@@ -51,3 +51,4 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 - Rust: `cargo check --manifest-path src-tauri/Cargo.toml`
 - Unit tests: `npx vitest run`
 - End-to-end: `npm run e2e` (Playwright; reuses a dev server on :1420). Headless uses SwiftShader — append `?fx=force` for full shelf effects and poll for state instead of fixed waits, because rAF is throttled there.
+- Visual QA: capture screenshots and *actually look at them* before calling a visual change done. Keep it proportionate — the surface you changed, batched into specimen boards where possible.

@@ -1,0 +1,971 @@
+/**
+ * features/bookshelf/world.ts — the PixiJS shelf world controller.
+ *
+ * Owns the Application (webgl, autoStart:false), the render-on-demand loop
+ * (dirty flag; idle frames cost nothing beyond the mote ticker), the camera,
+ * virtualization, LOD switching, the pull-out choreography, and every
+ * non-reactive Pixi object. Solid components talk to it through the
+ * WorldEvents callbacks and its small public API; Solid never diffs Pixi.
+ */
+
+import gsap from 'gsap';
+import { PixiPlugin } from 'gsap/PixiPlugin';
+import * as PIXI from 'pixi.js';
+import {
+  Application,
+  Container,
+  Sprite,
+  Texture,
+  TilingSprite,
+} from 'pixi.js';
+import { clamp } from '../../art/noise';
+import { SPINE_BASE_HEIGHT } from '../../art/spines';
+import { play } from '../../sound/engine';
+import { appState } from '../../state/app';
+import type { Book } from '../../data/types';
+import {
+  addWheelZoom,
+  applyDragPosition,
+  clampCamera,
+  createCamera,
+  isOutOfBounds,
+  momentumTick,
+  weightedVelocity,
+  worldToScreen,
+  xBounds,
+  yBounds,
+  zoomTick,
+  type CameraState,
+  type DragSample,
+  type Vec2,
+  type Viewport,
+} from './camera';
+import {
+  BOOK_BASELINE,
+  FLOOR_H,
+  HIT_SLOP,
+  SHELF_WIDTH,
+  slotCenterX,
+  Y_MIN,
+} from './constants';
+import { FloorStore } from './data';
+import { detectSoftwareRenderer, prefersReducedMotion, watchReducedMotion } from './env';
+import { FloorStampCache } from './floorStamps';
+import { FloorView, type BookVisual, type WorldHooks } from './floorView';
+import { ShelfInput } from './input';
+import { nextLodTier, type LodTier } from './lod';
+import { DustMotes, makeGlowTexture } from './motes';
+import { SpineFactory } from './spineFactory';
+import { EnvTextures, PLACEHOLDER_TINTS } from './textures';
+import { computeRange, diffWindow, Pool, type FloorRange } from './virtualizer';
+
+/* --------------------------- gsap registration ---------------------------- */
+
+let gsapRegistered = false;
+function ensureGsapPixi(): void {
+  if (gsapRegistered) return;
+  gsap.registerPlugin(PixiPlugin);
+  PixiPlugin.registerPIXI(PIXI);
+  gsapRegistered = true;
+}
+
+/* ------------------------------ shared types ------------------------------ */
+
+export interface RectLike {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VisibleBook {
+  id: string;
+  title: string;
+  floor: number;
+}
+
+export interface WorldEvents {
+  /** The a11y mirror re-renders from this. */
+  onVisibleBooksChange(books: VisibleBook[]): void;
+  /** Canvas pull-out finished; the DOM overlay takes over at `rect`. */
+  onGhostReady(book: Book, rect: RectLike): void;
+}
+
+/** Camera survives the shelf ↔ book unmount round-trip (module singleton). */
+interface CameraSnapshot {
+  x: number;
+  y: number;
+  zoom: number;
+}
+let sessionCamera: CameraSnapshot | null = null;
+
+const PARALLAX = 0.85;
+const BACKDROP_ALPHA = 0.45;
+
+/* --------------------------------- world ---------------------------------- */
+
+export class ShelfWorld {
+  readonly degrade: boolean;
+  /** Resolves once floor data is loaded and the first sync has run. */
+  readonly ready: Promise<void>;
+
+  private readonly app: Application;
+  private readonly host: HTMLElement;
+  private readonly events: WorldEvents;
+  private readonly dpr: number;
+  private reducedMotion: boolean;
+
+  private readonly camera: CameraState;
+  private readonly vp: Viewport = { width: 1, height: 1 };
+  private readonly store = new FloorStore();
+  private readonly factory: SpineFactory;
+  private readonly envTex = new EnvTextures();
+  private readonly stamps = new FloorStampCache((floor) => this.floors.has(floor));
+  private readonly input: ShelfInput;
+
+  private readonly backdrop: TilingSprite;
+  private readonly world = new Container();
+  private readonly fx = new Container();
+  private readonly motes: DustMotes;
+  private readonly glowTexture: Texture;
+
+  private readonly floors = new Map<number, FloorView>();
+  private readonly pool: Pool<FloorView>;
+  private tier: LodTier;
+  private range: FloorRange = { first: 0, last: -1 };
+
+  private dirty = true;
+  private raf = 0;
+  private lastTime = 0;
+  private destroyed = false;
+  private frozen = false;
+  private dragging = false;
+  private rawDragX = 0;
+  private rawDragY = 0;
+  private hovered: { fv: FloorView; visual: BookVisual } | null = null;
+  private ghost: Sprite | null = null;
+  private ghostShadow: Sprite | null = null;
+  private zoomTween: gsap.core.Tween | null = null;
+  private springTween: gsap.core.Tween | null = null;
+  private readonly tracked = new Set<gsap.core.Animation>();
+  private a11ySignature = '';
+
+  private readonly hooks: WorldHooks = {
+    markDirty: () => {
+      this.dirty = true;
+    },
+    motion: () => (this.reducedMotion ? 0 : 1),
+    track: (anim) => this.track(anim),
+  };
+
+  private readonly unsubs: Array<() => void> = [];
+
+  /* ------------------------------- creation ------------------------------ */
+
+  static async create(host: HTMLElement, events: WorldEvents): Promise<ShelfWorld> {
+    ensureGsapPixi();
+    const degrade = detectSoftwareRenderer();
+    const dpr = degrade ? 1 : Math.min(globalThis.devicePixelRatio || 1, 2);
+    const app = new Application();
+    await app.init({
+      preference: 'webgl',
+      antialias: !degrade,
+      resolution: dpr,
+      autoDensity: true,
+      autoStart: false,
+      backgroundAlpha: 0,
+      width: Math.max(1, host.clientWidth),
+      height: Math.max(1, host.clientHeight),
+    });
+    return new ShelfWorld(host, events, app, degrade, dpr);
+  }
+
+  private constructor(
+    host: HTMLElement,
+    events: WorldEvents,
+    app: Application,
+    degrade: boolean,
+    dpr: number,
+  ) {
+    this.host = host;
+    this.events = events;
+    this.app = app;
+    this.degrade = degrade;
+    this.dpr = dpr;
+    this.reducedMotion = prefersReducedMotion();
+    this.factory = new SpineFactory({ hiEnabled: !degrade });
+
+    host.appendChild(app.canvas);
+    app.canvas.classList.add('shelf-canvas');
+    this.vp.width = Math.max(1, host.clientWidth);
+    this.vp.height = Math.max(1, host.clientHeight);
+
+    // Stage hierarchy per the doc: backdrop → world → fx.
+    this.backdrop = new TilingSprite({
+      texture: Texture.WHITE,
+      width: this.vp.width,
+      height: this.vp.height,
+    });
+    this.backdrop.tint = PLACEHOLDER_TINTS.backdrop;
+    this.backdrop.alpha = 0;
+    this.backdrop.eventMode = 'none';
+    this.glowTexture = makeGlowTexture();
+    this.motes = new DustMotes(this.glowTexture);
+    this.fx.addChild(this.motes.container);
+    app.stage.addChild(this.backdrop, this.world, this.fx);
+    app.stage.eventMode = 'none';
+
+    // Camera: session restore, else a friendly overview of the first floors.
+    const snap = sessionCamera;
+    this.camera = snap !== null
+      ? createCamera(snap.zoom, snap.x, snap.y)
+      : createCamera(0.8, 0, Y_MIN);
+    if (snap === null) {
+      const bx = xBounds(this.vp, this.camera.zoom);
+      this.camera.x = clamp((SHELF_WIDTH - this.vp.width / this.camera.zoom) / 2, bx.min, bx.max);
+    }
+    this.tier = nextLodTier(0, this.camera.zoom);
+
+    this.motes.setEnabled(!degrade && !this.reducedMotion);
+    this.motes.resize(this.vp.width, this.vp.height);
+
+    this.input = new ShelfInput(app.canvas, {
+      onWheelZoom: (deltaY, cursor) => this.handleWheelZoom(deltaY, cursor),
+      onWheelPan: (dx, dy) => this.handleWheelPan(dx, dy),
+      onDragStart: () => this.handleDragStart(),
+      onDragMove: (dx, dy) => this.handleDragMove(dx, dy),
+      onDragEnd: (samples) => this.handleDragEnd(samples),
+      onTap: (cursor) => this.handleTap(cursor),
+      onHover: (cursor) => this.handleHover(cursor),
+    });
+
+    this.unsubs.push(
+      this.store.onChange((floorIndices) => this.handleFloorData(floorIndices)),
+      this.factory.onTexturesChanged((bookIds) => this.handleTexturesChanged(bookIds)),
+      this.envTex.onReady(() => this.handleEnvReady()),
+      watchReducedMotion((reduced) => {
+        this.reducedMotion = reduced;
+        this.motes.setEnabled(!this.degrade && !reduced);
+        this.dirty = true;
+      }),
+    );
+
+    const ro = new ResizeObserver(() => this.handleResize());
+    ro.observe(host);
+    this.unsubs.push(() => ro.disconnect());
+
+    const onVisibility = (): void => {
+      this.dirty = true;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    this.unsubs.push(() => document.removeEventListener('visibilitychange', onVisibility));
+
+    this.pool = new Pool<FloorView>(
+      () => {
+        const fv = new FloorView(this.hooks);
+        this.world.addChild(fv.root);
+        return fv;
+      },
+      (fv) => fv.reset(),
+      (fv) => fv.destroy(),
+    );
+
+    this.envTex.load(this.dpr, this.degrade);
+    this.ready = this.store.init().then(() => {
+      if (this.destroyed) return;
+      this.dirty = true;
+    });
+
+    this.updateCursor();
+    this.lastTime = performance.now();
+    this.raf = requestAnimationFrame(this.frame);
+  }
+
+  /* ------------------------------ public API ----------------------------- */
+
+  /** Open a book from the accessibility mirror (Enter/click on a list row). */
+  openFromList(bookId: string): void {
+    if (this.frozen || this.destroyed) return;
+    const book = this.store.findBook(bookId);
+    if (book === null) return;
+    const fv = this.floors.get(book.floor);
+    const visual = fv?.visuals.find((v) => v.book.id === bookId);
+    if (fv !== undefined && visual !== undefined && this.tier === 0) {
+      this.pullOutBook(fv, visual);
+      return;
+    }
+    appState.openBook(book.id);
+  }
+
+  /** Overlay crossfade started — fade the canvas ghost out (80ms). */
+  fadeGhost(): void {
+    const ghost = this.ghost;
+    const shadow = this.ghostShadow;
+    if (ghost === null) return;
+    const m = this.hooks.motion();
+    this.track(
+      gsap.to([ghost, shadow].filter((s): s is Sprite => s !== null), {
+        alpha: 0,
+        duration: 0.08 * m,
+        onUpdate: this.hooks.markDirty,
+        onComplete: () => this.disposeGhost(),
+      }),
+    );
+  }
+
+  /**
+   * Close flow, step 1: freeze input, hide the spine sprite, and return the
+   * book + its current screen rect for the overlay to fly back to. Null when
+   * the book is unknown or its floor is nowhere near the viewport.
+   */
+  prepareReturn(bookId: string): { book: Book; rect: RectLike } | null {
+    const book = this.store.findBook(bookId);
+    if (book === null) return null;
+    const floorTop = book.floor * FLOOR_H;
+    const visibleTop = this.camera.y - FLOOR_H;
+    const visibleBottom = this.camera.y + this.vp.height / this.camera.zoom + FLOOR_H;
+    if (floorTop < visibleTop || floorTop > visibleBottom) return null;
+    this.frozen = true;
+    this.input.frozen = true;
+    const fv = this.floors.get(book.floor);
+    const visual = fv?.visuals.find((v) => v.book.id === bookId);
+    if (visual !== undefined) visual.sprite.visible = false;
+    this.dirty = true;
+    return { book, rect: this.spineScreenRect(book) };
+  }
+
+  /** Close flow, step 2: canvas ghost settles the book back into its slot. */
+  pushInBook(book: Book, onDone: () => void): void {
+    void play('book-return');
+    const fv = this.floors.get(book.floor);
+    const visual = fv?.visuals.find((v) => v.book.id === book.id);
+    const m = this.hooks.motion();
+    const finish = (): void => {
+      if (visual !== undefined) visual.sprite.visible = true;
+      this.disposeGhost();
+      this.frozen = false;
+      this.input.frozen = false;
+      this.dirty = true;
+      onDone();
+    };
+    if (visual === undefined || fv === undefined || m === 0) {
+      finish();
+      return;
+    }
+    const zoom = this.camera.zoom;
+    const screen = worldToScreen(this.camera, {
+      x: visual.centerX,
+      y: fv.index * FLOOR_H + visual.baseY,
+    });
+    const ghost = new Sprite(visual.sprite.texture);
+    ghost.tint = visual.sprite.tint;
+    ghost.anchor.set(0.5, 1);
+    ghost.width = visual.params.w * zoom;
+    ghost.height = visual.height * zoom;
+    ghost.rotation = visual.baseRotation;
+    ghost.position.set(screen.x, screen.y - 20 * zoom);
+    const targetScaleX = ghost.scale.x;
+    const targetScaleY = ghost.scale.y;
+    ghost.scale.set(targetScaleX * 1.15, targetScaleY * 1.15);
+    this.ghost = ghost;
+    this.fx.addChild(ghost);
+    this.dirty = true;
+    this.track(
+      gsap.to(ghost, {
+        pixi: { scaleX: targetScaleX, scaleY: targetScaleY, y: screen.y },
+        duration: 0.4 * m,
+        ease: 'power3.out',
+        onUpdate: this.hooks.markDirty,
+        onComplete: finish,
+      }),
+    );
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    cancelAnimationFrame(this.raf);
+    sessionCamera = { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom };
+    for (const unsub of this.unsubs) unsub();
+    this.unsubs.length = 0;
+    this.input.destroy();
+    for (const anim of this.tracked) anim.kill();
+    this.tracked.clear();
+    this.zoomTween?.kill();
+    this.springTween?.kill();
+    this.disposeGhost();
+    for (const fv of this.floors.values()) fv.destroy();
+    this.floors.clear();
+    this.pool.drain();
+    this.motes.destroy();
+    this.stamps.clear();
+    this.store.destroy();
+    this.factory.destroy();
+    this.envTex.destroy();
+    this.glowTexture.destroy(true);
+    this.app.destroy({ removeView: true }, { children: true });
+  }
+
+  /* ------------------------------ frame loop ------------------------------ */
+
+  private readonly frame = (now: number): void => {
+    if (this.destroyed) return;
+    this.raf = requestAnimationFrame(this.frame);
+    const dt = clamp((now - this.lastTime) / 1000, 0, 0.05);
+    this.lastTime = now;
+
+    let moving = false;
+    if (!this.frozen && !this.dragging) {
+      moving = zoomTick(this.camera, dt, this.reducedMotion) || moving;
+      moving = momentumTick(this.camera, dt, this.vp) || moving;
+    }
+    if (this.motes.enabled && !document.hidden) {
+      this.motes.update(dt);
+      this.dirty = true;
+    }
+    if (moving) this.dirty = true;
+    if (!this.dirty) return;
+    this.dirty = false;
+
+    this.applyCamera();
+    this.sync();
+    this.app.render();
+  };
+
+  private applyCamera(): void {
+    const { x, y, zoom } = this.camera;
+    this.world.position.set(-x * zoom, -y * zoom);
+    this.world.scale.set(zoom);
+    this.backdrop.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
+    this.backdrop.tileScale.set(Math.max(zoom, 0.35));
+  }
+
+  /* ---------------------------- virtualization ---------------------------- */
+
+  private sync(): void {
+    const cam = this.camera;
+    const range = computeRange(cam.y, this.vp.height, cam.zoom);
+    const prevTier = this.tier;
+    this.tier = nextLodTier(this.tier, cam.zoom);
+    const tierChanged = this.tier !== prevTier;
+
+    const mounted = new Set(this.floors.keys());
+    const diff = diffWindow(mounted, range);
+    for (const index of diff.remove) {
+      const fv = this.floors.get(index);
+      if (fv !== undefined) {
+        if (this.hovered !== null && this.hovered.fv === fv) this.hovered = null;
+        this.floors.delete(index);
+        this.pool.release(fv);
+      }
+    }
+    for (const index of diff.add) {
+      const fv = this.pool.acquire();
+      this.floors.set(index, fv);
+      fv.populate(
+        index,
+        this.store.get(index),
+        this.envTex,
+        this.factory,
+        this.tier,
+        this.dpr,
+        this.degrade,
+      );
+      if (this.tier === 2) fv.showStamp(this.stampFor(index, fv));
+      this.requestSpines(fv);
+    }
+
+    if (tierChanged) {
+      if (this.tier !== 0) this.clearHover();
+      for (const [index, fv] of this.floors) {
+        fv.applyTier(this.tier, this.tier === 2 ? this.stampFor(index, fv) : null, this.factory);
+      }
+      if (this.tier === 0) {
+        for (const fv of this.floors.values()) this.requestSpines(fv);
+      }
+      this.updateCursor();
+    }
+
+    this.range = range;
+    this.store.ensureRange(range.first, range.last);
+    this.publishVisibleBooks();
+  }
+
+  private stampFor(index: number, fv: FloorView): PIXI.RenderTexture {
+    const cached = this.stamps.get(index);
+    if (cached !== undefined) return cached;
+    return this.stamps.bake(this.app.renderer, index, fv.content);
+  }
+
+  private requestSpines(fv: FloorView): void {
+    const centerFloor =
+      (this.camera.y + this.vp.height / (2 * this.camera.zoom)) / FLOOR_H;
+    const priority = Math.abs(fv.index - centerFloor);
+    for (const visual of fv.visuals) {
+      this.factory.request(visual.book, 'lo', priority);
+      if (this.tier === 0) this.factory.request(visual.book, 'hi', priority);
+    }
+  }
+
+  /* ----------------------------- data arrivals ---------------------------- */
+
+  private handleFloorData(floorIndices: readonly number[]): void {
+    if (this.destroyed) return;
+    let touched = false;
+    for (const index of floorIndices) {
+      const fv = this.floors.get(index);
+      if (fv === undefined) continue;
+      fv.setBooks(this.store.get(index), this.factory, this.dpr, this.envTex);
+      fv.refreshTextures(this.factory);
+      this.rebakeStamp(index, fv);
+      this.requestSpines(fv);
+      touched = true;
+    }
+    if (touched) {
+      this.dirty = true;
+      this.publishVisibleBooks();
+    }
+  }
+
+  private handleTexturesChanged(bookIds: readonly string[]): void {
+    if (this.destroyed) return;
+    const ids = new Set(bookIds);
+    for (const [index, fv] of this.floors) {
+      if (!fv.visuals.some((v) => ids.has(v.book.id))) continue;
+      fv.refreshTextures(this.factory, ids);
+      this.rebakeStamp(index, fv);
+      // Evictions fall back to placeholders — queue a re-bake for visibles.
+      this.requestSpines(fv);
+    }
+    this.dirty = true;
+  }
+
+  private handleEnvReady(): void {
+    if (this.destroyed) return;
+    const m = this.hooks.motion();
+    if (this.envTex.paper !== null && this.backdrop.texture !== this.envTex.paper) {
+      this.backdrop.texture = this.envTex.paper;
+      this.backdrop.tint = 0xffffff;
+      this.track(
+        gsap.to(this.backdrop, {
+          alpha: BACKDROP_ALPHA,
+          duration: 0.5 * m,
+          onUpdate: this.hooks.markDirty,
+        }),
+      );
+      if (m === 0) this.backdrop.alpha = BACKDROP_ALPHA;
+    }
+    for (const [index, fv] of this.floors) {
+      fv.applyEnv(this.envTex, this.degrade, true);
+      this.rebakeStamp(index, fv);
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * A floor's content changed: refresh its LOD2 stamp. Off-tier, the stale
+   * RenderTexture must be detached from the sprite BEFORE the cache destroys
+   * it (a destroyed texture on a live sprite crashes the renderer).
+   */
+  private rebakeStamp(index: number, fv: FloorView): void {
+    if (this.tier === 2) {
+      this.stamps.invalidate(index);
+      fv.showStamp(this.stampFor(index, fv));
+    } else {
+      fv.detachStamp();
+      this.stamps.invalidate(index);
+    }
+  }
+
+  /* -------------------------------- input --------------------------------- */
+
+  private handleWheelZoom(deltaY: number, cursor: Vec2): void {
+    if (this.frozen) return;
+    this.killNavTweens();
+    addWheelZoom(this.camera, deltaY, cursor);
+    this.dirty = true;
+  }
+
+  private handleWheelPan(dx: number, dy: number): void {
+    if (this.frozen) return;
+    this.killNavTweens();
+    const cam = this.camera;
+    cam.vx = 0;
+    cam.vy = 0;
+    cam.x += dx / cam.zoom;
+    cam.y += dy / cam.zoom;
+    clampCamera(cam, this.vp);
+    this.dirty = true;
+  }
+
+  private handleDragStart(): void {
+    if (this.frozen) return;
+    this.killNavTweens();
+    this.clearHover();
+    this.dragging = true;
+    this.camera.vx = 0;
+    this.camera.vy = 0;
+    this.rawDragX = this.camera.x;
+    this.rawDragY = this.camera.y;
+    this.updateCursor();
+  }
+
+  private handleDragMove(dx: number, dy: number): void {
+    if (this.frozen || !this.dragging) return;
+    const cam = this.camera;
+    this.rawDragX -= dx / cam.zoom;
+    this.rawDragY -= dy / cam.zoom;
+    applyDragPosition(cam, this.rawDragX, this.rawDragY, this.vp);
+    this.dirty = true;
+  }
+
+  private handleDragEnd(samples: readonly DragSample[]): void {
+    this.dragging = false;
+    this.updateCursor();
+    if (this.frozen) return;
+    const cam = this.camera;
+    if (isOutOfBounds(cam, this.vp)) {
+      this.springBack();
+    } else {
+      const v = weightedVelocity(samples);
+      cam.vx = -v.x / cam.zoom;
+      cam.vy = -v.y / cam.zoom;
+    }
+    this.dirty = true;
+  }
+
+  private handleTap(cursor: Vec2): void {
+    if (this.frozen) return;
+    if (this.tier === 0) {
+      const hit = this.hitBook(cursor);
+      if (hit !== null) this.pullOutBook(hit.fv, hit.visual);
+      return;
+    }
+    const worldY = cursor.y / this.camera.zoom + this.camera.y;
+    const floor = Math.floor(worldY / FLOOR_H);
+    if (floor >= 0) this.zoomToFloor(floor);
+  }
+
+  private handleHover(cursor: Vec2 | null): void {
+    if (this.frozen || this.dragging || this.tier !== 0) {
+      this.clearHover();
+      return;
+    }
+    const hit = cursor === null ? null : this.hitBook(cursor);
+    const current = this.hovered;
+    if (hit === null) {
+      this.clearHover();
+      return;
+    }
+    if (current !== null && current.visual === hit.visual) return;
+    this.clearHover();
+    this.hovered = hit;
+    hit.fv.setHover(hit.visual, true);
+    this.updateCursor();
+  }
+
+  private clearHover(): void {
+    const current = this.hovered;
+    if (current === null) return;
+    this.hovered = null;
+    current.fv.setHover(current.visual, false);
+    this.updateCursor();
+  }
+
+  private hitBook(cursor: Vec2): { fv: FloorView; visual: BookVisual } | null {
+    const cam = this.camera;
+    const wx = cursor.x / cam.zoom + cam.x;
+    const wy = cursor.y / cam.zoom + cam.y;
+    const floor = Math.floor(wy / FLOOR_H);
+    const fv = this.floors.get(floor);
+    if (fv === undefined) return null;
+    const localY = wy - floor * FLOOR_H;
+    for (const visual of fv.visuals) {
+      const halfW = visual.params.w / 2 + HIT_SLOP;
+      if (
+        Math.abs(wx - visual.centerX) <= halfW &&
+        localY >= BOOK_BASELINE - visual.height - HIT_SLOP &&
+        localY <= BOOK_BASELINE + HIT_SLOP
+      ) {
+        return { fv, visual };
+      }
+    }
+    return null;
+  }
+
+  private updateCursor(): void {
+    const cursor = this.dragging
+      ? 'grabbing'
+      : this.hovered !== null
+        ? 'pointer'
+        : 'grab';
+    this.app.canvas.style.cursor = cursor;
+  }
+
+  private killNavTweens(): void {
+    this.zoomTween?.kill();
+    this.zoomTween = null;
+    this.springTween?.kill();
+    this.springTween = null;
+    this.camera.anchor = null;
+  }
+
+  /* ------------------------- camera choreography -------------------------- */
+
+  private springBack(): void {
+    const cam = this.camera;
+    cam.vx = 0;
+    cam.vy = 0;
+    const bx = xBounds(this.vp, cam.zoom);
+    const by = yBounds();
+    const targetX = clamp(cam.x, bx.min, bx.max);
+    const targetY = clamp(cam.y, by.min, by.max);
+    const m = this.hooks.motion();
+    if (m === 0) {
+      cam.x = targetX;
+      cam.y = targetY;
+      this.dirty = true;
+      return;
+    }
+    this.springTween = gsap.to(cam, {
+      x: targetX,
+      y: targetY,
+      duration: 0.35,
+      ease: 'power2.out',
+      onUpdate: this.hooks.markDirty,
+      onComplete: () => {
+        this.springTween = null;
+      },
+    });
+    this.track(this.springTween);
+  }
+
+  /** Semantic zoom-in: GSAP tween in log-zoom space to center `floor` at 1×. */
+  private zoomToFloor(floor: number): void {
+    const cam = this.camera;
+    this.killNavTweens();
+    cam.vx = 0;
+    cam.vy = 0;
+    const targetZoom = 1;
+    const bx = xBounds(this.vp, targetZoom);
+    const targetX = clamp(
+      (SHELF_WIDTH - this.vp.width / targetZoom) / 2,
+      bx.min,
+      bx.max,
+    );
+    const targetY = Math.max(
+      Y_MIN,
+      floor * FLOOR_H - (this.vp.height / targetZoom - FLOOR_H) / 2,
+    );
+    const m = this.hooks.motion();
+    const proxy = { lz: Math.log(cam.zoom), x: cam.x, y: cam.y };
+    const apply = (): void => {
+      cam.zoom = Math.exp(proxy.lz);
+      cam.logZoomTarget = proxy.lz;
+      cam.x = proxy.x;
+      cam.y = proxy.y;
+      this.dirty = true;
+    };
+    if (m === 0) {
+      proxy.lz = 0;
+      proxy.x = targetX;
+      proxy.y = targetY;
+      apply();
+      return;
+    }
+    void play('shelf-whoosh');
+    this.zoomTween = gsap.to(proxy, {
+      lz: Math.log(targetZoom),
+      x: targetX,
+      y: targetY,
+      duration: 0.6,
+      ease: 'power3.inOut',
+      onUpdate: apply,
+      onComplete: () => {
+        this.zoomTween = null;
+      },
+    });
+    this.track(this.zoomTween);
+  }
+
+  /* ------------------------------- pull-out -------------------------------- */
+
+  private spineScreenRect(book: Book): RectLike {
+    const params = this.factory.getParams(book);
+    const zoom = this.camera.zoom;
+    const screen = worldToScreen(this.camera, {
+      x: slotCenterX(book.slot),
+      y: book.floor * FLOOR_H + BOOK_BASELINE,
+    });
+    const w = params.w * zoom;
+    const h = (SPINE_BASE_HEIGHT + params.hJitter) * zoom;
+    return { x: screen.x - w / 2, y: screen.y - h, width: w, height: h };
+  }
+
+  private pullOutBook(fv: FloorView, visual: BookVisual): void {
+    if (this.frozen) return;
+    void play('book-pull');
+    this.frozen = true;
+    this.input.frozen = true;
+    this.dragging = false;
+    this.camera.vx = 0;
+    this.camera.vy = 0;
+    this.killNavTweens();
+    if (this.hovered !== null) {
+      gsap.killTweensOf(this.hovered.visual.sprite);
+      this.hovered = null;
+    }
+    gsap.killTweensOf(visual.sprite);
+    visual.sprite.position.set(visual.centerX, visual.baseY);
+    visual.sprite.rotation = visual.baseRotation;
+
+    const zoom = this.camera.zoom;
+    const m = this.hooks.motion();
+    const screen = worldToScreen(this.camera, {
+      x: visual.centerX,
+      y: fv.index * FLOOR_H + visual.baseY,
+    });
+
+    // Canvas ghost in screen space (fx layer).
+    const ghost = new Sprite(visual.sprite.texture);
+    ghost.tint = visual.sprite.tint;
+    ghost.anchor.set(0.5, 1);
+    ghost.width = visual.params.w * zoom;
+    ghost.height = visual.height * zoom;
+    ghost.position.set(screen.x, screen.y);
+    ghost.skew.x = 0.06;
+    const baseScaleX = ghost.scale.x;
+    const baseScaleY = ghost.scale.y;
+
+    const shadow = new Sprite(this.glowTexture);
+    shadow.tint = 0x2e241a;
+    shadow.anchor.set(0.5);
+    shadow.width = visual.params.w * zoom * 1.7;
+    shadow.height = 16 * zoom;
+    shadow.position.set(screen.x, screen.y + 5 * zoom);
+    shadow.alpha = 0;
+    const shadowScaleX = shadow.scale.x;
+
+    this.fx.addChild(shadow, ghost);
+    this.ghost = ghost;
+    this.ghostShadow = shadow;
+    visual.sprite.visible = false;
+    this.dirty = true;
+
+    // Dim the floor siblings for focus.
+    if (!this.degrade) {
+      for (const other of fv.visuals) {
+        if (other === visual) continue;
+        this.track(
+          gsap.to(other.sprite, {
+            pixi: { tint: 0xb9ab97 },
+            duration: 0.3 * m,
+            onUpdate: this.hooks.markDirty,
+          }),
+        );
+      }
+    }
+
+    const liftedY = screen.y - 40 * zoom;
+    const finish = (): void => {
+      const width = visual.params.w * zoom * 1.35;
+      const height = visual.height * zoom * 1.35;
+      this.events.onGhostReady(visual.book, {
+        x: screen.x - width / 2,
+        y: liftedY - height,
+        width,
+        height,
+      });
+    };
+    if (m === 0) {
+      ghost.scale.set(baseScaleX * 1.35, baseScaleY * 1.35);
+      ghost.position.y = liftedY;
+      ghost.skew.x = 0;
+      shadow.alpha = 0.3;
+      this.dirty = true;
+      finish();
+      return;
+    }
+    const tl = gsap.timeline({
+      onUpdate: this.hooks.markDirty,
+      onComplete: finish,
+    });
+    tl.to(
+      ghost,
+      {
+        pixi: { scaleX: baseScaleX * 1.35, scaleY: baseScaleY * 1.35, y: liftedY },
+        duration: 0.45 * m,
+        ease: 'back.out(1.4)',
+      },
+      0,
+    )
+      .to(ghost.skew, { x: 0, duration: 0.45 * m, ease: 'power2.out' }, 0)
+      .to(
+        shadow,
+        {
+          alpha: 0.3,
+          pixi: { scaleX: shadowScaleX * 1.35 },
+          duration: 0.45 * m,
+          ease: 'power2.out',
+        },
+        0,
+      );
+    this.track(tl);
+  }
+
+  private disposeGhost(): void {
+    if (this.ghost !== null) {
+      gsap.killTweensOf(this.ghost);
+      gsap.killTweensOf(this.ghost.skew);
+      this.ghost.destroy();
+      this.ghost = null;
+    }
+    if (this.ghostShadow !== null) {
+      gsap.killTweensOf(this.ghostShadow);
+      this.ghostShadow.destroy();
+      this.ghostShadow = null;
+    }
+    this.dirty = true;
+  }
+
+  /* ------------------------------- utilities ------------------------------ */
+
+  private handleResize(): void {
+    if (this.destroyed) return;
+    const w = this.host.clientWidth;
+    const h = this.host.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    this.vp.width = w;
+    this.vp.height = h;
+    this.app.renderer.resize(w, h);
+    this.backdrop.width = w;
+    this.backdrop.height = h;
+    this.motes.resize(w, h);
+    if (!this.dragging) clampCamera(this.camera, this.vp);
+    this.dirty = true;
+  }
+
+  private publishVisibleBooks(): void {
+    const books: VisibleBook[] = [];
+    for (let i = this.range.first; i <= this.range.last; i++) {
+      const list = this.store.get(i);
+      if (list === undefined) continue;
+      for (const book of list) {
+        books.push({ id: book.id, title: book.title, floor: book.floor });
+      }
+    }
+    const signature = books.map((b) => b.id).join('|');
+    if (signature === this.a11ySignature) return;
+    this.a11ySignature = signature;
+    this.events.onVisibleBooksChange(books);
+  }
+
+  private track<T extends gsap.core.Animation>(anim: T): T {
+    // Opportunistic pruning keeps the set small without touching callbacks.
+    for (const existing of this.tracked) {
+      if (!existing.isActive() && existing.progress() === 1) this.tracked.delete(existing);
+    }
+    this.tracked.add(anim);
+    return anim;
+  }
+}

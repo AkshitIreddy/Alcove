@@ -1,0 +1,112 @@
+/* ============================================================================
+   Notebook — bookshelf world styles
+   The canvas host, the offscreen accessibility mirror, and the pulled-book
+   DOM overlay. Hot-path animation is transform/opacity only (GSAP-driven).
+   ========================================================================== */
+
+.shelf-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: var(--z-shelf);
+}
+
+.shelf-root canvas.shelf-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Accessibility mirror — visually hidden, fully focusable. Each visible book
+   is one row; Enter/click triggers the same open command as a canvas tap.
+   -------------------------------------------------------------------------- */
+.shelf-a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.shelf-a11y ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Pulled-book overlay — the DOM book cover that takes over from the canvas
+   ghost. Positioned via GSAP transforms only.
+   -------------------------------------------------------------------------- */
+.pulled-book {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-overlay);
+  transform-origin: 0 0;
+  will-change: transform, opacity;
+  pointer-events: none;
+
+  background: linear-gradient(
+    172deg,
+    var(--cover-top, var(--wash-amber)) 0%,
+    var(--cover-bottom, var(--wash-amber-deep)) 100%
+  );
+  border: 2px solid rgba(58, 50, 42, 0.55);
+  border-radius: 6px 14px 14px 6px / 8px 12px 12px 8px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* Darker "spine" strip along the cover's bound edge. */
+.pulled-book__spine-edge {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 9%;
+  background: linear-gradient(
+    to right,
+    rgba(46, 36, 26, 0.35),
+    rgba(46, 36, 26, 0.12) 55%,
+    transparent
+  );
+}
+
+.pulled-book__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  padding: var(--space-24) var(--space-32);
+  text-align: center;
+}
+
+.pulled-book__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  line-height: var(--leading-heading);
+  color: var(--paper-cream);
+  text-shadow: 0 1px 2px rgba(46, 36, 26, 0.45);
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.pulled-book__rule {
+  width: 42%;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: rgba(247, 241, 227, 0.65);
+}

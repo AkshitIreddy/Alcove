@@ -371,26 +371,10 @@ export default function BookView(): JSX.Element {
     const deadline = performance.now() + 6000;
     const attempt = (): void => {
       const instance = getPageEditor(pageId);
-      console.debug('[carry] attempt', pageId, {
-        has: Boolean(instance),
-        connected: instance?.view.dom.isConnected,
-        parent: instance?.view.dom.parentElement?.className,
-        grandparent:
-          instance?.view.dom.parentElement?.parentElement?.className,
-        pmCount: document.querySelectorAll('.ProseMirror').length,
-        leftLeafHasProse: Boolean(
-          paperElements.left?.querySelector('.ProseMirror'),
-        ),
-        leftKey: leafKey(leftPage()),
-      });
       if (instance && instance.view.dom.isConnected) {
         const size = instance.state.doc.content.size;
         const pos = Math.max(0, Math.min(offset ?? 0, size));
-        const ok = instance
-          .chain()
-          .focus(pos, { scrollIntoView: false })
-          .run();
-        console.debug('[carry] focused', { pos, ok, active: document.activeElement?.className });
+        instance.chain().focus(pos, { scrollIntoView: false }).run();
         return;
       }
       if (performance.now() < deadline) requestAnimationFrame(attempt);
@@ -418,7 +402,6 @@ export default function BookView(): JSX.Element {
     if (line !== undefined) fallbackAttrs.lineHeightPx = line;
 
     const merged = prependBlocksToDoc(next.doc, blocks, fallbackAttrs);
-    console.debug('[carry] blocks', JSON.stringify(blocks).slice(0, 200), 'cursor', cursorCarried, 'offset', caretOffset);
     updatePageDoc(next.id, merged);
     bumpDocVersion(next.id); // remounts the leaf when it is on this spread
     await savePageDoc(next.id, merged);
@@ -866,6 +849,11 @@ export default function BookView(): JSX.Element {
               { plate: false },
             ),
           );
+          // Built ONCE per book session: mounting a leaf mounts a TipTap
+          // editor that registers itself (src/editor/instances), so these
+          // must never be re-evaluated by a reactive prop read downstream.
+          const leftLeaf = leafFace('left', leftPage);
+          const rightLeaf = leafFace('right', rightPage);
           return (
             <div
               class="nb-spread-stage"
@@ -913,8 +901,8 @@ export default function BookView(): JSX.Element {
                     getPageElement={(side) => paperElements[side] ?? null}
                     onNavigate={onNavigate}
                     canFlip={canFlip}
-                    leftPage={leafFace('left', leftPage)}
-                    rightPage={leafFace('right', rightPage)}
+                    leftPage={leftLeaf}
+                    rightPage={rightLeaf}
                   />
                   <div class="nb-spread-gutter" aria-hidden="true" />
                   <Show when={canFlip('next')}>

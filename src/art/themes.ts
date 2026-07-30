@@ -435,6 +435,16 @@ export interface LibraryTheme {
   props: readonly PropSpec[];
   spineDefaults: SpineTheming;
   motes: MoteSpec;
+  /**
+   * Extra furniture hung under each shelf plank: apothecary drawers, cottage
+   * bunting strung between floors. Omitted = a plain plank edge.
+   */
+  shelfDetail?: 'none' | 'drawers' | 'bunting';
+  /**
+   * What sits behind the books. Most rooms back the case in timber; the
+   * scriptorium and attic show the room's own wall straight through.
+   */
+  backing?: 'wood' | 'wallpaper';
 }
 
 /* ============================== the registry ============================= */

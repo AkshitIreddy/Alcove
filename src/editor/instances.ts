@@ -16,18 +16,11 @@ const instances = new Map<string, Editor>();
 
 /** Register the live editor for a page (called on editor creation). */
 export function registerPageEditor(pageId: string, editor: Editor): void {
-  console.debug('[carry] register', pageId, {
-    connected: editor.view.dom.isConnected,
-    replacing: instances.has(pageId),
-  });
   instances.set(pageId, editor);
 }
 
 /** Remove a page's editor, but only if `editor` is still the current one. */
 export function unregisterPageEditor(pageId: string, editor: Editor): void {
-  console.debug('[carry] unregister', pageId, {
-    current: instances.get(pageId) === editor,
-  });
   if (instances.get(pageId) === editor) instances.delete(pageId);
 }
 

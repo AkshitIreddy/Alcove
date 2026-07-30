@@ -115,6 +115,24 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
   let rightLeafEl!: HTMLDivElement;
   let canvasEl!: HTMLCanvasElement;
 
+  /**
+   * The leaf children are read EXACTLY ONCE (component bodies run untracked,
+   * so this takes no dependency on the host's signals).
+   *
+   * Why this matters (wave-2 caret-carry bug): the host builds these props
+   * with a call expression (`leafFace('left', leftPage)`), so Solid compiles
+   * them into getters — and evaluating one MOUNTS a whole leaf, including a
+   * live TipTap editor that registers itself in src/editor/instances. Any
+   * second read (the old `props.leftPage === undefined` inside a classList
+   * effect) built a throwaway duplicate leaf on every keystroke, whose
+   * detached editor clobbered the registry entry the caret carry needs.
+   * Per the mount contract the leaf JSX is stable; keyed remounts happen
+   * INSIDE it.
+   */
+  const leftChild = props.leftPage;
+  const rightChild = props.rightPage;
+  const hasLeft = leftChild !== undefined;
+
   const ids = (): SpreadPageIds =>
     props.pageIds ?? {
       // No ids supplied: key snapshots by spread slot so the engine still
@@ -247,13 +265,13 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
     <div class="nb-flip-surface" ref={rootEl}>
       <div
         class="nb-flip-leaf nb-flip-leaf-left"
-        classList={{ 'is-empty': props.leftPage === undefined }}
+        classList={{ 'is-empty': !hasLeft }}
         ref={leftLeafEl}
       >
-        {props.leftPage}
+        {leftChild}
       </div>
       <div class="nb-flip-leaf nb-flip-leaf-right" ref={rightLeafEl}>
-        {props.rightPage}
+        {rightChild}
       </div>
       <div
         class="nb-flip-hotspot nb-flip-hotspot-prev"

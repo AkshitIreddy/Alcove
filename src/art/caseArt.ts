@@ -1,20 +1,20 @@
-/**
- * art/caseArt.ts — themed bookcase carpentry (docs/design/library-themes.md §1).
+﻿/**
+ * art/caseArt.ts â€” themed bookcase carpentry (docs/design/library-themes.md Â§1).
  *
  * Variant renderers for every visible part of the case, driven entirely by a
  * `LibraryTheme` from art/themes.ts:
  *
- *   crown/cornice  — 6 profiles × 6 carving vocabularies + a centrepiece
- *   side rail      — 4 edge treatments × 5 inlays
- *   shelf plank    — lit lip, front edge, joinery run, optional under-shelf
+ *   crown/cornice  â€” 6 profiles Ã— 6 carving vocabularies + a centrepiece
+ *   side rail      â€” 4 edge treatments Ã— 5 inlays
+ *   shelf plank    â€” lit lip, front edge, joinery run, optional under-shelf
  *                    detail (apothecary drawers, cottage bunting)
- *   back panel     — timber, or the room's own wall (scriptorium plaster,
+ *   back panel     â€” timber, or the room's own wall (scriptorium plaster,
  *                    attic lath) showing straight through the case
- *   joinery        — pegs · iron straps + rivets · clean mitre ·
- *                    painted-and-chipped · square nails · brass brackets
- *   floor plate    — brass · enamel · wood-burnt · paper tag · slate · tin,
+ *   joinery        â€” pegs Â· iron straps + rivets Â· clean mitre Â·
+ *                    painted-and-chipped Â· square nails Â· brass brackets
+ *   floor plate    â€” brass Â· enamel Â· wood-burnt Â· paper tag Â· slate Â· tin,
  *                    each accepting a label string
- *   light rig      — ambient cast, pools with drift, rim light, dust shafts,
+ *   light rig      â€” ambient cast, pools with drift, rim light, dust shafts,
  *                    vignette
  *
  * Everything is pure Canvas2D, deterministic per seed, and authored in world
@@ -38,10 +38,9 @@ import {
   type LibraryTheme,
   type LightSpec,
   type PlateSpec,
-  type RailSpec,
   type ThemeId,
 } from './themes';
-import { getColourway, renderWallpaper } from './wallpaper';
+import { renderWallpaper } from './wallpaper';
 import { hexAlpha, mixHex, paintWood, parseHex } from './wood';
 import { doubleStroke } from './wobble';
 
@@ -72,7 +71,7 @@ function roundRect(ctx: Ctx2D, x: number, y: number, w: number, h: number, r: nu
   ctx.closePath();
 }
 
-/** Doubled wobbled pencil pass — the hand-drawn arris line. */
+/** Doubled wobbled pencil pass â€” the hand-drawn arris line. */
 function pencil(ctx: Ctx2D, d: string, seed: number, amplitude = 0.7): void {
   const [a, b] = doubleStroke(d, { seed: seed >>> 0, amplitude, frequency: 0.028 });
   ctx.stroke(new Path2D(a));
@@ -558,7 +557,7 @@ function renderCentrepiece(
   ctx.lineJoin = 'round';
   switch (kind) {
     case 'diamond': {
-      // Two swashes flanking a lozenge — the athenaeum's quiet flourish.
+      // Two swashes flanking a lozenge â€” the athenaeum's quiet flourish.
       for (const dir of [-1, 1]) {
         pencil(
           ctx,
@@ -659,7 +658,7 @@ function renderCentrepiece(
 /* ================================ crown ================================== */
 
 /**
- * Render the crown/cornice into a `w × h` box at the current origin.
+ * Render the crown/cornice into a `w Ã— h` box at the current origin.
  * The profile decides the silhouette and the tonal steps; the carving
  * vocabulary runs along the frieze band; the centrepiece sits on the face.
  */
@@ -881,7 +880,7 @@ export function renderCrown(
 
 /* ================================= rail ================================== */
 
-/** Render one side-rail segment (one floor tall) into `w × h`. */
+/** Render one side-rail segment (one floor tall) into `w Ã— h`. */
 export function renderRail(
   ctx: Ctx2D,
   theme: LibraryTheme,
@@ -994,7 +993,7 @@ export function renderRail(
 export const THEMED_PLANK_HEIGHT = 40;
 
 /**
- * Render one shelf plank front face into `w × h`: lit top lip where books
+ * Render one shelf plank front face into `w Ã— h`: lit top lip where books
  * stand, wood field, joinery run, inlay, front arris, and the theme's
  * under-shelf detail (apothecary drawer fronts, cottage bunting).
  */
@@ -1234,7 +1233,7 @@ export function renderBackPanel(
 /* ================================= plate ================================= */
 
 /**
- * Render a floor label plate at the current origin, `spec.w × spec.h`.
+ * Render a floor label plate at the current origin, `spec.w Ã— spec.h`.
  * All six materials accept the same `label` string; the plate decides how
  * that label is written (engraved, fired, burnt, inked, chalked, stencilled).
  */
@@ -1251,7 +1250,7 @@ export function renderPlate(
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  // Contact shadow — plates sit proud of the timber.
+  // Contact shadow â€” plates sit proud of the timber.
   ctx.fillStyle = 'rgba(20, 14, 8, 0.34)';
   roundRect(ctx, 1.5, 2.5, w, h, radius);
   ctx.fill();
@@ -1490,7 +1489,7 @@ export function renderPlate(
   }
 
   // --- the label ----------------------------------------------------------
-  const text = label.length > 18 ? `${label.slice(0, 17)}…` : label;
+  const text = label.length > 18 ? `${label.slice(0, 17)}â€¦` : label;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `${spec.fontSize}px ${spec.font}`;
@@ -1588,8 +1587,8 @@ export function renderPlate(
 
 /**
  * Composite the room's light rig over a rendered case: ambient cast, pools,
- * dust shafts, rim light and vignette. `phase` (0–1) walks the very slow
- * drift/flicker cycle — bake a single phase for the shelf, or a handful of
+ * dust shafts, rim light and vignette. `phase` (0â€“1) walks the very slow
+ * drift/flicker cycle â€” bake a single phase for the shelf, or a handful of
  * phases if a caller wants to cross-fade.
  */
 export function applyLighting(
@@ -1604,7 +1603,7 @@ export function applyLighting(
   const long = Math.max(w, h);
   ctx.save();
 
-  // 1. Ambient colour cast — the single biggest "this is a different room"
+  // 1. Ambient colour cast â€” the single biggest "this is a different room"
   //    lever, so it goes down first and everything else lights on top of it.
   ctx.globalCompositeOperation = 'multiply';
   ctx.globalAlpha = light.ambient.amount;
@@ -1692,12 +1691,12 @@ export interface CaseSectionOptions {
   books?: boolean;
   /** Apply the light rig. Default true. */
   light?: boolean;
-  /** Drift/flicker phase, 0–1. */
+  /** Drift/flicker phase, 0â€“1. */
   phase?: number;
 }
 
 /**
- * One complete case section — wall behind, crown, both side rails, back
+ * One complete case section â€” wall behind, crown, both side rails, back
  * panel, a shelf with its plate and under-shelf detail, all lit by the room's
  * rig. This is the specimen-board renderer AND the studio's theme-picker
  * thumbnail renderer, so what a user previews is literally the room's art.
@@ -1812,7 +1811,7 @@ export function renderCaseSection(
 }
 
 /**
- * Stand-in book blocks in the theme's pigment ramp — enough to show how the
+ * Stand-in book blocks in the theme's pigment ramp â€” enough to show how the
  * room's spine bias reads against its own wood and wall. The real shelf draws
  * spines.ts sprites here; this is only for specimen boards and picker cards.
  */
@@ -1931,7 +1930,7 @@ export function bakeThemedBackPanel(
 export function bakeThemedPlate(id: ThemeId, label: string, dpr: number): Promise<ImageBitmap> {
   const theme = getTheme(id);
   const { w, h } = theme.plate;
-  // Paper tags overhang their box (string + torn edge) — pad the raster.
+  // Paper tags overhang their box (string + torn edge) â€” pad the raster.
   const padX = theme.plate.kind === 'paper-tag' ? 16 : 4;
   return bakePart(`plate|${id}|${label}|${w}x${h}`, w + padX * 2, h + 8, dpr, (ctx) => {
     ctx.translate(padX, 4);

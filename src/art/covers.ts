@@ -24,8 +24,23 @@
  * (seed+overrides+size+title) key so overlays and backdrops never re-paint.
  */
 
+import { charmColorCss, drawCoverCharm, type CharmKind } from './charms';
 import { clamp, mulberry32, type RandomFn } from './noise';
-import { deriveSpineParams, getGranulationTile, type Ctx2D } from './spines';
+import {
+  applyOutlineWear,
+  deriveSpineParams,
+  getGranulationTile,
+  materialFromTexture,
+  paintBindingMaterial,
+  paintEdgeTreatment,
+  paintWear,
+  textureFromMaterial,
+  type BindingMaterial,
+  type Ctx2D,
+  type EdgeTreatment,
+  type MaterialTones,
+  type TitlePlateStyle,
+} from './spines';
 
 /* --------------------------------- params -------------------------------- */
 
@@ -50,6 +65,28 @@ export interface CoverParams {
   titleFont: 0 | 1 | 2;
   /** Gilt (gold) frame accents, medallion and title plate trim. */
   gilt: boolean;
+
+  /* ---------------------- Book Studio additions (§4) ---------------------- */
+  /* Optional, so pre-studio CoverParams literals still typecheck and render.
+   * deriveCoverParams always fills them, inheriting from the spine so the
+   * shelf → pull-out → open-book journey never changes the book's identity. */
+
+  /** Binding material; when set it supersedes the legacy `texture` bucket. */
+  material?: BindingMaterial;
+  /** Title plate treatment (mirrors the spine's). */
+  titlePlate?: TitlePlateStyle;
+  /** Metal corner protectors on the four cover corners. */
+  cornerProtectors?: boolean;
+  /** Recess the title plate into a bevelled inset panel. */
+  insetPlate?: boolean;
+  /** Fore-edge treatment of the text block. */
+  edge?: EdgeTreatment;
+  /** Wear, 0 (pristine) → 1 (well-loved). */
+  wear?: number;
+  /** The book's charm, drawn cover-side. */
+  charm?: CharmKind;
+  /** Index into charms.CHARM_COLORS. */
+  charmColor?: number;
 }
 
 /** The user-overridable subset of CoverParams (everything but the seed). */
@@ -107,8 +144,24 @@ export function deriveCoverParams(
     medallion: spine.ornament % COVER_MEDALLION_COUNT,
     titleFont: spine.font,
     gilt: spine.gilt || rnd() < 0.18,
+    // Studio fields: inherited from the spine wherever the book already has
+    // an opinion, plus two cover-only rolls.
+    material: spine.material ?? materialFromTexture(spine.texture),
+    titlePlate: spine.titlePlate ?? 'none',
+    cornerProtectors: rnd() < 0.24,
+    insetPlate: rnd() < 0.4,
+    edge: spine.edge ?? 'plain',
+    wear: spine.wear ?? 0.12,
+    charm: spine.charm ?? 'none',
+    charmColor: spine.charmColor ?? 0,
   };
-  return overrides ? { ...derived, ...overrides } : derived;
+  const merged = overrides ? { ...derived, ...overrides } : derived;
+  // A material override must drag the legacy texture bucket along, or the
+  // two disagree and the cover paints a cloth weave under a silk sheen.
+  if (overrides?.material !== undefined && overrides.texture === undefined) {
+    merged.texture = textureFromMaterial(overrides.material);
+  }
+  return merged;
 }
 
 /* --------------------------------- colors -------------------------------- */
@@ -753,7 +806,78 @@ function paintMedallion(
   }
 }
 
-/** Title plate: aged-paper label with double rule, title text fitted inside. */
+/**
+ * Metal corner protectors: right-angled brass/gilt plates on the four cover
+ * corners, each with a curved inner edge, two rivets and a catchlight.
+ */
+function paintCornerProtectors(ctx: Ctx2D, w: number, h: number, gilt: boolean, s: number): void {
+  const size = Math.min(w * 0.16, h * 0.12);
+  const hi = gilt ? '#ffe9a8' : '#f0d68d';
+  const mid = gilt ? GOLD : '#b8912f';
+  const lo = gilt ? GOLD_DEEP : '#6f5312';
+  const corners = [
+    [0, 0, 1, 1],
+    [w, 0, -1, 1],
+    [w, h, -1, -1],
+    [0, h, 1, -1],
+  ] as const;
+  for (const [cx, cy, dx, dy] of corners) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + dy * size);
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(cx + dx * size, cy);
+    // Concave inner edge — a real corner piece is scooped, not a flat triangle.
+    ctx.quadraticCurveTo(cx + dx * size * 0.42, cy + dy * size * 0.42, cx, cy + dy * size);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(cx, cy, cx + dx * size, cy + dy * size);
+    g.addColorStop(0, hi);
+    g.addColorStop(0.4, mid);
+    g.addColorStop(1, lo);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(58, 42, 12, 0.6)';
+    ctx.lineWidth = Math.max(0.6, 0.9 * s);
+    ctx.stroke();
+    // Rivets.
+    for (const [rx, ry] of [
+      [cx + dx * size * 0.28, cy + dy * size * 0.12],
+      [cx + dx * size * 0.12, cy + dy * size * 0.28],
+    ] as const) {
+      ctx.beginPath();
+      ctx.arc(rx, ry, Math.max(1, 1.6 * s), 0, Math.PI * 2);
+      ctx.fillStyle = hi;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(58, 42, 12, 0.55)';
+      ctx.lineWidth = Math.max(0.4, 0.6 * s);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+/** A bevelled recess the title plate can sit down inside. */
+function paintPlateInset(ctx: Ctx2D, x: number, y: number, w: number, h: number, colB: HSL, s: number): void {
+  const b = Math.max(2, 3.5 * s);
+  ctx.fillStyle = hslStr(colB, -14, 0, 0.5);
+  ctx.fillRect(x - b, y - b, w + b * 2, h + b * 2);
+  // Lit lower/right bevel, shadowed upper/left bevel.
+  ctx.strokeStyle = hslStr(colB, -34, 0, 0.7);
+  ctx.lineWidth = Math.max(0.8, 1.2 * s);
+  ctx.beginPath();
+  ctx.moveTo(x - b, y + h + b);
+  ctx.lineTo(x - b, y - b);
+  ctx.lineTo(x + w + b, y - b);
+  ctx.stroke();
+  ctx.strokeStyle = hslStr(colB, 26, -6, 0.55);
+  ctx.beginPath();
+  ctx.moveTo(x + w + b, y - b);
+  ctx.lineTo(x + w + b, y + h + b);
+  ctx.lineTo(x - b, y + h + b);
+  ctx.stroke();
+}
+
+/** Title plate: four treatments, with the title text fitted inside. */
 function paintTitlePlate(
   ctx: Ctx2D,
   w: number,
@@ -764,24 +888,57 @@ function paintTitlePlate(
   s: number,
   rnd: RandomFn,
 ): void {
+  const style: TitlePlateStyle = params.titlePlate ?? 'label';
   const plateW = w * 0.58;
   const plateH = Math.max(34 * s, h * 0.13);
   const px = w * 0.54 - plateW / 2;
   const py = h * 0.155 - plateH / 2;
 
-  // Plate shadow + paper.
-  ctx.fillStyle = hslStr(colB, -20, 0, 0.35);
-  ctx.fillRect(px + 2 * s, py + 3 * s, plateW, plateH);
-  ctx.fillStyle = CREAM;
-  ctx.fillRect(px, py, plateW, plateH);
+  if (params.insetPlate && style !== 'none') {
+    paintPlateInset(ctx, px, py, plateW, plateH, colB, s);
+  }
 
-  // Double rule border (gilt outer when gilt).
-  ctx.strokeStyle = params.gilt ? GOLD : hslStr(colB, -18, 0, 0.8);
-  ctx.lineWidth = Math.max(1, 1.3 * s);
-  strokeJitterRect(ctx, px + 2.5 * s, py + 2.5 * s, plateW - 5 * s, plateH - 5 * s, 8 * s, 0.6 * s, rnd);
-  ctx.strokeStyle = hslStr(colB, -12, 0, 0.45);
-  ctx.lineWidth = Math.max(0.6, 0.8 * s);
-  strokeJitterRect(ctx, px + 5.5 * s, py + 5.5 * s, plateW - 11 * s, plateH - 11 * s, 8 * s, 0.5 * s, rnd);
+  if (style === 'label') {
+    // Plate shadow + paper.
+    ctx.fillStyle = hslStr(colB, -20, 0, 0.35);
+    ctx.fillRect(px + 2 * s, py + 3 * s, plateW, plateH);
+    ctx.fillStyle = CREAM;
+    ctx.fillRect(px, py, plateW, plateH);
+
+    // Double rule border (gilt outer when gilt).
+    ctx.strokeStyle = params.gilt ? GOLD : hslStr(colB, -18, 0, 0.8);
+    ctx.lineWidth = Math.max(1, 1.3 * s);
+    strokeJitterRect(ctx, px + 2.5 * s, py + 2.5 * s, plateW - 5 * s, plateH - 5 * s, 8 * s, 0.6 * s, rnd);
+    ctx.strokeStyle = hslStr(colB, -12, 0, 0.45);
+    ctx.lineWidth = Math.max(0.6, 0.8 * s);
+    strokeJitterRect(ctx, px + 5.5 * s, py + 5.5 * s, plateW - 11 * s, plateH - 11 * s, 8 * s, 0.5 * s, rnd);
+  } else if (style === 'gilt') {
+    // Tooled gilt panel straight onto the binding.
+    ctx.fillStyle = hslStr(colB, -10, 2, 0.4);
+    ctx.fillRect(px, py, plateW, plateH);
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = Math.max(1.1, 1.7 * s);
+    strokeJitterRect(ctx, px, py, plateW, plateH, 8 * s, 0.6 * s, rnd);
+    ctx.strokeStyle = 'rgba(201, 162, 39, 0.6)';
+    ctx.lineWidth = Math.max(0.6, 0.9 * s);
+    strokeJitterRect(ctx, px + 4 * s, py + 4 * s, plateW - 8 * s, plateH - 8 * s, 8 * s, 0.5 * s, rnd);
+  } else if (style === 'debossed') {
+    ctx.fillStyle = hslStr(colB, -12, 0, 0.45);
+    ctx.fillRect(px, py, plateW, plateH);
+    ctx.lineWidth = Math.max(0.9, 1.3 * s);
+    ctx.strokeStyle = hslStr(colB, -34, 0, 0.75);
+    ctx.beginPath();
+    ctx.moveTo(px, py + plateH);
+    ctx.lineTo(px, py);
+    ctx.lineTo(px + plateW, py);
+    ctx.stroke();
+    ctx.strokeStyle = hslStr(colB, 28, -6, 0.5);
+    ctx.beginPath();
+    ctx.moveTo(px + plateW, py);
+    ctx.lineTo(px + plateW, py + plateH);
+    ctx.lineTo(px, py + plateH);
+    ctx.stroke();
+  }
 
   // Title text, fitted. Handwriting floor: never below 13px equivalent —
   // the plate is baked at scale s, so the floor is 14*s canvas px.
@@ -856,12 +1013,28 @@ export function renderCoverInto(
   const s = Math.max(0.5, Math.min(w / 380, h / 520));
   const rnd = mulberry32((params.seed ^ 0x000c07e5) >>> 0);
 
+  const material: BindingMaterial = params.material ?? materialFromTexture(params.texture);
+  const wear = clamp(params.wear ?? 0, 0, 1);
+  const tones: MaterialTones = {
+    light: (dl = 0, ds = 0, a = 1) => hslStr(colA, dl, ds, a),
+    dark: (dl = 0, ds = 0, a = 1) => hslStr(colB, dl, ds, a),
+  };
+
   ctx.save();
   paintBase(ctx, w, h, colA, colB);
-  paintTexture(ctx, w, h, params.texture, colA, colB, s, rnd);
+  if (params.material) {
+    // Studio books use the six-material vocabulary shared with the spine.
+    paintBindingMaterial(ctx, w, h, material, tones, s, rnd);
+  } else {
+    paintTexture(ctx, w, h, params.texture, colA, colB, s, rnd);
+  }
   paintVignette(ctx, w, h, colB);
   paintSpineEdge(ctx, w, h, colB, s, rnd);
   paintBands(ctx, w, h, colB, params.gilt, s);
+  // Fore-edge: the text block's edge treatment, visible down the right side.
+  if (params.edge && params.edge !== 'plain') {
+    paintEdgeTreatment(ctx, w - 7 * s, h * 0.014, 7 * s, h * 0.972, params.edge, s, rnd);
+  }
   paintFrame(ctx, w, h, params, colB, s, rnd);
 
   const medallionY = title && opts.plate !== false ? h * 0.56 : h * 0.5;
@@ -869,6 +1042,21 @@ export function renderCoverInto(
 
   if (title && opts.plate !== false) {
     paintTitlePlate(ctx, w, h, params, colB, title, s, rnd);
+  }
+
+  if (params.cornerProtectors) {
+    paintCornerProtectors(ctx, w, h, params.gilt, s);
+  }
+
+  // Wear, then the charm on top of it (charms are the newest thing on a book).
+  paintWear(ctx, w, h, wear, tones, s, rnd);
+  if (params.charm && params.charm !== 'none') {
+    drawCoverCharm(ctx, params.charm, w, h, {
+      color: charmColorCss(params.charmColor ?? 0),
+      scale: s,
+      rnd: mulberry32((params.seed ^ 0x0cba12) >>> 0),
+      gilt: params.gilt,
+    });
   }
 
   // Shared granulation overlay.
@@ -894,6 +1082,31 @@ export function renderCoverInto(
   strokeJitterRect(ctx, 1, 1, w - 2, h - 2, 11 * s, 0.6 * s, rnd);
   ctx.restore();
 
+  // Worn boards lose their corners — punch the rounded/bumped silhouette out
+  // of the finished raster so the cover's outline matches its spine's.
+  if (wear > 0.15) {
+    const worn = applyOutlineWear(
+      [
+        { x: 0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ],
+      wear,
+      s * 2.2,
+      mulberry32((params.seed ^ 0x0e0d6e) >>> 0),
+    );
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.beginPath();
+    const first = worn[0] as Pt;
+    ctx.moveTo(first.x, first.y);
+    for (let i = 1; i < worn.length; i++) ctx.lineTo((worn[i] as Pt).x, (worn[i] as Pt).y);
+    ctx.closePath();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   ctx.restore();
 }
 
@@ -912,7 +1125,7 @@ export function coverDataUrl(
   title = '',
   opts: RenderCoverOptions = {},
 ): string {
-  const key = `${params.seed}|${params.palette}|${params.texture}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
+  const key = `${params.seed}|${params.palette}|${params.texture}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
   const cached = urlCache.get(key);
   if (cached !== undefined) return cached;
   const url = renderCover(w, h, params, title, opts).toDataURL('image/png');

@@ -20,7 +20,18 @@ Everything below is current as of commit `9469771` on `main` (private repo `Aksh
 
 Make the app **beautiful** — specifically, make the bookshelf look like a **high-end digital painting**, and keep it fast.
 
-The user supplied a reference image (**they will give it to you — please look at it carefully**): a sunlit bookshelf overgrown with flowering vines. Warm golden light raking across from the upper right, deep shadows, richly varied books with gold-foil spines, thick woody vines with large overlapping leaves, and clusters of pink flowers spilling in front of the shelves.
+The reference image is in the repo at **`docs/design/reference/bookshelf-reference.png`** — open it and study it before touching the art.
+
+What it actually contains, read closely:
+
+- **Composition is the whole trick.** Foliage frames the *edges* — a vine mass down the right side, a flowering vine up the left, a garden bed along the bottom — while the **centre stays clear books**. There is real negative space. It is not uniform ground cover. (Our current build ignores this and covers everything, which is why the user said it looks like "lettuce everywhere".)
+- **Books are densely packed**, shoulder to shoulder, filling each shelf completely — with widths from thin slivers to fat tomes and an irregular height skyline. Very few gaps.
+- **The richness comes from light and material, not from saturated hues.** The spines are actually fairly muted — navy, oxblood, tan, cream, olive, brown — but they *read* as gorgeous because of warm raking light, gold foil catching that light, deep shadow behind, and visible material texture. This matters: the user has separately asked for "very very colorful", so the resolution is **saturated, joyful colour in the themes, but achieving depth the way this image does — through lighting, contrast and material rather than flat bright fills.**
+- **Light** rakes hard from the upper right: a blown-out hot corner, visible warm rays, and a strong falloff into near-black at the upper left and in every recess.
+- **Leaves** are large relative to the books (roughly a third of a book's height), heart-shaped, overlapping into masses with depth tiers.
+- **Flowers** appear as concentrated clusters (pink on the left and bottom, small white ones on the right vine) — never sprinkled evenly.
+
+(The file is a stock image and carries a small watermark; use it as art direction only, never ship any part of it.)
 
 Their verdict on the current app art, verbatim:
 
@@ -84,6 +95,22 @@ User: *"the sound effects are very rough low quality, like i want smoother high 
 **Repo conventions** are in `CLAUDE.md` — read it first. Design docs live in `docs/design/`. Notable: everything hand-drawn/warm; left icon rails rather than top bars; pages never scroll (overflow flows to the next page); all art must be baked and sprite-drawn for 60fps; no live SVG filters in hot paths.
 
 ---
+
+## Outstanding work queue (beyond the bugs above)
+
+These were planned and specced but not built. Roughly in the order the user cares about:
+
+1. **Add-book affordance** — *there is currently no way to create a book anywhere in the app.* The Book Studio, trash drawer and search all exist, but nothing creates a book. Needs a charming affordance on the shelf (empty slot with a pencil outline and a `+`), plus "add floor", plus a shelf right-click "New book here".
+2. **Reach the studios from the shelf** — `src/views/rail/LibraryStudio.tsx` and `BookStudio.tsx` exist but nothing opens them, so the user reported "I didn't see an option to change themes". Needs a visible shelf control, theme cards rendered from the real theme art, and persistence.
+3. **Living motion layer** — a shared wind field swaying leaves and drifting petals, plus per-theme scheduled events: a butterfly crossing (Blossom Grove), a robot turning its head and blinking LEDs (Robot Workshop), a pterodactyl silhouette (Dino Dig), a fish darting and caustics rippling (Coral Reef), a comet (Star Voyager). Cheap, GPU-friendly, respecting `--motion-scale`.
+4. **More colorful worlds to the painterly standard** — the six new ones sketched (Blossom Grove as default, Robot Workshop, Dino Dig, Candy Shop, Coral Reef, Star Voyager) plus 2–3 backdrop variants each, and a saturation pass so none of the original eight reads as drab. See `docs/design/library-themes.md`.
+5. **Saturated UI palette** — `src/styles/tokens.css` is still warm-parchment browns and creams; the user finds the chrome dull. Needs livelier accents, brighter washes (coral/turquoise/violet/lime for stickers, highlights and callouts), with contrast re-checked across all four UI themes including night.
+6. **Expose import/export and tutorial replay properly** — the transfer panel currently only opens via `Ctrl+Shift+E` / `Ctrl+Shift+I`; it needs real entries in the rail or settings, plus a settings row to replay the guided tutorial.
+7. **Motion design system** — unify easing/duration/choreography across the app, add page transitions, micro-interactions, spring physics, and user-facing motion customization.
+8. **Notion-depth writing features** — nested toggles, columns, math, footnotes, sync blocks, backlinks, sortable tables, a selection formatting toolbar, more markdown shortcuts.
+9. **Notebook Script v2 + diagnostics log** — tighten the AI-facing format into a precise mini-language (variables, reusable styles, strict-mode validation), and add an exportable diagnostics log (logic *and* visual issues) that a user can hand to their AI when something goes wrong. Current spec: `src-tauri/resources/notebook-script-spec.md`.
+10. **UI/UX audit findings** — `docs/design/ui-audit.md` contains a written design critique whose fixes were only partly applied.
+11. **Final installer pass** — rebuild and verify the NSIS installer once the above lands.
 
 ## What would help most
 

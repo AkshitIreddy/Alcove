@@ -1,6 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod backup;
+mod export;
+mod import;
 mod media;
+mod tray;
 
 /// Connection string for the app database. Must stay in sync with
 /// `DB_PATH` in `src/data/db.ts` on the frontend.
@@ -59,6 +63,13 @@ pub fn run() {
             media::save_image_asset,
             media::fetch_link_preview,
             media::fetch_images,
+            backup::run_backup,
+            backup::list_backups,
+            backup::restore_backup,
+            tray::tray_enable,
+            tray::tray_disable,
+            export::export_pdf,
+            import::read_markdown_file,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(

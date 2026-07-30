@@ -67,6 +67,9 @@ class FakeSound implements SettingsSoundAdapter {
   ambientRunning = false;
   startCalls = 0;
   stopCalls = 0;
+  soundscape: Settings['soundscape'] = 'library';
+  typingSounds = false;
+  hourlyChime = false;
 
   setVolumes(partial: Partial<Record<string, number>>): void {
     for (const [key, value] of Object.entries(partial)) {
@@ -92,12 +95,27 @@ class FakeSound implements SettingsSoundAdapter {
     this.ambientRunning = false;
   }
 
+  setSoundscape(name: Settings['soundscape']): void {
+    this.soundscape = name;
+  }
+
+  setTypingSounds(enabled: boolean): void {
+    this.typingSounds = enabled;
+  }
+
+  setHourlyChime(enabled: boolean): void {
+    this.hourlyChime = enabled;
+  }
+
   snapshot(): unknown {
     return {
       volumes: { ...this.volumes },
       muted: this.muted,
       reduced: this.reduced,
       ambientRunning: this.ambientRunning,
+      soundscape: this.soundscape,
+      typingSounds: this.typingSounds,
+      hourlyChime: this.hourlyChime,
     };
   }
 }

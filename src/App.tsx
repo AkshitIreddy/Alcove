@@ -11,6 +11,8 @@ import { appState, type ViewState } from "./state/app";
 import { load as loadSettings, subscribe as subscribeSettings } from "./data/settings";
 import { applySettings } from "./features/settings/apply";
 import SettingsPanel from "./features/settings/SettingsPanel";
+import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
+import { initSystemFeatures } from "./features/system";
 import ShelfView from "./views/ShelfView";
 import BookView from "./views/BookView";
 import "./styles/settings.css";
@@ -87,6 +89,8 @@ export default function App(): JSX.Element {
     void loadSettings();
     const unsubscribe = subscribeSettings(applySettings);
     onCleanup(unsubscribe);
+    // Backup scheduler, tray, launch-into-last-book, perf HUD lifecycle.
+    onCleanup(initSystemFeatures());
   });
 
   return (
@@ -95,6 +99,7 @@ export default function App(): JSX.Element {
         <BookView />
       </Show>
       <DevViewSwitcher />
+      <QuickSwitcher />
 
       <button
         type="button"

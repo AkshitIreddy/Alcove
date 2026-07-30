@@ -17,7 +17,10 @@
 import type { AnimationLevel, Settings } from '../../data/types';
 import {
   muteAll as engineMuteAll,
+  setHourlyChime as engineSetHourlyChime,
   setReducedSound as engineSetReducedSound,
+  setSoundscape as engineSetSoundscape,
+  setTypingSounds as engineSetTypingSounds,
   setVolumes as engineSetVolumes,
   startAmbient as engineStartAmbient,
   stopAmbient as engineStopAmbient,
@@ -72,6 +75,9 @@ export interface SettingsSoundAdapter {
   setReducedSound(reduced: boolean): void;
   startAmbient(): void;
   stopAmbient(): void;
+  setSoundscape(name: Settings['soundscape']): void;
+  setTypingSounds(enabled: boolean): void;
+  setHourlyChime(enabled: boolean): void;
 }
 
 const engineAdapter: SettingsSoundAdapter = {
@@ -82,6 +88,9 @@ const engineAdapter: SettingsSoundAdapter = {
     void engineStartAmbient();
   },
   stopAmbient: engineStopAmbient,
+  setSoundscape: engineSetSoundscape,
+  setTypingSounds: engineSetTypingSounds,
+  setHourlyChime: engineSetHourlyChime,
 };
 
 /* --------------------------------- apply ----------------------------------- */
@@ -123,6 +132,9 @@ export function applySettingsTo(
   });
   sound.muteAll(s.muteAll);
   sound.setReducedSound(s.reducedSound);
+  sound.setSoundscape(s.soundscape);
+  sound.setTypingSounds(s.typingSounds);
+  sound.setHourlyChime(s.hourlyChime);
   if (s.ambientLoop) sound.startAmbient();
   else sound.stopAmbient();
 }

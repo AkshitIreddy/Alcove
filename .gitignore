@@ -5,3 +5,5 @@ dist
 tests/e2e/.artifacts
 test-results
 playwright-report
+# scheduled task lock
+.claude/scheduled_tasks.lock

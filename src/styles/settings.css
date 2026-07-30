@@ -283,7 +283,9 @@
   right: 0;
   bottom: 0;
   width: min(440px, 94vw);
-  transform: translateX(105%);
+  /* Off-screen rest position is applied by GSAP (xPercent) on mount —
+     a CSS translateX(%) here would be read back by GSAP as a pixel `x`,
+     making the xPercent slide-in tween a no-op. */
   visibility: hidden;
   pointer-events: auto;
   overflow-y: auto;

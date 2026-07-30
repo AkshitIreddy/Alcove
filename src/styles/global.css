@@ -1,0 +1,216 @@
+/* ============================================================================
+   Notebook — global styles
+   Reset, paper ground, default type, selection, scrollbars, focus, motion.
+   All colors come from tokens.css.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Reset
+   -------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  height: 100%;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: break-word;
+}
+
+/* ----------------------------------------------------------------------------
+   Paper ground — cream base with a very subtle warm CSS vignette:
+   light pools at the top, edges deepen like a well-thumbed page.
+   -------------------------------------------------------------------------- */
+body {
+  min-height: 100vh;
+  background-color: var(--paper-cream);
+  background-image:
+    radial-gradient(
+      130% 90% at 50% -10%,
+      var(--paper-glow) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      145% 145% at 50% 45%,
+      transparent 55%,
+      var(--paper-vignette-soft) 82%,
+      var(--paper-vignette-deep) 100%
+    );
+  background-attachment: fixed;
+
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--ink-sepia);
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ----------------------------------------------------------------------------
+   Headings — Caveat, never below its 20px legibility floor
+   -------------------------------------------------------------------------- */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  line-height: var(--leading-heading);
+  letter-spacing: 0.005em;
+  color: var(--ink-sepia);
+}
+
+h1 {
+  font-size: var(--text-h1);
+}
+
+h2 {
+  font-size: var(--text-h2);
+}
+
+h3 {
+  font-size: var(--text-h3);
+  font-weight: 600;
+}
+
+h4 {
+  font-size: var(--text-h4);
+  font-weight: 600;
+}
+
+/* Small headings drop out of Caveat (its floor is 20px) */
+h5 {
+  font-family: var(--font-accent);
+  font-size: var(--text-body);
+  font-weight: 700;
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+}
+
+h6 {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  font-weight: 700;
+  letter-spacing: var(--tracking-ui);
+  text-transform: uppercase;
+  color: var(--ink-sepia-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Selection — amber wash
+   -------------------------------------------------------------------------- */
+::selection {
+  background: var(--selection-wash);
+  color: var(--ink-sepia);
+}
+
+/* ----------------------------------------------------------------------------
+   Scrollbars — thin, parchment-toned
+   -------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--paper-edge);
+  border: 3px solid var(--paper-cream);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-sepia-soft);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ----------------------------------------------------------------------------
+   Focus — hand-drawn dashed ring
+   -------------------------------------------------------------------------- */
+:focus-visible {
+  outline: 2px dashed var(--ink-sepia);
+  outline-offset: 3px;
+}
+
+/* ----------------------------------------------------------------------------
+   Reduced motion — zero the motion scale and kill transitions
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scale: 0;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Font-role utilities
+   -------------------------------------------------------------------------- */
+.font-ui {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  line-height: 1.4;
+}
+
+.font-accent {
+  font-family: var(--font-accent);
+}
+
+.font-label {
+  font-family: var(--font-label);
+}

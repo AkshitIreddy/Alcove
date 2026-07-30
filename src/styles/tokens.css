@@ -1,0 +1,156 @@
+/* ============================================================================
+   Notebook — design tokens
+   Warm-parchment world: cream paper, sepia ink, watercolor washes.
+   Every color in the app lives here. No hardcoded colors elsewhere.
+   ========================================================================== */
+
+:root {
+  /* ------------------------------------------------------------------------
+     Paper
+     ---------------------------------------------------------------------- */
+  --paper-cream: #f7f1e3; /* default page/ground */
+  --paper-aged: #efe4cc; /* older, sun-touched sheets, cards */
+  --paper-deep: #e2d3b3; /* shadowed paper, pressed creases */
+  --paper-edge: #d3bf98; /* parchment lines, scrollbar thumbs, hairlines */
+
+  /* Vignette + glow stops (composed in global.css) */
+  --paper-glow: rgba(255, 252, 243, 0.55); /* warm light pooling at top */
+  --paper-vignette-soft: rgba(148, 117, 78, 0.06);
+  --paper-vignette-deep: rgba(120, 91, 55, 0.11);
+
+  /* ------------------------------------------------------------------------
+     Ink
+     ---------------------------------------------------------------------- */
+  --ink-sepia: #5b4636; /* primary reading ink */
+  --ink-sepia-soft: #8a7361;
+  --ink-graphite: #45413a; /* pencil linework */
+  --ink-graphite-soft: #736c62;
+  --ink-blue: #3f5878; /* fountain-pen blue-black */
+  --ink-blue-soft: #74879f;
+
+  /* ------------------------------------------------------------------------
+     Watercolor washes — light wash / base pigment / deep rim (edge-darkening)
+     ---------------------------------------------------------------------- */
+  --wash-amber-light: #f7e7c2;
+  --wash-amber: #e9c46a;
+  --wash-amber-deep: #a8802e;
+
+  --wash-terracotta-light: #f5dccb;
+  --wash-terracotta: #d99271;
+  --wash-terracotta-deep: #a35c3d;
+
+  --wash-moss-light: #e3e8cd;
+  --wash-moss: #a8b878;
+  --wash-moss-deep: #6f814a;
+
+  --wash-lemon-light: #faf3cd;
+  --wash-lemon: #ecdc76;
+  --wash-lemon-deep: #b3a23a;
+
+  --wash-sky-light: #dce9ec;
+  --wash-sky: #9dc3cf;
+  --wash-sky-deep: #5f8fa0;
+
+  --wash-blush-light: #f7ded9;
+  --wash-blush: #e4a89f;
+  --wash-blush-deep: #b06c62;
+
+  --wash-plum-light: #e9dbe7;
+  --wash-plum: #b995b3;
+  --wash-plum-deep: #7d5878;
+
+  /* Text selection — amber wash, translucent so ink reads through */
+  --selection-wash: rgba(233, 196, 106, 0.45);
+
+  /* ------------------------------------------------------------------------
+     Spacing scale (px values match names)
+     ---------------------------------------------------------------------- */
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* ------------------------------------------------------------------------
+     Radii
+     ---------------------------------------------------------------------- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+  /* Slightly-off ellipse corners that read as hand-drawn */
+  --radius-hand: 255px 15px 225px 15px / 15px 225px 15px 255px;
+
+  /* ------------------------------------------------------------------------
+     Shadows — layered, warm brown alphas only (never pure black)
+     ---------------------------------------------------------------------- */
+  --shadow-xs: 0 1px 2px rgba(94, 70, 45, 0.1);
+  --shadow-sm:
+    0 1px 2px rgba(94, 70, 45, 0.08),
+    0 2px 6px rgba(94, 70, 45, 0.07);
+  --shadow-md:
+    0 2px 3px rgba(94, 70, 45, 0.07),
+    0 6px 14px rgba(94, 70, 45, 0.09),
+    0 12px 28px rgba(94, 70, 45, 0.06);
+  --shadow-lg:
+    0 4px 6px rgba(94, 70, 45, 0.07),
+    0 12px 24px rgba(94, 70, 45, 0.1),
+    0 28px 56px rgba(94, 70, 45, 0.09);
+  --shadow-inset-paper: inset 0 1px 3px rgba(94, 70, 45, 0.1);
+
+  /* ------------------------------------------------------------------------
+     Z-index layers
+     ---------------------------------------------------------------------- */
+  --z-shelf: 10; /* bookshelf world canvas */
+  --z-overlay: 100; /* focused-book DOM overlay */
+  --z-flip: 200; /* page-flip WebGL layer */
+  --z-menus: 300; /* popovers, context menus, dev chrome */
+  --z-toasts: 400; /* notifications */
+
+  /* ------------------------------------------------------------------------
+     Motion
+     ---------------------------------------------------------------------- */
+  --dur-xs: 120ms; /* micro feedback: hover tints, press */
+  --dur-sm: 180ms; /* small reveals, fades */
+  --dur-md: 300ms; /* standard transitions */
+  --dur-lg: 450ms; /* book pull-out, larger movement */
+  --dur-xl: 600ms; /* page flips, view changes */
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* playful overshoot */
+
+  /* Multiply JS/GSAP durations by this; reduced-motion sets it to 0 */
+  --motion-scale: 1;
+
+  /* ------------------------------------------------------------------------
+     Type — font roles (see CLAUDE.md: handwriting never below 13px)
+     ---------------------------------------------------------------------- */
+  --font-heading: "Caveat Variable", "Segoe Script", cursive; /* >= 20px only */
+  --font-body: "Patrick Hand", "Segoe Print", cursive;
+  --font-accent: "Kalam", "Segoe Print", cursive;
+  --font-label: "Architects Daughter", "Segoe Print", cursive;
+  --font-ui: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+
+  /* Type scale */
+  --text-h1: 44px;
+  --text-h2: 34px;
+  --text-h3: 26px;
+  --text-h4: 21px; /* Caveat floor is 20px — h4 stays above it */
+  --text-body: 17px;
+  --text-sm: 15px;
+  --text-label: 14px;
+  --text-ui: 12px; /* Nunito Sans territory (below 13px) */
+  --text-ui-xs: 11px;
+
+  --leading-body: 1.65;
+  --leading-heading: 1.15;
+  --tracking-body: 0.01em;
+  --tracking-ui: 0.02em;
+}

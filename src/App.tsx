@@ -1,51 +1,62 @@
-import { createSignal } from "solid-js";
-import logo from "./assets/logo.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { For, Show, type JSX } from "solid-js";
+import { appState, type ViewState } from "./state/app";
+import ShelfView from "./views/ShelfView";
+import BookView from "./views/BookView";
 
-function App() {
-  const [greetMsg, setGreetMsg] = createSignal("");
-  const [name, setName] = createSignal("");
+const VIEWS: readonly ViewState[] = ["shelf", "book"];
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name: name() }));
-  }
+const pillStyle: JSX.CSSProperties = {
+  position: "fixed",
+  right: "var(--space-16)",
+  bottom: "var(--space-16)",
+  "z-index": "var(--z-menus)",
+  display: "flex",
+  gap: "var(--space-4)",
+  padding: "var(--space-4)",
+  background: "var(--paper-aged)",
+  border: "1px solid var(--paper-edge)",
+  "border-radius": "var(--radius-pill)",
+  "box-shadow": "var(--shadow-sm)",
+  opacity: 0.85,
+};
 
+/** Tiny dev-only switcher so both views stay reachable while features land. */
+function DevViewSwitcher(): JSX.Element {
   return (
-    <main class="container">
-      <h1>Welcome to Tauri + Solid</h1>
-
-      <div class="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://solidjs.com" target="_blank">
-          <img src={logo} class="logo solid" alt="Solid logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and Solid logos to learn more.</p>
-
-      <form
-        class="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
+    <nav style={pillStyle} aria-label="Dev view switcher">
+      <For each={VIEWS}>
+        {(view) => {
+          const active = () => appState.viewState() === view;
+          return (
+            <button
+              type="button"
+              class="font-ui"
+              style={{
+                padding: "var(--space-4) var(--space-12)",
+                "border-radius": "var(--radius-pill)",
+                background: active() ? "var(--wash-amber-light)" : "transparent",
+                color: active() ? "var(--ink-sepia)" : "var(--ink-graphite-soft)",
+                "font-weight": active() ? 700 : 400,
+                transition: "background var(--dur-xs) var(--ease-out), color var(--dur-xs) var(--ease-out)",
+              }}
+              onClick={() => appState.setViewState(view)}
+            >
+              {view}
+            </button>
+          );
         }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg()}</p>
-    </main>
+      </For>
+    </nav>
   );
 }
 
-export default App;
+export default function App(): JSX.Element {
+  return (
+    <>
+      <Show when={appState.viewState() === "book"} fallback={<ShelfView />}>
+        <BookView />
+      </Show>
+      <DevViewSwitcher />
+    </>
+  );
+}

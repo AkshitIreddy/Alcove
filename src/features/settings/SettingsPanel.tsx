@@ -15,6 +15,7 @@ import {
   Show,
   createEffect,
   createResource,
+  createSignal,
   onCleanup,
   onMount,
   type JSX,
@@ -23,6 +24,12 @@ import { gsap } from 'gsap';
 import { save, settings } from '../../data/settings';
 import { isTauri } from '../../data/db';
 import type { BookPalette, Settings } from '../../data/types';
+import {
+  formatRelativeTime,
+  getLastBackupRun,
+  runBackupNow,
+} from '../system/backup';
+import PerfHud from '../system/PerfHud';
 
 /* ------------------------------- helpers ---------------------------------- */
 
@@ -242,6 +249,25 @@ async function loadAutostart(): Promise<AutostartPlugin> {
   return (await import('@tauri-apps/plugin-autostart')) as AutostartPlugin;
 }
 
+/* ----------------------------- backup folder bits --------------------------- */
+
+/** Open the OS directory picker (desktop only); null when cancelled. */
+async function pickBackupFolder(): Promise<string | null> {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({
+    directory: true,
+    multiple: false,
+    title: 'Choose a backup folder',
+  });
+  return typeof picked === 'string' ? picked : null;
+}
+
+/** Last path segment for a compact display of the chosen folder. */
+function folderDisplayName(path: string): string {
+  const parts = path.split(/[\\/]/).filter((p) => p.length > 0);
+  return parts.length > 0 ? parts[parts.length - 1] : path;
+}
+
 /* --------------------------------- panel ----------------------------------- */
 
 export default function SettingsPanel(props: {
@@ -277,6 +303,36 @@ export default function SettingsPanel(props: {
       await save({ autostart: next });
     } catch {
       // Plugin unavailable — leave the stored setting untouched.
+    }
+  };
+
+  // Backup surface: last-run stamp + manual "back up now".
+  const [lastBackup, { refetch: refetchLastBackup }] =
+    createResource(getLastBackupRun);
+  const [backupBusy, setBackupBusy] = createSignal(false);
+  const [backupNote, setBackupNote] = createSignal<string | null>(null);
+
+  const backupNow = async (): Promise<void> => {
+    if (!inTauri || backupBusy()) return;
+    setBackupBusy(true);
+    setBackupNote(null);
+    try {
+      await runBackupNow();
+      await refetchLastBackup();
+    } catch {
+      setBackupNote('backup failed — check the folder');
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const chooseBackupFolder = async (): Promise<void> => {
+    if (!inTauri) return;
+    try {
+      const picked = await pickBackupFolder();
+      if (picked !== null) put({ backupFolder: picked });
+    } catch {
+      // Dialog unavailable — keep the current folder.
     }
   };
 
@@ -352,6 +408,9 @@ export default function SettingsPanel(props: {
 
   return (
     <div class="nbs-layer">
+      {/* Perf HUD lives in this always-mounted layer (gated by its setting),
+          so it needs no extra App.tsx wiring. */}
+      <PerfHud />
       <div
         class="nbs-scrim"
         ref={scrimRef}
@@ -455,6 +514,63 @@ export default function SettingsPanel(props: {
           </Row>
         </Section>
 
+        {/* --------------------------- Library & shelf ------------------------ */}
+        <Section title="Library & shelf">
+          <Row label="wood stain" wide>
+            <Seg
+              label="shelf wood stain"
+              options={[
+                { value: 'oak', label: 'oak' },
+                { value: 'walnut', label: 'walnut' },
+                { value: 'cherry', label: 'cherry' },
+                { value: 'cream', label: 'painted cream' },
+              ]}
+              value={settings.shelfWoodStain}
+              onSelect={(v) =>
+                put({ shelfWoodStain: v as Settings['shelfWoodStain'] })
+              }
+            />
+          </Row>
+          <Row label="wallpaper" wide>
+            <Seg
+              label="wallpaper pattern"
+              options={[
+                { value: 'damask', label: 'damask' },
+                { value: 'stars', label: 'stars' },
+                { value: 'botanical', label: 'botanical' },
+                { value: 'plain', label: 'plain' },
+              ]}
+              value={settings.wallpaperPattern}
+              onSelect={(v) =>
+                put({ wallpaperPattern: v as Settings['wallpaperPattern'] })
+              }
+            />
+          </Row>
+          <Row label="mouse wheel" hint="what a plain wheel spin does" wide>
+            <Seg
+              label="wheel mode"
+              options={[
+                { value: 'zoom', label: 'zooms' },
+                { value: 'scroll', label: 'scrolls floors' },
+              ]}
+              value={settings.wheelMode}
+              onSelect={(v) => put({ wheelMode: v as Settings['wheelMode'] })}
+            />
+          </Row>
+          <Row label="sort books" wide>
+            <Seg
+              label="shelf sort"
+              options={[
+                { value: 'manual', label: 'my order' },
+                { value: 'recent', label: 'recent first' },
+                { value: 'favorites', label: 'favorites first' },
+              ]}
+              value={settings.shelfSort}
+              onSelect={(v) => put({ shelfSort: v as Settings['shelfSort'] })}
+            />
+          </Row>
+        </Section>
+
         {/* ----------------------------- Motion & feel ------------------------ */}
         <Section title="Motion & feel">
           <Row label="animation" wide>
@@ -542,6 +658,34 @@ export default function SettingsPanel(props: {
               onChange={(v) => put({ ambientLoop: v })}
             />
           </Row>
+          <Row label="soundscape" wide>
+            <Seg
+              label="soundscape"
+              options={[
+                { value: 'library', label: 'library' },
+                { value: 'rain', label: 'rain' },
+                { value: 'fireplace', label: 'fireplace' },
+                { value: 'crickets', label: 'crickets' },
+                { value: 'none', label: 'none' },
+              ]}
+              value={settings.soundscape}
+              onSelect={(v) => put({ soundscape: v as Settings['soundscape'] })}
+            />
+          </Row>
+          <Row label="typing sounds" hint="soft pencil scratches as you type">
+            <Toggle
+              label="typing sounds"
+              checked={settings.typingSounds}
+              onChange={(v) => put({ typingSounds: v })}
+            />
+          </Row>
+          <Row label="hourly chime" hint="one soft clock note on the hour">
+            <Toggle
+              label="hourly chime"
+              checked={settings.hourlyChime}
+              onChange={(v) => put({ hourlyChime: v })}
+            />
+          </Row>
           <Row label="reduced sound" hint="skip hover ticks & scratches">
             <Toggle
               label="reduced sound"
@@ -566,6 +710,25 @@ export default function SettingsPanel(props: {
               options={AUTOSAVE_OPTIONS}
               value={closestOption(AUTOSAVE_OPTIONS, settings.autosaveIntervalMs)}
               onSelect={(v) => put({ autosaveIntervalMs: Number(v) })}
+            />
+          </Row>
+          <Row label="editor cursor" wide>
+            <Seg
+              label="cursor style"
+              options={[
+                { value: 'standard', label: 'standard' },
+                { value: 'pencil', label: 'pencil' },
+                { value: 'quill', label: 'quill' },
+              ]}
+              value={settings.cursorStyle}
+              onSelect={(v) => put({ cursorStyle: v as Settings['cursorStyle'] })}
+            />
+          </Row>
+          <Row label="page thumbnails" hint="filmstrip of mini pages">
+            <Toggle
+              label="page thumbnails strip"
+              checked={settings.thumbnailsStrip}
+              onChange={(v) => put({ thumbnailsStrip: v })}
             />
           </Row>
           <Row label="new books wear" wide>
@@ -625,6 +788,89 @@ export default function SettingsPanel(props: {
               />
             </Row>
           </Show>
+          <Row
+            label="backup folder"
+            hint={
+              settings.backupFolder !== null
+                ? folderDisplayName(settings.backupFolder)
+                : 'app data folder'
+            }
+          >
+            <div class="nbs-btn-pair">
+              <button
+                type="button"
+                class="nbs-action-btn"
+                disabled={!inTauri}
+                title={
+                  inTauri
+                    ? settings.backupFolder ?? 'app data folder'
+                    : 'available in the desktop app'
+                }
+                onClick={() => void chooseBackupFolder()}
+              >
+                choose…
+              </button>
+              <Show when={settings.backupFolder !== null}>
+                <button
+                  type="button"
+                  class="nbs-action-btn"
+                  onClick={() => put({ backupFolder: null })}
+                >
+                  default
+                </button>
+              </Show>
+            </div>
+          </Row>
+          <Row
+            label="back up now"
+            hint={
+              !inTauri
+                ? 'available in the desktop app'
+                : backupNote() ??
+                  `last backup: ${formatRelativeTime(
+                    lastBackup() ?? null,
+                    new Date(),
+                  )}`
+            }
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              disabled={!inTauri || backupBusy()}
+              onClick={() => void backupNow()}
+            >
+              {backupBusy() ? 'backing up…' : 'back up now'}
+            </button>
+          </Row>
+          <Row label="open with last book" hint="jump straight back in">
+            <Toggle
+              label="launch into last book"
+              checked={settings.launchIntoLastBook}
+              onChange={(v) => put({ launchIntoLastBook: v })}
+            />
+          </Row>
+          <Row
+            label="tray quick capture"
+            hint={
+              inTauri
+                ? 'tray icon with a quick Inbox note'
+                : 'available in the desktop app'
+            }
+          >
+            <Toggle
+              label="tray quick capture"
+              checked={inTauri ? settings.trayQuickCapture : false}
+              disabled={!inTauri}
+              onChange={(v) => put({ trayQuickCapture: v })}
+            />
+          </Row>
+          <Row label="performance HUD" hint="fps + texture memory overlay">
+            <Toggle
+              label="performance HUD"
+              checked={settings.perfHud}
+              onChange={(v) => put({ perfHud: v })}
+            />
+          </Row>
           <div class="nbs-keys">
             <span class="nbs-row-label">shortcuts</span>
             <span class="nbs-row-hint font-ui">

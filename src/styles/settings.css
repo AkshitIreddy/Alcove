@@ -675,6 +675,82 @@
 }
 
 /* ----------------------------------------------------------------------------
+   Action buttons (backup folder picker, back-up-now) — inked paper chips
+   -------------------------------------------------------------------------- */
+.nbs-btn-pair {
+  display: inline-flex;
+  gap: var(--space-4);
+}
+
+.nbs-action-btn {
+  font-family: var(--font-accent);
+  font-size: 13px; /* Kalam floor */
+  line-height: 1.5;
+  padding: 2px 12px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.4px solid var(--ink-graphite);
+  /* uneven inked pill */
+  border-radius: 10px 13px 9px 12px / 12px 9px 13px 10px;
+  box-shadow: var(--shadow-xs);
+  white-space: nowrap;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring),
+    box-shadow calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-action-btn:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+  transform: rotate(-1.2deg) scale(1.03);
+  box-shadow: var(--shadow-sm);
+}
+
+.nbs-action-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.nbs-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------------------
+   Performance HUD (dev overlay, gated by settings.perfHud) — a tiny
+   parchment card pinned top-left, pointer-transparent, UI microtype.
+   -------------------------------------------------------------------------- */
+.nb-perfhud {
+  position: fixed;
+  top: var(--space-12);
+  left: var(--space-12);
+  z-index: var(--z-toasts);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-4) var(--space-8);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px 11px 7px 10px / 10px 7px 11px 8px;
+  box-shadow: var(--shadow-sm);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.nb-perfhud-title {
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  text-transform: uppercase;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-perfhud-line {
+  font-size: var(--text-ui-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------------------
    Footnote
    -------------------------------------------------------------------------- */
 .nbs-footnote {

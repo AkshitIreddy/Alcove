@@ -1,0 +1,133 @@
+/**
+ * Image asset persistence (frontend half of the media pipeline).
+ *
+ * Tauri: bytes → `save_image_asset` Rust command (writes
+ * `app_data_dir/assets/images/<contenthash>.<ext>`) → `assets` DB row
+ * recorded here via the sql plugin (Rust stays filesystem-only) → asset
+ * protocol src.
+ *
+ * Browser dev: object URL + in-memory-DB row, so paste/drop works without
+ * the Rust side.
+ */
+import { nanoid } from 'nanoid';
+import { getDb, isTauri } from '../../data/db';
+import { registerDevAssetUrl, resolveAssetSrc } from './resolver';
+
+export interface StoredImage {
+  /** `assets` table id (content-derived in Tauri). */
+  assetId: string;
+  /** Path relative to the assets root (or `dev/…` in the browser). */
+  relPath: string;
+  /** Displayable src for the current environment. */
+  src: string;
+}
+
+interface SavedAssetIpc {
+  id: string;
+  relPath: string;
+}
+
+/** Insert (or refresh) the `assets` row for a stored file. */
+export async function recordAssetRow(
+  id: string,
+  relPath: string,
+  meta: Record<string, unknown> | null = null,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    'INSERT OR REPLACE INTO assets (id, rel_path, kind, meta, created_at) VALUES ($1, $2, $3, $4, $5)',
+    [id, relPath, 'image', meta === null ? null : JSON.stringify(meta), new Date().toISOString()],
+  );
+}
+
+/**
+ * Persist raw image bytes as a local asset and return a displayable src.
+ * `meta` lands in the assets row (source URL, attribution…).
+ */
+export async function storeImageBytes(
+  bytes: Uint8Array,
+  suggestedExt: string,
+  meta: Record<string, unknown> | null = null,
+): Promise<StoredImage> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const saved = await invoke<SavedAssetIpc>('save_image_asset', {
+      bytes: Array.from(bytes),
+      suggestedExt,
+    });
+    await recordAssetRow(saved.id, saved.relPath, meta);
+    return {
+      assetId: saved.id,
+      relPath: saved.relPath,
+      src: await resolveAssetSrc(saved.relPath),
+    };
+  }
+
+  // Browser dev fallback: object URL, no filesystem.
+  const id = `img_dev_${nanoid(10)}`;
+  const relPath = `dev/${id}`;
+  const url = URL.createObjectURL(
+    new Blob([bytes.slice().buffer], { type: `image/${suggestedExt || 'png'}` }),
+  );
+  registerDevAssetUrl(relPath, url);
+  await recordAssetRow(id, relPath, meta);
+  return { assetId: id, relPath, src: url };
+}
+
+/** Convenience: persist a pasted/dropped File or Blob. */
+export async function storeImageFile(file: File | Blob): Promise<StoredImage> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ext = file.type.startsWith('image/') ? file.type.slice(6) : 'png';
+  const name = file instanceof File ? file.name : null;
+  return storeImageBytes(bytes, ext, name === null ? null : { fileName: name });
+}
+
+// ---------------------------------------------------------------------------
+// Image fetch (Openverse via Rust) — used by the script `fetch:` directive
+// and the slash menu.
+// ---------------------------------------------------------------------------
+
+export interface FetchedImageIpc {
+  id: string;
+  relPath: string;
+  url: string;
+  thumbUrl: string | null;
+  attribution: string;
+  license: string;
+}
+
+export interface FetchedImageResult extends FetchedImageIpc {
+  /** Displayable src resolved for the current environment. */
+  src: string;
+}
+
+/**
+ * Search openly-licensed images, cache them as local assets (Rust side),
+ * record their asset rows, and return displayable srcs. Tauri-only —
+ * resolves to `[]` in the browser dev shell.
+ */
+export async function fetchImages(
+  query: string,
+  count = 3,
+  provider = 'openverse',
+): Promise<FetchedImageResult[]> {
+  if (!isTauri()) return [];
+  const { invoke } = await import('@tauri-apps/api/core');
+  const fetched = await invoke<FetchedImageIpc[]>('fetch_images', {
+    query,
+    count,
+    provider,
+  });
+  const results: FetchedImageResult[] = [];
+  for (const item of fetched) {
+    await recordAssetRow(item.id, item.relPath, {
+      sourceUrl: item.url,
+      attribution: item.attribution,
+      license: item.license,
+      provider,
+      query,
+    });
+    results.push({ ...item, src: await resolveAssetSrc(item.relPath) });
+  }
+  return results;
+}

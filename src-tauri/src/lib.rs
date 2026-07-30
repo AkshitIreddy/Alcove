@@ -1,5 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod media;
+
 /// Connection string for the app database. Must stay in sync with
 /// `DB_PATH` in `src/data/db.ts` on the frontend.
 const DB_URL: &str = "sqlite:notebook.db";
@@ -53,6 +55,11 @@ fn migrations() -> Vec<Migration> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            media::save_image_asset,
+            media::fetch_link_preview,
+            media::fetch_images,
+        ])
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::new()

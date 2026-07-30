@@ -58,6 +58,19 @@ import {
   lodTierFor,
   nextLodTier,
 } from '../src/features/bookshelf/lod';
+import {
+  BOOK_DRAG_DIST_PX,
+  classifyDrag,
+  classifyKeyZoom,
+  classifyWheel,
+  dragThresholdFor,
+  PINCH_DELTA_MAX,
+  PINCH_ZOOM_SENSITIVITY,
+  PULL_COMPLETE_TRAVEL_PX,
+  SHELF_DRAG_DIST_PX,
+  WHEEL_ZOOM_SENSITIVITY,
+  type WheelLike,
+} from '../src/features/bookshelf/gestures';
 
 const VP: Viewport = { width: 1280, height: 800 };
 
@@ -408,6 +421,126 @@ describe('layout: seeded cluster layout', () => {
     expect(one).toHaveLength(1);
     expect(one[0]!.centerX).toBeGreaterThanOrEqual(LAYOUT_MARGIN_X + 20);
     expect(one[0]!.centerX).toBeLessThanOrEqual(SHELF_WIDTH - LAYOUT_MARGIN_X - 20);
+  });
+});
+
+describe('gestures: wheel decision matrix', () => {
+  const wheel = (over: Partial<WheelLike>): WheelLike => ({
+    deltaX: 0,
+    deltaY: 0,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    ...over,
+  });
+
+  it('plain wheel zooms to the cursor (primary expectation)', () => {
+    const a = classifyWheel(wheel({ deltaY: 120 }));
+    expect(a).toEqual({ kind: 'zoom', deltaY: 120, sensitivity: WHEEL_ZOOM_SENSITIVITY });
+    const b = classifyWheel(wheel({ deltaY: -120 }));
+    expect(b.kind).toBe('zoom');
+  });
+
+  it('ctrl+wheel (mouse notch) zooms at wheel sensitivity', () => {
+    const a = classifyWheel(wheel({ deltaY: 120, ctrlKey: true }));
+    expect(a).toEqual({ kind: 'zoom', deltaY: 120, sensitivity: WHEEL_ZOOM_SENSITIVITY });
+  });
+
+  it('touchpad pinch (ctrlKey wheel with small deltas) zooms at pinch sensitivity', () => {
+    const a = classifyWheel(wheel({ deltaY: -6.4, ctrlKey: true }));
+    expect(a).toEqual({ kind: 'zoom', deltaY: -6.4, sensitivity: PINCH_ZOOM_SENSITIVITY });
+    // Boundary: exactly PINCH_DELTA_MAX is a mouse notch, not a pinch.
+    const b = classifyWheel(wheel({ deltaY: PINCH_DELTA_MAX, ctrlKey: true }));
+    expect(b).toMatchObject({ kind: 'zoom', sensitivity: WHEEL_ZOOM_SENSITIVITY });
+  });
+
+  it('meta+wheel zooms too (mac muscle memory in the webview)', () => {
+    expect(classifyWheel(wheel({ deltaY: 120, metaKey: true })).kind).toBe('zoom');
+  });
+
+  it('shift+wheel pans vertically', () => {
+    expect(classifyWheel(wheel({ deltaY: 90, shiftKey: true }))).toEqual({
+      kind: 'pan',
+      dx: 0,
+      dy: 90,
+    });
+  });
+
+  it('shift+wheel with browser-preswapped deltas still pans vertically', () => {
+    // Chromium can report shift+wheel as deltaX with deltaY 0.
+    expect(classifyWheel(wheel({ deltaX: 90, shiftKey: true }))).toEqual({
+      kind: 'pan',
+      dx: 0,
+      dy: 90,
+    });
+  });
+
+  it('sideways-dominant deltas (touchpad) pan horizontally', () => {
+    expect(classifyWheel(wheel({ deltaX: 80, deltaY: 10 }))).toEqual({
+      kind: 'pan',
+      dx: 80,
+      dy: 0,
+    });
+  });
+
+  it('vertical-dominant mixed deltas still zoom', () => {
+    expect(classifyWheel(wheel({ deltaX: 10, deltaY: 80 })).kind).toBe('zoom');
+  });
+});
+
+describe('gestures: drag decision matrix', () => {
+  it('uses a wider threshold on a spine than on the shelf', () => {
+    expect(dragThresholdFor(true)).toBe(BOOK_DRAG_DIST_PX);
+    expect(dragThresholdFor(false)).toBe(SHELF_DRAG_DIST_PX);
+    expect(BOOK_DRAG_DIST_PX).toBe(8);
+    expect(BOOK_DRAG_DIST_PX).toBeGreaterThan(SHELF_DRAG_DIST_PX);
+  });
+
+  it('dragging a spine downward (toward the viewer) pulls', () => {
+    expect(classifyDrag(true, 0, 10)).toBe('pull');
+    expect(classifyDrag(true, 3, 30)).toBe('pull');
+  });
+
+  it('dragging a spine sideways/outward pulls', () => {
+    expect(classifyDrag(true, 12, -4)).toBe('pull');
+    expect(classifyDrag(true, -15, -9)).toBe('pull');
+    expect(classifyDrag(true, 9, 0)).toBe('pull');
+  });
+
+  it('pushing a spine firmly upward pans (scroll-the-shelf gesture)', () => {
+    expect(classifyDrag(true, 0, -12)).toBe('pan');
+    expect(classifyDrag(true, 4, -20)).toBe('pan');
+  });
+
+  it('any drag starting on the wall/shelf pans', () => {
+    expect(classifyDrag(false, 0, 40)).toBe('pan');
+    expect(classifyDrag(false, 40, 0)).toBe('pan');
+    expect(classifyDrag(false, -12, -12)).toBe('pan');
+  });
+
+  it('the auto-complete travel is comfortably past the pull threshold', () => {
+    expect(PULL_COMPLETE_TRAVEL_PX).toBeGreaterThan(BOOK_DRAG_DIST_PX * 5);
+  });
+});
+
+describe('gestures: keyboard zoom', () => {
+  it('maps +/= to zoom in, -/_ to zoom out, 0 to reset', () => {
+    expect(classifyKeyZoom({ key: '+' })).toBe('in');
+    expect(classifyKeyZoom({ key: '=' })).toBe('in');
+    expect(classifyKeyZoom({ key: '-' })).toBe('out');
+    expect(classifyKeyZoom({ key: '_' })).toBe('out');
+    expect(classifyKeyZoom({ key: '0' })).toBe('reset');
+  });
+
+  it('ignores unrelated keys', () => {
+    expect(classifyKeyZoom({ key: 'a' })).toBeNull();
+    expect(classifyKeyZoom({ key: '1' })).toBeNull();
+    expect(classifyKeyZoom({ key: 'Enter' })).toBeNull();
+  });
+
+  it('ignores alt combos and keystrokes while editing text', () => {
+    expect(classifyKeyZoom({ key: '+', altKey: true })).toBeNull();
+    expect(classifyKeyZoom({ key: '0', editing: true })).toBeNull();
   });
 });
 

@@ -13,7 +13,11 @@ import { describe, expect, it } from 'vitest';
 import { clamp, fnv1a, lerp, mulberry32, seededNoise1D, seededNoise2D } from '../src/art/noise';
 import { paperFilter, pencilFilter, svgDoc, watercolorFilter } from '../src/art/filters';
 import { doubleStroke, wobbleLine, wobblePath, wobbleRect } from '../src/art/wobble';
-import { deriveSpineParams } from '../src/art/spines';
+import {
+  deriveSpineParams,
+  getSpineParams,
+  getSpinePalette,
+} from '../src/art/spines';
 import { AtlasManager, type AtlasCanvas, type AtlasRect } from '../src/art/atlas';
 
 /* ------------------------------- noise ----------------------------------- */
@@ -92,7 +96,7 @@ describe('deriveSpineParams', () => {
         expect([0, 1, 2]).toContain(band.kind);
       }
       expect(p.ornament).toBeGreaterThanOrEqual(0);
-      expect(p.ornament).toBeLessThanOrEqual(7);
+      expect(p.ornament).toBeLessThanOrEqual(11);
       expect([0, 1, 2]).toContain(p.texture);
       expect([0, 1, 2]).toContain(p.font);
       expect(typeof p.gilt).toBe('boolean');
@@ -100,7 +104,39 @@ describe('deriveSpineParams', () => {
       expect(p.w).toBeGreaterThanOrEqual(28);
       expect(p.w).toBeLessThanOrEqual(46);
       expect(Math.abs(p.hJitter)).toBeLessThanOrEqual(6);
+      expect(typeof p.twoTone).toBe('boolean');
+      expect(p.twoToneSplit).toBeGreaterThanOrEqual(0.26);
+      expect(p.twoToneSplit).toBeLessThanOrEqual(0.48);
+      expect(typeof p.headTail).toBe('boolean');
     }
+  });
+
+  it('uses all 12 ornament stamps across many seeds', () => {
+    const seen = new Set<number>();
+    for (let seed = 0; seed < 2000; seed++) seen.add(deriveSpineParams(seed).ornament);
+    expect(seen.size).toBe(12);
+  });
+
+  it('getSpineParams is the public alias used by cover modules', () => {
+    expect(getSpineParams(0xfeed)).toEqual(deriveSpineParams(0xfeed));
+  });
+
+  it('getSpinePalette exposes deterministic CSS colors for a book', () => {
+    const params = deriveSpineParams(0xabcd);
+    const a = getSpinePalette(params);
+    const b = getSpinePalette(params);
+    expect(a).toEqual(b);
+    for (const v of [a.top, a.bottom, a.ink, a.accent]) {
+      expect(v).toMatch(/^(hsl\(|#)/);
+    }
+    expect(a.gold).toMatch(/^#/);
+    // Gilt books get the gold accent.
+    const gilt = { ...params, gilt: true };
+    expect(getSpinePalette(gilt).accent).toBe(getSpinePalette(gilt).gold);
+    // The palette differs across palette indices.
+    const other = deriveSpineParams(0xabcd);
+    other.palette = (other.palette + 1) % 12;
+    expect(getSpinePalette(other).top).not.toBe(a.top);
   });
 });
 

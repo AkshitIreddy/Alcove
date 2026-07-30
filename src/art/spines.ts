@@ -32,7 +32,10 @@ export interface SpineParams {
   hueJitter: number;
   /** 0–3 horizontal bands. */
   bands: BandSpec[];
-  /** Ornament stamp 0–7: diamond/laurel/star/blot/chevron/sun/moon/keyhole. */
+  /**
+   * Ornament stamp 0–11: diamond/laurel/star/blot/chevron/sun/moon/keyhole/
+   * laurel-wreath/quill/tree/crescent-with-stars.
+   */
   ornament: number;
   /** Cover texture: 0 = cloth, 1 = leather, 2 = paper. */
   texture: 0 | 1 | 2;
@@ -46,6 +49,12 @@ export interface SpineParams {
   w: number;
   /** Height jitter in world px, ±6 — applied by the shelf compositor. */
   hJitter: number;
+  /** Two-tone binding: the head section is bound in the darker partner tone. */
+  twoTone: boolean;
+  /** Fraction of the height covered by the two-tone head section (0.26–0.48). */
+  twoToneSplit: number;
+  /** Striped head/tail bands (endbands) at the spine's top and bottom. */
+  headTail: boolean;
 }
 
 /** Suggested base spine height in world px (book zone is 280). */
@@ -103,7 +112,7 @@ export function deriveSpineParams(seed: number): SpineParams {
   }
   bands.sort((a, b) => a.y - b.y);
 
-  const ornament = Math.floor(rnd() * 8);
+  const ornament = Math.floor(rnd() * 12);
   const texture = Math.floor(rnd() * 3) as 0 | 1 | 2;
   const font = Math.floor(rnd() * 3) as 0 | 1 | 2;
   const gilt = rnd() < 0.3;
@@ -112,6 +121,11 @@ export function deriveSpineParams(seed: number): SpineParams {
   // of 28–46, i.e. weighted toward 32–38.
   const w = 28 + ((rnd() + rnd()) / 2) * 18;
   const hJitter = (rnd() * 2 - 1) * 6;
+  // New draws are APPENDED so every earlier parameter keeps its value for a
+  // given seed (the rnd stream stays aligned with the original recipe).
+  const twoTone = rnd() < 0.3;
+  const twoToneSplit = 0.26 + rnd() * 0.22;
+  const headTail = rnd() < 0.55;
 
   return {
     seed: seed >>> 0,
@@ -126,6 +140,47 @@ export function deriveSpineParams(seed: number): SpineParams {
     lean,
     w,
     hJitter,
+    twoTone,
+    twoToneSplit,
+    headTail,
+  };
+}
+
+/**
+ * Public alias for cover modules (the pulled-book overlay bakes a DOM/canvas
+ * cover that must match the shelf spine exactly). Same seed ⇒ same params.
+ */
+export function getSpineParams(seed: number): SpineParams {
+  return deriveSpineParams(seed);
+}
+
+/** CSS-usable palette of one spine, derived from its params. */
+export interface SpinePaletteCss {
+  /** Light/top pigment. */
+  top: string;
+  /** Dark/bottom pigment. */
+  bottom: string;
+  /** Deep ink used for bands/edges. */
+  ink: string;
+  /** Ornament/title color (gold when the book is gilt). */
+  accent: string;
+  /** The shared gilt gold. */
+  gold: string;
+}
+
+/**
+ * The canonical palette lookup for a book's params — exported so the cover
+ * module (and the DOM overlay) never has to duplicate the pigment tables.
+ */
+export function getSpinePalette(params: SpineParams): SpinePaletteCss {
+  const duo = PALETTES[params.palette % PALETTES.length] as readonly [HSL, HSL];
+  const hue = params.hueJitter;
+  return {
+    top: hslStr(duo[0], hue),
+    bottom: hslStr(duo[1], hue),
+    ink: hslStr(duo[1], hue, -18),
+    accent: params.gilt ? GOLD : hslStr(duo[1], hue, -24),
+    gold: GOLD,
   };
 }
 
@@ -300,8 +355,9 @@ function strokePts(ctx: Ctx2D, pts: readonly Pt[], close: boolean): void {
 }
 
 /**
- * The 8 procedural ornament stamps, drawn as simple wobbled paths:
- * 0 diamond, 1 laurel, 2 star, 3 blot, 4 chevron, 5 sun, 6 moon, 7 keyhole.
+ * The 12 procedural ornament stamps, drawn as simple wobbled paths:
+ * 0 diamond, 1 laurel, 2 star, 3 blot, 4 chevron, 5 sun, 6 moon, 7 keyhole,
+ * 8 laurel wreath, 9 quill, 10 tree, 11 crescent-with-stars.
  */
 function drawOrnament(
   ctx: Ctx2D,
@@ -394,7 +450,7 @@ function drawOrnament(
       ctx.globalAlpha = prevAlpha;
       break;
     }
-    default: { // 7 keyhole
+    case 7: { // keyhole
       const circle: Pt[] = [];
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2;
@@ -402,6 +458,79 @@ function drawOrnament(
       }
       strokePts(ctx, circle, true);
       strokePts(ctx, [pt(-0.16, -0.05), pt(-0.3, 0.85), pt(0.3, 0.85), pt(0.16, -0.05)], true);
+      break;
+    }
+    case 8: { // laurel wreath — full open-topped ring of leaf ticks
+      for (const side of [-1, 1]) {
+        const arc: Pt[] = [];
+        for (let i = 0; i <= 8; i++) {
+          // From the bottom (π/2) sweeping up each side, leaving the top open.
+          const a = Math.PI / 2 + side * (i / 8) * (Math.PI * 0.82);
+          arc.push(pt(Math.cos(a) * 0.85, Math.sin(a) * 0.85));
+        }
+        strokePts(ctx, arc, false);
+        for (let i = 1; i <= 4; i++) {
+          const a = Math.PI / 2 + side * (i / 5) * (Math.PI * 0.82);
+          const bx = Math.cos(a) * 0.85;
+          const by = Math.sin(a) * 0.85;
+          strokePts(ctx, [pt(bx, by), pt(bx * 1.35, by * 1.35 - 0.08)], false);
+          strokePts(ctx, [pt(bx, by), pt(bx * 0.68, by * 0.68 - 0.06)], false);
+        }
+      }
+      // Ribbon knot at the bottom.
+      strokePts(ctx, [pt(-0.18, 0.95), pt(0, 0.78), pt(0.18, 0.95)], false);
+      break;
+    }
+    case 9: { // quill — curved feather shaft with barb ticks and a nib
+      const shaft: Pt[] = [];
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        shaft.push(pt(-0.75 + t * 1.5, 0.85 - t * 1.55 - Math.sin(t * Math.PI) * 0.32));
+      }
+      strokePts(ctx, shaft, false);
+      for (let i = 2; i <= 7; i++) {
+        const t = i / 8;
+        const bx = -0.75 + t * 1.5;
+        const by = 0.85 - t * 1.55 - Math.sin(t * Math.PI) * 0.32;
+        strokePts(ctx, [pt(bx, by), pt(bx - 0.3, by - 0.22 + t * 0.1)], false);
+      }
+      // Nib tick at the writing end.
+      strokePts(ctx, [pt(-0.75, 0.85), pt(-0.95, 1.02)], false);
+      break;
+    }
+    case 10: { // tree — trunk, three branch tiers, root flare
+      strokePts(ctx, [pt(0, 1), pt(0, -0.25)], false);
+      for (const [ty, sp] of [
+        [0.45, 0.72],
+        [0.05, 0.55],
+        [-0.35, 0.36],
+      ] as const) {
+        strokePts(ctx, [pt(-sp, ty + 0.35), pt(0, ty - 0.2), pt(sp, ty + 0.35)], false);
+      }
+      strokePts(ctx, [pt(-0.3, 1), pt(0, 0.82), pt(0.3, 1)], false);
+      // Tiny crown dot.
+      ctx.beginPath();
+      ctx.arc(cx, cy - 0.62 * s, s * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    default: { // 11 crescent-with-stars
+      ctx.beginPath();
+      ctx.arc(cx - s * 0.15, cy + s * 0.1, s * 0.62, -Math.PI * 0.5, Math.PI * 0.5, false);
+      ctx.arc(cx + s * 0.17, cy + s * 0.1, s * 0.46, Math.PI * 0.55, -Math.PI * 0.55, true);
+      ctx.closePath();
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = prevAlpha * 0.8;
+      ctx.fill();
+      ctx.globalAlpha = prevAlpha;
+      // Three four-point sparkle stars around the crescent.
+      for (const [sx, sy, sr] of [
+        [0.45, -0.55, 0.2],
+        [0.72, 0.05, 0.13],
+        [0.28, 0.62, 0.16],
+      ] as const) {
+        strokePts(ctx, [pt(sx, sy - sr), pt(sx + sr * 0.4, sy), pt(sx, sy + sr), pt(sx - sr * 0.4, sy)], true);
+      }
       break;
     }
   }
@@ -484,17 +613,41 @@ export function renderSpine(
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 
+  // --- two-tone binding: darker partner tone over the head section ---
+  if (params.twoTone) {
+    const splitY = params.twoToneSplit * h;
+    const g3 = ctx.createLinearGradient(0, 0, 0, splitY);
+    g3.addColorStop(0, hslStr(colB, hue, -2, 4, 0.92));
+    g3.addColorStop(1, hslStr(colB, hue, -10, 2, 0.92));
+    ctx.fillStyle = g3;
+    ctx.fillRect(-w * 0.05, 0, w * 1.1, splitY);
+    // Separating rule where the tones meet: gilt on gilt books, ink else.
+    if (params.gilt) {
+      ctx.fillStyle = GOLD;
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(w * 0.04, splitY - 1.1 * scale, w * 0.92, 2.2 * scale);
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = hslStr(colB, hue, -22, 0, 0.7);
+    ctx.lineWidth = Math.max(0.7, 0.8 * scale);
+    strokePts(
+      ctx,
+      jitteredSegment({ x: 0, y: splitY }, { x: w, y: splitY }, step, 0.4 * scale, rnd),
+      false,
+    );
+  }
+
   // --- 2px inset pigment-pooling edge (stroke inside the clip) ---
   tracePoly(ctx, fillPts, true);
   ctx.lineWidth = 4 * scale; // clipped: only the inner ~2px shows
   ctx.strokeStyle = hslStr(colB, hue, -12, 0, 0.5);
   ctx.stroke();
 
-  // --- texture pass ---
+  // --- texture pass (contrast raised: cloth/leather must read as materials) ---
   ctx.globalAlpha = 1;
   if (params.texture === 0) {
-    // cloth: fine horizontal weave lines
-    ctx.strokeStyle = hslStr(colB, hue, -10, 0, 0.06);
+    // cloth: horizontal weave + a fainter vertical cross-weave
+    ctx.strokeStyle = hslStr(colB, hue, -12, 0, 0.1);
     ctx.lineWidth = Math.max(0.5, 0.5 * scale);
     ctx.beginPath();
     const pitch = Math.max(2, 3 * scale);
@@ -503,11 +656,20 @@ export function renderSpine(
       ctx.lineTo(w, yy);
     }
     ctx.stroke();
+    ctx.strokeStyle = hslStr(colA, hue, 10, -6, 0.05);
+    ctx.beginPath();
+    const vPitch = Math.max(2, 2.4 * scale);
+    for (let xx = vPitch / 2; xx < w; xx += vPitch) {
+      ctx.moveTo(xx, 0);
+      ctx.lineTo(xx, h);
+    }
+    ctx.stroke();
   } else if (params.texture === 1) {
-    // leather: coarse mottle — the granulation tile scaled up, multiplied
+    // leather: coarse mottle (granulation tile scaled up, multiplied) plus a
+    // few soft diagonal creases.
     const tile = getGranulationTile();
     ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = 0.05;
+    ctx.globalAlpha = 0.09;
     const ts = GRANULATION_SIZE * 2;
     for (let ty = 0; ty < h; ty += ts) {
       for (let tx = 0; tx < w; tx += ts) {
@@ -516,6 +678,15 @@ export function renderSpine(
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = hslStr(colB, hue, -14, 0, 0.08);
+    ctx.lineWidth = Math.max(0.6, 0.7 * scale);
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const cy0 = (0.12 + rnd() * 0.76) * h;
+      ctx.moveTo(0, cy0);
+      ctx.quadraticCurveTo(w * 0.5, cy0 + (rnd() * 2 - 1) * 8 * scale, w, cy0 + (rnd() * 2 - 1) * 5 * scale);
+    }
+    ctx.stroke();
   } else {
     // paper: sparse vertical fibre streaks
     ctx.strokeStyle = hslStr(colA, hue, 14, -10, 0.05);
@@ -529,36 +700,73 @@ export function renderSpine(
     ctx.stroke();
   }
 
-  // --- bands ---
-  const inkBand = hslStr(colB, hue, -18, 0, 0.75);
+  // --- bands (embossed: every dark rule carries a catchlight rule above) ---
+  const inkBand = hslStr(colB, hue, -18, 0, 0.8);
+  const embossLight = hslStr(colA, hue, 26, -8, 0.5);
   for (const band of params.bands) {
     const by = band.y * h;
     if (band.kind === 0) {
-      // double-rule
-      ctx.strokeStyle = inkBand;
+      // embossed double-rule: light/dark pairs read as raised cords
       ctx.lineWidth = Math.max(0.7, 0.7 * scale);
-      for (const dy of [-1.6 * scale, 1.6 * scale]) {
+      for (const dy of [-1.8 * scale, 1.8 * scale]) {
+        ctx.strokeStyle = embossLight;
+        strokePts(ctx, jitteredSegment({ x: w * 0.06, y: by + dy - 0.9 * scale }, { x: w * 0.94, y: by + dy - 0.9 * scale }, step, 0.35 * scale, rnd), false);
+        ctx.strokeStyle = inkBand;
         strokePts(ctx, jitteredSegment({ x: w * 0.06, y: by + dy }, { x: w * 0.94, y: by + dy }, step, 0.4 * scale, rnd), false);
       }
     } else if (band.kind === 1) {
-      // thick band
+      // thick raised band: shaded fill, catchlight on top, shadow below
       ctx.fillStyle = hslStr(colB, hue, -8, 0, 0.65);
       ctx.fillRect(0, by - 3 * scale, w, 6 * scale);
+      ctx.strokeStyle = embossLight;
+      ctx.lineWidth = Math.max(0.6, 0.6 * scale);
+      strokePts(ctx, jitteredSegment({ x: 0, y: by - 3.8 * scale }, { x: w, y: by - 3.8 * scale }, step, 0.35 * scale, rnd), false);
       ctx.strokeStyle = inkBand;
       ctx.lineWidth = Math.max(0.7, 0.7 * scale);
       for (const dy of [-3 * scale, 3 * scale]) {
         strokePts(ctx, jitteredSegment({ x: 0, y: by + dy }, { x: w, y: by + dy }, step, 0.4 * scale, rnd), false);
       }
     } else {
-      // gilt band
+      // gilt band with an embossed shadow under the gold
+      ctx.fillStyle = hslStr(colB, hue, -20, 0, 0.4);
+      ctx.fillRect(w * 0.05, by + 1.2 * scale, w * 0.9, 1.2 * scale);
       ctx.fillStyle = GOLD;
       const prevAlpha = ctx.globalAlpha;
       ctx.globalAlpha = 0.85;
       ctx.fillRect(w * 0.05, by - 1.4 * scale, w * 0.9, 2.8 * scale);
       ctx.globalAlpha = prevAlpha;
+      ctx.fillStyle = 'rgba(255, 244, 214, 0.55)';
+      ctx.fillRect(w * 0.08, by - 1.4 * scale, w * 0.84, 0.8 * scale);
       ctx.strokeStyle = hslStr(colB, hue, -20, 0, 0.5);
       ctx.lineWidth = Math.max(0.5, 0.5 * scale);
       strokePts(ctx, jitteredSegment({ x: w * 0.05, y: by }, { x: w * 0.95, y: by }, step, 0.3 * scale, rnd), false);
+    }
+  }
+
+  // --- head/tail endbands: striped caps at the very top and bottom ---
+  if (params.headTail) {
+    const bandH = 4.2 * scale;
+    const stripeW = Math.max(2.2 * scale, 3);
+    const capColor = params.gilt ? GOLD : hslStr(colB, hue, -16);
+    const creamColor = 'hsl(43 48% 88%)';
+    for (const [cy0, edgeY] of [
+      [0.6 * scale, 0],
+      [h - bandH - 0.6 * scale, h],
+    ] as const) {
+      ctx.fillStyle = creamColor;
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = capColor;
+      for (let sx = w * 0.04; sx < w * 0.96; sx += stripeW * 2) {
+        ctx.fillRect(sx, cy0, Math.min(stripeW, w * 0.96 - sx), bandH);
+      }
+      ctx.globalAlpha = 1;
+      // Seat line where the endband meets the boards.
+      ctx.strokeStyle = hslStr(colB, hue, -24, 0, 0.55);
+      ctx.lineWidth = Math.max(0.6, 0.6 * scale);
+      const seamY = edgeY === 0 ? cy0 + bandH : cy0;
+      strokePts(ctx, jitteredSegment({ x: w * 0.03, y: seamY }, { x: w * 0.97, y: seamY }, step, 0.35 * scale, rnd), false);
     }
   }
 
@@ -606,6 +814,31 @@ export function renderSpine(
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
+
+  // --- tiny wear highlights: rubbed edges and corner scuffs ---
+  const wearInk = hslStr(colA, hue, 30, -18, 0.28);
+  ctx.strokeStyle = wearInk;
+  ctx.lineWidth = Math.max(0.6, 0.7 * scale);
+  ctx.lineCap = 'round';
+  const wearCount = 2 + Math.floor(rnd() * 3);
+  for (let i = 0; i < wearCount; i++) {
+    const edgeX = rnd() < 0.5 ? 1.2 * scale : w - 1.2 * scale;
+    const wy = (0.08 + rnd() * 0.84) * h;
+    const len = (6 + rnd() * 14) * scale;
+    ctx.beginPath();
+    ctx.moveTo(edgeX, wy);
+    ctx.lineTo(edgeX + (rnd() * 2 - 1) * 0.8 * scale, wy + len);
+    ctx.stroke();
+  }
+  // Corner scuffs at the tail (books get shelved bottom-first).
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = hslStr(colA, hue, 34, -16);
+  for (const cxx of [1.5 * scale, w - 1.5 * scale]) {
+    ctx.beginPath();
+    ctx.arc(cxx, h - 2 * scale, (1.6 + rnd() * 1.4) * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 
   ctx.restore(); // end clip
 

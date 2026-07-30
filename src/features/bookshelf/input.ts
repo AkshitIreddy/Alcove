@@ -1,31 +1,45 @@
 /**
  * features/bookshelf/input.ts — pointer/wheel handling for the shelf canvas.
  *
- * Pointer events with setPointerCapture; click-vs-drag threshold 5px OR
- * 250ms; wheel routing: Ctrl+wheel and pinch-trackpad (Chromium reports
- * pinches as ctrlKey wheels) zoom to the cursor, plain wheel scrolls
- * vertically (shift/horizontal deltas pan x). Velocity samples are collected
- * per move for the weighted-momentum release.
+ * Pointer events with setPointerCapture. Gesture ROUTING lives in gestures.ts
+ * (pure, tested); this class only tracks pointer state and forwards decisions:
+ *   - wheel: classifyWheel → zoom-to-cursor (plain + ctrl/pinch) or pan
+ *     (shift = vertical, sideways deltas = horizontal). The listener is
+ *     non-passive and ALWAYS preventDefaults so the webview never page-zooms.
+ *   - pointerdown asks the world whether a book spine is under the cursor;
+ *     the drag threshold is 8px on a spine, 5px on the shelf/wall, and the
+ *     world decides pull-vs-pan when the threshold is crossed.
+ *   - click-vs-drag: within threshold AND under 250ms ⇒ tap.
+ * Velocity samples are collected per move for the weighted-momentum release.
  */
 
 import type { DragSample, Vec2 } from './camera';
+import { classifyWheel, dragThresholdFor } from './gestures';
 
-/** Drag threshold: beyond this many px OR held longer than DRAG_TIME_MS. */
-export const DRAG_DIST_PX = 5;
+/** Tap time cap: held longer than this is a drag, not a click. */
 export const DRAG_TIME_MS = 250;
 
 /** Max retained velocity samples (weighted-velocity uses the last 4). */
 const MAX_SAMPLES = 4;
 
 export interface InputCallbacks {
-  onWheelZoom(deltaY: number, cursor: Vec2): void;
-  /** Plain-wheel scroll, screen px. */
+  onWheelZoom(deltaY: number, cursor: Vec2, sensitivity: number): void;
+  /** Wheel pan, screen px. */
   onWheelPan(dx: number, dy: number): void;
-  onDragStart(): void;
-  /** Screen-px delta since the previous move. */
-  onDragMove(dx: number, dy: number): void;
+  /** A primary pointer went down at `cursor`. Return true when it hit a book. */
+  onPointerDown(cursor: Vec2): boolean;
+  /**
+   * The drag threshold was crossed. (dx, dy) is the total displacement since
+   * pointerdown; `onBook` echoes the onPointerDown hit. The world routes this
+   * to a shelf pan or a book pull (classifyDrag).
+   */
+  onDragStart(dx: number, dy: number, onBook: boolean): void;
+  /** Screen-px delta since the previous move, plus the current cursor. */
+  onDragMove(dx: number, dy: number, cursor: Vec2): void;
   /** Release with screen-px/s velocity samples, most recent first. */
   onDragEnd(samples: readonly DragSample[]): void;
+  /** The pointer was cancelled mid-drag (capture lost, etc.). */
+  onDragCancel(): void;
   onTap(cursor: Vec2): void;
   /** Cursor position while not dragging; null when the pointer leaves. */
   onHover(cursor: Vec2 | null): void;
@@ -39,6 +53,7 @@ interface PointerTracking {
   lastX: number;
   lastY: number;
   lastT: number;
+  onBook: boolean;
   dragging: boolean;
   samples: DragSample[];
 }
@@ -55,6 +70,7 @@ export class ShelfInput {
     private readonly cb: InputCallbacks,
   ) {
     const opts: AddEventListenerOptions = { signal: this.ac.signal };
+    // Non-passive on purpose: preventDefault must stop webview page-zoom.
     el.addEventListener('wheel', this.onWheel, { ...opts, passive: false });
     el.addEventListener('pointerdown', this.onPointerDown, opts);
     el.addEventListener('pointermove', this.onPointerMove, opts);
@@ -77,20 +93,19 @@ export class ShelfInput {
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     if (this.frozen) return;
-    if (e.ctrlKey || e.metaKey) {
-      this.cb.onWheelZoom(e.deltaY, this.cursorOf(e));
-      return;
+    const action = classifyWheel(e);
+    if (action.kind === 'zoom') {
+      this.cb.onWheelZoom(action.deltaY, this.cursorOf(e), action.sensitivity);
+    } else {
+      this.cb.onWheelPan(action.dx, action.dy);
     }
-    // Shift+wheel pans horizontally (browsers may pre-swap deltas).
-    const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
-    const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
-    this.cb.onWheelPan(dx, dy);
   };
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (this.frozen || !e.isPrimary || e.button !== 0) return;
     this.el.setPointerCapture(e.pointerId);
     const now = e.timeStamp;
+    const onBook = this.cb.onPointerDown(this.cursorOf(e));
     this.tracking = {
       id: e.pointerId,
       startX: e.clientX,
@@ -99,6 +114,7 @@ export class ShelfInput {
       lastX: e.clientX,
       lastY: e.clientY,
       lastT: now,
+      onBook,
       dragging: false,
       samples: [],
     };
@@ -118,17 +134,19 @@ export class ShelfInput {
     t.lastY = e.clientY;
     t.lastT = e.timeStamp;
     if (!t.dragging) {
-      const dist = Math.hypot(e.clientX - t.startX, e.clientY - t.startY);
+      const totalDx = e.clientX - t.startX;
+      const totalDy = e.clientY - t.startY;
+      const dist = Math.hypot(totalDx, totalDy);
       const held = e.timeStamp - t.startT;
-      if (dist > DRAG_DIST_PX || held > DRAG_TIME_MS) {
+      if (dist > dragThresholdFor(t.onBook) || (!t.onBook && held > DRAG_TIME_MS)) {
         t.dragging = true;
-        this.cb.onDragStart();
+        this.cb.onDragStart(totalDx, totalDy, t.onBook);
       }
     }
     if (t.dragging) {
       t.samples.unshift({ dx, dy, dt });
       if (t.samples.length > MAX_SAMPLES) t.samples.length = MAX_SAMPLES;
-      this.cb.onDragMove(dx, dy);
+      this.cb.onDragMove(dx, dy, this.cursorOf(e));
     }
   };
 
@@ -142,7 +160,7 @@ export class ShelfInput {
     } else {
       const dist = Math.hypot(e.clientX - t.startX, e.clientY - t.startY);
       const held = e.timeStamp - t.startT;
-      if (dist <= DRAG_DIST_PX && held <= DRAG_TIME_MS) {
+      if (dist <= dragThresholdFor(t.onBook) && held <= DRAG_TIME_MS) {
         this.cb.onTap(this.cursorOf(e));
       }
     }
@@ -152,7 +170,7 @@ export class ShelfInput {
     const t = this.tracking;
     if (t === null || e.pointerId !== t.id) return;
     this.tracking = null;
-    if (t.dragging && !this.frozen) this.cb.onDragEnd([]);
+    if (t.dragging && !this.frozen) this.cb.onDragCancel();
   };
 
   private readonly onPointerLeave = (): void => {

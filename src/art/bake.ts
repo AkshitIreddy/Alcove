@@ -19,8 +19,10 @@ import { fnv1a } from './noise';
  * Bump to invalidate every disk-cached raster (recipe/parameter changes,
  * Chromium feTurbulence drift, etc.).
  * v2: under-plank shadow became a gradient strip; case back/rail/crown added.
+ * v3: magical-library overhaul — richer wood grain, joinery pegs, gold
+ *     pinstripes, carved cornice, damask wallpaper tile, shelf props.
  */
-export const RECIPE_VERSION = 2;
+export const RECIPE_VERSION = 3;
 
 const ART_DIR = 'art';
 

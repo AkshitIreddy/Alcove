@@ -45,6 +45,93 @@
 }
 
 /* ----------------------------------------------------------------------------
+   Zoom pill — floating hand-drawn control at the bottom-center of the shelf.
+   Always works regardless of wheel/keyboard availability.
+   -------------------------------------------------------------------------- */
+.shelf-zoom-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) rotate(-0.4deg);
+  z-index: calc(var(--z-shelf) + 1);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px;
+  background: var(--paper-aged);
+  border: 2px solid var(--ink-graphite);
+  /* Lumpy hand-drawn pill: uneven radii read as inked, not machined. */
+  border-radius: 22px 26px 24px 28px / 26px 22px 28px 24px;
+  box-shadow:
+    var(--shadow-md, 0 3px 8px rgba(94, 70, 45, 0.25)),
+    inset 0 0 0 1.5px rgba(247, 241, 227, 0.7),
+    inset 0 1px 4px rgba(94, 70, 45, 0.12);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.shelf-zoom-pill__btn,
+.shelf-zoom-pill__pct,
+.shelf-zoom-pill__fit {
+  appearance: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-sepia);
+  font-family: var(--font-body);
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 12px 14px 12px 15px / 14px 12px 15px 12px;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.shelf-zoom-pill__btn {
+  font-size: 20px;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+.shelf-zoom-pill__pct {
+  font-size: 15px;
+  min-width: 52px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.shelf-zoom-pill__fit {
+  font-family: var(--font-accent);
+  font-size: 14px;
+}
+
+.shelf-zoom-pill__btn:hover,
+.shelf-zoom-pill__pct:hover,
+.shelf-zoom-pill__fit:hover {
+  background: rgba(233, 196, 106, 0.35);
+}
+
+.shelf-zoom-pill__btn:active,
+.shelf-zoom-pill__pct:active,
+.shelf-zoom-pill__fit:active {
+  transform: translateY(1px) rotate(0.6deg);
+}
+
+.shelf-zoom-pill__btn:focus-visible,
+.shelf-zoom-pill__pct:focus-visible,
+.shelf-zoom-pill__fit:focus-visible {
+  outline: 2px dashed var(--ink-sepia-soft);
+  outline-offset: 2px;
+}
+
+.shelf-zoom-pill__rule {
+  width: 2px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--paper-edge);
+  border-radius: var(--radius-pill, 999px);
+  transform: rotate(3deg);
+}
+
+/* ----------------------------------------------------------------------------
    Pulled-book overlay — the DOM book cover that takes over from the canvas
    ghost. Positioned via GSAP transforms only.
    -------------------------------------------------------------------------- */

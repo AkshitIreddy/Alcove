@@ -23,6 +23,7 @@ export default function BookshelfWorld(): JSX.Element {
   let host!: HTMLDivElement;
   const [visibleBooks, setVisibleBooks] = createSignal<VisibleBook[]>([]);
   const [overlay, setOverlay] = createSignal<OverlayState | null>(null);
+  const [zoomPct, setZoomPct] = createSignal(100);
   let world: ShelfWorld | null = null;
   let disposed = false;
 
@@ -33,6 +34,9 @@ export default function BookshelfWorld(): JSX.Element {
       },
       onGhostReady: (book, rect) => {
         if (!disposed) setOverlay({ book, rect, mode: 'open' });
+      },
+      onZoomChange: (percent) => {
+        if (!disposed) setZoomPct(percent);
       },
     }).then((w) => {
       if (disposed) {
@@ -113,6 +117,45 @@ export default function BookshelfWorld(): JSX.Element {
           </For>
         </ul>
       </nav>
+      <div class="shelf-zoom-pill" role="toolbar" aria-label="Zoom controls">
+        <button
+          type="button"
+          class="shelf-zoom-pill__btn"
+          aria-label="Zoom out"
+          title="Zoom out (-)"
+          onClick={() => world?.zoomOut()}
+        >
+          −
+        </button>
+        <button
+          type="button"
+          class="shelf-zoom-pill__pct"
+          aria-label="Reset zoom to 100%"
+          title="Reset zoom (0)"
+          onClick={() => world?.zoomReset()}
+        >
+          {zoomPct()}%
+        </button>
+        <button
+          type="button"
+          class="shelf-zoom-pill__btn"
+          aria-label="Zoom in"
+          title="Zoom in (+)"
+          onClick={() => world?.zoomIn()}
+        >
+          +
+        </button>
+        <span class="shelf-zoom-pill__rule" aria-hidden="true" />
+        <button
+          type="button"
+          class="shelf-zoom-pill__fit"
+          aria-label="Fit bookcase to window"
+          title="Fit the whole case"
+          onClick={() => world?.zoomFit()}
+        >
+          fit
+        </button>
+      </div>
     </div>
   );
 }

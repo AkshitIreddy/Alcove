@@ -30,10 +30,12 @@ import {
   clampZoomBounds,
   createCamera,
   isOutOfBounds,
+  lerpExp,
+  LOG_MAX_ZOOM,
   minZoomFor,
   momentumTick,
+  screenToWorld,
   weightedVelocity,
-  WHEEL_SENSITIVITY,
   worldToScreen,
   xBounds,
   yBounds,
@@ -52,6 +54,7 @@ import {
   HIT_SLOP,
   SHELF_WIDTH,
   slotCenterX,
+  X_SLACK,
   Y_MIN,
 } from './constants';
 import { FloorStore } from './data';
@@ -63,6 +66,12 @@ import {
 } from './env';
 import { FloorStampCache } from './floorStamps';
 import { FloorView, type BookVisual, type WorldHooks } from './floorView';
+import {
+  classifyDrag,
+  classifyKeyZoom,
+  KEY_ZOOM_STEP,
+  PULL_COMPLETE_TRAVEL_PX,
+} from './gestures';
 import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
 import { DustMotes, makeGlowTexture } from './motes';
@@ -100,6 +109,8 @@ export interface WorldEvents {
   onVisibleBooksChange(books: VisibleBook[]): void;
   /** Canvas pull-out finished; the DOM overlay takes over at `rect`. */
   onGhostReady(book: Book, rect: RectLike): void;
+  /** Rounded zoom percent changed (drives the zoom pill readout). */
+  onZoomChange?(percent: number): void;
 }
 
 /** Camera survives the shelf ↔ book unmount round-trip (module singleton). */
@@ -112,6 +123,28 @@ let sessionCamera: CameraSnapshot | null = null;
 
 const PARALLAX = 0.85;
 const BACKDROP_ALPHA = 0.45;
+const WALLPAPER_ALPHA = 0.6;
+
+/** Springy-lag constant for the dragged-book ghost (lerpExp k). */
+const PULL_FOLLOW_K = 11;
+
+/** A dragged-out book. The ghost chases the pointer with springy lag. */
+interface BookPull {
+  fv: FloorView;
+  visual: BookVisual;
+  ghost: Sprite;
+  shadow: Sprite;
+  /** Where the spine sat on screen when the pull began. */
+  startX: number;
+  startY: number;
+  /** Pointer target (screen px, spine bottom-center). */
+  targetX: number;
+  targetY: number;
+  /** Current sprung position. */
+  x: number;
+  y: number;
+  finishing: boolean;
+}
 
 /* --------------------------------- world ---------------------------------- */
 
@@ -135,6 +168,14 @@ export class ShelfWorld {
   private readonly input: ShelfInput;
 
   private readonly backdrop: TilingSprite;
+  /** Damask wallpaper pattern tiled over the paper (parallax with backdrop). */
+  private wallpaper: TilingSprite | null = null;
+  /** Screen-space wall lighting between backdrop and world. */
+  private readonly wallFx = new Container();
+  /** Warm falloff pooled behind the case (tracks the case each frame). */
+  private caseGlow: Sprite | null = null;
+  /** 2–3 large lamp-glow pools that drift very slowly (baked radial glows). */
+  private readonly lightPools: Sprite[] = [];
   private readonly world = new Container();
   private readonly fx = new Container();
   private readonly motes: DustMotes;
@@ -151,14 +192,18 @@ export class ShelfWorld {
   private dirty = true;
   private raf = 0;
   private lastTime = 0;
+  private elapsed = 0;
   private destroyed = false;
   private frozen = false;
   private dragging = false;
   private rawDragX = 0;
   private rawDragY = 0;
   private hovered: { fv: FloorView; visual: BookVisual } | null = null;
+  private downHit: { fv: FloorView; visual: BookVisual } | null = null;
+  private pull: BookPull | null = null;
   private ghost: Sprite | null = null;
   private ghostShadow: Sprite | null = null;
+  private lastZoomPct = -1;
   private zoomTween: gsap.core.Tween | null = null;
   private springTween: gsap.core.Tween | null = null;
   private readonly tracked = new Set<gsap.core.Animation>();
@@ -228,6 +273,32 @@ export class ShelfWorld {
     this.motes = new DustMotes(this.glowTexture);
     this.fx.addChild(this.motes.container);
 
+    // Wall lighting: a broad warm falloff hugging the case plus 2–3 large
+    // baked radial lamp-glow pools (additive, slow drift when motion is on).
+    this.wallFx.eventMode = 'none';
+    const caseGlow = new Sprite(this.glowTexture);
+    caseGlow.anchor.set(0.5);
+    caseGlow.tint = 0xffe3ae;
+    caseGlow.alpha = 0.5;
+    this.caseGlow = caseGlow;
+    this.wallFx.addChild(caseGlow);
+    const poolSpecs = [
+      { tint: 0xffd98f, alpha: 0.26, fx: 0.18, fy: 0.16, r: 0.62 },
+      { tint: 0xffe7b0, alpha: 0.2, fx: 0.86, fy: 0.4, r: 0.55 },
+      { tint: 0xffd27a, alpha: 0.16, fx: 0.5, fy: 0.94, r: 0.7 },
+    ];
+    for (const spec of poolSpecs) {
+      const pool = new Sprite(this.glowTexture);
+      pool.anchor.set(0.5);
+      pool.blendMode = 'add';
+      pool.tint = spec.tint;
+      pool.alpha = spec.alpha;
+      (pool as Sprite & { __spec?: typeof spec }).__spec = spec;
+      this.lightPools.push(pool);
+      this.wallFx.addChild(pool);
+    }
+    this.layoutWallLighting();
+
     // The case crown above floor 0 (flat placeholder until the bake lands)
     // and the soft wall shading around the case top — all world-space,
     // added before any FloorView so floors always render above them. The
@@ -260,7 +331,7 @@ export class ShelfWorld {
     this.crown.height = CROWN_H;
     this.world.addChild(this.crown);
 
-    app.stage.addChild(this.backdrop, this.world, this.fx);
+    app.stage.addChild(this.backdrop, this.wallFx, this.world, this.fx);
     app.stage.eventMode = 'none';
 
     // Camera: session restore, else a friendly overview of the first floors.
@@ -280,14 +351,38 @@ export class ShelfWorld {
     this.motes.resize(this.vp.width, this.vp.height);
 
     this.input = new ShelfInput(app.canvas, {
-      onWheelZoom: (deltaY, cursor) => this.handleWheelZoom(deltaY, cursor),
+      onWheelZoom: (deltaY, cursor, sensitivity) =>
+        this.handleWheelZoom(deltaY, cursor, sensitivity),
       onWheelPan: (dx, dy) => this.handleWheelPan(dx, dy),
-      onDragStart: () => this.handleDragStart(),
-      onDragMove: (dx, dy) => this.handleDragMove(dx, dy),
+      onPointerDown: (cursor) => this.handlePointerDown(cursor),
+      onDragStart: (dx, dy, onBook) => this.handleDragStart(dx, dy, onBook),
+      onDragMove: (dx, dy, cursor) => this.handleDragMove(dx, dy, cursor),
       onDragEnd: (samples) => this.handleDragEnd(samples),
+      onDragCancel: () => this.handleDragCancel(),
       onTap: (cursor) => this.handleTap(cursor),
       onHover: (cursor) => this.handleHover(cursor),
     });
+
+    // Keyboard zoom: +/- and 0 work anywhere on the shelf (document-level;
+    // classifyKeyZoom ignores keystrokes bound for editable fields).
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (this.frozen || this.destroyed) return;
+      const target = e.target as HTMLElement | null;
+      const editing =
+        target !== null &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT');
+      const action = classifyKeyZoom({ key: e.key, altKey: e.altKey, editing });
+      if (action === null) return;
+      e.preventDefault();
+      if (action === 'in') this.zoomIn();
+      else if (action === 'out') this.zoomOut();
+      else this.zoomReset();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    this.unsubs.push(() => document.removeEventListener('keydown', onKeyDown));
 
     this.unsubs.push(
       this.store.onChange((floorIndices) => this.handleFloorData(floorIndices)),
@@ -351,6 +446,58 @@ export class ShelfWorld {
       return;
     }
     appState.openBook(book.id);
+  }
+
+  /* --------------------------- zoom pill / keys --------------------------- */
+
+  /** Current zoom as a percent (zoom pill readout). */
+  get zoomPercent(): number {
+    return Math.round(this.camera.zoom * 100);
+  }
+
+  /** Zoom in one step, anchored at the viewport center. */
+  zoomIn(): void {
+    this.nudgeZoom(KEY_ZOOM_STEP);
+  }
+
+  /** Zoom out one step, anchored at the viewport center. */
+  zoomOut(): void {
+    this.nudgeZoom(-KEY_ZOOM_STEP);
+  }
+
+  /** Reset to 100%. */
+  zoomReset(): void {
+    this.zoomToLog(0);
+  }
+
+  /** Fit the whole case width in the viewport. */
+  zoomFit(): void {
+    const fit = clamp(
+      (this.vp.width * 0.94) / (SHELF_WIDTH + X_SLACK * 2),
+      minZoomFor(this.vp),
+      Math.exp(LOG_MAX_ZOOM),
+    );
+    this.zoomToLog(Math.log(fit));
+  }
+
+  private nudgeZoom(dLog: number): void {
+    if (this.frozen || this.destroyed || this.pull !== null) return;
+    this.zoomToLog(this.camera.logZoomTarget + dLog);
+  }
+
+  /** Retarget the smoothed zoom, anchored at the viewport center. */
+  private zoomToLog(logTarget: number): void {
+    if (this.frozen || this.destroyed || this.pull !== null) return;
+    this.killNavTweens();
+    const cam = this.camera;
+    const center = { x: this.vp.width / 2, y: this.vp.height / 2 };
+    cam.anchor = { screen: center, world: screenToWorld(cam, center) };
+    cam.logZoomTarget = clamp(
+      logTarget,
+      Math.log(minZoomFor(this.vp)),
+      LOG_MAX_ZOOM,
+    );
+    this.dirty = true;
   }
 
   /** Overlay crossfade started — fade the canvas ghost out (80ms). */
@@ -449,6 +596,7 @@ export class ShelfWorld {
     this.tracked.clear();
     this.zoomTween?.kill();
     this.springTween?.kill();
+    this.pull = null;
     this.disposeGhost();
     for (const fv of this.floors.values()) fv.destroy();
     this.floors.clear();
@@ -476,9 +624,12 @@ export class ShelfWorld {
       moving = momentumTick(this.camera, dt, this.vp) || moving;
     }
     if (this.motes.enabled && !document.hidden) {
+      this.elapsed += dt;
       this.motes.update(dt);
+      this.driftLightPools();
       this.dirty = true;
     }
+    if (this.pullTick(dt)) this.dirty = true;
     if (moving) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
@@ -488,12 +639,83 @@ export class ShelfWorld {
     this.app.render();
   };
 
+  /** Springy-lag step for a dragged book ghost. True while a pull is live. */
+  private pullTick(dt: number): boolean {
+    const pull = this.pull;
+    if (pull === null || pull.finishing) return false;
+    const m = this.hooks.motion();
+    pull.x = m === 0 ? pull.targetX : lerpExp(pull.x, pull.targetX, dt, PULL_FOLLOW_K);
+    pull.y = m === 0 ? pull.targetY : lerpExp(pull.y, pull.targetY, dt, PULL_FOLLOW_K);
+    pull.ghost.position.set(pull.x, pull.y);
+    // Trail the pointer with a little tilt for life (capped ±0.14 rad).
+    const lag = pull.targetX - pull.x;
+    pull.ghost.rotation = clamp(lag * 0.004, -0.14, 0.14);
+    // Contact shadow stays on the shelf and fades as the book lifts away.
+    const away = Math.hypot(pull.x - pull.startX, pull.y - pull.startY);
+    pull.shadow.alpha = Math.max(0, 0.3 - away * 0.002);
+    return true;
+  }
+
+  /** Very slow sinusoidal drift of the wall light pools (motion mode only). */
+  private driftLightPools(): void {
+    const t = this.elapsed;
+    for (let i = 0; i < this.lightPools.length; i++) {
+      const pool = this.lightPools[i] as Sprite & {
+        __spec?: { fx: number; fy: number };
+        __base?: { x: number; y: number };
+      };
+      const base = pool.__base;
+      if (base === undefined) continue;
+      const amp = 18 + i * 7;
+      pool.position.set(
+        base.x + Math.sin(t * 0.07 + i * 2.1) * amp,
+        base.y + Math.cos(t * 0.055 + i * 1.3) * amp * 0.7,
+      );
+    }
+  }
+
   private applyCamera(): void {
     const { x, y, zoom } = this.camera;
     this.world.position.set(-x * zoom, -y * zoom);
     this.world.scale.set(zoom);
     this.backdrop.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
     this.backdrop.tileScale.set(Math.max(zoom, 0.35));
+    if (this.wallpaper !== null) {
+      this.wallpaper.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
+      this.wallpaper.tileScale.set(Math.max(zoom, 0.35));
+    }
+    // The warm falloff tracks the case: centered on it, wider than it, so
+    // the wall dims away from the shelf like lamplight pooling behind it.
+    const glow = this.caseGlow;
+    if (glow !== null) {
+      const caseCenterX = (SHELF_WIDTH / 2 - x) * zoom;
+      glow.position.set(caseCenterX, this.vp.height * 0.42);
+      glow.width = Math.max((SHELF_WIDTH + 900) * zoom, this.vp.width * 0.9);
+      glow.height = this.vp.height * 1.7;
+    }
+    const pct = Math.round(zoom * 100);
+    if (pct !== this.lastZoomPct) {
+      this.lastZoomPct = pct;
+      this.events.onZoomChange?.(pct);
+    }
+  }
+
+  /** Re-seat the wall lighting after a resize (bases; drift offsets from them). */
+  private layoutWallLighting(): void {
+    const { width, height } = this.vp;
+    for (const raw of this.lightPools) {
+      const pool = raw as Sprite & {
+        __spec?: { fx: number; fy: number; r: number };
+        __base?: { x: number; y: number };
+      };
+      const spec = pool.__spec;
+      if (spec === undefined) continue;
+      const d = Math.max(width, height) * spec.r;
+      pool.width = d;
+      pool.height = d * 0.82;
+      pool.__base = { x: width * spec.fx, y: height * spec.fy };
+      pool.position.set(pool.__base.x, pool.__base.y);
+    }
   }
 
   /* ---------------------------- virtualization ---------------------------- */
@@ -611,6 +833,27 @@ export class ShelfWorld {
       );
       if (m === 0) this.backdrop.alpha = BACKDROP_ALPHA;
     }
+    if (this.envTex.wallpaper !== null && this.wallpaper === null) {
+      // Damask pencil pattern over the paper: its own tiling layer so the
+      // pattern scale stays independent of the paper fibre tile.
+      const wp = new TilingSprite({
+        texture: this.envTex.wallpaper,
+        width: this.vp.width,
+        height: this.vp.height,
+      });
+      wp.eventMode = 'none';
+      wp.alpha = 0;
+      this.app.stage.addChildAt(wp, this.app.stage.getChildIndex(this.backdrop) + 1);
+      this.wallpaper = wp;
+      this.track(
+        gsap.to(wp, {
+          alpha: WALLPAPER_ALPHA,
+          duration: 0.5 * m,
+          onUpdate: this.hooks.markDirty,
+        }),
+      );
+      if (m === 0) wp.alpha = WALLPAPER_ALPHA;
+    }
     if (this.envTex.crown !== null && !this.crownWood) {
       this.crownWood = true;
       this.crown.texture = this.envTex.crown;
@@ -648,8 +891,8 @@ export class ShelfWorld {
 
   /* -------------------------------- input --------------------------------- */
 
-  private handleWheelZoom(deltaY: number, cursor: Vec2): void {
-    if (this.frozen) return;
+  private handleWheelZoom(deltaY: number, cursor: Vec2, sensitivity: number): void {
+    if (this.frozen || this.pull !== null) return;
     this.killNavTweens();
     // Viewport-aware min zoom: the case never shrinks below ~30% of the
     // screen width, so max zoom-out is a readable bookcase tower.
@@ -657,7 +900,7 @@ export class ShelfWorld {
       this.camera,
       deltaY,
       cursor,
-      WHEEL_SENSITIVITY,
+      sensitivity,
       Math.log(minZoomFor(this.vp)),
     );
     this.dirty = true;
@@ -675,8 +918,19 @@ export class ShelfWorld {
     this.dirty = true;
   }
 
-  private handleDragStart(): void {
+  /** Hit-test at pointerdown; the input layer widens the drag threshold on a hit. */
+  private handlePointerDown(cursor: Vec2): boolean {
+    this.downHit = this.frozen || this.tier !== 0 ? null : this.hitBook(cursor);
+    return this.downHit !== null;
+  }
+
+  private handleDragStart(dx: number, dy: number, onBook: boolean): void {
     if (this.frozen) return;
+    const hit = this.downHit;
+    if (onBook && hit !== null && classifyDrag(true, dx, dy) === 'pull') {
+      this.beginBookPull(hit.fv, hit.visual);
+      return;
+    }
     this.killNavTweens();
     this.clearHover();
     this.dragging = true;
@@ -687,8 +941,19 @@ export class ShelfWorld {
     this.updateCursor();
   }
 
-  private handleDragMove(dx: number, dy: number): void {
-    if (this.frozen || !this.dragging) return;
+  private handleDragMove(dx: number, dy: number, cursor: Vec2): void {
+    if (this.frozen) return;
+    const pull = this.pull;
+    if (pull !== null) {
+      if (pull.finishing) return;
+      pull.targetX = cursor.x;
+      pull.targetY = cursor.y + (pull.visual.height * this.camera.zoom) / 2;
+      const travel = Math.hypot(pull.targetX - pull.startX, pull.targetY - pull.startY);
+      if (travel >= PULL_COMPLETE_TRAVEL_PX) this.finishBookPull();
+      this.dirty = true;
+      return;
+    }
+    if (!this.dragging) return;
     const cam = this.camera;
     this.rawDragX -= dx / cam.zoom;
     this.rawDragY -= dy / cam.zoom;
@@ -697,6 +962,10 @@ export class ShelfWorld {
   }
 
   private handleDragEnd(samples: readonly DragSample[]): void {
+    if (this.pull !== null) {
+      if (!this.pull.finishing) this.finishBookPull();
+      return;
+    }
     this.dragging = false;
     this.updateCursor();
     if (this.frozen) return;
@@ -709,6 +978,14 @@ export class ShelfWorld {
       cam.vy = -v.y / cam.zoom;
     }
     this.dirty = true;
+  }
+
+  private handleDragCancel(): void {
+    if (this.pull !== null) {
+      if (!this.pull.finishing) this.cancelBookPull();
+      return;
+    }
+    this.handleDragEnd([]);
   }
 
   private handleTap(cursor: Vec2): void {
@@ -724,7 +1001,7 @@ export class ShelfWorld {
   }
 
   private handleHover(cursor: Vec2 | null): void {
-    if (this.frozen || this.dragging || this.tier !== 0) {
+    if (this.frozen || this.dragging || this.pull !== null || this.tier !== 0) {
       this.clearHover();
       return;
     }
@@ -771,11 +1048,9 @@ export class ShelfWorld {
   }
 
   private updateCursor(): void {
-    const cursor = this.dragging
-      ? 'grabbing'
-      : this.hovered !== null
-        ? 'pointer'
-        : 'grab';
+    // Books use grab/grabbing (they get dragged out); the shelf pans with the
+    // same affordance, so the cursor is grab everywhere and grabbing mid-drag.
+    const cursor = this.dragging || this.pull !== null ? 'grabbing' : 'grab';
     this.app.canvas.style.cursor = cursor;
   }
 
@@ -886,6 +1161,63 @@ export class ShelfWorld {
     return { x: screen.x - w / 2, y: screen.y - h, width: w, height: h };
   }
 
+  /**
+   * Screen-space canvas ghost of a spine (fx layer). Hides the shelf sprite;
+   * shared by the tap pull-out and the drag-to-pull gesture.
+   */
+  private spawnGhost(
+    fv: FloorView,
+    visual: BookVisual,
+  ): { ghost: Sprite; shadow: Sprite; screen: Vec2 } {
+    const zoom = this.camera.zoom;
+    gsap.killTweensOf(visual.sprite);
+    visual.sprite.position.set(visual.centerX, visual.baseY);
+    visual.sprite.rotation = visual.baseRotation;
+    const screen = worldToScreen(this.camera, {
+      x: visual.centerX,
+      y: fv.index * FLOOR_H + visual.baseY,
+    });
+
+    const ghost = new Sprite(visual.sprite.texture);
+    ghost.tint = visual.sprite.tint;
+    ghost.anchor.set(0.5, 1);
+    ghost.width = visual.params.w * zoom;
+    ghost.height = visual.height * zoom;
+    ghost.position.set(screen.x, screen.y);
+
+    const shadow = new Sprite(this.glowTexture);
+    shadow.tint = 0x2e241a;
+    shadow.anchor.set(0.5);
+    shadow.width = visual.params.w * zoom * 1.7;
+    shadow.height = 16 * zoom;
+    shadow.position.set(screen.x, screen.y + 5 * zoom);
+    shadow.alpha = 0;
+
+    this.fx.addChild(shadow, ghost);
+    this.ghost = ghost;
+    this.ghostShadow = shadow;
+    visual.sprite.visible = false;
+    this.dirty = true;
+    return { ghost, shadow, screen };
+  }
+
+  /** Dim the floor siblings for focus while a book comes out. */
+  private dimSiblings(fv: FloorView, visual: BookVisual): void {
+    if (this.degrade) return;
+    const m = this.hooks.motion();
+    for (const other of fv.visuals) {
+      if (other === visual) continue;
+      this.track(
+        gsap.to(other.sprite, {
+          pixi: { tint: 0xb9ab97 },
+          duration: 0.3 * m,
+          onUpdate: this.hooks.markDirty,
+        }),
+      );
+    }
+  }
+
+  /** Tap pull-out: the full from-rest choreography. */
   private pullOutBook(fv: FloorView, visual: BookVisual): void {
     if (this.frozen) return;
     void play('book-pull');
@@ -899,56 +1231,15 @@ export class ShelfWorld {
       gsap.killTweensOf(this.hovered.visual.sprite);
       this.hovered = null;
     }
-    gsap.killTweensOf(visual.sprite);
-    visual.sprite.position.set(visual.centerX, visual.baseY);
-    visual.sprite.rotation = visual.baseRotation;
 
     const zoom = this.camera.zoom;
     const m = this.hooks.motion();
-    const screen = worldToScreen(this.camera, {
-      x: visual.centerX,
-      y: fv.index * FLOOR_H + visual.baseY,
-    });
-
-    // Canvas ghost in screen space (fx layer).
-    const ghost = new Sprite(visual.sprite.texture);
-    ghost.tint = visual.sprite.tint;
-    ghost.anchor.set(0.5, 1);
-    ghost.width = visual.params.w * zoom;
-    ghost.height = visual.height * zoom;
-    ghost.position.set(screen.x, screen.y);
+    const { ghost, shadow, screen } = this.spawnGhost(fv, visual);
     ghost.skew.x = 0.06;
     const baseScaleX = ghost.scale.x;
     const baseScaleY = ghost.scale.y;
-
-    const shadow = new Sprite(this.glowTexture);
-    shadow.tint = 0x2e241a;
-    shadow.anchor.set(0.5);
-    shadow.width = visual.params.w * zoom * 1.7;
-    shadow.height = 16 * zoom;
-    shadow.position.set(screen.x, screen.y + 5 * zoom);
-    shadow.alpha = 0;
     const shadowScaleX = shadow.scale.x;
-
-    this.fx.addChild(shadow, ghost);
-    this.ghost = ghost;
-    this.ghostShadow = shadow;
-    visual.sprite.visible = false;
-    this.dirty = true;
-
-    // Dim the floor siblings for focus.
-    if (!this.degrade) {
-      for (const other of fv.visuals) {
-        if (other === visual) continue;
-        this.track(
-          gsap.to(other.sprite, {
-            pixi: { tint: 0xb9ab97 },
-            duration: 0.3 * m,
-            onUpdate: this.hooks.markDirty,
-          }),
-        );
-      }
-    }
+    this.dimSiblings(fv, visual);
 
     const liftedY = screen.y - 40 * zoom;
     const finish = (): void => {
@@ -997,6 +1288,119 @@ export class ShelfWorld {
     this.track(tl);
   }
 
+  /* ----------------------------- drag-to-pull ----------------------------- */
+
+  /** The drag threshold was crossed on a spine: the ghost starts chasing. */
+  private beginBookPull(fv: FloorView, visual: BookVisual): void {
+    if (this.frozen || this.pull !== null) return;
+    void play('book-pull');
+    this.killNavTweens();
+    this.clearHover();
+    this.dragging = false;
+    this.camera.vx = 0;
+    this.camera.vy = 0;
+    const { ghost, shadow, screen } = this.spawnGhost(fv, visual);
+    shadow.alpha = 0.3;
+    this.pull = {
+      fv,
+      visual,
+      ghost,
+      shadow,
+      startX: screen.x,
+      startY: screen.y,
+      targetX: screen.x,
+      targetY: screen.y,
+      x: screen.x,
+      y: screen.y,
+      finishing: false,
+    };
+    this.updateCursor();
+    this.dirty = true;
+  }
+
+  /** Release (or enough travel): finish the pull-out into the DOM overlay. */
+  private finishBookPull(): void {
+    const pull = this.pull;
+    if (pull === null || pull.finishing) return;
+    pull.finishing = true;
+    this.frozen = true;
+    this.input.frozen = true;
+    this.camera.vx = 0;
+    this.camera.vy = 0;
+    const { ghost, shadow, visual, fv } = pull;
+    const zoom = this.camera.zoom;
+    const m = this.hooks.motion();
+    this.dimSiblings(fv, visual);
+
+    const liftX = pull.x;
+    const liftY = pull.y - 26 * zoom;
+    const targetScaleX = ghost.scale.x * 1.35;
+    const targetScaleY = ghost.scale.y * 1.35;
+    const finish = (): void => {
+      this.pull = null;
+      this.updateCursor();
+      const width = visual.params.w * zoom * 1.35;
+      const height = visual.height * zoom * 1.35;
+      this.events.onGhostReady(visual.book, {
+        x: liftX - width / 2,
+        y: liftY - height,
+        width,
+        height,
+      });
+    };
+    if (m === 0) {
+      ghost.scale.set(targetScaleX, targetScaleY);
+      ghost.position.set(liftX, liftY);
+      ghost.rotation = 0;
+      shadow.alpha = 0;
+      this.dirty = true;
+      finish();
+      return;
+    }
+    const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: finish });
+    tl.to(
+      ghost,
+      {
+        pixi: { scaleX: targetScaleX, scaleY: targetScaleY, x: liftX, y: liftY },
+        duration: 0.3,
+        ease: 'back.out(1.3)',
+      },
+      0,
+    )
+      .to(ghost, { rotation: 0, duration: 0.3, ease: 'power2.out' }, 0)
+      .to(shadow, { alpha: 0, duration: 0.3 }, 0);
+    this.track(tl);
+  }
+
+  /** Pointer cancelled mid-pull: slide the book back into its slot. */
+  private cancelBookPull(): void {
+    const pull = this.pull;
+    if (pull === null) return;
+    this.pull = null;
+    this.updateCursor();
+    const { ghost, visual } = pull;
+    const m = this.hooks.motion();
+    const done = (): void => {
+      visual.sprite.visible = true;
+      this.disposeGhost();
+      this.dirty = true;
+    };
+    if (m === 0) {
+      done();
+      return;
+    }
+    this.track(
+      gsap.to(ghost, {
+        pixi: { x: pull.startX, y: pull.startY },
+        rotation: 0,
+        duration: 0.22,
+        ease: 'power2.out',
+        onUpdate: this.hooks.markDirty,
+        onComplete: done,
+      }),
+    );
+  }
+
   private disposeGhost(): void {
     if (this.ghost !== null) {
       gsap.killTweensOf(this.ghost);
@@ -1024,6 +1428,11 @@ export class ShelfWorld {
     this.app.renderer.resize(w, h);
     this.backdrop.width = w;
     this.backdrop.height = h;
+    if (this.wallpaper !== null) {
+      this.wallpaper.width = w;
+      this.wallpaper.height = h;
+    }
+    this.layoutWallLighting();
     this.motes.resize(w, h);
     clampZoomBounds(this.camera, this.vp);
     if (!this.dragging) clampCamera(this.camera, this.vp);

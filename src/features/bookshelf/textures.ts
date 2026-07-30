@@ -10,7 +10,9 @@
  */
 
 import { CanvasSource, ImageSource, Texture } from 'pixi.js';
-import { bakePaperTile } from '../../art/paper';
+import { bakePaperTile, bakeWallpaperTile } from '../../art/paper';
+import { PROP_H, PROP_W, renderProp, type PropKind } from '../../art/props';
+import type { Ctx2D } from '../../art/spines';
 import {
   bakeBackPanel,
   bakeCrown,
@@ -22,7 +24,14 @@ import { doubleStroke } from '../../art/wobble';
 import { fnv1a, mulberry32 } from '../../art/noise';
 import { BOOK_ZONE_H, CROWN_H, CROWN_LIP, FLOOR_H, RAIL_W, SHELF_WIDTH } from './constants';
 
-export type EnvKind = 'plank' | 'shadow' | 'paper' | 'back' | 'rail' | 'crown';
+export type EnvKind =
+  | 'plank'
+  | 'shadow'
+  | 'paper'
+  | 'back'
+  | 'rail'
+  | 'crown'
+  | 'wallpaper';
 
 /** Flat placeholder tints (match the baked art's average tones). */
 export const PLACEHOLDER_TINTS = {
@@ -102,8 +111,10 @@ export class EnvTextures {
   back: Texture | null = null;
   rail: Texture | null = null;
   crown: Texture | null = null;
+  wallpaper: Texture | null = null;
 
   private readonly doodles = new Map<number, Texture>();
+  private readonly props = new Map<number, Texture>();
   private wallShade: Texture | null = null;
   private readonly listeners = new Set<(kind: EnvKind) => void>();
   private destroyed = false;
@@ -129,6 +140,9 @@ export class EnvTextures {
       .catch(() => undefined);
     void bakeCrown(SHELF_WIDTH + CROWN_LIP * 2, CROWN_H, dpr)
       .then((bitmap) => this.deliver('crown', textureFromBitmap(bitmap, true)))
+      .catch(() => undefined);
+    void bakeWallpaperTile(dpr)
+      .then((bitmap) => this.deliver('wallpaper', textureFromBitmap(bitmap, true)))
       .catch(() => undefined);
   }
 
@@ -267,6 +281,29 @@ export class EnvTextures {
     return texture;
   }
 
+  /**
+   * Shelf-dressing prop texture (baked once per kind per session, ImageBitmap
+   * path — see the makeCanvas note). `variant` seeds the small strokes so the
+   * same kind can appear twice without reading as a stamp; only a few
+   * variants per kind are ever baked (kind*8 + variant%8 cache slots).
+   */
+  getProp(dpr: number, kind: PropKind, variant: number): Texture {
+    const v = ((variant % 8) + 8) % 8;
+    const key = kind * 8 + v;
+    const cached = this.props.get(key);
+    if (cached !== undefined) return cached;
+    const scale = Math.max(1, dpr);
+    const canvas = makeCanvas(Math.ceil(PROP_W * scale), Math.ceil(PROP_H * scale));
+    const ctx = get2d(canvas);
+    if (ctx) {
+      ctx.scale(scale, scale);
+      renderProp(ctx as Ctx2D, kind, (0x9a75 + kind * 131 + v * 977) >>> 0);
+    }
+    const texture = textureFromCanvas(canvas);
+    this.props.set(key, texture);
+    return texture;
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.listeners.clear();
@@ -276,15 +313,19 @@ export class EnvTextures {
     this.back?.destroy(true);
     this.rail?.destroy(true);
     this.crown?.destroy(true);
+    this.wallpaper?.destroy(true);
     this.wallShade?.destroy(true);
     for (const tex of this.doodles.values()) tex.destroy(true);
     this.doodles.clear();
+    for (const tex of this.props.values()) tex.destroy(true);
+    this.props.clear();
     this.plank = null;
     this.shadow = null;
     this.paper = null;
     this.back = null;
     this.rail = null;
     this.crown = null;
+    this.wallpaper = null;
     this.wallShade = null;
   }
 
@@ -298,6 +339,7 @@ export class EnvTextures {
     else if (kind === 'paper') this.paper = texture;
     else if (kind === 'back') this.back = texture;
     else if (kind === 'rail') this.rail = texture;
+    else if (kind === 'wallpaper') this.wallpaper = texture;
     else this.crown = texture;
     for (const cb of this.listeners) cb(kind);
   }

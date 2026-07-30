@@ -21,15 +21,119 @@ export const PLANK_HEIGHT_WORLD = 40;
 const PLANK_SEGMENT_WORLD = 240;
 
 /** Low-res band size in device px (compute noise coarse, smooth-scale up). */
-const BAND_PX = 4;
+const BAND_PX = 3;
 
-const WOOD_LIGHT = { r: 0x8a, g: 0x6a, b: 0x48 }; // #8a6a48
-const WOOD_DARK = { r: 0x6f, g: 0x51, b: 0x38 }; // #6f5138
+/**
+ * Long directional grain streaks — the pass that makes baked wood read as
+ * brushed timber instead of noise mush. Draws `count` wavy strokes along the
+ * grain axis at very low alpha in alternating light/dark inks.
+ * Coordinates are world px; caller has ctx.scale(dpr, dpr) active.
+ */
+function grainStreaks(
+  ctx: OffscreenCanvasRenderingContext2D,
+  w: number,
+  h: number,
+  vertical: boolean,
+  count: number,
+  seed: number,
+): void {
+  const rnd = mulberry32(seed >>> 0);
+  const along = vertical ? h : w;
+  const across = vertical ? w : h;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let i = 0; i < count; i++) {
+    const dark = rnd() < 0.55;
+    ctx.strokeStyle = dark
+      ? `rgba(58, 42, 26, ${0.05 + rnd() * 0.07})`
+      : `rgba(228, 200, 160, ${0.05 + rnd() * 0.06})`;
+    ctx.lineWidth = 0.7 + rnd() * 1.4;
+    const a0 = rnd() * across;
+    const drift = (rnd() * 2 - 1) * 6;
+    const start = -10 + rnd() * along * 0.35;
+    const len = along * (0.35 + rnd() * 0.65);
+    ctx.beginPath();
+    let prevA = a0;
+    const segs = 4;
+    for (let s0 = 0; s0 <= segs; s0++) {
+      const t = start + (len * s0) / segs;
+      const a = a0 + (drift * s0) / segs + (rnd() * 2 - 1) * 1.6;
+      if (s0 === 0) {
+        ctx.moveTo(vertical ? a : t, vertical ? t : a);
+      } else {
+        const midT = start + (len * (s0 - 0.5)) / segs;
+        const midA = (prevA + a) / 2 + (rnd() * 2 - 1) * 1.2;
+        ctx.quadraticCurveTo(
+          vertical ? midA : midT,
+          vertical ? midT : midA,
+          vertical ? a : t,
+          vertical ? t : a,
+        );
+      }
+      prevA = a;
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Richer than the original doc duo (#8a6a48→#6f5138): the flat look read as
+// "cheap"; a wider light↔dark spread gives the grain visible depth.
+const WOOD_LIGHT = { r: 0x96, g: 0x74, b: 0x4e }; // #96744e
+const WOOD_DARK = { r: 0x5c, g: 0x42, b: 0x2b }; // #5c422b
+
+/** Gold inlay ink used for the thin pinstripes on rails/planks/crown. */
+const GOLD_INK = 'rgba(201, 162, 62, 0.5)';
+const GOLD_INK_SOFT = 'rgba(214, 178, 88, 0.28)';
 
 interface Knot {
   x: number;
   y: number;
   r: number;
+}
+
+/**
+ * A round joinery peg: shaded end-grain dot with a top-left catchlight and a
+ * doubled pencil ring — the little touch that sells "built furniture".
+ * Coordinates in world px; caller has already ctx.scale(dpr, dpr)-ed.
+ */
+function drawPeg(
+  ctx: OffscreenCanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  seed: number,
+): void {
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.15, x, y, r);
+  g.addColorStop(0, '#7d5f3f');
+  g.addColorStop(0.55, '#5a422c');
+  g.addColorStop(1, '#43301f');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  // Catchlight arc.
+  ctx.strokeStyle = 'rgba(255, 240, 214, 0.4)';
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.arc(x - r * 0.18, y - r * 0.18, r * 0.55, Math.PI * 0.8, Math.PI * 1.6);
+  ctx.stroke();
+  // Doubled pencil ring.
+  ctx.strokeStyle = 'rgba(50, 40, 30, 0.6)';
+  ctx.lineWidth = 1;
+  const ring = (rr: number): string => {
+    // Approximate circle as 4 cubic arcs via path string for doubleStroke.
+    const k = rr * 0.5523;
+    return (
+      `M ${x - rr} ${y} C ${x - rr} ${y - k}, ${x - k} ${y - rr}, ${x} ${y - rr} ` +
+      `C ${x + k} ${y - rr}, ${x + rr} ${y - k}, ${x + rr} ${y} ` +
+      `C ${x + rr} ${y + k}, ${x + k} ${y + rr}, ${x} ${y + rr} ` +
+      `C ${x - k} ${y + rr}, ${x - rr} ${y + k}, ${x - rr} ${y} Z`
+    );
+  };
+  const [a, b] = doubleStroke(ring(r), { seed: seed >>> 0, amplitude: 0.35, frequency: 0.09 });
+  ctx.stroke(new Path2D(a));
+  ctx.stroke(new Path2D(b));
 }
 
 function renderPlank(widthWorldPx: number, dpr: number): OffscreenCanvas {
@@ -67,14 +171,15 @@ function renderPlank(widthWorldPx: number, dpr: number): OffscreenCanvas {
     const sy = (py * BAND_PX) / dpr;
     for (let px = 0; px < lw; px++) {
       const sx = (px * BAND_PX) / dpr;
-      // Anisotropic stretch = grain direction.
-      const g = noise(sx * 0.008, sy * 0.09);
-      let ring = g * 5.5;
+      // Anisotropic stretch = grain direction. Kept low-frequency so the
+      // band-resolution field upscales silky instead of blocky.
+      const g = noise(sx * 0.006, sy * 0.045);
+      let ring = g * 3.2;
       for (const k of knots) {
         const d = Math.hypot(sx - k.x, sy - k.y);
         ring += 0.5 * Math.exp(-(d * d) / (k.r * k.r)) * Math.sin(d * 0.35);
       }
-      const t = Math.pow(fract(ring), 1.8);
+      const t = Math.pow(fract(ring), 1.5) * 0.8 + 0.1;
       const i = (py * lw + px) * 4;
       data[i] = Math.round(lerp(WOOD_LIGHT.r, WOOD_DARK.r, t));
       data[i + 1] = Math.round(lerp(WOOD_LIGHT.g, WOOD_DARK.g, t));
@@ -87,6 +192,12 @@ function renderPlank(widthWorldPx: number, dpr: number): OffscreenCanvas {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(low, 0, 0, lw, lh, 0, 0, wDev, hDev);
+
+  // Directional grain streaks: long wavy light/dark strokes along the plank.
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  grainStreaks(ctx, widthWorldPx, PLANK_HEIGHT_WORLD, false, Math.round(widthWorldPx / 14), seed ^ 0x5eae);
+  ctx.restore();
 
   // --- granulation tile, multiplied at 0.08 ---
   const tile = getGranulationTile();
@@ -120,8 +231,10 @@ function renderPlank(widthWorldPx: number, dpr: number): OffscreenCanvas {
   ctx.lineCap = 'round';
 
   let seamIndex = 0;
+  const seamXs: number[] = [];
   for (let sx = PLANK_SEGMENT_WORLD; sx < widthWorldPx - 20; sx += PLANK_SEGMENT_WORLD) {
     const jx = sx + (rnd() * 2 - 1) * 12;
+    seamXs.push(jx);
     const [seamA, seamB] = doubleStroke(
       `M ${jx} 1 L ${jx} ${PLANK_HEIGHT_WORLD - 1}`,
       { seed: (seed + 101 * seamIndex) >>> 0, amplitude: 0.9, frequency: 0.05 },
@@ -147,6 +260,24 @@ function renderPlank(widthWorldPx: number, dpr: number): OffscreenCanvas {
   );
   ctx.stroke(new Path2D(edgeA));
   ctx.stroke(new Path2D(edgeB));
+
+  // Thin gold pinstripe inlay along the shelf lip (fades under the vignette).
+  ctx.strokeStyle = GOLD_INK_SOFT;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(12, 6.5);
+  ctx.lineTo(widthWorldPx - 12, 6.5);
+  ctx.stroke();
+
+  // Joinery pegs: a pair at each rail joint, one at every plank seam.
+  const pegCtx = ctx as unknown as OffscreenCanvasRenderingContext2D;
+  for (const px of [50, widthWorldPx - 50]) {
+    drawPeg(pegCtx, px, 13.5, 3.4, seed ^ Math.round(px));
+    drawPeg(pegCtx, px, 27.5, 3.4, (seed ^ Math.round(px)) + 7);
+  }
+  for (const sx of seamXs) {
+    drawPeg(pegCtx, sx, 20, 3.1, seed ^ (Math.round(sx) * 3));
+  }
   ctx.restore();
 
   // --- vignette: two radial gradients, multiplied ---
@@ -275,8 +406,8 @@ export function bakeBackPanel(
         const sx = (px * BAND_PX) / dpr;
         // Anisotropy rotated 90° vs the plank: grain flows down the boards.
         // Low contrast — the panel is a quiet backdrop, not a feature wall.
-        const gN = noise(sx * 0.05, sy * 0.006);
-        const t = Math.pow(fract(gN * 4.5), 1.8) * 0.42 + 0.22;
+        const gN = noise(sx * 0.028, sy * 0.005);
+        const t = Math.pow(fract(gN * 2.8), 1.5) * 0.42 + 0.22;
         const i = (py * lw + px) * 4;
         data[i] = Math.round(lerp(BACK_LIGHT.r, BACK_DARK.r, t));
         data[i + 1] = Math.round(lerp(BACK_LIGHT.g, BACK_DARK.g, t));
@@ -288,6 +419,12 @@ export function bakeBackPanel(
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(low, 0, 0, lw, lh, 0, 0, wDev, hDev);
+
+    // Vertical grain streaks down the boards (quiet — it's a backdrop).
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    grainStreaks(ctx, widthWorldPx, heightWorldPx, true, Math.round(widthWorldPx / 24), seed ^ 0xbac);
+    ctx.restore();
 
     // Granulation multiply.
     const tile = getGranulationTile();
@@ -379,8 +516,8 @@ export function bakeSideRail(
       const sy = (py * BAND_PX) / dpr;
       for (let px = 0; px < lw; px++) {
         const sx = (px * BAND_PX) / dpr;
-        const gN = noise(sx * 0.16, sy * 0.004);
-        const t = Math.pow(fract(gN * 3.5), 1.8);
+        const gN = noise(sx * 0.09, sy * 0.003);
+        const t = Math.pow(fract(gN * 2.6), 1.5) * 0.85 + 0.08;
         const i = (py * lw + px) * 4;
         data[i] = Math.round(lerp(WOOD_LIGHT.r, WOOD_DARK.r, t));
         data[i + 1] = Math.round(lerp(WOOD_LIGHT.g, WOOD_DARK.g, t));
@@ -392,6 +529,12 @@ export function bakeSideRail(
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(low, 0, 0, lw, lh, 0, 0, wDev, hDev);
+
+    // Vertical streaks (few — the rail is narrow).
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    grainStreaks(ctx, railWorldPx, heightWorldPx, true, 9, seed ^ 0x11a);
+    ctx.restore();
 
     // Granulation.
     const tile = getGranulationTile();
@@ -429,6 +572,22 @@ export function bakeSideRail(
       ctx.stroke(new Path2D(a));
       ctx.stroke(new Path2D(b));
     }
+
+    // Thin gold pinstripe inlay: a dead-straight pair just inside the pencil
+    // edges (straight so the per-floor repeat is seamless).
+    ctx.strokeStyle = GOLD_INK;
+    ctx.lineWidth = 0.9;
+    for (const gx of [6.5, railWorldPx - 6.5]) {
+      ctx.beginPath();
+      ctx.moveTo(gx, 0);
+      ctx.lineTo(gx, heightWorldPx);
+      ctx.stroke();
+    }
+
+    // Joinery pegs where the shelf tenons into the rail: one pair per floor,
+    // sitting at the plank band near the bottom of the repeat.
+    const pegY = heightWorldPx - PLANK_HEIGHT_WORLD / 2;
+    drawPeg(ctx, railWorldPx * 0.5, pegY, 3.6, seed ^ 0x515);
     ctx.restore();
 
     return canvas;
@@ -469,8 +628,8 @@ export function bakeCrown(
       const sy = (py * BAND_PX) / dpr;
       for (let px = 0; px < lw; px++) {
         const sx = (px * BAND_PX) / dpr;
-        const gN = noise(sx * 0.006, sy * 0.07);
-        const t = Math.pow(fract(gN * 5), 1.8);
+        const gN = noise(sx * 0.0035, sy * 0.03);
+        const t = Math.pow(fract(gN * 2.3), 1.4) * 0.72 + 0.12;
         const i = (py * lw + px) * 4;
         data[i] = Math.round(lerp(WOOD_LIGHT.r, WOOD_DARK.r, t));
         data[i + 1] = Math.round(lerp(WOOD_LIGHT.g, WOOD_DARK.g, t));
@@ -482,6 +641,12 @@ export function bakeCrown(
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(low, 0, 0, lw, lh, 0, 0, wDev, hDev);
+
+    // Horizontal grain streaks across the header board.
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    grainStreaks(ctx, widthWorldPx, heightWorldPx, false, Math.round(widthWorldPx / 18), seed ^ 0x37);
+    ctx.restore();
 
     // Granulation + lighting: lit top, darker cornice lip at the bottom.
     const tile = getGranulationTile();
@@ -523,6 +688,38 @@ export function bakeCrown(
       ctx.stroke(new Path2D(a));
       ctx.stroke(new Path2D(b));
     });
+
+    // Carved cornice: a dentil course (little tooth blocks) above the lip,
+    // shaded so each block reads as relief, under a thin gold pinstripe.
+    const dentilTop = heightWorldPx - 19;
+    const dentilBottom = heightWorldPx - 11.5;
+    for (let dx = 10; dx + 8 < widthWorldPx - 10; dx += 16) {
+      ctx.fillStyle = 'rgba(64, 48, 32, 0.30)';
+      ctx.fillRect(dx, dentilTop, 8, dentilBottom - dentilTop);
+      ctx.fillStyle = 'rgba(255, 244, 222, 0.22)';
+      ctx.fillRect(dx, dentilTop, 8, 1.4);
+      ctx.fillStyle = 'rgba(40, 30, 20, 0.28)';
+      ctx.fillRect(dx + 6.8, dentilTop, 1.2, dentilBottom - dentilTop);
+    }
+    ctx.strokeStyle = GOLD_INK;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(8, dentilTop - 3);
+    ctx.lineTo(widthWorldPx - 8, dentilTop - 3);
+    ctx.stroke();
+
+    // Carved scallop course under the top edge (soft shadow arcs).
+    ctx.strokeStyle = 'rgba(60, 46, 32, 0.30)';
+    ctx.lineWidth = 1.1;
+    for (let sx0 = 14; sx0 + 20 < widthWorldPx - 12; sx0 += 24) {
+      ctx.beginPath();
+      ctx.arc(sx0 + 10, 6.5, 8.5, Math.PI * 0.12, Math.PI * 0.88);
+      ctx.stroke();
+    }
+
+    // Corner rosette pegs on the cornice lip.
+    drawPeg(ctx, 16, heightWorldPx - 5.5, 3.2, seed ^ 0xc0);
+    drawPeg(ctx, widthWorldPx - 16, heightWorldPx - 5.5, 3.2, seed ^ 0xc1);
     // Flourish: a lazy "~~" swash with a diamond, centered.
     const cx = widthWorldPx / 2;
     const cy = (heightWorldPx - 10) / 2 + 2;

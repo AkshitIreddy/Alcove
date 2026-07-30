@@ -9,7 +9,16 @@
 import { CanvasSource, Container, ImageSource, Sprite, Texture } from 'pixi.js';
 import { mulberry32 } from '../../art/noise';
 
-export const MOTE_COUNT = 12;
+/** Total motes; the first MOTE_POOL_COUNT cluster near the wall light pools. */
+export const MOTE_COUNT = 18;
+export const MOTE_POOL_COUNT = 7;
+
+/** Normalized centers of the lamp-glow pools (match world.ts poolSpecs). */
+const POOL_CENTERS: ReadonlyArray<readonly [number, number]> = [
+  [0.18, 0.16],
+  [0.86, 0.4],
+  [0.5, 0.94],
+];
 
 interface Mote {
   sprite: Sprite;
@@ -103,9 +112,17 @@ export class DustMotes {
     this.width = width;
     this.height = height;
     const rnd = mulberry32(0x5eed + Math.floor(width));
-    for (const mote of this.motes) {
-      mote.x = rnd() * width;
-      mote.y = rnd() * height;
+    for (let i = 0; i < this.motes.length; i++) {
+      const mote = this.motes[i] as Mote;
+      if (i < MOTE_POOL_COUNT) {
+        // Cluster near a lamp-glow pool so the light reads as dusty air.
+        const pool = POOL_CENTERS[i % POOL_CENTERS.length] as readonly [number, number];
+        mote.x = (pool[0] + (rnd() * 2 - 1) * 0.14) * width;
+        mote.y = (pool[1] + (rnd() * 2 - 1) * 0.16) * height;
+      } else {
+        mote.x = rnd() * width;
+        mote.y = rnd() * height;
+      }
     }
   }
 

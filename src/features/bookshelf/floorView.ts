@@ -33,7 +33,8 @@ import {
   SHELF_WIDTH,
   TOP_SHADOW_H,
 } from './constants';
-import { layoutFloor } from './layout';
+import { layoutFloor, LAYOUT_MARGIN_X } from './layout';
+import { PROP_H, PROP_KINDS, PROP_W, type PropKind } from '../../art/props';
 import type { LodTier } from './lod';
 import { LOD_CROSSFADE_MS } from './lod';
 import { doodleVariantFor, PLACEHOLDER_TINTS, type EnvTextures } from './textures';
@@ -97,6 +98,7 @@ export class FloorView {
   private hoverGlow: Sprite | null = null;
   private hoverShadow: Sprite | null = null;
   private readonly hoverLayer = new Container();
+  private readonly propsLayer = new Container();
   private readonly booksLayer = new Container();
   private stampSprite: Sprite | null = null;
   private tier: LodTier = 0;
@@ -132,6 +134,7 @@ export class FloorView {
       this.backBase,
       this.plankBase,
       this.hoverLayer,
+      this.propsLayer,
       this.booksLayer,
       this.railL,
       this.railR,
@@ -213,7 +216,68 @@ export class FloorView {
         this.visuals.push(visual);
       }
     }
+    this.placeProps(env, dpr);
     this.updateHint(env, dpr);
+  }
+
+  /**
+   * Deterministic shelf dressing: 0–2 small props (plant/hourglass/candle/
+   * globe/book stack) in the wide gaps between book clusters on some floors.
+   * Baked sprites only; part of `content`, so LOD2 stamps inherit them.
+   */
+  private placeProps(env: EnvTextures, dpr: number): void {
+    for (const child of this.propsLayer.removeChildren()) child.destroy();
+    if (this.visuals.length === 0) return;
+    const rnd = mulberry32(fnv1a(`props|${this.index}`));
+
+    // Candidate spans: rail→first, wide inter-book gaps, last→rail.
+    const MIN_GAP = 68;
+    interface Span {
+      x0: number;
+      x1: number;
+    }
+    const spans: Span[] = [];
+    const first = this.visuals[0] as BookVisual;
+    const last = this.visuals[this.visuals.length - 1] as BookVisual;
+    if (first.centerX - first.params.w / 2 - LAYOUT_MARGIN_X >= MIN_GAP) {
+      spans.push({ x0: LAYOUT_MARGIN_X, x1: first.centerX - first.params.w / 2 });
+    }
+    for (let i = 1; i < this.visuals.length; i++) {
+      const a = this.visuals[i - 1] as BookVisual;
+      const b = this.visuals[i] as BookVisual;
+      const x0 = a.centerX + a.params.w / 2;
+      const x1 = b.centerX - b.params.w / 2;
+      if (x1 - x0 >= MIN_GAP) spans.push({ x0, x1 });
+    }
+    if (SHELF_WIDTH - LAYOUT_MARGIN_X - (last.centerX + last.params.w / 2) >= MIN_GAP) {
+      spans.push({ x0: last.centerX + last.params.w / 2, x1: SHELF_WIDTH - LAYOUT_MARGIN_X });
+    }
+
+    let placed = 0;
+    for (const span of spans) {
+      if (placed >= 2) break;
+      // Not every gap gets a prop — some floors stay plain.
+      if (rnd() >= 0.5) {
+        rnd(); // keep the stream length stable whether or not we place
+        rnd();
+        rnd();
+        continue;
+      }
+      const kind = Math.floor(rnd() * PROP_KINDS) as PropKind;
+      const variant = Math.floor(rnd() * 8);
+      const scale = 0.8 + rnd() * 0.25;
+      const sprite = new Sprite(env.getProp(dpr, kind, variant));
+      sprite.anchor.set(0.5, 1);
+      sprite.width = PROP_W * scale;
+      sprite.height = PROP_H * scale;
+      const mid = (span.x0 + span.x1) / 2;
+      const halfW = (PROP_W * scale) / 2;
+      const x = Math.min(Math.max(mid, span.x0 + halfW), span.x1 - halfW);
+      sprite.position.set(x, BOOK_BASELINE + 1);
+      this.propsLayer.addChild(sprite);
+      placed++;
+    }
+    this.hooks.markDirty();
   }
 
   /** Pull env art in (called on populate and again when bakes land). */
@@ -488,6 +552,7 @@ export class FloorView {
     }
     this.visuals = [];
     this.booksLayer.removeChildren();
+    for (const child of this.propsLayer.removeChildren()) child.destroy();
     gsap.killTweensOf(this.content);
     if (this.stampSprite !== null) {
       gsap.killTweensOf(this.stampSprite);

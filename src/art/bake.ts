@@ -18,8 +18,9 @@ import { fnv1a } from './noise';
 /**
  * Bump to invalidate every disk-cached raster (recipe/parameter changes,
  * Chromium feTurbulence drift, etc.).
+ * v2: under-plank shadow became a gradient strip; case back/rail/crown added.
  */
-export const RECIPE_VERSION = 1;
+export const RECIPE_VERSION = 2;
 
 const ART_DIR = 'art';
 

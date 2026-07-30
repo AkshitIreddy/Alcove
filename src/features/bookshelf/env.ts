@@ -20,11 +20,33 @@ export function watchReducedMotion(cb: (reduced: boolean) => void): () => void {
 }
 
 /**
+ * QA override for the degrade probe, read from the URL query string:
+ *   ?fx=force   — treat the renderer as hardware even on SwiftShader. Used by
+ *                 the headless Playwright screenshot harness (scratchpad qa/),
+ *                 which always runs on software WebGL and would otherwise
+ *                 never show hi-res titled spines, shadows, or dust motes.
+ *   ?fx=degrade — force the degrade path on real GPUs (for testing it).
+ * Keep this: future visual QA depends on ?fx=force.
+ */
+export function fxOverride(): 'force' | 'degrade' | null {
+  try {
+    const v = new URLSearchParams(window.location.search).get('fx');
+    return v === 'force' || v === 'degrade' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Degrade probe per the design doc: create a WebGL context and inspect the
  * unmasked renderer string for software rasterizers (SwiftShader/llvmpipe/
- * "software"). No context at all also means degrade.
+ * "software"). No context at all also means degrade. The ?fx= query param
+ * (see fxOverride) short-circuits the probe for QA.
  */
 export function detectSoftwareRenderer(): boolean {
+  const override = fxOverride();
+  if (override === 'force') return false;
+  if (override === 'degrade') return true;
   try {
     const canvas = document.createElement('canvas');
     const gl =

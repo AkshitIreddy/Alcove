@@ -32,7 +32,16 @@ export const LO_SCALE = 0.62;
 export const HI_SCALE = 2;
 
 /** Spines baked per idle slice. */
-const BAKES_PER_SLICE = 4;
+const BAKES_PER_SLICE = 6;
+
+/**
+ * Hard cap on how long hi-res (titled) bakes wait for the handwriting fonts.
+ * document.fonts.load can stall (headless first paint, cold font cache, or a
+ * face that never resolves) and titles must not be held hostage: after this
+ * timeout hi bakes proceed with the fallback face, and if the real fonts
+ * land later the hi atlas is dropped so titles re-bake crisp.
+ */
+export const FONT_WAIT_MAX_MS = 2500;
 
 /**
  * The 12 curated palette duos from art/spines.ts (top, bottom), duplicated
@@ -119,7 +128,13 @@ function get2d(canvas: AtlasPage['canvas']): Ctx2D {
 export class SpineFactory {
   private readonly loAtlas: AtlasManager;
   private readonly hiAtlas: AtlasManager;
-  private readonly sources = new Map<number, CanvasSource>();
+  /**
+   * GPU sources per atlas page, keyed `${variant}:${page.id}` — page ids are
+   * PER-MANAGER counters, so lo page 0 and hi page 0 are different canvases.
+   * (Keying by bare page.id once aliased every hi texture onto the lo canvas,
+   * which is why baked spine titles never showed at LOD0.)
+   */
+  private readonly sources = new Map<string, CanvasSource>();
   private readonly loTextures = new Map<string, Texture>();
   private readonly hiTextures = new Map<string, Texture>();
   private readonly paramsCache = new Map<string, SpineParams>();
@@ -137,12 +152,12 @@ export class SpineFactory {
     this.loAtlas = new AtlasManager({
       maxPages: 2,
       padding: 2,
-      onEvict: (page, keys) => this.handleEvict(page, keys, this.loTextures),
+      onEvict: (page, keys) => this.handleEvict('lo', page, keys, this.loTextures),
     });
     this.hiAtlas = new AtlasManager({
       maxPages: 4,
       padding: 2,
-      onEvict: (page, keys) => this.handleEvict(page, keys, this.hiTextures),
+      onEvict: (page, keys) => this.handleEvict('hi', page, keys, this.hiTextures),
     });
     this.preloadFonts();
   }
@@ -214,12 +229,33 @@ export class SpineFactory {
 
   /* ------------------------------ internals ------------------------------ */
 
+  /**
+   * Gate hi-res (titled) bakes on the handwriting fonts — but only briefly.
+   * Two paths flip `fontsReady`:
+   *   1. document.fonts.load resolves (the normal case, ~instant once the
+   *      @fontsource CSS is parsed);
+   *   2. the FONT_WAIT_MAX_MS timeout (headless/misbehaving font loader) —
+   *      titles bake with the fallback face rather than never appearing, and
+   *      when the real fonts do arrive the hi atlas is dropped + re-baked.
+   */
   private preloadFonts(): void {
     const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
     if (fonts === undefined) {
       this.fontsReady = true;
       return;
     }
+    let settled = false;
+    let timedOut = false;
+    const ready = (): void => {
+      if (this.destroyed) return;
+      this.fontsReady = true;
+      this.scheduleSlice();
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      ready();
+    }, FONT_WAIT_MAX_MS);
     Promise.all([
       fonts.load('20px "Caveat Variable"'),
       fonts.load('20px Kalam'),
@@ -227,8 +263,14 @@ export class SpineFactory {
     ])
       .catch(() => undefined)
       .then(() => {
-        this.fontsReady = true;
-        this.scheduleSlice();
+        settled = true;
+        clearTimeout(timer);
+        if (this.destroyed) return;
+        if (timedOut && this.hiTextures.size > 0) {
+          // Some titles were baked with the fallback face — redo them.
+          this.hiAtlas.clear();
+        }
+        ready();
       });
   }
 
@@ -289,7 +331,7 @@ export class SpineFactory {
     });
     ctx.restore();
 
-    const source = this.sourceFor(page);
+    const source = this.sourceFor(variant, page);
     const texture = new Texture({
       source,
       frame: new Rectangle(rect.x, rect.y, rect.w, rect.h),
@@ -298,26 +340,29 @@ export class SpineFactory {
     return source;
   }
 
-  private sourceFor(page: AtlasPage): CanvasSource {
-    let source = this.sources.get(page.id);
+  private sourceFor(variant: SpineVariant, page: AtlasPage): CanvasSource {
+    const key = `${variant}:${page.id}`;
+    let source = this.sources.get(key);
     if (source === undefined) {
       source = new CanvasSource({
         resource: page.canvas as unknown as HTMLCanvasElement,
         autoGenerateMipmaps: true,
-        label: `spine-atlas-${page.id}`,
+        label: `spine-atlas-${key}`,
       });
-      this.sources.set(page.id, source);
+      this.sources.set(key, source);
     }
     return source;
   }
 
   private handleEvict(
+    variant: SpineVariant,
     page: AtlasPage,
     keys: readonly string[],
     bucket: Map<string, Texture>,
   ): void {
-    const source = this.sources.get(page.id);
-    this.sources.delete(page.id);
+    const sourceKey = `${variant}:${page.id}`;
+    const source = this.sources.get(sourceKey);
+    this.sources.delete(sourceKey);
     const bookIds: string[] = [];
     for (const key of keys) {
       const sep = key.indexOf('|');

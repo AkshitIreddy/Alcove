@@ -17,6 +17,19 @@ export const MAX_ZOOM = 2.5;
 export const LOG_MIN_ZOOM = Math.log(MIN_ZOOM);
 export const LOG_MAX_ZOOM = Math.log(MAX_ZOOM);
 
+/**
+ * Zoom-out floor as a fraction of the viewport width: the case never shrinks
+ * below ~30% of the screen, so min zoom is a sliver-proof bookcase tower
+ * rather than a 7%-wide strip. On small windows this still dips into LOD2
+ * territory (zoom < 0.22); on wide desktop viewports LOD1 covers min zoom.
+ */
+export const MIN_CASE_VIEW_FRACTION = 0.3;
+
+/** Viewport-aware minimum zoom (≥ the absolute MIN_ZOOM, capped at 0.6). */
+export function minZoomFor(vp: Viewport): number {
+  return clamp((vp.width * MIN_CASE_VIEW_FRACTION) / SHELF_WIDTH, MIN_ZOOM, 0.6);
+}
+
 /** Wheel deltaY → log-zoom delta. */
 export const WHEEL_SENSITIVITY = 0.0015;
 
@@ -103,19 +116,43 @@ export function beginZoomAnchor(cam: CameraState, cursor: Vec2): void {
   }
 }
 
-/** Accumulate a wheel step into the log-zoom target, anchored at `cursor`. */
+/**
+ * Accumulate a wheel step into the log-zoom target, anchored at `cursor`.
+ * `minLogZoom` lets the world pass the viewport-aware floor (minZoomFor);
+ * the default is the absolute bound.
+ */
 export function addWheelZoom(
   cam: CameraState,
   deltaY: number,
   cursor: Vec2,
   sensitivity: number = WHEEL_SENSITIVITY,
+  minLogZoom: number = LOG_MIN_ZOOM,
 ): void {
   beginZoomAnchor(cam, cursor);
   cam.logZoomTarget = clamp(
     cam.logZoomTarget - deltaY * sensitivity,
-    LOG_MIN_ZOOM,
+    minLogZoom,
     LOG_MAX_ZOOM,
   );
+}
+
+/**
+ * Re-clamp zoom (and its target) into the viewport-aware bounds — called on
+ * resize and on session restore, where a stale zoom may undershoot the new
+ * minimum. Returns true when anything changed.
+ */
+export function clampZoomBounds(cam: CameraState, vp: Viewport): boolean {
+  const lo = Math.log(minZoomFor(vp));
+  let changed = false;
+  if (cam.logZoomTarget < lo) {
+    cam.logZoomTarget = lo;
+    changed = true;
+  }
+  if (Math.log(cam.zoom) < lo) {
+    cam.zoom = Math.exp(lo);
+    changed = true;
+  }
+  return changed;
 }
 
 /** Re-derive cam so the anchor's world point sits under its screen point. */

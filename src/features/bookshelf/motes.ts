@@ -6,7 +6,7 @@
  * entirely in degrade mode and under reduced motion.
  */
 
-import { CanvasSource, Container, Sprite, Texture } from 'pixi.js';
+import { CanvasSource, Container, ImageSource, Sprite, Texture } from 'pixi.js';
 import { mulberry32 } from '../../art/noise';
 
 export const MOTE_COUNT = 12;
@@ -25,13 +25,27 @@ interface Mote {
   t: number;
 }
 
-/** Shared 64² radial soft-glow texture (also used by the pull-out shadow). */
+/**
+ * Shared 64² radial soft-glow texture (also used by the pull-out shadow and
+ * the hover halo). Authored on an OffscreenCanvas and shipped to the GPU as
+ * an ImageBitmap (ImageSource) — direct canvas uploads deliver wrong pixels
+ * on some renderers (headless SwiftShader), turning soft gradients into
+ * garbage; the ImageBitmap path renders correctly everywhere.
+ */
 export function makeGlowTexture(): Texture {
   const size = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
+  const canvas: OffscreenCanvas | HTMLCanvasElement =
+    typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(size, size)
+      : (() => {
+          const c = document.createElement('canvas');
+          c.width = size;
+          c.height = size;
+          return c;
+        })();
+  const ctx = (canvas as OffscreenCanvas).getContext('2d') as
+    | OffscreenCanvasRenderingContext2D
+    | null;
   if (ctx) {
     const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
     g.addColorStop(0, 'rgba(255, 250, 235, 1)');
@@ -40,7 +54,14 @@ export function makeGlowTexture(): Texture {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
   }
-  return new Texture({ source: new CanvasSource({ resource: canvas }) });
+  if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
+    return new Texture({
+      source: new ImageSource({ resource: canvas.transferToImageBitmap() }),
+    });
+  }
+  return new Texture({
+    source: new CanvasSource({ resource: canvas as HTMLCanvasElement }),
+  });
 }
 
 export class DustMotes {

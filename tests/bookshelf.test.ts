@@ -10,12 +10,16 @@ import {
   addWheelZoom,
   applyDragPosition,
   clampCamera,
+  clampZoomBounds,
   createCamera,
   isOutOfBounds,
   lerpExp,
   LOG_MAX_ZOOM,
   LOG_MIN_ZOOM,
   MAX_ZOOM,
+  MIN_CASE_VIEW_FRACTION,
+  MIN_ZOOM,
+  minZoomFor,
   momentumTick,
   MOMENTUM_KILL_SPEED,
   RUBBER_FACTOR,
@@ -27,7 +31,21 @@ import {
   zoomTick,
   type Viewport,
 } from '../src/features/bookshelf/camera';
-import { FLOOR_H, SHELF_WIDTH, X_SLACK, Y_MIN } from '../src/features/bookshelf/constants';
+import {
+  FLOOR_H,
+  RAIL_W,
+  SHELF_WIDTH,
+  SLOT_MARGIN_X,
+  X_SLACK,
+  Y_MIN,
+} from '../src/features/bookshelf/constants';
+import {
+  LAYOUT_MARGIN_X,
+  layoutFloor,
+  LEAN_MAX_DEG,
+  MAX_LEANERS,
+  type LayoutBookIn,
+} from '../src/features/bookshelf/layout';
 import {
   computeRange,
   diffWindow,
@@ -278,6 +296,118 @@ describe('virtualizer: windowing', () => {
     expect(made).toBe(3); // reused, not created
     pool.drain();
     expect(destroyed).toBe(2);
+  });
+});
+
+describe('camera: viewport-aware min zoom', () => {
+  it('keeps the case at ≥ ~30% of the viewport width', () => {
+    const z = minZoomFor(VP);
+    expect(SHELF_WIDTH * z).toBeGreaterThanOrEqual(VP.width * MIN_CASE_VIEW_FRACTION - 1e-9);
+    expect(z).toBeCloseTo((VP.width * MIN_CASE_VIEW_FRACTION) / SHELF_WIDTH, 10);
+  });
+
+  it('never drops below the absolute MIN_ZOOM on tiny viewports', () => {
+    expect(minZoomFor({ width: 120, height: 200 })).toBe(MIN_ZOOM);
+  });
+
+  it('still dips into LOD2 territory on small windows', () => {
+    // A 640px window may zoom below the 0.22 stamp threshold.
+    expect(minZoomFor({ width: 640, height: 480 })).toBeLessThan(0.22);
+  });
+
+  it('addWheelZoom honors a custom min log-zoom clamp', () => {
+    const cam = createCamera(1, 0, 0);
+    const minLog = Math.log(minZoomFor(VP));
+    addWheelZoom(cam, 1e9, { x: 0, y: 0 }, undefined, minLog);
+    expect(cam.logZoomTarget).toBeCloseTo(minLog, 12);
+  });
+
+  it('clampZoomBounds lifts a stale under-min zoom (resize/session restore)', () => {
+    const cam = createCamera(0.06, 0, 0);
+    cam.logZoomTarget = Math.log(0.06);
+    expect(clampZoomBounds(cam, VP)).toBe(true);
+    expect(cam.zoom).toBeCloseTo(minZoomFor(VP), 12);
+    expect(cam.logZoomTarget).toBeCloseTo(Math.log(minZoomFor(VP)), 12);
+    expect(clampZoomBounds(cam, VP)).toBe(false);
+  });
+});
+
+describe('layout: seeded cluster layout', () => {
+  const mkItems = (widths: readonly number[]): LayoutBookIn[] =>
+    widths.map((w, i) => ({ slot: i, w }));
+
+  it('books stay clear of the rails', () => {
+    expect(LAYOUT_MARGIN_X).toBeGreaterThan(RAIL_W);
+    // Legacy raw-slot fallback (spineScreenRect for unmounted floors) also
+    // clears the rails.
+    expect(SLOT_MARGIN_X).toBeGreaterThan(RAIL_W);
+    for (let floor = 0; floor < 24; floor++) {
+      const items = mkItems([34, 40, 28, 46, 30, 38, 36, 33, 44]);
+      for (const [i, p] of layoutFloor(items, floor).entries()) {
+        const item = items[i] as LayoutBookIn;
+        expect(p.centerX - item.w / 2).toBeGreaterThanOrEqual(LAYOUT_MARGIN_X - 1e-6);
+        expect(p.centerX + item.w / 2).toBeLessThanOrEqual(SHELF_WIDTH - LAYOUT_MARGIN_X + 1e-6);
+      }
+    }
+  });
+
+  it('is deterministic per (floor, items) and varies across floors', () => {
+    const items = mkItems([34, 40, 28, 46, 30, 38]);
+    const a = layoutFloor(items, 3);
+    const b = layoutFloor(items, 3);
+    expect(a).toEqual(b);
+    const c = layoutFloor(items, 4);
+    expect(JSON.stringify(c)).not.toBe(JSON.stringify(a));
+  });
+
+  it('preserves order and never overlaps book bodies', () => {
+    for (let floor = 0; floor < 40; floor++) {
+      const widths = Array.from({ length: 3 + (floor % 9) }, (_, i) => 28 + ((i * 7 + floor * 3) % 18));
+      const items = mkItems(widths);
+      const placed = layoutFloor(items, floor);
+      for (let i = 1; i < placed.length; i++) {
+        const prev = placed[i - 1];
+        const cur = placed[i];
+        const prevW = (items[i - 1] as LayoutBookIn).w;
+        const curW = (items[i] as LayoutBookIn).w;
+        expect(cur!.centerX).toBeGreaterThan(prev!.centerX);
+        expect(cur!.centerX - prev!.centerX).toBeGreaterThanOrEqual((prevW + curW) / 2 + 0.99);
+      }
+    }
+  });
+
+  it('spreads a populated floor across the shelf (no left-cluster dead space)', () => {
+    for (let floor = 0; floor < 12; floor++) {
+      const items = mkItems([34, 40, 28, 46, 30, 38, 36, 33]);
+      const placed = layoutFloor(items, floor);
+      const first = placed[0];
+      const last = placed[placed.length - 1];
+      const span = last!.centerX - first!.centerX;
+      expect(span).toBeGreaterThanOrEqual(SHELF_WIDTH * 0.45);
+      // The row's midpoint sits reasonably near the case center.
+      const mid = (first!.centerX + last!.centerX) / 2;
+      expect(Math.abs(mid - SHELF_WIDTH / 2)).toBeLessThanOrEqual(SHELF_WIDTH * 0.2);
+    }
+  });
+
+  it('leans at most MAX_LEANERS books, within the lean magnitude bound', () => {
+    for (let floor = 0; floor < 60; floor++) {
+      const items = mkItems([34, 40, 28, 46, 30, 38, 36]);
+      const placed = layoutFloor(items, floor);
+      const leaners = placed.filter((p) => p.leanDeg !== 0);
+      expect(leaners.length).toBeLessThanOrEqual(MAX_LEANERS);
+      for (const p of placed) {
+        expect(Math.abs(p.leanDeg)).toBeLessThanOrEqual(LEAN_MAX_DEG);
+      }
+    }
+  });
+
+  it('handles empty and single-book floors', () => {
+    expect(layoutFloor([], 0)).toEqual([]);
+    const one = layoutFloor([{ slot: 0, w: 40 }], 7);
+    expect(one).toHaveLength(1);
+    expect(one[0]!.centerX).toBeGreaterThanOrEqual(LAYOUT_MARGIN_X + 20);
+    expect(one[0]!.centerX).toBeLessThanOrEqual(SHELF_WIDTH - LAYOUT_MARGIN_X - 20);
   });
 });
 

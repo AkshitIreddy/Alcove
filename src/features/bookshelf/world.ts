@@ -27,10 +27,13 @@ import {
   addWheelZoom,
   applyDragPosition,
   clampCamera,
+  clampZoomBounds,
   createCamera,
   isOutOfBounds,
+  minZoomFor,
   momentumTick,
   weightedVelocity,
+  WHEEL_SENSITIVITY,
   worldToScreen,
   xBounds,
   yBounds,
@@ -42,6 +45,9 @@ import {
 } from './camera';
 import {
   BOOK_BASELINE,
+  CASE_SHADE_W,
+  CROWN_H,
+  CROWN_LIP,
   FLOOR_H,
   HIT_SLOP,
   SHELF_WIDTH,
@@ -49,7 +55,12 @@ import {
   Y_MIN,
 } from './constants';
 import { FloorStore } from './data';
-import { detectSoftwareRenderer, prefersReducedMotion, watchReducedMotion } from './env';
+import {
+  detectSoftwareRenderer,
+  fxOverride,
+  prefersReducedMotion,
+  watchReducedMotion,
+} from './env';
 import { FloorStampCache } from './floorStamps';
 import { FloorView, type BookVisual, type WorldHooks } from './floorView';
 import { ShelfInput } from './input';
@@ -128,6 +139,9 @@ export class ShelfWorld {
   private readonly fx = new Container();
   private readonly motes: DustMotes;
   private readonly glowTexture: Texture;
+  /** Crown/header board capping the case above floor 0. */
+  private readonly crown: Sprite;
+  private crownWood = false;
 
   private readonly floors = new Map<number, FloorView>();
   private readonly pool: Pool<FloorView>;
@@ -156,6 +170,7 @@ export class ShelfWorld {
     },
     motion: () => (this.reducedMotion ? 0 : 1),
     track: (anim) => this.track(anim),
+    glow: () => this.glowTexture,
   };
 
   private readonly unsubs: Array<() => void> = [];
@@ -212,6 +227,39 @@ export class ShelfWorld {
     this.glowTexture = makeGlowTexture();
     this.motes = new DustMotes(this.glowTexture);
     this.fx.addChild(this.motes.container);
+
+    // The case crown above floor 0 (flat placeholder until the bake lands)
+    // and the soft wall shading around the case top — all world-space,
+    // added before any FloorView so floors always render above them. The
+    // shade texture is a translucent warm gradient (normal blending, see
+    // getWallShade); side pieces beside the crown connect the per-floor AO
+    // strips so the halo reads as one continuous shadow.
+    const shadeTex = this.envTex.getWallShade();
+    const topShade = new Sprite(shadeTex);
+    topShade.rotation = -Math.PI / 2;
+    topShade.position.set(-CROWN_LIP, -CROWN_H);
+    topShade.width = 44; // vertical extent after rotation
+    topShade.height = SHELF_WIDTH + CROWN_LIP * 2;
+    this.world.addChild(topShade);
+    for (const side of [-1, 1] as const) {
+      const s = new Sprite(shadeTex);
+      s.width = CASE_SHADE_W - CROWN_LIP;
+      s.height = CROWN_H;
+      if (side === -1) {
+        s.scale.x = -s.scale.x;
+        s.position.set(-CROWN_LIP, -CROWN_H);
+      } else {
+        s.position.set(SHELF_WIDTH + CROWN_LIP, -CROWN_H);
+      }
+      this.world.addChild(s);
+    }
+    this.crown = new Sprite(Texture.WHITE);
+    this.crown.tint = PLACEHOLDER_TINTS.crown;
+    this.crown.position.set(-CROWN_LIP, -CROWN_H);
+    this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
+    this.crown.height = CROWN_H;
+    this.world.addChild(this.crown);
+
     app.stage.addChild(this.backdrop, this.world, this.fx);
     app.stage.eventMode = 'none';
 
@@ -224,6 +272,8 @@ export class ShelfWorld {
       const bx = xBounds(this.vp, this.camera.zoom);
       this.camera.x = clamp((SHELF_WIDTH - this.vp.width / this.camera.zoom) / 2, bx.min, bx.max);
     }
+    // A restored zoom may undershoot the viewport-aware floor (window grew).
+    clampZoomBounds(this.camera, this.vp);
     this.tier = nextLodTier(0, this.camera.zoom);
 
     this.motes.setEnabled(!degrade && !this.reducedMotion);
@@ -279,6 +329,12 @@ export class ShelfWorld {
     this.updateCursor();
     this.lastTime = performance.now();
     this.raf = requestAnimationFrame(this.frame);
+
+    // QA hook: with an ?fx= override active (screenshot harness), expose the
+    // world so headless probes can inspect camera/floor/sprite state.
+    if (fxOverride() !== null) {
+      (globalThis as Record<string, unknown>)['__shelfWorld'] = this;
+    }
   }
 
   /* ------------------------------ public API ----------------------------- */
@@ -555,6 +611,19 @@ export class ShelfWorld {
       );
       if (m === 0) this.backdrop.alpha = BACKDROP_ALPHA;
     }
+    if (this.envTex.crown !== null && !this.crownWood) {
+      this.crownWood = true;
+      this.crown.texture = this.envTex.crown;
+      this.crown.tint = 0xffffff;
+      this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
+      this.crown.height = CROWN_H;
+      if (m > 0) {
+        this.crown.alpha = 0;
+        this.track(
+          gsap.to(this.crown, { alpha: 1, duration: 0.4 * m, onUpdate: this.hooks.markDirty }),
+        );
+      }
+    }
     for (const [index, fv] of this.floors) {
       fv.applyEnv(this.envTex, this.degrade, true);
       this.rebakeStamp(index, fv);
@@ -582,7 +651,15 @@ export class ShelfWorld {
   private handleWheelZoom(deltaY: number, cursor: Vec2): void {
     if (this.frozen) return;
     this.killNavTweens();
-    addWheelZoom(this.camera, deltaY, cursor);
+    // Viewport-aware min zoom: the case never shrinks below ~30% of the
+    // screen width, so max zoom-out is a readable bookcase tower.
+    addWheelZoom(
+      this.camera,
+      deltaY,
+      cursor,
+      WHEEL_SENSITIVITY,
+      Math.log(minZoomFor(this.vp)),
+    );
     this.dirty = true;
   }
 
@@ -793,12 +870,19 @@ export class ShelfWorld {
   private spineScreenRect(book: Book): RectLike {
     const params = this.factory.getParams(book);
     const zoom = this.camera.zoom;
+    // The seeded cluster layout owns spine positions; read them from the
+    // mounted visual. Raw slot math is only a fallback for unmounted floors.
+    const visual = this.floors
+      .get(book.floor)
+      ?.visuals.find((v) => v.book.id === book.id);
+    const centerX = visual !== undefined ? visual.centerX : slotCenterX(book.slot);
+    const height = visual !== undefined ? visual.height : SPINE_BASE_HEIGHT + params.hJitter;
     const screen = worldToScreen(this.camera, {
-      x: slotCenterX(book.slot),
+      x: centerX,
       y: book.floor * FLOOR_H + BOOK_BASELINE,
     });
     const w = params.w * zoom;
-    const h = (SPINE_BASE_HEIGHT + params.hJitter) * zoom;
+    const h = height * zoom;
     return { x: screen.x - w / 2, y: screen.y - h, width: w, height: h };
   }
 
@@ -941,6 +1025,7 @@ export class ShelfWorld {
     this.backdrop.width = w;
     this.backdrop.height = h;
     this.motes.resize(w, h);
+    clampZoomBounds(this.camera, this.vp);
     if (!this.dragging) clampCamera(this.camera, this.vp);
     this.dirty = true;
   }

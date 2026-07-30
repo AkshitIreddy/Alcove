@@ -37,7 +37,29 @@ export function slotCenterX(slot: number): number {
   return slotX(slot) + SLOT_W / 2;
 }
 
-/** Hard upper bound for the camera (a little headroom above floor 0). */
+/* ------------------------------- bookcase -------------------------------- */
+/*
+ * The case is drawn as real furniture: vertical side rails framing every
+ * floor, a darker back panel behind the books, and a crown board above
+ * floor 0. Geometry lives here (features own layout; src/art renders it).
+ */
+
+/** Width of one vertical side rail, world px. Must stay < LAYOUT_MARGIN_X. */
+export const RAIL_W = 34;
+
+/** Height of the crown/header board above floor 0 (sits at y ∈ [-CROWN_H, 0]). */
+export const CROWN_H = 64;
+
+/** Horizontal overhang of the crown past the case sides (cornice lip). */
+export const CROWN_LIP = 14;
+
+/** Width of the soft ambient-occlusion strip cast on the wall beside the case. */
+export const CASE_SHADE_W = 72;
+
+/** Height of the shadow strip cast by the plank above onto each book zone. */
+export const TOP_SHADOW_H = 26;
+
+/** Hard upper bound for the camera (headroom above floor 0 incl. the crown). */
 export const Y_MIN = -80;
 
 /** Extra horizontal slack allowed past the shelf edges when zoomed in. */

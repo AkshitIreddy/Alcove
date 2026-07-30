@@ -6,8 +6,9 @@
  * known-empty floor, or the floor's books sorted by slot.
  *
  * Non-Tauri dev fallback: when the SQLite layer is a stub and returns nothing
- * even after seedIfEmpty(), ~30 deterministic demo books (spine_seed =
- * fnv1a(title), floors 0–4, gappy slots) keep the shelf visually populated.
+ * even after seedIfEmpty(), ~40 deterministic demo books (spine_seed =
+ * fnv1a(title), floors 0–5 with varied counts per floor) keep the shelf
+ * visually populated.
  */
 
 import { listBooksByFloorRange } from '../../data/books';
@@ -31,34 +32,47 @@ interface DemoSpec {
 }
 
 const DEMO_BOOKS: readonly DemoSpec[] = [
-  // Floor 0 — sciences
+  // Floor 0 — sciences (well stocked)
   { title: 'Cell Biology', floor: 0, slot: 0 },
   { title: 'Organic Chemistry (send help)', floor: 0, slot: 1 },
   { title: 'Physics: Waves & Wobbles', floor: 0, slot: 3 },
   { title: 'Lab Notebook, Semester 3', floor: 0, slot: 4 },
-  { title: 'Astronomy Log', floor: 0, slot: 7 },
+  { title: 'Astronomy Log', floor: 0, slot: 6 },
+  { title: 'Geology Rocks (sorry)', floor: 0, slot: 7 },
   { title: 'Tide Pools & Tiny Crabs', floor: 0, slot: 9 },
-  // Floor 1 — math & computing
+  { title: 'Weather Diary', floor: 0, slot: 10 },
+  { title: 'Mushroom Spotting', floor: 0, slot: 11 },
+  // Floor 1 — math & computing (the crowded one)
   { title: 'Linear Algebra', floor: 1, slot: 0 },
-  { title: 'Calculus II: The Redemption', floor: 1, slot: 2 },
+  { title: 'Calculus II: The Redemption', floor: 1, slot: 1 },
   { title: 'Huffman Coding (with kittens)', floor: 1, slot: 3 },
-  { title: 'Rust Borrow Checker Diary', floor: 1, slot: 5 },
-  { title: 'SQL Spellbook', floor: 1, slot: 8 },
-  { title: 'Graph Theory Doodles', floor: 1, slot: 11 },
-  // Floor 2 — languages
+  { title: 'Rust Borrow Checker Diary', floor: 1, slot: 4 },
+  { title: 'SQL Spellbook', floor: 1, slot: 5 },
+  { title: 'Graph Theory Doodles', floor: 1, slot: 7 },
+  { title: 'Big-O and Other Fears', floor: 1, slot: 8 },
+  { title: 'Regex Incantations', floor: 1, slot: 10 },
+  { title: 'Compiler Campfire Stories', floor: 1, slot: 11 },
+  { title: 'Probability for Pigeons', floor: 1, slot: 12 },
+  { title: 'Knot Theory (literal)', floor: 1, slot: 14 },
+  // Floor 2 — languages (roomier)
   { title: 'Kanji Practice', floor: 2, slot: 1 },
   { title: 'French Verbs I Keep Forgetting', floor: 2, slot: 2 },
   { title: 'Latin Roots & Word Nerdery', floor: 2, slot: 4 },
   { title: 'Sign Language Notes', floor: 2, slot: 6 },
   { title: 'Haiku Attempts (be nice)', floor: 2, slot: 7 },
   { title: 'Etymology Rabbit Holes', floor: 2, slot: 10 },
-  // Floor 3 — arts & craft
+  { title: 'Untranslatable Words', floor: 2, slot: 12 },
+  // Floor 3 — arts & craft (well stocked)
   { title: 'Watercolor Basics', floor: 3, slot: 0 },
   { title: 'Figure Drawing Warmups', floor: 3, slot: 1 },
-  { title: 'Music Theory Scraps', floor: 3, slot: 4 },
+  { title: 'Music Theory Scraps', floor: 3, slot: 3 },
   { title: 'Typography Crushes', floor: 3, slot: 5 },
-  { title: 'Bookbinding Experiments', floor: 3, slot: 8 },
-  { title: 'Pottery Wheel Mishaps', floor: 3, slot: 12 },
+  { title: 'Bookbinding Experiments', floor: 3, slot: 6 },
+  { title: 'Pottery Wheel Mishaps', floor: 3, slot: 8 },
+  { title: 'Linocut Ideas', floor: 3, slot: 9 },
+  { title: 'Songs Half Written', floor: 3, slot: 11 },
+  { title: 'Stage Fright Journal', floor: 3, slot: 12 },
+  { title: 'Colour Mixing Notes', floor: 3, slot: 13 },
   // Floor 4 — life, observed
   { title: 'Birdwatching Field Notes', floor: 4, slot: 2 },
   { title: 'Tea Tasting Journal', floor: 4, slot: 3 },
@@ -66,6 +80,10 @@ const DEMO_BOOKS: readonly DemoSpec[] = [
   { title: 'Dream Journal (do not read)', floor: 4, slot: 9 },
   { title: 'Cloud Shapes I Have Known', floor: 4, slot: 10 },
   { title: 'Maps of Imaginary Places', floor: 4, slot: 13 },
+  // Floor 5 — nearly empty (a few strays before the empty floors begin)
+  { title: 'Someday Projects', floor: 5, slot: 4 },
+  { title: 'Letters Never Sent', floor: 5, slot: 5 },
+  { title: 'Blank On Purpose', floor: 5, slot: 9 },
 ];
 
 /** Deterministic client-side demo library (browser dev without SQLite). */
@@ -174,7 +192,7 @@ export class FloorStore {
       this.demoMode = true;
       books = demoBooks();
     } else if (this.demoMode) {
-      // Demo library only stocks floors 0-4; deeper pages stay empty.
+      // Demo library only stocks floors 0-5; deeper pages stay empty.
       books = [];
     }
     for (let floor = start; floor <= end; floor++) this.floors.set(floor, []);

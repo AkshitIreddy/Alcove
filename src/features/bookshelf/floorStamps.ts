@@ -62,10 +62,14 @@ export class FloorStampCache {
     const wasAlpha = content.alpha;
     content.visible = true;
     content.alpha = 1;
+    // Vertical scale fills the WHOLE texel height: STAMP_HEIGHT is the
+    // rounded-up FLOOR_H*STAMP_SCALE, and leaving the fractional last row
+    // transparent paints a bright wall-colored seam between floor stamps at
+    // far zoom. The ~1% aspect stretch is imperceptible at stamp size.
     renderer.render({
       container: content,
       target: entry.rt,
-      transform: new Matrix(STAMP_SCALE, 0, 0, STAMP_SCALE, 0, 0),
+      transform: new Matrix(STAMP_SCALE, 0, 0, STAMP_HEIGHT / FLOOR_H, 0, 0),
       clear: true,
     });
     content.visible = wasVisible;

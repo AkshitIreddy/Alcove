@@ -6,47 +6,211 @@
  * is first needed, so cold start pays nothing until the first play().
  *
  * The settings store drives this from outside via setVolumes / muteAll /
- * setReducedSound — this module never imports src/data.
+ * setReducedSound / setSoundCharacter — this module never imports src/data.
  *
- * For tests, the Howler dependency is injectable via setHowlerLoader().
+ * ─────────────────────────────────────────────────────────────────────────
+ * VARIANTS AND CHARACTER
+ * ─────────────────────────────────────────────────────────────────────────
+ * Every one-shot ships as a FAMILY of 3-6 separately synthesized takes
+ * (see scripts/gen-sounds.mjs). `play('book-pull')` names the family and
+ * gets a rotated variant, a per-play pitch nudge (±1.5-5% depending on
+ * character) and a per-play level nudge, so the same interaction never
+ * sounds mechanically identical twice. The first file of every family keeps
+ * its historical name, so every existing call site still resolves.
+ *
+ * The sound-character preset (settings.soundCharacter) picks which half of
+ * each family is in play, how wide the jitter is, how loud each category
+ * sits, and which decorative sounds are dropped entirely:
+ *
+ *   calm     the reference voicing — every variant, gentle jitter (default)
+ *   rich     the longer, more textured takes; wider jitter; fuller ambience
+ *   minimal  the short takes only, quieter, and the decorative layer
+ *            (hover ticks, typing ticks, pencil loop, confetti, whooshes)
+ *            never plays at all
+ *
+ * For tests, the Howler dependency is injectable via setHowlerLoader() and
+ * the jitter RNG via setPlayRngForTests().
  */
 
 /* ------------------------------- sound names ------------------------------ */
 
 export type SoundName =
+  /* page turns */
   | 'page-flip-1'
   | 'page-flip-2'
   | 'page-flip-3'
+  | 'page-flip-4'
+  | 'page-flip-5'
+  | 'page-flip-6'
+  /* pulling a book out */
   | 'book-pull'
+  | 'book-pull-2'
+  | 'book-pull-3'
+  | 'book-pull-4'
+  /* putting one back */
   | 'book-return'
+  | 'book-return-2'
+  | 'book-return-3'
+  | 'book-return-4'
+  /* camera moves */
   | 'shelf-whoosh'
+  | 'shelf-whoosh-2'
+  | 'shelf-whoosh-3'
+  /* menus and panels */
   | 'pop-soft'
+  | 'pop-soft-2'
+  | 'pop-soft-3'
+  | 'pop-soft-4'
+  | 'pop-soft-5'
+  /* hover */
   | 'tick-hover'
+  | 'tick-hover-2'
+  | 'tick-hover-3'
+  | 'tick-hover-4'
+  | 'tick-hover-5'
+  /* ticking a box */
   | 'check-done'
+  | 'check-done-2'
+  | 'check-done-3'
+  | 'check-done-4'
+  /* deleting */
   | 'crumple-delete'
+  | 'crumple-delete-2'
+  | 'crumple-delete-3'
+  | 'crumple-delete-4'
+  /* landing */
   | 'drop-thump'
+  | 'drop-thump-2'
+  | 'drop-thump-3'
+  | 'drop-thump-4'
+  /* the writing loop */
   | 'pencil-scratch'
+  /* celebration */
   | 'confetti'
+  | 'confetti-2'
+  | 'confetti-3'
+  /* ambience beds */
   | 'ambient-library'
   | 'ambient-rain'
   | 'ambient-fireplace'
   | 'ambient-crickets'
+  /* keystrokes */
   | 'typing-tick-1'
   | 'typing-tick-2'
   | 'typing-tick-3'
-  | 'chime-hour';
-
-/** `play('page-flip')` picks a random variant with no immediate repeats. */
-export type PlayableName = SoundName | 'page-flip';
+  | 'typing-tick-4'
+  | 'typing-tick-5'
+  | 'typing-tick-6'
+  /* the hour */
+  | 'chime-hour'
+  | 'chime-hour-2'
+  | 'chime-hour-3';
 
 export type SoundCategory = 'ui' | 'pages' | 'shelf' | 'ambient';
 export type VolumeKey = SoundCategory | 'master';
 export type Volumes = Record<VolumeKey, number>;
 
-export const PAGE_FLIP_VARIANTS = ['page-flip-1', 'page-flip-2', 'page-flip-3'] as const satisfies readonly SoundName[];
+/* -------------------------------- families -------------------------------- */
 
-/** Velocity-varied pencil ticks behind the optional typing sounds. */
-export const TYPING_TICK_VARIANTS = ['typing-tick-1', 'typing-tick-2', 'typing-tick-3'] as const satisfies readonly SoundName[];
+/**
+ * Family key -> its variant takes, most-used first. `page-flip` and
+ * `typing-tick` are virtual keys (no file of their own); every other key is
+ * ALSO the name of its first variant, which is what keeps `play('book-pull')`
+ * working exactly as before — only now it rotates.
+ */
+export const SOUND_FAMILIES = {
+  'page-flip': ['page-flip-1', 'page-flip-2', 'page-flip-3', 'page-flip-4', 'page-flip-5', 'page-flip-6'],
+  'book-pull': ['book-pull', 'book-pull-2', 'book-pull-3', 'book-pull-4'],
+  'book-return': ['book-return', 'book-return-2', 'book-return-3', 'book-return-4'],
+  'shelf-whoosh': ['shelf-whoosh', 'shelf-whoosh-2', 'shelf-whoosh-3'],
+  'pop-soft': ['pop-soft', 'pop-soft-2', 'pop-soft-3', 'pop-soft-4', 'pop-soft-5'],
+  'tick-hover': ['tick-hover', 'tick-hover-2', 'tick-hover-3', 'tick-hover-4', 'tick-hover-5'],
+  'check-done': ['check-done', 'check-done-2', 'check-done-3', 'check-done-4'],
+  'crumple-delete': ['crumple-delete', 'crumple-delete-2', 'crumple-delete-3', 'crumple-delete-4'],
+  'drop-thump': ['drop-thump', 'drop-thump-2', 'drop-thump-3', 'drop-thump-4'],
+  confetti: ['confetti', 'confetti-2', 'confetti-3'],
+  'typing-tick': ['typing-tick-1', 'typing-tick-2', 'typing-tick-3', 'typing-tick-4', 'typing-tick-5', 'typing-tick-6'],
+  'chime-hour': ['chime-hour', 'chime-hour-2', 'chime-hour-3'],
+} as const satisfies Record<string, readonly SoundName[]>;
+
+export type FamilyName = keyof typeof SOUND_FAMILIES;
+
+/** `play()` accepts a concrete file name or a family key. */
+export type PlayableName = SoundName | FamilyName;
+
+export const FAMILY_NAMES = Object.keys(SOUND_FAMILIES) as readonly FamilyName[];
+
+/**
+ * Which half of a family a take belongs to.
+ *   plain — the shorter, leaner takes; what `minimal` plays
+ *   full  — the longest, most textured takes; what `rich` leans on
+ * Mirrors the `weight` field in scripts/gen-sounds.mjs; the unit suite
+ * asserts the two stay in step by measuring the actual files.
+ */
+export type VariantWeight = 'plain' | 'full';
+
+export const VARIANT_WEIGHTS: Record<SoundName, VariantWeight> = {
+  'page-flip-1': 'plain',
+  'page-flip-2': 'full',
+  'page-flip-3': 'plain',
+  'page-flip-4': 'full',
+  'page-flip-5': 'plain',
+  'page-flip-6': 'full',
+  'book-pull': 'plain',
+  'book-pull-2': 'full',
+  'book-pull-3': 'plain',
+  'book-pull-4': 'full',
+  'book-return': 'plain',
+  'book-return-2': 'full',
+  'book-return-3': 'plain',
+  'book-return-4': 'full',
+  'shelf-whoosh': 'plain',
+  'shelf-whoosh-2': 'full',
+  'shelf-whoosh-3': 'plain',
+  'pop-soft': 'plain',
+  'pop-soft-2': 'full',
+  'pop-soft-3': 'plain',
+  'pop-soft-4': 'full',
+  'pop-soft-5': 'plain',
+  'tick-hover': 'plain',
+  'tick-hover-2': 'full',
+  'tick-hover-3': 'plain',
+  'tick-hover-4': 'full',
+  'tick-hover-5': 'plain',
+  'check-done': 'plain',
+  'check-done-2': 'full',
+  'check-done-3': 'plain',
+  'check-done-4': 'full',
+  'crumple-delete': 'plain',
+  'crumple-delete-2': 'full',
+  'crumple-delete-3': 'plain',
+  'crumple-delete-4': 'full',
+  'drop-thump': 'plain',
+  'drop-thump-2': 'full',
+  'drop-thump-3': 'plain',
+  'drop-thump-4': 'full',
+  'pencil-scratch': 'plain',
+  confetti: 'plain',
+  'confetti-2': 'full',
+  'confetti-3': 'plain',
+  'ambient-library': 'full',
+  'ambient-rain': 'full',
+  'ambient-fireplace': 'full',
+  'ambient-crickets': 'full',
+  'typing-tick-1': 'plain',
+  'typing-tick-2': 'plain',
+  'typing-tick-3': 'full',
+  'typing-tick-4': 'plain',
+  'typing-tick-5': 'full',
+  'typing-tick-6': 'plain',
+  'chime-hour': 'full',
+  'chime-hour-2': 'plain',
+  'chime-hour-3': 'full',
+};
+
+/** Historical aliases kept so nothing that imported them breaks. */
+export const PAGE_FLIP_VARIANTS = SOUND_FAMILIES['page-flip'];
+export const TYPING_TICK_VARIANTS = SOUND_FAMILIES['typing-tick'];
 
 /** The user-facing soundscape choice (settings.soundscape). */
 export type SoundscapeName = 'library' | 'rain' | 'fireplace' | 'crickets' | 'none';
@@ -66,40 +230,113 @@ interface SoundDef {
   readonly loop: boolean;
 }
 
-export const SOUND_MANIFEST: Record<SoundName, SoundDef> = {
-  'page-flip-1': { category: 'pages', loop: false },
-  'page-flip-2': { category: 'pages', loop: false },
-  'page-flip-3': { category: 'pages', loop: false },
-  'pencil-scratch': { category: 'pages', loop: true },
-  'typing-tick-1': { category: 'pages', loop: false },
-  'typing-tick-2': { category: 'pages', loop: false },
-  'typing-tick-3': { category: 'pages', loop: false },
-  'book-pull': { category: 'shelf', loop: false },
-  'book-return': { category: 'shelf', loop: false },
-  'shelf-whoosh': { category: 'shelf', loop: false },
-  'drop-thump': { category: 'shelf', loop: false },
-  'pop-soft': { category: 'ui', loop: false },
-  'tick-hover': { category: 'ui', loop: false },
-  'check-done': { category: 'ui', loop: false },
-  'crumple-delete': { category: 'ui', loop: false },
-  confetti: { category: 'ui', loop: false },
-  'ambient-library': { category: 'ambient', loop: true },
-  'ambient-rain': { category: 'ambient', loop: true },
-  'ambient-fireplace': { category: 'ambient', loop: true },
-  'ambient-crickets': { category: 'ambient', loop: true },
-  'chime-hour': { category: 'ambient', loop: false },
-};
+/** Build the manifest from the families so a new variant cannot be forgotten. */
+function manifestFor(name: SoundName): SoundDef {
+  if (name.startsWith('page-flip') || name.startsWith('typing-tick') || name === 'pencil-scratch') {
+    return { category: 'pages', loop: name === 'pencil-scratch' };
+  }
+  if (name.startsWith('book-pull') || name.startsWith('book-return') || name.startsWith('shelf-whoosh') || name.startsWith('drop-thump')) {
+    return { category: 'shelf', loop: false };
+  }
+  if (name.startsWith('ambient-')) return { category: 'ambient', loop: true };
+  if (name.startsWith('chime-hour')) return { category: 'ambient', loop: false };
+  return { category: 'ui', loop: false };
+}
 
-export const SOUND_NAMES = Object.keys(SOUND_MANIFEST) as readonly SoundName[];
+const ALL_SOUND_NAMES: readonly SoundName[] = [
+  ...SOUND_FAMILIES['page-flip'],
+  ...SOUND_FAMILIES['book-pull'],
+  ...SOUND_FAMILIES['book-return'],
+  ...SOUND_FAMILIES['shelf-whoosh'],
+  ...SOUND_FAMILIES['pop-soft'],
+  ...SOUND_FAMILIES['tick-hover'],
+  ...SOUND_FAMILIES['check-done'],
+  ...SOUND_FAMILIES['crumple-delete'],
+  ...SOUND_FAMILIES['drop-thump'],
+  'pencil-scratch',
+  ...SOUND_FAMILIES.confetti,
+  'ambient-library',
+  'ambient-rain',
+  'ambient-fireplace',
+  'ambient-crickets',
+  ...SOUND_FAMILIES['typing-tick'],
+  ...SOUND_FAMILIES['chime-hour'],
+];
+
+export const SOUND_MANIFEST: Record<SoundName, SoundDef> = Object.fromEntries(
+  ALL_SOUND_NAMES.map((name) => [name, manifestFor(name)]),
+) as Record<SoundName, SoundDef>;
+
+export const SOUND_NAMES: readonly SoundName[] = ALL_SOUND_NAMES;
 
 /** Sounds skipped entirely when the user prefers reduced sound. */
-const REDUCED_SKIP: ReadonlySet<SoundName> = new Set([
-  'tick-hover',
+const REDUCED_SKIP: ReadonlySet<SoundName> = new Set<SoundName>([
+  ...SOUND_FAMILIES['tick-hover'],
   'pencil-scratch',
-  ...TYPING_TICK_VARIANTS,
+  ...SOUND_FAMILIES['typing-tick'],
 ]);
 
 export const soundUrl = (name: SoundName): string => `/sounds/${name}.wav`;
+
+/* --------------------------- sound character ------------------------------ */
+
+/** settings.soundCharacter — the user-facing voicing preset. */
+export type SoundCharacter = 'calm' | 'rich' | 'minimal';
+
+export const SOUND_CHARACTERS = ['calm', 'rich', 'minimal'] as const satisfies readonly SoundCharacter[];
+
+export interface CharacterProfile {
+  /** Extra gain per category, on top of the user's sliders. */
+  readonly gain: Readonly<Record<SoundCategory, number>>;
+  /** Half-width of the per-play playback-rate jitter (±, as a fraction). */
+  readonly pitchJitter: number;
+  /** Half-width of the per-play level jitter (±, as a fraction). */
+  readonly levelJitter: number;
+  /** Which slice of each family this character draws its variants from. */
+  readonly pool: VariantWeight | 'all';
+  /** Sounds this character never plays. */
+  readonly skip: ReadonlySet<SoundName>;
+  /** Human-readable one-liner for the settings row. */
+  readonly blurb: string;
+}
+
+/** Decorative sounds — pleasant, but nothing depends on them. */
+const DECORATIVE: readonly SoundName[] = [
+  ...SOUND_FAMILIES['tick-hover'],
+  ...SOUND_FAMILIES['typing-tick'],
+  ...SOUND_FAMILIES['shelf-whoosh'],
+  ...SOUND_FAMILIES.confetti,
+  'pencil-scratch',
+];
+
+export const CHARACTER_PROFILES: Record<SoundCharacter, CharacterProfile> = {
+  // The reference voicing. Every gain is exactly 1 so `calm` is a pure
+  // pass-through of the user's own sliders.
+  calm: {
+    gain: { ui: 1, pages: 1, shelf: 1, ambient: 1 },
+    pitchJitter: 0.03,
+    levelJitter: 0.08,
+    pool: 'all',
+    skip: new Set(),
+    blurb: 'soft and even — the whole set, gently varied',
+  },
+  rich: {
+    gain: { ui: 1.1, pages: 1.1, shelf: 1.1, ambient: 1.35 },
+    pitchJitter: 0.05,
+    levelJitter: 0.12,
+    pool: 'full',
+    skip: new Set(),
+    blurb: 'the longest, most textured takes, with more room around them',
+  },
+  minimal: {
+    gain: { ui: 0.6, pages: 0.7, shelf: 0.65, ambient: 0.7 },
+    pitchJitter: 0.015,
+    levelJitter: 0.04,
+    pool: 'plain',
+    skip: new Set(DECORATIVE),
+    blurb: 'only what an action needs, quieter — no hover or typing ticks',
+  },
+};
 
 /* --------------------------- injectable Howler ---------------------------- */
 
@@ -159,6 +396,7 @@ const defaultVolumes = (): Volumes => ({
 let volumes: Volumes = defaultVolumes();
 let muted = false;
 let reducedSound = false;
+let character: SoundCharacter = 'calm';
 
 const howls = new Map<SoundName, Promise<HowlLike>>();
 
@@ -173,6 +411,9 @@ let ambient: AmbientState | undefined;
 let ambientWanted = false;
 /** Which soundscape the bed realizes when it runs ('none' = silence). */
 let soundscape: SoundscapeName = 'library';
+
+/** RNG behind variant choice, pitch jitter and level jitter. */
+let playRng: () => number = Math.random;
 
 /* -------------------------- variant rotation logic ------------------------- */
 
@@ -199,7 +440,43 @@ export function createVariantPicker<T>(variants: readonly T[], rng: () => number
   };
 }
 
-let pickPageFlip = createVariantPicker(PAGE_FLIP_VARIANTS);
+/**
+ * The variants of `family` this character is allowed to draw from. Falls
+ * back to the whole family when the character's slice would be empty, so a
+ * one-variant family can never starve the picker.
+ */
+export function poolFor(family: FamilyName, forCharacter: SoundCharacter = character): readonly SoundName[] {
+  const all = SOUND_FAMILIES[family] as readonly SoundName[];
+  const { pool } = CHARACTER_PROFILES[forCharacter];
+  if (pool === 'all') return all;
+  const slice = all.filter((n) => VARIANT_WEIGHTS[n] === pool);
+  return slice.length > 0 ? slice : all;
+}
+
+/**
+ * One rotating picker per family per character. Keyed by both so switching
+ * character does not have to reset every family's rotation, and so a family
+ * whose pool changed picks up the new pool immediately.
+ */
+const pickers = new Map<string, () => SoundName>();
+
+function pickVariant(family: FamilyName): SoundName {
+  const key = `${family}|${character}`;
+  let pick = pickers.get(key);
+  if (pick === undefined) {
+    pick = createVariantPicker(poolFor(family), () => playRng());
+    pickers.set(key, pick);
+  }
+  return pick();
+}
+
+const isFamily = (name: PlayableName): name is FamilyName =>
+  Object.prototype.hasOwnProperty.call(SOUND_FAMILIES, name);
+
+/** Resolve a playable name to the concrete file this play() will use. */
+function resolveName(name: PlayableName): SoundName {
+  return isFamily(name) ? pickVariant(name) : name;
+}
 
 /* -------------------------------- internals -------------------------------- */
 
@@ -221,16 +498,22 @@ function ensureHowl(name: SoundName): Promise<HowlLike> {
 
 function effectiveVolume(name: SoundName, requested: number | undefined): number {
   const category = SOUND_MANIFEST[name].category;
-  return clamp01(requested ?? 1) * volumes[category] * volumes.master;
+  const trim = CHARACTER_PROFILES[character].gain[category];
+  return clamp01(clamp01(requested ?? 1) * volumes[category] * volumes.master * trim);
 }
+
+/** A symmetric ±half multiplier around 1, from the play RNG. */
+const jitter = (half: number): number => 1 + (playRng() * 2 - 1) * half;
 
 /* --------------------------------- API ------------------------------------ */
 
 export interface PlayOptions {
   /** Per-call gain 0..1, multiplied with category and master gains. */
   volume?: number;
-  /** Playback rate (1 = normal); callers can jitter ±10% to keep repeats organic. */
+  /** Playback rate (1 = normal). When omitted the engine jitters it itself. */
   rate?: number;
+  /** Opt out of the automatic per-play pitch/level jitter. */
+  noJitter?: boolean;
 }
 
 /**
@@ -243,10 +526,14 @@ export async function init(): Promise<void> {
 
 /**
  * Fire-and-forget playback. Resolves with the Howler sound id, or undefined
- * when the sound was skipped (muted, reduced-sound, or ambient delegation).
+ * when the sound was skipped (muted, reduced-sound, character-skipped, or
+ * ambient delegation).
+ *
+ * A family name rotates through that family's variants; every play also gets
+ * a small pitch and level nudge so repetition never fatigues.
  */
 export async function play(name: PlayableName, options: PlayOptions = {}): Promise<number | undefined> {
-  const resolved: SoundName = name === 'page-flip' ? pickPageFlip() : name;
+  const resolved = resolveName(name);
   if (AMBIENT_LOOP_NAMES.has(resolved)) {
     // Playing an ambient loop directly means "switch the bed to it".
     const entry = (Object.entries(SOUNDSCAPE_LOOPS) as Array<[SoundscapeName, SoundName]>).find(
@@ -258,10 +545,18 @@ export async function play(name: PlayableName, options: PlayOptions = {}): Promi
   }
   if (muted) return undefined;
   if (reducedSound && REDUCED_SKIP.has(resolved)) return undefined;
+  const profile = CHARACTER_PROFILES[character];
+  if (profile.skip.has(resolved)) return undefined;
+
+  const jitterOn = options.noJitter !== true;
+  const level = jitterOn ? jitter(profile.levelJitter) : 1;
+  const rate =
+    options.rate ?? (jitterOn && profile.pitchJitter > 0 ? jitter(profile.pitchJitter) : undefined);
+
   const howl = await ensureHowl(resolved);
   const id = howl.play();
-  howl.volume(effectiveVolume(resolved, options.volume), id);
-  if (options.rate !== undefined) howl.rate(options.rate, id);
+  howl.volume(effectiveVolume(resolved, (options.volume ?? 1) * level), id);
+  if (rate !== undefined) howl.rate(rate, id);
   return id;
 }
 
@@ -340,6 +635,20 @@ export function getVolumes(): Readonly<Volumes> {
   return { ...volumes };
 }
 
+/**
+ * settings.soundCharacter -> here (via the settings apply step).
+ * Live-applies to the running ambient bed so the change is audible at once.
+ */
+export function setSoundCharacter(next: SoundCharacter): void {
+  if (character === next) return;
+  character = next;
+  if (ambient) ambient.howl.volume(effectiveVolume(ambient.name, undefined), ambient.id);
+}
+
+export function getSoundCharacter(): SoundCharacter {
+  return character;
+}
+
 /** Hard mute for every sound; restores the ambient bed on unmute. */
 export function muteAll(mute: boolean): void {
   if (muted === mute) return;
@@ -375,7 +684,7 @@ export function isReducedSound(): boolean {
  *
  * The engine handles everything else: the enabled flag (settings.typingSounds
  * via setTypingSounds), rate limiting, variant rotation, velocity variation,
- * mute and reduced-sound.
+ * mute, reduced-sound and the character preset.
  */
 
 /** Hard ceiling on tick playback rate — held keys stay a whisper. */
@@ -386,7 +695,6 @@ let typingSoundsEnabled = false;
 let lastTypingTickMs = Number.NEGATIVE_INFINITY;
 /** Total ticks actually played this session (observability for tests/E2E). */
 let typingTicksPlayed = 0;
-let pickTypingTick = createVariantPicker(TYPING_TICK_VARIANTS);
 let typingRng: () => number = Math.random;
 
 /** settings.typingSounds -> here (via the settings apply step). */
@@ -400,16 +708,17 @@ export function isTypingSounds(): boolean {
 
 /**
  * Editor keystroke hook. Rate-limited to 12 ticks/s; each tick is a rotated
- * pencil-tap variant with velocity-varied gain and a touch of rate jitter.
- * `nowMs` is injectable for deterministic tests.
+ * pencil-tap variant with velocity-varied gain. `nowMs` is injectable for
+ * deterministic tests.
  */
 export function keystroke(nowMs: number = Date.now()): void {
   if (!typingSoundsEnabled || muted || reducedSound) return;
+  if (CHARACTER_PROFILES[character].skip.has('typing-tick-1')) return;
   if (nowMs - lastTypingTickMs < TYPING_MIN_INTERVAL_MS) return;
   lastTypingTickMs = nowMs;
   typingTicksPlayed += 1;
   const velocity = 0.45 + 0.55 * typingRng();
-  void play(pickTypingTick(), { volume: velocity, rate: 0.94 + 0.12 * typingRng() });
+  void play('typing-tick', { volume: velocity });
 }
 
 /* ------------------------------- hourly chime ------------------------------ */
@@ -494,6 +803,7 @@ export interface SoundEngineState {
   ambientPlaying: SoundName | null;
   muted: boolean;
   reducedSound: boolean;
+  character: SoundCharacter;
   typingSounds: boolean;
   /** Ticks actually played this session — E2E asserts the rate limiter with it. */
   typingTicksPlayed: number;
@@ -510,6 +820,7 @@ export function getEngineState(): SoundEngineState {
     ambientPlaying: ambient?.name ?? null,
     muted,
     reducedSound,
+    character,
     typingSounds: typingSoundsEnabled,
     typingTicksPlayed,
     hourlyChime: hourlyChimeEnabled,
@@ -533,6 +844,9 @@ declare global {
       keystroke: typeof keystroke;
       setHourlyChime: typeof setHourlyChime;
       chimeTick: typeof chimeTick;
+      setSoundCharacter: typeof setSoundCharacter;
+      poolFor: typeof poolFor;
+      play: typeof play;
     };
   }
 }
@@ -547,6 +861,9 @@ if (typeof window !== 'undefined') {
     keystroke,
     setHourlyChime,
     chimeTick,
+    setSoundCharacter,
+    poolFor,
+    play,
   };
 }
 
@@ -558,9 +875,15 @@ export function setChimeDepsForTests(deps: ChimeDeps): void {
   launchedAtMs = deps.now();
 }
 
-/** Swap the typing velocity/jitter RNG for deterministic assertions. */
+/** Swap the typing velocity RNG for deterministic assertions. */
 export function setTypingRngForTests(rng: () => number): void {
   typingRng = rng;
+}
+
+/** Swap the variant/pitch/level RNG for deterministic assertions. */
+export function setPlayRngForTests(rng: () => number): void {
+  playRng = rng;
+  pickers.clear();
 }
 
 /** Reset all engine state (volumes, mute, caches, variant rotation). */
@@ -568,17 +891,18 @@ export function resetEngineForTests(): void {
   volumes = defaultVolumes();
   muted = false;
   reducedSound = false;
+  character = 'calm';
   ambient = undefined;
   ambientWanted = false;
   soundscape = 'library';
   howls.clear();
   howlerModule = undefined;
   loadHowler = defaultLoader;
-  pickPageFlip = createVariantPicker(PAGE_FLIP_VARIANTS);
+  pickers.clear();
+  playRng = Math.random;
   typingSoundsEnabled = false;
   lastTypingTickMs = Number.NEGATIVE_INFINITY;
   typingTicksPlayed = 0;
-  pickTypingTick = createVariantPicker(TYPING_TICK_VARIANTS);
   typingRng = Math.random;
   if (chimeTimer !== undefined) clearInterval(chimeTimer);
   chimeTimer = undefined;

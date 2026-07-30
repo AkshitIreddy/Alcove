@@ -25,6 +25,15 @@
  */
 
 import { charmColorCss, drawCoverCharm, type CharmKind } from './charms';
+import {
+  DEFAULT_LIGHT_RIG,
+  applyAmbientOcclusion,
+  applyKeyLight,
+  applyRimLight,
+  applySpecularCatch,
+  keyToSource,
+  type LightRig,
+} from './lighting';
 import { clamp, mulberry32, type RandomFn } from './noise';
 import {
   applyOutlineWear,
@@ -44,7 +53,7 @@ import {
 
 /* --------------------------------- params -------------------------------- */
 
-export const COVER_PALETTE_COUNT = 12;
+export const COVER_PALETTE_COUNT = 20;
 export const COVER_FRAME_COUNT = 4;
 export const COVER_MEDALLION_COUNT = 8;
 export const COVER_TEXTURES = ['cloth', 'leather', 'paper'] as const;
@@ -87,6 +96,11 @@ export interface CoverParams {
   charm?: CharmKind;
   /** Index into charms.CHARM_COLORS. */
   charmColor?: number;
+  /**
+   * Sub-treatment within the material (crackled vs pebbled leather, ribbed vs
+   * flat cloth, combed vs stone marbling…). Inherited from the spine.
+   */
+  boardStyle?: number;
 }
 
 /** The user-overridable subset of CoverParams (everything but the seed). */
@@ -154,6 +168,9 @@ export function deriveCoverParams(
     wear: spine.wear ?? 0.12,
     charm: spine.charm ?? 'none',
     charmColor: spine.charmColor ?? 0,
+    // Sub-treatment within the material: a spine bound in crackled leather
+    // must pull out into a cover in crackled leather.
+    boardStyle: spine.boardStyle ?? 0,
   };
   const merged = overrides ? { ...derived, ...overrides } : derived;
   // A material override must drag the legacy texture bucket along, or the
@@ -173,22 +190,32 @@ interface HSL {
 }
 
 /**
- * The 12 curated warm pigment duos (top/light, bottom/dark) — same order as
- * art/spines.ts PALETTES (not exported there; drift is cosmetic only).
+ * The 20 curated pigment duos (top/light, bottom/dark) — same order and same
+ * values as art/spines.ts PALETTES (not exported there; drift is cosmetic
+ * only, but a spine and its own pull-out cover disagreeing is not, so keep
+ * these two tables in step).
  */
 const PALETTES: ReadonlyArray<readonly [HSL, HSL]> = [
-  [{ h: 38, s: 62, l: 52 }, { h: 30, s: 58, l: 38 }], // amber
-  [{ h: 16, s: 55, l: 48 }, { h: 10, s: 52, l: 34 }], // terracotta
-  [{ h: 95, s: 28, l: 42 }, { h: 100, s: 30, l: 30 }], // moss
-  [{ h: 210, s: 26, l: 48 }, { h: 214, s: 30, l: 34 }], // dusty blue
-  [{ h: 315, s: 24, l: 40 }, { h: 320, s: 28, l: 28 }], // plum
-  [{ h: 44, s: 60, l: 46 }, { h: 40, s: 55, l: 33 }], // ochre
-  [{ h: 130, s: 16, l: 52 }, { h: 135, s: 18, l: 38 }], // sage
-  [{ h: 22, s: 60, l: 40 }, { h: 18, s: 58, l: 28 }], // rust
-  [{ h: 28, s: 38, l: 52 }, { h: 24, s: 36, l: 38 }], // clay
-  [{ h: 70, s: 30, l: 38 }, { h: 66, s: 32, l: 27 }], // olive
-  [{ h: 200, s: 18, l: 42 }, { h: 204, s: 20, l: 30 }], // slate
-  [{ h: 355, s: 32, l: 56 }, { h: 350, s: 30, l: 42 }], // blush
+  [{ h: 38, s: 64, l: 52 }, { h: 28, s: 62, l: 31 }], // 0  amber
+  [{ h: 16, s: 58, l: 47 }, { h: 8, s: 56, l: 27 }], // 1  terracotta
+  [{ h: 95, s: 30, l: 41 }, { h: 102, s: 34, l: 23 }], // 2  moss
+  [{ h: 210, s: 28, l: 46 }, { h: 216, s: 34, l: 26 }], // 3  dusty blue
+  [{ h: 315, s: 26, l: 39 }, { h: 322, s: 32, l: 21 }], // 4  plum
+  [{ h: 44, s: 62, l: 46 }, { h: 38, s: 58, l: 27 }], // 5  ochre
+  [{ h: 130, s: 18, l: 51 }, { h: 136, s: 22, l: 31 }], // 6  sage
+  [{ h: 22, s: 62, l: 39 }, { h: 16, s: 62, l: 22 }], // 7  rust
+  [{ h: 28, s: 40, l: 51 }, { h: 22, s: 38, l: 31 }], // 8  clay
+  [{ h: 70, s: 32, l: 37 }, { h: 64, s: 36, l: 21 }], // 9  olive
+  [{ h: 200, s: 20, l: 41 }, { h: 206, s: 24, l: 23 }], // 10 slate
+  [{ h: 355, s: 34, l: 55 }, { h: 348, s: 34, l: 35 }], // 11 blush
+  [{ h: 2, s: 54, l: 33 }, { h: 356, s: 56, l: 17 }], // 12 oxblood
+  [{ h: 220, s: 46, l: 29 }, { h: 226, s: 50, l: 15 }], // 13 navy
+  [{ h: 148, s: 36, l: 27 }, { h: 154, s: 40, l: 14 }], // 14 forest
+  [{ h: 33, s: 46, l: 60 }, { h: 27, s: 42, l: 40 }], // 15 tan
+  [{ h: 44, s: 40, l: 83 }, { h: 38, s: 32, l: 62 }], // 16 cream
+  [{ h: 212, s: 12, l: 25 }, { h: 214, s: 14, l: 11 }], // 17 ink
+  [{ h: 186, s: 36, l: 33 }, { h: 192, s: 40, l: 18 }], // 18 teal
+  [{ h: 36, s: 76, l: 55 }, { h: 28, s: 72, l: 34 }], // 19 saffron
 ];
 
 const FONT_STACKS: readonly string[] = [
@@ -995,6 +1022,13 @@ function paintTitlePlate(
 export interface RenderCoverOptions {
   /** Skip the title plate even when a title is given (page backdrops). */
   plate?: boolean;
+  /**
+   * The room's light rig, so a pulled-out book keeps the sun it was shelved
+   * under. Defaults to the house golden-hour rig.
+   */
+  rig?: LightRig;
+  /** Bake the light passes into the cover. Default true. */
+  light?: boolean;
 }
 
 /**
@@ -1040,8 +1074,9 @@ export function renderCoverInto(
   ctx.save();
   paintBase(ctx, w, h, colA, colB);
   if (params.material) {
-    // Studio books use the six-material vocabulary shared with the spine.
-    paintBindingMaterial(ctx, w, h, material, tones, s, rnd);
+    // Studio books use the seven-material vocabulary shared with the spine,
+    // including the per-book sub-treatment (crackle / rib / marbling variant).
+    paintBindingMaterial(ctx, w, h, material, tones, s, rnd, params.boardStyle ?? 0);
   } else {
     paintTexture(ctx, w, h, params.texture, colA, colB, s, rnd);
   }
@@ -1098,6 +1133,55 @@ export function renderCoverInto(
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
+
+  // --- the light rig ------------------------------------------------------
+  // The pull-out cover has to be lit by the SAME sun as the shelf it came
+  // from, or the book visibly changes material as it leaves the row. Same
+  // pass order as the spine: AO into the board edges, key with a hot spot,
+  // rim on the edges facing the source, and a specular catch on the gilt.
+  if (opts.light !== false) {
+    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
+    applyAmbientOcclusion(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      reach: Math.min(w, h) * 0.16,
+      strength: 0.55,
+      corners: true,
+    });
+    applyKeyLight(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      intensity: 0.92,
+      hotSpot: rig.hotSpot * (material === 'silk' ? 1.25 : 0.85),
+    });
+    applyRimLight(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      thickness: Math.max(1.5, Math.min(w, h) * 0.02),
+      strength: 0.85,
+    });
+    if (params.gilt) {
+      const src = keyToSource(rig);
+      applySpecularCatch(ctx, {
+        rig,
+        x: w * (src.x >= 0 ? 0.68 : 0.32),
+        y: h * (src.y >= 0 ? 0.66 : 0.34),
+        radius: Math.min(w, h) * 0.3,
+        aspect: 1.9,
+        strength: 0.34,
+        colour: '#fff4cc',
+      });
+    }
+  }
 
   // Pencil outline (double stroked, jittered) hugging the cover edge.
   ctx.strokeStyle = GRAPHITE;

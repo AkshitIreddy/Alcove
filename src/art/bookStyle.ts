@@ -47,11 +47,14 @@ import {
   PIGMENT_LABELS,
   SPINE_FORMATS,
   SPINE_FORMAT_IDS,
+  MAX_BOARD_STYLE,
   SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
+  THICKNESS_CLASSES,
   TITLE_PLATES,
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
+  composeShelfRow,
   deriveSpineParams,
   formatForHeight,
   heightForFormat,
@@ -60,18 +63,27 @@ import {
   isSpineFormat,
   isTitlePlateStyle,
   textureFromMaterial,
+  thicknessClassFor,
   type BindingMaterial,
+  type ComposeShelfRowOptions,
   type EdgeTreatment,
+  type RowBookInput,
+  type ShelfRowComposition,
   type SpineFormat,
   type SpineParams,
+  type ThicknessClass,
   type TitlePlateStyle,
 } from './spines';
 
 export type {
   BindingMaterial,
   CharmKind,
+  ComposeShelfRowOptions,
   EdgeTreatment,
+  RowBookInput,
+  ShelfRowComposition,
   SpineFormat,
+  ThicknessClass,
   TitlePlateStyle,
 };
 /**
@@ -88,6 +100,7 @@ export {
   EDGE_LABELS,
   EDGE_TREATMENTS,
   MATERIAL_LABELS,
+  MAX_BOARD_STYLE,
   MAX_RAISED_BANDS,
   ORNAMENT_COUNT,
   ORNAMENT_LABELS,
@@ -97,12 +110,15 @@ export {
   SPINE_FORMAT_IDS,
   SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
+  THICKNESS_CLASSES,
   TITLE_PLATES,
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
+  composeShelfRow,
   formatForHeight,
   heightForFormat,
   isSpineFormat,
+  thicknessClassFor,
 };
 
 /** Title faces, index-aligned with SpineParams.font / CoverParams.titleFont. */
@@ -440,12 +456,43 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
 /**
  * A book's spine thickness from its page count. Sub-linear (√) so a 40-page
  * notebook is fat but not absurd, and every book still fits the shelf band.
+ *
+ * The base was dropped from 20 to 9 when the painterly rebuild widened
+ * `SPINE_THICKNESS_RANGE`: with a floor of 20 a one-page book and a ten-page
+ * book were within a few px of each other, and a young library — where every
+ * book has a similar page count — came out as a picket fence.
  */
 export function thicknessFromPageCount(pageCount: number | undefined): number | undefined {
   const n = num(pageCount);
   if (n === undefined || n <= 0) return undefined;
   return clamp(
-    20 + Math.sqrt(n) * 6.6,
+    9 + Math.sqrt(n) * 5.4,
+    SPINE_THICKNESS_RANGE.min,
+    SPINE_THICKNESS_RANGE.max,
+  );
+}
+
+/**
+ * How much of a book's thickness comes from its seed rather than its page
+ * count, when both are available.
+ *
+ * Page count alone is *correct* and *boring*: a fresh library's books all
+ * have one or two pages, so they all come out the same width — precisely the
+ * "near-uniform widths" the art direction rejects. The seed's multi-modal
+ * roll (pamphlet → tome, see `spines.THICKNESS_CLASSES`) supplies the spread;
+ * the page count still moves the needle, so a book that grows visibly fattens.
+ */
+export const SEEDED_THICKNESS_WEIGHT = 0.58;
+
+/**
+ * Blend a page-count thickness with the book's own seeded thickness class.
+ * Exported so the studio's thickness slider can show what the default *would*
+ * be for a given page count.
+ */
+export function blendThickness(seeded: number, fromPages: number | undefined): number {
+  if (fromPages === undefined) return clamp(seeded, SPINE_THICKNESS_RANGE.min, SPINE_THICKNESS_RANGE.max);
+  return clamp(
+    fromPages * (1 - SEEDED_THICKNESS_WEIGHT) + seeded * SEEDED_THICKNESS_WEIGHT,
     SPINE_THICKNESS_RANGE.min,
     SPINE_THICKNESS_RANGE.max,
   );
@@ -588,7 +635,7 @@ export function resolveBookStyle(
   const format: SpineFormat = formatForHeight(height);
 
   const thickness = clamp(
-    over.thickness ?? thicknessFromPageCount(opts.pageCount) ?? base.w,
+    over.thickness ?? blendThickness(base.w, thicknessFromPageCount(opts.pageCount)),
     SPINE_THICKNESS_RANGE.min,
     SPINE_THICKNESS_RANGE.max,
   );

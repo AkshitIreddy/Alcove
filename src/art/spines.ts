@@ -17,7 +17,27 @@ import {
   drawSpineCharm,
   type CharmKind,
 } from './charms';
-import { clamp, mulberry32, type RandomFn } from './noise';
+import {
+  DEFAULT_LIGHT_RIG,
+  applyAmbientOcclusion,
+  applyAtmosphericHaze,
+  applyColourBleed,
+  applyCreaseOcclusion,
+  applyKeyLight,
+  applyRimLight,
+  applySpecularCatch,
+  blowOut,
+  castContactShadow,
+  castObjectShadow,
+  cylinderShading,
+  keyToSource,
+  litEdges,
+  mixColourCss,
+  shiftTemperature,
+  withAlpha,
+  type LightRig,
+} from './lighting';
+import { clamp, lerp, mulberry32, type RandomFn } from './noise';
 
 /* ------------------------------ studio vocab ------------------------------ */
 
@@ -36,8 +56,26 @@ export const BINDING_MATERIALS = [
   'vellum',
   'linen',
   'silk',
+  'marbled',
 ] as const;
 export type BindingMaterial = (typeof BINDING_MATERIALS)[number];
+
+/**
+ * Sub-treatments *within* a material, rolled from the seed rather than chosen
+ * in the studio. The painterly spec asks for "cracked leather, ribbed cloth,
+ * marbled boards" as separate visual facts; rather than inflate the studio's
+ * material picker to a dozen entries, each material carries two or three
+ * genuinely different grains and the seed picks one:
+ *
+ * - leather: `0` smooth calf · `1` pebbled morocco · `2` crackled (craquelure)
+ * - cloth:   `0` flat buckram · `1` ribbed (rep) cloth · `2` pyroxylin sheen
+ * - paper:   `0` laid · `1` coated/glazed · `2` kraft
+ * - vellum:  `0` pale skin · `1` tanned skin
+ * - linen:   `0` coarse · `1` fine
+ * - silk:    `0` satin · `1` watered/moiré
+ * - marbled: `0` combed · `1` Spanish wave · `2` stone/shell
+ */
+export const MAX_BOARD_STYLE = 2;
 
 /** Title panel treatments on the spine (and, mirrored, on the cover). */
 export const TITLE_PLATES = ['none', 'gilt', 'label', 'debossed'] as const;
@@ -48,16 +86,28 @@ export const EDGE_TREATMENTS = ['plain', 'gilt', 'marbled', 'speckled'] as const
 export type EdgeTreatment = (typeof EDGE_TREATMENTS)[number];
 
 /** Number of curated pigment duos (shared with covers.ts). */
-export const PIGMENT_COUNT = 12;
+export const PIGMENT_COUNT = 20;
 /** Number of ornament stamps (a book may also have none). */
 export const ORNAMENT_COUNT = 12;
 /** Maximum raised bands (cords) across a spine. */
 export const MAX_RAISED_BANDS = 5;
 
-/** Legal spine height range in world px. */
-export const SPINE_HEIGHT_RANGE = { min: 150, max: 290 } as const;
-/** Legal spine thickness range in world px. */
-export const SPINE_THICKNESS_RANGE = { min: 20, max: 64 } as const;
+/**
+ * Legal spine height range in world px. Widened at both ends from the old
+ * 150–290: the reference's skyline swings 20–30% between neighbours, and a
+ * band that narrow could not express it.
+ */
+export const SPINE_HEIGHT_RANGE = { min: 132, max: 300 } as const;
+
+/**
+ * Legal spine thickness range in world px.
+ *
+ * The old floor of 20 was the single loudest "machine-made" tell on the shelf:
+ * the reference has slivers you could lose a fingernail in sitting right next
+ * to tomes four times their width. 8 → 58 gives that ratio. Anything relying
+ * on a minimum drawable spine should clamp on its own side.
+ */
+export const SPINE_THICKNESS_RANGE = { min: 8, max: 58 } as const;
 
 /**
  * Book formats, the bibliographic sizes a real shelf mixes: a folio towers
@@ -65,11 +115,11 @@ export const SPINE_THICKNESS_RANGE = { min: 20, max: 64 } as const;
  * SPINE_HEIGHT_RANGE. The studio's height slider overrides them outright.
  */
 export const SPINE_FORMATS = {
-  folio: { min: 262, max: 288, label: 'Folio' },
-  quarto: { min: 240, max: 264, label: 'Quarto' },
-  octavo: { min: 214, max: 242, label: 'Octavo' },
-  duodecimo: { min: 188, max: 216, label: 'Duodecimo' },
-  pocket: { min: 162, max: 190, label: 'Pocket' },
+  folio: { min: 268, max: 300, label: 'Folio' },
+  quarto: { min: 238, max: 272, label: 'Quarto' },
+  octavo: { min: 204, max: 244, label: 'Octavo' },
+  duodecimo: { min: 170, max: 212, label: 'Duodecimo' },
+  pocket: { min: 134, max: 178, label: 'Pocket' },
 } as const;
 export type SpineFormat = keyof typeof SPINE_FORMATS;
 export const SPINE_FORMAT_IDS = Object.keys(SPINE_FORMATS) as readonly SpineFormat[];
@@ -95,9 +145,10 @@ export const MATERIAL_LABELS: Readonly<Record<BindingMaterial, string>> = {
   vellum: 'Vellum',
   linen: 'Linen',
   silk: 'Silk',
+  marbled: 'Marbled boards',
 };
 
-/** Display names for the 12 pigment duos, index-aligned with PALETTES. */
+/** Display names for the 20 pigment duos, index-aligned with PALETTES. */
 export const PIGMENT_LABELS: readonly string[] = [
   'Amber',
   'Terracotta',
@@ -111,6 +162,14 @@ export const PIGMENT_LABELS: readonly string[] = [
   'Olive',
   'Slate',
   'Blush',
+  'Oxblood',
+  'Navy',
+  'Forest',
+  'Tan',
+  'Cream',
+  'Ink',
+  'Teal',
+  'Saffron',
 ];
 
 /** Display names for the 12 ornament stamps, index-aligned with drawOrnament. */
@@ -228,6 +287,36 @@ export interface SpineParams {
   charm?: CharmKind;
   /** Index into charms.CHARM_COLORS for the ribbon/twine/wax colourway. */
   charmColor?: number;
+
+  /* ------------------- painterly rebuild additions (§1, §3) ---------------- */
+  /* All optional, all seed-derived, none exposed in the studio: these are the
+   * facts that separate "a painted book" from "a coloured rectangle". */
+
+  /**
+   * Sub-treatment within the material (see MAX_BOARD_STYLE): crackled vs
+   * pebbled leather, ribbed vs flat cloth, combed vs stone marbling…
+   */
+  boardStyle?: number;
+  /**
+   * How much of the text block's fore-edge shows beside the spine, as a
+   * fraction of the spine's drawn width (0.05–0.24). The reference has a
+   * visible cream page-block next to *every* spine; we had none.
+   */
+  pageBlock?: number;
+  /**
+   * How far the book stands proud of (positive) or recessed behind (negative)
+   * the shelf's front edge, in world px, ±10. Drives the compositor's depth
+   * offset, the AO on recessed books and the contact shadow's gap.
+   */
+  proud?: number;
+  /** Extra sun-fade on the side facing the key, 0–1 (independent of `wear`). */
+  sunFade?: number;
+  /** How much of the foil title has rubbed away, 0 (crisp) → 1 (ghost). */
+  foilWear?: number;
+  /** The book's own bump/knock history: 0–1, drives corner and cap damage. */
+  knock?: number;
+  /** Squab: a slightly convex (rounded) spine, 0 (flat back) → 1 (full round). */
+  round?: number;
 }
 
 /** Suggested base spine height in world px (book zone is 280). */
@@ -239,20 +328,45 @@ interface HSL {
   l: number;
 }
 
-/** 12 curated warm pigment duos (top/light, bottom/dark). */
+/**
+ * 20 curated pigment duos (top/light, bottom/dark).
+ *
+ * Two changes from the original twelve, both straight out of the painterly
+ * spec's "deep colour range" line:
+ *
+ *  1. Every dark partner tone was pushed down 4–7 points of lightness and up a
+ *     little in saturation. The whole shelf used to sit mid-tone; "genuinely
+ *     dark darks" is what a painting has and a diagram does not.
+ *  2. Eight pigments were appended — oxblood, navy, forest, tan, cream, ink,
+ *     teal and saffron. The reference's row is built out of exactly this kind
+ *     of spread: a couple of near-black bindings anchoring a run of tans and
+ *     creams, with one saturated red doing all the work.
+ *
+ * Order is append-only: index 0–11 keep their hue family so an existing
+ * book's identity survives the change.
+ */
 const PALETTES: ReadonlyArray<readonly [HSL, HSL]> = [
-  [{ h: 38, s: 62, l: 52 }, { h: 30, s: 58, l: 38 }], // amber
-  [{ h: 16, s: 55, l: 48 }, { h: 10, s: 52, l: 34 }], // terracotta
-  [{ h: 95, s: 28, l: 42 }, { h: 100, s: 30, l: 30 }], // moss
-  [{ h: 210, s: 26, l: 48 }, { h: 214, s: 30, l: 34 }], // dusty blue
-  [{ h: 315, s: 24, l: 40 }, { h: 320, s: 28, l: 28 }], // plum
-  [{ h: 44, s: 60, l: 46 }, { h: 40, s: 55, l: 33 }], // ochre
-  [{ h: 130, s: 16, l: 52 }, { h: 135, s: 18, l: 38 }], // sage
-  [{ h: 22, s: 60, l: 40 }, { h: 18, s: 58, l: 28 }], // rust
-  [{ h: 28, s: 38, l: 52 }, { h: 24, s: 36, l: 38 }], // clay
-  [{ h: 70, s: 30, l: 38 }, { h: 66, s: 32, l: 27 }], // olive
-  [{ h: 200, s: 18, l: 42 }, { h: 204, s: 20, l: 30 }], // slate
-  [{ h: 355, s: 32, l: 56 }, { h: 350, s: 30, l: 42 }], // blush
+  [{ h: 38, s: 64, l: 52 }, { h: 28, s: 62, l: 31 }], // 0  amber
+  [{ h: 16, s: 58, l: 47 }, { h: 8, s: 56, l: 27 }], // 1  terracotta
+  [{ h: 95, s: 30, l: 41 }, { h: 102, s: 34, l: 23 }], // 2  moss
+  [{ h: 210, s: 28, l: 46 }, { h: 216, s: 34, l: 26 }], // 3  dusty blue
+  [{ h: 315, s: 26, l: 39 }, { h: 322, s: 32, l: 21 }], // 4  plum
+  [{ h: 44, s: 62, l: 46 }, { h: 38, s: 58, l: 27 }], // 5  ochre
+  [{ h: 130, s: 18, l: 51 }, { h: 136, s: 22, l: 31 }], // 6  sage
+  [{ h: 22, s: 62, l: 39 }, { h: 16, s: 62, l: 22 }], // 7  rust
+  [{ h: 28, s: 40, l: 51 }, { h: 22, s: 38, l: 31 }], // 8  clay
+  [{ h: 70, s: 32, l: 37 }, { h: 64, s: 36, l: 21 }], // 9  olive
+  [{ h: 200, s: 20, l: 41 }, { h: 206, s: 24, l: 23 }], // 10 slate
+  [{ h: 355, s: 34, l: 55 }, { h: 348, s: 34, l: 35 }], // 11 blush
+  // --- the deep range the reference is actually built from -----------------
+  [{ h: 2, s: 54, l: 33 }, { h: 356, s: 56, l: 17 }], // 12 oxblood
+  [{ h: 220, s: 46, l: 29 }, { h: 226, s: 50, l: 15 }], // 13 navy
+  [{ h: 148, s: 36, l: 27 }, { h: 154, s: 40, l: 14 }], // 14 forest
+  [{ h: 33, s: 46, l: 60 }, { h: 27, s: 42, l: 40 }], // 15 tan
+  [{ h: 44, s: 40, l: 83 }, { h: 38, s: 32, l: 62 }], // 16 cream
+  [{ h: 212, s: 12, l: 25 }, { h: 214, s: 14, l: 11 }], // 17 ink
+  [{ h: 186, s: 36, l: 33 }, { h: 192, s: 40, l: 18 }], // 18 teal
+  [{ h: 36, s: 76, l: 55 }, { h: 28, s: 72, l: 34 }], // 19 saffron
 ];
 
 const FONTS: readonly string[] = [
@@ -290,9 +404,16 @@ export function deriveSpineParams(seed: number): SpineParams {
   const font = Math.floor(rnd() * 3) as 0 | 1 | 2;
   const gilt = rnd() < 0.3;
   const lean = (rnd() * 2 - 1) * 1.2;
-  // Average of two uniforms ⇒ triangular distribution peaked at the middle
-  // of 28–46, i.e. weighted toward 32–38.
-  const w = 28 + ((rnd() + rnd()) / 2) * 18;
+  // Spine thickness. The old recipe (triangular, 28–46) is exactly the
+  // "near-uniform widths" the art direction calls out: a triangular
+  // distribution puts four books in five inside a 10px band, and a row of
+  // those reads as a fence.
+  //
+  // A real shelf is a *mixture*: mostly ordinary octavos, but with a long
+  // thin tail of pamphlets and slim verse, and a short fat tail of atlases
+  // and bound volumes. So roll a class first, then a width inside it — a
+  // genuine multi-modal draw with the tails the reference has.
+  const w = thicknessRoll(rnd);
   const hJitter = (rnd() * 2 - 1) * 6;
   // New draws are APPENDED so every earlier parameter keeps its value for a
   // given seed (the rnd stream stays aligned with the original recipe).
@@ -324,6 +445,28 @@ export function deriveSpineParams(seed: number): SpineParams {
           Math.floor(rnd() * 6)
         ] ?? 'none';
   const charmColor = Math.floor(rnd() * 8);
+
+  // --- painterly rebuild rolls (appended: earlier fields keep their values) ---
+  const boardStyle = Math.floor(rnd() * (MAX_BOARD_STYLE + 1));
+  // Thin books show proportionally MORE page block (there is less spine to
+  // hide it behind), which is exactly what makes a row of slivers read as
+  // books rather than as coloured strips.
+  const pageBlock = clamp(0.05 + rnd() * 0.13 + (w < 20 ? 0.06 : 0), 0.05, 0.24);
+  // Most books sit flush; a quarter are noticeably pushed back or pulled
+  // forward. Squaring the roll keeps the extremes rare.
+  const proudRoll = rnd() * 2 - 1;
+  const proud = Math.sign(proudRoll) * proudRoll * proudRoll * 10;
+  const sunFade = rnd() * rnd();
+  const foilWear = clamp(rnd() * rnd() * 1.5, 0, 1);
+  const knock = rnd() * rnd();
+  // Round backs are a hand-binding convention: leather and vellum almost
+  // always, cloth sometimes, paper wrappers never.
+  const round =
+    material === 'leather' || material === 'vellum'
+      ? 0.55 + rnd() * 0.45
+      : material === 'cloth' || material === 'linen'
+        ? rnd() * 0.6
+        : rnd() * 0.25;
 
   // --- book format (appended last: every earlier field keeps its value) ---
   // A real shelf is not a row of identical rectangles — it is folios next to
@@ -365,7 +508,65 @@ export function deriveSpineParams(seed: number): SpineParams {
     height,
     charm,
     charmColor,
+    boardStyle,
+    pageBlock,
+    proud,
+    sunFade,
+    foilWear,
+    knock,
+    round,
   };
+}
+
+/* ------------------------------ thickness ---------------------------------- */
+
+/**
+ * The six thickness classes a real shelf mixes, with the share of books that
+ * fall in each. The spread — a 7px pamphlet standing next to a 54px atlas —
+ * is the single most important silhouette fact in the art direction.
+ */
+export const THICKNESS_CLASSES = [
+  { id: 'pamphlet', label: 'Pamphlet', min: 8, max: 13, weight: 9 },
+  { id: 'slim', label: 'Slim', min: 13, max: 20, weight: 17 },
+  { id: 'trade', label: 'Trade', min: 20, max: 28, weight: 26 },
+  { id: 'standard', label: 'Standard', min: 28, max: 37, weight: 24 },
+  { id: 'stout', label: 'Stout', min: 37, max: 46, weight: 15 },
+  { id: 'tome', label: 'Tome', min: 46, max: 58, weight: 9 },
+] as const;
+
+export type ThicknessClass = (typeof THICKNESS_CLASSES)[number]['id'];
+
+/**
+ * Draw one spine thickness in world px. Consumes exactly two values from
+ * `rnd` (class, then position inside the class) so the parameter stream stays
+ * aligned for every seed.
+ */
+export function thicknessRoll(rnd: RandomFn): number {
+  const roll = rnd();
+  let total = 0;
+  for (const c of THICKNESS_CLASSES) total += c.weight;
+  let acc = roll * total;
+  let chosen = THICKNESS_CLASSES[2] as (typeof THICKNESS_CLASSES)[number];
+  for (const c of THICKNESS_CLASSES) {
+    acc -= c.weight;
+    if (acc < 0) {
+      chosen = c;
+      break;
+    }
+  }
+  return clamp(
+    chosen.min + rnd() * (chosen.max - chosen.min),
+    SPINE_THICKNESS_RANGE.min,
+    SPINE_THICKNESS_RANGE.max,
+  );
+}
+
+/** Which thickness class a width lands in (for tests and the studio label). */
+export function thicknessClassFor(w: number): ThicknessClass {
+  for (const c of THICKNESS_CLASSES) {
+    if (w < c.max) return c.id;
+  }
+  return 'tome';
 }
 
 /* --------------------------- weighted roll tables ------------------------- */
@@ -383,12 +584,13 @@ function pickWeighted<T>(roll: number, table: ReadonlyArray<readonly [T, number]
 }
 
 const MATERIAL_WEIGHTS: ReadonlyArray<readonly [BindingMaterial, number]> = [
-  ['leather', 22],
-  ['cloth', 24],
-  ['paper', 18],
-  ['linen', 14],
-  ['vellum', 10],
-  ['silk', 12],
+  ['leather', 21],
+  ['cloth', 22],
+  ['paper', 16],
+  ['linen', 13],
+  ['vellum', 9],
+  ['silk', 10],
+  ['marbled', 9],
 ];
 
 /** `none` = chance of zero cords; `max` = cords drawn as 1 + floor(r*max). */
@@ -399,6 +601,9 @@ const MATERIAL_CORD_BIAS: Readonly<Record<BindingMaterial, { none: number; max: 
   linen: { none: 0.7, max: 3 },
   paper: { none: 0.86, max: 2 },
   silk: { none: 0.78, max: 2 },
+  // Marbled boards are the classic half-leather binding: the spine IS leather,
+  // so cords are the norm.
+  marbled: { none: 0.24, max: 5 },
 };
 
 /** Added to the wear multiplier — soft bindings age faster than leather. */
@@ -409,6 +614,7 @@ const MATERIAL_WEAR_BIAS: Readonly<Record<BindingMaterial, number>> = {
   vellum: 0.2,
   linen: 0.35,
   silk: 0.25,
+  marbled: 0.4,
 };
 
 const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = [
@@ -447,6 +653,10 @@ export function textureFromMaterial(material: BindingMaterial): 0 | 1 | 2 {
     case 'linen':
     case 'silk':
       return 0;
+    // Half-bound marbled boards read as leather on the pull-out cover: the
+    // spine and corners the user actually sees up close are calf.
+    case 'marbled':
+      return 1;
     default:
       return 2;
   }
@@ -926,7 +1136,15 @@ function drawOrnament(
  * without shifting hue — the same trick as the granulation tile, but with
  * shaped marks instead of white noise. Lazily built, shared forever.
  */
-type MaterialTileKind = 'pebble' | 'weave' | 'linen' | 'laid';
+type MaterialTileKind =
+  | 'pebble'
+  | 'weave'
+  | 'linen'
+  | 'laid'
+  | 'crackle'
+  | 'rib'
+  | 'morocco'
+  | 'kraft';
 const materialTiles = new Map<MaterialTileKind, Canvas2D>();
 
 const TILE_SIZE: Readonly<Record<MaterialTileKind, number>> = {
@@ -934,7 +1152,89 @@ const TILE_SIZE: Readonly<Record<MaterialTileKind, number>> = {
   weave: 48,
   linen: 64,
   laid: 64,
+  crackle: 160,
+  rib: 32,
+  morocco: 144,
+  kraft: 96,
 };
+
+/**
+ * Craquelure: the branching net of hairline cracks old leather grows as the
+ * finish dries and the boards flex. Built by growing a set of seeded polylines
+ * and letting them branch — a Voronoi would be more correct and a great deal
+ * slower, and at spine scale nobody can tell.
+ */
+function paintCrackleTile(ctx: Ctx2D, size: number, rnd: RandomFn): void {
+  const walk = (
+    x0: number,
+    y0: number,
+    angle: number,
+    len: number,
+    depth: number,
+    width: number,
+  ): void => {
+    let x = x0;
+    let y = y0;
+    let a = angle;
+    const seg = 5 + rnd() * 5;
+    const steps = Math.max(2, Math.round(len / seg));
+    // A crack is a valley: a dark core with a lit lip on the side the light
+    // would catch. Drawing both is what makes it read as *depth* rather than
+    // as a scratch of ink.
+    const pts: Pt[] = [{ x, y }];
+    for (let i = 0; i < steps; i++) {
+      a += (rnd() * 2 - 1) * 0.55;
+      x += Math.cos(a) * seg;
+      y += Math.sin(a) * seg;
+      pts.push({ x, y });
+    }
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = `rgba(22,22,22,${(0.26 + rnd() * 0.2).toFixed(3)})`;
+    ctx.lineWidth = width;
+    tracePoly(ctx, pts, false);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(238,238,238,${(0.12 + rnd() * 0.12).toFixed(3)})`;
+    ctx.lineWidth = width * 0.7;
+    ctx.save();
+    ctx.translate(-width * 0.55, -width * 0.55);
+    tracePoly(ctx, pts, false);
+    ctx.stroke();
+    ctx.restore();
+
+    if (depth > 0) {
+      const branches = 1 + Math.floor(rnd() * 2);
+      for (let b = 0; b < branches; b++) {
+        const at = pts[1 + Math.floor(rnd() * (pts.length - 1))] as Pt;
+        walk(
+          at.x,
+          at.y,
+          a + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.9),
+          len * (0.4 + rnd() * 0.3),
+          depth - 1,
+          Math.max(0.5, width * 0.72),
+        );
+      }
+    }
+  };
+
+  for (let i = 0; i < 14; i++) {
+    walk(rnd() * size, rnd() * size, rnd() * Math.PI * 2, 40 + rnd() * 70, 2, 1.1 + rnd() * 0.9);
+  }
+  // Fine surface crazing between the big cracks.
+  for (let i = 0; i < 260; i++) {
+    const x = rnd() * size;
+    const y = rnd() * size;
+    const a = rnd() * Math.PI * 2;
+    const l = 2 + rnd() * 6;
+    ctx.strokeStyle = `rgba(30,30,30,${(0.08 + rnd() * 0.12).toFixed(3)})`;
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    ctx.stroke();
+  }
+}
 
 /**
  * One cell of a plain (over-under) weave. `warp` true ⇒ the vertical thread
@@ -985,11 +1285,83 @@ function getMaterialTile(kind: MaterialTileKind): Canvas2D {
   const ctx = get2d(c);
   ctx.fillStyle = '#808080';
   ctx.fillRect(0, 0, size, size);
-  const rnd = mulberry32(
-    kind === 'pebble' ? 0x9e3b17 : kind === 'linen' ? 0x51c0de : kind === 'laid' ? 0x1a1d0e : 0x2b17a4,
-  );
+  const TILE_SEEDS: Readonly<Record<MaterialTileKind, number>> = {
+    pebble: 0x9e3b17,
+    linen: 0x51c0de,
+    laid: 0x1a1d0e,
+    weave: 0x2b17a4,
+    crackle: 0xc7ac41,
+    rib: 0x71bbed,
+    morocco: 0x3af0c0,
+    kraft: 0x8d21fa,
+  };
+  const rnd = mulberry32(TILE_SEEDS[kind]);
 
-  if (kind === 'pebble') {
+  if (kind === 'crackle') {
+    paintCrackleTile(ctx, size, rnd);
+  } else if (kind === 'rib') {
+    // Rep / ribbed cloth: parallel raised cords running across the spine.
+    // Each rib is a tiny cylinder — dark valley, lit crown, dark valley — and
+    // the pitch drifts slightly so it never reads as a printed stripe.
+    let y = 0;
+    while (y < size) {
+      const pitch = 3.4 + rnd() * 1.6;
+      const g = ctx.createLinearGradient(0, y, 0, y + pitch);
+      g.addColorStop(0, 'rgba(28,28,28,0.34)');
+      g.addColorStop(0.3, 'rgba(226,226,226,0.28)');
+      g.addColorStop(0.52, 'rgba(198,198,198,0.14)');
+      g.addColorStop(1, 'rgba(24,24,24,0.36)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, y, size, pitch);
+      y += pitch;
+    }
+    // Fine warp threads crossing the ribs, barely there.
+    for (let x = 0; x < size; x += 2.2) {
+      ctx.fillStyle = `rgba(160,160,160,${(0.04 + rnd() * 0.05).toFixed(3)})`;
+      ctx.fillRect(x, 0, 0.9, size);
+    }
+  } else if (kind === 'morocco') {
+    // Morocco (goat) grain: much larger, flatter, more angular cells than
+    // calf pebble, in drifting rows — the grain a fine binding actually has.
+    const rows = 9;
+    for (let j = 0; j < rows; j++) {
+      const cy = ((j + 0.5) / rows) * size;
+      let x = rnd() * 14;
+      while (x < size + 14) {
+        const rx = 6 + rnd() * 9;
+        const ry = 4 + rnd() * 5;
+        const yy = cy + (rnd() * 2 - 1) * 5;
+        const g = ctx.createRadialGradient(x - rx * 0.35, yy - ry * 0.4, ry * 0.1, x, yy, rx);
+        g.addColorStop(0, 'rgba(232,232,232,0.26)');
+        g.addColorStop(0.7, 'rgba(140,140,140,0.05)');
+        g.addColorStop(1, 'rgba(24,24,24,0.34)');
+        ctx.beginPath();
+        ctx.ellipse(x, yy, rx, ry, (rnd() * 2 - 1) * 0.35, 0, Math.PI * 2);
+        ctx.fillStyle = g;
+        ctx.fill();
+        x += rx * 1.5 + rnd() * 4;
+      }
+    }
+    // The deep valleys between the grain islands.
+    for (let i = 0; i < 400; i++) {
+      ctx.fillStyle = 'rgba(20,20,20,0.16)';
+      ctx.fillRect(rnd() * size, rnd() * size, 1.2 + rnd() * 2.6, 1.1);
+    }
+  } else if (kind === 'kraft') {
+    // Kraft / boards paper: coarse recycled pulp with visible long fibres.
+    for (let i = 0; i < 900; i++) {
+      ctx.fillStyle = rnd() < 0.5 ? 'rgba(60,60,60,0.1)' : 'rgba(228,228,228,0.12)';
+      ctx.fillRect(rnd() * size, rnd() * size, 0.9 + rnd() * 1.6, 0.9);
+    }
+    for (let i = 0; i < 70; i++) {
+      ctx.save();
+      ctx.translate(rnd() * size, rnd() * size);
+      ctx.rotate(rnd() * Math.PI);
+      ctx.fillStyle = rnd() < 0.4 ? 'rgba(48,42,34,0.2)' : 'rgba(236,230,216,0.22)';
+      ctx.fillRect(0, 0, 6 + rnd() * 22, 0.9 + rnd() * 0.8);
+      ctx.restore();
+    }
+  } else if (kind === 'pebble') {
     // Leather grain: clustered irregular cells with dark valleys between the
     // lit crowns. Two passes — big soft cells, then fine crazing on top —
     // so the grain still reads once the tile is scaled up on a cover.
@@ -1127,7 +1499,144 @@ export interface MaterialTones {
 }
 
 /**
- * Paint one of the six binding materials over an already-based, clipped
+ * Marbled paper boards — the swirled, combed sheets a half-bound book carries
+ * on its covers, and (on a narrow spine) a band of the same pattern.
+ *
+ * Three genuinely different historical patterns, chosen by `variant`:
+ *  - `0` **combed**: colour bands raked into a regular wave by a comb.
+ *  - `1` **Spanish wave**: the comb pattern overlaid with a hard, repeating
+ *    light/dark ripple pressed in as the sheet was lifted.
+ *  - `2` **stone / shell**: no comb at all — droplets spread into cells with
+ *    pale haloes, the oldest and loosest of the three.
+ *
+ * The palette is the book's own pigment duo plus a fixed set of period marbling
+ * colours, so a marbled book still reads as belonging to its shelf.
+ */
+export function paintMarbledBoard(
+  ctx: Ctx2D,
+  w: number,
+  h: number,
+  tones: MaterialTones,
+  s: number,
+  rnd: RandomFn,
+  variant = 0,
+): void {
+  const px = Math.max(0.5, s);
+  ctx.save();
+
+  // --- size (the ground the colours float on) ---
+  ctx.fillStyle = 'rgba(238, 227, 200, 0.5)';
+  ctx.fillRect(0, 0, w, h);
+
+  const inks = [
+    tones.dark(-8, 8, 1),
+    tones.light(2, 6, 1),
+    '#7b2f22',
+    '#2f4a6b',
+    '#6d5a1f',
+    '#4a2f52',
+    '#2f5340',
+  ];
+
+  if (variant === 2) {
+    // --- stone / shell marble: droplets spreading into cells ---
+    const drops = Math.round((w * h) / Math.max(30, 260 * px * px)) + 26;
+    for (let i = 0; i < drops; i++) {
+      const cx = rnd() * w;
+      const cy = rnd() * h;
+      const r = (2.2 + rnd() * 7) * px;
+      const col = inks[Math.floor(rnd() * inks.length)] as string;
+      // Each cell is a soft blob with a pale halo where the size was pushed
+      // aside — the "shell" in shell marble.
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, withAlpha(col, 0.62));
+      g.addColorStop(0.62, withAlpha(col, 0.42));
+      g.addColorStop(0.86, 'rgba(252, 246, 226, 0.5)');
+      g.addColorStop(1, 'rgba(252, 246, 226, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, r * (0.7 + rnd() * 0.6), rnd() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // --- combed marble: bands of colour raked into a wave ---
+    const bandH = Math.max(2.4 * px, h / (10 + Math.floor(rnd() * 10)));
+    const waveLen = Math.max(8 * px, w * (0.55 + rnd() * 0.9));
+    const waveAmp = bandH * (0.7 + rnd() * 1.1);
+    const phase = rnd() * Math.PI * 2;
+    let y = -bandH * 2;
+    let bandIndex = 0;
+    ctx.lineCap = 'round';
+    while (y < h + bandH * 2) {
+      const col = inks[(bandIndex + Math.floor(rnd() * 2)) % inks.length] as string;
+      const thick = bandH * (0.3 + rnd() * 0.7);
+      ctx.strokeStyle = withAlpha(col, 0.42 + rnd() * 0.3);
+      ctx.lineWidth = thick;
+      ctx.beginPath();
+      const steps = Math.max(4, Math.ceil(w / Math.max(1.2, 2 * px)));
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        const xx = t * w;
+        const yy = y + Math.sin((xx / waveLen) * Math.PI * 2 + phase + bandIndex * 0.35) * waveAmp;
+        if (k === 0) ctx.moveTo(xx, yy);
+        else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke();
+      // A pale vein of size between every pair of colour bands.
+      ctx.strokeStyle = 'rgba(250, 243, 222, 0.34)';
+      ctx.lineWidth = Math.max(0.5, thick * 0.34);
+      ctx.stroke();
+      y += bandH;
+      bandIndex++;
+    }
+
+    // Comb ticks: fine vertical pulls that drag the bands into peaks.
+    const teeth = Math.max(3, Math.round(w / Math.max(3, 6 * px)));
+    for (let i = 0; i < teeth; i++) {
+      const xx = ((i + 0.5) / teeth) * w;
+      const g = ctx.createLinearGradient(xx - px, 0, xx + px, 0);
+      g.addColorStop(0, 'rgba(40, 30, 18, 0.1)');
+      g.addColorStop(0.5, 'rgba(252, 246, 226, 0.16)');
+      g.addColorStop(1, 'rgba(40, 30, 18, 0.1)');
+      ctx.fillStyle = g;
+      ctx.fillRect(xx - px, 0, px * 2, h);
+    }
+
+    if (variant === 1) {
+      // Spanish wave: a hard repeating light/dark ripple pressed across
+      // everything, at an angle to the comb.
+      const step = Math.max(2.4 * px, h * 0.045);
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate(0.12);
+      ctx.translate(-w / 2, -h / 2);
+      for (let yy = -h * 0.2; yy < h * 1.2; yy += step) {
+        const g = ctx.createLinearGradient(0, yy, 0, yy + step);
+        g.addColorStop(0, 'rgba(30, 22, 12, 0.24)');
+        g.addColorStop(0.42, 'rgba(255, 250, 232, 0.2)');
+        g.addColorStop(1, 'rgba(30, 22, 12, 0.2)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-w * 0.2, yy, w * 1.4, step);
+      }
+      ctx.restore();
+    }
+  }
+
+  // --- the sheet itself: paper grain, and the glaze marbled boards carry ---
+  tileOver(ctx, getMaterialTile('kraft'), w, h, Math.max(30, 54 * px), 0.28);
+  tileOver(ctx, getGranulationTile(), w, h, GRANULATION_SIZE * 2, 0.08, 'multiply');
+  const glaze = ctx.createLinearGradient(0, 0, w, 0);
+  glaze.addColorStop(0, 'rgba(0,0,0,0.14)');
+  glaze.addColorStop(0.38, 'rgba(255,250,236,0.14)');
+  glaze.addColorStop(1, 'rgba(0,0,0,0.12)');
+  ctx.fillStyle = glaze;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.restore();
+}
+
+/**
+ * Paint one of the seven binding materials over an already-based, clipped
  * region of `w`×`h`. Shared verbatim by spines and covers so a linen spine
  * pulls out into a linen cover.
  *
@@ -1148,15 +1657,48 @@ export function paintBindingMaterial(
   tones: MaterialTones,
   s: number,
   rnd: RandomFn,
+  /**
+   * Sub-treatment within the material, 0–{@link MAX_BOARD_STYLE}. See the
+   * MAX_BOARD_STYLE doc comment for what each index means per material.
+   * Defaults to 0 so every existing call site keeps its old look.
+   */
+  boardStyle = 0,
 ): void {
   const px = Math.max(0.5, s);
+  const variant = clamp(Math.round(boardStyle), 0, MAX_BOARD_STYLE);
   ctx.save();
   ctx.lineCap = 'round';
 
   switch (material) {
     case 'leather': {
-      tileOver(ctx, getMaterialTile('pebble'), w, h, Math.max(44, 78 * px), 0.66);
+      // 0 smooth calf · 1 pebbled morocco · 2 crackled (craquelure)
+      if (variant === 1) {
+        tileOver(ctx, getMaterialTile('morocco'), w, h, Math.max(52, 92 * px), 0.72);
+        tileOver(ctx, getMaterialTile('pebble'), w, h, Math.max(30, 54 * px), 0.28);
+      } else {
+        tileOver(ctx, getMaterialTile('pebble'), w, h, Math.max(44, 78 * px), 0.66);
+      }
       tileOver(ctx, getGranulationTile(), w, h, GRANULATION_SIZE * 2, 0.1, 'multiply');
+
+      if (variant === 2) {
+        // Craquelure. Two passes at different scales so the crack net has the
+        // hierarchy real dried leather does: a few big branching splits, then
+        // a fine web filling between them.
+        tileOver(ctx, getMaterialTile('crackle'), w, h, Math.max(60, 118 * px), 0.68);
+        tileOver(ctx, getMaterialTile('crackle'), w, h, Math.max(26, 46 * px), 0.34);
+        // Pigment has flaked out of the deepest cracks back to the board.
+        for (let i = 0; i < 12; i++) {
+          const cx = rnd() * w;
+          const cy = rnd() * h;
+          const r = (1.2 + rnd() * 3.4) * px;
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          g.addColorStop(0, tones.light(26, -28, 0.3));
+          g.addColorStop(1, tones.light(26, -28, 0));
+          ctx.fillStyle = g;
+          ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+        }
+      }
+
       // Creases: long soft folds that follow the way a spine flexes.
       ctx.strokeStyle = tones.dark(-16, 0, 0.16);
       ctx.lineWidth = Math.max(0.7, 1.1 * px);
@@ -1167,22 +1709,45 @@ export function paintBindingMaterial(
         ctx.quadraticCurveTo(w * 0.5, cy + (rnd() * 2 - 1) * 9 * px, w * 1.05, cy + (rnd() * 2 - 1) * 6 * px);
         ctx.stroke();
       }
-      // Waxy sheen down the crown of the spine.
+      // Waxy sheen down the crown of the spine. Crackled leather has lost most
+      // of its finish, so its sheen is much flatter.
+      const gloss = variant === 2 ? 0.4 : 1;
       const sheen = ctx.createLinearGradient(0, 0, w, 0);
-      sheen.addColorStop(0, 'rgba(255,246,226,0)');
-      sheen.addColorStop(0.34, 'rgba(255,246,226,0.15)');
-      sheen.addColorStop(0.52, 'rgba(255,246,226,0.06)');
+      sheen.addColorStop(0, `rgba(255,246,226,0)`);
+      sheen.addColorStop(0.34, `rgba(255,246,226,${(0.15 * gloss).toFixed(3)})`);
+      sheen.addColorStop(0.52, `rgba(255,246,226,${(0.06 * gloss).toFixed(3)})`);
       sheen.addColorStop(1, 'rgba(0,0,0,0.1)');
       ctx.fillStyle = sheen;
       ctx.fillRect(0, 0, w, h);
       break;
     }
     case 'cloth': {
-      // Tight, perfectly even buckram grain.
-      tileOver(ctx, getMaterialTile('weave'), w, h, Math.max(20, 34 * px), 0.72);
-      // Matte veil: cloth eats light, never returns a highlight.
-      ctx.fillStyle = 'rgba(238, 236, 230, 0.07)';
-      ctx.fillRect(0, 0, w, h);
+      // 0 flat buckram · 1 ribbed (rep) cloth · 2 pyroxylin-coated
+      if (variant === 1) {
+        // Ribbed cloth: the horizontal cords are the whole identity of the
+        // material, so they get a real tile plus a second, finer pass to keep
+        // the pitch from banding at any particular zoom.
+        tileOver(ctx, getMaterialTile('rib'), w, h, Math.max(14, 26 * px), 0.8);
+        tileOver(ctx, getMaterialTile('rib'), w, h, Math.max(7, 13 * px), 0.26);
+        tileOver(ctx, getMaterialTile('weave'), w, h, Math.max(16, 26 * px), 0.2);
+      } else {
+        tileOver(ctx, getMaterialTile('weave'), w, h, Math.max(20, 34 * px), 0.72);
+      }
+      if (variant === 2) {
+        // Pyroxylin: a plasticky coating over the weave, so it *does* return a
+        // highlight — the one cloth that is not matte.
+        const pg = ctx.createLinearGradient(0, 0, w, 0);
+        pg.addColorStop(0, 'rgba(0,0,0,0.12)');
+        pg.addColorStop(0.36, 'rgba(255,252,242,0.2)');
+        pg.addColorStop(0.62, 'rgba(255,252,242,0.06)');
+        pg.addColorStop(1, 'rgba(0,0,0,0.14)');
+        ctx.fillStyle = pg;
+        ctx.fillRect(0, 0, w, h);
+      } else {
+        // Matte veil: cloth eats light, never returns a highlight.
+        ctx.fillStyle = 'rgba(238, 236, 230, 0.07)';
+        ctx.fillRect(0, 0, w, h);
+      }
       // Cloth is dyed in the piece, so the colour sits slightly uneven.
       for (let i = 0; i < 4; i++) {
         const cx = rnd() * w;
@@ -1196,12 +1761,30 @@ export function paintBindingMaterial(
       }
       break;
     }
+    case 'marbled': {
+      paintMarbledBoard(ctx, w, h, tones, s, rnd, variant);
+      break;
+    }
     case 'paper': {
       // Flat and chalky: no gloss anywhere, but the mould's laid + chain
       // lines are unmistakable.
       ctx.fillStyle = 'rgba(246, 240, 226, 0.12)';
       ctx.fillRect(0, 0, w, h);
-      tileOver(ctx, getMaterialTile('laid'), w, h, Math.max(40, 68 * px), 0.42);
+      if (variant === 2) {
+        // Kraft / boards: coarse recycled pulp, no mould marks at all.
+        tileOver(ctx, getMaterialTile('kraft'), w, h, Math.max(34, 58 * px), 0.6);
+      } else {
+        tileOver(ctx, getMaterialTile('laid'), w, h, Math.max(40, 68 * px), 0.42);
+      }
+      if (variant === 1) {
+        // Coated / glazed wrapper: a low, broad sheen and a crisper surface.
+        const cg = ctx.createLinearGradient(0, 0, w, 0);
+        cg.addColorStop(0, 'rgba(0,0,0,0.08)');
+        cg.addColorStop(0.4, 'rgba(255,253,246,0.18)');
+        cg.addColorStop(1, 'rgba(0,0,0,0.1)');
+        ctx.fillStyle = cg;
+        ctx.fillRect(0, 0, w, h);
+      }
       ctx.strokeStyle = tones.light(16, -12, 0.1);
       ctx.lineWidth = Math.max(0.5, 0.7 * px);
       for (let i = 0; i < 9; i++) {
@@ -1668,6 +2251,45 @@ export interface RenderSpineOptions {
    * Lo-res LOD bakes skip text entirely (illegible at that size anyway).
    */
   hiRes?: boolean;
+
+  /* ---------------------- painterly rebuild (§1, §2) ---------------------- */
+
+  /**
+   * The room's light rig. Defaults to the house golden-hour rig. Every book on
+   * a shelf must be handed the SAME rig or the row falls apart — one sun.
+   */
+  rig?: LightRig;
+  /**
+   * Where this book sits along the row, 0 (far end from the key) → 1 (nearest
+   * the key). Drives how much key light the spine takes, so a row reads as a
+   * single gradient rather than thirty identically-lit rectangles.
+   * Default 0.5.
+   */
+  rowPhase?: number;
+  /**
+   * How far back in the shelf the book sits, 0 (proud of the edge) →
+   * 1 (pushed to the back board). Drives AO and atmospheric haze.
+   * Default derived from `params.proud`.
+   */
+  depth?: number;
+  /**
+   * The neighbouring spines' colours, for the reference's colour bleeding.
+   * Pass `null` for "nothing there" (the end of a run, or a gap).
+   */
+  neighbourLeft?: string | null;
+  neighbourRight?: string | null;
+  /**
+   * Bake the light passes into the spine texture. Default true. Set false when
+   * the compositor lights the sprite itself (e.g. a Pixi filter pass), so the
+   * light is not applied twice.
+   */
+  light?: boolean;
+  /**
+   * Draw the page-block edge beside the spine. Default true. The reference has
+   * one next to *every* spine; this exists only so the pull-out cover, which
+   * paints its own fore-edge, can suppress it.
+   */
+  pageBlock?: boolean;
 }
 
 /**
@@ -1709,16 +2331,47 @@ export function renderSpine(
   const titlePlate: TitlePlateStyle = params.titlePlate ?? 'none';
   const edge = params.edge ?? 'plain';
   const charm: CharmKind = params.charm ?? 'none';
+  const boardStyle = clamp(Math.round(params.boardStyle ?? 0), 0, MAX_BOARD_STYLE);
+  const round = clamp(params.round ?? 0.4, 0, 1);
+  const foilWear = clamp(params.foilWear ?? wear * 0.6, 0, 1);
+  const sunFade = clamp(params.sunFade ?? 0, 0, 1);
+  const knock = clamp(params.knock ?? wear * 0.5, 0, 1);
   const tones: MaterialTones = {
     light: (dl = 0, ds = 0, a = 1) => hslStr(colA, hue, dl, ds, a),
     dark: (dl = 0, ds = 0, a = 1) => hslStr(colB, hue, dl, ds, a),
   };
 
+  /* --- the light this book sits in -------------------------------------- */
+  const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
+  const lightOn = opts.light !== false;
+  const rowPhase = clamp(opts.rowPhase ?? 0.5, 0, 1);
+  const depth = clamp(
+    opts.depth ?? 0.5 - clamp((params.proud ?? 0) / 20, -0.5, 0.5),
+    0,
+    1,
+  );
+  // A book at the far end of the row from the key takes ~55% of the key a book
+  // right under it does. That single gradient across a row is most of what
+  // makes a shelf read as *lit* rather than *coloured in*.
+  const keyTake = lerp(0.45, 1.15, rowPhase) * lerp(1, 0.62, depth);
+  const src = keyToSource(rig);
+  /** Which side of the spine the key comes from: +1 = right, -1 = left. */
+  const keySide = src.x >= 0 ? 1 : -1;
+
   ctx.save();
   ctx.translate(x, y);
 
   // --- silhouette fill path (jittered, corners worn round) ---
-  const outline = applyOutlineWear(silhouetteOutline(params.silhouette, w, h), wear, scale, rnd);
+  // `knock` is the book's bump history, independent of how faded it is: a
+  // pristine book that has been dropped still has rounded board corners, and
+  // that irregularity at the silhouette is what stops a row reading as a bar
+  // chart even before any of the surface detail lands.
+  const outline = applyOutlineWear(
+    silhouetteOutline(params.silhouette, w, h),
+    clamp(wear + knock * 0.45, 0, 1),
+    scale,
+    rnd,
+  );
   const step = Math.max(4, 6 * scale);
   const fillPts = densifyJitter(outline, step, 0.6 * scale, rnd);
   tracePoly(ctx, fillPts, true);
@@ -1782,13 +2435,94 @@ export function renderSpine(
   ctx.strokeStyle = hslStr(colB, hue, -12, 0, 0.5);
   ctx.stroke();
 
-  // --- binding material (six distinct baked treatments) ---
+  // --- binding material (seven materials × three sub-treatments) ---
   ctx.globalAlpha = 1;
-  paintBindingMaterial(ctx, w, h, material, tones, scale, rnd);
+  paintBindingMaterial(ctx, w, h, material, tones, scale, rnd, boardStyle);
+
+  // --- round back: the spine is a shallow cylinder, not a flat card ---
+  // Real books are backed round; the flat fill we had is what made every spine
+  // read as a painted strip. Shading the width as a cylinder — dark at both
+  // joints, a lit crown offset toward the key — costs one gradient and gives
+  // the row its whole sense of solidity.
+  if (round > 0.03) {
+    const crown = clamp(0.5 + keySide * 0.16 * (lightOn ? 1 : 0), 0.2, 0.8);
+    const rg = ctx.createLinearGradient(0, 0, w, 0);
+    const deep = 0.34 * round;
+    const lift = 0.26 * round;
+    rg.addColorStop(0, hslStr(colB, hue, -30, 0, deep));
+    rg.addColorStop(Math.max(0.06, crown - 0.34), hslStr(colB, hue, -14, 0, deep * 0.35));
+    rg.addColorStop(crown, hslStr(colA, hue, 22, -6, lift));
+    rg.addColorStop(Math.min(0.94, crown + 0.34), hslStr(colB, hue, -16, 0, deep * 0.42));
+    rg.addColorStop(1, hslStr(colB, hue, -32, 0, deep * 1.05));
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, w, h);
+    // The two joints (where the spine leather turns onto the boards) are the
+    // darkest line on any book. Two crease occlusions, one per joint.
+    const jointR = Math.max(0.8, w * 0.1);
+    applyCreaseOcclusion(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      length: h,
+      axis: 'vertical',
+      reach: jointR,
+      strength: 0.7 * round,
+      bias: 0.55,
+    });
+    applyCreaseOcclusion(ctx, {
+      rig,
+      x: w,
+      y: 0,
+      length: h,
+      axis: 'vertical',
+      reach: jointR,
+      strength: 0.7 * round,
+      bias: -0.55,
+    });
+  }
 
   // --- text-block edge: the sliver of pages showing at the fore-joint ---
-  const edgeW = clamp(w * 0.075, 1.6 * scale, 4 * scale);
-  paintEdgeTreatment(ctx, w - edgeW, h * 0.012, edgeW, h * 0.976, edge, scale, rnd);
+  // Widened hard from the old `w * 0.075` cap: the art direction's very first
+  // book note is "visible page-block edges beside every spine", and a 2px
+  // sliver is not visible at shelf scale. `params.pageBlock` carries the
+  // per-book fraction, and thin books show proportionally more.
+  const blockFrac = clamp(params.pageBlock ?? 0.1, 0.05, 0.24);
+  const edgeW =
+    opts.pageBlock === false ? 0 : clamp(w * blockFrac, 2.2 * scale, 9 * scale);
+  if (edgeW > 0.5) {
+    const blockX = keySide > 0 ? w - edgeW : 0;
+    paintEdgeTreatment(ctx, blockX, h * 0.012, edgeW, h * 0.976, edge, scale, rnd);
+    // The page block stands a hair proud of the boards, so it takes its own
+    // key light and throws its own tiny shadow back onto the spine.
+    if (lightOn) {
+      applyKeyLight(ctx, {
+        rig,
+        x: blockX,
+        y: h * 0.012,
+        width: edgeW,
+        height: h * 0.976,
+        intensity: keyTake * 1.15,
+        hotSpot: 0.2,
+      });
+    }
+    castContactShadow(ctx, {
+      rig,
+      x: keySide > 0 ? blockX : blockX + edgeW,
+      y: h * 0.012,
+      length: h * 0.976,
+      depth: Math.max(1.2, edgeW * 0.6),
+      side: keySide > 0 ? 'left' : 'right',
+      strength: 0.7,
+      skew: 0,
+    });
+    // Head and tail of the block: you see the top few leaves from above.
+    const capH = Math.max(0.8, 1.6 * scale);
+    const capG = ctx.createLinearGradient(0, 0, 0, capH * 2.4);
+    capG.addColorStop(0, 'rgba(246, 238, 214, 0.7)');
+    capG.addColorStop(1, 'rgba(246, 238, 214, 0)');
+    ctx.fillStyle = capG;
+    ctx.fillRect(blockX, 0, edgeW, capH * 2.4);
+  }
 
   // --- bands (embossed: every dark rule carries a catchlight rule above) ---
   const inkBand = hslStr(colB, hue, -18, 0, 0.8);
@@ -1843,32 +2577,99 @@ export function renderSpine(
       cordYs.push(zTop + ((i + 1) / (raisedBands + 1)) * (zBot - zTop));
     }
   }
-  const cordH = clamp(w * 0.17, 3.2 * scale, 7.5 * scale);
+  // Cords are FAT — a sewn cord under leather stands a real 3–4mm proud, and
+  // the timid 3px band we drew before was the difference between "raised
+  // bands casting their own tiny shadows" and "painted lines".
+  const cordH = clamp(w * 0.24, 4.2 * scale, 11 * scale);
   for (const cy of cordYs) {
     const by = cy * h;
     const top = by - cordH / 2;
-    // Cylindrical shading: shadow above, lit crown, deep shadow beneath.
-    const cg = ctx.createLinearGradient(0, top - cordH * 0.45, 0, top + cordH * 1.5);
-    cg.addColorStop(0, hslStr(colB, hue, -26, 0, 0.55));
-    cg.addColorStop(0.24, hslStr(colA, hue, 20, -6, 0.85));
-    cg.addColorStop(0.44, hslStr(colA, hue, 4, 0, 0.9));
-    cg.addColorStop(0.72, hslStr(colB, hue, -12, 0, 0.85));
-    cg.addColorStop(1, hslStr(colB, hue, -30, 0, 0.5));
-    ctx.fillStyle = cg;
-    ctx.fillRect(0, top - cordH * 0.45, w, cordH * 1.95);
-    // Crown catchlight + the seat line under the cord.
-    ctx.lineWidth = Math.max(0.6, 0.7 * scale);
-    ctx.strokeStyle = hslStr(colA, hue, 34, -10, 0.5);
-    strokePts(ctx, jitteredSegment({ x: 0, y: top + cordH * 0.24 }, { x: w, y: top + cordH * 0.24 }, step, 0.3 * scale, rnd), false);
-    ctx.strokeStyle = hslStr(colB, hue, -30, 0, 0.6);
-    strokePts(ctx, jitteredSegment({ x: 0, y: top + cordH * 1.05 }, { x: w, y: top + cordH * 1.05 }, step, 0.35 * scale, rnd), false);
+
+    // 1. The cord's OWN cast shadow onto the panel beneath it. This is the
+    //    spec's raised-band note, and it has to happen before the cord is
+    //    drawn so the cord sits on top of its own shadow.
+    castContactShadow(ctx, {
+      rig,
+      x: -w * 0.02,
+      y: top + cordH,
+      length: w * 1.04,
+      depth: cordH * 0.95,
+      side: 'below',
+      strength: 0.85,
+      gap: cordH * 0.25,
+      skew: cordH * 0.4,
+      taper: w * 0.1,
+    });
+
+    // 2. The cord body: a true cylinder lit by the rig, not a stack of stops.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, top, w, cordH);
+    ctx.clip();
+    // Base tone first — the leather is stretched thinner over the cord, so it
+    // reads a shade lighter and less saturated than the panel.
+    ctx.fillStyle = hslStr(colA, hue, 6, -4, 0.9);
+    ctx.fillRect(0, top, w, cordH);
+    ctx.fillStyle = cylinderShading(ctx, rig, w / 2, top + cordH / 2, cordH / 2, 0);
+    ctx.fillRect(0, top, w, cordH);
+    // The leather's own grain still runs over the cord.
+    tileOver(
+      ctx,
+      getMaterialTile(material === 'leather' && boardStyle === 1 ? 'morocco' : 'pebble'),
+      w,
+      cordH,
+      Math.max(20, 44 * scale),
+      0.2,
+    );
+    ctx.restore();
+
+    // 3. Crown catchlight — a thin specular streak along the top of the roll.
+    const crownY = top + cordH * (keySide > 0 ? 0.3 : 0.32);
+    ctx.lineWidth = Math.max(0.6, 0.8 * scale);
+    ctx.strokeStyle = withAlpha(blowOut(rig.rimColour, 0.4), 0.42 * keyTake);
+    strokePts(
+      ctx,
+      jitteredSegment({ x: 0, y: crownY }, { x: w, y: crownY }, step, 0.3 * scale, rnd),
+      false,
+    );
+
+    // 4. The two seat lines where the cord meets the panel.
+    ctx.strokeStyle = hslStr(colB, hue, -34, 0, 0.55);
+    ctx.lineWidth = Math.max(0.5, 0.6 * scale);
+    for (const sy of [top, top + cordH]) {
+      strokePts(
+        ctx,
+        jitteredSegment({ x: 0, y: sy }, { x: w, y: sy }, step, 0.3 * scale, rnd),
+        false,
+      );
+    }
+
     if (bandGilt) {
-      // A gold rule tooled tight against each side of the cord.
-      ctx.fillStyle = GOLD;
-      ctx.globalAlpha = 0.9;
-      ctx.fillRect(w * 0.07, top - cordH * 0.62, w * 0.86, Math.max(0.8, 1.1 * scale));
-      ctx.fillRect(w * 0.07, top + cordH * 1.28, w * 0.86, Math.max(0.8, 1.1 * scale));
-      ctx.globalAlpha = 1;
+      // A gold rule tooled tight against each side of the cord, each with its
+      // own debossed shadow so the gold sits *in* the leather.
+      for (const gy of [top - cordH * 0.34, top + cordH * 1.12]) {
+        const gh = Math.max(0.8, 1.2 * scale);
+        ctx.fillStyle = hslStr(colB, hue, -30, 0, 0.45);
+        ctx.fillRect(w * 0.07, gy + gh * 0.85, w * 0.86, gh * 0.8);
+        ctx.fillStyle = GOLD;
+        ctx.globalAlpha = 0.92;
+        ctx.fillRect(w * 0.07, gy, w * 0.86, gh);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(255, 246, 216, 0.5)';
+        ctx.fillRect(w * 0.07, gy, w * 0.86, gh * 0.4);
+      }
+      if (lightOn) {
+        applySpecularCatch(ctx, {
+          rig,
+          x: w * (keySide > 0 ? 0.72 : 0.28),
+          y: top - cordH * 0.34,
+          radius: Math.max(1.4, w * 0.16),
+          aspect: 3.4,
+          angle: 0,
+          strength: 0.55 * keyTake,
+          colour: '#fff2c0',
+        });
+      }
     }
   }
 
@@ -2101,22 +2902,98 @@ export function renderSpine(
         : paleTitle
           ? hslStr(colB, hue, -30, 0, 0.5)
           : hslStr(colA, hue, 26, -12, 0.5);
+      const runY0 = (py0 + py1) / 2 - textLen / 2;
       ctx.save();
-      ctx.translate(w / 2, (py0 + py1) / 2 - textLen / 2);
+      ctx.translate(w / 2, runY0);
       ctx.rotate(Math.PI / 2);
       let advance = 0;
       for (const g of glyphs) {
         // Per-glyph baseline wobble: rnd()*1.2 - 0.6 px (scaled).
         const wob = (trnd() * 1.2 - 0.6) * scale;
         if (reliefInk !== null) {
+          // Stamped INTO the binding: a dark bite on the side the light comes
+          // from and a lit lip opposite, not a flat drop shadow.
+          ctx.fillStyle = hslStr(colB, hue, -34, 0, 0.4);
+          ctx.fillText(g.ch, advance - 0.55 * scale * keySide, wob - 0.6 * scale);
           ctx.fillStyle = reliefInk;
           ctx.fillText(g.ch, advance + 0.75 * scale, wob + 0.75 * scale);
         }
-        ctx.fillStyle = titleInk;
+        if (goldTitle) {
+          // Real foil is not one flat gold: it is a burnished ramp, brightest
+          // where the light rakes it. Painting each glyph with a gradient in
+          // the RUN's direction is what makes a tooled title catch the eye.
+          const gg = ctx.createLinearGradient(advance, -fontPx * 0.55, advance, fontPx * 0.55);
+          gg.addColorStop(0, '#8a6a14');
+          gg.addColorStop(0.28, '#f5e29b');
+          gg.addColorStop(0.5, GOLD);
+          gg.addColorStop(0.74, '#fff2c4');
+          gg.addColorStop(1, '#7d5f12');
+          ctx.fillStyle = gg;
+        } else {
+          ctx.fillStyle = titleInk;
+        }
         ctx.fillText(g.ch, advance, wob);
         advance += g.adv;
       }
       ctx.restore();
+
+      // --- foil wear + specular catch -----------------------------------
+      // "Gold foil titles that CATCH the light, half-legible, some worn away."
+      // Beauty over legibility at shelf scale: a perfectly crisp title on every
+      // book is the single most machine-made thing on a shelf.
+      if (goldTitle) {
+        const runLen = textLen;
+        const runX0 = w / 2 - fontPx * 0.6;
+
+        if (foilWear > 0.04 && runLen > 2) {
+          // Rub the foil back to the binding underneath, in patches — foil
+          // wears where fingers and neighbours touch it, not uniformly.
+          const rubs = Math.round(4 + foilWear * 26);
+          for (let i = 0; i < rubs; i++) {
+            const ry = runY0 + trnd() * runLen;
+            const rx = w / 2 + (trnd() * 2 - 1) * fontPx * 0.55;
+            const rr = (0.6 + trnd() * 2.4) * scale * (0.5 + foilWear);
+            const g = ctx.createRadialGradient(rx, ry, 0, rx, ry, rr);
+            const a = clamp(foilWear * (0.35 + trnd() * 0.6), 0, 0.9);
+            g.addColorStop(0, hslStr(colB, hue, -6, 0, a));
+            g.addColorStop(1, hslStr(colB, hue, -6, 0, 0));
+            ctx.fillStyle = g;
+            ctx.fillRect(rx - rr, ry - rr, rr * 2, rr * 2);
+          }
+          // Whole-run fade: at high wear the title is a ghost, and that is a
+          // feature — half-legible is what the reference has.
+          if (foilWear > 0.55) {
+            ctx.fillStyle = hslStr(colB, hue, -4, 0, (foilWear - 0.55) * 0.5);
+            ctx.fillRect(runX0, runY0 - fontPx * 0.4, fontPx * 1.3, runLen + fontPx * 0.8);
+          }
+        }
+
+        if (lightOn) {
+          // The catch: one hard glint travelling along the run, placed where
+          // the key would rake it, plus a broad low sheen over the whole title.
+          const catchAt = clamp(0.24 + rowPhase * 0.5, 0, 1);
+          applySpecularCatch(ctx, {
+            rig,
+            x: w / 2 + keySide * fontPx * 0.14,
+            y: runY0 + runLen * catchAt,
+            radius: Math.max(2, fontPx * 0.85),
+            aspect: 0.42,
+            angle: Math.PI / 2,
+            strength: clamp((1 - foilWear * 0.7) * keyTake * 1.1, 0, 1.3),
+            colour: '#fff6d2',
+          });
+          applySpecularCatch(ctx, {
+            rig,
+            x: w / 2,
+            y: runY0 + runLen * 0.5,
+            radius: Math.max(3, runLen * 0.4),
+            aspect: 0.2,
+            angle: Math.PI / 2,
+            strength: clamp((1 - foilWear) * keyTake * 0.32, 0, 0.6),
+            colour: '#ffe9a8',
+          });
+        }
+      }
     }
   }
 
@@ -2159,6 +3036,146 @@ export function renderSpine(
     });
   }
 
+  /* ------------------------------------------------------------------ *
+   *  The light passes. Everything above painted the OBJECT; everything
+   *  below paints the LIGHT ON it, in the order the art direction sets
+   *  out: AO in every recess → key with hot spots → rim → bleed → haze.
+   * ------------------------------------------------------------------ */
+  if (lightOn) {
+    // --- 1. ambient occlusion -----------------------------------------
+    // The head and tail of a shelved book are always occluded — one by the
+    // plank above, one by the plank it stands on — and both joints are
+    // occluded by the neighbours. That is four of four edges, but weighted:
+    // the tail is darkest, the head next, the joints least (the round-back
+    // crease already did most of that work).
+    applyAmbientOcclusion(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      edges: ['bottom'],
+      reach: Math.min(h * 0.3, 30 * scale),
+      strength: 0.9 + depth * 0.4,
+      corners: false,
+    });
+    applyAmbientOcclusion(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      edges: ['top'],
+      reach: Math.min(h * 0.22, 22 * scale),
+      strength: 0.62 + depth * 0.5,
+      corners: false,
+    });
+    applyAmbientOcclusion(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      edges: ['left', 'right'],
+      reach: Math.max(1, w * 0.22),
+      strength: 0.34 + depth * 0.5,
+      corners: true,
+    });
+
+    // --- 2. sun-fade on the side that faces the window -----------------
+    // Independent of `wear`: this is bleaching from years of standing in the
+    // same light, and it lands on ONE side of the spine — the reference's
+    // books are visibly paler where the sun reached them.
+    if (sunFade > 0.05) {
+      const fx = keySide > 0 ? w : 0;
+      const fg = ctx.createLinearGradient(fx, 0, fx - keySide * w * 0.85, 0);
+      const fa = sunFade * 0.3 * (0.4 + rowPhase * 0.9);
+      fg.addColorStop(0, `rgba(236, 224, 196, ${fa.toFixed(3)})`);
+      fg.addColorStop(0.55, `rgba(236, 224, 196, ${(fa * 0.4).toFixed(3)})`);
+      fg.addColorStop(1, 'rgba(236, 224, 196, 0)');
+      ctx.fillStyle = fg;
+      ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.globalAlpha = sunFade * 0.34;
+      const sg = ctx.createLinearGradient(fx, 0, fx - keySide * w * 0.85, 0);
+      sg.addColorStop(0, 'hsl(0 0% 55%)');
+      sg.addColorStop(1, 'hsl(0 0% 55% / 0)');
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+
+    // --- 3. the key ----------------------------------------------------
+    applyKeyLight(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      intensity: keyTake,
+      // A book facing the viewer takes the key almost head-on; the surface
+      // normal is straight out of the frame, which the 2D rig treats as
+      // "fully facing", so the modulation lives in `keyTake` instead.
+      hotSpot: rig.hotSpot * clamp(keyTake, 0, 1) * (material === 'silk' ? 1.3 : 1),
+    });
+
+    // --- 4. the rim ----------------------------------------------------
+    // Only the edges that actually face the key, and only on the vertical
+    // joints plus the head: the tail sits in the plank's contact shadow and
+    // must never light up.
+    const edgesLit = litEdges(rig).filter((e) => e !== 'bottom');
+    applyRimLight(ctx, {
+      rig,
+      x: 0,
+      y: 0,
+      width: w,
+      height: h,
+      edges: edgesLit,
+      thickness: Math.max(1, w * 0.14),
+      strength: keyTake * (material === 'vellum' || material === 'silk' ? 1.25 : 1),
+    });
+
+    // --- 5. colour bleed from the neighbours ---------------------------
+    if (opts.neighbourLeft) {
+      applyColourBleed(ctx, {
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+        colour: opts.neighbourLeft,
+        from: 'left',
+        reach: Math.max(1.5, w * 0.4),
+        strength: 0.13,
+      });
+    }
+    if (opts.neighbourRight) {
+      applyColourBleed(ctx, {
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+        colour: opts.neighbourRight,
+        from: 'right',
+        reach: Math.max(1.5, w * 0.4),
+        strength: 0.13,
+      });
+    }
+
+    // --- 6. atmospheric depth for recessed books -----------------------
+    if (depth > 0.55) {
+      applyAtmosphericHaze(ctx, {
+        rig,
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+        depth: (depth - 0.55) / 0.45,
+        strength: 0.85,
+      });
+    }
+  }
+
   ctx.restore(); // end clip
 
   // --- pencil edges: per-vertex jittered, double-stroked, alpha 0.55 ---
@@ -2177,3 +3194,904 @@ export function renderSpine(
 
   ctx.restore();
 }
+
+/* ========================================================================== *
+ *                        shelf-row composition (Â§3)                          *
+ * ========================================================================== *
+ *
+ * "Per shelf, generate a *composition*, not a row: choose a rhythm of
+ *  thick/thin, tall/short, leaning/upright, proud/recessed; cluster similar
+ *  bindings then break the pattern; leave occasional gaps and stacked-flat
+ *  books."
+ *
+ * The old layout put every book in a slot of its own width with a 1â€“5px gap.
+ * That is a *packing*, and packings look packed. What follows is a
+ * composition: a plan of runs, each with a character, laid out left to right,
+ * with the books ASSIGNED to runs by how well they suit the run's character
+ * rather than taken in order.
+ *
+ * Everything here is pure and deterministic â€” same (books, seed) â‡’ identical
+ * composition â€” so it can be unit-tested in node and cached by the shelf.
+ */
+
+/** How a book sits on the plank. */
+export type BookPose =
+  /** Standing square, the ordinary case. */
+  | 'upright'
+  /** Standing but tipped several degrees into an adjacent gap. */
+  | 'leaning'
+  /** Lying on its side in a stack, spine outward. */
+  | 'flat'
+  /** Standing, but pivoted a little so a corner of the board shows. */
+  | 'angled';
+
+/** The character of one run of books within a row. */
+export type RunCharacter =
+  /** A tight block of thin books â€” the row's rhythm section. */
+  | 'thin-run'
+  /** Ordinary mixed widths, the connective tissue. */
+  | 'mixed'
+  /** Two or three heavy tomes, the row's anchors. */
+  | 'heavy'
+  /** A cluster whose last book has fallen into the gap beside it. */
+  | 'leaning-cluster'
+  /** A short stack of books lying flat, filling a gap. */
+  | 'flat-stack'
+  /** Deliberately empty. */
+  | 'gap';
+
+/** One book handed to the composer. */
+export interface RowBookInput {
+  /** Stable id, echoed back on the placement (usually the book row id). */
+  id: string;
+  /** Art seed. */
+  seed: number;
+  /** Title, for the spine lettering. */
+  title: string;
+  /**
+   * Pre-resolved params. When omitted the composer derives them from `seed`,
+   * so a caller with no style overrides can pass ids and titles alone.
+   */
+  params?: SpineParams;
+}
+
+/** Where one book ended up. */
+export interface RowPlacement {
+  id: string;
+  /** Index into the composer's input array. */
+  index: number;
+  params: SpineParams;
+  title: string;
+  /** Left edge of the book's footprint, world px from the row's origin. */
+  x: number;
+  /** Footprint width (the thickness, widened when the book leans). */
+  width: number;
+  /** Drawn spine height, world px. */
+  height: number;
+  /** Lean in degrees; positive tips the top to the right. */
+  leanDeg: number;
+  /**
+   * Depth into the case: -1 pulled fully proud of the shelf edge,
+   * 0 flush, +1 pushed to the back board. Feeds `renderSpine`'s `depth`
+   * (remapped to 0â€“1) and the contact shadow's gap.
+   */
+  depth: number;
+  /** 0â€“1 along the row, for `renderSpine`'s `rowPhase`. */
+  phase: number;
+  pose: BookPose;
+  /** Which run this book belongs to. */
+  run: number;
+  runCharacter: RunCharacter;
+  /** For `flat` books: how high off the plank the book lies, world px. */
+  stackY: number;
+  /** Empty width immediately after this book, world px. */
+  gapAfter: number;
+}
+
+/** An empty stretch of plank. */
+export interface RowGap {
+  x: number;
+  width: number;
+  /** True when the gap exists because a book leans into it. */
+  leanedInto: boolean;
+}
+
+/** The finished composition. */
+export interface ShelfRowComposition {
+  placements: RowPlacement[];
+  /** Gaps between runs, for flora and props to grow into. */
+  gaps: RowGap[];
+  /** Total width consumed, world px. */
+  width: number;
+  /** Tallest drawn height in the row, world px. */
+  maxHeight: number;
+  /** Shortest drawn height in the row, world px. */
+  minHeight: number;
+  /** The run plan, in order â€” useful for tests and for debugging a bad row. */
+  runs: RunCharacter[];
+  /**
+   * The row's skyline variation: (max - min) / max. The art direction asks for
+   * 20â€“30%; the composer targets it explicitly and reports what it achieved.
+   */
+  skylineVariation: number;
+  /** Ratio of the fattest book to the thinnest. */
+  thicknessRatio: number;
+}
+
+export interface ComposeShelfRowOptions {
+  /** Total width available, world px. Default 900. */
+  width?: number;
+  /** Composition seed. Same seed â‡’ same composition. */
+  seed?: number;
+  /**
+   * Target skyline variation, (max-height âˆ’ min-height) / max-height.
+   * Default 0.26, the middle of the spec's 20â€“30%.
+   */
+  skylineTarget?: number;
+  /** Allow books to lean. Default true. */
+  lean?: boolean;
+  /** Allow flat-stacked runs. Default true. */
+  flatStacks?: boolean;
+  /** Allow gaps. Default true. */
+  gaps?: boolean;
+  /** Minimum gap between two neighbouring upright books, world px. Default 0.6. */
+  minKerf?: number;
+}
+
+/** Weighted pick of a run character, avoiding repeating the previous one. */
+function pickRunCharacter(
+  rnd: RandomFn,
+  previous: RunCharacter | null,
+  remaining: number,
+  allowFlat: boolean,
+  allowGap: boolean,
+): RunCharacter {
+  const table: Array<readonly [RunCharacter, number]> = [
+    ['mixed', 30],
+    ['thin-run', 20],
+    ['heavy', 14],
+    ['leaning-cluster', 14],
+    ['flat-stack', allowFlat && remaining >= 2 ? 10 : 0],
+    ['gap', allowGap ? 12 : 0],
+  ];
+  // A run never immediately repeats itself â€” that repetition is exactly the
+  // "uniform slots" failure the art direction calls out. Two gaps in a row is
+  // especially bad: it reads as a missing shelf, not as breathing room.
+  const filtered = table.map(([c, wgt]) =>
+    c === previous ? ([c, wgt * 0.12] as const) : ([c, wgt] as const),
+  );
+  let total = 0;
+  for (const [, wgt] of filtered) total += wgt;
+  if (total <= 0) return 'mixed';
+  let acc = rnd() * total;
+  for (const [c, wgt] of filtered) {
+    acc -= wgt;
+    if (acc < 0) return c;
+  }
+  return 'mixed';
+}
+
+/** How many books a run of this character wants. */
+function runSize(character: RunCharacter, rnd: RandomFn, remaining: number): number {
+  switch (character) {
+    case 'gap':
+      return 0;
+    case 'heavy':
+      return Math.min(remaining, 1 + Math.floor(rnd() * 2.4));
+    case 'flat-stack':
+      return Math.min(remaining, 2 + Math.floor(rnd() * 3));
+    case 'thin-run':
+      return Math.min(remaining, 3 + Math.floor(rnd() * 4));
+    case 'leaning-cluster':
+      return Math.min(remaining, 2 + Math.floor(rnd() * 3));
+    default:
+      return Math.min(remaining, 2 + Math.floor(rnd() * 4));
+  }
+}
+
+/**
+ * Score how well a book suits a run's character. Higher is better. This is
+ * the compositional heart of the module: a shelf looks *arranged* because the
+ * thin books ended up together and the tomes anchor the ends, not because
+ * every book got its own equal slot.
+ */
+function suitability(params: SpineParams, character: RunCharacter): number {
+  const bw = params.w;
+  const bh = spineHeightPx(params);
+  switch (character) {
+    case 'thin-run':
+      return 100 - bw * 2.2;
+    case 'heavy':
+      return bw * 2.4 + bh * 0.16;
+    case 'flat-stack':
+      // Flat books want to be wide-ish and NOT tall (a folio lying flat eats
+      // the whole shelf).
+      return bw * 1.1 - Math.abs(bh - 200) * 0.28;
+    case 'leaning-cluster':
+      // A leaning book should be slim enough to fall convincingly.
+      return 60 - Math.abs(bw - 24) * 1.5;
+    default:
+      return 40 - Math.abs(bw - 30) * 0.6;
+  }
+}
+
+/** Shift everything right of `from` by `delta` (used when resizing a gap). */
+function shiftAfter(
+  placements: RowPlacement[],
+  gaps: RowGap[],
+  from: number,
+  delta: number,
+  skipGapIndex: number,
+): void {
+  if (delta === 0) return;
+  for (const p of placements) {
+    if (p.x >= from - 0.001) p.x += delta;
+  }
+  for (let i = 0; i < gaps.length; i++) {
+    if (i === skipGapIndex) continue;
+    const g = gaps[i] as RowGap;
+    if (g.x >= from - 0.001) g.x += delta;
+  }
+}
+
+/**
+ * Compose a pleasing row.
+ *
+ * The pipeline:
+ *  1. plan a sequence of runs (thin / mixed / heavy / leaning / flat / gap),
+ *     never repeating a character back to back;
+ *  2. assign books to runs by suitability, so like bindings cluster;
+ *  3. break the pattern â€” swap members between long runs, because a perfectly
+ *     sorted run is its own kind of uniform;
+ *  4. fix the skyline: nudge heights until the row hits its variation target
+ *     and no three neighbours share a height;
+ *  5. lay out x positions, kerf, leans, depths and gaps;
+ *  6. scale gaps to fill (or compress to fit) the available width.
+ */
+export function composeShelfRow(
+  books: readonly RowBookInput[],
+  opts: ComposeShelfRowOptions = {},
+): ShelfRowComposition {
+  const width = Math.max(60, opts.width ?? 900);
+  const rnd = mulberry32(((opts.seed ?? 0x5e1f) ^ 0x9e3779b1) >>> 0);
+  const allowLean = opts.lean !== false;
+  const allowFlat = opts.flatStacks !== false;
+  const allowGap = opts.gaps !== false;
+  const minKerf = opts.minKerf ?? 0.6;
+  const skylineTarget = clamp(opts.skylineTarget ?? 0.26, 0.05, 0.6);
+
+  if (books.length === 0) {
+    return {
+      placements: [],
+      gaps: [{ x: 0, width, leanedInto: false }],
+      width: 0,
+      maxHeight: 0,
+      minHeight: 0,
+      runs: ['gap'],
+      skylineVariation: 0,
+      thicknessRatio: 1,
+    };
+  }
+
+  interface Candidate {
+    input: RowBookInput;
+    index: number;
+    params: SpineParams;
+    height: number;
+  }
+
+  const pool: Candidate[] = books.map((b, index) => {
+    const params = b.params ?? deriveSpineParams(b.seed);
+    return { input: b, index, params, height: spineHeightPx(params) };
+  });
+
+  /* ---------------- 1. plan the runs ---------------------------------- */
+  const runs: RunCharacter[] = [];
+  const runMembers: Candidate[][] = [];
+  const unassigned = pool.slice();
+  let previous: RunCharacter | null = null;
+  let guard = 0;
+  while (unassigned.length > 0 && guard++ < 400) {
+    // Always open on something solid rather than a gap; a row that starts with
+    // a hole reads as broken rather than as composed.
+    const character: RunCharacter =
+      runs.length === 0
+        ? rnd() < 0.4
+          ? 'heavy'
+          : 'mixed'
+        : pickRunCharacter(rnd, previous, unassigned.length, allowFlat, allowGap);
+    previous = character;
+    if (character === 'gap') {
+      runs.push('gap');
+      runMembers.push([]);
+      continue;
+    }
+    const want = Math.max(1, runSize(character, rnd, unassigned.length));
+    // 2. assign by suitability, with a little noise so the sort is not rigid.
+    const scored = unassigned
+      .map((c) => ({ c, s: suitability(c.params, character) + rnd() * 18 }))
+      .sort((a, b) => b.s - a.s);
+    const taken = scored.slice(0, want).map((entry) => entry.c);
+    for (const t of taken) {
+      const at = unassigned.indexOf(t);
+      if (at >= 0) unassigned.splice(at, 1);
+    }
+    runs.push(character);
+    runMembers.push(taken);
+  }
+  if (runs.length === 0) {
+    runs.push('mixed');
+    runMembers.push(pool.slice());
+  }
+
+  /* ---------------- 3. break the pattern ------------------------------ */
+  // Swap one member between two long runs. A run of five perfectly graded
+  // thin books is as machine-made as a run of five identical ones; the
+  // reference always has one book that does not belong where it is.
+  for (let i = 0; i < runMembers.length; i++) {
+    const a = runMembers[i] as Candidate[];
+    if (a.length < 3 || runs[i] === 'gap' || runs[i] === 'flat-stack') continue;
+    for (let j = i + 1; j < runMembers.length; j++) {
+      const b = runMembers[j] as Candidate[];
+      if (b.length < 3 || runs[j] === 'gap' || runs[j] === 'flat-stack') continue;
+      if (rnd() < 0.6) {
+        const ai = Math.floor(rnd() * a.length);
+        const bi = Math.floor(rnd() * b.length);
+        const tmp = a[ai] as Candidate;
+        a[ai] = b[bi] as Candidate;
+        b[bi] = tmp;
+      }
+      break;
+    }
+  }
+
+  // Shuffle within each run so suitability sorting does not leave a visible
+  // monotone ramp of widths inside every cluster.
+  for (const members of runMembers) {
+    for (let i = members.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      const tmp = members[i] as Candidate;
+      members[i] = members[j] as Candidate;
+      members[j] = tmp;
+    }
+  }
+
+  /* ---------------- 4. fix the skyline -------------------------------- */
+  const flatList = runMembers.flat();
+  if (flatList.length >= 2) {
+    let maxH = -Infinity;
+    let minH = Infinity;
+    for (const c of flatList) {
+      maxH = Math.max(maxH, c.height);
+      minH = Math.min(minH, c.height);
+    }
+    const variation = maxH > 0 ? (maxH - minH) / maxH : 0;
+    if (variation < skylineTarget) {
+      // Not enough spread: push the shortest down and the tallest up, in
+      // proportion to how far each already sits from the row's mean, so the
+      // skyline gains range without any book losing its format identity.
+      const mean = flatList.reduce((s, c) => s + c.height, 0) / flatList.length;
+      const need = (skylineTarget - variation) * maxH;
+      const span = Math.max(1, maxH - minH);
+      for (const c of flatList) {
+        const away = c.height - mean;
+        const push = Math.sign(away) * need * (0.35 + (Math.abs(away) / span) * 0.5);
+        c.height = clamp(c.height + push, SPINE_HEIGHT_RANGE.min, SPINE_HEIGHT_RANGE.max);
+      }
+    }
+    // No three consecutive books within 3% of each other â€” the "irregular
+    // skyline" note. A plateau of three is the eye's threshold for "these are
+    // all the same height".
+    for (let i = 2; i < flatList.length; i++) {
+      const a = flatList[i - 2] as Candidate;
+      const b = flatList[i - 1] as Candidate;
+      const c = flatList[i] as Candidate;
+      const near = (p: number, q: number): boolean => Math.abs(p - q) / Math.max(1, p) < 0.03;
+      if (near(a.height, b.height) && near(b.height, c.height)) {
+        const dir = rnd() < 0.5 ? -1 : 1;
+        b.height = clamp(
+          b.height + dir * b.height * (0.06 + rnd() * 0.08),
+          SPINE_HEIGHT_RANGE.min,
+          SPINE_HEIGHT_RANGE.max,
+        );
+      }
+    }
+  }
+
+  /* ---------------- 5. lay out ---------------------------------------- */
+  const placements: RowPlacement[] = [];
+  const gaps: RowGap[] = [];
+  let cursor = 0;
+
+  for (let r = 0; r < runs.length; r++) {
+    const character = runs[r] as RunCharacter;
+    const members = runMembers[r] as Candidate[];
+
+    if (character === 'gap') {
+      const g = 14 + rnd() * 34;
+      gaps.push({ x: cursor, width: g, leanedInto: false });
+      cursor += g;
+      continue;
+    }
+
+    if (character === 'flat-stack' && members.length >= 2) {
+      // A flat stack: books lying on their sides, biggest at the bottom, each
+      // one offset a little so the stack reads as hand-made. The stack's
+      // FOOTPRINT is the tallest book's height; its own height is the sum of
+      // the thicknesses. Real shelves are full of these and we had none.
+      const sorted = [...members].sort((a, b) => b.height - a.height);
+      const footprint = Math.max(...sorted.map((c) => c.height)) * 0.94;
+      let stackY = 0;
+      for (let i = 0; i < sorted.length; i++) {
+        const c = sorted[i] as Candidate;
+        const jitterX = (rnd() * 2 - 1) * Math.min(10, footprint * 0.05);
+        placements.push({
+          id: c.input.id,
+          index: c.index,
+          params: c.params,
+          title: c.input.title,
+          x: cursor + jitterX + (footprint - c.height * 0.94) / 2,
+          width: c.height * 0.94,
+          height: c.params.w,
+          leanDeg: (rnd() * 2 - 1) * 1.6,
+          depth: 0.1 + rnd() * 0.3,
+          phase: 0,
+          pose: 'flat',
+          run: r,
+          runCharacter: character,
+          stackY,
+          gapAfter: 0,
+        });
+        stackY += c.params.w;
+      }
+      cursor += footprint + 2 + rnd() * 8;
+      continue;
+    }
+
+    const leanLast =
+      allowLean &&
+      (character === 'leaning-cluster' || (character !== 'heavy' && rnd() < 0.16)) &&
+      members.length >= 2;
+    // A whole cluster shares a depth bias â€” books get pushed back in groups
+    // when someone reshelves a handful at once.
+    const runDepth = (rnd() * 2 - 1) * 0.42;
+
+    for (let i = 0; i < members.length; i++) {
+      const c = members[i] as Candidate;
+      const isLast = i === members.length - 1;
+      const doLean = leanLast && isLast;
+      const leanDeg = doLean
+        ? (rnd() < 0.5 ? -1 : 1) * (6 + rnd() * 9)
+        : c.params.lean + (rnd() * 2 - 1) * 0.9;
+      const rad = Math.abs(leanDeg) * (Math.PI / 180);
+      // A leaning book occupies more floor: its footprint is the thickness
+      // projected plus the height's contribution.
+      const footprint = c.params.w * Math.cos(rad) + c.height * Math.sin(rad);
+      // Per-book depth: the cluster bias plus the book's own `proud`, plus a
+      // little noise. Recessed books gain AO and haze in renderSpine.
+      const proud = (c.params.proud ?? 0) / 10;
+      const depth = clamp(runDepth * 0.7 + proud * 0.8 + (rnd() * 2 - 1) * 0.18, -1, 1);
+      // 'angled': a book pivoted so a sliver of its board shows. Rare, and
+      // never on a leaner (that would read as a rendering bug).
+      const pose: BookPose = doLean ? 'leaning' : rnd() < 0.07 ? 'angled' : 'upright';
+
+      placements.push({
+        id: c.input.id,
+        index: c.index,
+        params: c.params,
+        title: c.input.title,
+        x: cursor,
+        width: footprint,
+        height: c.height,
+        leanDeg,
+        depth,
+        phase: 0,
+        pose,
+        run: r,
+        runCharacter: character,
+        stackY: 0,
+        gapAfter: 0,
+      });
+
+      // Kerf: books inside a run touch. Only a leaner opens a real space.
+      const kerf = isLast ? 0 : minKerf + rnd() * (character === 'thin-run' ? 0.8 : 2.2);
+      cursor += footprint + kerf;
+    }
+
+    // A leaner needs somewhere to fall into.
+    if (leanLast) {
+      const last = placements[placements.length - 1] as RowPlacement;
+      const g = Math.max(10, last.height * Math.sin(Math.abs(last.leanDeg) * (Math.PI / 180)) * 0.9);
+      gaps.push({ x: cursor, width: g, leanedInto: true });
+      cursor += g;
+    } else if (r < runs.length - 1 && runs[r + 1] !== 'gap') {
+      // Between two runs, a small breath.
+      const g = 3 + rnd() * 9;
+      gaps.push({ x: cursor, width: g, leanedInto: false });
+      cursor += g;
+    }
+  }
+
+  /* ---------------- 6. fit to the available width --------------------- */
+  const used = cursor;
+  if (used > 1 && Math.abs(used - width) > 1) {
+    const slack = width - used;
+    const gapTotal = gaps.reduce((s, g) => s + g.width, 0);
+    if (slack > 0 && gaps.length > 0) {
+      // Distribute the leftover into the gaps, weighted toward the ones that
+      // are already large â€” a row of equal gaps is a picket fence.
+      const weights = gaps.map((g) => g.width + 6);
+      const wSum = weights.reduce((s, v) => s + v, 0);
+      for (let i = 0; i < gaps.length; i++) {
+        const g = gaps[i] as RowGap;
+        const add = (slack * (weights[i] as number)) / wSum;
+        shiftAfter(placements, gaps, g.x + g.width, add, i);
+        g.width += add;
+      }
+    } else if (slack < 0) {
+      // Overfull: shrink the gaps first, and only then squeeze uniformly.
+      const shrink = Math.min(gapTotal * 0.92, -slack);
+      if (gapTotal > 0.5) {
+        const k = shrink / gapTotal;
+        for (let i = 0; i < gaps.length; i++) {
+          const g = gaps[i] as RowGap;
+          const cut = g.width * k;
+          shiftAfter(placements, gaps, g.x + g.width, -cut, i);
+          g.width -= cut;
+        }
+      }
+      const nowUsed = placements.reduce((s, p) => Math.max(s, p.x + p.width), 0);
+      if (nowUsed > width + 1) {
+        const k = width / nowUsed;
+        for (const p of placements) {
+          p.x *= k;
+          p.width *= k;
+        }
+        for (const g of gaps) {
+          g.x *= k;
+          g.width *= k;
+        }
+      }
+    }
+  }
+
+  /* ---------------- finalize ------------------------------------------ */
+  let maxHeight = 0;
+  let minHeight = Infinity;
+  let maxW = 0;
+  let minW = Infinity;
+  const total = Math.max(
+    1,
+    placements.reduce((s, p) => Math.max(s, p.x + p.width), 0),
+  );
+  for (const p of placements) {
+    p.phase = clamp((p.x + p.width / 2) / total, 0, 1);
+    const drawn = p.pose === 'flat' ? p.stackY + p.height : p.height;
+    maxHeight = Math.max(maxHeight, drawn);
+    minHeight = Math.min(minHeight, drawn);
+    maxW = Math.max(maxW, p.params.w);
+    minW = Math.min(minW, p.params.w);
+  }
+  // gapAfter, for flora and props.
+  for (const p of placements) {
+    const right = p.x + p.width;
+    let best = 0;
+    for (const g of gaps) {
+      if (g.x >= right - 0.5 && g.x - right < 3) best = Math.max(best, g.width);
+    }
+    p.gapAfter = best;
+  }
+  if (!Number.isFinite(minHeight)) minHeight = 0;
+  if (!Number.isFinite(minW)) minW = 1;
+
+  return {
+    placements,
+    gaps,
+    width: total,
+    maxHeight,
+    minHeight,
+    runs,
+    skylineVariation: maxHeight > 0 ? (maxHeight - minHeight) / maxHeight : 0,
+    thicknessRatio: minW > 0 ? maxW / minW : 1,
+  };
+}
+
+/* -------------------------- rendering a whole row ------------------------- */
+
+export interface RenderShelfRowOptions {
+  /** The room's light. Every book in the row gets this same rig. */
+  rig?: LightRig;
+  /** World px â†’ canvas px. */
+  scale?: number;
+  /** Canvas x of the row's origin. */
+  x?: number;
+  /**
+   * Canvas y of the PLANK's top surface â€” books stand on this line and cast
+   * their contact shadows onto it.
+   */
+  baselineY: number;
+  /** Bake titles (hi-res). Default true. */
+  hiRes?: boolean;
+  /** Paint a plank under the books. Default true. */
+  plank?: boolean;
+  /** Plank depth in canvas px (how much of the shelf board shows). */
+  plankHeight?: number;
+  /** Paint the dark back board behind the books. Default true. */
+  backBoard?: boolean;
+  /** Seed for the row's own incidental jitter. */
+  seed?: number;
+}
+
+/**
+ * Render a whole composed row â€” plank, back board, every book with its
+ * contact shadows, in back-to-front depth order.
+ *
+ * This is the function the QA specimen board uses, and the reference
+ * implementation for how a compositor should light a shelf: the *inter-object*
+ * shadows (book onto neighbour, book onto plank) can only be drawn here,
+ * because a single baked spine sprite has no idea what is next to it.
+ *
+ * Frame-wide passes (shafts, bloom, vignette, grade) are deliberately NOT
+ * applied â€” they belong to the case, over the whole composite. Use
+ * `renderLitScene` from `art/lighting.ts` for those.
+ */
+export function renderShelfRow(
+  ctx: Ctx2D,
+  comp: ShelfRowComposition,
+  opts: RenderShelfRowOptions,
+): void {
+  const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
+  const scale = opts.scale ?? 1;
+  const originX = opts.x ?? 0;
+  const baseY = opts.baselineY;
+  const rnd = mulberry32(((opts.seed ?? 0x51e1f) ^ 0x2545f491) >>> 0);
+  const plankH = opts.plankHeight ?? 26 * scale;
+  const rowW = comp.width * scale;
+  const tallest = comp.maxHeight * scale;
+  const src = keyToSource(rig);
+  const keySide = src.x >= 0 ? 1 : -1;
+
+  /* --- back board: the case's interior, which falls to near-black -------- */
+  if (opts.backBoard !== false) {
+    ctx.save();
+    const bg = ctx.createLinearGradient(originX, baseY - tallest * 1.25, originX + rowW, baseY);
+    const far = shiftTemperature(rig.shadowColour, -rig.temperatureShift * 0.8);
+    const near = mixColourCss(rig.ambientColour, rig.keyColour, 0.18 * rig.keyIntensity);
+    bg.addColorStop(0, keySide > 0 ? withAlpha(far, 0.98) : near);
+    bg.addColorStop(1, keySide > 0 ? near : withAlpha(far, 0.98));
+    ctx.fillStyle = bg;
+    ctx.fillRect(originX, baseY - tallest * 1.28, rowW, tallest * 1.28);
+    // Deep occlusion where the back board meets the plank.
+    applyCreaseOcclusion(ctx, {
+      rig,
+      x: originX,
+      y: baseY,
+      length: rowW,
+      axis: 'horizontal',
+      reach: tallest * 0.3,
+      strength: 1.15,
+      bias: -0.85,
+    });
+    ctx.restore();
+  }
+
+  /* --- the plank ---------------------------------------------------------- */
+  if (opts.plank !== false) {
+    ctx.save();
+    const wood = ctx.createLinearGradient(0, baseY, 0, baseY + plankH);
+    wood.addColorStop(0, mixColourCss('#8a6a45', rig.keyColour, 0.3));
+    wood.addColorStop(0.18, '#7d5f3c');
+    wood.addColorStop(0.72, '#5d4429');
+    wood.addColorStop(1, '#3b2a18');
+    ctx.fillStyle = wood;
+    ctx.fillRect(originX, baseY, rowW, plankH);
+    // Grain: long low-contrast streaks along the board.
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 26; i++) {
+      const gy = baseY + rnd() * plankH;
+      ctx.strokeStyle = rnd() < 0.5 ? 'rgba(46,32,18,0.24)' : 'rgba(196,164,116,0.16)';
+      ctx.lineWidth = (0.4 + rnd() * 1.3) * scale;
+      ctx.beginPath();
+      ctx.moveTo(originX, gy);
+      for (let gx = 0; gx <= rowW; gx += 40 * scale) {
+        ctx.lineTo(originX + gx, gy + Math.sin(gx * 0.012 + i) * 1.4 * scale);
+      }
+      ctx.stroke();
+    }
+    tileOver(ctx, getGranulationTile(), rowW, plankH, 128, 0.07, 'multiply');
+    // The plank's own front arris catches the key.
+    applyKeyLight(ctx, {
+      rig,
+      x: originX,
+      y: baseY,
+      width: rowW,
+      height: plankH,
+      intensity: 0.7,
+      hotSpot: 0.2,
+    });
+    ctx.restore();
+  }
+
+  /* --- books, back to front ---------------------------------------------- */
+  // Depth order matters: a recessed book must be overlapped by the proud one
+  // in front of it, and its shadow must land under, not over.
+  const order = comp.placements
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => {
+      if (a.p.pose === 'flat' && b.p.pose !== 'flat') return -1;
+      if (b.p.pose === 'flat' && a.p.pose !== 'flat') return 1;
+      return b.p.depth - a.p.depth;
+    });
+
+  for (const { p, i } of order) {
+    const px = originX + p.x * scale;
+    const pw = p.params.w * scale;
+    const ph = p.height * scale;
+    // Depth shifts the book up-screen a little and shrinks it â€” the cheapest
+    // convincing parallax there is.
+    const depth01 = clamp((p.depth + 1) / 2, 0, 1);
+    const recess = p.depth * 6 * scale;
+    const bookBase = baseY - Math.max(0, recess) * 0.45;
+
+    const left = comp.placements[i - 1];
+    const right = comp.placements[i + 1];
+    const paletteOf = (q: RowPlacement | undefined): string | null =>
+      q === undefined ? null : getSpinePalette(q.params).top;
+
+    if (p.pose === 'flat') {
+      /* ---- a book lying on its side in a stack ------------------------ */
+      const fw = p.width * scale;
+      const fh = p.params.w * scale;
+      const fy = bookBase - (p.stackY + p.params.w) * scale;
+      // Contact shadow onto whatever it lies on.
+      castContactShadow(ctx, {
+        rig,
+        x: px - fw * 0.02,
+        y: fy + fh,
+        length: fw * 1.04,
+        depth: Math.max(2, fh * 0.7),
+        side: 'below',
+        strength: 1.05,
+        gap: 0.5,
+      });
+      ctx.save();
+      ctx.translate(px + fw / 2, fy + fh / 2);
+      ctx.rotate((p.leanDeg * Math.PI) / 180);
+      // The spine renderer draws a vertical spine; rotate a quarter turn so
+      // the lettering runs along the stack the way it does in life.
+      ctx.rotate(-Math.PI / 2);
+      renderSpine(
+        ctx,
+        p.params,
+        -fw / 2,
+        -fh / 2,
+        fw,
+        (fh / p.params.w) * 1,
+        p.title,
+        {
+          hiRes: opts.hiRes !== false,
+          rig,
+          rowPhase: p.phase,
+          depth: depth01,
+          light: true,
+        },
+      );
+      ctx.restore();
+      continue;
+    }
+
+    /* ---- an upright (or leaning) book --------------------------------- */
+    const leanRad = (p.leanDeg * Math.PI) / 180;
+
+    // 1. The long projected shadow onto the plank, along the key direction.
+    castObjectShadow(ctx, {
+      rig,
+      x: px,
+      y: bookBase,
+      width: pw,
+      height: ph * 0.42,
+      strength: 0.7 * (1 - depth01 * 0.3),
+      softness: 0.55 + depth01 * 0.3,
+    });
+
+    // 2. THE contact shadow at the foot. Every object that touches another.
+    castContactShadow(ctx, {
+      rig,
+      x: px - pw * 0.06,
+      y: bookBase,
+      length: pw * 1.12,
+      depth: Math.max(2.5, pw * 0.55),
+      side: 'below',
+      strength: 1.1 * (1 - depth01 * 0.25),
+      gap: Math.max(0, -p.depth) * 2,
+    });
+
+    // 3. Contact shadow onto the neighbour on the shadow side, drawn on the
+    //    plank line between them â€” the join a row of books actually shows.
+    if (left !== undefined || right !== undefined) {
+      const sideX = keySide > 0 ? px : px + pw;
+      castContactShadow(ctx, {
+        rig,
+        x: sideX,
+        y: bookBase - ph,
+        length: ph,
+        depth: Math.max(1.5, pw * 0.4),
+        side: keySide > 0 ? 'left' : 'right',
+        strength: 0.55,
+        skew: 0,
+      });
+    }
+
+    ctx.save();
+    // Lean pivots about the book's foot, and the foot sinks a touch so the
+    // other corner tucks into the plank instead of floating over it.
+    const sink = (pw / 2) * Math.abs(Math.sin(leanRad));
+    ctx.translate(px + pw / 2, bookBase + sink);
+    ctx.rotate(leanRad);
+    ctx.translate(-pw / 2, -ph);
+
+    renderSpine(ctx, p.params, 0, 0, ph, scale, p.title, {
+      hiRes: opts.hiRes !== false,
+      rig,
+      rowPhase: p.phase,
+      depth: depth01,
+      neighbourLeft: paletteOf(left),
+      neighbourRight: paletteOf(right),
+      light: true,
+    });
+    ctx.restore();
+
+    // 4. An 'angled' book shows a sliver of its front board catching the key.
+    if (p.pose === 'angled') {
+      const bw = Math.max(1.5, pw * 0.22);
+      const bx = keySide > 0 ? px + pw : px - bw;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(bx, bookBase - ph * 0.995);
+      ctx.lineTo(bx + bw * keySide, bookBase - ph * 0.97);
+      ctx.lineTo(bx + bw * keySide, bookBase - ph * 0.02);
+      ctx.lineTo(bx, bookBase);
+      ctx.closePath();
+      ctx.clip();
+      const pal = getSpinePalette(p.params);
+      ctx.fillStyle = pal.bottom;
+      ctx.fillRect(Math.min(bx, bx + bw * keySide), bookBase - ph, bw, ph);
+      applyKeyLight(ctx, {
+        rig,
+        x: Math.min(bx, bx + bw * keySide),
+        y: bookBase - ph,
+        width: bw,
+        height: ph,
+        intensity: 1.25,
+        hotSpot: 0.5,
+      });
+      applyAmbientOcclusion(ctx, {
+        rig,
+        x: Math.min(bx, bx + bw * keySide),
+        y: bookBase - ph,
+        width: bw,
+        height: ph,
+        edges: ['bottom'],
+        reach: ph * 0.25,
+        strength: 1,
+        corners: false,
+      });
+      ctx.restore();
+    }
+  }
+
+  /* --- the row's own front-edge occlusion --------------------------------- */
+  // The plank's front arris throws a shadow back under the books it carries;
+  // without it the whole row reads as pasted onto the wood.
+  applyCreaseOcclusion(ctx, {
+    rig,
+    x: originX,
+    y: baseY,
+    length: rowW,
+    axis: 'horizontal',
+    reach: 8 * scale,
+    strength: 0.8,
+    bias: -0.4,
+  });
+}
+

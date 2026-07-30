@@ -1,8 +1,22 @@
 // @vitest-environment node
 /**
- * tests/sound.test.ts — verifies the generated sound files (format, duration,
- * headroom, loop continuity) and the playback engine's routing/rotation logic
- * against a stub Howler injected through the engine's loader seam.
+ * tests/sound.test.ts — verifies the generated sound files and the playback
+ * engine's routing / rotation / character logic.
+ *
+ * The file assertions are the acceptance criteria for the sound redesign.
+ * The old set was reviewed as "very rough low quality"; these tests encode
+ * what was actually wrong with it, measured:
+ *
+ *   WARMTH      spectral centroid. The old page turns measured 5428 Hz with
+ *               43% of their energy above 4 kHz — that is the harshness.
+ *               Every one-shot now has to come in under 2 kHz and 3%.
+ *   SMOOTHNESS  the largest sample-to-sample step, as a share of peak. The
+ *               old page-flip-2 jumped 78% of full scale between adjacent
+ *               samples; the old pencil loop 63%. That is what a click IS.
+ *               Everything now has to stay under 25%.
+ *   ONSET       the first half-millisecond must be under 4% of peak, so no
+ *               sound can snap open.
+ *   VARIETY     every family must ship several genuinely different takes.
  *
  * Regenerate fixtures with: node scripts/gen-sounds.mjs
  */
@@ -13,31 +27,40 @@ import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  CHARACTER_PROFILES,
   PAGE_FLIP_VARIANTS,
   SOUNDSCAPE_LOOPS,
+  SOUND_CHARACTERS,
+  SOUND_FAMILIES,
   SOUND_MANIFEST,
   SOUND_NAMES,
   TYPING_TICK_VARIANTS,
+  VARIANT_WEIGHTS,
   chimeTick,
   createVariantPicker,
   getEngineState,
+  getSoundCharacter,
   getSoundscape,
   getVolumes,
   init,
   keystroke,
   muteAll,
   play,
+  poolFor,
   resetEngineForTests,
   setChimeDepsForTests,
   setHourlyChime,
   setHowlerLoader,
+  setPlayRngForTests,
   setReducedSound,
+  setSoundCharacter,
   setSoundscape,
   setTypingRngForTests,
   setTypingSounds,
   setVolumes,
   startAmbient,
   stopAmbient,
+  type FamilyName,
   type HowlLike,
   type HowlOptions,
   type SoundName,
@@ -53,6 +76,7 @@ interface ParsedWav {
   channels: number;
   samples: Int16Array;
   durationMs: number;
+  peak: number;
   peakDb: number;
 }
 
@@ -100,6 +124,7 @@ function parseWav(path: string): ParsedWav {
     channels: fmt.channels,
     samples: data,
     durationMs: (data.length / fmt.sampleRate) * 1000,
+    peak,
     peakDb: 20 * Math.log10(Math.max(peak, 1e-9)),
   };
 }
@@ -113,32 +138,183 @@ function rmsDb(samples: Int16Array, from: number, to: number): number {
   return 20 * Math.log10(Math.max(Math.sqrt(sum / (to - from)), 1e-9));
 }
 
+/* ─────────────────────────── spectral analysis ──────────────────────────── */
+
+/** In-place radix-2 FFT. */
+function fft(re: Float64Array, im: Float64Array): void {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i] as number; re[i] = re[j] as number; re[j] = tr;
+      const ti = im[i] as number; im[i] = im[j] as number; im[j] = ti;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len;
+    const wr = Math.cos(ang);
+    const wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1;
+      let ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k] as number;
+        const ui = im[i + k] as number;
+        const vr = (re[i + k + len / 2] as number) * cr - (im[i + k + len / 2] as number) * ci;
+        const vi = (re[i + k + len / 2] as number) * ci + (im[i + k + len / 2] as number) * cr;
+        re[i + k] = ur + vr;
+        im[i + k] = ui + vi;
+        re[i + k + len / 2] = ur - vr;
+        im[i + k + len / 2] = ui - vi;
+        const ncr = cr * wr - ci * wi;
+        ci = cr * wi + ci * wr;
+        cr = ncr;
+      }
+    }
+  }
+}
+
+interface Spectrum {
+  /** Amplitude-weighted mean frequency, Hz. Lower = warmer. */
+  centroid: number;
+  /** Share of energy above 4 kHz, 0..1. Lower = less harsh. */
+  highShare: number;
+}
+
+function spectrum(w: ParsedWav): Spectrum {
+  const N = 2048;
+  const s = w.samples;
+  let num = 0;
+  let den = 0;
+  let high = 0;
+  let total = 0;
+  for (let start = 0; start + N <= s.length; start += N / 2) {
+    const re = new Float64Array(N);
+    const im = new Float64Array(N);
+    let energy = 0;
+    for (let i = 0; i < N; i++) {
+      const win = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N);
+      const v = ((s[start + i] as number) / 32768) * win;
+      re[i] = v;
+      energy += v * v;
+    }
+    if (energy < 1e-10) continue; // skip pure silence (the reverb tail's end)
+    fft(re, im);
+    for (let k = 1; k < N / 2; k++) {
+      const mag = Math.hypot(re[k] as number, im[k] as number);
+      const f = (k * w.sampleRate) / N;
+      num += f * mag;
+      den += mag;
+      total += mag * mag;
+      if (f > 4000) high += mag * mag;
+    }
+  }
+  return {
+    centroid: den > 0 ? num / den : 0,
+    highShare: total > 0 ? high / total : 0,
+  };
+}
+
+/** Largest single-sample jump anywhere, as a share of peak. A click's signature. */
+function maxStepShare(w: ParsedWav): number {
+  const s = w.samples;
+  let max = 0;
+  for (let i = 1; i < s.length; i++) {
+    const d = Math.abs((s[i] as number) - (s[i - 1] as number));
+    if (d > max) max = d;
+  }
+  return max / Math.max(w.peak * 32768, 1);
+}
+
+/** Loudest sample inside the first `ms`, as a share of peak. */
+function onsetShare(w: ParsedWav, ms: number): number {
+  const n = Math.min(w.samples.length, Math.round((ms / 1000) * w.sampleRate));
+  let max = 0;
+  for (let i = 0; i < n; i++) {
+    const v = Math.abs(w.samples[i] as number);
+    if (v > max) max = v;
+  }
+  return max / Math.max(w.peak * 32768, 1);
+}
+
 /* ───────────────────────────── generated files ──────────────────────────── */
 
 /** Expected duration windows (ms) per sound. */
 const DURATION_BOUNDS: Record<SoundName, readonly [number, number]> = {
-  'page-flip-1': [80, 160],
-  'page-flip-2': [80, 160],
-  'page-flip-3': [80, 160],
-  'book-pull': [220, 320],
-  'book-return': [200, 320],
-  'shelf-whoosh': [300, 420],
-  'pop-soft': [45, 90],
-  'tick-hover': [15, 45],
-  'check-done': [150, 400],
-  'crumple-delete': [250, 400],
-  'drop-thump': [90, 180],
+  'page-flip-1': [280, 440],
+  'page-flip-2': [280, 440],
+  'page-flip-3': [280, 440],
+  'page-flip-4': [280, 440],
+  'page-flip-5': [280, 440],
+  'page-flip-6': [280, 440],
+  'book-pull': [600, 820],
+  'book-pull-2': [600, 820],
+  'book-pull-3': [600, 820],
+  'book-pull-4': [600, 820],
+  'book-return': [600, 820],
+  'book-return-2': [600, 820],
+  'book-return-3': [600, 820],
+  'book-return-4': [600, 820],
+  'shelf-whoosh': [540, 840],
+  'shelf-whoosh-2': [540, 840],
+  'shelf-whoosh-3': [540, 840],
+  'pop-soft': [280, 420],
+  'pop-soft-2': [280, 420],
+  'pop-soft-3': [280, 420],
+  'pop-soft-4': [280, 420],
+  'pop-soft-5': [280, 420],
+  'tick-hover': [110, 210],
+  'tick-hover-2': [110, 210],
+  'tick-hover-3': [110, 210],
+  'tick-hover-4': [110, 210],
+  'tick-hover-5': [110, 210],
+  'check-done': [840, 1100],
+  'check-done-2': [840, 1100],
+  'check-done-3': [840, 1100],
+  'check-done-4': [840, 1100],
+  'crumple-delete': [660, 920],
+  'crumple-delete-2': [660, 920],
+  'crumple-delete-3': [660, 920],
+  'crumple-delete-4': [660, 920],
+  'drop-thump': [480, 680],
+  'drop-thump-2': [480, 680],
+  'drop-thump-3': [480, 680],
+  'drop-thump-4': [480, 680],
   'pencil-scratch': [180, 240],
-  confetti: [340, 520],
+  confetti: [820, 1140],
+  'confetti-2': [820, 1140],
+  'confetti-3': [820, 1140],
   'ambient-library': [7990, 8010],
   'ambient-rain': [7990, 8010],
   'ambient-fireplace': [7990, 8010],
   'ambient-crickets': [7990, 8010],
-  'typing-tick-1': [30, 70],
-  'typing-tick-2': [25, 70],
-  'typing-tick-3': [35, 80],
-  'chime-hour': [4000, 5400],
+  'typing-tick-1': [110, 200],
+  'typing-tick-2': [110, 200],
+  'typing-tick-3': [110, 200],
+  'typing-tick-4': [110, 200],
+  'typing-tick-5': [110, 200],
+  'typing-tick-6': [110, 200],
+  'chime-hour': [5400, 6600],
+  'chime-hour-2': [5400, 6600],
+  'chime-hour-3': [5400, 6600],
 };
+
+/**
+ * Warmth ceilings. Interaction sounds may carry a little more paper detail
+ * than an ambience bed you sit inside for hours, so the beds are stricter.
+ * For scale: the OLD set measured 5428 Hz (page-flip-1), 5225 Hz (pencil
+ * loop) and 2332 Hz (crumple) — all three fail these thresholds outright.
+ */
+const CENTROID_MAX_ONESHOT_HZ = 2000;
+const CENTROID_MAX_AMBIENT_HZ = 1400;
+/** Share of energy above 4 kHz. The old crickets bed measured 51%. */
+const HIGH_SHARE_MAX = 0.03;
+/** Largest adjacent-sample jump, as a share of peak. Old worst case: 78%. */
+const MAX_STEP_SHARE = 0.25;
+/** Loudest sample in the first half-millisecond, as a share of peak. */
+const ONSET_SHARE_MAX = 0.04;
 
 describe('generated WAV files', () => {
   const parsed = new Map<SoundName, ParsedWav>();
@@ -151,40 +327,151 @@ describe('generated WAV files', () => {
     return p;
   };
 
-  it.each(SOUND_NAMES.map((n) => [n] as const))('%s.wav: 44.1 kHz 16-bit mono, in duration bounds, no clipping', (name) => {
-    const w = wav(name);
-    expect(w.sampleRate).toBe(44100);
-    expect(w.bitsPerSample).toBe(16);
-    expect(w.channels).toBe(1);
-    const [min, max] = DURATION_BOUNDS[name];
-    expect(w.durationMs).toBeGreaterThanOrEqual(min);
-    expect(w.durationMs).toBeLessThanOrEqual(max);
-    // Mastered to -6 dBFS or below — comfortably clear of clipping.
-    expect(w.peakDb).toBeLessThanOrEqual(-5.5);
-    expect(w.samples.length).toBeGreaterThan(0);
+  it.each(SOUND_NAMES.map((n) => [n] as const))(
+    '%s.wav: 44.1 kHz 16-bit mono, in duration bounds, no clipping',
+    (name) => {
+      const w = wav(name);
+      expect(w.sampleRate).toBe(44100);
+      expect(w.bitsPerSample).toBe(16);
+      expect(w.channels).toBe(1);
+      const [min, max] = DURATION_BOUNDS[name];
+      expect(w.durationMs).toBeGreaterThanOrEqual(min);
+      expect(w.durationMs).toBeLessThanOrEqual(max);
+      // Mastered to -8 dBFS or below — the whole set now leaves real headroom.
+      expect(w.peakDb).toBeLessThanOrEqual(-7.5);
+      expect(w.samples.length).toBeGreaterThan(0);
+    },
+  );
+
+  it('every declared sound has a file and the manifest covers every file', () => {
+    expect(SOUND_NAMES.length).toBe(new Set(SOUND_NAMES).size);
+    for (const name of SOUND_NAMES) {
+      expect(SOUND_MANIFEST[name], name).toBeDefined();
+      expect(VARIANT_WEIGHTS[name], name).toMatch(/^(plain|full)$/);
+      expect(() => wav(name)).not.toThrow();
+    }
   });
 
-  it('quiet-by-design sounds actually sit far below the pack', () => {
-    expect(wav('shelf-whoosh').peakDb).toBeLessThanOrEqual(-15);
-    expect(wav('tick-hover').peakDb).toBeLessThanOrEqual(-20);
-    expect(wav('ambient-library').peakDb).toBeLessThanOrEqual(-12);
-    expect(wav('ambient-rain').peakDb).toBeLessThanOrEqual(-12);
-    expect(wav('ambient-fireplace').peakDb).toBeLessThanOrEqual(-12);
-    expect(wav('ambient-crickets').peakDb).toBeLessThanOrEqual(-12);
-    for (const tick of TYPING_TICK_VARIANTS) {
-      expect(wav(tick).peakDb).toBeLessThanOrEqual(-15);
+  /* ── warmth ─────────────────────────────────────────────────────────── */
+
+  it.each(SOUND_NAMES.map((n) => [n] as const))(
+    '%s.wav is warm: spectral centroid under the ceiling, little energy over 4 kHz',
+    (name) => {
+      const w = wav(name);
+      const { centroid, highShare } = spectrum(w);
+      const ceiling = SOUND_MANIFEST[name].category === 'ambient' && SOUND_MANIFEST[name].loop
+        ? CENTROID_MAX_AMBIENT_HZ
+        : CENTROID_MAX_ONESHOT_HZ;
+      expect(centroid, `${name} centroid ${Math.round(centroid)} Hz`).toBeGreaterThan(50);
+      expect(centroid, `${name} centroid ${Math.round(centroid)} Hz`).toBeLessThanOrEqual(ceiling);
+      expect(highShare, `${name} >4kHz share ${(highShare * 100).toFixed(1)}%`).toBeLessThanOrEqual(
+        HIGH_SHARE_MAX,
+      );
+    },
+  );
+
+  it('the papery sounds keep some detail — warm is not the same as muffled', () => {
+    // A page turn that measured 300 Hz would be a pillow, not paper.
+    for (const name of SOUND_FAMILIES['page-flip']) {
+      expect(spectrum(wav(name)).centroid, name).toBeGreaterThan(900);
     }
-    expect(wav('chime-hour').peakDb).toBeLessThanOrEqual(-11);
+    expect(spectrum(wav('pencil-scratch')).centroid).toBeGreaterThan(700);
+    expect(spectrum(wav('confetti')).centroid).toBeGreaterThan(800);
   });
+
+  /* ── smoothness ─────────────────────────────────────────────────────── */
+
+  it.each(SOUND_NAMES.map((n) => [n] as const))(
+    '%s.wav has no sample-level discontinuity and no clicky attack',
+    (name) => {
+      const w = wav(name);
+      const step = maxStepShare(w);
+      expect(step, `${name} max adjacent-sample step ${(step * 100).toFixed(1)}% of peak`)
+        .toBeLessThanOrEqual(MAX_STEP_SHARE);
+      const onset = onsetShare(w, 0.5);
+      expect(onset, `${name} first 0.5 ms reaches ${(onset * 100).toFixed(2)}% of peak`)
+        .toBeLessThanOrEqual(ONSET_SHARE_MAX);
+    },
+  );
 
   it('edges are faded (no clicks at start or end)', () => {
     for (const name of SOUND_NAMES) {
       const s = wav(name).samples;
-      // First and last samples must be at/near zero after the >=5 ms fades.
-      expect(Math.abs(s[0] as number)).toBeLessThan(330); // < ~1% FS
-      expect(Math.abs(s[s.length - 1] as number)).toBeLessThan(330);
+      // First and last samples must be at/near zero after the fades.
+      expect(Math.abs(s[0] as number), name).toBeLessThan(330); // < ~1% FS
+      expect(Math.abs(s[s.length - 1] as number), name).toBeLessThan(330);
     }
   });
+
+  /* ── loudness hierarchy ─────────────────────────────────────────────── */
+
+  it('quiet-by-design sounds actually sit far below the pack', () => {
+    for (const n of SOUND_FAMILIES['shelf-whoosh']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-19.5);
+    for (const n of SOUND_FAMILIES['tick-hover']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-25.5);
+    for (const n of TYPING_TICK_VARIANTS) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-19.5);
+    for (const n of ['ambient-library', 'ambient-rain', 'ambient-fireplace'] as const) {
+      expect(wav(n).peakDb, n).toBeLessThanOrEqual(-18.5);
+    }
+    expect(wav('ambient-crickets').peakDb).toBeLessThanOrEqual(-20.5);
+    for (const n of SOUND_FAMILIES['chime-hour']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-13.5);
+    expect(wav('pencil-scratch').peakDb).toBeLessThanOrEqual(-17.5);
+  });
+
+  it('interaction sounds are gentle touches: hover is far under the action sounds', () => {
+    // The hover tick must be at least 15 dB below anything you deliberately do.
+    const hover = wav('tick-hover').peakDb;
+    for (const n of [...SOUND_FAMILIES['book-pull'], ...SOUND_FAMILIES['drop-thump'], ...SOUND_FAMILIES['check-done']]) {
+      expect(wav(n).peakDb - hover, n).toBeGreaterThan(15);
+    }
+    // And the ambience bed sits below every one-shot it plays under.
+    expect(wav('ambient-library').peakDb).toBeLessThan(wav('page-flip-1').peakDb - 8);
+  });
+
+  /* ── variety ────────────────────────────────────────────────────────── */
+
+  it('every family ships at least three genuinely different takes', () => {
+    for (const [family, variants] of Object.entries(SOUND_FAMILIES) as Array<[FamilyName, readonly SoundName[]]>) {
+      expect(variants.length, family).toBeGreaterThanOrEqual(3);
+      for (let a = 0; a < variants.length; a++) {
+        for (let b = a + 1; b < variants.length; b++) {
+          const wa = wav(variants[a] as SoundName);
+          const wb = wav(variants[b] as SoundName);
+          const label = `${variants[a]} vs ${variants[b]}`;
+          // Peak-normalized difference energy: near-copies would sit near 0.
+          const n = Math.min(wa.samples.length, wb.samples.length);
+          let diff = 0;
+          let ref = 0;
+          for (let i = 0; i < n; i++) {
+            const va = (wa.samples[i] as number) / (wa.peak * 32768);
+            const vb = (wb.samples[i] as number) / (wb.peak * 32768);
+            diff += (va - vb) * (va - vb);
+            ref += va * va + vb * vb;
+          }
+          expect(Math.sqrt(diff / Math.max(ref, 1e-12)), label).toBeGreaterThan(0.5);
+        }
+      }
+    }
+  });
+
+  it('each family spans both variant weights so every character has a pool', () => {
+    for (const [family, variants] of Object.entries(SOUND_FAMILIES) as Array<[FamilyName, readonly SoundName[]]>) {
+      const weights = new Set(variants.map((v) => VARIANT_WEIGHTS[v]));
+      expect(weights, family).toContain('plain');
+      expect(weights, family).toContain('full');
+    }
+  });
+
+  it("the 'full' takes really are the longer ones", () => {
+    for (const variants of Object.values(SOUND_FAMILIES) as Array<readonly SoundName[]>) {
+      const plain = variants.filter((v) => VARIANT_WEIGHTS[v] === 'plain');
+      const full = variants.filter((v) => VARIANT_WEIGHTS[v] === 'full');
+      const mean = (list: readonly SoundName[]): number =>
+        list.reduce((sum, n) => sum + wav(n).durationMs, 0) / list.length;
+      expect(mean(full)).toBeGreaterThan(mean(plain));
+    }
+  });
+
+  /* ── loops ──────────────────────────────────────────────────────────── */
 
   it('ambient-library loops seamlessly: head/tail RMS continuity within 3 dB', () => {
     const w = wav('ambient-library');
@@ -218,11 +505,13 @@ describe('generated WAV files', () => {
   });
 
   it('chime-hour decays into silence (a bell, not a drone)', () => {
-    const w = wav('chime-hour');
-    const win = Math.round(0.3 * w.sampleRate);
-    const early = rmsDb(w.samples, 0, win);
-    const late = rmsDb(w.samples, w.samples.length - win, w.samples.length);
-    expect(early - late).toBeGreaterThan(20); // long natural decay
+    for (const name of SOUND_FAMILIES['chime-hour']) {
+      const w = wav(name);
+      const win = Math.round(0.3 * w.sampleRate);
+      const early = rmsDb(w.samples, 0, win);
+      const late = rmsDb(w.samples, w.samples.length - win, w.samples.length);
+      expect(early - late, name).toBeGreaterThan(20); // long natural decay
+    }
   });
 
   it('pencil-scratch loop keeps continuous energy across the seam', () => {
@@ -328,28 +617,44 @@ class StubHowl implements HowlLike {
 const findStub = (name: SoundName): StubHowl | undefined =>
   StubHowl.instances.find((h) => h.src === `/sounds/${name}.wav`);
 
+/** A deterministic spread-out RNG for rotation tests. */
+function lcg(): () => number {
+  let n = 1;
+  return () => {
+    n = (n * 16807 + 12345) % 2147483647;
+    return (n % 1009) / 1009;
+  };
+}
+
+const installStub = (): void => {
+  resetEngineForTests();
+  StubHowl.instances = [];
+  StubHowl.playLog = [];
+  setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+};
+
 describe('sound engine (stub Howler)', () => {
   beforeEach(() => {
-    resetEngineForTests();
-    StubHowl.instances = [];
-    StubHowl.playLog = [];
-    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+    installStub();
+    // rng == 0.5 makes jitter() exactly 1, so volume maths stays exact.
+    setPlayRngForTests(() => 0.5);
   });
 
   it('is lazy: no Howl instances exist before the first play', async () => {
     expect(StubHowl.instances).toHaveLength(0);
-    await play('pop-soft');
+    await play('pop-soft-3');
     expect(StubHowl.instances).toHaveLength(1);
-    expect(StubHowl.instances[0]?.src).toBe('/sounds/pop-soft.wav');
+    expect(StubHowl.instances[0]?.src).toBe('/sounds/pop-soft-3.wav');
   });
 
-  it('init() preloads all 21 sounds with correct src and loop flags', async () => {
+  it('init() preloads every sound with correct src and loop flags', async () => {
     await init();
     expect(StubHowl.instances).toHaveLength(SOUND_NAMES.length);
+    expect(SOUND_NAMES.length).toBeGreaterThanOrEqual(50);
     for (const name of SOUND_NAMES) {
       const stub = findStub(name);
       expect(stub, name).toBeDefined();
-      expect(stub?.options.loop).toBe(SOUND_MANIFEST[name].loop);
+      expect(stub?.options.loop, name).toBe(SOUND_MANIFEST[name].loop);
       expect(stub?.options.preload).toBe(true);
     }
     // Re-init reuses cached instances.
@@ -357,11 +662,11 @@ describe('sound engine (stub Howler)', () => {
     expect(StubHowl.instances).toHaveLength(SOUND_NAMES.length);
   });
 
-  it('routes volume: request x category x master', async () => {
+  it('routes volume: request x category x master x character trim', async () => {
     setVolumes({ master: 0.5, ui: 0.5 });
-    const id = await play('pop-soft', { volume: 0.8 });
+    const id = await play('pop-soft-2', { volume: 0.8 });
     expect(id).toBeDefined();
-    const stub = findStub('pop-soft');
+    const stub = findStub('pop-soft-2');
     expect(stub?.volumes.get(id as number)).toBeCloseTo(0.8 * 0.5 * 0.5, 10);
   });
 
@@ -371,30 +676,73 @@ describe('sound engine (stub Howler)', () => {
     expect(getVolumes().ambient).toBe(0);
     const flipId = await play('page-flip-1');
     expect(findStub('page-flip-1')?.volumes.get(flipId as number)).toBeCloseTo(0.6, 10);
-    const thumpId = await play('drop-thump');
-    expect(findStub('drop-thump')?.volumes.get(thumpId as number)).toBeCloseTo(1, 10);
+    const thumpId = await play('drop-thump-3');
+    expect(findStub('drop-thump-3')?.volumes.get(thumpId as number)).toBeCloseTo(1, 10);
   });
 
-  it('forwards the rate option to the played id', async () => {
-    const id = await play('check-done', { rate: 1.1 });
-    expect(findStub('check-done')?.rates.get(id as number)).toBe(1.1);
+  it('forwards an explicit rate and never overrides it with jitter', async () => {
+    const id = await play('check-done-2', { rate: 1.1 });
+    expect(findStub('check-done-2')?.rates.get(id as number)).toBe(1.1);
   });
 
-  it('page-flip picks variants with no immediate repeats', async () => {
-    for (let i = 0; i < 60; i++) await play('page-flip');
-    expect(StubHowl.playLog).toHaveLength(60);
-    const variantSrcs = new Set(PAGE_FLIP_VARIANTS.map((v) => `/sounds/${v}.wav`));
-    for (const src of StubHowl.playLog) expect(variantSrcs.has(src)).toBe(true);
-    for (let i = 1; i < StubHowl.playLog.length; i++) {
-      expect(StubHowl.playLog[i]).not.toBe(StubHowl.playLog[i - 1]);
+  it('jitters pitch and level per play, inside the character bounds', async () => {
+    setPlayRngForTests(lcg());
+    setVolumes({ master: 1, ui: 1 });
+    for (let i = 0; i < 40; i++) await play('check-done-3');
+    const stub = findStub('check-done-3') as StubHowl;
+    const { pitchJitter, levelJitter } = CHARACTER_PROFILES.calm;
+    for (const [, rate] of stub.rates) {
+      expect(rate).toBeGreaterThanOrEqual(1 - pitchJitter - 1e-9);
+      expect(rate).toBeLessThanOrEqual(1 + pitchJitter + 1e-9);
     }
-    expect(new Set(StubHowl.playLog).size).toBe(3);
+    for (const [, vol] of stub.volumes) {
+      expect(vol).toBeGreaterThanOrEqual(1 - levelJitter - 1e-9);
+      expect(vol).toBeLessThanOrEqual(1);
+    }
+    // The whole point: repeats are not identical.
+    expect(new Set([...stub.rates.values()].map((r) => r.toFixed(5))).size).toBeGreaterThan(5);
+    expect(new Set([...stub.volumes.values()].map((v) => v.toFixed(5))).size).toBeGreaterThan(5);
   });
 
-  it('reducedSound skips tick-hover and pencil-scratch entirely (not even loaded)', async () => {
+  it('noJitter gives an exactly reproducible play', async () => {
+    setPlayRngForTests(lcg());
+    setVolumes({ master: 1, ui: 1 });
+    const a = await play('confetti-2', { noJitter: true });
+    const b = await play('confetti-2', { noJitter: true });
+    const stub = findStub('confetti-2') as StubHowl;
+    expect(stub.volumes.get(a as number)).toBe(1);
+    expect(stub.volumes.get(b as number)).toBe(1);
+    expect(stub.rates.size).toBe(0);
+  });
+
+  it.each(Object.keys(SOUND_FAMILIES).map((f) => [f] as const))(
+    "play('%s') rotates that family with no immediate repeats",
+    async (family) => {
+      setPlayRngForTests(lcg());
+      const variants = SOUND_FAMILIES[family as FamilyName] as readonly SoundName[];
+      await init(); // warm the cache so play order == call order
+      StubHowl.playLog = [];
+      for (let i = 0; i < 60; i++) await play(family as FamilyName);
+      expect(StubHowl.playLog).toHaveLength(60);
+      const srcs = new Set(variants.map((v) => `/sounds/${v}.wav`));
+      for (const src of StubHowl.playLog) expect(srcs.has(src), src).toBe(true);
+      for (let i = 1; i < StubHowl.playLog.length; i++) {
+        expect(StubHowl.playLog[i]).not.toBe(StubHowl.playLog[i - 1]);
+      }
+      expect(new Set(StubHowl.playLog).size).toBe(variants.length);
+    },
+  );
+
+  it('a concrete variant name still plays exactly that file', async () => {
+    await play('page-flip-4');
+    expect(StubHowl.playLog).toEqual(['/sounds/page-flip-4.wav']);
+  });
+
+  it('reducedSound skips hover and pencil sounds entirely (not even loaded)', async () => {
     setReducedSound(true);
     expect(await play('tick-hover')).toBeUndefined();
     expect(await play('pencil-scratch')).toBeUndefined();
+    expect(await play('typing-tick-2')).toBeUndefined();
     expect(findStub('tick-hover')).toBeUndefined();
     expect(findStub('pencil-scratch')).toBeUndefined();
     // Other sounds still play.
@@ -466,16 +814,103 @@ describe('sound engine (stub Howler)', () => {
   });
 });
 
+/* ────────────────────────── sound-character presets ─────────────────────── */
+
+describe('sound-character presets (stub Howler)', () => {
+  beforeEach(() => {
+    installStub();
+    setPlayRngForTests(() => 0.5);
+  });
+
+  it('defaults to calm, which is a pure pass-through of the user sliders', () => {
+    expect(getSoundCharacter()).toBe('calm');
+    for (const gain of Object.values(CHARACTER_PROFILES.calm.gain)) expect(gain).toBe(1);
+    expect(CHARACTER_PROFILES.calm.skip.size).toBe(0);
+    expect(getEngineState().character).toBe('calm');
+  });
+
+  it('every character is describable and has sane jitter widths', () => {
+    for (const name of SOUND_CHARACTERS) {
+      const p = CHARACTER_PROFILES[name];
+      expect(p.blurb.length).toBeGreaterThan(10);
+      expect(p.pitchJitter).toBeGreaterThan(0);
+      expect(p.pitchJitter).toBeLessThanOrEqual(0.06);
+      expect(p.levelJitter).toBeGreaterThan(0);
+      expect(p.levelJitter).toBeLessThanOrEqual(0.15);
+    }
+  });
+
+  it('the pool a character draws from matches its variant weight', () => {
+    for (const family of Object.keys(SOUND_FAMILIES) as FamilyName[]) {
+      expect(poolFor(family, 'calm')).toEqual(SOUND_FAMILIES[family]);
+      for (const n of poolFor(family, 'minimal')) expect(VARIANT_WEIGHTS[n], n).toBe('plain');
+      for (const n of poolFor(family, 'rich')) expect(VARIANT_WEIGHTS[n], n).toBe('full');
+      expect(poolFor(family, 'minimal').length).toBeGreaterThan(0);
+      expect(poolFor(family, 'rich').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('minimal plays only plain takes and drops the decorative layer', async () => {
+    setSoundCharacter('minimal');
+    setPlayRngForTests(lcg());
+    expect(await play('tick-hover')).toBeUndefined();
+    expect(await play('pencil-scratch')).toBeUndefined();
+    expect(await play('confetti')).toBeUndefined();
+    expect(await play('shelf-whoosh')).toBeUndefined();
+    expect(StubHowl.playLog).toHaveLength(0);
+    // The sounds an action depends on still play, from the plain pool only.
+    for (let i = 0; i < 20; i++) await play('book-pull');
+    expect(StubHowl.playLog.length).toBe(20);
+    for (const src of StubHowl.playLog) {
+      const name = src.replace('/sounds/', '').replace('.wav', '') as SoundName;
+      expect(VARIANT_WEIGHTS[name], name).toBe('plain');
+    }
+  });
+
+  it('rich leans on the full takes and lifts the ambience', async () => {
+    setSoundCharacter('rich');
+    setPlayRngForTests(lcg());
+    for (let i = 0; i < 20; i++) await play('page-flip');
+    for (const src of StubHowl.playLog) {
+      const name = src.replace('/sounds/', '').replace('.wav', '') as SoundName;
+      expect(VARIANT_WEIGHTS[name], name).toBe('full');
+    }
+    expect(CHARACTER_PROFILES.rich.gain.ambient).toBeGreaterThan(CHARACTER_PROFILES.calm.gain.ambient);
+  });
+
+  it('character gain trims the played volume', async () => {
+    setPlayRngForTests(() => 0.5);
+    setVolumes({ master: 1, ui: 1 });
+    setSoundCharacter('minimal');
+    const id = await play('check-done', { volume: 1 });
+    expect(findStub('check-done')?.volumes.get(id as number)).toBeCloseTo(
+      CHARACTER_PROFILES.minimal.gain.ui,
+      10,
+    );
+  });
+
+  it('switching character live-updates the running ambient bed', async () => {
+    setVolumes({ master: 1, ambient: 0.5 });
+    await startAmbient();
+    const stub = findStub('ambient-library') as StubHowl;
+    const id = stub.fades[0]?.id as number;
+    setSoundCharacter('rich');
+    expect(stub.volumes.get(id)).toBeCloseTo(
+      Math.min(1, 0.5 * CHARACTER_PROFILES.rich.gain.ambient),
+      10,
+    );
+    expect(getEngineState().character).toBe('rich');
+  });
+});
+
 /* ───────────────────────────── soundscape picker ────────────────────────── */
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('soundscape picker (stub Howler)', () => {
   beforeEach(() => {
-    resetEngineForTests();
-    StubHowl.instances = [];
-    StubHowl.playLog = [];
-    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+    installStub();
+    setPlayRngForTests(() => 0.5);
   });
 
   it('every soundscape maps to a looping ambient manifest entry', () => {
@@ -499,11 +934,9 @@ describe('soundscape picker (stub Howler)', () => {
     setSoundscape('rain');
     await flush();
     const rain = findStub('ambient-rain') as StubHowl;
-    // Old bed fading to silence and stopped once the fade lands.
     expect(lib.fades[lib.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
     lib.emit('fade');
     expect(lib.playing(libId)).toBe(false);
-    // New bed fading in at the ambient gain.
     expect(rain.fades[0]).toMatchObject({ from: 0, duration: 600 });
     expect(getEngineState()).toMatchObject({ soundscape: 'rain', ambientPlaying: 'ambient-rain' });
   });
@@ -514,10 +947,8 @@ describe('soundscape picker (stub Howler)', () => {
     setSoundscape('none');
     expect(lib.fades[lib.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
     expect(getEngineState().ambientPlaying).toBeNull();
-    // While 'none', startAmbient stays a silent no-op (but remembers intent).
     await startAmbient();
     expect(getEngineState().ambientPlaying).toBeNull();
-    // Picking a soundscape again resumes the wanted bed.
     setSoundscape('crickets');
     await flush();
     expect(findStub('ambient-crickets')?.fades[0]).toMatchObject({ from: 0, duration: 600 });
@@ -552,10 +983,8 @@ describe('soundscape picker (stub Howler)', () => {
 
 describe('typing sounds (stub Howler)', () => {
   beforeEach(() => {
-    resetEngineForTests();
-    StubHowl.instances = [];
-    StubHowl.playLog = [];
-    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+    installStub();
+    setPlayRngForTests(lcg());
   });
 
   const tickSrcs = new Set(TYPING_TICK_VARIANTS.map((v) => `/sounds/${v}.wav`));
@@ -573,13 +1002,10 @@ describe('typing sounds (stub Howler)', () => {
 
   it('rate-limits to 12 ticks/s', async () => {
     setTypingSounds(true);
-    // 40 keystrokes hammered 10 ms apart = 400 ms of furious typing.
     for (let i = 0; i < 40; i++) keystroke(i * 10);
     await flush();
-    // ceil(400 / 83.3) -> at most 5-6 ticks may land in that window.
     expect(StubHowl.playLog.length).toBeLessThanOrEqual(6);
     expect(StubHowl.playLog.length).toBeGreaterThanOrEqual(4);
-    // Slow typing (100 ms apart) is under the limit — every stroke ticks.
     StubHowl.playLog = [];
     for (let i = 0; i < 5; i++) keystroke(10_000 + i * 100);
     await flush();
@@ -596,26 +1022,26 @@ describe('typing sounds (stub Howler)', () => {
     keystroke(1000);
     keystroke(2000);
     await flush();
+    const { pitchJitter, levelJitter } = CHARACTER_PROFILES.calm;
     for (const stub of StubHowl.instances) {
       for (const [, vol] of stub.volumes) {
-        expect(vol).toBeGreaterThanOrEqual(0.45);
+        expect(vol).toBeGreaterThanOrEqual(0.45 * (1 - levelJitter) - 1e-9);
         expect(vol).toBeLessThanOrEqual(1);
       }
       for (const [, rate] of stub.rates) {
-        expect(rate).toBeGreaterThanOrEqual(0.94);
-        expect(rate).toBeLessThanOrEqual(1.06);
+        expect(rate).toBeGreaterThanOrEqual(1 - pitchJitter - 1e-9);
+        expect(rate).toBeLessThanOrEqual(1 + pitchJitter + 1e-9);
       }
     }
-    // Velocity actually varies across strokes.
     const vols = StubHowl.instances.flatMap((s) => [...s.volumes.values()]);
     expect(new Set(vols.map((v) => v.toFixed(4))).size).toBeGreaterThan(1);
   });
 
   it('rotates tick variants with no immediate repeats', async () => {
     setTypingSounds(true);
-    // Pre-warm the cache so every play() resolves in call order — first-time
-    // Howl creation has a deeper microtask chain and would shuffle the log.
+    // Pre-warm the cache so every play() resolves in call order.
     await init();
+    StubHowl.playLog = [];
     for (let i = 0; i < 30; i++) keystroke(i * 1000);
     await flush();
     expect(StubHowl.playLog).toHaveLength(30);
@@ -625,15 +1051,19 @@ describe('typing sounds (stub Howler)', () => {
     }
   });
 
-  it('muted and reduced-sound both silence typing ticks', async () => {
+  it('muted, reduced-sound and the minimal character all silence typing ticks', async () => {
     setTypingSounds(true);
     muteAll(true);
     keystroke(0);
     muteAll(false);
     setReducedSound(true);
     keystroke(1000);
+    setReducedSound(false);
+    setSoundCharacter('minimal');
+    keystroke(2000);
     await flush();
     expect(StubHowl.playLog).toHaveLength(0);
+    expect(getEngineState().typingTicksPlayed).toBe(0);
   });
 });
 
@@ -647,17 +1077,15 @@ describe('hourly chime (stub Howler)', () => {
     new Date(2026, 6, 30, h, m, s).getTime();
 
   beforeEach(() => {
-    resetEngineForTests();
-    StubHowl.instances = [];
-    StubHowl.playLog = [];
-    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+    installStub();
+    setPlayRngForTests(lcg());
     focused = true;
     nowMs = at(9, 40);
     setChimeDepsForTests({ now: () => nowMs, hasFocus: () => focused });
   });
 
   const chimes = (): number =>
-    StubHowl.playLog.filter((src) => src === '/sounds/chime-hour.wav').length;
+    StubHowl.playLog.filter((src) => src.startsWith('/sounds/chime-hour')).length;
 
   it('rings once at the top of the hour, focused, past the launch grace', async () => {
     setHourlyChime(true);
@@ -728,5 +1156,13 @@ describe('hourly chime (stub Howler)', () => {
     await flush();
     expect(chimes()).toBe(0);
     expect(getEngineState().hourlyChime).toBe(false);
+  });
+});
+
+/* Guard: PAGE_FLIP_VARIANTS stays the page-flip family (legacy import path). */
+describe('legacy exports', () => {
+  it('PAGE_FLIP_VARIANTS and TYPING_TICK_VARIANTS still name their families', () => {
+    expect(PAGE_FLIP_VARIANTS).toEqual(SOUND_FAMILIES['page-flip']);
+    expect(TYPING_TICK_VARIANTS).toEqual(SOUND_FAMILIES['typing-tick']);
   });
 });

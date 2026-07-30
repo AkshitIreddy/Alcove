@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import { getDb } from './db';
+import { indexPage } from './search';
 import type { CreatePageInput, Page, PageDoc, PageRow } from './types';
 
 /** A fresh, empty TipTap document — the starter content for new pages. */
@@ -107,6 +108,7 @@ export async function savePageDoc(
     'UPDATE pages SET doc_json = $1, source_dirty = $2, updated_at = $3 WHERE id = $4',
     [JSON.stringify(doc), sourceDirty ? 1 : 0, updatedAt, id],
   );
+  void indexPage(id, existing.bookId, existing.ord, doc, updatedAt); // search index (never throws)
   return { ...existing, doc, sourceDirty, updatedAt };
 }
 

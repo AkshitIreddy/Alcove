@@ -1,0 +1,296 @@
+/* ============================================================================
+   Notebook — quick switcher (Ctrl+K) + full-text search styling
+   A hand-drawn parchment command bar floating over a warm scrim, plus the
+   pulse-highlight chips that land on a page after click-to-jump.
+   All colors from tokens.css; animation is transform/opacity only.
+   ========================================================================== */
+
+/* --------------------------------- scrim ---------------------------------- */
+.nb-qs-scrim {
+  position: fixed;
+  inset: 0;
+  /* Above toasts: the command bar must clear every book-view layer
+     (flip leaves, panels, toasts) in whichever view it opens over. */
+  z-index: calc(var(--z-toasts) + 20);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 14vh;
+  background: rgba(91, 70, 54, 0.28);
+  animation: nb-qs-scrim-in var(--dur-sm) var(--ease-out) backwards;
+}
+
+/* Fades the wash in via background (not opacity) so children never inherit
+   a stuck-at-zero opacity if the compositor stalls the animation. */
+@keyframes nb-qs-scrim-in {
+  from {
+    background: rgba(91, 70, 54, 0);
+  }
+  to {
+    background: rgba(91, 70, 54, 0.28);
+  }
+}
+
+/* ---------------------------------- bar ----------------------------------- */
+.nb-qs-bar {
+  width: min(620px, 92vw);
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-lg) var(--radius-hand) var(--radius-lg)
+    var(--radius-hand);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-12) var(--space-16) var(--space-8);
+  transform-origin: top center;
+  animation: nb-qs-bar-in var(--dur-md) var(--ease-spring);
+}
+
+/* Transform-only entrance: even if a stalled compositor freezes the
+   animation at its first frame, the bar stays fully readable. */
+@keyframes nb-qs-bar-in {
+  from {
+    transform: translateY(-14px) rotate(-0.6deg) scale(0.97);
+  }
+  to {
+    transform: translateY(0) rotate(0) scale(1);
+  }
+}
+
+/* --------------------------------- tabs ----------------------------------- */
+.nb-qs-tabs {
+  display: flex;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+
+.nb-qs-tab {
+  font-size: var(--text-label);
+  color: var(--ink-graphite-soft);
+  padding: 2px var(--space-12);
+  border: 1.5px dashed transparent;
+  border-radius: 8px 14px 10px 15px / 12px 8px 14px 9px;
+  transform: rotate(-0.6deg);
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-qs-tab + .nb-qs-tab {
+  transform: rotate(0.5deg);
+}
+
+.nb-qs-tab:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+}
+
+.nb-qs-tab.is-active {
+  color: var(--wash-amber-deep);
+  background: var(--wash-amber-light);
+  border-color: var(--wash-amber-deep);
+}
+
+/* --------------------------------- input ---------------------------------- */
+.nb-qs-input {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 21px;
+  color: var(--ink-sepia);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--paper-edge);
+  border-radius: 0;
+  padding: var(--space-4) var(--space-4) var(--space-8);
+  outline: none;
+}
+
+.nb-qs-input::placeholder {
+  color: var(--ink-sepia-soft);
+  opacity: 0.8;
+}
+
+.nb-qs-input:focus {
+  border-bottom-color: var(--wash-amber-deep);
+}
+
+/* -------------------------------- results --------------------------------- */
+.nb-qs-results {
+  margin-top: var(--space-8);
+  overflow-y: auto;
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-edge) transparent;
+}
+
+.nb-qs-results::-webkit-scrollbar {
+  width: 8px;
+}
+
+.nb-qs-results::-webkit-scrollbar-thumb {
+  background: var(--paper-edge);
+  border-radius: var(--radius-pill);
+}
+
+.nb-qs-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  text-align: left;
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: 1.5px solid transparent;
+  border-radius: 10px 16px 12px 17px / 14px 10px 16px 11px;
+  color: var(--ink-sepia);
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-qs-row.is-selected {
+  background: var(--wash-amber-light);
+  border-color: var(--wash-amber);
+  transform: translateX(2px) rotate(-0.25deg);
+}
+
+.nb-qs-row-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-qs-row.is-selected .nb-qs-row-icon {
+  color: var(--wash-amber-deep);
+}
+
+.nb-qs-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.nb-qs-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nb-qs-row-title {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.3;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.nb-qs-row-meta {
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+  white-space: nowrap;
+}
+
+.nb-qs-row-snippet {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--ink-sepia-soft);
+  overflow-wrap: anywhere;
+}
+
+mark.nb-qs-hit {
+  background: var(--selection-wash);
+  color: var(--ink-sepia);
+  border-radius: 3px 6px 4px 7px / 6px 3px 7px 4px;
+  padding: 0 1px;
+}
+
+.nb-qs-empty {
+  padding: var(--space-12) var(--space-8);
+  font-size: var(--text-sm);
+  color: var(--ink-sepia-soft);
+  text-align: center;
+}
+
+/* -------------------------------- footer ---------------------------------- */
+.nb-qs-footer {
+  display: flex;
+  gap: var(--space-16);
+  justify-content: center;
+  padding-top: var(--space-8);
+  margin-top: var(--space-4);
+  border-top: 1px dashed var(--paper-edge);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+/* ---------------------- click-to-jump pulse highlight ---------------------- */
+/* Fixed-position chips dropped on document.body by src/search/jump.ts —
+   never inside ProseMirror's DOM. Transform/opacity animation only. */
+.nb-search-pulse {
+  position: fixed;
+  z-index: var(--z-toasts);
+  pointer-events: none;
+  background: var(--selection-wash);
+  border: 2px solid var(--wash-amber);
+  border-radius: 8px 14px 10px 15px / 12px 8px 14px 9px;
+  opacity: 0;
+  animation: nb-search-pulse 2.3s var(--ease-out) forwards;
+}
+
+@keyframes nb-search-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0.75;
+    transform: scale(1.04);
+  }
+  46% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  78% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-qs-scrim,
+  .nb-qs-bar {
+    animation: none;
+  }
+  .nb-search-pulse {
+    animation: nb-search-pulse-static 2.3s linear forwards;
+  }
+  @keyframes nb-search-pulse-static {
+    0% {
+      opacity: 1;
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}

@@ -131,6 +131,42 @@ function mergeStored(raw: unknown): MutableSettings {
     backupIntervalDays: takeNumber(s.backupIntervalDays, d.backupIntervalDays),
     spellcheck: takeBoolean(s.spellcheck, d.spellcheck),
     keybindings: takeKeybindings(s.keybindings, d.keybindings),
+    wheelMode: takeEnum(s.wheelMode, ['zoom', 'scroll'] as const, d.wheelMode),
+    shelfWoodStain: takeEnum(
+      s.shelfWoodStain,
+      ['oak', 'walnut', 'cherry', 'cream'] as const,
+      d.shelfWoodStain,
+    ),
+    wallpaperPattern: takeEnum(
+      s.wallpaperPattern,
+      ['damask', 'stars', 'botanical', 'plain'] as const,
+      d.wallpaperPattern,
+    ),
+    shelfSort: takeEnum(
+      s.shelfSort,
+      ['manual', 'recent', 'favorites'] as const,
+      d.shelfSort,
+    ),
+    soundscape: takeEnum(
+      s.soundscape,
+      ['library', 'rain', 'fireplace', 'crickets', 'none'] as const,
+      d.soundscape,
+    ),
+    typingSounds: takeBoolean(s.typingSounds, d.typingSounds),
+    hourlyChime: takeBoolean(s.hourlyChime, d.hourlyChime),
+    cursorStyle: takeEnum(
+      s.cursorStyle,
+      ['standard', 'pencil', 'quill'] as const,
+      d.cursorStyle,
+    ),
+    journalBookId:
+      typeof s.journalBookId === 'string' ? s.journalBookId : d.journalBookId,
+    thumbnailsStrip: takeBoolean(s.thumbnailsStrip, d.thumbnailsStrip),
+    launchIntoLastBook: takeBoolean(s.launchIntoLastBook, d.launchIntoLastBook),
+    trayQuickCapture: takeBoolean(s.trayQuickCapture, d.trayQuickCapture),
+    backupFolder:
+      typeof s.backupFolder === 'string' ? s.backupFolder : d.backupFolder,
+    perfHud: takeBoolean(s.perfHud, d.perfHud),
     telemetry: false,
   };
 }

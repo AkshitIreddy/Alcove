@@ -45,5 +45,27 @@ export const DEFAULT_SETTINGS: Settings = {
   // Input
   keybindings: { ...DEFAULT_KEYBINDINGS },
 
+  // Wave 2 — library & shelf
+  wheelMode: 'zoom',
+  shelfWoodStain: 'walnut',
+  wallpaperPattern: 'damask',
+  shelfSort: 'manual',
+
+  // Wave 2 — ambience & input feel
+  soundscape: 'library',
+  typingSounds: false,
+  hourlyChime: false,
+  cursorStyle: 'standard',
+
+  // Wave 2 — books & pages
+  journalBookId: null,
+  thumbnailsStrip: false,
+
+  // Wave 2 — system
+  launchIntoLastBook: false,
+  trayQuickCapture: false,
+  backupFolder: null,
+  perfHud: false,
+
   telemetry: false,
 };

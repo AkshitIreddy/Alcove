@@ -209,6 +209,32 @@ export interface Settings {
   /** Action id -> shortcut (e.g. 'command-palette' -> 'mod+k'). */
   keybindings: Record<string, string>;
 
+  // Wave 2 — library & shelf
+  /** Plain-wheel behavior on the shelf. */
+  wheelMode: 'zoom' | 'scroll';
+  shelfWoodStain: 'oak' | 'walnut' | 'cherry' | 'cream';
+  wallpaperPattern: 'damask' | 'stars' | 'botanical' | 'plain';
+  shelfSort: 'manual' | 'recent' | 'favorites';
+
+  // Wave 2 — ambience & input feel
+  soundscape: 'library' | 'rain' | 'fireplace' | 'crickets' | 'none';
+  typingSounds: boolean;
+  hourlyChime: boolean;
+  cursorStyle: 'standard' | 'pencil' | 'quill';
+
+  // Wave 2 — books & pages
+  /** Book id receiving /today journal pages, or null when unset. */
+  journalBookId: string | null;
+  thumbnailsStrip: boolean;
+
+  // Wave 2 — system
+  launchIntoLastBook: boolean;
+  trayQuickCapture: boolean;
+  /** Absolute folder for backups, or null = app data default. */
+  backupFolder: string | null;
+  /** Dev overlay: FPS + texture memory. */
+  perfHud: boolean;
+
   /** Never collected; the type forbids turning it on. */
   readonly telemetry: false;
 }

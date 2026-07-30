@@ -25,6 +25,7 @@ import {
   type SolidNodeViewProps,
 } from '../solid';
 import { DiagramRenderer } from '../../diagrams/render/DiagramRenderer';
+import '../../styles/diagrams.css';
 import {
   decodeDiagramData,
   encodeDiagramData,

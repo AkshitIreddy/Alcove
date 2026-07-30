@@ -1,0 +1,230 @@
+/* ============================================================================
+   Notebook — page-flip styles
+   Canvas overlay, hotspot cursors, snapshot hiding, CSS 3D rigid-fold
+   fallback, reduced-motion crossfade veil.
+   All colors from tokens.css. Overlays animate transform/opacity only.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Surface + leaves
+   -------------------------------------------------------------------------- */
+.nb-flip-surface {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.nb-flip-leaf {
+  position: relative;
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+/* Single-page books: the empty left leaf takes no space. */
+.nb-flip-leaf-left.is-empty {
+  flex: 0 0 0;
+  overflow: hidden;
+}
+
+/* ----------------------------------------------------------------------------
+   Canvas overlay — hidden at rest, above the leaves during a flip.
+   Pointer events stay on the surface (the controller owns the gesture).
+   -------------------------------------------------------------------------- */
+.nb-flip-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-flip);
+  display: none;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.nb-flip-canvas.is-flipping {
+  display: block;
+}
+
+/* ----------------------------------------------------------------------------
+   Hotspots — outer-edge strips with a page-curl cursor affordance.
+   Transparent to the eye; they exist for the cursor and the hover lift.
+   -------------------------------------------------------------------------- */
+.nb-flip-hotspot {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 48px;
+  z-index: calc(var(--z-flip) - 1);
+  cursor: grab;
+}
+
+.nb-flip-hotspot:active {
+  cursor: grabbing;
+}
+
+.nb-flip-hotspot-next {
+  right: 0;
+}
+
+.nb-flip-hotspot-prev {
+  left: 0;
+}
+
+.nb-flip-hotspot.is-disabled {
+  display: none;
+}
+
+/* Tiny corner-lift shadow on hover: a soft warm wedge at the bottom corner,
+   as if the page corner already peeled a millimetre. Opacity+transform only. */
+.nb-flip-hotspot::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 44px;
+  height: 44px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--dur-sm) var(--ease-out),
+    transform var(--dur-sm) var(--ease-out);
+  pointer-events: none;
+}
+
+.nb-flip-hotspot-next::after {
+  right: 0;
+  background:
+    radial-gradient(
+      120% 120% at 100% 100%,
+      rgba(94, 70, 45, 0.18) 0%,
+      rgba(94, 70, 45, 0.08) 42%,
+      transparent 68%
+    );
+  border-bottom-right-radius: var(--radius-md);
+}
+
+.nb-flip-hotspot-prev::after {
+  left: 0;
+  background:
+    radial-gradient(
+      120% 120% at 0% 100%,
+      rgba(94, 70, 45, 0.18) 0%,
+      rgba(94, 70, 45, 0.08) 42%,
+      transparent 68%
+    );
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.nb-flip-hotspot:hover::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ----------------------------------------------------------------------------
+   Snapshotting — applied to the capture root while html-to-image clones it.
+   Hide anything that must never bake into a page texture: caret, selection
+   tint, interactive chrome.
+   -------------------------------------------------------------------------- */
+.snapshotting,
+.snapshotting * {
+  caret-color: transparent !important;
+}
+
+.snapshotting ::selection {
+  background: transparent !important;
+}
+
+.snapshotting .nb-drag-handle,
+.snapshotting .nb-style-switcher,
+.snapshotting .ProseMirror-gapcursor,
+.snapshotting .ProseMirror-dropcursor,
+.snapshotting [data-snapshot-hide] {
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------------------
+   Rigid CSS 3D fallback (no WebGL / context loss / snapshot failure)
+   -------------------------------------------------------------------------- */
+.nb-flip-fallback-stage {
+  perspective: 1600px;
+  perspective-origin: 50% 50%;
+}
+
+.nb-flip-fallback-leaf {
+  position: relative;
+  z-index: var(--z-flip);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* Paper backside face: plain cream with a soft spine-side gradient. */
+.nb-flip-fallback-back {
+  position: absolute;
+  z-index: var(--z-flip);
+  background-color: var(--paper-cream);
+  background-image: linear-gradient(
+    90deg,
+    var(--paper-vignette-deep) 0%,
+    transparent 18%,
+    transparent 82%,
+    var(--paper-vignette-soft) 100%
+  );
+  border: 1px solid var(--paper-edge);
+  backface-visibility: hidden;
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Leaf shading overlay (inside the leaf): darkens as the page turns away.
+   Animated with opacity only. */
+.nb-flip-fallback-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    90deg,
+    rgba(94, 70, 45, 0.28) 0%,
+    rgba(94, 70, 45, 0.1) 35%,
+    transparent 75%
+  );
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+/* Cast shadow on the revealed page beneath. Opacity only. */
+.nb-flip-fallback-shadow {
+  position: absolute;
+  z-index: calc(var(--z-flip) - 1);
+  background: linear-gradient(
+    90deg,
+    rgba(94, 70, 45, 0.3) 0%,
+    rgba(94, 70, 45, 0.12) 40%,
+    transparent 78%
+  );
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.nb-flip-fallback-shadow.is-prev {
+  background: linear-gradient(
+    270deg,
+    rgba(94, 70, 45, 0.3) 0%,
+    rgba(94, 70, 45, 0.12) 40%,
+    transparent 78%
+  );
+}
+
+/* ----------------------------------------------------------------------------
+   Reduced-motion crossfade veil — GSAP drives the opacity (global.css zeroes
+   CSS transition durations under prefers-reduced-motion, so no transitions
+   here). Also used to mask an emergency landing after GPU context loss.
+   -------------------------------------------------------------------------- */
+.nb-flip-veil {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-flip) + 1);
+  background: var(--paper-cream);
+  pointer-events: none;
+  will-change: opacity;
+}

@@ -13,6 +13,10 @@ export default defineConfig(async (env) =>
   mergeConfig(await viteConfig(env), {
     test: {
       environment: 'node',
+      // Keep the Playwright E2E suite (tests/e2e/*.spec.ts, `npm run e2e`)
+      // out of Vitest's default `{test,spec}` collection glob.
+      include: ['tests/**/*.test.ts'],
+      exclude: ['**/node_modules/**', 'tests/e2e/**'],
     },
   }),
 );

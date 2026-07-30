@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "license": "MIT",
   "dependencies": {
@@ -64,6 +66,7 @@
     "@tauri-apps/cli": "^2",
     "@types/howler": "^2.2.13",
     "fast-check": "^4.9.0",
+    "playwright": "^1.62.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vite-plugin-solid": "^2.11.0",

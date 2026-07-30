@@ -13,7 +13,6 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { DragHandle, type DragHandleOptions } from '@tiptap/extension-drag-handle';
 import Highlight from '@tiptap/extension-highlight';
-import Image from '@tiptap/extension-image';
 import NodeRange from '@tiptap/extension-node-range';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TableKit } from '@tiptap/extension-table';
@@ -25,6 +24,7 @@ import { offset } from '@floating-ui/dom';
 import { common, createLowlight } from 'lowlight';
 import { nanoid } from 'nanoid';
 import { NotebookDocument } from './document';
+import { MediaImage } from './media';
 import { customNodeExtensions } from './nodes';
 import { SlashCommands } from './slash/extension';
 
@@ -60,34 +60,6 @@ export interface EditorExtensionsOptions {
     'render' | 'onNodeChange' | 'onElementDragStart' | 'onElementDragEnd'
   >;
 }
-
-/** Image with a per-image width attribute for imageRow flex layout. */
-const NotebookImage = Image.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      /** Percentage of the row this image takes (null = share evenly). */
-      widthPct: {
-        default: null,
-        parseHTML: (element: HTMLElement) => {
-          const raw = element.getAttribute('data-width-pct');
-          const parsed = raw === null ? NaN : Number(raw);
-          return Number.isFinite(parsed)
-            ? Math.min(100, Math.max(10, parsed))
-            : null;
-        },
-        renderHTML: (attributes: Record<string, unknown>) => {
-          const value = attributes.widthPct;
-          if (typeof value !== 'number') return {};
-          return {
-            'data-width-pct': String(value),
-            style: `flex-basis: ${value}%`,
-          };
-        },
-      },
-    };
-  },
-});
 
 export function createEditorExtensions(
   options: EditorExtensionsOptions = {},
@@ -135,7 +107,7 @@ export function createEditorExtensions(
     TextStyleKit,
     Highlight.configure({ multicolor: true }),
 
-    NotebookImage.configure({ allowBase64: true }),
+    MediaImage.configure({ allowBase64: true }),
 
     CodeBlockLowlight.configure({
       lowlight,

@@ -14,7 +14,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import type { Slice } from '@tiptap/pm/model';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
-import { For, onCleanup, type JSX } from 'solid-js';
+import { createEffect, For, onCleanup, type JSX } from 'solid-js';
 import { savePageDoc } from '../data/pages';
 import type { PageDoc, PageStyle } from '../data/types';
 import {
@@ -25,6 +25,8 @@ import {
   normalizePageDoc,
 } from './document';
 import { createEditorExtensions } from './extensions';
+import { setActiveEditor } from './insert/activeEditor';
+import { createMediaPastePlugin } from './media';
 import { createEditorTransaction, createTiptapEditor } from './solid';
 import { play } from '../sound/engine';
 
@@ -169,6 +171,19 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       scheduleSave(instance.getJSON() as PageDoc);
     },
   }));
+
+  // Publish the live editor for the script toolbar/dialog + install the media
+  // paste/drop plugin (once per instance).
+  let mediaPluginInstalled: unknown = null;
+  createEffect(() => {
+    const instance = editor();
+    setActiveEditor(instance ?? null);
+    if (instance && mediaPluginInstalled !== instance) {
+      instance.registerPlugin(createMediaPastePlugin());
+      mediaPluginInstalled = instance;
+    }
+  });
+  onCleanup(() => setActiveEditor(null));
 
   // -------------------------------------------------------------------------
   // Page style (doc attrs → background CSS)

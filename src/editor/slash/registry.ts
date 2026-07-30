@@ -3,6 +3,7 @@
  * so it is unit-testable in a Node environment.
  */
 import type { Editor, Range } from '@tiptap/core';
+import { SLASH_DIAGRAM_COMMANDS } from '../../diagrams/slashCommands';
 import { STICKER_IDS, type StickerId } from '../nodes/stickers';
 
 export interface SlashCommandContext {
@@ -289,6 +290,7 @@ const turnIntoCommands: SlashCommand[] = [
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   ...blockCommands,
+  ...SLASH_DIAGRAM_COMMANDS,
   ...stickerCommands,
   ...turnIntoCommands,
 ];

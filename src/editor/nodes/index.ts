@@ -9,6 +9,8 @@ import type { AnyExtension } from '@tiptap/core';
 import { Callout } from './callout';
 import { ImageRow } from './imageRow';
 import { Sticker } from './sticker';
+import { Diagram } from './diagram';
+import { LinkCard } from '../media';
 
 export interface CustomNodeRegistration {
   /** Node name as it appears in document JSON (`node.type`). */
@@ -20,6 +22,8 @@ const registry: CustomNodeRegistration[] = [
   { name: Callout.name, extension: Callout },
   { name: ImageRow.name, extension: ImageRow },
   { name: Sticker.name, extension: Sticker },
+  { name: Diagram.name, extension: Diagram },
+  { name: LinkCard.name, extension: LinkCard },
 ];
 
 /**

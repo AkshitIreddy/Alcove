@@ -2,16 +2,24 @@
  * BookView — the opened book: one page rendered as a paper sheet with the
  * block editor inside. Page-flip navigation arrives with the flip feature;
  * for now the first page of the book is shown.
+ *
+ * The script toolbar (top-right) bridges pages and Notebook Script:
+ * Insert script (paste dialog), Export script (clipboard), Copy AI spec.
  */
-import { Show, createResource, type JSX } from 'solid-js';
+import { Show, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import { appState } from '../state/app';
 import { editorState } from '../editor/state';
 import { getBook, listBooksByFloorRange } from '../data/books';
-import { createPage, listPages } from '../data/pages';
+import { createPage, getPage, listPages } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
-import type { Book, Page } from '../data/types';
+import type { Book, Page, PageDoc } from '../data/types';
 import PageEditor from '../editor/PageEditor';
+import InsertScriptDialog from '../editor/insert/InsertScriptDialog';
+import { activeEditor } from '../editor/insert/activeEditor';
+import { docToScript } from '../editor/script/fromTiptap';
+import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
 import '../styles/editor.css';
+import '../styles/insert.css';
 
 interface BookSession {
   readonly book: Book;
@@ -63,6 +71,47 @@ export default function BookView(): JSX.Element {
     loadSession,
   );
 
+  const [insertOpen, setInsertOpen] = createSignal(false);
+  const [toast, setToast] = createSignal<string | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const notify = (message: string): void => {
+    setToast(message);
+    if (toastTimer !== undefined) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => setToast(null), 2600);
+  };
+  onCleanup(() => {
+    if (toastTimer !== undefined) clearTimeout(toastTimer);
+  });
+
+  const copyText = async (text: string, doneMessage: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify(doneMessage);
+    } catch {
+      notify('could not reach the clipboard');
+    }
+  };
+
+  /**
+   * Export Script (design doc §3): the stored verbatim source while the page
+   * is unedited since insert, else the canonical printer over the live doc.
+   */
+  const exportScript = async (pageId: string): Promise<void> => {
+    const page = await getPage(pageId);
+    if (page !== null && page.scriptSource !== null && !page.sourceDirty) {
+      await copyText(page.scriptSource, 'script copied (original paste)');
+      return;
+    }
+    const editor = activeEditor();
+    const doc = editor !== null ? (editor.getJSON() as PageDoc) : page?.doc;
+    if (doc === undefined) {
+      notify('nothing to export yet');
+      return;
+    }
+    await copyText(docToScript(doc), 'script copied to clipboard');
+  };
+
   return (
     <main class="nb-book-view">
       <button
@@ -94,6 +143,41 @@ export default function BookView(): JSX.Element {
       >
         {(loaded) => (
           <div class="nb-sheet-stage">
+            <div
+              class="nb-script-toolbar font-ui"
+              role="toolbar"
+              aria-label="Script tools"
+            >
+              <button
+                type="button"
+                class="nb-script-tool"
+                title="Paste Notebook Script into this page"
+                onClick={() => setInsertOpen(true)}
+              >
+                Insert script
+              </button>
+              <button
+                type="button"
+                class="nb-script-tool"
+                title="Copy this page as Notebook Script"
+                onClick={() => void exportScript(loaded.page.id)}
+              >
+                Export script
+              </button>
+              <button
+                type="button"
+                class="nb-script-tool"
+                title="Copy the Notebook Script spec for your AI assistant"
+                onClick={() =>
+                  void copyText(
+                    NOTEBOOK_SCRIPT_SPEC,
+                    'spec copied — paste it to your AI',
+                  )
+                }
+              >
+                Copy AI spec
+              </button>
+            </div>
             <article class="nb-sheet">
               <div class="nb-sheet-paper">
                 <header class="nb-sheet-header">
@@ -105,8 +189,20 @@ export default function BookView(): JSX.Element {
                 />
               </div>
             </article>
+
+            <Show when={insertOpen()}>
+              <InsertScriptDialog
+                pageId={loaded.page.id}
+                onClose={() => setInsertOpen(false)}
+                onNotify={notify}
+              />
+            </Show>
           </div>
         )}
+      </Show>
+
+      <Show when={toast()} keyed>
+        {(message) => <div class="nb-script-toast">{message}</div>}
       </Show>
     </main>
   );

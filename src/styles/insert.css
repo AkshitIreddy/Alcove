@@ -1,0 +1,507 @@
+/* ============================================================================
+   Notebook — Insert Script dialog + script toolbar
+   Hand-drawn modal: aged paper card, wobbly dashed border, Caveat title.
+   All colors from tokens.css. No live SVG filters.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Script toolbar (BookView, top-right of the sheet)
+   -------------------------------------------------------------------------- */
+.nb-script-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  padding: 0 var(--space-4) var(--space-8);
+}
+
+.nb-script-tool {
+  padding: 3px var(--space-12) 4px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-script-tool:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  border-color: var(--paper-edge);
+  transform: rotate(-0.8deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Toast
+   -------------------------------------------------------------------------- */
+.nb-script-toast {
+  position: fixed;
+  bottom: var(--space-32);
+  left: 50%;
+  transform: translateX(-50%) rotate(-0.5deg);
+  z-index: var(--z-toasts);
+  padding: var(--space-8) var(--space-20);
+  font-size: var(--text-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  animation: nb-toast-in var(--dur-sm) var(--ease-out);
+}
+
+@keyframes nb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) rotate(-0.5deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) rotate(-0.5deg);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Dialog overlay + aged-paper card
+   -------------------------------------------------------------------------- */
+.nb-ins-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-menus);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-24);
+  background: rgba(94, 70, 45, 0.28);
+}
+
+.nb-ins-card {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 100%);
+  max-height: min(86vh, 780px);
+  padding: var(--space-20) var(--space-24) var(--space-16);
+  background-color: var(--paper-aged);
+  background-image: radial-gradient(
+    120% 80% at 50% -10%,
+    var(--paper-glow) 0%,
+    transparent 60%
+  );
+  border: 2px dashed var(--ink-sepia-soft);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-lg);
+  transform: rotate(-0.35deg);
+}
+
+.nb-ins-title {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+  transform: rotate(-0.6deg);
+}
+
+.nb-ins-hint {
+  margin: 2px 0 var(--space-12);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Body: textarea + warnings | preview
+   -------------------------------------------------------------------------- */
+.nb-ins-body {
+  display: flex;
+  gap: var(--space-16);
+  flex: 1;
+  min-height: 0;
+}
+
+.nb-ins-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.nb-ins-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 240px;
+  resize: none;
+  padding: var(--space-12);
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-graphite);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-ins-textarea:focus {
+  outline: none;
+  border-color: var(--wash-amber);
+}
+
+.nb-ins-warnings {
+  max-height: 110px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  list-style: none;
+  font-size: var(--text-ui-xs);
+  line-height: 1.5;
+  color: var(--ink-sepia-soft);
+  background: var(--wash-lemon-light);
+  border: 1px dashed var(--wash-lemon-deep);
+  border-radius: var(--radius-md);
+}
+
+.nb-ins-warn-line {
+  font-weight: 700;
+  color: var(--wash-terracotta-deep);
+}
+
+/* ----------------------------------------------------------------------------
+   Preview pane — a small piece of cream paper
+   -------------------------------------------------------------------------- */
+.nb-ins-preview {
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-16);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-ins-preview-empty {
+  margin-top: var(--space-24);
+  text-align: center;
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-ins-preview-doc {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--ink-sepia);
+}
+
+.nb-ins-fm {
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-4);
+  font-size: var(--text-ui-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-graphite-soft);
+  border-bottom: 1px dashed var(--paper-edge);
+}
+
+.nb-ins-preview-doc h1,
+.nb-ins-preview-doc h2,
+.nb-ins-preview-doc h3 {
+  font-family: var(--font-heading);
+  color: var(--ink-sepia);
+  line-height: var(--leading-heading);
+  margin: var(--space-12) 0 var(--space-4);
+}
+
+.nb-ins-preview-doc h1 {
+  font-size: 30px;
+}
+
+.nb-ins-preview-doc h2 {
+  font-size: 25px;
+}
+
+.nb-ins-preview-doc h3 {
+  font-size: 21px;
+}
+
+.nb-ins-preview-doc p {
+  margin: var(--space-4) 0;
+}
+
+.nb-ins-preview-doc ul,
+.nb-ins-preview-doc ol {
+  margin: var(--space-4) 0;
+  padding-left: var(--space-20);
+}
+
+.nb-ins-preview-doc li.nb-ins-task {
+  list-style: none;
+  margin-left: calc(-1 * var(--space-12));
+}
+
+.nb-ins-preview-doc li.nb-ins-task > input {
+  margin-right: var(--space-8);
+  accent-color: var(--wash-moss-deep);
+}
+
+.nb-ins-preview-doc blockquote {
+  margin: var(--space-8) 0;
+  padding: var(--space-4) var(--space-12);
+  border-left: 3px solid var(--wash-amber);
+  color: var(--ink-sepia-soft);
+  font-style: italic;
+}
+
+.nb-ins-preview-doc hr {
+  margin: var(--space-12) 0;
+  border: none;
+  border-top: 2px dashed var(--paper-edge);
+}
+
+.nb-ins-preview-doc code {
+  padding: 0 4px;
+  font-family: Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--paper-deep);
+  border-radius: var(--radius-sm);
+}
+
+.nb-ins-preview-doc mark {
+  padding: 0 2px;
+  background: var(--wash-amber-light);
+  border-radius: var(--radius-sm);
+}
+
+.nb-ins-preview-doc mark[data-color='terracotta'] {
+  background: var(--wash-terracotta-light);
+}
+
+.nb-ins-preview-doc mark[data-color='moss'] {
+  background: var(--wash-moss-light);
+}
+
+.nb-ins-preview-doc mark[data-color='lemon'] {
+  background: var(--wash-lemon-light);
+}
+
+.nb-ins-preview-doc mark[data-color='sky'] {
+  background: var(--wash-sky-light);
+}
+
+.nb-ins-preview-doc mark[data-color='blush'] {
+  background: var(--wash-blush-light);
+}
+
+.nb-ins-preview-doc mark[data-color='graphite'] {
+  background: var(--paper-deep);
+}
+
+.nb-ins-preview-doc a {
+  color: var(--ink-blue);
+  text-decoration: underline wavy var(--ink-blue-soft) 1px;
+}
+
+.nb-ins-table {
+  margin: var(--space-8) 0;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.nb-ins-table th,
+.nb-ins-table td {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--paper-edge);
+  text-align: left;
+}
+
+.nb-ins-table th {
+  background: var(--paper-aged);
+}
+
+.nb-ins-image {
+  margin: var(--space-8) 0;
+}
+
+.nb-ins-image img {
+  max-width: 100%;
+  max-height: 140px;
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-sm);
+  background: var(--paper-deep);
+}
+
+.nb-ins-image figcaption {
+  font-size: var(--text-ui-xs);
+  color: var(--ink-graphite-soft);
+}
+
+/* Containers: tinted cards with a name chip */
+.nb-ins-container {
+  position: relative;
+  margin: var(--space-12) 0;
+  padding: var(--space-16) var(--space-12) var(--space-8);
+  background: var(--wash-amber-light);
+  border: 1.5px dashed var(--wash-amber-deep);
+  border-radius: var(--radius-hand);
+}
+
+.nb-ins-container[data-color='terracotta'],
+.nb-ins-container[data-name='quote-card'] {
+  background: var(--wash-terracotta-light);
+  border-color: var(--wash-terracotta-deep);
+}
+
+.nb-ins-container[data-color='moss'] {
+  background: var(--wash-moss-light);
+  border-color: var(--wash-moss-deep);
+}
+
+.nb-ins-container[data-color='lemon'],
+.nb-ins-container[data-name='sticky-note'] {
+  background: var(--wash-lemon-light);
+  border-color: var(--wash-lemon-deep);
+}
+
+.nb-ins-container[data-color='sky'] {
+  background: var(--wash-sky-light);
+  border-color: var(--wash-sky-deep);
+}
+
+.nb-ins-container[data-color='blush'] {
+  background: var(--wash-blush-light);
+  border-color: var(--wash-blush-deep);
+}
+
+.nb-ins-container[data-name='columns'] > .nb-ins-container[data-name='col'] {
+  display: inline-block;
+  vertical-align: top;
+  width: calc(50% - var(--space-8));
+  margin: var(--space-4) 0;
+}
+
+.nb-ins-chip {
+  position: absolute;
+  top: -9px;
+  left: var(--space-12);
+  padding: 0 var(--space-8);
+  font-size: var(--text-ui-xs);
+  letter-spacing: 0.05em;
+  color: var(--ink-sepia-soft);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+}
+
+/* Diagrams: labeled box, no rendering in the preview */
+.nb-ins-diagram {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  margin: var(--space-12) 0;
+  min-height: 64px;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 10px,
+      rgba(94, 70, 45, 0.04) 10px 20px
+    ),
+    var(--paper-cream);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-md);
+}
+
+.nb-ins-diagram-note {
+  font-size: var(--text-ui-xs);
+  color: var(--ink-graphite-soft);
+}
+
+/* fetch: directives */
+.nb-ins-fetch {
+  margin: var(--space-8) 0;
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+  background: var(--paper-cream);
+  border: 1.5px dotted var(--wash-sky-deep);
+  border-radius: var(--radius-md);
+}
+
+/* ----------------------------------------------------------------------------
+   Actions
+   -------------------------------------------------------------------------- */
+.nb-ins-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-16);
+}
+
+.nb-ins-spacer {
+  flex: 1;
+}
+
+.nb-ins-button {
+  padding: var(--space-4) var(--space-16) 6px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out),
+    box-shadow var(--dur-xs) var(--ease-out);
+}
+
+.nb-ins-button:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+  transform: rotate(-1deg) translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.nb-ins-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.nb-ins-button-primary {
+  font-weight: 700;
+  background: var(--wash-amber);
+  border-color: var(--wash-amber-deep);
+}
+
+.nb-ins-button-primary:hover:not(:disabled) {
+  background: var(--wash-amber);
+}
+
+.nb-ins-button-ghost {
+  border-style: dashed;
+  border-color: var(--paper-edge);
+  color: var(--ink-sepia-soft);
+  background: transparent;
+}
+
+/* Narrow windows: stack the panes */
+@media (max-width: 760px) {
+  .nb-ins-body {
+    flex-direction: column;
+  }
+
+  .nb-ins-preview {
+    min-height: 160px;
+  }
+}

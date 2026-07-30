@@ -97,6 +97,65 @@
 }
 
 /* ----------------------------------------------------------------------------
+   Export PDF scope chooser — two big hand-drawn choices on aged paper
+   -------------------------------------------------------------------------- */
+.nb-pdf-card {
+  width: min(460px, 94vw);
+}
+
+.nb-pdf-choices {
+  display: flex;
+  gap: var(--space-16, 16px);
+  margin-top: var(--space-8, 8px);
+}
+
+.nb-pdf-choice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-16, 16px) var(--space-8, 8px) var(--space-12, 12px);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transform: rotate(-0.5deg);
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out),
+    box-shadow var(--dur-xs) var(--ease-out);
+}
+
+.nb-pdf-choice + .nb-pdf-choice {
+  transform: rotate(0.6deg);
+}
+
+.nb-pdf-choice:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.nb-pdf-choice:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.nb-pdf-choice-art {
+  width: 56px;
+  height: 56px;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-pdf-choice-label {
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+}
+
+/* ----------------------------------------------------------------------------
    Custom stickers — "your stickers" panel section (rail panel look)
    -------------------------------------------------------------------------- */
 .nb-user-sticker-button img,

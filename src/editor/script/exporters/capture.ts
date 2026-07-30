@@ -63,9 +63,29 @@ export interface CapturedImage {
   height: number;
 }
 
+/**
+ * True when an element has real layout to rasterize. A leaf that is
+ * mid-mount, collapsed (`.nb-flip-leaf-left.is-empty`) or hidden measures
+ * 0×0 — html-to-image happily produces a 0×0 canvas for it and `toBlob`
+ * then yields null, so callers must check first.
+ */
+export function isCapturable(element: HTMLElement | null): boolean {
+  return (
+    element !== null &&
+    element.isConnected &&
+    element.clientWidth > 1 &&
+    element.clientHeight > 1
+  );
+}
+
 let fontCssPromise: Promise<string> | undefined;
 
 async function captureCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
+  if (!isCapturable(element)) {
+    throw new Error(
+      `capture: element has no layout (${element.clientWidth}×${element.clientHeight})`,
+    );
+  }
   fontCssPromise ??= getFontEmbedCSS(element).catch(() => '');
   const fontEmbedCSS = await fontCssPromise;
   element.classList.add('snapshotting');
@@ -91,7 +111,11 @@ function canvasToBytes(
     canvas.toBlob(
       (blob) => {
         if (blob === null) {
-          reject(new Error('canvas.toBlob returned null'));
+          reject(
+            new Error(
+              `canvas.toBlob returned null (${canvas.width}×${canvas.height})`,
+            ),
+          );
           return;
         }
         blob
@@ -140,13 +164,25 @@ export interface OffscreenPageSize {
   height: number;
 }
 
-/** Sheet size of the mounted book leaf, or a book-ish default. */
+/**
+ * Sheet size of the mounted book leaf, or a book-ish default. Scans every
+ * mounted sheet (the collapsed left leaf of a single-page spread measures
+ * 0×0) and takes the largest laid-out one.
+ */
 export function measureMountedSheet(): OffscreenPageSize {
-  const paper = document.querySelector<HTMLElement>('.nb-sheet-paper');
-  if (paper !== null && paper.clientWidth > 120 && paper.clientHeight > 160) {
-    return { width: paper.clientWidth, height: paper.clientHeight };
+  let best: OffscreenPageSize = { width: 620, height: 875 };
+  let bestArea = 0;
+  for (const paper of document.querySelectorAll<HTMLElement>(
+    '.nb-sheet-paper:not(.nb-export-sheet)',
+  )) {
+    const { clientWidth: width, clientHeight: height } = paper;
+    if (width < 120 || height < 160) continue;
+    if (width * height > bestArea) {
+      bestArea = width * height;
+      best = { width, height };
+    }
   }
-  return { width: 620, height: 875 };
+  return best;
 }
 
 function docPageStyle(doc: PageDoc): PageStyle {

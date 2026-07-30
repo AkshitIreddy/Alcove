@@ -43,6 +43,8 @@ import {
   PLACEHOLDER_TINTS,
   PLAQUE_H,
   PLAQUE_W,
+  SELECT_CARET_H,
+  SELECT_CARET_W,
   type EnvTextures,
 } from './textures';
 import { placeholderTint, type SpineFactory } from './spineFactory';
@@ -58,6 +60,14 @@ export const HOVER_SECONDS = 0.18;
 /** Warm halo behind the hovered book (add-blended glow sprite). */
 export const HOVER_GLOW_ALPHA = 0.34;
 export const HOVER_GLOW_TINT = 0xffd98f;
+
+/**
+ * Keyboard-selection halo (wave-2 item 8) — a cooler, tighter glow plus a
+ * penciled caret on the plank, so it never reads as a mouse hover and the
+ * two can coexist (mouse moving does not steal the keyboard selection).
+ */
+export const SELECT_GLOW_ALPHA = 0.42;
+export const SELECT_GLOW_TINT = 0xbcd9f2;
 
 export interface WorldHooks {
   markDirty(): void;
@@ -120,6 +130,8 @@ export class FloorView {
   private hint: Sprite | null = null;
   private hoverGlow: Sprite | null = null;
   private hoverShadow: Sprite | null = null;
+  private selectGlow: Sprite | null = null;
+  private selectCaret: Sprite | null = null;
   private readonly hoverLayer = new Container();
   private readonly propsLayer = new Container();
   private readonly booksLayer = new Container();
@@ -633,6 +645,58 @@ export class FloorView {
     }
   }
 
+  /**
+   * Keyboard-selection halo (wave-2 item 8): a cool glow behind the book plus
+   * a penciled caret on the plank under it. Deliberately does NOT move the
+   * spine — hover owns the lift tween, so the two never fight and a mouse
+   * drifting over the shelf cannot steal the keyboard selection.
+   */
+  setSelected(visual: BookVisual | null, env: EnvTextures, dpr: number): void {
+    if (this.selectGlow === null) {
+      const glow = new Sprite(this.hooks.glow());
+      glow.anchor.set(0.5);
+      glow.blendMode = 'add';
+      glow.tint = SELECT_GLOW_TINT;
+      glow.alpha = 0;
+      const caret = new Sprite(env.getSelectCaret(dpr));
+      caret.anchor.set(0.5, 0);
+      caret.width = SELECT_CARET_W;
+      caret.height = SELECT_CARET_H;
+      caret.alpha = 0;
+      this.selectGlow = glow;
+      this.selectCaret = caret;
+      this.hoverLayer.addChild(glow, caret);
+    }
+    const glow = this.selectGlow;
+    const caret = this.selectCaret as Sprite;
+    const on = visual !== null;
+    if (visual !== null) {
+      glow.position.set(visual.centerX, visual.baseY - visual.height * 0.5);
+      glow.width = visual.w * 3;
+      glow.height = visual.height * 1.24;
+      caret.position.set(visual.centerX, BOOK_BASELINE + 5);
+    }
+    const m = this.hooks.motion();
+    const fade = HOVER_SECONDS * m;
+    gsap.killTweensOf(glow);
+    gsap.killTweensOf(caret);
+    for (const [sprite, target] of [
+      [glow, on ? SELECT_GLOW_ALPHA : 0],
+      [caret, on ? 1 : 0],
+    ] as Array<[Sprite, number]>) {
+      this.hooks.track(
+        gsap.to(sprite, {
+          alpha: target,
+          duration: fade,
+          overwrite: true,
+          onUpdate: () => this.hooks.markDirty(),
+        }),
+      );
+      if (m === 0) sprite.alpha = target;
+    }
+    this.hooks.markDirty();
+  }
+
   /** Return to the pool: detach from data but keep env sprites for reuse. */
   reset(): void {
     this.clearHoverFx();
@@ -665,13 +729,15 @@ export class FloorView {
   /* ------------------------------ internals ------------------------------ */
 
   private clearHoverFx(): void {
-    if (this.hoverGlow !== null) {
-      gsap.killTweensOf(this.hoverGlow);
-      this.hoverGlow.alpha = 0;
-    }
-    if (this.hoverShadow !== null) {
-      gsap.killTweensOf(this.hoverShadow);
-      this.hoverShadow.alpha = 0;
+    for (const fx of [
+      this.hoverGlow,
+      this.hoverShadow,
+      this.selectGlow,
+      this.selectCaret,
+    ]) {
+      if (fx === null) continue;
+      gsap.killTweensOf(fx);
+      fx.alpha = 0;
     }
   }
 

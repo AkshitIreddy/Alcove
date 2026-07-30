@@ -7,7 +7,7 @@
  *   import {
  *     openTemplatesGallery,   // roadmap 26 — "+ from template"
  *     importMarkdownBooks,    // roadmap 25 — "Import Markdown"
- *     exportOpenBookPdf,      // roadmap 23 — "Export PDF"
+ *     openExportPdfDialog,    // roadmap 23 — "Export PDF" (page / whole book)
  *     exportActivePagePng,    // roadmap 24 — "Export page PNG"
  *   } from '../features/templates/groupD';
  *
@@ -17,6 +17,7 @@
  * rail buttons are wired.
  */
 import {
+  exportActivePagePdf,
   exportActivePagePng,
   exportOpenBookPdf,
 } from '../../editor/script/exporters/exportPage';
@@ -27,12 +28,15 @@ import {
 } from '../../editor/nodes/stickers';
 import { registerScriptStickerName } from '../../script/vocab';
 import { openTemplatesGallery } from './TemplatesGallery';
+import { openExportPdfDialog } from './ExportPdfDialog';
 import { importMarkdownBooks } from './importMarkdown';
 import { importUserStickers, loadUserStickers } from './userStickers';
 
 export { openTemplatesGallery } from './TemplatesGallery';
+export { openExportPdfDialog } from './ExportPdfDialog';
 export { importMarkdownBooks } from './importMarkdown';
 export {
+  exportActivePagePdf,
   exportActivePagePng,
   exportOpenBookPdf,
 } from '../../editor/script/exporters/exportPage';
@@ -52,8 +56,10 @@ void loadUserStickers();
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).__nbGroupD = {
     openTemplatesGallery,
+    openExportPdfDialog,
     importMarkdownBooks,
     exportActivePagePng,
+    exportActivePagePdf,
     exportOpenBookPdf,
     importUserStickers,
     listUserStickers,

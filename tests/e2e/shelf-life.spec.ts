@@ -9,6 +9,26 @@
 import { expect, test, type Page } from 'playwright/test';
 import { WELCOME_TITLE, screenDiffRatio, waitForSpine } from './helpers';
 
+/**
+ * Write settings through the world's own settings-module instance.
+ *
+ * Deliberately NOT `import('/src/data/settings.ts')`: on a dev server that
+ * has served HMR updates, Vite rewrites the app graph's import URLs with a
+ * ?t= cache-buster, so a fresh dynamic import hands back a SECOND copy of the
+ * module and writes to it never reach the shelf. `__shelfSaveSettings` is the
+ * real store's `save`, captured by world.ts behind the ?fx= QA hook.
+ */
+async function saveSettings(
+  page: Page,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(async (p) => {
+    const save = (window as unknown as Record<string, unknown>)
+      .__shelfSaveSettings as (patch: Record<string, unknown>) => Promise<unknown>;
+    await save(p);
+  }, patch);
+}
+
 /** Load the shelf with the QA world hook exposed. */
 async function gotoShelfQa(page: Page): Promise<void> {
   await page.goto('/?fx=force');
@@ -272,12 +292,11 @@ test('wood stain and wallpaper live-apply from settings', async ({ page }) => {
   await waitForSpine(page);
   const before = await page.screenshot({ type: 'png' });
 
-  // Drive the real settings store (same module instance via Vite dev URLs).
-  await page.evaluate(async () => {
-    const settings = (await import('/src/data/settings.ts')) as {
-      save(patch: Record<string, unknown>): Promise<unknown>;
-    };
-    await settings.save({ shelfWoodStain: 'walnut', wallpaperPattern: 'stars' });
+  // 'cherry' + 'stars' both differ from the shipped defaults (walnut/damask),
+  // so this is a real repaint rather than a no-op write.
+  await saveSettings(page, {
+    shelfWoodStain: 'cherry',
+    wallpaperPattern: 'stars',
   });
 
   await expect
@@ -292,9 +311,9 @@ test('wood stain and wallpaper live-apply from settings', async ({ page }) => {
         }),
       { timeout: 20_000, message: 'stain/wallpaper setting never applied' },
     )
-    .toBe('walnut|stars');
+    .toBe('cherry|stars');
 
-  // The repaint really happened (walnut darkens every wood pixel).
+  // The repaint really happened (cherry reddens every wood pixel).
   await expect
     .poll(
       async () => {
@@ -304,4 +323,134 @@ test('wood stain and wallpaper live-apply from settings', async ({ page }) => {
       { timeout: 25_000, message: 'restain never repainted the case' },
     )
     .toBeGreaterThan(0.02);
+});
+
+test('shelf sort setting reaches the floor store', async ({ page }) => {
+  await gotoShelfQa(page);
+  await waitForSpine(page);
+  await saveSettings(page, { shelfSort: 'favorites' });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = (window as unknown as Record<string, unknown>)
+            .__shelfWorld as { store: { sort: string } };
+          return w.store.sort;
+        }),
+      { timeout: 20_000, message: 'shelfSort never reached the store' },
+    )
+    .toBe('favorites');
+});
+
+test('wheel mode setting reaches the input layer', async ({ page }) => {
+  await gotoShelfQa(page);
+  await waitForSpine(page);
+  await saveSettings(page, { wheelMode: 'scroll' });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = (window as unknown as Record<string, unknown>)
+            .__shelfWorld as { input: { wheelMode: string } };
+          return w.input.wheelMode;
+        }),
+      { timeout: 20_000, message: 'wheelMode never reached the input layer' },
+    )
+    .toBe('scroll');
+});
+
+test('opening a book leaves a ribbon and re-derives its thickness', async ({
+  page,
+}) => {
+  await gotoShelfQa(page);
+  await openBookMenu(page);
+  await page.locator('[data-shelf-action="open"]').click();
+  await expect(page.locator('.nb-book-view')).toBeVisible({ timeout: 30_000 });
+
+  // Back to the shelf: the book is now "recent" (ribbon) and its page count
+  // has been re-counted into cover_meta.shelf (auto spine thickness).
+  await page.locator('.nb-back-button').click();
+  await expect(page.locator('canvas.shelf-canvas')).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = (window as unknown as Record<string, unknown>)
+            .__shelfWorld as {
+            floors: Map<
+              number,
+              {
+                visuals: Array<{
+                  ribbon: unknown;
+                  book: { coverMeta: { shelf?: { pageCount?: number } } | null };
+                }>;
+              }
+            >;
+          };
+          for (const fv of w.floors.values()) {
+            for (const v of fv.visuals) {
+              if (v.ribbon !== null) {
+                return (v.book.coverMeta?.shelf?.pageCount ?? -1) >= 1;
+              }
+            }
+          }
+          return null;
+        }),
+      { timeout: 30_000, message: 'continue-reading ribbon never appeared' },
+    )
+    .toBe(true);
+});
+
+test('move mode reshelves a book to another slot', async ({ page }) => {
+  await gotoShelfQa(page);
+  await openBookMenu(page);
+
+  const slotBefore = await page.evaluate(() => {
+    const w = (window as unknown as Record<string, unknown>).__shelfWorld as {
+      floors: Map<number, { visuals: Array<{ book: { slot: number } }> }>;
+    };
+    for (const fv of w.floors.values()) {
+      for (const v of fv.visuals) return v.book.slot;
+    }
+    return -1;
+  });
+
+  await page.locator('[data-shelf-action="move"]').click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = (window as unknown as Record<string, unknown>)
+            .__shelfWorld as { moveActive: boolean };
+          return w.moveActive;
+        }),
+      { timeout: 15_000, message: 'move mode never engaged' },
+    )
+    .toBe(true);
+
+  // Drop it on a slot far to the right of where it started (world x 950).
+  const drop = await worldToScreenPt(page, 950, 250);
+  await page.mouse.move(drop.x, drop.y);
+  await page.mouse.click(drop.x, drop.y);
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = (window as unknown as Record<string, unknown>)
+            .__shelfWorld as {
+            moveActive: boolean;
+            floors: Map<number, { visuals: Array<{ book: { slot: number } }> }>;
+          };
+          if (w.moveActive) return null;
+          for (const fv of w.floors.values()) {
+            for (const v of fv.visuals) return v.book.slot;
+          }
+          return null;
+        }),
+      { timeout: 25_000, message: 'move never committed a new slot' },
+    )
+    .not.toBe(slotBefore);
 });

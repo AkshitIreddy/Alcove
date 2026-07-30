@@ -163,6 +163,7 @@ export class EnvTextures {
   private starCharm: Texture | null = null;
   private ribbon: Texture | null = null;
   private trashDrawer: Texture | null = null;
+  private selectCaret: Texture | null = null;
   private readonly listeners = new Set<(kind: EnvKind) => void>();
   private destroyed = false;
 
@@ -507,6 +508,40 @@ export class EnvTextures {
   }
 
   /**
+   * Keyboard-selection caret (wave-2 item 8): a small penciled chevron that
+   * sits on the plank beneath the selected spine. Deliberately unlike the
+   * warm hover halo so a keyboard selection reads as its own thing — and,
+   * being a fixed-size sprite, it never distorts across spine widths.
+   */
+  getSelectCaret(dpr: number): Texture {
+    if (this.selectCaret !== null) return this.selectCaret;
+    const w = SELECT_CARET_W;
+    const h = SELECT_CARET_H;
+    const scale = Math.max(1, dpr) * 2;
+    const canvas = makeCanvas(Math.ceil(w * scale), Math.ceil(h * scale));
+    const ctx = get2d(canvas);
+    if (ctx) {
+      ctx.scale(scale, scale);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // Doubled hand-drawn chevron pointing up at the book, with a pale
+      // under-stroke so it reads on both light plank and dark back panel.
+      const d = `M 2.5 ${h - 3} L ${w / 2} 3 L ${w - 2.5} ${h - 3}`;
+      const [a, b] = doubleStroke(d, { seed: 0x5e1e, amplitude: 0.7, frequency: 0.12 });
+      ctx.strokeStyle = 'rgba(255, 248, 228, 0.85)';
+      ctx.lineWidth = 3.2;
+      ctx.stroke(new Path2D(a));
+      ctx.stroke(new Path2D(b));
+      ctx.strokeStyle = 'rgba(58, 44, 28, 0.9)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke(new Path2D(a));
+      ctx.stroke(new Path2D(b));
+    }
+    this.selectCaret = textureFromCanvas(canvas);
+    return this.selectCaret;
+  }
+
+  /**
    * Brass floor plaque with an engraved label. Cached per label text; the
    * cache is bounded (LRU-ish clear) since labels are user-editable.
    */
@@ -656,6 +691,7 @@ export class EnvTextures {
     this.starCharm?.destroy(true);
     this.ribbon?.destroy(true);
     this.trashDrawer?.destroy(true);
+    this.selectCaret?.destroy(true);
     for (const tex of this.doodles.values()) tex.destroy(true);
     this.doodles.clear();
     for (const tex of this.props.values()) tex.destroy(true);
@@ -680,6 +716,7 @@ export class EnvTextures {
     this.starCharm = null;
     this.ribbon = null;
     this.trashDrawer = null;
+    this.selectCaret = null;
   }
 
   /* ------------------------------ internals ------------------------------- */
@@ -738,6 +775,10 @@ export const PLAQUE_H = 22;
 /** Trash-drawer front design size, world px. */
 export const TRASH_DRAWER_W = 340;
 export const TRASH_DRAWER_H = 56;
+
+/** Keyboard-selection caret design size, world px. */
+export const SELECT_CARET_W = 26;
+export const SELECT_CARET_H = 16;
 
 const PATTERN_INK = 'rgba(140, 110, 72, 0.16)';
 const PATTERN_INK_SOFT = 'rgba(150, 122, 86, 0.10)';

@@ -13,8 +13,10 @@ import { openBlankPage, openBookView } from './helpers';
 
 interface GroupDHooks {
   openTemplatesGallery(): void;
+  openExportPdfDialog(): void;
   importMarkdownBooks(): Promise<Array<{ id: string; title: string }>>;
   exportActivePagePng(): Promise<boolean>;
+  exportActivePagePdf(): Promise<boolean>;
   exportOpenBookPdf(): Promise<boolean>;
   registerUserSticker(name: string, src: string): string;
   insertSticker(id: string): boolean;
@@ -157,9 +159,76 @@ test('export page as PNG downloads a real PNG at 2x', async ({ page }) => {
   expect(await okPromise).toBe(true);
 });
 
+test('page PNG export survives a collapsed / unlaid-out leaf', async ({
+  page,
+}) => {
+  await openBookView(page);
+  await waitForHooks(page);
+
+  // Simulate the book view mid-mount (or a single-page spread's collapsed
+  // left leaf): no mounted sheet has layout, so the export has to fall back
+  // to rendering the page offscreen instead of failing.
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll<HTMLElement>(
+      '.nb-flip-surface',
+    )) {
+      el.style.display = 'none';
+    }
+  });
+  // Nothing mounted has layout any more → `activeSheetElement()` finds none.
+  expect(
+    await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.nb-sheet-paper')).every(
+        (el) => el.clientWidth === 0 && el.clientHeight === 0,
+      ),
+    ),
+  ).toBe(true);
+
+  const downloadPromise = page.waitForEvent('download', { timeout: 90_000 });
+  const okPromise = page.evaluate(() =>
+    window.__nbGroupD.exportActivePagePng(),
+  );
+  const download = await downloadPromise;
+  const filePath = test.info().outputPath('fallback-page.png');
+  await download.saveAs(filePath);
+  const bytes = await fs.readFile(filePath);
+  expect(bytes.subarray(0, 8)).toEqual(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  );
+  expect(bytes.length).toBeGreaterThan(10_000);
+  expect(await okPromise).toBe(true);
+});
+
 /* ----------------------------------------------------------------------------
    23 — export the whole book as a PDF (browser path: TS assembler)
    -------------------------------------------------------------------------- */
+
+test('Export PDF chooser offers page + book and exports this page', async ({
+  page,
+}) => {
+  await openBookView(page);
+  await waitForHooks(page);
+
+  await page.evaluate(() => window.__nbGroupD.openExportPdfDialog());
+  const dialog = page.locator('.nb-pdf-card');
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.locator('.nb-pdf-choice')).toHaveCount(2);
+  await page.screenshot({ path: test.info().outputPath('export-pdf-dialog.png') });
+
+  const downloadPromise = page.waitForEvent('download', { timeout: 90_000 });
+  await dialog.locator('.nb-pdf-choice[data-scope="page"]').click();
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/-page\.pdf$/);
+  const filePath = test.info().outputPath('exported-page.pdf');
+  await download.saveAs(filePath);
+  const text = (await fs.readFile(filePath)).toString('latin1');
+  expect(text.startsWith('%PDF-1.4\n')).toBe(true);
+  expect(text).toContain('/Count 1');
+  expect(text).toContain('/Filter /DCTDecode');
+  expect(text.endsWith('%%EOF\n')).toBe(true);
+});
 
 test('export book as PDF downloads a well-formed multi-page PDF', async ({
   page,

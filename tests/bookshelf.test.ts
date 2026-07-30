@@ -511,6 +511,42 @@ describe('gestures: wheel decision matrix', () => {
   it('vertical-dominant mixed deltas still zoom', () => {
     expect(classifyWheel(wheel({ deltaX: 10, deltaY: 80 })).kind).toBe('zoom');
   });
+
+  // settings.wheelMode = 'scroll' — the plain spin and shift+spin swap roles.
+  it("scroll mode: a plain wheel pans the floors", () => {
+    expect(classifyWheel(wheel({ deltaY: 120 }), 'scroll')).toEqual({
+      kind: 'pan',
+      dx: 0,
+      dy: 120,
+    });
+  });
+
+  it('scroll mode: shift+wheel zooms instead', () => {
+    expect(classifyWheel(wheel({ deltaY: 120, shiftKey: true }), 'scroll')).toEqual({
+      kind: 'zoom',
+      deltaY: 120,
+      sensitivity: WHEEL_ZOOM_SENSITIVITY,
+    });
+  });
+
+  it('scroll mode: ctrl/pinch still zooms and sideways still pans sideways', () => {
+    expect(classifyWheel(wheel({ deltaY: -6.4, ctrlKey: true }), 'scroll')).toEqual({
+      kind: 'zoom',
+      deltaY: -6.4,
+      sensitivity: PINCH_ZOOM_SENSITIVITY,
+    });
+    expect(classifyWheel(wheel({ deltaX: 80, deltaY: 10 }), 'scroll')).toEqual({
+      kind: 'pan',
+      dx: 80,
+      dy: 0,
+    });
+  });
+
+  it("zoom mode is the default when no mode is passed", () => {
+    expect(classifyWheel(wheel({ deltaY: 120 }))).toEqual(
+      classifyWheel(wheel({ deltaY: 120 }), 'zoom'),
+    );
+  });
 });
 
 describe('gestures: drag decision matrix', () => {

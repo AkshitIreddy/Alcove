@@ -4,11 +4,13 @@
  * Every "what does this wheel/drag/key mean?" question is answered here so it
  * can be regression-tested in node without Pixi or DOM:
  *
- *   wheel:  plain wheel      → zoom to cursor (primary expectation)
+ *   wheel:  plain wheel      → zoom to cursor (primary expectation), or pan
+ *                              the floors when settings.wheelMode = 'scroll'
  *           ctrl/meta wheel  → zoom (mouse ctrl+scroll AND touchpad pinch —
  *                              Chromium/WebView2 reports pinches as ctrlKey
  *                              wheels with small fractional deltas)
- *           shift + wheel    → vertical pan (wheel-scroll for people who want it)
+ *           shift + wheel    → the other one (vertical pan in 'zoom' mode,
+ *                              zoom in 'scroll' mode) — shift always flips
  *           sideways deltas  → horizontal pan (touchpad two-finger sideways)
  *   drag:   started on spine + pulled toward the viewer (down) or sideways
  *                            → pull the book out
@@ -54,11 +56,19 @@ export type WheelAction =
   | { kind: 'zoom'; deltaY: number; sensitivity: number }
   | { kind: 'pan'; dx: number; dy: number };
 
+/** What a plain (unmodified) wheel spin does — settings.wheelMode. */
+export type WheelMode = 'zoom' | 'scroll';
+
 /**
  * Route one wheel event. The caller must ALWAYS preventDefault (the listener
  * is registered non-passive) so ctrl+wheel never page-zooms the webview.
+ *
+ * `mode` is settings.wheelMode: 'zoom' (default) makes a plain spin zoom to
+ * the cursor and shift+spin pan the floors; 'scroll' swaps those two, for
+ * people whose muscle memory says "the wheel scrolls". ctrl/meta always
+ * zooms in both modes, and sideways touchpad deltas always pan sideways.
  */
-export function classifyWheel(e: WheelLike): WheelAction {
+export function classifyWheel(e: WheelLike, mode: WheelMode = 'zoom'): WheelAction {
   if (e.ctrlKey || e.metaKey) {
     const pinch = Math.abs(e.deltaY) < PINCH_DELTA_MAX;
     return {
@@ -67,16 +77,20 @@ export function classifyWheel(e: WheelLike): WheelAction {
       sensitivity: pinch ? PINCH_ZOOM_SENSITIVITY : WHEEL_ZOOM_SENSITIVITY,
     };
   }
+  // Shift flips whatever the plain spin does.
   if (e.shiftKey) {
+    if (mode === 'scroll') {
+      return { kind: 'zoom', deltaY: e.deltaY, sensitivity: WHEEL_ZOOM_SENSITIVITY };
+    }
     // Vertical pan. Some browsers pre-swap shift+wheel into deltaX.
     const dy = e.deltaY !== 0 ? e.deltaY : e.deltaX;
     return { kind: 'pan', dx: 0, dy };
   }
   if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-    // Touchpad sideways scroll pans horizontally.
+    // Touchpad sideways scroll pans horizontally (both modes).
     return { kind: 'pan', dx: e.deltaX, dy: 0 };
   }
-  // Plain wheel: zoom to cursor — the primary user expectation.
+  if (mode === 'scroll') return { kind: 'pan', dx: 0, dy: e.deltaY };
   return { kind: 'zoom', deltaY: e.deltaY, sensitivity: WHEEL_ZOOM_SENSITIVITY };
 }
 

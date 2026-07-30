@@ -14,7 +14,7 @@
  */
 
 import type { DragSample, Vec2 } from './camera';
-import { classifyWheel, dragThresholdFor } from './gestures';
+import { classifyWheel, dragThresholdFor, type WheelMode } from './gestures';
 
 /** Tap time cap: held longer than this is a drag, not a click. */
 export const DRAG_TIME_MS = 250;
@@ -64,6 +64,9 @@ export class ShelfInput {
   /** While frozen (pull-out in progress) every event is swallowed. */
   frozen = false;
 
+  /** What a plain wheel spin does (mirrors settings.wheelMode). */
+  wheelMode: WheelMode = 'zoom';
+
   private tracking: PointerTracking | null = null;
   private readonly ac = new AbortController();
 
@@ -102,7 +105,7 @@ export class ShelfInput {
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     if (this.frozen) return;
-    const action = classifyWheel(e);
+    const action = classifyWheel(e, this.wheelMode);
     if (action.kind === 'zoom') {
       this.cb.onWheelZoom(action.deltaY, this.cursorOf(e), action.sensitivity);
     } else {

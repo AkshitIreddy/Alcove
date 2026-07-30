@@ -23,7 +23,11 @@ import { SPINE_BASE_HEIGHT } from '../../art/spines';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
 import { moveBook, nextFreeSlot, touchBookOpened } from '../../data/books';
-import { settings, subscribe as subscribeSettings } from '../../data/settings';
+import {
+  save as saveSettings,
+  settings,
+  subscribe as subscribeSettings,
+} from '../../data/settings';
 import type { Book } from '../../data/types';
 import { floorLabel, loadFloorNames, onFloorNameChange } from './floorNames';
 import {
@@ -443,11 +447,12 @@ export class ShelfWorld {
         this.motes.setEnabled(!this.degrade && !reduced);
         this.dirty = true;
       }),
-      // Wave-2: live-apply wood stain / wallpaper / shelf sort on save.
+      // Wave-2: live-apply wood stain / wallpaper / sort / wheel mode on save.
       subscribeSettings((s) => {
         this.envTex.setStain(s.shelfWoodStain);
         this.envTex.setWallpaper(s.wallpaperPattern);
         this.store.setSort(s.shelfSort);
+        this.input.wheelMode = s.wheelMode;
       }),
       // Plaque label edits re-texture the mounted floor + its LOD2 stamp.
       onFloorNameChange((floor) => {
@@ -503,9 +508,16 @@ export class ShelfWorld {
     this.raf = requestAnimationFrame(this.frame);
 
     // QA hook: with an ?fx= override active (screenshot harness), expose the
-    // world so headless probes can inspect camera/floor/sprite state.
+    // world so headless probes can inspect camera/floor/sprite state, plus a
+    // settings writer bound to the SAME settings module instance this world
+    // subscribed to. (A probe's own `import('/src/data/settings.ts')` can
+    // resolve to a second copy of the module on a dev server that has served
+    // HMR updates — Vite appends ?t= to the app graph's import URLs — and
+    // writes to that copy would never reach the shelf.)
     if (fxOverride() !== null) {
-      (globalThis as Record<string, unknown>)['__shelfWorld'] = this;
+      const globals = globalThis as Record<string, unknown>;
+      globals['__shelfWorld'] = this;
+      globals['__shelfSaveSettings'] = saveSettings;
     }
   }
 
@@ -872,8 +884,13 @@ export class ShelfWorld {
       this.trashSprite.height = TRASH_DRAWER_H;
     }
     this.trashSprite.position.set(SHELF_WIDTH / 2, y);
-    // Keep on top of floor containers (mounts re-order world children).
-    this.world.addChild(this.trashSprite);
+    // Keep on top of floor containers (mounts re-order world children). Only
+    // re-append when it is not already last — addChild every frame would
+    // churn the child array on the hot path.
+    const kids = this.world.children;
+    if (kids[kids.length - 1] !== this.trashSprite) {
+      this.world.addChild(this.trashSprite);
+    }
   }
 
   /** World-space rect of the trash drawer (hit-testing). */
@@ -1846,16 +1863,17 @@ export class ShelfWorld {
     const visual = fv.visuals[sel.index] as BookVisual;
     const current = this.kbVisual;
     if (current !== null && current.visual === visual) return;
-    if (current !== null) current.fv.setHover(current.visual, false);
-    this.clearHover();
+    if (current !== null && current.fv !== fv) {
+      current.fv.setSelected(null, this.envTex, this.dpr);
+    }
     this.kbVisual = { fv, visual };
-    fv.setHover(visual, true);
+    fv.setSelected(visual, this.envTex, this.dpr);
     this.dirty = true;
   }
 
   private clearKbSelection(): void {
     const current = this.kbVisual;
-    if (current !== null) current.fv.setHover(current.visual, false);
+    if (current !== null) current.fv.setSelected(null, this.envTex, this.dpr);
     this.kbVisual = null;
     this.kbSel = null;
     this.dirty = true;

@@ -54,6 +54,12 @@ const BOOK_PALETTES: readonly BookPalette[] = [
   'lemon',
   'sky',
   'blush',
+  'plum',
+  'peach',
+  'sage',
+  'lavender',
+  'sand',
+  'slate',
 ];
 
 function takeBoolean(value: unknown, fallback: boolean): boolean {
@@ -112,8 +118,11 @@ function mergeStored(raw: unknown): MutableSettings {
     soundMaster: takeNumber(s.soundMaster, d.soundMaster),
     soundUi: takeNumber(s.soundUi, d.soundUi),
     soundPages: takeNumber(s.soundPages, d.soundPages),
+    soundShelf: takeNumber(s.soundShelf, d.soundShelf),
     soundAmbient: takeNumber(s.soundAmbient, d.soundAmbient),
     muteAll: takeBoolean(s.muteAll, d.muteAll),
+    ambientLoop: takeBoolean(s.ambientLoop, d.ambientLoop),
+    reducedSound: takeBoolean(s.reducedSound, d.reducedSound),
     autostart: takeBoolean(s.autostart, d.autostart),
     zoomSensitivity: takeNumber(s.zoomSensitivity, d.zoomSensitivity),
     dragMomentum: takeNumber(s.dragMomentum, d.dragMomentum),
@@ -124,6 +133,14 @@ function mergeStored(raw: unknown): MutableSettings {
     keybindings: takeKeybindings(s.keybindings, d.keybindings),
     telemetry: false,
   };
+}
+
+/**
+ * Validated merge of an unknown stored blob over `DEFAULT_SETTINGS`.
+ * Pure — no store or db access. Exposed for the settings feature and tests.
+ */
+export function mergeSettings(raw: unknown): Settings {
+  return mergeStored(raw);
 }
 
 // ---------------------------------------------------------------------------

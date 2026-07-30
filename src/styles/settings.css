@@ -1,0 +1,683 @@
+/* ============================================================================
+   Notebook — settings feature styles
+   Theme token remaps, extra book-palette washes, decoration hooks, the
+   floating gear button, and the slide-in paper settings sheet.
+
+   NOTE ON COLORS: tokens.css owns the base palette. The [data-theme=...] and
+   [data-ink=...] blocks below are the one sanctioned place that REMAPS those
+   tokens (a theme is by definition a new set of token values), and the five
+   extra book washes extend the wash family in the same spirit.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Themes — applied as data-theme on <html> by applySettings().
+   'parchment' is the tokens.css default and needs no override.
+   -------------------------------------------------------------------------- */
+
+/* Pastel — powdered rose paper, mauve ink, softened pigments. */
+:root[data-theme='pastel'] {
+  --paper-cream: #faf1f5;
+  --paper-aged: #f4e4ec;
+  --paper-deep: #ead0dd;
+  --paper-edge: #d9b6c8;
+  --paper-glow: rgba(255, 250, 253, 0.6);
+  --paper-vignette-soft: rgba(151, 106, 133, 0.06);
+  --paper-vignette-deep: rgba(124, 79, 106, 0.11);
+
+  --ink-sepia: #6b4d5e;
+  --ink-sepia-soft: #a07f92;
+  --ink-graphite: #575066;
+  --ink-graphite-soft: #857e94;
+  --ink-blue: #5a6aa0;
+  --ink-blue-soft: #8b97bd;
+
+  --wash-amber: #eccf8d;
+  --wash-amber-deep: #b9955a;
+  --wash-terracotta: #e3ab92;
+  --wash-terracotta-deep: #b3765a;
+  --wash-moss: #bcc79b;
+  --wash-moss-deep: #879465;
+  --wash-lemon: #efe29a;
+  --wash-lemon-deep: #bcab60;
+  --wash-sky: #b3d2db;
+  --wash-sky-deep: #7ba4b2;
+  --wash-blush: #ecc0ba;
+  --wash-blush-deep: #bd8880;
+  --wash-plum: #c9abc4;
+  --wash-plum-deep: #93718d;
+
+  --selection-wash: rgba(236, 192, 186, 0.5);
+}
+
+/* Botanical — pressed-leaf paper, moss ink, eucalyptus blues. */
+:root[data-theme='botanical'] {
+  --paper-cream: #f2f3e3;
+  --paper-aged: #e9ebd1;
+  --paper-deep: #d8ddb8;
+  --paper-edge: #b9c396;
+  --paper-glow: rgba(252, 255, 240, 0.6);
+  --paper-vignette-soft: rgba(110, 124, 74, 0.06);
+  --paper-vignette-deep: rgba(88, 102, 54, 0.12);
+
+  --ink-sepia: #4d5340;
+  --ink-sepia-soft: #7e8668;
+  --ink-graphite: #454c3c;
+  --ink-graphite-soft: #737b66;
+  --ink-blue: #3e6357;
+  --ink-blue-soft: #74958a;
+
+  --wash-amber: #e0c168;
+  --wash-moss: #9db26c;
+  --wash-moss-deep: #667a3e;
+  --wash-sky: #94c1b7;
+  --wash-sky-deep: #598a7f;
+  --wash-blush: #dfa89b;
+
+  --selection-wash: rgba(157, 178, 108, 0.4);
+}
+
+/* Night — a candle-lit desk after dark: warm dark paper, cream ink. */
+:root[data-theme='night'] {
+  --paper-cream: #262120;
+  --paper-aged: #2e2825;
+  --paper-deep: #383029;
+  --paper-edge: #55483a;
+  --paper-glow: rgba(255, 232, 190, 0.05);
+  --paper-vignette-soft: rgba(0, 0, 0, 0.14);
+  --paper-vignette-deep: rgba(0, 0, 0, 0.3);
+
+  --ink-sepia: #e6d9c3;
+  --ink-sepia-soft: #a89478;
+  --ink-graphite: #d3ccc2;
+  --ink-graphite-soft: #93897b;
+  --ink-blue: #a9c1e8;
+  --ink-blue-soft: #7386a3;
+
+  --wash-amber-light: #4d3f21;
+  --wash-amber: #d9b45e;
+  --wash-amber-deep: #f2d896;
+  --wash-terracotta-light: #4a2f23;
+  --wash-terracotta: #c98262;
+  --wash-terracotta-deep: #edb49c;
+  --wash-moss-light: #333c26;
+  --wash-moss: #98a96b;
+  --wash-moss-deep: #c8d6a2;
+  --wash-lemon-light: #45401f;
+  --wash-lemon: #d6c465;
+  --wash-lemon-deep: #efe3a1;
+  --wash-sky-light: #263a41;
+  --wash-sky: #86b0bd;
+  --wash-sky-deep: #b7dde8;
+  --wash-blush-light: #462c29;
+  --wash-blush: #d1958c;
+  --wash-blush-deep: #f0c0b8;
+  --wash-plum-light: #3a2c38;
+  --wash-plum: #a886a2;
+  --wash-plum-deep: #d3b4cd;
+
+  --wash-peach-light: #4a3524;
+  --wash-peach: #dda278;
+  --wash-peach-deep: #f4c9a4;
+  --wash-sage-light: #333a2c;
+  --wash-sage: #a6b892;
+  --wash-sage-deep: #ccdabc;
+  --wash-lavender-light: #362e40;
+  --wash-lavender: #ab97c4;
+  --wash-lavender-deep: #d4c4e8;
+  --wash-sand-light: #423a26;
+  --wash-sand: #c8b483;
+  --wash-sand-deep: #e8d9ae;
+  --wash-slate-light: #2c343b;
+  --wash-slate: #93a3b1;
+  --wash-slate-deep: #c2d1dd;
+
+  --selection-wash: rgba(233, 196, 106, 0.28);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.26),
+    0 2px 6px rgba(0, 0, 0, 0.22);
+  --shadow-md:
+    0 2px 3px rgba(0, 0, 0, 0.24),
+    0 6px 14px rgba(0, 0, 0, 0.28),
+    0 12px 28px rgba(0, 0, 0, 0.2);
+  --shadow-lg:
+    0 4px 6px rgba(0, 0, 0, 0.24),
+    0 12px 24px rgba(0, 0, 0, 0.32),
+    0 28px 56px rgba(0, 0, 0, 0.28);
+  --shadow-inset-paper: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* ----------------------------------------------------------------------------
+   Ink color — applied as data-ink on <html>. 'sepia' is the default.
+   -------------------------------------------------------------------------- */
+:root[data-ink='graphite'] {
+  --ink-sepia: var(--ink-graphite);
+  --ink-sepia-soft: var(--ink-graphite-soft);
+}
+
+:root[data-ink='ink-blue'] {
+  --ink-sepia: var(--ink-blue);
+  --ink-sepia-soft: var(--ink-blue-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Extra book-palette washes (light wash / base pigment / deep rim) —
+   extends the tokens.css wash family to 12 book palettes.
+   -------------------------------------------------------------------------- */
+:root {
+  --wash-peach-light: #f9e4d2;
+  --wash-peach: #eeb28a;
+  --wash-peach-deep: #b57545;
+
+  --wash-sage-light: #e6ecdd;
+  --wash-sage: #b7c9a3;
+  --wash-sage-deep: #7d9468;
+
+  --wash-lavender-light: #e9e2f0;
+  --wash-lavender: #bda8d4;
+  --wash-lavender-deep: #82699f;
+
+  --wash-sand-light: #f3ead6;
+  --wash-sand: #d9c391;
+  --wash-sand-deep: #a08b55;
+
+  --wash-slate-light: #dfe4e8;
+  --wash-slate: #a3b1bd;
+  --wash-slate-deep: #667889;
+}
+
+/* ----------------------------------------------------------------------------
+   Decoration hooks — features opt in by using these class names.
+   .nb-doodle / [data-decor]  : any purely decorative flourish
+   .nb-margin-doodle          : margin sketches specifically
+   -------------------------------------------------------------------------- */
+:root.nb-minimalist .nb-doodle,
+:root.nb-minimalist [data-decor],
+:root.nb-minimalist .nb-margin-doodle,
+:root.nb-no-doodles .nb-margin-doodle {
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------------------
+   Floating gear button (bottom-left)
+   -------------------------------------------------------------------------- */
+.nbs-gear-button {
+  position: fixed;
+  left: var(--space-16);
+  bottom: var(--space-16);
+  z-index: var(--z-menus);
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1px solid var(--paper-edge);
+  /* slightly-off circle: reads as inked, not stamped */
+  border-radius: 50% 47% 52% 48% / 48% 52% 46% 54%;
+  box-shadow: var(--shadow-sm);
+  opacity: 0.92;
+  transition:
+    transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring),
+    box-shadow calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
+    opacity calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-gear-button:hover {
+  opacity: 1;
+  transform: scale(1.06);
+  box-shadow: var(--shadow-md);
+}
+
+.nbs-gear-button:hover .nbs-gear-icon {
+  animation: nbs-wobble calc(0.7s * var(--motion-scale, 1)) var(--ease-in-out);
+}
+
+.nbs-gear-button:active {
+  transform: scale(0.96);
+}
+
+.nbs-gear-icon {
+  width: 26px;
+  height: 26px;
+}
+
+@keyframes nbs-wobble {
+  0% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(14deg);
+  }
+  60% {
+    transform: rotate(-8deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Panel layer, scrim, sheet
+   -------------------------------------------------------------------------- */
+.nbs-layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-toasts) - 1);
+  pointer-events: none;
+}
+
+.nbs-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(58, 43, 26, 0.3);
+  opacity: 0;
+  visibility: hidden; /* gsap autoAlpha drives opacity+visibility */
+  pointer-events: auto;
+}
+
+.nbs-sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 94vw);
+  transform: translateX(105%);
+  visibility: hidden;
+  pointer-events: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-20) var(--space-24) var(--space-48);
+  color: var(--ink-sepia);
+  background-color: var(--paper-aged);
+  /* aged-paper feel: warm light at the top, blotches, pressed left crease */
+  background-image:
+    radial-gradient(120% 55% at 50% -12%, var(--paper-glow) 0%, transparent 60%),
+    radial-gradient(38% 26% at 82% 34%, color-mix(in srgb, var(--paper-deep) 42%, transparent) 0%, transparent 100%),
+    radial-gradient(30% 22% at 14% 72%, color-mix(in srgb, var(--paper-deep) 34%, transparent) 0%, transparent 100%),
+    linear-gradient(to right, color-mix(in srgb, var(--paper-deep) 55%, transparent) 0%, transparent 14px);
+  border-left: 1px solid var(--paper-edge);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ----------------------------------------------------------------------------
+   Sheet header + sections
+   -------------------------------------------------------------------------- */
+.nbs-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding-bottom: var(--space-12);
+}
+
+.nbs-title {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  line-height: var(--leading-heading);
+  transform: rotate(-1deg);
+}
+
+.nbs-doodle {
+  color: var(--ink-sepia-soft);
+  font-size: 18px;
+  transform: rotate(12deg) translateY(-4px);
+}
+
+.nbs-close {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-sepia-soft);
+  border-radius: 46% 54% 50% 50% / 52% 48% 54% 46%;
+  transition:
+    color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-close:hover {
+  color: var(--ink-sepia);
+  background: var(--paper-deep);
+  transform: rotate(90deg);
+}
+
+.nbs-close-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.nbs-section {
+  padding: var(--space-12) 0 var(--space-16);
+  border-top: 1px dashed var(--paper-edge);
+}
+
+.nbs-section-title {
+  font-family: var(--font-heading);
+  font-size: 25px; /* Caveat stays above its 20px floor */
+  font-weight: 700;
+  color: var(--ink-sepia);
+  margin-bottom: var(--space-8);
+  transform: rotate(-0.6deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Rows
+   -------------------------------------------------------------------------- */
+.nbs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-8) 0;
+}
+
+.nbs-row--wide {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-8);
+}
+
+.nbs-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.nbs-row-label {
+  font-family: var(--font-accent);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--ink-sepia);
+  white-space: nowrap;
+}
+
+.nbs-row-hint {
+  color: var(--ink-sepia-soft);
+  font-size: var(--text-ui-xs);
+}
+
+.nbs-row-control {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.nbs-row--wide .nbs-row-control {
+  flex: 1 1 auto;
+}
+
+/* ----------------------------------------------------------------------------
+   Toggle — a drawn switch: inked track, graphite pebble thumb
+   -------------------------------------------------------------------------- */
+.nbs-toggle {
+  display: inline-flex;
+  padding: 2px;
+}
+
+.nbs-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.nbs-toggle-track {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 23px;
+  background: var(--paper-cream);
+  border: 1.6px solid var(--ink-graphite);
+  border-radius: 12px 14px 11px 13px / 13px 11px 14px 12px;
+  box-shadow: var(--shadow-inset-paper);
+  transition: background calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
+  border: 1.5px solid var(--ink-graphite);
+  border-radius: 48% 52% 55% 45% / 52% 48% 45% 55%;
+  transform: translateX(0) rotate(-8deg);
+  transition: transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-toggle[aria-checked='true'] .nbs-toggle-track {
+  background: var(--wash-amber);
+}
+
+.nbs-toggle[aria-checked='true'] .nbs-toggle-thumb {
+  transform: translateX(19px) rotate(10deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Slider — pencil line track, tick marks, pebble thumb
+   -------------------------------------------------------------------------- */
+.nbs-slider-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 170px;
+  max-width: 100%;
+}
+
+.nbs-slider-wrap {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+/* pencil tick marks under the line */
+.nbs-slider-wrap::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 7px;
+  top: 16px;
+  height: 5px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--ink-sepia-soft) 0 1px,
+    transparent 1px calc(100% / var(--nbs-ticks, 6))
+  );
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.nbs-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 26px;
+  background: transparent;
+}
+
+.nbs-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--ink-sepia-soft);
+  border-radius: var(--radius-pill);
+}
+
+.nbs-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -7px;
+  background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
+  border: 1.6px solid var(--ink-graphite);
+  border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
+  box-shadow: var(--shadow-xs);
+  cursor: grab;
+}
+
+.nbs-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+
+.nbs-slider::-moz-range-track {
+  height: 2px;
+  background: var(--ink-sepia-soft);
+  border-radius: var(--radius-pill);
+}
+
+.nbs-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
+  border: 1.6px solid var(--ink-graphite);
+  border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
+}
+
+.nbs-slider-value {
+  color: var(--ink-sepia-soft);
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ----------------------------------------------------------------------------
+   Segmented pick — paper chips, active one gets an amber wash + tilt
+   -------------------------------------------------------------------------- */
+.nbs-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+}
+
+.nbs-seg-chip {
+  font-family: var(--font-accent);
+  font-size: 13px; /* Kalam floor */
+  line-height: 1.5;
+  padding: 2px 10px;
+  color: var(--ink-graphite-soft);
+  border: 1.4px dashed transparent;
+  border-radius: 9px 11px 8px 12px / 11px 9px 12px 8px;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring),
+    border-color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-seg-chip:hover {
+  color: var(--ink-sepia);
+  background: var(--paper-deep);
+}
+
+.nbs-seg-chip[aria-pressed='true'] {
+  color: var(--ink-sepia);
+  font-weight: 700;
+  background: var(--wash-amber-light);
+  border-color: var(--ink-sepia-soft);
+  transform: rotate(-1.4deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Watercolor swatches — 12 palette blobs
+   -------------------------------------------------------------------------- */
+.nbs-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: var(--space-4) 0;
+}
+
+.nbs-swatch {
+  width: 27px;
+  height: 25px;
+  /* uneven blob: pigment pooling toward the lower rim */
+  border-radius: 47% 53% 44% 56% / 55% 46% 54% 45%;
+  background: radial-gradient(120% 120% at 32% 26%, var(--sw-light) 0%, var(--sw) 72%);
+  box-shadow:
+    inset 0 -3px 5px -2px var(--sw-deep),
+    var(--shadow-xs);
+  transition: transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-swatch:hover {
+  transform: scale(1.14) rotate(-4deg);
+}
+
+.nbs-swatch[aria-pressed='true'] {
+  outline: 2px dashed var(--ink-sepia);
+  outline-offset: 2px;
+  transform: rotate(-4deg);
+}
+
+.nbs-swatch[data-palette='amber'] { --sw-light: var(--wash-amber-light); --sw: var(--wash-amber); --sw-deep: var(--wash-amber-deep); }
+.nbs-swatch[data-palette='terracotta'] { --sw-light: var(--wash-terracotta-light); --sw: var(--wash-terracotta); --sw-deep: var(--wash-terracotta-deep); }
+.nbs-swatch[data-palette='moss'] { --sw-light: var(--wash-moss-light); --sw: var(--wash-moss); --sw-deep: var(--wash-moss-deep); }
+.nbs-swatch[data-palette='lemon'] { --sw-light: var(--wash-lemon-light); --sw: var(--wash-lemon); --sw-deep: var(--wash-lemon-deep); }
+.nbs-swatch[data-palette='sky'] { --sw-light: var(--wash-sky-light); --sw: var(--wash-sky); --sw-deep: var(--wash-sky-deep); }
+.nbs-swatch[data-palette='blush'] { --sw-light: var(--wash-blush-light); --sw: var(--wash-blush); --sw-deep: var(--wash-blush-deep); }
+.nbs-swatch[data-palette='plum'] { --sw-light: var(--wash-plum-light); --sw: var(--wash-plum); --sw-deep: var(--wash-plum-deep); }
+.nbs-swatch[data-palette='peach'] { --sw-light: var(--wash-peach-light); --sw: var(--wash-peach); --sw-deep: var(--wash-peach-deep); }
+.nbs-swatch[data-palette='sage'] { --sw-light: var(--wash-sage-light); --sw: var(--wash-sage); --sw-deep: var(--wash-sage-deep); }
+.nbs-swatch[data-palette='lavender'] { --sw-light: var(--wash-lavender-light); --sw: var(--wash-lavender); --sw-deep: var(--wash-lavender-deep); }
+.nbs-swatch[data-palette='sand'] { --sw-light: var(--wash-sand-light); --sw: var(--wash-sand); --sw-deep: var(--wash-sand-deep); }
+.nbs-swatch[data-palette='slate'] { --sw-light: var(--wash-slate-light); --sw: var(--wash-slate); --sw-deep: var(--wash-slate-deep); }
+
+/* ----------------------------------------------------------------------------
+   Keybindings list (read-only)
+   -------------------------------------------------------------------------- */
+.nbs-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-8);
+}
+
+.nbs-keys-list {
+  list-style: none;
+  padding: var(--space-8) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.nbs-keys-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.nbs-keys-action {
+  font-family: var(--font-accent);
+  font-size: 13px;
+  color: var(--ink-sepia-soft);
+}
+
+.nbs-keys-combo {
+  display: inline-flex;
+  gap: var(--space-4);
+}
+
+.nbs-kbd {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-bottom-width: 2px;
+  border-radius: 4px 5px 4px 6px;
+  padding: 1px 6px;
+}
+
+/* ----------------------------------------------------------------------------
+   Footnote
+   -------------------------------------------------------------------------- */
+.nbs-footnote {
+  padding-top: var(--space-16);
+  color: var(--ink-sepia-soft);
+  text-align: center;
+  border-top: 1px dashed var(--paper-edge);
+}

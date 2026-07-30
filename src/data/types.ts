@@ -151,7 +151,13 @@ export type BookPalette =
   | 'moss'
   | 'lemon'
   | 'sky'
-  | 'blush';
+  | 'blush'
+  | 'plum'
+  | 'peach'
+  | 'sage'
+  | 'lavender'
+  | 'sand'
+  | 'slate';
 
 /**
  * All user-facing options. Persisted as a single JSON blob in the
@@ -179,8 +185,14 @@ export interface Settings {
   soundMaster: number;
   soundUi: number;
   soundPages: number;
+  /** Bookshelf-world sounds (book pulls, whooshes, thumps). */
+  soundShelf: number;
   soundAmbient: number;
   muteAll: boolean;
+  /** Keep the ambient library loop running in the background. */
+  ambientLoop: boolean;
+  /** Skip the most incidental sounds (hover ticks, pencil scratch). */
+  reducedSound: boolean;
 
   // Behavior
   autostart: boolean;

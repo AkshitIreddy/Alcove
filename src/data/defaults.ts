@@ -27,8 +27,11 @@ export const DEFAULT_SETTINGS: Settings = {
   soundMaster: 0.8,
   soundUi: 0.7,
   soundPages: 0.8,
+  soundShelf: 0.7,
   soundAmbient: 0.35,
   muteAll: false,
+  ambientLoop: false,
+  reducedSound: false,
 
   // Behavior
   autostart: false,

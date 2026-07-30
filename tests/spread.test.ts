@@ -19,6 +19,7 @@ import {
   lastSpreadIndex,
   leftSlot,
   newPageDoc,
+  prependBlocksToDoc,
   rightSlot,
   shouldAutoCreatePage,
   spreadCount,
@@ -234,6 +235,67 @@ describe('newPageDoc', () => {
       content: [],
     });
     expect(newPageDoc('dotted').attrs).toEqual({ pageStyle: 'dotted' });
+  });
+
+  it('stamps the book line-spacing default when given, clamped to 24–64', () => {
+    expect(newPageDoc('ruled', 30).attrs).toEqual({
+      pageStyle: 'ruled',
+      lineHeightPx: 30,
+    });
+    expect(newPageDoc('ruled', 5).attrs).toEqual({
+      pageStyle: 'ruled',
+      lineHeightPx: 24,
+    });
+    expect(newPageDoc('ruled', 999).attrs).toEqual({
+      pageStyle: 'ruled',
+      lineHeightPx: 64,
+    });
+    expect(newPageDoc('ruled', Number.NaN).attrs).toEqual({ pageStyle: 'ruled' });
+  });
+});
+
+/* ─────────────────────── pagination overflow merge ────────────────────── */
+
+describe('prependBlocksToDoc', () => {
+  const para = (text: string): unknown => ({
+    type: 'paragraph',
+    content: [{ type: 'text', text }],
+  });
+
+  it('prepends carried blocks before existing content', () => {
+    const doc: PageDoc = { type: 'doc', attrs: { pageStyle: 'grid' }, content: [para('old')] };
+    const merged = prependBlocksToDoc(doc, [para('carried-1'), para('carried-2')]);
+    expect(merged.content).toEqual([para('carried-1'), para('carried-2'), para('old')]);
+    // attrs survive, input untouched (pure)
+    expect(merged.attrs).toEqual({ pageStyle: 'grid' });
+    expect(doc.content).toEqual([para('old')]);
+  });
+
+  it('replaces a blank starter page instead of stacking above an empty paragraph', () => {
+    const fresh: PageDoc = { type: 'doc', content: [{ type: 'paragraph' }] };
+    const merged = prependBlocksToDoc(fresh, [para('carried')]);
+    expect(merged.content).toEqual([para('carried')]);
+  });
+
+  it('builds a fresh doc (with fallback attrs) when the page has no doc yet', () => {
+    const merged = prependBlocksToDoc(null, [para('carried')], {
+      pageStyle: 'dotted',
+      lineHeightPx: 30,
+    });
+    expect(merged).toEqual({
+      type: 'doc',
+      attrs: { pageStyle: 'dotted', lineHeightPx: 30 },
+      content: [para('carried')],
+    });
+    expect(prependBlocksToDoc(undefined, [para('x')]).attrs).toBeUndefined();
+  });
+
+  it('keeps real content even when it is a non-paragraph block', () => {
+    const doc: PageDoc = { type: 'doc', content: [{ type: 'image' }] };
+    expect(prependBlocksToDoc(doc, [para('carried')]).content).toEqual([
+      para('carried'),
+      { type: 'image' },
+    ]);
   });
 });
 

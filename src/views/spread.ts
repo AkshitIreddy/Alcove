@@ -151,11 +151,50 @@ export function docHasContent(doc: PageDoc | null | undefined): boolean {
 
 /**
  * Starter doc for a page created from the spread ("+ page" / auto-create):
- * empty content, page style inherited from the user's default
- * (settings.pageStyleDefault). Line height stays the editor default.
+ * empty content, page style inherited from the book's page defaults (falling
+ * back to settings.pageStyleDefault at the call site). An explicit
+ * `lineHeightPx` (the book's per-page line spacing default) is stamped into
+ * the doc attrs so the editor opens with the book's spacing.
  */
-export function newPageDoc(pageStyle: PageStyle): PageDoc {
-  return { type: 'doc', attrs: { pageStyle }, content: [] };
+export function newPageDoc(pageStyle: PageStyle, lineHeightPx?: number): PageDoc {
+  const attrs: Record<string, unknown> = { pageStyle };
+  if (typeof lineHeightPx === 'number' && Number.isFinite(lineHeightPx)) {
+    attrs.lineHeightPx = Math.min(64, Math.max(24, Math.round(lineHeightPx)));
+  }
+  return { type: 'doc', attrs, content: [] };
+}
+
+/* ----------------------------------------------------------------------------
+   Pagination overflow — merging carried blocks into the next page's doc
+   -------------------------------------------------------------------------- */
+
+/**
+ * Prepend overflowed top-level blocks to the START of a page doc (pagination
+ * contract: BookView appends the blocks PageEditor removed to the next
+ * page's doc). Pure — returns a new doc, never mutates.
+ *
+ * - A missing doc becomes a fresh doc holding just the carried blocks
+ *   (attrs from `fallbackAttrs`, e.g. the book's page defaults).
+ * - A doc whose content is blank (empty, or only empty paragraphs — the
+ *   normalizePageDoc starter shape) is REPLACED by the carried blocks, so
+ *   carrying into a fresh page never leaves a stray empty paragraph between
+ *   carried batches.
+ */
+export function prependBlocksToDoc(
+  doc: PageDoc | null | undefined,
+  blocks: readonly unknown[],
+  fallbackAttrs?: Record<string, unknown>,
+): PageDoc {
+  if (!doc) {
+    return {
+      type: 'doc',
+      ...(fallbackAttrs ? { attrs: { ...fallbackAttrs } } : {}),
+      content: [...blocks],
+    };
+  }
+  const existing = Array.isArray(doc.content) ? doc.content : [];
+  const keep = docHasContent(doc) ? existing : [];
+  return { ...doc, content: [...blocks, ...keep] };
 }
 
 /* ----------------------------------------------------------------------------

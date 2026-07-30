@@ -1,16 +1,23 @@
 /**
- * BookView — the opened book as a true two-page spread on the desk: left and
- * right leaves side by side over a terracotta cover (edge peeking a few px
- * around the paper), spine gutter shadow down the middle, page flips driven
- * by the flip engine per the FlipSurface mount contract.
+ * BookView — the opened book as a true two-page spread on the desk.
+ *
+ * Restructured layout (user QA wave):
+ * - The old top toolbar is GONE. A slim left icon rail (BookRail) carries
+ *   every book tool; panels (customize / page style / stickers & effects)
+ *   slide out from the rail with the settings sheet's GSAP pattern.
+ * - The spread fills ~92% of the viewport height and all width freed by the
+ *   rail; the title shrinks into a small Caveat plate above the book.
+ * - The cover behind the pages is real procedural cover art (art/covers),
+ *   seeded from spine_seed and overridable via cover_meta.
+ * - Pagination (contract with src/editor/PageEditor): leaves never scroll.
+ *   PageEditor measures itself against `pageCapacityPx` and hands overflow
+ *   blocks up through `onOverflow`; BookView prepends them to the next page
+ *   (creating it if needed), remounts that leaf, and flips forward when the
+ *   cursor was carried.
  *
  * Spread state: `spreadIndex` maps to page slots left = 2i, right = 2i + 1
- * (pure math in ./spread.ts). Flipping forward off the last spread while the
- * right leaf holds ink auto-creates the next page; "+ page" in the toolbar
- * appends one explicitly. New pages inherit settings.pageStyleDefault.
- *
- * The script toolbar (top-right) bridges pages and Notebook Script:
- * Insert script (paste dialog), Export script (clipboard), Copy AI spec.
+ * (pure math in ./spread.ts). New pages inherit the book's page defaults
+ * (cover_meta.pageDefaults) and fall back to settings.pageStyleDefault.
  */
 import {
   Show,
@@ -25,12 +32,26 @@ import {
 } from 'solid-js';
 import { appState } from '../state/app';
 import { editorState } from '../editor/state';
-import { getBook, listBooksByFloorRange } from '../data/books';
-import { createPage, getPage, listPages } from '../data/pages';
+import {
+  getBook,
+  listBooksByFloorRange,
+  readCoverOverrides,
+  readPageDefaults,
+  saveCoverOverrides,
+  savePageDefaults,
+  type BookPageDefaults,
+} from '../data/books';
+import { createPage, getPage, listPages, savePageDoc } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { settings } from '../data/settings';
-import type { Book, Page, PageDoc } from '../data/types';
-import PageEditor from '../editor/PageEditor';
+import type { Book, Page, PageDoc, PageStyle } from '../data/types';
+import {
+  coverDataUrl,
+  deriveCoverParams,
+  normalizeCoverOverrides,
+  type CoverOverrides,
+} from '../art/covers';
+import PageEditor, { type PageEditorProps } from '../editor/PageEditor';
 import InsertScriptDialog from '../editor/insert/InsertScriptDialog';
 import { activeEditor } from '../editor/insert/activeEditor';
 import { docToScript } from '../editor/script/fromTiptap';
@@ -39,12 +60,18 @@ import FlipSurface, { type FlipSurfaceApi } from '../flip/FlipSurface';
 import type { LeafSide } from '../flip/PageFlipController';
 import type { FlipDirection } from '../flip/math';
 import { play } from '../sound/engine';
+import BookRail, { type RailPanelId } from './rail/BookRail';
+import RailPanel from './rail/RailPanel';
+import CustomizePanel from './rail/CustomizePanel';
+import PageStylePanel from './rail/PageStylePanel';
+import StickersPanel from './rail/StickersPanel';
 import {
   arrowFlipAction,
   canFlipSpread,
   docHasContent,
   leftSlot,
   newPageDoc,
+  prependBlocksToDoc,
   shouldAutoCreatePage,
   spreadOfSlot,
   spreadPageIds,
@@ -53,11 +80,27 @@ import {
 import '../styles/editor.css';
 import '../styles/insert.css';
 import '../styles/spread.css';
+import '../styles/rail.css';
 
 interface BookSession {
   readonly book: Book;
   readonly pages: Page[];
 }
+
+/**
+ * Pagination contract props (docs in the wave brief; PageEditor's side is
+ * built by the editor agent). Typed structurally here so BookView compiles
+ * and wires the flow even while the editor half lands in parallel — extra
+ * props are ignored by Solid components until PageEditor consumes them.
+ */
+type PaginatedPageEditorProps = PageEditorProps & {
+  paginated?: boolean;
+  pageCapacityPx?: number;
+  onOverflow?(blocks: unknown[], cursorCarried: boolean): void;
+};
+const PaginatedPageEditor = PageEditor as (
+  props: PaginatedPageEditorProps,
+) => JSX.Element;
 
 async function loadSession(source: {
   readonly bookId: string | null;
@@ -91,21 +134,6 @@ function BackArrowIcon(): JSX.Element {
         stroke-width="2.2"
         stroke-linecap="round"
         stroke-linejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Hand-drawn plus for the "+ page" tool (static wobbled strokes). */
-function AddPageIcon(): JSX.Element {
-  return (
-    <svg viewBox="0 0 16 16" class="nb-add-page-icon" aria-hidden="true">
-      <path
-        d="M 8.2 2.6 C 7.9 6.2 8.1 9.7 7.9 13.4 M 2.6 8.2 C 6.2 7.8 9.8 8.1 13.4 7.9"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
       />
     </svg>
   );
@@ -145,14 +173,30 @@ export default function BookView(): JSX.Element {
   const [spreadIndex, setSpreadIndex] = createSignal(0);
   const [focusedSide, setFocusedSide] = createSignal<LeafSide>('left');
 
+  // ---------------------------------------------------------------------------
+  // Per-book customization state (cover_meta), hydrated with the session.
+  // ---------------------------------------------------------------------------
+  const [coverOverrides, setCoverOverrides] = createSignal<CoverOverrides | null>(
+    null,
+  );
+  const [pageDefaults, setPageDefaults] = createSignal<BookPageDefaults | null>(
+    null,
+  );
+
   createEffect(
     on(session, (loaded) => {
       if (loaded) {
         setPages(loaded.pages);
         setSpreadIndex(0);
+        setCoverOverrides(normalizeCoverOverrides(readCoverOverrides(loaded.book)));
+        setPageDefaults(readPageDefaults(loaded.book));
       }
     }),
   );
+
+  const bookPageStyle = (): PageStyle =>
+    pageDefaults()?.pageStyle ?? settings.pageStyleDefault;
+  const bookLineHeight = (): number | undefined => pageDefaults()?.lineHeightPx;
 
   const pageAt = (slot: number): Page | null => pages()[slot] ?? null;
   const leftPage = createMemo(() => pageAt(leftSlot(spreadIndex())));
@@ -175,20 +219,28 @@ export default function BookView(): JSX.Element {
     );
   };
 
+  // External doc rewrites (overflow carries, page-default sweeps) bump a
+  // per-page version; leaves key on id@version so the mounted editor remounts
+  // with the fresh doc (PageEditor reads props once at mount).
+  const [docVersions, setDocVersions] = createSignal<Record<string, number>>({});
+  const bumpDocVersion = (pageId: string): void => {
+    setDocVersions((prev) => ({ ...prev, [pageId]: (prev[pageId] ?? 0) + 1 }));
+  };
+
   const rightHasContent = (): boolean => docHasContent(rightPage()?.doc);
 
   const canFlip = (direction: FlipDirection): boolean =>
     canFlipSpread(pages().length, spreadIndex(), direction, rightHasContent());
 
   // -------------------------------------------------------------------------
-  // Page creation ("+ page" tool + auto-create on forward flip)
+  // Page creation ("+ page" rail tool + auto-create on forward flip)
   // -------------------------------------------------------------------------
   const appendPage = async (): Promise<Page | null> => {
     const loaded = session();
     if (!loaded) return null;
     const created = await createPage({
       bookId: loaded.book.id,
-      doc: newPageDoc(settings.pageStyleDefault),
+      doc: newPageDoc(bookPageStyle(), bookLineHeight()),
     });
     setPages((prev) => [...prev, created]);
     return created;
@@ -230,6 +282,174 @@ export default function BookView(): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
+  // Pagination — capacity measurement + overflow carry (see module docblock)
+  // -------------------------------------------------------------------------
+  const [pageCapacity, setPageCapacity] = createSignal(0);
+
+  const measureCapacity = (paper: HTMLElement): void => {
+    const styles = getComputedStyle(paper);
+    const capacity =
+      paper.clientHeight -
+      (Number.parseFloat(styles.paddingTop) || 0) -
+      (Number.parseFloat(styles.paddingBottom) || 0);
+    if (capacity > 120) setPageCapacity(Math.floor(capacity));
+  };
+
+  const capacityObserver =
+    typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.target instanceof HTMLElement) {
+              measureCapacity(entry.target);
+            }
+          }
+        })
+      : null;
+  onCleanup(() => capacityObserver?.disconnect());
+
+  /** Serialize carries: bursts of overflow land one at a time, in order. */
+  let carryChain: Promise<void> = Promise.resolve();
+
+  /**
+   * ProseMirror's scrollIntoView scrolls the prose root mid-drain (while the
+   * pasted/typed content still overflows); once the trailing blocks have been
+   * carried off, that stale scrollTop leaves the page visually cropped even
+   * though the content now fits. Leaves never scroll — pin everything to 0.
+   */
+  const resetLeafScroll = (side: LeafSide): void => {
+    const paper = paperElements[side];
+    if (!paper) return;
+    const targets: HTMLElement[] = [
+      paper,
+      ...Array.from(
+        paper.querySelectorAll<HTMLElement>('.nb-page, .nb-page-editor, .nb-prose'),
+      ),
+    ];
+    for (const el of targets) {
+      if (el.scrollTop !== 0) el.scrollTop = 0;
+      if (el.scrollLeft !== 0) el.scrollLeft = 0;
+    }
+  };
+
+  const focusLeafStart = (side: LeafSide): void => {
+    // Double rAF: wait out the keyed remount + first paint, then drop the
+    // caret at the start of the carried content.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const prose =
+          paperElements[side]?.querySelector<HTMLElement>('.nb-prose');
+        if (!prose) return;
+        prose.focus();
+        const editor = activeEditor();
+        editor?.commands.focus('start');
+      });
+    });
+  };
+
+  const carryOverflow = async (
+    pageId: string,
+    blocks: unknown[],
+    cursorCarried: boolean,
+  ): Promise<void> => {
+    const slot = pages().findIndex((page) => page.id === pageId);
+    if (slot < 0) return;
+
+    let next: Page | null = pages()[slot + 1] ?? null;
+    if (!next) {
+      next = await appendPage();
+      if (!next) return;
+    }
+
+    const fallbackAttrs: Record<string, unknown> = { pageStyle: bookPageStyle() };
+    const line = bookLineHeight();
+    if (line !== undefined) fallbackAttrs.lineHeightPx = line;
+
+    const merged = prependBlocksToDoc(next.doc, blocks, fallbackAttrs);
+    updatePageDoc(next.id, merged);
+    bumpDocVersion(next.id); // remounts the leaf when it is on this spread
+    await savePageDoc(next.id, merged);
+
+    // Clear any stale mid-drain scroll on both leaves (before + after the
+    // browser settles layout — rAF covers late scrollIntoView calls).
+    resetLeafScroll('left');
+    resetLeafScroll('right');
+    requestAnimationFrame(() => {
+      resetLeafScroll('left');
+      resetLeafScroll('right');
+    });
+
+    if (cursorCarried) {
+      const targetSpread = spreadOfSlot(slot + 1);
+      if (targetSpread === spreadIndex()) {
+        // Left leaf spilled into the right leaf of the same spread.
+        focusLeafStart('right');
+      } else {
+        flipApi?.flipNext();
+        focusLeafStart('left');
+      }
+    }
+  };
+
+  const handleOverflow = (
+    pageId: string,
+    blocks: unknown[],
+    cursorCarried: boolean,
+  ): void => {
+    if (!Array.isArray(blocks) || blocks.length === 0) return;
+    carryChain = carryChain.then(() =>
+      carryOverflow(pageId, blocks, cursorCarried).catch(() => undefined),
+    );
+  };
+
+  // -------------------------------------------------------------------------
+  // Customization persistence + application
+  // -------------------------------------------------------------------------
+  const changeCoverOverrides = (next: CoverOverrides | null): void => {
+    setCoverOverrides(next);
+    const loaded = session();
+    if (loaded) {
+      void saveCoverOverrides(
+        loaded.book.id,
+        next as Record<string, unknown> | null,
+      );
+    }
+  };
+
+  /** Debounced sweep: stamp the book's page defaults into every page doc. */
+  let defaultsTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => {
+    if (defaultsTimer !== undefined) clearTimeout(defaultsTimer);
+  });
+
+  const applyDefaultsToPages = (defaults: BookPageDefaults): void => {
+    const style = defaults.pageStyle;
+    const line = defaults.lineHeightPx;
+    if (style === undefined && line === undefined) return;
+    setPages((prev) =>
+      prev.map((page) => {
+        const attrs: Record<string, unknown> = { ...(page.doc.attrs ?? {}) };
+        if (style !== undefined) attrs.pageStyle = style;
+        if (line !== undefined) attrs.lineHeightPx = line;
+        return { ...page, doc: { ...page.doc, attrs } };
+      }),
+    );
+    for (const page of pages()) {
+      void savePageDoc(page.id, page.doc);
+      bumpDocVersion(page.id);
+    }
+  };
+
+  const changePageDefaults = (next: BookPageDefaults | null): void => {
+    setPageDefaults(next);
+    const loaded = session();
+    if (loaded) void savePageDefaults(loaded.book.id, next);
+    if (defaultsTimer !== undefined) clearTimeout(defaultsTimer);
+    if (next) {
+      defaultsTimer = setTimeout(() => applyDefaultsToPages(next), 350);
+    }
+  };
+
+  // -------------------------------------------------------------------------
   // Keyboard: ←/→ flip through the FlipSurface api unless the user is typing.
   // -------------------------------------------------------------------------
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -247,8 +467,9 @@ export default function BookView(): JSX.Element {
   onCleanup(() => window.removeEventListener('keydown', onKeyDown));
 
   // -------------------------------------------------------------------------
-  // Script toolbar plumbing (unchanged behavior, now spread-aware)
+  // Rail actions (script tools moved off the old top toolbar)
   // -------------------------------------------------------------------------
+  const [activePanel, setActivePanel] = createSignal<RailPanelId | null>(null);
   const [insertOpen, setInsertOpen] = createSignal(false);
   const [toast, setToast] = createSignal<string | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -300,25 +521,41 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   // Leaves — the contract's per-side page JSX. The .nb-sheet-paper is stable
   // (getPageElement target + snapshot root); only the editor inside is keyed
-  // by page id, so edits never remount and spread changes always do.
+  // by page id + external doc version, so edits never remount and spread
+  // changes / overflow carries always do.
   // -------------------------------------------------------------------------
   const paperElements: Partial<Record<LeafSide, HTMLDivElement>> = {};
+
+  const leafKey = (page: Page | null): string | null =>
+    page ? `${page.id}@${docVersions()[page.id] ?? 0}` : null;
 
   const leafFace = (side: LeafSide, page: () => Page | null): JSX.Element => (
     <div
       class="nb-sheet-paper nb-leaf-paper"
       data-side={side}
-      ref={(el) => (paperElements[side] = el)}
+      ref={(el) => {
+        paperElements[side] = el;
+        capacityObserver?.observe(el);
+        queueMicrotask(() => measureCapacity(el));
+      }}
       onFocusIn={() => setFocusedSide(side)}
     >
-      <Show when={page()?.id} keyed>
-        {(pageId) => (
-          <PageEditor
-            pageId={pageId}
-            initialDoc={page()?.doc ?? { type: 'doc', content: [] }}
-            onDocChange={(doc) => updatePageDoc(pageId, doc)}
-          />
-        )}
+      <Show when={leafKey(page())} keyed>
+        {(_key: string) => {
+          const current = page();
+          return current ? (
+            <PaginatedPageEditor
+              pageId={current.id}
+              initialDoc={current.doc}
+              onDocChange={(doc) => updatePageDoc(current.id, doc)}
+              paginated
+              pageCapacityPx={pageCapacity()}
+              onOverflow={(blocks, cursorCarried) =>
+                handleOverflow(current.id, blocks, cursorCarried)
+              }
+            />
+          ) : null;
+        }}
       </Show>
     </div>
   );
@@ -333,6 +570,25 @@ export default function BookView(): JSX.Element {
         <BackArrowIcon />
         <span>back to shelf</span>
       </button>
+
+      <BookRail
+        activePanel={activePanel()}
+        onTogglePanel={(panel) =>
+          setActivePanel((current) => (current === panel ? null : panel))
+        }
+        onInsertScript={() => setInsertOpen(true)}
+        onExportScript={() => {
+          const page = activePage();
+          if (page) void exportScript(page.id);
+        }}
+        onCopySpec={() =>
+          void copyText(
+            NOTEBOOK_SCRIPT_SPEC,
+            'spec copied — paste it to your AI',
+          )
+        }
+        onAddPage={() => void addPage()}
+      />
 
       <Show
         when={session()}
@@ -352,87 +608,91 @@ export default function BookView(): JSX.Element {
         }
         keyed
       >
-        {(loaded) => (
-          <div class="nb-spread-stage" data-spread-index={spreadIndex()}>
+        {(loaded) => {
+          const backdropUrl = createMemo(() =>
+            coverDataUrl(
+              720,
+              500,
+              deriveCoverParams(loaded.book.spineSeed, coverOverrides()),
+              '',
+              { plate: false },
+            ),
+          );
+          return (
             <div
-              class="nb-script-toolbar font-ui"
-              role="toolbar"
-              aria-label="Script tools"
+              class="nb-spread-stage"
+              data-spread-index={spreadIndex()}
+              data-book-ink={pageDefaults()?.ink ?? 'inherit'}
             >
-              <button
-                type="button"
-                class="nb-script-tool nb-add-page"
-                title="Add a page to this book"
-                onClick={() => void addPage()}
-              >
-                <AddPageIcon />
-                <span>page</span>
-              </button>
-              <button
-                type="button"
-                class="nb-script-tool"
-                title="Paste Notebook Script into this page"
-                onClick={() => setInsertOpen(true)}
-              >
-                Insert script
-              </button>
-              <button
-                type="button"
-                class="nb-script-tool"
-                title="Copy this page as Notebook Script"
-                onClick={() => {
-                  const page = activePage();
-                  if (page) void exportScript(page.id);
-                }}
-              >
-                Export script
-              </button>
-              <button
-                type="button"
-                class="nb-script-tool"
-                title="Copy the Notebook Script spec for your AI assistant"
-                onClick={() =>
-                  void copyText(
-                    NOTEBOOK_SCRIPT_SPEC,
-                    'spec copied — paste it to your AI',
-                  )
-                }
-              >
-                Copy AI spec
-              </button>
-            </div>
+              <header class="nb-spread-header">
+                <h1 class="nb-book-title-plate">{loaded.book.title}</h1>
+              </header>
 
-            <header class="nb-spread-header">
-              <h1 class="nb-book-title">{loaded.book.title}</h1>
-            </header>
-
-            <div class="nb-book-cover">
-              <div class="nb-spread">
-                <FlipSurface
-                  ref={(api) => (flipApi = api)}
-                  spreadIndex={spreadIndex()}
-                  pageIds={ids()}
-                  getPageElement={(side) => paperElements[side] ?? null}
-                  onNavigate={onNavigate}
-                  canFlip={canFlip}
-                  leftPage={leafFace('left', leftPage)}
-                  rightPage={leafFace('right', rightPage)}
-                />
-                <div class="nb-spread-gutter" aria-hidden="true" />
+              <div
+                class="nb-book-cover"
+                style={{ 'background-image': `url("${backdropUrl()}")` }}
+              >
+                <div class="nb-spread">
+                  <FlipSurface
+                    ref={(api) => (flipApi = api)}
+                    spreadIndex={spreadIndex()}
+                    pageIds={ids()}
+                    getPageElement={(side) => paperElements[side] ?? null}
+                    onNavigate={onNavigate}
+                    canFlip={canFlip}
+                    leftPage={leafFace('left', leftPage)}
+                    rightPage={leafFace('right', rightPage)}
+                  />
+                  <div class="nb-spread-gutter" aria-hidden="true" />
+                  <Show when={canFlip('next')}>
+                    <div class="nb-page-curl" aria-hidden="true" />
+                  </Show>
+                </div>
               </div>
-            </div>
 
-            <Show when={insertOpen() ? activePage()?.id : null} keyed>
-              {(pageId) => (
-                <InsertScriptDialog
-                  pageId={pageId}
-                  onClose={() => setInsertOpen(false)}
-                  onNotify={notify}
+              <RailPanel
+                open={activePanel() === 'customize'}
+                title="Customize this book"
+                onClose={() => setActivePanel(null)}
+              >
+                <CustomizePanel
+                  spineSeed={loaded.book.spineSeed}
+                  title={loaded.book.title}
+                  overrides={coverOverrides()}
+                  onOverridesChange={changeCoverOverrides}
+                  pageDefaults={pageDefaults()}
+                  onPageDefaultsChange={changePageDefaults}
                 />
-              )}
-            </Show>
-          </div>
-        )}
+              </RailPanel>
+
+              <RailPanel
+                open={activePanel() === 'page-style'}
+                title="Page style"
+                onClose={() => setActivePanel(null)}
+              >
+                <PageStylePanel open={activePanel() === 'page-style'} />
+              </RailPanel>
+
+              <RailPanel
+                open={activePanel() === 'stickers'}
+                title="Stickers & effects"
+                onClose={() => setActivePanel(null)}
+              >
+                <StickersPanel />
+              </RailPanel>
+
+              <Show when={insertOpen() ? activePage()?.id : null} keyed>
+                {(pageId) => (
+                  <InsertScriptDialog
+                    pageId={pageId}
+                    onClose={() => setInsertOpen(false)}
+                    onNotify={notify}
+                  />
+                )}
+              </Show>
+            </div>
+          );
+        }}
       </Show>
 
       <Show when={toast()} keyed>

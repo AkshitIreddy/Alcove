@@ -5,14 +5,23 @@
  * ghost's exact screen rect, then FLIP-animates (transform/opacity only) to
  * center stage — and the reverse on close. GPU-smooth world motion, DOM-crisp
  * cover where it matters.
+ *
+ * The face is REAL cover art: art/covers.renderCover baked once into a
+ * device-pixel-ratio canvas (seeded from spine_seed, honoring cover_meta
+ * overrides), so the pull-out shows the same intricate tooled cover the
+ * opened BookView rests on — no more flat gradient rectangle.
  */
 
 import gsap from 'gsap';
 import { onCleanup, onMount, type JSX } from 'solid-js';
-import { deriveSpineParams } from '../../art/spines';
+import {
+  deriveCoverParams,
+  normalizeCoverOverrides,
+  renderCoverInto,
+} from '../../art/covers';
+import { readCoverOverrides } from '../../data/books';
 import type { Book } from '../../data/types';
 import { prefersReducedMotion } from './env';
-import { paletteCss } from './spineFactory';
 import type { RectLike } from './world';
 
 export interface PulledOverlayProps {
@@ -39,21 +48,43 @@ interface CenterLayout {
 function centerLayout(): CenterLayout {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const height = Math.min(vh * 0.68, 520);
+  // Bigger presence than the old 520px cap — the pulled book is the hero.
+  const height = Math.min(vh * 0.78, 660);
   const width = height * 0.72;
   return { width, height, x: (vw - width) / 2, y: (vh - height) / 2 };
 }
 
 export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
   let el!: HTMLDivElement;
-  const params = deriveSpineParams(p.book.spineSeed);
-  const colors = paletteCss(params);
+  let coverCanvas: HTMLCanvasElement | undefined;
 
   onMount(() => {
     const m = prefersReducedMotion() ? 0 : 1;
     const center = centerLayout();
     el.style.width = `${center.width}px`;
     el.style.height = `${center.height}px`;
+
+    // Bake the cover face at device resolution for the center size.
+    if (coverCanvas) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      coverCanvas.width = Math.round(center.width * dpr);
+      coverCanvas.height = Math.round(center.height * dpr);
+      const ctx = coverCanvas.getContext('2d');
+      if (ctx) {
+        const params = deriveCoverParams(
+          p.book.spineSeed,
+          normalizeCoverOverrides(readCoverOverrides(p.book)),
+        );
+        renderCoverInto(
+          ctx,
+          coverCanvas.width,
+          coverCanvas.height,
+          params,
+          p.book.title,
+        );
+      }
+    }
+
     const atSpine = {
       x: p.spineRect.x,
       y: p.spineRect.y,
@@ -84,20 +115,21 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
   });
 
   return (
-    <div
-      class="pulled-book"
-      ref={el}
-      role="presentation"
-      style={{
-        '--cover-top': colors.top,
-        '--cover-bottom': colors.bottom,
-      }}
-    >
-      <div class="pulled-book__spine-edge" />
-      <div class="pulled-book__face">
-        <h2 class="pulled-book__title">{p.book.title}</h2>
-        <div class="pulled-book__rule" />
-      </div>
+    <div class="pulled-book" ref={el} role="presentation">
+      {/* Inline-styled so the overlay needs no shelf.css additions
+          (that stylesheet belongs to the shelf art wave). */}
+      <canvas
+        class="pulled-book__cover"
+        ref={(node) => (coverCanvas = node)}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: '0',
+          width: '100%',
+          height: '100%',
+          display: 'block',
+        }}
+      />
     </div>
   );
 }

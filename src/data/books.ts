@@ -1,6 +1,12 @@
 import { nanoid } from 'nanoid';
 import { getDb } from './db';
-import type { Book, BookRow, CreateBookInput, UpdateBookPatch } from './types';
+import type {
+  Book,
+  BookRow,
+  CreateBookInput,
+  PageStyle,
+  UpdateBookPatch,
+} from './types';
 
 function parseCoverMeta(raw: string | null): Record<string, unknown> | null {
   if (raw === null) return null;
@@ -133,6 +139,102 @@ export async function moveBook(
     [floor, slot, new Date().toISOString(), id],
   );
   return getBook(id);
+}
+
+/* ----------------------------------------------------------------------------
+   cover_meta helpers — the book's free-form JSON blob, sectioned:
+     { cover: {...CoverOverrides}, pageDefaults: {...BookPageDefaults} }
+   The data layer stays art-agnostic: `cover` is passed through as loose JSON
+   (validated by src/art/covers.normalizeCoverOverrides at the render site);
+   `pageDefaults` is validated here because pages consume it directly.
+   -------------------------------------------------------------------------- */
+
+/** Per-book page defaults applied to current + future pages of the book. */
+export interface BookPageDefaults {
+  /** Line spacing in px (26–40 in the customize panel). */
+  lineHeightPx?: number;
+  pageStyle?: PageStyle;
+  /** Ink token for this book's pages ('sepia' | 'graphite' | 'ink-blue'). */
+  ink?: string;
+}
+
+const PAGE_STYLE_VALUES: readonly string[] = ['ruled', 'grid', 'blank', 'dotted'];
+const INK_VALUES: readonly string[] = ['sepia', 'graphite', 'ink-blue'];
+
+/** Loose cover-art override JSON stored under `cover_meta.cover`, or null. */
+export function readCoverOverrides(
+  book: Pick<Book, 'coverMeta'> | null | undefined,
+): Record<string, unknown> | null {
+  const section = book?.coverMeta?.cover;
+  if (section !== null && typeof section === 'object' && !Array.isArray(section)) {
+    return section as Record<string, unknown>;
+  }
+  return null;
+}
+
+/** Validated per-book page defaults from `cover_meta.pageDefaults`, or null. */
+export function readPageDefaults(
+  book: Pick<Book, 'coverMeta'> | null | undefined,
+): BookPageDefaults | null {
+  const section = book?.coverMeta?.pageDefaults;
+  if (section === null || typeof section !== 'object' || Array.isArray(section)) {
+    return null;
+  }
+  const raw = section as Record<string, unknown>;
+  const out: BookPageDefaults = {};
+  if (
+    typeof raw.lineHeightPx === 'number' &&
+    Number.isFinite(raw.lineHeightPx)
+  ) {
+    out.lineHeightPx = Math.min(64, Math.max(24, Math.round(raw.lineHeightPx)));
+  }
+  if (typeof raw.pageStyle === 'string' && PAGE_STYLE_VALUES.includes(raw.pageStyle)) {
+    out.pageStyle = raw.pageStyle as PageStyle;
+  }
+  if (typeof raw.ink === 'string' && INK_VALUES.includes(raw.ink)) {
+    out.ink = raw.ink;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Pure merge of one section into an existing coverMeta blob (null-safe). */
+export function mergeCoverMetaSection(
+  meta: Record<string, unknown> | null,
+  key: 'cover' | 'pageDefaults',
+  value: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const next: Record<string, unknown> = { ...(meta ?? {}) };
+  if (value === null || Object.keys(value).length === 0) delete next[key];
+  else next[key] = value;
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+/** Persist cover-art overrides for a book (merging other sections through). */
+export async function saveCoverOverrides(
+  id: string,
+  overrides: Record<string, unknown> | null,
+): Promise<Book | null> {
+  const book = await getBook(id);
+  if (book === null) return null;
+  return updateBook(id, {
+    coverMeta: mergeCoverMetaSection(book.coverMeta, 'cover', overrides),
+  });
+}
+
+/** Persist per-book page defaults (merging other sections through). */
+export async function savePageDefaults(
+  id: string,
+  defaults: BookPageDefaults | null,
+): Promise<Book | null> {
+  const book = await getBook(id);
+  if (book === null) return null;
+  return updateBook(id, {
+    coverMeta: mergeCoverMetaSection(
+      book.coverMeta,
+      'pageDefaults',
+      defaults as Record<string, unknown> | null,
+    ),
+  });
 }
 
 /**

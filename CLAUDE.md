@@ -12,6 +12,30 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 - `script-language.md` — "Notebook Script": Markdown subset + `:::name {attrs}` directives + fenced mini-languages (tree/graph/timeline). Handwritten tolerant parser in `src/script/` — parse() is total, never throws, returns diagnostics.
 - `art-pipeline.md` — bake-once: SVG filters (pencil/watercolor recipes are in the doc) run only inside `art/bake.ts`, results persisted to appCacheDir as PNG. Icons/chrome are pre-distorted vector SVG. Spines are seeded procedural canvas.
 
+`docs/ROADMAP-wave2.md` tracks the 33 customization / quality-of-life features and their group ownership.
+
+## Product rules (from user review — non-negotiable)
+
+- **No scrollbars inside pages.** Pages are fixed-height; overflow flows to the next page via the pagination contract (`PageEditor` peels trailing blocks → `onOverflow` → `BookView` prepends to the next page, creating it if needed).
+- **Books drag out of the shelf** (click also works as a quick pull). Plain wheel zooms; shift+wheel pans.
+- **Left icon rails, not top bars.** Book tools, page style, customization, stickers/effects all live in the left rail with hand-drawn tooltips. Freed space goes to the pages.
+- Right-click opens a Notion-style block context menu; clicking empty ruled space starts typing there.
+- Aesthetic bar is "intricate, magical library" — baked art, ornamented spines and covers, never flat rectangles.
+- Seeding ships exactly one Welcome book; the migration removes old empty demo books without touching user content.
+
+## Map of the app
+
+- `src/features/bookshelf/` — Pixi world, gestures, spine/cover factories, shelf menu, trash drawer, floor plates
+- `src/views/` — `BookView` spread + `rail/` (icon rail and its panels), TOC/thumbnails/cheat-sheet
+- `src/editor/` — TipTap setup, custom nodes, slash + context menus, effects, pagination, script bridge, exporters
+- `src/flip/` — WebGL page-curl engine and snapshot cache
+- `src/script/` — Notebook Script parser/printer (total, never throws)
+- `src/diagrams/` — layout algorithms + hand-drawn SVG renderers
+- `src/search/`, `src/features/quickswitch/` — fuzzy quick switcher + full-text index
+- `src/features/system/` — backups, tray, perf HUD, launch behavior
+- `src/sound/` — Howler engine; `scripts/gen-sounds.mjs` synthesizes every WAV from scratch
+- `src-tauri/src/` — `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs` (all registered in `lib.rs`)
+
 ## Conventions
 
 - Package manager: npm. Do not add dependencies without checking package.json first — most things are already installed.
@@ -25,4 +49,6 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 
 - Frontend typecheck: `npx tsc --noEmit` (agents working in parallel: use this, do NOT run `npm run build` or `npm run tauri dev`)
 - Rust: `cargo check --manifest-path src-tauri/Cargo.toml`
-- Tests: `npx vitest run`
+- Unit tests: `npx vitest run`
+- End-to-end: `npm run e2e` (Playwright; reuses a dev server on :1420). Headless uses SwiftShader — append `?fx=force` for full shelf effects and poll for state instead of fixed waits, because rAF is throttled there.
+- Visual QA: capture screenshots and *actually look at them* before calling a visual change done.

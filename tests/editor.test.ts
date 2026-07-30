@@ -42,6 +42,19 @@ if (typeof globals.window === 'undefined') {
 }
 
 const { createEditorExtensions } = await import('../src/editor/extensions');
+const {
+  buildBlockContextMenu,
+  HIGHLIGHT_WASHES,
+  INK_COLOR_TOKENS,
+} = await import('../src/editor/menu/registry');
+const { editorApi, BLOCK_EFFECT_KEYS } = await import('../src/editor/api');
+const {
+  activeEditor,
+  getLineHeight,
+  getPageStyle,
+  setLineHeight,
+  setPageStyle,
+} = await import('../src/editor/insert/activeEditor');
 
 const schema = getSchema(createEditorExtensions());
 
@@ -328,6 +341,141 @@ describe('document round-trip through the schema', () => {
       content: [{ type: 'no-such-block' }],
     };
     expect(() => schema.nodeFromJSON(invalid)).toThrow();
+  });
+});
+
+/* --------------------------- context menu registry ------------------------ */
+
+describe('block context menu registry', () => {
+  const entries = buildBlockContextMenu();
+  const submenus = entries.filter(
+    (entry) => entry.kind === 'submenu',
+  ) as Array<{ id: string; items: readonly { id: string }[] }>;
+  const leafIds = entries.flatMap((entry) => {
+    if (entry.kind === 'item') return [entry.id];
+    if (entry.kind === 'submenu') return entry.items.map((item) => item.id);
+    return [];
+  });
+
+  it('exposes the Notion-grade groups', () => {
+    expect(submenus.map((submenu) => submenu.id)).toEqual([
+      'turn-into',
+      'color',
+      'highlight',
+      'effects',
+    ]);
+    const rootIds = entries
+      .filter((entry) => entry.kind === 'item')
+      .map((entry) => (entry as { id: string }).id);
+    expect(rootIds).toEqual([
+      'insert-above',
+      'insert-below',
+      'duplicate',
+      'copy-script',
+      'delete',
+    ]);
+  });
+
+  it('has globally unique leaf ids', () => {
+    expect(new Set(leafIds).size).toBe(leafIds.length);
+  });
+
+  it('turn-into covers every block family', () => {
+    const turnInto = submenus.find((submenu) => submenu.id === 'turn-into');
+    const ids = (turnInto?.items ?? []).map((item) => item.id);
+    for (const expected of [
+      'turn-text',
+      'turn-heading-1',
+      'turn-heading-2',
+      'turn-heading-3',
+      'turn-bullet-list',
+      'turn-ordered-list',
+      'turn-task-list',
+      'turn-toggle',
+      'turn-quote',
+      'turn-callout',
+      'turn-code-block',
+      'turn-sticky-note',
+      'turn-washi-box',
+      'turn-card',
+      'turn-quote-card',
+      'turn-banner',
+      'turn-spoiler',
+    ]) {
+      expect(ids, `missing ${expected}`).toContain(expected);
+    }
+  });
+
+  it('offers the 3 vocab inks and the 7 highlight washes (plus resets)', () => {
+    expect(Object.keys(INK_COLOR_TOKENS)).toEqual([
+      'sepia',
+      'graphite',
+      'ink-blue',
+    ]);
+    expect(HIGHLIGHT_WASHES).toEqual([
+      'amber',
+      'terracotta',
+      'moss',
+      'lemon',
+      'sky',
+      'blush',
+      'plum',
+    ]);
+    const color = submenus.find((submenu) => submenu.id === 'color');
+    expect(color?.items.map((item) => item.id)).toContain('ink-default');
+    const highlight = submenus.find((submenu) => submenu.id === 'highlight');
+    expect(highlight?.items.map((item) => item.id)).toContain('highlight-none');
+  });
+
+  it('effects submenu quick-applies every BlockEffects attr family', () => {
+    const effects = submenus.find((submenu) => submenu.id === 'effects');
+    const ids = (effects?.items ?? []).map((item) => item.id);
+    for (const key of [
+      'effect-rotate',
+      'effect-tape',
+      'effect-washi',
+      'effect-frame',
+      'effect-paper',
+      'effect-underline',
+      'effect-clear',
+    ]) {
+      expect(ids).toContain(key);
+    }
+  });
+});
+
+/* --------------------------- rail palette API ----------------------------- */
+
+describe('editor rail API (no live editor)', () => {
+  it('exposes the typed command surface', () => {
+    expect(typeof editorApi.insertSticker).toBe('function');
+    expect(typeof editorApi.applyBlockEffect).toBe('function');
+    expect(typeof editorApi.setInk).toBe('function');
+    expect(typeof editorApi.setHighlight).toBe('function');
+    expect(BLOCK_EFFECT_KEYS).toEqual([
+      'rotate',
+      'tape',
+      'washi',
+      'shadow',
+      'frame',
+      'paper',
+      'underline',
+    ]);
+  });
+
+  it('returns false instead of throwing when no editor is active', () => {
+    expect(activeEditor()).toBeNull();
+    expect(editorApi.insertSticker('star')).toBe(false);
+    expect(editorApi.applyBlockEffect('tape', 'top')).toBe(false);
+    expect(editorApi.setInk('ink-blue')).toBe(false);
+    expect(editorApi.setHighlight('moss')).toBe(false);
+  });
+
+  it('page-style helpers fall back to defaults without an editor', () => {
+    expect(getPageStyle()).toBe(DEFAULT_PAGE_STYLE);
+    expect(getLineHeight()).toBe(DEFAULT_LINE_HEIGHT_PX);
+    expect(setPageStyle('grid')).toBe(false);
+    expect(setLineHeight(40)).toBe(false);
   });
 });
 

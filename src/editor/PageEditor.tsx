@@ -4,29 +4,41 @@
  * - Debounced (400ms) savePageDoc on every update; flushed on unmount.
  * - Document carries pageStyle ('ruled'|'grid'|'blank'|'dotted') and
  *   lineHeightPx attrs; the page background CSS renders them (editor.css).
+ *   The BookView rail changes them through the imperative surface in
+ *   src/editor/insert/activeEditor.ts (getPageStyle/setPageStyle/
+ *   getLineHeight/setLineHeight) — the old in-page floating switcher is gone.
  * - Line-level drag handles (hand-drawn grip) + GSAP Flip settle on drop.
+ * - Click-below-to-type: clicking the empty ruled area below the last block
+ *   drops the caret on a fresh line (or pulses the page-full hint when the
+ *   page is paginated and cannot grow).
+ * - Right-click opens the block context menu (src/editor/menu) and the
+ *   native menu is suppressed inside the editor only.
+ * - Pagination contract (see src/editor/pagination.ts): when `paginated`,
+ *   overflowing trailing blocks leave the page after each transaction via
+ *   `onOverflow(removedBlocksJson, cursorCarried)`.
  *
  * Props are read once at mount (an editor instance is not hot-swappable);
  * remount with a keyed <Show>/<For> when the page changes.
  */
-import type { JSONContent } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Slice } from '@tiptap/pm/model';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
-import { createEffect, For, onCleanup, type JSX } from 'solid-js';
+import { createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
 import { savePageDoc } from '../data/pages';
 import type { PageDoc, PageStyle } from '../data/types';
 import {
   DEFAULT_LINE_HEIGHT_PX,
   DEFAULT_PAGE_STYLE,
-  PAGE_STYLES,
   isPageStyle,
   normalizePageDoc,
 } from './document';
 import { createEditorExtensions } from './extensions';
 import { setActiveEditor } from './insert/activeEditor';
+import { handleEditorContextMenu } from './menu/contextMenuController';
 import { createMediaPastePlugin } from './media';
+import { pageIsFull, trailingOverflowCount } from './pagination';
 import { createEditorTransaction, createTiptapEditor } from './solid';
 import { play } from '../sound/engine';
 import { settings } from '../data/settings';
@@ -69,9 +81,22 @@ export interface PageEditorProps {
    * page list current so leaf remounts never resurrect a stale doc.
    */
   readonly onDocChange?: (doc: PageDoc) => void;
+  /** Pagination contract: fixed-capacity page that hands overflow onward. */
+  readonly paginated?: boolean;
+  /** Content budget in px, compared against the prose root's scrollHeight. */
+  readonly pageCapacityPx?: number;
+  /**
+   * Receives the trailing top-level blocks (doc JSON) removed on overflow,
+   * and whether the caret sat inside them (BookView then flips forward and
+   * focuses the carried block).
+   */
+  readonly onOverflow?: (blocks: unknown[], cursorCarried: boolean) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
+const PAGE_FULL_HINT_MS = 1600;
+/** Safety bound on the overflow loop (a transaction per iteration). */
+const MAX_OVERFLOW_PASSES = 64;
 
 /** Respect reduced-motion: tokens.css zeroes --motion-scale. */
 function motionScale(): number {
@@ -82,11 +107,16 @@ function motionScale(): number {
   return Number.isFinite(parsed) ? parsed : 1;
 }
 
-/** Hand-drawn grip: six slightly-scattered graphite dots. */
+/**
+ * Hand-drawn grip: six slightly-scattered graphite dots. Starts hidden —
+ * the DragHandle extension positions it on first block hover, and without
+ * this it would sit unpositioned in the page corner until then.
+ */
 function buildDragHandleElement(): HTMLElement {
   const element = document.createElement('div');
   element.className = 'nb-drag-handle';
   element.setAttribute('aria-hidden', 'true');
+  element.style.visibility = 'hidden';
   element.innerHTML =
     '<svg viewBox="0 0 14 22" xmlns="http://www.w3.org/2000/svg">' +
     '<g fill="var(--ink-graphite-soft)">' +
@@ -108,13 +138,6 @@ function topLevelBlocks(view: EditorView): HTMLElement[] {
   }
   return blocks;
 }
-
-const PAGE_STYLE_LABELS: Record<PageStyle, string> = {
-  ruled: 'Ruled lines',
-  grid: 'Grid squares',
-  dotted: 'Dot grid',
-  blank: 'Blank paper',
-};
 
 export default function PageEditor(props: PageEditorProps): JSX.Element {
   let mountElement!: HTMLDivElement;
@@ -173,6 +196,144 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
+  // Page-full hint ("page is full — flip onward"), auto-clearing pulse.
+  // -------------------------------------------------------------------------
+  const [pageFullHint, setPageFullHint] = createSignal(false);
+  let hintTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const pulsePageFullHint = (): void => {
+    setPageFullHint(true);
+    if (hintTimer !== undefined) clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => setPageFullHint(false), PAGE_FULL_HINT_MS);
+  };
+  onCleanup(() => {
+    if (hintTimer !== undefined) clearTimeout(hintTimer);
+  });
+
+  // -------------------------------------------------------------------------
+  // Pagination — measure after each transaction; peel trailing blocks while
+  // the content overflows the capacity (contract in src/editor/pagination.ts)
+  // -------------------------------------------------------------------------
+  const capacityPx = (): number | undefined => {
+    const value = props.pageCapacityPx;
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : undefined;
+  };
+  const isPaginated = (): boolean => props.paginated === true;
+
+  let extracting = false;
+
+  const extractOverflow = (instance: Editor): void => {
+    const capacity = capacityPx();
+    if (!isPaginated() || capacity === undefined) return;
+    if (extracting || instance.isDestroyed) return;
+    extracting = true;
+    try {
+      const view = instance.view;
+      const root = view.dom;
+      const removed: unknown[] = [];
+      let cursorCarried = false;
+      let passes = 0;
+
+      // Content-based measurement (block bottoms + surviving padding): the
+      // spread stretches the prose root to fill the leaf, so its scrollHeight
+      // equals the page height even when half empty and cannot be trusted.
+      while (view.state.doc.childCount > 1 && passes < MAX_OVERFLOW_PASSES) {
+        passes += 1;
+        const rootTop = root.getBoundingClientRect().top;
+        const bottoms = Array.from(root.children).map(
+          (child) => child.getBoundingClientRect().bottom - rootTop,
+        );
+        const padBottom =
+          Number.parseFloat(getComputedStyle(root).paddingBottom) || 0;
+        const doc = view.state.doc;
+        const removeCount = Math.min(
+          trailingOverflowCount(bottoms, capacity, padBottom),
+          doc.childCount - 1,
+        );
+        if (removeCount <= 0) break;
+
+        let from = doc.content.size;
+        for (let i = 0; i < removeCount; i += 1) {
+          const child = doc.child(doc.childCount - 1 - i);
+          from -= child.nodeSize;
+          removed.unshift(child.toJSON());
+        }
+        if (view.state.selection.head >= from) cursorCarried = true;
+
+        // One transaction for the removal; addToHistory false so undo does
+        // not resurrect the overflow (and re-trigger the loop).
+        const tr = view.state.tr.delete(from, doc.content.size);
+        tr.setMeta('addToHistory', false);
+        view.dispatch(tr);
+      }
+
+      if (removed.length > 0) {
+        props.onOverflow?.(removed, cursorCarried);
+      }
+    } finally {
+      extracting = false;
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Click-below-to-type — clicking the empty ruled area below the last block
+  // places the caret on a fresh line (contract: append an empty paragraph or
+  // reuse a trailing empty one; pulse the hint instead when at capacity).
+  // -------------------------------------------------------------------------
+  const handleClick = (
+    view: EditorView,
+    _pos: number,
+    event: MouseEvent,
+  ): boolean => {
+    const instance = editor();
+    if (!instance) return false;
+    const root = view.dom;
+    const last = root.lastElementChild;
+    if (!(last instanceof HTMLElement)) return false;
+    const lastRect = last.getBoundingClientRect();
+    if (event.clientY <= lastRect.bottom) return false;
+
+    const doc = view.state.doc;
+    const lastNode = doc.lastChild;
+    const trailingEmptyParagraph =
+      lastNode !== null &&
+      lastNode.type.name === 'paragraph' &&
+      lastNode.content.size === 0;
+
+    if (trailingEmptyParagraph) {
+      // Reuse the empty line that is already waiting there.
+      instance
+        .chain()
+        .setTextSelection(doc.content.size - 1)
+        .focus()
+        .run();
+      return true;
+    }
+
+    if (isPaginated()) {
+      // Content height = last block bottom + surviving padding (see
+      // extractOverflow for why scrollHeight is unusable here).
+      const contentHeight =
+        lastRect.bottom -
+        root.getBoundingClientRect().top +
+        (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0);
+      if (pageIsFull(contentHeight, lineHeightPx(), capacityPx())) {
+        pulsePageFullHint();
+        return true;
+      }
+    }
+
+    instance
+      .chain()
+      .insertContentAt(doc.content.size, { type: 'paragraph' })
+      .focus('end')
+      .run();
+    return true;
+  };
+
+  // -------------------------------------------------------------------------
   // Editor
   // -------------------------------------------------------------------------
   const editor = createTiptapEditor(() => ({
@@ -188,11 +349,21 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     editorProps: {
       attributes: { class: 'nb-prose', spellcheck: 'true' },
       handleDrop,
+      handleClick,
+      handleDOMEvents: {
+        // Right-click block menu; the native menu is suppressed only here.
+        contextmenu: (_view, event: Event): boolean => {
+          const instance = editor();
+          if (!instance || !(event instanceof MouseEvent)) return false;
+          return handleEditorContextMenu(instance, event);
+        },
+      },
     },
     onUpdate: ({ editor: instance }) => {
       const doc = instance.getJSON() as PageDoc;
       scheduleSave(doc);
       props.onDocChange?.(doc);
+      extractOverflow(instance);
     },
     // Two editors are mounted at once in the spread view; the focused one is
     // the "active" editor the script toolbar/dialog should target.
@@ -212,6 +383,20 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   });
   onCleanup(() => setActiveEditor(null));
 
+  // Initial-overflow pass: a freshly (re)mounted paginated page may already
+  // exceed capacity (BookView prepends carried blocks). Measure after layout
+  // and again once the handwriting fonts are in (metrics shift).
+  createEffect(() => {
+    const instance = editor();
+    if (!instance || !isPaginated()) return;
+    requestAnimationFrame(() => {
+      if (!instance.isDestroyed) extractOverflow(instance);
+    });
+    void document.fonts?.ready.then(() => {
+      if (!instance.isDestroyed) extractOverflow(instance);
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Page style (doc attrs → background CSS)
   // -------------------------------------------------------------------------
@@ -226,14 +411,6 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       ? value
       : DEFAULT_LINE_HEIGHT_PX;
   });
-
-  const setPageStyle = (style: PageStyle): void => {
-    const instance = editor();
-    if (!instance || pageStyle() === style) return;
-    instance.view.dispatch(
-      instance.state.tr.setDocAttribute('pageStyle', style),
-    );
-  };
 
   // -------------------------------------------------------------------------
   // Margin doodles — deterministic pencil sketches, seeded by pageId.
@@ -256,30 +433,22 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     <div
       class="nb-page"
       data-style={pageStyle()}
+      data-paginated={isPaginated() ? 'true' : undefined}
       style={{ '--page-line-height': `${lineHeightPx()}px` }}
       ref={(el) => {
         pageRootElement = el;
         el.addEventListener('change', onTaskToggle);
       }}
     >
-      <nav class="nb-style-switcher" aria-label="Page style">
-        <For each={PAGE_STYLES}>
-          {(style) => (
-            <button
-              type="button"
-              class="nb-style-choice font-ui"
-              classList={{ 'is-active': pageStyle() === style }}
-              title={PAGE_STYLE_LABELS[style]}
-              aria-label={PAGE_STYLE_LABELS[style]}
-              aria-pressed={pageStyle() === style}
-              onClick={() => setPageStyle(style)}
-            >
-              <span class="nb-style-dot" data-style={style} aria-hidden="true" />
-            </button>
-          )}
-        </For>
-      </nav>
       <div class="nb-page-editor" ref={mountElement} />
+      <div
+        class="nb-page-full-hint font-accent"
+        classList={{ 'is-active': pageFullHint() }}
+        role="status"
+        aria-hidden={!pageFullHint()}
+      >
+        page is full — flip onward
+      </div>
     </div>
   );
 }

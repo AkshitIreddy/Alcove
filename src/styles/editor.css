@@ -99,7 +99,10 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Page container + style switcher
+   Page container
+   (The in-page floating style switcher is gone — the BookView rail drives
+   page style through the activeEditor imperative surface. The .nb-style-dot
+   swatches below are kept for the rail to reuse.)
    -------------------------------------------------------------------------- */
 .nb-page {
   --page-line-height: 32px;
@@ -107,44 +110,51 @@
   padding: 0 var(--space-40);
 }
 
-.nb-style-switcher {
+/* When paginated, overflow is handed to the next page — never a scrollbar. */
+.nb-page[data-paginated='true'] .nb-page-editor .ProseMirror {
+  overflow: hidden;
+}
+
+/* "page is full — flip onward" pulse (auto-clears via .is-active) */
+.nb-page-full-hint {
   position: absolute;
-  top: calc(-1 * var(--space-24));
-  right: var(--space-24);
-  z-index: 3;
-  display: flex;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  left: 50%;
+  bottom: var(--space-16);
+  transform: translateX(-50%) translateY(6px);
+  z-index: 4;
+  padding: var(--space-4) var(--space-16);
+  font-size: 15px;
+  color: var(--ink-sepia);
   background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-xs);
-  opacity: 0.6;
-  transition: opacity var(--dur-sm) var(--ease-out);
-}
-
-.nb-style-switcher:hover,
-.nb-style-switcher:focus-within {
-  opacity: 1;
-}
-
-.nb-style-choice {
-  padding: 3px;
-  border-radius: var(--radius-pill);
-  border: 1.5px solid transparent;
-  line-height: 0;
+  border: 1.5px dashed var(--ink-sepia-soft);
+  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
   transition:
-    border-color var(--dur-xs) var(--ease-out),
-    background var(--dur-xs) var(--ease-out);
+    opacity var(--dur-sm) var(--ease-out),
+    transform var(--dur-sm) var(--ease-spring);
 }
 
-.nb-style-choice:hover {
-  background: var(--wash-amber-light);
+.nb-page-full-hint.is-active {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  animation: nb-page-full-pulse 0.9s var(--ease-out) 1;
 }
 
-.nb-style-choice.is-active {
-  border-color: var(--ink-sepia-soft);
-  background: var(--paper-cream);
+@keyframes nb-page-full-pulse {
+  0% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  30% {
+    transform: translateX(-50%) translateY(0) scale(1.05);
+  }
+  60% {
+    transform: translateX(-50%) translateY(0) scale(0.99);
+  }
+  100% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }
 
 .nb-style-dot {
@@ -204,7 +214,10 @@
 .nb-page-editor .ProseMirror {
   outline: none;
   min-height: 62vh;
-  padding: 0 var(--space-8) 30vh;
+  /* The 40px left gutter is the drag-handle lane: the handle is absolutely
+     positioned INSIDE .nb-page-editor (which hosts overflow clipping in the
+     spread), so blocks leave it room within the clip area. */
+  padding: 0 var(--space-8) 30vh var(--space-40);
   background-origin: content-box;
   background-attachment: local;
   background-repeat: repeat;
@@ -895,24 +908,59 @@
 /* Drop cursor color is configured on the extension (wash amber). */
 
 /* ----------------------------------------------------------------------------
-   Drag handle — scattered graphite grip dots
+   Drag handle — scattered graphite grip dots.
+   The extension appends its wrapper (an inline-styled absolute div with
+   z-index: 10) next to the prose root; the flip-surface edge hotspots sit at
+   z-index calc(var(--z-flip) - 1) and would swallow every click on the
+   handle in the page margin, so the wrapper is lifted above them here.
    -------------------------------------------------------------------------- */
+.nb-page-editor > div:has(> .nb-drag-handle) {
+  z-index: calc(var(--z-flip) + 5) !important;
+}
+
 .nb-drag-handle {
-  width: 22px;
-  height: 26px;
+  position: relative;
+  width: 24px;
+  height: 28px;
   display: grid;
   place-items: center;
+  background: color-mix(in srgb, var(--paper-aged) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--paper-edge) 80%, transparent);
   border-radius: 6px 9px 7px 10px;
+  box-shadow: var(--shadow-xs);
   cursor: grab;
-  opacity: 0.7;
+  opacity: 0.85;
+  animation: nb-handle-in var(--dur-sm) var(--ease-out) both;
   transition:
     background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
     opacity var(--dur-xs) var(--ease-out);
+}
+
+/* Fade in at the left margin whenever the extension re-anchors it. */
+@keyframes nb-handle-in {
+  from {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+  to {
+    opacity: 0.85;
+    transform: translateX(0);
+  }
+}
+
+/* Forgiving hit area beyond the drawn box. */
+.nb-drag-handle::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 
 .nb-drag-handle:hover {
   background: var(--wash-amber-light);
+  border-color: var(--ink-sepia-soft);
   opacity: 1;
+  animation: none;
 }
 
 .nb-drag-handle:active,
@@ -1027,4 +1075,125 @@
   padding: var(--space-12) var(--space-16);
   color: var(--ink-graphite-soft);
   font-size: var(--text-label);
+}
+
+/* ----------------------------------------------------------------------------
+   Block context menu — aged-paper card matching the slash menu, with
+   fly-out submenus (Turn into / Color / Highlight / Effects)
+   -------------------------------------------------------------------------- */
+.nb-ctx-menu {
+  width: 236px;
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  box-shadow: var(--shadow-md);
+  padding: var(--space-4);
+}
+
+/* No overflow clipping here — submenus fly out past the card edge. */
+.nb-ctx-list {
+  padding: var(--space-4);
+}
+
+.nb-ctx-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 4px var(--space-8);
+  border: 1.5px dashed transparent;
+  border-radius: 8px 11px 9px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-ctx-item.is-selected,
+.nb-ctx-item:hover,
+.nb-ctx-parent.is-open {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-sepia-soft);
+}
+
+.nb-ctx-item.is-danger .nb-ctx-title {
+  color: var(--wash-terracotta-deep);
+}
+
+.nb-ctx-glyph {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-accent);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 6px 9px 7px 10px;
+  transform: rotate(-2deg);
+}
+
+.nb-ctx-swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 3px;
+  border-radius: 50% 42% 55% 45%;
+  border: 1.5px solid color-mix(in srgb, var(--ink-sepia) 35%, transparent);
+}
+
+.nb-ctx-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-accent);
+  font-size: 15px;
+  color: var(--ink-sepia);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nb-ctx-caret {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-ctx-divider {
+  height: 0;
+  margin: var(--space-4) var(--space-8);
+  border-top: 1.5px dashed var(--paper-edge);
+}
+
+/* Fly-out submenu — anchored to its parent row */
+.nb-ctx-parent-wrap {
+  position: relative;
+}
+
+.nb-ctx-sub {
+  position: absolute;
+  left: calc(100% - var(--space-4));
+  top: calc(-1 * var(--space-4));
+  z-index: 1;
+  width: 216px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  box-shadow: var(--shadow-md);
+  padding: var(--space-4);
+}
+
+/* When the menu card sits near the right viewport edge, the controller adds
+   .is-left so submenus fly out the other way. */
+.nb-ctx-menu.is-left .nb-ctx-sub {
+  left: auto;
+  right: calc(100% - var(--space-4));
 }

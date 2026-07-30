@@ -504,6 +504,8 @@ function paintFrame(
   colB: HSL,
   s: number,
   rnd: RandomFn,
+  /** Blind-tooling relief pass: draw everything in this one tone instead. */
+  reliefInk?: string,
 ): { inset: number } {
   const spineBand = w * 0.085;
   const insetL = spineBand + w * 0.045;
@@ -511,8 +513,8 @@ function paintFrame(
   const insetY = h * 0.055;
   const inner = 9 * s;
 
-  const ink = params.gilt ? GOLD : hslStr(colB, -26, 0, 0.85);
-  const inkSoft = params.gilt ? GOLD_DEEP : hslStr(colB, -18, 0, 0.55);
+  const ink = reliefInk ?? (params.gilt ? GOLD : hslStr(colB, -26, 0, 0.85));
+  const inkSoft = reliefInk ?? (params.gilt ? GOLD_DEEP : hslStr(colB, -18, 0, 0.55));
   const step = 10 * s;
 
   ctx.lineJoin = 'round';
@@ -640,9 +642,11 @@ function paintMedallion(
   colB: HSL,
   s: number,
   rnd: RandomFn,
+  /** Blind-tooling relief pass: draw everything in this one tone instead. */
+  reliefInk?: string,
 ): void {
-  const ink = params.gilt ? GOLD : hslStr(colB, -26, 0, 0.9);
-  const inkSoft = params.gilt ? GOLD_DEEP : hslStr(colB, -16, 0, 0.55);
+  const ink = reliefInk ?? (params.gilt ? GOLD : hslStr(colB, -26, 0, 0.9));
+  const inkSoft = reliefInk ?? (params.gilt ? GOLD_DEEP : hslStr(colB, -16, 0, 0.55));
   ctx.strokeStyle = ink;
   ctx.fillStyle = ink;
   ctx.lineJoin = 'round';
@@ -883,6 +887,7 @@ function paintTitlePlate(
   w: number,
   h: number,
   params: CoverParams,
+  colA: HSL,
   colB: HSL,
   title: string,
   s: number,
@@ -960,7 +965,19 @@ function paintTitlePlate(
     }
     text = `${text}…`;
   }
-  ctx.fillStyle = hslStr(colB, -30, 8);
+  // On a paper label the ground is cream, so deep ink always reads. Tooled
+  // straight onto the binding it does not: dark pigments need gold or a pale
+  // foil, exactly as a real binder would letter them.
+  const onBinding = style !== 'label';
+  const material: BindingMaterial = params.material ?? materialFromTexture(params.texture);
+  const groundL = colB.l + (material === 'vellum' ? 22 : material === 'paper' ? 10 : 0);
+  ctx.fillStyle = !onBinding
+    ? hslStr(colB, -30, 8)
+    : params.gilt || style === 'gilt'
+      ? GOLD
+      : groundL < 44
+        ? hslStr(colA, clamp(100 - colA.l - 6, 0, 100), -46)
+        : hslStr(colB, -30, 8);
   ctx.fillText(text, px + plateW / 2, py + plateH / 2 + 1 * s);
 
   // Tiny flourish under the text.
@@ -1035,13 +1052,24 @@ export function renderCoverInto(
   if (params.edge && params.edge !== 'plain') {
     paintEdgeTreatment(ctx, w - 7 * s, h * 0.014, 7 * s, h * 0.972, params.edge, s, rnd);
   }
-  paintFrame(ctx, w, h, params, colB, s, rnd);
-
+  // Frame + medallion are BLIND TOOLED: a lit impression offset down-right,
+  // then the ink pass on top. Both passes use an identically-seeded PRNG so
+  // the hand-drawn jitter lines up exactly and the pair reads as one pressed
+  // line with a highlight, not as two sloppy strokes.
+  const toolSeed = (params.seed ^ 0x700_1e60) >>> 0;
   const medallionY = title && opts.plate !== false ? h * 0.56 : h * 0.5;
-  paintMedallion(ctx, w * 0.54, medallionY, Math.min(w, h) * 0.19, params, colB, s, rnd);
+  const medallionR = Math.min(w, h) * 0.19;
+  const lit = hslStr(colA, 26, -10, 0.55);
+  ctx.save();
+  ctx.translate(1 * s, 1 * s);
+  paintFrame(ctx, w, h, params, colB, s, mulberry32(toolSeed), lit);
+  paintMedallion(ctx, w * 0.54, medallionY, medallionR, params, colB, s, mulberry32(toolSeed), lit);
+  ctx.restore();
+  paintFrame(ctx, w, h, params, colB, s, mulberry32(toolSeed));
+  paintMedallion(ctx, w * 0.54, medallionY, medallionR, params, colB, s, mulberry32(toolSeed));
 
   if (title && opts.plate !== false) {
-    paintTitlePlate(ctx, w, h, params, colB, title, s, rnd);
+    paintTitlePlate(ctx, w, h, params, colA, colB, title, s, rnd);
   }
 
   if (params.cornerProtectors) {

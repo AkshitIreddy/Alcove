@@ -173,8 +173,10 @@ export default function QuickSwitcher(): JSX.Element {
 
   const mode = (): 'nav' | 'content' =>
     raw().startsWith('>') ? 'content' : 'nav';
-  const query = (): string =>
-    (mode() === 'content' ? raw().slice(1) : raw()).trim();
+  /** What the field SHOWS — the `>` mode prefix is never displayed. */
+  const shown = (): string =>
+    mode() === 'content' ? raw().slice(1) : raw();
+  const query = (): string => shown().trim();
 
   const refreshData = async (): Promise<void> => {
     try {
@@ -359,6 +361,17 @@ export default function QuickSwitcher(): JSX.Element {
     } else if (event.key === 'Tab') {
       event.preventDefault();
       toggleMode();
+    } else if (
+      event.key === 'Backspace' &&
+      mode() === 'content' &&
+      shown() === ''
+    ) {
+      // The field is visually empty but `raw` still holds the hidden `>`, so
+      // the browser fires no input event — backspace here drops the mode
+      // instead of dead-ending the user in "search text".
+      event.preventDefault();
+      setRaw('');
+      setSel(0);
     }
   };
 
@@ -428,9 +441,18 @@ export default function QuickSwitcher(): JSX.Element {
                   ? 'search inside every page…'
                   : 'jump to a book or heading…  (> to search text)'
               }
-              value={raw()}
+              /* The `>` is a typing SHORTCUT into content mode, not a token
+                 the user should have to see or delete: once the mode is lit
+                 in the tabs, showing the prefix in the field is a second,
+                 redundant representation of the same state. */
+              value={shown()}
               onInput={(event) => {
-                setRaw(event.currentTarget.value);
+                const next = event.currentTarget.value;
+                setRaw(
+                  mode() === 'content' && !next.startsWith('>')
+                    ? `>${next}`
+                    : next,
+                );
                 setSel(0);
               }}
               onKeyDown={onInputKeyDown}
@@ -494,10 +516,18 @@ export default function QuickSwitcher(): JSX.Element {
             </div>
 
             <footer class="nb-qs-footer font-ui">
-              <span>↑↓ move</span>
-              <span>enter open</span>
-              <span>tab mode</span>
-              <span>esc close</span>
+              <span>
+                <kbd>↑↓</kbd> move
+              </span>
+              <span>
+                <kbd>enter</kbd> open
+              </span>
+              <span>
+                <kbd>tab</kbd> mode
+              </span>
+              <span>
+                <kbd>esc</kbd> close
+              </span>
             </footer>
           </div>
         </div>

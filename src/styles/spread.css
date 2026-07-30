@@ -491,6 +491,9 @@
 /* ----------------------------------------------------------------------------
    Keyboard cheat-sheet (roadmap #14) — '?' overlay, two-column paper card.
    -------------------------------------------------------------------------- */
+/* The veil was 0.34 over a cream page: the book stayed fully legible and
+   competed with the card for attention. 0.52 plus a centred glow pushes the
+   spread back and pools warm light behind the paper. */
 .nb-cheat-veil {
   position: fixed;
   inset: 0;
@@ -498,17 +501,42 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(59, 44, 29, 0.34);
+  background:
+    radial-gradient(
+      54% 46% at 50% 50%,
+      rgba(59, 44, 29, 0.34) 0%,
+      rgba(59, 44, 29, 0.56) 100%
+    ),
+    rgba(59, 44, 29, 0.52);
+  animation: nb-cheat-veil-in var(--dur-sm) var(--ease-out);
 }
 
+@keyframes nb-cheat-veil-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Aged paper (not cream) so the card separates from the cream page behind
+   it, plus a drawn double rule that reads as a pressed card edge. */
 .nb-cheat-card {
   width: min(640px, 92vw);
-  padding: var(--space-16) var(--space-24) var(--space-12);
-  background: var(--paper-cream);
+  padding: var(--space-20) var(--space-24) var(--space-16);
+  background: var(--paper-aged);
   border: 1.5px solid var(--paper-edge);
   border-radius: 12px 18px 14px 20px / 16px 12px 20px 14px;
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--paper-cream) 70%, transparent),
+    var(--shadow-lg);
   transform: rotate(-0.5deg);
+  animation: nb-cheat-card-in calc(var(--dur-md) * var(--motion-scale, 1))
+    var(--ease-spring);
+}
+
+@keyframes nb-cheat-card-in {
+  from {
+    transform: rotate(-0.5deg) translateY(-10px) scale(0.97);
+  }
 }
 
 .nb-cheat-title {
@@ -528,42 +556,52 @@
 
 .nb-cheat-heading {
   font-size: 17px; /* Kalam accent — stays above the 13px handwriting floor */
-  color: var(--wash-terracotta-deep);
+  /* --wash-terracotta-deep is a PIGMENT (4.49:1 as type, under AA at this
+     size); --ink-accent is its readable ink sibling at 5.78:1. */
+  color: var(--ink-accent);
   border-bottom: 1px dashed var(--paper-edge);
-  padding-bottom: 2px;
+  padding-bottom: 3px;
   margin-bottom: var(--space-8);
   transform: rotate(-0.4deg);
 }
 
+/* Grid, not flex: `min-width: 92px` let "drag page edge" and "click corner
+   curl" blow past the others, so the description column started at three
+   different x positions down each column. One fixed key column = one edge. */
 .nb-cheat-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-8);
-  margin: var(--space-4) 0;
+  margin: 5px 0;
 }
 
 .nb-cheat-keys {
-  flex: 0 0 auto;
-  min-width: 92px;
   font-family: var(--font-ui);
   font-size: var(--text-ui);
   color: var(--ink-sepia);
-  background: var(--paper-aged);
+  background: var(--paper-cream);
   border: 1px solid var(--paper-edge);
   border-bottom-width: 2px;
   border-radius: 4px 7px 5px 8px;
-  padding: 1px var(--space-4);
+  padding: 2px var(--space-4);
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nb-cheat-what {
   font-family: var(--font-body);
   font-size: var(--text-sm);
-  color: var(--ink-sepia-soft);
+  line-height: 1.35;
+  color: var(--ink-sepia);
 }
 
 .nb-cheat-footnote {
   text-align: center;
-  color: var(--ink-graphite-soft);
-  margin-top: var(--space-12);
+  color: var(--ink-sepia-soft);
+  margin-top: var(--space-16);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--paper-edge);
 }

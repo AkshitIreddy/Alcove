@@ -766,12 +766,27 @@ function makeCanvas2D(w: number, h: number): Canvas2D {
 }
 
 /** Parse `#rrggbb` (or `#rgb`) into 0–255 components. */
-export function parseHex(hex: string): { r: number; g: number; b: number } {
-  const s = hex.replace('#', '');
+export function parseHex(colour: string): { r: number; g: number; b: number } {
+  // Also accepts the `rgb()/rgba()` strings mixHex produces, so a mixed colour
+  // can be fed straight back into another mix (or into paintWood) without
+  // silently degrading to mid grey.
+  const rgb = /^\s*rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/.exec(colour);
+  if (rgb) {
+    return {
+      r: clamp255(Number(rgb[1])),
+      g: clamp255(Number(rgb[2])),
+      b: clamp255(Number(rgb[3])),
+    };
+  }
+  const s = colour.replace('#', '').trim();
   const full = s.length === 3 ? s.split('').map((c) => c + c).join('') : s;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return { r: 128, g: 128, b: 128 };
   const n = Number.parseInt(full, 16);
-  if (!Number.isFinite(n)) return { r: 128, g: 128, b: 128 };
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function clamp255(n: number): number {
+  return !Number.isFinite(n) ? 0 : n < 0 ? 0 : n > 255 ? 255 : Math.round(n);
 }
 
 /** `rgba()` string from a hex colour plus an alpha. */

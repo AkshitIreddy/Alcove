@@ -546,11 +546,15 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   const [activePanel, setActivePanel] = createSignal<RailPanelId | null>(null);
   const [insertOpen, setInsertOpen] = createSignal(false);
-  const [toast, setToast] = createSignal<string | null>(null);
+  /** Toasts carry a tone so a failure never reads like a success. */
+  const [toast, setToast] = createSignal<{
+    message: string;
+    tone: 'ok' | 'error';
+  } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const notify = (message: string): void => {
-    setToast(message);
+  const notify = (message: string, tone: 'ok' | 'error' = 'ok'): void => {
+    setToast({ message, tone });
     if (toastTimer !== undefined) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => setToast(null), 2600);
   };
@@ -570,7 +574,7 @@ export default function BookView(): JSX.Element {
       await navigator.clipboard.writeText(text);
       notify(doneMessage);
     } catch {
-      notify('could not reach the clipboard');
+      notify('could not reach the clipboard', 'error');
     }
   };
 
@@ -587,7 +591,7 @@ export default function BookView(): JSX.Element {
     const editor = activeEditor();
     const doc = editor !== null ? (editor.getJSON() as PageDoc) : page?.doc;
     if (doc === undefined) {
-      notify('nothing to export yet');
+      notify('nothing to export yet', 'error');
       return;
     }
     await copyText(docToScript(doc), 'script copied to clipboard');
@@ -1005,7 +1009,16 @@ export default function BookView(): JSX.Element {
       </Show>
 
       <Show when={toast()} keyed>
-        {(message) => <div class="nb-script-toast">{message}</div>}
+        {(note) => (
+          <div
+            class="nb-script-toast"
+            classList={{ 'is-error': note.tone === 'error' }}
+            role="status"
+            aria-live="polite"
+          >
+            {note.message}
+          </div>
+        )}
       </Show>
     </main>
   );

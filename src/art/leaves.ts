@@ -69,9 +69,12 @@ export function leafProfile(shape: LeafShape, t: number, lobes = 2.5): number {
       // Broad shoulders low down (peak ≈ t 0.28), long point.
       return Math.pow(Math.sin(Math.PI * Math.pow(u, 0.545)), 0.8);
     case 'lobed': {
-      // Ivy: an oval envelope chewed into scallops.
-      const env = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.62)), 0.75);
-      return env * (0.72 + 0.28 * Math.cos(2 * Math.PI * lobes * u * 0.92 + 0.6));
+      // Ivy: an oval envelope chewed into deep scallops. The modulation is
+      // deliberately strong — at shelf scale a shallow scallop just reads as
+      // a blurry oval, and the ivy leaf stops being recognisably ivy.
+      const env = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.58)), 0.7);
+      const cut = 0.61 + 0.39 * Math.cos(2 * Math.PI * lobes * u * 0.92 + 0.6);
+      return env * cut;
     }
     case 'needle':
       // Thyme / fern pinna / grass blade: long, blunt-based, thin.
@@ -243,6 +246,14 @@ export interface LeafPaint {
   alpha?: number;
   /** Outline stroke width. Default 0.85. */
   lineWidth?: number;
+  /**
+   * Variegation colour. When set, a few soft pale blotches are washed over
+   * the blade (clipped to it) — what makes a pothos leaf read as a pothos
+   * rather than a plain heart.
+   */
+  variegation?: string;
+  /** Sun highlight along the near shoulder. Default: derived from fillTip. */
+  sheen?: string;
 }
 
 /** HSL colour string helper shared with flora.ts. */
@@ -293,6 +304,35 @@ export function drawLeaf(ctx: Ctx2D, o: LeafGeometryOptions, paint: LeafPaint): 
   ctx.stroke();
   ctx.restore();
 
+  // 2b. Variegation: irregular pale washes clipped to the blade.
+  if (paint.variegation) {
+    const vr = mulberry32((seed * 2654435761) >>> 0);
+    ctx.save();
+    traceSmooth(ctx, outline, true);
+    ctx.clip();
+    ctx.fillStyle = paint.variegation;
+    const blotches = 2 + Math.floor(vr() * 3);
+    for (let i = 0; i < blotches; i++) {
+      const t = 0.2 + vr() * 0.65;
+      const a = axisPoint(t, o.len, back, o.bend ?? 0);
+      const side = vr() < 0.5 ? 1 : -1;
+      const w = leafProfile(o.shape, t, o.lobes ?? 2.5) * (o.width / 2);
+      ctx.globalAlpha = alpha * (0.3 + vr() * 0.3);
+      ctx.beginPath();
+      ctx.ellipse(
+        a.x + (vr() * 2 - 1) * o.len * 0.08,
+        a.y + side * w * (0.25 + vr() * 0.5),
+        o.len * (0.1 + vr() * 0.16),
+        Math.max(1, w * (0.28 + vr() * 0.36)),
+        (vr() * 2 - 1) * 0.7,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // 3. Fold shading for older, curled leaves.
   const curl = clamp(o.curl ?? 0, 0, 0.75);
   if (curl > 0.05) {
@@ -324,6 +364,21 @@ export function drawLeaf(ctx: Ctx2D, o: LeafGeometryOptions, paint: LeafPaint): 
       traceSmooth(ctx, v, false);
       ctx.stroke();
     }
+  }
+
+  // 4b. Sheen: a soft light wash along the far shoulder so the blade reads as
+  // a curved surface catching the room light rather than a flat cut-out.
+  if (paint.sheen && o.len > 7) {
+    const far = outline.slice(Math.floor(outline.length / 2));
+    ctx.save();
+    traceSmooth(ctx, outline, true);
+    ctx.clip();
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.strokeStyle = paint.sheen;
+    ctx.lineWidth = Math.max(1.2, o.width * 0.16);
+    traceSmooth(ctx, far, false);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // 5. Double-stroked pencil outline.

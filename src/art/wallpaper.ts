@@ -219,6 +219,24 @@ function pencil(ctx: Ctx2D, d: string, seed: number, amplitude = 0.6): void {
  * Wall ground: flat base plus a few very soft tonal blooms (stamped, so they
  * wrap) — stops every wall reading as a dead flat rectangle behind the case.
  */
+/**
+ * A fully transparent version of `colour`.
+ *
+ * Canvas interpolates gradient stops in *un-premultiplied* RGBA, so a stop
+ * pair of `#e3dccb → rgba(0,0,0,0)` passes through half-alpha dark grey and
+ * paints a visible dark halo. Every soft-edged wash in this module must fade
+ * to its own colour at zero alpha instead.
+ */
+function fade(colour: string): string {
+  const rgb = /^\s*rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/.exec(colour);
+  if (rgb) return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, 0)`;
+  const s = colour.replace('#', '').trim();
+  const full = s.length === 3 ? s.split('').map((c) => c + c).join('') : s;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return 'rgba(0, 0, 0, 0)';
+  const n = Number.parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0)`;
+}
+
 function ground(ctx: Ctx2D, size: number, cw: Colourway, rnd: RandomFn, blooms = 5): void {
   ctx.fillStyle = cw.base;
   ctx.fillRect(0, 0, size, size);
@@ -229,9 +247,12 @@ function ground(ctx: Ctx2D, size: number, cw: Colourway, rnd: RandomFn, blooms =
     stamp(size, x, y, r, (cx, cy) => {
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
       g.addColorStop(0, cw.baseAlt);
-      g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      g.addColorStop(1, fade(cw.baseAlt));
       ctx.save();
-      ctx.globalAlpha = 0.34;
+      // Deliberately weak: the ground is a whisper of unevenness in the paper,
+      // never a visible blob. Anything stronger reads as a dirty photograph
+      // and swallows the linework that carries the pattern.
+      ctx.globalAlpha = 0.16;
       ctx.fillStyle = g;
       ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
       ctx.restore();
@@ -409,14 +430,21 @@ const botanicalToile: WallpaperPattern = {
       ctx.restore();
     };
 
-    const count = 9;
-    for (let i = 0; i < count; i++) {
-      const x = rnd() * size;
-      const y = rnd() * size;
-      const rot = (rnd() * 2 - 1) * 0.7;
-      const len = 34 + rnd() * 30;
-      const kind = i % 3;
-      stamp(size, x, y, len, (cx, cy) => sprig(cx, cy, rot, len, kind));
+    // Toile is a *dense* print — a herbarium sheet, not three lonely stems.
+    // Half-drop jitter over a 4x4 lattice keeps coverage even without a
+    // readable grid, and the stamp() call makes every sprig wrap.
+    const cols = 4;
+    const step = size / cols;
+    let i = 0;
+    for (let row = 0; row < cols; row++) {
+      for (let col = 0; col < cols; col++) {
+        const x = col * step + (row % 2 ? step * 0.5 : 0) + rnd() * step * 0.8;
+        const y = row * step + rnd() * step * 0.8;
+        const rot = (rnd() * 2 - 1) * 0.9;
+        const len = 30 + rnd() * 26;
+        stamp(size, x % size, y % size, len, (cx, cy) => sprig(cx, cy, rot, len, i % 3));
+        i++;
+      }
     }
 
     // Accent: one small vignette wreath per tile.
@@ -445,26 +473,41 @@ const constellation: WallpaperPattern = {
 
     // Zodiac linework: a wandering polyline whose vertices are reused as the
     // bright stars, so the figure always connects real stars.
+    // Two small figures per tile rather than one long wander, each drawn as a
+    // continuous faint rule — real chart linework, not a dashed scribble.
     const nodes: Array<[number, number]> = [];
-    for (let i = 0; i < 7; i++) nodes.push([rnd() * size, rnd() * size]);
-    ctx.strokeStyle = cw.inkSoft;
-    ctx.lineWidth = 1;
-    for (let i = 1; i < nodes.length; i++) {
-      const a = nodes[i - 1]!;
-      const b = nodes[i]!;
-      // Only draw the segment if it does not straddle an edge — a straddling
-      // segment cannot wrap correctly, and a broken constellation reads fine.
-      if (Math.hypot(b[0] - a[0], b[1] - a[1]) > size * 0.45) continue;
-      ctx.beginPath();
-      ctx.setLineDash([4, 5]);
-      ctx.moveTo(a[0], a[1]);
-      ctx.lineTo(b[0], b[1]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+    for (let f = 0; f < 2; f++) {
+      const ox = rnd() * size;
+      const oy = rnd() * size;
+      const fig: Array<[number, number]> = [];
+      for (let i = 0; i < 5; i++) {
+        fig.push([ox + (rnd() * 2 - 1) * size * 0.17, oy + (rnd() * 2 - 1) * size * 0.17]);
+      }
+      ctx.strokeStyle = cw.inkSoft;
+      ctx.lineWidth = 0.9;
+      for (let i = 1; i < fig.length; i++) {
+        const a = fig[i - 1]!;
+        const b = fig[i]!;
+        stamp(size, 0, 0, size * 2, (ox2, oy2) => {
+          ctx.beginPath();
+          ctx.moveTo(a[0] + ox2, a[1] + oy2);
+          ctx.lineTo(b[0] + ox2, b[1] + oy2);
+          ctx.stroke();
+        });
+      }
+      // The figure's own name, sketched as an unreadable ruled squiggle.
+      ctx.strokeStyle = cw.inkSoft;
+      ctx.lineWidth = 0.7;
+      stamp(size, ox, oy + size * 0.2, 40, (cx, cy) => {
+        const pts: Array<[number, number]> = [];
+        for (let s = 0; s <= 8; s++) pts.push([cx - 18 + s * 4.5, cy + (s % 2 ? -1.2 : 1.2)]);
+        sketch(ctx, pts, rnd, 0.4);
+      });
+      nodes.push(...fig);
     }
 
     // Star field: many faint dots, a few bright accent stars with rays.
-    const dots = 90;
+    const dots = 150;
     for (let i = 0; i < dots; i++) {
       const x = rnd() * size;
       const y = rnd() * size;
@@ -476,21 +519,25 @@ const constellation: WallpaperPattern = {
         ctx.fill();
       });
     }
+    // Bright stars sit ON the figure's vertices: a four-point gold twinkle,
+    // small and sharp rather than a drawn X.
     for (const [x, y] of nodes) {
       stamp(size, x, y, 8, (cx, cy) => {
-        ctx.strokeStyle = cw.accent;
         ctx.fillStyle = cw.accent;
-        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(cx, cy, 1.7, 0, Math.PI * 2);
-        ctx.fill();
-        for (let i = 0; i < 4; i++) {
-          const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-          ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(a) * 2.4, cy + Math.sin(a) * 2.4);
-          ctx.lineTo(cx + Math.cos(a) * 6, cy + Math.sin(a) * 6);
-          ctx.stroke();
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+          const rr = i % 2 === 0 ? 5.2 : 1.1;
+          const px = cx + Math.cos(a) * rr;
+          const py = cy + Math.sin(a) * rr;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
         }
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+        ctx.fill();
       });
     }
 
@@ -523,20 +570,34 @@ const ditsyFloral: WallpaperPattern = {
     ctx.lineCap = 'round';
     ctx.lineWidth = 1;
 
+    // Half-drop lattice with generous jitter and mixed sizes — a printed
+    // ditsy never lines up in visible columns, and a strict grid is the
+    // single fastest way to make a wall look machine-made.
     const cols = 4;
     const step = size / cols;
     for (let row = 0; row < cols; row++) {
       for (let col = 0; col < cols; col++) {
         const half = row % 2 === 1 ? step / 2 : 0;
-        const x = col * step + half + (rnd() * 2 - 1) * 3;
-        const y = row * step + step / 2 + (rnd() * 2 - 1) * 3;
+        const x = col * step + half + (rnd() * 2 - 1) * step * 0.3;
+        const y = row * step + step / 2 + (rnd() * 2 - 1) * step * 0.3;
         const accent = (row * cols + col) % 5 === 2;
-        stamp(size, x, y, 12, (cx, cy) => {
+        const r = 4.2 + rnd() * 3;
+        const tilt = rnd() * Math.PI;
+        stamp(size, ((x % size) + size) % size, ((y % size) + size) % size, 14, (cx, cy) => {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(tilt);
           ctx.strokeStyle = accent ? cw.accent : cw.ink;
-          flower(ctx, cx, cy, 5.4, mulberry32((seed + row * 31 + col * 7) >>> 0));
+          flower(ctx, 0, 0, r, mulberry32((seed + row * 31 + col * 7) >>> 0));
+          // A soft wash in the flower's throat gives it a centre of gravity.
+          ctx.fillStyle = accent ? cw.accent : cw.inkSoft;
+          ctx.beginPath();
+          ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+          ctx.fill();
           ctx.strokeStyle = cw.inkSoft;
-          leaf(ctx, cx - 1, cy + 5, -7, 6, 2.4);
-          leaf(ctx, cx + 1, cy + 5, 7, 6, 2.4);
+          leaf(ctx, -1, r, -r * 1.3, r * 1.1, 2.4);
+          leaf(ctx, 1, r, r * 1.3, r * 1.1, 2.4);
+          ctx.restore();
         });
       }
     }
@@ -606,39 +667,72 @@ const ricePaperBamboo: WallpaperPattern = {
     // on the far side of the paper, so it is soft-edged and very pale.
     const culms = 2;
     for (let i = 0; i < culms; i++) {
-      const x = (i + 0.35 + rnd() * 0.3) * (size / culms);
-      const w = 13 + rnd() * 7;
+      const x = (i + 0.28 + rnd() * 0.44) * (size / culms);
+      const w = 15 + rnd() * 8;
       for (const ox of [-size, 0, size]) {
         const cx = x + ox;
         if (cx + w < 0 || cx - w > size) continue;
+        // The culm is a *shadow*: soft either side, definite in the middle.
+        // Three passes — the alphas in a colourway are low by design, so a
+        // single fill of `ink` disappears at wall scale.
         const g = ctx.createLinearGradient(cx - w, 0, cx + w, 0);
         g.addColorStop(0, 'rgba(0, 0, 0, 0)');
-        g.addColorStop(0.5, cw.inkSoft);
-        g.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(cx - w, 0, w * 2, size);
-        // Nodes: spacing divides the tile so they wrap.
-        ctx.strokeStyle = cw.inkSoft;
-        ctx.lineWidth = 1.4;
+        g.addColorStop(0.22, cw.inkSoft);
+        g.addColorStop(0.5, cw.ink);
+        g.addColorStop(0.78, cw.inkSoft);
+        g.addColorStop(1, fade(cw.inkSoft));
+        for (let pass = 0; pass < 3; pass++) {
+          ctx.fillStyle = g;
+          ctx.fillRect(cx - w, 0, w * 2, size);
+        }
+        // Definite edges: the culm has a shape, not just a smudge.
+        ctx.fillStyle = cw.ink;
+        ctx.fillRect(cx - w * 0.62, 0, 1.2, size);
+        ctx.fillRect(cx + w * 0.62, 0, 1.2, size);
+        // Nodes: a dark collar with a pale gap above it, spacing divides the
+        // tile so they wrap. One side shoot springs from every other node.
         for (let n = 0; n < 3; n++) {
-          const y = (n * size) / 3 + (i * size) / 7;
-          ctx.beginPath();
-          ctx.moveTo(cx - w * 0.8, y % size);
-          ctx.lineTo(cx + w * 0.8, (y % size) - 1.5);
-          ctx.stroke();
+          const y = ((n * size) / 3 + (i * size) / 7) % size;
+          ctx.fillStyle = cw.ink;
+          ctx.fillRect(cx - w * 0.8, y, w * 1.6, 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+          ctx.fillRect(cx - w * 0.8, y - 2.4, w * 1.6, 1.4);
+          if (n % 2 === 0) {
+            ctx.strokeStyle = cw.inkSoft;
+            ctx.lineWidth = 1.6;
+            const dir = i % 2 === 0 ? 1 : -1;
+            ctx.beginPath();
+            ctx.moveTo(cx + dir * w * 0.7, y + 1);
+            ctx.quadraticCurveTo(cx + dir * (w + 20), y - 10, cx + dir * (w + 38), y - 30);
+            ctx.stroke();
+          }
         }
       }
     }
 
-    // A couple of leaf shadows.
-    ctx.strokeStyle = cw.inkSoft;
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 5; i++) {
+    // Leaf shadows hanging off the culms: long lance-shaped bamboo leaves in
+    // twos and threes, not a random scatter of ticks.
+    for (let i = 0; i < 4; i++) {
       const x = rnd() * size;
       const y = rnd() * size;
-      const a = (rnd() * 2 - 1) * 1.1;
-      stamp(size, x, y, 26, (cx, cy) => {
-        leaf(ctx, cx, cy, Math.cos(a) * 24, Math.sin(a) * 24, 4.5);
+      // Bamboo leaves hang: always sweeping downward from their node.
+      const a = Math.PI * 0.28 + (rnd() * 2 - 1) * 0.4;
+      const flip = rnd() < 0.5 ? -1 : 1;
+      stamp(size, x, y, 52, (cx, cy) => {
+        for (let k = 0; k < 3; k++) {
+          const aa = a + k * 0.22;
+          const len = 34 - k * 4;
+          ctx.strokeStyle = k === 0 ? cw.ink : cw.inkSoft;
+          ctx.lineWidth = 1.3;
+          leaf(ctx, cx, cy, flip * Math.cos(aa) * len, Math.sin(aa) * len, 4.4);
+        }
+        // The twig they hang from.
+        ctx.strokeStyle = cw.inkSoft;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - flip * 14, cy - 8);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
       });
     }
 
@@ -676,27 +770,24 @@ const lathPlaster: WallpaperPattern = {
   render(ctx, size, cw, seed) {
     const rnd = mulberry32(seed >>> 0);
 
-    // Under-layer: horizontal laths with dark keying gaps.
-    const laths = 8;
+    // Under-layer: horizontal riven laths on an opaque ground. The ground
+    // matters — without it the exposed lath composites over nothing and the
+    // tear reads as a black hole punched in the wall.
+    ctx.fillStyle = cw.baseAlt;
+    ctx.fillRect(0, 0, size, size);
+    const laths = 9;
     const lh = size / laths;
+    const lathLight = 'rgba(168, 140, 104, 0.55)';
+    const lathDark = 'rgba(124, 100, 72, 0.55)';
     for (let i = 0; i < laths; i++) {
       const y = i * lh;
-      ctx.fillStyle = i % 2 === 0 ? cw.baseAlt : cw.base;
-      ctx.fillRect(0, y, size, lh - 2);
-      ctx.fillStyle = 'rgba(24, 20, 16, 0.42)';
-      ctx.fillRect(0, y + lh - 2, size, 2);
-      // Nail heads on the laths.
-      for (let n = 0; n < 2; n++) {
-        const x = ((n + 0.5) * size) / 2 + (rnd() * 2 - 1) * 20;
-        stamp(size, x, y + lh / 2, 3, (cx, cy) => {
-          ctx.fillStyle = 'rgba(40, 34, 28, 0.5)';
-          ctx.beginPath();
-          ctx.arc(cx, cy, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      }
-      // Wood streaks along each lath.
-      ctx.strokeStyle = 'rgba(40, 32, 24, 0.14)';
+      ctx.fillStyle = i % 2 === 0 ? lathLight : lathDark;
+      ctx.fillRect(0, y, size, lh - 2.5);
+      // Keying gap: plaster squeezed through between the laths, in shadow.
+      ctx.fillStyle = 'rgba(40, 32, 24, 0.34)';
+      ctx.fillRect(0, y + lh - 2.5, size, 2.5);
+      // Split grain along each lath.
+      ctx.strokeStyle = 'rgba(60, 46, 32, 0.22)';
       ctx.lineWidth = 0.8;
       for (let s = 0; s < 3; s++) {
         const sy = y + 2 + rnd() * (lh - 6);
@@ -705,56 +796,97 @@ const lathPlaster: WallpaperPattern = {
         ctx.lineTo(size, sy + (rnd() * 2 - 1) * 1.5);
         ctx.stroke();
       }
+      // Nail heads, two per lath.
+      for (let n = 0; n < 2; n++) {
+        const x = ((n + 0.5) * size) / 2 + (rnd() * 2 - 1) * 22;
+        stamp(size, x, y + lh / 2, 3, (cx, cy) => {
+          ctx.fillStyle = 'rgba(52, 42, 32, 0.55)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
     }
 
-    // Plaster skin over most of it, torn open in a couple of places. The tear
-    // shape is stamped, so the hole wraps across tile edges.
+    // One big torn opening per tile (stamped, so it wraps), with a feathered
+    // crumbling rim rather than a cut-out edge.
+    const hx = rnd() * size;
+    const hy = rnd() * size;
+    const hr = size * 0.2;
+    const holePath = (cx: number, cy: number, scale: number): void => {
+      const pts = 13;
+      const lobe = mulberry32((seed ^ 0x7ea2) >>> 0);
+      ctx.moveTo(cx + hr * scale, cy);
+      for (let p = 1; p <= pts; p++) {
+        const a = (p / pts) * Math.PI * 2;
+        const rr = hr * scale * (0.62 + lobe() * 0.62);
+        ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.82);
+      }
+      ctx.closePath();
+    };
+
+    // Plaster skin everywhere EXCEPT the hole.
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, size, size);
-    const holes = 2;
-    for (let i = 0; i < holes; i++) {
-      const hx = rnd() * size;
-      const hy = rnd() * size;
-      const hr = size * (0.14 + rnd() * 0.12);
-      stamp(size, hx, hy, hr * 1.6, (cx, cy) => {
-        ctx.moveTo(cx + hr, cy);
-        const pts = 11;
-        for (let p = 1; p <= pts; p++) {
-          const a = (p / pts) * Math.PI * 2;
-          const rr = hr * (0.6 + rnd() * 0.7);
-          ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8);
-        }
-        ctx.closePath();
-      });
-    }
+    stamp(size, hx, hy, hr * 2, (cx, cy) => holePath(cx, cy, 1));
     ctx.clip('evenodd');
-    ctx.fillStyle = '#e6ded0';
+    ctx.fillStyle = cw.base;
     ctx.fillRect(0, 0, size, size);
-    // Plaster mottling + hairline cracks.
-    ctx.globalAlpha = 0.5;
-    ground(ctx, size, { ...cw, base: 'rgba(0,0,0,0)', baseAlt: 'rgba(150, 142, 128, 0.5)' }, rnd, 5);
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = 'rgba(120, 110, 96, 0.3)';
+    ground(ctx, size, cw, rnd, 5);
+    // Hairline crazing across the skin.
+    ctx.strokeStyle = cw.ink;
     ctx.lineWidth = 0.8;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       const x = rnd() * size;
       const y = rnd() * size;
       const pts: Array<[number, number]> = [[x, y]];
       let px = x;
       let py = y;
       for (let s = 0; s < 5; s++) {
-        px += (rnd() * 2 - 1) * 18;
-        py += (rnd() * 2 - 1) * 18;
+        px += (rnd() * 2 - 1) * 20;
+        py += (rnd() * 2 - 1) * 20;
         pts.push([px, py]);
       }
       sketch(ctx, pts, rnd, 1.6);
     }
+    // Crumbling inner rim: a soft dark feather just inside the plaster edge.
+    ctx.save();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = 'rgba(56, 46, 34, 0.26)';
+    ctx.beginPath();
+    stamp(size, hx, hy, hr * 2, (cx, cy) => holePath(cx, cy, 1));
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 252, 244, 0.3)';
+    ctx.stroke();
+    ctx.restore();
     ctx.restore();
 
-    // Shadowed torn edge around each hole.
-    ctx.strokeStyle = 'rgba(60, 52, 42, 0.3)';
-    ctx.lineWidth = 1.6;
+    // Shadow the plaster casts down into the opening.
+    ctx.save();
+    ctx.beginPath();
+    stamp(size, hx, hy, hr * 2, (cx, cy) => holePath(cx, cy, 1));
+    ctx.clip();
+    const sg = ctx.createLinearGradient(0, hy - hr, 0, hy + hr);
+    sg.addColorStop(0, 'rgba(30, 24, 16, 0.3)');
+    sg.addColorStop(0.55, 'rgba(30, 24, 16, 0.05)');
+    sg.addColorStop(1, 'rgba(30, 24, 16, 0)');
+    ctx.fillStyle = sg;
+    ctx.fillRect(0, 0, size, size);
+    ctx.restore();
+
+    // Loose flakes of plaster still clinging around the tear.
+    for (let i = 0; i < 7; i++) {
+      const a = rnd() * Math.PI * 2;
+      const d = hr * (1.05 + rnd() * 0.35);
+      stamp(size, hx + Math.cos(a) * d, hy + Math.sin(a) * d * 0.85, 8, (cx, cy) => {
+        ctx.fillStyle = cw.baseAlt;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 2 + rnd() * 4, 1.5 + rnd() * 3, rnd() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
   },
 };
 
@@ -845,17 +977,25 @@ const artNouveauVine: WallpaperPattern = {
       const x0 = (v + 0.5) * (size / vines) + (rnd() * 2 - 1) * 8;
       const sway = 16 + rnd() * 12;
       const draw = (offX: number): void => {
-        ctx.strokeStyle = cw.ink;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        for (let s = 0; s <= 48; s++) {
-          const t = s / 48;
-          const y = t * size;
-          const x = x0 + offX + Math.sin(t * Math.PI * 2) * sway;
-          if (s === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+        // Whiplash stem: swelling from hairline at the top to a full stroke at
+        // the waist, drawn as three overlaid passes so it reads at any zoom.
+        for (const [width, style] of [
+          [3.4, cw.inkSoft],
+          [1.8, cw.ink],
+          [0.9, cw.ink],
+        ] as const) {
+          ctx.strokeStyle = style;
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          for (let s = 0; s <= 48; s++) {
+            const t = s / 48;
+            const y = t * size;
+            const x = x0 + offX + Math.sin(t * Math.PI * 2) * sway;
+            if (s === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
         // Buds + tendrils hung off the stem at fixed parameters.
         for (const t of [0.12, 0.38, 0.62, 0.88]) {
           const y = t * size;
@@ -874,13 +1014,23 @@ const artNouveauVine: WallpaperPattern = {
             else ctx.lineTo(px, py);
           }
           ctx.stroke();
-          // Stylised bud.
+          // Stylised bud on a stalk, with a filled heart so the motif has
+          // some weight against the stem.
           ctx.strokeStyle = cw.accent;
-          ctx.lineWidth = 1.1;
+          ctx.lineWidth = 1.4;
           leaf(ctx, x, y, dir * 20, -12, 6);
           ctx.beginPath();
-          ctx.ellipse(x + dir * 22, y - 13, 4.5, 7, dir * 0.6, 0, Math.PI * 2);
+          ctx.ellipse(x + dir * 22, y - 13, 4.8, 7.4, dir * 0.6, 0, Math.PI * 2);
           ctx.stroke();
+          ctx.fillStyle = cw.accent;
+          ctx.beginPath();
+          ctx.ellipse(x + dir * 22, y - 13, 2.4, 3.8, dir * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+          // A second leaf falling the other way keeps the vine from reading
+          // as a comb of identical hooks.
+          ctx.strokeStyle = cw.ink;
+          ctx.lineWidth = 1.2;
+          leaf(ctx, x, y, -dir * 14, 11, 5);
         }
       };
       for (const ox of [-size, 0, size]) {
@@ -902,8 +1052,11 @@ const marbledEndpaper: WallpaperPattern = {
     ground(ctx, size, cw, rnd, 4);
 
     // Combed bands: each band's wave uses an integer number of cycles across
-    // the tile, so left and right edges match exactly.
-    const bands = 9;
+    // the tile, so left and right edges match exactly. Held well back in
+    // alpha — marble this size would otherwise shout over the books.
+    ctx.save();
+    ctx.globalAlpha = 0.34;
+    const bands = 20;
     for (let i = 0; i < bands; i++) {
       const y0 = (i * size) / bands;
       const cycles = 1 + (i % 3);
@@ -928,11 +1081,12 @@ const marbledEndpaper: WallpaperPattern = {
       ctx.closePath();
       ctx.fill();
     }
+    ctx.restore();
 
     // Comb teeth: fine vertical drags pulling the bands into peaks.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.lineWidth = 0.8;
-    const teeth = 16;
+    const teeth = 26;
     for (let i = 0; i < teeth; i++) {
       const x = (i * size) / teeth;
       ctx.beginPath();

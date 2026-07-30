@@ -14,12 +14,12 @@
 
 import gsap from 'gsap';
 import { onCleanup, onMount, type JSX } from 'solid-js';
-import {
-  deriveCoverParams,
-  normalizeCoverOverrides,
-  renderCoverInto,
-} from '../../art/covers';
-import { readCoverOverrides } from '../../data/books';
+import { resolveBookStyle } from '../../art/bookStyle';
+import { renderCoverInto } from '../../art/covers';
+import { getTheme } from '../../art/themes';
+import { readShelfMeta } from '../../data/books';
+import { bookStyleOverridesFor, themeSpineDefaults } from './bookIdentity';
+import { libraryPrefs } from './libraryPrefs';
 import type { Book } from '../../data/types';
 import { prefersReducedMotion } from './env';
 import type { RectLike } from './world';
@@ -71,15 +71,19 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       coverCanvas.height = Math.round(center.height * dpr);
       const ctx = coverCanvas.getContext('2d');
       if (ctx) {
-        const params = deriveCoverParams(
+        // Same resolver the shelf spine uses, so a customized book is
+        // recognisably itself on the shelf, mid-pull-out and open (§4).
+        const { cover } = resolveBookStyle(
           p.book.spineSeed,
-          normalizeCoverOverrides(readCoverOverrides(p.book)),
+          themeSpineDefaults(getTheme(libraryPrefs.theme)),
+          bookStyleOverridesFor(p.book),
+          { pageCount: readShelfMeta(p.book)?.pageCount },
         );
         renderCoverInto(
           ctx,
           coverCanvas.width,
           coverCanvas.height,
-          params,
+          cover,
           p.book.title,
         );
       }

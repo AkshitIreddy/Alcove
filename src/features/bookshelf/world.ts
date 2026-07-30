@@ -20,9 +20,11 @@ import {
 } from 'pixi.js';
 import { clamp } from '../../art/noise';
 import { SPINE_BASE_HEIGHT } from '../../art/spines';
+import type { BookStyle } from '../../art/bookStyle';
+import type { LightPool } from '../../art/themes';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
-import { moveBook, nextFreeSlot, touchBookOpened } from '../../data/books';
+import { createBook, moveBook, nextFreeSlot, touchBookOpened } from '../../data/books';
 import {
   save as saveSettings,
   settings,
@@ -73,7 +75,20 @@ import {
   prefersReducedMotion,
   watchReducedMotion,
 } from './env';
+import { persistBookStyle } from './bookIdentity';
 import { FloorStampCache } from './floorStamps';
+import { planFloorFlora, type FloorFloraPlan } from './floraPlan';
+import { bakeFloraTexture, clearFloraTextures } from './floraTextures';
+import {
+  loadLibraryPrefs,
+  resolveLibrary,
+  saveLibraryPrefs as saveLibraryPrefsFn,
+  snapshotLibraryPrefs,
+  subscribeLibraryPrefs,
+  warmthTint,
+  type LibraryPrefs,
+  type ResolvedLibrary,
+} from './libraryPrefs';
 import {
   FloorView,
   PLAQUE_CENTER_X,
@@ -133,6 +148,8 @@ export interface WorldEvents {
   onGhostReady(book: Book, rect: RectLike): void;
   /** Rounded zoom percent changed (drives the zoom pill readout). */
   onZoomChange?(percent: number): void;
+  /** The applied library room changed (theme/wallpaper/backdrop key). */
+  onLibraryChange?(key: string): void;
   /** Right-click on a spine: open the shelf book menu at `screen` (CSS px). */
   onBookMenu?(book: Book, screen: Vec2): void;
   /** Double-click on a floor plaque: open the label editor over `rect`. */
@@ -153,8 +170,49 @@ const PARALLAX = 0.85;
 const BACKDROP_ALPHA = 0.45;
 const WALLPAPER_ALPHA = 0.6;
 
+/** Mid tone of the baked trash-drawer art — the base `ratioTint` divides out. */
+const TRASH_ART_TONE = 0xddd0be;
+
 /** Springy-lag constant for the dragged-book ghost (lerpExp k). */
 const PULL_FOLLOW_K = 11;
+
+/** '#rrggbb' (or 'rgba(...)') → 0xRRGGBB, defaulting to warm white. */
+export function hexToInt(colour: string, fallback = 0xfff2d8): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(colour.trim());
+  if (m !== null) return Number.parseInt(m[1] as string, 16);
+  const short = /^#?([0-9a-f]{3})$/i.exec(colour.trim());
+  if (short !== null) {
+    const [r, g, b] = (short[1] as string).split('') as [string, string, string];
+    return Number.parseInt(`${r}${r}${g}${g}${b}${b}`, 16);
+  }
+  const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(colour);
+  if (rgb !== null) {
+    return (Number(rgb[1]) << 16) | (Number(rgb[2]) << 8) | Number(rgb[3]);
+  }
+  return fallback;
+}
+
+/**
+ * Renormalizing tint: what to multiply art whose average tone is `base` by so
+ * it lands on `target`. Lets one baked brown sprite (the trash drawer) wear
+ * every room's wood without re-baking.
+ */
+export function ratioTint(target: number, base: number): number {
+  const ch = (shift: number): number => {
+    const t = (target >> shift) & 0xff;
+    const b = (base >> shift) & 0xff;
+    return Math.max(0, Math.min(255, Math.round((t / Math.max(1, b)) * 255)));
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+/** Multiply two 0xRRGGBB tints channel-wise (Pixi's own tint semantics). */
+export function mixTint(a: number, b: number): number {
+  const r = (((a >> 16) & 0xff) * ((b >> 16) & 0xff)) / 255;
+  const g = (((a >> 8) & 0xff) * ((b >> 8) & 0xff)) / 255;
+  const bl = ((a & 0xff) * (b & 0xff)) / 255;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl);
+}
 
 /** A dragged-out book. The ghost chases the pointer with springy lag. */
 interface BookPull {
@@ -195,13 +253,29 @@ export class ShelfWorld {
   private readonly stamps = new FloorStampCache((floor) => this.floors.has(floor));
   private readonly input: ShelfInput;
 
+  /** The room currently applied (null until the first prefs snapshot). */
+  private library: ResolvedLibrary | null = null;
+  /** Bumped per theme application so stale async flora bakes drop. */
+  private libraryGen = 0;
+  /** The room key whose art is actually on screen. */
+  private appliedLibraryKey = '';
+  /** Full-viewport snapshot held over the stage during a theme crossfade. */
+  private themeFade: Sprite | null = null;
+
   private readonly backdrop: TilingSprite;
   /** Damask wallpaper pattern tiled over the paper (parallax with backdrop). */
   private wallpaper: TilingSprite | null = null;
   /** Screen-space wall lighting between backdrop and world. */
   private readonly wallFx = new Container();
+  /**
+   * The theme's lamp pools, ABOVE the case (additive) so light actually falls
+   * on the wood and the books rather than only on the wall behind them.
+   */
+  private readonly lightFx = new Container();
   /** Warm falloff pooled behind the case (tracks the case each frame). */
   private caseGlow: Sprite | null = null;
+  /** Whole-room colour cast from the theme's LightSpec.ambient. */
+  private ambientWash: Sprite | null = null;
   /** 2–3 large lamp-glow pools that drift very slowly (baked radial glows). */
   private readonly lightPools: Sprite[] = [];
   private readonly world = new Container();
@@ -324,6 +398,13 @@ export class ShelfWorld {
     // Wall lighting: a broad warm falloff hugging the case plus 2–3 large
     // baked radial lamp-glow pools (additive, slow drift when motion is on).
     this.wallFx.eventMode = 'none';
+    // Whole-room colour cast (theme.light.ambient) — a flat wash under the
+    // pools, so a night study reads blue-cool and a cottage reads honey.
+    const ambient = new Sprite(Texture.WHITE);
+    ambient.eventMode = 'none';
+    ambient.alpha = 0;
+    this.ambientWash = ambient;
+    this.wallFx.addChild(ambient);
     const caseGlow = new Sprite(this.glowTexture);
     caseGlow.anchor.set(0.5);
     caseGlow.tint = 0xffe3ae;
@@ -335,6 +416,7 @@ export class ShelfWorld {
       { tint: 0xffe7b0, alpha: 0.2, fx: 0.86, fy: 0.4, r: 0.55 },
       { tint: 0xffd27a, alpha: 0.16, fx: 0.5, fy: 0.94, r: 0.7 },
     ];
+    this.lightFx.eventMode = 'none';
     for (const spec of poolSpecs) {
       const pool = new Sprite(this.glowTexture);
       pool.anchor.set(0.5);
@@ -343,7 +425,7 @@ export class ShelfWorld {
       pool.alpha = spec.alpha;
       (pool as Sprite & { __spec?: typeof spec }).__spec = spec;
       this.lightPools.push(pool);
-      this.wallFx.addChild(pool);
+      this.lightFx.addChild(pool);
     }
     this.layoutWallLighting();
 
@@ -379,7 +461,7 @@ export class ShelfWorld {
     this.crown.height = CROWN_H;
     this.world.addChild(this.crown);
 
-    app.stage.addChild(this.backdrop, this.wallFx, this.world, this.fx);
+    app.stage.addChild(this.backdrop, this.wallFx, this.world, this.lightFx, this.fx);
     app.stage.eventMode = 'none';
 
     // Camera: session restore, else a friendly overview of the first floors.
@@ -498,6 +580,17 @@ export class ShelfWorld {
       settings.shelfWoodStain,
       settings.wallpaperPattern,
     );
+
+    // The library theme (docs/design/library-themes.md). The first snapshot
+    // arrives synchronously with the defaults, then again once the stored
+    // prefs load — and after every studio edit.
+    this.unsubs.push(
+      subscribeLibraryPrefs((prefs) => {
+        void this.applyLibrary(prefs);
+      }),
+    );
+    void loadLibraryPrefs();
+
     this.ready = this.store.init().then(() => {
       if (this.destroyed) return;
       this.dirty = true;
@@ -518,6 +611,50 @@ export class ShelfWorld {
       const globals = globalThis as Record<string, unknown>;
       globals['__shelfWorld'] = this;
       globals['__shelfSaveSettings'] = saveSettings;
+      // Library studio bridge — same module instance the world subscribed to.
+      globals['__libraryPrefs'] = {
+        save: (patch: Partial<LibraryPrefs>) => saveLibraryPrefsFn(patch),
+        // The STORE, not the world's copy — the shelf unmounts while a book
+        // is open, and the studio still writes to the store from there.
+        current: () => snapshotLibraryPrefs(),
+      };
+      // Shelf-dressing helper for screenshot boards: the visual QA harness
+      // needs a populated case, and creating books through the UI one at a
+      // time is far too slow.
+      globals['__shelfSeedBooks'] = async (
+        titles: readonly string[],
+        floor = 0,
+      ): Promise<void> => {
+        let slot = await nextFreeSlot(floor, 0);
+        for (const title of titles) {
+          await createBook({ title, floor, slot });
+          slot += 1;
+        }
+        await this.store.refreshAll();
+      };
+      globals['__shelfBookMeta'] = (bookId: string): unknown =>
+        this.store.findBook(bookId)?.coverMeta ?? null;
+      globals['__shelfSpineRect'] = (bookId: string): RectLike | null => {
+        const book = this.store.findBook(bookId);
+        return book === null ? null : this.spineScreenRect(book);
+      };
+      globals['__shelfVisibleBooks'] = (): Array<{ id: string; title: string }> =>
+        [...this.floors.values()].flatMap((fv) =>
+          fv.visuals.map((v) => ({ id: v.book.id, title: v.book.title })),
+        );
+      // Apply a Book Studio override blob straight to a book (screenshot
+      // boards need a heavily customized book on the shelf).
+      globals['__shelfSetBookStyle'] = async (
+        bookId: string,
+        overrides: Record<string, unknown> | null,
+      ): Promise<void> => {
+        await persistBookStyle(
+          bookId,
+          overrides === null ? null : (overrides as unknown as BookStyle),
+        );
+        this.factory.invalidate(bookId);
+        await this.store.refreshAll();
+      };
     }
   }
 
@@ -795,9 +932,213 @@ export class ShelfWorld {
     }
   }
 
+  /* ------------------------------- theming -------------------------------- */
+
+  /**
+   * Dress the whole world in a library theme (§1). Order matters:
+   *  1. snapshot the current frame so the swap crossfades rather than pops;
+   *  2. re-spec the light rig, motes and spine bias immediately (cheap);
+   *  3. kick the case bakes — disk-cached, so a revisited room is instant;
+   *  4. when they land, fade the snapshot out and replant the flora.
+   */
+  private async applyLibrary(prefs: LibraryPrefs): Promise<void> {
+    if (this.destroyed) return;
+    const next = resolveLibrary(prefs);
+    const prev = this.library;
+    // Compare against what is actually ON SCREEN, not just against the last
+    // request: the initial snapshot and the "stored prefs loaded" snapshot
+    // arrive back to back, and the second one must not cancel the first's
+    // bake bookkeeping (which is what left `libraryKey` empty forever).
+    const roomChanged = this.appliedLibraryKey !== next.key;
+    const densityChanged = prev !== null && prev.prefs.floraDensity !== prefs.floraDensity;
+    this.library = next;
+    const gen = ++this.libraryGen;
+
+    // Light + motes + spine bias react instantly; they cost nothing to redo.
+    this.applyLightRig(next);
+    if (this.trashSprite !== null) {
+      this.trashSprite.tint = ratioTint(hexToInt(next.theme.wood.light), TRASH_ART_TONE);
+    }
+    this.factory.setTheme(next.theme);
+
+    if (!roomChanged) {
+      if (densityChanged) void this.refreshFlora(gen);
+      this.dirty = true;
+      return;
+    }
+
+    // Only crossfade when a room is being REPLACED — the first dressing has
+    // nothing to fade from.
+    if (this.appliedLibraryKey !== '') this.beginThemeFade();
+    clearFloraTextures();
+    for (const fv of this.floors.values()) fv.clearFlora();
+
+    await this.envTex.setTheme({
+      themeId: next.theme.id,
+      wallpaper: next.wallpaper,
+      backdrop: next.backdrop,
+    });
+    if (this.destroyed || gen !== this.libraryGen) return;
+
+    // Re-plate every mounted floor in the new room's plate material.
+    for (const [index, fv] of this.floors) {
+      fv.setPlaque(this.envTex, this.dpr, floorLabel(index));
+      this.rebakeStamp(index, fv);
+    }
+    this.endThemeFade();
+    this.dirty = true;
+    this.appliedLibraryKey = next.key;
+    this.events.onLibraryChange?.(next.key);
+    void this.refreshFlora(gen);
+  }
+
+  /** The room key currently ON SCREEN (bakes landed). QA + tests read this. */
+  get libraryKey(): string {
+    return this.appliedLibraryKey;
+  }
+
+  /**
+   * Grab the current frame into a sprite pinned over the stage. The case art
+   * swaps underneath it, then `endThemeFade` dissolves it — so a theme switch
+   * never shows a half-dressed bookcase.
+   */
+  private beginThemeFade(): void {
+    if (this.degrade || this.reducedMotion) return;
+    try {
+      const texture = this.app.renderer.generateTexture({
+        target: this.app.stage,
+        frame: new PIXI.Rectangle(0, 0, this.vp.width, this.vp.height),
+        resolution: 1,
+      });
+      const snap = new Sprite(texture);
+      snap.eventMode = 'none';
+      snap.width = this.vp.width;
+      snap.height = this.vp.height;
+      this.themeFade?.destroy(true);
+      this.themeFade = snap;
+      this.app.stage.addChild(snap);
+    } catch {
+      this.themeFade = null; // extraction unsupported — swap without the fade
+    }
+  }
+
+  private endThemeFade(): void {
+    const snap = this.themeFade;
+    if (snap === null) return;
+    this.themeFade = null;
+    this.track(
+      gsap.to(snap, {
+        alpha: 0,
+        duration: 0.42,
+        ease: 'power2.out',
+        onUpdate: this.hooks.markDirty,
+        onComplete: () => {
+          snap.destroy(true);
+          this.dirty = true;
+        },
+      }),
+    );
+  }
+
+  /**
+   * Re-spec the wall lighting, ambient cast and motes from the theme's
+   * LightSpec/MoteSpec, warmed by the studio's light slider.
+   */
+  private applyLightRig(lib: ResolvedLibrary): void {
+    const light = lib.theme.light;
+    const warmth = warmthTint(lib.prefs.lightWarmth);
+    const pools = light.pools.length > 0 ? light.pools : [];
+
+    // Grow/shrink the sprite pool to match the theme.
+    while (this.lightPools.length < pools.length) {
+      const extra = new Sprite(this.glowTexture);
+      extra.anchor.set(0.5);
+      extra.blendMode = 'add';
+      extra.eventMode = 'none';
+      this.lightPools.push(extra);
+      this.lightFx.addChild(extra);
+    }
+    for (let i = 0; i < this.lightPools.length; i++) {
+      const sprite = this.lightPools[i] as Sprite & {
+        __spec?: { fx: number; fy: number; r: number };
+        __base?: { x: number; y: number };
+      };
+      const pool = pools[i] as LightPool | undefined;
+      if (pool === undefined) {
+        sprite.visible = false;
+        continue;
+      }
+      sprite.visible = true;
+      sprite.tint = mixTint(hexToInt(pool.colour), warmth);
+      sprite.alpha = clamp(pool.intensity, 0, 1) * 0.6;
+      sprite.__spec = { fx: pool.x, fy: pool.y, r: pool.radius * 1.6 };
+    }
+    this.layoutWallLighting();
+
+    if (this.caseGlow !== null) {
+      this.caseGlow.tint = mixTint(hexToInt(light.ambient.colour), warmth);
+      this.caseGlow.alpha = 0.28 + light.ambient.amount * 0.5;
+    }
+    if (this.ambientWash !== null) {
+      this.ambientWash.tint = hexToInt(light.ambient.colour);
+      this.ambientWash.alpha = Math.min(0.4, light.ambient.amount * 0.55);
+      this.ambientWash.width = this.vp.width;
+      this.ambientWash.height = this.vp.height;
+    }
+
+    const motes = lib.theme.motes;
+    this.motes.setStyle({
+      colour: hexToInt(motes.colour),
+      density: motes.density,
+      drift: motes.drift,
+      twinkle: motes.kind === 'sparkle',
+    });
+    this.motes.setEnabled(!this.degrade && !this.reducedMotion && motes.kind !== 'none');
+  }
+
+  /* -------------------------------- flora --------------------------------- */
+
+  /**
+   * Replant every mounted floor. Deterministic per (floor, anchor, theme), so
+   * a floor keeps its plants across remounts; keep-outs come from the floor's
+   * live spine rects, so flora never lands on a title (§3 occlusion rule).
+   */
+  private async refreshFlora(gen: number): Promise<void> {
+    const lib = this.library;
+    if (lib === null || this.destroyed || gen !== this.libraryGen) return;
+    for (const [index, fv] of [...this.floors]) {
+      await this.growFloor(index, fv, gen);
+    }
+  }
+
+  /** Plan + bake + attach one floor's two flora layers. */
+  private async growFloor(index: number, fv: FloorView, gen: number): Promise<void> {
+    const lib = this.library;
+    if (lib === null || this.destroyed || gen !== this.libraryGen) return;
+    if (this.degrade && lib.prefs.floraDensity <= 0) return;
+    const plan: FloorFloraPlan = planFloorFlora({
+      floorIndex: index,
+      theme: lib.theme,
+      densityMultiplier: lib.prefs.floraDensity,
+      spines: fv.visuals.map((v) => ({ centerX: v.centerX, w: v.w, height: v.height })),
+    });
+    for (const layer of ['back', 'rail'] as const) {
+      const baked = await bakeFloraTexture(plan[layer], this.dpr);
+      if (this.destroyed || gen !== this.libraryGen) return;
+      // The floor may have been recycled while the bake ran.
+      if (this.floors.get(index) !== fv) return;
+      fv.setFlora(layer, baked?.texture ?? null, baked?.bounds ?? null);
+    }
+    this.dirty = true;
+  }
+
   /** Re-seat the wall lighting after a resize (bases; drift offsets from them). */
   private layoutWallLighting(): void {
     const { width, height } = this.vp;
+    if (this.ambientWash !== null) {
+      this.ambientWash.width = width;
+      this.ambientWash.height = height;
+    }
     for (const raw of this.lightPools) {
       const pool = raw as Sprite & {
         __spec?: { fx: number; fy: number; r: number };
@@ -849,6 +1190,7 @@ export class ShelfWorld {
       fv.setPlaque(this.envTex, this.dpr, floorLabel(index));
       if (this.tier === 2) fv.showStamp(this.stampFor(index, fv));
       this.requestSpines(fv);
+      void this.growFloor(index, fv, this.libraryGen);
       this.applyKbHalo();
     }
 
@@ -882,6 +1224,9 @@ export class ShelfWorld {
       this.trashSprite.anchor.set(0.5, 0);
       this.trashSprite.width = TRASH_DRAWER_W;
       this.trashSprite.height = TRASH_DRAWER_H;
+      const wood = this.library?.theme.wood.light;
+      this.trashSprite.tint =
+        wood === undefined ? TRASH_ART_TONE : ratioTint(hexToInt(wood), TRASH_ART_TONE);
     }
     this.trashSprite.position.set(SHELF_WIDTH / 2, y);
     // Keep on top of floor containers (mounts re-order world children). Only
@@ -933,6 +1278,8 @@ export class ShelfWorld {
       fv.refreshTextures(this.factory);
       this.rebakeStamp(index, fv);
       this.requestSpines(fv);
+      // Spine rects moved, so the flora keep-outs have to be recomputed.
+      void this.growFloor(index, fv, this.libraryGen);
       touched = true;
     }
     if (touched) {
@@ -959,7 +1306,17 @@ export class ShelfWorld {
   private handleEnvReady(): void {
     if (this.destroyed) return;
     const m = this.hooks.motion();
-    if (this.envTex.paper !== null && this.backdrop.texture !== this.envTex.paper) {
+    // The room's own wall (papered · panelled · plastered · boarded · shoji ·
+    // glazed) supersedes the old paper+damask pair entirely.
+    const strip = this.envTex.backdropStrip;
+    if (strip !== null) {
+      if (this.backdrop.texture !== strip) {
+        this.backdrop.texture = strip;
+        this.backdrop.tint = 0xffffff;
+      }
+      this.backdrop.alpha = 1;
+      if (this.wallpaper !== null) this.wallpaper.visible = false;
+    } else if (this.envTex.paper !== null && this.backdrop.texture !== this.envTex.paper) {
       this.backdrop.texture = this.envTex.paper;
       this.backdrop.tint = 0xffffff;
       this.track(
@@ -971,7 +1328,9 @@ export class ShelfWorld {
       );
       if (m === 0) this.backdrop.alpha = BACKDROP_ALPHA;
     }
-    if (this.envTex.wallpaper !== null && this.wallpaper === null) {
+    if (strip !== null) {
+      // Themed wall — nothing else to hang on it.
+    } else if (this.envTex.wallpaper !== null && this.wallpaper === null) {
       // Damask pencil pattern over the paper: its own tiling layer so the
       // pattern scale stays independent of the paper fibre tile.
       const wp = new TilingSprite({

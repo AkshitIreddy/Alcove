@@ -22,11 +22,19 @@
      Ink
      ---------------------------------------------------------------------- */
   --ink-sepia: #5b4636; /* primary reading ink */
-  --ink-sepia-soft: #8a7361;
+  /* "soft" inks are secondary, never decorative: they carry hints, captions,
+     meta and inactive control labels, so they are tuned to clear WCAG AA
+     (>= 4.5:1) against the DARKEST paper ground they ever sit on
+     (--paper-aged #efe4cc). Measured: 4.73:1 aged / 5.31:1 cream. */
+  --ink-sepia-soft: #765f4d;
   --ink-graphite: #45413a; /* pencil linework */
-  --ink-graphite-soft: #736c62;
+  --ink-graphite-soft: #635c52; /* 5.23:1 aged / 5.86:1 cream */
   --ink-blue: #3f5878; /* fountain-pen blue-black */
-  --ink-blue-soft: #74879f;
+  --ink-blue-soft: #5c7290; /* 4.72:1 aged / 5.30:1 cream */
+
+  /* Accent INK (readable text), distinct from the terracotta wash PIGMENT
+     below: the pigment is tuned for paint, this for type. 5.78:1 on cream. */
+  --ink-accent: #8e4c2f;
 
   /* ------------------------------------------------------------------------
      Watercolor washes — light wash / base pigment / deep rim (edge-darkening)
@@ -84,8 +92,17 @@
   --radius-lg: 14px;
   --radius-xl: 22px;
   --radius-pill: 999px;
-  /* Slightly-off ellipse corners that read as hand-drawn */
+  /* Slightly-off ellipse corners that read as hand-drawn.
+     CAREFUL: this is a COMPLETE border-radius shorthand (it carries its own
+     `/`). It is only valid as the WHOLE value — `border-radius: var(--radius-lg)
+     var(--radius-hand) …` produces an invalid declaration the browser drops,
+     which silently squares the corners off. Use the --radius-wobble-* pairs
+     below when you want a per-corner hand-drawn shape. */
   --radius-hand: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  /* Safe per-corner wobbles: complete 8-value shorthands, drop-in ready. */
+  --radius-wobble-sm: 6px 9px 5px 10px / 9px 5px 10px 6px;
+  --radius-wobble-md: 10px 15px 11px 16px / 14px 10px 16px 11px;
+  --radius-wobble-lg: 16px 24px 18px 26px / 22px 16px 26px 18px;
 
   /* ------------------------------------------------------------------------
      Shadows — layered, warm brown alphas only (never pure black)
@@ -145,8 +162,12 @@
   --text-h4: 21px; /* Caveat floor is 20px — h4 stays above it */
   --text-body: 17px;
   --text-sm: 15px;
+  --text-chip: 13px; /* handwriting floor — chips, inline buttons, meta */
   --text-label: 14px;
   --text-ui: 12px; /* Nunito Sans territory (below 13px) */
+  /* Reserved for non-essential ornament ONLY. Anything a user must READ
+     (hints, captions, counts, keyboard legends) uses --text-ui or larger:
+     11px secondary ink is the single most common legibility failure. */
   --text-ui-xs: 11px;
 
   --leading-body: 1.65;

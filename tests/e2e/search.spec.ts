@@ -112,7 +112,11 @@ test.describe("full-text search ('>' mode)", () => {
 
     await input.fill('welcome');
     await page.keyboard.press('Tab');
-    await expect(input).toHaveValue('>welcome');
+    // The `>` mode prefix is a typing shortcut, not a token the user has to
+    // see or delete: the query survives the mode switch, and the lit tab is
+    // the single source of truth for which mode is active.
+    // (Design audit finding 20 — docs/design/ui-audit.md.)
+    await expect(input).toHaveValue('welcome');
     await expect(
       page.locator('.nb-qs-tab', { hasText: 'search text' }),
     ).toHaveClass(/is-active/);

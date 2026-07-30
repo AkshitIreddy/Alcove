@@ -49,8 +49,11 @@ export function isThemeId(value: unknown): value is ThemeId {
  * pipeline and must not be bumped from here.
  *
  * v1: initial eight worlds + twelve wallpapers.
+ * v2: backdrop variants; legible cornice carving + rail inlay; boarded back
+ *     panels; scriptorium/attic show the room wall; cottage bunting and
+ *     apothecary drawers wired up; wallpaper motif pass.
  */
-export const THEME_RECIPE_VERSION = 1;
+export const THEME_RECIPE_VERSION = 2;
 
 /* ================================= wood ================================== */
 
@@ -273,6 +276,84 @@ export interface WallpaperSpec {
   tile: number;
 }
 
+/* =============================== backdrop ================================ */
+
+/**
+ * How the *room's wall* is finished behind the case. Orthogonal to the
+ * wallpaper: a papered wall shows the pattern edge to edge, a panelled wall
+ * shows it only above the dado, and plastered/boarded/shoji/glazed walls
+ * ignore the pattern entirely and take only its colourway. Every theme offers
+ * two or three, and the studio may pick any of them independently of the room
+ * (`resolveBackdrop`), so "Cottage Nook with a boarded wall" is one click.
+ */
+export const BACKDROP_IDS = [
+  'papered', // wallpaper, edge to edge
+  'panelled', // fielded timber dado + chair rail, paper above
+  'plastered', // trowelled limewash, ghost of a fresco
+  'boarded', // vertical tongue-and-groove boarding
+  'shoji', // paper screens in a kumiko lattice, lit from behind
+  'glazed', // glasshouse window wall, foliage beyond
+] as const;
+
+export type BackdropId = (typeof BACKDROP_IDS)[number];
+
+export function isBackdropId(v: unknown): v is BackdropId {
+  return typeof v === 'string' && (BACKDROP_IDS as readonly string[]).includes(v);
+}
+
+export interface BackdropInfo {
+  id: BackdropId;
+  name: string;
+  /** One line for the studio picker. */
+  blurb: string;
+  /** Whether the wallpaper pattern is visible at all in this treatment. */
+  usesPattern: boolean;
+}
+
+export const BACKDROPS: Readonly<Record<BackdropId, BackdropInfo>> = {
+  papered: {
+    id: 'papered',
+    name: 'Papered',
+    blurb: 'The wallpaper, floor to ceiling.',
+    usesPattern: true,
+  },
+  panelled: {
+    id: 'panelled',
+    name: 'Panelled',
+    blurb: 'Fielded timber below a chair rail, paper above.',
+    usesPattern: true,
+  },
+  plastered: {
+    id: 'plastered',
+    name: 'Plastered',
+    blurb: 'Trowelled limewash with the ghost of an old fresco.',
+    usesPattern: false,
+  },
+  boarded: {
+    id: 'boarded',
+    name: 'Boarded',
+    blurb: 'Vertical tongue-and-groove, beaded and a little tired.',
+    usesPattern: false,
+  },
+  shoji: {
+    id: 'shoji',
+    name: 'Shoji',
+    blurb: 'Paper screens in a kumiko lattice, lit from behind.',
+    usesPattern: false,
+  },
+  glazed: {
+    id: 'glazed',
+    name: 'Glazed',
+    blurb: 'A glasshouse wall — mullions, condensation, green beyond.',
+    usesPattern: false,
+  },
+};
+
+/** All backdrops in picker order. */
+export function allBackdrops(): readonly BackdropInfo[] {
+  return BACKDROP_IDS.map((id) => BACKDROPS[id]);
+}
+
 /* ================================ light ================================== */
 
 /** A pool of light on the case, positioned in normalized case coordinates. */
@@ -430,6 +511,12 @@ export interface LibraryTheme {
   rail: RailSpec;
   plate: PlateSpec;
   wallpaper: WallpaperSpec;
+  /**
+   * The room's two or three wall finishes, most characteristic first —
+   * `backdrops[0]` is the room's own wall. Any backdrop may be chosen for any
+   * theme from the studio; this list is only the curated shortlist.
+   */
+  backdrops: readonly [BackdropId, BackdropId, ...BackdropId[]];
   light: LightSpec;
   flora: FloraSpec;
   props: readonly PropSpec[];
@@ -504,6 +591,7 @@ const ATHENAEUM: LibraryTheme = {
     radius: 3,
   },
   wallpaper: { pattern: 'damask', colourway: 'tobacco', tile: 256 },
+  backdrops: ['panelled', 'papered', 'plastered'],
   light: {
     pools: [
       { x: 0.26, y: 0.16, radius: 0.42, colour: '#ffd9a0', intensity: 0.5, drift: 10 },
@@ -589,6 +677,7 @@ const CONSERVATORY: LibraryTheme = {
     radius: 14,
   },
   wallpaper: { pattern: 'botanical-toile', colourway: 'eucalyptus', tile: 256 },
+  backdrops: ['glazed', 'boarded', 'papered'],
   light: {
     pools: [
       { x: 0.5, y: -0.08, radius: 0.78, colour: '#e8f4ea', intensity: 0.42, drift: 4 },
@@ -677,14 +766,15 @@ const OBSERVATORY: LibraryTheme = {
     radius: 2,
   },
   wallpaper: { pattern: 'constellation', colourway: 'midnight', tile: 256 },
+  backdrops: ['papered', 'glazed', 'panelled'],
   light: {
     pools: [
-      { x: 0.16, y: 0.1, radius: 0.62, colour: '#b9cdf2', intensity: 0.44, drift: 5 },
-      { x: 0.86, y: 0.78, radius: 0.3, colour: '#f0a95e', intensity: 0.2, drift: 3 },
+      { x: 0.16, y: 0.1, radius: 0.68, colour: '#b9cdf2', intensity: 0.5, drift: 5 },
+      { x: 0.86, y: 0.78, radius: 0.36, colour: '#f0a95e', intensity: 0.3, drift: 3 },
     ],
-    ambient: { colour: '#4a5a7c', amount: 0.24 },
+    ambient: { colour: '#4a5a7c', amount: 0.2 },
     rim: { colour: '#dce8ff', width: 2.2, intensity: 0.6 },
-    vignette: { amount: 0.6, colour: '#0d1020' },
+    vignette: { amount: 0.5, colour: '#0d1020' },
     driftSeconds: 52,
     flicker: 0,
     shafts: false,
@@ -761,6 +851,7 @@ const COTTAGE: LibraryTheme = {
     radius: 4,
   },
   wallpaper: { pattern: 'gingham-floral', colourway: 'rose-cream', tile: 256 },
+  backdrops: ['boarded', 'papered', 'panelled'],
   light: {
     pools: [
       { x: 0.92, y: 0.3, radius: 0.72, colour: '#ffcf8a', intensity: 0.5, drift: 12 },
@@ -792,6 +883,7 @@ const COTTAGE: LibraryTheme = {
     wear: 0.55,
   },
   motes: { kind: 'dust', density: 24, colour: '#ffe6bc', drift: 4 },
+  shelfDetail: 'bunting',
 };
 
 const SCRIPTORIUM: LibraryTheme = {
@@ -849,6 +941,7 @@ const SCRIPTORIUM: LibraryTheme = {
     radius: 2,
   },
   wallpaper: { pattern: 'plain-limewash', colourway: 'limewash', tile: 256 },
+  backdrops: ['plastered', 'boarded', 'papered'],
   light: {
     pools: [
       { x: 0.14, y: 0.24, radius: 0.3, colour: '#ffb54a', intensity: 0.56, drift: 3 },
@@ -877,6 +970,8 @@ const SCRIPTORIUM: LibraryTheme = {
     wear: 0.7,
   },
   motes: { kind: 'dust', density: 48, colour: '#e8cf9a', drift: 6 },
+  // The scriptorium's own limewashed wall shows straight through the case.
+  backing: 'wallpaper',
 };
 
 const SAKURA: LibraryTheme = {
@@ -934,6 +1029,7 @@ const SAKURA: LibraryTheme = {
     radius: 2,
   },
   wallpaper: { pattern: 'rice-paper-bamboo', colourway: 'rice', tile: 256 },
+  backdrops: ['shoji', 'papered', 'boarded'],
   light: {
     pools: [
       { x: 0.5, y: 0.3, radius: 0.95, colour: '#fff6ea', intensity: 0.4, drift: 3 },
@@ -1021,6 +1117,7 @@ const ATTIC: LibraryTheme = {
     radius: 1,
   },
   wallpaper: { pattern: 'lath-plaster', colourway: 'greyboard', tile: 256 },
+  backdrops: ['papered', 'boarded', 'plastered'],
   light: {
     pools: [
       { x: 0.12, y: 0.12, radius: 0.26, colour: '#ffca7a', intensity: 0.5, drift: 6 },
@@ -1050,6 +1147,8 @@ const ATTIC: LibraryTheme = {
     wear: 0.9,
   },
   motes: { kind: 'dust', density: 62, colour: '#e6d5b4', drift: 7 },
+  // No back boards at all in the attic — you see the lath straight through.
+  backing: 'wallpaper',
 };
 
 const APOTHECARY: LibraryTheme = {
@@ -1107,6 +1206,7 @@ const APOTHECARY: LibraryTheme = {
     radius: 3,
   },
   wallpaper: { pattern: 'apothecary-labels', colourway: 'amber', tile: 256 },
+  backdrops: ['papered', 'panelled', 'plastered'],
   light: {
     pools: [
       { x: 0.22, y: 0.72, radius: 0.34, colour: '#ffb257', intensity: 0.5, drift: 4 },
@@ -1139,6 +1239,7 @@ const APOTHECARY: LibraryTheme = {
     wear: 0.45,
   },
   motes: { kind: 'sparkle', density: 22, colour: '#ffd28a', drift: 3 },
+  shelfDetail: 'drawers',
 };
 
 /** Every theme, keyed by id. */
@@ -1174,6 +1275,20 @@ export function resolveWallpaper(
   const pattern = isWallpaperPatternId(override?.pattern) ? override.pattern : theme.wallpaper.pattern;
   const colourway = isColourwayId(override?.colourway) ? override.colourway : theme.wallpaper.colourway;
   return { pattern, colourway, tile: theme.wallpaper.tile };
+}
+
+/**
+ * Apply a user backdrop override on top of the room's own wall finish (§4).
+ * Any of the six treatments may be chosen for any theme; an unrecognised or
+ * absent override falls back to the theme's first (most characteristic) wall.
+ */
+export function resolveBackdrop(theme: LibraryTheme, override?: string | null): BackdropId {
+  return isBackdropId(override) ? override : theme.backdrops[0];
+}
+
+/** The theme's own two or three wall finishes, with their picker copy. */
+export function themeBackdrops(theme: LibraryTheme): readonly BackdropInfo[] {
+  return theme.backdrops.map((id) => BACKDROPS[id]);
 }
 
 /**

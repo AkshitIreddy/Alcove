@@ -40,9 +40,10 @@ import {
   type PlateSpec,
   type ThemeId,
 } from './themes';
-import { renderWallpaper } from './wallpaper';
+import { getColourway, renderWallpaper } from './wallpaper';
 import { hexAlpha, mixHex, paintWood, parseHex } from './wood';
 import { doubleStroke } from './wobble';
+import type { BackdropId, WallpaperSpec } from './themes';
 
 /* ============================== primitives =============================== */
 
@@ -403,22 +404,38 @@ export function renderCarving(
   ctx.save();
   switch (carving) {
     case 'dentil': {
-      const pitch = 16;
-      const bw = 8;
-      for (let dx = x + 4; dx + bw < x + w - 4; dx += pitch) {
-        ctx.fillStyle = 'rgba(64, 48, 32, 0.34)';
-        ctx.fillRect(dx, y, bw, h);
-        ctx.fillStyle = 'rgba(255, 244, 222, 0.26)';
-        ctx.fillRect(dx, y, bw, 1.5);
-        ctx.fillStyle = 'rgba(30, 22, 14, 0.34)';
-        ctx.fillRect(dx + bw - 1.4, y, 1.4, h);
-        // Shadow cast into the recess to the right of each tooth.
+      // Tooth blocks standing PROUD of a dark recess. The recess goes down
+      // first across the whole band, then each block is modelled on top:
+      // lit top arris, lit face, shadowed right cheek, contact shadow.
+      const pitch = 17;
+      const bw = 10;
+      ctx.fillStyle = 'rgba(18, 12, 6, 0.55)';
+      ctx.fillRect(x, y, w, h);
+      for (let dx = x + 3; dx + bw < x + w - 3; dx += pitch) {
+        ctx.fillStyle = 'rgba(255, 238, 206, 0.3)';
+        ctx.fillRect(dx, y + 1, bw, h - 2);
+        const face = ctx.createLinearGradient(dx, y, dx + bw, y);
+        face.addColorStop(0, 'rgba(255, 248, 226, 0.34)');
+        face.addColorStop(0.62, 'rgba(255, 240, 210, 0.06)');
+        face.addColorStop(1, 'rgba(24, 16, 8, 0.42)');
+        ctx.fillStyle = face;
+        ctx.fillRect(dx, y + 1, bw, h - 2);
+        ctx.fillStyle = 'rgba(255, 250, 232, 0.5)';
+        ctx.fillRect(dx, y + 1, bw, 1.6);
+        ctx.fillStyle = 'rgba(16, 10, 5, 0.5)';
+        ctx.fillRect(dx, y + h - 2.4, bw, 2.4);
+        // Cast shadow into the recess to the right of each tooth.
         const g = ctx.createLinearGradient(dx + bw, 0, dx + pitch, 0);
-        g.addColorStop(0, 'rgba(24, 18, 10, 0.34)');
-        g.addColorStop(1, 'rgba(24, 18, 10, 0)');
+        g.addColorStop(0, 'rgba(10, 6, 2, 0.5)');
+        g.addColorStop(1, 'rgba(10, 6, 2, 0)');
         ctx.fillStyle = g;
         ctx.fillRect(dx + bw, y, pitch - bw, h);
       }
+      // Fillet above and below the run, so the dentils sit in a moulding.
+      ctx.fillStyle = 'rgba(255, 248, 228, 0.26)';
+      ctx.fillRect(x, y - 2.4, w, 2.4);
+      ctx.fillStyle = 'rgba(20, 13, 6, 0.4)';
+      ctx.fillRect(x, y + h, w, 2);
       break;
     }
     case 'star-punch': {
@@ -500,29 +517,41 @@ export function renderCarving(
       break;
     }
     case 'ovolo': {
-      // A single rounded bead running the length, with fillets either side.
+      // Bead-and-reel: a rounded bead running the length, cut into alternating
+      // ovals and discs so the moulding reads as turned, not printed.
       const g = ctx.createLinearGradient(0, y, 0, y + h);
-      g.addColorStop(0, 'rgba(255, 250, 236, 0.4)');
-      g.addColorStop(0.45, 'rgba(255, 244, 220, 0.12)');
-      g.addColorStop(1, 'rgba(72, 50, 30, 0.34)');
+      g.addColorStop(0, 'rgba(255, 252, 240, 0.5)');
+      g.addColorStop(0.42, 'rgba(255, 244, 218, 0.14)');
+      g.addColorStop(1, 'rgba(64, 42, 24, 0.44)');
       ctx.fillStyle = g;
       ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = 'rgba(88, 62, 38, 0.3)';
-      ctx.lineWidth = 1;
+      const cy = y + h / 2;
+      const rr = h * 0.4;
+      const pitch = 20;
+      for (let dx = x + 6; dx < x + w - 6; dx += pitch) {
+        // Oval bead.
+        ctx.fillStyle = 'rgba(255, 250, 234, 0.34)';
+        ctx.beginPath();
+        ctx.ellipse(dx, cy, rr * 0.9, rr, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(70, 46, 26, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Reel: two discs seen edge-on between the beads.
+        ctx.fillStyle = 'rgba(56, 36, 20, 0.4)';
+        ctx.fillRect(dx + rr * 1.3, cy - rr * 0.5, 2, rr);
+        ctx.fillStyle = 'rgba(255, 248, 228, 0.3)';
+        ctx.fillRect(dx + rr * 1.3 + 2, cy - rr * 0.5, 1.2, rr);
+      }
+      ctx.strokeStyle = 'rgba(88, 62, 38, 0.4)';
+      ctx.lineWidth = 1.2;
       for (const fy of [y + 0.8, y + h - 0.8]) {
         ctx.beginPath();
         ctx.moveTo(x, fy);
         ctx.lineTo(x + w, fy);
         ctx.stroke();
       }
-      // Occasional carver's stop-chamfer.
-      ctx.strokeStyle = 'rgba(90, 64, 40, 0.25)';
-      for (let dx = x + 30; dx < x + w - 30; dx += 90 + rnd() * 40) {
-        ctx.beginPath();
-        ctx.moveTo(dx, y);
-        ctx.lineTo(dx + 6, y + h);
-        ctx.stroke();
-      }
+      void rnd;
       break;
     }
     case 'plain':
@@ -801,7 +830,7 @@ export function renderCrown(
   ctx.restore(); // end silhouette clip
 
   // --- carving frieze -----------------------------------------------------
-  const friezeH = Math.min(10, h * 0.22);
+  const friezeH = Math.max(9, Math.min(15, h * 0.3));
   const friezeY =
     crown.profile === 'beam' || crown.profile === 'gable'
       ? h - friezeH - 4
@@ -831,13 +860,16 @@ export function renderCrown(
 
   // --- centrepiece --------------------------------------------------------
   const cy = crown.profile === 'pediment' ? h * 0.3 : Math.max(10, friezeY - 12);
+  // Ink the motif from the timber's own dark end rather than the rail's
+  // hairline ink — on pale rooms (hinoki, barn wood) the rail ink vanishes
+  // and the crown ends up a blank board.
   renderCentrepiece(
     ctx,
     crown.centrepiece,
     w / 2,
     cy,
-    9,
-    theme.rail.ink,
+    10,
+    hexAlpha(wood.dark, 0.62),
     crown.bead?.colour ?? theme.rail.inlayColour,
     seed ^ 0x0e11,
   );
@@ -856,6 +888,47 @@ export function renderCrown(
   } else if (joinery.kind === 'brass-bracket') {
     for (const x of [18, w - 18]) {
       renderJoinery(ctx, joinery, x - 12, h - lipH, 24, lipH, seed ^ Math.round(x), 'horizontal');
+    }
+  } else if (joinery.kind === 'mitre') {
+    // The mitre return at each end: the whole ornament of a well-made cornice.
+    // A hairline shadow along the 45 with a whisper of light on the proud side.
+    for (const [ex, dir] of [
+      [3, 1],
+      [w - 3, -1],
+    ] as const) {
+      ctx.strokeStyle = 'rgba(46, 36, 24, 0.42)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(ex, 1);
+      ctx.lineTo(ex + dir * (h - 2), h - 1);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 252, 244, 0.42)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(ex + dir * 1.4, 1);
+      ctx.lineTo(ex + dir * (h - 0.6), h - 1);
+      ctx.stroke();
+    }
+    // A wedged through-tenon proud of the face, twice: quiet, deliberate.
+    for (const t of [0.3, 0.7]) {
+      const tx = t * w;
+      const ty = h - lipH * 0.5;
+      ctx.fillStyle = 'rgba(28, 20, 12, 0.28)';
+      ctx.fillRect(tx - 7, ty - 4.5, 15, 10);
+      ctx.fillStyle = mixHex(joinery.metal, '#ffffff', 0.18);
+      ctx.fillRect(tx - 8, ty - 5, 15, 10);
+      ctx.strokeStyle = 'rgba(56, 44, 28, 0.5)';
+      ctx.lineWidth = 0.9;
+      ctx.strokeRect(tx - 8, ty - 5, 15, 10);
+      // The wedge itself, driven across the tenon.
+      ctx.fillStyle = 'rgba(70, 52, 32, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(tx - 2, ty - 5);
+      ctx.lineTo(tx + 1, ty - 5);
+      ctx.lineTo(tx + 2.4, ty + 5);
+      ctx.lineTo(tx - 3.4, ty + 5);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 
@@ -939,25 +1012,35 @@ export function renderRail(
     };
     switch (rail.inlay) {
       case 'gold-pinstripe':
-      case 'silver':
-        for (const x of [6.5, w - 6.5]) {
-          drawLine(x, rail.inlayColour, 0.9);
-          drawLine(x + 1.2, 'rgba(20, 16, 10, 0.18)', 0.7);
+      case 'silver': {
+        // A pair of stringing lines sunk into the stock: a dark scratch-stock
+        // groove with the metal lying bright in the bottom of it.
+        for (const x of [7, w - 7]) {
+          drawLine(x - 1, 'rgba(18, 13, 7, 0.5)', 2.6);
+          drawLine(x, rail.inlayColour, 1.6);
+          drawLine(x, rail.inlay === 'silver' ? 'rgba(246, 250, 255, 0.7)' : 'rgba(255, 238, 176, 0.7)', 0.7);
+          drawLine(x + 1.6, 'rgba(20, 16, 10, 0.34)', 1);
         }
         break;
+      }
       case 'painted-line':
-        drawLine(w / 2, rail.inlayColour, 3.2);
-        drawLine(w / 2 - 2.4, 'rgba(255, 255, 255, 0.16)', 1);
+        drawLine(w / 2 + 1.6, 'rgba(30, 22, 14, 0.3)', 4.6);
+        drawLine(w / 2, rail.inlayColour, 4);
+        drawLine(w / 2 - 1.6, 'rgba(255, 255, 255, 0.3)', 1.2);
         break;
       case 'brass-bead': {
         // A half-round brass bead: bright core, dark seating lines.
-        const bg = ctx.createLinearGradient(w / 2 - 3, 0, w / 2 + 3, 0);
-        bg.addColorStop(0, 'rgba(90, 62, 20, 0.5)');
-        bg.addColorStop(0.4, rail.inlayColour);
-        bg.addColorStop(0.55, 'rgba(255, 240, 190, 0.65)');
-        bg.addColorStop(1, 'rgba(80, 54, 16, 0.5)');
+        const bg = ctx.createLinearGradient(w / 2 - 4, 0, w / 2 + 4, 0);
+        bg.addColorStop(0, 'rgba(60, 40, 12, 0.7)');
+        bg.addColorStop(0.32, rail.inlayColour);
+        bg.addColorStop(0.52, 'rgba(255, 242, 194, 0.9)');
+        bg.addColorStop(0.72, rail.inlayColour);
+        bg.addColorStop(1, 'rgba(52, 34, 8, 0.7)');
         ctx.fillStyle = bg;
-        ctx.fillRect(w / 2 - 3, 0, 6, h);
+        ctx.fillRect(w / 2 - 4, 0, 8, h);
+        // Seating grooves either side of the bead.
+        drawLine(w / 2 - 5, 'rgba(24, 15, 6, 0.45)', 1.4);
+        drawLine(w / 2 + 5, 'rgba(24, 15, 6, 0.45)', 1.4);
         break;
       }
     }
@@ -1017,6 +1100,60 @@ export function renderPlank(
   face.addColorStop(1, 'rgba(50, 38, 26, 0.24)');
   ctx.fillStyle = face;
   ctx.fillRect(0, 0, w, h);
+
+  // Front-edge profile — the same stock worked four different ways, which is
+  // most of what tells one carpenter's shelf from another's at a glance.
+  switch (rail.edge) {
+    case 'rounded': {
+      // Bullnose: light rolls over the top and dies under the belly.
+      const g = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+      g.addColorStop(0, 'rgba(255, 252, 240, 0.42)');
+      g.addColorStop(1, 'rgba(255, 252, 240, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h * 0.5);
+      const u = ctx.createLinearGradient(0, h * 0.6, 0, h);
+      u.addColorStop(0, 'rgba(46, 32, 18, 0)');
+      u.addColorStop(1, 'rgba(46, 32, 18, 0.34)');
+      ctx.fillStyle = u;
+      ctx.fillRect(0, h * 0.6, w, h * 0.4);
+      break;
+    }
+    case 'chamfer': {
+      // A crisp 45 taken off the top arris: two flat tonal steps, no rolloff.
+      ctx.fillStyle = 'rgba(255, 252, 244, 0.34)';
+      ctx.fillRect(0, 0, w, h * 0.2);
+      ctx.fillStyle = 'rgba(60, 46, 28, 0.16)';
+      ctx.fillRect(0, h * 0.2, w, 1.6);
+      ctx.fillStyle = 'rgba(48, 34, 20, 0.26)';
+      ctx.fillRect(0, h - h * 0.16, w, h * 0.16);
+      break;
+    }
+    case 'rough': {
+      // Sawn and left: a ragged arris with torn fibres along the top edge.
+      ctx.strokeStyle = 'rgba(28, 20, 12, 0.34)';
+      ctx.lineWidth = 1;
+      for (let sx = 0; sx < w; sx += 5 + rnd() * 9) {
+        const d = rnd() * 2.6;
+        ctx.beginPath();
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx + 1 + rnd() * 3, d);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(24, 17, 10, 0.2)';
+      ctx.fillRect(0, h - 5, w, 5);
+      break;
+    }
+    default: {
+      // Sharp: a hard bright arris with a fine quirk bead under it.
+      ctx.fillStyle = 'rgba(255, 250, 236, 0.5)';
+      ctx.fillRect(0, 0, w, 2);
+      ctx.fillStyle = 'rgba(38, 26, 14, 0.3)';
+      ctx.fillRect(0, h * 0.34, w, 1.6);
+      ctx.fillStyle = 'rgba(255, 246, 222, 0.18)';
+      ctx.fillRect(0, h * 0.34 + 1.6, w, 1);
+      break;
+    }
+  }
 
   // Plank seams.
   ctx.strokeStyle = rail.ink;
@@ -1159,6 +1296,639 @@ export function renderShelfDetail(
   ctx.restore();
 }
 
+/* =============================== backdrop ================================ */
+
+export interface BackdropOptions {
+  seed: number;
+  /**
+   * One floor's height in world px. Every vertical feature (dado rail, shoji
+   * lattice, glazing bars) repeats on this pitch, so a caller can bake a
+   * single floor-tall strip and tile it up the world.
+   */
+  floorH?: number;
+  /** Studio wallpaper override; defaults to the theme's own pairing. */
+  wallpaper?: WallpaperSpec;
+}
+
+/**
+ * Paint the *room's wall* behind the case, `w × h` at the current origin.
+ *
+ * Six treatments, orthogonal to both theme and wallpaper (library-themes.md
+ * §1 + the studio's "This library" tab): papered · panelled · plastered ·
+ * boarded · shoji · glazed. Only papered and panelled show the wallpaper
+ * pattern; the rest take just its colourway, so switching a room's wall never
+ * clashes with the books.
+ */
+export function renderBackdrop(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  backdrop: BackdropId,
+  w: number,
+  h: number,
+  opts: BackdropOptions,
+): void {
+  const wp = opts.wallpaper ?? theme.wallpaper;
+  const floorH = Math.max(120, opts.floorH ?? h);
+  const seed = opts.seed >>> 0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
+  switch (backdrop) {
+    case 'panelled':
+      backdropPanelled(ctx, theme, wp, w, h, floorH, seed);
+      break;
+    case 'plastered':
+      backdropPlastered(ctx, theme, wp, w, h, floorH, seed);
+      break;
+    case 'boarded':
+      backdropBoarded(ctx, theme, wp, w, h, seed);
+      break;
+    case 'shoji':
+      backdropShoji(ctx, theme, wp, w, h, floorH, seed);
+      break;
+    case 'glazed':
+      backdropGlazed(ctx, theme, wp, w, h, floorH, seed);
+      break;
+    case 'papered':
+    default:
+      paperWall(ctx, wp, 0, 0, w, h, seed);
+      break;
+  }
+  // Every room is a little darker at the skirting than at the picture rail.
+  const room = ctx.createLinearGradient(0, 0, 0, h);
+  room.addColorStop(0, 'rgba(255, 255, 255, 0.05)');
+  room.addColorStop(0.55, 'rgba(0, 0, 0, 0)');
+  room.addColorStop(1, 'rgba(18, 12, 8, 0.16)');
+  ctx.fillStyle = room;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+/** Tile the wallpaper across a rect. */
+function paperWall(
+  ctx: Ctx2D,
+  wp: WallpaperSpec,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  seed: number,
+): void {
+  const size = wp.tile;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  // Snap the tile origin to the pattern grid so the seam never lands mid-rect.
+  const x0 = x - (((x % size) + size) % size);
+  const y0 = y - (((y % size) + size) % size);
+  for (let ty = y0; ty < y + h; ty += size) {
+    for (let tx = x0; tx < x + w; tx += size) {
+      ctx.save();
+      ctx.translate(tx, ty);
+      renderWallpaper(ctx, wp.pattern, size, wp.colourway, seed);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+/** Wall timber: the case's own wood, one shade quieter and less contrasty. */
+function wallTimber(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  w: number,
+  h: number,
+  seed: number,
+  direction: 'horizontal' | 'vertical',
+): void {
+  paintWood(
+    ctx,
+    {
+      ...theme.wood,
+      contrast: theme.wood.contrast * 0.72,
+      // A wall is further away and less handled than the case: knock the
+      // chipping back so the paint film reads as a surface, not as fly specks.
+      paint: theme.wood.paint
+        ? { ...theme.wood.paint, chipping: theme.wood.paint.chipping * 0.4 }
+        : undefined,
+    },
+    w,
+    h,
+    { seed: seed >>> 0, direction, contrast: 0.9, noFinish: true },
+  );
+}
+
+/* --- panelled ------------------------------------------------------------ */
+
+function backdropPanelled(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  wp: WallpaperSpec,
+  w: number,
+  h: number,
+  floorH: number,
+  seed: number,
+): void {
+  const rnd = mulberry32(seed ^ 0x9d1);
+  const ink = theme.rail.ink;
+  for (let by = -floorH; by < h; by += floorH) {
+    const dadoY = by + floorH * 0.6;
+    const railH = 11;
+    const skirtH = 20;
+    const base = by + floorH - skirtH;
+    // 1. paper above the rail
+    paperWall(ctx, wp, 0, Math.max(0, by), w, Math.max(0, dadoY - Math.max(0, by)), seed);
+    // 2. dado field
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, dadoY, w, floorH - floorH * 0.6);
+    ctx.clip();
+    ctx.save();
+    ctx.translate(0, dadoY);
+    wallTimber(ctx, theme, w, floorH * 0.4 + 2, seed ^ 0x4a1, 'vertical');
+    ctx.restore();
+    // Fielded panels: a raised centre inside a bevelled frame.
+    const stile = 16;
+    const pw = 150;
+    const count = Math.max(1, Math.round(w / pw));
+    const cw2 = w / count;
+    for (let i = 0; i < count; i++) {
+      const px = i * cw2 + stile / 2;
+      const py = dadoY + 14;
+      const pwi = cw2 - stile;
+      const phi = base - py - 10;
+      if (pwi < 20 || phi < 20) continue;
+      // Bevel: light on the top/left arris, shadow on the bottom/right.
+      ctx.fillStyle = 'rgba(20, 14, 8, 0.3)';
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + pwi, py);
+      ctx.lineTo(px + pwi - 9, py + 9);
+      ctx.lineTo(px + 9, py + 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(20, 14, 8, 0.2)';
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + 9, py + 9);
+      ctx.lineTo(px + 9, py + phi - 9);
+      ctx.lineTo(px, py + phi);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 246, 224, 0.22)';
+      ctx.beginPath();
+      ctx.moveTo(px + pwi, py);
+      ctx.lineTo(px + pwi, py + phi);
+      ctx.lineTo(px + pwi - 9, py + phi - 9);
+      ctx.lineTo(px + pwi - 9, py + 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 246, 224, 0.26)';
+      ctx.beginPath();
+      ctx.moveTo(px, py + phi);
+      ctx.lineTo(px + pwi, py + phi);
+      ctx.lineTo(px + pwi - 9, py + phi - 9);
+      ctx.lineTo(px + 9, py + phi - 9);
+      ctx.closePath();
+      ctx.fill();
+      // Raised centre catches the light: without this the field reads as a
+      // dark hole in dark-timbered rooms and the panelling disappears.
+      const field = ctx.createLinearGradient(px + 9, py + 9, px + 9, py + phi - 9);
+      field.addColorStop(0, 'rgba(255, 246, 220, 0.2)');
+      field.addColorStop(0.5, 'rgba(255, 246, 220, 0.08)');
+      field.addColorStop(1, 'rgba(40, 28, 16, 0.14)');
+      ctx.fillStyle = field;
+      ctx.fillRect(px + 9, py + 9, pwi - 18, phi - 18);
+      ctx.strokeStyle = hexAlpha('#2a1d12', 0.3);
+      ctx.lineWidth = 1;
+      pencil(ctx, `M ${px + 9} ${py + 9} L ${px + pwi - 9} ${py + 9} L ${px + pwi - 9} ${py + phi - 9} L ${px + 9} ${py + phi - 9} Z`, (seed + i * 71) >>> 0, 0.5);
+    }
+    ctx.restore();
+    // 3. chair rail: three stacked mouldings, plus its shadow on the paper.
+    const shadow = ctx.createLinearGradient(0, dadoY - 16, 0, dadoY);
+    shadow.addColorStop(0, 'rgba(24, 16, 8, 0)');
+    shadow.addColorStop(1, 'rgba(24, 16, 8, 0.3)');
+    ctx.fillStyle = shadow;
+    ctx.fillRect(0, dadoY - 16, w, 16);
+    ctx.save();
+    ctx.translate(0, dadoY - railH);
+    wallTimber(ctx, theme, w, railH + 3, seed ^ 0x77c1, 'horizontal');
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255, 250, 232, 0.34)';
+    ctx.fillRect(0, dadoY - railH, w, 2.4);
+    ctx.fillStyle = 'rgba(30, 20, 12, 0.34)';
+    ctx.fillRect(0, dadoY - railH * 0.42, w, 2);
+    ctx.fillStyle = 'rgba(255, 248, 226, 0.18)';
+    ctx.fillRect(0, dadoY - railH * 0.42 + 2, w, 1.2);
+    ctx.fillStyle = 'rgba(26, 18, 10, 0.3)';
+    ctx.fillRect(0, dadoY + 1.5, w, 2.4);
+    if (theme.rail.inlay !== 'none') {
+      ctx.fillStyle = theme.rail.inlayColour;
+      ctx.fillRect(0, dadoY - railH * 0.72, w, 1.1);
+    }
+    // 4. skirting board
+    ctx.save();
+    ctx.translate(0, base);
+    wallTimber(ctx, theme, w, skirtH, seed ^ 0x1b0, 'horizontal');
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255, 248, 226, 0.24)';
+    ctx.fillRect(0, base, w, 2);
+    ctx.fillStyle = 'rgba(20, 14, 8, 0.42)';
+    ctx.fillRect(0, base + skirtH - 3, w, 3);
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1;
+    pencil(ctx, `M 0 ${base + 0.8} L ${w} ${base + 0.8}`, (seed ^ 0x33) >>> 0, 0.6);
+    void rnd;
+  }
+}
+
+/* --- plastered ----------------------------------------------------------- */
+
+function backdropPlastered(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  wp: WallpaperSpec,
+  w: number,
+  h: number,
+  floorH: number,
+  seed: number,
+): void {
+  const cw = getColourway(wp.colourway);
+  const rnd = mulberry32(seed ^ 0x51a);
+  ctx.fillStyle = cw.base;
+  ctx.fillRect(0, 0, w, h);
+  // Trowel sweeps: a float travels FLAT and far, so these are long shallow
+  // arcs, almost horizontal, and barely there. Short fat arcs read as debris.
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let i = 0; i < Math.round((w * h) / 2600); i++) {
+    const cx = rnd() * w;
+    const cy = rnd() * h;
+    const r = 180 + rnd() * 340;
+    const a0 = -Math.PI / 2 - 0.5 + rnd() * 1;
+    const span = 0.06 + rnd() * 0.16;
+    ctx.strokeStyle = rnd() < 0.5 ? 'rgba(255, 255, 250, 0.03)' : hexAlpha(parseHexToHex(cw.inkSoft), 0.035);
+    ctx.lineWidth = 4 + rnd() * 9;
+    ctx.beginPath();
+    ctx.arc(cx, cy + r, r, a0 - span, a0 + span);
+    ctx.stroke();
+  }
+  ctx.restore();
+  // Ghost of an old fresco: a blind arcade, drawn as one continuous line per
+  // bay with a springing course tying the bays together, so it reads as
+  // architecture even at a tenth of its original strength.
+  for (let by = -floorH; by < h; by += floorH) {
+    const bays = Math.max(2, Math.round(w / 200));
+    const bw = w / bays;
+    const top = by + floorH * 0.14;
+    const bot = by + floorH * 0.9;
+    const r = bw * 0.42;
+    const spring = top + r;
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = cw.accent;
+    ctx.lineWidth = 1.8;
+    for (let i = 0; i < bays; i++) {
+      const cx = i * bw + bw / 2;
+      // arc(…, PI, 0) sweeps the BOTTOM half (canvas adds 2PI when end < start)
+      // and turns every arch into a ring. PI → 2PI is the springing arch.
+      ctx.beginPath();
+      ctx.moveTo(cx - r, bot);
+      ctx.lineTo(cx - r, spring);
+      ctx.arc(cx, spring, r, Math.PI, Math.PI * 2);
+      ctx.lineTo(cx + r, bot);
+      ctx.stroke();
+    }
+    // Springing course + impost band across every bay.
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(0, spring);
+    ctx.lineTo(w, spring);
+    ctx.moveTo(0, spring + 5);
+    ctx.lineTo(w, spring + 5);
+    ctx.stroke();
+    // A faded figure standing in every other bay: halo, shoulders, robe.
+    ctx.globalAlpha = 0.34;
+    ctx.lineWidth = 1.8;
+    for (let i = 0; i < bays; i += 2) {
+      const cx = i * bw + bw / 2;
+      const head = spring + r * 0.5;
+      const hem = bot - 8;
+      ctx.beginPath();
+      // Halo only — no facial features; a saint whose paint has gone.
+      ctx.arc(cx, head, r * 0.3, 0, Math.PI * 2);
+      // Shoulders, then a robe falling in two folds to a soft hem.
+      ctx.moveTo(cx - r * 0.34, head + r * 0.46);
+      ctx.quadraticCurveTo(cx, head + r * 0.24, cx + r * 0.34, head + r * 0.46);
+      ctx.moveTo(cx - r * 0.34, head + r * 0.46);
+      ctx.bezierCurveTo(cx - r * 0.52, head + r * 1.4, cx - r * 0.5, hem - 20, cx - r * 0.44, hem);
+      ctx.moveTo(cx + r * 0.34, head + r * 0.46);
+      ctx.bezierCurveTo(cx + r * 0.52, head + r * 1.4, cx + r * 0.5, hem - 20, cx + r * 0.44, hem);
+      ctx.moveTo(cx - r * 0.44, hem);
+      ctx.quadraticCurveTo(cx, hem + 7, cx + r * 0.44, hem);
+      // One inner fold so the robe has weight.
+      ctx.moveTo(cx, head + r * 0.62);
+      ctx.quadraticCurveTo(cx - r * 0.12, hem - 30, cx - r * 0.06, hem - 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Where the plaster has been reskimmed the fresco simply stops.
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 3; i++) {
+      const px = rnd() * w;
+      const py = by + rnd() * floorH;
+      const pr = 40 + rnd() * 90;
+      const pg = ctx.createRadialGradient(px, py, 0, px, py, pr);
+      pg.addColorStop(0, cw.base);
+      pg.addColorStop(0.7, cw.base);
+      // Fade to a TRANSPARENT VERSION OF THIS COLOUR, never to rgba(0,0,0,0):
+      // canvas interpolates un-premultiplied, so fading to transparent black
+      // paints a dark halo ring at the gradient's edge.
+      pg.addColorStop(1, hexAlpha(cw.base, 0));
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = pg;
+      ctx.fillRect(px - pr, py - pr, pr * 2, pr * 2);
+    }
+    ctx.restore();
+  }
+  // Damp bloom creeping up from the floor.
+  const damp = ctx.createLinearGradient(0, h, 0, h - Math.min(h * 0.4, 220));
+  damp.addColorStop(0, hexAlpha('#6d6250', 0.34));
+  damp.addColorStop(1, 'rgba(109, 98, 80, 0)');
+  ctx.fillStyle = damp;
+  ctx.fillRect(0, h - Math.min(h * 0.4, 220), w, Math.min(h * 0.4, 220));
+  // Hairline settlement cracks + pinholes.
+  ctx.strokeStyle = cw.ink;
+  ctx.lineWidth = 0.9;
+  for (let i = 0; i < Math.round(h / 90); i++) {
+    let x = rnd() * w;
+    let y = rnd() * h;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 6; s++) {
+      x += (rnd() * 2 - 1) * 22;
+      y += 10 + rnd() * 26;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  for (let i = 0; i < Math.round((w * h) / 900); i++) {
+    ctx.fillStyle = rnd() < 0.6 ? cw.inkSoft : 'rgba(255, 255, 255, 0.18)';
+    ctx.beginPath();
+    ctx.arc(rnd() * w, rnd() * h, 0.4 + rnd() * 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  void theme;
+}
+
+/* --- boarded ------------------------------------------------------------- */
+
+function backdropBoarded(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  wp: WallpaperSpec,
+  w: number,
+  h: number,
+  seed: number,
+): void {
+  const rnd = mulberry32(seed ^ 0xb0a2);
+  const cw = getColourway(wp.colourway);
+  // Boards of mildly varying width, each its own piece of timber.
+  let x = -20 - rnd() * 20;
+  let i = 0;
+  while (x < w) {
+    const bw = 34 + rnd() * 22;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, 0, bw, h);
+    ctx.clip();
+    ctx.translate(x, 0);
+    wallTimber(ctx, theme, bw, h, (seed ^ (i * 3167)) >>> 0, 'vertical');
+    // Per-board tone jitter: no two boards came off the same log.
+    ctx.fillStyle = i % 3 === 0
+      ? 'rgba(255, 250, 236, 0.09)'
+      : i % 3 === 1
+        ? 'rgba(24, 18, 12, 0.09)'
+        : 'rgba(0, 0, 0, 0)';
+    ctx.fillRect(0, 0, bw, h);
+    ctx.restore();
+    // V-groove between boards: dark core, bright lip on the left of the next.
+    ctx.fillStyle = 'rgba(18, 13, 8, 0.42)';
+    ctx.fillRect(x + bw - 2.2, 0, 2.2, h);
+    ctx.fillStyle = 'rgba(255, 248, 228, 0.2)';
+    ctx.fillRect(x + bw, 0, 1.4, h);
+    // Bead line a few px in — the tongue-and-groove signature.
+    ctx.strokeStyle = 'rgba(28, 20, 12, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 6.5, 0);
+    ctx.lineTo(x + 6.5, h);
+    ctx.stroke();
+    x += bw;
+    i++;
+  }
+  // Wash the whole run toward the wall colourway so it belongs to the room.
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = cw.base;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+  // A few nail heads and one horizontal batten line high up.
+  ctx.fillStyle = 'rgba(52, 44, 34, 0.45)';
+  for (let n = 0; n < Math.round(w / 90); n++) {
+    ctx.beginPath();
+    ctx.arc(rnd() * w, rnd() * h, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/* --- shoji --------------------------------------------------------------- */
+
+function backdropShoji(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  wp: WallpaperSpec,
+  w: number,
+  h: number,
+  floorH: number,
+  seed: number,
+): void {
+  const rnd = mulberry32(seed ^ 0x5401);
+  const cw = getColourway(wp.colourway);
+  const paper = mixHex(cw.base, '#fffaf0', 0.5);
+  ctx.fillStyle = paper;
+  ctx.fillRect(0, 0, w, h);
+  // Paper glows warm where the light behind it is strongest.
+  for (let by = -floorH; by < h; by += floorH) {
+    const g = ctx.createRadialGradient(w * 0.5, by + floorH * 0.4, 0, w * 0.5, by + floorH * 0.4, Math.max(w, floorH) * 0.7);
+    g.addColorStop(0, 'rgba(255, 246, 224, 0.5)');
+    g.addColorStop(1, 'rgba(255, 246, 224, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, by, w, floorH);
+  }
+  // Kozo fibres suspended in the sheet.
+  for (let i = 0; i < Math.round((w * h) / 700); i++) {
+    const x = rnd() * w;
+    const y = rnd() * h;
+    const a = rnd() * Math.PI;
+    const len = 3 + rnd() * 11;
+    ctx.strokeStyle = rnd() < 0.5 ? cw.inkSoft : 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  // The shadow of a branch on the far side of the screen — soft, no detail.
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = cw.inkSoft;
+  for (let by = -floorH; by < h; by += floorH) {
+    let x = -10;
+    let y = by + floorH * (0.2 + rnd() * 0.5);
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    while (x < w + 20) {
+      const nx = x + 60 + rnd() * 60;
+      const ny = y + (rnd() * 2 - 1) * 34;
+      ctx.quadraticCurveTo((x + nx) / 2, y - 18, nx, ny);
+      x = nx;
+      y = ny;
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  // Kumiko lattice: fine timber grid over the paper, with its own shadow.
+  const cols = Math.max(2, Math.round(w / 118));
+  const rows = 4;
+  const cwid = w / cols;
+  const rh = floorH / rows;
+  const bar = (x: number, y: number, bw: number, bh: number): void => {
+    ctx.fillStyle = 'rgba(60, 46, 30, 0.16)';
+    ctx.fillRect(x + 1.5, y + 2, bw, bh);
+    ctx.fillStyle = mixHex(theme.wood.light, '#3a2c1c', 0.32);
+    ctx.fillRect(x, y, bw, bh);
+    ctx.fillStyle = 'rgba(255, 250, 236, 0.3)';
+    ctx.fillRect(x, y, bw < bh ? 1 : bw, bw < bh ? bh : 1);
+  };
+  for (let by = -floorH; by < h; by += floorH) {
+    for (let r = 0; r <= rows; r++) bar(0, by + r * rh - 1.6, w, 3.2);
+    for (let c = 0; c <= cols; c++) bar(c * cwid - 1.6, by, 3.2, floorH);
+    // Heavier stile/rail framing every panel.
+    for (let c = 0; c <= cols; c += 2) bar(c * cwid - 4, by, 8, floorH);
+    bar(0, by + floorH - 6, w, 12);
+  }
+}
+
+/* --- glazed -------------------------------------------------------------- */
+
+function backdropGlazed(
+  ctx: Ctx2D,
+  theme: LibraryTheme,
+  wp: WallpaperSpec,
+  w: number,
+  h: number,
+  floorH: number,
+  seed: number,
+): void {
+  const rnd = mulberry32(seed ^ 0x91a5);
+  const cw = getColourway(wp.colourway);
+  const night = theme.id === 'observatory';
+  const skyTop = night ? '#1a2340' : mixHex(cw.base, '#cfe4ea', 0.62);
+  const skyBot = night ? '#2b3557' : mixHex(cw.base, '#eef3e6', 0.55);
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, skyTop);
+  g.addColorStop(1, skyBot);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  // What is beyond the glass: soft foliage masses, or a star field at night.
+  if (night) {
+    for (let i = 0; i < Math.round((w * h) / 1400); i++) {
+      ctx.fillStyle = rnd() < 0.12 ? cw.accent : 'rgba(222, 232, 255, 0.5)';
+      ctx.beginPath();
+      ctx.arc(rnd() * w, rnd() * h, 0.4 + rnd() * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    for (let i = 0; i < Math.round((w * h) / 4200); i++) {
+      const cx = rnd() * w;
+      const cy = rnd() * h;
+      const r = 22 + rnd() * 54;
+      const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      fg.addColorStop(0, `rgba(96, 124, 82, ${0.16 + rnd() * 0.14})`);
+      fg.addColorStop(1, 'rgba(96, 124, 82, 0)');
+      ctx.fillStyle = fg;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+  }
+  // Condensation: runs down the pane with a bright leading bead.
+  for (let i = 0; i < Math.round(w / 26); i++) {
+    const x = rnd() * w;
+    const y0 = rnd() * h;
+    const len = 14 + rnd() * 90;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 0.8 + rnd();
+    ctx.beginPath();
+    ctx.moveTo(x, y0);
+    ctx.quadraticCurveTo(x + (rnd() * 2 - 1) * 3, y0 + len * 0.6, x + (rnd() * 2 - 1) * 4, y0 + len);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    ctx.beginPath();
+    ctx.arc(x, y0 + len, 1.2 + rnd(), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Glazing bars: painted timber grid with putty lines and a cast shadow.
+  const cols = Math.max(2, Math.round(w / 130));
+  const rows = 3;
+  const cwid = w / cols;
+  const rh = floorH / rows;
+  // Glazing bars are the room's own joinery: painted where the room paints,
+  // otherwise its timber lightened only a little (a night observatory must
+  // not sprout cream-white window frames).
+  const barColour = theme.wood.paint?.colour ?? mixHex(theme.wood.light, '#f4efe2', 0.3);
+  const barDark = theme.wood.paint?.shade ?? theme.wood.dark;
+  const bar = (x: number, y: number, bw: number, bh: number): void => {
+    ctx.fillStyle = 'rgba(30, 34, 26, 0.24)';
+    ctx.fillRect(x + 2, y + 2.5, bw, bh);
+    ctx.fillStyle = barColour;
+    ctx.fillRect(x, y, bw, bh);
+    ctx.fillStyle = hexAlpha(parseHexToHex(barDark), 0.5);
+    if (bw < bh) ctx.fillRect(x + bw - 1.6, y, 1.6, bh);
+    else ctx.fillRect(x, y + bh - 1.6, bw, 1.6);
+    ctx.fillStyle = 'rgba(255, 255, 250, 0.42)';
+    if (bw < bh) ctx.fillRect(x, y, 1.3, bh);
+    else ctx.fillRect(x, y, bw, 1.3);
+  };
+  for (let by = -floorH; by < h; by += floorH) {
+    for (let r = 0; r <= rows; r++) bar(0, by + r * rh - 3, w, 6);
+    for (let c = 0; c <= cols; c++) bar(c * cwid - 3.5, by, 7, floorH);
+    // A heavier transom + mullion every other bay.
+    bar(0, by + floorH * 0.5 - 6, w, 12);
+    for (let c = 0; c <= cols; c += 2) bar(c * cwid - 6, by, 12, floorH);
+  }
+  // Green haze pressed against the inside of the glass, bottom corners.
+  const haze = ctx.createLinearGradient(0, h, 0, h * 0.6);
+  haze.addColorStop(0, night ? 'rgba(40, 52, 92, 0.34)' : 'rgba(112, 134, 92, 0.3)');
+  haze.addColorStop(1, night ? 'rgba(40, 52, 92, 0)' : 'rgba(112, 134, 92, 0)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, h * 0.6, w, h * 0.4);
+  void rnd;
+}
+
+/** mixHex returns `rgb(...)`; hexAlpha needs hex — normalise between them. */
+function parseHexToHex(colour: string): string {
+  if (colour.startsWith('#')) return colour;
+  const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(colour);
+  if (!m) return '#6b6152';
+  const hex = (n: string): string => Number(n).toString(16).padStart(2, '0');
+  return `#${hex(m[1]!)}${hex(m[2]!)}${hex(m[3]!)}`;
+}
+
 /* ============================== back panel =============================== */
 
 /**
@@ -1172,38 +1942,59 @@ export function renderBackPanel(
   w: number,
   h: number,
   seed: number,
+  wallpaper?: WallpaperSpec,
 ): void {
+  const wp = wallpaper ?? theme.wallpaper;
   ctx.save();
   if ((theme.backing ?? 'wood') === 'wallpaper') {
-    const size = theme.wallpaper.tile;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, w, h);
-    ctx.clip();
-    for (let y = 0; y < h; y += size) {
-      for (let x = 0; x < w; x += size) {
-        ctx.save();
-        ctx.translate(x, y);
-        renderWallpaper(ctx, theme.wallpaper.pattern, size, theme.wallpaper.colourway, seed);
-        ctx.restore();
-      }
-    }
-    ctx.restore();
+    // The room's own wall, seen straight through the carcass.
+    paperWall(ctx, wp, 0, 0, w, h, seed);
   } else {
-    // Darker, quieter timber than the front members: it is a backdrop.
-    paintWood(
-      ctx,
-      { ...theme.wood, light: mixHex(theme.wood.light, theme.wood.dark, 0.55), contrast: theme.wood.contrast * 0.5 },
-      w,
-      h,
-      { seed: seed ^ 0xbac6, direction: 'vertical', knots: 0, noFinish: true },
-    );
-    // Board seams.
+    // Boarded backing: distinct vertical boards, each its own piece of timber,
+    // darker and quieter than the front members. Drawing real boards (rather
+    // than one big noise field) is what stops the backdrop reading as mud.
     const rnd = mulberry32(seed >>> 0);
-    ctx.strokeStyle = hexAlpha(theme.wood.dark, 0.3);
-    ctx.lineWidth = 1;
-    for (let x = 130; x < w - 40; x += 130 + rnd() * 46) {
-      pencil(ctx, `M ${x} 0 L ${x} ${h}`, (seed + x) >>> 0, 1);
+    const backWood = {
+      ...theme.wood,
+      light: mixHex(theme.wood.light, theme.wood.dark, 0.5),
+      dark: mixHex(theme.wood.dark, '#0b0805', 0.28),
+      contrast: theme.wood.contrast * 0.7,
+      knots: theme.wood.knots * 0.4,
+    };
+    let x = -8 - rnd() * 30;
+    let i = 0;
+    while (x < w) {
+      const bw = 74 + rnd() * 54;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, 0, bw, h);
+      ctx.clip();
+      ctx.translate(x, 0);
+      paintWood(ctx, backWood, bw, h, {
+        seed: (seed ^ (i * 7919)) >>> 0,
+        direction: 'vertical',
+        noFinish: true,
+        // Painted rooms leave the carcass backs bare: this is the pale wood
+        // the chipped sage paint is chipping back TO, and it stops the room
+        // going flat and monochrome.
+        bare: theme.wood.paint !== undefined,
+      });
+      // Tone jitter so the boards read as separate pieces, not one field.
+      ctx.fillStyle =
+        i % 3 === 0
+          ? 'rgba(255, 244, 220, 0.055)'
+          : i % 3 === 1
+            ? 'rgba(12, 8, 5, 0.075)'
+            : 'rgba(0, 0, 0, 0)';
+      ctx.fillRect(0, 0, bw, h);
+      ctx.restore();
+      // Shadowed rebate between boards with a thin lit lip on the next one.
+      ctx.fillStyle = 'rgba(12, 8, 5, 0.5)';
+      ctx.fillRect(x + bw - 1.8, 0, 1.8, h);
+      ctx.fillStyle = 'rgba(255, 246, 224, 0.1)';
+      ctx.fillRect(x + bw, 0, 1, h);
+      x += bw;
+      i++;
     }
   }
 
@@ -1362,6 +2153,34 @@ export function renderPlate(
       ctx.lineWidth = 1.2;
       roundRect(ctx, 1, 1, w - 2, h - 2, radius);
       ctx.stroke();
+      if (spec.burn <= 0.05) {
+        // A clean nafuda plaque: an incised keyline, a chamfered arris and a
+        // pierced hole at each end for the cord. Without these it is a label,
+        // not a piece of joinery.
+        ctx.strokeStyle = 'rgba(120, 100, 74, 0.42)';
+        ctx.lineWidth = 0.9;
+        roundRect(ctx, 4.5, 4.5, w - 9, h - 9, Math.max(0.5, radius - 1));
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 250, 238, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(2, 2.4);
+        ctx.lineTo(w - 2, 2.4);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(96, 80, 58, 0.35)';
+        ctx.beginPath();
+        ctx.moveTo(2, h - 2.4);
+        ctx.lineTo(w - 2, h - 2.4);
+        ctx.stroke();
+        for (const hx of [5.5, w - 5.5]) {
+          ctx.fillStyle = 'rgba(88, 72, 52, 0.5)';
+          ctx.beginPath();
+          ctx.ellipse(hx, h / 2, 1.5, 2.1, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 250, 238, 0.4)';
+          ctx.lineWidth = 0.6;
+          ctx.stroke();
+        }
+      }
       break;
     }
     case 'paper-tag': {
@@ -1691,6 +2510,10 @@ export interface CaseSectionOptions {
   books?: boolean;
   /** Apply the light rig. Default true. */
   light?: boolean;
+  /** Wall treatment; defaults to the room's own (`theme.backdrops[0]`). */
+  backdrop?: BackdropId;
+  /** Studio wallpaper override (pattern x colourway). */
+  wallpaper?: WallpaperSpec;
   /** Drift/flicker phase, 0â€“1. */
   phase?: number;
 }
@@ -1711,6 +2534,7 @@ export function renderCaseSection(
 ): void {
   const label = opts.label ?? theme.name;
   const showBooks = opts.books ?? true;
+  const wp = opts.wallpaper ?? theme.wallpaper;
   const railW = theme.rail.width;
   const crownH = theme.crown.height;
   const plankH = THEMED_PLANK_HEIGHT;
@@ -1719,20 +2543,11 @@ export function renderCaseSection(
   ctx.save();
 
   // --- 1. the wall behind the case ---------------------------------------
-  const tile = theme.wallpaper.tile;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, w, h);
-  ctx.clip();
-  for (let y = 0; y < h; y += tile) {
-    for (let x = 0; x < w; x += tile) {
-      ctx.save();
-      ctx.translate(x, y);
-      renderWallpaper(ctx, theme.wallpaper.pattern, tile, theme.wallpaper.colourway, seed ^ 0x77);
-      ctx.restore();
-    }
-  }
-  ctx.restore();
+  renderBackdrop(ctx, theme, opts.backdrop ?? theme.backdrops[0], w, h, {
+    seed: seed ^ 0x77,
+    floorH: h,
+    wallpaper: wp,
+  });
 
   // Case drop shadow onto the wall.
   const caseX = 14;
@@ -1748,7 +2563,7 @@ export function renderCaseSection(
   // --- 2. back panel ------------------------------------------------------
   ctx.save();
   ctx.translate(caseX + railW, crownH);
-  renderBackPanel(ctx, theme, caseW - railW * 2, h - crownH, seed ^ 0xbeef);
+  renderBackPanel(ctx, theme, caseW - railW * 2, h - crownH, seed ^ 0xbeef, wp);
   ctx.restore();
 
   // --- 3. books (stand-ins in the theme's pigment ramp) -------------------
@@ -1938,15 +2753,56 @@ export function bakeThemedPlate(id: ThemeId, label: string, dpr: number): Promis
   });
 }
 
+/**
+ * Bake one floor-tall strip of the room's wall. Vertical features repeat on
+ * `floorH`, so the caller tiles this strip up and across the world (a Pixi
+ * TilingSprite over the whole wall is exactly right).
+ */
+export function bakeThemedBackdrop(
+  id: ThemeId,
+  backdrop: BackdropId,
+  w: number,
+  floorH: number,
+  dpr: number,
+  wallpaper?: WallpaperSpec,
+): Promise<ImageBitmap> {
+  const theme = getTheme(id);
+  const wp = wallpaper ?? theme.wallpaper;
+  return bakePart(
+    `backdrop|${id}|${backdrop}|${wp.pattern}|${wp.colourway}|${w}x${floorH}`,
+    w,
+    floorH,
+    dpr,
+    (ctx) =>
+      renderBackdrop(ctx, theme, backdrop, w, floorH, {
+        seed: fnv1a(`${id}|${backdrop}|${w}`),
+        floorH,
+        wallpaper: wp,
+      }),
+  );
+}
+
 /** Bake the theme-picker thumbnail / specimen card. */
 export function bakeThemeThumbnail(
   id: ThemeId,
   w: number,
   h: number,
   dpr: number,
+  opts: { backdrop?: BackdropId; wallpaper?: WallpaperSpec } = {},
 ): Promise<ImageBitmap> {
   const theme = getTheme(id);
-  return bakePart(`thumb|${id}|${w}x${h}`, w, h, dpr, (ctx) =>
-    renderCaseSection(ctx, theme, w, h, fnv1a(`${id}|thumb`), { label: theme.name }),
+  const backdrop = opts.backdrop ?? theme.backdrops[0];
+  const wp = opts.wallpaper ?? theme.wallpaper;
+  return bakePart(
+    `thumb|${id}|${backdrop}|${wp.pattern}|${wp.colourway}|${w}x${h}`,
+    w,
+    h,
+    dpr,
+    (ctx) =>
+      renderCaseSection(ctx, theme, w, h, fnv1a(`${id}|thumb`), {
+        label: theme.name,
+        backdrop,
+        wallpaper: wp,
+      }),
   );
 }

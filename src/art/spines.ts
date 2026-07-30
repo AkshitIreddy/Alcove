@@ -59,6 +59,25 @@ export const SPINE_HEIGHT_RANGE = { min: 150, max: 290 } as const;
 /** Legal spine thickness range in world px. */
 export const SPINE_THICKNESS_RANGE = { min: 20, max: 64 } as const;
 
+/**
+ * Book formats, the bibliographic sizes a real shelf mixes: a folio towers
+ * over a pocket duodecimo. Heights are in world px and always inside
+ * SPINE_HEIGHT_RANGE. The studio's height slider overrides them outright.
+ */
+export const SPINE_FORMATS = {
+  folio: { min: 262, max: 288, label: 'Folio' },
+  quarto: { min: 240, max: 264, label: 'Quarto' },
+  octavo: { min: 214, max: 242, label: 'Octavo' },
+  duodecimo: { min: 188, max: 216, label: 'Duodecimo' },
+  pocket: { min: 162, max: 190, label: 'Pocket' },
+} as const;
+export type SpineFormat = keyof typeof SPINE_FORMATS;
+export const SPINE_FORMAT_IDS = Object.keys(SPINE_FORMATS) as readonly SpineFormat[];
+
+export function isSpineFormat(v: unknown): v is SpineFormat {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(SPINE_FORMATS, v);
+}
+
 /** The five named wear stops, pristine → well-loved (wear is continuous). */
 export const WEAR_STOPS = [
   { id: 'pristine', label: 'Pristine', value: 0 },
@@ -67,6 +86,64 @@ export const WEAR_STOPS = [
   { id: 'worn', label: 'Worn', value: 0.75 },
   { id: 'well-loved', label: 'Well-loved', value: 1 },
 ] as const;
+
+/** Display names for the studio's material picker. */
+export const MATERIAL_LABELS: Readonly<Record<BindingMaterial, string>> = {
+  leather: 'Leather',
+  cloth: 'Cloth',
+  paper: 'Paper',
+  vellum: 'Vellum',
+  linen: 'Linen',
+  silk: 'Silk',
+};
+
+/** Display names for the 12 pigment duos, index-aligned with PALETTES. */
+export const PIGMENT_LABELS: readonly string[] = [
+  'Amber',
+  'Terracotta',
+  'Moss',
+  'Dusty blue',
+  'Plum',
+  'Ochre',
+  'Sage',
+  'Rust',
+  'Clay',
+  'Olive',
+  'Slate',
+  'Blush',
+];
+
+/** Display names for the 12 ornament stamps, index-aligned with drawOrnament. */
+export const ORNAMENT_LABELS: readonly string[] = [
+  'Diamond',
+  'Laurel spray',
+  'Star',
+  'Blot',
+  'Chevron',
+  'Sun',
+  'Moon',
+  'Keyhole',
+  'Laurel wreath',
+  'Quill',
+  'Tree',
+  'Crescent & stars',
+];
+
+/** Display names for the title-plate treatments. */
+export const TITLE_PLATE_LABELS: Readonly<Record<TitlePlateStyle, string>> = {
+  none: 'None',
+  gilt: 'Gilt panel',
+  label: 'Paper label',
+  debossed: 'Debossed',
+};
+
+/** Display names for the text-block edge treatments. */
+export const EDGE_LABELS: Readonly<Record<EdgeTreatment, string>> = {
+  plain: 'Plain',
+  gilt: 'Gilt',
+  marbled: 'Marbled',
+  speckled: 'Speckled',
+};
 
 export function isBindingMaterial(v: unknown): v is BindingMaterial {
   return typeof v === 'string' && (BINDING_MATERIALS as readonly string[]).includes(v);
@@ -143,7 +220,9 @@ export interface SpineParams {
   wear?: number;
   /** Text-block edge treatment. */
   edge?: EdgeTreatment;
-  /** Spine height in world px (SPINE_BASE_HEIGHT + hJitter by default). */
+  /** Bibliographic format the seeded `height` was drawn from. */
+  format?: SpineFormat;
+  /** Spine height in world px (drawn from `format`'s band by default). */
   height?: number;
   /** Charm carried on the shelf AND into the pull-out / open book. */
   charm?: CharmKind;
@@ -237,11 +316,6 @@ export function deriveSpineParams(seed: number): SpineParams {
   const wearRoll = rnd();
   const wear = clamp(wearRoll * wearRoll * (0.55 + MATERIAL_WEAR_BIAS[material]), 0, 1);
   const edge = pickWeighted(rnd(), EDGE_WEIGHTS);
-  const height = clamp(
-    SPINE_BASE_HEIGHT + hJitter,
-    SPINE_HEIGHT_RANGE.min,
-    SPINE_HEIGHT_RANGE.max,
-  );
   const charmRoll = rnd();
   const charm: CharmKind =
     charmRoll < 0.66
@@ -251,7 +325,20 @@ export function deriveSpineParams(seed: number): SpineParams {
         ] ?? 'none';
   const charmColor = Math.floor(rnd() * 8);
 
+  // --- book format (appended last: every earlier field keeps its value) ---
+  // A real shelf is not a row of identical rectangles — it is folios next to
+  // pocket duodecimos. `hJitter` (±6px, consumed above) stays exactly as it
+  // was for the legacy compositor; `height` now carries the format spread.
+  const format = pickWeighted(rnd(), FORMAT_WEIGHTS);
+  const span = SPINE_FORMATS[format];
+  const height = clamp(
+    span.min + rnd() * (span.max - span.min) + hJitter * 0.35,
+    SPINE_HEIGHT_RANGE.min,
+    SPINE_HEIGHT_RANGE.max,
+  );
+
   return {
+    format,
     seed: seed >>> 0,
     silhouette,
     palette,
@@ -331,6 +418,14 @@ const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = [
   ['debossed', 16],
 ];
 
+const FORMAT_WEIGHTS: ReadonlyArray<readonly [SpineFormat, number]> = [
+  ['folio', 9],
+  ['quarto', 20],
+  ['octavo', 38],
+  ['duodecimo', 22],
+  ['pocket', 11],
+];
+
 const EDGE_WEIGHTS: ReadonlyArray<readonly [EdgeTreatment, number]> = [
   ['plain', 58],
   ['gilt', 18],
@@ -355,6 +450,27 @@ export function textureFromMaterial(material: BindingMaterial): 0 | 1 | 2 {
     default:
       return 2;
   }
+}
+
+/** Middle of a format's height band, in world px (the studio's preset value). */
+export function heightForFormat(format: SpineFormat): number {
+  const span = SPINE_FORMATS[format];
+  return clamp((span.min + span.max) / 2, SPINE_HEIGHT_RANGE.min, SPINE_HEIGHT_RANGE.max);
+}
+
+/** Which format band a height lands in (so the studio can label a slider). */
+export function formatForHeight(height: number): SpineFormat {
+  let best: SpineFormat = 'octavo';
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const id of SPINE_FORMAT_IDS) {
+    const span = SPINE_FORMATS[id];
+    const d = height < span.min ? span.min - height : height > span.max ? height - span.max : 0;
+    if (d < bestDist) {
+      bestDist = d;
+      best = id;
+    }
+  }
+  return best;
 }
 
 /** Resolved spine height in world px (studio override wins over the jitter). */
@@ -618,21 +734,30 @@ function drawOrnament(
       strokePts(ctx, [pt(0, -1), pt(0.62, 0), pt(0, 1), pt(-0.62, 0)], true);
       break;
     }
-    case 1: { // laurel — two mirrored arcs with leaf ticks
+    case 1: { // laurel spray — two mirrored stems with FILLED leaves
+      // Hairline leaf ticks vanish at 14px; solid leaves survive.
       for (const side of [-1, 1]) {
-        const arc: Pt[] = [];
-        for (let i = 0; i <= 6; i++) {
-          const a = -Math.PI / 3 + (i / 6) * ((2 * Math.PI) / 3);
-          arc.push(pt(side * (0.35 + 0.45 * Math.cos(a)) - side * 0.35, Math.sin(a)));
-        }
-        strokePts(ctx, arc, false);
-        for (let i = 1; i <= 3; i++) {
-          const a = -Math.PI / 4 + (i / 4) * (Math.PI / 2);
-          const bx = side * (0.35 + 0.45 * Math.cos(a)) - side * 0.35;
-          const by = Math.sin(a);
-          strokePts(ctx, [pt(bx, by), pt(bx + side * 0.28, by - 0.12)], false);
+        strokePts(ctx, [pt(side * 0.12, 0.92), pt(side * 0.42, 0.1), pt(side * 0.34, -0.86)], false);
+        for (let i = 0; i < 4; i++) {
+          const t = 0.1 + i * 0.27;
+          const bx = side * (0.12 + (0.42 - 0.12) * Math.min(1, t * 1.6));
+          const by = 0.92 - t * 1.78;
+          const ang = side * (0.5 + i * 0.12);
+          ctx.beginPath();
+          ctx.ellipse(
+            cx + (bx + side * 0.26) * s,
+            cy + (by - 0.06) * s,
+            s * 0.3,
+            s * 0.12,
+            ang,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
         }
       }
+      // Tie at the foot.
+      strokePts(ctx, [pt(-0.2, 1), pt(0, 0.84), pt(0.2, 1)], false);
       break;
     }
     case 2: { // star (5-point)
@@ -670,10 +795,14 @@ function drawOrnament(
       break;
     }
     case 5: { // sun — circle + 8 rays
+      // 20 samples, not 12: at 14px a 12-gon reads as a lumpy pentagon.
       const circle: Pt[] = [];
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        circle.push(pt(Math.cos(a) * 0.55, Math.sin(a) * 0.55));
+      for (let i = 0; i < 20; i++) {
+        const a = (i / 20) * Math.PI * 2;
+        circle.push({
+          x: cx + Math.cos(a) * 0.55 * s,
+          y: cy + Math.sin(a) * 0.55 * s,
+        });
       }
       strokePts(ctx, circle, true);
       for (let i = 0; i < 8; i++) {
@@ -695,50 +824,56 @@ function drawOrnament(
     }
     case 7: { // keyhole
       const circle: Pt[] = [];
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        circle.push(pt(Math.cos(a) * 0.42, -0.35 + Math.sin(a) * 0.42));
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        circle.push({
+          x: cx + Math.cos(a) * 0.42 * s,
+          y: cy + (-0.35 + Math.sin(a) * 0.42) * s,
+        });
       }
       strokePts(ctx, circle, true);
       strokePts(ctx, [pt(-0.16, -0.05), pt(-0.3, 0.85), pt(0.3, 0.85), pt(0.16, -0.05)], true);
       break;
     }
-    case 8: { // laurel wreath — full open-topped ring of leaf ticks
-      for (const side of [-1, 1]) {
-        const arc: Pt[] = [];
-        for (let i = 0; i <= 8; i++) {
-          // From the bottom (π/2) sweeping up each side, leaving the top open.
-          const a = Math.PI / 2 + side * (i / 8) * (Math.PI * 0.82);
-          arc.push(pt(Math.cos(a) * 0.85, Math.sin(a) * 0.85));
-        }
-        strokePts(ctx, arc, false);
-        for (let i = 1; i <= 4; i++) {
-          const a = Math.PI / 2 + side * (i / 5) * (Math.PI * 0.82);
-          const bx = Math.cos(a) * 0.85;
-          const by = Math.sin(a) * 0.85;
-          strokePts(ctx, [pt(bx, by), pt(bx * 1.35, by * 1.35 - 0.08)], false);
-          strokePts(ctx, [pt(bx, by), pt(bx * 0.68, by * 0.68 - 0.06)], false);
-        }
+    case 8: { // laurel wreath — open-topped ring of FILLED leaves
+      const leaves = 12;
+      for (let i = 0; i < leaves; i++) {
+        // Sweep from the bottom up both sides, leaving a gap at the crown.
+        const t = i / (leaves - 1);
+        const a = Math.PI / 2 + (t < 0.5 ? -1 : 1) * ((t < 0.5 ? 1 - t * 2 : t * 2 - 1) * Math.PI * 0.86);
+        const bx = Math.cos(a) * 0.78;
+        const by = Math.sin(a) * 0.78;
+        ctx.beginPath();
+        ctx.ellipse(cx + bx * s, cy + by * s, s * 0.3, s * 0.13, a + Math.PI / 2, 0, Math.PI * 2);
+        ctx.fill();
       }
       // Ribbon knot at the bottom.
-      strokePts(ctx, [pt(-0.18, 0.95), pt(0, 0.78), pt(0.18, 0.95)], false);
+      ctx.lineWidth = Math.max(1, ctx.lineWidth);
+      strokePts(ctx, [pt(-0.26, 1.02), pt(0, 0.8), pt(0.26, 1.02)], false);
       break;
     }
-    case 9: { // quill — curved feather shaft with barb ticks and a nib
+    case 9: { // quill — a solid feather blade on a curved shaft
+      const shaftPt = (t: number): Pt =>
+        pt(-0.72 + t * 1.44, 0.9 - t * 1.6 - Math.sin(t * Math.PI) * 0.3);
+      // Blade: one closed vane down one side of the shaft.
+      const vane: Pt[] = [];
+      for (let i = 0; i <= 8; i++) vane.push(shaftPt(0.2 + (i / 8) * 0.8));
+      for (let i = 8; i >= 0; i--) {
+        const t = 0.2 + (i / 8) * 0.8;
+        const p = shaftPt(t);
+        const bulge = Math.sin(((t - 0.2) / 0.8) * Math.PI) * 0.42;
+        vane.push({ x: p.x - bulge * s, y: p.y + bulge * 0.42 * s });
+      }
+      tracePoly(ctx, vane, true);
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = prevAlpha * 0.85;
+      ctx.fill();
+      ctx.globalAlpha = prevAlpha;
+      // Shaft + nib, drawn over the blade.
       const shaft: Pt[] = [];
-      for (let i = 0; i <= 8; i++) {
-        const t = i / 8;
-        shaft.push(pt(-0.75 + t * 1.5, 0.85 - t * 1.55 - Math.sin(t * Math.PI) * 0.32));
-      }
+      for (let i = 0; i <= 8; i++) shaft.push(shaftPt(i / 8));
       strokePts(ctx, shaft, false);
-      for (let i = 2; i <= 7; i++) {
-        const t = i / 8;
-        const bx = -0.75 + t * 1.5;
-        const by = 0.85 - t * 1.55 - Math.sin(t * Math.PI) * 0.32;
-        strokePts(ctx, [pt(bx, by), pt(bx - 0.3, by - 0.22 + t * 0.1)], false);
-      }
-      // Nib tick at the writing end.
-      strokePts(ctx, [pt(-0.75, 0.85), pt(-0.95, 1.02)], false);
+      strokePts(ctx, [shaftPt(0), pt(-0.94, 1.06)], false);
       break;
     }
     case 10: { // tree — trunk, three branch tiers, root flare
@@ -758,21 +893,26 @@ function drawOrnament(
       break;
     }
     default: { // 11 crescent-with-stars
+      // A fatter crescent tipped back, so the horns read even at 14px.
       ctx.beginPath();
-      ctx.arc(cx - s * 0.15, cy + s * 0.1, s * 0.62, -Math.PI * 0.5, Math.PI * 0.5, false);
-      ctx.arc(cx + s * 0.17, cy + s * 0.1, s * 0.46, Math.PI * 0.55, -Math.PI * 0.55, true);
+      ctx.arc(cx - s * 0.22, cy, s * 0.86, -Math.PI * 0.46, Math.PI * 0.46, false);
+      ctx.arc(cx + s * 0.16, cy, s * 0.6, Math.PI * 0.62, -Math.PI * 0.62, true);
       ctx.closePath();
       const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = prevAlpha * 0.8;
+      ctx.globalAlpha = prevAlpha * 0.92;
       ctx.fill();
       ctx.globalAlpha = prevAlpha;
-      // Three four-point sparkle stars around the crescent.
+      // Filled four-point sparkles instead of hairline outlines.
       for (const [sx, sy, sr] of [
-        [0.45, -0.55, 0.2],
-        [0.72, 0.05, 0.13],
-        [0.28, 0.62, 0.16],
+        [0.6, -0.62, 0.3],
+        [0.86, 0.16, 0.19],
       ] as const) {
-        strokePts(ctx, [pt(sx, sy - sr), pt(sx + sr * 0.4, sy), pt(sx, sy + sr), pt(sx - sr * 0.4, sy)], true);
+        tracePoly(
+          ctx,
+          [pt(sx, sy - sr), pt(sx + sr * 0.36, sy), pt(sx, sy + sr), pt(sx - sr * 0.36, sy)],
+          true,
+        );
+        ctx.fill();
       }
       break;
     }
@@ -786,71 +926,166 @@ function drawOrnament(
  * without shifting hue — the same trick as the granulation tile, but with
  * shaped marks instead of white noise. Lazily built, shared forever.
  */
-type MaterialTileKind = 'pebble' | 'weave' | 'linen';
+type MaterialTileKind = 'pebble' | 'weave' | 'linen' | 'laid';
 const materialTiles = new Map<MaterialTileKind, Canvas2D>();
+
+const TILE_SIZE: Readonly<Record<MaterialTileKind, number>> = {
+  pebble: 128,
+  weave: 48,
+  linen: 64,
+  laid: 64,
+};
+
+/**
+ * One cell of a plain (over-under) weave. `warp` true ⇒ the vertical thread
+ * passes over the horizontal one in this cell. Threads are drawn as rounded
+ * bars with a lit crown and a shadowed underside so the cloth reads as
+ * *fabric* rather than a grid of lines.
+ */
+function weaveCell(
+  ctx: Ctx2D,
+  x: number,
+  y: number,
+  c: number,
+  warp: boolean,
+  thread: number,
+  contrast: number,
+): void {
+  const half = thread / 2;
+  const drawBar = (vertical: boolean, over: boolean): void => {
+    const a = over ? contrast : contrast * 0.55;
+    const cx = x + c / 2;
+    const cy = y + c / 2;
+    if (vertical) {
+      const g = ctx.createLinearGradient(cx - half, 0, cx + half, 0);
+      g.addColorStop(0, `rgba(34,34,34,${(a * 0.9).toFixed(3)})`);
+      g.addColorStop(0.42, `rgba(238,238,238,${(a * 0.75).toFixed(3)})`);
+      g.addColorStop(1, `rgba(34,34,34,${a.toFixed(3)})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - half, y - 0.4, thread, c + 0.8);
+    } else {
+      const g = ctx.createLinearGradient(0, cy - half, 0, cy + half);
+      g.addColorStop(0, `rgba(34,34,34,${(a * 0.9).toFixed(3)})`);
+      g.addColorStop(0.42, `rgba(238,238,238,${(a * 0.75).toFixed(3)})`);
+      g.addColorStop(1, `rgba(34,34,34,${a.toFixed(3)})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x - 0.4, cy - half, c + 0.8, thread);
+    }
+  };
+  // Under first, over second — that is what makes the interlace read.
+  drawBar(!warp, false);
+  drawBar(warp, true);
+}
 
 function getMaterialTile(kind: MaterialTileKind): Canvas2D {
   const hit = materialTiles.get(kind);
   if (hit) return hit;
-  const size = kind === 'pebble' ? 128 : kind === 'linen' ? 64 : 32;
+  const size = TILE_SIZE[kind];
   const c = makeCanvas(size, size);
   const ctx = get2d(c);
   ctx.fillStyle = '#808080';
   ctx.fillRect(0, 0, size, size);
-  const rnd = mulberry32(kind === 'pebble' ? 0x9e3b17 : kind === 'linen' ? 0x51c0de : 0x2b17a4);
+  const rnd = mulberry32(
+    kind === 'pebble' ? 0x9e3b17 : kind === 'linen' ? 0x51c0de : kind === 'laid' ? 0x1a1d0e : 0x2b17a4,
+  );
 
   if (kind === 'pebble') {
-    // Leather grain: clustered irregular cells, dark valleys + lit crowns.
+    // Leather grain: clustered irregular cells with dark valleys between the
+    // lit crowns. Two passes — big soft cells, then fine crazing on top —
+    // so the grain still reads once the tile is scaled up on a cover.
+    for (let i = 0; i < 320; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const r = 3.4 + rnd() * 6.5;
+      const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.34, r * 0.05, x, y, r);
+      g.addColorStop(0, 'rgba(236,236,236,0.30)');
+      g.addColorStop(0.62, 'rgba(150,150,150,0.06)');
+      g.addColorStop(1, 'rgba(28,28,28,0.30)');
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * (0.68 + rnd() * 0.6), rnd() * Math.PI, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
     for (let i = 0; i < 900; i++) {
       const x = rnd() * size;
       const y = rnd() * size;
-      const r = 1.2 + rnd() * 3.4;
+      const r = 0.8 + rnd() * 2.2;
       ctx.beginPath();
       ctx.ellipse(x, y, r, r * (0.6 + rnd() * 0.7), rnd() * Math.PI, 0, Math.PI * 2);
-      ctx.fillStyle = rnd() < 0.55 ? 'rgba(40,40,40,0.20)' : 'rgba(228,228,228,0.16)';
+      ctx.fillStyle = rnd() < 0.55 ? 'rgba(30,30,30,0.22)' : 'rgba(236,236,236,0.18)';
       ctx.fill();
     }
   } else if (kind === 'weave') {
-    // Book cloth: an even, fine, two-way weave.
-    ctx.lineWidth = 1;
-    for (let y = 0.5; y < size; y += 3) {
-      ctx.strokeStyle = 'rgba(46,46,46,0.42)';
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(size, y);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(232,232,232,0.30)';
-      ctx.beginPath();
-      ctx.moveTo(0, y + 1);
-      ctx.lineTo(size, y + 1);
-      ctx.stroke();
+    // Book cloth (buckram): a TIGHT, perfectly even plain weave. The cells are
+    // small and regular — that regularity is what separates cloth from linen.
+    const cell = size / 12;
+    for (let j = 0; j < 12; j++) {
+      for (let i = 0; i < 12; i++) {
+        weaveCell(ctx, i * cell, j * cell, cell, (i + j) % 2 === 0, cell * 0.72, 0.4);
+      }
     }
-    for (let x = 0.5; x < size; x += 2.5) {
-      ctx.strokeStyle = 'rgba(70,70,70,0.20)';
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, size);
-      ctx.stroke();
+    // A whisper of sizing/starch sheen across the whole tile.
+    ctx.fillStyle = 'rgba(220,220,220,0.05)';
+    ctx.fillRect(0, 0, size, size);
+  } else if (kind === 'linen') {
+    // Linen: the SAME interlace at 3× the pitch, with irregular thread
+    // thickness, drifting spacing and slubs. Coarse, hand-woven, alive.
+    const cells = 5;
+    const cell = size / cells;
+    for (let j = 0; j < cells; j++) {
+      for (let i = 0; i < cells; i++) {
+        weaveCell(
+          ctx,
+          i * cell,
+          j * cell,
+          cell,
+          (i + j) % 2 === 0,
+          cell * (0.52 + rnd() * 0.3),
+          0.42 + rnd() * 0.22,
+        );
+      }
+    }
+    // Slubs: short fat thread bulges that only linen has.
+    for (let i = 0; i < 18; i++) {
+      const x = rnd() * size;
+      const y = Math.floor(rnd() * cells) * cell + cell * 0.5;
+      ctx.fillStyle = `rgba(26,26,26,${(0.2 + rnd() * 0.2).toFixed(3)})`;
+      ctx.fillRect(x, y - cell * 0.22, 5 + rnd() * 11, cell * 0.44);
+      ctx.fillStyle = 'rgba(240,240,240,0.2)';
+      ctx.fillRect(x, y - cell * 0.26, 5 + rnd() * 9, 1.2);
+    }
+    // Undyed neps caught in the weave.
+    for (let i = 0; i < 40; i++) {
+      ctx.fillStyle = 'rgba(246,246,246,0.26)';
+      ctx.fillRect(rnd() * size, rnd() * size, 1 + rnd() * 2.4, 1 + rnd() * 1.4);
     }
   } else {
-    // Linen: coarse, irregular, slubby — thick threads at uneven spacing.
-    for (let y = 0; y < size; y += 5) {
-      const t = 1.4 + rnd() * 1.8;
-      ctx.fillStyle = `rgba(38,38,38,${(0.22 + rnd() * 0.24).toFixed(3)})`;
-      ctx.fillRect(0, y, size, t);
-      ctx.fillStyle = 'rgba(238,238,238,0.22)';
-      ctx.fillRect(0, y + t, size, 1);
+    // Laid paper: widely spaced chain lines across faint laid lines — the
+    // mould marks a hand-made sheet carries. The laid lines are deliberately
+    // whisper-quiet and one-directional; give them any real weight and paper
+    // starts reading as another woven cloth.
+    for (let x = 0; x < size; x += 3.6) {
+      ctx.fillStyle = `rgba(104,104,104,${(0.05 + rnd() * 0.04).toFixed(3)})`;
+      ctx.fillRect(x, 0, 1.3, size);
     }
-    for (let x = 0; x < size; x += 4.5) {
-      ctx.fillStyle = `rgba(58,58,58,${(0.1 + rnd() * 0.14).toFixed(3)})`;
-      ctx.fillRect(x, 0, 1.2 + rnd() * 1.2, size);
+    for (let y = 0; y < size; y += 19) {
+      ctx.fillStyle = 'rgba(242,242,242,0.34)';
+      ctx.fillRect(0, y, size, 1.8);
+      ctx.fillStyle = 'rgba(64,64,64,0.2)';
+      ctx.fillRect(0, y + 2, size, 1.2);
     }
-    // Slubs: short fat thread bulges.
-    for (let i = 0; i < 26; i++) {
-      const x = rnd() * size;
-      const y = Math.floor(rnd() * (size / 5)) * 5;
-      ctx.fillStyle = 'rgba(30,30,30,0.34)';
-      ctx.fillRect(x, y, 4 + rnd() * 9, 2.4 + rnd() * 1.6);
+    // Pulp flecks and the odd embedded fibre.
+    for (let i = 0; i < 150; i++) {
+      ctx.fillStyle = rnd() < 0.5 ? 'rgba(48,48,48,0.14)' : 'rgba(244,244,244,0.18)';
+      ctx.fillRect(rnd() * size, rnd() * size, 0.9 + rnd() * 1.8, 0.9);
+    }
+    for (let i = 0; i < 14; i++) {
+      ctx.save();
+      ctx.translate(rnd() * size, rnd() * size);
+      ctx.rotate(rnd() * Math.PI);
+      ctx.fillStyle = 'rgba(228,228,228,0.28)';
+      ctx.fillRect(0, 0, 5 + rnd() * 14, 0.9);
+      ctx.restore();
     }
   }
 
@@ -920,7 +1155,7 @@ export function paintBindingMaterial(
 
   switch (material) {
     case 'leather': {
-      tileOver(ctx, getMaterialTile('pebble'), w, h, Math.max(48, 96 * px), 0.5);
+      tileOver(ctx, getMaterialTile('pebble'), w, h, Math.max(44, 78 * px), 0.66);
       tileOver(ctx, getGranulationTile(), w, h, GRANULATION_SIZE * 2, 0.1, 'multiply');
       // Creases: long soft folds that follow the way a spine flexes.
       ctx.strokeStyle = tones.dark(-16, 0, 0.16);
@@ -943,26 +1178,30 @@ export function paintBindingMaterial(
       break;
     }
     case 'cloth': {
-      tileOver(ctx, getMaterialTile('weave'), w, h, Math.max(12, 24 * px), 0.62);
+      // Tight, perfectly even buckram grain.
+      tileOver(ctx, getMaterialTile('weave'), w, h, Math.max(20, 34 * px), 0.72);
       // Matte veil: cloth eats light, never returns a highlight.
       ctx.fillStyle = 'rgba(238, 236, 230, 0.07)';
       ctx.fillRect(0, 0, w, h);
-      // A couple of frayed threads catching the light.
-      ctx.strokeStyle = tones.light(20, -12, 0.16);
-      ctx.lineWidth = Math.max(0.5, 0.6 * px);
-      for (let i = 0; i < 3; i++) {
-        const yy = (0.1 + rnd() * 0.8) * h;
-        ctx.beginPath();
-        ctx.moveTo(0, yy);
-        ctx.lineTo(w, yy + (rnd() * 2 - 1) * 1.2 * px);
-        ctx.stroke();
+      // Cloth is dyed in the piece, so the colour sits slightly uneven.
+      for (let i = 0; i < 4; i++) {
+        const cx = rnd() * w;
+        const cy = rnd() * h;
+        const r = (0.16 + rnd() * 0.3) * Math.max(w, h);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, tones.dark(-6, 2, 0.07));
+        g.addColorStop(1, tones.dark(-6, 2, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
       }
       break;
     }
     case 'paper': {
-      // Flat and chalky: no gloss anywhere.
-      ctx.fillStyle = 'rgba(246, 240, 226, 0.1)';
+      // Flat and chalky: no gloss anywhere, but the mould's laid + chain
+      // lines are unmistakable.
+      ctx.fillStyle = 'rgba(246, 240, 226, 0.12)';
       ctx.fillRect(0, 0, w, h);
+      tileOver(ctx, getMaterialTile('laid'), w, h, Math.max(40, 68 * px), 0.42);
       ctx.strokeStyle = tones.light(16, -12, 0.1);
       ctx.lineWidth = Math.max(0.5, 0.7 * px);
       for (let i = 0; i < 9; i++) {
@@ -1018,9 +1257,9 @@ export function paintBindingMaterial(
       break;
     }
     case 'linen': {
-      tileOver(ctx, getMaterialTile('linen'), w, h, Math.max(24, 46 * px), 0.66);
+      tileOver(ctx, getMaterialTile('linen'), w, h, Math.max(26, 44 * px), 0.78);
       // Warm natural-fibre veil (linen is never as cool as buckram).
-      ctx.fillStyle = 'rgba(226, 208, 172, 0.12)';
+      ctx.fillStyle = 'rgba(226, 208, 172, 0.14)';
       ctx.fillRect(0, 0, w, h);
       // Undyed flecks in the weave.
       for (let i = 0; i < 34; i++) {
@@ -1247,22 +1486,28 @@ export function paintWear(
   const px = Math.max(0.5, s);
   ctx.save();
 
-  // --- sun-faded panel: the side that faced the room loses its pigment ---
-  const fadeW = w * (0.42 + wear * 0.3);
-  const fade = ctx.createLinearGradient(0, 0, fadeW, 0);
-  fade.addColorStop(0, `rgba(214, 202, 176, ${(0.1 + wear * 0.3).toFixed(3)})`);
-  fade.addColorStop(0.55, `rgba(216, 206, 182, ${(0.05 + wear * 0.16).toFixed(3)})`);
-  fade.addColorStop(1, 'rgba(216, 206, 182, 0)');
+  // --- sun-faded panel: a soft band of light that lay across the spine for
+  // years. Feathered on BOTH sides and inset from the joint — a hard-edged
+  // stripe starting at x=0 reads as a printing fault, not as sunlight. ---
+  const fadeC = w * 0.4;
+  const fadeR = w * (0.34 + wear * 0.34);
+  const fade = ctx.createLinearGradient(fadeC - fadeR, 0, fadeC + fadeR, 0);
+  const fadeA = 0.06 + wear * 0.2;
+  fade.addColorStop(0, 'rgba(222, 210, 182, 0)');
+  fade.addColorStop(0.34, `rgba(224, 212, 184, ${(fadeA * 0.75).toFixed(3)})`);
+  fade.addColorStop(0.52, `rgba(226, 214, 186, ${fadeA.toFixed(3)})`);
+  fade.addColorStop(1, 'rgba(222, 210, 182, 0)');
   ctx.fillStyle = fade;
-  ctx.fillRect(0, 0, fadeW, h);
-  // Desaturate the same panel so it reads as bleached, not just lighter.
+  ctx.fillRect(0, 0, w, h);
+  // Desaturate the same band so it reads as bleached, not merely lighter.
   ctx.globalCompositeOperation = 'saturation';
-  ctx.globalAlpha = 0.2 + wear * 0.5;
-  const sat = ctx.createLinearGradient(0, 0, fadeW, 0);
-  sat.addColorStop(0, 'hsl(0 0% 60%)');
+  ctx.globalAlpha = 0.14 + wear * 0.4;
+  const sat = ctx.createLinearGradient(fadeC - fadeR, 0, fadeC + fadeR, 0);
+  sat.addColorStop(0, 'hsl(0 0% 60% / 0)');
+  sat.addColorStop(0.5, 'hsl(0 0% 60%)');
   sat.addColorStop(1, 'hsl(0 0% 60% / 0)');
   ctx.fillStyle = sat;
-  ctx.fillRect(0, 0, fadeW, h);
+  ctx.fillRect(0, 0, w, h);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 
@@ -1323,6 +1568,27 @@ export function paintWear(
   ctx.fillStyle = grime;
   ctx.fillRect(0, h * 0.86, w, h * 0.14);
 
+  // --- worn through: the head and tail caps of a truly well-loved book give
+  // out first, and the joint frays back to the board underneath ---
+  if (wear > 0.8) {
+    const t = (wear - 0.8) / 0.2;
+    for (const capY of [0, h] as const) {
+      const dir = capY === 0 ? 1 : -1;
+      const capH = (2.5 + t * 5) * px;
+      const g = ctx.createLinearGradient(0, capY, 0, capY + dir * capH);
+      g.addColorStop(0, tones.light(36, -32, 0.3 + t * 0.34));
+      g.addColorStop(1, tones.light(36, -32, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, Math.min(capY, capY + dir * capH), w, capH);
+      // A nick out of the cap.
+      ctx.fillStyle = tones.light(30, -30, 0.24 + t * 0.3);
+      const nx = (0.2 + rnd() * 0.6) * w;
+      ctx.beginPath();
+      ctx.ellipse(nx, capY, (1.6 + rnd() * 3) * px, (1.4 + t * 3.4) * px, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // --- hairline cracks in the joint, only when truly well-loved ---
   if (wear > 0.62) {
     ctx.strokeStyle = 'rgba(38, 28, 18, 0.34)';
@@ -1360,14 +1626,24 @@ interface Panel {
  * occupies. Title goes in one panel, the ornament stamp in another — exactly
  * how real tooled spines are laid out.
  */
-function spinePanels(cordYs: readonly number[], reserve: Panel | null): Panel[] {
+function spinePanels(
+  cordYs: readonly number[],
+  reserve: Panel | null,
+  /**
+   * Half-thickness of a cut (cord or band rule) as a fraction of the spine
+   * height. Panels are held clear of it — otherwise a raised cord runs
+   * straight through the middle of the lettering, which is exactly what the
+   * first pass of this did.
+   */
+  cutPad = 0,
+): Panel[] {
   const zoneTop = 0.055;
   const zoneBot = 0.945;
   const cuts: Panel[] = [];
   let prev = zoneTop;
-  for (const y of cordYs) {
-    if (y > prev) cuts.push({ y0: prev, y1: y });
-    prev = y;
+  for (const y of [...cordYs].sort((a, b) => a - b)) {
+    if (y - cutPad > prev) cuts.push({ y0: prev, y1: y - cutPad });
+    prev = Math.max(prev, y + cutPad);
   }
   if (zoneBot > prev) cuts.push({ y0: prev, y1: zoneBot });
 
@@ -1598,18 +1874,21 @@ export function renderSpine(
 
   // --- head/tail endbands: striped caps at the very top and bottom ---
   if (params.headTail) {
-    const bandH = 4.2 * scale;
-    const stripeW = Math.max(2.2 * scale, 3);
-    const capColor = params.gilt ? GOLD : hslStr(colB, hue, -16);
-    const creamColor = 'hsl(43 48% 88%)';
+    // Real endbands are a *fine* two-colour silk twist, only a few threads
+    // deep. Kept low-contrast and shallow here: at shelf scale a loud band
+    // reads as hazard tape across the top of every book.
+    const bandH = 3.2 * scale;
+    const stripeW = Math.max(1.5 * scale, 2);
+    const capColor = params.gilt ? GOLD : hslStr(colB, hue, -6, -6);
+    const creamColor = 'hsl(41 40% 82%)';
     for (const [cy0, edgeY] of [
       [0.6 * scale, 0],
       [h - bandH - 0.6 * scale, h],
     ] as const) {
       ctx.fillStyle = creamColor;
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.62;
       ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.62;
       ctx.fillStyle = capColor;
       if (headTailStyle === 1) {
         // Chevron endband: slanted stripes, the classic two-colour sewing.
@@ -1624,12 +1903,12 @@ export function renderSpine(
         }
       } else if (headTailStyle === 2) {
         // Wrapped cord: a rounded core with thread spiralling round it.
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 0.6;
         ctx.fillStyle = creamColor;
         ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
-        ctx.globalAlpha = 0.95;
+        ctx.globalAlpha = 0.62;
         ctx.strokeStyle = capColor;
-        ctx.lineWidth = Math.max(0.9, 1.3 * scale);
+        ctx.lineWidth = Math.max(0.7, 0.9 * scale);
         for (let sx = w * 0.03; sx < w * 0.99; sx += stripeW * 1.35) {
           ctx.beginPath();
           ctx.moveTo(sx, cy0 + bandH);
@@ -1637,8 +1916,8 @@ export function renderSpine(
           ctx.stroke();
         }
         // Crown highlight so the cord reads round.
-        ctx.strokeStyle = 'rgba(255, 250, 232, 0.5)';
-        ctx.lineWidth = Math.max(0.6, 0.8 * scale);
+        ctx.strokeStyle = 'rgba(255, 250, 232, 0.32)';
+        ctx.lineWidth = Math.max(0.5, 0.6 * scale);
         ctx.beginPath();
         ctx.moveTo(w * 0.05, cy0 + bandH * 0.3);
         ctx.lineTo(w * 0.95, cy0 + bandH * 0.3);
@@ -1650,8 +1929,8 @@ export function renderSpine(
       }
       ctx.globalAlpha = 1;
       // Seat line where the endband meets the boards.
-      ctx.strokeStyle = hslStr(colB, hue, -24, 0, 0.55);
-      ctx.lineWidth = Math.max(0.6, 0.6 * scale);
+      ctx.strokeStyle = hslStr(colB, hue, -24, 0, 0.4);
+      ctx.lineWidth = Math.max(0.5, 0.5 * scale);
       const seamY = edgeY === 0 ? cy0 + bandH : cy0;
       strokePts(ctx, jitteredSegment({ x: w * 0.03, y: seamY }, { x: w * 0.97, y: seamY }, step, 0.35 * scale, rnd), false);
     }
@@ -1659,7 +1938,11 @@ export function renderSpine(
 
   // --- tooling panels: title in one, ornament in another ---
   const reserve = charmSpineReserve(charm);
-  const panels = spinePanels(cordYs, reserve).filter((p) => p.y1 - p.y0 > 0.045);
+  // Anything drawn ACROSS the spine is a cut the lettering has to respect:
+  // the sewn cords when there are any, the decorative rules when there are not.
+  const cutYs = raisedBands > 0 ? cordYs : legacyBands.map((b) => b.y);
+  const cutPad = h > 0 ? (raisedBands > 0 ? cordH * 0.95 : 4.6 * scale) / h : 0;
+  const panels = spinePanels(cutYs, reserve, cutPad).filter((p) => p.y1 - p.y0 > 0.045);
   let titlePanel: Panel | null = null;
   let ornamentPanel: Panel | null = null;
   if (panels.length > 0) {
@@ -1667,10 +1950,15 @@ export function renderSpine(
     // there is one, otherwise the tallest panel in the upper half.
     const upper = panels.filter((p) => (p.y0 + p.y1) / 2 < 0.68);
     const pool = upper.length > 0 ? upper : panels;
+    const tallest = pool.reduce((a, b) => (b.y1 - b.y0 > a.y1 - a.y0 ? b : a));
+    const second = panels.length > 1 ? (panels[1] as Panel) : null;
+    // Follow the convention only when it costs (almost) nothing: on a heavily
+    // corded spine the second panel can be much shorter than the best one, and
+    // an elided title is a worse crime than an unconventional one.
     titlePanel =
-      panels.length > 1 && (panels[1] as Panel).y1 - (panels[1] as Panel).y0 > 0.16
-        ? (panels[1] as Panel)
-        : pool.reduce((a, b) => (b.y1 - b.y0 > a.y1 - a.y0 ? b : a));
+      second !== null && second.y1 - second.y0 >= (tallest.y1 - tallest.y0) * 0.8
+        ? second
+        : tallest;
     const below = panels.filter((p) => p !== titlePanel && p.y0 >= (titlePanel as Panel).y1 - 1e-6);
     const rest = below.length > 0 ? below : panels.filter((p) => p !== titlePanel);
     if (rest.length > 0) {
@@ -1692,25 +1980,50 @@ export function renderSpine(
     const py1 = titlePanel.y1 * h;
     const pad = 4 * scale;
     const availLen = Math.max(0, py1 - py0 - pad * 2);
-    const fontPx = clamp(w * 0.52, 10 * scale, 20 * scale);
-    ctx.font = `${fontPx.toFixed(2)}px ${FONTS[params.font] as string}`;
+    const family = FONTS[params.font] as string;
+    // A binder letters the title to FIT the panel: he picks smaller tools
+    // before he abbreviates. So shrink the face first (down to the legibility
+    // floor), and only then elide — a spine that says "Constellati…" is a bug,
+    // one that says "Cons" is a disaster.
+    const maxFont = clamp(w * 0.52, 10 * scale, 20 * scale);
+    const minFont = Math.max(6.5 * scale, maxFont * 0.52);
+    // Cursive faces overhang their advance width; keep a little air so the
+    // last glyph's tail never crosses the plate border.
+    const fitLen = Math.max(0, availLen - pad * 0.9);
+    let fontPx = maxFont;
+    let text = title.trim();
+    const measure = (t: string): number => {
+      ctx.font = `${fontPx.toFixed(2)}px ${family}`;
+      let sum = 0;
+      for (const ch of t) sum += ctx.measureText(ch).width;
+      return sum;
+    };
+    if (opts.hiRes && text.length > 0 && fitLen > 0) {
+      while (measure(text) > fitLen && fontPx > minFont) fontPx = Math.max(minFont, fontPx * 0.94);
+      if (measure(text) > fitLen) {
+        // Still too long at the floor: elide on a word boundary when one is
+        // near the end, otherwise clip and mark it with an ellipsis.
+        while (text.length > 1 && measure(`${text}…`) > fitLen) text = text.slice(0, -1);
+        const trimmed = text.replace(/[\s,;:.-]+$/u, '');
+        text = `${trimmed.length > 0 ? trimmed : text}…`;
+      }
+    } else {
+      text = '';
+    }
+    ctx.font = `${fontPx.toFixed(2)}px ${family}`;
 
-    // Measure how much of the title actually fits down the panel.
     const glyphs: Array<{ ch: string; adv: number }> = [];
     let textLen = 0;
-    if (opts.hiRes && title.length > 0) {
-      for (const ch of title) {
-        const cw = ctx.measureText(ch).width;
-        if (textLen + cw > availLen) break;
-        glyphs.push({ ch, adv: cw });
-        textLen += cw;
-      }
+    for (const ch of text) {
+      const cw = ctx.measureText(ch).width;
+      glyphs.push({ ch, adv: cw });
+      textLen += cw;
     }
     const plateLen =
       textLen > 0
-        ? Math.min(availLen, textLen + pad * 2.4)
+        ? Math.min(availLen, textLen + pad * 2.6)
         : Math.min(availLen, (py1 - py0) * 0.6);
-    const plateW = Math.min(w * 0.78, fontPx * 1.75);
+    const plateW = Math.min(w * 0.78, fontPx * 1.9);
     const plateX = w * 0.5 - plateW / 2;
     const plateY = (py0 + py1) / 2 - plateLen / 2;
 
@@ -1724,7 +2037,10 @@ export function renderSpine(
         jitterRectStroke(ctx, plateX, plateY, plateW, plateLen, step, 0.4 * scale, rnd);
         ctx.strokeStyle = 'rgba(201, 162, 39, 0.55)';
         ctx.lineWidth = Math.max(0.5, 0.7 * scale);
-        jitterRectStroke(ctx, plateX + 2.4 * scale, plateY + 2.4 * scale, plateW - 4.8 * scale, plateLen - 4.8 * scale, step, 0.35 * scale, rnd);
+        // Inner rule inset proportionally, so small plates do not end up with
+        // two rules sitting on top of each other.
+        const gi = Math.min(3.2 * scale, plateW * 0.14, plateLen * 0.1);
+        jitterRectStroke(ctx, plateX + gi, plateY + gi, plateW - gi * 2, plateLen - gi * 2, step, 0.35 * scale, rnd);
       } else if (titlePlate === 'label') {
         ctx.fillStyle = 'rgba(40, 32, 22, 0.32)';
         ctx.fillRect(plateX + 1.2 * scale, plateY + 1.6 * scale, plateW, plateLen);
@@ -1760,12 +2076,31 @@ export function renderSpine(
     if (glyphs.length > 0) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const titleInk =
-        titlePlate === 'label'
-          ? hslStr(colB, hue, -34, 6, 0.95)
-          : titlePlate === 'gilt' || params.gilt
-            ? GOLD
-            : hslStr(colB, hue, -30, 0, 0.9);
+      // Letter the title in whatever actually reads against the panel it sits
+      // on. A binder never tools dark ink onto navy cloth — he uses gold or a
+      // white foil — and "near-black on near-black" was the single worst
+      // legibility bug on the shelf.
+      const lift = material === 'vellum' ? 20 : material === 'paper' ? 9 : 0;
+      const panelL = colA.l * 0.55 + colB.l * 0.45 + lift + wear * 6;
+      const onLabel = titlePlate === 'label';
+      const goldTitle = !onLabel && (titlePlate === 'gilt' || params.gilt);
+      const paleTitle = !onLabel && !goldTitle && panelL < 48;
+      const titleInk = onLabel
+        ? hslStr(colB, hue, -34, 6, 0.95)
+        : goldTitle
+          ? GOLD
+          : paleTitle
+            ? hslStr(colA, hue, clamp(94 - colA.l, 0, 100), -46, 0.94)
+            : hslStr(colB, hue, -38, 0, 0.94);
+      // Every tooled title is stamped INTO the binding, so it always carries a
+      // relief edge. Drawing it unconditionally (not just for `debossed`) is
+      // also the belt-and-braces that keeps a title readable on a ground whose
+      // lightness sits right on the pale/deep decision boundary.
+      const reliefInk = onLabel
+        ? null
+        : paleTitle
+          ? hslStr(colB, hue, -30, 0, 0.5)
+          : hslStr(colA, hue, 26, -12, 0.5);
       ctx.save();
       ctx.translate(w / 2, (py0 + py1) / 2 - textLen / 2);
       ctx.rotate(Math.PI / 2);
@@ -1773,9 +2108,9 @@ export function renderSpine(
       for (const g of glyphs) {
         // Per-glyph baseline wobble: rnd()*1.2 - 0.6 px (scaled).
         const wob = (trnd() * 1.2 - 0.6) * scale;
-        if (titlePlate === 'debossed') {
-          ctx.fillStyle = hslStr(colA, hue, 24, -10, 0.4);
-          ctx.fillText(g.ch, advance + 0.7 * scale, wob + 0.7 * scale);
+        if (reliefInk !== null) {
+          ctx.fillStyle = reliefInk;
+          ctx.fillText(g.ch, advance + 0.75 * scale, wob + 0.75 * scale);
         }
         ctx.fillStyle = titleInk;
         ctx.fillText(g.ch, advance, wob);
@@ -1789,7 +2124,7 @@ export function renderSpine(
   if (ornamentOn && !charmTakesOrnamentSlot(charm)) {
     const oPanel = ornamentPanel ?? { y0: 0.7, y1: 0.9 };
     const ocy = ((oPanel.y0 + oPanel.y1) / 2) * h;
-    const oSize = Math.min(w * 0.3, 11 * scale, ((oPanel.y1 - oPanel.y0) * h) / 2.2);
+    const oSize = Math.min(w * 0.36, 14 * scale, ((oPanel.y1 - oPanel.y0) * h) / 2.1);
     const inkColor = params.gilt ? GOLD : hslStr(colB, hue, -24, 0, 0.85);
     ctx.strokeStyle = inkColor;
     ctx.fillStyle = inkColor;

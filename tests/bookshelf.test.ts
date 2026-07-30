@@ -29,7 +29,29 @@ import {
 } from '../src/data/books';
 import { createPage, listPages } from '../src/data/pages';
 import type { Book } from '../src/data/types';
+import { resolveBookStyle } from '../src/art/bookStyle';
+import { rectsOverlap, spineKeepOuts } from '../src/art/flora';
+import { deriveSpineParams, SPINE_BASE_HEIGHT } from '../src/art/spines';
+import { getTheme } from '../src/art/themes';
+import { readBookStyleOverrides } from '../src/data/books';
+import {
+  coverOverridesFromStyle,
+  spineArtHeight,
+  themeSpineDefaults,
+} from '../src/features/bookshelf/bookIdentity';
 import { orderBooks } from '../src/features/bookshelf/data';
+import {
+  planFloorFlora,
+  spineRects,
+  themeFloraSpec,
+} from '../src/features/bookshelf/floraPlan';
+import {
+  DEFAULT_LIBRARY_PREFS,
+  mergeLibraryPrefs,
+  resolveLibrary,
+  warmthTint,
+} from '../src/features/bookshelf/libraryPrefs';
+import { libraryKey } from '../src/features/bookshelf/libraryKey';
 import { parseFloorNames } from '../src/features/bookshelf/floorNames';
 import {
   addWheelZoom,
@@ -859,5 +881,267 @@ describe('lod: tier hysteresis', () => {
   it('is stable at the extremes', () => {
     expect(nextLodTier(0, 2.5)).toBe(0);
     expect(nextLodTier(2, 0.06)).toBe(2);
+  });
+});
+
+/* ==========================================================================
+   Library themes + Book Studio wiring (docs/design/library-themes.md)
+   ========================================================================== */
+
+describe('library prefs: validated merge', () => {
+  it('falls back to the default room for garbage', () => {
+    expect(mergeLibraryPrefs(null)).toEqual(DEFAULT_LIBRARY_PREFS);
+    expect(mergeLibraryPrefs('nope')).toEqual(DEFAULT_LIBRARY_PREFS);
+    expect(mergeLibraryPrefs([1, 2, 3])).toEqual(DEFAULT_LIBRARY_PREFS);
+    expect(mergeLibraryPrefs({ theme: 'atlantis' }).theme).toBe(
+      DEFAULT_LIBRARY_PREFS.theme,
+    );
+  });
+
+  it('keeps valid ids and clamps the sliders', () => {
+    const prefs = mergeLibraryPrefs({
+      theme: 'observatory',
+      wallpaperPattern: 'constellation',
+      colourway: 'midnight',
+      backdrop: 'shoji',
+      floraDensity: 9,
+      lightWarmth: -3,
+    });
+    expect(prefs.theme).toBe('observatory');
+    expect(prefs.wallpaperPattern).toBe('constellation');
+    expect(prefs.colourway).toBe('midnight');
+    expect(prefs.backdrop).toBe('shoji');
+    expect(prefs.floraDensity).toBe(2);
+    expect(prefs.lightWarmth).toBe(0);
+  });
+
+  it('unset pickers mean "follow the room"', () => {
+    const prefs = mergeLibraryPrefs({ theme: 'sakura' });
+    expect(prefs.wallpaperPattern).toBeNull();
+    const lib = resolveLibrary(prefs);
+    expect(lib.wallpaper.pattern).toBe(getTheme('sakura').wallpaper.pattern);
+    expect(lib.backdrop).toBe(getTheme('sakura').backdrops[0]);
+  });
+
+  it('resolveLibrary keys identical rooms identically', () => {
+    const a = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage' }));
+    const b = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage', floraDensity: 2 }));
+    // Flora density does not change the CASE art, so the bake key must match.
+    expect(a.key).toBe(b.key);
+    const other = getTheme('cottage').backdrops[0] === 'shoji' ? 'boarded' : 'shoji';
+    const c = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage', backdrop: other }));
+    expect(c.key).not.toBe(a.key);
+  });
+});
+
+describe('warmth tint', () => {
+  it('is neutral in the middle and cool/warm at the ends', () => {
+    expect(warmthTint(0.5)).toBe(0xffffff);
+    const cool = warmthTint(0);
+    const warm = warmthTint(1);
+    expect((cool & 0xff) > ((cool >> 16) & 0xff)).toBe(true);
+    expect(((warm >> 16) & 0xff) > (warm & 0xff)).toBe(true);
+  });
+});
+
+describe('flora planning on the real case', () => {
+  const theme = getTheme('conservatory');
+
+  it('density 0 gives a genuinely clean shelf', () => {
+    const plan = planFloorFlora({
+      floorIndex: 3,
+      theme,
+      densityMultiplier: 0,
+      spines: [],
+    });
+    expect(plan.back).toHaveLength(0);
+    expect(plan.rail).toHaveLength(0);
+  });
+
+  it('is deterministic and monotonic in density', () => {
+    const at = (m: number): string[] => {
+      const plan = planFloorFlora({
+        floorIndex: 2,
+        theme,
+        densityMultiplier: m,
+        spines: [],
+      });
+      return [...plan.back, ...plan.rail].map((p) => p.id).sort();
+    };
+    const sparse = at(0.5);
+    const lush = at(2);
+    expect(at(0.5)).toEqual(sparse);
+    expect(lush.length).toBeGreaterThanOrEqual(sparse.length);
+    for (const id of sparse) expect(lush).toContain(id);
+  });
+
+  it('never grows over a spine title', () => {
+    const spines = Array.from({ length: 14 }, (_, i) => ({
+      centerX: 60 + i * 78,
+      w: 44,
+      height: 240,
+    }));
+    const plan = planFloorFlora({
+      floorIndex: 1,
+      theme,
+      densityMultiplier: 2,
+      spines,
+    });
+    const keepOut = spineKeepOuts(spineRects(spines), 4);
+    for (const placement of plan.back) {
+      for (const rect of keepOut) {
+        expect(rectsOverlap(placement.bounds, rect)).toBe(false);
+      }
+    }
+  });
+
+  it('rail-layer flora stays clear of whole spines', () => {
+    const spines = [{ centerX: 90, w: 46, height: 260 }];
+    const plan = planFloorFlora({
+      floorIndex: 0,
+      theme,
+      densityMultiplier: 2,
+      spines,
+    });
+    const whole = spineRects(spines)[0]!;
+    for (const placement of plan.rail) {
+      expect(rectsOverlap(placement.bounds, whole)).toBe(false);
+    }
+  });
+
+  it('maps every themed species and anchor onto the flora vocabulary', () => {
+    const ids = [
+      'athenaeum',
+      'conservatory',
+      'observatory',
+      'cottage',
+      'scriptorium',
+      'sakura',
+      'attic',
+      'apothecary',
+    ] as const;
+    for (const id of ids) {
+      const spec = themeFloraSpec(getTheme(id));
+      expect(spec.species.every((s) => typeof s === 'string' && s.length > 0)).toBe(true);
+      expect(spec.eligibleAnchors?.every((a) => typeof a === 'string')).toBe(true);
+    }
+  });
+});
+
+describe('book studio: overrides win in every room', () => {
+  const overrides = {
+    material: 'silk' as const,
+    pigment: 4,
+    raisedBands: 5,
+    charm: 'wax-seal' as const,
+    edge: 'marbled' as const,
+    wear: 0.7,
+  };
+
+  it('keeps a customized book identical across themes', () => {
+    const a = resolveBookStyle(0xabcdef, themeSpineDefaults(getTheme('athenaeum')), overrides);
+    const b = resolveBookStyle(
+      0xabcdef,
+      themeSpineDefaults(getTheme('observatory')),
+      overrides,
+    );
+    expect(b.style.material).toBe('silk');
+    expect(b.style.pigment).toBe(4);
+    expect(b.style.raisedBands).toBe(5);
+    expect(b.style.charm).toBe('wax-seal');
+    expect(b.style.edge).toBe('marbled');
+    expect(a.style.pigment).toBe(b.style.pigment);
+  });
+
+  it('lets the room bias an un-overridden book', () => {
+    const seeds = [1, 7, 99, 4242, 31337];
+    const pigments = (id: 'athenaeum' | 'sakura'): number[] =>
+      seeds.map(
+        (s) => resolveBookStyle(s, themeSpineDefaults(getTheme(id))).style.pigment,
+      );
+    expect(pigments('athenaeum')).not.toEqual(pigments('sakura'));
+  });
+
+  it('projects a style onto cover overrides consistently', () => {
+    const { style, cover } = resolveBookStyle(
+      0x1234,
+      themeSpineDefaults(getTheme('cottage')),
+      overrides,
+    );
+    const projected = coverOverridesFromStyle(style);
+    expect(projected.palette).toBe(style.pigment);
+    expect(projected.charm).toBe(style.charm);
+    expect(projected.edge).toBe(style.edge);
+    expect(cover.palette).toBe(projected.palette);
+    expect(cover.frame).toBe(projected.frame);
+  });
+});
+
+describe('cover_meta.style section', () => {
+  it('round-trips alongside the other cover_meta sections', () => {
+    const withShelf = mergeCoverMetaSection(null, 'shelf', { pinned: true });
+    const withStyle = mergeCoverMetaSection(withShelf, 'style', { pigment: 3 });
+    expect(readBookStyleOverrides({ coverMeta: withStyle })).toEqual({ pigment: 3 });
+    expect(readShelfMeta({ coverMeta: withStyle })).toEqual({ pinned: true });
+    const cleared = mergeCoverMetaSection(withStyle, 'style', null);
+    expect(readBookStyleOverrides({ coverMeta: cleared })).toBeNull();
+    expect(readShelfMeta({ coverMeta: cleared })).toEqual({ pinned: true });
+  });
+
+  it('reads null for garbage', () => {
+    expect(readBookStyleOverrides(null)).toBeNull();
+    expect(readBookStyleOverrides({ coverMeta: { style: 'nope' } })).toBeNull();
+    expect(readBookStyleOverrides({ coverMeta: { style: [1] } })).toBeNull();
+  });
+});
+
+describe('spine art height', () => {
+  it('uses the studio height when present', () => {
+    const { spine } = resolveBookStyle(0x99, getTheme('athenaeum'), { height: 286 });
+    expect(spineArtHeight(spine)).toBeCloseTo(286, 0);
+  });
+
+  it('falls back to the classic base height for pre-studio params', () => {
+    const legacy = { ...deriveSpineParams(0x99), height: undefined };
+    expect(spineArtHeight(legacy)).toBeCloseTo(SPINE_BASE_HEIGHT + legacy.hJitter, 5);
+  });
+});
+
+describe('theme spine bias adapter', () => {
+  it('maps a hex ramp onto real pigment indices', () => {
+    for (const id of ['athenaeum', 'observatory', 'sakura', 'apothecary'] as const) {
+      const d = themeSpineDefaults(getTheme(id));
+      expect(d.pigments?.length).toBe(getTheme(id).spineDefaults.pigments.length);
+      for (const p of d.pigments ?? []) {
+        expect(Number.isInteger(p)).toBe(true);
+        expect(p).toBeGreaterThanOrEqual(0);
+        expect(p).toBeLessThan(12);
+      }
+    }
+  });
+
+  it('turns the 0-1 band dial into a cord range', () => {
+    const banded = themeSpineDefaults(getTheme('athenaeum')).raisedBands;
+    const flat = themeSpineDefaults(getTheme('sakura')).raisedBands;
+    expect(Array.isArray(banded)).toBe(true);
+    expect(Array.isArray(flat)).toBe(true);
+    const hi = (r: unknown): number => (r as readonly number[])[1] as number;
+    expect(hi(banded)).toBeGreaterThanOrEqual(hi(flat));
+  });
+});
+
+describe('themed env keys', () => {
+  it('keys a room by theme x wallpaper x wall', () => {
+    const theme = getTheme('apothecary');
+    const base = libraryKey(theme.id, theme.wallpaper, theme.backdrops[0]);
+    const other = libraryKey(
+      theme.id,
+      { ...theme.wallpaper, colourway: 'midnight' },
+      theme.backdrops[0],
+    );
+    expect(base).not.toBe(other);
+    expect(base).toBe(libraryKey(theme.id, { ...theme.wallpaper }, theme.backdrops[0]));
+    // The prefs store must agree with the texture cache on the same room.
+    expect(resolveLibrary(mergeLibraryPrefs({ theme: 'apothecary' })).key).toBe(base);
   });
 });

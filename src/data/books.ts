@@ -245,10 +245,41 @@ export function readShelfMeta(
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/**
+ * Book Studio overrides stored under `cover_meta.style` (library-themes.md §4).
+ *
+ * Kept as loose JSON here — `src/art/bookStyle.normalizeBookStyleOverrides`
+ * is the validator, and it is total, so a corrupt blob degrades to "follow the
+ * room" rather than throwing. This section supersedes `cover` for books that
+ * have one: the studio writes a single style covering spine AND cover, so the
+ * two can never drift apart.
+ */
+export function readBookStyleOverrides(
+  book: Pick<Book, 'coverMeta'> | null | undefined,
+): Record<string, unknown> | null {
+  const section = book?.coverMeta?.style;
+  if (section !== null && typeof section === 'object' && !Array.isArray(section)) {
+    return section as Record<string, unknown>;
+  }
+  return null;
+}
+
+/** Persist Book Studio overrides (merging other cover_meta sections through). */
+export async function saveBookStyleOverrides(
+  id: string,
+  overrides: Record<string, unknown> | null,
+): Promise<Book | null> {
+  const book = await getBook(id);
+  if (book === null) return null;
+  return updateBook(id, {
+    coverMeta: mergeCoverMetaSection(book.coverMeta, 'style', overrides),
+  });
+}
+
 /** Pure merge of one section into an existing coverMeta blob (null-safe). */
 export function mergeCoverMetaSection(
   meta: Record<string, unknown> | null,
-  key: 'cover' | 'pageDefaults' | 'shelf',
+  key: 'cover' | 'pageDefaults' | 'shelf' | 'style',
   value: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
   const next: Record<string, unknown> = { ...(meta ?? {}) };

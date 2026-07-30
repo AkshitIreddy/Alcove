@@ -10,9 +10,27 @@
  */
 
 import { CanvasSource, ImageSource, Texture } from 'pixi.js';
+import {
+  bakeThemedBackPanel,
+  bakeThemedCrown,
+  bakeThemedPlank,
+  bakeThemedRail,
+  renderBackdrop,
+  renderPlate,
+  renderShelfDetail,
+} from '../../art/caseArt';
+import { bakeCached } from '../../art/bake';
+import { libraryKey } from './libraryKey';
 import { bakePaperTile, bakeWallpaperTile } from '../../art/paper';
 import { PROP_H, PROP_W, renderProp, type PropKind } from '../../art/props';
 import type { Ctx2D } from '../../art/spines';
+import {
+  getTheme,
+  type BackdropId,
+  type LibraryTheme,
+  type ThemeId,
+  type WallpaperSpec,
+} from '../../art/themes';
 import {
   bakeBackPanel,
   bakeCrown,
@@ -31,7 +49,62 @@ export type EnvKind =
   | 'back'
   | 'rail'
   | 'crown'
-  | 'wallpaper';
+  | 'wallpaper'
+  | 'backdrop';
+
+/**
+ * The baked wall strip. Vertical features (dado rails, glazing bars, shoji
+ * lattice) repeat on FLOOR_H, but a backdrop renderer also scatters one-off
+ * marks — trowel sweeps, a ghost fresco, peeling lath — across whatever
+ * height it is handed. Baking THREE floors at a time and tiling that keeps
+ * the pitch correct while pushing the visible repeat three times further
+ * apart, which is the difference between "a wall" and "a wallpaper sample".
+ */
+export const BACKDROP_STRIP_W = 640;
+export const BACKDROP_STRIP_FLOORS = 3;
+
+/** World-px height of the under-plank detail strip (drawers / bunting). */
+export const SHELF_DETAIL_H = 34;
+
+/** A room to bake the case in. */
+export interface ThemeRequest {
+  themeId: ThemeId;
+  wallpaper: WallpaperSpec;
+  backdrop: BackdropId;
+}
+
+/**
+ * Bake a multi-floor strip of the room's wall. Same disk cache as every other
+ * themed part (art/bake.ts), keyed by theme x wall x wallpaper x size.
+ */
+function bakeWallStrip(
+  theme: LibraryTheme,
+  backdrop: BackdropId,
+  dpr: number,
+  wallpaper: WallpaperSpec,
+): Promise<ImageBitmap> {
+  const w = BACKDROP_STRIP_W;
+  const h = FLOOR_H * BACKDROP_STRIP_FLOORS;
+  const key =
+    `wall|${theme.id}|${backdrop}|${wallpaper.pattern}|${wallpaper.colourway}|${w}x${h}`;
+  return bakeCached(key, dpr, async () => {
+    const canvas = makeCanvas(Math.ceil(w * dpr), Math.ceil(h * dpr)) as OffscreenCanvas;
+    const ctx = get2d(canvas);
+    if (ctx === null) throw new Error('textures: wall strip 2d context unavailable');
+    ctx.scale(dpr, dpr);
+    renderBackdrop(ctx as Ctx2D, theme, backdrop, w, h, {
+      seed: fnv1a(`${theme.id}|${backdrop}|wall`),
+      floorH: FLOOR_H,
+      wallpaper,
+    });
+    return canvas;
+  });
+}
+
+/** Identity of a baked room — same key ⇒ same case art. */
+export function themeKeyOf(req: ThemeRequest): string {
+  return libraryKey(req.themeId, req.wallpaper, req.backdrop);
+}
 
 /** Case wood stains (settings.shelfWoodStain). 'oak' = the baked base art. */
 export type WoodStain = 'oak' | 'walnut' | 'cherry' | 'cream';
@@ -155,11 +228,14 @@ export class EnvTextures {
   rail: Texture | null = null;
   crown: Texture | null = null;
   wallpaper: Texture | null = null;
+  /** One floor-tall strip of the room's wall; tiled across the whole world. */
+  backdropStrip: Texture | null = null;
 
   private readonly doodles = new Map<number, Texture>();
   private readonly props = new Map<number, Texture>();
   private readonly plaques = new Map<string, Texture>();
   private wallShade: Texture | null = null;
+  private shelfDetail: Texture | null = null;
   private starCharm: Texture | null = null;
   private ribbon: Texture | null = null;
   private trashDrawer: Texture | null = null;
@@ -174,6 +250,94 @@ export class EnvTextures {
   private stain: WoodStain = 'oak';
   private pattern: WallpaperPattern = 'damask';
   private loadDpr = 1;
+
+  /* ------------------------------ theming -------------------------------- */
+  /** The room currently baked in (null until the first setTheme). */
+  private themeReq: ThemeRequest | null = null;
+  private themeKey = '';
+  /** Bumped on every setTheme so stale bakes drop on arrival. */
+  private themeGen = 0;
+  /** Resolves when every part of the current room has landed. */
+  private themeSettled: Promise<void> = Promise.resolve();
+
+  /** The theme the case is currently wearing (defaults to the athenaeum). */
+  get theme(): LibraryTheme {
+    return getTheme(this.themeReq?.themeId);
+  }
+
+  /** True once at least one themed part has been delivered. */
+  get themed(): boolean {
+    return this.themeKey !== '';
+  }
+
+  /**
+   * World-px size the floor plate sprite should be drawn at. Themed rooms use
+   * their own PlateSpec box (a paper tag is wider and taller than a brass
+   * plate), so the engraved label keeps its designed size instead of being
+   * squeezed into the legacy 132x22 plaque box.
+   */
+  get plateSize(): { w: number; h: number } {
+    if (!this.themed) return { w: PLAQUE_W, h: PLAQUE_H };
+    const { w, h } = this.theme.plate;
+    // Keep the theme's own ASPECT (a paper tag is not a brass rectangle) but
+    // never exceed the case's plaque footprint: the plate sits on a 40px
+    // plank between the books, and a plate that outgrows that box starts
+    // competing with the spines instead of labelling the floor.
+    const k = Math.min(PLAQUE_W / w, PLAQUE_H / h, 1);
+    return { w: Math.round(w * k), h: Math.round(h * k) };
+  }
+
+  /** Awaitable "the room is fully baked" (theme crossfade waits on this). */
+  get themeReady(): Promise<void> {
+    return this.themeSettled;
+  }
+
+  /**
+   * Dress the case in a library theme: wood/joinery plank, side rail, cornice,
+   * back panel and the room's wall strip, all baked through art/bake.ts's disk
+   * cache (keyed by theme × wallpaper × backdrop), so the second visit to a
+   * room is instant. Listeners fire per part as it lands.
+   */
+  setTheme(req: ThemeRequest): Promise<void> {
+    if (this.destroyed) return Promise.resolve();
+    const key = themeKeyOf(req);
+    if (key === this.themeKey) return this.themeSettled;
+    this.themeKey = key;
+    this.themeReq = req;
+    const gen = ++this.themeGen;
+    const dpr = this.loadDpr;
+    const theme = getTheme(req.themeId);
+    // Floor plates are drawn from the theme's PlateSpec — drop the cache.
+    for (const tex of this.plaques.values()) tex.destroy(true);
+    this.plaques.clear();
+    this.shelfDetail?.destroy(true);
+    this.shelfDetail = null;
+
+    const land = (kind: EnvKind, bitmap: ImageBitmap): void => {
+      if (this.destroyed || gen !== this.themeGen) return;
+      const old = this[kind as 'plank' | 'back' | 'rail' | 'crown' | 'backdropStrip'];
+      this.assign(kind, textureFromBitmap(bitmap, true));
+      for (const cb of this.listeners) cb(kind);
+      if (old !== null && old !== undefined && !old.destroyed) old.destroy(true);
+    };
+
+    const jobs: Array<Promise<unknown>> = [
+      bakeThemedPlank(theme.id, SHELF_WIDTH, dpr).then((b) => land('plank', b)),
+      bakeThemedRail(theme.id, FLOOR_H, dpr).then((b) => land('rail', b)),
+      bakeThemedCrown(theme.id, SHELF_WIDTH + CROWN_LIP * 2, dpr).then((b) =>
+        land('crown', b),
+      ),
+      bakeThemedBackPanel(theme.id, SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) =>
+        land('back', b),
+      ),
+      bakeWallStrip(theme, req.backdrop, dpr, req.wallpaper).then((b) =>
+        land('backdrop', b),
+      ),
+    ].map((p) => p.catch(() => undefined));
+
+    this.themeSettled = Promise.all(jobs).then(() => undefined);
+    return this.themeSettled;
+  }
 
   /** Current stain (QA probes + world sync). */
   get currentStain(): WoodStain {
@@ -230,7 +394,7 @@ export class EnvTextures {
    * sprites re-texture. Old textures are destroyed AFTER listeners ran.
    */
   setStain(stain: WoodStain): void {
-    if (this.destroyed || stain === this.stain) return;
+    if (this.destroyed || this.themed || stain === this.stain) return;
     this.stain = stain;
     for (const kind of STAINED_KINDS) {
       const base = this.baseBitmaps.get(kind);
@@ -248,7 +412,7 @@ export class EnvTextures {
    * a 'wallpaper' notification either way.
    */
   setWallpaper(pattern: WallpaperPattern): void {
-    if (this.destroyed || pattern === this.pattern) return;
+    if (this.destroyed || this.themed || pattern === this.pattern) return;
     this.pattern = pattern;
     this.wallpaper = pattern === 'plain' ? null : this.wallpaperTile(pattern);
     for (const cb of this.listeners) cb('wallpaper');
@@ -553,6 +717,14 @@ export class EnvTextures {
       for (const tex of this.plaques.values()) tex.destroy(true);
       this.plaques.clear();
     }
+    // Themed rooms draw their own plate material (brass · enamel · slate ·
+    // wood-burnt · paper tag · tin) straight from the theme's PlateSpec.
+    if (this.themed) {
+      const theme = this.theme;
+      const texture = this.renderThemedPlate(theme, dpr, label);
+      this.plaques.set(key, texture);
+      return texture;
+    }
     const w = PLAQUE_W;
     const h = PLAQUE_H;
     const scale = Math.max(1, dpr) * 2;
@@ -619,10 +791,13 @@ export class EnvTextures {
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       // Drawer face.
+      // Drawn in a NEUTRAL near-white wood so the world can tint it to the
+      // room's own timber (a multiply tint can only darken — art baked brown
+      // could never become pale ash).
       const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, '#8a6a48');
-      g.addColorStop(0.5, '#75573a');
-      g.addColorStop(1, '#5c422b');
+      g.addColorStop(0, '#f4ece0');
+      g.addColorStop(0.5, '#ddd0be');
+      g.addColorStop(1, '#bdae99');
       ctx.fillStyle = g;
       ctx.fillRect(1, 1, w - 2, h - 2);
       // Doubled pencil outline + inner panel line.
@@ -655,10 +830,10 @@ export class EnvTextures {
       ctx.font = '12px "Architects Daughter", "Segoe Print", cursive';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(240, 224, 194, 0.8)';
+      ctx.fillStyle = 'rgba(74, 56, 36, 0.78)';
       ctx.fillText('~ waste paper ~', cx, h - 11);
       // Crumpled-ball doodle right of the handle.
-      ctx.strokeStyle = 'rgba(235, 222, 198, 0.6)';
+      ctx.strokeStyle = 'rgba(84, 64, 42, 0.55)';
       ctx.lineWidth = 1;
       const bx = w - 34;
       const by = h / 2 - 2;
@@ -687,7 +862,9 @@ export class EnvTextures {
     this.rail?.destroy(true);
     this.crown?.destroy(true);
     this.wallpaper?.destroy(true);
+    this.backdropStrip?.destroy(true);
     this.wallShade?.destroy(true);
+    this.shelfDetail?.destroy(true);
     this.starCharm?.destroy(true);
     this.ribbon?.destroy(true);
     this.trashDrawer?.destroy(true);
@@ -712,7 +889,9 @@ export class EnvTextures {
     this.rail = null;
     this.crown = null;
     this.wallpaper = null;
+    this.backdropStrip = null;
     this.wallShade = null;
+    this.shelfDetail = null;
     this.starCharm = null;
     this.ribbon = null;
     this.trashDrawer = null;
@@ -725,6 +904,9 @@ export class EnvTextures {
   private deliverBitmap(kind: EnvKind, bitmap: ImageBitmap, mipmaps: boolean): void {
     if (this.destroyed) return;
     this.baseBitmaps.set(kind, bitmap);
+    // A theme owns the case wood and the wall: keep the un-themed bakes as
+    // fallbacks but never let a late arrival stomp the room's art.
+    if (this.themed && kind !== 'paper' && kind !== 'shadow') return;
     if (kind === 'wallpaper') {
       const damask = textureFromBitmap(bitmap, mipmaps);
       this.wallpaperTiles.set('damask', damask);
@@ -745,7 +927,49 @@ export class EnvTextures {
     else if (kind === 'back') this.back = texture;
     else if (kind === 'rail') this.rail = texture;
     else if (kind === 'wallpaper') this.wallpaper = texture;
+    else if (kind === 'backdrop') this.backdropStrip = texture;
     else this.crown = texture;
+  }
+
+  /**
+   * The furniture hung under each shelf plank — apothecary drawers, cottage
+   * bunting. Drawn at the TOP of a floor's book zone, i.e. on the underside of
+   * the plank above. Returns null for rooms with a plain plank edge.
+   */
+  getShelfDetail(dpr: number): Texture | null {
+    if (!this.themed) return null;
+    const theme = this.theme;
+    const kind = theme.shelfDetail ?? 'none';
+    if (kind === 'none') return null;
+    if (this.shelfDetail !== null) return this.shelfDetail;
+    const w = SHELF_WIDTH;
+    const h = SHELF_DETAIL_H;
+    const scale = Math.max(1, dpr);
+    const canvas = makeCanvas(Math.ceil(w * scale), Math.ceil(h * scale));
+    const ctx = get2d(canvas);
+    if (ctx) {
+      ctx.scale(scale, scale);
+      renderShelfDetail(ctx as Ctx2D, theme, w, h, fnv1a(`${theme.id}|detail`));
+    }
+    this.shelfDetail = textureFromCanvas(canvas);
+    return this.shelfDetail;
+  }
+
+  /**
+   * The room's own floor plate, rendered synchronously into the shared
+   * PLAQUE_W×PLAQUE_H design box (the sprite is sized to that box, so a
+   * theme's larger paper tag simply draws smaller strokes inside it).
+   */
+  private renderThemedPlate(theme: LibraryTheme, dpr: number, label: string): Texture {
+    const plate = theme.plate;
+    const scale = Math.max(1, dpr) * 2;
+    const canvas = makeCanvas(Math.ceil(plate.w * scale), Math.ceil(plate.h * scale));
+    const ctx = get2d(canvas);
+    if (ctx) {
+      ctx.scale(scale, scale);
+      renderPlate(ctx as Ctx2D, plate, label, fnv1a(`${theme.id}|plate|${label}`), theme);
+    }
+    return textureFromCanvas(canvas);
   }
 
   /** Wood texture for the current stain ('oak' = base bitmap untouched). */

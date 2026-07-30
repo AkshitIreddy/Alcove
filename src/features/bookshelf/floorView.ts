@@ -21,8 +21,8 @@
 import gsap from 'gsap';
 import { Container, NineSliceSprite, Sprite, Texture, type RenderTexture } from 'pixi.js';
 import { SHADOW_STRIP } from '../../art/wood';
-import { SPINE_BASE_HEIGHT, type SpineParams } from '../../art/spines';
-import { readShelfMeta, thicknessScale } from '../../data/books';
+import { type SpineParams } from '../../art/spines';
+import { readShelfMeta } from '../../data/books';
 import type { Book } from '../../data/types';
 import {
   BOOK_BASELINE,
@@ -41,13 +41,12 @@ import { LOD_CROSSFADE_MS } from './lod';
 import {
   doodleVariantFor,
   PLACEHOLDER_TINTS,
-  PLAQUE_H,
-  PLAQUE_W,
   SELECT_CARET_H,
   SELECT_CARET_W,
+  SHELF_DETAIL_H,
   type EnvTextures,
 } from './textures';
-import { placeholderTint, type SpineFactory } from './spineFactory';
+import { placeholderTint, spineArtHeight, type SpineFactory } from './spineFactory';
 import { fnv1a, mulberry32 } from '../../art/noise';
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -127,6 +126,9 @@ export class FloorView {
   private railR: Sprite;
   private railsWood = false;
   private plaque: Sprite | null = null;
+  private shelfDetail: Sprite | null = null;
+  /** DPR the world mounted this floor with (applyEnv needs it for detail). */
+  private dprHint = 1;
   private hint: Sprite | null = null;
   private hoverGlow: Sprite | null = null;
   private hoverShadow: Sprite | null = null;
@@ -135,6 +137,12 @@ export class FloorView {
   private readonly hoverLayer = new Container();
   private readonly propsLayer = new Container();
   private readonly booksLayer = new Container();
+  /** Flora growing inside the book zone — behind the spines (§3). */
+  private readonly floraBack = new Container();
+  /** Flora on the case furniture — over the rails, never over a book. */
+  private readonly floraRail = new Container();
+  private floraBackSprite: Sprite | null = null;
+  private floraRailSprite: Sprite | null = null;
   private stampSprite: Sprite | null = null;
   private tier: LodTier = 0;
 
@@ -170,10 +178,14 @@ export class FloorView {
       this.plankBase,
       this.hoverLayer,
       this.propsLayer,
+      this.floraBack,
       this.booksLayer,
       this.railL,
       this.railR,
+      this.floraRail,
     );
+    this.floraBack.eventMode = 'none';
+    this.floraRail.eventMode = 'none';
     this.root.eventMode = 'none';
   }
 
@@ -193,6 +205,9 @@ export class FloorView {
     this.root.position.set(0, index * FLOOR_H);
     this.root.visible = true;
     this.tier = tier;
+    this.dprHint = dpr;
+    this.floraBack.visible = tier === 0;
+    this.floraRail.visible = tier === 0;
     this.applyEnv(env, degrade, false);
     this.setBooks(books, factory, dpr, env, recentBookId);
     // Representation matches the tier immediately on (re)mount — no fade.
@@ -223,11 +238,11 @@ export class FloorView {
 
     if (books !== undefined && books.length > 0) {
       const paramsList = books.map((book) => factory.getParams(book));
-      const widths = books.map((book, i) => {
-        const params = paramsList[i] as SpineParams;
-        const pages = readShelfMeta(book)?.pageCount;
-        return Math.min(64, Math.max(22, Math.round(params.w * thicknessScale(pages))));
-      });
+      // Thickness now comes from resolveBookStyle (page count + any studio
+      // override); the factory has already folded it into params.w.
+      const widths = paramsList.map((params) =>
+        Math.min(64, Math.max(22, Math.round((params as SpineParams).w))),
+      );
       const placed = layoutFloor(
         widths.map((w, i) => ({ slot: (books[i] as Book).slot, w })),
         this.index,
@@ -241,7 +256,7 @@ export class FloorView {
         sprite.anchor.set(0.5, 1);
         const centerX = place !== undefined ? place.centerX : SHELF_WIDTH / 2;
         const leanDeg = params.lean + (place !== undefined ? place.leanDeg : 0);
-        const height = SPINE_BASE_HEIGHT + params.hJitter;
+        const height = spineArtHeight(params);
         // Rotation is around the bottom-center anchor, which lifts one bottom
         // corner off the plank by (w/2)·sin θ — sink the book by that much so
         // leaners stay grounded (the other corner tucks into the plank).
@@ -411,6 +426,26 @@ export class FloorView {
       fadeIn(this.plankWood);
     }
 
+    // Under-plank furniture from the theme (apothecary drawers, cottage
+    // bunting) — drawn on the underside of the plank ABOVE this floor.
+    const detail = env.getShelfDetail(this.dprHint);
+    if (detail !== null && this.shelfDetail === null) {
+      this.shelfDetail = new Sprite(detail);
+      this.shelfDetail.position.set(0, 0);
+      this.shelfDetail.width = SHELF_WIDTH;
+      this.shelfDetail.height = SHELF_DETAIL_H;
+      this.shelfDetail.eventMode = 'none';
+      this.content.addChildAt(this.shelfDetail, this.content.getChildIndex(this.hoverLayer));
+      fadeIn(this.shelfDetail);
+    } else if (this.shelfDetail !== null) {
+      if (detail === null) {
+        this.shelfDetail.destroy();
+        this.shelfDetail = null;
+      } else if (this.shelfDetail.texture !== detail) {
+        this.shelfDetail.texture = detail;
+      }
+    }
+
     if (env.rail !== null && !this.railsWood) {
       this.railsWood = true;
       this.railL.texture = env.rail;
@@ -444,9 +479,77 @@ export class FloorView {
     } else if (this.plaque.texture !== tex) {
       this.plaque.texture = tex;
     }
-    this.plaque.width = PLAQUE_W;
-    this.plaque.height = PLAQUE_H;
+    const size = env.plateSize;
+    this.plaque.width = size.w;
+    this.plaque.height = size.h;
     this.hooks.markDirty();
+  }
+
+  /* -------------------------------- flora -------------------------------- */
+
+  /**
+   * Attach one of the two baked flora layers at its world-space bounds. Flora
+   * is decoration only: it fades in, never intercepts pointer events, and is
+   * hidden below LOD0 (docs/design/library-themes.md §5) so far-zoom towers
+   * stay cheap and read by silhouette alone.
+   */
+  setFlora(
+    layer: 'back' | 'rail',
+    texture: Texture | null,
+    bounds: { x: number; y: number; w: number; h: number } | null,
+  ): void {
+    const parent = layer === 'back' ? this.floraBack : this.floraRail;
+    const current = layer === 'back' ? this.floraBackSprite : this.floraRailSprite;
+    if (texture === null || bounds === null) {
+      if (current !== null) {
+        gsap.killTweensOf(current);
+        current.destroy();
+        if (layer === 'back') this.floraBackSprite = null;
+        else this.floraRailSprite = null;
+        this.hooks.markDirty();
+      }
+      return;
+    }
+    let sprite = current;
+    const fresh = sprite === null;
+    if (sprite === null) {
+      sprite = new Sprite(texture);
+      sprite.eventMode = 'none';
+      parent.addChild(sprite);
+      if (layer === 'back') this.floraBackSprite = sprite;
+      else this.floraRailSprite = sprite;
+    } else if (sprite.texture !== texture) {
+      sprite.texture = texture;
+    }
+    sprite.position.set(bounds.x, bounds.y);
+    sprite.width = bounds.w;
+    sprite.height = bounds.h;
+    parent.visible = this.tier === 0;
+    if (fresh) {
+      const m = this.hooks.motion();
+      if (m > 0) {
+        sprite.alpha = 0;
+        this.hooks.track(
+          gsap.to(sprite, {
+            alpha: 1,
+            duration: 0.5 * m,
+            onUpdate: () => this.hooks.markDirty(),
+          }),
+        );
+      }
+    }
+    this.hooks.markDirty();
+  }
+
+  /** Drop both flora layers (theme switch, floor recycle). */
+  clearFlora(): void {
+    this.setFlora('back', null, null);
+    this.setFlora('rail', null, null);
+  }
+
+  /** True when this floor already carries baked flora. */
+  get hasFlora(): boolean {
+    return this.floraBackSprite !== null || this.floraRailSprite !== null;
   }
 
   /**
@@ -483,6 +586,9 @@ export class FloorView {
   applyTier(tier: LodTier, stamp: RenderTexture | null, factory: SpineFactory): void {
     const prev = this.tier;
     this.tier = tier;
+    // Flora (and its LOD2-stamp cost) drops out above LOD0 — §5 acceptance.
+    this.floraBack.visible = tier === 0;
+    this.floraRail.visible = tier === 0;
     if (tier !== 2) this.refreshTextures(factory);
     if (prev === tier) {
       if (tier === 2 && stamp !== null) this.showStamp(stamp);
@@ -707,6 +813,7 @@ export class FloorView {
     this.visuals = [];
     this.booksLayer.removeChildren();
     for (const child of this.propsLayer.removeChildren()) child.destroy();
+    this.clearFlora();
     gsap.killTweensOf(this.content);
     if (this.stampSprite !== null) {
       gsap.killTweensOf(this.stampSprite);

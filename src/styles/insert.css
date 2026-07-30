@@ -40,31 +40,49 @@
 /* ----------------------------------------------------------------------------
    Toast
    -------------------------------------------------------------------------- */
+/* Sat at bottom:32px, which in book view lands INSIDE the cover — the
+   message read as page furniture rather than as feedback. Top-RIGHT keeps it
+   clear of every fixed element in both views: the book title plate and the
+   back arrow (top centre / top left), the tool rail (left edge), the shelf
+   zoom pill and the dev corner (bottom). Sized to body type and given an
+   inked left edge so it reads as a torn note laid on the desk. */
 .nb-script-toast {
   position: fixed;
-  bottom: var(--space-32);
-  left: 50%;
-  transform: translateX(-50%) rotate(-0.5deg);
+  top: var(--space-16);
+  right: var(--space-20);
+  transform: rotate(-0.5deg);
   z-index: var(--z-toasts);
-  padding: var(--space-8) var(--space-20);
-  font-size: var(--text-ui);
+  max-width: min(380px, 62vw);
+  padding: var(--space-8) var(--space-20) var(--space-8) var(--space-16);
+  font-family: var(--font-accent);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  text-align: center;
   color: var(--ink-sepia);
   background: var(--paper-aged);
   border: 1.5px solid var(--paper-edge);
-  border-radius: var(--radius-hand);
-  box-shadow: var(--shadow-md);
+  border-left: 4px solid var(--wash-moss-deep);
+  border-radius: var(--radius-wobble-md);
+  box-shadow: var(--shadow-lg);
   pointer-events: none;
-  animation: nb-toast-in var(--dur-sm) var(--ease-out);
+  animation: nb-toast-in calc(var(--dur-md) * var(--motion-scale, 1))
+    var(--ease-spring);
+}
+
+/* Failures must not look like successes: same paper, terracotta edge. */
+.nb-script-toast.is-error {
+  border-left-color: var(--wash-terracotta-deep);
+  color: var(--ink-accent);
 }
 
 @keyframes nb-toast-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px) rotate(-0.5deg);
+    transform: translateY(-12px) rotate(-0.5deg);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) rotate(-0.5deg);
+    transform: rotate(-0.5deg);
   }
 }
 
@@ -161,7 +179,7 @@
   margin: 0;
   padding: var(--space-8) var(--space-12);
   list-style: none;
-  font-size: var(--text-ui-xs);
+  font-size: var(--text-ui); /* diagnostics have to be readable (was 11px) */
   line-height: 1.5;
   color: var(--ink-sepia-soft);
   background: var(--wash-lemon-light);
@@ -473,8 +491,16 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* Disabled stays READABLE and plainly inert: at 0.45 the primary "Insert"
+   still read as a live amber button, just washed out — the two states were
+   nearly indistinguishable. Now it loses its fill and gains a dashed rim. */
 .nb-ins-button:disabled {
-  opacity: 0.45;
+  opacity: 1;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--paper-edge);
+  box-shadow: none;
   cursor: default;
 }
 

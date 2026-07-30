@@ -44,7 +44,7 @@ import { bakeCached } from './bake';
 import { getGranulationTile, type Canvas2D, type Ctx2D } from './spines';
 
 /** Bump when the growth model or drawing changes — invalidates baked sprites. */
-export const FLORA_RECIPE_VERSION = 1;
+export const FLORA_RECIPE_VERSION = 2;
 
 /**
  * Flora is decoration: the shelf compositor drops the whole layer below this
@@ -216,6 +216,11 @@ export interface ThreadGeom {
   width: number;
   alpha: number;
   colour: string;
+  /**
+   * Optional wider stroke laid down first. Pale silk needs a dark halo to
+   * survive on parchment; dark twine needs none.
+   */
+  halo?: string;
 }
 
 export interface PotGeom {
@@ -243,6 +248,22 @@ export interface ShadeGeom {
   alpha: number;
 }
 
+/**
+ * A filled cushion silhouette drawn *under* a fringe of leaves. This is what
+ * gives a moss tuft actual volume — without a body, a few dozen tiny blades
+ * only ever read as scattered grit.
+ */
+export interface MoundGeom {
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+  /** +1 = the dome bulges toward -y (sits on a surface), -1 = toward +y. */
+  up: number;
+  tone: Tone;
+  seed: number;
+}
+
 export interface FloraGeometry {
   stems: StemGeom[];
   leaves: LeafGeom[];
@@ -251,6 +272,7 @@ export interface FloraGeometry {
   pots: PotGeom[];
   tags: TagGeom[];
   shades: ShadeGeom[];
+  mounds: MoundGeom[];
   ink: string;
   /** Anchor-local bounding box (add the anchor position for world space). */
   bounds: Rect;
@@ -293,12 +315,31 @@ export const FLORA_LABELS: Record<FloraSpeciesId, string> = {
 
 const DEFAULT_INK = 'hsl(96 22% 20%)';
 
-function defaultFacing(kind: FloraAnchorKind): FloraFacing {
+/**
+ * Species that *hang*: they drape down off whatever they take hold of. The
+ * rest stand up out of the surface they sit on. Facing is therefore a
+ * property of the pair (species, anchor kind), not of the anchor alone —
+ * getting this wrong is what makes moss grow downward through a shelf.
+ */
+const TRAILING: ReadonlySet<FloraSpeciesId> = new Set<FloraSpeciesId>([
+  'ivy',
+  'pothos',
+  'hearts',
+  'cobweb',
+  'herbBundle',
+]);
+
+/** Which way a given species grows off a given anchor kind. */
+export function speciesFacing(id: FloraSpeciesId, kind: FloraAnchorKind): FloraFacing {
   switch (kind) {
     case 'shelfUnderside':
     case 'caseCorner':
-    case 'railTop':
+      // Nothing stands upright on the underside of a plank or a top corner.
       return 'down';
+    case 'railTop':
+    case 'crownTop':
+      // A vine spills over the front edge; a tuft stands on the surface.
+      return TRAILING.has(id) ? 'down' : 'up';
     default:
       return 'up';
   }
@@ -342,6 +383,27 @@ function tone(gr: Grow, h: number, s: number, l: number): Tone {
 /** Uniform in [a, b). */
 function rr(gr: Grow, a: number, b: number): number {
   return a + gr.rnd() * (b - a);
+}
+
+/**
+ * Contact shadow where growth meets wood. Every species that touches the case
+ * lays one down: it is the single cheapest thing that stops a specimen from
+ * looking like a sticker pasted on top of the shelf.
+ *
+ * `spread` is the half-width of the contact patch in *unscaled* px; the shade
+ * is squashed along the growth axis so it hugs the surface, and offset a hair
+ * along the facing direction so the plant sits *in front of* its own shadow.
+ */
+function contactShade(gr: Grow, spread: number, alpha = 0.3, x = 0): void {
+  const s = gr.scale;
+  const down = Math.sin(gr.dir) >= 0 ? 1 : -1;
+  gr.g.shades.push({
+    x,
+    y: down * 0.8 * s,
+    rx: spread * s,
+    ry: Math.max(1.6, spread * 0.26) * s,
+    alpha,
+  });
 }
 
 interface StemParams {
@@ -421,6 +483,19 @@ interface LeafParams {
   hueJitter?: number;
   /** Relative leaf size at the stem tip (the taper the doc asks for). */
   sizeTaper?: number;
+  /**
+   * `taper` (default) shrinks linearly toward the tip. `frond` uses a fern's
+   * envelope: short pinnae at the base, longest around a third of the way up,
+   * shrinking to nothing at the tip.
+   */
+  sizeProfile?: 'taper' | 'frond';
+  /** Per-leaf random size spread, ± this fraction. Default 0.17. */
+  sizeJitter?: number;
+  /**
+   * Signed bend pushed into every blade, as a fraction of leaf length. Fern
+   * pinnae and grass all sweep the same way; random-only bend reads as noise.
+   */
+  bendBias?: number;
   curlChance?: number;
   paleChance?: number;
   /** Probability a leaf is an older, darker one. */
@@ -458,7 +533,13 @@ function leafify(gr: Grow, stem: StemGeom, p: LeafParams): void {
     next = p.every * rr(gr, 0.72, 1.3);
 
     const tangent = stemAngle(stem, i);
-    const size = lerp(1, sizeTaper, t) * rr(gr, 0.82, 1.16);
+    const jit = p.sizeJitter ?? 0.17;
+    const envelope =
+      p.sizeProfile === 'frond'
+        ? // Peaks around t≈0.3 and closes to `sizeTaper` at the tip.
+          lerp(sizeTaper, 1, Math.pow(Math.sin(Math.PI * Math.pow(clamp(t, 0, 1), 0.62)), 0.85))
+        : lerp(1, sizeTaper, t);
+    const size = envelope * rr(gr, 1 - jit, 1 + jit);
     const sides = p.paired ? [1, -1] : [side];
     for (const s of sides) {
       const dark = gr.rnd() < darkChance;
@@ -475,7 +556,8 @@ function leafify(gr: Grow, stem: StemGeom, p: LeafParams): void {
         len: p.len * size,
         width: p.width * size,
         shape: shapes[Math.floor(gr.rnd() * shapes.length) as number] ?? 'oval',
-        bend: (gr.rnd() * 2 - 1) * p.len * 0.16,
+        bend:
+          ((gr.rnd() * 2 - 1) * 0.16 + s * gr.flip * (p.bendBias ?? 0)) * p.len * size,
         curl,
         tone: lt,
         pale: gr.rnd() < paleChance,
@@ -506,41 +588,46 @@ interface TrailDef {
   paleChance?: number;
   curlChance?: number;
   sizeTaper?: number;
+  sizeJitter?: number;
 }
 
 const TRAILS: Record<'ivy' | 'pothos' | 'hearts', TrailDef> = {
   ivy: {
-    len: 148,
+    // Bigger, better-spaced leaves and a lighter mid-tone: at shelf scale the
+    // old 18px leaves every 13px merged into one dark caterpillar.
+    len: 152,
     width: 2.2,
-    gravity: 0.17,
-    wobble: 0.055,
+    gravity: 0.19,
+    wobble: 0.062,
     spread: 0.95,
     shape: 'lobed',
-    leafLen: 18,
-    leafW: 20,
-    every: 13,
-    splay: 1.0,
-    tone: [104, 31, 33],
+    leafLen: 23,
+    leafW: 25,
+    every: 18,
+    splay: 1.02,
+    tone: [102, 33, 39],
     branches: 2,
-    curlChance: 0.17,
-    sizeTaper: 0.5,
+    curlChance: 0.18,
+    sizeTaper: 0.42,
+    sizeJitter: 0.26,
   },
   pothos: {
-    len: 132,
-    width: 2.8,
-    gravity: 0.21,
-    wobble: 0.048,
+    len: 136,
+    width: 2.9,
+    gravity: 0.22,
+    wobble: 0.05,
     spread: 1.05,
     shape: 'heart',
-    leafLen: 24,
-    leafW: 22,
-    every: 20,
-    splay: 0.92,
-    tone: [95, 34, 36],
+    leafLen: 26,
+    leafW: 24,
+    every: 15,
+    splay: 0.94,
+    tone: [95, 35, 39],
     branches: 1,
-    paleChance: 0.3,
-    curlChance: 0.12,
-    sizeTaper: 0.5,
+    paleChance: 0.42,
+    curlChance: 0.13,
+    sizeTaper: 0.44,
+    sizeJitter: 0.22,
   },
   hearts: {
     len: 176,
@@ -549,15 +636,18 @@ const TRAILS: Record<'ivy' | 'pothos' | 'hearts', TrailDef> = {
     wobble: 0.03,
     spread: 0.3,
     shape: 'heart',
-    leafLen: 9.5,
-    leafW: 10.5,
-    every: 18,
+    leafLen: 10,
+    leafW: 11,
+    every: 16,
     splay: 1.38,
-    tone: [116, 15, 44],
+    tone: [116, 17, 46],
     branches: 1,
     paired: true,
-    curlChance: 0.1,
-    sizeTaper: 0.72,
+    curlChance: 0.12,
+    sizeTaper: 0.66,
+    // A string-of-hearts is charming precisely because it is uneven — equal
+    // beads at equal spacing read as a curtain, not a plant.
+    sizeJitter: 0.34,
   },
 };
 
@@ -565,6 +655,8 @@ function growTrail(gr: Grow, def: TrailDef): void {
   const s = gr.scale;
   const t = tone(gr, def.tone[0], def.tone[1], def.tone[2]);
   const stemTone: Tone = { h: t.h - 4, s: clamp(t.s + 4, 0, 100), l: clamp(t.l + 4, 0, 100) };
+  // Where the vine grips the wood.
+  contactShade(gr, 4.5, 0.26);
   const main = growStem(gr, {
     x: 0,
     y: 0,
@@ -587,6 +679,7 @@ function growTrail(gr: Grow, def: TrailDef): void {
     paleChance: def.paleChance ?? 0,
     curlChance: def.curlChance ?? 0.16,
     sizeTaper: def.sizeTaper ?? 0.45,
+    sizeJitter: def.sizeJitter ?? 0.17,
   };
   leafify(gr, main, leaves);
 
@@ -617,45 +710,75 @@ function growTrail(gr: Grow, def: TrailDef): void {
 
 /* --------------------------- the ten species ----------------------------- */
 
-function growFern(gr: Grow): void {
-  const s = gr.scale;
-  const t = tone(gr, 126, 30, 29);
+/** One arching frond: a rachis with pinnae under a proper frond envelope. */
+function growFrond(gr: Grow, s: number, t: Tone, lean: number, size: number): StemGeom {
   const rachis = growStem(gr, {
-    x: 0,
+    x: (gr.rnd() * 2 - 1) * 2.5 * s,
     y: 0,
-    angle: gr.dir + gr.flip * rr(gr, 0.5, 0.85),
-    len: 104 * s * rr(gr, 0.85, 1.15),
-    width: 2.6 * s,
+    angle: gr.dir + gr.flip * lean,
+    len: 100 * s * size * rr(gr, 0.88, 1.12),
+    width: 2.5 * s * size,
     taper: 0.14,
-    gravity: 0.3,
-    wobble: 0.028,
+    // Gravity is integrated per step, so over a 25-step rachis even 0.14
+    // accumulates a full 90° turn and the frond flops onto its side. 0.045
+    // buys the ~30° nod a fern actually has.
+    gravity: 0.045,
+    wobble: 0.035,
     tone: { h: t.h - 6, s: t.s + 6, l: t.l + 8 },
   });
   leafify(gr, rachis, {
     shape: 'needle',
-    every: 7 * s,
-    len: 18 * s,
-    width: 5.4 * s,
-    splay: 1.12,
+    every: 8.4 * s * size,
+    len: 21 * s * size,
+    width: 6.4 * s * size,
+    splay: 1.06,
     paired: true,
-    from: 0.08,
+    from: 0.1,
     tone: t,
-    sizeTaper: 0.2,
-    curlChance: 0.08,
-    darkChance: 0.14,
-    hueJitter: 7,
+    // Short at the base, longest a third of the way up, closing at the tip —
+    // the silhouette that separates a frond from a fish skeleton.
+    sizeProfile: 'frond',
+    sizeTaper: 0.3,
+    sizeJitter: 0.13,
+    // Every pinna sweeps toward the tip of the frond.
+    bendBias: -0.3,
+    curlChance: 0.07,
+    darkChance: 0.15,
+    hueJitter: 9,
   });
+  return rachis;
+}
+
+function growFern(gr: Grow): void {
+  const s = gr.scale;
+  const t = tone(gr, 126, 30, 36);
+  contactShade(gr, 8, 0.3);
+  // A shuttlecock of fronds fanning from one crown: the tallest slightly off
+  // centre, the rest shorter and splayed. Mirroring two equal fronds either
+  // side of the vertical is what made the old clump read as a moustache.
+  const base = rr(gr, 0.05, 0.3);
+  const fronds = 3 + (gr.rnd() < 0.5 ? 1 : 0);
+  const main = growFrond(gr, s, t, base, 1);
+  for (let i = 1; i < fronds; i++) {
+    // Alternate sides, widening as we go, each frond shorter than the last.
+    const side = i % 2 === 0 ? 1 : -1;
+    const lean = base + side * (0.3 + Math.floor(i / 2) * 0.34) * rr(gr, 0.85, 1.15);
+    growFrond(gr, s, t, lean, rr(gr, 0.52, 0.8) - i * 0.04);
+  }
   // Fiddlehead: an unfurling spiral at the tip, on about half the seeds.
-  if (gr.rnd() < 0.5) {
-    const tip = rachis.pts[rachis.pts.length - 1] as Pt;
-    const a0 = stemAngle(rachis, rachis.pts.length - 1);
+  if (gr.rnd() < 0.55) {
+    const tip = main.pts[main.pts.length - 1] as Pt;
+    const a0 = stemAngle(main, main.pts.length - 1);
     const pts: Pt[] = [];
     const turn = gr.flip * (gr.rnd() < 0.5 ? 1 : -1);
     for (let i = 0; i <= 26; i++) {
       const u = i / 26;
       const r = 8 * s * (1 - u * 0.94);
       const a = a0 + turn * u * Math.PI * 2.1;
-      pts.push({ x: tip.x + Math.cos(a) * r - Math.cos(a0) * 8 * s, y: tip.y + Math.sin(a) * r - Math.sin(a0) * 8 * s });
+      pts.push({
+        x: tip.x + Math.cos(a) * r - Math.cos(a0) * 8 * s,
+        y: tip.y + Math.sin(a) * r - Math.sin(a0) * 8 * s,
+      });
     }
     gr.g.threads.push({ pts, width: 1.7 * s, alpha: 0.95, colour: hsl(t.h - 4, t.s + 8, t.l + 6) });
   }
@@ -666,51 +789,80 @@ function growMoss(gr: Grow): void {
   const t = tone(gr, 94, 34, 32);
   const up = gr.dir;
   const flipY = up < 0 ? 1 : -1;
-  const halfW = 22 * s;
-  const height = 15 * s;
-  gr.g.shades.push({ x: 0, y: 0, rx: halfW * 1.05, ry: 3.4 * s, alpha: 0.3 });
-  // Two layers: a darker, denser cushion behind a brighter front fringe, so
-  // the tuft reads as a mound with volume instead of a flat smear.
-  for (const layer of [0, 1]) {
-    const count = layer === 0 ? 34 + Math.floor(gr.rnd() * 14) : 26 + Math.floor(gr.rnd() * 12);
-    const spread = layer === 0 ? 0.88 : 1;
+  // Cushions are lumpy and wide, not neat and low.
+  const halfW = rr(gr, 20, 30) * s;
+  const height = rr(gr, 15, 23) * s;
+  contactShade(gr, halfW / s + 3, 0.34);
+
+  // 1. The body. Two overlapping domes give the tuft an uneven crest, which
+  //    is what stops the silhouette reading as a drawn semicircle.
+  gr.g.mounds.push({
+    x: 0,
+    y: 0,
+    rx: halfW,
+    ry: height * 0.92,
+    up: flipY,
+    tone: { h: t.h, s: clamp(t.s - 3, 0, 100), l: clamp(t.l - 8, 0, 100) },
+    seed: (gr.rnd() * 0xffffffff) >>> 0,
+  });
+  gr.g.mounds.push({
+    x: rr(gr, -0.42, 0.42) * halfW,
+    y: 0,
+    rx: halfW * rr(gr, 0.5, 0.72),
+    ry: height * rr(gr, 0.72, 1.06),
+    up: flipY,
+    tone: { h: t.h + rr(gr, -6, 8), s: clamp(t.s + 4, 0, 100), l: clamp(t.l - 1, 0, 100) },
+    seed: (gr.rnd() * 0xffffffff) >>> 0,
+  });
+
+  // 2. Three fringes of tiny blades: a dark one poking above the crest, a
+  //    mid one over the body, and a bright one along the lit front edge.
+  const LAYERS = [
+    { count: 30, spread: 0.82, rise: 1.02, size: 1, dl: -9, front: 0 },
+    { count: 34, spread: 0.96, rise: 0.82, size: 0.94, dl: 2, front: 0.24 },
+    { count: 26, spread: 1.04, rise: 0.42, size: 0.84, dl: 11, front: 0.62 },
+  ];
+  for (const layer of LAYERS) {
+    const count = layer.count + Math.floor(gr.rnd() * 10);
     for (let i = 0; i < count; i++) {
       const u = ((i + gr.rnd()) / count) * 2 - 1;
       // A cushion: tallest in the middle, thinning at the edges.
-      const mound = Math.pow(Math.max(0, 1 - u * u), 0.55);
-      const x = u * halfW * spread;
-      const y = -mound * rr(gr, 0.12, 1) * height * (layer === 0 ? 1 : 0.62);
+      const mound = Math.pow(Math.max(0, 1 - u * u), 0.5);
+      const x = u * halfW * layer.spread;
+      // The front fringe is pushed down the face of the cushion, but never
+      // *through* the surface — at the edges the mound falls to zero and an
+      // unclamped offset buried the outermost blades inside the shelf.
+      const y = Math.min(
+        0.5 * s,
+        -mound * rr(gr, 0.5, 1.05) * height * layer.rise + layer.front * height * 0.42,
+      );
       gr.g.leaves.push({
         x,
         y: y * flipY,
-        angle: up + (gr.rnd() * 2 - 1) * 0.8 + u * 0.7,
-        len: rr(gr, 4.6, 9) * s * (layer === 0 ? 1 : 0.82),
-        width: rr(gr, 3, 5.6) * s,
-        shape: gr.rnd() < 0.5 ? 'round' : 'needle',
-        bend: (gr.rnd() * 2 - 1) * 1.8 * s,
+        angle: up + (gr.rnd() * 2 - 1) * 0.7 + u * 0.85,
+        len: rr(gr, 5, 10.5) * s * layer.size,
+        width: rr(gr, 3.2, 6) * s * layer.size,
+        shape: gr.rnd() < 0.55 ? 'round' : 'needle',
+        bend: (gr.rnd() * 2 - 1) * 2 * s,
         curl: 0,
         tone: {
-          h: t.h + (gr.rnd() * 2 - 1) * 16,
+          h: t.h + (gr.rnd() * 2 - 1) * 15,
           s: clamp(t.s + (gr.rnd() * 2 - 1) * 12, 0, 100),
-          l: clamp(
-            t.l + (gr.rnd() * 2 - 1) * 9 + (layer === 0 ? -7 : 5) - (gr.rnd() < 0.15 ? 7 : 0),
-            0,
-            100,
-          ),
+          l: clamp(t.l + (gr.rnd() * 2 - 1) * 8 + layer.dl - (gr.rnd() < 0.14 ? 8 : 0), 0, 100),
         },
         pale: false,
         seed: (gr.rnd() * 0xffffffff) >>> 0,
       });
     }
   }
-  // Sporophytes: bare hairs with a tiny capsule.
-  const hairs = 4 + Math.floor(gr.rnd() * 4);
+  // 3. Sporophytes: bare hairs with a tiny capsule.
+  const hairs = 5 + Math.floor(gr.rnd() * 5);
   for (let i = 0; i < hairs; i++) {
     const x = (gr.rnd() * 2 - 1) * halfW * 0.7;
-    const len = rr(gr, 11, 20) * s;
+    const len = rr(gr, 13, 24) * s;
     const stem = growStem(gr, {
       x,
-      y: 0,
+      y: -height * 0.34 * flipY,
       angle: up + (gr.rnd() * 2 - 1) * 0.35,
       len,
       width: 0.9 * s,
@@ -735,94 +887,111 @@ function growMoss(gr: Grow): void {
 
 function growHerbBundle(gr: Grow): void {
   const s = gr.scale;
-  const t = tone(gr, 76, 19, 47);
-  const twine = 'hsl(38 26% 52%)';
-  const knotY = 12 * s;
-  // Twine: a loop over the shelf edge, down to the knot.
-  gr.g.threads.push({
-    pts: [
-      { x: -4 * s, y: -6 * s },
-      { x: -3 * s, y: 1 * s },
-      { x: -1.5 * s, y: knotY - 2 * s },
-    ],
-    width: 1.3 * s,
-    alpha: 0.9,
-    colour: twine,
-  });
-  gr.g.threads.push({
-    pts: [
-      { x: 4 * s, y: -6 * s },
-      { x: 3 * s, y: 1 * s },
-      { x: 1.5 * s, y: knotY - 2 * s },
-    ],
-    width: 1.3 * s,
-    alpha: 0.9,
-    colour: twine,
-  });
-  const stems = 6 + Math.floor(gr.rnd() * 4);
+  // A drying bundle is sage-grey and dusty, not fresh green — and it has to
+  // be light enough that individual sprigs separate against dark wood.
+  const t = tone(gr, 78, 17, 52);
+  const twine = 'hsl(38 28% 56%)';
+  const knotY = 15 * s;
+  contactShade(gr, 5, 0.24);
+
+  // 1. Twine: a hanging loop from the shelf edge down to the knot.
+  for (const side of [-1, 1]) {
+    gr.g.threads.push({
+      pts: [
+        { x: side * 5.2 * s, y: -9 * s },
+        { x: side * 4.4 * s, y: 0 },
+        { x: side * 2.2 * s, y: knotY - 3 * s },
+      ],
+      width: 1.35 * s,
+      alpha: 0.92,
+      colour: twine,
+    });
+  }
+
+  // 2. Fewer, chunkier sprigs — the old 6-9 x dense-needles bundle collapsed
+  //    into one unreadable dark clump at shelf scale.
+  const stems = 4 + Math.floor(gr.rnd() * 3);
   for (let i = 0; i < stems; i++) {
-    const spread = ((i + 0.5) / stems - 0.5) * 1.05;
+    const spread = ((i + 0.5) / stems - 0.5) * 1.15;
     const stem = growStem(gr, {
-      x: (gr.rnd() * 2 - 1) * 1.5 * s,
-      y: knotY,
+      x: (gr.rnd() * 2 - 1) * 1.2 * s,
+      y: knotY + 2 * s,
       angle: Math.PI / 2 + spread + (gr.rnd() * 2 - 1) * 0.1,
-      len: rr(gr, 38, 60) * s,
-      width: 1.4 * s,
+      len: rr(gr, 42, 66) * s,
+      width: 1.5 * s,
       taper: 0.5,
-      gravity: 0.14,
-      wobble: 0.035,
+      gravity: 0.16,
+      wobble: 0.04,
       step: 3.5,
-      tone: { h: t.h - 6, s: t.s + 6, l: t.l - 6 },
+      tone: { h: t.h - 8, s: t.s + 4, l: t.l - 12 },
     });
     leafify(gr, stem, {
-      shape: 'needle',
-      every: 7.5 * s,
-      len: 9.5 * s,
-      width: 3.6 * s,
-      splay: 1.25,
+      shape: ['needle', 'oval'],
+      every: 11.5 * s,
+      len: 13 * s,
+      width: 5 * s,
+      splay: 1.2,
       paired: true,
-      from: 0.16,
+      from: 0.14,
       tone: t,
-      hueJitter: 16,
-      sizeTaper: 0.6,
-      curlChance: 0.3,
-      darkChance: 0.28,
+      // Dried herbs are a scrapyard of tones: that variety is the legibility.
+      hueJitter: 20,
+      sizeTaper: 0.55,
+      sizeJitter: 0.26,
+      bendBias: -0.16,
+      curlChance: 0.34,
+      darkChance: 0.22,
     });
     // Lavender-ish flower spikes on some stems.
-    if (gr.rnd() < 0.3) {
+    if (gr.rnd() < 0.42) {
       const tip = stem.pts[stem.pts.length - 1] as Pt;
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0; k < 5; k++) {
         gr.g.blooms.push({
-          x: tip.x + (gr.rnd() * 2 - 1) * 1.6 * s,
-          y: tip.y - k * 2.4 * s,
-          r: rr(gr, 1.2, 2) * s,
+          x: tip.x + (gr.rnd() * 2 - 1) * 1.8 * s,
+          y: tip.y - k * 2.8 * s,
+          r: rr(gr, 1.6, 2.6) * s,
           kind: 'bud',
-          open: 0.2,
-          tone: { h: 268, s: 22, l: 52 },
+          open: 0.28,
+          // Lilac, not indigo: at 2px a dark bud is just a dirty speck.
+          tone: { h: 274, s: 34, l: 70 },
           seed: (gr.rnd() * 0xffffffff) >>> 0,
         });
       }
     }
   }
-  // The knot itself, and sometimes a paper tag.
+
+  // 3. The knot: three wraps round the neck plus a loose tail, so it reads as
+  //    *tied* rather than as a stripe painted across the stems.
+  for (let k = 0; k < 3; k++) {
+    const y = knotY + k * 2.6 * s;
+    gr.g.threads.push({
+      pts: [
+        { x: -5 * s, y: y + 0.4 * s },
+        { x: 0, y: y - 0.5 * s },
+        { x: 5 * s, y: y + 0.5 * s },
+      ],
+      width: 1.7 * s,
+      alpha: 0.96,
+      colour: twine,
+    });
+  }
   gr.g.threads.push({
     pts: [
-      { x: -4 * s, y: knotY },
-      { x: 4 * s, y: knotY + 1 * s },
-      { x: -4 * s, y: knotY + 2.4 * s },
-      { x: 4 * s, y: knotY + 3.6 * s },
+      { x: 3 * s, y: knotY + 5 * s },
+      { x: 7 * s, y: knotY + 8 * s },
+      { x: 6 * s, y: knotY + 13 * s },
     ],
-    width: 1.6 * s,
-    alpha: 0.95,
+    width: 1.1 * s,
+    alpha: 0.8,
     colour: twine,
   });
-  if (gr.rnd() < 0.45) {
+  if (gr.rnd() < 0.55) {
     gr.g.tags.push({
-      x: 6 * s,
-      y: knotY + 4 * s,
-      w: 11 * s,
-      h: 7 * s,
-      angle: rr(gr, -0.35, 0.1),
+      x: 6.5 * s,
+      y: knotY + 5 * s,
+      w: 12 * s,
+      h: 8 * s,
+      angle: rr(gr, -0.4, 0.12),
     });
   }
 }
@@ -831,19 +1000,22 @@ function growBlossom(gr: Grow): void {
   const s = gr.scale;
   const wood: Tone = tone(gr, 26, 22, 30);
   const petal: Tone = tone(gr, 344, 46, 82);
+  contactShade(gr, 5, 0.26);
   const branch = growStem(gr, {
     x: 0,
     y: 0,
     angle: gr.dir + gr.flip * rr(gr, 0.85, 1.25),
-    len: 150 * s * rr(gr, 0.85, 1.12),
-    width: 3.4 * s,
+    // Was 150px: half again as long as any other species, which made every
+    // blossom branch the loudest thing on the shelf.
+    len: 112 * s * rr(gr, 0.85, 1.12),
+    width: 3 * s,
     taper: 0.22,
     gravity: 0.07,
-    wobble: 0.038,
+    wobble: 0.05,
     woody: 1,
     tone: wood,
   });
-  const twigs = 3 + Math.floor(gr.rnd() * 3);
+  const twigs = 4 + Math.floor(gr.rnd() * 3);
   const tips: Pt[] = [];
   for (let i = 0; i < twigs; i++) {
     const at = Math.floor(branch.pts.length * ((i + 0.6) / (twigs + 0.6)) * 0.95);
@@ -870,7 +1042,7 @@ function growBlossom(gr: Grow): void {
       gr.g.blooms.push({
         x: qq.x + (gr.rnd() * 2 - 1) * 2 * s,
         y: qq.y + (gr.rnd() * 2 - 1) * 2 * s,
-        r: rr(gr, 5.4, 9.4) * s,
+        r: rr(gr, 4.2, 7.4) * s,
         kind: gr.rnd() < 0.26 ? 'bud' : 'blossom',
         open: rr(gr, 0.35, 1),
         tone: {
@@ -884,14 +1056,16 @@ function growBlossom(gr: Grow): void {
     // A couple of young leaves per twig.
     leafify(gr, twig, {
       shape: 'oval',
-      every: 14 * s,
-      len: 9 * s,
-      width: 5 * s,
+      every: 9 * s,
+      len: 11 * s,
+      width: 6 * s,
       splay: 1.05,
-      tone: tone(gr, 108, 26, 38),
-      sizeTaper: 0.7,
-      curlChance: 0.06,
-      darkChance: 0.1,
+      from: 0.05,
+      tone: tone(gr, 108, 28, 40),
+      sizeTaper: 0.68,
+      sizeJitter: 0.22,
+      curlChance: 0.08,
+      darkChance: 0.12,
     });
   }
   // A few blossoms straight off the main branch too.
@@ -900,7 +1074,7 @@ function growBlossom(gr: Grow): void {
     gr.g.blooms.push({
       x: p.x + (gr.rnd() * 2 - 1) * 3 * s,
       y: p.y + (gr.rnd() * 2 - 1) * 3 * s,
-      r: rr(gr, 4.6, 7.6) * s,
+      r: rr(gr, 3.8, 6.2) * s,
       kind: 'blossom',
       open: rr(gr, 0.5, 1),
       tone: petal,
@@ -914,7 +1088,7 @@ function growPotted(gr: Grow): void {
   const t = tone(gr, 108, 30, 34);
   const potW = 30 * s;
   const potH = 24 * s;
-  gr.g.shades.push({ x: 0, y: 0, rx: potW * 0.72, ry: 4 * s, alpha: 0.34 });
+  contactShade(gr, 22, 0.36);
   const kinds: PotGeom['kind'][] = ['terracotta', 'terracotta', 'enamel', 'brass'];
   gr.g.pots.push({
     x: -potW / 2,
@@ -966,8 +1140,9 @@ function growPotted(gr: Grow): void {
 
 function growGrassTuft(gr: Grow): void {
   const s = gr.scale;
-  const t = tone(gr, 86, 32, 40);
-  const blades = 9 + Math.floor(gr.rnd() * 6);
+  const t = tone(gr, 86, 32, 42);
+  contactShade(gr, 7, 0.32);
+  const blades = 11 + Math.floor(gr.rnd() * 7);
   for (let i = 0; i < blades; i++) {
     const u = (i + 0.5) / blades - 0.5;
     const dry = gr.rnd() < 0.22;
@@ -1022,7 +1197,10 @@ function growGrassTuft(gr: Grow): void {
 
 function growCobweb(gr: Grow): void {
   const s = gr.scale;
-  const colour = 'hsl(40 12% 82%)';
+  const colour = 'hsl(40 12% 86%)';
+  // Pale silk vanishes on parchment; a dark halo under every strand keeps the
+  // web readable on both a cream wall and dark walnut.
+  const halo = 'hsl(30 18% 22% / 0.5)';
   const spokes = 6 + Math.floor(gr.rnd() * 3);
   const reach = rr(gr, 46, 72) * s;
   // Sweep from the facing direction toward the horizontal on the flip side.
@@ -1045,7 +1223,7 @@ function growCobweb(gr: Grow): void {
       });
     }
     radials.push(pts);
-    gr.g.threads.push({ pts, width: 0.75, alpha: 0.34, colour });
+    gr.g.threads.push({ pts, width: 0.8, alpha: 0.42, colour, halo });
   }
   // Catenary rings between consecutive radials, with a few missing spans.
   const rings = 4 + Math.floor(gr.rnd() * 3);
@@ -1063,9 +1241,10 @@ function growCobweb(gr: Grow): void {
       const sag = 1 + u * 0.18;
       gr.g.threads.push({
         pts: [pA, { x: mid.x * sag, y: mid.y * sag }, pB],
-        width: 0.7,
-        alpha: 0.28 + gr.rnd() * 0.1,
+        width: 0.72,
+        alpha: 0.34 + gr.rnd() * 0.12,
         colour,
+        halo,
       });
     }
   }
@@ -1089,7 +1268,7 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   ivy: {
     id: 'ivy',
     label: FLORA_LABELS.ivy,
-    anchors: ['railTop', 'caseCorner', 'crownTop', 'potPosition', 'shelfUnderside'],
+    anchors: ['railTop', 'caseCorner', 'crownTop', 'shelfUnderside'],
     scale: [0.8, 1.15],
     nominalW: 150,
     grow: (gr) => growTrail(gr, TRAILS.ivy),
@@ -1097,7 +1276,7 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   pothos: {
     id: 'pothos',
     label: FLORA_LABELS.pothos,
-    anchors: ['railTop', 'shelfUnderside', 'potPosition', 'caseCorner'],
+    anchors: ['railTop', 'shelfUnderside', 'caseCorner'],
     scale: [0.8, 1.1],
     nominalW: 140,
     grow: (gr) => growTrail(gr, TRAILS.pothos),
@@ -1105,7 +1284,7 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   hearts: {
     id: 'hearts',
     label: FLORA_LABELS.hearts,
-    anchors: ['railTop', 'shelfUnderside', 'potPosition'],
+    anchors: ['railTop', 'shelfUnderside'],
     scale: [0.85, 1.2],
     nominalW: 60,
     grow: (gr) => growTrail(gr, TRAILS.hearts),
@@ -1113,7 +1292,8 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   fern: {
     id: 'fern',
     label: FLORA_LABELS.fern,
-    anchors: ['railTop', 'potPosition', 'crownTop', 'caseCorner'],
+    // Ferns stand up out of a surface, so no undersides and no top corners.
+    anchors: ['railTop', 'jointGap', 'crownTop', 'potPosition'],
     scale: [0.85, 1.2],
     nominalW: 110,
     grow: growFern,
@@ -1121,9 +1301,9 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   moss: {
     id: 'moss',
     label: FLORA_LABELS.moss,
-    anchors: ['jointGap', 'railTop', 'crownTop', 'caseCorner'],
+    anchors: ['jointGap', 'railTop', 'crownTop', 'potPosition'],
     scale: [0.75, 1.25],
-    nominalW: 40,
+    nominalW: 48,
     grow: growMoss,
   },
   herbBundle: {
@@ -1137,9 +1317,9 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   blossom: {
     id: 'blossom',
     label: FLORA_LABELS.blossom,
-    anchors: ['crownTop', 'caseCorner', 'railTop'],
-    scale: [0.85, 1.15],
-    nominalW: 160,
+    anchors: ['crownTop', 'railTop'],
+    scale: [0.8, 1.05],
+    nominalW: 124,
     grow: growBlossom,
   },
   potted: {
@@ -1153,7 +1333,7 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   grassTuft: {
     id: 'grassTuft',
     label: FLORA_LABELS.grassTuft,
-    anchors: ['jointGap', 'railTop', 'crownTop'],
+    anchors: ['jointGap', 'railTop', 'crownTop', 'potPosition'],
     scale: [0.8, 1.2],
     nominalW: 46,
     grow: growGrassTuft,
@@ -1161,7 +1341,8 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   cobweb: {
     id: 'cobweb',
     label: FLORA_LABELS.cobweb,
-    anchors: ['caseCorner', 'crownTop', 'shelfUnderside'],
+    // Webs live in corners and dark undersides, never out on an open crown.
+    anchors: ['caseCorner', 'shelfUnderside', 'jointGap'],
     scale: [0.85, 1.3],
     nominalW: 70,
     grow: growCobweb,
@@ -1192,6 +1373,7 @@ function emptyGeometry(ink: string): FloraGeometry {
     pots: [],
     tags: [],
     shades: [],
+    mounds: [],
     ink,
     bounds: { x: 0, y: 0, w: 0, h: 0 },
   };
@@ -1228,6 +1410,10 @@ function computeBounds(g: FloraGeometry): Rect {
     hit(t.x, t.y, r);
   }
   for (const sh of g.shades) hit(sh.x, sh.y, Math.max(sh.rx, sh.ry));
+  for (const m of g.mounds) {
+    hit(m.x, m.y, m.rx);
+    hit(m.x, m.y - m.up * m.ry, m.rx * 0.2);
+  }
   if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
   const pad = 1.5;
   return {
@@ -1410,7 +1596,7 @@ export function planFlora(o: FloraPlanOptions): FloraPlacement[] {
     if (anchor.run && anchor.run > 0) {
       scale = Math.min(scale, Math.max(0.45, (anchor.run * 1.6) / def.nominalW));
     }
-    const facing = anchor.facing ?? defaultFacing(anchor.kind);
+    const facing = anchor.facing ?? speciesFacing(species, anchor.kind);
     const flip = anchor.flip ?? rnd() < 0.5;
 
     const placement: FloraPlacement = {
@@ -1486,6 +1672,71 @@ function drawRibbon(ctx: Ctx2D, s: StemGeom, ink: string): void {
   ctx.globalAlpha = s.woody > 0.5 ? 0.5 : 0.34;
   ctx.lineWidth = 0.75;
   ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * A soft contact shadow. Radial falloff, squashed onto the surface — this is
+ * what makes a specimen sit *on* the wood instead of floating over it.
+ */
+function drawShade(ctx: Ctx2D, sh: ShadeGeom, alpha: number): void {
+  if (sh.rx <= 0 || sh.ry <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha * sh.alpha;
+  ctx.translate(sh.x, sh.y);
+  ctx.scale(1, sh.ry / sh.rx);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sh.rx);
+  g.addColorStop(0, 'hsl(26 34% 9% / 0.95)');
+  g.addColorStop(0.55, 'hsl(26 34% 9% / 0.45)');
+  g.addColorStop(1, 'hsl(26 34% 9% / 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, sh.rx, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * The filled body of a cushion (moss). A wobbled dome, washed with a
+ * top-lit gradient and a darker skirt where it meets the surface.
+ */
+function drawMound(ctx: Ctx2D, m: MoundGeom, ink: string): void {
+  if (m.rx <= 0 || m.ry <= 0) return;
+  const rnd = mulberry32(m.seed >>> 0);
+  const steps = 22;
+  const pts: Pt[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps;
+    const a = Math.PI * u;
+    // Lumpy crest: two low-frequency bumps plus a little grain.
+    const bump =
+      1 +
+      0.13 * Math.sin(u * Math.PI * 2.7 + rnd() * 0.001) +
+      0.09 * Math.sin(u * Math.PI * 5.3 + 1.7);
+    pts.push({
+      x: m.x - Math.cos(a) * m.rx * (0.97 + 0.06 * Math.sin(u * Math.PI * 3.1)),
+      y: m.y - m.up * Math.sin(a) * m.ry * bump,
+    });
+  }
+  pts.push({ x: m.x + m.rx, y: m.y });
+  pts.push({ x: m.x - m.rx, y: m.y });
+
+  ctx.save();
+  traceSmooth(ctx, pts, true);
+  const g = ctx.createLinearGradient(m.x, m.y - m.up * m.ry * 1.15, m.x, m.y);
+  g.addColorStop(0, toneStr(m.tone, 12, -4));
+  g.addColorStop(0.55, toneStr(m.tone));
+  g.addColorStop(1, toneStr(m.tone, -13, 3));
+  ctx.fillStyle = g;
+  ctx.fill();
+  // Edge darkening, clipped — the watercolour rim again.
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.2;
+  ctx.lineWidth = Math.max(2.5, m.ry * 0.5);
+  ctx.stroke();
+  ctx.restore();
   ctx.restore();
 }
 
@@ -1582,31 +1833,76 @@ function drawPot(ctx: Ctx2D, p: PotGeom, ink: string): void {
     enamel: ['#8fa79a', '#b7cabf', '#6c8478'],
   };
   const [a, b, c] = ramp[p.kind];
+  const cx = p.x + p.w / 2;
+  const inset = p.h * 0.19;
   ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Body: a tapered pot whose sides bow very slightly, traced smooth so the
+  // silhouette is drawn rather than ruled.
+  const body: Pt[] = [
+    { x: p.x + 0.6, y: p.y },
+    { x: p.x - 0.4, y: p.y + p.h * 0.4 },
+    { x: p.x + inset * 0.55, y: p.y + p.h * 0.82 },
+    { x: p.x + inset, y: p.y + p.h },
+    { x: p.x + p.w - inset, y: p.y + p.h + 0.5 },
+    { x: p.x + p.w - inset * 0.55, y: p.y + p.h * 0.82 },
+    { x: p.x + p.w + 0.4, y: p.y + p.h * 0.4 },
+    { x: p.x + p.w - 0.6, y: p.y },
+  ];
+  traceSmooth(ctx, body, true);
   const g = ctx.createLinearGradient(p.x, 0, p.x + p.w, 0);
-  g.addColorStop(0, a);
-  g.addColorStop(0.45, b);
+  g.addColorStop(0, c);
+  g.addColorStop(0.34, b);
+  g.addColorStop(0.72, a);
   g.addColorStop(1, c);
   ctx.fillStyle = g;
+  ctx.fill();
   ctx.strokeStyle = ink;
-  ctx.lineWidth = 1.1;
-  ctx.globalAlpha = 0.92;
-  ctx.beginPath();
-  ctx.moveTo(p.x, p.y);
-  ctx.lineTo(p.x + p.w, p.y);
-  ctx.lineTo(p.x + p.w - p.h * 0.2, p.y + p.h);
-  ctx.lineTo(p.x + p.h * 0.2, p.y + p.h);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 0.7;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1.05;
   ctx.stroke();
-  // Rim.
-  ctx.globalAlpha = 0.95;
-  ctx.fillStyle = a;
-  ctx.beginPath();
-  ctx.rect(p.x - p.w * 0.09, p.y - p.h * 0.26, p.w * 1.18, p.h * 0.27);
+
+  // Rim: a lipped band with rounded ends, sitting slightly proud of the body.
+  const rimY = p.y - p.h * 0.24;
+  const rimH = p.h * 0.26;
+  const rimW = p.w * 1.14;
+  const rim: Pt[] = [
+    { x: cx - rimW / 2, y: rimY + 1 },
+    { x: cx - rimW / 2 - 0.8, y: rimY + rimH * 0.55 },
+    { x: cx - rimW / 2 + 1.2, y: rimY + rimH },
+    { x: cx + rimW / 2 - 1.2, y: rimY + rimH + 0.6 },
+    { x: cx + rimW / 2 + 0.8, y: rimY + rimH * 0.55 },
+    { x: cx + rimW / 2, y: rimY + 1 },
+  ];
+  traceSmooth(ctx, rim, true);
+  const rg = ctx.createLinearGradient(cx - rimW / 2, 0, cx + rimW / 2, 0);
+  rg.addColorStop(0, c);
+  rg.addColorStop(0.4, a);
+  rg.addColorStop(0.75, b);
+  rg.addColorStop(1, c);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = rg;
   ctx.fill();
-  ctx.globalAlpha = 0.7;
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = ink;
+  ctx.stroke();
+
+  // A single warm highlight down the lit side, and dry-brush wear at the foot.
+  ctx.globalAlpha = 0.2;
+  ctx.strokeStyle = '#fff3dd';
+  ctx.lineWidth = Math.max(1.4, p.w * 0.07);
+  ctx.beginPath();
+  ctx.moveTo(p.x + p.w * 0.68, p.y + p.h * 0.12);
+  ctx.quadraticCurveTo(p.x + p.w * 0.63, p.y + p.h * 0.5, p.x + p.w * 0.6, p.y + p.h * 0.82);
+  ctx.stroke();
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(p.x + inset * 1.1, p.y + p.h * 0.9);
+  ctx.quadraticCurveTo(cx, p.y + p.h * 0.96, p.x + p.w - inset * 1.1, p.y + p.h * 0.88);
   ctx.stroke();
   ctx.restore();
 }
@@ -1645,6 +1941,11 @@ export interface FloraDrawOptions {
   alpha?: number;
   /** Add the shared granulation tile over the specimen. Default false. */
   granulate?: boolean;
+  /**
+   * Draw contact shadows. Default true. Turn off when the compositor already
+   * lays down its own occlusion pass under the flora layer.
+   */
+  shadows?: boolean;
 }
 
 /**
@@ -1656,14 +1957,27 @@ export function drawFloraGeometry(
   g: FloraGeometry,
   opts: FloraDrawOptions = {},
 ): void {
+  const A = opts.alpha ?? 1;
   ctx.save();
-  ctx.globalAlpha = opts.alpha ?? 1;
+  ctx.globalAlpha = A;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  // Contact shadows go down first, under everything the specimen draws.
+  if (opts.shadows !== false) for (const sh of g.shades) drawShade(ctx, sh, A);
+
+  for (const m of g.mounds) drawMound(ctx, m, g.ink);
+
   for (const t of g.threads) {
     ctx.save();
-    ctx.globalAlpha = (opts.alpha ?? 1) * t.alpha;
+    if (t.halo) {
+      ctx.globalAlpha = A * t.alpha * 0.75;
+      ctx.strokeStyle = t.halo;
+      ctx.lineWidth = t.width * 2.6;
+      traceSmooth(ctx, t.pts, false);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = A * t.alpha;
     ctx.strokeStyle = t.colour;
     ctx.lineWidth = t.width;
     traceSmooth(ctx, t.pts, false);
@@ -1677,10 +1991,6 @@ export function drawFloraGeometry(
     ctx.save();
     ctx.translate(l.x, l.y);
     ctx.rotate(l.angle);
-    const base = l.pale
-      ? toneStr(l.tone, 16, -14)
-      : toneStr(l.tone);
-    const tip = l.pale ? toneStr(l.tone, 26, -20) : toneStr(l.tone, 11, -4);
     drawLeaf(
       ctx,
       {
@@ -1689,16 +1999,23 @@ export function drawFloraGeometry(
         width: l.width,
         bend: l.bend,
         curl: l.curl,
-        jitter: 0.45,
+        // Hand-wobble has to scale with the blade: a fixed 0.45px wobble on a
+        // 9px string-of-hearts leaf turns the heart into a lump.
+        jitter: clamp(l.len * 0.03, 0.2, 0.5),
         seed: l.seed,
-        steps: l.len > 14 ? 20 : 14,
+        steps: l.len > 14 ? 20 : 16,
       },
       {
-        fillBase: base,
-        fillTip: tip,
+        fillBase: toneStr(l.tone),
+        fillTip: toneStr(l.tone, 11, -4),
         ink: g.ink,
         vein: toneStr(l.tone, -12, 4),
         lineWidth: clamp(l.len * 0.055, 0.55, 1.05),
+        // Variegation is a *pattern on* the leaf, not a different leaf
+        // colour — painting the whole blade pale (the old behaviour) just
+        // bleached it out and lost the plant.
+        variegation: l.pale ? toneStr(l.tone, 27, -19) : undefined,
+        sheen: toneStr(l.tone, 20, -6),
       },
     );
     ctx.restore();

@@ -25,11 +25,14 @@
   --paper-vignette-deep: rgba(124, 79, 106, 0.11);
 
   --ink-sepia: #6b4d5e;
-  --ink-sepia-soft: #a07f92;
+  /* Soft inks re-tuned for AA on this theme's darkest ground (#f4e4ec):
+     was 2.89:1 / 3.17:1 — now 4.78:1 / 4.55:1. */
+  --ink-sepia-soft: #7d5b6d;
   --ink-graphite: #575066;
-  --ink-graphite-soft: #857e94;
+  --ink-graphite-soft: #6b657a;
   --ink-blue: #5a6aa0;
-  --ink-blue-soft: #8b97bd;
+  --ink-blue-soft: #6d7aa6;
+  --ink-accent: #9c4f6b;
 
   --wash-amber: #eccf8d;
   --wash-amber-deep: #b9955a;
@@ -60,11 +63,13 @@
   --paper-vignette-deep: rgba(88, 102, 54, 0.12);
 
   --ink-sepia: #4d5340;
-  --ink-sepia-soft: #7e8668;
+  /* AA on #e9ebd1: was 3.14:1 / 3.63:1 — now 4.60:1 / 4.72:1. */
+  --ink-sepia-soft: #646b4f;
   --ink-graphite: #454c3c;
-  --ink-graphite-soft: #737b66;
+  --ink-graphite-soft: #616955;
   --ink-blue: #3e6357;
-  --ink-blue-soft: #74958a;
+  --ink-blue-soft: #55766b;
+  --ink-accent: #8a5638;
 
   --wash-amber: #e0c168;
   --wash-moss: #9db26c;
@@ -87,11 +92,13 @@
   --paper-vignette-deep: rgba(0, 0, 0, 0.3);
 
   --ink-sepia: #e6d9c3;
-  --ink-sepia-soft: #a89478;
+  /* AA on #2e2825: was 4.96:1 / 4.22:1 — now 6.31:1 / 5.58:1. */
+  --ink-sepia-soft: #bda88a;
   --ink-graphite: #d3ccc2;
-  --ink-graphite-soft: #93897b;
+  --ink-graphite-soft: #ab9f8d;
   --ink-blue: #a9c1e8;
-  --ink-blue-soft: #7386a3;
+  --ink-blue-soft: #93a7c4;
+  --ink-accent: #e0a184;
 
   --wash-amber-light: #4d3f21;
   --wash-amber: #d9b45e;
@@ -238,6 +245,52 @@
   transform: scale(0.96);
 }
 
+/* ----------------------------------------------------------------------------
+   Dev view switcher (App.tsx, gated behind ?dev=1 / import.meta.env.DEV).
+   A margin note in the corner, not a toolbar: it used to sit at 0.85 opacity
+   directly over the book cover's bottom-right corner in every build.
+   -------------------------------------------------------------------------- */
+.nb-dev-switcher {
+  position: fixed;
+  right: var(--space-8);
+  bottom: var(--space-8);
+  z-index: var(--z-menus);
+  display: flex;
+  gap: var(--space-4);
+  padding: 3px;
+  background: var(--paper-aged);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-xs);
+  opacity: 0.45;
+  transition: opacity calc(var(--dur-sm) * var(--motion-scale, 1))
+    var(--ease-out);
+}
+
+.nb-dev-switcher:hover,
+.nb-dev-switcher:focus-within {
+  opacity: 1;
+}
+
+/* Focus mode promises "the chrome melts away", but the gear and the dev
+   switcher live OUTSIDE .nb-book-view (App.tsx renders them as siblings), so
+   the rail's fade never reached them and they stayed at full strength over a
+   dimmed desk. :has() bridges the gap. Hover/focus brings them back, so
+   nothing becomes unreachable. */
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button,
+body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher {
+  opacity: 0.1;
+  transition: opacity calc(var(--dur-md) * var(--motion-scale, 1))
+    var(--ease-out);
+}
+
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:hover,
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible,
+body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:hover,
+body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
+  opacity: 1;
+}
+
 .nbs-gear-icon {
   width: 26px;
   height: 26px;
@@ -301,16 +354,62 @@
     linear-gradient(to right, color-mix(in srgb, var(--paper-deep) 55%, transparent) 0%, transparent 14px);
   border-left: 1px solid var(--paper-edge);
   box-shadow: var(--shadow-lg);
+  /* Self-styled slim bar: the sheet is 3200px of content in an 800px window,
+     so it MUST scroll — but the 12px global bar reads as browser chrome
+     against hand-drawn paper. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-edge) transparent;
+}
+
+.nbs-sheet::-webkit-scrollbar {
+  width: 9px;
+}
+
+.nbs-sheet::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nbs-sheet::-webkit-scrollbar-thumb {
+  background: var(--paper-edge);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--radius-pill);
 }
 
 /* ----------------------------------------------------------------------------
    Sheet header + sections
    -------------------------------------------------------------------------- */
+/* Sticky so the title + close cross stay reachable through 3200px of
+   content; the paper wash keeps rows from showing through as they pass. */
 .nbs-header {
+  position: sticky;
+  top: calc(var(--space-20) * -1);
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  padding-bottom: var(--space-12);
+  margin: calc(var(--space-20) * -1) calc(var(--space-24) * -1) 0;
+  padding: var(--space-20) var(--space-24) var(--space-12);
+  /* Fully opaque paper — a partial gradient let row text ghost through the
+     title as it scrolled past. The fade lives in ::after, below the header. */
+  background: var(--paper-aged);
+}
+
+/* 14px of paper dissolving into the sheet, so rows slide under the header
+   instead of being guillotined by a hard edge. */
+.nbs-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 14px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    var(--paper-aged) 0%,
+    color-mix(in srgb, var(--paper-aged) 0%, transparent) 100%
+  );
 }
 
 .nbs-title {
@@ -351,8 +450,12 @@
   height: 16px;
 }
 
+/* Vertical rhythm: every section opens with 20px of air above its rule and
+   16px below the title, so the dashed rules read as evenly spaced staves
+   rather than crowding whichever row happened to end last. */
 .nbs-section {
-  padding: var(--space-12) 0 var(--space-16);
+  margin-top: var(--space-20);
+  padding: var(--space-16) 0 var(--space-4);
   border-top: 1px dashed var(--paper-edge);
 }
 
@@ -361,7 +464,7 @@
   font-size: 25px; /* Caveat stays above its 20px floor */
   font-weight: 700;
   color: var(--ink-sepia);
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-16);
   transform: rotate(-0.6deg);
 }
 
@@ -385,7 +488,7 @@
 .nbs-row-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -393,13 +496,17 @@
   font-family: var(--font-accent);
   font-size: 15px;
   font-weight: 400;
+  line-height: 1.3;
   color: var(--ink-sepia);
   white-space: nowrap;
 }
 
+/* Hints are read, not decoration: 12px (was 11px) in the re-tuned soft ink
+   lands at 4.7:1 instead of 3.5:1. */
 .nbs-row-hint {
   color: var(--ink-sepia-soft);
-  font-size: var(--text-ui-xs);
+  font-size: var(--text-ui);
+  line-height: 1.35;
 }
 
 .nbs-row-control {
@@ -422,7 +529,7 @@
 }
 
 .nbs-toggle:disabled {
-  opacity: 0.4;
+  opacity: 0.62; /* still legibly a switch, plainly inert (was 0.4) */
   cursor: not-allowed;
 }
 
@@ -465,9 +572,13 @@
 .nbs-slider-group {
   display: flex;
   align-items: center;
-  gap: var(--space-8);
-  width: 170px;
-  max-width: 100%;
+  gap: var(--space-12);
+  /* Was a fixed 170px pinned to the far right of a space-between row, which
+     left 120–180px of dead air between a value and the control it belongs
+     to. Now the group grows to fill the row and carries its own readout. */
+  flex: 1 1 auto;
+  min-width: 150px;
+  max-width: 260px;
 }
 
 .nbs-slider-wrap {
@@ -501,9 +612,17 @@
   background: transparent;
 }
 
+/* Value FILL: the ink runs dark up to the thumb and drops to a hairline
+   past it, so the level is readable at a glance without hunting the pebble.
+   --nbs-fill is set inline (0–100) by SettingsPanel's Slider. */
 .nbs-slider::-webkit-slider-runnable-track {
-  height: 2px;
-  background: var(--ink-sepia-soft);
+  height: 3px;
+  background: linear-gradient(
+      to right,
+      var(--ink-sepia) 0 calc(var(--nbs-fill, 50) * 1%),
+      transparent calc(var(--nbs-fill, 50) * 1%)
+    ),
+    linear-gradient(var(--ink-sepia-soft), var(--ink-sepia-soft));
   border-radius: var(--radius-pill);
 }
 
@@ -512,7 +631,7 @@
   appearance: none;
   width: 16px;
   height: 16px;
-  margin-top: -7px;
+  margin-top: -6.5px;
   background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
   border: 1.6px solid var(--ink-graphite);
   border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
@@ -525,8 +644,14 @@
 }
 
 .nbs-slider::-moz-range-track {
-  height: 2px;
+  height: 3px;
   background: var(--ink-sepia-soft);
+  border-radius: var(--radius-pill);
+}
+
+.nbs-slider::-moz-range-progress {
+  height: 3px;
+  background: var(--ink-sepia);
   border-radius: var(--radius-pill);
 }
 
@@ -538,10 +663,19 @@
   border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
 }
 
+/* Readout sits ON the control it describes (it used to live in the row hint,
+   a full row-width away). Tabular figures so it never jitters while dragging. */
 .nbs-slider-value {
-  color: var(--ink-sepia-soft);
-  min-width: 30px;
-  text-align: right;
+  flex: 0 0 auto;
+  min-width: 42px;
+  padding: 1px var(--space-4);
+  font-size: var(--text-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-wobble-sm);
 }
 
 /* ----------------------------------------------------------------------------
@@ -550,16 +684,22 @@
 .nbs-seg {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4) var(--space-8);
+  gap: var(--space-8);
 }
 
+/* Resting chips used to be bare text on paper — "pastel / botanical / night"
+   read as a caption, not as three things you can press. They now carry a
+   drawn paper edge at rest, so the whole group reads as a control; the
+   pressed one wins on FILL + WEIGHT + TILT rather than on being the only
+   thing with a border. */
 .nbs-seg-chip {
   font-family: var(--font-accent);
-  font-size: 13px; /* Kalam floor */
+  font-size: var(--text-chip); /* 13px — Kalam floor */
   line-height: 1.5;
-  padding: 2px 10px;
+  padding: 2px 11px;
   color: var(--ink-graphite-soft);
-  border: 1.4px dashed transparent;
+  background: color-mix(in srgb, var(--paper-cream) 70%, transparent);
+  border: 1.4px dashed color-mix(in srgb, var(--paper-edge) 88%, transparent);
   border-radius: 9px 11px 8px 12px / 11px 9px 12px 8px;
   transition:
     background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
@@ -568,17 +708,27 @@
     border-color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
 }
 
-.nbs-seg-chip:hover {
+/* Hover previews the pressed look (it used to paint --paper-deep, a muddy
+   brown that was DARKER than the selected state — inverted visual weight). */
+.nbs-seg-chip:hover:not([aria-pressed='true']) {
   color: var(--ink-sepia);
-  background: var(--paper-deep);
+  background: var(--wash-amber-light);
+  border-color: var(--wash-amber);
+  transform: translateY(-1px) rotate(-0.8deg);
 }
 
 .nbs-seg-chip[aria-pressed='true'] {
   color: var(--ink-sepia);
   font-weight: 700;
   background: var(--wash-amber-light);
+  border-style: solid;
   border-color: var(--ink-sepia-soft);
+  box-shadow: var(--shadow-xs);
   transform: rotate(-1.4deg);
+}
+
+.nbs-seg-chip:active {
+  transform: scale(0.96) rotate(-0.6deg);
 }
 
 /* ----------------------------------------------------------------------------
@@ -644,27 +794,32 @@
   gap: var(--space-4);
 }
 
+/* Two columns, not space-between: combos of one, two and three chips used to
+   produce a ragged left edge down the whole list. The fixed combo column
+   right-aligns every binding on ONE edge and left-aligns the actions. */
 .nbs-keys-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-12);
+  min-height: 22px;
 }
 
 .nbs-keys-action {
   font-family: var(--font-accent);
-  font-size: 13px;
+  font-size: var(--text-chip);
   color: var(--ink-sepia-soft);
 }
 
 .nbs-keys-combo {
   display: inline-flex;
+  justify-content: flex-end;
   gap: var(--space-4);
 }
 
 .nbs-kbd {
   font-family: var(--font-ui);
-  font-size: var(--text-ui-xs);
+  font-size: var(--text-ui);
   letter-spacing: var(--tracking-ui);
   color: var(--ink-sepia);
   background: var(--paper-cream);
@@ -684,7 +839,7 @@
 
 .nbs-action-btn {
   font-family: var(--font-accent);
-  font-size: 13px; /* Kalam floor */
+  font-size: var(--text-chip); /* 13px — Kalam floor */
   line-height: 1.5;
   padding: 2px 12px;
   color: var(--ink-sepia);
@@ -710,8 +865,16 @@
   transform: scale(0.97);
 }
 
+/* Disabled must still be READABLE, just plainly inert. At 0.4 opacity the
+   desktop-only actions ("choose…", "back up now") were unreadable smudges;
+   they now keep their ink and lose their paper + shadow instead. */
 .nbs-action-btn:disabled {
-  opacity: 0.4;
+  opacity: 1;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--paper-edge);
+  box-shadow: none;
   cursor: not-allowed;
 }
 

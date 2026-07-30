@@ -13,15 +13,19 @@
 
 import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { AtlasManager, type AtlasPage } from '../../art/atlas';
-import { clamp } from '../../art/noise';
-import {
-  deriveSpineParams,
-  renderSpine,
-  SPINE_BASE_HEIGHT,
-  type Ctx2D,
-  type SpineParams,
-} from '../../art/spines';
+import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
+import { renderSpine, type Ctx2D, type SpineParams } from '../../art/spines';
+import { getTheme, type LibraryTheme } from '../../art/themes';
+import { readShelfMeta } from '../../data/books';
 import type { Book } from '../../data/types';
+import {
+  bookStyleOverridesFor,
+  spineArtHeight,
+  themeSpineDefaults,
+} from './bookIdentity';
+import { paletteCss, placeholderTint } from './spinePalette';
+
+export { paletteCss, placeholderTint, spineArtHeight };
 
 export type SpineVariant = 'lo' | 'hi';
 
@@ -42,60 +46,6 @@ const BAKES_PER_SLICE = 6;
  * land later the hi atlas is dropped so titles re-bake crisp.
  */
 export const FONT_WAIT_MAX_MS = 2500;
-
-/**
- * The 12 curated palette duos from art/spines.ts (top, bottom), duplicated
- * here as HSL tuples because art/ does not export them. Used only for flat
- * placeholder tints and the DOM overlay cover — drift is cosmetic.
- */
-const PALETTE_DUOS: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
-  [38, 62, 52, 30, 58, 38], // amber
-  [16, 55, 48, 10, 52, 34], // terracotta
-  [95, 28, 42, 100, 30, 30], // moss
-  [210, 26, 48, 214, 30, 34], // dusty blue
-  [315, 24, 40, 320, 28, 28], // plum
-  [44, 60, 46, 40, 55, 33], // ochre
-  [130, 16, 52, 135, 18, 38], // sage
-  [22, 60, 40, 18, 58, 28], // rust
-  [28, 38, 52, 24, 36, 38], // clay
-  [70, 30, 38, 66, 32, 27], // olive
-  [200, 18, 42, 204, 20, 30], // slate
-  [355, 32, 56, 350, 30, 42], // blush
-];
-
-function hslToRgbInt(h: number, s: number, l: number): number {
-  const hh = ((h % 360) + 360) % 360;
-  const ss = clamp(s, 0, 100) / 100;
-  const ll = clamp(l, 0, 100) / 100;
-  const c = (1 - Math.abs(2 * ll - 1)) * ss;
-  const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
-  const m = ll - c / 2;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  if (hh < 60) [r, g, b] = [c, x, 0];
-  else if (hh < 120) [r, g, b] = [x, c, 0];
-  else if (hh < 180) [r, g, b] = [0, c, x];
-  else if (hh < 240) [r, g, b] = [0, x, c];
-  else if (hh < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const to255 = (v: number) => Math.round((v + m) * 255);
-  return (to255(r) << 16) | (to255(g) << 8) | to255(b);
-}
-
-/** Flat placeholder tint (0xRRGGBB) for a spine before its bake lands. */
-export function placeholderTint(params: SpineParams): number {
-  const duo = PALETTE_DUOS[params.palette % PALETTE_DUOS.length];
-  return hslToRgbInt(duo[0] + params.hueJitter, duo[1], duo[2]);
-}
-
-/** CSS colors for the DOM pulled-book cover (top → bottom gradient). */
-export function paletteCss(params: SpineParams): { top: string; bottom: string } {
-  const duo = PALETTE_DUOS[params.palette % PALETTE_DUOS.length];
-  const f = (h: number, s: number, l: number) =>
-    `hsl(${(((h + params.hueJitter) % 360) + 360) % 360} ${s}% ${l}%)`;
-  return { top: f(duo[0], duo[1], duo[2]), bottom: f(duo[3], duo[4], duo[5]) };
-}
 
 interface QueueItem {
   book: Book;
@@ -137,8 +87,12 @@ export class SpineFactory {
   private readonly sources = new Map<string, CanvasSource>();
   private readonly loTextures = new Map<string, Texture>();
   private readonly hiTextures = new Map<string, Texture>();
-  private readonly paramsCache = new Map<string, SpineParams>();
+  private readonly paramsCache = new Map<string, ResolvedBookStyle>();
   private readonly queue = new Map<string, QueueItem>();
+  /** The room whose spine bias new/unstyled books inherit. */
+  private theme: LibraryTheme = getTheme(null);
+  /** Cache-busting salt so a theme change re-derives every book's params. */
+  private styleEpoch = 0;
   private readonly listeners = new Set<(bookIds: readonly string[]) => void>();
   private idle: { cancel: () => void } | null = null;
   private fontsReady = false;
@@ -167,13 +121,64 @@ export class SpineFactory {
     return () => this.listeners.delete(cb);
   }
 
-  getParams(book: Book): SpineParams {
-    let params = this.paramsCache.get(book.id);
-    if (params === undefined) {
-      params = deriveSpineParams(book.spineSeed);
-      this.paramsCache.set(book.id, params);
+  /**
+   * Switch the room. Spine art is `seed → theme bias → per-book overrides`,
+   * so every un-overridden book re-derives; books with explicit studio
+   * overrides come back byte-identical (resolveBookStyle is deterministic and
+   * overrides always win), which is exactly the "a favourite red leather book
+   * keeps its identity in every room" rule.
+   */
+  setTheme(theme: LibraryTheme): void {
+    if (this.destroyed || theme.id === this.theme.id) return;
+    this.theme = theme;
+    this.styleEpoch++;
+    this.paramsCache.clear();
+    this.invalidateAll();
+  }
+
+  /** Drop every baked spine (theme switch). Listeners re-request. */
+  invalidateAll(): void {
+    if (this.destroyed) return;
+    const ids = new Set<string>();
+    for (const bucket of [this.loTextures, this.hiTextures]) {
+      for (const [bookId, tex] of bucket) {
+        ids.add(bookId);
+        tex.destroy(false);
+      }
+      bucket.clear();
     }
-    return params;
+    this.loAtlas.clear();
+    this.hiAtlas.clear();
+    this.queue.clear();
+    if (ids.size > 0) this.emit([...ids]);
+  }
+
+  /**
+   * The book's fully-merged studio style — spine params, cover params and the
+   * flat `style` the studio panel edits. Cached per book per theme epoch.
+   */
+  getStyle(book: Book): ResolvedBookStyle {
+    const key = `${this.styleEpoch}|${book.id}`;
+    let resolved = this.paramsCache.get(key);
+    if (resolved === undefined) {
+      resolved = resolveBookStyle(
+        book.spineSeed,
+        themeSpineDefaults(this.theme),
+        bookStyleOverridesFor(book),
+        { pageCount: readShelfMeta(book)?.pageCount },
+      );
+      this.paramsCache.set(key, resolved);
+    }
+    return resolved;
+  }
+
+  /** Drop one book's cached style (studio edit / rename). */
+  invalidateStyle(bookId: string): void {
+    this.paramsCache.delete(`${this.styleEpoch}|${bookId}`);
+  }
+
+  getParams(book: Book): SpineParams {
+    return this.getStyle(book).spine;
   }
 
   /** Baked texture for a variant, or undefined (touches the page LRU). */
@@ -205,6 +210,7 @@ export class SpineFactory {
    */
   invalidate(bookId: string): void {
     if (this.destroyed) return;
+    this.invalidateStyle(bookId);
     let touched = false;
     for (const variant of ['lo', 'hi'] as const) {
       const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
@@ -336,7 +342,9 @@ export class SpineFactory {
     const params = this.getParams(book);
     const scale = variant === 'hi' ? HI_SCALE : LO_SCALE;
     const w = Math.ceil(params.w * scale);
-    const h = Math.ceil(SPINE_BASE_HEIGHT * scale);
+    // Bake at the book's OWN height so a duodecimo's ornament is not stretched
+    // when the compositor sizes the sprite (studio height/format control).
+    const h = Math.ceil(spineArtHeight(params) * scale);
     const atlas = variant === 'hi' ? this.hiAtlas : this.loAtlas;
     const handle = atlas.alloc(`${variant}|${book.id}`, w, h);
     const { rect, page } = handle;

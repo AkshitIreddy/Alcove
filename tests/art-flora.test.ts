@@ -38,9 +38,11 @@ import {
   spineKeepOuts,
   spineTitleKeepOut,
   speciesAnchors,
+  speciesFacing,
   speciesFitsAnchor,
   violatesKeepOut,
   type FloraAnchor,
+  type FloraAnchorKind,
   type FloraPlacement,
   type FloraPlanOptions,
   type FloraSpeciesId,
@@ -269,6 +271,221 @@ describe('growth model', () => {
     const shifted = growFlora(placementOf('ivy', { palette: { hueShift: 40, lightShift: 12 } }));
     expect(shifted.leaves[0]!.tone.h).toBeCloseTo(plain.leaves[0]!.tone.h + 40, 6);
     expect(shifted.leaves[0]!.tone.l).toBeCloseTo(plain.leaves[0]!.tone.l + 12, 6);
+  });
+});
+
+/* ---------------------------- facing & grounding -------------------------- */
+
+/** Species that hang off what they grip; everything else stands upright. */
+const HANGING: FloraSpeciesId[] = ['ivy', 'pothos', 'hearts', 'cobweb', 'herbBundle'];
+
+describe('facing (which way a species grows off an anchor)', () => {
+  it('nothing stands upright on an underside or a top corner', () => {
+    for (const s of FLORA_SPECIES) {
+      for (const kind of ['shelfUnderside', 'caseCorner'] as FloraAnchorKind[]) {
+        expect(speciesFacing(s, kind), `${s} on ${kind}`).toBe('down');
+      }
+    }
+  });
+
+  it('on a rail or crown, trailers hang and everything else stands up', () => {
+    for (const s of FLORA_SPECIES) {
+      const want = HANGING.includes(s) ? 'down' : 'up';
+      expect(speciesFacing(s, 'railTop'), `${s} on railTop`).toBe(want);
+      expect(speciesFacing(s, 'crownTop'), `${s} on crownTop`).toBe(want);
+    }
+  });
+
+  it('joint gaps and pot positions always grow upward', () => {
+    for (const s of FLORA_SPECIES) {
+      expect(speciesFacing(s, 'jointGap')).toBe('up');
+      expect(speciesFacing(s, 'potPosition')).toBe('up');
+    }
+  });
+
+  it('planFlora uses the per-species facing, not a per-anchor default', () => {
+    // A rail with no explicit facing: moss must stand on it, ivy must hang.
+    const anchors: FloraAnchor[] = Array.from({ length: 40 }, (_, i) => ({
+      id: `rail${i}`,
+      kind: 'railTop' as const,
+      x: i * 50,
+      y: 200,
+    }));
+    for (const [species, want] of [
+      ['moss', 'up'],
+      ['grassTuft', 'up'],
+      ['potted', 'up'],
+      ['fern', 'up'],
+      ['ivy', 'down'],
+      ['pothos', 'down'],
+      ['hearts', 'down'],
+    ] as const) {
+      const plan = planFlora(basePlan({ anchors, spec: { species: [species], density: 'lush' } }));
+      expect(plan.length, species).toBeGreaterThan(0);
+      for (const p of plan) expect(p.facing, `${species} on a rail`).toBe(want);
+    }
+  });
+
+  it('an explicit anchor.facing still wins', () => {
+    const anchors: FloraAnchor[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `j${i}`,
+      kind: 'jointGap' as const,
+      x: i * 40,
+      y: 100,
+      facing: 'right' as const,
+    }));
+    const plan = planFlora(basePlan({ anchors, spec: { species: ['moss'], density: 'lush' } }));
+    expect(plan.length).toBeGreaterThan(0);
+    for (const p of plan) expect(p.facing).toBe('right');
+  });
+
+  it('upright growth actually goes up (and hanging growth goes down)', () => {
+    const reach = (s: FloraSpeciesId, facing: 'up' | 'down') => {
+      const g = growFlora(placementOf(s, { facing, seed: 99 }));
+      return g.bounds.y + g.bounds.h / 2; // centre of mass, roughly
+    };
+    for (const s of ['moss', 'fern', 'grassTuft', 'potted'] as FloraSpeciesId[]) {
+      expect(reach(s, 'up'), `${s} should grow upward (-y)`).toBeLessThan(0);
+    }
+    for (const s of ['ivy', 'pothos', 'hearts'] as FloraSpeciesId[]) {
+      expect(reach(s, 'down'), `${s} should hang downward (+y)`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('contact shadows & bodies', () => {
+  it('every species that meets wood lays down a contact shadow', () => {
+    // Cobwebs are the one exception: silk casts nothing.
+    for (const s of FLORA_SPECIES.filter((x) => x !== 'cobweb')) {
+      const g = growFlora(placementOf(s));
+      expect(g.shades.length, `${s} has no contact shadow`).toBeGreaterThan(0);
+      for (const sh of g.shades) {
+        expect(sh.rx).toBeGreaterThan(0);
+        expect(sh.ry).toBeGreaterThan(0);
+        expect(sh.ry).toBeLessThan(sh.rx); // squashed onto the surface
+        expect(sh.alpha).toBeGreaterThan(0);
+        expect(sh.alpha).toBeLessThan(1);
+      }
+    }
+    expect(growFlora(placementOf('cobweb')).shades).toHaveLength(0);
+  });
+
+  it('contact shadows scale with the specimen', () => {
+    const small = growFlora(placementOf('grassTuft', { scale: 0.6 })).shades[0]!;
+    const large = growFlora(placementOf('grassTuft', { scale: 1.2 })).shades[0]!;
+    expect(large.rx).toBeCloseTo(small.rx * 2, 5);
+  });
+
+  it('moss grows a filled cushion body, and only moss does', () => {
+    const moss = growFlora(placementOf('moss'));
+    expect(moss.mounds.length).toBeGreaterThan(0);
+    for (const m of moss.mounds) {
+      expect(m.rx).toBeGreaterThan(0);
+      expect(m.ry).toBeGreaterThan(0);
+      expect(Math.abs(m.up)).toBe(1);
+    }
+    for (const s of FLORA_SPECIES.filter((x) => x !== 'moss')) {
+      expect(growFlora(placementOf(s)).mounds, s).toHaveLength(0);
+    }
+  });
+
+  it('a moss cushion domes away from the surface it sits on', () => {
+    const up = growFlora(placementOf('moss', { facing: 'up' }));
+    const down = growFlora(placementOf('moss', { facing: 'down' }));
+    expect(up.mounds[0]!.up).toBe(1);
+    expect(down.mounds[0]!.up).toBe(-1);
+  });
+
+  it('bounds still contain shadows and cushions', () => {
+    for (const s of FLORA_SPECIES) {
+      const g = growFlora(placementOf(s, { seed: 4242 }));
+      const b = g.bounds;
+      for (const sh of g.shades) {
+        expect(sh.x - sh.rx).toBeGreaterThanOrEqual(b.x - 1e-6);
+        expect(sh.x + sh.rx).toBeLessThanOrEqual(b.x + b.w + 1e-6);
+      }
+      for (const m of g.mounds) {
+        expect(m.x - m.rx).toBeGreaterThanOrEqual(b.x - 1e-6);
+        expect(m.y - m.up * m.ry).toBeGreaterThanOrEqual(b.y - 1e-6);
+      }
+    }
+  });
+});
+
+describe('species character', () => {
+  it('pothos is variegated and the other trails are not', () => {
+    const pothos = growFlora(placementOf('pothos', { seed: 12 }));
+    expect(pothos.leaves.some((l) => l.pale)).toBe(true);
+    expect(pothos.leaves.every((l) => l.pale)).toBe(false);
+    expect(growFlora(placementOf('ivy')).leaves.some((l) => l.pale)).toBe(false);
+    expect(growFlora(placementOf('hearts')).leaves.some((l) => l.pale)).toBe(false);
+  });
+
+  it('ivy leaves are lobed and pothos leaves are hearts', () => {
+    expect(growFlora(placementOf('ivy')).leaves.every((l) => l.shape === 'lobed')).toBe(true);
+    expect(growFlora(placementOf('pothos')).leaves.every((l) => l.shape === 'heart')).toBe(true);
+  });
+
+  it('a fern is a clump of fronds whose rachis nods rather than flops over', () => {
+    for (const seed of [3, 5, 77, 900]) {
+      const g = growFlora(placementOf('fern', { seed, facing: 'up' }));
+      expect(g.stems.length, 'a clump, not one sprig').toBeGreaterThanOrEqual(3);
+      for (const st of g.stems) {
+        const pts = st.pts;
+        const a0 = Math.atan2(pts[1]!.y - pts[0]!.y, pts[1]!.x - pts[0]!.x);
+        const n = pts.length;
+        const a1 = Math.atan2(pts[n - 1]!.y - pts[n - 2]!.y, pts[n - 1]!.x - pts[n - 2]!.x);
+        const turn = Math.abs(Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)));
+        // Gravity is integrated per step; left unchecked it swung a frond a
+        // full 90°+ onto its side and the clump read as a moustache.
+        expect(turn, `frond turned ${((turn * 180) / Math.PI).toFixed(0)}°`).toBeLessThan(
+          Math.PI / 3,
+        );
+      }
+      // And the whole clump still stands above the surface it grew from.
+      expect(g.bounds.y + g.bounds.h).toBeLessThan(-g.bounds.y);
+    }
+  });
+
+  it('a cobweb is threads only, and every strand carries a halo so it reads on parchment', () => {
+    const g = growFlora(placementOf('cobweb'));
+    expect(g.threads.length).toBeGreaterThan(8);
+    expect(g.stems).toHaveLength(0);
+    expect(g.leaves).toHaveLength(0);
+    for (const t of g.threads) expect(t.halo).toBeTruthy();
+    // Twine, by contrast, needs no halo.
+    for (const t of growFlora(placementOf('herbBundle')).threads) expect(t.halo).toBeUndefined();
+  });
+
+  it('a herb bundle hangs from twine, is tied, and is sometimes tagged', () => {
+    let tagged = 0;
+    for (let seed = 0; seed < 24; seed++) {
+      const g = growFlora(placementOf('herbBundle', { seed }));
+      expect(g.threads.length).toBeGreaterThanOrEqual(6); // 2 hangers + 3 wraps + tail
+      expect(g.stems.length).toBeGreaterThanOrEqual(4);
+      if (g.tags.length > 0) tagged++;
+    }
+    expect(tagged).toBeGreaterThan(4);
+    expect(tagged).toBeLessThan(24);
+  });
+
+  it('a blossom branch no longer dwarfs the rest of the planting', () => {
+    const area = (s: FloraSpeciesId) => {
+      const b = growFlora(placementOf(s, { seed: 21 })).bounds;
+      return b.w * b.h;
+    };
+    const others = FLORA_SPECIES.filter((s) => s !== 'blossom').map(area);
+    const mean = others.reduce((a, b) => a + b, 0) / others.length;
+    // It used to be half again as long as anything else on the shelf.
+    expect(area('blossom')).toBeLessThan(mean * 1.5);
+    expect(area('blossom')).toBeGreaterThan(mean * 0.5); // still a real branch
+  });
+
+  it('the potted plant brings its own pot', () => {
+    const g = growFlora(placementOf('potted'));
+    expect(g.pots).toHaveLength(1);
+    expect(g.pots[0]!.w).toBeGreaterThan(0);
+    expect(g.leaves.length).toBeGreaterThan(6);
   });
 });
 

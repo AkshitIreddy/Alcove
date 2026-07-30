@@ -22,6 +22,8 @@
 import {
   CHARMS,
   CHARM_COLORS,
+  CHARM_COLOR_LABELS,
+  CHARM_LABELS,
   isCharmKind,
   type CharmKind,
 } from './charms';
@@ -35,20 +37,32 @@ import {
 import { clamp, mulberry32, type RandomFn } from './noise';
 import {
   BINDING_MATERIALS,
+  EDGE_LABELS,
   EDGE_TREATMENTS,
+  MATERIAL_LABELS,
   MAX_RAISED_BANDS,
   ORNAMENT_COUNT,
+  ORNAMENT_LABELS,
   PIGMENT_COUNT,
+  PIGMENT_LABELS,
+  SPINE_FORMATS,
+  SPINE_FORMAT_IDS,
   SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
   TITLE_PLATES,
+  TITLE_PLATE_LABELS,
+  WEAR_STOPS,
   deriveSpineParams,
+  formatForHeight,
+  heightForFormat,
   isBindingMaterial,
   isEdgeTreatment,
+  isSpineFormat,
   isTitlePlateStyle,
   textureFromMaterial,
   type BindingMaterial,
   type EdgeTreatment,
+  type SpineFormat,
   type SpineParams,
   type TitlePlateStyle,
 } from './spines';
@@ -57,17 +71,38 @@ export type {
   BindingMaterial,
   CharmKind,
   EdgeTreatment,
+  SpineFormat,
   TitlePlateStyle,
 };
+/**
+ * The studio panel's whole vocabulary, re-exported from one module so the rail
+ * UI never has to reach into `spines.ts`/`charms.ts` directly (and so those two
+ * stay free to reorganise).
+ */
 export {
   BINDING_MATERIALS,
   CHARMS,
   CHARM_COLORS,
+  CHARM_COLOR_LABELS,
+  CHARM_LABELS,
+  EDGE_LABELS,
   EDGE_TREATMENTS,
+  MATERIAL_LABELS,
   MAX_RAISED_BANDS,
   ORNAMENT_COUNT,
+  ORNAMENT_LABELS,
   PIGMENT_COUNT,
+  PIGMENT_LABELS,
+  SPINE_FORMATS,
+  SPINE_FORMAT_IDS,
+  SPINE_HEIGHT_RANGE,
+  SPINE_THICKNESS_RANGE,
   TITLE_PLATES,
+  TITLE_PLATE_LABELS,
+  WEAR_STOPS,
+  formatForHeight,
+  heightForFormat,
+  isSpineFormat,
 };
 
 /** Title faces, index-aligned with SpineParams.font / CoverParams.titleFont. */
@@ -102,6 +137,12 @@ export interface BookStyle {
   /** Wear, 0 (pristine) → 1 (well-loved). */
   wear: number;
   edge: EdgeTreatment;
+  /**
+   * Bibliographic format band the height sits in. Always kept consistent with
+   * `height`: setting `format` in an override picks that band's mid height,
+   * and an explicit `height` re-derives the format it lands in.
+   */
+  format: SpineFormat;
   /** Spine height in world px. */
   height: number;
   /** Spine thickness in world px (defaults from page count). */
@@ -365,9 +406,13 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
 
   if (isEdgeTreatment(raw.edge)) o.edge = raw.edge;
 
+  // `height` wins over `format`; a lone `format` picks its band's mid height.
+  if (isSpineFormat(raw.format)) o.format = raw.format;
   const height = num(raw.height);
   if (height !== undefined) {
     o.height = clamp(height, SPINE_HEIGHT_RANGE.min, SPINE_HEIGHT_RANGE.max);
+  } else if (o.format !== undefined) {
+    o.height = heightForFormat(o.format);
   }
   const thickness = num(raw.thickness);
   if (thickness !== undefined) {
@@ -538,6 +583,9 @@ export function resolveBookStyle(
     SPINE_HEIGHT_RANGE.min,
     SPINE_HEIGHT_RANGE.max,
   );
+  // The format label always describes the height that actually got used, so
+  // the studio's preset dropdown can never disagree with its own slider.
+  const format: SpineFormat = formatForHeight(height);
 
   const thickness = clamp(
     over.thickness ?? thicknessFromPageCount(opts.pageCount) ?? base.w,
@@ -604,6 +652,7 @@ export function resolveBookStyle(
     titleFont,
     wear,
     edge,
+    format,
     height,
     thickness,
     gilt,
@@ -641,6 +690,7 @@ export function spineParamsFor(base: SpineParams, style: BookStyle): SpineParams
     titlePlate: style.titlePlate,
     wear: style.wear,
     edge: style.edge,
+    format: style.format,
     height: style.height,
     w: style.thickness,
     charm: style.charm,
@@ -697,6 +747,7 @@ export function randomBookStyleOverrides(seed: number): BookStyleOverrides {
     titleFont: Math.floor(rnd() * 3) as 0 | 1 | 2,
     wear: rnd() * rnd(),
     edge: pick(EDGE_TREATMENTS, rnd()),
+    height: heightForFormat(pick(SPINE_FORMAT_IDS, rnd())),
     gilt: rnd() < 0.4,
     charm: rnd() < 0.45 ? 'none' : pick(charmPool.filter((c) => c !== 'none'), rnd()),
     charmColor: Math.floor(rnd() * CHARM_COLORS.length),

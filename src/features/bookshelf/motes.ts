@@ -32,6 +32,9 @@ interface Mote {
   baseAlpha: number;
   scale: number;
   t: number;
+  /** Seeded values setStyle scales from (so restyling never compounds). */
+  seedAlpha: number;
+  seedScale: number;
 }
 
 /**
@@ -81,6 +84,7 @@ export class DustMotes {
   private readonly texture: Texture;
   private width = 0;
   private height = 0;
+  private twinkle = false;
 
   constructor(texture: Texture) {
     this.texture = texture;
@@ -100,11 +104,49 @@ export class DustMotes {
         baseAlpha: 0.05 + rnd() * 0.1,
         scale: 0.08 + rnd() * 0.22,
         t: rnd() * 100,
+        seedAlpha: 0,
+        seedScale: 0,
       };
+      mote.seedAlpha = mote.baseAlpha;
+      mote.seedScale = mote.scale;
       sprite.scale.set(mote.scale);
       sprite.alpha = 0;
       this.motes.push(mote);
       this.container.addChild(sprite);
+    }
+  }
+
+  /**
+   * Re-style the drift from a theme's MoteSpec (docs/design/library-themes.md
+   * §1): dust falls slowly and warm, pollen thicker and gold, silver sparkle
+   * twinkles hard, petals drift big and slow. `density` is particles per
+   * 1000x1000 world px — scaled here onto the fixed MOTE_COUNT pool by
+   * modulating how many are visible and how bright they burn.
+   */
+  setStyle(style: {
+    colour: number;
+    /** Particles per 1000² world px, ~2 (thin) → ~26 (heavy). */
+    density: number;
+    /** Fall speed in world px/s; negative rises. */
+    drift: number;
+    twinkle?: boolean;
+  }): void {
+    const shown = Math.max(
+      3,
+      Math.min(MOTE_COUNT, Math.round((style.density / 14) * MOTE_COUNT)),
+    );
+    const weight = Math.min(1.9, Math.max(0.5, style.density / 10));
+    this.twinkle = style.twinkle ?? false;
+    for (let i = 0; i < this.motes.length; i++) {
+      const mote = this.motes[i] as Mote;
+      mote.sprite.tint = style.colour;
+      mote.sprite.visible = i < shown;
+      // Negative drift in the spec means "rises"; the pool always rises, so a
+      // positive (falling) spec flips the sign of riseSpeed.
+      mote.riseSpeed = -style.drift * (0.55 + (i % 5) * 0.18);
+      mote.baseAlpha = mote.seedAlpha * weight;
+      mote.scale = mote.seedScale * (0.8 + weight * 0.35);
+      mote.sprite.scale.set(mote.scale);
     }
   }
 
@@ -134,11 +176,18 @@ export class DustMotes {
       if (mote.y < -12) {
         mote.y = this.height + 12;
         mote.x = (mote.x + 137) % this.width;
+      } else if (mote.y > this.height + 12) {
+        // Falling themes (petals, heavy dust) wrap the other way.
+        mote.y = -12;
+        mote.x = (mote.x + 211) % this.width;
       }
       const wob = Math.sin(mote.t * mote.wobbleFreq * Math.PI * 2 + mote.phase);
       mote.sprite.position.set(mote.x + wob * mote.wobbleAmp, mote.y);
-      // Gentle twinkle.
-      mote.sprite.alpha = mote.baseAlpha * (0.7 + 0.3 * Math.sin(mote.t * 0.9 + mote.phase));
+      // Gentle twinkle — sparkle rooms pulse much harder than dusty ones.
+      const depth = this.twinkle ? 0.72 : 0.3;
+      const speed = this.twinkle ? 2.6 : 0.9;
+      mote.sprite.alpha =
+        mote.baseAlpha * (1 - depth + depth * (0.5 + 0.5 * Math.sin(mote.t * speed + mote.phase)));
     }
   }
 

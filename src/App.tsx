@@ -19,25 +19,37 @@ import "./styles/settings.css";
 
 const VIEWS: readonly ViewState[] = ["shelf", "book"];
 
-const pillStyle: JSX.CSSProperties = {
-  position: "fixed",
-  right: "var(--space-16)",
-  bottom: "var(--space-16)",
-  "z-index": "var(--z-menus)",
-  display: "flex",
-  gap: "var(--space-4)",
-  padding: "var(--space-4)",
-  background: "var(--paper-aged)",
-  border: "1px solid var(--paper-edge)",
-  "border-radius": "var(--radius-pill)",
-  "box-shadow": "var(--shadow-sm)",
-  opacity: 0.85,
-};
+/**
+ * The switcher is DEV chrome: a raw "shelf | book" pill pinned over the
+ * bottom-right corner of the book cover in every production screenshot.
+ * It stays reachable (the e2e suite and manual QA drive it) but only when
+ * asked for — `?dev=1`, a `nb-dev` localStorage flag, or a non-production
+ * bundle. Everything else gets a clean corner.
+ */
+function devChromeEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("dev") === "1") return true;
+    if (params.get("dev") === "0") return false;
+    if (window.localStorage.getItem("nb-dev") === "1") return true;
+  } catch {
+    // Storage or URL unavailable (packaged webview quirks) — fall through.
+  }
+  return import.meta.env.DEV === true;
+}
 
-/** Tiny dev-only switcher so both views stay reachable while features land. */
+/**
+ * Tiny dev-only switcher so both views stay reachable while features land.
+ *
+ * Placement/opacity live in settings.css (`.nb-dev-switcher`), NOT in an
+ * inline style: inline styles outrank the stylesheet, so an inline `opacity`
+ * here would beat the focus-mode fade rule and leave the pill glowing over a
+ * deliberately dimmed desk.
+ */
 function DevViewSwitcher(): JSX.Element {
   return (
-    <nav style={pillStyle} aria-label="Dev view switcher">
+    <nav class="nb-dev-switcher" aria-label="Dev view switcher">
       <For each={VIEWS}>
         {(view) => {
           const active = () => appState.viewState() === view;
@@ -82,6 +94,7 @@ function GearIcon(): JSX.Element {
 
 export default function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const showDevChrome = devChromeEnabled();
 
   onMount(() => {
     // Hydrate persisted settings, then keep the world in sync: subscribe fires
@@ -98,7 +111,9 @@ export default function App(): JSX.Element {
       <Show when={appState.viewState() === "book"} fallback={<ShelfView />}>
         <BookView />
       </Show>
-      <DevViewSwitcher />
+      <Show when={showDevChrome}>
+        <DevViewSwitcher />
+      </Show>
       <QuickSwitcher />
 
       <button

@@ -95,8 +95,23 @@ const INK = 'rgba(52, 44, 36, 0.75)';
 
 /* ----------------------------- colour helpers ---------------------------- */
 
+/**
+ * Parse `#rgb`, `#rrggbb` **and** the `rgb(r g b [/ a])` form that `mixHex`
+ * itself emits. That second case matters: `shadeHex(mixHex(a, b, t), …)` is a
+ * natural thing to write, and before this parsed rgb() it fell through to the
+ * grey fallback — which is exactly how wax seals ended up looking like pewter
+ * coins and ribbon fold-backs like grey tape.
+ */
 function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
+  const raw = hex.trim();
+  if (raw.startsWith('rgb')) {
+    const nums = raw.match(/-?\d*\.?\d+/g);
+    if (nums && nums.length >= 3) {
+      return [Number(nums[0]), Number(nums[1]), Number(nums[2])];
+    }
+    return [128, 128, 128];
+  }
+  const h = raw.replace('#', '');
   const full =
     h.length === 3
       ? `${h[0] as string}${h[0] as string}${h[1] as string}${h[1] as string}${h[2] as string}${h[2] as string}`
@@ -200,8 +215,13 @@ function softShadow(ctx: Ctx2D, x: number, y: number, w: number, h: number, alph
 /* ------------------------------ shared pieces ---------------------------- */
 
 /**
- * A length of ribbon as a quad strip with a shaded fold and a V-notched tail.
+ * A length of ribbon as a swept strip with a shaded fold and a V-notched tail.
  * (x0,y0) is the top centre, (x1,y1) the bottom centre; `wTop`/`wBot` widths.
+ *
+ * `sway` bows the ribbon sideways at its midpoint: a ribbon that falls dead
+ * straight reads as a plastic stick, and that is exactly what the first pass
+ * of this looked like on a cover. The bow, plus a twist in the shading
+ * gradient, is what makes it read as cloth.
  */
 function ribbonStrip(
   ctx: Ctx2D,
@@ -214,35 +234,57 @@ function ribbonStrip(
   color: string,
   s: number,
   notch = true,
+  sway = 0.22,
 ): void {
   const dx = x1 - x0;
   const dy = y1 - y0;
   const len = Math.max(1e-3, Math.hypot(dx, dy));
-  const nx = -dy / len;
-  const ny = dx / len;
-  const notchDepth = notch ? Math.min(wBot * 0.75, len * 0.22) : 0;
-  const tipX = x1 - (dx / len) * notchDepth;
-  const tipY = y1 - (dy / len) * notchDepth;
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const bow = sway * len * 0.32;
 
+  // Sample the centre line as a quadratic bow, and widen along it.
+  const STEPS = 14;
+  const centre = (t: number): Pt => {
+    const b = 4 * t * (1 - t); // 0 at the ends, 1 at the middle
+    return {
+      x: x0 + dx * t + nx * bow * b,
+      y: y0 + dy * t + ny * bow * b,
+    };
+  };
+  const halfAt = (t: number): number => (wTop + (wBot - wTop) * t) * 0.5;
+
+  const left: Pt[] = [];
+  const right: Pt[] = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const c = centre(t);
+    const hw = halfAt(t);
+    left.push({ x: c.x - nx * hw, y: c.y - ny * hw });
+    right.push({ x: c.x + nx * hw, y: c.y + ny * hw });
+  }
+
+  const tail = centre(1);
+  const notchDepth = notch ? Math.min(wBot * 0.8, len * 0.2) : 0;
   const body: Pt[] = [
-    { x: x0 - nx * wTop * 0.5, y: y0 - ny * wTop * 0.5 },
-    { x: x0 + nx * wTop * 0.5, y: y0 + ny * wTop * 0.5 },
-    { x: x1 + nx * wBot * 0.5, y: y1 + ny * wBot * 0.5 },
-    { x: tipX, y: tipY },
-    { x: x1 - nx * wBot * 0.5, y: y1 - ny * wBot * 0.5 },
+    ...left,
+    { x: tail.x - ux * notchDepth, y: tail.y - uy * notchDepth },
+    ...right.reverse(),
   ];
 
-  // Body with a cross-ribbon shading gradient (silk catches light on one side).
+  // Cross-ribbon shading (silk catches the light along one edge only).
   const g = ctx.createLinearGradient(
     x0 - nx * wTop * 0.5,
     y0 - ny * wTop * 0.5,
     x0 + nx * wTop * 0.5,
     y0 + ny * wTop * 0.5,
   );
-  g.addColorStop(0, shadeHex(color, -0.34));
-  g.addColorStop(0.34, shadeHex(color, 0.22));
-  g.addColorStop(0.62, color);
-  g.addColorStop(1, shadeHex(color, -0.42));
+  g.addColorStop(0, shadeHex(color, -0.38));
+  g.addColorStop(0.3, shadeHex(color, 0.26));
+  g.addColorStop(0.58, color);
+  g.addColorStop(1, shadeHex(color, -0.46));
   const first = body[0] as Pt;
   ctx.beginPath();
   ctx.moveTo(first.x, first.y);
@@ -251,26 +293,20 @@ function ribbonStrip(
   ctx.fillStyle = g;
   ctx.fill();
 
-  // Specular thread down the lit side.
-  strokePath(
-    ctx,
-    [
-      { x: x0 + nx * wTop * 0.12, y: y0 + ny * wTop * 0.12 },
-      { x: x1 + nx * wBot * 0.1, y: y1 + ny * wBot * 0.1 },
-    ],
-    shadeHex(color, 0.5, 0.45),
-    Math.max(0.6, wTop * 0.14),
-  );
-  // Dark edge on the shaded side.
-  strokePath(
-    ctx,
-    [
-      { x: x0 - nx * wTop * 0.5, y: y0 - ny * wTop * 0.5 },
-      { x: x1 - nx * wBot * 0.5, y: y1 - ny * wBot * 0.5 },
-    ],
-    shadeHex(color, -0.55, 0.5),
-    Math.max(0.5, 0.6 * s),
-  );
+  // Specular thread and shaded edge, both following the bow.
+  const rail = (off: number, style: string, width: number): void => {
+    const pts: Pt[] = [];
+    for (let i = 0; i <= STEPS; i++) {
+      const t = i / STEPS;
+      const c = centre(t);
+      const hw = halfAt(t) * off;
+      pts.push({ x: c.x + nx * hw, y: c.y + ny * hw });
+    }
+    strokePath(ctx, pts, style, width);
+  };
+  rail(0.24, shadeHex(color, 0.55, 0.5), Math.max(0.7, wTop * 0.16));
+  rail(-0.96, shadeHex(color, -0.58, 0.55), Math.max(0.5, 0.7 * s));
+  rail(0.96, shadeHex(color, -0.4, 0.4), Math.max(0.4, 0.5 * s));
 }
 
 /** Cord + knot + thread skirt. (cx, cy) is where the skirt starts. */
@@ -470,7 +506,9 @@ function claspBand(
 /** Blob of sealing wax with a pressed sigil and a gloss catchlight. */
 function waxSeal(ctx: Ctx2D, cx: number, cy: number, r: number, color: string, s: number, rnd: RandomFn): void {
   softShadow(ctx, cx - r, cy - r * 0.6, r * 2, r * 1.6, 0.22);
-  const wax = mixHex(color, '#8f1f1f', 0.28);
+  // Pull every colourway toward real sealing wax — deep, warm and saturated.
+  // At 0.28 the mix left pale colourways looking like pressed tin coins.
+  const wax = mixHex(color, '#8a1c18', 0.42);
   const outer = blobPath(cx, cy, r, 16, 0.13, rnd);
   fillPath(ctx, outer, shadeHex(wax, -0.18));
   // Domed body.
@@ -488,29 +526,30 @@ function waxSeal(ctx: Ctx2D, cx: number, cy: number, r: number, color: string, s
   ctx.fillStyle = g;
   ctx.fill();
 
-  // Pressed sigil: a six-point star inside a ring, debossed (dark + light rim).
-  const sig = r * 0.5;
+  // Pressed sigil: a ring with six radiating spokes. Deliberately coarse —
+  // a fine six-point star turned to grey mush at shelf scale.
+  const sig = r * 0.56;
   for (const [dx, dy, col, wdt] of [
-    [0.6 * s, 0.6 * s, shadeHex(wax, 0.4, 0.65), 0.9],
-    [0, 0, shadeHex(wax, -0.55, 0.85), 1],
+    [0.7 * s, 0.7 * s, shadeHex(wax, 0.45, 0.7), 1],
+    [0, 0, shadeHex(wax, -0.62, 0.9), 1.25],
   ] as const) {
     ctx.save();
     ctx.translate(dx, dy);
     ctx.beginPath();
-    ctx.arc(cx, cy, sig * 0.92, 0, Math.PI * 2);
+    ctx.arc(cx, cy, sig * 0.94, 0, Math.PI * 2);
     ctx.strokeStyle = col;
-    ctx.lineWidth = Math.max(0.6, 0.9 * s * wdt);
+    ctx.lineWidth = Math.max(0.9, r * 0.11 * wdt);
     ctx.stroke();
     for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + 0.2;
+      const a = (i / 6) * Math.PI + 0.2;
       strokePath(
         ctx,
         [
-          { x: cx - Math.cos(a) * sig * 0.62, y: cy - Math.sin(a) * sig * 0.62 },
-          { x: cx + Math.cos(a) * sig * 0.62, y: cy + Math.sin(a) * sig * 0.62 },
+          { x: cx - Math.cos(a) * sig * 0.6, y: cy - Math.sin(a) * sig * 0.6 },
+          { x: cx + Math.cos(a) * sig * 0.6, y: cy + Math.sin(a) * sig * 0.6 },
         ],
         col,
-        Math.max(0.5, 0.8 * s * wdt),
+        Math.max(0.8, r * 0.09 * wdt),
       );
     }
     ctx.restore();
@@ -518,8 +557,8 @@ function waxSeal(ctx: Ctx2D, cx: number, cy: number, r: number, color: string, s
 
   // Gloss catchlight.
   ctx.beginPath();
-  ctx.ellipse(cx - r * 0.34, cy - r * 0.42, r * 0.3, r * 0.16, -0.5, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 240, 230, 0.3)';
+  ctx.ellipse(cx - r * 0.36, cy - r * 0.46, r * 0.28, r * 0.14, -0.5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 240, 230, 0.26)';
   ctx.fill();
 }
 
@@ -603,7 +642,7 @@ function kraftTag(
 export function charmSpineReserve(kind: CharmKind): { y0: number; y1: number } | null {
   switch (kind) {
     case 'ribbon':
-      return { y0: 0.855, y1: 1 };
+      return { y0: 0.79, y1: 1 };
     case 'tassel':
       return { y0: 0, y1: 0.32 };
     case 'pressed-flower':
@@ -645,17 +684,17 @@ export function drawSpineCharm(
 
   switch (kind) {
     case 'ribbon': {
-      // A stub of ribbon peeking past the tail — what you actually see on a
-      // shelf. Sits slightly off-centre so it reads as hanging free.
-      const rw = clamp(w * 0.3, 3.4 * s, 8 * s);
-      const cx = w * 0.63;
-      ribbonStrip(ctx, cx, h * 0.845, cx + rw * 0.28, h * 0.985, rw * 0.92, rw, color, s);
+      // A length of ribbon hanging past the tail — what you actually see of a
+      // marker on a shelf. Sits off-centre and bows, so it reads as free cloth.
+      const rw = clamp(w * 0.34, 4.2 * s, 10 * s);
+      const cx = w * 0.6;
+      ribbonStrip(ctx, cx, h * 0.79, cx + rw * 0.42, h * 0.995, rw * 0.9, rw * 1.05, color, s, true, 0.34);
       // The slot it emerges from.
       strokePath(
         ctx,
         [
-          { x: cx - rw * 0.6, y: h * 0.848 },
-          { x: cx + rw * 0.6, y: h * 0.848 },
+          { x: cx - rw * 0.62, y: h * 0.793 },
+          { x: cx + rw * 0.62, y: h * 0.793 },
         ],
         'rgba(30, 24, 18, 0.4)',
         Math.max(0.5, 0.7 * s),
@@ -663,42 +702,42 @@ export function drawSpineCharm(
       break;
     }
     case 'tassel': {
-      const cx = w * 0.66;
+      const cx = w * 0.64;
       // Cord looping over the head.
       strokePath(
         ctx,
         [
-          { x: cx - w * 0.26, y: h * 0.012 },
-          { x: cx - w * 0.05, y: h * 0.055 },
-          { x: cx, y: h * 0.105 },
+          { x: cx - w * 0.3, y: h * 0.01 },
+          { x: cx - w * 0.06, y: h * 0.05 },
+          { x: cx, y: h * 0.1 },
         ],
         shadeHex(color, -0.15),
-        Math.max(0.7, 1.1 * s),
+        Math.max(0.9, 1.4 * s),
       );
-      tasselBody(ctx, cx, h * 0.145, Math.min(w * 0.5, 13 * s), color, rnd);
+      tasselBody(ctx, cx, h * 0.145, Math.min(w * 0.62, 17 * s), color, rnd);
       break;
     }
     case 'pressed-flower': {
       // Tucked in the pages so only the head of the flower shows at the top.
-      const cx = w * 0.38;
+      const cx = w * 0.42;
       pressedFlower(
         ctx,
         cx,
-        h * 0.085,
-        Math.min(w * 0.33, 9 * s),
-        { x: cx + w * 0.24, y: h * 0.215 },
+        h * 0.082,
+        Math.min(w * 0.42, 12 * s),
+        { x: cx + w * 0.26, y: h * 0.2 },
         color,
         rnd,
       );
       break;
     }
     case 'clasp': {
-      const bandH = clamp(h * 0.055, 5 * s, 11 * s);
+      const bandH = clamp(h * 0.062, 6 * s, 13 * s);
       claspBand(ctx, -w * 0.02, h * 0.525 - bandH / 2, w * 1.04, bandH, m, s, true);
       break;
     }
     case 'wax-seal': {
-      waxSeal(ctx, w * 0.5, h * 0.775, Math.min(w * 0.36, 12 * s), color, s, rnd);
+      waxSeal(ctx, w * 0.5, h * 0.775, Math.min(w * 0.44, 16 * s), color, s, rnd);
       break;
     }
     default: {
@@ -750,70 +789,75 @@ export function drawCoverCharm(
   switch (kind) {
     case 'ribbon': {
       // Emerges from under the fore-edge and drapes off the bottom corner.
-      const rw = w * 0.062;
-      ribbonStrip(ctx, w * 0.9, h * 0.52, w * 0.845, h * 0.985, rw * 0.9, rw * 1.08, color, s);
+      // Wide enough to read as cloth: the first pass was two thin sticks.
+      const rw = w * 0.095;
+      ribbonStrip(ctx, w * 0.88, h * 0.46, w * 0.8, h * 0.99, rw * 0.92, rw * 1.12, color, s, true, 0.3);
       // A short second length folded back over itself, for depth.
-      ribbonStrip(ctx, w * 0.9, h * 0.52, w * 0.955, h * 0.73, rw * 0.75, rw * 0.6, shadeHex(color, -0.16), s, false);
+      ribbonStrip(
+        ctx, w * 0.88, h * 0.46, w * 0.965, h * 0.73,
+        rw * 0.8, rw * 0.62, shadeHex(color, -0.2), s, false, -0.3,
+      );
       // Shadow where it leaves the block.
       strokePath(
         ctx,
         [
-          { x: w * 0.9 - rw * 0.6, y: h * 0.518 },
-          { x: w * 0.9 + rw * 0.6, y: h * 0.518 },
+          { x: w * 0.88 - rw * 0.66, y: h * 0.457 },
+          { x: w * 0.88 + rw * 0.66, y: h * 0.457 },
         ],
-        'rgba(28, 22, 16, 0.35)',
-        Math.max(0.6, 0.9 * s),
+        'rgba(28, 22, 16, 0.4)',
+        Math.max(0.8, 1.2 * s),
       );
       break;
     }
     case 'tassel': {
-      const cx = w * 0.87;
+      const cx = w * 0.84;
       strokePath(
         ctx,
         [
-          { x: cx - w * 0.13, y: h * 0.03 },
-          { x: cx - w * 0.02, y: h * 0.09 },
-          { x: cx, y: h * 0.16 },
+          { x: cx - w * 0.17, y: h * 0.025 },
+          { x: cx - w * 0.03, y: h * 0.1 },
+          { x: cx, y: h * 0.18 },
         ],
         shadeHex(color, -0.15),
-        Math.max(1, 2 * s),
+        Math.max(1.4, 2.6 * s),
       );
-      tasselBody(ctx, cx, h * 0.205, Math.min(w * 0.15, 40 * s), color, rnd);
+      tasselBody(ctx, cx, h * 0.235, Math.min(w * 0.2, 52 * s), color, rnd);
       break;
     }
     case 'pressed-flower': {
-      const cx = w * 0.78;
-      const cy = h * 0.735;
-      pressedFlower(ctx, cx, cy, Math.min(w * 0.085, 26 * s), { x: cx - w * 0.13, y: cy + h * 0.13 }, color, rnd);
+      const cx = w * 0.76;
+      const cy = h * 0.72;
+      pressedFlower(ctx, cx, cy, Math.min(w * 0.13, 38 * s), { x: cx - w * 0.16, y: cy + h * 0.15 }, color, rnd);
       break;
     }
     case 'clasp': {
-      const bandH = Math.max(9 * s, h * 0.045);
-      claspBand(ctx, w * 0.7, h * 0.5 - bandH / 2, w * 0.32, bandH, m, s, true);
+      // The strap runs off the fore-edge, never past it.
+      const bandH = Math.max(11 * s, h * 0.055);
+      claspBand(ctx, w * 0.62, h * 0.5 - bandH / 2, w * 0.38, bandH, m, s, true);
       break;
     }
     case 'wax-seal': {
-      waxSeal(ctx, w * 0.75, h * 0.8, Math.min(w * 0.1, 30 * s), color, s, rnd);
+      waxSeal(ctx, w * 0.74, h * 0.78, Math.min(w * 0.15, 44 * s), color, s, rnd);
       break;
     }
     default: {
       // tag, hung on twine from the top fore-edge corner
-      const tw = w * 0.16;
+      const tw = w * 0.21;
       const th = tw * 1.4;
       ctx.save();
-      ctx.translate(w * 0.82, h * 0.2);
-      ctx.rotate(0.11);
+      ctx.translate(w * 0.8, h * 0.19);
+      ctx.rotate(0.13);
       kraftTag(ctx, -tw / 2, 0, tw, th, color, s, rnd);
       ctx.restore();
       strokePath(
         ctx,
         [
-          { x: w * 0.99, y: h * 0.055 },
-          { x: w * 0.9, y: h * 0.08 },
-          { x: w * 0.79, y: h * 0.14 },
+          { x: w * 0.99, y: h * 0.045 },
+          { x: w * 0.9, y: h * 0.075 },
+          { x: w * 0.77, y: h * 0.14 },
         ],
         mixHex(color, '#d9c9a4', 0.35),
-        Math.max(0.8, 1.3 * s),
+        Math.max(1, 1.7 * s),
       );
       break;
     }

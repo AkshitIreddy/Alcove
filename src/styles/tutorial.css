@@ -1,0 +1,363 @@
+/* ============================================================================
+   Notebook — guided tour (src/features/tutorial)
+
+   A dimmed world with one lit patch, a pencil arrow, and an aged-paper
+   speech card taped over the top. Colors come from tokens.css only; every
+   transition is scaled by --motion-scale so "animation: off" is instant.
+   ========================================================================== */
+
+.nbt-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toasts);
+  /* The layer itself is inert — only the painted scrim and the card catch
+     pointer events, which leaves the spotlight hole genuinely clickable. */
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   The one SVG: scrim with the hole punched out, ring, arrow.
+   -------------------------------------------------------------------------- */
+
+.nbt-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* evenodd + the hole subpath = everything dims except the target. Because the
+   hole is unpainted it also fails hit-testing, so clicks pass through it. */
+.nbt-scrim {
+  fill: rgba(41, 28, 16, 0.6);
+  pointer-events: auto;
+}
+
+:root[data-theme='night'] .nbt-scrim {
+  fill: rgba(8, 5, 3, 0.68);
+}
+
+/* Warm lift inside the hole. The shelf world is dark wood, where a dim scrim
+   alone barely registers — this is what actually makes the patch read as lit.
+   Must never swallow clicks aimed at the highlighted control. */
+.nbt-glow {
+  fill: rgba(255, 238, 202, 0.12);
+  pointer-events: none;
+}
+
+/* Warm pencil ring traced around the lit patch. Two stacked strokes fake the
+   candle-glow — no SVG filter (art-pipeline.md: never in a live path). */
+.nbt-ring {
+  fill: none;
+  stroke: var(--wash-amber-deep);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.nbt-ring--halo {
+  stroke: var(--wash-amber);
+  stroke-width: 7;
+  opacity: 0.26;
+}
+
+.nbt-arrow {
+  fill: none;
+  stroke: var(--ink-sepia);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+:root[data-theme='night'] .nbt-arrow {
+  stroke: var(--wash-amber);
+}
+
+.nbt-arrow--head {
+  stroke-width: 2.4;
+}
+
+/* ----------------------------------------------------------------------------
+   Speech card — aged paper, torn-ish edge, a strip of washi tape.
+   -------------------------------------------------------------------------- */
+
+.nbt-card {
+  position: absolute;
+  width: 348px;
+  max-width: calc(100vw - 36px);
+  padding: var(--space-20) var(--space-20) var(--space-16);
+  box-sizing: border-box;
+  pointer-events: auto;
+  background:
+    radial-gradient(
+      120% 90% at 22% 0%,
+      rgba(255, 252, 243, 0.75),
+      rgba(255, 252, 243, 0) 62%
+    ),
+    var(--paper-aged);
+  color: var(--ink-sepia);
+  border: 1.4px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-lg);
+  transform-origin: 50% 0%;
+  outline: none;
+}
+
+.nbt-card:focus-visible {
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 2.5px var(--wash-amber);
+}
+
+/* The cream highlight above is a parchment-paper effect; on night paper it
+   reads as a milky haze that eats the eyebrow's contrast. Warm + far weaker. */
+:root[data-theme='night'] .nbt-card {
+  background:
+    radial-gradient(
+      120% 90% at 22% 0%,
+      rgba(255, 238, 202, 0.08),
+      rgba(255, 238, 202, 0) 62%
+    ),
+    var(--paper-aged);
+}
+
+.nbt-card--wide {
+  width: 428px;
+  padding: var(--space-24) var(--space-24) var(--space-20);
+}
+
+/* Inner hairline — the doubled pencil edge the rest of the app uses. */
+.nbt-card::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Washi tape strip, rotated a touch off-square. */
+.nbt-tape {
+  position: absolute;
+  top: -11px;
+  left: 26px;
+  width: 74px;
+  height: 22px;
+  background: linear-gradient(
+    100deg,
+    rgba(233, 196, 106, 0.55),
+    rgba(247, 231, 194, 0.72) 45%,
+    rgba(233, 196, 106, 0.5)
+  );
+  border-left: 1px dashed rgba(168, 128, 46, 0.4);
+  border-right: 1px dashed rgba(168, 128, 46, 0.4);
+  transform: rotate(-3.2deg);
+  box-shadow: 0 1px 2px rgba(94, 70, 45, 0.16);
+}
+
+.nbt-card[data-side='top'] .nbt-tape {
+  left: auto;
+  right: 26px;
+  transform: rotate(2.6deg);
+}
+
+.nbt-eyebrow {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  text-transform: lowercase;
+  color: var(--ink-sepia-soft);
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.nbt-scene {
+  color: var(--wash-amber-deep);
+  font-style: italic;
+}
+
+.nbt-title {
+  margin: 0 0 var(--space-8);
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+}
+
+.nbt-body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--ink-graphite);
+}
+
+.nbt-hint {
+  margin: var(--space-8) 0 0;
+  padding: 5px 9px;
+  display: inline-block;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: rgba(233, 196, 106, 0.18);
+  border: 1px dashed var(--paper-edge);
+  border-radius: var(--radius-md);
+}
+
+/* ----------------------------------------------------------------------------
+   Progress — tiny inked circles.
+   -------------------------------------------------------------------------- */
+
+.nbt-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: var(--space-16) 0 var(--space-12);
+  padding: 0;
+}
+
+.nbt-dot {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.nbt-dot svg {
+  width: 14px;
+  height: 14px;
+  overflow: visible;
+  transition:
+    transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbt-dot circle {
+  fill: none;
+  stroke: var(--ink-sepia-soft);
+  stroke-width: 1.5;
+  opacity: 0.45;
+  transition:
+    fill calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
+    opacity calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
+    stroke calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbt-dot.is-done circle {
+  fill: var(--ink-sepia-soft);
+  opacity: 0.55;
+}
+
+.nbt-dot.is-current circle {
+  fill: var(--wash-amber);
+  stroke: var(--wash-amber-deep);
+  stroke-width: 2;
+  opacity: 1;
+}
+
+.nbt-dot.is-current svg {
+  transform: scale(1.32) rotate(-6deg);
+}
+
+.nbt-dot:hover circle {
+  opacity: 0.85;
+}
+
+.nbt-dot:focus-visible svg {
+  transform: scale(1.32);
+  outline: 2px solid var(--wash-amber-deep);
+  outline-offset: 3px;
+  border-radius: 50%;
+}
+
+/* ----------------------------------------------------------------------------
+   Actions
+   -------------------------------------------------------------------------- */
+
+.nbt-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.nbt-spacer {
+  flex: 1 1 auto;
+}
+
+.nbt-btn {
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  padding: 7px 14px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.3px solid var(--paper-edge);
+  border-radius: 140px 12px 130px 12px / 12px 130px 12px 140px;
+  cursor: pointer;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring),
+    box-shadow calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbt-btn:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+  transform: translateY(-1px) rotate(-0.5deg);
+  box-shadow: var(--shadow-xs);
+}
+
+.nbt-btn:active:not(:disabled) {
+  transform: translateY(1px) rotate(0.3deg);
+}
+
+.nbt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.nbt-btn--primary {
+  background: var(--wash-amber);
+  border-color: var(--wash-amber-deep);
+  color: var(--ink-sepia);
+  font-weight: 700;
+  padding: 7px 18px;
+}
+
+.nbt-btn--primary:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+}
+
+.nbt-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-sepia-soft);
+  padding: 7px 6px;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.nbt-btn--ghost:hover {
+  background: transparent;
+  color: var(--ink-sepia);
+  box-shadow: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Narrow windows: the card drops to a bottom sheet so it never covers the
+   thing it is pointing at.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 620px) {
+  .nbt-card,
+  .nbt-card--wide {
+    width: calc(100vw - 28px);
+  }
+}

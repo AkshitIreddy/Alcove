@@ -153,7 +153,14 @@ function Toggle(props: {
   );
 }
 
-/** Range slider with pencil tick marks. */
+/**
+ * Range slider with pencil tick marks, a value FILL on the track, and its
+ * numeric readout attached to the control.
+ *
+ * The readout used to be passed as the Row `hint`, which parked it under the
+ * label a full row-width away from the slider it described; `display` is now
+ * always supplied and rendered inside the group.
+ */
 function Slider(props: {
   label: string;
   min: number;
@@ -164,11 +171,22 @@ function Slider(props: {
   display?: string;
   onInput: (value: number) => void;
 }): JSX.Element {
+  /** 0–100 position of the thumb, consumed by the track gradient. */
+  const fill = (): number => {
+    const span = props.max - props.min;
+    if (span <= 0) return 0;
+    const pct = ((props.value - props.min) / span) * 100;
+    return Math.max(0, Math.min(100, pct));
+  };
+
   return (
     <div class="nbs-slider-group">
       <div
         class="nbs-slider-wrap"
-        style={{ '--nbs-ticks': String(props.ticks ?? 6) }}
+        style={{
+          '--nbs-ticks': String(props.ticks ?? 6),
+          '--nbs-fill': fill().toFixed(1),
+        }}
       >
         <input
           type="range"
@@ -467,13 +485,14 @@ export default function SettingsPanel(props: {
               onSelect={(v) => put({ handwritingFont: String(v) })}
             />
           </Row>
-          <Row label="body size" hint={`${settings.bodyFontSize}px`}>
+          <Row label="body size" hint="reading type on every page">
             <Slider
               label="body font size"
               min={15}
               max={21}
               step={1}
               ticks={6}
+              display={`${settings.bodyFontSize}px`}
               value={settings.bodyFontSize}
               onInput={(v) => put({ bodyFontSize: v })}
             />
@@ -587,16 +606,14 @@ export default function SettingsPanel(props: {
               }
             />
           </Row>
-          <Row
-            label="zoom speed"
-            hint={`${settings.zoomSensitivity.toFixed(2)}×`}
-          >
+          <Row label="zoom speed" hint="how fast the wheel travels">
             <Slider
               label="zoom sensitivity"
               min={0.5}
               max={2}
               step={0.05}
               ticks={6}
+              display={`${settings.zoomSensitivity.toFixed(2)}×`}
               value={settings.zoomSensitivity}
               onInput={(v) => put({ zoomSensitivity: v })}
             />
@@ -628,16 +645,14 @@ export default function SettingsPanel(props: {
         <Section title="Sound">
           <For each={VOLUME_KEYS}>
             {(key) => (
-              <Row
-                label={VOLUME_LABELS[key]}
-                hint={`${Math.round(settings[key] * 100)}%`}
-              >
+              <Row label={VOLUME_LABELS[key]}>
                 <Slider
                   label={VOLUME_LABELS[key]}
                   min={0}
                   max={1}
                   step={0.05}
                   ticks={5}
+                  display={`${Math.round(settings[key] * 100)}%`}
                   value={settings[key]}
                   onInput={(v) => put({ [key]: v } as Partial<Settings>)}
                 />

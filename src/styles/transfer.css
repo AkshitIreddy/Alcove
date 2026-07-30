@@ -1,0 +1,938 @@
+/* ============================================================================
+   Notebook — transfer desk (export / import / undo book)
+   A single aged-paper card with a left icon rail. Everything is baked: no
+   runtime SVG filters, no live blurs, transform/opacity animation only.
+   All colors come from tokens.css.
+   ========================================================================== */
+
+.nb-tr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-menus);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-24);
+  background: rgba(94, 70, 45, 0.3);
+  animation: nb-tr-fade var(--dur-sm) var(--ease-out);
+}
+
+@keyframes nb-tr-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.nb-tr-card {
+  display: flex;
+  width: min(1160px, 100%);
+  height: min(88vh, 820px);
+  overflow: hidden;
+  background-color: var(--paper-aged);
+  background-image: radial-gradient(
+    120% 70% at 50% -8%,
+    var(--paper-glow) 0%,
+    transparent 62%
+  );
+  border: 2px dashed var(--ink-sepia-soft);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-lg);
+  transform: rotate(-0.3deg);
+  animation: nb-tr-rise calc(var(--dur-md) * var(--motion-scale)) var(--ease-out);
+}
+
+@keyframes nb-tr-rise {
+  from {
+    opacity: 0;
+    transform: rotate(-0.3deg) translateY(14px) scale(0.985);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Left icon rail — never a top bar
+   -------------------------------------------------------------------------- */
+.nb-tr-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+  flex: 0 0 104px;
+  padding: var(--space-16) var(--space-8);
+  background: linear-gradient(
+    100deg,
+    var(--paper-deep) 0%,
+    var(--paper-aged) 130%
+  );
+  border-right: 2px dashed var(--paper-edge);
+}
+
+.nb-tr-rail-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-8) var(--space-4) 6px;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-rail-button:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  transform: rotate(-1.2deg);
+}
+
+.nb-tr-rail-button[data-active='true'] {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  border-color: var(--wash-amber-deep);
+  transform: rotate(-0.8deg);
+}
+
+.nb-tr-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.nb-tr-rail-label {
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  text-align: center;
+}
+
+.nb-tr-rail-spacer {
+  flex: 1;
+}
+
+.nb-tr-rail-close {
+  padding: 4px 0 6px;
+  font-size: 14px;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color var(--dur-xs) var(--ease-out), background var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-rail-close:hover {
+  color: var(--wash-terracotta-deep);
+  background: var(--wash-terracotta-light);
+}
+
+/* ----------------------------------------------------------------------------
+   Body
+   -------------------------------------------------------------------------- */
+.nb-tr-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-16) var(--space-24) var(--space-16);
+}
+
+.nb-tr-head {
+  flex: 0 0 auto;
+  padding-bottom: var(--space-8);
+  border-bottom: 2px dashed var(--paper-edge);
+}
+
+.nb-tr-headline {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+  transform: rotate(-0.5deg);
+}
+
+.nb-tr-room {
+  display: flex;
+  gap: var(--space-20);
+  flex: 1;
+  min-height: 0;
+  padding-top: var(--space-12);
+}
+
+.nb-tr-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+  min-height: 0;
+}
+
+.nb-tr-col-tree {
+  flex: 1.15 1 0;
+}
+
+.nb-tr-col-side {
+  flex: 1 1 0;
+}
+
+.nb-tr-col-wide {
+  flex: 1 1 100%;
+}
+
+.nb-tr-h3 {
+  font-family: var(--font-heading);
+  font-size: 23px;
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+  transform: rotate(-0.4deg);
+}
+
+.nb-tr-h4 {
+  font-family: var(--font-accent);
+  font-size: 17px;
+  color: var(--ink-sepia);
+}
+
+.nb-tr-lede {
+  max-width: 56ch;
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Chips
+   -------------------------------------------------------------------------- */
+.nb-tr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.nb-tr-chip {
+  padding: 3px var(--space-12) 4px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-chip:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  transform: translateY(-1px) rotate(-0.8deg);
+}
+
+.nb-tr-chip[data-active='true'] {
+  color: var(--ink-sepia);
+  font-weight: 700;
+  background: var(--wash-amber);
+  border-color: var(--wash-amber-deep);
+  transform: rotate(-0.6deg);
+}
+
+.nb-tr-chip-sm {
+  padding: 1px var(--space-8) 2px;
+  font-size: var(--text-ui-xs);
+}
+
+/* ----------------------------------------------------------------------------
+   Item tree
+   -------------------------------------------------------------------------- */
+.nb-tr-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-8);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-tr-node + .nb-tr-node {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px dashed var(--paper-edge);
+}
+
+.nb-tr-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  padding: 3px var(--space-8) 4px;
+  text-align: left;
+  background: transparent;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-row:hover {
+  background: var(--wash-amber-light);
+  border-color: var(--paper-edge);
+  transform: translateX(1px);
+}
+
+.nb-tr-row-book {
+  padding-left: 0;
+}
+
+.nb-tr-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1;
+  min-width: 0;
+  padding: 2px var(--space-4) 3px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.nb-tr-disclose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  height: 20px;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.nb-tr-chevron {
+  width: 15px;
+  height: 15px;
+  transition: transform var(--dur-sm) var(--ease-out);
+}
+
+.nb-tr-disclose[data-open='true'] .nb-tr-chevron {
+  transform: rotate(90deg);
+}
+
+.nb-tr-glyph {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-tr-glyph .nb-tr-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.nb-tr-row-page .nb-tr-glyph .nb-tr-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.nb-tr-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--ink-sepia);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-tr-row-book .nb-tr-title {
+  font-size: var(--text-body);
+}
+
+.nb-tr-meta {
+  flex: 0 0 auto;
+  font-size: var(--text-ui-xs);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-children {
+  padding: 2px 0 var(--space-4) var(--space-24);
+  margin-left: 9px;
+  border-left: 1.5px dashed var(--paper-edge);
+}
+
+.nb-tr-resolve {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 0 0 var(--space-4) var(--space-32);
+}
+
+/* ----------------------------------------------------------------------------
+   Tick boxes
+   -------------------------------------------------------------------------- */
+.nb-tr-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+  color: var(--wash-moss-deep);
+  background: var(--paper-cream);
+  border: 1.6px solid var(--ink-sepia-soft);
+  border-radius: 6px 3px 7px 3px / 3px 7px 3px 6px;
+  transform: rotate(-1.4deg);
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-box[data-state='on'] {
+  background: var(--wash-moss-light);
+  border-color: var(--wash-moss-deep);
+}
+
+.nb-tr-box[data-state='some'] {
+  background: var(--wash-lemon-light);
+  border-color: var(--wash-lemon-deep);
+  color: var(--wash-lemon-deep);
+}
+
+.nb-tr-tick {
+  width: 14px;
+  height: 14px;
+}
+
+/* ----------------------------------------------------------------------------
+   Conflict badges
+   -------------------------------------------------------------------------- */
+.nb-tr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-8) 1px;
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--wash-terracotta-deep);
+  background: var(--wash-terracotta-light);
+  border: 1px dashed var(--wash-terracotta-deep);
+  border-radius: var(--radius-pill);
+  transform: rotate(-0.9deg);
+}
+
+.nb-tr-badge[data-kind='same-id'] {
+  color: var(--wash-lemon-deep);
+  background: var(--wash-lemon-light);
+  border-color: var(--wash-lemon-deep);
+}
+
+.nb-tr-badge-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Page-level badges repeat down the whole tree, so they stay as quiet ink
+   rather than another filled pill competing with the book rows. */
+.nb-tr-row-page .nb-tr-badge {
+  padding-right: var(--space-4);
+  color: var(--ink-graphite-soft);
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Options
+   -------------------------------------------------------------------------- */
+.nb-tr-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-8) var(--space-8) var(--space-12);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-tr-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  width: 100%;
+  padding: var(--space-4) var(--space-8) 5px;
+  text-align: left;
+  background: transparent;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-toggle:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-tr-toggle .nb-tr-box {
+  margin-top: 2px;
+}
+
+.nb-tr-toggle-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nb-tr-toggle-label {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink-sepia);
+}
+
+.nb-tr-toggle-hint {
+  font-size: var(--text-ui-xs);
+  line-height: 1.4;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-optrow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-4) var(--space-8) 0;
+}
+
+.nb-tr-optlabel {
+  font-size: var(--text-ui-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-graphite-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Parcel preview
+   -------------------------------------------------------------------------- */
+.nb-tr-parcel {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-12) var(--space-16) var(--space-12);
+  background-color: var(--wash-amber-light);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 12px,
+    rgba(168, 128, 46, 0.05) 12px 24px
+  );
+  border: 1.5px dashed var(--wash-amber-deep);
+  border-radius: var(--radius-hand);
+  transform: rotate(0.4deg);
+}
+
+.nb-tr-parcel-counts {
+  font-size: var(--text-ui);
+  color: var(--ink-sepia-soft);
+}
+
+.nb-tr-parcel-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: var(--space-4) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nb-tr-parcel-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 1px 0;
+  border-bottom: 1px dashed rgba(168, 128, 46, 0.35);
+}
+
+.nb-tr-parcel-name {
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink-sepia);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-tr-parcel-note {
+  flex: 0 0 auto;
+  font-size: var(--text-ui-xs);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-parcel-more {
+  color: var(--ink-graphite-soft);
+  border-bottom: none;
+}
+
+/* Basis 0 so the watermark only ever fills space the list does not want —
+   a long parcel list must never be clipped by decoration. */
+.nb-tr-parcel-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-height: 0;
+  /* Padding absorbs the few px the -2.5deg tilt adds to the drawing's box. */
+  padding: 5px 0;
+  overflow: hidden;
+  color: var(--wash-amber-deep);
+  opacity: 0.24;
+}
+
+.nb-tr-parcel-svg {
+  height: 100%;
+  max-height: 140px;
+  width: auto;
+  max-width: 58%;
+  transform: rotate(-2.5deg);
+}
+
+.nb-tr-filename {
+  font-size: var(--text-ui-xs);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-filename strong {
+  color: var(--ink-sepia);
+}
+
+/* ----------------------------------------------------------------------------
+   Import: drop plate, plan, promises
+   -------------------------------------------------------------------------- */
+.nb-tr-dropplate {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  flex: 0 0 auto;
+  margin: auto;
+  padding: var(--space-32) var(--space-40) var(--space-40);
+  max-width: 600px;
+  text-align: center;
+  background: var(--paper-cream);
+  border: 2.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-md);
+  transform: rotate(-0.5deg);
+}
+
+/* A second sheet peeking out behind — the plate reads as paper, not a box. */
+.nb-tr-dropplate::before {
+  content: '';
+  position: absolute;
+  inset: 6px -9px -10px 8px;
+  z-index: -1;
+  background: var(--paper-aged);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+  transform: rotate(1.4deg);
+}
+
+.nb-tr-dropart {
+  color: var(--wash-amber-deep);
+  transform: rotate(2deg);
+}
+
+.nb-tr-dropart .nb-tr-icon {
+  width: 84px;
+  height: 84px;
+}
+
+.nb-tr-plan {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-8);
+  list-style: none;
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-tr-plan-item {
+  padding: var(--space-4) var(--space-8) 5px var(--space-12);
+  margin-bottom: var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--ink-sepia);
+  background: var(--wash-moss-light);
+  border-left: 3px solid var(--wash-moss-deep);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.nb-tr-plan-item[data-action='append'] {
+  background: var(--wash-sky-light);
+  border-left-color: var(--wash-sky-deep);
+}
+
+.nb-tr-plan-item[data-action='skip'] {
+  color: var(--ink-graphite-soft);
+  background: transparent;
+  border-left-color: var(--paper-edge);
+}
+
+.nb-tr-plan-total {
+  padding: var(--space-12) var(--space-8) var(--space-4);
+  text-align: center;
+  font-size: var(--text-ui-xs);
+  letter-spacing: 0.04em;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-promise {
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--ink-sepia-soft);
+  background: var(--wash-sky-light);
+  border: 1.5px dashed var(--wash-sky-deep);
+  border-radius: var(--radius-hand);
+  transform: rotate(-0.5deg);
+}
+
+.nb-tr-done {
+  padding: var(--space-4) var(--space-12) 6px;
+  font-size: var(--text-ui);
+  color: var(--wash-moss-deep);
+  background: var(--wash-moss-light);
+  border: 1.5px dashed var(--wash-moss-deep);
+  border-radius: var(--radius-hand);
+}
+
+.nb-tr-warnings,
+.nb-tr-errors {
+  max-height: 120px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-8) var(--space-12) var(--space-8) var(--space-24);
+  font-size: var(--text-ui-xs);
+  line-height: 1.5;
+  color: var(--wash-terracotta-deep);
+  background: var(--wash-lemon-light);
+  border: 1px dashed var(--wash-lemon-deep);
+  border-radius: var(--radius-md);
+}
+
+/* ----------------------------------------------------------------------------
+   History (the undo book)
+   -------------------------------------------------------------------------- */
+.nb-tr-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-12);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-tr-hist {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-16) var(--space-12);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-xs);
+  transform: rotate(-0.25deg);
+}
+
+.nb-tr-hist:nth-child(even) {
+  transform: rotate(0.3deg);
+}
+
+.nb-tr-hist[data-kind='revert'] {
+  background: var(--wash-sky-light);
+  border-color: var(--wash-sky-deep);
+}
+
+.nb-tr-hist-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.nb-tr-hist-title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--ink-sepia);
+}
+
+.nb-tr-hist-meta {
+  font-size: var(--text-ui-xs);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-hist-note {
+  margin-top: 2px;
+  font-size: var(--text-ui-xs);
+  color: var(--wash-sky-deep);
+}
+
+.nb-tr-hist-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 0 0 auto;
+}
+
+.nb-tr-kind {
+  padding: 1px var(--space-8) 2px;
+  font-size: var(--text-ui-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-sepia-soft);
+  background: var(--paper-deep);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  transform: rotate(-1.2deg);
+}
+
+.nb-tr-hist-end {
+  /* Pinned to the foot of the sheet so the undo book reads as a page with a
+     footer rather than a half-empty list. */
+  margin-top: auto;
+  padding: var(--space-16) 0 var(--space-4);
+  border-top: 1.5px dashed var(--paper-edge);
+  text-align: center;
+  font-size: var(--text-ui-xs);
+  letter-spacing: 0.04em;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-tr-retention {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: 2px dashed var(--paper-edge);
+}
+
+.nb-tr-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-12);
+  margin: auto;
+  padding: var(--space-32);
+  text-align: center;
+}
+
+.nb-tr-empty {
+  max-width: 42ch;
+  font-size: var(--text-ui);
+  line-height: 1.6;
+  color: var(--ink-graphite-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Actions
+   -------------------------------------------------------------------------- */
+.nb-tr-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 0 0 auto;
+  padding-top: var(--space-4);
+}
+
+.nb-tr-spacer {
+  flex: 1;
+}
+
+.nb-tr-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-16) 6px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out),
+    box-shadow var(--dur-xs) var(--ease-out);
+}
+
+.nb-tr-button:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+  transform: rotate(-1deg) translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.nb-tr-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.nb-tr-button-primary {
+  font-weight: 700;
+  background: var(--wash-amber);
+  border-color: var(--wash-amber-deep);
+}
+
+.nb-tr-button-undo {
+  color: var(--wash-terracotta-deep);
+  border-color: var(--wash-terracotta-deep);
+  background: var(--wash-terracotta-light);
+}
+
+.nb-tr-button-undo .nb-tr-badge-icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* Narrow windows: stack the two columns. */
+@media (max-width: 900px) {
+  .nb-tr-room {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .nb-tr-col-tree,
+  .nb-tr-col-side {
+    flex: 0 0 auto;
+  }
+
+  .nb-tr-tree {
+    min-height: 220px;
+  }
+}

@@ -1,41 +1,35 @@
 /**
- * src/views/rail/CustomizePanel.tsx — per-book customization sheet.
+ * src/views/rail/CustomizePanel.tsx — the Book Studio (library-themes.md §4).
  *
- * Two halves:
- *  1. Cover editor — live canvas preview + palette / texture / frame /
- *     medallion / title-font / gilt controls. Every change flows up through
- *     onOverridesChange; BookView persists to cover_meta (src/data/books)
- *     and the backdrop + pull-out cover re-bake reactively.
- *  2. Page defaults — line spacing (26–40px), page style and ink applied to
- *     the book's current AND future pages (BookView owns the application).
+ * Two tabs behind the rail's Customize brush:
+ *  1. **this book** — the full spine + cover vocabulary with a live preview
+ *     that flips between the two faces (BookStudio.tsx).
+ *  2. **this library** — the room: theme, wall finish, wallpaper pattern x
+ *     colourway, flora density, lamp warmth (LibraryStudio.tsx).
+ * Page defaults (line spacing / page style / ink) stay on the book tab, since
+ * they are also "about this book".
+ *
+ * Persistence:
+ *  - library choices go through `features/bookshelf/libraryPrefs` (the Pixi
+ *    world subscribes to it, so the shelf redresses itself instantly);
+ *  - book style goes to `cover_meta.style` via `saveBookStyleOverrides` when
+ *    `bookId` is supplied, AND its cover-facing projection goes out through
+ *    the existing `onOverridesChange` prop so the open book's cover, the
+ *    pull-out ghost and the shelf spine all agree.
  */
-import { For, createEffect, type JSX } from 'solid-js';
-import {
-  COVER_FRAME_COUNT,
-  COVER_MEDALLION_COUNT,
-  COVER_PALETTE_COUNT,
-  coverPaletteCss,
-  deriveCoverParams,
-  normalizeCoverOverrides,
-  renderCoverInto,
-  type CoverOverrides,
-} from '../../art/covers';
+import { For, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
+import type { BookStyleOverrides } from '../../art/bookStyle';
+import { normalizeBookStyleOverrides } from '../../art/bookStyle';
+import type { CoverOverrides } from '../../art/covers';
+import type { BookStyle } from '../../art/bookStyle';
+import { readBookStyleOverrides } from '../../data/books';
 import type { BookPageDefaults } from '../../data/books';
+import { getBook } from '../../data/books';
+import { persistBookStyle } from '../../features/bookshelf/bookIdentity';
 import type { PageStyle } from '../../data/types';
+import BookStudio, { coverOverridesFromStyle } from './BookStudio';
+import LibraryStudio from './LibraryStudio';
 
-const TEXTURES = ['cloth', 'leather', 'paper'] as const;
-const FRAMES = ['rules', 'corners', 'scallop', 'stitch'] as const;
-const MEDALLIONS = [
-  'diamond',
-  'laurel',
-  'star',
-  'flower',
-  'chevron',
-  'sun',
-  'moon',
-  'keyhole',
-] as const;
-const TITLE_FONTS = ['Caveat', 'Kalam', 'Patrick Hand'] as const;
 const PAGE_STYLES: readonly PageStyle[] = ['ruled', 'grid', 'blank', 'dotted'];
 const INKS = [
   { value: 'sepia', label: 'sepia' },
@@ -47,6 +41,8 @@ export const LINE_SPACING_MIN = 26;
 export const LINE_SPACING_MAX = 40;
 const DEFAULT_LINE_SPACING = 32;
 
+type StudioTab = 'book' | 'library';
+
 export interface CustomizePanelProps {
   spineSeed: number;
   title: string;
@@ -54,31 +50,56 @@ export interface CustomizePanelProps {
   onOverridesChange(next: CoverOverrides | null): void;
   pageDefaults: BookPageDefaults | null;
   onPageDefaultsChange(next: BookPageDefaults | null): void;
+  /**
+   * The book being edited. Supply it and the studio persists the merged
+   * style to `cover_meta.style` itself; omit it and the panel still works,
+   * holding the style for the session only.
+   */
+  bookId?: string;
+  /** Page count, for the default spine thickness. */
+  pageCount?: number;
 }
 
 export default function CustomizePanel(props: CustomizePanelProps): JSX.Element {
-  let previewCanvas: HTMLCanvasElement | undefined;
+  const [tab, setTab] = createSignal<StudioTab>('book');
+  const [style, setStyle] = createSignal<Record<string, unknown> | null>(null);
 
-  const params = (): ReturnType<typeof deriveCoverParams> =>
-    deriveCoverParams(
-      props.spineSeed,
-      normalizeCoverOverrides(props.overrides as unknown),
+  // Hydrate the persisted style blob whenever the book changes.
+  createEffect(
+    on(
+      () => props.bookId,
+      (id) => {
+        if (id === undefined) {
+          setStyle(null);
+          return;
+        }
+        let stale = false;
+        void getBook(id).then((book) => {
+          if (!stale) setStyle(readBookStyleOverrides(book));
+        });
+        return () => {
+          stale = true;
+        };
+      },
+    ),
+  );
+
+  const changeStyle = (next: BookStyleOverrides | null): void => {
+    const blob = (next as Record<string, unknown> | null) ?? null;
+    setStyle(blob);
+    const normalized = normalizeBookStyleOverrides(blob);
+    // The cover art reads cover_meta.cover — keep it in step so the open book
+    // and the pull-out ghost show what the studio previewed.
+    props.onOverridesChange(
+      normalized === null
+        ? null
+        : coverOverridesFromStyle(normalized as Parameters<typeof coverOverridesFromStyle>[0]),
     );
-
-  // Live preview — re-painted on every override change.
-  createEffect(() => {
-    const p = params();
-    const canvas = previewCanvas;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    renderCoverInto(ctx, canvas.width, canvas.height, p, props.title);
-  });
-
-  const patch = (partial: CoverOverrides): void => {
-    const next = { ...(props.overrides ?? {}), ...partial };
-    props.onOverridesChange(Object.keys(next).length > 0 ? next : null);
+    if (props.bookId !== undefined) {
+      // Writes cover_meta.style AND its cover projection, so the shelf spine,
+      // the pull-out ghost and the opened book all agree.
+      void persistBookStyle(props.bookId, (normalized as BookStyle | null) ?? null);
+    }
   };
 
   const patchDefaults = (partial: BookPageDefaults): void => {
@@ -89,179 +110,99 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
     props.pageDefaults?.lineHeightPx ?? DEFAULT_LINE_SPACING;
 
   return (
-    <div class="nb-customize">
-      <div class="nb-cover-preview-wrap">
-        <canvas
-          ref={(el) => (previewCanvas = el)}
-          width={228}
-          height={310}
-          class="nb-cover-preview"
-          aria-label="Cover preview"
-        />
+    <div class="nb-customize nb-studio">
+      <div class="nb-studio-tabs" role="tablist" aria-label="Studio">
+        <button
+          type="button"
+          class="nb-studio-tab"
+          role="tab"
+          aria-selected={tab() === 'book'}
+          classList={{ 'is-active': tab() === 'book' }}
+          onClick={() => setTab('book')}
+        >
+          this book
+        </button>
+        <button
+          type="button"
+          class="nb-studio-tab"
+          role="tab"
+          aria-selected={tab() === 'library'}
+          classList={{ 'is-active': tab() === 'library' }}
+          onClick={() => setTab('library')}
+        >
+          this library
+        </button>
       </div>
 
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">cover colors</h3>
-        <div class="nb-swatch-grid" role="group" aria-label="Cover palette">
-          <For each={Array.from({ length: COVER_PALETTE_COUNT }, (_, i) => i)}>
-            {(i) => {
-              const duo = coverPaletteCss(i);
-              return (
-                <button
-                  type="button"
-                  class="nb-swatch"
-                  style={{
-                    background: `linear-gradient(160deg, ${duo.top}, ${duo.bottom})`,
-                  }}
-                  aria-label={`Palette ${i + 1}`}
-                  aria-pressed={params().palette === i}
-                  classList={{ 'is-active': params().palette === i }}
-                  onClick={() => patch({ palette: i })}
-                />
-              );
-            }}
-          </For>
-        </div>
-      </section>
-
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">binding</h3>
-        <div class="nb-chip-row" role="group" aria-label="Cover texture">
-          <For each={TEXTURES}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={params().texture === i()}
-                onClick={() => patch({ texture: i() as 0 | 1 | 2 })}
-              >
-                {name}
-              </button>
-            )}
-          </For>
-        </div>
-        <div class="nb-chip-row" role="group" aria-label="Frame style">
-          <For each={FRAMES.slice(0, COVER_FRAME_COUNT)}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={params().frame === i()}
-                onClick={() => patch({ frame: i() })}
-              >
-                {name}
-              </button>
-            )}
-          </For>
-        </div>
-      </section>
-
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">medallion</h3>
-        <div class="nb-chip-grid" role="group" aria-label="Center medallion">
-          <For each={MEDALLIONS.slice(0, COVER_MEDALLION_COUNT)}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={params().medallion === i()}
-                onClick={() => patch({ medallion: i() })}
-              >
-                {name}
-              </button>
-            )}
-          </For>
-        </div>
-      </section>
-
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">title & gilt</h3>
-        <div class="nb-chip-row" role="group" aria-label="Title lettering">
-          <For each={TITLE_FONTS}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={params().titleFont === i()}
-                onClick={() => patch({ titleFont: i() as 0 | 1 | 2 })}
-              >
-                {name}
-              </button>
-            )}
-          </For>
-        </div>
-        <div class="nb-chip-row">
-          <button
-            type="button"
-            class="nb-chip nb-chip-gilt"
-            role="switch"
-            aria-checked={params().gilt}
-            aria-pressed={params().gilt}
-            onClick={() => patch({ gilt: !params().gilt })}
-          >
-            gold tooling
-          </button>
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            onClick={() => props.onOverridesChange(null)}
-          >
-            reset cover
-          </button>
-        </div>
-      </section>
-
-      <section class="nb-panel-section nb-panel-section-divided">
-        <h3 class="nb-panel-section-title">pages of this book</h3>
-        <label class="nb-panel-row">
-          <span class="nb-panel-row-label">
-            line spacing <em class="nb-panel-row-hint">{lineSpacing()}px</em>
-          </span>
-          <input
-            type="range"
-            class="nb-panel-slider"
-            min={LINE_SPACING_MIN}
-            max={LINE_SPACING_MAX}
-            step={1}
-            value={lineSpacing()}
-            aria-label="Line spacing"
-            onInput={(e) =>
-              patchDefaults({ lineHeightPx: Number(e.currentTarget.value) })
-            }
+      <Show when={tab() === 'book'}>
+        <div class="nb-studio-pane" role="tabpanel" aria-label="This book">
+          <BookStudio
+            spineSeed={props.spineSeed}
+            title={props.title}
+            style={style()}
+            onStyleChange={changeStyle}
+            pageCount={props.pageCount}
           />
-        </label>
-        <div class="nb-chip-row" role="group" aria-label="Default page style">
-          <For each={PAGE_STYLES}>
-            {(style) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={props.pageDefaults?.pageStyle === style}
-                onClick={() => patchDefaults({ pageStyle: style })}
-              >
-                {style}
-              </button>
-            )}
-          </For>
+
+          <section class="nb-panel-section nb-panel-section-divided">
+            <h3 class="nb-panel-section-title">pages of this book</h3>
+            <label class="nb-panel-row">
+              <span class="nb-panel-row-label">
+                line spacing <em class="nb-panel-row-hint">{lineSpacing()}px</em>
+              </span>
+              <input
+                type="range"
+                class="nb-panel-slider"
+                min={LINE_SPACING_MIN}
+                max={LINE_SPACING_MAX}
+                step={1}
+                value={lineSpacing()}
+                aria-label="Line spacing"
+                onInput={(e) =>
+                  patchDefaults({ lineHeightPx: Number(e.currentTarget.value) })
+                }
+              />
+            </label>
+            <div class="nb-chip-row" role="group" aria-label="Default page style">
+              <For each={PAGE_STYLES}>
+                {(pageStyle) => (
+                  <button
+                    type="button"
+                    class="nb-chip"
+                    aria-pressed={props.pageDefaults?.pageStyle === pageStyle}
+                    onClick={() => patchDefaults({ pageStyle })}
+                  >
+                    {pageStyle}
+                  </button>
+                )}
+              </For>
+            </div>
+            <div class="nb-chip-row" role="group" aria-label="Ink color">
+              <For each={INKS}>
+                {(ink) => (
+                  <button
+                    type="button"
+                    class="nb-chip"
+                    aria-pressed={props.pageDefaults?.ink === ink.value}
+                    onClick={() => patchDefaults({ ink: ink.value })}
+                  >
+                    {ink.label}
+                  </button>
+                )}
+              </For>
+            </div>
+            <p class="nb-panel-footnote">
+              applies to every page of this book, now and later
+            </p>
+          </section>
         </div>
-        <div class="nb-chip-row" role="group" aria-label="Ink color">
-          <For each={INKS}>
-            {(ink) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={props.pageDefaults?.ink === ink.value}
-                onClick={() => patchDefaults({ ink: ink.value })}
-              >
-                {ink.label}
-              </button>
-            )}
-          </For>
+      </Show>
+
+      <Show when={tab() === 'library'}>
+        <div class="nb-studio-pane" role="tabpanel" aria-label="This library">
+          <LibraryStudio />
         </div>
-        <p class="nb-panel-footnote">
-          applies to every page of this book, now and later
-        </p>
-      </section>
+      </Show>
     </div>
   );
 }

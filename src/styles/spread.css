@@ -1,0 +1,192 @@
+/* ============================================================================
+   Notebook — two-page spread (BookView)
+   The opened book on the desk: cream leaves side by side over a terracotta
+   cover edge, spine gutter shadow down the middle, page-stack hairlines on
+   the outer edges hinting at more pages beneath.
+   All colors from tokens.css. Nothing here animates layout — hover feedback
+   is transform/opacity only, with durations from the token scale (global.css
+   zeroes those and --motion-scale under prefers-reduced-motion).
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Stage — title above the spread, toolbar riding the top-right edge
+   -------------------------------------------------------------------------- */
+.nb-spread-stage {
+  /* One knob for the book's visible height; leaves scroll inside it. */
+  --spread-h: clamp(520px, 72vh, 880px);
+  width: min(1280px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.nb-spread-stage .nb-script-toolbar {
+  align-self: stretch;
+}
+
+.nb-spread-header {
+  align-self: center;
+  text-align: center;
+}
+
+.nb-spread-stage .nb-book-title {
+  margin-bottom: var(--space-16);
+}
+
+/* "+ page" tool — a hand-drawn plus beside the script tools */
+.nb-add-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.nb-add-page-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+/* ----------------------------------------------------------------------------
+   Cover — terracotta edge peeking a few px around the paper, resting on the
+   desk under a soft warm shadow
+   -------------------------------------------------------------------------- */
+.nb-book-cover {
+  position: relative;
+  width: 100%;
+  padding: 12px 14px 16px;
+  background: linear-gradient(
+    162deg,
+    var(--wash-terracotta) 0%,
+    var(--wash-terracotta-deep) 58%,
+    color-mix(in srgb, var(--wash-terracotta-deep) 72%, var(--ink-sepia)) 100%
+  );
+  border: 1px solid
+    color-mix(in srgb, var(--wash-terracotta-deep) 70%, var(--ink-sepia));
+  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wash-terracotta-light) 55%, transparent),
+    0 6px 10px rgba(94, 70, 45, 0.12),
+    0 18px 34px rgba(94, 70, 45, 0.16),
+    0 36px 72px rgba(94, 70, 45, 0.13);
+}
+
+/* ----------------------------------------------------------------------------
+   Spread — the FlipSurface host (leaves are laid out by flip.css)
+   -------------------------------------------------------------------------- */
+.nb-spread {
+  position: relative;
+  height: var(--spread-h);
+}
+
+.nb-spread > .nb-flip-surface {
+  height: 100%;
+}
+
+/* ----------------------------------------------------------------------------
+   Leaves — the ruled-paper look from editor.css continues unchanged inside;
+   here we only reshape the sheet for life inside a bound book: full-height,
+   scrollable, square gutter corners, no deckled tear (bound edges are cut).
+   -------------------------------------------------------------------------- */
+.nb-spread .nb-sheet-paper {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-32) var(--space-12) var(--space-24);
+  border: none;
+  clip-path: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-edge) transparent;
+}
+
+/* Page-stack edge: 3–4 offset hairlines outside the outer edges, alternating
+   cream/edge so they read as the fore-edges of the pages beneath. Painted
+   with box-shadow (outside the border box) into the cover's padding ring. */
+.nb-spread .nb-leaf-paper[data-side='left'] {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  box-shadow:
+    -2px 1px 0 0 var(--paper-deep),
+    -3.5px 2px 0 0 var(--paper-cream),
+    -5px 3px 0 0 var(--paper-deep),
+    -6.5px 4px 0 0 var(--paper-cream),
+    -8px 5px 0 0 var(--paper-edge);
+}
+
+.nb-spread .nb-leaf-paper[data-side='right'] {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  box-shadow:
+    2px 1px 0 0 var(--paper-deep),
+    3.5px 2px 0 0 var(--paper-cream),
+    5px 3px 0 0 var(--paper-deep),
+    6.5px 4px 0 0 var(--paper-cream),
+    8px 5px 0 0 var(--paper-edge);
+}
+
+/* Short pages still fill the leaf so the rules run to the bottom; long pages
+   grow and scroll within the sheet. */
+.nb-spread .nb-page {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-24);
+}
+
+.nb-spread .nb-page-editor {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.nb-spread .nb-page-editor .ProseMirror {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: var(--space-64);
+}
+
+/* The style switcher sits inside the sheet's top padding (the sheet scrolls,
+   so the old outside-the-sheet offset would be clipped away). */
+.nb-spread .nb-style-switcher {
+  top: calc(-1 * var(--space-24));
+  right: var(--space-8);
+}
+
+/* ----------------------------------------------------------------------------
+   Gutter — static spine ambient occlusion down the middle (design doc: CSS
+   gradient overlay, never animated). Sits above the resting leaves, below
+   the flip hotspots/canvas, and outside the snapshot roots so rest and
+   mid-flip frames match.
+   -------------------------------------------------------------------------- */
+.nb-spread-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 132px;
+  transform: translateX(-50%);
+  z-index: 10;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(94, 70, 45, 0.05) 30%,
+    rgba(94, 70, 45, 0.14) 46%,
+    rgba(94, 70, 45, 0.2) 50%,
+    rgba(94, 70, 45, 0.14) 54%,
+    rgba(94, 70, 45, 0.05) 70%,
+    transparent 100%
+  );
+}
+
+/* The crease itself — one soft dark thread at dead center. */
+.nb-spread-gutter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgba(94, 70, 45, 0.18);
+}

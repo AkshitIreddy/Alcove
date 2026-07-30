@@ -1,0 +1,259 @@
+// @vitest-environment node
+/**
+ * tests/spread.test.ts — pure spread logic (src/views/spread.ts).
+ *
+ * Runs without DOM: ord↔spread math, the six-id window handed to FlipSurface
+ * (incl. nulls at both ends of the book), flip gating + the auto-create
+ * decision matrix, the blank-vs-ink doc probe, the starter doc's inherited
+ * page style, and the arrow-key guard.
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import type { PageDoc } from '../src/data/types';
+import {
+  arrowFlipAction,
+  canFlipSpread,
+  docHasContent,
+  isLastSpread,
+  lastSpreadIndex,
+  leftSlot,
+  newPageDoc,
+  rightSlot,
+  shouldAutoCreatePage,
+  spreadCount,
+  spreadOfSlot,
+  spreadPageIds,
+} from '../src/views/spread';
+
+/** A book of n pages with ids p0..p(n-1). */
+const book = (n: number): string[] =>
+  Array.from({ length: n }, (_, i) => `p${i}`);
+
+/* ─────────────────────────── ord ↔ spread math ────────────────────────── */
+
+describe('slot math', () => {
+  it('maps spread index to left/right slots (left = 2i, right = 2i + 1)', () => {
+    expect(leftSlot(0)).toBe(0);
+    expect(rightSlot(0)).toBe(1);
+    expect(leftSlot(3)).toBe(6);
+    expect(rightSlot(3)).toBe(7);
+  });
+
+  it('maps slots back to their spread', () => {
+    expect(spreadOfSlot(0)).toBe(0);
+    expect(spreadOfSlot(1)).toBe(0);
+    expect(spreadOfSlot(2)).toBe(1);
+    expect(spreadOfSlot(7)).toBe(3);
+  });
+
+  it('round-trips: every slot lands on the spread that shows it', () => {
+    for (let slot = 0; slot < 20; slot += 1) {
+      const spread = spreadOfSlot(slot);
+      expect([leftSlot(spread), rightSlot(spread)]).toContain(slot);
+    }
+  });
+
+  it('counts spreads (ceil of half), with an empty book still opening one', () => {
+    expect(spreadCount(0)).toBe(1);
+    expect(spreadCount(1)).toBe(1);
+    expect(spreadCount(2)).toBe(1);
+    expect(spreadCount(3)).toBe(2);
+    expect(spreadCount(4)).toBe(2);
+    expect(spreadCount(5)).toBe(3);
+  });
+
+  it('identifies the last spread', () => {
+    expect(lastSpreadIndex(1)).toBe(0);
+    expect(lastSpreadIndex(4)).toBe(1);
+    expect(isLastSpread(4, 0)).toBe(false);
+    expect(isLastSpread(4, 1)).toBe(true);
+    expect(isLastSpread(4, 2)).toBe(true); // defensive: past the end counts
+  });
+});
+
+/* ───────────────────────────── id windows ─────────────────────────────── */
+
+describe('spreadPageIds', () => {
+  it('1-page book: only the left leaf has a page; everything else is null', () => {
+    expect(spreadPageIds(book(1), 0)).toEqual({
+      left: 'p0',
+      right: null,
+      nextLeft: null,
+      nextRight: null,
+      prevLeft: null,
+      prevRight: null,
+    });
+  });
+
+  it('2-page book: full spread, no neighbours', () => {
+    expect(spreadPageIds(book(2), 0)).toEqual({
+      left: 'p0',
+      right: 'p1',
+      nextLeft: null,
+      nextRight: null,
+      prevLeft: null,
+      prevRight: null,
+    });
+  });
+
+  it('3-page book, first spread: next spread has only a left page', () => {
+    expect(spreadPageIds(book(3), 0)).toEqual({
+      left: 'p0',
+      right: 'p1',
+      nextLeft: 'p2',
+      nextRight: null,
+      prevLeft: null,
+      prevRight: null,
+    });
+  });
+
+  it('3-page book, last spread: prev pair present, right leaf blank', () => {
+    expect(spreadPageIds(book(3), 1)).toEqual({
+      left: 'p2',
+      right: null,
+      nextLeft: null,
+      nextRight: null,
+      prevLeft: 'p0',
+      prevRight: 'p1',
+    });
+  });
+
+  it('6-page book, middle spread: both neighbour pairs fully present', () => {
+    expect(spreadPageIds(book(6), 1)).toEqual({
+      left: 'p2',
+      right: 'p3',
+      nextLeft: 'p4',
+      nextRight: 'p5',
+      prevLeft: 'p0',
+      prevRight: 'p1',
+    });
+  });
+
+  it('empty book: all null', () => {
+    expect(spreadPageIds([], 0)).toEqual({
+      left: null,
+      right: null,
+      nextLeft: null,
+      nextRight: null,
+      prevLeft: null,
+      prevRight: null,
+    });
+  });
+});
+
+/* ─────────────────────── flip gating + auto-create ────────────────────── */
+
+describe('canFlipSpread', () => {
+  it('prev needs a spread before this one', () => {
+    expect(canFlipSpread(6, 0, 'prev', false)).toBe(false);
+    expect(canFlipSpread(6, 1, 'prev', false)).toBe(true);
+    expect(canFlipSpread(6, 2, 'prev', true)).toBe(true);
+  });
+
+  it('next is free while pages exist ahead', () => {
+    expect(canFlipSpread(6, 0, 'next', false)).toBe(true);
+    expect(canFlipSpread(6, 1, 'next', false)).toBe(true);
+    expect(canFlipSpread(3, 0, 'next', false)).toBe(true);
+  });
+
+  it('next on the last spread only when the right leaf holds ink', () => {
+    // 1-page book: right leaf is a cream blank face — book ends here.
+    expect(canFlipSpread(1, 0, 'next', false)).toBe(false);
+    // 2-page book, right page empty: still no forward flip.
+    expect(canFlipSpread(2, 0, 'next', false)).toBe(false);
+    // 2-page book, right page written on: forward flip auto-creates.
+    expect(canFlipSpread(2, 0, 'next', true)).toBe(true);
+    expect(canFlipSpread(6, 2, 'next', true)).toBe(true);
+  });
+});
+
+describe('shouldAutoCreatePage', () => {
+  it('fires only for a forward flip off the last spread with right-leaf ink', () => {
+    expect(shouldAutoCreatePage(2, 0, 'next', true)).toBe(true);
+    expect(shouldAutoCreatePage(6, 2, 'next', true)).toBe(true);
+  });
+
+  it('never fires backward, mid-book, or from a blank right leaf', () => {
+    expect(shouldAutoCreatePage(2, 0, 'prev', true)).toBe(false);
+    expect(shouldAutoCreatePage(6, 0, 'next', true)).toBe(false); // pages ahead
+    expect(shouldAutoCreatePage(2, 0, 'next', false)).toBe(false);
+    expect(shouldAutoCreatePage(1, 0, 'next', false)).toBe(false);
+  });
+});
+
+/* ─────────────────────────── doc content probe ────────────────────────── */
+
+describe('docHasContent', () => {
+  const doc = (content: unknown[]): PageDoc => ({ type: 'doc', content });
+
+  it('empty and missing content are blank', () => {
+    expect(docHasContent(null)).toBe(false);
+    expect(docHasContent(undefined)).toBe(false);
+    expect(docHasContent({ type: 'doc' })).toBe(false);
+    expect(docHasContent(doc([]))).toBe(false);
+  });
+
+  it('empty paragraphs (fresh-page shape) are blank', () => {
+    expect(docHasContent(doc([{ type: 'paragraph' }]))).toBe(false);
+    expect(
+      docHasContent(doc([{ type: 'paragraph' }, { type: 'paragraph', content: [] }])),
+    ).toBe(false);
+  });
+
+  it('whitespace-only text is blank', () => {
+    expect(
+      docHasContent(
+        doc([{ type: 'paragraph', content: [{ type: 'text', text: '   ' }] }]),
+      ),
+    ).toBe(false);
+  });
+
+  it('real text is ink', () => {
+    expect(
+      docHasContent(
+        doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] }]),
+      ),
+    ).toBe(true);
+  });
+
+  it('non-paragraph blocks are ink even without text', () => {
+    expect(docHasContent(doc([{ type: 'image' }]))).toBe(true);
+    expect(docHasContent(doc([{ type: 'horizontalRule' }]))).toBe(true);
+    expect(docHasContent(doc([{ type: 'paragraph' }, { type: 'table' }]))).toBe(true);
+  });
+});
+
+/* ─────────────────────────────── new pages ────────────────────────────── */
+
+describe('newPageDoc', () => {
+  it('inherits the default page style from settings', () => {
+    expect(newPageDoc('grid')).toEqual({
+      type: 'doc',
+      attrs: { pageStyle: 'grid' },
+      content: [],
+    });
+    expect(newPageDoc('dotted').attrs).toEqual({ pageStyle: 'dotted' });
+  });
+});
+
+/* ───────────────────────────── keyboard guard ─────────────────────────── */
+
+describe('arrowFlipAction', () => {
+  it('maps arrows to flip directions when not typing', () => {
+    expect(arrowFlipAction('ArrowRight', false)).toBe('next');
+    expect(arrowFlipAction('ArrowLeft', false)).toBe('prev');
+  });
+
+  it('typing always wins — the caret keeps the arrows', () => {
+    expect(arrowFlipAction('ArrowRight', true)).toBeNull();
+    expect(arrowFlipAction('ArrowLeft', true)).toBeNull();
+  });
+
+  it('ignores every other key', () => {
+    expect(arrowFlipAction('ArrowUp', false)).toBeNull();
+    expect(arrowFlipAction('ArrowDown', false)).toBeNull();
+    expect(arrowFlipAction('Enter', false)).toBeNull();
+    expect(arrowFlipAction(' ', false)).toBeNull();
+  });
+});

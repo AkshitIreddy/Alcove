@@ -63,6 +63,12 @@ gsap.registerPlugin(Flip);
 export interface PageEditorProps {
   readonly pageId: string;
   readonly initialDoc: PageDoc;
+  /**
+   * Fires on every editor update with the fresh doc JSON (same payload the
+   * debounced save persists). The spread host uses it to keep its in-memory
+   * page list current so leaf remounts never resurrect a stale doc.
+   */
+  readonly onDocChange?: (doc: PageDoc) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -184,8 +190,13 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       handleDrop,
     },
     onUpdate: ({ editor: instance }) => {
-      scheduleSave(instance.getJSON() as PageDoc);
+      const doc = instance.getJSON() as PageDoc;
+      scheduleSave(doc);
+      props.onDocChange?.(doc);
     },
+    // Two editors are mounted at once in the spread view; the focused one is
+    // the "active" editor the script toolbar/dialog should target.
+    onFocus: ({ editor: instance }) => setActiveEditor(instance),
   }));
 
   // Publish the live editor for the script toolbar/dialog + install the media

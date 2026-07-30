@@ -19,12 +19,91 @@ export const STICKER_IDS = [
   'flower',
 ] as const;
 
-export type StickerId = (typeof STICKER_IDS)[number];
+export type BuiltinStickerId = (typeof STICKER_IDS)[number];
+
+/**
+ * Wave 2 (custom stickers): user-imported stickers live in the `user:`
+ * namespace. A StickerId is either one of the 8 built-ins or `user:<name>`;
+ * everything downstream (sticker node, palette, script vocab) accepts both.
+ */
+export type UserStickerId = `user:${string}`;
+
+export type StickerId = BuiltinStickerId | UserStickerId;
+
+/** True for ids in the user namespace (`user:<name>`, name non-empty). */
+export function isUserStickerId(value: unknown): value is UserStickerId {
+  return (
+    typeof value === 'string' &&
+    value.startsWith('user:') &&
+    value.length > 'user:'.length
+  );
+}
 
 export function isStickerId(value: unknown): value is StickerId {
   return (
-    typeof value === 'string' && (STICKER_IDS as readonly string[]).includes(value)
+    (typeof value === 'string' &&
+      (STICKER_IDS as readonly string[]).includes(value)) ||
+    isUserStickerId(value)
   );
+}
+
+// ---------------------------------------------------------------------------
+// User sticker registry (wave 2, item 27)
+//
+// Imported PNG/SVG stickers are persisted as image assets (assets table +
+// app-data files); this in-memory registry maps `user:<name>` → displayable
+// src for the current session. Hydrated at startup from the assets table by
+// src/features/templates/userStickers.ts.
+// ---------------------------------------------------------------------------
+
+export interface UserStickerRecord {
+  /** Full sticker id, e.g. `user:bunny`. */
+  id: UserStickerId;
+  /** Bare name (lowercase, [a-z0-9-]), e.g. `bunny`. */
+  name: string;
+  /** Displayable image src (asset protocol URL / object URL / data URI). */
+  src: string;
+}
+
+const userStickerRegistry = new Map<string, UserStickerRecord>();
+const userStickerListeners = new Set<() => void>();
+
+/** Normalize a raw name into the sticker-name alphabet (may return ''). */
+export function sanitizeStickerName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+}
+
+/**
+ * Register (or refresh) a user sticker for this session. Returns its full
+ * id. Notifies palette listeners.
+ */
+export function registerUserSticker(name: string, src: string): UserStickerId {
+  const clean = sanitizeStickerName(name) || 'sticker';
+  const id: UserStickerId = `user:${clean}`;
+  userStickerRegistry.set(id, { id, name: clean, src });
+  for (const listener of userStickerListeners) listener();
+  return id;
+}
+
+/** All registered user stickers, insertion-ordered. */
+export function listUserStickers(): UserStickerRecord[] {
+  return [...userStickerRegistry.values()];
+}
+
+/** Displayable src for a user sticker id, or null when unregistered. */
+export function userStickerSrc(id: string): string | null {
+  return userStickerRegistry.get(id)?.src ?? null;
+}
+
+/** Subscribe to registry changes (palette refresh). Returns unsubscribe. */
+export function onUserStickersChange(listener: () => void): () => void {
+  userStickerListeners.add(listener);
+  return () => userStickerListeners.delete(listener);
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +519,7 @@ function drawFlower(rng: Rng): string {
   return svg(petals + center + stemDot, 'flower sticker');
 }
 
-const DRAWERS: Record<StickerId, (rng: Rng) => string> = {
+const DRAWERS: Record<BuiltinStickerId, (rng: Rng) => string> = {
   star: drawStar,
   bee: drawBee,
   leaf: drawLeaf,
@@ -451,13 +530,46 @@ const DRAWERS: Record<StickerId, (rng: Rng) => string> = {
   flower: drawFlower,
 };
 
-const cache = new Map<StickerId, string>();
+const cache = new Map<string, string>();
+
+/** Minimal HTML attribute escaping for src/alt injection into markup. */
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Dashed "missing sticker" placeholder (unregistered user id). */
+function missingUserStickerSvg(name: string): string {
+  return (
+    `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" ` +
+    `aria-label="${escapeAttr(name)} sticker (missing)" class="nb-sticker-art">` +
+    `<rect x="4" y="4" width="24" height="24" rx="7" fill="none" ` +
+    `stroke="var(--ink-graphite-soft)" stroke-width="1.6" stroke-dasharray="4 3"/>` +
+    `<path d="M 12 16.2 C 14.6 15.8 17.3 15.9 20 16.1" fill="none" ` +
+    `stroke="var(--ink-graphite-soft)" stroke-width="1.6" stroke-linecap="round"/></svg>`
+  );
+}
 
 /**
- * Full inline-SVG markup for a sticker. Deterministic (seeded by id) and
- * memoized — every star wobbles identically, like a rubber stamp.
+ * Full inline markup for a sticker. Built-ins are deterministic wobbly SVG
+ * (seeded by id, memoized — every star wobbles identically, like a rubber
+ * stamp). `user:` ids render the imported image via the session registry,
+ * degrading to a dashed placeholder while unregistered (never cached, so a
+ * late registration shows up on the next render).
  */
 export function stickerSvg(id: StickerId): string {
+  if (isUserStickerId(id)) {
+    const src = userStickerSrc(id);
+    const name = id.slice('user:'.length);
+    if (src === null) return missingUserStickerSvg(name);
+    return (
+      `<img class="nb-sticker-art nb-sticker-art-user" src="${escapeAttr(src)}" ` +
+      `alt="${escapeAttr(name)} sticker" draggable="false"/>`
+    );
+  }
   const cached = cache.get(id);
   if (cached !== undefined) return cached;
   const markup = DRAWERS[id](mulberry32(fnv1a(`sticker:${id}`)));

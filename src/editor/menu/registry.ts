@@ -8,6 +8,11 @@
  */
 import type { Editor } from '@tiptap/core';
 import {
+  HIGHLIGHT_STYLES,
+  highlightAttrs,
+  type HighlightStyle,
+} from '../highlightStyles';
+import {
   applyEffectAt,
   blockToScript,
   blockTextRange,
@@ -159,14 +164,24 @@ function applyHighlight(
   editor: Editor,
   pos: number,
   wash: HighlightWash | null,
+  style: HighlightStyle = 'marker',
 ): void {
   const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
   if (!block) return;
   const range = blockTextRange(block);
   const chain = editor.chain().setTextSelection(range);
   if (wash === null) chain.unsetHighlight();
-  else chain.setHighlight({ color: wash });
+  else chain.setHighlight(highlightAttrs(wash, style));
   chain.focus().run();
+}
+
+/** The wash of the current highlight mark near `pos`, or amber. */
+function currentWash(editor: Editor): HighlightWash {
+  const color: unknown = editor.getAttributes('highlight').color;
+  return typeof color === 'string' &&
+    (HIGHLIGHT_WASHES as readonly string[]).includes(color)
+    ? (color as HighlightWash)
+    : 'amber';
 }
 
 const INK_LABELS: Record<InkColor, string> = {
@@ -194,6 +209,13 @@ const COLOR_ITEMS: readonly ContextMenuItem[] = [
   },
 ];
 
+/** Highlighter styles (roadmap #15) — labels for the style rows. */
+const HIGHLIGHT_STYLE_LABELS: Record<HighlightStyle, { title: string; glyph: string }> = {
+  marker: { title: 'Marker sweep', glyph: '▰' },
+  squiggle: { title: 'Squiggle underline', glyph: '﹏' },
+  circle: { title: 'Circle scribble', glyph: '◯' },
+};
+
 const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
   ...HIGHLIGHT_WASHES.map(
     (wash): ContextMenuItem => ({
@@ -202,6 +224,18 @@ const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
       title: `${wash.charAt(0).toUpperCase()}${wash.slice(1)} wash`,
       swatch: `var(--wash-${wash})`,
       run: ({ editor, pos }) => applyHighlight(editor, pos, wash),
+    }),
+  ),
+  // Style rows re-apply the block's current wash (amber when none) in the
+  // chosen hand-drawn style.
+  ...HIGHLIGHT_STYLES.map(
+    (style): ContextMenuItem => ({
+      kind: 'item',
+      id: `highlight-style-${style}`,
+      title: HIGHLIGHT_STYLE_LABELS[style].title,
+      glyph: HIGHLIGHT_STYLE_LABELS[style].glyph,
+      run: ({ editor, pos }) =>
+        applyHighlight(editor, pos, currentWash(editor), style),
     }),
   ),
   {

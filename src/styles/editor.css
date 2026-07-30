@@ -355,24 +355,55 @@
 
 .nb-prose mark[data-color='amber'] {
   background: color-mix(in srgb, var(--wash-amber) 50%, transparent);
+  --hl-tint: var(--wash-amber-deep);
 }
 .nb-prose mark[data-color='terracotta'] {
   background: color-mix(in srgb, var(--wash-terracotta) 50%, transparent);
+  --hl-tint: var(--wash-terracotta-deep);
 }
 .nb-prose mark[data-color='moss'] {
   background: color-mix(in srgb, var(--wash-moss) 50%, transparent);
+  --hl-tint: var(--wash-moss-deep);
 }
 .nb-prose mark[data-color='lemon'] {
   background: color-mix(in srgb, var(--wash-lemon) 60%, transparent);
+  --hl-tint: var(--wash-lemon-deep);
 }
 .nb-prose mark[data-color='sky'] {
   background: color-mix(in srgb, var(--wash-sky) 50%, transparent);
+  --hl-tint: var(--wash-sky-deep);
 }
 .nb-prose mark[data-color='blush'] {
   background: color-mix(in srgb, var(--wash-blush) 50%, transparent);
+  --hl-tint: var(--wash-blush-deep);
 }
 .nb-prose mark[data-color='plum'] {
   background: color-mix(in srgb, var(--wash-plum) 45%, transparent);
+  --hl-tint: var(--wash-plum-deep);
+}
+
+/* Highlighter styles (roadmap #15). Default 'marker' keeps the watercolor
+   sweep above; squiggle/circle drop the fill and draw ink instead. These
+   rules sit AFTER the data-color rules on purpose — equal specificity,
+   later wins, and the wash tint survives via --hl-tint. */
+.nb-prose mark[data-style='squiggle'] {
+  background: transparent;
+  padding: 0 1px;
+  border-radius: 0;
+  text-decoration: underline wavy 2px;
+  text-decoration-color: var(--hl-tint, var(--wash-amber-deep));
+  text-underline-offset: 4px;
+  text-decoration-skip-ink: none;
+}
+
+.nb-prose mark[data-style='circle'] {
+  background: transparent;
+  padding: 0 0.3em;
+  border: 2px solid var(--hl-tint, var(--wash-amber-deep));
+  /* Drunken ellipse — reads as a one-stroke pen circle. */
+  border-radius: 48% 52% 45% 55% / 62% 48% 58% 42%;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* ----------------------------------------------------------------------------
@@ -1196,4 +1227,26 @@
 .nb-ctx-menu.is-left .nb-ctx-sub {
   left: auto;
   right: calc(100% - var(--space-4));
+}
+
+/* ----------------------------------------------------------------------------
+   Cursor styles (roadmap #16, settings.cursorStyle) — the editor's writing
+   cursor becomes a tiny hand-drawn pencil or quill. Inline SVG data-URIs
+   (pre-distorted vector, per the art-pipeline doc — no runtime filters);
+   hotspot at the drawn tip, `text` fallback everywhere.
+   -------------------------------------------------------------------------- */
+.nb-book-view[data-cursor='pencil'] .nb-prose,
+.nb-book-view[data-cursor='pencil'] .nb-leaf-paper {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><path d='M19.2 2.8 C 20.7 3.9 21.9 5.1 23 6.6 L 8.4 21.4 L 2.8 23.2 L 4.4 17.6 C 9.2 12.5 14 7.6 19.2 2.8 Z' fill='%23e9c46a' stroke='%235b4636' stroke-width='1.6' stroke-linejoin='round'/><path d='M4.4 17.6 C 5.9 18.6 7.2 19.9 8.4 21.4' fill='none' stroke='%235b4636' stroke-width='1.2'/><path d='M17.2 5 C 18.6 6 19.8 7.2 20.9 8.7' fill='none' stroke='%235b4636' stroke-width='1.1' opacity='0.6'/></svg>")
+      3 23,
+    text;
+}
+
+.nb-book-view[data-cursor='quill'] .nb-prose,
+.nb-book-view[data-cursor='quill'] .nb-leaf-paper {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><path d='M23 2.6 C 15.4 4 9.3 8.8 5.8 16.2 L 3.6 22.6 L 10 20.4 C 17.3 16.8 21.7 10.4 23 2.6 Z' fill='%23dce9ec' stroke='%235b4636' stroke-width='1.5' stroke-linejoin='round'/><path d='M20.6 4.8 C 15.2 8.9 10.4 13.7 6.4 19.5' fill='none' stroke='%235b4636' stroke-width='1.1' opacity='0.7'/><path d='M12.8 9.4 C 14 10 15 10.9 15.9 12 M 9.8 12.8 C 11 13.4 12 14.3 12.9 15.4' fill='none' stroke='%235b4636' stroke-width='0.9' opacity='0.5'/></svg>")
+      3 23,
+    text;
 }

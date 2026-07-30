@@ -54,6 +54,30 @@ export const STICKER_NAMES = [
   "arrow",
 ] as const;
 
+/**
+ * Wave 2 (custom stickers): the *live* sticker value domain. Starts as the
+ * 15 built-in names and grows at runtime when the user imports custom
+ * stickers (`user:<name>` — see src/editor/nodes/stickers.ts). Kept as a
+ * mutable array so the attr parser's fuzzy matcher accepts registered user
+ * stickers without a warning. The built-in table above stays frozen.
+ */
+export const SCRIPT_STICKER_DOMAIN: string[] = [...STICKER_NAMES];
+
+/**
+ * Register a script sticker value (e.g. `user:bunny`) into the live domain.
+ * Idempotent; names should be pre-lowercased by the caller.
+ */
+export function registerScriptStickerName(name: string): void {
+  if (name !== "" && !SCRIPT_STICKER_DOMAIN.includes(name)) {
+    SCRIPT_STICKER_DOMAIN.push(name);
+  }
+}
+
+/** True for values in the user-sticker namespace (`user:<name>`). */
+export function isUserStickerName(value: string): boolean {
+  return value.startsWith("user:") && value.length > "user:".length;
+}
+
 export const TAPE_VALUES = ["top", "corner", "both"] as const;
 export const WASHI_VALUES = ["top"] as const;
 export const BLOCK_PAPER_VALUES = ["torn", "lined"] as const;
@@ -71,7 +95,8 @@ export const IMAGE_STYLE_VALUES = ["polaroid", "plain", "washi", "watercolor"] a
  */
 export const ATTR_ENUM_DOMAINS: Record<string, readonly string[]> = {
   color: WASH_COLORS,
-  sticker: STICKER_NAMES,
+  // Live domain: built-ins + runtime-registered `user:` stickers (wave 2).
+  sticker: SCRIPT_STICKER_DOMAIN,
   tape: TAPE_VALUES,
   washi: WASHI_VALUES,
   paper: BLOCK_PAPER_VALUES,

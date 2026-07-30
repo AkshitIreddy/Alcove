@@ -12,7 +12,6 @@ import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { DragHandle, type DragHandleOptions } from '@tiptap/extension-drag-handle';
-import Highlight from '@tiptap/extension-highlight';
 import NodeRange from '@tiptap/extension-node-range';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TableKit } from '@tiptap/extension-table';
@@ -24,6 +23,7 @@ import { offset } from '@floating-ui/dom';
 import { common, createLowlight } from 'lowlight';
 import { nanoid } from 'nanoid';
 import { NotebookDocument } from './document';
+import { NotebookHighlight } from './highlightStyles';
 import { MediaImage } from './media';
 import { customNodeExtensions } from './nodes';
 import { SlashCommands } from './slash/extension';
@@ -114,7 +114,8 @@ export function createEditorExtensions(
 
     // TextStyleKit bundles TextStyle + Color/FontFamily/FontSize/LineHeight…
     TextStyleKit,
-    Highlight.configure({ multicolor: true }),
+    // Highlight + hand-drawn style attr (marker / squiggle / circle).
+    NotebookHighlight.configure({ multicolor: true }),
 
     MediaImage.configure({ allowBase64: true }),
 

@@ -368,6 +368,200 @@
   background-position: 4px 4px;
 }
 
+/* ---------------------------- rail footer (wave 2) --------------------------
+   Quiet word count (roadmap #11) + the autosave pencil (#17) that scribbles
+   for a beat whenever a save flushes. Transform/opacity only. */
+.nb-rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--paper-edge);
+}
+
+.nb-rail-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-graphite-soft);
+  opacity: 0.35;
+  transform-origin: 80% 85%;
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+.nb-rail-pencil .nb-rail-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.nb-rail-pencil.is-scribbling {
+  opacity: 1;
+  color: var(--wash-amber-deep);
+  animation: nb-pencil-scribble calc(0.5s / max(var(--motion-scale), 0.001))
+    ease-in-out 2;
+}
+
+@keyframes nb-pencil-scribble {
+  0% {
+    transform: rotate(0deg) translateX(0);
+  }
+  25% {
+    transform: rotate(-9deg) translateX(-1.5px);
+  }
+  50% {
+    transform: rotate(4deg) translateX(1.5px);
+  }
+  75% {
+    transform: rotate(-6deg) translateX(-1px);
+  }
+  100% {
+    transform: rotate(0deg) translateX(0);
+  }
+}
+
+.nb-rail-counts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--ink-graphite-soft);
+  cursor: default;
+}
+
+.nb-rail-counts-page {
+  color: var(--ink-sepia-soft);
+  font-weight: 700;
+}
+
+/* ------------------------------- TOC panel ---------------------------------
+   Roadmap #9 — indented heading tree, one row per heading (or per blank
+   page); the current spread's rows get an amber tick. */
+.nb-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nb-toc-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+  width: 100%;
+  text-align: left;
+  padding: 3px var(--space-8);
+  border-radius: var(--radius-hand);
+  border: 1.5px solid transparent;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-toc-row:hover {
+  background: var(--wash-amber-light);
+  transform: translateX(2px) rotate(-0.4deg);
+}
+
+.nb-toc-row.is-current {
+  border-color: var(--wash-amber-deep);
+}
+
+.nb-toc-row[data-level='2'] {
+  padding-left: var(--space-20);
+}
+
+.nb-toc-row[data-level='3'],
+.nb-toc-row[data-level='4'] {
+  padding-left: var(--space-32);
+}
+
+.nb-toc-text {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink-sepia);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-toc-row[data-level='1'] .nb-toc-text {
+  font-weight: 700;
+}
+
+.nb-toc-row.is-page-row .nb-toc-text {
+  color: var(--ink-graphite-soft);
+  font-style: italic;
+}
+
+.nb-toc-page {
+  flex: 0 0 auto;
+  color: var(--ink-graphite-soft);
+}
+
+/* ----------------------------- history panel -------------------------------
+   Roadmap #13 — the "time-turner": stacked snapshot cards, newest on top. */
+.nb-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.nb-history-hint {
+  margin-bottom: var(--space-4);
+}
+
+.nb-history-row {
+  padding: var(--space-8);
+  background: var(--paper-aged);
+  border: 1px solid var(--paper-edge);
+  border-radius: 6px 10px 7px 11px / 9px 6px 11px 7px;
+}
+
+.nb-history-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.nb-history-when {
+  font-size: var(--text-sm);
+  color: var(--ink-sepia);
+}
+
+.nb-history-words {
+  color: var(--ink-graphite-soft);
+}
+
+.nb-history-preview {
+  margin: var(--space-4) 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-history-confirm {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.nb-history-restore-yes {
+  background: var(--wash-amber-light);
+  border-color: var(--wash-amber-deep);
+  color: var(--wash-amber-deep);
+  font-weight: 700;
+}
+
 /* ------------------------------ stickers panel ----------------------------- */
 .nb-sticker-grid {
   display: grid;

@@ -18,6 +18,11 @@ import "./styles/global.css";
 import { render } from "solid-js/web";
 import App from "./App";
 
+/* Group D (import/export & templates) wiring surface: hydrates the custom
+   sticker registry at boot and exposes dev-only E2E hooks. Rail buttons
+   import their handlers from this module. */
+import "./features/templates/groupD";
+
 const root = document.getElementById("root");
 if (!root) {
   throw new Error("Notebook: #root element is missing from index.html");

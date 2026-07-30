@@ -48,12 +48,11 @@ test('typing past capacity never grows a scrollbar', async ({ page }) => {
   expect(found, 'typed ink vanished after the overflow').toBe(true);
 });
 
-// FIXME(app bug — see spawned task "Fix lost caret when typing past page
-// capacity"): when the overflow fires, the spread flips forward but keyboard
-// focus is dropped (document.activeElement becomes <body>), so everything
-// typed after the page break is silently lost. Un-fixme once the caret
-// carries onto the following page.
-test.fixme('caret carries across the page break while typing', async ({
+// Wave-2 fix (group B): the overflow drain now reports the caret's offset
+// inside the carried blocks; BookView jumps the spread synchronously (no
+// animated flip — that blur was how keystrokes got lost) and re-focuses the
+// carried block's editor at the same offset (src/editor/instances registry).
+test('caret carries across the page break while typing', async ({
   page,
 }) => {
   const prose = await openBlankPage(page);

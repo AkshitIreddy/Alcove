@@ -317,3 +317,253 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* ----------------------------------------------------------------------------
+   Focus mode (roadmap #12) — F9 / rail icon. Chrome melts away (rail, back
+   arrow, title plate, thumbnails), the wall dims behind the book, and the
+   spread takes the freed room. Opacity/transform only; the elements stay
+   mounted so state survives.
+   -------------------------------------------------------------------------- */
+.nb-book-view.is-focus-mode {
+  background: color-mix(in srgb, var(--ink-sepia) 14%, transparent);
+  padding-left: var(--space-20);
+}
+
+.nb-book-view.is-focus-mode .nb-rail,
+.nb-book-view.is-focus-mode .nb-back-button,
+.nb-book-view.is-focus-mode .nb-spread-header {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+.nb-book-view .nb-rail,
+.nb-book-view .nb-back-button,
+.nb-book-view .nb-spread-header {
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+/* Dim the wall a touch further with a soft vignette behind the book. */
+.nb-book-view.is-focus-mode .nb-book-cover {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wash-terracotta-light) 40%, transparent),
+    0 6px 10px rgba(94, 70, 45, 0.18),
+    0 18px 34px rgba(94, 70, 45, 0.22),
+    0 0 0 100vmax rgba(59, 44, 29, 0.28);
+}
+
+/* ----------------------------------------------------------------------------
+   Thumbnails strip (roadmap #10) — bottom filmstrip of mini page renders.
+   Horizontal scroll stays inside the strip (thin styled bar), never the page.
+   -------------------------------------------------------------------------- */
+.nb-thumb-strip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+  max-width: 100%;
+  margin-top: var(--space-8);
+  padding: var(--space-4) var(--space-8);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-edge) transparent;
+  background: color-mix(in srgb, var(--paper-aged) 72%, transparent);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-sm);
+}
+
+.nb-thumb {
+  flex: 0 0 auto;
+  padding: 0;
+  transition: transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-thumb:hover {
+  transform: translateY(-3px) rotate(-1.2deg);
+}
+
+.nb-thumb-paper {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 66px;
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 3px 6px 4px 7px / 5px 4px 7px 4px;
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.nb-thumb-paper canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+.nb-thumb-paper.has-snapshot canvas {
+  opacity: 1;
+}
+
+/* Placeholder ruled lines while a page has no snapshot yet. */
+.nb-thumb-paper::before {
+  content: '';
+  position: absolute;
+  inset: 8px 6px 6px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 7px,
+    var(--paper-edge) 7px 8px
+  );
+  opacity: 0.6;
+}
+
+.nb-thumb-number {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 9px;
+  color: var(--ink-graphite-soft);
+  background: color-mix(in srgb, var(--paper-cream) 80%, transparent);
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+.nb-thumb.is-current .nb-thumb-paper {
+  border-color: var(--wash-amber-deep);
+  box-shadow: 0 0 0 1.5px var(--wash-amber-deep), var(--shadow-xs);
+}
+
+/* ----------------------------------------------------------------------------
+   Ribbon bookmarks (roadmap #19) — colored ribbons peeking over the top of
+   the cover; click to jump. Positions are inline (per-slot fractions).
+   -------------------------------------------------------------------------- */
+.nb-ribbon-row {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 12;
+}
+
+.nb-ribbon {
+  position: absolute;
+  top: 0;
+  width: 16px;
+  height: 42px;
+  border-radius: 2px 2px 0 0;
+  transform: rotate(0.8deg);
+  transform-origin: top center;
+  box-shadow: 1px 2px 3px rgba(94, 70, 45, 0.25);
+  /* Forked ribbon tail. */
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
+  transition: transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-ribbon:hover {
+  transform: rotate(-1.5deg) translateY(3px);
+}
+
+.nb-ribbon[data-color='terracotta'] {
+  background: var(--wash-terracotta-deep);
+}
+.nb-ribbon[data-color='moss'] {
+  background: var(--wash-moss-deep);
+}
+.nb-ribbon[data-color='sky'] {
+  background: var(--wash-sky-deep);
+}
+.nb-ribbon[data-color='plum'] {
+  background: var(--wash-plum-deep);
+}
+.nb-ribbon[data-color='amber'] {
+  background: var(--wash-amber-deep);
+}
+.nb-ribbon[data-color='blush'] {
+  background: var(--wash-blush-deep);
+}
+
+/* ----------------------------------------------------------------------------
+   Keyboard cheat-sheet (roadmap #14) — '?' overlay, two-column paper card.
+   -------------------------------------------------------------------------- */
+.nb-cheat-veil {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toasts);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 44, 29, 0.34);
+}
+
+.nb-cheat-card {
+  width: min(640px, 92vw);
+  padding: var(--space-16) var(--space-24) var(--space-12);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 12px 18px 14px 20px / 16px 12px 20px 14px;
+  box-shadow: var(--shadow-lg);
+  transform: rotate(-0.5deg);
+}
+
+.nb-cheat-title {
+  font-family: var(--font-heading);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ink-sepia);
+  text-align: center;
+  margin-bottom: var(--space-12);
+}
+
+.nb-cheat-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-24);
+}
+
+.nb-cheat-heading {
+  font-size: 17px; /* Kalam accent — stays above the 13px handwriting floor */
+  color: var(--wash-terracotta-deep);
+  border-bottom: 1px dashed var(--paper-edge);
+  padding-bottom: 2px;
+  margin-bottom: var(--space-8);
+  transform: rotate(-0.4deg);
+}
+
+.nb-cheat-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  margin: var(--space-4) 0;
+}
+
+.nb-cheat-keys {
+  flex: 0 0 auto;
+  min-width: 92px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1px solid var(--paper-edge);
+  border-bottom-width: 2px;
+  border-radius: 4px 7px 5px 8px;
+  padding: 1px var(--space-4);
+  text-align: center;
+}
+
+.nb-cheat-what {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink-sepia-soft);
+}
+
+.nb-cheat-footnote {
+  text-align: center;
+  color: var(--ink-graphite-soft);
+  margin-top: var(--space-12);
+}

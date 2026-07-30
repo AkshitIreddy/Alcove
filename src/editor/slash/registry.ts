@@ -4,6 +4,7 @@
  */
 import type { Editor, Range } from '@tiptap/core';
 import { SLASH_DIAGRAM_COMMANDS } from '../../diagrams/slashCommands';
+import { openToday } from '../journal';
 import { STICKER_IDS, type StickerId } from '../nodes/stickers';
 
 export interface SlashCommandContext {
@@ -262,6 +263,20 @@ const blockCommands: SlashCommand[] = [
     section: 'blocks',
     run: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).wrapIn('spoiler').run(),
+  },
+  {
+    id: 'today',
+    title: 'Today',
+    subtitle: "Jump to today's journal page",
+    icon: glyph('☀'),
+    keywords: ['today', 'journal', 'daily', 'diary', 'date', 'day'],
+    section: 'blocks',
+    run: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      // Fire-and-forget: resolves the Journal book, creates-or-finds the
+      // dated page and navigates (src/editor/journal.ts).
+      void openToday();
+    },
   },
   {
     id: 'columns',

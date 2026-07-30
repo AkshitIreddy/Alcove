@@ -35,10 +35,17 @@ import {
   normalizePageDoc,
 } from './document';
 import { createEditorExtensions } from './extensions';
+import { recordSnapshot } from './history/pageHistory';
+import { registerPageEditor, unregisterPageEditor } from './instances';
 import { setActiveEditor } from './insert/activeEditor';
 import { handleEditorContextMenu } from './menu/contextMenuController';
 import { createMediaPastePlugin } from './media';
-import { pageIsFull, trailingOverflowCount } from './pagination';
+import {
+  accumulateCarriedCaret,
+  pageIsFull,
+  trailingOverflowCount,
+} from './pagination';
+import { notifySaved } from './saveIndicator';
 import { createEditorTransaction, createTiptapEditor } from './solid';
 import { play } from '../sound/engine';
 import { settings } from '../data/settings';
@@ -87,10 +94,15 @@ export interface PageEditorProps {
   readonly pageCapacityPx?: number;
   /**
    * Receives the trailing top-level blocks (doc JSON) removed on overflow,
-   * and whether the caret sat inside them (BookView then flips forward and
-   * focuses the carried block).
+   * whether the caret sat inside them, and — when it did — the caret's PM
+   * token offset within the carried content (BookView advances the spread
+   * and restores the caret at that offset inside the next page's editor).
    */
-  readonly onOverflow?: (blocks: unknown[], cursorCarried: boolean) => void;
+  readonly onOverflow?: (
+    blocks: unknown[],
+    cursorCarried: boolean,
+    caretOffset?: number | null,
+  ) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -158,7 +170,10 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     if (pendingDoc !== null) {
       const doc = pendingDoc;
       pendingDoc = null;
-      void savePageDoc(pageId, doc);
+      void savePageDoc(pageId, doc).then(() => notifySaved());
+      // Page history (roadmap #13): the flushed doc is snapshot-worthy —
+      // the ring throttles internally so bursts collapse to one snapshot.
+      recordSnapshot(pageId, doc);
     }
   };
 
@@ -233,7 +248,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       const view = instance.view;
       const root = view.dom;
       const removed: unknown[] = [];
-      let cursorCarried = false;
+      let caretOffset: number | null = null;
       let passes = 0;
 
       // Content-based measurement (block bottoms + surviving padding): the
@@ -260,7 +275,15 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
           from -= child.nodeSize;
           removed.unshift(child.toJSON());
         }
-        if (view.state.selection.head >= from) cursorCarried = true;
+        // Caret carry (roadmap first-duty fix): track where the caret sits
+        // inside the carried content so BookView can restore it on the next
+        // page. Later passes prepend earlier blocks, shifting the offset.
+        caretOffset = accumulateCarriedCaret(
+          caretOffset,
+          view.state.selection.head,
+          from,
+          doc.content.size - from,
+        );
 
         // One transaction for the removal; addToHistory false so undo does
         // not resurrect the overflow (and re-trigger the loop).
@@ -270,7 +293,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       }
 
       if (removed.length > 0) {
-        props.onOverflow?.(removed, cursorCarried);
+        props.onOverflow?.(removed, caretOffset !== null, caretOffset);
       }
     } finally {
       extracting = false;
@@ -376,12 +399,17 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   createEffect(() => {
     const instance = editor();
     setActiveEditor(instance ?? null);
+    if (instance) registerPageEditor(pageId, instance);
     if (instance && mediaPluginInstalled !== instance) {
       instance.registerPlugin(createMediaPastePlugin());
       mediaPluginInstalled = instance;
     }
   });
-  onCleanup(() => setActiveEditor(null));
+  onCleanup(() => {
+    setActiveEditor(null);
+    const instance = editor();
+    if (instance) unregisterPageEditor(pageId, instance);
+  });
 
   // Initial-overflow pass: a freshly (re)mounted paginated page may already
   // exceed capacity (BookView prepends carried blocks). Measure after layout

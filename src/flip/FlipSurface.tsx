@@ -52,7 +52,7 @@
 
 import { createEffect, onCleanup, onMount, type JSX } from 'solid-js';
 import { PageFlipController, type FlipPages, type LeafSide } from './PageFlipController';
-import { PageRasterCache } from './rasterCache';
+import { PageRasterCache, type RasterEntry } from './rasterCache';
 import type { FlipDirection } from './math';
 import '../styles/flip.css';
 
@@ -74,6 +74,12 @@ export interface FlipSurfaceApi {
   flipPrev(): void;
   /** Mark every known page snapshot stale and re-rasterize during idle. */
   invalidateSnapshots(): void;
+  /**
+   * Peek a page's cached snapshot without disturbing LRU order (thumbnails
+   * strip, roadmap #10). Only pages that have been mounted since the book
+   * opened can have one — callers need a placeholder fallback.
+   */
+  getSnapshot(pageId: string): RasterEntry | undefined;
 }
 
 export interface FlipSurfaceProps {
@@ -169,6 +175,7 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         if (id) cache.notifyEdited(id);
       }
     },
+    getSnapshot: (pageId) => cache.peek(pageId),
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {

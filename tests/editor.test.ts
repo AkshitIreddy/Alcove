@@ -156,7 +156,10 @@ const fixtureDoc: PageDoc = {
         {
           type: 'text',
           text: 'phases',
-          marks: [{ type: 'highlight', attrs: { color: 'amber' } }],
+          // hlStyle is the wave-2 highlighter-style attr (default 'marker').
+          marks: [
+            { type: 'highlight', attrs: { color: 'amber', hlStyle: 'marker' } },
+          ],
         },
       ],
     },

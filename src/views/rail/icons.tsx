@@ -95,6 +95,72 @@ export function AddPageIcon(): JSX.Element {
   );
 }
 
+/** Indented list lines — table of contents. */
+export function TocIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 5.2 5.6 C 10 5.2 14.8 5.2 19.4 5.7" {...S} stroke-width="2" />
+      <path d="M 8.3 10.3 C 12 10 15.7 10 19.2 10.3 M 8.4 14.7 C 11.9 14.4 15.4 14.4 18.9 14.7" {...S} stroke-width="1.5" />
+      <path d="M 5.3 18.9 C 9.9 18.5 14.5 18.5 19.1 19" {...S} stroke-width="2" />
+      <path d="M 5.5 10.4 C 5.9 10.3 6.2 10.3 6.5 10.4 M 5.6 14.8 C 6 14.7 6.3 14.7 6.6 14.8" {...S} stroke-width="1.8" opacity="0.6" />
+    </>,
+  );
+}
+
+/** Hourglass with swirl — page history "time-turner". */
+export function HistoryIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 12.1 12 C 8.9 10.2 7.4 8 7.2 4.6 C 10.4 4.2 13.7 4.2 16.9 4.7 C 16.7 8 15.2 10.2 12.1 12 Z" {...S} />
+      <path d="M 12.1 12 C 15.2 13.8 16.7 16 16.9 19.4 C 13.7 19.8 10.4 19.8 7.2 19.3 C 7.4 16 8.9 13.8 12.1 12 Z" {...S} />
+      <path d="M 10 17.6 C 11.4 16.9 12.8 16.9 14.2 17.7" {...S} stroke-width="1.4" opacity="0.6" />
+      <path d="M 19.9 8.3 C 21 9.6 21.3 11.2 20.8 12.9" {...S} stroke-width="1.3" opacity="0.55" />
+    </>,
+  );
+}
+
+/** Corner brackets around a dot — focus mode. */
+export function FocusIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 4.6 8.2 C 4.4 6.9 4.5 5.8 4.9 4.8 C 5.9 4.4 7 4.3 8.3 4.5 M 15.8 4.5 C 17.1 4.3 18.2 4.4 19.2 4.8 C 19.6 5.9 19.7 7 19.5 8.3 M 19.5 15.8 C 19.7 17.1 19.6 18.2 19.2 19.2 C 18.1 19.6 17 19.7 15.7 19.5 M 8.2 19.5 C 6.9 19.7 5.8 19.6 4.8 19.2 C 4.4 18.1 4.3 17 4.5 15.7" {...S} />
+      <path d="M 12 10.2 C 13 10.5 13.6 11.1 13.8 12.1 C 13.5 13 12.9 13.6 11.9 13.8 C 11 13.5 10.4 12.9 10.2 11.9 C 10.5 11 11.1 10.4 12 10.2 Z" {...S} stroke-width="1.6" />
+    </>,
+  );
+}
+
+/** Bookmark ribbon with a forked tail. */
+export function RibbonIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 8.1 4.2 C 10.7 3.9 13.3 3.9 15.9 4.3 C 16.2 9.4 16.2 14.5 15.8 19.8 C 14.5 18.5 13.2 17.3 12 16.1 C 10.8 17.2 9.6 18.4 8.3 19.6 C 7.9 14.4 7.8 9.3 8.1 4.2 Z" {...S} />
+      <path d="M 10.3 7.6 C 11.4 7.5 12.6 7.5 13.7 7.6" {...S} stroke-width="1.3" opacity="0.55" />
+    </>,
+  );
+}
+
+/** Row of tiny frames — thumbnails filmstrip. */
+export function FilmstripIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 3.6 9.1 C 9.2 8.7 14.9 8.7 20.5 9.2 C 20.7 11.1 20.7 13 20.4 14.9 C 14.8 15.3 9.2 15.3 3.7 14.8 C 3.4 12.9 3.4 11 3.6 9.1 Z" {...S} />
+      <path d="M 9.2 9 C 9 11 9 13 9.2 15 M 14.9 9 C 14.7 11 14.7 13 14.9 15" {...S} stroke-width="1.4" />
+      <path d="M 5.4 5.9 C 9.8 5.6 14.2 5.6 18.6 5.9 M 5.5 18.1 C 9.9 18.4 14.3 18.4 18.7 18.1" {...S} stroke-width="1.2" opacity="0.5" />
+    </>,
+  );
+}
+
+/** Little pencil — autosave scribble indicator (rail footer). */
+export function PencilIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 16.9 3.8 C 17.9 4.4 18.8 5.2 19.5 6.2 C 15.9 10.4 12.3 14.2 8.6 17.8 C 7.4 18.1 6.2 18.3 4.9 18.4 C 5.1 17.1 5.3 15.9 5.7 14.7 C 9.3 11 12.9 7.4 16.9 3.8 Z" {...S} />
+      <path d="M 15.1 5.9 C 16 6.5 16.8 7.2 17.5 8.1" {...S} stroke-width="1.3" opacity="0.6" />
+      <path d="M 10.5 20.5 C 13.6 20.1 16.8 20.1 19.9 20.4" {...S} stroke-width="1.3" opacity="0.45" />
+    </>,
+  );
+}
+
 /** Hand-drawn close cross (panels). */
 export function CloseIcon(): JSX.Element {
   return frame(

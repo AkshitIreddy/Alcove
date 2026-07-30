@@ -20,6 +20,7 @@
  * (cover_meta.pageDefaults) and fall back to settings.pageStyleDefault.
  */
 import {
+  For,
   Show,
   createEffect,
   createMemo,
@@ -28,6 +29,7 @@ import {
   on,
   onCleanup,
   onMount,
+  untrack,
   type JSX,
 } from 'solid-js';
 import { appState } from '../state/app';
@@ -43,7 +45,7 @@ import {
 } from '../data/books';
 import { createPage, getPage, listPages, savePageDoc } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
-import { settings } from '../data/settings';
+import { save as saveSettings, settings } from '../data/settings';
 import type { Book, Page, PageDoc, PageStyle } from '../data/types';
 import {
   coverDataUrl,
@@ -54,17 +56,37 @@ import {
 import PageEditor, { type PageEditorProps } from '../editor/PageEditor';
 import InsertScriptDialog from '../editor/insert/InsertScriptDialog';
 import { activeEditor } from '../editor/insert/activeEditor';
+import {
+  recordSnapshot,
+  type PageSnapshot,
+} from '../editor/history/pageHistory';
+import { getPageEditor } from '../editor/instances';
+import { clearJournalJump, pendingJournalJump } from '../editor/journal';
+import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
 import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
+import { countBook, countDoc } from '../editor/wordcount';
 import FlipSurface, { type FlipSurfaceApi } from '../flip/FlipSurface';
 import type { LeafSide } from '../flip/PageFlipController';
 import type { FlipDirection } from '../flip/math';
 import { play } from '../sound/engine';
+import { useSearchJump } from '../search/jump';
+import QuickSwitcher from '../features/quickswitch/QuickSwitcher';
 import BookRail, { type RailPanelId } from './rail/BookRail';
 import RailPanel from './rail/RailPanel';
 import CustomizePanel from './rail/CustomizePanel';
+import HistoryPanel from './rail/HistoryPanel';
 import PageStylePanel from './rail/PageStylePanel';
 import StickersPanel from './rail/StickersPanel';
+import TocPanel from './rail/TocPanel';
+import CheatSheet from './CheatSheet';
+import ThumbStrip from './ThumbStrip';
+import {
+  readBookmarks,
+  saveBookmarks,
+  toggleBookmark,
+  type Bookmark,
+} from './bookmarks';
 import {
   arrowFlipAction,
   canFlipSpread,
@@ -96,7 +118,11 @@ interface BookSession {
 type PaginatedPageEditorProps = PageEditorProps & {
   paginated?: boolean;
   pageCapacityPx?: number;
-  onOverflow?(blocks: unknown[], cursorCarried: boolean): void;
+  onOverflow?(
+    blocks: unknown[],
+    cursorCarried: boolean,
+    caretOffset?: number | null,
+  ): void;
 };
 const PaginatedPageEditor = PageEditor as (
   props: PaginatedPageEditorProps,
@@ -331,25 +357,52 @@ export default function BookView(): JSX.Element {
     }
   };
 
-  const focusLeafStart = (side: LeafSide): void => {
-    // Double rAF: wait out the keyed remount + first paint, then drop the
-    // caret at the start of the carried content.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const prose =
-          paperElements[side]?.querySelector<HTMLElement>('.nb-prose');
-        if (!prose) return;
-        prose.focus();
-        const editor = activeEditor();
-        editor?.commands.focus('start');
+  /**
+   * Caret carry (roadmap first-duty fix): drop the caret inside the carried
+   * content of the target page's editor. The leaf remounts (keyed on
+   * id@version), so the instance may not exist for a frame or two — poll
+   * across rAF until the registry hands back a live, connected editor.
+   *
+   * `offset` is the caret's PM token offset within the carried blocks;
+   * since carries PREPEND to the target doc, the same offset addresses the
+   * caret's spot in the new doc (clamped defensively).
+   */
+  const focusCarriedCaret = (pageId: string, offset: number | null): void => {
+    const deadline = performance.now() + 6000;
+    const attempt = (): void => {
+      const instance = getPageEditor(pageId);
+      console.debug('[carry] attempt', pageId, {
+        has: Boolean(instance),
+        connected: instance?.view.dom.isConnected,
+        parent: instance?.view.dom.parentElement?.className,
+        grandparent:
+          instance?.view.dom.parentElement?.parentElement?.className,
+        pmCount: document.querySelectorAll('.ProseMirror').length,
+        leftLeafHasProse: Boolean(
+          paperElements.left?.querySelector('.ProseMirror'),
+        ),
+        leftKey: leafKey(leftPage()),
       });
-    });
+      if (instance && instance.view.dom.isConnected) {
+        const size = instance.state.doc.content.size;
+        const pos = Math.max(0, Math.min(offset ?? 0, size));
+        const ok = instance
+          .chain()
+          .focus(pos, { scrollIntoView: false })
+          .run();
+        console.debug('[carry] focused', { pos, ok, active: document.activeElement?.className });
+        return;
+      }
+      if (performance.now() < deadline) requestAnimationFrame(attempt);
+    };
+    attempt();
   };
 
   const carryOverflow = async (
     pageId: string,
     blocks: unknown[],
     cursorCarried: boolean,
+    caretOffset: number | null,
   ): Promise<void> => {
     const slot = pages().findIndex((page) => page.id === pageId);
     if (slot < 0) return;
@@ -365,6 +418,7 @@ export default function BookView(): JSX.Element {
     if (line !== undefined) fallbackAttrs.lineHeightPx = line;
 
     const merged = prependBlocksToDoc(next.doc, blocks, fallbackAttrs);
+    console.debug('[carry] blocks', JSON.stringify(blocks).slice(0, 200), 'cursor', cursorCarried, 'offset', caretOffset);
     updatePageDoc(next.id, merged);
     bumpDocVersion(next.id); // remounts the leaf when it is on this spread
     await savePageDoc(next.id, merged);
@@ -380,13 +434,15 @@ export default function BookView(): JSX.Element {
 
     if (cursorCarried) {
       const targetSpread = spreadOfSlot(slot + 1);
-      if (targetSpread === spreadIndex()) {
-        // Left leaf spilled into the right leaf of the same spread.
-        focusLeafStart('right');
-      } else {
-        flipApi?.flipNext();
-        focusLeafStart('left');
+      if (targetSpread !== spreadIndex()) {
+        // Jump the spread SYNCHRONOUSLY instead of the animated flip: the
+        // flip blurs the editor for ~450ms and every keystroke typed during
+        // it would be silently lost (the original caret-carry bug). The new
+        // leaves mount in this same task, so focus can chase immediately.
+        setSpreadIndex(targetSpread);
+        void play('page-flip');
       }
+      focusCarriedCaret(next.id, caretOffset);
     }
   };
 
@@ -394,10 +450,13 @@ export default function BookView(): JSX.Element {
     pageId: string,
     blocks: unknown[],
     cursorCarried: boolean,
+    caretOffset: number | null,
   ): void => {
     if (!Array.isArray(blocks) || blocks.length === 0) return;
     carryChain = carryChain.then(() =>
-      carryOverflow(pageId, blocks, cursorCarried).catch(() => undefined),
+      carryOverflow(pageId, blocks, cursorCarried, caretOffset).catch(
+        () => undefined,
+      ),
     );
   };
 
@@ -450,10 +509,43 @@ export default function BookView(): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
-  // Keyboard: ←/→ flip through the FlipSurface api unless the user is typing.
+  // Focus mode (roadmap #12) + keyboard cheat-sheet (roadmap #14)
+  // -------------------------------------------------------------------------
+  const [focusMode, setFocusMode] = createSignal(false);
+  const [cheatOpen, setCheatOpen] = createSignal(false);
+
+  // -------------------------------------------------------------------------
+  // Keyboard: ←/→ flip through the FlipSurface api unless the user is typing;
+  // F9 toggles focus mode, '?' opens the cheat-sheet when not typing.
   // -------------------------------------------------------------------------
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.defaultPrevented || insertOpen()) return;
+
+    if (event.key === 'F9') {
+      event.preventDefault();
+      setFocusMode((current) => !current);
+      return;
+    }
+    if (cheatOpen() && (event.key === 'Escape' || event.key === '?')) {
+      event.preventDefault();
+      setCheatOpen(false);
+      return;
+    }
+    if (event.key === '?' && !isTypingTarget(document.activeElement)) {
+      event.preventDefault();
+      setCheatOpen(true);
+      return;
+    }
+    if (
+      event.key === 'Escape' &&
+      focusMode() &&
+      activePanel() === null // panels own their Escape (RailPanel)
+    ) {
+      event.preventDefault();
+      setFocusMode(false);
+      return;
+    }
+
     const action = arrowFlipAction(
       event.key,
       isTypingTarget(document.activeElement),
@@ -519,12 +611,147 @@ export default function BookView(): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
+  // Word / character counts — quiet display in the rail footer (roadmap #11)
+  // -------------------------------------------------------------------------
+  const counts = createMemo(() => {
+    const pageCounts = countDoc(activePage()?.doc ?? null);
+    const bookCounts = countBook(pages().map((page) => page.doc));
+    return {
+      pageWords: pageCounts.words,
+      pageChars: pageCounts.chars,
+      bookWords: bookCounts.words,
+      bookChars: bookCounts.chars,
+    };
+  });
+
+  // -------------------------------------------------------------------------
+  // Jump-to-slot — shared by TOC (roadmap #9), thumbnails (#10), ribbons (#19)
+  // -------------------------------------------------------------------------
+  const jumpToSlot = (slot: number): void => {
+    const target = spreadOfSlot(slot);
+    const current = spreadIndex();
+    if (target === current) return;
+    if (target === current + 1) {
+      flipApi?.flipNext(); // adjacent — arrive with the flip animation
+      return;
+    }
+    if (target === current - 1) {
+      flipApi?.flipPrev();
+      return;
+    }
+    setSpreadIndex(target);
+    void play('page-flip');
+  };
+
+  // -------------------------------------------------------------------------
+  // Page history restore — the time-turner panel hands a snapshot back
+  // (roadmap #13). The current ink is snapshot first so a restore is always
+  // reversible from the same panel.
+  // -------------------------------------------------------------------------
+  const [historyRefresh, setHistoryRefresh] = createSignal(0);
+
+  const restoreSnapshot = async (
+    pageId: string,
+    snapshot: PageSnapshot,
+  ): Promise<void> => {
+    const page = pages().find((entry) => entry.id === pageId);
+    if (!page) return;
+    recordSnapshot(pageId, page.doc, { force: true });
+    updatePageDoc(pageId, snapshot.doc);
+    bumpDocVersion(pageId);
+    await savePageDoc(pageId, snapshot.doc);
+    notifySaved();
+    setHistoryRefresh((n) => n + 1);
+    notify('the page turned back in time');
+    void play('pop-soft');
+  };
+
+  // -------------------------------------------------------------------------
+  // Ribbon bookmarks (roadmap #19) — hydrated with the session, persisted in
+  // cover_meta.bookmarks via src/views/bookmarks (defensive helpers).
+  // -------------------------------------------------------------------------
+  const [bookmarks, setBookmarks] = createSignal<Bookmark[]>([]);
+
+  createEffect(
+    on(session, (loaded) => {
+      if (loaded) setBookmarks(readBookmarks(loaded.book));
+    }),
+  );
+
+  const activeBookmarked = createMemo((): boolean => {
+    const page = activePage();
+    return page
+      ? bookmarks().some((mark) => mark.pageId === page.id)
+      : false;
+  });
+
+  const onToggleBookmark = (): void => {
+    const loaded = session();
+    const page = activePage();
+    if (!loaded || !page) return;
+    const next = toggleBookmark(bookmarks(), page.id);
+    const added = next.length > bookmarks().length;
+    setBookmarks(next);
+    void saveBookmarks(loaded.book.id, next);
+    void play('pop-soft');
+    notify(added ? 'ribbon tucked into this page' : 'ribbon removed');
+  };
+
+  /** Bookmarks resolved to live slots (dropped pages disappear quietly). */
+  const ribbons = createMemo(() =>
+    bookmarks()
+      .map((mark) => ({
+        ...mark,
+        slot: pages().findIndex((page) => page.id === mark.pageId),
+      }))
+      .filter((mark) => mark.slot >= 0),
+  );
+
+  // -------------------------------------------------------------------------
+  // /today journal jump (roadmap #18): the slash command records a pending
+  // page id + opens the Journal book; once this view's session shows that
+  // book, flip to the dated page (refreshing the page list if the page was
+  // created while the book was already open).
+  // -------------------------------------------------------------------------
+  let journalJumpBusy = false;
+  createEffect(
+    on([pendingJournalJump, session], ([pageId, loaded]) => {
+      if (pageId === null || !loaded || journalJumpBusy) return;
+      const slot = untrack(pages).findIndex((page) => page.id === pageId);
+      if (slot >= 0) {
+        setSpreadIndex(spreadOfSlot(slot));
+        clearJournalJump();
+        return;
+      }
+      journalJumpBusy = true;
+      void listPages(loaded.book.id)
+        .then((fresh) => {
+          if (fresh.length > 0) setPages(fresh);
+          const index = fresh.findIndex((page) => page.id === pageId);
+          if (index >= 0) setSpreadIndex(spreadOfSlot(index));
+        })
+        .finally(() => {
+          journalJumpBusy = false;
+          clearJournalJump();
+        });
+    }),
+  );
+
+  // -------------------------------------------------------------------------
   // Leaves — the contract's per-side page JSX. The .nb-sheet-paper is stable
   // (getPageElement target + snapshot root); only the editor inside is keyed
   // by page id + external doc version, so edits never remount and spread
   // changes / overflow carries always do.
   // -------------------------------------------------------------------------
   const paperElements: Partial<Record<LeafSide, HTMLDivElement>> = {};
+
+  // Search click-to-jump (group C): flip to the target page + pulse the match.
+  useSearchJump({
+    bookId: () => session()?.book.id ?? null,
+    pages,
+    setSpreadIndex,
+    getPaper: (side) => paperElements[side] ?? null,
+  });
 
   const leafKey = (page: Page | null): string | null =>
     page ? `${page.id}@${docVersions()[page.id] ?? 0}` : null;
@@ -550,8 +777,13 @@ export default function BookView(): JSX.Element {
               onDocChange={(doc) => updatePageDoc(current.id, doc)}
               paginated
               pageCapacityPx={pageCapacity()}
-              onOverflow={(blocks, cursorCarried) =>
-                handleOverflow(current.id, blocks, cursorCarried)
+              onOverflow={(blocks, cursorCarried, caretOffset) =>
+                handleOverflow(
+                  current.id,
+                  blocks,
+                  cursorCarried,
+                  caretOffset ?? null,
+                )
               }
             />
           ) : null;
@@ -561,7 +793,14 @@ export default function BookView(): JSX.Element {
   );
 
   return (
-    <main class="nb-book-view">
+    <main
+      class="nb-book-view"
+      classList={{ 'is-focus-mode': focusMode() }}
+      data-focus-mode={focusMode() ? 'true' : 'false'}
+      data-cursor={settings.cursorStyle}
+    >
+      {/* Ctrl+K quick switcher (single-instance; safe if also mounted in App). */}
+      <QuickSwitcher />
       <button
         type="button"
         class="nb-back-button font-accent"
@@ -588,6 +827,15 @@ export default function BookView(): JSX.Element {
           )
         }
         onAddPage={() => void addPage()}
+        focusMode={focusMode()}
+        onToggleFocus={() => setFocusMode((current) => !current)}
+        bookmarked={activeBookmarked()}
+        onToggleBookmark={onToggleBookmark}
+        thumbnails={settings.thumbnailsStrip}
+        onToggleThumbnails={() =>
+          void saveSettings({ thumbnailsStrip: !settings.thumbnailsStrip })
+        }
+        counts={counts()}
       />
 
       <Show
@@ -632,6 +880,31 @@ export default function BookView(): JSX.Element {
                 class="nb-book-cover"
                 style={{ 'background-image': `url("${backdropUrl()}")` }}
               >
+                {/* Ribbon bookmarks peeking over the top edge (roadmap #19). */}
+                <Show when={ribbons().length > 0}>
+                  <div class="nb-ribbon-row" data-testid="ribbon-row">
+                    <For each={ribbons()}>
+                      {(mark) => (
+                        <button
+                          type="button"
+                          class="nb-ribbon"
+                          data-color={mark.color}
+                          style={{
+                            left: `${
+                              8 +
+                              ((mark.slot + 0.5) /
+                                Math.max(pages().length, 1)) *
+                                84
+                            }%`,
+                          }}
+                          title={`ribbon — page ${mark.slot + 1}`}
+                          aria-label={`Jump to bookmarked page ${mark.slot + 1}`}
+                          onClick={() => jumpToSlot(mark.slot)}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </Show>
                 <div class="nb-spread">
                   <FlipSurface
                     ref={(api) => (flipApi = api)}
@@ -649,6 +922,16 @@ export default function BookView(): JSX.Element {
                   </Show>
                 </div>
               </div>
+
+              {/* Bottom filmstrip of mini page renders (roadmap #10). */}
+              <Show when={settings.thumbnailsStrip && !focusMode()}>
+                <ThumbStrip
+                  pages={pages()}
+                  currentSpread={spreadIndex()}
+                  getSnapshot={(pageId) => flipApi?.getSnapshot(pageId)}
+                  onJump={jumpToSlot}
+                />
+              </Show>
 
               <RailPanel
                 open={activePanel() === 'customize'}
@@ -681,6 +964,39 @@ export default function BookView(): JSX.Element {
                 <StickersPanel />
               </RailPanel>
 
+              <RailPanel
+                open={activePanel() === 'toc'}
+                title="Table of contents"
+                onClose={() => setActivePanel(null)}
+              >
+                <TocPanel
+                  pages={pages()}
+                  currentSpread={spreadIndex()}
+                  onJump={(slot) => {
+                    jumpToSlot(slot);
+                    setActivePanel(null);
+                  }}
+                />
+              </RailPanel>
+
+              <RailPanel
+                open={activePanel() === 'history'}
+                title="Turn back time"
+                onClose={() => setActivePanel(null)}
+              >
+                <Show when={activePanel() === 'history' ? activePage()?.id : null} keyed>
+                  {(pageId) => (
+                    <HistoryPanel
+                      pageId={pageId}
+                      refreshKey={historyRefresh()}
+                      onRestore={(snapshot) =>
+                        void restoreSnapshot(pageId, snapshot)
+                      }
+                    />
+                  )}
+                </Show>
+              </RailPanel>
+
               <Show when={insertOpen() ? activePage()?.id : null} keyed>
                 {(pageId) => (
                   <InsertScriptDialog
@@ -693,6 +1009,11 @@ export default function BookView(): JSX.Element {
             </div>
           );
         }}
+      </Show>
+
+      {/* '?' keyboard cheat-sheet (roadmap #14). */}
+      <Show when={cheatOpen()}>
+        <CheatSheet onClose={() => setCheatOpen(false)} />
       </Show>
 
       <Show when={toast()} keyed>

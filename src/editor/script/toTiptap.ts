@@ -90,6 +90,11 @@ export const SCRIPT_STICKER_TO_EDITOR = {
 } satisfies Record<string, StickerId>;
 
 export function mapStickerName(name: string): StickerId | null {
+  // Wave 2: `user:<name>` script stickers pass through to the editor's
+  // user-sticker registry (src/editor/nodes/stickers.ts) untouched.
+  if (name.startsWith('user:') && name.length > 'user:'.length) {
+    return name as StickerId;
+  }
   const table: Record<string, StickerId> = SCRIPT_STICKER_TO_EDITOR;
   return table[name] ?? null;
 }

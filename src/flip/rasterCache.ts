@@ -104,6 +104,14 @@ export class PageRasterCache {
     return this.entries.get(pageId);
   }
 
+  /**
+   * Cached bitmap WITHOUT touching LRU order — consumers that merely
+   * observe (the thumbnails strip) must not evict flip-critical neighbours.
+   */
+  peek(pageId: string): RasterEntry | undefined {
+    return this.entries.peek(pageId);
+  }
+
   /** Whether the cached bitmap matches the page's current version. */
   isFresh(pageId: string): boolean {
     const entry = this.entries.peek(pageId);

@@ -44,6 +44,37 @@ export function trailingOverflowCount(
 }
 
 /**
+ * Caret bookkeeping for the overflow drain (caret carry across page breaks).
+ *
+ * The drain loop removes trailing blocks pass by pass, LAST blocks first:
+ * pass 1 takes the tail, pass 2 takes the new (earlier) tail, and removed
+ * blocks accumulate in document order via unshift — so blocks from later
+ * passes sit BEFORE earlier passes' blocks in the carried array.
+ *
+ * The caret's offset inside the carried content (PM token offset from the
+ * start of the first carried block) therefore evolves like this per pass:
+ * - Caret not carried yet: it is carried NOW iff `selectionHead >= from`
+ *   (the deletion range start); its offset is `selectionHead - from`.
+ * - Caret already carried (a previous pass took it): this pass prepends
+ *   `removedSize` more tokens before it — shift the offset by that much.
+ *
+ * Once carried the caret can never be "found" again (its old position maps
+ * into the shrunken doc), so `current !== null` always takes the shift path.
+ *
+ * @returns The caret offset within the carried content so far, or null when
+ *          the caret still lives on the source page.
+ */
+export function accumulateCarriedCaret(
+  current: number | null,
+  selectionHead: number,
+  from: number,
+  removedSize: number,
+): number | null {
+  if (current !== null) return current + Math.max(0, removedSize);
+  return selectionHead >= from ? selectionHead - from : null;
+}
+
+/**
  * True when a page whose content stands `contentHeightPx` tall cannot take
  * one more text line without overflowing `capacityPx` — the
  * click-below-to-type gate ("page is full").

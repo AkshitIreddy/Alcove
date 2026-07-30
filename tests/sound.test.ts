@@ -883,7 +883,15 @@ describe('sound-character presets (stub Howler)', () => {
     setVolumes({ master: 1, ui: 1 });
     setSoundCharacter('minimal');
     const id = await play('check-done', { volume: 1 });
-    expect(findStub('check-done')?.volumes.get(id as number)).toBeCloseTo(
+    // play('check-done') names the family: under minimal it rotates the
+    // plain pool, so assert the trim on whichever concrete take was played.
+    expect(StubHowl.playLog).toHaveLength(1);
+    const playedSrc = StubHowl.playLog[0] as string;
+    const playedName = playedSrc.replace('/sounds/', '').replace('.wav', '') as SoundName;
+    expect(SOUND_FAMILIES['check-done'] as readonly SoundName[]).toContain(playedName);
+    expect(VARIANT_WEIGHTS[playedName]).toBe('plain');
+    const stub = StubHowl.instances.find((h) => h.src === playedSrc);
+    expect(stub?.volumes.get(id as number)).toBeCloseTo(
       CHARACTER_PROFILES.minimal.gain.ui,
       10,
     );

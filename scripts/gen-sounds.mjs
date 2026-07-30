@@ -660,14 +660,17 @@ function writeWav(path, pcm) {
  * gives a sound a PITCH, and pitch is what makes a sound feel intentional
  * rather than like a burst of noise.
  */
-function tone({ dur, f0, f1 = f0, attackMs = 7, decayMs, curve = 1.9, partials = [[1, 1]], phase0 = 0, lowpassHz = null }) {
+function tone({ dur, f0, f1 = f0, attackMs = 7, decayMs, curve = 1.9, partials = [[1, 1]], phase0 = 0, lowpassHz = null, drift = 0, driftHz = 0.9, rng = null }) {
   const n = Math.round(dur * SR);
   const out = buf(n);
   const env = envelope({ dur, attackMs, decayMs: decayMs ?? dur * 800, curve, releaseMs: dur * 400 });
   const phases = partials.map(() => phase0);
+  // Subtle slow pitch wobble (a few tenths of a percent) — the organic
+  // imperfection that keeps a sustained note from sounding like a test tone.
+  const wobble = drift > 0 ? makeSlowNoise(rng ?? mulberry32(97), driftHz) : null;
   for (let i = 0; i < n; i++) {
     const u = i / n;
-    const f = expInterp(f0, f1, u);
+    const f = expInterp(f0, f1, u) * (wobble === null ? 1 : 1 + drift * wobble());
     let s = 0;
     for (let k = 0; k < partials.length; k++) {
       const [ratio, amp] = partials[k];
@@ -999,8 +1002,8 @@ function popSoft({ seed, dur, f0, f1 }) {
   const tN = Math.round(0.008 * SR);
   const trans = buf(tN);
   const tlp = new Biquad(lowpassCoeffs(900, 0.9));
-  const tEnv = envelope({ dur: tN / SR, attackMs: 2.4, decayMs: 5.5, curve: 2.2 });
-  for (let i = 0; i < tN; i++) trans[i] = tlp.process(white(rng)) * tEnv(i) * 0.34;
+  const tEnv = envelope({ dur: tN / SR, attackMs: 3.2, decayMs: 5.5, curve: 2.2 });
+  for (let i = 0; i < tN; i++) trans[i] = tlp.process(white(rng)) * tEnv(i) * 0.3;
 
   const breath = airBand({
     dur: dur * 0.6, rng, q: 0.8, source: 'pink',
@@ -1036,7 +1039,7 @@ function tickHover({ seed, dur, freq, toneHz }) {
 
   const touch = buf(n);
   const bp = new Biquad(bandpassCoeffs(freq, 1.1));
-  const env = envelope({ dur, attackMs: 5, decayMs: dur * 700, curve: 2.2, releaseMs: dur * 400 });
+  const env = envelope({ dur, attackMs: 6.5, decayMs: dur * 700, curve: 2.2, releaseMs: dur * 400 });
   for (let i = 0; i < n; i++) touch[i] = bp.process(white(rng)) * env(i);
 
   const pitch = tone({ dur: dur * 0.8, f0: toneHz, f1: toneHz * 0.9, attackMs: 6, decayMs: dur * 500, curve: 2.4, lowpassHz: 1200 });
@@ -1066,9 +1069,9 @@ function checkDone({ seed, dur, root, gapMs, strokeAmp }) {
   const n = Math.round(dur * SR);
 
   const mk = (f, len) => tone({
-    dur: len, f0: f, f1: f * 0.998, attackMs: 8, decayMs: len * 820, curve: 2.1,
+    dur: len, f0: f, f1: f * 0.998, attackMs: 10, decayMs: len * 820, curve: 2.1,
     partials: [[1, 1], [2, 0.22], [3, 0.07], [4.2, 0.03]],
-    lowpassHz: 3200,
+    lowpassHz: 3200, drift: 0.003, driftHz: 0.8, rng,
   });
 
   const noteA = mk(root, dur * 0.62);
@@ -1231,7 +1234,10 @@ function pencilScratch() {
  *
  * LAYERS
  *   1 pops        ~22 soft sine blips, 340-1150 Hz (was 650-2400), each
- *                 with its own raised-cosine attack and pitch droop
+ *                 with its own raised-cosine attack and pitch droop. Kept
+ *                 under ~1.5 kHz with weak upper partials: a pop whose
+ *                 fundamental slews at a quarter of full scale per sample
+ *                 is a click wearing a party hat.
  *   2 flutter     bandpassed noise around 950 Hz, gently AM'd
  *   3 lift        a rising airy swell under the first half
  *   4 bed         brown noise below 320 Hz so it has a floor
@@ -1245,25 +1251,25 @@ function confetti({ seed, dur, pops, fLo, fHi }) {
   for (let k = 0; k < pops; k++) {
     const t0 = Math.pow(rng(), 1.5) * (dur - 0.14);
     const f = between(rng, fLo, fHi);
-    const len = between(rng, 0.05, 0.12);
-    const amp = between(rng, 0.16, 0.34) * (1 - 0.35 * (t0 / dur));
+    const len = between(rng, 0.06, 0.13);
+    const amp = between(rng, 0.14, 0.3) * (1 - 0.35 * (t0 / dur));
     mixInto(out, tone({
-      dur: len, f0: f, f1: f * 0.78, attackMs: between(rng, 5, 9),
+      dur: len, f0: f, f1: f * 0.78, attackMs: between(rng, 8, 14),
       decayMs: len * 780, curve: 2.2,
-      partials: [[1, 1], [2, 0.18], [3, 0.06]],
-      lowpassHz: 3600,
+      partials: [[1, 1], [2, 0.13], [3, 0.04]],
+      lowpassHz: 2300,
     }), t0 * SR, amp);
-    mixInto(out, fibre(rng, { lenMs: 5, freq: f * 1.4, q: 2.6, amp: amp * 0.14 }), t0 * SR);
+    mixInto(out, fibre(rng, { lenMs: 7, freq: f * 1.15, q: 2.4, amp: amp * 0.1 }), t0 * SR);
   }
 
-  const flutterBp = new Biquad(bandpassCoeffs(1500, 1));
+  const flutterBp = new Biquad(bandpassCoeffs(1150, 1));
   const flutterDrift = makeSlowNoise(rng, 3);
   const flutter = buf(n);
   for (let i = 0; i < n; i++) {
     const t = i / SR;
     const u = i / n;
-    const mod = 0.55 + 0.45 * Math.sin(TWO_PI * 9 * t + flutterDrift() * 2.2);
-    flutter[i] = flutterBp.process(white(rng)) * mod * Math.pow(hann(u), 1.3) * 0.13;
+    const mod = 0.55 + 0.45 * Math.sin(TWO_PI * 7 * t + flutterDrift() * 2.2);
+    flutter[i] = flutterBp.process(white(rng)) * mod * Math.pow(hann(u), 1.3) * 0.11;
   }
 
   const lift = airBand({
@@ -1293,30 +1299,35 @@ function confetti({ seed, dur, pops, fLo, fHi }) {
  * typing-tick — a pencil meeting paper, once.
  *
  * LAYERS
- *   1 tap         bandpass 560-880 Hz (was 1320-1750), Q 1.4
- *   2 desk        a 175 → 120 Hz wooden body under it
+ *   1 tap         bandpass 560-960 Hz (was 1320-1750), Q per variant
+ *   2 desk        a ~150-215 Hz wooden body under it
  *   3 graphite    8 ms of 1300 Hz-lowpassed grain
  *   4 room        110 ms tail
+ *
+ * Six variants that are genuinely different pencils — soft HB, a sharp
+ * clickier point, a long wooden drag, a light tap, a deep soft stroke and
+ * a brisk flick — because a keystroke every 80 ms makes near-copies
+ * obvious within a sentence.
  */
-function typingTick({ seed, dur, freq, deskHz }) {
+function typingTick({ seed, dur, freq, deskHz, q = 1.4, attackMs = 6, decayK = 650, deskGain = 0.45, grainAmp = 0.3 }) {
   const rng = mulberry32(seed);
   const n = Math.round(dur * SR);
 
   const tap = buf(n);
-  const bp = new Biquad(bandpassCoeffs(freq, 1.4));
-  const env = envelope({ dur, attackMs: 4.5, decayMs: dur * 650, curve: 2.3, releaseMs: dur * 400 });
+  const bp = new Biquad(bandpassCoeffs(freq, q));
+  const env = envelope({ dur, attackMs, decayMs: dur * decayK, curve: 2.3, releaseMs: dur * 400 });
   for (let i = 0; i < n; i++) tap[i] = bp.process(white(rng)) * env(i);
 
-  const desk = tone({ dur: dur * 0.7, f0: deskHz, f1: deskHz * 0.7, attackMs: 5, decayMs: dur * 450, curve: 2.4, lowpassHz: 600 });
+  const desk = tone({ dur: dur * 0.7, f0: deskHz, f1: deskHz * 0.7, attackMs: 5.5, decayMs: dur * 450, curve: 2.4, lowpassHz: 600 });
 
   const grainN = Math.round(0.008 * SR);
   const grain = buf(grainN);
   const glp = new Biquad(lowpassCoeffs(1300, 0.9));
-  const gEnv = envelope({ dur: grainN / SR, attackMs: 2.2, decayMs: 5.5, curve: 2.4 });
-  for (let i = 0; i < grainN; i++) grain[i] = glp.process(white(rng)) * gEnv(i) * 0.3;
+  const gEnv = envelope({ dur: grainN / SR, attackMs: 2.8, decayMs: 5.5, curve: 2.4 });
+  for (let i = 0; i < grainN; i++) grain[i] = glp.process(white(rng)) * gEnv(i) * grainAmp;
 
   const dry = layer(tap, grain);
-  mixInto(dry, desk, 0, 0.45);
+  mixInto(dry, desk, 0, deskGain);
 
   return voice(dry, {
     compressor: { thresholdDb: -26, ratio: 2.2, attackMs: 8, releaseMs: 160 },
@@ -1552,13 +1563,15 @@ function ambientFireplace() {
  * ambient-crickets — 8 s seamless summer night.
  *
  * LAYERS
- *   1 night air   pink noise under 300 Hz, very quiet
- *   2 chorus      three cricket voices at 2.6-3.1 kHz (was 3.9-4.4 kHz;
- *                 this bed measured 51% of its energy above 4 kHz, which
- *                 is exactly why it read as hissy)
+ *   1 night air   pink noise under 300 Hz, rich enough to carry the bed
+ *   2 chorus      three cricket voices at ~2.0-2.4 kHz (was 3.9-4.4 kHz —
+ *                 the band that made the old set hiss — then 2.6-3.1 kHz,
+ *                 whose carrier slew still measured a 35% adjacent-sample
+ *                 step; at 44.1 kHz a sine's per-sample slew is 2πfA, so
+ *                 calm crickets are LOW crickets sitting inside the air)
  *   3 far chorus  a fourth voice drowned in reverb, one field away
  *   4 breeze      a slow filtered swell moving through the grass
- *   5 room        wrap-around reverb, plus a hard -14 dB shelf at 3.5 kHz
+ *   5 room        wrap-around reverb over the whole bed
  */
 function ambientCrickets() {
   const rng = mulberry32(616161);
@@ -1566,21 +1579,23 @@ function ambientCrickets() {
   const n = Math.round(genDur * SR);
   const out = buf(n);
 
+  // The night air is the LOUDEST layer, not a whisper: the chirps read as
+  // events inside a warm room tone rather than needles on top of silence.
   const pink = makePink(rng);
   const lp = new Biquad(lowpassCoeffs(300, 0.7));
   const swell = makeSlowNoise(rng, 0.18);
-  for (let i = 0; i < n; i++) out[i] = lp.process(pink() * 1.6) * Math.pow(10, (swell() * 0.7) / 20) * 0.26;
+  for (let i = 0; i < n; i++) out[i] = lp.process(pink() * 1.6) * Math.pow(10, (swell() * 0.7) / 20) * 0.52;
 
   const breeze = makeBrown(rng);
   const bLp = new Biquad(lowpassCoeffs(420, 0.7));
   const bMod = makeSlowNoise(rng, 0.22);
-  for (let i = 0; i < n; i++) out[i] += bLp.process(breeze() * 1.4) * (0.4 + 0.6 * Math.abs(bMod())) * 0.2;
+  for (let i = 0; i < n; i++) out[i] += bLp.process(breeze() * 1.4) * (0.4 + 0.6 * Math.abs(bMod())) * 0.36;
 
   const voices = [
-    { f: 2680, pulse: 38, gapMin: 0.4, gapMax: 0.95, amp: 0.4, seed: 11, far: false },
-    { f: 2920, pulse: 44, gapMin: 0.5, gapMax: 1.15, amp: 0.3, seed: 22, far: false },
-    { f: 3080, pulse: 34, gapMin: 0.6, gapMax: 1.4, amp: 0.2, seed: 33, far: false },
-    { f: 2780, pulse: 40, gapMin: 0.9, gapMax: 2.0, amp: 0.5, seed: 44, far: true },
+    { f: 2060, pulse: 36, gapMin: 0.4, gapMax: 0.95, amp: 0.3, seed: 11, far: false },
+    { f: 2230, pulse: 42, gapMin: 0.5, gapMax: 1.15, amp: 0.23, seed: 22, far: false },
+    { f: 2380, pulse: 33, gapMin: 0.6, gapMax: 1.4, amp: 0.15, seed: 33, far: false },
+    { f: 2160, pulse: 39, gapMin: 0.9, gapMax: 2.0, amp: 0.36, seed: 44, far: true },
   ];
   for (const v of voices) {
     const vr = mulberry32(v.seed);
@@ -1596,8 +1611,9 @@ function ambientCrickets() {
       for (let i = 0; i < len && start + i < n; i++) {
         const tt = i / SR;
         const u = i / len;
-        // Softer syllable window (^1.1 not ^1.6) — less spiky, more singing.
-        const syl = Math.pow(hann((tt * v.pulse) % 1), 1.1);
+        // Softer syllable window (^1.45) — the pulse onsets round off, so
+        // each chirp sings instead of pecking.
+        const syl = Math.pow(hann((tt * v.pulse) % 1), 1.45);
         phase += (TWO_PI * f) / SR;
         dest[start + i] += Math.sin(phase) * syl * Math.pow(hann(u), 1.2) * v.amp;
       }
@@ -1609,7 +1625,10 @@ function ambientCrickets() {
     }
   }
 
-  const warm = warmBus(out, { highShelfHz: 4200, highShelfDb: -7, lidHz: 6000, lowShelfDb: 2, presenceDb: -4, bright: 0.95 });
+  // Round the chorus itself before the bus: what little top the sines have
+  // left is not detail anyone misses, and it keeps the bed un-hissy.
+  const rounded = filterBuffer(out, lowpassCoeffs(2700, 0.7));
+  const warm = warmBus(rounded, { highShelfHz: 3400, highShelfDb: -8, lidHz: 4800, lowShelfDb: 2, presenceDb: -4, bright: 0.95 });
   return crossfadeLoop(addRoomLooped(warm, { wet: 0.16, size: 1.4, damp: 2000, wetLowpassHz: 2600 }), SR);
 }
 
@@ -1686,9 +1705,9 @@ const SOUNDS = [
   { name: 'pencil-scratch', peakDb: -18, weight: 'plain', fadeInMs: 5, fadeOutMs: 5, render: pencilScratch },
 
   /* celebration — 3 variants ---------------------------------------------- */
-  { name: 'confetti', peakDb: -11, weight: 'plain', render: () => confetti({ seed: 9999, dur: 0.6, pops: 20, fLo: 460, fHi: 1650 }) },
-  { name: 'confetti-2', peakDb: -11, weight: 'full', render: () => confetti({ seed: 9998, dur: 0.72, pops: 26, fLo: 430, fHi: 1800 }) },
-  { name: 'confetti-3', peakDb: -11.5, weight: 'plain', render: () => confetti({ seed: 9997, dur: 0.54, pops: 16, fLo: 490, fHi: 1500 }) },
+  { name: 'confetti', peakDb: -11, weight: 'plain', render: () => confetti({ seed: 9999, dur: 0.6, pops: 20, fLo: 450, fHi: 1500 }) },
+  { name: 'confetti-2', peakDb: -11, weight: 'full', render: () => confetti({ seed: 9998, dur: 0.72, pops: 26, fLo: 420, fHi: 1480 }) },
+  { name: 'confetti-3', peakDb: -11.5, weight: 'plain', render: () => confetti({ seed: 9997, dur: 0.54, pops: 16, fLo: 480, fHi: 1400 }) },
 
   /* ambience beds --------------------------------------------------------- */
   { name: 'ambient-library', peakDb: -19, weight: 'full', fadeInMs: 5, fadeOutMs: 5, render: ambientLibrary },
@@ -1697,12 +1716,12 @@ const SOUNDS = [
   { name: 'ambient-crickets', peakDb: -21, weight: 'full', fadeInMs: 5, fadeOutMs: 5, render: ambientCrickets },
 
   /* keystrokes — 6 variants ------------------------------------------------ */
-  { name: 'typing-tick-1', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 71, dur: 0.09, freq: 700, deskHz: 175 }) },
-  { name: 'typing-tick-2', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 72, dur: 0.082, freq: 820, deskHz: 190 }) },
-  { name: 'typing-tick-3', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 73, dur: 0.1, freq: 620, deskHz: 162 }) },
-  { name: 'typing-tick-4', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 74, dur: 0.086, freq: 760, deskHz: 182 }) },
-  { name: 'typing-tick-5', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 75, dur: 0.104, freq: 580, deskHz: 155 }) },
-  { name: 'typing-tick-6', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 76, dur: 0.078, freq: 880, deskHz: 200 }) },
+  { name: 'typing-tick-1', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 71, dur: 0.088, freq: 680, deskHz: 145, q: 1.5, attackMs: 6, decayK: 500, deskGain: 0.28, grainAmp: 0.26 }) },
+  { name: 'typing-tick-2', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 72, dur: 0.082, freq: 900, deskHz: 205, q: 1.2, attackMs: 5.5, decayK: 620, grainAmp: 0.34, deskGain: 0.3 }) },
+  { name: 'typing-tick-3', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 73, dur: 0.11, freq: 540, deskHz: 165, q: 1.6, attackMs: 7, decayK: 800, grainAmp: 0.24, deskGain: 0.58 }) },
+  { name: 'typing-tick-4', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 74, dur: 0.08, freq: 790, deskHz: 185, q: 1.1, attackMs: 5.5, decayK: 540, grainAmp: 0.3, deskGain: 0.26 }) },
+  { name: 'typing-tick-5', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 75, dur: 0.106, freq: 610, deskHz: 222, q: 1.7, attackMs: 7.5, decayK: 820, grainAmp: 0.22, deskGain: 0.6 }) },
+  { name: 'typing-tick-6', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 76, dur: 0.076, freq: 1000, deskHz: 240, q: 1.0, attackMs: 5, decayK: 580, grainAmp: 0.36, deskGain: 0.3 }) },
 
   /* the hour — 3 variants --------------------------------------------------- */
   { name: 'chime-hour', peakDb: -14, weight: 'full', fadeOutMs: 120, render: () => chimeHour({ seed: 360360, dur: 5, f0: 329.63, brightness: 0.85 }) },
@@ -1744,11 +1763,19 @@ function fft(re, im) {
 }
 
 function analyze(pcm) {
-  let peak = 0, sum = 0;
+  let peak = 0, sum = 0, dc = 0, maxStep = 0, onset = 0;
+  const onsetN = Math.min(pcm.length, Math.round(0.0005 * SR));
   for (let i = 0; i < pcm.length; i++) {
-    const v = Math.abs(pcm[i]) / 32768;
-    if (v > peak) peak = v;
-    sum += (pcm[i] / 32768) * (pcm[i] / 32768);
+    const v = pcm[i] / 32768;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+    sum += v * v;
+    dc += v;
+    if (i > 0) {
+      const d = Math.abs(v - pcm[i - 1] / 32768);
+      if (d > maxStep) maxStep = d;
+    }
+    if (i < onsetN && a > onset) onset = a;
   }
   const rms = Math.sqrt(sum / pcm.length);
 
@@ -1796,6 +1823,10 @@ function analyze(pcm) {
     centroid: den > 0 ? num / den : 0,
     hfPct: tot > 0 ? (hf / tot) * 100 : 0,
     attackMs: atk,
+    // Click metrics — the same measurements the unit suite gates on.
+    stepPct: (maxStep / Math.max(peak, 1e-9)) * 100,
+    onsetPct: (onset / Math.max(peak, 1e-9)) * 100,
+    dcDb: 20 * Math.log10(Math.max(Math.abs(dc / pcm.length), 1e-9)),
   };
 }
 
@@ -1804,8 +1835,8 @@ function analyze(pcm) {
 mkdirSync(OUT_DIR, { recursive: true });
 const ditherRng = mulberry32(0xd17e);
 
-function padCols([a, b, c, d, e, f, g]) {
-  return a.padEnd(24) + b.padStart(9) + c.padStart(10) + d.padStart(9) + e.padStart(11) + f.padStart(8) + g.padStart(9);
+function padCols([a, b, c, d, e, f, g, h, i, j]) {
+  return a.padEnd(24) + b.padStart(9) + c.padStart(10) + d.padStart(9) + e.padStart(11) + f.padStart(8) + g.padStart(9) + h.padStart(8) + i.padStart(8) + j.padStart(8);
 }
 
 const reportLines = [
@@ -1819,9 +1850,12 @@ const reportLines = [
   '',
   'centroid = spectral centroid (lower = warmer).  >4k = share of energy above',
   '4 kHz (lower = less harsh).  atk = time to half-peak envelope (higher = softer).',
+  'step = largest adjacent-sample jump as % of peak (click signature; gate 25%).',
+  'onset = loudest sample in the first 0.5 ms as % of peak (gate 4%).',
+  'DC = residual DC offset (gate: silence).  A trailing ! marks a gate breach.',
   '',
-  padCols(['file', 'duration', 'peak dB', 'RMS dB', 'centroid', '>4kHz', 'attack']),
-  padCols(['----', '--------', '-------', '------', '--------', '-----', '------']),
+  padCols(['file', 'duration', 'peak dB', 'RMS dB', 'centroid', '>4kHz', 'attack', 'step', 'onset', 'DC']),
+  padCols(['----', '--------', '-------', '------', '--------', '-----', '------', '----', '-----', '--']),
 ];
 
 const seen = new Set();
@@ -1840,6 +1874,14 @@ for (const s of SOUNDS) {
   const pcm = toPcm16(mastered, ditherRng);
   writeWav(join(OUT_DIR, `${s.name}.wav`), pcm);
   const a = analyze(pcm);
+  // The acceptance gates the unit suite enforces — flagged here so a breach
+  // is visible at generation time instead of at test time.
+  const breaches = [
+    a.stepPct > 25 ? `step ${a.stepPct.toFixed(1)}%>25%` : '',
+    a.onsetPct > 4 ? `onset ${a.onsetPct.toFixed(1)}%>4%` : '',
+    a.dcDb > -60 ? `DC ${a.dcDb.toFixed(1)}dB` : '',
+  ].filter(Boolean).join(', ');
+  const flag = breaches === '' ? '' : `  !! ${breaches}`;
   reportLines.push(
     padCols([
       `${s.name}.wav`,
@@ -1849,12 +1891,19 @@ for (const s of SOUNDS) {
       `${Math.round(a.centroid)}Hz`,
       `${a.hfPct.toFixed(1)}%`,
       `${a.attackMs.toFixed(1)}ms`,
-    ]),
+      `${a.stepPct.toFixed(1)}%`,
+      `${a.onsetPct.toFixed(1)}%`,
+      `${a.dcDb.toFixed(0)}dB`,
+    ]) + (flag === '' ? '' : ' !'),
   );
   console.log(
     `  ${s.name}.wav  ${a.durationS.toFixed(3)}s  peak ${a.peakDb.toFixed(1)}  ` +
-    `centroid ${Math.round(a.centroid)}Hz  >4k ${a.hfPct.toFixed(1)}%  atk ${a.attackMs.toFixed(1)}ms`,
+    `centroid ${Math.round(a.centroid)}Hz  >4k ${a.hfPct.toFixed(1)}%  atk ${a.attackMs.toFixed(1)}ms  ` +
+    `step ${a.stepPct.toFixed(1)}%  onset ${a.onsetPct.toFixed(2)}%${flag}`,
   );
+}
+if (reportLines.some((l) => l.endsWith(' !'))) {
+  console.log('\nWARNING: gate breaches flagged above — the unit suite will fail on these.');
 }
 
 reportLines.push('');

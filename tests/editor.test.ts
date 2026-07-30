@@ -119,15 +119,25 @@ describe('slash command registry', () => {
 /**
  * Fixture note: ProseMirror's toJSON always emits the full attrs object for
  * node types that declare attributes, so fixtures spell out defaults too
- * (id from UniqueID, language: null, etc.).
+ * (id from UniqueID, language: null, the BlockEffects nulls, etc.).
  */
+const FX = {
+  rotate: null,
+  tape: null,
+  washi: null,
+  shadow: null,
+  frame: null,
+  paper: null,
+  underline: null,
+};
+
 const fixtureDoc: PageDoc = {
   type: 'doc',
   attrs: { pageStyle: 'grid', lineHeightPx: 32 },
   content: [
     {
       type: 'heading',
-      attrs: { id: 'b_head1', level: 2 },
+      attrs: { id: 'b_head1', level: 2, ...FX },
       content: [
         { type: 'text', text: 'Mitosis ' },
         {
@@ -139,7 +149,7 @@ const fixtureDoc: PageDoc = {
     },
     {
       type: 'paragraph',
-      attrs: { id: 'b_para1' },
+      attrs: { id: 'b_para1', ...FX },
       content: [
         { type: 'text', text: 'A cell divides ' },
         {
@@ -151,18 +161,18 @@ const fixtureDoc: PageDoc = {
     },
     {
       type: 'callout',
-      attrs: { id: 'b_call1', icon: 'leaf', tint: 'moss' },
+      attrs: { id: 'b_call1', icon: 'leaf', tint: 'moss', ...FX },
       content: [
         {
           type: 'paragraph',
-          attrs: { id: 'b_call1p' },
+          attrs: { id: 'b_call1p', ...FX },
           content: [{ type: 'text', text: 'Remember the spindle fibers!' }],
         },
       ],
     },
     {
       type: 'details',
-      attrs: { id: 'b_det1', open: true },
+      attrs: { id: 'b_det1', open: true, ...FX },
       content: [
         {
           type: 'detailsSummary',
@@ -173,7 +183,7 @@ const fixtureDoc: PageDoc = {
           content: [
             {
               type: 'paragraph',
-              attrs: { id: 'b_det1p' },
+              attrs: { id: 'b_det1p', ...FX },
               content: [{ type: 'text', text: 'Chromatin condenses.' }],
             },
           ],
@@ -182,7 +192,7 @@ const fixtureDoc: PageDoc = {
     },
     {
       type: 'taskList',
-      attrs: { id: 'b_tasks' },
+      attrs: { id: 'b_tasks', ...FX },
       content: [
         {
           type: 'taskItem',
@@ -190,7 +200,7 @@ const fixtureDoc: PageDoc = {
           content: [
             {
               type: 'paragraph',
-              attrs: { id: 'b_task1p' },
+              attrs: { id: 'b_task1p', ...FX },
               content: [{ type: 'text', text: 'draw the diagram' }],
             },
           ],
@@ -201,7 +211,7 @@ const fixtureDoc: PageDoc = {
           content: [
             {
               type: 'paragraph',
-              attrs: { id: 'b_task2p' },
+              attrs: { id: 'b_task2p', ...FX },
               content: [{ type: 'text', text: 'revise telophase' }],
             },
           ],
@@ -210,7 +220,7 @@ const fixtureDoc: PageDoc = {
     },
     {
       type: 'codeBlock',
-      attrs: { id: 'b_code1', language: 'typescript' },
+      attrs: { id: 'b_code1', language: 'typescript', ...FX },
       content: [{ type: 'text', text: 'const phases = 4;' }],
     },
   ],

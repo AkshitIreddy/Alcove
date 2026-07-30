@@ -6,15 +6,17 @@
  * things degrade to styled paragraphs — it never throws.
  *
  * Fidelity notes:
- * - Script attrs the live schema does not model (rotate, tape, washi, …) are
- *   still emitted onto the node JSON so `tiptapToScriptDoc` can round-trip
- *   them. ProseMirror silently drops unknown attrs when the JSON is inserted
- *   into a real editor, so fidelity inside the live editor is best-effort.
- * - Containers without a dedicated node (sticky-note, card, banner, unknown
- *   names…) fall back to a callout node carrying `containerName` +
- *   `containerAttrs` marker attrs.
- * - `columns`/`col` have no editor node yet: their children are flattened
- *   into the normal block flow.
+ * - The decorative block attrs (rotate, tape, washi, shadow, frame, paper,
+ *   underline) are REAL attributes on every block type via the BlockEffects
+ *   global-attribute extension, so they survive the live editor. Attrs the
+ *   schema still does not model (sticker on containers, unknown keys…) are
+ *   emitted onto the node JSON so `tiptapToScriptDoc` can round-trip them;
+ *   ProseMirror drops those on insertion into a real editor.
+ * - Every vocab container maps to its real node (names match vocab.ts
+ *   canonical names verbatim, so `options.hasNode` wires them
+ *   automatically). The callout fallback with `containerName` +
+ *   `containerAttrs` marker attrs remains ONLY for genuinely unknown names —
+ *   or when a supplied hasNode() denies a container node.
  * - Diagrams emit a real `diagram` node only when `options.hasNode('diagram')`
  *   says one is registered; otherwise a placeholder paragraph carries the
  *   diagram JSON in a `data-diagram` attr.
@@ -25,6 +27,7 @@ import type {
   Attrs,
   Block,
   ContainerBlock,
+  ContainerName,
   DiagramBlock,
   Inline,
   ListItem,
@@ -32,6 +35,7 @@ import type {
   TableRow,
 } from '../../script/types';
 import type { PageDoc } from '../../data/types';
+import { GAP_VALUES, WASH_COLORS } from '../../script/vocab';
 import type { StickerId } from '../nodes/stickers';
 import type { CalloutTint } from '../nodes/callout';
 
@@ -109,6 +113,34 @@ const EDITOR_TINTS: readonly string[] = [
 
 function isEditorTint(value: unknown): value is CalloutTint {
   return typeof value === 'string' && EDITOR_TINTS.includes(value);
+}
+
+/**
+ * Vocab container name → registered editor node name. New container nodes
+ * use the canonical vocab name VERBATIM; only the legacy imageRow node
+ * predates that convention.
+ */
+export const CONTAINER_NODE_NAMES: Record<
+  Exclude<ContainerName, 'generic'>,
+  string
+> = {
+  'sticky-note': 'sticky-note',
+  polaroid: 'polaroid',
+  'washi-box': 'washi-box',
+  callout: 'callout',
+  columns: 'columns',
+  col: 'col',
+  'image-row': 'imageRow',
+  card: 'card',
+  'quote-card': 'quote-card',
+  spoiler: 'spoiler',
+  banner: 'banner',
+};
+
+const WASH_NAMES: readonly string[] = WASH_COLORS;
+
+function isWashName(value: unknown): value is string {
+  return typeof value === 'string' && WASH_NAMES.includes(value);
 }
 
 /** Icon used when a container falls back to a callout node. */
@@ -404,6 +436,68 @@ function degradeToParagraphs(
   return out;
 }
 
+/**
+ * Is the real node for a container available? Container nodes are part of
+ * the default editor schema now, so with no hasNode supplied we assume
+ * presence; an explicit hasNode() can still deny (degradation path).
+ */
+function hasContainerNode(
+  name: Exclude<ContainerName, 'generic'>,
+  options: ToTiptapOptions,
+): boolean {
+  return (
+    options.hasNode === undefined ||
+    options.hasNode(CONTAINER_NODE_NAMES[name]) === true
+  );
+}
+
+/** Map container children as full blocks, guaranteeing `block+` validity. */
+function blockChildren(blocks: Block[], options: ToTiptapOptions): TiptapNode[] {
+  const out = mapBlocks(blocks, options);
+  if (out.length === 0) out.push({ type: 'paragraph' });
+  return out;
+}
+
+/** Callout fallback carrying containerName/containerAttrs marker attrs. */
+function fallbackContainer(
+  block: ContainerBlock,
+  options: ToTiptapOptions,
+): TiptapNode[] {
+  const name =
+    block.name === 'generic' ? (block.rawName ?? 'generic') : block.name;
+  const tint: CalloutTint = isEditorTint(block.attrs.color)
+    ? block.attrs.color
+    : 'amber';
+  const icon = CONTAINER_FALLBACK_ICON[block.name] ?? 'sparkle';
+  const id = typeof block.attrs.id === 'string' ? { id: block.attrs.id } : {};
+  return [
+    node(
+      'callout',
+      {
+        icon,
+        tint,
+        ...id,
+        containerName: name,
+        containerAttrs: { ...block.attrs },
+      },
+      degradeToParagraphs(block.children, options),
+    ),
+  ];
+}
+
+/** One `col` node from a script col container. */
+function mapColumn(block: ContainerBlock, options: ToTiptapOptions): TiptapNode {
+  const width =
+    typeof block.attrs.width === 'number' && block.attrs.width > 0
+      ? { width: block.attrs.width }
+      : {};
+  return node(
+    'col',
+    { ...width, ...extraAttrs(block.attrs, 'width' in width ? ['width'] : []) },
+    blockChildren(block.children, options),
+  );
+}
+
 function mapContainer(
   block: ContainerBlock,
   options: ToTiptapOptions,
@@ -458,34 +552,130 @@ function mapContainer(
       return out;
     }
 
-    case 'columns':
-    case 'col':
-      // No columns node yet — flatten children into the normal flow.
-      return mapBlocks(block.children, options);
-
-    default: {
-      // Generic/effect containers → callout fallback with marker attrs.
-      const name =
-        block.name === 'generic' ? (block.rawName ?? 'generic') : block.name;
-      const tint: CalloutTint = isEditorTint(block.attrs.color)
-        ? block.attrs.color
-        : 'amber';
-      const icon = CONTAINER_FALLBACK_ICON[block.name] ?? 'sparkle';
-      const id = typeof block.attrs.id === 'string' ? { id: block.attrs.id } : {};
+    case 'sticky-note':
+    case 'washi-box':
+    case 'quote-card':
+    case 'banner': {
+      if (!hasContainerNode(block.name, options)) {
+        return fallbackContainer(block, options);
+      }
+      const color = isWashName(block.attrs.color)
+        ? { color: block.attrs.color }
+        : {};
       return [
         node(
-          'callout',
-          {
-            icon,
-            tint,
-            ...id,
-            containerName: name,
-            containerAttrs: { ...block.attrs },
-          },
-          degradeToParagraphs(block.children, options),
+          block.name,
+          { ...color, ...extraAttrs(block.attrs, 'color' in color ? ['color'] : []) },
+          blockChildren(block.children, options),
         ),
       ];
     }
+
+    case 'card': {
+      if (!hasContainerNode('card', options)) {
+        return fallbackContainer(block, options);
+      }
+      const title =
+        typeof block.attrs.title === 'string' && block.attrs.title !== ''
+          ? { title: block.attrs.title }
+          : {};
+      return [
+        node(
+          'card',
+          { ...title, ...extraAttrs(block.attrs, 'title' in title ? ['title'] : []) },
+          blockChildren(block.children, options),
+        ),
+      ];
+    }
+
+    case 'spoiler': {
+      if (!hasContainerNode('spoiler', options)) {
+        return fallbackContainer(block, options);
+      }
+      return [
+        node(
+          'spoiler',
+          extraAttrs(block.attrs),
+          blockChildren(block.children, options),
+        ),
+      ];
+    }
+
+    case 'polaroid': {
+      if (!hasContainerNode('polaroid', options)) {
+        return fallbackContainer(block, options);
+      }
+      // Schema: image? paragraph+ — first image wins, the rest degrades.
+      let image: TiptapNode | null = null;
+      const rest: Block[] = [];
+      for (const child of block.children) {
+        if (image === null && child.kind === 'image') {
+          image = node('image', {
+            src: child.src,
+            alt: child.alt,
+            ...extraAttrs(child.attrs),
+          });
+        } else {
+          rest.push(child);
+        }
+      }
+      const content: TiptapNode[] = [];
+      if (image !== null) content.push(image);
+      content.push(...degradeToParagraphs(rest, options));
+      return [node('polaroid', extraAttrs(block.attrs), content)];
+    }
+
+    case 'columns': {
+      if (
+        !hasContainerNode('columns', options) ||
+        !hasContainerNode('col', options)
+      ) {
+        // Degradation path: flatten children into the normal flow.
+        return mapBlocks(block.children, options);
+      }
+      const cols: TiptapNode[] = [];
+      const stray: Block[] = [];
+      for (const child of block.children) {
+        if (child.kind === 'container' && child.name === 'col') {
+          cols.push(mapColumn(child, options));
+        } else {
+          stray.push(child);
+        }
+      }
+      if (stray.length > 0) {
+        cols.push(node('col', {}, blockChildren(stray, options)));
+      }
+      // Schema: col{2,4}. Too few → flatten; too many → merge into the 4th.
+      if (cols.length < 2) return mapBlocks(block.children, options);
+      while (cols.length > 4) {
+        const extra = cols.pop();
+        const target = cols[3];
+        target.content = [
+          ...(target.content ?? []),
+          ...(extra?.content ?? []),
+        ];
+      }
+      const gap =
+        typeof block.attrs.gap === 'string' &&
+        (GAP_VALUES as readonly string[]).includes(block.attrs.gap)
+          ? { gap: block.attrs.gap }
+          : {};
+      return [
+        node(
+          'columns',
+          { ...gap, ...extraAttrs(block.attrs, 'gap' in gap ? ['gap'] : []) },
+          cols,
+        ),
+      ];
+    }
+
+    case 'col':
+      // A stray col outside columns has no valid slot — flatten.
+      return mapBlocks(block.children, options);
+
+    default:
+      // Genuinely unknown containers → callout fallback with marker attrs.
+      return fallbackContainer(block, options);
   }
 }
 

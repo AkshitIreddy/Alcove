@@ -193,6 +193,97 @@ const blockCommands: SlashCommand[] = [
     run: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
   },
+  {
+    id: 'sticky-note',
+    title: 'Sticky note',
+    subtitle: 'A lemon post-it, slightly tilted',
+    icon: glyph('▤'),
+    keywords: ['sticky', 'note', 'postit', 'post-it', 'sticky-note', 'reminder'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('sticky-note').run(),
+  },
+  {
+    id: 'polaroid',
+    title: 'Polaroid',
+    subtitle: 'White-framed photo with caption',
+    icon: glyph('▣'),
+    keywords: ['polaroid', 'photo', 'picture', 'frame', 'caption', 'snapshot'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('polaroid').run(),
+  },
+  {
+    id: 'washi-box',
+    title: 'Washi box',
+    subtitle: 'Held down by two tape strips',
+    icon: glyph('▦'),
+    keywords: ['washi', 'box', 'tape', 'washi-box', 'taped'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('washi-box').run(),
+  },
+  {
+    id: 'card',
+    title: 'Card',
+    subtitle: 'A clean aged-paper card',
+    icon: glyph('▢'),
+    keywords: ['card', 'box', 'panel', 'definition', 'aside'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('card').run(),
+  },
+  {
+    id: 'quote-card',
+    title: 'Quote card',
+    subtitle: 'Decorated pull-quote',
+    icon: glyph('❞'),
+    keywords: ['quote', 'quotecard', 'quote-card', 'pull', 'blockquote', 'saying'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('quote-card').run(),
+  },
+  {
+    id: 'banner',
+    title: 'Banner',
+    subtitle: 'Full-width ribbon with chevron ends',
+    icon: glyph('⚑'),
+    keywords: ['banner', 'ribbon', 'header', 'strip', 'week'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('banner').run(),
+  },
+  {
+    id: 'spoiler',
+    title: 'Spoiler',
+    subtitle: 'Blurred until clicked',
+    icon: glyph('…'),
+    keywords: ['spoiler', 'hidden', 'details', 'reveal', 'blur', 'answer'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('spoiler').run(),
+  },
+  {
+    id: 'columns',
+    title: 'Columns',
+    subtitle: 'Two columns, side by side',
+    icon: glyph('▥'),
+    keywords: ['columns', 'col', 'layout', 'side', 'split', 'two'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: 'columns',
+          content: [
+            { type: 'col', content: [{ type: 'paragraph' }] },
+            { type: 'col', content: [{ type: 'paragraph' }] },
+          ],
+        })
+        .run(),
+  },
 ];
 
 const STICKER_TILT: Record<StickerId, number> = {

@@ -455,6 +455,52 @@ function blockFromNode(node: TiptapNode): Block[] {
       }
       case 'callout':
         return [calloutToContainer(node)];
+      // Real container nodes — names match the script vocab verbatim.
+      case 'sticky-note':
+      case 'polaroid':
+      case 'washi-box':
+      case 'card':
+      case 'quote-card':
+      case 'spoiler':
+      case 'banner': {
+        const raw = nodeAttrs(node);
+        const attrs = attrsFrom(raw, ['title']);
+        if (node.type === 'card' && typeof raw.title === 'string' && raw.title !== '') {
+          attrs.title = raw.title;
+        }
+        return [
+          {
+            kind: 'container',
+            name: node.type as ContainerName,
+            children: childNodes(node).flatMap(blockFromNode),
+            attrs,
+            ...ZERO,
+          },
+        ];
+      }
+      case 'columns': {
+        const cols: Block[] = childNodes(node)
+          .filter((child) => child.type === 'col')
+          .map((child) => ({
+            kind: 'container' as const,
+            name: 'col' as const,
+            children: childNodes(child).flatMap(blockFromNode),
+            attrs: attrsFrom(nodeAttrs(child)),
+            ...ZERO,
+          }));
+        return [
+          {
+            kind: 'container',
+            name: 'columns',
+            children: cols,
+            attrs: attrsFrom(nodeAttrs(node)),
+            ...ZERO,
+          },
+        ];
+      }
+      case 'col':
+        // A col outside columns has no script form of its own — flatten.
+        return childNodes(node).flatMap(blockFromNode);
       case 'details': {
         const body = childNodes(node);
         const summary = body.find((c) => c.type === 'detailsSummary');

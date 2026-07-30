@@ -164,11 +164,20 @@ describe('unknown-container degradation', () => {
     expect(print(restored)).toContain('::: mystery-box');
   });
 
-  it('columns flatten into the normal block flow (no columns node yet)', () => {
+  it('columns map to a real columns node with col children', () => {
     const cols = parse(
       '::: columns\n::: col\nleft\n:::\n::: col\nright\n:::\n:::',
     );
-    const flat = content(scriptDocToTiptap(cols));
+    const mapped = content(scriptDocToTiptap(cols));
+    expect(mapped.map((n) => n.type)).toEqual(['columns']);
+    expect(mapped[0].content?.map((n) => n.type)).toEqual(['col', 'col']);
+  });
+
+  it('columns still flatten when a hasNode() denies the nodes', () => {
+    const cols = parse(
+      '::: columns\n::: col\nleft\n:::\n::: col\nright\n:::\n:::',
+    );
+    const flat = content(scriptDocToTiptap(cols, { hasNode: () => false }));
     expect(flat.map((n) => n.type)).toEqual(['paragraph', 'paragraph']);
   });
 
@@ -297,11 +306,25 @@ describe('editor schema compatibility', () => {
   });
 
   it('callout children degrade to paragraphs (schema: paragraph+)', () => {
-    const doc = parse('::: card\n## A heading inside\n- a list item\n:::');
+    const doc = parse('::: callout\n## A heading inside\n- a list item\n:::');
     const json = scriptDocToTiptap(doc);
     const callout = content(json)[0];
     expect(callout.type).toBe('callout');
     expect(callout.content?.every((n) => n.type === 'paragraph')).toBe(true);
+    expect(() =>
+      schema.nodeFromJSON(json as unknown as Record<string, unknown>).check(),
+    ).not.toThrow();
+  });
+
+  it('card is a real node now and keeps rich children (schema: block+)', () => {
+    const doc = parse(
+      '::: card {title=Definitions}\n## A heading inside\n- a list item\n:::',
+    );
+    const json = scriptDocToTiptap(doc);
+    const card = content(json)[0];
+    expect(card.type).toBe('card');
+    expect(card.attrs?.title).toBe('Definitions');
+    expect(card.content?.map((n) => n.type)).toEqual(['heading', 'bulletList']);
     expect(() =>
       schema.nodeFromJSON(json as unknown as Record<string, unknown>).check(),
     ).not.toThrow();

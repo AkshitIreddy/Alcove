@@ -29,8 +29,15 @@ import { setActiveEditor } from './insert/activeEditor';
 import { createMediaPastePlugin } from './media';
 import { createEditorTransaction, createTiptapEditor } from './solid';
 import { play } from '../sound/engine';
+import { settings } from '../data/settings';
+import { burstConfetti } from './effects/confetti';
+import { mountMarginDoodles } from './effects/doodles';
+import '../styles/effects.css';
 
-/** Soft pencil-tick when a todo checkbox is checked (delegated per page root). */
+/**
+ * Soft pencil-tick when a todo checkbox is checked (delegated per page root)
+ * — plus a confetti burst from the checkbox when the user opted in.
+ */
 function onTaskToggle(event: Event): void {
   const target = event.target;
   if (
@@ -40,6 +47,14 @@ function onTaskToggle(event: Event): void {
     target.checked
   ) {
     void play('check-done');
+    if (settings.confettiOnComplete && !settings.minimalistMode) {
+      const rect = target.getBoundingClientRect();
+      burstConfetti({
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      });
+      void play('confetti');
+    }
   }
 }
 
@@ -97,6 +112,7 @@ const PAGE_STYLE_LABELS: Record<PageStyle, string> = {
 
 export default function PageEditor(props: PageEditorProps): JSX.Element {
   let mountElement!: HTMLDivElement;
+  let pageRootElement!: HTMLDivElement;
 
   // -------------------------------------------------------------------------
   // Debounced persistence
@@ -208,12 +224,32 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     );
   };
 
+  // -------------------------------------------------------------------------
+  // Margin doodles — deterministic pencil sketches, seeded by pageId.
+  // Mounted only when the user wants them (settings are reactive; the
+  // nb-minimalist/nb-no-doodles root classes hide them as a CSS backstop).
+  // -------------------------------------------------------------------------
+  let doodleCleanup: (() => void) | undefined;
+  createEffect(() => {
+    const show = settings.showMarginDoodles && !settings.minimalistMode;
+    doodleCleanup?.();
+    doodleCleanup = undefined;
+    if (show) doodleCleanup = mountMarginDoodles(pageRootElement, pageId);
+  });
+  onCleanup(() => {
+    doodleCleanup?.();
+    doodleCleanup = undefined;
+  });
+
   return (
     <div
       class="nb-page"
       data-style={pageStyle()}
       style={{ '--page-line-height': `${lineHeightPx()}px` }}
-      ref={(el) => el.addEventListener('change', onTaskToggle)}
+      ref={(el) => {
+        pageRootElement = el;
+        el.addEventListener('change', onTaskToggle);
+      }}
     >
       <nav class="nb-style-switcher" aria-label="Page style">
         <For each={PAGE_STYLES}>

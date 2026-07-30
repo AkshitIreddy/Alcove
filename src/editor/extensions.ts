@@ -44,6 +44,15 @@ export const BLOCK_ID_TYPES = [
   'details',
   'callout',
   'imageRow',
+  'sticky-note',
+  'polaroid',
+  'washi-box',
+  'card',
+  'quote-card',
+  'banner',
+  'spoiler',
+  'columns',
+  'col',
 ] as const;
 
 export interface EditorExtensionsOptions {

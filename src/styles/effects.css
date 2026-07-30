@@ -1,0 +1,603 @@
+/* ============================================================================
+   Notebook — delight effects
+   Universal block effects (tape, washi, rotate, shadow, frame, paper,
+   underline) + the script-vocabulary container blocks (sticky-note,
+   polaroid, washi-box, card, quote-card, banner, spoiler, columns) +
+   margin doodles + confetti overlay.
+
+   Pure CSS everywhere: gradient tape, static pre-jittered clip-paths,
+   radial-gradient scallop masks. No live SVG filters (CLAUDE.md).
+   All colors derive from tokens.css.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Rotate — BlockEffects writes `--nb-rotate` inline; sticky notes and
+   polaroids get a seeded default tilt through the same variable.
+   -------------------------------------------------------------------------- */
+.nb-prose [data-rotate],
+.nb-prose [data-type='sticky-note'],
+.nb-prose [data-type='polaroid'] {
+  transform: rotate(var(--nb-rotate, 0deg));
+}
+
+/* ----------------------------------------------------------------------------
+   Effect anchors
+   -------------------------------------------------------------------------- */
+.nb-prose [data-tape],
+.nb-prose [data-washi],
+.nb-prose [data-frame],
+.nb-prose [data-paper] {
+  position: relative;
+}
+
+/* ----------------------------------------------------------------------------
+   Tape — translucent scotch-tape strips (gradients, slight rotation)
+   -------------------------------------------------------------------------- */
+.nb-prose [data-tape]::before,
+.nb-prose [data-tape='both']::after {
+  content: '';
+  position: absolute;
+  width: 74px;
+  height: 22px;
+  background: linear-gradient(
+    178deg,
+    color-mix(in srgb, var(--wash-amber-light) 72%, transparent) 0%,
+    color-mix(in srgb, var(--wash-amber) 38%, transparent) 60%,
+    color-mix(in srgb, var(--wash-amber-deep) 30%, transparent) 100%
+  );
+  clip-path: polygon(
+    3% 6%, 97% 0%, 100% 42%, 96% 100%, 4% 96%, 0% 55%
+  );
+  box-shadow: var(--shadow-xs);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.nb-prose [data-tape='top']::before {
+  top: -11px;
+  left: 50%;
+  margin-left: -37px;
+  transform: rotate(-2.5deg);
+}
+
+.nb-prose [data-tape='corner']::before {
+  top: -8px;
+  right: -20px;
+  transform: rotate(42deg);
+}
+
+.nb-prose [data-tape='both']::before {
+  top: -8px;
+  left: -20px;
+  transform: rotate(-42deg);
+}
+
+.nb-prose [data-tape='both']::after {
+  top: -8px;
+  right: -20px;
+  transform: rotate(42deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Washi — a patterned paper-tape strip across the top edge
+   -------------------------------------------------------------------------- */
+.nb-prose [data-washi='top']::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 22%;
+  width: 56%;
+  height: 19px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--paper-cream) 55%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--wash-terracotta) 55%, transparent);
+  clip-path: polygon(2% 4%, 98% 0%, 100% 94%, 0% 100%);
+  transform: rotate(-1.2deg);
+  box-shadow: var(--shadow-xs);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ----------------------------------------------------------------------------
+   Shadow — the block lifts gently off the page
+   -------------------------------------------------------------------------- */
+.nb-prose [data-shadow='soft'] {
+  background: var(--paper-cream);
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-12);
+  box-shadow: var(--shadow-md);
+}
+
+/* ----------------------------------------------------------------------------
+   Frame — scallop (radial-gradient border mask) and stitch (dashed outline)
+   -------------------------------------------------------------------------- */
+.nb-prose [data-frame='scallop'] {
+  padding: var(--space-12) var(--space-16);
+  isolation: isolate; /* keeps the z-index:-1 frame behind content only */
+}
+
+.nb-prose [data-frame='scallop']::before {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  z-index: -1;
+  --nb-sc: 7px;
+  background: color-mix(in srgb, var(--wash-amber) 28%, var(--paper-cream));
+  -webkit-mask:
+    radial-gradient(var(--nb-sc), #000 97%, transparent) round
+      calc(-1.5 * var(--nb-sc)) calc(-1.5 * var(--nb-sc)) /
+      calc(3 * var(--nb-sc)) calc(3 * var(--nb-sc)),
+    linear-gradient(#000 0 0) 50% 50% /
+      calc(100% - 2 * var(--nb-sc)) calc(100% - 2 * var(--nb-sc)) no-repeat;
+  mask:
+    radial-gradient(var(--nb-sc), #000 97%, transparent) round
+      calc(-1.5 * var(--nb-sc)) calc(-1.5 * var(--nb-sc)) /
+      calc(3 * var(--nb-sc)) calc(3 * var(--nb-sc)),
+    linear-gradient(#000 0 0) 50% 50% /
+      calc(100% - 2 * var(--nb-sc)) calc(100% - 2 * var(--nb-sc)) no-repeat;
+  pointer-events: none;
+}
+
+.nb-prose [data-frame='stitch'] {
+  padding: var(--space-8) var(--space-12);
+  background: color-mix(in srgb, var(--paper-aged) 55%, transparent);
+  border-radius: var(--radius-sm);
+  outline: 2px dashed var(--ink-sepia-soft);
+  outline-offset: 5px;
+}
+
+/* ----------------------------------------------------------------------------
+   Paper — per-block paper textures
+   torn: static pre-jittered clip-path deckle on top and bottom edges
+   -------------------------------------------------------------------------- */
+.nb-prose [data-paper='torn'] {
+  padding: var(--space-16) var(--space-20);
+  background: var(--paper-aged);
+  clip-path: polygon(
+    0% 7px, 4% 2px, 9% 8px, 14% 3px, 19% 9px, 24% 2px, 29% 7px, 34% 4px,
+    39% 9px, 44% 2px, 49% 8px, 54% 3px, 59% 9px, 64% 2px, 69% 6px, 74% 3px,
+    79% 9px, 84% 4px, 89% 8px, 94% 2px, 100% 6px,
+    100% calc(100% - 8px), 95% calc(100% - 2px), 90% calc(100% - 9px),
+    85% calc(100% - 3px), 80% calc(100% - 8px), 75% calc(100% - 2px),
+    70% calc(100% - 7px), 65% calc(100% - 4px), 60% calc(100% - 9px),
+    55% calc(100% - 2px), 50% calc(100% - 8px), 45% calc(100% - 3px),
+    40% calc(100% - 9px), 35% calc(100% - 2px), 30% calc(100% - 6px),
+    25% calc(100% - 3px), 20% calc(100% - 9px), 15% calc(100% - 4px),
+    10% calc(100% - 8px), 5% calc(100% - 2px), 0% calc(100% - 7px)
+  );
+}
+
+.nb-prose [data-paper='lined'] {
+  padding: var(--space-8) var(--space-16);
+  background-color: var(--paper-cream);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--page-line-height, 32px) - 1px),
+    color-mix(in srgb, var(--paper-edge) 80%, transparent)
+      calc(var(--page-line-height, 32px) - 1px),
+    color-mix(in srgb, var(--paper-edge) 80%, transparent)
+      var(--page-line-height, 32px)
+  );
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-sm);
+}
+
+/* ----------------------------------------------------------------------------
+   Underline — squiggle (wobble-baked SVG mask) and marker sweep
+   -------------------------------------------------------------------------- */
+.nb-prose [data-underline='squiggle'] {
+  position: relative;
+  padding-bottom: 8px;
+}
+
+.nb-prose [data-underline='squiggle']::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 10%;
+  bottom: 0;
+  height: 9px;
+  background: var(--wash-amber-deep);
+  opacity: 0.75;
+  /* --nb-squiggle carries the module-load-baked wobble SVG data URI */
+  -webkit-mask: var(--nb-squiggle) repeat-x 0 50% / 28px 9px;
+  mask: var(--nb-squiggle) repeat-x 0 50% / 28px 9px;
+  pointer-events: none;
+}
+
+.nb-prose [data-underline='marker'] {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--wash-amber) 55%, transparent),
+    color-mix(in srgb, var(--wash-amber) 55%, transparent)
+  );
+  background-repeat: no-repeat;
+  background-position: 0 76%;
+  background-size: 100% 0.42em;
+}
+
+/* ----------------------------------------------------------------------------
+   Wash-color hooks — containers read --fx-light/base/deep; a data-color
+   attribute retargets them. Declared AFTER the container bases below would
+   lose the cascade, so bases only set fallbacks and these come last in the
+   container section (see bottom of file).
+   -------------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------------
+   Sticky note — folded corner, soft shadow, seeded tilt
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='sticky-note'] {
+  --fx-light: var(--wash-lemon-light);
+  --fx-base: var(--wash-lemon);
+  --fx-deep: var(--wash-lemon-deep);
+  position: relative;
+  max-width: 520px;
+  margin: var(--space-12) 0;
+  padding: var(--space-16) var(--space-20) var(--space-24);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--fx-light) 88%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--fx-base) 42%, var(--paper-cream)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--fx-deep) 28%, transparent);
+  border-radius: 2px 4px 3px 5px;
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-accent);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+/* Folded bottom-right corner */
+.nb-prose [data-type='sticky-note']::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(
+    315deg,
+    var(--paper-cream) 0 47%,
+    color-mix(in srgb, var(--fx-deep) 30%, var(--fx-light)) 50%,
+    color-mix(in srgb, var(--fx-base) 72%, var(--paper-cream)) 100%
+  );
+  border-top-left-radius: 5px;
+  box-shadow: -2px -2px 3px rgba(94, 70, 45, 0.09);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Polaroid — white frame, Kalam caption under the photo, seeded tilt
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='polaroid'] {
+  max-width: 440px;
+  margin: var(--space-16) auto;
+  padding: var(--space-12) var(--space-12) var(--space-4);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 2px;
+  box-shadow: var(--shadow-md);
+}
+
+.nb-prose [data-type='polaroid'] img {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 1px;
+  box-shadow: var(--shadow-inset-paper);
+}
+
+.nb-prose [data-type='polaroid'] p {
+  font-family: var(--font-accent);
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--ink-sepia-soft);
+  padding: var(--space-8) var(--space-4);
+}
+
+/* ----------------------------------------------------------------------------
+   Washi box — patterned wash panel taped down top and bottom
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='washi-box'] {
+  --fx-light: var(--wash-sky-light);
+  --fx-base: var(--wash-sky);
+  --fx-deep: var(--wash-sky-deep);
+  position: relative;
+  margin: var(--space-16) 0 var(--space-12);
+  padding: var(--space-16) var(--space-20);
+  background:
+    radial-gradient(
+      color-mix(in srgb, var(--fx-base) 28%, transparent) 1px,
+      transparent 1.4px
+    ) 0 0 / 14px 14px,
+    color-mix(in srgb, var(--fx-light) 58%, var(--paper-cream));
+  border: 1.5px solid color-mix(in srgb, var(--fx-deep) 35%, transparent);
+  border-radius: var(--radius-md);
+}
+
+.nb-prose [data-type='washi-box']::before,
+.nb-prose [data-type='washi-box']::after {
+  content: '';
+  position: absolute;
+  width: 86px;
+  height: 20px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--paper-cream) 50%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--fx-base) 62%, transparent);
+  clip-path: polygon(3% 0%, 97% 4%, 100% 96%, 0% 100%);
+  box-shadow: var(--shadow-xs);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.nb-prose [data-type='washi-box']::before {
+  top: -10px;
+  left: 12%;
+  transform: rotate(-3deg);
+}
+
+.nb-prose [data-type='washi-box']::after {
+  bottom: -10px;
+  right: 12%;
+  transform: rotate(2.5deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Card — clean aged-paper card, optional pencil title (data-title)
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='card'] {
+  margin: var(--space-12) 0;
+  padding: var(--space-16) var(--space-20);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-xs);
+}
+
+.nb-prose [data-type='card'][data-title]::before {
+  content: attr(data-title);
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--ink-sepia);
+  margin-bottom: var(--space-4);
+  transform: rotate(-0.5deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Quote card — big decorative quotes, Caveat, wash tint
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='quote-card'] {
+  --fx-light: var(--wash-blush-light);
+  --fx-base: var(--wash-blush);
+  --fx-deep: var(--wash-blush-deep);
+  position: relative;
+  margin: var(--space-16) 0;
+  padding: var(--space-20) var(--space-48);
+  background: radial-gradient(
+    130% 120% at 30% 12%,
+    color-mix(in srgb, var(--fx-light) 74%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--fx-base) 30%, var(--paper-cream)) 100%
+  );
+  border-radius: var(--radius-hand);
+  font-family: var(--font-heading);
+  font-size: 25px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--ink-sepia);
+}
+
+.nb-prose [data-type='quote-card']::before,
+.nb-prose [data-type='quote-card']::after {
+  position: absolute;
+  font-family: var(--font-heading);
+  font-size: 62px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--fx-deep) 55%, transparent);
+  pointer-events: none;
+}
+
+.nb-prose [data-type='quote-card']::before {
+  content: '\201C';
+  top: 4px;
+  left: 12px;
+}
+
+.nb-prose [data-type='quote-card']::after {
+  content: '\201D';
+  bottom: -16px;
+  right: 14px;
+}
+
+/* ----------------------------------------------------------------------------
+   Banner — full-width ribbon, chevron ends via clip-path, Caveat text
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='banner'] {
+  --fx-light: var(--wash-amber-light);
+  --fx-base: var(--wash-amber);
+  --fx-deep: var(--wash-amber-deep);
+  margin: var(--space-16) calc(-1 * var(--space-8));
+  padding: var(--space-8) var(--space-48);
+  background: linear-gradient(
+    178deg,
+    color-mix(in srgb, var(--fx-base) 62%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--fx-base) 86%, var(--fx-deep)) 100%
+  );
+  clip-path: polygon(
+    0% 0%, 100% 0%, calc(100% - 24px) 50%, 100% 100%, 0% 100%, 24px 50%
+  );
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink-sepia);
+}
+
+/* ----------------------------------------------------------------------------
+   Spoiler — blurred until clicked, pencil "psst…" label
+   -------------------------------------------------------------------------- */
+.nb-spoiler {
+  position: relative;
+  margin: var(--space-12) 0;
+  padding: var(--space-8) var(--space-16) var(--space-12);
+  background: color-mix(in srgb, var(--paper-aged) 60%, transparent);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-md);
+}
+
+.nb-spoiler.is-selected {
+  outline: 2px dashed var(--wash-amber-deep);
+  outline-offset: 3px;
+}
+
+.nb-spoiler-toggle {
+  font-family: var(--font-label);
+  font-size: 13px;
+  color: var(--ink-graphite-soft);
+  padding: 1px var(--space-8);
+  border-radius: var(--radius-pill);
+  transform: rotate(-0.8deg);
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    color var(--dur-xs) var(--ease-out);
+}
+
+.nb-spoiler-toggle:hover {
+  background: var(--wash-amber-light);
+  color: var(--ink-graphite);
+}
+
+.nb-spoiler-body {
+  transition:
+    filter var(--dur-md) var(--ease-out),
+    opacity var(--dur-md) var(--ease-out);
+}
+
+.nb-spoiler:not(.is-revealed) .nb-spoiler-body {
+  filter: blur(5px);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Columns — 2-4 flexible columns; col weights render as flex-grow
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='columns'] {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+  margin: var(--space-8) 0;
+}
+
+.nb-prose [data-type='columns'][data-gap='sm'] {
+  gap: var(--space-8);
+}
+
+.nb-prose [data-type='columns'][data-gap='lg'] {
+  gap: var(--space-32);
+}
+
+.nb-prose [data-type='col'] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Wash-color retargeting (comes after container bases so it wins)
+   -------------------------------------------------------------------------- */
+.nb-prose [data-color='amber'] {
+  --fx-light: var(--wash-amber-light);
+  --fx-base: var(--wash-amber);
+  --fx-deep: var(--wash-amber-deep);
+}
+.nb-prose [data-color='terracotta'] {
+  --fx-light: var(--wash-terracotta-light);
+  --fx-base: var(--wash-terracotta);
+  --fx-deep: var(--wash-terracotta-deep);
+}
+.nb-prose [data-color='moss'] {
+  --fx-light: var(--wash-moss-light);
+  --fx-base: var(--wash-moss);
+  --fx-deep: var(--wash-moss-deep);
+}
+.nb-prose [data-color='lemon'] {
+  --fx-light: var(--wash-lemon-light);
+  --fx-base: var(--wash-lemon);
+  --fx-deep: var(--wash-lemon-deep);
+}
+.nb-prose [data-color='sky'] {
+  --fx-light: var(--wash-sky-light);
+  --fx-base: var(--wash-sky);
+  --fx-deep: var(--wash-sky-deep);
+}
+.nb-prose [data-color='blush'] {
+  --fx-light: var(--wash-blush-light);
+  --fx-base: var(--wash-blush);
+  --fx-deep: var(--wash-blush-deep);
+}
+.nb-prose [data-color='graphite'] {
+  /* No graphite wash pigment in tokens — compose from paper/ink neutrals. */
+  --fx-light: var(--paper-aged);
+  --fx-base: var(--paper-deep);
+  --fx-deep: var(--ink-graphite-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Margin doodles — deterministic pencil sketches in the page margins
+   -------------------------------------------------------------------------- */
+.nb-margin-doodle {
+  position: absolute;
+  z-index: 1;
+  opacity: 0.35;
+  color: var(--ink-graphite-soft);
+  pointer-events: none;
+  user-select: none;
+}
+
+.nb-margin-doodle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ----------------------------------------------------------------------------
+   Confetti overlay canvas
+   -------------------------------------------------------------------------- */
+.nb-confetti-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: var(--z-toasts);
+}
+
+/* ----------------------------------------------------------------------------
+   Minimalist mode — decorations stand down (root class from settings)
+   -------------------------------------------------------------------------- */
+:root.nb-minimalist .nb-prose [data-tape]::before,
+:root.nb-minimalist .nb-prose [data-tape='both']::after,
+:root.nb-minimalist .nb-prose [data-washi='top']::before,
+:root.nb-minimalist .nb-prose [data-type='washi-box']::before,
+:root.nb-minimalist .nb-prose [data-type='washi-box']::after,
+:root.nb-minimalist .nb-prose [data-frame='scallop']::before,
+:root.nb-minimalist .nb-prose [data-underline='squiggle']::after {
+  display: none;
+}
+
+:root.nb-minimalist .nb-prose [data-rotate],
+:root.nb-minimalist .nb-prose [data-type='sticky-note'],
+:root.nb-minimalist .nb-prose [data-type='polaroid'] {
+  transform: none;
+}

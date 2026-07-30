@@ -14,131 +14,194 @@
    'parchment' is the tokens.css default and needs no override.
    -------------------------------------------------------------------------- */
 
-/* Pastel — powdered rose paper, mauve ink, softened pigments. */
+/* Pastel — blossom paper, plum ink, sweet-shop pigments. Pastel means the
+   PAPER is soft; the pigments still have to carry real hue. */
 :root[data-theme='pastel'] {
-  --paper-cream: #faf1f5;
-  --paper-aged: #f4e4ec;
-  --paper-deep: #ead0dd;
-  --paper-edge: #d9b6c8;
-  --paper-glow: rgba(255, 250, 253, 0.6);
-  --paper-vignette-soft: rgba(151, 106, 133, 0.06);
-  --paper-vignette-deep: rgba(124, 79, 106, 0.11);
+  --paper-cream: #fdf0f6;
+  --paper-aged: #f9e2ee;
+  --paper-deep: #f0c9de;
+  --paper-edge: #e0a8c6;
+  --paper-glow: rgba(255, 250, 253, 0.65);
+  --paper-vignette-soft: rgba(190, 110, 155, 0.05);
+  --paper-vignette-deep: rgba(160, 80, 125, 0.1);
 
-  --ink-sepia: #6b4d5e;
-  /* Soft inks re-tuned for AA on this theme's darkest ground (#f4e4ec):
-     was 2.89:1 / 3.17:1 — now 4.78:1 / 4.55:1. */
-  --ink-sepia-soft: #7d5b6d;
-  --ink-graphite: #575066;
-  --ink-graphite-soft: #6b657a;
-  --ink-blue: #5a6aa0;
-  --ink-blue-soft: #6d7aa6;
-  --ink-accent: #9c4f6b;
+  --ink-sepia: #5f3a52; /* 7.74:1 aged */
+  /* Soft inks tuned for AA on this theme's darkest ground (#f9e2ee). */
+  --ink-sepia-soft: #7a5069; /* 5.39:1 */
+  --ink-graphite: #4f4661;
+  --ink-graphite-soft: #5f5672; /* 5.60:1 */
+  --ink-blue: #4e5fa0;
+  --ink-blue-soft: #525f95; /* 5.00:1 */
+  --ink-accent: #b2306e; /* 4.84:1 */
 
-  --wash-amber: #eccf8d;
-  --wash-amber-deep: #b9955a;
-  --wash-terracotta: #e3ab92;
-  --wash-terracotta-deep: #b3765a;
-  --wash-moss: #bcc79b;
-  --wash-moss-deep: #879465;
-  --wash-lemon: #efe29a;
-  --wash-lemon-deep: #bcab60;
-  --wash-sky: #b3d2db;
-  --wash-sky-deep: #7ba4b2;
-  --wash-blush: #ecc0ba;
-  --wash-blush-deep: #bd8880;
-  --wash-plum: #c9abc4;
-  --wash-plum-deep: #93718d;
+  --wash-amber: #ffc14a;
+  --wash-amber-deep: #9c6608;
+  --wash-terracotta: #ff9068;
+  --wash-terracotta-deep: #bd4a1e;
+  --wash-moss: #86d55c;
+  --wash-moss-deep: #3d7f24;
+  --wash-lemon: #ffe968;
+  --wash-lemon-deep: #94800c;
+  --wash-sky: #6cc7f5;
+  --wash-sky-deep: #14769f;
+  --wash-blush: #ff9fc0;
+  --wash-blush-deep: #cf3a72;
+  --wash-plum: #c187f0;
+  --wash-plum-deep: #7739bc;
+  --wash-coral: #ff8878;
+  --wash-coral-deep: #c93a28;
+  --wash-turquoise: #4ddbcc;
+  --wash-turquoise-deep: #0e8a80;
+  --wash-violet: #9184f5;
+  --wash-violet-deep: #4834bd;
+  --wash-lime: #c8ea5e;
+  --wash-lime-deep: #74960a;
 
-  --selection-wash: rgba(236, 192, 186, 0.5);
+  --accent: #ff5f9e;
+  --accent-deep: #cf1f6d;
+  --accent-light: #ffdcec;
+  --accent-ink: #b2306e;
+  --accent-leaf: #5cc94a;
+  --accent-sun: #ffc14a;
+  --accent-sea: #2ec2d4;
+
+  --selection-wash: rgba(255, 159, 192, 0.45);
 }
 
-/* Botanical — pressed-leaf paper, moss ink, eucalyptus blues. */
+/* Botanical — pressed-leaf paper, moss ink, greenhouse brights. */
 :root[data-theme='botanical'] {
-  --paper-cream: #f2f3e3;
-  --paper-aged: #e9ebd1;
-  --paper-deep: #d8ddb8;
-  --paper-edge: #b9c396;
-  --paper-glow: rgba(252, 255, 240, 0.6);
-  --paper-vignette-soft: rgba(110, 124, 74, 0.06);
-  --paper-vignette-deep: rgba(88, 102, 54, 0.12);
+  --paper-cream: #f3f8e4;
+  --paper-aged: #e8f0cf;
+  --paper-deep: #d5e4ae;
+  --paper-edge: #b2c885;
+  --paper-glow: rgba(252, 255, 240, 0.65);
+  --paper-vignette-soft: rgba(110, 140, 60, 0.05);
+  --paper-vignette-deep: rgba(80, 110, 40, 0.11);
 
-  --ink-sepia: #4d5340;
-  /* AA on #e9ebd1: was 3.14:1 / 3.63:1 — now 4.60:1 / 4.72:1. */
-  --ink-sepia-soft: #646b4f;
-  --ink-graphite: #454c3c;
-  --ink-graphite-soft: #616955;
-  --ink-blue: #3e6357;
-  --ink-blue-soft: #55766b;
-  --ink-accent: #8a5638;
+  --ink-sepia: #3d4a2e; /* 8.03:1 aged */
+  --ink-sepia-soft: #556340; /* 5.48:1 */
+  --ink-graphite: #3a4235;
+  --ink-graphite-soft: #586150; /* 5.49:1 */
+  --ink-blue: #26645a;
+  --ink-blue-soft: #37695f; /* 5.31:1 */
+  --ink-accent: #9c4a1f; /* 5.21:1 */
 
-  --wash-amber: #e0c168;
-  --wash-moss: #9db26c;
-  --wash-moss-deep: #667a3e;
-  --wash-sky: #94c1b7;
-  --wash-sky-deep: #598a7f;
-  --wash-blush: #dfa89b;
+  --wash-amber: #ffb92e;
+  --wash-amber-deep: #8a5600;
+  --wash-terracotta: #f2803f;
+  --wash-terracotta-deep: #ab3a12;
+  --wash-moss: #5fc42f;
+  --wash-moss-deep: #2f7016;
+  --wash-lemon: #f7e04a;
+  --wash-lemon-deep: #85720a;
+  --wash-sky: #3fbfc9;
+  --wash-sky-deep: #0a7480;
+  --wash-blush: #ff87ac;
+  --wash-blush-deep: #c22c60;
+  --wash-plum: #a86ce0;
+  --wash-plum-deep: #642caa;
+  --wash-coral: #ff7355;
+  --wash-coral-deep: #ba2c14;
+  --wash-turquoise: #1fcdae;
+  --wash-turquoise-deep: #06806b;
+  --wash-violet: #7a72e8;
+  --wash-violet-deep: #3a2ea8;
+  --wash-lime: #aede2c;
+  --wash-lime-deep: #628400;
 
-  --selection-wash: rgba(157, 178, 108, 0.4);
+  --accent: #ff6a3d;
+  --accent-deep: #b83a12;
+  --accent-light: #ffe1cf;
+  --accent-ink: #9c4a1f;
+  --accent-leaf: #4fbc2a;
+  --accent-sun: #ffb92e;
+  --accent-sea: #0fb2b8;
+
+  --selection-wash: rgba(174, 222, 44, 0.42);
 }
 
-/* Night — a candle-lit desk after dark: warm dark paper, cream ink. */
+/* Night — a candle-lit desk after dark: warm dark paper, cream ink, and
+   pigments that glow rather than mute (neon-on-black is the only way a
+   saturated palette survives a dark ground). */
 :root[data-theme='night'] {
-  --paper-cream: #262120;
-  --paper-aged: #2e2825;
-  --paper-deep: #383029;
-  --paper-edge: #55483a;
+  --paper-cream: #221d1c;
+  --paper-aged: #2b2523;
+  --paper-deep: #3a322b;
+  --paper-edge: #5d4d3c;
   --paper-glow: rgba(255, 232, 190, 0.05);
   --paper-vignette-soft: rgba(0, 0, 0, 0.14);
   --paper-vignette-deep: rgba(0, 0, 0, 0.3);
 
-  --ink-sepia: #e6d9c3;
-  /* AA on #2e2825: was 4.96:1 / 4.22:1 — now 6.31:1 / 5.58:1. */
-  --ink-sepia-soft: #bda88a;
-  --ink-graphite: #d3ccc2;
-  --ink-graphite-soft: #ab9f8d;
-  --ink-blue: #a9c1e8;
-  --ink-blue-soft: #93a7c4;
-  --ink-accent: #e0a184;
+  --ink-sepia: #f2e6d0; /* 12.22:1 aged */
+  --ink-sepia-soft: #c6b190; /* 7.25:1 */
+  --ink-graphite: #dcd5cb;
+  --ink-graphite-soft: #b0a492; /* 6.16:1 */
+  --ink-blue: #9fc4ff;
+  --ink-blue-soft: #93a9d0;
+  --ink-accent: #ff9db8; /* 7.74:1 */
 
-  --wash-amber-light: #4d3f21;
-  --wash-amber: #d9b45e;
-  --wash-amber-deep: #f2d896;
-  --wash-terracotta-light: #4a2f23;
-  --wash-terracotta: #c98262;
-  --wash-terracotta-deep: #edb49c;
-  --wash-moss-light: #333c26;
-  --wash-moss: #98a96b;
-  --wash-moss-deep: #c8d6a2;
-  --wash-lemon-light: #45401f;
-  --wash-lemon: #d6c465;
-  --wash-lemon-deep: #efe3a1;
-  --wash-sky-light: #263a41;
-  --wash-sky: #86b0bd;
-  --wash-sky-deep: #b7dde8;
-  --wash-blush-light: #462c29;
-  --wash-blush: #d1958c;
-  --wash-blush-deep: #f0c0b8;
-  --wash-plum-light: #3a2c38;
-  --wash-plum: #a886a2;
-  --wash-plum-deep: #d3b4cd;
+  /* On night the ramp inverts: `-light` is the deep shadow tint a callout is
+     painted with, `-deep` is the bright rim that catches the candle. */
+  --wash-amber-light: #54421c;
+  --wash-amber: #ffc233;
+  --wash-amber-deep: #ffe0a0;
+  --wash-terracotta-light: #4f2f1e;
+  --wash-terracotta: #ff8f52;
+  --wash-terracotta-deep: #ffc4a0;
+  --wash-moss-light: #2f4020;
+  --wash-moss: #7fdb4d;
+  --wash-moss-deep: #c2f0a4;
+  --wash-lemon-light: #4a441c;
+  --wash-lemon: #ffe95c;
+  --wash-lemon-deep: #fff3ad;
+  --wash-sky-light: #1e3d4e;
+  --wash-sky: #55c8ff;
+  --wash-sky-deep: #b1e5ff;
+  --wash-blush-light: #4d2632;
+  --wash-blush: #ff8fb5;
+  --wash-blush-deep: #ffc3d6;
+  --wash-plum-light: #3b2549;
+  --wash-plum: #c084f5;
+  --wash-plum-deep: #e0c2ff;
+  --wash-coral-light: #4f2a22;
+  --wash-coral: #ff7f6e;
+  --wash-coral-deep: #ffbdb3;
+  --wash-turquoise-light: #1a4442;
+  --wash-turquoise: #35e2d0;
+  --wash-turquoise-deep: #a8f4ec;
+  --wash-violet-light: #2e2a58;
+  --wash-violet: #9b8dff;
+  --wash-violet-deep: #cdc5ff;
+  --wash-lime-light: #3d4a1a;
+  --wash-lime: #cbf254;
+  --wash-lime-deep: #e6faa8;
 
-  --wash-peach-light: #4a3524;
-  --wash-peach: #dda278;
-  --wash-peach-deep: #f4c9a4;
-  --wash-sage-light: #333a2c;
-  --wash-sage: #a6b892;
-  --wash-sage-deep: #ccdabc;
-  --wash-lavender-light: #362e40;
-  --wash-lavender: #ab97c4;
-  --wash-lavender-deep: #d4c4e8;
-  --wash-sand-light: #423a26;
-  --wash-sand: #c8b483;
-  --wash-sand-deep: #e8d9ae;
-  --wash-slate-light: #2c343b;
-  --wash-slate: #93a3b1;
-  --wash-slate-deep: #c2d1dd;
+  --wash-peach-light: #4f3624;
+  --wash-peach: #ffb578;
+  --wash-peach-deep: #ffd8b4;
+  --wash-sage-light: #333f2c;
+  --wash-sage: #a5da8a;
+  --wash-sage-deep: #d0edc2;
+  --wash-lavender-light: #362e4a;
+  --wash-lavender: #bda9ff;
+  --wash-lavender-deep: #ddd2ff;
+  --wash-sand-light: #453b26;
+  --wash-sand: #f0cf72;
+  --wash-sand-deep: #f7e8b8;
+  --wash-slate-light: #2c363f;
+  --wash-slate: #8fb9d9;
+  --wash-slate-deep: #c9e0f0;
 
-  --selection-wash: rgba(233, 196, 106, 0.28);
+  --accent-light: #4d2634;
+  --accent: #ff6f9f;
+  --accent-deep: #ffb0c9;
+  --accent-ink: #ff8fb0; /* 7.05:1 on --paper-aged */
+  --accent-leaf: #7fdb4d;
+  --accent-leaf-ink: #a2e87d;
+  --accent-sun: #ffc233;
+  --accent-sea: #35e2d0;
+
+  --selection-wash: rgba(255, 226, 92, 0.3);
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-sm:
@@ -173,25 +236,25 @@
    extends the tokens.css wash family to 12 book palettes.
    -------------------------------------------------------------------------- */
 :root {
-  --wash-peach-light: #f9e4d2;
-  --wash-peach: #eeb28a;
-  --wash-peach-deep: #b57545;
+  --wash-peach-light: #ffe7d2;
+  --wash-peach: #ffab63;
+  --wash-peach-deep: #c56a15;
 
-  --wash-sage-light: #e6ecdd;
-  --wash-sage: #b7c9a3;
-  --wash-sage-deep: #7d9468;
+  --wash-sage-light: #e4f4da;
+  --wash-sage: #8fcd78;
+  --wash-sage-deep: #47883a;
 
-  --wash-lavender-light: #e9e2f0;
-  --wash-lavender: #bda8d4;
-  --wash-lavender-deep: #82699f;
+  --wash-lavender-light: #ebe3ff;
+  --wash-lavender: #b49bf5;
+  --wash-lavender-deep: #6c4fc7;
 
-  --wash-sand-light: #f3ead6;
-  --wash-sand: #d9c391;
-  --wash-sand-deep: #a08b55;
+  --wash-sand-light: #fdf0cd;
+  --wash-sand: #ecc75f;
+  --wash-sand-deep: #98771a;
 
-  --wash-slate-light: #dfe4e8;
-  --wash-slate: #a3b1bd;
-  --wash-slate-deep: #667889;
+  --wash-slate-light: #dceaf4;
+  --wash-slate: #78a9cc;
+  --wash-slate-deep: #366687;
 }
 
 /* ----------------------------------------------------------------------------
@@ -218,9 +281,15 @@
   height: 46px;
   display: grid;
   place-items: center;
-  color: var(--ink-sepia);
-  background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
+  color: var(--accent-ink);
+  background:
+    radial-gradient(
+      130% 130% at 32% 24%,
+      color-mix(in srgb, var(--accent-light) 92%, white) 0%,
+      var(--accent-light) 68%,
+      color-mix(in srgb, var(--accent) 34%, var(--accent-light)) 100%
+    );
+  border: 1.4px solid color-mix(in srgb, var(--accent-deep) 55%, transparent);
   /* slightly-off circle: reads as inked, not stamped */
   border-radius: 50% 47% 52% 48% / 48% 52% 46% 54%;
   box-shadow: var(--shadow-sm);
@@ -324,7 +393,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(58, 43, 26, 0.3);
+  background: rgba(58, 30, 42, 0.28);
   opacity: 0;
   visibility: hidden; /* gsap autoAlpha drives opacity+visibility */
   pointer-events: auto;
@@ -454,18 +523,93 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
    16px below the title, so the dashed rules read as evenly spaced staves
    rather than crowding whichever row happened to end last. */
 .nbs-section {
+  /* Per-section pigment. `data-accent` (set by SettingsPanel's Section)
+     rebinds these three, and every control inside the section paints from
+     them — one hand-tinted chapter per topic instead of one amber list. */
+  --sec-light: var(--accent-light);
+  --sec: var(--accent);
+  --sec-deep: var(--accent-deep);
   margin-top: var(--space-20);
   padding: var(--space-16) 0 var(--space-4);
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed color-mix(in srgb, var(--sec) 42%, var(--paper-edge));
 }
 
+.nbs-section[data-accent='blush'] {
+  --sec-light: var(--wash-blush-light);
+  --sec: var(--wash-blush);
+  --sec-deep: var(--wash-blush-deep);
+}
+.nbs-section[data-accent='moss'] {
+  --sec-light: var(--wash-moss-light);
+  --sec: var(--wash-moss);
+  --sec-deep: var(--wash-moss-deep);
+}
+.nbs-section[data-accent='violet'] {
+  --sec-light: var(--wash-violet-light);
+  --sec: var(--wash-violet);
+  --sec-deep: var(--wash-violet-deep);
+}
+.nbs-section[data-accent='turquoise'] {
+  --sec-light: var(--wash-turquoise-light);
+  --sec: var(--wash-turquoise);
+  --sec-deep: var(--wash-turquoise-deep);
+}
+.nbs-section[data-accent='amber'] {
+  --sec-light: var(--wash-amber-light);
+  --sec: var(--wash-amber);
+  --sec-deep: var(--wash-amber-deep);
+}
+.nbs-section[data-accent='sky'] {
+  --sec-light: var(--wash-sky-light);
+  --sec: var(--wash-sky);
+  --sec-deep: var(--wash-sky-deep);
+}
+.nbs-section[data-accent='coral'] {
+  --sec-light: var(--wash-coral-light);
+  --sec: var(--wash-coral);
+  --sec-deep: var(--wash-coral-deep);
+}
+.nbs-section[data-accent='lime'] {
+  --sec-light: var(--wash-lime-light);
+  --sec: var(--wash-lime);
+  --sec-deep: var(--wash-lime-deep);
+}
+
+/* The title is the section's colour statement: full-strength ink for the
+   word (contrast is non-negotiable) with the pigment carried by a painted
+   underline swipe, so hue never has to do the legibility work. */
 .nbs-section-title {
+  position: relative;
+  display: inline-block;
   font-family: var(--font-heading);
   font-size: 25px; /* Caveat stays above its 20px floor */
   font-weight: 700;
   color: var(--ink-sepia);
   margin-bottom: var(--space-16);
+  padding: 0 4px 2px;
   transform: rotate(-0.6deg);
+}
+
+/* Sits BELOW the baseline rather than under the glyphs: a negative z-index
+   would drop the swipe behind the sheet's own painted background and vanish,
+   and blending it over the text would cost contrast. */
+.nbs-section-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 7px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--sec) 20%, transparent) 0%,
+    var(--sec) 12%,
+    var(--sec) 88%,
+    color-mix(in srgb, var(--sec) 25%, transparent) 100%
+  );
+  border-radius: 60% 40% 55% 45% / 100% 100% 100% 100%;
+  opacity: 0.85;
+  transform: rotate(0.5deg);
 }
 
 /* ----------------------------------------------------------------------------
@@ -559,7 +703,12 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 }
 
 .nbs-toggle[aria-checked='true'] .nbs-toggle-track {
-  background: var(--wash-amber);
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--sec) 78%, white) 0%,
+    var(--sec) 100%
+  );
+  border-color: color-mix(in srgb, var(--sec-deep) 70%, var(--ink-graphite));
 }
 
 .nbs-toggle[aria-checked='true'] .nbs-toggle-thumb {
@@ -619,7 +768,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   height: 3px;
   background: linear-gradient(
       to right,
-      var(--ink-sepia) 0 calc(var(--nbs-fill, 50) * 1%),
+      var(--sec-deep) 0 calc(var(--nbs-fill, 50) * 1%),
       transparent calc(var(--nbs-fill, 50) * 1%)
     ),
     linear-gradient(var(--ink-sepia-soft), var(--ink-sepia-soft));
@@ -712,18 +861,28 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
    brown that was DARKER than the selected state — inverted visual weight). */
 .nbs-seg-chip:hover:not([aria-pressed='true']) {
   color: var(--ink-sepia);
-  background: var(--wash-amber-light);
-  border-color: var(--wash-amber);
+  background: var(--sec-light);
+  border-color: var(--sec);
   transform: translateY(-1px) rotate(-0.8deg);
 }
 
+/* The pressed chip is the loudest thing in its section: a real wash of the
+   section pigment, rimmed in the deep pigment the way wet paint pools. Ink
+   stays --ink-sepia, so the win is FILL + WEIGHT + TILT, never contrast. */
 .nbs-seg-chip[aria-pressed='true'] {
   color: var(--ink-sepia);
   font-weight: 700;
-  background: var(--wash-amber-light);
+  background:
+    radial-gradient(
+      120% 130% at 30% 18%,
+      color-mix(in srgb, var(--sec-light) 88%, white) 0%,
+      color-mix(in srgb, var(--sec) 46%, var(--sec-light)) 100%
+    );
   border-style: solid;
-  border-color: var(--ink-sepia-soft);
-  box-shadow: var(--shadow-xs);
+  border-color: color-mix(in srgb, var(--sec-deep) 72%, transparent);
+  box-shadow:
+    inset 0 -3px 4px -3px var(--sec-deep),
+    var(--shadow-xs);
   transform: rotate(-1.4deg);
 }
 
@@ -760,7 +919,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-swatch[aria-pressed='true'] {
   outline: 2px dashed var(--ink-sepia);
   outline-offset: 2px;
-  transform: rotate(-4deg);
+  transform: rotate(-4deg) scale(1.08);
 }
 
 .nbs-swatch[data-palette='amber'] { --sw-light: var(--wash-amber-light); --sw: var(--wash-amber); --sw-deep: var(--wash-amber-deep); }
@@ -856,7 +1015,8 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 }
 
 .nbs-action-btn:hover:not(:disabled) {
-  background: var(--wash-amber-light);
+  background: var(--sec-light);
+  border-color: var(--sec-deep);
   transform: rotate(-1.2deg) scale(1.03);
   box-shadow: var(--shadow-sm);
 }

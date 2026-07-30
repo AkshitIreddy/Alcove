@@ -150,6 +150,21 @@
   height: 18px;
 }
 
+/*
+ * The shelf has no icon rail to slide out of, so the studio sheet hugs the
+ * window edge instead — a little wider, because theme cards want the room.
+ */
+.nb-rail-panel.is-shelf {
+  left: var(--space-16);
+  width: min(376px, 84vw);
+}
+
+.nb-studio-hint {
+  margin-top: var(--space-16);
+  padding-top: var(--space-12);
+  border-top: 1px dashed var(--paper-edge);
+}
+
 .nb-rail-panel-body {
   flex: 1 1 auto;
   min-height: 0;

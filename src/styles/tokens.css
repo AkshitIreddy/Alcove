@@ -1,74 +1,126 @@
 /* ============================================================================
    Notebook — design tokens
-   Warm-parchment world: cream paper, sepia ink, watercolor washes.
+   A hand-drawn world painted in real watercolour: bright cream paper, warm
+   ink, and pigments that are genuinely SATURATED. The linework stays pencil;
+   the colour is allowed to sing.
    Every color in the app lives here. No hardcoded colors elsewhere.
+
+   Contrast contract (checked, not guessed):
+     - body ink >= 8:1 on every paper ground and every `-light` wash;
+     - "soft" inks >= 4.5:1 on the DARKEST ground they sit on (--paper-aged);
+     - `-deep` pigments are RIM/BORDER colours first, but the ones that are
+       also used as type (terracotta, moss, sky, blush, plum, amber) clear
+       4.5:1 on --paper-aged too.
    ========================================================================== */
 
 :root {
   /* ------------------------------------------------------------------------
-     Paper
+     Paper — brighter and cleaner than the old sepia parchment. Paper is the
+     quiet ground the colour sits on; it should read as fresh cartridge stock,
+     not as a tea-stained antique.
      ---------------------------------------------------------------------- */
-  --paper-cream: #f7f1e3; /* default page/ground */
-  --paper-aged: #efe4cc; /* older, sun-touched sheets, cards */
-  --paper-deep: #e2d3b3; /* shadowed paper, pressed creases */
-  --paper-edge: #d3bf98; /* parchment lines, scrollbar thumbs, hairlines */
+  --paper-cream: #fdf6e6; /* default page/ground */
+  --paper-aged: #f6e9cd; /* older, sun-touched sheets, cards */
+  --paper-deep: #ecd9ae; /* shadowed paper, pressed creases */
+  --paper-edge: #d8bf8e; /* parchment lines, scrollbar thumbs, hairlines */
 
   /* Vignette + glow stops (composed in global.css) */
-  --paper-glow: rgba(255, 252, 243, 0.55); /* warm light pooling at top */
-  --paper-vignette-soft: rgba(148, 117, 78, 0.06);
-  --paper-vignette-deep: rgba(120, 91, 55, 0.11);
+  --paper-glow: rgba(255, 250, 232, 0.6); /* warm light pooling at top */
+  --paper-vignette-soft: rgba(150, 120, 70, 0.05);
+  --paper-vignette-deep: rgba(120, 92, 50, 0.1);
 
   /* ------------------------------------------------------------------------
      Ink
      ---------------------------------------------------------------------- */
-  --ink-sepia: #5b4636; /* primary reading ink */
+  --ink-sepia: #4a3427; /* primary reading ink — 9.64:1 aged / 10.76 cream */
   /* "soft" inks are secondary, never decorative: they carry hints, captions,
      meta and inactive control labels, so they are tuned to clear WCAG AA
      (>= 4.5:1) against the DARKEST paper ground they ever sit on
-     (--paper-aged #efe4cc). Measured: 4.73:1 aged / 5.31:1 cream. */
-  --ink-sepia-soft: #765f4d;
-  --ink-graphite: #45413a; /* pencil linework */
-  --ink-graphite-soft: #635c52; /* 5.23:1 aged / 5.86:1 cream */
-  --ink-blue: #3f5878; /* fountain-pen blue-black */
-  --ink-blue-soft: #5c7290; /* 4.72:1 aged / 5.30:1 cream */
+     (--paper-aged #f6e9cd). Measured: 5.08:1 aged / 5.67:1 cream. */
+  --ink-sepia-soft: #7a5c42;
+  --ink-graphite: #3b3630; /* pencil linework — 9.94:1 aged */
+  --ink-graphite-soft: #5f584e; /* 5.83:1 aged / 6.52:1 cream */
+  --ink-blue: #2f5aa0; /* fountain-pen blue — 5.65:1 aged */
+  --ink-blue-soft: #43679f; /* 4.74:1 aged / 5.30:1 cream */
 
-  /* Accent INK (readable text), distinct from the terracotta wash PIGMENT
-     below: the pigment is tuned for paint, this for type. 5.78:1 on cream. */
-  --ink-accent: #8e4c2f;
+  /* Accent INK (readable text), distinct from the wash PIGMENTS below: the
+     pigments are tuned for paint, this for type. 4.84:1 aged / 5.40 cream. */
+  --ink-accent: #b8305a;
 
   /* ------------------------------------------------------------------------
      Watercolor washes — light wash / base pigment / deep rim (edge-darkening)
+
+     Base pigments are the ones you SEE: fills, chips, swatches, sticker
+     bodies, book cloth. They are deliberately loud. `-light` is the pale
+     tint a callout or a hover state is painted with (body ink must stay
+     comfortable on it); `-deep` is the pigment gathering at a wet edge.
      ---------------------------------------------------------------------- */
-  --wash-amber-light: #f7e7c2;
-  --wash-amber: #e9c46a;
-  --wash-amber-deep: #a8802e;
+  --wash-amber-light: #ffeec9;
+  --wash-amber: #ffb51f; /* marigold, not weak tea */
+  --wash-amber-deep: #8f5a00;
 
-  --wash-terracotta-light: #f5dccb;
-  --wash-terracotta: #d99271;
-  --wash-terracotta-deep: #a35c3d;
+  --wash-terracotta-light: #ffe0cf;
+  --wash-terracotta: #f4763b; /* persimmon */
+  --wash-terracotta-deep: #b13c12;
 
-  --wash-moss-light: #e3e8cd;
-  --wash-moss: #a8b878;
-  --wash-moss-deep: #6f814a;
+  --wash-moss-light: #ddf5c8;
+  --wash-moss: #6fc93f; /* new-leaf green */
+  --wash-moss-deep: #35761b;
 
-  --wash-lemon-light: #faf3cd;
-  --wash-lemon: #ecdc76;
-  --wash-lemon-deep: #b3a23a;
+  --wash-lemon-light: #fff7c2;
+  --wash-lemon: #ffe23d; /* full sun */
+  --wash-lemon-deep: #8f7a00;
 
-  --wash-sky-light: #dce9ec;
-  --wash-sky: #9dc3cf;
-  --wash-sky-deep: #5f8fa0;
+  --wash-sky-light: #d5eeff;
+  --wash-sky: #45b6f2; /* summer sky */
+  --wash-sky-deep: #0a6fa4;
 
-  --wash-blush-light: #f7ded9;
-  --wash-blush: #e4a89f;
-  --wash-blush-deep: #b06c62;
+  --wash-blush-light: #ffe0eb;
+  --wash-blush: #ff8cb3; /* cherry blossom */
+  --wash-blush-deep: #c72f66;
 
-  --wash-plum-light: #e9dbe7;
-  --wash-plum: #b995b3;
-  --wash-plum-deep: #7d5878;
+  --wash-plum-light: #eddfff;
+  --wash-plum: #b06ceb; /* orchid */
+  --wash-plum-deep: #6c2fb3;
 
-  /* Text selection — amber wash, translucent so ink reads through */
-  --selection-wash: rgba(233, 196, 106, 0.45);
+  /* Four brand-new brights. The sticker / highlight / callout palettes draw
+     from the whole wash family, so these widen the joyful end of it. */
+  --wash-coral-light: #ffdfd6;
+  --wash-coral: #ff6f5e;
+  --wash-coral-deep: #c02a19;
+
+  --wash-turquoise-light: #cdf6f0;
+  --wash-turquoise: #22cfbf;
+  --wash-turquoise-deep: #067f74;
+
+  --wash-violet-light: #e3dfff;
+  --wash-violet: #7b6bf2;
+  --wash-violet-deep: #3c29b4;
+
+  --wash-lime-light: #f0fbc4;
+  --wash-lime: #b6e13a;
+  --wash-lime-deep: #6a8c00;
+
+  /* ------------------------------------------------------------------------
+     UI accent — the colour the interface uses to say "this one".
+     Cherry-blossom rose: brighter and far more characterful than the old
+     amber-on-brown, and it stays distinct from the amber/lemon washes that
+     content uses for highlights, so a selected control never reads as a
+     highlighted word.
+     ---------------------------------------------------------------------- */
+  --accent-light: #ffe2ec;
+  --accent: #ff5f92;
+  --accent-deep: #cf2160;
+  --accent-ink: #ad2b53; /* accent as TYPE: 5.38:1 aged / 6.01 cream */
+
+  /* Supporting accents for surfaces that want a second/third voice. */
+  --accent-leaf: #4bc23a;
+  --accent-leaf-ink: #2c7a1c;
+  --accent-sun: #ffb51f;
+  --accent-sea: #17b6c9;
+
+  /* Text selection — a bright lemon swipe, translucent so ink reads through */
+  --selection-wash: rgba(255, 214, 61, 0.5);
 
   /* ------------------------------------------------------------------------
      Spacing scale (px values match names)

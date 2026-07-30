@@ -58,10 +58,15 @@ export interface CustomizePanelProps {
   bookId?: string;
   /** Page count, for the default spine thickness. */
   pageCount?: number;
+  /**
+   * Which tab opens first. The rail (inside a book) starts on the book;
+   * the shelf's own studio button starts on the room.
+   */
+  initialTab?: StudioTab;
 }
 
 export default function CustomizePanel(props: CustomizePanelProps): JSX.Element {
-  const [tab, setTab] = createSignal<StudioTab>('book');
+  const [tab, setTab] = createSignal<StudioTab>(props.initialTab ?? 'book');
   const [style, setStyle] = createSignal<Record<string, unknown> | null>(null);
 
   // Hydrate the persisted style blob whenever the book changes.

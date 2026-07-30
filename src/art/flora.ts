@@ -44,7 +44,7 @@ import { bakeCached } from './bake';
 import { getGranulationTile, type Canvas2D, type Ctx2D } from './spines';
 
 /** Bump when the growth model or drawing changes — invalidates baked sprites. */
-export const FLORA_RECIPE_VERSION = 2;
+export const FLORA_RECIPE_VERSION = 3;
 
 /**
  * Flora is decoration: the shelf compositor drops the whole layer below this
@@ -132,13 +132,73 @@ export interface FloraAnchor {
   run?: number;
 }
 
-/** Theme-level hue/tone push, so a theme can dry out or cool its planting. */
-export interface FloraPalette {
+/**
+ * An HSL triple, `[hue 0-360, saturation 0-100, lightness 0-100]`. Roles are
+ * authored as triples rather than strings because every species jitters and
+ * shades around its role colour — you cannot do that to `#4bc23a`.
+ */
+export type ToneTuple = readonly [number, number, number];
+
+/**
+ * The colour roles a specimen paints from. A theme supplies as many as it
+ * cares about; anything omitted falls back to `DEFAULT_FLORA_ROLES` (a vivid
+ * summer garden), so `{}` is still a perfectly good palette.
+ *
+ * Species do NOT own absolute colours: each declares a small delta off a role
+ * (see `SPECIES_TINT`). That is what lets "Coral Reef" repaint every plant on
+ * the shelf into weed-teal and coral-pink while ivy, pothos and hearts stay
+ * recognisably different plants from each other.
+ */
+export type FloraToneRole =
+  /** Trailing vines and general foliage. */
+  | 'leaf'
+  /** Mature, deeper foliage — fern fronds. */
+  | 'leafDeep'
+  /** Cushion moss. */
+  | 'moss'
+  /** Grass blades. */
+  | 'grass'
+  /** Blossom petals. */
+  | 'bloom'
+  /** The warm small flower — dandelion heads. */
+  | 'bloomAlt'
+  /** The cool small flower — lavender-ish herb spikes. */
+  | 'bloomCool'
+  /** Woody branches and twigs. */
+  | 'wood'
+  /** Dried/sun-bleached material — herb bundles, dead grass blades. */
+  | 'dry';
+
+/** Roles that are flat CSS colour strings rather than jitterable tones. */
+export type FloraStringRole = 'silk' | 'twine';
+
+export type FloraRoles = {
+  [K in FloraToneRole]?: ToneTuple;
+} & {
+  /** Cobweb silk. */
+  silk?: string;
+  /** Twine on hanging bundles. */
+  twine?: string;
+};
+
+/**
+ * Theme-level colour control for the planting.
+ *
+ * Two layers, deliberately: `hueShift`/`satShift`/`lightShift` are a cheap
+ * global push over whatever the roles produce (dry a shelf out, cool it,
+ * fade it for a crossfade), while the roles themselves repaint the world.
+ */
+export interface FloraPalette extends FloraRoles {
   hueShift?: number;
   satShift?: number;
   lightShift?: number;
   /** Pencil colour for every outline. Default a dark warm graphite-green. */
   ink?: string;
+  /**
+   * Per-leaf hue spread in degrees, ± this much. Higher = a scrappier, more
+   * varied planting. Default 9.
+   */
+  variance?: number;
 }
 
 /** A theme's flora recipe — `LibraryTheme.flora` in `art/themes.ts`. */
@@ -313,7 +373,160 @@ export const FLORA_LABELS: Record<FloraSpeciesId, string> = {
   cobweb: 'cobweb',
 };
 
-const DEFAULT_INK = 'hsl(96 22% 20%)';
+const DEFAULT_INK = 'hsl(112 34% 18%)';
+
+/* ============================== colour roles ============================== */
+
+/**
+ * The default world: a summer garden in full colour. These are the numbers a
+ * theme overrides — see `FLORA_PALETTES` for the shipped alternatives.
+ *
+ * Saturation matters more than hue here. The old planting sat around 30-35%
+ * and read as sage-grey pot-pourri at shelf scale; foliage in daylight is
+ * 45-55% and blossom is 70-85%, which is what makes growth look *alive*
+ * rather than pressed and dried.
+ */
+export const DEFAULT_FLORA_ROLES: Record<FloraToneRole, ToneTuple> = {
+  leaf: [104, 52, 38],
+  leafDeep: [128, 48, 33],
+  moss: [96, 50, 33],
+  grass: [88, 54, 41],
+  bloom: [342, 80, 80],
+  bloomAlt: [46, 94, 60],
+  bloomCool: [274, 56, 74],
+  wood: [22, 40, 31],
+  dry: [40, 52, 58],
+};
+
+/** String-valued roles (drawn flat, never jittered). */
+export const DEFAULT_FLORA_STRINGS: Record<FloraStringRole, string> = {
+  silk: 'hsl(190 26% 92%)',
+  twine: 'hsl(36 46% 58%)',
+};
+
+/** Every tone role, in a stable order (cache keys, debug boards, tests). */
+export const TONE_ROLES: readonly FloraToneRole[] = [
+  'leaf',
+  'leafDeep',
+  'moss',
+  'grass',
+  'bloom',
+  'bloomAlt',
+  'bloomCool',
+  'wood',
+  'dry',
+];
+
+/**
+ * Named palettes a theme can point at (`LibraryTheme.flora.palette`). Each is
+ * a partial set of roles: anything left out keeps the garden default, which
+ * is why "Autumn Study" only has to say what turns.
+ */
+export const FLORA_PALETTES = {
+  /** The default: high-summer garden greens, cherry-pink blossom. */
+  garden: {},
+  /** Cherry orchard in full bloom — pale-bright foliage, heaps of blossom. */
+  blossomGrove: {
+    leaf: [108, 54, 43],
+    leafDeep: [124, 50, 38],
+    moss: [100, 52, 38],
+    grass: [92, 56, 46],
+    bloom: [338, 88, 84],
+    bloomAlt: [52, 96, 68],
+    wood: [16, 34, 32],
+    variance: 11,
+  },
+  /** Underwater: weed-teal fronds, coral heads, urchin-violet buds. */
+  coralReef: {
+    leaf: [172, 60, 41],
+    leafDeep: [190, 58, 36],
+    moss: [166, 52, 35],
+    grass: [180, 56, 44],
+    bloom: [10, 88, 68],
+    bloomAlt: [288, 72, 68],
+    wood: [200, 22, 38],
+    dry: [30, 42, 60],
+    silk: 'hsl(186 60% 90%)',
+    twine: 'hsl(190 34% 62%)',
+    ink: 'hsl(196 46% 18%)',
+    variance: 14,
+  },
+  /** Jurassic undergrowth: deep jungle greens, hot volcanic blooms. */
+  dinoDig: {
+    leaf: [98, 50, 32],
+    leafDeep: [142, 46, 27],
+    moss: [82, 46, 29],
+    grass: [72, 52, 40],
+    bloom: [28, 88, 58],
+    bloomAlt: [14, 82, 52],
+    wood: [26, 44, 25],
+    dry: [38, 54, 52],
+    ink: 'hsl(104 40% 14%)',
+    variance: 12,
+  },
+  /** Workshop circuitry: neon teal "foliage", magenta indicator blooms. */
+  circuit: {
+    leaf: [168, 70, 44],
+    leafDeep: [198, 68, 38],
+    moss: [186, 62, 36],
+    grass: [160, 68, 46],
+    bloom: [318, 88, 66],
+    bloomAlt: [52, 96, 60],
+    wood: [220, 14, 34],
+    dry: [206, 20, 56],
+    silk: 'hsl(184 70% 88%)',
+    twine: 'hsl(210 20% 60%)',
+    ink: 'hsl(206 44% 16%)',
+    variance: 10,
+  },
+  /** Sweet-shop: mint stems, bubblegum flowers, sherbet everything. */
+  candy: {
+    leaf: [150, 58, 50],
+    leafDeep: [166, 54, 44],
+    moss: [300, 42, 60],
+    grass: [140, 60, 54],
+    bloom: [330, 92, 80],
+    bloomAlt: [40, 96, 70],
+    wood: [20, 38, 44],
+    dry: [46, 60, 68],
+    variance: 16,
+  },
+  /** Late October: everything turns, nothing has fallen yet. */
+  autumn: {
+    leaf: [30, 72, 45],
+    leafDeep: [12, 66, 38],
+    moss: [64, 44, 34],
+    grass: [40, 62, 48],
+    bloom: [350, 74, 72],
+    bloomAlt: [38, 92, 56],
+    wood: [20, 44, 27],
+    dry: [34, 58, 52],
+    variance: 18,
+  },
+  /** After dark: cooled, deepened, with luminous night-blooming flowers. */
+  moonlit: {
+    leaf: [156, 40, 32],
+    leafDeep: [176, 38, 27],
+    moss: [150, 38, 28],
+    grass: [148, 42, 36],
+    bloom: [286, 62, 76],
+    bloomAlt: [196, 70, 72],
+    wood: [220, 18, 24],
+    dry: [206, 16, 46],
+    silk: 'hsl(210 44% 88%)',
+    ink: 'hsl(214 44% 12%)',
+    variance: 9,
+  },
+} as const satisfies Record<string, FloraPalette>;
+
+export type FloraPaletteName = keyof typeof FLORA_PALETTES;
+
+export const FLORA_PALETTE_NAMES = Object.keys(FLORA_PALETTES) as FloraPaletteName[];
+
+/** Resolve a palette by name (unknown names fall back to the garden). */
+export function floraPalette(name: string): FloraPalette {
+  return (FLORA_PALETTES as Record<string, FloraPalette>)[name] ?? FLORA_PALETTES.garden;
+}
 
 /**
  * Species that *hang*: they drape down off whatever they take hold of. The
@@ -378,6 +591,79 @@ function tone(gr: Grow, h: number, s: number, l: number): Tone {
     s: clamp(s + (gr.pal.satShift ?? 0), 0, 100),
     l: clamp(l + (gr.pal.lightShift ?? 0), 0, 100),
   };
+}
+
+/**
+ * Look a colour role up in the palette (falling back to the garden default)
+ * and apply this species' character delta, then the theme's global shifts.
+ *
+ * This is the one place species colour comes from. Nothing below hardcodes a
+ * green: change `pal.leaf` and every vine on the shelf follows.
+ */
+function roleTone(gr: Grow, role: FloraToneRole, delta: ToneTuple = [0, 0, 0]): Tone {
+  const base = gr.pal[role] ?? DEFAULT_FLORA_ROLES[role];
+  return tone(gr, base[0] + delta[0], base[1] + delta[1], base[2] + delta[2]);
+}
+
+/** Palette string roles (silk, twine) with their defaults. */
+function roleColour(gr: Grow, role: FloraStringRole): string {
+  return gr.pal[role] ?? DEFAULT_FLORA_STRINGS[role];
+}
+
+/** Per-leaf hue spread for this palette. */
+function variance(gr: Grow, fallback = 9): number {
+  return gr.pal.variance ?? fallback;
+}
+
+/**
+ * One flower's colour off the branch's petal tone. Most keep the hue and
+ * jitter around it; `paleChance` of them open near-white, which is what a
+ * real cherry branch does and what stops a mass of blossom reading as one
+ * flat pink blob.
+ */
+function petalTone(gr: Grow, petal: Tone, paleChance: number): Tone {
+  if (gr.rnd() < paleChance) {
+    return {
+      h: petal.h + (gr.rnd() * 2 - 1) * 6,
+      s: clamp(petal.s * 0.3 + 6, 0, 100),
+      l: clamp(petal.l + rr(gr, 8, 15), 0, 98),
+    };
+  }
+  return {
+    h: petal.h + (gr.rnd() * 2 - 1) * variance(gr, 9),
+    s: clamp(petal.s + (gr.rnd() * 2 - 1) * 10, 0, 100),
+    l: clamp(petal.l + (gr.rnd() * 2 - 1) * 7, 0, 100),
+  };
+}
+
+/**
+ * Everything about a palette that changes pixels, as a short stable string.
+ *
+ * Both the geometry memo and the on-disk bake cache key off this: without the
+ * role colours in here, switching a theme's planting from garden green to
+ * reef teal would silently reuse the old baked bitmaps.
+ */
+export function paletteKey(pal: FloraPalette): string {
+  const parts: string[] = [
+    `h${pal.hueShift ?? 0}`,
+    `s${pal.satShift ?? 0}`,
+    `l${pal.lightShift ?? 0}`,
+    `v${pal.variance ?? ''}`,
+    `i${pal.ink ?? ''}`,
+    `k${pal.silk ?? ''}`,
+    `t${pal.twine ?? ''}`,
+  ];
+  for (const role of TONE_ROLES) {
+    const v = pal[role];
+    if (v) parts.push(`${role}${v[0]},${v[1]},${v[2]}`);
+  }
+  return parts.join('/');
+}
+
+/** Potting soil, derived from the palette's wood so it never clashes. */
+function soilTone(gr: Grow): [number, number, number] {
+  const t = roleTone(gr, 'wood', [4, -14, -6]);
+  return [t.h, t.s, t.l];
 }
 
 /** Uniform in [a, b). */
@@ -582,7 +868,10 @@ interface TrailDef {
   leafW: number;
   every: number;
   splay: number;
-  tone: [number, number, number];
+  /** Colour role this trail paints from. */
+  role: FloraToneRole;
+  /** Character delta off that role — what makes ivy ≠ pothos ≠ hearts. */
+  tint: ToneTuple;
   branches: number;
   paired?: boolean;
   paleChance?: number;
@@ -605,7 +894,9 @@ const TRAILS: Record<'ivy' | 'pothos' | 'hearts', TrailDef> = {
     leafW: 25,
     every: 18,
     splay: 1.02,
-    tone: [102, 33, 39],
+    // English ivy: the darkest, bluest-green of the three trails.
+    role: 'leaf',
+    tint: [-4, -2, 0],
     branches: 2,
     curlChance: 0.18,
     sizeTaper: 0.42,
@@ -622,7 +913,9 @@ const TRAILS: Record<'ivy' | 'pothos' | 'hearts', TrailDef> = {
     leafW: 24,
     every: 15,
     splay: 0.94,
-    tone: [95, 35, 39],
+    // Pothos: a warmer, yellower green — then variegated on top.
+    role: 'leaf',
+    tint: [-11, -4, 1],
     branches: 1,
     paleChance: 0.42,
     curlChance: 0.13,
@@ -640,7 +933,9 @@ const TRAILS: Record<'ivy' | 'pothos' | 'hearts', TrailDef> = {
     leafW: 11,
     every: 16,
     splay: 1.38,
-    tone: [116, 17, 46],
+    // String-of-hearts: silvered, desaturated, noticeably paler.
+    role: 'leaf',
+    tint: [12, -34, 8],
     branches: 1,
     paired: true,
     curlChance: 0.12,
@@ -653,7 +948,7 @@ const TRAILS: Record<'ivy' | 'pothos' | 'hearts', TrailDef> = {
 
 function growTrail(gr: Grow, def: TrailDef): void {
   const s = gr.scale;
-  const t = tone(gr, def.tone[0], def.tone[1], def.tone[2]);
+  const t = roleTone(gr, def.role, def.tint);
   const stemTone: Tone = { h: t.h - 4, s: clamp(t.s + 4, 0, 100), l: clamp(t.l + 4, 0, 100) };
   // Where the vine grips the wood.
   contactShade(gr, 4.5, 0.26);
@@ -675,6 +970,7 @@ function growTrail(gr: Grow, def: TrailDef): void {
     width: def.leafW * s,
     splay: def.splay,
     tone: t,
+    hueJitter: variance(gr),
     paired: def.paired ?? false,
     paleChance: def.paleChance ?? 0,
     curlChance: def.curlChance ?? 0.16,
@@ -744,14 +1040,14 @@ function growFrond(gr: Grow, s: number, t: Tone, lean: number, size: number): St
     bendBias: -0.3,
     curlChance: 0.07,
     darkChance: 0.15,
-    hueJitter: 9,
+    hueJitter: variance(gr),
   });
   return rachis;
 }
 
 function growFern(gr: Grow): void {
   const s = gr.scale;
-  const t = tone(gr, 126, 30, 36);
+  const t = roleTone(gr, 'leafDeep');
   contactShade(gr, 8, 0.3);
   // A shuttlecock of fronds fanning from one crown: the tallest slightly off
   // centre, the rest shorter and splayed. Mirroring two equal fronds either
@@ -786,7 +1082,7 @@ function growFern(gr: Grow): void {
 
 function growMoss(gr: Grow): void {
   const s = gr.scale;
-  const t = tone(gr, 94, 34, 32);
+  const t = roleTone(gr, 'moss');
   const up = gr.dir;
   const flipY = up < 0 ? 1 : -1;
   // Cushions are lumpy and wide, not neat and low.
@@ -846,7 +1142,7 @@ function growMoss(gr: Grow): void {
         bend: (gr.rnd() * 2 - 1) * 2 * s,
         curl: 0,
         tone: {
-          h: t.h + (gr.rnd() * 2 - 1) * 15,
+          h: t.h + (gr.rnd() * 2 - 1) * variance(gr, 15) * 1.6,
           s: clamp(t.s + (gr.rnd() * 2 - 1) * 12, 0, 100),
           l: clamp(t.l + (gr.rnd() * 2 - 1) * 8 + layer.dl - (gr.rnd() < 0.14 ? 8 : 0), 0, 100),
         },
@@ -879,7 +1175,7 @@ function growMoss(gr: Grow): void {
       r: rr(gr, 1.3, 2.1) * s,
       kind: 'capsule',
       open: 1,
-      tone: { h: 36, s: 40, l: 44 },
+      tone: roleTone(gr, 'wood', [14, 8, 14]),
       seed: (gr.rnd() * 0xffffffff) >>> 0,
     });
   }
@@ -887,10 +1183,11 @@ function growMoss(gr: Grow): void {
 
 function growHerbBundle(gr: Grow): void {
   const s = gr.scale;
-  // A drying bundle is sage-grey and dusty, not fresh green — and it has to
-  // be light enough that individual sprigs separate against dark wood.
-  const t = tone(gr, 78, 17, 52);
-  const twine = 'hsl(38 28% 56%)';
+  // A drying bundle is dustier than living growth — but "dusty" is a
+  // lightness/saturation move off the palette's `dry` role, not a hardcoded
+  // sage-grey: a reef or a candy shelf hangs quite different bundles.
+  const t = roleTone(gr, 'dry', [38, -30, -6]);
+  const twine = roleColour(gr, 'twine');
   const knotY = 15 * s;
   contactShade(gr, 5, 0.24);
 
@@ -935,7 +1232,7 @@ function growHerbBundle(gr: Grow): void {
       from: 0.14,
       tone: t,
       // Dried herbs are a scrapyard of tones: that variety is the legibility.
-      hueJitter: 20,
+      hueJitter: variance(gr, 20) + 11,
       sizeTaper: 0.55,
       sizeJitter: 0.26,
       bendBias: -0.16,
@@ -952,8 +1249,8 @@ function growHerbBundle(gr: Grow): void {
           r: rr(gr, 1.6, 2.6) * s,
           kind: 'bud',
           open: 0.28,
-          // Lilac, not indigo: at 2px a dark bud is just a dirty speck.
-          tone: { h: 274, s: 34, l: 70 },
+          // Light and saturated: at 2px a dark bud is just a dirty speck.
+          tone: roleTone(gr, 'bloomCool'),
           seed: (gr.rnd() * 0xffffffff) >>> 0,
         });
       }
@@ -998,8 +1295,11 @@ function growHerbBundle(gr: Grow): void {
 
 function growBlossom(gr: Grow): void {
   const s = gr.scale;
-  const wood: Tone = tone(gr, 26, 22, 30);
-  const petal: Tone = tone(gr, 344, 46, 82);
+  const wood: Tone = roleTone(gr, 'wood', [4, -18, -1]);
+  const petal: Tone = roleTone(gr, 'bloom');
+  // Roughly a quarter of a branch's flowers open near-white, the way a real
+  // cherry does — the pale ones are what make the pink ones read as pink.
+  const paleChance = 0.26;
   contactShade(gr, 5, 0.26);
   const branch = growStem(gr, {
     x: 0,
@@ -1045,11 +1345,7 @@ function growBlossom(gr: Grow): void {
         r: rr(gr, 4.2, 7.4) * s,
         kind: gr.rnd() < 0.26 ? 'bud' : 'blossom',
         open: rr(gr, 0.35, 1),
-        tone: {
-          h: petal.h + (gr.rnd() * 2 - 1) * 8,
-          s: clamp(petal.s + (gr.rnd() * 2 - 1) * 10, 0, 100),
-          l: clamp(petal.l + (gr.rnd() * 2 - 1) * 7, 0, 100),
-        },
+        tone: petalTone(gr, petal, paleChance),
         seed: (gr.rnd() * 0xffffffff) >>> 0,
       });
     }
@@ -1061,7 +1357,8 @@ function growBlossom(gr: Grow): void {
       width: 6 * s,
       splay: 1.05,
       from: 0.05,
-      tone: tone(gr, 108, 28, 40),
+      tone: roleTone(gr, 'leaf', [6, -12, 3]),
+      hueJitter: variance(gr),
       sizeTaper: 0.68,
       sizeJitter: 0.22,
       curlChance: 0.08,
@@ -1077,7 +1374,7 @@ function growBlossom(gr: Grow): void {
       r: rr(gr, 3.8, 6.2) * s,
       kind: 'blossom',
       open: rr(gr, 0.5, 1),
-      tone: petal,
+      tone: petalTone(gr, petal, paleChance),
       seed: (gr.rnd() * 0xffffffff) >>> 0,
     });
   }
@@ -1085,7 +1382,7 @@ function growBlossom(gr: Grow): void {
 
 function growPotted(gr: Grow): void {
   const s = gr.scale;
-  const t = tone(gr, 108, 30, 34);
+  const t = roleTone(gr, 'leaf', [6, -8, -2]);
   const potW = 30 * s;
   const potH = 24 * s;
   contactShade(gr, 22, 0.36);
@@ -1120,6 +1417,7 @@ function growPotted(gr: Grow): void {
       splay: 1.0,
       from: 0.3,
       tone: t,
+      hueJitter: variance(gr),
       sizeTaper: 0.75,
       curlChance: 0.14,
       darkChance: 0.2,
@@ -1134,13 +1432,14 @@ function growPotted(gr: Grow): void {
     ],
     width: 2.2 * s,
     alpha: 0.55,
-    colour: 'hsl(28 24% 26%)',
+    colour: hsl(...soilTone(gr)),
   });
 }
 
 function growGrassTuft(gr: Grow): void {
   const s = gr.scale;
-  const t = tone(gr, 86, 32, 42);
+  const t = roleTone(gr, 'grass');
+  const dryTone = roleTone(gr, 'dry');
   contactShade(gr, 7, 0.32);
   const blades = 11 + Math.floor(gr.rnd() * 7);
   for (let i = 0; i < blades; i++) {
@@ -1156,9 +1455,9 @@ function growGrassTuft(gr: Grow): void {
       bend: (u >= 0 ? 1 : -1) * rr(gr, 5, 14) * s,
       curl: gr.rnd() < 0.12 ? rr(gr, 0.3, 0.6) : 0,
       tone: dry
-        ? { h: 44, s: 30, l: 52 }
+        ? dryTone
         : {
-            h: t.h + (gr.rnd() * 2 - 1) * 12,
+            h: t.h + (gr.rnd() * 2 - 1) * variance(gr, 12) * 1.3,
             s: clamp(t.s + (gr.rnd() * 2 - 1) * 10, 0, 100),
             l: clamp(t.l + (gr.rnd() * 2 - 1) * 9, 0, 100),
           },
@@ -1189,7 +1488,7 @@ function growGrassTuft(gr: Grow): void {
       r: puff ? rr(gr, 6.5, 9) * s : rr(gr, 3.6, 5.2) * s,
       kind: puff ? 'puff' : 'dandelion',
       open: 1,
-      tone: puff ? { h: 44, s: 12, l: 84 } : { h: 48, s: 76, l: 58 },
+      tone: puff ? roleTone(gr, 'dry', [4, -40, 26]) : roleTone(gr, 'bloomAlt'),
       seed: (gr.rnd() * 0xffffffff) >>> 0,
     });
   }
@@ -1197,10 +1496,11 @@ function growGrassTuft(gr: Grow): void {
 
 function growCobweb(gr: Grow): void {
   const s = gr.scale;
-  const colour = 'hsl(40 12% 86%)';
+  const colour = roleColour(gr, 'silk');
   // Pale silk vanishes on parchment; a dark halo under every strand keeps the
-  // web readable on both a cream wall and dark walnut.
-  const halo = 'hsl(30 18% 22% / 0.5)';
+  // web readable on both a cream wall and dark walnut. It carries its own
+  // alpha, so it must stay a colour string rather than a palette role.
+  const halo = 'hsl(206 26% 18% / 0.5)';
   const spokes = 6 + Math.floor(gr.rnd() * 3);
   const reach = rr(gr, 46, 72) * s;
   // Sweep from the facing direction toward the horizontal on the flip side.
@@ -1258,7 +1558,7 @@ function growCobweb(gr: Grow): void {
       r: rr(gr, 0.7, 1.5),
       kind: 'dust',
       open: 1,
-      tone: { h: 40, s: 10, l: 70 },
+      tone: roleTone(gr, 'dry', [0, -34, 14]),
       seed: (gr.rnd() * 0xffffffff) >>> 0,
     });
   }
@@ -1431,7 +1731,7 @@ function computeBounds(g: FloraGeometry): Rect {
  */
 export function growFlora(p: FloraPlacement): FloraGeometry {
   const pal = p.palette;
-  const key = `${p.species}|${p.seed}|${p.scale.toFixed(4)}|${p.flip ? 1 : 0}|${p.facing}|${pal.hueShift ?? 0}|${pal.satShift ?? 0}|${pal.lightShift ?? 0}`;
+  const key = `${p.species}|${p.seed}|${p.scale.toFixed(4)}|${p.flip ? 1 : 0}|${p.facing}|${paletteKey(pal)}`;
   const hit = geometryMemo.get(key);
   if (hit) return hit;
 
@@ -1751,8 +2051,9 @@ function drawBloom(ctx: Ctx2D, b: BloomGeom, ink: string): void {
         petalBase: toneStr(b.tone, -8, 4),
         petalTip: toneStr(b.tone, 9),
         ink,
-        centre: hsl(46, 62, 58),
-        stamen: hsl(40, 40, 40, 0.8),
+        // A real blossom's eye is the brightest thing on the branch.
+        centre: hsl(46, 96, 60),
+        stamen: hsl(34, 70, 34, 0.85),
       });
       break;
     }
@@ -1809,7 +2110,7 @@ function drawBloom(ctx: Ctx2D, b: BloomGeom, ink: string): void {
       break;
     }
     case 'dust': {
-      ctx.fillStyle = 'hsl(40 10% 72% / 0.5)';
+      ctx.fillStyle = toneStr(b.tone, -8, 0, 0.5);
       ctx.beginPath();
       ctx.arc(0, 0, b.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1827,10 +2128,12 @@ function drawBloom(ctx: Ctx2D, b: BloomGeom, ink: string): void {
 }
 
 function drawPot(ctx: Ctx2D, p: PotGeom, ink: string): void {
+  // Glazed pottery, not unfired mud: these are the only saturated non-plant
+  // surfaces on a shelf and they are worth the pigment.
   const ramp: Record<PotGeom['kind'], [string, string, string]> = {
-    terracotta: ['#a9603f', '#c07450', '#84492f'],
-    brass: ['#b08d3e', '#d0ae5c', '#8a6c2c'],
-    enamel: ['#8fa79a', '#b7cabf', '#6c8478'],
+    terracotta: ['#d8613a', '#f08050', '#a03d1c'],
+    brass: ['#d8a52e', '#f5c95c', '#9c7010'],
+    enamel: ['#2fa8b8', '#5ecfdb', '#16707e'],
   };
   const [a, b, c] = ramp[p.kind];
   const cx = p.x + p.w / 2;
@@ -1890,8 +2193,8 @@ function drawPot(ctx: Ctx2D, p: PotGeom, ink: string): void {
   ctx.stroke();
 
   // A single warm highlight down the lit side, and dry-brush wear at the foot.
-  ctx.globalAlpha = 0.2;
-  ctx.strokeStyle = '#fff3dd';
+  ctx.globalAlpha = 0.24;
+  ctx.strokeStyle = '#fffaf0';
   ctx.lineWidth = Math.max(1.4, p.w * 0.07);
   ctx.beginPath();
   ctx.moveTo(p.x + p.w * 0.68, p.y + p.h * 0.12);
@@ -2007,15 +2310,18 @@ export function drawFloraGeometry(
       },
       {
         fillBase: toneStr(l.tone),
-        fillTip: toneStr(l.tone, 11, -4),
+        // The tip catches light: LIGHTER but no less saturated. Bleeding
+        // saturation out of the gradient (the old -4) is exactly what turned
+        // a leaf into a faded pressed specimen.
+        fillTip: toneStr(l.tone, 11, 3),
         ink: g.ink,
-        vein: toneStr(l.tone, -12, 4),
+        vein: toneStr(l.tone, -14, 8),
         lineWidth: clamp(l.len * 0.055, 0.55, 1.05),
         // Variegation is a *pattern on* the leaf, not a different leaf
         // colour — painting the whole blade pale (the old behaviour) just
         // bleached it out and lost the plant.
         variegation: l.pale ? toneStr(l.tone, 27, -19) : undefined,
-        sheen: toneStr(l.tone, 20, -6),
+        sheen: toneStr(l.tone, 22, 0),
       },
     );
     ctx.restore();
@@ -2139,7 +2445,7 @@ export function floraLayerCacheKey(placements: readonly FloraPlacement[]): strin
   const parts = placements.map(
     (p) =>
       `${p.species}:${p.seed.toString(16)}:${p.scale.toFixed(3)}:${p.flip ? 1 : 0}:${p.facing}:` +
-      `${Math.round(p.anchor.x)},${Math.round(p.anchor.y)}`,
+      `${Math.round(p.anchor.x)},${Math.round(p.anchor.y)}:${paletteKey(p.palette)}`,
   );
   return `flora|v${FLORA_RECIPE_VERSION}|${parts.join('|')}`;
 }

@@ -160,6 +160,61 @@ export const COLOURWAYS: Readonly<Record<ColourwayId, Colourway>> = {
     inkSoft: 'rgba(126, 112, 90, 0.08)',
     accent: 'rgba(178, 146, 92, 0.2)',
   },
+  /* --- v3: the saturated six ------------------------------------------- */
+  blossom: {
+    id: 'blossom',
+    name: 'Blossom Sky',
+    base: '#8ed4f7',
+    baseAlt: '#a8e2fa',
+    ink: 'rgba(46, 116, 82, 0.17)',
+    inkSoft: 'rgba(46, 116, 82, 0.1)',
+    accent: 'rgba(255, 118, 168, 0.38)',
+  },
+  chrome: {
+    id: 'chrome',
+    name: 'Workshop Chrome',
+    base: '#243444',
+    baseAlt: '#2d4054',
+    ink: 'rgba(110, 232, 255, 0.17)',
+    inkSoft: 'rgba(110, 232, 255, 0.1)',
+    accent: 'rgba(255, 82, 202, 0.38)',
+  },
+  jungle: {
+    id: 'jungle',
+    name: 'Volcano Jungle',
+    base: '#c2561c',
+    baseAlt: '#ad4718',
+    ink: 'rgba(24, 74, 36, 0.18)',
+    inkSoft: 'rgba(24, 74, 36, 0.1)',
+    accent: 'rgba(86, 208, 118, 0.38)',
+  },
+  bubblegum: {
+    id: 'bubblegum',
+    name: 'Bubblegum',
+    base: '#ffd4e6',
+    baseAlt: '#ffc2dc',
+    ink: 'rgba(214, 63, 140, 0.16)',
+    inkSoft: 'rgba(214, 63, 140, 0.09)',
+    accent: 'rgba(52, 208, 172, 0.4)',
+  },
+  lagoon: {
+    id: 'lagoon',
+    name: 'Lagoon',
+    base: '#0f6e91',
+    baseAlt: '#12809f',
+    ink: 'rgba(178, 246, 255, 0.16)',
+    inkSoft: 'rgba(178, 246, 255, 0.09)',
+    accent: 'rgba(255, 132, 104, 0.4)',
+  },
+  nebula: {
+    id: 'nebula',
+    name: 'Nebula',
+    base: '#1a1046',
+    baseAlt: '#241458',
+    ink: 'rgba(150, 200, 255, 0.16)',
+    inkSoft: 'rgba(150, 200, 255, 0.09)',
+    accent: 'rgba(255, 92, 214, 0.4)',
+  },
 };
 
 /** Resolve a colourway id (or a literal colourway) to a Colourway. */
@@ -1193,6 +1248,560 @@ const plainLimewash: WallpaperPattern = {
   },
 };
 
+/* --- 13. blossom sky ----------------------------------------------------- */
+
+const blossomSky: WallpaperPattern = {
+  id: 'blossom-sky',
+  name: 'Blossom Sky',
+  blurb: 'Cherry branches and drifting petals across an open spring sky.',
+  render(ctx, size, cw, seed) {
+    const rnd = mulberry32(seed >>> 0);
+    ground(ctx, size, cw, rnd, 6);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Soft cloud banks: very pale blooms sitting low in the tile.
+    for (let i = 0; i < 3; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const r = size * (0.16 + rnd() * 0.12);
+      stamp(size, x, y, r, (cx, cy) => {
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+        g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      });
+    }
+
+    // Two blossom branches crossing the tile — each is periodic in x, so the
+    // branch continues straight into the next tile.
+    for (const b of [0, 1]) {
+      const y0 = size * (b ? 0.66 : 0.24);
+      const amp = size * 0.06;
+      ctx.strokeStyle = 'rgba(96, 62, 40, 0.34)';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      for (let s = 0; s <= 24; s++) {
+        const t = s / 24;
+        const x = t * size;
+        const y = y0 + Math.sin(t * Math.PI * 2 + b * 1.7) * amp;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // Twigs, leaves and blossom heads along the branch.
+      const heads = 7;
+      for (let i = 0; i < heads; i++) {
+        const t = (i + 0.5) / heads;
+        const x = t * size;
+        const y = y0 + Math.sin(t * Math.PI * 2 + b * 1.7) * amp;
+        const up = i % 2 === 0 ? -1 : 1;
+        const tx = x + (rnd() * 2 - 1) * 6;
+        const ty = y + up * (9 + rnd() * 9);
+        ctx.strokeStyle = 'rgba(96, 62, 40, 0.26)';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo((x + tx) / 2 + up * 3, (y + ty) / 2, tx, ty);
+        ctx.stroke();
+        // Blossom: five soft petals plus a stamen dot.
+        stamp(size, tx, ty, 12, (cx, cy) => {
+          ctx.fillStyle = cw.accent;
+          for (let p = 0; p < 5; p++) {
+            const a = (p / 5) * Math.PI * 2 + i;
+            ctx.beginPath();
+            ctx.ellipse(cx + Math.cos(a) * 3.6, cy + Math.sin(a) * 3.6, 3.4, 2.4, a, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = 'rgba(255, 230, 120, 0.5)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        // A green leaf on the opposite side.
+        ctx.strokeStyle = cw.ink;
+        ctx.lineWidth = 1.2;
+        leaf(ctx, x, y, -up * 7, -up * 5, 3.4);
+      }
+    }
+
+    // Loose petals falling between the branches.
+    for (let i = 0; i < 14; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      stamp(size, x, y, 6, (cx, cy) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rnd() * Math.PI);
+        ctx.fillStyle = cw.accent;
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 2.8, 1.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+  },
+};
+
+/* --- 14. circuit trace --------------------------------------------------- */
+
+const circuitTrace: WallpaperPattern = {
+  id: 'circuit-trace',
+  name: 'Circuit Trace',
+  blurb: 'Etched PCB routes, solder pads and the odd lit via.',
+  render(ctx, size, cw, seed) {
+    const rnd = mulberry32(seed >>> 0);
+    ground(ctx, size, cw, rnd, 4);
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'round';
+    const cells = 8;
+    const step = size / cells;
+
+    // Traces: staircase routes that always start and end on the tile grid, so
+    // every run continues into the neighbouring tile.
+    for (let i = 0; i < cells; i++) {
+      const horizontal = i % 2 === 0;
+      const lane = (i + 0.5) * step;
+      ctx.strokeStyle = cw.ink;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      let a = 0;
+      let b = lane;
+      ctx.moveTo(horizontal ? a : b, horizontal ? b : a);
+      while (a < size) {
+        const run = step * (1 + Math.floor(rnd() * 2));
+        const jog = (rnd() < 0.5 ? -1 : 1) * step * 0.5;
+        const na = Math.min(size, a + run);
+        ctx.lineTo(horizontal ? na : b, horizontal ? b : na);
+        if (na < size) {
+          const nb = b + jog;
+          // 45° corner, the way a router breaks a right angle.
+          ctx.lineTo(horizontal ? na + step * 0.25 : nb, horizontal ? nb : na + step * 0.25);
+          b = nb;
+          a = na + step * 0.25;
+        } else a = na;
+      }
+      ctx.stroke();
+    }
+
+    // Solder pads on the grid, with a drilled hole in the middle.
+    for (let gy = 0; gy < cells; gy++) {
+      for (let gx = 0; gx < cells; gx++) {
+        if ((gx * 3 + gy * 5) % 4 !== 0) continue;
+        const x = (gx + 0.5) * step;
+        const y = (gy + 0.5) * step;
+        const lit = (gx + gy) % 7 === 0;
+        stamp(size, x, y, 8, (cx, cy) => {
+          ctx.fillStyle = lit ? cw.accent : cw.ink;
+          ctx.beginPath();
+          ctx.arc(cx, cy, lit ? 3.4 : 2.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = cw.base;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+          if (lit) {
+            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 9);
+            g.addColorStop(0, cw.accent);
+            g.addColorStop(1, fade(cw.accent));
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = g;
+            ctx.fillRect(cx - 9, cy - 9, 18, 18);
+            ctx.globalAlpha = 1;
+          }
+        });
+      }
+    }
+
+    // One little chip outline per tile: the accent motif.
+    const chipX = rnd() * size;
+    const chipY = rnd() * size;
+    stamp(size, chipX, chipY, 26, (cx, cy) => {
+      ctx.strokeStyle = cw.ink;
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(cx - 13, cy - 9, 26, 18);
+      ctx.lineWidth = 1.1;
+      for (let p = 0; p < 4; p++) {
+        const py = cy - 6 + p * 4;
+        ctx.beginPath();
+        ctx.moveTo(cx - 18, py);
+        ctx.lineTo(cx - 13, py);
+        ctx.moveTo(cx + 13, py);
+        ctx.lineTo(cx + 18, py);
+        ctx.stroke();
+      }
+      ctx.fillStyle = cw.inkSoft;
+      ctx.beginPath();
+      ctx.arc(cx - 9, cy - 5, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  },
+};
+
+/* --- 15. fern & footprint ------------------------------------------------ */
+
+const fernFootprint: WallpaperPattern = {
+  id: 'fern-footprint',
+  name: 'Fern & Footprint',
+  blurb: 'Jungle fern silhouettes with three-toed tracks wandering through.',
+  render(ctx, size, cw, seed) {
+    const rnd = mulberry32(seed >>> 0);
+    ground(ctx, size, cw, rnd, 6);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Fern fronds: a spine with pinnae stepping down both sides.
+    for (let i = 0; i < 5; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const len = 34 + rnd() * 30;
+      const ang = -Math.PI / 2 + (rnd() * 2 - 1) * 1.1;
+      stamp(size, x, y, len + 14, (cx, cy) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(ang);
+        ctx.strokeStyle = cw.ink;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(len * 0.3, -len * 0.24, len, -len * 0.16);
+        ctx.stroke();
+        const pinnae = 11;
+        for (let p = 1; p <= pinnae; p++) {
+          const t = p / (pinnae + 1);
+          const px = t * len;
+          const py = -t * len * 0.2 - Math.sin(t * Math.PI) * 2;
+          const plen = (1 - t) * 13 + 4;
+          ctx.lineWidth = 1.2;
+          for (const side of [-1, 1]) {
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.quadraticCurveTo(px + plen * 0.5, py + side * plen * 0.7, px + plen * 0.7, py + side * plen);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      });
+    }
+
+    // A trail of three-toed footprints crossing the tile diagonally.
+    const prints = 5;
+    for (let i = 0; i < prints; i++) {
+      const t = (i + 0.4) / prints;
+      const x = t * size;
+      const y = ((t * size * 0.7) % size);
+      const side = i % 2 === 0 ? -1 : 1;
+      stamp(size, x + side * 7, y, 16, (cx, cy) => {
+        ctx.fillStyle = cw.accent;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(0.6 + side * 0.2);
+        // Heel pad plus three splayed toes.
+        ctx.beginPath();
+        ctx.ellipse(0, 4, 5.4, 4.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        for (const a of [-0.8, 0, 0.8]) {
+          ctx.beginPath();
+          ctx.ellipse(Math.sin(a) * 6.4, -4 - Math.cos(a) * 2.4, 2.4, 4.2, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      });
+    }
+
+    // Accent motif: one amber drop with a trapped speck.
+    const ax = rnd() * size;
+    const ay = rnd() * size;
+    stamp(size, ax, ay, 14, (cx, cy) => {
+      const g = ctx.createRadialGradient(cx - 2, cy - 3, 1, cx, cy, 9);
+      g.addColorStop(0, 'rgba(255, 214, 122, 0.45)');
+      g.addColorStop(1, 'rgba(255, 176, 60, 0.14)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 8, 10, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = cw.inkSoft;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  },
+};
+
+/* --- 16. peppermint stripe ----------------------------------------------- */
+
+const peppermintStripe: WallpaperPattern = {
+  id: 'peppermint-stripe',
+  name: 'Peppermint Stripe',
+  blurb: 'Diagonal sugar stripes with dots and sprinkles between them.',
+  render(ctx, size, cw, seed) {
+    const rnd = mulberry32(seed >>> 0);
+    ground(ctx, size, cw, rnd, 4);
+
+    // 45° stripes: drawn as a doubled run so the diagonal wraps at both edges.
+    const bands = 8;
+    const pitch = size / bands;
+    ctx.save();
+    ctx.lineCap = 'butt';
+    for (let i = -bands; i < bands * 2; i++) {
+      const off = i * pitch;
+      ctx.strokeStyle = i % 2 === 0 ? cw.ink : cw.accent;
+      ctx.lineWidth = i % 2 === 0 ? pitch * 0.42 : pitch * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(off, -2);
+      ctx.lineTo(off + size + 2, size + 2);
+      ctx.stroke();
+      // A thin sugar highlight riding the leading edge of each wide stripe.
+      if (i % 2 === 0) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(off - pitch * 0.2, -2);
+        ctx.lineTo(off + size - pitch * 0.2, size + 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Sprinkles: little rounded bars at jittered angles.
+    for (let i = 0; i < 26; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      stamp(size, x, y, 8, (cx, cy) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rnd() * Math.PI);
+        ctx.strokeStyle = rnd() < 0.5 ? 'rgba(255, 255, 255, 0.34)' : cw.accent;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(-3, 0);
+        ctx.lineTo(3, 0);
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
+    // Accent motif: one wrapped mint per tile.
+    const mx = rnd() * size;
+    const my = rnd() * size;
+    stamp(size, mx, my, 18, (cx, cy) => {
+      ctx.strokeStyle = cw.ink;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 7.5, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let s = 0; s < 6; s++) {
+        const a = (s / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * 7.5, cy + Math.sin(a) * 7.5);
+        ctx.stroke();
+      }
+      // Wrapper twists either side.
+      for (const dir of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + dir * 7.5, cy);
+        ctx.lineTo(cx + dir * 14, cy - 4);
+        ctx.lineTo(cx + dir * 14, cy + 4);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    });
+  },
+};
+
+/* --- 17. reef bubbles ---------------------------------------------------- */
+
+const reefBubble: WallpaperPattern = {
+  id: 'reef-bubble',
+  name: 'Reef & Bubbles',
+  blurb: 'Kelp ribbons, coral fans and columns of rising bubbles.',
+  render(ctx, size, cw, seed) {
+    const rnd = mulberry32(seed >>> 0);
+    ground(ctx, size, cw, rnd, 6);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Kelp: full-height ribbons, periodic in y so they run floor to ceiling.
+    for (let i = 0; i < 4; i++) {
+      const x0 = rnd() * size;
+      const waves = 2;
+      const amp = 9 + rnd() * 10;
+      stamp(size, x0, size / 2, amp + 20, (cx) => {
+        ctx.strokeStyle = cw.ink;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        for (let s = 0; s <= 32; s++) {
+          const t = s / 32;
+          const x = cx + Math.sin(t * Math.PI * 2 * waves) * amp;
+          const y = t * size;
+          if (s === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        // Blades stepping off the stipe.
+        ctx.lineWidth = 1.3;
+        for (let s = 1; s < 10; s++) {
+          const t = s / 10;
+          const x = cx + Math.sin(t * Math.PI * 2 * waves) * amp;
+          const y = t * size;
+          const side = s % 2 === 0 ? 1 : -1;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.quadraticCurveTo(x + side * 12, y + 3, x + side * 15, y + 12);
+          ctx.stroke();
+        }
+      });
+    }
+
+    // Coral fans in the accent colour.
+    for (let i = 0; i < 3; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      stamp(size, x, y, 24, (cx, cy) => {
+        ctx.strokeStyle = cw.accent;
+        ctx.lineWidth = 1.8;
+        for (let b = 0; b < 6; b++) {
+          const a = -Math.PI / 2 + (b - 2.5) * 0.3;
+          const len = 12 + rnd() * 8;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + 6);
+          ctx.quadraticCurveTo(
+            cx + Math.cos(a) * len * 0.5,
+            cy + 6 + Math.sin(a) * len * 0.6,
+            cx + Math.cos(a) * len,
+            cy + 6 + Math.sin(a) * len,
+          );
+          ctx.stroke();
+          // Polyp tip.
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * len, cy + 6 + Math.sin(a) * len, 1.6, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+    }
+
+    // Bubbles: rings with a catchlight, in loose rising columns.
+    for (let c = 0; c < 5; c++) {
+      const bx = rnd() * size;
+      const count = 4 + Math.floor(rnd() * 4);
+      for (let i = 0; i < count; i++) {
+        const x = bx + (rnd() * 2 - 1) * 9;
+        const y = rnd() * size;
+        const r = 1.8 + rnd() * 4;
+        stamp(size, x, y, r + 3, (cx, cy) => {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.34)';
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+          ctx.beginPath();
+          ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+    }
+  },
+};
+
+/* --- 18. nebula ---------------------------------------------------------- */
+
+const nebula: WallpaperPattern = {
+  id: 'nebula',
+  name: 'Nebula',
+  blurb: 'Glowing gas clouds, neon constellations and a comet or two.',
+  render(ctx, size, cw, seed) {
+    const rnd = mulberry32(seed >>> 0);
+    ground(ctx, size, cw, rnd, 4);
+
+    // Nebula clouds: two coloured blooms, stamped so they wrap.
+    for (let i = 0; i < 4; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const r = size * (0.2 + rnd() * 0.2);
+      const tint = i % 2 === 0 ? cw.accent : 'rgba(90, 190, 255, 0.34)';
+      stamp(size, x, y, r, (cx, cy) => {
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, tint);
+        g.addColorStop(1, fade(tint));
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+        ctx.restore();
+      });
+    }
+
+    // Star field: a lot of tiny ones, a few four-point flares.
+    for (let i = 0; i < 150; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const big = rnd() < 0.09;
+      stamp(size, x, y, big ? 7 : 2, (cx, cy) => {
+        if (big) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(cx - 4.5, cy);
+          ctx.lineTo(cx + 4.5, cy);
+          ctx.moveTo(cx, cy - 4.5);
+          ctx.lineTo(cx, cy + 4.5);
+          ctx.stroke();
+        }
+        ctx.fillStyle = rnd() < 0.2 ? cw.accent : 'rgba(255, 255, 255, 0.55)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, big ? 1.6 : 0.5 + rnd() * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    // One constellation per tile: joined stars with hairline rule lines.
+    const nodes: Array<[number, number]> = [];
+    const ox = rnd() * size;
+    const oy = rnd() * size;
+    for (let i = 0; i < 5; i++) nodes.push([ox + (rnd() * 2 - 1) * 40, oy + (rnd() * 2 - 1) * 40]);
+    stamp(size, ox, oy, 60, (cx, cy) => {
+      ctx.save();
+      ctx.translate(cx - ox, cy - oy);
+      ctx.strokeStyle = cw.ink;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      nodes.forEach(([nx, ny], i) => (i === 0 ? ctx.moveTo(nx, ny) : ctx.lineTo(nx, ny)));
+      ctx.stroke();
+      for (const [nx, ny] of nodes) {
+        ctx.fillStyle = cw.accent;
+        ctx.beginPath();
+        ctx.arc(nx, ny, 2.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    // A comet: a bright head with a tapering trail.
+    const kx = rnd() * size;
+    const ky = rnd() * size;
+    stamp(size, kx, ky, 46, (cx, cy) => {
+      const g = ctx.createLinearGradient(cx, cy, cx - 40, cy + 26);
+      g.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+      g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 2.6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.quadraticCurveTo(cx - 22, cy + 10, cx - 40, cy + 26);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  },
+};
+
 /* =============================== registry ================================ */
 
 export const WALLPAPER_PATTERNS: Readonly<Record<WallpaperPatternId, WallpaperPattern>> = {
@@ -1208,9 +1817,15 @@ export const WALLPAPER_PATTERNS: Readonly<Record<WallpaperPatternId, WallpaperPa
   'marbled-endpaper': marbledEndpaper,
   'pin-dot': pinDot,
   'plain-limewash': plainLimewash,
+  'blossom-sky': blossomSky,
+  'circuit-trace': circuitTrace,
+  'fern-footprint': fernFootprint,
+  'peppermint-stripe': peppermintStripe,
+  'reef-bubble': reefBubble,
+  nebula,
 };
 
-/** All twelve patterns in studio-picker order. */
+/** All eighteen patterns in studio-picker order. */
 export function allWallpaperPatterns(): readonly WallpaperPattern[] {
   return WALLPAPER_PATTERN_IDS.map((id) => WALLPAPER_PATTERNS[id]);
 }

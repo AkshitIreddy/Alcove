@@ -5,10 +5,10 @@
  *
  * The acceptance criteria in docs/design/library-themes.md §5 that can be
  * checked without pixels:
- *   - eight complete worlds, every one a full art package
+ *   - fourteen complete worlds, every one a full art package
  *   - no two rooms are the same bookcase recoloured (distinct carpentry
  *     vocabulary, not just distinct hexes)
- *   - twelve wallpaper patterns; pattern and colourway fully independent
+ *   - eighteen wallpaper patterns; pattern and colourway fully independent
  *   - the wall treatment is orthogonal to both
  *   - overrides resolve, and a zero flora slider reaches genuinely clean
  *
@@ -49,9 +49,16 @@ const themes = allThemes();
 /* ================================ identity =============================== */
 
 describe('theme registry', () => {
-  it('ships exactly the eight worlds the doc names', () => {
-    expect(THEME_IDS).toHaveLength(8);
+  it('ships the eight original worlds plus the six colourful ones', () => {
+    expect(THEME_IDS).toHaveLength(14);
     expect([...THEME_IDS]).toEqual([
+      // The colourful six lead the picker; Blossom Grove is the default room.
+      'blossom',
+      'robot',
+      'dino',
+      'candy',
+      'reef',
+      'voyager',
       'athenaeum',
       'conservatory',
       'observatory',
@@ -61,6 +68,12 @@ describe('theme registry', () => {
       'attic',
       'apothecary',
     ]);
+  });
+
+  it('opens a brand-new library in Blossom Grove', () => {
+    expect(DEFAULT_THEME_ID).toBe('blossom');
+    expect(THEMES[DEFAULT_THEME_ID].flora.density).toBe('lush');
+    expect(THEMES[DEFAULT_THEME_ID].motes.kind).toBe('petals');
   });
 
   it('keys every theme by its own id and lists them in picker order', () => {
@@ -219,7 +232,7 @@ describe('no two rooms are the same bookcase recoloured', () => {
   });
 
   it('uses a distinct plate material and wallpaper per room', () => {
-    expect(new Set(themes.map((t) => t.plate.kind)).size).toBeGreaterThanOrEqual(6);
+    expect(new Set(themes.map((t) => t.plate.kind)).size).toBeGreaterThanOrEqual(12);
     expect(new Set(themes.map((t) => t.wallpaper.pattern)).size).toBe(themes.length);
   });
 
@@ -233,12 +246,67 @@ describe('no two rooms are the same bookcase recoloured', () => {
   });
 });
 
+/* ============================ colour actually sings ====================== */
+
+describe('every room is genuinely colourful', () => {
+  /** Chroma proxy: how far apart the RGB channels are, 0 = grey. */
+  const chroma = (hex: string): number => {
+    const { r, g, b } = parseHex(hex);
+    return Math.max(r, g, b) - Math.min(r, g, b);
+  };
+
+  it('never ships a drab spine ramp', () => {
+    for (const theme of themes) {
+      const pigments = theme.spineDefaults.pigments;
+      const mean = pigments.reduce((sum, p) => sum + chroma(p), 0) / pigments.length;
+      expect(mean, `${theme.id} spine pigments are washed out`).toBeGreaterThan(70);
+      // And at least one pigment that really sings.
+      expect(Math.max(...pigments.map(chroma)), `${theme.id} has no hero colour`).toBeGreaterThan(110);
+    }
+  });
+
+  it('gives every room a coloured light rig, not a grey one', () => {
+    for (const theme of themes) {
+      const pools = theme.light.pools;
+      expect(Math.max(...pools.map((p) => chroma(p.colour))), `${theme.id} pools are grey`).toBeGreaterThan(40);
+      expect(chroma(theme.light.ambient.colour), `${theme.id} ambient is grey`).toBeGreaterThan(30);
+    }
+  });
+
+  it('keeps the colourful six visually apart from the heritage eight', () => {
+    const colourful = ['blossom', 'robot', 'dino', 'candy', 'reef', 'voyager'] as const;
+    for (const id of colourful) {
+      const t = THEMES[id];
+      expect(t.name.length).toBeGreaterThan(3);
+      expect(t.props.length).toBeGreaterThanOrEqual(4);
+      // Each brings its own new carving + plate + wallpaper vocabulary.
+      expect(
+        ['blossom', 'circuit', 'fossil', 'candy-stripe', 'coral', 'starfield'],
+      ).toContain(t.crown.carving);
+      expect(
+        ['painted-sign', 'led-panel', 'amber-stone', 'candy-wrapper', 'shell', 'neon'],
+      ).toContain(t.plate.kind);
+    }
+    // No two of them share a carving, a plate or a wallpaper.
+    for (const axis of ['carving', 'plate', 'wallpaper'] as const) {
+      const values = colourful.map((id) =>
+        axis === 'carving'
+          ? THEMES[id].crown.carving
+          : axis === 'plate'
+            ? THEMES[id].plate.kind
+            : THEMES[id].wallpaper.pattern,
+      );
+      expect(new Set(values).size, `${axis} repeats across the colourful six`).toBe(6);
+    }
+  });
+});
+
 /* =============================== wallpaper =============================== */
 
 describe('wallpaper library', () => {
-  it('ships the twelve patterns the doc names', () => {
-    expect(WALLPAPER_PATTERN_IDS).toHaveLength(12);
-    expect(allWallpaperPatterns()).toHaveLength(12);
+  it('ships the twelve original patterns plus the colourful six', () => {
+    expect(WALLPAPER_PATTERN_IDS).toHaveLength(18);
+    expect(allWallpaperPatterns()).toHaveLength(18);
     for (const id of WALLPAPER_PATTERN_IDS) {
       const p = WALLPAPER_PATTERNS[id];
       expect(p.id).toBe(id);
@@ -248,8 +316,8 @@ describe('wallpaper library', () => {
     }
   });
 
-  it('ships twelve colourways, every one complete', () => {
-    expect(COLOURWAY_IDS).toHaveLength(12);
+  it('ships eighteen colourways, every one complete', () => {
+    expect(COLOURWAY_IDS).toHaveLength(18);
     for (const id of COLOURWAY_IDS) {
       const c = COLOURWAYS[id];
       expect(c.id).toBe(id);
@@ -282,7 +350,7 @@ describe('wallpaper library', () => {
         combos.add(`${p}|${resolveWallpaper(THEMES.athenaeum, { pattern: p, colourway: c }).colourway}`);
       }
     }
-    expect(combos.size).toBe(144);
+    expect(combos.size).toBe(18 * 18);
   });
 
   it('applies studio overrides one axis at a time', () => {

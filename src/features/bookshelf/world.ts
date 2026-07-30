@@ -24,7 +24,14 @@ import type { BookStyle } from '../../art/bookStyle';
 import type { LightPool } from '../../art/themes';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
-import { createBook, moveBook, nextFreeSlot, touchBookOpened } from '../../data/books';
+import {
+  createBook,
+  deleteBook,
+  listBooksByFloorRange,
+  moveBook,
+  nextFreeSlot,
+  touchBookOpened,
+} from '../../data/books';
 import {
   save as saveSettings,
   settings,
@@ -68,6 +75,7 @@ import {
   X_SLACK,
   Y_MIN,
 } from './constants';
+import { GHOST_H, GHOST_W, nextSpotX } from './addSpot';
 import { FloorStore } from './data';
 import {
   detectSoftwareRenderer,
@@ -141,6 +149,26 @@ export interface VisibleBook {
   floor: number;
 }
 
+/**
+ * The ghost "add a book here" slot, in screen (CSS px) coordinates.
+ *
+ * The world owns WHERE it belongs (which floor you are looking at, which
+ * stretch of plank is free); the DOM overlay owns what it looks like.
+ */
+export interface AddSpot {
+  floor: number;
+  /** Screen rect of the ghost spine, CSS px. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** True while the library holds no books at all (first-run invitation). */
+  firstRun: boolean;
+}
+
+/** The title a freshly created book wears until you write over it. */
+export const NEW_BOOK_TITLE = 'Untitled';
+
 export interface WorldEvents {
   /** The a11y mirror re-renders from this. */
   onVisibleBooksChange(books: VisibleBook[]): void;
@@ -156,6 +184,10 @@ export interface WorldEvents {
   onEditFloorPlate?(floor: number, rect: RectLike): void;
   /** The trash drawer under the last floor was clicked. */
   onOpenTrash?(): void;
+  /** The ghost add-a-book slot appeared, moved or vanished. */
+  onAddSpotChange?(spot: AddSpot | null): void;
+  /** Right-click on empty plank: the "new book here" menu at `screen`. */
+  onShelfMenu?(floor: number, screen: Vec2): void;
 }
 
 /** Camera survives the shelf ↔ book unmount round-trip (module singleton). */
@@ -330,6 +362,10 @@ export class ShelfWorld {
   private trashSprite: Sprite | null = null;
   /** Previous tap (plaque double-click detection). */
   private lastTap: { x: number; y: number; t: number } | null = null;
+  /** The ghost add-a-book slot last published to the overlay. */
+  private addSpot: AddSpot | null = null;
+  /** Change signature for the ghost slot (publish only on a real move). */
+  private addSpotSig = ' ';
 
   private readonly hooks: WorldHooks = {
     markDirty: () => {
@@ -632,6 +668,18 @@ export class ShelfWorld {
         }
         await this.store.refreshAll();
       };
+      // Add-a-book affordance probes: where the ghost stands, creating a
+      // book through the same path the UI uses, and emptying the case so
+      // the first-run invitation can be photographed.
+      globals['__shelfAddSpot'] = (): AddSpot | null => this.addSpot;
+      globals['__shelfAddBook'] = (
+        floor?: number,
+      ): Promise<{ book: Book; rect: RectLike } | null> => this.addBook(floor);
+      globals['__shelfEmptyLibrary'] = async (): Promise<void> => {
+        const books = await listBooksByFloorRange(-1, 64);
+        for (const book of books) await deleteBook(book.id);
+        await this.store.refreshAll();
+      };
       globals['__shelfBookMeta'] = (bookId: string): unknown =>
         this.store.findBook(bookId)?.coverMeta ?? null;
       globals['__shelfSpineRect'] = (bookId: string): RectLike | null => {
@@ -863,13 +911,204 @@ export class ShelfWorld {
     }
     if (this.pullTick(dt)) this.dirty = true;
     if (moving) this.dirty = true;
-    if (!this.dirty) return;
-    this.dirty = false;
-
-    this.applyCamera();
-    this.sync();
-    this.app.render();
+    if (this.dirty) {
+      this.dirty = false;
+      this.applyCamera();
+      this.sync();
+      this.app.render();
+    }
+    // Cheap (one floor's visuals, a few adds) and it must also react to
+    // state that never marks the stage dirty — a freeze during a pull-out,
+    // a move mode starting — so it runs outside the render gate.
+    this.publishAddSpot();
   };
+
+  /* --------------------------- add-a-book affordance ---------------------- */
+
+  /** The floor the camera is looking at (never negative). */
+  get centerFloor(): number {
+    const cam = this.camera;
+    return Math.max(
+      0,
+      Math.floor((cam.y + this.vp.height / (2 * cam.zoom)) / FLOOR_H),
+    );
+  }
+
+  /** The ghost slot as last published (QA probes, menus). */
+  get addSpotNow(): AddSpot | null {
+    return this.addSpot;
+  }
+
+  /** True when the whole case is bare — nothing on any floor, ever. */
+  private libraryIsEmpty(): boolean {
+    if (this.store.maxFloor > 0) return false;
+    const ground = this.store.get(0);
+    return ground !== undefined && ground.length === 0;
+  }
+
+  /**
+   * Where the dashed "add a book" outline stands right now, or null when it
+   * has no business being on screen (mid pull-out, whole-floor stamps, the
+   * looked-at floor unloaded, or the slot panned out of the viewport).
+   */
+  private computeAddSpot(): AddSpot | null {
+    if (this.destroyed || this.frozen || this.pull !== null || this.move !== null) {
+      return null;
+    }
+    // Tier 2 is the whole-floor stamp view — individual spines are not even
+    // drawn there, so a per-book ghost would read as a smudge.
+    if (this.tier === 2) return null;
+
+    // Books fill the case top-down, so the ghost stands on the FIRST floor
+    // with room whose plank is fully on screen — reading order, not "wherever
+    // the camera's midpoint happens to fall" (which put the invitation for a
+    // brand-new library one floor below the empty floor 0).
+    const cam = this.camera;
+    const viewBottom = cam.y + this.vp.height / cam.zoom;
+    const firstFloor = Math.max(0, Math.floor(cam.y / FLOOR_H));
+    const lastFloor = Math.max(firstFloor, Math.floor(viewBottom / FLOOR_H));
+    let floor = -1;
+    let x: number | null = null;
+    let fallbackFloor = -1;
+    let fallbackX: number | null = null;
+    for (let index = firstFloor; index <= lastFloor; index++) {
+      const fv = this.floors.get(index);
+      if (fv === undefined || !fv.loaded) continue;
+      const candidate = nextSpotX(fv.visuals, index);
+      if (candidate === null) continue; // full floor: try the next one down
+      const top = index * FLOOR_H + BOOK_BASELINE - GHOST_H;
+      const bottom = index * FLOOR_H + BOOK_BASELINE;
+      if (top >= cam.y && bottom <= viewBottom) {
+        floor = index;
+        x = candidate;
+        break;
+      }
+      if (fallbackX === null) {
+        fallbackFloor = index;
+        fallbackX = candidate;
+      }
+    }
+    if (x === null) {
+      floor = fallbackFloor;
+      x = fallbackX;
+    }
+    if (x === null || floor < 0) return null;
+
+    const topLeft = worldToScreen(cam, {
+      x: x - GHOST_W / 2,
+      y: floor * FLOOR_H + BOOK_BASELINE - GHOST_H,
+    });
+    const width = GHOST_W * cam.zoom;
+    const height = GHOST_H * cam.zoom;
+    if (
+      topLeft.x + width < 0 ||
+      topLeft.x > this.vp.width ||
+      topLeft.y + height < 0 ||
+      topLeft.y > this.vp.height
+    ) {
+      return null;
+    }
+    return {
+      floor,
+      x: topLeft.x,
+      y: topLeft.y,
+      width,
+      height,
+      firstRun: this.libraryIsEmpty(),
+    };
+  }
+
+  private publishAddSpot(): void {
+    const spot = this.computeAddSpot();
+    const sig =
+      spot === null
+        ? ''
+        : `${spot.floor}|${Math.round(spot.x)}|${Math.round(spot.y)}|` +
+          `${Math.round(spot.width)}|${Math.round(spot.height)}|${spot.firstRun}`;
+    if (sig === this.addSpotSig) return;
+    this.addSpotSig = sig;
+    this.addSpot = spot;
+    this.events.onAddSpotChange?.(spot);
+  }
+
+  /**
+   * Put a new book on the shelf. Lands on `floor` (default: wherever the
+   * ghost slot currently stands), slides in from the right, and hands back
+   * its spine rect so the caller can open the inline title editor right on
+   * the spine. Null when the world is busy or already torn down.
+   */
+  async addBook(floor?: number): Promise<{ book: Book; rect: RectLike } | null> {
+    if (this.destroyed || this.frozen || this.pull !== null) return null;
+    const target = Math.max(0, floor ?? this.addSpot?.floor ?? this.centerFloor);
+    // Land past the floor's last book so the spine appears where the ghost
+    // was standing rather than in some historical slot gap.
+    const existing = this.store.get(target) ?? [];
+    const after = existing.reduce((max, b) => Math.max(max, b.slot + 1), 0);
+    const slot = await nextFreeSlot(target, after);
+    const book = await createBook({ title: NEW_BOOK_TITLE, floor: target, slot });
+    if (this.destroyed) return null;
+    await this.store.refreshAll();
+    if (this.destroyed) return null;
+    void play('pop-soft');
+    this.animateArrival(book);
+    this.dirty = true;
+    return { book, rect: this.spineScreenRect(book) };
+  }
+
+  /** The new spine slides in from the right and settles onto the plank. */
+  private animateArrival(book: Book): void {
+    const fv = this.floors.get(book.floor);
+    const visual = fv?.visuals.find((v) => v.book.id === book.id);
+    if (fv === undefined || visual === undefined) return;
+    if (this.hooks.motion() === 0) return;
+    const sprite = visual.sprite;
+    gsap.killTweensOf(sprite);
+    const from = {
+      x: visual.centerX + 130,
+      y: visual.baseY - 30,
+      rotation: visual.baseRotation + 0.5,
+    };
+    const proxy = { t: 0 };
+    sprite.alpha = 0;
+    sprite.position.set(from.x, from.y);
+    sprite.rotation = from.rotation;
+    // A plain proxy, not the pixi plugin: PixiPlugin talks rotation in
+    // degrees and every other rotation in this file is radians.
+    this.track(
+      gsap.to(proxy, {
+        t: 1,
+        duration: 0.66,
+        ease: 'back.out(1.4)',
+        onUpdate: () => {
+          const t = proxy.t;
+          sprite.position.set(
+            from.x + (visual.centerX - from.x) * t,
+            from.y + (visual.baseY - from.y) * t,
+          );
+          sprite.rotation = from.rotation + (visual.baseRotation - from.rotation) * t;
+          sprite.alpha = Math.min(1, t * 2.4);
+          this.dirty = true;
+        },
+        onComplete: () => {
+          sprite.position.set(visual.centerX, visual.baseY);
+          sprite.rotation = visual.baseRotation;
+          sprite.alpha = 1;
+          this.dirty = true;
+        },
+      }),
+    );
+  }
+
+  /**
+   * Extend the case downward: fly to the first floor past the last book,
+   * where the ghost slot is waiting. Returns the floor index.
+   */
+  addFloor(): number {
+    const target = this.store.maxFloor + 1;
+    this.clearKbSelection();
+    this.zoomToFloor(target);
+    return target;
+  }
 
   /** Springy-lag step for a dragged book ghost. True while a pull is live. */
   private pullTick(dt: number): boolean {
@@ -1571,7 +1810,16 @@ export class ShelfWorld {
     if (hit !== null) {
       void play('pop-soft');
       this.events.onBookMenu?.(hit.visual.book, { x: cursor.x, y: cursor.y });
+      return;
     }
+    // Empty plank: the shelf's own menu ("new book here", "add a floor").
+    const cam = this.camera;
+    const wx = cursor.x / cam.zoom + cam.x;
+    const wy = cursor.y / cam.zoom + cam.y;
+    const floor = Math.floor(wy / FLOOR_H);
+    if (floor < 0 || wx < 0 || wx > SHELF_WIDTH) return;
+    void play('pop-soft');
+    this.events.onShelfMenu?.(floor, { x: cursor.x, y: cursor.y });
   }
 
   /** Screen rect of a floor's plaque (label editor placement). */

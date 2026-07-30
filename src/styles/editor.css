@@ -353,33 +353,69 @@
   box-decoration-break: clone;
 }
 
+/* Every swatch is the same recipe: the wash pigment thinned to --hl-mix so
+   the ink reads straight through it, plus --hl-tint for the squiggle/circle
+   styles below. Night flips --hl-mix down (see the override at the end of
+   this block): a full-strength bright wash under cream ink is unreadable,
+   while the same pigment at a quarter strength reads as a coloured shadow. */
+.nb-prose mark[data-color] {
+  background: color-mix(in srgb, var(--hl-base) var(--hl-mix, 50%), transparent);
+}
+
 .nb-prose mark[data-color='amber'] {
-  background: color-mix(in srgb, var(--wash-amber) 50%, transparent);
+  --hl-base: var(--wash-amber);
   --hl-tint: var(--wash-amber-deep);
 }
 .nb-prose mark[data-color='terracotta'] {
-  background: color-mix(in srgb, var(--wash-terracotta) 50%, transparent);
+  --hl-base: var(--wash-terracotta);
   --hl-tint: var(--wash-terracotta-deep);
 }
 .nb-prose mark[data-color='moss'] {
-  background: color-mix(in srgb, var(--wash-moss) 50%, transparent);
+  --hl-base: var(--wash-moss);
   --hl-tint: var(--wash-moss-deep);
 }
 .nb-prose mark[data-color='lemon'] {
-  background: color-mix(in srgb, var(--wash-lemon) 60%, transparent);
+  --hl-base: var(--wash-lemon);
+  --hl-mix: 58%;
   --hl-tint: var(--wash-lemon-deep);
 }
 .nb-prose mark[data-color='sky'] {
-  background: color-mix(in srgb, var(--wash-sky) 50%, transparent);
+  --hl-base: var(--wash-sky);
   --hl-tint: var(--wash-sky-deep);
 }
 .nb-prose mark[data-color='blush'] {
-  background: color-mix(in srgb, var(--wash-blush) 50%, transparent);
+  --hl-base: var(--wash-blush);
   --hl-tint: var(--wash-blush-deep);
 }
 .nb-prose mark[data-color='plum'] {
-  background: color-mix(in srgb, var(--wash-plum) 45%, transparent);
+  --hl-base: var(--wash-plum);
+  --hl-mix: 44%;
   --hl-tint: var(--wash-plum-deep);
+}
+.nb-prose mark[data-color='coral'] {
+  --hl-base: var(--wash-coral);
+  --hl-mix: 46%;
+  --hl-tint: var(--wash-coral-deep);
+}
+.nb-prose mark[data-color='turquoise'] {
+  --hl-base: var(--wash-turquoise);
+  --hl-tint: var(--wash-turquoise-deep);
+}
+.nb-prose mark[data-color='violet'] {
+  --hl-base: var(--wash-violet);
+  --hl-mix: 42%;
+  --hl-tint: var(--wash-violet-deep);
+}
+.nb-prose mark[data-color='lime'] {
+  --hl-base: var(--wash-lime);
+  --hl-mix: 54%;
+  --hl-tint: var(--wash-lime-deep);
+}
+
+/* Dark paper: the same pigments, a quarter strength, so a highlight reads as
+   a coloured pool of shadow and the cream ink keeps >6:1 on every swatch. */
+:root[data-theme='night'] .nb-prose mark[data-color] {
+  --hl-mix: 27%;
 }
 
 /* Highlighter styles (roadmap #15). Default 'marker' keeps the watercolor
@@ -796,6 +832,31 @@
   --co-light: var(--wash-blush-light);
   --co-base: var(--wash-blush);
   --co-deep: var(--wash-blush-deep);
+}
+.nb-callout[data-tint='plum'] {
+  --co-light: var(--wash-plum-light);
+  --co-base: var(--wash-plum);
+  --co-deep: var(--wash-plum-deep);
+}
+.nb-callout[data-tint='coral'] {
+  --co-light: var(--wash-coral-light);
+  --co-base: var(--wash-coral);
+  --co-deep: var(--wash-coral-deep);
+}
+.nb-callout[data-tint='turquoise'] {
+  --co-light: var(--wash-turquoise-light);
+  --co-base: var(--wash-turquoise);
+  --co-deep: var(--wash-turquoise-deep);
+}
+.nb-callout[data-tint='violet'] {
+  --co-light: var(--wash-violet-light);
+  --co-base: var(--wash-violet);
+  --co-deep: var(--wash-violet-deep);
+}
+.nb-callout[data-tint='lime'] {
+  --co-light: var(--wash-lime-light);
+  --co-base: var(--wash-lime);
+  --co-deep: var(--wash-lime-deep);
 }
 
 .nb-callout-icon {

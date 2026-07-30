@@ -231,9 +231,29 @@ function Seg(props: {
   );
 }
 
-function Section(props: { title: string; children: JSX.Element }): JSX.Element {
+/**
+ * Every section carries its own pigment. `data-accent` selects a wash family
+ * in settings.css, which the section's own title rule and all of its chips,
+ * toggles and buttons inherit through --sec-* — so the sheet reads as six
+ * hand-tinted chapters rather than one long amber list.
+ */
+type SectionAccent =
+  | 'blush'
+  | 'moss'
+  | 'violet'
+  | 'turquoise'
+  | 'amber'
+  | 'sky'
+  | 'coral'
+  | 'lime';
+
+function Section(props: {
+  title: string;
+  accent: SectionAccent;
+  children: JSX.Element;
+}): JSX.Element {
   return (
-    <section class="nbs-section">
+    <section class="nbs-section" data-accent={props.accent}>
       <h3 class="nbs-section-title">{props.title}</h3>
       {props.children}
     </section>
@@ -459,7 +479,7 @@ export default function SettingsPanel(props: {
         </header>
 
         {/* ------------------------------ Appearance -------------------------- */}
-        <Section title="Appearance">
+        <Section title="Appearance" accent="blush">
           <Row label="theme" wide>
             <Seg
               label="theme"
@@ -534,7 +554,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* --------------------------- Library & shelf ------------------------ */}
-        <Section title="Library & shelf">
+        <Section title="Library & shelf" accent="moss">
           <Row label="wood stain" wide>
             <Seg
               label="shelf wood stain"
@@ -591,7 +611,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ----------------------------- Motion & feel ------------------------ */}
-        <Section title="Motion & feel">
+        <Section title="Motion & feel" accent="violet">
           <Row label="animation" wide>
             <Seg
               label="animation level"
@@ -642,7 +662,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* -------------------------------- Sound ----------------------------- */}
-        <Section title="Sound">
+        <Section title="Sound" accent="turquoise">
           <For each={VOLUME_KEYS}>
             {(key) => (
               <Row label={VOLUME_LABELS[key]}>
@@ -711,7 +731,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ------------------------------- Writing ----------------------------- */}
-        <Section title="Writing">
+        <Section title="Writing" accent="amber">
           <Row label="spellcheck">
             <Toggle
               label="spellcheck"
@@ -770,7 +790,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ------------------------------- System ------------------------------ */}
-        <Section title="System">
+        <Section title="System" accent="sky">
           <Row
             label="start with Windows"
             hint={

@@ -961,6 +961,93 @@ export function paintWood(
         ctx.stroke();
       }
     }
+  } else if (wood.grain === 'birch') {
+    // Birch bark: dark lenticel dashes lying ACROSS the sheet, a few papery
+    // peels lifting at the edges, and a chalky bloom over the whole surface.
+    const marks = Math.round((alongLen * acrossLen) / 1400);
+    for (let i = 0; i < marks; i++) {
+      const a = rnd() * alongLen;
+      const c = rnd() * acrossLen;
+      const len = 4 + rnd() * 14;
+      const thick = 0.8 + rnd() * 1.6;
+      ctx.strokeStyle = `rgba(74, 58, 42, ${0.16 + rnd() * 0.22})`;
+      ctx.lineWidth = thick;
+      ctx.lineCap = 'butt';
+      const x0 = vertical ? c : a;
+      const y0 = vertical ? a : c;
+      // Lenticels run perpendicular to the grain.
+      const dx = vertical ? 0 : len * 0.06;
+      const dy = vertical ? len * 0.06 : 0;
+      const px = vertical ? len : 0;
+      const py = vertical ? 0 : len;
+      ctx.beginPath();
+      ctx.moveTo(x0 - px / 2 - dx, y0 - py / 2 - dy);
+      ctx.lineTo(x0 + px / 2 + dx, y0 + py / 2 + dy);
+      ctx.stroke();
+      // A pale lip just under the dash: the bark curling away.
+      ctx.strokeStyle = 'rgba(255, 252, 244, 0.3)';
+      ctx.lineWidth = thick * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x0 - px / 2, y0 - py / 2 + (vertical ? 1.4 : 1.4));
+      ctx.lineTo(x0 + px / 2, y0 + py / 2 + 1.4);
+      ctx.stroke();
+    }
+    // Chalky bloom.
+    ctx.fillStyle = 'rgba(255, 253, 246, 0.14)';
+    ctx.fillRect(0, 0, w, h);
+  } else if (wood.grain === 'brushed') {
+    // Brushed metal: dense fine satin lines along the grain, a couple of
+    // deeper scores, and no ring figure at all.
+    const lines = Math.round(acrossLen * 1.6);
+    for (let i = 0; i < lines; i++) {
+      const c = rnd() * acrossLen;
+      const bright = rnd() < 0.5;
+      ctx.strokeStyle = bright
+        ? `rgba(255, 255, 255, ${0.03 + rnd() * 0.07})`
+        : `rgba(20, 30, 42, ${0.03 + rnd() * 0.08})`;
+      ctx.lineWidth = 0.5 + rnd() * 0.9;
+      const a0 = rnd() * alongLen * 0.5;
+      const len = alongLen * (0.4 + rnd() * 0.6);
+      ctx.beginPath();
+      if (vertical) {
+        ctx.moveTo(c, a0);
+        ctx.lineTo(c + (rnd() * 2 - 1) * 0.6, a0 + len);
+      } else {
+        ctx.moveTo(a0, c);
+        ctx.lineTo(a0 + len, c + (rnd() * 2 - 1) * 0.6);
+      }
+      ctx.stroke();
+    }
+    // A few machining scores that catch hard.
+    for (let i = 0; i < Math.max(2, Math.round(acrossLen / 40)); i++) {
+      const c = rnd() * acrossLen;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      if (vertical) {
+        ctx.moveTo(c, 0);
+        ctx.lineTo(c, alongLen);
+      } else {
+        ctx.moveTo(0, c);
+        ctx.lineTo(alongLen, c);
+      }
+      ctx.stroke();
+    }
+  } else if (wood.grain === 'gloss') {
+    // A moulded, enamelled body: no figure, just a broad diffuse falloff and
+    // a scattering of tiny bubbles trapped in the coat.
+    const g = vertical ? ctx.createLinearGradient(0, 0, w, 0) : ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, hexAlpha(wood.light, 0.5));
+    g.addColorStop(0.45, 'rgba(255, 255, 255, 0)');
+    g.addColorStop(1, hexAlpha(wood.dark, 0.35));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < Math.round((w * h) / 900); i++) {
+      ctx.fillStyle = rnd() < 0.5 ? 'rgba(255, 255, 255, 0.3)' : hexAlpha(wood.dark, 0.16);
+      ctx.beginPath();
+      ctx.arc(rnd() * w, rnd() * h, 0.4 + rnd() * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
   } else if (wood.grain === 'knotty') {
     // Cathedral arches around each knot — nested pointed rings.
     for (const k of knots) {
@@ -1156,6 +1243,26 @@ function woodFinish(ctx: Ctx2D, wood: WoodSpec, w: number, h: number, vertical: 
     case 'limewash': {
       g.addColorStop(0, `rgba(255, 255, 250, ${0.5 * wood.sheen})`);
       g.addColorStop(1, `rgba(240, 238, 228, ${0.2 * wood.sheen})`);
+      break;
+    }
+    case 'gloss': {
+      // Candy shell: a hard bright band near the top, a dark waist, then a
+      // bounce light coming back up off whatever the object is standing on.
+      g.addColorStop(0, `rgba(255, 255, 255, ${0.34 * wood.sheen})`);
+      g.addColorStop(0.14, `rgba(255, 255, 255, ${0.72 * wood.sheen})`);
+      g.addColorStop(0.3, `rgba(255, 255, 255, ${0.08 * wood.sheen})`);
+      g.addColorStop(0.72, `rgba(70, 20, 50, ${0.16 * wood.sheen})`);
+      g.addColorStop(1, `rgba(255, 240, 250, ${0.4 * wood.sheen})`);
+      break;
+    }
+    case 'metal': {
+      // Brushed metal: a wide anisotropic sheen, a cool shadow side and a
+      // bright return at the far arris.
+      g.addColorStop(0, `rgba(240, 250, 255, ${0.42 * wood.sheen})`);
+      g.addColorStop(0.28, `rgba(255, 255, 255, ${0.16 * wood.sheen})`);
+      g.addColorStop(0.62, `rgba(14, 26, 40, ${0.26 * wood.sheen})`);
+      g.addColorStop(0.9, `rgba(120, 200, 240, ${0.18 * wood.sheen})`);
+      g.addColorStop(1, `rgba(255, 255, 255, ${0.3 * wood.sheen})`);
       break;
     }
     case 'painted':

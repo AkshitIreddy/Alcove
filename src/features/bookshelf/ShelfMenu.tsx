@@ -22,6 +22,7 @@ import type { Book } from '../../data/types';
 export type ShelfMenuAction =
   | 'open'
   | 'rename'
+  | 'customize'
   | 'pin'
   | 'duplicate'
   | 'move'
@@ -57,6 +58,7 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
   const items = (): MenuItem[] => [
     { action: 'open', title: 'Open', glyph: '📖' },
     { action: 'rename', title: 'Rename…', glyph: '✎' },
+    { action: 'customize', title: 'Dress this book…', glyph: '🎨' },
     {
       action: 'pin',
       title: props.pinned ? 'Unpin favorite' : 'Pin as favorite',
@@ -229,6 +231,111 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
           </button>
         </div>
       </Show>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   The shelf's OWN menu — right-click on bare plank rather than on a spine.
+   Same aged-paper card, three verbs: put a book here, grow the case, dress
+   the room.
+   ------------------------------------------------------------------------ */
+
+export type ShelfSpotAction = 'new-book' | 'add-floor' | 'studio';
+
+export interface ShelfSpotMenuProps {
+  /** Floor the right-click landed on (1-based in the label). */
+  floor: number;
+  x: number;
+  y: number;
+  onAction(action: ShelfSpotAction): void;
+  onClose(): void;
+}
+
+const SPOT_ITEMS: ReadonlyArray<{
+  action: ShelfSpotAction;
+  title: string;
+  glyph: string;
+}> = [
+  { action: 'new-book', title: 'New book here', glyph: '✚' },
+  { action: 'add-floor', title: 'Add a floor below', glyph: '▤' },
+  { action: 'studio', title: 'Library studio…', glyph: '🎨' },
+];
+
+export function ShelfSpotMenu(props: ShelfSpotMenuProps): JSX.Element {
+  const [selected, setSelected] = createSignal(0);
+  let rootElement: HTMLDivElement | undefined;
+
+  onMount(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        props.onClose();
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const n = SPOT_ITEMS.length;
+        setSelected((s) => (s + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const item = SPOT_ITEMS[selected()];
+        if (item !== undefined) {
+          props.onAction(item.action);
+          props.onClose();
+        }
+      }
+    };
+    const onPointerDown = (e: PointerEvent): void => {
+      if (rootElement !== undefined && !rootElement.contains(e.target as Node)) {
+        props.onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    onCleanup(() => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+    });
+  });
+
+  const pos = (): { left: string; top: string } => ({
+    left: `${Math.max(8, Math.min(props.x, window.innerWidth - MENU_W - 12))}px`,
+    top: `${Math.max(8, Math.min(props.y, window.innerHeight - 180))}px`,
+  });
+
+  return (
+    <div
+      class="shelf-menu shelf-menu--spot"
+      role="menu"
+      aria-label="Shelf actions"
+      ref={rootElement}
+      style={pos()}
+    >
+      <div class="shelf-menu__title">floor {props.floor + 1}</div>
+      <For each={SPOT_ITEMS}>
+        {(item, index) => (
+          <button
+            type="button"
+            role="menuitem"
+            class="shelf-menu__item"
+            classList={{ 'is-selected': index() === selected() }}
+            data-shelf-spot={item.action}
+            onMouseEnter={() => setSelected(index())}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              props.onAction(item.action);
+              props.onClose();
+            }}
+          >
+            <span class="shelf-menu__glyph" aria-hidden="true">
+              {item.glyph}
+            </span>
+            <span class="shelf-menu__label">{item.title}</span>
+          </button>
+        )}
+      </For>
     </div>
   );
 }

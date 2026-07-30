@@ -25,6 +25,11 @@ export interface RailPanelProps {
   title: string;
   onClose: () => void;
   children: JSX.Element;
+  /**
+   * Extra class on the sheet. The shelf uses `is-shelf` — there is no icon
+   * rail out there, so the sheet hugs the window edge instead of the rail.
+   */
+  panelClass?: string;
 }
 
 export default function RailPanel(props: RailPanelProps): JSX.Element {
@@ -69,6 +74,7 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
   return (
     <aside
       class="nb-rail-panel"
+      classList={{ [props.panelClass ?? '']: props.panelClass !== undefined }}
       ref={(el) => (sheetRef = el)}
       role="dialog"
       aria-label={props.title}

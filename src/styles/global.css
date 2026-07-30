@@ -157,13 +157,13 @@ h6 {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--paper-edge);
+  background: color-mix(in srgb, var(--accent) 30%, var(--paper-edge));
   border: 3px solid var(--paper-cream);
   border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-sepia-soft);
+  background: var(--accent);
 }
 
 ::-webkit-scrollbar-corner {
@@ -171,10 +171,12 @@ h6 {
 }
 
 /* ----------------------------------------------------------------------------
-   Focus — hand-drawn dashed ring
+   Focus — hand-drawn dashed ring, drawn in the UI accent so it reads as
+   "the app is talking to you" rather than as another pencil line. The accent
+   is tuned per theme, so it stays visible on cream, blossom, leaf and night.
    -------------------------------------------------------------------------- */
 :focus-visible {
-  outline: 2px dashed var(--ink-sepia);
+  outline: 2px dashed var(--accent-deep);
   outline-offset: 3px;
 }
 

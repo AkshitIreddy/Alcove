@@ -195,8 +195,284 @@ export function renderJoinery(
       drawBracket(ctx, j, x + w / 2, y + h / 2, j.size, rnd, orientation);
       break;
     }
+    case 'hex-bolt':
+    case 'bone-pin':
+    case 'candy-stud':
+    case 'shell-rivet':
+    case 'star-rivet':
+    case 'vine-tie': {
+      // The colourful worlds all fix their carcass with a *pair* of visible
+      // fittings, exactly where the pegs would go — the vocabulary changes,
+      // the carpentry logic does not.
+      const pts: Array<[number, number]> =
+        orientation === 'horizontal'
+          ? [
+              [x + w * 0.3, y + h / 2],
+              [x + w * 0.7, y + h / 2],
+            ]
+          : [
+              [x + w / 2, y + h * 0.32],
+              [x + w / 2, y + h * 0.68],
+            ];
+      for (const [px, py] of pts) {
+        switch (j.kind) {
+          case 'hex-bolt':
+            drawHexBolt(ctx, j, px, py, j.size, rnd);
+            break;
+          case 'bone-pin':
+            drawBonePin(ctx, j, px, py, j.size, rnd);
+            break;
+          case 'candy-stud':
+            drawCandyStud(ctx, j, px, py, j.size, rnd);
+            break;
+          case 'shell-rivet':
+            drawShellRivet(ctx, j, px, py, j.size, rnd);
+            break;
+          case 'star-rivet':
+            drawStarRivet(ctx, j, px, py, j.size, rnd);
+            break;
+          default:
+            drawVineTie(ctx, j, px, py, j.size, rnd, orientation);
+            break;
+        }
+      }
+      break;
+    }
   }
   ctx.restore();
+}
+
+/** Machined hex head sitting on a washer, with a lit chamfer. */
+function drawHexBolt(ctx: Ctx2D, j: JoinerySpec, x: number, y: number, r: number, rnd: RandomFn): void {
+  // Washer + its shadow in the panel.
+  ctx.fillStyle = 'rgba(10, 16, 24, 0.42)';
+  ctx.beginPath();
+  ctx.arc(x + 0.8, y + 1.2, r * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = hexAlpha(parseHexToHex(j.metalDark), 0.9);
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.45, 0, Math.PI * 2);
+  ctx.fill();
+  // Hex head: a lit facet, a mid facet, a shadow facet.
+  const hex = (rr: number): void => {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.26;
+      const px = x + Math.cos(a) * rr;
+      const py = y + Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  };
+  const g = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+  g.addColorStop(0, mixHex(j.metal, '#ffffff', 0.5));
+  g.addColorStop(0.45, j.metal);
+  g.addColorStop(1, j.metalDark);
+  ctx.fillStyle = g;
+  hex(r);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(14, 22, 32, 0.75)';
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+  // Turned top face.
+  ctx.strokeStyle = j.highlight;
+  ctx.lineWidth = 0.8;
+  hex(r * 0.55);
+  ctx.stroke();
+  void rnd;
+}
+
+/** A polished bone dowel seated in a bronze collar. */
+function drawBonePin(ctx: Ctx2D, j: JoinerySpec, x: number, y: number, r: number, rnd: RandomFn): void {
+  ctx.fillStyle = 'rgba(40, 22, 8, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(x + 0.8, y + 1.4, r * 1.4, r * 1.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Bronze collar.
+  ctx.fillStyle = 'rgba(168, 106, 40, 0.9)';
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.35, 0, Math.PI * 2);
+  ctx.fill();
+  // Bone: a rounded dowel end with a marrow shadow and two hairline cracks.
+  const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r);
+  g.addColorStop(0, '#fffaf0');
+  g.addColorStop(0.55, j.metal);
+  g.addColorStop(1, j.metalDark);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(150, 122, 84, 0.5)';
+  ctx.beginPath();
+  ctx.ellipse(x + r * 0.15, y + r * 0.1, r * 0.35, r * 0.28, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 96, 60, 0.55)';
+  ctx.lineWidth = 0.7;
+  for (let i = 0; i < 2; i++) {
+    const a = rnd() * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(x - Math.cos(a) * r * 0.8, y - Math.sin(a) * r * 0.8);
+    ctx.lineTo(x + Math.cos(a) * r * 0.7, y + Math.sin(a) * r * 0.6);
+    ctx.stroke();
+  }
+}
+
+/** A jelly-bean stud: fat gloss highlight, sugar rim. */
+function drawCandyStud(ctx: Ctx2D, j: JoinerySpec, x: number, y: number, r: number, rnd: RandomFn): void {
+  ctx.fillStyle = 'rgba(140, 50, 96, 0.3)';
+  ctx.beginPath();
+  ctx.ellipse(x + 0.6, y + 1.6, r * 1.15, r * 1.05, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.45, r * 0.1, x, y, r * 1.1);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.3, j.metal);
+  g.addColorStop(1, j.metalDark);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 1.1, r, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // The hard little gloss dot that makes a sweet look wet.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.34, y - r * 0.4, r * 0.3, r * 0.2, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = hexAlpha(parseHexToHex(j.metalDark), 0.7);
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 1.1, r, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  void rnd;
+}
+
+/** A little scallop shell capping a pearl. */
+function drawShellRivet(ctx: Ctx2D, j: JoinerySpec, x: number, y: number, r: number, rnd: RandomFn): void {
+  ctx.fillStyle = 'rgba(8, 50, 62, 0.34)';
+  ctx.beginPath();
+  ctx.ellipse(x + 0.6, y + 1.4, r * 1.2, r * 1.1, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const g = ctx.createLinearGradient(x, y - r, x, y + r);
+  g.addColorStop(0, mixHex(j.metal, '#ffffff', 0.6));
+  g.addColorStop(1, j.metalDark);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.05, Math.PI, Math.PI * 2);
+  // Scalloped lower edge.
+  const lobes = 5;
+  for (let i = 0; i <= lobes; i++) {
+    const t = i / lobes;
+    const px = x + r * 1.05 - t * r * 2.1;
+    ctx.quadraticCurveTo(px + r * 0.2, y + r * 0.5, px - r * 0.21, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Radiating ribs.
+  ctx.strokeStyle = hexAlpha(parseHexToHex(j.metalDark), 0.6);
+  ctx.lineWidth = 0.7;
+  for (let i = 0; i <= 4; i++) {
+    const a = Math.PI + (i / 4) * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    ctx.stroke();
+  }
+  // Pearl at the hinge.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.beginPath();
+  ctx.arc(x, y + r * 0.1, r * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  void rnd;
+}
+
+/** A star washer with a neon core burning through it. */
+function drawStarRivet(ctx: Ctx2D, j: JoinerySpec, x: number, y: number, r: number, rnd: RandomFn): void {
+  // Halo first, so the fitting sits inside its own glow.
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, r * 3.4);
+  halo.addColorStop(0, hexAlpha(parseHexToHex(j.metal), 0.4));
+  halo.addColorStop(1, hexAlpha(parseHexToHex(j.metal), 0));
+  ctx.fillStyle = halo;
+  ctx.fillRect(x - r * 3.4, y - r * 3.4, r * 6.8, r * 6.8);
+  ctx.fillStyle = hexAlpha(parseHexToHex(j.metalDark), 0.95);
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = j.metal;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const rr = i % 2 === 0 ? r * 1.15 : r * 0.46;
+    const px = x + Math.cos(a) * rr;
+    const py = y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = j.highlight;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
+  ctx.fill();
+  void rnd;
+}
+
+/** Whipped twine binding the joint, with one tendril escaping it. */
+function drawVineTie(
+  ctx: Ctx2D,
+  j: JoinerySpec,
+  x: number,
+  y: number,
+  r: number,
+  rnd: RandomFn,
+  orientation: 'horizontal' | 'vertical',
+): void {
+  const vertical = orientation === 'vertical';
+  const len = r * 3.2;
+  // Whipping: a stack of twine turns across the member.
+  ctx.save();
+  ctx.translate(x, y);
+  if (vertical) ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = 'rgba(60, 42, 24, 0.3)';
+  roundRect(ctx, -len / 2 + 0.6, -r * 1.1 + 1.2, len, r * 2.2, r);
+  ctx.fill();
+  ctx.fillStyle = '#d9c39a';
+  roundRect(ctx, -len / 2, -r * 1.1, len, r * 2.2, r);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(122, 96, 58, 0.7)';
+  ctx.lineWidth = 0.8;
+  const turns = 5;
+  for (let i = 0; i <= turns; i++) {
+    const tx = -len / 2 + (i / turns) * len;
+    ctx.beginPath();
+    ctx.moveTo(tx, -r * 1.1);
+    ctx.lineTo(tx + 1.4, r * 1.1);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(90, 70, 40, 0.55)';
+  roundRect(ctx, -len / 2, -r * 1.1, len, r * 2.2, r);
+  ctx.stroke();
+  ctx.restore();
+  // A tendril escaping the binding, with two small leaves.
+  ctx.strokeStyle = j.metalDark;
+  ctx.lineWidth = 1.3;
+  const dir = rnd() < 0.5 ? -1 : 1;
+  const tipX = x + dir * r * 3.4;
+  const tipY = y - r * 2.6;
+  ctx.beginPath();
+  ctx.moveTo(x, y - r * 0.6);
+  ctx.quadraticCurveTo(x + dir * r * 2.6, y - r * 1.2, tipX, tipY);
+  ctx.stroke();
+  ctx.fillStyle = j.metal;
+  for (const t of [0.55, 1]) {
+    const lx = x + (tipX - x) * t;
+    const ly = y - r * 0.6 + (tipY - (y - r * 0.6)) * t;
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(dir * 0.8 + t);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.1, r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawPegFitting(ctx: Ctx2D, j: JoinerySpec, x: number, y: number, r: number, rnd: RandomFn): void {
@@ -554,6 +830,267 @@ export function renderCarving(
       void rnd;
       break;
     }
+    case 'blossom': {
+      // A green swag looping along the frieze with a blossom at every dip.
+      const pitch = 46;
+      ctx.strokeStyle = 'rgba(47, 125, 60, 0.85)';
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let dx = x; dx < x + w; dx += pitch) {
+        ctx.moveTo(dx, y + h * 0.3);
+        ctx.quadraticCurveTo(dx + pitch / 2, y + h * 1.05, dx + pitch, y + h * 0.3);
+      }
+      ctx.stroke();
+      for (let dx = x; dx < x + w; dx += pitch) {
+        // Leaves either side of the dip.
+        const mx = dx + pitch / 2;
+        const my = y + h * 0.78;
+        ctx.fillStyle = 'rgba(95, 191, 98, 0.9)';
+        for (const side of [-1, 1]) {
+          ctx.save();
+          ctx.translate(mx + side * 11, my - 2);
+          ctx.rotate(side * 0.7);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 7, 3.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        // Blossom head: five petals + a sunny centre.
+        if (mx + 8 > x + w) continue;
+        ctx.fillStyle = 'rgba(255, 150, 190, 0.95)';
+        for (let p = 0; p < 5; p++) {
+          const a = (p / 5) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.ellipse(mx + Math.cos(a) * 3.4, my + Math.sin(a) * 3.4, 3.4, 2.5, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(255, 222, 96, 0.95)';
+        ctx.beginPath();
+        ctx.arc(mx, my, 1.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // A pale sap-line above the swag ties it to the crown.
+      ctx.strokeStyle = 'rgba(255, 252, 232, 0.4)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 1.6);
+      ctx.lineTo(x + w, y + 1.6);
+      ctx.stroke();
+      break;
+    }
+    case 'circuit': {
+      // An etched board: a dark solder-resist band, copper routes, lit pads.
+      ctx.fillStyle = 'rgba(8, 22, 32, 0.7)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'square';
+      const lanes = 3;
+      for (let l = 0; l < lanes; l++) {
+        const ly = y + ((l + 0.7) * h) / (lanes + 0.4);
+        ctx.beginPath();
+        let px = x + 4;
+        ctx.moveTo(px, ly);
+        while (px < x + w - 8) {
+          const run = 14 + rnd() * 22;
+          px = Math.min(x + w - 4, px + run);
+          ctx.lineTo(px, ly);
+          if (px < x + w - 12 && rnd() < 0.5) {
+            const jog = (rnd() < 0.5 ? -1 : 1) * h * 0.22;
+            ctx.lineTo(px + 5, ly + jog);
+            ctx.lineTo(px + 10, ly + jog);
+            px += 10;
+          }
+        }
+        ctx.stroke();
+      }
+      // Pads and vias.
+      for (let dx = x + 10; dx < x + w - 6; dx += 22) {
+        const cy = y + h * (0.3 + ((dx / 22) % 3) * 0.22);
+        ctx.fillStyle = 'rgba(255, 226, 138, 0.85)';
+        ctx.beginPath();
+        ctx.arc(dx, cy, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(6, 16, 26, 0.9)';
+        ctx.beginPath();
+        ctx.arc(dx, cy, 1.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Two LEDs actually alight, with a halo on the resist.
+      for (const t of [0.22, 0.74]) {
+        const lx = x + t * w;
+        const ly = y + h * 0.52;
+        const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, 12);
+        g.addColorStop(0, 'rgba(120, 250, 255, 0.9)');
+        g.addColorStop(1, 'rgba(120, 250, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(lx - 12, ly - 12, 24, 24);
+        ctx.fillStyle = 'rgba(238, 255, 255, 0.95)';
+        ctx.beginPath();
+        ctx.arc(lx, ly, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'fossil': {
+      // Vertebrae standing in a recessed matrix, with teeth between them.
+      ctx.fillStyle = 'rgba(48, 26, 10, 0.5)';
+      ctx.fillRect(x, y, w, h);
+      const pitch = 30;
+      for (let dx = x + 8; dx < x + w - 8; dx += pitch) {
+        const cy = y + h * 0.52;
+        const r = Math.min(h * 0.32, 7);
+        // Centrum: a lit bone disc with a dark neural canal.
+        const g = ctx.createRadialGradient(dx - r * 0.4, cy - r * 0.5, 0, dx, cy, r * 1.5);
+        g.addColorStop(0, '#fff8e6');
+        g.addColorStop(0.6, '#e0cda0');
+        g.addColorStop(1, '#a08a5e');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(dx, cy, r * 1.2, r, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(56, 34, 14, 0.6)';
+        ctx.beginPath();
+        ctx.ellipse(dx, cy, r * 0.32, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Neural spine standing up out of the vertebra.
+        ctx.fillStyle = '#efe0bb';
+        ctx.beginPath();
+        ctx.moveTo(dx - 2.4, cy - r * 0.7);
+        ctx.lineTo(dx + 2.4, cy - r * 0.7);
+        ctx.lineTo(dx + 1, y + 1.5);
+        ctx.lineTo(dx - 1, y + 1.5);
+        ctx.closePath();
+        ctx.fill();
+        // A tooth lying in the matrix between vertebrae.
+        const tx = dx + pitch / 2;
+        if (tx < x + w - 6) {
+          ctx.fillStyle = '#f4e8c8';
+          ctx.beginPath();
+          ctx.moveTo(tx - 3, cy + r * 0.9);
+          ctx.quadraticCurveTo(tx, cy - r * 0.6, tx + 3, cy + r * 0.9);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(90, 60, 24, 0.5)';
+          ctx.lineWidth = 0.7;
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = 'rgba(255, 186, 74, 0.35)';
+      ctx.fillRect(x, y, w, 1.6);
+      break;
+    }
+    case 'candy-stripe': {
+      // A barber pole running the frieze, piped along both edges.
+      ctx.fillStyle = 'rgba(255, 250, 252, 0.85)';
+      ctx.fillRect(x, y, w, h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.clip();
+      const pitch = 18;
+      for (let dx = x - h; dx < x + w + h; dx += pitch) {
+        ctx.fillStyle = ((dx / pitch) | 0) % 2 === 0 ? 'rgba(255, 95, 158, 0.9)' : 'rgba(104, 232, 196, 0.85)';
+        ctx.beginPath();
+        ctx.moveTo(dx, y + h);
+        ctx.lineTo(dx + h, y);
+        ctx.lineTo(dx + h + pitch * 0.46, y);
+        ctx.lineTo(dx + pitch * 0.46, y + h);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Gloss band across the top third: sugar shell.
+      const gl = ctx.createLinearGradient(0, y, 0, y + h);
+      gl.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+      gl.addColorStop(0.4, 'rgba(255, 255, 255, 0)');
+      gl.addColorStop(1, 'rgba(180, 60, 120, 0.22)');
+      ctx.fillStyle = gl;
+      ctx.fillRect(x, y, w, h);
+      ctx.restore();
+      // Piped icing edges.
+      for (const py of [y + 1.6, y + h - 1.6]) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 2.4;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, py);
+        ctx.lineTo(x + w, py);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      break;
+    }
+    case 'coral': {
+      // Branching coral growing up out of the moulding, polyps along it.
+      ctx.fillStyle = 'rgba(10, 70, 96, 0.34)';
+      ctx.fillRect(x, y, w, h);
+      const pitch = 34;
+      for (let dx = x + 10; dx < x + w - 6; dx += pitch) {
+        const baseY = y + h - 1;
+        const branch = (bx: number, by: number, ang: number, len: number, depth: number): void => {
+          if (depth === 0 || len < 3) return;
+          const ex = bx + Math.cos(ang) * len;
+          const ey = by + Math.sin(ang) * len;
+          ctx.strokeStyle = depth > 1 ? 'rgba(255, 138, 118, 0.9)' : 'rgba(255, 190, 170, 0.9)';
+          ctx.lineWidth = depth * 1.3;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.quadraticCurveTo((bx + ex) / 2 + 2, (by + ey) / 2, ex, ey);
+          ctx.stroke();
+          // Polyp dots along the limb.
+          ctx.fillStyle = 'rgba(255, 240, 214, 0.7)';
+          ctx.beginPath();
+          ctx.arc(ex, ey, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+          branch(ex, ey, ang - 0.5 - rnd() * 0.2, len * 0.62, depth - 1);
+          branch(ex, ey, ang + 0.5 + rnd() * 0.2, len * 0.62, depth - 1);
+        };
+        branch(dx, baseY, -Math.PI / 2, h * 0.44, 3);
+      }
+      // A pale sand line along the bottom of the band.
+      ctx.fillStyle = 'rgba(255, 236, 208, 0.45)';
+      ctx.fillRect(x, y + h - 2, w, 2);
+      break;
+    }
+    case 'starfield': {
+      // Punched stars joined by a neon rule — a constellation cut into the
+      // cornice rather than printed on it.
+      ctx.fillStyle = 'rgba(12, 8, 40, 0.75)';
+      ctx.fillRect(x, y, w, h);
+      const pitch = 24;
+      const pts: Array<[number, number]> = [];
+      for (let dx = x + 8; dx < x + w - 6; dx += pitch) {
+        const cy = y + h * (0.34 + ((dx / pitch) % 3) * 0.18);
+        pts.push([dx, cy]);
+      }
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+      ctx.stroke();
+      for (const [px, py] of pts) {
+        const g = ctx.createRadialGradient(px, py, 0, px, py, 8);
+        g.addColorStop(0, 'rgba(150, 240, 255, 0.75)');
+        g.addColorStop(1, 'rgba(150, 240, 255, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(px - 8, py - 8, 16, 16);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+          const rr = i % 2 === 0 ? 4.2 : 1.4;
+          const sx = px + Math.cos(a) * rr;
+          const sy = py + Math.sin(a) * rr;
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
     case 'plain':
     default: {
       // No carving; a single incised line is the whole ornament.
@@ -679,6 +1216,242 @@ function renderCentrepiece(
       ctx.stroke();
       break;
     }
+    case 'blossom': {
+      // A full cherry blossom with two leaves, carved proud of the arch.
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = 'rgba(74, 168, 82, 0.95)';
+        ctx.save();
+        ctx.translate(cx + side * s * 1.5, cy + s * 0.3);
+        ctx.rotate(side * 0.8);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.85, s * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      for (let p = 0; p < 5; p++) {
+        const a = (p / 5) * Math.PI * 2 - Math.PI / 2;
+        ctx.fillStyle = p % 2 === 0 ? 'rgba(255, 150, 190, 0.98)' : 'rgba(255, 178, 208, 0.98)';
+        ctx.beginPath();
+        ctx.ellipse(cx + Math.cos(a) * s * 0.62, cy + Math.sin(a) * s * 0.62, s * 0.55, s * 0.4, a, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(198, 92, 132, 0.55)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255, 214, 74, 0.98)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      // Stamens.
+      ctx.strokeStyle = 'rgba(214, 132, 60, 0.8)';
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * s * 0.55, cy + Math.sin(a) * s * 0.55);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'gear': {
+      // A toothed gear with a lit hub — the workshop's maker's mark.
+      const teeth = 10;
+      ctx.fillStyle = 'rgba(226, 236, 246, 0.95)';
+      ctx.beginPath();
+      for (let i = 0; i < teeth * 2; i++) {
+        const a = (i / (teeth * 2)) * Math.PI * 2;
+        const rr = i % 2 === 0 ? s * 1.15 : s * 0.82;
+        const px = cx + Math.cos(a) * rr;
+        const py = cy + Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(24, 36, 48, 0.8)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(60, 232, 255, 0.9)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(20, 30, 42, 0.9)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      // Bolt holes in the web.
+      ctx.fillStyle = 'rgba(24, 36, 48, 0.55)';
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.4;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * s * 0.62, cy + Math.sin(a) * s * 0.62, s * 0.13, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'skull': {
+      // A little theropod skull in profile: long jaw, eye socket, teeth.
+      ctx.fillStyle = 'rgba(250, 240, 214, 0.97)';
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 1.7, cy + s * 0.32);
+      ctx.quadraticCurveTo(cx - s * 1.9, cy - s * 0.5, cx - s * 0.6, cy - s * 0.72);
+      ctx.quadraticCurveTo(cx + s * 0.9, cy - s * 0.85, cx + s * 1.85, cy - s * 0.1);
+      ctx.quadraticCurveTo(cx + s * 1.5, cy + s * 0.42, cx + s * 0.2, cy + s * 0.45);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(120, 88, 40, 0.75)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Eye socket + nostril.
+      ctx.fillStyle = 'rgba(60, 36, 12, 0.8)';
+      ctx.beginPath();
+      ctx.ellipse(cx - s * 0.75, cy - s * 0.22, s * 0.3, s * 0.24, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + s * 1.15, cy - s * 0.28, s * 0.16, s * 0.12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Jaw with teeth.
+      ctx.fillStyle = 'rgba(250, 240, 214, 0.97)';
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 1.5, cy + s * 0.5);
+      ctx.quadraticCurveTo(cx + s * 0.4, cy + s * 0.95, cx + s * 1.7, cy + s * 0.2);
+      ctx.lineTo(cx + s * 1.6, cy + s * 0.55);
+      ctx.quadraticCurveTo(cx + s * 0.3, cy + s * 1.25, cx - s * 1.5, cy + s * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 250, 236, 0.98)';
+      for (let i = 0; i < 6; i++) {
+        const t = i / 6;
+        const tx = cx - s * 1.1 + t * s * 2.5;
+        const ty = cy + s * (0.5 - t * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(tx - 1.2, ty);
+        ctx.lineTo(tx + 1.2, ty);
+        ctx.lineTo(tx, ty + s * 0.32);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
+    case 'lollipop': {
+      // A swirl pop crossed with a striped stick.
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.lineWidth = s * 0.34;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + s * 0.6);
+      ctx.lineTo(cx, cy + s * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 244, 250, 0.98)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 1.05, 0, Math.PI * 2);
+      ctx.fill();
+      // The spiral: two colours chasing each other.
+      for (const [colour, phase] of [
+        ['rgba(255, 95, 158, 0.95)', 0],
+        ['rgba(104, 232, 196, 0.95)', Math.PI],
+      ] as const) {
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = s * 0.3;
+        ctx.beginPath();
+        for (let i = 0; i <= 40; i++) {
+          const t = i / 40;
+          const a = phase + t * Math.PI * 3.6;
+          const rr = t * s * 0.9;
+          const px = cx + Math.cos(a) * rr;
+          const py = cy + Math.sin(a) * rr;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(190, 80, 130, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 1.05, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.beginPath();
+      ctx.ellipse(cx - s * 0.4, cy - s * 0.5, s * 0.26, s * 0.14, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'shell': {
+      // A fluted scallop with a pearl sitting in the hinge.
+      const g = ctx.createLinearGradient(cx, cy - s, cx, cy + s);
+      g.addColorStop(0, 'rgba(255, 244, 232, 0.98)');
+      g.addColorStop(1, 'rgba(255, 176, 148, 0.95)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + s * 0.9);
+      for (let i = 0; i <= 7; i++) {
+        const t = i / 7;
+        const a = Math.PI + t * Math.PI;
+        ctx.quadraticCurveTo(
+          cx + Math.cos(a + 0.1) * s * 1.6,
+          cy + Math.sin(a) * s * 1.5,
+          cx + Math.cos(a) * s * 1.45,
+          cy + Math.sin(a) * s * 1.2,
+        );
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(190, 106, 84, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      for (let i = 0; i <= 6; i++) {
+        const a = Math.PI + (i / 6) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + s * 0.85);
+        ctx.lineTo(cx + Math.cos(a) * s * 1.3, cy + Math.sin(a) * s * 1.05);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.beginPath();
+      ctx.arc(cx, cy + s * 0.75, s * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'planet': {
+      // A ringed planet with a small moon, glowing on the crest.
+      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 2.6);
+      halo.addColorStop(0, 'rgba(140, 230, 255, 0.4)');
+      halo.addColorStop(1, 'rgba(140, 230, 255, 0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(cx - s * 2.6, cy - s * 2.6, s * 5.2, s * 5.2);
+      const body = ctx.createRadialGradient(cx - s * 0.35, cy - s * 0.4, s * 0.1, cx, cy, s);
+      body.addColorStop(0, '#ffd9a0');
+      body.addColorStop(0.5, '#ff8f4a');
+      body.addColorStop(1, '#a83f8a');
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(cx, cy, s, 0, Math.PI * 2);
+      ctx.fill();
+      // Cloud bands.
+      ctx.strokeStyle = 'rgba(255, 232, 190, 0.5)';
+      ctx.lineWidth = 1.2;
+      for (const off of [-0.4, 0, 0.42]) {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + off * s, s * 0.94, s * 0.2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // Ring: behind and in front, so it reads as a ring not a hoop.
+      ctx.strokeStyle = 'rgba(160, 244, 255, 0.9)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, s * 1.9, s * 0.6, -0.35, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 120, 214, 0.9)';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, s * 1.9, s * 0.6, -0.35, 0, Math.PI);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(226, 244, 255, 0.95)';
+      ctx.beginPath();
+      ctx.arc(cx + s * 2.2, cy - s * 1.2, s * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
   }
   void rnd;
   ctx.restore();
@@ -720,6 +1493,33 @@ export function renderCrown(
     ctx.lineTo(w * 0.5, h * 0.06);
     ctx.lineTo(w * 0.76, h * 0.46);
     ctx.lineTo(w, h * 0.46);
+    ctx.lineTo(w, h);
+    ctx.closePath();
+  } else if (crown.profile === 'arch') {
+    // A soft arbour arch: the board rises to a broad round crown.
+    ctx.moveTo(0, h);
+    ctx.lineTo(0, h * 0.58);
+    ctx.quadraticCurveTo(w * 0.5, -h * 0.28, w, h * 0.58);
+    ctx.lineTo(w, h);
+    ctx.closePath();
+  } else if (crown.profile === 'gantry') {
+    // Industrial gantry: a deep beam on two end plates, lamp bar under it.
+    ctx.moveTo(0, h);
+    ctx.lineTo(0, h * 0.1);
+    ctx.lineTo(w, h * 0.1);
+    ctx.lineTo(w, h);
+    ctx.closePath();
+  } else if (crown.profile === 'crest') {
+    // A scalloped/finned crest: a run of arcs with a taller centre fin.
+    ctx.moveTo(0, h);
+    ctx.lineTo(0, h * 0.62);
+    const lobes = Math.max(4, Math.round(w / 74));
+    const lw = w / lobes;
+    for (let i = 0; i < lobes; i++) {
+      const x0 = i * lw;
+      const mid = Math.abs(i - (lobes - 1) / 2) < 0.6;
+      ctx.quadraticCurveTo(x0 + lw * 0.5, mid ? -h * 0.16 : h * 0.1, x0 + lw, h * 0.62);
+    }
     ctx.lineTo(w, h);
     ctx.closePath();
   } else {
@@ -826,6 +1626,110 @@ export function renderCrown(
       ctx.fill();
       break;
     }
+    case 'arch': {
+      // Light pours over the top of the arch and dies in the soffit.
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, 'rgba(255, 252, 236, 0.5)');
+      g.addColorStop(0.45, 'rgba(255, 248, 226, 0.12)');
+      g.addColorStop(1, 'rgba(60, 44, 24, 0.32)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      // Voussoir lines radiating from the arch centre.
+      ctx.strokeStyle = 'rgba(90, 70, 44, 0.22)';
+      ctx.lineWidth = 1.1;
+      for (let i = 1; i < 9; i++) {
+        const t = i / 9;
+        const a = Math.PI + t * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(w / 2 + Math.cos(a) * w * 0.2, h * 0.62 + Math.sin(a) * h * 0.2);
+        ctx.lineTo(w / 2 + Math.cos(a) * w * 0.52, h * 0.62 + Math.sin(a) * h * 0.9);
+        ctx.stroke();
+      }
+      // The arch's own soffit shadow along the underside.
+      ctx.fillStyle = 'rgba(48, 34, 18, 0.28)';
+      ctx.fillRect(0, h - Math.max(6, h * 0.14), w, Math.max(6, h * 0.14));
+      break;
+    }
+    case 'gantry': {
+      // A rolled steel beam: bright top flange, dark web, lit bottom flange.
+      const flange = Math.max(6, h * 0.16);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+      ctx.fillRect(0, h * 0.1, w, flange);
+      const web = ctx.createLinearGradient(0, h * 0.1 + flange, 0, h - flange);
+      web.addColorStop(0, 'rgba(10, 20, 30, 0.4)');
+      web.addColorStop(0.5, 'rgba(10, 20, 30, 0.16)');
+      web.addColorStop(1, 'rgba(10, 20, 30, 0.44)');
+      ctx.fillStyle = web;
+      ctx.fillRect(0, h * 0.1 + flange, w, h - flange - h * 0.1);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillRect(0, h - flange, w, 2);
+      // End plates with a bolt circle.
+      for (const px of [10, w - 10]) {
+        ctx.fillStyle = 'rgba(226, 236, 246, 0.4)';
+        roundRect(ctx, px - 9, h * 0.1 + 2, 18, h - h * 0.1 - 6, 3);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(16, 26, 38, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + 0.6;
+          ctx.fillStyle = 'rgba(20, 32, 44, 0.7)';
+          ctx.beginPath();
+          ctx.arc(px + Math.cos(a) * 5, h * 0.5 + Math.sin(a) * (h * 0.22), 1.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // The lamp bar slung under the beam.
+      const lampY = h - 3;
+      const lg = ctx.createLinearGradient(0, lampY - 8, 0, lampY + 4);
+      lg.addColorStop(0, 'rgba(60, 232, 255, 0)');
+      lg.addColorStop(1, 'rgba(60, 232, 255, 0.34)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(0, lampY - 8, w, 12);
+      for (let lx = 22; lx < w - 12; lx += 46) {
+        const glow = ctx.createRadialGradient(lx, lampY, 0, lx, lampY, 15);
+        glow.addColorStop(0, 'rgba(180, 250, 255, 0.85)');
+        glow.addColorStop(1, 'rgba(120, 240, 255, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(lx - 15, lampY - 15, 30, 30);
+        ctx.fillStyle = 'rgba(240, 255, 255, 0.95)';
+        ctx.fillRect(lx - 7, lampY - 2.4, 14, 3.2);
+      }
+      break;
+    }
+    case 'crest': {
+      // Each lobe is a moulded shell: light on the crown, shade in the valley.
+      const lobes = Math.max(4, Math.round(w / 74));
+      const lw = w / lobes;
+      for (let i = 0; i < lobes; i++) {
+        const x0 = i * lw;
+        const g = ctx.createRadialGradient(x0 + lw * 0.42, h * 0.34, 2, x0 + lw * 0.5, h * 0.5, lw * 0.8);
+        g.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+        g.addColorStop(0.6, 'rgba(255, 255, 255, 0.06)');
+        g.addColorStop(1, 'rgba(90, 40, 70, 0.26)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x0, 0, lw, h);
+        // Valley shadow between lobes.
+        const v = ctx.createLinearGradient(x0 - 6, 0, x0 + 6, 0);
+        v.addColorStop(0, 'rgba(70, 30, 55, 0)');
+        v.addColorStop(0.5, 'rgba(70, 30, 55, 0.24)');
+        v.addColorStop(1, 'rgba(70, 30, 55, 0)');
+        ctx.fillStyle = v;
+        ctx.fillRect(x0 - 6, 0, 12, h);
+      }
+      // A bright rim riding the whole scalloped edge.
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.62);
+      for (let i = 0; i < lobes; i++) {
+        const x0 = i * lw;
+        const mid = Math.abs(i - (lobes - 1) / 2) < 0.6;
+        ctx.quadraticCurveTo(x0 + lw * 0.5, mid ? -h * 0.16 : h * 0.1, x0 + lw, h * 0.62);
+      }
+      ctx.stroke();
+      break;
+    }
   }
   ctx.restore(); // end silhouette clip
 
@@ -834,7 +1738,9 @@ export function renderCrown(
   const friezeY =
     crown.profile === 'beam' || crown.profile === 'gable'
       ? h - friezeH - 4
-      : h - lipH - friezeH - 2;
+      : crown.profile === 'gantry'
+        ? h - friezeH - 13
+        : h - lipH - friezeH - 2;
   if (crown.carving !== 'plain' || crown.profile === 'beam') {
     renderCarving(
       ctx,
@@ -859,7 +1765,14 @@ export function renderCrown(
   }
 
   // --- centrepiece --------------------------------------------------------
-  const cy = crown.profile === 'pediment' ? h * 0.3 : Math.max(10, friezeY - 12);
+  const cy =
+    crown.profile === 'pediment'
+      ? h * 0.3
+      : crown.profile === 'arch'
+        ? h * 0.34
+        : crown.profile === 'crest'
+          ? h * 0.36
+          : Math.max(10, friezeY - 12);
   // Ink the motif from the timber's own dark end rather than the rail's
   // hairline ink — on pale rooms (hinoki, barn wood) the rail ink vanishes
   // and the crown ends up a blank board.
@@ -938,6 +1851,25 @@ export function renderCrown(
   ctx.lineCap = 'round';
   if (crown.profile === 'gable') {
     pencil(ctx, `M 1 ${h - 1} L 1 ${h * 0.42} L ${w / 2} 2 L ${w - 1} ${h * 0.42} L ${w - 1} ${h - 1}`, seed);
+  } else if (crown.profile === 'arch') {
+    pencil(
+      ctx,
+      `M 1 ${h - 1} L 1 ${h * 0.58} Q ${w / 2} ${-h * 0.28} ${w - 1} ${h * 0.58} L ${w - 1} ${h - 1}`,
+      seed,
+    );
+  } else if (crown.profile === 'crest') {
+    const lobes = Math.max(4, Math.round(w / 74));
+    const lw = w / lobes;
+    let d = `M 1 ${h - 1} L 1 ${h * 0.62}`;
+    for (let i = 0; i < lobes; i++) {
+      const x0 = i * lw;
+      const mid = Math.abs(i - (lobes - 1) / 2) < 0.6;
+      d += ` Q ${x0 + lw * 0.5} ${mid ? -h * 0.16 : h * 0.1} ${x0 + lw} ${h * 0.62}`;
+    }
+    pencil(ctx, `${d} L ${w - 1} ${h - 1}`, seed, 0.5);
+  } else if (crown.profile === 'gantry') {
+    pencil(ctx, `M 1 ${h * 0.1 + 0.6} L ${w - 1} ${h * 0.1 + 0.6}`, seed, 0.5);
+    pencil(ctx, `M 1 ${h - 1.4} L ${w - 1} ${h - 1.4}`, seed + 3, 0.5);
   } else if (crown.profile === 'pediment') {
     pencil(
       ctx,
@@ -1041,6 +1973,183 @@ export function renderRail(
         // Seating grooves either side of the bead.
         drawLine(w / 2 - 5, 'rgba(24, 15, 6, 0.45)', 1.4);
         drawLine(w / 2 + 5, 'rgba(24, 15, 6, 0.45)', 1.4);
+        break;
+      }
+      case 'led-strip': {
+        // An aluminium channel with a lit ribbon in the bottom of it: dark
+        // extrusion, diffuser glow, hot core, then a spill on the timber.
+        const cx = w / 2;
+        const spill = ctx.createLinearGradient(cx - 13, 0, cx + 13, 0);
+        spill.addColorStop(0, hexAlpha(parseHexToHex(rail.inlayColour), 0));
+        spill.addColorStop(0.5, hexAlpha(parseHexToHex(rail.inlayColour), 0.42));
+        spill.addColorStop(1, hexAlpha(parseHexToHex(rail.inlayColour), 0));
+        ctx.fillStyle = spill;
+        ctx.fillRect(cx - 13, 0, 26, h);
+        ctx.fillStyle = 'rgba(16, 24, 34, 0.9)';
+        ctx.fillRect(cx - 6, 0, 12, h);
+        ctx.fillStyle = hexAlpha(parseHexToHex(rail.inlayColour), 0.9);
+        ctx.fillRect(cx - 3.6, 0, 7.2, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.fillRect(cx - 1.2, 0, 2.4, h);
+        // Individual emitters visible through the diffuser.
+        for (let y = 6; y < h; y += 26) {
+          const g = ctx.createRadialGradient(cx, y, 0, cx, y, 9);
+          g.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+          g.addColorStop(1, hexAlpha(parseHexToHex(rail.inlayColour), 0));
+          ctx.fillStyle = g;
+          ctx.fillRect(cx - 9, y - 9, 18, 18);
+        }
+        // Channel lips.
+        drawLine(cx - 6.8, 'rgba(210, 226, 240, 0.55)', 1.4);
+        drawLine(cx + 6.8, 'rgba(60, 78, 96, 0.6)', 1.4);
+        break;
+      }
+      case 'vine': {
+        // A living vine climbing the rail: a wandering stem with alternating
+        // leaves and the odd tendril curl. Periodic in h so floors line up.
+        const cx = w / 2;
+        const amp = w * 0.2;
+        const stem = (dx: number, colour: string, width: number): void => {
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = width;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          for (let s = 0; s <= 40; s++) {
+            const t = s / 40;
+            const x = cx + dx + Math.sin(t * Math.PI * 4) * amp;
+            const y = t * h;
+            if (s === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        };
+        stem(1.4, 'rgba(28, 62, 30, 0.35)', 3.4);
+        stem(0, rail.inlayColour, 2.6);
+        const leaves = 12;
+        for (let i = 0; i < leaves; i++) {
+          const t = (i + 0.5) / leaves;
+          const x = cx + Math.sin(t * Math.PI * 4) * amp;
+          const y = t * h;
+          const side = i % 2 === 0 ? -1 : 1;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(side * 0.9 + Math.sin(t * 9) * 0.2);
+          const lg = ctx.createLinearGradient(0, -4, 0, 4);
+          lg.addColorStop(0, mixHex(rail.inlayColour, '#eaffd0', 0.5));
+          lg.addColorStop(1, mixHex(rail.inlayColour, '#12441c', 0.35));
+          ctx.fillStyle = lg;
+          ctx.beginPath();
+          ctx.ellipse(side * 6, 0, 7.5, 3.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(30, 66, 32, 0.5)';
+          ctx.lineWidth = 0.7;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(side * 0.5, 0);
+          ctx.lineTo(side * 12, 0);
+          ctx.stroke();
+          ctx.restore();
+          // A blossom every fourth leaf node.
+          if (i % 4 === 1) {
+            ctx.fillStyle = 'rgba(255, 156, 194, 0.95)';
+            for (let p = 0; p < 5; p++) {
+              const a = (p / 5) * Math.PI * 2;
+              ctx.beginPath();
+              ctx.ellipse(x - side * 5 + Math.cos(a) * 2.6, y + Math.sin(a) * 2.6, 2.6, 1.9, a, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.fillStyle = 'rgba(255, 222, 96, 0.95)';
+            ctx.beginPath();
+            ctx.arc(x - side * 5, y, 1.3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+      }
+      case 'candy-stripe': {
+        // A candy cane running the rail: diagonal stripes inside a rounded
+        // white band, with a gloss down one side.
+        const bandW = Math.min(16, w * 0.5);
+        const bx = w / 2 - bandW / 2;
+        ctx.save();
+        ctx.beginPath();
+        roundRect(ctx, bx, 0, bandW, h, bandW / 2);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(255, 250, 252, 0.95)';
+        ctx.fillRect(bx, 0, bandW, h);
+        const pitch = 16;
+        for (let y = -bandW; y < h + bandW; y += pitch) {
+          ctx.fillStyle = ((y / pitch) | 0) % 2 === 0 ? rail.inlayColour : 'rgba(104, 232, 196, 0.9)';
+          ctx.beginPath();
+          ctx.moveTo(bx, y);
+          ctx.lineTo(bx + bandW, y - bandW);
+          ctx.lineTo(bx + bandW, y - bandW + pitch * 0.5);
+          ctx.lineTo(bx, y + pitch * 0.5);
+          ctx.closePath();
+          ctx.fill();
+        }
+        const gl = ctx.createLinearGradient(bx, 0, bx + bandW, 0);
+        gl.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+        gl.addColorStop(0.35, 'rgba(255, 255, 255, 0)');
+        gl.addColorStop(1, 'rgba(150, 50, 100, 0.24)');
+        ctx.fillStyle = gl;
+        ctx.fillRect(bx, 0, bandW, h);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(180, 70, 124, 0.4)';
+        ctx.lineWidth = 1;
+        roundRect(ctx, bx, 0, bandW, h, bandW / 2);
+        ctx.stroke();
+        break;
+      }
+      case 'coral-line': {
+        // A coral rib: a knuckled spine with polyp dots down both sides.
+        const cx = w / 2;
+        drawLine(cx + 1.4, 'rgba(12, 60, 76, 0.4)', 5);
+        const g = ctx.createLinearGradient(cx - 3.5, 0, cx + 3.5, 0);
+        g.addColorStop(0, mixHex(rail.inlayColour, '#ffffff', 0.55));
+        g.addColorStop(0.5, rail.inlayColour);
+        g.addColorStop(1, mixHex(rail.inlayColour, '#7a2b28', 0.45));
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - 3.5, 0, 7, h);
+        for (let y = 9; y < h; y += 34) {
+          // Knuckle across the rib — widely spaced, so the rail reads as a
+          // growing coral branch and never as a candy stripe.
+          ctx.fillStyle = 'rgba(255, 236, 220, 0.45)';
+          ctx.beginPath();
+          ctx.ellipse(cx, y, 4.6, 2.2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // A short side branch off the rib, alternating sides, with polyps.
+          const side = ((y / 34) | 0) % 2 === 0 ? -1 : 1;
+          ctx.strokeStyle = mixHex(rail.inlayColour, '#ffd8c4', 0.35);
+          ctx.lineWidth = 2.4;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(cx, y + 4);
+          ctx.quadraticCurveTo(cx + side * 6, y + 10, cx + side * 8.5, y + 19);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255, 226, 200, 0.8)';
+          ctx.beginPath();
+          ctx.arc(cx + side * 8.5, y + 20, 2.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'neon': {
+        // A bent neon tube: wide saturated halo, glass wall, hot white core.
+        const cx = w / 2;
+        const halo = ctx.createLinearGradient(cx - 15, 0, cx + 15, 0);
+        halo.addColorStop(0, hexAlpha(parseHexToHex(rail.inlayColour), 0));
+        halo.addColorStop(0.5, hexAlpha(parseHexToHex(rail.inlayColour), 0.5));
+        halo.addColorStop(1, hexAlpha(parseHexToHex(rail.inlayColour), 0));
+        ctx.fillStyle = halo;
+        ctx.fillRect(cx - 15, 0, 30, h);
+        drawLine(cx, hexAlpha(parseHexToHex(rail.inlayColour), 0.95), 6);
+        drawLine(cx, 'rgba(255, 235, 252, 0.95)', 2.2);
+        // Glass ends: a darker collar every floor so it reads as tube, not paint.
+        for (const y of [4, h - 4]) {
+          ctx.fillStyle = 'rgba(30, 20, 48, 0.8)';
+          ctx.fillRect(cx - 4.5, y - 2, 9, 4);
+        }
         break;
       }
     }
@@ -1999,23 +3108,29 @@ export function renderBackPanel(
   }
 
   // Ambient occlusion where the panel meets the rails and the plank above.
+  // A room whose wall shows straight through the carcass (a grove open to the
+  // sky, a reef, a nebula) must not have that wall multiplied down to mud, so
+  // the shading is much gentler — and neutral-warm rather than grey-brown —
+  // when the backing IS the wall.
   ctx.globalCompositeOperation = 'multiply';
+  const wallBacked = (theme.backing ?? 'wood') === 'wallpaper';
   const aoW = 56;
+  const side = wallBacked ? '#c6c0b6' : '#8b8172';
   for (const [x0, x1] of [
     [0, aoW],
     [w, w - aoW],
   ] as const) {
     const g = ctx.createLinearGradient(x0, 0, x1, 0);
-    g.addColorStop(0, '#8b8172');
+    g.addColorStop(0, side);
     g.addColorStop(1, '#ffffff');
     ctx.fillStyle = g;
     ctx.fillRect(Math.min(x0, x1), 0, aoW, h);
   }
   const top = ctx.createLinearGradient(0, 0, 0, h);
-  top.addColorStop(0, '#9d9384');
+  top.addColorStop(0, wallBacked ? '#d2ccc2' : '#9d9384');
   top.addColorStop(0.35, '#ffffff');
-  top.addColorStop(0.9, '#efe6d8');
-  top.addColorStop(1, '#c0b3a0');
+  top.addColorStop(0.9, wallBacked ? '#fbf7f0' : '#efe6d8');
+  top.addColorStop(1, wallBacked ? '#ddd6cc' : '#c0b3a0');
   ctx.fillStyle = top;
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
@@ -2305,10 +3420,246 @@ export function renderPlate(
       ctx.stroke();
       break;
     }
+    case 'painted-sign': {
+      // A little painted garden sign: bright board, chamfered edge, a hand-
+      // painted keyline and two screws.
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, mixHex(spec.body, '#ffffff', 0.32));
+      g.addColorStop(0.55, spec.body);
+      g.addColorStop(1, spec.bodyDark);
+      ctx.fillStyle = g;
+      roundRect(ctx, 0, 0, w, h, radius);
+      ctx.fill();
+      // Brush drag across the paint film.
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+      ctx.lineWidth = 1.4;
+      for (let y = 3; y < h - 2; y += 3.4) {
+        ctx.beginPath();
+        ctx.moveTo(2, y);
+        ctx.lineTo(w - 2, y + (rnd() * 2 - 1) * 0.8);
+        ctx.stroke();
+      }
+      // Hand-painted cream keyline, deliberately not quite parallel.
+      ctx.strokeStyle = 'rgba(255, 252, 232, 0.85)';
+      ctx.lineWidth = 1.6;
+      pencil(
+        ctx,
+        `M 5 4.5 L ${w - 5} 4 L ${w - 4.5} ${h - 4.5} L 5 ${h - 4} Z`,
+        (seed ^ 0x5a17) >>> 0,
+        0.6,
+      );
+      // A leaf sprig in each corner of the sign.
+      ctx.fillStyle = 'rgba(255, 252, 232, 0.6)';
+      for (const [lx, ly, dir] of [
+        [9, h / 2, -1],
+        [w - 9, h / 2, 1],
+      ] as const) {
+        for (const off of [-4, 4]) {
+          ctx.save();
+          ctx.translate(lx, ly + off);
+          ctx.rotate(dir * 0.5 + off * 0.06);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 3.6, 1.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+      // Chamfer shadow along the bottom arris.
+      ctx.fillStyle = 'rgba(20, 50, 24, 0.28)';
+      ctx.fillRect(2, h - 2.4, w - 4, 2.4);
+      break;
+    }
+    case 'led-panel': {
+      // A machined bezel around a dark glass read-out, backlit from within.
+      ctx.fillStyle = mixHex('#8fa2b4', '#2b3644', 0.4);
+      roundRect(ctx, 0, 0, w, h, radius);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(2, 1.2, w - 4, 1.2);
+      ctx.fillStyle = spec.body;
+      roundRect(ctx, 3, 3, w - 6, h - 6, Math.max(1, radius - 1));
+      ctx.fill();
+      // Glass: a dark field with a scanline texture and a cyan bloom.
+      const glow = ctx.createLinearGradient(0, 3, 0, h - 3);
+      glow.addColorStop(0, hexAlpha(parseHexToHex(spec.ink), 0.3));
+      glow.addColorStop(0.5, hexAlpha(parseHexToHex(spec.ink), 0.1));
+      glow.addColorStop(1, hexAlpha(parseHexToHex(spec.ink), 0.26));
+      ctx.fillStyle = glow;
+      ctx.fillRect(3, 3, w - 6, h - 6);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+      for (let y = 4; y < h - 3; y += 3) ctx.fillRect(3, y, w - 6, 1);
+      // Status pip.
+      ctx.fillStyle = 'rgba(120, 255, 170, 0.95)';
+      ctx.beginPath();
+      ctx.arc(w - 8, h - 7, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'amber-stone': {
+      // A polished amber cabochon in a bronze bezel, with an inclusion.
+      ctx.fillStyle = '#9a6a22';
+      roundRect(ctx, 0, 0, w, h, radius);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 224, 150, 0.5)';
+      ctx.fillRect(3, 1.4, w - 6, 1.2);
+      const g = ctx.createRadialGradient(w * 0.36, h * 0.3, 2, w * 0.5, h * 0.55, w * 0.62);
+      g.addColorStop(0, mixHex(spec.body, '#fff0c0', 0.65));
+      g.addColorStop(0.55, spec.body);
+      g.addColorStop(1, spec.bodyDark);
+      ctx.fillStyle = g;
+      roundRect(ctx, 3, 3, w - 6, h - 6, Math.max(2, radius - 2));
+      ctx.fill();
+      // Flow lines and bubbles inside the resin.
+      ctx.strokeStyle = 'rgba(255, 236, 176, 0.4)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const y = 6 + rnd() * (h - 12);
+        ctx.beginPath();
+        ctx.moveTo(5, y);
+        ctx.quadraticCurveTo(w / 2, y + (rnd() * 2 - 1) * 5, w - 5, y + (rnd() * 2 - 1) * 3);
+        ctx.stroke();
+      }
+      for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = 'rgba(90, 44, 8, 0.35)';
+        ctx.beginPath();
+        ctx.arc(6 + rnd() * (w - 12), 6 + rnd() * (h - 12), 0.7 + rnd() * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // The inclusion: a tiny trapped insect, all legs and no detail.
+      ctx.strokeStyle = 'rgba(58, 28, 4, 0.6)';
+      ctx.lineWidth = 0.8;
+      const ix = w - 16;
+      const iy = h * 0.62;
+      ctx.beginPath();
+      ctx.ellipse(ix, iy, 2.4, 1.4, 0.4, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = -0.6 + i * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(ix, iy);
+        ctx.lineTo(ix + Math.cos(a) * 4.5, iy + Math.sin(a) * 4.5);
+        ctx.moveTo(ix, iy);
+        ctx.lineTo(ix - Math.cos(a) * 4.5, iy - Math.sin(a) * 3.5);
+        ctx.stroke();
+      }
+      // Specular kiss.
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.3, h * 0.28, w * 0.12, h * 0.1, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'candy-wrapper': {
+      // A boiled sweet in a twisted foil wrapper.
+      for (const dir of [-1, 1]) {
+        const ex = dir < 0 ? 0 : w;
+        ctx.fillStyle = mixHex(spec.body, '#ffffff', 0.4);
+        ctx.beginPath();
+        ctx.moveTo(ex, h / 2);
+        ctx.lineTo(ex + dir * 11, h / 2 - 8);
+        ctx.lineTo(ex + dir * 9, h / 2);
+        ctx.lineTo(ex + dir * 11, h / 2 + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = hexAlpha(parseHexToHex(spec.bodyDark), 0.7);
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+      }
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, mixHex(spec.body, '#ffffff', 0.5));
+      g.addColorStop(0.45, spec.body);
+      g.addColorStop(1, spec.bodyDark);
+      ctx.fillStyle = g;
+      roundRect(ctx, 0, 0, w, h, radius);
+      ctx.fill();
+      // Foil crinkle: vertical bright/dark creases.
+      for (let x = 4; x < w - 3; x += 5 + rnd() * 4) {
+        ctx.strokeStyle = rnd() < 0.5 ? 'rgba(255, 255, 255, 0.5)' : 'rgba(190, 120, 20, 0.3)';
+        ctx.lineWidth = 0.8 + rnd();
+        ctx.beginPath();
+        ctx.moveTo(x, 2);
+        ctx.lineTo(x + (rnd() * 2 - 1) * 2, h - 2);
+        ctx.stroke();
+      }
+      // A pink stripe band across the wrapper, the way sweets are printed.
+      ctx.fillStyle = 'rgba(255, 120, 176, 0.55)';
+      ctx.fillRect(0, h * 0.16, w, 2.4);
+      ctx.fillRect(0, h * 0.78, w, 2.4);
+      ctx.strokeStyle = hexAlpha(parseHexToHex(spec.bodyDark), 0.55);
+      ctx.lineWidth = 1;
+      roundRect(ctx, 0.5, 0.5, w - 1, h - 1, radius);
+      ctx.stroke();
+      break;
+    }
+    case 'shell': {
+      // A fluted scallop with a pearl lustre, ribs radiating from the hinge.
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, mixHex(spec.body, '#ffffff', 0.6));
+      g.addColorStop(0.6, spec.body);
+      g.addColorStop(1, spec.bodyDark);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      const lobes = 7;
+      ctx.moveTo(0, h * 0.72);
+      for (let i = 0; i < lobes; i++) {
+        const x0 = (i * w) / lobes;
+        ctx.quadraticCurveTo(x0 + w / lobes / 2, -h * 0.16, x0 + w / lobes, h * 0.72);
+      }
+      ctx.quadraticCurveTo(w * 0.5, h * 1.2, 0, h * 0.72);
+      ctx.closePath();
+      ctx.fill();
+      // Ribs.
+      ctx.strokeStyle = hexAlpha(parseHexToHex(spec.bodyDark), 0.55);
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= lobes; i++) {
+        const x0 = (i * w) / lobes;
+        ctx.beginPath();
+        ctx.moveTo(w / 2, h * 0.98);
+        ctx.quadraticCurveTo((w / 2 + x0) / 2, h * 0.4, x0, h * 0.18);
+        ctx.stroke();
+      }
+      // Nacre: a cool sheen across the top third.
+      const n = ctx.createLinearGradient(0, 0, w, h * 0.5);
+      n.addColorStop(0, 'rgba(214, 250, 255, 0.5)');
+      n.addColorStop(0.5, 'rgba(255, 226, 244, 0.24)');
+      n.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = n;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    case 'neon': {
+      // A dark plate with the label written in neon tube; the glow spills onto
+      // the timber, so the plate is drawn a little larger than its body.
+      const bloom = ctx.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w * 0.6);
+      bloom.addColorStop(0, hexAlpha(parseHexToHex(spec.ink), 0.34));
+      bloom.addColorStop(1, hexAlpha(parseHexToHex(spec.ink), 0));
+      ctx.fillStyle = bloom;
+      ctx.fillRect(-w * 0.1, -h * 0.4, w * 1.2, h * 1.8);
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, mixHex(spec.body, '#5a4fb0', 0.4));
+      g.addColorStop(1, spec.bodyDark);
+      ctx.fillStyle = g;
+      roundRect(ctx, 0, 0, w, h, radius);
+      ctx.fill();
+      // Star specks inside the plate.
+      for (let i = 0; i < 14; i++) {
+        ctx.fillStyle = rnd() < 0.3 ? 'rgba(255, 140, 220, 0.7)' : 'rgba(220, 240, 255, 0.6)';
+        ctx.beginPath();
+        ctx.arc(2 + rnd() * (w - 4), 2 + rnd() * (h - 4), 0.4 + rnd() * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = hexAlpha(parseHexToHex(spec.ink), 0.7);
+      ctx.lineWidth = 1.4;
+      roundRect(ctx, 2, 2, w - 4, h - 4, Math.max(1, radius - 1));
+      ctx.stroke();
+      break;
+    }
   }
 
   // --- the label ----------------------------------------------------------
-  const text = label.length > 18 ? `${label.slice(0, 17)}â€¦` : label;
+  // … by escape, not by literal: this file has been through a CP1252
+  // round-trip once already and a mangled ellipsis is visible on every plate.
+  const text = label.length > 20 ? `${label.slice(0, 19)}…` : label;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `${spec.fontSize}px ${spec.font}`;
@@ -2334,6 +3685,30 @@ export function renderPlate(
     ctx.fillStyle = spec.ink;
     ctx.fillText(text, tx, ty);
     ctx.restore();
+  } else if (spec.kind === 'led-panel' || spec.kind === 'neon') {
+    // Emissive type: a wide soft bloom, a saturated body, a hot white core.
+    const { r: lr, g: lg, b: lb } = parseHex(spec.ink);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = `rgba(${lr}, ${lg}, ${lb}, 1)`;
+    for (const spread of [3, 1.8]) {
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.scale(1 + spread / 60, 1 + spread / 22);
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+    ctx.fillStyle = spec.ink;
+    ctx.fillText(text, tx, ty);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillText(text, tx, ty - 0.4);
+  } else if (spec.kind === 'painted-sign') {
+    // Hand-painted: a soft drop under the letter and a slightly wet edge.
+    ctx.fillStyle = 'rgba(18, 60, 26, 0.4)';
+    ctx.fillText(text, tx + 0.9, ty + 1.2);
+    ctx.fillStyle = spec.ink;
+    ctx.fillText(text, tx, ty);
   } else if (spec.kind === 'tin') {
     // Stencilled: hard-edged with a slight ink starve.
     ctx.fillStyle = spec.ink;

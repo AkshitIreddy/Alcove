@@ -3365,6 +3365,37 @@ function drawMassOcclusion(ctx: Ctx2D, leaves: readonly LeafGeom[], alpha: numbe
   ctx.restore();
 }
 
+/* --------------------------- bake-time pacing ---------------------------- */
+
+/**
+ * Yield to the event loop so a long bake never becomes a longtask.
+ * `scheduler.yield()` (Chromium 129+) continues as a macrotask without the
+ * 4ms nested-timeout clamp; setTimeout is the fallback everywhere else.
+ */
+function yieldControl(): Promise<void> {
+  const sched = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (sched && typeof sched.yield === 'function') return sched.yield();
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Frame-budget pacer for bake draws. `tick()` is awaited between draw
+ * elements; it resolves immediately while under budget and yields the event
+ * loop once the budget is spent, so the window stays responsive (and Pixi's
+ * ticker keeps rendering) through a whole multi-floor bake storm.
+ */
+class BakePacer {
+  private deadline: number;
+  constructor(private readonly budgetMs = 10) {
+    this.deadline = performance.now() + budgetMs;
+  }
+  async tick(): Promise<void> {
+    if (performance.now() < this.deadline) return;
+    await yieldControl();
+    this.deadline = performance.now() + this.budgetMs;
+  }
+}
+
 /**
  * Draw a grown specimen at the current transform origin (= its anchor).
  *
@@ -3372,12 +3403,19 @@ function drawMassOcclusion(ctx: Ctx2D, leaves: readonly LeafGeom[], alpha: numbe
  * of the rebuild. Within a tier the order is threads → mounds → stems →
  * leaves → blooms, and between the back and mid tiers sits the mass occlusion
  * pass that gives the canopy an interior.
+ *
+ * The body is a generator that yields between top-level elements, at points
+ * where the canvas state is back at the baseline established by the opening
+ * `save()`. The two drivers below execute the *same* canvas calls in the
+ * *same* order — the sync one runs straight through (sprites, tests), the
+ * async one (bake path) lets the event loop breathe via a BakePacer, so the
+ * rasterized output is identical either way.
  */
-export function drawFloraGeometry(
+function* drawFloraGeometrySteps(
   ctx: Ctx2D,
   g: FloraGeometry,
-  opts: FloraDrawOptions = {},
-): void {
+  opts: FloraDrawOptions,
+): Generator<void, void, void> {
   const A = opts.alpha ?? 1;
   const light: FloraLight = opts.light
     ? { ...activeLight, ...opts.light }
@@ -3393,6 +3431,7 @@ export function drawFloraGeometry(
     for (const sh of g.shades) {
       if (cast) cast(ctx, sh.x, sh.y, sh.rx, sh.ry, sh.alpha * A);
       else drawShade(ctx, sh, A, light);
+      yield;
     }
   }
 
@@ -3423,24 +3462,75 @@ export function drawFloraGeometry(
   };
 
   for (const tier of [TIER_BACK, TIER_MID, TIER_LIT] as const) {
-    for (const t of tierOf(g.threads, tier)) drawThread(t);
-    for (const m of tierOf(g.mounds, tier)) drawMound(ctx, m, g.ink, light);
-    for (const s of tierOf(g.stems, tier)) drawRibbon(ctx, s, g.ink, light);
-    const leaves = tierOf(g.leaves, tier);
-    for (const l of leaves) drawLeafGeom(ctx, l, g.ink, light);
-    for (const b of tierOf(g.blooms, tier)) drawBloom(ctx, b, g.ink, light);
+    for (const t of tierOf(g.threads, tier)) {
+      drawThread(t);
+      yield;
+    }
+    for (const m of tierOf(g.mounds, tier)) {
+      drawMound(ctx, m, g.ink, light);
+      yield;
+    }
+    for (const s of tierOf(g.stems, tier)) {
+      drawRibbon(ctx, s, g.ink, light);
+      yield;
+    }
+    for (const l of tierOf(g.leaves, tier)) {
+      drawLeafGeom(ctx, l, g.ink, light);
+      yield;
+    }
+    for (const b of tierOf(g.blooms, tier)) {
+      drawBloom(ctx, b, g.ink, light);
+      yield;
+    }
     // Between the silhouette and the body: darken the interior of the mass.
     if (tier === TIER_BACK && (opts.occlude ?? true)) {
       drawMassOcclusion(ctx, g.leaves, A * light.occlusion);
+      yield;
     }
   }
 
   // Pots and tags are objects, not foliage: they belong in front of the
   // growth that spills out of them but behind the lit blades that drape over.
-  for (const p of g.pots) drawPot(ctx, p, g.ink, light);
-  for (const t of g.tags) drawTag(ctx, t, g.ink);
+  for (const p of g.pots) {
+    drawPot(ctx, p, g.ink, light);
+    yield;
+  }
+  for (const t of g.tags) {
+    drawTag(ctx, t, g.ink);
+    yield;
+  }
 
   ctx.restore();
+}
+
+/** Synchronous driver: run the whole specimen in one turn (sprites, tests). */
+export function drawFloraGeometry(
+  ctx: Ctx2D,
+  g: FloraGeometry,
+  opts: FloraDrawOptions = {},
+): void {
+  const steps = drawFloraGeometrySteps(ctx, g, opts);
+  while (!steps.next().done) {
+    // The generator only yields pacing markers; nothing to do between them.
+  }
+}
+
+/**
+ * Asynchronous driver for the bake path: identical pixels to
+ * `drawFloraGeometry`, but whenever `budgetMs` of solid drawing has elapsed
+ * the loop suspends for one macrotask, so a whole-floor bake is a stream of
+ * sub-frame slices instead of one window-freezing longtask.
+ */
+export async function drawFloraGeometryAsync(
+  ctx: Ctx2D,
+  g: FloraGeometry,
+  opts: FloraDrawOptions = {},
+  pacer: BakePacer = new BakePacer(),
+): Promise<void> {
+  const steps = drawFloraGeometrySteps(ctx, g, opts);
+  for (let r = steps.next(); !r.done; r = steps.next()) {
+    await pacer.tick();
+  }
 }
 
 /**
@@ -3462,7 +3552,31 @@ export function drawFloraLayer(
   placements: readonly FloraPlacement[],
   opts: FloraDrawOptions = {},
 ): void {
-  for (const p of placements) drawFlora(ctx, p, opts);
+  for (const p of placements) {
+    drawFlora(ctx, p, opts);
+  }
+}
+
+/**
+ * The bake-path layer draw: identical pixels to `drawFloraLayer`, paced so no
+ * contiguous run of drawing exceeds `budgetMs` before the event loop gets a
+ * macrotask. One pacer is shared across every specimen so the budget is
+ * honoured across specimen boundaries too.
+ */
+export async function drawFloraLayerAsync(
+  ctx: Ctx2D,
+  placements: readonly FloraPlacement[],
+  opts: FloraDrawOptions = {},
+  budgetMs = 10,
+): Promise<void> {
+  const pacer = new BakePacer(budgetMs);
+  for (const p of placements) {
+    const g = growFlora(p);
+    ctx.save();
+    ctx.translate(p.anchor.x, p.anchor.y);
+    await drawFloraGeometryAsync(ctx, g, opts, pacer);
+    ctx.restore();
+  }
 }
 
 /* ================================= baking ================================= */
@@ -3476,7 +3590,12 @@ function makeCanvas(w: number, h: number): Canvas2D {
 }
 
 function get2d(c: Canvas2D): Ctx2D {
-  const ctx = (c as OffscreenCanvas).getContext('2d');
+  // Bake canvases are only ever read back (convertToBlob → disk PNG cache,
+  // transferToImageBitmap → Pixi upload) — never shown on screen. Keeping
+  // them CPU-resident keeps every draw off the GPU channel: that channel is
+  // where a bake used to block for seconds at a time behind a saturated GPU
+  // process, and it made convertToBlob pay a full readback on top.
+  const ctx = (c as OffscreenCanvas).getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('flora: 2d context unavailable');
   return ctx as Ctx2D;
 }
@@ -3529,12 +3648,16 @@ export function renderFloraSprite(
  * Render a whole floor's flora into ONE canvas covering the union of the
  * placements' bounds. This is what the shelf compositor wants: a single
  * sprite drawn behind the spine atlas.
+ *
+ * Async because the draw is paced (`drawFloraLayerAsync`): the same canvas
+ * calls in the same order as the synchronous sprite path, sliced so the bake
+ * never blocks the window.
  */
-export function renderFloraLayerCanvas(
+export async function renderFloraLayerCanvas(
   placements: readonly FloraPlacement[],
   dpr = 1,
   opts: FloraDrawOptions = {},
-): FloraSpriteResult | null {
+): Promise<FloraSpriteResult | null> {
   const b = floraLayerBounds(placements);
   if (!b || b.w <= 0 || b.h <= 0) return null;
   const w = Math.max(1, Math.ceil(b.w * dpr));
@@ -3543,7 +3666,7 @@ export function renderFloraLayerCanvas(
   const ctx = get2d(canvas);
   ctx.scale(dpr, dpr);
   ctx.translate(-b.x, -b.y);
-  drawFloraLayer(ctx, placements, opts);
+  await drawFloraLayerAsync(ctx, placements, opts);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (opts.granulate !== false) granulate(ctx, w, h);
   return { canvas, bounds: b, dpr };
@@ -3577,7 +3700,7 @@ export async function bakeFloraLayer(
   const bounds = floraLayerBounds(placements);
   if (!bounds || bounds.w <= 0 || bounds.h <= 0) return null;
   const bitmap = await bakeCached(floraLayerCacheKey(placements), dpr, async () => {
-    const res = renderFloraLayerCanvas(placements, dpr, opts);
+    const res = await renderFloraLayerCanvas(placements, dpr, opts);
     if (!res) throw new Error('flora: empty layer');
     return res.canvas as OffscreenCanvas;
   });

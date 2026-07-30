@@ -126,6 +126,39 @@ async function writeDiskCache(key: string, blob: Blob): Promise<void> {
  */
 const memoryCache = new Map<string, Promise<ImageBitmap>>();
 
+/* ------------------------------ profiling -------------------------------- */
+
+/** One timed unit of bake work (a disk read or a producer run). */
+export interface BakeSample {
+  /** Truncated params (first 96 chars) — enough to identify the art piece. */
+  what: string;
+  ms: number;
+  /** 'disk' = read back from the PNG cache; 'bake' = the producer ran. */
+  kind: 'disk' | 'bake' | 'spine';
+  at: number;
+}
+
+/**
+ * Ring buffer of recent bake timings. Always on (numbers only, capped) so the
+ * diagnostics log and the perf HUD can read it; exposed on globalThis for QA
+ * probes when any ?fx= / ?bakeprof= flag is present.
+ */
+const PROFILE_CAP = 600;
+const bakeSamples: BakeSample[] = [];
+
+export function recordBakeSample(sample: BakeSample): void {
+  bakeSamples.push(sample);
+  if (bakeSamples.length > PROFILE_CAP) bakeSamples.splice(0, bakeSamples.length - PROFILE_CAP);
+}
+
+export function bakeProfile(): readonly BakeSample[] {
+  return bakeSamples;
+}
+
+if (typeof location !== 'undefined' && /[?&](fx|bakeprof)=/.test(location.search)) {
+  (globalThis as Record<string, unknown>)['__bakeProfile'] = bakeSamples;
+}
+
 /** Drop every in-memory entry (debug/tests). Does not touch the disk cache. */
 export function clearMemoryCache(): void {
   memoryCache.clear();
@@ -151,10 +184,16 @@ export function bakeCached(
   if (hit) return hit;
 
   const pending = (async () => {
+    const t0 = performance.now();
     const fromDisk = await readDiskCache(key);
-    if (fromDisk) return fromDisk;
+    if (fromDisk) {
+      recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t0, kind: 'disk', at: t0 });
+      return fromDisk;
+    }
 
+    const t1 = performance.now();
     const canvas = await produce();
+    recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t1, kind: 'bake', at: t1 });
     if (diskEnabled) {
       // convertToBlob MUST precede transferToImageBitmap (transfer detaches
       // the canvas bitmap). The write itself is fire-and-forget.

@@ -13,6 +13,7 @@
 
 import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { AtlasManager, type AtlasPage } from '../../art/atlas';
+import { recordBakeSample } from '../../art/bake';
 import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
 import { renderSpine, type Ctx2D, type SpineParams } from '../../art/spines';
 import { getTheme, type LibraryTheme } from '../../art/themes';
@@ -339,6 +340,18 @@ export class SpineFactory {
   }
 
   private bakeOne(book: Book, variant: SpineVariant): CanvasSource {
+    const t0 = performance.now();
+    const source = this.bakeOneTimed(book, variant);
+    recordBakeSample({
+      what: `spine|${variant}|${book.title.slice(0, 40)}`,
+      ms: performance.now() - t0,
+      kind: 'spine',
+      at: t0,
+    });
+    return source;
+  }
+
+  private bakeOneTimed(book: Book, variant: SpineVariant): CanvasSource {
     const params = this.getParams(book);
     const scale = variant === 'hi' ? HI_SCALE : LO_SCALE;
     const w = Math.ceil(params.w * scale);

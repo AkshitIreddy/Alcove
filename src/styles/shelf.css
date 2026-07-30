@@ -197,3 +197,277 @@
   border-radius: var(--radius-pill);
   background: rgba(247, 241, 227, 0.65);
 }
+
+/* ----------------------------------------------------------------------------
+   Shelf book menu (wave-2) — right-click card mirroring the editor context
+   menu aesthetic: aged paper, lumpy hand-inked corners, dashed hover rows.
+   -------------------------------------------------------------------------- */
+.shelf-menu {
+  position: fixed;
+  z-index: var(--z-menus);
+  width: 216px;
+  padding: var(--space-8);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  box-shadow: var(--shadow-md);
+}
+
+.shelf-menu__title {
+  padding: 2px var(--space-8) 6px;
+  font-family: var(--font-accent);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-sepia);
+  border-bottom: 1.5px dashed var(--paper-edge);
+  margin-bottom: var(--space-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shelf-menu__item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 4px var(--space-8);
+  border: 1.5px dashed transparent;
+  border-radius: 8px 11px 9px 12px;
+  background: transparent;
+  color: var(--ink-sepia);
+  font-family: var(--font-body);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.shelf-menu__item.is-selected,
+.shelf-menu__item:hover {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-sepia-soft);
+}
+
+.shelf-menu__item.is-danger .shelf-menu__label {
+  color: var(--wash-terracotta-deep);
+}
+
+.shelf-menu__glyph {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 6px 9px 7px 10px;
+  transform: rotate(-2deg);
+}
+
+.shelf-menu__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shelf-menu__hint {
+  margin: 0 0 var(--space-8);
+  padding: 0 var(--space-8);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: var(--ink-sepia-soft);
+}
+
+.shelf-menu__input {
+  width: 100%;
+  margin: var(--space-4) 0 var(--space-8);
+  padding: 5px var(--space-8);
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 8px 11px 9px 12px;
+  outline: none;
+}
+
+.shelf-menu__input:focus-visible {
+  border-style: dashed;
+}
+
+.shelf-menu__row {
+  display: flex;
+  gap: var(--space-8);
+  padding: 0 var(--space-4) 2px;
+}
+
+.shelf-menu__btn {
+  appearance: none;
+  padding: 4px var(--space-12);
+  font-family: var(--font-accent);
+  font-size: 13.5px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 10px 13px 11px 14px / 12px 10px 14px 11px;
+  cursor: pointer;
+  transition: background var(--dur-xs) var(--ease-out), transform var(--dur-xs) var(--ease-out);
+}
+
+.shelf-menu__btn:hover {
+  background: var(--wash-amber-light);
+}
+
+.shelf-menu__btn:active {
+  transform: translateY(1px) rotate(0.5deg);
+}
+
+.shelf-menu__btn.is-primary {
+  background: var(--wash-amber-light);
+  font-weight: 700;
+}
+
+.shelf-menu__btn.is-danger {
+  color: var(--wash-terracotta-deep);
+  border-color: var(--wash-terracotta-deep);
+}
+
+.shelf-menu__btn.is-danger:hover {
+  background: var(--wash-terracotta-light);
+}
+
+/* ----------------------------------------------------------------------------
+   Floor plaque inline editor — a small engraved-brass-toned input floated
+   exactly over the canvas plaque (double-click to edit).
+   -------------------------------------------------------------------------- */
+.shelf-plate-edit {
+  position: fixed;
+  z-index: var(--z-menus);
+  padding: 2px 10px;
+  font-family: var(--font-accent);
+  font-size: 14px;
+  text-align: center;
+  color: #3e2a0e;
+  background: linear-gradient(180deg, #e4c06a, #c39a44 55%, #a67f30);
+  border: 1.5px solid rgba(74, 54, 22, 0.85);
+  border-radius: 6px 9px 7px 10px;
+  box-shadow: var(--shadow-md), inset 0 1px 2px rgba(255, 240, 200, 0.5);
+  outline: none;
+}
+
+.shelf-plate-edit::placeholder {
+  color: rgba(62, 42, 14, 0.5);
+}
+
+/* ----------------------------------------------------------------------------
+   Trash drawer panel — restore / empty the crumpled books.
+   -------------------------------------------------------------------------- */
+.shelf-trash {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%) rotate(-0.3deg);
+  z-index: var(--z-menus);
+  width: min(430px, calc(100vw - 48px));
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-12) var(--space-16);
+  background: var(--paper-aged);
+  border: 2px solid var(--ink-graphite);
+  border-radius: 14px 20px 16px 22px / 18px 14px 22px 16px;
+  box-shadow: var(--shadow-lg), inset 0 0 0 1.5px rgba(247, 241, 227, 0.7);
+}
+
+.shelf-trash__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1.5px dashed var(--paper-edge);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.shelf-trash__title {
+  font-family: var(--font-heading);
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--ink-sepia);
+}
+
+.shelf-trash__close {
+  appearance: none;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-sepia-soft);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.shelf-trash__close:hover {
+  background: var(--wash-amber-light);
+  color: var(--ink-sepia);
+}
+
+.shelf-trash__empty {
+  margin: var(--space-8) 0 var(--space-4);
+  text-align: center;
+  font-family: var(--font-accent);
+  font-size: 14px;
+  color: var(--ink-graphite-soft);
+}
+
+.shelf-trash__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.shelf-trash__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 5px var(--space-4);
+  border-bottom: 1px dashed var(--paper-edge);
+}
+
+.shelf-trash__row:last-child {
+  border-bottom: none;
+}
+
+.shelf-trash__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--ink-sepia);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shelf-trash__when {
+  flex: 0 0 auto;
+  font-family: var(--font-ui, 'Nunito Sans');
+  font-size: 11.5px;
+  color: var(--ink-graphite-soft);
+}
+
+.shelf-trash__foot {
+  display: flex;
+  gap: var(--space-8);
+  justify-content: flex-end;
+  padding-top: var(--space-8);
+}

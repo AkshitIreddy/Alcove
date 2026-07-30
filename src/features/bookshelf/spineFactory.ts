@@ -198,6 +198,28 @@ export class SpineFactory {
     return this.get(book.id, 'lo');
   }
 
+  /**
+   * Drop a book's baked textures (title rename, spine reseed). The atlas
+   * rects are released (pixels stay until page eviction) and listeners are
+   * notified so live sprites fall back to placeholders + re-request.
+   */
+  invalidate(bookId: string): void {
+    if (this.destroyed) return;
+    let touched = false;
+    for (const variant of ['lo', 'hi'] as const) {
+      const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
+      const tex = bucket.get(bookId);
+      if (tex !== undefined) {
+        bucket.delete(bookId);
+        tex.destroy(false);
+        touched = true;
+      }
+      (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
+      this.queue.delete(`${variant}|${bookId}`);
+    }
+    if (touched) this.emit([bookId]);
+  }
+
   /** Queue a bake (idempotent). Lower priority = baked sooner. */
   request(book: Book, variant: SpineVariant, priority: number): void {
     if (this.destroyed) return;

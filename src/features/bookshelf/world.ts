@@ -22,7 +22,10 @@ import { clamp } from '../../art/noise';
 import { SPINE_BASE_HEIGHT } from '../../art/spines';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
+import { moveBook, nextFreeSlot, touchBookOpened } from '../../data/books';
+import { settings, subscribe as subscribeSettings } from '../../data/settings';
 import type { Book } from '../../data/types';
+import { floorLabel, loadFloorNames, onFloorNameChange } from './floorNames';
 import {
   addWheelZoom,
   applyDragPosition,
@@ -53,6 +56,8 @@ import {
   FLOOR_H,
   HIT_SLOP,
   SHELF_WIDTH,
+  SLOT_MARGIN_X,
+  SLOT_W,
   slotCenterX,
   X_SLACK,
   Y_MIN,
@@ -65,7 +70,13 @@ import {
   watchReducedMotion,
 } from './env';
 import { FloorStampCache } from './floorStamps';
-import { FloorView, type BookVisual, type WorldHooks } from './floorView';
+import {
+  FloorView,
+  PLAQUE_CENTER_X,
+  PLAQUE_CENTER_Y,
+  type BookVisual,
+  type WorldHooks,
+} from './floorView';
 import {
   classifyDrag,
   classifyKeyZoom,
@@ -76,7 +87,14 @@ import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
 import { DustMotes, makeGlowTexture } from './motes';
 import { SpineFactory } from './spineFactory';
-import { EnvTextures, PLACEHOLDER_TINTS } from './textures';
+import {
+  EnvTextures,
+  PLACEHOLDER_TINTS,
+  PLAQUE_H,
+  PLAQUE_W,
+  TRASH_DRAWER_H,
+  TRASH_DRAWER_W,
+} from './textures';
 import { computeRange, diffWindow, Pool, type FloorRange } from './virtualizer';
 
 /* --------------------------- gsap registration ---------------------------- */
@@ -111,6 +129,12 @@ export interface WorldEvents {
   onGhostReady(book: Book, rect: RectLike): void;
   /** Rounded zoom percent changed (drives the zoom pill readout). */
   onZoomChange?(percent: number): void;
+  /** Right-click on a spine: open the shelf book menu at `screen` (CSS px). */
+  onBookMenu?(book: Book, screen: Vec2): void;
+  /** Double-click on a floor plaque: open the label editor over `rect`. */
+  onEditFloorPlate?(floor: number, rect: RectLike): void;
+  /** The trash drawer under the last floor was clicked. */
+  onOpenTrash?(): void;
 }
 
 /** Camera survives the shelf ↔ book unmount round-trip (module singleton). */
@@ -208,6 +232,26 @@ export class ShelfWorld {
   private springTween: gsap.core.Tween | null = null;
   private readonly tracked = new Set<gsap.core.Animation>();
   private a11ySignature = '';
+
+  /* ------------------------- wave-2 shelf-life state ---------------------- */
+  /** Menu-driven move mode: ghost follows the pointer, tap drops the book. */
+  private move: {
+    visual: BookVisual;
+    ghost: Sprite;
+    shadow: Sprite;
+    targetFloor: number;
+    targetSlot: number;
+    committing: boolean;
+  } | null = null;
+  /** Drop-target slot highlight while moving (fx layer, screen space). */
+  private movePreview: Sprite | null = null;
+  /** Keyboard shelf-nav selection (floor + index into the floor's visuals). */
+  private kbSel: { floor: number; index: number } | null = null;
+  private kbVisual: { fv: FloorView; visual: BookVisual } | null = null;
+  /** Trash drawer front under the last occupied floor (world space). */
+  private trashSprite: Sprite | null = null;
+  /** Previous tap (plaque double-click detection). */
+  private lastTap: { x: number; y: number; t: number } | null = null;
 
   private readonly hooks: WorldHooks = {
     markDirty: () => {
@@ -361,6 +405,7 @@ export class ShelfWorld {
       onDragCancel: () => this.handleDragCancel(),
       onTap: (cursor) => this.handleTap(cursor),
       onHover: (cursor) => this.handleHover(cursor),
+      onContextMenu: (cursor) => this.handleContextMenu(cursor),
     });
 
     // Keyboard zoom: +/- and 0 work anywhere on the shelf (document-level;
@@ -374,6 +419,11 @@ export class ShelfWorld {
           target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT');
+      // Wave-2 shelf nav (arrows/Enter/Home) + move-mode Escape.
+      if (!editing && this.handleNavKey(e.key)) {
+        e.preventDefault();
+        return;
+      }
       const action = classifyKeyZoom({ key: e.key, altKey: e.altKey, editing });
       if (action === null) return;
       e.preventDefault();
@@ -393,7 +443,29 @@ export class ShelfWorld {
         this.motes.setEnabled(!this.degrade && !reduced);
         this.dirty = true;
       }),
+      // Wave-2: live-apply wood stain / wallpaper / shelf sort on save.
+      subscribeSettings((s) => {
+        this.envTex.setStain(s.shelfWoodStain);
+        this.envTex.setWallpaper(s.wallpaperPattern);
+        this.store.setSort(s.shelfSort);
+      }),
+      // Plaque label edits re-texture the mounted floor + its LOD2 stamp.
+      onFloorNameChange((floor) => {
+        const fv = this.floors.get(floor);
+        if (fv !== undefined) {
+          fv.setPlaque(this.envTex, this.dpr, floorLabel(floor));
+          this.rebakeStamp(floor, fv);
+          this.dirty = true;
+        }
+      }),
     );
+    void loadFloorNames().then(() => {
+      if (this.destroyed) return;
+      for (const [index, fv] of this.floors) {
+        fv.setPlaque(this.envTex, this.dpr, floorLabel(index));
+      }
+      this.dirty = true;
+    });
 
     const ro = new ResizeObserver(() => this.handleResize());
     ro.observe(host);
@@ -415,7 +487,12 @@ export class ShelfWorld {
       (fv) => fv.destroy(),
     );
 
-    this.envTex.load(this.dpr, this.degrade);
+    this.envTex.load(
+      this.dpr,
+      this.degrade,
+      settings.shelfWoodStain,
+      settings.wallpaperPattern,
+    );
     this.ready = this.store.init().then(() => {
       if (this.destroyed) return;
       this.dirty = true;
@@ -445,6 +522,7 @@ export class ShelfWorld {
       this.pullOutBook(fv, visual);
       return;
     }
+    void touchBookOpened(book.id);
     appState.openBook(book.id);
   }
 
@@ -563,7 +641,7 @@ export class ShelfWorld {
     const ghost = new Sprite(visual.sprite.texture);
     ghost.tint = visual.sprite.tint;
     ghost.anchor.set(0.5, 1);
-    ghost.width = visual.params.w * zoom;
+    ghost.width = visual.w * zoom;
     ghost.height = visual.height * zoom;
     ghost.rotation = visual.baseRotation;
     ghost.position.set(screen.x, screen.y - 20 * zoom);
@@ -597,6 +675,11 @@ export class ShelfWorld {
     this.zoomTween?.kill();
     this.springTween?.kill();
     this.pull = null;
+    this.move = null;
+    this.movePreview?.destroy();
+    this.movePreview = null;
+    this.trashSprite?.destroy();
+    this.trashSprite = null;
     this.disposeGhost();
     for (const fv of this.floors.values()) fv.destroy();
     this.floors.clear();
@@ -737,6 +820,7 @@ export class ShelfWorld {
         this.pool.release(fv);
       }
     }
+    const recentId = this.store.recentBookId();
     for (const index of diff.add) {
       const fv = this.pool.acquire();
       this.floors.set(index, fv);
@@ -748,9 +832,12 @@ export class ShelfWorld {
         this.tier,
         this.dpr,
         this.degrade,
+        recentId,
       );
+      fv.setPlaque(this.envTex, this.dpr, floorLabel(index));
       if (this.tier === 2) fv.showStamp(this.stampFor(index, fv));
       this.requestSpines(fv);
+      this.applyKbHalo();
     }
 
     if (tierChanged) {
@@ -766,7 +853,38 @@ export class ShelfWorld {
 
     this.range = range;
     this.store.ensureRange(range.first, range.last);
+    this.syncTrashDrawer();
     this.publishVisibleBooks();
+  }
+
+  /**
+   * The trash drawer front sits just under the last occupied floor's plank
+   * (wave-2 item 22). World-space sprite, re-appended after floor mounts so
+   * it always renders above the next floor's back panel.
+   */
+  private syncTrashDrawer(): void {
+    const floor = this.store.maxFloor;
+    const y = (floor + 1) * FLOOR_H + 3;
+    if (this.trashSprite === null) {
+      this.trashSprite = new Sprite(this.envTex.getTrashDrawer(this.dpr));
+      this.trashSprite.anchor.set(0.5, 0);
+      this.trashSprite.width = TRASH_DRAWER_W;
+      this.trashSprite.height = TRASH_DRAWER_H;
+    }
+    this.trashSprite.position.set(SHELF_WIDTH / 2, y);
+    // Keep on top of floor containers (mounts re-order world children).
+    this.world.addChild(this.trashSprite);
+  }
+
+  /** World-space rect of the trash drawer (hit-testing). */
+  private trashDrawerHit(wx: number, wy: number): boolean {
+    if (this.trashSprite === null) return false;
+    const y0 = (this.store.maxFloor + 1) * FLOOR_H + 3;
+    return (
+      Math.abs(wx - SHELF_WIDTH / 2) <= TRASH_DRAWER_W / 2 &&
+      wy >= y0 &&
+      wy <= y0 + TRASH_DRAWER_H
+    );
   }
 
   private stampFor(index: number, fv: FloorView): PIXI.RenderTexture {
@@ -790,16 +908,19 @@ export class ShelfWorld {
   private handleFloorData(floorIndices: readonly number[]): void {
     if (this.destroyed) return;
     let touched = false;
+    const recentId = this.store.recentBookId();
     for (const index of floorIndices) {
       const fv = this.floors.get(index);
       if (fv === undefined) continue;
-      fv.setBooks(this.store.get(index), this.factory, this.dpr, this.envTex);
+      fv.setBooks(this.store.get(index), this.factory, this.dpr, this.envTex, recentId);
       fv.refreshTextures(this.factory);
       this.rebakeStamp(index, fv);
       this.requestSpines(fv);
       touched = true;
     }
     if (touched) {
+      this.kbVisual = null;
+      this.applyKbHalo();
       this.dirty = true;
       this.publishVisibleBooks();
     }
@@ -853,22 +974,37 @@ export class ShelfWorld {
         }),
       );
       if (m === 0) wp.alpha = WALLPAPER_ALPHA;
+    } else if (this.wallpaper !== null) {
+      // Wave-2 wallpaper picker: pattern swap or 'plain' (layer hidden).
+      if (this.envTex.wallpaper === null) {
+        this.wallpaper.visible = false;
+      } else {
+        this.wallpaper.visible = true;
+        this.wallpaper.alpha = WALLPAPER_ALPHA;
+        if (this.wallpaper.texture !== this.envTex.wallpaper) {
+          this.wallpaper.texture = this.envTex.wallpaper;
+        }
+      }
     }
-    if (this.envTex.crown !== null && !this.crownWood) {
+    if (this.envTex.crown !== null) {
+      const firstArrival = !this.crownWood;
       this.crownWood = true;
-      this.crown.texture = this.envTex.crown;
-      this.crown.tint = 0xffffff;
-      this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
-      this.crown.height = CROWN_H;
-      if (m > 0) {
-        this.crown.alpha = 0;
-        this.track(
-          gsap.to(this.crown, { alpha: 1, duration: 0.4 * m, onUpdate: this.hooks.markDirty }),
-        );
+      if (this.crown.texture !== this.envTex.crown) {
+        this.crown.texture = this.envTex.crown;
+        this.crown.tint = 0xffffff;
+        this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
+        this.crown.height = CROWN_H;
+        if (firstArrival && m > 0) {
+          this.crown.alpha = 0;
+          this.track(
+            gsap.to(this.crown, { alpha: 1, duration: 0.4 * m, onUpdate: this.hooks.markDirty }),
+          );
+        }
       }
     }
     for (const [index, fv] of this.floors) {
       fv.applyEnv(this.envTex, this.degrade, true);
+      fv.refreshEnv(this.envTex);
       this.rebakeStamp(index, fv);
     }
     this.dirty = true;
@@ -920,12 +1056,16 @@ export class ShelfWorld {
 
   /** Hit-test at pointerdown; the input layer widens the drag threshold on a hit. */
   private handlePointerDown(cursor: Vec2): boolean {
-    this.downHit = this.frozen || this.tier !== 0 ? null : this.hitBook(cursor);
+    this.downHit =
+      this.frozen || this.tier !== 0 || this.move !== null
+        ? null
+        : this.hitBook(cursor);
     return this.downHit !== null;
   }
 
   private handleDragStart(dx: number, dy: number, onBook: boolean): void {
     if (this.frozen) return;
+    if (this.move !== null) return; // move mode: the ghost follows, no pan/pull
     const hit = this.downHit;
     if (onBook && hit !== null && classifyDrag(true, dx, dy) === 'pull') {
       this.beginBookPull(hit.fv, hit.visual);
@@ -943,6 +1083,10 @@ export class ShelfWorld {
 
   private handleDragMove(dx: number, dy: number, cursor: Vec2): void {
     if (this.frozen) return;
+    if (this.move !== null) {
+      if (!this.move.committing) this.updateMove(cursor);
+      return;
+    }
     const pull = this.pull;
     if (pull !== null) {
       if (pull.finishing) return;
@@ -962,6 +1106,7 @@ export class ShelfWorld {
   }
 
   private handleDragEnd(samples: readonly DragSample[]): void {
+    if (this.move !== null) return; // move mode: only a tap (click) drops
     if (this.pull !== null) {
       if (!this.pull.finishing) this.finishBookPull();
       return;
@@ -981,6 +1126,7 @@ export class ShelfWorld {
   }
 
   private handleDragCancel(): void {
+    if (this.move !== null) return;
     if (this.pull !== null) {
       if (!this.pull.finishing) this.cancelBookPull();
       return;
@@ -990,17 +1136,88 @@ export class ShelfWorld {
 
   private handleTap(cursor: Vec2): void {
     if (this.frozen) return;
+    if (this.move !== null) {
+      void this.commitMove(cursor);
+      return;
+    }
+    const cam = this.camera;
+    const wx = cursor.x / cam.zoom + cam.x;
+    const wy = cursor.y / cam.zoom + cam.y;
+    if (this.trashDrawerHit(wx, wy)) {
+      void play('pop-soft');
+      this.events.onOpenTrash?.();
+      return;
+    }
+    // Double-tap on a floor plaque (tier 0, where the label is legible)
+    // opens the inline label editor.
+    const prev = this.lastTap;
+    const now = performance.now();
+    this.lastTap = { x: cursor.x, y: cursor.y, t: now };
+    if (
+      prev !== null &&
+      now - prev.t < 400 &&
+      Math.hypot(cursor.x - prev.x, cursor.y - prev.y) < 24 &&
+      this.tier === 0
+    ) {
+      const floor = Math.floor(wy / FLOOR_H);
+      const localY = wy - floor * FLOOR_H;
+      if (
+        floor >= 0 &&
+        Math.abs(wx - PLAQUE_CENTER_X) <= PLAQUE_W / 2 + 10 &&
+        Math.abs(localY - PLAQUE_CENTER_Y) <= PLAQUE_H / 2 + 8
+      ) {
+        this.lastTap = null;
+        this.events.onEditFloorPlate?.(floor, this.plaqueScreenRect(floor));
+        return;
+      }
+    }
+    this.clearKbSelection();
     if (this.tier === 0) {
       const hit = this.hitBook(cursor);
       if (hit !== null) this.pullOutBook(hit.fv, hit.visual);
       return;
     }
-    const worldY = cursor.y / this.camera.zoom + this.camera.y;
-    const floor = Math.floor(worldY / FLOOR_H);
+    const floor = Math.floor(wy / FLOOR_H);
     if (floor >= 0) this.zoomToFloor(floor);
   }
 
+  private handleContextMenu(cursor: Vec2): void {
+    if (
+      this.frozen ||
+      this.destroyed ||
+      this.tier !== 0 ||
+      this.pull !== null ||
+      this.move !== null
+    ) {
+      return;
+    }
+    const hit = this.hitBook(cursor);
+    if (hit !== null) {
+      void play('pop-soft');
+      this.events.onBookMenu?.(hit.visual.book, { x: cursor.x, y: cursor.y });
+    }
+  }
+
+  /** Screen rect of a floor's plaque (label editor placement). */
+  private plaqueScreenRect(floor: number): RectLike {
+    const zoom = this.camera.zoom;
+    const topLeft = worldToScreen(this.camera, {
+      x: PLAQUE_CENTER_X - PLAQUE_W / 2,
+      y: floor * FLOOR_H + PLAQUE_CENTER_Y - PLAQUE_H / 2,
+    });
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: PLAQUE_W * zoom,
+      height: PLAQUE_H * zoom,
+    };
+  }
+
   private handleHover(cursor: Vec2 | null): void {
+    if (this.move !== null) {
+      if (cursor !== null && !this.move.committing) this.updateMove(cursor);
+      return;
+    }
     if (this.frozen || this.dragging || this.pull !== null || this.tier !== 0) {
       this.clearHover();
       return;
@@ -1035,7 +1252,7 @@ export class ShelfWorld {
     if (fv === undefined) return null;
     const localY = wy - floor * FLOOR_H;
     for (const visual of fv.visuals) {
-      const halfW = visual.params.w / 2 + HIT_SLOP;
+      const halfW = visual.w / 2 + HIT_SLOP;
       if (
         Math.abs(wx - visual.centerX) <= halfW &&
         localY >= BOOK_BASELINE - visual.height - HIT_SLOP &&
@@ -1050,7 +1267,10 @@ export class ShelfWorld {
   private updateCursor(): void {
     // Books use grab/grabbing (they get dragged out); the shelf pans with the
     // same affordance, so the cursor is grab everywhere and grabbing mid-drag.
-    const cursor = this.dragging || this.pull !== null ? 'grabbing' : 'grab';
+    const cursor =
+      this.dragging || this.pull !== null || this.move !== null
+        ? 'grabbing'
+        : 'grab';
     this.app.canvas.style.cursor = cursor;
   }
 
@@ -1156,7 +1376,7 @@ export class ShelfWorld {
       x: centerX,
       y: book.floor * FLOOR_H + BOOK_BASELINE,
     });
-    const w = params.w * zoom;
+    const w = (visual !== undefined ? visual.w : params.w) * zoom;
     const h = height * zoom;
     return { x: screen.x - w / 2, y: screen.y - h, width: w, height: h };
   }
@@ -1181,14 +1401,14 @@ export class ShelfWorld {
     const ghost = new Sprite(visual.sprite.texture);
     ghost.tint = visual.sprite.tint;
     ghost.anchor.set(0.5, 1);
-    ghost.width = visual.params.w * zoom;
+    ghost.width = visual.w * zoom;
     ghost.height = visual.height * zoom;
     ghost.position.set(screen.x, screen.y);
 
     const shadow = new Sprite(this.glowTexture);
     shadow.tint = 0x2e241a;
     shadow.anchor.set(0.5);
-    shadow.width = visual.params.w * zoom * 1.7;
+    shadow.width = visual.w * zoom * 1.7;
     shadow.height = 16 * zoom;
     shadow.position.set(screen.x, screen.y + 5 * zoom);
     shadow.alpha = 0;
@@ -1221,6 +1441,7 @@ export class ShelfWorld {
   private pullOutBook(fv: FloorView, visual: BookVisual): void {
     if (this.frozen) return;
     void play('book-pull');
+    void touchBookOpened(visual.book.id);
     this.frozen = true;
     this.input.frozen = true;
     this.dragging = false;
@@ -1243,7 +1464,7 @@ export class ShelfWorld {
 
     const liftedY = screen.y - 40 * zoom;
     const finish = (): void => {
-      const width = visual.params.w * zoom * 1.35;
+      const width = visual.w * zoom * 1.35;
       const height = visual.height * zoom * 1.35;
       this.events.onGhostReady(visual.book, {
         x: screen.x - width / 2,
@@ -1323,6 +1544,7 @@ export class ShelfWorld {
     const pull = this.pull;
     if (pull === null || pull.finishing) return;
     pull.finishing = true;
+    void touchBookOpened(pull.visual.book.id);
     this.frozen = true;
     this.input.frozen = true;
     this.camera.vx = 0;
@@ -1339,7 +1561,7 @@ export class ShelfWorld {
     const finish = (): void => {
       this.pull = null;
       this.updateCursor();
-      const width = visual.params.w * zoom * 1.35;
+      const width = visual.w * zoom * 1.35;
       const height = visual.height * zoom * 1.35;
       this.events.onGhostReady(visual.book, {
         x: liftX - width / 2,
@@ -1416,6 +1638,229 @@ export class ShelfWorld {
     this.dirty = true;
   }
 
+  /* --------------------- wave-2: move mode & shelf nav --------------------- */
+
+  /**
+   * Menu-driven "Move": the spine ghost follows the pointer with a slot drop
+   * preview; a click drops the book (slot collisions resolve to the next free
+   * slot), Escape cancels. Only available at LOD0 with the floor mounted.
+   */
+  beginMove(bookId: string): void {
+    if (this.frozen || this.destroyed || this.pull !== null || this.move !== null) {
+      return;
+    }
+    const book = this.store.findBook(bookId);
+    if (book === null) return;
+    const fv = this.floors.get(book.floor);
+    const visual = fv?.visuals.find((v) => v.book.id === bookId);
+    if (fv === undefined || visual === undefined) return;
+    void play('book-pull');
+    this.killNavTweens();
+    this.clearHover();
+    this.clearKbSelection();
+    const { ghost, shadow } = this.spawnGhost(fv, visual);
+    shadow.alpha = 0.2;
+    ghost.alpha = 0.9;
+    this.move = {
+      visual,
+      ghost,
+      shadow,
+      targetFloor: book.floor,
+      targetSlot: book.slot,
+      committing: false,
+    };
+    this.updateCursor();
+    this.dirty = true;
+  }
+
+  /** True while a move is following the pointer (QA + component guard). */
+  get moveActive(): boolean {
+    return this.move !== null;
+  }
+
+  private updateMove(cursor: Vec2): void {
+    const move = this.move;
+    if (move === null) return;
+    const cam = this.camera;
+    const wx = cursor.x / cam.zoom + cam.x;
+    const wy = cursor.y / cam.zoom + cam.y;
+    move.targetFloor = Math.max(0, Math.floor(wy / FLOOR_H));
+    move.targetSlot = Math.round(
+      clamp((wx - SLOT_MARGIN_X - SLOT_W / 2) / SLOT_W, 0, 19),
+    );
+    move.ghost.position.set(cursor.x, cursor.y + (move.visual.height * cam.zoom) / 2);
+    move.shadow.alpha = 0;
+    if (this.movePreview === null) {
+      const p = new Sprite(this.glowTexture);
+      p.anchor.set(0.5, 1);
+      p.blendMode = 'add';
+      p.tint = 0xffd98f;
+      p.alpha = 0.55;
+      this.fx.addChild(p);
+      this.movePreview = p;
+    }
+    const screen = worldToScreen(cam, {
+      x: slotCenterX(move.targetSlot),
+      y: move.targetFloor * FLOOR_H + BOOK_BASELINE,
+    });
+    this.movePreview.position.set(screen.x, screen.y + 6 * cam.zoom);
+    this.movePreview.width = move.visual.w * 2.8 * cam.zoom;
+    this.movePreview.height = move.visual.height * 1.2 * cam.zoom;
+    this.dirty = true;
+  }
+
+  private async commitMove(cursor: Vec2): Promise<void> {
+    const move = this.move;
+    if (move === null || move.committing) return;
+    this.updateMove(cursor);
+    move.committing = true;
+    void play('drop-thump');
+    try {
+      const slot = await nextFreeSlot(move.targetFloor, move.targetSlot);
+      await moveBook(move.visual.book.id, move.targetFloor, slot);
+    } catch {
+      // DB failure: the refresh below re-syncs whatever state persisted.
+    }
+    if (this.destroyed) return;
+    move.visual.sprite.visible = true;
+    this.endMove();
+    await this.refreshData();
+  }
+
+  private cancelMove(): void {
+    const move = this.move;
+    if (move === null) return;
+    move.visual.sprite.visible = true;
+    this.endMove();
+  }
+
+  private endMove(): void {
+    this.move = null;
+    if (this.movePreview !== null) {
+      this.movePreview.destroy();
+      this.movePreview = null;
+    }
+    this.disposeGhost();
+    this.updateCursor();
+    this.dirty = true;
+  }
+
+  /** Re-fetch every loaded floor from the DB (after shelf-UI mutations). */
+  async refreshData(): Promise<void> {
+    await this.store.refreshAll();
+  }
+
+  /** Drop baked spine textures after a rename (title is baked into hi-res). */
+  invalidateSpine(bookId: string): void {
+    this.factory.invalidate(bookId);
+  }
+
+  /**
+   * Keyboard shelf nav (wave-2 item 8): arrows move a selection halo between
+   * books, Enter pulls the selected book out, Home jumps to floor 0, Escape
+   * clears (or cancels a live move). Returns true when the key was consumed.
+   */
+  private handleNavKey(key: string): boolean {
+    if (key === 'Escape') {
+      if (this.move !== null) {
+        this.cancelMove();
+        return true;
+      }
+      if (this.kbSel !== null) {
+        this.clearKbSelection();
+        return true;
+      }
+      return false;
+    }
+    if (this.tier !== 0 || this.pull !== null || this.move !== null) return false;
+    if (key === 'Enter') {
+      const kv = this.kbVisual;
+      if (kv === null) return false;
+      this.clearKbSelection();
+      this.pullOutBook(kv.fv, kv.visual);
+      return true;
+    }
+    const isArrow =
+      key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown';
+    if (!isArrow && key !== 'Home') return false;
+
+    const sel = this.kbSel;
+    if (key === 'Home') {
+      this.kbSel = { floor: 0, index: 0 };
+    } else if (sel === null) {
+      // First arrow press: select on the floor closest to the view center.
+      const centerFloor =
+        (this.camera.y + this.vp.height / (2 * this.camera.zoom)) / FLOOR_H;
+      let best: number | null = null;
+      for (const [index, fv] of this.floors) {
+        if (fv.visuals.length === 0) continue;
+        if (best === null || Math.abs(index - centerFloor) < Math.abs(best - centerFloor)) {
+          best = index;
+        }
+      }
+      if (best === null) return true;
+      this.kbSel = { floor: best, index: 0 };
+    } else {
+      let { floor, index } = sel;
+      if (key === 'ArrowLeft') index -= 1;
+      else if (key === 'ArrowRight') index += 1;
+      else if (key === 'ArrowUp') floor -= 1;
+      else floor += 1;
+      if (floor < 0) floor = 0;
+      if (index < 0) index = 0;
+      this.kbSel = { floor, index };
+    }
+    this.ensureSelVisible();
+    this.applyKbHalo();
+    return true;
+  }
+
+  /** Current keyboard selection (QA probes). */
+  get keyboardSelection(): { floor: number; index: number } | null {
+    return this.kbSel;
+  }
+
+  /** Scroll the camera so the selected floor is fully visible. */
+  private ensureSelVisible(): void {
+    const sel = this.kbSel;
+    if (sel === null) return;
+    const cam = this.camera;
+    const floorTop = sel.floor * FLOOR_H;
+    const viewH = this.vp.height / cam.zoom;
+    if (floorTop < cam.y || floorTop + FLOOR_H > cam.y + viewH) {
+      this.killNavTweens();
+      cam.vx = 0;
+      cam.vy = 0;
+      cam.y = Math.max(Y_MIN, floorTop - (viewH - FLOOR_H) / 2);
+      this.dirty = true;
+    }
+  }
+
+  /** (Re)apply the selection halo — also called when floors (re)mount. */
+  private applyKbHalo(): void {
+    const sel = this.kbSel;
+    if (sel === null) return;
+    const fv = this.floors.get(sel.floor);
+    if (fv === undefined || fv.visuals.length === 0) return;
+    sel.index = Math.min(sel.index, fv.visuals.length - 1);
+    const visual = fv.visuals[sel.index] as BookVisual;
+    const current = this.kbVisual;
+    if (current !== null && current.visual === visual) return;
+    if (current !== null) current.fv.setHover(current.visual, false);
+    this.clearHover();
+    this.kbVisual = { fv, visual };
+    fv.setHover(visual, true);
+    this.dirty = true;
+  }
+
+  private clearKbSelection(): void {
+    const current = this.kbVisual;
+    if (current !== null) current.fv.setHover(current.visual, false);
+    this.kbVisual = null;
+    this.kbSel = null;
+    this.dirty = true;
+  }
+
   /* ------------------------------- utilities ------------------------------ */
 
   private handleResize(): void {
@@ -1448,7 +1893,8 @@ export class ShelfWorld {
         books.push({ id: book.id, title: book.title, floor: book.floor });
       }
     }
-    const signature = books.map((b) => b.id).join('|');
+    // Titles are part of the signature so renames re-render the mirror.
+    const signature = books.map((b) => `${b.id}:${b.title}`).join('|');
     if (signature === this.a11ySignature) return;
     this.a11ySignature = signature;
     this.events.onVisibleBooksChange(books);

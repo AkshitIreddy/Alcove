@@ -1,11 +1,36 @@
 /**
  * tests/bookshelf.test.ts — pure-logic tests for the bookshelf world:
  * camera math (screen↔world, anchor-preserving zoom, clamp/rubber-band,
- * momentum), virtualizer windowing diff, and LOD tier hysteresis.
- * Node environment — no Pixi/DOM imports.
+ * momentum), virtualizer windowing diff, LOD tier hysteresis, and the
+ * wave-2 shelf-life data layer (shelf meta, thickness, trash drawer flow,
+ * sort orders, floor plaque names). Node environment — no Pixi/DOM imports.
  */
 
 import { describe, expect, it } from 'vitest';
+import {
+  createBook,
+  duplicateBook,
+  emptyTrash,
+  getBook,
+  listBooksByFloorRange,
+  listTrashedBooks,
+  maxOccupiedFloor,
+  mergeCoverMetaSection,
+  nextFreeSlot,
+  readShelfMeta,
+  renameBook,
+  restoreBook,
+  setBookPinned,
+  thicknessScale,
+  touchBookOpened,
+  TRASH_FLOOR,
+  trashBook,
+  updateBookPageCount,
+} from '../src/data/books';
+import { createPage, listPages } from '../src/data/pages';
+import type { Book } from '../src/data/types';
+import { orderBooks } from '../src/features/bookshelf/data';
+import { parseFloorNames } from '../src/features/bookshelf/floorNames';
 import {
   addWheelZoom,
   applyDragPosition,
@@ -541,6 +566,229 @@ describe('gestures: keyboard zoom', () => {
   it('ignores alt combos and keystrokes while editing text', () => {
     expect(classifyKeyZoom({ key: '+', altKey: true })).toBeNull();
     expect(classifyKeyZoom({ key: '0', editing: true })).toBeNull();
+  });
+});
+
+/* ------------------------- wave-2 shelf & library life ------------------- */
+
+function fakeBook(over: Partial<Book>): Book {
+  return {
+    id: 'b',
+    title: 'T',
+    floor: 0,
+    slot: 0,
+    spineSeed: 1,
+    coverMeta: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
+  };
+}
+
+describe('shelf meta: cover_meta.shelf section', () => {
+  it('reads a valid section and drops junk fields', () => {
+    const meta = readShelfMeta(
+      fakeBook({
+        coverMeta: {
+          shelf: {
+            pinned: true,
+            lastOpenedAt: '2026-02-01T10:00:00.000Z',
+            pageCount: 7.6,
+            prevFloor: 2.2,
+            prevSlot: -3,
+            bogus: 'nope',
+          },
+        },
+      }),
+    );
+    expect(meta).toEqual({
+      pinned: true,
+      lastOpenedAt: '2026-02-01T10:00:00.000Z',
+      pageCount: 8,
+      prevFloor: 2,
+      prevSlot: 0,
+    });
+  });
+
+  it('returns null for missing/invalid sections', () => {
+    expect(readShelfMeta(fakeBook({}))).toBeNull();
+    expect(readShelfMeta(fakeBook({ coverMeta: { shelf: 'x' } }))).toBeNull();
+    expect(readShelfMeta(fakeBook({ coverMeta: { shelf: {} } }))).toBeNull();
+    expect(readShelfMeta(null)).toBeNull();
+  });
+
+  it('mergeCoverMetaSection supports the shelf key alongside others', () => {
+    const merged = mergeCoverMetaSection(
+      { cover: { palette: 'amber' } },
+      'shelf',
+      { pinned: true },
+    );
+    expect(merged).toEqual({ cover: { palette: 'amber' }, shelf: { pinned: true } });
+    // Clearing the section leaves the rest intact.
+    expect(mergeCoverMetaSection(merged, 'shelf', null)).toEqual({
+      cover: { palette: 'amber' },
+    });
+  });
+});
+
+describe('auto spine thickness', () => {
+  it('is 1 for unknown page counts', () => {
+    expect(thicknessScale(null)).toBe(1);
+    expect(thicknessScale(undefined)).toBe(1);
+    expect(thicknessScale(Number.NaN)).toBe(1);
+  });
+
+  it('grows with page count, clamped to [0.85, 1.45]', () => {
+    expect(thicknessScale(0)).toBeCloseTo(0.85, 10);
+    expect(thicknessScale(4)).toBeCloseTo(0.95, 10);
+    expect(thicknessScale(25)).toBeCloseTo(1.1, 10);
+    expect(thicknessScale(10_000)).toBe(1.45);
+    expect(thicknessScale(9)).toBeGreaterThan(thicknessScale(4));
+  });
+});
+
+describe('shelf sort orders (orderBooks)', () => {
+  const a = fakeBook({ id: 'a', slot: 0 });
+  const b = fakeBook({
+    id: 'b',
+    slot: 1,
+    coverMeta: { shelf: { lastOpenedAt: '2026-03-01T00:00:00.000Z' } },
+  });
+  const c = fakeBook({
+    id: 'c',
+    slot: 2,
+    coverMeta: { shelf: { pinned: true, lastOpenedAt: '2026-02-01T00:00:00.000Z' } },
+  });
+
+  it('manual keeps slot order', () => {
+    expect(orderBooks([c, a, b], 'manual').map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('favorites puts pinned books first', () => {
+    expect(orderBooks([a, b, c], 'favorites').map((x) => x.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('recent puts the newest-opened first, never-opened last by slot', () => {
+    expect(orderBooks([a, b, c], 'recent').map((x) => x.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [c, a, b];
+    orderBooks(input, 'favorites');
+    expect(input.map((x) => x.id)).toEqual(['c', 'a', 'b']);
+  });
+});
+
+describe('floor plaque names', () => {
+  it('parses a valid blob, trimming and capping labels', () => {
+    const map = parseFloorNames({
+      '0': '  Sciences  ',
+      '3': 'x'.repeat(80),
+      '-1': 'trash',
+      '2': 7,
+      abc: 'nope',
+      '5': '   ',
+    });
+    expect(map.get(0)).toBe('Sciences');
+    expect(map.get(3)).toHaveLength(40);
+    expect(map.has(-1)).toBe(false);
+    expect(map.has(2)).toBe(false);
+    expect(map.has(5)).toBe(false);
+  });
+
+  it('degrades corrupt blobs to an empty map', () => {
+    expect(parseFloorNames(null).size).toBe(0);
+    expect(parseFloorNames('junk').size).toBe(0);
+    expect(parseFloorNames([1, 2]).size).toBe(0);
+  });
+});
+
+describe('trash drawer flow (in-memory db)', () => {
+  it('soft-deletes to floor -1, restores to the old spot, empties for real', async () => {
+    const book = await createBook({ title: 'Doomed Diary', floor: 2, slot: 5 });
+    await createPage({ bookId: book.id });
+
+    // Trash: off the shelf, into the drawer, with restore bookkeeping.
+    await trashBook(book.id);
+    const trashed = await getBook(book.id);
+    expect(trashed?.floor).toBe(TRASH_FLOOR);
+    const meta = readShelfMeta(trashed);
+    expect(meta?.prevFloor).toBe(2);
+    expect(meta?.prevSlot).toBe(5);
+    expect(typeof meta?.deletedAt).toBe('string');
+    // The shelf query (floors >= 0) no longer sees it.
+    const onShelf = await listBooksByFloorRange(0, 10);
+    expect(onShelf.some((b) => b.id === book.id)).toBe(false);
+    const drawer = await listTrashedBooks();
+    expect(drawer.map((b) => b.id)).toContain(book.id);
+
+    // Restore: back to floor 2 slot 5, bookkeeping cleared.
+    await restoreBook(book.id);
+    const restored = await getBook(book.id);
+    expect(restored?.floor).toBe(2);
+    expect(restored?.slot).toBe(5);
+    expect(readShelfMeta(restored)?.deletedAt).toBeUndefined();
+
+    // Empty: permanent delete removes book AND pages.
+    await trashBook(book.id);
+    const removed = await emptyTrash();
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(await getBook(book.id)).toBeNull();
+    expect(await listPages(book.id)).toEqual([]);
+  });
+
+  it('trashing twice is a no-op and restore lands on a free slot', async () => {
+    const one = await createBook({ title: 'One', floor: 4, slot: 1 });
+    await trashBook(one.id);
+    const before = readShelfMeta(await getBook(one.id));
+    await trashBook(one.id); // no-op: prevFloor must not become -1
+    expect(readShelfMeta(await getBook(one.id))?.prevFloor).toBe(before?.prevFloor);
+    // Occupy the old slot; restore must land on the next free one.
+    await createBook({ title: 'Squatter', floor: 4, slot: 1 });
+    await restoreBook(one.id);
+    const back = await getBook(one.id);
+    expect(back?.floor).toBe(4);
+    expect(back?.slot).toBe(2);
+  });
+});
+
+describe('shelf-life book ops (in-memory db)', () => {
+  it('pin, touch-opened, and page-count meta round-trip', async () => {
+    const book = await createBook({ title: 'Ops', floor: 0, slot: 8 });
+    await setBookPinned(book.id, true);
+    expect(readShelfMeta(await getBook(book.id))?.pinned).toBe(true);
+    await setBookPinned(book.id, false);
+    expect(readShelfMeta(await getBook(book.id))?.pinned).toBe(false);
+
+    await touchBookOpened(book.id);
+    const opened = readShelfMeta(await getBook(book.id))?.lastOpenedAt;
+    expect(typeof opened).toBe('string');
+
+    await createPage({ bookId: book.id });
+    await createPage({ bookId: book.id });
+    await updateBookPageCount(book.id);
+    expect(readShelfMeta(await getBook(book.id))?.pageCount).toBe(2);
+  });
+
+  it('duplicate copies pages and lands on the next free slot', async () => {
+    const src = await createBook({ title: 'Original', floor: 6, slot: 3 });
+    await createPage({ bookId: src.id });
+    await createPage({ bookId: src.id });
+    await createBook({ title: 'Neighbor', floor: 6, slot: 4 });
+    const copy = await duplicateBook(src.id);
+    expect(copy).not.toBeNull();
+    expect(copy?.title).toBe('Original copy');
+    expect(copy?.floor).toBe(6);
+    expect(copy?.slot).toBe(5); // 3 and 4 taken
+    expect(await listPages(copy!.id)).toHaveLength(2);
+  });
+
+  it('rename + nextFreeSlot + maxOccupiedFloor behave', async () => {
+    const book = await createBook({ title: 'Old name', floor: 9, slot: 0 });
+    await renameBook(book.id, 'New name');
+    expect((await getBook(book.id))?.title).toBe('New name');
+    expect(await nextFreeSlot(9, 0)).toBe(1);
+    expect(await maxOccupiedFloor()).toBeGreaterThanOrEqual(9);
   });
 });
 

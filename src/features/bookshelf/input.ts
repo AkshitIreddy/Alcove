@@ -43,6 +43,8 @@ export interface InputCallbacks {
   onTap(cursor: Vec2): void;
   /** Cursor position while not dragging; null when the pointer leaves. */
   onHover(cursor: Vec2 | null): void;
+  /** Right-click / context-menu gesture at `cursor` (wave-2 shelf menu). */
+  onContextMenu?(cursor: Vec2): void;
 }
 
 interface PointerTracking {
@@ -77,7 +79,14 @@ export class ShelfInput {
     el.addEventListener('pointerup', this.onPointerUp, opts);
     el.addEventListener('pointercancel', this.onPointerCancel, opts);
     el.addEventListener('pointerleave', this.onPointerLeave, opts);
-    el.addEventListener('contextmenu', (e) => e.preventDefault(), opts);
+    el.addEventListener(
+      'contextmenu',
+      (e) => {
+        e.preventDefault();
+        if (!this.frozen) this.cb.onContextMenu?.(this.cursorOf(e));
+      },
+      opts,
+    );
   }
 
   destroy(): void {

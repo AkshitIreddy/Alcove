@@ -22,6 +22,7 @@ import gsap from 'gsap';
 import { Container, NineSliceSprite, Sprite, Texture, type RenderTexture } from 'pixi.js';
 import { SHADOW_STRIP } from '../../art/wood';
 import { SPINE_BASE_HEIGHT, type SpineParams } from '../../art/spines';
+import { readShelfMeta, thicknessScale } from '../../data/books';
 import type { Book } from '../../data/types';
 import {
   BOOK_BASELINE,
@@ -37,7 +38,13 @@ import { layoutFloor, LAYOUT_MARGIN_X } from './layout';
 import { PROP_H, PROP_KINDS, PROP_W, type PropKind } from '../../art/props';
 import type { LodTier } from './lod';
 import { LOD_CROSSFADE_MS } from './lod';
-import { doodleVariantFor, PLACEHOLDER_TINTS, type EnvTextures } from './textures';
+import {
+  doodleVariantFor,
+  PLACEHOLDER_TINTS,
+  PLAQUE_H,
+  PLAQUE_W,
+  type EnvTextures,
+} from './textures';
 import { placeholderTint, type SpineFactory } from './spineFactory';
 import { fnv1a, mulberry32 } from '../../art/noise';
 
@@ -73,7 +80,22 @@ export interface BookVisual {
   centerX: number;
   /** World-px composed height (base + jitter). */
   height: number;
+  /**
+   * World-px effective spine width: params.w × auto-thickness from the
+   * cached page count (wave-2 item 5). Layout/hit-testing/ghosts use this;
+   * the bake stays at params.w and stretches slightly (invisible for wood
+   * grain-free procedural spines).
+   */
+  w: number;
+  /** Pin star charm child sprite, present while the book is pinned. */
+  charm: Sprite | null;
+  /** Continue-reading ribbon child sprite (last-opened book only). */
+  ribbon: Sprite | null;
 }
+
+/** Plaque geometry on the plank (floor-local, world px). */
+export const PLAQUE_CENTER_X = SHELF_WIDTH / 2;
+export const PLAQUE_CENTER_Y = BOOK_ZONE_H + PLANK_H / 2 + 1;
 
 export class FloorView {
   readonly root = new Container();
@@ -94,6 +116,7 @@ export class FloorView {
   private railL: Sprite;
   private railR: Sprite;
   private railsWood = false;
+  private plaque: Sprite | null = null;
   private hint: Sprite | null = null;
   private hoverGlow: Sprite | null = null;
   private hoverShadow: Sprite | null = null;
@@ -152,44 +175,55 @@ export class FloorView {
     tier: LodTier,
     dpr: number,
     degrade: boolean,
+    recentBookId: string | null = null,
   ): void {
     this.index = index;
     this.root.position.set(0, index * FLOOR_H);
     this.root.visible = true;
     this.tier = tier;
     this.applyEnv(env, degrade, false);
-    this.setBooks(books, factory, dpr, env);
+    this.setBooks(books, factory, dpr, env, recentBookId);
     // Representation matches the tier immediately on (re)mount — no fade.
     this.content.visible = tier !== 2;
     this.content.alpha = 1;
     if (this.stampSprite !== null) this.stampSprite.visible = false;
   }
 
-  /** Update book data (store page landed) without changing tier state. */
+  /**
+   * Update book data (store page landed) without changing tier state.
+   * `recentBookId` marks the continue-reading book (page ribbon).
+   */
   setBooks(
     books: readonly Book[] | undefined,
     factory: SpineFactory,
     dpr: number,
     env: EnvTextures,
+    recentBookId: string | null = null,
   ): void {
     this.loaded = books !== undefined;
     this.clearHoverFx();
     for (const v of this.visuals) {
       gsap.killTweensOf(v.sprite);
-      v.sprite.destroy();
+      v.sprite.destroy({ children: true });
     }
     this.visuals = [];
     this.booksLayer.removeChildren();
 
     if (books !== undefined && books.length > 0) {
       const paramsList = books.map((book) => factory.getParams(book));
+      const widths = books.map((book, i) => {
+        const params = paramsList[i] as SpineParams;
+        const pages = readShelfMeta(book)?.pageCount;
+        return Math.min(64, Math.max(22, Math.round(params.w * thicknessScale(pages))));
+      });
       const placed = layoutFloor(
-        paramsList.map((p, i) => ({ slot: (books[i] as Book).slot, w: p.w })),
+        widths.map((w, i) => ({ slot: (books[i] as Book).slot, w })),
         this.index,
       );
       for (let i = 0; i < books.length; i++) {
         const book = books[i] as Book;
         const params = paramsList[i] as SpineParams;
+        const w = widths[i] as number;
         const place = placed[i];
         const sprite = new Sprite(Texture.WHITE);
         sprite.anchor.set(0.5, 1);
@@ -199,7 +233,7 @@ export class FloorView {
         // Rotation is around the bottom-center anchor, which lifts one bottom
         // corner off the plank by (w/2)·sin θ — sink the book by that much so
         // leaners stay grounded (the other corner tucks into the plank).
-        const sink = (params.w / 2) * Math.abs(Math.sin(leanDeg * DEG_TO_RAD));
+        const sink = (w / 2) * Math.abs(Math.sin(leanDeg * DEG_TO_RAD));
         const visual: BookVisual = {
           book,
           params,
@@ -208,9 +242,26 @@ export class FloorView {
           baseRotation: leanDeg * DEG_TO_RAD,
           centerX,
           height,
+          w,
+          charm: null,
+          ribbon: null,
         };
         sprite.position.set(centerX, visual.baseY);
         sprite.rotation = visual.baseRotation;
+        // Wave-2 decorations, parented to the spine so hover lifts/leans
+        // carry them along. Local transforms are set in applyTexture.
+        if (readShelfMeta(book)?.pinned === true) {
+          const charm = new Sprite(env.getStarCharm(dpr));
+          charm.anchor.set(0.5, 0);
+          sprite.addChild(charm);
+          visual.charm = charm;
+        }
+        if (recentBookId !== null && book.id === recentBookId) {
+          const ribbon = new Sprite(env.getRibbon(dpr));
+          ribbon.anchor.set(0.5, 0);
+          sprite.addChild(ribbon);
+          visual.ribbon = ribbon;
+        }
         this.applyTexture(visual, factory);
         this.booksLayer.addChild(sprite);
         this.visuals.push(visual);
@@ -239,18 +290,18 @@ export class FloorView {
     const spans: Span[] = [];
     const first = this.visuals[0] as BookVisual;
     const last = this.visuals[this.visuals.length - 1] as BookVisual;
-    if (first.centerX - first.params.w / 2 - LAYOUT_MARGIN_X >= MIN_GAP) {
-      spans.push({ x0: LAYOUT_MARGIN_X, x1: first.centerX - first.params.w / 2 });
+    if (first.centerX - first.w / 2 - LAYOUT_MARGIN_X >= MIN_GAP) {
+      spans.push({ x0: LAYOUT_MARGIN_X, x1: first.centerX - first.w / 2 });
     }
     for (let i = 1; i < this.visuals.length; i++) {
       const a = this.visuals[i - 1] as BookVisual;
       const b = this.visuals[i] as BookVisual;
-      const x0 = a.centerX + a.params.w / 2;
-      const x1 = b.centerX - b.params.w / 2;
+      const x0 = a.centerX + a.w / 2;
+      const x1 = b.centerX - b.w / 2;
       if (x1 - x0 >= MIN_GAP) spans.push({ x0, x1 });
     }
-    if (SHELF_WIDTH - LAYOUT_MARGIN_X - (last.centerX + last.params.w / 2) >= MIN_GAP) {
-      spans.push({ x0: last.centerX + last.params.w / 2, x1: SHELF_WIDTH - LAYOUT_MARGIN_X });
+    if (SHELF_WIDTH - LAYOUT_MARGIN_X - (last.centerX + last.w / 2) >= MIN_GAP) {
+      spans.push({ x0: last.centerX + last.w / 2, x1: SHELF_WIDTH - LAYOUT_MARGIN_X });
     }
 
     let placed = 0;
@@ -364,6 +415,45 @@ export class FloorView {
       fadeIn(this.railL);
       fadeIn(this.railR);
     }
+  }
+
+  /**
+   * Brass floor plaque on the plank (wave-2 item 2). Idempotent: creates the
+   * sprite on first call, re-textures on label change. Lives in `content`,
+   * so LOD2 stamps inherit it and the far-zoom tower shows the plates.
+   */
+  setPlaque(env: EnvTextures, dpr: number, label: string): void {
+    const tex = env.getPlaque(dpr, label);
+    if (this.plaque === null) {
+      this.plaque = new Sprite(tex);
+      this.plaque.anchor.set(0.5);
+      this.plaque.position.set(PLAQUE_CENTER_X, PLAQUE_CENTER_Y);
+      this.content.addChildAt(this.plaque, this.content.getChildIndex(this.hoverLayer));
+    } else if (this.plaque.texture !== tex) {
+      this.plaque.texture = tex;
+    }
+    this.plaque.width = PLAQUE_W;
+    this.plaque.height = PLAQUE_H;
+    this.hooks.markDirty();
+  }
+
+  /**
+   * Re-point existing wood sprites at the (re-stained) env textures. applyEnv
+   * only ADDS missing sprites; this handles in-place texture swaps after
+   * EnvTextures.setStain re-derives the case wood.
+   */
+  refreshEnv(env: EnvTextures): void {
+    if (this.backWood !== null && env.back !== null && this.backWood.texture !== env.back) {
+      this.backWood.texture = env.back;
+    }
+    if (this.plankWood !== null && env.plank !== null && this.plankWood.texture !== env.plank) {
+      this.plankWood.texture = env.plank;
+    }
+    if (this.railsWood && env.rail !== null && this.railL.texture !== env.rail) {
+      this.railL.texture = env.rail;
+      this.railR.texture = env.rail;
+    }
+    this.hooks.markDirty();
   }
 
   /** Re-pick textures for specific books (bakes landed / page evicted). */
@@ -513,10 +603,10 @@ export class FloorView {
     gsap.killTweensOf(shadow);
     if (on) {
       glow.position.set(visual.centerX, visual.baseY - visual.height * 0.52);
-      glow.width = visual.params.w * 3.4;
+      glow.width = visual.w * 3.4;
       glow.height = visual.height * 1.3;
       shadow.position.set(visual.centerX, visual.baseY + 3);
-      shadow.width = visual.params.w * 2.1;
+      shadow.width = visual.w * 2.1;
       shadow.height = 14;
     }
     const fade = HOVER_SECONDS * m;
@@ -548,7 +638,7 @@ export class FloorView {
     this.clearHoverFx();
     for (const v of this.visuals) {
       gsap.killTweensOf(v.sprite);
-      v.sprite.destroy();
+      v.sprite.destroy({ children: true });
     }
     this.visuals = [];
     this.booksLayer.removeChildren();
@@ -594,9 +684,36 @@ export class FloorView {
       visual.sprite.texture = Texture.WHITE;
       visual.sprite.tint = placeholderTint(visual.params);
     }
-    visual.sprite.width = visual.params.w;
+    visual.sprite.width = visual.w;
     visual.sprite.height = visual.height;
+    this.layoutDecor(visual);
     this.hooks.markDirty();
+  }
+
+  /**
+   * Position/scale the charm + ribbon children in the spine sprite's LOCAL
+   * space. The sprite's scale maps texture px → world px, so local sizes are
+   * divided back out; decor then renders at a stable world size and rides
+   * every hover lift / lean / pull transform for free. Children also inherit
+   * the parent tint (placeholder phase) — counter-tint is not worth it for
+   * the ~100ms placeholder window.
+   */
+  private layoutDecor(visual: BookVisual): void {
+    const sx = visual.sprite.scale.x;
+    const sy = visual.sprite.scale.y;
+    if (sx === 0 || sy === 0) return;
+    const charm = visual.charm;
+    if (charm !== null) {
+      charm.width = 20 / sx;
+      charm.height = 24 / sy;
+      charm.position.set((-visual.w * 0.16) / sx, (-visual.height + 2) / sy);
+    }
+    const ribbon = visual.ribbon;
+    if (ribbon !== null) {
+      ribbon.width = 11 / sx;
+      ribbon.height = 32 / sy;
+      ribbon.position.set((visual.w * 0.17) / sx, (-visual.height - 5) / sy);
+    }
   }
 
   private updateHint(env: EnvTextures, dpr: number): void {

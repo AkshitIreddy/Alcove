@@ -11,12 +11,42 @@
  * visually populated.
  */
 
-import { listBooksByFloorRange } from '../../data/books';
+import {
+  listBooksByFloorRange,
+  maxOccupiedFloor,
+  readShelfMeta,
+} from '../../data/books';
 import { seedIfEmpty } from '../../data/seed';
 import type { Book } from '../../data/types';
 import { fnv1a } from '../../art/noise';
 
 export const FLOOR_PAGE_SIZE = 8;
+
+/** Shelf ordering mode (mirrors settings.shelfSort). */
+export type ShelfSort = 'manual' | 'recent' | 'favorites';
+
+/**
+ * Order a floor's books for display (pure). Manual = persisted slot order;
+ * favorites = pinned books first (slot order within each group); recent =
+ * most recently opened first (never-opened books keep slot order at the end).
+ */
+export function orderBooks(books: readonly Book[], sort: ShelfSort): Book[] {
+  const bySlot = [...books].sort((a, b) => a.slot - b.slot);
+  if (sort === 'manual') return bySlot;
+  if (sort === 'favorites') {
+    return bySlot.sort((a, b) => {
+      const pa = readShelfMeta(a)?.pinned === true ? 0 : 1;
+      const pb = readShelfMeta(b)?.pinned === true ? 0 : 1;
+      return pa !== pb ? pa - pb : a.slot - b.slot;
+    });
+  }
+  return bySlot.sort((a, b) => {
+    const ra = readShelfMeta(a)?.lastOpenedAt ?? '';
+    const rb = readShelfMeta(b)?.lastOpenedAt ?? '';
+    if (ra !== rb) return ra < rb ? 1 : -1; // ISO strings: newest first
+    return a.slot - b.slot;
+  });
+}
 
 /** Debounce window for coalescing page fetches during a fling, ms. */
 const FETCH_DEBOUNCE_MS = 60;
@@ -111,6 +141,10 @@ export class FloorStore {
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
   private demoMode = false;
+  private sort: ShelfSort = 'manual';
+
+  /** Highest occupied floor (>= 0), refreshed on init and reloads. */
+  maxFloor = 0;
 
   /**
    * First-run: seed the library, then load page 0. When even the seeded page
@@ -124,6 +158,64 @@ export class FloorStore {
       // Seeding is best-effort; the demo fallback below still populates.
     }
     await this.loadPage(0, true);
+    await this.updateMaxFloor();
+  }
+
+  /** Switch the display ordering; re-sorts loaded floors and notifies. */
+  setSort(sort: ShelfSort): void {
+    if (sort === this.sort || this.destroyed) return;
+    this.sort = sort;
+    const affected: number[] = [];
+    for (const [floor, list] of this.floors) {
+      if (list.length > 1) {
+        const ordered = orderBooks(list, sort);
+        list.splice(0, list.length, ...ordered);
+      }
+      affected.push(floor);
+    }
+    for (const cb of this.listeners) cb(affected);
+  }
+
+  /**
+   * Re-fetch every loaded page from the data layer (after rename / pin /
+   * duplicate / trash / restore / move mutations) and notify all floors.
+   */
+  async refreshAll(): Promise<void> {
+    if (this.destroyed) return;
+    const loaded = [...this.pages.keys()];
+    this.pages.clear();
+    for (const page of loaded) {
+      await this.loadPage(page, page === 0 && this.demoMode);
+    }
+    await this.updateMaxFloor();
+  }
+
+  /**
+   * The most recently opened book among loaded floors (continue-reading
+   * ribbon), or null when nothing has ever been opened.
+   */
+  recentBookId(): string | null {
+    let best: string | null = null;
+    let bestAt = '';
+    for (const books of this.floors.values()) {
+      for (const book of books) {
+        const at = readShelfMeta(book)?.lastOpenedAt;
+        if (at !== undefined && at > bestAt) {
+          bestAt = at;
+          best = book.id;
+        }
+      }
+    }
+    return best;
+  }
+
+  private async updateMaxFloor(): Promise<void> {
+    try {
+      const max = await maxOccupiedFloor();
+      if (!this.destroyed) this.maxFloor = Math.max(0, max);
+    } catch {
+      // keep the previous value
+    }
   }
 
   /** undefined = unknown yet; [] = known empty floor. */
@@ -206,7 +298,10 @@ export class FloorStore {
     }
     for (let floor = start; floor <= end; floor++) {
       const list = this.floors.get(floor);
-      if (list !== undefined) list.sort((a, b) => a.slot - b.slot);
+      if (list !== undefined && list.length > 1) {
+        const ordered = orderBooks(list, this.sort);
+        list.splice(0, list.length, ...ordered);
+      }
     }
     this.pages.set(page, 'ready');
     const affected: number[] = [];

@@ -17,3 +17,10 @@ drop-thump.wav          0.120 s      -6.00    -13.63
 pencil-scratch.wav      0.200 s     -14.00    -24.88
 confetti.wav            0.400 s      -7.50    -22.76
 ambient-library.wav     8.000 s     -17.00    -30.03
+ambient-rain.wav        8.000 s     -17.00    -29.66
+ambient-fireplace.wav   8.000 s     -17.00    -28.00
+ambient-crickets.wav    8.000 s     -19.00    -36.12
+typing-tick-1.wav       0.045 s     -16.00    -31.28
+typing-tick-2.wav       0.038 s     -16.00    -31.50
+typing-tick-3.wav       0.052 s     -16.00    -30.30
+chime-hour.wav          4.700 s     -12.00    -26.31

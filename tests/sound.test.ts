@@ -14,16 +14,27 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   PAGE_FLIP_VARIANTS,
+  SOUNDSCAPE_LOOPS,
   SOUND_MANIFEST,
   SOUND_NAMES,
+  TYPING_TICK_VARIANTS,
+  chimeTick,
   createVariantPicker,
+  getEngineState,
+  getSoundscape,
   getVolumes,
   init,
+  keystroke,
   muteAll,
   play,
   resetEngineForTests,
+  setChimeDepsForTests,
+  setHourlyChime,
   setHowlerLoader,
   setReducedSound,
+  setSoundscape,
+  setTypingRngForTests,
+  setTypingSounds,
   setVolumes,
   startAmbient,
   stopAmbient,
@@ -120,6 +131,13 @@ const DURATION_BOUNDS: Record<SoundName, readonly [number, number]> = {
   'pencil-scratch': [180, 240],
   confetti: [340, 520],
   'ambient-library': [7990, 8010],
+  'ambient-rain': [7990, 8010],
+  'ambient-fireplace': [7990, 8010],
+  'ambient-crickets': [7990, 8010],
+  'typing-tick-1': [30, 70],
+  'typing-tick-2': [25, 70],
+  'typing-tick-3': [35, 80],
+  'chime-hour': [4000, 5400],
 };
 
 describe('generated WAV files', () => {
@@ -150,6 +168,13 @@ describe('generated WAV files', () => {
     expect(wav('shelf-whoosh').peakDb).toBeLessThanOrEqual(-15);
     expect(wav('tick-hover').peakDb).toBeLessThanOrEqual(-20);
     expect(wav('ambient-library').peakDb).toBeLessThanOrEqual(-12);
+    expect(wav('ambient-rain').peakDb).toBeLessThanOrEqual(-12);
+    expect(wav('ambient-fireplace').peakDb).toBeLessThanOrEqual(-12);
+    expect(wav('ambient-crickets').peakDb).toBeLessThanOrEqual(-12);
+    for (const tick of TYPING_TICK_VARIANTS) {
+      expect(wav(tick).peakDb).toBeLessThanOrEqual(-15);
+    }
+    expect(wav('chime-hour').peakDb).toBeLessThanOrEqual(-11);
   });
 
   it('edges are faded (no clicks at start or end)', () => {
@@ -167,6 +192,37 @@ describe('generated WAV files', () => {
     const head = rmsDb(w.samples, 0, win);
     const tail = rmsDb(w.samples, w.samples.length - win, w.samples.length);
     expect(Math.abs(head - tail)).toBeLessThanOrEqual(3);
+  });
+
+  it.each([['ambient-rain'], ['ambient-fireplace'], ['ambient-crickets']] as const)(
+    '%s loops seamlessly: head/tail RMS continuity within 6 dB',
+    (name) => {
+      // Event-based textures (droplets, crackles, chirps) vary more per window
+      // than the library room tone — 1 s windows, 6 dB tolerance.
+      const w = wav(name);
+      const win = w.sampleRate; // 1 s windows
+      const head = rmsDb(w.samples, 0, win);
+      const tail = rmsDb(w.samples, w.samples.length - win, w.samples.length);
+      expect(Math.abs(head - tail)).toBeLessThanOrEqual(6);
+    },
+  );
+
+  it('ambient loops keep continuous energy — no silent stretch mid-loop', () => {
+    for (const name of ['ambient-rain', 'ambient-fireplace', 'ambient-crickets'] as const) {
+      const w = wav(name);
+      const win = w.sampleRate; // 1 s windows across the whole loop
+      for (let from = 0; from + win <= w.samples.length; from += win) {
+        expect(rmsDb(w.samples, from, from + win), `${name} @ ${from / w.sampleRate}s`).toBeGreaterThan(-60);
+      }
+    }
+  });
+
+  it('chime-hour decays into silence (a bell, not a drone)', () => {
+    const w = wav('chime-hour');
+    const win = Math.round(0.3 * w.sampleRate);
+    const early = rmsDb(w.samples, 0, win);
+    const late = rmsDb(w.samples, w.samples.length - win, w.samples.length);
+    expect(early - late).toBeGreaterThan(20); // long natural decay
   });
 
   it('pencil-scratch loop keeps continuous energy across the seam', () => {
@@ -287,7 +343,7 @@ describe('sound engine (stub Howler)', () => {
     expect(StubHowl.instances[0]?.src).toBe('/sounds/pop-soft.wav');
   });
 
-  it('init() preloads all 14 sounds with correct src and loop flags', async () => {
+  it('init() preloads all 21 sounds with correct src and loop flags', async () => {
     await init();
     expect(StubHowl.instances).toHaveLength(SOUND_NAMES.length);
     for (const name of SOUND_NAMES) {
@@ -407,5 +463,270 @@ describe('sound engine (stub Howler)', () => {
     const stub = findStub('ambient-library') as StubHowl;
     expect(id).toBeDefined();
     expect(stub.fades).toHaveLength(1); // faded in, not raw-played
+  });
+});
+
+/* ───────────────────────────── soundscape picker ────────────────────────── */
+
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('soundscape picker (stub Howler)', () => {
+  beforeEach(() => {
+    resetEngineForTests();
+    StubHowl.instances = [];
+    StubHowl.playLog = [];
+    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+  });
+
+  it('every soundscape maps to a looping ambient manifest entry', () => {
+    for (const loop of Object.values(SOUNDSCAPE_LOOPS)) {
+      expect(SOUND_MANIFEST[loop]).toEqual({ category: 'ambient', loop: true });
+    }
+  });
+
+  it('startAmbient honors the selected soundscape', async () => {
+    setSoundscape('fireplace');
+    await startAmbient();
+    expect(findStub('ambient-fireplace')?.fades[0]).toMatchObject({ from: 0, duration: 600 });
+    expect(findStub('ambient-library')).toBeUndefined();
+    expect(getEngineState().ambientPlaying).toBe('ambient-fireplace');
+  });
+
+  it('switching soundscapes crossfades: old bed out, new bed in', async () => {
+    await startAmbient(); // default 'library'
+    const lib = findStub('ambient-library') as StubHowl;
+    const libId = lib.fades[0]?.id as number;
+    setSoundscape('rain');
+    await flush();
+    const rain = findStub('ambient-rain') as StubHowl;
+    // Old bed fading to silence and stopped once the fade lands.
+    expect(lib.fades[lib.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
+    lib.emit('fade');
+    expect(lib.playing(libId)).toBe(false);
+    // New bed fading in at the ambient gain.
+    expect(rain.fades[0]).toMatchObject({ from: 0, duration: 600 });
+    expect(getEngineState()).toMatchObject({ soundscape: 'rain', ambientPlaying: 'ambient-rain' });
+  });
+
+  it("setSoundscape('none') stops the bed; re-selecting a scape resumes it", async () => {
+    await startAmbient();
+    const lib = findStub('ambient-library') as StubHowl;
+    setSoundscape('none');
+    expect(lib.fades[lib.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
+    expect(getEngineState().ambientPlaying).toBeNull();
+    // While 'none', startAmbient stays a silent no-op (but remembers intent).
+    await startAmbient();
+    expect(getEngineState().ambientPlaying).toBeNull();
+    // Picking a soundscape again resumes the wanted bed.
+    setSoundscape('crickets');
+    await flush();
+    expect(findStub('ambient-crickets')?.fades[0]).toMatchObject({ from: 0, duration: 600 });
+    expect(getEngineState().ambientPlaying).toBe('ambient-crickets');
+  });
+
+  it('selecting a soundscape while the bed is not wanted starts nothing', async () => {
+    setSoundscape('rain');
+    await flush();
+    expect(StubHowl.playLog).toHaveLength(0);
+    expect(getSoundscape()).toBe('rain');
+    expect(getEngineState().ambientPlaying).toBeNull();
+  });
+
+  it('ambient volume changes live-apply to whichever bed is running', async () => {
+    setSoundscape('rain');
+    await startAmbient();
+    const rain = findStub('ambient-rain') as StubHowl;
+    const id = rain.fades[0]?.id as number;
+    setVolumes({ ambient: 0.2, master: 1 });
+    expect(rain.volumes.get(id)).toBeCloseTo(0.2, 10);
+  });
+
+  it("play('ambient-rain') switches the soundscape and starts that bed", async () => {
+    await play('ambient-rain');
+    expect(getSoundscape()).toBe('rain');
+    expect(findStub('ambient-rain')?.fades).toHaveLength(1);
+  });
+});
+
+/* ─────────────────────────────── typing sounds ──────────────────────────── */
+
+describe('typing sounds (stub Howler)', () => {
+  beforeEach(() => {
+    resetEngineForTests();
+    StubHowl.instances = [];
+    StubHowl.playLog = [];
+    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+  });
+
+  const tickSrcs = new Set(TYPING_TICK_VARIANTS.map((v) => `/sounds/${v}.wav`));
+
+  it('plays nothing until typing sounds are enabled', async () => {
+    keystroke(0);
+    await flush();
+    expect(StubHowl.playLog).toHaveLength(0);
+    setTypingSounds(true);
+    keystroke(1000);
+    await flush();
+    expect(StubHowl.playLog).toHaveLength(1);
+    expect(tickSrcs.has(StubHowl.playLog[0] as string)).toBe(true);
+  });
+
+  it('rate-limits to 12 ticks/s', async () => {
+    setTypingSounds(true);
+    // 40 keystrokes hammered 10 ms apart = 400 ms of furious typing.
+    for (let i = 0; i < 40; i++) keystroke(i * 10);
+    await flush();
+    // ceil(400 / 83.3) -> at most 5-6 ticks may land in that window.
+    expect(StubHowl.playLog.length).toBeLessThanOrEqual(6);
+    expect(StubHowl.playLog.length).toBeGreaterThanOrEqual(4);
+    // Slow typing (100 ms apart) is under the limit — every stroke ticks.
+    StubHowl.playLog = [];
+    for (let i = 0; i < 5; i++) keystroke(10_000 + i * 100);
+    await flush();
+    expect(StubHowl.playLog).toHaveLength(5);
+  });
+
+  it('varies velocity (volume) and rate within gentle bounds', async () => {
+    setTypingSounds(true);
+    setVolumes({ master: 1, pages: 1 });
+    const rolls = [0, 0.5, 0.999, 0.25, 0.75, 0.1];
+    let i = 0;
+    setTypingRngForTests(() => rolls[i++ % rolls.length] as number);
+    keystroke(0);
+    keystroke(1000);
+    keystroke(2000);
+    await flush();
+    for (const stub of StubHowl.instances) {
+      for (const [, vol] of stub.volumes) {
+        expect(vol).toBeGreaterThanOrEqual(0.45);
+        expect(vol).toBeLessThanOrEqual(1);
+      }
+      for (const [, rate] of stub.rates) {
+        expect(rate).toBeGreaterThanOrEqual(0.94);
+        expect(rate).toBeLessThanOrEqual(1.06);
+      }
+    }
+    // Velocity actually varies across strokes.
+    const vols = StubHowl.instances.flatMap((s) => [...s.volumes.values()]);
+    expect(new Set(vols.map((v) => v.toFixed(4))).size).toBeGreaterThan(1);
+  });
+
+  it('rotates tick variants with no immediate repeats', async () => {
+    setTypingSounds(true);
+    // Pre-warm the cache so every play() resolves in call order — first-time
+    // Howl creation has a deeper microtask chain and would shuffle the log.
+    await init();
+    for (let i = 0; i < 30; i++) keystroke(i * 1000);
+    await flush();
+    expect(StubHowl.playLog).toHaveLength(30);
+    for (const src of StubHowl.playLog) expect(tickSrcs.has(src)).toBe(true);
+    for (let i = 1; i < StubHowl.playLog.length; i++) {
+      expect(StubHowl.playLog[i]).not.toBe(StubHowl.playLog[i - 1]);
+    }
+  });
+
+  it('muted and reduced-sound both silence typing ticks', async () => {
+    setTypingSounds(true);
+    muteAll(true);
+    keystroke(0);
+    muteAll(false);
+    setReducedSound(true);
+    keystroke(1000);
+    await flush();
+    expect(StubHowl.playLog).toHaveLength(0);
+  });
+});
+
+/* ─────────────────────────────── hourly chime ───────────────────────────── */
+
+describe('hourly chime (stub Howler)', () => {
+  let nowMs = 0;
+  let focused = true;
+
+  const at = (h: number, m: number, s = 0): number =>
+    new Date(2026, 6, 30, h, m, s).getTime();
+
+  beforeEach(() => {
+    resetEngineForTests();
+    StubHowl.instances = [];
+    StubHowl.playLog = [];
+    setHowlerLoader(async () => ({ Howl: StubHowl as unknown as new (o: HowlOptions) => HowlLike }));
+    focused = true;
+    nowMs = at(9, 40);
+    setChimeDepsForTests({ now: () => nowMs, hasFocus: () => focused });
+  });
+
+  const chimes = (): number =>
+    StubHowl.playLog.filter((src) => src === '/sounds/chime-hour.wav').length;
+
+  it('rings once at the top of the hour, focused, past the launch grace', async () => {
+    setHourlyChime(true);
+    chimeTick(); // still 9:40 — nothing
+    nowMs = at(10, 0, 15); // launch was 9:40 -> 20 min uptime
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(1);
+    // Later polls in the same hour never double-ring.
+    nowMs = at(10, 30);
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(1);
+    expect(getEngineState().hourlyChime).toBe(true);
+  });
+
+  it('never rings within 10 minutes of launch (skipped, not deferred)', async () => {
+    nowMs = at(9, 55);
+    setChimeDepsForTests({ now: () => nowMs, hasFocus: () => focused }); // launch 9:55
+    setHourlyChime(true);
+    nowMs = at(10, 0, 30); // boundary at 5.5 min uptime -> skip
+    chimeTick();
+    nowMs = at(10, 20); // grace has passed, but the 10:00 chime is gone
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(0);
+    nowMs = at(11, 0, 10); // the next boundary rings normally
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(1);
+  });
+
+  it('skips while the app is unfocused or muted', async () => {
+    setHourlyChime(true);
+    focused = false;
+    nowMs = at(10, 0, 10);
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(0);
+    focused = true;
+    muteAll(true);
+    nowMs = at(11, 0, 10);
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(0);
+    muteAll(false);
+    nowMs = at(12, 0, 10);
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(1);
+  });
+
+  it('enabling mid-hour arms on the current hour (no instant ring)', async () => {
+    nowMs = at(14, 59, 50);
+    setChimeDepsForTests({ now: () => nowMs, hasFocus: () => focused });
+    nowMs = at(15, 30); // well past a boundary before enabling
+    setHourlyChime(true);
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(0);
+  });
+
+  it('disabling stops future chimes', async () => {
+    setHourlyChime(true);
+    setHourlyChime(false);
+    nowMs = at(10, 0, 10);
+    chimeTick();
+    await flush();
+    expect(chimes()).toBe(0);
+    expect(getEngineState().hourlyChime).toBe(false);
   });
 });

@@ -670,6 +670,192 @@ function ambientLibrary() {
   return crossfadeLoop(out, SR); // 1 s equal-power seam blend -> 8.000 s
 }
 
+/** ambient-rain — 8 s seamless: droplet ticks on glass over a lowpassed bed. */
+function ambientRain() {
+  const rng = mulberry32(424242);
+  const genDur = 9; // 1 s gets crossfaded into the head -> exactly 8 s
+  const n = Math.round(genDur * SR);
+  const out = new Float64Array(n);
+  // Bed: steady rain hush — pink noise through a dark lowpass, slow swell.
+  const pink = makePink(rng);
+  const lp = new Biquad(lowpassCoeffs(640, 0.7));
+  const hp = new Biquad(highpassCoeffs(90, 0.7));
+  const swell = makeSlowNoise(rng, 0.18);
+  for (let i = 0; i < n; i++) {
+    const gain = Math.pow(10, (swell() * 0.7) / 20);
+    out[i] = hp.process(lp.process(pink() * 1.9)) * gain;
+  }
+  // Droplets: Poisson ticks (~11/s), tiny bandpassed pings against the pane.
+  // Constant rate across the whole buffer keeps the loop seam statistically flat.
+  let t = 0;
+  while (t < genDur) {
+    addCrinkle(out, rng, {
+      start: Math.round(t * SR),
+      lenMs: 2.5 + rng() * 6,
+      freq: 1500 + rng() * 3200,
+      q: 6 + rng() * 6,
+      amp: 0.16 + 0.34 * Math.pow(rng(), 1.6),
+    });
+    t += -Math.log(1 - rng()) / 11;
+  }
+  const lid = new Biquad(lowpassCoeffs(5200, 0.8));
+  for (let i = 0; i < n; i++) out[i] = lid.process(out[i]);
+  return crossfadeLoop(out, SR);
+}
+
+/** ambient-fireplace — 8 s seamless: Poisson crackle bursts + warm brown bed. */
+function ambientFireplace() {
+  const rng = mulberry32(515151);
+  const genDur = 9;
+  const n = Math.round(genDur * SR);
+  const out = new Float64Array(n);
+  // Warm ember bed: brown noise, dark lowpass, slow breathing.
+  const brown = makeBrown(rng);
+  const lp = new Biquad(lowpassCoeffs(320, 0.7));
+  const swell = makeSlowNoise(rng, 0.22);
+  for (let i = 0; i < n; i++) {
+    const gain = Math.pow(10, (swell() * 1.1) / 20);
+    out[i] = lp.process(brown()) * gain;
+  }
+  // Crackles: Poisson bursts (~4.5/s); each burst snaps 1-3 close sub-ticks.
+  let t = 0;
+  while (t < genDur) {
+    const subs = 1 + Math.floor(rng() * 3);
+    let st = t;
+    for (let k = 0; k < subs; k++) {
+      addCrinkle(out, rng, {
+        start: Math.round(st * SR),
+        lenMs: 1.2 + rng() * 3.4,
+        freq: 1600 + rng() * 3400,
+        q: 4 + rng() * 5,
+        amp: 0.3 + 0.8 * Math.pow(rng(), 2),
+      });
+      st += 0.004 + rng() * 0.02;
+    }
+    // Now and then a deeper pop — a log settling.
+    if (rng() < 0.16) {
+      const pop = renderThump(rng, { dur: 0.05, f0: 300, f1: 140, amp: 0.4, noiseAmp: 0.25 });
+      const at = Math.round(t * SR);
+      for (let i = 0; i < pop.length && at + i < n; i++) out[at + i] += pop[i];
+    }
+    t += -Math.log(1 - rng()) / 4.5;
+  }
+  const lid = new Biquad(lowpassCoeffs(4800, 0.8));
+  for (let i = 0; i < n; i++) out[i] = softSat(lid.process(out[i]), 1.25);
+  return crossfadeLoop(out, SR);
+}
+
+/** ambient-crickets — 8 s seamless: AM sine chirp chorus over a whisper bed. */
+function ambientCrickets() {
+  const rng = mulberry32(616161);
+  const genDur = 9;
+  const n = Math.round(genDur * SR);
+  const out = new Float64Array(n);
+  // Very quiet night-air bed.
+  const pink = makePink(rng);
+  const lp = new Biquad(lowpassCoeffs(420, 0.7));
+  const swell = makeSlowNoise(rng, 0.2);
+  for (let i = 0; i < n; i++) {
+    out[i] = lp.process(pink() * 1.6) * Math.pow(10, (swell() * 0.6) / 20) * 0.32;
+  }
+  // Three cricket voices around 4.2 kHz, each an irregular train of chirps;
+  // a chirp is a run of syllable pulses (raised-hann AM at the pulse rate).
+  const voices = [
+    { f: 4160, pulse: 42, gapMin: 0.35, gapMax: 0.85, amp: 0.55, seed: 11 },
+    { f: 4390, pulse: 49, gapMin: 0.45, gapMax: 1.05, amp: 0.4, seed: 22 },
+    { f: 3930, pulse: 38, gapMin: 0.55, gapMax: 1.3, amp: 0.3, seed: 33 },
+  ];
+  for (const v of voices) {
+    const vr = mulberry32(v.seed);
+    let t = vr() * 0.6; // desynchronized starts
+    while (t < genDur) {
+      const syllables = 6 + Math.floor(vr() * 7); // 6-12 pulses per chirp
+      const chirpLen = syllables / v.pulse; // ~0.15-0.32 s
+      const start = Math.round(t * SR);
+      const len = Math.round(chirpLen * SR);
+      const f = v.f * (0.985 + vr() * 0.03);
+      let phase = vr() * TWO_PI;
+      for (let i = 0; i < len && start + i < n; i++) {
+        const tt = i / SR;
+        const u = i / len;
+        const syl = Math.pow(hann((tt * v.pulse) % 1), 1.6); // pulse train
+        phase += (TWO_PI * f) / SR;
+        out[start + i] += Math.sin(phase) * syl * hann(u) * v.amp;
+      }
+      t += chirpLen + v.gapMin + vr() * (v.gapMax - v.gapMin);
+    }
+  }
+  // Keep the top end silky — 4 kHz sines can bite.
+  const shelf = new Biquad(highshelfCoeffs(6000, -8));
+  for (let i = 0; i < n; i++) out[i] = shelf.process(out[i]);
+  return crossfadeLoop(out, SR);
+}
+
+/** typing-tick 1/2/3 — a pencil meeting paper: tiny tap + graphite grain. */
+function typingTick({ seed, freq, dur }) {
+  const rng = mulberry32(seed);
+  const n = Math.round(dur * SR);
+  const out = new Float64Array(n);
+  const bp = new Biquad(bandpassCoeffs(freq, 2.2));
+  const grain = new Biquad(bandpassCoeffs(freq * 2.1, 3.5));
+  const lp = new Biquad(lowpassCoeffs(3600, 0.8));
+  const attack = Math.round(0.0012 * SR);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const u = i / n;
+    const env = (i < attack ? i / attack : 1) * Math.pow(1 - u, 2.6);
+    const w = white(rng);
+    const tap = bp.process(w) + grain.process(w) * 0.35;
+    // A whisper of wooden desk body under the tap.
+    phase += (TWO_PI * expInterp(240, 150, u)) / SR;
+    const body = Math.sin(phase) * Math.exp(-t / 0.011) * 0.5;
+    out[i] = lp.process((tap + body) * env);
+  }
+  return out;
+}
+
+/** chime-hour — one warm tube-bell note, felt-hammer soft. Cozy, not churchy. */
+function chimeHour() {
+  const rng = mulberry32(360360);
+  const dur = 4.2;
+  const n = Math.round(dur * SR);
+  const out = new Float64Array(n);
+  const f0 = 329.63; // E4 — a warm parlor-clock bell
+  // Tubular-bell-ish partials (free-bar ratios), lower modes ringing longest;
+  // a detuned twin on the fundamental gives the slow warm beating.
+  const partials = [
+    { r: 1, a: 1.0, tau: 2.6 },
+    { r: 1.003, a: 0.6, tau: 2.9 },
+    { r: 0.5, a: 0.22, tau: 3.4 }, // hum an octave below
+    { r: 2.76, a: 0.42, tau: 1.1 },
+    { r: 5.4, a: 0.2, tau: 0.45 },
+    { r: 8.93, a: 0.09, tau: 0.22 },
+  ];
+  const phases = partials.map(() => rng() * TWO_PI);
+  const attack = Math.round(0.004 * SR);
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    let s = 0;
+    for (let k = 0; k < partials.length; k++) {
+      const p = partials[k];
+      phases[k] += (TWO_PI * f0 * p.r) / SR;
+      s += Math.sin(phases[k]) * p.a * Math.exp(-t / p.tau);
+    }
+    out[i] = s * (i < attack ? i / attack : 1) * 0.22;
+  }
+  // Felt hammer strike: a soft thock of lowpassed noise at the very start.
+  const strikeLp = new Biquad(lowpassCoeffs(1400, 0.8));
+  const strikeLen = Math.round(0.012 * SR);
+  for (let i = 0; i < strikeLen; i++) {
+    out[i] += strikeLp.process(white(rng)) * Math.pow(1 - i / strikeLen, 2) * 0.1;
+  }
+  const lid = new Biquad(lowpassCoeffs(3800, 0.7));
+  for (let i = 0; i < n; i++) out[i] = softSat(lid.process(out[i]), 1.15);
+  // A breath of room so the bell hangs in the library air.
+  return addReverbTail(out, { tailMs: 500, wet: 0.22, feedback: 0.6, damp: 0.5 });
+}
+
 /* ═══════════════════════════════ build all ═══════════════════════════════ */
 
 const SOUNDS = [
@@ -687,6 +873,13 @@ const SOUNDS = [
   { name: 'pencil-scratch', peakDb: -14, fadeInMs: 5, fadeOutMs: 5, render: pencilScratch },
   { name: 'confetti', peakDb: -7.5, render: confetti },
   { name: 'ambient-library', peakDb: -17, fadeInMs: 5, fadeOutMs: 5, render: ambientLibrary },
+  { name: 'ambient-rain', peakDb: -17, fadeInMs: 5, fadeOutMs: 5, render: ambientRain },
+  { name: 'ambient-fireplace', peakDb: -17, fadeInMs: 5, fadeOutMs: 5, render: ambientFireplace },
+  { name: 'ambient-crickets', peakDb: -19, fadeInMs: 5, fadeOutMs: 5, render: ambientCrickets },
+  { name: 'typing-tick-1', peakDb: -16, fadeOutMs: 5, render: () => typingTick({ seed: 71, freq: 1500, dur: 0.045 }) },
+  { name: 'typing-tick-2', peakDb: -16, fadeOutMs: 5, render: () => typingTick({ seed: 72, freq: 1750, dur: 0.038 }) },
+  { name: 'typing-tick-3', peakDb: -16, fadeOutMs: 5, render: () => typingTick({ seed: 73, freq: 1320, dur: 0.052 }) },
+  { name: 'chime-hour', peakDb: -12, fadeOutMs: 60, render: chimeHour },
 ];
 
 function analyze(pcm) {

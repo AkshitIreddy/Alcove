@@ -1,0 +1,147 @@
+/* ============================================================================
+   Notebook — group D: templates gallery, markdown import, custom stickers,
+   export helpers. Warm-parchment hand-drawn styling; every color from
+   tokens.css; no live SVG filters; scrolling stays inside the overlay card
+   (never inside book pages).
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Templates gallery (reuses the .nb-ins-overlay/.nb-ins-card aged-paper
+   modal from insert.css; the gallery only widens the card + adds the grid)
+   -------------------------------------------------------------------------- */
+.nb-tpl-gallery {
+  width: min(1060px, 94vw);
+  max-height: 92vh;
+}
+
+.nb-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  gap: var(--space-16, 16px);
+  margin-top: var(--space-12, 12px);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 4px 4px 8px;
+}
+
+.nb-tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-8, 8px);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(-0.4deg);
+  transition:
+    transform var(--dur-xs) var(--ease-out),
+    box-shadow var(--dur-xs) var(--ease-out);
+}
+
+.nb-tpl-card:nth-child(2n) {
+  transform: rotate(0.5deg);
+}
+
+.nb-tpl-card:hover {
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Mini live preview: the real ScriptPreview scaled down behind glass. */
+.nb-tpl-preview {
+  height: 168px;
+  overflow: hidden;
+  position: relative;
+  background: var(--paper-glow, var(--paper-cream));
+  border: 1px dashed var(--paper-edge);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+.nb-tpl-preview::after {
+  /* soft bottom fade so the crop reads as intentional */
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 34px;
+  background: linear-gradient(transparent, var(--paper-cream));
+}
+
+.nb-tpl-preview-scale {
+  transform: scale(0.52);
+  transform-origin: top left;
+  width: 192%;
+  padding: 8px 10px;
+}
+
+.nb-tpl-name {
+  margin: 2px 0 0;
+  font-family: var(--font-heading);
+  font-size: 21px;
+  line-height: 1.15;
+  color: var(--ink-sepia);
+}
+
+.nb-tpl-blurb {
+  margin: 0;
+  font-size: var(--text-ui-xs, 11px);
+  color: var(--ink-sepia-soft);
+}
+
+.nb-tpl-actions {
+  display: flex;
+  gap: var(--space-8, 8px);
+  margin-top: 4px;
+}
+
+/* ----------------------------------------------------------------------------
+   Custom stickers — "your stickers" panel section (rail panel look)
+   -------------------------------------------------------------------------- */
+.nb-user-sticker-button img,
+.nb-sticker-art-user {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+.nb-user-sticker-import {
+  border: 1.6px dashed var(--paper-edge) !important;
+  color: var(--ink-sepia-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nb-user-sticker-import:hover {
+  color: var(--ink-sepia);
+  border-color: var(--wash-amber-deep) !important;
+  transform: rotate(-2deg);
+}
+
+.nb-user-sticker-import svg {
+  width: 60%;
+  height: 60%;
+}
+
+/* Sticker node rendering user images inline on the page. */
+.nb-sticker .nb-sticker-art-user {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ----------------------------------------------------------------------------
+   Export offscreen host — belt & braces: never intercept input, never show
+   -------------------------------------------------------------------------- */
+.nb-export-offscreen {
+  pointer-events: none;
+  user-select: none;
+}
+
+.nb-export-sheet {
+  overflow: hidden;
+}

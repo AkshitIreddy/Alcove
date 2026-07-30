@@ -13,6 +13,8 @@ import { applySettings } from "./features/settings/apply";
 import SettingsPanel from "./features/settings/SettingsPanel";
 import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
 import { initSystemFeatures } from "./features/system";
+import TutorialOverlay, { maybeAutoStartTutorial } from "./features/tutorial";
+import { openTransferPanel } from "./features/transfer";
 import ShelfView from "./views/ShelfView";
 import BookView from "./views/BookView";
 import "./styles/settings.css";
@@ -104,6 +106,23 @@ export default function App(): JSX.Element {
     onCleanup(unsubscribe);
     // Backup scheduler, tray, launch-into-last-book, perf HUD lifecycle.
     onCleanup(initSystemFeatures());
+
+    // First run opens the guided tour; it no-ops once completed.
+    void maybeAutoStartTutorial();
+
+    // Import/export lives behind a shortcut until the rail exposes it.
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && event.shiftKey && event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        openTransferPanel("export");
+      } else if (mod && event.shiftKey && event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        openTransferPanel("import");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
   });
 
   return (
@@ -115,6 +134,7 @@ export default function App(): JSX.Element {
         <DevViewSwitcher />
       </Show>
       <QuickSwitcher />
+      <TutorialOverlay />
 
       <button
         type="button"

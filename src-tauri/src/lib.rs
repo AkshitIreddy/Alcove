@@ -4,6 +4,7 @@ mod backup;
 mod export;
 mod import;
 mod media;
+mod transfer;
 mod tray;
 
 /// Connection string for the app database. Must stay in sync with
@@ -70,6 +71,9 @@ pub fn run() {
             tray::tray_disable,
             export::export_pdf,
             import::read_markdown_file,
+            transfer::bundle_write,
+            transfer::bundle_read,
+            transfer::bundle_probe,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(

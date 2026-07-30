@@ -1,129 +1,107 @@
 <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <radialGradient id="paperVig" cx="50%" cy="42%" r="75%">
-      <stop offset="0%" stop-color="#f9f4e7"/>
-      <stop offset="68%" stop-color="#f5eeda"/>
-      <stop offset="100%" stop-color="#ecdfc4"/>
-    </radialGradient>
     <linearGradient id="coverGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#d37d52"/>
+      <stop offset="0%" stop-color="#d88157"/>
       <stop offset="55%" stop-color="#c96f4a"/>
-      <stop offset="100%" stop-color="#b25c3d"/>
+      <stop offset="100%" stop-color="#ad5738"/>
     </linearGradient>
     <linearGradient id="spineGrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#a3502f"/>
+      <stop offset="0%" stop-color="#9c4a2b"/>
       <stop offset="100%" stop-color="#b85f3c"/>
     </linearGradient>
     <linearGradient id="pageGrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#efe6cd"/>
-      <stop offset="100%" stop-color="#f8f2e0"/>
+      <stop offset="0%" stop-color="#eee2c8"/>
+      <stop offset="100%" stop-color="#f9f3e2"/>
     </linearGradient>
   </defs>
 
-  <!-- parchment tile background -->
-  <rect x="28" y="28" width="968" height="968" rx="184" fill="url(#paperVig)"/>
-  <!-- wobbly hand-inked border, double stroke -->
-  <path d="M 212 62
-           C 380 54, 640 58, 812 64
-           C 918 70, 962 112, 958 216
-           C 964 384, 960 636, 956 810
-           C 952 916, 908 958, 806 956
-           C 640 964, 380 962, 214 958
-           C 112 962, 66 916, 64 812
-           C 58 640, 60 384, 64 214
-           C 62 110, 108 66, 212 62 Z"
-        fill="none" stroke="#6b4a32" stroke-width="7" opacity="0.55" stroke-linecap="round"/>
-  <path d="M 216 78
-           C 382 71, 638 74, 808 79
-           C 902 85, 946 122, 943 214
-           C 948 384, 945 634, 941 806
-           C 938 900, 896 942, 802 940
-           C 638 947, 382 945, 218 942
-           C 122 946, 80 902, 79 808
-           C 73 638, 75 386, 79 216
-           C 77 124, 120 82, 216 78 Z"
-        fill="none" stroke="#6b4a32" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+  <!-- soft cast shadow -->
+  <ellipse cx="520" cy="962" rx="380" ry="52" fill="#5d3a26" opacity="0.28"/>
 
-  <!-- soft amber wash behind the book -->
-  <path d="M 512 236
-           C 668 222, 796 320, 788 470
-           C 802 626, 700 764, 524 780
-           C 356 792, 240 676, 248 500
-           C 240 350, 360 244, 512 236 Z"
-        fill="#e8b64c" opacity="0.20"/>
+  <g transform="rotate(-4 512 512)">
+    <!-- page block -->
+    <path d="M 232 96
+             C 430 78, 700 82, 848 96
+             C 870 98, 881 110, 883 132
+             C 892 400, 894 690, 885 906
+             C 883 928, 872 939, 850 941
+             C 680 953, 430 956, 242 946 Z"
+          fill="url(#pageGrad)" stroke="#5d3a26" stroke-width="13" stroke-linejoin="round"/>
+    <path d="M 860 176 C 867 400, 869 700, 862 862" fill="none" stroke="#cbb890" stroke-width="9" opacity="0.9"/>
+    <path d="M 834 170 C 842 406, 843 696, 836 872" fill="none" stroke="#cbb890" stroke-width="8" opacity="0.7"/>
+    <path d="M 809 166 C 816 410, 817 700, 812 878" fill="none" stroke="#cbb890" stroke-width="8" opacity="0.5"/>
 
-  <!-- cast shadow under book -->
-  <ellipse cx="516" cy="812" rx="252" ry="42" fill="#8a6a48" opacity="0.22"/>
-
-  <g transform="rotate(-5 512 512)">
-    <!-- page block (right + bottom edges) -->
-    <path d="M 356 250
-             C 470 240, 620 242, 706 250
-             C 718 251, 724 258, 725 270
-             C 730 420, 731 610, 726 742
-             C 725 754, 719 760, 707 761
-             C 610 768, 470 770, 362 764 Z"
-          fill="url(#pageGrad)" stroke="#6b4a32" stroke-width="7" stroke-linejoin="round"/>
-    <!-- page edge lines -->
-    <path d="M 712 296 C 716 420, 717 600, 713 716" fill="none" stroke="#cbb890" stroke-width="5" opacity="0.9"/>
-    <path d="M 697 292 C 702 424, 703 598, 699 722" fill="none" stroke="#cbb890" stroke-width="4" opacity="0.7"/>
-    <path d="M 683 290 C 687 426, 688 600, 685 726" fill="none" stroke="#cbb890" stroke-width="4" opacity="0.5"/>
-
-    <!-- front cover, slightly offset left of pages -->
-    <path d="M 318 226
-             C 330 218, 348 214, 368 214
-             C 480 206, 600 208, 664 216
-             C 682 218, 690 228, 691 246
-             C 697 400, 698 600, 692 716
-             C 691 734, 682 743, 664 745
-             C 570 753, 452 754, 360 748
-             C 336 747, 322 744, 312 736 Z"
-          fill="url(#coverGrad)" stroke="#5d3a26" stroke-width="9" stroke-linejoin="round"/>
+    <!-- front cover -->
+    <path d="M 165 52
+             C 186 38, 218 31, 254 30
+             C 452 17, 664 20, 776 33
+             C 808 37, 823 55, 825 87
+             C 836 360, 838 714, 827 918
+             C 825 950, 809 967, 777 970
+             C 611 984, 403 986, 240 975
+             C 198 973, 173 968, 155 954 Z"
+          fill="url(#coverGrad)" stroke="#4f3120" stroke-width="16" stroke-linejoin="round"/>
 
     <!-- spine -->
-    <path d="M 318 226
-             C 296 244, 286 268, 285 302
-             C 281 440, 281 560, 285 668
-             C 286 700, 296 722, 312 736
-             C 322 744, 336 747, 360 748
-             C 348 730, 343 706, 342 676
-             C 338 552, 338 420, 342 300
-             C 343 268, 350 242, 368 214
-             C 348 214, 330 218, 318 226 Z"
-          fill="url(#spineGrad)" stroke="#5d3a26" stroke-width="9" stroke-linejoin="round"/>
+    <path d="M 165 52
+             C 126 84, 108 127, 106 187
+             C 99 431, 99 643, 106 833
+             C 108 890, 126 928, 155 954
+             C 173 968, 198 973, 240 975
+             C 219 943, 210 900,  208 847
+             C 201 628, 201 396, 208 184
+             C 210 127, 222 82, 254 30
+             C 218 31, 186 38, 165 52 Z"
+          fill="url(#spineGrad)" stroke="#4f3120" stroke-width="16" stroke-linejoin="round"/>
 
-    <!-- gilt bands on spine -->
-    <path d="M 340 330 C 330 331, 296 332, 287 331" fill="none" stroke="#e8b64c" stroke-width="14" stroke-linecap="round" opacity="0.9"/>
-    <path d="M 341 372 C 331 373, 298 374, 288 373" fill="none" stroke="#e8b64c" stroke-width="8" stroke-linecap="round" opacity="0.75"/>
-    <path d="M 340 634 C 330 635, 297 636, 288 635" fill="none" stroke="#e8b64c" stroke-width="14" stroke-linecap="round" opacity="0.9"/>
+    <!-- gilt bands -->
+    <path d="M 205 236 C 187 238, 128 240, 112 238" fill="none" stroke="#e8b64c" stroke-width="25" stroke-linecap="round" opacity="0.92"/>
+    <path d="M 206 310 C 188 312, 131 314, 114 312" fill="none" stroke="#e8b64c" stroke-width="14" stroke-linecap="round" opacity="0.75"/>
+    <path d="M 204 772 C 186 774, 128 776, 112 774" fill="none" stroke="#e8b64c" stroke-width="25" stroke-linecap="round" opacity="0.92"/>
 
-    <!-- cover label: cream rectangle with squiggle title -->
-    <path d="M 420 318
-             C 470 313, 560 314, 606 319
-             C 615 320, 620 326, 620 335
-             C 622 366, 622 398, 620 424
-             C 620 433, 614 438, 605 439
-             C 552 444, 468 444, 422 440
-             C 413 439, 408 433, 408 424
-             C 406 396, 406 362, 408 334
-             C 408 325, 411 319, 420 318 Z"
-          fill="#f7f1e3" stroke="#5d3a26" stroke-width="6"/>
-    <path d="M 438 356 C 470 352, 540 353, 588 356" fill="none" stroke="#6b4a32" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
-    <path d="M 438 386 C 466 382, 520 383, 556 386" fill="none" stroke="#6b4a32" stroke-width="7" stroke-linecap="round" opacity="0.6"/>
-    <path d="M 438 412 C 462 409, 500 410, 522 412" fill="none" stroke="#6b4a32" stroke-width="7" stroke-linecap="round" opacity="0.4"/>
+    <!-- ornamental frame on cover: double wobbly line + corner dots -->
+    <path d="M 300 128
+             C 452 118, 630 120, 742 130
+             C 752 131, 757 137, 758 147
+             C 765 372, 766 640, 759 850
+             C 758 860, 753 866, 743 867
+             C 620 877, 452 878, 306 870
+             C 296 869, 291 863, 290 853
+             C 283 636, 283 380, 289 146
+             C 289 136, 294 129, 300 128 Z"
+          fill="none" stroke="#f0d9a8" stroke-width="9" opacity="0.85"/>
+    <circle cx="313" cy="152" r="9" fill="#f0d9a8" opacity="0.8"/>
+    <circle cx="735" cy="155" r="9" fill="#f0d9a8" opacity="0.8"/>
+    <circle cx="313" cy="843" r="9" fill="#f0d9a8" opacity="0.8"/>
+    <circle cx="733" cy="840" r="9" fill="#f0d9a8" opacity="0.8"/>
 
-    <!-- decorative stitches near cover edge -->
-    <path d="M 664 262 C 667 262, 671 262, 674 263" fill="none" stroke="#f0d9a8" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
-    <path d="M 665 300 C 668 300, 672 300, 675 301" fill="none" stroke="#f0d9a8" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
-    <path d="M 665 338 C 668 338, 672 338, 675 339" fill="none" stroke="#f0d9a8" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    <!-- cream label with scribbles -->
+    <path d="M 356 330
+             C 452 322, 606 324, 690 331
+             C 706 332, 715 342, 716 358
+             C 720 416, 720 476, 716 524
+             C 715 540, 705 549, 689 551
+             C 596 559, 448 559, 362 552
+             C 346 551, 337 541, 336 525
+             C 332 472, 332 408, 336 356
+             C 337 340, 342 331, 356 330 Z"
+          fill="#f7f1e3" stroke="#4f3120" stroke-width="11"/>
+    <path d="M 392 398 C 448 391, 574 392, 660 398" fill="none" stroke="#6b4a32" stroke-width="15" stroke-linecap="round" opacity="0.85"/>
+    <path d="M 392 452 C 440 445, 536 446, 600 452" fill="none" stroke="#6b4a32" stroke-width="13" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 392 500 C 434 495, 500 496, 540 500" fill="none" stroke="#6b4a32" stroke-width="13" stroke-linecap="round" opacity="0.4"/>
 
-    <!-- moss ribbon bookmark -->
-    <path d="M 574 748
-             C 573 782, 572 812, 574 842
-             C 575 852, 580 855, 588 850
-             C 597 843, 604 843, 612 849
-             C 620 855, 626 852, 626 842
-             C 627 812, 626 780, 624 748 Z"
-          fill="#7d915c" stroke="#4f6138" stroke-width="7" stroke-linejoin="round"/>
+    <!-- medallion under label -->
+    <path d="M 512 640 L 542 690 L 512 740 L 482 690 Z"
+          fill="none" stroke="#e8b64c" stroke-width="10" stroke-linejoin="round" opacity="0.85"/>
+    <circle cx="512" cy="690" r="8" fill="#e8b64c" opacity="0.85"/>
+
+    <!-- moss ribbon -->
+    <path d="M 610 958
+             C 609 992, 608 1010, 610 1030
+             C 611 1042, 617 1045, 626 1039
+             C 637 1031, 646 1031, 656 1038
+             C 665 1045, 672 1042, 672 1030
+             C 673 1006, 672 986, 670 958 Z"
+          fill="#7d915c" stroke="#4f6138" stroke-width="11" stroke-linejoin="round"/>
   </g>
 </svg>

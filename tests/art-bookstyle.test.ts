@@ -51,14 +51,19 @@ const SEEDS = [0, 1, 7, 42, 1337, 0xbeef, 0xfeedface, 0xffffffff];
 /* ------------------------------- vocabulary ------------------------------- */
 
 describe('studio vocabulary', () => {
-  it('ships the six binding materials the spec names', () => {
+  it('ships the seven binding materials the spec names', () => {
+    // The painterly rebuild added 'marbled' to the original six — marbled
+    // boards are one of the reference shelf's named materials, with their own
+    // combed/Spanish-wave/stone grains in paintBindingMaterial.
     expect([...BINDING_MATERIALS].sort()).toEqual(
-      ['cloth', 'leather', 'linen', 'paper', 'silk', 'vellum'].sort(),
+      ['cloth', 'leather', 'linen', 'marbled', 'paper', 'silk', 'vellum'].sort(),
     );
   });
 
-  it('ships 12 pigments, 12 ornaments, 4 plates, 4 edges, 6 charms', () => {
-    expect(PIGMENT_COUNT).toBe(12);
+  it('ships 20 pigments, 12 ornaments, 4 plates, 4 edges, 6 charms', () => {
+    // 12 heritage duos + the 8 deep-range duos (oxblood … saffron) the
+    // reference's rich, unsaturated darks are built from.
+    expect(PIGMENT_COUNT).toBe(20);
     expect(ORNAMENT_COUNT).toBe(12);
     expect(TITLE_PLATES).toHaveLength(4);
     expect(EDGE_TREATMENTS).toHaveLength(4);

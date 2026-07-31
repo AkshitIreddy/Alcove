@@ -21,7 +21,7 @@
 import gsap from 'gsap';
 import { Container, NineSliceSprite, Sprite, Texture, type RenderTexture } from 'pixi.js';
 import { SHADOW_STRIP } from '../../art/wood';
-import { type SpineParams } from '../../art/spines';
+import { SPINE_THICKNESS_RANGE, type SpineParams } from '../../art/spines';
 import { readShelfMeta } from '../../data/books';
 import type { Book } from '../../data/types';
 import {
@@ -238,10 +238,15 @@ export class FloorView {
 
     if (books !== undefined && books.length > 0) {
       const paramsList = books.map((book) => factory.getParams(book));
-      // Thickness now comes from resolveBookStyle (page count + any studio
-      // override); the factory has already folded it into params.w.
+      // Thickness comes from resolveBookStyle (seeded class ↔ page count blend
+      // + any studio override); the factory has already folded it into
+      // params.w. Clamp only to the legal spine range — the old [22, 64] band
+      // here is exactly what flattened every row into a picket fence.
       const widths = paramsList.map((params) =>
-        Math.min(64, Math.max(22, Math.round((params as SpineParams).w))),
+        Math.min(
+          SPINE_THICKNESS_RANGE.max,
+          Math.max(SPINE_THICKNESS_RANGE.min, Math.round((params as SpineParams).w)),
+        ),
       );
       const placed = layoutFloor(
         widths.map((w, i) => ({ slot: (books[i] as Book).slot, w })),

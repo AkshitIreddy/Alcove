@@ -3107,32 +3107,74 @@ export function renderBackPanel(
     }
   }
 
-  // Ambient occlusion where the panel meets the rails and the plank above.
-  // A room whose wall shows straight through the carcass (a grove open to the
-  // sky, a reef, a nebula) must not have that wall multiplied down to mud, so
-  // the shading is much gentler — and neutral-warm rather than grey-brown —
-  // when the backing IS the wall.
-  ctx.globalCompositeOperation = 'multiply';
+  /* ----------------- the recess light (painterly rebuild §5) --------------
+   * The reference's case interior is a light trap: the back panel falls to
+   * near-black at the sides and behind the book tails, and a warm key rakes
+   * in from the upper right — the same sun the spines' baked `rowPhase`
+   * follows (left end of a row shaded, right end lit). This agreement is
+   * what makes books read as standing IN the case rather than pasted on it.
+   *
+   * Four gradient passes, no per-pixel work. A room whose wall shows
+   * straight through the carcass (a grove open to the sky, a reef, a nebula)
+   * takes the same idea at reduced strength — the wall must not go to mud.
+   */
   const wallBacked = (theme.backing ?? 'wood') === 'wallpaper';
-  const aoW = 56;
-  const side = wallBacked ? '#c6c0b6' : '#8b8172';
-  for (const [x0, x1] of [
-    [0, aoW],
-    [w, w - aoW],
-  ] as const) {
+  const k = wallBacked ? 0.42 : 1;
+  const shade = (hex: string): string => mixHex(hex, '#ffffff', 1 - k);
+
+  ctx.globalCompositeOperation = 'multiply';
+
+  // 1. The horizontal rake: the key enters from the right, so the left of
+  //    the case sits in thrown shadow (spines take keyTake 0.45 → 1.15 the
+  //    same way). The far left is the reference's near-black recess.
+  const rake = ctx.createLinearGradient(0, 0, w, 0);
+  rake.addColorStop(0, shade('#2c2013'));
+  rake.addColorStop(0.38, shade('#5d4d3c'));
+  rake.addColorStop(0.72, shade('#9c8f7c'));
+  rake.addColorStop(1, '#ffffff');
+  ctx.fillStyle = rake;
+  ctx.fillRect(0, 0, w, h);
+
+  // 2. Vertical falloff: the plank above throws the top into shadow, the
+  //    middle catches what light gets in, and the bottom quarter sinks into
+  //    the contact band behind the book tails — the near-black line the
+  //    reference has at every shelf joint.
+  const fall = ctx.createLinearGradient(0, 0, 0, h);
+  fall.addColorStop(0, shade('#3a2d1f'));
+  fall.addColorStop(0.16, shade('#8d7f6c'));
+  fall.addColorStop(0.42, '#ffffff');
+  fall.addColorStop(0.72, '#ffffff');
+  fall.addColorStop(0.9, shade('#6d5c47'));
+  fall.addColorStop(1, shade('#1f150c'));
+  ctx.fillStyle = fall;
+  ctx.fillRect(0, 0, w, h);
+
+  // 3. Side occlusion at the rails — asymmetric: the right rail catches the
+  //    key, the left rail swallows it.
+  const aoW = 64;
+  const sides: ReadonlyArray<readonly [number, number, string]> = [
+    [0, aoW, shade('#1f150c')],
+    [w, w - aoW, shade('#4e4132')],
+  ];
+  for (const [x0, x1, c] of sides) {
     const g = ctx.createLinearGradient(x0, 0, x1, 0);
-    g.addColorStop(0, side);
+    g.addColorStop(0, c);
     g.addColorStop(1, '#ffffff');
     ctx.fillStyle = g;
     ctx.fillRect(Math.min(x0, x1), 0, aoW, h);
   }
-  const top = ctx.createLinearGradient(0, 0, 0, h);
-  top.addColorStop(0, wallBacked ? '#d2ccc2' : '#9d9384');
-  top.addColorStop(0.35, '#ffffff');
-  top.addColorStop(0.9, wallBacked ? '#fbf7f0' : '#efe6d8');
-  top.addColorStop(1, wallBacked ? '#ddd6cc' : '#c0b3a0');
-  ctx.fillStyle = top;
+
+  // 4. The warm key itself, washing in from the upper right. Screen lifts
+  //    the lit corner toward the golden hour without crushing the boards.
+  ctx.globalCompositeOperation = 'screen';
+  const wash = ctx.createLinearGradient(w, 0, w * 0.22, h * 0.62);
+  const washA = wallBacked ? 0.2 : 0.42;
+  wash.addColorStop(0, `rgba(255, 215, 154, ${washA})`);
+  wash.addColorStop(0.45, `rgba(255, 208, 150, ${washA * 0.4})`);
+  wash.addColorStop(1, 'rgba(255, 208, 150, 0)');
+  ctx.fillStyle = wash;
   ctx.fillRect(0, 0, w, h);
+
   ctx.restore();
 }
 
@@ -4111,7 +4153,10 @@ export function bakeThemedBackPanel(
   dpr: number,
 ): Promise<ImageBitmap> {
   const theme = getTheme(id);
-  return bakePart(`back|${id}|${w}x${h}`, w, h, dpr, (ctx) =>
+  // `back-v2`: the painterly rebuild's recess light supersedes the old flat
+  // AO — bump the part key so persisted v1 bakes are not reused (kept local
+  // so the shared THEME_RECIPE_VERSION is untouched).
+  return bakePart(`back-v2|${id}|${w}x${h}`, w, h, dpr, (ctx) =>
     renderBackPanel(ctx, theme, w, h, fnv1a(`${id}|back|${w}x${h}`)),
   );
 }

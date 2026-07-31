@@ -1,31 +1,21 @@
 /**
- * features/bookshelf/spinePalette.ts — the 12 curated spine pigments, as
+ * features/bookshelf/spinePalette.ts — the 20 curated spine pigments, as
  * plain numbers. Pure (no Pixi), so both the atlas factory and the theme
  * bias adapter can use it and unit tests can import it in node.
  */
 
 import { clamp } from '../../art/noise';
-import type { SpineParams } from '../../art/spines';
+import { SPINE_PALETTES, type SpineParams } from '../../art/spines';
 
 /**
- * The 12 curated palette duos from art/spines.ts (top, bottom), duplicated
- * here as HSL tuples because art/ does not export them. Used only for flat
- * placeholder tints and the DOM overlay cover — drift is cosmetic.
+ * The renderer's own palette duos (top, bottom), flattened to HSL tuples.
+ * Derived from art/spines.ts's SPINE_PALETTES so placeholder tints, the DOM
+ * overlay cover and neighbour-bleed colours can never drift from the baked
+ * art (the painterly rebuild's deep range — oxblood … saffron — used to fall
+ * off the end of the old 12-entry copy and wrap onto the wrong hue).
  */
-const PALETTE_DUOS: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
-  [38, 62, 52, 30, 58, 38], // amber
-  [16, 55, 48, 10, 52, 34], // terracotta
-  [95, 28, 42, 100, 30, 30], // moss
-  [210, 26, 48, 214, 30, 34], // dusty blue
-  [315, 24, 40, 320, 28, 28], // plum
-  [44, 60, 46, 40, 55, 33], // ochre
-  [130, 16, 52, 135, 18, 38], // sage
-  [22, 60, 40, 18, 58, 28], // rust
-  [28, 38, 52, 24, 36, 38], // clay
-  [70, 30, 38, 66, 32, 27], // olive
-  [200, 18, 42, 204, 20, 30], // slate
-  [355, 32, 56, 350, 30, 42], // blush
-];
+const PALETTE_DUOS: ReadonlyArray<readonly [number, number, number, number, number, number]> =
+  SPINE_PALETTES.map(([top, bottom]) => [top.h, top.s, top.l, bottom.h, bottom.s, bottom.l]);
 
 function hslToRgbInt(h: number, s: number, l: number): number {
   const hh = ((h % 360) + 360) % 360;
@@ -63,7 +53,7 @@ export function paletteCss(params: SpineParams): { top: string; bottom: string }
 
 
 /**
- * The 12 pigments as their MID tone in HSL — the average of each duo's top and
+ * The 20 pigments as their MID tone in HSL — the average of each duo's top and
  * bottom stop, which is what a spine actually reads as at shelf size.
  */
 const PIGMENT_HSL = PALETTE_DUOS.map((duo) => ({
@@ -95,7 +85,7 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
 }
 
 /**
- * Perceptual-ish distance from a colour to one of the 12 pigments.
+ * Perceptual-ish distance from a colour to one of the 20 pigments.
  *
  * Hue dominates — a book is recognised by its colour FAMILY — but hue is
  * meaningless on a near-grey, so its weight fades with the lower of the two

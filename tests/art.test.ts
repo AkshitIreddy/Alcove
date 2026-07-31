@@ -14,6 +14,11 @@ import { clamp, fnv1a, lerp, mulberry32, seededNoise1D, seededNoise2D } from '..
 import { paperFilter, pencilFilter, svgDoc, watercolorFilter } from '../src/art/filters';
 import { doubleStroke, wobbleLine, wobblePath, wobbleRect } from '../src/art/wobble';
 import {
+  BINDING_MATERIALS,
+  MAX_RAISED_BANDS,
+  PIGMENT_COUNT,
+  SPINE_HEIGHT_RANGE,
+  SPINE_THICKNESS_RANGE,
   deriveSpineParams,
   getSpineParams,
   getSpinePalette,
@@ -87,7 +92,7 @@ describe('deriveSpineParams', () => {
       expect(p.silhouette).toBeGreaterThanOrEqual(0);
       expect(p.silhouette).toBeLessThanOrEqual(6);
       expect(p.palette).toBeGreaterThanOrEqual(0);
-      expect(p.palette).toBeLessThanOrEqual(11);
+      expect(p.palette).toBeLessThanOrEqual(PIGMENT_COUNT - 1);
       expect(Math.abs(p.hueJitter)).toBeLessThanOrEqual(6);
       expect(p.bands.length).toBeLessThanOrEqual(3);
       for (const band of p.bands) {
@@ -101,14 +106,55 @@ describe('deriveSpineParams', () => {
       expect([0, 1, 2]).toContain(p.font);
       expect(typeof p.gilt).toBe('boolean');
       expect(Math.abs(p.lean)).toBeLessThanOrEqual(1.2);
-      expect(p.w).toBeGreaterThanOrEqual(28);
-      expect(p.w).toBeLessThanOrEqual(46);
+      // Painterly rebuild: thickness is a multi-modal draw over the full
+      // legal spine range (pamphlet slivers → tomes), not the old 28–46 band.
+      expect(p.w).toBeGreaterThanOrEqual(SPINE_THICKNESS_RANGE.min);
+      expect(p.w).toBeLessThanOrEqual(SPINE_THICKNESS_RANGE.max);
       expect(Math.abs(p.hJitter)).toBeLessThanOrEqual(6);
       expect(typeof p.twoTone).toBe('boolean');
       expect(p.twoToneSplit).toBeGreaterThanOrEqual(0.26);
       expect(p.twoToneSplit).toBeLessThanOrEqual(0.48);
       expect(typeof p.headTail).toBe('boolean');
     }
+  });
+
+  it('spans slivers to tomes and pocket to folio across seeds', () => {
+    // The rebuild's reason to exist: a shelf mixes thickness classes and
+    // bibliographic formats rather than stamping one rectangle. 500 seeds
+    // must reach BOTH tails of both distributions, every binding material,
+    // and keep the painterly fields inside their documented bands.
+    let minW = Infinity;
+    let maxW = -Infinity;
+    let minH = Infinity;
+    let maxH = -Infinity;
+    const materials = new Set<string>();
+    const palettes = new Set<number>();
+    for (let seed = 0; seed < 500; seed++) {
+      const p = deriveSpineParams(seed);
+      minW = Math.min(minW, p.w);
+      maxW = Math.max(maxW, p.w);
+      minH = Math.min(minH, p.height);
+      maxH = Math.max(maxH, p.height);
+      materials.add(p.material);
+      palettes.add(p.palette);
+      expect(p.palette).toBeGreaterThanOrEqual(0);
+      expect(p.palette).toBeLessThanOrEqual(PIGMENT_COUNT - 1);
+      expect(p.height).toBeGreaterThanOrEqual(SPINE_HEIGHT_RANGE.min);
+      expect(p.height).toBeLessThanOrEqual(SPINE_HEIGHT_RANGE.max);
+      expect(p.raisedBands).toBeGreaterThanOrEqual(0);
+      expect(p.raisedBands).toBeLessThanOrEqual(MAX_RAISED_BANDS);
+      expect(p.pageBlock).toBeGreaterThanOrEqual(0.06);
+      expect(p.pageBlock).toBeLessThanOrEqual(0.28);
+      expect(Math.abs(p.proud)).toBeLessThanOrEqual(10);
+    }
+    expect(minW).toBeLessThanOrEqual(14); // pamphlet slivers appear
+    expect(maxW).toBeGreaterThanOrEqual(46); // tomes appear
+    expect(minH).toBeLessThanOrEqual(155); // pocket books appear
+    expect(maxH).toBeGreaterThanOrEqual(266); // folios appear
+    for (const m of BINDING_MATERIALS) expect(materials).toContain(m);
+    // The deep range (12–19) is reachable from the raw seed, not only via
+    // theme ramps — that is where the reference's rich darks come from.
+    expect(Math.max(...palettes)).toBeGreaterThanOrEqual(12);
   });
 
   it('uses all 12 ornament stamps across many seeds', () => {

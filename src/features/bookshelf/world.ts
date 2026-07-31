@@ -113,7 +113,8 @@ import {
 import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
 import { DustMotes, makeGlowTexture } from './motes';
-import { SpineFactory } from './spineFactory';
+import { SpineFactory, type SpineRowContext } from './spineFactory';
+import { paletteCss } from './spinePalette';
 import {
   EnvTextures,
   PLACEHOLDER_TINTS,
@@ -1498,10 +1499,45 @@ export class ShelfWorld {
     const centerFloor =
       (this.camera.y + this.vp.height / (2 * this.camera.zoom)) / FLOOR_H;
     const priority = Math.abs(fv.index - centerFloor);
-    for (const visual of fv.visuals) {
-      this.factory.request(visual.book, 'lo', priority);
-      if (this.tier === 0) this.factory.request(visual.book, 'hi', priority);
+    const visuals = fv.visuals;
+    for (let i = 0; i < visuals.length; i++) {
+      const visual = visuals[i] as BookVisual;
+      // Row context, baked into the spine: where this book sits under the
+      // raking key (left end shaded, right end lit), and which touching
+      // neighbours bleed into its joints. Baking it in is what turns thirty
+      // identically-lit rectangles into one shelf sharing a single sun.
+      const ctx: SpineRowContext = {
+        rowPhase: clamp(visual.centerX / SHELF_WIDTH, 0, 1),
+        neighbourLeft: this.bleedNeighbour(visuals, i, -1),
+        neighbourRight: this.bleedNeighbour(visuals, i, 1),
+      };
+      this.factory.request(visual.book, 'lo', priority, ctx);
+      if (this.tier === 0) this.factory.request(visual.book, 'hi', priority, ctx);
     }
+  }
+
+  /**
+   * The touching neighbour's dark tone, for the edge bleed baked into a
+   * spine. `null` at the ends of a run or across a cluster gap — a gap
+   * breaks the bleed exactly the way it breaks the contact.
+   */
+  private bleedNeighbour(
+    visuals: readonly BookVisual[],
+    i: number,
+    dir: -1 | 1,
+  ): string | null {
+    const j = i + dir;
+    if (j < 0 || j >= visuals.length) return null;
+    const a = visuals[i] as BookVisual;
+    const b = visuals[j] as BookVisual;
+    const gap =
+      dir === 1
+        ? b.centerX - b.w / 2 - (a.centerX + a.w / 2)
+        : a.centerX - a.w / 2 - (b.centerX + b.w / 2);
+    // Leaning neighbours close the visual gap toward the top; tolerate a
+    // sliver of daylight before calling it a break.
+    if (gap > 14) return null;
+    return paletteCss(b.params).bottom;
   }
 
   /* ----------------------------- data arrivals ---------------------------- */

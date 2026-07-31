@@ -30,6 +30,27 @@ export { paletteCss, placeholderTint, spineArtHeight };
 
 export type SpineVariant = 'lo' | 'hi';
 
+/**
+ * Where a book sits in its shelf row, captured at request time and folded
+ * into the bake. This is what lets a row read as one raking-light scene
+ * rather than thirty identically-lit rectangles:
+ *
+ * - `rowPhase` — 0 at the far end from the key light → 1 right under it;
+ * - `neighbourLeft/Right` — the adjacent spines' colours, for the reference's
+ *   colour bleed across touching books (`null` = gap or end of run).
+ *
+ * All optional: callers without layout knowledge (studio previews) bake the
+ * neutral mid-row defaults. Baked-in context goes stale when a book moves,
+ * which is acceptable — a neighbour's hue bleed is a whisper, and the book
+ * re-bakes on the next invalidation.
+ */
+export interface SpineRowContext {
+  rowPhase?: number;
+  depth?: number;
+  neighbourLeft?: string | null;
+  neighbourRight?: string | null;
+}
+
 /** Lo-res bake scale: 232 world px → ~144 texture px (doc: 32×146-ish). */
 export const LO_SCALE = 0.62;
 
@@ -52,6 +73,7 @@ interface QueueItem {
   book: Book;
   variant: SpineVariant;
   priority: number;
+  ctx?: SpineRowContext;
 }
 
 type IdleHandle = number;
@@ -228,7 +250,7 @@ export class SpineFactory {
   }
 
   /** Queue a bake (idempotent). Lower priority = baked sooner. */
-  request(book: Book, variant: SpineVariant, priority: number): void {
+  request(book: Book, variant: SpineVariant, priority: number, ctx?: SpineRowContext): void {
     if (this.destroyed) return;
     if (variant === 'hi' && !this.hiEnabled) return;
     const key = `${variant}|${book.id}`;
@@ -236,9 +258,10 @@ export class SpineFactory {
     const existing = this.queue.get(key);
     if (existing !== undefined) {
       existing.priority = Math.min(existing.priority, priority);
+      if (ctx !== undefined) existing.ctx = ctx;
       return;
     }
-    this.queue.set(key, { book, variant, priority });
+    this.queue.set(key, { book, variant, priority, ctx });
     this.scheduleSlice();
   }
 
@@ -327,7 +350,7 @@ export class SpineFactory {
     for (const item of items) {
       this.queue.delete(`${item.variant}|${item.book.id}`);
       try {
-        const source = this.bakeOne(item.book, item.variant);
+        const source = this.bakeOne(item.book, item.variant, item.ctx);
         touchedSources.add(source);
         bakedIds.push(item.book.id);
       } catch {
@@ -339,9 +362,9 @@ export class SpineFactory {
     this.scheduleSlice();
   }
 
-  private bakeOne(book: Book, variant: SpineVariant): CanvasSource {
+  private bakeOne(book: Book, variant: SpineVariant, rowCtx?: SpineRowContext): CanvasSource {
     const t0 = performance.now();
-    const source = this.bakeOneTimed(book, variant);
+    const source = this.bakeOneTimed(book, variant, rowCtx);
     recordBakeSample({
       what: `spine|${variant}|${book.title.slice(0, 40)}`,
       ms: performance.now() - t0,
@@ -351,7 +374,7 @@ export class SpineFactory {
     return source;
   }
 
-  private bakeOneTimed(book: Book, variant: SpineVariant): CanvasSource {
+  private bakeOneTimed(book: Book, variant: SpineVariant, rowCtx?: SpineRowContext): CanvasSource {
     const params = this.getParams(book);
     const scale = variant === 'hi' ? HI_SCALE : LO_SCALE;
     const w = Math.ceil(params.w * scale);
@@ -371,6 +394,10 @@ export class SpineFactory {
     ctx.clearRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
     renderSpine(ctx, params, rect.x, rect.y, h, scale, book.title, {
       hiRes: variant === 'hi',
+      rowPhase: rowCtx?.rowPhase,
+      depth: rowCtx?.depth,
+      neighbourLeft: rowCtx?.neighbourLeft ?? null,
+      neighbourRight: rowCtx?.neighbourRight ?? null,
     });
     ctx.restore();
 

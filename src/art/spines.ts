@@ -369,6 +369,14 @@ const PALETTES: ReadonlyArray<readonly [HSL, HSL]> = [
   [{ h: 36, s: 76, l: 55 }, { h: 28, s: 72, l: 34 }], // 19 saffron
 ];
 
+/**
+ * The 20 pigment duos, exported for features-side helpers that must mirror
+ * the renderer's exact colours (placeholder tints, DOM pull-out gradients,
+ * neighbour-bleed colours). `spinePalette.ts` used to keep a hand-copied —
+ * and silently drifting — 12-entry duplicate of this table.
+ */
+export const SPINE_PALETTES = PALETTES;
+
 const FONTS: readonly string[] = [
   '"Caveat Variable", "Caveat", cursive',
   '"Kalam", cursive',
@@ -451,7 +459,7 @@ export function deriveSpineParams(seed: number): SpineParams {
   // Thin books show proportionally MORE page block (there is less spine to
   // hide it behind), which is exactly what makes a row of slivers read as
   // books rather than as coloured strips.
-  const pageBlock = clamp(0.05 + rnd() * 0.13 + (w < 20 ? 0.06 : 0), 0.05, 0.24);
+  const pageBlock = clamp(0.07 + rnd() * 0.14 + (w < 20 ? 0.07 : 0), 0.06, 0.28);
   // Most books sit flush; a quarter are noticeably pushed back or pulled
   // forward. Squaring the roll keeps the extremes rare.
   const proudRoll = rnd() * 2 - 1;
@@ -625,11 +633,11 @@ const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = [
 ];
 
 const FORMAT_WEIGHTS: ReadonlyArray<readonly [SpineFormat, number]> = [
-  ['folio', 9],
-  ['quarto', 20],
-  ['octavo', 38],
+  ['folio', 12],
+  ['quarto', 18],
+  ['octavo', 34],
   ['duodecimo', 22],
-  ['pocket', 11],
+  ['pocket', 14],
 ];
 
 const EDGE_WEIGHTS: ReadonlyArray<readonly [EdgeTreatment, number]> = [
@@ -2350,10 +2358,12 @@ export function renderSpine(
     0,
     1,
   );
-  // A book at the far end of the row from the key takes ~55% of the key a book
-  // right under it does. That single gradient across a row is most of what
-  // makes a shelf read as *lit* rather than *coloured in*.
-  const keyTake = lerp(0.45, 1.15, rowPhase) * lerp(1, 0.62, depth);
+  // A book at the far end of the row from the key takes ~half of the key a
+  // book right under it does. That single gradient across a row is most of
+  // what makes a shelf read as *lit* rather than *coloured in*. The floor is
+  // 0.55, not lower: shaded books keep their pigment's identity (the
+  // reference's shaded end is dusky, never silhouette).
+  const keyTake = lerp(0.55, 1.15, rowPhase) * lerp(1, 0.62, depth);
   const src = keyToSource(rig);
   /** Which side of the spine the key comes from: +1 = right, -1 = left. */
   const keySide = src.x >= 0 ? 1 : -1;

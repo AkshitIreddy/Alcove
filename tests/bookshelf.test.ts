@@ -31,7 +31,7 @@ import { createPage, listPages } from '../src/data/pages';
 import type { Book } from '../src/data/types';
 import { resolveBookStyle } from '../src/art/bookStyle';
 import { rectsOverlap, spineKeepOuts } from '../src/art/flora';
-import { deriveSpineParams, SPINE_BASE_HEIGHT } from '../src/art/spines';
+import { deriveSpineParams, PIGMENT_COUNT, SPINE_BASE_HEIGHT } from '../src/art/spines';
 import { getTheme } from '../src/art/themes';
 import { readBookStyleOverrides } from '../src/data/books';
 import {
@@ -1115,7 +1115,9 @@ describe('theme spine bias adapter', () => {
       for (const p of d.pigments ?? []) {
         expect(Number.isInteger(p)).toBe(true);
         expect(p).toBeGreaterThanOrEqual(0);
-        expect(p).toBeLessThan(12);
+        // The deep range (12–19) is a legal map target: midnight, oxblood and
+        // forest ramps SHOULD land there, not collapse onto the heritage 12.
+        expect(p).toBeLessThan(PIGMENT_COUNT);
       }
     }
   });

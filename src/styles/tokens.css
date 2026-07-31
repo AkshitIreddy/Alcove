@@ -54,52 +54,59 @@
      bodies, book cloth. They are deliberately loud. `-light` is the pale
      tint a callout or a hover state is painted with (body ink must stay
      comfortable on it); `-deep` is the pigment gathering at a wet edge.
+
+     Value discipline (this is what makes the palette read as PAINT rather
+     than as a set of pastels): the three rungs of every ramp are separated
+     in VALUE, not only in hue. `-light` sits high (a tint you can read black
+     ink on), the base sits mid and carries the hue at full chroma, `-deep`
+     sits low enough to be type on the darkest paper. Washing a rung out to
+     buy contrast is forbidden — take the value down and the chroma UP.
      ---------------------------------------------------------------------- */
-  --wash-amber-light: #ffeec9;
-  --wash-amber: #ffb51f; /* marigold, not weak tea */
-  --wash-amber-deep: #8f5a00;
+  --wash-amber-light: #ffe9b4;
+  --wash-amber: #ffb100; /* marigold, not weak tea */
+  --wash-amber-deep: #8a5600;
 
-  --wash-terracotta-light: #ffe0cf;
-  --wash-terracotta: #f4763b; /* persimmon */
-  --wash-terracotta-deep: #b13c12;
+  --wash-terracotta-light: #ffd9bd;
+  --wash-terracotta: #f96f2c; /* persimmon */
+  --wash-terracotta-deep: #a83709;
 
-  --wash-moss-light: #ddf5c8;
-  --wash-moss: #6fc93f; /* new-leaf green */
-  --wash-moss-deep: #35761b;
+  --wash-moss-light: #d6f4b7;
+  --wash-moss: #63c92c; /* new-leaf green */
+  --wash-moss-deep: #2f7113;
 
-  --wash-lemon-light: #fff7c2;
-  --wash-lemon: #ffe23d; /* full sun */
-  --wash-lemon-deep: #8f7a00;
+  --wash-lemon-light: #fff4b0;
+  --wash-lemon: #ffde1f; /* full sun */
+  --wash-lemon-deep: #837000;
 
-  --wash-sky-light: #d5eeff;
-  --wash-sky: #45b6f2; /* summer sky */
-  --wash-sky-deep: #0a6fa4;
+  --wash-sky-light: #c9e9ff;
+  --wash-sky: #29b0f5; /* summer sky */
+  --wash-sky-deep: #04688f;
 
-  --wash-blush-light: #ffe0eb;
-  --wash-blush: #ff8cb3; /* cherry blossom */
-  --wash-blush-deep: #c72f66;
+  --wash-blush-light: #ffd9e7;
+  --wash-blush: #ff7ba8; /* cherry blossom */
+  --wash-blush-deep: #bd245c;
 
-  --wash-plum-light: #eddfff;
-  --wash-plum: #b06ceb; /* orchid */
-  --wash-plum-deep: #6c2fb3;
+  --wash-plum-light: #e6d4ff;
+  --wash-plum: #a959ea; /* orchid */
+  --wash-plum-deep: #6427ac;
 
   /* Four brand-new brights. The sticker / highlight / callout palettes draw
      from the whole wash family, so these widen the joyful end of it. */
-  --wash-coral-light: #ffdfd6;
-  --wash-coral: #ff6f5e;
-  --wash-coral-deep: #c02a19;
+  --wash-coral-light: #ffd9cd;
+  --wash-coral: #ff5f4b;
+  --wash-coral-deep: #b62312;
 
-  --wash-turquoise-light: #cdf6f0;
-  --wash-turquoise: #22cfbf;
-  --wash-turquoise-deep: #067f74;
+  --wash-turquoise-light: #baf4ec;
+  --wash-turquoise: #00cbb8;
+  --wash-turquoise-deep: #04786d;
 
-  --wash-violet-light: #e3dfff;
-  --wash-violet: #7b6bf2;
-  --wash-violet-deep: #3c29b4;
+  --wash-violet-light: #dcd6ff;
+  --wash-violet: #6d5cf2;
+  --wash-violet-deep: #3721ae;
 
-  --wash-lime-light: #f0fbc4;
-  --wash-lime: #b6e13a;
-  --wash-lime-deep: #6a8c00;
+  --wash-lime-light: #eafbaa;
+  --wash-lime: #aede1f;
+  --wash-lime-deep: #628400;
 
   /* ------------------------------------------------------------------------
      UI accent — the colour the interface uses to say "this one".
@@ -108,19 +115,39 @@
      content uses for highlights, so a selected control never reads as a
      highlighted word.
      ---------------------------------------------------------------------- */
-  --accent-light: #ffe2ec;
-  --accent: #ff5f92;
-  --accent-deep: #cf2160;
+  --accent-light: #ffdce9;
+  --accent: #ff4785;
+  --accent-deep: #c81456;
   --accent-ink: #ad2b53; /* accent as TYPE: 5.38:1 aged / 6.01 cream */
+  /* The label a FILLED accent control wears. Every other accent rung is a
+     paper tint, so this is the one token that has to flip with the theme:
+     on the three light themes it is warm paper-white sitting on a deep
+     pigment; on night, accent-deep IS the bright rung, so this goes to ink.
+     Gated at 4.5:1 against --accent-deep in all four themes. */
+  --on-accent: #fff7f3;
+
+  /* ------------------------------------------------------------------------
+     Gold foil — the one METAL in the palette.
+     Foil is never one colour: a catch-light, a burnished body and a bronze
+     recess are what separate "gilt" from "a yellow line". `--gilt` is the
+     rim/hardware value (gated 3:1 as essential non-text), `--gilt-ink` is
+     the value foil is allowed to be TYPE at, `--gilt-deep` the shadow side
+     of a stamped rule. Used for chosen-state ticks, swatch rims and the
+     tooled edges that make chrome read as a bound book rather than a form.
+     ---------------------------------------------------------------------- */
+  --gilt-light: #ffe9a8; /* catch-light on the leaf */
+  --gilt: #96700d; /* burnished body — 3.6:1 on aged paper */
+  --gilt-deep: #74560a; /* the bronze down in the tooling */
+  --gilt-ink: #63490b; /* foil as type — clears 4.5:1 on lemon-light */
 
   /* Supporting accents for surfaces that want a second/third voice. */
-  --accent-leaf: #4bc23a;
+  --accent-leaf: #35bb1f;
   --accent-leaf-ink: #2c7a1c;
-  --accent-sun: #ffb51f;
-  --accent-sea: #17b6c9;
+  --accent-sun: #ffb100;
+  --accent-sea: #00b3c9;
 
   /* Text selection — a bright lemon swipe, translucent so ink reads through */
-  --selection-wash: rgba(255, 214, 61, 0.5);
+  --selection-wash: rgba(255, 210, 31, 0.52);
 
   /* ------------------------------------------------------------------------
      Spacing scale (px values match names)

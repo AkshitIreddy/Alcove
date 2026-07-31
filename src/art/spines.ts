@@ -31,6 +31,14 @@ import {
   withAlpha,
   type LightRig,
 } from './lighting';
+import {
+  materialBase,
+  materialDefaults,
+  // `getMaterialTile` already means "procedural tile canvas" in this file, so
+  // the generated-library accessor comes in under an unambiguous name.
+  getMaterialTile as getGeneratedTile,
+  type MaterialCategory,
+} from './materials';
 import { clamp, lerp, mulberry32, type RandomFn } from './noise';
 import { emitSpines, type NormalCtx } from '../render/normals';
 
@@ -2316,6 +2324,24 @@ interface SpinePaintSpec {
   keyTake: number;
   depth: number;
   seed: number;
+  /**
+   * 0 when this spine's surface is entirely hand-painted, 1 when a generated
+   * material tile went down under the brushwork. The material painters read
+   * it and pull their own texture passes back, so the two never stack into
+   * mush — see `matteBack`.
+   */
+  matBase: number;
+}
+
+/**
+ * Attenuate a procedural texture pass by however much generated material sits
+ * under it. `k` is how much of the pass survives at full material (0.35 =
+ * "keep a third of it"). The pass never goes to zero: the brush marks are
+ * what stop a tiled sheet from reading as a tiled sheet, and they carry the
+ * per-book variation the tile cannot.
+ */
+function matteBack(spec: SpinePaintSpec, value: number, k = 0.4): number {
+  return value * (1 - spec.matBase * (1 - k));
 }
 
 /**
@@ -2340,16 +2366,20 @@ function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec
   const grainSize = clamp(w * 0.16, 2.4 * s, 7 * s);
 
   // 1. pebble grain — two sponge passes, one sinking, one lifting.
-  P.scumble(sf, mask, P.brush('sponge', { size: grainSize, colour: pig.deep, opacity: 0.15, spacing: 0.5, grain: 0.95 }), {
-    coverage: 0.15,
+  //    Morocco's pebbling is the one thing the generated tile does better than
+  //    a sponge, so when it is under here the sponge only has to break up the
+  //    tile's regularity rather than invent the grain.
+  const grainK = matteBack(spec, 1, 0.3);
+  P.scumble(sf, mask, P.brush('sponge', { size: grainSize, colour: pig.deep, opacity: 0.15 * grainK, spacing: 0.5, grain: 0.95 }), {
+    coverage: 0.15 * grainK,
     passes: 1,
     patchScale: grainSize * 3.4,
     edgeBias: 0.25,
     seed: (spec.seed ^ 0x1e47) >>> 0,
     targetBuildup: 0.45,
   });
-  P.scumble(sf, mask, P.brush('sponge', { size: grainSize * 0.8, colour: pig.lift, opacity: 0.11, spacing: 0.55, grain: 0.95 }), {
-    coverage: 0.11,
+  P.scumble(sf, mask, P.brush('sponge', { size: grainSize * 0.8, colour: pig.lift, opacity: 0.11 * grainK, spacing: 0.55, grain: 0.95 }), {
+    coverage: 0.11 * grainK,
     passes: 1,
     patchScale: grainSize * 5,
     // Grain catches the light on the side the key comes from.
@@ -2385,7 +2415,9 @@ function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec
   }
 
   // 3. craquelure — short, hard, dark, and only where wear says so.
-  const cracks = Math.round(spec.wear * 18 + 3);
+  //    `leather-cracked` already supplies a crack net when it is resident, so
+  //    the hand-drawn ones drop to a few accents that cross it at odd angles.
+  const cracks = Math.round(matteBack(spec, spec.wear * 18 + 3, 0.35));
   const crackBrush = P.brush('ink', {
     size: Math.max(0.9, 1.1 * s),
     colour: pig.deep,
@@ -2440,16 +2472,19 @@ function paintClothPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
   const { w, h, scale, pig, boardStyle } = spec;
   const s = Math.max(0.6, scale);
   const ribGap = boardStyle === 1 ? 4.2 * s : boardStyle === 2 ? 6 * s : 2.9 * s;
+  // The ribbed tile IS a warp, so when it is under here the painted warp
+  // becomes a scatter of irregular threads over it instead of the weave.
+  const weaveK = matteBack(spec, 1, 0.32);
   const warpBrush = P.brush('bristle', {
     size: Math.max(1.1, ribGap * 0.85),
     colour: pig.deep,
-    opacity: 0.115,
+    opacity: 0.115 * weaveK,
     spacing: 0.3,
     grain: 0.8,
     followPath: true,
     jitter: { lum: 0.09, hue: 6, opacity: 0.55, position: 0.35 },
   });
-  const warpLift = P.withBrush(warpBrush, { colour: pig.lift, opacity: 0.085 });
+  const warpLift = P.withBrush(warpBrush, { colour: pig.lift, opacity: 0.085 * weaveK });
   for (let x = -ribGap; x < w + ribGap; x += ribGap) {
     const jx = x + (rnd() - 0.5) * ribGap * 0.3;
     const b = rnd() < 0.42 ? warpLift : warpBrush;
@@ -2468,7 +2503,7 @@ function paintClothPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
   const weftBrush = P.brush('flat', {
     size: Math.max(1, ribGap * 0.7),
     colour: pig.deep,
-    opacity: 0.05,
+    opacity: 0.05 * weaveK,
     spacing: 0.35,
     grain: 0.85,
     jitter: { lum: 0.07, opacity: 0.7, position: 0.4 },
@@ -2515,7 +2550,9 @@ function paintPaperPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
     grain: 0.95,
     jitter: { lum: 0.12, opacity: 0.8, position: 0.7 },
   });
-  const fibres = Math.round(h / (5 * s)) + 4;
+  // The laid-paper tile brings its own fibre and crackle; the painted fibres
+  // then only need to add the long ones that cross several of the tile's.
+  const fibres = Math.round(matteBack(spec, h / (5 * s) + 4, 0.4));
   for (let i = 0; i < fibres; i++) {
     const x0 = rnd() * w;
     const y0 = rnd() * h;
@@ -2552,7 +2589,10 @@ function paintVellumPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec,
     spacing: 0.3,
     jitter: { lum: 0.1, hue: 9, size: 0.6 },
   });
-  for (let i = 0; i < 14; i++) {
+  // Vellum's mottling is the tile's strongest signal, so the painted clouds
+  // thin right out when it is present — but never vanish, because the clouds
+  // are what differ from book to book.
+  for (let i = 0, n = Math.round(matteBack(spec, 14, 0.45)); i < n; i++) {
     P.dab(sf, rnd() * w, rnd() * h, cloud, { size: w * (0.5 + rnd() * 1.1), opacity: 0.03 + rnd() * 0.06 });
   }
   P.scumble(sf, mask, P.brush('soft', { size: Math.max(2, w * 0.3), colour: P.shiftHsl(pig.deep, 20, -0.1, 0.08), opacity: 0.05 }), {
@@ -2581,10 +2621,11 @@ function paintLinenPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
   const { w, h, scale, pig } = spec;
   const s = Math.max(0.6, scale);
   const gap = 4.6 * s;
+  const hatchK = matteBack(spec, 1, 0.34);
   const hatch = P.brush('chalk', {
     size: Math.max(1.2, gap * 0.9),
     colour: pig.deep,
-    opacity: 0.06,
+    opacity: 0.06 * hatchK,
     spacing: 0.4,
     grain: 1,
     jitter: { lum: 0.13, opacity: 0.8, position: 0.6 },
@@ -2599,7 +2640,7 @@ function paintLinenPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
     });
   }
   for (let y = -gap; y < h + gap; y += gap * 1.1) {
-    P.stroke(sf, [{ x: -2, y }, { x: w + 2, y: y + (rnd() - 0.5) * 1.6 * s }], P.withBrush(hatch, { colour: rnd() < 0.4 ? pig.lift : pig.deep, opacity: 0.05 }), {
+    P.stroke(sf, [{ x: -2, y }, { x: w + 2, y: y + (rnd() - 0.5) * 1.6 * s }], P.withBrush(hatch, { colour: rnd() < 0.4 ? pig.lift : pig.deep, opacity: 0.05 * hatchK }), {
       passes: 1,
       pressure: P.PRESSURE.flat,
       wobble: 0.6 * s,
@@ -2609,7 +2650,7 @@ function paintLinenPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
   }
   // Slubs: fat irregular thread nubs, the thing that says "linen" not "cloth".
   const slub = P.brush('flat', { size: Math.max(1.6, 3 * s), colour: pig.lift, opacity: 0.13, grain: 0.9 });
-  for (let i = 0; i < Math.round(w * h * 0.004); i++) {
+  for (let i = 0, n = Math.round(matteBack(spec, w * h * 0.004, 0.45)); i < n; i++) {
     const a = rnd() * Math.PI;
     const sx = rnd() * w;
     const sy = rnd() * h;
@@ -2694,7 +2735,10 @@ function paintMarbledPainterly(
     '#1e3a52',
     '#c8a24a',
   ];
-  const veinCount = Math.round(h / (5.5 * s));
+  // The generated marbled sheet is genuinely better combed than anything the
+  // stamp budget allows, so when it is down the painted veins drop to a few
+  // that ride over it and tie it to this book's pigment.
+  const veinCount = Math.round(matteBack(spec, h / (5.5 * s), 0.28));
   const veinBrush = P.brush('soft', {
     size: Math.max(1.2, 2.4 * s),
     colour: inks[0],
@@ -2726,7 +2770,7 @@ function paintMarbledPainterly(
     // Stone/shell: droplets with pale haloes, no comb.
     const drop = P.brush('soft', { size: Math.max(2, 4 * s), colour: inks[2], opacity: 0.13, jitter: { hue: 16, lum: 0.14, size: 0.7 } });
     const halo = P.withBrush(drop, { colour: '#efe4c4', opacity: 0.09 });
-    for (let i = 0; i < Math.round(w * h * 0.006); i++) {
+    for (let i = 0, n = Math.round(matteBack(spec, w * h * 0.006, 0.4)); i < n; i++) {
       const dx = rnd() * w;
       const dy = rnd() * h;
       const r = (1.4 + rnd() * 3.4) * s;
@@ -2735,6 +2779,112 @@ function paintMarbledPainterly(
     }
   }
   P.glaze(sf, mask, pig.deep, 0.1, { blend: 'multiply', mottle: 0.4, seed: (spec.seed ^ 0x3e91) >>> 0 });
+}
+
+/* ------------------------- generated material base ------------------------ */
+
+/**
+ * Which generated tile stands in for each binding, per board sub-style.
+ *
+ * The mapping is not "one tile per material name" because `boardStyle` already
+ * says *which* leather or *which* cloth this book is bound in, and the library
+ * happens to contain exactly those distinctions: crackled calf and pebbled
+ * morocco are two different tiles, ribbed rep and slubby buckram are two more.
+ *
+ * `silk` is deliberately absent. Its identity is a moving satin sheen — bands
+ * of specular that slide as the eye moves — and no static tile can supply
+ * that; the procedural version in `paintSilkPainterly` is better, so silk
+ * keeps painting itself. Same reasoning, opposite conclusion, for `marbled`:
+ * combed marbling is pure high-frequency figure and the generated sheet beats
+ * anything the brush engine can lay in a shelf's stamp budget.
+ */
+function spineMaterialSlug(material: BindingMaterial, boardStyle: number): string | null {
+  switch (material) {
+    case 'leather':
+      // 0 smooth calf · 1 pebbled morocco · 2 craquelure
+      return boardStyle === 2 ? 'leather-cracked' : 'leather-morocco';
+    case 'cloth':
+      // 0 flat buckram · 1 ribbed rep · 2 pyroxylin-coated
+      return boardStyle === 1 ? 'cloth-ribbed' : 'cloth-linen';
+    case 'linen':
+      return 'cloth-linen';
+    case 'paper':
+      return 'paper-laid';
+    case 'vellum':
+      return 'vellum';
+    case 'marbled':
+      return 'paper-marbled';
+    case 'silk':
+    default:
+      return null;
+  }
+}
+
+/** Category a binding belongs to, for the generic loader path. */
+function spineMaterialCategory(material: BindingMaterial): MaterialCategory | null {
+  switch (material) {
+    case 'leather':
+      return 'leather';
+    case 'cloth':
+    case 'linen':
+      return 'cloth';
+    case 'paper':
+    case 'vellum':
+      return 'paper';
+    case 'marbled':
+      return 'marble';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Lay the generated tile over the blocked-in mass, tinted to this book's
+ * pigment. Returns 0 when nothing was available (paint it all by hand) and
+ * 1 when a full material base went down.
+ *
+ * Three things keep this from reading as a texture decal:
+ *  - the crop offset and mirror are seeded per book, so two morocco spines
+ *    side by side are two different pieces of the same skin;
+ *  - the repeat is scaled by the bake scale, so grain size is physical and
+ *    does not crawl between the lo-res and hi-res LODs;
+ *  - it composites at less than full alpha, so the underpainting's hue and
+ *    value drift still breathes through — and every pass after this one
+ *    (joints, bands, foil, wear, light) is still brushwork on top.
+ */
+function paintGeneratedBase(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec): number {
+  const slug = spineMaterialSlug(spec.material, spec.boardStyle);
+  if (slug === null) return 0;
+  const tile = getGeneratedTile(slug);
+  const category = spineMaterialCategory(spec.material);
+  if (!tile && category === null) return 0;
+
+  const tuned = materialDefaults(slug, spec.scale);
+  // A narrow spine only ever shows a sliver of the sheet, so squeeze the
+  // repeat a little on wide books and let it run on slivers — the grain then
+  // reads at roughly the same *count* of features across every spine width.
+  const widthK = clamp(28 / Math.max(6, spec.w / Math.max(0.6, spec.scale)), 0.72, 1.5);
+  const marbled = spec.material === 'marbled';
+  const seed = (spec.seed ^ 0x4d13) >>> 0;
+
+  const ok = materialBase(sf, mask, {
+    slug: tile ? slug : undefined,
+    category: tile ? undefined : (category ?? undefined),
+    tint: spec.pig.base,
+    scale: spec.scale,
+    tilePx: tuned.tilePx * widthK,
+    // Marbling is the subject on a marbled board, so it comes in hard; a
+    // grain is tooth under the paint and comes in softer.
+    strength: marbled ? 0.9 : 0.78,
+    alpha: marbled ? 0.94 : 0.84,
+    seed,
+    flipX: (seed & 1) === 1,
+    flipY: (seed & 2) === 2,
+    feather: 1,
+    floor: 0.06,
+    ceiling: 2.2,
+  });
+  return ok ? 1 : 0;
 }
 
 /** Dispatch: paint the binding material into an already blocked-in mass. */
@@ -3457,6 +3607,9 @@ export function renderSpine(
     keyTake,
     depth,
     seed: params.seed >>> 0,
+    // Filled in once the mass exists — the base cannot be laid before there
+    // is something to lay it on.
+    matBase: 0,
   };
   // Stamp budget for the whole spine. The brush engine's default budget is
   // tuned for a full-frame painting; a 30x230px spine at that density spends
@@ -3488,6 +3641,14 @@ export function renderSpine(
   /* --- 1. the mass ------------------------------------------------------ */
   const crown = crownAt(spec);
   const mask = paintSpineMass(sf, shape, pig.base, w, h, scale, (params.seed ^ 0x81ac) >>> 0);
+
+  /* --- 1b. the generated material, dyed to this book's pigment --------- */
+  // Goes down straight onto the mass and under everything else, because that
+  // is where a binding material physically is: the board is covered first,
+  // then the joints are turned, then the bands are worked, then the foil is
+  // struck, then a century happens to it. When the library is not resident
+  // this is a no-op and the hand-painted passes below run at full strength.
+  spec.matBase = paintGeneratedBase(sf, mask, spec);
 
   /* --- 2. underpainting: sink the joints ------------------------------ */
   // Both vertical joints are where the covering turns onto the boards: the

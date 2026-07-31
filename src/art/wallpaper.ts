@@ -180,13 +180,19 @@ export const COLOURWAYS: Readonly<Record<ColourwayId, Colourway>> = {
     accent: 'rgba(255, 82, 202, 0.38)',
   },
   jungle: {
+    /* The one colourway that broke the house rule: it carried a 0.40 ink and
+       a 0.50 accent, which turns the wall into a second pattern competing
+       with the spines. The fix is the one the doc prescribes — take the ALPHA
+       down and the ink's own value down with it, so a near-black volcanic
+       green at 0.17 reads as clearly as the old smoky green at 0.40 did,
+       without ever rising off the wall. */
     id: 'jungle',
     name: 'Volcano Jungle',
     base: '#1f7a44',
     baseAlt: '#1a6a3a',
-    ink: 'rgba(6, 46, 24, 0.4)',
-    inkSoft: 'rgba(6, 46, 24, 0.22)',
-    accent: 'rgba(255, 182, 62, 0.5)',
+    ink: 'rgba(2, 26, 12, 0.17)',
+    inkSoft: 'rgba(2, 26, 12, 0.1)',
+    accent: 'rgba(255, 176, 40, 0.4)',
   },
   bubblegum: {
     id: 'bubblegum',

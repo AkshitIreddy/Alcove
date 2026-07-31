@@ -10,30 +10,42 @@
  * Painted foliage reads as real when it has a skeleton, clumps AND gaps, a
  * scale hierarchy and a value range. Every specimen here is grown as:
  *
- *   1. **Vine skeleton** — a seeded climbing/hanging/trailing path anchored
- *      at the shelf edge, woody at the base and tapering to the tip, with
- *      side shoots and curling tendrils. The stem is drawn and stays visible
- *      in the gaps between leaf knots.
+ *   1. **Stem skeleton** — a seeded climbing/hanging/trailing path anchored
+ *      at the shelf edge, thick and woody at the grip and tapering to a hair
+ *      at the growing point, with side shoots and curling tendrils. The stem
+ *      is drawn and stays visible in the gaps between leaf knots.
  *   2. **Leaves instanced at nodes** — a bare-streak/leafy-streak state
  *      machine walks the skeleton, so foliage arrives in clumps separated by
- *      bare internodes, never as a uniform rosette. Leaves near the interior
- *      are small and dark (TIER_BACK); a few large heroes (TIER_LIT) stand
- *      proud of the silhouette and catch the rim light.
+ *      bare internodes, never as a uniform rosette.
  *   3. **Inflorescences at nodes** — flowers arrive as rare focal clusters
  *      of 3–7 varied blossoms with buds, each on its own pedicel, half
  *      cupped by bract leaves. Never an even scatter of dots.
- *   4. **Value discipline** — the draw lays down the near-black interior
+ *   4. **Depth by position, not by dice** — `shadeInterior()` then re-tiers
+ *      every blade by its distance from the mass centroid: the heart of a
+ *      clump goes to TIER_BACK (near-black, buried), the outer silhouette
+ *      keeps TIER_MID, and the chosen heroes stay TIER_LIT. Rolling tiers
+ *      per leaf instead scatters dark blades evenly and reads as noise.
+ *   5. **Value discipline** — the draw lays down the near-black interior
  *      mass first, the skeleton over it, then mid foliage, then lit rims and
  *      backlit heroes. The `LightRig` drives every grading decision.
  *
- * ## Drawing = stamp instancing (why it is fast)
+ * ## Everything is painted, nothing is filled
  *
- * Leaves are painted ONCE per (shape, palette tone, tier) into small
- * offscreen canvases — the **leaf-stamp cache** — with full vector richness
- * (gradients, veins, rim light, nibbled margins). Specimens then instance
- * them with `drawImage` transforms. Bake canvases are CPU-resident
- * (`willReadFrequently`), so this is both richer and dramatically cheaper
- * than re-running a vector pipeline per leaf.
+ * Blades, stems and moss cushions go through `art/brush.ts`: a block-in of
+ * crossing marks, aimed scumbles for the lit and shaded flanks, unifying
+ * glazes, stroked venation, a rim, and `edgeVary` to decide which edges the
+ * eye may lock onto. There is not a `ctx.fill()` of a leaf anywhere in this
+ * file, because a filled path with a gradient over it is flat by construction
+ * (docs/design/painted-rendering.md §1).
+ *
+ * Blades are painted ONCE per (shape, tone bucket, tier, light bucket) into
+ * small offscreen canvases — the **leaf-stamp cache** — at ~2x their final
+ * size, then instanced with `drawImage` transforms. Supersampling matters: a
+ * brush mark has a physical size, and painted at a blade's true 30px the head
+ * is a third of the blade and the silhouette dissolves. Baking the *light
+ * direction* into the stamp matters too — one stamp reused at every angle
+ * gives every blade its highlight on the same flank of itself, and a mass
+ * with no agreement about where the sun is reads as a sheet of stickers.
  *
  * Three layers, in order:
  *
@@ -41,10 +53,18 @@
  *      what scale, and returns placements with honest world-space bounds.
  *      No canvas, no DOM: safe to run in a worker or a unit test.
  *   2. **Grow**  `growFlora()` — turns a placement into `FloraGeometry`
- *      (vines, leaf instances, bloom clusters, threads) in anchor-local
- *      coords. Pure and DOM-free.
+ *      (stems, leaf instances, blooms, threads) in anchor-local coords. Pure
+ *      and DOM-free.
  *   3. **Draw**  `drawFlora()` / `renderFloraSprite()` / `bakeFloraLayer()` —
- *      Canvas2D rendering of that geometry, once, into a sprite.
+ *      rendering of that geometry, once, into a sprite.
+ *
+ * ## Generated cut-outs
+ *
+ * `registerFloraAtoms()` + `setFloraAtomMode()` let the painted blades be
+ * replaced or supplemented by the transparent foliage cut-outs in
+ * `assets/atoms/`, re-lit into the scene's palette and depth tiers. Default
+ * `off` — see the note on `ATOM_FAMILIES` for which families are usable and
+ * why most are not.
  *
  * ## Occlusion rule (binding)
  *
@@ -65,21 +85,44 @@ import {
   drawBellFlower,
   drawBlossom,
   drawFloretDome,
-  drawLeaf,
   hsl,
+  leafAxis,
   leafBoundRadius,
+  leafOutline,
+  leafVeins,
   traceSmooth,
   traceTapered,
-  type LeafPaint,
+  type LeafGeometryOptions,
   type LeafShape,
   type Pt,
 } from './leaves';
+import {
+  PRESSURE,
+  blockIn,
+  brush,
+  clipToMask,
+  createSurface,
+  dab,
+  edgeVary,
+  getPaintQuality,
+  drawSurface,
+  glaze,
+  hslToRgb,
+  parseColour,
+  scumble,
+  setPaintQuality,
+  stroke,
+  surfaceToImageData,
+  type Hsl,
+  type Surface,
+  type Vec2,
+} from './brush';
 import { bakeCached } from './bake';
 import { blowOut, keyToSource, rgbaToCss, type LightRig } from './lighting';
 import { getGranulationTile, type Canvas2D, type Ctx2D } from './spines';
 
 /** Bump when the growth model or drawing changes — invalidates baked sprites. */
-export const FLORA_RECIPE_VERSION = 5;
+export const FLORA_RECIPE_VERSION = 6;
 
 /**
  * Flora is decoration: the shelf compositor drops the whole layer below this
@@ -420,11 +463,12 @@ export interface Tone {
 export type VineHabit = 'climb' | 'hang' | 'trail' | 'upright';
 
 /**
- * One vine: the skeleton everything else hangs from. `pts` runs base → tip;
- * `widths` tapers from woody base to fresh tip. Drawn as a tapered ribbon and
+ * One stem: the skeleton everything else hangs from. `pts` runs base → tip;
+ * `widths` tapers from woody base to fresh tip — thick and directional at the
+ * grip, a hair at the growing point. Drawn as a painted tapered ribbon and
  * deliberately left visible in the gaps between leaf clumps.
  */
-export interface VineGeom {
+export interface StemGeom {
   pts: Pt[];
   widths: number[];
   tone: Tone;
@@ -436,6 +480,9 @@ export interface VineGeom {
   /** Draw bark striations along the length. Set on the thick woody vines. */
   bark?: boolean;
 }
+
+/** @deprecated the growth model calls these stems now. */
+export type VineGeom = StemGeom;
 
 /**
  * One instanced leaf. Geometry only — the pixels live in the leaf-stamp
@@ -462,6 +509,15 @@ export interface LeafInstance {
   tone: Tone;
   /** Depth tier — always explicit on instances. */
   tier: FloraTier;
+  /**
+   * 0 = flat, up to ~0.55 = an older blade rolled over on itself. Carried on
+   * the *instance* (not decided inside the stamp cache) so a plant can be
+   * asked for "mostly fresh, a few tired" and the growth model owns that
+   * ratio — curl is character, not a rendering detail.
+   */
+  curl: number;
+  /** 0–1: how chewed the margin is. A canopy with no damage looks printed. */
+  damage: number;
   seed: number;
 }
 
@@ -495,20 +551,6 @@ export interface BloomGeom {
   angle?: number;
   /** Petal count override (rosettes want 8–13, blossoms 5). */
   petals?: number;
-}
-
-/**
- * A focal point of flowers at one skeleton node: 3–7 blooms of varied radius
- * (one hero, mid blooms, buds), each carried on its own pedicel back to the
- * node. This is the unit that replaced "popcorn": flowers never appear singly
- * scattered — they arrive as a small bouquet half-cupped by foliage.
- */
-export interface BloomCluster {
-  /** The node heart the pedicels spring from (anchor-local). */
-  x: number;
-  y: number;
-  blooms: BloomGeom[];
-  pedicels: ThreadGeom[];
 }
 
 export interface ThreadGeom {
@@ -570,10 +612,23 @@ export interface MoundGeom {
   tier?: FloraTier;
 }
 
+/**
+ * Everything one specimen draws, in anchor-local coordinates.
+ *
+ * Flat arrays, not a tree. Flowers used to live inside a `clusters` structure
+ * that owned its own pedicels; the renderer then had to flatten it twice per
+ * tier and nothing else could see a bloom without knowing about clusters.
+ * They are still *composed* as clusters by `growInflorescence` — a hero, mid
+ * blooms and buds around one node, each on its own pedicel — the composition
+ * just lands in the shared lists like every other part.
+ */
 export interface FloraGeometry {
-  vines: VineGeom[];
+  /** Woody skeleton: stems, side shoots, flower stalks. */
+  stems: StemGeom[];
   leaves: LeafInstance[];
-  clusters: BloomCluster[];
+  /** Every flower and bud, already tiered. */
+  blooms: BloomGeom[];
+  /** Pedicels, tendrils, twine, silk — anything drawn as a line. */
   threads: ThreadGeom[];
   shades: ShadeGeom[];
   mounds: MoundGeom[];
@@ -960,6 +1015,15 @@ interface VineRecipe {
   curve: number;
   /** Variegated blade chance. */
   pale?: number;
+  /** Chance a blade is old enough to have curled. Default 0.24. */
+  curlChance?: number;
+  /** Chance a blade's margin has been chewed. Default 0.16. */
+  damageChance?: number;
+  /**
+   * Lift the whole specimen off its anchor by this many px at scale 1, along
+   * the growth direction. Moss sits *on* a cushion, not on the plank.
+   */
+  lift?: number;
   /** Colour role + species character delta. */
   role: FloraToneRole;
   toneDelta: ToneTuple;
@@ -1015,7 +1079,9 @@ function shapeAspect(shape: LeafShape): number {
     case 'needle':
       return 0.2;
     case 'strap':
-      return 0.26;
+      // A grass blade is a *blade*. At 0.26 the stamp came out as wide as a
+      // hosta leaf and a tuft read as a clump of green caterpillars.
+      return 0.16;
     case 'petal':
       return 0.55;
     case 'fan':
@@ -1086,9 +1152,15 @@ function vinePath(
         break;
       }
       default: {
-        // Upright: rise steeply, then arc outward toward the fan side.
-        const arc = (1 - (1 - t) * (1 - t)) * 0.75 * uprightSide;
-        ang = baseAngle + arc + wob;
+        // Upright: rise steeply, then nod outward toward the fan side.
+        //
+        // The arc is an *absolute* offset off the base angle, never an
+        // integration — an integrated gravity term compounds, and a frond
+        // that gains a few degrees per step ends up lying on its side by the
+        // tip, which is what turned a fern clump into a moustache. Capped at
+        // ~29° of total turn so a frond nods, and only nods.
+        const arc = (1 - (1 - t) * (1 - t)) * 0.5 * uprightSide;
+        ang = baseAngle + arc + wob * (1 - t * 0.4);
         break;
       }
     }
@@ -1152,9 +1224,9 @@ function growInflorescence(
 
   const nB = rri(gr, 3, 7);
   const nBuds = clamp(rri(gr, 1, 2), 1, nB - 2);
+  // Local list only so the packing test below can see its own siblings; every
+  // bloom is pushed straight into the shared geometry as it is placed.
   const blooms: BloomGeom[] = [];
-  const pedicels: ThreadGeom[] = [];
-  const cluster: BloomCluster = { x: node.x, y: node.y, blooms, pedicels };
 
   const place = (px: number, py: number, r: number, kind: BloomKind, open: number, tier: FloraTier): void => {
     const b: BloomGeom = {
@@ -1169,6 +1241,7 @@ function growInflorescence(
       petals: 5,
     };
     blooms.push(b);
+    gr.g.blooms.push(b);
     // Pedicel: node → bloom with a soft outward bow.
     const mx = (node.x + px) / 2;
     const my = (node.y + py) / 2;
@@ -1176,7 +1249,7 @@ function growInflorescence(
     const dy = py - node.y;
     const dist = Math.hypot(dx, dy) || 1;
     const bow = dist * rr(gr, 0.14, 0.3) * (gr.rnd() < 0.5 ? 1 : -1);
-    pedicels.push({
+    gr.g.threads.push({
       pts: [
         { x: node.x, y: node.y },
         { x: mx - (dy / dist) * bow, y: my + (dx / dist) * bow },
@@ -1241,11 +1314,19 @@ function growInflorescence(
       tier: TIER_MID,
     });
   }
-
-  gr.g.clusters.push(cluster);
 }
 
-/** Push one leaf instance, with per-leaf tone jitter and stamp pick. */
+/**
+ * Push one leaf instance, with per-leaf tone jitter, stamp pick, and the two
+ * bits of *age* a blade carries: `curl` (a tired leaf rolling over on itself)
+ * and `damage` (a chewed margin).
+ *
+ * Age is a minority state on purpose. A canopy where nothing is curled reads
+ * as plastic; one where half of it is reads as dying. The recipe owns the
+ * ratio (`curlChance` ≈ ¼) and the growth model — not the stamp cache — makes
+ * the roll, so a specimen's mix of fresh and tired blades is part of its
+ * geometry and survives into the tests.
+ */
 function g_pushLeaf(
   gr: Grow,
   rec: VineRecipe,
@@ -1259,6 +1340,7 @@ function g_pushLeaf(
     s: clamp(base.s + (gr.rnd() * 2 - 1) * 5, 0, 100),
     l: clamp(base.l + (gr.rnd() * 2 - 1) * 4, 0, 100),
   };
+  const curlChance = rec.curlChance ?? 0.24;
   gr.g.leaves.push({
     x: o.x,
     y: o.y,
@@ -1266,11 +1348,13 @@ function g_pushLeaf(
     len: o.len,
     width: o.len * shapeAspect(shape),
     shape,
-    stamp: rri(gr, 0, 3),
+    stamp: rri(gr, 0, STAMP_VARIANTS - 1),
     flip: gr.rnd() < 0.5,
     pale: (rec.pale ?? 0) > 0 && gr.rnd() < (rec.pale ?? 0),
     tone: t,
     tier: o.tier,
+    curl: gr.rnd() < curlChance ? rr(gr, 0.14, 0.44) : 0,
+    damage: gr.rnd() < (rec.damageChance ?? 0.16) ? rr(gr, 0.12, 0.4) : 0,
     seed: (gr.rnd() * 0xffffffff) >>> 0,
   });
   return gr.g.leaves.length - 1;
@@ -1299,7 +1383,7 @@ function growVine(
       ? roleTone(gr, 'wood', [rec.toneDelta[0] * 0.4, rec.toneDelta[1] * 0.4, rec.toneDelta[2] * 0.4])
       : roleTone(gr, rec.role, [rec.toneDelta[0], rec.toneDelta[1] - 6, rec.toneDelta[2] - 8]);
 
-  gr.g.vines.push({
+  gr.g.stems.push({
     pts,
     widths,
     tone: stemTone,
@@ -1463,7 +1547,11 @@ function growVineSpecimen(gr: Grow, rec: VineRecipe): void {
     const w = rr(gr, rec.width[0], rec.width[1]) * Math.min(1.25, gr.scale);
     // Siblings spread a little along the anchor's run so they don't stack.
     const ox = (gr.rnd() * 2 - 1) * 7 * gr.scale;
-    const oy = (gr.rnd() * 2 - 1) * 2.5 * gr.scale;
+    // `lift` raises the whole specimen off the anchor along its growth
+    // direction — moss creeps across the crown of its own cushion, so its
+    // stems start above the plank, not on it.
+    const lift = (rec.lift ?? 0) * gr.scale;
+    const oy = (gr.rnd() * 2 - 1) * 2.5 * gr.scale - (gr.facing === 'down' ? -lift : lift);
     growVine(gr, rec, habit, ox, oy, angle, len, w, v, 0);
   }
 }
@@ -1473,45 +1561,82 @@ function growVineSpecimen(gr: Grow, rec: VineRecipe): void {
 /** Moss creeps; its body is a filled cushion under the creeping vines. */
 function addMossMound(gr: Grow, rec: VineRecipe): void {
   const up = gr.facing === 'down' ? -1 : 1;
-  const rx = rr(gr, 30, 48) * gr.scale;
+  // Wider than 36px and half as tall, a cushion stops being a dome and starts
+  // being a smear of green along the plank.
+  const rx = rr(gr, 22, 38) * gr.scale;
   gr.g.mounds.push({
     x: rr(gr, -4, 4) * gr.scale,
     y: 0,
     rx,
-    ry: rx * rr(gr, 0.4, 0.52),
+    ry: rx * rr(gr, 0.56, 0.74),
     up,
     tone: roleTone(gr, 'moss', rec.toneDelta),
     seed: (gr.rnd() * 0xffffffff) >>> 0,
   });
 }
 
-/** Herb bundles hang from twine wraps, with the occasional paper tag. */
+/**
+ * The twine rig a herb bundle hangs from — the part that makes it read as a
+ * *tied* object rather than as leaves floating under a shelf.
+ *
+ * Six threads minimum, and each one is doing a job:
+ *   - **two hangers** rising from the wrap to the hook, slightly apart, so
+ *     the bunch reads as suspended by a loop with real width;
+ *   - **three wraps**, tightening down the neck of the bunch — a single wrap
+ *     looks like a rubber band, three look like string turned round by hand;
+ *   - **one tail**, the cut end of the twine, hanging free;
+ *   - plus a tag string when the bundle is labelled.
+ */
 function addTwineAndTag(gr: Grow): void {
   const twine = roleColour(gr, 'twine');
   const wrapY = rr(gr, 7, 11) * gr.scale;
   const wrapW = rr(gr, 9, 13) * gr.scale;
-  for (let k = 0; k < 2; k++) {
-    const y = wrapY + k * 3.2 * gr.scale;
+  const wrapWidth = Math.max(0.7, 1.1 * gr.scale);
+
+  // Three wraps, each a shade narrower as the neck tapers into the bunch.
+  for (let k = 0; k < 3; k++) {
+    const y = wrapY + k * 3.1 * gr.scale;
+    const w = wrapW * (1 - k * 0.07);
     const pts: Pt[] = [];
     for (let i = 0; i <= 8; i++) {
       const a = Math.PI * (i / 8);
-      pts.push({ x: -Math.cos(a) * wrapW, y: y + Math.sin(a) * 2.6 * gr.scale });
+      pts.push({ x: -Math.cos(a) * w, y: y + Math.sin(a) * 2.6 * gr.scale });
     }
-    gr.g.threads.push({ pts, width: Math.max(0.7, 1.1 * gr.scale), alpha: 0.95, colour: twine });
+    gr.g.threads.push({ pts, width: wrapWidth, alpha: 0.95, colour: twine });
   }
-  // The loop the bunch hangs from.
-  gr.g.threads.push({
-    pts: [
-      { x: 0, y: -9 * gr.scale },
-      { x: -1.5 * gr.scale, y: -3 * gr.scale },
-      { x: 0, y: wrapY },
-      { x: 1.5 * gr.scale, y: -3 * gr.scale },
-      { x: 0.4 * gr.scale, y: -9 * gr.scale },
-    ],
-    width: Math.max(0.6, 0.9 * gr.scale),
-    alpha: 0.9,
-    colour: twine,
-  });
+
+  // Two hangers up to the hook, meeting at the top.
+  const hookY = -10 * gr.scale;
+  for (const side of [-1, 1]) {
+    gr.g.threads.push({
+      pts: [
+        { x: side * 0.6 * gr.scale, y: hookY },
+        { x: side * 2.1 * gr.scale, y: hookY * 0.35 },
+        { x: side * 1.1 * gr.scale, y: wrapY - 1 * gr.scale },
+      ],
+      width: Math.max(0.6, 0.9 * gr.scale),
+      alpha: 0.9,
+      colour: twine,
+    });
+  }
+
+  // The cut tail of the knot, hanging loose off the last wrap.
+  {
+    const tailSide = gr.rnd() < 0.5 ? 1 : -1;
+    const tailLen = rr(gr, 8, 15) * gr.scale;
+    gr.g.threads.push({
+      pts: [
+        { x: tailSide * wrapW * 0.75, y: wrapY + 2 * gr.scale },
+        { x: tailSide * wrapW * (0.95 + gr.rnd() * 0.3), y: wrapY + tailLen * 0.55 },
+        { x: tailSide * wrapW * (0.6 + gr.rnd() * 0.5), y: wrapY + tailLen },
+      ],
+      width: Math.max(0.5, 0.75 * gr.scale),
+      alpha: 0.85,
+      colour: twine,
+      taper: true,
+    });
+  }
+
   if (gr.rnd() < 0.55) {
     const tx = wrapW * rr(gr, 0.7, 1.05);
     const ty = wrapY + rr(gr, 4, 8) * gr.scale;
@@ -1568,7 +1693,7 @@ function growGrassTuft(gr: Grow): void {
       len,
       width: len * 0.16,
       shape: 'strap',
-      stamp: rri(gr, 0, 3),
+      stamp: rri(gr, 0, STAMP_VARIANTS - 1),
       flip: gr.rnd() < 0.5,
       pale: dry,
       tone: {
@@ -1577,6 +1702,9 @@ function growGrassTuft(gr: Grow): void {
         l: clamp(base.l + (gr.rnd() * 2 - 1) * 5, 0, 100),
       },
       tier,
+      // Dry blades kink over; green ones stand.
+      curl: dry ? rr(gr, 0.2, 0.5) : 0,
+      damage: dry ? rr(gr, 0.1, 0.3) : 0,
       seed: (gr.rnd() * 0xffffffff) >>> 0,
     });
     bladeIdx.push(g.leaves.length - 1);
@@ -1608,7 +1736,7 @@ function growGrassTuft(gr: Grow): void {
       });
     }
     const stemTone = roleTone(gr, 'grass', [0, -6, -8]);
-    g.vines.push({
+    g.stems.push({
       pts,
       widths: pts.map((_, i) => Math.max(0.4, (1.1 - (i / segs) * 0.6) * gr.scale)),
       tone: stemTone,
@@ -1618,22 +1746,15 @@ function growGrassTuft(gr: Grow): void {
     const tip = pts[segs] as Pt;
     const clock = gr.rnd() < 0.55;
     const r = rr(gr, 5.5, 8.5) * gr.scale;
-    g.clusters.push({
+    g.blooms.push({
       x: tip.x,
       y: tip.y,
-      blooms: [
-        {
-          x: tip.x,
-          y: tip.y,
-          r,
-          kind: clock ? 'dandelion' : 'puff',
-          open: 1,
-          tone: clock ? roleTone(gr, 'bloomAlt') : tone(gr, 42, 22, 78),
-          seed: (gr.rnd() * 0xffffffff) >>> 0,
-          tier: TIER_LIT,
-        },
-      ],
-      pedicels: [],
+      r,
+      kind: clock ? 'dandelion' : 'puff',
+      open: 1,
+      tone: clock ? roleTone(gr, 'bloomAlt') : tone(gr, 42, 22, 78),
+      seed: (gr.rnd() * 0xffffffff) >>> 0,
+      tier: TIER_LIT,
     });
   }
 }
@@ -1750,11 +1871,11 @@ const IVY: VineRecipe = {
   woody: 0.55,
   habitUp: 'climb',
   habitDown: 'hang',
-  shapes: [
-    ['lobed', 0.7],
-    ['palmate', 0.3],
-  ],
-  leafLen: [22, 38],
+  // Ivy is its lobed silhouette. Mixing palmate in was an attempt at canopy
+  // variety that only made the plant unidentifiable — variety in an ivy comes
+  // from scale, curl and lobe count, not from a second blade shape.
+  shapes: [['lobed', 1]],
+  leafLen: [24, 42],
   perNode: [1, 2],
   clumpRun: [2, 4],
   gapRun: [1, 3],
@@ -1781,13 +1902,15 @@ const POTHOS: VineRecipe = {
   perNode: [1, 2],
   clumpRun: [1, 3],
   gapRun: [1, 2],
-  backChance: 0.26,
-  heroes: [1, 2],
+  backChance: 0.34,
+  heroes: [2, 3],
   branches: 0.9,
   tendrils: 0.8,
   splay: [0.6, 1.1],
   curve: 0.24,
-  pale: 0.4,
+  // Variegation on two leaves in five, not on nearly every one: a plant whose
+  // every blade is streaked pale has no dark left to be variegated against.
+  pale: 0.22,
   role: 'leaf',
   toneDelta: [-11, -2, 2],
 };
@@ -1813,12 +1936,16 @@ const HEARTS: VineRecipe = {
   splay: [0.9, 1.5],
   curve: 0.18,
   role: 'leaf',
-  toneDelta: [12, -32, 10],
+  toneDelta: [10, -18, 6],
 };
 
 const BLOSSOM: VineRecipe = {
   vines: [1, 2],
-  len: [110, 200],
+  // A flowering branch used to run to 200px while nothing else on the shelf
+  // passed 130 — one plant then dominated every composition it landed in and
+  // the shelf read as "a cherry tree with some books". Kept in the same size
+  // class as its neighbours; the flowers do the work, not the reach.
+  len: [80, 135],
   step: 15,
   width: [2.6, 3.8],
   woody: 0.75,
@@ -1842,10 +1969,13 @@ const BLOSSOM: VineRecipe = {
   role: 'leaf',
   toneDelta: [6, -8, 1],
   flowers: {
-    kinds: ['blossom'],
+    kinds: ['blossom', 'rosette', 'bell'],
     chance: 0.5,
     maxPerVine: 3,
-    size: [6.5, 11],
+    // A blossom on a shelf is 20-40px across in the reference, not 13. Small
+    // flowers read as popcorn: they have no interior structure at that size,
+    // so a cluster of them is a scatter of white dots.
+    size: [10, 16],
     pale: 0.3,
     role: 'bloom',
   },
@@ -1872,6 +2002,10 @@ const MOSS: VineRecipe = {
   curve: 0.26,
   role: 'moss',
   toneDelta: [0, 0, 0],
+  curlChance: 0.1,
+  damageChance: 0.05,
+  // Moss creeps over the top of its own cushion, not along the bare plank.
+  lift: 9,
 };
 
 const FERN: VineRecipe = {
@@ -1882,14 +2016,22 @@ const FERN: VineRecipe = {
   woody: 0.2,
   habitUp: 'upright',
   habitDown: 'hang',
-  shapes: [['needle', 1]],
-  leafLen: [7, 13],
+  // Pinnules, not needles. A fern painted with 0.2-aspect needles at 7-13px
+  // gave every pinna a 2px width: the blades vanished, the rachis was the
+  // only thing left, and a clump of fronds read as barbed wire. A real
+  // pinnule is a deeply-cut blade with actual area.
+  shapes: [
+    ['pinnate', 0.7],
+    ['needle', 0.3],
+  ],
+  leafLen: [14, 24],
   perNode: [2, 2],
   opposite: true,
   clumpRun: [8, 12],
   gapRun: [0, 1],
-  backChance: 0.3,
-  heroes: [0, 1],
+  backChance: 0.32,
+  heroes: [1, 2],
+  curlChance: 0.14,
   branches: 0,
   tendrils: 0,
   splay: [1.1, 1.5],
@@ -1899,15 +2041,22 @@ const FERN: VineRecipe = {
 };
 
 const HERB: VineRecipe = {
-  vines: [3, 5],
-  len: [34, 62],
+  // A bundle is a *bunch*: four sprigs is the minimum that reads as tied
+  // together rather than as a single sad twig on a string.
+  vines: [4, 6],
+  len: [48, 82],
   step: 9,
-  width: [1.0, 1.5],
+  width: [1.2, 1.8],
   woody: 0.35,
   habitUp: 'hang',
   habitDown: 'hang',
-  shapes: [['strap', 1]],
-  leafLen: [11, 20],
+  shapes: [
+    ['strap', 0.6],
+    ['needle', 0.4],
+  ],
+  leafLen: [15, 26],
+  curlChance: 0.4,
+  damageChance: 0.35,
   perNode: [1, 2],
   clumpRun: [2, 4],
   gapRun: [1, 2],
@@ -2031,7 +2180,9 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   herbBundle: {
     id: 'herbBundle',
     label: FLORA_LABELS.herbBundle,
-    anchors: ['railTop', 'shelfUnderside'],
+    // Undersides only. A bunch tied to a rail *top* has nothing to hang from
+    // and grew upside down out of the plank.
+    anchors: ['shelfUnderside'],
     scale: [0.7, 1.15],
     nominalW: 60,
     grow: vineGrower(HERB, addTwineAndTag),
@@ -2095,9 +2246,9 @@ const GEOMETRY_MEMO_CAP = 512;
 
 function emptyGeometry(ink: string): FloraGeometry {
   return {
-    vines: [],
+    stems: [],
     leaves: [],
-    clusters: [],
+    blooms: [],
     threads: [],
     shades: [],
     mounds: [],
@@ -2119,7 +2270,7 @@ function computeBounds(g: FloraGeometry): Rect {
     if (x + r > maxX) maxX = x + r;
     if (y + r > maxY) maxY = y + r;
   };
-  for (const v of g.vines) {
+  for (const v of g.stems) {
     for (let i = 0; i < v.pts.length; i++) {
       const p = v.pts[i] as Pt;
       hit(p.x, p.y, (v.widths[i] ?? 1) / 2 + 0.5);
@@ -2128,10 +2279,7 @@ function computeBounds(g: FloraGeometry): Rect {
   // A leaf is bounded by the circle that covers its whole blade from the
   // petiole — deliberately conservative (keep-out runs on these numbers).
   for (const l of g.leaves) hit(l.x, l.y, leafBoundRadius(l.len, l.width) + 0.5);
-  for (const c of g.clusters) {
-    for (const b of c.blooms) hit(b.x, b.y, b.r * 1.35 + 1);
-    for (const t of c.pedicels) for (const p of t.pts) hit(p.x, p.y, t.width + 0.5);
-  }
+  for (const b of g.blooms) hit(b.x, b.y, b.r * 1.35 + 1);
   for (const t of g.threads) for (const p of t.pts) hit(p.x, p.y, t.width + 0.5);
   for (const p of g.pots) {
     hit(p.x, p.y, 0);
@@ -2159,6 +2307,47 @@ function computeBounds(g: FloraGeometry): Rect {
 }
 
 /**
+ * Push the *interior* of a foliage mass into shadow.
+ *
+ * Depth tiers were being rolled per leaf from a fixed probability, which
+ * scatters dark leaves evenly through a mass — and an evenly-speckled mass has
+ * no depth at all, it just looks noisy. A real canopy is organised in space:
+ * the blades near the heart of the clump are buried under everything else and
+ * go nearly black, the ones on the outside of the silhouette are the ones the
+ * light can actually reach.
+ *
+ * So tiers are re-assigned by distance from the mass centroid. This is the
+ * pass that stopped the shelf's planting reading as a pale-green glow sitting
+ * *in front of* the case instead of growing out of it.
+ *
+ * Light-independent on purpose: geometry is memoized by placement, and making
+ * it depend on the mutable light rig would silently serve stale specimens
+ * after a theme change. Interior-is-dark is true whatever direction the sun
+ * comes from.
+ */
+function shadeInterior(g: FloraGeometry): void {
+  const leaves = g.leaves;
+  if (leaves.length < 8) return;
+  let cx = 0;
+  let cy = 0;
+  for (const l of leaves) {
+    cx += l.x;
+    cy += l.y;
+  }
+  cx /= leaves.length;
+  cy /= leaves.length;
+  let maxD = 1;
+  for (const l of leaves) maxD = Math.max(maxD, Math.hypot(l.x - cx, l.y - cy));
+  for (const l of leaves) {
+    // Heroes were chosen deliberately; they keep their light.
+    if (l.tier === TIER_LIT) continue;
+    const d = Math.hypot(l.x - cx, l.y - cy) / maxD;
+    if (d < 0.52) l.tier = TIER_BACK;
+    else if (d > 0.84) l.tier = TIER_MID;
+  }
+}
+
+/**
  * Grow a specimen's geometry in **anchor-local** coordinates (the anchor is
  * the origin). Pure and deterministic; memoized because keep-out resolution
  * regrows the same specimen at a few different scales.
@@ -2182,6 +2371,7 @@ export function growFlora(p: FloraPlacement): FloraGeometry {
     facing: p.facing,
   };
   SPECIES[p.species].grow(gr);
+  shadeInterior(g);
   g.bounds = computeBounds(g);
 
   if (geometryMemo.size > GEOMETRY_MEMO_CAP) geometryMemo.clear();
@@ -2414,13 +2604,34 @@ function toneStr(t: Tone, dl = 0, ds = 0, a = 1): string {
   return hsl(t.h, t.s + ds, t.l + dl, a);
 }
 
+/** A tone pushed to a depth tier's value — the shared ladder, for non-leaves. */
+function tierTone(t: Tone, tier: FloraTier): Tone {
+  const v = TIER_VALUE[tier];
+  return { h: t.h, s: clamp(t.s * v.s, 0, 100), l: clamp(t.l * v.l, 0, 100) };
+}
+
 /**
- * Draw one vine as a tapered ribbon with real *round* form: a shaded side, a
- * lit side, bark striations on the thick woody ones and a pencil arris.
+ * Paint one stem as a tapering woody ribbon with real cylindrical form.
+ *
+ * The stem is the thing that makes a plant read as *grown* rather than
+ * assembled: it has a direction, it is thick where it grips and a hair where
+ * it is still growing, and its light wraps around a cylinder. So it gets the
+ * full treatment rather than a stroked path — block-in along the run, a dark
+ * flank away from the key, a lit core on the key side, bark striations on the
+ * thick ones, and a hairline arris.
+ *
+ * Thin green shoots (under ~2px) skip the surface entirely and take the cheap
+ * canvas ribbon: a two-pixel-wide stem has no interior to paint, and there
+ * can be a hundred of them on one floor.
  */
-function drawVineRibbon(ctx: Ctx2D, s: VineGeom, ink: string, light: FloraLight): void {
+function drawStemRibbon(ctx: Ctx2D, s: StemGeom, ink: string, light: FloraLight): void {
   const n = s.pts.length;
   if (n < 2) return;
+  const tier = s.tier ?? TIER_MID;
+  const maxW = Math.max(...s.widths);
+  const t = tierTone(s.tone, tier);
+
+  // Ribbon outline, as before: the two offset flanks of a variable-width path.
   const left: Pt[] = [];
   const right: Pt[] = [];
   for (let i = 0; i < n; i++) {
@@ -2430,93 +2641,207 @@ function drawVineRibbon(ctx: Ctx2D, s: VineGeom, ink: string, light: FloraLight)
     const dy = b.y - a.y;
     const m = Math.hypot(dx, dy) || 1;
     const w = Math.max(0.45, (s.widths[i] ?? 1) / 2);
-    left.push({ x: (s.pts[i] as Pt).x - (dy / m) * w, y: (s.pts[i] as Pt).y + (dx / m) * w });
-    right.push({ x: (s.pts[i] as Pt).x + (dy / m) * w, y: (s.pts[i] as Pt).y - (dx / m) * w });
+    const p = s.pts[i] as Pt;
+    left.push({ x: p.x - (dy / m) * w, y: p.y + (dx / m) * w });
+    right.push({ x: p.x + (dy / m) * w, y: p.y - (dx / m) * w });
   }
-  const outline = left.concat(right.reverse());
-  const tier = s.tier ?? TIER_MID;
-  const maxW = Math.max(...s.widths);
-  const t = tier === TIER_BACK
-    ? { h: s.tone.h, s: Math.max(0, s.tone.s - 12), l: Math.max(0, s.tone.l - 18) }
-    : tier === TIER_LIT
-      ? { h: s.tone.h, s: s.tone.s, l: Math.min(100, s.tone.l + 5) }
-      : s.tone;
+  const outline = left.concat([...right].reverse());
 
-  ctx.save();
-  traceSmooth(ctx, outline, true);
-  const first = s.pts[0] as Pt;
-  const last = s.pts[n - 1] as Pt;
-  const g = ctx.createLinearGradient(first.x, first.y, last.x, last.y);
-  g.addColorStop(0, toneStr(t, s.woody > 0.5 ? -6 : -2));
-  g.addColorStop(0.6, toneStr(t, 2));
-  g.addColorStop(1, toneStr(t, 9));
-  ctx.fillStyle = g;
-  ctx.fill();
-
-  if (tier !== TIER_BACK && maxW > 1.6) {
+  if (maxW < 2.1 || tier === TIER_BACK) {
+    // Cheap path: a filled ribbon with a single length gradient.
     ctx.save();
-    ctx.clip();
-    // Cylinder shading: a dark edge on the away side, a bright core on the
-    // key side, laid perpendicular to the run of the stem.
-    const nx = Math.cos(light.angle);
-    const ny = Math.sin(light.angle);
-    const span = maxW * 1.4;
-    const cx = (first.x + last.x) / 2;
-    const cy = (first.y + last.y) / 2;
-    const cg = ctx.createLinearGradient(cx + nx * span, cy + ny * span, cx - nx * span, cy - ny * span);
-    cg.addColorStop(0, toneStr(t, 16, -4, 0.55));
-    cg.addColorStop(0.42, 'rgba(0,0,0,0)');
-    cg.addColorStop(1, toneStr(t, -26, -6, 0.6));
-    ctx.fillStyle = cg;
-    ctx.fillRect(cx - span * 6, cy - span * 6, span * 12, span * 12);
+    traceSmooth(ctx, outline, true);
+    const first = s.pts[0] as Pt;
+    const last = s.pts[n - 1] as Pt;
+    const g = ctx.createLinearGradient(first.x, first.y, last.x, last.y);
+    g.addColorStop(0, toneStr(t, s.woody > 0.5 ? -6 : -2));
+    g.addColorStop(0.6, toneStr(t, 2));
+    g.addColorStop(1, toneStr(t, 9));
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = ink;
+    ctx.globalAlpha = s.woody > 0.5 ? 0.45 : 0.3;
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
 
-    // Bark: short striations running along the stem.
-    if (s.bark && maxW > 3) {
-      const rnd = mulberry32((Math.round(first.x * 31 + first.y * 17) >>> 0) || 7);
-      ctx.strokeStyle = toneStr(t, -18, 2, 0.4);
-      ctx.lineWidth = Math.max(0.4, maxW * 0.09);
-      for (let k = 0; k < 9; k++) {
-        const i0 = Math.floor(rnd() * (n - 2));
-        const i1 = Math.min(n - 1, i0 + 2 + Math.floor(rnd() * 4));
-        const off = (rnd() * 2 - 1) * maxW * 0.3;
-        const seg: Pt[] = [];
-        for (let i = i0; i <= i1; i++) {
-          const p = s.pts[i] as Pt;
-          const a = s.pts[Math.max(0, i - 1)] as Pt;
-          const b = s.pts[Math.min(n - 1, i + 1)] as Pt;
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const m = Math.hypot(dx, dy) || 1;
-          seg.push({ x: p.x - (dy / m) * off, y: p.y + (dx / m) * off });
-        }
-        traceSmooth(ctx, seg, false);
-        ctx.stroke();
+  // Painted path. Surface covering the ribbon plus brush overshoot.
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of outline) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const pad = Math.ceil(Math.max(4, maxW * 0.9));
+  const ox = -minX + pad;
+  const oy = -minY + pad;
+  const sw = Math.ceil(maxX - minX + pad * 2);
+  const sh = Math.ceil(maxY - minY + pad * 2);
+  if (sw < 3 || sh < 3 || sw * sh > 900000) return;
+  const surface = createSurface(sw, sh);
+  const shape: Vec2[] = outline.map((p) => ({ x: p.x + ox, y: p.y + oy }));
+  const spine: Vec2[] = s.pts.map((p) => ({ x: p.x + ox, y: p.y + oy }));
+
+  const first = spine[0] as Vec2;
+  const last = spine[spine.length - 1] as Vec2;
+  const runAngle = Math.atan2(last.y - first.y, last.x - first.x);
+  const body: Hsl = { h: t.h, s: clamp(t.s / 100, 0, 1), l: clamp(t.l / 100, 0, 1) };
+
+  const mask = blockIn(surface, shape, body, {
+    direction: runAngle,
+    brush: brush(s.woody > 0.5 ? 'chalk' : 'bristle', {
+      size: Math.max(2.4, maxW * 0.62),
+      opacity: 0.5,
+      grain: s.woody > 0.5 ? 0.7 : 0.5,
+      hardness: 0.55,
+      spacing: 0.16,
+      colour: body,
+      jitter: { size: 0.24, opacity: 0.34, angle: 0.3, hue: 7, sat: 0.05, lum: 0.07, position: 0.4 },
+    }),
+    valueSpread: 0.13,
+    hueSpread: 10,
+    roughness: Math.max(0.25, maxW * 0.06),
+    openness: 0.02,
+    rowFactor: 0.38,
+    feather: 0.85,
+    edgeNoise: Math.max(0.2, maxW * 0.05),
+    seed: (Math.round(first.x * 31 + first.y * 17) >>> 0) || 0x5111,
+  });
+
+  // Cylinder form: the away side falls off, the key side keeps a lit core.
+  const lx = Math.cos(light.angle);
+  const ly = Math.sin(light.angle);
+  /** Signed distance across the stem, normalised to ±1 on the key axis. */
+  const across = (x: number, y: number): number => {
+    // Nearest spine sample, cheaply: project onto the overall run.
+    const px = x - first.x;
+    const py = y - first.y;
+    const along = px * Math.cos(runAngle) + py * Math.sin(runAngle);
+    const cxp = first.x + Math.cos(runAngle) * along;
+    const cyp = first.y + Math.sin(runAngle) * along;
+    return clamp(((x - cxp) * lx + (y - cyp) * ly) / Math.max(1, maxW * 0.55), -1, 1);
+  };
+  scumble(
+    surface,
+    mask,
+    brush('bristle', {
+      size: Math.max(2, maxW * 0.5),
+      opacity: 0.2,
+      grain: 0.55,
+      colour: { h: t.h + 4, s: clamp((t.s - 6) / 100, 0, 1), l: clamp((t.l * 0.5) / 100, 0, 1) },
+      angle: runAngle,
+      jitter: { size: 0.35, opacity: 0.45, angle: 0.25, hue: 6, sat: 0.05, lum: 0.05, position: 0.6 },
+    }),
+    {
+      coverage: 0.7,
+      passes: 2,
+      direction: runAngle,
+      patchScale: Math.max(6, maxW * 3),
+      targetBuildup: 0.6,
+      weight: (x, y) => clamp(-across(x, y), 0, 1),
+      seed: 0x5222,
+    },
+  );
+  scumble(
+    surface,
+    mask,
+    brush('flat', {
+      size: Math.max(1.8, maxW * 0.34),
+      opacity: 0.17,
+      grain: 0.4,
+      colour: { h: t.h - 4, s: clamp((t.s + 2) / 100, 0, 1), l: clamp((t.l + 15) / 100, 0, 1) },
+      angle: runAngle,
+      jitter: { size: 0.3, opacity: 0.4, angle: 0.2, hue: 5, sat: 0.05, lum: 0.05, position: 0.5 },
+    }),
+    {
+      coverage: 0.5,
+      passes: 1,
+      direction: runAngle,
+      patchScale: Math.max(6, maxW * 2.4),
+      targetBuildup: 0.5,
+      weight: (x, y) => Math.pow(clamp(across(x, y), 0, 1), 0.8),
+      seed: 0x5333,
+    },
+  );
+
+  // Bark: short striations parallel to the run, only where there is room.
+  if (s.bark && maxW > 3) {
+    const rnd = mulberry32((Math.round(first.x * 131 + first.y * 71) >>> 0) || 0x5444);
+    const barkBrush = brush('blade', {
+      size: Math.max(0.8, maxW * 0.1),
+      opacity: 0.2,
+      colour: { h: t.h + 6, s: clamp((t.s + 2) / 100, 0, 1), l: clamp((t.l * 0.62) / 100, 0, 1) },
+      jitter: { size: 0.4, opacity: 0.5, angle: 0.15, hue: 5, sat: 0.04, lum: 0.05, position: 0.4 },
+    });
+    for (let k = 0; k < 7; k++) {
+      const i0 = Math.floor(rnd() * Math.max(1, spine.length - 3));
+      const i1 = Math.min(spine.length - 1, i0 + 2 + Math.floor(rnd() * 4));
+      const off = (rnd() * 2 - 1) * maxW * 0.3;
+      const seg: Vec2[] = [];
+      for (let i = i0; i <= i1; i++) {
+        const p = spine[i] as Vec2;
+        const a = spine[Math.max(0, i - 1)] as Vec2;
+        const b = spine[Math.min(spine.length - 1, i + 1)] as Vec2;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const m = Math.hypot(dx, dy) || 1;
+        seg.push({ x: p.x - (dy / m) * off, y: p.y + (dx / m) * off });
+      }
+      if (seg.length > 2) {
+        stroke(surface, seg, barkBrush, { passes: 1, taper: 0.4, alpha: 0.5, seed: (k * 977) >>> 0 });
       }
     }
-    ctx.restore();
-
-    // Rim: a hairline of key colour along the lit arris.
-    if (maxW > 2.4) {
-      const litLeft = Math.sin(light.angle) < 0;
-      ctx.save();
-      traceSmooth(ctx, outline, true);
-      ctx.clip();
-      ctx.strokeStyle = light.rim;
-      ctx.globalAlpha = 0.4 * light.strength * (tier === TIER_LIT ? 1 : 0.6);
-      ctx.lineWidth = Math.max(0.5, maxW * 0.16);
-      traceSmooth(ctx, litLeft ? right : left, false);
-      ctx.stroke();
-      ctx.restore();
-    }
   }
 
-  // Pencil edge — heavier on woody branches.
-  traceSmooth(ctx, outline, true);
-  ctx.strokeStyle = ink;
-  ctx.globalAlpha = s.woody > 0.5 ? 0.5 : 0.34;
-  ctx.lineWidth = 0.75;
-  ctx.stroke();
-  ctx.restore();
+  clipToMask(surface, mask, {
+    feather: 0.9,
+    noise: Math.max(0.2, maxW * 0.05),
+    noiseScale: Math.max(5, maxW * 2.5),
+    seed: 0x5555,
+  });
+
+  // The arris: one hairline of key colour down the lit side of the cylinder.
+  if (light.strength > 0.02 && maxW > 2.4) {
+    const litFlank = ly < 0 ? right : left;
+    const flank: Vec2[] = litFlank.map((p) => ({ x: p.x + ox, y: p.y + oy }));
+    stroke(
+      surface,
+      flank,
+      brush('ink', {
+        size: Math.max(0.8, Math.min(2.4, maxW * 0.2)),
+        opacity: 0.3,
+        hardness: 0.75,
+        colour: light.rim,
+        jitter: { size: 0.4, opacity: 0.55, angle: 0.2, hue: 5, sat: 0.05, lum: 0.05, position: 0.5 },
+      }),
+      {
+        passes: 1,
+        taper: [0.2, 0.6],
+        alpha: 0.5 * light.strength * (tier === TIER_LIT ? 1 : 0.7),
+        seed: 0x5666,
+      },
+    );
+  }
+
+  edgeVary(surface, shape, {
+    crisp: 0.34,
+    lost: 0.24,
+    band: clamp(maxW * 0.28, 1.2, 3),
+    frequency: 0.5,
+    accent: ink,
+    accentStrength: s.woody > 0.5 ? 0.4 : 0.28,
+    lightAngle: light.angle,
+    softness: clamp(maxW * 0.24, 1.2, 3),
+    seed: 0x5777,
+  });
+
+  drawSurface(ctx as CanvasRenderingContext2D, surface, -ox, -oy);
 }
 
 /**
@@ -2547,100 +2872,199 @@ function drawShade(ctx: Ctx2D, sh: ShadeGeom, alpha: number, light: FloraLight):
 }
 
 /**
- * The filled body of a cushion (moss). A wobbled dome, washed with a
- * top-lit gradient and a darker skirt where it meets the surface.
+ * The filled body of a cushion (moss), painted rather than filled.
+ *
+ * Moss exposed the limits of the old fill-and-gradient approach most
+ * brutally: a gradient-washed dome with a few dots on it reads as a green
+ * bread roll, which is exactly what it looked like. Real cushion moss is a
+ * *velvet* — a mass with no hard edge anywhere, thousands of tiny shoots
+ * catching light along the crest and going near-black in the hollows.
+ *
+ * So: a sponge block-in for the body, two aimed scumbles for crest and skirt,
+ * then a scatter of sponge dabs deliberately stamped *past* the silhouette so
+ * the boundary is a fuzz of shoots rather than a line. There is no final clip
+ * — losing the outline is the entire point of the pass.
  */
 function drawMound(ctx: Ctx2D, m: MoundGeom, ink: string, light: FloraLight): void {
   if (m.rx <= 0 || m.ry <= 0) return;
+  const tier = m.tier ?? TIER_MID;
+  const dl = tier === TIER_BACK ? -14 : tier === TIER_LIT ? 4 : 0;
   const rnd = mulberry32(m.seed >>> 0);
-  const steps = 30;
-  const pts: Pt[] = [];
+  const lx = Math.cos(light.angle);
+  const ly = Math.sin(light.angle);
+
+  // Surface: the dome plus room for the fuzz to spill past it.
+  const fuzz = Math.max(3, m.ry * 0.45);
+  const pad = Math.ceil(fuzz + 4);
+  const sw = Math.ceil(m.rx * 2 + pad * 2);
+  const sh = Math.ceil(m.ry * 1.35 + pad * 2);
+  const ox = pad + m.rx; // surface x of the mound centre
+  const oy = m.up > 0 ? sh - pad : pad; // surface y of the ground line
+  const surface = createSurface(sw, sh);
+
+  // The dome outline: a lumpy half-ellipse standing on the ground line.
+  const steps = 34;
+  const dome: Vec2[] = [];
   for (let i = 0; i <= steps; i++) {
     const u = i / steps;
     const a = Math.PI * u;
-    // Lumpy crest: two low-frequency bumps plus a little grain.
     const bump =
-      1 +
-      0.13 * Math.sin(u * Math.PI * 2.7 + rnd() * 0.001) +
-      0.09 * Math.sin(u * Math.PI * 5.3 + 1.7);
-    pts.push({
-      x: m.x - Math.cos(a) * m.rx * (0.97 + 0.06 * Math.sin(u * Math.PI * 3.1)),
-      y: m.y - m.up * Math.sin(a) * m.ry * bump,
+      1 + 0.14 * Math.sin(u * Math.PI * 2.7 + m.seed * 0.001) + 0.09 * Math.sin(u * Math.PI * 5.3 + 1.7);
+    dome.push({
+      x: ox - Math.cos(a) * m.rx * (0.97 + 0.06 * Math.sin(u * Math.PI * 3.1)),
+      y: oy - m.up * Math.sin(a) * m.ry * bump,
     });
   }
-  pts.push({ x: m.x + m.rx, y: m.y });
-  pts.push({ x: m.x - m.rx, y: m.y });
+  dome.push({ x: ox + m.rx, y: oy });
+  dome.push({ x: ox - m.rx, y: oy });
 
-  const tier = m.tier ?? TIER_MID;
-  const dl = tier === TIER_BACK ? -16 : tier === TIER_LIT ? 5 : 0;
-  ctx.save();
-  traceSmooth(ctx, pts, true);
-  // Directional, not merely top-lit: the dome's key side blows out and the
-  // away side falls into the skirt shadow.
-  const lx = Math.cos(light.angle);
-  const ly = Math.sin(light.angle);
-  const g = ctx.createLinearGradient(
-    m.x + lx * m.rx * 0.9,
-    m.y - m.up * m.ry * 1.15 + ly * m.ry * 0.6,
-    m.x - lx * m.rx * 0.9,
-    m.y + m.ry * 0.3,
-  );
-  g.addColorStop(0, toneStr(m.tone, 16 + dl, -4));
-  g.addColorStop(0.45, toneStr(m.tone, dl));
-  g.addColorStop(1, toneStr(m.tone, -20 + dl, 3));
-  ctx.fillStyle = g;
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  // Mottle: patchy colonies of a slightly different green.
-  for (let i = 0; i < 7; i++) {
-    ctx.globalAlpha = 0.1 + rnd() * 0.12;
-    ctx.fillStyle = toneStr(m.tone, rnd() < 0.5 ? 12 : -14, rnd() * 10 - 4);
-    ctx.beginPath();
-    ctx.ellipse(
-      m.x + (rnd() * 2 - 1) * m.rx * 0.8,
-      m.y - m.up * rnd() * m.ry * 0.9,
-      m.rx * (0.14 + rnd() * 0.24),
-      m.ry * (0.16 + rnd() * 0.3),
-      rnd() * 2,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  // Edge darkening, clipped — the watercolour rim again.
-  traceSmooth(ctx, pts, true);
-  ctx.strokeStyle = ink;
-  ctx.globalAlpha = 0.24;
-  ctx.lineWidth = Math.max(2.5, m.ry * 0.5);
-  ctx.stroke();
-  // Skirt: a hard dark band where the cushion meets the surface.
-  ctx.globalAlpha = 0.32;
-  ctx.strokeStyle = ink;
-  ctx.lineWidth = Math.max(2, m.ry * 0.24);
-  ctx.beginPath();
-  ctx.moveTo(m.x - m.rx, m.y);
-  ctx.lineTo(m.x + m.rx, m.y);
-  ctx.stroke();
-  ctx.restore();
-  // Rim along the key edge of the crest.
+  const body: Hsl = {
+    h: m.tone.h,
+    s: clamp(m.tone.s / 100, 0, 1),
+    l: clamp((m.tone.l + dl) / 100, 0, 1),
+  };
+  const mask = blockIn(surface, dome, body, {
+    brush: brush('sponge', {
+      size: Math.max(4, m.ry * 0.42),
+      opacity: 0.34,
+      grain: 0.92,
+      hardness: 0.36,
+      spacing: 0.3,
+      scatter: 0.3,
+      colour: body,
+      jitter: { size: 0.5, opacity: 0.5, angle: 0.9, hue: 11, sat: 0.08, lum: 0.1, position: m.ry * 0.1 },
+    }),
+    valueSpread: 0.16,
+    hueSpread: 16,
+    roughness: m.ry * 0.1,
+    openness: 0.06,
+    rowFactor: 0.45,
+    feather: 2,
+    edgeNoise: m.ry * 0.1,
+    seed: (m.seed ^ 0x4d05) >>> 0,
+  });
+
+  const crestY = oy - m.up * m.ry;
   if (tier !== TIER_BACK) {
-    ctx.save();
-    traceSmooth(ctx, pts, true);
-    ctx.clip();
-    ctx.globalAlpha = 0.38 * light.strength;
-    ctx.strokeStyle = light.rim;
-    ctx.lineWidth = Math.max(1.4, m.ry * 0.14);
-    const crest = pts.slice(
-      lx >= 0 ? Math.floor(pts.length * 0.42) : 2,
-      lx >= 0 ? pts.length - 2 : Math.floor(pts.length * 0.6),
+    // Lit crest: a warmer, paler green on the key side of the dome's top.
+    scumble(
+      surface,
+      mask,
+      brush('sponge', {
+        size: Math.max(3, m.ry * 0.3),
+        opacity: 0.2,
+        grain: 0.9,
+        colour: {
+          h: m.tone.h - 6,
+          s: clamp((m.tone.s - 6) / 100, 0, 1),
+          l: clamp((m.tone.l + 17 + dl) / 100, 0, 1),
+        },
+        jitter: { size: 0.55, opacity: 0.5, angle: 1, hue: 9, sat: 0.07, lum: 0.08, position: 1.4 },
+      }),
+      {
+        coverage: 0.5,
+        passes: 2,
+        patchScale: Math.max(5, m.rx * 0.22),
+        targetBuildup: 0.55,
+        weight: (x, y) => {
+          const nx = (x - ox) / Math.max(1, m.rx);
+          const ny = (y - crestY) / Math.max(1, m.ry);
+          const face = clamp(nx * lx - ny * ly * m.up * 0.6, -1, 1);
+          const height = clamp(1 - Math.abs(y - crestY) / Math.max(1, m.ry * 1.1), 0, 1);
+          return clamp(face * 0.55 + 0.2, 0, 1) * (0.3 + 0.7 * height);
+        },
+        seed: (m.seed ^ 0x5e16) >>> 0,
+      },
     );
-    traceSmooth(ctx, crest, false);
-    ctx.stroke();
-    ctx.restore();
   }
-  ctx.restore();
+  // Skirt: the cushion goes nearly black where it meets the wood.
+  scumble(
+    surface,
+    mask,
+    brush('sponge', {
+      size: Math.max(3, m.ry * 0.34),
+      opacity: 0.24,
+      grain: 0.85,
+      colour: {
+        h: m.tone.h + 6,
+        s: clamp((m.tone.s - 4) / 100, 0, 1),
+        l: clamp((m.tone.l * 0.42 + dl) / 100, 0, 1),
+      },
+      jitter: { size: 0.5, opacity: 0.5, angle: 1, hue: 7, sat: 0.06, lum: 0.05, position: 1.2 },
+    }),
+    {
+      coverage: 0.6,
+      passes: 2,
+      patchScale: Math.max(5, m.rx * 0.2),
+      targetBuildup: 0.6,
+      weight: (_x, y) => {
+        const d = (y - oy) * -m.up; // 0 at the ground line, grows into the dome
+        return clamp(1 - d / Math.max(1, m.ry * 0.75), 0, 1);
+      },
+      seed: (m.seed ^ 0x6f27) >>> 0,
+    },
+  );
+
+  // The velvet boundary: individual shoots stamped along the crest, half of
+  // them outside the silhouette. This is what a cushion's edge actually is.
+  const shoots = Math.round(clamp(m.rx * 1.1, 20, 160));
+  const shootBrush = brush('sponge', {
+    size: Math.max(2, m.ry * 0.2),
+    opacity: 0.5,
+    grain: 0.95,
+    hardness: 0.5,
+    colour: body,
+    jitter: { size: 0.6, opacity: 0.5, angle: 1.2, hue: 12, sat: 0.09, lum: 0.12, position: 0 },
+  });
+  for (let i = 0; i < shoots; i++) {
+    const u = rnd();
+    const a = Math.PI * u;
+    const bump = 1 + 0.14 * Math.sin(u * Math.PI * 2.7) + 0.09 * Math.sin(u * Math.PI * 5.3 + 1.7);
+    const out = rnd() * fuzz * 0.9;
+    const dx = -Math.cos(a) * (m.rx + out * 0.6);
+    const dy = -m.up * (Math.sin(a) * m.ry * bump + out);
+    const face = clamp((dx / Math.max(1, m.rx)) * lx - (dy / Math.max(1, m.ry)) * ly, -1, 1);
+    dab(surface, ox + dx, oy + dy, shootBrush, {
+      size: Math.max(1.6, m.ry * (0.12 + rnd() * 0.16)),
+      opacity: (0.28 + rnd() * 0.3) * (1 - (out / (fuzz + 1)) * 0.55),
+      colour: {
+        h: m.tone.h + (rnd() * 2 - 1) * 10,
+        s: clamp((m.tone.s + (rnd() * 2 - 1) * 8) / 100, 0, 1),
+        l: clamp((m.tone.l + dl + face * 13 + (rnd() * 2 - 1) * 6) / 100, 0, 1),
+      },
+    });
+  }
+
+  // Rim along the lit crest — one thin note of key colour, nothing more.
+  if (tier !== TIER_BACK && light.strength > 0.02) {
+    const arcPts: Vec2[] = [];
+    const a0 = lx >= 0 ? 0.44 : 0.06;
+    for (let i = 0; i <= 12; i++) {
+      const u = a0 + (i / 12) * 0.5;
+      const a = Math.PI * u;
+      arcPts.push({ x: ox - Math.cos(a) * m.rx * 0.94, y: oy - m.up * Math.sin(a) * m.ry * 0.96 });
+    }
+    stroke(
+      surface,
+      arcPts,
+      brush('soft', {
+        size: Math.max(1.6, m.ry * 0.16),
+        opacity: 0.13,
+        hardness: 0.35,
+        colour: light.rim,
+        jitter: { size: 0.4, opacity: 0.5, angle: 0.3, hue: 5, sat: 0.05, lum: 0.05, position: 0.8 },
+      }),
+      {
+        passes: 1,
+        taper: 0.4,
+        alpha: 0.55 * light.strength,
+        seed: (m.seed ^ 0x7038) >>> 0,
+      },
+    );
+  }
+
+  drawSurface(ctx as CanvasRenderingContext2D, surface, m.x - ox, m.y - oy);
+  void ink;
 }
 
 function drawBloom(ctx: Ctx2D, b: BloomGeom, ink: string, light: FloraLight): void {
@@ -2800,10 +3224,13 @@ function drawPot(ctx: Ctx2D, p: PotGeom, ink: string, light: FloraLight): void {
   void light;
   // Glazed pottery, not unfired mud: these are the only saturated non-plant
   // surfaces on a shelf and they are worth the pigment.
+  // Values a stop below where they started: a pot lit as brightly as the key
+  // itself becomes the brightest object on the shelf and steals the eye from
+  // the plant growing out of it — the brass one read as a gold balloon.
   const ramp: Record<PotGeom['kind'], [string, string, string]> = {
-    terracotta: ['#d8613a', '#f08050', '#a03d1c'],
-    brass: ['#d8a52e', '#f5c95c', '#9c7010'],
-    enamel: ['#2fa8b8', '#5ecfdb', '#16707e'],
+    terracotta: ['#a8492c', '#c96a44', '#5e2412'],
+    brass: ['#9c7526', '#c99f47', '#5a3f0c'],
+    enamel: ['#237986', '#3f9ba8', '#0e4a54'],
   };
   const [a, b, c] = ramp[p.kind];
   const cx = p.x + p.w / 2;
@@ -2930,56 +3357,496 @@ interface LeafStamp {
   /** Native blade length the stamp was painted at. */
   len: number;
 }
-
-/** Native blade length per tier: heroes are painted big (crisp when lit). */
+/**
+ * Native blade length per tier. Heroes are painted big so they stay crisp
+ * when the light hits them; the silhouette tier is painted small because
+ * nothing in it is ever legible as an individual leaf.
+ */
 const STAMP_NATIVE: Record<FloraTier, number> = {
   [TIER_BACK]: 30,
   [TIER_MID]: 46,
-  [TIER_LIT]: 66,
+  [TIER_LIT]: 68,
 };
 
-const STAMP_VARIANTS = 4;
+/**
+ * Supersample factor for painting a stamp.
+ *
+ * A brush mark has a physical size. Painted at a blade's true 30px the head
+ * is a third of the blade wide, the silhouette dissolves and a leaf reads as
+ * a ball of moss — which is exactly what the first pass produced. Painted at
+ * 2.4x and blitted down, the same marks land at a believable scale *and* the
+ * downscale does the antialiasing for free, so the edge comes back.
+ */
+const STAMP_SUPERSAMPLE = 1.9;
+
+const STAMP_VARIANTS = 3;
+
+/**
+ * How many directions of key light a blade is painted for.
+ *
+ * The light is baked *into* the stamp, so a stamp is only correct for leaves
+ * pointing a particular way. Painting one stamp and reusing it at every angle
+ * is what made the old foliage read as a sheet of stickers: every blade
+ * carried its highlight on the same flank of *itself*, so the mass had no
+ * agreement about where the sun was. Six buckets is enough that the error
+ * never exceeds 45°, which is below the threshold at which a highlight on a
+ * 30px blade reads as being on the wrong side — and four is as far as the
+ * budget stretches, since every bucket multiplies the stamp cache.
+ */
+const LIGHT_BUCKETS = 4;
+
+/**
+ * The value ladder. This is the single most important table in the file.
+ *
+ * The reference painting's foliage is not "green at three opacities" — it is
+ * a near-black mass, an ordinary mid-green body, and a handful of blades that
+ * have actually been *hit* by light. Our old tiers spanned about 12 points of
+ * lightness in total and the result read as one flat green no matter how much
+ * per-leaf detail went in underneath.
+ */
+const TIER_VALUE: Record<FloraTier, { l: number; s: number }> = {
+  // Silhouette. 0.44 of the body value puts a 34%-lightness leaf at 15% —
+  // dark enough to read as a hole in the mass, not so dark it punches a
+  // literal black blob through a warm painting.
+  [TIER_BACK]: { l: 0.42, s: 0.78 },
+  [TIER_MID]: { l: 0.86, s: 1 },
+  [TIER_LIT]: { l: 1.12, s: 1.05 },
+};
+
+interface LeafStamp {
+  c: Canvas2D;
+  /** Petiole (attachment) point inside the stamp canvas. */
+  px: number;
+  py: number;
+  /** Native blade length the stamp was painted at. */
+  len: number;
+}
 
 const stampCache = new Map<string, LeafStamp[]>();
-const STAMP_CACHE_CAP = 160;
+const STAMP_CACHE_CAP = 420;
 
-/** Paint options per tier — this is where the value discipline is baked in. */
-function stampPaint(
-  tier: FloraTier,
-  tone0: Tone,
-  pale: boolean,
-  ink: string,
-  light: FloraLight,
-  len: number,
-): LeafPaint {
-  const back = tier === TIER_BACK;
-  const lit = tier === TIER_LIT;
+/** Tone → the brush engine's colour form, with a tier's value applied. */
+function tierColour(t: Tone, tier: FloraTier, dl = 0, ds = 0, dh = 0): Hsl {
+  const v = TIER_VALUE[tier];
   return {
-    fillBase: back ? toneStr(tone0, -12, -10) : toneStr(tone0),
-    // The tip catches light: LIGHTER but no less saturated. Bleeding
-    // saturation out of the gradient is what turns a leaf into a faded
-    // pressed specimen.
-    fillTip: back ? toneStr(tone0, -4, -10) : toneStr(tone0, lit ? 15 : 11, 3),
-    ink,
-    vein: back ? toneStr(tone0, -8, -6) : toneStr(tone0, -16, 8),
-    lineWidth: clamp(len * 0.045, 0.5, 1.3),
-    // Variegation is a *pattern on* the leaf, not a different leaf colour.
-    variegation: pale ? toneStr(tone0, 27, -19) : undefined,
-    sheen: toneStr(tone0, 22, 0),
-    shade: toneStr(tone0, -22, -4),
-    lightAngle: light.angle,
-    rim: back ? undefined : light.rim,
-    rimStrength: (lit ? 0.85 : 0.38) * light.strength,
-    specular: lit ? hsl(48, 70, 96, 0.5) : undefined,
-    translucent: lit ? toneStr(tone0, 26, 16, 0.5) : undefined,
-    mottle: back ? 0 : 0.55,
-    // The back tier is a silhouette: interior detail there is invisible at
-    // shelf scale and only costs contrast.
-    flat: back,
+    h: t.h + dh,
+    s: clamp((t.s * v.s + ds) / 100, 0, 1),
+    l: clamp((t.l * v.l + dl) / 100, 0, 1),
   };
 }
 
-/** Build (or fetch) the stamp set for one (shape, pale, tier, tone bucket). */
+/* ---------------------- the painted blade (brush.ts) ---------------------- */
+
+interface BladeSpec {
+  shape: LeafShape;
+  len: number;
+  width: number;
+  bend: number;
+  curl: number;
+  damage: number;
+  tone: Tone;
+  tier: FloraTier;
+  pale: boolean;
+  ink: string;
+  light: FloraLight;
+  /** Key direction in **blade-local** radians (blade runs along +x). */
+  keyAngle: number;
+  seed: number;
+}
+
+/**
+ * Paint one blade into its own surface with the brush engine.
+ *
+ * There is not a single `fill()` in here, and that is the point
+ * (docs/design/painted-rendering.md §1): a filled path with a gradient over it
+ * is flat by construction, and no amount of vein detail rescues it. What the
+ * eye reads as "painted" is *broken colour* — a mass laid down with crossing
+ * marks whose value and hue wander, edges that are crisp in one place and lost
+ * in another, and a lit side built by dragging a lighter colour over a darker
+ * one so the under-layer keeps showing through.
+ *
+ * The passes, in order:
+ *
+ *   1. **block-in** — the mass, in crossing chalk strokes, silhouette roughened;
+ *   2. **shadow scumble** — a cooler, darker colour dragged across the flank
+ *      facing away from the key, weighted by the local light term;
+ *   3. **lit scumble** — a warmer, lighter colour on the key flank, biased
+ *      toward the tip (the part of a blade that actually catches sun);
+ *   4. **glazes** — one cool multiply in the shadow, one warm pass in the
+ *      light, which is what makes a hundred separately-painted leaves agree
+ *      they are in the same room;
+ *   5. **venation** — a dark midrib with a pale halo either side, then
+ *      secondaries, all as tapered strokes;
+ *   6. **variegation** — pale patches for pothos and friends;
+ *   7. **rim** — a hairline of key colour along the lit margin, then the whole
+ *      surface re-clipped so nothing haloes outside the blade;
+ *   8. **edge variation** — a handful of crisp edges, the rest dissolved.
+ *
+ * The silhouette tier stops after pass 1: it is a shape, not a leaf, and
+ * every pass after the block-in only costs contrast and time.
+ */
+function paintBlade(spec: BladeSpec): { surface: Surface; px: number; py: number } {
+  const { shape, len, width, tier, tone: t0, light } = spec;
+  const back = tier === TIER_BACK;
+  const lit = tier === TIER_LIT;
+  const rnd = mulberry32(spec.seed >>> 0);
+  // A strap or a needle is nearly all edge. Roughening a silhouette that is
+  // 12px across by a fixed fraction of its *width* scallops it into a
+  // bottlebrush, and the interior passes have nowhere to land — so narrow
+  // blades get a quieter treatment across the board.
+  const narrow = width < 26;
+
+  const geo: LeafGeometryOptions = {
+    shape,
+    len,
+    width,
+    bend: spec.bend,
+    curl: spec.curl,
+    damage: spec.damage,
+    jitter: clamp(len * 0.02, 0.15, 0.7),
+    seed: spec.seed,
+    steps: len > 34 ? 26 : len > 16 ? 20 : 14,
+    lobes: shape === 'palmate' ? 2.5 : undefined,
+  };
+  const outline = leafOutline(geo);
+
+  // Surface big enough for the blade plus the brush overshoot at its edges.
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of outline) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const pad = Math.max(5, width * 0.16);
+  const px = -minX + pad;
+  const py = -minY + pad;
+  const sw = Math.ceil(maxX - minX + pad * 2);
+  const sh = Math.ceil(maxY - minY + pad * 2);
+  const surface = createSurface(sw, sh);
+
+  const shape2: Vec2[] = outline.map((p) => ({ x: p.x + px, y: p.y + py }));
+  const axis: Vec2[] = leafAxis(geo).map((p) => ({ x: p.x + px, y: p.y + py }));
+
+  // Light term in blade-local space: +1 on the flank facing the key.
+  const lx = Math.cos(spec.keyAngle);
+  const ly = Math.sin(spec.keyAngle);
+  const cx = px + len * 0.45;
+  const cy = py;
+  const half = Math.max(2, width * 0.5);
+  /** −1 (deep shade) … +1 (facing the key), per surface pixel. */
+  const lightAt = (x: number, y: number): number =>
+    clamp(((x - cx) * lx + (y - cy) * ly) / (half * 1.05), -1, 1);
+
+  /* -- 1. block-in --------------------------------------------------------- */
+  const body = tierColour(t0, tier);
+  const mask = blockIn(surface, shape2, body, {
+    direction: Math.atan2(spec.bend, len),
+    // Head sized against the blade's *short* axis. A leaf has to survive as a
+    // silhouette first and a texture second: at a quarter of the blade width
+    // the marks are visible without eating the shape.
+    brush: brush(back ? 'chalk' : 'chalk', {
+      size: Math.max(3.5, width * (back ? 0.3 : 0.24)),
+      opacity: back ? 0.6 : 0.5,
+      grain: back ? 0.72 : 0.58,
+      hardness: back ? 0.55 : 0.52,
+      spacing: 0.17,
+      colour: body,
+      jitter: {
+        size: 0.26,
+        opacity: 0.34,
+        angle: 0.45,
+        hue: back ? 4 : 9,
+        sat: 0.06,
+        lum: back ? 0.035 : 0.075,
+        position: Math.max(0.3, width * 0.018),
+      },
+    }),
+    valueSpread: back ? 0.06 : 0.16,
+    hueSpread: back ? 6 : 18,
+    roughness: narrow ? Math.max(0.2, width * 0.006) : Math.max(0.3, width * 0.016),
+    // Openness and row spacing decide whether you can see the marks at all.
+    // Below ~0.35 rows every pixel gets so many overlapping stamps that the
+    // jitter averages out and the blade turns into airbrush — which is what
+    // the first inspection board showed: velvet, not paint.
+    openness: back ? 0.02 : narrow ? 0.03 : 0.07,
+    rowFactor: narrow ? 0.4 : 0.58,
+    feather: 0.9,
+    edgeNoise: narrow ? Math.max(0.15, width * 0.005) : Math.max(0.25, width * 0.014),
+    seed: (spec.seed ^ 0x51a3) >>> 0,
+  });
+
+  if (back) {
+    // Silhouette tier: a faint cool glaze to sink it, a whisper of the rim so
+    // the mass still has a top edge, and out. Everything else is invisible at
+    // this value and costs only time.
+    glaze(surface, mask, light.fill, 0.09 * light.occlusion, {
+      blend: 'multiply',
+      mottle: 0.2,
+      mottleScale: Math.max(8, len * 0.4),
+      seed: (spec.seed ^ 0x2b17) >>> 0,
+    });
+    clipToMask(surface, mask, {
+      feather: 1,
+      noise: Math.max(0.25, width * 0.012),
+      noiseScale: Math.max(5, len * 0.22),
+      seed: (spec.seed ^ 0x66fa) >>> 0,
+    });
+    return { surface, px, py };
+  }
+
+  /* -- 2. shadow flank ----------------------------------------------------- */
+  const shadeCol = tierColour(t0, tier, -13, -3, -6);
+  scumble(
+    surface,
+    mask,
+    brush('bristle', {
+      size: Math.max(3, width * 0.3),
+      opacity: 0.2,
+      grain: 0.55,
+      colour: shadeCol,
+      jitter: { size: 0.4, opacity: 0.45, angle: 0.6, hue: 7, sat: 0.05, lum: 0.05, position: 1 },
+    }),
+    {
+      coverage: 0.62,
+      passes: 2,
+      patchScale: Math.max(6, len * 0.28),
+      targetBuildup: 0.62,
+      direction: Math.atan2(spec.bend, len),
+      // Deepest at the petiole end of the shaded flank: a blade is darkest
+      // where it tucks back under the mass it grew out of.
+      weight: (x, y) => {
+        const s = clamp(-lightAt(x, y), 0, 1);
+        const along = clamp(1.12 - (x - px) / Math.max(1, len), 0, 1);
+        return s * (0.45 + 0.55 * along);
+      },
+      seed: (spec.seed ^ 0x77c1) >>> 0,
+    },
+  );
+
+  /* -- 3. lit flank -------------------------------------------------------- */
+  const litCol = tierColour(t0, tier, lit ? 19 : 13, lit ? 2 : -1, lit ? 5 : 3);
+  scumble(
+    surface,
+    mask,
+    brush('flat', {
+      size: Math.max(3, width * 0.26),
+      opacity: 0.17,
+      grain: 0.42,
+      colour: litCol,
+      angle: Math.atan2(spec.bend, len),
+      jitter: { size: 0.35, opacity: 0.4, angle: 0.35, hue: 6, sat: 0.05, lum: 0.06, position: 0.9 },
+    }),
+    {
+      coverage: lit ? 0.58 : 0.34,
+      passes: 2,
+      patchScale: Math.max(5, len * 0.22),
+      targetBuildup: lit ? 0.6 : 0.36,
+      direction: Math.atan2(spec.bend, len),
+      weight: (x, y) => {
+        const s = clamp(lightAt(x, y), 0, 1);
+        const along = clamp((x - px) / Math.max(1, len), 0, 1);
+        return Math.pow(s, 0.8) * (0.35 + 0.65 * along);
+      },
+      seed: (spec.seed ^ 0x1f5d) >>> 0,
+    },
+  );
+
+  /* -- 4. unifying glazes -------------------------------------------------- */
+  glaze(surface, mask, light.fill, 0.16 * light.occlusion, {
+    blend: 'multiply',
+    mottle: 0.24,
+    mottleScale: Math.max(7, len * 0.35),
+    gradient: (x, y) => clamp(-lightAt(x, y) * 0.9 + 0.12, 0, 1),
+    seed: (spec.seed ^ 0x3ae9) >>> 0,
+  });
+  if (lit) {
+    // Sun through the blade: a warm pass near the tip, on the key side only.
+    glaze(surface, mask, light.key, 0.22 * light.strength, {
+      blend: 'softlight',
+      mottle: 0.3,
+      mottleScale: Math.max(6, len * 0.3),
+      gradient: (x, y) =>
+        clamp(lightAt(x, y) * 0.7 + 0.3, 0, 1) * clamp((x - px) / Math.max(1, len * 0.9), 0, 1),
+      seed: (spec.seed ^ 0x60b4) >>> 0,
+    });
+  }
+
+  /* -- 5. venation --------------------------------------------------------- */
+  if (len >= 17 && shape !== 'needle' && shape !== 'round') {
+    const veinDark = tierColour(t0, tier, -16, 4, -4);
+    const veinPale = tierColour(t0, tier, lit ? 24 : 17, -6, 4);
+    // Pale halo first, then the dark rib over its centre — a rib drawn as one
+    // dark line reads as a scratch; real venation is a valley with lit sides.
+    stroke(surface, axis, brush('soft', {
+      size: Math.max(1.6, width * 0.11),
+      opacity: 0.1,
+      hardness: 0.3,
+      colour: veinPale,
+      jitter: { size: 0.2, opacity: 0.3, angle: 0.2, hue: 4, sat: 0.03, lum: 0.05, position: 0.5 },
+    }), {
+      passes: 1,
+      taper: [0.06, 0.55],
+      alpha: 0.7,
+      seed: (spec.seed ^ 0x11ab) >>> 0,
+    });
+    stroke(surface, axis, brush('blade', {
+      size: Math.max(1, width * 0.05),
+      opacity: 0.3,
+      colour: veinDark,
+      jitter: { size: 0.25, opacity: 0.35, angle: 0.15, hue: 4, sat: 0.03, lum: 0.04, position: 0.3 },
+    }), {
+      passes: 1,
+      taper: [0.05, 0.75],
+      alpha: 0.75,
+      seed: (spec.seed ^ 0x22bc) >>> 0,
+    });
+    const secondaries = len > 40 ? 4 : len > 26 ? 3 : 2;
+    const vb = brush('blade', {
+      size: Math.max(0.9, width * 0.035),
+      opacity: 0.22,
+      colour: veinDark,
+      jitter: { size: 0.3, opacity: 0.4, angle: 0.2, hue: 4, sat: 0.03, lum: 0.04, position: 0.4 },
+    });
+    for (const v of leafVeins(geo, secondaries)) {
+      stroke(surface, v.map((p) => ({ x: p.x + px, y: p.y + py })), vb, {
+        passes: 1,
+        taper: [0.1, 0.8],
+        alpha: 0.55,
+        seed: (spec.seed ^ (0x33cd + v.length * 977)) >>> 0,
+      });
+    }
+  }
+
+  /* -- 6. variegation ------------------------------------------------------ */
+  if (spec.pale) {
+    scumble(
+      surface,
+      mask,
+      brush('sponge', {
+        size: Math.max(3, width * 0.28),
+        opacity: 0.26,
+        grain: 0.7,
+        colour: tierColour(t0, tier, 15, -14, 6),
+        jitter: { size: 0.5, opacity: 0.4, angle: 0.7, hue: 8, sat: 0.05, lum: 0.04, position: 1.2 },
+      }),
+      {
+        coverage: 0.26,
+        passes: 1,
+        patchScale: Math.max(4, len * 0.2),
+        targetBuildup: 0.5,
+        threshold: 0.62,
+        seed: (spec.seed ^ 0x44de) >>> 0,
+      },
+    );
+  }
+
+  /* -- 7. rim light -------------------------------------------------------- */
+  if (light.strength > 0.02) {
+    // The lit margin is whichever half of the outline the key vector points
+    // into. `outline` runs petiole → tip along the +normal flank, then back.
+    const halfN = Math.floor(shape2.length / 2);
+    const litNear = ly > 0;
+    const edge = litNear ? shape2.slice(0, halfN) : shape2.slice(halfN);
+    const a0 = Math.floor(edge.length * 0.16);
+    const a1 = Math.floor(edge.length * 0.9);
+    const seg = edge.slice(a0, a1);
+    if (seg.length > 3) {
+      // Two strokes: a soft wide halo just inside the margin so the edge
+      // glows, then a thin hot core on top. One thin line alone disappeared
+      // the moment the stamp was blitted down to shelf scale — which is
+      // exactly what happened, and the rim light was the whole point.
+      stroke(surface, seg, brush('soft', {
+        // Tight. At a fifth of the blade width this halo washed a pale slash
+        // clear across the leaf *face*, which reads as damage, not as light.
+        size: clamp(width * 0.1, 1.6, 4.5),
+        opacity: 0.11,
+        hardness: 0.42,
+        colour: light.rim,
+        jitter: { size: 0.3, opacity: 0.5, angle: 0.2, hue: 5, sat: 0.05, lum: 0.05, position: 0.4 },
+      }), {
+        passes: 1,
+        taper: [0.3, 0.35],
+        pressure: PRESSURE.arc,
+        alpha: (lit ? 0.9 : 0.34) * light.strength,
+        seed: (spec.seed ^ 0x54ee) >>> 0,
+      });
+      stroke(surface, seg, brush('ink', {
+        size: clamp(width * 0.05, 1, 2.6),
+        opacity: 0.6,
+        hardness: 0.88,
+        colour: light.rim,
+        jitter: { size: 0.35, opacity: 0.45, angle: 0.2, hue: 5, sat: 0.06, lum: 0.05, position: 0.35 },
+      }), {
+        passes: 1,
+        taper: [0.35, 0.4],
+        pressure: PRESSURE.arc,
+        // The mid tier is the *body* of the mass. Rim-lighting all of it
+        // strongly is how a canopy ends up looking frosted: only the blades
+        // actually standing proud of the silhouette should catch the key.
+        alpha: (lit ? 1 : 0.34) * light.strength,
+        seed: (spec.seed ^ 0x55ef) >>> 0,
+      });
+    }
+    // A hot specular catch on the heroes only — the brightest note on the plant.
+    if (lit) {
+      const sx = px + len * 0.5 + lx * half * 0.42;
+      const sy = py + spec.bend * 0.4 + ly * half * 0.42;
+      dab(surface, sx, sy, brush('soft', {
+        size: Math.max(3, len * 0.2),
+        opacity: 0.16 * light.strength,
+        hardness: 0.22,
+        colour: light.rim,
+        jitter: { size: 0, opacity: 0, angle: 0, hue: 0, sat: 0, lum: 0, position: 0 },
+      }));
+    }
+  }
+
+  // Everything since the block-in was free to spill; pull it all back inside
+  // the silhouette, with a noisy boundary so the edge is never a vector path.
+  clipToMask(surface, mask, {
+    feather: 0.95,
+    noise: Math.max(0.25, width * 0.012),
+    noiseScale: Math.max(5, len * 0.22),
+    seed: (spec.seed ^ 0x66fa) >>> 0,
+  });
+
+  /* -- 8. edge variation --------------------------------------------------- */
+  edgeVary(surface, shape2, {
+    // Crisp where the light hits, lost in the shade — the reference painting's
+    // leaves have maybe two hard edges each and the rest melt into the mass.
+    //
+    // `lost` is the dangerous knob at this size. At 0.42 nearly half of a
+    // 30px blade's outline dissolved and the leaf stopped being a leaf; the
+    // treated band has to stay a small fraction of the short axis too.
+    crisp: lit ? 0.4 : 0.3,
+    lost: lit ? 0.2 : 0.24,
+    band: clamp(width * 0.05, 1.2, 3.2),
+    frequency: 0.7,
+    accent: tierColour(t0, tier, -20, 6, -8),
+    accentStrength: lit ? 0.45 : 0.34,
+    lightAngle: spec.keyAngle,
+    softness: clamp(width * 0.05, 1.2, 3),
+    seed: (spec.seed ^ 0x77ab) >>> 0,
+  });
+
+  void rnd;
+  return { surface, px, py };
+}
+
+/** Blade-local key direction for a leaf pointing `worldAngle`, bucketed. */
+function lightBucket(worldAngle: number, flip: boolean, light: FloraLight): number {
+  // A flipped stamp is mirrored across its own axis at draw time, so the light
+  // has to be mirrored with it or half the plant lights from the wrong side.
+  const local = (light.angle - worldAngle) * (flip ? -1 : 1);
+  const norm = ((local % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  return Math.round((norm / (Math.PI * 2)) * LIGHT_BUCKETS) % LIGHT_BUCKETS;
+}
+
+/** Build (or fetch) the stamp set for one (shape, pale, tier, tone, key). */
 function leafStamps(
   shape: LeafShape,
   pale: boolean,
@@ -2987,76 +3854,423 @@ function leafStamps(
   tone0: Tone,
   ink: string,
   light: FloraLight,
+  bucket: number,
 ): LeafStamp[] {
   // Quantize the tone so per-leaf jitter doesn't fragment the cache: leaves
-  // within ~6°/8%/8% of each other share stamps, and the variants +
-  // transforms supply the visible variety.
+  // within ~7°/9%/9% of each other share stamps, and the variants, the light
+  // buckets and the instance transforms supply the visible variety.
   const q = (v: number, step: number): number => Math.round(v / step);
   const key = [
     shape,
     pale ? 1 : 0,
     tier,
-    q(tone0.h, 6),
-    q(tone0.s, 8),
-    q(tone0.l, 8),
+    q(tone0.h, 7),
+    q(tone0.s, 9),
+    q(tone0.l, 9),
+    bucket,
     ink,
-    light.angle.toFixed(2),
+    light.rim,
+    light.strength.toFixed(2),
   ].join('|');
   const hit = stampCache.get(key);
   if (hit) return hit;
 
-  const len = STAMP_NATIVE[tier];
+  const len = STAMP_NATIVE[tier] * STAMP_SUPERSAMPLE;
   const width = Math.max(3, len * shapeAspect(shape));
-  const paint = stampPaint(tier, tone0, pale, ink, light, len);
+  const keyAngle = (bucket / LIGHT_BUCKETS) * Math.PI * 2;
   const rnd = mulberry32(fnv1a(key));
   const stamps: LeafStamp[] = [];
+  // Stamps are painted supersampled and blitted down, so the finest half of
+  // the texture the brush engine would lay is thrown away by the downscale
+  // anyway. Halving the stamp budget for this stretch buys most of the bake
+  // time back and costs nothing you can see. Values are preserved — the
+  // engine raises per-stamp opacity to compensate.
+  const q0 = getPaintQuality();
+  setPaintQuality(q0 * 0.5);
   for (let v = 0; v < STAMP_VARIANTS; v++) {
-    const bend = (rnd() * 2 - 1) * len * 0.16;
-    const curl = rnd() < 0.35 ? rnd() * 0.3 : 0;
-    const damage = rnd() < 0.3 ? 0.12 + rnd() * 0.3 : 0;
-    const seed = (rnd() * 0xffffffff) >>> 0;
-    const padX = 7;
-    const padY = 7 + Math.abs(bend);
-    const w = Math.ceil(len * 1.28 + padX * 2);
-    const h = Math.ceil(width + padY * 2);
-    const c = makeCanvas(w, h);
+    const painted = paintBlade({
+      shape,
+      len,
+      width,
+      bend: (rnd() * 2 - 1) * len * 0.15,
+      // The instance carries curl/damage as *character*; the variants only
+      // need enough spread that four blades in a row are not the same blade.
+      curl: 0,
+      damage: rnd() < 0.3 ? 0.12 + rnd() * 0.28 : 0,
+      tone: tone0,
+      tier,
+      pale,
+      ink,
+      light,
+      keyAngle,
+      seed: (rnd() * 0xffffffff) >>> 0,
+    });
+    const c = makeCanvas(painted.surface.width, painted.surface.height);
     const ctx = get2d(c);
-    const px = padX + len * 0.14;
-    const py = h / 2;
-    ctx.translate(px, py);
-    drawLeaf(
-      ctx,
-      {
-        shape,
-        len,
-        width,
-        bend,
-        curl,
-        jitter: clamp(len * 0.028, 0.2, 0.9),
-        seed,
-        damage,
-        lobes: shape === 'palmate' ? 2.5 : undefined,
-      },
-      paint,
-    );
-    stamps.push({ c, px, py, len });
+    ctx.putImageData(surfaceToImageData(painted.surface), 0, 0);
+    stamps.push({ c, px: painted.px, py: painted.py, len });
   }
+  setPaintQuality(q0);
   if (stampCache.size > STAMP_CACHE_CAP) stampCache.clear();
   stampCache.set(key, stamps);
   return stamps;
 }
 
-/** Instance one leaf: a single transformed blit from the stamp cache. */
+/**
+ * Instance one leaf: a single transformed blit from the stamp cache.
+ *
+ * `curl` is applied here rather than baked, as a lateral squash of the blit —
+ * a rolled leaf presents a narrower silhouette to the viewer, which is exactly
+ * a scale on the blade's short axis, and doing it at instance time means one
+ * cached stamp serves both the fresh and the tired version of a blade.
+ */
 function drawLeafInstance(ctx: Ctx2D, l: LeafInstance, ink: string, light: FloraLight): void {
-  const stamps = leafStamps(l.shape, l.pale, l.tier, l.tone, ink, light);
-  const s = stamps[l.stamp % stamps.length] as LeafStamp;
+  const bucket = lightBucket(l.angle, l.flip, light);
+  const atom = atomFor(l);
+  const s = atom
+    ? atomStamp(atom, l.tone, l.tier, light, bucket)
+    : (leafStamps(l.shape, l.pale, l.tier, l.tone, ink, light, bucket)[
+        l.stamp % STAMP_VARIANTS
+      ] as LeafStamp);
+  if (!s) return;
   const k = l.len / s.len;
   ctx.save();
   ctx.translate(l.x, l.y);
   ctx.rotate(l.angle);
   if (l.flip) ctx.scale(1, -1);
+  if (l.curl > 0.02) ctx.scale(1, 1 - clamp(l.curl, 0, 0.6) * 0.55);
   ctx.drawImage(s.c as CanvasImageSource, -s.px * k, -s.py * k, s.c.width * k, s.c.height * k);
   ctx.restore();
+}
+
+/* ========================= generated foliage atoms ========================= */
+
+/**
+ * The alternative to painting a blade: composite a *generated* one.
+ *
+ * `assets/atoms/` holds 16 transparent foliage cut-outs produced by the local
+ * SDXL pipeline (see docs/design/generated-assets.md) — rose leaves, fern
+ * leaflets, grass blades, daisies, a berry sprig. They are real painted
+ * botanical material, which is more than any procedure will ever be.
+ *
+ * They are also, as generated, unusable raw:
+ *
+ *   - they sit at one fixed value key (bright, high-key, ink-outlined), so
+ *     dropping them into a shelf lit from the upper right gives every leaf a
+ *     highlight in the same place regardless of which way it points;
+ *   - most carry a pale halo where the background was cut away, which reads as
+ *     a white fringe against near-black wood;
+ *   - their colour is fixed, so a theme that repaints the planting teal has no
+ *     effect on them at all.
+ *
+ * So an atom is never blitted as-is. It goes through `atomStamp`, which crops
+ * it to its real content, strips the halo, and **re-lights it**: every pixel's
+ * luminance is remapped into the depth tier's value band and its hue/sat are
+ * pulled toward the species tone, with a directional lift on the key side. The
+ * source image contributes its *drawing* — the venation, the margin, the shape
+ * of a real leaf — and the scene contributes the light and the palette.
+ */
+
+/** An atom the caller has decoded and handed us. */
+export interface FloraAtomImage {
+  image: CanvasImageSource;
+  width: number;
+  height: number;
+}
+
+/**
+ * Which leaf shapes an atom family can stand in for. Anything not listed here
+ * has no generated equivalent and always paints procedurally.
+ */
+const ATOM_FAMILIES: Record<string, readonly LeafShape[]> = {
+  // Only `rose-leaf` maps. The comparison board (prototypes/flora,
+  // `atoms-vs-painted`) settled this: the fern and grass cut-outs are whole
+  // *compositions* — a complete frond, a bundle of blades — not single
+  // organs, so instancing one per leaf node builds fronds out of fronds and
+  // grass tufts out of grass tufts. The result is recursive and wrong at
+  // every scale. Their right use is as an entire specimen, not as a blade.
+  'rose-leaf': ['serrate', 'oval', 'heart'],
+};
+
+const atomImages = new Map<string, FloraAtomImage>();
+const atomsByShape = new Map<LeafShape, string[]>();
+
+/**
+ * How the renderer uses the generated cut-outs.
+ *
+ *  - `off`  — procedural blades only (the default; nothing depends on assets
+ *             having been generated on this machine);
+ *  - `mix`  — a fraction of blades in a supported family come from atoms, so
+ *             a mass mixes generated and painted leaves;
+ *  - `only` — every blade with a generated equivalent uses one.
+ */
+export type FloraAtomMode = 'off' | 'mix' | 'only';
+
+let atomMode: FloraAtomMode = 'off';
+let atomMixRatio = 0.45;
+
+export function setFloraAtomMode(mode: FloraAtomMode, mixRatio = 0.45): void {
+  atomMode = mode;
+  atomMixRatio = clamp(mixRatio, 0, 1);
+  atomStampCache.clear();
+}
+
+export function getFloraAtomMode(): FloraAtomMode {
+  return atomMode;
+}
+
+/**
+ * Hand the renderer decoded atom images, keyed by their file stem
+ * (`rose-leaf-v1-3`). Safe to call again; it replaces the registry.
+ */
+export function registerFloraAtoms(atoms: Record<string, FloraAtomImage>): void {
+  atomImages.clear();
+  atomsByShape.clear();
+  atomStampCache.clear();
+  for (const [name, img] of Object.entries(atoms)) {
+    atomImages.set(name, img);
+    for (const [family, shapes] of Object.entries(ATOM_FAMILIES)) {
+      if (!name.startsWith(family)) continue;
+      for (const shape of shapes) {
+        const list = atomsByShape.get(shape);
+        if (list) list.push(name);
+        else atomsByShape.set(shape, [name]);
+      }
+    }
+  }
+  for (const list of atomsByShape.values()) list.sort();
+}
+
+/** Registered atom names, sorted. For the prototype boards. */
+export function floraAtomNames(): string[] {
+  return [...atomImages.keys()].sort();
+}
+
+interface AtomStamp {
+  c: Canvas2D;
+  px: number;
+  py: number;
+  /** Native blade length (the cropped content's long axis). */
+  len: number;
+}
+
+const atomStampCache = new Map<string, AtomStamp>();
+const ATOM_CACHE_CAP = 260;
+
+/**
+ * Crop, de-halo and re-light one atom into a stamp with the same contract as
+ * a painted one: petiole at (px, py), blade running along +x, `len` px long.
+ */
+function atomStamp(
+  name: string,
+  tone0: Tone,
+  tier: FloraTier,
+  light: FloraLight,
+  bucket: number,
+): AtomStamp | null {
+  const src = atomImages.get(name);
+  if (!src) return null;
+  const q = (v: number, step: number): number => Math.round(v / step);
+  const key = [name, tier, q(tone0.h, 7), q(tone0.s, 9), q(tone0.l, 9), bucket, light.rim].join('|');
+  const hit = atomStampCache.get(key);
+  if (hit) return hit;
+
+  // 1. Read the source at a working size — big enough to stay crisp on a hero
+  //    blade, small enough that the per-pixel pass is cheap.
+  const long = Math.max(src.width, src.height);
+  const k = Math.min(1, 190 / Math.max(1, long));
+  const w = Math.max(2, Math.round(src.width * k));
+  const h = Math.max(2, Math.round(src.height * k));
+  const work = makeCanvas(w, h);
+  const wctx = get2d(work);
+  wctx.drawImage(src.image, 0, 0, w, h);
+  const img = wctx.getImageData(0, 0, w, h);
+  const d = img.data;
+
+  // 2. De-halo + crop. The cut-outs carry a pale fringe where the background
+  //    was removed; it is low-alpha, near-white and desaturated, so it can be
+  //    identified and dissolved without touching the leaf itself.
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const a = d[i + 3]! / 255;
+      if (a <= 0.02) continue;
+      const r = d[i]! / 255;
+      const g = d[i + 1]! / 255;
+      const b = d[i + 2]! / 255;
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const sat = mx <= 0 ? 0 : (mx - mn) / mx;
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (sat < 0.14 && lum > 0.78) {
+        // Halo: fade it out rather than cutting, so the margin stays soft.
+        const kill = clamp((lum - 0.78) / 0.16, 0, 1) * clamp(1 - sat / 0.14, 0, 1);
+        d[i + 3] = Math.round(d[i + 3]! * (1 - kill));
+        if (d[i + 3]! / 255 <= 0.04) continue;
+      }
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < minX || maxY < minY) return null;
+
+  // 3. Re-light. Luminance drives everything: it carries the drawing (veins,
+  //    margin, the modelling the generator painted) and nothing else survives
+  //    the palette swap intact.
+  const v = TIER_VALUE[tier];
+  const targetL = clamp((tone0.l * v.l) / 100, 0.02, 0.96);
+  const band = tier === TIER_BACK ? 0.16 : tier === TIER_LIT ? 0.4 : 0.3;
+  const lo = clamp(targetL - band * 0.62, 0.01, 0.97);
+  const hi = clamp(targetL + band * 0.55, 0.02, 0.99);
+  const targetS = clamp((tone0.s * v.s) / 100, 0, 1);
+  // The key direction in blade-local space, so the atom at least agrees with
+  // the rest of the shelf about which side of itself is lit.
+  const keyAngle = (bucket / LIGHT_BUCKETS) * Math.PI * 2;
+  const klx = Math.cos(keyAngle);
+  const kly = Math.sin(keyAngle);
+  const rim = parseColour(light.rim);
+  const cw = maxX - minX + 1;
+  const ch = maxY - minY + 1;
+  const out = makeCanvas(cw, ch);
+  const octx = get2d(out);
+  const oimg = octx.createImageData(cw, ch);
+  const od = oimg.data;
+  const ccx = cw / 2;
+  const ccy = ch / 2;
+  const rad = Math.max(1, Math.hypot(cw, ch) * 0.5);
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const si = ((y + minY) * w + (x + minX)) * 4;
+      const oi = (y * cw + x) * 4;
+      const a = d[si + 3]!;
+      if (a <= 4) continue;
+      const r = d[si]! / 255;
+      const g = d[si + 1]! / 255;
+      const b = d[si + 2]! / 255;
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const sat = mx <= 0 ? 0 : (mx - mn) / mx;
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      // Directional lift: the half of the blade facing the key gets warmer
+      // and lighter, the other half sinks. Without it the generated highlight
+      // sits wherever the model happened to put it.
+      const face = clamp((((x - ccx) * klx + (y - ccy) * kly) / rad) * 1.15, -1, 1);
+      const shaped = clamp(Math.pow(lum, 0.86) + face * (tier === TIER_BACK ? 0.05 : 0.16), 0, 1);
+      const l = lo + (hi - lo) * shaped;
+      // Keep a memory of the source's own saturation so a pale vein stays pale.
+      const s = clamp(targetS * (0.5 + 0.75 * clamp(sat / 0.45, 0, 1)), 0, 1);
+      const c = hslToRgb({ h: tone0.h + (sat > 0.5 ? 0 : 6), s, l });
+      // A hairline of key colour where the blade is both lit and bright.
+      const rimK =
+        tier === TIER_BACK ? 0 : clamp((face - 0.45) / 0.55, 0, 1) * clamp((lum - 0.58) / 0.42, 0, 1) * 0.55 * light.strength;
+      od[oi] = Math.round(255 * clamp(c.r * (1 - rimK) + rim.r * rimK, 0, 1));
+      od[oi + 1] = Math.round(255 * clamp(c.g * (1 - rimK) + rim.g * rimK, 0, 1));
+      od[oi + 2] = Math.round(255 * clamp(c.b * (1 - rimK) + rim.b * rimK, 0, 1));
+      od[oi + 3] = a;
+    }
+  }
+  octx.putImageData(oimg, 0, 0);
+
+  // Petiole: the cut-outs are drawn tip-up or tip-right; treat the long axis
+  // as the blade and hang the stamp off the middle of its near end.
+  const landscape = cw >= ch;
+  const stamp: AtomStamp = landscape
+    ? { c: out, px: cw * 0.06, py: ch / 2, len: cw }
+    : { c: out, px: cw / 2, py: ch * 0.94, len: ch };
+  if (atomStampCache.size > ATOM_CACHE_CAP) atomStampCache.clear();
+  atomStampCache.set(key, stamp);
+  return stamp;
+}
+
+/** Should this leaf instance be drawn from a generated cut-out? */
+function atomFor(l: LeafInstance): string | null {
+  if (atomMode === 'off') return null;
+  const list = atomsByShape.get(l.shape);
+  if (!list || list.length === 0) return null;
+  if (atomMode === 'mix') {
+    // Stable per leaf: the same blade must not flicker between sources when
+    // the layer is re-baked.
+    if ((l.seed >>> 8) / 0x00ffffff > atomMixRatio) return null;
+  }
+  return list[l.seed % list.length] ?? null;
+}
+
+export interface FloraAtomDrawOptions {
+  len: number;
+  tone: Tone;
+  tier: FloraTier;
+  seed?: number;
+  flip?: boolean;
+  light?: Partial<FloraLight>;
+}
+
+/**
+ * Draw one atom at the current origin, contract-identical to `drawLeafStamp`.
+ * For the prototype boards.
+ */
+export function drawFloraAtom(ctx: Ctx2D, name: string, o: FloraAtomDrawOptions): void {
+  const light: FloraLight = o.light ? { ...activeLight, ...o.light } : activeLight;
+  const s = atomStamp(name, o.tone, o.tier, light, 0);
+  if (!s) return;
+  const k = o.len / s.len;
+  ctx.save();
+  if (o.flip) ctx.scale(1, -1);
+  ctx.drawImage(s.c as CanvasImageSource, -s.px * k, -s.py * k, s.c.width * k, s.c.height * k);
+  ctx.restore();
+}
+
+/* ------------------------- painted-blade debug API ------------------------ */
+
+export interface LeafStampOptions {
+  shape: LeafShape;
+  tier: FloraTier;
+  tone: Tone;
+  len: number;
+  pale?: boolean;
+  curl?: number;
+  damage?: number;
+  stamp?: number;
+  flip?: boolean;
+  seed?: number;
+  ink?: string;
+  light?: Partial<FloraLight>;
+}
+
+/**
+ * Paint one blade at the current origin (petiole at 0,0, blade along +x).
+ * Exists for the prototype boards: the shelf never draws a lone leaf, but the
+ * only way to judge a blade's value range and edge quality is to look at one
+ * on its own at inspection size.
+ */
+export function drawLeafStamp(ctx: Ctx2D, o: LeafStampOptions): void {
+  const light: FloraLight = o.light ? { ...activeLight, ...o.light } : activeLight;
+  drawLeafInstance(
+    ctx,
+    {
+      x: 0,
+      y: 0,
+      angle: 0,
+      len: o.len,
+      width: o.len * shapeAspect(o.shape),
+      shape: o.shape,
+      stamp: o.stamp ?? 0,
+      flip: o.flip ?? false,
+      pale: o.pale ?? false,
+      tone: o.tone,
+      tier: o.tier,
+      curl: o.curl ?? 0,
+      damage: o.damage ?? 0,
+      seed: o.seed ?? 1,
+    },
+    o.ink ?? DEFAULT_INK,
+    light,
+  );
 }
 
 /**
@@ -3225,10 +4439,7 @@ function* drawFloraGeometrySteps(
     ctx.restore();
   };
 
-  const pedicelsOf = (tier: FloraTier): ThreadGeom[] =>
-    g.clusters.flatMap((c) => tierOf(c.pedicels, tier));
-  const bloomsOf = (tier: FloraTier): BloomGeom[] =>
-    g.clusters.flatMap((c) => tierOf(c.blooms, tier));
+  const bloomsOf = (tier: FloraTier): BloomGeom[] => tierOf(g.blooms, tier);
 
   // 1. The interior mass: back mounds + back leaves, then the occlusion pass
   //    multiplied over it — the near-black heart every cluster needs.
@@ -3246,17 +4457,13 @@ function* drawFloraGeometrySteps(
   }
 
   // 2. The skeleton, over the dark mass so the vines stay visible in gaps.
-  for (const v of g.vines) {
-    drawVineRibbon(ctx, v, g.ink, light);
+  for (const v of g.stems) {
+    drawStemRibbon(ctx, v, g.ink, light);
     yield;
   }
 
   // 3. Back-tier threads + buds: the shadowed, half-hidden parts of a cluster.
   for (const t of tierOf(g.threads, TIER_BACK)) {
-    drawThread(t);
-    yield;
-  }
-  for (const t of pedicelsOf(TIER_BACK)) {
     drawThread(t);
     yield;
   }
@@ -3271,10 +4478,6 @@ function* drawFloraGeometrySteps(
     yield;
   }
   for (const t of tierOf(g.threads, TIER_MID)) {
-    drawThread(t);
-    yield;
-  }
-  for (const t of pedicelsOf(TIER_MID)) {
     drawThread(t);
     yield;
   }
@@ -3294,10 +4497,6 @@ function* drawFloraGeometrySteps(
   }
   for (const l of tierOf(g.leaves, TIER_LIT)) {
     drawLeafInstance(ctx, l, g.ink, light);
-    yield;
-  }
-  for (const t of pedicelsOf(TIER_LIT)) {
-    drawThread(t);
     yield;
   }
   for (const b of bloomsOf(TIER_LIT)) {

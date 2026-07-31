@@ -32,40 +32,50 @@
   --ink-graphite-soft: #5f5672; /* 5.60:1 */
   --ink-blue: #4e5fa0;
   --ink-blue-soft: #525f95; /* 5.00:1 */
-  --ink-accent: #b2306e; /* 4.84:1 */
+  --ink-accent: #a72963; /* 5.40:1 */
 
-  --wash-amber: #ffc14a;
-  --wash-amber-deep: #9c6608;
-  --wash-terracotta: #ff9068;
-  --wash-terracotta-deep: #bd4a1e;
-  --wash-moss: #86d55c;
-  --wash-moss-deep: #3d7f24;
-  --wash-lemon: #ffe968;
-  --wash-lemon-deep: #94800c;
-  --wash-sky: #6cc7f5;
-  --wash-sky-deep: #14769f;
-  --wash-blush: #ff9fc0;
-  --wash-blush-deep: #cf3a72;
-  --wash-plum: #c187f0;
-  --wash-plum-deep: #7739bc;
-  --wash-coral: #ff8878;
-  --wash-coral-deep: #c93a28;
-  --wash-turquoise: #4ddbcc;
-  --wash-turquoise-deep: #0e8a80;
-  --wash-violet: #9184f5;
-  --wash-violet-deep: #4834bd;
-  --wash-lime: #c8ea5e;
-  --wash-lime-deep: #74960a;
+  /* Pastel's paper is the softest of the four, so its `-deep` rung has the
+     LEAST value headroom — these are tuned down (and up in chroma) until
+     every one clears 4.5:1 as type on #f9e2ee. Sweet, never chalky. */
+  --wash-amber: #ffbb2e;
+  --wash-amber-deep: #8a5a02;
+  --wash-terracotta: #ff8452;
+  --wash-terracotta-deep: #ac3a10;
+  --wash-moss: #7bd44b;
+  --wash-moss-deep: #34701c;
+  --wash-lemon: #ffe64f;
+  --wash-lemon-deep: #857208;
+  --wash-sky: #56c2f5;
+  --wash-sky-deep: #0a6a90;
+  --wash-blush: #ff92b8;
+  --wash-blush-deep: #b3265b;
+  --wash-plum: #bb78f0;
+  --wash-plum-deep: #6d2fb4;
+  --wash-coral: #ff7a68;
+  --wash-coral-deep: #b62d1c;
+  --wash-turquoise: #33d8c7;
+  --wash-turquoise-deep: #0a7c72;
+  --wash-violet: #8578f5;
+  --wash-violet-deep: #4128b0;
+  --wash-lime: #c3e94b;
+  --wash-lime-deep: #6b8b04;
 
-  --accent: #ff5f9e;
-  --accent-deep: #cf1f6d;
-  --accent-light: #ffdcec;
-  --accent-ink: #b2306e;
-  --accent-leaf: #5cc94a;
-  --accent-sun: #ffc14a;
-  --accent-sea: #2ec2d4;
+  --accent: #ff4b93;
+  --accent-deep: #c81466;
+  --accent-light: #ffd6e8;
+  --accent-ink: #a72963;
+  --accent-leaf: #47c033;
+  --accent-sun: #ffbb2e;
+  --accent-sea: #12bcd0;
 
-  --selection-wash: rgba(255, 159, 192, 0.45);
+  /* Rose gold — pastel's foil is pinked, the way blush leaf reads over a
+     blossom ground. Same value band as the base gilt, different hue. */
+  --gilt-light: #ffdfb4;
+  --gilt: #9a6626;
+  --gilt-deep: #7a4d19;
+  --gilt-ink: #6a4116;
+
+  --selection-wash: rgba(255, 146, 184, 0.46);
 }
 
 /* Botanical — pressed-leaf paper, moss ink, greenhouse brights. */
@@ -109,13 +119,20 @@
   --wash-lime: #aede2c;
   --wash-lime-deep: #628400;
 
-  --accent: #ff6a3d;
-  --accent-deep: #b83a12;
-  --accent-light: #ffe1cf;
+  --accent: #ff5a26;
+  --accent-deep: #ad3108;
+  --accent-light: #ffdcc4;
   --accent-ink: #9c4a1f;
-  --accent-leaf: #4fbc2a;
+  --accent-leaf: #3fb417;
   --accent-sun: #ffb92e;
-  --accent-sea: #0fb2b8;
+  --accent-sea: #00a9b0;
+
+  /* Greenhouse brass — foil that has been out in the damp, pulled toward
+     olive so it belongs to the pressed-leaf ground. */
+  --gilt-light: #f2e3a0;
+  --gilt: #7d7411;
+  --gilt-deep: #635b0c;
+  --gilt-ink: #545009;
 
   --selection-wash: rgba(174, 222, 44, 0.42);
 }
@@ -200,6 +217,17 @@
   --accent-leaf-ink: #a2e87d;
   --accent-sun: #ffc233;
   --accent-sea: #35e2d0;
+  /* accent-deep is the BRIGHT rung after dark, so the label on a filled
+     accent control inverts with it: near-black wine instead of paper. */
+  --on-accent: #2a1218;
+
+  /* Foil after dark is the only thing in the room that is genuinely bright:
+     candle-lit leaf. The ramp inverts with the washes — `-deep`/`-ink` are
+     the LIGHT rungs here because they sit on the dark `-light` grounds. */
+  --gilt-light: #6b5416;
+  --gilt: #f5d271;
+  --gilt-deep: #ffeab0;
+  --gilt-ink: #fff3cf;
 
   --selection-wash: rgba(255, 226, 92, 0.3);
 
@@ -236,25 +264,25 @@
    extends the tokens.css wash family to 12 book palettes.
    -------------------------------------------------------------------------- */
 :root {
-  --wash-peach-light: #ffe7d2;
-  --wash-peach: #ffab63;
-  --wash-peach-deep: #c56a15;
+  --wash-peach-light: #ffdfc2;
+  --wash-peach: #ff9a3d;
+  --wash-peach-deep: #b25a06;
 
-  --wash-sage-light: #e4f4da;
-  --wash-sage: #8fcd78;
-  --wash-sage-deep: #47883a;
+  --wash-sage-light: #dcf3c8;
+  --wash-sage: #7ecb5e;
+  --wash-sage-deep: #3d8226;
 
-  --wash-lavender-light: #ebe3ff;
-  --wash-lavender: #b49bf5;
-  --wash-lavender-deep: #6c4fc7;
+  --wash-lavender-light: #e4d9ff;
+  --wash-lavender: #a688f5;
+  --wash-lavender-deep: #5f3ec2;
 
-  --wash-sand-light: #fdf0cd;
-  --wash-sand: #ecc75f;
-  --wash-sand-deep: #98771a;
+  --wash-sand-light: #fdecb6;
+  --wash-sand: #e8bb2f;
+  --wash-sand-deep: #8a6a04;
 
-  --wash-slate-light: #dceaf4;
-  --wash-slate: #78a9cc;
-  --wash-slate-deep: #366687;
+  --wash-slate-light: #d2e6f6;
+  --wash-slate: #5c9dcc;
+  --wash-slate-deep: #2a5f83;
 }
 
 /* ----------------------------------------------------------------------------
@@ -281,19 +309,27 @@
   height: 46px;
   display: grid;
   place-items: center;
-  color: var(--accent-ink);
+  /* A FILLED accent seal, not a pale blob: the one control that lives loose
+     on the desk should read as a wax stamp. Label/icon paints in --on-accent
+     (the token gated at 4.5:1 against --accent-deep in all four themes), and
+     a gilt hairline sits between the fill and the paper the way foil sits
+     between board and cloth. */
+  color: var(--on-accent);
   background:
     radial-gradient(
-      130% 130% at 32% 24%,
-      color-mix(in srgb, var(--accent-light) 92%, white) 0%,
-      var(--accent-light) 68%,
-      color-mix(in srgb, var(--accent) 34%, var(--accent-light)) 100%
+      118% 118% at 30% 22%,
+      color-mix(in srgb, var(--accent) 74%, white) 0%,
+      var(--accent) 24%,
+      var(--accent-deep) 74%
     );
-  border: 1.4px solid color-mix(in srgb, var(--accent-deep) 55%, transparent);
+  border: 1.4px solid var(--gilt);
   /* slightly-off circle: reads as inked, not stamped */
   border-radius: 50% 47% 52% 48% / 48% 52% 46% 54%;
-  box-shadow: var(--shadow-sm);
-  opacity: 0.92;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--gilt-light) 70%, transparent),
+    inset 0 -4px 6px -4px var(--accent-deep),
+    var(--shadow-sm);
+  opacity: 0.96;
   transition:
     transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring),
     box-shadow calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
@@ -360,9 +396,13 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   opacity: 1;
 }
 
+/* The gear is a 1.4px stroke sitting on a saturated seal, so it gets a
+   one-pixel halo in the seal's own deep pigment: the line keeps its
+   --on-accent value but stops dissolving into the mid-tone of the fill. */
 .nbs-gear-icon {
   width: 26px;
   height: 26px;
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--accent-deep) 72%, transparent));
 }
 
 @keyframes nbs-wobble {
@@ -421,8 +461,12 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
     radial-gradient(38% 26% at 82% 34%, color-mix(in srgb, var(--paper-deep) 42%, transparent) 0%, transparent 100%),
     radial-gradient(30% 22% at 14% 72%, color-mix(in srgb, var(--paper-deep) 34%, transparent) 0%, transparent 100%),
     linear-gradient(to right, color-mix(in srgb, var(--paper-deep) 55%, transparent) 0%, transparent 14px);
-  border-left: 1px solid var(--paper-edge);
-  box-shadow: var(--shadow-lg);
+  /* The sheet's spine edge: a gilt rule over the board edge, the way a
+     half-bound cover shows foil where cloth meets paper. */
+  border-left: 2px solid var(--gilt);
+  box-shadow:
+    inset 2px 0 0 color-mix(in srgb, var(--gilt-light) 55%, transparent),
+    var(--shadow-lg);
   /* Self-styled slim bar: the sheet is 3200px of content in an 800px window,
      so it MUST scroll — but the 12px global bar reads as browser chrome
      against hand-drawn paper. */
@@ -870,20 +914,46 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
    section pigment, rimmed in the deep pigment the way wet paint pools. Ink
    stays --ink-sepia, so the win is FILL + WEIGHT + TILT, never contrast. */
 .nbs-seg-chip[aria-pressed='true'] {
+  position: relative;
   color: var(--ink-sepia);
   font-weight: 700;
   background:
     radial-gradient(
       120% 130% at 30% 18%,
       color-mix(in srgb, var(--sec-light) 88%, white) 0%,
-      color-mix(in srgb, var(--sec) 46%, var(--sec-light)) 100%
+      color-mix(in srgb, var(--sec) 62%, var(--sec-light)) 100%
     );
   border-style: solid;
-  border-color: color-mix(in srgb, var(--sec-deep) 72%, transparent);
+  border-color: color-mix(in srgb, var(--sec-deep) 80%, transparent);
+  /* Foil tooling: a gilt catch-light along the top inner edge and the deep
+     pigment pooling at the bottom — the chip reads as STAMPED, which is what
+     separates a chosen chip from a merely tinted one. */
   box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--gilt-light) 62%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--gilt) 26%, transparent),
     inset 0 -3px 4px -3px var(--sec-deep),
     var(--shadow-xs);
   transform: rotate(-1.4deg);
+}
+
+/* The chosen chip carries a gilt tick struck into the paper beside it.
+   --gilt-ink is the value foil is allowed to be TYPE at, so this stays a
+   legible mark rather than a decorative smudge. */
+.nbs-seg-chip[aria-pressed='true']::after {
+  content: '✓';
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  position: absolute;
+  right: -3px;
+  top: -6px;
+  padding: 1px 3px;
+  color: var(--gilt-ink);
+  background: var(--wash-lemon-light);
+  border: 1px solid var(--gilt);
+  border-radius: 50% 45% 52% 48% / 48% 52% 45% 55%;
+  transform: rotate(9deg);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--gilt-deep) 40%, transparent);
 }
 
 .nbs-seg-chip:active {
@@ -905,9 +975,19 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   height: 25px;
   /* uneven blob: pigment pooling toward the lower rim */
   border-radius: 47% 53% 44% 56% / 55% 46% 54% 45%;
-  background: radial-gradient(120% 120% at 32% 26%, var(--sw-light) 0%, var(--sw) 72%);
+  /* These blobs preview the pigment a NEW BOOK will wear, so the pigment has
+     to be the thing you see. The old ramp ran `-light` → base, which on night
+     (where `-light` is the dark rung) turned twelve bright paints into twelve
+     mud pies. Now it runs a white catch-light → the base at full strength →
+     the deep at the wet lower rim, identically in all four themes. */
+  background: radial-gradient(
+    82% 82% at 31% 23%,
+    color-mix(in srgb, var(--sw) 58%, white) 0%,
+    var(--sw) 44%,
+    color-mix(in srgb, var(--sw-deep) 62%, var(--sw)) 100%
+  );
   box-shadow:
-    inset 0 -3px 5px -2px var(--sw-deep),
+    inset 0 -4px 6px -2px var(--sw-deep),
     var(--shadow-xs);
   transition: transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
 }
@@ -916,10 +996,18 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   transform: scale(1.14) rotate(-4deg);
 }
 
+/* Chosen palette blob: a gilt setting rather than a dashed pencil ring. The
+   blob gains a foil bezel (gilt rim + catch-light) and keeps its own pigment,
+   so what you see is the colour you picked, mounted. */
 .nbs-swatch[aria-pressed='true'] {
-  outline: 2px dashed var(--ink-sepia);
+  outline: 2px solid var(--gilt);
   outline-offset: 2px;
-  transform: rotate(-4deg) scale(1.08);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--gilt-light) 75%, transparent),
+    inset 0 -4px 6px -2px var(--sw-deep),
+    0 0 0 4px color-mix(in srgb, var(--gilt-light) 45%, transparent),
+    var(--shadow-sm);
+  transform: rotate(-4deg) scale(1.12);
 }
 
 .nbs-swatch[data-palette='amber'] { --sw-light: var(--wash-amber-light); --sw: var(--wash-amber); --sw-deep: var(--wash-amber-deep); }

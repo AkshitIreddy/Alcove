@@ -75,20 +75,6 @@ body {
       var(--paper-vignette-deep) 100%
     );
   background-attachment: fixed;
-}
-
-/* On the shelf the Pixi world paints its own wall lighting (case glow, lamp
-   pools, wallpaper) over a semi-transparent backdrop — the CSS edge vignette
-   bled through it and double-darkened the viewport top into a stray band.
-   There the shelf keeps only the warm top glow; the vignette still deepens
-   the edges of every non-shelf surface (the open book's desk, sheets). */
-body:has(.shelf-root) {
-  background-image: radial-gradient(
-    130% 90% at 50% -10%,
-    var(--paper-glow) 0%,
-    transparent 60%
-  );
-}
 
   font-family: var(--font-body);
   font-size: var(--text-body);
@@ -98,6 +84,24 @@ body:has(.shelf-root) {
 
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* On the shelf the Pixi world paints its own wall lighting (case glow, lamp
+   pools, wallpaper) over a semi-transparent backdrop — the CSS edge vignette
+   bled through it and double-darkened the viewport top into a stray band.
+   There the shelf keeps only the warm top glow; the vignette still deepens
+   the edges of every non-shelf surface (the open book's desk, sheets).
+
+   CARE: this rule was once pasted INTO the `body` block above, which closed
+   `body` early and orphaned every type declaration after it — the whole app
+   silently fell back to the UA serif at the UA size, in the UA black. Keep
+   the two blocks separate and keep the type contract inside `body`. */
+body:has(.shelf-root) {
+  background-image: radial-gradient(
+    130% 90% at 50% -10%,
+    var(--paper-glow) 0%,
+    transparent 60%
+  );
 }
 
 /* ----------------------------------------------------------------------------

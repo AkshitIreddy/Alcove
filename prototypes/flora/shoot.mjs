@@ -29,6 +29,10 @@ await esbuild.build({
   format: 'iife',
   target: 'es2022',
   outfile: join(here, 'bundle.js'),
+  // The generated foliage cut-outs are inlined as data URIs. The harness runs
+  // over file://, where fetching a sibling .webp taints the canvas and
+  // toDataURL then throws — a data URI is same-origin and does not.
+  loader: { '.webp': 'dataurl' },
   logLevel: 'warning',
 });
 
@@ -46,6 +50,7 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto(pathToFileURL(join(here, 'index.html')).href);
 await page.waitForFunction(() => Boolean(window.__harness), null, { timeout: 15000 });
 
+page.setDefaultTimeout(180000);
 const all = await page.evaluate(() => window.__harness.list());
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : all;
 

@@ -156,10 +156,16 @@ export function leafProfile(shape: LeafShape, t: number, lobes = 2.5): number {
       return env * teeth;
     }
     case 'fan': {
-      // Ginkgo: nothing at the stalk, widest right at the tip, faint notch.
+      // Ginkgo: nothing at the stalk, widest just below the tip, faint notch.
+      //
+      // The blade still has to *close* at t=1 — an outline whose two flanks
+      // are 0.8·width apart at the last sample ends in a straight chord, which
+      // is the one silhouette a hand never draws. So the wide top edge rounds
+      // off over the last 12% instead of being cut square.
       const env = Math.pow(u, 0.62);
       const notch = 1 - 0.22 * Math.exp(-Math.pow((u - 1) * 6, 2));
-      return env * notch * 1.02;
+      const cap = u > 0.88 ? Math.sqrt(Math.max(0, 1 - Math.pow((u - 0.88) / 0.12, 2))) : 1;
+      return env * notch * cap * 1.02;
     }
     case 'strap': {
       // Long parallel-sided blade with a softly wavy margin.

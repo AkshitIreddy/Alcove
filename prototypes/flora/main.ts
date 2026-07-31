@@ -9,6 +9,7 @@
  */
 
 import { SCENES, type Scene } from './scenes';
+import { loadAtoms } from './scenes/atoms';
 
 declare global {
   interface Window {
@@ -44,14 +45,21 @@ for (const scene of SCENES) {
   bar.insertBefore(b, status);
 }
 
-window.__harness = {
-  list: () => SCENES.map((s) => s.name),
-  render: (name: string) => {
-    const scene = SCENES.find((s) => s.name === name);
-    if (!scene) throw new Error(`no scene "${name}"`);
-    return runScene(scene);
-  },
-};
+// The generated cut-outs are decoded before the harness declares itself
+// ready, so any scene can composite them without an async hop.
+void loadAtoms().then(() => {
+  window.__harness = {
+    list: () => SCENES.map((s) => s.name),
+    render: (name: string) => {
+      const scene = SCENES.find((s) => s.name === name);
+      if (!scene) throw new Error(`no scene "${name}"`);
+      return runScene(scene);
+    },
+  };
+  status.textContent = `${SCENES.length} scenes ready — pick one`;
+});
 
-status.textContent = `${SCENES.length} scenes ready`;
-if (SCENES.length) runScene(SCENES[0]);
+// No auto-render. Painting a board goes through the brush engine now and can
+// take seconds; rendering on load blocked the `load` event *and* every poll
+// the shooter makes, so the harness looked dead when it was merely working.
+status.textContent = `${SCENES.length} scenes ready — pick one`;

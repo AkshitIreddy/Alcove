@@ -39,7 +39,6 @@ import {
   listBooksByFloorRange,
   readCoverOverrides,
   readPageDefaults,
-  saveCoverOverrides,
   savePageDefaults,
   type BookPageDefaults,
 } from '../data/books';
@@ -405,6 +404,10 @@ export default function BookView(): JSX.Element {
     updatePageDoc(next.id, merged);
     bumpDocVersion(next.id); // remounts the leaf when it is on this spread
     await savePageDoc(next.id, merged);
+    // When the carry target is on the NEXT spread it never remounts here,
+    // so the mutation observer never fires — mark the flip snapshots stale
+    // explicitly or the back/revealed faces show the pre-carry page.
+    flipApi?.invalidateSnapshots();
 
     // Clear any stale mid-drain scroll on both leaves (before + after the
     // browser settles layout — rAF covers late scrollIntoView calls).
@@ -448,13 +451,9 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   const changeCoverOverrides = (next: CoverOverrides | null): void => {
     setCoverOverrides(next);
-    const loaded = session();
-    if (loaded) {
-      void saveCoverOverrides(
-        loaded.book.id,
-        next as Record<string, unknown> | null,
-      );
-    }
+    // Persistence is owned by CustomizePanel's persistBookStyle (it writes
+    // cover_meta.style AND this cover projection together). Saving here too
+    // raced that writer with a stale projection — last finisher won.
   };
 
   /** Debounced sweep: stamp the book's page defaults into every page doc. */
@@ -903,6 +902,7 @@ export default function BookView(): JSX.Element {
                     spreadIndex={spreadIndex()}
                     pageIds={ids()}
                     getPageElement={(side) => paperElements[side] ?? null}
+                    loadPageDoc={async (pageId) => (await getPage(pageId))?.doc ?? null}
                     onNavigate={onNavigate}
                     canFlip={canFlip}
                     leftPage={leftLeaf}
@@ -931,6 +931,7 @@ export default function BookView(): JSX.Element {
                 onClose={() => setActivePanel(null)}
               >
                 <CustomizePanel
+                  bookId={loaded.book.id}
                   spineSeed={loaded.book.spineSeed}
                   title={loaded.book.title}
                   overrides={coverOverrides()}

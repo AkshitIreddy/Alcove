@@ -151,6 +151,40 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     props.onStyleChange(bookStyleToOverrides(fresh.style));
   };
 
+  /**
+   * Per-section luck: the knobs each section's dice re-rolls, keyed by the
+   * section's aria label. Draws come from randomBookStyleOverrides so they
+   * stay inside the same tasteful legal domain as the big "randomise".
+   * Format re-rolls height only — resolveBookStyle derives format from it.
+   */
+  const REROLL_GROUPS = {
+    binding: ['material'],
+    pigment: ['pigment', 'hueJitter'],
+    'bands & endbands': ['raisedBands', 'bandGilt', 'headTail', 'headTailStyle'],
+    'ornament stamp': ['ornament'],
+    'title plate': ['titlePlate', 'titleFont', 'gilt'],
+    'wear & edges': ['wear', 'edge'],
+    format: ['height'],
+    charm: ['charm', 'charmColor'],
+    cover: ['coverFrame', 'coverMedallion', 'cornerProtectors', 'insetPlate'],
+  } as const satisfies Record<string, readonly (keyof BookStyle)[]>;
+
+  const reroll = (keys: readonly (keyof BookStyle)[]): void => {
+    // A press should visibly move: redraw a few times when the draw matches
+    // the current value on every knob in the group.
+    let draw = randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0);
+    for (let tries = 0; tries < 3; tries += 1) {
+      if (keys.some((key) => !Object.is(draw[key], style()[key]))) break;
+      draw = randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0);
+    }
+    const partial: Record<string, unknown> = {};
+    for (const key of keys) {
+      const value = draw[key];
+      if (value !== undefined) partial[key] = value;
+    }
+    patch(partial as Partial<BookStyle>);
+  };
+
   return (
     <div class="nb-book-studio">
       {/* ------------------------- flipping preview ------------------------ */}
@@ -197,7 +231,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       {/* ------------------------------ binding ---------------------------- */}
       <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">binding</h3>
+        <h3 class="nb-panel-section-title">
+          binding
+          <RerollDice section="binding" onClick={() => reroll(REROLL_GROUPS.binding)} />
+        </h3>
         <div class="nb-chip-row" role="group" aria-label="Binding material">
           <For each={BINDING_MATERIALS}>
             {(m) => (
@@ -217,6 +254,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">
           pigment <em class="nb-panel-row-hint">{PIGMENT_LABELS[style().pigment]}</em>
+          <RerollDice section="pigment" onClick={() => reroll(REROLL_GROUPS.pigment)} />
         </h3>
         <div class="nb-swatch-grid" role="group" aria-label="Spine pigment">
           <For each={Array.from({ length: PIGMENT_COUNT }, (_, i) => i)}>
@@ -252,7 +290,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       {/* ------------------------------- bands ----------------------------- */}
       <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">bands & endbands</h3>
+        <h3 class="nb-panel-section-title">
+          bands & endbands
+          <RerollDice section="bands & endbands" onClick={() => reroll(REROLL_GROUPS['bands & endbands'])} />
+        </h3>
         <label class="nb-panel-row">
           <span class="nb-panel-row-label">
             raised cords <em class="nb-panel-row-hint">{style().raisedBands}</em>
@@ -307,7 +348,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       {/* ----------------------------- ornament ---------------------------- */}
       <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">ornament stamp</h3>
+        <h3 class="nb-panel-section-title">
+          ornament stamp
+          <RerollDice section="ornament stamp" onClick={() => reroll(REROLL_GROUPS['ornament stamp'])} />
+        </h3>
         <div class="nb-chip-grid" role="group" aria-label="Ornament stamp">
           <button
             type="button"
@@ -334,7 +378,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       {/* --------------------------- title & plate ------------------------- */}
       <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">title plate</h3>
+        <h3 class="nb-panel-section-title">
+          title plate
+          <RerollDice section="title plate" onClick={() => reroll(REROLL_GROUPS['title plate'])} />
+        </h3>
         <div class="nb-chip-row" role="group" aria-label="Title plate">
           <For each={TITLE_PLATES}>
             {(p) => (
@@ -378,6 +425,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">
           wear <em class="nb-panel-row-hint">{wearLabel(style().wear)}</em>
+          <RerollDice section="wear & edges" onClick={() => reroll(REROLL_GROUPS['wear & edges'])} />
         </h3>
         <input
           type="range"
@@ -410,6 +458,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">
           format <em class="nb-panel-row-hint">{Math.round(style().height)}px tall</em>
+          <RerollDice section="format" onClick={() => reroll(REROLL_GROUPS.format)} />
         </h3>
         <div class="nb-chip-row" role="group" aria-label="Book format">
           <For each={SPINE_FORMAT_IDS}>
@@ -444,7 +493,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       {/* ------------------------------- charms ---------------------------- */}
       <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">charm</h3>
+        <h3 class="nb-panel-section-title">
+          charm
+          <RerollDice section="charm" onClick={() => reroll(REROLL_GROUPS.charm)} />
+        </h3>
         <div class="nb-chip-grid" role="group" aria-label="Charm">
           <For each={CHARMS}>
             {(c) => (
@@ -481,7 +533,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       {/* -------------------------------- cover ---------------------------- */}
       <section class="nb-panel-section nb-panel-section-divided">
-        <h3 class="nb-panel-section-title">cover</h3>
+        <h3 class="nb-panel-section-title">
+          cover
+          <RerollDice section="cover" onClick={() => reroll(REROLL_GROUPS.cover)} />
+        </h3>
         <div class="nb-chip-row" role="group" aria-label="Cover frame">
           <For each={['rules', 'corners', 'scallop', 'stitch']}>
             {(name, i) => (
@@ -565,6 +620,32 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         </p>
       </section>
     </div>
+  );
+}
+
+/**
+ * A tiny dice button pinned to a section title — the per-field counterpart
+ * of the big "randomise". Same pre-wobbled stroke idiom as the shelf dock
+ * icons (fill:none paths, so a missing stylesheet can't black-box it).
+ */
+function RerollDice(props: { section: string; onClick(): void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      class="nb-reroll"
+      aria-label={`Reroll ${props.section}`}
+      title={`Reroll ${props.section}`}
+      onClick={props.onClick}
+    >
+      <svg viewBox="0 0 28 28" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5.3 4.8 L22.5 4.4 C23.3 4.4 23.9 5.0 24.0 5.8 L23.6 22.4 C23.6 23.2 23.0 23.8 22.2 23.9 L5.7 23.5 C4.9 23.5 4.3 22.9 4.2 22.1 L4.6 6.1 C4.6 5.3 4.9 4.9 5.3 4.8 Z" />
+          <circle cx="10.0" cy="10.1" r="1.15" fill="currentColor" stroke="none" />
+          <circle cx="14.1" cy="14.1" r="1.15" fill="currentColor" stroke="none" />
+          <circle cx="18.3" cy="18.1" r="1.15" fill="currentColor" stroke="none" />
+        </g>
+      </svg>
+    </button>
   );
 }
 

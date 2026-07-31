@@ -132,21 +132,24 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Shelf dock — the hand-drawn signboard hanging at the top of the case.
-   The three things you can do to a LIBRARY (rather than to a book) live
-   here, so "how do I add a book?" is never a question. Sits at the top so
-   it never argues with the zoom pill, the gear or the trash drawer.
+   Shelf dock — the hand-drawn signboard pinned to the LEFT WALL, well clear
+   of the case. The three things you can do to a LIBRARY (rather than to a
+   book) live here, so "how do I add a book?" is never a question. Vertical
+   like the book's own icon rail (the app's idiom), centred on the wall's
+   height so it never argues with the case top, the zoom pill, the gear or
+   the trash drawer.
    -------------------------------------------------------------------------- */
 .shelf-dock {
   position: absolute;
-  left: 50%;
-  top: 16px;
-  transform: translateX(-50%) rotate(-0.35deg);
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-0.35deg);
   z-index: calc(var(--z-shelf) + 2);
   display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 5px 7px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 7px;
   background: var(--paper-aged);
   border: 2px solid var(--ink-graphite);
   border-radius: var(--radius-wobble-lg);
@@ -160,9 +163,10 @@
 .shelf-dock__btn {
   appearance: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 7px;
-  padding: 6px 13px 6px 10px;
+  gap: 5px;
+  padding: 8px 10px 7px;
   font-family: var(--font-accent);
   font-size: 15px;
   line-height: 1;
@@ -206,8 +210,8 @@
 }
 
 .shelf-dock__icon {
-  width: 21px;
-  height: 21px;
+  width: 23px;
+  height: 23px;
   flex: 0 0 auto;
 }
 
@@ -215,13 +219,14 @@
   white-space: nowrap;
 }
 
+/* Horizontal pencil line between "make a book" and "dress the room". */
 .shelf-dock__rule {
-  width: 2px;
-  height: 22px;
-  margin: 0 3px;
+  width: 72%;
+  height: 2px;
+  margin: 2px auto;
   background: var(--paper-edge);
   border-radius: var(--radius-pill);
-  transform: rotate(3deg);
+  transform: rotate(-2deg);
 }
 
 /* ----------------------------------------------------------------------------

@@ -580,7 +580,7 @@ export default function BookshelfWorld(): JSX.Element {
       </nav>
 
       {/* ---- the shelf's own signboard: make things, dress the room ------ */}
-      <div class="shelf-dock" role="toolbar" aria-label="Shelf tools">
+      <div class="shelf-dock" role="toolbar" aria-label="Shelf tools" aria-orientation="vertical">
         <button
           type="button"
           class="shelf-dock__btn is-primary"

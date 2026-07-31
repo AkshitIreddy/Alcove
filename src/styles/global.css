@@ -75,6 +75,20 @@ body {
       var(--paper-vignette-deep) 100%
     );
   background-attachment: fixed;
+}
+
+/* On the shelf the Pixi world paints its own wall lighting (case glow, lamp
+   pools, wallpaper) over a semi-transparent backdrop — the CSS edge vignette
+   bled through it and double-darkened the viewport top into a stray band.
+   There the shelf keeps only the warm top glow; the vignette still deepens
+   the edges of every non-shelf surface (the open book's desk, sheets). */
+body:has(.shelf-root) {
+  background-image: radial-gradient(
+    130% 90% at 50% -10%,
+    var(--paper-glow) 0%,
+    transparent 60%
+  );
+}
 
   font-family: var(--font-body);
   font-size: var(--text-body);

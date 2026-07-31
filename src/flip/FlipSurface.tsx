@@ -19,6 +19,7 @@
  *     prevLeft: ..., prevRight: ...,     // pages before the left leaf
  *   }}
  *   getPageElement={(side) => sheetPaperEl(side)}  // the .nb-sheet-paper
+ *   loadPageDoc={(id) => getPage(id).then((p) => p?.doc ?? null)}  // for flip backs
  *   onNavigate={(dir) => setSpreadIndex((i) => i + (dir === 'next' ? 1 : -1))}
  *   leftPage={<PageEditor pageId=... />}   // omit for single-page books
  *   rightPage={<PageEditor pageId=... />}
@@ -53,6 +54,8 @@
 import { createEffect, onCleanup, onMount, type JSX } from 'solid-js';
 import { PageFlipController, type FlipPages, type LeafSide } from './PageFlipController';
 import { PageRasterCache, type RasterEntry } from './rasterCache';
+import { createOffscreenPageCapture } from './offscreenPages';
+import type { PageDoc } from '../data/types';
 import type { FlipDirection } from './math';
 import '../styles/flip.css';
 
@@ -94,6 +97,12 @@ export interface FlipSurfaceProps {
   spreadIndex: number;
   /** Page ids (cache keys + navigability); see mount contract. */
   pageIds?: SpreadPageIds;
+  /**
+   * Resolve an unmounted page's document so its snapshot can be staged
+   * offscreen. Without it the flip's back/revealed faces (the adjacent
+   * spread, never in the DOM at rest) fall back to blank cream.
+   */
+  loadPageDoc?(pageId: string): Promise<PageDoc | null>;
   /** Optional override for direction gating. */
   canFlip?(direction: FlipDirection): boolean;
   ref?: (api: FlipSurfaceApi) => void;
@@ -166,6 +175,8 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         };
   };
 
+  // Read once, like the leaf children: a plain function prop, not JSX.
+  const loadPageDoc = props.loadPageDoc;
   const cache = new PageRasterCache({
     getElement: (pageId) => {
       const current = ids();
@@ -173,6 +184,22 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
       if (pageId === current.right) return props.getPageElement('right');
       return null; // adjacent pages are not mounted at rest
     },
+    ...(loadPageDoc !== undefined
+      ? {
+          captureOffscreen: createOffscreenPageCapture({
+            loadPageDoc: (pageId) => loadPageDoc(pageId),
+            // Stage sheets at the live leaf's exact size so offscreen
+            // textures align 1:1 with the flip overlay; fall back to the
+            // largest mounted sheet while the leaf is mid-remount.
+            pageSize: () => {
+              const el = props.getPageElement('right');
+              return el !== null && el.clientWidth > 1 && el.clientHeight > 1
+                ? { width: el.clientWidth, height: el.clientHeight }
+                : null;
+            },
+          }),
+        }
+      : {}),
   });
 
   let controller: PageFlipController | undefined;

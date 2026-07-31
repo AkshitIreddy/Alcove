@@ -11,7 +11,9 @@
  *   (the biggest per-capture cost).
  * - `.snapshotting` class added to the captured root during the clone so CSS
  *   can hide caret/selection UI; a `filter` drops chrome elements (drag
- *   handles, style switcher, anything marked data-snapshot-hide).
+ *   handles, style switcher, anything marked data-snapshot-hide) and images
+ *   that cannot inline (still-resolving media) fall back to a transparent
+ *   placeholder rather than rejecting the whole capture.
  * - Edit trigger: notifyEdited() debounces 300ms then rasterizes inside
  *   requestIdleCallback. ensureAdjacent() eagerly captures neighbours when
  *   a spread settles so both flip directions are instant.
@@ -35,7 +37,32 @@ const SNAPSHOTTING_CLASS = 'snapshotting';
 
 /** Elements never included in snapshots (interactive chrome, not paper). */
 const SNAPSHOT_EXCLUDE_SELECTOR =
-  '.nb-drag-handle, .nb-style-switcher, [data-snapshot-hide]';
+  '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
+
+/** 1×1 transparent PNG — stand-in for images that fail to inline. */
+const TRANSPARENT_PX =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU1ErkJggg==';
+
+/**
+ * Skip chrome and un-embeddable images. An `<img>` with an empty src (a
+ * media node still resolving its asset) makes html-to-image's inline step
+ * reject with a bare error Event; a rejected capture leaves NO cache entry,
+ * so beginFlip's synchronous get() finds nothing and that face of the flip
+ * renders blank cream for the whole gesture. Same recipe as the exporter
+ * (script/exporters/capture.ts) and the offscreen staging (offscreenPages.ts).
+ */
+function snapshotFilter(node: HTMLElement): boolean {
+  if (
+    node instanceof HTMLImageElement &&
+    (node.getAttribute('src') ?? '') === ''
+  ) {
+    return false;
+  }
+  return (
+    typeof node.matches !== 'function' ||
+    !node.matches(SNAPSHOT_EXCLUDE_SELECTOR)
+  );
+}
 
 export interface RasterEntry {
   readonly bitmap: ImageBitmap;
@@ -49,11 +76,20 @@ export interface RasterEntry {
 export interface PageRasterCacheOptions {
   /**
    * Resolve a pageId to its live snapshot root (the `.nb-sheet-paper` of a
-   * mounted leaf). Return null for pages not currently in the DOM — ensure()
-   * then resolves null and the flip falls back to plain paper (or an older
+   * mounted leaf). Return null for pages not currently in the DOM — those
+   * go through `captureOffscreen` when provided, otherwise ensure()
+   * resolves null and the flip falls back to plain paper (or an older
    * cached bitmap captured while the page was visible).
    */
   getElement(pageId: string): HTMLElement | null;
+  /**
+   * Rasterize a page that has no mounted leaf (the adjacent spread, which
+   * is never in the DOM at rest). The flip's back and revealed faces come
+   * from this path — without it they fall back to blank cream. The returned
+   * bitmap enters the same LRU/version bookkeeping as a live capture;
+   * ownership passes to the cache (it will be close()d on eviction).
+   */
+  captureOffscreen?(pageId: string): Promise<ImageBitmap | null>;
   /** LRU capacity override (default 6). */
   capacity?: number;
   /** pixelRatio override (default: device ratio capped per doc). */
@@ -198,7 +234,17 @@ export class PageRasterCache {
 
   private async capture(pageId: string): Promise<RasterEntry | null> {
     const element = this.options.getElement(pageId);
-    if (!element || !element.isConnected) return null;
+    if (
+      element === null ||
+      !element.isConnected ||
+      element.clientWidth < 1 ||
+      element.clientHeight < 1
+    ) {
+      // No live leaf for this page (adjacent spread, or mid-remount with no
+      // layout yet) — stage it offscreen so the flip's back and revealed
+      // faces still get real content instead of blank cream.
+      return this.captureUnmounted(pageId);
+    }
     const versionAtStart = this.version(pageId);
 
     // Font-embed CSS is built once for the whole app lifetime and reused —
@@ -213,11 +259,15 @@ export class PageRasterCache {
         pixelRatio: this.pixelRatio,
         backgroundColor: PAPER_CREAM,
         fontEmbedCSS,
-        filter: (node: HTMLElement) =>
-          typeof node.matches !== 'function' || !node.matches(SNAPSHOT_EXCLUDE_SELECTOR),
+        imagePlaceholder: TRANSPARENT_PX,
+        filter: snapshotFilter,
       });
-    } catch {
-      return null; // snapshot failure → caller falls back (doc: CSS path)
+    } catch (err) {
+      // Snapshot failure → caller falls back (doc: CSS path). Warn rather
+      // than swallow: a capture that keeps failing silently leaves the flip
+      // with a blank face and no trace of why.
+      console.warn('[rasterCache] snapshot capture failed for', pageId, err);
+      return null;
     } finally {
       element.classList.remove(SNAPSHOTTING_CLASS);
     }
@@ -233,6 +283,33 @@ export class PageRasterCache {
       version: versionAtStart,
       width: canvas.width,
       height: canvas.height,
+      pixelRatio: this.pixelRatio,
+    };
+    this.entries.set(pageId, entry);
+    return entry;
+  }
+
+  /** Offscreen path for pages with no mounted leaf (see capture()). */
+  private async captureUnmounted(pageId: string): Promise<RasterEntry | null> {
+    const captureOffscreen = this.options.captureOffscreen;
+    if (captureOffscreen === undefined) return null;
+    const versionAtStart = this.version(pageId);
+    let bitmap: ImageBitmap | null;
+    try {
+      bitmap = await captureOffscreen(pageId);
+    } catch {
+      return null; // staging failure → caller falls back (doc: CSS path)
+    }
+    if (bitmap === null) return null;
+    if (this.disposed) {
+      bitmap.close();
+      return null;
+    }
+    const entry: RasterEntry = {
+      bitmap,
+      version: versionAtStart,
+      width: bitmap.width,
+      height: bitmap.height,
       pixelRatio: this.pixelRatio,
     };
     this.entries.set(pageId, entry);

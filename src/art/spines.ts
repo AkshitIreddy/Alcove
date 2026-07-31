@@ -2756,6 +2756,12 @@ function clamp01Local(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/** Push a colour toward white without losing its temperature. */
+function blowOutRgb(c: P.Rgb, amount: number): P.Rgb {
+  const k = clamp01Local(amount);
+  return P.mixRgb(c, { r: 1, g: 0.985, b: 0.94 }, k);
+}
+
 /* ------------------------------ stencils --------------------------------- */
 
 /** An alpha coverage field lifted off a canvas — text, an ornament, a charm. */
@@ -3028,7 +3034,10 @@ function paintPageBlockPainterly(
   if (bw <= 0.6 || bh <= 1) return;
   const s = Math.max(0.6, spec.scale);
   const shape = P.roughenShape(P.rectShape(x, y, bw, bh), 0.4 * s, (spec.seed ^ 0x2244) >>> 0, 3.4);
-  const paper = edge === 'gilt' ? '#b08c34' : '#d8caa4';
+  // Aged paper, not white. A text block that has stood on a shelf for fifty
+  // years is the colour of weak tea; painting it cream-white was what made
+  // every book look like it had a strip of masking tape down one side.
+  const paper = edge === 'gilt' ? '#9c7c2e' : '#bcab86';
   const mask = P.blockIn(sf, shape, paper, {
     brush: P.brush('flat', { size: Math.max(1.4, bw * 0.7), colour: paper, opacity: 0.3, grain: 0.5 }),
     passes: 2,
@@ -3062,8 +3071,8 @@ function paintPageBlockPainterly(
         { x: lx + (rnd() - 0.5) * 0.8 * s, y: y + bh * 0.99 },
       ],
       P.withBrush(leafBrush, {
-        colour: dark ? '#9b8a68' : rnd() < 0.3 ? '#f6efd8' : '#e0d2b0',
-        opacity: dark ? 0.22 : 0.26,
+        colour: dark ? '#7e7052' : rnd() < 0.28 ? '#e2d6b6' : '#c6b590',
+        opacity: dark ? 0.24 : 0.24,
       }),
       { passes: 1, pressure: P.PRESSURE.flat, taper: 0.03, wobble: 0.3 * s, seed: (spec.seed + i * 97) >>> 0, alpha: 0.6 + rnd() * 0.5 },
     );
@@ -3104,14 +3113,24 @@ function paintPageBlockPainterly(
   // The block stands a hair proud, so it takes light on its outer face and
   // throws a thin shadow back onto the board beside it.
   const outerLeft = spec.keySide > 0;
-  P.glaze(sf, mask, spec.lightOn ? P.mixRgb(FOIL_HOT, P.parseColour(spec.rig.keyColour), 0.5) : FOIL_HOT, spec.lightOn ? 0.2 * spec.keyTake : 0.06, {
+  P.glaze(sf, mask, spec.lightOn ? P.mixRgb(FOIL_HOT, P.parseColour(spec.rig.keyColour), 0.5) : FOIL_HOT, spec.lightOn ? 0.13 * spec.keyTake : 0.05, {
     blend: 'screen',
     gradient: (px) => {
       const u = (px - x) / bw;
-      return clamp01Local(outerLeft ? u : 1 - u) ** 1.6;
+      return clamp01Local(outerLeft ? u : 1 - u) ** 2.2;
+    },
+    mottle: 0.35,
+    seed: (spec.seed ^ 0xaa1) >>> 0,
+  });
+  // Dust and shadow collect in the gutter side of the block.
+  P.glaze(sf, mask, spec.pig.deep, 0.4, {
+    blend: 'multiply',
+    gradient: (px) => {
+      const u = (px - x) / bw;
+      return clamp01Local(outerLeft ? 1 - u * 2.2 : (u - 0.55) / 0.45) ** 1.2;
     },
     mottle: 0.3,
-    seed: (spec.seed ^ 0xaa1) >>> 0,
+    seed: (spec.seed ^ 0xaa2) >>> 0,
   });
   P.stroke(
     sf,
@@ -3811,41 +3830,59 @@ export function renderSpine(
   if (lightOn) {
     // Occlusion: the plank below, the plank above, and the neighbour on the
     // side away from the key. Three glazes, one direction, no halo.
-    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.18), 0.62 * (0.7 + depth * 0.5), {
+    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.18), 0.42 * (0.7 + depth * 0.5), {
       blend: 'multiply',
-      gradient: (_x, py) => clamp01Local((py / h - 0.8) / 0.2) ** 1.5,
+      gradient: (_x, py) => clamp01Local((py / h - 0.86) / 0.14) ** 1.5,
       mottle: 0.2,
       seed: (params.seed ^ 0x3a01) >>> 0,
     });
-    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.24), 0.42 * (0.6 + depth * 0.6), {
+    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.24), 0.26 * (0.6 + depth * 0.6), {
       blend: 'multiply',
-      gradient: (_x, py) => clamp01Local((0.16 - py / h) / 0.16) ** 1.6,
+      gradient: (_x, py) => clamp01Local((0.12 - py / h) / 0.12) ** 1.6,
       mottle: 0.2,
       seed: (params.seed ^ 0x3a02) >>> 0,
     });
-    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour('#0c0a12'), 0.4), 0.5, {
+    // The neighbour's occlusion, on the side away from the key. Kept to a
+    // narrow band: a wide one turns every book into a vignette, which is how
+    // the first painted pass ended up murky.
+    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour('#0c0a12'), 0.4), 0.34, {
       blend: 'multiply',
       gradient: (px) => {
         const u = keySide > 0 ? 1 - px / w : px / w;
-        return clamp01Local((0.3 - u) / 0.3) ** 1.4;
+        return clamp01Local((0.2 - u) / 0.2) ** 1.5;
       },
       mottle: 0.25,
       mottleScale: Math.max(8, h * 0.15),
       seed: (params.seed ^ 0x3a03) >>> 0,
     });
 
-    // The key: warm, raking, strongest on books nearest the source.
-    P.glaze(sf, mask, P.parseColour(rig.keyColour), clamp(0.2 * keyTake * rig.keyIntensity, 0, 0.4), {
+    // The key: warm, raking, strongest on books nearest the source. This is
+    // the pass that has to *win* — a shelf where the occlusion outweighs the
+    // sun reads as a cupboard, not a library in the afternoon.
+    P.glaze(sf, mask, P.parseColour(rig.keyColour), clamp(0.34 * keyTake * rig.keyIntensity, 0, 0.6), {
       blend: 'screen',
       gradient: (px, py) => {
         const u = keySide > 0 ? px / w : 1 - px / w;
-        const across = 0.35 + 0.65 * clamp01Local(u) ** 1.2;
-        const down = 0.55 + 0.45 * clamp01Local(1 - py / h) ** 0.8;
+        const across = 0.3 + 0.7 * clamp01Local(u) ** 1.1;
+        const down = 0.42 + 0.58 * clamp01Local(1 - py / h) ** 0.7;
         return across * down;
       },
       mottle: 0.3,
       mottleScale: Math.max(12, h * 0.25),
       seed: (params.seed ^ 0x3a04) >>> 0,
+    });
+    // A hot lip where the covering turns the corner into the key: the one
+    // near-white the binding is allowed, and what makes a row sparkle.
+    P.glaze(sf, mask, blowOutRgb(P.parseColour(rig.rimColour), 0.45), clamp(0.3 * keyTake, 0, 0.5), {
+      blend: 'screen',
+      gradient: (px, py) => {
+        const u = keySide > 0 ? px / w : 1 - px / w;
+        const lip = Math.exp(-Math.pow((u - 0.9) / 0.09, 2));
+        return lip * (0.35 + 0.65 * Math.sin(Math.PI * clamp01Local(py / h)) ** 0.6);
+      },
+      mottle: 0.4,
+      mottleScale: Math.max(8, h * 0.14),
+      seed: (params.seed ^ 0x3a08) >>> 0,
     });
 
     // Colour bleeding from the neighbours: a painted shelf has no isolated
@@ -4147,25 +4184,6 @@ function suitability(params: SpineParams, character: RunCharacter): number {
   }
 }
 
-/** Shift everything right of `from` by `delta` (used when resizing a gap). */
-function shiftAfter(
-  placements: RowPlacement[],
-  gaps: RowGap[],
-  from: number,
-  delta: number,
-  skipGapIndex: number,
-): void {
-  if (delta === 0) return;
-  for (const p of placements) {
-    if (p.x >= from - 0.001) p.x += delta;
-  }
-  for (let i = 0; i < gaps.length; i++) {
-    if (i === skipGapIndex) continue;
-    const g = gaps[i] as RowGap;
-    if (g.x >= from - 0.001) g.x += delta;
-  }
-}
-
 /**
  * Compose a pleasing row.
  *
@@ -4445,48 +4463,164 @@ export function composeShelfRow(
   }
 
   /* ---------------- 6. fit to the available width --------------------- */
-  const used = cursor;
-  if (used > 1 && Math.abs(used - width) > 1) {
-    const slack = width - used;
-    const gapTotal = gaps.reduce((s, g) => s + g.width, 0);
-    if (slack > 0 && gaps.length > 0) {
-      // Distribute the leftover into the gaps, weighted toward the ones that
-      // are already large â€” a row of equal gaps is a picket fence.
-      const weights = gaps.map((g) => g.width + 6);
-      const wSum = weights.reduce((s, v) => s + v, 0);
-      for (let i = 0; i < gaps.length; i++) {
-        const g = gaps[i] as RowGap;
-        const add = (slack * (weights[i] as number)) / wSum;
-        shiftAfter(placements, gaps, g.x + g.width, add, i);
-        g.width += add;
+  //
+  // Density is a compositional property, not a leftover.
+  //
+  // The old version poured *all* the slack into the gaps, so a shelf given 26
+  // books and 1200px of plank came back as five clumps separated by 90px
+  // voids. That is the single most unfinished-looking thing the old row did,
+  // and it is nothing like the reference, where the books are shoulder to
+  // shoulder for the whole run with one or two deliberate holes.
+  //
+  // So the row is re-packed from scratch here rather than nudged: group the
+  // placements (a flat stack is ONE group, since its books share an x range),
+  // cap every space between groups at a plausible book-sized hole, spend any
+  // remaining slack on making the books thicker, and only then admit a single
+  // trailing hole — which is where a bookend or a trailing vine wants to be
+  // anyway.
+  {
+    interface Group {
+      members: RowPlacement[];
+      x0: number;
+      x1: number;
+      /** Space to the next group in the original layout. */
+      after: number;
+      flat: boolean;
+      leanedInto: boolean;
+    }
+
+    const byRun = new Map<number, RowPlacement[]>();
+    for (const p of placements) {
+      const key = p.pose === 'flat' ? p.run : p.index + 1e6;
+      const list = byRun.get(key);
+      if (list) list.push(p);
+      else byRun.set(key, [p]);
+    }
+    const groups: Group[] = [];
+    for (const members of byRun.values()) {
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      for (const m of members) {
+        x0 = Math.min(x0, m.x);
+        x1 = Math.max(x1, m.x + m.width);
       }
-    } else if (slack < 0) {
-      // Overfull: shrink the gaps first, and only then squeeze uniformly.
-      const shrink = Math.min(gapTotal * 0.92, -slack);
-      if (gapTotal > 0.5) {
-        const k = shrink / gapTotal;
-        for (let i = 0; i < gaps.length; i++) {
-          const g = gaps[i] as RowGap;
-          const cut = g.width * k;
-          shiftAfter(placements, gaps, g.x + g.width, -cut, i);
-          g.width -= cut;
-        }
-      }
-      const nowUsed = placements.reduce((s, p) => Math.max(s, p.x + p.width), 0);
-      if (nowUsed > width + 1) {
-        const k = width / nowUsed;
-        for (const p of placements) {
-          p.x *= k;
-          p.width *= k;
-        }
-        for (const g of gaps) {
-          g.x *= k;
-          g.width *= k;
+      groups.push({ members, x0, x1, after: 0, flat: members[0]?.pose === 'flat', leanedInto: false });
+    }
+    groups.sort((a, b) => a.x0 - b.x0);
+
+    // A leaner needs the hole it is falling into; everything else is packed.
+    const leanGap = new Set<number>();
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i] as Group;
+      const next = groups[i + 1];
+      g.after = next ? Math.max(0, next.x0 - g.x1) : 0;
+      const tipped = g.members.some((m) => Math.abs(m.leanDeg) > 4);
+      if (tipped) leanGap.add(i);
+      g.leanedInto = tipped;
+    }
+
+    const holeCap = Math.min(52, Math.max(20, width * 0.04));
+    let spacing = groups.map((g, i) => {
+      if (i === groups.length - 1) return 0;
+      const tight = minKerf + (g.after > 0 ? Math.min(g.after, 3.2) : 0);
+      return leanGap.has(i) ? Math.min(Math.max(g.after, 10), holeCap) : tight;
+    });
+
+    const bookSpan = (): number => groups.reduce((s, g) => s + (g.x1 - g.x0), 0);
+    const spanTotal = (): number => bookSpan() + spacing.reduce((s, v) => s + v, 0);
+
+    let slack = width - spanTotal();
+
+    // 1. Fatten the books. Bounded at +38%: past that a duodecimo becomes a
+    //    folio and the format identity the studio panel controls goes away.
+    if (slack > 2) {
+      const total = bookSpan();
+      if (total > 1) {
+        const k = Math.min(1.38, 1 + slack / total);
+        if (k > 1.001) {
+          for (const g of groups) {
+            const gx0 = g.x0;
+            for (const m of g.members) {
+              const rel = m.x - gx0;
+              if (m.pose === 'flat') {
+                // A flat book's drawn "width" is its height lying down; leave
+                // the volume alone and only re-anchor it.
+                m.x = gx0 + rel * k;
+              } else {
+                m.x = gx0 + rel * k;
+                m.width *= k;
+                m.params = {
+                  ...m.params,
+                  w: clamp(m.params.w * k, SPINE_THICKNESS_RANGE.min, SPINE_THICKNESS_RANGE.max * 1.25),
+                };
+              }
+            }
+            g.x1 = gx0 + (g.x1 - gx0) * k;
+          }
+          slack = width - spanTotal();
         }
       }
     }
-  }
 
+    // 2. Any slack left widens the holes, up to the cap.
+    if (slack > 1 && groups.length > 1) {
+      const holes = spacing.length - 1;
+      const room = spacing.map((v, i) => (i < holes ? Math.max(0, holeCap - v) : 0));
+      const roomTotal = room.reduce((s, v) => s + v, 0);
+      if (roomTotal > 0.5) {
+        const take = Math.min(slack, roomTotal);
+        spacing = spacing.map((v, i) => v + (room[i] as number) * (take / roomTotal));
+        slack = width - spanTotal();
+      }
+    }
+
+    // 3. Overfull: squeeze the spaces, then the books.
+    if (slack < 0) {
+      const spaceTotal = spacing.reduce((s, v) => s + v, 0);
+      const cut = Math.min(spaceTotal * 0.85, -slack);
+      if (spaceTotal > 0.5) {
+        const k = 1 - cut / spaceTotal;
+        spacing = spacing.map((v) => v * k);
+        slack = width - spanTotal();
+      }
+      if (slack < -1) {
+        const total = bookSpan();
+        const k = Math.max(0.55, (total + slack) / Math.max(1, total));
+        for (const g of groups) {
+          const gx0 = g.x0;
+          for (const m of g.members) {
+            const rel = m.x - gx0;
+            m.x = gx0 + rel * k;
+            if (m.pose !== 'flat') {
+              m.width *= k;
+              m.params = {
+                ...m.params,
+                w: clamp(m.params.w * k, SPINE_THICKNESS_RANGE.min, SPINE_THICKNESS_RANGE.max * 1.25),
+              };
+            }
+          }
+          g.x1 = gx0 + (g.x1 - gx0) * k;
+        }
+        slack = width - spanTotal();
+      }
+    }
+
+    // 4. Re-pack left to right and rebuild the gap list from what is left.
+    gaps.length = 0;
+    let cur = 0;
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i] as Group;
+      const shift = cur - g.x0;
+      for (const m of g.members) m.x += shift;
+      g.x1 += shift;
+      cur = g.x1;
+      const gapW = spacing[i] as number;
+      if (gapW > 4) gaps.push({ x: cur, width: gapW, leanedInto: g.leanedInto });
+      cur += gapW;
+      for (const m of g.members) m.gapAfter = gapW;
+    }
+    if (width - cur > 6) gaps.push({ x: cur, width: width - cur, leanedInto: false });
+  }
   /* ---------------- finalize ------------------------------------------ */
   let maxHeight = 0;
   let minHeight = Infinity;

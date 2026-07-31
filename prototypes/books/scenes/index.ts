@@ -7,5 +7,6 @@ export interface Scene {
 
 import { BASELINE_SCENES } from './baseline';
 import { MATERIAL_SCENES } from './materials';
+import { SHELF_SCENES } from './shelf';
 
-export const SCENES: Scene[] = [...BASELINE_SCENES, ...MATERIAL_SCENES];
+export const SCENES: Scene[] = [...BASELINE_SCENES, ...SHELF_SCENES, ...MATERIAL_SCENES];

@@ -45,20 +45,32 @@ export function drawRow(
   ctx.fillRect(0, 0, w, h);
 
   for (const p of comp.placements) {
-    const hp = p.height;
     ctx.save();
-    ctx.translate(20 + p.x, baseline - hp);
-    if (p.leanDeg !== 0) {
-      ctx.translate(0, hp);
-      ctx.rotate((p.leanDeg * Math.PI) / 180);
-      ctx.translate(0, -hp);
+    if (p.pose === 'flat') {
+      // Lying down: the spine's long axis runs along the plank.
+      ctx.translate(20 + p.x, baseline - p.stackY);
+      ctx.rotate(-Math.PI / 2);
+      renderSpine(ctx, p.params, 0, 0, p.width, 1, p.title, {
+        hiRes: true,
+        rig,
+        rowPhase: p.phase,
+        depth: (p.depth + 1) / 2,
+      });
+    } else {
+      const hp = p.height;
+      ctx.translate(20 + p.x, baseline - hp);
+      if (p.leanDeg !== 0) {
+        ctx.translate(0, hp);
+        ctx.rotate((p.leanDeg * Math.PI) / 180);
+        ctx.translate(0, -hp);
+      }
+      renderSpine(ctx, p.params, 0, 0, hp, 1, p.title, {
+        hiRes: true,
+        rig,
+        rowPhase: p.phase,
+        depth: (p.depth + 1) / 2,
+      });
     }
-    renderSpine(ctx, p.params, 0, 0, hp, 1, p.title, {
-      hiRes: true,
-      rig,
-      rowPhase: p.phase,
-      depth: (p.depth + 1) / 2,
-    });
     ctx.restore();
   }
 

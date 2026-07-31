@@ -205,6 +205,21 @@ const PARALLAX = 0.85;
 const BACKDROP_ALPHA = 0.45;
 const WALLPAPER_ALPHA = 0.6;
 
+/**
+ * The wall, knocked back and warmed — a multiply tint on the room's own paper.
+ *
+ * `ART-BIBLE.md` §2 and §10: the surround is the *quietest, darkest* region in
+ * the picture and it is warm. Our themed walls are painted at full value in
+ * their own hue, so a pale-blue papered room put a bright cyan slab behind a
+ * bookcase that the light had (correctly) let fall into shadow — the wall was
+ * competing with the books for attention and reading cold against a warm key.
+ * Multiplying by a dark sepia keeps every room's wall recognisably *its* wall
+ * (blue papers go warm slate, blush papers go dusty rose) while moving all of
+ * them to the bottom of the value hierarchy where they belong.
+ */
+const WALL_TINT = 0x9a7f61;
+
+
 /** Mid tone of the baked trash-drawer art — the base `ratioTint` divides out. */
 const TRASH_ART_TONE = 0xddd0be;
 
@@ -315,6 +330,18 @@ export class ShelfWorld {
   private ambientWash: Sprite | null = null;
   /** 2–3 large lamp-glow pools that drift very slowly (baked radial glows). */
   private readonly lightPools: Sprite[] = [];
+  /**
+   * Everything the one light shades: wall, wall lighting, case, lamp pools.
+   *
+   * The pass used to hang on `world` alone, so the room behind the bookcase
+   * was the only surface in the frame receiving no light at all — a flat
+   * bright slab with a tiling seam across it, sitting behind a case that was
+   * (correctly) falling off into shadow. A wall is part of the picture: it
+   * takes the same key falloff, the same vignette and the same grade as the
+   * wood in front of it. `scene` has an identity transform (the camera lives
+   * on `world` inside it), so the filter area is simply the viewport.
+   */
+  private readonly scene = new Container();
   private readonly world = new Container();
   private readonly fx = new Container();
   private readonly motes: DustMotes;
@@ -502,18 +529,20 @@ export class ShelfWorld {
     this.crown.height = CROWN_H;
     this.world.addChild(this.crown);
 
-    app.stage.addChild(this.backdrop, this.wallFx, this.world, this.lightFx, this.fx);
+    this.scene.addChild(this.backdrop, this.wallFx, this.world, this.lightFx);
+    this.scene.eventMode = 'none';
+    app.stage.addChild(this.scene, this.fx);
     app.stage.eventMode = 'none';
 
-    // One light over the whole case. Everything in `this.world` draws albedo;
-    // this pass shades all of it together, which is the difference between a
-    // shelf of separately-shaded rectangles and a lit room. Degrade mode and
-    // `?scenelight=0` leave the world unlit — the pass is never load-bearing.
+    // One light over the whole PICTURE. Everything in `this.scene` draws
+    // albedo; this pass shades all of it together, which is the difference
+    // between a shelf of separately-shaded rectangles and a lit room. Degrade
+    // mode and `?scenelight=0` leave it unlit — the pass is never load-bearing.
     this.sceneLight = new SceneLight(degrade ? null : app.renderer, {
       quality: dpr > 1.5 ? 'medium' : 'high',
     });
     this.sceneLight.resize(this.vp.width, this.vp.height);
-    this.sceneLight.attach(this.world);
+    this.sceneLight.attach(this.scene);
 
     // Camera: session restore, else a friendly overview of the first floors.
     const snap = sessionCamera;
@@ -1673,13 +1702,13 @@ export class ShelfWorld {
     if (strip !== null) {
       if (this.backdrop.texture !== strip) {
         this.backdrop.texture = strip;
-        this.backdrop.tint = 0xffffff;
       }
+      this.backdrop.tint = WALL_TINT;
       this.backdrop.alpha = 1;
       if (this.wallpaper !== null) this.wallpaper.visible = false;
     } else if (this.envTex.paper !== null && this.backdrop.texture !== this.envTex.paper) {
       this.backdrop.texture = this.envTex.paper;
-      this.backdrop.tint = 0xffffff;
+      this.backdrop.tint = WALL_TINT;
       this.track(
         gsap.to(this.backdrop, {
           alpha: BACKDROP_ALPHA,
@@ -1701,7 +1730,7 @@ export class ShelfWorld {
       });
       wp.eventMode = 'none';
       wp.alpha = 0;
-      this.app.stage.addChildAt(wp, this.app.stage.getChildIndex(this.backdrop) + 1);
+      this.scene.addChildAt(wp, this.scene.getChildIndex(this.backdrop) + 1);
       this.wallpaper = wp;
       this.track(
         gsap.to(wp, {

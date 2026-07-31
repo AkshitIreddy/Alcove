@@ -468,6 +468,7 @@ float castShadow(vec2 uv, float h) {
   float lxyLen = length(lxy);
   if (lxyLen < 1e-3) return 0.0;
   vec2 dir = lxy / lxyLen;
+  vec2 perp = vec2(-dir.y, dir.x);
   vec2 texel = uFrame.xy;
   // Height gained per pixel travelled toward the source, in buffer units.
   float climb = (uKeyDir.z / max(0.15, lxyLen)) / max(1.0, uShadowParams.w);
@@ -480,11 +481,22 @@ float castShadow(vec2 uv, float h) {
   float occ = 0.0;
   float wsum = 0.0;
   const int STEPS = ${p.shadowSteps};
+  // Penumbra, and the reason the march does not alias.
+  //
+  // Quadratic spacing puts the last few taps tens of pixels apart, so a hard
+  // occluder was reproducing its own silhouette at each of those offsets — a
+  // stack of ghost rectangles trailing away from every book, which is exactly
+  // what the first lit render showed. Widening each tap ACROSS the ray as it
+  // travels fixes it for the same reason a real shadow is soft: a distant
+  // occluder subtends a blur, not an edge. The lateral offset walks the golden
+  // angle so consecutive taps land on opposite sides without combing.
+  float penumbra = reach * (0.05 + uShadowParams.z * 0.16);
   for (int i = 0; i < STEPS; i++) {
     float t = (float(i) + jitter) / float(STEPS);
     float dist = t * t * reach;                 // quadratic: dense near contact
     float rayH = h + dist * climb;
-    float hs = readHeight(uv + dir * dist * texel);
+    float lat = (fract(float(i) * 0.6180339887) * 2.0 - 1.0) * penumbra * t * t;
+    float hs = readHeight(uv + (dir * dist + perp * lat) * texel);
     float over = hs - rayH;
     float hit = smoothstep(0.0, max(0.006, uShadowParams.z * 0.26), over);
     // Weighted *average*, not a max: a max turns every dithered ray start into

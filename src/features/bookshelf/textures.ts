@@ -150,6 +150,36 @@ function bakeWallStrip(
   });
 }
 
+/**
+ * Fold a wall strip into a vertically mirrored tile.
+ *
+ * The strip is three floors tall and tiles horizontally, but nothing makes its
+ * last row match its first — so tiling it in Y put a hard brightness step
+ * across the whole frame every `FLOOR_H * 3` world px, which is exactly the
+ * horizontal banding visible whenever the shelf is zoomed out. Stacking the
+ * strip against a flipped copy of itself makes the vertical period seamless by
+ * construction: every joint is now a mirror line through matching pixels.
+ *
+ * The cost is one extra `drawImage` per theme and double the texture height;
+ * the alternative (authoring the wall recipe to wrap) lives in `wallpaper.ts`
+ * and would still not fix the strip's *lighting* gradient, which is what the
+ * step actually was.
+ */
+function mirrorTileY(bitmap: ImageBitmap): AnyCanvas {
+  const w = bitmap.width;
+  const h = bitmap.height;
+  const canvas = makeCanvas(w, h * 2);
+  const ctx = get2d(canvas);
+  if (ctx === null) return canvas;
+  ctx.drawImage(bitmap, 0, 0);
+  ctx.save();
+  ctx.translate(0, h * 2);
+  ctx.scale(1, -1);
+  ctx.drawImage(bitmap, 0, 0);
+  ctx.restore();
+  return canvas;
+}
+
 /*
  * Every bake below goes through `art/bake.ts`, which will hand the recipe to
  * the art worker when `artRoutes` recognises its cache key (see that module —
@@ -388,9 +418,14 @@ export class EnvTextures {
       bakeThemedBackPanel(theme.id, SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) =>
         land('back', b),
       ),
-      bakeWallStrip(theme, req.backdrop, dpr, req.wallpaper).then((b) =>
-        land('backdrop', b),
-      ),
+      bakeWallStrip(theme, req.backdrop, dpr, req.wallpaper).then((b) => {
+        if (this.destroyed || gen !== this.themeGen) return;
+        // Seamless in Y before it ever reaches a TilingSprite (see mirrorTileY).
+        const old = this.backdropStrip;
+        this.assign('backdrop', textureFromCanvas(mirrorTileY(b)));
+        for (const cb of this.listeners) cb('backdrop');
+        if (old !== null && !old.destroyed) old.destroy(true);
+      }),
     ].map((p) => p.catch(() => undefined));
 
     this.themeSettled = Promise.all(jobs).then(() => undefined);

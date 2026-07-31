@@ -21,13 +21,14 @@ interface LibraryTheme {
   rail: RailSpec;               // inlay (gold pinstripe | silver | none | painted line)
   plate: PlateSpec;             // floor label plate: brass | enamel | wood-burnt | paper tag
   wallpaper: WallpaperSpec;     // pattern id + colourway (see §2)
-  light: LightSpec;             // pool count/positions/colour/drift, rim light, vignette
-  flora: FloraSpec;             // species + density + anchors (see §3)
-  props: PropSpec[];            // themed shelf dressing
   spineDefaults: SpineTheming;  // material bias + pigment ramp for new books
-  motes: MoteSpec;              // dust | pollen | sparkle | petals | none
 }
 ```
+
+> **Removed since:** `light: LightSpec`, `flora: FloraSpec`, `props: PropSpec[]`
+> and `motes: MoteSpec`. The deferred lighting pass, the flora pipeline and the
+> shelf props were all deleted with the runtime painting stack; the data came
+> off `LibraryTheme` with them rather than sit there reading like a promise.
 
 Themes only *bias* per-book art — an explicit per-book override (§4) always wins, so a user's favourite red leather book keeps its identity in every room.
 
@@ -69,9 +70,15 @@ Rules: contrast stays *very* low (the pattern must never fight the books), penci
 
 ---
 
-## 3. Flora & growth — `src/art/flora.ts`
+## 3. ~~Flora & growth~~ — deleted
 
-The thing that makes a shelf feel alive. All deterministic per `(floorIndex, anchorId, themeSeed)`, all baked.
+> `src/art/flora.ts`, `art/leaves.ts`, `floraPlan.ts` and `floraTextures.ts` are
+> gone, and so is the density slider. It never once looked good: thin vines, tiny
+> leaves, specimens popping in one at a time. "Forget about the flower floral."
+> The placement logic below was sound and the failure was entirely in the art, so
+> it stays written down in case authored foliage sprites ever meet the bar.
+
+The thing that was meant to make a shelf feel alive. All deterministic per `(floorIndex, anchorId, themeSeed)`, all baked.
 
 **Species:** ivy trail, pothos trail, moss tuft, fern frond, hanging herb bundle, blossom branch, trailing string-of-hearts, small potted plant, grass/dandelion tuft, cobweb.
 

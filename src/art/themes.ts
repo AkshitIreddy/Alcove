@@ -1,21 +1,23 @@
-﻿/**
- * art/themes.ts â€” the library theme system (docs/design/library-themes.md Â§1).
+/**
+ * art/themes.ts — the library theme system (docs/design/library-themes.md §1).
  *
- * A theme is a complete art package, not a colour swap: wood palette + grain
- * character + finish, joinery vocabulary, cornice profile + carving, rail
- * inlay, floor-plate material, wallpaper (pattern Ã— colourway), a light rig,
- * flora/props/motes dressing, and the pigment bias new book spines inherit.
+ * A theme is a room's identity: wood palette + grain character + finish,
+ * joinery vocabulary, cornice profile + carving, rail inlay, floor-plate
+ * material, wallpaper (pattern × colourway), and the pigment bias new book
+ * spines inherit.
+ *
+ * A theme USED to carry three more packages: a light rig (pools, ambient, rim,
+ * vignette, drift, flicker, shafts), a flora planting plan, a prop shortlist
+ * and a dust-mote spec. None of them draw anything now — the deferred lighting
+ * pass, the flora pipeline and the shelf props all went with the painting
+ * stack — so the data went too rather than sit here reading like a promise.
  *
  * This module is the TYPE + DATA root of the theme system and deliberately
  * imports nothing from the rest of src/art, so every other art module can
- * depend on it without a cycle:
- *
- *     themes.ts  â†  wood.ts  â†  caseArt.ts
- *          â†‘                       â†‘
- *          â””â”€â”€â”€â”€ wallpaper.ts â”€â”€â”€â”€â”€â”˜
+ * depend on it without a cycle.
  *
  * Everything downstream is procedural + baked once (art-pipeline.md) and
- * deterministic per seed. Themes only *bias* per-book art â€” an explicit
+ * deterministic per seed. Themes only *bias* per-book art — an explicit
  * per-book override always wins, so a favourite red leather book keeps its
  * identity in every room.
  */
@@ -73,17 +75,17 @@ export function isThemeId(value: unknown): value is ThemeId {
 
 /**
  * Cache-key salt for every raster produced by the theme system.
- * Owned by this module â€” `RECIPE_VERSION` in bake.ts belongs to the shelf
+ * Owned by this module — `RECIPE_VERSION` in bake.ts belongs to the shelf
  * pipeline and must not be bumped from here.
  *
  * v1: initial eight worlds + twelve wallpapers.
  * v2: backdrop variants; legible cornice carving + rail inlay; boarded back
  *     panels; scriptorium/attic show the room wall; cottage bunting and
  *     apothecary drawers wired up; wallpaper motif pass.
- * v3: six colourful worlds (blossom Â· robot Â· dino Â· candy Â· reef Â· voyager),
+ * v3: six colourful worlds (blossom · robot · dino · candy · reef · voyager),
  *     Blossom Grove becomes the default, and the original eight get a
- *     saturation pass â€” every palette, wallpaper colourway and light rig.
- * v4: creative-motif redo of every room except the grove â€” deeper contrast
+ *     saturation pass — every palette, wallpaper colourway and light rig.
+ * v4: creative-motif redo of every room except the grove — deeper contrast
  *     ramps, story-telling light rigs, re-coloured walls (jungle green for
  *     the dig, strawberry cream for the shop, lagoon blue for the reef) and
  *     a richer wallpaper pass (fish, planets, sprinkles, fossils, moons).
@@ -94,7 +96,7 @@ export const THEME_RECIPE_VERSION = 4;
 
 /**
  * Grain character. Drives ring shape, extra passes and defect vocabulary in
- * `paintWood` (wood.ts) â€” not just a colour swap.
+ * `paintWood` (wood.ts) — not just a colour swap.
  * - `quartersawn` tight straight rings + bright ray-fleck dashes
  * - `knotty`      wide soft rings, many knots, cathedral arches
  * - `straight`    even, near-featureless (pale ash / hinoki)
@@ -103,7 +105,7 @@ export const THEME_RECIPE_VERSION = 4;
  * - `flame`       wavy, ribboned figure (cherry / walnut crotch)
  * - `birch`       pale sheet with dark lenticel dashes and bark peel
  * - `brushed`     not timber at all: brushed metal, fine unidirectional satin
- * - `gloss`       moulded/enamelled body â€” almost no figure, all highlight
+ * - `gloss`       moulded/enamelled body — almost no figure, all highlight
  */
 export type WoodGrain =
   | 'quartersawn'
@@ -116,7 +118,7 @@ export type WoodGrain =
   | 'brushed'
   | 'gloss';
 
-/** Surface finish â†’ specular character of the sheen pass. */
+/** Surface finish → specular character of the sheen pass. */
 export type WoodFinish =
   | 'wax'
   | 'matte'
@@ -159,10 +161,10 @@ export interface WoodSpec {
   knots: number;
   /** Directional streak strokes per 100 world px across the grain. */
   streaks: number;
-  /** Overall lightâ†”dark spread; <1 flattens the field. */
+  /** Overall light↔dark spread; <1 flattens the field. */
   contrast: number;
   finish: WoodFinish;
-  /** Specular strength of the finish pass, 0â€“1. */
+  /** Specular strength of the finish pass, 0–1. */
   sheen: number;
   /** Optional paint film over the wood. */
   paint?: PaintSpec;
@@ -171,7 +173,7 @@ export interface WoodSpec {
 /* =============================== joinery ================================= */
 
 /**
- * How the case is held together â€” visible construction is most of what makes
+ * How the case is held together — visible construction is most of what makes
  * a room feel built rather than drawn.
  */
 export type JoineryKind =
@@ -198,7 +200,7 @@ export interface JoinerySpec {
   highlight: string;
   /** Fitting scale in world px (peg radius / strap width). */
   size: number;
-  /** 0â€“1 density of fittings along an edge. */
+  /** 0–1 density of fittings along an edge. */
   density: number;
 }
 
@@ -214,7 +216,7 @@ export type CrownProfile =
   | 'pediment' // shopfront pediment with a centre keystone
   | 'arch' // a soft round-topped arbour arch (grove, reef)
   | 'gantry' // industrial gantry beam with end plates and a lamp bar
-  | 'crest'; // scalloped/finned crest â€” candy awning, rocket fin
+  | 'crest'; // scalloped/finned crest — candy awning, rocket fin
 
 /** Carving vocabulary run along the cornice. */
 export type CrownCarving =
@@ -330,7 +332,7 @@ export interface PlateSpec {
   font: string;
   /** Label size in world px (handwriting faces never below 13). */
   fontSize: number;
-  /** 0â€“1 scorch amount for wood-burnt plates; 0 = a clean pale plaque. */
+  /** 0–1 scorch amount for wood-burnt plates; 0 = a clean pale plaque. */
   burn: number;
   /** Corner radius in world px. */
   radius: number;
@@ -339,7 +341,7 @@ export interface PlateSpec {
 /* ============================== wallpaper ================================ */
 
 /**
- * The twelve tileable patterns (Â§2). Pattern and colourway are independent so
+ * The twelve tileable patterns (§2). Pattern and colourway are independent so
  * users can mix any pattern with any colourway; the renderers live in
  * wallpaper.ts, the ids live here so themes.ts stays import-free.
  */
@@ -356,7 +358,7 @@ export const WALLPAPER_PATTERN_IDS = [
   'marbled-endpaper',
   'pin-dot',
   'plain-limewash',
-  // v3 â€” the colourful six.
+  // v3 — the colourful six.
   'blossom-sky',
   'circuit-trace',
   'fern-footprint',
@@ -385,7 +387,7 @@ export const COLOURWAY_IDS = [
   'slate-blue',
   'moss',
   'ivory',
-  // v3 â€” saturated colourways for the colourful worlds.
+  // v3 — saturated colourways for the colourful worlds.
   'blossom',
   'chrome',
   'jungle',
@@ -475,7 +477,7 @@ export const BACKDROPS: Readonly<Record<BackdropId, BackdropInfo>> = {
   glazed: {
     id: 'glazed',
     name: 'Glazed',
-    blurb: 'A glasshouse wall â€” mullions, condensation, green beyond.',
+    blurb: 'A glasshouse wall — mullions, condensation, green beyond.',
     usesPattern: false,
   },
 };
@@ -485,140 +487,7 @@ export function allBackdrops(): readonly BackdropInfo[] {
   return BACKDROP_IDS.map((id) => BACKDROPS[id]);
 }
 
-/* ================================ light ================================== */
-
-/** A pool of light on the case, positioned in normalized case coordinates. */
-export interface LightPool {
-  /** 0â€“1 across the case. */
-  x: number;
-  /** 0â€“1 down the case (0 = crown). */
-  y: number;
-  /** Pool radius as a fraction of the case's longest side. */
-  radius: number;
-  colour: string;
-  /** 0â€“1 peak intensity. */
-  intensity: number;
-  /** Horizontal drift amplitude in world px for the (very slow) idle sway. */
-  drift: number;
-}
-
-export interface LightSpec {
-  pools: LightPool[];
-  /** Whole-room colour cast, multiplied over the case. */
-  ambient: { colour: string; amount: number };
-  /** Edge rim light (null = none). */
-  rim: { colour: string; width: number; intensity: number } | null;
-  /** Corner darkening. */
-  vignette: { amount: number; colour: string };
-  /** Seconds for one full drift cycle. */
-  driftSeconds: number;
-  /** Candle-style breathing: 0 = steady. */
-  flicker: number;
-  /** Visible dust shafts from the pools (attic). */
-  shafts: boolean;
-}
-
-/* ============================= flora & props ============================= */
-
-export type FloraSpecies =
-  | 'ivy-trail'
-  | 'pothos-trail'
-  | 'moss-tuft'
-  | 'fern-frond'
-  | 'herb-bundle'
-  | 'blossom-branch'
-  | 'string-of-hearts'
-  | 'potted-plant'
-  | 'grass-tuft'
-  | 'cobweb';
-
-export type FloraAnchor =
-  | 'rail-top'
-  | 'shelf-underside'
-  | 'case-corner'
-  | 'crown-top'
-  | 'joint-gap'
-  | 'pot';
-
-export type FloraDensity = 'none' | 'sparse' | 'lush';
-
-export interface FloraSpec {
-  species: readonly FloraSpecies[];
-  density: FloraDensity;
-  anchors: readonly FloraAnchor[];
-}
-
-/**
- * Themed shelf dressing. `kind` is a superset of the five prop kinds
- * currently implemented in props.ts; `fallback` maps every themed prop onto
- * one of those five so the shelf renders sensibly before the extended props
- * land (see "integration points" in the module docs).
- */
-export type PropName =
-  | 'plant'
-  | 'hourglass'
-  | 'candle'
-  | 'globe'
-  | 'bookstack'
-  | 'terracotta-pot'
-  | 'watering-can'
-  | 'glass-cloche'
-  | 'seed-packet'
-  | 'orrery'
-  | 'telescope'
-  | 'moon-dial'
-  | 'star-chart'
-  | 'jam-jar'
-  | 'thimble'
-  | 'yarn-ball'
-  | 'bunting'
-  | 'quill'
-  | 'wax-seal'
-  | 'scroll'
-  | 'bell'
-  | 'tea-bowl'
-  | 'ink-stone'
-  | 'paper-crane'
-  | 'crate'
-  | 'suitcase'
-  | 'dusty-jar'
-  | 'newspapers'
-  | 'mortar-pestle'
-  | 'brass-scales'
-  | 'glow-bottle'
-  | 'inkwell'
-  | 'candlestick'
-  // v3 â€” the colourful worlds' dressing.
-  | 'blossom-sprig'
-  | 'birdhouse'
-  | 'robot-arm'
-  | 'gear-stack'
-  | 'oil-can'
-  | 'fossil-skull'
-  | 'amber-specimen'
-  | 'palm-frond'
-  | 'lollipop'
-  | 'candy-jar'
-  | 'cupcake'
-  | 'coral-fan'
-  | 'conch'
-  | 'rocket'
-  | 'planet';
-
-/** Legacy prop kinds implemented today in props.ts (0â€“4). */
-export type LegacyPropKind = 0 | 1 | 2 | 3 | 4;
-
-export interface PropSpec {
-  kind: PropName;
-  /** Where the prop sits. */
-  anchor: 'shelf' | 'crown' | 'shelf-underside' | 'floor';
-  /** Selection weight (higher = shows up more often). */
-  weight: number;
-  /** Existing props.ts kind to draw until `kind` has its own renderer. */
-  fallback: LegacyPropKind;
-}
-
-/* ============================ spines & motes ============================= */
+/* ================================ spines ================================= */
 
 export type SpineMaterial = 'leather' | 'cloth' | 'paper' | 'vellum' | 'linen' | 'silk';
 
@@ -627,36 +496,12 @@ export interface SpineTheming {
   materials: readonly SpineMaterial[];
   /** Pigment ramp new spines draw from (hex). */
   pigments: readonly string[];
-  /** 0â€“1 chance a new spine gets gilt bands/lettering. */
+  /** 0–1 chance a new spine gets gilt bands/lettering. */
   gilt: number;
-  /** 0â€“1 bias toward raised bands (leather) vs flat (paper/washi). */
+  /** 0–1 bias toward raised bands (leather) vs flat (paper/washi). */
   bands: number;
-  /** 0â€“1 wear bias: 0 pristine, 1 well-loved. */
+  /** 0–1 wear bias: 0 pristine, 1 well-loved. */
   wear: number;
-}
-
-export type MoteKind =
-  | 'dust'
-  | 'pollen'
-  | 'sparkle'
-  | 'petals'
-  | 'none'
-  /** Rising bubbles (reef). */
-  | 'bubbles'
-  /** Hot orange welding sparks that fall fast (workshop). */
-  | 'sparks'
-  /** Bright paper confetti (candy shop). */
-  | 'confetti'
-  /** Slow drifting stars and comet grit (voyager). */
-  | 'stars';
-
-export interface MoteSpec {
-  kind: MoteKind;
-  /** Particles per 1000Ã—1000 world px. */
-  density: number;
-  colour: string;
-  /** Fall speed in world px/s (negative drifts upward). */
-  drift: number;
 }
 
 /* =============================== the theme =============================== */
@@ -672,16 +517,12 @@ export interface LibraryTheme {
   plate: PlateSpec;
   wallpaper: WallpaperSpec;
   /**
-   * The room's two or three wall finishes, most characteristic first â€”
+   * The room's two or three wall finishes, most characteristic first —
    * `backdrops[0]` is the room's own wall. Any backdrop may be chosen for any
    * theme from the studio; this list is only the curated shortlist.
    */
   backdrops: readonly [BackdropId, BackdropId, ...BackdropId[]];
-  light: LightSpec;
-  flora: FloraSpec;
-  props: readonly PropSpec[];
   spineDefaults: SpineTheming;
-  motes: MoteSpec;
   /**
    * Extra furniture hung under each shelf plank: apothecary drawers, cottage
    * bunting strung between floors. Omitted = a plain plank edge.
@@ -754,30 +595,6 @@ const BLOSSOM: LibraryTheme = {
   },
   wallpaper: { pattern: 'blossom-sky', colourway: 'blossom', tile: 256 },
   backdrops: ['plastered', 'glazed', 'panelled'],
-  light: {
-    pools: [
-      { x: 0.24, y: 0.06, radius: 0.72, colour: '#fff4c2', intensity: 0.56, drift: 12 },
-      { x: 0.82, y: 0.46, radius: 0.44, colour: '#ffd9e6', intensity: 0.34, drift: 8 },
-      { x: 0.5, y: 1.02, radius: 0.5, colour: '#c8f5b0', intensity: 0.24, drift: 5 },
-    ],
-    ambient: { colour: '#ffeec0', amount: 0.08 },
-    rim: { colour: '#fffbe6', width: 2.4, intensity: 0.38 },
-    vignette: { amount: 0.16, colour: '#2f7a5e' },
-    driftSeconds: 38,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: {
-    species: ['blossom-branch', 'ivy-trail', 'moss-tuft', 'potted-plant', 'grass-tuft'],
-    density: 'lush',
-    anchors: ['crown-top', 'rail-top', 'case-corner', 'joint-gap', 'shelf-underside', 'pot'],
-  },
-  props: [
-    { kind: 'blossom-sprig', anchor: 'shelf', weight: 4, fallback: 0 },
-    { kind: 'birdhouse', anchor: 'shelf', weight: 2, fallback: 3 },
-    { kind: 'terracotta-pot', anchor: 'shelf', weight: 3, fallback: 0 },
-    { kind: 'jam-jar', anchor: 'shelf', weight: 2, fallback: 1 },
-  ],
   spineDefaults: {
     materials: ['cloth', 'paper', 'linen'],
     pigments: ['#e75480', '#4fb95a', '#f7b32b', '#4aa3e0', '#b06fd6', '#ff8f6b'],
@@ -785,7 +602,6 @@ const BLOSSOM: LibraryTheme = {
     bands: 0.3,
     wear: 0.16,
   },
-  motes: { kind: 'petals', density: 22, colour: '#ffb3cf', drift: 7 },
   // The grove is open to the sky: you see it straight through the case.
   backing: 'wood',
 };
@@ -847,26 +663,6 @@ const ROBOT: LibraryTheme = {
   },
   wallpaper: { pattern: 'circuit-trace', colourway: 'chrome', tile: 256 },
   backdrops: ['panelled', 'papered', 'boarded'],
-  light: {
-    pools: [
-      { x: 0.13, y: 0.16, radius: 0.48, colour: '#38ecff', intensity: 0.56, drift: 5 },
-      { x: 0.87, y: 0.64, radius: 0.42, colour: '#ff45c8', intensity: 0.48, drift: 5 },
-      { x: 0.52, y: 0.0, radius: 0.52, colour: '#ffcf6a', intensity: 0.4, drift: 8 },
-    ],
-    ambient: { colour: '#5fcfff', amount: 0.17 },
-    rim: { colour: '#8ff6ff', width: 2.8, intensity: 0.64 },
-    vignette: { amount: 0.46, colour: '#0a141f' },
-    driftSeconds: 26,
-    flicker: 0.14,
-    shafts: false,
-  },
-  flora: { species: [], density: 'none', anchors: [] },
-  props: [
-    { kind: 'robot-arm', anchor: 'shelf', weight: 4, fallback: 3 },
-    { kind: 'gear-stack', anchor: 'shelf', weight: 3, fallback: 4 },
-    { kind: 'oil-can', anchor: 'shelf', weight: 2, fallback: 1 },
-    { kind: 'glow-bottle', anchor: 'shelf', weight: 2, fallback: 2 },
-  ],
   spineDefaults: {
     materials: ['cloth', 'leather', 'linen'],
     pigments: ['#e8342f', '#12c8e8', '#ffc21c', '#f04ecb', '#2f6fe0', '#3ad17a'],
@@ -874,7 +670,6 @@ const ROBOT: LibraryTheme = {
     bands: 0.35,
     wear: 0.3,
   },
-  motes: { kind: 'sparks', density: 20, colour: '#ffb347', drift: 9 },
   shelfDetail: 'drawers',
 };
 
@@ -934,30 +729,6 @@ const DINO: LibraryTheme = {
   },
   wallpaper: { pattern: 'fern-footprint', colourway: 'jungle', tile: 256 },
   backdrops: ['boarded', 'papered', 'plastered'],
-  light: {
-    pools: [
-      { x: 0.5, y: 0.98, radius: 0.78, colour: '#ff7a1f', intensity: 0.58, drift: 6 },
-      { x: 0.12, y: 0.1, radius: 0.46, colour: '#ffd257', intensity: 0.4, drift: 8 },
-      { x: 0.9, y: 0.3, radius: 0.46, colour: '#4fd06a', intensity: 0.38, drift: 5 },
-    ],
-    ambient: { colour: '#ffb03e', amount: 0.16 },
-    rim: { colour: '#ffd08a', width: 2.2, intensity: 0.5 },
-    vignette: { amount: 0.44, colour: '#16230a' },
-    driftSeconds: 30,
-    flicker: 0.08,
-    shafts: false,
-  },
-  flora: {
-    species: ['fern-frond', 'ivy-trail', 'moss-tuft', 'grass-tuft', 'potted-plant'],
-    density: 'lush',
-    anchors: ['rail-top', 'case-corner', 'joint-gap', 'shelf-underside', 'pot'],
-  },
-  props: [
-    { kind: 'fossil-skull', anchor: 'shelf', weight: 4, fallback: 3 },
-    { kind: 'amber-specimen', anchor: 'shelf', weight: 3, fallback: 1 },
-    { kind: 'palm-frond', anchor: 'shelf', weight: 3, fallback: 0 },
-    { kind: 'crate', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['leather', 'cloth', 'paper'],
     pigments: ['#2f9e4f', '#e8760f', '#c9302c', '#137a6e', '#f0b323', '#7a4a1e'],
@@ -965,7 +736,6 @@ const DINO: LibraryTheme = {
     bands: 0.5,
     wear: 0.5,
   },
-  motes: { kind: 'pollen', density: 30, colour: '#ffd88a', drift: 5 },
   // The dig site is open to the jungle and the volcano behind it.
   backing: 'wood',
 };
@@ -1027,30 +797,6 @@ const CANDY: LibraryTheme = {
   },
   wallpaper: { pattern: 'peppermint-stripe', colourway: 'bubblegum', tile: 256 },
   backdrops: ['panelled', 'papered', 'boarded'],
-  light: {
-    pools: [
-      { x: 0.3, y: 0.08, radius: 0.66, colour: '#fffbe0', intensity: 0.5, drift: 8 },
-      { x: 0.78, y: 0.6, radius: 0.46, colour: '#b8ffe8', intensity: 0.34, drift: 6 },
-      { x: 0.5, y: 1, radius: 0.44, colour: '#ffd9f0', intensity: 0.32, drift: 4 },
-    ],
-    ambient: { colour: '#ffd6ea', amount: 0.1 },
-    rim: { colour: '#ffffff', width: 2.2, intensity: 0.5 },
-    vignette: { amount: 0.18, colour: '#a33d74' },
-    driftSeconds: 32,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: {
-    species: ['potted-plant', 'moss-tuft'],
-    density: 'sparse',
-    anchors: ['pot', 'joint-gap'],
-  },
-  props: [
-    { kind: 'lollipop', anchor: 'shelf', weight: 4, fallback: 1 },
-    { kind: 'candy-jar', anchor: 'shelf', weight: 4, fallback: 1 },
-    { kind: 'cupcake', anchor: 'shelf', weight: 3, fallback: 0 },
-    { kind: 'jam-jar', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['paper', 'silk', 'cloth'],
     pigments: ['#ff5f9e', '#3fd6b0', '#ffd93d', '#b47cf0', '#5ec8ff', '#ff8a5c'],
@@ -1058,7 +804,6 @@ const CANDY: LibraryTheme = {
     bands: 0.2,
     wear: 0.08,
   },
-  motes: { kind: 'confetti', density: 26, colour: '#fff2a8', drift: 6 },
   shelfDetail: 'bunting',
 };
 
@@ -1119,30 +864,6 @@ const REEF: LibraryTheme = {
   },
   wallpaper: { pattern: 'reef-bubble', colourway: 'lagoon', tile: 256 },
   backdrops: ['plastered', 'glazed', 'panelled'],
-  light: {
-    pools: [
-      { x: 0.3, y: -0.06, radius: 0.62, colour: '#c8fbff', intensity: 0.54, drift: 10 },
-      { x: 0.72, y: -0.02, radius: 0.5, colour: '#a6f0ff', intensity: 0.42, drift: 12 },
-      { x: 0.5, y: 0.9, radius: 0.44, colour: '#ff9c7a', intensity: 0.3, drift: 5 },
-    ],
-    ambient: { colour: '#2fd3d8', amount: 0.18 },
-    rim: { colour: '#dcffff', width: 2.4, intensity: 0.46 },
-    vignette: { amount: 0.42, colour: '#07314f' },
-    driftSeconds: 24,
-    flicker: 0.1,
-    shafts: true,
-  },
-  flora: {
-    species: ['ivy-trail', 'fern-frond', 'moss-tuft', 'pothos-trail'],
-    density: 'lush',
-    anchors: ['rail-top', 'case-corner', 'shelf-underside', 'joint-gap'],
-  },
-  props: [
-    { kind: 'coral-fan', anchor: 'shelf', weight: 4, fallback: 0 },
-    { kind: 'conch', anchor: 'shelf', weight: 3, fallback: 3 },
-    { kind: 'glow-bottle', anchor: 'shelf', weight: 2, fallback: 2 },
-    { kind: 'glass-cloche', anchor: 'shelf', weight: 2, fallback: 1 },
-  ],
   spineDefaults: {
     materials: ['cloth', 'silk', 'linen'],
     pigments: ['#ff7a63', '#17b5c4', '#ffc75f', '#2f76c9', '#f25f9c', '#3fc98a'],
@@ -1150,7 +871,6 @@ const REEF: LibraryTheme = {
     bands: 0.3,
     wear: 0.24,
   },
-  motes: { kind: 'bubbles', density: 32, colour: '#d6f9ff', drift: -12 },
   // Open water behind the shelves rather than a timber back.
   backing: 'wood',
 };
@@ -1211,26 +931,6 @@ const VOYAGER: LibraryTheme = {
   },
   wallpaper: { pattern: 'nebula', colourway: 'nebula', tile: 256 },
   backdrops: ['papered', 'glazed', 'panelled'],
-  light: {
-    pools: [
-      { x: 0.18, y: 0.12, radius: 0.5, colour: '#7cf5ff', intensity: 0.5, drift: 7 },
-      { x: 0.84, y: 0.44, radius: 0.44, colour: '#ff4fd8', intensity: 0.46, drift: 7 },
-      { x: 0.46, y: 0.94, radius: 0.46, colour: '#9a6bff', intensity: 0.36, drift: 5 },
-    ],
-    ambient: { colour: '#6a4ad8', amount: 0.2 },
-    rim: { colour: '#9ef8ff', width: 2.6, intensity: 0.66 },
-    vignette: { amount: 0.5, colour: '#0a0630' },
-    driftSeconds: 44,
-    flicker: 0.06,
-    shafts: false,
-  },
-  flora: { species: [], density: 'none', anchors: [] },
-  props: [
-    { kind: 'rocket', anchor: 'shelf', weight: 4, fallback: 1 },
-    { kind: 'planet', anchor: 'shelf', weight: 4, fallback: 3 },
-    { kind: 'telescope', anchor: 'shelf', weight: 2, fallback: 1 },
-    { kind: 'star-chart', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['leather', 'silk', 'cloth'],
     pigments: ['#5b3fd6', '#12d3e8', '#ff45b8', '#ffcf3f', '#3f7bff', '#8aff9e'],
@@ -1238,7 +938,6 @@ const VOYAGER: LibraryTheme = {
     bands: 0.45,
     wear: 0.14,
   },
-  motes: { kind: 'stars', density: 24, colour: '#b6f0ff', drift: 2 },
   // There is no back to this case; there is only the nebula.
   backing: 'wood',
 };
@@ -1248,7 +947,7 @@ const VOYAGER: LibraryTheme = {
 const ATHENAEUM: LibraryTheme = {
   id: 'athenaeum',
   name: 'Old Athenaeum',
-  blurb: 'Quartersawn oak, brass and gilt â€” the refined default.',
+  blurb: 'Quartersawn oak, brass and gilt — the refined default.',
   wood: {
     light: '#a87c45',
     dark: '#3c2410',
@@ -1301,25 +1000,6 @@ const ATHENAEUM: LibraryTheme = {
   },
   wallpaper: { pattern: 'damask', colourway: 'tobacco', tile: 256 },
   backdrops: ['panelled', 'papered', 'plastered'],
-  light: {
-    pools: [
-      { x: 0.26, y: 0.16, radius: 0.44, colour: '#ffd070', intensity: 0.6, drift: 10 },
-      { x: 0.78, y: 0.52, radius: 0.38, colour: '#ffbe62', intensity: 0.42, drift: 7 },
-    ],
-    ambient: { colour: '#ffc76a', amount: 0.17 },
-    rim: null,
-    vignette: { amount: 0.46, colour: '#241708' },
-    driftSeconds: 34,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: { species: ['ivy-trail'], density: 'sparse', anchors: ['pot', 'rail-top'] },
-  props: [
-    { kind: 'hourglass', anchor: 'shelf', weight: 3, fallback: 1 },
-    { kind: 'globe', anchor: 'shelf', weight: 2, fallback: 3 },
-    { kind: 'candlestick', anchor: 'shelf', weight: 2, fallback: 2 },
-    { kind: 'inkwell', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['leather', 'cloth', 'leather'],
     pigments: ['#a02a22', '#1f7a4a', '#d09a18', '#3b3a96', '#b0561c', '#7a2f6a'],
@@ -1327,7 +1007,6 @@ const ATHENAEUM: LibraryTheme = {
     bands: 0.8,
     wear: 0.3,
   },
-  motes: { kind: 'dust', density: 26, colour: '#f2dcb4', drift: 5 },
 };
 
 const CONSERVATORY: LibraryTheme = {
@@ -1387,29 +1066,6 @@ const CONSERVATORY: LibraryTheme = {
   },
   wallpaper: { pattern: 'botanical-toile', colourway: 'eucalyptus', tile: 256 },
   backdrops: ['glazed', 'boarded', 'papered'],
-  light: {
-    pools: [
-      { x: 0.5, y: -0.08, radius: 0.8, colour: '#d8ffe0', intensity: 0.5, drift: 4 },
-      { x: 0.38, y: 1.02, radius: 0.52, colour: '#ffd47a', intensity: 0.32, drift: 3 },
-    ],
-    ambient: { colour: '#9fe6a8', amount: 0.15 },
-    rim: { colour: '#f4fff2', width: 2.5, intensity: 0.3 },
-    vignette: { amount: 0.24, colour: '#2e4030' },
-    driftSeconds: 46,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: {
-    species: ['ivy-trail', 'pothos-trail', 'moss-tuft', 'fern-frond', 'potted-plant'],
-    density: 'lush',
-    anchors: ['rail-top', 'shelf-underside', 'case-corner', 'joint-gap', 'pot', 'crown-top'],
-  },
-  props: [
-    { kind: 'terracotta-pot', anchor: 'shelf', weight: 4, fallback: 0 },
-    { kind: 'watering-can', anchor: 'shelf', weight: 2, fallback: 3 },
-    { kind: 'glass-cloche', anchor: 'shelf', weight: 2, fallback: 1 },
-    { kind: 'seed-packet', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['paper', 'linen', 'cloth'],
     pigments: ['#5aa84a', '#e0c063', '#3f9fb0', '#d98a5a', '#9a6fc4', '#e0705f'],
@@ -1417,7 +1073,6 @@ const CONSERVATORY: LibraryTheme = {
     bands: 0.2,
     wear: 0.35,
   },
-  motes: { kind: 'pollen', density: 34, colour: '#f6f0b8', drift: -3 },
 };
 
 const OBSERVATORY: LibraryTheme = {
@@ -1476,25 +1131,6 @@ const OBSERVATORY: LibraryTheme = {
   },
   wallpaper: { pattern: 'constellation', colourway: 'midnight', tile: 256 },
   backdrops: ['plastered', 'glazed', 'panelled'],
-  light: {
-    pools: [
-      { x: 0.16, y: 0.1, radius: 0.7, colour: '#a8d0ff', intensity: 0.58, drift: 5 },
-      { x: 0.86, y: 0.78, radius: 0.38, colour: '#ffa53f', intensity: 0.4, drift: 3 },
-    ],
-    ambient: { colour: '#5a6fd8', amount: 0.2 },
-    rim: { colour: '#dce8ff', width: 2.2, intensity: 0.6 },
-    vignette: { amount: 0.5, colour: '#0d1020' },
-    driftSeconds: 52,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: { species: [], density: 'none', anchors: [] },
-  props: [
-    { kind: 'orrery', anchor: 'shelf', weight: 3, fallback: 3 },
-    { kind: 'telescope', anchor: 'shelf', weight: 3, fallback: 1 },
-    { kind: 'moon-dial', anchor: 'shelf', weight: 2, fallback: 3 },
-    { kind: 'star-chart', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['leather', 'silk', 'cloth'],
     pigments: ['#2b3fb0', '#7a2f9e', '#1f7a9e', '#8a90e0', '#e0b83f', '#c43f8a'],
@@ -1502,13 +1138,12 @@ const OBSERVATORY: LibraryTheme = {
     bands: 0.6,
     wear: 0.2,
   },
-  motes: { kind: 'sparkle', density: 20, colour: '#e8f0ff', drift: 1 },
 };
 
 const COTTAGE: LibraryTheme = {
   id: 'cottage',
   name: 'Cottage Nook',
-  blurb: 'Honey pine, knots and knitting â€” warm and thoroughly lived in.',
+  blurb: 'Honey pine, knots and knitting — warm and thoroughly lived in.',
   wood: {
     light: '#f5c877',
     dark: '#a5641e',
@@ -1561,29 +1196,6 @@ const COTTAGE: LibraryTheme = {
   },
   wallpaper: { pattern: 'gingham-floral', colourway: 'rose-cream', tile: 256 },
   backdrops: ['boarded', 'papered', 'panelled'],
-  light: {
-    pools: [
-      { x: 0.92, y: 0.3, radius: 0.74, colour: '#ffc464', intensity: 0.58, drift: 12 },
-      { x: 0.34, y: 0.68, radius: 0.46, colour: '#ffd08a', intensity: 0.36, drift: 8 },
-    ],
-    ambient: { colour: '#ffc98a', amount: 0.16 },
-    rim: { colour: '#fff0d2', width: 2, intensity: 0.26 },
-    vignette: { amount: 0.36, colour: '#5e3a20' },
-    driftSeconds: 40,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: {
-    species: ['potted-plant', 'string-of-hearts', 'moss-tuft'],
-    density: 'sparse',
-    anchors: ['pot', 'rail-top', 'shelf-underside'],
-  },
-  props: [
-    { kind: 'jam-jar', anchor: 'shelf', weight: 3, fallback: 0 },
-    { kind: 'yarn-ball', anchor: 'shelf', weight: 3, fallback: 3 },
-    { kind: 'thimble', anchor: 'shelf', weight: 2, fallback: 1 },
-    { kind: 'bunting', anchor: 'shelf-underside', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['cloth', 'linen', 'paper'],
     pigments: ['#f0899e', '#ffd166', '#7fc98a', '#d98ac4', '#6fb6d6', '#e8825c'],
@@ -1591,7 +1203,6 @@ const COTTAGE: LibraryTheme = {
     bands: 0.25,
     wear: 0.55,
   },
-  motes: { kind: 'dust', density: 24, colour: '#ffe6bc', drift: 4 },
   shelfDetail: 'bunting',
 };
 
@@ -1651,26 +1262,6 @@ const SCRIPTORIUM: LibraryTheme = {
   },
   wallpaper: { pattern: 'plain-limewash', colourway: 'limewash', tile: 256 },
   backdrops: ['plastered', 'boarded', 'papered'],
-  light: {
-    pools: [
-      { x: 0.14, y: 0.24, radius: 0.32, colour: '#ffa326', intensity: 0.66, drift: 3 },
-      { x: 0.52, y: 0.08, radius: 0.28, colour: '#ff8f18', intensity: 0.54, drift: 2 },
-      { x: 0.86, y: 0.6, radius: 0.3, colour: '#ffb038', intensity: 0.58, drift: 3 },
-    ],
-    ambient: { colour: '#e09332', amount: 0.2 },
-    rim: { colour: '#ffcf8a', width: 1.8, intensity: 0.34 },
-    vignette: { amount: 0.72, colour: '#150e08' },
-    driftSeconds: 22,
-    flicker: 0.55,
-    shafts: false,
-  },
-  flora: { species: ['cobweb'], density: 'sparse', anchors: ['case-corner', 'crown-top'] },
-  props: [
-    { kind: 'quill', anchor: 'shelf', weight: 3, fallback: 2 },
-    { kind: 'wax-seal', anchor: 'shelf', weight: 2, fallback: 4 },
-    { kind: 'scroll', anchor: 'shelf', weight: 3, fallback: 4 },
-    { kind: 'bell', anchor: 'shelf', weight: 2, fallback: 1 },
-  ],
   spineDefaults: {
     materials: ['vellum', 'leather', 'paper'],
     pigments: ['#e8d8a8', '#a82a1e', '#d0a02a', '#2f6a4a', '#3a5a9e', '#7a3a1e'],
@@ -1678,7 +1269,6 @@ const SCRIPTORIUM: LibraryTheme = {
     bands: 0.7,
     wear: 0.7,
   },
-  motes: { kind: 'dust', density: 48, colour: '#e8cf9a', drift: 6 },
   // The scriptorium's own limewashed wall shows straight through the case.
   backing: 'wallpaper',
 };
@@ -1739,28 +1329,6 @@ const SAKURA: LibraryTheme = {
   },
   wallpaper: { pattern: 'rice-paper-bamboo', colourway: 'rice', tile: 256 },
   backdrops: ['shoji', 'papered', 'boarded'],
-  light: {
-    pools: [
-      { x: 0.5, y: 0.3, radius: 0.95, colour: '#fff2dc', intensity: 0.46, drift: 3 },
-      { x: 0.2, y: 0.82, radius: 0.44, colour: '#ffc6da', intensity: 0.34, drift: 2 },
-    ],
-    ambient: { colour: '#ffe4d0', amount: 0.11 },
-    rim: { colour: '#fffaf2', width: 1.6, intensity: 0.22 },
-    vignette: { amount: 0.16, colour: '#7c6a58' },
-    driftSeconds: 60,
-    flicker: 0,
-    shafts: false,
-  },
-  flora: {
-    species: ['blossom-branch', 'moss-tuft'],
-    density: 'sparse',
-    anchors: ['crown-top', 'joint-gap'],
-  },
-  props: [
-    { kind: 'tea-bowl', anchor: 'shelf', weight: 3, fallback: 0 },
-    { kind: 'ink-stone', anchor: 'shelf', weight: 2, fallback: 4 },
-    { kind: 'paper-crane', anchor: 'shelf', weight: 3, fallback: 1 },
-  ],
   spineDefaults: {
     materials: ['paper', 'silk', 'linen'],
     pigments: ['#2f5fbf', '#ff9ec2', '#6fbf5a', '#e8d9a8', '#e0607a', '#8a6fd0'],
@@ -1768,7 +1336,6 @@ const SAKURA: LibraryTheme = {
     bands: 0.1,
     wear: 0.12,
   },
-  motes: { kind: 'petals', density: 16, colour: '#ffb0cc', drift: 8 },
 };
 
 const ATTIC: LibraryTheme = {
@@ -1827,27 +1394,6 @@ const ATTIC: LibraryTheme = {
   },
   wallpaper: { pattern: 'lath-plaster', colourway: 'greyboard', tile: 256 },
   backdrops: ['boarded', 'papered', 'plastered'],
-  light: {
-    pools: [
-      { x: 0.12, y: 0.12, radius: 0.3, colour: '#ffb347', intensity: 0.62, drift: 6 },
-      { x: 0.38, y: 0.04, radius: 0.28, colour: '#ffa832', intensity: 0.58, drift: 6 },
-      { x: 0.64, y: 0.14, radius: 0.28, colour: '#ffbe58', intensity: 0.56, drift: 6 },
-      { x: 0.9, y: 0.05, radius: 0.28, colour: '#ff9f2e', intensity: 0.54, drift: 6 },
-    ],
-    ambient: { colour: '#d8a45c', amount: 0.18 },
-    rim: null,
-    vignette: { amount: 0.66, colour: '#241d16' },
-    driftSeconds: 18,
-    flicker: 0.12,
-    shafts: true,
-  },
-  flora: { species: ['cobweb', 'grass-tuft'], density: 'sparse', anchors: ['case-corner', 'joint-gap'] },
-  props: [
-    { kind: 'crate', anchor: 'shelf', weight: 3, fallback: 4 },
-    { kind: 'suitcase', anchor: 'shelf', weight: 2, fallback: 4 },
-    { kind: 'dusty-jar', anchor: 'shelf', weight: 3, fallback: 1 },
-    { kind: 'newspapers', anchor: 'shelf', weight: 2, fallback: 4 },
-  ],
   spineDefaults: {
     materials: ['paper', 'cloth', 'linen'],
     pigments: ['#d29a42', '#7f9e8a', '#c06a3a', '#4f7a9e', '#e0c070', '#a85a6a'],
@@ -1855,8 +1401,7 @@ const ATTIC: LibraryTheme = {
     bands: 0.15,
     wear: 0.9,
   },
-  motes: { kind: 'dust', density: 62, colour: '#e6d5b4', drift: 7 },
-  // No back boards at all in the attic â€” you see the lath straight through.
+  // No back boards at all in the attic — you see the lath straight through.
   backing: 'wallpaper',
 };
 
@@ -1916,30 +1461,6 @@ const APOTHECARY: LibraryTheme = {
   },
   wallpaper: { pattern: 'apothecary-labels', colourway: 'amber', tile: 256 },
   backdrops: ['panelled', 'papered', 'plastered'],
-  light: {
-    pools: [
-      { x: 0.22, y: 0.72, radius: 0.34, colour: '#ffb257', intensity: 0.5, drift: 4 },
-      { x: 0.56, y: 0.86, radius: 0.28, colour: '#ffc266', intensity: 0.44, drift: 4 },
-      { x: 0.84, y: 0.66, radius: 0.3, colour: '#ffa93f', intensity: 0.46, drift: 4 },
-      { x: 0.5, y: 0.1, radius: 0.5, colour: '#f2c17e', intensity: 0.22, drift: 6 },
-    ],
-    ambient: { colour: '#ff9f22', amount: 0.2 },
-    rim: { colour: '#ffdc9a', width: 2, intensity: 0.4 },
-    vignette: { amount: 0.52, colour: '#2a1408' },
-    driftSeconds: 30,
-    flicker: 0.18,
-    shafts: false,
-  },
-  flora: {
-    species: ['herb-bundle', 'ivy-trail'],
-    density: 'sparse',
-    anchors: ['shelf-underside', 'rail-top'],
-  },
-  props: [
-    { kind: 'mortar-pestle', anchor: 'shelf', weight: 3, fallback: 4 },
-    { kind: 'brass-scales', anchor: 'shelf', weight: 2, fallback: 1 },
-    { kind: 'glow-bottle', anchor: 'shelf', weight: 4, fallback: 2 },
-  ],
   spineDefaults: {
     materials: ['leather', 'paper', 'cloth'],
     pigments: ['#e07a14', '#c2331e', '#e0a824', '#2f7a6a', '#8a3f9e', '#f0b83a'],
@@ -1947,7 +1468,6 @@ const APOTHECARY: LibraryTheme = {
     bands: 0.5,
     wear: 0.45,
   },
-  motes: { kind: 'sparkle', density: 22, colour: '#ffd28a', drift: 3 },
   shelfDetail: 'drawers',
 };
 
@@ -1981,7 +1501,7 @@ export function allThemes(): readonly LibraryTheme[] {
 
 /**
  * Apply user wallpaper overrides on top of a theme's own wallpaper, so the
- * studio's "pattern + colourway" controls can mix freely (Â§4).
+ * studio's "pattern + colourway" controls can mix freely (§4).
  */
 export function resolveWallpaper(
   theme: LibraryTheme,
@@ -1993,7 +1513,7 @@ export function resolveWallpaper(
 }
 
 /**
- * Apply a user backdrop override on top of the room's own wall finish (Â§4).
+ * Apply a user backdrop override on top of the room's own wall finish (§4).
  * Any of the six treatments may be chosen for any theme; an unrecognised or
  * absent override falls back to the theme's first (most characteristic) wall.
  */
@@ -2004,14 +1524,4 @@ export function resolveBackdrop(theme: LibraryTheme, override?: string | null): 
 /** The theme's own two or three wall finishes, with their picker copy. */
 export function themeBackdrops(theme: LibraryTheme): readonly BackdropInfo[] {
   return theme.backdrops.map((id) => BACKDROPS[id]);
-}
-
-/**
- * Scale a theme's flora density by the global settings slider (0â€“1).
- * 0 always yields a genuinely clean shelf (acceptance criterion Â§5).
- */
-export function scaleFloraDensity(density: FloraDensity, slider: number): FloraDensity {
-  if (slider <= 0.001 || density === 'none') return 'none';
-  if (slider < 0.55) return density === 'lush' ? 'sparse' : 'sparse';
-  return density;
 }

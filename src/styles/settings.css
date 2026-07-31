@@ -14,236 +14,251 @@
    'parchment' is the tokens.css default and needs no override.
    -------------------------------------------------------------------------- */
 
-/* Pastel — blossom paper, plum ink, sweet-shop pigments. Pastel means the
-   PAPER is soft; the pigments still have to carry real hue. */
+/* Every theme is the SAME drawing in a different room: the flat band from
+   tokens.css, hue-rotated. A theme may move the paper and the accent; it may
+   not reintroduce gradients, neon chroma or a light model. */
+
+/* Pastel — blossom paper and a rose accent. Pastel means the PAPER is soft;
+   the pigments stay in the flat band so the drawing still reads. */
 :root[data-theme='pastel'] {
-  --paper-cream: #fdf0f6;
-  --paper-aged: #f9e2ee;
-  --paper-deep: #f0c9de;
-  --paper-edge: #e0a8c6;
-  --paper-glow: rgba(255, 250, 253, 0.65);
-  --paper-vignette-soft: rgba(190, 110, 155, 0.05);
-  --paper-vignette-deep: rgba(160, 80, 125, 0.1);
+  --paper-cream: #f9eff2;
+  --paper-aged: #f0dfe6;
+  --paper-deep: #e2c8d3;
+  --paper-edge: #c9a2b3;
 
-  --ink-sepia: #5f3a52; /* 7.74:1 aged */
-  /* Soft inks tuned for AA on this theme's darkest ground (#f9e2ee). */
-  --ink-sepia-soft: #7a5069; /* 5.39:1 */
-  --ink-graphite: #4f4661;
-  --ink-graphite-soft: #5f5672; /* 5.60:1 */
-  --ink-blue: #4e5fa0;
-  --ink-blue-soft: #525f95; /* 5.00:1 */
-  --ink-accent: #a72963; /* 5.40:1 */
+  --wall: #efe1e6;
+  --timber: #c08a6a;
+  --timber-dark: #9d6b52;
+  --recess: #7d5648;
 
-  /* Pastel's paper is the softest of the four, so its `-deep` rung has the
-     LEAST value headroom — these are tuned down (and up in chroma) until
-     every one clears 4.5:1 as type on #f9e2ee. Sweet, never chalky. */
-  --wash-amber: #ffbb2e;
-  --wash-amber-deep: #8a5a02;
-  --wash-terracotta: #ff8452;
-  --wash-terracotta-deep: #ac3a10;
-  --wash-moss: #7bd44b;
-  --wash-moss-deep: #34701c;
-  --wash-lemon: #ffe64f;
-  --wash-lemon-deep: #857208;
-  --wash-sky: #56c2f5;
-  --wash-sky-deep: #0a6a90;
-  --wash-blush: #ff92b8;
-  --wash-blush-deep: #b3265b;
-  --wash-plum: #bb78f0;
-  --wash-plum-deep: #6d2fb4;
-  --wash-coral: #ff7a68;
-  --wash-coral-deep: #b62d1c;
-  --wash-turquoise: #33d8c7;
-  --wash-turquoise-deep: #0a7c72;
-  --wash-violet: #8578f5;
-  --wash-violet-deep: #4128b0;
-  --wash-lime: #c3e94b;
-  --wash-lime-deep: #6b8b04;
+  --ink-line: #4e2f3d;
+  --ink-line-soft: #6b4756;
 
-  --accent: #ff4b93;
-  --accent-deep: #c81466;
-  --accent-light: #ffd6e8;
-  --accent-ink: #a72963;
-  --accent-leaf: #47c033;
-  --accent-sun: #ffbb2e;
-  --accent-sea: #12bcd0;
+  --ink-sepia: #4e2f3d; /* 9.55:1 aged */
+  --ink-sepia-soft: #6b4756; /* 5.87:1 aged */
+  --ink-graphite: #453a44;
+  --ink-graphite-soft: #5c505b; /* 5.51:1 aged */
+  --ink-blue: #3f5270;
+  --ink-blue-soft: #4a5a72; /* 5.11:1 aged */
+  --ink-accent: #8e3b5a;
 
-  /* Rose gold — pastel's foil is pinked, the way blush leaf reads over a
+  /* Same twelve faces, warmed toward the blossom ground. */
+  --wash-amber: #e5b357;
+  --wash-amber-deep: #7d5806;
+  --wash-terracotta: #d0785a;
+  --wash-terracotta-deep: #96421d;
+  --wash-moss: #86975f;
+  --wash-moss-deep: #4f6138;
+  --wash-lemon: #ddc45c;
+  --wash-lemon-deep: #786608;
+  --wash-sky: #6a8496;
+  --wash-sky-deep: #3a5666;
+  --wash-blush: #c47c96;
+  --wash-blush-deep: #7c3b55;
+  --wash-plum: #93607b;
+  --wash-plum-deep: #5c3448;
+  --wash-coral: #d76f56;
+  --wash-coral-deep: #8f3319;
+  --wash-turquoise: #63a99c;
+  --wash-turquoise-deep: #2c5f56;
+  --wash-violet: #837aa6;
+  --wash-violet-deep: #444063;
+  --wash-lime: #adb865;
+  --wash-lime-deep: #5c6a1c;
+
+  --accent-light: #f4d6e0;
+  --accent: #c96186;
+  --accent-deep: #9c3b5e;
+  --accent-ink: #8e3355;
+  --accent-leaf: #86975f;
+  --accent-leaf-ink: #4f6138;
+  --accent-sun: #e5b357;
+  --accent-sea: #63a99c;
+
+  /* Rose gold — pastel's ornament is pinked, the way blush leaf reads over a
      blossom ground. Same value band as the base gilt, different hue. */
-  --gilt-light: #ffdfb4;
+  --gilt-face: #e5a878;
+  --on-gilt: #4e2f3d;
+  --gilt-light: #f0d4b8;
   --gilt: #9a6626;
   --gilt-deep: #7a4d19;
   --gilt-ink: #6a4116;
 
-  --selection-wash: rgba(255, 146, 184, 0.46);
+  --selection-wash: rgba(201, 97, 134, 0.34);
 }
 
-/* Botanical — pressed-leaf paper, moss ink, greenhouse brights. */
+/* Botanical — pressed-leaf paper, moss ink, a terracotta-pot accent. */
 :root[data-theme='botanical'] {
-  --paper-cream: #f3f8e4;
-  --paper-aged: #e8f0cf;
-  --paper-deep: #d5e4ae;
-  --paper-edge: #b2c885;
-  --paper-glow: rgba(252, 255, 240, 0.65);
-  --paper-vignette-soft: rgba(110, 140, 60, 0.05);
-  --paper-vignette-deep: rgba(80, 110, 40, 0.11);
+  --paper-cream: #f0f2e0;
+  --paper-aged: #e4e8ca;
+  --paper-deep: #d2d9ac;
+  --paper-edge: #a9b47e;
 
-  --ink-sepia: #3d4a2e; /* 8.03:1 aged */
-  --ink-sepia-soft: #556340; /* 5.48:1 */
-  --ink-graphite: #3a4235;
-  --ink-graphite-soft: #586150; /* 5.49:1 */
-  --ink-blue: #26645a;
-  --ink-blue-soft: #37695f; /* 5.31:1 */
-  --ink-accent: #9c4a1f; /* 5.21:1 */
+  --wall: #e3e7d2;
+  --timber: #b58f52;
+  --timber-dark: #91703c;
+  --recess: #6d5b34;
 
-  --wash-amber: #ffb92e;
-  --wash-amber-deep: #8a5600;
-  --wash-terracotta: #f2803f;
-  --wash-terracotta-deep: #ab3a12;
-  --wash-moss: #5fc42f;
-  --wash-moss-deep: #2f7016;
-  --wash-lemon: #f7e04a;
-  --wash-lemon-deep: #85720a;
-  --wash-sky: #3fbfc9;
-  --wash-sky-deep: #0a7480;
-  --wash-blush: #ff87ac;
-  --wash-blush-deep: #c22c60;
-  --wash-plum: #a86ce0;
-  --wash-plum-deep: #642caa;
-  --wash-coral: #ff7355;
-  --wash-coral-deep: #ba2c14;
-  --wash-turquoise: #1fcdae;
-  --wash-turquoise-deep: #06806b;
-  --wash-violet: #7a72e8;
-  --wash-violet-deep: #3a2ea8;
-  --wash-lime: #aede2c;
-  --wash-lime-deep: #628400;
+  --ink-line: #37402a;
+  --ink-line-soft: #55603f;
 
-  --accent: #ff5a26;
-  --accent-deep: #ad3108;
-  --accent-light: #ffdcc4;
-  --accent-ink: #9c4a1f;
-  --accent-leaf: #3fb417;
-  --accent-sun: #ffb92e;
-  --accent-sea: #00a9b0;
+  --ink-sepia: #37402a; /* 8.65:1 aged */
+  --ink-sepia-soft: #55603f; /* 5.19:1 aged */
+  --ink-graphite: #363c30;
+  --ink-graphite-soft: #565e49; /* 5.14:1 aged */
+  --ink-blue: #2f5a58;
+  --ink-blue-soft: #3d6260; /* 5.09:1 aged */
+  --ink-accent: #8c4a1c;
 
-  /* Greenhouse brass — foil that has been out in the damp, pulled toward
+  --wash-amber: #d9ae4e;
+  --wash-amber-deep: #7d5806;
+  --wash-terracotta: #c4714a;
+  --wash-terracotta-deep: #96421d;
+  --wash-moss: #7d915c;
+  --wash-moss-deep: #4f6138;
+  --wash-lemon: #d3c04f;
+  --wash-lemon-deep: #786608;
+  --wash-sky: #5f8288;
+  --wash-sky-deep: #3a5666;
+  --wash-blush: #b87c8c;
+  --wash-blush-deep: #7c3b55;
+  --wash-plum: #855e72;
+  --wash-plum-deep: #5c3448;
+  --wash-coral: #cd6a4c;
+  --wash-coral-deep: #8f3319;
+  --wash-turquoise: #59a392;
+  --wash-turquoise-deep: #2c5f56;
+  --wash-violet: #7a789c;
+  --wash-violet-deep: #444063;
+  --wash-lime: #a3b356;
+  --wash-lime-deep: #5c6a1c;
+
+  --accent-light: #eddcc2;
+  --accent: #c07a3a;
+  --accent-deep: #8f4a18;
+  --accent-ink: #7f4213;
+  --accent-leaf: #7d915c;
+  --accent-leaf-ink: #4f6138;
+  --accent-sun: #d9ae4e;
+  --accent-sea: #59a392;
+
+  /* Greenhouse brass — ornament that has been out in the damp, pulled toward
      olive so it belongs to the pressed-leaf ground. */
-  --gilt-light: #f2e3a0;
+  --gilt-face: #cfc35c;
+  --on-gilt: #37402a;
+  --gilt-light: #e4dfa6;
   --gilt: #7d7411;
   --gilt-deep: #635b0c;
   --gilt-ink: #545009;
 
-  --selection-wash: rgba(174, 222, 44, 0.42);
+  --selection-wash: rgba(169, 180, 94, 0.45);
 }
 
-/* Night — a candle-lit desk after dark: warm dark paper, cream ink, and
-   pigments that glow rather than mute (neon-on-black is the only way a
-   saturated palette survives a dark ground). */
+/* Night — the same drawing after dark. The ink and the paper swap ends of
+   the value scale and every ramp inverts with them: `-light` becomes the
+   deep tint a callout is filled with, `-deep` becomes the bright face. The
+   faces stay in their band — a flat drawing does not glow. */
 :root[data-theme='night'] {
-  --paper-cream: #221d1c;
-  --paper-aged: #2b2523;
-  --paper-deep: #3a322b;
-  --paper-edge: #5d4d3c;
-  --paper-glow: rgba(255, 232, 190, 0.05);
-  --paper-vignette-soft: rgba(0, 0, 0, 0.14);
-  --paper-vignette-deep: rgba(0, 0, 0, 0.3);
+  --paper-cream: #2b211a;
+  --paper-aged: #352a20;
+  --paper-deep: #443528;
+  --paper-edge: #6b533a;
 
-  --ink-sepia: #f2e6d0; /* 12.22:1 aged */
-  --ink-sepia-soft: #c6b190; /* 7.25:1 */
-  --ink-graphite: #dcd5cb;
-  --ink-graphite-soft: #b0a492; /* 6.16:1 */
-  --ink-blue: #9fc4ff;
-  --ink-blue-soft: #93a9d0;
-  --ink-accent: #ff9db8; /* 7.74:1 */
+  --wall: #302620;
+  --timber: #8a6236;
+  --timber-dark: #6b4a28;
+  --recess: #4a3320;
 
-  /* On night the ramp inverts: `-light` is the deep shadow tint a callout is
-     painted with, `-deep` is the bright rim that catches the candle. */
-  --wash-amber-light: #54421c;
-  --wash-amber: #ffc233;
-  --wash-amber-deep: #ffe0a0;
-  --wash-terracotta-light: #4f2f1e;
-  --wash-terracotta: #ff8f52;
-  --wash-terracotta-deep: #ffc4a0;
-  --wash-moss-light: #2f4020;
-  --wash-moss: #7fdb4d;
-  --wash-moss-deep: #c2f0a4;
-  --wash-lemon-light: #4a441c;
-  --wash-lemon: #ffe95c;
-  --wash-lemon-deep: #fff3ad;
-  --wash-sky-light: #1e3d4e;
-  --wash-sky: #55c8ff;
-  --wash-sky-deep: #b1e5ff;
-  --wash-blush-light: #4d2632;
-  --wash-blush: #ff8fb5;
-  --wash-blush-deep: #ffc3d6;
-  --wash-plum-light: #3b2549;
-  --wash-plum: #c084f5;
-  --wash-plum-deep: #e0c2ff;
-  --wash-coral-light: #4f2a22;
-  --wash-coral: #ff7f6e;
-  --wash-coral-deep: #ffbdb3;
-  --wash-turquoise-light: #1a4442;
-  --wash-turquoise: #35e2d0;
-  --wash-turquoise-deep: #a8f4ec;
-  --wash-violet-light: #2e2a58;
-  --wash-violet: #9b8dff;
-  --wash-violet-deep: #cdc5ff;
-  --wash-lime-light: #3d4a1a;
-  --wash-lime: #cbf254;
-  --wash-lime-deep: #e6faa8;
+  /* After dark the outline is the LIGHTEST thing in the drawing, or every
+     shape loses its edge against the ground. */
+  --ink-line: #d8c8ad;
+  --ink-line-soft: #a8937a;
 
-  --wash-peach-light: #4f3624;
-  --wash-peach: #ffb578;
-  --wash-peach-deep: #ffd8b4;
-  --wash-sage-light: #333f2c;
-  --wash-sage: #a5da8a;
-  --wash-sage-deep: #d0edc2;
-  --wash-lavender-light: #362e4a;
-  --wash-lavender: #bda9ff;
-  --wash-lavender-deep: #ddd2ff;
-  --wash-sand-light: #453b26;
-  --wash-sand: #f0cf72;
-  --wash-sand-deep: #f7e8b8;
-  --wash-slate-light: #2c363f;
-  --wash-slate: #8fb9d9;
-  --wash-slate-deep: #c9e0f0;
+  --ink-sepia: #f2e8d4; /* 11.49:1 aged */
+  --ink-sepia-soft: #c4ad8d; /* 6.46:1 aged */
+  --ink-graphite: #ded6c8;
+  --ink-graphite-soft: #b1a48f; /* 5.71:1 aged */
+  --ink-blue: #9fbecd;
+  --ink-blue-soft: #93aab8;
+  --ink-accent: #e8a184;
 
-  --accent-light: #4d2634;
-  --accent: #ff6f9f;
-  --accent-deep: #ffb0c9;
-  --accent-ink: #ff8fb0; /* 7.05:1 on --paper-aged */
-  --accent-leaf: #7fdb4d;
-  --accent-leaf-ink: #a2e87d;
-  --accent-sun: #ffc233;
-  --accent-sea: #35e2d0;
+  --wash-amber-light: #443c18;
+  --wash-amber: #e8b64c;
+  --wash-amber-deep: #f2d79a;
+  --wash-terracotta-light: #4a2a1a;
+  --wash-terracotta: #d4805c;
+  --wash-terracotta-deep: #eeb99f;
+  --wash-moss-light: #2e3823;
+  --wash-moss: #93a771;
+  --wash-moss-deep: #c6d4ab;
+  --wash-lemon-light: #443c18;
+  --wash-lemon: #dfc451;
+  --wash-lemon-deep: #eee0a0;
+  --wash-sky-light: #24333c;
+  --wash-sky: #7b9aab;
+  --wash-sky-deep: #b6cbd6;
+  --wash-blush-light: #3f2530;
+  --wash-blush: #c78ba1;
+  --wash-blush-deep: #e4bfcb;
+  --wash-plum-light: #33222c;
+  --wash-plum: #a4778c;
+  --wash-plum-deep: #d0b4c1;
+  --wash-coral-light: #452419;
+  --wash-coral: #dc7d61;
+  --wash-coral-deep: #f0b7a4;
+  --wash-turquoise-light: #1f3733;
+  --wash-turquoise: #6fb3a5;
+  --wash-turquoise-deep: #aed6cd;
+  --wash-violet-light: #2c2938;
+  --wash-violet: #948cb5;
+  --wash-violet-deep: #c5c0d8;
+  --wash-lime-light: #3a3c1c;
+  --wash-lime: #b5c072;
+  --wash-lime-deep: #d9deb0;
+
+  --wash-peach-light: #452f1d;
+  --wash-peach: #d9a06e;
+  --wash-peach-deep: #eecfb0;
+  --wash-sage-light: #2f3a2a;
+  --wash-sage: #9aae83;
+  --wash-sage-deep: #cbd8bb;
+  --wash-lavender-light: #322c40;
+  --wash-lavender: #a397c4;
+  --wash-lavender-deep: #cfc7e0;
+  --wash-sand-light: #423618;
+  --wash-sand: #d9bc6a;
+  --wash-sand-deep: #eeddaa;
+  --wash-slate-light: #26323a;
+  --wash-slate: #8aa5b5;
+  --wash-slate-deep: #bfd2dc;
+
+  --accent-light: #472a1c;
+  --accent: #d98a63;
+  --accent-deep: #f0b89b;
+  --accent-ink: #e8a184;
+  --accent-leaf: #93a771;
+  --accent-leaf-ink: #c6d4ab;
+  --accent-sun: #e8b64c;
+  --accent-sea: #6fb3a5;
   /* accent-deep is the BRIGHT rung after dark, so the label on a filled
      accent control inverts with it: near-black wine instead of paper. */
-  --on-accent: #2a1218;
+  --on-accent: #2b1a10;
 
-  /* Foil after dark is the only thing in the room that is genuinely bright:
-     candle-lit leaf. The ramp inverts with the washes — `-deep`/`-ink` are
-     the LIGHT rungs here because they sit on the dark `-light` grounds. */
-  --gilt-light: #6b5416;
-  --gilt: #f5d271;
-  --gilt-deep: #ffeab0;
-  --gilt-ink: #fff3cf;
+  /* The gilt face stays bright after dark, so what sits ON it stays dark —
+     this is the one ink token that does NOT invert with the theme. */
+  --gilt-face: #e8b64c;
+  --on-gilt: #2b211a;
+  --gilt-light: #5a4514;
+  --gilt: #e0bd5f;
+  --gilt-deep: #f2dc9e;
+  --gilt-ink: #f7e8bd;
 
-  --selection-wash: rgba(255, 226, 92, 0.3);
+  --selection-wash: rgba(232, 182, 76, 0.32);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-sm:
-    0 1px 2px rgba(0, 0, 0, 0.26),
-    0 2px 6px rgba(0, 0, 0, 0.22);
-  --shadow-md:
-    0 2px 3px rgba(0, 0, 0, 0.24),
-    0 6px 14px rgba(0, 0, 0, 0.28),
-    0 12px 28px rgba(0, 0, 0, 0.2);
-  --shadow-lg:
-    0 4px 6px rgba(0, 0, 0, 0.24),
-    0 12px 24px rgba(0, 0, 0, 0.32),
-    0 28px 56px rgba(0, 0, 0, 0.28);
-  --shadow-inset-paper: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  /* The one shadow, restated for a dark room: still flat, still offset,
+     never a blur. */
+  --lift-ink: rgba(0, 0, 0, 0.4);
+  --lift-ink-strong: rgba(0, 0, 0, 0.55);
 }
 
 /* ----------------------------------------------------------------------------
@@ -260,29 +275,31 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Extra book-palette washes (light wash / base pigment / deep rim) —
-   extends the tokens.css wash family to 12 book palettes.
+   Extra book-palette faces (light / base / deep) — extends the tokens.css
+   family to 12 book palettes, in the SAME flat band. Sage, sand and slate are
+   literally FLAT.sage / FLAT.ochre / FLAT.slate, so a swatch here and a spine
+   on the plank are the same colour.
    -------------------------------------------------------------------------- */
 :root {
-  --wash-peach-light: #ffdfc2;
-  --wash-peach: #ff9a3d;
-  --wash-peach-deep: #b25a06;
+  --wash-peach-light: #f7e0cc;
+  --wash-peach: #d99257;
+  --wash-peach-deep: #8a4d10;
 
-  --wash-sage-light: #dcf3c8;
-  --wash-sage: #7ecb5e;
-  --wash-sage-deep: #3d8226;
+  --wash-sage-light: #e0e8d3;
+  --wash-sage: #8a9a6b; /* FLAT.sage */
+  --wash-sage-deep: #556442;
 
-  --wash-lavender-light: #e4d9ff;
-  --wash-lavender: #a688f5;
-  --wash-lavender-deep: #5f3ec2;
+  --wash-lavender-light: #e0dced;
+  --wash-lavender: #8b83ad;
+  --wash-lavender-deep: #4e4a70;
 
-  --wash-sand-light: #fdecb6;
-  --wash-sand: #e8bb2f;
-  --wash-sand-deep: #8a6a04;
+  --wash-sand-light: #f4e7c4;
+  --wash-sand: #c9973f; /* FLAT.ochre */
+  --wash-sand-deep: #7d5e14;
 
-  --wash-slate-light: #d2e6f6;
-  --wash-slate: #5c9dcc;
-  --wash-slate-deep: #2a5f83;
+  --wash-slate-light: #d8e2e9;
+  --wash-slate: #6a8494;
+  --wash-slate-deep: #3d5a6b;
 }
 
 /* ----------------------------------------------------------------------------
@@ -309,26 +326,17 @@
   height: 46px;
   display: grid;
   place-items: center;
-  /* A FILLED accent seal, not a pale blob: the one control that lives loose
-     on the desk should read as a wax stamp. Label/icon paints in --on-accent
-     (the token gated at 4.5:1 against --accent-deep in all four themes), and
-     a gilt hairline sits between the fill and the paper the way foil sits
-     between board and cloth. */
+  /* A FILLED accent seal: the one control that lives loose on the desk should
+     read as a wax stamp. It used to be a radial gradient with a foil
+     catch-light and an inset pool — a lit sphere, in an app with no lights.
+     Now: one flat accent face, the one ink outline, one flat lift.
+     --on-accent is the label token gated at 4.5:1 against --accent-deep. */
   color: var(--on-accent);
-  background:
-    radial-gradient(
-      118% 118% at 30% 22%,
-      color-mix(in srgb, var(--accent) 74%, white) 0%,
-      var(--accent) 24%,
-      var(--accent-deep) 74%
-    );
-  border: 1.4px solid var(--gilt);
+  background: var(--accent-deep);
+  border: var(--stroke-ink);
   /* slightly-off circle: reads as inked, not stamped */
   border-radius: 50% 47% 52% 48% / 48% 52% 46% 54%;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--gilt-light) 70%, transparent),
-    inset 0 -4px 6px -4px var(--accent-deep),
-    var(--shadow-sm);
+  box-shadow: var(--shadow-sm);
   opacity: 0.96;
   transition:
     transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring),
@@ -364,7 +372,7 @@
   gap: var(--space-4);
   padding: 3px;
   background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-xs);
   opacity: 0.45;
@@ -402,7 +410,6 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-gear-icon {
   width: 26px;
   height: 26px;
-  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--accent-deep) 72%, transparent));
 }
 
 @keyframes nbs-wobble {
@@ -433,7 +440,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(58, 30, 42, 0.28);
+  background: var(--lift-ink-strong);
   opacity: 0;
   visibility: hidden; /* gsap autoAlpha drives opacity+visibility */
   pointer-events: auto;
@@ -454,19 +461,13 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   overscroll-behavior: contain;
   padding: var(--space-20) var(--space-24) var(--space-48);
   color: var(--ink-sepia);
+  /* One flat sheet of paper. The four stacked gradients this replaces (top
+     light, two blotches, a pressed crease) were a texture AND a light model,
+     and they cost a full-height repaint on every scroll of a 3200px sheet. */
   background-color: var(--paper-aged);
-  /* aged-paper feel: warm light at the top, blotches, pressed left crease */
-  background-image:
-    radial-gradient(120% 55% at 50% -12%, var(--paper-glow) 0%, transparent 60%),
-    radial-gradient(38% 26% at 82% 34%, color-mix(in srgb, var(--paper-deep) 42%, transparent) 0%, transparent 100%),
-    radial-gradient(30% 22% at 14% 72%, color-mix(in srgb, var(--paper-deep) 34%, transparent) 0%, transparent 100%),
-    linear-gradient(to right, color-mix(in srgb, var(--paper-deep) 55%, transparent) 0%, transparent 14px);
-  /* The sheet's spine edge: a gilt rule over the board edge, the way a
-     half-bound cover shows foil where cloth meets paper. */
-  border-left: 2px solid var(--gilt);
-  box-shadow:
-    inset 2px 0 0 color-mix(in srgb, var(--gilt-light) 55%, transparent),
-    var(--shadow-lg);
+  /* The sheet's bound edge, in the one ink. */
+  border-left: var(--stroke-ink);
+  box-shadow: var(--shadow-lg);
   /* Self-styled slim bar: the sheet is 3200px of content in an 800px window,
      so it MUST scroll — but the 12px global bar reads as browser chrome
      against hand-drawn paper. */
@@ -508,21 +509,18 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   background: var(--paper-aged);
 }
 
-/* 14px of paper dissolving into the sheet, so rows slide under the header
-   instead of being guillotined by a hard edge. */
+/* The header used to dissolve into the sheet over 14px so rows would not be
+   guillotined. A fade is a soft edge, and this drawing does not have any: the
+   boundary is now stated outright, as a hairline rule in the soft ink. */
 .nbs-header::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
   top: 100%;
-  height: 14px;
+  height: 2px;
   pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    var(--paper-aged) 0%,
-    color-mix(in srgb, var(--paper-aged) 0%, transparent) 100%
-  );
+  background: var(--ink-line-soft);
 }
 
 .nbs-title {
@@ -575,7 +573,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   --sec-deep: var(--accent-deep);
   margin-top: var(--space-20);
   padding: var(--space-16) 0 var(--space-4);
-  border-top: 1px dashed color-mix(in srgb, var(--sec) 42%, var(--paper-edge));
+  border-top: 1px dashed var(--ink-line-soft);
 }
 
 .nbs-section[data-accent='blush'] {
@@ -644,15 +642,10 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   right: 0;
   bottom: -1px;
   height: 7px;
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--sec) 20%, transparent) 0%,
-    var(--sec) 12%,
-    var(--sec) 88%,
-    color-mix(in srgb, var(--sec) 25%, transparent) 100%
-  );
-  border-radius: 60% 40% 55% 45% / 100% 100% 100% 100%;
-  opacity: 0.85;
+  /* Was a four-stop gradient fading out at both ends — a wet brush. A flat
+     drawing underlines with a flat bar. */
+  background: var(--sec);
+  border-radius: var(--radius-pill);
   transform: rotate(0.5deg);
 }
 
@@ -726,10 +719,9 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   display: block;
   width: 42px;
   height: 23px;
-  background: var(--paper-cream);
-  border: 1.6px solid var(--ink-graphite);
+  background: var(--paper-deep);
+  border: var(--stroke-ink-thin);
   border-radius: 12px 14px 11px 13px / 13px 11px 14px 12px;
-  box-shadow: var(--shadow-inset-paper);
   transition: background calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
 }
 
@@ -739,20 +731,16 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   left: 2px;
   width: 15px;
   height: 15px;
-  background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
-  border: 1.5px solid var(--ink-graphite);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
   border-radius: 48% 52% 55% 45% / 52% 48% 45% 55%;
   transform: translateX(0) rotate(-8deg);
   transition: transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring);
 }
 
 .nbs-toggle[aria-checked='true'] .nbs-toggle-track {
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--sec) 78%, white) 0%,
-    var(--sec) 100%
-  );
-  border-color: color-mix(in srgb, var(--sec-deep) 70%, var(--ink-graphite));
+  background: var(--sec);
+  border-color: var(--ink-line);
 }
 
 .nbs-toggle[aria-checked='true'] .nbs-toggle-thumb {
@@ -825,8 +813,8 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   width: 16px;
   height: 16px;
   margin-top: -6.5px;
-  background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
-  border: 1.6px solid var(--ink-graphite);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
   border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
   box-shadow: var(--shadow-xs);
   cursor: grab;
@@ -851,8 +839,8 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: radial-gradient(circle at 35% 30%, var(--paper-cream), var(--paper-deep));
-  border: 1.6px solid var(--ink-graphite);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
   border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
 }
 
@@ -867,7 +855,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   text-align: center;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-wobble-sm);
 }
 
@@ -891,9 +879,9 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   line-height: 1.5;
   padding: 2px 11px;
   color: var(--ink-graphite-soft);
-  background: color-mix(in srgb, var(--paper-cream) 70%, transparent);
-  border: 1.4px dashed color-mix(in srgb, var(--paper-edge) 88%, transparent);
-  border-radius: 9px 11px 8px 12px / 11px 9px 12px 8px;
+  background: var(--paper-cream);
+  border: 1.4px dashed var(--ink-line-soft);
+  border-radius: 11px 14px 10px 15px / 14px 11px 15px 10px;
   transition:
     background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
     color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
@@ -906,7 +894,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-seg-chip:hover:not([aria-pressed='true']) {
   color: var(--ink-sepia);
   background: var(--sec-light);
-  border-color: var(--sec);
+  border-color: var(--ink-line);
   transform: translateY(-1px) rotate(-0.8deg);
 }
 
@@ -917,22 +905,13 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   position: relative;
   color: var(--ink-sepia);
   font-weight: 700;
-  background:
-    radial-gradient(
-      120% 130% at 30% 18%,
-      color-mix(in srgb, var(--sec-light) 88%, white) 0%,
-      color-mix(in srgb, var(--sec) 62%, var(--sec-light)) 100%
-    );
+  /* The chosen chip was a radial gradient inside a foil bezel — a stamped,
+     lit object. Flat: the section's own pale face, the one ink outline, and
+     the one flat lift. It still wins on FILL + WEIGHT + TILT, never on ink. */
+  background: var(--sec-light);
   border-style: solid;
-  border-color: color-mix(in srgb, var(--sec-deep) 80%, transparent);
-  /* Foil tooling: a gilt catch-light along the top inner edge and the deep
-     pigment pooling at the bottom — the chip reads as STAMPED, which is what
-     separates a chosen chip from a merely tinted one. */
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--gilt-light) 62%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--gilt) 26%, transparent),
-    inset 0 -3px 4px -3px var(--sec-deep),
-    var(--shadow-xs);
+  border-color: var(--ink-line);
+  box-shadow: var(--shadow-xs);
   transform: rotate(-1.4deg);
 }
 
@@ -948,12 +927,11 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   right: -3px;
   top: -6px;
   padding: 1px 3px;
-  color: var(--gilt-ink);
-  background: var(--wash-lemon-light);
-  border: 1px solid var(--gilt);
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: 1px solid var(--on-gilt);
   border-radius: 50% 45% 52% 48% / 48% 52% 45% 55%;
   transform: rotate(9deg);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--gilt-deep) 40%, transparent);
 }
 
 .nbs-seg-chip:active {
@@ -975,20 +953,14 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   height: 25px;
   /* uneven blob: pigment pooling toward the lower rim */
   border-radius: 47% 53% 44% 56% / 55% 46% 54% 45%;
-  /* These blobs preview the pigment a NEW BOOK will wear, so the pigment has
-     to be the thing you see. The old ramp ran `-light` → base, which on night
-     (where `-light` is the dark rung) turned twelve bright paints into twelve
-     mud pies. Now it runs a white catch-light → the base at full strength →
-     the deep at the wet lower rim, identically in all four themes. */
-  background: radial-gradient(
-    82% 82% at 31% 23%,
-    color-mix(in srgb, var(--sw) 58%, white) 0%,
-    var(--sw) 44%,
-    color-mix(in srgb, var(--sw-deep) 62%, var(--sw)) 100%
-  );
-  box-shadow:
-    inset 0 -4px 6px -2px var(--sw-deep),
-    var(--shadow-xs);
+  /* These blobs preview the cloth a NEW BOOK will wear, so they are drawn the
+     way that book will be: the base face flat, the one ink outline round it.
+     They used to be a three-stop radial with a catch-light and pigment
+     pooling at the wet lower rim — the exact painting idiom the flat palette
+     replaced, and on night it turned twelve faces into twelve mud pies. */
+  background: var(--sw);
+  border: var(--stroke-ink-thin);
+  box-shadow: var(--shadow-xs);
   transition: transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
 }
 
@@ -1000,13 +972,9 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
    blob gains a foil bezel (gilt rim + catch-light) and keeps its own pigment,
    so what you see is the colour you picked, mounted. */
 .nbs-swatch[aria-pressed='true'] {
-  outline: 2px solid var(--gilt);
-  outline-offset: 2px;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--gilt-light) 75%, transparent),
-    inset 0 -4px 6px -2px var(--sw-deep),
-    0 0 0 4px color-mix(in srgb, var(--gilt-light) 45%, transparent),
-    var(--shadow-sm);
+  outline: 3px solid var(--accent-deep);
+  outline-offset: 3px;
+  box-shadow: var(--shadow-sm);
   transform: rotate(-4deg) scale(1.12);
 }
 
@@ -1070,9 +1038,9 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   letter-spacing: var(--tracking-ui);
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
-  border-bottom-width: 2px;
-  border-radius: 4px 5px 4px 6px;
+  border: var(--stroke-ink-thin);
+  border-bottom-width: 3px;
+  border-radius: 7px 8px 7px 9px;
   padding: 1px 6px;
 }
 
@@ -1091,7 +1059,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   padding: 2px 12px;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.4px solid var(--ink-graphite);
+  border: var(--stroke-ink-thin);
   /* uneven inked pill */
   border-radius: 10px 13px 9px 12px / 12px 9px 13px 10px;
   box-shadow: var(--shadow-xs);
@@ -1104,7 +1072,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 
 .nbs-action-btn:hover:not(:disabled) {
   background: var(--sec-light);
-  border-color: var(--sec-deep);
+  border-color: var(--ink-line);
   transform: rotate(-1.2deg) scale(1.03);
   box-shadow: var(--shadow-sm);
 }
@@ -1121,7 +1089,7 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   color: var(--ink-sepia-soft);
   background: transparent;
   border-style: dashed;
-  border-color: var(--paper-edge);
+  border-color: var(--ink-line-soft);
   box-shadow: none;
   cursor: not-allowed;
 }
@@ -1141,8 +1109,8 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   padding: var(--space-4) var(--space-8);
   color: var(--ink-sepia);
   background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
-  border-radius: 8px 11px 7px 10px / 10px 7px 11px 8px;
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 14px 10px 13px / 13px 10px 14px 11px;
   box-shadow: var(--shadow-sm);
   opacity: 0.92;
   pointer-events: none;
@@ -1168,5 +1136,5 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   padding-top: var(--space-16);
   color: var(--ink-sepia-soft);
   text-align: center;
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
 }

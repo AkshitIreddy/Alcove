@@ -60,7 +60,7 @@
   text-align: center;
   color: var(--ink-sepia);
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-left: 4px solid var(--wash-moss-deep);
   border-radius: var(--radius-wobble-md);
   box-shadow: var(--shadow-lg);
@@ -97,7 +97,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-24);
-  background: rgba(94, 70, 45, 0.28);
+  background: var(--lift-ink-strong);
 }
 
 .nb-ins-card {
@@ -107,12 +107,7 @@
   max-height: min(86vh, 780px);
   padding: var(--space-20) var(--space-24) var(--space-16);
   background-color: var(--paper-aged);
-  background-image: radial-gradient(
-    120% 80% at 50% -10%,
-    var(--paper-glow) 0%,
-    transparent 60%
-  );
-  border: 2px dashed var(--ink-sepia-soft);
+  border: 2px dashed var(--ink-line);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-lg);
   transform: rotate(-0.35deg);
@@ -163,7 +158,7 @@
   line-height: 1.55;
   color: var(--ink-graphite);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-paper);
 }
@@ -202,7 +197,7 @@
   overflow-y: auto;
   padding: var(--space-16);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-paper);
 }
@@ -228,7 +223,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-graphite-soft);
-  border-bottom: 1px dashed var(--paper-edge);
+  border-bottom: 1px dashed var(--ink-line-soft);
 }
 
 .nb-ins-preview-doc h1,
@@ -283,7 +278,7 @@
 .nb-ins-preview-doc hr {
   margin: var(--space-12) 0;
   border: none;
-  border-top: 2px dashed var(--paper-edge);
+  border-top: 2px dashed var(--ink-line-soft);
 }
 
 .nb-ins-preview-doc code {
@@ -338,7 +333,7 @@
 .nb-ins-table th,
 .nb-ins-table td {
   padding: var(--space-4) var(--space-8);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   text-align: left;
 }
 
@@ -353,7 +348,7 @@
 .nb-ins-image img {
   max-width: 100%;
   max-height: 140px;
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-sm);
   background: var(--paper-deep);
 }
@@ -416,7 +411,7 @@
   letter-spacing: 0.05em;
   color: var(--ink-sepia-soft);
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-pill);
 }
 
@@ -436,7 +431,7 @@
       rgba(94, 70, 45, 0.04) 10px 20px
     ),
     var(--paper-cream);
-  border: 1.5px dashed var(--paper-edge);
+  border: 1.5px dashed var(--ink-line-soft);
   border-radius: var(--radius-md);
 }
 

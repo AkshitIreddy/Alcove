@@ -29,12 +29,7 @@
   height: min(88vh, 820px);
   overflow: hidden;
   background-color: var(--paper-aged);
-  background-image: radial-gradient(
-    120% 70% at 50% -8%,
-    var(--paper-glow) 0%,
-    transparent 62%
-  );
-  border: 2px dashed var(--ink-sepia-soft);
+  border: 2px dashed var(--ink-line);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-lg);
   transform: rotate(-0.3deg);
@@ -58,12 +53,10 @@
   gap: var(--space-4);
   flex: 0 0 104px;
   padding: var(--space-16) var(--space-8);
-  background: linear-gradient(
-    100deg,
-    var(--paper-deep) 0%,
-    var(--paper-aged) 130%
-  );
-  border-right: 2px dashed var(--paper-edge);
+  /* The rail is the DARKER FACE of the same sheet — flat.ts's one depth cue —
+     not a sheet lit from the left. */
+  background: var(--paper-deep);
+  border-right: 2px dashed var(--ink-line);
 }
 
 .nb-tr-rail-button {
@@ -117,7 +110,7 @@
   font-size: 14px;
   color: var(--ink-sepia-soft);
   background: transparent;
-  border: 1.5px dashed var(--paper-edge);
+  border: 1.5px dashed var(--ink-line-soft);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: color var(--dur-xs) var(--ease-out), background var(--dur-xs) var(--ease-out);
@@ -142,7 +135,7 @@
 .nb-tr-head {
   flex: 0 0 auto;
   padding-bottom: var(--space-8);
-  border-bottom: 2px dashed var(--paper-edge);
+  border-bottom: 2px dashed var(--ink-line-soft);
 }
 
 .nb-tr-headline {
@@ -218,7 +211,7 @@
   letter-spacing: var(--tracking-ui);
   color: var(--ink-sepia-soft);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-pill);
   cursor: pointer;
   transition:
@@ -256,7 +249,7 @@
   overflow-y: auto;
   padding: var(--space-8);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-paper);
 }
@@ -264,7 +257,7 @@
 .nb-tr-node + .nb-tr-node {
   margin-top: 2px;
   padding-top: 2px;
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
 }
 
 .nb-tr-row {
@@ -370,7 +363,7 @@
 .nb-tr-children {
   padding: 2px 0 var(--space-4) var(--space-24);
   margin-left: 9px;
-  border-left: 1.5px dashed var(--paper-edge);
+  border-left: 1.5px dashed var(--ink-line-soft);
 }
 
 .nb-tr-resolve {
@@ -464,7 +457,7 @@
   gap: 2px;
   padding: var(--space-8) var(--space-8) var(--space-12);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-paper);
 }
@@ -635,7 +628,7 @@
   max-width: 600px;
   text-align: center;
   background: var(--paper-cream);
-  border: 2.5px dashed var(--paper-edge);
+  border: 2.5px dashed var(--ink-line-soft);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-md);
   transform: rotate(-0.5deg);
@@ -648,7 +641,7 @@
   inset: 6px -9px -10px 8px;
   z-index: -1;
   background: var(--paper-aged);
-  border: 1.5px dashed var(--paper-edge);
+  border: 1.5px dashed var(--ink-line-soft);
   border-radius: var(--radius-hand);
   transform: rotate(1.4deg);
 }
@@ -671,7 +664,7 @@
   padding: var(--space-8);
   list-style: none;
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-paper);
 }
@@ -753,7 +746,7 @@
   overflow-y: auto;
   padding: var(--space-12);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset-paper);
 }
@@ -764,7 +757,7 @@
   gap: var(--space-16);
   padding: var(--space-8) var(--space-16) var(--space-12);
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-xs);
   transform: rotate(-0.25deg);
@@ -816,7 +809,7 @@
   text-transform: uppercase;
   color: var(--ink-sepia-soft);
   background: var(--paper-deep);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-pill);
   transform: rotate(-1.2deg);
 }
@@ -826,7 +819,7 @@
      footer rather than a half-empty list. */
   margin-top: auto;
   padding: var(--space-16) 0 var(--space-4);
-  border-top: 1.5px dashed var(--paper-edge);
+  border-top: 1.5px dashed var(--ink-line-soft);
   text-align: center;
   font-size: var(--text-ui-xs);
   letter-spacing: 0.04em;
@@ -839,7 +832,7 @@
   flex-wrap: wrap;
   gap: var(--space-8);
   padding-top: var(--space-8);
-  border-top: 2px dashed var(--paper-edge);
+  border-top: 2px dashed var(--ink-line-soft);
 }
 
 .nb-tr-empty-card {

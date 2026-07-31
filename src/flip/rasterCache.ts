@@ -39,7 +39,15 @@ const SNAPSHOTTING_CLASS = 'snapshotting';
 const SNAPSHOT_EXCLUDE_SELECTOR =
   '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
 
-/** 1×1 transparent PNG — stand-in for images that fail to inline. */
+/**
+ * 1×1 transparent PNG — stand-in for images that fail to inline.
+ *
+ * `backgroundColor` fills the canvas with cream before the clone is drawn,
+ * so a placeholder normally lands on paper. It is still the one deliberate
+ * source of alpha in a snapshot, and the curl shader treats any transparent
+ * texel as cream (see samplePage in flip/curl.ts) — never as black, which is
+ * what sampling premultiplied .rgb alone used to give.
+ */
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU1ErkJggg==';
 

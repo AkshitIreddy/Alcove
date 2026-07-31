@@ -31,7 +31,7 @@
   gap: 4px;
   padding: var(--space-8, 8px);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-sm);
   transform: rotate(-0.4deg);
@@ -54,19 +54,20 @@
   height: 168px;
   overflow: hidden;
   position: relative;
-  background: var(--paper-glow, var(--paper-cream));
-  border: 1px dashed var(--paper-edge);
+  background: var(--paper-cream);
+  border: 1px dashed var(--ink-line-soft);
   border-radius: var(--radius-sm);
   pointer-events: none;
 }
 
+/* The crop used to dissolve over 34px of gradient. Flat drawings crop with a
+   line: the preview stops, and an ink rule says so. */
 .nb-tpl-preview::after {
-  /* soft bottom fade so the crop reads as intentional */
   content: '';
   position: absolute;
   inset: auto 0 0 0;
-  height: 34px;
-  background: linear-gradient(transparent, var(--paper-cream));
+  height: 2px;
+  background: var(--ink-line-soft);
 }
 
 .nb-tpl-preview-scale {
@@ -118,7 +119,7 @@
   padding: var(--space-16, 16px) var(--space-8, 8px) var(--space-12, 12px);
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
@@ -168,7 +169,7 @@
 }
 
 .nb-user-sticker-import {
-  border: 1.6px dashed var(--paper-edge) !important;
+  border: 1.6px dashed var(--ink-line-soft) !important;
   color: var(--ink-sepia-soft);
   display: inline-flex;
   align-items: center;

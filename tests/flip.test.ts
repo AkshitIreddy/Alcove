@@ -1,15 +1,27 @@
 // @vitest-environment node
 /**
- * tests/flip.test.ts — pure page-flip math (src/flip/math.ts).
+ * tests/flip.test.ts — pure page-flip math (src/flip/math.ts) plus the curl
+ * shader's sampling invariants (src/flip/curl.ts).
  *
  * Everything here runs without DOM or WebGL: fold-line sweep, radius easing,
  * gesture→p clamp mapping (incl. corner tilt), the release velocity-decision
- * matrix, tween-duration/sound-volume scaling, snapshot dpr capping and the
- * raster cache's LRU eviction order.
+ * matrix, tween-duration/sound-volume scaling, snapshot dpr capping, the
+ * raster cache's LRU eviction order, and which page id lands on which face.
+ *
+ * The shader block cannot run GLSL in node, so it asserts on the shader
+ * SOURCE instead. Both rules it locks down were shipped bugs: sampling a
+ * premultiplied snapshot's .rgb painted transparent texels black, and
+ * sampling a 'prev' leaf without mirroring rendered the spread reversed for
+ * the length of the turn.
  */
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  CURL_FRAG_SRC,
+  GROUND_FRAG_SRC,
+  PAPER_CREAM_RGB,
+} from '../src/flip/curl';
 import {
   DPR_CAP_DEFAULT,
   DPR_CAP_LOW_MEMORY,
@@ -25,6 +37,7 @@ import {
   decideFlipTarget,
   dragToP,
   flipDuration,
+  flipFaceIds,
   foldLineX,
   foldTilt,
   foldTiltAtP,
@@ -256,6 +269,120 @@ describe('hitTestHotspot', () => {
     expect(hitTestHotspot(W + 1, H / 2, W, H)).toBeNull();
     expect(hitTestHotspot(W - 1, -1, W, H)).toBeNull();
     expect(hitTestHotspot(W - 1, H + 1, W, H)).toBeNull();
+  });
+});
+
+/* ──────────────────────── face selection (which page) ─────────────────── */
+
+describe('flipFaceIds', () => {
+  const ids = {
+    left: 'L',
+    right: 'R',
+    nextLeft: 'N1',
+    nextRight: 'N2',
+    prevLeft: 'P1',
+    prevRight: 'P2',
+  };
+
+  it('turns the right leaf forward: face = current right, back = next left', () => {
+    expect(flipFaceIds('next', ids)).toEqual({
+      front: 'R',
+      back: 'N1',
+      revealed: 'N2',
+    });
+  });
+
+  it('mirrors exactly for a backward turn (left leaf, prev RIGHT on its back)', () => {
+    expect(flipFaceIds('prev', ids)).toEqual({
+      front: 'L',
+      back: 'P2',
+      revealed: 'P1',
+    });
+  });
+
+  it('never confuses the two spreads either side', () => {
+    const next = flipFaceIds('next', ids);
+    const prev = flipFaceIds('prev', ids);
+    // A 'prev' flip must not touch a single next-spread id and vice versa.
+    expect(Object.values(next)).not.toContain('P1');
+    expect(Object.values(next)).not.toContain('P2');
+    expect(Object.values(prev)).not.toContain('N1');
+    expect(Object.values(prev)).not.toContain('N2');
+  });
+
+  it('reports missing neighbours as null (cream paper), never undefined', () => {
+    const bare = { left: null, right: 'R' };
+    expect(flipFaceIds('next', bare)).toEqual({
+      front: 'R',
+      back: null,
+      revealed: null,
+    });
+    expect(flipFaceIds('prev', bare)).toEqual({
+      front: null,
+      back: null,
+      revealed: null,
+    });
+  });
+});
+
+/* ─────────────────────── curl shader sampling rules ───────────────────── */
+
+describe('curl shader sources', () => {
+  /** Call sites where a page sampler is read (skips samplePage's own body). */
+  const pageSamples = (src: string): string[] =>
+    [...src.matchAll(/samplePage\(uTex\w+/g)].map((m) => m[0]);
+
+  it('routes every page texture through samplePage (never bare .rgb)', () => {
+    for (const src of [CURL_FRAG_SRC, GROUND_FRAG_SRC]) {
+      // A bare texture() read of a page sampler is the black-page bug.
+      expect(src).not.toMatch(/texture\(uTex(Front|Back|Revealed)/);
+      expect(src).toMatch(/samplePage\(uTex/);
+    }
+    expect(pageSamples(CURL_FRAG_SRC)).toHaveLength(2); // front + back
+    expect(pageSamples(GROUND_FRAG_SRC)).toHaveLength(1); // revealed
+  });
+
+  it('composites samples over paper cream, matching PAPER_CREAM_RGB', () => {
+    const cream = PAPER_CREAM_RGB.map((c) => (c / 255).toFixed(6)).join(', ');
+    expect(CURL_FRAG_SRC).toContain(`const vec3 PAPER_CREAM = vec3(${cream});`);
+    // Premultiplied composite: rgb already carries alpha, cream fills the rest.
+    expect(CURL_FRAG_SRC).toContain('texel.rgb + PAPER_CREAM * (1.0 - texel.a)');
+  });
+
+  it('mirrors faces per direction: front/revealed straight, back flipped', () => {
+    // faceUv's rule — mirrored ⇔ exactly one of (prev leaf, backside).
+    expect(CURL_FRAG_SRC).toContain('bool mirrored = (uDir < 0.0) != backside;');
+    expect(CURL_FRAG_SRC).toContain('samplePage(uTexFront, faceUv(vUv, false))');
+    expect(CURL_FRAG_SRC).toContain('samplePage(uTexBack, faceUv(vUv, true))');
+    expect(GROUND_FRAG_SRC).toContain('samplePage(uTexRevealed, faceUv(vUv, false))');
+  });
+
+  it('agrees with the truth table the fix was derived from', () => {
+    // Transliteration of faceUv's one expression; leaf-local x runs from the
+    // spine, so a 'prev' leaf (spine on the right) reads every front/revealed
+    // face backwards, while its BACKSIDE happens to line up straight.
+    const mirrored = (dir: 'next' | 'prev', backside: boolean): boolean =>
+      (dir === 'prev') !== backside;
+    expect(mirrored('next', false)).toBe(false); // right leaf, its own face
+    expect(mirrored('next', true)).toBe(true); // …its backside
+    expect(mirrored('prev', false)).toBe(true); // left leaf, its own face
+    expect(mirrored('prev', true)).toBe(false); // …its backside
+  });
+
+  it('keeps the ground pass shadow in unmirrored leaf-local space', () => {
+    // The fold-line distance must use the same coords the vertex shader
+    // deformed, or the cast shadow flips to the wrong side of the curl.
+    expect(GROUND_FRAG_SRC).toContain('vec2 local = vUv * uLeafSize;');
+  });
+
+  it('treats an uncovered paper-fibre texel as neutral, not black', () => {
+    expect(CURL_FRAG_SRC).toContain('vec3 fibre = (tile.rgb + (1.0 - tile.a))');
+  });
+
+  it('declares uDir in both fragment passes (faceUv needs it)', () => {
+    for (const src of [CURL_FRAG_SRC, GROUND_FRAG_SRC]) {
+      expect([...src.matchAll(/uniform float uDir;/g)]).toHaveLength(1);
+    }
   });
 });
 

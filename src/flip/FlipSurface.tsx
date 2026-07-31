@@ -56,7 +56,7 @@ import { PageFlipController, type FlipPages, type LeafSide } from './PageFlipCon
 import { PageRasterCache, type RasterEntry } from './rasterCache';
 import { createOffscreenPageCapture } from './offscreenPages';
 import type { PageDoc } from '../data/types';
-import type { FlipDirection } from './math';
+import { flipFaceIds, type FlipDirection } from './math';
 import '../styles/flip.css';
 
 export interface SpreadPageIds {
@@ -159,21 +159,8 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
       : (current.prevLeft ?? null) !== null || (current.prevRight ?? null) !== null;
   };
 
-  const getFlipPages = (dir: FlipDirection): FlipPages | null => {
-    if (!canFlip(dir)) return null;
-    const current = ids();
-    return dir === 'next'
-      ? {
-          front: current.right,
-          back: current.nextLeft ?? null,
-          revealed: current.nextRight ?? null,
-        }
-      : {
-          front: current.left,
-          back: current.prevRight ?? null,
-          revealed: current.prevLeft ?? null,
-        };
-  };
+  const getFlipPages = (dir: FlipDirection): FlipPages | null =>
+    canFlip(dir) ? flipFaceIds(dir, ids()) : null;
 
   // Read once, like the leaf children: a plain function prop, not JSX.
   const loadPageDoc = props.loadPageDoc;

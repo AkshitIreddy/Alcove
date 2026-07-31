@@ -133,13 +133,11 @@ export interface BakeSample {
   /** Truncated params (first 96 chars) — enough to identify the art piece. */
   what: string;
   ms: number;
-  /** 'disk' = read back from the PNG cache; 'bake' = the producer ran. */
   /**
    * `'disk'` — read back from the PNG cache; `'bake'` — the producer ran on
-   * this thread; `'offload'` — painted by the art worker; `'spine'` — a spine,
-   * wherever it was painted.
+   * this thread; `'spine'` — a spine, wherever it was painted.
    */
-  kind: 'disk' | 'bake' | 'spine' | 'offload';
+  kind: 'disk' | 'bake' | 'spine';
   at: number;
 }
 
@@ -230,46 +228,21 @@ export function pendingBakeTurns(): number {
   return pumpQueue.length;
 }
 
-/* ------------------------------ offloading -------------------------------- */
-
-/**
- * A hook that may paint a cache miss somewhere other than this thread.
- *
- * `bakeCached` is the single choke point every piece of baked art passes
- * through — the shelf's case, the studio's theme cards, the pull-out preview,
- * all of it. Putting the off-thread route HERE rather than at each call site
- * means one mechanism covers callers this module has never heard of, which is
- * how the theme-card grid stopped painting five rooms' worth of oak on the
- * main thread during boot without that panel having to know a worker exists.
- *
- * Contract: resolve a bitmap to claim the bake, or **`null` to decline** —
- * declining is normal (an unrecognised recipe, no worker, a failed job) and
- * simply falls through to the local producer. Never throws in a way the caller
- * has to handle; a rejection is treated as a decline.
- */
-export type BakeOffloader = (params: string, dpr: number) => Promise<ImageBitmap | null>;
-
-let offloader: BakeOffloader | null = null;
-
-/** Install (or clear, with `null`) the off-thread route. */
-export function setBakeOffloader(fn: BakeOffloader | null): void {
-  offloader = fn;
-}
-
-/** Is anything currently able to take bakes off this thread? (tests / HUD) */
-export function hasBakeOffloader(): boolean {
-  return offloader !== null;
-}
-
 /** A producer bakes the raster for a cache miss and hands back its canvas. */
 export type CanvasProducer = () => Promise<OffscreenCanvas>;
 
 /**
- * The cached bake path used by paper.ts / wood.ts / other bakers:
+ * The cached bake path every baker goes through:
  *  1. in-memory Map hit → shared ImageBitmap
  *  2. disk hit → readFile → createImageBitmap
  *  3. miss → produce() → convertToBlob → writeFile (best-effort) →
  *     transferToImageBitmap
+ *
+ * There is no off-thread route here any more. Routing a bake to the art worker
+ * only ever paid for the painting stack's brush work; the flat parts are a few
+ * dozen path fills, less work than posting a message about them. Spines still
+ * paint off-thread, but they go straight to `artOffload.spine()` from
+ * `SpineFactory` with the recipe in hand rather than encoded in a cache key.
  */
 export function bakeCached(
   params: string,
@@ -286,29 +259,6 @@ export function bakeCached(
     if (fromDisk) {
       recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t0, kind: 'disk', at: t0 });
       return fromDisk;
-    }
-
-    // Somebody else's thread, if one will have it. This is checked before the
-    // fairness pump because an offloaded bake costs this thread nothing and
-    // has no business queueing behind local producers.
-    if (offloader !== null) {
-      const tOff = performance.now();
-      let offloaded: ImageBitmap | null = null;
-      try {
-        offloaded = await offloader(params, dpr);
-      } catch {
-        offloaded = null;
-      }
-      if (offloaded !== null) {
-        recordBakeSample({
-          what: params.slice(0, 96),
-          ms: performance.now() - tOff,
-          kind: 'offload',
-          at: tOff,
-        });
-        persistBitmap(key, offloaded);
-        return offloaded;
-      }
     }
 
     // Wait for a turn so this producer's synchronous cost lands in a task of

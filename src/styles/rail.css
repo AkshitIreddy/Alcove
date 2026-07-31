@@ -5,6 +5,11 @@
    customize / page-style / stickers panels that slide out beside it
    (GSAP owns the panel's rest transform — never CSS % transforms).
    All colors from tokens.css. Hover feedback is transform/opacity only.
+
+   Flat language (tokens.css): every surface here is one flat fill bounded by
+   --ink-line at 2px, with a generous radius and at most the one flat offset
+   lift. The hairline paper-edge borders these used to wear made the rail read
+   as a stack of faint receipts over a boldly-inked bookcase.
    ========================================================================== */
 
 /* ------------------------------------ rail -------------------------------- */
@@ -20,7 +25,7 @@
   gap: var(--space-4);
   padding: var(--space-8) var(--space-4);
   background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-md);
 }
@@ -47,9 +52,9 @@
 }
 
 .nb-rail-button.is-active {
-  background: var(--wash-amber-light);
-  border-color: var(--wash-amber-deep);
-  color: var(--wash-amber-deep);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
 }
 
 .nb-rail-icon {
@@ -61,7 +66,7 @@
   width: 22px;
   height: 1px;
   margin: var(--space-4) 0;
-  background: var(--paper-edge);
+  background: var(--ink-line);
   transform: rotate(-1.2deg);
 }
 
@@ -78,8 +83,8 @@
   letter-spacing: var(--tracking-ui);
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
-  border-radius: 4px 8px 6px 9px / 7px 5px 9px 6px;
+  border: var(--stroke-ink-thin);
+  border-radius: 8px 11px 9px 12px / 11px 8px 12px 9px;
   padding: 3px var(--space-8);
   box-shadow: var(--shadow-sm);
   opacity: 0;
@@ -106,8 +111,8 @@
   display: flex;
   flex-direction: column;
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-lg) var(--radius-hand) var(--radius-lg) var(--radius-hand);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-wobble-lg);
   box-shadow: var(--shadow-lg);
   visibility: hidden; /* GSAP flips this + owns xPercent */
   will-change: transform;
@@ -118,7 +123,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-12) var(--space-16) var(--space-8);
-  border-bottom: 1px dashed var(--paper-edge);
+  border-bottom: 1px dashed var(--ink-line-soft);
 }
 
 .nb-rail-panel-title {
@@ -162,7 +167,7 @@
 .nb-studio-hint {
   margin-top: var(--space-16);
   padding-top: var(--space-12);
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
 }
 
 .nb-rail-panel-body {
@@ -182,7 +187,7 @@
 .nb-panel-section-divided {
   margin-top: var(--space-16);
   padding-top: var(--space-12);
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
 }
 
 .nb-panel-section-title {
@@ -245,8 +250,8 @@
   letter-spacing: var(--tracking-ui);
   color: var(--ink-sepia);
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: 6px 10px 8px 11px / 9px 7px 11px 8px;
+  border: var(--stroke-ink-thin);
+  border-radius: 10px 14px 12px 15px / 13px 11px 15px 12px;
   padding: var(--space-4) var(--space-8);
   transition:
     background var(--dur-xs) var(--ease-out),
@@ -261,16 +266,16 @@
 
 .nb-chip[aria-pressed='true'],
 .nb-chip[aria-checked='true'] {
-  background: var(--wash-amber-light);
-  border-color: var(--wash-amber-deep);
-  color: var(--wash-amber-deep);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
   font-weight: 700;
 }
 
 .nb-chip-gilt[aria-checked='true'] {
-  background: var(--wash-lemon-light);
-  border-color: #c9a227;
-  color: #8f6f14;
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
 }
 
 .nb-chip-ghost {
@@ -289,7 +294,7 @@
 .nb-cover-preview {
   width: 152px;
   height: 207px;
-  border-radius: 4px 10px 10px 5px / 6px 8px 9px 7px;
+  border-radius: 8px 14px 14px 9px / 10px 12px 13px 11px;
   box-shadow: var(--shadow-md);
 }
 
@@ -299,21 +304,26 @@
   gap: var(--space-4);
 }
 
+/* A swatch is a book cloth, so it is drawn like one: flat fill, ink edge.
+   It used to carry a transparent border that only appeared when chosen, which
+   made the pale colourways (rice, ivory, limewash) disappear into the panel. */
 .nb-swatch {
   aspect-ratio: 1;
-  border-radius: 5px 9px 7px 10px / 8px 6px 10px 7px;
-  border: 2px solid transparent;
+  border-radius: 9px 13px 11px 14px / 12px 10px 14px 11px;
+  border: var(--stroke-ink-thin);
   box-shadow: var(--shadow-xs);
-  transition: transform var(--dur-xs) var(--ease-out), border-color var(--dur-xs) var(--ease-out);
+  transition: transform var(--dur-xs) var(--ease-out), box-shadow var(--dur-xs) var(--ease-out);
 }
 
 .nb-swatch:hover {
   transform: scale(1.08) rotate(-2deg);
 }
 
+/* Chosen = a flat accent plate behind the swatch, so the cloth colour itself
+   is never obscured by the marker. */
 .nb-swatch.is-active,
 .nb-swatch[aria-pressed='true'] {
-  border-color: var(--ink-sepia);
+  box-shadow: 0 0 0 3px var(--accent-deep);
 }
 
 /* ----------------------------- page-style panel ---------------------------- */
@@ -331,7 +341,7 @@
   gap: var(--space-4);
   padding: var(--space-8);
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   transition:
     background var(--dur-xs) var(--ease-out),
@@ -344,8 +354,9 @@
 }
 
 .nb-pagestyle-card[aria-pressed='true'] {
-  background: var(--wash-amber-light);
-  border-color: var(--wash-amber-deep);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
 }
 
 .nb-pagestyle-label {
@@ -359,7 +370,7 @@
   width: 64px;
   height: 46px;
   background-color: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-sm);
 }
 
@@ -393,7 +404,7 @@
   gap: 2px;
   margin-top: var(--space-8);
   padding-top: var(--space-8);
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
 }
 
 .nb-rail-pencil {
@@ -485,7 +496,8 @@
 }
 
 .nb-toc-row.is-current {
-  border-color: var(--wash-amber-deep);
+  border-color: var(--ink-line);
+  background: var(--wash-amber-light);
 }
 
 .nb-toc-row[data-level='2'] {
@@ -535,8 +547,8 @@
 .nb-history-row {
   padding: var(--space-8);
   background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
-  border-radius: 6px 10px 7px 11px / 9px 6px 11px 7px;
+  border: var(--stroke-ink-thin);
+  border-radius: 10px 14px 11px 15px / 13px 10px 15px 11px;
 }
 
 .nb-history-meta {
@@ -571,9 +583,9 @@
 }
 
 .nb-history-restore-yes {
-  background: var(--wash-amber-light);
-  border-color: var(--wash-amber-deep);
-  color: var(--wash-amber-deep);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
   font-weight: 700;
 }
 
@@ -591,7 +603,7 @@
   align-items: center;
   justify-content: center;
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   padding: var(--space-4);
   transition: transform var(--dur-xs) var(--ease-spring), background var(--dur-xs) var(--ease-out);
@@ -618,7 +630,7 @@
   display: flex;
   gap: var(--space-4);
   padding-bottom: var(--space-8);
-  border-bottom: 1px dashed var(--paper-edge);
+  border-bottom: 1px dashed var(--ink-line-soft);
 }
 
 .nb-studio-tab {
@@ -643,9 +655,9 @@
 }
 
 .nb-studio-tab.is-active {
-  color: var(--ink-sepia);
-  background: var(--wash-amber-light);
-  border-color: var(--wash-amber-deep);
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
   transform: rotate(-0.5deg);
 }
 
@@ -682,7 +694,7 @@
   display: block;
   backface-visibility: hidden;
   border-radius: 4px 10px 10px 5px / 6px 8px 9px 7px;
-  filter: drop-shadow(2px 5px 7px rgba(58, 42, 24, 0.28));
+  box-shadow: var(--shadow-md);
 }
 
 .nb-studio-face-cover {
@@ -709,8 +721,8 @@
   padding: 4px 4px 6px;
   text-align: left;
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: 7px 12px 9px 11px / 10px 8px 12px 9px;
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 16px 13px 15px / 14px 12px 16px 13px;
   box-shadow: var(--shadow-xs);
   overflow: hidden;
   transition:
@@ -725,7 +737,8 @@
 }
 
 .nb-theme-card.is-active {
-  border-color: var(--wash-amber-deep);
+  border-color: var(--ink-line);
+  background: var(--wash-amber-light);
   box-shadow: var(--shadow-md);
 }
 
@@ -737,9 +750,9 @@
   font-family: var(--font-ui);
   font-size: 12px;
   line-height: 1;
-  color: #6b4a16;
-  background: var(--wash-lemon-light);
-  border: 1.5px solid #c9a227;
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: 1.5px solid var(--on-gilt);
   border-radius: var(--radius-pill);
   padding: 2px 5px;
 }
@@ -749,8 +762,8 @@
   height: auto;
   aspect-ratio: 168 / 116;
   display: block;
-  border-radius: 4px 7px 5px 6px / 6px 4px 7px 5px;
-  background: var(--paper-edge);
+  border-radius: 8px 11px 9px 10px / 10px 8px 11px 9px;
+  background: var(--paper-deep);
 }
 
 .nb-theme-card-name {
@@ -814,7 +827,7 @@
 .nb-reroll:hover {
   color: var(--ink-sepia);
   background: var(--wash-lemon-light);
-  border-color: var(--paper-edge);
+  border-color: var(--ink-line);
   transform: rotate(-6deg);
 }
 
@@ -822,10 +835,8 @@
   transform: rotate(5deg) scale(0.92);
 }
 
-.nb-reroll:focus-visible {
-  outline: 2px dashed var(--ink-sepia-soft);
-  outline-offset: 2px;
-}
+/* No local focus override: the global ring (global.css) is a solid accent
+   outline, which is more visible here than a second dashed pencil line. */
 
 .nb-reroll svg {
   width: 100%;
@@ -855,10 +866,6 @@
   cursor: progress;
 }
 
-.nb-panel-slider-warmth {
-  accent-color: #d9922f;
-}
-
 /* The studio's chip grids get tighter type — there are a lot of them. */
 .nb-book-studio .nb-chip,
 .nb-library-studio .nb-chip {
@@ -867,5 +874,5 @@
 
 /* Pale colourways (rice, ivory, limewash) need an edge to read on cream. */
 .nb-swatch-colourway {
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
 }

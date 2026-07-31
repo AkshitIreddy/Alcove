@@ -4,8 +4,9 @@
  * Everything the gesture and renderer need to *decide* lives here so it can
  * be unit-tested in a plain node environment (tests/flip.test.ts):
  * fold-line position, curl radius easing, gesture→p mapping, corner fold
- * tilt, release-velocity decision, tween duration, snapshot pixel-ratio cap,
- * sound-volume scaling and the LRU used by the raster cache.
+ * tilt, which page lands on which face of the moving sheet, release-velocity
+ * decision, tween duration, snapshot pixel-ratio cap, sound-volume scaling
+ * and the LRU used by the raster cache.
  *
  * Conventions
  * - `p ∈ [0,1]` is flip progress (0 = page at rest, 1 = fully flipped).
@@ -125,6 +126,57 @@ export function foldTilt(grip: FlipGrip, cyNorm: number): number {
 export function foldTiltAtP(baseTilt: number, p: number): number {
   const t = clamp01(p);
   return baseTilt * (1 - t * t);
+}
+
+/* ----------------------------------------------------------------------------
+   Face selection (which page lands on which side of the moving sheet)
+   -------------------------------------------------------------------------- */
+
+/** A settled spread's ids plus the two spreads either side of it. */
+export interface SpreadNeighbourIds {
+  left: string | null;
+  right: string | null;
+  /** Pages behind the current right leaf ('next' flip). */
+  nextLeft?: string | null;
+  nextRight?: string | null;
+  /** Pages before the current left leaf ('prev' flip). */
+  prevLeft?: string | null;
+  prevRight?: string | null;
+}
+
+/** The three snapshots a flip needs; null = plain cream paper. */
+export interface FlipFaceIds {
+  /** The moving sheet's visible face at rest. */
+  front: string | null;
+  /** The same sheet's other side — what sweeps in past the crest. */
+  back: string | null;
+  /** The page uncovered beneath the sheet. */
+  revealed: string | null;
+}
+
+/**
+ * Which page belongs on which face of the moving sheet.
+ *
+ * 'next' turns the RIGHT leaf: its visible face is the current right page,
+ * its backside is the next spread's LEFT page, and the next spread's right
+ * page lies uncovered beneath. 'prev' turns the LEFT leaf and is the exact
+ * mirror — face = current left, backside = the previous spread's RIGHT page,
+ * revealed = the previous spread's left page. Mirroring this wrong shows the
+ * wrong page for the whole gesture, so the table lives here where it is
+ * testable rather than inline in the Solid component.
+ */
+export function flipFaceIds(dir: FlipDirection, ids: SpreadNeighbourIds): FlipFaceIds {
+  return dir === 'next'
+    ? {
+        front: ids.right,
+        back: ids.nextLeft ?? null,
+        revealed: ids.nextRight ?? null,
+      }
+    : {
+        front: ids.left,
+        back: ids.prevRight ?? null,
+        revealed: ids.prevLeft ?? null,
+      };
 }
 
 /* ----------------------------------------------------------------------------

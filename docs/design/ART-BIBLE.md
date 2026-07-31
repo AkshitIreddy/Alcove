@@ -76,8 +76,8 @@ Enough books to suggest abundance without crowding. Enough plants to say nature 
 
 | Bible principle | Where it is implemented |
 |---|---|
-| Lighting is the atmosphere | `src/art/lighting.ts` + `src/render/` deferred pass — key, rim, translucency, bloom, warm AO, grade |
-| Materials with history | photoreal generation (Juggernaut XL + Detail Tweaker), wear language in every prompt |
+| Lighting is the atmosphere | **superseded.** The deferred pass (`src/art/lighting.ts` + `src/render/`) is deleted. The flat language has no lights: depth is a darker flat face beside a lighter one, plus `flat.contactShadow()` where an object meets a surface |
+| Materials with history | **superseded.** Photoreal generation is gone; a material now shows in the silhouette and dressing (cords, round back, gilt), never in a simulated surface |
 | Books never repeat | procedural composition: per-book size, lean, wear, binding, foil, fade |
 | Controlled randomness | seeded jitter on every repeated element; clustered placement, never even spacing |
 | Believable growth | flora anchored to plausible origins, paths that wrap and exit frame |

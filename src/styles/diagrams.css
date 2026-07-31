@@ -34,7 +34,7 @@
 /* Lazy-mount placeholder: a penciled empty frame */
 .nb-diagram-skeleton {
   min-height: 140px;
-  border: 2px dashed var(--paper-edge);
+  border: 2px dashed var(--ink-line-soft);
   border-radius: var(--radius-hand);
   background: var(--paper-aged);
   opacity: 0.6;
@@ -226,7 +226,7 @@
   font-size: 14px;
   color: var(--ink-graphite);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   cursor: pointer;
   box-shadow: var(--shadow-xs);
@@ -274,7 +274,7 @@
   line-height: 1.5;
   color: var(--ink-graphite);
   background: var(--paper-aged);
-  border: 1.5px dashed var(--paper-edge);
+  border: 1.5px dashed var(--ink-line-soft);
   border-radius: var(--radius-md);
   padding: var(--space-8);
   outline: none;
@@ -304,7 +304,7 @@
   font-size: var(--text-sm);
   color: var(--ink-sepia);
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   padding: 2px var(--space-12);
   cursor: pointer;

@@ -59,13 +59,12 @@
   gap: 2px;
   padding: 4px 10px;
   background: var(--paper-aged);
-  border: 2px solid var(--ink-graphite);
-  /* Lumpy hand-drawn pill: uneven radii read as inked, not machined. */
+  /* Same ink as the bookcase it floats over, at the same confident weight.
+     The inset paper rim and inset blur it used to carry were a bevel — a
+     light model — so the pill read as a plastic capsule on a flat drawing. */
+  border: var(--stroke-ink);
   border-radius: 22px 26px 24px 28px / 26px 22px 28px 24px;
-  box-shadow:
-    var(--shadow-md, 0 3px 8px rgba(94, 70, 45, 0.25)),
-    inset 0 0 0 1.5px rgba(247, 241, 227, 0.7),
-    inset 0 1px 4px rgba(94, 70, 45, 0.12);
+  box-shadow: var(--shadow-md);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -106,7 +105,7 @@
 .shelf-zoom-pill__btn:hover,
 .shelf-zoom-pill__pct:hover,
 .shelf-zoom-pill__fit:hover {
-  background: rgba(233, 196, 106, 0.35);
+  background: var(--wash-amber-light);
 }
 
 .shelf-zoom-pill__btn:active,
@@ -115,18 +114,14 @@
   transform: translateY(1px) rotate(0.6deg);
 }
 
-.shelf-zoom-pill__btn:focus-visible,
-.shelf-zoom-pill__pct:focus-visible,
-.shelf-zoom-pill__fit:focus-visible {
-  outline: 2px dashed var(--ink-sepia-soft);
-  outline-offset: 2px;
-}
-
+/* The pill's own buttons sit inside a 2px ink border, so their focus ring
+   uses the global solid accent outline rather than a second dashed line
+   that would read as more of the same ink. */
 .shelf-zoom-pill__rule {
   width: 2px;
   height: 20px;
   margin: 0 4px;
-  background: var(--paper-edge);
+  background: var(--ink-line);
   border-radius: var(--radius-pill, 999px);
   transform: rotate(3deg);
 }
@@ -151,11 +146,9 @@
   gap: 4px;
   padding: 8px 7px;
   background: var(--paper-aged);
-  border: 2px solid var(--ink-graphite);
+  border: var(--stroke-ink);
   border-radius: var(--radius-wobble-lg);
-  box-shadow:
-    var(--shadow-md),
-    inset 0 0 0 1.5px rgba(255, 252, 238, 0.72);
+  box-shadow: var(--shadow-md);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -183,7 +176,7 @@
 
 .shelf-dock__btn:hover {
   background: var(--wash-lemon-light);
-  border-color: var(--paper-edge);
+  border-color: var(--ink-line);
   transform: translateY(-1px);
 }
 
@@ -191,22 +184,21 @@
   transform: translateY(1px) rotate(0.5deg);
 }
 
-.shelf-dock__btn:focus-visible {
-  outline: 2px dashed var(--ink-sepia-soft);
-  outline-offset: 2px;
-}
-
-/* The headline verb: cherry-blossom pink so the eye lands here first. */
+/* The headline verb: the terracotta face, so the eye lands here first. */
 .shelf-dock__btn.is-primary {
   color: var(--accent-ink);
   font-weight: 700;
   background: var(--accent-light);
-  border-color: var(--accent-deep);
+  border-color: var(--ink-line);
 }
 
+/* Hover FILLS the button rather than tinting it — the pale rung has nowhere
+   left to go once the rest is flat. --on-accent is the label token gated at
+   4.5:1 against --accent-deep in every theme. */
 .shelf-dock__btn.is-primary:hover {
-  background: #ffd2e0;
-  border-color: var(--accent-deep);
+  background: var(--accent-deep);
+  color: var(--on-accent);
+  border-color: var(--ink-line);
 }
 
 .shelf-dock__icon {
@@ -219,12 +211,12 @@
   white-space: nowrap;
 }
 
-/* Horizontal pencil line between "make a book" and "dress the room". */
+/* Horizontal ink line between "make a book" and "dress the room". */
 .shelf-dock__rule {
   width: 72%;
   height: 2px;
   margin: 2px auto;
-  background: var(--paper-edge);
+  background: var(--ink-line);
   border-radius: var(--radius-pill);
   transform: rotate(-2deg);
 }
@@ -242,17 +234,13 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  background: linear-gradient(
-    177deg,
-    rgba(255, 253, 244, 0.5),
-    rgba(255, 243, 210, 0.28)
-  );
-  border: 3px dashed rgba(48, 42, 36, 0.82);
-  /* Lumpy: a pencil outline, not a CSS rectangle. */
-  border-radius: 5px 9px 8px 4px / 8px 5px 9px 6px;
-  box-shadow:
-    0 0 0 2.5px rgba(255, 252, 238, 0.55),
-    0 5px 16px rgba(38, 28, 18, 0.28);
+  /* One flat face plus the one outline colour: the empty slot is drawn in
+     exactly the vocabulary the books that will fill it are drawn in, just
+     dashed so it reads as "not yet a book". */
+  background: var(--paper-aged);
+  border: 3px dashed var(--ink-line);
+  border-radius: 8px 12px 11px 7px / 11px 8px 12px 9px;
+  box-shadow: var(--shadow-md);
   transition:
     background var(--dur-sm, 180ms) var(--ease-out),
     border-color var(--dur-sm, 180ms) var(--ease-out),
@@ -266,7 +254,7 @@
   left: 16%;
   right: 16%;
   top: 21%;
-  border-top: 2px dashed rgba(59, 54, 48, 0.42);
+  border-top: 2px dashed var(--ink-line-soft);
 }
 
 .shelf-addslot__plus {
@@ -280,7 +268,7 @@
   line-height: 1;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 2px solid var(--ink-graphite);
+  border: var(--stroke-ink);
   border-radius: 50% 47% 53% 50% / 50% 53% 47% 50%;
   box-shadow: var(--shadow-xs);
   transition:
@@ -302,7 +290,7 @@
   white-space: nowrap;
   color: var(--accent-ink);
   background: var(--paper-cream);
-  border: 1.5px solid var(--accent-deep);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-wobble-sm);
   box-shadow: var(--shadow-sm);
   opacity: 0;
@@ -310,26 +298,23 @@
   pointer-events: none;
 }
 
+/* Hover swaps the slot's face for the accent tint and lifts it by the one
+   flat offset. `outline: none` is safe here because the accent face IS the
+   focus indication, and it is the same treatment for hover and focus. */
 .shelf-addslot:hover,
 .shelf-addslot:focus-visible {
   outline: none;
-  background: linear-gradient(
-    177deg,
-    rgba(255, 226, 236, 0.72),
-    rgba(255, 205, 224, 0.5)
-  );
+  background: var(--accent-light);
   border-color: var(--accent-deep);
-  box-shadow:
-    0 0 0 3px rgba(255, 226, 236, 0.6),
-    0 8px 22px rgba(199, 47, 102, 0.3);
+  box-shadow: var(--shadow-lg);
   transform: translateY(-3px);
 }
 
 .shelf-addslot:hover .shelf-addslot__plus,
 .shelf-addslot:focus-visible .shelf-addslot__plus {
-  color: #fff6fa;
+  color: var(--on-accent);
   background: var(--accent-deep);
-  border-color: var(--accent-deep);
+  border-color: var(--ink-line);
   transform: scale(1.12) rotate(90deg);
 }
 
@@ -348,17 +333,15 @@
     var(--ease-in-out, ease-in-out) infinite;
 }
 
+/* The beckon is a flat accent plate growing behind the slot — a ring that
+   steps out and back, with no blur anywhere in it. */
 @keyframes shelf-addslot-breathe {
   0%,
   100% {
-    box-shadow:
-      0 0 0 2px rgba(255, 252, 238, 0.36),
-      0 5px 16px rgba(38, 28, 18, 0.22);
+    box-shadow: 0 0 0 0 var(--accent-light), var(--shadow-md);
   }
   50% {
-    box-shadow:
-      0 0 0 5px rgba(255, 214, 232, 0.5),
-      0 8px 22px rgba(199, 47, 102, 0.28);
+    box-shadow: 0 0 0 6px var(--accent-light), var(--shadow-lg);
   }
 }
 
@@ -379,11 +362,9 @@
   padding: 14px 18px 16px;
   transform: rotate(-0.8deg);
   background: var(--paper-cream);
-  border: 2px solid var(--ink-graphite);
+  border: var(--stroke-ink);
   border-radius: var(--radius-wobble-lg);
-  box-shadow:
-    var(--shadow-lg),
-    inset 0 0 0 1.5px rgba(255, 252, 238, 0.8);
+  box-shadow: var(--shadow-lg);
 }
 
 .shelf-firstrun__eyebrow {
@@ -412,16 +393,18 @@
   font-weight: 700;
   color: var(--accent-ink);
   background: var(--accent-light);
-  border: 2px solid var(--accent-deep);
+  border: var(--stroke-ink);
   border-radius: var(--radius-wobble-md);
   cursor: pointer;
   transition:
     background var(--dur-xs, 120ms) var(--ease-out),
+    color var(--dur-xs, 120ms) var(--ease-out),
     transform var(--dur-xs, 120ms) var(--ease-out);
 }
 
 .shelf-firstrun__btn:hover {
-  background: #ffd2e0;
+  background: var(--accent-deep);
+  color: var(--on-accent);
   transform: translateY(-1px);
 }
 
@@ -460,9 +443,7 @@
   background: var(--paper-cream);
   border: 2px dashed var(--accent-deep);
   border-radius: var(--radius-wobble-sm);
-  box-shadow:
-    0 4px 14px rgba(38, 28, 18, 0.3),
-    inset 0 0 0 1.5px rgba(255, 252, 238, 0.8);
+  box-shadow: var(--shadow-md);
   outline: none;
   /* Fades in as the new spine finishes sliding onto the plank. */
   animation: shelf-spine-name-in calc(0.22s * var(--motion-scale, 1))
@@ -495,59 +476,22 @@
   will-change: transform, opacity;
   pointer-events: none;
 
-  background: linear-gradient(
-    172deg,
-    var(--cover-top, var(--wash-amber)) 0%,
-    var(--cover-bottom, var(--wash-amber-deep)) 100%
-  );
-  border: 2px solid rgba(58, 50, 42, 0.55);
-  border-radius: 6px 14px 14px 6px / 8px 12px 12px 8px;
+  /* The flat cloth face showing until the cover canvas paints over it. The
+     gradient this replaces was a lighting model the canvas book beside it does
+     not have, so a book mid-pull changed material the instant it left the
+     shelf. */
+  background: var(--wash-terracotta);
+  border: var(--stroke-ink);
+  border-radius: 10px 18px 18px 10px / 12px 16px 16px 12px;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
-/* Darker "spine" strip along the cover's bound edge. */
-.pulled-book__spine-edge {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 9%;
-  background: linear-gradient(
-    to right,
-    rgba(46, 36, 26, 0.35),
-    rgba(46, 36, 26, 0.12) 55%,
-    transparent
-  );
-}
-
-.pulled-book__face {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-12);
-  padding: var(--space-24) var(--space-32);
-  text-align: center;
-}
-
-.pulled-book__title {
-  font-family: var(--font-heading);
-  font-size: var(--text-h3);
-  font-weight: 700;
-  line-height: var(--leading-heading);
-  color: var(--paper-cream);
-  text-shadow: 0 1px 2px rgba(46, 36, 26, 0.45);
-  overflow-wrap: break-word;
-  max-width: 100%;
-}
-
-.pulled-book__rule {
-  width: 42%;
-  height: 2px;
-  border-radius: var(--radius-pill);
-  background: rgba(247, 241, 227, 0.65);
-}
+/*
+ * `.pulled-book__spine-edge` / `__face` / `__title` / `__rule` were styled
+ * here. `PulledBookOverlay` renders exactly one child — a <canvas> that paints
+ * the whole cover — so none of them ever matched an element.
+ */
 
 /* ----------------------------------------------------------------------------
    Shelf book menu (wave-2) — right-click card mirroring the editor context
@@ -559,8 +503,8 @@
   width: 216px;
   padding: var(--space-8);
   background: var(--paper-aged);
-  border: 1.5px solid var(--ink-sepia-soft);
-  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  border: var(--stroke-ink);
+  border-radius: 14px 18px 16px 20px / 18px 14px 20px 16px;
   box-shadow: var(--shadow-md);
 }
 
@@ -570,7 +514,7 @@
   font-size: 14px;
   font-weight: 700;
   color: var(--ink-sepia);
-  border-bottom: 1.5px dashed var(--paper-edge);
+  border-bottom: 1.5px dashed var(--ink-line-soft);
   margin-bottom: var(--space-4);
   white-space: nowrap;
   overflow: hidden;
@@ -599,7 +543,7 @@
 .shelf-menu__item.is-selected,
 .shelf-menu__item:hover {
   background: var(--wash-amber-light);
-  border-color: var(--ink-sepia-soft);
+  border-color: var(--ink-line);
 }
 
 .shelf-menu__item.is-danger .shelf-menu__label {
@@ -614,8 +558,8 @@
   place-items: center;
   font-size: 13px;
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: 6px 9px 7px 10px;
+  border: var(--stroke-ink-thin);
+  border-radius: 8px 11px 9px 12px;
   transform: rotate(-2deg);
 }
 
@@ -644,13 +588,16 @@
   font-size: 15px;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.5px solid var(--ink-sepia-soft);
-  border-radius: 8px 11px 9px 12px;
+  border: var(--stroke-ink-thin);
+  border-radius: 10px 13px 11px 14px;
   outline: none;
 }
 
+/* `outline: none` above kills the global focus ring on this input, so focus
+   has to be re-stated here — a solid accent rim, not a style change. */
 .shelf-menu__input:focus-visible {
-  border-style: dashed;
+  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 2px var(--accent-deep);
 }
 
 .shelf-menu__row {
@@ -666,8 +613,8 @@
   font-size: 13.5px;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.5px solid var(--ink-sepia-soft);
-  border-radius: 10px 13px 11px 14px / 12px 10px 14px 11px;
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 15px 13px 16px / 14px 12px 16px 13px;
   cursor: pointer;
   transition: background var(--dur-xs) var(--ease-out), transform var(--dur-xs) var(--ease-out);
 }
@@ -695,8 +642,10 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Floor plaque inline editor — a small engraved-brass-toned input floated
-   exactly over the canvas plaque (double-click to edit).
+   Floor plaque inline editor — a small gilt plate floated exactly over the
+   canvas plaque (double-click to edit). It was a three-stop brass gradient
+   with an inset catch-light; the plaque it covers is one flat gilt fill with
+   an ink edge, so it is now the same.
    -------------------------------------------------------------------------- */
 .shelf-plate-edit {
   position: fixed;
@@ -705,16 +654,23 @@
   font-family: var(--font-accent);
   font-size: 14px;
   text-align: center;
-  color: #3e2a0e;
-  background: linear-gradient(180deg, #e4c06a, #c39a44 55%, #a67f30);
-  border: 1.5px solid rgba(74, 54, 22, 0.85);
-  border-radius: 6px 9px 7px 10px;
-  box-shadow: var(--shadow-md), inset 0 1px 2px rgba(255, 240, 200, 0.5);
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: 1.5px solid var(--on-gilt);
+  border-radius: 8px 11px 9px 12px;
+  box-shadow: var(--shadow-md);
   outline: none;
 }
 
 .shelf-plate-edit::placeholder {
-  color: rgba(62, 42, 14, 0.5);
+  color: var(--on-gilt);
+  opacity: 0.6;
+}
+
+/* The editor kills the global ring with `outline: none`, so focus is a solid
+   accent rim instead. */
+.shelf-plate-edit:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-deep), var(--shadow-md);
 }
 
 /* ----------------------------------------------------------------------------
@@ -732,16 +688,16 @@
   flex-direction: column;
   padding: var(--space-12) var(--space-16);
   background: var(--paper-aged);
-  border: 2px solid var(--ink-graphite);
-  border-radius: 14px 20px 16px 22px / 18px 14px 22px 16px;
-  box-shadow: var(--shadow-lg), inset 0 0 0 1.5px rgba(247, 241, 227, 0.7);
+  border: var(--stroke-ink);
+  border-radius: 18px 24px 20px 26px / 22px 18px 26px 20px;
+  box-shadow: var(--shadow-lg);
 }
 
 .shelf-trash__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1.5px dashed var(--paper-edge);
+  border-bottom: 1.5px dashed var(--ink-line-soft);
   padding-bottom: var(--space-4);
   margin-bottom: var(--space-8);
 }
@@ -791,7 +747,7 @@
   align-items: center;
   gap: var(--space-8);
   padding: 5px var(--space-4);
-  border-bottom: 1px dashed var(--paper-edge);
+  border-bottom: 1px dashed var(--ink-line-soft);
 }
 
 .shelf-trash__row:last-child {

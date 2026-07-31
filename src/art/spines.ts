@@ -33,8 +33,7 @@ import { clamp, mulberry32, type RandomFn } from './noise';
  * does not simulate a surface, so on the shelf a material now shows up in the
  * *silhouette and dressing* rather than in the texture: which bindings get
  * cords, how round the back is, how likely gilt is. The vocabulary is kept
- * whole because it is persisted per book, drives the Book Studio, and still
- * names a real sheet in `art/materials.ts` (see `bindingMaterialSlug`).
+ * whole because it is persisted per book and drives the Book Studio.
  */
 export const BINDING_MATERIALS = [
   'leather',
@@ -52,7 +51,7 @@ export type BindingMaterial = (typeof BINDING_MATERIALS)[number];
  * in the studio: rather than inflate the studio's material picker to a dozen
  * entries, each material carries two or three grains and the seed picks one.
  * The flat spine does not draw a grain, but the distinction is persisted and
- * still selects a sheet in `bindingMaterialSlug`:
+ * still shifts the silhouette:
  *
  * - leather: `0` smooth calf · `1` pebbled morocco · `2` crackled (craquelure)
  * - cloth:   `0` flat buckram · `1` ribbed (rep) cloth · `2` pyroxylin sheen
@@ -731,13 +730,10 @@ export function getSpinePalette(params: SpineParams): SpinePaletteCss {
   };
 }
 
-/* --------------------------- granulation tile ---------------------------- */
+/* ------------------------------- canvases -------------------------------- */
 
 export type Canvas2D = OffscreenCanvas | HTMLCanvasElement;
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-
-const GRANULATION_SIZE = 256;
-let granulationTile: Canvas2D | null = null;
 
 function makeCanvas(w: number, h: number): Canvas2D {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -751,33 +747,6 @@ function get2d(c: Canvas2D): Ctx2D {
   const ctx = (c as OffscreenCanvas).getContext('2d');
   if (!ctx) throw new Error('spines: 2d context unavailable');
   return ctx as Ctx2D;
-}
-
-/**
- * The shared 256² high-frequency granulation noise tile (module-level lazy).
- * Drawn with globalCompositeOperation 'overlay' at alpha 0.06 — cheaper than
- * another filter chain. Nothing on a book uses it any more; `art/wood.ts` and
- * `art/flora.ts` still do, and it lives here because this is where it was born
- * and both of them already import the canvas types from this file.
- */
-export function getGranulationTile(): Canvas2D {
-  if (granulationTile) return granulationTile;
-  const c = makeCanvas(GRANULATION_SIZE, GRANULATION_SIZE);
-  const ctx = get2d(c);
-  const img = ctx.createImageData(GRANULATION_SIZE, GRANULATION_SIZE);
-  const rnd = mulberry32(0xa57a57);
-  const data = img.data;
-  for (let i = 0; i < data.length; i += 4) {
-    // Mid-gray ± noise: gray 128 is neutral under 'overlay'.
-    const v = Math.round(128 + (rnd() * 2 - 1) * 56);
-    data[i] = v;
-    data[i + 1] = v;
-    data[i + 2] = v;
-    data[i + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  granulationTile = c;
-  return c;
 }
 
 /* ------------------------------ geometry --------------------------------- */
@@ -1019,47 +988,6 @@ function drawOrnament(
       }
       break;
     }
-  }
-}
-
-/* --------------------------- material vocabulary -------------------------- */
-
-/**
- * Which generated material tile stands in for each binding, per board style.
- *
- * Nothing in this file draws a tile any more — the flat spine is six flat
- * shapes and an ink line — so this survives purely as the (material,
- * boardStyle) → slug table. It is still the single place that mapping is
- * written down, and `art/materials.ts` keys its library off exactly these
- * slugs, so anything that wants a real binding sheet (a cover mock-up, an
- * export, the asset tooling) asks here rather than inventing its own.
- *
- * The mapping is not "one slug per material name" because `boardStyle` already
- * says *which* leather or *which* cloth this book is bound in, and the library
- * happens to contain exactly those distinctions: crackled calf and pebbled
- * morocco are two different sheets, ribbed rep and slubby buckram two more.
- * `silk` has no sheet — its identity is a sheen that moves, which no static
- * tile can supply — so it returns null.
- */
-export function bindingMaterialSlug(material: BindingMaterial, boardStyle: number): string | null {
-  switch (material) {
-    case 'leather':
-      // 0 smooth calf · 1 pebbled morocco · 2 craquelure
-      return boardStyle === 2 ? 'leather-cracked' : 'leather-morocco';
-    case 'cloth':
-      // 0 flat buckram · 1 ribbed rep · 2 pyroxylin-coated
-      return boardStyle === 1 ? 'cloth-ribbed' : 'cloth-linen';
-    case 'linen':
-      return 'cloth-linen';
-    case 'paper':
-      return 'paper-laid';
-    case 'vellum':
-      return 'vellum';
-    case 'marbled':
-      return 'paper-marbled';
-    case 'silk':
-    default:
-      return null;
   }
 }
 
@@ -1467,7 +1395,7 @@ export function renderSpine(
 }
 
 /* ========================================================================== *
- *                        shelf-row composition (Â§3)                          *
+ *                        shelf-row composition (§3)                          *
  * ========================================================================== *
  *
  * "Per shelf, generate a *composition*, not a row: choose a rhythm of
@@ -1475,14 +1403,14 @@ export function renderSpine(
  *  bindings then break the pattern; leave occasional gaps and stacked-flat
  *  books."
  *
- * The old layout put every book in a slot of its own width with a 1â€“5px gap.
+ * The old layout put every book in a slot of its own width with a 1–5px gap.
  * That is a *packing*, and packings look packed. What follows is a
  * composition: a plan of runs, each with a character, laid out left to right,
  * with the books ASSIGNED to runs by how well they suit the run's character
  * rather than taken in order.
  *
- * Everything here is pure and deterministic â€” same (books, seed) â‡’ identical
- * composition â€” so it can be unit-tested in node and cached by the shelf.
+ * Everything here is pure and deterministic — same (books, seed) ⇒ identical
+ * composition — so it can be unit-tested in node and cached by the shelf.
  */
 
 /** How a book sits on the plank. */
@@ -1498,7 +1426,7 @@ export type BookPose =
 
 /** The character of one run of books within a row. */
 export type RunCharacter =
-  /** A tight block of thin books â€” the row's rhythm section. */
+  /** A tight block of thin books — the row's rhythm section. */
   | 'thin-run'
   /** Ordinary mixed widths, the connective tissue. */
   | 'mixed'
@@ -1544,10 +1472,10 @@ export interface RowPlacement {
   /**
    * Depth into the case: -1 pulled fully proud of the shelf edge,
    * 0 flush, +1 pushed to the back board. Feeds `renderSpine`'s `depth`
-   * (remapped to 0â€“1) and the contact shadow's gap.
+   * (remapped to 0–1) and the contact shadow's gap.
    */
   depth: number;
-  /** 0â€“1 along the row, for `renderSpine`'s `rowPhase`. */
+  /** 0–1 along the row, for `renderSpine`'s `rowPhase`. */
   phase: number;
   pose: BookPose;
   /** Which run this book belongs to. */
@@ -1578,11 +1506,11 @@ export interface ShelfRowComposition {
   maxHeight: number;
   /** Shortest drawn height in the row, world px. */
   minHeight: number;
-  /** The run plan, in order â€” useful for tests and for debugging a bad row. */
+  /** The run plan, in order — useful for tests and for debugging a bad row. */
   runs: RunCharacter[];
   /**
    * The row's skyline variation: (max - min) / max. The art direction asks for
-   * 20â€“30%; the composer targets it explicitly and reports what it achieved.
+   * 20–30%; the composer targets it explicitly and reports what it achieved.
    */
   skylineVariation: number;
   /** Ratio of the fattest book to the thinnest. */
@@ -1592,11 +1520,11 @@ export interface ShelfRowComposition {
 export interface ComposeShelfRowOptions {
   /** Total width available, world px. Default 900. */
   width?: number;
-  /** Composition seed. Same seed â‡’ same composition. */
+  /** Composition seed. Same seed ⇒ same composition. */
   seed?: number;
   /**
-   * Target skyline variation, (max-height âˆ’ min-height) / max-height.
-   * Default 0.26, the middle of the spec's 20â€“30%.
+   * Target skyline variation, (max-height − min-height) / max-height.
+   * Default 0.26, the middle of the spec's 20–30%.
    */
   skylineTarget?: number;
   /** Allow books to lean. Default true. */
@@ -1625,7 +1553,7 @@ function pickRunCharacter(
     ['flat-stack', allowFlat && remaining >= 2 ? 10 : 0],
     ['gap', allowGap ? 12 : 0],
   ];
-  // A run never immediately repeats itself â€” that repetition is exactly the
+  // A run never immediately repeats itself — that repetition is exactly the
   // "uniform slots" failure the art direction calls out. Two gaps in a row is
   // especially bad: it reads as a missing shelf, not as breathing room.
   const filtered = table.map(([c, wgt]) =>
@@ -1693,7 +1621,7 @@ function suitability(params: SpineParams, character: RunCharacter): number {
  *  1. plan a sequence of runs (thin / mixed / heavy / leaning / flat / gap),
  *     never repeating a character back to back;
  *  2. assign books to runs by suitability, so like bindings cluster;
- *  3. break the pattern â€” swap members between long runs, because a perfectly
+ *  3. break the pattern — swap members between long runs, because a perfectly
  *     sorted run is its own kind of uniform;
  *  4. fix the skyline: nudge heights until the row hits its variation target
  *     and no three neighbours share a height;
@@ -1831,7 +1759,7 @@ export function composeShelfRow(
         c.height = clamp(c.height + push, SPINE_HEIGHT_RANGE.min, SPINE_HEIGHT_RANGE.max);
       }
     }
-    // No three consecutive books within 3% of each other â€” the "irregular
+    // No three consecutive books within 3% of each other — the "irregular
     // skyline" note. A plateau of three is the eye's threshold for "these are
     // all the same height".
     for (let i = 2; i < flatList.length; i++) {
@@ -1904,7 +1832,7 @@ export function composeShelfRow(
       allowLean &&
       (character === 'leaning-cluster' || (character !== 'heavy' && rnd() < 0.16)) &&
       members.length >= 2;
-    // A whole cluster shares a depth bias â€” books get pushed back in groups
+    // A whole cluster shares a depth bias — books get pushed back in groups
     // when someone reshelves a handful at once.
     const runDepth = (rnd() * 2 - 1) * 0.42;
 

@@ -12,10 +12,14 @@
  *   page at p=1, and the doc's land() swap demands raster↔DOM be
  *   pixel-identical at p∈{0,1}. The blend doubles as the doc's "page
  *   flattens as it lands".
- * - Fragment: back face samples the destination page mirrored in x and 4%
- *   lighter/desaturated (paper backside); lighting is smoothstep bands —
- *   crest highlight, pre-fold darkening, self-shadow on the flat part —
- *   plus a paper-texture multiply (uPaperTex) so raster matches resting CSS.
+ * - Fragment: back face samples the destination page 4% lighter/desaturated
+ *   (paper backside); lighting is smoothstep bands — crest highlight,
+ *   pre-fold darkening, self-shadow on the flat part — plus a paper-texture
+ *   multiply (uPaperTex) so raster matches resting CSS.
+ * - Every page sample goes through samplePage()/faceUv() in FRAG_COMMON:
+ *   snapshots composite over paper cream (a transparent texel must read as
+ *   paper, never black) and mirror per direction/face (leaf-local x runs
+ *   from the spine, snapshots run from the page's left edge).
  * - Ground pass: opaque quad under the curl showing the revealed page's
  *   raster with the cast shadow composited in the same fragment — drawn
  *   first in the same GL frame, so shadow and mesh can never desync.
@@ -45,6 +49,9 @@ export const CURL_FOV_RAD = (20 * Math.PI) / 180;
 
 /** Paper cream (tokens.css --paper-cream #f7f1e3) as 0-255 RGB. */
 export const PAPER_CREAM_RGB: readonly [number, number, number] = [247, 241, 227];
+
+/** The same cream as a GLSL literal, so shader and CPU can never drift. */
+const PAPER_CREAM_GLSL = PAPER_CREAM_RGB.map((channel) => (channel / 255).toFixed(6)).join(', ');
 
 /* ----------------------------------------------------------------------------
    Shader sources
@@ -130,15 +137,48 @@ void main() {
 }
 `;
 
-/** Fragment prelude shared by both passes: paper-fibre multiply. */
-const FRAG_PAPER = /* glsl */ `
+/**
+ * Fragment prelude shared by both passes: page sampling + paper-fibre
+ * multiply. Both passes must agree on face orientation and on what an
+ * uncovered texel means, so the rules live in exactly one place.
+ */
+const FRAG_COMMON = /* glsl */ `
+uniform float uDir;        // +1 = next (right leaf), -1 = prev (left leaf)
 uniform sampler2D uPaperTex;
 uniform vec2 uPaperScale;  // leaf size / paper tile css size (repeat count)
 uniform float uPaperMix;   // fibre multiply strength (0 disables)
 uniform float uPaperMean;  // mean luminance of the paper tile (normalizer)
 
+const vec3 PAPER_CREAM = vec3(${PAPER_CREAM_GLSL});
+
+/**
+ * Leaf-local uv → page-snapshot uv. Leaf-local x runs from the SPINE, but a
+ * snapshot always starts at the page's LEFT edge — and on a 'prev' leaf the
+ * spine IS the right edge. A face reads mirrored when exactly one of "the
+ * leaf itself is mirrored" / "this is the sheet's backside" holds; sampling
+ * it straight renders the whole spread reversed for the length of the turn.
+ */
+vec2 faceUv(vec2 uv, bool backside) {
+  bool mirrored = (uDir < 0.0) != backside;
+  return mirrored ? vec2(1.0 - uv.x, uv.y) : uv;
+}
+
+/**
+ * Snapshots upload with PREMULTIPLIED alpha, so any texel the capture left
+ * transparent arrives as rgb=0 — taking .rgb alone painted it pure BLACK
+ * mid-turn. Compositing over cream makes a transparent (or partly
+ * transparent, or wholly failed) capture read as blank paper instead, which
+ * is the same fallback the missing-snapshot path already uses.
+ */
+vec3 samplePage(sampler2D tex, vec2 uv) {
+  vec4 texel = texture(tex, uv);
+  return texel.rgb + PAPER_CREAM * (1.0 - texel.a);
+}
+
 vec3 paperMultiply(vec3 color, vec2 uv) {
-  vec3 fibre = texture(uPaperTex, uv * uPaperScale).rgb / max(uPaperMean, 0.001);
+  // Same alpha guard: an uncovered fibre texel must read neutral, not black.
+  vec4 tile = texture(uPaperTex, uv * uPaperScale);
+  vec3 fibre = (tile.rgb + (1.0 - tile.a)) / max(uPaperMean, 0.001);
   return color * mix(vec3(1.0), fibre, uPaperMix);
 }
 `;
@@ -154,8 +194,7 @@ uniform sampler2D uTexFront;
 uniform sampler2D uTexBack;
 uniform vec2 uLeafSize;
 uniform float uLift;       // sin(p·π): 0 at rest/landed, 1 mid-flip
-uniform float uDir;
-${FRAG_PAPER}
+${FRAG_COMMON}
 out vec4 outColor;
 
 const float HALF_PI = 1.57079633;
@@ -167,13 +206,13 @@ void main() {
 
   vec3 color;
   if (isBack) {
-    // Paper backside = destination page mirrored in x, 4% lighter and
-    // slightly desaturated.
-    vec3 c = texture(uTexBack, vec2(1.0 - vUv.x, vUv.y)).rgb;
+    // Paper backside = the sheet's other page, 4% lighter and slightly
+    // desaturated. faceUv owns the mirroring for both directions.
+    vec3 c = samplePage(uTexBack, faceUv(vUv, true));
     c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), 0.12);
     color = mix(c, vec3(1.0), 0.04);
   } else {
-    color = texture(uTexFront, vUv).rgb;
+    color = samplePage(uTexFront, faceUv(vUv, false));
   }
 
   // Same tiled paper the resting CSS uses, normalized by its mean so only
@@ -229,12 +268,15 @@ uniform float uFoldX;
 uniform float uTilt;
 uniform float uRadius;
 uniform float uLift;
-${FRAG_PAPER}
+${FRAG_COMMON}
 out vec4 outColor;
 
 void main() {
-  vec3 color = paperMultiply(texture(uTexRevealed, vUv).rgb, vUv);
+  // The revealed page sits the same way round as the leaf's front face.
+  vec3 color = paperMultiply(samplePage(uTexRevealed, faceUv(vUv, false)), vUv);
 
+  // Shadow geometry stays in LEAF-local space (vUv is unmirrored) so the
+  // band tracks the fold line the vertex shader used.
   vec2 local = vUv * uLeafSize;
   vec2 n = vec2(cos(uTilt), sin(uTilt));
   float d = dot(local - vec2(uFoldX, uLeafSize.y * 0.5), n);

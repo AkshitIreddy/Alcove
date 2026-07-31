@@ -1,5 +1,17 @@
 # Painterly art direction — the reference-image standard
 
+> ## ⚠️ Superseded
+>
+> This document describes the **runtime painting era**, which has been deleted.
+> The app's visual language is now `assets/brand/icon.svg` as implemented in
+> `src/art/flat.ts`: flat colour, one dark outline colour on everything, rounded
+> corners, edges that bow slightly, a tiny palette. No gradients, no texture, no
+> lighting, no glow, no bloom, no drop shadows. Depth is a darker flat face
+> beside a lighter one, plus `contactShadow()` where an object meets a surface.
+>
+> Kept for the reasoning, not as a blueprint. `docs/design/ART-BIBLE.md` and
+> `art-pipeline.md` are the live ones.
+
 The user supplied a reference photograph/painting of a sunlit bookshelf overgrown with flowering vines and said, plainly, that our shelf next to it "looks very cheap… like something a child could make, not some talented artist."
 
 This document is the corrective. **The target is a high-end digital painting**, not a diagram of a bookshelf. Every theme is held to this standard.

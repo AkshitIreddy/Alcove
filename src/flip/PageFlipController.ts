@@ -128,6 +128,17 @@ export class PageFlipController {
   private renderScheduled = false;
   private destroyed = false;
 
+  /**
+   * Landing bookkeeping. `landing` is true from the moment navigation is
+   * committed until the overlay is back at rest — a re-grab in that window
+   * would drive a gesture against an already-swapped spread. `landToken`
+   * invalidates a landing's queued frames the instant a new flip (or a
+   * destroy / context loss) takes over, so a stale frame can never rip the
+   * canvas away mid-gesture.
+   */
+  private landing = false;
+  private landToken = 0;
+
   private ctx: FlipContext | null = null;
   private renderer: CurlRenderer | null = null;
 
@@ -189,11 +200,17 @@ export class PageFlipController {
     root.removeEventListener('pointermove', this.onPointerMove);
     root.removeEventListener('pointerup', this.onPointerUp);
     root.removeEventListener('pointercancel', this.onPointerCancel);
+    this.landToken++; // drop any queued landing frames
     this.tween?.kill();
     this.tween = null;
     this.cancelCrossfade?.();
     this.fold?.dispose();
     this.fold = null;
+    // Leave nothing of the overlay behind: the host may keep the leaves
+    // mounted (book stays open, surface remounts) after this controller goes.
+    this.options.canvas.classList.remove('is-flipping');
+    if (this.leafElement) this.leafElement.style.visibility = '';
+    this.leafElement = null;
     this.renderer?.dispose();
     this.renderer = null;
     this.ctx?.dispose();
@@ -207,9 +224,14 @@ export class PageFlipController {
 
     // Interrupt a settling tween: kill it and resume the drag from the
     // current p — the overlay is already up, so a re-grab costs nothing.
-    if (this.phase === 'settling' && !this.reducedMotion()) {
+    // Not once land() has run though: navigation is committed by then and
+    // the leaf/textures the gesture would drive belong to the old spread.
+    if (this.phase === 'settling' && !this.landing && !this.reducedMotion()) {
       this.tween?.kill();
       this.tween = null;
+      // The CSS fallback drives its own tween; leaving it alive let it fight
+      // the drag and then land() on its own halfway through the new gesture.
+      this.fold?.kill();
       this.phase = 'dragging';
       this.capturePointer(event);
       this.lastP = this.flip.p;
@@ -355,6 +377,11 @@ export class PageFlipController {
     const leafElement = this.options.getLeafElement(side);
     if (!leafElement) return false;
 
+    // Any landing still holding queued frames is now history — its hide-the-
+    // canvas frame must not fire in the middle of this flip.
+    this.landToken++;
+    this.landing = false;
+
     this.rootRect = this.options.root.getBoundingClientRect();
     const rect = leafElement.getBoundingClientRect();
     this.leaf = {
@@ -444,9 +471,20 @@ export class PageFlipController {
   /**
    * Flat-state swap (the seamless trick): the page is geometrically flat at
    * p∈{0,1}, so we commit/restore the live DOM under the canvas, wait one
-   * rAF so it paints, then hide the canvas — raster→DOM is pixel-identical.
+   * rAF so it paints, then wipe and hide the overlay — raster→DOM is
+   * pixel-identical.
+   *
+   * The wipe and the hide are DELIBERATELY different frames. `display:none`
+   * pulls the canvas out of compositing, so a gl.clear() issued in the same
+   * frame is never presented: the layer keeps the last curl frame, and that
+   * ghost sheet hangs over the settled spread (and flashes straight back the
+   * next time the canvas is shown). Clear while it is still displayed, hide
+   * it once the transparent frame has been composited.
    */
   private land(target: 0 | 1): void {
+    if (this.landing) return; // a landing is already in flight
+    this.landing = true;
+    const token = ++this.landToken;
     this.tween = null;
     this.flip.p = target;
     const dir = this.dir;
@@ -463,16 +501,22 @@ export class PageFlipController {
       leafElement.style.visibility = '';
     }
 
+    // A newer flip (or destroy / context loss) bumps landToken and owns the
+    // overlay from that moment; these frames must then do nothing.
+    const superseded = (): boolean => this.destroyed || this.landToken !== token;
+
     requestAnimationFrame(() => {
+      if (superseded()) return;
       // One painted frame with the (new or restored) live DOM beneath the
       // canvas; now the overlay can vanish without a visible pop.
       requestAnimationFrame(() => {
-        this.options.canvas.classList.remove('is-flipping');
+        if (superseded()) return;
         this.renderer?.clear();
         // The old leaf element may have been unmounted by navigation; clear
         // the inline style anyway in case the host recycles it.
         if (leafElement) leafElement.style.visibility = '';
         this.phase = 'rest';
+        this.landing = false;
         this.leafElement = null;
         if (target === 1) {
           this.savedRanges = [];
@@ -482,6 +526,10 @@ export class PageFlipController {
           this.restoreSelection(); // focus/selection come back only on cancel
           this.options.events?.onCancel?.(dir);
         }
+        requestAnimationFrame(() => {
+          if (superseded()) return;
+          this.options.canvas.classList.remove('is-flipping');
+        });
       });
     });
   }
@@ -513,12 +561,34 @@ export class PageFlipController {
   private handleContextLost(): void {
     this.renderer = null; // programs are gone with the context
     if (this.phase === 'rest') return;
+    const committed = this.landing; // land() already navigated
+    this.landToken++; // the veil owns the landing from here
+    this.landing = false;
     this.tween?.kill();
     this.tween = null;
     const dir = this.dir;
     const target: 0 | 1 = this.flip.p > 0.5 ? 1 : 0;
     const leafElement = this.leafElement;
     this.options.canvas.classList.remove('is-flipping');
+
+    const finish = (): void => {
+      this.phase = 'rest';
+      this.leafElement = null;
+      if (target === 1) this.options.events?.onLanded?.(dir);
+      else {
+        this.restoreSelection();
+        this.options.events?.onCancel?.(dir);
+      }
+    };
+
+    if (committed) {
+      // The spread already swapped and its live DOM is painted underneath —
+      // nothing to mask, and navigating twice would skip a spread.
+      if (leafElement) leafElement.style.visibility = '';
+      finish();
+      return;
+    }
+
     // Mask the pop with the reduced-motion veil, swap at full cover.
     crossfadeSpread({
       container: this.options.root,
@@ -526,15 +596,7 @@ export class PageFlipController {
         if (target === 1) this.options.navigate(dir);
         if (leafElement) leafElement.style.visibility = '';
       },
-      onDone: () => {
-        this.phase = 'rest';
-        this.leafElement = null;
-        if (target === 1) this.options.events?.onLanded?.(dir);
-        else {
-          this.restoreSelection();
-          this.options.events?.onCancel?.(dir);
-        }
-      },
+      onDone: finish,
     });
   }
 

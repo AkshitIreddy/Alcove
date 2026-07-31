@@ -28,7 +28,7 @@ app.stage
  â”œâ”€ backdrop     (tiled wall/paper texture, parallaxFactor 0.85 â€” position = -cam.y*0.85*zoom)
  â””â”€ world        (x = -cam.x*zoom, y = -cam.y*zoom, scale = zoom)
      â”œâ”€ FloorView(i), FloorView(i+1) ...   (pooled)
-     â””â”€ fxLayer   (pull-out ghost sprite, dust motes, drop shadow)
+     â””â”€ fxLayer   (pull-out ghost sprite, drop shadow)
 ```
 
 ## Camera model (`camera.ts`)
@@ -77,7 +77,7 @@ Pointer events on the canvas with `setPointerCapture`. Click vs drag: threshold 
 
 ## Degrade mode
 
-At startup create the WebGL context and check `WEBGL_debug_renderer_info` for 'SwiftShader'/'llvmpipe' or measure a 20-frame probe; if software: force LOD1 max textures, disable shadows/motes, cap DPR at 1. Also ensure Tauri doesn't launch WebView2 with `--disable-gpu` and set `additionalBrowserArguments` to leave hardware acceleration default-on.
+At startup create the WebGL context and check `WEBGL_debug_renderer_info` for 'SwiftShader'/'llvmpipe' or measure a 20-frame probe; if software: force LOD1 max textures, cap DPR at 1. Also ensure Tauri doesn't launch WebView2 with `--disable-gpu` and set `additionalBrowserArguments` to leave hardware acceleration default-on.
 
 ## Libraries
 pixi.js@^8.6 (WebGL renderer; do NOT enable the WebGPU preference initially)

@@ -154,39 +154,12 @@ test.describe('library themes on the real shelf', () => {
   });
 });
 
-test.describe('flora density', () => {
-  test('slides from overgrown to genuinely clean and back', async ({ page }) => {
-    test.slow();
-    await gotoShelfQa(page);
-    const lib = bridge(page);
-    await lib.seed(['Seedlings', 'Cartography']);
-    await lib.setPrefs({ theme: 'conservatory', floraDensity: 2 });
-    await waitForRoom(page, 'conservatory');
-    await page.waitForTimeout(2500);
-    const lush = await page.screenshot({ type: 'png' });
-
-    await lib.setPrefs({ floraDensity: 0 });
-    await expect
-      .poll(
-        async () => screenDiffRatio(page, lush, await page.screenshot({ type: 'png' })),
-        { timeout: 45_000, message: 'the shelf never cleared' },
-      )
-      .toBeGreaterThan(0.005);
-    const clean = await page.screenshot({ type: 'png' });
-
-    // Turning it back up regrows the same planting (deterministic per anchor).
-    await lib.setPrefs({ floraDensity: 2 });
-    await expect
-      .poll(
-        async () => screenDiffRatio(page, clean, await page.screenshot({ type: 'png' })),
-        { timeout: 45_000, message: 'the flora never grew back' },
-      )
-      .toBeGreaterThan(0.005);
-    expect(
-      await screenDiffRatio(page, lush, await page.screenshot({ type: 'png' })),
-    ).toBeLessThan(0.05);
-  });
-});
+/*
+ * A 'flora density' suite lived here, sliding the conservatory from overgrown
+ * to clean and back and diffing the screen at each step. Nothing grows on the
+ * case any more — the flora pipeline went with the painting stack and the
+ * slider went with it — so there is nothing left to slide.
+ */
 
 test.describe('the Book Studio', () => {
   test('opens as two painted tabs behind the rail brush', async ({ page }) => {

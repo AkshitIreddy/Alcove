@@ -24,7 +24,7 @@ export function watchReducedMotion(cb: (reduced: boolean) => void): () => void {
  *   ?fx=force   — treat the renderer as hardware even on SwiftShader. Used by
  *                 the headless Playwright screenshot harness (scratchpad qa/),
  *                 which always runs on software WebGL and would otherwise
- *                 never show hi-res titled spines, shadows, or dust motes.
+ *                 never show hi-res titled spines.
  *   ?fx=degrade — force the degrade path on real GPUs (for testing it).
  * Keep this: future visual QA depends on ?fx=force.
  */

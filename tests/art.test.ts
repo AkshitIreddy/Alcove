@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * tests/art.test.ts — determinism, atlas packing sanity, and filter
- * resolution-scaling math for the art foundation library (src/art).
+ * tests/art.test.ts — determinism and atlas packing sanity for the art
+ * foundation library (src/art).
  *
  * These tests run in plain Node — nothing here touches canvas, DOM, or Tauri.
  * (The explicit node pragma opts out of vite-plugin-solid's jsdom default,
@@ -11,7 +11,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { clamp, fnv1a, lerp, mulberry32, seededNoise1D, seededNoise2D } from '../src/art/noise';
-import { paperFilter, pencilFilter, svgDoc, watercolorFilter } from '../src/art/filters';
 import { doubleStroke, wobbleLine, wobblePath, wobbleRect } from '../src/art/wobble';
 import {
   BINDING_MATERIALS,
@@ -237,62 +236,12 @@ describe('wobblePath', () => {
   });
 });
 
-/* ---------------------------- filter scaling ------------------------------ */
-
-describe('filter recipes and resolution scaling', () => {
-  it('pencil at 1x matches the doc values', () => {
-    const xml = pencilFilter(1);
-    expect(xml).toContain('id="pencil"');
-    expect(xml).toContain('baseFrequency="0.035 0.06"');
-    expect(xml).toContain('scale="2.5"');
-    expect(xml).toContain('baseFrequency="0.9"');
-    expect(xml).toContain('color-interpolation-filters="sRGB"');
-  });
-
-  it('pencil at scale S: baseFrequency /S, displacement scale *S', () => {
-    const xml = pencilFilter(2);
-    expect(xml).toContain('baseFrequency="0.0175 0.03"');
-    expect(xml).toContain('scale="5"');
-    expect(xml).toContain('baseFrequency="0.45"');
-  });
-
-  it('watercolor at 1x matches the doc values', () => {
-    const xml = watercolorFilter(1);
-    expect(xml).toContain('id="watercolor"');
-    expect(xml).toContain('baseFrequency="0.012 0.015"');
-    expect(xml).toContain('scale="18"');
-    expect(xml).toContain('radius="4"');
-    expect(xml).toContain('stdDeviation="1.4"');
-    expect(xml).toContain('baseFrequency="0.05"');
-  });
-
-  it('watercolor at scale 2 scales every pixel-space value', () => {
-    const xml = watercolorFilter(2);
-    expect(xml).toContain('baseFrequency="0.006 0.0075"');
-    expect(xml).toContain('scale="36"');
-    expect(xml).toContain('radius="8"');
-    expect(xml).toContain('stdDeviation="2.8"');
-    expect(xml).toContain('baseFrequency="0.025"');
-  });
-
-  it('paper scales baseFrequency /S and surfaceScale *S', () => {
-    expect(paperFilter(1)).toContain('baseFrequency="0.04"');
-    expect(paperFilter(1)).toContain('surfaceScale="1.6"');
-    const xml = paperFilter(4);
-    expect(xml).toContain('baseFrequency="0.01"');
-    expect(xml).toContain('surfaceScale="6.4"');
-  });
-
-  it('svgDoc produces a self-contained document', () => {
-    const doc = svgDoc(512, 256, '<rect width="512" height="256"/>', '<filter id="x"/>');
-    expect(doc.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
-    expect(doc).toContain('width="512" height="256"');
-    expect(doc).toContain('viewBox="0 0 512 256"');
-    expect(doc).toContain('<defs><filter id="x"/></defs>');
-    expect(doc.endsWith('</svg>')).toBe(true);
-    expect(svgDoc(8, 8, '<g/>')).not.toContain('<defs>');
-  });
-});
+/*
+ * The SVG filter recipes (pencil / watercolour / paper) and their
+ * resolution-scaling maths were tested here. `art/filters.ts` existed only to
+ * feed `art/paper.ts` through a bake, and both went with the painting stack —
+ * the flat style has no filters at all.
+ */
 
 /* --------------------------------- atlas ---------------------------------- */
 

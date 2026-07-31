@@ -9,8 +9,7 @@
  *
  * ## What this replaced, and why the surface did not change
  *
- * This module used to be a thin dispatcher onto the painting stack
- * (`art/caseArt.ts`, `art/wood.ts`, `art/wallpaper.ts`, `art/props.ts`) —
+ * This module used to be a thin dispatcher onto a runtime painting stack —
  * seconds of brush work per room, disk-cached because it had to be. The public
  * shape stayed byte-for-byte identical through the restyle on purpose:
  * `world.ts` and `floorView.ts` are this class's only consumers, they are
@@ -39,11 +38,7 @@ import {
   type FlatCtx,
 } from '../../art/flat';
 import { drawCrown, drawPlank, drawPost, drawRecess } from '../../art/flatShelf';
-import { installArtRoutes } from './artRoutes';
 import { libraryKey } from './libraryKey';
-// Type only. `floorView.ts` still picks prop kinds from `art/props.ts`; this
-// module no longer renders one, but the signature it calls must still name it.
-import type { PropKind } from '../../art/props';
 import {
   getTheme,
   type BackdropId,
@@ -54,7 +49,6 @@ import {
 import { fnv1a } from '../../art/noise';
 import {
   BOOK_ZONE_H,
-  CASE_SHADE_W,
   CROWN_H,
   CROWN_LIP,
   FLOOR_H,
@@ -85,38 +79,12 @@ export const BACKDROP_STRIP_FLOORS = 3;
 /** World-px height of the under-plank detail strip (no longer drawn). */
 export const SHELF_DETAIL_H = 34;
 
-/* ------------------------------- case halo -------------------------------- */
-
-/** How far the case's shadow used to reach onto the wall, world px. */
-export const CASE_HALO_PAD = CASE_SHADE_W;
-
-/** Width of the vertical edge slice the halo was cut into. */
-export const CASE_HALO_EDGE_W = CASE_HALO_PAD * 2 + CROWN_LIP;
-
-/** The two frames the world draws the case's wall shadow from. */
-export interface CaseHalo {
-  /** The cornice's halo, ending exactly at y = 0 (world). */
-  top: Texture;
-  /** One floor's worth of vertical edge falloff; tiles down both sides. */
-  edge: Texture;
-}
-
 /** A room to bake the case in. */
 export interface ThemeRequest {
   themeId: ThemeId;
   wallpaper: WallpaperSpec;
   backdrop: BackdropId;
 }
-
-/*
- * `bake.ts` hands a recipe to the art worker when `artRoutes` recognises its
- * cache key. None of the flat keys below match a route — deliberately: the
- * worker's case renderers are the painting stack, and routing a flat part to
- * them would quietly resurrect the wood grain. Flat parts cost a few dozen
- * path fills, so there is nothing to offload anyway. The install stays because
- * spines still benefit from it and it is idempotent.
- */
-installArtRoutes();
 
 /** Identity of a baked room — same key ⇒ same case art. */
 export function themeKeyOf(req: ThemeRequest): string {
@@ -462,34 +430,12 @@ export class EnvTextures {
   }
 
   /**
-   * The case's shadow on the wall — gone.
-   *
-   * It was one blurred silhouette cut into a cornice frame and a tiling edge
-   * slice. A Gaussian falloff is a light model, and the flat style has exactly
-   * one shadow (`flat.contactShadow`, under an object that sits on a surface).
-   * Both consumers already treat null as "no halo", which is the degrade path
-   * they always had.
-   */
-  getCaseHalo(dpr: number): CaseHalo | null {
-    void dpr;
-    return null;
-  }
-
-  /**
    * Empty-floor doodle. Retired with the pencil vocabulary: the doodles were
    * chalk-toned strokes tuned for a dark painted back panel, and they read as
    * smudges against a flat recess.
    */
   getEmptyDoodle(dpr: number, variant: number): Texture {
     void dpr;
-    void variant;
-    return this.blankTexture();
-  }
-
-  /** Shelf-dressing props. Retired — the books are the subject. */
-  getProp(dpr: number, kind: PropKind, variant: number): Texture {
-    void dpr;
-    void kind;
     void variant;
     return this.blankTexture();
   }

@@ -53,7 +53,7 @@
   line-height: 1.2;
   color: var(--ink-sepia);
   background: var(--paper-aged);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   padding: 2px var(--space-16) 3px;
   box-shadow: var(--shadow-xs);
@@ -70,9 +70,12 @@
    sepia literals restate tokens.css so a book can pin sepia even when the
    app-wide ink is graphite).
    -------------------------------------------------------------------------- */
+/* These restate the tokens.css sepia pair verbatim (FLAT.ink / FLAT.inkSoft).
+   They used to be a lighter, greyer pair left over from the parchment palette,
+   which put the "soft" rung at 3.5:1 on aged paper — under the body bar. */
 .nb-spread-stage[data-book-ink='sepia'] {
-  --ink-sepia: #5b4636;
-  --ink-sepia-soft: #8a7361;
+  --ink-sepia: #4f3120;
+  --ink-sepia-soft: #6b4a32;
 }
 
 .nb-spread-stage[data-book-ink='graphite'] {
@@ -96,22 +99,14 @@
   min-height: 0;
   width: 100%;
   padding: 14px 16px 18px;
-  background:
-    linear-gradient(
-      162deg,
-      var(--wash-terracotta) 0%,
-      var(--wash-terracotta-deep) 58%,
-      color-mix(in srgb, var(--wash-terracotta-deep) 72%, var(--ink-sepia)) 100%
-    );
-  background-size: 100% 100%;
-  border: 1px solid
-    color-mix(in srgb, var(--wash-terracotta-deep) 70%, var(--ink-sepia));
-  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--wash-terracotta-light) 40%, transparent),
-    0 6px 10px rgba(94, 70, 45, 0.12),
-    0 18px 34px rgba(94, 70, 45, 0.16),
-    0 36px 72px rgba(94, 70, 45, 0.13);
+  /* The board is ONE flat cloth face bounded by the app's one ink, exactly
+     as the shelf draws the same book's spine. It used to be a three-stop
+     terracotta gradient under a three-layer ambient shadow and an inset
+     catch-light — a lit, photographed object sitting inside a flat drawing. */
+  background: var(--wash-terracotta);
+  border: var(--stroke-ink);
+  border-radius: 16px 22px 18px 24px / 20px 16px 24px 18px;
+  box-shadow: var(--shadow-lg);
 }
 
 /* ----------------------------------------------------------------------------
@@ -226,16 +221,10 @@
   transform: translateX(-50%);
   z-index: 10;
   pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(94, 70, 45, 0.05) 30%,
-    rgba(94, 70, 45, 0.14) 46%,
-    rgba(94, 70, 45, 0.2) 50%,
-    rgba(94, 70, 45, 0.14) 54%,
-    rgba(94, 70, 45, 0.05) 70%,
-    transparent 100%
-  );
+  /* The gutter is where the two leaves meet, so it is the DARKER FACE of the
+     paper rather than a shading ramp across 132px. */
+  width: 26px;
+  background: var(--lift-ink);
 }
 
 /* The crease itself — one soft dark thread at dead center. */
@@ -247,7 +236,7 @@
   left: 50%;
   width: 2px;
   transform: translateX(-50%);
-  background: rgba(94, 70, 45, 0.18);
+  background: var(--ink-line-soft);
 }
 
 /* ----------------------------------------------------------------------------
@@ -263,18 +252,17 @@
   z-index: 11;
   pointer-events: none;
   opacity: 0.75;
-  /* Folded corner: paper triangle + shaded underside. */
-  background:
-    linear-gradient(
-      315deg,
-      transparent 48%,
-      var(--paper-deep) 49%,
-      var(--paper-aged) 62%,
-      var(--paper-cream) 76%,
-      transparent 77%
-    );
+  /* Folded corner: a flat triangle of the paper's darker face, cut with a
+     hard stop. Every stop is 0-width, so nothing here ramps. */
+  background: linear-gradient(
+    315deg,
+    transparent 49%,
+    var(--paper-deep) 49%,
+    var(--paper-deep) 77%,
+    transparent 77%
+  );
   border-bottom-right-radius: var(--radius-sm);
-  filter: drop-shadow(-1px -1px 1px rgba(94, 70, 45, 0.18));
+  border-left: 1px solid var(--ink-line-soft);
   transition: opacity var(--dur-sm) var(--ease-out), transform var(--dur-sm) var(--ease-out);
   transform-origin: 100% 100%;
 }
@@ -291,22 +279,11 @@
   pointer-events: auto;
 }
 
-.nb-spread .nb-flip-hotspot-next {
-  background: linear-gradient(
-    270deg,
-    rgba(233, 196, 106, 0.28) 0%,
-    rgba(233, 196, 106, 0.1) 55%,
-    transparent 100%
-  );
-}
-
+/* The hotspots fade in on opacity (above), so the fill itself is flat: a band
+   of the amber face, not a ramp dissolving into the page. */
+.nb-spread .nb-flip-hotspot-next,
 .nb-spread .nb-flip-hotspot-prev {
-  background: linear-gradient(
-    90deg,
-    rgba(233, 196, 106, 0.28) 0%,
-    rgba(233, 196, 106, 0.1) 55%,
-    transparent 100%
-  );
+  background: var(--wash-amber-light);
 }
 
 .nb-spread .nb-flip-hotspot:hover {
@@ -343,13 +320,10 @@
   transition: opacity var(--dur-sm) var(--ease-out);
 }
 
-/* Dim the wall a touch further with a soft vignette behind the book. */
+/* Focus mode dims the whole room behind the book. A zero-blur spread of
+   100vmax is a flat plate, not an ambient glow, so it stays in the language. */
 .nb-book-view.is-focus-mode .nb-book-cover {
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--wash-terracotta-light) 40%, transparent),
-    0 6px 10px rgba(94, 70, 45, 0.18),
-    0 18px 34px rgba(94, 70, 45, 0.22),
-    0 0 0 100vmax rgba(59, 44, 29, 0.28);
+  box-shadow: var(--shadow-lg), 0 0 0 100vmax var(--lift-ink-strong);
 }
 
 /* ----------------------------------------------------------------------------
@@ -369,7 +343,7 @@
   scrollbar-width: thin;
   scrollbar-color: var(--paper-edge) transparent;
   background: color-mix(in srgb, var(--paper-aged) 72%, transparent);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-sm);
 }
@@ -390,7 +364,7 @@
   width: 52px;
   height: 66px;
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: 3px 6px 4px 7px / 5px 4px 7px 4px;
   box-shadow: var(--shadow-xs);
   overflow: hidden;
@@ -435,7 +409,7 @@
 
 .nb-thumb.is-current .nb-thumb-paper {
   border-color: var(--wash-amber-deep);
-  box-shadow: 0 0 0 1.5px var(--wash-amber-deep), var(--shadow-xs);
+  box-shadow: 0 0 0 2px var(--ink-line), var(--shadow-xs);
 }
 
 /* ----------------------------------------------------------------------------
@@ -459,7 +433,7 @@
   border-radius: 2px 2px 0 0;
   transform: rotate(0.8deg);
   transform-origin: top center;
-  box-shadow: 1px 2px 3px rgba(94, 70, 45, 0.25);
+  box-shadow: var(--shadow-sm);
   /* Forked ribbon tail. */
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
   transition: transform var(--dur-xs) var(--ease-out);
@@ -501,13 +475,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(
-      54% 46% at 50% 50%,
-      rgba(59, 44, 29, 0.34) 0%,
-      rgba(59, 44, 29, 0.56) 100%
-    ),
-    rgba(59, 44, 29, 0.52);
+  /* One flat veil. The radial that used to pool light at the centre was the
+     last vignette in the app. */
+  background: var(--lift-ink-strong);
   animation: nb-cheat-veil-in var(--dur-sm) var(--ease-out);
 }
 
@@ -523,7 +493,7 @@
   width: min(640px, 92vw);
   padding: var(--space-20) var(--space-24) var(--space-16);
   background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: 12px 18px 14px 20px / 16px 12px 20px 14px;
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--paper-cream) 70%, transparent),
@@ -559,7 +529,7 @@
   /* --wash-terracotta-deep is a PIGMENT (4.49:1 as type, under AA at this
      size); --ink-accent is its readable ink sibling at 5.78:1. */
   color: var(--ink-accent);
-  border-bottom: 1px dashed var(--paper-edge);
+  border-bottom: 1px dashed var(--ink-line-soft);
   padding-bottom: 3px;
   margin-bottom: var(--space-8);
   transform: rotate(-0.4deg);
@@ -581,7 +551,7 @@
   font-size: var(--text-ui);
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-bottom-width: 2px;
   border-radius: 4px 7px 5px 8px;
   padding: 2px var(--space-4);
@@ -603,5 +573,5 @@
   color: var(--ink-sepia-soft);
   margin-top: var(--space-16);
   padding-top: var(--space-8);
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
 }

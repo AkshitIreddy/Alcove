@@ -53,57 +53,6 @@ export const CROWN_H = 64;
 /** Horizontal overhang of the crown past the case sides (cornice lip). */
 export const CROWN_LIP = 14;
 
-/** Width of the soft ambient-occlusion strip cast on the wall beside the case. */
-export const CASE_SHADE_W = 72;
-
-/** Height of the shadow strip cast by the plank above onto each book zone. */
-export const TOP_SHADOW_H = 26;
-
-/* ------------------- under-plank shadow: the cut plan --------------------- */
-
-/** One piece of the three-piece under-plank shadow. */
-export interface ShadowSlice {
-  /** Source frame in texture px. */
-  x: number;
-  w: number;
-  /** Where it is drawn, in floor-local world px. */
-  destX: number;
-  destW: number;
-}
-
-/**
- * Cut the baked shadow strip into [middle, capLeft, capRight].
- *
- * The strip is a vertical falloff that is UNIFORM across its middle, with a
- * darker radial pool `capW` world px wide baked into each end. Stretching a
- * uniform region is exact; stretching a pool is not — it smears into a soft
- * rectangle, which is precisely the "shadowy corner boxes, repeating at shelf
- * corners" the user reported. So: the caps are drawn 1:1 at `capW` world px
- * and only the pool-free middle is stretched.
- *
- * `sourceW` is the strip texture's width in texture px, which is `stripW *
- * DPR` — hence the conversion here rather than a hard-coded texel inset. The
- * old nine-slice used a fixed 16-texel inset, so its slice geometry silently
- * changed meaning between a 1x and a 2x display; this is DPR-invariant.
- *
- * Pure function, no Pixi — see tests/bookshelf.test.ts.
- */
-export function underPlankShadowSlices(
-  sourceW: number,
-  stripW: number,
-  capW: number,
-  shelfW: number = SHELF_WIDTH,
-): [ShadowSlice, ShadowSlice, ShadowSlice] {
-  const texelsPerWorldPx = sourceW / stripW;
-  // Never let the two caps meet or cross in the middle of the source.
-  const capPx = Math.max(1, Math.min(Math.round(capW * texelsPerWorldPx), Math.floor(sourceW / 2) - 1));
-  return [
-    { x: capPx, w: sourceW - capPx * 2, destX: capW, destW: shelfW - capW * 2 },
-    { x: 0, w: capPx, destX: 0, destW: capW },
-    { x: sourceW - capPx, w: capPx, destX: shelfW - capW, destW: capW },
-  ];
-}
-
 /** Hard upper bound for the camera (headroom above floor 0 incl. the crown). */
 export const Y_MIN = -80;
 

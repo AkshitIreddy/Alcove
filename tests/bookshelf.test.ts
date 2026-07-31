@@ -30,11 +30,8 @@ import {
 import { createPage, listPages } from '../src/data/pages';
 import type { Book } from '../src/data/types';
 import { resolveBookStyle } from '../src/art/bookStyle';
-import { rectsOverlap, spineKeepOuts } from '../src/art/flora';
 import { deriveSpineParams, PIGMENT_COUNT, SPINE_BASE_HEIGHT } from '../src/art/spines';
 import { getTheme } from '../src/art/themes';
-import { routeFor } from '../src/features/bookshelf/artRoutes';
-import { rigForTheme } from '../src/features/bookshelf/lightRig';
 import { readBookStyleOverrides } from '../src/data/books';
 import {
   coverOverridesFromStyle,
@@ -43,15 +40,9 @@ import {
 } from '../src/features/bookshelf/bookIdentity';
 import { orderBooks } from '../src/features/bookshelf/data';
 import {
-  planFloorFlora,
-  spineRects,
-  themeFloraSpec,
-} from '../src/features/bookshelf/floraPlan';
-import {
   DEFAULT_LIBRARY_PREFS,
   mergeLibraryPrefs,
   resolveLibrary,
-  warmthTint,
 } from '../src/features/bookshelf/libraryPrefs';
 import { libraryKey } from '../src/features/bookshelf/libraryKey';
 import { parseFloorNames } from '../src/features/bookshelf/floorNames';
@@ -85,7 +76,6 @@ import {
   RAIL_W,
   SHELF_WIDTH,
   SLOT_MARGIN_X,
-  underPlankShadowSlices,
   X_SLACK,
   Y_MIN,
 } from '../src/features/bookshelf/constants';
@@ -906,27 +896,28 @@ describe('library prefs: validated merge', () => {
       theme: 'observatory',
       wallpaperPattern: 'constellation',
       wallDepth: 4,
-      lightWarmth: -3,
     });
     expect(prefs.theme).toBe('observatory');
     expect(prefs.wallpaperPattern).toBe('constellation');
     expect(prefs.wallDepth).toBe(1);
-    expect(prefs.lightWarmth).toBe(0);
   });
 
   it('drops the retired wall controls rather than carrying them forward', () => {
     // colourway / backdrop / floraDensity were three ways to change one
-    // surface, and two of them could silently void the third. A stored blob
-    // from before the purge has to load without reviving them.
+    // surface, and two of them could silently void the third. lightWarmth
+    // tinted lamp pools that no longer exist. A stored blob from before the
+    // purge has to load without reviving any of them.
     const prefs = mergeLibraryPrefs({
       theme: 'observatory',
       colourway: 'midnight',
       backdrop: 'shoji',
       floraDensity: 2,
+      lightWarmth: 0.9,
     });
     expect(prefs).not.toHaveProperty('colourway');
     expect(prefs).not.toHaveProperty('backdrop');
     expect(prefs).not.toHaveProperty('floraDensity');
+    expect(prefs).not.toHaveProperty('lightWarmth');
     expect(prefs.wallpaperPattern).toBeNull();
   });
 
@@ -940,11 +931,9 @@ describe('library prefs: validated merge', () => {
 
   it('resolveLibrary keys identical rooms identically', () => {
     const a = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage' }));
-    // Neither slider touches the CASE art, so the bake key must match — this
-    // is what stops a wall-depth drag from re-baking the whole bookcase.
-    const b = resolveLibrary(
-      mergeLibraryPrefs({ theme: 'cottage', wallDepth: 1, lightWarmth: 0.9 }),
-    );
+    // The depth slider does not touch the CASE art, so the bake key must
+    // match — this is what stops a drag from re-baking the whole bookcase.
+    const b = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage', wallDepth: 1 }));
     expect(a.key).toBe(b.key);
     // The wall pattern does, so it must not.
     const c = resolveLibrary(
@@ -954,99 +943,12 @@ describe('library prefs: validated merge', () => {
   });
 });
 
-describe('warmth tint', () => {
-  it('is neutral in the middle and cool/warm at the ends', () => {
-    expect(warmthTint(0.5)).toBe(0xffffff);
-    const cool = warmthTint(0);
-    const warm = warmthTint(1);
-    expect((cool & 0xff) > ((cool >> 16) & 0xff)).toBe(true);
-    expect(((warm >> 16) & 0xff) > (warm & 0xff)).toBe(true);
-  });
-});
-
-describe('flora planning on the real case', () => {
-  const theme = getTheme('conservatory');
-
-  it('density 0 gives a genuinely clean shelf', () => {
-    const plan = planFloorFlora({
-      floorIndex: 3,
-      theme,
-      densityMultiplier: 0,
-      spines: [],
-    });
-    expect(plan.back).toHaveLength(0);
-    expect(plan.rail).toHaveLength(0);
-  });
-
-  it('is deterministic and monotonic in density', () => {
-    const at = (m: number): string[] => {
-      const plan = planFloorFlora({
-        floorIndex: 2,
-        theme,
-        densityMultiplier: m,
-        spines: [],
-      });
-      return [...plan.back, ...plan.rail].map((p) => p.id).sort();
-    };
-    const sparse = at(0.5);
-    const lush = at(2);
-    expect(at(0.5)).toEqual(sparse);
-    expect(lush.length).toBeGreaterThanOrEqual(sparse.length);
-    for (const id of sparse) expect(lush).toContain(id);
-  });
-
-  it('never grows over a spine title', () => {
-    const spines = Array.from({ length: 14 }, (_, i) => ({
-      centerX: 60 + i * 78,
-      w: 44,
-      height: 240,
-    }));
-    const plan = planFloorFlora({
-      floorIndex: 1,
-      theme,
-      densityMultiplier: 2,
-      spines,
-    });
-    const keepOut = spineKeepOuts(spineRects(spines), 4);
-    for (const placement of plan.back) {
-      for (const rect of keepOut) {
-        expect(rectsOverlap(placement.bounds, rect)).toBe(false);
-      }
-    }
-  });
-
-  it('rail-layer flora stays clear of whole spines', () => {
-    const spines = [{ centerX: 90, w: 46, height: 260 }];
-    const plan = planFloorFlora({
-      floorIndex: 0,
-      theme,
-      densityMultiplier: 2,
-      spines,
-    });
-    const whole = spineRects(spines)[0]!;
-    for (const placement of plan.rail) {
-      expect(rectsOverlap(placement.bounds, whole)).toBe(false);
-    }
-  });
-
-  it('maps every themed species and anchor onto the flora vocabulary', () => {
-    const ids = [
-      'athenaeum',
-      'conservatory',
-      'observatory',
-      'cottage',
-      'scriptorium',
-      'sakura',
-      'attic',
-      'apothecary',
-    ] as const;
-    for (const id of ids) {
-      const spec = themeFloraSpec(getTheme(id));
-      expect(spec.species.every((s) => typeof s === 'string' && s.length > 0)).toBe(true);
-      expect(spec.eligibleAnchors?.every((a) => typeof a === 'string')).toBe(true);
-    }
-  });
-});
+/*
+ * `warmthTint` had a suite here, and flora planning another (anchor
+ * composition, density monotonicity, title keep-outs). Both went with the
+ * painting era: there are no lamp pools left to tint, so the `lightWarmth`
+ * pref and its studio slider are gone, and nothing grows on the case.
+ */
 
 describe('book studio: overrides win in every room', () => {
   const overrides = {
@@ -1169,161 +1071,18 @@ describe('themed env keys', () => {
 });
 
 /*
- * Regression guard for the "shadowy transparent corner boxes" the user saw
- * repeating at every shelf corner.
- *
- * Cause: the under-plank shadow was a NineSliceSprite with a fixed 16-TEXEL
- * inset. The strip bakes a darker radial pool ~26 WORLD px wide into each end,
- * so most of that pool fell inside the centre slice, which is then stretched
- * ~12x across the shelf — smearing each pool into a soft ~140px rectangle.
- * (Measured before the fix, DPR 1: alpha 126 at x=0 not reaching the flat 96
- * until x≈140. After: flat by x=24, with zero deviation across the middle.)
- *
- * The cut plan below is what replaced it. These assertions encode the two
- * invariants that make the smear impossible.
+ * `underPlankShadowSlices` had a suite here — the cut plan that kept the baked
+ * under-plank ambient-occlusion strip's corner pools from smearing into the
+ * "shadowy transparent corner boxes" the user reported. A blurred AO falloff is
+ * a light model, so the strip went with the lighting pass, and the three-sprite
+ * rig in `floorView.ts` and the pure cut function in `constants.ts` went with
+ * it. There is nothing left to cut.
  */
-describe('under-plank shadow cut plan', () => {
-  const STRIP_W = 128;
-  const CAP_W = 28;
 
-  it('never lets a corner pool texel into the stretched middle', () => {
-    for (const dpr of [1, 1.25, 1.5, 2, 3]) {
-      const sourceW = Math.ceil(STRIP_W * dpr);
-      const [mid, capL, capR] = underPlankShadowSlices(sourceW, STRIP_W, CAP_W);
-      const poolTexels = CAP_W * (sourceW / STRIP_W);
-      // The middle frame starts at or after the pool ends, and ends at or
-      // before the far pool begins.
-      expect(mid.x).toBeGreaterThanOrEqual(Math.floor(poolTexels));
-      expect(mid.x + mid.w).toBeLessThanOrEqual(Math.ceil(sourceW - poolTexels));
-      // The caps cover exactly the pool regions.
-      expect(capL.x).toBe(0);
-      expect(capR.x + capR.w).toBe(sourceW);
-    }
-  });
+/*
+ * `artRoutes.routeFor` had a suite here, covering the cache keys the worker
+ * could reproduce a case part from. Every one of those recipes was the painting
+ * stack; the flat case is drawn inline (cheaper than posting a job) and the
+ * router now has no routes to test.
+ */
 
-  it('draws the caps 1:1 so the pool keeps its baked world size at any DPR', () => {
-    for (const dpr of [1, 1.5, 2, 3]) {
-      const sourceW = Math.ceil(STRIP_W * dpr);
-      const [, capL, capR] = underPlankShadowSlices(sourceW, STRIP_W, CAP_W);
-      // Destination width is the same world size regardless of DPR…
-      expect(capL.destW).toBe(CAP_W);
-      expect(capR.destW).toBe(CAP_W);
-      // …and the source frame scales with DPR to match it, i.e. a scale of 1
-      // world px per (dpr) texels — no magnification, hence no smear.
-      const scale = capL.destW / (capL.w / dpr);
-      expect(scale).toBeGreaterThan(0.9);
-      expect(scale).toBeLessThan(1.1);
-    }
-  });
-
-  it('tiles the full shelf width with no gap and no overlap', () => {
-    const [mid, capL, capR] = underPlankShadowSlices(256, STRIP_W, CAP_W);
-    expect(capL.destX).toBe(0);
-    expect(capL.destX + capL.destW).toBe(mid.destX);
-    expect(mid.destX + mid.destW).toBe(capR.destX);
-    expect(capR.destX + capR.destW).toBe(SHELF_WIDTH);
-  });
-
-  it('degrades safely when the strip is narrower than two caps', () => {
-    const [mid, capL, capR] = underPlankShadowSlices(8, STRIP_W, CAP_W);
-    expect(mid.w).toBeGreaterThan(0);
-    expect(capL.w).toBeGreaterThan(0);
-    expect(capR.w).toBeGreaterThan(0);
-    expect(capL.w + mid.w + capR.w).toBe(8);
-  });
-});
-
-/* ========================================================================== *
- *          off-thread art: which recipes the worker can reproduce            *
- * ========================================================================== */
-
-describe('art offload routing', () => {
-  it('routes every themed case part the shelf asks for', () => {
-    expect(routeFor('theme4|crown|blossom|1228x50')).toBe('crown');
-    expect(routeFor('theme4|rail|blossom|34x320')).toBe('rail');
-    expect(routeFor('theme4|plank|blossom|1200x40')).toBe('plank');
-    // The back panel carries its own recipe suffix; the route must survive it.
-    expect(routeFor('theme4|back-v2|blossom|1200x280')).toBe('back');
-    expect(routeFor('theme9|back-v7|attic|1200x280')).toBe('back');
-  });
-
-  it('routes the base wood with or without a material segment', () => {
-    // `wood.ts` gained an `m1` segment mid-flight; both shapes must route, or
-    // a recipe bump silently puts a second of brush work back on the main
-    // thread with nothing to say so.
-    expect(routeFor('wood|plank|1200x40')).toBe('base-plank');
-    expect(routeFor('wood|m1|plank|1200x40')).toBe('base-plank');
-    expect(routeFor('wood|m1|back|1200x280')).toBe('base-back');
-    expect(routeFor('wood|m1|rail|34x320')).toBe('base-rail');
-    expect(routeFor('wood|m1|crown|1228x64')).toBe('base-crown');
-    expect(routeFor('wood|shadow|128x26')).toBe('base-shadow');
-  });
-
-  it('routes the multi-floor wall strip, versioned or not', () => {
-    expect(routeFor('wall|blossom|papered|blossom|sky|640x960')).toBe('wall');
-    expect(routeFor('wall|v2|blossom|papered|blossom|sky|640x960')).toBe('wall');
-  });
-
-  it('declines anything it cannot reproduce from the key alone', () => {
-    // Flora: the key is a digest of a placement list and cannot be inverted.
-    expect(routeFor('flora|v6|ivy:8d53035e:0.68:1:down:1183,4')).toBe(null);
-    // SVG rasterisation needs `new Image()`, which a worker does not have.
-    expect(routeFor('paper|aged|512')).toBe(null);
-    expect(routeFor('wallpaper|damask|256')).toBe(null);
-    // Junk, and near-misses.
-    expect(routeFor('')).toBe(null);
-    expect(routeFor('theme4|crown|blossom')).toBe(null);
-    expect(routeFor('wood|m1|plank|1200')).toBe(null);
-  });
-});
-
-/* ========================================================================== *
- *                    the shelf's light rig, per room                         *
- * ========================================================================== */
-
-describe('rigForTheme', () => {
-  it('keeps the shelf grade whatever the room is', () => {
-    for (const id of ['athenaeum', 'attic'] as const) {
-      const rig = rigForTheme(getTheme(id), 0.5);
-      // The tuned grade (qa/lit/sheet-rigs.png) — less glow, more separation.
-      expect(rig.bloom).toBeLessThanOrEqual(0.2);
-      expect(rig.exposure).toBeLessThanOrEqual(1);
-      expect(rig.ambientLevel).toBeLessThanOrEqual(0.2);
-      expect(rig.ambientOcclusion).toBeGreaterThan(0.7);
-      // A low sun: this is what turns a row of rectangles into cylinders.
-      expect(rig.keyElevation).toBeLessThan(0.3);
-    }
-  });
-
-  it('takes its key direction and colour from the room s brightest lamp', () => {
-    const theme = getTheme('athenaeum');
-    const rig = rigForTheme(theme, 0.5);
-    const brightest = [...theme.light.pools].sort(
-      (a, b) => b.intensity - a.intensity,
-    )[0];
-    if (brightest !== undefined) {
-      expect(rig.keyColour).toBe(brightest.colour);
-      // The key travels FROM the lamp toward the middle of the frame.
-      const expected = Math.atan2(0.5 - brightest.y, 0.5 - brightest.x) + Math.PI;
-      expect(rig.keyAngle).toBeCloseTo(expected, 6);
-    }
-  });
-
-  it('moves the temperature split, not the exposure, with the warmth slider', () => {
-    const theme = getTheme('athenaeum');
-    const cold = rigForTheme(theme, 0);
-    const warm = rigForTheme(theme, 1);
-    expect(warm.temperatureShift).toBeGreaterThan(cold.temperatureShift);
-    expect(warm.exposure).toBe(cold.exposure);
-    expect(warm.keyIntensity).toBe(cold.keyIntensity);
-    // Out-of-range / NaN warmth must not produce a NaN rig.
-    expect(Number.isFinite(rigForTheme(theme, Number.NaN).temperatureShift)).toBe(true);
-    expect(Number.isFinite(rigForTheme(theme, 9).temperatureShift)).toBe(true);
-  });
-
-  it('drops the volumetric shafts in rooms that do not have them', () => {
-    const theme = getTheme('athenaeum');
-    const rig = rigForTheme(theme, 0.5);
-    expect(rig.shafts.length === 0).toBe(!theme.light.shafts);
-  });
-});

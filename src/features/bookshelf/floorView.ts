@@ -2,9 +2,7 @@
  * features/bookshelf/floorView.ts — one pooled Pixi container per floor.
  *
  * root (positioned at y = i*FLOOR_H) → content (floor-local), bottom → top:
- *   wall shade strips (AO cast on the paper wall beside the case)
- *   → back panel (flat tint placeholder, baked board wall crossfades in)
- *   → under-plank shadow (cast by the plank/crown ABOVE, at the zone top)
+ *   back panel (flat tint placeholder, baked board wall crossfades in)
  *   → plank (flat tint placeholder, wood bitmap crossfades in)
  *   → empty-floor doodle → hover glow layer → book sprites
  *   → side rails (the case frame, in front so shelves read as slotted in).
@@ -19,29 +17,22 @@
  */
 
 import gsap from 'gsap';
-import { Container, Rectangle, Sprite, Texture, type RenderTexture } from 'pixi.js';
-import { SHADOW_STRIP } from '../../art/wood';
+import { Container, Sprite, Texture, type RenderTexture } from 'pixi.js';
 import { SPINE_THICKNESS_RANGE, type SpineParams } from '../../art/spines';
 import { readShelfMeta } from '../../data/books';
 import type { Book } from '../../data/types';
 import {
   BOOK_BASELINE,
   BOOK_ZONE_H,
-  CROWN_LIP,
   FLOOR_H,
   PLANK_H,
   RAIL_W,
   SHELF_WIDTH,
-  TOP_SHADOW_H,
-  underPlankShadowSlices,
 } from './constants';
-import { layoutFloor, LAYOUT_MARGIN_X } from './layout';
-import { PROP_H, PROP_KINDS, PROP_W, type PropKind } from '../../art/props';
+import { layoutFloor } from './layout';
 import type { LodTier } from './lod';
 import { LOD_CROSSFADE_MS } from './lod';
 import {
-  CASE_HALO_EDGE_W,
-  CASE_HALO_PAD,
   doodleVariantFor,
   PLACEHOLDER_TINTS,
   SELECT_CARET_H,
@@ -71,36 +62,13 @@ export const HOVER_GLOW_TINT = 0xffd98f;
 export const SELECT_GLOW_ALPHA = 0.42;
 export const SELECT_GLOW_TINT = 0xbcd9f2;
 
-/**
- * World-px width of the darker pool baked into each END of the under-plank
- * shadow strip (art/wood.ts paints a radial at cx = 0 and cx = w with radius
- * `inset * 1.6`, in world units, so this is DPR-independent). +2 covers the
- * radial's antialiased tail.
- *
- * WHY THIS EXISTS — the "corner boxes" bug: the strip used to be drawn with a
- * NineSliceSprite whose left/right inset was SHADOW_STRIP.inset (16). Two
- * things went wrong at once.
- *   1. Nine-slice insets are TEXTURE pixels, but the strip is baked at
- *      `dpr` scale, so 16 meant 16 world px at DPR 1 and only 8 at DPR 2 —
- *      the slice geometry silently changed with the display.
- *   2. Either way the inset was narrower than the 25.6 px pool, so most of
- *      each pool sat inside the CENTRE slice, which is then stretched from
- *      ~72 texels to ~1148 world px (≈12x). The pool smeared into a soft
- *      ~140 px translucent rectangle at both ends of every floor — the
- *      "weird shadowy corner boxes, repeating at shelf corners".
- * Measured before the fix (alpha under the plank edge, DPR 1): 126 at x=0
- * decaying to the flat 96 only by x≈140. After: flat 96 by x≈28, matching
- * the bake.
- */
-export const SHADOW_CAP_W = Math.ceil(SHADOW_STRIP.inset * 1.6) + 2;
-
 export interface WorldHooks {
   markDirty(): void;
   /** Motion scale: 1 normally, 0 under prefers-reduced-motion. */
   motion(): number;
   /** Register a tween for kill-on-destroy; returns it for chaining. */
   track<T extends gsap.core.Animation>(anim: T): T;
-  /** Shared soft radial glow texture (motes/pull-out shadow/hover halo). */
+  /** Shared soft radial texture (hover halo, pull-out contact shadow). */
   glow(): Texture;
 }
 
@@ -145,19 +113,6 @@ export class FloorView {
   private backWood: Sprite | null = null;
   private readonly plankBase: Sprite;
   private plankWood: Sprite | null = null;
-  /**
-   * Under-plank shadow rig — three sprites, never a nine-slice (see
-   * SHADOW_CAP_W). `shadow` is the pool-free middle: horizontally uniform, so
-   * stretching it across the shelf is exact. `shadowCapL`/`shadowCapR` carry
-   * the baked corner pools at their true world width, so they cannot smear.
-   */
-  private shadow: Sprite | null = null;
-  private shadowCapL: Sprite | null = null;
-  private shadowCapR: Sprite | null = null;
-  /** Source the three shadow frames were cut from (re-cut when it changes). */
-  private shadowSource: Texture | null = null;
-  private shadeL: Sprite | null = null;
-  private shadeR: Sprite | null = null;
   private railL: Sprite;
   private railR: Sprite;
   private railsWood = false;
@@ -171,14 +126,7 @@ export class FloorView {
   private selectGlow: Sprite | null = null;
   private selectCaret: Sprite | null = null;
   private readonly hoverLayer = new Container();
-  private readonly propsLayer = new Container();
   private readonly booksLayer = new Container();
-  /** Flora growing inside the book zone — behind the spines (§3). */
-  private readonly floraBack = new Container();
-  /** Flora on the case furniture — over the rails, never over a book. */
-  private readonly floraRail = new Container();
-  private floraBackSprite: Sprite | null = null;
-  private floraRailSprite: Sprite | null = null;
   private stampSprite: Sprite | null = null;
   private tier: LodTier = 0;
 
@@ -213,15 +161,10 @@ export class FloorView {
       this.backBase,
       this.plankBase,
       this.hoverLayer,
-      this.propsLayer,
-      this.floraBack,
       this.booksLayer,
       this.railL,
       this.railR,
-      this.floraRail,
     );
-    this.floraBack.eventMode = 'none';
-    this.floraRail.eventMode = 'none';
     this.root.eventMode = 'none';
   }
 
@@ -234,7 +177,6 @@ export class FloorView {
     factory: SpineFactory,
     tier: LodTier,
     dpr: number,
-    degrade: boolean,
     recentBookId: string | null = null,
   ): void {
     this.index = index;
@@ -242,9 +184,7 @@ export class FloorView {
     this.root.visible = true;
     this.tier = tier;
     this.dprHint = dpr;
-    this.floraBack.visible = tier === 0;
-    this.floraRail.visible = tier === 0;
-    this.applyEnv(env, degrade, false);
+    this.applyEnv(env, false);
     this.setBooks(books, factory, dpr, env, recentBookId);
     // Representation matches the tier immediately on (re)mount — no fade.
     this.content.visible = tier !== 2;
@@ -338,72 +278,11 @@ export class FloorView {
         this.visuals.push(visual);
       }
     }
-    this.placeProps(env, dpr);
     this.updateHint(env, dpr);
   }
 
-  /**
-   * Deterministic shelf dressing: 0–2 small props (plant/hourglass/candle/
-   * globe/book stack) in the wide gaps between book clusters on some floors.
-   * Baked sprites only; part of `content`, so LOD2 stamps inherit them.
-   */
-  private placeProps(env: EnvTextures, dpr: number): void {
-    for (const child of this.propsLayer.removeChildren()) child.destroy();
-    if (this.visuals.length === 0) return;
-    const rnd = mulberry32(fnv1a(`props|${this.index}`));
-
-    // Candidate spans: rail→first, wide inter-book gaps, last→rail.
-    const MIN_GAP = 68;
-    interface Span {
-      x0: number;
-      x1: number;
-    }
-    const spans: Span[] = [];
-    const first = this.visuals[0] as BookVisual;
-    const last = this.visuals[this.visuals.length - 1] as BookVisual;
-    if (first.centerX - first.w / 2 - LAYOUT_MARGIN_X >= MIN_GAP) {
-      spans.push({ x0: LAYOUT_MARGIN_X, x1: first.centerX - first.w / 2 });
-    }
-    for (let i = 1; i < this.visuals.length; i++) {
-      const a = this.visuals[i - 1] as BookVisual;
-      const b = this.visuals[i] as BookVisual;
-      const x0 = a.centerX + a.w / 2;
-      const x1 = b.centerX - b.w / 2;
-      if (x1 - x0 >= MIN_GAP) spans.push({ x0, x1 });
-    }
-    if (SHELF_WIDTH - LAYOUT_MARGIN_X - (last.centerX + last.w / 2) >= MIN_GAP) {
-      spans.push({ x0: last.centerX + last.w / 2, x1: SHELF_WIDTH - LAYOUT_MARGIN_X });
-    }
-
-    let placed = 0;
-    for (const span of spans) {
-      if (placed >= 2) break;
-      // Not every gap gets a prop — some floors stay plain.
-      if (rnd() >= 0.5) {
-        rnd(); // keep the stream length stable whether or not we place
-        rnd();
-        rnd();
-        continue;
-      }
-      const kind = Math.floor(rnd() * PROP_KINDS) as PropKind;
-      const variant = Math.floor(rnd() * 8);
-      const scale = 0.8 + rnd() * 0.25;
-      const sprite = new Sprite(env.getProp(dpr, kind, variant));
-      sprite.anchor.set(0.5, 1);
-      sprite.width = PROP_W * scale;
-      sprite.height = PROP_H * scale;
-      const mid = (span.x0 + span.x1) / 2;
-      const halfW = (PROP_W * scale) / 2;
-      const x = Math.min(Math.max(mid, span.x0 + halfW), span.x1 - halfW);
-      sprite.position.set(x, BOOK_BASELINE + 1);
-      this.propsLayer.addChild(sprite);
-      placed++;
-    }
-    this.hooks.markDirty();
-  }
-
   /** Pull env art in (called on populate and again when bakes land). */
-  applyEnv(env: EnvTextures, degrade: boolean, animate: boolean): void {
+  applyEnv(env: EnvTextures, animate: boolean): void {
     const m = this.hooks.motion();
     const fadeIn = (sprite: Sprite): void => {
       if (animate && m > 0) {
@@ -418,40 +297,6 @@ export class FloorView {
       }
     };
 
-    // The case's shadow on the wall, down both sides of this floor.
-    //
-    // One slice of the blurred case silhouette (see EnvTextures.getCaseHalo),
-    // stretched over the floor's height — the profile is constant in y along a
-    // straight edge, so stretching it is exact rather than approximate, and it
-    // meets the crown's halo at y = 0 without a seam.
-    //
-    // The slice runs from CASE_HALO_PAD + CROWN_LIP OUTSIDE the case to
-    // CASE_HALO_PAD inside it. That inner overlap is the point: it puts the
-    // slice's own edge under the opaque back panel and rails, so no sprite
-    // boundary can ever show as a step on the wall. The previous strips ended
-    // flush with the case at full opacity, which is what drew the "shadowy
-    // corner boxes" the user reported.
-    if (this.shadeL === null) {
-      const halo = env.getCaseHalo(this.dprHint);
-      if (halo !== null) {
-        const outer = CASE_HALO_PAD + CROWN_LIP;
-        this.shadeL = new Sprite(halo.edge);
-        this.shadeL.width = CASE_HALO_EDGE_W;
-        this.shadeL.height = FLOOR_H;
-        this.shadeL.position.set(-outer, 0);
-        this.shadeR = new Sprite(halo.edge);
-        this.shadeR.width = CASE_HALO_EDGE_W;
-        this.shadeR.height = FLOOR_H;
-        // Mirrored about the case's right edge.
-        this.shadeR.scale.x = -this.shadeR.scale.x;
-        this.shadeR.position.set(SHELF_WIDTH + outer, 0);
-        this.shadeL.eventMode = 'none';
-        this.shadeR.eventMode = 'none';
-        this.content.addChildAt(this.shadeL, 0);
-        this.content.addChildAt(this.shadeR, 0);
-      }
-    }
-
     if (env.back !== null && this.backWood === null) {
       this.backWood = new Sprite(env.back);
       this.backWood.position.set(0, 0);
@@ -460,9 +305,6 @@ export class FloorView {
       this.content.addChildAt(this.backWood, this.content.getChildIndex(this.backBase) + 1);
       fadeIn(this.backWood);
     }
-
-    // Under-plank shadow: cast by the shelf above onto this floor's zone top.
-    if (!degrade) this.syncUnderPlankShadow(env, fadeIn);
 
     if (env.plank !== null && this.plankWood === null) {
       this.plankWood = new Sprite(env.plank);
@@ -512,66 +354,6 @@ export class FloorView {
   }
 
   /**
-   * Build (or re-cut) the three-piece under-plank shadow.
-   *
-   * The baked strip is `SHADOW_STRIP.w × SHADOW_STRIP.h` world px rasterised
-   * at some DPR, with a darker radial pool SHADOW_CAP_W wide at each end. We
-   * cut it into three frames and place them at their true world widths:
-   *
-   *   ├── cap L ──┼──────────── middle (stretched) ────────────┼── cap R ──┤
-   *   0        CAP_W                                  W-CAP_W           W
-   *
-   * The middle frame is horizontally uniform by construction, so stretching
-   * it ~1148 px wide is exact — no smear, no seam, no DPR dependence. The
-   * caps are drawn 1:1 in world px and so keep the pool the size the bake
-   * intended. Vertically every piece maps its full 26-px height onto
-   * TOP_SHADOW_H, which the old nine-slice did NOT (its 10/8 row insets were
-   * texture px, so the falloff curve changed shape with the display DPR).
-   *
-   * Idempotent: re-cuts only when `env.shadow` is a different Texture (theme
-   * or stain swap destroys the old one).
-   */
-  private syncUnderPlankShadow(env: EnvTextures, fadeIn: (s: Sprite) => void): void {
-    const src = env.shadow;
-    if (src === null || src === this.shadowSource) return;
-
-    // `source.width` is in logical units (pixelWidth / resolution), which is
-    // what Texture frames are measured in.
-    const srcH = src.source.height;
-    const [mid, capL, capR] = underPlankShadowSlices(
-      src.source.width,
-      SHADOW_STRIP.w,
-      SHADOW_CAP_W,
-    );
-    const cut = (s: { x: number; w: number }): Texture =>
-      new Texture({ source: src.source, frame: new Rectangle(s.x, 0, s.w, srcH) });
-
-    const place = (existing: Sprite | null, texture: Texture, x: number, w: number): Sprite => {
-      if (existing !== null) {
-        const old = existing.texture;
-        existing.texture = texture;
-        // Only the derived frame is ours to free; the shared source is not.
-        if (old !== texture) old.destroy(false);
-        return existing;
-      }
-      const sprite = new Sprite(texture);
-      sprite.eventMode = 'none';
-      sprite.position.set(x, 0);
-      sprite.width = w;
-      sprite.height = TOP_SHADOW_H;
-      this.content.addChildAt(sprite, this.content.getChildIndex(this.plankBase));
-      fadeIn(sprite);
-      return sprite;
-    };
-
-    this.shadow = place(this.shadow, cut(mid), mid.destX, mid.destW);
-    this.shadowCapL = place(this.shadowCapL, cut(capL), capL.destX, capL.destW);
-    this.shadowCapR = place(this.shadowCapR, cut(capR), capR.destX, capR.destW);
-    this.shadowSource = src;
-    this.hooks.markDirty();
-  }
-
-  /**
    * Brass floor plaque on the plank (wave-2 item 2). Idempotent: creates the
    * sprite on first call, re-textures on label change. Lives in `content`,
    * so LOD2 stamps inherit it and the far-zoom tower shows the plates.
@@ -592,73 +374,6 @@ export class FloorView {
     this.hooks.markDirty();
   }
 
-  /* -------------------------------- flora -------------------------------- */
-
-  /**
-   * Attach one of the two baked flora layers at its world-space bounds. Flora
-   * is decoration only: it fades in, never intercepts pointer events, and is
-   * hidden below LOD0 (docs/design/library-themes.md §5) so far-zoom towers
-   * stay cheap and read by silhouette alone.
-   */
-  setFlora(
-    layer: 'back' | 'rail',
-    texture: Texture | null,
-    bounds: { x: number; y: number; w: number; h: number } | null,
-  ): void {
-    const parent = layer === 'back' ? this.floraBack : this.floraRail;
-    const current = layer === 'back' ? this.floraBackSprite : this.floraRailSprite;
-    if (texture === null || bounds === null) {
-      if (current !== null) {
-        gsap.killTweensOf(current);
-        current.destroy();
-        if (layer === 'back') this.floraBackSprite = null;
-        else this.floraRailSprite = null;
-        this.hooks.markDirty();
-      }
-      return;
-    }
-    let sprite = current;
-    const fresh = sprite === null;
-    if (sprite === null) {
-      sprite = new Sprite(texture);
-      sprite.eventMode = 'none';
-      parent.addChild(sprite);
-      if (layer === 'back') this.floraBackSprite = sprite;
-      else this.floraRailSprite = sprite;
-    } else if (sprite.texture !== texture) {
-      sprite.texture = texture;
-    }
-    sprite.position.set(bounds.x, bounds.y);
-    sprite.width = bounds.w;
-    sprite.height = bounds.h;
-    parent.visible = this.tier === 0;
-    if (fresh) {
-      const m = this.hooks.motion();
-      if (m > 0) {
-        sprite.alpha = 0;
-        this.hooks.track(
-          gsap.to(sprite, {
-            alpha: 1,
-            duration: 0.5 * m,
-            onUpdate: () => this.hooks.markDirty(),
-          }),
-        );
-      }
-    }
-    this.hooks.markDirty();
-  }
-
-  /** Drop both flora layers (theme switch, floor recycle). */
-  clearFlora(): void {
-    this.setFlora('back', null, null);
-    this.setFlora('rail', null, null);
-  }
-
-  /** True when this floor already carries baked flora. */
-  get hasFlora(): boolean {
-    return this.floraBackSprite !== null || this.floraRailSprite !== null;
-  }
-
   /**
    * Re-point existing wood sprites at the (re-stained) env textures. applyEnv
    * only ADDS missing sprites; this handles in-place texture swaps after
@@ -675,9 +390,6 @@ export class FloorView {
       this.railL.texture = env.rail;
       this.railR.texture = env.rail;
     }
-    // Re-cut the shadow frames if the strip texture itself was replaced —
-    // otherwise the three sprites keep pointing at a destroyed source.
-    if (this.shadow !== null) this.syncUnderPlankShadow(env, () => undefined);
     this.hooks.markDirty();
   }
 
@@ -696,9 +408,6 @@ export class FloorView {
   applyTier(tier: LodTier, stamp: RenderTexture | null, factory: SpineFactory): void {
     const prev = this.tier;
     this.tier = tier;
-    // Flora (and its LOD2-stamp cost) drops out above LOD0 — §5 acceptance.
-    this.floraBack.visible = tier === 0;
-    this.floraRail.visible = tier === 0;
     if (tier !== 2) this.refreshTextures(factory);
     if (prev === tier) {
       if (tier === 2 && stamp !== null) this.showStamp(stamp);
@@ -922,8 +631,6 @@ export class FloorView {
     }
     this.visuals = [];
     this.booksLayer.removeChildren();
-    for (const child of this.propsLayer.removeChildren()) child.destroy();
-    this.clearFlora();
     gsap.killTweensOf(this.content);
     if (this.stampSprite !== null) {
       gsap.killTweensOf(this.stampSprite);
@@ -940,15 +647,6 @@ export class FloorView {
 
   destroy(): void {
     this.reset();
-    // The three shadow sprites own derived frame Textures cut from the shared
-    // strip source; free the frames (never the source, which EnvTextures owns).
-    for (const s of [this.shadow, this.shadowCapL, this.shadowCapR]) {
-      if (s !== null && !s.destroyed) s.texture.destroy(false);
-    }
-    this.shadow = null;
-    this.shadowCapL = null;
-    this.shadowCapR = null;
-    this.shadowSource = null;
     this.root.destroy({ children: true });
   }
 

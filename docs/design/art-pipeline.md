@@ -84,7 +84,11 @@ Bake once per DPR onto a flood rect; tint variants (cream #f7f1e3, aged #efe4cc)
 
 For icons, dividers, frames: at build/bake time sample each clean path with svg-path-properties every 3â€“5px, offset each sample by 1D simplex noise (amplitude 0.8â€“1.5px, frequency ~0.02/px, seeded per element), rebuild as Catmull-Rom â†’ cubic path, output 2 slightly different passes (rough.js's double-stroke trick, or call rough.js `generator.path()` directly and take its op sets). Result is plain crisp SVG: infinite zoom, zero filters. Pencil *texture* on these strokes = `stroke="url(#graphitePattern)"` where the pattern is a tiny 64Ã—64 baked graphite tile â€” Chromium renders patterned strokes fast. Ship the 20â€“30 core icons as pre-generated SVG committed to the repo (run the wobbler as a Vite build script, `scripts/gen-icons.ts`) so runtime does nothing.
 
-## Procedural wood (module `art/wood.ts`)
+## ~~Procedural wood~~ (deleted)
+
+> `art/wood.ts` is gone. The case is drawn flat — `art/flat.ts` + `art/flatShelf.ts`
+> through `features/bookshelf/textures.ts`. The recipe below is kept as a record
+> of what a grain field cost; nothing implements it.
 
 Canvas 2D + simplex-noise: for each pixel row-band (work in 4px bands then smooth-scale, not per-pixel JS at full res): `g = n2d(x*0.008, y*0.09)` (anisotropic stretch = grain direction), `ring = fract(g*5.5)`, ease with `ring^1.8`, lerp plank palette #8a6a48â†’#6f5138; add 2â€“3 knots per plank: `ring += 0.5*exp(-dÂ²/rÂ²)*sin(d*0.35)` around seeded centers; multiply the shared granulation tile at 0.08; draw plank seams + front-edge outline via the wobble module strokes in graphite at 55% alpha; vignette with two radial gradients (multiply). Bake per zoom bucket, persist to disk. Shelf shadow under each row: pre-baked 9-slice blurred strip, drawn stretched.
 
@@ -113,7 +117,7 @@ Buckets at 0.5Ã—, 1Ã—, 2Ã—, 4Ã— (Ã—DPR). During pinch/scroll-zoom
 - **UI micro-copy floor**: never render handwriting below 13px; below that switch to Nunito Sans (quiet, rounded, harmonizes). Skip Shadows Into Light and Gochi Hand for anything functional â€” too spindly/irregular; keep them available only as user-selectable "decorative title" options.
 
 ## File layout
-`src/art/bake.ts` (SVGâ†’ImageBitmap + disk cache), `src/art/filters.ts` (filter-def SVG strings + resolution scaling), `src/art/wobble.ts` (path pre-distortion), `src/art/wood.ts`, `src/art/spines.ts` (+ atlas manager), `src/art/noise.ts` (simplex + mulberry32 + fnv1a), `scripts/gen-icons.ts` (build-time icon wobbler), `src/assets/fonts/` via @fontsource imports.
+`src/art/bake.ts` (SVGâ†’ImageBitmap + disk cache), `src/art/flat.ts` + `src/art/flatShelf.ts` (the flat drawing vocabulary and the case parts built from it), `src/art/wobble.ts` (path pre-distortion), `src/art/spines.ts` (+ atlas manager), `src/art/noise.ts` (simplex + mulberry32 + fnv1a), `scripts/gen-icons.ts` (build-time icon wobbler), `src/assets/fonts/` via @fontsource imports.
 
 ## Libraries
 roughjs@^4.6.6 (bake-time sketchy geometry + editor doodles, canvas backend)

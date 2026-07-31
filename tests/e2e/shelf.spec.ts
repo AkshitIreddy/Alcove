@@ -160,12 +160,14 @@ test('drag-pan scrolls the shelf and coasts with momentum', async ({ page }) => 
 /**
  * The regression this guards.
  *
- * The painted pipeline pays for its look in CPU: a single spine measured 6.0s
- * and one flora layer 5.1s on a software renderer. With all of it on the main
- * thread a cold shelf produced **20 blocks over 100ms, 18.0s of frozen window
- * and a 2.8s single stall** — the app was unusable while it drew itself.
- * Moving the painting into `artOffload`'s worker pool took the same boot to
- * 3 blocks and 3.1s (`qa/_probes/probe-responsive.mjs`, 42 books).
+ * The painted pipeline paid for its look in CPU: a single spine measured 6.0s
+ * on a software renderer, and with the whole stack on the main thread a cold
+ * shelf produced **20 blocks over 100ms, 18.0s of frozen window and a 2.8s
+ * single stall** — the app was unusable while it drew itself. Moving the
+ * painting into `artOffload`'s worker pool took the same boot to 3 blocks and
+ * 3.1s (`qa/_probes/probe-responsive.mjs`, 42 books). Most of that stack is
+ * gone now and the case draws flat, but the tripwire stays: the spines still
+ * bake, and a main-thread bake is still the way this regresses.
  *
  * The probe measures lag the only way a user experiences it: schedule a
  * zero-delay callback, and see how much LATER than that it actually ran.
@@ -194,7 +196,7 @@ test('the shelf never freezes the window while it paints itself', async ({ page 
   });
 
   await gotoShelf(page);
-  // Long enough for the case, the spines and both flora layers to land.
+  // Long enough for the case and every spine to land.
   await page.waitForTimeout(20_000);
 
   const lag = await page.evaluate(
@@ -269,19 +271,3 @@ test('the art worker pool is alive and taking the painting off the main thread',
   expect(stats?.jobs ?? 0, 'nothing was painted off the main thread').toBeGreaterThan(0);
 });
 
-test('the case is lit by the deferred pass, not by itself', async ({ page }) => {
-  await gotoShelfQa(page);
-  await page.waitForTimeout(8_000);
-
-  const light = await page.evaluate(() => {
-    const world = (globalThis as Record<string, unknown>)['__shelfWorld'] as
-      | Record<string, { enabled?: boolean }>
-      | undefined;
-    const scene = world?.['sceneLight'];
-    return { present: scene !== undefined, enabled: scene?.enabled === true };
-  });
-  expect(light.present, 'the world has no scene light').toBe(true);
-  // SwiftShader is still WebGL, so the pass must be on here too. A WebGPU
-  // renderer would legitimately report false — see isDeferredLightingSupported.
-  expect(light.enabled, 'the deferred lighting pass did not attach').toBe(true);
-});

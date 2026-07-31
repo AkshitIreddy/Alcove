@@ -66,12 +66,9 @@
 }
 
 .nb-sheet-paper {
+  /* Flat paper. The warm radial that used to pool at the sheet top was the
+     page's share of the old parchment lighting; the flat palette has none. */
   background-color: var(--paper-cream);
-  background-image: radial-gradient(
-    130% 90% at 50% -6%,
-    var(--paper-glow) 0%,
-    transparent 65%
-  );
   border: 1px solid var(--paper-edge);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   padding: var(--space-40) var(--space-24) var(--space-64);
@@ -162,7 +159,7 @@
   width: 18px;
   height: 18px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   background-color: var(--paper-cream);
 }
 
@@ -1127,7 +1124,7 @@
   font-weight: 700;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: 6px 9px 7px 10px;
   transform: rotate(-2deg);
 }
@@ -1224,7 +1221,7 @@
   font-weight: 700;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: 6px 9px 7px 10px;
   transform: rotate(-2deg);
 }

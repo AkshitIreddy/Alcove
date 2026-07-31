@@ -91,15 +91,12 @@
   padding: var(--space-20) var(--space-20) var(--space-16);
   box-sizing: border-box;
   pointer-events: auto;
-  background:
-    radial-gradient(
-      120% 90% at 22% 0%,
-      rgba(255, 252, 243, 0.75),
-      rgba(255, 252, 243, 0) 62%
-    ),
-    var(--paper-aged);
+  /* One flat card. The cream radial that used to pool in the top-left was a
+     parchment lighting effect, and it had to be re-tuned per theme because a
+     light model never survives a palette change. */
+  background: var(--paper-aged);
   color: var(--ink-sepia);
-  border: 1.4px solid var(--paper-edge);
+  border: var(--stroke-ink);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-lg);
   transform-origin: 50% 0%;
@@ -107,21 +104,7 @@
 }
 
 .nbt-card:focus-visible {
-  box-shadow:
-    var(--shadow-lg),
-    0 0 0 2.5px var(--wash-amber);
-}
-
-/* The cream highlight above is a parchment-paper effect; on night paper it
-   reads as a milky haze that eats the eyebrow's contrast. Warm + far weaker. */
-:root[data-theme='night'] .nbt-card {
-  background:
-    radial-gradient(
-      120% 90% at 22% 0%,
-      rgba(255, 238, 202, 0.08),
-      rgba(255, 238, 202, 0) 62%
-    ),
-    var(--paper-aged);
+  box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-deep);
 }
 
 .nbt-card--wide {
@@ -134,7 +117,7 @@
   content: '';
   position: absolute;
   inset: 4px;
-  border: 1px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: var(--radius-hand);
   opacity: 0.45;
   pointer-events: none;
@@ -147,16 +130,12 @@
   left: 26px;
   width: 74px;
   height: 22px;
-  background: linear-gradient(
-    100deg,
-    rgba(233, 196, 106, 0.55),
-    rgba(247, 231, 194, 0.72) 45%,
-    rgba(233, 196, 106, 0.5)
-  );
-  border-left: 1px dashed rgba(168, 128, 46, 0.4);
-  border-right: 1px dashed rgba(168, 128, 46, 0.4);
+  /* Washi tape: one flat gilt face with torn ink ends, not a sheen. */
+  background: var(--gilt-face);
+  border-left: 1px dashed var(--on-gilt);
+  border-right: 1px dashed var(--on-gilt);
   transform: rotate(-3.2deg);
-  box-shadow: 0 1px 2px rgba(94, 70, 45, 0.16);
+  box-shadow: var(--shadow-xs);
 }
 
 .nbt-card[data-side='top'] .nbt-tape {
@@ -205,7 +184,7 @@
   letter-spacing: var(--tracking-ui);
   color: var(--ink-sepia-soft);
   background: rgba(233, 196, 106, 0.18);
-  border: 1px dashed var(--paper-edge);
+  border: 1px dashed var(--ink-line-soft);
   border-radius: var(--radius-md);
 }
 
@@ -274,7 +253,7 @@
 
 .nbt-dot:focus-visible svg {
   transform: scale(1.32);
-  outline: 2px solid var(--wash-amber-deep);
+  outline: 3px solid var(--accent-deep);
   outline-offset: 3px;
   border-radius: 50%;
 }
@@ -299,7 +278,7 @@
   padding: 7px 14px;
   color: var(--ink-sepia);
   background: var(--paper-cream);
-  border: 1.3px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   border-radius: 140px 12px 130px 12px / 12px 130px 12px 140px;
   cursor: pointer;
   transition:

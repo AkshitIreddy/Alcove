@@ -43,7 +43,13 @@ export function placeholderTint(params: SpineParams): number {
   return hslToRgbInt(duo[0] + params.hueJitter, duo[1], duo[2]);
 }
 
-/** CSS colors for the DOM pulled-book cover (top → bottom gradient). */
+/**
+ * A book's cloth as two CSS colours: `top` is the face, `bottom` the darker
+ * face beside it. This used to be a top → bottom gradient on the DOM
+ * pulled-book cover; the overlay paints a canvas over the whole thing now and
+ * the flat language has no ramps, so the only live consumer is `world.ts`,
+ * which uses `bottom` to tint the gap between two leaning neighbours.
+ */
 export function paletteCss(params: SpineParams): { top: string; bottom: string } {
   const duo = PALETTE_DUOS[params.palette % PALETTE_DUOS.length];
   const f = (h: number, s: number, l: number) =>

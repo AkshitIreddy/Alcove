@@ -15,31 +15,38 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
 - [x] ~~`flat.ts` + `flatShelf.ts`~~ — palette, primitives, case parts, spines
 - [x] ~~Wall is one flat tint~~ — nothing tiles, so nothing can seam
 - [x] ~~`specimen.html`~~ — judge the drawing on its own
-- [ ] **Point the shelf at it.** The case and books still render through
-      `caseArt.ts` / `wood.ts` / `spines.ts`. The specimen looks right; the app
-      does not yet use it. This is the next piece and the biggest.
-- [ ] Delete the painting stack once nothing imports it: `brush.ts`,
-      `materials.ts`, `flora.ts`, `leaves.ts`, `props.ts`, `charms.ts`,
-      `wallpaper.ts`, `caseArt.ts`, `wood.ts`, most of `spines.ts`
-- [ ] Delete the lighting stack: `sceneLight.ts`, `lightRig.ts`,
-      `art/lighting.ts`, `src/render/*`
-- [ ] Themes → a few simple colour schemes over the one flat case
+- [x] ~~**Point the shelf at it.**~~ The case, the spines and the covers all
+      render through `flat.ts` / `flatShelf.ts` now.
+- [x] ~~Delete the painting stack~~ — `brush.ts`, `materials.ts`, `flora.ts`,
+      `leaves.ts`, `props.ts`, `paper.ts`, `filters.ts`, `caseArt.ts`,
+      `wood.ts`, the wallpaper renderers, and the granulation/material tables
+      in `spines.ts`. `charms.ts` and `wobble.ts` stayed — both are live.
+- [x] ~~Delete the lighting stack~~ — `sceneLight.ts`, `lightRig.ts`,
+      `art/lighting.ts`, `src/render/*`, plus the per-theme light rigs and the
+      dust motes that only existed to make the lamp pools visible.
+- [x] ~~Restyle the rails, chrome and studio panel to match~~ — every token in
+      `tokens.css` rebuilt on the FLAT palette, zero-blur flat shadows.
+- [ ] Themes → a few simple colour schemes over the one flat case. The theme
+      DATA is down to carpentry + wallpaper + spine bias, but every room still
+      bakes the same flat case, so the picker currently only changes the seed.
 - [ ] Restyle the book covers and the pulled-book overlay to match
-- [ ] Restyle the rails, chrome and studio panel to match
 
 ## 🐛 Reported bugs
 
 - [ ] Dragging empty shelf space pulls a book out instead of panning
-- [ ] Page content **blackens** during the turn
-- [ ] Turning **backwards inverts the pages** for a second
-- [ ] Stray page-turn effect persists after the flip completes
+- [x] ~~Page content **blackens** during the turn~~ — premultiplied alpha; page
+      samples now composite over paper cream in the shader
+- [x] ~~Turning **backwards inverts the pages** for a second~~ — a 'prev' leaf's
+      spine is its RIGHT edge, so every face needed its UVs mirrored
+- [x] ~~Stray page-turn effect persists after the flip completes~~ — the canvas
+      was hidden before `renderer.clear()` presented
 - [ ] Pull-out animation looks cheap
 - [ ] "waste paper" drawer sits inside the bookcase — should be a side option
 - [ ] Chrome card ("new book / studio / add floor") overlaps the bookcase top
 - [ ] App logo/icon too small in-app — should read at 16–32px
 - [ ] Sound effects still low quality — want smoother, calmer, warmer
-- [ ] Settings changes are slow (they trigger a full case re-bake; goes away
-      with the painting stack)
+- [x] ~~Settings changes are slow~~ — the full case re-bake went with the
+      painting stack; a flat part is a few dozen path fills
 
 ## 🧩 Features still missing
 

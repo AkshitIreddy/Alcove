@@ -24,8 +24,12 @@ describe('token contrast across the four UI themes', () => {
   });
 
   it('checks a real matrix (body, chrome, rims, all sixteen washes)', () => {
-    // 20 fixed body/chrome/rim pairs + 3 info + 16 wash + 16 wash-rim + 6 type.
-    expect(buildPairs().length).toBe(20 + 3 + 16 + 16 + 6);
+    // 21 fixed body/chrome/rim pairs + 3 info + 16 wash + 16 wash-rim + 6 type.
+    // The 21st is on-gilt / gilt-face: night inverts --ink-line to a light
+    // value but --gilt-face is bright gold in every theme, so ink-on-gilt went
+    // invisible after dark until --on-gilt (the one ink token that does not
+    // invert) was added. Nothing else covers that pairing.
+    expect(buildPairs().length).toBe(21 + 3 + 16 + 16 + 6);
   });
 
   it('resolves every gated token (a renamed-away token must fail loudly)', () => {

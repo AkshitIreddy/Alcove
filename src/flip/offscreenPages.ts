@@ -34,7 +34,11 @@ const SNAPSHOTTING_CLASS = 'snapshotting';
 const SNAPSHOT_EXCLUDE_SELECTOR =
   '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
 
-/** 1×1 transparent PNG — stand-in for images that fail to inline. */
+/**
+ * 1×1 transparent PNG — stand-in for images that fail to inline. As on the
+ * mounted path, any alpha it leaves behind resolves to cream in the shader
+ * (flip/curl.ts samplePage), never to black.
+ */
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU5ErkJggg==';
 

@@ -1,7 +1,6 @@
 // @vitest-environment node
 /**
- * tests/art-themes.test.ts — the library theme system
- * (src/art/themes.ts + src/art/wallpaper.ts + src/art/caseArt.ts).
+ * tests/art-themes.test.ts — the library theme system (src/art/themes.ts).
  *
  * The acceptance criteria in docs/design/library-themes.md §5 that can be
  * checked without pixels:
@@ -10,11 +9,12 @@
  *     vocabulary, not just distinct hexes)
  *   - eighteen wallpaper patterns; pattern and colourway fully independent
  *   - the wall treatment is orthogonal to both
- *   - overrides resolve, and a zero flora slider reaches genuinely clean
  *
- * Colour maths (`parseHex`/`mixHex`) is tested here too, because a mixed
- * colour silently degrading to grey is invisible in a diff and catastrophic
- * on screen.
+ * These are assertions about theme *data*, which outlived the renderers that
+ * consumed it. The painting stack took the wallpaper renderers with it, so the
+ * pattern catalogue is checked for its ids and labels only; the deferred
+ * lighting pass took the per-theme light rigs, and the flora/prop/mote
+ * dressing went with the art that drew it.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -37,14 +37,27 @@ import {
   isWallpaperPatternId,
   resolveBackdrop,
   resolveWallpaper,
-  scaleFloraDensity,
   themeBackdrops,
   type LibraryTheme,
 } from '../src/art/themes';
-import { COLOURWAYS, WALLPAPER_PATTERNS, allWallpaperPatterns, getColourway } from '../src/art/wallpaper';
-import { mixHex, parseHex } from '../src/art/wood';
+import { WALLPAPER_PATTERNS } from '../src/art/wallpaper';
 
 const themes = allThemes();
+
+/**
+ * `#rgb` / `#rrggbb` → channels. Local because the shared implementation lived
+ * in `art/wood.ts` and went with the painted case; the assertions below only
+ * need it to read theme palette hexes.
+ */
+function parseHex(hex: string): { r: number; g: number; b: number } {
+  const s = hex.trim().replace(/^#/, '');
+  const full = s.length === 3 ? s.replace(/./g, (c) => c + c) : s;
+  return {
+    r: Number.parseInt(full.slice(0, 2), 16),
+    g: Number.parseInt(full.slice(2, 4), 16),
+    b: Number.parseInt(full.slice(4, 6), 16),
+  };
+}
 
 /* ================================ identity =============================== */
 
@@ -72,8 +85,7 @@ describe('theme registry', () => {
 
   it('opens a brand-new library in Blossom Grove', () => {
     expect(DEFAULT_THEME_ID).toBe('blossom');
-    expect(THEMES[DEFAULT_THEME_ID].flora.density).toBe('lush');
-    expect(THEMES[DEFAULT_THEME_ID].motes.kind).toBe('petals');
+    expect(THEMES[DEFAULT_THEME_ID].name).toBe('Blossom Grove');
   });
 
   it('keys every theme by its own id and lists them in picker order', () => {
@@ -132,14 +144,9 @@ describe('every theme is a complete art package', () => {
     expect(WALLPAPER_PATTERN_IDS).toContain(theme.wallpaper.pattern);
     expect(COLOURWAY_IDS).toContain(theme.wallpaper.colourway);
     expect(theme.wallpaper.tile).toBeGreaterThanOrEqual(128);
-    // light rig
-    expect(theme.light.pools.length).toBeGreaterThan(0);
-    expect(theme.light.driftSeconds).toBeGreaterThan(0);
-    // dressing
-    expect(theme.props.length).toBeGreaterThan(0);
+    // spine bias
     expect(theme.spineDefaults.pigments.length).toBeGreaterThanOrEqual(4);
     expect(theme.spineDefaults.materials.length).toBeGreaterThan(0);
-    expect(theme.motes.density).toBeGreaterThanOrEqual(0);
   });
 
   it('never renders a handwriting face below the 13px floor', () => {
@@ -148,41 +155,6 @@ describe('every theme is a complete art package', () => {
       if (/Nunito/.test(theme.plate.font)) continue;
       expect(theme.plate.font).toMatch(/Caveat|Patrick Hand|Kalam|Architects Daughter/);
     }
-  });
-
-  it('keeps light pools inside a sane normalized range', () => {
-    for (const theme of themes) {
-      for (const p of theme.light.pools) {
-        expect(p.x).toBeGreaterThanOrEqual(-0.2);
-        expect(p.x).toBeLessThanOrEqual(1.2);
-        expect(p.y).toBeGreaterThanOrEqual(-0.2);
-        expect(p.y).toBeLessThanOrEqual(1.2);
-        expect(p.intensity).toBeGreaterThan(0);
-        expect(p.intensity).toBeLessThanOrEqual(1);
-        expect(p.radius).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('gives flora anchors exactly when it has species', () => {
-    for (const theme of themes) {
-      if (theme.flora.density === 'none') {
-        expect(theme.flora.species).toHaveLength(0);
-        expect(theme.flora.anchors).toHaveLength(0);
-      } else {
-        expect(theme.flora.species.length).toBeGreaterThan(0);
-        expect(theme.flora.anchors.length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('honours the doc: the conservatory is the lush one, the observatory is bare', () => {
-    expect(THEMES.conservatory.flora.density).toBe('lush');
-    expect(THEMES.observatory.flora.density).toBe('none');
-    expect(THEMES.conservatory.motes.kind).toBe('pollen');
-    expect(THEMES.sakura.motes.kind).toBe('petals');
-    expect(THEMES.attic.light.shafts).toBe(true);
-    expect(THEMES.scriptorium.light.flicker).toBeGreaterThan(0);
   });
 
   it('wires the shelf furniture the doc calls for', () => {
@@ -209,7 +181,6 @@ describe('no two rooms are the same bookcase recoloured', () => {
       t.rail.inlay,
       t.plate.kind,
       t.wallpaper.pattern,
-      t.motes.kind,
     ].join('|');
 
   it('gives every room a unique carpentry signature', () => {
@@ -265,20 +236,11 @@ describe('every room is genuinely colourful', () => {
     }
   });
 
-  it('gives every room a coloured light rig, not a grey one', () => {
-    for (const theme of themes) {
-      const pools = theme.light.pools;
-      expect(Math.max(...pools.map((p) => chroma(p.colour))), `${theme.id} pools are grey`).toBeGreaterThan(40);
-      expect(chroma(theme.light.ambient.colour), `${theme.id} ambient is grey`).toBeGreaterThan(30);
-    }
-  });
-
   it('keeps the colourful six visually apart from the heritage eight', () => {
     const colourful = ['blossom', 'robot', 'dino', 'candy', 'reef', 'voyager'] as const;
     for (const id of colourful) {
       const t = THEMES[id];
       expect(t.name.length).toBeGreaterThan(3);
-      expect(t.props.length).toBeGreaterThanOrEqual(4);
       // Each brings its own new carving + plate + wallpaper vocabulary.
       expect(
         ['blossom', 'circuit', 'fossil', 'candy-stripe', 'coral', 'starfield'],
@@ -306,41 +268,18 @@ describe('every room is genuinely colourful', () => {
 describe('wallpaper library', () => {
   it('ships the twelve original patterns plus the colourful six', () => {
     expect(WALLPAPER_PATTERN_IDS).toHaveLength(18);
-    expect(allWallpaperPatterns()).toHaveLength(18);
+    // The renderers are gone; the catalogue survives so the studio picker can
+    // still label the preference it persists.
     for (const id of WALLPAPER_PATTERN_IDS) {
       const p = WALLPAPER_PATTERNS[id];
       expect(p.id).toBe(id);
       expect(p.name.length).toBeGreaterThan(2);
-      expect(p.blurb.length).toBeGreaterThan(10);
-      expect(typeof p.render).toBe('function');
     }
   });
 
-  it('ships eighteen colourways, every one complete', () => {
+  it('ships eighteen colourways for a theme to name', () => {
     expect(COLOURWAY_IDS).toHaveLength(18);
-    for (const id of COLOURWAY_IDS) {
-      const c = COLOURWAYS[id];
-      expect(c.id).toBe(id);
-      expect(c.base).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(c.baseAlt).toMatch(/^#[0-9a-f]{6}$/i);
-      for (const ink of [c.ink, c.inkSoft, c.accent]) expect(ink).toMatch(/^rgba\(/);
-    }
-  });
-
-  it('keeps ink contrast very low so the wall never fights the books', () => {
-    const alphaOf = (rgba: string): number => Number(/,\s*([\d.]+)\s*\)$/.exec(rgba)?.[1] ?? '1');
-    for (const id of COLOURWAY_IDS) {
-      const c = COLOURWAYS[id];
-      expect(alphaOf(c.ink)).toBeLessThanOrEqual(0.18);
-      expect(alphaOf(c.inkSoft)).toBeLessThanOrEqual(alphaOf(c.ink));
-      expect(alphaOf(c.accent)).toBeLessThanOrEqual(0.4);
-    }
-  });
-
-  it('resolves a colourway from an id or a literal, and survives junk', () => {
-    expect(getColourway('midnight').id).toBe('midnight');
-    expect(getColourway(COLOURWAYS.amber)).toBe(COLOURWAYS.amber);
-    expect(getColourway('nope' as never).id).toBe('ivory');
+    for (const id of COLOURWAY_IDS) expect(isColourwayId(id)).toBe(true);
   });
 
   it('keeps pattern and colourway independent (144 walls)', () => {
@@ -413,60 +352,17 @@ describe('wall treatments are orthogonal to the room', () => {
   });
 });
 
-/* ================================= flora ================================= */
+/*
+ * `scaleFloraDensity` had a suite here, guarding the acceptance criterion that
+ * a zero slider reached a genuinely clean shelf. Every shelf is clean now:
+ * flora, shelf props and the dust motes went with the painting stack, and the
+ * `light` / `flora` / `props` / `motes` packages came off `LibraryTheme` with
+ * them rather than sit in the data reading like a promise.
+ */
 
-describe('flora density slider', () => {
-  it('reaches genuinely clean at zero', () => {
-    for (const d of ['none', 'sparse', 'lush'] as const) {
-      expect(scaleFloraDensity(d, 0)).toBe('none');
-    }
-  });
-
-  it('never grows anything in a room that has none', () => {
-    for (const slider of [0, 0.3, 0.7, 1]) expect(scaleFloraDensity('none', slider)).toBe('none');
-  });
-
-  it('thins lush rooms at low settings and restores them at high ones', () => {
-    expect(scaleFloraDensity('lush', 0.3)).toBe('sparse');
-    expect(scaleFloraDensity('lush', 1)).toBe('lush');
-    expect(scaleFloraDensity('sparse', 1)).toBe('sparse');
-  });
-});
-
-/* ============================== colour maths ============================= */
-
-describe('colour maths', () => {
-  it('parses hex in both lengths', () => {
-    expect(parseHex('#ff8000')).toEqual({ r: 255, g: 128, b: 0 });
-    expect(parseHex('f80')).toEqual({ r: 255, g: 136, b: 0 });
-  });
-
-  it('parses the rgb()/rgba() strings mixHex itself produces', () => {
-    // Regression: paintWood fed a mixed colour used to see NaN and paint the
-    // whole case mid grey — a silent, catastrophic failure.
-    expect(parseHex('rgb(141, 106, 68)')).toEqual({ r: 141, g: 106, b: 68 });
-    expect(parseHex('rgba(12, 34, 56, 0.5)')).toEqual({ r: 12, g: 34, b: 56 });
-  });
-
-  it('round-trips a mix back through parseHex without going grey', () => {
-    const mixed = mixHex('#8d6a44', '#3b2a19', 0.5);
-    const { r, g, b } = parseHex(mixed);
-    expect(r).toBeGreaterThan(90);
-    expect(r).toBeLessThan(110);
-    // Grey would mean r === g === b === 128.
-    expect(r === g && g === b).toBe(false);
-    // And mixing again must not drift toward grey either.
-    const twice = parseHex(mixHex(mixed, '#3b2a19', 0.5));
-    expect(twice.r).toBeGreaterThan(twice.b);
-  });
-
-  it('is a no-op at the ends of the ramp', () => {
-    expect(parseHex(mixHex('#123456', '#abcdef', 0))).toEqual(parseHex('#123456'));
-    expect(parseHex(mixHex('#123456', '#abcdef', 1))).toEqual(parseHex('#abcdef'));
-  });
-
-  it('returns mid grey only for genuinely unparseable input', () => {
-    expect(parseHex('not a colour')).toEqual({ r: 128, g: 128, b: 128 });
-    expect(parseHex('')).toEqual({ r: 128, g: 128, b: 128 });
-  });
-});
+/*
+ * `parseHex`/`mixHex` had a suite here — a mixed colour silently degrading to
+ * grey was invisible in a diff and catastrophic on screen. Both lived in
+ * `art/wood.ts` to tint the painted case, and went with it. `art/charms.ts`
+ * still has its own `mixHex`, covered by tests/art-bookstyle.test.ts.
+ */

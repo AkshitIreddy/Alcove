@@ -4,17 +4,21 @@
  * A small pool of {@link ../artWorker} instances, a promise per job, and a
  * hard rule: **failure is never fatal**. If workers are unavailable (no
  * `Worker`, no `OffscreenCanvas`, a bundler that could not build the module,
- * a job that threw or timed out) every entry point resolves to `null` and the
- * caller paints the piece itself on the main thread, exactly as before. The
- * worker is a performance path, not a correctness dependency.
+ * a job that threw or timed out) {@link ArtOffload.spine} resolves to `null`
+ * and the caller draws the piece itself on the main thread, exactly as before.
+ * The worker is a performance path, not a correctness dependency.
+ *
+ * Spines are the only thing offloaded now. Case furniture and flora both used
+ * to come through here; the case is flat shapes that cost less to draw than to
+ * post, and flora is gone.
  *
  * ## Pool size
  *
- * Painting is embarrassingly parallel — spines share nothing — so the pool is
- * sized from `hardwareConcurrency`, minus one for the main thread, capped at
- * {@link MAX_WORKERS}. The cap is not about the CPU: each worker holds its own
- * copy of the brush kernels and the leaf atlases, and four of those is already
- * a lot of memory to hand a note-taking app.
+ * Spines share nothing, so the pool is sized from `hardwareConcurrency`, minus
+ * one for the main thread, capped at {@link MAX_WORKERS}. The cap is not about
+ * the CPU: each worker holds its own copy of the spine art module and its
+ * fonts, and four of those is already a lot of memory to hand a note-taking
+ * app.
  *
  * ## Ordering
  *
@@ -27,23 +31,14 @@ import {
   ART_JOB_TIMEOUT_MS,
   type ArtJob,
   type ArtMessage,
-  type CaseJob,
-  type FloraJob,
   type SpineJob,
 } from './artJobs';
-import type { Rect } from '../../art/flora';
 
 /** Never spin up more than this many painting threads. */
 export const MAX_WORKERS = 3;
 
 export interface SpinePaint {
   bitmap: ImageBitmap;
-  ms: number;
-}
-
-export interface FloraPaint {
-  bitmap: ImageBitmap | null;
-  bounds: Rect | null;
   ms: number;
 }
 
@@ -144,21 +139,6 @@ export class ArtOffload {
    */
   async spine(job: Omit<SpineJob, 'id' | 'kind'>): Promise<SpinePaint | null> {
     const res = await this.submit<{ bitmap: ImageBitmap; ms: number }>({ ...job, kind: 'spine' });
-    return res === null ? null : { bitmap: res.bitmap, ms: res.ms };
-  }
-
-  /** Paint a flora layer off-thread. Resolves `null` to mean "do it yourself". */
-  async flora(job: Omit<FloraJob, 'id' | 'kind'>): Promise<FloraPaint | null> {
-    const res = await this.submit<{ bitmap: ImageBitmap | null; bounds: Rect | null; ms: number }>({
-      ...job,
-      kind: 'flora',
-    });
-    return res === null ? null : { bitmap: res.bitmap, bounds: res.bounds, ms: res.ms };
-  }
-
-  /** Paint one piece of case furniture off-thread. `null` = do it yourself. */
-  async casePart(job: Omit<CaseJob, 'id' | 'kind'>): Promise<SpinePaint | null> {
-    const res = await this.submit<{ bitmap: ImageBitmap; ms: number }>({ ...job, kind: 'case' });
     return res === null ? null : { bitmap: res.bitmap, ms: res.ms };
   }
 

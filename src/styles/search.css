@@ -38,7 +38,7 @@
   display: flex;
   flex-direction: column;
   background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
+  border: var(--stroke-ink-thin);
   /* BUG FIX: this was
        var(--radius-lg) var(--radius-hand) var(--radius-lg) var(--radius-hand)
      and --radius-hand is a COMPLETE shorthand carrying its own `/`, so the
@@ -76,7 +76,7 @@
   color: var(--ink-graphite-soft);
   padding: 2px var(--space-12);
   background: color-mix(in srgb, var(--paper-aged) 60%, transparent);
-  border: 1.5px dashed color-mix(in srgb, var(--paper-edge) 85%, transparent);
+  border: 1.5px dashed var(--ink-line-soft);
   border-radius: 8px 14px 10px 15px / 12px 8px 14px 9px;
   transform: rotate(-0.6deg);
   transition:
@@ -114,7 +114,7 @@
   color: var(--ink-sepia);
   background: transparent;
   border: none;
-  border-bottom: 2px solid var(--paper-edge);
+  border-bottom: var(--stroke-ink);
   border-radius: 0;
   padding: var(--space-4) var(--space-4) var(--space-8);
   outline: none;
@@ -246,7 +246,7 @@ mark.nb-qs-hit {
   justify-content: center;
   padding-top: var(--space-8);
   margin-top: var(--space-4);
-  border-top: 1px dashed var(--paper-edge);
+  border-top: 1px dashed var(--ink-line-soft);
   font-size: var(--text-ui); /* 12px — these legends have to be readable */
   letter-spacing: var(--tracking-ui);
   color: var(--ink-graphite-soft);

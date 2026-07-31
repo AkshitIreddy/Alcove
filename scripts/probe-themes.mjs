@@ -79,8 +79,6 @@ for (const id of THEME_IDS) {
         wallpaperPattern: null,
         colourway: null,
         backdrop: null,
-        floraDensity: 1,
-        lightWarmth: 0.5,
       });
       const hit = settings.find((r) => r && r.key === 'library');
       if (hit) hit.value = prefs;

@@ -156,18 +156,12 @@
   will-change: transform;
 }
 
-/* Paper backside face: plain cream with a soft spine-side gradient. */
+/* Paper backside face: plain flat cream. The spine-side vignette it carried
+   was the last of the parchment lighting in the fold fallback. */
 .nb-flip-fallback-back {
   position: absolute;
   z-index: var(--z-flip);
   background-color: var(--paper-cream);
-  background-image: linear-gradient(
-    90deg,
-    var(--paper-vignette-deep) 0%,
-    transparent 18%,
-    transparent 82%,
-    var(--paper-vignette-soft) 100%
-  );
   border: 1px solid var(--paper-edge);
   backface-visibility: hidden;
   will-change: transform;

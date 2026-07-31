@@ -56,25 +56,17 @@ h6 {
 }
 
 /* ----------------------------------------------------------------------------
-   Paper ground — cream base with a very subtle warm CSS vignette:
-   light pools at the top, edges deepen like a well-thumbed page.
+   Paper ground — one flat cream fill.
+
+   This used to be two stacked radial gradients (a warm pool at the top, a
+   vignette at the edges). Both are light models, and the shelf world beneath
+   is drawn without one, so the page ground was quietly contradicting the art
+   it framed. A flat fill also means no full-viewport gradient to re-raster on
+   every resize.
    -------------------------------------------------------------------------- */
 body {
   min-height: 100vh;
   background-color: var(--paper-cream);
-  background-image:
-    radial-gradient(
-      130% 90% at 50% -10%,
-      var(--paper-glow) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      145% 145% at 50% 45%,
-      transparent 55%,
-      var(--paper-vignette-soft) 82%,
-      var(--paper-vignette-deep) 100%
-    );
-  background-attachment: fixed;
 
   font-family: var(--font-body);
   font-size: var(--text-body);
@@ -86,22 +78,17 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* On the shelf the Pixi world paints its own wall lighting (case glow, lamp
-   pools, wallpaper) over a semi-transparent backdrop — the CSS edge vignette
-   bled through it and double-darkened the viewport top into a stray band.
-   There the shelf keeps only the warm top glow; the vignette still deepens
-   the edges of every non-shelf surface (the open book's desk, sheets).
+/* The shelf canvas paints the room's own flat wall, so the page behind it is
+   that same wall rather than page cream — any sliver showing past the canvas
+   (during a resize, or at a non-integer DPR) then matches instead of flashing
+   a lighter rectangle.
 
    CARE: this rule was once pasted INTO the `body` block above, which closed
    `body` early and orphaned every type declaration after it — the whole app
    silently fell back to the UA serif at the UA size, in the UA black. Keep
    the two blocks separate and keep the type contract inside `body`. */
 body:has(.shelf-root) {
-  background-image: radial-gradient(
-    130% 90% at 50% -10%,
-    var(--paper-glow) 0%,
-    transparent 60%
-  );
+  background-color: var(--wall);
 }
 
 /* ----------------------------------------------------------------------------
@@ -163,7 +150,7 @@ h6 {
 }
 
 /* ----------------------------------------------------------------------------
-   Scrollbars — thin, parchment-toned
+   Scrollbars — a flat pill in the rule colour, on the paper it scrolls
    -------------------------------------------------------------------------- */
 ::-webkit-scrollbar {
   width: 12px;
@@ -175,7 +162,7 @@ h6 {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--accent) 30%, var(--paper-edge));
+  background: var(--paper-edge);
   border: 3px solid var(--paper-cream);
   border-radius: var(--radius-pill);
 }
@@ -189,13 +176,17 @@ h6 {
 }
 
 /* ----------------------------------------------------------------------------
-   Focus — hand-drawn dashed ring, drawn in the UI accent so it reads as
-   "the app is talking to you" rather than as another pencil line. The accent
-   is tuned per theme, so it stays visible on cream, blossom, leaf and night.
+   Focus — a SOLID ring in the UI accent.
+
+   It was dashed, to look drawn. But a dashed ring is half a ring: on a chip
+   already bordered in ink it read as texture rather than as focus, which is
+   the one affordance that is never allowed to be subtle. Solid, thick, and
+   offset far enough to clear the control's own 2px outline. The accent is
+   tuned per theme, so it stays visible on cream, blossom, leaf and night.
    -------------------------------------------------------------------------- */
 :focus-visible {
-  outline: 2px dashed var(--accent-deep);
-  outline-offset: 3px;
+  outline: 3px solid var(--accent-deep);
+  outline-offset: 2px;
 }
 
 /* ----------------------------------------------------------------------------

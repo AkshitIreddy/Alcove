@@ -1,11 +1,11 @@
-﻿/**
- * src/views/rail/LibraryStudio.tsx â€” the studio's "This library" tab.
+/**
+ * src/views/rail/LibraryStudio.tsx — the studio's "This library" tab.
  *
  * Picks the ROOM: which of the eight themes, what hangs on its wall (pattern
  * x colourway), how the wall itself is finished, how much grows on the case
- * and how warm the lamps burn (docs/design/library-themes.md Â§4).
+ * and how warm the lamps burn (docs/design/library-themes.md §4).
  *
- * The theme cards are painted from the REAL case art â€” `bakeThemeThumbnail`
+ * The theme cards are painted from the REAL case art — `bakeThemeThumbnail`
  * is the same renderer the shelf uses, so what you preview is literally the
  * room you get. Every control writes straight through `saveLibraryPrefs`, and
  * the Pixi world is subscribed to that store, so changes land on the shelf
@@ -47,8 +47,6 @@ const CARD_H = 116;
  * The room is one room now: the flat palette has a single timber and a plain
  * wall, so what still differs between cards is the seed — each theme gets its
  * own arrangement of books, which is what keeps the grid legible as a grid.
- * The lighting a theme carries (`theme.light`) is real and still applies to the
- * shelf; it is simply not something a 168px case section can show.
  */
 const cardCache = new Map<string, Promise<ImageBitmap | null>>();
 
@@ -78,7 +76,7 @@ function cardArt(theme: LibraryTheme, dpr: number): Promise<ImageBitmap | null> 
 }
 
 /**
- * A theme card â€” the case, drawn in the app's one style, per theme seed.
+ * A theme card — the case, drawn in the app's one style, per theme seed.
  *
  * No `pattern` prop any more: it existed so the ACTIVE card could preview the
  * reader's wall pick, and the wall is now one flat colour with nothing on it.
@@ -135,7 +133,7 @@ function ThemeCard(props: {
 }
 
 export interface LibraryStudioProps {
-  /** Optional: notified after every change (sound cue, toastâ€¦). */
+  /** Optional: notified after every change (sound cue, toast…). */
   onChanged?(prefs: LibraryPrefs): void;
 }
 
@@ -154,7 +152,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const theme = (): (typeof THEMES)[ThemeId] => getTheme(libraryPrefs.theme);
 
-  /** Surprise me â€” a whole different room, dressing and all. */
+  /** Surprise me — a whole different room, dressing and all. */
   const surprise = (): void => {
     const r = (n: number): number => Math.floor(Math.random() * n);
     const id = SHIPPED_THEME_IDS[r(SHIPPED_THEME_IDS.length)] as ThemeId;
@@ -164,7 +162,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       // time you roll turns the shelf into wallpaper with books in front.
       wallpaperPattern: r(3) === 0 ? WALLPAPER_PATTERN_IDS[r(WALLPAPER_PATTERN_IDS.length)] ?? null : null,
       wallDepth: 0.2 + Math.random() * 0.5,
-      lightWarmth: 0.25 + Math.random() * 0.6,
     });
   };
 
@@ -179,15 +176,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     if (d < 0.4) return 'faint relief';
     if (d < 0.7) return 'raised';
     return 'deep relief';
-  };
-
-  const warmthLabel = (): string => {
-    const w = libraryPrefs.lightWarmth;
-    if (w < 0.25) return 'moonlight';
-    if (w < 0.45) return 'cool';
-    if (w < 0.6) return 'as built';
-    if (w < 0.8) return 'warm';
-    return 'candlelit';
   };
 
   return (
@@ -259,24 +247,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         </label>
       </section>
 
-      <section class="nb-panel-section nb-panel-section-divided">
-        <label class="nb-panel-row">
-          <span class="nb-panel-row-label">
-            lamp warmth <em class="nb-panel-row-hint">{warmthLabel()}</em>
-          </span>
-          <input
-            type="range"
-            class="nb-panel-slider nb-panel-slider-warmth"
-            min={0}
-            max={1}
-            step={0.02}
-            value={libraryPrefs.lightWarmth}
-            aria-label="Light warmth"
-            onInput={(e) => patch({ lightWarmth: Number(e.currentTarget.value) })}
-          />
-        </label>
-      </section>
-
       <section class="nb-panel-section">
         <div class="nb-chip-row">
           <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
@@ -291,7 +261,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           </button>
         </div>
         <p class="nb-panel-footnote">
-          {`seed ${fnv1a(theme().id).toString(16)} Â· the room is laid out the same way every time`}
+          {`seed ${fnv1a(theme().id).toString(16)} · the room is laid out the same way every time`}
         </p>
       </section>
     </div>

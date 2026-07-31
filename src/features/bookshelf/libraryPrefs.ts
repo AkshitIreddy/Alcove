@@ -58,15 +58,12 @@ export interface LibraryPrefs {
    * Drives the strength of the wall's own shading, not a separate texture.
    */
   wallDepth: number;
-  /** Lamp warmth, 0 (cool moonlight) → 1 (deep amber). 0.5 = the room's own. */
-  lightWarmth: number;
 }
 
 export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
   theme: DEFAULT_THEME_ID,
   wallpaperPattern: null,
   wallDepth: 0.35,
-  lightWarmth: 0.5,
 };
 
 /** Validated merge of an unknown stored blob over the defaults. Total. */
@@ -80,7 +77,6 @@ export function mergeLibraryPrefs(raw: unknown): LibraryPrefs {
     theme: isThemeId(s.theme) ? s.theme : d.theme,
     wallpaperPattern: isWallpaperPatternId(s.wallpaperPattern) ? s.wallpaperPattern : null,
     wallDepth: num(s.wallDepth, d.wallDepth, 0, 1),
-    lightWarmth: num(s.lightWarmth, d.lightWarmth, 0, 1),
   };
 }
 
@@ -181,19 +177,4 @@ export function resolveLibrary(prefs: LibraryPrefs): ResolvedLibrary {
     backdrop,
     key: libraryKey(theme.id, wallpaper, backdrop),
   };
-}
-
-/**
- * Lamp warmth as a Pixi tint multiplier. 0.5 is neutral (the room's own
- * lamps); below that the pools cool toward moonlight, above they deepen amber.
- */
-export function warmthTint(warmth: number): number {
-  const t = Math.min(1, Math.max(0, warmth));
-  // Cool #cfe0ff → neutral #ffffff → warm #ffb463, lerped in two halves.
-  const lerp = (a: number, b: number, k: number): number => Math.round(a + (b - a) * k);
-  const [r, g, b] =
-    t < 0.5
-      ? [lerp(0xcf, 0xff, t * 2), lerp(0xe0, 0xff, t * 2), lerp(0xff, 0xff, t * 2)]
-      : [0xff, lerp(0xff, 0xb4, (t - 0.5) * 2), lerp(0xff, 0x63, (t - 0.5) * 2)];
-  return (r << 16) | (g << 8) | b;
 }

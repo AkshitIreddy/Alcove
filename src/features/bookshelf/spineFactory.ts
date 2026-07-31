@@ -26,7 +26,6 @@ import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { AtlasManager, type AtlasPage } from '../../art/atlas';
 import { recordBakeSample } from '../../art/bake';
 import { artOffload, type ArtOffload } from './artOffload';
-import { installArtRoutes } from './artRoutes';
 import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
 import { renderSpine, type Ctx2D, type SpineParams } from '../../art/spines';
 import { getTheme, type LibraryTheme } from '../../art/themes';
@@ -225,9 +224,6 @@ export class SpineFactory {
       onEvict: (page, keys) => this.handleEvict('hi', page, keys, this.hiTextures),
     });
     this.preloadFonts();
-    // Route every OTHER baked recipe (the case, the wall, the base wood)
-    // through the same threads, whoever asks for it.
-    installArtRoutes();
     // Start fetching + compiling the worker bundle now: it overlaps the app's
     // own boot, so the first spine request finds threads already alive.
     this.offload.warmUp();

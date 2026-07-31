@@ -182,7 +182,16 @@ export function buildPairs() {
     /* chrome: buttons, pressed chips, tooltips, menu items, quick switcher */
     ['chrome', 'ink-sepia / accent-light (pressed chip, QS row)', '--ink-sepia', '--accent-light', AA_TEXT],
     ['chrome', 'accent-ink / accent-light (primary button label)', '--accent-ink', '--accent-light', AA_TEXT],
+    // Every filled-accent control in the app paints --on-accent on
+    // --accent-deep, never on plain --accent (which stays a rim/wash colour) —
+    // so that is the only pairing worth gating.
     ['chrome', 'on-accent / accent-deep (filled + hover)', '--on-accent', '--accent-deep', AA_TEXT],
+    // Night inverts --ink-line to a LIGHT value but --gilt-face stays bright
+    // gold in every theme, so anything drawn as "ink on gilt" (chip ticks, the
+    // active tab, the pulled-book rule) went to 1.14:1 after dark. --on-gilt is
+    // the one ink token that does NOT invert; this is the gate that catches it
+    // drifting back.
+    ['chrome', 'on-gilt / gilt-face (chip tick, active tab)', '--on-gilt', '--gilt-face', AA_TEXT],
     ['chrome', 'gilt-ink / wash-lemon-light (gilt chip)', '--gilt-ink', '--wash-lemon-light', AA_TEXT],
     ['chrome', 'gilt-deep / wash-lemon-light (theme ✓)', '--gilt-deep', '--wash-lemon-light', AA_TEXT],
 

@@ -5,7 +5,7 @@
  * SwiftShader throttles rAF, so everything polls; no fixed waits.
  */
 import { expect, test, type Page } from 'playwright/test';
-import { gotoShelf, openBlankPage } from './helpers';
+import { WELCOME_HEADING, gotoShelf, openBlankPage } from './helpers';
 
 const INPUT = '.nb-qs-input';
 const ROW = '.nb-qs-row';
@@ -24,7 +24,7 @@ test.describe('quick switcher (Ctrl+K)', () => {
 
     await page.locator(INPUT).fill('welc');
     const row = page.locator(ROW).first();
-    await expect(row).toContainText('Welcome to Notebook', {
+    await expect(row).toContainText(WELCOME_HEADING, {
       timeout: 15_000,
     });
 
@@ -33,7 +33,7 @@ test.describe('quick switcher (Ctrl+K)', () => {
       timeout: 30_000,
     });
     await expect(page.locator('.nb-prose h1').first()).toContainText(
-      'Welcome to Notebook',
+      WELCOME_HEADING,
       { timeout: 30_000 },
     );
   });
@@ -88,7 +88,7 @@ test.describe("full-text search ('>' mode)", () => {
     const row = page.locator(`${ROW}[data-kind="content"]`).first();
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expect(row.locator('mark.nb-qs-hit').first()).toBeVisible();
-    await expect(row).toContainText('Welcome to Notebook');
+    await expect(row).toContainText(WELCOME_HEADING);
 
     await row.click();
     await expect(page.locator('.nb-book-view')).toBeVisible({

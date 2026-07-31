@@ -20,8 +20,24 @@
  * polls for state instead of fixed-waiting.
  */
 import { expect, type Page } from 'playwright/test';
+import { STUB_STORAGE_KEY } from '../../src/data/db';
+import { WELCOME_BOOK_TITLE } from '../../src/data/seed';
+import { TUTORIAL_KEY } from '../../src/features/tutorial/state';
 
-export const WELCOME_TITLE = 'Welcome to Notebook ✎';
+/**
+ * Re-exported from the seed rather than spelled out again. It was a duplicate
+ * literal here, and renaming the app broke every optical shelf test at once
+ * without a single type error to say so — the string still compiled, it just
+ * no longer matched any book. One definition, so the next rename cannot.
+ */
+export const WELCOME_TITLE = WELCOME_BOOK_TITLE;
+
+/**
+ * The same title as it appears in the page's own H1, without the trailing ✎.
+ * The heading is authored in Notebook Script and the glyph is a sticker
+ * attribute there, so it does not always land in the rendered text node.
+ */
+export const WELCOME_HEADING = WELCOME_BOOK_TITLE.replace(/\s*✎\s*$/, '');
 
 /** Bounding box + centroid of the amber spine, in CSS pixels. */
 export interface SpineRegion {
@@ -40,25 +56,45 @@ export interface SpineRegion {
  * Suppress the first-run tour for this page — call BEFORE the first goto.
  *
  * The tour is not just a scrim (that is `pointer-events: none` now); the CARD
- * is a real 350x600 element parked over the right of the viewport, and it
+ * is a real 350x600 element parked over the middle of the viewport, and it
  * lands squarely on the shelf spot menu, the studio sheet and the dev
  * switcher. It also owns a window keydown listener, so a spec driving the
  * keyboard is driving two things at once.
  *
- * The completion flag has to be written by an init script: setting it after a
- * navigation races the overlay's mount, and stopping the overlay afterwards
- * leaves behind whatever it has already taken (focus, a step's key handler).
- * Every spec's own goto helper calls this first.
+ * WHERE the flag lives is the part that was wrong for a long time. This used
+ * to write a bare `localStorage['appState:tutorialCompleted']`, and nothing
+ * reads that: `tutorial/state.readCompleted()` selects the key out of the
+ * app's `settings` TABLE, which in browser mode is one JSON blob under the db
+ * stub's own key. So the write always succeeded and never suppressed anything
+ * — the suite only looked calm because `openBookView` also called `stop()`,
+ * and every spec that did not was quietly racing a 13-step tour.
+ *
+ * It has to be an init script either way: writing after a navigation races the
+ * overlay's mount, and stopping the overlay afterwards leaves behind whatever
+ * it has already taken (focus, a step's key handler). Every spec's own goto
+ * helper calls this first.
  */
 export async function suppressTour(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    try {
-      window.localStorage.setItem('appState:tutorialCompleted', 'true');
-    } catch {
-      // Private-mode storage failures are not this helper's problem; callers
-      // that care also stop() the overlay once the app is up.
-    }
-  });
+  await page.addInitScript(
+    ([storageKey, tutorialKey]: [string, string]) => {
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        const blob: Record<string, Array<Record<string, unknown>>> =
+          raw === null ? {} : JSON.parse(raw);
+        const rows = Array.isArray(blob.settings) ? blob.settings : [];
+        const row = { key: tutorialKey, value: '1' };
+        const at = rows.findIndex((r) => r?.key === tutorialKey);
+        if (at >= 0) rows[at] = row;
+        else rows.push(row);
+        blob.settings = rows;
+        window.localStorage.setItem(storageKey, JSON.stringify(blob));
+      } catch {
+        // Denied storage or a blob this build cannot parse. Callers that care
+        // also stop() the overlay once the app is up.
+      }
+    },
+    [STUB_STORAGE_KEY, TUTORIAL_KEY] as [string, string],
+  );
 }
 
 /**
@@ -322,10 +358,11 @@ export async function openBookView(page: Page): Promise<void> {
   await expect(page.locator('.nb-prose').first()).toBeVisible({
     timeout: 30_000,
   });
-  // The seeded welcome book's first page is on the left leaf.
+  // The seeded welcome book's first page is on the left leaf. Matched against
+  // the seed constant with its trailing glyph trimmed, not a literal.
   await expect(
     page.locator('.nb-leaf-paper[data-side="left"] .nb-prose h1').first(),
-  ).toContainText('Welcome to Notebook', { timeout: 30_000 });
+  ).toContainText(WELCOME_HEADING, { timeout: 30_000 });
 }
 
 /**

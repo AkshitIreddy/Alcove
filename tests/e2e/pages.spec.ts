@@ -3,7 +3,7 @@
  * overflow ink flows to a following page), arrow-key page turns, "+ page".
  */
 import { expect, test } from 'playwright/test';
-import { openBlankPage, openBookView } from './helpers';
+import { WELCOME_HEADING, openBlankPage, openBookView } from './helpers';
 
 test('typing past capacity never grows a scrollbar', async ({ page }) => {
   const prose = await openBlankPage(page);
@@ -84,7 +84,7 @@ test('arrow keys turn the page', async ({ page }) => {
   // ← flips back to the welcome spread.
   await page.keyboard.press('ArrowLeft');
   await expect(
-    page.locator('.nb-prose h1', { hasText: 'Welcome to Notebook' }),
+    page.locator('.nb-prose h1', { hasText: WELCOME_HEADING }),
   ).toBeVisible({ timeout: 30_000 });
 });
 

@@ -1,4 +1,4 @@
-# Notebook — running TODO
+# Bellanote — running TODO
 
 Nothing gets forgotten here. Tick items when *verified in the running app*, not
 when written — and where two colours or two frames are hard to tell apart, use
@@ -132,10 +132,20 @@ when written — and where two colours or two frames are hard to tell apart, use
 - [x] ~~Wallpaper **colour** has very few options~~ — a `tone` axis of 8,
       resolved from the room's cloth slots so it repaints per theme, over 50
       papers.
-- [ ] Can a reader **clone a shelf** (the shelf only, not its books)? Book
-      options belong on right-clicking a shelf inside the library tab
-- [ ] Rooms may be redundant now that they only change colour — consider
-      removing the concept
+- [x] ~~Can a reader **clone a shelf** (the shelf only, not its books)?~~ — a
+      `clone` chip on each bookcase card copies the three stores that make a
+      case look like itself (the validated room blob, the `designPrefs`
+      carpentry and paper, the floor count) and no books. It deliberately does
+      not switch to the copy: landing in an identical-looking case with every
+      book gone reads as a catastrophe. Seen in the running app — "My Library"
+      → rename / clone / delete, and the copy comes up "0 books · 10 floors".
+- [ ] Book options on right-clicking a shelf inside the library tab — the other
+      half of that line, not started
+- [x] ~~Rooms may be redundant now that they only change colour~~ — **keep
+      them.** They stopped being only colour: a room is a colour scheme *and*
+      the default carpentry and paper a new bookcase is dressed in, and there
+      are 60 of them behind a searchable picker. The concept is now the only
+      thing standing between the reader and four orthogonal vocabularies.
 
 ### Book interaction
 

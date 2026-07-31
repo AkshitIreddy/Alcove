@@ -92,8 +92,8 @@ describe('extractPageText', () => {
 
 describe('fuzzyMatch', () => {
   it('matches subsequences case-insensitively', () => {
-    expect(fuzzyMatch('wlcm', 'Welcome to Notebook')).not.toBeNull();
-    expect(fuzzyMatch('xyz', 'Welcome to Notebook')).toBeNull();
+    expect(fuzzyMatch('wlcm', 'Welcome to Bellanote')).not.toBeNull();
+    expect(fuzzyMatch('xyz', 'Welcome to Bellanote')).toBeNull();
   });
 
   it('ranks prefix > word-start > mid-word substring > scattered', () => {

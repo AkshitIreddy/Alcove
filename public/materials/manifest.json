@@ -12,12 +12,12 @@
       "file": "cloth-linen.webp",
       "size": 512,
       "bytes": 89442,
-      "mean": 0.63367,
-      "spread": 0.16191,
-      "saturation": 0.2899,
-      "min": 0.0504,
-      "max": 0.9801,
-      "seam": 1.33
+      "mean": 0.63423,
+      "spread": 0.16134,
+      "saturation": 0.28686,
+      "min": 0.0499,
+      "max": 0.9926,
+      "seam": 1.336
     },
     {
       "slug": "cloth-ribbed",
@@ -26,12 +26,12 @@
       "file": "cloth-ribbed.webp",
       "size": 512,
       "bytes": 70508,
-      "mean": 0.62206,
-      "spread": 0.18016,
-      "saturation": 0.34131,
-      "min": 0.0775,
-      "max": 0.9649,
-      "seam": 0.958
+      "mean": 0.62256,
+      "spread": 0.1797,
+      "saturation": 0.34308,
+      "min": 0.0847,
+      "max": 0.9705,
+      "seam": 1.361
     },
     {
       "slug": "leather-cracked",
@@ -40,12 +40,12 @@
       "file": "leather-cracked.webp",
       "size": 512,
       "bytes": 73280,
-      "mean": 0.53333,
-      "spread": 0.14209,
-      "saturation": 0.40528,
+      "mean": 0.53397,
+      "spread": 0.14113,
+      "saturation": 0.41606,
       "min": 0,
-      "max": 0.9557,
-      "seam": 1.426
+      "max": 0.9772,
+      "seam": 1.603
     },
     {
       "slug": "leather-morocco",
@@ -54,12 +54,12 @@
       "file": "leather-morocco.webp",
       "size": 512,
       "bytes": 76918,
-      "mean": 0.48967,
-      "spread": 0.1154,
-      "saturation": 0.55479,
-      "min": 0.005,
-      "max": 0.9874,
-      "seam": 1.05
+      "mean": 0.49017,
+      "spread": 0.1147,
+      "saturation": 0.55761,
+      "min": 0.0067,
+      "max": 0.9969,
+      "seam": 1.113
     },
     {
       "slug": "paper-marbled",
@@ -69,11 +69,11 @@
       "size": 512,
       "bytes": 100622,
       "mean": 0.5791,
-      "spread": 0.20026,
-      "saturation": 0.50143,
-      "min": 0.0958,
-      "max": 0.986,
-      "seam": 1.012
+      "spread": 0.19732,
+      "saturation": 0.48724,
+      "min": 0.0847,
+      "max": 0.9946,
+      "seam": 1.163
     },
     {
       "slug": "paper-laid",
@@ -82,12 +82,12 @@
       "file": "paper-laid.webp",
       "size": 512,
       "bytes": 59992,
-      "mean": 0.72907,
-      "spread": 0.1522,
-      "saturation": 0.21837,
-      "min": 0.0042,
-      "max": 0.8758,
-      "seam": 1.661
+      "mean": 0.72963,
+      "spread": 0.15014,
+      "saturation": 0.22109,
+      "min": 0.01,
+      "max": 0.8735,
+      "seam": 1.885
     },
     {
       "slug": "vellum",
@@ -96,12 +96,68 @@
       "file": "vellum.webp",
       "size": 512,
       "bytes": 64664,
-      "mean": 0.68674,
-      "spread": 0.08751,
-      "saturation": 0.29918,
-      "min": 0.1099,
-      "max": 0.866,
-      "seam": 1.053
+      "mean": 0.68734,
+      "spread": 0.08646,
+      "saturation": 0.29823,
+      "min": 0.1084,
+      "max": 0.897,
+      "seam": 1.242
+    },
+    {
+      "slug": "wallpaper-damask",
+      "category": "wallpaper",
+      "role": "figure",
+      "file": "wallpaper-damask.webp",
+      "size": 768,
+      "bytes": 162596,
+      "mean": 0.5732,
+      "spread": 0.29468,
+      "saturation": 0.54844,
+      "min": 0.0154,
+      "max": 0.9851,
+      "seam": 1.098
+    },
+    {
+      "slug": "wallpaper-ditsy",
+      "category": "wallpaper",
+      "role": "figure",
+      "file": "wallpaper-ditsy.webp",
+      "size": 768,
+      "bytes": 139500,
+      "mean": 0.60035,
+      "spread": 0.30709,
+      "saturation": 0.48446,
+      "min": 0.0486,
+      "max": 0.9994,
+      "seam": 0.643
+    },
+    {
+      "slug": "wallpaper-toile",
+      "category": "wallpaper",
+      "role": "figure",
+      "file": "wallpaper-toile.webp",
+      "size": 768,
+      "bytes": 141902,
+      "mean": 0.59474,
+      "spread": 0.29738,
+      "saturation": 0.29147,
+      "min": 0.03,
+      "max": 0.9994,
+      "seam": 1.62
+    },
+    {
+      "slug": "wallpaper-vine",
+      "category": "wallpaper",
+      "role": "figure",
+      "file": "wallpaper-vine.webp",
+      "size": 768,
+      "bytes": 137720,
+      "mean": 0.50522,
+      "spread": 0.35443,
+      "saturation": 0.51333,
+      "min": 0,
+      "max": 0.9972,
+      "seam": 1.598
     },
     {
       "slug": "wood-oak",
@@ -110,12 +166,12 @@
       "file": "wood-oak.webp",
       "size": 512,
       "bytes": 69840,
-      "mean": 0.54834,
-      "spread": 0.13535,
-      "saturation": 0.3773,
-      "min": 0.0008,
-      "max": 0.8715,
-      "seam": 0.62
+      "mean": 0.54894,
+      "spread": 0.13492,
+      "saturation": 0.38163,
+      "min": 0,
+      "max": 0.8981,
+      "seam": 0.667
     },
     {
       "slug": "wood-painted",
@@ -124,12 +180,12 @@
       "file": "wood-painted.webp",
       "size": 512,
       "bytes": 90256,
-      "mean": 0.57302,
-      "spread": 0.1893,
-      "saturation": 0.3414,
+      "mean": 0.57366,
+      "spread": 0.18875,
+      "saturation": 0.3491,
       "min": 0,
-      "max": 0.9947,
-      "seam": 1.208
+      "max": 0.9997,
+      "seam": 1.607
     },
     {
       "slug": "wood-walnut",
@@ -138,12 +194,12 @@
       "file": "wood-walnut.webp",
       "size": 512,
       "bytes": 82896,
-      "mean": 0.49364,
-      "spread": 0.18897,
-      "saturation": 0.51915,
+      "mean": 0.49424,
+      "spread": 0.18845,
+      "saturation": 0.52381,
       "min": 0,
-      "max": 0.9441,
-      "seam": 1.063
+      "max": 0.9429,
+      "seam": 1.095
     }
   ]
 }

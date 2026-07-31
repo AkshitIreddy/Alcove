@@ -41,7 +41,8 @@ import {
   type PlateSpec,
   type ThemeId,
 } from './themes';
-import { getColourway, renderWallpaper } from './wallpaper';
+import { drawMaterialRect, getMaterialTile, whenMaterialsReady } from './materials';
+import { getColourway, renderWallpaper, wallpaperHasPrint, wallpaperRepeat } from './wallpaper';
 import { hexAlpha, mixHex, paintWood, parseHex } from './wood';
 import { doubleStroke } from './wobble';
 import type { BackdropId, WallpaperSpec } from './themes';
@@ -1533,7 +1534,14 @@ export function renderCrown(
   }
   ctx.clip();
 
-  paintWood(ctx, wood, w, h, { seed: seed ^ 0xc0a1, direction: 'horizontal', contrast: 0.95 });
+  // The crown is one short board seen whole — the figure pass cannot repeat
+  // across it, and it is the piece the eye lands on first.
+  paintWood(ctx, wood, w, h, {
+    seed: seed ^ 0xc0a1,
+    direction: 'horizontal',
+    contrast: 0.95,
+    figure: 0.62,
+  });
 
   // --- profile shading ----------------------------------------------------
   const lipH = Math.max(7, h * 0.2);
@@ -1901,7 +1909,14 @@ export function renderRail(
 ): void {
   const { rail, wood, joinery } = theme;
   ctx.save();
-  paintWood(ctx, wood, w, h, { seed: seed ^ 0x9a11, direction: 'vertical', contrast: 0.9 });
+  // A side rail is ~34 px wide: one repeat is wider than the part, so the
+  // figure reads as this stile’s own grain and cannot be counted.
+  paintWood(ctx, wood, w, h, {
+    seed: seed ^ 0x9a11,
+    direction: 'vertical',
+    contrast: 0.9,
+    figure: 0.78,
+  });
 
   // --- edge treatment: how light wraps the stock --------------------------
   const g = ctx.createLinearGradient(0, 0, w, 0);
@@ -2215,7 +2230,16 @@ export function renderPlank(
     dark: mixHex(wood.dark, '#120c07', 0.34),
     contrast: wood.contrast * 1.15,
   };
-  paintWood(ctx, edgeWood, w, h, { seed: seed ^ 0x9147, direction: 'horizontal' });
+  paintWood(ctx, edgeWood, w, h, {
+    seed: seed ^ 0x9147,
+    direction: 'horizontal',
+    // The plank edge is 40 px tall and a whole tile repeat is taller than
+    // that, so the figure cannot be caught repeating across the height — and
+    // across the run it is stretched nearly twice, which puts the visible
+    // period past the length of any shelf. Pale timbers (birch, limed oak)
+    // came out as flat cardboard bars without it.
+    figure: 0.72,
+  });
 
   // --- the profile, painted ----------------------------------------------
   //
@@ -2560,6 +2584,58 @@ export function renderBackdrop(
 }
 
 /** Tile the wallpaper across a rect. */
+/**
+ * Lay the tooth of real paper over a printed surface.
+ *
+ * Wallpaper is ink on paper, and the paper is what you actually see between
+ * the motifs — a hung wall is never the flat printed field the pattern
+ * renderer produces. This modulates value only: the tile is tinted to neutral
+ * grey and composited in `soft-light`, so it cannot shift the colourway's hue,
+ * it can only give the surface a fibre.
+ *
+ * The multiply pass that follows is a quarter of the strength and exists to
+ * return the paper's darks — soft-light on its own lifts a surface and the
+ * fibre ends up reading as a sheen rather than as a tooth.
+ *
+ * A no-op when the library is not resident, which is the pre-existing look.
+ */
+function paperTooth(
+  ctx: Ctx2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  seed: number,
+  strength = 1,
+  slug = 'paper-laid',
+): void {
+  if (w < 2 || h < 2 || strength <= 0.01) return;
+  if (!getMaterialTile(slug)) return;
+  const common = {
+    slug,
+    tint: '#808080',
+    // Wall-sized surface, so the sheet reads at roughly its real fineness
+    // rather than as a wall-height crackle.
+    tilePx: 190,
+    colourMix: 0,
+    balance: 1,
+    seed,
+  } as const;
+  drawMaterialRect(ctx as CanvasRenderingContext2D, x, y, w, h, {
+    ...common,
+    strength: 0.9,
+    globalAlpha: 0.4 * strength,
+    composite: 'soft-light',
+  });
+  drawMaterialRect(ctx as CanvasRenderingContext2D, x, y, w, h, {
+    ...common,
+    strength: 1,
+    contrast: 1.1,
+    globalAlpha: 0.1 * strength,
+    composite: 'multiply',
+  });
+}
+
 function paperWall(
   ctx: Ctx2D,
   wp: WallpaperSpec,
@@ -2569,7 +2645,11 @@ function paperWall(
   h: number,
   seed: number,
 ): void {
-  const size = wp.tile;
+  // A hung printed sheet wants a motif-sized pitch, not the 256 px cell the
+  // procedural patterns were authored at; `wallpaperRepeat` returns the
+  // requested size unchanged when no sheet is resident.
+  const printed = wallpaperHasPrint(wp.pattern);
+  const size = wallpaperRepeat(wp.pattern, wp.tile);
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, w, h);
@@ -2585,6 +2665,15 @@ function paperWall(
       ctx.restore();
     }
   }
+  // The sheet the pattern is printed on — one pass over the whole hung area,
+  // NOT per tile, so the fibre does not repeat on the pattern's pitch.
+  //
+  // Held well back over a printed sheet. The tooth exists to stop a flat
+  // procedural fill reading as coloured card; a painted damask already has
+  // more surface incident than the tooth can add, and at full strength the
+  // soft-light pass just greys the print down — which is the exact
+  // desaturation this wall was rebuilt to get rid of.
+  paperTooth(ctx, x, y, w, h, (seed ^ 0x9e11) >>> 0, printed ? 0.3 : 0.85);
   ctx.restore();
 }
 
@@ -3141,8 +3230,15 @@ export function renderBackPanel(
   const wp = wallpaper ?? theme.wallpaper;
   ctx.save();
   if ((theme.backing ?? 'wood') === 'wallpaper') {
-    // The room's own wall, seen straight through the carcass.
-    paperWall(ctx, wp, 0, 0, w, h, seed);
+    // The room's own wall, seen straight through the carcass — at a tighter
+    // pitch than the wall outside it.
+    //
+    // Not a stylistic choice: the back of a carcass is ~30 cm further from the
+    // eye than the face of the case, and a print at the same on-screen repeat
+    // in both places flattens that distance to nothing. Shrinking the motif
+    // behind the books is the cheapest perspective cue there is, and it also
+    // stops a full-size bloom sitting directly behind a spine and fighting it.
+    paperWall(ctx, { ...wp, tile: Math.max(48, Math.round(wp.tile * 0.66)) }, 0, 0, w, h, seed);
   } else {
     // Boarded backing: distinct vertical boards, each its own piece of timber,
     // darker and quieter than the front members. Drawing real boards (rather
@@ -3204,7 +3300,16 @@ export function renderBackPanel(
    * takes the same idea at reduced strength — the wall must not go to mud.
    */
   const wallBacked = (theme.backing ?? 'wood') === 'wallpaper';
-  const k = wallBacked ? 0.42 : 1;
+  // 0.42 was set when the wall behind the carcass was a pale, near-flat
+  // procedural field that any real shading turned to mud. It now shows a
+  // printed sheet with three times the luminance spread, and at 0.42 the
+  // interior came out exactly as bright as the room outside it — so the case
+  // read as a frame painted onto the wall rather than as a box with a depth.
+  //
+  // The recess is what makes a bookshelf a bookshelf. Multiply is also the
+  // right operator for this on a coloured print: it takes value away and
+  // leaves hue alone, so the interior goes deep without going grey.
+  const k = wallBacked ? 0.8 : 1;
   const shade = (hex: string): string => mixHex(hex, '#ffffff', 1 - k);
 
   ctx.globalCompositeOperation = 'multiply';
@@ -3253,7 +3358,7 @@ export function renderBackPanel(
   //    the lit corner toward the golden hour without crushing the boards.
   ctx.globalCompositeOperation = 'screen';
   const wash = ctx.createLinearGradient(w, 0, w * 0.22, h * 0.62);
-  const washA = wallBacked ? 0.2 : 0.42;
+  const washA = wallBacked ? 0.34 : 0.42;
   wash.addColorStop(0, `rgba(255, 215, 154, ${washA})`);
   wash.addColorStop(0.45, `rgba(255, 208, 150, ${washA * 0.4})`);
   wash.addColorStop(1, 'rgba(255, 208, 150, 0)');
@@ -4194,7 +4299,16 @@ function bakePart(
   dpr: number,
   draw: (ctx: Ctx2D) => void,
 ): Promise<ImageBitmap> {
-  return bakeCached(`theme${THEME_RECIPE_VERSION}|${key}`, dpr, async () => {
+  // `mat1`: the generated material library changed how every timber and every
+  // papered wall is painted, so bakes persisted by the previous recipe are no
+  // longer valid. Bumping the key here rather than THEME_RECIPE_VERSION keeps
+  // the invalidation local to the parts this module owns.
+  return bakeCached(`theme${THEME_RECIPE_VERSION}|mat2|${key}`, dpr, async () => {
+    // Case parts are big, few, and cached to disk — a part baked before the
+    // WebPs land would keep its material-less look forever. They are also
+    // baked off a promise already, so waiting costs nothing but the first
+    // frame of the very first run.
+    await whenMaterialsReady();
     const canvas = makeCanvas(Math.ceil(w * dpr), Math.ceil(h * dpr)) as OffscreenCanvas;
     const ctx = get2d(canvas);
     ctx.scale(dpr, dpr);

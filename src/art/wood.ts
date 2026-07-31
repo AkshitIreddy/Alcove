@@ -11,6 +11,7 @@
 
 import * as P from './brush';
 import { bakeCached } from './bake';
+import { getMaterialTile, materialBase, materialDefaults, whenMaterialsReady } from './materials';
 import { fnv1a, fract, lerp, mulberry32, seededNoise2D } from './noise';
 import { getGranulationTile, type Canvas2D, type Ctx2D } from './spines';
 import type { WoodSpec } from './themes';
@@ -312,9 +313,10 @@ function renderPlank(widthWorldPx: number, dpr: number): OffscreenCanvas {
  * PLANK_HEIGHT_WORLD. Returned bitmap is shared — do not close() it.
  */
 export function bakeShelfPlank(widthWorldPx: number, dpr: number): Promise<ImageBitmap> {
-  return bakeCached(`wood|plank|${widthWorldPx}x${PLANK_HEIGHT_WORLD}`, dpr, async () =>
-    renderPlank(widthWorldPx, dpr),
-  );
+  return bakeCached(`wood|m1|plank|${widthWorldPx}x${PLANK_HEIGHT_WORLD}`, dpr, async () => {
+    await whenMaterialsReady();
+    return renderPlank(widthWorldPx, dpr);
+  });
 }
 
 /* ---------------------------- under-shelf shadow -------------------------- */
@@ -383,7 +385,8 @@ export function bakeBackPanel(
   heightWorldPx: number,
   dpr: number,
 ): Promise<ImageBitmap> {
-  return bakeCached(`wood|back|${widthWorldPx}x${heightWorldPx}`, dpr, async () => {
+  return bakeCached(`wood|m1|back|${widthWorldPx}x${heightWorldPx}`, dpr, async () => {
+    await whenMaterialsReady();
     const wDev = Math.ceil(widthWorldPx * dpr);
     const hDev = Math.ceil(heightWorldPx * dpr);
     const canvas = new OffscreenCanvas(wDev, hDev);
@@ -496,7 +499,8 @@ export function bakeSideRail(
   heightWorldPx: number,
   dpr: number,
 ): Promise<ImageBitmap> {
-  return bakeCached(`wood|rail|${railWorldPx}x${heightWorldPx}`, dpr, async () => {
+  return bakeCached(`wood|m1|rail|${railWorldPx}x${heightWorldPx}`, dpr, async () => {
+    await whenMaterialsReady();
     const wDev = Math.ceil(railWorldPx * dpr);
     const hDev = Math.ceil(heightWorldPx * dpr);
     const canvas = new OffscreenCanvas(wDev, hDev);
@@ -608,7 +612,8 @@ export function bakeCrown(
   heightWorldPx: number,
   dpr: number,
 ): Promise<ImageBitmap> {
-  return bakeCached(`wood|crown|${widthWorldPx}x${heightWorldPx}`, dpr, async () => {
+  return bakeCached(`wood|m1|crown|${widthWorldPx}x${heightWorldPx}`, dpr, async () => {
+    await whenMaterialsReady();
     const wDev = Math.ceil(widthWorldPx * dpr);
     const hDev = Math.ceil(heightWorldPx * dpr);
     const canvas = new OffscreenCanvas(wDev, hDev);
@@ -818,12 +823,219 @@ export interface WoodFieldOptions {
   pixelScale?: number;
   /** Skip the finish/sheen pass (when the caller lights the part itself). */
   noFinish?: boolean;
+  /**
+   * Weight of the generated timber-fibre overlay, 0..1. Default 1 (use the
+   * tuned amount); 0 disables it and leaves the board fully hand-painted.
+   * See {@link paintWoodFibre} for why it is an overlay and not a base.
+   */
+  fibre?: number;
+  /**
+   * Force a particular generated tile for the fibre pass. Default: chosen from
+   * the seed among the wood tiles whose figure suits a sawn board.
+   */
+  fibreSlug?: string;
+  /**
+   * Weight of the generated *figure* pass, 0..1. Default 0 (off).
+   *
+   * The fibre pass above is deliberately high-frequency and nearly colourless
+   * — pore structure and nothing else. This is the other half: the tile at a
+   * board-sized repeat, carrying enough of its own value swing and its own
+   * hue that the timber has visible figure rather than a fine tooth.
+   *
+   * It is off by default and opt-in per part because it is only safe where the
+   * repeat cannot be counted. On a 2400 px shelf run one repeat of `wood-oak`
+   * would put the same parquet block on screen seven times; on a 34 px rail, a
+   * crown board, or a 40 px plank *edge*, one repeat is most of the part and
+   * there is nothing to count. See {@link paintWoodFigure}.
+   */
+  figure?: number;
+  /** Force a particular tile for the figure pass. Default `wood-walnut`. */
+  figureSlug?: string;
 }
 
 interface KnotSite {
   along: number;
   across: number;
   r: number;
+}
+
+/**
+ * Lay the generated timber tile over an already-painted board as *fibre only*.
+ *
+ * This is the one place in the art where the generated library deliberately
+ * does NOT become the base, and the reason is worth writing down.
+ *
+ * A shelf plank is 1600–2400 px of continuous run. The tiles are 512² and
+ * repeat every ~340 px, so using one as the board's surface puts the same knot
+ * on screen five to seven times in a row — the single most obvious "this is a
+ * texture" tell there is, and unfixable by any amount of tinting. Worse,
+ * `wood-oak` came out of the generator as parquet *blocks*, which is not what
+ * a plank looks like at all, and `wood-painted` is a set of vertical boards
+ * with its own painted-on colour scheme that fights whatever the theme chose.
+ * Meanwhile `paintWood` already does the thing a tile cannot: cathedral figure
+ * that sweeps around knots placed for this particular board, at this
+ * particular length, in this theme's timber colours.
+ *
+ * What the tiles do have that the brush engine does not is the *fine* end of
+ * the spectrum — the fibrous, slightly ragged pore structure between the
+ * rings. So that is all this takes: the tile at a small repeat, rotated to run
+ * along the grain, composited in `soft-light` at low weight. It reads as the
+ * surface of the timber rather than as a picture of timber, and because it is
+ * high-frequency the repeat is invisible.
+ */
+function paintWoodFibre(
+  sf: P.Surface,
+  vertical: boolean,
+  mid: P.Rgb,
+  seed: number,
+  opts: WoodFieldOptions,
+): void {
+  const weight = Math.max(0, Math.min(1, opts.fibre ?? 1));
+  if (weight <= 0.001) return;
+  // Walnut's flowing figure is the only one of the three whose fine structure
+  // suits a sawn board; oak is parquet and painted is a colour scheme.
+  const slug = opts.fibreSlug ?? 'wood-walnut';
+  if (!getMaterialTile(slug)) return;
+  const tuned = materialDefaults(slug, 1);
+  const px = Math.max(0.35, opts.pixelScale ?? 1);
+  // Small repeat: this is pore structure, not figure. Scaled by device pixels
+  // so the fibre is the same physical fineness at every bake resolution.
+  const repeat = tuned.tilePx * 0.34 * px;
+
+  /**
+   * Two passes at deliberately incommensurate repeats.
+   *
+   * One pass at a 116 px repeat across a 900 px plank puts the same knot on
+   * screen eight times in a row and the eye locks onto it instantly. Two
+   * passes whose periods are in an irrational-ish ratio (1 : 1.61) only agree
+   * again after their least common multiple, which is longer than any plank
+   * the case draws — so the surface never visibly repeats even though both
+   * layers individually do. The second pass is also mirrored and offset, which
+   * kills the residual correlation.
+   *
+   * Each pass is stretched 1.45× along the grain as well: sawn timber's pores
+   * are elongated, and the anisotropy doubles as a second decorrelation axis.
+   */
+  const along = vertical ? 'y' : 'x';
+  const layer = (
+    factor: number,
+    blend: 'softlight' | 'multiply',
+    alpha: number,
+    mirror: boolean,
+    salt: number,
+  ): void => {
+    const r = repeat * factor;
+    materialBase(sf, null, {
+      slug,
+      tint: mid,
+      // Along-grain, so the fibre runs with the rings rather than across them.
+      rotate: vertical ? 0 : 90,
+      tilePxX: along === 'x' ? r * 1.45 : r,
+      tilePxY: along === 'x' ? r : r * 1.45,
+      strength: blend === 'multiply' ? 1 : 0.85,
+      // Almost none of walnut's own colour: the theme picked this timber's hue
+      // and a tile that argues with it turns every painted case brown.
+      colourMix: blend === 'multiply' ? 0.05 : 0.08,
+      contrast: blend === 'multiply' ? 1.2 : 1.1,
+      // The soft-light layers set the surface's value and are balanced onto
+      // the timber's mid tone exactly. The multiply layers only bite the pore
+      // darks back in at a tenth alpha, where a crop's own exposure is
+      // invisible — so they skip balancing, which is two extra passes over a
+      // 1600 px plank each and the bulk of this function's cost.
+      balance: blend === 'multiply' ? 0 : 1,
+      seed: (seed ^ salt) >>> 0,
+      flipY: mirror !== ((seed & 8) === 8),
+      flipX: mirror,
+      blend,
+      alpha: alpha * weight,
+      respectAlpha: true,
+      alphaGate: 0.5,
+    });
+  };
+
+  layer(1, 'softlight', 0.4, false, 0x77d1);
+  layer(1.61, 'softlight', 0.3, true, 0x2b95);
+  // A whisper of multiply puts the pore *darks* back — soft-light alone only
+  // lifts, and open-grained timber is defined by the holes, not the shine.
+  layer(1, 'multiply', 0.11, false, 0x77d1);
+  layer(1.61, 'multiply', 0.08, true, 0x2b95);
+}
+
+/**
+ * Lay the generated timber tile over a board as *figure* — the grain you can
+ * actually see from across the room.
+ *
+ * The fibre pass is the right call for a long shelf run and the wrong one for
+ * everything else. A pale theme timber — birch at `#fdf3e2`/`#b98a55`, say —
+ * painted at low contrast and then given nothing but a colourless tooth comes
+ * out as a flat cream bar. That is a cardboard shelf, and no amount of light
+ * on top of it will make it read as wood, because there is no structure for
+ * the light to find.
+ *
+ * So this puts the tile's own figure back, at a repeat sized to the board
+ * rather than to its pores, keeping a real share of the timber's colour. Two
+ * passes at incommensurate repeats for the same reason the fibre uses two:
+ * one repeat is a texture, two that never agree is a surface.
+ *
+ * `multiply` carries the figure's darks and `overlay` its lights, which
+ * between them widen the board's value range without shifting its mean —
+ * the theme still owns what colour the timber is, the tile only says where
+ * the grain goes.
+ */
+function paintWoodFigure(
+  sf: P.Surface,
+  vertical: boolean,
+  mid: P.Rgb,
+  seed: number,
+  opts: WoodFieldOptions,
+): void {
+  const weight = Math.max(0, Math.min(1, opts.figure ?? 0));
+  if (weight <= 0.001) return;
+  // Walnut only. Oak came out of the generator as parquet blocks and painted
+  // as a colour scheme of its own — both are wrong as a board's figure.
+  const slug = opts.figureSlug ?? 'wood-walnut';
+  if (!getMaterialTile(slug)) return;
+  const tuned = materialDefaults(slug, 1);
+  const px = Math.max(0.35, opts.pixelScale ?? 1);
+  const repeat = tuned.tilePx * 1.15 * px;
+
+  const along = vertical ? 'y' : 'x';
+  const layer = (
+    factor: number,
+    blend: 'overlay' | 'multiply',
+    alpha: number,
+    mirror: boolean,
+    salt: number,
+  ): void => {
+    const r = repeat * factor;
+    materialBase(sf, null, {
+      slug,
+      tint: mid,
+      // Along the run, and stretched, so the figure reads as sawn timber
+      // rather than as a square of veneer.
+      rotate: vertical ? 0 : 90,
+      tilePxX: along === 'x' ? r * 1.9 : r,
+      tilePxY: along === 'x' ? r : r * 1.9,
+      strength: 0.95,
+      // A real share of the walnut's own colour — this is the difference
+      // between "wood" and "a beige rectangle with lines on it". Held under
+      // half so the theme's chosen timber still wins the argument.
+      colourMix: blend === 'multiply' ? 0.3 : 0.42,
+      contrast: blend === 'multiply' ? 1.15 : 1.05,
+      balance: 1,
+      seed: (seed ^ salt) >>> 0,
+      flipY: mirror !== ((seed & 4) === 4),
+      flipX: mirror,
+      blend,
+      alpha: alpha * weight,
+      respectAlpha: true,
+      alphaGate: 0.5,
+    });
+  };
+
+  layer(1, 'overlay', 0.5, false, 0x51a7);
+  layer(1.47, 'overlay', 0.34, true, 0x9c22);
+  layer(1, 'multiply', 0.26, false, 0x51a7);
 }
 
 /**
@@ -1112,6 +1324,10 @@ export function paintWood(
       alpha: 0.5 + rnd() * 0.6,
     });
   }
+
+  /* --- 6b. generated timber fibre + figure ------------------------------- */
+  paintWoodFibre(sf, vertical, mid, seed, opts);
+  paintWoodFigure(sf, vertical, mid, seed, opts);
 
   /* --- 7. unify --------------------------------------------------------- */
   // One warm glaze so every stroke belongs to the same board, plus a slow

@@ -9,7 +9,7 @@
  * here — a few strokes on small canvases, no async round-trip needed.
  */
 
-import { CanvasSource, ImageSource, Texture } from 'pixi.js';
+import { CanvasSource, ImageSource, Rectangle, Texture } from 'pixi.js';
 import {
   bakeThemedBackPanel,
   bakeThemedCrown,
@@ -20,6 +20,7 @@ import {
   renderShelfDetail,
 } from '../../art/caseArt';
 import { bakeCached } from '../../art/bake';
+import { installArtRoutes } from './artRoutes';
 import { libraryKey } from './libraryKey';
 import { bakePaperTile, bakeWallpaperTile } from '../../art/paper';
 import { PROP_H, PROP_W, renderProp, type PropKind } from '../../art/props';
@@ -40,7 +41,15 @@ import {
 } from '../../art/wood';
 import { doubleStroke } from '../../art/wobble';
 import { fnv1a, mulberry32 } from '../../art/noise';
-import { BOOK_ZONE_H, CROWN_H, CROWN_LIP, FLOOR_H, RAIL_W, SHELF_WIDTH } from './constants';
+import {
+  BOOK_ZONE_H,
+  CASE_SHADE_W,
+  CROWN_H,
+  CROWN_LIP,
+  FLOOR_H,
+  RAIL_W,
+  SHELF_WIDTH,
+} from './constants';
 
 export type EnvKind =
   | 'plank'
@@ -66,6 +75,43 @@ export const BACKDROP_STRIP_FLOORS = 3;
 /** World-px height of the under-plank detail strip (drawers / bunting). */
 export const SHELF_DETAIL_H = 34;
 
+/* ------------------------------- case halo -------------------------------- */
+
+/** How far the case's shadow reaches onto the wall, world px. */
+export const CASE_HALO_PAD = CASE_SHADE_W;
+
+/**
+ * Width of the vertical edge slice: the whole falloff outside the case, plus
+ * the cornice's overhang, plus a pad's worth of overlap INTO the case. The
+ * overlap is deliberate — it is drawn behind an opaque back panel, so the
+ * slice can never end in a visible seam against the case's own edge.
+ */
+export const CASE_HALO_EDGE_W = CASE_HALO_PAD * 2 + CROWN_LIP;
+
+/** Rows lifted for the edge slice (any height works; it is constant in y). */
+const HALO_EDGE_H = 8;
+
+/** Extra canvas below the cornice so the vertical profile can settle. */
+const HALO_TAIL = 220;
+
+/** Gaussian radius in world px — a soft architectural shadow, not a line. */
+const HALO_BLUR = 22;
+
+/** Near-black warm, per the reference's deep surrounds. */
+const HALO_INK = '34, 24, 15';
+const HALO_ALPHA = 0.42;
+
+/** Halos are pure low-frequency; half a world pixel is more than enough. */
+const HALO_SCALE = 0.5;
+
+/** The two frames the world draws the case's wall shadow from. */
+export interface CaseHalo {
+  /** The cornice's halo, ending exactly at y = 0 (world). */
+  top: Texture;
+  /** One floor's worth of vertical edge falloff; tiles down both sides. */
+  edge: Texture;
+}
+
 /** A room to bake the case in. */
 export interface ThemeRequest {
   themeId: ThemeId;
@@ -86,7 +132,10 @@ function bakeWallStrip(
   const w = BACKDROP_STRIP_W;
   const h = FLOOR_H * BACKDROP_STRIP_FLOORS;
   const key =
-    `wall|${theme.id}|${backdrop}|${wallpaper.pattern}|${wallpaper.colourway}|${w}x${h}`;
+    // `v2`: the wall now hangs a graded printed sheet from the generated
+    // wallpaper library, so bakes persisted by the procedural-only recipe are
+    // no longer valid.
+    `wall|v2|${theme.id}|${backdrop}|${wallpaper.pattern}|${wallpaper.colourway}|${w}x${h}`;
   return bakeCached(key, dpr, async () => {
     const canvas = makeCanvas(Math.ceil(w * dpr), Math.ceil(h * dpr)) as OffscreenCanvas;
     const ctx = get2d(canvas);
@@ -100,6 +149,15 @@ function bakeWallStrip(
     return canvas;
   });
 }
+
+/*
+ * Every bake below goes through `art/bake.ts`, which will hand the recipe to
+ * the art worker when `artRoutes` recognises its cache key (see that module —
+ * the case, the wall and the base wood are all routed). Nothing here has to
+ * know about threads: a themed plank is still `bakeThemedPlank(...)`, it just
+ * no longer costs this thread a second of brush work.
+ */
+installArtRoutes();
 
 /** Identity of a baked room — same key ⇒ same case art. */
 export function themeKeyOf(req: ThemeRequest): string {
@@ -234,7 +292,7 @@ export class EnvTextures {
   private readonly doodles = new Map<number, Texture>();
   private readonly props = new Map<number, Texture>();
   private readonly plaques = new Map<string, Texture>();
-  private wallShade: Texture | null = null;
+  private halo: CaseHalo | null = null;
   private shelfDetail: Texture | null = null;
   private starCharm: Texture | null = null;
   private ribbon: Texture | null = null;
@@ -363,6 +421,7 @@ export class EnvTextures {
     this.loadDpr = dpr;
     this.stain = stain;
     this.pattern = pattern;
+
     void bakeShelfPlank(SHELF_WIDTH, dpr)
       .then((bitmap) => this.deliverBitmap('plank', bitmap, true))
       .catch(() => undefined);
@@ -424,29 +483,89 @@ export class EnvTextures {
   }
 
   /**
-   * Soft horizontal shade gradient — translucent warm-dark at the left edge
-   * fading to fully transparent. Rendered with NORMAL blending (do NOT use
-   * multiply: the shelf canvas is transparent over the CSS paper body, so
-   * multiply would darken against premultiplied backdrop pixels and read
-   * as a heavy gray slab). Flanks the case as wall ambient occlusion and,
-   * rotated, caps it above the crown. Shared 64×8 texture, baked once.
+   * The case's ambient occlusion on the wall — one blurred silhouette, cut
+   * into the two pieces the world draws.
+   *
+   * ## The bug this replaces
+   *
+   * The old `getWallShade` was a 64×8 one-sided ramp: opaque at u=0, clear at
+   * u=1. Every consumer placed it with its OPAQUE end flush against a sprite
+   * boundary — the left strip's dark edge at `x = -CROWN_LIP`, the top strip's
+   * at `y = -CROWN_H` — on the assumption that the case art would cover the
+   * step. It does not: the baked cornice only fills about half of its 64px
+   * box, so both steps sat exposed on the wall, and where two of them met at
+   * the case's top corners they read as a pair of translucent rectangles with
+   * dead-straight edges. That is exactly the reported "weird corner boxes,
+   * shadowy transparent, repeating at the shelf corners". Measured on a 2×
+   * capture of the top-left corner: a hard 8-level alpha step at x = -14 and
+   * another at y = -64, both running the full length of their sprite.
+   *
+   * ## Why a blurred silhouette instead of a fixed gradient
+   *
+   * Because the shape of the shadow at a corner is not the product of two
+   * edge gradients — it is the blur of the shape that casts it. Painting the
+   * case's outline and running one Gaussian over it gets every edge, every
+   * corner and the crown's overhang right *by construction*, with no
+   * placement rule for a future caller to get wrong. The falloff is a true
+   * convolution, so there is no step anywhere: the largest neighbouring-pixel
+   * delta across the whole halo is under two alpha levels.
+   *
+   * ## The cut
+   *
+   * One bake, two frames of the same texture:
+   *  - `top` — the crown's halo, ending exactly at y = 0;
+   *  - `edge` — an 8-row slice taken from far below the cornice, where the
+   *    profile has settled to a straight vertical edge. Floors tile it down
+   *    the sides, and because it comes out of the same convolution it joins
+   *    the top piece seamlessly at y = 0 rather than merely nearly.
    */
-  getWallShade(): Texture {
-    if (this.wallShade !== null) return this.wallShade;
-    const w = 64;
-    const h = 8;
-    const canvas = makeCanvas(w, h);
+  getCaseHalo(dpr: number): CaseHalo | null {
+    if (this.halo !== null) return this.halo;
+    const s = HALO_SCALE * Math.max(1, Math.min(2, dpr));
+    const w = SHELF_WIDTH + (CROWN_LIP + CASE_HALO_PAD) * 2;
+    const h = CASE_HALO_PAD + CROWN_H + HALO_TAIL;
+    const canvas = makeCanvas(Math.ceil(w * s), Math.ceil(h * s));
     const ctx = get2d(canvas);
-    if (ctx) {
-      const g = ctx.createLinearGradient(0, 0, w, 0);
-      g.addColorStop(0, 'rgba(122, 94, 58, 0.26)');
-      g.addColorStop(0.4, 'rgba(128, 101, 64, 0.11)');
-      g.addColorStop(1, 'rgba(132, 106, 70, 0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-    }
-    this.wallShade = textureFromCanvas(canvas);
-    return this.wallShade;
+    if (ctx === null) return null;
+    ctx.scale(s, s);
+
+    // The case's own outline, in this canvas's frame: the cornice board (which
+    // overhangs by CROWN_LIP on each side) sitting on the body.
+    ctx.fillStyle = `rgba(${HALO_INK}, ${HALO_ALPHA})`;
+    if ('filter' in ctx) ctx.filter = `blur(${HALO_BLUR}px)`;
+    const bodyX = CASE_HALO_PAD + CROWN_LIP;
+    ctx.fillRect(CASE_HALO_PAD, CASE_HALO_PAD, SHELF_WIDTH + CROWN_LIP * 2, CROWN_H);
+    ctx.fillRect(bodyX, CASE_HALO_PAD + CROWN_H, SHELF_WIDTH, HALO_TAIL);
+    if ('filter' in ctx) ctx.filter = 'none';
+
+    // Punch the case itself back out: the halo is what falls on the WALL, and
+    // leaving the blurred silhouette under the case would double the tone
+    // wherever a floor's own art is translucent.
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000';
+    ctx.fillRect(CASE_HALO_PAD, CASE_HALO_PAD, SHELF_WIDTH + CROWN_LIP * 2, CROWN_H);
+    ctx.fillRect(bodyX, CASE_HALO_PAD + CROWN_H, SHELF_WIDTH, HALO_TAIL);
+    ctx.globalCompositeOperation = 'source-over';
+
+    const source = new ImageSource({
+      resource: (canvas as OffscreenCanvas).transferToImageBitmap(),
+    });
+    // Frames are in texture px; the design rects above are in world px.
+    const px = (v: number): number => Math.round(v * s);
+    const topH = CASE_HALO_PAD + CROWN_H;
+    // Far enough below the cornice that the vertical edge has settled (the
+    // blur reaches ~2 radii) and far enough above the canvas floor that the
+    // bake's own bottom edge has not started to eat into it.
+    const edgeY = topH + HALO_TAIL * 0.5;
+    const halo: CaseHalo = {
+      top: new Texture({ source, frame: new Rectangle(0, 0, px(w), px(topH)) }),
+      edge: new Texture({
+        source,
+        frame: new Rectangle(0, px(edgeY), px(CASE_HALO_EDGE_W), px(HALO_EDGE_H)),
+      }),
+    };
+    this.halo = halo;
+    return halo;
   }
 
   /**
@@ -863,7 +982,8 @@ export class EnvTextures {
     this.crown?.destroy(true);
     this.wallpaper?.destroy(true);
     this.backdropStrip?.destroy(true);
-    this.wallShade?.destroy(true);
+    this.halo?.top.destroy(true);
+    this.halo?.edge.destroy(false);
     this.shelfDetail?.destroy(true);
     this.starCharm?.destroy(true);
     this.ribbon?.destroy(true);
@@ -890,7 +1010,7 @@ export class EnvTextures {
     this.crown = null;
     this.wallpaper = null;
     this.backdropStrip = null;
-    this.wallShade = null;
+    this.halo = null;
     this.shelfDetail = null;
     this.starCharm = null;
     this.ribbon = null;

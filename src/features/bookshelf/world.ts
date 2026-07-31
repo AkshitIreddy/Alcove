@@ -64,7 +64,6 @@ import {
 } from './camera';
 import {
   BOOK_BASELINE,
-  CASE_SHADE_W,
   CROWN_H,
   CROWN_LIP,
   FLOOR_H,
@@ -114,9 +113,11 @@ import {
 import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
 import { DustMotes, makeGlowTexture } from './motes';
+import { rigForTheme, SceneLight, type LitFloor, type LitSpine } from './sceneLight';
 import { SpineFactory, type SpineRowContext } from './spineFactory';
 import { paletteCss } from './spinePalette';
 import {
+  CASE_HALO_PAD,
   EnvTextures,
   PLACEHOLDER_TINTS,
   PLAQUE_H,
@@ -277,6 +278,8 @@ export class ShelfWorld {
   private readonly host: HTMLElement;
   private readonly events: WorldEvents;
   private readonly dpr: number;
+  /** The one deferred lighting pass over the whole case (see sceneLight.ts). */
+  private readonly sceneLight: SceneLight;
   private reducedMotion: boolean;
 
   private readonly camera: CameraState;
@@ -473,24 +476,24 @@ export class ShelfWorld {
     // shade texture is a translucent warm gradient (normal blending, see
     // getWallShade); side pieces beside the crown connect the per-floor AO
     // strips so the halo reads as one continuous shadow.
-    const shadeTex = this.envTex.getWallShade();
-    const topShade = new Sprite(shadeTex);
-    topShade.rotation = -Math.PI / 2;
-    topShade.position.set(-CROWN_LIP, -CROWN_H);
-    topShade.width = 44; // vertical extent after rotation
-    topShade.height = SHELF_WIDTH + CROWN_LIP * 2;
-    this.world.addChild(topShade);
-    for (const side of [-1, 1] as const) {
-      const s = new Sprite(shadeTex);
-      s.width = CASE_SHADE_W - CROWN_LIP;
-      s.height = CROWN_H;
-      if (side === -1) {
-        s.scale.x = -s.scale.x;
-        s.position.set(-CROWN_LIP, -CROWN_H);
-      } else {
-        s.position.set(SHELF_WIDTH + CROWN_LIP, -CROWN_H);
-      }
-      this.world.addChild(s);
+    // ONE sprite, not three. The crown's halo is a frame of the blurred case
+    // silhouette (EnvTextures.getCaseHalo): it already contains the cornice's
+    // overhang, both top corners and the start of the vertical falloff, so
+    // there is no seam to align and no exposed opaque edge. Its bottom is
+    // exactly y = 0, where each floor's own edge slice picks the profile up.
+    //
+    // The three rotated/mirrored gradient strips this replaces were the
+    // "shadowy transparent corner boxes": each ended flush against the case at
+    // FULL opacity on the assumption the cornice art would hide the step, and
+    // the cornice fills only about half its box.
+    const halo = this.envTex.getCaseHalo(this.dpr);
+    if (halo !== null) {
+      const haloTop = new Sprite(halo.top);
+      haloTop.eventMode = 'none';
+      haloTop.position.set(-CROWN_LIP - CASE_HALO_PAD, -CROWN_H - CASE_HALO_PAD);
+      haloTop.width = SHELF_WIDTH + (CROWN_LIP + CASE_HALO_PAD) * 2;
+      haloTop.height = CASE_HALO_PAD + CROWN_H;
+      this.world.addChild(haloTop);
     }
     this.crown = new Sprite(Texture.WHITE);
     this.crown.tint = PLACEHOLDER_TINTS.crown;
@@ -501,6 +504,16 @@ export class ShelfWorld {
 
     app.stage.addChild(this.backdrop, this.wallFx, this.world, this.lightFx, this.fx);
     app.stage.eventMode = 'none';
+
+    // One light over the whole case. Everything in `this.world` draws albedo;
+    // this pass shades all of it together, which is the difference between a
+    // shelf of separately-shaded rectangles and a lit room. Degrade mode and
+    // `?scenelight=0` leave the world unlit — the pass is never load-bearing.
+    this.sceneLight = new SceneLight(degrade ? null : app.renderer, {
+      quality: dpr > 1.5 ? 'medium' : 'high',
+    });
+    this.sceneLight.resize(this.vp.width, this.vp.height);
+    this.sceneLight.attach(this.world);
 
     // Camera: session restore, else a friendly overview of the first floors.
     const snap = sessionCamera;
@@ -883,6 +896,7 @@ export class ShelfWorld {
     for (const fv of this.floors.values()) fv.destroy();
     this.floors.clear();
     this.pool.drain();
+    this.sceneLight.destroy();
     this.motes.destroy();
     this.stamps.clear();
     this.store.destroy();
@@ -917,6 +931,9 @@ export class ShelfWorld {
       this.dirty = false;
       this.applyCamera();
       this.sync();
+      // Drives the light's own animation (dust shafts). Set before the draw so
+      // the pass and the motes agree about what time it is.
+      this.sceneLight.setTime(this.elapsed);
       this.app.render();
     }
     // Cheap (one floor's visuals, a few adds) and it must also react to
@@ -1171,6 +1188,10 @@ export class ShelfWorld {
       this.lastZoomPct = pct;
       this.events.onZoomChange?.(pct);
     }
+    // The height field is in SCREEN space, so it is stale the instant the
+    // camera moves. (Cheap: update() no-ops unless the quantized signature
+    // actually changed.)
+    this.syncSceneLight();
   }
 
   /* ------------------------------- theming -------------------------------- */
@@ -1327,6 +1348,12 @@ export class ShelfWorld {
       this.ambientWash.height = this.vp.height;
     }
 
+    // The real light: one rig for the whole case, derived from the room's own
+    // art direction plus the user's warmth slider. The sprite pools above stay
+    // — they are the visible lamps in the picture — but the SHADING now comes
+    // from here.
+    this.sceneLight.setRig(rigForTheme(lib.theme, lib.prefs.lightWarmth));
+
     const motes = lib.theme.motes;
     this.motes.setStyle({
       colour: hexToInt(motes.colour),
@@ -1459,6 +1486,55 @@ export class ShelfWorld {
     this.store.ensureRange(range.first, range.last);
     this.syncTrashDrawer();
     this.publishVisibleBooks();
+    this.syncSceneLight();
+  }
+
+  /**
+   * Hand the deferred pass this frame's geometry.
+   *
+   * Called from `sync` (composition changed) and from the ticker via
+   * `applyCamera` (the camera moved) — `SceneLight.update` de-duplicates on a
+   * quantized signature, so calling it more often than necessary is free.
+   *
+   * The rects are read off the live FloorViews rather than off the store,
+   * because the height field has to agree with what is actually ON SCREEN:
+   * a hovered book has lifted, a pulled book has left the row, and a book
+   * mid-arrival is still tweening. Shading geometry the compositor is not
+   * drawing puts a shadow under nothing.
+   */
+  private syncSceneLight(): void {
+    if (!this.sceneLight.enabled || this.destroyed) return;
+    const floors: LitFloor[] = [];
+    for (const [index, fv] of this.floors) {
+      if (!fv.root.visible || !fv.content.visible) continue;
+      const y = index * FLOOR_H;
+      const spines: LitSpine[] = [];
+      for (const v of fv.visuals) {
+        if (!v.sprite.visible || v.sprite.alpha < 0.05) continue;
+        spines.push({
+          centerX: v.centerX,
+          // baseY is the sprite's foot in floor-local space; the sprite is
+          // anchored (0.5, 1) there and hover lifts it, so read it live.
+          baseY: y + v.sprite.y,
+          w: v.w,
+          h: v.height,
+          lean: v.sprite.rotation,
+          proud: v.params.proud ?? 0,
+        });
+      }
+      floors.push({ y, spines });
+    }
+    // Deepest floor last so a book's contact shadow lands on the plank below.
+    floors.sort((a, b) => a.y - b.y);
+    this.sceneLight.update({
+      cameraX: this.camera.x,
+      cameraY: this.camera.y,
+      zoom: this.camera.zoom,
+      viewportW: this.vp.width,
+      viewportH: this.vp.height,
+      floors,
+      crown: this.floors.has(0),
+    });
   }
 
   /**
@@ -2549,6 +2625,7 @@ export class ShelfWorld {
       this.wallpaper.height = h;
     }
     this.layoutWallLighting();
+    this.sceneLight.resize(w, h);
     this.motes.resize(w, h);
     clampZoomBounds(this.camera, this.vp);
     if (!this.dragging) clampCamera(this.camera, this.vp);

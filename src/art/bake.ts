@@ -134,7 +134,12 @@ export interface BakeSample {
   what: string;
   ms: number;
   /** 'disk' = read back from the PNG cache; 'bake' = the producer ran. */
-  kind: 'disk' | 'bake' | 'spine';
+  /**
+   * `'disk'` — read back from the PNG cache; `'bake'` — the producer ran on
+   * this thread; `'offload'` — painted by the art worker; `'spine'` — a spine,
+   * wherever it was painted.
+   */
+  kind: 'disk' | 'bake' | 'spine' | 'offload';
   at: number;
 }
 
@@ -225,6 +230,37 @@ export function pendingBakeTurns(): number {
   return pumpQueue.length;
 }
 
+/* ------------------------------ offloading -------------------------------- */
+
+/**
+ * A hook that may paint a cache miss somewhere other than this thread.
+ *
+ * `bakeCached` is the single choke point every piece of baked art passes
+ * through — the shelf's case, the studio's theme cards, the pull-out preview,
+ * all of it. Putting the off-thread route HERE rather than at each call site
+ * means one mechanism covers callers this module has never heard of, which is
+ * how the theme-card grid stopped painting five rooms' worth of oak on the
+ * main thread during boot without that panel having to know a worker exists.
+ *
+ * Contract: resolve a bitmap to claim the bake, or **`null` to decline** —
+ * declining is normal (an unrecognised recipe, no worker, a failed job) and
+ * simply falls through to the local producer. Never throws in a way the caller
+ * has to handle; a rejection is treated as a decline.
+ */
+export type BakeOffloader = (params: string, dpr: number) => Promise<ImageBitmap | null>;
+
+let offloader: BakeOffloader | null = null;
+
+/** Install (or clear, with `null`) the off-thread route. */
+export function setBakeOffloader(fn: BakeOffloader | null): void {
+  offloader = fn;
+}
+
+/** Is anything currently able to take bakes off this thread? (tests / HUD) */
+export function hasBakeOffloader(): boolean {
+  return offloader !== null;
+}
+
 /** A producer bakes the raster for a cache miss and hands back its canvas. */
 export type CanvasProducer = () => Promise<OffscreenCanvas>;
 
@@ -250,6 +286,29 @@ export function bakeCached(
     if (fromDisk) {
       recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t0, kind: 'disk', at: t0 });
       return fromDisk;
+    }
+
+    // Somebody else's thread, if one will have it. This is checked before the
+    // fairness pump because an offloaded bake costs this thread nothing and
+    // has no business queueing behind local producers.
+    if (offloader !== null) {
+      const tOff = performance.now();
+      let offloaded: ImageBitmap | null = null;
+      try {
+        offloaded = await offloader(params, dpr);
+      } catch {
+        offloaded = null;
+      }
+      if (offloaded !== null) {
+        recordBakeSample({
+          what: params.slice(0, 96),
+          ms: performance.now() - tOff,
+          kind: 'offload',
+          at: tOff,
+        });
+        persistBitmap(key, offloaded);
+        return offloaded;
+      }
     }
 
     // Wait for a turn so this producer's synchronous cost lands in a task of
@@ -278,6 +337,93 @@ export function bakeCached(
   });
   memoryCache.set(key, wrapped);
   return wrapped;
+}
+
+/* --------------------------- off-thread bridge ---------------------------- */
+
+/**
+ * Is this piece already painted somewhere — memory or disk?
+ *
+ * The point of asking is to decide whether to send a recipe to the art worker.
+ * A worker cannot reach the disk cache (`@tauri-apps/plugin-fs` talks to the
+ * window's Tauri internals, which a worker does not have), so a caller that
+ * dispatched blindly would repaint every warm-start layer from scratch on a
+ * thread — costing seconds of CPU and a lot of heat to reproduce bytes that
+ * were already sitting on disk.
+ *
+ * A `true` answer primes the memory cache as a side effect, so the follow-up
+ * `bakeCached` resolves immediately rather than reading the file twice.
+ */
+export async function peekBake(params: string, dpr: number): Promise<boolean> {
+  return (await readBake(params, dpr)) !== null;
+}
+
+/**
+ * The cached bitmap for `params`, or null — never paints anything.
+ *
+ * The read side of {@link adoptBake}: a caller that intends to hand the recipe
+ * to the art worker asks this first, so a warm cache short-circuits the whole
+ * round trip. Memory hits are synchronous-ish (one already-resolved promise);
+ * a disk hit is decoded once and then filed in memory.
+ */
+export async function readBake(params: string, dpr: number): Promise<ImageBitmap | null> {
+  const key = cacheKey(params, dpr);
+  const hit = memoryCache.get(key);
+  if (hit !== undefined) {
+    try {
+      return await hit;
+    } catch {
+      return null;
+    }
+  }
+  if (!diskEnabled) return null;
+  const t0 = performance.now();
+  const fromDisk = await readDiskCache(key);
+  if (fromDisk === null) return null;
+  recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t0, kind: 'disk', at: t0 });
+  memoryCache.set(key, Promise.resolve(fromDisk));
+  return fromDisk;
+}
+
+/**
+ * Take ownership of a bitmap painted elsewhere (the art worker) and file it
+ * under `params` as though `bakeCached` had produced it: into the memory cache
+ * immediately, and onto disk in the background so the next cold boot is a
+ * disk read instead of a repaint.
+ *
+ * The bitmap stays owned by the caller for drawing — this only *shares* it,
+ * which is the same contract every other cache entry has (callers must never
+ * `close()` a bitmap that came out of this module).
+ */
+export function adoptBake(params: string, dpr: number, bitmap: ImageBitmap): void {
+  const key = cacheKey(params, dpr);
+  if (!memoryCache.has(key)) memoryCache.set(key, Promise.resolve(bitmap));
+  persistBitmap(key, bitmap);
+}
+
+/**
+ * PNG-encode a bitmap into the disk cache, off the critical path.
+ *
+ * Fire-and-forget by design: a failure only means the next cold boot repaints
+ * the piece, and the encode must never land in the frame that is about to draw
+ * it. `createImageBitmap` is deliberately not used to copy — the bitmap is
+ * only read here, never transferred, so the caller keeps ownership.
+ */
+function persistBitmap(key: string, bitmap: ImageBitmap): void {
+  if (!diskEnabled) return;
+  if (typeof OffscreenCanvas === 'undefined') return;
+  void (async () => {
+    try {
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d');
+      if (ctx === null) return;
+      ctx.drawImage(bitmap, 0, 0);
+      const blob = await canvas.convertToBlob({ type: 'image/png' });
+      await writeDiskCache(key, blob);
+    } catch {
+      /* best effort */
+    }
+  })();
 }
 
 /**

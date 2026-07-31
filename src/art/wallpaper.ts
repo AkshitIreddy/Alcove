@@ -24,6 +24,7 @@
  */
 
 import { bakeCached } from './bake';
+import { gradedPrint, getMaterialTile, type WallpaperGrade } from './materials';
 import { mulberry32, type RandomFn } from './noise';
 import type { Canvas2D, Ctx2D } from './spines';
 import {
@@ -2011,6 +2012,180 @@ export function allWallpaperPatterns(): readonly WallpaperPattern[] {
  * `size` is the tile edge in world px; the tile is opaque (it carries the
  * colourway's base) so it can be drawn straight onto the wall.
  */
+/* ============================ printed papers ============================= */
+
+/**
+ * How a pattern maps onto one of the four painted wallpaper sheets in
+ * `assets/generated/wallpaper/`.
+ *
+ * The house rules at the top of this file — whisper contrast, ink alphas in
+ * 0.06–0.18, "the wall must never fight the books" — produced walls that read
+ * as pale blue nothing with a few dots on it. They were the wrong rules: a
+ * wall does not compete with books by being *coloured*, it competes by being
+ * *busy at the books' own scale*, and the fix for that is motif size and value
+ * structure, not draining the chroma out of the room.
+ *
+ * So every pattern that is a *print* now hangs a real printed sheet, graded
+ * into its colourway (see `materials.gradedPrint`). The procedural renderer
+ * stays as the ground beneath it and, for the handful of patterns whose
+ * identity is a specific motif rather than a floral — constellations, circuit
+ * traces, apothecary labels — comes back over the top through `multiply`, so
+ * a night sky still has its stars.
+ *
+ * Three patterns deliberately have no sheet: `lath-plaster`, `plain-limewash`
+ * and `marbled-endpaper` are not printed papers at all. The first two are bare
+ * wall, and the third already has a painted master in the material library
+ * (`paper-marbled`), which it uses instead.
+ */
+interface PrintRecipe {
+  /** Slug in the material library. */
+  slug: string;
+  /**
+   * Grade overrides — see {@link WallpaperGrade}. `useAccent` points the hue
+   * rotation at the colourway's accent rather than its body colour, for rooms
+   * whose paper is printed in the accent (see `blossom-sky`).
+   */
+  grade?: Partial<Omit<WallpaperGrade, 'base' | 'hueToward'>> & { useAccent?: boolean };
+  /**
+   * Alpha at which the procedural pattern is multiplied back over the print.
+   * 0 (the default) means the sheet stands alone.
+   */
+  overlay?: number;
+  /** Multiplier on the tile repeat. 1 = the wall's requested tile size. */
+  repeat?: number;
+}
+
+const PRINTS: Partial<Record<WallpaperPatternId, PrintRecipe>> = {
+  // --- the four sheets on their home patterns ---------------------------
+  damask: { slug: 'wallpaper-damask', grade: { hueShift: 0.42 } },
+  'botanical-toile': { slug: 'wallpaper-toile', grade: { hueShift: 0.34, vividness: 1.3 } },
+  'ditsy-floral': { slug: 'wallpaper-ditsy', grade: { hueShift: 0.36 } },
+  'art-nouveau-vine': { slug: 'wallpaper-vine', grade: { hueShift: 0.4 } },
+
+  // --- florals that borrow a neighbouring sheet -------------------------
+  // The default theme's wall, and the one that proved `hueToward` was needed:
+  // Blossom Grove's *body* colour is sky blue, so a hue pull toward `base`
+  // turned coral blossom electric blue and the leaves lime. Aimed at the
+  // room's pink accent instead — which is what the blossom actually is — the
+  // sheet stays a cherry grove and only leans warmer.
+  'blossom-sky': {
+    slug: 'wallpaper-ditsy',
+    grade: { useAccent: true, hueShift: 0.3, vividness: 1.32, valuePull: 0.1 },
+  },
+  'gingham-floral': { slug: 'wallpaper-ditsy', grade: { hueShift: 0.42, vividness: 1.28 }, overlay: 0.4, repeat: 0.85 },
+  'fern-footprint': { slug: 'wallpaper-toile', grade: { hueShift: 0.5, vividness: 1.26 } },
+  'rice-paper-bamboo': { slug: 'wallpaper-toile', grade: { useAccent: true, hueShift: 0.4, vividness: 1.16, valuePull: 0.22 }, overlay: 0.35 },
+  'pin-dot': { slug: 'wallpaper-ditsy', grade: { hueShift: 0.5, vividness: 1.14, valuePull: 0.26 }, repeat: 0.8 },
+  'peppermint-stripe': { slug: 'wallpaper-ditsy', grade: { useAccent: true, hueShift: 0.42, vividness: 1.4 }, overlay: 0.45 },
+
+  // --- dark, ornate rooms ------------------------------------------------
+  // The vine sheet is cream blossom and copper stems on near-black. Rotated
+  // toward the room's hue it stops being botanical and becomes whatever
+  // tangle the theme is about — kelp for the reef, traces for the robot.
+  //
+  // Exposure stays at or above 1 here. These rooms are dark because their
+  // *sheets* are dark; knocking the exposure down on top of that was what
+  // turned the robot's wall into an unreadable black-blue smear.
+  constellation: { slug: 'wallpaper-damask', grade: { hueShift: 0.58, vividness: 1.2, exposure: 0.94 }, overlay: 0.55 },
+  nebula: { slug: 'wallpaper-damask', grade: { useAccent: true, hueShift: 0.5, vividness: 1.35, exposure: 0.92 }, overlay: 0.5 },
+  'circuit-trace': { slug: 'wallpaper-vine', grade: { useAccent: true, hueShift: 0.5, vividness: 1.3, exposure: 1.16 }, overlay: 0.55 },
+  'reef-bubble': { slug: 'wallpaper-vine', grade: { hueShift: 0.66, vividness: 1.34, exposure: 1.06 }, overlay: 0.4 },
+  'apothecary-labels': { slug: 'wallpaper-toile', grade: { hueShift: 0.5, vividness: 1.2, exposure: 0.96 }, overlay: 0.5 },
+
+  // --- the marbled sheet is already in the library -----------------------
+  'marbled-endpaper': { slug: 'paper-marbled', grade: { hueShift: 0.34, vividness: 1.25 }, repeat: 1.3 },
+};
+
+/**
+ * The tile repeat a pattern wants, in world px.
+ *
+ * A printed sheet's repeat is a *motif* — roughly a foot of wall — where the
+ * procedural patterns were authored as a 256 px cell. Hanging a damask at
+ * 256 px turns the acanthus into upholstery tweed, so a print asks for a
+ * larger pitch. Falls back to the requested size when no sheet is resident,
+ * which keeps the procedural walls exactly as they were.
+ *
+ * The multiplier landed at 1.15 the hard way. At 1.8 the drawing was
+ * unquestionably legible — and a single bloom came out the size of a book, so
+ * the wall stopped being a wall and started competing with the shelf for the
+ * eye. A wallpaper wins by repetition, not by scale.
+ */
+export function wallpaperRepeat(pattern: WallpaperPatternId, requested: number): number {
+  const recipe = PRINTS[pattern];
+  if (!recipe || !getMaterialTile(recipe.slug)) return requested;
+  return Math.round(requested * 1.15 * (recipe.repeat ?? 1));
+}
+
+/** True when this pattern will hang a real printed sheet. */
+export function wallpaperHasPrint(pattern: WallpaperPatternId): boolean {
+  const recipe = PRINTS[pattern];
+  return recipe !== undefined && getMaterialTile(recipe.slug) !== null;
+}
+
+/** Device-pixel scale currently on the context, for sizing the graded sheet. */
+function ctxScale(ctx: Ctx2D): number {
+  try {
+    const m = (ctx as CanvasRenderingContext2D).getTransform();
+    const s = Math.hypot(m.a, m.b);
+    return Number.isFinite(s) && s > 0.05 ? s : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Paint one tile of the printed sheet, graded into the colourway.
+ *
+ * Filled through a `CanvasPattern` rather than `drawImage` on purpose: the
+ * pattern sampler wraps, so the tile's own seam is sampled correctly and the
+ * wall never shows the hairline that edge-clamped `drawImage` leaves when a
+ * tile lands on a fractional device pixel.
+ *
+ * Returns false when nothing was hung, and the caller keeps its procedural
+ * result — which is the look that shipped before the sheets existed.
+ */
+function paintPrint(
+  ctx: Ctx2D,
+  pattern: WallpaperPatternId,
+  size: number,
+  cw: Colourway,
+): boolean {
+  const recipe = PRINTS[pattern];
+  if (!recipe) return false;
+
+  // Grade at the resolution the wall will actually show, capped at the tile's
+  // own 768 so we never upsample the master into softness.
+  const px = Math.max(192, Math.min(768, Math.round(size * ctxScale(ctx))));
+  const { useAccent, ...grade } = recipe.grade ?? {};
+  const sheet = gradedPrint(recipe.slug, {
+    hueShift: 0.45,
+    vividness: 1.2,
+    chromaFloor: 0.1,
+    valuePull: 0.18,
+    exposure: 1,
+    ...grade,
+    base: cw.base,
+    hueToward: useAccent === true ? cw.accent : cw.base,
+    size: px,
+  });
+  if (!sheet) return false;
+
+  const fill = ctx.createPattern(sheet as unknown as CanvasImageSource, 'repeat');
+  if (!fill) return false;
+  const k = size / px;
+  try {
+    fill.setTransform(new DOMMatrix([k, 0, 0, k, 0, 0]));
+  } catch {
+    // No DOMMatrix (very old worker): fall back to an unscaled fill rather
+    // than dropping the sheet entirely.
+  }
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, size, size);
+  ctx.restore();
+  return true;
+}
+
 export function renderWallpaper(
   ctx: Ctx2D,
   pattern: WallpaperPatternId,
@@ -2020,12 +2195,32 @@ export function renderWallpaper(
 ): void {
   const cw = getColourway(colourway);
   const p = WALLPAPER_PATTERNS[pattern] ?? WALLPAPER_PATTERNS['pin-dot'];
+  const recipe = PRINTS[pattern];
   ctx.save();
   // Clip so stamped neighbours cannot bleed outside the tile.
   ctx.beginPath();
   ctx.rect(0, 0, size, size);
   ctx.clip();
-  p.render(ctx, size, cw, seed);
+
+  const printed = paintPrint(ctx, pattern, size, cw);
+  if (!printed) {
+    p.render(ctx, size, cw, seed);
+  } else if ((recipe?.overlay ?? 0) > 0.01) {
+    // The theme's own motif, multiplied back over the sheet. Multiply is what
+    // makes this safe: the procedural tile's ground is a near-flat light
+    // field, so it barely touches the print, while its ink — the stars, the
+    // traces, the labels — still lands as a dark mark.
+    const scratch = makeCanvas(Math.ceil(size), Math.ceil(size));
+    const sctx = scratch.getContext('2d') as Ctx2D | null;
+    if (sctx) {
+      p.render(sctx, size, cw, seed);
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = recipe?.overlay ?? 0;
+      ctx.drawImage(scratch as unknown as CanvasImageSource, 0, 0, size, size);
+      ctx.restore();
+    }
+  }
   ctx.restore();
 }
 

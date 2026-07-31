@@ -27,7 +27,7 @@ import type { Book } from '../../data/types';
 import {
   BOOK_BASELINE,
   BOOK_ZONE_H,
-  CASE_SHADE_W,
+  CROWN_LIP,
   FLOOR_H,
   PLANK_H,
   RAIL_W,
@@ -40,6 +40,8 @@ import { PROP_H, PROP_KINDS, PROP_W, type PropKind } from '../../art/props';
 import type { LodTier } from './lod';
 import { LOD_CROSSFADE_MS } from './lod';
 import {
+  CASE_HALO_EDGE_W,
+  CASE_HALO_PAD,
   doodleVariantFor,
   PLACEHOLDER_TINTS,
   SELECT_CARET_H,
@@ -413,22 +415,38 @@ export class FloorView {
       }
     };
 
-    // Wall AO strips flanking the case (synchronous translucent gradient,
-    // normal blending per the getWallShade contract).
+    // The case's shadow on the wall, down both sides of this floor.
+    //
+    // One slice of the blurred case silhouette (see EnvTextures.getCaseHalo),
+    // stretched over the floor's height — the profile is constant in y along a
+    // straight edge, so stretching it is exact rather than approximate, and it
+    // meets the crown's halo at y = 0 without a seam.
+    //
+    // The slice runs from CASE_HALO_PAD + CROWN_LIP OUTSIDE the case to
+    // CASE_HALO_PAD inside it. That inner overlap is the point: it puts the
+    // slice's own edge under the opaque back panel and rails, so no sprite
+    // boundary can ever show as a step on the wall. The previous strips ended
+    // flush with the case at full opacity, which is what drew the "shadowy
+    // corner boxes" the user reported.
     if (this.shadeL === null) {
-      const tex = env.getWallShade();
-      this.shadeR = new Sprite(tex);
-      this.shadeR.position.set(SHELF_WIDTH, 0);
-      this.shadeR.width = CASE_SHADE_W;
-      this.shadeR.height = FLOOR_H;
-      this.shadeL = new Sprite(tex);
-      // Mirrored: dark edge hugs the case's left side.
-      this.shadeL.width = CASE_SHADE_W;
-      this.shadeL.height = FLOOR_H;
-      this.shadeL.scale.x = -this.shadeL.scale.x;
-      this.shadeL.position.set(0, 0);
-      this.content.addChildAt(this.shadeL, 0);
-      this.content.addChildAt(this.shadeR, 0);
+      const halo = env.getCaseHalo(this.dprHint);
+      if (halo !== null) {
+        const outer = CASE_HALO_PAD + CROWN_LIP;
+        this.shadeL = new Sprite(halo.edge);
+        this.shadeL.width = CASE_HALO_EDGE_W;
+        this.shadeL.height = FLOOR_H;
+        this.shadeL.position.set(-outer, 0);
+        this.shadeR = new Sprite(halo.edge);
+        this.shadeR.width = CASE_HALO_EDGE_W;
+        this.shadeR.height = FLOOR_H;
+        // Mirrored about the case's right edge.
+        this.shadeR.scale.x = -this.shadeR.scale.x;
+        this.shadeR.position.set(SHELF_WIDTH + outer, 0);
+        this.shadeL.eventMode = 'none';
+        this.shadeR.eventMode = 'none';
+        this.content.addChildAt(this.shadeL, 0);
+        this.content.addChildAt(this.shadeR, 0);
+      }
     }
 
     if (env.back !== null && this.backWood === null) {

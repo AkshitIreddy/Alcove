@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC_DIR = join(ROOT, 'assets', 'generated', 'materials');
+const WALL_DIR = join(ROOT, 'assets', 'generated', 'wallpaper');
 const OUT_DIR = join(ROOT, 'public', 'materials');
 
 const args = process.argv.slice(2);
@@ -70,6 +71,25 @@ const CATEGORY = {
   'wood-walnut': { category: 'wood', role: 'figure' },
   'wood-painted': { category: 'wood', role: 'figure' },
 };
+
+/**
+ * The printed wallpapers, from `assets/generated/wallpaper/`.
+ *
+ * They ship through the same loader and the same manifest as the materials —
+ * a wallpaper IS a material, it just happens to be one the wall is made of —
+ * but they get their own slug prefix and a *larger* shipped edge. A spine
+ * shows ~34 px of leather and can afford a 512² tile; the wall is the single
+ * biggest surface on screen and its motifs are read at full size, so 512
+ * visibly softens the acanthus scrollwork. 768 costs ~60 KB more each and
+ * keeps the drawing crisp.
+ */
+const WALLPAPER = {
+  damask: { slug: 'wallpaper-damask', category: 'wallpaper', role: 'figure' },
+  'botanical-toile': { slug: 'wallpaper-toile', category: 'wallpaper', role: 'figure' },
+  'ditsy-floral': { slug: 'wallpaper-ditsy', category: 'wallpaper', role: 'figure' },
+  'art-nouveau-vine': { slug: 'wallpaper-vine', category: 'wallpaper', role: 'figure' },
+};
+const WALLPAPER_SIZE = Math.max(256, Number(opt('wallpaper-size', 768)));
 
 if (!existsSync(SRC_DIR)) {
   console.error(`no masters at ${SRC_DIR} — run scripts/gen-assets.mjs first`);
@@ -222,6 +242,65 @@ for (const file of masters) {
   entries.push({ slug, ...meta, file: `${slug}.webp`, size: SIZE, bytes: buf.length, ...stats });
   const seamNote = stats.seam > 2.2 ? `  ⚠ seam ${stats.seam.toFixed(1)}×` : '';
   console.log(`  → ${slug.padEnd(16)} ${(buf.length / 1024).toFixed(0).padStart(4)} KB${seamNote}`);
+}
+
+/* ------------------------------ wallpapers -------------------------------- */
+
+if (existsSync(WALL_DIR)) {
+  for (const file of readdirSync(WALL_DIR).filter((f) => /\.(png|webp|jpg|jpeg)$/i.test(f)).sort()) {
+    const stem = basename(file).replace(/\.[^.]+$/, '');
+    const meta = WALLPAPER[stem];
+    if (!meta) {
+      console.warn(`  skip wallpaper ${stem} — add it to WALLPAPER in this script`);
+      continue;
+    }
+    const srcPath = join(WALL_DIR, file);
+    const outPath = join(OUT_DIR, `${meta.slug}.webp`);
+    masterBytes += statSync(srcPath).size;
+
+    if (!FORCE && existsSync(outPath) && statSync(outPath).mtimeMs >= statSync(srcPath).mtimeMs) {
+      const { stats } = await bake(
+        `data:image/webp;base64,${readFileSync(outPath).toString('base64')}`,
+        WALLPAPER_SIZE,
+        QUALITY,
+      );
+      const bytes = statSync(outPath).size;
+      shippedBytes += bytes;
+      entries.push({
+        slug: meta.slug,
+        category: meta.category,
+        role: meta.role,
+        file: `${meta.slug}.webp`,
+        size: WALLPAPER_SIZE,
+        bytes,
+        ...stats,
+      });
+      console.log(`  = ${meta.slug.padEnd(18)} ${(bytes / 1024).toFixed(0).padStart(4)} KB (cached)`);
+      continue;
+    }
+
+    const ext = file.split('.').pop().toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const { url, stats } = await bake(
+      `data:${mime};base64,${readFileSync(srcPath).toString('base64')}`,
+      WALLPAPER_SIZE,
+      QUALITY,
+    );
+    const buf = Buffer.from(url.split(',')[1], 'base64');
+    writeFileSync(outPath, buf);
+    shippedBytes += buf.length;
+    entries.push({
+      slug: meta.slug,
+      category: meta.category,
+      role: meta.role,
+      file: `${meta.slug}.webp`,
+      size: WALLPAPER_SIZE,
+      bytes: buf.length,
+      ...stats,
+    });
+    const seamNote = stats.seam > 2.2 ? `  ⚠ seam ${stats.seam.toFixed(1)}×` : '';
+    console.log(`  → ${meta.slug.padEnd(18)} ${(buf.length / 1024).toFixed(0).padStart(4)} KB${seamNote}`);
+  }
 }
 
 await browser.close();

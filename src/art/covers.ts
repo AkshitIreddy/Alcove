@@ -34,9 +34,11 @@ import {
   keyToSource,
   type LightRig,
 } from './lighting';
+import { drawMaterialRect, getMaterialTile, materialDefaults } from './materials';
 import { clamp, mulberry32, type RandomFn } from './noise';
 import {
   applyOutlineWear,
+  bindingMaterialSlug,
   deriveSpineParams,
   getGranulationTile,
   materialFromTexture,
@@ -417,6 +419,116 @@ function paintTexture(
       ctx.stroke();
     }
   }
+}
+
+/**
+ * Lay the generated covering material over the base wash, dyed to the book's
+ * pigment. Returns true when a tile was available.
+ *
+ * The tile comes from `bindingMaterialSlug`, the *same* table the spine uses.
+ * That is not deduplication for its own sake: a book's cover and its spine are
+ * one piece of covering wrapped around the boards, and the shelf → pull-out →
+ * open-book journey is only convincing if the grain on the spine is the grain
+ * on the board.
+ *
+ * The cover is where this matters most. A spine is thirty pixels wide on a
+ * shelf and can get away with a suggestion of grain, but a pulled-out board
+ * fills a third of the window — and the procedural cover texture is three
+ * hatched lines and a granulation tile, which at that size reads as exactly
+ * what it is. A real 512² morocco tile at a 200 px repeat does not.
+ *
+ * `soft-light` rather than `source-over`: the base wash below already carries
+ * the two directional gradients that give the board its form, and a normal
+ * composite would flatten them. Soft-light keeps them and adds the tooth.
+ */
+function paintGeneratedBoard(
+  ctx: Ctx2D,
+  w: number,
+  h: number,
+  material: BindingMaterial,
+  boardStyle: number,
+  colA: HSL,
+  s: number,
+  seed: number,
+): boolean {
+  const slug = bindingMaterialSlug(material, boardStyle);
+  if (slug === null || !getMaterialTile(slug)) return false;
+  const tuned = materialDefaults(slug, 1);
+  const marbled = material === 'marbled';
+  // A board is roughly six spine-widths across, so the repeat opens up to
+  // match: the same physical grain, seen across a much bigger surface.
+  const tilePx = tuned.tilePx * Math.max(1.05, s * 1.7);
+  const tint = hslStr(colA);
+
+  // Pass 1: the covering itself, holding the base wash's modelling.
+  const ok = drawMaterialRect(ctx as CanvasRenderingContext2D, 0, 0, w, h, {
+    slug,
+    tint,
+    tilePx,
+    strength: marbled ? 1 : 0.92,
+    balance: 0.85,
+    seed,
+    flipX: (seed & 4) === 4,
+    globalAlpha: marbled ? 0.9 : 0.78,
+    composite: 'soft-light',
+  });
+  if (!ok) return false;
+
+  // Pass 2: the same crop again at a lower alpha in `multiply`, which puts the
+  // material's own darks back. Soft-light alone lifts the mid-tones and the
+  // craquelure ends up as a ghost; this returns the crack to being a crack.
+  drawMaterialRect(ctx as CanvasRenderingContext2D, 0, 0, w, h, {
+    slug,
+    tint,
+    tilePx,
+    strength: 1,
+    contrast: 1.15,
+    balance: 1,
+    colourMix: marbled ? 0.7 : 0.06,
+    seed,
+    flipX: (seed & 4) === 4,
+    globalAlpha: marbled ? 0.5 : 0.34,
+    composite: 'multiply',
+  });
+  return true;
+}
+
+/**
+ * Run a painting pass at partial weight.
+ *
+ * The cover's texture routines are canvas-native and set their own
+ * `globalAlpha` and composite modes internally, so there is no outer knob to
+ * turn them down with. Snapshotting the pixels either side of the pass and
+ * mixing back is crude, but it is exact, it works for any pass regardless of
+ * what it does inside, and a cover bakes once — the two `getImageData` calls
+ * are nothing next to the tooling that follows.
+ *
+ * Used to pull the hand-painted weave/grain back when a real material tile is
+ * already carrying it, keeping the brush marks that vary book to book while
+ * dropping the part the tile does better.
+ */
+function atWeight(ctx: Ctx2D, w: number, h: number, weight: number, pass: () => void): void {
+  const k = Math.max(0, Math.min(1, weight));
+  if (k >= 0.999) {
+    pass();
+    return;
+  }
+  if (k <= 0.001) return;
+  let before: ImageData | null = null;
+  try {
+    before = ctx.getImageData(0, 0, w, h);
+  } catch {
+    // Tainted canvas or no readback — fall back to the full-strength pass
+    // rather than silently painting nothing.
+    pass();
+    return;
+  }
+  pass();
+  const after = ctx.getImageData(0, 0, w, h);
+  const a = after.data;
+  const b = before.data;
+  for (let i = 0; i < a.length; i++) a[i] = b[i] + (a[i] - b[i]) * k;
+  ctx.putImageData(after, 0, 0);
 }
 
 function paintVignette(ctx: Ctx2D, w: number, h: number, colB: HSL): void {
@@ -1073,13 +1185,38 @@ export function renderCoverInto(
 
   ctx.save();
   paintBase(ctx, w, h, colA, colB);
-  if (params.material) {
-    // Studio books use the seven-material vocabulary shared with the spine,
-    // including the per-book sub-treatment (crackle / rib / marbling variant).
-    paintBindingMaterial(ctx, w, h, material, tones, s, rnd, params.boardStyle ?? 0);
-  } else {
-    paintTexture(ctx, w, h, params.texture, colA, colB, s, rnd);
-  }
+  // The generated covering goes down between the base wash and the hand
+  // treatment, so the tooling, the frame and the wear are all worked into a
+  // material rather than onto a gradient.
+  const boardMat = paintGeneratedBoard(
+    ctx,
+    w,
+    h,
+    material,
+    params.boardStyle ?? 0,
+    colA,
+    s,
+    (params.seed ^ 0x0b0a_2d17) >>> 0,
+  );
+  // With a real covering underneath, the hand-painted weave only has to break
+  // the tile's regularity and add this book's own accidents — so it runs at a
+  // third. With no tile it is the whole material and runs at full.
+  //
+  // Vellum and paper are the exceptions: their hand pass is not mostly weave,
+  // it is a strong *lightening* — parchment is pale, and that pallor is how
+  // you tell a vellum binding from a tan calf one at a glance. Cutting it to a
+  // third turned every vellum cover into leather, so those two keep most of
+  // their pass and let the tile add mottle underneath it.
+  const handWeight = !boardMat ? 1 : material === 'vellum' || material === 'paper' ? 0.66 : 0.34;
+  atWeight(ctx, w, h, handWeight, () => {
+    if (params.material) {
+      // Studio books use the seven-material vocabulary shared with the spine,
+      // including the per-book sub-treatment (crackle / rib / marbling variant).
+      paintBindingMaterial(ctx, w, h, material, tones, s, rnd, params.boardStyle ?? 0);
+    } else {
+      paintTexture(ctx, w, h, params.texture, colA, colB, s, rnd);
+    }
+  });
   paintVignette(ctx, w, h, colB);
   paintSpineEdge(ctx, w, h, colB, s, rnd);
   paintBands(ctx, w, h, colB, params.gilt, s);

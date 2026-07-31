@@ -1,0 +1,20 @@
+[
+  {
+    "label": "BEFORE — art on the main thread",
+    "firstPaint": 2720,
+    "tti": 42987,
+    "worst": 7608,
+    "over100": 35,
+    "frozenMs": 42387,
+    "taskTotal": 37714
+  },
+  {
+    "label": "AFTER  — art in worker threads",
+    "firstPaint": 3202,
+    "tti": 5552,
+    "worst": 2901,
+    "over100": 8,
+    "frozenMs": 5029,
+    "taskTotal": 4508
+  }
+]

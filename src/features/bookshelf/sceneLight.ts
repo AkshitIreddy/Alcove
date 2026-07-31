@@ -1,0 +1,419 @@
+/**
+ * features/bookshelf/sceneLight.ts — the shelf, lit by one light.
+ *
+ * `src/render/` builds a deferred lighting pass: elements emit **albedo only**,
+ * a half-resolution height field says what shape everything is, and a single
+ * fullscreen shader applies key, fill, ambient occlusion, contact shadows, rim,
+ * temperature split, bloom, vignette and grade over the composed frame. This
+ * module is the shelf's half of that contract: it owns the height field, keeps
+ * it aligned with the camera, and hangs the filter on the world container.
+ *
+ * ## Why the shelf needs it
+ *
+ * Every spine used to shade itself at bake time. A hundred books each lit by
+ * their own private sun average out to no light at all — which is exactly what
+ * the flat, pastel shelf in the review screenshots looked like, and exactly
+ * what `docs/design/painted-rendering.md` says a painted scene cannot do. The
+ * reference image's richness is raking light across a whole row: one direction,
+ * one falloff, near-black between the books and hot gold on the edges facing
+ * the window. That can only come from a pass that sees the whole picture.
+ *
+ * ## What is emitted
+ *
+ * Screen-space, once per changed frame, back to front:
+ *
+ * | element      | profile           | why                                    |
+ * |--------------|-------------------|----------------------------------------|
+ * | back panel   | `plane`, recessed | the recess the books sit inside        |
+ * | side rails   | `roundedBox`      | the case frame, standing proud         |
+ * | shelf plank  | `bevel`           | its front lip catches the key and casts |
+ * | cornice      | `bevel`           | the overhang above floor 0             |
+ * | each spine   | `roundedBox` + lean | the roll that makes a row read round |
+ *
+ * Nothing else: flora, plaques and props ride on whatever the surface under
+ * them is doing, which is both cheaper and more correct than giving a painted
+ * leaf its own geometry.
+ *
+ * ## Cost
+ *
+ * The buffer is half resolution and only repainted when the camera or the
+ * composition actually changed. `emitHeight` memoizes one raster per distinct
+ * profile, so a shelf of two hundred books draws two hundred `drawImage`s of a
+ * handful of cached canvases — measured well inside a frame. The lighting
+ * itself is one fullscreen pass, independent of book count.
+ *
+ * ## Failure is always "unlit", never "broken"
+ *
+ * WebGPU (no GLSL twin), a renderer that will not compile the program, or
+ * `?scenelight=0` all end with `enabled === false` and the world drawing its
+ * plain albedo — which is precisely what it did before this file existed.
+ */
+
+import { Rectangle, type Container, type Renderer } from 'pixi.js';
+
+import { DEFAULT_LIGHT_RIG, type LightRig } from '../../art/lighting';
+import type { LibraryTheme } from '../../art/themes';
+import {
+  CanvasNormalBuffer,
+  DeferredLightingFilter,
+  emitHeight,
+  isDeferredLightingSupported,
+  type HeightShape,
+  type LightingQuality,
+} from '../../render';
+import { BOOK_ZONE_H, CROWN_H, CROWN_LIP, FLOOR_H, RAIL_W, SHELF_WIDTH } from './constants';
+
+/* ========================================================================== *
+ *                              scene description                             *
+ * ========================================================================== */
+
+/** One spine's geometry, in WORLD coordinates. */
+export interface LitSpine {
+  /** Centre of the spine on its floor. */
+  centerX: number;
+  /** Absolute world y of the spine's foot (it stands on the plank). */
+  baseY: number;
+  w: number;
+  h: number;
+  /** Lean in radians (the compositor's rotation about the foot). */
+  lean: number;
+  /**
+   * How far the book stands proud of the shelf front, world px. Positive
+   * pulls it toward the viewer (a brighter face, a longer contact shadow);
+   * negative sinks it into the recess.
+   */
+  proud: number;
+}
+
+/** One mounted floor, in WORLD coordinates. */
+export interface LitFloor {
+  /** Absolute world y of the floor's top. */
+  y: number;
+  spines: readonly LitSpine[];
+}
+
+export interface LitScene {
+  cameraX: number;
+  cameraY: number;
+  zoom: number;
+  viewportW: number;
+  viewportH: number;
+  floors: readonly LitFloor[];
+  /** Draw the cornice's height (only true when floor 0 is mounted). */
+  crown: boolean;
+}
+
+/* ========================================================================== *
+ *                                  profiles                                  *
+ * ========================================================================== */
+
+/**
+ * Quantize a number onto a grid.
+ *
+ * `shapeKey` folds every profile parameter AND the raster size into its cache
+ * key, so passing raw per-book values would mint a fresh raster for every
+ * book — hundreds of canvases for a difference no one can see. Rounding lean
+ * to a fiftieth of a radian and sizes to four pixels collapses a whole shelf
+ * onto a handful of profiles.
+ */
+function q(v: number, step: number): number {
+  return Math.round(v / step) * step;
+}
+
+/** The back of the case: flat, and set back from everything on it. */
+const BACK_PANEL: HeightShape = { kind: 'plane', height: 0.06 };
+
+/** The plank: a plateau with a chamfered front lip. */
+const PLANK: HeightShape = { kind: 'bevel', size: 0.16, height: 0.46 };
+
+/** The cornice: a deeper plateau, it overhangs. */
+const CROWN: HeightShape = { kind: 'bevel', size: 0.12, height: 0.72 };
+
+/** A side rail: a tall rounded column standing off the back panel. */
+const RAIL: HeightShape = { kind: 'roundedBox', axis: 'x', radius: 0.3, height: 0.6 };
+
+/** The spine profile, per book (radius and lean vary). */
+function spineShape(lean: number, radius: number, height: number): HeightShape {
+  return {
+    kind: 'roundedBox',
+    axis: 'x',
+    radius: q(radius, 0.04),
+    height: q(height, 0.05),
+    edgeHeight: q(height * 0.55, 0.05),
+    crossRadius: 0.05,
+    lean: q(lean, 0.02),
+  };
+}
+
+/* ========================================================================== *
+ *                               the rig, per room                            *
+ * ========================================================================== */
+
+/**
+ * Fold a theme's painterly light description into a deferred rig.
+ *
+ * `LightSpec` (themes.ts) talks about lamp pools, an ambient cast, a rim and a
+ * vignette — the vocabulary the old sprite-based fake used. The deferred pass
+ * wants a physical rig. Rather than add a second, redundant light description
+ * to every theme, this maps one onto the other so a room's existing art
+ * direction drives the real light: an attic's warm pools become a warm key
+ * with deep ambient occlusion, a moonlit study's cool cast becomes a cool key
+ * with a hard rim.
+ *
+ * `warmth` is the user's own slider (0 = moonlight, 1 = candlelit).
+ */
+export function rigForTheme(theme: LibraryTheme, warmth: number): LightRig {
+  const light = theme.light;
+  const w = Number.isFinite(warmth) ? Math.min(1, Math.max(0, warmth)) : 0.5;
+  // The brightest pool is the room's key; its position gives the key's angle.
+  const key = [...light.pools].sort((a, b) => b.intensity - a.intensity)[0];
+  // Pool coordinates are viewport fractions; a pool up and to the right means
+  // light travelling down and to the left.
+  const angle =
+    key === undefined
+      ? DEFAULT_LIGHT_RIG.keyAngle
+      : Math.atan2(0.5 - key.y, 0.5 - key.x) + Math.PI;
+
+  const ambient = light.ambient;
+  const rim = light.rim;
+  return {
+    ...DEFAULT_LIGHT_RIG,
+    id: `theme:${theme.id}`,
+    label: theme.name,
+    keyAngle: angle,
+    keyColour: key?.colour ?? DEFAULT_LIGHT_RIG.keyColour,
+    // A candlelit room is not a brighter room — it is a warmer, lower one, so
+    // warmth moves the key only a little and the temperature split a lot.
+    keyIntensity: 0.86 + (key?.intensity ?? 0.5) * 0.4,
+    ambientColour: ambient.colour,
+    ambientLevel: 0.1 + ambient.amount * 0.22,
+    fillIntensity: 0.2 + (1 - w) * 0.16,
+    rimColour: rim?.colour ?? DEFAULT_LIGHT_RIG.rimColour,
+    rimStrength: rim === null ? 0.28 : 0.3 + rim.intensity * 0.5,
+    vignette: Math.min(0.6, light.vignette.amount * 0.9),
+    vignetteColour: light.vignette.colour,
+    temperatureShift: -0.25 + w * 0.85,
+    shafts: light.shafts ? DEFAULT_LIGHT_RIG.shafts : [],
+  };
+}
+
+/* ========================================================================== *
+ *                                 the pass                                   *
+ * ========================================================================== */
+
+function flagOff(name: string): boolean {
+  if (typeof location === 'undefined') return false;
+  return new RegExp(`[?&]${name}=0`).test(location.search);
+}
+
+export interface SceneLightOptions {
+  /** Half-res by default; drop to 0.35 on a weak GPU. */
+  resolution?: number;
+  quality?: LightingQuality;
+}
+
+export class SceneLight {
+  private buffer: CanvasNormalBuffer | null = null;
+  private filter: DeferredLightingFilter | null = null;
+  private target: Container | null = null;
+  private vpW = 1;
+  private vpH = 1;
+  /** Signature of the last painted scene — repaint only when it changes. */
+  private lastSig = '';
+  private destroyed = false;
+
+  readonly enabled: boolean;
+
+  constructor(renderer: Renderer | null, opts: SceneLightOptions = {}) {
+    this.enabled = !flagOff('scenelight') && isDeferredLightingSupported(renderer);
+    if (!this.enabled) return;
+    this.buffer = new CanvasNormalBuffer({
+      width: 1,
+      height: 1,
+      resolution: opts.resolution ?? 0.5,
+    });
+    this.filter = new DeferredLightingFilter({
+      rig: DEFAULT_LIGHT_RIG,
+      normals: this.buffer,
+      quality: opts.quality ?? 'medium',
+      sceneWidth: 1,
+      sceneHeight: 1,
+    });
+  }
+
+  /** Hang the pass on the world container. Safe to call once. */
+  attach(target: Container): void {
+    if (!this.enabled || this.filter === null || this.destroyed) return;
+    this.target = target;
+    target.filters = [this.filter];
+  }
+
+  /** Take the pass back off (degrade mode, teardown). */
+  detach(): void {
+    if (this.target !== null) this.target.filters = [];
+    this.target = null;
+  }
+
+  setRig(rig: LightRig): void {
+    this.filter?.setRig(rig);
+  }
+
+  /** Seconds, for drifting shafts and any animated light. */
+  setTime(seconds: number): void {
+    this.filter?.setTime(seconds);
+  }
+
+  resize(width: number, height: number): void {
+    if (!this.enabled || this.buffer === null || this.filter === null) return;
+    this.vpW = Math.max(1, Math.round(width));
+    this.vpH = Math.max(1, Math.round(height));
+    this.buffer.resize(this.vpW, this.vpH);
+    this.filter.setSceneSize(this.vpW, this.vpH);
+    this.lastSig = '';
+  }
+
+  /**
+   * Repaint the height field for this frame, and keep the filter's area
+   * pinned to the viewport in world coordinates.
+   *
+   * Pixi transforms `filterArea` by the container's world transform, so the
+   * rect handed over is in WORLD units — get that wrong and the pass either
+   * renders the entire endless shelf into one texture or clips the frame.
+   */
+  update(scene: LitScene): void {
+    if (!this.enabled || this.buffer === null || this.filter === null || this.destroyed) return;
+    if (scene.viewportW !== this.vpW || scene.viewportH !== this.vpH) {
+      this.resize(scene.viewportW, scene.viewportH);
+    }
+    if (this.target !== null) {
+      this.target.filterArea = new Rectangle(
+        scene.cameraX,
+        scene.cameraY,
+        scene.viewportW / scene.zoom,
+        scene.viewportH / scene.zoom,
+      );
+    }
+
+    const sig = signature(scene);
+    if (sig === this.lastSig) return;
+    this.lastSig = sig;
+
+    const buffer = this.buffer;
+    const ctx = buffer.ctx;
+    buffer.reset();
+
+    const z = scene.zoom;
+    const sx = (wx: number): number => (wx - scene.cameraX) * z;
+    const sy = (wy: number): number => (wy - scene.cameraY) * z;
+
+    const caseL = sx(0);
+    const caseW = SHELF_WIDTH * z;
+
+    for (const floor of scene.floors) {
+      const top = sy(floor.y);
+      // 1. The recess the books stand in.
+      emitHeight(ctx, BACK_PANEL, {
+        x: caseL,
+        y: top,
+        width: caseW,
+        height: BOOK_ZONE_H * z,
+      });
+      // 2. The plank, and its chamfered front lip.
+      emitHeight(ctx, PLANK, {
+        x: caseL,
+        y: sy(floor.y + BOOK_ZONE_H),
+        width: caseW,
+        height: (FLOOR_H - BOOK_ZONE_H) * z,
+      });
+      // 3. The case frame. Drawn after the panel so the rails stand on it.
+      for (const rx of [0, SHELF_WIDTH - RAIL_W]) {
+        emitHeight(ctx, RAIL, {
+          x: sx(rx),
+          y: top,
+          width: RAIL_W * z,
+          height: FLOOR_H * z,
+        });
+      }
+      // 4. The books.
+      for (const spine of floor.spines) {
+        const w = spine.w * z;
+        const h = spine.h * z;
+        if (w < 1.5 || h < 1.5) continue;
+        // A book that stands proud is BOTH taller in the height field and
+        // lifted off the back plane; one without the other reads as a decal.
+        const proud = Math.max(-0.18, Math.min(0.22, spine.proud / 48));
+        emitHeight(ctx, spineShape(spine.lean, radiusFor(spine.w), 0.62 + proud), {
+          x: sx(spine.centerX - spine.w / 2),
+          y: sy(spine.baseY - spine.h),
+          width: w,
+          height: h,
+          rotation: spine.lean,
+          heightOffset: proud * 0.5,
+        });
+      }
+    }
+
+    // 5. The cornice, over everything, overhanging both sides.
+    if (scene.crown) {
+      emitHeight(ctx, CROWN, {
+        x: sx(-CROWN_LIP),
+        y: sy(-CROWN_H),
+        width: (SHELF_WIDTH + CROWN_LIP * 2) * z,
+        height: CROWN_H * z,
+      });
+    }
+
+    buffer.flush();
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.detach();
+    this.filter?.destroy();
+    this.filter = null;
+    this.buffer?.destroy();
+    this.buffer = null;
+  }
+}
+
+/**
+ * A thicker book rolls over a smaller FRACTION of its width — the physical
+ * radius of the joint is roughly constant, so a 46px folio's shoulder is a
+ * smaller share of its face than a 28px duodecimo's.
+ */
+function radiusFor(widthWorldPx: number): number {
+  return Math.max(0.12, Math.min(0.34, 8 / Math.max(8, widthWorldPx)));
+}
+
+/**
+ * Cheap identity for a painted frame.
+ *
+ * Repainting the height field costs a few hundred `drawImage`s and a texture
+ * upload; doing it on a frame where nothing moved is pure waste, and the shelf
+ * renders continuously (motes, hover springs, momentum). Quantized so that a
+ * sub-pixel camera drift does not force a repaint the eye could not see.
+ */
+function signature(scene: LitScene): string {
+  const parts: (string | number)[] = [
+    Math.round(scene.cameraX * 2),
+    Math.round(scene.cameraY * 2),
+    Math.round(scene.zoom * 400),
+    scene.viewportW,
+    scene.viewportH,
+    scene.crown ? 1 : 0,
+    scene.floors.length,
+  ];
+  for (const floor of scene.floors) {
+    parts.push(Math.round(floor.y), floor.spines.length);
+    for (const s of floor.spines) {
+      parts.push(
+        Math.round(s.centerX),
+        Math.round(s.baseY),
+        Math.round(s.w),
+        Math.round(s.h),
+        Math.round(s.lean * 50),
+      );
+    }
+  }
+  return parts.join(',');
+}

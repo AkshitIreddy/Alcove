@@ -1,0 +1,20 @@
+const { M, C, S } = globalThis;
+const CASES = [['leather',1],['leather',2],['cloth',1],['cloth',0],['linen',0],['paper',0],['vellum',0],['marbled',0]];
+const W=250,H=340,PAD=12,LBL=22;
+const c=document.createElement('canvas');
+c.width = 16 + 4*(W*2+PAD+26); c.height = 30 + 2*(H+LBL+16);
+const g=c.getContext('2d'); g.fillStyle='#171310'; g.fillRect(0,0,c.width,c.height); g.textBaseline='middle';
+CASES.forEach(([mat,bs],i)=>{
+  const col=i%4, row=Math.floor(i/4);
+  const x=16+col*(W*2+PAD+26), y=30+row*(H+LBL+16);
+  const p=C.deriveCoverParams(S.deriveSpineParams(9100+i*137), 9100+i*137);
+  p.material=mat; p.boardStyle=bs; p.wear=0.25;
+  g.fillStyle='#f2e8d5'; g.font='700 14px system-ui'; g.fillText(mat+'·'+bs, x, y-10);
+  g.fillStyle='#9fb6c8'; g.font='600 11px system-ui'; g.fillText('procedural', x, y+8);
+  g.fillStyle='#ffd9a0'; g.fillText('material', x+W+PAD, y+8);
+  M.setMaterialsEnabled(false);
+  g.drawImage(C.renderCover(W,H,p,'Peregrine Pickle'), x, y+18);
+  M.setMaterialsEnabled(true);
+  g.drawImage(C.renderCover(W,H,p,'Peregrine Pickle'), x+W+PAD, y+18);
+});
+return c.toDataURL('image/png');

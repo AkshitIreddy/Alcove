@@ -43,7 +43,55 @@ export interface FloraJob {
   dpr: number;
 }
 
-export type ArtJob = SpineJob | FloraJob;
+/**
+ * One piece of the room's furniture: a shelf plank, a side rail, the cornice,
+ * the back panel, or a multi-floor strip of the wall behind it.
+ *
+ * These are single big paints (a themed plank measured ~1s, the cornice ~0.5s)
+ * that all land in the same first second as the spines, so leaving them on the
+ * main thread would keep a visible hitch right where the shelf appears.
+ */
+export type CasePart =
+  /* themed (art/caseArt.ts) — the room the user picked */
+  | 'plank'
+  | 'rail'
+  | 'crown'
+  | 'back'
+  | 'wall'
+  /* untinted base case (art/wood.ts, art/paper.ts) — the fallback the shelf
+   * shows before a theme lands, and the source every wood stain derives from */
+  | 'base-plank'
+  | 'base-shadow'
+  | 'base-paper'
+  | 'base-back'
+  | 'base-rail'
+  | 'base-crown'
+  | 'base-wallpaper'
+  /* a whole little case in one raster — the Library Studio's theme cards and
+   * any other room preview (`caseArt.renderCaseSection`) */
+  | 'card';
+
+export interface CaseJob {
+  kind: 'case';
+  id: number;
+  part: CasePart;
+  themeId: string;
+  /** Wall only: which backdrop renderer and which paper to hang on it. */
+  backdrop: string;
+  wallpaper: { pattern: string; colourway: string; tile: number };
+  /** Design size in world px. */
+  w: number;
+  h: number;
+  /** Wall only: the floor pitch its vertical features repeat on. */
+  floorH: number;
+  /** Card only: text for the floor plate ('' leaves it blank). */
+  label?: string;
+  /** Card only: draw books on the shelf. Default true. */
+  books?: boolean;
+  dpr: number;
+}
+
+export type ArtJob = SpineJob | FloraJob | CaseJob;
 
 /* -------------------------------- results -------------------------------- */
 
@@ -66,6 +114,14 @@ export interface FloraResult {
   ms: number;
 }
 
+export interface CaseResult {
+  kind: 'case';
+  id: number;
+  ok: true;
+  bitmap: ImageBitmap;
+  ms: number;
+}
+
 export interface ArtFailure {
   kind: 'error';
   id: number;
@@ -81,7 +137,7 @@ export interface ArtReady {
   fonts: string[];
 }
 
-export type ArtResult = SpineResult | FloraResult | ArtFailure;
+export type ArtResult = SpineResult | FloraResult | CaseResult | ArtFailure;
 export type ArtMessage = ArtResult | ArtReady;
 
 /**

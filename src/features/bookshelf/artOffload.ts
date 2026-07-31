@@ -23,7 +23,14 @@
  * `SpineFactory` survive the trip.
  */
 
-import { ART_JOB_TIMEOUT_MS, type ArtJob, type ArtMessage, type FloraJob, type SpineJob } from './artJobs';
+import {
+  ART_JOB_TIMEOUT_MS,
+  type ArtJob,
+  type ArtMessage,
+  type CaseJob,
+  type FloraJob,
+  type SpineJob,
+} from './artJobs';
 import type { Rect } from '../../art/flora';
 
 /** Never spin up more than this many painting threads. */
@@ -68,6 +75,10 @@ function queryFlag(name: string): string | null {
  * with `?artworker=0` (which is how the freeze probe measures the before/after
  * without needing two builds).
  */
+/** QA builds (`?fx=`, `?bakeprof=`) narrate every fallback. */
+const VERBOSE =
+  typeof location !== 'undefined' && /[?&](fx|bakeprof|artworker)=/.test(location.search);
+
 function offloadSupported(): boolean {
   if (queryFlag('artworker') === '0') return false;
   if (typeof Worker === 'undefined') return false;
@@ -104,9 +115,22 @@ export class ArtOffload {
     return !this.disabled && !this.destroyed;
   }
 
-  /** Live worker count (0 before the first job). */
+  /** Live worker count (0 until {@link warmUp} or the first job). */
   get size(): number {
     return this.slots.length;
+  }
+
+  /**
+   * Spin the pool up now rather than on the first job.
+   *
+   * Worth doing early: a module worker has to fetch and compile the whole art
+   * bundle before it can paint anything, and doing that concurrently with the
+   * app's own boot hides it entirely. Also makes {@link size} meaningful, so
+   * the caller can size its in-flight budget correctly on the very first pump.
+   */
+  warmUp(): void {
+    if (!this.available) return;
+    this.ensureStarted();
   }
 
   /** {jobs, ms} painted off-thread so far. */
@@ -130,6 +154,12 @@ export class ArtOffload {
       kind: 'flora',
     });
     return res === null ? null : { bitmap: res.bitmap, bounds: res.bounds, ms: res.ms };
+  }
+
+  /** Paint one piece of case furniture off-thread. `null` = do it yourself. */
+  async casePart(job: Omit<CaseJob, 'id' | 'kind'>): Promise<SpinePaint | null> {
+    const res = await this.submit<{ bitmap: ImageBitmap; ms: number }>({ ...job, kind: 'case' });
+    return res === null ? null : { bitmap: res.bitmap, ms: res.ms };
   }
 
   destroy(): void {
@@ -171,8 +201,13 @@ export class ArtOffload {
         slot.worker.postMessage(message);
       });
       return value;
-    } catch {
+    } catch (err) {
       // Every failure mode collapses to the same answer: the caller paints it.
+      // Silent in production; loud under any QA flag, because a worker that is
+      // quietly failing looks exactly like a worker that is quietly working.
+      if (VERBOSE) {
+        console.warn(`[artOffload] ${job.kind} fell back to the main thread:`, err);
+      }
       return null;
     }
   }

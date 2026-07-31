@@ -47,8 +47,8 @@ import * as P from './brush';
  * 1. Manifest
  * ========================================================================== */
 
-/** The five families the art code asks for by name. */
-export type MaterialCategory = 'leather' | 'cloth' | 'paper' | 'wood' | 'marble';
+/** The families the art code asks for by name. */
+export type MaterialCategory = 'leather' | 'cloth' | 'paper' | 'wood' | 'marble' | 'wallpaper';
 
 /**
  * How much of the tile's own identity survives tinting.
@@ -110,22 +110,45 @@ export interface MaterialEntry {
 export const MATERIAL_MANIFEST: readonly MaterialEntry[] = [
   // Craquelure. The crack net is huge in tile space, so it needs a *large*
   // repeat to stay legible as cracks; squeeze it and it silts up into noise.
-  { slug: 'leather-cracked', category: 'leather', role: 'grain', file: 'leather-cracked.webp', size: 512, mean: 0.53333, spread: 0.14209, saturation: 0.40528, paint: { tilePx: 150, contrast: 0.8, colourMix: 0.1 } },
+  { slug: 'leather-cracked', category: 'leather', role: 'grain', file: 'leather-cracked.webp', size: 512, mean: 0.53397, spread: 0.14113, saturation: 0.41606, paint: { tilePx: 115, contrast: 0.72, colourMix: 0.1 } },
   // The best tile in the set: tight pebbled goatskin, right at spine scale.
-  { slug: 'leather-morocco', category: 'leather', role: 'grain', file: 'leather-morocco.webp', size: 512, mean: 0.48967, spread: 0.1154, saturation: 0.55479, paint: { tilePx: 130, contrast: 1, colourMix: 0.1 } },
-  // Coloured slubs are linen's whole identity — it gets three times the hue
-  // mix of the other grains so the flecks stay flecks and not dark specks.
-  { slug: 'cloth-linen', category: 'cloth', role: 'grain', file: 'cloth-linen.webp', size: 512, mean: 0.63367, spread: 0.16191, saturation: 0.2899, paint: { tilePx: 170, contrast: 0.95, colourMix: 0.3 } },
+  { slug: 'leather-morocco', category: 'leather', role: 'grain', file: 'leather-morocco.webp', size: 512, mean: 0.49017, spread: 0.1147, saturation: 0.55761, paint: { tilePx: 130, contrast: 1, colourMix: 0.1 } },
+  // Coloured slubs are linen's whole identity — it gets twice the hue mix of
+  // the other grains so the flecks stay flecks and not dark specks. The model
+  // painted them at roughly four times life size, though: at a 150 px repeat
+  // a single slub was 6 px on a 34 px spine and read as polka dots on a
+  // cover, so the repeat is squeezed until a slub is a slub.
+  { slug: 'cloth-linen', category: 'cloth', role: 'grain', file: 'cloth-linen.webp', size: 512, mean: 0.63423, spread: 0.16134, saturation: 0.28686, paint: { tilePx: 82, contrast: 0.6, colourMix: 0.24 } },
   // Very fine warp: below a ~200 px repeat the rib mips away to nothing.
-  { slug: 'cloth-ribbed', category: 'cloth', role: 'grain', file: 'cloth-ribbed.webp', size: 512, mean: 0.62206, spread: 0.18016, saturation: 0.34131, paint: { tilePx: 260, contrast: 1, colourMix: 0.12 } },
-  { slug: 'paper-laid', category: 'paper', role: 'grain', file: 'paper-laid.webp', size: 512, mean: 0.72907, spread: 0.1522, saturation: 0.21837, paint: { tilePx: 200, contrast: 0.85, colourMix: 0.12 } },
+  { slug: 'cloth-ribbed', category: 'cloth', role: 'grain', file: 'cloth-ribbed.webp', size: 512, mean: 0.62256, spread: 0.1797, saturation: 0.34308, paint: { tilePx: 260, contrast: 0.8, colourMix: 0.12 } },
+  { slug: 'paper-laid', category: 'paper', role: 'grain', file: 'paper-laid.webp', size: 512, mean: 0.72963, spread: 0.15014, saturation: 0.22109, paint: { tilePx: 130, contrast: 0.7, colourMix: 0.12 } },
   // Lowest spread in the library (0.088) — needs the contrast boost or it
   // lands as a flat fill, which is the exact failure this module exists for.
-  { slug: 'vellum', category: 'paper', role: 'grain', file: 'vellum.webp', size: 512, mean: 0.68674, spread: 0.08751, saturation: 0.29918, paint: { tilePx: 150, contrast: 1.45, colourMix: 0.18 } },
-  { slug: 'paper-marbled', category: 'marble', role: 'figure', file: 'paper-marbled.webp', size: 512, mean: 0.5791, spread: 0.20026, saturation: 0.50143, paint: { tilePx: 230, contrast: 0.85, colourMix: 0.62 } },
-  { slug: 'wood-oak', category: 'wood', role: 'figure', file: 'wood-oak.webp', size: 512, mean: 0.54834, spread: 0.13535, saturation: 0.3773, paint: { tilePx: 300, contrast: 1, colourMix: 0.66 } },
-  { slug: 'wood-walnut', category: 'wood', role: 'figure', file: 'wood-walnut.webp', size: 512, mean: 0.49364, spread: 0.18897, saturation: 0.51915, paint: { tilePx: 340, contrast: 0.9, colourMix: 0.66 } },
-  { slug: 'wood-painted', category: 'wood', role: 'figure', file: 'wood-painted.webp', size: 512, mean: 0.57302, spread: 0.1893, saturation: 0.3414, paint: { tilePx: 320, contrast: 0.9, colourMix: 0.7 } },
+  { slug: 'vellum', category: 'paper', role: 'grain', file: 'vellum.webp', size: 512, mean: 0.68734, spread: 0.08646, saturation: 0.29823, paint: { tilePx: 150, contrast: 1.45, colourMix: 0.18 } },
+  { slug: 'paper-marbled', category: 'marble', role: 'figure', file: 'paper-marbled.webp', size: 512, mean: 0.5791, spread: 0.19732, saturation: 0.48724, paint: { tilePx: 230, contrast: 0.85, colourMix: 0.62 } },
+  { slug: 'wood-oak', category: 'wood', role: 'figure', file: 'wood-oak.webp', size: 512, mean: 0.54894, spread: 0.13492, saturation: 0.38163, paint: { tilePx: 300, contrast: 1, colourMix: 0.66 } },
+  { slug: 'wood-walnut', category: 'wood', role: 'figure', file: 'wood-walnut.webp', size: 512, mean: 0.49424, spread: 0.18845, saturation: 0.52381, paint: { tilePx: 340, contrast: 0.9, colourMix: 0.66 } },
+  { slug: 'wood-painted', category: 'wood', role: 'figure', file: 'wood-painted.webp', size: 512, mean: 0.57366, spread: 0.18875, saturation: 0.3491, paint: { tilePx: 320, contrast: 0.9, colourMix: 0.7 } },
+
+  // ---- printed wallpapers -------------------------------------------------
+  // Shipped at 768² rather than 512² because the wall is the largest surface
+  // on screen and its motifs are read at full size, not minified onto a spine.
+  //
+  // Two numbers here look wrong next to the rest of the table and are not.
+  // `colourMix` is near-total: a wallpaper's drawing IS its colour — an
+  // acanthus scroll repainted in the room's single base hue is a stencil, not
+  // a printed paper — so almost nothing of the tint's chroma is allowed to
+  // stand in front of it. And `tilePx` is the largest in the library because
+  // one repeat of a damask is a *motif*, roughly a foot of wall; squeeze it to
+  // material scale and the drawing turns into upholstery tweed.
+  //
+  // Their luminance spread (0.29–0.35) is also double any other tile's, which
+  // is exactly the point: that spread is where the room's depth comes from
+  // once the light pass has something to bite on.
+  { slug: 'wallpaper-damask', category: 'wallpaper', role: 'figure', file: 'wallpaper-damask.webp', size: 768, mean: 0.5732, spread: 0.29468, saturation: 0.54844, paint: { tilePx: 460, contrast: 1, colourMix: 0.88 } },
+  { slug: 'wallpaper-toile', category: 'wallpaper', role: 'figure', file: 'wallpaper-toile.webp', size: 768, mean: 0.59474, spread: 0.29738, saturation: 0.29147, paint: { tilePx: 470, contrast: 1, colourMix: 0.88 } },
+  { slug: 'wallpaper-ditsy', category: 'wallpaper', role: 'figure', file: 'wallpaper-ditsy.webp', size: 768, mean: 0.60035, spread: 0.30709, saturation: 0.48446, paint: { tilePx: 430, contrast: 1, colourMix: 0.88 } },
+  { slug: 'wallpaper-vine', category: 'wallpaper', role: 'figure', file: 'wallpaper-vine.webp', size: 768, mean: 0.50522, spread: 0.35443, saturation: 0.51333, paint: { tilePx: 470, contrast: 1, colourMix: 0.88 } },
 ];
 
 /** Where the shipped tiles live, relative to the app root. */
@@ -139,6 +162,7 @@ const BY_CATEGORY: Readonly<Record<MaterialCategory, readonly string[]>> = {
   paper: MATERIAL_MANIFEST.filter((m) => m.category === 'paper').map((m) => m.slug),
   wood: MATERIAL_MANIFEST.filter((m) => m.category === 'wood').map((m) => m.slug),
   marble: MATERIAL_MANIFEST.filter((m) => m.category === 'marble').map((m) => m.slug),
+  wallpaper: MATERIAL_MANIFEST.filter((m) => m.category === 'wallpaper').map((m) => m.slug),
 };
 
 /** Slugs in a category, in manifest order. Empty array for an unknown name. */
@@ -276,6 +300,7 @@ export function materialCount(): number {
 export function clearMaterialCache(): void {
   TILES.clear();
   FAILED.clear();
+  GRADED.clear();
   readyResolved = false;
   readyPromise = null;
 }
@@ -585,6 +610,17 @@ export interface SampleMaterialOptions {
    * in over a painted underlayer rather than dropping it on like a decal.
    */
   gradient?: (x: number, y: number) => number;
+  /**
+   * How hard to force the *sampled crop* back to the tint's value, 0..1.
+   *
+   * Without this the tile's own composition leaks into the palette: crop the
+   * dark half of the marbled sheet and a book the theme designed as a light
+   * accent comes out as a dark mass. The value-first themes in
+   * `docs/design/painted-rendering.md` only work if a pigment's luminance is
+   * the luminance that lands. 1 removes the drift entirely; 0 keeps all of it.
+   * Default 0.75 — enough that two books in the same leather still differ.
+   */
+  balance?: number;
   /** Value floor, so a dark tile region never crushes to pure black. 0.04. */
   floor?: number;
   /** Value ceiling relative to the tint. Default 2.6. */
@@ -654,8 +690,44 @@ export function sampleMaterial(
 
   const surface = P.createSurface(w, h);
   const d = surface.data;
-  const mean = Math.max(0.02, tile.mean);
+  let mean = Math.max(0.02, tile.mean);
   const texel = { r: 0, g: 0, b: 0, l: 0 };
+
+  // Crop balancing: re-derive the divisor from the region actually sampled,
+  // on a coarse grid, and blend it toward the tile-wide mean by `balance`.
+  // ~1500 texel fetches, i.e. free next to the per-pixel loop below.
+  const balance = clamp01(opts.balance ?? 0.75);
+  if (balance > 0) {
+    const gx = Math.min(w, 40);
+    const gy = Math.min(h, 40);
+    let acc = 0;
+    for (let j = 0; j < gy; j++) {
+      for (let i = 0; i < gx; i++) {
+        const px = ((i + 0.5) / gx) * w;
+        const py = ((j + 0.5) / gy) * h;
+        let u = px * sx;
+        let v = py * sy;
+        if (flipX) u = -u;
+        if (flipY) v = -v;
+        let tu = u;
+        let tv = v;
+        if (rot === 90) {
+          tu = -v;
+          tv = u;
+        } else if (rot === 180) {
+          tu = -u;
+          tv = -v;
+        } else if (rot === 270) {
+          tu = v;
+          tv = -u;
+        }
+        fetchTexel(level, tu + baseX, tv + baseY, texel);
+        acc += texel.l;
+      }
+    }
+    const cropMean = Math.max(0.02, acc / (gx * gy));
+    mean = mean + (cropMean - mean) * balance;
+  }
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -720,6 +792,38 @@ export function sampleMaterial(
       d[i + 3] = a;
     }
   }
+
+  // Second half of crop balancing: the pre-pass got the *pivot* right, this
+  // gets the *result* right. Dividing by a predicted mean is not enough —
+  // channel clipping, the hue mix and the floor/ceiling clamps all bias the
+  // outcome, and measuring showed every material landing 0.04–0.06 darker
+  // than the pigment the theme asked for, which is exactly the kind of drift
+  // that turns a designed value structure into mid-tone mush. So: measure what
+  // actually came out and scale it onto the tint's luminance.
+  if (balance > 0) {
+    let acc = 0;
+    let cnt = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const av = d[i + 3];
+      if (av <= 0.002) continue;
+      acc += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / av;
+      cnt++;
+    }
+    if (cnt > 0) {
+      const got = Math.max(0.008, acc / cnt);
+      // Bounded so a pathologically dark crop cannot blow the whole patch out.
+      const corr = Math.min(1.9, Math.max(0.55, Math.pow(tintL / got, balance)));
+      if (Math.abs(corr - 1) > 0.004) {
+        for (let i = 0; i < d.length; i += 4) {
+          const av = d[i + 3];
+          if (av <= 0.002) continue;
+          d[i] = clamp01((d[i] / av) * corr) * av;
+          d[i + 1] = clamp01((d[i + 1] / av) * corr) * av;
+          d[i + 2] = clamp01((d[i + 2] / av) * corr) * av;
+        }
+      }
+    }
+  }
   return surface;
 }
 
@@ -745,6 +849,32 @@ export interface MaterialBaseOptions extends SampleMaterialOptions {
   /** Offset of the mask/material rect within the surface. Default 0,0. */
   originX?: number;
   originY?: number;
+  /**
+   * Multiply the material's alpha by the alpha already on the surface, so it
+   * can only dye paint that exists. Default true.
+   *
+   * This is not a detail. A painted mass is deliberately ragged at its
+   * boundary — strokes overshoot, the clip is noise-displaced, the last few px
+   * fade out — and that raggedness is most of what makes a book read as
+   * painted rather than as a sprite. A material patch composited at a flat
+   * alpha fills those gaps in and hands the silhouette a hard edge: measuring
+   * a shelf of spines showed the fringe going from mostly-translucent to
+   * ~87% opaque, which pulled a band of dark edge pixels into every value
+   * statistic and, worse, made the books look die-cut. Gating on destination
+   * alpha keeps the mass's own boundary exactly as the brush left it.
+   */
+  respectAlpha?: boolean;
+  /**
+   * Destination alpha at which `respectAlpha` reaches full strength, 0..1.
+   * Default 0.6.
+   *
+   * A brushed mass is not uniformly opaque even in its middle — 0.6–0.9 is
+   * normal where strokes have not quite doubled up — and scaling the material
+   * by raw destination alpha therefore washed it out everywhere, not just at
+   * the fringe. Ramping to full by 0.6 means the interior gets all of the
+   * material and only the genuinely see-through boundary is held back.
+   */
+  alphaGate?: number;
 }
 
 /**
@@ -783,21 +913,32 @@ export function materialBase(
 
   const blend = opts.blend ?? 'normal';
   const feather = Math.max(0.01, opts.feather ?? 1);
+  const respect = opts.respectAlpha !== false;
+  const gate = Math.max(0.02, Math.min(1, opts.alphaGate ?? 0.6));
 
-  if (!mask) {
-    P.compositeSurface(surface, patch, ox, oy, 1, blend);
-    return true;
-  }
-
-  // Multiply the patch's alpha by mask coverage before compositing, so the
-  // material stops exactly where the painted mass does — including the
-  // noise-displaced boundary `clipToMask` gave the mass.
-  const cov = mask.coverage;
+  // Gate the patch by mask coverage and (by default) by the paint already
+  // there, so the material stops exactly where the painted mass does —
+  // including the noise-displaced boundary `clipToMask` gave the mass.
+  const cov = mask ? mask.coverage : null;
   const pd = patch.data;
+  const sd = surface.data;
   for (let y = 0; y < h; y++) {
+    const sy = y + oy;
+    const rowInside = sy >= 0 && sy < surface.height;
     for (let x = 0; x < w; x++) {
-      const c = cov[y * mask.width + x];
-      const k = feather >= 1 ? c : clamp01(c / feather);
+      let k = 1;
+      if (cov && mask) {
+        const c = cov[y * mask.width + x];
+        k = feather >= 1 ? c : clamp01(c / feather);
+      }
+      if (respect && rowInside) {
+        const sxp = x + ox;
+        const da = sxp >= 0 && sxp < surface.width ? sd[(sy * surface.width + sxp) * 4 + 3] : 0;
+        k *= da >= gate ? 1 : da / gate;
+      } else if (respect) {
+        k = 0;
+      }
+      if (k >= 0.999) continue;
       const i = (y * w + x) * 4;
       pd[i] *= k;
       pd[i + 1] *= k;
@@ -860,6 +1001,233 @@ export function drawMaterialRect(
   ctx.drawImage(scratch as unknown as CanvasImageSource, x, y);
   ctx.restore();
   return true;
+}
+
+/* ========================================================================== *
+ * 5. Colour-graded prints — the wallpaper path
+ * ========================================================================== */
+
+/**
+ * Why the wallpapers do not go through {@link sampleMaterial}.
+ *
+ * Everything above this line exists to take a tile's *structure* and throw its
+ * colour away, because a spine's colour belongs to the book. A printed
+ * wallpaper is the opposite object. Its drawing and its colour are the same
+ * fact — a Morris damask is not "a scroll pattern that happens to be in peach
+ * on navy", it is the peach-on-navy — and the moment you renormalise it to a
+ * single tint's luminance you get the exact failure this whole rewrite is
+ * against: a flat pale field with some faint marks on it.
+ *
+ * So a wallpaper is *graded*, the way a colourist grades a photograph, not
+ * re-pigmented:
+ *
+ *   - **Hue** rotates by one constant angle for the entire sheet, chosen so
+ *     the print's dominant hue lands part-way toward the room's base. A
+ *     constant rotation is the whole trick: lerping every pixel *toward* the
+ *     base hue individually collapses leaf-green and flower-red onto the same
+ *     colour and the drawing dies. Rotating them together moves the room
+ *     without touching the print's internal harmony.
+ *   - **Chroma** is multiplied, never divided, and greys get a floor lift, so
+ *     the sheet comes out louder than the master rather than quieter.
+ *   - **Value** is kept as painted, with only a gentle pull toward the room's
+ *     own lightness — because the master's 0.29–0.35 luminance spread is
+ *     precisely the depth the flat procedural walls never had, and flattening
+ *     it to the base colour's value would throw away the reason to be here.
+ */
+export interface WallpaperGrade {
+  /** The room's body colour. Sets the value the sheet is pulled toward. */
+  base: P.ColourLike;
+  /**
+   * The colour the print's *hue* rotates toward. Defaults to `base`.
+   *
+   * These are separate because a room's body colour and the colour its paper
+   * is printed in are usually not the same fact, and conflating them produces
+   * nonsense. Blossom Grove is the case that forced it: its body colour is
+   * sky blue, so pulling the sheet toward `base` rotated coral blossom into
+   * electric blue and the leaves into lime. Its *accent* is the pink the
+   * blossom actually is — point the hue at that and the wall becomes the
+   * room it is named after.
+   */
+  hueToward?: P.ColourLike;
+  /** How far to rotate the print's hue toward the target, 0..1. Default 0.45. */
+  hueShift?: number;
+  /** Chroma multiplier. Above 1 makes the print louder. Default 1.2. */
+  vividness?: number;
+  /** Saturation floor applied to near-neutral pixels, 0..1. Default 0.1. */
+  chromaFloor?: number;
+  /** How far the sheet's value is pulled toward `base`'s value, 0..1. Default 0.18. */
+  valuePull?: number;
+  /** Overall exposure multiplier on value. Default 1. */
+  exposure?: number;
+  /** Output edge in px. Defaults to the tile's own size. */
+  size?: number;
+}
+
+type AnyCanvas2D = OffscreenCanvas | HTMLCanvasElement;
+
+const GRADED = new Map<string, AnyCanvas2D>();
+
+function rgbToHsv(r: number, g: number, b: number, out: { h: number; s: number; v: number }): void {
+  const max = r > g ? (r > b ? r : b) : g > b ? g : b;
+  const min = r < g ? (r < b ? r : b) : g < b ? g : b;
+  const d = max - min;
+  out.v = max;
+  out.s = max <= 0 ? 0 : d / max;
+  if (d <= 0) {
+    out.h = 0;
+    return;
+  }
+  let h: number;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  out.h = h;
+}
+
+function hsvToRgb(h: number, s: number, v: number, out: { r: number; g: number; b: number }): void {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: out.r = v; out.g = t; out.b = p; break;
+    case 1: out.r = q; out.g = v; out.b = p; break;
+    case 2: out.r = p; out.g = v; out.b = t; break;
+    case 3: out.r = p; out.g = q; out.b = v; break;
+    case 4: out.r = t; out.g = p; out.b = v; break;
+    default: out.r = v; out.g = p; out.b = q; break;
+  }
+}
+
+/** Chroma-weighted mean hue of a tile — what the sheet "reads as". */
+function dominantHue(tile: MaterialTile): number {
+  // The coarsest mip is plenty: we want the sheet's overall cast, and running
+  // this over 768² would cost more than the grade itself.
+  const lvl = tile.levels[Math.min(tile.levels.length - 1, 2)];
+  const n = lvl.size * lvl.size;
+  const hsv = { h: 0, s: 0, v: 0 };
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    rgbToHsv(lvl.rgb[i * 3] / 255, lvl.rgb[i * 3 + 1] / 255, lvl.rgb[i * 3 + 2] / 255, hsv);
+    // Weight by chroma so the ground's vast neutral area does not outvote the
+    // motifs that actually carry the sheet's identity.
+    const wgt = hsv.s * hsv.s * hsv.v;
+    const a = hsv.h * Math.PI * 2;
+    x += Math.cos(a) * wgt;
+    y += Math.sin(a) * wgt;
+  }
+  if (x === 0 && y === 0) return 0;
+  const ang = Math.atan2(y, x);
+  return ((ang / (Math.PI * 2)) % 1 + 1) % 1;
+}
+
+function newCanvas(w: number, h: number): AnyCanvas2D | null {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+/**
+ * Grade a print into a room and return it as a drawable canvas, cached.
+ *
+ * Cached hard, because this is a per-pixel pass over a 768² sheet and the wall
+ * asks for the same (print × room) combination for every tile it lays down —
+ * the difference between grading once and grading per tile is the difference
+ * between 4 ms and a visible hitch on every theme switch.
+ *
+ * `null` when the tile is not resident or there is no canvas to draw on, which
+ * is the caller's cue to paint the wall procedurally.
+ */
+export function gradedPrint(slug: string, grade: WallpaperGrade): AnyCanvas2D | null {
+  const tile = getMaterialTile(slug);
+  if (!tile) return null;
+
+  const size = Math.max(32, Math.round(grade.size ?? tile.size));
+  const hueShift = clamp01(grade.hueShift ?? 0.45);
+  const vividness = Math.max(0, grade.vividness ?? 1.2);
+  const chromaFloor = clamp01(grade.chromaFloor ?? 0.1);
+  const valuePull = clamp01(grade.valuePull ?? 0.18);
+  const exposure = Math.max(0.2, grade.exposure ?? 1);
+
+  const base = P.parseColour(grade.base);
+  const target = grade.hueToward === undefined ? base : P.parseColour(grade.hueToward);
+  const key =
+    `${slug}|${size}|${base.r.toFixed(3)},${base.g.toFixed(3)},${base.b.toFixed(3)}` +
+    `|${target.r.toFixed(3)},${target.g.toFixed(3)},${target.b.toFixed(3)}` +
+    `|${hueShift}|${vividness}|${chromaFloor}|${valuePull}|${exposure}`;
+  const hit = GRADED.get(key);
+  if (hit) return hit;
+
+  const canvas = newCanvas(size, size);
+  if (!canvas) return null;
+  const ctx = (canvas as OffscreenCanvas).getContext('2d', { willReadFrequently: true }) as
+    | OffscreenCanvasRenderingContext2D
+    | null;
+  if (!ctx) return null;
+
+  const baseHsv = { h: 0, s: 0, v: 0 };
+  rgbToHsv(base.r, base.g, base.b, baseHsv);
+  const targetHsv = { h: 0, s: 0, v: 0 };
+  rgbToHsv(target.r, target.g, target.b, targetHsv);
+
+  // One rotation for the whole sheet — see the note on WallpaperGrade.
+  // A near-neutral target has no meaningful hue to aim at (a grey "chrome"
+  // room would otherwise drag every print to pure red, hue 0), so it simply
+  // does not rotate.
+  const src = dominantHue(tile);
+  let delta = targetHsv.s < 0.08 ? 0 : targetHsv.h - src;
+  // Take the short way round the wheel, or a "pull toward blue" becomes a
+  // 300° trip through green and the print changes species.
+  if (delta > 0.5) delta -= 1;
+  else if (delta < -0.5) delta += 1;
+  const rot = delta * hueShift;
+
+  // The sheet is resampled from the mip whose texels best match the output, so
+  // asking for a 384 px wall tile off a 768 master is a filtered halve rather
+  // than point-sampling every other pixel.
+  const level = levelFor(tile, tile.size / size);
+  const step = level.size / size;
+
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  const hsv = { h: 0, s: 0, v: 0 };
+  const out = { r: 0, g: 0, b: 0 };
+  const texel = { r: 0, g: 0, b: 0, l: 0 };
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      fetchTexel(level, x * step, y * step, texel);
+      rgbToHsv(texel.r, texel.g, texel.b, hsv);
+
+      const h = (hsv.h + rot + 1) % 1;
+      // Lift neutrals toward the floor, then multiply — done in this order so
+      // a grey ground gains a tint instead of being multiplied by nothing.
+      let s = hsv.s + (chromaFloor - hsv.s) * (hsv.s < chromaFloor ? 0.75 : 0);
+      s = clamp01(s * vividness);
+      let v = hsv.v * exposure;
+      v = clamp01(v + (baseHsv.v - v) * valuePull);
+
+      hsvToRgb(h, s, v, out);
+      const i = (y * size + x) * 4;
+      d[i] = out.r * 255;
+      d[i + 1] = out.g * 255;
+      d[i + 2] = out.b * 255;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  GRADED.set(key, canvas);
+  return canvas;
+}
+
+/** Drop every graded sheet (theme churn in the studio, teardown, tests). */
+export function clearGradedPrints(): void {
+  GRADED.clear();
 }
 
 /**

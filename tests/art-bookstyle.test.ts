@@ -45,7 +45,14 @@ import {
   thicknessFromPageCount,
   type BookStyle,
 } from '../src/art/bookStyle';
-import { SPINE_PALETTES, composeShelfRow, deriveSpineParams } from '../src/art/spines';
+import { MATERIAL_MANIFEST, materialEntry } from '../src/art/materials';
+import {
+  MAX_BOARD_STYLE,
+  SPINE_PALETTES,
+  bindingMaterialSlug,
+  composeShelfRow,
+  deriveSpineParams,
+} from '../src/art/spines';
 
 const SEEDS = [0, 1, 7, 42, 1337, 0xbeef, 0xfeedface, 0xffffffff];
 
@@ -542,6 +549,71 @@ describe('painted rebuild — row density', () => {
     expect(a.placements.map((p) => [p.id, Math.round(p.x), Math.round(p.width)])).toEqual(
       b.placements.map((p) => [p.id, Math.round(p.x), Math.round(p.width)]),
     );
+  });
+});
+
+/* --------------------- generated covering materials ---------------------- */
+
+describe('binding → generated tile', () => {
+  const SLUGS = new Set(MATERIAL_MANIFEST.map((m) => m.slug));
+
+  it('maps every binding to a tile that actually ships, or to nothing', () => {
+    for (const material of BINDING_MATERIALS) {
+      for (let boardStyle = 0; boardStyle <= MAX_BOARD_STYLE; boardStyle++) {
+        const slug = bindingMaterialSlug(material, boardStyle);
+        if (slug === null) continue;
+        expect(SLUGS.has(slug), `${material}/${boardStyle} → ${slug}`).toBe(true);
+      }
+    }
+  });
+
+  it('leaves silk to the brush engine', () => {
+    // Silk's identity is a satin sheen that slides as the eye moves. A static
+    // tile cannot carry that, so the procedural version stays authoritative —
+    // this is the one binding the library is deliberately not used for.
+    for (let b = 0; b <= MAX_BOARD_STYLE; b++) {
+      expect(bindingMaterialSlug('silk', b)).toBeNull();
+    }
+  });
+
+  it('sends each binding to a tile of a sensible family', () => {
+    const want: Partial<Record<(typeof BINDING_MATERIALS)[number], string>> = {
+      leather: 'leather',
+      cloth: 'cloth',
+      linen: 'cloth',
+      paper: 'paper',
+      vellum: 'paper',
+      marbled: 'marble',
+    };
+    for (const [material, category] of Object.entries(want)) {
+      const slug = bindingMaterialSlug(material as (typeof BINDING_MATERIALS)[number], 0);
+      expect(slug, material).not.toBeNull();
+      expect(materialEntry(slug!)?.category, material).toBe(category);
+    }
+  });
+
+  it('uses the board sub-style to choose which leather and which cloth', () => {
+    // boardStyle already says *pebbled morocco* or *craquelure*, *ribbed rep*
+    // or *slubby buckram*, and the library happens to contain exactly those
+    // distinctions — so the sub-style has to reach the tile choice or the
+    // studio control stops meaning anything.
+    expect(bindingMaterialSlug('leather', 2)).not.toBe(bindingMaterialSlug('leather', 0));
+    expect(bindingMaterialSlug('cloth', 1)).not.toBe(bindingMaterialSlug('cloth', 0));
+  });
+
+  it('is a pure function of its two arguments', () => {
+    for (const material of BINDING_MATERIALS) {
+      for (let b = 0; b <= MAX_BOARD_STYLE; b++) {
+        expect(bindingMaterialSlug(material, b)).toBe(bindingMaterialSlug(material, b));
+      }
+    }
+  });
+
+  it('tolerates an out-of-range board style', () => {
+    for (const material of BINDING_MATERIALS) {
+      expect(() => bindingMaterialSlug(material, -3)).not.toThrow();
+      expect(() => bindingMaterialSlug(material, 99)).not.toThrow();
+    }
   });
 });
 

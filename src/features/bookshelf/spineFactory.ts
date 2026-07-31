@@ -6,14 +6,27 @@
  * shelf-packing), one Pixi CanvasSource per page, sub-rect Textures per book.
  * Two buckets: lo-res (≈0.62×, effectively permanent — 2 pages hold ~1500
  * spines) and hi-res (2×, title text baked in, page-LRU capped at 4 pages
- * ≈ 64MB). Baking is chunked through requestIdleCallback (4 spines/slice)
- * prioritized by distance to the viewport, so a floor scrolled into view
- * shows lo-res instantly and sharpens within ~100ms.
+ * ≈ 64MB).
+ *
+ * ## Where the painting happens
+ *
+ * Off the main thread, whenever that is possible. A painted spine is seconds
+ * of brush work (`docs/design/painted-rendering.md`), which no amount of
+ * slicing can make invisible — the atom is one spine. So the default path
+ * ships the recipe to `artOffload` and the main thread's whole share becomes a
+ * single `drawImage` of the returned `ImageBitmap` into the atlas page.
+ *
+ * The old inline path is still here, unchanged, as the fallback: no worker
+ * support, a dead worker or a job that timed out all land on `bakeOneTimed`,
+ * chunked through `requestIdleCallback` with a per-slice time budget and
+ * prioritised by distance to the viewport.
  */
 
 import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { AtlasManager, type AtlasPage } from '../../art/atlas';
 import { recordBakeSample } from '../../art/bake';
+import { artOffload, type ArtOffload } from './artOffload';
+import { installArtRoutes } from './artRoutes';
 import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
 import { renderSpine, type Ctx2D, type SpineParams } from '../../art/spines';
 import { getTheme, type LibraryTheme } from '../../art/themes';
@@ -89,6 +102,17 @@ const observedCost: Record<SpineVariant, number> = { lo: 4, hi: 12 };
  */
 export const FONT_WAIT_MAX_MS = 2500;
 
+/**
+ * How many spine jobs may be outstanding in the worker pool at once.
+ *
+ * Two per thread: one painting, one already queued so a thread never idles
+ * between jobs, and no more — the queue is re-sorted by distance to the
+ * viewport on every request, and anything already handed to a worker has left
+ * that ordering behind. A deep in-flight queue would mean panning the shelf
+ * waits for spines the camera left three floors ago.
+ */
+const IN_FLIGHT_PER_WORKER = 2;
+
 interface QueueItem {
   book: Book;
   variant: SpineVariant;
@@ -139,16 +163,35 @@ export class SpineFactory {
   private theme: LibraryTheme = getTheme(null);
   /** Cache-busting salt so a theme change re-derives every book's params. */
   private styleEpoch = 0;
+  /** Bumped whenever every baked spine is dropped; stale worker results die. */
+  private bakeEpoch = 0;
   private readonly listeners = new Set<(bookIds: readonly string[]) => void>();
   private idle: { cancel: () => void } | null = null;
   private fontsReady = false;
   private destroyed = false;
 
+  /* --------------------------- off-thread state -------------------------- */
+
+  private readonly offload: ArtOffload;
+  /** Queue keys currently being painted by a worker. */
+  private readonly inFlight = new Set<string>();
+  /**
+   * Books whose textures landed since the last flush. Batched to one listener
+   * call per frame: a worker pool answers in a burst, and forty separate
+   * `onTexturesChanged` calls would re-pick and re-request the whole visible
+   * shelf forty times for one frame's worth of new pixels.
+   */
+  private readonly landed = new Set<string>();
+  private flushScheduled = false;
+  /** Pages touched since the last flush (their GPU source needs an update). */
+  private readonly dirtySources = new Set<CanvasSource>();
+
   /** Degrade mode never bakes hi-res. */
   readonly hiEnabled: boolean;
 
-  constructor(opts: { hiEnabled?: boolean } = {}) {
+  constructor(opts: { hiEnabled?: boolean; offload?: ArtOffload } = {}) {
     this.hiEnabled = opts.hiEnabled ?? true;
+    this.offload = opts.offload ?? artOffload();
     this.loAtlas = new AtlasManager({
       maxPages: 2,
       padding: 2,
@@ -160,6 +203,12 @@ export class SpineFactory {
       onEvict: (page, keys) => this.handleEvict('hi', page, keys, this.hiTextures),
     });
     this.preloadFonts();
+    // Route every OTHER baked recipe (the case, the wall, the base wood)
+    // through the same threads, whoever asks for it.
+    installArtRoutes();
+    // Start fetching + compiling the worker bundle now: it overlaps the app's
+    // own boot, so the first spine request finds threads already alive.
+    this.offload.warmUp();
   }
 
   onTexturesChanged(cb: (bookIds: readonly string[]) => void): () => void {
@@ -196,6 +245,10 @@ export class SpineFactory {
     this.loAtlas.clear();
     this.hiAtlas.clear();
     this.queue.clear();
+    // Anything a worker is still painting belongs to the old room — let the
+    // results arrive and be dropped rather than stalling on a cancel round-trip.
+    this.bakeEpoch++;
+    this.inFlight.clear();
     if (ids.size > 0) this.emit([...ids]);
   }
 
@@ -285,7 +338,7 @@ export class SpineFactory {
       return;
     }
     this.queue.set(key, { book, variant, priority, ctx });
-    this.scheduleSlice();
+    this.pump();
   }
 
   destroy(): void {
@@ -293,6 +346,9 @@ export class SpineFactory {
     this.idle?.cancel();
     this.idle = null;
     this.queue.clear();
+    this.inFlight.clear();
+    this.landed.clear();
+    this.dirtySources.clear();
     this.listeners.clear();
     // clear() fires onEvict per page, which destroys the GPU sources.
     this.loAtlas.clear();
@@ -324,7 +380,7 @@ export class SpineFactory {
     const ready = (): void => {
       if (this.destroyed) return;
       this.fontsReady = true;
-      this.scheduleSlice();
+      this.pump();
     };
     const timer = setTimeout(() => {
       if (settled) return;
@@ -349,8 +405,169 @@ export class SpineFactory {
       });
   }
 
+  /**
+   * Move the queue forward.
+   *
+   * Worker first: hand as many top-ranked items to the pool as its in-flight
+   * budget allows. Only what is left over — everything, when there is no pool —
+   * goes to the idle-callback slice that paints on this thread.
+   */
+  private pump(): void {
+    if (this.destroyed) return;
+    this.dispatchToWorkers();
+    this.scheduleSlice();
+  }
+
+  /** The queue in bake order (see {@link SpineFactory.rank}). */
+  private ranked(): QueueItem[] {
+    return [...this.queue.values()]
+      // Hi-res title text needs the handwriting fonts; hold hi bakes till then.
+      // The worker registers its own faces, so this gate only applies inline.
+      .filter((it) => it.variant === 'lo' || this.fontsReady || this.offload.available)
+      .sort((a, b) => SpineFactory.rank(a) - SpineFactory.rank(b));
+  }
+
+  private dispatchToWorkers(): void {
+    if (!this.offload.available) return;
+    this.offload.warmUp();
+    if (!this.offload.available) return;
+    const budget = Math.max(1, this.offload.size) * IN_FLIGHT_PER_WORKER;
+    if (this.inFlight.size >= budget) return;
+    for (const item of this.ranked()) {
+      if (this.inFlight.size >= budget) break;
+      const key = `${item.variant}|${item.book.id}`;
+      this.queue.delete(key);
+      this.inFlight.add(key);
+      void this.paintOffThread(key, item);
+    }
+  }
+
+  /**
+   * One spine, painted in a worker and blitted here.
+   *
+   * The atlas rect is allocated on ARRIVAL rather than on dispatch: allocating
+   * up front would reserve shelf space in the order jobs were sent and leave
+   * holes wherever a job failed, and an eviction between dispatch and arrival
+   * would hand back a rect on a page that no longer exists.
+   */
+  private async paintOffThread(key: string, item: QueueItem): Promise<void> {
+    const epoch = this.bakeEpoch;
+    const { book, variant, ctx: rowCtx } = item;
+    const params = this.getParams(book);
+    const scale = variant === 'hi' ? HI_SCALE : LO_SCALE;
+    const w = Math.ceil(params.w * scale);
+    const h = Math.ceil(spineArtHeight(params) * scale);
+
+    let paint: Awaited<ReturnType<ArtOffload['spine']>> = null;
+    try {
+      paint = await this.offload.spine({
+        params,
+        title: book.title,
+        w,
+        h,
+        scale,
+        hiRes: variant === 'hi',
+        rowPhase: rowCtx?.rowPhase,
+        depth: rowCtx?.depth,
+        neighbourLeft: rowCtx?.neighbourLeft ?? null,
+        neighbourRight: rowCtx?.neighbourRight ?? null,
+      });
+    } catch {
+      paint = null;
+    }
+
+    this.inFlight.delete(key);
+    if (this.destroyed) {
+      paint?.bitmap.close();
+      return;
+    }
+    if (epoch !== this.bakeEpoch) {
+      // The room changed while this was painting — the pixels are stale.
+      paint?.bitmap.close();
+      this.pump();
+      return;
+    }
+    if (paint === null) {
+      // No worker (or it failed): put the item back for the inline slice.
+      if (!(variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id)) {
+        this.queue.set(key, item);
+      }
+      this.scheduleSlice();
+      return;
+    }
+
+    recordBakeSample({
+      what: `spine|${variant}|${book.title.slice(0, 40)}`,
+      ms: paint.ms,
+      kind: 'spine',
+      at: performance.now() - paint.ms,
+    });
+
+    try {
+      this.blit(book, variant, w, h, paint.bitmap);
+    } catch {
+      // Atlas full or context lost — the placeholder stays; never crash.
+    } finally {
+      paint.bitmap.close();
+    }
+    this.pump();
+  }
+
+  /** Place a finished spine bitmap into its atlas page. Sub-millisecond. */
+  private blit(
+    book: Book,
+    variant: SpineVariant,
+    w: number,
+    h: number,
+    bitmap: ImageBitmap,
+  ): void {
+    const atlas = variant === 'hi' ? this.hiAtlas : this.loAtlas;
+    const handle = atlas.alloc(`${variant}|${book.id}`, w, h);
+    const { rect, page } = handle;
+    const ctx = get2d(page.canvas);
+    ctx.clearRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
+    ctx.drawImage(bitmap as unknown as CanvasImageSource, rect.x, rect.y);
+
+    const source = this.sourceFor(variant, page);
+    const texture = new Texture({
+      source,
+      frame: new Rectangle(rect.x, rect.y, rect.w, rect.h),
+    });
+    (variant === 'hi' ? this.hiTextures : this.loTextures).set(book.id, texture);
+    this.dirtySources.add(source);
+    this.landed.add(book.id);
+    this.scheduleFlush();
+  }
+
+  /**
+   * Coalesce a burst of arrivals into one GPU upload + one listener call per
+   * frame. rAF rather than a microtask: the upload should land with the frame
+   * that will draw it, and a microtask flush would upload the same 2048² page
+   * once per spine.
+   */
+  private scheduleFlush(): void {
+    if (this.flushScheduled || this.destroyed) return;
+    this.flushScheduled = true;
+    const run = (): void => {
+      this.flushScheduled = false;
+      if (this.destroyed) return;
+      for (const source of this.dirtySources) source.update();
+      this.dirtySources.clear();
+      if (this.landed.size > 0) {
+        const ids = [...this.landed];
+        this.landed.clear();
+        this.emit(ids);
+      }
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }
+
   private scheduleSlice(): void {
     if (this.destroyed || this.idle !== null || this.queue.size === 0) return;
+    // With a live pool the queue drains through `dispatchToWorkers`; an idle
+    // slice would race it and paint the same spine on this thread.
+    if (this.offload.available && this.inFlight.size > 0) return;
     this.idle = scheduleIdle((deadline) => {
       this.idle = null;
       this.processSlice(deadline);

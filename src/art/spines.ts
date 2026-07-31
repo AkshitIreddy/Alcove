@@ -2798,7 +2798,7 @@ function paintMarbledPainterly(
  * combed marbling is pure high-frequency figure and the generated sheet beats
  * anything the brush engine can lay in a shelf's stamp budget.
  */
-function spineMaterialSlug(material: BindingMaterial, boardStyle: number): string | null {
+export function bindingMaterialSlug(material: BindingMaterial, boardStyle: number): string | null {
   switch (material) {
     case 'leather':
       // 0 smooth calf · 1 pebbled morocco · 2 craquelure
@@ -2853,7 +2853,7 @@ function spineMaterialCategory(material: BindingMaterial): MaterialCategory | nu
  *    (joints, bands, foil, wear, light) is still brushwork on top.
  */
 function paintGeneratedBase(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec): number {
-  const slug = spineMaterialSlug(spec.material, spec.boardStyle);
+  const slug = bindingMaterialSlug(spec.material, spec.boardStyle);
   if (slug === null) return 0;
   const tile = getGeneratedTile(slug);
   const category = spineMaterialCategory(spec.material);
@@ -2875,8 +2875,8 @@ function paintGeneratedBase(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec): 
     tilePx: tuned.tilePx * widthK,
     // Marbling is the subject on a marbled board, so it comes in hard; a
     // grain is tooth under the paint and comes in softer.
-    strength: marbled ? 0.9 : 0.78,
-    alpha: marbled ? 0.94 : 0.84,
+    strength: marbled ? 0.98 : 0.9,
+    alpha: marbled ? 0.96 : 0.9,
     seed,
     flipX: (seed & 1) === 1,
     flipY: (seed & 2) === 2,

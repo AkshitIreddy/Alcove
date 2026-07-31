@@ -7,3 +7,8 @@ test-results
 playwright-report
 # scheduled task lock
 .claude/scheduled_tasks.lock
+
+# Generated art intermediates — the shipped copies live in public/
+assets/spinewalls/
+assets/spinelayouts/*.png
+assets/spines/

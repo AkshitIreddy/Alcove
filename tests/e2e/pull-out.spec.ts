@@ -1,11 +1,31 @@
 /**
- * Pulling a book off the shelf opens the book view; going back shelves it
- * again. The spine position is located optically (see helpers.ts).
+ * Taking a book off the shelf, and putting it back.
+ *
+ * Pulling used to run straight on into the book view. It does not any more:
+ * the book comes to rest HELD in front of the case with two verbs under it
+ * ("read it" / "put it back"), and reading is a second, deliberate act. These
+ * tests were written against the old one-gesture behaviour and are updated
+ * rather than deleted — the thing they guard (a real pull gesture reaches a
+ * real open book, and going back re-shelves it) is still worth guarding; only
+ * the number of steps between the two ends changed.
+ *
+ * The spine position is located optically (see helpers.ts).
  */
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page } from 'playwright/test';
 import { WELCOME_TITLE, gotoShelf, waitForSpine } from './helpers';
 
-test('dragging a book off the shelf opens the book view', async ({ page }) => {
+/** The held card, and the verb that opens the book. */
+async function readTheHeldBook(page: Page): Promise<void> {
+  await expect(page.locator('[data-testid="pulled-book-hand"]')).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('button', { name: 'put it back' })).toBeVisible();
+  await page.getByRole('button', { name: 'read it' }).click();
+}
+
+test('dragging a book off the shelf holds it, and "read it" opens it', async ({
+  page,
+}) => {
   await gotoShelf(page);
   const spine = await waitForSpine(page);
 
@@ -18,11 +38,34 @@ test('dragging a book off the shelf opens the book view', async ({ page }) => {
   }
   await page.mouse.up();
 
-  // Pull animation + overlay handoff → the focused book view.
+  // The flight ENDS held — it does not carry on into the pages.
+  await readTheHeldBook(page);
   await expect(page.locator('.nb-book-view')).toBeVisible({ timeout: 30_000 });
   await expect(
     page.locator('.nb-leaf-paper[data-side="left"] .nb-prose h1').first(),
-  ).toContainText('Welcome to Notebook', { timeout: 30_000 });
+  ).toBeVisible({ timeout: 30_000 });
+});
+
+test('"put it back" shelves a held book without opening it', async ({ page }) => {
+  await gotoShelf(page);
+  await waitForSpine(page);
+
+  await page
+    .locator('.shelf-a11y button', { hasText: WELCOME_TITLE })
+    .dispatchEvent('click');
+  await expect(page.locator('[data-testid="pulled-book-hand"]')).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole('button', { name: 'put it back' }).click();
+
+  // Back on the plank, and the shelf left exactly as it was found: no held
+  // card, no scrim, and the spine painted on the canvas again.
+  await expect(page.locator('[data-testid="pulled-book-hand"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.locator('.pulled-book-scrim')).toHaveCount(0);
+  await expect(page.locator('.nb-book-view')).toHaveCount(0);
+  await waitForSpine(page);
 });
 
 test('back to shelf returns the book', async ({ page }) => {
@@ -35,6 +78,7 @@ test('back to shelf returns the book', async ({ page }) => {
   await page
     .locator('.shelf-a11y button', { hasText: WELCOME_TITLE })
     .dispatchEvent('click');
+  await readTheHeldBook(page);
   await expect(page.locator('.nb-book-view')).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: /back to shelf/i }).click();

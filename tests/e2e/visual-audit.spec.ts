@@ -8,7 +8,7 @@
  * immune to SwiftShader's throttled rAF.
  */
 import { expect, test, type Page } from 'playwright/test';
-import { openBookView } from './helpers';
+import { openBookView, suppressTour } from './helpers';
 
 /* -------------------------------------------------------------------------- */
 /* helpers                                                                     */
@@ -49,6 +49,7 @@ const PAINTED_BG_FN = `
 `;
 
 async function openSettings(page: Page): Promise<void> {
+  await suppressTour(page);
   await page.goto('/');
   await page.locator('.nbs-gear-button').click();
   await expect(page.locator('.nbs-sheet')).toBeVisible({ timeout: 30_000 });
@@ -81,6 +82,7 @@ async function openSettings(page: Page): Promise<void> {
 test('secondary ink clears WCAG AA on every theme (audit 2, 3, 5)', async ({
   page,
 }) => {
+  await suppressTour(page);
   await page.goto('/');
 
   for (const theme of ['parchment', 'pastel', 'botanical', 'night'] as const) {
@@ -135,6 +137,7 @@ test('secondary ink clears WCAG AA on every theme (audit 2, 3, 5)', async ({
 });
 
 test('the lit quick-switcher tab is readable (audit 4)', async ({ page }) => {
+  await suppressTour(page);
   await page.goto('/');
   await page.keyboard.press('Control+k');
   await expect(page.locator('.nb-qs-bar')).toBeVisible({ timeout: 30_000 });
@@ -160,6 +163,7 @@ test('the lit quick-switcher tab is readable (audit 4)', async ({ page }) => {
 test('the quick-switcher bar keeps its hand-drawn corners (audit 1)', async ({
   page,
 }) => {
+  await suppressTour(page);
   await page.goto('/');
   await page.keyboard.press('Control+k');
   await expect(page.locator('.nb-qs-bar')).toBeVisible({ timeout: 30_000 });
@@ -438,6 +442,7 @@ test('focus mode fades the app-level chrome too (audit 18)', async ({
 test('the `>` mode prefix never shows in the field (audit 20)', async ({
   page,
 }) => {
+  await suppressTour(page);
   await page.goto('/');
   await page.keyboard.press('Control+k');
   const input = page.locator('.nb-qs-input');
@@ -457,6 +462,7 @@ test('the `>` mode prefix never shows in the field (audit 20)', async ({
 });
 
 test('result meta pins to the row edge (audit 21)', async ({ page }) => {
+  await suppressTour(page);
   await page.goto('/');
   await page.keyboard.press('Control+k');
   await expect(page.locator('.nb-qs-row').first()).toBeVisible({

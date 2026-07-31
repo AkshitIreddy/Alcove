@@ -7,7 +7,7 @@
  * input paths. Every assertion polls (SwiftShader throttles rAF).
  */
 import { expect, test, type Page } from 'playwright/test';
-import { WELCOME_TITLE, screenDiffRatio, waitForSpine } from './helpers';
+import { WELCOME_TITLE, screenDiffRatio, suppressTour, waitForSpine } from './helpers';
 
 /**
  * Write settings through the world's own settings-module instance.
@@ -31,6 +31,7 @@ async function saveSettings(
 
 /** Load the shelf with the QA world hook exposed. */
 async function gotoShelfQa(page: Page): Promise<void> {
+  await suppressTour(page);
   await page.goto('/?fx=force');
   await expect(page.locator('canvas.shelf-canvas')).toBeVisible({
     timeout: 45_000,

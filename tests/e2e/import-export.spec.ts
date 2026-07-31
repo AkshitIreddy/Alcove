@@ -9,7 +9,7 @@
  */
 import { promises as fs } from 'node:fs';
 import { expect, test, type Page } from 'playwright/test';
-import { openBlankPage, openBookView } from './helpers';
+import { openBlankPage, openBookView, suppressTour } from './helpers';
 
 interface GroupDHooks {
   openTemplatesGallery(): void;
@@ -103,6 +103,7 @@ test('markdown import creates a shelved book split on H1s and opens it', async (
   const mdPath = test.info().outputPath('import-sample.md');
   await fs.writeFile(mdPath, IMPORT_MD, 'utf8');
 
+  await suppressTour(page);
   await page.goto('/');
   await waitForHooks(page);
 
@@ -175,12 +176,17 @@ test('page PNG export survives a collapsed / unlaid-out leaf', async ({
       el.style.display = 'none';
     }
   });
-  // Nothing mounted has layout any more → `activeSheetElement()` finds none.
+  // Nothing MOUNTED has layout any more → `activeSheetElement()` finds none.
+  // The `:not(.nb-export-sheet)` is load-bearing and not cosmetic: the flip's
+  // idle snapshot loop stages its own laid-out `.nb-sheet-paper` offscreen,
+  // and a bare selector catches whichever one happens to be alive when this
+  // line runs, so the guard failed at random. `measureMountedSheet()` in
+  // capture.ts excludes them for exactly this reason.
   expect(
     await page.evaluate(() =>
-      Array.from(document.querySelectorAll('.nb-sheet-paper')).every(
-        (el) => el.clientWidth === 0 && el.clientHeight === 0,
-      ),
+      Array.from(
+        document.querySelectorAll('.nb-sheet-paper:not(.nb-export-sheet)'),
+      ).every((el) => el.clientWidth === 0 && el.clientHeight === 0),
     ),
   ).toBe(true);
 

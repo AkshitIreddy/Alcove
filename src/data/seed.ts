@@ -1,14 +1,21 @@
 /**
  * First-run seeding + seed migrations.
  *
- * v2 seeds ONE "Welcome to Notebook ✎" book whose pages are authored in
- * Notebook Script (parsed + mapped to editor JSON at seed time, with the
- * verbatim source stored per page so "Export Script" shows it).
+ * Seeds ONE "Welcome to Bellanote ✎" book whose pages are authored in Notebook
+ * Script (parsed + mapped to editor JSON at seed time, with the verbatim
+ * source stored per page so "Export Script" shows it).
  *
- * Migration for installs that ran the old v1 seed (24 demo books): any book
- * whose title is in the old demo list AND whose pages are all empty is
- * deleted — a demo book the user actually wrote in is never touched. The
- * current seed version is stored in the `settings` table under 'seedVersion'.
+ * Two migrations have accumulated, and both are written to touch as little as
+ * possible, because everything here runs against a library someone may have
+ * spent months in:
+ *
+ *   v1 → v2  installs that ran the old 24-demo-book seed. Any book whose title
+ *            is in the old demo list AND whose pages are all empty is deleted;
+ *            a demo book the user actually wrote in is never touched.
+ *   v2 → v3  the app was renamed, so the welcome book is RETITLED in place
+ *            rather than reseeded. See renameLegacyWelcomeBook.
+ *
+ * The current seed version lives in the `settings` table under 'seedVersion'.
  */
 
 import { parse } from '../script';
@@ -19,12 +26,22 @@ import { createPage, listPages } from './pages';
 import type { PageDoc } from './types';
 
 /** Bump when the seed contents change in a way that needs a migration. */
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
 
-export const WELCOME_BOOK_TITLE = 'Welcome to Notebook ✎';
+export const WELCOME_BOOK_TITLE = 'Welcome to Bellanote ✎';
+
+/**
+ * What the welcome book was called before the app was renamed (v2 → v3).
+ *
+ * This is not just history: the title is also the identity check that stops a
+ * second welcome book being seeded. Renaming the constant without knowing the
+ * old value would make every existing library fail its own existence test and
+ * grow a duplicate, so v3 RENAMES the book in place instead.
+ */
+export const LEGACY_WELCOME_BOOK_TITLE = 'Welcome to Notebook ✎';
 
 /**
  * FNV-1a 32-bit hash (inlined on purpose — the data layer must not depend on
@@ -41,12 +58,54 @@ function fnv1a(text: string): number {
 }
 
 /**
- * Spine seed for the welcome book: fnv1a(title) + 3. The +3 nudge lands the
- * seed on palette 0 (warm amber) in art/spines.ts's deriveSpineParams —
- * mulberry32(seed)'s second draw satisfies floor(rnd * 12) === 0. Verified by
- * a unit test in tests/data-seed.test.ts.
+ * Spine seed for the welcome book. Deterministic from the title, so reinstalls
+ * grow an identical spine.
+ *
+ * It used to carry a +3 nudge chosen to land the seed on palette 0 (warm
+ * amber). That is gone: the binding below is authored outright, and an
+ * explicit per-book style always beats anything derived from the seed, so
+ * tuning the hash to hit a colour would have been a decoration that decided
+ * nothing. The seed still drives the details the style does not name.
  */
-export const WELCOME_SPINE_SEED = (fnv1a(WELCOME_BOOK_TITLE) + 3) >>> 0;
+export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
+
+/**
+ * The welcome book's binding, authored rather than rolled.
+ *
+ * This is the first object a reader ever sees on the shelf, and it was warm
+ * amber cloth with whatever the seed happened to give it — which read as the
+ * default it was. It is the app's calling card, so it is dressed like one:
+ * oxblood leather, four raised cords with gilt rules either side, wrapped
+ * endbands, a gilt title plate and gilt edges, in quarto so it has some
+ * presence beside a pocket paperback.
+ *
+ * Oxblood specifically because the default room is Verdigris Library — a
+ * blue-green case on warm plaster. A warm red is the one thing on that wall
+ * that cannot be mistaken for part of the furniture, and it ties to the deep
+ * blue and gold of the app mark rather than competing with it.
+ *
+ * Wear is low but not zero. A pristine 0 makes an object look like a render;
+ * a little softening at the corners is what makes it look like a book.
+ *
+ * Stored under `cover_meta.style`, which is the Book Studio's own format
+ * (library-themes.md §4) — so a reader can open the studio and change any of
+ * it, and the room may never repaint it behind their back.
+ */
+export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
+  material: 'leather',
+  pigment: 12, // Oxblood
+  hueJitter: 0,
+  raisedBands: 4,
+  bandGilt: true,
+  headTail: true,
+  headTailStyle: 2, // wrapped cord
+  ornament: 9, // Quill
+  titlePlate: 'gilt',
+  titleFont: 0,
+  wear: 0.1,
+  edge: 'gilt',
+  format: 'quarto',
+};
 
 /**
  * Titles created by the retired v1 seed (24 demo books). Used only by the
@@ -89,13 +148,13 @@ export const OLD_DEMO_TITLES: readonly string[] = [
  * source is stored on each page so Export Script works out of the box.
  */
 export const WELCOME_PAGE_SOURCES: readonly string[] = [
-  // Page 1 — what Notebook is + how to get around
+  // Page 1 — what Bellanote is + how to get around
   `---
 paper: cream
 wash: amber
 ---
 
-# Welcome to Notebook ✎ {sticker=star}
+# Welcome to Bellanote ✎ {sticker=star}
 
 This is your **library**. Every book on the shelf opens into pages like this one — ==real, editable pages=={color=amber}, not a demo.
 
@@ -104,7 +163,7 @@ Click anywhere below the ink and just start typing. Everything autosaves as you 
 :::
 
 - The **shelf** goes on forever — drag to pan, scroll to zoom
-- **Drag a book off the shelf** to open it
+- **Click a spine** and the book comes out and rests in front of the case — then *read it*, or put it back
 - Use the **arrow keys** to flip through a book's pages
 
 > Flip to the next page to meet the editor → {washi=top}
@@ -163,7 +222,7 @@ Highlights come in seven washes: ==amber=={color=amber}, ==moss=={color=moss}, =
 Fenced mini-languages render as hand-drawn diagrams. A \`tree\`:
 
 \`\`\`tree {style=watercolor}
-Notebook
+Bellanote
   Shelf
     Floors | endless
     Books
@@ -268,7 +327,7 @@ export function isDeletableDemoBook(
   title: string,
   pageDocs: readonly PageDoc[],
 ): boolean {
-  if (title === WELCOME_BOOK_TITLE) return false;
+  if (title === WELCOME_BOOK_TITLE || title === LEGACY_WELCOME_BOOK_TITLE) return false;
   if (!OLD_DEMO_TITLES.includes(title)) return false;
   return pageDocs.every(isEmptyPageDoc);
 }
@@ -311,12 +370,33 @@ async function cleanupOldDemoBooks(db: Db): Promise<void> {
   }
 }
 
+/**
+ * Both titles count. A library seeded before the rename holds the legacy one,
+ * and asking only about the current title would tell us the welcome book is
+ * missing and seed a second copy beside it.
+ */
 async function welcomeBookExists(db: Db): Promise<boolean> {
   const rows = await db.select<Array<{ id: string }>>(
-    'SELECT id FROM books WHERE title = $1 LIMIT 1',
-    [WELCOME_BOOK_TITLE],
+    'SELECT id FROM books WHERE title IN ($1, $2) LIMIT 1',
+    [WELCOME_BOOK_TITLE, LEGACY_WELCOME_BOOK_TITLE],
   );
   return rows.length > 0;
+}
+
+/**
+ * v2 → v3: the app was renamed, so the book that welcomes you to it is
+ * renamed in place. Retitling rather than reseeding is the whole point — the
+ * reader may have written in it, and it is still their book.
+ *
+ * The spine is deliberately left alone. Its seed is derived from the title, so
+ * regenerating it would change the object on the shelf under someone who had
+ * come to recognise it, to no benefit.
+ */
+async function renameLegacyWelcomeBook(db: Db): Promise<void> {
+  await db.execute('UPDATE books SET title = $1 WHERE title = $2', [
+    WELCOME_BOOK_TITLE,
+    LEGACY_WELCOME_BOOK_TITLE,
+  ]);
 }
 
 async function createWelcomeBook(): Promise<void> {
@@ -325,7 +405,7 @@ async function createWelcomeBook(): Promise<void> {
     floor: 0,
     slot: 3,
     spineSeed: WELCOME_SPINE_SEED,
-    coverMeta: { palette: 'amber' },
+    coverMeta: { style: { ...WELCOME_BINDING } },
   });
   const pages = buildWelcomePageDocs();
   for (let i = 0; i < pages.length; i += 1) {
@@ -341,10 +421,15 @@ async function createWelcomeBook(): Promise<void> {
 /**
  * Seed + migrate on app load (name kept for existing callers).
  *
- * - seedVersion >= 2: nothing to do.
- * - seedVersion < 2 (fresh installs AND installs that ran the old v1 seed):
- *   delete pristine v1 demo books, create the welcome book if it does not
- *   exist yet, then record seedVersion = 2.
+ * - seedVersion >= 3: nothing to do.
+ * - seedVersion < 3 (fresh installs, installs that ran the old v1 seed, and
+ *   installs sitting at v2 from before the rename): delete pristine v1 demo
+ *   books, retitle a legacy welcome book if there is one, create the welcome
+ *   book if none exists, then record seedVersion = 3.
+ *
+ * The order matters. Renaming BEFORE the existence check is what stops a v2
+ * library growing a second welcome book — though the check reads both titles
+ * as well, because a migration that is only correct in one order is a trap.
  *
  * Returns true when the welcome book was created by this call.
  */
@@ -353,6 +438,7 @@ export async function seedIfEmpty(): Promise<boolean> {
   if ((await readSeedVersion(db)) >= SEED_VERSION) return false;
 
   await cleanupOldDemoBooks(db);
+  await renameLegacyWelcomeBook(db);
   const exists = await welcomeBookExists(db);
   if (!exists) await createWelcomeBook();
   await writeSeedVersion(db, SEED_VERSION);

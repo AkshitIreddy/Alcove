@@ -10,6 +10,7 @@ import {
   screenDiffRatio,
   spineRegion,
   waitForSpine,
+  suppressTour,
 } from './helpers';
 
 test('shelf loads with the welcome book visible', async ({ page }) => {
@@ -233,6 +234,7 @@ test('the shelf never freezes the window while it paints itself', async ({ page 
  * of the pool (with zero workers), which is a very convincing way to fail.
  */
 async function gotoShelfQa(page: Page): Promise<void> {
+  await suppressTour(page);
   await page.goto('/?fx=force');
   await expect(page.locator('canvas.shelf-canvas')).toBeVisible({ timeout: 45_000 });
   await page.waitForFunction(

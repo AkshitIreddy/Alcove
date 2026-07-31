@@ -9,7 +9,7 @@
  * nothing; `__shelfWorld.libraryKey` reports the room whose art is actually up.
  */
 import { expect, test, type Page } from 'playwright/test';
-import { screenDiffRatio } from './helpers';
+import { screenDiffRatio, suppressTour } from './helpers';
 
 interface LibraryBridge {
   save(patch: Record<string, unknown>): Promise<unknown>;
@@ -71,6 +71,7 @@ function bridge(page: Page) {
 }
 
 async function gotoShelfQa(page: Page): Promise<void> {
+  await suppressTour(page);
   await page.goto('/?fx=force');
   await expect(page.locator('canvas.shelf-canvas')).toBeVisible({ timeout: 45_000 });
   await expect
@@ -79,6 +80,18 @@ async function gotoShelfQa(page: Page): Promise<void> {
       message: 'library QA bridge never appeared',
     })
     .toBe(true);
+}
+
+/**
+ * Put the shelf in a known room and wait for its art.
+ *
+ * These tests need a defined starting point, not the app's default — which has
+ * already moved once (athenaeum → verdigris) and will move again as the room
+ * vocabulary grows. Asking for the room is one line and pins nothing.
+ */
+async function startInRoom(page: Page, themeId: string): Promise<void> {
+  await bridge(page).setPrefs({ theme: themeId });
+  await waitForRoom(page, themeId);
 }
 
 /** Wait until the world reports the requested room's art is actually up. */
@@ -105,7 +118,7 @@ test.describe('library themes on the real shelf', () => {
     await gotoShelfQa(page);
     const lib = bridge(page);
     await lib.seed(['Field Notes', 'The Long Hall', 'Marginalia', 'Ink & Ash']);
-    await waitForRoom(page, 'athenaeum');
+    await startInRoom(page, 'athenaeum');
 
     const ids = ['athenaeum', 'blossom', 'reef', 'apothecary'] as const;
     const shots: Record<string, Buffer> = {};
@@ -130,7 +143,7 @@ test.describe('library themes on the real shelf', () => {
   test('the retired wall controls are ignored, not resurrected', async ({ page }) => {
     await gotoShelfQa(page);
     const lib = bridge(page);
-    await waitForRoom(page, 'athenaeum');
+    await startInRoom(page, 'athenaeum');
 
     // wallpaperPattern / colourway / backdrop / wallDepth were four pickers for
     // a wall that is one flat fill. A blob still carrying them must load as a
@@ -162,8 +175,8 @@ test.describe('the Book Studio', () => {
     await openBook(page);
 
     await page.locator('[data-tool="customize"]').click();
-    await expect(page.getByRole('tab', { name: 'this book' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'this library' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'this book', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'this library', exact: true })).toBeVisible();
 
     // The book tab paints a real spine and a real cover with the same
     // renderers the shelf uses.
@@ -206,7 +219,7 @@ test.describe('the Book Studio', () => {
     // The library tab paints room cards from the real case art. It was a grid
     // of four; there are sixty rooms now, so it is a strip of five and a way
     // through to the rest, exactly like the carpentry and the papers.
-    await page.getByRole('tab', { name: 'this library' }).click();
+    await page.getByRole('tab', { name: 'this library', exact: true }).click();
     const rooms = page.locator('[aria-label="Library theme"]');
     await expect(rooms).toBeVisible();
     await expect(rooms.locator('.nb-strip-art')).toHaveCount(5);
@@ -233,7 +246,7 @@ test.describe('the Book Studio', () => {
     await gotoShelfQa(page);
     await openBook(page);
     await page.locator('[data-tool="customize"]').click();
-    await page.getByRole('tab', { name: 'this library' }).click();
+    await page.getByRole('tab', { name: 'this library', exact: true }).click();
     await expect(page.locator('[aria-label="Library theme"]')).toBeVisible();
 
     // Reef is one of sixty rooms and not among the five the strip shows, so it
@@ -265,7 +278,7 @@ test.describe('a customized book keeps its identity', () => {
     await gotoShelfQa(page);
     const lib = bridge(page);
     await lib.seed(['Cartography']);
-    await waitForRoom(page, 'athenaeum');
+    await startInRoom(page, 'athenaeum');
     await expect
       .poll(() => lib.books().then((b) => b.length), { timeout: 45_000 })
       .toBeGreaterThan(0);

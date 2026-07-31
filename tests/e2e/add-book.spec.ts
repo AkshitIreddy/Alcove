@@ -13,11 +13,13 @@
  * Everything polls — SwiftShader throttles rAF hard.
  */
 import { expect, test, type Page } from 'playwright/test';
+import { suppressTour } from './helpers';
 
 const NEW_BOOK_TITLE = 'Untitled';
 
 /** Load the shelf with the QA world hook exposed. */
 async function gotoShelfQa(page: Page): Promise<void> {
+  await suppressTour(page);
   await page.goto('/?fx=force');
   await expect(page.locator('canvas.shelf-canvas')).toBeVisible({
     timeout: 45_000,
@@ -170,12 +172,22 @@ test('rail "studio" opens the Library studio; a theme pick re-themes and persist
   await page.locator('[data-shelf-dock="studio"]').click();
   const studio = page.locator('.nb-library-studio');
   await expect(studio).toBeVisible({ timeout: 15_000 });
-  // Theme cards painted from the real case art.
-  await expect(page.locator('.nb-theme-card').first()).toBeVisible({
+  // Rooms outgrew the inline grid: there are sixty now, so the studio shows a
+  // five-tile strip and puts the rest behind a searchable sheet, the same
+  // shape the carpentry and the papers use. Cards are still painted from the
+  // real case art — assert that, then reach Coral Reef the way a reader does.
+  const rooms = page.locator('[aria-label="Library theme"]');
+  await expect(rooms.locator('.nb-strip-art').first()).toBeVisible({
     timeout: 30_000,
   });
 
-  await page.locator('.nb-theme-card', { hasText: 'Coral Reef' }).click();
+  await rooms.locator('.nb-strip-more').click();
+  await expect(page.locator('.nb-pick-card').first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.locator('.nb-pick-search input').fill('coral reef');
+  await expect(page.locator('.nb-pick-card')).toHaveCount(1);
+  await page.locator('.nb-pick-card').first().click();
   await expect
     .poll(
       () =>

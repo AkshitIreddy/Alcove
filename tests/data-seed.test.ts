@@ -1,11 +1,11 @@
 // @vitest-environment node
 /**
- * tests/data-seed.test.ts — the v2 welcome-book seed + v1 demo cleanup:
+ * tests/data-seed.test.ts — the welcome-book seed + its two migrations:
  *
  *  - isEmptyPageDoc(): what counts as "no user content"
  *  - isDeletableDemoBook(): kept/deleted decision matrix
  *  - welcome content: 4-6 pages, warning-free Notebook Script, real nodes
- *  - WELCOME_SPINE_SEED lands on the amber spine palette
+ *  - WELCOME_BINDING: the authored binding, and that it is a valid style
  *  - seedIfEmpty(): end-to-end migration against the in-memory dev DB
  *    (old demo books deleted only when pristine, welcome book created once,
  *    seedVersion recorded) and fresh-install seeding.
@@ -14,9 +14,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  LEGACY_WELCOME_BOOK_TITLE,
   OLD_DEMO_TITLES,
   SEED_VERSION,
   SEED_VERSION_KEY,
+  WELCOME_BINDING,
   WELCOME_BOOK_TITLE,
   WELCOME_PAGE_SOURCES,
   WELCOME_SPINE_SEED,
@@ -24,6 +26,7 @@ import {
   isDeletableDemoBook,
   isEmptyPageDoc,
 } from '../src/data/seed';
+import { normalizeBookStyleOverrides } from '../src/art/bookStyle';
 import { parse } from '../src/script';
 import type { PageDoc } from '../src/data/types';
 
@@ -162,20 +165,50 @@ describe('welcome book content', () => {
   });
 });
 
-describe('WELCOME_SPINE_SEED', () => {
-  it('derives the warm amber spine palette (index 0 of 12)', () => {
-    // mulberry32 exactly as in src/art/noise.ts; deriveSpineParams draws
-    // silhouette first, then palette = floor(rnd() * 12).
-    let a = WELCOME_SPINE_SEED >>> 0;
-    const rnd = (): number => {
-      a = (a + 0x6d2b79f5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-    rnd(); // silhouette draw
-    expect(Math.floor(rnd() * 12)).toBe(0);
+describe('WELCOME_BINDING', () => {
+  /**
+   * The normalizer DROPS fields it does not recognise rather than throwing, so
+   * a typo in the authored binding would not fail anywhere — the book would
+   * just quietly go back to following the room, which is the bland default the
+   * binding exists to replace. Every key has to survive the round trip.
+   */
+  it('survives normalization with every field intact', () => {
+    const normalized = normalizeBookStyleOverrides({ ...WELCOME_BINDING });
+    expect(normalized).not.toBeNull();
+    expect(normalized).toMatchObject(WELCOME_BINDING);
+    // Nothing may be DROPPED. The normalizer is allowed to ADD — setting
+    // `format` derives the band's mid `height` — so this checks for silent
+    // loss rather than pinning the exact key set.
+    for (const key of Object.keys(WELCOME_BINDING)) {
+      expect(normalized).toHaveProperty(key);
+    }
+  });
+
+  it('is vivid rather than the default warm amber', () => {
+    // Pigment 0 is Amber, which is what the seed used to land on and what the
+    // reader called bland. Anything else is fine; this only pins that we did
+    // not drift back.
+    expect(WELCOME_BINDING.pigment).not.toBe(0);
+  });
+
+  it('derives a stable spine seed from the current title', () => {
+    expect(WELCOME_SPINE_SEED).toBe(WELCOME_SPINE_SEED >>> 0);
+    expect(Number.isInteger(WELCOME_SPINE_SEED)).toBe(true);
+  });
+});
+
+describe('the rename migration', () => {
+  it('keeps the legacy welcome title distinct from the current one', () => {
+    expect(LEGACY_WELCOME_BOOK_TITLE).not.toBe(WELCOME_BOOK_TITLE);
+  });
+
+  /**
+   * The legacy title is the identity check for libraries seeded before the
+   * rename. If the demo cleanup treated it as deletable, a v2 library would
+   * lose the welcome book it already had.
+   */
+  it('never deletes a legacy welcome book as a stale demo', () => {
+    expect(isDeletableDemoBook(LEGACY_WELCOME_BOOK_TITLE, [emptyDoc()])).toBe(false);
   });
 });
 
@@ -295,10 +328,47 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
       shelved.filter((b) => b.title === seed.WELCOME_BOOK_TITLE),
     ).toHaveLength(1);
   });
+
+  /**
+   * The v2 → v3 hazard, and the reason the rename is a migration rather than a
+   * constant edit: a library seeded before the app was renamed holds the OLD
+   * welcome title. Change the constant without handling that and the existence
+   * check finds nothing, so every existing reader gets a second welcome book
+   * on the shelf next to the one they have been writing in.
+   */
+  it('v2 install: retitles the welcome book in place, does not duplicate it', async () => {
+    const { seed, books, pages } = await freshDataLayer();
+
+    const legacy = await books.createBook({
+      title: seed.LEGACY_WELCOME_BOOK_TITLE,
+      floor: 0,
+      slot: 3,
+    });
+    // The reader wrote in it — this book is theirs now, not ours to replace.
+    await pages.createPage({ bookId: legacy.id, ord: 0 });
+    const page = (await pages.listPages(legacy.id))[0];
+    await pages.savePageDoc(page.id, {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'my notes' }] },
+      ],
+    });
+
+    await expect(seed.seedIfEmpty()).resolves.toBe(false);
+
+    const shelved = await books.listBooksByFloorRange(0, 999);
+    expect(shelved).toHaveLength(1);
+    expect(shelved[0].id).toBe(legacy.id);
+    expect(shelved[0].title).toBe(seed.WELCOME_BOOK_TITLE);
+
+    // Their writing survived the retitle.
+    const kept = (await pages.listPages(legacy.id))[0];
+    expect(seed.isEmptyPageDoc(kept.doc)).toBe(false);
+  });
 });
 
 // Re-exported constants stay wired (guards against accidental renames).
 it('exports the current seed version constants', () => {
-  expect(SEED_VERSION).toBe(2);
+  expect(SEED_VERSION).toBe(3);
   expect(SEED_VERSION_KEY).toBe('seedVersion');
 });

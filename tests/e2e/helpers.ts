@@ -3,9 +3,18 @@
  *
  * The shelf world is a WebGL canvas (no DOM per book), so shelf-state
  * assertions work optically: take a screenshot, decode it inside the page
- * (2D canvas + getImageData) and locate the seeded welcome book by its warm
- * amber spine color — robust to camera position and art-pipeline changes as
- * long as the amber palette stays the amber palette.
+ * (2D canvas + getImageData) and find the seeded book's spine as a tall narrow
+ * run of one colour.
+ *
+ * WHICH colour is asked of the running app, not assumed. This used to hunt for
+ * "warm amber" on the reasoning that the welcome book's seed pins palette 0 —
+ * which was true of the palette and not of the screen: a spine's cloth is
+ * resolved against the ROOM, and the day the default room moved from athenaeum
+ * to verdigris the seeded book stopped being amber. Every optical shelf test
+ * then locked onto the nearest amber thing in frame (the gilt cornice studs)
+ * and right-clicked the cornice. So `spineRegion` reads the spine's rect from
+ * the world hook, samples the colour actually painted there, and only then
+ * scans. Amber stays as the fallback for the pages that boot without `?fx=`.
  *
  * SwiftShader (headless WebGL) can throttle rAF to ~10fps, so every helper
  * polls for state instead of fixed-waiting.
@@ -27,9 +36,41 @@ export interface SpineRegion {
   count: number;
 }
 
-/** Load the shelf and wait until the world has booted and lists books. */
+/**
+ * Suppress the first-run tour for this page — call BEFORE the first goto.
+ *
+ * The tour is not just a scrim (that is `pointer-events: none` now); the CARD
+ * is a real 350x600 element parked over the right of the viewport, and it
+ * lands squarely on the shelf spot menu, the studio sheet and the dev
+ * switcher. It also owns a window keydown listener, so a spec driving the
+ * keyboard is driving two things at once.
+ *
+ * The completion flag has to be written by an init script: setting it after a
+ * navigation races the overlay's mount, and stopping the overlay afterwards
+ * leaves behind whatever it has already taken (focus, a step's key handler).
+ * Every spec's own goto helper calls this first.
+ */
+export async function suppressTour(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('appState:tutorialCompleted', 'true');
+    } catch {
+      // Private-mode storage failures are not this helper's problem; callers
+      // that care also stop() the overlay once the app is up.
+    }
+  });
+}
+
+/**
+ * Load the shelf and wait until the world has booted and lists books.
+ *
+ * `?fx=force` is not decoration: it is what exposes `__shelfWorld`, and
+ * `spineRegion` needs it to ask which colour the seeded spine is actually
+ * wearing. Every other shelf spec already boots this way.
+ */
 export async function gotoShelf(page: Page): Promise<void> {
-  await page.goto('/');
+  await suppressTour(page);
+  await page.goto('/?fx=force');
   await expect(page.locator('canvas.shelf-canvas')).toBeVisible({
     timeout: 45_000,
   });
@@ -40,76 +81,141 @@ export async function gotoShelf(page: Page): Promise<void> {
 }
 
 /**
- * Optically locate the welcome book's warm amber spine in the current frame.
- * Returns null when no amber region is on screen. Coordinates are CSS px.
+ * Optically locate the seeded book's spine in the current frame.
+ * Returns null when no such region is on screen. Coordinates are CSS px.
  */
 export async function spineRegion(page: Page): Promise<SpineRegion | null> {
+  // Where the world says the first visible spine is, when the hook is up. Used
+  // only to SAMPLE the colour — the bounding box below is still measured off
+  // real pixels, so "the world painted it" and "it shrank when I zoomed out"
+  // stay claims about the screen.
+  const hint = await page.evaluate(() => {
+    const g = globalThis as Record<string, unknown>;
+    const world = g['__shelfWorld'] as
+      | { spineRectOf(id: string): { x: number; y: number; width: number; height: number } | null }
+      | undefined;
+    const list = g['__shelfVisibleBooks'] as (() => Array<{ id: string }>) | undefined;
+    if (world === undefined || list === undefined) return null;
+    const books = list();
+    if (books.length === 0) return null;
+    const r = world.spineRectOf(books[0]!.id);
+    return r === null ? null : r;
+  });
+
   const shot = await page.screenshot({ type: 'png' });
-  const region = await page.evaluate(async (b64: string) => {
-    const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
-    await img.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0);
-    const { data, width, height } = ctx.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height,
-    );
-    // Amber spine top duo ≈ rgb(208,153,57): saturated warm orange.
-    // Excludes shelf wood (~rgb(138,106,72)) and cream paper (blue-rich).
-    const isAmber = (i: number): boolean => {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      return r > 170 && b < 120 && r - b > 85 && g - b > 40;
-    };
+  const region = await page.evaluate(
+    async ([b64, box]: [string, { x: number; y: number; width: number; height: number } | null]) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0);
+      const { data, width, height } = ctx.getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+      const scale = width / window.innerWidth;
 
-    // A library theme's own brass — gilt cornice beading, floor plates, the
-    // drawer pull — is amber too, and it is spread thinly across the whole
-    // frame. The BOOK is a tall narrow amber column, so lock onto the densest
-    // column first and keep only pixels near it; otherwise the centroid drifts
-    // off the spine onto bare shelf and every "click the book" test misses.
-    const cols = new Int32Array(Math.ceil(width / 2));
-    for (let y = 0; y < height; y += 2) {
-      for (let x = 0; x < width; x += 2) {
-        if (isAmber((y * width + x) * 4)) cols[x >> 1] += 1;
-      }
-    }
-    let peak = 0;
-    for (let c = 1; c < cols.length; c += 1) if (cols[c] > cols[peak]) peak = c;
-    const peakX = peak * 2;
-    // Half a slot each side: wide enough for one spine, narrow enough to
-    // exclude the crown and the floor plates.
-    const band = Math.max(24, Math.round(width * 0.035));
+      // Fallback predicate: warm amber, which is what the seeded spine wore in
+      // every room this suite knew about before the vocabulary grew.
+      // Excludes shelf wood (~rgb(138,106,72)) and cream paper (blue-rich).
+      let match = (i: number): boolean => {
+        const r = data[i] as number;
+        const g = data[i + 1] as number;
+        const b = data[i + 2] as number;
+        return r > 170 && b < 120 && r - b > 85 && g - b > 40;
+      };
 
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -1;
-    let maxY = -1;
-    let count = 0;
-    let sx = 0;
-    let sy = 0;
-    for (let y = 0; y < height; y += 2) {
-      for (let x = Math.max(0, peakX - band); x < Math.min(width, peakX + band); x += 2) {
-        if (!isAmber((y * width + x) * 4)) continue;
-        count += 1;
-        sx += x;
-        sy += y;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+      if (box !== null && box.width > 2 && box.height > 8) {
+        // Median of a column down the middle of the spine, so a gilt band or a
+        // label plate does not become "the spine colour".
+        const cx = Math.round((box.x + box.width / 2) * scale);
+        const samples: Array<[number, number, number]> = [];
+        for (let t = 0.2; t <= 0.8; t += 0.02) {
+          const y = Math.round((box.y + box.height * t) * scale);
+          if (y < 0 || y >= height || cx < 0 || cx >= width) continue;
+          const i = (y * width + cx) * 4;
+          samples.push([data[i] as number, data[i + 1] as number, data[i + 2] as number]);
+        }
+        if (samples.length >= 8) {
+          const mid = (k: 0 | 1 | 2): number => {
+            const v = samples.map((s) => s[k]).sort((a, b) => a - b);
+            return v[Math.floor(v.length / 2)] as number;
+          };
+          const [tr, tg, tb] = [mid(0), mid(1), mid(2)];
+          match = (i: number): boolean =>
+            Math.abs((data[i] as number) - tr) < 26 &&
+            Math.abs((data[i + 1] as number) - tg) < 26 &&
+            Math.abs((data[i + 2] as number) - tb) < 26;
+        }
       }
-    }
-    if (count < 30) return null;
-    return { cx: sx / count, cy: sy / count, minX, minY, maxX, maxY, count, imgWidth: width };
-  }, shot.toString('base64'));
+
+      // The case's own timber can share the spine's colour family, and it is
+      // spread thinly across the whole frame. The BOOK is a tall narrow column
+      // of it, so lock onto the densest column first and keep only pixels near
+      // it; otherwise the centroid drifts onto bare shelf and every "click the
+      // book" test misses.
+      const cols = new Int32Array(Math.ceil(width / 2));
+      for (let y = 0; y < height; y += 2) {
+        for (let x = 0; x < width; x += 2) {
+          if (match((y * width + x) * 4)) cols[x >> 1] += 1;
+        }
+      }
+      let peak = 0;
+      for (let c = 1; c < cols.length; c += 1) {
+        if ((cols[c] as number) > (cols[peak] as number)) peak = c;
+      }
+      const peakX = peak * 2;
+      // Half a slot each side: wide enough for one spine, narrow enough to
+      // exclude the crown and the floor plates.
+      const band = Math.max(24, Math.round(width * 0.035));
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -1;
+      let maxY = -1;
+      let count = 0;
+      let sx = 0;
+      let sy = 0;
+      for (let y = 0; y < height; y += 2) {
+        for (
+          let x = Math.max(0, peakX - band);
+          x < Math.min(width, peakX + band);
+          x += 2
+        ) {
+          if (!match((y * width + x) * 4)) continue;
+          count += 1;
+          sx += x;
+          sy += y;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+      if (count < 30) return null;
+      return {
+        cx: sx / count,
+        cy: sy / count,
+        minX,
+        minY,
+        maxX,
+        maxY,
+        count,
+        imgWidth: width,
+      };
+    },
+    [shot.toString('base64'), hint] as [
+      string,
+      { x: number; y: number; width: number; height: number } | null,
+    ],
+  );
   if (region === null) return null;
   // Screenshots are device pixels (dpr 1.5); map back to CSS px.
   const viewport = page.viewportSize();
@@ -199,16 +305,18 @@ export async function screenDiffRatio(
  * still applied by BookView. Left as-is deliberately.)
  */
 export async function openBookView(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    try {
-      window.localStorage.setItem('appState:tutorialCompleted', 'true');
-    } catch {
-      // Private-mode storage failures are not this helper's problem; the
-      // explicit stop() below still clears the overlay.
-    }
-  });
+  await suppressTour(page);
   await page.goto('/');
   await page.evaluate(() => window.__nbTutorial?.stop?.());
+  // Poll rather than race: stop() is one shot, and a tour that mounts a beat
+  // later (storage refused, or a reload between the two) would still be there
+  // when the click lands.
+  await expect
+    .poll(() => page.locator('.nbt-card').count(), {
+      timeout: 15_000,
+      message: 'the first-run tour never went away',
+    })
+    .toBe(0);
   await page.getByRole('button', { name: 'book', exact: true }).click();
   await expect(page.locator('.nb-book-view')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.nb-prose').first()).toBeVisible({

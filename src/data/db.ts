@@ -125,6 +125,23 @@ function parseWhere(
       tests.push((row) => (row[col] == null) !== negate);
       continue;
     }
+    /*
+     * `col IN ($1, $2, …)`. Worth supporting rather than letting it fall to
+     * the catch-all below: an unrecognized condition matches NOTHING, which is
+     * the safe answer for a DELETE and a silently wrong one for a SELECT. An
+     * existence check written with IN would report "absent" for a row that is
+     * right there, and the caller would go create a duplicate — which is
+     * exactly how this got noticed.
+     */
+    const inTest = /^(\w+)\s+IN\s*\(([^)]*)\)$/i.exec(cond);
+    if (inTest) {
+      const col = inTest[1];
+      const values = inTest[2]
+        .split(',')
+        .map((t) => resolveValueToken(t.trim(), binds, cursor));
+      tests.push((row) => values.some((v) => row[col] === v));
+      continue;
+    }
     const cmp = /^(\w+)\s*(=|!=|<>|>=|<=|>|<)\s*(\S+)$/.exec(cond);
     if (!cmp) {
       // Unrecognized condition: match nothing rather than corrupting data.

@@ -75,7 +75,7 @@ export interface TutorialStep {
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to Notebook',
+    title: 'Welcome to Bellanote',
     body: 'Your books stand on a shelf. Open one and you get pages you can write on, and everything you write is saved as you go. Each step below asks you to try one thing — the card turns green once you have.',
     hint: 'Enter to go on · Esc to leave',
     scene: 'any',
@@ -266,7 +266,11 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'settings',
     title: 'Settings, and the whole library',
-    body: 'The gear in the corner covers everything that is not one book: theme and wood stain, wallpaper, the sounds the shelf makes, how much of it moves, backups, import and export — and this walk again whenever you want it.',
+    // Named the wood stain and the wallpaper until 2026-08-01; both moved to
+    // the library studio when they grew into real vocabularies, and settings
+    // has not carried either row since. Sending a new reader to the gear to
+    // look for them is the one thing a tour must not do.
+    body: 'The gear in the corner covers everything that is not one book: how the app looks, the sounds the shelf makes, how much of it moves, backups, import and export — and this walk again whenever you want it. How the bookcase itself is built and painted lives in the studio on the shelf.',
     hint: 'gear → settings',
     task: {
       ask: 'Open Settings.',

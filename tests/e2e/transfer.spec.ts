@@ -11,6 +11,7 @@
  */
 import { promises as fs } from 'node:fs';
 import { expect, test, type Page } from 'playwright/test';
+import { suppressTour } from './helpers';
 
 interface SeedBook {
   title: string;
@@ -32,6 +33,7 @@ async function openTransfer(
   tab: 'export' | 'import' | 'history',
   seed: SeedBook[] = [],
 ): Promise<void> {
+  await suppressTour(page);
   await page.goto('/');
   await expect(page.locator('canvas.shelf-canvas')).toBeVisible({ timeout: 45_000 });
   await expect(page.locator('.shelf-a11y button').first()).toBeAttached({

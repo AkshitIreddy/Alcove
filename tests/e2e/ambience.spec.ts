@@ -9,9 +9,11 @@
  * node unit suite in tests/sound.test.ts.
  */
 import { expect, test, type Page } from 'playwright/test';
+import { suppressTour } from './helpers';
 
 /** Load the app and wait until the sound engine's debug surface is up. */
 async function gotoWithEngine(page: Page): Promise<void> {
+  await suppressTour(page);
   await page.goto('/');
   await expect
     .poll(() => page.evaluate(() => typeof window.__nbSound?.getState), {

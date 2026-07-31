@@ -65,13 +65,24 @@ when written — and where two colours or two frames are hard to tell apart, use
       copper/saffron/ink. Old Athenaeum is kept hex-for-hex (it is what
       `art/flat.ts` falls back to and the ruler the fold was measured with) and
       sits first in the picker.
-- [ ] The welcome BOOK's default binding is still the bland one — the shelf and
-      the wall were done, the book was not
+- [x] ~~The welcome BOOK's default binding is still the bland one~~ — it is
+      authored now (`seed.WELCOME_BINDING`) rather than rolled: oxblood
+      leather, four raised cords with gilt rules either side, wrapped
+      endbands, gilt title plate and gilt edges, quarto. Oxblood because the
+      default room is Verdigris Library, and a warm red is the one thing on a
+      blue-green case that cannot be mistaken for the furniture. Wear 0.1, not
+      0 — pristine reads as a render. The normalizer DROPS fields it does not
+      recognise instead of throwing, so a typo would silently revert the book
+      to following the room; a test pins that every authored key survives the
+      round trip.
 - [ ] Design brief throughout: **creative and vivid**
 
 ### Shelf rendering
 
-- [ ] The shelf is **not centred**
+- [x] ~~The shelf is **not centred**~~ — surplus width beyond
+      `INTER_CLUSTER_GAP_MAX` goes to the two ends rather than being spent on
+      the gaps, which centres the packed row in the case
+      (`bookshelf/layout.ts:149`). Left-packing was why it sat off to one side.
 - [x] ~~The **corner joins** where the top rail meets both uprights are missing
       their ink outline; same at the bottom~~ — the cornice's underside was a
       join, and a join runs its FILL past the edge and strokes no ink. Under
@@ -101,12 +112,26 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ### Studio / panels
 
-- [ ] Settings gear must **travel** with pushed content, not hide
-- [ ] A bookcase card reads **"0 books"** while books are on its shelves
-- [ ] Not enough **spacing** between bookcase elements and the bottom buttons
-- [ ] "a new bookcase" → **"add bookcase"**
-- [ ] The **"the palette" section does not work**
-- [ ] Wallpaper **colour** has very few options
+- [x] ~~Settings gear must **travel** with pushed content, not hide~~ — panels
+      PUSH now instead of covering. `views/rail/panelPush.ts` publishes three
+      custom properties on `<html>`: `--nb-panel-push` (room the world gives
+      up), `--nb-panel-edge` (where the sheet's right side is, for chrome
+      pinned to the window corner) and `--nb-panel-gutter` (how far a sheet
+      HINGED ON THE WINDOW EDGE reaches, or 0). The gear reads the gutter, so
+      it steps aside for the one sheet that lands on it and stays put for the
+      ones that do not. One writer, every consumer a CSS rule, so an element
+      mounting mid-slide is already in the right place.
+- [x] ~~A bookcase card reads **"0 books"**~~ — `countBooksInBookcase`, and the
+      card renders the real count with singular/plural.
+- [x] ~~Not enough **spacing** between bookcase elements and the bottom
+      buttons~~
+- [x] ~~"a new bookcase" → **"add bookcase"**~~
+- [x] ~~The **"the palette" section does not work**~~ — it was a bare row of
+      nine unlabelled chips, so there was nothing to operate. It is a labelled
+      legend of the active room's palette now, and says what each chip is.
+- [x] ~~Wallpaper **colour** has very few options~~ — a `tone` axis of 8,
+      resolved from the room's cloth slots so it repaints per theme, over 50
+      papers.
 - [ ] Can a reader **clone a shelf** (the shelf only, not its books)? Book
       options belong on right-clicking a shelf inside the library tab
 - [ ] Rooms may be redundant now that they only change colour — consider
@@ -114,66 +139,87 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ### Book interaction
 
-- [ ] **Do not auto-open a book** on click or drag. Open on a second click via
-      an explicit button, which also offers "put it back on the shelf" —
-      or let the reader drag it back in
+- [x] ~~**Do not auto-open a book** on click or drag~~ — pulling a spine used
+      to run straight into the book view, with no way to say "wrong one" but
+      to open it and close it again. The flight now ENDS at the pull: the book
+      rests **held** in front of the case with two verbs under it, read it or
+      put it back. The cover itself is the primary target, the read button
+      takes focus so Enter opens, Escape puts it back, and the book can be
+      dragged back onto the case — the gesture the object suggests before any
+      button does. Two clicks to read, both of them on the book.
 
 ### Book studio
 
-- [ ] Remove the new-book **wear** setting; randomise every element instead
-- [ ] Customising a book **does not update the preview**
-- [ ] A short book renders a correct spine but a **much taller cover**
+- [x] ~~Remove the new-book **wear** setting~~ — gone; every element of a new
+      book is randomised instead.
+- [x] ~~Customising a book **does not update the preview**~~ — one live preview
+      that flips between spine and cover, both painted through
+      `resolveBookStyle`, so the preview and the shelf cannot disagree.
+- [x] ~~A short book renders a correct spine but a **much taller cover**~~ —
+      the preview was stretching every format to one box. A duodecimo previews
+      short and a folio previews tall, which is the whole point of the format
+      chips.
 
 ### Tutorial / onboarding
 
-- [ ] Step 1 copy: "a bookshelf you can live in" reads oddly
-- [ ] Step 2's highlight has **poor edges** — use a straight rounded rectangle
-      for every tutorial highlight
-- [ ] Step 3's window is **smaller than the opened book**, and completing it
-      does not advance to step 4
-- [ ] Every step needs **completion detection** plus a green indicator
-- [ ] **Space advances the tutorial** — a bug, since step 5 asks you to type
-- [ ] Step 6: the highlight does not cover the whole block, the six dots sit
-      outside it, and the instruction should say right-click then drag
-- [ ] Step 8 does not move the note aside so the panel can be seen or used;
-      needs a step actually showing how to customise a book
-- [ ] Step 9 (the AI feature) needs elaborating
+Rebuilt. Steps carry a probe that reads real app state, so completion is
+detected rather than assumed — it was advancing on timers and on clicks near
+the right place, which congratulated people for things they had not done.
+
+- [x] ~~Step 1 copy: "a bookshelf you can live in" reads oddly~~
+- [x] ~~Step 2's highlight has **poor edges**~~ — every highlight is a straight
+      rounded rect (`engine.roundedRectPath`), not a traced outline.
+- [x] ~~Step 3's window is **smaller than the opened book**, and completing it
+      does not advance~~
+- [x] ~~Every step needs **completion detection** plus a green indicator~~ —
+      `features/tutorial/probe.ts`; a step with no probe gets no checkbox,
+      because a tick nobody earned is worse than no tick.
+- [x] ~~**Space advances the tutorial**~~
+- [x] ~~Step 6: highlight does not cover the whole block, six dots sit outside
+      it, instruction should say right-click then drag~~
+- [x] ~~Step 8 does not move the note aside so the panel can be used~~
+- [x] ~~Step 9 (the AI feature) needs elaborating~~
 
 ### Editor / pages
 
 - [ ] Large text sits **too high above its baseline** — visible in the Welcome
       book on "Make it yours" and the Diagrams heading
-- [ ] Turning a page **selects all the text**, so the next turn drags
-      everything
-- [ ] **Page flicker after a turn** — still present
+- [x] ~~Turning a page **selects all the text**~~ — `PageFlipController`
+      clears the selection at every reparenting point, and the flip surface is
+      `user-select: none`.
+- [x] ~~**Page flicker after a turn**~~
 
 ### Sound
 
-- [ ] The **library ambience is creepy** — remove it
-- [ ] The rain / fireplace / crickets soundscapes are good: **add more of that
-      kind**
-- [ ] Only the **first page-turn** sound is bad; the rest are fine
-- [ ] Typing sounds may be **too quiet**
-- [ ] **Buttons need click sounds**
+Every cue was synthesized from scratch, which is why the set kept reading as
+cheap however much it was tuned. They are CC0 / public-domain recordings now,
+processed by `gen-sounds.mjs` from one table that also writes the manifest.
+
+- [x] ~~The **library ambience is creepy** — remove it~~ — it was the one bed
+      that was purely synthetic: an empty room tone with no source. Gone.
+- [x] ~~**Add more soundscapes** of the rain / fireplace / crickets kind~~ —
+      ten now: cafe, crickets, fireplace, forest, night, rain, shore, storm,
+      stream, wind.
+- [x] ~~Only the **first page-turn** sound is bad~~
+- [x] ~~Typing sounds may be **too quiet**~~
+- [x] ~~**Buttons need click sounds**~~ — `sound/uiClicks.ts`. It was the
+      most-touched surface in the app with no audio at all, which made the
+      rest of the sound design feel arbitrary.
 
 ### Process
 
-- [ ] Drive the app with Playwright as a matter of course: act, screenshot,
-      check. Make it a skill.
-- [ ] Make a skill for: prefer physically trying it to reasoning about it —
-      without implying you should not think at all
+- [x] ~~Drive the app with Playwright as a matter of course: act, screenshot,
+      check. Make it a skill.~~ — `~/.claude/skills/playwright-qa/`
+- [x] ~~Make a skill for: prefer physically trying it to reasoning about it~~ —
+      `~/.claude/skills/try-it-first/`
 
 ## 🔴 Found by looking, 2026-08-01 (after the variety waves)
 
-- [ ] **The settings gear is HIDDEN while a panel is open, not moved.** My
-      original brief said hide it; the reader pointed out that push-not-cover
-      already solves the overlap, so it should TRAVEL with the pushed content
-      and stay reachable. The corrected brief did not reach the running agent.
-- [ ] **A bookcase card reads "0 books" while books are visibly on its
-      shelves.** Either the count query does not filter to the active bookcase,
-      or the migration did not stamp existing books with a bookcase id. Verify
-      against a library that existed before the migration — this is the risky
-      half of that change.
+- [x] ~~**The settings gear is HIDDEN while a panel is open, not moved.**~~ —
+      fixed via `--nb-panel-gutter`; see the Studio / panels section above.
+- [x] ~~**A bookcase card reads "0 books" while books are visibly on its
+      shelves.**~~ — `countBooksInBookcase`. Still worth opening a library that
+      existed before the migration once, since that was the risky half.
 - [ ] Wallpaper defaults to `plain-parchment`, so none of the 50 papers show
       until one is picked. Intended, but worth confirming the picker actually
       changes the wall in the running app.
@@ -192,11 +238,13 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ### Sound — LICENCE OBLIGATION, do not ship without this
 
-- [ ] **One shipped cue is CC BY 4.0** ("Rain on Window Loop" by alxl,
-      OpenGameArt) and CC BY *requires* visible attribution. `CREDITS.json`
-      records it but nothing shows it to a user. Either surface a credits view
-      in settings, or replace that one file with a CC0 alternative and drop the
-      obligation entirely. Everything else shipped is CC0 or public domain.
+- [x] ~~**One shipped cue is CC BY 4.0** ("Rain on Window Loop" by alxl,
+      OpenGameArt) and CC BY *requires* visible attribution.~~ — the credits
+      are rendered in the settings panel from the manifest (`sound/credits.ts`
+      + `SoundCredits.tsx`, mounted at `SettingsPanel.tsx:806`). Split out from
+      the view so the obligation is testable in node against the real file: a
+      test that has to boot a DOM to check a licence is a test that gets
+      skipped.
 - [ ] A human still needs to **listen**. The agent that sourced these could
       not; every judgement was measurement plus envelope inspection.
 - [ ] `npm run sounds` needs ffmpeg on PATH and is Windows-only (PowerShell
@@ -224,12 +272,9 @@ recordings.
       measurement plus envelope inspection — the agent that built it could not
       play audio. A human listening pass is the remaining acceptance gate, and
       until it happens this section is sourced, not approved
-- [ ] **The one CC BY 4.0 credit is recorded but never shown, so as shipped we
-      are out of compliance.** `alxl`'s "Rain on Window Loop" requires visible
-      attribution; it sits in `CREDITS.json` under `attributionsRequired`, and
-      **nothing in `src/` reads that file** (verified by grep). Needs a credits
-      row — `SettingsPanel.tsx:1044`'s Help section is the natural home. Read
-      the manifest, do not hard-code the string
+- [x] ~~**The one CC BY 4.0 credit is recorded but never shown, so as shipped
+      we are out of compliance.**~~ — done, read from the manifest rather than
+      hard-coded. Duplicate of the licence-obligation item above.
 - [ ] `pop-soft` (5 variants) is the one family sourced from an interface pack
       rather than foley, so it is the least papery thing in the set. Kept
       because the alternatives in that duration window were worse; the obvious
@@ -296,15 +341,23 @@ stricter reading and ship the credit, which satisfies either.
 
 ### Focus mode — NOT STARTED this round
 
-- [ ] Entering focus mode does **not close an open side panel**
-- [ ] **No obvious way out.** Today: click blank space outside the book, then
-      Esc. Needs a visible affordance.
+- [x] ~~Entering focus mode does **not close an open side panel**~~ — a rail
+      panel also pushes the spread sideways to make room, and focus mode hides
+      the rail, so entering with Customize open left a wall of controls beside
+      a book shoved off the right edge. `setFocus(true)` clears the panel.
+- [x] ~~**No obvious way out.**~~ — a "leave focus · Esc" chip
+      (`BookView.tsx:879`). Escape is also checked BEFORE the defaultPrevented
+      guard, because the caret normally sits in a page and ProseMirror eats
+      its own Escape.
 
-### The "what can I add" catalogue — NOT STARTED this round
+### The "what can I add" catalogue
 
-- [ ] "Stickers and effects" is where every insertable thing lives, but the
-      name hides it. Rename to something that reads as a catalogue.
-- [ ] Add a **fonts** category alongside it
+- [x] ~~"Stickers and effects" is where every insertable thing lives, but the
+      name hides it~~ — it is the **catalogue** now
+      (`views/rail/CataloguePanel.tsx`), a browsable index of everything that
+      can be dropped into a page. "Stickers" was naming the whole drawer after
+      a fraction of what was in it.
+- [x] ~~Add a **fonts** category alongside it~~
 - [ ] Many more effects, and more custom element types worth inserting
 
 ### Spec automation

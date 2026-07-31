@@ -1,14 +1,23 @@
-# Notebook
+# Bellanote
 
 A Windows desktop notes app: a hand-drawn bookshelf world (warm parchment aesthetic) where books open into Notion-grade block-edited pages. Built with Tauri 2 (Rust) + SolidJS + TypeScript + Vite.
 
 ## The visual language (binding, and the thing most often got wrong)
 
-Everything drawn in this app follows `assets/brand/icon.svg`, implemented in `src/art/flat.ts`: **flat colour, ONE dark outline colour (`FLAT.ink`) on everything, rounded corners, edges that bow slightly, a tiny palette. No gradients, no texture, no lighting, no glow, no bloom, no blurred shadows.** Depth is a darker flat face beside a lighter one, plus `contactShadow()` where an object meets a surface.
+Everything drawn in this app follows `assets/brand/icon.svg`, implemented in `src/art/flat.ts`: **flat colour, ONE dark outline colour (`FLAT.ink`) on everything, rounded corners, edges that bow slightly, a tiny palette. No texture, no lighting, no glow, no bloom, no blurred shadows.** Depth is a darker flat face beside a lighter one, plus `contactShadow()` where an object meets a surface.
 
-This replaced a runtime painting stack — brush engine, procedural wood and flora, deferred lighting, generated photoreal materials — that cost ~5s to first paint and still read as cheap. `docs/design/RESET-render-architecture.md` is the decision; several docs under `docs/design/` predate it and carry a superseded banner. Do not reintroduce a light model, a gradient or a blur "just here".
+**Gentle gradients are allowed** — the icon itself uses three, and a soft wash reading as pigment or tinted paper is inside the style. What is banned is a light MODEL: a highlight placed to imply a lamp, a specular, a shading pass, a blur, a blend mode. `tests/styles.test.ts` gates the real rules and deliberately does not gate gradients. (An earlier version of this file said "no gradients" flatly; that was written too wide and cost a pointless sweep across the codebase.)
 
-One correction to the above, because the rule was written too wide: **gentle gradients are allowed** — the icon itself uses three, and a soft wash reading as pigment or tinted paper is inside the style. What is banned is a light MODEL: a highlight placed to imply a lamp, a specular, a shading pass, a blur, a blend mode. `tests/styles.test.ts` gates the real rules and deliberately does not gate gradients.
+This replaced a runtime painting stack — brush engine, procedural wood and flora, deferred lighting, generated photoreal materials — that cost ~5s to first paint and still read as cheap. `docs/design/RESET-render-architecture.md` is the decision; several docs under `docs/design/` predate it and carry a superseded banner. Do not reintroduce a light model or a blur "just here".
+
+### The app mark is NOT the drawing reference
+
+There are two brand images and confusing them will send you the wrong way:
+
+- `assets/brand/icon.svg` — flat, the reference above. Cited by `tokens.css`, `art/flat.ts`, `art/palette.ts`, `art/covers.ts` and `tests/styles.test.ts`. **This is the one in-app art follows.**
+- `assets/brand/bellanote-art.png` — the shipped app/installer icon, a rendered illustration supplied by the owner. Deliberately a different register from the app's interior. It is the source for `scripts/gen-icons.py` and nothing else.
+
+Do not flatten the mark to match the app, and do not add rendering to the app to match the mark.
 
 A library theme is a colour scheme (`FlatScheme` in `art/flat.ts`, `ColourScheme` in `art/themes.ts`): timber, timberDark, recess, wall and exactly six book cloths. `setFlatScheme()` swaps it; the swap must be synchronous around the draw, and every cache holding drawn pixels must key on `flatSchemeTag()`.
 

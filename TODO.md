@@ -70,10 +70,13 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
       `tests/styles.test.ts` now gates every file in `src/styles/`: no
       `blur()`, no `backdrop-filter`, no non-zero box-shadow blur radius, no
       blend modes, and the handwriting font floors (13px, 20px for Caveat)
-- [ ] Smooth two-stop CSS gradients that are lighting rather than pattern:
-      `editor.css` 558/800, `effects.css` 42/241/262/387/431, `flip.css`
-      95/107/177/192. **Not** the `repeating-linear-gradient` ruled lines or
-      the scallop/stitch masks — those are flat by construction. Own sweep
+- [x] ~~Smooth two-stop CSS gradients~~ — **not a violation, and the rule was
+      wrong.** `flat.ts` said "no gradients"; the icon it was derived from
+      carries three `linearGradient`s of its own. A soft wash reading as
+      pigment or tinted paper is inside the style — what is banned is a light
+      MODEL (a highlight placed to imply a lamp). Rule corrected in `flat.ts`,
+      the sweep that had started was reverted, and `tests/styles.test.ts`
+      deliberately does not gate gradients
 
 ## 🧩 Features still missing
 

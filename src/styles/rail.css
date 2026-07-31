@@ -872,7 +872,50 @@
   padding: 3px var(--space-8);
 }
 
+/* The settings gear is a fixed bottom-left FAB. Once the studio grew its
+   mix-it-up rows the panel reached the bottom of the viewport and the last
+   chip row landed underneath it, so reserve the gear's lane. */
+.nb-library-studio {
+  padding-bottom: var(--space-64);
+}
+
 /* Pale colourways (rice, ivory, limewash) need an edge to read on cream. */
 .nb-swatch-colourway {
   border: var(--stroke-ink-thin);
+}
+
+/* ----------------------------------------------------------------------------
+   Mix-it-up rows — one swatch button per room, per part.
+
+   A colour chip rather than a named one: the row is choosing where a COLOUR
+   comes from, and four room names stacked three times reads as a wall of text
+   for something the eye can answer instantly.
+   -------------------------------------------------------------------------- */
+.nb-panel-row-stack {
+  display: block;
+  margin-bottom: var(--space-12);
+}
+
+.nb-panel-row-stack .nb-chip-row {
+  margin-top: var(--space-4);
+}
+
+.nb-library-studio .nb-chip-swatch {
+  padding: 3px;
+  line-height: 0;
+}
+
+.nb-chip-swatch-dot {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: var(--nb-swatch, var(--paper-cream));
+  border: var(--stroke-ink-thin);
+}
+
+/* The chosen room reads as a pressed chip, not a differently-coloured dot —
+   the dot's own colour is already carrying meaning. */
+.nb-library-studio .nb-chip-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--ink-sepia);
 }

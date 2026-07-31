@@ -172,6 +172,8 @@ export class SpineFactory {
   private readonly queue = new Map<string, QueueItem>();
   /** The room whose spine bias new/unstyled books inherit. */
   private theme: LibraryTheme = getTheme(null);
+  /** Identity of the cloths currently baked in — see `setTheme`. */
+  private clothKey: string = getTheme(null).id;
   /** Cache-busting salt so a theme change re-derives every book's params. */
   private styleEpoch = 0;
   /** Bumped whenever every baked spine is dropped; stale worker results die. */
@@ -241,9 +243,16 @@ export class SpineFactory {
    * overrides always win), which is exactly the "a favourite red leather book
    * keeps its identity in every room" rule.
    */
-  setTheme(theme: LibraryTheme): void {
-    if (this.destroyed || theme.id === this.theme.id) return;
+  setTheme(theme: LibraryTheme, clothKey?: string): void {
+    if (this.destroyed) return;
+    // The id is NOT sufficient. A reader can keep the preset and swap only
+    // where the book cloths come from, which changes every spine's colour
+    // without changing the room's name — comparing ids alone left the shelf
+    // wearing the old cloths until something else happened to invalidate.
+    const key = clothKey ?? theme.id;
+    if (theme.id === this.theme.id && key === this.clothKey) return;
     this.theme = theme;
+    this.clothKey = key;
     this.styleEpoch++;
     this.paramsCache.clear();
     this.invalidateAll();

@@ -25,9 +25,18 @@
  *   the icon reads as one drawing rather than a pile of clip art.
  * - **Outline weight scales with the shape**, roughly 1.5% of its short side,
  *   so a book spine and a whole bookcase feel drawn by the same pen.
- * - **Fills are flat.** No gradients, no texture, no lighting. Depth comes
- *   from a darker flat face (the icon's spine beside its cover) and one soft
- *   contact shadow — never from a light model.
+ * - **No light MODEL.** Depth comes from a darker flat face (the icon's spine
+ *   beside its cover) and one soft contact shadow — never from a key light, a
+ *   specular highlight, or a shading pass.
+ *
+ *   This is not the same as "no gradients", which is what this comment used to
+ *   say and what a sweep of `src/styles/` then went and enforced. The icon
+ *   itself carries three `linearGradient`s — its cover, spine and page block
+ *   are each a gentle two- or three-stop ramp. A soft wash reading as pigment
+ *   or as tinted paper is inside the style; a highlight placed at 30% 12% to
+ *   imply a lamp is not. The test in `tests/styles.test.ts` gates the things
+ *   that are unambiguously a light model — blur, blend modes, soft shadows —
+ *   and deliberately does not gate gradients.
  * - **Nothing is axis-true.** Every long edge bows by a hair.
  */
 

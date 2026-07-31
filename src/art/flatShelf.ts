@@ -186,11 +186,15 @@ export function drawSpine(
   h: number,
   spec: FlatSpine,
 ): void {
-  // The INDEX is the book's identity and never moves between rooms; only the
-  // hexes it lands on do, which is what makes a room change a recolour rather
-  // than a re-roll of the whole shelf.
-  const cloths = flatScheme().cloths;
-  const [face, dark] = cloths[spec.cloth] ?? cloths[0] ?? CLOTHS[0]!;
+  // A book's cloth comes from the HOUSE palette, never from the room.
+  //
+  // It used to follow `flatScheme()`, so redecorating repainted every book on
+  // every shelf at once. That is precisely the wrong thing for a bookshelf to
+  // do: you find a book by recognising its spine, and a shelf whose colours
+  // all move together is a shelf you have to re-learn. The room owns the case
+  // and the wall; a book owns itself, and the way to change one is to dress
+  // that one (right-click → dress this book).
+  const [face, dark] = CLOTHS[spec.cloth] ?? CLOTHS[0]!;
   const radius = Math.min(w * 0.34, h * 0.03);
   const ink = inkWidth(w);
 

@@ -48,8 +48,8 @@ import {
   type FlatScheme,
 } from '../../art/flat';
 import { drawCrown, drawPlank, drawPost, drawRecess } from '../../art/flatShelf';
-import { libraryKey } from './libraryKey';
-import { getTheme, type LibraryTheme, type ThemeId } from '../../art/themes';
+import { schemeKey } from './libraryKey';
+import { getTheme, type ColourScheme, type LibraryTheme, type ThemeId } from '../../art/themes';
 import { fnv1a } from '../../art/noise';
 import {
   BOOK_ZONE_H,
@@ -93,11 +93,18 @@ export const SHELF_DETAIL_H = 34;
  */
 export interface ThemeRequest {
   themeId: ThemeId;
+  /**
+   * The colours to draw, which are NOT necessarily `getTheme(themeId).scheme`.
+   * A reader can take the shelf from one room and the books from another, so
+   * the composed scheme is passed in rather than looked up — looking it up
+   * here would silently ignore every part that was borrowed.
+   */
+  scheme: ColourScheme;
 }
 
 /** Identity of a baked room — same key ⇒ same case art. */
 export function themeKeyOf(req: ThemeRequest): string {
-  return libraryKey(getTheme(req.themeId));
+  return schemeKey(req.themeId, req.scheme);
 }
 
 /** Case wood stains (settings.shelfWoodStain). One flat timber now; inert. */
@@ -250,8 +257,8 @@ function bakeFlatPart(
  * The hexes, not the theme id: editing a colour in `art/themes.ts` has to
  * invalidate the PNGs on disk, and an id-only tag would not notice.
  */
-function roomTag(theme: LibraryTheme): string {
-  return fnv1a(libraryKey(theme)).toString(36);
+function roomTag(themeId: ThemeId, scheme: ColourScheme): string {
+  return fnv1a(schemeKey(themeId, scheme)).toString(36);
 }
 
 /** A room reduced to the two things a bake needs: its colours and its tag. */
@@ -260,8 +267,8 @@ interface Room {
   tag: string;
 }
 
-function roomOf(theme: LibraryTheme): Room {
-  return { scheme: theme.scheme, tag: roomTag(theme) };
+function roomOf(req: ThemeRequest): Room {
+  return { scheme: req.scheme, tag: roomTag(req.themeId, req.scheme) };
 }
 
 /**
@@ -376,9 +383,18 @@ export class EnvTextures {
   /** Resolves when every part of the current room has landed. */
   private themeSettled: Promise<void> = Promise.resolve();
 
-  /** The theme the case is currently wearing (defaults to the athenaeum). */
+  /** The preset the case is currently wearing (defaults to the athenaeum). */
   get theme(): LibraryTheme {
     return getTheme(this.themeReq?.themeId);
+  }
+
+  /**
+   * The colours the case is currently DRAWN in, which is not the same thing —
+   * a reader can borrow the shelf from one room and the books from another, so
+   * this is the composed scheme rather than `theme.scheme`.
+   */
+  get scheme(): ColourScheme {
+    return this.themeReq?.scheme ?? getTheme(null).scheme;
   }
 
   /** True once at least one themed part has been delivered. */
@@ -622,7 +638,7 @@ export class EnvTextures {
     // Snapshot the room here, not inside each bake: `setTheme` may land another
     // one while these are in flight, and a plank baked in the old scheme next
     // to a post baked in the new one is a two-tone bookcase.
-    const room = roomOf(this.theme);
+    const room = roomOf(this.themeReq ?? { themeId: this.theme.id, scheme: this.scheme });
     const jobs: Array<Promise<unknown>> = [
       bakeFlatPlank(room, SHELF_WIDTH, PLANK_H, dpr).then((b) => this.landPart('plank', b, gen)),
       bakeFlatBack(room, SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) => this.landPart('back', b, gen)),

@@ -19,10 +19,19 @@ import { For, createEffect, createSignal, onCleanup, onMount, type JSX } from 's
 import { flatScheme, setFlatScheme, type FlatCtx } from '../../art/flat';
 import { drawCaseCard } from '../../art/flatShelf';
 import { fnv1a } from '../../art/noise';
-import { THEMES, THEME_IDS, getTheme, type LibraryTheme, type ThemeId } from '../../art/themes';
+import {
+  THEMES,
+  THEME_IDS,
+  getTheme,
+  type ColourScheme,
+  type LibraryTheme,
+  type ThemeId,
+} from '../../art/themes';
 import {
   libraryPrefs,
   loadLibraryPrefs,
+  partTheme,
+  resolveLibrary,
   saveLibraryPrefs,
   type LibraryPrefs,
 } from '../../features/bookshelf/libraryPrefs';
@@ -127,9 +136,9 @@ function ThemeCard(props: { id: ThemeId; active: boolean; onPick(): void }): JSX
  * card above actually chose. Inline styles because every swatch's colour comes
  * from the data, not from the stylesheet.
  */
-function Swatches(props: { theme: LibraryTheme }): JSX.Element {
+function Swatches(props: { scheme: ColourScheme; name: string }): JSX.Element {
   const chips = (): readonly { colour: string; label: string }[] => {
-    const s = props.theme.scheme;
+    const s = props.scheme;
     return [
       { colour: s.timber, label: 'case timber' },
       { colour: s.recess, label: 'behind the books' },
@@ -142,7 +151,7 @@ function Swatches(props: { theme: LibraryTheme }): JSX.Element {
     <div
       class="nb-swatch-row"
       role="img"
-      aria-label={`${props.theme.name} palette`}
+      aria-label={`${props.name} palette`}
       style={{ display: 'flex', gap: '4px', 'flex-wrap': 'wrap' }}
     >
       <For each={chips()}>
@@ -162,6 +171,22 @@ function Swatches(props: { theme: LibraryTheme }): JSX.Element {
     </div>
   );
 }
+
+/**
+ * The three things on screen, and the swatch colour that stands for each.
+ *
+ * Keyed by the `LibraryPrefs` field they write, so a row cannot drift from the
+ * pref it edits. The swatch shows the colour that part would actually change:
+ * picking a shelf shows timber, picking books shows the first cloth.
+ */
+const PARTS = [
+  { key: 'shelf', label: 'shelves', colour: (t: LibraryTheme) => t.scheme.timber },
+  { key: 'wall', label: 'wallpaper', colour: (t: LibraryTheme) => t.scheme.wall },
+] as const satisfies readonly {
+  key: 'shelf' | 'wall';
+  label: string;
+  colour: (t: LibraryTheme) => string;
+}[];
 
 export interface LibraryStudioProps {
   /** Optional: notified after every change (sound cue, toast…). */
@@ -209,19 +234,71 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         </div>
       </section>
 
+      {/*
+        The three parts, each free to come from a different room. A preset
+        above sets all three at once; these override it one at a time, so
+        liking one room's timber and another's books is finally expressible.
+      */}
+      <section class="nb-panel-section nb-panel-section-divided">
+        <h3 class="nb-panel-section-title">mix it up</h3>
+        <For each={PARTS}>
+          {(part) => (
+            <div class="nb-panel-row nb-panel-row-stack">
+              <span class="nb-panel-row-label">
+                {part.label}{' '}
+                <em class="nb-panel-row-hint">
+                  {getTheme(partTheme(libraryPrefs, part.key)).name.toLowerCase()}
+                </em>
+              </span>
+              <div class="nb-chip-row" role="group" aria-label={`${part.label} colours`}>
+                <For each={THEME_IDS}>
+                  {(id) => (
+                    <button
+                      type="button"
+                      class="nb-chip nb-chip-swatch"
+                      aria-pressed={partTheme(libraryPrefs, part.key) === id}
+                      aria-label={`${part.label}: ${getTheme(id).name}`}
+                      title={getTheme(id).name}
+                      style={{ '--nb-swatch': part.colour(getTheme(id)) }}
+                      onClick={() =>
+                        patch({
+                          // Clear back to "follow the room" when the pick IS
+                          // the room's own, so the preset keeps driving it.
+                          [part.key]: id === libraryPrefs.theme ? null : id,
+                        })
+                      }
+                    >
+                      <span class="nb-chip-swatch-dot" aria-hidden="true" />
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          )}
+        </For>
+        <p class="nb-panel-footnote">
+          Books keep their own colours in every room — that is how you spot
+          yours. To change one, right-click its spine and pick “dress this
+          book”; to move it, right-click and pick “move”.
+        </p>
+      </section>
+
       <section class="nb-panel-section nb-panel-section-divided">
         <h3 class="nb-panel-section-title">the palette</h3>
-        <Swatches theme={theme()} />
-        <p class="nb-panel-footnote">
-          The case, the wall and the cloth new books are bound in. Everything else
-          — the shapes, the ink, the ornament — is the same drawing in every room.
-        </p>
+        <Swatches scheme={resolveLibrary(libraryPrefs).scheme} name={theme().name} />
       </section>
 
       <section class="nb-panel-section">
         <div class="nb-chip-row">
           <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
             surprise me
+          </button>
+          <button
+            type="button"
+            class="nb-chip nb-chip-ghost"
+            onClick={() => patch({ shelf: null, wall: null })}
+          >
+            back to one room
           </button>
         </div>
       </section>

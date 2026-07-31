@@ -1094,9 +1094,9 @@ export class ShelfWorld {
     // The palette every flat draw on this thread reads, set BEFORE the factory
     // is told: `setTheme` invalidates every baked spine, and the re-bakes it
     // provokes must already be finding the new room's cloths.
-    setFlatScheme(next.theme.scheme);
+    setFlatScheme(next.scheme);
     // Spine bias reacts instantly; it costs nothing to redo.
-    this.factory.setTheme(next.theme);
+    this.factory.setTheme(next.theme, next.scheme.cloths.flat().join('|'));
 
     if (!roomChanged) {
       this.dirty = true;
@@ -1107,10 +1107,10 @@ export class ShelfWorld {
     // nothing to fade from.
     if (this.appliedLibraryKey !== '') this.beginThemeFade();
 
-    await this.envTex.setTheme({ themeId: next.theme.id });
+    await this.envTex.setTheme({ themeId: next.theme.id, scheme: next.scheme });
     // The wall is not a texture, so no env-ready callback carries it — set it
     // here, on the same beat the case parts land.
-    this.backdrop.tint = wallTint(next.theme.scheme.wall);
+    this.backdrop.tint = wallTint(next.scheme.wall);
     if (this.destroyed || gen !== this.libraryGen) return;
 
     // Re-plate every mounted floor in the new room's plate material.
@@ -1320,7 +1320,7 @@ export class ShelfWorld {
     // both when it was a procedural strip and when it was a generated panel.
     // A backdrop is not a subject; the books are.
     if (this.backdrop.texture !== Texture.WHITE) this.backdrop.texture = Texture.WHITE;
-    this.backdrop.tint = wallTint(this.envTex.theme.scheme.wall);
+    this.backdrop.tint = wallTint(this.envTex.scheme.wall);
     this.backdrop.alpha = 1;
     if (this.wallpaper !== null) this.wallpaper.visible = false;
     this.syncCrown();

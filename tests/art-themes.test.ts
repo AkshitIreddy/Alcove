@@ -319,11 +319,6 @@ describe('picking a room actually repaints it', () => {
     { name: 'post', draw: () => drawPost(recording.ctx, 0, 0, 20, 200), of: (s) => s.timber },
     { name: 'recess', draw: () => drawRecess(recording.ctx, 0, 0, 200, 200), of: (s) => s.recess },
     { name: 'crown', draw: () => drawCrown(recording.ctx, 0, 0, 300, 24), of: (s) => s.timber },
-    {
-      name: 'spine',
-      draw: () => drawSpine(recording.ctx, 0, 0, 30, 200, flatSpineFor(0)),
-      of: (s) => s.cloths[0]![0],
-    },
   ];
 
   let recording = recorder();
@@ -340,6 +335,21 @@ describe('picking a room actually repaints it', () => {
       }
     });
   }
+
+  it('does NOT repaint a book when the room changes', () => {
+    // The counterpart to the cases above, and the reason `spine` is not one of
+    // them. A room owns the case and the wall; a book owns itself. Books that
+    // all recoloured together were books you had to re-learn every time you
+    // redecorated, which defeats the point of recognising a spine.
+    const seen = new Set<string>();
+    for (const theme of themes) {
+      recording = recorder();
+      setFlatScheme(theme.scheme);
+      drawSpine(recording.ctx, 0, 0, 30, 200, flatSpineFor(0));
+      seen.add(recording.fills.join('|'));
+    }
+    expect(seen.size, 'the same book drew differently in different rooms').toBe(1);
+  });
 
   it('restores the house palette when the scheme is cleared', () => {
     setFlatScheme(THEMES.reef.scheme);

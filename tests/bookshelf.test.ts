@@ -926,7 +926,43 @@ describe('library prefs: validated merge', () => {
       floraDensity: 2,
       lightWarmth: 0.9,
     });
-    expect(prefs).toEqual({ theme: 'reef' });
+    expect(prefs).toEqual({ theme: 'reef', shelf: null, wall: null });
+  });
+
+  it('keeps a per-part pick, and drops one naming a retired room', () => {
+    const mixed = mergeLibraryPrefs({ theme: 'reef', shelf: 'apothecary', wall: 'blossom' });
+    expect(mixed.shelf).toBe('apothecary');
+    expect(mixed.wall).toBe('blossom');
+    // A part naming one of the ten retired rooms falls back to following the
+    // preset rather than resolving to the default room, which would silently
+    // repaint that one part.
+    expect(mergeLibraryPrefs({ theme: 'reef', shelf: 'sakura' }).shelf).toBeNull();
+  });
+
+  it('composes the drawn scheme from two rooms', () => {
+    const apothecary = getTheme('apothecary');
+    const blossom = getTheme('blossom');
+    const { scheme } = resolveLibrary(
+      mergeLibraryPrefs({ theme: 'reef', shelf: 'apothecary', wall: 'blossom' }),
+    );
+    // Shelf fields from one room, wall from another, and the preset supplies
+    // neither — it is only the default each part falls back to.
+    expect(scheme.timber).toBe(apothecary.scheme.timber);
+    expect(scheme.timberDark).toBe(apothecary.scheme.timberDark);
+    expect(scheme.recess).toBe(apothecary.scheme.recess);
+    expect(scheme.wall).toBe(blossom.scheme.wall);
+  });
+
+  it('gives a mixed room its own bake key', () => {
+    const plain = resolveLibrary(mergeLibraryPrefs({ theme: 'reef' })).key;
+    const mixed = resolveLibrary(
+      mergeLibraryPrefs({ theme: 'reef', shelf: 'apothecary' }),
+    ).key;
+    // Or a case baked with reef timber would be served to a room wearing
+    // apothecary's, forever, off the disk cache.
+    expect(mixed).not.toBe(plain);
+    // Naming the preset explicitly is the same room, not a third key.
+    expect(resolveLibrary(mergeLibraryPrefs({ theme: 'reef', shelf: 'reef' })).key).toBe(plain);
   });
 
   it('opens a library saved in a retired room in the default one', () => {
@@ -1072,8 +1108,9 @@ describe('themed env keys', () => {
       scheme: { ...theme.scheme, timber: '#123456' },
     };
     expect(libraryKey(restained)).not.toBe(base);
-    // The prefs store must agree with the texture cache on the same room.
-    expect(resolveLibrary(mergeLibraryPrefs({ theme: 'apothecary' })).key).toBe(base);
+    // The prefs store agrees with the texture cache on an UNMIXED room — its
+    // key is the preset's key plus the three parts, all of which follow it.
+    expect(resolveLibrary(mergeLibraryPrefs({ theme: 'apothecary' })).key).toContain(base);
   });
 });
 

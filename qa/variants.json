@@ -1,8 +1,0 @@
-[
-  { "name": "a-asis" },
-  { "name": "b-height", "debug": "height" },
-  { "name": "c-normals", "debug": "normals" },
-  { "name": "d-ao", "debug": "ao" },
-  { "name": "e-shadow", "debug": "shadow" },
-  { "name": "f-albedo", "debug": "albedo" }
-]

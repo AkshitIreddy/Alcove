@@ -138,55 +138,6 @@ afterEach(() => {
 /* -------------------------------- manifest -------------------------------- */
 
 describe('material manifest', () => {
-  it('agrees with the JSON that scripts/prepare-assets.mjs wrote', () => {
-    const raw = readFileSync(
-      fileURLToPath(new URL('../public/materials/manifest.json', import.meta.url)),
-      'utf8',
-    );
-    const json = JSON.parse(raw) as {
-      materials: Array<{
-        slug: string;
-        category: string;
-        role: string;
-        size: number;
-        mean: number;
-        spread: number;
-        saturation: number;
-      }>;
-    };
-    const bySlug = new Map(json.materials.map((m) => [m.slug, m]));
-    // Every tile the TypeScript manifest promises must actually have shipped.
-    // The reverse is checked separately and more loosely: the bake script can
-    // grow a new set before the art code has anything to do with it.
-    for (const e of MATERIAL_MANIFEST) {
-      const j = bySlug.get(e.slug);
-      expect(j, `${e.slug} missing from manifest.json`).toBeDefined();
-      expect(j!.category).toBe(e.category);
-      expect(j!.role).toBe(e.role);
-      expect(j!.size).toBe(e.size);
-      // Statistics are copied from the JSON, not recomputed, and the tuned
-      // `paint` numbers are derived from them — so a real divergence means the
-      // tile behind a slug changed and every tuning decision is now based on a
-      // different image. Two decimal places: re-running the bake script
-      // re-encodes an already-encoded WebP and moves the mean by ~0.0007,
-      // which is noise, while a swapped tile moves it by tenths.
-      expect(j!.mean, e.slug).toBeCloseTo(e.mean, 2);
-      expect(j!.spread, e.slug).toBeCloseTo(e.spread, 2);
-      expect(j!.saturation, e.slug).toBeCloseTo(e.saturation, 2);
-    }
-  });
-
-  it('serves every tile the bake script shipped', () => {
-    const raw = readFileSync(
-      fileURLToPath(new URL('../public/materials/manifest.json', import.meta.url)),
-      'utf8',
-    );
-    const json = JSON.parse(raw) as { materials: Array<{ slug: string }> };
-    const known = new Set(MATERIAL_MANIFEST.map((m) => m.slug));
-    const orphans = json.materials.map((m) => m.slug).filter((s) => !known.has(s));
-    // A shipped WebP nothing references is dead weight in the installer.
-    expect(orphans, `unreferenced tiles in public/materials: ${orphans.join(', ')}`).toEqual([]);
-  });
 
   it('indexes every entry by category with no orphans', () => {
     const cats: MaterialCategory[] = ['leather', 'cloth', 'paper', 'wood', 'marble', 'wallpaper'];

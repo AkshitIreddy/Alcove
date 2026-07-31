@@ -38,7 +38,6 @@ import {
   themeSpineDefaults,
 } from './bookIdentity';
 import { paletteCss, placeholderTint } from './spinePalette';
-import { spineAtlas, type SpineFrame } from './spineAtlas';
 import { fnv1a } from '../../art/noise';
 import { FLOOR_H, PLANK_H } from './constants';
 
@@ -199,22 +198,6 @@ export class SpineFactory {
   /** Pages touched since the last flush (their GPU source needs an update). */
   private readonly dirtySources = new Set<CanvasSource>();
 
-  /* ---------------------------- authored art ---------------------------- */
-
-  /**
-   * When the generated sprite library is present it supersedes everything
-   * below: no recipe is baked, no worker is dispatched, no idle slice is
-   * scheduled. See `docs/design/RESET-render-architecture.md` — the measured
-   * 4,977ms first paint and 15,314ms main-thread block *were* the painting,
-   * and the only way to make painting fast enough was to stop doing it.
-   *
-   * The paint path stays as the fallback rather than being deleted, because
-   * it is what runs where the atlas cannot: a fresh clone before anyone has
-   * run the generation scripts, and the headless e2e harness.
-   */
-  private atlasReady = false;
-  /** Chosen frame per book — stable for the life of the library. */
-  private readonly frames = new Map<string, SpineFrame | null>();
   /**
    * Every book the shelf has asked about.
    *
@@ -240,19 +223,6 @@ export class SpineFactory {
       maxPages: 4,
       padding: 2,
       onEvict: (page, keys) => this.handleEvict('hi', page, keys, this.hiTextures),
-    });
-    // Fire and forget. Every book renders as a tinted placeholder until the
-    // pages land — which is the correct trade, because a placeholder appears
-    // in the first frame and the whole library arrives at once rather than a
-    // book at a time. Pop-in was a symptom of chunked painting, not of
-    // loading.
-    void spineAtlas.load().then((ok) => {
-      if (this.destroyed || !ok) return;
-      this.atlasReady = true;
-      // Drop anything already painted and tell listeners to re-pick: the
-      // authored sprite beats whatever the fallback managed in the meantime.
-      this.invalidateAll();
-      if (this.known.size > 0) this.emit([...this.known]);
     });
     this.preloadFonts();
     // Route every OTHER baked recipe (the case, the wall, the base wood)
@@ -353,24 +323,17 @@ export class SpineFactory {
    * from the studio actually picks a different book, which is the one case
    * where the binding *should* move.
    */
-  private frameFor(book: Book): SpineFrame | null {
-    const cached = this.frames.get(book.id);
-    if (cached !== undefined) return cached;
-    const frame = spineAtlas.pick(fnv1a(`${book.id}|${book.spineSeed}`) | 0);
-    this.frames.set(book.id, frame);
-    return frame;
-  }
-
   /**
-   * How tall this book stands relative to the tallest in the library, or null
-   * when there is no authored sprite. The generated rows were composed with
-   * feet on a common baseline and genuinely varied heights, and honouring
-   * that is what makes a shelf read as a shelf rather than a row of identical
-   * slabs.
+   * How tall this book stands, as a fraction of the opening.
+   *
+   * Derived straight from the book's own seed rather than from art. A shelf
+   * only reads as a shelf when the tops of its books make an uneven line, and
+   * the range is deliberately wide — half-height to full — because the first
+   * flat specimen used a narrow band and the row looked like a fence.
    */
-  heightFraction(book: Book): number | null {
-    const frame = this.frameFor(book);
-    return frame === null ? null : spineAtlas.heightFraction(frame);
+  heightFraction(book: Book): number {
+    const h = fnv1a(`${book.id}|${book.spineSeed}|h`) >>> 0;
+    return 0.5 + ((h % 50) / 100);
   }
 
   /**
@@ -383,42 +346,26 @@ export class SpineFactory {
    * seeded books averaged well under three quarters of the opening and the
    * case read as mostly empty air.
    *
-   * With authored art the proportions are already correct — the layouts run
-   * from 62% to 100% of their available height — so mapping the sprite's own
-   * fraction onto the book zone reproduces the reference directly, and the
-   * tallest books nearly touch the plank above.
-   *
    * An explicit studio height still wins — but only a genuinely explicit one.
    * `resolveBookStyle` fills `spine.height` in from the seeded format band for
    * every book, so testing the *resolved* value treats every seeded default as
-   * a deliberate choice and the authored proportions never get a look in. The
+   * a deliberate choice and the seeded proportions never get a look in. The
    * override record is the only place a real user decision lives.
    */
   artHeight(book: Book): number {
-    const params = this.getParams(book);
     const overrides = bookStyleOverridesFor(book);
     const chosen = overrides?.['height'];
     if (typeof chosen === 'number' && Number.isFinite(chosen)) {
-      return spineArtHeight(params);
+      return spineArtHeight(this.getParams(book));
     }
-    const fraction = this.heightFraction(book);
-    if (fraction === null) return spineArtHeight(params);
-    return BOOK_ZONE_H * BOOK_ZONE_FILL * fraction;
+    return BOOK_ZONE_H * BOOK_ZONE_FILL * this.heightFraction(book);
   }
 
   /**
-   * Best texture available for a tier.
-   *
-   * The authored sprite wins outright when the library is loaded — it is
-   * already at full resolution, so there is no lo/hi distinction to make and
-   * nothing to request. Otherwise: tier 0 prefers hi, everything falls back
-   * lo → undefined (placeholder).
+   * Best texture available for a tier: tier 0 prefers hi, everything falls
+   * back lo → undefined (placeholder).
    */
   pick(book: Book, tier: number): Texture | undefined {
-    if (this.atlasReady) {
-      const frame = this.frameFor(book);
-      if (frame !== null) return spineAtlas.texture(frame);
-    }
     if (tier === 0 && this.hiEnabled) {
       const hi = this.get(book.id, 'hi');
       if (hi !== undefined) return hi;
@@ -434,9 +381,6 @@ export class SpineFactory {
   invalidate(bookId: string): void {
     if (this.destroyed) return;
     this.invalidateStyle(bookId);
-    // Re-seeding a spine from the studio should actually move the binding, so
-    // the cached frame goes with the cached style.
-    this.frames.delete(bookId);
     let touched = false;
     for (const variant of ['lo', 'hi'] as const) {
       const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
@@ -455,11 +399,6 @@ export class SpineFactory {
   /** Queue a bake (idempotent). Lower priority = baked sooner. */
   request(book: Book, variant: SpineVariant, priority: number, ctx?: SpineRowContext): void {
     if (this.destroyed) return;
-    // With authored art there is nothing to bake, and this is where the
-    // startup cost actually disappears: the shelf still asks for every
-    // visible spine on every layout pass, and every one of those asks now
-    // returns without scheduling work.
-    if (this.atlasReady && this.frameFor(book) !== null) return;
     if (variant === 'hi' && !this.hiEnabled) return;
     const key = `${variant}|${book.id}`;
     if ((variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id)) return;

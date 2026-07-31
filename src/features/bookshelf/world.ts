@@ -114,7 +114,6 @@ import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
 import { DustMotes, makeGlowTexture } from './motes';
 import { rigForTheme, SceneLight, type LitFloor, type LitSpine } from './sceneLight';
-import { roomArt } from './roomArt';
 import { SpineFactory, type SpineRowContext } from './spineFactory';
 import { paletteCss } from './spinePalette';
 import {
@@ -203,8 +202,6 @@ interface CameraSnapshot {
 let sessionCamera: CameraSnapshot | null = null;
 
 const PARALLAX = 0.85;
-const BACKDROP_ALPHA = 0.45;
-const WALLPAPER_ALPHA = 0.6;
 
 /**
  * The wall, knocked back and warmed — a multiply tint on the room's own paper.
@@ -218,7 +215,16 @@ const WALLPAPER_ALPHA = 0.6;
  * (blue papers go warm slate, blush papers go dusty rose) while moving all of
  * them to the bottom of the value hierarchy where they belong.
  */
-const WALL_TINT = 0x9a7f61;
+
+/**
+ * The wall, as one flat colour (`FLAT.wall`).
+ *
+ * Drawn as a tint on a white pixel rather than any texture, which is the
+ * whole point: a solid fill has no tile and therefore no seam, and the pale
+ * banding in the corners while panning was a seam in every version that had
+ * one — procedural strip and generated panel alike.
+ */
+const FLAT_WALL_TINT = 0xe9e2d0;
 
 /**
  * How much grows on the case. Zero.
@@ -362,7 +368,6 @@ export class ShelfWorld {
   private readonly glowTexture: Texture;
   /** Crown/header board capping the case above floor 0. */
   private readonly crown: Sprite;
-  private crownWood = false;
 
   private readonly floors = new Map<number, FloorView>();
   private readonly pool: Pool<FloorView>;
@@ -473,11 +478,6 @@ export class ShelfWorld {
     this.backdrop.tint = PLACEHOLDER_TINTS.backdrop;
     this.backdrop.alpha = 0;
     this.backdrop.eventMode = 'none';
-    // Fire and forget, like the spine atlas: the procedural wall shows until
-    // the panel lands, then handleEnvReady swaps to it.
-    void roomArt.load().then((ok) => {
-      if (ok && !this.destroyed) this.handleEnvReady();
-    });
     this.glowTexture = makeGlowTexture();
     this.motes = new DustMotes(this.glowTexture);
     this.fx.addChild(this.motes.container);
@@ -1736,93 +1736,16 @@ export class ShelfWorld {
 
   private handleEnvReady(): void {
     if (this.destroyed) return;
-    const m = this.hooks.motion();
-    // The authored wall panel outranks every baked strip. Reported as pale
-    // horizontal banding while panning, worst in the corners: the baked wall
-    // is a small tile repeated across the viewport and its seam is visible.
-    // A 1536px panel is wider than the viewport usually is, so at the scale
-    // set in applyCamera the repeat is simply never on screen.
-    const authored = roomArt.get('wall-plaster');
-    if (authored !== undefined) {
-      if (this.backdrop.texture !== authored) this.backdrop.texture = authored;
-      this.backdrop.tint = WALL_TINT;
-      this.backdrop.alpha = 1;
-      if (this.wallpaper !== null) this.wallpaper.visible = this.envTex.wallpaper !== null;
-      this.dirty = true;
-      return;
-    }
-    // The room's own wall (papered · panelled · plastered · boarded · shoji ·
-    // glazed) supersedes the old paper+damask pair entirely.
-    const strip = this.envTex.backdropStrip;
-    if (strip !== null) {
-      if (this.backdrop.texture !== strip) {
-        this.backdrop.texture = strip;
-      }
-      this.backdrop.tint = WALL_TINT;
-      this.backdrop.alpha = 1;
-      if (this.wallpaper !== null) this.wallpaper.visible = false;
-    } else if (this.envTex.paper !== null && this.backdrop.texture !== this.envTex.paper) {
-      this.backdrop.texture = this.envTex.paper;
-      this.backdrop.tint = WALL_TINT;
-      this.track(
-        gsap.to(this.backdrop, {
-          alpha: BACKDROP_ALPHA,
-          duration: 0.5 * m,
-          onUpdate: this.hooks.markDirty,
-        }),
-      );
-      if (m === 0) this.backdrop.alpha = BACKDROP_ALPHA;
-    }
-    if (strip !== null) {
-      // Themed wall — nothing else to hang on it.
-    } else if (this.envTex.wallpaper !== null && this.wallpaper === null) {
-      // Damask pencil pattern over the paper: its own tiling layer so the
-      // pattern scale stays independent of the paper fibre tile.
-      const wp = new TilingSprite({
-        texture: this.envTex.wallpaper,
-        width: this.vp.width,
-        height: this.vp.height,
-      });
-      wp.eventMode = 'none';
-      wp.alpha = 0;
-      this.scene.addChildAt(wp, this.scene.getChildIndex(this.backdrop) + 1);
-      this.wallpaper = wp;
-      this.track(
-        gsap.to(wp, {
-          alpha: WALLPAPER_ALPHA,
-          duration: 0.5 * m,
-          onUpdate: this.hooks.markDirty,
-        }),
-      );
-      if (m === 0) wp.alpha = WALLPAPER_ALPHA;
-    } else if (this.wallpaper !== null) {
-      // Wave-2 wallpaper picker: pattern swap or 'plain' (layer hidden).
-      if (this.envTex.wallpaper === null) {
-        this.wallpaper.visible = false;
-      } else {
-        this.wallpaper.visible = true;
-        this.wallpaper.alpha = WALLPAPER_ALPHA;
-        if (this.wallpaper.texture !== this.envTex.wallpaper) {
-          this.wallpaper.texture = this.envTex.wallpaper;
-        }
-      }
-    }
-    if (this.envTex.crown !== null) {
-      const firstArrival = !this.crownWood;
-      this.crownWood = true;
-      if (this.crown.texture !== this.envTex.crown) {
-        this.crown.texture = this.envTex.crown;
-        this.crown.tint = 0xffffff;
-        this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
-        this.crown.height = CROWN_H;
-        if (firstArrival && m > 0) {
-          this.crown.alpha = 0;
-          this.track(
-            gsap.to(this.crown, { alpha: 1, duration: 0.4 * m, onUpdate: this.hooks.markDirty }),
-          );
-        }
-      }
-    }
+    // The wall is one flat colour. Nothing is tiled, so nothing can seam —
+    // which is what the reported pale banding in the corners actually was,
+    // both when it was a procedural strip and when it was a generated panel.
+    // A backdrop is not a subject; the books are.
+    if (this.backdrop.texture !== Texture.WHITE) this.backdrop.texture = Texture.WHITE;
+    this.backdrop.tint = FLAT_WALL_TINT;
+    this.backdrop.alpha = 1;
+    if (this.wallpaper !== null) this.wallpaper.visible = false;
+    this.dirty = true;
+    // Floors still need telling that their env textures moved.
     for (const [index, fv] of this.floors) {
       fv.applyEnv(this.envTex, this.degrade, true);
       fv.refreshEnv(this.envTex);

@@ -1,0 +1,63 @@
+<!doctype html>
+<!--
+  specimen.html — look at the flat art on its own, before it is wired into the
+  shelf. Served by the dev server at /specimen.html; screenshot it with
+  shots-now/specimen.mjs.
+
+  A separate page rather than a route in the app because the point is to judge
+  the DRAWING, with nothing else on screen to flatter or excuse it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Flat art specimen</title>
+    <style>
+      html, body { margin: 0; background: #e9e2d0; }
+      canvas { display: block; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c" width="1400" height="900"></canvas>
+    <script type="module">
+      import { FLAT, contactShadow } from '/src/art/flat.ts';
+      import {
+        drawCrown, drawPlank, drawPost, drawRecess, drawSpine, flatSpineFor,
+      } from '/src/art/flatShelf.ts';
+
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.fillStyle = FLAT.wall;
+      ctx.fillRect(0, 0, 1400, 900);
+
+      // One bookcase: crown, two posts, three floors of recess + plank.
+      const X = 160, Y = 60, W = 1080, POST = 34, FLOORS = 3, FLOOR_H = 240, PLANK = 30;
+      const H = FLOORS * FLOOR_H + 40;
+
+      contactShadow(ctx, X + W / 2, Y + H + 16, W * 0.48, 22, 0.22);
+
+      drawRecess(ctx, X + POST * 0.6, Y + 40, W - POST * 1.2, H - 40);
+      for (let f = 0; f < FLOORS; f++) {
+        const top = Y + 40 + f * FLOOR_H;
+        const plankY = top + FLOOR_H - PLANK;
+        // Books stand on the plank.
+        let bx = X + POST + 26;
+        let i = 0;
+        while (bx < X + W - POST - 40) {
+          const spec = flatSpineFor((f * 977 + i * 131 + 7) >>> 0);
+          const bw = 20 + ((spec.seed >> 3) % 26);
+          // Heights range over the whole opening, not a narrow band: the first
+          // specimen's tops formed an almost level line and the row read as a
+          // fence rather than a shelf.
+          const bh = (FLOOR_H - PLANK) * (0.5 + ((spec.seed >> 9) % 50) / 100);
+          if (bx + bw > X + W - POST - 26) break;
+          drawSpine(ctx, bx, plankY - bh, bw, bh, spec);
+          bx += bw + 3;
+          i++;
+        }
+        drawPlank(ctx, X + POST * 0.5, plankY, W - POST, PLANK, f * 31 + 5);
+      }
+      drawPost(ctx, X, Y + 30, POST, H - 30, 2);
+      drawPost(ctx, X + W - POST, Y + 30, POST, H - 30, 3);
+      drawCrown(ctx, X - 16, Y, W + 32, 46, 9);
+    </script>
+  </body>
+</html>

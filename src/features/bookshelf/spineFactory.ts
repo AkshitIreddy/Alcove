@@ -40,10 +40,21 @@ import {
 import { paletteCss, placeholderTint } from './spinePalette';
 import { spineAtlas, type SpineFrame } from './spineAtlas';
 import { fnv1a } from '../../art/noise';
+import { FLOOR_H, PLANK_H } from './constants';
 
 export { paletteCss, placeholderTint, spineArtHeight };
 
 export type SpineVariant = 'lo' | 'hi';
+
+/** Clear height inside one floor cell — FLOOR_H 320 less the 40px plank. */
+const BOOK_ZONE_H = FLOOR_H - PLANK_H;
+
+/**
+ * How much of that a full-height book takes. Not 1.0: real books clear the
+ * shelf above them, and a book flush to the plank overhead reads as jammed
+ * rather than shelved. 0.97 leaves the hairline of air the reference has.
+ */
+const BOOK_ZONE_FILL = 0.97;
 
 /**
  * Where a book sits in its shelf row, captured at request time and folded
@@ -352,14 +363,41 @@ export class SpineFactory {
 
   /**
    * How tall this book stands relative to the tallest in the library, or null
-   * when there is no authored sprite. The shelf uses this to size the book:
-   * the generated rows were composed with feet on a common baseline and
-   * genuinely varied heights, and honouring that is what makes a shelf read
-   * as a shelf rather than a row of identical slabs.
+   * when there is no authored sprite. The generated rows were composed with
+   * feet on a common baseline and genuinely varied heights, and honouring
+   * that is what makes a shelf read as a shelf rather than a row of identical
+   * slabs.
    */
   heightFraction(book: Book): number | null {
     const frame = this.frameFor(book);
     return frame === null ? null : spineAtlas.heightFraction(frame);
+  }
+
+  /**
+   * World-px height to draw this book at.
+   *
+   * Reported: *"books far too small relative to shelf height"* — in the
+   * reference the volumes very nearly fill the opening. The old numbers made
+   * that impossible: a 232px base against a 280px book zone is 83% before
+   * jitter, and the studio's format band bottoms out at 150px, so a shelf of
+   * seeded books averaged well under three quarters of the opening and the
+   * case read as mostly empty air.
+   *
+   * With authored art the proportions are already correct — the layouts run
+   * from 62% to 100% of their available height — so mapping the sprite's own
+   * fraction onto the book zone reproduces the reference directly, and the
+   * tallest books nearly touch the plank above.
+   *
+   * An explicit studio height still wins. Someone who set a height meant it.
+   */
+  artHeight(book: Book): number {
+    const params = this.getParams(book);
+    if (typeof params.height === 'number' && Number.isFinite(params.height)) {
+      return spineArtHeight(params);
+    }
+    const fraction = this.heightFraction(book);
+    if (fraction === null) return spineArtHeight(params);
+    return BOOK_ZONE_H * BOOK_ZONE_FILL * fraction;
   }
 
   /**

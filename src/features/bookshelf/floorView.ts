@@ -49,7 +49,7 @@ import {
   SHELF_DETAIL_H,
   type EnvTextures,
 } from './textures';
-import { placeholderTint, spineArtHeight, type SpineFactory } from './spineFactory';
+import { placeholderTint, type SpineFactory } from './spineFactory';
 import { fnv1a, mulberry32 } from '../../art/noise';
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -297,7 +297,10 @@ export class FloorView {
         sprite.anchor.set(0.5, 1);
         const centerX = place !== undefined ? place.centerX : SHELF_WIDTH / 2;
         const leanDeg = params.lean + (place !== undefined ? place.leanDeg : 0);
-        const height = spineArtHeight(params);
+        // Not spineArtHeight(params) directly: with authored art the sprite's
+        // own proportions set the height, so the row keeps the generated
+        // spread and the tall books nearly fill the opening.
+        const height = factory.artHeight(book);
         // Rotation is around the bottom-center anchor, which lifts one bottom
         // corner off the plank by (w/2)·sin θ — sink the book by that much so
         // leaners stay grounded (the other corner tucks into the plank).

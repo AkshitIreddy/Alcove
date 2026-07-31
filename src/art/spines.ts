@@ -10,6 +10,7 @@
  * composited with 'overlay' at alpha 0.06.
  */
 
+import * as P from './brush';
 import {
   charmColorCss,
   charmSpineReserve,
@@ -20,24 +21,18 @@ import {
 import {
   DEFAULT_LIGHT_RIG,
   applyAmbientOcclusion,
-  applyAtmosphericHaze,
-  applyColourBleed,
   applyCreaseOcclusion,
   applyKeyLight,
-  applyRimLight,
-  applySpecularCatch,
-  blowOut,
   castContactShadow,
   castObjectShadow,
-  cylinderShading,
   keyToSource,
-  litEdges,
   mixColourCss,
   shiftTemperature,
   withAlpha,
   type LightRig,
 } from './lighting';
 import { clamp, lerp, mulberry32, type RandomFn } from './noise';
+import { emitSpines, type NormalCtx } from '../render/normals';
 
 /* ------------------------------ studio vocab ------------------------------ */
 
@@ -384,7 +379,6 @@ const FONTS: readonly string[] = [
 ];
 
 const GOLD = '#c9a227';
-const GRAPHITE = 'rgba(58, 50, 42, 0.55)';
 
 /**
  * Derive the full parameter set for one book from its seed.
@@ -846,25 +840,6 @@ function silhouetteOutline(silhouette: number, w: number, h: number): Pt[] {
  * every vertex by ±amp. The jitter sequence comes from `rnd`, so identical
  * seeds reproduce identical outlines.
  */
-function densifyJitter(pts: readonly Pt[], step: number, amp: number, rnd: RandomFn): Pt[] {
-  const out: Pt[] = [];
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const a = pts[i] as Pt;
-    const b = pts[(i + 1) % n] as Pt;
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    const segs = Math.max(1, Math.round(len / step));
-    for (let k = 0; k < segs; k++) {
-      const t = k / segs;
-      out.push({
-        x: a.x + (b.x - a.x) * t + (rnd() * 2 - 1) * amp,
-        y: a.y + (b.y - a.y) * t + (rnd() * 2 - 1) * amp,
-      });
-    }
-  }
-  return out;
-}
-
 function tracePoly(ctx: Ctx2D, pts: readonly Pt[], close: boolean): void {
   ctx.beginPath();
   const first = pts[0];
@@ -875,44 +850,6 @@ function tracePoly(ctx: Ctx2D, pts: readonly Pt[], close: boolean): void {
     ctx.lineTo(p.x, p.y);
   }
   if (close) ctx.closePath();
-}
-
-/** Jittered open polyline between two points (for band rules etc.). */
-function jitteredSegment(a: Pt, b: Pt, step: number, amp: number, rnd: RandomFn): Pt[] {
-  const out: Pt[] = [];
-  const len = Math.hypot(b.x - a.x, b.y - a.y);
-  const segs = Math.max(1, Math.round(len / step));
-  for (let k = 0; k <= segs; k++) {
-    const t = k / segs;
-    out.push({
-      x: a.x + (b.x - a.x) * t + (rnd() * 2 - 1) * amp,
-      y: a.y + (b.y - a.y) * t + (rnd() * 2 - 1) * amp,
-    });
-  }
-  return out;
-}
-
-/** Stroke a rectangle as four jittered pencil segments. */
-function jitterRectStroke(
-  ctx: Ctx2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  step: number,
-  amp: number,
-  rnd: RandomFn,
-): void {
-  const c: Pt[] = [
-    { x, y },
-    { x: x + w, y },
-    { x: x + w, y: y + h },
-    { x, y: y + h },
-  ];
-  for (let i = 0; i < 4; i++) {
-    tracePoly(ctx, jitteredSegment(c[i] as Pt, c[(i + 1) % 4] as Pt, step, amp, rnd), false);
-    ctx.stroke();
-  }
 }
 
 /* -------------------------------- colors --------------------------------- */
@@ -2253,6 +2190,1009 @@ function spinePanels(
 
 /* -------------------------------- render --------------------------------- */
 
+/* ========================================================================== *
+ *                        THE PAINTED SPINE (brush-based)                     *
+ * ========================================================================== *
+ *
+ * `docs/design/painted-rendering.md` Pillar 1: a spine is not a fill with
+ * decorations on top, it is a mass built from stamps. Everything below paints
+ * into a {@link P.Surface} — a float RGBA buffer the brush engine owns — and
+ * the result is blitted once. Three consequences, all of them the point:
+ *
+ *  - **no hard edges anywhere.** `blockIn` overshoots and falls short of the
+ *    silhouette; `edgeVary` then decides which few edges the eye may lock on.
+ *  - **colour moves inside every shape.** Per-stamp hue/value jitter means a
+ *    navy spine is forty navies, which is the difference between leather and
+ *    a swatch.
+ *  - **one light.** The form modelling is a glaze whose gradient is derived
+ *    from the shared `LightRig`, so thirty books agree about the sun. When the
+ *    deferred pass lands (`opts.light === false`) the glazes are skipped and
+ *    the surface is pure albedo, with the height contribution emitted instead.
+ */
+
+/** Pigment set for one book: the mass, its shadow, its crown, its tooling. */
+interface Pigment {
+  base: P.Rgb;
+  deep: P.Rgb;
+  lift: P.Rgb;
+  /** Warm/cool partner used for the second material tone. */
+  partner: P.Rgb;
+}
+
+/**
+ * The value classes a shelf is built from.
+ *
+ * Pillar 3, applied where it actually bites. The old shelf sat entirely in the
+ * 45–70% lightness band, which is why it read as mid-tone mush no matter how
+ * the hues were tuned. A real library row is mostly *dark* — oxblood, navy,
+ * near-black calf — with a handful of tan/cream bindings doing all the lifting
+ * and gold doing the sparkling. Weights below sum to 1.
+ */
+const VALUE_CLASSES: ReadonlyArray<{ lum: readonly [number, number]; weight: number }> = [
+  { lum: [0.055, 0.115], weight: 0.2 }, // near-black bindings: the anchors
+  { lum: [0.115, 0.19], weight: 0.28 }, // deep: oxblood / navy / forest
+  { lum: [0.19, 0.3], weight: 0.24 }, // mid-dark: the connective tissue
+  { lum: [0.3, 0.44], weight: 0.16 }, // mid: tan, olive, faded cloth
+  { lum: [0.5, 0.7], weight: 0.12 }, // light: vellum, cream, parchment
+];
+
+/** Pick a target luminance for this book's binding from the value structure. */
+function valueTargetFor(seed: number): number {
+  const r = mulberry32((seed ^ 0x7a1e) >>> 0);
+  let acc = r();
+  for (const cls of VALUE_CLASSES) {
+    acc -= cls.weight;
+    if (acc < 0) return lerp(cls.lum[0], cls.lum[1], r());
+  }
+  return 0.22;
+}
+
+/** Move a colour to a target luminance while keeping its hue and bite. */
+function retone(c: P.Rgb, target: number): P.Rgb {
+  const lum = P.luminance(c);
+  if (lum <= 0.002) return target <= 0.02 ? c : P.mixRgb(c, { r: 1, g: 1, b: 1 }, target);
+  if (target < lum) {
+    // Toward black, but not a flat multiply: shadows in paint go cool and keep
+    // a little chroma rather than sliding to grey.
+    const k = 1 - target / lum;
+    const shadow = P.shiftHsl(c, -6, 0.06, -0.02);
+    return P.mixRgb(c, P.mixRgb(shadow, { r: 0.03, g: 0.035, b: 0.055 }, 0.9), k);
+  }
+  const k = Math.min(0.92, (target - lum) / Math.max(0.08, 1 - lum));
+  return P.mixRgb(c, P.shiftHsl(c, 4, -0.12, 0.2), k);
+}
+
+/** Build the four working tones for a book from its pigment duo. */
+function pigmentFor(colA: HSL, colB: HSL, hue: number, seed: number): Pigment {
+  const rawA = P.hslToRgb({ h: colA.h + hue, s: colA.s / 100, l: colA.l / 100 });
+  const rawB = P.hslToRgb({ h: colB.h + hue, s: colB.s / 100, l: colB.l / 100 });
+  const target = valueTargetFor(seed);
+  const base = retone(P.mixRgb(rawA, rawB, 0.42), target);
+  return {
+    base,
+    // The shadow tone is a genuine dark — 30% of the mass value, not 80% — and
+    // drifts cool, which is what stops a row of books reading as flat cards.
+    deep: retone(P.shiftHsl(base, -8, 0.08, 0), Math.max(0.02, target * 0.34)),
+    // The crown lifts and warms toward the key rather than washing out.
+    lift: retone(P.shiftHsl(base, 6, -0.06, 0), Math.min(0.86, target * 1.9 + 0.1)),
+    partner: retone(rawB, Math.max(0.035, target * 0.62)),
+  };
+}
+
+/** Convert the local Pt polygon vocabulary to the brush engine's Vec2. */
+function toVec(pts: readonly Pt[]): P.Vec2[] {
+  return pts.map((p) => ({ x: p.x, y: p.y }));
+}
+
+/** Everything one painted spine needs to know about itself and its room. */
+interface SpinePaintSpec {
+  w: number;
+  h: number;
+  scale: number;
+  pig: Pigment;
+  material: BindingMaterial;
+  boardStyle: number;
+  wear: number;
+  knock: number;
+  foilWear: number;
+  sunFade: number;
+  round: number;
+  rig: LightRig;
+  lightOn: boolean;
+  /** +1 = key from the right, -1 = from the left. */
+  keySide: 1 | -1;
+  keyTake: number;
+  depth: number;
+  seed: number;
+}
+
+/**
+ * Where the lit crown of the round back sits, 0..1 across the width.
+ * One expression, shared by the albedo pass and the height contribution, so
+ * the painted crown and the shaded crown are the same crown.
+ */
+function crownAt(spec: SpinePaintSpec): number {
+  return clamp(0.5 + spec.keySide * 0.17 * spec.round, 0.22, 0.78);
+}
+
+/* ------------------------------ materials -------------------------------- */
+
+/**
+ * Cracked leather. Pebble grain from a sponge, creases dragged with a soft
+ * head, then a crackle net of short dark strokes that follow no grid — the
+ * craquelure of a binding that has flexed for a century.
+ */
+function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig } = spec;
+  const s = Math.max(0.6, scale);
+  const grainSize = clamp(w * 0.16, 2.4 * s, 7 * s);
+
+  // 1. pebble grain — two sponge passes, one sinking, one lifting.
+  P.scumble(sf, mask, P.brush('sponge', { size: grainSize, colour: pig.deep, opacity: 0.1, spacing: 0.5, grain: 0.95 }), {
+    coverage: 0.52,
+    passes: 2,
+    patchScale: grainSize * 3.4,
+    edgeBias: 0.25,
+    seed: (spec.seed ^ 0x1e47) >>> 0,
+    targetBuildup: 0.45,
+  });
+  P.scumble(sf, mask, P.brush('sponge', { size: grainSize * 0.8, colour: pig.lift, opacity: 0.07, spacing: 0.55, grain: 0.95 }), {
+    coverage: 0.34,
+    passes: 1,
+    patchScale: grainSize * 5,
+    // Grain catches the light on the side the key comes from.
+    weight: (x) => 0.35 + 0.65 * clamp01Local(spec.keySide > 0 ? x / w : 1 - x / w),
+    seed: (spec.seed ^ 0x2b71) >>> 0,
+    targetBuildup: 0.35,
+  });
+
+  // 2. creases — the soft folds where the spine has been opened.
+  const creases = 2 + Math.floor(rnd() * 3);
+  const creaseBrush = P.brush('soft', {
+    size: Math.max(1.6, w * 0.2),
+    colour: pig.deep,
+    opacity: 0.055,
+    spacing: 0.14,
+    jitter: { lum: 0.05, hue: 5, position: 0.5 },
+  });
+  for (let i = 0; i < creases; i++) {
+    const cx = w * (0.16 + rnd() * 0.68);
+    const y0 = h * rnd() * 0.4;
+    const y1 = y0 + h * (0.28 + rnd() * 0.5);
+    const path: P.Vec2[] = [];
+    for (let k = 0; k <= 5; k++) {
+      const t = k / 5;
+      path.push({ x: cx + Math.sin(t * 3.1 + i) * w * 0.12, y: lerp(y0, y1, t) });
+    }
+    P.stroke(sf, path, creaseBrush, {
+      passes: 2,
+      pressure: P.PRESSURE.arc,
+      seed: (spec.seed + i * 977) >>> 0,
+      alpha: 0.8,
+    });
+  }
+
+  // 3. craquelure — short, hard, dark, and only where wear says so.
+  const cracks = Math.round(spec.wear * 34 + 4);
+  const crackBrush = P.brush('ink', {
+    size: Math.max(0.9, 1.1 * s),
+    colour: pig.deep,
+    opacity: 0.3,
+    spacing: 0.3,
+    jitter: { lum: 0.1, opacity: 0.6, position: 0.4 },
+  });
+  for (let i = 0; i < cracks; i++) {
+    let px = rnd() * w;
+    let py = rnd() * h;
+    const segs = 2 + Math.floor(rnd() * 3);
+    const path: P.Vec2[] = [{ x: px, y: py }];
+    let ang = rnd() * Math.PI * 2;
+    for (let k = 0; k < segs; k++) {
+      ang += (rnd() - 0.5) * 1.9;
+      const len = (1.6 + rnd() * 4.5) * s;
+      px += Math.cos(ang) * len;
+      py += Math.sin(ang) * len;
+      path.push({ x: px, y: py });
+    }
+    P.stroke(sf, path, crackBrush, {
+      passes: 1,
+      pressure: P.PRESSURE.flick,
+      wobble: 0.3 * s,
+      seed: (spec.seed + i * 313) >>> 0,
+      alpha: 0.5 + rnd() * 0.5,
+    });
+  }
+
+  // 4. waxy sheen — a broad soft-light glaze biased to the crown.
+  const crown = crownAt(spec);
+  P.glaze(sf, mask, P.shiftHsl(pig.lift, 4, -0.1, 0.06), 0.16, {
+    blend: 'softlight',
+    gradient: (x, y) => {
+      const u = x / w;
+      const band = Math.exp(-Math.pow((u - crown) / 0.3, 2));
+      const v = y / h;
+      return band * (0.45 + 0.55 * Math.sin(Math.PI * clamp01Local(v)));
+    },
+    mottle: 0.34,
+    mottleScale: Math.max(10, w * 1.4),
+    seed: (spec.seed ^ 0x51c0) >>> 0,
+  });
+}
+
+/**
+ * Book cloth / buckram. A woven material reads by its *rib*: fine vertical
+ * warp with a horizontal weft crossing it, matte, with the weave picking up a
+ * cool sheen only on the crown.
+ */
+function paintClothPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig, boardStyle } = spec;
+  const s = Math.max(0.6, scale);
+  const ribGap = boardStyle === 1 ? 3.4 * s : boardStyle === 2 ? 5.2 * s : 2.2 * s;
+  const warpBrush = P.brush('bristle', {
+    size: Math.max(1.1, ribGap * 0.85),
+    colour: pig.deep,
+    opacity: 0.075,
+    spacing: 0.3,
+    grain: 0.8,
+    followPath: true,
+    jitter: { lum: 0.09, hue: 6, opacity: 0.55, position: 0.35 },
+  });
+  const warpLift = P.withBrush(warpBrush, { colour: pig.lift, opacity: 0.055 });
+  for (let x = -ribGap; x < w + ribGap; x += ribGap) {
+    const jx = x + (rnd() - 0.5) * ribGap * 0.3;
+    const b = rnd() < 0.42 ? warpLift : warpBrush;
+    P.stroke(
+      sf,
+      [
+        { x: jx, y: -h * 0.02 },
+        { x: jx + (rnd() - 0.5) * 1.2 * s, y: h * 0.5 },
+        { x: jx + (rnd() - 0.5) * 1.2 * s, y: h * 1.02 },
+      ],
+      b,
+      { passes: 1, pressure: P.PRESSURE.flat, taper: 0.02, wobble: 0.35 * s, seed: (spec.seed + x * 71) >>> 0 },
+    );
+  }
+  // Weft: shorter, broken horizontals, half the density of the warp.
+  const weftBrush = P.brush('flat', {
+    size: Math.max(1, ribGap * 0.7),
+    colour: pig.deep,
+    opacity: 0.05,
+    spacing: 0.35,
+    grain: 0.85,
+    jitter: { lum: 0.07, opacity: 0.7, position: 0.4 },
+  });
+  for (let y = 0; y < h; y += ribGap * 1.15) {
+    const jy = y + (rnd() - 0.5) * ribGap * 0.4;
+    P.stroke(
+      sf,
+      [
+        { x: -w * 0.04, y: jy },
+        { x: w * 1.04, y: jy },
+      ],
+      weftBrush,
+      { passes: 1, pressure: P.PRESSURE.flat, taper: 0.05, wobble: 0.25 * s, seed: (spec.seed + y * 131) >>> 0, alpha: 0.55 + rnd() * 0.45 },
+    );
+  }
+  // Slubs — the little thick spots any woven cloth has.
+  P.scumble(sf, mask, P.brush('chalk', { size: Math.max(1.4, 2.2 * s), colour: pig.lift, opacity: 0.11, grain: 0.9 }), {
+    coverage: 0.12,
+    passes: 1,
+    patchScale: Math.max(12, w * 1.1),
+    seed: (spec.seed ^ 0x3fa1) >>> 0,
+    targetBuildup: 0.4,
+  });
+  // Matte veil: cloth never has leather's sheen, so the crown glaze is cool
+  // and weak. This is the whole difference between the two at shelf scale.
+  P.glaze(sf, mask, P.shiftHsl(pig.base, 16, -0.2, 0.1), 0.1, {
+    blend: 'softlight',
+    mottle: 0.4,
+    mottleScale: Math.max(14, w * 2),
+    seed: (spec.seed ^ 0x22b8) >>> 0,
+  });
+}
+
+/** Paper-covered boards: long fibres, foxing, a chalky bloom. */
+function paintPaperPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig } = spec;
+  const s = Math.max(0.6, scale);
+  const fibre = P.brush('chalk', {
+    size: Math.max(1, 1.5 * s),
+    colour: pig.deep,
+    opacity: 0.05,
+    spacing: 0.45,
+    grain: 0.95,
+    jitter: { lum: 0.12, opacity: 0.8, position: 0.7 },
+  });
+  const fibres = Math.round(h / (2.4 * s)) + 6;
+  for (let i = 0; i < fibres; i++) {
+    const x0 = rnd() * w;
+    const y0 = rnd() * h;
+    const len = h * (0.06 + rnd() * 0.3);
+    P.stroke(
+      sf,
+      [
+        { x: x0, y: y0 },
+        { x: x0 + (rnd() - 0.5) * 2.4 * s, y: y0 + len },
+      ],
+      rnd() < 0.4 ? P.withBrush(fibre, { colour: pig.lift }) : fibre,
+      { passes: 1, pressure: P.PRESSURE.arc, taper: 0.3, seed: (spec.seed + i * 617) >>> 0 },
+    );
+  }
+  // Foxing: rust specks that bloom where damp got in.
+  const spots = Math.round(6 + spec.wear * 40);
+  const fox = P.brush('soft', { size: Math.max(1.2, 2.4 * s), colour: '#8a5a30', opacity: 0.09, jitter: { hue: 14, lum: 0.12, size: 0.7 } });
+  for (let i = 0; i < spots; i++) {
+    P.dab(sf, rnd() * w, rnd() * h, fox, { size: (0.7 + rnd() * 2.6) * s, opacity: 0.04 + rnd() * 0.11 });
+  }
+  P.glaze(sf, mask, '#e8dcc0', 0.09, { blend: 'softlight', mottle: 0.5, mottleScale: Math.max(16, w * 2.2), seed: (spec.seed ^ 0x9c31) >>> 0 });
+}
+
+/** Vellum: translucent, pale, follicled, unevenly stretched. */
+function paintVellumPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig } = spec;
+  const s = Math.max(0.6, scale);
+  // Big soft clouds of translucency — vellum's signature is that you can see
+  // the skin's thickness change across the sheet.
+  const cloud = P.brush('soft', {
+    size: Math.max(4, w * 0.7),
+    colour: P.shiftHsl(pig.lift, 6, -0.1, 0.14),
+    opacity: 0.055,
+    spacing: 0.3,
+    jitter: { lum: 0.1, hue: 9, size: 0.6 },
+  });
+  for (let i = 0; i < 14; i++) {
+    P.dab(sf, rnd() * w, rnd() * h, cloud, { size: w * (0.5 + rnd() * 1.1), opacity: 0.03 + rnd() * 0.06 });
+  }
+  P.scumble(sf, mask, P.brush('soft', { size: Math.max(2, w * 0.3), colour: P.shiftHsl(pig.deep, 20, -0.1, 0.08), opacity: 0.05 }), {
+    coverage: 0.3,
+    passes: 1,
+    patchScale: Math.max(18, w * 2.4),
+    seed: (spec.seed ^ 0x77c2) >>> 0,
+    targetBuildup: 0.3,
+  });
+  // Follicles: the hair pattern, in little arcs of three or four dots.
+  const dot = P.brush('ink', { size: Math.max(0.8, 0.9 * s), colour: P.shiftHsl(pig.deep, 8, 0, 0.06), opacity: 0.22 });
+  const groups = Math.round(10 + h / (6 * s));
+  for (let i = 0; i < groups; i++) {
+    const gx = rnd() * w;
+    const gy = rnd() * h;
+    const a = rnd() * Math.PI;
+    for (let k = 0; k < 3; k++) {
+      P.dab(sf, gx + Math.cos(a) * k * 1.7 * s, gy + Math.sin(a) * k * 1.7 * s, dot, { opacity: 0.1 + rnd() * 0.16 });
+    }
+  }
+  P.glaze(sf, mask, '#f3e8cc', 0.14, { blend: 'screen', mottle: 0.45, mottleScale: Math.max(12, w * 1.8), seed: (spec.seed ^ 0x1188) >>> 0 });
+}
+
+/** Linen: coarse, slubby, cross-hatched, warm. */
+function paintLinenPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig } = spec;
+  const s = Math.max(0.6, scale);
+  const gap = 3.1 * s;
+  const hatch = P.brush('chalk', {
+    size: Math.max(1.2, gap * 0.9),
+    colour: pig.deep,
+    opacity: 0.06,
+    spacing: 0.4,
+    grain: 1,
+    jitter: { lum: 0.13, opacity: 0.8, position: 0.6 },
+  });
+  for (let x = -gap; x < w + gap; x += gap) {
+    P.stroke(sf, [{ x, y: -2 }, { x: x + (rnd() - 0.5) * 2 * s, y: h + 2 }], hatch, {
+      passes: 1,
+      pressure: P.PRESSURE.flat,
+      wobble: 0.7 * s,
+      seed: (spec.seed + x * 89) >>> 0,
+      alpha: 0.6 + rnd() * 0.5,
+    });
+  }
+  for (let y = -gap; y < h + gap; y += gap * 1.1) {
+    P.stroke(sf, [{ x: -2, y }, { x: w + 2, y: y + (rnd() - 0.5) * 1.6 * s }], P.withBrush(hatch, { colour: rnd() < 0.4 ? pig.lift : pig.deep, opacity: 0.05 }), {
+      passes: 1,
+      pressure: P.PRESSURE.flat,
+      wobble: 0.6 * s,
+      seed: (spec.seed + y * 151) >>> 0,
+      alpha: 0.5 + rnd() * 0.5,
+    });
+  }
+  // Slubs: fat irregular thread nubs, the thing that says "linen" not "cloth".
+  const slub = P.brush('flat', { size: Math.max(1.6, 3 * s), colour: pig.lift, opacity: 0.13, grain: 0.9 });
+  for (let i = 0; i < Math.round(w * h * 0.004); i++) {
+    const a = rnd() * Math.PI;
+    const sx = rnd() * w;
+    const sy = rnd() * h;
+    const len = (2 + rnd() * 4) * s;
+    P.stroke(
+      sf,
+      [
+        { x: sx, y: sy },
+        { x: sx + Math.cos(a) * len, y: sy + Math.sin(a) * len },
+      ],
+      rnd() < 0.5 ? slub : P.withBrush(slub, { colour: pig.deep, opacity: 0.11 }),
+      { passes: 1, pressure: P.PRESSURE.arc, taper: 0.35, seed: (spec.seed + i * 41) >>> 0 },
+    );
+  }
+  P.glaze(sf, mask, '#d8c49a', 0.08, { blend: 'softlight', mottle: 0.4, seed: (spec.seed ^ 0x4d21) >>> 0 });
+}
+
+/** Silk: satin sheen bands running the length, plus a watered moiré. */
+function paintSilkPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig } = spec;
+  const s = Math.max(0.6, scale);
+  const bands = 3 + Math.floor(rnd() * 3);
+  const sheen = P.brush('soft', {
+    size: Math.max(2, w / bands),
+    colour: pig.lift,
+    opacity: 0.07,
+    spacing: 0.16,
+    jitter: { lum: 0.07, hue: 5, position: 0.3 },
+  });
+  for (let i = 0; i < bands; i++) {
+    const bx = ((i + 0.5) / bands) * w;
+    P.stroke(sf, [{ x: bx, y: -2 }, { x: bx, y: h + 2 }], i % 2 === 0 ? sheen : P.withBrush(sheen, { colour: pig.deep, opacity: 0.06 }), {
+      passes: 2,
+      pressure: P.PRESSURE.flat,
+      taper: 0.05,
+      wobble: 0.8 * s,
+      seed: (spec.seed + i * 733) >>> 0,
+    });
+  }
+  // Watered ripple: sinusoidal horizontals of alternating tone.
+  const ripple = P.brush('soft', { size: Math.max(1.2, 1.8 * s), colour: pig.lift, opacity: 0.06, spacing: 0.2 });
+  for (let y = 0; y < h; y += 3.6 * s) {
+    const path: P.Vec2[] = [];
+    const phase = rnd() * 6.28;
+    for (let k = 0; k <= 6; k++) {
+      const t = k / 6;
+      path.push({ x: t * w, y: y + Math.sin(phase + t * 5.4) * 2.2 * s });
+    }
+    P.stroke(sf, path, y % (7.2 * s) < 3.6 * s ? ripple : P.withBrush(ripple, { colour: pig.deep }), {
+      passes: 1,
+      pressure: P.PRESSURE.arc,
+      seed: (spec.seed + y * 211) >>> 0,
+      alpha: 0.6,
+    });
+  }
+  P.glaze(sf, mask, P.shiftHsl(pig.lift, 0, 0.06, 0.1), 0.12, {
+    blend: 'screen',
+    gradient: (x) => Math.exp(-Math.pow((x / w - crownAt(spec)) / 0.22, 2)),
+    mottle: 0.25,
+    seed: (spec.seed ^ 0x6a3c) >>> 0,
+  });
+}
+
+/**
+ * Marbled boards, painted rather than composited: combed waves laid as long
+ * wavering strokes in three or four period colours, then a Spanish-wave or
+ * stone variant on top.
+ */
+function paintMarbledPainterly(
+  sf: P.Surface,
+  mask: P.Mask,
+  spec: SpinePaintSpec,
+  rnd: RandomFn,
+  variant: number,
+): void {
+  const { w, h, scale, pig } = spec;
+  const s = Math.max(0.6, scale);
+  const inks: P.ColourLike[] = [
+    P.shiftHsl(pig.deep, 0, 0.1, 0),
+    P.shiftHsl(pig.base, 24, 0.08, 0.02),
+    '#7a2b1e',
+    '#1e3a52',
+    '#c8a24a',
+  ];
+  const veinCount = Math.round(h / (3.2 * s));
+  const veinBrush = P.brush('soft', {
+    size: Math.max(1.2, 2.4 * s),
+    colour: inks[0],
+    opacity: 0.14,
+    spacing: 0.18,
+    jitter: { lum: 0.1, hue: 10, opacity: 0.5, position: 0.5 },
+  });
+  const combAmp = variant === 2 ? 0.3 : 1;
+  for (let i = 0; i < veinCount; i++) {
+    const y = (i / veinCount) * h + (rnd() - 0.5) * 2 * s;
+    const colour = inks[i % inks.length];
+    const path: P.Vec2[] = [];
+    const phase = variant === 0 ? (i % 2) * 1.6 : rnd() * 6.28;
+    const amp = (variant === 1 ? 3.4 : 2.2) * s * combAmp;
+    for (let k = 0; k <= 8; k++) {
+      const t = k / 8;
+      path.push({ x: -2 + t * (w + 4), y: y + Math.sin(phase + t * (variant === 1 ? 9 : 5)) * amp });
+    }
+    P.stroke(sf, path, P.withBrush(veinBrush, { colour }), {
+      passes: 1,
+      pressure: P.PRESSURE.flat,
+      taper: 0.04,
+      wobble: 0.5 * s,
+      seed: (spec.seed + i * 419) >>> 0,
+      alpha: 0.45 + rnd() * 0.45,
+    });
+  }
+  if (variant === 2) {
+    // Stone/shell: droplets with pale haloes, no comb.
+    const drop = P.brush('soft', { size: Math.max(2, 4 * s), colour: inks[2], opacity: 0.13, jitter: { hue: 16, lum: 0.14, size: 0.7 } });
+    const halo = P.withBrush(drop, { colour: '#efe4c4', opacity: 0.09 });
+    for (let i = 0; i < Math.round(w * h * 0.006); i++) {
+      const dx = rnd() * w;
+      const dy = rnd() * h;
+      const r = (1.4 + rnd() * 3.4) * s;
+      P.dab(sf, dx, dy, halo, { size: r * 2.1 });
+      P.dab(sf, dx, dy, P.withBrush(drop, { colour: inks[1 + Math.floor(rnd() * 4)] }), { size: r });
+    }
+  }
+  P.glaze(sf, mask, pig.deep, 0.1, { blend: 'multiply', mottle: 0.4, seed: (spec.seed ^ 0x3e91) >>> 0 });
+}
+
+/** Dispatch: paint the binding material into an already blocked-in mass. */
+function paintMaterialPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  switch (spec.material) {
+    case 'leather':
+      paintLeatherPainterly(sf, mask, spec, rnd);
+      break;
+    case 'cloth':
+      paintClothPainterly(sf, mask, spec, rnd);
+      break;
+    case 'paper':
+      paintPaperPainterly(sf, mask, spec, rnd);
+      break;
+    case 'vellum':
+      paintVellumPainterly(sf, mask, spec, rnd);
+      break;
+    case 'linen':
+      paintLinenPainterly(sf, mask, spec, rnd);
+      break;
+    case 'silk':
+      paintSilkPainterly(sf, mask, spec, rnd);
+      break;
+    default:
+      paintMarbledPainterly(sf, mask, spec, rnd, spec.boardStyle);
+      break;
+  }
+}
+
+function clamp01Local(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/* ------------------------------ stencils --------------------------------- */
+
+/** An alpha coverage field lifted off a canvas — text, an ornament, a charm. */
+interface Stencil {
+  w: number;
+  h: number;
+  a: Float32Array;
+}
+
+let stencilCanvas: Canvas2D | null = null;
+
+/**
+ * Rasterise anything drawable into an alpha stencil.
+ *
+ * The bridge between "canvas can draw text and bezier ornaments" and "the
+ * brush engine paints everything else". A glyph run comes back as coverage,
+ * which is then *stamped* with gold rather than filled with it — the whole
+ * reason a tooled title can look burnished instead of printed.
+ */
+function makeStencil(w: number, h: number, draw: (c: Ctx2D) => void): Stencil {
+  const cw = Math.max(1, Math.ceil(w));
+  const ch = Math.max(1, Math.ceil(h));
+  if (!stencilCanvas || stencilCanvas.width < cw || stencilCanvas.height < ch) {
+    stencilCanvas = makeCanvas(Math.max(cw, 128), Math.max(ch, 128));
+  }
+  const c = stencilCanvas;
+  const ctx = get2d(c);
+  ctx.save();
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#fff';
+  draw(ctx);
+  ctx.restore();
+  const img = ctx.getImageData(0, 0, cw, ch);
+  const a = new Float32Array(cw * ch);
+  for (let i = 0, o = 0; i < a.length; i++, o += 4) a[i] = img.data[o + 3] / 255;
+  return { w: cw, h: ch, a };
+}
+
+interface StampOptions {
+  /** Rotate the stencil a quarter turn so a horizontal run reads top-to-bottom. */
+  rotate?: boolean;
+  /** Colour at coverage centre; may vary with position along the run. */
+  colour: (t: number, u: number) => P.Rgb;
+  /** 0..1 — how much of the mark has been rubbed back to the binding. */
+  wear?: number;
+  /** Noise scale for the wear dropouts, px. */
+  wearScale?: number;
+  alpha?: number;
+  seed?: number;
+  /** Debossed bite: a dark offset copy under the mark. */
+  relief?: { colour: P.Rgb; dx: number; dy: number; alpha: number } | null;
+}
+
+/**
+ * Composite a stencil onto the surface as *material* rather than as ink.
+ *
+ * `t` runs along the mark, `u` across it, so a foil colour ramp can be a
+ * burnished gradient rather than a flat gold. Wear eats the mark with
+ * low-frequency noise, which is the reference's "some worn away".
+ */
+function stampStencil(sf: P.Surface, st: Stencil, ox: number, oy: number, opts: StampOptions): void {
+  const rotate = opts.rotate ?? false;
+  const wear = clamp(opts.wear ?? 0, 0, 1);
+  const wearScale = opts.wearScale ?? 7;
+  const alphaMul = opts.alpha ?? 1;
+  const seed = (opts.seed ?? 0x4f01) >>> 0;
+  const d = sf.data;
+  const relief = opts.relief ?? null;
+
+  const put = (sx: number, sy: number, cov: number, colour: P.Rgb): void => {
+    const xi = Math.round(sx);
+    const yi = Math.round(sy);
+    if (xi < 0 || yi < 0 || xi >= sf.width || yi >= sf.height) return;
+    const i = (yi * sf.width + xi) * 4;
+    const a = clamp01Local(cov);
+    if (a <= 0.004) return;
+    const inv = 1 - a;
+    d[i] = colour.r * a + d[i] * inv;
+    d[i + 1] = colour.g * a + d[i + 1] * inv;
+    d[i + 2] = colour.b * a + d[i + 2] * inv;
+    d[i + 3] = a + d[i + 3] * inv;
+  };
+
+  for (let sy = 0; sy < st.h; sy++) {
+    for (let sx = 0; sx < st.w; sx++) {
+      const cov = st.a[sy * st.w + sx];
+      if (cov <= 0.01) continue;
+      // Along/across parameters, in the mark's own frame.
+      const t = st.w > 1 ? sx / (st.w - 1) : 0;
+      const u = st.h > 1 ? sy / (st.h - 1) : 0.5;
+      const tx = rotate ? ox - (sy - st.h / 2) : ox + sx;
+      const ty = rotate ? oy + sx : oy + sy;
+      let a = cov * alphaMul;
+      if (wear > 0) {
+        const n = P.fbm(tx / wearScale, ty / wearScale, seed, 3);
+        // Foil lifts in patches: below the threshold it is simply gone.
+        const eaten = clamp01Local((n - (0.34 + wear * 0.42)) / 0.22);
+        a *= 0.18 + 0.82 * eaten;
+        if (wear > 0.6) a *= 1 - (wear - 0.6) * 1.1;
+      }
+      if (a <= 0.006) continue;
+      if (relief) {
+        put(tx + relief.dx, ty + relief.dy, cov * relief.alpha * alphaMul, relief.colour);
+      }
+      put(tx, ty, a, opts.colour(t, u));
+    }
+  }
+}
+
+/** The burnished ramp a real gold-foil letter carries across its stroke. */
+function foilColour(u: number, warm: P.Rgb, hot: P.Rgb, dark: P.Rgb): P.Rgb {
+  if (u < 0.26) return P.mixRgb(dark, warm, u / 0.26);
+  if (u < 0.5) return P.mixRgb(warm, hot, (u - 0.26) / 0.24);
+  if (u < 0.74) return P.mixRgb(hot, warm, (u - 0.5) / 0.24);
+  return P.mixRgb(warm, dark, (u - 0.74) / 0.26);
+}
+
+const FOIL_WARM: P.Rgb = P.parseColour('#c9a227');
+const FOIL_HOT: P.Rgb = P.parseColour('#fff3c6');
+const FOIL_DARK: P.Rgb = P.parseColour('#6d4f0e');
+const FOIL_SILVER: P.Rgb = P.parseColour('#cdd3d8');
+
+/* ---------------------------- painted furniture --------------------------- */
+
+/**
+ * A tooled rule: gold (or blind) line pressed into the binding.
+ * Never a `fillRect` — a rule that survives a century has gaps in it.
+ */
+function paintRule(
+  sf: P.Surface,
+  x0: number,
+  x1: number,
+  y: number,
+  thickness: number,
+  colour: P.Rgb,
+  spec: SpinePaintSpec,
+  opts: { gold?: boolean; alpha?: number; seed?: number; wear?: number } = {},
+): void {
+  const gold = opts.gold ?? false;
+  const wear = clamp(opts.wear ?? spec.foilWear * 0.7, 0, 1);
+  const seed = (opts.seed ?? spec.seed) >>> 0;
+  const rnd = mulberry32(seed);
+  const th = Math.max(0.7, thickness);
+  // The bite under the tool: every impressed rule sits in its own trench.
+  P.stroke(
+    sf,
+    [
+      { x: x0, y: y + th * 0.85 },
+      { x: x1, y: y + th * 0.85 },
+    ],
+    P.brush('soft', { size: th * 1.5, colour: spec.pig.deep, opacity: 0.16, spacing: 0.2, jitter: { lum: 0.05, position: 0.2 } }),
+    { passes: 1, pressure: P.PRESSURE.flat, taper: 0.04, seed: seed ^ 0x11, alpha: 0.8 },
+  );
+  const steps = Math.max(2, Math.round((x1 - x0) / Math.max(1.2, th * 1.6)));
+  for (let i = 0; i < steps; i++) {
+    const t0 = i / steps;
+    const t1 = (i + 1) / steps;
+    // Dropouts: the tool skipped, or the gold has since lifted.
+    if (rnd() < wear * 0.55) continue;
+    const c = gold ? foilColour(0.2 + rnd() * 0.6, FOIL_WARM, FOIL_HOT, FOIL_DARK) : colour;
+    P.stroke(
+      sf,
+      [
+        { x: lerp(x0, x1, t0), y: y + (rnd() - 0.5) * th * 0.4 },
+        { x: lerp(x0, x1, t1), y: y + (rnd() - 0.5) * th * 0.4 },
+      ],
+      P.brush('blade', {
+        size: th,
+        colour: c,
+        opacity: (opts.alpha ?? 0.75) * (0.7 + rnd() * 0.5),
+        spacing: 0.12,
+        hardness: 0.9,
+        jitter: { lum: gold ? 0.14 : 0.06, hue: gold ? 8 : 3, opacity: 0.4, position: 0.25 },
+      }),
+      { passes: 1, pressure: P.PRESSURE.flat, taper: 0.02, wobble: th * 0.25, seed: (seed + i * 37) >>> 0 },
+    );
+  }
+}
+
+/**
+ * A raised cord: the sewing support under the leather. Three marks — the
+ * trench it casts below, the roll of the cord itself, the catchlight on its
+ * crown — because "raised bands casting their own tiny shadows" is on the
+ * art-direction list and a painted line is not that.
+ */
+function paintCord(sf: P.Surface, cy: number, cordH: number, spec: SpinePaintSpec, seed: number): void {
+  const { w, pig } = spec;
+  const top = cy - cordH / 2;
+  const rnd = mulberry32(seed >>> 0);
+
+  // 1. the cast shadow under the cord
+  P.stroke(
+    sf,
+    [
+      { x: -w * 0.05, y: top + cordH * 1.05 },
+      { x: w * 1.05, y: top + cordH * 1.05 },
+    ],
+    P.brush('soft', { size: cordH * 1.1, colour: pig.deep, opacity: 0.17, spacing: 0.18, jitter: { lum: 0.05, position: 0.4 } }),
+    { passes: 2, pressure: P.PRESSURE.flat, taper: 0.03, seed: seed ^ 0x71 },
+  );
+
+  // 2. the roll — dark seat, body, lit crown, all as strokes across the width
+  const rows = Math.max(3, Math.round(cordH));
+  for (let i = 0; i < rows; i++) {
+    const v = (i + 0.5) / rows;
+    const y = top + v * cordH;
+    // Lambert across a half-cylinder, offset toward the key.
+    const n = Math.cos((v - 0.42) * Math.PI);
+    const lit = clamp01Local(n * 0.5 + 0.5);
+    const colour =
+      lit > 0.62
+        ? P.mixRgb(pig.base, pig.lift, (lit - 0.62) / 0.38)
+        : P.mixRgb(pig.deep, pig.base, lit / 0.62);
+    P.stroke(
+      sf,
+      [
+        { x: -w * 0.04, y },
+        { x: w * 1.04, y },
+      ],
+      P.brush('flat', {
+        size: Math.max(1, cordH / rows + 0.6),
+        colour,
+        opacity: 0.42,
+        spacing: 0.14,
+        jitter: { lum: 0.05, hue: 4, opacity: 0.3, position: 0.25 },
+      }),
+      { passes: 1, pressure: P.PRESSURE.flat, taper: 0.02, wobble: 0.4, seed: (seed + i * 53) >>> 0 },
+    );
+  }
+
+  // 3. the catchlight
+  if (spec.lightOn) {
+    P.stroke(
+      sf,
+      [
+        { x: w * 0.04, y: top + cordH * 0.3 },
+        { x: w * 0.96, y: top + cordH * 0.3 },
+      ],
+      P.brush('soft', {
+        size: Math.max(0.9, cordH * 0.22),
+        colour: P.mixRgb(pig.lift, FOIL_HOT, 0.35),
+        opacity: 0.2 * spec.keyTake,
+        spacing: 0.2,
+        jitter: { opacity: 0.6, position: 0.3 },
+      }),
+      { passes: 1, pressure: P.PRESSURE.arc, taper: 0.16, seed: seed ^ 0x2f },
+    );
+  }
+  void rnd;
+}
+
+/**
+ * The page block: the cream sliver of the text block visible beside the spine.
+ *
+ * The art direction's first book note. Painted as leaves — many near-vertical
+ * hairlines of slightly different creams — rather than a gradient strip, so it
+ * reads as a thousand sheets of paper instead of a beige rectangle.
+ */
+function paintPageBlockPainterly(
+  sf: P.Surface,
+  x: number,
+  y: number,
+  bw: number,
+  bh: number,
+  edge: EdgeTreatment,
+  spec: SpinePaintSpec,
+  rnd: RandomFn,
+): void {
+  if (bw <= 0.6 || bh <= 1) return;
+  const s = Math.max(0.6, spec.scale);
+  const shape = P.roughenShape(P.rectShape(x, y, bw, bh), 0.4 * s, (spec.seed ^ 0x2244) >>> 0, 3.4);
+  const paper = edge === 'gilt' ? '#b08c34' : '#d8caa4';
+  const mask = P.blockIn(sf, shape, paper, {
+    brush: P.brush('flat', { size: Math.max(1.4, bw * 0.7), colour: paper, opacity: 0.3, grain: 0.5 }),
+    passes: 2,
+    valueSpread: 0.1,
+    hueSpread: 8,
+    roughness: 0.35 * s,
+    rowFactor: 0.4,
+    direction: Math.PI / 2,
+    openness: 0.04,
+    feather: 0.9,
+    seed: (spec.seed ^ 0x5511) >>> 0,
+  });
+
+  // The leaves. Every few are darker (dust between them) and a few catch light.
+  const leafBrush = P.brush('blade', {
+    size: Math.max(0.7, 0.9 * s),
+    colour: '#e8dcbc',
+    opacity: 0.3,
+    spacing: 0.16,
+    hardness: 0.85,
+    jitter: { lum: 0.12, hue: 8, opacity: 0.6, position: 0.25 },
+  });
+  const count = Math.max(3, Math.round(bw / (0.9 * s)));
+  for (let i = 0; i < count; i++) {
+    const lx = x + ((i + 0.5) / count) * bw + (rnd() - 0.5) * 0.5 * s;
+    const dark = rnd() < 0.34;
+    P.stroke(
+      sf,
+      [
+        { x: lx, y: y + bh * 0.01 },
+        { x: lx + (rnd() - 0.5) * 0.8 * s, y: y + bh * 0.99 },
+      ],
+      P.withBrush(leafBrush, {
+        colour: dark ? '#9b8a68' : rnd() < 0.3 ? '#f6efd8' : '#e0d2b0',
+        opacity: dark ? 0.22 : 0.26,
+      }),
+      { passes: 1, pressure: P.PRESSURE.flat, taper: 0.03, wobble: 0.3 * s, seed: (spec.seed + i * 97) >>> 0, alpha: 0.6 + rnd() * 0.5 },
+    );
+  }
+
+  if (edge === 'gilt') {
+    // Burnished gold over the leaves, hottest where the key rakes it.
+    P.glaze(sf, mask, FOIL_WARM, 0.6, { blend: 'normal', mottle: 0.35, mottleScale: 9, seed: (spec.seed ^ 0x88) >>> 0 });
+    P.scumble(sf, mask, P.brush('soft', { size: Math.max(1.2, bw * 0.6), colour: FOIL_HOT, opacity: 0.16 }), {
+      coverage: 0.45,
+      passes: 1,
+      patchScale: Math.max(6, bh * 0.09),
+      seed: (spec.seed ^ 0x99) >>> 0,
+      targetBuildup: 0.5,
+    });
+  } else if (edge === 'speckled') {
+    const speck = P.brush('ink', { size: Math.max(0.7, 0.8 * s), colour: '#7d3c22', opacity: 0.4, jitter: { hue: 20, lum: 0.2, size: 0.8 } });
+    for (let i = 0; i < Math.round(bw * bh * 0.09); i++) {
+      P.dab(sf, x + rnd() * bw, y + rnd() * bh, speck, { size: (0.5 + rnd() * 1.3) * s, opacity: 0.2 + rnd() * 0.4 });
+    }
+  } else if (edge === 'marbled') {
+    const vein = P.brush('soft', { size: Math.max(0.9, 1.4 * s), colour: '#8a4a2c', opacity: 0.2, jitter: { hue: 24, lum: 0.16 } });
+    for (let i = 0; i < Math.round(bh / (4 * s)); i++) {
+      const vy = rnd() * bh;
+      P.stroke(
+        sf,
+        [
+          { x: x - 0.5, y: y + vy },
+          { x: x + bw * 0.5, y: y + vy + (rnd() - 0.5) * 3 * s },
+          { x: x + bw + 0.5, y: y + vy + (rnd() - 0.5) * 3 * s },
+        ],
+        P.withBrush(vein, { colour: i % 2 === 0 ? '#8a4a2c' : '#2f4a5e' }),
+        { passes: 1, pressure: P.PRESSURE.arc, seed: (spec.seed + i * 173) >>> 0, alpha: 0.5 },
+      );
+    }
+  }
+
+  // The block stands a hair proud, so it takes light on its outer face and
+  // throws a thin shadow back onto the board beside it.
+  const outerLeft = spec.keySide > 0;
+  P.glaze(sf, mask, spec.lightOn ? P.mixRgb(FOIL_HOT, P.parseColour(spec.rig.keyColour), 0.5) : FOIL_HOT, spec.lightOn ? 0.2 * spec.keyTake : 0.06, {
+    blend: 'screen',
+    gradient: (px) => {
+      const u = (px - x) / bw;
+      return clamp01Local(outerLeft ? u : 1 - u) ** 1.6;
+    },
+    mottle: 0.3,
+    seed: (spec.seed ^ 0xaa1) >>> 0,
+  });
+  P.stroke(
+    sf,
+    [
+      { x: outerLeft ? x : x + bw, y },
+      { x: outerLeft ? x : x + bw, y: y + bh },
+    ],
+    P.brush('soft', { size: Math.max(1, bw * 0.5), colour: spec.pig.deep, opacity: 0.2, spacing: 0.2 }),
+    { passes: 1, pressure: P.PRESSURE.flat, taper: 0.03, seed: (spec.seed ^ 0xbb2) >>> 0 },
+  );
+}
+
+/**
+ * The wear pass, painted: sun bleach, rubbed board showing through, grime
+ * pooled at the tail, and knocked corners.
+ */
+function paintWearPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
+  const { w, h, scale, pig, wear } = spec;
+  if (wear <= 0.02) return;
+  const s = Math.max(0.6, scale);
+
+  // Rubbed patches — pigment gone back to the board underneath.
+  const boardTone = P.mixRgb(pig.base, P.parseColour('#a08a68'), 0.5 + wear * 0.28);
+  const rub = P.brush('chalk', {
+    size: Math.max(1.6, w * 0.22),
+    colour: boardTone,
+    opacity: 0.1,
+    spacing: 0.4,
+    grain: 0.95,
+    jitter: { lum: 0.12, hue: 8, opacity: 0.7, size: 0.6 },
+  });
+  const rubs = Math.round(wear * 16);
+  for (let i = 0; i < rubs; i++) {
+    // Wear lands on corners and edges, never in the middle of a panel.
+    const edgePick = rnd();
+    const rx = edgePick < 0.5 ? (rnd() < 0.5 ? w * (0.02 + rnd() * 0.12) : w * (0.86 + rnd() * 0.12)) : rnd() * w;
+    const ry = edgePick < 0.5 ? rnd() * h : rnd() < 0.5 ? h * rnd() * 0.1 : h * (0.9 + rnd() * 0.1);
+    P.dab(sf, rx, ry, rub, { size: (1.6 + rnd() * 4) * s, opacity: 0.05 + rnd() * 0.14 * wear });
+  }
+
+  // Grime pooled at the tail, where a shelved book collects dust for decades.
+  P.glaze(sf, mask, '#3b3125', 0.16 * (0.4 + wear), {
+    blend: 'multiply',
+    gradient: (_x, y) => clamp01Local((y / h - 0.78) / 0.22) ** 1.4,
+    mottle: 0.5,
+    mottleScale: Math.max(8, w),
+    seed: (spec.seed ^ 0x6611) >>> 0,
+  });
+
+  // Sun bleach: one broad soft band across the spine, on the key side.
+  if (spec.sunFade > 0.05) {
+    P.glaze(sf, mask, '#efe4c6', spec.sunFade * 0.24, {
+      blend: 'screen',
+      gradient: (x) => {
+        const u = spec.keySide > 0 ? x / w : 1 - x / w;
+        return clamp01Local(u) ** 1.5;
+      },
+      mottle: 0.45,
+      mottleScale: Math.max(10, w * 1.5),
+      seed: (spec.seed ^ 0x7722) >>> 0,
+    });
+  }
+
+  // Knocked corners: the board is bumped and the covering has lifted.
+  if (spec.knock > 0.08) {
+    const bump = P.brush('chalk', { size: Math.max(1.4, 2.6 * s), colour: boardTone, opacity: 0.16, grain: 1, jitter: { lum: 0.14, size: 0.7 } });
+    for (const [cx, cy] of [
+      [0, 0],
+      [w, 0],
+      [0, h],
+      [w, h],
+    ] as const) {
+      const n = Math.round(spec.knock * 5);
+      for (let i = 0; i < n; i++) {
+        const r = (0.6 + rnd() * 2.4) * s;
+        P.dab(sf, cx + (rnd() - 0.5) * 4 * s, cy + (rnd() - 0.5) * 4 * s, bump, { size: r * 2, opacity: 0.08 + rnd() * 0.16 });
+      }
+    }
+  }
+}
+
 export interface RenderSpineOptions {
   /**
    * Hi-res variant: adds the vertical title with per-glyph baseline wobble.
@@ -2298,6 +3238,13 @@ export interface RenderSpineOptions {
    * paints its own fore-edge, can suppress it.
    */
   pageBlock?: boolean;
+  /**
+   * Height/normal buffer for the deferred lighting pass. When given, the book
+   * writes its rounded-box profile (and the ribs of any raised bands) at the
+   * same rect it painted, so one fullscreen shader can light the whole shelf.
+   * The spine never shades itself into this buffer — it only declares shape.
+   */
+  normalCtx?: NormalCtx;
 }
 
 /**
@@ -2344,10 +3291,6 @@ export function renderSpine(
   const foilWear = clamp(params.foilWear ?? wear * 0.6, 0, 1);
   const sunFade = clamp(params.sunFade ?? 0, 0, 1);
   const knock = clamp(params.knock ?? wear * 0.5, 0, 1);
-  const tones: MaterialTones = {
-    light: (dl = 0, ds = 0, a = 1) => hslStr(colA, hue, dl, ds, a),
-    dark: (dl = 0, ds = 0, a = 1) => hslStr(colB, hue, dl, ds, a),
-  };
 
   /* --- the light this book sits in -------------------------------------- */
   const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
@@ -2368,217 +3311,197 @@ export function renderSpine(
   /** Which side of the spine the key comes from: +1 = right, -1 = left. */
   const keySide = src.x >= 0 ? 1 : -1;
 
-  ctx.save();
-  ctx.translate(x, y);
-
-  // --- silhouette fill path (jittered, corners worn round) ---
-  // `knock` is the book's bump history, independent of how faded it is: a
-  // pristine book that has been dropped still has rounded board corners, and
-  // that irregularity at the silhouette is what stops a row reading as a bar
-  // chart even before any of the surface detail lands.
+  /* ------------------------------------------------------------------ *
+   *  Everything below paints into a brush Surface and is blitted once.
+   *  No `fill()`, no gradient stops, no hard rectangle anywhere.
+   * ------------------------------------------------------------------ */
+  const pig = pigmentFor(colA, colB, hue, params.seed);
+  const spec: SpinePaintSpec = {
+    w,
+    h,
+    scale,
+    pig,
+    material,
+    boardStyle,
+    wear,
+    knock,
+    foilWear,
+    sunFade,
+    round,
+    rig,
+    lightOn,
+    keySide,
+    keyTake,
+    depth,
+    seed: params.seed >>> 0,
+  };
+  const sf = P.createSurface(Math.max(2, Math.ceil(w)), Math.max(2, Math.ceil(h)));
+  const s = Math.max(0.6, scale);
+  // The silhouette is INSET rather than the surface padded: a stroke that
+  // overshoots the edge has somewhere to land, which is what stops the
+  // outline reading as a cut-out.
+  const inset = Math.min(w * 0.06, Math.max(0.8, 1.1 * s));
   const outline = applyOutlineWear(
-    silhouetteOutline(params.silhouette, w, h),
+    silhouetteOutline(params.silhouette, w - inset * 2, h - inset * 2),
     clamp(wear + knock * 0.45, 0, 1),
     scale,
     rnd,
   );
-  const step = Math.max(4, 6 * scale);
-  const fillPts = densifyJitter(outline, step, 0.6 * scale, rnd);
-  tracePoly(ctx, fillPts, true);
-  ctx.fillStyle = hslStr(colA, hue);
-  ctx.fill();
+  const shape = P.roughenShape(
+    P.densifyShape(
+      toVec(outline).map((p) => ({ x: p.x + inset, y: p.y + inset })),
+      Math.max(2, 5 * s),
+    ),
+    0.55 * s,
+    (params.seed ^ 0x3311) >>> 0,
+    2.4,
+  );
 
-  // Everything painterly happens clipped to the silhouette.
-  ctx.save();
-  tracePoly(ctx, fillPts, true);
-  ctx.clip();
+  /* --- 1. the mass ------------------------------------------------------ */
+  const crown = crownAt(spec);
+  const mask = P.blockIn(sf, shape, pig.base, {
+    brush: P.brush('chalk', {
+      size: Math.max(2.2, w * 0.42),
+      colour: pig.base,
+      opacity: 0.2,
+      spacing: 0.2,
+      grain: 0.7,
+      jitter: { lum: 0.07, hue: 8, opacity: 0.45, position: 0.5, size: 0.3, angle: 0.4, sat: 0.06 },
+    }),
+    passes: 3,
+    valueSpread: 0.1,
+    hueSpread: 12,
+    roughness: 0.5 * s,
+    overshoot: 1.8 * s,
+    direction: Math.PI / 2,
+    openness: 0.05,
+    rowFactor: 0.42,
+    feather: 1.1,
+    edgeNoise: 0.4 * s,
+    seed: (params.seed ^ 0x81ac) >>> 0,
+  });
 
-  // --- two layered multiply watercolor gradients ---
-  const g1 = ctx.createLinearGradient(0, 0, 0, h);
-  g1.addColorStop(0, hslStr(colA, hue, 8));
-  g1.addColorStop(0.55, hslStr(colA, hue));
-  g1.addColorStop(1, hslStr(colB, hue));
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = g1;
-  ctx.fillRect(-w * 0.05, 0, w * 1.1, h);
+  /* --- 2. underpainting: sink the joints, lift the crown ---------------- */
+  P.scumble(
+    sf,
+    mask,
+    P.brush('chalk', { size: Math.max(2, w * 0.38), colour: pig.deep, opacity: 0.09, grain: 0.8, spacing: 0.3 }),
+    {
+      coverage: 0.55,
+      passes: 2,
+      // Both vertical joints are where the covering turns onto the boards:
+      // the darkest lines on any book, and the reason a row reads as objects.
+      weight: (px) => {
+        const u = px / w;
+        return clamp01Local(Math.max(1 - u / 0.3, (u - 0.7) / 0.3)) ** 1.3;
+      },
+      patchScale: Math.max(6, w * 0.9),
+      seed: (params.seed ^ 0x1c0d) >>> 0,
+      targetBuildup: 0.55,
+    },
+  );
+  P.scumble(
+    sf,
+    mask,
+    P.brush('chalk', { size: Math.max(2, w * 0.3), colour: pig.lift, opacity: 0.07, grain: 0.75, spacing: 0.32 }),
+    {
+      coverage: 0.4,
+      passes: 1,
+      weight: (px, py) => {
+        const band = Math.exp(-Math.pow((px / w - crown) / 0.26, 2));
+        return band * (0.4 + 0.6 * Math.sin(Math.PI * clamp01Local(py / h)));
+      },
+      patchScale: Math.max(8, h * 0.12),
+      seed: (params.seed ^ 0x2d1e) >>> 0,
+      targetBuildup: 0.45,
+    },
+  );
 
-  const g2 = ctx.createLinearGradient(0, 0, w, 0);
-  g2.addColorStop(0, hslStr(colB, hue, -6));
-  g2.addColorStop(0.18, hslStr(colA, hue, 10));
-  g2.addColorStop(0.82, hslStr(colA, hue, 6));
-  g2.addColorStop(1, hslStr(colB, hue, -8));
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = g2;
-  ctx.fillRect(-w * 0.05, 0, w * 1.1, h);
+  /* --- 3. the binding material ----------------------------------------- */
+  paintMaterialPainterly(sf, mask, spec, rnd);
 
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
-
-  // --- two-tone binding: darker partner tone over the head section ---
+  /* --- 4. two-tone binding: a darker label panel over the head ---------- */
   if (params.twoTone) {
     const splitY = params.twoToneSplit * h;
-    const g3 = ctx.createLinearGradient(0, 0, 0, splitY);
-    g3.addColorStop(0, hslStr(colB, hue, -2, 4, 0.92));
-    g3.addColorStop(1, hslStr(colB, hue, -10, 2, 0.92));
-    ctx.fillStyle = g3;
-    ctx.fillRect(-w * 0.05, 0, w * 1.1, splitY);
-    // Separating rule where the tones meet: gilt on gilt books, ink else.
+    const panelShape = P.roughenShape(P.rectShape(-1, -1, w + 2, splitY + 1), 0.5 * s, (params.seed ^ 0x4a1) >>> 0, 3);
+    const panelMask = P.blockIn(sf, panelShape, pig.partner, {
+      brush: P.brush('chalk', { size: Math.max(2, w * 0.4), colour: pig.partner, opacity: 0.18, grain: 0.7 }),
+      passes: 2,
+      valueSpread: 0.08,
+      hueSpread: 9,
+      roughness: 0.4 * s,
+      direction: Math.PI / 2,
+      openness: 0.08,
+      rowFactor: 0.45,
+      feather: 1,
+      seed: (params.seed ^ 0x4a1) >>> 0,
+    });
+    P.clipToMask(sf, mask, { feather: 1.1 });
+    void panelMask;
     if (params.gilt) {
-      ctx.fillStyle = GOLD;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(w * 0.04, splitY - 1.1 * scale, w * 0.92, 2.2 * scale);
-      ctx.globalAlpha = 1;
+      paintRule(sf, w * 0.05, w * 0.95, splitY, Math.max(0.9, 1.4 * s), FOIL_WARM, spec, { gold: true, seed: (params.seed ^ 0x51) >>> 0 });
+    } else {
+      paintRule(sf, w * 0.05, w * 0.95, splitY, Math.max(0.8, s), pig.deep, spec, { seed: (params.seed ^ 0x52) >>> 0, wear: 0.2 });
     }
-    ctx.strokeStyle = hslStr(colB, hue, -22, 0, 0.7);
-    ctx.lineWidth = Math.max(0.7, 0.8 * scale);
-    strokePts(
-      ctx,
-      jitteredSegment({ x: 0, y: splitY }, { x: w, y: splitY }, step, 0.4 * scale, rnd),
-      false,
-    );
   }
 
-  // --- 2px inset pigment-pooling edge (stroke inside the clip) ---
-  tracePoly(ctx, fillPts, true);
-  ctx.lineWidth = 4 * scale; // clipped: only the inner ~2px shows
-  ctx.strokeStyle = hslStr(colB, hue, -12, 0, 0.5);
-  ctx.stroke();
-
-  // --- binding material (seven materials × three sub-treatments) ---
-  ctx.globalAlpha = 1;
-  paintBindingMaterial(ctx, w, h, material, tones, scale, rnd, boardStyle);
-
-  // --- round back: the spine is a shallow cylinder, not a flat card ---
-  // Real books are backed round; the flat fill we had is what made every spine
-  // read as a painted strip. Shading the width as a cylinder — dark at both
-  // joints, a lit crown offset toward the key — costs one gradient and gives
-  // the row its whole sense of solidity.
+  /* --- 5. round back: one cylinder of light across the width ------------ */
   if (round > 0.03) {
-    const crown = clamp(0.5 + keySide * 0.16 * (lightOn ? 1 : 0), 0.2, 0.8);
-    const rg = ctx.createLinearGradient(0, 0, w, 0);
-    const deep = 0.34 * round;
-    const lift = 0.26 * round;
-    rg.addColorStop(0, hslStr(colB, hue, -30, 0, deep));
-    rg.addColorStop(Math.max(0.06, crown - 0.34), hslStr(colB, hue, -14, 0, deep * 0.35));
-    rg.addColorStop(crown, hslStr(colA, hue, 22, -6, lift));
-    rg.addColorStop(Math.min(0.94, crown + 0.34), hslStr(colB, hue, -16, 0, deep * 0.42));
-    rg.addColorStop(1, hslStr(colB, hue, -32, 0, deep * 1.05));
-    ctx.fillStyle = rg;
-    ctx.fillRect(0, 0, w, h);
-    // The two joints (where the spine leather turns onto the boards) are the
-    // darkest line on any book. Two crease occlusions, one per joint.
-    const jointR = Math.max(0.8, w * 0.1);
-    applyCreaseOcclusion(ctx, {
-      rig,
-      x: 0,
-      y: 0,
-      length: h,
-      axis: 'vertical',
-      reach: jointR,
-      strength: 0.7 * round,
-      bias: 0.55,
+    // Multiply pass for the two shoulders rolling away from the viewer …
+    P.glaze(sf, mask, pig.deep, 0.55 * round, {
+      blend: 'multiply',
+      gradient: (px) => {
+        const u = px / w;
+        const d0 = Math.abs(u - crown) / Math.max(crown, 1 - crown);
+        return clamp01Local(d0 ** 1.7);
+      },
+      mottle: 0.22,
+      mottleScale: Math.max(9, h * 0.2),
+      seed: (params.seed ^ 0x6c11) >>> 0,
     });
-    applyCreaseOcclusion(ctx, {
-      rig,
-      x: w,
-      y: 0,
-      length: h,
-      axis: 'vertical',
-      reach: jointR,
-      strength: 0.7 * round,
-      bias: -0.55,
+    // … and a screen pass for the crown, warmed toward the key.
+    P.glaze(sf, mask, lightOn ? P.mixRgb(pig.lift, P.parseColour(rig.keyColour), 0.28) : pig.lift, 0.24 * round * (lightOn ? keyTake : 0.7), {
+      blend: 'screen',
+      gradient: (px, py) => {
+        const band = Math.exp(-Math.pow((px / w - crown) / 0.2, 2));
+        return band * (0.35 + 0.65 * Math.sin(Math.PI * clamp01Local(py / h)) ** 0.7);
+      },
+      mottle: 0.25,
+      mottleScale: Math.max(10, h * 0.22),
+      seed: (params.seed ^ 0x6c12) >>> 0,
     });
   }
 
-  // --- text-block edge: the sliver of pages showing at the fore-joint ---
-  // Widened hard from the old `w * 0.075` cap: the art direction's very first
-  // book note is "visible page-block edges beside every spine", and a 2px
-  // sliver is not visible at shelf scale. `params.pageBlock` carries the
-  // per-book fraction, and thin books show proportionally more.
+  /* --- 6. the page block ------------------------------------------------ */
   const blockFrac = clamp(params.pageBlock ?? 0.1, 0.05, 0.24);
-  const edgeW =
-    opts.pageBlock === false ? 0 : clamp(w * blockFrac, 2.2 * scale, 9 * scale);
-  if (edgeW > 0.5) {
-    const blockX = keySide > 0 ? w - edgeW : 0;
-    paintEdgeTreatment(ctx, blockX, h * 0.012, edgeW, h * 0.976, edge, scale, rnd);
-    // The page block stands a hair proud of the boards, so it takes its own
-    // key light and throws its own tiny shadow back onto the spine.
-    if (lightOn) {
-      applyKeyLight(ctx, {
-        rig,
-        x: blockX,
-        y: h * 0.012,
-        width: edgeW,
-        height: h * 0.976,
-        intensity: keyTake * 1.15,
-        hotSpot: 0.2,
-      });
-    }
-    castContactShadow(ctx, {
-      rig,
-      x: keySide > 0 ? blockX : blockX + edgeW,
-      y: h * 0.012,
-      length: h * 0.976,
-      depth: Math.max(1.2, edgeW * 0.6),
-      side: keySide > 0 ? 'left' : 'right',
-      strength: 0.7,
-      skew: 0,
-    });
-    // Head and tail of the block: you see the top few leaves from above.
-    const capH = Math.max(0.8, 1.6 * scale);
-    const capG = ctx.createLinearGradient(0, 0, 0, capH * 2.4);
-    capG.addColorStop(0, 'rgba(246, 238, 214, 0.7)');
-    capG.addColorStop(1, 'rgba(246, 238, 214, 0)');
-    ctx.fillStyle = capG;
-    ctx.fillRect(blockX, 0, edgeW, capH * 2.4);
+  const edgeW = opts.pageBlock === false ? 0 : clamp(w * blockFrac, 2 * s, 9 * s);
+  if (edgeW > 0.8) {
+    const blockX = keySide > 0 ? w - edgeW - inset * 0.5 : inset * 0.5;
+    paintPageBlockPainterly(sf, blockX, h * 0.014, edgeW, h * 0.972, edge, spec, rnd);
   }
 
-  // --- bands (embossed: every dark rule carries a catchlight rule above) ---
-  const inkBand = hslStr(colB, hue, -18, 0, 0.8);
-  const embossLight = hslStr(colA, hue, 26, -8, 0.5);
+  /* --- 7. bands and cords ---------------------------------------------- */
   const legacyBands = raisedBands > 0 ? [] : params.bands;
   for (const band of legacyBands) {
     const by = band.y * h;
     if (band.kind === 0) {
-      // embossed double-rule: light/dark pairs read as raised cords
-      ctx.lineWidth = Math.max(0.7, 0.7 * scale);
-      for (const dy of [-1.8 * scale, 1.8 * scale]) {
-        ctx.strokeStyle = embossLight;
-        strokePts(ctx, jitteredSegment({ x: w * 0.06, y: by + dy - 0.9 * scale }, { x: w * 0.94, y: by + dy - 0.9 * scale }, step, 0.35 * scale, rnd), false);
-        ctx.strokeStyle = inkBand;
-        strokePts(ctx, jitteredSegment({ x: w * 0.06, y: by + dy }, { x: w * 0.94, y: by + dy }, step, 0.4 * scale, rnd), false);
+      for (const dy of [-1.9 * s, 1.9 * s]) {
+        paintRule(sf, w * 0.05, w * 0.95, by + dy, Math.max(0.7, 0.9 * s), pig.deep, spec, {
+          seed: (params.seed + by * 13 + dy) >>> 0,
+          wear: 0.25,
+          alpha: 0.6,
+        });
       }
     } else if (band.kind === 1) {
-      // thick raised band: shaded fill, catchlight on top, shadow below
-      ctx.fillStyle = hslStr(colB, hue, -8, 0, 0.65);
-      ctx.fillRect(0, by - 3 * scale, w, 6 * scale);
-      ctx.strokeStyle = embossLight;
-      ctx.lineWidth = Math.max(0.6, 0.6 * scale);
-      strokePts(ctx, jitteredSegment({ x: 0, y: by - 3.8 * scale }, { x: w, y: by - 3.8 * scale }, step, 0.35 * scale, rnd), false);
-      ctx.strokeStyle = inkBand;
-      ctx.lineWidth = Math.max(0.7, 0.7 * scale);
-      for (const dy of [-3 * scale, 3 * scale]) {
-        strokePts(ctx, jitteredSegment({ x: 0, y: by + dy }, { x: w, y: by + dy }, step, 0.4 * scale, rnd), false);
-      }
+      paintCord(sf, by, clamp(w * 0.2, 3.4 * s, 8 * s), spec, (params.seed + by * 29) >>> 0);
     } else {
-      // gilt band with an embossed shadow under the gold
-      ctx.fillStyle = hslStr(colB, hue, -20, 0, 0.4);
-      ctx.fillRect(w * 0.05, by + 1.2 * scale, w * 0.9, 1.2 * scale);
-      ctx.fillStyle = GOLD;
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(w * 0.05, by - 1.4 * scale, w * 0.9, 2.8 * scale);
-      ctx.globalAlpha = prevAlpha;
-      ctx.fillStyle = 'rgba(255, 244, 214, 0.55)';
-      ctx.fillRect(w * 0.08, by - 1.4 * scale, w * 0.84, 0.8 * scale);
-      ctx.strokeStyle = hslStr(colB, hue, -20, 0, 0.5);
-      ctx.lineWidth = Math.max(0.5, 0.5 * scale);
-      strokePts(ctx, jitteredSegment({ x: w * 0.05, y: by }, { x: w * 0.95, y: by }, step, 0.3 * scale, rnd), false);
+      paintRule(sf, w * 0.05, w * 0.95, by, Math.max(1, 1.6 * s), FOIL_WARM, spec, {
+        gold: true,
+        seed: (params.seed + by * 37) >>> 0,
+      });
     }
   }
 
-  // --- raised bands (cords sewn under the leather), 0–5, optionally gilt ---
   const cordYs: number[] = [];
   if (raisedBands > 0) {
     const zTop = 0.085;
@@ -2587,189 +3510,76 @@ export function renderSpine(
       cordYs.push(zTop + ((i + 1) / (raisedBands + 1)) * (zBot - zTop));
     }
   }
-  // Cords are FAT — a sewn cord under leather stands a real 3–4mm proud, and
-  // the timid 3px band we drew before was the difference between "raised
-  // bands casting their own tiny shadows" and "painted lines".
-  const cordH = clamp(w * 0.24, 4.2 * scale, 11 * scale);
+  const cordH = clamp(w * 0.24, 4.2 * s, 11 * s);
   for (const cy of cordYs) {
-    const by = cy * h;
-    const top = by - cordH / 2;
-
-    // 1. The cord's OWN cast shadow onto the panel beneath it. This is the
-    //    spec's raised-band note, and it has to happen before the cord is
-    //    drawn so the cord sits on top of its own shadow.
-    castContactShadow(ctx, {
-      rig,
-      x: -w * 0.02,
-      y: top + cordH,
-      length: w * 1.04,
-      depth: cordH * 0.95,
-      side: 'below',
-      strength: 0.85,
-      gap: cordH * 0.25,
-      skew: cordH * 0.4,
-      taper: w * 0.1,
-    });
-
-    // 2. The cord body: a true cylinder lit by the rig, not a stack of stops.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, top, w, cordH);
-    ctx.clip();
-    // Base tone first — the leather is stretched thinner over the cord, so it
-    // reads a shade lighter and less saturated than the panel.
-    ctx.fillStyle = hslStr(colA, hue, 6, -4, 0.9);
-    ctx.fillRect(0, top, w, cordH);
-    ctx.fillStyle = cylinderShading(ctx, rig, w / 2, top + cordH / 2, cordH / 2, 0);
-    ctx.fillRect(0, top, w, cordH);
-    // The leather's own grain still runs over the cord.
-    tileOver(
-      ctx,
-      getMaterialTile(material === 'leather' && boardStyle === 1 ? 'morocco' : 'pebble'),
-      w,
-      cordH,
-      Math.max(20, 44 * scale),
-      0.2,
-    );
-    ctx.restore();
-
-    // 3. Crown catchlight — a thin specular streak along the top of the roll.
-    const crownY = top + cordH * (keySide > 0 ? 0.3 : 0.32);
-    ctx.lineWidth = Math.max(0.6, 0.8 * scale);
-    ctx.strokeStyle = withAlpha(blowOut(rig.rimColour, 0.4), 0.42 * keyTake);
-    strokePts(
-      ctx,
-      jitteredSegment({ x: 0, y: crownY }, { x: w, y: crownY }, step, 0.3 * scale, rnd),
-      false,
-    );
-
-    // 4. The two seat lines where the cord meets the panel.
-    ctx.strokeStyle = hslStr(colB, hue, -34, 0, 0.55);
-    ctx.lineWidth = Math.max(0.5, 0.6 * scale);
-    for (const sy of [top, top + cordH]) {
-      strokePts(
-        ctx,
-        jitteredSegment({ x: 0, y: sy }, { x: w, y: sy }, step, 0.3 * scale, rnd),
-        false,
-      );
-    }
-
+    paintCord(sf, cy * h, cordH, spec, (params.seed + cy * 9973) >>> 0);
     if (bandGilt) {
-      // A gold rule tooled tight against each side of the cord, each with its
-      // own debossed shadow so the gold sits *in* the leather.
-      for (const gy of [top - cordH * 0.34, top + cordH * 1.12]) {
-        const gh = Math.max(0.8, 1.2 * scale);
-        ctx.fillStyle = hslStr(colB, hue, -30, 0, 0.45);
-        ctx.fillRect(w * 0.07, gy + gh * 0.85, w * 0.86, gh * 0.8);
-        ctx.fillStyle = GOLD;
-        ctx.globalAlpha = 0.92;
-        ctx.fillRect(w * 0.07, gy, w * 0.86, gh);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = 'rgba(255, 246, 216, 0.5)';
-        ctx.fillRect(w * 0.07, gy, w * 0.86, gh * 0.4);
-      }
-      if (lightOn) {
-        applySpecularCatch(ctx, {
-          rig,
-          x: w * (keySide > 0 ? 0.72 : 0.28),
-          y: top - cordH * 0.34,
-          radius: Math.max(1.4, w * 0.16),
-          aspect: 3.4,
-          angle: 0,
-          strength: 0.55 * keyTake,
-          colour: '#fff2c0',
+      for (const gy of [cy * h - cordH * 0.85, cy * h + cordH * 0.85]) {
+        paintRule(sf, w * 0.08, w * 0.92, gy, Math.max(0.9, 1.2 * s), FOIL_WARM, spec, {
+          gold: true,
+          seed: (params.seed + gy * 61) >>> 0,
         });
       }
     }
   }
 
-  // --- head/tail endbands: striped caps at the very top and bottom ---
+  /* --- 8. head and tail endbands ---------------------------------------- */
   if (params.headTail) {
-    // Real endbands are a *fine* two-colour silk twist, only a few threads
-    // deep. Kept low-contrast and shallow here: at shelf scale a loud band
-    // reads as hazard tape across the top of every book.
-    const bandH = 3.2 * scale;
-    const stripeW = Math.max(1.5 * scale, 2);
-    const capColor = params.gilt ? GOLD : hslStr(colB, hue, -6, -6);
-    const creamColor = 'hsl(41 40% 82%)';
-    for (const [cy0, edgeY] of [
-      [0.6 * scale, 0],
-      [h - bandH - 0.6 * scale, h],
-    ] as const) {
-      ctx.fillStyle = creamColor;
-      ctx.globalAlpha = 0.62;
-      ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
-      ctx.globalAlpha = 0.62;
-      ctx.fillStyle = capColor;
-      if (headTailStyle === 1) {
-        // Chevron endband: slanted stripes, the classic two-colour sewing.
-        for (let sx = w * 0.02; sx < w * 0.98; sx += stripeW * 2) {
-          ctx.beginPath();
-          ctx.moveTo(sx, cy0 + bandH);
-          ctx.lineTo(sx + stripeW, cy0 + bandH);
-          ctx.lineTo(sx + stripeW + bandH * 0.8, cy0);
-          ctx.lineTo(sx + bandH * 0.8, cy0);
-          ctx.closePath();
-          ctx.fill();
-        }
-      } else if (headTailStyle === 2) {
-        // Wrapped cord: a rounded core with thread spiralling round it.
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = creamColor;
-        ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
-        ctx.globalAlpha = 0.62;
-        ctx.strokeStyle = capColor;
-        ctx.lineWidth = Math.max(0.7, 0.9 * scale);
-        for (let sx = w * 0.03; sx < w * 0.99; sx += stripeW * 1.35) {
-          ctx.beginPath();
-          ctx.moveTo(sx, cy0 + bandH);
-          ctx.lineTo(sx + bandH * 0.75, cy0);
-          ctx.stroke();
-        }
-        // Crown highlight so the cord reads round.
-        ctx.strokeStyle = 'rgba(255, 250, 232, 0.32)';
-        ctx.lineWidth = Math.max(0.5, 0.6 * scale);
-        ctx.beginPath();
-        ctx.moveTo(w * 0.05, cy0 + bandH * 0.3);
-        ctx.lineTo(w * 0.95, cy0 + bandH * 0.3);
-        ctx.stroke();
-      } else {
-        for (let sx = w * 0.04; sx < w * 0.96; sx += stripeW * 2) {
-          ctx.fillRect(sx, cy0, Math.min(stripeW, w * 0.96 - sx), bandH);
-        }
+    const bandH = 3 * s;
+    const stripeW = Math.max(1.4 * s, 1.8);
+    const capCol = params.gilt ? FOIL_WARM : P.shiftHsl(pig.partner, 0, -0.06, 0.04);
+    const creamCol = P.parseColour('#ddd0ab');
+    for (const cy0 of [0.7 * s, h - bandH - 0.7 * s]) {
+      P.stroke(
+        sf,
+        [
+          { x: w * 0.05, y: cy0 + bandH * 0.5 },
+          { x: w * 0.95, y: cy0 + bandH * 0.5 },
+        ],
+        P.brush('flat', { size: bandH, colour: creamCol, opacity: 0.34, spacing: 0.2, jitter: { lum: 0.09, position: 0.3 } }),
+        { passes: 1, pressure: P.PRESSURE.flat, taper: 0.06, seed: (params.seed + cy0 * 17) >>> 0 },
+      );
+      const stripeBrush = P.brush('flat', {
+        size: bandH * 0.75,
+        colour: capCol,
+        opacity: 0.4,
+        spacing: 0.2,
+        jitter: { lum: 0.1, hue: 6, opacity: 0.5, position: 0.3 },
+      });
+      for (let sx = w * 0.05; sx < w * 0.95; sx += stripeW * 2) {
+        const slant = headTailStyle === 0 ? 0 : bandH * 0.8;
+        P.stroke(
+          sf,
+          [
+            { x: sx, y: cy0 + bandH },
+            { x: sx + slant, y: cy0 },
+          ],
+          stripeBrush,
+          { passes: 1, pressure: P.PRESSURE.flat, taper: 0.1, smooth: false, seed: (params.seed + sx * 31) >>> 0, alpha: 0.7 + rnd() * 0.4 },
+        );
       }
-      ctx.globalAlpha = 1;
-      // Seat line where the endband meets the boards.
-      ctx.strokeStyle = hslStr(colB, hue, -24, 0, 0.4);
-      ctx.lineWidth = Math.max(0.5, 0.5 * scale);
-      const seamY = edgeY === 0 ? cy0 + bandH : cy0;
-      strokePts(ctx, jitteredSegment({ x: w * 0.03, y: seamY }, { x: w * 0.97, y: seamY }, step, 0.35 * scale, rnd), false);
+      paintRule(sf, w * 0.05, w * 0.95, cy0 < h / 2 ? cy0 + bandH : cy0, Math.max(0.6, 0.7 * s), pig.deep, spec, {
+        seed: (params.seed + cy0 * 71) >>> 0,
+        wear: 0.3,
+        alpha: 0.5,
+      });
     }
   }
 
-  // --- tooling panels: title in one, ornament in another ---
+  /* --- 9. tooling panels: title in one, ornament in another ------------- */
   const reserve = charmSpineReserve(charm);
-  // Anything drawn ACROSS the spine is a cut the lettering has to respect:
-  // the sewn cords when there are any, the decorative rules when there are not.
   const cutYs = raisedBands > 0 ? cordYs : legacyBands.map((b) => b.y);
   const cutPad = h > 0 ? (raisedBands > 0 ? cordH * 0.95 : 4.6 * scale) / h : 0;
   const panels = spinePanels(cutYs, reserve, cutPad).filter((p) => p.y1 - p.y0 > 0.045);
   let titlePanel: Panel | null = null;
   let ornamentPanel: Panel | null = null;
   if (panels.length > 0) {
-    // Binder's convention: title goes in the second panel from the head when
-    // there is one, otherwise the tallest panel in the upper half.
     const upper = panels.filter((p) => (p.y0 + p.y1) / 2 < 0.68);
     const pool = upper.length > 0 ? upper : panels;
     const tallest = pool.reduce((a, b) => (b.y1 - b.y0 > a.y1 - a.y0 ? b : a));
     const second = panels.length > 1 ? (panels[1] as Panel) : null;
-    // Follow the convention only when it costs (almost) nothing: on a heavily
-    // corded spine the second panel can be much shorter than the best one, and
-    // an elided title is a worse crime than an unconventional one.
     titlePanel =
-      second !== null && second.y1 - second.y0 >= (tallest.y1 - tallest.y0) * 0.8
-        ? second
-        : tallest;
+      second !== null && second.y1 - second.y0 >= (tallest.y1 - tallest.y0) * 0.8 ? second : tallest;
     const below = panels.filter((p) => p !== titlePanel && p.y0 >= (titlePanel as Panel).y1 - 1e-6);
     const rest = below.length > 0 ? below : panels.filter((p) => p !== titlePanel);
     if (rest.length > 0) {
@@ -2777,14 +3587,13 @@ export function renderSpine(
       if (ornamentPanel.y1 - ornamentPanel.y0 < 0.085) ornamentPanel = null;
     }
     if (!ornamentPanel && panels.length === 1) {
-      // Single panel: give the ornament the tail quarter and shorten the title.
       const only = panels[0] as Panel;
       ornamentPanel = { y0: only.y0 + (only.y1 - only.y0) * 0.74, y1: only.y1 };
       titlePanel = { y0: only.y0, y1: ornamentPanel.y0 };
     }
   }
 
-  // --- title plate + vertical title ---
+  /* --- 10. the title, tooled in foil ----------------------------------- */
   const trnd = mulberry32((params.seed ^ 0x7115) >>> 0);
   if (titlePanel) {
     const py0 = titlePanel.y0 * h;
@@ -2792,28 +3601,21 @@ export function renderSpine(
     const pad = 4 * scale;
     const availLen = Math.max(0, py1 - py0 - pad * 2);
     const family = FONTS[params.font] as string;
-    // A binder letters the title to FIT the panel: he picks smaller tools
-    // before he abbreviates. So shrink the face first (down to the legibility
-    // floor), and only then elide — a spine that says "Constellati…" is a bug,
-    // one that says "Cons" is a disaster.
+    const mctx = get2d(makeCanvas(8, 8));
     const maxFont = clamp(w * 0.52, 10 * scale, 20 * scale);
     const minFont = Math.max(6.5 * scale, maxFont * 0.52);
-    // Cursive faces overhang their advance width; keep a little air so the
-    // last glyph's tail never crosses the plate border.
     const fitLen = Math.max(0, availLen - pad * 0.9);
     let fontPx = maxFont;
     let text = title.trim();
     const measure = (t: string): number => {
-      ctx.font = `${fontPx.toFixed(2)}px ${family}`;
+      mctx.font = `${fontPx.toFixed(2)}px ${family}`;
       let sum = 0;
-      for (const ch of t) sum += ctx.measureText(ch).width;
+      for (const ch of t) sum += mctx.measureText(ch).width;
       return sum;
     };
     if (opts.hiRes && text.length > 0 && fitLen > 0) {
       while (measure(text) > fitLen && fontPx > minFont) fontPx = Math.max(minFont, fontPx * 0.94);
       if (measure(text) > fitLen) {
-        // Still too long at the floor: elide on a word boundary when one is
-        // near the end, otherwise clip and mark it with an ellipsis.
         while (text.length > 1 && measure(`${text}…`) > fitLen) text = text.slice(0, -1);
         const trimmed = text.replace(/[\s,;:.-]+$/u, '');
         text = `${trimmed.length > 0 ? trimmed : text}…`;
@@ -2821,222 +3623,281 @@ export function renderSpine(
     } else {
       text = '';
     }
-    ctx.font = `${fontPx.toFixed(2)}px ${family}`;
-
+    mctx.font = `${fontPx.toFixed(2)}px ${family}`;
     const glyphs: Array<{ ch: string; adv: number }> = [];
     let textLen = 0;
     for (const ch of text) {
-      const cw = ctx.measureText(ch).width;
+      const cw = mctx.measureText(ch).width;
       glyphs.push({ ch, adv: cw });
       textLen += cw;
     }
+
+    // The lettering ground: a tooled panel, a paper label, or nothing at all.
     const plateLen =
-      textLen > 0
-        ? Math.min(availLen, textLen + pad * 2.6)
-        : Math.min(availLen, (py1 - py0) * 0.6);
-    const plateW = Math.min(w * 0.78, fontPx * 1.9);
+      textLen > 0 ? Math.min(availLen, textLen + pad * 2.6) : Math.min(availLen, (py1 - py0) * 0.6);
+    const plateW = Math.min(w * 0.8, fontPx * 1.95);
     const plateX = w * 0.5 - plateW / 2;
     const plateY = (py0 + py1) / 2 - plateLen / 2;
 
     if (titlePlate !== 'none' && plateLen > 6 * scale) {
-      ctx.save();
-      if (titlePlate === 'gilt') {
-        ctx.fillStyle = hslStr(colB, hue, -8, 2, 0.32);
-        ctx.fillRect(plateX, plateY, plateW, plateLen);
-        ctx.strokeStyle = GOLD;
-        ctx.lineWidth = Math.max(0.9, 1.3 * scale);
-        jitterRectStroke(ctx, plateX, plateY, plateW, plateLen, step, 0.4 * scale, rnd);
-        ctx.strokeStyle = 'rgba(201, 162, 39, 0.55)';
-        ctx.lineWidth = Math.max(0.5, 0.7 * scale);
-        // Inner rule inset proportionally, so small plates do not end up with
-        // two rules sitting on top of each other.
-        const gi = Math.min(3.2 * scale, plateW * 0.14, plateLen * 0.1);
-        jitterRectStroke(ctx, plateX + gi, plateY + gi, plateW - gi * 2, plateLen - gi * 2, step, 0.35 * scale, rnd);
-      } else if (titlePlate === 'label') {
-        ctx.fillStyle = 'rgba(40, 32, 22, 0.32)';
-        ctx.fillRect(plateX + 1.2 * scale, plateY + 1.6 * scale, plateW, plateLen);
-        ctx.fillStyle = '#efe3c4';
-        ctx.fillRect(plateX, plateY, plateW, plateLen);
-        // Ruled border + a hint of the paper's own tone at the edges.
-        ctx.strokeStyle = 'rgba(120, 96, 58, 0.55)';
-        ctx.lineWidth = Math.max(0.5, 0.7 * scale);
-        jitterRectStroke(ctx, plateX + 1.8 * scale, plateY + 1.8 * scale, plateW - 3.6 * scale, plateLen - 3.6 * scale, step, 0.4 * scale, rnd);
-        ctx.strokeStyle = 'rgba(150, 124, 82, 0.4)';
-        jitterRectStroke(ctx, plateX, plateY, plateW, plateLen, step, 0.5 * scale, rnd);
+      if (titlePlate === 'label') {
+        // A paper label, gummed on: the ONE genuinely light shape a dark book
+        // is allowed, which is why it has to be painted rather than filled.
+        const labelShape = P.roughenShape(
+          P.densifyShape(P.rectShape(plateX, plateY, plateW, plateLen), 5 * s),
+          0.7 * s,
+          (params.seed ^ 0x9a1) >>> 0,
+          3.2,
+        );
+        P.stroke(
+          sf,
+          [
+            { x: plateX + plateW * 0.5, y: plateY + plateLen + 1.2 * s },
+            { x: plateX + plateW * 0.5, y: plateY - 1 * s },
+          ],
+          P.brush('soft', { size: plateW * 1.15, colour: pig.deep, opacity: 0.12, spacing: 0.2 }),
+          { passes: 1, pressure: P.PRESSURE.flat, taper: 0.05, seed: (params.seed ^ 0x9a2) >>> 0 },
+        );
+        const labelMask = P.blockIn(sf, labelShape, '#e3d5b2', {
+          brush: P.brush('chalk', { size: Math.max(2, plateW * 0.6), colour: '#e3d5b2', opacity: 0.24, grain: 0.7 }),
+          passes: 3,
+          valueSpread: 0.07,
+          hueSpread: 7,
+          roughness: 0.4 * s,
+          direction: Math.PI / 2,
+          openness: 0.03,
+          rowFactor: 0.4,
+          feather: 0.9,
+          seed: (params.seed ^ 0x9a3) >>> 0,
+        });
+        P.glaze(sf, labelMask, '#8b7444', 0.16, {
+          blend: 'multiply',
+          gradient: (px, py) => {
+            const u = clamp01Local((px - plateX) / plateW);
+            const v = clamp01Local((py - plateY) / plateLen);
+            return Math.max(Math.abs(u - 0.5) * 1.5, Math.abs(v - 0.5) * 1.5) ** 2;
+          },
+          mottle: 0.4,
+          seed: (params.seed ^ 0x9a4) >>> 0,
+        });
+        paintRule(sf, plateX + 1.8 * s, plateX + plateW - 1.8 * s, plateY + 1.8 * s, Math.max(0.6, 0.7 * s), P.parseColour('#7a6238'), spec, { wear: 0.35, alpha: 0.5, seed: (params.seed ^ 0x9a5) >>> 0 });
+        paintRule(sf, plateX + 1.8 * s, plateX + plateW - 1.8 * s, plateY + plateLen - 1.8 * s, Math.max(0.6, 0.7 * s), P.parseColour('#7a6238'), spec, { wear: 0.35, alpha: 0.5, seed: (params.seed ^ 0x9a6) >>> 0 });
       } else {
-        // debossed: pressed into the binding — dark top/left, lit bottom/right
-        ctx.fillStyle = hslStr(colB, hue, -12, 0, 0.4);
-        ctx.fillRect(plateX, plateY, plateW, plateLen);
-        ctx.strokeStyle = hslStr(colB, hue, -32, 0, 0.7);
-        ctx.lineWidth = Math.max(0.7, 1 * scale);
-        ctx.beginPath();
-        ctx.moveTo(plateX, plateY + plateLen);
-        ctx.lineTo(plateX, plateY);
-        ctx.lineTo(plateX + plateW, plateY);
-        ctx.stroke();
-        ctx.strokeStyle = hslStr(colA, hue, 28, -8, 0.55);
-        ctx.beginPath();
-        ctx.moveTo(plateX + plateW, plateY);
-        ctx.lineTo(plateX + plateW, plateY + plateLen);
-        ctx.lineTo(plateX, plateY + plateLen);
-        ctx.stroke();
+        // gilt / debossed: rules tooled straight into the binding.
+        const gold = titlePlate === 'gilt';
+        const ruleCol = gold ? FOIL_WARM : pig.deep;
+        for (const ry of [plateY, plateY + plateLen]) {
+          paintRule(sf, plateX, plateX + plateW, ry, Math.max(0.8, 1.2 * s), ruleCol, spec, {
+            gold,
+            seed: (params.seed + ry * 41) >>> 0,
+          });
+        }
+        const vBrush = P.brush('blade', {
+          size: Math.max(0.8, 1.1 * s),
+          colour: ruleCol,
+          opacity: 0.5,
+          spacing: 0.14,
+          hardness: 0.9,
+          jitter: { lum: gold ? 0.16 : 0.06, hue: gold ? 9 : 3, opacity: 0.5, position: 0.3 },
+        });
+        for (const rx of [plateX, plateX + plateW]) {
+          P.stroke(
+            sf,
+            [
+              { x: rx, y: plateY },
+              { x: rx, y: plateY + plateLen },
+            ],
+            vBrush,
+            { passes: 1, pressure: P.PRESSURE.flat, taper: 0.03, wobble: 0.35 * s, seed: (params.seed + rx * 53) >>> 0, alpha: 1 - foilWear * 0.5 },
+          );
+        }
       }
-      ctx.restore();
     }
 
     if (glyphs.length > 0) {
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      // Letter the title in whatever actually reads against the panel it sits
-      // on. A binder never tools dark ink onto navy cloth — he uses gold or a
-      // white foil — and "near-black on near-black" was the single worst
-      // legibility bug on the shelf.
-      const lift = material === 'vellum' ? 20 : material === 'paper' ? 9 : 0;
-      const panelL = colA.l * 0.55 + colB.l * 0.45 + lift + wear * 6;
       const onLabel = titlePlate === 'label';
       const goldTitle = !onLabel && (titlePlate === 'gilt' || params.gilt);
-      const paleTitle = !onLabel && !goldTitle && panelL < 48;
-      const titleInk = onLabel
-        ? hslStr(colB, hue, -34, 6, 0.95)
-        : goldTitle
-          ? GOLD
-          : paleTitle
-            ? hslStr(colA, hue, clamp(94 - colA.l, 0, 100), -46, 0.94)
-            : hslStr(colB, hue, -38, 0, 0.94);
-      // Every tooled title is stamped INTO the binding, so it always carries a
-      // relief edge. Drawing it unconditionally (not just for `debossed`) is
-      // also the belt-and-braces that keeps a title readable on a ground whose
-      // lightness sits right on the pale/deep decision boundary.
-      const reliefInk = onLabel
-        ? null
-        : paleTitle
-          ? hslStr(colB, hue, -30, 0, 0.5)
-          : hslStr(colA, hue, 26, -12, 0.5);
+      const groundLum = P.luminance(pig.base);
+      const silverTitle = !onLabel && !goldTitle && groundLum < 0.2;
       const runY0 = (py0 + py1) / 2 - textLen / 2;
-      ctx.save();
-      ctx.translate(w / 2, runY0);
-      ctx.rotate(Math.PI / 2);
-      let advance = 0;
-      for (const g of glyphs) {
-        // Per-glyph baseline wobble: rnd()*1.2 - 0.6 px (scaled).
-        const wob = (trnd() * 1.2 - 0.6) * scale;
-        if (reliefInk !== null) {
-          // Stamped INTO the binding: a dark bite on the side the light comes
-          // from and a lit lip opposite, not a flat drop shadow.
-          ctx.fillStyle = hslStr(colB, hue, -34, 0, 0.4);
-          ctx.fillText(g.ch, advance - 0.55 * scale * keySide, wob - 0.6 * scale);
-          ctx.fillStyle = reliefInk;
-          ctx.fillText(g.ch, advance + 0.75 * scale, wob + 0.75 * scale);
+      const stH = Math.ceil(fontPx * 1.75);
+      const st = makeStencil(Math.ceil(textLen + fontPx * 0.6), stH, (c) => {
+        c.font = `${fontPx.toFixed(2)}px ${family}`;
+        c.textAlign = 'left';
+        c.textBaseline = 'middle';
+        let advance = fontPx * 0.3;
+        for (const g of glyphs) {
+          const wob = (trnd() * 1.2 - 0.6) * scale;
+          c.fillText(g.ch, advance, stH / 2 + wob);
+          advance += g.adv;
         }
-        if (goldTitle) {
-          // Real foil is not one flat gold: it is a burnished ramp, brightest
-          // where the light rakes it. Painting each glyph with a gradient in
-          // the RUN's direction is what makes a tooled title catch the eye.
-          const gg = ctx.createLinearGradient(advance, -fontPx * 0.55, advance, fontPx * 0.55);
-          gg.addColorStop(0, '#8a6a14');
-          gg.addColorStop(0.28, '#f5e29b');
-          gg.addColorStop(0.5, GOLD);
-          gg.addColorStop(0.74, '#fff2c4');
-          gg.addColorStop(1, '#7d5f12');
-          ctx.fillStyle = gg;
-        } else {
-          ctx.fillStyle = titleInk;
-        }
-        ctx.fillText(g.ch, advance, wob);
-        advance += g.adv;
-      }
-      ctx.restore();
+      });
 
-      // --- foil wear + specular catch -----------------------------------
-      // "Gold foil titles that CATCH the light, half-legible, some worn away."
-      // Beauty over legibility at shelf scale: a perfectly crisp title on every
-      // book is the single most machine-made thing on a shelf.
-      if (goldTitle) {
-        const runLen = textLen;
-        const runX0 = w / 2 - fontPx * 0.6;
-
-        if (foilWear > 0.04 && runLen > 2) {
-          // Rub the foil back to the binding underneath, in patches — foil
-          // wears where fingers and neighbours touch it, not uniformly.
-          const rubs = Math.round(4 + foilWear * 26);
-          for (let i = 0; i < rubs; i++) {
-            const ry = runY0 + trnd() * runLen;
-            const rx = w / 2 + (trnd() * 2 - 1) * fontPx * 0.55;
-            const rr = (0.6 + trnd() * 2.4) * scale * (0.5 + foilWear);
-            const g = ctx.createRadialGradient(rx, ry, 0, rx, ry, rr);
-            const a = clamp(foilWear * (0.35 + trnd() * 0.6), 0, 0.9);
-            g.addColorStop(0, hslStr(colB, hue, -6, 0, a));
-            g.addColorStop(1, hslStr(colB, hue, -6, 0, 0));
-            ctx.fillStyle = g;
-            ctx.fillRect(rx - rr, ry - rr, rr * 2, rr * 2);
+      // Rotate the run a quarter turn: `t` now runs down the spine, `u` across
+      // the letter's stroke — which is exactly the axis a burnished foil ramp
+      // needs to run along.
+      const inkDark = P.mixRgb(pig.deep, P.parseColour('#141019'), 0.45);
+      const inkPale = P.mixRgb(pig.lift, P.parseColour('#f4ecd8'), 0.6);
+      const colourAt = goldTitle
+        ? (t: number, u: number): P.Rgb => {
+            const foil = foilColour(u, FOIL_WARM, FOIL_HOT, FOIL_DARK);
+            // One glint travels along the run where the key rakes it.
+            const catchAt = clamp(0.24 + rowPhase * 0.5, 0, 1);
+            const g = Math.exp(-Math.pow((t - catchAt) / 0.16, 2)) * (lightOn ? keyTake : 0.4);
+            return P.mixRgb(foil, FOIL_HOT, clamp01Local(g * 0.7));
           }
-          // Whole-run fade: at high wear the title is a ghost, and that is a
-          // feature — half-legible is what the reference has.
-          if (foilWear > 0.55) {
-            ctx.fillStyle = hslStr(colB, hue, -4, 0, (foilWear - 0.55) * 0.5);
-            ctx.fillRect(runX0, runY0 - fontPx * 0.4, fontPx * 1.3, runLen + fontPx * 0.8);
-          }
-        }
+        : silverTitle
+          ? (_t: number, u: number): P.Rgb => foilColour(u, FOIL_SILVER, P.parseColour('#ffffff'), P.parseColour('#5d6670'))
+          : onLabel
+            ? (): P.Rgb => inkDark
+            : (): P.Rgb => (groundLum < 0.34 ? inkPale : inkDark);
 
-        if (lightOn) {
-          // The catch: one hard glint travelling along the run, placed where
-          // the key would rake it, plus a broad low sheen over the whole title.
-          const catchAt = clamp(0.24 + rowPhase * 0.5, 0, 1);
-          applySpecularCatch(ctx, {
-            rig,
-            x: w / 2 + keySide * fontPx * 0.14,
-            y: runY0 + runLen * catchAt,
-            radius: Math.max(2, fontPx * 0.85),
-            aspect: 0.42,
-            angle: Math.PI / 2,
-            strength: clamp((1 - foilWear * 0.7) * keyTake * 1.1, 0, 1.3),
-            colour: '#fff6d2',
-          });
-          applySpecularCatch(ctx, {
-            rig,
-            x: w / 2,
-            y: runY0 + runLen * 0.5,
-            radius: Math.max(3, runLen * 0.4),
-            aspect: 0.2,
-            angle: Math.PI / 2,
-            strength: clamp((1 - foilWear) * keyTake * 0.32, 0, 0.6),
-            colour: '#ffe9a8',
-          });
-        }
-      }
+      stampStencil(sf, st, w / 2, runY0 - fontPx * 0.3, {
+        rotate: true,
+        colour: colourAt,
+        wear: onLabel ? foilWear * 0.35 : foilWear,
+        wearScale: Math.max(3.5, fontPx * 0.55),
+        alpha: 0.95,
+        seed: (params.seed ^ 0x515e) >>> 0,
+        relief: onLabel
+          ? null
+          : {
+              colour: goldTitle || silverTitle ? P.mixRgb(pig.deep, P.parseColour('#000000'), 0.35) : pig.deep,
+              dx: -0.8 * s * keySide,
+              dy: 0.85 * s,
+              alpha: 0.4,
+            },
+      });
     }
   }
 
-  // --- ornament stamp (12 + none; the wax seal charm takes its slot) ---
+  /* --- 11. the ornament, tooled in the same foil ------------------------ */
   if (ornamentOn && !charmTakesOrnamentSlot(charm)) {
     const oPanel = ornamentPanel ?? { y0: 0.7, y1: 0.9 };
     const ocy = ((oPanel.y0 + oPanel.y1) / 2) * h;
     const oSize = Math.min(w * 0.36, 14 * scale, ((oPanel.y1 - oPanel.y0) * h) / 2.1);
-    const inkColor = params.gilt ? GOLD : hslStr(colB, hue, -24, 0, 0.85);
-    ctx.strokeStyle = inkColor;
-    ctx.fillStyle = inkColor;
-    ctx.lineWidth = Math.max(1, 1.1 * scale);
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    drawOrnament(ctx, params.ornament, w / 2, ocy, Math.max(2, oSize), rnd);
-  }
-
-  // --- shared granulation overlay ---
-  const tile = getGranulationTile();
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = 0.06;
-  for (let ty = 0; ty < h; ty += GRANULATION_SIZE) {
-    for (let tx = 0; tx < w; tx += GRANULATION_SIZE) {
-      ctx.drawImage(tile, tx, ty);
+    if (oSize > 1.6) {
+      const box = Math.ceil(oSize * 2.6);
+      const ornRnd = mulberry32((params.seed ^ 0x0c17) >>> 0);
+      const st = makeStencil(box, box, (c) => {
+        c.lineWidth = Math.max(1, 1.1 * scale);
+        c.lineJoin = 'round';
+        c.lineCap = 'round';
+        drawOrnament(c, params.ornament, box / 2, box / 2, Math.max(2, oSize), ornRnd);
+      });
+      const gold = params.gilt;
+      stampStencil(sf, st, w / 2 - box / 2, ocy - box / 2, {
+        colour: gold
+          ? (_t, u) => foilColour(u, FOIL_WARM, FOIL_HOT, FOIL_DARK)
+          : () => P.mixRgb(pig.deep, P.parseColour('#0e0b12'), 0.3),
+        wear: foilWear * 0.8,
+        wearScale: Math.max(3, oSize * 0.5),
+        alpha: gold ? 0.9 : 0.7,
+        seed: (params.seed ^ 0x0c18) >>> 0,
+        relief: {
+          colour: P.mixRgb(pig.deep, P.parseColour('#000000'), 0.3),
+          dx: -0.7 * s * keySide,
+          dy: 0.7 * s,
+          alpha: 0.35,
+        },
+      });
     }
   }
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
 
-  // --- wear: sun-fade, scuffs, rubbed patches, grime, cracks ---
-  paintWear(ctx, w, h, wear, tones, scale, rnd);
+  /* --- 12. wear --------------------------------------------------------- */
+  paintWearPainterly(sf, mask, spec, rnd);
 
-  // --- charm: the identity cue carried to the cover and the open book ---
+  /* --- 13. the light on the object -------------------------------------- */
+  if (lightOn) {
+    // Occlusion: the plank below, the plank above, and the neighbour on the
+    // side away from the key. Three glazes, one direction, no halo.
+    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.18), 0.62 * (0.7 + depth * 0.5), {
+      blend: 'multiply',
+      gradient: (_x, py) => clamp01Local((py / h - 0.8) / 0.2) ** 1.5,
+      mottle: 0.2,
+      seed: (params.seed ^ 0x3a01) >>> 0,
+    });
+    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.24), 0.42 * (0.6 + depth * 0.6), {
+      blend: 'multiply',
+      gradient: (_x, py) => clamp01Local((0.16 - py / h) / 0.16) ** 1.6,
+      mottle: 0.2,
+      seed: (params.seed ^ 0x3a02) >>> 0,
+    });
+    P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour('#0c0a12'), 0.4), 0.5, {
+      blend: 'multiply',
+      gradient: (px) => {
+        const u = keySide > 0 ? 1 - px / w : px / w;
+        return clamp01Local((0.3 - u) / 0.3) ** 1.4;
+      },
+      mottle: 0.25,
+      mottleScale: Math.max(8, h * 0.15),
+      seed: (params.seed ^ 0x3a03) >>> 0,
+    });
+
+    // The key: warm, raking, strongest on books nearest the source.
+    P.glaze(sf, mask, P.parseColour(rig.keyColour), clamp(0.2 * keyTake * rig.keyIntensity, 0, 0.4), {
+      blend: 'screen',
+      gradient: (px, py) => {
+        const u = keySide > 0 ? px / w : 1 - px / w;
+        const across = 0.35 + 0.65 * clamp01Local(u) ** 1.2;
+        const down = 0.55 + 0.45 * clamp01Local(1 - py / h) ** 0.8;
+        return across * down;
+      },
+      mottle: 0.3,
+      mottleScale: Math.max(12, h * 0.25),
+      seed: (params.seed ^ 0x3a04) >>> 0,
+    });
+
+    // Colour bleeding from the neighbours: a painted shelf has no isolated
+    // objects, and this is nearly free.
+    if (opts.neighbourLeft) {
+      P.glaze(sf, mask, opts.neighbourLeft, 0.11, {
+        blend: 'softlight',
+        gradient: (px) => clamp01Local((0.32 - px / w) / 0.32) ** 1.3,
+        mottle: 0.3,
+        seed: (params.seed ^ 0x3a05) >>> 0,
+      });
+    }
+    if (opts.neighbourRight) {
+      P.glaze(sf, mask, opts.neighbourRight, 0.11, {
+        blend: 'softlight',
+        gradient: (px) => clamp01Local((px / w - 0.68) / 0.32) ** 1.3,
+        mottle: 0.3,
+        seed: (params.seed ^ 0x3a06) >>> 0,
+      });
+    }
+
+    // Recessed books lose contrast and gain the room's haze.
+    if (depth > 0.55) {
+      P.glaze(sf, mask, P.parseColour(rig.ambientColour), (depth - 0.55) / 0.45 * 0.22 * rig.hazeStrength, {
+        blend: 'normal',
+        mottle: 0.2,
+        seed: (params.seed ^ 0x3a07) >>> 0,
+      });
+    }
+  }
+
+  /* --- 14. edges: a few crisp, most of them lost ------------------------ */
+  P.edgeVary(sf, shape, {
+    crisp: 0.26,
+    lost: 0.3,
+    band: Math.max(1.2, 1.6 * s),
+    accent: P.mixRgb(pig.deep, P.parseColour('#0b0910'), 0.4),
+    accentStrength: 0.4,
+    lightAngle: rig.keyAngle,
+    softness: Math.max(1.2, 2 * s),
+    seed: (params.seed ^ 0x1d3e) >>> 0,
+  });
+
+  // Canvas tooth, faint, tying the book to every other painted thing.
+  P.addGrain(sf, 0.045, 1.5, (params.seed ^ 0x7e11) >>> 0, mask);
+
+  /* --- 15. one blit ----------------------------------------------------- */
+  ctx.save();
+  ctx.translate(x, y);
+  P.drawSurface(ctx as CanvasRenderingContext2D, sf, 0, 0);
+
+  // The charm keeps its own palette, so it is composited rather than stamped.
   if (charm !== 'none') {
     drawSpineCharm(ctx, charm, w, h, {
       color: charmColorCss(params.charmColor ?? 0),
@@ -3045,164 +3906,25 @@ export function renderSpine(
       gilt: params.gilt,
     });
   }
+  ctx.restore();
 
-  /* ------------------------------------------------------------------ *
-   *  The light passes. Everything above painted the OBJECT; everything
-   *  below paints the LIGHT ON it, in the order the art direction sets
-   *  out: AO in every recess → key with hot spots → rim → bleed → haze.
-   * ------------------------------------------------------------------ */
-  if (lightOn) {
-    // --- 1. ambient occlusion -----------------------------------------
-    // The head and tail of a shelved book are always occluded — one by the
-    // plank above, one by the plank it stands on — and both joints are
-    // occluded by the neighbours. That is four of four edges, but weighted:
-    // the tail is darkest, the head next, the joints least (the round-back
-    // crease already did most of that work).
-    applyAmbientOcclusion(ctx, {
-      rig,
-      x: 0,
-      y: 0,
-      width: w,
-      height: h,
-      edges: ['bottom'],
-      reach: Math.min(h * 0.3, 30 * scale),
-      strength: 0.9 + depth * 0.4,
-      corners: false,
-    });
-    applyAmbientOcclusion(ctx, {
-      rig,
-      x: 0,
-      y: 0,
-      width: w,
-      height: h,
-      edges: ['top'],
-      reach: Math.min(h * 0.22, 22 * scale),
-      strength: 0.62 + depth * 0.5,
-      corners: false,
-    });
-    applyAmbientOcclusion(ctx, {
-      rig,
-      x: 0,
-      y: 0,
-      width: w,
-      height: h,
-      edges: ['left', 'right'],
-      reach: Math.max(1, w * 0.22),
-      strength: 0.34 + depth * 0.5,
-      corners: true,
-    });
-
-    // --- 2. sun-fade on the side that faces the window -----------------
-    // Independent of `wear`: this is bleaching from years of standing in the
-    // same light, and it lands on ONE side of the spine — the reference's
-    // books are visibly paler where the sun reached them.
-    if (sunFade > 0.05) {
-      const fx = keySide > 0 ? w : 0;
-      const fg = ctx.createLinearGradient(fx, 0, fx - keySide * w * 0.85, 0);
-      const fa = sunFade * 0.3 * (0.4 + rowPhase * 0.9);
-      fg.addColorStop(0, `rgba(236, 224, 196, ${fa.toFixed(3)})`);
-      fg.addColorStop(0.55, `rgba(236, 224, 196, ${(fa * 0.4).toFixed(3)})`);
-      fg.addColorStop(1, 'rgba(236, 224, 196, 0)');
-      ctx.fillStyle = fg;
-      ctx.fillRect(0, 0, w, h);
-      ctx.save();
-      ctx.globalCompositeOperation = 'saturation';
-      ctx.globalAlpha = sunFade * 0.34;
-      const sg = ctx.createLinearGradient(fx, 0, fx - keySide * w * 0.85, 0);
-      sg.addColorStop(0, 'hsl(0 0% 55%)');
-      sg.addColorStop(1, 'hsl(0 0% 55% / 0)');
-      ctx.fillStyle = sg;
-      ctx.fillRect(0, 0, w, h);
-      ctx.restore();
-    }
-
-    // --- 3. the key ----------------------------------------------------
-    applyKeyLight(ctx, {
-      rig,
-      x: 0,
-      y: 0,
-      width: w,
-      height: h,
-      intensity: keyTake,
-      // A book facing the viewer takes the key almost head-on; the surface
-      // normal is straight out of the frame, which the 2D rig treats as
-      // "fully facing", so the modulation lives in `keyTake` instead.
-      hotSpot: rig.hotSpot * clamp(keyTake, 0, 1) * (material === 'silk' ? 1.3 : 1),
-    });
-
-    // --- 4. the rim ----------------------------------------------------
-    // Only the edges that actually face the key, and only on the vertical
-    // joints plus the head: the tail sits in the plank's contact shadow and
-    // must never light up.
-    const edgesLit = litEdges(rig).filter((e) => e !== 'bottom');
-    applyRimLight(ctx, {
-      rig,
-      x: 0,
-      y: 0,
-      width: w,
-      height: h,
-      edges: edgesLit,
-      thickness: Math.max(1, w * 0.14),
-      strength: keyTake * (material === 'vellum' || material === 'silk' ? 1.25 : 1),
-    });
-
-    // --- 5. colour bleed from the neighbours ---------------------------
-    if (opts.neighbourLeft) {
-      applyColourBleed(ctx, {
-        x: 0,
-        y: 0,
+  // The height contribution for the deferred pass. Emitted whether or not the
+  // albedo was lit, so a scene can light a pre-lit bake for free extra depth
+  // or take `light: false` art and do all of it on the GPU.
+  const nctx = opts.normalCtx;
+  if (nctx) {
+    emitSpines(nctx, [
+      {
+        x,
+        y,
         width: w,
         height: h,
-        colour: opts.neighbourLeft,
-        from: 'left',
-        reach: Math.max(1.5, w * 0.4),
-        strength: 0.13,
-      });
-    }
-    if (opts.neighbourRight) {
-      applyColourBleed(ctx, {
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        colour: opts.neighbourRight,
-        from: 'right',
-        reach: Math.max(1.5, w * 0.4),
-        strength: 0.13,
-      });
-    }
-
-    // --- 6. atmospheric depth for recessed books -----------------------
-    if (depth > 0.55) {
-      applyAtmosphericHaze(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        depth: (depth - 0.55) / 0.45,
-        strength: 0.85,
-      });
-    }
+        proud: clamp(1 - depth, 0, 1),
+        radius: clamp(0.16 + round * 0.16, 0.08, 0.4),
+        bands: raisedBands,
+      },
+    ]);
   }
-
-  ctx.restore(); // end clip
-
-  // --- pencil edges: per-vertex jittered, double-stroked, alpha 0.55 ---
-  ctx.strokeStyle = GRAPHITE;
-  ctx.lineWidth = Math.max(0.8, 0.9 * scale);
-  ctx.lineJoin = 'round';
-  const passA = densifyJitter(outline, step, 0.7 * scale, rnd);
-  tracePoly(ctx, passA, true);
-  ctx.stroke();
-  const passB = densifyJitter(outline, step, 0.55 * scale, rnd);
-  ctx.save();
-  ctx.translate(0.5 * scale, -0.4 * scale);
-  tracePoly(ctx, passB, true);
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.restore();
 }
 
 /* ========================================================================== *

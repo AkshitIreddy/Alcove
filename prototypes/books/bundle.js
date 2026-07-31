@@ -28,6 +28,1171 @@
     return v < min ? min : v > max ? max : v;
   }
 
+  // src/art/brush.ts
+  var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+  function parseColour(input) {
+    if (typeof input !== "string") {
+      if ("r" in input) return { r: clamp01(input.r), g: clamp01(input.g), b: clamp01(input.b) };
+      return hslToRgb(input);
+    }
+    const s = input.trim().toLowerCase();
+    if (s.startsWith("#")) {
+      const hex = s.slice(1);
+      if (hex.length === 3 || hex.length === 4) {
+        return {
+          r: parseInt(hex[0] + hex[0], 16) / 255,
+          g: parseInt(hex[1] + hex[1], 16) / 255,
+          b: parseInt(hex[2] + hex[2], 16) / 255
+        };
+      }
+      if (hex.length >= 6) {
+        return {
+          r: parseInt(hex.slice(0, 2), 16) / 255,
+          g: parseInt(hex.slice(2, 4), 16) / 255,
+          b: parseInt(hex.slice(4, 6), 16) / 255
+        };
+      }
+      return { r: 0, g: 0, b: 0 };
+    }
+    const nums = s.match(/-?[\d.]+/g)?.map(Number) ?? [];
+    if (s.startsWith("hsl")) {
+      return hslToRgb({ h: nums[0] ?? 0, s: (nums[1] ?? 0) / 100, l: (nums[2] ?? 0) / 100 });
+    }
+    return { r: (nums[0] ?? 0) / 255, g: (nums[1] ?? 0) / 255, b: (nums[2] ?? 0) / 255 };
+  }
+  function hslToRgb({ h, s, l }) {
+    const hh = (h % 360 + 360) % 360;
+    const ss = clamp01(s);
+    const ll = clamp01(l);
+    if (ss === 0) return { r: ll, g: ll, b: ll };
+    const c = (1 - Math.abs(2 * ll - 1)) * ss;
+    const x = c * (1 - Math.abs(hh / 60 % 2 - 1));
+    const m = ll - c / 2;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    if (hh < 60) [r, g, b] = [c, x, 0];
+    else if (hh < 120) [r, g, b] = [x, c, 0];
+    else if (hh < 180) [r, g, b] = [0, c, x];
+    else if (hh < 240) [r, g, b] = [0, x, c];
+    else if (hh < 300) [r, g, b] = [x, 0, c];
+    else [r, g, b] = [c, 0, x];
+    return { r: r + m, g: g + m, b: b + m };
+  }
+  function rgbToHsl({ r, g, b }) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d === 0) return { h: 0, s: 0, l };
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h;
+    if (max === r) h = 60 * ((g - b) / d % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+    return { h: (h + 360) % 360, s: clamp01(s), l };
+  }
+  function mixRgb(a, b, t) {
+    return { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t };
+  }
+  function shiftHsl(colour, dh, ds, dl) {
+    const hsl = rgbToHsl(parseColour(colour));
+    return hslToRgb({ h: hsl.h + dh, s: clamp01(hsl.s + ds), l: clamp01(hsl.l + dl) });
+  }
+  function luminance({ r, g, b }) {
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function createSurface(width, height, ground) {
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    const surface = { width: w, height: h, data: new Float32Array(w * h * 4) };
+    if (ground !== void 0) fillSurface(surface, ground);
+    return surface;
+  }
+  function fillSurface(surface, colour, alpha = 1) {
+    const c = parseColour(colour);
+    const a = clamp01(alpha);
+    const d = surface.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = c.r * a;
+      d[i + 1] = c.g * a;
+      d[i + 2] = c.b * a;
+      d[i + 3] = a;
+    }
+  }
+  function getPixel(surface, x, y) {
+    const xi = Math.max(0, Math.min(surface.width - 1, Math.round(x)));
+    const yi = Math.max(0, Math.min(surface.height - 1, Math.round(y)));
+    const i = (yi * surface.width + xi) * 4;
+    const a = surface.data[i + 3];
+    if (a <= 1e-6) return { r: 0, g: 0, b: 0, a: 0 };
+    return { r: surface.data[i] / a, g: surface.data[i + 1] / a, b: surface.data[i + 2] / a, a };
+  }
+  function surfaceToRGBA8(surface, background) {
+    const out = new Uint8ClampedArray(surface.width * surface.height * 4);
+    const d = surface.data;
+    const bg = background === void 0 ? null : parseColour(background);
+    for (let i = 0, o = 0; i < d.length; i += 4, o += 4) {
+      let a = d[i + 3];
+      let r = d[i];
+      let g = d[i + 1];
+      let b = d[i + 2];
+      if (bg) {
+        r += bg.r * (1 - a);
+        g += bg.g * (1 - a);
+        b += bg.b * (1 - a);
+        a = 1;
+      }
+      if (a <= 1e-6) {
+        out[o] = 0;
+        out[o + 1] = 0;
+        out[o + 2] = 0;
+        out[o + 3] = 0;
+        continue;
+      }
+      out[o] = clamp01(r / a) * 255;
+      out[o + 1] = clamp01(g / a) * 255;
+      out[o + 2] = clamp01(b / a) * 255;
+      out[o + 3] = clamp01(a) * 255;
+    }
+    return out;
+  }
+  function surfaceToImageData(surface, background) {
+    return new ImageData(surfaceToRGBA8(surface, background), surface.width, surface.height);
+  }
+  function drawSurface(ctx, surface, x = 0, y = 0) {
+    const tmp = document.createElement("canvas");
+    tmp.width = surface.width;
+    tmp.height = surface.height;
+    const tctx = tmp.getContext("2d");
+    tctx.putImageData(surfaceToImageData(surface), 0, 0);
+    ctx.drawImage(tmp, x, y);
+  }
+  function compositeSurface(dst, src, x = 0, y = 0, alpha = 1, blend = "normal") {
+    const ox = Math.round(x);
+    const oy = Math.round(y);
+    const x0 = Math.max(0, ox);
+    const y0 = Math.max(0, oy);
+    const x1 = Math.min(dst.width, ox + src.width);
+    const y1 = Math.min(dst.height, oy + src.height);
+    const a = clamp01(alpha);
+    if (a <= 0) return;
+    for (let dy = y0; dy < y1; dy++) {
+      for (let dx = x0; dx < x1; dx++) {
+        const si = ((dy - oy) * src.width + (dx - ox)) * 4;
+        const sa = src.data[si + 3];
+        if (sa <= 2e-3) continue;
+        compositePixel(dst.data, (dy * dst.width + dx) * 4, src.data[si] / sa, src.data[si + 1] / sa, src.data[si + 2] / sa, sa * a, blend);
+      }
+    }
+  }
+  function clipToMask(surface, mask, opts = {}) {
+    const ox = opts.offsetX ?? 0;
+    const oy = opts.offsetY ?? 0;
+    const feather = Math.max(0.25, opts.feather ?? 1.2);
+    const noise = opts.noise ?? 0;
+    const noiseScale = opts.noiseScale ?? 9;
+    const seed = (opts.seed ?? 3089) >>> 0;
+    const d = surface.data;
+    for (let y = 0; y < surface.height; y++) {
+      for (let x = 0; x < surface.width; x++) {
+        const i = (y * surface.width + x) * 4;
+        if (d[i + 3] <= 2e-3) continue;
+        const sx = x + ox;
+        const sy = y + oy;
+        let dist = maskDistanceAt(mask, sx, sy);
+        if (noise > 0) dist -= (clamp01((fbm(sx / noiseScale, sy / noiseScale, seed, 3) - 0.26) / 0.48) - 0.5) * 2 * noise;
+        const k = clamp01(0.5 - dist / (feather * 2));
+        if (k >= 0.999) continue;
+        d[i] *= k;
+        d[i + 1] *= k;
+        d[i + 2] *= k;
+        d[i + 3] *= k;
+      }
+    }
+  }
+  function blendChannel(mode, cd, cs) {
+    switch (mode) {
+      case "multiply":
+        return cd * cs;
+      case "screen":
+        return cd + cs - cd * cs;
+      case "overlay":
+        return cd <= 0.5 ? 2 * cd * cs : 1 - 2 * (1 - cd) * (1 - cs);
+      case "softlight": {
+        const dd = cd <= 0.25 ? ((16 * cd - 12) * cd + 4) * cd : Math.sqrt(cd);
+        return cs <= 0.5 ? cd - (1 - 2 * cs) * cd * (1 - cd) : cd + (2 * cs - 1) * (dd - cd);
+      }
+      case "lighten":
+        return Math.max(cd, cs);
+      case "darken":
+        return Math.min(cd, cs);
+      case "add":
+        return cd + cs;
+      default:
+        return cs;
+    }
+  }
+  function compositePixel(d, i, r, g, b, aS, mode) {
+    if (aS <= 0) return;
+    const aD = d[i + 3];
+    if (mode === "erase") {
+      const keep = 1 - aS;
+      d[i] *= keep;
+      d[i + 1] *= keep;
+      d[i + 2] *= keep;
+      d[i + 3] = aD * keep;
+      return;
+    }
+    if (mode === "normal" || aD <= 1e-6) {
+      const inv2 = 1 - aS;
+      d[i] = r * aS + d[i] * inv2;
+      d[i + 1] = g * aS + d[i + 1] * inv2;
+      d[i + 2] = b * aS + d[i + 2] * inv2;
+      d[i + 3] = aS + aD * inv2;
+      return;
+    }
+    const cdR = d[i] / aD;
+    const cdG = d[i + 1] / aD;
+    const cdB = d[i + 2] / aD;
+    const bR = blendChannel(mode, cdR, r);
+    const bG = blendChannel(mode, cdG, g);
+    const bB = blendChannel(mode, cdB, b);
+    const mR = (1 - aD) * r + aD * bR;
+    const mG = (1 - aD) * g + aD * bG;
+    const mB = (1 - aD) * b + aD * bB;
+    const inv = 1 - aS;
+    d[i] = mR * aS + d[i] * inv;
+    d[i + 1] = mG * aS + d[i + 1] * inv;
+    d[i + 2] = mB * aS + d[i + 2] * inv;
+    d[i + 3] = aS + aD * inv;
+  }
+  var KERNEL_CACHE = /* @__PURE__ */ new Map();
+  var KIND_INDEX = {
+    soft: 0,
+    bristle: 1,
+    chalk: 2,
+    flat: 3,
+    blade: 4,
+    sponge: 5,
+    ink: 6
+  };
+  function hash2(x, y, seed) {
+    let h = x * 374761393 + y * 668265263 + seed * 1274126177 | 0;
+    h = h ^ h >>> 13 | 0;
+    h = Math.imul(h, 1274126177);
+    return ((h ^ h >>> 16) >>> 0) / 4294967296;
+  }
+  function valueNoise(x, y, seed) {
+    const xi = Math.floor(x);
+    const yi = Math.floor(y);
+    const xf = x - xi;
+    const yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf);
+    const v = yf * yf * (3 - 2 * yf);
+    const a = hash2(xi, yi, seed);
+    const b = hash2(xi + 1, yi, seed);
+    const c = hash2(xi, yi + 1, seed);
+    const e = hash2(xi + 1, yi + 1, seed);
+    return (a + (b - a) * u) * (1 - v) + (c + (e - c) * u) * v;
+  }
+  function fbm(x, y, seed, octaves = 3) {
+    let sum = 0;
+    let amp = 0.5;
+    let norm = 0;
+    let fx = x;
+    let fy = y;
+    for (let o = 0; o < octaves; o++) {
+      sum += valueNoise(fx, fy, seed + o * 1013) * amp;
+      norm += amp;
+      amp *= 0.5;
+      fx *= 2.03;
+      fy *= 2.01;
+    }
+    return sum / norm;
+  }
+  function makeKernel(kind, size, hardness = 0.5, grain = 0.5, variant = 0) {
+    const px = Math.max(3, Math.ceil(size) | 1);
+    const hB = Math.round(clamp01(hardness) * 20);
+    const gB = Math.round(clamp01(grain) * 20);
+    const key = (((KIND_INDEX[kind] * 258 + px) * 21 + hB) * 21 + gB) * 8 + (variant & 7);
+    const hit = KERNEL_CACHE.get(key);
+    if (hit) return hit;
+    const alpha = new Float32Array(px * px);
+    const c = (px - 1) / 2;
+    const seed = (variant & 7) * 7919 + px * 31 + hB * 101;
+    const rand = mulberry32(seed);
+    const squash = 1 + (rand() - 0.5) * 0.28;
+    const tilt = (rand() - 0.5) * 0.5;
+    const cosT = Math.cos(tilt);
+    const sinT = Math.sin(tilt);
+    const bristleCount = 5 + Math.floor(rand() * 7);
+    const bristleY = [];
+    const bristleW = [];
+    for (let i = 0; i < bristleCount; i++) {
+      bristleY.push((i / (bristleCount - 1) - 0.5) * 2 + (rand() - 0.5) * 0.18);
+      bristleW.push(0.35 + rand() * 0.65);
+    }
+    for (let y = 0; y < px; y++) {
+      for (let x = 0; x < px; x++) {
+        const dx0 = (x - c) / c;
+        const dy0 = (y - c) / c;
+        const lx = (dx0 * cosT + dy0 * sinT) * squash;
+        const ly = (-dx0 * sinT + dy0 * cosT) / squash;
+        let a = 0;
+        switch (kind) {
+          case "soft": {
+            const r = Math.hypot(lx, ly);
+            if (r >= 1) break;
+            const exp = 1.05 + hardness * 5.5;
+            a = Math.pow(1 - r, exp);
+            break;
+          }
+          case "ink": {
+            const r = Math.hypot(lx, ly);
+            const edge = 1 - Math.max(0, Math.min(1, (r - (0.82 - hardness * 0.12)) / 0.2));
+            a = edge;
+            break;
+          }
+          case "bristle": {
+            const r = Math.hypot(lx, ly);
+            if (r >= 1) break;
+            const body = Math.pow(1 - r, 0.8 + hardness * 2.4);
+            let streak = 0;
+            for (let i = 0; i < bristleCount; i++) {
+              const d = Math.abs(ly - bristleY[i]);
+              const w = 0.06 + 0.09 * bristleW[i];
+              if (d < w * 2.6) streak = Math.max(streak, bristleW[i] * Math.exp(-(d * d) / (2 * w * w)));
+            }
+            const along = 0.55 + 0.45 * (1 - Math.abs(lx));
+            a = body * (0.18 + 0.95 * streak) * along;
+            break;
+          }
+          case "chalk": {
+            const r = Math.hypot(lx, ly);
+            if (r >= 1) break;
+            const body = Math.pow(1 - r, 0.55 + hardness * 1.9);
+            const n = fbm((x + seed) * 0.85, (y - seed) * 0.85, seed, 3);
+            const bite = 1 - grain;
+            const tooth = Math.max(0, (n - 0.34 * grain) / (1 - 0.34 * grain));
+            a = body * (bite + (1 - bite) * tooth * 1.35);
+            break;
+          }
+          case "flat": {
+            const ax = Math.abs(lx);
+            const ay = Math.abs(ly) / 0.42;
+            if (ax >= 1 || ay >= 1) break;
+            const endFall = Math.pow(1 - ax, 0.35 + (1 - hardness) * 1.4);
+            const sideFall = Math.pow(1 - ay, 0.3 + (1 - hardness) * 1.6);
+            let streak = 1;
+            for (let i = 0; i < bristleCount; i++) {
+              const d = Math.abs(ly / 0.42 - bristleY[i]);
+              if (d < 0.1) streak = Math.min(streak, 0.55 + bristleW[i] * 0.45);
+            }
+            a = endFall * sideFall * streak;
+            break;
+          }
+          case "blade": {
+            const ax = Math.abs(lx);
+            const ay = Math.abs(ly) / 0.34;
+            if (ax >= 1 || ay >= 1) break;
+            const crisp = ly < 0 ? 1 : Math.pow(1 - ay, 1.6);
+            a = Math.pow(1 - ax, 0.3) * crisp * (1 - ay * 0.35);
+            break;
+          }
+          case "sponge": {
+            const r = Math.hypot(lx, ly);
+            if (r >= 1) break;
+            const body = Math.pow(1 - r, 0.7);
+            const n = fbm((x + seed * 0.5) * 0.5, (y + seed * 0.7) * 0.5, seed + 5, 3);
+            const clump = Math.max(0, (n - 0.42) / 0.58);
+            a = body * clump * 1.8;
+            break;
+          }
+        }
+        if (a > 0) {
+          const jn = hash2(x * 7 + variant, y * 13 - variant, seed + 991);
+          a *= 1 - grain * 0.22 * jn;
+        }
+        alpha[y * px + x] = a > 1 ? 1 : a < 0 ? 0 : a;
+      }
+    }
+    const kernel = { size: px, alpha };
+    if (KERNEL_CACHE.size > 512) KERNEL_CACHE.clear();
+    KERNEL_CACHE.set(key, kernel);
+    return kernel;
+  }
+  var PAINT_QUALITY = 1;
+  var KIND_DEFAULTS = {
+    soft: { hardness: 0.35, opacity: 0.1, spacing: 0.16, grain: 0.25, scatter: 0.05 },
+    bristle: { hardness: 0.55, opacity: 0.16, spacing: 0.2, grain: 0.55, scatter: 0.09 },
+    chalk: { hardness: 0.5, opacity: 0.14, spacing: 0.26, grain: 0.85, scatter: 0.14 },
+    flat: { hardness: 0.6, opacity: 0.18, spacing: 0.14, grain: 0.45, scatter: 0.04, followPath: true },
+    blade: { hardness: 0.85, opacity: 0.3, spacing: 0.1, grain: 0.25, scatter: 0.02, followPath: true },
+    sponge: { hardness: 0.4, opacity: 0.12, spacing: 0.42, grain: 0.9, scatter: 0.35 },
+    ink: { hardness: 0.95, opacity: 0.55, spacing: 0.08, grain: 0.1, scatter: 0.01 }
+  };
+  var DEFAULT_JITTER = {
+    size: 0.3,
+    opacity: 0.4,
+    angle: 0.35,
+    hue: 7,
+    sat: 0.07,
+    lum: 0.07,
+    position: 0.6
+  };
+  function brush(kind, overrides = {}) {
+    const kd = KIND_DEFAULTS[kind];
+    const { colour, jitter, ...rest } = overrides;
+    return {
+      kind,
+      size: 18,
+      hardness: 0.5,
+      opacity: 0.14,
+      spacing: 0.2,
+      scatter: 0.08,
+      angle: 0,
+      followPath: false,
+      flow: 1,
+      grain: 0.5,
+      blend: "normal",
+      variants: 6,
+      ...kd,
+      ...rest,
+      colour: parseColour(colour ?? "#6b5a44"),
+      jitter: { ...DEFAULT_JITTER, ...jitter ?? {} }
+    };
+  }
+  function withBrush(base, overrides) {
+    const { colour, jitter, ...rest } = overrides;
+    return {
+      ...base,
+      ...rest,
+      colour: colour === void 0 ? base.colour : parseColour(colour),
+      jitter: { ...base.jitter, ...jitter ?? {} }
+    };
+  }
+  function dab(surface, x, y, b, opts = {}) {
+    const size = Math.max(1.2, opts.size ?? b.size);
+    const alphaMul = clamp01((opts.opacity ?? b.opacity) * b.flow);
+    if (alphaMul <= 6e-4) return;
+    const angle = opts.angle ?? b.angle;
+    const colour = opts.colour === void 0 ? b.colour : parseColour(opts.colour);
+    const blend = opts.blend ?? b.blend;
+    const variant = opts.variant ?? Math.floor(hash2(Math.round(x * 3.1), Math.round(y * 3.7), 4919) * b.variants);
+    const kernel = makeKernel(b.kind, Math.min(256, Math.max(3, Math.round(size))), b.hardness, b.grain, variant);
+    const k = kernel.size;
+    const kc = (k - 1) / 2;
+    const scale = k / size;
+    const half = size * 0.5 * Math.SQRT2 + 1;
+    const x0 = Math.max(0, Math.floor(x - half));
+    const x1 = Math.min(surface.width - 1, Math.ceil(x + half));
+    const y0 = Math.max(0, Math.floor(y - half));
+    const y1 = Math.min(surface.height - 1, Math.ceil(y + half));
+    if (x1 < x0 || y1 < y0) return;
+    const cos = Math.cos(-angle);
+    const sin = Math.sin(-angle);
+    const stepX = cos * scale;
+    const stepY = sin * scale;
+    const d = surface.data;
+    const ka = kernel.alpha;
+    const { r, g, b: bl } = colour;
+    const kMax = k - 1;
+    const w = surface.width;
+    const bilinear = size >= 14;
+    const normal = blend === "normal";
+    for (let py = y0; py <= y1; py++) {
+      const dy = py + 0.5 - y;
+      const dx0 = x0 + 0.5 - x;
+      let kx = (dx0 * cos - dy * sin) * scale + kc;
+      let ky = (dx0 * sin + dy * cos) * scale + kc;
+      let idx = (py * w + x0) * 4;
+      for (let px = x0; px <= x1; px++, kx += stepX, ky += stepY, idx += 4) {
+        if (kx < 0 || ky < 0 || kx > kMax || ky > kMax) continue;
+        const ix = kx | 0;
+        const iy = ky | 0;
+        let a;
+        if (bilinear) {
+          const fx = kx - ix;
+          const fy = ky - iy;
+          const ix1 = ix + 1 < k ? ix + 1 : ix;
+          const iy1 = iy + 1 < k ? iy + 1 : iy;
+          const row0 = iy * k;
+          const row1 = iy1 * k;
+          a = (ka[row0 + ix] * (1 - fx) + ka[row0 + ix1] * fx) * (1 - fy) + (ka[row1 + ix] * (1 - fx) + ka[row1 + ix1] * fx) * fy;
+        } else {
+          a = ka[iy * k + ix];
+        }
+        if (a <= 8e-4) continue;
+        const aS = a * alphaMul;
+        if (normal) {
+          const inv = 1 - aS;
+          d[idx] = r * aS + d[idx] * inv;
+          d[idx + 1] = g * aS + d[idx + 1] * inv;
+          d[idx + 2] = bl * aS + d[idx + 2] * inv;
+          d[idx + 3] = aS + d[idx + 3] * inv;
+        } else {
+          compositePixel(d, idx, r, g, bl, aS, blend);
+        }
+      }
+    }
+  }
+  function pathLength(pts) {
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    return len;
+  }
+  function smoothPath(pts, subdivisions = 8) {
+    if (pts.length < 3) return pts.map((p) => ({ ...p }));
+    const out = [];
+    const at = (i) => pts[Math.max(0, Math.min(pts.length - 1, i))];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = at(i - 1);
+      const p1 = at(i);
+      const p2 = at(i + 1);
+      const p3 = at(i + 2);
+      for (let s = 0; s < subdivisions; s++) {
+        const t = s / subdivisions;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        out.push({
+          x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+          y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+        });
+      }
+    }
+    out.push({ ...pts[pts.length - 1] });
+    return out;
+  }
+  function resamplePath(pts, step) {
+    const out = [];
+    if (pts.length === 0) return out;
+    const total = pathLength(pts);
+    if (pts.length === 1 || total < 1e-6) {
+      out.push({ x: pts[0].x, y: pts[0].y, angle: 0, t: 0 });
+      return out;
+    }
+    const s = Math.max(0.15, step);
+    let travelled = 0;
+    let carry = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const segLen = Math.hypot(dx, dy);
+      if (segLen < 1e-9) continue;
+      const angle = Math.atan2(dy, dx);
+      let d = carry;
+      while (d <= segLen) {
+        const u = d / segLen;
+        out.push({ x: a.x + dx * u, y: a.y + dy * u, angle, t: (travelled + d) / total });
+        d += s;
+      }
+      carry = d - segLen;
+      travelled += segLen;
+    }
+    const last = pts[pts.length - 1];
+    const prev = pts[pts.length - 2];
+    out.push({ x: last.x, y: last.y, angle: Math.atan2(last.y - prev.y, last.x - prev.x), t: 1 });
+    return out;
+  }
+  var PRESSURE = {
+    /** Constant. */
+    flat: () => 1,
+    /** Heavy in the middle, tapered at both ends — a natural single stroke. */
+    arc: (t) => Math.sin(Math.PI * clamp01(t)) ** 0.55,
+    /** Lands hard, lifts off — a flick. */
+    flick: (t) => Math.pow(1 - clamp01(t), 0.7),
+    /** Lifts on, presses down — for stems thickening into a trunk. */
+    swell: (t) => Math.pow(clamp01(t), 0.7),
+    /** Two accents with a thin waist — a leaf ridge or a decorative rule. */
+    double: (t) => 0.45 + 0.55 * Math.abs(Math.cos(Math.PI * clamp01(t)))
+  };
+  function stroke(surface, path, b, opts = {}) {
+    if (path.length === 0) return;
+    const rng = opts.rng ?? mulberry32((opts.seed ?? 20973) >>> 0);
+    const passes = Math.max(1, Math.round(opts.passes ?? 2));
+    const taper = typeof opts.taper === "number" ? [opts.taper, opts.taper] : opts.taper ?? [0.12, 0.12];
+    const pressure = opts.pressure ?? PRESSURE.arc;
+    const wobbleAmp = opts.wobble ?? b.size * 0.06;
+    const alphaMul = opts.alpha ?? 1;
+    let pts = path.map((p) => ({ ...p }));
+    if (opts.closed && pts.length > 2) pts.push({ ...pts[0] });
+    if ((opts.smooth ?? true) && pts.length >= 3) pts = smoothPath(pts, 6);
+    const step = Math.max(0.4, b.size * b.spacing);
+    const samples = resamplePath(pts, step);
+    if (samples.length === 0) return;
+    const hsl = rgbToHsl(b.colour);
+    for (let pass = 0; pass < passes; pass++) {
+      const passSeedX = rng() * 1e3;
+      const passSeedY = rng() * 1e3;
+      const lateral = pass === 0 ? 0 : (rng() * 2 - 1) * (opts.passOffset ?? b.size * 0.16);
+      const passAlpha = pass === 0 ? 1 : 0.62 + rng() * 0.3;
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const j = b.jitter;
+        let profile = pressure(s.t);
+        const [tIn, tOut] = taper;
+        if (tIn > 0 && s.t < tIn) profile *= Math.pow(s.t / tIn, 0.6);
+        if (tOut > 0 && s.t > 1 - tOut) profile *= Math.pow((1 - s.t) / tOut, 0.6);
+        if (profile <= 8e-3) continue;
+        const nx = -Math.sin(s.angle);
+        const ny = Math.cos(s.angle);
+        const wob = wobbleAmp === 0 ? 0 : (fbm(s.t * 7 + passSeedX, passSeedY, 17, 2) - 0.5) * 2 * wobbleAmp;
+        const scat = (rng() * 2 - 1) * b.scatter * b.size;
+        const off = lateral + wob + scat;
+        const jx = (rng() * 2 - 1) * j.position;
+        const jy = (rng() * 2 - 1) * j.position;
+        const x = s.x + nx * off + jx;
+        const y = s.y + ny * off + jy;
+        const size = b.size * profile * (1 + (rng() * 2 - 1) * j.size);
+        const opacity = b.opacity * passAlpha * alphaMul * (0.55 + 0.45 * profile) * (1 + (rng() * 2 - 1) * j.opacity);
+        const angle = (b.followPath ? s.angle + b.angle : b.angle) + (rng() * 2 - 1) * j.angle;
+        const grad = opts.gradient?.(s.t);
+        const colour = hslToRgb({
+          h: hsl.h + (rng() * 2 - 1) * j.hue + (grad?.dh ?? 0),
+          s: clamp01(hsl.s + (rng() * 2 - 1) * j.sat + (grad?.ds ?? 0)),
+          l: clamp01(hsl.l + (rng() * 2 - 1) * j.lum + (grad?.dl ?? 0))
+        });
+        dab(surface, x, y, b, { size, opacity, angle, colour, variant: Math.floor(rng() * b.variants) });
+      }
+    }
+  }
+  function rectShape(x, y, w, h) {
+    return [
+      { x, y },
+      { x: x + w, y },
+      { x: x + w, y: y + h },
+      { x, y: y + h }
+    ];
+  }
+  function densifyShape(shape, maxSegment) {
+    const out = [];
+    const n = shape.length;
+    const step = Math.max(0.5, maxSegment);
+    for (let i = 0; i < n; i++) {
+      const a = shape[i];
+      const b = shape[(i + 1) % n];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const parts = Math.max(1, Math.ceil(len / step));
+      for (let k = 0; k < parts; k++) {
+        out.push({ x: a.x + (b.x - a.x) * k / parts, y: a.y + (b.y - a.y) * k / parts });
+      }
+    }
+    return out;
+  }
+  function roughenShape(shape, amount, seed = 1, frequency = 2.2) {
+    let perimeter = 0;
+    for (let i = 0; i < shape.length; i++) {
+      const a = shape[i];
+      const b = shape[(i + 1) % shape.length];
+      perimeter += Math.hypot(b.x - a.x, b.y - a.y);
+    }
+    if (shape.length < perimeter / Math.max(2, amount * 2.5)) {
+      shape = densifyShape(shape, Math.max(2, amount * 2.5));
+    }
+    const n = shape.length;
+    let cx = 0;
+    let cy = 0;
+    for (const p of shape) {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= n;
+    cy /= n;
+    return shape.map((p, i) => {
+      const t = i / n * frequency * Math.PI * 2;
+      const d = (fbm(Math.cos(t) * 2 + 4, Math.sin(t) * 2 + 4, seed, 2) - 0.5) * 2 * amount;
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: p.x + dx / len * d, y: p.y + dy / len * d };
+    });
+  }
+  function rasterizeShape(shape, pad = 8) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of shape) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    const x0 = Math.floor(minX - pad);
+    const y0 = Math.floor(minY - pad);
+    const w = Math.max(1, Math.ceil(maxX + pad) - x0);
+    const h = Math.max(1, Math.ceil(maxY + pad) - y0);
+    const coverage = new Float32Array(w * h);
+    const SUB = 4;
+    const subWeight = 1 / SUB;
+    const xs = [];
+    const n = shape.length;
+    for (let sy = 0; sy < h * SUB; sy++) {
+      const py = y0 + (sy + 0.5) / SUB;
+      xs.length = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const yi = shape[i].y;
+        const yj = shape[j].y;
+        if (yi > py === yj > py) continue;
+        xs.push(shape[i].x + (py - yi) / (yj - yi) * (shape[j].x - shape[i].x));
+      }
+      if (xs.length < 2) continue;
+      xs.sort((a, b) => a - b);
+      const row = sy / SUB | 0;
+      const rowBase = row * w;
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        let xa = xs[k] - x0;
+        let xb = xs[k + 1] - x0;
+        if (xb <= 0 || xa >= w) continue;
+        if (xa < 0) xa = 0;
+        if (xb > w) xb = w;
+        const ia = Math.floor(xa);
+        const ib = Math.floor(xb - 1e-9);
+        if (ia === ib) {
+          coverage[rowBase + ia] += (xb - xa) * subWeight;
+          continue;
+        }
+        coverage[rowBase + ia] += (ia + 1 - xa) * subWeight;
+        for (let px = ia + 1; px < ib; px++) coverage[rowBase + px] += subWeight;
+        coverage[rowBase + ib] += (xb - ib) * subWeight;
+      }
+    }
+    for (let i = 0; i < coverage.length; i++) if (coverage[i] > 1) coverage[i] = 1;
+    return { x: x0, y: y0, width: w, height: h, coverage, distance: chamferSDF(coverage, w, h) };
+  }
+  function chamferSDF(coverage, w, h) {
+    const BIG = 1e9;
+    const inner = new Float32Array(w * h);
+    const outer = new Float32Array(w * h);
+    for (let i = 0; i < coverage.length; i++) {
+      const solid = coverage[i] >= 0.5;
+      inner[i] = solid ? BIG : 0;
+      outer[i] = solid ? 0 : BIG;
+    }
+    const sweep = (f) => {
+      const D1 = 1;
+      const D2 = 1.41421356;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          let v = f[i];
+          if (x > 0) v = Math.min(v, f[i - 1] + D1);
+          if (y > 0) v = Math.min(v, f[i - w] + D1);
+          if (x > 0 && y > 0) v = Math.min(v, f[i - w - 1] + D2);
+          if (x < w - 1 && y > 0) v = Math.min(v, f[i - w + 1] + D2);
+          f[i] = v;
+        }
+      }
+      for (let y = h - 1; y >= 0; y--) {
+        for (let x = w - 1; x >= 0; x--) {
+          const i = y * w + x;
+          let v = f[i];
+          if (x < w - 1) v = Math.min(v, f[i + 1] + D1);
+          if (y < h - 1) v = Math.min(v, f[i + w] + D1);
+          if (x < w - 1 && y < h - 1) v = Math.min(v, f[i + w + 1] + D2);
+          if (x > 0 && y < h - 1) v = Math.min(v, f[i + w - 1] + D2);
+          f[i] = v;
+        }
+      }
+    };
+    sweep(inner);
+    sweep(outer);
+    const sdf = new Float32Array(w * h);
+    for (let i = 0; i < sdf.length; i++) sdf[i] = outer[i] > 0 ? outer[i] : -inner[i];
+    return sdf;
+  }
+  function maskCoverageAt(mask, x, y) {
+    const mx = Math.round(x) - mask.x;
+    const my = Math.round(y) - mask.y;
+    if (mx < 0 || my < 0 || mx >= mask.width || my >= mask.height) return 0;
+    return mask.coverage[my * mask.width + mx];
+  }
+  function maskDistanceAt(mask, x, y) {
+    const mx = Math.round(x) - mask.x;
+    const my = Math.round(y) - mask.y;
+    if (mx < 0 || my < 0 || mx >= mask.width || my >= mask.height) return 1e9;
+    return mask.distance[my * mask.width + mx];
+  }
+  function blockIn(surface, shape, colour, opts = {}) {
+    const seed = (opts.seed ?? 33196) >>> 0;
+    const rng = mulberry32(seed);
+    const base = parseColour(colour);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of shape) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    const bw = Math.max(1, maxX - minX);
+    const bh = Math.max(1, maxY - minY);
+    const short = Math.min(bw, bh);
+    const rough = opts.roughness ?? Math.max(0.6, short * 0.04);
+    const silhouette = rough > 0 ? roughenShape(shape, rough, seed, 2.6) : shape.map((p) => ({ ...p }));
+    const mask = rasterizeShape(silhouette, Math.max(6, short * 0.25));
+    const overshoot = opts.overshoot ?? Math.max(1.2, short * 0.05);
+    const passes = Math.max(1, Math.round(opts.passes ?? 2));
+    const valueSpread = opts.valueSpread ?? 0.11;
+    const hueSpread = opts.hueSpread ?? 12;
+    const openness = clamp01(opts.openness ?? 0.08);
+    const b = opts.brush ?? brush("chalk", {
+      size: Math.max(4, short * 0.5),
+      // Sparse and opaque, not dense and faint. Dense/faint is what turned the
+      // mass into a gradient in the first zoom test.
+      opacity: 0.5,
+      spacing: 0.2,
+      grain: 0.62,
+      hardness: 0.42,
+      jitter: { size: 0.3, opacity: 0.4, angle: 0.4, hue: 6, sat: 0.06, lum: 0.08, position: short * 0.02 }
+    });
+    const dir = opts.direction ?? (bw >= bh ? 0 : Math.PI / 2);
+    const hsl = rgbToHsl(base);
+    const layer = createSurface(mask.width, mask.height);
+    const lox = mask.x;
+    const loy = mask.y;
+    if ((opts.openness ?? 0.08) < 0.5) {
+      const under = withBrush(b, {
+        kind: "soft",
+        hardness: 0.3,
+        grain: 0.15,
+        opacity: 0.62,
+        spacing: 0.12,
+        scatter: 0.04,
+        colour: hslToRgb({ h: hsl.h, s: clamp01(hsl.s * 0.95), l: clamp01(hsl.l - valueSpread * 0.55) }),
+        blend: "normal",
+        jitter: { size: 0.16, opacity: 0.2, angle: 0.3, hue: 3, sat: 0.03, lum: 0.03, position: 0.6 }
+      });
+      const uStep = Math.max(1.2, under.size * 0.26 / Math.min(1, PAINT_QUALITY));
+      const uHsl = rgbToHsl(under.colour);
+      const margin = under.size * 0.6;
+      const uy0 = Math.max(0, Math.floor(minY - loy - margin));
+      const uy1 = Math.min(mask.height - 1, Math.ceil(maxY - loy + margin));
+      for (let ly = uy0; ly <= uy1; ly += uStep) {
+        const row = Math.max(0, Math.min(mask.height - 1, Math.round(ly)));
+        let rx0 = -1;
+        let rx1 = -1;
+        for (let mx = 0; mx < mask.width; mx++) {
+          if (mask.coverage[row * mask.width + mx] > 0.02) {
+            if (rx0 < 0) rx0 = mx;
+            rx1 = mx;
+          }
+        }
+        if (rx0 < 0) continue;
+        const drift = fbm((ly + loy) * 0.02, ly * 0.013, seed + 61, 3) - 0.5;
+        stroke(layer, [
+          { x: rx0 - margin, y: ly },
+          { x: rx1 + margin, y: ly }
+        ], withBrush(under, {
+          colour: hslToRgb({
+            h: uHsl.h + drift * hueSpread * 1.6,
+            s: clamp01(uHsl.s + drift * 0.07),
+            l: clamp01(uHsl.l + drift * valueSpread * 1.5)
+          })
+        }), {
+          pressure: PRESSURE.flat,
+          taper: 0,
+          passes: 1,
+          smooth: false,
+          wobble: 0,
+          rng,
+          gradient: (t) => ({ dl: (t - 0.5) * valueSpread * 0.9, dh: (t - 0.5) * hueSpread * 0.8 })
+        });
+      }
+    }
+    for (let pass = 0; pass < passes; pass++) {
+      const angle = dir + (pass - (passes - 1) / 2) * 0.18 + (rng() * 2 - 1) * 0.08;
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const span = Math.hypot(bw, bh) / 2 + overshoot + b.size;
+      const rowStep = Math.max(1.2, b.size * (opts.rowFactor ?? 0.55));
+      for (let vRow = -span; vRow <= span; vRow += rowStep) {
+        const lineSeed = rng();
+        const v = vRow + (rng() * 2 - 1) * rowStep * 0.4;
+        const rowAngle = angle + (rng() * 2 - 1) * 0.09;
+        const rcos = Math.cos(rowAngle);
+        const rsin = Math.sin(rowAngle);
+        const path = [];
+        for (let u = -span; u <= span; u += Math.max(2, b.size * 0.5)) {
+          path.push({ x: cx + u * rcos - v * rsin, y: cy + u * rsin + v * rcos });
+        }
+        const kept = [];
+        let run = [];
+        for (const p of path) {
+          const d = maskDistanceAt(mask, p.x, p.y);
+          const slop = overshoot * (0.35 + 0.65 * fbm(p.x * 0.05, p.y * 0.05, seed + 3, 2));
+          if (d < slop) run.push(p);
+          else if (run.length) {
+            kept.push(run);
+            run = [];
+          }
+        }
+        if (run.length) kept.push(run);
+        for (const seg of kept) {
+          if (seg.length < 2) continue;
+          const mid = seg[Math.floor(seg.length / 2)];
+          const gx = (mid.x - minX) / bw - 0.5;
+          const gy = (mid.y - minY) / bh - 0.5;
+          const drift = fbm(mid.x * 0.02 + lineSeed * 10, mid.y * 0.02, seed + 11, 3) - 0.5;
+          const passBias = (pass / Math.max(1, passes - 1) - 0.5) * 0.4;
+          const colourHere = hslToRgb({
+            h: hsl.h + (drift + gx * 0.5) * hueSpread * 2,
+            s: clamp01(hsl.s + drift * 0.06),
+            l: clamp01(hsl.l + (drift * 1.4 + gy * 0.5 + passBias) * valueSpread)
+          });
+          const local = seg.map((p) => ({ x: p.x - lox, y: p.y - loy }));
+          stroke(layer, local, withBrush(b, { colour: colourHere, blend: "normal" }), {
+            pressure: PRESSURE.flat,
+            taper: 0.03,
+            passes: 1,
+            smooth: false,
+            alpha: 1 - openness * fbm(mid.x * 0.03, mid.y * 0.03, seed + 21, 2),
+            rng,
+            wobble: b.size * 0.1
+          });
+        }
+      }
+    }
+    clipToMask(layer, mask, {
+      offsetX: lox,
+      offsetY: loy,
+      feather: opts.feather ?? 1.4,
+      noise: opts.edgeNoise ?? rough * 0.6,
+      noiseScale: Math.max(4, short * 0.16),
+      seed: seed + 41
+    });
+    compositeSurface(surface, layer, lox, loy, 1, opts.blend ?? "normal");
+    return mask;
+  }
+  function scumble(surface, mask, b, opts = {}) {
+    const seed = (opts.seed ?? 23579) >>> 0;
+    const rng = mulberry32(seed);
+    const coverage = clamp01(opts.coverage ?? 0.55);
+    const passes = Math.max(1, Math.round(opts.passes ?? 2));
+    const density = opts.density ?? 1;
+    const edgeBias = opts.edgeBias ?? 0;
+    const patchScale = opts.patchScale ?? 26;
+    const sizeSpread = opts.sizeSpread ?? 0.5;
+    const threshold = opts.threshold ?? 0.35;
+    const alphaMul = opts.alpha ?? 1;
+    const hsl = rgbToHsl(b.colour);
+    const area = mask.width * mask.height;
+    const budgetKernel = makeKernel(
+      b.kind,
+      Math.min(256, Math.max(3, Math.round(b.size))),
+      b.hardness,
+      b.grain,
+      0
+    );
+    let kSum = 0;
+    for (const a of budgetKernel.alpha) kSum += a;
+    const kMean = Math.max(0.02, kSum / budgetKernel.alpha.length);
+    const perStamp = Math.max(1, b.size * b.size * kMean);
+    const need = -Math.log(1 - Math.min(0.985, clamp01(opts.targetBuildup ?? 0.5)));
+    const q = PAINT_QUALITY;
+    const flow = Math.max(0.06, Math.min(1, b.opacity * b.flow / q));
+    const opacityScale = flow / Math.max(1e-6, b.opacity * b.flow);
+    const total = Math.min(4e4, Math.round(area * need / (perStamp * flow) * density / passes));
+    if (total <= 0) return;
+    let deepest = 1;
+    for (let i = 0; i < mask.distance.length; i += 7) deepest = Math.min(deepest, mask.distance[i]);
+    const depth = Math.max(2, -deepest);
+    for (let pass = 0; pass < passes; pass++) {
+      const px = rng() * 500;
+      const py = rng() * 500;
+      const passAlpha = 1 - pass * 0.12;
+      for (let n = 0; n < total; n++) {
+        const x = mask.x + rng() * mask.width;
+        const y = mask.y + rng() * mask.height;
+        const cov = maskCoverageAt(mask, x, y);
+        if (cov < threshold) continue;
+        const wgt = opts.weight ? clamp01(opts.weight(x, y)) : 1;
+        if (wgt <= 0.01 || rng() > wgt) continue;
+        const patch = clamp01((fbm((x + px) / patchScale, (y + py) / patchScale, seed + pass * 37, 3) - 0.26) / 0.48);
+        let keep = patch;
+        if (edgeBias !== 0) {
+          const d = -maskDistanceAt(mask, x, y) / depth;
+          keep *= edgeBias > 0 ? 1 - d * edgeBias : 1 + d * edgeBias;
+        }
+        if (keep < 1 - coverage) continue;
+        const size = b.size * (1 + (rng() * 2 - 1) * sizeSpread);
+        const angle = (opts.direction ?? rng() * Math.PI * 2) + (rng() * 2 - 1) * (opts.direction === void 0 ? 0 : b.jitter.angle);
+        const opacity = b.opacity * opacityScale * passAlpha * alphaMul * cov * (0.5 + 0.5 * wgt) * (0.35 + 0.9 * keep) * (1 + (rng() * 2 - 1) * b.jitter.opacity);
+        const colour = hslToRgb({
+          h: hsl.h + (rng() * 2 - 1) * b.jitter.hue + (patch - 0.5) * b.jitter.hue * 1.6,
+          s: clamp01(hsl.s + (rng() * 2 - 1) * b.jitter.sat),
+          l: clamp01(hsl.l + (rng() * 2 - 1) * b.jitter.lum + (patch - 0.5) * b.jitter.lum * 1.8)
+        });
+        dab(surface, x, y, b, { size, opacity, angle, colour, variant: Math.floor(rng() * b.variants) });
+      }
+    }
+  }
+  function glaze(surface, mask, colour, alpha, opts = {}) {
+    const c = parseColour(colour);
+    const blend = opts.blend ?? "normal";
+    const mottle = opts.mottle ?? 0.18;
+    const mottleScale = opts.mottleScale ?? 90;
+    const seed = (opts.seed ?? 24994) >>> 0;
+    const clip = opts.clip ?? mask !== null;
+    const x0 = mask && clip ? Math.max(0, mask.x) : 0;
+    const y0 = mask && clip ? Math.max(0, mask.y) : 0;
+    const x1 = mask && clip ? Math.min(surface.width, mask.x + mask.width) : surface.width;
+    const y1 = mask && clip ? Math.min(surface.height, mask.y + mask.height) : surface.height;
+    const d = surface.data;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        let a = alpha;
+        if (mask && clip) {
+          const cov = mask.coverage[(y - mask.y) * mask.width + (x - mask.x)];
+          if (cov <= 2e-3) continue;
+          a *= cov;
+        }
+        if (opts.gradient) {
+          a *= opts.gradient(x, y);
+          if (a <= 8e-4) continue;
+        }
+        if (mottle > 0) {
+          a *= 1 - mottle + mottle * 2 * fbm(x / mottleScale, y / mottleScale, seed, 3);
+        }
+        if (a <= 8e-4) continue;
+        compositePixel(d, (y * surface.width + x) * 4, c.r, c.g, c.b, a > 1 ? 1 : a, blend);
+      }
+    }
+  }
+  function edgeVary(surface, shape, opts = {}) {
+    const seed = (opts.seed ?? 15726) >>> 0;
+    const rng = mulberry32(seed);
+    const crispFrac = clamp01(opts.crisp ?? 0.3);
+    const lostFrac = clamp01(opts.lost ?? 0.25);
+    const band = Math.max(1, opts.band ?? 3);
+    const frequency = opts.frequency ?? 0.55;
+    const accentStrength = opts.accentStrength ?? 0.45;
+    const softness = Math.max(1, opts.softness ?? band);
+    const outline = smoothPath([...shape, shape[0], shape[1]], 4);
+    const samples = resamplePath(outline, Math.max(1.2, band * 0.6));
+    if (samples.length < 3) return;
+    const accentBrush = brush("ink", {
+      size: Math.max(1.8, band * 1.25),
+      opacity: accentStrength,
+      spacing: 0.35,
+      scatter: 0.05,
+      hardness: 0.95,
+      followPath: true,
+      jitter: { size: 0.35, opacity: 0.5, angle: 0.2, hue: 6, sat: 0.05, lum: 0.06, position: band * 0.25 }
+    });
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const f = clamp01((fbm(s.x * frequency * 0.06, s.y * frequency * 0.06, seed, 2) - 0.24) / 0.52);
+      if (f > 1 - crispFrac) {
+        let colour;
+        if (opts.accent !== void 0) {
+          colour = parseColour(opts.accent);
+        } else {
+          const px = getPixel(surface, s.x, s.y);
+          const hsl = rgbToHsl({ r: px.r, g: px.g, b: px.b });
+          let lift = -0.16;
+          if (opts.lightAngle !== void 0) {
+            const nrm = s.angle - Math.PI / 2;
+            const facing = Math.cos(nrm - (opts.lightAngle + Math.PI));
+            lift = facing > 0.2 ? 0.14 * facing : -0.18;
+          }
+          colour = hslToRgb({ h: hsl.h + (lift > 0 ? -6 : 8), s: clamp01(hsl.s + 0.05), l: clamp01(hsl.l + lift) });
+        }
+        const nx = -Math.sin(s.angle);
+        const ny = Math.cos(s.angle);
+        for (const side of [-0.35, 0.3]) {
+          dab(surface, s.x + nx * band * side, s.y + ny * band * side, accentBrush, {
+            colour,
+            angle: s.angle,
+            size: accentBrush.size * (0.7 + rng() * 0.7),
+            opacity: accentStrength * (0.55 + rng() * 0.6)
+          });
+        }
+      } else if (f < lostFrac) {
+        blurDisc(surface, s.x, s.y, softness * (1.1 + rng() * 0.9), 0.9);
+      }
+    }
+  }
+  function blurDisc(surface, cx, cy, radius, amount = 1) {
+    const r = Math.max(1, Math.round(radius));
+    const x0 = Math.max(1, Math.floor(cx - r));
+    const x1 = Math.min(surface.width - 2, Math.ceil(cx + r));
+    const y0 = Math.max(1, Math.floor(cy - r));
+    const y1 = Math.min(surface.height - 2, Math.ceil(cy + r));
+    if (x1 <= x0 || y1 <= y0) return;
+    const w = surface.width;
+    const d = surface.data;
+    const bw = x1 - x0 + 1;
+    const bh = y1 - y0 + 1;
+    const src = new Float32Array(bw * bh * 4);
+    for (let y = 0; y < bh; y++) {
+      const from = ((y0 + y) * w + x0) * 4;
+      src.set(d.subarray(from, from + bw * 4), y * bw * 4);
+    }
+    const kr = Math.max(1, Math.round(r * 0.4));
+    for (let y = 0; y < bh; y++) {
+      for (let x = 0; x < bw; x++) {
+        const sx = x0 + x;
+        const sy = y0 + y;
+        const dist = Math.hypot(sx + 0.5 - cx, sy + 0.5 - cy);
+        if (dist > r) continue;
+        const wgt = amount * (1 - dist / r);
+        if (wgt <= 4e-3) continue;
+        let ar = 0;
+        let ag = 0;
+        let ab = 0;
+        let aa = 0;
+        let n = 0;
+        for (let ky = -kr; ky <= kr; ky++) {
+          const yy = y + ky;
+          if (yy < 0 || yy >= bh) continue;
+          for (let kx = -kr; kx <= kr; kx++) {
+            const xx = x + kx;
+            if (xx < 0 || xx >= bw) continue;
+            const i = (yy * bw + xx) * 4;
+            ar += src[i];
+            ag += src[i + 1];
+            ab += src[i + 2];
+            aa += src[i + 3];
+            n++;
+          }
+        }
+        if (n === 0) continue;
+        const o = (sy * w + sx) * 4;
+        const inv = 1 - wgt;
+        d[o] = d[o] * inv + ar / n * wgt;
+        d[o + 1] = d[o + 1] * inv + ag / n * wgt;
+        d[o + 2] = d[o + 2] * inv + ab / n * wgt;
+        d[o + 3] = d[o + 3] * inv + aa / n * wgt;
+      }
+    }
+  }
+  function addGrain(surface, amount = 0.05, scale = 1.6, seed = 7, mask = null) {
+    const d = surface.data;
+    for (let y = 0; y < surface.height; y++) {
+      for (let x = 0; x < surface.width; x++) {
+        const i = (y * surface.width + x) * 4;
+        if (d[i + 3] <= 2e-3) continue;
+        let k = amount;
+        if (mask) {
+          const cov = maskCoverageAt(mask, x, y);
+          if (cov <= 2e-3) continue;
+          k *= cov;
+        }
+        const n = (fbm(x / scale, y / scale, seed, 2) - 0.5) * 2 * k;
+        const m = 1 + n;
+        d[i] = clamp01(d[i] * m);
+        d[i + 1] = clamp01(d[i + 1] * m);
+        d[i + 2] = clamp01(d[i + 2] * m);
+      }
+    }
+  }
+
   // src/art/charms.ts
   var CHARMS = [
     "none",
@@ -566,172 +1731,6 @@
   }
 
   // src/art/lighting.ts
-  var NAMED = {
-    black: "#000000",
-    white: "#ffffff",
-    transparent: "#00000000",
-    gold: "#c9a227",
-    cream: "#f4ead2",
-    ink: "#2c2419"
-  };
-  var BLACK = { r: 0, g: 0, b: 0, a: 1 };
-  function hue2rgb(p, q, t) {
-    let tt = t;
-    if (tt < 0) tt += 1;
-    if (tt > 1) tt -= 1;
-    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
-    if (tt < 1 / 2) return q;
-    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
-    return p;
-  }
-  function parseColour(css) {
-    if (typeof css !== "string") return { ...BLACK };
-    const raw = css.trim().toLowerCase();
-    const named = NAMED[raw];
-    const s = named ?? raw;
-    if (s.startsWith("#")) {
-      const hex = s.slice(1);
-      const expand = (c) => Number.parseInt(c + c, 16);
-      if (hex.length === 3 || hex.length === 4) {
-        const r = expand(hex[0]);
-        const g = expand(hex[1]);
-        const b = expand(hex[2]);
-        const a = hex.length === 4 ? expand(hex[3]) / 255 : 1;
-        if ([r, g, b].some((v) => Number.isNaN(v))) return { ...BLACK };
-        return { r, g, b, a };
-      }
-      if (hex.length === 6 || hex.length === 8) {
-        const n = Number.parseInt(hex.slice(0, 6), 16);
-        if (Number.isNaN(n)) return { ...BLACK };
-        const a = hex.length === 8 ? Number.parseInt(hex.slice(6, 8), 16) / 255 : 1;
-        return {
-          r: n >> 16 & 255,
-          g: n >> 8 & 255,
-          b: n & 255,
-          a: Number.isNaN(a) ? 1 : a
-        };
-      }
-      return { ...BLACK };
-    }
-    const fn = /^(rgba?|hsla?)\s*\(([^)]*)\)$/.exec(s);
-    if (fn === null) return { ...BLACK };
-    const kind = fn[1];
-    const parts = fn[2].replace(/\//g, " ").split(/[\s,]+/).filter((p2) => p2.length > 0);
-    if (parts.length < 3) return { ...BLACK };
-    const readAlpha = (p2) => {
-      if (p2 === void 0) return 1;
-      const v = p2.endsWith("%") ? Number.parseFloat(p2) / 100 : Number.parseFloat(p2);
-      return Number.isFinite(v) ? clamp(v, 0, 1) : 1;
-    };
-    if (kind.startsWith("rgb")) {
-      const chan = (p2) => {
-        const v = p2.endsWith("%") ? Number.parseFloat(p2) / 100 * 255 : Number.parseFloat(p2);
-        return Number.isFinite(v) ? clamp(Math.round(v), 0, 255) : 0;
-      };
-      return {
-        r: chan(parts[0]),
-        g: chan(parts[1]),
-        b: chan(parts[2]),
-        a: readAlpha(parts[3])
-      };
-    }
-    const h = ((Number.parseFloat(parts[0]) || 0) % 360 + 360) % 360 / 360;
-    const sat = clamp((Number.parseFloat(parts[1]) || 0) / 100, 0, 1);
-    const li = clamp((Number.parseFloat(parts[2]) || 0) / 100, 0, 1);
-    if (sat === 0) {
-      const v = Math.round(li * 255);
-      return { r: v, g: v, b: v, a: readAlpha(parts[3]) };
-    }
-    const q = li < 0.5 ? li * (1 + sat) : li + sat - li * sat;
-    const p = 2 * li - q;
-    return {
-      r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
-      g: Math.round(hue2rgb(p, q, h) * 255),
-      b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
-      a: readAlpha(parts[3])
-    };
-  }
-  function rgbaToCss(c) {
-    const r = clamp(Math.round(c.r), 0, 255);
-    const g = clamp(Math.round(c.g), 0, 255);
-    const b = clamp(Math.round(c.b), 0, 255);
-    const a = clamp(c.a, 0, 1);
-    return a >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
-  }
-  function withAlpha(colour, alpha) {
-    const c = typeof colour === "string" ? parseColour(colour) : colour;
-    return rgbaToCss({ ...c, a: clamp(alpha, 0, 1) });
-  }
-  function mixColour(a, b, t) {
-    const ca = typeof a === "string" ? parseColour(a) : a;
-    const cb = typeof b === "string" ? parseColour(b) : b;
-    const k = clamp(t, 0, 1);
-    return {
-      r: lerp(ca.r, cb.r, k),
-      g: lerp(ca.g, cb.g, k),
-      b: lerp(ca.b, cb.b, k),
-      a: lerp(ca.a, cb.a, k)
-    };
-  }
-  function shiftTemperature(colour, amount) {
-    const c = typeof colour === "string" ? parseColour(colour) : colour;
-    const k = clamp(amount, -1, 1);
-    const before = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    const r = c.r + k * 46;
-    const g = c.g + k * 14;
-    const b = c.b - k * 44;
-    const after = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const gain = after > 1 ? lerp(1, before / after, 0.75) : 1;
-    return {
-      r: clamp(r * gain, 0, 255),
-      g: clamp(g * gain, 0, 255),
-      b: clamp(b * gain, 0, 255),
-      a: c.a
-    };
-  }
-  function blowOut(colour, amount) {
-    const c = typeof colour === "string" ? parseColour(colour) : colour;
-    const t = clamp(amount, 0, 1);
-    const hot = {
-      r: lerp(c.r, 255, 0.86),
-      g: lerp(c.g, 255, 0.78),
-      b: lerp(c.b, 250, 0.62),
-      a: c.a
-    };
-    return mixColour(c, hot, t * t * (3 - 2 * t));
-  }
-  function falloff(t, curve = "smooth") {
-    const x = clamp(t, 0, 1);
-    switch (curve) {
-      case "linear":
-        return 1 - x;
-      case "smooth": {
-        const u = 1 - x;
-        return u * u * (3 - 2 * u);
-      }
-      case "smoother": {
-        const u = 1 - x;
-        return u * u * u * (u * (u * 6 - 15) + 10);
-      }
-      case "sqrt":
-        return Math.sqrt(1 - x);
-      case "quadratic":
-        return (1 - x) * (1 - x);
-      case "cubic":
-        return (1 - x) * (1 - x) * (1 - x);
-      case "inverseSquare":
-        return clamp((1 / (1 + 8 * x * x) - 1 / 9) * (9 / 8), 0, 1);
-      case "exponential":
-        return clamp((Math.exp(-4 * x) - Math.exp(-4)) / (1 - Math.exp(-4)), 0, 1);
-      case "gaussian": {
-        const g = Math.exp(-4.5 * x * x);
-        const edge = Math.exp(-4.5);
-        return clamp((g - edge) / (1 - edge), 0, 1);
-      }
-      default:
-        return 1 - x;
-    }
-  }
   var KEY_ANGLE = {
     /** Source upper-left; light travels down-right. */
     upperLeft: Math.PI * 0.25,
@@ -750,31 +1749,8 @@
     /** Source lower-left; light travels up-right. */
     lowerLeft: Math.PI * 1.75
   };
-  function keyDirection(rig) {
-    return { x: Math.cos(rig.keyAngle), y: Math.sin(rig.keyAngle) };
-  }
   function keyToSource(rig) {
     return { x: -Math.cos(rig.keyAngle), y: -Math.sin(rig.keyAngle) };
-  }
-  function surfaceLambert(normalAngle, rig, wrap = 0.25) {
-    const d = -Math.cos(normalAngle - rig.keyAngle);
-    const w = clamp(wrap, 0, 1);
-    return clamp((d + w) / (1 + w), 0, 1);
-  }
-  function rimFactor(normalAngle, rig) {
-    const facing = surfaceLambert(normalAngle, rig, 0.1);
-    const graze = Math.pow(facing, Math.max(0.05, rig.rimSharpness));
-    return clamp(graze * rig.rimStrength, 0, 1);
-  }
-  function contactShadowSpread(contactSize, gap = 0) {
-    const base = Math.max(1.2, contactSize * 0.22);
-    return base + Math.max(0, gap) * 1.35;
-  }
-  function falloffInverse(t) {
-    return 1 - falloff(clamp(t, 0, 1), "smooth");
-  }
-  function atmosphericBlend(depth, rig) {
-    return clamp(falloffInverse(clamp(depth, 0, 1)) * rig.hazeStrength, 0, 1);
   }
   var DEFAULT_LIGHT_RIG = {
     id: "golden-hour",
@@ -1679,373 +2655,371 @@
     if (typeof id !== "string") return DEFAULT_LIGHT_RIG;
     return LIGHT_RIGS[id] ?? DEFAULT_LIGHT_RIG;
   }
-  function castContactShadow(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const side = opts.side ?? "below";
-    const len = Math.max(0, opts.length);
-    if (len <= 0) return;
-    const gap = Math.max(0, opts.gap ?? 0);
-    const spread = contactShadowSpread(len, gap);
-    const depth = Math.max(1, opts.depth) + spread * 0.35;
-    const strength = clamp((opts.strength ?? 1) * rig.contactStrength, 0, 2);
-    if (strength <= 1e-3) return;
-    const base = opts.colour ?? rig.shadowColour;
-    const tinted = shiftTemperature(
-      mixColour(base, rig.fillColour, rig.fillIntensity * 0.22),
-      -rig.temperatureShift * 0.55
-    );
-    const skew = opts.skew ?? depth * 0.18;
-    const dir = keyDirection(rig);
-    const horizontal = side === "below" || side === "above";
-    const sign = side === "below" || side === "right" ? 1 : -1;
-    ctx.save();
-    ctx.globalCompositeOperation = "multiply";
-    const passes = [
-      [0.3, 1],
-      [0.72, 0.52],
-      [1, 0.24]
-    ];
-    for (const [reach, alphaK] of passes) {
-      const d = depth * reach;
-      const ox = dir.x * skew * reach;
-      const oy = dir.y * skew * reach * rig.groundFlatten;
-      let grad;
-      if (horizontal) {
-        grad = ctx.createLinearGradient(0, opts.y, 0, opts.y + sign * d);
-      } else {
-        grad = ctx.createLinearGradient(opts.x, 0, opts.x + sign * d, 0);
+
+  // src/render/normals.ts
+  function clamp012(x) {
+    return x < 0 ? 0 : x > 1 ? 1 : x;
+  }
+  function num(v, fallback, lo = -1e6, hi = 1e6) {
+    if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+  function smoothstep01(x) {
+    const t = clamp012(x);
+    return t * t * (3 - 2 * t);
+  }
+  function normalFromSlope(dhdu, dhdv, scale = 1) {
+    const nx = -dhdu * scale;
+    const ny = -dhdv * scale;
+    const len = Math.hypot(nx, ny, 1);
+    return { nx: nx / len, ny: ny / len, h: 0, a: 1 };
+  }
+  function sampleShape(shape, u, v) {
+    const uu = clamp012(Number.isFinite(u) ? u : 0);
+    const vv = clamp012(Number.isFinite(v) ? v : 0);
+    switch (shape?.kind) {
+      case "plane": {
+        const h = num(shape.height, 0, 0, 1);
+        const tx = num(shape.tiltX, 0, -1.5, 1.5);
+        const ty = num(shape.tiltY, 0, -1.5, 1.5);
+        const n = normalFromSlope(Math.tan(tx), Math.tan(ty), 1);
+        return { nx: n.nx, ny: n.ny, h, a: 1 };
       }
-      const a = clamp(0.55 * strength * alphaK, 0, 1);
-      grad.addColorStop(0, withAlpha(tinted, a));
-      grad.addColorStop(0.34, withAlpha(tinted, a * 0.5));
-      grad.addColorStop(0.68, withAlpha(tinted, a * 0.16));
-      grad.addColorStop(1, withAlpha(tinted, 0));
-      ctx.fillStyle = grad;
-      const taper = clamp(opts.taper ?? Math.min(len * 0.16, spread * 1.6), 0, len * 0.45);
-      ctx.save();
-      ctx.beginPath();
-      if (horizontal) {
-        const x0 = opts.x - spread * 0.4 + ox;
-        const x1 = opts.x + len + spread * 0.4 + ox;
-        const y0 = opts.y + oy;
-        const y1 = y0 + sign * d;
-        ctx.moveTo(x0 + taper, y0);
-        ctx.lineTo(x1 - taper, y0);
-        ctx.quadraticCurveTo(x1, y0, x1, y1);
-        ctx.lineTo(x0, y1);
-        ctx.quadraticCurveTo(x0, y0, x0 + taper, y0);
-      } else {
-        const y0 = opts.y - spread * 0.4 + oy;
-        const y1 = opts.y + len + spread * 0.4 + oy;
-        const x0 = opts.x + ox;
-        const x1 = x0 + sign * d;
-        ctx.moveTo(x0, y0 + taper);
-        ctx.lineTo(x0, y1 - taper);
-        ctx.quadraticCurveTo(x0, y1, x1, y1);
-        ctx.lineTo(x1, y0);
-        ctx.quadraticCurveTo(x0, y0, x0, y0 + taper);
+      case "roundedBox": {
+        const axis = shape.axis === "y" ? "y" : "x";
+        const r = num(shape.radius, 0.22, 1e-3, 0.5);
+        const top = num(shape.height, 0.6, 0, 1);
+        const edge = num(shape.edgeHeight, top * 0.55, 0, 1);
+        const cross = num(shape.crossRadius, 0.04, 0, 0.5);
+        const lean = num(shape.lean, 0, -1.2, 1.2);
+        const main = axis === "x" ? uu : vv;
+        const off = axis === "x" ? vv : uu;
+        const dMain = Math.min(main, 1 - main) / r;
+        const tMain = clamp012(dMain);
+        const rollMain = Math.sin(tMain * Math.PI / 2);
+        const hMain = edge + (top - edge) * rollMain;
+        const slopeMag = tMain >= 1 ? 0 : (top - edge) * (Math.PI / 2) * Math.cos(tMain * Math.PI / 2) / Math.max(1e-3, r);
+        const signMain = main < 0.5 ? 1 : -1;
+        let hCross = 1;
+        let slopeCross = 0;
+        if (cross > 1e-3) {
+          const dCross = clamp012(Math.min(off, 1 - off) / cross);
+          hCross = 0.72 + 0.28 * Math.sin(dCross * Math.PI / 2);
+          slopeCross = dCross >= 1 ? 0 : 0.28 * (Math.PI / 2) * Math.cos(dCross * Math.PI / 2) / Math.max(1e-3, cross);
+          slopeCross *= off < 0.5 ? 1 : -1;
+        }
+        const h = clamp012(hMain * hCross);
+        const dU = axis === "x" ? slopeMag * signMain : slopeCross * hMain;
+        const dV = axis === "x" ? slopeCross * hMain : slopeMag * signMain;
+        const n = normalFromSlope(dU + Math.tan(lean), dV, 1.35);
+        return { nx: n.nx, ny: n.ny, h, a: 1 };
       }
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.restore();
-  }
-  function applyAmbientOcclusion(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const { x, y, width: w, height: h } = opts;
-    if (w <= 0 || h <= 0) return;
-    const strength = clamp((opts.strength ?? 1) * rig.ambientOcclusion, 0, 2);
-    if (strength <= 1e-3) return;
-    const edges = opts.edges ?? ["top", "bottom", "left", "right"];
-    const reach = opts.reach ?? Math.min(w, h) * 0.4;
-    const curve = opts.curve ?? "smoother";
-    const colour = shiftTemperature(rig.shadowColour, -rig.temperatureShift * 0.6);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
-    ctx.globalCompositeOperation = "multiply";
-    const stops = 7;
-    const addStops = (g, peak2) => {
-      for (let i = 0; i <= stops; i++) {
-        const t = i / stops;
-        g.addColorStop(t, withAlpha(colour, clamp(peak2 * falloff(t, curve), 0, 1)));
+      case "bevel": {
+        const size = num(shape.size, 0.12, 1e-3, 0.5);
+        const top = num(shape.height, 0.5, 0, 1);
+        const edge = num(shape.edgeHeight, top * 0.4, 0, 1);
+        const round = num(shape.round, 0.45, 0, 1);
+        const e = shape.edges ?? { left: true, right: true, top: true, bottom: true };
+        const dl = e.left === false ? 1 : uu / size;
+        const dr = e.right === false ? 1 : (1 - uu) / size;
+        const dt = e.top === false ? 1 : vv / size;
+        const db = e.bottom === false ? 1 : (1 - vv) / size;
+        const ramp = (d) => {
+          const t = clamp012(d);
+          return round <= 0 ? t : t * (1 - round) + smoothstep01(t) * round;
+        };
+        const rl = ramp(dl);
+        const rr = ramp(dr);
+        const rt = ramp(dt);
+        const rb = ramp(db);
+        const tMin = Math.min(rl, rr, rt, rb);
+        const h = clamp012(edge + (top - edge) * tMin);
+        const grad = (d, sign) => {
+          const t = clamp012(d);
+          if (t >= 1) return 0;
+          const base = round <= 0 ? 1 : 1 - round + round * 6 * t * (1 - t);
+          return sign * (top - edge) * base / Math.max(1e-3, size);
+        };
+        let dU = 0;
+        let dV = 0;
+        if (rl === tMin) dU += grad(dl, 1);
+        if (rr === tMin) dU += grad(dr, -1);
+        if (rt === tMin) dV += grad(dt, 1);
+        if (rb === tMin) dV += grad(db, -1);
+        const n = normalFromSlope(dU, dV, 1.15);
+        return { nx: n.nx, ny: n.ny, h, a: 1 };
       }
-    };
-    const peak = clamp(0.62 * strength, 0, 0.95);
-    for (const edge of edges) {
-      let g;
-      let rect;
-      const rw = Math.min(reach, w);
-      const rh = Math.min(reach, h);
-      switch (edge) {
-        case "top":
-          g = ctx.createLinearGradient(0, y, 0, y + rh);
-          rect = [x, y, w, rh];
-          break;
-        case "bottom":
-          g = ctx.createLinearGradient(0, y + h, 0, y + h - rh);
-          rect = [x, y + h - rh, w, rh];
-          break;
-        case "left":
-          g = ctx.createLinearGradient(x, 0, x + rw, 0);
-          rect = [x, y, rw, h];
-          break;
-        default:
-          g = ctx.createLinearGradient(x + w, 0, x + w - rw, 0);
-          rect = [x + w - rw, y, rw, h];
-          break;
+      case "dome": {
+        const top = num(shape.height, 0.55, 0, 1);
+        const edge = num(shape.edgeHeight, top * 0.35, 0, 1);
+        const power = num(shape.power, 1, 0.15, 6);
+        const rib = num(shape.rib, 0, 0, 1);
+        const ribAxis = shape.ribAxis === "x" ? "x" : "y";
+        const elongate = num(shape.elongate, 0, 0, 0.95);
+        const cx = uu * 2 - 1;
+        const cy = vv * 2 - 1;
+        const sx = 1 - elongate * 0;
+        const sy = 1 / (1 - elongate * 0.85);
+        const ex = cx * sx;
+        const ey = cy / sy;
+        const r2 = ex * ex + ey * ey;
+        if (r2 >= 1) return { nx: 0, ny: 0, h: edge, a: 0 };
+        const dome = Math.pow(1 - r2, 0.5 * power);
+        let h = edge + (top - edge) * dome;
+        const k = -(top - edge) * power * Math.pow(Math.max(1e-4, 1 - r2), 0.5 * power - 1);
+        let dU = k * ex * sx * 2;
+        let dV = k * ey * 2 / sy;
+        if (rib > 1e-3) {
+          const t = ribAxis === "y" ? cx : cy;
+          const crease = Math.exp(-(t * t) / 0.02);
+          h -= rib * 0.16 * crease * dome;
+          const dcrease = -2 * t / 0.02 * crease;
+          if (ribAxis === "y") dU -= rib * 0.16 * dcrease * dome * 2;
+          else dV -= rib * 0.16 * dcrease * dome * 2;
+        }
+        const n = normalFromSlope(dU, dV, 0.85);
+        const a = smoothstep01((1 - Math.sqrt(r2)) / 0.06);
+        return { nx: n.nx, ny: n.ny, h: clamp012(h), a };
       }
-      addStops(g, peak);
-      ctx.fillStyle = g;
-      ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
-    }
-    if (opts.corners !== false) {
-      const cr = Math.min(reach * 1.15, Math.min(w, h) * 0.7);
-      for (const [cx, cy] of [
-        [x, y],
-        [x + w, y],
-        [x, y + h],
-        [x + w, y + h]
-      ]) {
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
-        addStops(g, peak * 0.62);
-        ctx.fillStyle = g;
-        ctx.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
+      case "cylinder": {
+        const axis = shape.axis === "y" ? "y" : "x";
+        const top = num(shape.height, 0.5, 0, 1);
+        const edge = num(shape.edgeHeight, 0.1, 0, 1);
+        const taper = num(shape.taper, 0, 0, 1);
+        const across = axis === "x" ? vv : uu;
+        const along = axis === "x" ? uu : vv;
+        const width = 1 - taper * along;
+        const c = (across - 0.5) / Math.max(1e-3, width * 0.5) / 2 + 0.5;
+        const t = (clamp012(c) - 0.5) * 2;
+        if (Math.abs(t) >= 1) return { nx: 0, ny: 0, h: edge, a: 0 };
+        const prof = Math.sqrt(Math.max(0, 1 - t * t));
+        const h = clamp012(edge + (top - edge) * prof);
+        const slope = -(top - edge) * t / Math.max(1e-3, prof) / Math.max(1e-3, width);
+        const dU = axis === "x" ? 0 : slope;
+        const dV = axis === "x" ? slope : 0;
+        const n = normalFromSlope(dU, dV, 0.9);
+        const a = smoothstep01((1 - Math.abs(t)) / 0.09);
+        return { nx: n.nx, ny: n.ny, h, a };
       }
-    }
-    ctx.restore();
-  }
-  function applyCreaseOcclusion(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const strength = clamp((opts.strength ?? 1) * rig.ambientOcclusion, 0, 2);
-    if (strength <= 1e-3 || opts.length <= 0 || opts.reach <= 0) return;
-    const colour = shiftTemperature(rig.shadowColour, -rig.temperatureShift * 0.5);
-    const bias = clamp(opts.bias ?? 0, -1, 1);
-    const near = opts.reach * (1 - bias * 0.6);
-    const far = opts.reach * (1 + bias * 0.6);
-    ctx.save();
-    ctx.globalCompositeOperation = "multiply";
-    const g = opts.axis === "horizontal" ? ctx.createLinearGradient(0, opts.y - near, 0, opts.y + far) : ctx.createLinearGradient(opts.x - near, 0, opts.x + far, 0);
-    const peak = clamp(0.55 * strength, 0, 0.92);
-    g.addColorStop(0, withAlpha(colour, 0));
-    g.addColorStop(0.32, withAlpha(colour, peak * 0.28));
-    g.addColorStop(near / (near + far), withAlpha(colour, peak));
-    g.addColorStop(0.72, withAlpha(colour, peak * 0.24));
-    g.addColorStop(1, withAlpha(colour, 0));
-    ctx.fillStyle = g;
-    if (opts.axis === "horizontal") {
-      ctx.fillRect(opts.x, opts.y - near, opts.length, near + far);
-    } else {
-      ctx.fillRect(opts.x - near, opts.y, near + far, opts.length);
-    }
-    ctx.restore();
-  }
-  function applyKeyLight(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const { x, y, width: w, height: h } = opts;
-    if (w <= 0 || h <= 0) return;
-    let power = clamp((opts.intensity ?? 1) * rig.keyIntensity, 0, 2);
-    if (opts.normalAngle !== void 0) power *= surfaceLambert(opts.normalAngle, rig);
-    if (power <= 2e-3) return;
-    const src = keyToSource(rig);
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    const reach = Math.hypot(w, h) * 0.6;
-    const x0 = cx - src.x * reach;
-    const y0 = cy - src.y * reach;
-    const x1 = cx + src.x * reach;
-    const y1 = cy + src.y * reach;
-    const warm = shiftTemperature(rig.keyColour, rig.temperatureShift * 0.5);
-    const cool = shiftTemperature(rig.fillColour, -rig.temperatureShift * 0.7);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
-    ctx.globalCompositeOperation = "screen";
-    const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    const peak = clamp(0.42 * power, 0, 0.9);
-    g.addColorStop(0, withAlpha(cool, 0));
-    g.addColorStop(0.42, withAlpha(warm, peak * 0.16));
-    g.addColorStop(0.74, withAlpha(warm, peak * 0.56));
-    g.addColorStop(1, withAlpha(blowOut(warm, 0.3), peak));
-    ctx.fillStyle = g;
-    ctx.fillRect(x, y, w, h);
-    ctx.globalCompositeOperation = "multiply";
-    const sg = ctx.createLinearGradient(x1, y1, x0, y0);
-    const shade = clamp(0.4 * power * rig.ambientOcclusion, 0, 0.72);
-    const shadowTone = shiftTemperature(
-      mixColour(rig.shadowColour, rig.fillColour, rig.fillIntensity * 0.5),
-      -rig.temperatureShift
-    );
-    sg.addColorStop(0, withAlpha(shadowTone, 0));
-    sg.addColorStop(0.55, withAlpha(shadowTone, shade * 0.32));
-    sg.addColorStop(1, withAlpha(shadowTone, shade));
-    ctx.fillStyle = sg;
-    ctx.fillRect(x, y, w, h);
-    const hot = clamp(opts.hotSpot ?? rig.hotSpot, 0, 1) * power;
-    if (hot > 0.02) {
-      ctx.globalCompositeOperation = "screen";
-      const hx = cx + src.x * w * 0.42;
-      const hy = cy + src.y * h * 0.42;
-      const hr = Math.max(w, h) * (0.28 + hot * 0.3);
-      const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-      const hotCol = blowOut(rig.keyColour, 0.72);
-      hg.addColorStop(0, withAlpha(hotCol, clamp(hot * 0.55, 0, 0.85)));
-      hg.addColorStop(0.4, withAlpha(hotCol, clamp(hot * 0.2, 0, 0.5)));
-      hg.addColorStop(1, withAlpha(hotCol, 0));
-      ctx.fillStyle = hg;
-      ctx.fillRect(x, y, w, h);
-    }
-    ctx.restore();
-  }
-  function cylinderShading(ctx, rig, cx, cy, radius, axisAngle) {
-    const perp = axisAngle + Math.PI / 2;
-    const src = keyToSource(rig);
-    const along = Math.cos(perp) * src.x + Math.sin(perp) * src.y;
-    const px = Math.cos(perp) * radius;
-    const py = Math.sin(perp) * radius;
-    const s = along >= 0 ? 1 : -1;
-    const g = ctx.createLinearGradient(cx - px * s, cy - py * s, cx + px * s, cy + py * s);
-    const shadow = shiftTemperature(rig.shadowColour, -rig.temperatureShift * 0.7);
-    const lit = blowOut(rig.keyColour, rig.hotSpot * 0.5);
-    g.addColorStop(0, withAlpha(shadow, clamp(0.5 * rig.ambientOcclusion, 0, 0.8)));
-    g.addColorStop(0.22, withAlpha(shadow, clamp(0.16 * rig.ambientOcclusion, 0, 0.4)));
-    g.addColorStop(0.52, withAlpha(lit, clamp(0.34 * rig.keyIntensity, 0, 0.7)));
-    g.addColorStop(0.72, withAlpha(lit, clamp(0.12 * rig.keyIntensity, 0, 0.35)));
-    g.addColorStop(1, withAlpha(shadow, clamp(0.42 * rig.ambientOcclusion, 0, 0.75)));
-    return g;
-  }
-  function litEdges(rig) {
-    const src = keyToSource(rig);
-    const out = [];
-    if (src.x > 0.15) out.push("right");
-    if (src.x < -0.15) out.push("left");
-    if (src.y > 0.15) out.push("bottom");
-    if (src.y < -0.15) out.push("top");
-    return out;
-  }
-  function applyRimLight(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const { x, y, width: w, height: h } = opts;
-    if (w <= 0 || h <= 0) return;
-    const strength = clamp((opts.strength ?? 1) * rig.rimStrength, 0, 2);
-    if (strength <= 5e-3) return;
-    const t = Math.max(0.6, opts.thickness ?? Math.min(w, h) * 0.085);
-    const edges = opts.edges ?? litEdges(rig);
-    const colour = blowOut(rig.rimColour, 0.35);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
-    ctx.globalCompositeOperation = "screen";
-    for (const edge of edges) {
-      const normal = edge === "right" ? 0 : edge === "left" ? Math.PI : edge === "top" ? -Math.PI / 2 : Math.PI / 2;
-      const f = rimFactor(normal, { ...rig, rimStrength: 1 });
-      const a = clamp(0.7 * strength * f, 0, 1);
-      if (a < 0.01) continue;
-      let g;
-      let rect;
-      switch (edge) {
-        case "top":
-          g = ctx.createLinearGradient(0, y, 0, y + t);
-          rect = [x, y, w, t];
-          break;
-        case "bottom":
-          g = ctx.createLinearGradient(0, y + h, 0, y + h - t);
-          rect = [x, y + h - t, w, t];
-          break;
-        case "left":
-          g = ctx.createLinearGradient(x, 0, x + t, 0);
-          rect = [x, y, t, h];
-          break;
-        default:
-          g = ctx.createLinearGradient(x + w, 0, x + w - t, 0);
-          rect = [x + w - t, y, t, h];
-          break;
+      case "sphere": {
+        const top = num(shape.height, 0.6, 0, 1);
+        const squash = num(shape.squash, 1, 0.1, 1);
+        const cx = uu * 2 - 1;
+        const cy = vv * 2 - 1;
+        const r2 = cx * cx + cy * cy;
+        if (r2 >= 1) return { nx: 0, ny: 0, h: 0, a: 0 };
+        const z = Math.sqrt(1 - r2);
+        const h = clamp012(top * z * squash);
+        const len = Math.hypot(cx, cy, z / Math.max(0.1, squash));
+        const a = smoothstep01((1 - Math.sqrt(r2)) / 0.05);
+        return { nx: cx / len, ny: cy / len, h, a };
       }
-      g.addColorStop(0, withAlpha(colour, a));
-      g.addColorStop(0.28, withAlpha(colour, a * 0.52));
-      g.addColorStop(0.62, withAlpha(colour, a * 0.14));
-      g.addColorStop(1, withAlpha(colour, 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
-    }
-    ctx.restore();
-  }
-  function applySpecularCatch(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const r = Math.max(0.4, opts.radius);
-    const strength = clamp((opts.strength ?? 1) * (0.4 + rig.keyIntensity * 0.55), 0, 1.4);
-    if (strength <= 0.01) return;
-    const aspect = Math.max(0.2, opts.aspect ?? 2.2);
-    const angle = opts.angle ?? rig.keyAngle + Math.PI / 2;
-    const colour = blowOut(opts.colour ?? rig.rimColour, 0.6);
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    ctx.translate(opts.x, opts.y);
-    ctx.rotate(angle);
-    ctx.scale(aspect, 1);
-    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-    g.addColorStop(0, withAlpha(colour, clamp(0.85 * strength, 0, 1)));
-    g.addColorStop(0.3, withAlpha(colour, clamp(0.4 * strength, 0, 1)));
-    g.addColorStop(0.66, withAlpha(colour, clamp(0.12 * strength, 0, 1)));
-    g.addColorStop(1, withAlpha(colour, 0));
-    ctx.fillStyle = g;
-    ctx.fillRect(-r, -r, r * 2, r * 2);
-    ctx.restore();
-  }
-  function applyAtmosphericHaze(ctx, opts) {
-    const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
-    const a = atmosphericBlend(opts.depth, rig) * clamp(opts.strength ?? 1, 0, 2);
-    if (a <= 4e-3 || opts.width <= 0 || opts.height <= 0) return;
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    ctx.fillStyle = withAlpha(rig.hazeColour, clamp(a * 0.42, 0, 0.7));
-    ctx.fillRect(opts.x, opts.y, opts.width, opts.height);
-    ctx.globalCompositeOperation = "saturation";
-    ctx.globalAlpha = clamp(a * 0.5, 0, 0.8);
-    ctx.fillStyle = "hsl(30 22% 50%)";
-    ctx.fillRect(opts.x, opts.y, opts.width, opts.height);
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-  function applyColourBleed(ctx, opts) {
-    const { x, y, width: w, height: h } = opts;
-    if (w <= 0 || h <= 0) return;
-    const a = clamp(opts.strength ?? 0.1, 0, 0.6);
-    if (a <= 3e-3) return;
-    const reach = Math.min(opts.reach ?? Math.min(w, h) * 0.45, opts.from === "left" || opts.from === "right" ? w : h);
-    const col = typeof opts.colour === "string" ? parseColour(opts.colour) : opts.colour;
-    ctx.save();
-    ctx.globalCompositeOperation = "soft-light";
-    let g;
-    let rect;
-    switch (opts.from) {
-      case "left":
-        g = ctx.createLinearGradient(x, 0, x + reach, 0);
-        rect = [x, y, reach, h];
-        break;
-      case "right":
-        g = ctx.createLinearGradient(x + w, 0, x + w - reach, 0);
-        rect = [x + w - reach, y, reach, h];
-        break;
-      case "top":
-        g = ctx.createLinearGradient(0, y, 0, y + reach);
-        rect = [x, y, w, reach];
-        break;
+      case "wedge": {
+        const axis = shape.axis === "y" ? "y" : "x";
+        const from = num(shape.from, 0.1, 0, 1);
+        const to = num(shape.to, 0.7, 0, 1);
+        const round = num(shape.round, 0.2, 0, 1);
+        const t = axis === "x" ? uu : vv;
+        const shaped = t * (1 - round) + smoothstep01(t) * round;
+        const h = clamp012(from + (to - from) * shaped);
+        const d = (to - from) * (1 - round + round * 6 * t * (1 - t));
+        const n = normalFromSlope(axis === "x" ? d : 0, axis === "x" ? 0 : d, 1);
+        return { nx: n.nx, ny: n.ny, h, a: 1 };
+      }
+      case "groove": {
+        const axis = shape.axis === "y" ? "y" : "x";
+        const surface = num(shape.height, 0.5, 0, 1);
+        const depth = num(shape.depth, 0.18, 0, 1);
+        const width = num(shape.width, 0.35, 0.01, 1);
+        const round = num(shape.round, 0.6, 0, 1);
+        const t = axis === "x" ? uu : vv;
+        const d = Math.abs(t - 0.5) / (width * 0.5);
+        const inside = clamp012(1 - d);
+        const dish = round <= 0 ? d < 1 ? 1 : 0 : Math.pow(inside, 1 + round);
+        const h = clamp012(surface - depth * dish);
+        const slope = d >= 1 ? 0 : depth * (1 + round) * Math.pow(Math.max(1e-4, inside), round) / (width * 0.5);
+        const sign = t < 0.5 ? -1 : 1;
+        const dU = axis === "x" ? slope * sign : 0;
+        const dV = axis === "x" ? 0 : slope * sign;
+        const n = normalFromSlope(dU, dV, 1.5);
+        return { nx: n.nx, ny: n.ny, h, a: 1 };
+      }
+      case "ribs": {
+        const axis = shape.axis === "y" ? "y" : "x";
+        const base = num(shape.height, 0.5, 0, 1);
+        const amp = num(shape.amplitude, 0.1, 0, 1);
+        const count = Math.max(1, Math.round(num(shape.count, 6, 1, 64)));
+        const round = num(shape.round, 0.75, 0, 1);
+        const t = axis === "x" ? uu : vv;
+        const phase = t * count * Math.PI * 2;
+        const sine = (Math.sin(phase) + 1) * 0.5;
+        const square = sine > 0.5 ? 1 : 0;
+        const prof = square * (1 - round) + sine * round;
+        const h = clamp012(base + amp * (prof - 0.5));
+        const d = amp * round * Math.cos(phase) * count * Math.PI;
+        const n = normalFromSlope(axis === "x" ? d : 0, axis === "x" ? 0 : d, 1);
+        return { nx: n.nx, ny: n.ny, h, a: 1 };
+      }
       default:
-        g = ctx.createLinearGradient(0, y + h, 0, y + h - reach);
-        rect = [x, y + h - reach, w, reach];
-        break;
+        return { nx: 0, ny: 0, h: 0, a: 1 };
     }
-    g.addColorStop(0, withAlpha(col, a));
-    g.addColorStop(0.45, withAlpha(col, a * 0.4));
-    g.addColorStop(1, withAlpha(col, 0));
-    ctx.fillStyle = g;
-    ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
+  }
+  function encodeSurface(p) {
+    const q = (v) => {
+      const x = Math.round(clamp012(v * 0.5 + 0.5) * 255);
+      return x < 0 ? 0 : x > 255 ? 255 : x;
+    };
+    return [q(p.nx), q(p.ny), Math.round(clamp012(p.h) * 255), Math.round(clamp012(p.a) * 255)];
+  }
+  var PROFILE_MAX = 128;
+  function profileSize(shape, w, h) {
+    const cw = Math.max(1, Math.min(PROFILE_MAX, Math.ceil(w)));
+    const ch = Math.max(1, Math.min(PROFILE_MAX, Math.ceil(h)));
+    switch (shape.kind) {
+      case "plane":
+        return [2, 2];
+      case "wedge":
+      case "groove":
+      case "ribs":
+        return shape.axis === "y" ? [2, ch] : [cw, 2];
+      case "roundedBox":
+        return shape.axis === "y" ? [24, ch] : [cw, 24];
+      case "cylinder":
+        return shape.axis === "y" ? [cw, 16] : [16, ch];
+      default:
+        return [cw, ch];
+    }
+  }
+  function shapeKey(shape, w, h) {
+    const [pw, ph] = profileSize(shape, w, h);
+    const parts = [shape.kind, String(pw), String(ph)];
+    for (const [k, v] of Object.entries(shape)) {
+      if (k === "kind") continue;
+      if (typeof v === "number") parts.push(`${k}:${v.toFixed(4)}`);
+      else if (typeof v === "boolean") parts.push(`${k}:${v ? 1 : 0}`);
+      else if (v !== null && typeof v === "object") parts.push(`${k}:${JSON.stringify(v)}`);
+    }
+    return parts.join("|");
+  }
+  function rasterizeShape2(shape, width, height) {
+    const [w, h] = profileSize(shape, width, height);
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      const v = h === 1 ? 0.5 : (y + 0.5) / h;
+      for (let x = 0; x < w; x++) {
+        const u = w === 1 ? 0.5 : (x + 0.5) / w;
+        const p = sampleShape(shape, u, v);
+        const [r, g, b, a] = encodeSurface(p);
+        const i = (y * w + x) * 4;
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+        data[i + 3] = a;
+      }
+    }
+    return { data, width: w, height: h };
+  }
+  var canvasCache = /* @__PURE__ */ new Map();
+  function makeCanvas(w, h) {
+    const cw = Math.max(1, Math.ceil(w));
+    const ch = Math.max(1, Math.ceil(h));
+    if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(cw, ch);
+    if (typeof document === "undefined") return null;
+    const c = document.createElement("canvas");
+    c.width = cw;
+    c.height = ch;
+    return c;
+  }
+  function shapeCanvas(shape, w, h) {
+    const key = shapeKey(shape, w, h);
+    const hit = canvasCache.get(key);
+    if (hit !== void 0) return hit;
+    const raster = rasterizeShape2(shape, w, h);
+    const canvas2 = makeCanvas(raster.width, raster.height);
+    if (canvas2 === null) return null;
+    const ctx = canvas2.getContext("2d");
+    if (ctx === null) return null;
+    const img = ctx.createImageData(raster.width, raster.height);
+    img.data.set(raster.data);
+    ctx.putImageData(img, 0, 0);
+    canvasCache.set(key, canvas2);
+    return canvas2;
+  }
+  function emitHeight(ctx, shape, opts) {
+    const w = opts.width;
+    const h = opts.height;
+    if (!(w > 0) || !(h > 0)) return;
+    const canvas2 = shapeCanvas(shape, w, h);
+    if (canvas2 === null) return;
+    const rot = opts.rotation ?? 0;
+    const alpha = clamp012(opts.opacity ?? 1);
+    if (alpha <= 2e-3) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = "source-over";
+    if (rot !== 0) {
+      ctx.translate(opts.x + w / 2, opts.y + h / 2);
+      ctx.rotate(rot);
+      ctx.translate(-w / 2, -h / 2);
+      ctx.drawImage(canvas2, 0, 0, w, h);
+    } else {
+      ctx.drawImage(canvas2, opts.x, opts.y, w, h);
+    }
     ctx.restore();
+    const scale = opts.heightScale ?? 1;
+    const offset = opts.heightOffset ?? 0;
+    if (scale === 1 && offset === 0) return;
+    ctx.save();
+    if (rot !== 0) {
+      ctx.translate(opts.x + w / 2, opts.y + h / 2);
+      ctx.rotate(rot);
+      ctx.translate(-w / 2 - opts.x, -h / 2 - opts.y);
+    }
+    if (scale !== 1) {
+      ctx.globalCompositeOperation = "multiply";
+      const k = Math.round(clamp012(scale) * 255);
+      ctx.fillStyle = `rgb(255, 255, ${k})`;
+      ctx.fillRect(opts.x, opts.y, w, h);
+    }
+    if (offset !== 0) {
+      ctx.globalCompositeOperation = offset > 0 ? "lighter" : "multiply";
+      const k = Math.round(clamp012(Math.abs(offset)) * 255);
+      ctx.fillStyle = offset > 0 ? `rgb(0, 0, ${k})` : `rgb(255, 255, ${Math.max(0, 255 - k)})`;
+      ctx.fillRect(opts.x, opts.y, w, h);
+    }
+    ctx.restore();
+  }
+  function emitSpines(ctx, books) {
+    for (const b of books) {
+      const proud = clamp012(b.proud ?? 0.5);
+      emitHeight(
+        ctx,
+        {
+          kind: "roundedBox",
+          axis: "x",
+          radius: b.radius ?? 0.24,
+          height: 0.42 + proud * 0.5,
+          edgeHeight: (0.42 + proud * 0.5) * 0.5,
+          crossRadius: 0.035,
+          ...b.lean !== void 0 ? { lean: b.lean } : {}
+        },
+        { x: b.x, y: b.y, width: b.width, height: b.height, ...b.lean !== void 0 ? { rotation: b.lean * 0.35 } : {} }
+      );
+      const bands = b.bands ?? 0;
+      if (bands > 0) {
+        emitHeight(
+          ctx,
+          { kind: "ribs", axis: "y", height: 0.5, amplitude: 0.16, count: bands, round: 0.55 },
+          {
+            x: b.x + b.width * 0.06,
+            y: b.y + b.height * 0.06,
+            width: b.width * 0.88,
+            height: b.height * 0.88,
+            opacity: 0.5
+          }
+        );
+      }
+    }
   }
 
   // src/art/spines.ts
@@ -2110,8 +3084,6 @@
     '"Kalam", cursive',
     '"Patrick Hand", cursive'
   ];
-  var GOLD2 = "#c9a227";
-  var GRAPHITE = "rgba(58, 50, 42, 0.55)";
   function deriveSpineParams(seed) {
     const rnd = mulberry32(seed >>> 0);
     const silhouette = Math.floor(rnd() * 7);
@@ -2296,9 +3268,7 @@
       SPINE_HEIGHT_RANGE.max
     );
   }
-  var GRANULATION_SIZE = 256;
-  var granulationTile = null;
-  function makeCanvas(w, h) {
+  function makeCanvas2(w, h) {
     if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
     const c = document.createElement("canvas");
     c.width = w;
@@ -2309,24 +3279,6 @@
     const ctx = c.getContext("2d");
     if (!ctx) throw new Error("spines: 2d context unavailable");
     return ctx;
-  }
-  function getGranulationTile() {
-    if (granulationTile) return granulationTile;
-    const c = makeCanvas(GRANULATION_SIZE, GRANULATION_SIZE);
-    const ctx = get2d(c);
-    const img = ctx.createImageData(GRANULATION_SIZE, GRANULATION_SIZE);
-    const rnd = mulberry32(10844759);
-    const data = img.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const v = Math.round(128 + (rnd() * 2 - 1) * 56);
-      data[i] = v;
-      data[i + 1] = v;
-      data[i + 2] = v;
-      data[i + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-    granulationTile = c;
-    return c;
   }
   function silhouetteOutline(silhouette, w, h) {
     const tl = { x: 0, y: 0 };
@@ -2379,24 +3331,6 @@
         return [tl, tr, br, bl];
     }
   }
-  function densifyJitter(pts, step, amp, rnd) {
-    const out = [];
-    const n = pts.length;
-    for (let i = 0; i < n; i++) {
-      const a = pts[i];
-      const b = pts[(i + 1) % n];
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      const segs = Math.max(1, Math.round(len / step));
-      for (let k = 0; k < segs; k++) {
-        const t = k / segs;
-        out.push({
-          x: a.x + (b.x - a.x) * t + (rnd() * 2 - 1) * amp,
-          y: a.y + (b.y - a.y) * t + (rnd() * 2 - 1) * amp
-        });
-      }
-    }
-    return out;
-  }
   function tracePoly(ctx, pts, close) {
     ctx.beginPath();
     const first = pts[0];
@@ -2407,37 +3341,6 @@
       ctx.lineTo(p.x, p.y);
     }
     if (close) ctx.closePath();
-  }
-  function jitteredSegment(a, b, step, amp, rnd) {
-    const out = [];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    const segs = Math.max(1, Math.round(len / step));
-    for (let k = 0; k <= segs; k++) {
-      const t = k / segs;
-      out.push({
-        x: a.x + (b.x - a.x) * t + (rnd() * 2 - 1) * amp,
-        y: a.y + (b.y - a.y) * t + (rnd() * 2 - 1) * amp
-      });
-    }
-    return out;
-  }
-  function jitterRectStroke(ctx, x, y, w, h, step, amp, rnd) {
-    const c = [
-      { x, y },
-      { x: x + w, y },
-      { x: x + w, y: y + h },
-      { x, y: y + h }
-    ];
-    for (let i = 0; i < 4; i++) {
-      tracePoly(ctx, jitteredSegment(c[i], c[(i + 1) % 4], step, amp, rnd), false);
-      ctx.stroke();
-    }
-  }
-  function hslStr(c, hueShift, dl = 0, ds = 0, alpha = 1) {
-    const h = ((c.h + hueShift) % 360 + 360) % 360;
-    const s = clamp(c.s + ds, 0, 100);
-    const l = clamp(c.l + dl, 0, 100);
-    return alpha >= 1 ? `hsl(${h} ${s}% ${l}%)` : `hsl(${h} ${s}% ${l}% / ${alpha})`;
   }
   function strokePts(ctx, pts, close) {
     tracePoly(ctx, pts, close);
@@ -2624,654 +3527,6 @@
       }
     }
   }
-  var materialTiles = /* @__PURE__ */ new Map();
-  var TILE_SIZE = {
-    pebble: 128,
-    weave: 48,
-    linen: 64,
-    laid: 64,
-    crackle: 160,
-    rib: 32,
-    morocco: 144,
-    kraft: 96
-  };
-  function paintCrackleTile(ctx, size, rnd) {
-    const walk = (x0, y0, angle, len, depth, width) => {
-      let x = x0;
-      let y = y0;
-      let a = angle;
-      const seg = 5 + rnd() * 5;
-      const steps = Math.max(2, Math.round(len / seg));
-      const pts = [{ x, y }];
-      for (let i = 0; i < steps; i++) {
-        a += (rnd() * 2 - 1) * 0.55;
-        x += Math.cos(a) * seg;
-        y += Math.sin(a) * seg;
-        pts.push({ x, y });
-      }
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = `rgba(22,22,22,${(0.26 + rnd() * 0.2).toFixed(3)})`;
-      ctx.lineWidth = width;
-      tracePoly(ctx, pts, false);
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(238,238,238,${(0.12 + rnd() * 0.12).toFixed(3)})`;
-      ctx.lineWidth = width * 0.7;
-      ctx.save();
-      ctx.translate(-width * 0.55, -width * 0.55);
-      tracePoly(ctx, pts, false);
-      ctx.stroke();
-      ctx.restore();
-      if (depth > 0) {
-        const branches = 1 + Math.floor(rnd() * 2);
-        for (let b = 0; b < branches; b++) {
-          const at = pts[1 + Math.floor(rnd() * (pts.length - 1))];
-          walk(
-            at.x,
-            at.y,
-            a + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.9),
-            len * (0.4 + rnd() * 0.3),
-            depth - 1,
-            Math.max(0.5, width * 0.72)
-          );
-        }
-      }
-    };
-    for (let i = 0; i < 14; i++) {
-      walk(rnd() * size, rnd() * size, rnd() * Math.PI * 2, 40 + rnd() * 70, 2, 1.1 + rnd() * 0.9);
-    }
-    for (let i = 0; i < 260; i++) {
-      const x = rnd() * size;
-      const y = rnd() * size;
-      const a = rnd() * Math.PI * 2;
-      const l = 2 + rnd() * 6;
-      ctx.strokeStyle = `rgba(30,30,30,${(0.08 + rnd() * 0.12).toFixed(3)})`;
-      ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
-      ctx.stroke();
-    }
-  }
-  function weaveCell(ctx, x, y, c, warp, thread, contrast) {
-    const half = thread / 2;
-    const drawBar = (vertical, over) => {
-      const a = over ? contrast : contrast * 0.55;
-      const cx = x + c / 2;
-      const cy = y + c / 2;
-      if (vertical) {
-        const g = ctx.createLinearGradient(cx - half, 0, cx + half, 0);
-        g.addColorStop(0, `rgba(34,34,34,${(a * 0.9).toFixed(3)})`);
-        g.addColorStop(0.42, `rgba(238,238,238,${(a * 0.75).toFixed(3)})`);
-        g.addColorStop(1, `rgba(34,34,34,${a.toFixed(3)})`);
-        ctx.fillStyle = g;
-        ctx.fillRect(cx - half, y - 0.4, thread, c + 0.8);
-      } else {
-        const g = ctx.createLinearGradient(0, cy - half, 0, cy + half);
-        g.addColorStop(0, `rgba(34,34,34,${(a * 0.9).toFixed(3)})`);
-        g.addColorStop(0.42, `rgba(238,238,238,${(a * 0.75).toFixed(3)})`);
-        g.addColorStop(1, `rgba(34,34,34,${a.toFixed(3)})`);
-        ctx.fillStyle = g;
-        ctx.fillRect(x - 0.4, cy - half, c + 0.8, thread);
-      }
-    };
-    drawBar(!warp, false);
-    drawBar(warp, true);
-  }
-  function getMaterialTile(kind) {
-    const hit = materialTiles.get(kind);
-    if (hit) return hit;
-    const size = TILE_SIZE[kind];
-    const c = makeCanvas(size, size);
-    const ctx = get2d(c);
-    ctx.fillStyle = "#808080";
-    ctx.fillRect(0, 0, size, size);
-    const TILE_SEEDS = {
-      pebble: 10369815,
-      linen: 5357790,
-      laid: 1711374,
-      weave: 2824100,
-      crackle: 13085761,
-      rib: 7453677,
-      morocco: 3862720,
-      kraft: 9249274
-    };
-    const rnd = mulberry32(TILE_SEEDS[kind]);
-    if (kind === "crackle") {
-      paintCrackleTile(ctx, size, rnd);
-    } else if (kind === "rib") {
-      let y = 0;
-      while (y < size) {
-        const pitch = 3.4 + rnd() * 1.6;
-        const g = ctx.createLinearGradient(0, y, 0, y + pitch);
-        g.addColorStop(0, "rgba(28,28,28,0.34)");
-        g.addColorStop(0.3, "rgba(226,226,226,0.28)");
-        g.addColorStop(0.52, "rgba(198,198,198,0.14)");
-        g.addColorStop(1, "rgba(24,24,24,0.36)");
-        ctx.fillStyle = g;
-        ctx.fillRect(0, y, size, pitch);
-        y += pitch;
-      }
-      for (let x = 0; x < size; x += 2.2) {
-        ctx.fillStyle = `rgba(160,160,160,${(0.04 + rnd() * 0.05).toFixed(3)})`;
-        ctx.fillRect(x, 0, 0.9, size);
-      }
-    } else if (kind === "morocco") {
-      const rows = 9;
-      for (let j = 0; j < rows; j++) {
-        const cy = (j + 0.5) / rows * size;
-        let x = rnd() * 14;
-        while (x < size + 14) {
-          const rx = 6 + rnd() * 9;
-          const ry = 4 + rnd() * 5;
-          const yy = cy + (rnd() * 2 - 1) * 5;
-          const g = ctx.createRadialGradient(x - rx * 0.35, yy - ry * 0.4, ry * 0.1, x, yy, rx);
-          g.addColorStop(0, "rgba(232,232,232,0.26)");
-          g.addColorStop(0.7, "rgba(140,140,140,0.05)");
-          g.addColorStop(1, "rgba(24,24,24,0.34)");
-          ctx.beginPath();
-          ctx.ellipse(x, yy, rx, ry, (rnd() * 2 - 1) * 0.35, 0, Math.PI * 2);
-          ctx.fillStyle = g;
-          ctx.fill();
-          x += rx * 1.5 + rnd() * 4;
-        }
-      }
-      for (let i = 0; i < 400; i++) {
-        ctx.fillStyle = "rgba(20,20,20,0.16)";
-        ctx.fillRect(rnd() * size, rnd() * size, 1.2 + rnd() * 2.6, 1.1);
-      }
-    } else if (kind === "kraft") {
-      for (let i = 0; i < 900; i++) {
-        ctx.fillStyle = rnd() < 0.5 ? "rgba(60,60,60,0.1)" : "rgba(228,228,228,0.12)";
-        ctx.fillRect(rnd() * size, rnd() * size, 0.9 + rnd() * 1.6, 0.9);
-      }
-      for (let i = 0; i < 70; i++) {
-        ctx.save();
-        ctx.translate(rnd() * size, rnd() * size);
-        ctx.rotate(rnd() * Math.PI);
-        ctx.fillStyle = rnd() < 0.4 ? "rgba(48,42,34,0.2)" : "rgba(236,230,216,0.22)";
-        ctx.fillRect(0, 0, 6 + rnd() * 22, 0.9 + rnd() * 0.8);
-        ctx.restore();
-      }
-    } else if (kind === "pebble") {
-      for (let i = 0; i < 320; i++) {
-        const x = rnd() * size;
-        const y = rnd() * size;
-        const r = 3.4 + rnd() * 6.5;
-        const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.34, r * 0.05, x, y, r);
-        g.addColorStop(0, "rgba(236,236,236,0.30)");
-        g.addColorStop(0.62, "rgba(150,150,150,0.06)");
-        g.addColorStop(1, "rgba(28,28,28,0.30)");
-        ctx.beginPath();
-        ctx.ellipse(x, y, r, r * (0.68 + rnd() * 0.6), rnd() * Math.PI, 0, Math.PI * 2);
-        ctx.fillStyle = g;
-        ctx.fill();
-      }
-      for (let i = 0; i < 900; i++) {
-        const x = rnd() * size;
-        const y = rnd() * size;
-        const r = 0.8 + rnd() * 2.2;
-        ctx.beginPath();
-        ctx.ellipse(x, y, r, r * (0.6 + rnd() * 0.7), rnd() * Math.PI, 0, Math.PI * 2);
-        ctx.fillStyle = rnd() < 0.55 ? "rgba(30,30,30,0.22)" : "rgba(236,236,236,0.18)";
-        ctx.fill();
-      }
-    } else if (kind === "weave") {
-      const cell = size / 12;
-      for (let j = 0; j < 12; j++) {
-        for (let i = 0; i < 12; i++) {
-          weaveCell(ctx, i * cell, j * cell, cell, (i + j) % 2 === 0, cell * 0.72, 0.4);
-        }
-      }
-      ctx.fillStyle = "rgba(220,220,220,0.05)";
-      ctx.fillRect(0, 0, size, size);
-    } else if (kind === "linen") {
-      const cells = 5;
-      const cell = size / cells;
-      for (let j = 0; j < cells; j++) {
-        for (let i = 0; i < cells; i++) {
-          weaveCell(
-            ctx,
-            i * cell,
-            j * cell,
-            cell,
-            (i + j) % 2 === 0,
-            cell * (0.52 + rnd() * 0.3),
-            0.42 + rnd() * 0.22
-          );
-        }
-      }
-      for (let i = 0; i < 18; i++) {
-        const x = rnd() * size;
-        const y = Math.floor(rnd() * cells) * cell + cell * 0.5;
-        ctx.fillStyle = `rgba(26,26,26,${(0.2 + rnd() * 0.2).toFixed(3)})`;
-        ctx.fillRect(x, y - cell * 0.22, 5 + rnd() * 11, cell * 0.44);
-        ctx.fillStyle = "rgba(240,240,240,0.2)";
-        ctx.fillRect(x, y - cell * 0.26, 5 + rnd() * 9, 1.2);
-      }
-      for (let i = 0; i < 40; i++) {
-        ctx.fillStyle = "rgba(246,246,246,0.26)";
-        ctx.fillRect(rnd() * size, rnd() * size, 1 + rnd() * 2.4, 1 + rnd() * 1.4);
-      }
-    } else {
-      for (let x = 0; x < size; x += 3.6) {
-        ctx.fillStyle = `rgba(104,104,104,${(0.05 + rnd() * 0.04).toFixed(3)})`;
-        ctx.fillRect(x, 0, 1.3, size);
-      }
-      for (let y = 0; y < size; y += 19) {
-        ctx.fillStyle = "rgba(242,242,242,0.34)";
-        ctx.fillRect(0, y, size, 1.8);
-        ctx.fillStyle = "rgba(64,64,64,0.2)";
-        ctx.fillRect(0, y + 2, size, 1.2);
-      }
-      for (let i = 0; i < 150; i++) {
-        ctx.fillStyle = rnd() < 0.5 ? "rgba(48,48,48,0.14)" : "rgba(244,244,244,0.18)";
-        ctx.fillRect(rnd() * size, rnd() * size, 0.9 + rnd() * 1.8, 0.9);
-      }
-      for (let i = 0; i < 14; i++) {
-        ctx.save();
-        ctx.translate(rnd() * size, rnd() * size);
-        ctx.rotate(rnd() * Math.PI);
-        ctx.fillStyle = "rgba(228,228,228,0.28)";
-        ctx.fillRect(0, 0, 5 + rnd() * 14, 0.9);
-        ctx.restore();
-      }
-    }
-    materialTiles.set(kind, c);
-    return c;
-  }
-  function tileOver(ctx, tile, w, h, tileSize, alpha, mode = "overlay") {
-    const prev = ctx.globalCompositeOperation;
-    ctx.globalCompositeOperation = mode;
-    ctx.globalAlpha = alpha;
-    for (let ty = 0; ty < h; ty += tileSize) {
-      for (let tx = 0; tx < w; tx += tileSize) {
-        ctx.drawImage(tile, tx, ty, tileSize, tileSize);
-      }
-    }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = prev;
-  }
-  function paintMarbledBoard(ctx, w, h, tones, s, rnd, variant = 0) {
-    const px = Math.max(0.5, s);
-    ctx.save();
-    ctx.fillStyle = "rgba(238, 227, 200, 0.5)";
-    ctx.fillRect(0, 0, w, h);
-    const inks = [
-      tones.dark(-8, 8, 1),
-      tones.light(2, 6, 1),
-      "#7b2f22",
-      "#2f4a6b",
-      "#6d5a1f",
-      "#4a2f52",
-      "#2f5340"
-    ];
-    if (variant === 2) {
-      const drops = Math.round(w * h / Math.max(30, 260 * px * px)) + 26;
-      for (let i = 0; i < drops; i++) {
-        const cx = rnd() * w;
-        const cy = rnd() * h;
-        const r = (2.2 + rnd() * 7) * px;
-        const col = inks[Math.floor(rnd() * inks.length)];
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        g.addColorStop(0, withAlpha(col, 0.62));
-        g.addColorStop(0.62, withAlpha(col, 0.42));
-        g.addColorStop(0.86, "rgba(252, 246, 226, 0.5)");
-        g.addColorStop(1, "rgba(252, 246, 226, 0)");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, r, r * (0.7 + rnd() * 0.6), rnd() * Math.PI, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else {
-      const bandH = Math.max(2.4 * px, h / (10 + Math.floor(rnd() * 10)));
-      const waveLen = Math.max(8 * px, w * (0.55 + rnd() * 0.9));
-      const waveAmp = bandH * (0.7 + rnd() * 1.1);
-      const phase = rnd() * Math.PI * 2;
-      let y = -bandH * 2;
-      let bandIndex = 0;
-      ctx.lineCap = "round";
-      while (y < h + bandH * 2) {
-        const col = inks[(bandIndex + Math.floor(rnd() * 2)) % inks.length];
-        const thick = bandH * (0.3 + rnd() * 0.7);
-        ctx.strokeStyle = withAlpha(col, 0.42 + rnd() * 0.3);
-        ctx.lineWidth = thick;
-        ctx.beginPath();
-        const steps = Math.max(4, Math.ceil(w / Math.max(1.2, 2 * px)));
-        for (let k = 0; k <= steps; k++) {
-          const t = k / steps;
-          const xx = t * w;
-          const yy = y + Math.sin(xx / waveLen * Math.PI * 2 + phase + bandIndex * 0.35) * waveAmp;
-          if (k === 0) ctx.moveTo(xx, yy);
-          else ctx.lineTo(xx, yy);
-        }
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(250, 243, 222, 0.34)";
-        ctx.lineWidth = Math.max(0.5, thick * 0.34);
-        ctx.stroke();
-        y += bandH;
-        bandIndex++;
-      }
-      const teeth = Math.max(3, Math.round(w / Math.max(3, 6 * px)));
-      for (let i = 0; i < teeth; i++) {
-        const xx = (i + 0.5) / teeth * w;
-        const g = ctx.createLinearGradient(xx - px, 0, xx + px, 0);
-        g.addColorStop(0, "rgba(40, 30, 18, 0.1)");
-        g.addColorStop(0.5, "rgba(252, 246, 226, 0.16)");
-        g.addColorStop(1, "rgba(40, 30, 18, 0.1)");
-        ctx.fillStyle = g;
-        ctx.fillRect(xx - px, 0, px * 2, h);
-      }
-      if (variant === 1) {
-        const step = Math.max(2.4 * px, h * 0.045);
-        ctx.save();
-        ctx.translate(w / 2, h / 2);
-        ctx.rotate(0.12);
-        ctx.translate(-w / 2, -h / 2);
-        for (let yy = -h * 0.2; yy < h * 1.2; yy += step) {
-          const g = ctx.createLinearGradient(0, yy, 0, yy + step);
-          g.addColorStop(0, "rgba(30, 22, 12, 0.24)");
-          g.addColorStop(0.42, "rgba(255, 250, 232, 0.2)");
-          g.addColorStop(1, "rgba(30, 22, 12, 0.2)");
-          ctx.fillStyle = g;
-          ctx.fillRect(-w * 0.2, yy, w * 1.4, step);
-        }
-        ctx.restore();
-      }
-    }
-    tileOver(ctx, getMaterialTile("kraft"), w, h, Math.max(30, 54 * px), 0.28);
-    tileOver(ctx, getGranulationTile(), w, h, GRANULATION_SIZE * 2, 0.08, "multiply");
-    const glaze = ctx.createLinearGradient(0, 0, w, 0);
-    glaze.addColorStop(0, "rgba(0,0,0,0.14)");
-    glaze.addColorStop(0.38, "rgba(255,250,236,0.14)");
-    glaze.addColorStop(1, "rgba(0,0,0,0.12)");
-    ctx.fillStyle = glaze;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
-  }
-  function paintBindingMaterial(ctx, w, h, material, tones, s, rnd, boardStyle = 0) {
-    const px = Math.max(0.5, s);
-    const variant = clamp(Math.round(boardStyle), 0, MAX_BOARD_STYLE);
-    ctx.save();
-    ctx.lineCap = "round";
-    switch (material) {
-      case "leather": {
-        if (variant === 1) {
-          tileOver(ctx, getMaterialTile("morocco"), w, h, Math.max(52, 92 * px), 0.72);
-          tileOver(ctx, getMaterialTile("pebble"), w, h, Math.max(30, 54 * px), 0.28);
-        } else {
-          tileOver(ctx, getMaterialTile("pebble"), w, h, Math.max(44, 78 * px), 0.66);
-        }
-        tileOver(ctx, getGranulationTile(), w, h, GRANULATION_SIZE * 2, 0.1, "multiply");
-        if (variant === 2) {
-          tileOver(ctx, getMaterialTile("crackle"), w, h, Math.max(60, 118 * px), 0.68);
-          tileOver(ctx, getMaterialTile("crackle"), w, h, Math.max(26, 46 * px), 0.34);
-          for (let i = 0; i < 12; i++) {
-            const cx = rnd() * w;
-            const cy = rnd() * h;
-            const r = (1.2 + rnd() * 3.4) * px;
-            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-            g.addColorStop(0, tones.light(26, -28, 0.3));
-            g.addColorStop(1, tones.light(26, -28, 0));
-            ctx.fillStyle = g;
-            ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-          }
-        }
-        ctx.strokeStyle = tones.dark(-16, 0, 0.16);
-        ctx.lineWidth = Math.max(0.7, 1.1 * px);
-        for (let i = 0; i < 5; i++) {
-          const cy = (0.08 + rnd() * 0.84) * h;
-          ctx.beginPath();
-          ctx.moveTo(-w * 0.05, cy);
-          ctx.quadraticCurveTo(w * 0.5, cy + (rnd() * 2 - 1) * 9 * px, w * 1.05, cy + (rnd() * 2 - 1) * 6 * px);
-          ctx.stroke();
-        }
-        const gloss = variant === 2 ? 0.4 : 1;
-        const sheen = ctx.createLinearGradient(0, 0, w, 0);
-        sheen.addColorStop(0, `rgba(255,246,226,0)`);
-        sheen.addColorStop(0.34, `rgba(255,246,226,${(0.15 * gloss).toFixed(3)})`);
-        sheen.addColorStop(0.52, `rgba(255,246,226,${(0.06 * gloss).toFixed(3)})`);
-        sheen.addColorStop(1, "rgba(0,0,0,0.1)");
-        ctx.fillStyle = sheen;
-        ctx.fillRect(0, 0, w, h);
-        break;
-      }
-      case "cloth": {
-        if (variant === 1) {
-          tileOver(ctx, getMaterialTile("rib"), w, h, Math.max(14, 26 * px), 0.8);
-          tileOver(ctx, getMaterialTile("rib"), w, h, Math.max(7, 13 * px), 0.26);
-          tileOver(ctx, getMaterialTile("weave"), w, h, Math.max(16, 26 * px), 0.2);
-        } else {
-          tileOver(ctx, getMaterialTile("weave"), w, h, Math.max(20, 34 * px), 0.72);
-        }
-        if (variant === 2) {
-          const pg = ctx.createLinearGradient(0, 0, w, 0);
-          pg.addColorStop(0, "rgba(0,0,0,0.12)");
-          pg.addColorStop(0.36, "rgba(255,252,242,0.2)");
-          pg.addColorStop(0.62, "rgba(255,252,242,0.06)");
-          pg.addColorStop(1, "rgba(0,0,0,0.14)");
-          ctx.fillStyle = pg;
-          ctx.fillRect(0, 0, w, h);
-        } else {
-          ctx.fillStyle = "rgba(238, 236, 230, 0.07)";
-          ctx.fillRect(0, 0, w, h);
-        }
-        for (let i = 0; i < 4; i++) {
-          const cx = rnd() * w;
-          const cy = rnd() * h;
-          const r = (0.16 + rnd() * 0.3) * Math.max(w, h);
-          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-          g.addColorStop(0, tones.dark(-6, 2, 0.07));
-          g.addColorStop(1, tones.dark(-6, 2, 0));
-          ctx.fillStyle = g;
-          ctx.fillRect(0, 0, w, h);
-        }
-        break;
-      }
-      case "marbled": {
-        paintMarbledBoard(ctx, w, h, tones, s, rnd, variant);
-        break;
-      }
-      case "paper": {
-        ctx.fillStyle = "rgba(246, 240, 226, 0.12)";
-        ctx.fillRect(0, 0, w, h);
-        if (variant === 2) {
-          tileOver(ctx, getMaterialTile("kraft"), w, h, Math.max(34, 58 * px), 0.6);
-        } else {
-          tileOver(ctx, getMaterialTile("laid"), w, h, Math.max(40, 68 * px), 0.42);
-        }
-        if (variant === 1) {
-          const cg = ctx.createLinearGradient(0, 0, w, 0);
-          cg.addColorStop(0, "rgba(0,0,0,0.08)");
-          cg.addColorStop(0.4, "rgba(255,253,246,0.18)");
-          cg.addColorStop(1, "rgba(0,0,0,0.1)");
-          ctx.fillStyle = cg;
-          ctx.fillRect(0, 0, w, h);
-        }
-        ctx.strokeStyle = tones.light(16, -12, 0.1);
-        ctx.lineWidth = Math.max(0.5, 0.7 * px);
-        for (let i = 0; i < 9; i++) {
-          const xx = rnd() * w;
-          const y0 = rnd() * h * 0.6;
-          ctx.beginPath();
-          ctx.moveTo(xx, y0);
-          ctx.quadraticCurveTo(xx + (rnd() * 2 - 1) * 3 * px, y0 + h * 0.2, xx + (rnd() * 2 - 1) * 2 * px, y0 + h * 0.4);
-          ctx.stroke();
-        }
-        for (let i = 0; i < 40; i++) {
-          const r = (0.4 + rnd() * 1.3) * px;
-          ctx.beginPath();
-          ctx.arc(rnd() * w, rnd() * h, r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(126, 88, 46, ${(0.05 + rnd() * 0.13).toFixed(3)})`;
-          ctx.fill();
-        }
-        break;
-      }
-      case "vellum": {
-        ctx.fillStyle = "rgba(242, 231, 199, 0.46)";
-        ctx.fillRect(0, 0, w, h);
-        for (let i = 0; i < 9; i++) {
-          const cx = rnd() * w;
-          const cy = rnd() * h;
-          const r = (0.1 + rnd() * 0.3) * Math.max(w, h);
-          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-          const dark = rnd() < 0.45;
-          g.addColorStop(0, dark ? "rgba(150, 124, 82, 0.16)" : "rgba(255, 250, 232, 0.2)");
-          g.addColorStop(1, "rgba(255,255,255,0)");
-          ctx.fillStyle = g;
-          ctx.fillRect(0, 0, w, h);
-        }
-        ctx.fillStyle = "rgba(122, 96, 58, 0.24)";
-        for (let i = 0; i < 90; i++) {
-          const x = rnd() * w;
-          const y = rnd() * h;
-          ctx.fillRect(x, y, 0.9 * px, 0.9 * px);
-          if (rnd() < 0.5) ctx.fillRect(x + 1.6 * px, y + 0.7 * px, 0.8 * px, 0.8 * px);
-        }
-        const vg = ctx.createLinearGradient(0, 0, w, 0);
-        vg.addColorStop(0, "rgba(120, 96, 56, 0.14)");
-        vg.addColorStop(0.42, "rgba(255, 252, 238, 0.2)");
-        vg.addColorStop(1, "rgba(120, 96, 56, 0.16)");
-        ctx.fillStyle = vg;
-        ctx.fillRect(0, 0, w, h);
-        break;
-      }
-      case "linen": {
-        tileOver(ctx, getMaterialTile("linen"), w, h, Math.max(26, 44 * px), 0.78);
-        ctx.fillStyle = "rgba(226, 208, 172, 0.14)";
-        ctx.fillRect(0, 0, w, h);
-        for (let i = 0; i < 34; i++) {
-          ctx.fillStyle = `rgba(246, 238, 214, ${(0.12 + rnd() * 0.24).toFixed(3)})`;
-          ctx.fillRect(rnd() * w, rnd() * h, (1 + rnd() * 3) * px, 0.9 * px);
-        }
-        break;
-      }
-      default: {
-        const bands = 5;
-        for (let i = 0; i < bands; i++) {
-          const cx = (i + 0.5) / bands * w;
-          const bw = w / bands;
-          const g = ctx.createLinearGradient(cx - bw * 0.5, 0, cx + bw * 0.5, 0);
-          g.addColorStop(0, "rgba(0,0,0,0.14)");
-          g.addColorStop(0.42, "rgba(255,252,240,0.24)");
-          g.addColorStop(0.62, "rgba(255,252,240,0.1)");
-          g.addColorStop(1, "rgba(0,0,0,0.12)");
-          ctx.fillStyle = g;
-          ctx.fillRect(cx - bw * 0.5, 0, bw, h);
-        }
-        ctx.lineWidth = Math.max(0.5, 0.8 * px);
-        for (let i = 0; i < 16; i++) {
-          const y0 = i / 16 * h + rnd() * h * 0.02;
-          ctx.strokeStyle = i % 2 === 0 ? "rgba(255,252,240,0.11)" : tones.dark(-12, 0, 0.09);
-          ctx.beginPath();
-          ctx.moveTo(0, y0);
-          for (let x = 0; x <= w; x += Math.max(2, 3 * px)) {
-            ctx.lineTo(x, y0 + Math.sin(x / Math.max(6, w) * 7 + i) * 2.2 * px);
-          }
-          ctx.stroke();
-        }
-        const spec = ctx.createLinearGradient(w * 0.2, 0, w * 0.46, 0);
-        spec.addColorStop(0, "rgba(255,255,248,0)");
-        spec.addColorStop(0.5, "rgba(255,255,248,0.3)");
-        spec.addColorStop(1, "rgba(255,255,248,0)");
-        ctx.fillStyle = spec;
-        ctx.fillRect(w * 0.2, 0, w * 0.26, h);
-        break;
-      }
-    }
-    ctx.restore();
-  }
-  function paintEdgeTreatment(ctx, x, y, w, h, edge, s, rnd) {
-    if (w <= 0.4 || h <= 0.4) return;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
-    const base = ctx.createLinearGradient(x, 0, x + w, 0);
-    base.addColorStop(0, "#cbbc99");
-    base.addColorStop(0.35, "#eae0c4");
-    base.addColorStop(1, "#c9b995");
-    ctx.fillStyle = base;
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = "rgba(96, 82, 58, 0.22)";
-    ctx.lineWidth = Math.max(0.4, 0.5 * s);
-    const pitch = Math.max(1.4, 2 * s);
-    ctx.beginPath();
-    for (let yy = y; yy < y + h; yy += pitch) {
-      ctx.moveTo(x, yy);
-      ctx.lineTo(x + w, yy);
-    }
-    ctx.stroke();
-    if (edge === "gilt") {
-      const g = ctx.createLinearGradient(x, 0, x + w, 0);
-      g.addColorStop(0, "#8a6a14");
-      g.addColorStop(0.3, "#f3dc93");
-      g.addColorStop(0.52, "#c9a227");
-      g.addColorStop(0.78, "#f7e7ab");
-      g.addColorStop(1, "#7d5f12");
-      ctx.globalAlpha = 0.94;
-      ctx.fillStyle = g;
-      ctx.fillRect(x, y, w, h);
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = "rgba(255, 248, 214, 0.4)";
-      ctx.lineWidth = Math.max(0.4, 0.5 * s);
-      for (let i = 0; i < 8; i++) {
-        const yy = y + rnd() * h;
-        ctx.beginPath();
-        ctx.moveTo(x, yy);
-        ctx.lineTo(x + w, yy + (rnd() * 2 - 1) * 2 * s);
-        ctx.stroke();
-      }
-    } else if (edge === "marbled") {
-      const veins = ["#8d3a2a", "#2f4a6b", "#7b6a2c", "#5d3a5c"];
-      ctx.globalAlpha = 0.62;
-      for (let i = 0; i < 14; i++) {
-        const col = veins[Math.floor(rnd() * veins.length)];
-        const y0 = y + rnd() * h;
-        const amp = (0.9 + rnd() * 2.6) * s;
-        const thick = (0.9 + rnd() * 2.4) * s;
-        ctx.strokeStyle = col;
-        ctx.lineWidth = thick;
-        ctx.beginPath();
-        ctx.moveTo(x - 1, y0);
-        const steps = Math.max(2, Math.ceil(w / Math.max(1, s)));
-        for (let k = 0; k <= steps; k++) {
-          const t = k / steps;
-          ctx.lineTo(x + t * (w + 2), y0 + Math.sin(t * 6 + i) * amp);
-        }
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 0.3;
-      ctx.strokeStyle = "#f0e6cb";
-      ctx.lineWidth = Math.max(0.4, 0.6 * s);
-      for (let i = 0; i < 18; i++) {
-        const yy = y + rnd() * h;
-        ctx.beginPath();
-        ctx.moveTo(x, yy);
-        ctx.lineTo(x + w, yy + 3 * s);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-    } else if (edge === "speckled") {
-      const specks = ["#7a3a24", "#4a3c2a", "#8f6a24"];
-      const count = Math.max(24, Math.round(w * h / Math.max(2, 6 * s * s)));
-      for (let i = 0; i < count; i++) {
-        ctx.fillStyle = specks[Math.floor(rnd() * specks.length)];
-        ctx.globalAlpha = 0.25 + rnd() * 0.5;
-        const r = (0.3 + rnd() * 0.9) * s;
-        ctx.beginPath();
-        ctx.arc(x + rnd() * w, y + rnd() * h, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    }
-    const sh = ctx.createLinearGradient(x, 0, x + Math.max(1, w * 0.4), 0);
-    sh.addColorStop(0, "rgba(38, 30, 20, 0.45)");
-    sh.addColorStop(1, "rgba(38, 30, 20, 0)");
-    ctx.fillStyle = sh;
-    ctx.fillRect(x, y, Math.max(1, w * 0.4), h);
-    ctx.restore();
-  }
   function applyOutlineWear(pts, wear, s, rnd) {
     if (wear <= 0.02 || pts.length < 3) return pts.slice();
     const r = (0.8 + wear * 5) * s;
@@ -3301,117 +3556,6 @@
     }
     return out;
   }
-  function paintWear(ctx, w, h, wear, tones, s, rnd) {
-    if (wear <= 0.02) return;
-    const px = Math.max(0.5, s);
-    ctx.save();
-    const fadeC = w * 0.4;
-    const fadeR = w * (0.34 + wear * 0.34);
-    const fade = ctx.createLinearGradient(fadeC - fadeR, 0, fadeC + fadeR, 0);
-    const fadeA = 0.06 + wear * 0.2;
-    fade.addColorStop(0, "rgba(222, 210, 182, 0)");
-    fade.addColorStop(0.34, `rgba(224, 212, 184, ${(fadeA * 0.75).toFixed(3)})`);
-    fade.addColorStop(0.52, `rgba(226, 214, 186, ${fadeA.toFixed(3)})`);
-    fade.addColorStop(1, "rgba(222, 210, 182, 0)");
-    ctx.fillStyle = fade;
-    ctx.fillRect(0, 0, w, h);
-    ctx.globalCompositeOperation = "saturation";
-    ctx.globalAlpha = 0.14 + wear * 0.4;
-    const sat = ctx.createLinearGradient(fadeC - fadeR, 0, fadeC + fadeR, 0);
-    sat.addColorStop(0, "hsl(0 0% 60% / 0)");
-    sat.addColorStop(0.5, "hsl(0 0% 60%)");
-    sat.addColorStop(1, "hsl(0 0% 60% / 0)");
-    ctx.fillStyle = sat;
-    ctx.fillRect(0, 0, w, h);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
-    const scuffs = Math.round(3 + wear * 16);
-    ctx.lineCap = "round";
-    for (let i = 0; i < scuffs; i++) {
-      const edgeX = rnd() < 0.5 ? (0.6 + rnd() * 1.6) * px : w - (0.6 + rnd() * 1.6) * px;
-      const wy = rnd() * h;
-      const len = (4 + rnd() * 22) * px;
-      ctx.strokeStyle = tones.light(28 + rnd() * 14, -20, 0.14 + wear * 0.34);
-      ctx.lineWidth = (0.5 + rnd() * 0.9) * px;
-      ctx.beginPath();
-      ctx.moveTo(edgeX, wy);
-      ctx.lineTo(edgeX + (rnd() * 2 - 1) * 1.2 * px, wy + len);
-      ctx.stroke();
-    }
-    if (wear > 0.3) {
-      const patches = Math.round(1 + wear * 5);
-      for (let i = 0; i < patches; i++) {
-        const cx = rnd() < 0.5 ? (1 + rnd() * 3) * px : w - (1 + rnd() * 3) * px;
-        const cy = rnd() * h;
-        const rx = (2 + rnd() * 5) * px;
-        const ry = (5 + rnd() * 26) * px;
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
-        g.addColorStop(0, tones.light(30, -26, 0.34 * wear));
-        g.addColorStop(1, tones.light(30, -26, 0));
-        ctx.fillStyle = g;
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
-        ctx.fillRect(-Math.max(rx, ry), -Math.max(rx, ry), Math.max(rx, ry) * 2, Math.max(rx, ry) * 2);
-        ctx.restore();
-      }
-    }
-    for (const [cx, cy] of [
-      [0, 0],
-      [w, 0],
-      [0, h],
-      [w, h]
-    ]) {
-      const r = (1.6 + wear * 6 + rnd() * 2) * px;
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      g.addColorStop(0, tones.light(34, -28, 0.2 + wear * 0.42));
-      g.addColorStop(1, tones.light(34, -28, 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-    }
-    const grime = ctx.createLinearGradient(0, h * 0.86, 0, h);
-    grime.addColorStop(0, "rgba(44, 34, 22, 0)");
-    grime.addColorStop(1, `rgba(44, 34, 22, ${(0.08 + wear * 0.22).toFixed(3)})`);
-    ctx.fillStyle = grime;
-    ctx.fillRect(0, h * 0.86, w, h * 0.14);
-    if (wear > 0.8) {
-      const t = (wear - 0.8) / 0.2;
-      for (const capY of [0, h]) {
-        const dir = capY === 0 ? 1 : -1;
-        const capH = (2.5 + t * 5) * px;
-        const g = ctx.createLinearGradient(0, capY, 0, capY + dir * capH);
-        g.addColorStop(0, tones.light(36, -32, 0.3 + t * 0.34));
-        g.addColorStop(1, tones.light(36, -32, 0));
-        ctx.fillStyle = g;
-        ctx.fillRect(0, Math.min(capY, capY + dir * capH), w, capH);
-        ctx.fillStyle = tones.light(30, -30, 0.24 + t * 0.3);
-        const nx = (0.2 + rnd() * 0.6) * w;
-        ctx.beginPath();
-        ctx.ellipse(nx, capY, (1.6 + rnd() * 3) * px, (1.4 + t * 3.4) * px, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    if (wear > 0.62) {
-      ctx.strokeStyle = "rgba(38, 28, 18, 0.34)";
-      ctx.lineWidth = Math.max(0.4, 0.6 * px);
-      const cracks = Math.round((wear - 0.62) * 12);
-      for (let i = 0; i < cracks; i++) {
-        const x0 = rnd() < 0.5 ? 1.5 * px : w - 1.5 * px;
-        const y0 = rnd() < 0.5 ? rnd() * h * 0.22 : h * (0.78 + rnd() * 0.22);
-        ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        let cxp = x0;
-        let cyp = y0;
-        for (let k = 0; k < 4; k++) {
-          cxp += (rnd() * 2 - 1) * 3 * px;
-          cyp += (rnd() < 0.5 ? -1 : 1) * (2 + rnd() * 5) * px;
-          ctx.lineTo(cxp, cyp);
-        }
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
   function spinePanels(cordYs, reserve, cutPad = 0) {
     const zoneTop = 0.055;
     const zoneBot = 0.945;
@@ -3434,6 +3578,759 @@
     }
     return out;
   }
+  var VALUE_CLASSES = [
+    { lum: [0.055, 0.115], weight: 0.2 },
+    // near-black bindings: the anchors
+    { lum: [0.115, 0.19], weight: 0.28 },
+    // deep: oxblood / navy / forest
+    { lum: [0.19, 0.3], weight: 0.24 },
+    // mid-dark: the connective tissue
+    { lum: [0.3, 0.44], weight: 0.16 },
+    // mid: tan, olive, faded cloth
+    { lum: [0.5, 0.7], weight: 0.12 }
+    // light: vellum, cream, parchment
+  ];
+  function valueTargetFor(seed) {
+    const r = mulberry32((seed ^ 31262) >>> 0);
+    let acc = r();
+    for (const cls of VALUE_CLASSES) {
+      acc -= cls.weight;
+      if (acc < 0) return lerp(cls.lum[0], cls.lum[1], r());
+    }
+    return 0.22;
+  }
+  function retone(c, target) {
+    const lum = luminance(c);
+    if (lum <= 2e-3) return target <= 0.02 ? c : mixRgb(c, { r: 1, g: 1, b: 1 }, target);
+    if (target < lum) {
+      const k2 = 1 - target / lum;
+      const shadow = shiftHsl(c, -6, 0.06, -0.02);
+      return mixRgb(c, mixRgb(shadow, { r: 0.03, g: 0.035, b: 0.055 }, 0.9), k2);
+    }
+    const k = Math.min(0.92, (target - lum) / Math.max(0.08, 1 - lum));
+    return mixRgb(c, shiftHsl(c, 4, -0.12, 0.2), k);
+  }
+  function pigmentFor(colA, colB, hue, seed) {
+    const rawA = hslToRgb({ h: colA.h + hue, s: colA.s / 100, l: colA.l / 100 });
+    const rawB = hslToRgb({ h: colB.h + hue, s: colB.s / 100, l: colB.l / 100 });
+    const target = valueTargetFor(seed);
+    const base = retone(mixRgb(rawA, rawB, 0.42), target);
+    return {
+      base,
+      // The shadow tone is a genuine dark — 30% of the mass value, not 80% — and
+      // drifts cool, which is what stops a row of books reading as flat cards.
+      deep: retone(shiftHsl(base, -8, 0.08, 0), Math.max(0.02, target * 0.34)),
+      // The crown lifts and warms toward the key rather than washing out.
+      lift: retone(shiftHsl(base, 6, -0.06, 0), Math.min(0.86, target * 1.9 + 0.1)),
+      partner: retone(rawB, Math.max(0.035, target * 0.62))
+    };
+  }
+  function toVec(pts) {
+    return pts.map((p) => ({ x: p.x, y: p.y }));
+  }
+  function crownAt(spec) {
+    return clamp(0.5 + spec.keySide * 0.17 * spec.round, 0.22, 0.78);
+  }
+  function paintLeatherPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig } = spec;
+    const s = Math.max(0.6, scale);
+    const grainSize = clamp(w * 0.16, 2.4 * s, 7 * s);
+    scumble(sf, mask, brush("sponge", { size: grainSize, colour: pig.deep, opacity: 0.1, spacing: 0.5, grain: 0.95 }), {
+      coverage: 0.52,
+      passes: 2,
+      patchScale: grainSize * 3.4,
+      edgeBias: 0.25,
+      seed: (spec.seed ^ 7751) >>> 0,
+      targetBuildup: 0.45
+    });
+    scumble(sf, mask, brush("sponge", { size: grainSize * 0.8, colour: pig.lift, opacity: 0.07, spacing: 0.55, grain: 0.95 }), {
+      coverage: 0.34,
+      passes: 1,
+      patchScale: grainSize * 5,
+      // Grain catches the light on the side the key comes from.
+      weight: (x) => 0.35 + 0.65 * clamp01Local(spec.keySide > 0 ? x / w : 1 - x / w),
+      seed: (spec.seed ^ 11121) >>> 0,
+      targetBuildup: 0.35
+    });
+    const creases = 2 + Math.floor(rnd() * 3);
+    const creaseBrush = brush("soft", {
+      size: Math.max(1.6, w * 0.2),
+      colour: pig.deep,
+      opacity: 0.055,
+      spacing: 0.14,
+      jitter: { lum: 0.05, hue: 5, position: 0.5 }
+    });
+    for (let i = 0; i < creases; i++) {
+      const cx = w * (0.16 + rnd() * 0.68);
+      const y0 = h * rnd() * 0.4;
+      const y1 = y0 + h * (0.28 + rnd() * 0.5);
+      const path = [];
+      for (let k = 0; k <= 5; k++) {
+        const t = k / 5;
+        path.push({ x: cx + Math.sin(t * 3.1 + i) * w * 0.12, y: lerp(y0, y1, t) });
+      }
+      stroke(sf, path, creaseBrush, {
+        passes: 2,
+        pressure: PRESSURE.arc,
+        seed: spec.seed + i * 977 >>> 0,
+        alpha: 0.8
+      });
+    }
+    const cracks = Math.round(spec.wear * 34 + 4);
+    const crackBrush = brush("ink", {
+      size: Math.max(0.9, 1.1 * s),
+      colour: pig.deep,
+      opacity: 0.3,
+      spacing: 0.3,
+      jitter: { lum: 0.1, opacity: 0.6, position: 0.4 }
+    });
+    for (let i = 0; i < cracks; i++) {
+      let px = rnd() * w;
+      let py = rnd() * h;
+      const segs = 2 + Math.floor(rnd() * 3);
+      const path = [{ x: px, y: py }];
+      let ang = rnd() * Math.PI * 2;
+      for (let k = 0; k < segs; k++) {
+        ang += (rnd() - 0.5) * 1.9;
+        const len = (1.6 + rnd() * 4.5) * s;
+        px += Math.cos(ang) * len;
+        py += Math.sin(ang) * len;
+        path.push({ x: px, y: py });
+      }
+      stroke(sf, path, crackBrush, {
+        passes: 1,
+        pressure: PRESSURE.flick,
+        wobble: 0.3 * s,
+        seed: spec.seed + i * 313 >>> 0,
+        alpha: 0.5 + rnd() * 0.5
+      });
+    }
+    const crown = crownAt(spec);
+    glaze(sf, mask, shiftHsl(pig.lift, 4, -0.1, 0.06), 0.16, {
+      blend: "softlight",
+      gradient: (x, y) => {
+        const u = x / w;
+        const band = Math.exp(-Math.pow((u - crown) / 0.3, 2));
+        const v = y / h;
+        return band * (0.45 + 0.55 * Math.sin(Math.PI * clamp01Local(v)));
+      },
+      mottle: 0.34,
+      mottleScale: Math.max(10, w * 1.4),
+      seed: (spec.seed ^ 20928) >>> 0
+    });
+  }
+  function paintClothPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig, boardStyle } = spec;
+    const s = Math.max(0.6, scale);
+    const ribGap = boardStyle === 1 ? 3.4 * s : boardStyle === 2 ? 5.2 * s : 2.2 * s;
+    const warpBrush = brush("bristle", {
+      size: Math.max(1.1, ribGap * 0.85),
+      colour: pig.deep,
+      opacity: 0.075,
+      spacing: 0.3,
+      grain: 0.8,
+      followPath: true,
+      jitter: { lum: 0.09, hue: 6, opacity: 0.55, position: 0.35 }
+    });
+    const warpLift = withBrush(warpBrush, { colour: pig.lift, opacity: 0.055 });
+    for (let x = -ribGap; x < w + ribGap; x += ribGap) {
+      const jx = x + (rnd() - 0.5) * ribGap * 0.3;
+      const b = rnd() < 0.42 ? warpLift : warpBrush;
+      stroke(
+        sf,
+        [
+          { x: jx, y: -h * 0.02 },
+          { x: jx + (rnd() - 0.5) * 1.2 * s, y: h * 0.5 },
+          { x: jx + (rnd() - 0.5) * 1.2 * s, y: h * 1.02 }
+        ],
+        b,
+        { passes: 1, pressure: PRESSURE.flat, taper: 0.02, wobble: 0.35 * s, seed: spec.seed + x * 71 >>> 0 }
+      );
+    }
+    const weftBrush = brush("flat", {
+      size: Math.max(1, ribGap * 0.7),
+      colour: pig.deep,
+      opacity: 0.05,
+      spacing: 0.35,
+      grain: 0.85,
+      jitter: { lum: 0.07, opacity: 0.7, position: 0.4 }
+    });
+    for (let y = 0; y < h; y += ribGap * 1.15) {
+      const jy = y + (rnd() - 0.5) * ribGap * 0.4;
+      stroke(
+        sf,
+        [
+          { x: -w * 0.04, y: jy },
+          { x: w * 1.04, y: jy }
+        ],
+        weftBrush,
+        { passes: 1, pressure: PRESSURE.flat, taper: 0.05, wobble: 0.25 * s, seed: spec.seed + y * 131 >>> 0, alpha: 0.55 + rnd() * 0.45 }
+      );
+    }
+    scumble(sf, mask, brush("chalk", { size: Math.max(1.4, 2.2 * s), colour: pig.lift, opacity: 0.11, grain: 0.9 }), {
+      coverage: 0.12,
+      passes: 1,
+      patchScale: Math.max(12, w * 1.1),
+      seed: (spec.seed ^ 16289) >>> 0,
+      targetBuildup: 0.4
+    });
+    glaze(sf, mask, shiftHsl(pig.base, 16, -0.2, 0.1), 0.1, {
+      blend: "softlight",
+      mottle: 0.4,
+      mottleScale: Math.max(14, w * 2),
+      seed: (spec.seed ^ 8888) >>> 0
+    });
+  }
+  function paintPaperPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig } = spec;
+    const s = Math.max(0.6, scale);
+    const fibre = brush("chalk", {
+      size: Math.max(1, 1.5 * s),
+      colour: pig.deep,
+      opacity: 0.05,
+      spacing: 0.45,
+      grain: 0.95,
+      jitter: { lum: 0.12, opacity: 0.8, position: 0.7 }
+    });
+    const fibres = Math.round(h / (2.4 * s)) + 6;
+    for (let i = 0; i < fibres; i++) {
+      const x0 = rnd() * w;
+      const y0 = rnd() * h;
+      const len = h * (0.06 + rnd() * 0.3);
+      stroke(
+        sf,
+        [
+          { x: x0, y: y0 },
+          { x: x0 + (rnd() - 0.5) * 2.4 * s, y: y0 + len }
+        ],
+        rnd() < 0.4 ? withBrush(fibre, { colour: pig.lift }) : fibre,
+        { passes: 1, pressure: PRESSURE.arc, taper: 0.3, seed: spec.seed + i * 617 >>> 0 }
+      );
+    }
+    const spots = Math.round(6 + spec.wear * 40);
+    const fox = brush("soft", { size: Math.max(1.2, 2.4 * s), colour: "#8a5a30", opacity: 0.09, jitter: { hue: 14, lum: 0.12, size: 0.7 } });
+    for (let i = 0; i < spots; i++) {
+      dab(sf, rnd() * w, rnd() * h, fox, { size: (0.7 + rnd() * 2.6) * s, opacity: 0.04 + rnd() * 0.11 });
+    }
+    glaze(sf, mask, "#e8dcc0", 0.09, { blend: "softlight", mottle: 0.5, mottleScale: Math.max(16, w * 2.2), seed: (spec.seed ^ 39985) >>> 0 });
+  }
+  function paintVellumPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig } = spec;
+    const s = Math.max(0.6, scale);
+    const cloud = brush("soft", {
+      size: Math.max(4, w * 0.7),
+      colour: shiftHsl(pig.lift, 6, -0.1, 0.14),
+      opacity: 0.055,
+      spacing: 0.3,
+      jitter: { lum: 0.1, hue: 9, size: 0.6 }
+    });
+    for (let i = 0; i < 14; i++) {
+      dab(sf, rnd() * w, rnd() * h, cloud, { size: w * (0.5 + rnd() * 1.1), opacity: 0.03 + rnd() * 0.06 });
+    }
+    scumble(sf, mask, brush("soft", { size: Math.max(2, w * 0.3), colour: shiftHsl(pig.deep, 20, -0.1, 0.08), opacity: 0.05 }), {
+      coverage: 0.3,
+      passes: 1,
+      patchScale: Math.max(18, w * 2.4),
+      seed: (spec.seed ^ 30658) >>> 0,
+      targetBuildup: 0.3
+    });
+    const dot = brush("ink", { size: Math.max(0.8, 0.9 * s), colour: shiftHsl(pig.deep, 8, 0, 0.06), opacity: 0.22 });
+    const groups = Math.round(10 + h / (6 * s));
+    for (let i = 0; i < groups; i++) {
+      const gx = rnd() * w;
+      const gy = rnd() * h;
+      const a = rnd() * Math.PI;
+      for (let k = 0; k < 3; k++) {
+        dab(sf, gx + Math.cos(a) * k * 1.7 * s, gy + Math.sin(a) * k * 1.7 * s, dot, { opacity: 0.1 + rnd() * 0.16 });
+      }
+    }
+    glaze(sf, mask, "#f3e8cc", 0.14, { blend: "screen", mottle: 0.45, mottleScale: Math.max(12, w * 1.8), seed: (spec.seed ^ 4488) >>> 0 });
+  }
+  function paintLinenPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig } = spec;
+    const s = Math.max(0.6, scale);
+    const gap = 3.1 * s;
+    const hatch = brush("chalk", {
+      size: Math.max(1.2, gap * 0.9),
+      colour: pig.deep,
+      opacity: 0.06,
+      spacing: 0.4,
+      grain: 1,
+      jitter: { lum: 0.13, opacity: 0.8, position: 0.6 }
+    });
+    for (let x = -gap; x < w + gap; x += gap) {
+      stroke(sf, [{ x, y: -2 }, { x: x + (rnd() - 0.5) * 2 * s, y: h + 2 }], hatch, {
+        passes: 1,
+        pressure: PRESSURE.flat,
+        wobble: 0.7 * s,
+        seed: spec.seed + x * 89 >>> 0,
+        alpha: 0.6 + rnd() * 0.5
+      });
+    }
+    for (let y = -gap; y < h + gap; y += gap * 1.1) {
+      stroke(sf, [{ x: -2, y }, { x: w + 2, y: y + (rnd() - 0.5) * 1.6 * s }], withBrush(hatch, { colour: rnd() < 0.4 ? pig.lift : pig.deep, opacity: 0.05 }), {
+        passes: 1,
+        pressure: PRESSURE.flat,
+        wobble: 0.6 * s,
+        seed: spec.seed + y * 151 >>> 0,
+        alpha: 0.5 + rnd() * 0.5
+      });
+    }
+    const slub = brush("flat", { size: Math.max(1.6, 3 * s), colour: pig.lift, opacity: 0.13, grain: 0.9 });
+    for (let i = 0; i < Math.round(w * h * 4e-3); i++) {
+      const a = rnd() * Math.PI;
+      const sx = rnd() * w;
+      const sy = rnd() * h;
+      const len = (2 + rnd() * 4) * s;
+      stroke(
+        sf,
+        [
+          { x: sx, y: sy },
+          { x: sx + Math.cos(a) * len, y: sy + Math.sin(a) * len }
+        ],
+        rnd() < 0.5 ? slub : withBrush(slub, { colour: pig.deep, opacity: 0.11 }),
+        { passes: 1, pressure: PRESSURE.arc, taper: 0.35, seed: spec.seed + i * 41 >>> 0 }
+      );
+    }
+    glaze(sf, mask, "#d8c49a", 0.08, { blend: "softlight", mottle: 0.4, seed: (spec.seed ^ 19745) >>> 0 });
+  }
+  function paintSilkPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig } = spec;
+    const s = Math.max(0.6, scale);
+    const bands = 3 + Math.floor(rnd() * 3);
+    const sheen = brush("soft", {
+      size: Math.max(2, w / bands),
+      colour: pig.lift,
+      opacity: 0.07,
+      spacing: 0.16,
+      jitter: { lum: 0.07, hue: 5, position: 0.3 }
+    });
+    for (let i = 0; i < bands; i++) {
+      const bx = (i + 0.5) / bands * w;
+      stroke(sf, [{ x: bx, y: -2 }, { x: bx, y: h + 2 }], i % 2 === 0 ? sheen : withBrush(sheen, { colour: pig.deep, opacity: 0.06 }), {
+        passes: 2,
+        pressure: PRESSURE.flat,
+        taper: 0.05,
+        wobble: 0.8 * s,
+        seed: spec.seed + i * 733 >>> 0
+      });
+    }
+    const ripple = brush("soft", { size: Math.max(1.2, 1.8 * s), colour: pig.lift, opacity: 0.06, spacing: 0.2 });
+    for (let y = 0; y < h; y += 3.6 * s) {
+      const path = [];
+      const phase = rnd() * 6.28;
+      for (let k = 0; k <= 6; k++) {
+        const t = k / 6;
+        path.push({ x: t * w, y: y + Math.sin(phase + t * 5.4) * 2.2 * s });
+      }
+      stroke(sf, path, y % (7.2 * s) < 3.6 * s ? ripple : withBrush(ripple, { colour: pig.deep }), {
+        passes: 1,
+        pressure: PRESSURE.arc,
+        seed: spec.seed + y * 211 >>> 0,
+        alpha: 0.6
+      });
+    }
+    glaze(sf, mask, shiftHsl(pig.lift, 0, 0.06, 0.1), 0.12, {
+      blend: "screen",
+      gradient: (x) => Math.exp(-Math.pow((x / w - crownAt(spec)) / 0.22, 2)),
+      mottle: 0.25,
+      seed: (spec.seed ^ 27196) >>> 0
+    });
+  }
+  function paintMarbledPainterly(sf, mask, spec, rnd, variant) {
+    const { w, h, scale, pig } = spec;
+    const s = Math.max(0.6, scale);
+    const inks = [
+      shiftHsl(pig.deep, 0, 0.1, 0),
+      shiftHsl(pig.base, 24, 0.08, 0.02),
+      "#7a2b1e",
+      "#1e3a52",
+      "#c8a24a"
+    ];
+    const veinCount = Math.round(h / (3.2 * s));
+    const veinBrush = brush("soft", {
+      size: Math.max(1.2, 2.4 * s),
+      colour: inks[0],
+      opacity: 0.14,
+      spacing: 0.18,
+      jitter: { lum: 0.1, hue: 10, opacity: 0.5, position: 0.5 }
+    });
+    const combAmp = variant === 2 ? 0.3 : 1;
+    for (let i = 0; i < veinCount; i++) {
+      const y = i / veinCount * h + (rnd() - 0.5) * 2 * s;
+      const colour = inks[i % inks.length];
+      const path = [];
+      const phase = variant === 0 ? i % 2 * 1.6 : rnd() * 6.28;
+      const amp = (variant === 1 ? 3.4 : 2.2) * s * combAmp;
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8;
+        path.push({ x: -2 + t * (w + 4), y: y + Math.sin(phase + t * (variant === 1 ? 9 : 5)) * amp });
+      }
+      stroke(sf, path, withBrush(veinBrush, { colour }), {
+        passes: 1,
+        pressure: PRESSURE.flat,
+        taper: 0.04,
+        wobble: 0.5 * s,
+        seed: spec.seed + i * 419 >>> 0,
+        alpha: 0.45 + rnd() * 0.45
+      });
+    }
+    if (variant === 2) {
+      const drop = brush("soft", { size: Math.max(2, 4 * s), colour: inks[2], opacity: 0.13, jitter: { hue: 16, lum: 0.14, size: 0.7 } });
+      const halo = withBrush(drop, { colour: "#efe4c4", opacity: 0.09 });
+      for (let i = 0; i < Math.round(w * h * 6e-3); i++) {
+        const dx = rnd() * w;
+        const dy = rnd() * h;
+        const r = (1.4 + rnd() * 3.4) * s;
+        dab(sf, dx, dy, halo, { size: r * 2.1 });
+        dab(sf, dx, dy, withBrush(drop, { colour: inks[1 + Math.floor(rnd() * 4)] }), { size: r });
+      }
+    }
+    glaze(sf, mask, pig.deep, 0.1, { blend: "multiply", mottle: 0.4, seed: (spec.seed ^ 16017) >>> 0 });
+  }
+  function paintMaterialPainterly(sf, mask, spec, rnd) {
+    switch (spec.material) {
+      case "leather":
+        paintLeatherPainterly(sf, mask, spec, rnd);
+        break;
+      case "cloth":
+        paintClothPainterly(sf, mask, spec, rnd);
+        break;
+      case "paper":
+        paintPaperPainterly(sf, mask, spec, rnd);
+        break;
+      case "vellum":
+        paintVellumPainterly(sf, mask, spec, rnd);
+        break;
+      case "linen":
+        paintLinenPainterly(sf, mask, spec, rnd);
+        break;
+      case "silk":
+        paintSilkPainterly(sf, mask, spec, rnd);
+        break;
+      default:
+        paintMarbledPainterly(sf, mask, spec, rnd, spec.boardStyle);
+        break;
+    }
+  }
+  function clamp01Local(v) {
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+  var stencilCanvas = null;
+  function makeStencil(w, h, draw) {
+    const cw = Math.max(1, Math.ceil(w));
+    const ch = Math.max(1, Math.ceil(h));
+    if (!stencilCanvas || stencilCanvas.width < cw || stencilCanvas.height < ch) {
+      stencilCanvas = makeCanvas2(Math.max(cw, 128), Math.max(ch, 128));
+    }
+    const c = stencilCanvas;
+    const ctx = get2d(c);
+    ctx.save();
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = "#fff";
+    draw(ctx);
+    ctx.restore();
+    const img = ctx.getImageData(0, 0, cw, ch);
+    const a = new Float32Array(cw * ch);
+    for (let i = 0, o = 0; i < a.length; i++, o += 4) a[i] = img.data[o + 3] / 255;
+    return { w: cw, h: ch, a };
+  }
+  function stampStencil(sf, st, ox, oy, opts) {
+    const rotate = opts.rotate ?? false;
+    const wear = clamp(opts.wear ?? 0, 0, 1);
+    const wearScale = opts.wearScale ?? 7;
+    const alphaMul = opts.alpha ?? 1;
+    const seed = (opts.seed ?? 20225) >>> 0;
+    const d = sf.data;
+    const relief = opts.relief ?? null;
+    const put = (sx, sy, cov, colour) => {
+      const xi = Math.round(sx);
+      const yi = Math.round(sy);
+      if (xi < 0 || yi < 0 || xi >= sf.width || yi >= sf.height) return;
+      const i = (yi * sf.width + xi) * 4;
+      const a = clamp01Local(cov);
+      if (a <= 4e-3) return;
+      const inv = 1 - a;
+      d[i] = colour.r * a + d[i] * inv;
+      d[i + 1] = colour.g * a + d[i + 1] * inv;
+      d[i + 2] = colour.b * a + d[i + 2] * inv;
+      d[i + 3] = a + d[i + 3] * inv;
+    };
+    for (let sy = 0; sy < st.h; sy++) {
+      for (let sx = 0; sx < st.w; sx++) {
+        const cov = st.a[sy * st.w + sx];
+        if (cov <= 0.01) continue;
+        const t = st.w > 1 ? sx / (st.w - 1) : 0;
+        const u = st.h > 1 ? sy / (st.h - 1) : 0.5;
+        const tx = rotate ? ox - (sy - st.h / 2) : ox + sx;
+        const ty = rotate ? oy + sx : oy + sy;
+        let a = cov * alphaMul;
+        if (wear > 0) {
+          const n = fbm(tx / wearScale, ty / wearScale, seed, 3);
+          const eaten = clamp01Local((n - (0.34 + wear * 0.42)) / 0.22);
+          a *= 0.18 + 0.82 * eaten;
+          if (wear > 0.6) a *= 1 - (wear - 0.6) * 1.1;
+        }
+        if (a <= 6e-3) continue;
+        if (relief) {
+          put(tx + relief.dx, ty + relief.dy, cov * relief.alpha * alphaMul, relief.colour);
+        }
+        put(tx, ty, a, opts.colour(t, u));
+      }
+    }
+  }
+  function foilColour(u, warm, hot, dark) {
+    if (u < 0.26) return mixRgb(dark, warm, u / 0.26);
+    if (u < 0.5) return mixRgb(warm, hot, (u - 0.26) / 0.24);
+    if (u < 0.74) return mixRgb(hot, warm, (u - 0.5) / 0.24);
+    return mixRgb(warm, dark, (u - 0.74) / 0.26);
+  }
+  var FOIL_WARM = parseColour("#c9a227");
+  var FOIL_HOT = parseColour("#fff3c6");
+  var FOIL_DARK = parseColour("#6d4f0e");
+  var FOIL_SILVER = parseColour("#cdd3d8");
+  function paintRule(sf, x0, x1, y, thickness, colour, spec, opts = {}) {
+    const gold = opts.gold ?? false;
+    const wear = clamp(opts.wear ?? spec.foilWear * 0.7, 0, 1);
+    const seed = (opts.seed ?? spec.seed) >>> 0;
+    const rnd = mulberry32(seed);
+    const th = Math.max(0.7, thickness);
+    stroke(
+      sf,
+      [
+        { x: x0, y: y + th * 0.85 },
+        { x: x1, y: y + th * 0.85 }
+      ],
+      brush("soft", { size: th * 1.5, colour: spec.pig.deep, opacity: 0.16, spacing: 0.2, jitter: { lum: 0.05, position: 0.2 } }),
+      { passes: 1, pressure: PRESSURE.flat, taper: 0.04, seed: seed ^ 17, alpha: 0.8 }
+    );
+    const steps = Math.max(2, Math.round((x1 - x0) / Math.max(1.2, th * 1.6)));
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps;
+      const t1 = (i + 1) / steps;
+      if (rnd() < wear * 0.55) continue;
+      const c = gold ? foilColour(0.2 + rnd() * 0.6, FOIL_WARM, FOIL_HOT, FOIL_DARK) : colour;
+      stroke(
+        sf,
+        [
+          { x: lerp(x0, x1, t0), y: y + (rnd() - 0.5) * th * 0.4 },
+          { x: lerp(x0, x1, t1), y: y + (rnd() - 0.5) * th * 0.4 }
+        ],
+        brush("blade", {
+          size: th,
+          colour: c,
+          opacity: (opts.alpha ?? 0.75) * (0.7 + rnd() * 0.5),
+          spacing: 0.12,
+          hardness: 0.9,
+          jitter: { lum: gold ? 0.14 : 0.06, hue: gold ? 8 : 3, opacity: 0.4, position: 0.25 }
+        }),
+        { passes: 1, pressure: PRESSURE.flat, taper: 0.02, wobble: th * 0.25, seed: seed + i * 37 >>> 0 }
+      );
+    }
+  }
+  function paintCord(sf, cy, cordH, spec, seed) {
+    const { w, pig } = spec;
+    const top = cy - cordH / 2;
+    const rnd = mulberry32(seed >>> 0);
+    stroke(
+      sf,
+      [
+        { x: -w * 0.05, y: top + cordH * 1.05 },
+        { x: w * 1.05, y: top + cordH * 1.05 }
+      ],
+      brush("soft", { size: cordH * 1.1, colour: pig.deep, opacity: 0.17, spacing: 0.18, jitter: { lum: 0.05, position: 0.4 } }),
+      { passes: 2, pressure: PRESSURE.flat, taper: 0.03, seed: seed ^ 113 }
+    );
+    const rows = Math.max(3, Math.round(cordH));
+    for (let i = 0; i < rows; i++) {
+      const v = (i + 0.5) / rows;
+      const y = top + v * cordH;
+      const n = Math.cos((v - 0.42) * Math.PI);
+      const lit = clamp01Local(n * 0.5 + 0.5);
+      const colour = lit > 0.62 ? mixRgb(pig.base, pig.lift, (lit - 0.62) / 0.38) : mixRgb(pig.deep, pig.base, lit / 0.62);
+      stroke(
+        sf,
+        [
+          { x: -w * 0.04, y },
+          { x: w * 1.04, y }
+        ],
+        brush("flat", {
+          size: Math.max(1, cordH / rows + 0.6),
+          colour,
+          opacity: 0.42,
+          spacing: 0.14,
+          jitter: { lum: 0.05, hue: 4, opacity: 0.3, position: 0.25 }
+        }),
+        { passes: 1, pressure: PRESSURE.flat, taper: 0.02, wobble: 0.4, seed: seed + i * 53 >>> 0 }
+      );
+    }
+    if (spec.lightOn) {
+      stroke(
+        sf,
+        [
+          { x: w * 0.04, y: top + cordH * 0.3 },
+          { x: w * 0.96, y: top + cordH * 0.3 }
+        ],
+        brush("soft", {
+          size: Math.max(0.9, cordH * 0.22),
+          colour: mixRgb(pig.lift, FOIL_HOT, 0.35),
+          opacity: 0.2 * spec.keyTake,
+          spacing: 0.2,
+          jitter: { opacity: 0.6, position: 0.3 }
+        }),
+        { passes: 1, pressure: PRESSURE.arc, taper: 0.16, seed: seed ^ 47 }
+      );
+    }
+    void rnd;
+  }
+  function paintPageBlockPainterly(sf, x, y, bw, bh, edge, spec, rnd) {
+    if (bw <= 0.6 || bh <= 1) return;
+    const s = Math.max(0.6, spec.scale);
+    const shape = roughenShape(rectShape(x, y, bw, bh), 0.4 * s, (spec.seed ^ 8772) >>> 0, 3.4);
+    const paper = edge === "gilt" ? "#b08c34" : "#d8caa4";
+    const mask = blockIn(sf, shape, paper, {
+      brush: brush("flat", { size: Math.max(1.4, bw * 0.7), colour: paper, opacity: 0.3, grain: 0.5 }),
+      passes: 2,
+      valueSpread: 0.1,
+      hueSpread: 8,
+      roughness: 0.35 * s,
+      rowFactor: 0.4,
+      direction: Math.PI / 2,
+      openness: 0.04,
+      feather: 0.9,
+      seed: (spec.seed ^ 21777) >>> 0
+    });
+    const leafBrush = brush("blade", {
+      size: Math.max(0.7, 0.9 * s),
+      colour: "#e8dcbc",
+      opacity: 0.3,
+      spacing: 0.16,
+      hardness: 0.85,
+      jitter: { lum: 0.12, hue: 8, opacity: 0.6, position: 0.25 }
+    });
+    const count = Math.max(3, Math.round(bw / (0.9 * s)));
+    for (let i = 0; i < count; i++) {
+      const lx = x + (i + 0.5) / count * bw + (rnd() - 0.5) * 0.5 * s;
+      const dark = rnd() < 0.34;
+      stroke(
+        sf,
+        [
+          { x: lx, y: y + bh * 0.01 },
+          { x: lx + (rnd() - 0.5) * 0.8 * s, y: y + bh * 0.99 }
+        ],
+        withBrush(leafBrush, {
+          colour: dark ? "#9b8a68" : rnd() < 0.3 ? "#f6efd8" : "#e0d2b0",
+          opacity: dark ? 0.22 : 0.26
+        }),
+        { passes: 1, pressure: PRESSURE.flat, taper: 0.03, wobble: 0.3 * s, seed: spec.seed + i * 97 >>> 0, alpha: 0.6 + rnd() * 0.5 }
+      );
+    }
+    if (edge === "gilt") {
+      glaze(sf, mask, FOIL_WARM, 0.6, { blend: "normal", mottle: 0.35, mottleScale: 9, seed: (spec.seed ^ 136) >>> 0 });
+      scumble(sf, mask, brush("soft", { size: Math.max(1.2, bw * 0.6), colour: FOIL_HOT, opacity: 0.16 }), {
+        coverage: 0.45,
+        passes: 1,
+        patchScale: Math.max(6, bh * 0.09),
+        seed: (spec.seed ^ 153) >>> 0,
+        targetBuildup: 0.5
+      });
+    } else if (edge === "speckled") {
+      const speck = brush("ink", { size: Math.max(0.7, 0.8 * s), colour: "#7d3c22", opacity: 0.4, jitter: { hue: 20, lum: 0.2, size: 0.8 } });
+      for (let i = 0; i < Math.round(bw * bh * 0.09); i++) {
+        dab(sf, x + rnd() * bw, y + rnd() * bh, speck, { size: (0.5 + rnd() * 1.3) * s, opacity: 0.2 + rnd() * 0.4 });
+      }
+    } else if (edge === "marbled") {
+      const vein = brush("soft", { size: Math.max(0.9, 1.4 * s), colour: "#8a4a2c", opacity: 0.2, jitter: { hue: 24, lum: 0.16 } });
+      for (let i = 0; i < Math.round(bh / (4 * s)); i++) {
+        const vy = rnd() * bh;
+        stroke(
+          sf,
+          [
+            { x: x - 0.5, y: y + vy },
+            { x: x + bw * 0.5, y: y + vy + (rnd() - 0.5) * 3 * s },
+            { x: x + bw + 0.5, y: y + vy + (rnd() - 0.5) * 3 * s }
+          ],
+          withBrush(vein, { colour: i % 2 === 0 ? "#8a4a2c" : "#2f4a5e" }),
+          { passes: 1, pressure: PRESSURE.arc, seed: spec.seed + i * 173 >>> 0, alpha: 0.5 }
+        );
+      }
+    }
+    const outerLeft = spec.keySide > 0;
+    glaze(sf, mask, spec.lightOn ? mixRgb(FOIL_HOT, parseColour(spec.rig.keyColour), 0.5) : FOIL_HOT, spec.lightOn ? 0.2 * spec.keyTake : 0.06, {
+      blend: "screen",
+      gradient: (px) => {
+        const u = (px - x) / bw;
+        return clamp01Local(outerLeft ? u : 1 - u) ** 1.6;
+      },
+      mottle: 0.3,
+      seed: (spec.seed ^ 2721) >>> 0
+    });
+    stroke(
+      sf,
+      [
+        { x: outerLeft ? x : x + bw, y },
+        { x: outerLeft ? x : x + bw, y: y + bh }
+      ],
+      brush("soft", { size: Math.max(1, bw * 0.5), colour: spec.pig.deep, opacity: 0.2, spacing: 0.2 }),
+      { passes: 1, pressure: PRESSURE.flat, taper: 0.03, seed: (spec.seed ^ 2994) >>> 0 }
+    );
+  }
+  function paintWearPainterly(sf, mask, spec, rnd) {
+    const { w, h, scale, pig, wear } = spec;
+    if (wear <= 0.02) return;
+    const s = Math.max(0.6, scale);
+    const boardTone = mixRgb(pig.base, parseColour("#a08a68"), 0.5 + wear * 0.28);
+    const rub = brush("chalk", {
+      size: Math.max(1.6, w * 0.22),
+      colour: boardTone,
+      opacity: 0.1,
+      spacing: 0.4,
+      grain: 0.95,
+      jitter: { lum: 0.12, hue: 8, opacity: 0.7, size: 0.6 }
+    });
+    const rubs = Math.round(wear * 16);
+    for (let i = 0; i < rubs; i++) {
+      const edgePick = rnd();
+      const rx = edgePick < 0.5 ? rnd() < 0.5 ? w * (0.02 + rnd() * 0.12) : w * (0.86 + rnd() * 0.12) : rnd() * w;
+      const ry = edgePick < 0.5 ? rnd() * h : rnd() < 0.5 ? h * rnd() * 0.1 : h * (0.9 + rnd() * 0.1);
+      dab(sf, rx, ry, rub, { size: (1.6 + rnd() * 4) * s, opacity: 0.05 + rnd() * 0.14 * wear });
+    }
+    glaze(sf, mask, "#3b3125", 0.16 * (0.4 + wear), {
+      blend: "multiply",
+      gradient: (_x, y) => clamp01Local((y / h - 0.78) / 0.22) ** 1.4,
+      mottle: 0.5,
+      mottleScale: Math.max(8, w),
+      seed: (spec.seed ^ 26129) >>> 0
+    });
+    if (spec.sunFade > 0.05) {
+      glaze(sf, mask, "#efe4c6", spec.sunFade * 0.24, {
+        blend: "screen",
+        gradient: (x) => {
+          const u = spec.keySide > 0 ? x / w : 1 - x / w;
+          return clamp01Local(u) ** 1.5;
+        },
+        mottle: 0.45,
+        mottleScale: Math.max(10, w * 1.5),
+        seed: (spec.seed ^ 30498) >>> 0
+      });
+    }
+    if (spec.knock > 0.08) {
+      const bump = brush("chalk", { size: Math.max(1.4, 2.6 * s), colour: boardTone, opacity: 0.16, grain: 1, jitter: { lum: 0.14, size: 0.7 } });
+      for (const [cx, cy] of [
+        [0, 0],
+        [w, 0],
+        [0, h],
+        [w, h]
+      ]) {
+        const n = Math.round(spec.knock * 5);
+        for (let i = 0; i < n; i++) {
+          const r = (0.6 + rnd() * 2.4) * s;
+          dab(sf, cx + (rnd() - 0.5) * 4 * s, cy + (rnd() - 0.5) * 4 * s, bump, { size: r * 2, opacity: 0.08 + rnd() * 0.16 });
+        }
+      }
+    }
+  }
   function renderSpine(ctx, params, x, y, hPx, scale, title, opts = {}) {
     const w = params.w * scale;
     const h = hPx;
@@ -3455,10 +4352,6 @@
     const foilWear = clamp(params.foilWear ?? wear * 0.6, 0, 1);
     const sunFade = clamp(params.sunFade ?? 0, 0, 1);
     const knock = clamp(params.knock ?? wear * 0.5, 0, 1);
-    const tones = {
-      light: (dl = 0, ds = 0, a = 1) => hslStr(colA, hue, dl, ds, a),
-      dark: (dl = 0, ds = 0, a = 1) => hslStr(colB, hue, dl, ds, a)
-    };
     const rig = opts.rig ?? DEFAULT_LIGHT_RIG;
     const lightOn = opts.light !== false;
     const rowPhase = clamp(opts.rowPhase ?? 0.5, 0, 1);
@@ -3470,171 +4363,171 @@
     const keyTake = lerp(0.55, 1.15, rowPhase) * lerp(1, 0.62, depth);
     const src = keyToSource(rig);
     const keySide = src.x >= 0 ? 1 : -1;
-    ctx.save();
-    ctx.translate(x, y);
+    const pig = pigmentFor(colA, colB, hue, params.seed);
+    const spec = {
+      w,
+      h,
+      scale,
+      pig,
+      material,
+      boardStyle,
+      wear,
+      knock,
+      foilWear,
+      sunFade,
+      round,
+      rig,
+      lightOn,
+      keySide,
+      keyTake,
+      depth,
+      seed: params.seed >>> 0
+    };
+    const sf = createSurface(Math.max(2, Math.ceil(w)), Math.max(2, Math.ceil(h)));
+    const s = Math.max(0.6, scale);
+    const inset = Math.min(w * 0.06, Math.max(0.8, 1.1 * s));
     const outline = applyOutlineWear(
-      silhouetteOutline(params.silhouette, w, h),
+      silhouetteOutline(params.silhouette, w - inset * 2, h - inset * 2),
       clamp(wear + knock * 0.45, 0, 1),
       scale,
       rnd
     );
-    const step = Math.max(4, 6 * scale);
-    const fillPts = densifyJitter(outline, step, 0.6 * scale, rnd);
-    tracePoly(ctx, fillPts, true);
-    ctx.fillStyle = hslStr(colA, hue);
-    ctx.fill();
-    ctx.save();
-    tracePoly(ctx, fillPts, true);
-    ctx.clip();
-    const g1 = ctx.createLinearGradient(0, 0, 0, h);
-    g1.addColorStop(0, hslStr(colA, hue, 8));
-    g1.addColorStop(0.55, hslStr(colA, hue));
-    g1.addColorStop(1, hslStr(colB, hue));
-    ctx.globalCompositeOperation = "multiply";
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = g1;
-    ctx.fillRect(-w * 0.05, 0, w * 1.1, h);
-    const g2 = ctx.createLinearGradient(0, 0, w, 0);
-    g2.addColorStop(0, hslStr(colB, hue, -6));
-    g2.addColorStop(0.18, hslStr(colA, hue, 10));
-    g2.addColorStop(0.82, hslStr(colA, hue, 6));
-    g2.addColorStop(1, hslStr(colB, hue, -8));
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = g2;
-    ctx.fillRect(-w * 0.05, 0, w * 1.1, h);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
+    const shape = roughenShape(
+      densifyShape(
+        toVec(outline).map((p) => ({ x: p.x + inset, y: p.y + inset })),
+        Math.max(2, 5 * s)
+      ),
+      0.55 * s,
+      (params.seed ^ 13073) >>> 0,
+      2.4
+    );
+    const crown = crownAt(spec);
+    const mask = blockIn(sf, shape, pig.base, {
+      brush: brush("chalk", {
+        size: Math.max(2.2, w * 0.42),
+        colour: pig.base,
+        opacity: 0.2,
+        spacing: 0.2,
+        grain: 0.7,
+        jitter: { lum: 0.07, hue: 8, opacity: 0.45, position: 0.5, size: 0.3, angle: 0.4, sat: 0.06 }
+      }),
+      passes: 3,
+      valueSpread: 0.1,
+      hueSpread: 12,
+      roughness: 0.5 * s,
+      overshoot: 1.8 * s,
+      direction: Math.PI / 2,
+      openness: 0.05,
+      rowFactor: 0.42,
+      feather: 1.1,
+      edgeNoise: 0.4 * s,
+      seed: (params.seed ^ 33196) >>> 0
+    });
+    scumble(
+      sf,
+      mask,
+      brush("chalk", { size: Math.max(2, w * 0.38), colour: pig.deep, opacity: 0.09, grain: 0.8, spacing: 0.3 }),
+      {
+        coverage: 0.55,
+        passes: 2,
+        // Both vertical joints are where the covering turns onto the boards:
+        // the darkest lines on any book, and the reason a row reads as objects.
+        weight: (px) => {
+          const u = px / w;
+          return clamp01Local(Math.max(1 - u / 0.3, (u - 0.7) / 0.3)) ** 1.3;
+        },
+        patchScale: Math.max(6, w * 0.9),
+        seed: (params.seed ^ 7181) >>> 0,
+        targetBuildup: 0.55
+      }
+    );
+    scumble(
+      sf,
+      mask,
+      brush("chalk", { size: Math.max(2, w * 0.3), colour: pig.lift, opacity: 0.07, grain: 0.75, spacing: 0.32 }),
+      {
+        coverage: 0.4,
+        passes: 1,
+        weight: (px, py) => {
+          const band = Math.exp(-Math.pow((px / w - crown) / 0.26, 2));
+          return band * (0.4 + 0.6 * Math.sin(Math.PI * clamp01Local(py / h)));
+        },
+        patchScale: Math.max(8, h * 0.12),
+        seed: (params.seed ^ 11550) >>> 0,
+        targetBuildup: 0.45
+      }
+    );
+    paintMaterialPainterly(sf, mask, spec, rnd);
     if (params.twoTone) {
       const splitY = params.twoToneSplit * h;
-      const g3 = ctx.createLinearGradient(0, 0, 0, splitY);
-      g3.addColorStop(0, hslStr(colB, hue, -2, 4, 0.92));
-      g3.addColorStop(1, hslStr(colB, hue, -10, 2, 0.92));
-      ctx.fillStyle = g3;
-      ctx.fillRect(-w * 0.05, 0, w * 1.1, splitY);
-      if (params.gilt) {
-        ctx.fillStyle = GOLD2;
-        ctx.globalAlpha = 0.85;
-        ctx.fillRect(w * 0.04, splitY - 1.1 * scale, w * 0.92, 2.2 * scale);
-        ctx.globalAlpha = 1;
-      }
-      ctx.strokeStyle = hslStr(colB, hue, -22, 0, 0.7);
-      ctx.lineWidth = Math.max(0.7, 0.8 * scale);
-      strokePts(
-        ctx,
-        jitteredSegment({ x: 0, y: splitY }, { x: w, y: splitY }, step, 0.4 * scale, rnd),
-        false
-      );
-    }
-    tracePoly(ctx, fillPts, true);
-    ctx.lineWidth = 4 * scale;
-    ctx.strokeStyle = hslStr(colB, hue, -12, 0, 0.5);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    paintBindingMaterial(ctx, w, h, material, tones, scale, rnd, boardStyle);
-    if (round > 0.03) {
-      const crown = clamp(0.5 + keySide * 0.16 * (lightOn ? 1 : 0), 0.2, 0.8);
-      const rg = ctx.createLinearGradient(0, 0, w, 0);
-      const deep = 0.34 * round;
-      const lift = 0.26 * round;
-      rg.addColorStop(0, hslStr(colB, hue, -30, 0, deep));
-      rg.addColorStop(Math.max(0.06, crown - 0.34), hslStr(colB, hue, -14, 0, deep * 0.35));
-      rg.addColorStop(crown, hslStr(colA, hue, 22, -6, lift));
-      rg.addColorStop(Math.min(0.94, crown + 0.34), hslStr(colB, hue, -16, 0, deep * 0.42));
-      rg.addColorStop(1, hslStr(colB, hue, -32, 0, deep * 1.05));
-      ctx.fillStyle = rg;
-      ctx.fillRect(0, 0, w, h);
-      const jointR = Math.max(0.8, w * 0.1);
-      applyCreaseOcclusion(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        length: h,
-        axis: "vertical",
-        reach: jointR,
-        strength: 0.7 * round,
-        bias: 0.55
+      const panelShape = roughenShape(rectShape(-1, -1, w + 2, splitY + 1), 0.5 * s, (params.seed ^ 1185) >>> 0, 3);
+      const panelMask = blockIn(sf, panelShape, pig.partner, {
+        brush: brush("chalk", { size: Math.max(2, w * 0.4), colour: pig.partner, opacity: 0.18, grain: 0.7 }),
+        passes: 2,
+        valueSpread: 0.08,
+        hueSpread: 9,
+        roughness: 0.4 * s,
+        direction: Math.PI / 2,
+        openness: 0.08,
+        rowFactor: 0.45,
+        feather: 1,
+        seed: (params.seed ^ 1185) >>> 0
       });
-      applyCreaseOcclusion(ctx, {
-        rig,
-        x: w,
-        y: 0,
-        length: h,
-        axis: "vertical",
-        reach: jointR,
-        strength: 0.7 * round,
-        bias: -0.55
+      clipToMask(sf, mask, { feather: 1.1 });
+      void panelMask;
+      if (params.gilt) {
+        paintRule(sf, w * 0.05, w * 0.95, splitY, Math.max(0.9, 1.4 * s), FOIL_WARM, spec, { gold: true, seed: (params.seed ^ 81) >>> 0 });
+      } else {
+        paintRule(sf, w * 0.05, w * 0.95, splitY, Math.max(0.8, s), pig.deep, spec, { seed: (params.seed ^ 82) >>> 0, wear: 0.2 });
+      }
+    }
+    if (round > 0.03) {
+      glaze(sf, mask, pig.deep, 0.55 * round, {
+        blend: "multiply",
+        gradient: (px) => {
+          const u = px / w;
+          const d0 = Math.abs(u - crown) / Math.max(crown, 1 - crown);
+          return clamp01Local(d0 ** 1.7);
+        },
+        mottle: 0.22,
+        mottleScale: Math.max(9, h * 0.2),
+        seed: (params.seed ^ 27665) >>> 0
+      });
+      glaze(sf, mask, lightOn ? mixRgb(pig.lift, parseColour(rig.keyColour), 0.28) : pig.lift, 0.24 * round * (lightOn ? keyTake : 0.7), {
+        blend: "screen",
+        gradient: (px, py) => {
+          const band = Math.exp(-Math.pow((px / w - crown) / 0.2, 2));
+          return band * (0.35 + 0.65 * Math.sin(Math.PI * clamp01Local(py / h)) ** 0.7);
+        },
+        mottle: 0.25,
+        mottleScale: Math.max(10, h * 0.22),
+        seed: (params.seed ^ 27666) >>> 0
       });
     }
     const blockFrac = clamp(params.pageBlock ?? 0.1, 0.05, 0.24);
-    const edgeW = opts.pageBlock === false ? 0 : clamp(w * blockFrac, 2.2 * scale, 9 * scale);
-    if (edgeW > 0.5) {
-      const blockX = keySide > 0 ? w - edgeW : 0;
-      paintEdgeTreatment(ctx, blockX, h * 0.012, edgeW, h * 0.976, edge, scale, rnd);
-      if (lightOn) {
-        applyKeyLight(ctx, {
-          rig,
-          x: blockX,
-          y: h * 0.012,
-          width: edgeW,
-          height: h * 0.976,
-          intensity: keyTake * 1.15,
-          hotSpot: 0.2
-        });
-      }
-      castContactShadow(ctx, {
-        rig,
-        x: keySide > 0 ? blockX : blockX + edgeW,
-        y: h * 0.012,
-        length: h * 0.976,
-        depth: Math.max(1.2, edgeW * 0.6),
-        side: keySide > 0 ? "left" : "right",
-        strength: 0.7,
-        skew: 0
-      });
-      const capH = Math.max(0.8, 1.6 * scale);
-      const capG = ctx.createLinearGradient(0, 0, 0, capH * 2.4);
-      capG.addColorStop(0, "rgba(246, 238, 214, 0.7)");
-      capG.addColorStop(1, "rgba(246, 238, 214, 0)");
-      ctx.fillStyle = capG;
-      ctx.fillRect(blockX, 0, edgeW, capH * 2.4);
+    const edgeW = opts.pageBlock === false ? 0 : clamp(w * blockFrac, 2 * s, 9 * s);
+    if (edgeW > 0.8) {
+      const blockX = keySide > 0 ? w - edgeW - inset * 0.5 : inset * 0.5;
+      paintPageBlockPainterly(sf, blockX, h * 0.014, edgeW, h * 0.972, edge, spec, rnd);
     }
-    const inkBand = hslStr(colB, hue, -18, 0, 0.8);
-    const embossLight = hslStr(colA, hue, 26, -8, 0.5);
     const legacyBands = raisedBands > 0 ? [] : params.bands;
     for (const band of legacyBands) {
       const by = band.y * h;
       if (band.kind === 0) {
-        ctx.lineWidth = Math.max(0.7, 0.7 * scale);
-        for (const dy of [-1.8 * scale, 1.8 * scale]) {
-          ctx.strokeStyle = embossLight;
-          strokePts(ctx, jitteredSegment({ x: w * 0.06, y: by + dy - 0.9 * scale }, { x: w * 0.94, y: by + dy - 0.9 * scale }, step, 0.35 * scale, rnd), false);
-          ctx.strokeStyle = inkBand;
-          strokePts(ctx, jitteredSegment({ x: w * 0.06, y: by + dy }, { x: w * 0.94, y: by + dy }, step, 0.4 * scale, rnd), false);
+        for (const dy of [-1.9 * s, 1.9 * s]) {
+          paintRule(sf, w * 0.05, w * 0.95, by + dy, Math.max(0.7, 0.9 * s), pig.deep, spec, {
+            seed: params.seed + by * 13 + dy >>> 0,
+            wear: 0.25,
+            alpha: 0.6
+          });
         }
       } else if (band.kind === 1) {
-        ctx.fillStyle = hslStr(colB, hue, -8, 0, 0.65);
-        ctx.fillRect(0, by - 3 * scale, w, 6 * scale);
-        ctx.strokeStyle = embossLight;
-        ctx.lineWidth = Math.max(0.6, 0.6 * scale);
-        strokePts(ctx, jitteredSegment({ x: 0, y: by - 3.8 * scale }, { x: w, y: by - 3.8 * scale }, step, 0.35 * scale, rnd), false);
-        ctx.strokeStyle = inkBand;
-        ctx.lineWidth = Math.max(0.7, 0.7 * scale);
-        for (const dy of [-3 * scale, 3 * scale]) {
-          strokePts(ctx, jitteredSegment({ x: 0, y: by + dy }, { x: w, y: by + dy }, step, 0.4 * scale, rnd), false);
-        }
+        paintCord(sf, by, clamp(w * 0.2, 3.4 * s, 8 * s), spec, params.seed + by * 29 >>> 0);
       } else {
-        ctx.fillStyle = hslStr(colB, hue, -20, 0, 0.4);
-        ctx.fillRect(w * 0.05, by + 1.2 * scale, w * 0.9, 1.2 * scale);
-        ctx.fillStyle = GOLD2;
-        const prevAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = 0.85;
-        ctx.fillRect(w * 0.05, by - 1.4 * scale, w * 0.9, 2.8 * scale);
-        ctx.globalAlpha = prevAlpha;
-        ctx.fillStyle = "rgba(255, 244, 214, 0.55)";
-        ctx.fillRect(w * 0.08, by - 1.4 * scale, w * 0.84, 0.8 * scale);
-        ctx.strokeStyle = hslStr(colB, hue, -20, 0, 0.5);
-        ctx.lineWidth = Math.max(0.5, 0.5 * scale);
-        strokePts(ctx, jitteredSegment({ x: w * 0.05, y: by }, { x: w * 0.95, y: by }, step, 0.3 * scale, rnd), false);
+        paintRule(sf, w * 0.05, w * 0.95, by, Math.max(1, 1.6 * s), FOIL_WARM, spec, {
+          gold: true,
+          seed: params.seed + by * 37 >>> 0
+        });
       }
     }
     const cordYs = [];
@@ -3645,135 +4538,57 @@
         cordYs.push(zTop + (i + 1) / (raisedBands + 1) * (zBot - zTop));
       }
     }
-    const cordH = clamp(w * 0.24, 4.2 * scale, 11 * scale);
+    const cordH = clamp(w * 0.24, 4.2 * s, 11 * s);
     for (const cy of cordYs) {
-      const by = cy * h;
-      const top = by - cordH / 2;
-      castContactShadow(ctx, {
-        rig,
-        x: -w * 0.02,
-        y: top + cordH,
-        length: w * 1.04,
-        depth: cordH * 0.95,
-        side: "below",
-        strength: 0.85,
-        gap: cordH * 0.25,
-        skew: cordH * 0.4,
-        taper: w * 0.1
-      });
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, top, w, cordH);
-      ctx.clip();
-      ctx.fillStyle = hslStr(colA, hue, 6, -4, 0.9);
-      ctx.fillRect(0, top, w, cordH);
-      ctx.fillStyle = cylinderShading(ctx, rig, w / 2, top + cordH / 2, cordH / 2, 0);
-      ctx.fillRect(0, top, w, cordH);
-      tileOver(
-        ctx,
-        getMaterialTile(material === "leather" && boardStyle === 1 ? "morocco" : "pebble"),
-        w,
-        cordH,
-        Math.max(20, 44 * scale),
-        0.2
-      );
-      ctx.restore();
-      const crownY = top + cordH * (keySide > 0 ? 0.3 : 0.32);
-      ctx.lineWidth = Math.max(0.6, 0.8 * scale);
-      ctx.strokeStyle = withAlpha(blowOut(rig.rimColour, 0.4), 0.42 * keyTake);
-      strokePts(
-        ctx,
-        jitteredSegment({ x: 0, y: crownY }, { x: w, y: crownY }, step, 0.3 * scale, rnd),
-        false
-      );
-      ctx.strokeStyle = hslStr(colB, hue, -34, 0, 0.55);
-      ctx.lineWidth = Math.max(0.5, 0.6 * scale);
-      for (const sy of [top, top + cordH]) {
-        strokePts(
-          ctx,
-          jitteredSegment({ x: 0, y: sy }, { x: w, y: sy }, step, 0.3 * scale, rnd),
-          false
-        );
-      }
+      paintCord(sf, cy * h, cordH, spec, params.seed + cy * 9973 >>> 0);
       if (bandGilt) {
-        for (const gy of [top - cordH * 0.34, top + cordH * 1.12]) {
-          const gh = Math.max(0.8, 1.2 * scale);
-          ctx.fillStyle = hslStr(colB, hue, -30, 0, 0.45);
-          ctx.fillRect(w * 0.07, gy + gh * 0.85, w * 0.86, gh * 0.8);
-          ctx.fillStyle = GOLD2;
-          ctx.globalAlpha = 0.92;
-          ctx.fillRect(w * 0.07, gy, w * 0.86, gh);
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = "rgba(255, 246, 216, 0.5)";
-          ctx.fillRect(w * 0.07, gy, w * 0.86, gh * 0.4);
-        }
-        if (lightOn) {
-          applySpecularCatch(ctx, {
-            rig,
-            x: w * (keySide > 0 ? 0.72 : 0.28),
-            y: top - cordH * 0.34,
-            radius: Math.max(1.4, w * 0.16),
-            aspect: 3.4,
-            angle: 0,
-            strength: 0.55 * keyTake,
-            colour: "#fff2c0"
+        for (const gy of [cy * h - cordH * 0.85, cy * h + cordH * 0.85]) {
+          paintRule(sf, w * 0.08, w * 0.92, gy, Math.max(0.9, 1.2 * s), FOIL_WARM, spec, {
+            gold: true,
+            seed: params.seed + gy * 61 >>> 0
           });
         }
       }
     }
     if (params.headTail) {
-      const bandH = 3.2 * scale;
-      const stripeW = Math.max(1.5 * scale, 2);
-      const capColor = params.gilt ? GOLD2 : hslStr(colB, hue, -6, -6);
-      const creamColor = "hsl(41 40% 82%)";
-      for (const [cy0, edgeY] of [
-        [0.6 * scale, 0],
-        [h - bandH - 0.6 * scale, h]
-      ]) {
-        ctx.fillStyle = creamColor;
-        ctx.globalAlpha = 0.62;
-        ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
-        ctx.globalAlpha = 0.62;
-        ctx.fillStyle = capColor;
-        if (headTailStyle === 1) {
-          for (let sx = w * 0.02; sx < w * 0.98; sx += stripeW * 2) {
-            ctx.beginPath();
-            ctx.moveTo(sx, cy0 + bandH);
-            ctx.lineTo(sx + stripeW, cy0 + bandH);
-            ctx.lineTo(sx + stripeW + bandH * 0.8, cy0);
-            ctx.lineTo(sx + bandH * 0.8, cy0);
-            ctx.closePath();
-            ctx.fill();
-          }
-        } else if (headTailStyle === 2) {
-          ctx.globalAlpha = 0.6;
-          ctx.fillStyle = creamColor;
-          ctx.fillRect(w * 0.04, cy0, w * 0.92, bandH);
-          ctx.globalAlpha = 0.62;
-          ctx.strokeStyle = capColor;
-          ctx.lineWidth = Math.max(0.7, 0.9 * scale);
-          for (let sx = w * 0.03; sx < w * 0.99; sx += stripeW * 1.35) {
-            ctx.beginPath();
-            ctx.moveTo(sx, cy0 + bandH);
-            ctx.lineTo(sx + bandH * 0.75, cy0);
-            ctx.stroke();
-          }
-          ctx.strokeStyle = "rgba(255, 250, 232, 0.32)";
-          ctx.lineWidth = Math.max(0.5, 0.6 * scale);
-          ctx.beginPath();
-          ctx.moveTo(w * 0.05, cy0 + bandH * 0.3);
-          ctx.lineTo(w * 0.95, cy0 + bandH * 0.3);
-          ctx.stroke();
-        } else {
-          for (let sx = w * 0.04; sx < w * 0.96; sx += stripeW * 2) {
-            ctx.fillRect(sx, cy0, Math.min(stripeW, w * 0.96 - sx), bandH);
-          }
+      const bandH = 3 * s;
+      const stripeW = Math.max(1.4 * s, 1.8);
+      const capCol = params.gilt ? FOIL_WARM : shiftHsl(pig.partner, 0, -0.06, 0.04);
+      const creamCol = parseColour("#ddd0ab");
+      for (const cy0 of [0.7 * s, h - bandH - 0.7 * s]) {
+        stroke(
+          sf,
+          [
+            { x: w * 0.05, y: cy0 + bandH * 0.5 },
+            { x: w * 0.95, y: cy0 + bandH * 0.5 }
+          ],
+          brush("flat", { size: bandH, colour: creamCol, opacity: 0.34, spacing: 0.2, jitter: { lum: 0.09, position: 0.3 } }),
+          { passes: 1, pressure: PRESSURE.flat, taper: 0.06, seed: params.seed + cy0 * 17 >>> 0 }
+        );
+        const stripeBrush = brush("flat", {
+          size: bandH * 0.75,
+          colour: capCol,
+          opacity: 0.4,
+          spacing: 0.2,
+          jitter: { lum: 0.1, hue: 6, opacity: 0.5, position: 0.3 }
+        });
+        for (let sx = w * 0.05; sx < w * 0.95; sx += stripeW * 2) {
+          const slant = headTailStyle === 0 ? 0 : bandH * 0.8;
+          stroke(
+            sf,
+            [
+              { x: sx, y: cy0 + bandH },
+              { x: sx + slant, y: cy0 }
+            ],
+            stripeBrush,
+            { passes: 1, pressure: PRESSURE.flat, taper: 0.1, smooth: false, seed: params.seed + sx * 31 >>> 0, alpha: 0.7 + rnd() * 0.4 }
+          );
         }
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = hslStr(colB, hue, -24, 0, 0.4);
-        ctx.lineWidth = Math.max(0.5, 0.5 * scale);
-        const seamY = edgeY === 0 ? cy0 + bandH : cy0;
-        strokePts(ctx, jitteredSegment({ x: w * 0.03, y: seamY }, { x: w * 0.97, y: seamY }, step, 0.35 * scale, rnd), false);
+        paintRule(sf, w * 0.05, w * 0.95, cy0 < h / 2 ? cy0 + bandH : cy0, Math.max(0.6, 0.7 * s), pig.deep, spec, {
+          seed: params.seed + cy0 * 71 >>> 0,
+          wear: 0.3,
+          alpha: 0.5
+        });
       }
     }
     const reserve = charmSpineReserve(charm);
@@ -3807,15 +4622,16 @@
       const pad = 4 * scale;
       const availLen = Math.max(0, py1 - py0 - pad * 2);
       const family = FONTS[params.font];
+      const mctx = get2d(makeCanvas2(8, 8));
       const maxFont = clamp(w * 0.52, 10 * scale, 20 * scale);
       const minFont = Math.max(6.5 * scale, maxFont * 0.52);
       const fitLen = Math.max(0, availLen - pad * 0.9);
       let fontPx = maxFont;
       let text = title.trim();
       const measure = (t) => {
-        ctx.font = `${fontPx.toFixed(2)}px ${family}`;
+        mctx.font = `${fontPx.toFixed(2)}px ${family}`;
         let sum = 0;
-        for (const ch of t) sum += ctx.measureText(ch).width;
+        for (const ch of t) sum += mctx.measureText(ch).width;
         return sum;
       };
       if (opts.hiRes && text.length > 0 && fitLen > 0) {
@@ -3828,167 +4644,234 @@
       } else {
         text = "";
       }
-      ctx.font = `${fontPx.toFixed(2)}px ${family}`;
+      mctx.font = `${fontPx.toFixed(2)}px ${family}`;
       const glyphs = [];
       let textLen = 0;
       for (const ch of text) {
-        const cw = ctx.measureText(ch).width;
+        const cw = mctx.measureText(ch).width;
         glyphs.push({ ch, adv: cw });
         textLen += cw;
       }
       const plateLen = textLen > 0 ? Math.min(availLen, textLen + pad * 2.6) : Math.min(availLen, (py1 - py0) * 0.6);
-      const plateW = Math.min(w * 0.78, fontPx * 1.9);
+      const plateW = Math.min(w * 0.8, fontPx * 1.95);
       const plateX = w * 0.5 - plateW / 2;
       const plateY = (py0 + py1) / 2 - plateLen / 2;
       if (titlePlate !== "none" && plateLen > 6 * scale) {
-        ctx.save();
-        if (titlePlate === "gilt") {
-          ctx.fillStyle = hslStr(colB, hue, -8, 2, 0.32);
-          ctx.fillRect(plateX, plateY, plateW, plateLen);
-          ctx.strokeStyle = GOLD2;
-          ctx.lineWidth = Math.max(0.9, 1.3 * scale);
-          jitterRectStroke(ctx, plateX, plateY, plateW, plateLen, step, 0.4 * scale, rnd);
-          ctx.strokeStyle = "rgba(201, 162, 39, 0.55)";
-          ctx.lineWidth = Math.max(0.5, 0.7 * scale);
-          const gi = Math.min(3.2 * scale, plateW * 0.14, plateLen * 0.1);
-          jitterRectStroke(ctx, plateX + gi, plateY + gi, plateW - gi * 2, plateLen - gi * 2, step, 0.35 * scale, rnd);
-        } else if (titlePlate === "label") {
-          ctx.fillStyle = "rgba(40, 32, 22, 0.32)";
-          ctx.fillRect(plateX + 1.2 * scale, plateY + 1.6 * scale, plateW, plateLen);
-          ctx.fillStyle = "#efe3c4";
-          ctx.fillRect(plateX, plateY, plateW, plateLen);
-          ctx.strokeStyle = "rgba(120, 96, 58, 0.55)";
-          ctx.lineWidth = Math.max(0.5, 0.7 * scale);
-          jitterRectStroke(ctx, plateX + 1.8 * scale, plateY + 1.8 * scale, plateW - 3.6 * scale, plateLen - 3.6 * scale, step, 0.4 * scale, rnd);
-          ctx.strokeStyle = "rgba(150, 124, 82, 0.4)";
-          jitterRectStroke(ctx, plateX, plateY, plateW, plateLen, step, 0.5 * scale, rnd);
+        if (titlePlate === "label") {
+          const labelShape = roughenShape(
+            densifyShape(rectShape(plateX, plateY, plateW, plateLen), 5 * s),
+            0.7 * s,
+            (params.seed ^ 2465) >>> 0,
+            3.2
+          );
+          stroke(
+            sf,
+            [
+              { x: plateX + plateW * 0.5, y: plateY + plateLen + 1.2 * s },
+              { x: plateX + plateW * 0.5, y: plateY - 1 * s }
+            ],
+            brush("soft", { size: plateW * 1.15, colour: pig.deep, opacity: 0.12, spacing: 0.2 }),
+            { passes: 1, pressure: PRESSURE.flat, taper: 0.05, seed: (params.seed ^ 2466) >>> 0 }
+          );
+          const labelMask = blockIn(sf, labelShape, "#e3d5b2", {
+            brush: brush("chalk", { size: Math.max(2, plateW * 0.6), colour: "#e3d5b2", opacity: 0.24, grain: 0.7 }),
+            passes: 3,
+            valueSpread: 0.07,
+            hueSpread: 7,
+            roughness: 0.4 * s,
+            direction: Math.PI / 2,
+            openness: 0.03,
+            rowFactor: 0.4,
+            feather: 0.9,
+            seed: (params.seed ^ 2467) >>> 0
+          });
+          glaze(sf, labelMask, "#8b7444", 0.16, {
+            blend: "multiply",
+            gradient: (px, py) => {
+              const u = clamp01Local((px - plateX) / plateW);
+              const v = clamp01Local((py - plateY) / plateLen);
+              return Math.max(Math.abs(u - 0.5) * 1.5, Math.abs(v - 0.5) * 1.5) ** 2;
+            },
+            mottle: 0.4,
+            seed: (params.seed ^ 2468) >>> 0
+          });
+          paintRule(sf, plateX + 1.8 * s, plateX + plateW - 1.8 * s, plateY + 1.8 * s, Math.max(0.6, 0.7 * s), parseColour("#7a6238"), spec, { wear: 0.35, alpha: 0.5, seed: (params.seed ^ 2469) >>> 0 });
+          paintRule(sf, plateX + 1.8 * s, plateX + plateW - 1.8 * s, plateY + plateLen - 1.8 * s, Math.max(0.6, 0.7 * s), parseColour("#7a6238"), spec, { wear: 0.35, alpha: 0.5, seed: (params.seed ^ 2470) >>> 0 });
         } else {
-          ctx.fillStyle = hslStr(colB, hue, -12, 0, 0.4);
-          ctx.fillRect(plateX, plateY, plateW, plateLen);
-          ctx.strokeStyle = hslStr(colB, hue, -32, 0, 0.7);
-          ctx.lineWidth = Math.max(0.7, 1 * scale);
-          ctx.beginPath();
-          ctx.moveTo(plateX, plateY + plateLen);
-          ctx.lineTo(plateX, plateY);
-          ctx.lineTo(plateX + plateW, plateY);
-          ctx.stroke();
-          ctx.strokeStyle = hslStr(colA, hue, 28, -8, 0.55);
-          ctx.beginPath();
-          ctx.moveTo(plateX + plateW, plateY);
-          ctx.lineTo(plateX + plateW, plateY + plateLen);
-          ctx.lineTo(plateX, plateY + plateLen);
-          ctx.stroke();
+          const gold = titlePlate === "gilt";
+          const ruleCol = gold ? FOIL_WARM : pig.deep;
+          for (const ry of [plateY, plateY + plateLen]) {
+            paintRule(sf, plateX, plateX + plateW, ry, Math.max(0.8, 1.2 * s), ruleCol, spec, {
+              gold,
+              seed: params.seed + ry * 41 >>> 0
+            });
+          }
+          const vBrush = brush("blade", {
+            size: Math.max(0.8, 1.1 * s),
+            colour: ruleCol,
+            opacity: 0.5,
+            spacing: 0.14,
+            hardness: 0.9,
+            jitter: { lum: gold ? 0.16 : 0.06, hue: gold ? 9 : 3, opacity: 0.5, position: 0.3 }
+          });
+          for (const rx of [plateX, plateX + plateW]) {
+            stroke(
+              sf,
+              [
+                { x: rx, y: plateY },
+                { x: rx, y: plateY + plateLen }
+              ],
+              vBrush,
+              { passes: 1, pressure: PRESSURE.flat, taper: 0.03, wobble: 0.35 * s, seed: params.seed + rx * 53 >>> 0, alpha: 1 - foilWear * 0.5 }
+            );
+          }
         }
-        ctx.restore();
       }
       if (glyphs.length > 0) {
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        const lift = material === "vellum" ? 20 : material === "paper" ? 9 : 0;
-        const panelL = colA.l * 0.55 + colB.l * 0.45 + lift + wear * 6;
         const onLabel = titlePlate === "label";
         const goldTitle = !onLabel && (titlePlate === "gilt" || params.gilt);
-        const paleTitle = !onLabel && !goldTitle && panelL < 48;
-        const titleInk = onLabel ? hslStr(colB, hue, -34, 6, 0.95) : goldTitle ? GOLD2 : paleTitle ? hslStr(colA, hue, clamp(94 - colA.l, 0, 100), -46, 0.94) : hslStr(colB, hue, -38, 0, 0.94);
-        const reliefInk = onLabel ? null : paleTitle ? hslStr(colB, hue, -30, 0, 0.5) : hslStr(colA, hue, 26, -12, 0.5);
+        const groundLum = luminance(pig.base);
+        const silverTitle = !onLabel && !goldTitle && groundLum < 0.2;
         const runY0 = (py0 + py1) / 2 - textLen / 2;
-        ctx.save();
-        ctx.translate(w / 2, runY0);
-        ctx.rotate(Math.PI / 2);
-        let advance = 0;
-        for (const g of glyphs) {
-          const wob = (trnd() * 1.2 - 0.6) * scale;
-          if (reliefInk !== null) {
-            ctx.fillStyle = hslStr(colB, hue, -34, 0, 0.4);
-            ctx.fillText(g.ch, advance - 0.55 * scale * keySide, wob - 0.6 * scale);
-            ctx.fillStyle = reliefInk;
-            ctx.fillText(g.ch, advance + 0.75 * scale, wob + 0.75 * scale);
+        const stH = Math.ceil(fontPx * 1.75);
+        const st = makeStencil(Math.ceil(textLen + fontPx * 0.6), stH, (c) => {
+          c.font = `${fontPx.toFixed(2)}px ${family}`;
+          c.textAlign = "left";
+          c.textBaseline = "middle";
+          let advance = fontPx * 0.3;
+          for (const g of glyphs) {
+            const wob = (trnd() * 1.2 - 0.6) * scale;
+            c.fillText(g.ch, advance, stH / 2 + wob);
+            advance += g.adv;
           }
-          if (goldTitle) {
-            const gg = ctx.createLinearGradient(advance, -fontPx * 0.55, advance, fontPx * 0.55);
-            gg.addColorStop(0, "#8a6a14");
-            gg.addColorStop(0.28, "#f5e29b");
-            gg.addColorStop(0.5, GOLD2);
-            gg.addColorStop(0.74, "#fff2c4");
-            gg.addColorStop(1, "#7d5f12");
-            ctx.fillStyle = gg;
-          } else {
-            ctx.fillStyle = titleInk;
+        });
+        const inkDark = mixRgb(pig.deep, parseColour("#141019"), 0.45);
+        const inkPale = mixRgb(pig.lift, parseColour("#f4ecd8"), 0.6);
+        const colourAt = goldTitle ? (t, u) => {
+          const foil = foilColour(u, FOIL_WARM, FOIL_HOT, FOIL_DARK);
+          const catchAt = clamp(0.24 + rowPhase * 0.5, 0, 1);
+          const g = Math.exp(-Math.pow((t - catchAt) / 0.16, 2)) * (lightOn ? keyTake : 0.4);
+          return mixRgb(foil, FOIL_HOT, clamp01Local(g * 0.7));
+        } : silverTitle ? (_t, u) => foilColour(u, FOIL_SILVER, parseColour("#ffffff"), parseColour("#5d6670")) : onLabel ? () => inkDark : () => groundLum < 0.34 ? inkPale : inkDark;
+        stampStencil(sf, st, w / 2, runY0 - fontPx * 0.3, {
+          rotate: true,
+          colour: colourAt,
+          wear: onLabel ? foilWear * 0.35 : foilWear,
+          wearScale: Math.max(3.5, fontPx * 0.55),
+          alpha: 0.95,
+          seed: (params.seed ^ 20830) >>> 0,
+          relief: onLabel ? null : {
+            colour: goldTitle || silverTitle ? mixRgb(pig.deep, parseColour("#000000"), 0.35) : pig.deep,
+            dx: -0.8 * s * keySide,
+            dy: 0.85 * s,
+            alpha: 0.4
           }
-          ctx.fillText(g.ch, advance, wob);
-          advance += g.adv;
-        }
-        ctx.restore();
-        if (goldTitle) {
-          const runLen = textLen;
-          const runX0 = w / 2 - fontPx * 0.6;
-          if (foilWear > 0.04 && runLen > 2) {
-            const rubs = Math.round(4 + foilWear * 26);
-            for (let i = 0; i < rubs; i++) {
-              const ry = runY0 + trnd() * runLen;
-              const rx = w / 2 + (trnd() * 2 - 1) * fontPx * 0.55;
-              const rr = (0.6 + trnd() * 2.4) * scale * (0.5 + foilWear);
-              const g = ctx.createRadialGradient(rx, ry, 0, rx, ry, rr);
-              const a = clamp(foilWear * (0.35 + trnd() * 0.6), 0, 0.9);
-              g.addColorStop(0, hslStr(colB, hue, -6, 0, a));
-              g.addColorStop(1, hslStr(colB, hue, -6, 0, 0));
-              ctx.fillStyle = g;
-              ctx.fillRect(rx - rr, ry - rr, rr * 2, rr * 2);
-            }
-            if (foilWear > 0.55) {
-              ctx.fillStyle = hslStr(colB, hue, -4, 0, (foilWear - 0.55) * 0.5);
-              ctx.fillRect(runX0, runY0 - fontPx * 0.4, fontPx * 1.3, runLen + fontPx * 0.8);
-            }
-          }
-          if (lightOn) {
-            const catchAt = clamp(0.24 + rowPhase * 0.5, 0, 1);
-            applySpecularCatch(ctx, {
-              rig,
-              x: w / 2 + keySide * fontPx * 0.14,
-              y: runY0 + runLen * catchAt,
-              radius: Math.max(2, fontPx * 0.85),
-              aspect: 0.42,
-              angle: Math.PI / 2,
-              strength: clamp((1 - foilWear * 0.7) * keyTake * 1.1, 0, 1.3),
-              colour: "#fff6d2"
-            });
-            applySpecularCatch(ctx, {
-              rig,
-              x: w / 2,
-              y: runY0 + runLen * 0.5,
-              radius: Math.max(3, runLen * 0.4),
-              aspect: 0.2,
-              angle: Math.PI / 2,
-              strength: clamp((1 - foilWear) * keyTake * 0.32, 0, 0.6),
-              colour: "#ffe9a8"
-            });
-          }
-        }
+        });
       }
     }
     if (ornamentOn && !charmTakesOrnamentSlot(charm)) {
       const oPanel = ornamentPanel ?? { y0: 0.7, y1: 0.9 };
       const ocy = (oPanel.y0 + oPanel.y1) / 2 * h;
       const oSize = Math.min(w * 0.36, 14 * scale, (oPanel.y1 - oPanel.y0) * h / 2.1);
-      const inkColor = params.gilt ? GOLD2 : hslStr(colB, hue, -24, 0, 0.85);
-      ctx.strokeStyle = inkColor;
-      ctx.fillStyle = inkColor;
-      ctx.lineWidth = Math.max(1, 1.1 * scale);
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      drawOrnament(ctx, params.ornament, w / 2, ocy, Math.max(2, oSize), rnd);
-    }
-    const tile = getGranulationTile();
-    ctx.globalCompositeOperation = "overlay";
-    ctx.globalAlpha = 0.06;
-    for (let ty = 0; ty < h; ty += GRANULATION_SIZE) {
-      for (let tx = 0; tx < w; tx += GRANULATION_SIZE) {
-        ctx.drawImage(tile, tx, ty);
+      if (oSize > 1.6) {
+        const box = Math.ceil(oSize * 2.6);
+        const ornRnd = mulberry32((params.seed ^ 3095) >>> 0);
+        const st = makeStencil(box, box, (c) => {
+          c.lineWidth = Math.max(1, 1.1 * scale);
+          c.lineJoin = "round";
+          c.lineCap = "round";
+          drawOrnament(c, params.ornament, box / 2, box / 2, Math.max(2, oSize), ornRnd);
+        });
+        const gold = params.gilt;
+        stampStencil(sf, st, w / 2 - box / 2, ocy - box / 2, {
+          colour: gold ? (_t, u) => foilColour(u, FOIL_WARM, FOIL_HOT, FOIL_DARK) : () => mixRgb(pig.deep, parseColour("#0e0b12"), 0.3),
+          wear: foilWear * 0.8,
+          wearScale: Math.max(3, oSize * 0.5),
+          alpha: gold ? 0.9 : 0.7,
+          seed: (params.seed ^ 3096) >>> 0,
+          relief: {
+            colour: mixRgb(pig.deep, parseColour("#000000"), 0.3),
+            dx: -0.7 * s * keySide,
+            dy: 0.7 * s,
+            alpha: 0.35
+          }
+        });
       }
     }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
-    paintWear(ctx, w, h, wear, tones, scale, rnd);
+    paintWearPainterly(sf, mask, spec, rnd);
+    if (lightOn) {
+      glaze(sf, mask, mixRgb(pig.deep, parseColour(rig.ambientColour), 0.18), 0.62 * (0.7 + depth * 0.5), {
+        blend: "multiply",
+        gradient: (_x, py) => clamp01Local((py / h - 0.8) / 0.2) ** 1.5,
+        mottle: 0.2,
+        seed: (params.seed ^ 14849) >>> 0
+      });
+      glaze(sf, mask, mixRgb(pig.deep, parseColour(rig.ambientColour), 0.24), 0.42 * (0.6 + depth * 0.6), {
+        blend: "multiply",
+        gradient: (_x, py) => clamp01Local((0.16 - py / h) / 0.16) ** 1.6,
+        mottle: 0.2,
+        seed: (params.seed ^ 14850) >>> 0
+      });
+      glaze(sf, mask, mixRgb(pig.deep, parseColour("#0c0a12"), 0.4), 0.5, {
+        blend: "multiply",
+        gradient: (px) => {
+          const u = keySide > 0 ? 1 - px / w : px / w;
+          return clamp01Local((0.3 - u) / 0.3) ** 1.4;
+        },
+        mottle: 0.25,
+        mottleScale: Math.max(8, h * 0.15),
+        seed: (params.seed ^ 14851) >>> 0
+      });
+      glaze(sf, mask, parseColour(rig.keyColour), clamp(0.2 * keyTake * rig.keyIntensity, 0, 0.4), {
+        blend: "screen",
+        gradient: (px, py) => {
+          const u = keySide > 0 ? px / w : 1 - px / w;
+          const across = 0.35 + 0.65 * clamp01Local(u) ** 1.2;
+          const down = 0.55 + 0.45 * clamp01Local(1 - py / h) ** 0.8;
+          return across * down;
+        },
+        mottle: 0.3,
+        mottleScale: Math.max(12, h * 0.25),
+        seed: (params.seed ^ 14852) >>> 0
+      });
+      if (opts.neighbourLeft) {
+        glaze(sf, mask, opts.neighbourLeft, 0.11, {
+          blend: "softlight",
+          gradient: (px) => clamp01Local((0.32 - px / w) / 0.32) ** 1.3,
+          mottle: 0.3,
+          seed: (params.seed ^ 14853) >>> 0
+        });
+      }
+      if (opts.neighbourRight) {
+        glaze(sf, mask, opts.neighbourRight, 0.11, {
+          blend: "softlight",
+          gradient: (px) => clamp01Local((px / w - 0.68) / 0.32) ** 1.3,
+          mottle: 0.3,
+          seed: (params.seed ^ 14854) >>> 0
+        });
+      }
+      if (depth > 0.55) {
+        glaze(sf, mask, parseColour(rig.ambientColour), (depth - 0.55) / 0.45 * 0.22 * rig.hazeStrength, {
+          blend: "normal",
+          mottle: 0.2,
+          seed: (params.seed ^ 14855) >>> 0
+        });
+      }
+    }
+    edgeVary(sf, shape, {
+      crisp: 0.26,
+      lost: 0.3,
+      band: Math.max(1.2, 1.6 * s),
+      accent: mixRgb(pig.deep, parseColour("#0b0910"), 0.4),
+      accentStrength: 0.4,
+      lightAngle: rig.keyAngle,
+      softness: Math.max(1.2, 2 * s),
+      seed: (params.seed ^ 7486) >>> 0
+    });
+    addGrain(sf, 0.045, 1.5, (params.seed ^ 32273) >>> 0, mask);
+    ctx.save();
+    ctx.translate(x, y);
+    drawSurface(ctx, sf, 0, 0);
     if (charm !== "none") {
       drawSpineCharm(ctx, charm, w, h, {
         color: charmColorCss(params.charmColor ?? 0),
@@ -3997,132 +4880,21 @@
         gilt: params.gilt
       });
     }
-    if (lightOn) {
-      applyAmbientOcclusion(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        edges: ["bottom"],
-        reach: Math.min(h * 0.3, 30 * scale),
-        strength: 0.9 + depth * 0.4,
-        corners: false
-      });
-      applyAmbientOcclusion(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        edges: ["top"],
-        reach: Math.min(h * 0.22, 22 * scale),
-        strength: 0.62 + depth * 0.5,
-        corners: false
-      });
-      applyAmbientOcclusion(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        edges: ["left", "right"],
-        reach: Math.max(1, w * 0.22),
-        strength: 0.34 + depth * 0.5,
-        corners: true
-      });
-      if (sunFade > 0.05) {
-        const fx = keySide > 0 ? w : 0;
-        const fg = ctx.createLinearGradient(fx, 0, fx - keySide * w * 0.85, 0);
-        const fa = sunFade * 0.3 * (0.4 + rowPhase * 0.9);
-        fg.addColorStop(0, `rgba(236, 224, 196, ${fa.toFixed(3)})`);
-        fg.addColorStop(0.55, `rgba(236, 224, 196, ${(fa * 0.4).toFixed(3)})`);
-        fg.addColorStop(1, "rgba(236, 224, 196, 0)");
-        ctx.fillStyle = fg;
-        ctx.fillRect(0, 0, w, h);
-        ctx.save();
-        ctx.globalCompositeOperation = "saturation";
-        ctx.globalAlpha = sunFade * 0.34;
-        const sg = ctx.createLinearGradient(fx, 0, fx - keySide * w * 0.85, 0);
-        sg.addColorStop(0, "hsl(0 0% 55%)");
-        sg.addColorStop(1, "hsl(0 0% 55% / 0)");
-        ctx.fillStyle = sg;
-        ctx.fillRect(0, 0, w, h);
-        ctx.restore();
-      }
-      applyKeyLight(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        intensity: keyTake,
-        // A book facing the viewer takes the key almost head-on; the surface
-        // normal is straight out of the frame, which the 2D rig treats as
-        // "fully facing", so the modulation lives in `keyTake` instead.
-        hotSpot: rig.hotSpot * clamp(keyTake, 0, 1) * (material === "silk" ? 1.3 : 1)
-      });
-      const edgesLit = litEdges(rig).filter((e) => e !== "bottom");
-      applyRimLight(ctx, {
-        rig,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        edges: edgesLit,
-        thickness: Math.max(1, w * 0.14),
-        strength: keyTake * (material === "vellum" || material === "silk" ? 1.25 : 1)
-      });
-      if (opts.neighbourLeft) {
-        applyColourBleed(ctx, {
-          x: 0,
-          y: 0,
+    ctx.restore();
+    const nctx = opts.normalCtx;
+    if (nctx) {
+      emitSpines(nctx, [
+        {
+          x,
+          y,
           width: w,
           height: h,
-          colour: opts.neighbourLeft,
-          from: "left",
-          reach: Math.max(1.5, w * 0.4),
-          strength: 0.13
-        });
-      }
-      if (opts.neighbourRight) {
-        applyColourBleed(ctx, {
-          x: 0,
-          y: 0,
-          width: w,
-          height: h,
-          colour: opts.neighbourRight,
-          from: "right",
-          reach: Math.max(1.5, w * 0.4),
-          strength: 0.13
-        });
-      }
-      if (depth > 0.55) {
-        applyAtmosphericHaze(ctx, {
-          rig,
-          x: 0,
-          y: 0,
-          width: w,
-          height: h,
-          depth: (depth - 0.55) / 0.45,
-          strength: 0.85
-        });
-      }
+          proud: clamp(1 - depth, 0, 1),
+          radius: clamp(0.16 + round * 0.16, 0.08, 0.4),
+          bands: raisedBands
+        }
+      ]);
     }
-    ctx.restore();
-    ctx.strokeStyle = GRAPHITE;
-    ctx.lineWidth = Math.max(0.8, 0.9 * scale);
-    ctx.lineJoin = "round";
-    const passA = densifyJitter(outline, step, 0.7 * scale, rnd);
-    tracePoly(ctx, passA, true);
-    ctx.stroke();
-    const passB = densifyJitter(outline, step, 0.55 * scale, rnd);
-    ctx.save();
-    ctx.translate(0.5 * scale, -0.4 * scale);
-    tracePoly(ctx, passB, true);
-    ctx.stroke();
-    ctx.restore();
-    ctx.restore();
   }
   function pickRunCharacter(rnd, previous, remaining, allowFlat, allowGap) {
     const table = [

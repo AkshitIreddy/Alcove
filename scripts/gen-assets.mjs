@@ -65,16 +65,34 @@ const SETS = {
     size: 768,
     tile: false,
     cutout: true,
+    /**
+     * ATOMS ONLY — one indivisible thing per asset.
+     *
+     * Collective nouns ("cluster", "clump", "frond") make SDXL compose a
+     * picture that fills and crops the frame; singular nouns ("leaf",
+     * "flower") reliably give one centred specimen. That is the better design
+     * regardless: the composer builds clusters procedurally from atoms, which
+     * keeps density, arrangement and variation under our control.
+     */
     items: [
       ['ivy-leaf', 'a single ivy leaf, botanical illustration'],
       ['pothos-leaf', 'a single heart-shaped pothos leaf, botanical illustration'],
-      ['fern-frond', 'a single fern frond, botanical illustration'],
-      ['blossom-cluster', 'a cluster of pink cherry blossom flowers on a twig, botanical illustration'],
-      ['wildflower-cluster', 'a small cluster of white and yellow wildflowers, botanical illustration'],
-      ['moss-clump', 'a clump of soft green moss, botanical illustration'],
+      ['fern-leaflet', 'a single small fern leaf, botanical illustration'],
+      ['blossom-flower', 'a single pink cherry blossom flower, five petals, botanical illustration'],
+      ['daisy-flower', 'a single small white daisy flower, yellow centre, botanical illustration'],
+      ['rose-leaf', 'a single serrated rose leaf, botanical illustration'],
+      ['grass-blade', 'a single blade of grass, botanical illustration'],
+      ['berry-sprig', 'a single small red berry on a short stem, botanical illustration'],
     ],
-    suffix: 'ONE single specimen only, alone, centred, nothing else in frame, isolated on plain empty white background, flat even lighting, no shadow, no pot, no vase',
-    negative: NEG_SINGLE,
+    /**
+     * Framing is the hard part. Round 1 gave scattered multi-subject
+     * compositions; adding anti-composition negatives then made SDXL zoom in
+     * until the subject cropped at the frame edge. The fix is to ask
+     * explicitly for the WHOLE specimen small in frame with margin, and to
+     * negative-prompt cropping as well as multiplicity.
+     */
+    suffix: 'centred, isolated on plain flat white background, flat even lighting, no shadow, no pot, no vase',
+    negative: `${NEG_SINGLE}, cropped, cut off, touching edges, partial`,
   },
   wallpaper: {
     size: 1024,
@@ -205,7 +223,17 @@ async function main() {
     const items = set.items.slice(0, perSet);
     process.stdout.write(`\n== ${setName}: ${items.length} assets @ ${set.size}px ==\n`);
 
-    for (const [slug, subject] of items) {
+    /**
+     * Candidates per asset. Framing on cutouts is seed luck — identical
+     * prompts yield a clean isolated specimen or a cropped composition
+     * depending on the draw — so generate several and pick, rather than
+     * trying to perfect the wording.
+     */
+    const variants = Math.max(1, Number(opt('variants', 1)));
+
+    for (const [baseSlug, subject] of items) {
+      for (let v = 0; v < variants; v++) {
+      const slug = variants > 1 ? `${baseSlug}-v${v + 1}` : baseSlug;
       const outPath = join(dir, `${slug}.png`);
       try {
         await access(outPath);
@@ -214,7 +242,8 @@ async function main() {
       } catch {}
 
       const prompt = `${subject}, ${STYLE}, ${set.suffix}`;
-      // Deterministic per slug so re-runs reproduce, but varied across the set.
+      // Deterministic per slug (variant suffix included) so re-runs reproduce
+      // exactly, while each candidate gets a genuinely different draw.
       const seed = [...slug].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
       const t0 = Date.now();
       try {
@@ -235,6 +264,7 @@ async function main() {
         process.stdout.write(`  ${slug} ${ok ? 'ok' : 'NO IMAGE'} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n`);
       } catch (err) {
         process.stdout.write(`  ${slug} FAILED: ${err.message}\n`);
+      }
       }
     }
   }

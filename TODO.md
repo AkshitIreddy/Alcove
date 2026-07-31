@@ -6,6 +6,100 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ---
 
+## 🔴 Reported 2026-08-01 (second pass) — WORK THIS LIST
+
+### Design quality — the biggest item
+
+- [ ] **Where parts JOIN looks unnatural** across many builds — face-frame has
+      a connector that does not integrate with the structure. Colour, texture
+      and shading do not carry across a joint. This is the headline complaint;
+      fix the joinery before adding more builds.
+- [ ] Shading generally is poor. Raise the quality bar.
+- [ ] Then take builds to **50**, each vetted individually
+- [ ] **Timber patterns do not look like real furniture** and are not cool
+      enough to earn the exception. Analyse, fix, then take to **50**, vetting
+      each for natural / creative / high quality
+- [ ] **Shelf colours: at least 50** (today there are 4)
+- [ ] Wallpaper is good — trim to **50**, even spread across design families,
+      quality pass, more colour, let the reader colour the ELEMENTS inside a
+      pattern, and control element sharpness
+- [ ] **Tag every design** (formal, refined, fancy, goofy, natural…) so
+      randomisation can be steered
+- [ ] "Surprise me" gains **controllable randomisation** driven by those tags
+- [ ] Defaults for shelf, welcome book and wallpaper are **bland** — design a
+      refined, vivid custom default and add it to the options
+- [ ] Design brief throughout: **creative and vivid**
+
+### Shelf rendering
+
+- [ ] The shelf is **not centred**
+- [ ] The **corner joins** where the top rail meets both uprights are missing
+      their ink outline; same at the bottom
+
+### Studio / panels
+
+- [ ] Settings gear must **travel** with pushed content, not hide
+- [ ] A bookcase card reads **"0 books"** while books are on its shelves
+- [ ] Not enough **spacing** between bookcase elements and the bottom buttons
+- [ ] "a new bookcase" → **"add bookcase"**
+- [ ] The **"the palette" section does not work**
+- [ ] Wallpaper **colour** has very few options
+- [ ] Can a reader **clone a shelf** (the shelf only, not its books)? Book
+      options belong on right-clicking a shelf inside the library tab
+- [ ] Rooms may be redundant now that they only change colour — consider
+      removing the concept
+
+### Book interaction
+
+- [ ] **Do not auto-open a book** on click or drag. Open on a second click via
+      an explicit button, which also offers "put it back on the shelf" —
+      or let the reader drag it back in
+
+### Book studio
+
+- [ ] Remove the new-book **wear** setting; randomise every element instead
+- [ ] Customising a book **does not update the preview**
+- [ ] A short book renders a correct spine but a **much taller cover**
+
+### Tutorial / onboarding
+
+- [ ] Step 1 copy: "a bookshelf you can live in" reads oddly
+- [ ] Step 2's highlight has **poor edges** — use a straight rounded rectangle
+      for every tutorial highlight
+- [ ] Step 3's window is **smaller than the opened book**, and completing it
+      does not advance to step 4
+- [ ] Every step needs **completion detection** plus a green indicator
+- [ ] **Space advances the tutorial** — a bug, since step 5 asks you to type
+- [ ] Step 6: the highlight does not cover the whole block, the six dots sit
+      outside it, and the instruction should say right-click then drag
+- [ ] Step 8 does not move the note aside so the panel can be seen or used;
+      needs a step actually showing how to customise a book
+- [ ] Step 9 (the AI feature) needs elaborating
+
+### Editor / pages
+
+- [ ] Large text sits **too high above its baseline** — visible in the Welcome
+      book on "Make it yours" and the Diagrams heading
+- [ ] Turning a page **selects all the text**, so the next turn drags
+      everything
+- [ ] **Page flicker after a turn** — still present
+
+### Sound
+
+- [ ] The **library ambience is creepy** — remove it
+- [ ] The rain / fireplace / crickets soundscapes are good: **add more of that
+      kind**
+- [ ] Only the **first page-turn** sound is bad; the rest are fine
+- [ ] Typing sounds may be **too quiet**
+- [ ] **Buttons need click sounds**
+
+### Process
+
+- [ ] Drive the app with Playwright as a matter of course: act, screenshot,
+      check. Make it a skill.
+- [ ] Make a skill for: prefer physically trying it to reasoning about it —
+      without implying you should not think at all
+
 ## 🔴 Found by looking, 2026-08-01 (after the variety waves)
 
 - [ ] **The settings gear is HIDDEN while a panel is open, not moved.** My

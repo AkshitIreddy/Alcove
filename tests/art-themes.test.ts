@@ -22,14 +22,19 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_THEME_ID,
+  FEATURED_THEME_IDS,
   THEMES,
+  THEME_FAMILIES,
   THEME_IDS,
+  THEME_TAGS,
   allThemes,
   getTheme,
   isThemeId,
+  themesInFamily,
   type ColourScheme,
   type LibraryTheme,
 } from '../src/art/themes';
+import { INK_FLOOR, caseFaces, clothPair, lum as paletteLum, toOklch } from '../src/art/palette';
 import {
   CLOTHS,
   FLAT,
@@ -73,11 +78,15 @@ function colours(scheme: ColourScheme): readonly string[] {
 /* ================================ identity =============================== */
 
 describe('theme registry', () => {
-  it('ships four rooms and offers all of them', () => {
-    expect(THEME_IDS).toHaveLength(4);
-    expect([...THEME_IDS]).toEqual(['athenaeum', 'blossom', 'reef', 'apothecary']);
-    // No "shipped subset" any more: ten rooms that existed only as data were
-    // exactly the promise this pass came to stop making.
+  it('ships a real library, and offers every room in it', () => {
+    // Four was the old ceiling and the wrong one: three of the four were warm
+    // wood, so "change the room" changed the lighting. The floor here is the
+    // brief ("at least 50"), not the exact count — adding a room should not
+    // have to come and edit a number.
+    expect(THEME_IDS.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(THEME_IDS).size, 'a duplicated id').toBe(THEME_IDS.length);
+    // No "shipped subset": ten rooms that existed only as data were exactly
+    // the promise the colour-only pass came to stop making.
     expect(themes.map((t) => t.id)).toEqual([...THEME_IDS]);
   });
 
@@ -85,9 +94,24 @@ describe('theme registry', () => {
     for (const id of THEME_IDS) expect(THEMES[id].id).toBe(id);
   });
 
-  it('opens a brand-new library in the icon palette', () => {
-    expect(DEFAULT_THEME_ID).toBe('athenaeum');
-    expect(THEMES[DEFAULT_THEME_ID].name).toBe('Old Athenaeum');
+  it('opens a brand-new library in a room with a decision in it', () => {
+    // Deliberately NOT the icon's oak. The oak is still what `art/flat.ts`
+    // falls back to and still one click away in the picker (below), but a
+    // brown case on a beige wall is what every stock bookshelf illustration
+    // looks like, and it is the first thing every reader sees.
+    expect(DEFAULT_THEME_ID).toBe('verdigris');
+    expect(THEMES[DEFAULT_THEME_ID].name).toBe('Verdigris Library');
+    // Nothing is lost: the old default is a room like any other.
+    expect(THEMES.athenaeum.name).toBe('Old Athenaeum');
+  });
+
+  it('offers a spread as the featured few, default and house oak included', () => {
+    for (const id of FEATURED_THEME_IDS) expect(isThemeId(id)).toBe(true);
+    expect(FEATURED_THEME_IDS).toContain(DEFAULT_THEME_ID);
+    expect(FEATURED_THEME_IDS).toContain('athenaeum');
+    // A strip that showed eight timbers would advertise the wrong library.
+    const families = new Set(FEATURED_THEME_IDS.map((id) => THEMES[id].family));
+    expect(families.size).toBeGreaterThanOrEqual(4);
   });
 
   it('falls back to the default room for junk and for retired ids', () => {
@@ -96,7 +120,10 @@ describe('theme registry', () => {
     expect(getTheme('not-a-room').id).toBe(DEFAULT_THEME_ID);
     // A library saved in one of the ten retired rooms still opens.
     expect(getTheme('sakura').id).toBe(DEFAULT_THEME_ID);
-    expect(getTheme('reef').id).toBe('reef');
+    // …and one saved in any of the four rooms that ever shipped opens THERE.
+    for (const id of ['athenaeum', 'blossom', 'reef', 'apothecary']) {
+      expect(getTheme(id).id, `${id} no longer loads`).toBe(id);
+    }
   });
 
   it('narrows persisted values', () => {
@@ -104,6 +131,35 @@ describe('theme registry', () => {
     expect(isThemeId('REEF')).toBe(false);
     expect(isThemeId('sakura')).toBe(false);
     expect(isThemeId(7)).toBe(false);
+  });
+});
+
+describe('the picker can group and steer', () => {
+  it('puts every room on exactly one shelf, and none of them empty', () => {
+    for (const family of THEME_FAMILIES) {
+      expect(themesInFamily(family).length, `${family} is empty`).toBeGreaterThan(0);
+    }
+    const counted = THEME_FAMILIES.reduce((n, f) => n + themesInFamily(f).length, 0);
+    expect(counted).toBe(themes.length);
+  });
+
+  it('tags every room out of one closed vocabulary', () => {
+    for (const theme of themes) {
+      expect(theme.tags.length, `${theme.id} is untagged`).toBeGreaterThanOrEqual(2);
+      for (const tag of theme.tags) {
+        expect(THEME_TAGS, `${theme.id} invents the tag "${tag}"`).toContain(tag);
+      }
+    }
+  });
+
+  it('never ships a mood word only one or two rooms answer to', () => {
+    // The words are offered as a way to STEER the dice (`withMood` in
+    // views/rail/designOptions.ts). A tag two rooms carry is not a mood, it is
+    // a preset with extra steps.
+    for (const tag of THEME_TAGS) {
+      const carried = themes.filter((t) => (t.tags as readonly string[]).includes(tag));
+      expect(carried.length, `"${tag}" is carried by ${carried.length} rooms`).toBeGreaterThanOrEqual(4);
+    }
   });
 });
 
@@ -121,12 +177,18 @@ describe('a theme is a colour scheme and nothing else', () => {
     // spine pipeline. Anything else that reappears here is a knob describing
     // art that is not drawn — which is the whole failure mode this pass fixed.
     for (const theme of themes) {
+      // `family` and `tags` are the only two additions since, and both are
+      // CONSUMED rather than decorative: the family groups the picker, the
+      // tags narrow the dice. Neither is drawn, and nothing else may join
+      // them — a field describing art nobody renders is the failure mode.
       expect(Object.keys(theme).sort()).toEqual([
         'blurb',
+        'family',
         'id',
         'name',
         'scheme',
         'spineDefaults',
+        'tags',
       ]);
       expect(Object.keys(theme.scheme).sort()).toEqual([
         'cloths',
@@ -207,6 +269,74 @@ describe('every scheme is drawable in the one ink', () => {
         expect(lum(face) - lum(dark), `${theme.id} ${face}`).toBeGreaterThan(10);
       }
     }
+  });
+});
+
+/* ============================== the joinery ============================== */
+
+/** Shortest way round the hue circle, in degrees. */
+function hueGap(a: string, b: string): number {
+  const d = Math.abs(toOklch(a).h - toOklch(b).h) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+describe('a board folds instead of ending', () => {
+  // The reported bug, in one word: "the area that connects different parts
+  // looks unnatural". Where a shelf's top surface meets its front edge, or an
+  // upright's face meets its turned side, the flat style has nothing but a
+  // colour step to say "same board, turning". Hand-mixed steps wander in hue
+  // and the seam reads as two objects butted together.
+
+  it('keeps every face of a room on the same hue', () => {
+    for (const theme of themes) {
+      const s = theme.scheme;
+      // The icon itself turns 7.9 degrees between its timber and its recess,
+      // and that is the most any room may wander. Past this the case stops
+      // being one piece of furniture.
+      expect(hueGap(s.timber, s.timberDark), `${theme.id} face`).toBeLessThanOrEqual(12);
+      expect(hueGap(s.timber, s.recess), `${theme.id} recess`).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it('keeps the inside of the case clearly darker than its front', () => {
+    // Not merely "darker" — the layering test above already has that, and it
+    // passed while four rooms had a recess sitting one step off their timber.
+    for (const theme of themes) {
+      const s = theme.scheme;
+      expect(lum(s.timber) - lum(s.recess), `${theme.id} has no depth`).toBeGreaterThan(28);
+      expect(lum(s.timber) - lum(s.timberDark), `${theme.id} has no fold`).toBeGreaterThan(14);
+    }
+  });
+
+  it('keeps every recess bright enough for the one ink to read on it', () => {
+    // `INK_FLOOR` is much higher than the bare legibility floor asserted
+    // further up, and it is where it is because a specimen board showed the
+    // difference: at the old floor a dark bookcase was a brown smear with its
+    // carpentry only implied.
+    for (const theme of themes) {
+      expect(paletteLum(theme.scheme.recess), `${theme.id} recess`).toBeGreaterThanOrEqual(
+        INK_FLOOR - 2,
+      );
+    }
+  });
+
+  it('derives the same faces every time it is asked', () => {
+    // These hexes reach the disk cache key (`libraryKey.ts`), which validates
+    // nothing about a hit. A derivation that wobbled would serve one room's
+    // baked case art in another, forever.
+    for (const timber of ['#c08a52', '#3f8a7d', '#2f7f8c', '#e6cf8a', '#6a615c']) {
+      expect(caseFaces(timber)).toEqual(caseFaces(timber));
+    }
+    expect(clothPair('#c96f4a')).toEqual(clothPair('#c96f4a'));
+  });
+
+  it('lifts a room authored darker than the ink can carry, rather than clipping it', () => {
+    // Ask for near-black and you get the darkest the app can draw with an
+    // outline still on it — WITH a fold, not three colours on the floor.
+    const faces = caseFaces('#100c08');
+    expect(paletteLum(faces.recess)).toBeGreaterThanOrEqual(INK_FLOOR - 2);
+    expect(lum(faces.timber) - lum(faces.recess)).toBeGreaterThan(28);
+    expect(hueGap(faces.timber, faces.recess)).toBeLessThanOrEqual(12);
   });
 });
 

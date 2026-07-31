@@ -63,6 +63,21 @@ import {
 
 /* --------------------------------- params -------------------------------- */
 
+/**
+ * How wide a book's board is, as a fraction of its height.
+ *
+ * ONE number, because a book is a book: what changes between a folio and a
+ * pocket duodecimo is how BIG the object is, not how differently shaped. The
+ * pull-out overlay has always drawn its ghost at this ratio, so anything else
+ * that shows a whole cover — the studio preview above all — has to use the
+ * same one or the book changes proportion between two views of itself.
+ *
+ * That was the bug: the studio drew every cover into a fixed 214×292 box while
+ * drawing the spine at the book's real height, so a pocket book previewed with
+ * a short spine beside a folio-sized board.
+ */
+export const COVER_ASPECT = 0.72;
+
 export const COVER_PALETTE_COUNT = 20;
 export const COVER_FRAME_COUNT = 4;
 export const COVER_MEDALLION_COUNT = 8;

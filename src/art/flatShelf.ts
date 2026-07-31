@@ -41,20 +41,34 @@ import {
 import { mulberry32 } from './noise';
 import {
   BUILDS,
+  caseTimber,
   drawCrownBody,
+  edgeLine,
   faceOf,
+  flushShift,
   paintCrownTrim,
   paintFacePattern,
   paintOpening,
   paintPlankTrim,
   paintPostTrim,
+  partPanel,
   resolveShelfDesign,
-  withinFace,
+  strokePart,
+  tracePart,
+  withinPart,
   type Box,
+  type PartOpts,
   type ShelfDesignInput,
 } from './shelfDesign';
 
-/** How much of an upright's width reads as its turned-away edge. */
+/**
+ * How much of an upright's width reads as its turned-away edge.
+ *
+ * Also the fraction of a cornice's underside and, near enough, of a board's
+ * front edge. Keeping them equal is what makes the case read as ONE piece of
+ * furniture with one depth: three parts whose turned-away faces are 5, 11 and
+ * 17 px look like three pieces of furniture standing in a line.
+ */
 const EDGE_FRACTION = 0.28;
 
 /**
@@ -82,42 +96,81 @@ export function drawPlank(
 ): void {
   const resolved = resolveShelfDesign(design);
   const spec = BUILDS[resolved.build];
-  const edge = h * spec.plankEdge;
-  const radius = h * spec.plankRadius;
-  const room = flatScheme();
-  // Draw the darker edge first as one tall shape, then the lighter top over
-  // it, so there is a single outline around the whole board rather than two
-  // stacked rectangles with a seam between them.
-  panel(ctx, x, y, w, h, room.timberDark, { radius, seed });
-  withinFace(ctx, x, y, w, h, radius, seed, () => {
-    wobbleRect(ctx, x, y, w, h - edge, radius, seed + 7);
-    ctx.fillStyle = room.timber;
-    ctx.fill();
+  const T = caseTimber();
+  const ink = inkWidth(h);
+  const shift = flushShift(h);
+
+  // Three of the board's four sides BUTT something: an upright on the left,
+  // an upright on the right, and the next floor's recess below. Only the top
+  // arris — where the board meets the space the books stand in — is a real
+  // silhouette, and even that one sits flush against the top of its own
+  // bitmap, so it is nudged out by `flushShift` and its ink line lands on the
+  // canvas rather than half off it.
+  //
+  // The bottom deserves its own line all the same: what is under it is the
+  // next floor's recess, which is nearly as dark as the board's front edge,
+  // and without a line between them the board dissolves into the case. So the
+  // fill runs past the bottom as a join and the underside line is drawn on
+  // afterwards, one ink width up, where it is certain to be on the bitmap.
+  const b: Box = { x, y: y - shift, w, h: h + shift };
+  const opts: PartOpts = {
+    radius: h * spec.plankRadius,
+    seed,
+    joins: { left: true, right: true, bottom: true },
+    width: ink,
+  };
+  const edge = b.h * spec.plankEdge;
+  const faceH = b.h - edge;
+
+  partPanel(ctx, b, T.edge, opts);
+  withinPart(ctx, b, opts, () => {
+    // The top surface: the face turned toward the reader, over the front edge
+    // that turns away. One shape drawn over another rather than two stacked
+    // rectangles, so there is one outline round the whole board.
+    ctx.fillStyle = T.face;
+    ctx.fillRect(b.x - 2, b.y - 2, b.w + 4, faceH + 2);
+    // The chamfer between them. Not a highlight: a real arris is never sharp,
+    // and this is the line that finally makes the front edge read as a second
+    // face rather than as a stripe painted on the first.
+    edgeLine(ctx, b.x, b.y + faceH, b.x + b.w, b.y + faceH, T.arris, Math.max(0.9, ink * 0.45), seed + 5, 0.7);
+    edgeLine(ctx, b.x, b.y + faceH - ink * 0.55, b.x + b.w, b.y + faceH - ink * 0.55, FLAT.ink, Math.max(1, ink * 0.6), seed + 6, 0.7);
     // Only the tile's x and w are read for a horizontal face, so the board's
     // own frame goes in unadjusted.
-    const face = { x, y, w, h: h - edge };
-    paintFacePattern(ctx, resolved.pattern, faceOf(face, 'x', frame), seed + 21);
-    paintPlankTrim(ctx, spec, { x, y, w, h }, seed + 33);
+    paintFacePattern(ctx, resolved.pattern, faceOf({ x: b.x, y: b.y, w: b.w, h: faceH }, 'x', frame), seed + 21);
+    paintPlankTrim(ctx, spec, b, seed + 33);
   });
-  // Re-stroke the outer edge so the clip cannot nibble it.
-  wobbleRect(ctx, x, y, w, h, radius, seed);
-  ctx.strokeStyle = FLAT.ink;
-  ctx.lineWidth = inkWidth(h);
-  ctx.lineJoin = 'round';
-  ctx.stroke();
+  // Re-ink the silhouette so the clip cannot nibble it, then the underside.
+  strokePart(ctx, b, opts);
+  const under = y + h - ink * 0.5;
+  edgeLine(ctx, x, under, x + w, under, FLAT.ink, ink, seed + 9, 0.6);
 }
 
 /**
  * A vertical side post. Same two-band trick, mirrored to the vertical.
  *
+ * ## x grows INWARD
+ *
+ * The right-hand upright is the same bitmap drawn mirrored, so inside this
+ * function `x` is always the OUTBOARD side of the case and `x + w` always the
+ * side facing the opening. Every asymmetric decision below leans on that.
+ *
  * The build may narrow the shaft inside the width it is given — a ladder's
  * rail is half a post — and the leftover shows the opening behind it, which is
- * what makes the case read as built rather than as a border.
+ * what makes the case read as built rather than as a border. It is flush to
+ * the OUTBOARD edge for exactly that reason. Centred, which is how it used to
+ * be, half the leftover fell on the case's outer face where there is no
+ * opening to show, and painted a stripe of the case's own dark interior down
+ * the outside of the bookcase — ten pixels of it on the ladder shelf.
+ *
+ * The outboard edge is then pushed out by `flushShift`, so its ink line's
+ * outer half lands exactly on the canvas boundary. Inset by the bake's pad
+ * instead, it left a two-pixel gap through which the recess sprite behind it
+ * showed on every build.
  *
  * `frame` matters here: this texture is ONE FLOOR and repeats down the case,
- * so it is drawn past both ends to keep its rounded cap off-canvas. Pass the
- * true floor rectangle and the pattern's pitch is snapped to divide it, which
- * is the difference between an upright and a chain of stutters.
+ * so it is drawn past both ends to keep its ends off-canvas. Pass the true
+ * floor rectangle and the pattern's pitch is snapped to divide it, which is
+ * the difference between an upright and a chain of stutters.
  */
 export function drawPost(
   ctx: FlatCtx,
@@ -131,30 +184,40 @@ export function drawPost(
 ): void {
   const resolved = resolveShelfDesign(design);
   const spec = BUILDS[resolved.build];
-  const room = flatScheme();
-  const shaftW = w * spec.postShaft;
-  const sx = x + (w - shaftW) / 2;
-  const radius = shaftW * 0.3;
+  const T = caseTimber();
+  const shift = flushShift(w);
+  const shaftW = w * spec.postShaft + shift;
+  const sx = x - shift;
+  const ink = inkWidth(shaftW);
   const tile: Box = frame ?? { x, y, w, h };
 
-  panel(ctx, sx, y, shaftW, h, room.timberDark, { radius, seed });
-  withinFace(ctx, sx, y, shaftW, h, radius, seed, () => {
-    const faceW = shaftW * (1 - EDGE_FRACTION);
-    wobbleRect(ctx, sx, y, faceW, h, radius, seed + 7);
-    ctx.fillStyle = room.timber;
-    ctx.fill();
+  // Top and bottom are joins — this slice is one floor of an upright that runs
+  // the whole height of the case, and a rounded cap at either end would give
+  // the case a chain of pill shapes down each side instead of two posts.
+  const b: Box = { x: sx, y, w: shaftW, h };
+  const opts: PartOpts = {
+    radius: shaftW * 0.28,
+    seed,
+    joins: { top: true, bottom: true },
+    width: ink,
+  };
+  const faceW = shaftW * (1 - EDGE_FRACTION);
+
+  partPanel(ctx, b, T.edge, opts);
+  withinPart(ctx, b, opts, () => {
+    // The front face, and inboard of it the return going back into the case.
+    ctx.fillStyle = T.face;
+    ctx.fillRect(b.x - 2, b.y - 2, faceW + 2, b.h + 4);
+    edgeLine(ctx, b.x + faceW, b.y, b.x + faceW, b.y + b.h, T.arris, Math.max(0.9, ink * 0.45), seed + 5, 0.7);
+    edgeLine(ctx, b.x + faceW - ink * 0.55, b.y, b.x + faceW - ink * 0.55, b.y + b.h, FLAT.ink, Math.max(1, ink * 0.6), seed + 6, 0.7);
     paintFacePattern(
       ctx,
       resolved.pattern,
-      faceOf({ x: sx, y, w: faceW, h }, 'y', tile),
+      faceOf({ x: b.x, y, w: faceW, h }, 'y', tile),
       seed + 21,
     );
   });
-  wobbleRect(ctx, sx, y, shaftW, h, radius, seed);
-  ctx.strokeStyle = FLAT.ink;
-  ctx.lineWidth = inkWidth(shaftW);
-  ctx.lineJoin = 'round';
-  ctx.stroke();
+  strokePart(ctx, b, opts);
   // Capitals, rungs and pegs sit ON the upright, outside its clip, because a
   // capital that does not overhang its shaft is not a capital.
   paintPostTrim(ctx, spec, { x: sx, y, w: shaftW, h }, tile, seed + 45);
@@ -171,6 +234,10 @@ export function drawPost(
  * `frame` is the visible opening, between the uprights. It matters because
  * this texture is baked oversize so its own outline lands off-canvas, and an
  * arch springing from that rectangle springs from outside the bookcase.
+ *
+ * All four sides are joins: the inside of a box has no edge of its own. The
+ * boards above and below and the uprights either side draw their ink lines
+ * across it, so it is filled flat and never outlined.
  */
 export function drawRecess(
   ctx: FlatCtx,
@@ -182,8 +249,15 @@ export function drawRecess(
   design?: ShelfDesignInput,
   frame?: Box,
 ): void {
-  panel(ctx, x, y, w, h, flatScheme().recess, { radius: Math.min(w, h) * 0.04, seed });
-  paintOpening(ctx, BUILDS[resolveShelfDesign(design).build], frame ?? { x, y, w, h }, seed + 17);
+  const b: Box = { x, y, w, h };
+  tracePart(ctx, b, {
+    radius: Math.min(w, h) * 0.04,
+    seed,
+    joins: { top: true, right: true, bottom: true, left: true },
+  });
+  ctx.fillStyle = flatScheme().recess;
+  ctx.fill();
+  paintOpening(ctx, BUILDS[resolveShelfDesign(design).build], frame ?? b, seed + 17);
 }
 
 /**
@@ -191,9 +265,30 @@ export function drawRecess(
  *
  * The one part with nothing flush above it, and therefore the one part whose
  * SILHOUETTE a build can really change — battlements, a scalloped cresting, a
- * pediment, or the house board with its lip line and gilt studs. The lip stays
- * a single ink line rather than a shaded bevel: the icon does the same on its
- * cover's cornice, and it survives being drawn at 20px tall.
+ * pediment, or the house board with its bed mould and gilt studs. Everything
+ * below the crest stays a run of flat bands and a single ink line rather than
+ * a shaded bevel: the icon does the same on its cover's cornice, and it
+ * survives being drawn at 20px tall.
+ *
+ * Its underside is a join, so the FILL runs past the bottom of the box it is
+ * given. That is what puts a square corner at each end of the cornice, sharing
+ * a vertical edge with the upright below, instead of the rounded lozenge that
+ * used to curl inboard of the case and leave the fourteen-pixel lip hanging
+ * over nothing.
+ *
+ * The ink is the other half of the same argument, and it took looking at a
+ * 12x crop to see it. A join that runs past the bottom and is never inked
+ * leaves the two `CROWN_LIP` overhangs — the only stretch of that underside
+ * with wall behind it rather than case — ending in a bare colour step, while
+ * every other edge of the bookcase carries a line. Four corners of every case,
+ * top and bottom (the plinth is this bitmap mirrored), each reading as a board
+ * pasted on rather than one resting on the carcass.
+ *
+ * So the underside gets its line after all, drawn on afterwards exactly the
+ * way `drawPlank` draws its own, and for the same reason: what a join buys is
+ * an unbroken FILL across the seam, not the absence of a joint. The caller has
+ * to hand in a box whose bottom edge is where the cornice's underside really
+ * is — the bleed will carry the fill past it — because the line lands there.
  */
 export function drawCrown(
   ctx: FlatCtx,
@@ -209,25 +304,22 @@ export function drawCrown(
   const spec = BUILDS[resolved.build];
   const box: Box = { x, y, w, h };
   const body = drawCrownBody(ctx, spec, box, seed);
-  const { clip, face } = body;
-  withinFace(ctx, clip.x, clip.y, clip.w, clip.h, body.radius, body.seed, () => {
-    paintFacePattern(
-      ctx,
-      resolved.pattern,
-      faceOf(face, 'x', frame),
-      seed + 21,
-    );
-  });
-  // Re-stroke the board the pattern was clipped into, with the same wobble it
-  // was filled with, so the clip cannot nibble its outline.
-  wobbleRect(ctx, clip.x, clip.y, clip.w, clip.h, body.radius, body.seed);
-  ctx.strokeStyle = FLAT.ink;
-  ctx.lineWidth = inkWidth(Math.min(clip.w, clip.h));
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-  // A row of small gilt studs along the cornice — the icon earns its charm
-  // from ornament like this, and a bare board reads as a placeholder.
-  paintCrownTrim(ctx, spec, box, face, seed);
+  // Clipped to the SILHOUETTE, not to a rectangle: a pattern worked into the
+  // corona must not spill out between the battlements.
+  ctx.save();
+  body.trace(ctx);
+  ctx.clip();
+  paintFacePattern(ctx, resolved.pattern, faceOf(body.face, 'x', frame), seed + 21);
+  ctx.restore();
+  body.outline(ctx);
+  // Half an ink width up, so the whole line is inside the bitmap however tight
+  // the bake is cropped — the same trick, and the same reason, as the board's.
+  const ink = inkWidth(h);
+  const under = y + h - ink * 0.5;
+  edgeLine(ctx, x, under, x + w, under, FLAT.ink, ink, seed + 9, 0.6);
+  // A row of small gilt studs along the frieze — the icon earns its charm from
+  // ornament like this, and a bare board reads as a placeholder.
+  paintCrownTrim(ctx, spec, box, body.frieze, seed);
 }
 
 /* ----------------------------------------------------------------------------
@@ -414,11 +506,17 @@ export function drawCaseCard(
   const crownY = margin * 0.7;
   // The cornice's underside sits ON the case, so the body starts inside it.
   const bodyTop = crownY + crownH * 0.78;
-  const bodyH = h - margin * 0.8 - bodyTop;
+  // The plinth is the cornice upside down and the same height, exactly as
+  // `world.ts` stands one under the shelf. The card carries it because it is
+  // half of what a build looks like: a crest that is charming on top can be a
+  // row of broken teeth when it is turned over, and a preview that hid that
+  // was previewing half a bookcase.
+  const footY = h - margin * 0.5;
+  const bodyH = footY - crownH - bodyTop;
   const postW = Math.max(3, caseW * 0.05);
 
   // One contact shadow where the case meets the floor — the only shadow here.
-  contactShadow(ctx, caseX + caseW / 2, bodyTop + bodyH, caseW * 0.5, Math.max(2, h * 0.022), 0.16);
+  contactShadow(ctx, caseX + caseW / 2, footY, caseW * 0.5, Math.max(2, h * 0.022), 0.16);
 
   const floors = 2;
   const floorH = bodyH / floors;
@@ -448,17 +546,24 @@ export function drawCaseCard(
   }
 
   // Uprights last of the body, so their ink lines close the recess and the
-  // boards. Sliced per floor and clipped, exactly as the shelf tiles them.
+  // boards. Sliced per floor and clipped, exactly as the shelf tiles them —
+  // and the RIGHT one mirrored, which is not a nicety: `drawPost` puts the
+  // shaft flush to the outboard side and its return on the inboard one, so an
+  // un-mirrored right upright turns the case inside out down one edge.
   const postOver = postW * 0.4 + 2;
   for (let f = 0; f < floors; f++) {
     const top = bodyTop + f * floorH;
-    for (const px of [caseX, caseX + caseW - postW]) {
+    for (const mirror of [false, true]) {
       ctx.save();
+      if (mirror) {
+        ctx.translate(caseX * 2 + caseW, 0);
+        ctx.scale(-1, 1);
+      }
       ctx.beginPath();
-      ctx.rect(px - postW, top, postW * 3, floorH);
+      ctx.rect(caseX - postW, top, postW * 3, floorH);
       ctx.clip();
-      drawPost(ctx, px, top - postOver, postW, floorH + postOver * 2, s + 3 + f * 29 + px, design, {
-        x: px,
+      drawPost(ctx, caseX, top - postOver, postW, floorH + postOver * 2, s + 3 + f * 29 + (mirror ? 71 : 0), design, {
+        x: caseX,
         y: top,
         w: postW,
         h: floorH,
@@ -468,4 +573,11 @@ export function drawCaseCard(
   }
 
   drawCrown(ctx, caseX - crownLip, crownY, caseW + crownLip * 2, crownH, s + 5, design);
+  // The plinth: the same bake, upside down. `scale(1, -1)` after translating
+  // to the case's foot, so the cornice's underside lands on the last board.
+  ctx.save();
+  ctx.translate(0, footY);
+  ctx.scale(1, -1);
+  drawCrown(ctx, caseX - crownLip, 0, caseW + crownLip * 2, crownH, s + 5, design);
+  ctx.restore();
 }

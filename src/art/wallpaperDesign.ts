@@ -46,13 +46,40 @@
  * trick the icon plays with a book's spine beside its cover, applied to a
  * repeat.
  *
- * ## Colour
+ * ## Colour, in two independent halves
  *
  * Everything is derived from `flatScheme()`, so redecorating the room repaints
- * the wall with it. A preset picks WHICH slot the motif borrows from — a shade
- * of the wall itself, the case timber, the recess, gilt, or the first book
- * cloth — never a literal hex, so no preset can look wrong in a room it was not
+ * the wall with it. A preset picks WHICH slot it borrows from — a shade of the
+ * wall itself, the case timber, the recess, gilt, or one of the book cloths —
+ * never a literal hex, so no preset can look wrong in a room it was not
  * designed against.
+ *
+ * There are TWO such choices, and the second is why this file stopped being a
+ * book of beiges. `ink` sets the motif's own wash, and that wash has to stay
+ * quiet: the wall is a backdrop and the books are the subject, so every ink
+ * slot is a mix back toward the wall, damped further by how much of the wall
+ * the pattern covers. `tone` sets the ELEMENTS inside the motif — the berry,
+ * the pip, the roof, the seeds — and that one is allowed to be an actual
+ * colour, because a detail is a few percent of the wall's area. A cream sprig
+ * with a terracotta bud is a different paper from a cream sprig with a green
+ * one, and until `tone` existed the only way to get either was to recolour the
+ * whole motif.
+ *
+ * ## Sharpness
+ *
+ * `edge` runs from an engraved hairline to a soft blotted one. It is NOT a
+ * blur: a blur would have to be clipped at the tile edge, and an antialiased
+ * clip edge is the pale band this module exists to avoid. It is what a
+ * different nib actually changes — line weight, line contrast, how far corners
+ * round off, and how much the hand wobbles.
+ *
+ * ## The book
+ *
+ * Fifty papers, seven per design family. Balanced across FAMILIES rather than
+ * across motifs, because the previous fifty-five were built motif by motif and
+ * came out twelve geometrics to five scenics. Every one carries mood tags, so
+ * a roll of the dice can be steered ("something quiet", "something gilded")
+ * instead of being a lottery over the whole book.
  */
 
 import {
@@ -72,28 +99,87 @@ import { fnv1a } from './noise';
  * few geometrics, a few florals, a few scenics.
  */
 export const WALLPAPER_PATTERNS = [
+  // ruled
   'plain',
-  'stripe',
   'pinstripe',
   'ticking',
-  'gingham',
+  // stripe
+  'stripe',
   'chevron',
   'herringbone',
+  // check
+  'gingham',
+  'harlequin',
   'honeycomb',
+  // lattice
   'trellis',
-  'scallop',
   'arch',
+  'scallop',
+  // spot
   'polka',
   'star',
   'moonstar',
+  // botanical
   'sprig',
   'laurel',
+  'pomegranate',
+  // figured
   'damask',
+  'urn',
   'bird',
   'toile',
 ] as const;
 
 export type WallpaperPattern = (typeof WALLPAPER_PATTERNS)[number];
+
+/**
+ * The design families, in the order a wallpaper book prints them.
+ *
+ * `figured` is the odd one: damasks, urns, birds and toiles are four different
+ * things, but they are all a DEVICE repeated rather than a geometry, and a
+ * section of two papers each reads better than four sections of two.
+ */
+export const WALLPAPER_FAMILIES = [
+  'ruled',
+  'stripe',
+  'check',
+  'lattice',
+  'spot',
+  'botanical',
+  'figured',
+] as const;
+export type WallpaperFamily = (typeof WALLPAPER_FAMILIES)[number];
+
+/** Which family each motif belongs to. */
+const PATTERN_FAMILY: Record<WallpaperPattern, WallpaperFamily> = {
+  plain: 'ruled',
+  pinstripe: 'ruled',
+  ticking: 'ruled',
+  stripe: 'stripe',
+  chevron: 'stripe',
+  herringbone: 'stripe',
+  gingham: 'check',
+  harlequin: 'check',
+  honeycomb: 'check',
+  trellis: 'lattice',
+  arch: 'lattice',
+  scallop: 'lattice',
+  polka: 'spot',
+  star: 'spot',
+  moonstar: 'spot',
+  sprig: 'botanical',
+  laurel: 'botanical',
+  pomegranate: 'botanical',
+  damask: 'figured',
+  urn: 'figured',
+  bird: 'figured',
+  toile: 'figured',
+};
+
+/** The family a motif sits in. Exported so a picker can group by it. */
+export function wallpaperFamily(pattern: WallpaperPattern): WallpaperFamily {
+  return PATTERN_FAMILY[pattern];
+}
 
 /**
  * How big the motif is, as a nominal cell in CSS px at zoom 1.
@@ -127,10 +213,21 @@ export type WallpaperDepth = (typeof WALLPAPER_DEPTHS)[number];
  */
 const DEPTH_OFFSET: Record<WallpaperDepth, number> = {
   flat: 0,
-  low: 0.016,
-  raised: 0.032,
-  carved: 0.055,
+  low: 0.014,
+  raised: 0.026,
+  carved: 0.042,
 };
+
+/**
+ * And an absolute ceiling on top of the proportional one.
+ *
+ * A fraction of the cell is the right RULE — a grand motif's thickness has to
+ * grow with it — but a grand star's cell is 145px and five percent of that is
+ * a seven-pixel offset, which stops being an edge and starts being a shadow
+ * cast by a lamp. Nine pixels is about where a flat second face still reads as
+ * the motif's own side.
+ */
+const DEPTH_MAX_PX = 9;
 
 /**
  * Which slot of the live scheme the motif borrows its colour from.
@@ -143,12 +240,78 @@ const DEPTH_OFFSET: Record<WallpaperDepth, number> = {
 export const WALLPAPER_INKS = ['paper', 'deep', 'timber', 'recess', 'gilt', 'cloth'] as const;
 export type WallpaperInk = (typeof WALLPAPER_INKS)[number];
 
-/** A wallpaper, fully specified. Four axes, and nothing else. */
+/**
+ * What the ELEMENTS inside the motif are coloured — the berry on the laurel,
+ * the pip in the honeycomb, the roof on the toile cottage, the seeds in the
+ * pomegranate.
+ *
+ * A separate axis from `ink` because `ink` decides the motif's own wash and
+ * that wash has to stay quiet — the wall is a backdrop. The detail is the one
+ * place a paper is allowed to be an actual colour, and until this axis existed
+ * every paper in the book was a shade of the same beige with a gilt pip, which
+ * is precisely what "more colour" was asking for.
+ *
+ * Most of these name a CLOTH SLOT rather than a hue, for the reason the ink
+ * slots do: `ember` is terracotta in the athenaeum and coral in the reef, and
+ * a paper built against one room should not look wrong in another.
+ */
+export const WALLPAPER_TONES = [
+  'auto',
+  'gilt',
+  'chalk',
+  'ember',
+  'sea',
+  'berry',
+  'bay',
+  'ink',
+] as const;
+export type WallpaperTone = (typeof WALLPAPER_TONES)[number];
+
+/**
+ * How sharp the drawn edge is, from a fine engraved line to a soft blotted one.
+ *
+ * NOT a blur. A blur would have to be clipped at the tile edge and an
+ * antialiased clip edge is the pale band this whole module exists to avoid —
+ * and it is a light-model move besides. Sharpness here is what a pen actually
+ * changes: line WEIGHT, line CONTRAST, how far corners are rounded off, and how
+ * much the hand wobbles. A blotted motif is a fat pale outline with round
+ * corners and a shaky rim; an etched one is a hair-thin dark line with crisp
+ * corners. Same shapes, different nib.
+ */
+export const WALLPAPER_EDGES = ['etched', 'crisp', 'soft', 'blotted'] as const;
+export type WallpaperEdge = (typeof WALLPAPER_EDGES)[number];
+
+/**
+ * A wallpaper, fully specified.
+ *
+ * `tone` and `edge` are OPTIONAL, and that is a compatibility decision rather
+ * than a taste one: `data/designPrefs.ts` rebuilds a spec field by field when
+ * it reads one back off disk, and a required field there would be a type error
+ * in a file this module does not own. Absent means `auto` / `crisp`, which is
+ * exactly the paper the first fifty-five presets drew.
+ */
 export interface WallpaperSpec {
   pattern: WallpaperPattern;
   scale: WallpaperScale;
   depth: WallpaperDepth;
   ink: WallpaperInk;
+  /** Element colour. Defaults to `auto`. */
+  tone?: WallpaperTone;
+  /** Edge sharpness. Defaults to `crisp`. */
+  edge?: WallpaperEdge;
+}
+
+/**
+ * The six axes as one short string.
+ *
+ * Exported because two callers outside this module need "is the reader looking
+ * at a different paper" and both grew their own four-axis version of it while
+ * the spec had four axes. A local copy that has fallen two axes behind serves a
+ * stale wall off the bake cache, which is the same class of bug the scheme tag
+ * exists to close.
+ */
+export function wallpaperAxisKey(spec: WallpaperSpec): string {
+  return `${spec.pattern}.${spec.scale}.${spec.depth}.${spec.ink}.${spec.tone ?? 'auto'}.${spec.edge ?? 'crisp'}`;
 }
 
 /* ============================ colour plumbing ============================ */
@@ -185,22 +348,27 @@ function luma(hex: string): number {
  */
 const COVERAGE: Record<WallpaperPattern, number> = {
   plain: 1,
-  stripe: 0.7,
   pinstripe: 1,
   ticking: 0.9,
-  gingham: 0.62,
+  stripe: 0.7,
   chevron: 0.8,
-  herringbone: 0.85,
+  // A true parquet leaves no paper showing at all, so the wash has to come
+  // most of the way back down or the wall turns into a floor.
+  herringbone: 0.62,
+  gingham: 0.62,
+  harlequin: 0.55,
   honeycomb: 0.5,
   trellis: 1,
+  arch: 0.62,
   scallop: 1,
-  arch: 0.7,
   polka: 1,
   star: 1,
   moonstar: 1,
   sprig: 1,
   laurel: 1,
+  pomegranate: 1,
   damask: 0.92,
+  urn: 1,
   bird: 1,
   toile: 0.9,
 };
@@ -221,8 +389,19 @@ export interface WallpaperColours {
   ink: string;
   /** The second flat face behind the motif when depth > flat. */
   relief: string;
-  /** One small detail colour — a berry, an eye, a gilt pip. */
+  /** The detail colour — a berry, an eye, a roof, a pip. Set by `tone`. */
   accent: string;
+  /**
+   * A darker face for shapes INSIDE the motif — a folded wing, a shaded niche,
+   * the seeds of a pomegranate.
+   *
+   * A solid colour rather than the ink at `globalAlpha`, which is what the
+   * first version used. Alpha over a flat fill is a grey with the hue washed
+   * out of it, and three of the motifs had one; a second flat face beside a
+   * lighter one is the style's own way of saying depth, and it holds its
+   * colour.
+   */
+  bloom: string;
 }
 
 /**
@@ -234,13 +413,54 @@ export interface WallpaperColours {
  * first time these were tuned by eye alone.
  */
 const INK_MIX: Record<WallpaperInk, { toward: (s: ReturnType<typeof flatScheme>) => string; t: number }> = {
-  paper: { toward: () => FLAT.ink, t: 0.09 },
-  deep: { toward: () => FLAT.ink, t: 0.2 },
-  timber: { toward: (s) => s.timber, t: 0.4 },
-  recess: { toward: (s) => s.recess, t: 0.32 },
-  gilt: { toward: () => FLAT.gilt, t: 0.34 },
-  cloth: { toward: (s) => s.cloths[0]?.[0] ?? FLAT.terracotta, t: 0.32 },
+  paper: { toward: () => FLAT.ink, t: 0.1 },
+  deep: { toward: () => FLAT.ink, t: 0.24 },
+  // The three HUED slots pull further than they used to. The first tuning was
+  // so cautious that a timber trellis and a cloth trellis were the same wall
+  // with a rounding error between them; the whole book read as one beige. They
+  // are still nowhere near their own hex — `COVERAGE` takes a bite out of every
+  // one of these — but a paper the reader picked for its colour now has one.
+  timber: { toward: (s) => s.timber, t: 0.52 },
+  recess: { toward: (s) => s.recess, t: 0.42 },
+  gilt: { toward: () => FLAT.gilt, t: 0.46 },
+  cloth: { toward: (s) => s.cloths[0]?.[0] ?? FLAT.terracotta, t: 0.46 },
 };
+
+/**
+ * Where the detail colour comes from, per tone.
+ *
+ * `auto` is the old rule kept exactly: gilt on everything, except on a gilt
+ * motif where gilt would vanish and the pip goes the other way, into the paper.
+ * Every preset that predates this axis therefore draws the pixels it always
+ * drew.
+ */
+function accentFor(
+  tone: WallpaperTone,
+  room: ReturnType<typeof flatScheme>,
+  ground: string,
+  face: string,
+  ink: string,
+): string {
+  if (tone === 'auto') return mix(face, FLAT.gilt, 0.62);
+  if (tone === 'ink') return mix(ink, face, 0.2);
+  // Not the wall's own colour: on a pale ground a chalk pip has to be lighter
+  // than the paper to read as cut out of the motif rather than as a hole in it.
+  if (tone === 'chalk') return mix(FLAT.cream, ground, 0.2);
+  const slot =
+    tone === 'gilt'
+      ? FLAT.gilt
+      : tone === 'ember'
+        ? (room.cloths[0]?.[0] ?? FLAT.terracotta)
+        : tone === 'sea'
+          ? (room.cloths[1]?.[0] ?? FLAT.slate)
+          : tone === 'berry'
+            ? (room.cloths[2]?.[0] ?? FLAT.plum)
+            : (room.cloths[4]?.[0] ?? FLAT.sage);
+  // Pulled a fifth of the way home so a berry sits IN the room rather than
+  // glowing out of it — but nothing like the wash the motif itself takes. A
+  // detail is a few percent of the wall's area; it can afford to be a colour.
+  return mix(slot, ground, 0.2);
+}
 
 /**
  * Derive a tile's palette from the live scheme.
@@ -248,10 +468,53 @@ const INK_MIX: Record<WallpaperInk, { toward: (s: ReturnType<typeof flatScheme>)
  * Exported because `world.ts` needs the ground colour for the placeholder tint
  * it shows before the first bake lands, and a preview card needs the whole set.
  */
+/**
+ * What the chosen nib does to the drawing.
+ *
+ * Four multipliers rather than four hand-drawn variants of every motif: the
+ * shapes are the same in every room and at every sharpness, and the difference
+ * between an engraved damask and a blotted one is entirely in the pen.
+ */
+interface EdgeFeel {
+  /** Outline weight multiplier. */
+  weight: number;
+  /** Extra pull of the outline toward the ground. Negative = darker line. */
+  fade: number;
+  /** Corner-radius multiplier for every rounded corner in the module. */
+  round: number;
+  /** Wobble amplitude multiplier — how much the hand shakes. */
+  wobble: number;
+}
+
+const EDGE_FEEL: Record<WallpaperEdge, EdgeFeel> = {
+  etched: { weight: 0.62, fade: -0.14, round: 0.4, wobble: 0.25 },
+  crisp: { weight: 1, fade: 0, round: 1, wobble: 1 },
+  soft: { weight: 1.38, fade: 0.11, round: 1.6, wobble: 1.5 },
+  blotted: { weight: 1.95, fade: 0.22, round: 2.3, wobble: 2.2 },
+};
+
+function edgeFeel(spec: WallpaperSpec): EdgeFeel {
+  return EDGE_FEEL[spec.edge ?? 'crisp'];
+}
+
+/**
+ * The corner-rounding multiplier, capped, for a shape that MEETS its
+ * neighbours.
+ *
+ * A blotted nib rounds corners off by more than twice, which is the point of
+ * it — but on a honeycomb or a harlequin the corner IS the joint, and rounding
+ * it that far reopens the little holes at every junction that this pass was
+ * about closing. Free-standing motifs get the full round.
+ */
+function joinRound(c: Paint): number {
+  return Math.min(c.edge.round, 1.25);
+}
+
 export function wallpaperColours(spec: WallpaperSpec): WallpaperColours {
   const room = flatScheme();
   const ground = room.wall;
   const rule = INK_MIX[spec.ink];
+  const feel = edgeFeel(spec);
   // Damped by how much of the wall the pattern actually covers. The same mix
   // that reads as a sprinkle of gilt stars reads as a gold wall when it is a
   // honeycomb, because the honeycomb's cells meet edge to edge and there is no
@@ -262,23 +525,56 @@ export function wallpaperColours(spec: WallpaperSpec): WallpaperColours {
   // The outline is pulled back toward the wall so the repeat reads as a wash
   // rather than as a second set of furniture. Pulled back FURTHER on a dark
   // face, where a full-strength ink would only turn the motif into a blob.
-  const inkPull = 0.34 + (1 - luma(face)) * 0.22;
-  const ink = mix(FLAT.ink, ground, Math.min(0.62, inkPull));
+  // The nib rides on top of that: a blotted line is a pale fat one, an etched
+  // line is a fine dark one. Clamped, because past about two thirds the outline
+  // IS the wall and the motif loses its silhouette entirely.
+  const inkPull = 0.34 + (1 - luma(face)) * 0.22 + feel.fade;
+  const ink = mix(FLAT.ink, ground, Math.max(0.1, Math.min(0.68, inkPull)));
 
   // The relief face sits between the motif and the wall in value, so the motif
   // reads as lifted OFF the wall rather than as casting anything onto it.
   const relief = mix(face, FLAT.ink, 0.2);
 
-  // One warm pip. Gilt everywhere except on a gilt motif, where it would
-  // vanish — there the accent goes the other way, into the paper.
-  const accent = spec.ink === 'gilt' ? mix(face, ground, 0.55) : mix(face, FLAT.gilt, 0.62);
+  // A gilt motif is the one case where the old rule has to stay: an accent
+  // drawn out of the same gold the motif is already made of is not an accent,
+  // so `auto` reverses into the paper there. Every other tone is chosen and is
+  // therefore honoured as chosen.
+  const tone = spec.tone ?? 'auto';
+  const accent =
+    tone === 'auto' && spec.ink === 'gilt'
+      ? mix(face, ground, 0.55)
+      : accentFor(tone, room, ground, face, ink);
 
-  return { ground, face, ink, relief, accent };
+  // A darker face carrying a trace of the detail colour, so an inner shape is
+  // part of the same drawing as the pip beside it rather than a grey patch.
+  const bloom = mix(mix(face, FLAT.ink, 0.28), accent, 0.18);
+
+  return { ground, face, ink, relief, accent, bloom };
+}
+
+/**
+ * Everything a motif draws with: the colours, plus the nib.
+ *
+ * The feel rides on the colour struct rather than being threaded as a seventh
+ * argument through every motif, every helper and every wrapped copy — `c` is
+ * already carried everywhere it is needed, and the alternative was a parameter
+ * that existed purely to be forwarded.
+ */
+interface Paint extends WallpaperColours {
+  edge: EdgeFeel;
 }
 
 /** The monochrome palette the relief pass draws with: one solid face, no ink. */
-function reliefColours(c: WallpaperColours): WallpaperColours {
-  return { ground: c.ground, face: c.relief, ink: c.relief, relief: c.relief, accent: c.relief };
+function reliefColours(c: Paint): Paint {
+  return {
+    ground: c.ground,
+    face: c.relief,
+    ink: c.relief,
+    relief: c.relief,
+    accent: c.relief,
+    bloom: c.relief,
+    edge: c.edge,
+  };
 }
 
 /* ============================== the torus ================================ */
@@ -296,7 +592,7 @@ type Pass = 'relief' | 'face';
  */
 interface Mark {
   /** Draw at the current origin. The emitter has already translated. */
-  draw(ctx: FlatCtx, pass: Pass, c: WallpaperColours): void;
+  draw(ctx: FlatCtx, pass: Pass, c: Paint): void;
   spanX: readonly [number, number] | null;
   spanY: readonly [number, number] | null;
 }
@@ -313,6 +609,19 @@ function shifts(span: readonly [number, number] | null, size: number): readonly 
 }
 
 /**
+ * The detail colour, damped, for use as a HAIRLINE.
+ *
+ * The same hex that sits quietly as a berry shouts as a rule down a whole
+ * wall: a line has no interior for the eye to average, so it reads at close to
+ * full chroma however thin it is. The first striped specimens came back
+ * looking like candy canes for exactly this reason. Areas get `accent`; long
+ * thin things get this.
+ */
+function thread(c: WallpaperColours): string {
+  return mix(c.accent, c.ground, 0.42);
+}
+
+/**
  * Draw every mark, plus every wrapped copy it needs, for one pass.
  *
  * Run twice per tile — all relief faces, then all motif faces — so that where
@@ -320,7 +629,7 @@ function shifts(span: readonly [number, number] | null, size: number): readonly 
  * rather than the relief cutting into the neighbour. Doing it per-mark instead
  * (relief, face, relief, face) is what makes a dense damask look chewed.
  */
-function emit(ctx: FlatCtx, size: number, marks: readonly Mark[], pass: Pass, c: WallpaperColours): void {
+function emit(ctx: FlatCtx, size: number, marks: readonly Mark[], pass: Pass, c: Paint): void {
   for (const mark of marks) {
     for (const ox of shifts(mark.spanX, size)) {
       for (const oy of shifts(mark.spanY, size)) {
@@ -339,10 +648,15 @@ function emit(ctx: FlatCtx, size: number, marks: readonly Mark[], pass: Pass, c:
 
 /* ============================ drawing helpers ============================ */
 
-/** Fill the current path, then outline it. The one move every motif makes. */
-function ink(ctx: FlatCtx, c: WallpaperColours, width: number, fill = true): void {
-  if (fill) {
-    ctx.fillStyle = c.face;
+/**
+ * Fill the current path, then outline it. The one move every motif makes.
+ *
+ * `fillWith` exists so an inner shape can take the bloom or the accent without
+ * every motif restating the four lines of stroke setup around it.
+ */
+function ink(ctx: FlatCtx, c: Paint, width: number, fill: boolean | string = true): void {
+  if (fill !== false) {
+    ctx.fillStyle = fill === true ? c.face : fill;
     ctx.fill();
   }
   ctx.strokeStyle = c.ink;
@@ -352,9 +666,16 @@ function ink(ctx: FlatCtx, c: WallpaperColours, width: number, fill = true): voi
   ctx.stroke();
 }
 
-/** Outline weight for a motif of radius `r`. Never below a visible hair. */
-function motifInk(r: number): number {
-  return Math.max(0.9, Math.min(4.2, r * 0.13));
+/**
+ * Outline weight for a motif of radius `r`, under the chosen nib.
+ *
+ * The floor is what matters: a wall motif is often 20px across and a purely
+ * proportional rule draws it in half a pixel, which reads as a watercolour of
+ * the pattern rather than as the pattern. The ceiling matters at the other end
+ * — a blotted grand damask would otherwise be more outline than fill.
+ */
+function motifInk(r: number, c: Paint): number {
+  return Math.max(0.8, Math.min(6.5, r * 0.13 * c.edge.weight));
 }
 
 /** A deterministic value in [-1, 1] from an integer — the wobble of `flat.ts`. */
@@ -375,6 +696,42 @@ function blob(ctx: FlatCtx, r: number, seed: number, lobes = 7, wobble = 0.07): 
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
+  ctx.closePath();
+}
+
+/** A small filled disc with an outline — a berry, a pip, an eye. */
+function pip(ctx: FlatCtx, x: number, y: number, r: number, fill: string, c: Paint, w: number): void {
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.6, r), 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (w > 0) {
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = w;
+    ctx.stroke();
+  }
+}
+
+/** An axis-aligned rounded rectangle from its top-left corner. */
+function roundedRect(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const r = Math.max(0, Math.min(radius, Math.abs(w) / 2, Math.abs(h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
 }
 
@@ -547,7 +904,7 @@ function runningLine(
   centre: number,
   profile: Profile,
   width: number,
-  colour: (c: WallpaperColours) => string,
+  colour: (c: Paint) => string,
 ): Mark {
   const t0 = -RUN_OVERSHOOT;
   const t1 = size + RUN_OVERSHOOT;
@@ -585,29 +942,44 @@ function runningLine(
  * Integer `k` again: the triangle wave's value at x = 0 and x = size is the
  * same, so the chevron's point lands identically on both edges.
  */
-function zigzag(
+function zigzagBand(
   size: number,
   centre: number,
   amp: number,
   k: number,
-  width: number,
+  half: number,
   phase: number,
+  width: number,
   relief = 0,
 ): Mark {
   const teeth = Math.max(1, Math.round(k));
-  const span: [number, number] = [centre - amp - width - relief, centre + amp + width + relief];
-  const trace = (ctx: FlatCtx): void => {
-    const period = size / teeth;
-    ctx.beginPath();
+  const period = size / teeth;
+  // The offset of a band edge from the centre line, measured VERTICALLY. A
+  // constant vertical offset of `half` would give a ribbon that is thinner
+  // than `2·half` where it slopes; dividing by cos θ makes the perpendicular
+  // width constant, which is what stops a chevron looking pinched at the
+  // diagonals and fat at the turns. The mitre at each peak then falls out of
+  // the geometry rather than being faked with a round line join.
+  const slope = (4 * amp) / period;
+  const lift = half * Math.hypot(1, slope);
+  const reach = amp + lift + width + relief;
+  const span: [number, number] = [centre - reach, centre + reach];
+
+  /** The zigzag centre line, displaced by `dy`, as an open polyline. */
+  const wave = (ctx: FlatCtx, dy: number, back: boolean): void => {
     // Two extra teeth off each end so the mitre sitting on the seam is a real
     // mitre and not a line cap.
-    for (let i = -2; i <= teeth * 2 + 2; i++) {
+    const from = back ? teeth * 2 + 2 : -2;
+    const to = back ? -2 : teeth * 2 + 2;
+    const step = back ? -1 : 1;
+    for (let i = from; back ? i >= to : i <= to; i += step) {
       const x = (i / 2) * period + phase;
-      const y = centre + (i % 2 === 0 ? -amp : amp);
-      if (i === -2) ctx.moveTo(x, y);
+      const y = centre + (i % 2 === 0 ? -amp : amp) + dy;
+      if (i === from) ctx.lineTo(x, y);
       else ctx.lineTo(x, y);
     }
   };
+
   return {
     spanX: null,
     spanY: span,
@@ -615,18 +987,38 @@ function zigzag(
       if (pass === 'relief' && relief <= 0) return;
       ctx.save();
       if (pass === 'relief') ctx.translate(0, relief);
-      trace(ctx);
-      ctx.strokeStyle = pass === 'relief' ? c.relief : c.face;
-      ctx.lineWidth = width;
-      ctx.lineCap = 'butt';
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-      if (pass === 'face') {
+      ctx.beginPath();
+      ctx.moveTo(-2 * (period / 2) + phase, centre - amp - lift);
+      wave(ctx, -lift, false);
+      wave(ctx, lift, true);
+      ctx.closePath();
+      ctx.fillStyle = pass === 'relief' ? c.relief : c.face;
+      ctx.fill();
+      if (pass === 'face' && width > 0) {
+        // Only the two long edges are stroked, and both run off the tile, so
+        // no cap ever lands on the seam.
         ctx.strokeStyle = c.ink;
-        ctx.lineWidth = Math.max(0.8, width * 0.22);
+        ctx.lineWidth = width;
+        ctx.lineJoin = 'miter';
+        ctx.miterLimit = 4;
+        ctx.lineCap = 'butt';
+        for (const dy of [-lift, lift] as const) {
+          ctx.beginPath();
+          ctx.moveTo(-2 * (period / 2) + phase, centre - amp + dy);
+          wave(ctx, dy, false);
+          ctx.stroke();
+        }
+        // A hairline down the spine in the detail colour — the braid that
+        // turns a plain zigzag into a woven chevron tape.
+        ctx.beginPath();
+        ctx.moveTo(-2 * (period / 2) + phase, centre - amp);
+        wave(ctx, 0, false);
+        ctx.strokeStyle = c.accent;
+        ctx.lineWidth = Math.max(0.8, half * 0.22);
         ctx.stroke();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
       }
-      ctx.lineCap = 'round';
       ctx.restore();
     },
   };
@@ -646,6 +1038,17 @@ interface CellAt {
   row: number;
   /** True for the interstitial point of a `diamond` lattice. */
   alt: boolean;
+  /**
+   * The pitch actually fitted, in tile space.
+   *
+   * A motif that has to MEET its neighbours — a harlequin lozenge, an arcade
+   * pier, a honeycomb wall — cannot work from a single radius, because the
+   * cell is rarely square and the joint has to land on the cell boundary to
+   * the pixel. Those motifs measure from here; the free-standing ones ignore
+   * it and stay inside `r`.
+   */
+  w: number;
+  h: number;
 }
 
 /**
@@ -655,31 +1058,55 @@ interface CellAt {
  * is what lets a wrapped copy come out identical: the copy is the same seed
  * under a translate.
  */
-type MotifFn = (ctx: FlatCtx, r: number, seed: number, c: WallpaperColours, at: CellAt) => void;
+type MotifFn = (ctx: FlatCtx, r: number, seed: number, c: Paint, at: CellAt) => void;
 
-/** A dot with a slightly uneven rim. */
-const dot: MotifFn = (ctx, r, seed, c) => {
-  blob(ctx, r * 0.5, seed, 6, 0.06);
-  ink(ctx, c, motifInk(r * 0.5));
+/**
+ * A dot — big and plain on the lattice point, small and coloured between.
+ *
+ * The interstitial population of a `diamond` lattice used to draw the same dot
+ * as the main one, which is a grid of dots at 45° and reads as one. Two sizes
+ * and two colours make it a scatter.
+ */
+const dot: MotifFn = (ctx, r, seed, c, at) => {
+  if (at.alt) {
+    blob(ctx, r * 0.26, seed, 6, 0.08 * c.edge.wobble);
+    ink(ctx, c, motifInk(r * 0.3, c) * 0.8, c.accent);
+    return;
+  }
+  blob(ctx, r * 0.5, seed, 6, 0.06 * c.edge.wobble);
+  ink(ctx, c, motifInk(r * 0.5, c));
+  // A smaller ring inside, in the detail colour: a plain disc is the one motif
+  // in the book with nothing at all to look at.
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = motifInk(r * 0.5, c) * 0.8;
+  ctx.stroke();
 };
 
-/** Five-point star with a pip in the middle. */
-const star: MotifFn = (ctx, r, seed, c) => {
+/** Five-point star on the lattice, a small four-point sparkle between. */
+const star: MotifFn = (ctx, r, seed, c, at) => {
+  const w = motifInk(r * 0.5, c);
+  if (at.alt) {
+    ctx.save();
+    ctx.rotate(jitter(seed) * 0.4);
+    starPath(ctx, r * 0.22, 4, 0.3);
+    ink(ctx, c, w * 0.7, c.accent);
+    ctx.restore();
+    return;
+  }
   ctx.save();
-  ctx.rotate(jitter(seed) * 0.16);
+  ctx.rotate(jitter(seed) * 0.16 * c.edge.wobble);
   starPath(ctx, r * 0.52);
-  ink(ctx, c, motifInk(r * 0.5));
+  ink(ctx, c, w);
   ctx.restore();
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.1, 0, Math.PI * 2);
-  ctx.fillStyle = c.accent;
-  ctx.fill();
+  pip(ctx, 0, 0, r * 0.12, c.accent, c, w * 0.6);
 };
 
 /** A crescent moon with a small star tucked into its horn. */
 const moonstar: MotifFn = (ctx, r, seed, c) => {
   const R = r * 0.72;
-  const w = motifInk(R);
+  const w = motifInk(R, c);
   // Crescent as a lune: outer circle minus a circle pushed off to the right.
   ctx.beginPath();
   ctx.arc(0, 0, R, Math.PI * 0.42, Math.PI * 1.58, false);
@@ -708,9 +1135,9 @@ const moonstar: MotifFn = (ctx, r, seed, c) => {
  */
 const sprig: MotifFn = (ctx, r, seed, c) => {
   const h = r * 0.96;
-  const w = motifInk(r * 0.6);
+  const w = motifInk(r * 0.6, c);
   ctx.save();
-  ctx.rotate(jitter(seed) * 0.2);
+  ctx.rotate(jitter(seed) * 0.2 * c.edge.wobble);
   // Stem.
   ctx.beginPath();
   ctx.moveTo(0, h * 0.72);
@@ -732,17 +1159,29 @@ const sprig: MotifFn = (ctx, r, seed, c) => {
     ink(ctx, c, w * 0.85);
     ctx.restore();
   }
-  // Bud. Small: at a quarter of the motif it stopped being a bud and the whole
-  // repeat read as a field of lollipops.
+  // The head. A single blob here was the whole reason the first field read as
+  // lollipops: a dot on a stick is a lollipop no matter how small it is, and
+  // shrinking it only made it a smaller lollipop. Five short petals around a
+  // pip is a FLOWER at any size, because the silhouette is not a circle.
   ctx.save();
-  ctx.translate(0, -h * 0.44);
-  blob(ctx, r * 0.17, seed + 5, 6, 0.1);
-  ctx.fillStyle = c.accent;
-  ctx.fill();
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.85;
-  ctx.stroke();
+  ctx.translate(0, -h * 0.46);
+  const petal = r * 0.2;
+  for (let i = 0; i < 5; i++) {
+    ctx.save();
+    ctx.rotate((i / 5) * Math.PI * 2 + jitter(seed + i) * 0.1 * c.edge.wobble);
+    leaf(ctx, petal * 1.5, petal * 0.62, 0);
+    ink(ctx, c, w * 0.7, c.accent);
+    ctx.restore();
+  }
+  pip(ctx, 0, 0, r * 0.1, c.bloom, c, w * 0.65);
   ctx.restore();
+  // Two buds lower down the stem, so the plant has a season in it.
+  for (const [t, side] of [
+    [0.3, -1],
+    [0.1, 1],
+  ] as const) {
+    pip(ctx, side * r * 0.13, -h * t, r * 0.075, c.accent, c, w * 0.55);
+  }
   ctx.restore();
 };
 
@@ -755,7 +1194,7 @@ const sprig: MotifFn = (ctx, r, seed, c) => {
  * which is what the real papers do.
  */
 const laurel: MotifFn = (ctx, r, seed, c, at) => {
-  const w = motifInk(r * 0.7);
+  const w = motifInk(r * 0.7, c);
   const flip = at.row % 2 === 0 ? 1 : -1;
   // The branch as a quadratic from tail to tip, so the leaves can be hung off
   // the curve itself rather than off an approximation of it.
@@ -768,7 +1207,7 @@ const laurel: MotifFn = (ctx, r, seed, c, at) => {
   ];
 
   ctx.save();
-  ctx.rotate(jitter(seed + 1) * 0.16);
+  ctx.rotate(jitter(seed + 1) * 0.16 * c.edge.wobble);
   ctx.scale(flip, 1);
   ctx.beginPath();
   ctx.moveTo(p0[0], p0[1]);
@@ -795,13 +1234,12 @@ const laurel: MotifFn = (ctx, r, seed, c, at) => {
       ctx.restore();
     }
   }
-  ctx.beginPath();
-  ctx.arc(p2[0], p2[1], r * 0.14, 0, Math.PI * 2);
-  ctx.fillStyle = c.accent;
-  ctx.fill();
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.7;
-  ctx.stroke();
+  // A berry at the tip and two smaller ones tucked behind it — one berry on a
+  // branch reads as a full stop, three read as fruit.
+  pip(ctx, p2[0], p2[1], r * 0.13, c.accent, c, w * 0.7);
+  const [b1x, b1y] = on(0.86);
+  pip(ctx, b1x - r * 0.05, b1y + r * 0.13, r * 0.085, c.accent, c, w * 0.6);
+  pip(ctx, b1x + r * 0.12, b1y + r * 0.16, r * 0.07, c.bloom, c, w * 0.55);
   ctx.restore();
 };
 
@@ -813,60 +1251,98 @@ const laurel: MotifFn = (ctx, r, seed, c, at) => {
  * repeated, and asymmetry breaks it.
  */
 const damask: MotifFn = (ctx, r, seed, c) => {
-  const w = motifInk(r * 0.8);
+  const w = motifInk(r * 0.8, c);
   const H = r * 0.98;
-  const W = r * 0.66;
-  // Ogee: a pointed oval, wider at the shoulders than at the waist.
+  const W = r * 0.62;
+
+  // The linking tendrils, drawn FIRST so the frame covers where they meet it.
+  // A damask field is a continuous ogee net, not a scatter of badges: the
+  // first version drew the device alone and the wall read as a row of fish
+  // floating on parchment. These reach a third of the way to the neighbour
+  // above and below, which is enough for the eye to close the lattice.
+  for (const dir of [-1, 1] as const) {
+    ctx.beginPath();
+    ctx.moveTo(0, dir * H);
+    ctx.quadraticCurveTo(W * 0.1, dir * H * 1.12, 0, dir * H * 1.26);
+    ctx.quadraticCurveTo(-W * 0.1, dir * H * 1.12, 0, dir * H);
+    ctx.closePath();
+    ink(ctx, c, w * 0.7);
+  }
+
+  // The ogee itself: a point at each end, shoulders that bow OUT high up and a
+  // waist that draws IN low down. The old silhouette was a plain pointed oval,
+  // and a pointed oval with two fins on it is a fish — the waist is the whole
+  // difference between the two drawings.
+  //
+  // Both ends run CONCAVE out of the point before they flare — that is what an
+  // ogee is, and a convex curve out of the point is what made the first fix a
+  // lightbulb instead. The first control sits close to the axis (the curve
+  // leaves the tip almost vertically), the second swings wide (the flare), and
+  // the widest place is a little above centre.
   ctx.beginPath();
   ctx.moveTo(0, -H);
-  ctx.bezierCurveTo(W * 0.9, -H * 0.62, W, -H * 0.05, W * 0.44, H * 0.46);
-  ctx.bezierCurveTo(W * 0.24, H * 0.75, W * 0.1, H * 0.9, 0, H);
-  ctx.bezierCurveTo(-W * 0.1, H * 0.9, -W * 0.24, H * 0.75, -W * 0.44, H * 0.46);
-  ctx.bezierCurveTo(-W, -H * 0.05, -W * 0.9, -H * 0.62, 0, -H);
+  ctx.bezierCurveTo(W * 0.12, -H * 0.84, W * 0.66, -H * 0.62, W * 0.94, -H * 0.08);
+  ctx.bezierCurveTo(W * 1.0, H * 0.16, W * 0.5, H * 0.3, W * 0.3, H * 0.58);
+  ctx.bezierCurveTo(W * 0.2, H * 0.8, W * 0.09, H * 0.88, 0, H);
+  ctx.bezierCurveTo(-W * 0.09, H * 0.88, -W * 0.2, H * 0.8, -W * 0.3, H * 0.58);
+  ctx.bezierCurveTo(-W * 0.5, H * 0.3, -W * 1.0, H * 0.16, -W * 0.94, -H * 0.08);
+  ctx.bezierCurveTo(-W * 0.66, -H * 0.62, -W * 0.12, -H * 0.84, 0, -H);
   ctx.closePath();
   ink(ctx, c, w);
 
-  // Inner fan of three leaves, in the ink colour so the frame stays the shape.
-  for (const [tilt, len] of [
-    [0, 0.62],
-    [-0.62, 0.46],
-    [0.62, 0.46],
+  // The palmette inside: five leaves fanning up out of the waist, longest in
+  // the middle. Solid bloom rather than ink at half alpha — the old inner fan
+  // was three grey smudges, which is what a flat fill turns into the moment it
+  // is drawn transparent.
+  for (const [tilt, len, wide] of [
+    [0, 0.74, 0.3],
+    [-0.52, 0.58, 0.26],
+    [0.52, 0.58, 0.26],
+    [-1.0, 0.4, 0.2],
+    [1.0, 0.4, 0.2],
   ] as const) {
     ctx.save();
-    ctx.translate(0, H * 0.36);
-    leaf(ctx, -H * len, W * 0.3, tilt);
-    ctx.fillStyle = c.ink;
-    ctx.globalAlpha = 0.55;
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.translate(0, H * 0.46);
+    leaf(ctx, -H * len, W * wide, tilt);
+    ink(ctx, c, w * 0.6, c.bloom);
     ctx.restore();
   }
-  // Crown pip.
-  ctx.beginPath();
-  ctx.arc(0, -H * 0.72, r * 0.1, 0, Math.PI * 2);
-  ctx.fillStyle = c.accent;
-  ctx.fill();
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.65;
-  ctx.stroke();
-  // Two side scrolls, which is what stops an ogee looking like an egg.
+
+  // A trefoil under the top point, in the detail colour: the crown.
+  for (const [dx, dy, rr] of [
+    [0, -0.62, 0.085],
+    [-0.26, -0.46, 0.06],
+    [0.26, -0.46, 0.06],
+  ] as const) {
+    pip(ctx, W * dx, H * dy, r * rr, c.accent, c, w * 0.55);
+  }
+
+  // Two scrolls curling off the shoulders. Without them an ogee is an egg —
+  // and they are what makes the neighbouring devices read as one net.
   for (const side of [1, -1] as const) {
     ctx.save();
-    ctx.translate(side * W * 0.86, -H * 0.12);
-    ctx.rotate(side * 0.5 + jitter(seed) * 0.06);
-    leaf(ctx, r * 0.34, r * 0.12, side > 0 ? -1.9 : 1.9);
+    ctx.translate(side * W * 0.9, -H * 0.16);
+    ctx.rotate(side * 0.55 + jitter(seed) * 0.06 * c.edge.wobble);
+    leaf(ctx, r * 0.4, r * 0.14, side > 0 ? -1.9 : 1.9);
     ink(ctx, c, w * 0.7);
+    ctx.restore();
+    // A curl of the same scroll, tucked under, so it turns rather than points.
+    ctx.save();
+    ctx.translate(side * W * 0.72, H * 0.06);
+    ctx.rotate(side * 1.5);
+    leaf(ctx, r * 0.22, r * 0.09, side > 0 ? -1.9 : 1.9);
+    ink(ctx, c, w * 0.6, c.bloom);
     ctx.restore();
   }
 };
 
 /** A perched bird on a twig — the chinoiserie note. Faces by column. */
 const bird: MotifFn = (ctx, r, seed, c, at) => {
-  const w = motifInk(r * 0.8);
+  const w = motifInk(r * 0.8, c);
   const flip = (at.col + at.row) % 2 === 0 ? 1 : -1;
   ctx.save();
   ctx.scale(flip, 1);
-  ctx.rotate(jitter(seed) * 0.08);
+  ctx.rotate(jitter(seed) * 0.08 * c.edge.wobble);
 
   // Twig with two leaves, under the bird's feet.
   ctx.beginPath();
@@ -886,6 +1362,7 @@ const bird: MotifFn = (ctx, r, seed, c, at) => {
     ink(ctx, c, w * 0.7);
     ctx.restore();
   }
+  pip(ctx, -r * 0.74, r * 0.58, r * 0.08, c.accent, c, w * 0.6);
 
   // Body: a teardrop leaning forward, tail sweeping back and up.
   ctx.beginPath();
@@ -897,18 +1374,19 @@ const bird: MotifFn = (ctx, r, seed, c, at) => {
   ctx.closePath();
   ink(ctx, c, w);
 
-  // Wing: one closed leaf on the flank, ink-toned so it reads as a fold.
-  ctx.save();
-  ctx.translate(r * 0.06, r * 0.02);
-  leaf(ctx, r * 0.52, r * 0.2, -2.5);
-  ctx.fillStyle = c.ink;
-  ctx.globalAlpha = 0.42;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.7;
-  ctx.stroke();
-  ctx.restore();
+  // Wing: two folded leaves on the flank, the longer one behind. A solid
+  // second face, not the ink at 42% — the transparent version came out the
+  // same grey on every paper in the book, so the bird had no plumage.
+  for (const [len, wide, tilt, dx, fill] of [
+    [0.58, 0.22, -2.42, -0.02, c.bloom],
+    [0.44, 0.16, -2.62, 0.12, c.accent],
+  ] as const) {
+    ctx.save();
+    ctx.translate(r * dx, r * 0.02);
+    leaf(ctx, r * len, r * wide, tilt);
+    ink(ctx, c, w * 0.65, fill);
+    ctx.restore();
+  }
 
   // Head, beak, eye.
   ctx.beginPath();
@@ -940,75 +1418,118 @@ const bird: MotifFn = (ctx, r, seed, c, at) => {
  * scales.
  */
 const toile: MotifFn = (ctx, r, seed, c) => {
-  const w = motifInk(r * 0.9);
+  const w = motifInk(r * 0.9, c);
+  const RX = r * 0.94;
+  const RY = r * 0.8;
   ctx.save();
-  ctx.rotate(jitter(seed) * 0.04);
+  ctx.rotate(jitter(seed) * 0.03 * c.edge.wobble);
 
-  // Frame.
+  // The cartouche is a WINDOW, not a plate. Filling it with the motif's own
+  // face is what buried the first version: the cottage, the tree and both
+  // birds were drawn in ink over a solid disc the same value as they were, and
+  // at shelf size the whole thing read as a grey egg. The scene sits on clean
+  // paper and the frame is a ring around it.
   ctx.beginPath();
-  ctx.ellipse(0, 0, r * 0.92, r * 0.78, 0, 0, Math.PI * 2);
-  ink(ctx, c, w);
+  ctx.ellipse(0, 0, RX, RY, 0, 0, Math.PI * 2);
+  ink(ctx, c, w * 1.1, c.ground);
 
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(0, 0, r * 0.92, r * 0.78, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, RX * 0.99, RY * 0.99, 0, 0, Math.PI * 2);
   ctx.clip();
 
-  const ground = r * 0.4;
+  const horizon = r * 0.34;
+
+  // Two hills behind, in the second face, so the scene has a distance.
+  for (const [hx, hy, hr] of [
+    [-r * 0.42, horizon + r * 0.16, r * 0.44],
+    [r * 0.3, horizon + r * 0.1, r * 0.34],
+  ] as const) {
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hr, hr * 0.62, 0, Math.PI, Math.PI * 2);
+    ctx.closePath();
+    ink(ctx, c, w * 0.7, c.bloom);
+  }
+
   // Ground line.
   ctx.beginPath();
-  ctx.moveTo(-r, ground);
-  ctx.quadraticCurveTo(0, ground - r * 0.1, r, ground);
+  ctx.moveTo(-r, horizon);
+  ctx.quadraticCurveTo(0, horizon - r * 0.08, r, horizon);
   ctx.strokeStyle = c.ink;
   ctx.lineWidth = w * 0.9;
   ctx.stroke();
 
-  // Cottage: a box with a pitched roof and a door.
-  const hw = r * 0.3;
-  const hh = r * 0.36;
+  // Cottage: gable wall, pitched roof, door, window, chimney and smoke.
+  const cx = -r * 0.34;
+  const cw = r * 0.5;
+  const ch = r * 0.34;
   ctx.beginPath();
-  ctx.rect(-r * 0.52, ground - hh, hw * 2, hh);
-  ctx.fillStyle = c.ground;
-  ctx.fill();
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.8;
-  ctx.stroke();
+  ctx.rect(cx - cw / 2, horizon - ch, cw, ch);
+  ink(ctx, c, w * 0.8, c.ground);
+  // Chimney first, so the roof laps over its foot.
   ctx.beginPath();
-  ctx.moveTo(-r * 0.6, ground - hh);
-  ctx.lineTo(-r * 0.52 + hw, ground - hh - r * 0.3);
-  ctx.lineTo(-r * 0.44 + hw * 2, ground - hh);
+  ctx.rect(cx + cw * 0.24, horizon - ch - r * 0.34, cw * 0.16, r * 0.24);
+  ink(ctx, c, w * 0.7, c.bloom);
+  ctx.beginPath();
+  ctx.moveTo(cx - cw * 0.66, horizon - ch);
+  ctx.lineTo(cx, horizon - ch - r * 0.28);
+  ctx.lineTo(cx + cw * 0.66, horizon - ch);
   ctx.closePath();
-  ctx.fillStyle = c.accent;
-  ctx.fill();
-  ctx.lineJoin = 'round';
-  ctx.stroke();
+  ink(ctx, c, w * 0.8, c.accent);
   ctx.beginPath();
-  ctx.rect(-r * 0.32, ground - hh * 0.62, hw * 0.4, hh * 0.62);
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.6;
-  ctx.stroke();
+  ctx.rect(cx - cw * 0.14, horizon - ch * 0.6, cw * 0.28, ch * 0.6);
+  ink(ctx, c, w * 0.6, c.bloom);
+  ctx.beginPath();
+  ctx.rect(cx + cw * 0.22, horizon - ch * 0.78, cw * 0.2, ch * 0.3);
+  ink(ctx, c, w * 0.55, c.ground);
+  // Three puffs of smoke leaning with the wind.
+  for (let i = 0; i < 3; i++) {
+    pip(
+      ctx,
+      cx + cw * 0.32 + r * (0.05 + i * 0.09),
+      horizon - ch - r * (0.4 + i * 0.11),
+      r * (0.05 + i * 0.017),
+      c.ground,
+      c,
+      w * 0.5,
+    );
+  }
 
-  // Tree: a blobby crown on a short trunk.
+  // Tree: a lobed crown on a short trunk, with a trunk line inside the crown.
   ctx.save();
-  ctx.translate(r * 0.42, ground - r * 0.34);
+  ctx.translate(r * 0.44, horizon - r * 0.3);
   ctx.beginPath();
-  ctx.moveTo(0, r * 0.34);
-  ctx.lineTo(0, -r * 0.02);
+  ctx.moveTo(0, r * 0.3);
+  ctx.lineTo(0, -r * 0.04);
   ctx.strokeStyle = c.ink;
   ctx.lineWidth = w * 0.9;
+  ctx.lineCap = 'round';
   ctx.stroke();
-  blob(ctx, r * 0.26, seed + 9, 8, 0.16);
-  ctx.fillStyle = c.ground;
-  ctx.fill();
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.8;
-  ctx.stroke();
+  blob(ctx, r * 0.24, seed + 9, 9, 0.18 * c.edge.wobble);
+  ink(ctx, c, w * 0.8, c.bloom);
   ctx.restore();
+
+  // A paling fence along the ground, which is what makes it a place.
+  for (let i = -3; i <= 3; i++) {
+    const fx = cx + i * r * 0.11;
+    ctx.beginPath();
+    ctx.moveTo(fx, horizon + r * 0.02);
+    ctx.lineTo(fx, horizon + r * 0.14);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = w * 0.5;
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.36, horizon + r * 0.07);
+  ctx.lineTo(cx + r * 0.36, horizon + r * 0.07);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = w * 0.5;
+  ctx.stroke();
 
   // Two birds, because an empty sky reads as an unfinished drawing.
   for (const [bx, by, s] of [
-    [-r * 0.34, -r * 0.44, 1],
-    [r * 0.1, -r * 0.56, 0.7],
+    [-r * 0.36, -r * 0.46, 1],
+    [r * 0.08, -r * 0.58, 0.7],
   ] as const) {
     ctx.beginPath();
     ctx.moveTo(bx - r * 0.11 * s, by);
@@ -1019,42 +1540,133 @@ const toile: MotifFn = (ctx, r, seed, c) => {
     ctx.stroke();
   }
   ctx.restore();
+
+  // The frame's own moulding: a second ring inside the first, and four pips on
+  // the axes — a cartouche rather than an oval hole.
+  ctx.beginPath();
+  ctx.ellipse(0, 0, RX * 0.9, RY * 0.88, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = w * 0.5;
+  ctx.stroke();
+  for (const [px, py] of [
+    [0, -RY],
+    [0, RY],
+    [-RX, 0],
+    [RX, 0],
+  ] as const) {
+    pip(ctx, px, py, r * 0.07, c.accent, c, w * 0.6);
+  }
   ctx.restore();
 };
 
-/** A rounded arch — a colonnade seen flat on. */
-const arch: MotifFn = (ctx, r, seed, c) => {
-  const w = motifInk(r * 0.8);
-  const hw = r * 0.56;
-  const hh = r * 0.9;
+/**
+ * One bay of an ARCADE: a pier, the arch it carries, and the ledge it stands
+ * on.
+ *
+ * The first version drew a free-standing arch centred in its cell, and the
+ * reader's headline note — "the area that connects different parts looks
+ * unnatural" — is exactly what that produces: a colonnade is a row of arches
+ * that SHARE their piers, and drawing each one whole leaves a strip of bare
+ * wall between every pair. So the pier is drawn on the cell's left EDGE (the
+ * neighbour draws the one on the right, and it is the same pier), the ledge
+ * runs the full cell width, and every joint lands on a cell boundary the
+ * lattice has already made exact.
+ *
+ * Everything is measured off the fitted cell rather than off `r`, because a
+ * joint that is a percent out is a joint the eye finds immediately.
+ */
+const arcade: MotifFn = (ctx, r, seed, c, at) => {
+  const W = at.w > 0 ? at.w : r * 2;
+  const H = at.h > 0 ? at.h : r * 2;
+  const w = motifInk(r * 0.8, c);
+  const pier = Math.max(2.5, W * 0.16);
+  // The bay does NOT fill its cell top to bottom. It used to: the ledge sat
+  // flush on the bottom edge and the arch's crown poked out of the top, so at
+  // one bay per tile the crown of the row below landed on the ledge of the row
+  // above — and the horizontal seam became the single busiest line in the
+  // whole tile. A band of plain wall at each end is both the fix and what a
+  // real arcade has between its storeys.
+  const foot = H * 0.42;
+  const ledge = Math.max(2.5, H * 0.06);
+  // Half a pixel of overlap on each side. Two rects that share an exact edge
+  // still leave an antialiased hairline between them, and a hairline repeated
+  // down a wall is the pale banding this module exists to avoid.
+  const bleed = 0.6;
+
+  // The ledge, running the full width of the bay.
   ctx.beginPath();
-  ctx.moveTo(-hw, hh);
-  ctx.lineTo(-hw, -hh * 0.16);
-  ctx.quadraticCurveTo(-hw, -hh, 0, -hh);
-  ctx.quadraticCurveTo(hw, -hh, hw, -hh * 0.16);
-  ctx.lineTo(hw, hh);
+  ctx.rect(-W / 2 - bleed, foot - ledge, W + bleed * 2, ledge);
+  ctx.fillStyle = c.bloom;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-W / 2 - bleed, foot - ledge);
+  ctx.lineTo(W / 2 + bleed, foot - ledge);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = w * 0.8;
+  ctx.lineCap = 'butt';
+  ctx.stroke();
+  ctx.lineCap = 'round';
+
+  const inner = W / 2 - pier;
+  const spring = -H * 0.02;
+  const crown = -H * 0.28;
+
+  // The niche: the void the arch frames, as a second flat face. Depth in this
+  // language is a darker face beside a lighter one, and an arcade with nothing
+  // behind it is a row of croquet hoops.
+  ctx.beginPath();
+  ctx.moveTo(-inner, foot - ledge);
+  ctx.lineTo(-inner, spring);
+  ctx.quadraticCurveTo(-inner, crown, 0, crown);
+  ctx.quadraticCurveTo(inner, crown, inner, spring);
+  ctx.lineTo(inner, foot - ledge);
+  ctx.closePath();
+  ink(ctx, c, w * 0.7, c.bloom);
+
+  // The arch band and its two piers, as one silhouette so the springing point
+  // is a corner of the same shape rather than two shapes meeting.
+  const outerTop = crown - Math.max(3, H * 0.1);
+  ctx.beginPath();
+  ctx.moveTo(-W / 2, foot);
+  ctx.lineTo(-W / 2, spring - H * 0.03);
+  ctx.quadraticCurveTo(-W / 2, outerTop, 0, outerTop);
+  ctx.quadraticCurveTo(W / 2, outerTop, W / 2, spring - H * 0.03);
+  ctx.lineTo(W / 2, foot);
+  ctx.lineTo(inner, foot);
+  ctx.lineTo(inner, spring);
+  ctx.quadraticCurveTo(inner, crown, 0, crown);
+  ctx.quadraticCurveTo(-inner, crown, -inner, spring);
+  ctx.lineTo(-inner, foot);
   ctx.closePath();
   ink(ctx, c, w);
-  // Inner keystone line, so an arch is an arch and not a tombstone.
+
+  // Keystone at the crown, and an impost block where each pier meets its arch.
   ctx.beginPath();
-  ctx.moveTo(-hw * 0.62, hh);
-  ctx.lineTo(-hw * 0.62, -hh * 0.14);
-  ctx.quadraticCurveTo(-hw * 0.62, -hh * 0.66, 0, -hh * 0.66);
-  ctx.quadraticCurveTo(hw * 0.62, -hh * 0.66, hw * 0.62, -hh * 0.14);
-  ctx.lineTo(hw * 0.62, hh);
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w * 0.6;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(0, -hh * 0.82, r * 0.08, 0, Math.PI * 2);
-  ctx.fillStyle = c.accent;
-  ctx.fill();
+  ctx.moveTo(-W * 0.055, crown + H * 0.02);
+  ctx.lineTo(W * 0.055, crown + H * 0.02);
+  ctx.lineTo(W * 0.075, outerTop + H * 0.01);
+  ctx.lineTo(-W * 0.075, outerTop + H * 0.01);
+  ctx.closePath();
+  ink(ctx, c, w * 0.7, c.accent);
+  for (const side of [-1, 1] as const) {
+    ctx.beginPath();
+    ctx.rect(side * (W / 2) - (side > 0 ? pier * 1.2 : 0), spring, pier * 1.2, Math.max(2, H * 0.035));
+    ink(ctx, c, w * 0.55, c.accent);
+  }
   void seed;
 };
 
-/** One overlapping scale of a fish-scale repeat. */
+/**
+ * One scale of a fish-scale repeat: the rim, a shell line, and three ribs.
+ *
+ * Deliberately still an OUTLINE and not a filled overlapping scale. A filled
+ * seigaiha is a cycle of overlaps — every row laps the one above it — and on a
+ * torus that cycle has to break somewhere, which puts one row's overlap the
+ * wrong way round at the seam. Drawn as a line, there is nothing to be behind
+ * anything.
+ */
 const scallop: MotifFn = (ctx, r, seed, c) => {
-  const w = motifInk(r * 0.8);
+  const w = motifInk(r * 0.8, c);
   ctx.beginPath();
   ctx.moveTo(-r, 0);
   ctx.bezierCurveTo(-r, r * 1.28, r, r * 1.28, r, 0);
@@ -1062,35 +1674,64 @@ const scallop: MotifFn = (ctx, r, seed, c) => {
   ctx.lineWidth = w;
   ctx.lineCap = 'round';
   ctx.stroke();
-  // A second, tighter arc inside — the shell line.
+  // Two tighter arcs inside — the shell lines. The inner one takes the detail
+  // colour, which is the only colour a line-drawn motif has anywhere to put.
   ctx.beginPath();
-  ctx.moveTo(-r * 0.6, r * 0.12);
-  ctx.bezierCurveTo(-r * 0.6, r * 0.86, r * 0.6, r * 0.86, r * 0.6, r * 0.12);
-  ctx.lineWidth = w * 0.6;
+  ctx.moveTo(-r * 0.68, r * 0.1);
+  ctx.bezierCurveTo(-r * 0.68, r * 0.94, r * 0.68, r * 0.94, r * 0.68, r * 0.1);
+  ctx.lineWidth = w * 0.62;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.38, r * 0.2);
+  ctx.bezierCurveTo(-r * 0.38, r * 0.66, r * 0.38, r * 0.66, r * 0.38, r * 0.2);
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = w * 0.62;
   ctx.stroke();
   void seed;
   void c.face;
 };
 
-/** A hexagon outline with a pip in the middle. */
-const honeycombCell: MotifFn = (ctx, r, seed, c) => {
+/**
+ * One cell of a honeycomb. Every third one is capped, so the comb has honey
+ * in it rather than being a field of identical empty hexagons.
+ */
+const honeycombCell: MotifFn = (ctx, r, seed, c, at) => {
   const pts: [number, number][] = [];
   for (let i = 0; i < 6; i++) {
     const a = -Math.PI / 2 + (i * Math.PI) / 3;
     pts.push([Math.cos(a) * r, Math.sin(a) * r]);
   }
-  roundedPoly(ctx, pts, r * 0.18);
-  ink(ctx, c, motifInk(r));
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.14, 0, Math.PI * 2);
-  ctx.fillStyle = c.accent;
-  ctx.fill();
+  // Barely rounded: these cells MEET, and a corner rounded off by a fifth of
+  // the cell leaves six triangles of bare wall at every junction.
+  roundedPoly(ctx, pts, r * 0.12 * joinRound(c));
+  // One cell in four, from the two parities — which is why `parity: 2` is on
+  // the plan. Any rule with a longer period than the fitted count has puts the
+  // wrong cells against the seam.
+  const capped = at.col % 2 === 0 && at.row % 2 === 0;
+  ink(ctx, c, motifInk(r, c), capped ? c.bloom : true);
+  if (capped) {
+    // A smaller hexagon inside the capped ones, in the detail colour.
+    const inner = pts.map(([x, y]) => [x * 0.44, y * 0.44] as const);
+    roundedPoly(ctx, inner, r * 0.08 * joinRound(c));
+    ink(ctx, c, motifInk(r, c) * 0.7, c.accent);
+  } else {
+    pip(ctx, 0, 0, r * 0.13, c.accent, c, 0);
+  }
   void seed;
 };
 
-/** A trellis diamond: a rounded lozenge outline with a leaf at each waist. */
+/**
+ * One diamond of a garden trellis, plus the knot where four of them meet.
+ *
+ * The old one rounded its corners by a third of the lozenge, so the four
+ * diamonds around a junction all stopped short of it and left a little
+ * four-pointed hole — the joinery complaint, in miniature, repeated across the
+ * whole wall. The corners are now nearly sharp, and the junction gets a KNOT
+ * on top: a rosette drawn at this cell's top and left corners only, which
+ * covers every junction in the lattice exactly once.
+ */
 const trellisCell: MotifFn = (ctx, r, seed, c) => {
-  const w = motifInk(r * 0.8);
+  const w = motifInk(r * 0.8, c);
   roundedPoly(
     ctx,
     [
@@ -1099,46 +1740,87 @@ const trellisCell: MotifFn = (ctx, r, seed, c) => {
       [0, r],
       [-r, 0],
     ],
-    r * 0.34,
+    r * 0.08 * joinRound(c),
   );
   ctx.strokeStyle = c.ink;
-  ctx.lineWidth = w;
+  ctx.lineWidth = w * 1.5;
   ctx.lineJoin = 'round';
   ctx.stroke();
+  // A lighter core down the middle of the batten, so the lattice reads as a
+  // strip of painted wood rather than as a wire.
+  ctx.strokeStyle = c.face;
+  ctx.lineWidth = w * 0.62;
+  ctx.stroke();
+  // Leaves hung inside the lozenge, off the two side corners.
   for (const side of [1, -1] as const) {
     ctx.save();
-    ctx.translate(side * r * 0.86, 0);
-    leaf(ctx, r * 0.34 * side, r * 0.12 * side, side > 0 ? -1.57 : 1.57);
-    ink(ctx, c, w * 0.7);
+    ctx.translate(side * r * 0.6, 0);
+    ctx.rotate(side * -0.5);
+    leaf(ctx, r * 0.42 * side, r * 0.15 * side, side > 0 ? -1.57 : 1.57);
+    ink(ctx, c, w * 0.7, c.bloom);
+    ctx.restore();
+  }
+  for (const [kx, ky] of [
+    [0, -r],
+    [-r, 0],
+  ] as const) {
+    ctx.save();
+    ctx.translate(kx, ky);
+    ctx.rotate(Math.PI / 4);
+    roundedPoly(
+      ctx,
+      [
+        [0, -r * 0.17],
+        [r * 0.17, 0],
+        [0, r * 0.17],
+        [-r * 0.17, 0],
+      ],
+      r * 0.06 * joinRound(c),
+    );
+    ink(ctx, c, w * 0.8, c.accent);
     ctx.restore();
   }
   void seed;
 };
 
 /**
- * One woven bar of a herringbone.
+ * A harlequin lozenge — big diamonds meeting edge to edge, two colours.
  *
- * The lean comes from `col + row`, not from the seed: a herringbone is a WEAVE,
- * and a weave whose bars lean at random is a heap of sticks. With the brick
- * lattice's half-step, `col + row` puts each bar's end against the next bar's
- * flank, which is the whole look.
+ * Measured off the fitted cell rather than off `r`: the diamonds have to share
+ * their edges exactly, and the cell is not square (a harlequin is taller than
+ * it is wide or it reads as a chessboard turned 45°).
  */
-const herringboneBar: MotifFn = (ctx, r, seed, c, at) => {
-  const w = motifInk(r * 0.7);
-  ctx.save();
-  ctx.rotate(((at.col + at.row) % 2 === 0 ? 1 : -1) * (Math.PI / 4));
+const harlequin: MotifFn = (ctx, r, seed, c, at) => {
+  const hw = (at.w > 0 ? at.w : r * 2) / 2;
+  const hh = (at.h > 0 ? at.h : r * 2) / 2;
+  const w = motifInk(Math.min(hw, hh) * 0.8, c);
+  const bleed = 0.5;
   roundedPoly(
     ctx,
     [
-      [-r, -r * 0.3],
-      [r, -r * 0.3],
-      [r, r * 0.3],
-      [-r, r * 0.3],
+      [0, -hh - bleed],
+      [hw + bleed, 0],
+      [0, hh + bleed],
+      [-hw - bleed, 0],
     ],
-    r * 0.22,
+    Math.min(hw, hh) * 0.06 * joinRound(c),
   );
-  ink(ctx, c, w);
-  ctx.restore();
+  const dark = (at.col + at.row) % 2 === 0;
+  ink(ctx, c, w, dark ? c.bloom : true);
+  // A slim inner lozenge, offset toward nothing in particular — it is a second
+  // flat face, not a shadow. On the pale diamonds it takes the detail colour,
+  // on the dark ones the face, so the two populations swap roles.
+  roundedPoly(
+    ctx,
+    [
+      [0, -hh * 0.44],
+      [hw * 0.44, 0],
+      [0, hh * 0.44],
+      [-hw * 0.44, 0],
+    ],
+    Math.min(hw, hh) * 0.05 * joinRound(c),
+  );
+  ink(ctx, c, w * 0.7, dark ? c.face : c.accent);
   void seed;
 };
 
@@ -1157,10 +1839,175 @@ const ginghamCross: MotifFn = (ctx, r, seed, c) => {
       [r, r],
       [-r, r],
     ],
-    r * 0.36,
+    r * 0.36 * c.edge.round,
   );
-  ctx.fillStyle = c.relief;
+  ctx.fillStyle = c.bloom;
   ctx.fill();
+  void seed;
+};
+
+/**
+ * The pomegranate — the fruit every sixteenth-century weaver put on everything.
+ *
+ * The one motif in the book with a real INSIDE: the fruit is cut away to show
+ * a bed of seeds, which is where the detail colour finally gets a surface
+ * rather than a pip.
+ */
+const pomegranate: MotifFn = (ctx, r, seed, c) => {
+  const w = motifInk(r * 0.8, c);
+  const H = r * 0.9;
+  const W = r * 0.62;
+  ctx.save();
+  ctx.rotate(jitter(seed) * 0.06 * c.edge.wobble);
+
+  // Two leaves behind the fruit, flanking the crown. Hung off the BELLY in the
+  // first pass, where they read as a tail and turned the fruit into a chilli.
+  for (const side of [1, -1] as const) {
+    ctx.save();
+    ctx.translate(side * W * 0.42, -H * 0.34);
+    ctx.rotate(side * 1.15);
+    leaf(ctx, r * 0.5 * side, r * 0.16 * side, side > 0 ? -1.57 : 1.57);
+    ink(ctx, c, w * 0.7, c.bloom);
+    ctx.restore();
+  }
+
+  // The body: broad and heavy at the bottom, drawn in to a shoulder at the top.
+  ctx.beginPath();
+  ctx.moveTo(0, -H * 0.42);
+  ctx.bezierCurveTo(W * 0.72, -H * 0.34, W, H * 0.12, W * 0.78, H * 0.54);
+  ctx.bezierCurveTo(W * 0.6, H * 0.86, -W * 0.6, H * 0.86, -W * 0.78, H * 0.54);
+  ctx.bezierCurveTo(-W, H * 0.12, -W * 0.72, -H * 0.34, 0, -H * 0.42);
+  ctx.closePath();
+  ink(ctx, c, w);
+
+  // The cut: a dome of seed-bed across the belly, with the seeds set into it.
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-W * 0.66, H * 0.1);
+  ctx.bezierCurveTo(-W * 0.5, -H * 0.24, W * 0.5, -H * 0.24, W * 0.66, H * 0.1);
+  ctx.bezierCurveTo(W * 0.5, H * 0.68, -W * 0.5, H * 0.68, -W * 0.66, H * 0.1);
+  ctx.closePath();
+  ink(ctx, c, w * 0.7, c.bloom);
+  ctx.clip();
+  for (const [sx, sy] of [
+    [-0.3, -0.02],
+    [0, -0.1],
+    [0.3, -0.02],
+    [-0.16, 0.2],
+    [0.16, 0.2],
+    [0, 0.42],
+  ] as const) {
+    ctx.save();
+    ctx.translate(W * sx, H * sy);
+    ctx.rotate(sx * 0.5);
+    leaf(ctx, H * 0.24, W * 0.11, 0);
+    ink(ctx, c, w * 0.5, c.accent);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // The calyx: five sepals standing off the shoulder. It is the crown that
+  // makes a pomegranate a pomegranate and not an apple.
+  for (const [tilt, len] of [
+    [0, 0.34],
+    [-0.62, 0.28],
+    [0.62, 0.28],
+    [-1.15, 0.2],
+    [1.15, 0.2],
+  ] as const) {
+    ctx.save();
+    ctx.translate(0, -H * 0.36);
+    leaf(ctx, -H * len, W * 0.13, tilt);
+    ink(ctx, c, w * 0.6);
+    ctx.restore();
+  }
+  ctx.restore();
+};
+
+/**
+ * A classical urn with a spray of three sprigs — the mantelpiece motif.
+ *
+ * Drawn from a centre line out, because an urn that is a hair asymmetric reads
+ * as a mistake rather than as a hand-drawn line.
+ */
+const urn: MotifFn = (ctx, r, seed, c) => {
+  const w = motifInk(r * 0.8, c);
+  const H = r * 0.92;
+  const W = r * 0.54;
+
+  // The spray first, so the urn's lip laps over the stems.
+  for (const [tilt, len, bud] of [
+    [0, 0.62, 0.11],
+    [-0.62, 0.5, 0.09],
+    [0.62, 0.5, 0.09],
+  ] as const) {
+    ctx.save();
+    ctx.translate(0, -H * 0.16);
+    ctx.rotate(tilt);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(W * 0.16, -H * len * 0.5, 0, -H * len);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = w * 0.7;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    for (const [t, side] of [
+      [0.34, 1],
+      [0.6, -1],
+    ] as const) {
+      ctx.save();
+      ctx.translate(0, -H * len * t);
+      leaf(ctx, r * 0.24 * side, r * 0.09 * side, side > 0 ? -1.15 : 1.15);
+      ink(ctx, c, w * 0.55, c.bloom);
+      ctx.restore();
+    }
+    pip(ctx, 0, -H * len, r * bud, c.accent, c, w * 0.55);
+    ctx.restore();
+  }
+
+  // Foot, stem, bowl, lip — bottom up, each lapping the one below it.
+  ctx.beginPath();
+  ctx.moveTo(-W * 0.52, H * 0.92);
+  ctx.lineTo(W * 0.52, H * 0.92);
+  ctx.lineTo(W * 0.3, H * 0.74);
+  ctx.lineTo(-W * 0.3, H * 0.74);
+  ctx.closePath();
+  ink(ctx, c, w * 0.8);
+  ctx.beginPath();
+  ctx.rect(-W * 0.15, H * 0.52, W * 0.3, H * 0.24);
+  ink(ctx, c, w * 0.7, c.bloom);
+  ctx.beginPath();
+  ctx.moveTo(-W * 0.72, H * 0.02);
+  ctx.bezierCurveTo(-W * 0.86, H * 0.44, -W * 0.4, H * 0.6, 0, H * 0.6);
+  ctx.bezierCurveTo(W * 0.4, H * 0.6, W * 0.86, H * 0.44, W * 0.72, H * 0.02);
+  ctx.closePath();
+  ink(ctx, c, w);
+  // A band across the belly of the bowl, in the detail colour.
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-W * 0.72, H * 0.02);
+  ctx.bezierCurveTo(-W * 0.86, H * 0.44, -W * 0.4, H * 0.6, 0, H * 0.6);
+  ctx.bezierCurveTo(W * 0.4, H * 0.6, W * 0.86, H * 0.44, W * 0.72, H * 0.02);
+  ctx.closePath();
+  ctx.clip();
+  ctx.beginPath();
+  ctx.rect(-W, H * 0.16, W * 2, H * 0.14);
+  ctx.fillStyle = c.accent;
+  ctx.fill();
+  ctx.restore();
+  // Two handles, curling out of the shoulder.
+  for (const side of [1, -1] as const) {
+    ctx.beginPath();
+    ctx.moveTo(side * W * 0.66, H * 0.04);
+    ctx.quadraticCurveTo(side * W * 1.14, -H * 0.02, side * W * 0.92, H * 0.26);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = w * 0.9;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+  // The lip, wider than the bowl, which is what makes it an urn.
+  roundedRect(ctx, -W * 0.86, -H * 0.14, W * 1.72, H * 0.18, r * 0.06 * c.edge.round);
+  ink(ctx, c, w * 0.85);
   void seed;
 };
 
@@ -1170,14 +2017,16 @@ const MOTIFS: Partial<Record<WallpaperPattern, MotifFn>> = {
   moonstar,
   sprig,
   laurel,
+  pomegranate,
   damask,
+  urn,
   bird,
   toile,
-  arch,
+  arch: arcade,
   scallop,
+  harlequin,
   honeycomb: honeycombCell,
   trellis: trellisCell,
-  herringbone: herringboneBar,
   gingham: ginghamCross,
 };
 
@@ -1211,30 +2060,61 @@ interface PatternPlan {
    * out of contact and the field falls apart into confetti.
    */
   radiusFrom: 'min' | 'col' | 'row';
+  /**
+   * How much of the depth axis this pattern actually takes, 0–1.
+   *
+   * A motif that MEETS its neighbours cannot carry much relief: the second
+   * face has nowhere to sit except in the joint, where it shows as one cell
+   * printed a hair off register rather than as thickness. Free-standing motifs
+   * take the full offset; tessellating ones take a third of it, and the depth
+   * picker still does something visible on both.
+   */
+  relief: number;
+  /**
+   * The period, in cells, of anything the motif decides from `col` / `row`.
+   *
+   * 1 for a motif that draws the same thing everywhere. 2 for one that
+   * alternates — a harlequin's two colours, a bird's facing, a laurel's
+   * mirror. The lattice is then fitted to a MULTIPLE of it, without which the
+   * alternation lands out of phase across the seam.
+   */
+  parity: number;
 }
 
 const PLANS: Record<WallpaperPattern, PatternPlan> = {
-  plain: { lattice: 'grid', cell: 1, radius: 0, aspect: 1, radiusFrom: 'min' },
-  stripe: { lattice: 'grid', cell: 1.15, radius: 0, aspect: 1, radiusFrom: 'min' },
-  pinstripe: { lattice: 'grid', cell: 0.5, radius: 0, aspect: 1, radiusFrom: 'min' },
-  ticking: { lattice: 'grid', cell: 1.05, radius: 0, aspect: 1, radiusFrom: 'min' },
-  gingham: { lattice: 'grid', cell: 0.9, radius: 0.5, aspect: 1, radiusFrom: 'min' },
-  chevron: { lattice: 'grid', cell: 1.1, radius: 0, aspect: 1, radiusFrom: 'min' },
-  herringbone: { lattice: 'brick', cell: 0.72, radius: 0.6, aspect: 1, radiusFrom: 'min' },
+  plain: { lattice: 'grid', cell: 1, radius: 0, aspect: 1, radiusFrom: 'min', relief: 0, parity: 1 },
+  pinstripe: { lattice: 'grid', cell: 0.5, radius: 0, aspect: 1, radiusFrom: 'min', relief: 0, parity: 1 },
+  ticking: { lattice: 'grid', cell: 1.05, radius: 0, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
+  stripe: { lattice: 'grid', cell: 1.15, radius: 0, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
+  chevron: { lattice: 'grid', cell: 1.1, radius: 0, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
+  // `cell` here is the side of the whole 4a repeat block, not a bar — see
+  // `herringboneMarks`, which is where the parquet is actually laid.
+  herringbone: { lattice: 'grid', cell: 1.7, radius: 0, aspect: 1, radiusFrom: 'min', relief: 0.35, parity: 1 },
+  gingham: { lattice: 'grid', cell: 0.9, radius: 0.5, aspect: 1, radiusFrom: 'min', relief: 0.5, parity: 1 },
+  harlequin: { lattice: 'grid', cell: 1.05, radius: 0.5, aspect: 1.4, radiusFrom: 'col', relief: 0.3, parity: 2 },
   // 0.866 and 0.577 are not taste: they are what makes a pointy-top hexagon
   // grid close. Width √3·R across, 1.5·R down.
-  honeycomb: { lattice: 'brick', cell: 0.95, radius: 0.577, aspect: 0.866, radiusFrom: 'col' },
-  trellis: { lattice: 'grid', cell: 1, radius: 0.5, aspect: 1, radiusFrom: 'min' },
-  scallop: { lattice: 'brick', cell: 1, radius: 0.5, aspect: 0.56, radiusFrom: 'col' },
-  arch: { lattice: 'grid', cell: 1.05, radius: 0.62, aspect: 1.2, radiusFrom: 'col' },
-  polka: { lattice: 'diamond', cell: 1.15, radius: 0.42, aspect: 1, radiusFrom: 'min' },
-  star: { lattice: 'diamond', cell: 1.25, radius: 0.46, aspect: 1, radiusFrom: 'min' },
-  moonstar: { lattice: 'halfdrop', cell: 1.1, radius: 0.46, aspect: 1, radiusFrom: 'min' },
-  sprig: { lattice: 'halfdrop', cell: 1.05, radius: 0.44, aspect: 1.1, radiusFrom: 'min' },
-  laurel: { lattice: 'halfdrop', cell: 1.2, radius: 0.44, aspect: 1, radiusFrom: 'min' },
-  damask: { lattice: 'halfdrop', cell: 1.5, radius: 0.44, aspect: 1.25, radiusFrom: 'min' },
-  bird: { lattice: 'halfdrop', cell: 1.7, radius: 0.44, aspect: 1, radiusFrom: 'min' },
-  toile: { lattice: 'halfdrop', cell: 2.1, radius: 0.46, aspect: 1, radiusFrom: 'min' },
+  honeycomb: { lattice: 'brick', cell: 0.95, radius: 0.577, aspect: 0.866, radiusFrom: 'col', relief: 0.3, parity: 2 },
+  trellis: { lattice: 'grid', cell: 1, radius: 0.5, aspect: 1, radiusFrom: 'min', relief: 0.6, parity: 1 },
+  arch: { lattice: 'grid', cell: 1.05, radius: 0.5, aspect: 1.3, radiusFrom: 'col', relief: 0.4, parity: 1 },
+  scallop: { lattice: 'brick', cell: 1, radius: 0.5, aspect: 0.56, radiusFrom: 'col', relief: 0.3, parity: 1 },
+  polka: { lattice: 'diamond', cell: 1.15, radius: 0.42, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
+  star: { lattice: 'diamond', cell: 1.25, radius: 0.46, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
+  moonstar: { lattice: 'halfdrop', cell: 1.1, radius: 0.46, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
+  sprig: { lattice: 'halfdrop', cell: 1.05, radius: 0.44, aspect: 1.1, radiusFrom: 'min', relief: 1, parity: 1 },
+  laurel: { lattice: 'halfdrop', cell: 1.2, radius: 0.44, aspect: 1, radiusFrom: 'min', relief: 1, parity: 2 },
+  pomegranate: { lattice: 'halfdrop', cell: 1.25, radius: 0.44, aspect: 1.15, radiusFrom: 'min', relief: 1, parity: 1 },
+  damask: { lattice: 'halfdrop', cell: 1.5, radius: 0.44, aspect: 1.25, radiusFrom: 'min', relief: 1, parity: 1 },
+  urn: { lattice: 'halfdrop', cell: 1.3, radius: 0.44, aspect: 1.15, radiusFrom: 'min', relief: 1, parity: 1 },
+  // Both scenics used to nominate a cell so large that one bird filled a
+  // 300px patch of wall, which is a poster, not a wallpaper. Halved, and the
+  // presets that asked for them at `grand` now ask at `large`.
+  bird: { lattice: 'halfdrop', cell: 1.15, radius: 0.44, aspect: 1, radiusFrom: 'min', relief: 1, parity: 2 },
+  // Radius, not cell, is what had to come down: in a half-drop the tightest
+  // neighbour is the DIAGONAL one at half a cell each way, and a round motif
+  // wide enough to look right against its side neighbours ran straight into
+  // it. Two cartouches were overlapping their frames.
+  toile: { lattice: 'halfdrop', cell: 1.5, radius: 0.34, aspect: 1, radiusFrom: 'min', relief: 1, parity: 1 },
 };
 
 /**
@@ -1246,13 +2126,14 @@ const PLANS: Record<WallpaperPattern, PatternPlan> = {
  * lattice that shifts alternate rows or columns needs that count to be even,
  * or the shifted half lands on the unshifted half across the seam.
  */
-function fitCount(size: number, cell: number, even: boolean, min = 2): number {
+function fitCount(size: number, cell: number, multiple: number, min = 2): number {
   const raw = Math.max(min, Math.round(size / Math.max(1, cell)));
-  if (!even) return raw;
-  return Math.max(min % 2 === 0 ? min : min + 1, raw % 2 === 0 ? raw : raw + 1);
+  const m = Math.max(1, Math.round(multiple));
+  if (m === 1) return raw;
+  return Math.max(Math.ceil(min / m) * m, Math.ceil(raw / m) * m);
 }
 
-const ORIGIN_CELL: CellAt = { col: 0, row: 0, alt: false };
+const ORIGIN_CELL: CellAt = { col: 0, row: 0, alt: false, w: 0, h: 0 };
 
 /** A motif placed on the lattice, ready to be wrapped by {@link emit}. */
 function motifMark(
@@ -1267,7 +2148,9 @@ function motifMark(
   // Generous: a motif's own paths stay inside r, but leaves, beaks and ink
   // width push past it, and a span that is too small is the one bug in this
   // module that produces a seam. Over-declaring costs an extra draw call.
-  const pad = r * 1.5 + relief + 4;
+  // A blotted nib strokes at two and a bit times the crisp weight and a motif
+  // that meets its neighbours reaches a full cell, so the slack is generous.
+  const pad = r * 1.7 + relief + 10;
   return {
     spanX: [cx - pad, cx + pad],
     spanY: [cy - pad, cy + pad],
@@ -1296,10 +2179,17 @@ function lattice(
   // the shifted half meets the unshifted half across the seam. Everything else
   // may go down to a single cell, which is what lets a grand toile show one
   // large vignette in a tile rather than four small ones.
-  const wantEvenCols = plan.lattice === 'halfdrop';
-  const wantEvenRows = plan.lattice === 'brick';
-  const cols = fitCount(size, nominal * plan.cell, wantEvenCols, wantEvenCols ? 2 : 1);
-  const rows = fitCount(size, nominal * plan.cell * plan.aspect, wantEvenRows, wantEvenRows ? 2 : 1);
+  //
+  // `parity` piles onto that for the SAME reason one step further in: a motif
+  // that reads `col` or `row` to decide which way it faces, or which of two
+  // colours it takes, is a pattern with a period of its own, and a count that
+  // is not a multiple of that period puts the wrong phase against the seam.
+  // The harlequin's two-tone checker and the honeycomb's capped cells both
+  // broke there — one gold diamond in the whole wall, in the wrong place.
+  const colMul = Math.max(plan.lattice === 'halfdrop' ? 2 : 1, plan.parity);
+  const rowMul = Math.max(plan.lattice === 'brick' ? 2 : 1, plan.parity);
+  const cols = fitCount(size, nominal * plan.cell, colMul, colMul);
+  const rows = fitCount(size, nominal * plan.cell * plan.aspect, rowMul, rowMul);
   const colW = size / cols;
   const rowH = size / rows;
 
@@ -1312,6 +2202,8 @@ function lattice(
         col,
         row,
         alt: false,
+        w: colW,
+        h: rowH,
       });
       if (plan.lattice === 'diamond') {
         // The interstitial half-step, which is what turns a grid of dots into
@@ -1321,6 +2213,8 @@ function lattice(
           col,
           row,
           alt: true,
+          w: colW,
+          h: rowH,
         });
       }
     }
@@ -1329,16 +2223,91 @@ function lattice(
 
 /* ============================ the tile builder =========================== */
 
+/** One parquet block: a rounded bar, filled flat, outlined. */
+function barMark(x: number, y: number, w: number, h: number, fill: 'face' | 'bloom', relief: number): Mark {
+  const pad = Math.max(w, h) * 0.2 + relief + 8;
+  return {
+    spanX: [x - pad, x + w + pad],
+    spanY: [y - pad, y + h + pad],
+    draw(ctx, pass, c) {
+      if (pass === 'relief' && relief <= 0) return;
+      const off = pass === 'relief' ? relief : 0;
+      const weight = motifInk(Math.min(w, h), c) * 0.9;
+      roundedRect(ctx, x + off, y + off, w, h, Math.min(w, h) * 0.2 * c.edge.round);
+      if (pass === 'relief') {
+        ctx.fillStyle = c.relief;
+        ctx.fill();
+        return;
+      }
+      ink(ctx, c, weight, fill === 'bloom' ? c.bloom : true);
+    },
+  };
+}
+
+/**
+ * A TRUE herringbone, laid rather than scattered.
+ *
+ * The old one rotated a bar ±45° on a brick lattice and hoped the ends would
+ * find the flanks. They did not — the specimen was a heap of sticks with wall
+ * showing through every joint, and that heap is most of what the reader meant
+ * by "the area that connects different parts looks unnatural".
+ *
+ * A herringbone of 2a×a blocks is a real tiling with a real period, so this
+ * lays it out instead. Taking the horizontal block A = [0,2a]×[0,a] and the
+ * vertical block B = [2a,3a]×[0,2a] as a pair, the pattern is that pair
+ * translated by the lattice generated by (2a,2a) and (a,−a). That lattice
+ * contains (4a,0) and (0,4a), so the whole thing closes exactly on a 4a
+ * square — four copies of the pair, eight blocks, covering 16a² with nothing
+ * left over and nothing overlapping. Fitting 4a to the tile is then the same
+ * move every other lattice here makes.
+ *
+ * The blocks are inset by a hairline each side, which is the grout: without it
+ * two abutting fills anti-alias into a seam of their own.
+ */
+function herringboneMarks(size: number, unit: number, relief: number): Mark[] {
+  const blocks = Math.max(1, Math.round(size / Math.max(1, unit)));
+  const a = size / (4 * blocks);
+  const grout = Math.max(0.7, a * 0.07);
+  const marks: Mark[] = [];
+  // The four translations of the pair inside one 4a block, in units of a.
+  const steps = [
+    [0, 0],
+    [1, 3],
+    [2, 2],
+    [3, 1],
+  ] as const;
+  for (let bx = 0; bx < blocks; bx++) {
+    for (let by = 0; by < blocks; by++) {
+      const ox = bx * 4 * a;
+      const oy = by * 4 * a;
+      for (const [tx, ty] of steps) {
+        const x = ox + tx * a;
+        const y = oy + ty * a;
+        // Horizontal block, then the vertical one standing on its right end.
+        marks.push(barMark(x + grout, y + grout, 2 * a - grout * 2, a - grout * 2, 'face', relief));
+        marks.push(
+          barMark(x + 2 * a + grout, y + grout, a - grout * 2, 2 * a - grout * 2, 'bloom', relief),
+        );
+      }
+    }
+  }
+  return marks;
+}
+
 /**
  * Build the mark list for one tile.
  *
  * Separated from the drawing so a test can count and bound the marks without a
  * canvas, and so the two passes share one list rather than re-deriving it.
  */
-function buildMarks(size: number, spec: WallpaperSpec, seed: number): Mark[] {
+function buildMarks(size: number, spec: WallpaperSpec, seed: number, paint: Paint): Mark[] {
   const plan = PLANS[spec.pattern];
   const nominal = SCALE_CELL[spec.scale];
-  const relief = DEPTH_OFFSET[spec.depth] * nominal * plan.cell;
+  const relief = Math.min(
+    DEPTH_MAX_PX,
+    DEPTH_OFFSET[spec.depth] * nominal * plan.cell * plan.relief,
+  );
+  const feel = paint.edge;
   const marks: Mark[] = [];
 
   switch (spec.pattern) {
@@ -1346,22 +2315,40 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number): Mark[] {
       break;
 
     case 'stripe': {
-      // Broad bands with a lazy wave in them, half the pitch wide.
-      const n = fitCount(size, nominal * plan.cell, false);
+      // Broad bands with a lazy wave in them, half the pitch wide, and a pair
+      // of fine rules in the gap between. A regency stripe is never one band
+      // repeated — it is a wide one and a narrow one, and drawing only the
+      // wide one is why the first specimen read as corduroy.
+      const n = fitCount(size, nominal * plan.cell, 1);
       const pitch = size / n;
       for (let i = 0; i < n; i++) {
         const centre = (i + 0.5) * pitch;
+        // The wave used to be nearly twice this and the bands looked drunk
+        // rather than drawn. A hand-drawn line wavers; it does not stagger.
+        const wave = periodic(size, pitch * 0.028 * feel.wobble, 1, i * 1.7);
         marks.push(
           runningBand(
             size,
             'y',
             centre,
             pitch * 0.27,
-            periodic(size, pitch * 0.045, 1, i * 1.7),
-            Math.max(0.9, pitch * 0.05),
+            wave,
+            Math.max(0.9, pitch * 0.05 * feel.weight),
             relief,
           ),
         );
+        for (const off of [-0.42, 0.42] as const) {
+          marks.push(
+            runningLine(
+              size,
+              'y',
+              centre + pitch * off,
+              wave,
+              Math.max(0.8, pitch * 0.022 * feel.weight),
+              thread,
+            ),
+          );
+        }
       }
       break;
     }
@@ -1369,22 +2356,32 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number): Mark[] {
     case 'pinstripe': {
       // A hairline every pitch, with a second, fainter one between — the
       // difference between "pinstripe" and "narrow stripe".
-      const n = fitCount(size, nominal * plan.cell, false, 4);
+      const n = fitCount(size, nominal * plan.cell, 1, 4);
       const pitch = size / n;
       for (let i = 0; i < n; i++) {
         const centre = (i + 0.5) * pitch;
-        const w = Math.max(0.9, pitch * 0.075);
+        const w = Math.max(0.9, pitch * 0.075 * feel.weight);
         marks.push(
-          runningLine(size, 'y', centre, periodic(size, pitch * 0.05, 1, i * 2.3), w, (c) => c.ink),
+          runningLine(
+            size,
+            'y',
+            centre,
+            periodic(size, pitch * 0.04 * feel.wobble, 1, i * 2.3),
+            w,
+            (c) => c.ink,
+          ),
         );
+        // The ghost between used to be drawn in the FACE colour, which on a
+        // pale paper is the wall with a rounding error — half the pinstripe
+        // was invisible. The detail colour is a real second rule.
         marks.push(
           runningLine(
             size,
             'y',
             centre + pitch * 0.5,
-            periodic(size, pitch * 0.04, 1, i * 1.1 + 0.9),
-            w * 0.6,
-            (c) => c.face,
+            periodic(size, pitch * 0.032 * feel.wobble, 1, i * 1.1 + 0.9),
+            w * 0.75,
+            thread,
           ),
         );
       }
@@ -1393,36 +2390,56 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number): Mark[] {
 
     case 'ticking': {
       // Mattress ticking: a solid band flanked by a thin twin.
-      const n = fitCount(size, nominal * plan.cell, false);
+      const n = fitCount(size, nominal * plan.cell, 1);
       const pitch = size / n;
       for (let i = 0; i < n; i++) {
         const centre = (i + 0.5) * pitch;
-        const wave = periodic(size, pitch * 0.04, 1, i * 0.9);
+        const wave = periodic(size, pitch * 0.03 * feel.wobble, 1, i * 0.9);
         marks.push(
-          runningBand(size, 'y', centre, pitch * 0.14, wave, Math.max(0.8, pitch * 0.04), relief),
+          runningBand(
+            size,
+            'y',
+            centre,
+            pitch * 0.17,
+            wave,
+            Math.max(0.8, pitch * 0.04 * feel.weight),
+            relief,
+          ),
         );
         // The twins are INK, not face: mattress ticking is a broad band with a
         // hairline either side of it, and a face-coloured twin on a
         // face-coloured band is nothing at all.
-        for (const off of [-0.32, 0.32] as const) {
+        for (const off of [-0.3, 0.3] as const) {
           marks.push(
             runningLine(
               size,
               'y',
               centre + pitch * off,
               wave,
-              Math.max(0.8, pitch * 0.035),
+              Math.max(0.8, pitch * 0.035 * feel.weight),
               (c) => c.ink,
             ),
           );
         }
+        // A hair of the detail colour down the centre of the broad band, which
+        // is the woven thread real mattress ticking has.
+        marks.push(
+          runningLine(
+            size,
+            'y',
+            centre,
+            wave,
+            Math.max(0.7, pitch * 0.022 * feel.weight),
+            thread,
+          ),
+        );
       }
       break;
     }
 
     case 'gingham': {
       // Warp, weft, then the deeper squares where they cross.
-      const n = fitCount(size, nominal * plan.cell, false);
+      const n = fitCount(size, nominal * plan.cell, 1);
       const pitch = size / n;
       const half = pitch * 0.26;
       // One shared wave per axis, so the crossing squares can be displaced by
@@ -1447,16 +2464,32 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number): Mark[] {
     }
 
     case 'chevron': {
-      const rows = fitCount(size, nominal * plan.cell, false);
-      const teeth = fitCount(size, nominal * plan.cell * 1.1, false);
+      const rows = fitCount(size, nominal * plan.cell, 1);
+      const teeth = fitCount(size, nominal * plan.cell * 1.1, 1);
       const rowH = size / rows;
       for (let i = 0; i < rows; i++) {
+        // Half-width is a little under half the row pitch, so a hair of wall
+        // shows between the ribbons; at exactly half they merge into a field
+        // and the zigzag stops reading as a tape.
         marks.push(
-          zigzag(size, (i + 0.5) * rowH, rowH * 0.22, teeth, Math.max(1.4, rowH * 0.3), 0, relief),
+          zigzagBand(
+            size,
+            (i + 0.5) * rowH,
+            rowH * 0.24,
+            teeth,
+            rowH * 0.2,
+            0,
+            Math.max(0.9, rowH * 0.05 * feel.weight),
+            relief,
+          ),
         );
       }
       break;
     }
+
+    case 'herringbone':
+      marks.push(...herringboneMarks(size, nominal * plan.cell, relief));
+      break;
 
     default: {
       // Everything else is a motif on a lattice.
@@ -1495,8 +2528,8 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number): Mark[] {
  */
 export function renderWallpaperTile(ctx: FlatCtx, size: number, spec: WallpaperSpec): void {
   if (!(size > 0)) return;
-  const c = wallpaperColours(spec);
-  const seed = fnv1a(`${spec.pattern}|${spec.scale}|${spec.depth}|${spec.ink}`);
+  const c: Paint = { ...wallpaperColours(spec), edge: edgeFeel(spec) };
+  const seed = fnv1a(wallpaperAxisKey(spec));
 
   ctx.save();
   ctx.beginPath();
@@ -1506,7 +2539,7 @@ export function renderWallpaperTile(ctx: FlatCtx, size: number, spec: WallpaperS
   ctx.fillStyle = c.ground;
   ctx.fillRect(0, 0, size, size);
 
-  const marks = buildMarks(size, spec, seed);
+  const marks = buildMarks(size, spec, seed, c);
   emit(ctx, size, marks, 'relief', c);
   emit(ctx, size, marks, 'face', c);
 
@@ -1548,10 +2581,38 @@ export function wallpaperTilePx(spec: WallpaperSpec, dpr = 1): number {
  * cover memo had.
  */
 export function wallpaperTileKey(spec: WallpaperSpec, size: number, dpr = 1): string {
-  return `wall|${flatSchemeTag()}|${spec.pattern}|${spec.scale}|${spec.depth}|${spec.ink}|${Math.round(size)}|${dpr}`;
+  // Every axis, through `wallpaperAxisKey`, so a new one cannot be added
+  // without entering the key — a tone that is not in the key is a tone the
+  // disk cache overwrites with whatever it baked first.
+  return `wall|${flatSchemeTag()}|${wallpaperAxisKey(spec)}|${Math.round(size)}|${dpr}`;
 }
 
 /* ============================== the presets ============================== */
+
+/**
+ * The mood words a paper answers to.
+ *
+ * A closed vocabulary, and typed, because the point of them is to STEER a
+ * random roll (`withMood` in `views/rail/designOptions.ts`): a tag only one
+ * paper carries narrows the dice to a single answer, which is a preset with
+ * extra steps, and a typo makes a tag exactly that. Twelve words, each on
+ * roughly six to fifteen papers.
+ */
+export const WALLPAPER_MOODS = [
+  'quiet',
+  'bold',
+  'warm',
+  'cool',
+  'grand',
+  'cosy',
+  'playful',
+  'formal',
+  'gilded',
+  'nocturnal',
+  'antique',
+  'fresh',
+] as const;
+export type WallpaperMood = (typeof WALLPAPER_MOODS)[number];
 
 /** A named wallpaper, as offered in the picker. */
 export interface WallpaperPreset {
@@ -1559,6 +2620,10 @@ export interface WallpaperPreset {
   name: string;
   /** One line for the picker card. */
   blurb: string;
+  /** Which section of the book this paper is printed in. */
+  family: WallpaperFamily;
+  /** Mood words, for filtering and for steering the dice. */
+  tags: readonly WallpaperMood[];
   spec: WallpaperSpec;
 }
 
@@ -1566,91 +2631,147 @@ function paper(
   id: string,
   name: string,
   blurb: string,
-  pattern: WallpaperPattern,
-  scale: WallpaperScale,
-  depth: WallpaperDepth,
-  inkSlot: WallpaperInk,
+  spec: WallpaperSpec,
+  tags: readonly WallpaperMood[],
 ): WallpaperPreset {
-  return { id, name, blurb, spec: { pattern, scale, depth, ink: inkSlot } };
+  return { id, name, blurb, family: PATTERN_FAMILY[spec.pattern], tags, spec };
 }
 
 /**
  * The book of papers.
  *
- * Composed rather than enumerated: nineteen motifs across five scales, four
- * reliefs and six ink slots is 2280 combinations, and the job of a preset list
- * is to be the fifty that are actually worth hanging. Ordered roughly quiet →
- * loud, because that is the order someone shops in.
+ * Composed rather than enumerated: twenty-two motifs across five scales, four
+ * reliefs, six ink slots, eight tones and four nibs is well past a hundred
+ * thousand combinations, and the job of a preset list is to be the fifty that
+ * are actually worth hanging.
+ *
+ * Grouped by FAMILY, seven each (eight for `figured`, which carries four
+ * motifs), and ordered quiet → loud within each — which is the order someone
+ * shops in. The balance is the point: the previous book was built motif by
+ * motif and ended up twelve geometrics against five scenics, so the picker's
+ * geometry section scrolled while its scenic section fitted on one row.
+ *
+ * Two constraints hold across the whole list, both tested:
+ *  - no two papers agree on all four of pattern/scale/depth/ink, because a
+ *    consumer that has not moved to `wallpaperAxisKey` would fail to notice
+ *    the swap and would keep the old wall on screen;
+ *  - every mood word lands on at least four papers, or steering the dice with
+ *    it is just a preset with extra steps.
  */
 export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = [
-  /* --- plain and near-plain --- */
-  paper('plain-parchment', 'Plain Parchment', 'The wall, and nothing on it.', 'plain', 'medium', 'flat', 'paper'),
-  paper('pin-quiet', 'Quiet Pinstripe', 'A hairline every inch, and a ghost between.', 'pinstripe', 'petite', 'flat', 'paper'),
-  paper('pin-study', 'Study Pinstripe', 'Close-ruled in the case timber.', 'pinstripe', 'petite', 'flat', 'timber'),
-  paper('pin-wide', 'Drawing Room Rule', 'Wider ruling, deeper ink.', 'pinstripe', 'small', 'flat', 'deep'),
+  /* ------------------------------- ruled -------------------------------- */
+  paper('plain-parchment', 'Plain Parchment', 'The wall, and nothing on it.',
+    { pattern: 'plain', scale: 'medium', depth: 'flat', ink: 'paper' }, ['quiet', 'warm']),
+  paper('pin-quiet', 'Quiet Pinstripe', 'A hairline every inch, and a paler one between.',
+    { pattern: 'pinstripe', scale: 'petite', depth: 'flat', ink: 'paper', tone: 'gilt', edge: 'etched' }, ['quiet', 'formal']),
+  paper('pin-study', 'Study Pinstripe', 'Close-ruled in the case timber.',
+    { pattern: 'pinstripe', scale: 'petite', depth: 'flat', ink: 'timber', tone: 'ember' }, ['quiet', 'warm', 'formal']),
+  paper('pin-wide', 'Drawing Room Rule', 'Wider ruling, with a blue thread between.',
+    { pattern: 'pinstripe', scale: 'small', depth: 'flat', ink: 'deep', tone: 'sea' }, ['formal', 'cool']),
+  paper('ticking-mattress', 'Mattress Ticking', 'A solid band flanked by its thin twin.',
+    { pattern: 'ticking', scale: 'small', depth: 'flat', ink: 'deep', tone: 'ink' }, ['quiet', 'antique']),
+  paper('ticking-linen', 'Linen Ticking', 'Ticking in pale timber, chalk-threaded.',
+    { pattern: 'ticking', scale: 'medium', depth: 'low', ink: 'timber', tone: 'chalk' }, ['warm', 'cosy']),
+  paper('ticking-cloth', 'Bindery Ticking', 'Ticking taken from the book cloth.',
+    { pattern: 'ticking', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'berry' }, ['bold', 'warm']),
 
-  /* --- stripes --- */
-  paper('stripe-regency', 'Regency Stripe', 'Broad bands with a lazy wave in them.', 'stripe', 'medium', 'low', 'paper'),
-  paper('stripe-tea', 'Tea Room Stripe', 'Warm timber bands, gently raised.', 'stripe', 'medium', 'raised', 'timber'),
-  paper('stripe-awning', 'Awning Stripe', 'Wide cloth bands, seaside-loud.', 'stripe', 'large', 'low', 'cloth'),
-  paper('stripe-hall', 'Long Hall Stripe', 'Grand bands for a tall wall.', 'stripe', 'grand', 'raised', 'recess'),
-  paper('ticking-mattress', 'Mattress Ticking', 'A solid band flanked by its thin twin.', 'ticking', 'small', 'flat', 'deep'),
-  paper('ticking-linen', 'Linen Ticking', 'Ticking in pale timber.', 'ticking', 'medium', 'low', 'timber'),
-  paper('ticking-cloth', 'Bindery Ticking', 'Ticking taken from the book cloth.', 'ticking', 'medium', 'flat', 'cloth'),
+  /* ------------------------------- stripe ------------------------------- */
+  paper('stripe-regency', 'Regency Stripe', 'A broad band, and a gilt rule either side.',
+    { pattern: 'stripe', scale: 'medium', depth: 'low', ink: 'paper', tone: 'gilt' }, ['formal', 'quiet', 'gilded']),
+  paper('stripe-tea', 'Tea Room Stripe', 'Warm timber bands, gently raised.',
+    { pattern: 'stripe', scale: 'medium', depth: 'raised', ink: 'timber', tone: 'ember' }, ['warm', 'cosy']),
+  paper('stripe-hall', 'Long Hall Stripe', 'Grand bands for a tall wall.',
+    { pattern: 'stripe', scale: 'grand', depth: 'raised', ink: 'recess', tone: 'chalk' }, ['grand', 'formal']),
+  paper('chevron-zig', 'Chevron', 'Rows of tidy zigzag, braided down the middle.',
+    { pattern: 'chevron', scale: 'small', depth: 'flat', ink: 'deep', tone: 'sea' }, ['cool', 'playful']),
+  paper('chevron-bold', 'Bold Chevron', 'The same zigzag, three times the size.',
+    { pattern: 'chevron', scale: 'large', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful']),
+  paper('herring-parquet', 'Parquet Herringbone', 'The floor pattern, laid on the wall.',
+    { pattern: 'herringbone', scale: 'small', depth: 'low', ink: 'timber', tone: 'ember' }, ['warm', 'antique']),
+  paper('herring-tweed', 'Tweed Herringbone', 'A fine weave, close to the eye.',
+    { pattern: 'herringbone', scale: 'petite', depth: 'flat', ink: 'recess', tone: 'bay', edge: 'etched' }, ['cool', 'formal']),
 
-  /* --- checks and weaves --- */
-  paper('gingham-kitchen', 'Kitchen Gingham', 'Warp, weft, and the darker square between.', 'gingham', 'small', 'flat', 'paper'),
-  paper('gingham-picnic', 'Picnic Check', 'A bolder check in book cloth.', 'gingham', 'medium', 'flat', 'cloth'),
-  paper('gingham-shadow', 'Shadow Check', 'Deep check, deeply set.', 'gingham', 'medium', 'raised', 'recess'),
-  paper('herring-tweed', 'Tweed Herringbone', 'Little woven bars, both ways at once.', 'herringbone', 'petite', 'flat', 'paper'),
-  paper('herring-parquet', 'Parquet Herringbone', 'The floor pattern, put on the wall.', 'herringbone', 'small', 'low', 'timber'),
-  paper('herring-carved', 'Carved Herringbone', 'Woven, and standing off the plaster.', 'herringbone', 'medium', 'carved', 'timber'),
-  paper('chevron-zig', 'Chevron', 'Rows of tidy zigzag.', 'chevron', 'small', 'flat', 'deep'),
-  paper('chevron-bold', 'Bold Chevron', 'The same zigzag, three times the size.', 'chevron', 'large', 'flat', 'cloth'),
+  /* -------------------------------- check ------------------------------- */
+  paper('gingham-kitchen', 'Kitchen Gingham', 'Warp, weft, and the darker square between.',
+    { pattern: 'gingham', scale: 'small', depth: 'flat', ink: 'paper', tone: 'ember' }, ['cosy', 'fresh']),
+  paper('gingham-picnic', 'Picnic Check', 'A bolder check in book cloth.',
+    { pattern: 'gingham', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['playful', 'bold', 'warm']),
+  paper('gingham-shadow', 'Shadow Check', 'Deep check, deeply set.',
+    { pattern: 'gingham', scale: 'medium', depth: 'raised', ink: 'recess', tone: 'sea' }, ['cool', 'quiet']),
+  paper('harlequin-carnival', 'Carnival Harlequin', 'Big two-tone lozenges, edge to edge.',
+    { pattern: 'harlequin', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['playful', 'bold']),
+  paper('harlequin-court', 'Court Harlequin', 'The same diamonds, gilded and grave.',
+    { pattern: 'harlequin', scale: 'large', depth: 'low', ink: 'recess', tone: 'gilt' }, ['grand', 'formal', 'gilded', 'nocturnal']),
+  paper('honey-comb', 'Honeycomb', 'Hexagons, and honey in one cell of five.',
+    { pattern: 'honeycomb', scale: 'small', depth: 'flat', ink: 'gilt' }, ['gilded', 'warm']),
+  paper('honey-grand', 'Grand Honeycomb', 'One big comb for a big room.',
+    { pattern: 'honeycomb', scale: 'large', depth: 'low', ink: 'timber', tone: 'ember' }, ['bold', 'warm']),
 
-  /* --- geometrics --- */
-  paper('honey-comb', 'Honeycomb', 'Hexagons with a gilt pip in each.', 'honeycomb', 'small', 'flat', 'gilt'),
-  paper('honey-raised', 'Raised Honeycomb', 'Hexagons lifted off the wall.', 'honeycomb', 'medium', 'raised', 'timber'),
-  paper('honey-grand', 'Grand Honeycomb', 'One big comb for a big room.', 'honeycomb', 'large', 'low', 'recess'),
-  paper('trellis-garden', 'Garden Trellis', 'Lozenges with a leaf at every waist.', 'trellis', 'medium', 'flat', 'paper'),
-  paper('trellis-conservatory', 'Conservatory Trellis', 'Trellis in painted timber.', 'trellis', 'large', 'low', 'timber'),
-  paper('trellis-gilt', 'Gilt Trellis', 'A gilded lattice, raised.', 'trellis', 'medium', 'raised', 'gilt'),
-  paper('scallop-shell', 'Scallop', 'Overlapping shells, small and even.', 'scallop', 'small', 'flat', 'paper'),
-  paper('scallop-tide', 'Tide Scallop', 'Shells in the deeper wash.', 'scallop', 'medium', 'low', 'deep'),
-  paper('scallop-grand', 'Grand Scallop', 'Big shells, carved out.', 'scallop', 'large', 'carved', 'recess'),
-  paper('arch-cloister', 'Cloister Arches', 'A colonnade, drawn flat on.', 'arch', 'medium', 'low', 'paper'),
-  paper('arch-reading', 'Reading Room Arches', 'Arches in the case timber.', 'arch', 'large', 'raised', 'timber'),
-  paper('arch-gilt', 'Gilded Arcade', 'Arches with a gilt keystone.', 'arch', 'large', 'carved', 'gilt'),
+  /* ------------------------------- lattice ------------------------------ */
+  paper('trellis-garden', 'Garden Trellis', 'Battens, knots, and a leaf at every waist.',
+    { pattern: 'trellis', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'bay' }, ['fresh', 'quiet']),
+  paper('trellis-conservatory', 'Conservatory Trellis', 'Trellis in painted timber.',
+    { pattern: 'trellis', scale: 'large', depth: 'low', ink: 'timber', tone: 'bay' }, ['fresh', 'warm']),
+  paper('trellis-gilt', 'Gilt Trellis', 'A gilded lattice, raised.',
+    { pattern: 'trellis', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'formal']),
+  paper('arch-cloister', 'Cloister Arches', 'An arcade, drawn flat on.',
+    { pattern: 'arch', scale: 'medium', depth: 'low', ink: 'paper', tone: 'chalk' }, ['formal', 'quiet']),
+  paper('arch-gilt', 'Gilded Arcade', 'Arches with a gilt keystone in every bay.',
+    { pattern: 'arch', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'formal']),
+  paper('scallop-shell', 'Scallop', 'Overlapping shells, small and even.',
+    { pattern: 'scallop', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sea' }, ['fresh', 'cool']),
+  paper('scallop-tide', 'Tide Scallop', 'Shells in the deeper wash, softly drawn.',
+    { pattern: 'scallop', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sea', edge: 'soft' }, ['cool', 'quiet', 'nocturnal']),
 
-  /* --- spots and stars --- */
-  paper('polka-pin', 'Pin Spot', 'The smallest dot that still reads.', 'polka', 'petite', 'flat', 'deep'),
-  paper('polka-parlour', 'Parlour Spot', 'An even field of soft dots.', 'polka', 'small', 'low', 'paper'),
-  paper('polka-cloth', 'Bindery Spot', 'Dots taken from the book cloth.', 'polka', 'medium', 'raised', 'cloth'),
-  paper('star-night', 'Star Field', 'Small stars, evenly sown.', 'star', 'small', 'flat', 'deep'),
-  paper('star-gilt', 'Gilt Stars', 'Gold stars with a pale pip.', 'star', 'medium', 'low', 'gilt'),
-  paper('star-grand', 'Grand Stars', 'Big stars, standing proud.', 'star', 'large', 'carved', 'cloth'),
-  paper('moon-nursery', 'Moon and Star', 'A crescent with a star in its horn.', 'moonstar', 'small', 'flat', 'paper'),
-  paper('moon-gilt', 'Gilded Crescents', 'Moons in gold leaf.', 'moonstar', 'medium', 'raised', 'gilt'),
-  paper('moon-deep', 'Night Watch', 'Crescents in the deepest wash.', 'moonstar', 'medium', 'low', 'recess'),
+  /* -------------------------------- spot -------------------------------- */
+  paper('polka-parlour', 'Parlour Spot', 'A ringed dot, with a small one between.',
+    { pattern: 'polka', scale: 'small', depth: 'low', ink: 'paper', tone: 'ember' }, ['cosy', 'playful']),
+  paper('polka-cloth', 'Bindery Spot', 'Dots taken from the book cloth.',
+    { pattern: 'polka', scale: 'medium', depth: 'raised', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful']),
+  paper('star-night', 'Star Field', 'Small stars, evenly sown, sparks between.',
+    { pattern: 'star', scale: 'small', depth: 'flat', ink: 'deep', tone: 'chalk' }, ['nocturnal', 'quiet']),
+  paper('star-gilt', 'Gilt Stars', 'Gold stars with a pale pip.',
+    { pattern: 'star', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'playful']),
+  paper('star-grand', 'Grand Stars', 'Big stars, standing proud of the plaster.',
+    { pattern: 'star', scale: 'large', depth: 'carved', ink: 'recess', tone: 'gilt' }, ['grand', 'nocturnal', 'gilded']),
+  paper('moon-nursery', 'Moon and Star', 'A crescent with a star in its horn.',
+    { pattern: 'moonstar', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sea' }, ['nocturnal', 'cosy']),
+  paper('moon-gilt', 'Gilded Crescents', 'Moons in gold leaf.',
+    { pattern: 'moonstar', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'nocturnal']),
 
-  /* --- florals --- */
-  paper('sprig-cottage', 'Cottage Sprig', 'A stem, two leaves and a bud.', 'sprig', 'small', 'flat', 'paper'),
-  paper('sprig-meadow', 'Meadow Sprig', 'The same sprig, larger and lifted.', 'sprig', 'medium', 'low', 'cloth'),
-  paper('sprig-shade', 'Shaded Sprig', 'Sprigs in the recess colour.', 'sprig', 'medium', 'raised', 'recess'),
-  paper('laurel-wreath', 'Laurel', 'Branches with a berry at each tip.', 'laurel', 'medium', 'flat', 'paper'),
-  paper('laurel-gilt', 'Gilt Laurel', 'Laurel in gold, standing off the wall.', 'laurel', 'medium', 'raised', 'gilt'),
-  paper('laurel-grand', 'Grand Laurel', 'Laurel at ballroom scale.', 'laurel', 'large', 'low', 'timber'),
-  paper('damask-athenaeum', 'Athenaeum Damask', 'The house damask — ogee, fan and crown.', 'damask', 'large', 'raised', 'paper'),
-  paper('damask-quiet', 'Quiet Damask', 'The same device, barely there.', 'damask', 'medium', 'flat', 'paper'),
-  paper('damask-timber', 'Tea-Stain Damask', 'Damask washed in the case timber.', 'damask', 'large', 'low', 'timber'),
-  paper('damask-gilt', 'Gilt Damask', 'The grand one. Gold, and carved.', 'damask', 'grand', 'carved', 'gilt'),
+  /* ------------------------------ botanical ----------------------------- */
+  paper('sprig-cottage', 'Cottage Sprig', 'A stem, four leaves and a five-petalled head.',
+    { pattern: 'sprig', scale: 'small', depth: 'flat', ink: 'paper', tone: 'ember' }, ['cosy', 'fresh']),
+  paper('sprig-meadow', 'Meadow Sprig', 'The same sprig, larger and lifted.',
+    { pattern: 'sprig', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'bay' }, ['fresh', 'warm']),
+  paper('sprig-shade', 'Shaded Sprig', 'Sprigs in the recess colour, softly printed.',
+    { pattern: 'sprig', scale: 'medium', depth: 'raised', ink: 'recess', tone: 'chalk', edge: 'soft' }, ['quiet', 'cool']),
+  paper('laurel-wreath', 'Laurel', 'Branches with three berries at every tip.',
+    { pattern: 'laurel', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'berry' }, ['formal', 'fresh']),
+  paper('laurel-gilt', 'Gilt Laurel', 'Laurel in gold, standing off the wall.',
+    { pattern: 'laurel', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'formal']),
+  paper('pom-orchard', 'Orchard Pomegranate', 'The cut fruit, seeds and all.',
+    { pattern: 'pomegranate', scale: 'medium', depth: 'low', ink: 'timber', tone: 'ember' }, ['warm', 'antique']),
+  paper('pom-velvet', 'Velvet Pomegranate', 'The weaver’s fruit, at velvet scale.',
+    { pattern: 'pomegranate', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'berry' }, ['grand', 'bold', 'antique']),
 
-  /* --- scenics --- */
-  paper('bird-chinoiserie', 'Chinoiserie Birds', 'A bird on a twig, facing both ways.', 'bird', 'large', 'flat', 'paper'),
-  paper('bird-gilt', 'Gilded Aviary', 'Birds in gold, lifted off the wall.', 'bird', 'large', 'raised', 'gilt'),
-  paper('bird-cloth', 'Aviary Cloth', 'Birds in the binding colour.', 'bird', 'grand', 'low', 'cloth'),
-  paper('toile-cottage', 'Cottage Toile', 'A house, a tree and two birds, in an oval.', 'toile', 'grand', 'flat', 'deep'),
-  paper('toile-timber', 'Country Toile', 'The same vignette, washed warm.', 'toile', 'grand', 'low', 'timber'),
+  /* ------------------------------- figured ------------------------------ */
+  paper('damask-athenaeum', 'Athenaeum Damask', 'The house damask — ogee, palmette and crown.',
+    { pattern: 'damask', scale: 'large', depth: 'raised', ink: 'paper', tone: 'gilt' }, ['formal', 'grand', 'antique']),
+  paper('damask-gilt', 'Gilt Damask', 'The grand one. Gold, and carved.',
+    { pattern: 'damask', scale: 'grand', depth: 'carved', ink: 'gilt' }, ['grand', 'gilded', 'formal']),
+  paper('urn-mantel', 'Mantel Urn', 'A classical urn with a spray of three.',
+    { pattern: 'urn', scale: 'medium', depth: 'low', ink: 'deep', tone: 'bay' }, ['formal', 'antique']),
+  paper('urn-gilt', 'Gilded Urn', 'The same urn, banded in gold.',
+    { pattern: 'urn', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'antique']),
+  paper('bird-chinoiserie', 'Chinoiserie Birds', 'A bird on a berried twig, facing both ways.',
+    { pattern: 'bird', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'sea' }, ['playful', 'fresh']),
+  paper('bird-cloth', 'Aviary Cloth', 'Birds in the binding colour.',
+    { pattern: 'bird', scale: 'large', depth: 'low', ink: 'cloth', tone: 'bay' }, ['warm', 'playful']),
+  paper('toile-cottage', 'Cottage Toile', 'A cottage, a fence and two birds, in a cartouche.',
+    { pattern: 'toile', scale: 'large', depth: 'flat', ink: 'deep', tone: 'ember' }, ['antique', 'cosy']),
+  paper('toile-timber', 'Country Toile', 'The same vignette, washed warm and soft.',
+    { pattern: 'toile', scale: 'grand', depth: 'low', ink: 'timber', tone: 'bay', edge: 'soft' }, ['antique', 'warm']),
 ];
 
 /** The wallpaper a library opens with — the wall as it has always been. */
@@ -1673,6 +2794,23 @@ const LEGACY_IDS: Readonly<Record<string, string>> = {
   stars: 'star-night',
   botanical: 'sprig-cottage',
   constellation: 'star-night',
+  // The papers dropped when the book was rebalanced from fifty-five lumpy
+  // presets to fifty even ones. A reader's WALL is unaffected either way — the
+  // spec is what gets persisted, not the id — but the studio highlights the
+  // card whose id matches, and an id that resolves to nothing highlights the
+  // plain wall, which reads as the choice having been thrown away.
+  'stripe-awning': 'chevron-bold',
+  'herring-carved': 'herring-parquet',
+  'honey-raised': 'honey-grand',
+  'scallop-grand': 'scallop-tide',
+  'arch-reading': 'arch-gilt',
+  'polka-pin': 'polka-parlour',
+  'moon-deep': 'moon-gilt',
+  'laurel-grand': 'laurel-gilt',
+  'damask-quiet': 'damask-athenaeum',
+  'damask-timber': 'damask-athenaeum',
+  'bird-gilt': 'bird-cloth',
+  'pomegranate-orchard': 'pom-orchard',
 };
 
 /** Narrowing guard for persisted / user-supplied ids. Accepts legacy names. */

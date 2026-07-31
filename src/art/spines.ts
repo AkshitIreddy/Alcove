@@ -25,6 +25,7 @@ import {
   drawBookSpine,
   fitsLabelPlate,
   hasDecoration,
+  materialLookFor,
   resolveBookDesign,
   type BookDesign,
   type BookPresetId,
@@ -267,6 +268,15 @@ export interface SpineParams {
 
   /** Binding material. Defaults to a material implied by `texture`. */
   material?: BindingMaterial;
+  /**
+   * Whether `material` was CHOSEN rather than inherited.
+   *
+   * The 62 bindings each carry a covering of their own, and a book that hands
+   * one down unasked flattens the whole table into the seven the studio knows.
+   * So the covering only overrules its binding when the reader actually
+   * touched the chip — which is exactly what `resolveBookStyle` reports.
+   */
+  materialPinned?: boolean;
   /** Raised cords across the spine, 0–5. >0 replaces the decorative `bands`. */
   raisedBands?: number;
   /** Gold rules flanking each raised cord. */
@@ -1366,6 +1376,14 @@ export function renderSpine(
     gilt: params.gilt,
     labelAt: seeded.labelAt,
     preset: params.binding ?? null,
+    // The studio's four own axes. They used to stop here: the sheet offered
+    // cords, endbands, a covering and a wear slider, `drawBookSpine` had never
+    // heard of any of them, and every one of those controls moved nothing.
+    material: params.materialPinned === true ? materialLookFor(params.material) : null,
+    bands: params.raisedBands ?? 0,
+    bandGilt: params.bandGilt ?? params.gilt,
+    headTail: params.headTail ? (params.headTailStyle ?? 0) : null,
+    wear: params.wear ?? 0,
   });
 
   // Geometry BEFORE any drawing: three shapes stand narrower than their slot

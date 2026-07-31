@@ -9,8 +9,12 @@
  * cache directory. A specimen board cannot catch it (it draws fresh every
  * time) and neither can a screenshot on a clean profile.
  *
- * Three vocabularies landed at once, each adding an axis to art that was
- * previously keyed on the colour scheme alone. These tests pin the keys.
+ * Five vocabularies have landed on top of art that was once keyed on the
+ * colour scheme alone: the build, the timber pattern, the room, the paper, and
+ * the paper's tone and nib. Each arrival left behind a hand-spelled copy of
+ * "what makes this art different" somewhere downstream, and every one of those
+ * copies has since fallen behind the spec it was copied from. These tests pin
+ * the keys, and pin the copies to the shared function rather than to a list.
  */
 import { describe, expect, it } from 'vitest';
 // From `libraryKey`, not `textures`: the latter imports Pixi and cannot load
@@ -26,13 +30,18 @@ import {
 } from '../src/art/shelfDesign';
 import {
   WALLPAPER_DEPTHS,
+  WALLPAPER_EDGES,
   WALLPAPER_INKS,
   WALLPAPER_PATTERNS,
   WALLPAPER_SCALES,
+  WALLPAPER_PRESETS,
+  WALLPAPER_TONES,
+  wallpaperAxisKey,
   wallpaperSpec,
   wallpaperTileKey,
   DEFAULT_WALLPAPER_ID,
 } from '../src/art/wallpaperDesign';
+import { wallpaperOptions } from '../src/views/rail/designOptions';
 import { bookDesignTag, BOOK_PRESETS, resolveBookDesign } from '../src/art/bookDesign';
 
 const scheme = getTheme(THEME_IDS[0]).scheme;
@@ -91,7 +100,7 @@ describe('the case bake key carries the carpentry', () => {
   });
 });
 
-describe('the wallpaper tile key carries all four axes', () => {
+describe('the wallpaper tile key carries every axis', () => {
   const base = wallpaperSpec(DEFAULT_WALLPAPER_ID);
   const keyFor = (spec: Parameters<typeof wallpaperTileKey>[0]): string =>
     wallpaperTileKey(spec, 256, 1);
@@ -116,8 +125,74 @@ describe('the wallpaper tile key carries all four axes', () => {
     expect(keys.size).toBe(WALLPAPER_INKS.length);
   });
 
+  it('changes with the element TONE', () => {
+    const keys = new Set(WALLPAPER_TONES.map((tone) => keyFor({ ...base, tone })));
+    expect(keys.size).toBe(WALLPAPER_TONES.length);
+  });
+
+  it('changes with the EDGE sharpness', () => {
+    const keys = new Set(WALLPAPER_EDGES.map((edge) => keyFor({ ...base, edge })));
+    expect(keys.size).toBe(WALLPAPER_EDGES.length);
+  });
+
   it('changes with the drawn size', () => {
     expect(wallpaperTileKey(base, 256, 1)).not.toBe(wallpaperTileKey(base, 384, 1));
+  });
+});
+
+describe('the applied-room key carries every wallpaper axis too', () => {
+  /**
+   * `world.ts` keys the room it has already painted on `wallpaperAxisKey`, and
+   * skips the repaint when that string has not moved. It used to spell its own
+   * four-axis copy, which fell two axes behind when `tone` and `edge` landed:
+   * changing only the sharpness left the old wall on screen — the disk cache
+   * was correct and never consulted. Pinning the shared function here is what
+   * stops the copy growing back.
+   */
+  const base = wallpaperSpec(DEFAULT_WALLPAPER_ID);
+
+  it('separates every value of every axis', () => {
+    const axes = [
+      WALLPAPER_PATTERNS.map((pattern) => ({ ...base, pattern })),
+      WALLPAPER_SCALES.map((scale) => ({ ...base, scale })),
+      WALLPAPER_DEPTHS.map((depth) => ({ ...base, depth })),
+      WALLPAPER_INKS.map((ink) => ({ ...base, ink })),
+      WALLPAPER_TONES.map((tone) => ({ ...base, tone })),
+      WALLPAPER_EDGES.map((edge) => ({ ...base, edge })),
+    ];
+    for (const specs of axes) {
+      expect(new Set(specs.map(wallpaperAxisKey)).size).toBe(specs.length);
+    }
+  });
+
+  it('treats an unnamed optional axis as its default, not as a third state', () => {
+    // Otherwise the same paper read off disk (no `tone`) and picked in the
+    // studio (`tone: 'auto'`) would be two rooms, and switching between them
+    // would rebake a byte-identical wall.
+    expect(wallpaperAxisKey({ ...base, tone: undefined, edge: undefined })).toBe(
+      wallpaperAxisKey({ ...base, tone: 'auto', edge: 'crisp' }),
+    );
+  });
+});
+
+describe("the picker's card keys carry every axis too", () => {
+  /**
+   * `DesignCanvas` caches a drawn tile on `artKey`, so two cards that agree on
+   * it show one picture. This was the fourth place in the app to spell the
+   * wallpaper's axes out by hand, and the fourth to have fallen behind the
+   * spec — a paper differing only in tone or nib previewed as its neighbour,
+   * which is a picker lying about what it is offering.
+   */
+  it('gives every named paper its own card', () => {
+    const opts = wallpaperOptions();
+    expect(new Set(opts.map((o) => o.artKey)).size).toBe(opts.length);
+  });
+
+  it('derives the card key from the spec rather than re-spelling it', () => {
+    for (const preset of WALLPAPER_PRESETS) {
+      const opt = wallpaperOptions().find((o) => o.id === preset.id);
+      expect(opt?.artKey).toContain(wallpaperAxisKey(preset.spec));
+    }
   });
 });
 

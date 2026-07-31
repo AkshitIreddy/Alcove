@@ -231,6 +231,30 @@ export interface BookDesign {
   /** Where the label wants to sit, 0..1 of the spine height. */
   labelAt: number;
   seed: number;
+
+  /* --- the studio's own axes, on top of whatever the preset decided ------- *
+   *
+   * A preset says how the book was BOUND; these four say what happened to it
+   * afterwards, and every one of them is a control on the Book Studio sheet.
+   * They were dead for a while: the sheet offered them, `drawBookSpine` had
+   * never heard of them, and turning them moved nothing. Defaults are the
+   * no-op values, so a caller that knows nothing about them draws exactly what
+   * it drew before.
+   */
+
+  /** Raised cords sewn across the spine, 0–5. Each one stands proud. */
+  bands: number;
+  /** Foil rules flanking each cord. False strikes them in soft ink. */
+  bandGilt: boolean;
+  /** Endband style at head and tail — 0 blocks, 1 chevron, 2 cord — or null. */
+  headTail: number | null;
+  /**
+   * 0 pristine → 1 well-loved. Flat art cannot grind dirt into a surface, so
+   * wear is told as fading cloth and rubbed-off foil: the two things that
+   * actually happen to a spine that has been pulled off a shelf a thousand
+   * times, and the two you can still read across a room.
+   */
+  wear: number;
 }
 
 /** A rectangle in canvas px. */
@@ -412,6 +436,22 @@ export interface ResolveBookDesignOptions {
   gilt?: boolean;
   /** Where the label sits, 0..1. Callers pass `FlatSpine.labelAt`. */
   labelAt?: number;
+  /**
+   * Overrule the preset's covering.
+   *
+   * Only pass this when the reader ASKED for it. A preset's material is half
+   * of what makes it that preset — pass one unconditionally and all sixty-two
+   * bindings collapse into however many looks the caller knows about.
+   */
+  material?: MaterialLook | null;
+  /** Raised cords across the spine, 0–5. Default 0. */
+  bands?: number;
+  /** Foil on those cords. Defaults to the design's own `gilt`. */
+  bandGilt?: boolean;
+  /** Endband style 0–2, or null for none (the default). */
+  headTail?: number | null;
+  /** 0–1, fading the cloth and rubbing the foil. Default 0. */
+  wear?: number;
 }
 
 /**
@@ -429,17 +469,78 @@ export function resolveBookDesign(opts: ResolveBookDesignOptions): BookDesign {
     opts.accent ?? cloth + 1 + (((seed >>> 5) % (CLOTHS.length - 1)) | 0),
     CLOTHS.length,
   );
+  const gilt = opts.gilt ?? preset.gilt;
   return {
     preset: preset.id,
     shape: preset.shape,
-    material: preset.material,
+    material: opts.material ?? preset.material,
     decorations: preset.decorations,
     cloth,
     accent: accent === cloth ? normIndex(cloth + 1, CLOTHS.length) : accent,
-    gilt: opts.gilt ?? preset.gilt,
+    gilt,
     labelAt: clamp(opts.labelAt ?? 0.24, 0.16, 0.48),
     seed,
+    bands: clamp(Math.round(opts.bands ?? 0), 0, 5),
+    bandGilt: opts.bandGilt ?? gilt,
+    headTail:
+      opts.headTail === null || opts.headTail === undefined
+        ? null
+        : clamp(Math.round(opts.headTail), 0, 2),
+    wear: clamp(opts.wear ?? 0, 0, 1),
   };
+}
+
+/**
+ * The studio's seven binding materials, folded onto the ten looks the drawing
+ * knows. Seven distinct answers — the map is injective on purpose, because a
+ * chip that lands on the same picture as its neighbour is a chip that does
+ * nothing.
+ */
+export const MATERIAL_LOOK_FOR_BINDING: Readonly<Record<string, MaterialLook>> = {
+  leather: 'morocco-grain',
+  cloth: 'smooth-cloth',
+  paper: 'paper-wrapper',
+  vellum: 'vellum',
+  linen: 'ribbed-cloth',
+  // Silk is the flattest rich surface a flat drawing has: one deep even tone,
+  // edge to edge, no turned board catching the light it does not have.
+  silk: 'buckram',
+  marbled: 'marbled-paper',
+};
+
+/** `MATERIAL_LOOK_FOR_BINDING` with a safe fallback. */
+export function materialLookFor(material: string | undefined): MaterialLook {
+  return MATERIAL_LOOK_FOR_BINDING[material ?? ''] ?? 'smooth-cloth';
+}
+
+/**
+ * …and back, so the studio's covering chips can say what the BINDING chose.
+ *
+ * Lossy, and that is fine: the drawing knows ten looks and the studio offers
+ * seven, so a half binding reports the leather its head strip is made of. The
+ * chip is then telling the truth about what the reader is looking at, and
+ * pressing it says "make the whole book that" — which is exactly what it does.
+ */
+export function bindingMaterialFor(look: MaterialLook): string {
+  switch (look) {
+    case 'morocco-grain':
+    case 'half-bound':
+    case 'quarter-bound':
+      return 'leather';
+    case 'vellum':
+      return 'vellum';
+    case 'ribbed-cloth':
+      return 'linen';
+    case 'buckram':
+      return 'silk';
+    case 'marbled-paper':
+      return 'marbled';
+    case 'paper-wrapper':
+    case 'patterned-paper':
+      return 'paper';
+    default:
+      return 'cloth';
+  }
 }
 
 /** The binding a stable string id resolves to (book row ids, test fixtures). */
@@ -457,7 +558,14 @@ export function bookDesignFromId(id: string, opts: Omit<ResolveBookDesignOptions
  * the wrapper off the disk cache forever.
  */
 export function bookDesignTag(design: BookDesign): string {
-  return `${design.preset}.${design.cloth}${design.accent}${design.gilt ? 'g' : 'n'}`;
+  // The studio's four axes belong in the key for the same reason the preset
+  // does: they change pixels, and a cache that ignores them serves a pristine
+  // spine to a book the reader just wore out.
+  return (
+    `${design.preset}.${design.cloth}${design.accent}${design.gilt ? 'g' : 'n'}` +
+    `${design.material}${design.bands}${design.bandGilt ? 'g' : 'n'}` +
+    `${design.headTail ?? '-'}${Math.round(design.wear * 10)}`
+  );
 }
 
 /** Does this design carry the given mark? */
@@ -506,6 +614,28 @@ function clothPair(index: number): readonly [string, string] {
 }
 
 /**
+ * A cloth after `wear` years on a shelf.
+ *
+ * Sun and hands take a spine's dye toward the paper it is made of; they do not
+ * add dirt, and a flat drawing that tried to would just look smudged. A fifth
+ * of the way to cream at full wear is enough to read beside a pristine
+ * neighbour and not so much that a well-loved oxblood stops being oxblood.
+ */
+function fadedPair(pair: readonly [string, string], wear: number): readonly [string, string] {
+  if (wear <= 0.02) return pair;
+  const t = clamp(wear, 0, 1) * 0.2;
+  return [mix(pair[0], FLAT.cream, t), mix(pair[1], FLAT.cream, t * 0.8)];
+}
+
+/**
+ * Tooling colour after `wear`. Gilt is leaf a few atoms thick and it is the
+ * first thing to go; what shows through is the board underneath.
+ */
+function rubbed(foil: string, board: string, wear: number): string {
+  return wear <= 0.02 ? foil : mix(foil, board, clamp(wear, 0, 1) * 0.5);
+}
+
+/**
  * The [face, board] pair the material actually shows at height fraction `t`.
  *
  * Cords, yapp lips, creases and the slipcase are drawn OUTSIDE the material
@@ -515,8 +645,8 @@ function clothPair(index: number): readonly [string, string] {
  * stopped reading as part of the book it is standing on.
  */
 function surfaceAt(design: BookDesign, t: number): readonly [string, string] {
-  const [face, dark] = clothPair(design.cloth);
-  const [accentFace, accentDark] = clothPair(design.accent);
+  const [face, dark] = fadedPair(clothPair(design.cloth), design.wear);
+  const [accentFace, accentDark] = fadedPair(clothPair(design.accent), design.wear);
   switch (design.material) {
     case 'vellum':
       return [FLAT.cream, FLAT.creamDeep];
@@ -903,8 +1033,8 @@ function drawShapeMarks(
  */
 function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
   const { x, y, w, h } = b;
-  const [face, dark] = clothPair(design.cloth);
-  const [accentFace, accentDark] = clothPair(design.accent);
+  const [face, dark] = fadedPair(clothPair(design.cloth), design.wear);
+  const [accentFace, accentDark] = fadedPair(clothPair(design.accent), design.wear);
   const seed = design.seed;
   const r = Math.min(w * 0.3, h * 0.03);
 
@@ -917,7 +1047,9 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
   // Below this the fine work of a material — veins, lozenges, joint lines —
   // lands on less than a pixel and reads as dirt, so a sliver gets the plain
   // two-tone case and nothing else. The two-tone still carries the colour.
-  const fine = w >= 11;
+  // A thoroughly worn book loses the same detail for the same reason it loses
+  // its gilt: it has been rubbed off.
+  const fine = w >= 11 && design.wear < 0.78;
 
   switch (design.material) {
     case 'ribbed-cloth': {
@@ -1189,7 +1321,8 @@ function drawDecoration(
 ): void {
   const { x, y, w, h } = d;
   const seed = design.seed;
-  const foil = design.gilt ? FLAT.gilt : FLAT.inkSoft;
+  const [, board] = surfaceAt(design, 0.5);
+  const foil = rubbed(design.gilt ? FLAT.gilt : FLAT.inkSoft, board, design.wear);
   if (!fitsMark(mark, w)) return;
 
   switch (mark) {
@@ -1342,6 +1475,210 @@ function drawDecoration(
   }
 }
 
+/* ========================================================================== *
+ *                     stage 3b — the studio's own marks                      *
+ * ========================================================================== */
+
+/** Head and tail margins the cords never cross, as fractions of the height. */
+const CORD_SPAN = { top: 0.1, bottom: 0.92 } as const;
+/**
+ * How much taller the lettering compartment is than its neighbours.
+ *
+ * Not decoration — it is how a corded spine is actually laid out, and the
+ * reason `RIB_STATIONS` above has an enlarged second compartment too. Cut five
+ * equal slices instead and the book comes out a ladder with no rung tall
+ * enough to carry its own title, which is exactly what the first pass did.
+ */
+const TITLE_COMPARTMENT_WEIGHT = 2.1;
+
+/**
+ * Where `n` sewn cords sit, as fractions of the spine height.
+ *
+ * A binder divides the spine into `n + 1` compartments and the cords land on
+ * the divisions between them — never flush with head or tail, which would read
+ * as the book having been cut off rather than sewn. The compartment the label
+ * wants (`labelAt`) is given roughly twice the room of its neighbours.
+ */
+export function cordStations(n: number, labelAt = 0.24): readonly number[] {
+  const count = clamp(Math.round(n), 0, 5);
+  if (count === 0) return [];
+  const cells = count + 1;
+  const span = CORD_SPAN.bottom - CORD_SPAN.top;
+  // Which cell an equal cut would have put the label in — good enough to pick
+  // the one to enlarge, and it keeps the answer a pure function of (n, labelAt).
+  const home = clamp(Math.floor(((labelAt - CORD_SPAN.top) / span) * cells), 0, cells - 1);
+  const weights: number[] = [];
+  let total = 0;
+  for (let i = 0; i < cells; i += 1) {
+    const wt = i === home ? TITLE_COMPARTMENT_WEIGHT : 1;
+    weights.push(wt);
+    total += wt;
+  }
+  const out: number[] = [];
+  let run = 0;
+  for (let i = 0; i < count; i += 1) {
+    run += weights[i] as number;
+    out.push(CORD_SPAN.top + (run / total) * span);
+  }
+  return out;
+}
+
+/**
+ * The raised cords the studio's "raised cords" slider asks for.
+ *
+ * A cord is a physical thing, not a rule: it stands proud of the spine, so it
+ * gets the flat language's answer for "in front" — its own body in the darker
+ * board tone with the one ink outline round it — and the foil, when there is
+ * any, goes on as two thin rules riding its shoulders, which is where a binder
+ * actually strikes them.
+ */
+function drawRaisedCords(
+  ctx: FlatCtx,
+  d: DesignBox,
+  design: BookDesign,
+  reserved: Reserved | null,
+): void {
+  if (design.bands <= 0) return;
+  const { x, y, w, h } = d;
+  // Under about seven px the cord, its outline and its two rules add up to
+  // more ink than cloth and the spine turns into a ladder of grey.
+  if (w < 7) return;
+  const [, board] = surfaceAt(design, 0.5);
+  const cordH = Math.max(2, Math.min(h * 0.022, w * 0.42));
+  const foil = rubbed(design.gilt || design.bandGilt ? FLAT.gilt : FLAT.inkSoft, board, design.wear);
+  const rule = Math.max(0.8, w * 0.045);
+
+  for (const [i, t] of cordStations(design.bands, design.labelAt).entries()) {
+    const cy = y + h * t;
+    // Only the cord's own centre has to clear the reserved band. Testing its
+    // shoulders instead swallowed most of a five-cord spine: the label fills
+    // its compartment, and every cord bounding that compartment is within a
+    // shoulder's reach of it by construction.
+    if (reserved !== null && cy > reserved.y0 && cy < reserved.y1) continue;
+    panel(ctx, x + w * 0.04, cy - cordH / 2, w * 0.92, cordH, board, {
+      radius: cordH * 0.5,
+      seed: design.seed + 300 + i,
+      width: Math.max(1, inkWidth(w) * 0.55),
+    });
+    if (!design.bandGilt || w < 11) continue;
+    for (const off of [-cordH * 1.35, cordH * 1.35]) {
+      stroke(
+        ctx,
+        x + w * 0.16,
+        cy + off,
+        x + w * 0.84,
+        cy + off,
+        foil,
+        rule,
+        design.seed + 320 + i * 2 + (off > 0 ? 1 : 0),
+      );
+    }
+  }
+}
+
+/**
+ * The silk endbands at head and tail — the striped thread a hand-bound book
+ * shows above and below its text block.
+ *
+ * Tiny on purpose: two or three px tall at shelf scale. They are the detail
+ * that separates a bound book from a printed box, and the moment they grow
+ * past a thirtieth of the spine they read as extra bands instead.
+ */
+function drawEndbands(ctx: FlatCtx, d: DesignBox, design: BookDesign): void {
+  const style = design.headTail;
+  if (style === null) return;
+  const { x, y, w, h } = d;
+  if (w < 8) return;
+  const [accent] = fadedPair(clothPair(design.accent), design.wear);
+  // A real endband is a couple of millimetres of thread and would vanish at
+  // shelf scale; this is the smallest that still reads as striped rather than
+  // as a scratch. Inset from the very edge, because three of the shapes narrow
+  // at the head and a band flush with the tip hangs off the silhouette.
+  const band = Math.max(3, Math.min(h * 0.026, w * 0.42));
+  const bx = x + w * 0.16;
+  const bw = w * 0.68;
+
+  for (const [end, by] of [
+    [0, y + h * 0.035],
+    [1, y + h * 0.965 - band],
+  ] as const) {
+    const seed = design.seed + 400 + end * 7;
+    switch (style) {
+      case 1: {
+        // Chevron: a zigzag of the accent over cream, the classic two-colour
+        // sewn endband. Four peaks is the most that survives at this width.
+        panel(ctx, bx, by, bw, band, FLAT.cream, {
+          radius: band * 0.4,
+          seed,
+          width: Math.max(0.8, inkWidth(w) * 0.4),
+        });
+        ctx.beginPath();
+        const peaks = 4;
+        for (let i = 0; i <= peaks * 2; i += 1) {
+          const px = bx + (bw * i) / (peaks * 2);
+          const py = by + (i % 2 === 0 ? band * 0.82 : band * 0.18);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = Math.max(0.8, band * 0.34);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        break;
+      }
+      case 2: {
+        // Cord: one wrapped rope, so it reads as a single object rather than
+        // as a stripe. Cream body, accent whipping every third of its length.
+        panel(ctx, bx, by, bw, band, FLAT.cream, {
+          radius: band * 0.5,
+          seed,
+          width: Math.max(0.8, inkWidth(w) * 0.4),
+        });
+        for (let i = 1; i < 4; i += 1) {
+          const sx = bx + (bw * i) / 4;
+          stroke(ctx, sx, by + band * 0.05, sx - band * 0.5, by + band * 0.95, accent, Math.max(0.8, band * 0.3), seed + i);
+        }
+        break;
+      }
+      default: {
+        // Blocks: alternating cream and accent, the commonest machine endband.
+        const cells = 5;
+        for (let i = 0; i < cells; i += 1) {
+          fillBandOutlined(
+            ctx,
+            bx + (bw * i) / cells,
+            by,
+            bw / cells,
+            band,
+            i % 2 === 0 ? FLAT.cream : accent,
+            seed + i,
+          );
+        }
+        break;
+      }
+    }
+  }
+}
+
+/** One endband cell: filled, and outlined only once round the whole run. */
+function fillBandOutlined(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colour: string,
+  seed: number,
+): void {
+  wobbleRect(ctx, x, y, w, h, h * 0.22, seed);
+  ctx.fillStyle = colour;
+  ctx.fill();
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = Math.max(0.7, h * 0.16);
+  ctx.stroke();
+}
+
 /**
  * Where the lettering-piece goes — THE one answer, for both callers.
  *
@@ -1478,6 +1815,11 @@ export function drawBookSpine(
     drawDecoration(ctx, decor, design, mark, reserved);
   }
 
+  // 3b. the studio's own marks, over the preset's tooling and under the
+  // lettering-piece: cords are sewn INTO the book, a label is stuck ON it.
+  drawRaisedCords(ctx, decor, design, reserved);
+  drawEndbands(ctx, decor, design);
+
   // 4. the lettering-piece, unless the caller is about to set a real title.
   const label = wantsLabel && opts.ownLabel !== true ? drawLabelPlate(ctx, decor, design, ink) : null;
 
@@ -1543,6 +1885,38 @@ function freeSpan(design: BookDesign): { top: number; bottom: number } {
     // A title crossing a cord reads as a misprint, not as a book.
     top = Math.max(top, 0.32);
     bottom = Math.min(bottom, 0.58);
+  }
+  // The studio's cords claim the compartment they bound, so the caller's title
+  // lands BETWEEN two cords rather than across one. Whichever gap round the
+  // label's resting place is largest wins.
+  const stations = cordStations(design.bands, design.labelAt);
+  if (stations.length > 0) {
+    const edges = [top, ...stations.filter((t) => t > top && t < bottom), bottom];
+    let bestTop = top;
+    let bestBottom = bottom;
+    let best = -1;
+    // Clear of the cord AND of the gilt rules riding its shoulders — 0.022
+    // for the cord, another 0.015 for the rule, and a hair of air.
+    const gap = 0.042;
+    for (let i = 0; i < edges.length - 1; i += 1) {
+      const a = (edges[i] as number) + gap;
+      const b = (edges[i + 1] as number) - gap;
+      // Prefer the compartment the label already wants to sit in; fall back to
+      // the roomiest one so a five-cord spine still has somewhere to be titled.
+      const holds = design.labelAt >= a && design.labelAt <= b ? 1 : 0;
+      const score = b - a + holds;
+      if (score > best) {
+        best = score;
+        bestTop = a;
+        bestBottom = b;
+      }
+    }
+    top = Math.max(top, bestTop);
+    bottom = Math.min(bottom, bestBottom);
+  }
+  if (design.headTail !== null) {
+    top = Math.max(top, 0.05);
+    bottom = Math.min(bottom, 0.95);
   }
   return { top, bottom: Math.max(bottom, top + 0.16) };
 }

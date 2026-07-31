@@ -188,6 +188,18 @@ export interface ResolvedBookStyle {
   spine: SpineParams;
   /** Ready for `renderCover` / `coverDataUrl`. */
   cover: CoverParams;
+  /**
+   * Which fields came from the persisted override blob rather than from the
+   * seed or the room.
+   *
+   * The merged style cannot say — every field in it has a value, whoever
+   * supplied it. Some renderers need the difference: a binding preset carries
+   * a covering of its own, and handing it the book's *inherited* material
+   * flattens all sixty-two bindings into the seven the studio lists, while
+   * handing it a material the reader actually picked is the whole point of the
+   * chip.
+   */
+  pinned: ReadonlySet<keyof BookStyle>;
 }
 
 /* ---------------------------- theme defaults ----------------------------- */
@@ -711,13 +723,25 @@ export function resolveBookStyle(
     insetPlate,
   };
 
-  return { seed: s, style, spine: spineParamsFor(base, style), cover: coverParamsFor(s, style) };
+  const pinned = new Set(Object.keys(over) as (keyof BookStyle)[]);
+  return {
+    seed: s,
+    style,
+    spine: spineParamsFor(base, style, pinned),
+    cover: coverParamsFor(s, style),
+    pinned,
+  };
 }
 
 /** Project a resolved style onto renderable SpineParams. */
-export function spineParamsFor(base: SpineParams, style: BookStyle): SpineParams {
+export function spineParamsFor(
+  base: SpineParams,
+  style: BookStyle,
+  pinned: ReadonlySet<keyof BookStyle> = new Set(),
+): SpineParams {
   return {
     ...base,
+    materialPinned: pinned.has('material'),
     palette: style.pigment,
     hueJitter: style.hueJitter,
     // The legacy 0|1|2 texture bucket is kept in sync so any consumer that
@@ -771,6 +795,28 @@ export function coverParamsFor(seed: number, style: BookStyle): CoverParams {
 /** Freeze a resolved style into a complete override blob (the studio's Save). */
 export function bookStyleToOverrides(style: BookStyle): BookStyleOverrides {
   return { ...style };
+}
+
+/**
+ * The character a brand-new book arrives with.
+ *
+ * There used to be a global "new books wear this palette" setting, which is
+ * the wrong shape of answer twice over: it made every book a reader owned the
+ * same colour, and it was never actually applied to anything. A library is
+ * interesting because its books are not alike, so a new book rolls its whole
+ * vocabulary instead — silhouette dressing, tooling, plate, format, charm,
+ * cover fittings, the lot.
+ *
+ * With ONE deliberate hole: `pigment` and `hueJitter` are left unset, so the
+ * room's palette still tints a new book. Colour is the axis a library theme
+ * exists to control ("themes only *bias* per-book art"), and a creation-time
+ * roll that pinned it would make every room's shelves the same rainbow and
+ * quietly kill the feature. Everything a theme does NOT speak for is the
+ * book's own from the moment it is made.
+ */
+export function freshBookStyleOverrides(seed: number): BookStyleOverrides {
+  const { pigment: _pigment, hueJitter: _hueJitter, ...rest } = randomBookStyleOverrides(seed);
+  return rest;
 }
 
 /**

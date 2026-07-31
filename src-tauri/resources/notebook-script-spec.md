@@ -17,10 +17,13 @@ you already know 80% of it. The other 20% is:
 - tiny fenced diagram languages: ` ```tree `, ` ```graph `, ` ```timeline `
 - `fetch:` lines that ask the app to find images for you
 - flat `key: value` frontmatter for page style
+- `::let name = value` variables, used as `{{name}}` (section 4)
+- `::style name {attrs}` reusable decoration, applied with `{use=name}`
 
 The parser is deliberately forgiving. It never errors — worst case it shows a
 warning and renders your intent anyway. Still, the closer you stick to this
-spec, the prettier the note.
+spec, the prettier the note: every warning names the line, the column and what
+it expected there, and the person pasting your note will read them.
 
 ---
 
@@ -157,6 +160,62 @@ Pollination notes — see diagram below!
 
 Use effects like seasoning: one or two per block reads as handmade charm,
 five reads as chaos.
+
+### Variables: `::let name = value`, used as `{{name}}`
+
+Write a value once, use it everywhere. A `::let` line is a leaf directive —
+two colons, no closing `:::`:
+
+```
+::let course = Cell Biology
+::let week = 3
+::let {teacher="Dr. Ito", room=B12}
+
+# {{course}} — week {{week}}
+
+Taught by {{teacher}} in {{room}}.
+```
+
+- Definitions are document-wide and order-free: `{{course}}` works above the
+  `::let` that defines it, and inside containers.
+- Values are plain text. A value may reference other variables
+  (`::let title = {{course}} notes`) but never carries markup — `**bold**` in a
+  value stays literal.
+- `{{name}}` works in prose, headings, list items, table cells, image paths,
+  captions, diagram labels, attribute values (`{color={{tint}}}`) and even the
+  frontmatter (`title: {{course}}`). It does **not** work inside `` `code` ``.
+- Names ignore case, dashes and underscores: `{{course-name}}` finds
+  `::let Course_Name`.
+- An undefined `{{name}}` is left on the page exactly as written and warned
+  ("unknown variable 'name'"), so nothing silently disappears. A cycle
+  (`a` → `b` → `a`) is broken and warned.
+
+### Reusable styles: `::style name {attrs}`, applied with `{use=name}`
+
+Name a set of attributes once, then decorate many blocks with it:
+
+```
+::style hero {color=amber, rotate=-2, tape=corner}
+::style quiet {color=graphite}
+
+# The Cell {use=hero}
+
+::: sticky-note {use=hero, color=lemon}
+Explicit attrs win — this note is lemon, still tilted and taped.
+:::
+
+Footnote-ish aside. {use=quiet}
+```
+
+- `{use=name}` works on any block, container, inline span or diagram node.
+- Apply several at once with quotes: `{use="hero quiet"}` (later wins).
+- A style may build on another: `::style loud {use=hero, sticker=star}`.
+- Attributes written on the block beat the ones the style brings.
+- An unknown style name is warned and simply not applied.
+
+Both directives are optional sugar — a note that never uses them is still
+perfectly good Notebook Script. Reach for them when a note repeats the same
+value or the same decoration three or more times.
 
 ## 5. Containers: `::: name {attrs}` … `:::`
 
@@ -354,6 +413,29 @@ gentle warnings. Specifically:
 
 So: do your best, don't stress about perfection.
 
+### …but every recovery is reported
+
+Tolerance is not silence. Each recovery above produces a warning that names
+the line, the column and what was expected, and the app lists them next to the
+preview. The ones you are most likely to trigger:
+
+| what you wrote | what you are told |
+| --- | --- |
+| `{color=chartreuse}` | unknown color 'chartreuse' — expected amber, terracotta, moss… |
+| `{rotate=slightly}` | 'rotate' expects a number |
+| `{color=amber, color=moss}` | attribute 'color' is set twice — the last wins |
+| `{color}` | attribute 'color' needs a value — expected `color=amber` |
+| `::: wobbly-box` | unknown container — expected sticky-note, polaroid… |
+| a `:::` or ` ``` ` left open | closed at end of note |
+| `::: col` with no `::: columns` | renders as a plain box |
+| a table row with the wrong cell count | row has 3 cells but the header has 2 |
+| `<Callout>` / `<div>` / `import` | that is JSX/HTML/JS, not Notebook Script |
+| `{{typo}}` | unknown variable — with the list of defined ones |
+| `{use=ghost}` | unknown style — with the list of defined ones |
+
+Nothing on that list stops the note from being inserted. They are there so a
+person can see what you meant versus what the app understood.
+
 ## 8. This is NOT Mermaid, MDX, JSX, or HTML — do not emit those
 
 Notebook Script's diagram fences look like Mermaid at a glance but are a
@@ -436,12 +518,16 @@ ink: sepia
 wash: amber
 ---
 
+::let course = Cell Biology
+::let week = 3
+::style pinned {color=lemon, rotate=-2, tape=corner}
+
 # The Cell {sticker=microscope}
 
-Cells are the ==basic unit of life=={color=amber}. Key terms:
-**organelle**, *cytoplasm*, ~~protoplasm~~ (outdated).
+{{course}} — week {{week}}. Cells are the ==basic unit of life=={color=amber}.
+Key terms: **organelle**, *cytoplasm*, ~~protoplasm~~ (outdated).
 
-::: sticky-note {color=lemon, rotate=-2}
+::: sticky-note {use=pinned}
 Exam on **Friday!** Focus on mitochondria.
 :::
 
@@ -506,6 +592,14 @@ spoiler      banner                 ```flowchart same as graph
 ATTRS  {key=value, key2=value2}
 colors: amber terracotta moss lemon sky blush graphite
 sticker= tape= washi= rotate= color= paper= shadow= underline= frame=
+
+DEFINITIONS (leaf directives — no closing ':::')
+::let course = Cell Biology      define a variable
+::let {week=3, room=B12}         define several at once
+{{course}}                       use one, anywhere
+::style hero {color=amber}       name a set of attrs
+{use=hero}                       apply it to a block or span
+{use="hero quiet"}               apply several
 ```
 
 ## 11. Final checklist (before you answer)
@@ -519,7 +613,10 @@ sticker= tape= washi= rotate= color= paper= shadow= underline= frame=
 6. Diagrams use the fences and grammars from section 6 — **never Mermaid**,
    no `graph TD`, no `[shape]` brackets, arrows are `->`.
 7. No HTML, no JSX, no `import`.
-8. Sprinkle personality: a sticky-note, a sticker, a slight `rotate`, an
+8. Every `{{name}}` you write has a matching `::let name = …` somewhere, and
+   every `{use=name}` has a matching `::style name {…}`. If you only use a
+   value once, skip the variable and write the value.
+9. Sprinkle personality: a sticky-note, a sticker, a slight `rotate`, an
    `image-row` with a `fetch:` or two. The app is warm and hand-drawn —
    notes should feel like that too.
-9. Output the note as one plain-text block, ready to paste.
+10. Output the note as one plain-text block, ready to paste.

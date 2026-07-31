@@ -36,6 +36,7 @@ import {
   type IndexedPage,
 } from '../../data/search';
 import { settings } from '../../data/settings';
+import { matchesBinding } from '../../data/keybindings';
 import type { Book } from '../../data/types';
 import { fuzzyMatch } from '../../search/fuzzy';
 import { tokenize } from '../../search/rank';
@@ -54,22 +55,8 @@ import '../../styles/search.css';
 
 const [primaryToken, setPrimaryToken] = createSignal<object | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hotkey ("mod+k" from settings.keybindings['command-palette'])
-// ---------------------------------------------------------------------------
-
-function matchesBinding(event: KeyboardEvent, binding: string): boolean {
-  const parts = binding.toLowerCase().split('+');
-  const key = parts[parts.length - 1];
-  if (event.key.toLowerCase() !== key) return false;
-  const wantMod = parts.includes('mod');
-  const wantShift = parts.includes('shift');
-  const wantAlt = parts.includes('alt');
-  if (wantMod !== (event.ctrlKey || event.metaKey)) return false;
-  if (wantShift !== event.shiftKey) return false;
-  if (wantAlt !== event.altKey) return false;
-  return true;
-}
+// Hotkey: "mod+k" from settings.keybindings['command-palette']. The matcher
+// itself lives in data/keybindings.ts — every shortcut in the app shares it.
 
 // ---------------------------------------------------------------------------
 // Result rows

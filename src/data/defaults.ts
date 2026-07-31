@@ -1,10 +1,21 @@
 import type { Settings } from './types';
 
+/**
+ * Every combo the settings sheet advertises, and the only place they are
+ * chosen. Handlers read this map through `settings.keybindings` and match with
+ * `data/keybindings.matchesBinding`, so a rebind here moves the real shortcut.
+ *
+ * The script pair sits on mod+alt rather than mod+shift because mod+shift+e /
+ * mod+shift+i belong to the library export/import — the settings sheet shows
+ * those two on their own rows, so they are the ones a reader will hit first.
+ */
 export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
   'command-palette': 'mod+k',
   'new-page': 'mod+n',
-  'insert-script': 'mod+shift+i',
-  'export-script': 'mod+shift+e',
+  'export-library': 'mod+shift+e',
+  'import-library': 'mod+shift+i',
+  'insert-script': 'mod+alt+i',
+  'export-script': 'mod+alt+e',
   'toggle-handwriting': 'mod+shift+h',
   'zoom-to-shelf': 'escape',
 };

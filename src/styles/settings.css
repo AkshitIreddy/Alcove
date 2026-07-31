@@ -682,6 +682,23 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   white-space: nowrap;
 }
 
+/* The name line. Shortcut chips sit BESIDE the label, not under it: the combo
+   is part of what the row is called ("export library… Ctrl Shift E"), and
+   parking it on its own line cost a row 30px of height for no reading gain. */
+.nbs-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+}
+
+.nbs-row-keys {
+  display: inline-flex;
+  gap: var(--space-4);
+  flex: 0 0 auto;
+}
+
 /* Hints are read, not decoration: 12px (was 11px) in the re-tuned soft ink
    lands at 4.7:1 instead of 3.5:1. */
 .nbs-row-hint {
@@ -1079,6 +1096,16 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 
 .nbs-action-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+/* These chips are the only rows you can *press* (export, import, diagnostics,
+   replay the tour, back up now), so keyboard focus on them must be obvious.
+   The global ring is inherited; the chip additionally sits up on its paper so
+   the ring reads against the section wash rather than against ink-on-ink. */
+.nbs-action-btn:focus-visible {
+  outline-offset: 3px;
+  background: var(--sec-light);
+  border-color: var(--ink-line);
 }
 
 /* Disabled must still be READABLE, just plainly inert. At 0.4 opacity the

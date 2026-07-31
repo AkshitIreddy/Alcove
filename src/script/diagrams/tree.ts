@@ -8,7 +8,7 @@
  */
 
 import type { Diag, SrcLine, TreeNode } from "../types";
-import { parseAttrBlock } from "../attrParser";
+import { findAttrBrace, parseAttrBlock } from "../attrParser";
 
 const COMMENT_RE = /^\s*(\/\/|#)/;
 
@@ -28,7 +28,7 @@ export function parseTree(lines: SrcLine[], diags: Diag[]): TreeNode[] {
 
     // trailing {attrs}
     let attrs: TreeNode["attrs"];
-    const braceAt = content.indexOf("{");
+    const braceAt = findAttrBrace(content);
     if (braceAt !== -1) {
       const res = parseAttrBlock(
         content.slice(braceAt),

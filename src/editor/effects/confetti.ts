@@ -9,7 +9,12 @@
  *
  * The particle math is pure and exported for tests; only burstConfetti()
  * touches the DOM.
+ *
+ * The 900 ms burst is its own arc, not a step on the motion scale — the scale
+ * covers UI travel, and a shortened confetti burst would just look broken.
+ * What it does take from the scale is the on/off decision (isMotionOff).
  */
+import { isMotionOff } from '../../styles/motion';
 
 export const CONFETTI_COUNT = 40;
 export const CONFETTI_DURATION_MS = 900;
@@ -113,14 +118,6 @@ function paletteColors(): string[] {
   });
 }
 
-function motionScale(): number {
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue('--motion-scale')
-    .trim();
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : 1;
-}
-
 export interface ConfettiOrigin {
   /** Viewport coordinates of the burst center (defaults to mid-screen). */
   x?: number;
@@ -128,8 +125,8 @@ export interface ConfettiOrigin {
 }
 
 /**
- * Fire one burst. Fire-and-forget; respects reduced motion (--motion-scale
- * 0 skips entirely). Safe to call outside a browser (no-ops).
+ * Fire one burst. Fire-and-forget; decorative, so reduced motion skips it
+ * entirely rather than playing it fast. Safe to call outside a browser.
  */
 export function burstConfetti(origin: ConfettiOrigin = {}): void {
   if (
@@ -140,7 +137,7 @@ export function burstConfetti(origin: ConfettiOrigin = {}): void {
   ) {
     return;
   }
-  if (motionScale() <= 0) return;
+  if (isMotionOff()) return;
 
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');

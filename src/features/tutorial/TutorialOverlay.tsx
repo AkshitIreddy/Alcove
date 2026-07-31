@@ -64,20 +64,19 @@ import {
   tutorialRunning,
 } from './state';
 import { appState } from '../../state/app';
+import { motionScale } from '../../styles/motion';
 import '../../styles/tutorial.css';
 
 /* ------------------------------- helpers ---------------------------------- */
 
-/** Current --motion-scale as a number (0 when motion is off). */
-function motionScale(): number {
-  if (typeof document === 'undefined') return 1;
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue('--motion-scale')
-    .trim();
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : 1;
-}
-
+/**
+ * The tour's beats (spotlight travel, pencil draw-on, card entrance) are
+ * authored choreography rather than UI travel, so they keep their own seconds
+ * instead of taking DUR from styles/motion.ts — but they scale through the
+ * shared `motionScale()`, which is the one place that decides how much motion
+ * to play. A private copy of that read used to live here and missed the OS
+ * reduced-motion preference entirely.
+ */
 function sameRect(a: Rect | null, b: Rect | null): boolean {
   if (a === null || b === null) return a === b;
   return (

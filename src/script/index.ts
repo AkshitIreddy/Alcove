@@ -10,8 +10,10 @@
 import type { ScriptDoc } from "./types";
 import { parseDoc } from "./blockParser";
 import { printDoc } from "./printer";
+import { diag } from "./diagnostics";
 
-export const NOTEBOOK_SCRIPT_VERSION = "0.1.0";
+/** v2: `::let` variables, `::style` presets, coded/located diagnostics. */
+export const NOTEBOOK_SCRIPT_VERSION = "2.0.0";
 
 /**
  * Parse Notebook Script source. Total by construction — and belt-and-braces
@@ -36,11 +38,11 @@ export function parse(source: string): ScriptDoc {
         },
       ],
       diagnostics: [
-        {
-          severity: "warn",
-          message: `internal parser error — content kept as plain text (${String(err)})`,
-          span: { srcStart: 0, srcEnd: source.length },
-        },
+        diag(
+          "internal-error",
+          `internal parser error — content kept as plain text (${String(err)})`,
+          { srcStart: 0, srcEnd: source.length },
+        ),
       ],
     };
   }
@@ -56,3 +58,18 @@ export * from "./vocab";
 export { normalizeName, resolveContainerName, resolveDiagramLang, levenshtein, fuzzyMatch } from "./normalize";
 export { parseAttrBlock, parseBareAttrs } from "./attrParser";
 export { parseInline } from "./inlineParser";
+export {
+  diag,
+  expectedOneOf,
+  locateDiags,
+  pushDiag,
+  sortDiags,
+  type DiagCode,
+} from "./diagnostics";
+export {
+  applyDefinitions,
+  resolveStyles,
+  resolveVars,
+  scanDirectives,
+  hasVarRef,
+} from "./resolve";

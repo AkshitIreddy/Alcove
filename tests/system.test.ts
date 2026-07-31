@@ -16,8 +16,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { save, load as loadSettings } from '../src/data/settings';
-import { createBook } from '../src/data/books';
-import { listPages } from '../src/data/pages';
+import { createBook, trashBook } from '../src/data/books';
+import { createPage, listPages } from '../src/data/pages';
 import { appState } from '../src/state/app';
 import {
   BOOT_DELAY_MS,
@@ -45,6 +45,21 @@ import {
   findPixiRenderer,
   formatBytes,
 } from '../src/features/system/PerfHud';
+import {
+  ERROR_LOG_CAPACITY,
+  MESSAGE_MAX,
+  clearErrorLog,
+  describeErrorArgs,
+  recentErrors,
+  recordError,
+} from '../src/features/system/errorLog';
+import {
+  collectDiagnostics,
+  collectLibraryCounts,
+  diagnosticsFileName,
+  formatDiagnostics,
+  redactPaths,
+} from '../src/features/system/diagnostics';
 
 const NOW = new Date('2026-07-30T12:00:00.000Z');
 
@@ -263,5 +278,117 @@ describe('perf HUD stats', () => {
       __PIXI_APP__: { renderer: { name: 'other' } },
     });
     expect(viaRegistry?.rendererName).toBe('webgl');
+  });
+});
+
+/* -------------------------------- error log -------------------------------- */
+
+describe('error log', () => {
+  afterEach(() => clearErrorLog());
+
+  it('folds console arguments into one clamped line', () => {
+    expect(describeErrorArgs(['boom', new Error('nope')])).toBe('boom Error: nope');
+    expect(describeErrorArgs([{ a: 1 }, null, undefined, 3])).toBe(
+      '{"a":1} null undefined 3',
+    );
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(describeErrorArgs([cyclic])).toBe('[unserializable object]');
+
+    const long = describeErrorArgs(['x'.repeat(1000)]);
+    expect(long.length).toBe(MESSAGE_MAX);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
+  it('folds consecutive repeats and caps the buffer', () => {
+    recordError('console', '   ');
+    expect(recentErrors()).toHaveLength(0);
+
+    recordError('console', 'same');
+    recordError('console', 'same');
+    recordError('window', 'same'); // different source -> its own entry
+    const folded = recentErrors();
+    expect(folded).toHaveLength(2);
+    expect(folded[0].count).toBe(2);
+
+    clearErrorLog();
+    for (let i = 0; i < ERROR_LOG_CAPACITY + 10; i += 1) recordError('console', `e${i}`);
+    const capped = recentErrors();
+    expect(capped).toHaveLength(ERROR_LOG_CAPACITY);
+    expect(capped[capped.length - 1].message).toBe(`e${ERROR_LOG_CAPACITY + 9}`);
+  });
+
+  it('hands out copies, so a reader cannot corrupt the log', () => {
+    recordError('promise', 'original');
+    const snapshot = recentErrors();
+    snapshot[0].message = 'tampered';
+    expect(recentErrors()[0].message).toBe('original');
+  });
+});
+
+/* ------------------------------- diagnostics ------------------------------- */
+
+describe('diagnostics redaction', () => {
+  it('keeps the filename and drops every path above it', () => {
+    expect(redactPaths(String.raw`failed to open C:\Users\ada\Documents\secret.db`)).toBe(
+      String.raw`failed to open …\secret.db`,
+    );
+    expect(redactPaths('at file:///C:/Users/ada/app/main.js')).toBe('at …/main.js');
+    expect(redactPaths('ENOENT /Users/ada/notes/private.md')).toBe(
+      'ENOENT …/private.md',
+    );
+    expect(redactPaths('nothing path-shaped here')).toBe('nothing path-shaped here');
+  });
+});
+
+describe('diagnostics report', () => {
+  // The stub db is shared across this file, so counts are asserted as deltas
+  // on floors no other test in here touches.
+  it('counts shelved books, trashed books, pages and floors', async () => {
+    await loadSettings();
+    const before = await collectLibraryCounts();
+    expect(before).not.toBeNull();
+
+    const one = await createBook({ title: 'One', floor: 40, slot: 0 });
+    await createBook({ title: 'Two', floor: 41, slot: 1 });
+    const gone = await createBook({ title: 'Gone', floor: 40, slot: 5 });
+    await trashBook(gone.id);
+    await createPage({ bookId: one.id, ord: 0 });
+
+    const after = await collectLibraryCounts();
+    expect(after!.books - before!.books).toBe(2);
+    expect(after!.trashedBooks - before!.trashedBooks).toBe(1);
+    expect(after!.pages - before!.pages).toBe(1);
+    expect(after!.occupiedFloors - before!.occupiedFloors).toBe(2);
+    expect(after!.deepestFloor).toBe(41);
+  });
+
+  it('never writes a backup path, page content or a raw error path', async () => {
+    await loadSettings();
+    await save({ backupFolder: String.raw`C:\Users\ada\Backups\notebook` });
+    clearErrorLog();
+    recordError('window', String.raw`could not read C:\Users\ada\Documents\diary.md`);
+
+    const report = await collectDiagnostics();
+    const text = formatDiagnostics(report);
+
+    expect(text).not.toContain(String.raw`C:\Users\ada`);
+    expect(text).not.toContain('Backups');
+    expect(text).toContain('custom folder (path withheld)');
+    expect(text).toContain(String.raw`…\diary.md`);
+    expect(text).toContain('NOTEBOOK — DIAGNOSTICS REPORT');
+    expect(text).toContain('RECENT ERRORS');
+    // Booleans and volumes are resolved, not dumped as raw JSON.
+    expect(text).toMatch(/^spellcheck\s+(on|off)$/m);
+
+    await save({ backupFolder: null });
+    clearErrorLog();
+  });
+
+  it('names the file by date', () => {
+    expect(diagnosticsFileName(new Date(2026, 6, 5))).toBe(
+      'notebook-diagnostics-2026-07-05.txt',
+    );
   });
 });

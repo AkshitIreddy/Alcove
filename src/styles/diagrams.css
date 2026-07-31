@@ -293,6 +293,12 @@
   color: var(--wash-terracotta-deep);
 }
 
+/* Matches `.nb-ins-warn-line` in insert.css — the two diagnostic lists are the
+   same list, so they must not look like two different features. */
+.nb-diagram-diag-line {
+  font-weight: 700;
+}
+
 .nb-diagram-popover-actions {
   display: flex;
   justify-content: flex-end;

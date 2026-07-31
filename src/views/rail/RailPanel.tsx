@@ -2,7 +2,8 @@
  * src/views/rail/RailPanel.tsx — the sliding paper sheet the rail's tools
  * open. Mirrors the settings sheet's GSAP pattern (SettingsPanel) but slides
  * in from the LEFT, out of the rail: GSAP owns the rest position (xPercent),
- * never CSS % transforms, durations scaled by --motion-scale.
+ * never CSS % transforms. Timing comes from the motion scale — a whole sheet
+ * crossing the screen is the `slow` step.
  *
  * No scrim — the panel floats beside the rail so the book stays visible and
  * editable (sticker/effect buttons need the editor selection to survive).
@@ -10,15 +11,8 @@
  */
 import { createEffect, onCleanup, onMount, type JSX } from 'solid-js';
 import { gsap } from 'gsap';
+import { tween } from '../../styles/motion';
 import { CloseIcon } from './icons';
-
-function motionScale(): number {
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue('--motion-scale')
-    .trim();
-  const n = Number.parseFloat(raw);
-  return Number.isFinite(n) ? n : 1;
-}
 
 export interface RailPanelProps {
   open: boolean;
@@ -43,16 +37,16 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
     const open = props.open;
     const sheet = sheetRef;
     if (!sheet || open === wasOpen) return open;
-    const dur = 0.45 * motionScale();
     gsap.killTweensOf(sheet);
     if (open) {
       gsap.set(sheet, { visibility: 'visible' });
-      gsap.to(sheet, { xPercent: 0, duration: dur, ease: 'power3.out' });
+      gsap.to(sheet, { xPercent: 0, ...tween('slow', 'enter') });
     } else if (wasOpen !== undefined) {
+      // Leaving is a step quicker than arriving — the sheet has already been
+      // read by the time it closes.
       gsap.to(sheet, {
         xPercent: -130,
-        duration: dur * 0.8,
-        ease: 'power2.in',
+        ...tween('normal', 'exit'),
         onComplete: () => gsap.set(sheet, { visibility: 'hidden' }),
       });
     }

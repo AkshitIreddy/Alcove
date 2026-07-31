@@ -6,11 +6,18 @@
  *  - applySettingsTo(): pushing settings into an injected DOM root + sound
  *    adapter (theme/ink attrs, motion scale, font vars, classes, volumes,
  *    mute/reduced, ambient loop) and its idempotence.
+ *  - keybindings: the shortcut map the settings sheet advertises and the
+ *    handlers match on — no two actions may claim one combo.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_KEYBINDINGS, DEFAULT_SETTINGS } from '../src/data/defaults';
+import {
+  ariaKeyshortcuts,
+  formatBinding,
+  matchesBinding,
+} from '../src/data/keybindings';
 import { mergeSettings } from '../src/data/settings';
 import type { Settings } from '../src/data/types';
 import {
@@ -21,6 +28,7 @@ import {
   MOTION_SCALES,
   NO_DOODLES_CLASS,
   applySettingsTo,
+  effectiveMotionScale,
   type SettingsRoot,
   type SettingsSoundAdapter,
 } from '../src/features/settings/apply';
@@ -128,10 +136,13 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
   } as Settings;
 }
 
-function apply(s: Settings): { root: FakeRoot; sound: FakeSound } {
+function apply(
+  s: Settings,
+  osPrefersReduced = false,
+): { root: FakeRoot; sound: FakeSound } {
   const root = new FakeRoot();
   const sound = new FakeSound();
-  applySettingsTo(s, root, sound);
+  applySettingsTo(s, root, sound, osPrefersReduced);
   return { root, sound };
 }
 
@@ -245,6 +256,19 @@ describe('applySettingsTo', () => {
     }
   });
 
+  // We write --motion-scale INLINE, which outranks the reduced-motion media
+  // query in global.css — so the OS preference has to be folded in here or it
+  // is silently overridden for every user who set it.
+  it('lets the OS reduced-motion preference beat any animation level', () => {
+    for (const level of ['full', 'reduced', 'off'] as const) {
+      const { root } = apply(makeSettings({ animationLevel: level }), true);
+      expect(root.vars.get('--motion-scale')).toBe('0');
+    }
+    expect(effectiveMotionScale('full', true)).toBe('0');
+    expect(effectiveMotionScale('full', false)).toBe('1');
+    expect(effectiveMotionScale('reduced', false)).toBe('0.5');
+  });
+
   it('writes the body font stack and clamped size vars', () => {
     for (const font of Object.keys(HANDWRITING_FONT_STACKS)) {
       const { root } = apply(
@@ -356,5 +380,80 @@ describe('applySettingsTo', () => {
 
     expect(root.snapshot()).toEqual(afterA.root);
     expect(sound.snapshot()).toEqual(afterA.sound);
+  });
+});
+
+/* ------------------------------ keybindings -------------------------------- */
+
+/**
+ * The settings sheet renders `settings.keybindings` as THE shortcut list, and
+ * App.tsx / BookView.tsx match real events against the same map. Two things
+ * therefore have to hold, and neither did before: no two actions may claim one
+ * combo (export-script and the library export both shipped as mod+shift+e, so
+ * the sheet advertised a combo that opened something else), and every action
+ * the UI looks up has to exist.
+ */
+describe('DEFAULT_KEYBINDINGS', () => {
+  it('gives every action a distinct combo', () => {
+    const combos = Object.values(DEFAULT_KEYBINDINGS);
+    expect(new Set(combos).size).toBe(combos.length);
+  });
+
+  it('ships every action the handlers look up', () => {
+    for (const action of [
+      'command-palette',
+      'export-library',
+      'import-library',
+      'insert-script',
+      'export-script',
+    ]) {
+      expect(DEFAULT_KEYBINDINGS[action]).toBeTruthy();
+    }
+  });
+});
+
+describe('matchesBinding', () => {
+  const event = (
+    key: string,
+    mods: { ctrl?: boolean; shift?: boolean; alt?: boolean } = {},
+  ): KeyboardEvent =>
+    ({
+      key,
+      ctrlKey: mods.ctrl === true,
+      metaKey: false,
+      shiftKey: mods.shift === true,
+      altKey: mods.alt === true,
+    }) as KeyboardEvent;
+
+  it('matches a combo exactly, modifiers and all', () => {
+    expect(matchesBinding(event('e', { ctrl: true, shift: true }), 'mod+shift+e')).toBe(true);
+    expect(matchesBinding(event('E', { ctrl: true, shift: true }), 'mod+shift+e')).toBe(true);
+  });
+
+  // The whole point of the mod+alt / mod+shift split: the script pair and the
+  // library pair share their letters, so a loose matcher would fire both.
+  it('does not let the script pair fire on the library combo', () => {
+    const libraryExport = event('e', { ctrl: true, shift: true });
+    expect(matchesBinding(libraryExport, DEFAULT_KEYBINDINGS['export-library']!)).toBe(true);
+    expect(matchesBinding(libraryExport, DEFAULT_KEYBINDINGS['export-script']!)).toBe(false);
+
+    const scriptExport = event('e', { ctrl: true, alt: true });
+    expect(matchesBinding(scriptExport, DEFAULT_KEYBINDINGS['export-script']!)).toBe(true);
+    expect(matchesBinding(scriptExport, DEFAULT_KEYBINDINGS['export-library']!)).toBe(false);
+  });
+
+  it('rejects a missing or an extra modifier', () => {
+    expect(matchesBinding(event('k', { ctrl: true }), 'mod+k')).toBe(true);
+    expect(matchesBinding(event('k'), 'mod+k')).toBe(false);
+    expect(matchesBinding(event('k', { ctrl: true, shift: true }), 'mod+k')).toBe(false);
+  });
+});
+
+describe('formatBinding / ariaKeyshortcuts', () => {
+  // 'mod' is a storage token; a kbd chip reading "mod" is a key nobody has.
+  it('spells combos out for chips and for aria', () => {
+    expect(formatBinding('mod+shift+e')).toBe('Ctrl+Shift+E');
+    expect(ariaKeyshortcuts('mod+shift+e')).toBe('Control+Shift+E');
+    expect(formatBinding('escape')).toBe('Escape');
   });
 });

@@ -122,6 +122,8 @@ export const FRONTMATTER_ENUM_DOMAINS: Record<string, readonly string[]> = {
 export const KNOWN_ATTR_KEYS = [
   "id",
   "class",
+  // v2: apply a named `::style` set — `{use=hero}` / `{use="hero tilted"}`
+  "use",
   "color",
   "sticker",
   "tape",
@@ -153,7 +155,25 @@ export const ATTR_KEY_ALIASES: Record<string, string> = {
   rotation: "rotate",
   columns: "cols",
   highlight: "color",
+  // v2 style application
+  uses: "use",
+  apply: "use",
+  usestyle: "use",
 };
+
+/**
+ * Keys whose value must be a number. A non-numeric value is kept (the parser
+ * never rejects) but earns a precise diagnostic — `rotate=slightly` is the
+ * kind of thing a chatbot writes and a user would otherwise never notice.
+ */
+export const NUMERIC_ATTR_KEYS = ["rotate", "cols", "count", "width"] as const;
+
+/**
+ * Directive names for the v2 leaf directives, and their tolerated spellings
+ * (normalized: lowercase, spaces/`-`/`_` stripped).
+ */
+export const LET_DIRECTIVE_NAMES = ["let", "var"] as const;
+export const STYLE_DIRECTIVE_NAMES = ["style", "styledef", "preset"] as const;
 
 // ---------------------------------------------------------------------------
 // Containers

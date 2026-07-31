@@ -8,6 +8,10 @@
  *
  * parseDoc() is TOTAL: any input returns a doc + diagnostics, never throws.
  * `\r\n`, `\r` and `\n` line endings are treated identically.
+ *
+ * v2 adds a pre-pass (src/script/resolve.ts) that lifts `::let` / `::style`
+ * leaf directives out of the line stream before the block pass, and a
+ * post-pass that substitutes `{{variables}}` and expands `{use=style}`.
  */
 
 import type {
@@ -32,7 +36,25 @@ import {
   resolveContainerName,
   resolveDiagramLang,
 } from "./normalize";
-import { CALLOUT_VARIANTS, FRONTMATTER_ENUM_DOMAINS } from "./vocab";
+import {
+  CALLOUT_VARIANTS,
+  CONTAINER_NAMES,
+  DIAGRAM_LANGS,
+  FRONTMATTER_ENUM_DOMAINS,
+} from "./vocab";
+import {
+  expectedOneOf,
+  locateDiags,
+  pushDiag,
+  sortDiags,
+  type DiagCode,
+} from "./diagnostics";
+import {
+  applyDefinitions,
+  resolveStyles,
+  resolveVars,
+  scanDirectives,
+} from "./resolve";
 import { parseInline } from "./inlineParser";
 import { parseTree } from "./diagrams/tree";
 import { parseGraph } from "./diagrams/graph";
@@ -72,11 +94,20 @@ function indentOf(text: string): number {
 // Recognizer patterns
 // ---------------------------------------------------------------------------
 
+/**
+ * One `{…}` attribute block. `{{name}}` references are allowed inside it
+ * (`{color={{tint}}}`), so the body is "anything but braces, or a reference".
+ * Both alternatives start with a different character — no backtracking.
+ */
+const ATTR_BLOCK = "\\{(?:[^{}]|\\{\\{[^{}]*\\}\\})*\\}";
+
 const COLON_RE = /^\s*(:{2,})\s*(.*)$/;
 const TICK_OPEN_RE = /^\s*(`{3,})\s*(.*)$/;
 const TICK_CLOSE_RE = /^\s*`{2,}\s*$/;
 const HEADING_RE = /^\s*(#{1,6})\s+(.*)$/;
-const DIVIDER_RE = /^\s*(-{3,}|\*{3,}|_{3,})\s*(\{[^{}]*\})?\s*$/;
+const DIVIDER_RE = new RegExp(
+  `^\\s*(-{3,}|\\*{3,}|_{3,})\\s*(${ATTR_BLOCK})?\\s*$`,
+);
 const LIST_RE = /^([ \t]*)([-*+]|\d{1,9}[.)])[ \t]+(.*)$/;
 const TASK_RE = /^\[([ xX])\][ \t]?(.*)$/;
 const QUOTE_RE = /^\s*>[ \t]?(.*)$/;
@@ -84,8 +115,20 @@ const TABLE_RE = /^\s*\|/;
 const IMAGE_RE = /^\s*!\[([^\]]*)\]\(([^)]*)\)\s*(\{.*)?$/;
 const FETCH_LINE_RE = /^\s*fetch\s*:\s*(.*)$/i;
 const IMAGE_LINE_RE = /^\s*image\s*:\s*(.*)$/i;
-const PURE_ATTR_RE = /^\s*\{[^{}]*\}\s*$/;
+const PURE_ATTR_RE = new RegExp(`^\\s*${ATTR_BLOCK}\\s*$`);
+/** A block's trailing ` {attrs}` — the space before the brace is required. */
+const TRAILING_ATTR_RE = new RegExp(`^(.*\\S)[ \\t]+(${ATTR_BLOCK})[ \\t]*$`);
 const FM_FENCE_RE = /^-{3,}\s*$/;
+
+/** Things a chatbot writes when it forgets which language it is writing. */
+const HTML_TAG_RE = /^\s*<\/?([A-Za-z][\w.:-]*)(\s[^<>]*)?\/?>/;
+const IMPORT_RE = /^\s*(import|export)\s+[\w{*]/;
+const SETEXT_RE = /^\s*={3,}\s*$/;
+/** Frontmatter attempt: `key: value` or an indented continuation. */
+const FM_KEYISH_RE = /^\s*[\w-]+\s*:/;
+
+/** Container nesting past this reads as runaway `:::` in AI output. */
+const MAX_CONTAINER_DEPTH = 8;
 
 type LineClass =
   | "blank"
@@ -132,9 +175,15 @@ export function parseDoc(source: string): ScriptDoc {
   const blocks: Block[] = [];
   const stack: OpenContainer[] = [];
   const lines = splitLines(source);
+  let depthWarned = false;
 
-  const warn = (message: string, span: Span): void => {
-    diags.push({ severity: "warn", message, span });
+  const warn = (
+    code: DiagCode,
+    message: string,
+    span: Span,
+    expected?: string,
+  ): void => {
+    pushDiag(diags, code, message, span, expected);
   };
   const target = (): Block[] =>
     stack.length > 0 ? stack[stack.length - 1].block.children : blocks;
@@ -150,7 +199,7 @@ export function parseDoc(source: string): ScriptDoc {
     text: string,
     baseOffset: number,
   ): { text: string; attrs: Attrs } => {
-    const m = /^(.*\S)[ \t]+(\{[^{}]*\})[ \t]*$/.exec(text);
+    const m = TRAILING_ATTR_RE.exec(text);
     if (!m || m[1].endsWith("\\")) return { text, attrs: {} };
     const trimmed = text.trimEnd();
     const braceStart = trimmed.length - m[2].length;
@@ -166,6 +215,7 @@ export function parseDoc(source: string): ScriptDoc {
   };
 
   // --- frontmatter (line 0 only; leading blank lines tolerated) ------------
+  const fmSpans: Record<string, Span> = {};
   let i = 0;
   while (i < lines.length && lines[i].text.trim() === "") i++;
   if (i < lines.length && FM_FENCE_RE.test(lines[i].text.trim())) {
@@ -176,12 +226,30 @@ export function parseDoc(source: string): ScriptDoc {
         break;
       }
     }
+    // Does this look like an *attempt* at frontmatter? Only then is a broken
+    // block worth a diagnostic — a note that simply opens with a `---`
+    // divider must stay silent. A closed block only has to contain a
+    // `key: value` line somewhere; an unclosed one has to start with one,
+    // because "everything to the end of the note" would otherwise match.
+    let firstBody = -1;
+    let anyKeyish = false;
+    for (let j = i + 1; j < (close === -1 ? lines.length : close); j++) {
+      if (lines[j].text.trim() === "") continue;
+      if (firstBody === -1) firstBody = j;
+      if (FM_KEYISH_RE.test(lines[j].text)) anyKeyish = true;
+    }
+    const looksLikeFm =
+      firstBody !== -1 &&
+      (close === -1 ? FM_KEYISH_RE.test(lines[firstBody].text) : anyKeyish);
+
     let valid = close !== -1;
+    let firstBad = -1;
     if (valid) {
       for (let j = i + 1; j < close; j++) {
         const t = lines[j].text.trim();
         if (t !== "" && !t.startsWith("#") && !t.includes(":")) {
           valid = false;
+          firstBad = j;
           break;
         }
       }
@@ -191,6 +259,15 @@ export function parseDoc(source: string): ScriptDoc {
       for (let j = i + 1; j < close; j++) {
         const t = lines[j].text.trim();
         if (t === "" || t.startsWith("#")) continue;
+        // nested YAML: an indented key is read as a top-level one, warned
+        if (/^[ \t]/.test(lines[j].text)) {
+          warn(
+            "frontmatter-nested",
+            `indented '${t}' — page style is flat 'key: value' only, no nested YAML`,
+            lineSpan(lines[j]),
+            "key: value at column 1",
+          );
+        }
         const colonAt = t.indexOf(":");
         let key = t.slice(0, colonAt).trim().toLowerCase();
         // strip inline `# comment` (needs a space before the hash)
@@ -202,30 +279,129 @@ export function parseDoc(source: string): ScriptDoc {
         if (!fmKeys.includes(key)) {
           const fixed = fuzzyMatch(key, fmKeys);
           if (fixed !== null) {
-            warn(`unknown page style '${key}' — did you mean '${fixed}'? Using it.`, lineSpan(lines[j]));
+            warn(
+              "frontmatter-key-corrected",
+              `unknown page style '${key}' — did you mean '${fixed}'? Using it.`,
+              lineSpan(lines[j]),
+              fixed,
+            );
             key = fixed;
+          } else {
+            warn(
+              "frontmatter-unknown-key",
+              `unknown page style '${key}' (kept, the page ignores it)`,
+              lineSpan(lines[j]),
+              expectedOneOf(fmKeys),
+            );
           }
         }
         const domain = FRONTMATTER_ENUM_DOMAINS[key];
         if (domain !== undefined && !domain.includes(value)) {
           const fixed = fuzzyMatch(value, domain);
           if (fixed !== null) {
-            warn(`unknown ${key} '${value}' — using '${fixed}'`, lineSpan(lines[j]));
+            warn(
+              "frontmatter-value-corrected",
+              `unknown ${key} '${value}' — using '${fixed}'`,
+              lineSpan(lines[j]),
+              expectedOneOf(domain),
+            );
             value = fixed;
           } else {
-            warn(`unknown ${key} '${value}' (kept)`, lineSpan(lines[j]));
+            warn(
+              "frontmatter-unknown-value",
+              `unknown ${key} '${value}' (kept)`,
+              lineSpan(lines[j]),
+              expectedOneOf(domain),
+            );
           }
         }
         frontmatter[key] = value;
+        fmSpans[key] = lineSpan(lines[j]);
       }
       i = close + 1;
+    } else if (looksLikeFm) {
+      // invalid frontmatter → the `---` falls through as a divider below,
+      // but say *why* so the page style silently going missing is visible
+      if (close === -1) {
+        warn(
+          "frontmatter-unclosed",
+          "page style opened with '---' but never closed — it was read as page text",
+          lineSpan(lines[i]),
+          "a closing '---' line",
+        );
+      } else {
+        warn(
+          "frontmatter-invalid",
+          `'${lines[firstBad].text.trim()}' is not a 'key: value' pair — the whole page-style block was ignored`,
+          lineSpan(lines[firstBad]),
+          "key: value",
+        );
+      }
     }
-    // invalid frontmatter → the `---` falls through as a divider below
   }
+
+  // --- v2 pre-pass: ::let / ::style leaf directives -------------------------
+  const scan = scanDirectives(lines, i);
+  diags.push(...scan.diags);
+  const vars = resolveVars(scan.vars, diags);
+  const styles = resolveStyles(scan.styles, diags);
 
   // --- helpers for the fence handlers --------------------------------------
 
+  /**
+   * A paragraph is the fallthrough, so it is also where a chatbot's wrong
+   * language lands: HTML, JSX, ESM imports, Setext underlines. Those parse as
+   * literal prose — say so once per paragraph and per kind, then move on.
+   */
+  const sniffWrongLanguage = (from: number, to: number): void => {
+    const seen = new Set<DiagCode>();
+    const once = (
+      code: DiagCode,
+      message: string,
+      line: SrcLine,
+      expected: string,
+    ): void => {
+      if (seen.has(code)) return;
+      seen.add(code);
+      warn(code, message, lineSpan(line), expected);
+    };
+    for (let j = from; j <= to; j++) {
+      const text = lines[j].text;
+      const tag = HTML_TAG_RE.exec(text);
+      if (tag !== null) {
+        const isComponent = /^[A-Z]/.test(tag[1]);
+        once(
+          isComponent ? "jsx-not-script" : "html-not-script",
+          `'<${tag[1]}>' is ${isComponent ? "JSX" : "HTML"}, not Notebook Script — it stays literal text`,
+          lines[j],
+          isComponent
+            ? "::: callout {variant=info} … :::"
+            : "Markdown or a ':::' container",
+        );
+        continue;
+      }
+      if (IMPORT_RE.test(text)) {
+        once(
+          "import-not-script",
+          "'import'/'export' statements are not part of Notebook Script",
+          lines[j],
+          "plain note content",
+        );
+        continue;
+      }
+      if (j > from && SETEXT_RE.test(text)) {
+        once(
+          "setext-heading",
+          "'===' underlines are not headings here",
+          lines[j],
+          "# Heading",
+        );
+      }
+    }
+  };
+
   const makeParagraph = (from: number, to: number): void => {
+    sniffWrongLanguage(from, to);
     // gather already-classified paragraph lines [from, to]
     const parts: string[] = [];
     for (let j = from; j <= to; j++) parts.push(lines[j].text.trim());
@@ -261,7 +437,12 @@ export function parseDoc(source: string): ScriptDoc {
         query = attrs.query;
         delete attrs.query;
       } else {
-        warn("fetch directive has no query", { srcStart: base, srcEnd: base + rest.length });
+        warn(
+          "fetch-missing-query",
+          "fetch directive has no query",
+          { srcStart: base, srcEnd: base + rest.length },
+          '::fetch{query="a fluffy kitten"}',
+        );
       }
     } else {
       const pipeAt = rest.indexOf("|");
@@ -285,7 +466,12 @@ export function parseDoc(source: string): ScriptDoc {
     if (rest === "") {
       // close fence (2+ colons)
       if (stack.length === 0) {
-        warn("':::' here closes nothing — ignored", lineSpan(line));
+        warn(
+          "container-stray-close",
+          "':::' here closes nothing — there is no open container above it",
+          lineSpan(line),
+          "an opening '::: name' first",
+        );
       } else {
         const open = stack.pop() as OpenContainer;
         open.block.srcEnd = line.end;
@@ -333,15 +519,58 @@ export function parseDoc(source: string): ScriptDoc {
     const resolved = resolveContainerName(rawName);
     if (colons === 2 && resolved.name === "generic") return false;
     if (colons === 2) {
-      warn(`container fences should open with ':::' (got '::')`, lineSpan(line));
+      warn(
+        "container-two-colon-open",
+        `container fences open with ':::' (got '::')`,
+        lineSpan(line),
+        `::: ${resolved.name}`,
+      );
     }
     if (resolved.corrected) {
-      warn(`unknown container '${rawName}' — did you mean '${resolved.name}'? Using it.`, lineSpan(line));
+      warn(
+        "container-corrected",
+        `unknown container '${rawName}' — did you mean '${resolved.name}'? Using it.`,
+        lineSpan(line),
+        resolved.name,
+      );
     } else if (resolved.name === "generic") {
-      warn(`unknown container '${rawName}' — rendered as a plain box`, lineSpan(line));
+      warn(
+        "unknown-container",
+        `unknown container '${rawName}' — rendered as a plain box`,
+        lineSpan(line),
+        expectedOneOf(CONTAINER_NAMES),
+      );
+    }
+    if (resolved.name === "col" && !stack.some((o) => o.block.name === "columns")) {
+      warn(
+        "col-outside-columns",
+        "':::col' outside a ':::columns' block — it renders as a plain box",
+        lineSpan(line),
+        "::: columns wrapping the ::: col blocks",
+      );
+    }
+    // once per note: a runaway `:::` cascade would otherwise warn per level
+    if (stack.length >= MAX_CONTAINER_DEPTH && !depthWarned) {
+      depthWarned = true;
+      warn(
+        "container-too-deep",
+        `containers are nested ${stack.length + 1} deep — did a ':::' close go missing?`,
+        lineSpan(line),
+        `at most ${MAX_CONTAINER_DEPTH} levels`,
+      );
     }
 
     let attrs: Attrs = {};
+    // `::: callout tip` — a bare variant word, not an attribute
+    if (
+      resolved.name === "callout" &&
+      !after.startsWith("{") &&
+      after !== "" &&
+      fuzzyMatch(after.trim(), CALLOUT_VARIANTS) !== null
+    ) {
+      attrs.variant = fuzzyMatch(after.trim(), CALLOUT_VARIANTS) as string;
+      after = "";
+    }
     if (after.startsWith("{")) {
       const braceAt = line.text.indexOf("{");
       const res = parseAttrBlock(after, line.start + braceAt);
@@ -411,7 +640,12 @@ export function parseDoc(source: string): ScriptDoc {
     const closed = j < lines.length;
     let body = lines.slice(i + 1, j);
     if (!closed) {
-      warn("code fence never closed — everything to the end of the note is inside it", lineSpan(line));
+      warn(
+        "fence-unclosed",
+        "code fence never closed — everything to the end of the note is inside it",
+        lineSpan(line),
+        "a closing ``` line",
+      );
     }
     if (body.length > 0 && PURE_ATTR_RE.test(body[0].text)) {
       const res = parseAttrBlock(
@@ -427,9 +661,19 @@ export function parseDoc(source: string): ScriptDoc {
     const srcEnd = closed ? lines[j].end : source.length;
     const resolved = resolveDiagramLang(rawLang);
     if (resolved.mermaid) {
-      warn("Mermaid fence parsed with the graph grammar — prefer ```graph", lineSpan(line));
+      warn(
+        "mermaid-fence",
+        "Mermaid fence parsed with the graph grammar — prefer ```graph",
+        lineSpan(line),
+        "```graph",
+      );
     } else if (resolved.corrected) {
-      warn(`unknown diagram '${rawLang}' — did you mean '${resolved.lang}'? Using it.`, lineSpan(line));
+      warn(
+        "fence-lang-corrected",
+        `unknown diagram '${rawLang}' — did you mean '${resolved.lang}'? Using it.`,
+        lineSpan(line),
+        resolved.lang ?? "",
+      );
     }
 
     if (resolved.lang !== null) {
@@ -465,8 +709,10 @@ export function parseDoc(source: string): ScriptDoc {
       target().push(block);
     } else {
       warn(
+        "fence-unknown-lang",
         `unknown fence language '${rawLang === "" ? "(none)" : rawLang}' — kept as plain text in a box`,
         lineSpan(line),
+        expectedOneOf(DIAGRAM_LANGS),
       );
       const container: ContainerBlock = {
         kind: "container",
@@ -643,11 +889,30 @@ export function parseDoc(source: string): ScriptDoc {
             return null;
           });
         } else {
-          warn("extra table alignment row ignored", lineSpan(rawRows[r].line));
+          warn(
+            "table-align-extra",
+            "extra table alignment row ignored — only the row under the header sets alignment",
+            lineSpan(rawRows[r].line),
+          );
         }
         continue;
       }
       rows.push(toRow(rawRows[r]));
+    }
+    // ragged rows silently lose (or invent) columns at render time
+    if (header !== null) {
+      const want = header.cells.length;
+      for (let r = 0; r < rows.length; r++) {
+        const got = rows[r].cells.length;
+        if (got !== want) {
+          warn(
+            "table-ragged",
+            `table row has ${got} cell${got === 1 ? "" : "s"} but the header has ${want}`,
+            { srcStart: rows[r].srcStart, srcEnd: rows[r].srcEnd },
+            `${want} cells`,
+          );
+        }
+      }
     }
     target().push({
       kind: "table",
@@ -666,6 +931,13 @@ export function parseDoc(source: string): ScriptDoc {
     const line = lines[i];
     // skip the trailing pseudo-line for sources ending in a newline
     if (i === lines.length - 1 && line.text === "" && line.start >= source.length) break;
+
+    // `::let` / `::style` lines were lifted out by the pre-pass; skipping them
+    // here (before the awaiting-attrs check) leaves every other offset intact
+    if (scan.consumed.has(i)) {
+      i++;
+      continue;
+    }
 
     // a pure {attrs} line right inside a container fence is container attrs
     if (
@@ -702,7 +974,12 @@ export function parseDoc(source: string): ScriptDoc {
         const m = HEADING_RE.exec(line.text) as RegExpExecArray;
         let level = m[1].length;
         if (level > 3) {
-          warn(`headings go down to ### only — '${m[1]}' treated as ###`, lineSpan(line));
+          warn(
+            "heading-too-deep",
+            `headings go down to ### only — '${m[1]}' treated as ###`,
+            lineSpan(line),
+            "#, ## or ###",
+          );
           level = 3;
         }
         const contentOff = line.start + (line.text.length - m[2].length);
@@ -751,6 +1028,14 @@ export function parseDoc(source: string): ScriptDoc {
           const res = parseAttrBlock(m[3], line.start + line.text.lastIndexOf(m[3]));
           diags.push(...res.diags);
           attrs = res.attrs;
+        }
+        if (m[2].trim() === "") {
+          warn(
+            "image-missing-src",
+            "image has no source — nothing will render",
+            lineSpan(line),
+            "![alt](path/to/image.png) or a 'fetch:' line",
+          );
         }
         target().push({
           kind: "image",
@@ -826,10 +1111,22 @@ export function parseDoc(source: string): ScriptDoc {
     const open = stack.pop() as OpenContainer;
     open.block.srcEnd = source.length;
     warn(
+      "container-unclosed",
       `container ':::${open.block.rawName ?? open.block.name}' was never closed — closed at end of note`,
       { srcStart: open.block.srcStart, srcEnd: open.block.srcStart + 3 },
+      "a closing ':::' line",
     );
   }
 
-  return { frontmatter, blocks, diagnostics: diags };
+  // --- v2 post-pass: {{variables}} and {use=style} -------------------------
+  // Runs even with no definitions: a stray `{{placeholder}}` an AI left behind
+  // is exactly the kind of thing the author needs told about.
+  const doc: ScriptDoc = { frontmatter, blocks, diagnostics: diags };
+  applyDefinitions(doc, vars, styles, diags, fmSpans);
+  if (Object.keys(vars).length > 0) doc.vars = vars;
+  if (Object.keys(styles).length > 0) doc.styles = styles;
+
+  locateDiags(diags, lines.map((l) => l.start));
+  doc.diagnostics = sortDiags(diags);
+  return doc;
 }

@@ -18,6 +18,7 @@ import type {
   TimelineEntry,
   TreeNode,
 } from '../script/types';
+import { locateDiags, sortDiags } from '../script/diagnostics';
 import { parseTree } from '../script/diagrams/tree';
 import { parseGraph } from '../script/diagrams/graph';
 import { parseTimeline } from '../script/diagrams/timeline';
@@ -48,25 +49,34 @@ export interface ParsedDiagramSource {
   diagnostics: Diag[];
 }
 
-/** Parse fence-body source for `kind`. Total: never throws. */
+/**
+ * Parse fence-body source for `kind`. Total: never throws.
+ *
+ * The returned diagnostics honour the same contract as `script.parse()`'s —
+ * located (1-based line/column) and in source order. That is not free here:
+ * the mini-language parsers are called DIRECTLY rather than through
+ * `parseDoc`, which is the pass that normally locates and sorts, so without
+ * `finish()` the popover would show every warning at line 0.
+ */
 export function parseDiagramSource(
   kind: DiagramKind,
   source: string,
 ): ParsedDiagramSource {
   const diags: Diag[] = [];
   const lines = toSrcLines(source);
+  const finish = (data: DiagramData): ParsedDiagramSource => {
+    locateDiags(diags, lines.map((line) => line.start));
+    return { data, diagnostics: sortDiags(diags) };
+  };
   switch (kind) {
     case 'tree':
     case 'mindmap':
-      return { data: { kind, roots: parseTree(lines, diags) }, diagnostics: diags };
+      return finish({ kind, roots: parseTree(lines, diags) });
     case 'graph':
     case 'flowchart':
-      return { data: { kind, graph: parseGraph(lines, diags) }, diagnostics: diags };
+      return finish({ kind, graph: parseGraph(lines, diags) });
     case 'timeline':
-      return {
-        data: { kind, entries: parseTimeline(lines, diags) },
-        diagnostics: diags,
-      };
+      return finish({ kind, entries: parseTimeline(lines, diags) });
   }
 }
 

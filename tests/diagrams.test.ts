@@ -423,6 +423,33 @@ describe('diagram source bridge', () => {
     }
   });
 
+  /**
+   * The diagram popover calls the mini-language parsers DIRECTLY, not through
+   * parseDoc — so `parseDiagramSource` has to locate and sort the diagnostics
+   * itself, or every warning it shows lands at line 0. Same contract as
+   * script.parse(): 1-based line/column, source order, never throws.
+   */
+  it('locates and sorts the diagnostics it returns', () => {
+    const { diagnostics } = parseDiagramSource('graph', 'A -> B\n-> C\nB ->');
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics.map((d) => [d.code, d.line, d.column])).toEqual([
+      ['graph-missing-source', 2, 1],
+      ['graph-dangling-arrow', 3, 1],
+    ]);
+    // `expected` is the half a writer can act on, so it must survive the trip.
+    expect(diagnostics[0]!.expected).toBeTruthy();
+  });
+
+  it('stays total on junk, with no diagnostic left unlocated', () => {
+    for (const kind of ['tree', 'graph', 'timeline'] as const) {
+      const { diagnostics } = parseDiagramSource(kind, '}{ -> ->\n\n:::\n\t ');
+      for (const d of diagnostics) {
+        expect(d.line).toBeGreaterThan(0);
+        expect(d.column).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it('encode/decode round-trips through the data attr', () => {
     const data = parseDiagramSource('timeline', TL_SOURCE).data;
     const decoded = decodeDiagramData('timeline', encodeDiagramData(data));

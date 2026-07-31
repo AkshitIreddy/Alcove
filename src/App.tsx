@@ -8,7 +8,12 @@ import {
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import { appState, type ViewState } from "./state/app";
-import { load as loadSettings, subscribe as subscribeSettings } from "./data/settings";
+import {
+  load as loadSettings,
+  settings,
+  subscribe as subscribeSettings,
+} from "./data/settings";
+import { matchesBinding } from "./data/keybindings";
 import { applySettings } from "./features/settings/apply";
 import SettingsPanel from "./features/settings/SettingsPanel";
 import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
@@ -110,19 +115,29 @@ export default function App(): JSX.Element {
     // First run opens the guided tour; it no-ops once completed.
     void maybeAutoStartTutorial();
 
-    // Import/export lives behind a shortcut until the rail exposes it.
+    // Library import/export: rows in the settings sheet, plus these two combos.
+    // Read from settings so the shortcut list the sheet renders IS the binding.
     const onKeyDown = (event: KeyboardEvent): void => {
-      const mod = event.ctrlKey || event.metaKey;
-      if (mod && event.shiftKey && event.key.toLowerCase() === "e") {
+      const keys = settings.keybindings;
+      if (matchesBinding(event, keys["export-library"] ?? "mod+shift+e")) {
         event.preventDefault();
         openTransferPanel("export");
-      } else if (mod && event.shiftKey && event.key.toLowerCase() === "i") {
+      } else if (matchesBinding(event, keys["import-library"] ?? "mod+shift+i")) {
         event.preventDefault();
         openTransferPanel("import");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+
+    // The OS reduced-motion switch can flip while the app is open; re-apply so
+    // the inline --motion-scale follows it (see settings/apply.ts).
+    if (typeof window.matchMedia === "function") {
+      const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const onMotionChange = (): void => applySettings(settings);
+      query.addEventListener("change", onMotionChange);
+      onCleanup(() => query.removeEventListener("change", onMotionChange));
+    }
   });
 
   return (

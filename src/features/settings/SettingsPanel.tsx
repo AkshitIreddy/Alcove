@@ -22,13 +22,19 @@ import {
 } from 'solid-js';
 import { gsap } from 'gsap';
 import { save, settings } from '../../data/settings';
+import { DEFAULT_KEYBINDINGS } from '../../data/defaults';
+import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
+import { tween } from '../../styles/motion';
 import type { BookPalette, Settings } from '../../data/types';
 import {
   formatRelativeTime,
   getLastBackupRun,
   runBackupNow,
 } from '../system/backup';
+import { exportDiagnostics } from '../system/diagnostics';
+import { openTransferPanel } from '../transfer';
+import { replayTutorial } from '../tutorial';
 import PerfHud from '../system/PerfHud';
 
 /* ------------------------------- helpers ---------------------------------- */
@@ -38,13 +44,9 @@ function put(patch: Partial<Settings>): void {
   void save(patch);
 }
 
-/** Current --motion-scale as a number (0 when motion is off). */
-function motionScale(): number {
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue('--motion-scale')
-    .trim();
-  const n = Number.parseFloat(raw);
-  return Number.isFinite(n) ? n : 1;
+/** The stored combo for an action, falling back to the shipped default. */
+function binding(action: string): string {
+  return settings.keybindings[action] ?? DEFAULT_KEYBINDINGS[action] ?? '';
 }
 
 const VOLUME_KEYS = [
@@ -110,16 +112,33 @@ function closestOption(
 
 /* ---------------------------- small controls ------------------------------- */
 
+/**
+ * `keys` is a '+'-joined combo ("Ctrl+Shift+E") drawn as kbd chips beside the
+ * hint. Rows that ALSO have a keyboard path advertise it here, so learning the
+ * shortcut is a side effect of using the button once.
+ */
 function Row(props: {
   label: string;
   hint?: string;
+  keys?: string;
   wide?: boolean;
   children: JSX.Element;
 }): JSX.Element {
   return (
     <div class="nbs-row" classList={{ 'nbs-row--wide': props.wide }}>
       <div class="nbs-row-text">
-        <span class="nbs-row-label">{props.label}</span>
+        <span class="nbs-row-head">
+          <span class="nbs-row-label">{props.label}</span>
+          <Show when={props.keys}>
+            {(combo) => (
+              <span class="nbs-row-keys">
+                <For each={combo().split('+')}>
+                  {(part) => <kbd class="nbs-kbd">{part}</kbd>}
+                </For>
+              </span>
+            )}
+          </Show>
+        </span>
         <Show when={props.hint}>
           <span class="nbs-row-hint font-ui">{props.hint}</span>
         </Show>
@@ -364,6 +383,43 @@ export default function SettingsPanel(props: {
     }
   };
 
+  /**
+   * Open the parcel desk on a tab — the exact call Ctrl+Shift+E / Ctrl+Shift+I
+   * make from App.tsx, so the button and the shortcut can never drift apart.
+   *
+   * The settings sheet is modal and traps Tab, so it closes first; the open is
+   * deferred a microtask so that trap has been torn down before the transfer
+   * panel claims focus.
+   */
+  const openTransfer = (tab: 'export' | 'import'): void => {
+    props.onClose();
+    queueMicrotask(() => openTransferPanel(tab));
+  };
+
+  /** Clear the "tour completed" marker and run it again from step one. */
+  const replayTour = (): void => {
+    props.onClose();
+    void replayTutorial();
+  };
+
+  // Diagnostics: a plain-text report for a bug thread. See the privacy note in
+  // features/system/diagnostics.ts — no page content ever reaches the file.
+  const [diagBusy, setDiagBusy] = createSignal(false);
+  const [diagNote, setDiagNote] = createSignal<string | null>(null);
+
+  const saveDiagnostics = async (): Promise<void> => {
+    if (diagBusy()) return;
+    setDiagBusy(true);
+    setDiagNote(null);
+    try {
+      const outcome = await exportDiagnostics();
+      if (outcome === 'saved') setDiagNote('saved — safe to share');
+      else if (outcome === 'failed') setDiagNote('could not write the report');
+    } finally {
+      setDiagBusy(false);
+    }
+  };
+
   const chooseBackupFolder = async (): Promise<void> => {
     if (!inTauri) return;
     try {
@@ -385,7 +441,9 @@ export default function SettingsPanel(props: {
     const sheet = sheetRef;
     const scrim = scrimRef;
     if (!sheet || !scrim || open === wasOpen) return open;
-    const dur = 0.45 * motionScale();
+    // A whole surface entering/leaving: the 'slow'/'normal' pair the rail
+    // sheet uses, so the two panels arrive at the same tempo. tween() folds in
+    // the motion preference, so there is no branch here for reduced motion.
     gsap.killTweensOf([sheet, scrim]);
     if (open) {
       lastFocused =
@@ -393,17 +451,16 @@ export default function SettingsPanel(props: {
           ? document.activeElement
           : null;
       gsap.set(sheet, { visibility: 'visible' });
-      gsap.to(sheet, { xPercent: 0, duration: dur, ease: 'power3.out' });
-      gsap.to(scrim, { autoAlpha: 1, duration: dur * 0.7, ease: 'power1.out' });
+      gsap.to(sheet, { xPercent: 0, ...tween('slow', 'enter') });
+      gsap.to(scrim, { autoAlpha: 1, ...tween('normal', 'enter') });
       queueMicrotask(() => closeRef?.focus());
     } else if (wasOpen !== undefined) {
       gsap.to(sheet, {
         xPercent: 105,
-        duration: dur * 0.8,
-        ease: 'power2.in',
+        ...tween('normal', 'exit'),
         onComplete: () => gsap.set(sheet, { visibility: 'hidden' }),
       });
-      gsap.to(scrim, { autoAlpha: 0, duration: dur * 0.6, ease: 'power1.in' });
+      gsap.to(scrim, { autoAlpha: 0, ...tween('quick', 'exit') });
       lastFocused?.focus();
       lastFocused = null;
     }
@@ -917,13 +974,15 @@ export default function SettingsPanel(props: {
                   a.localeCompare(b),
                 )}
               >
-                {([action, binding]) => (
+                {([action, combo]) => (
                   <li class="nbs-keys-item">
                     <span class="nbs-keys-action">
                       {action.replace(/-/g, ' ')}
                     </span>
+                    {/* formatBinding, not the raw combo: 'mod' is a storage
+                        token, and a chip reading "mod" is a key nobody has. */}
                     <span class="nbs-keys-combo">
-                      <For each={binding.split('+')}>
+                      <For each={formatBinding(combo).split('+')}>
                         {(part) => <kbd class="nbs-kbd">{part}</kbd>}
                       </For>
                     </span>
@@ -932,6 +991,62 @@ export default function SettingsPanel(props: {
               </For>
             </ul>
           </div>
+        </Section>
+
+        {/* --------------------------- Library files -------------------------- */}
+        <Section title="Library files" accent="coral">
+          {/* Chips are derived from the same binding the handler matches on
+              (App.tsx), so a rebind cannot leave this row lying. */}
+          <Row
+            label="export library…"
+            hint="pack books into one file you can keep or move"
+            keys={formatBinding(binding('export-library'))}
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              aria-keyshortcuts={ariaKeyshortcuts(binding('export-library'))}
+              onClick={() => openTransfer('export')}
+            >
+              export…
+            </button>
+          </Row>
+          <Row
+            label="import library…"
+            hint="add a bundle to this shelf — nothing is overwritten"
+            keys={formatBinding(binding('import-library'))}
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              aria-keyshortcuts={ariaKeyshortcuts(binding('import-library'))}
+              onClick={() => openTransfer('import')}
+            >
+              import…
+            </button>
+          </Row>
+          <Row
+            label="export diagnostics…"
+            hint={diagNote() ?? 'a plain-text report to share — no page text'}
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              disabled={diagBusy()}
+              onClick={() => void saveDiagnostics()}
+            >
+              {diagBusy() ? 'writing…' : 'save report…'}
+            </button>
+          </Row>
+        </Section>
+
+        {/* ------------------------------- Help ------------------------------- */}
+        <Section title="Help" accent="lime">
+          <Row label="replay the tour" hint="the guided walk around the library, again">
+            <button type="button" class="nbs-action-btn" onClick={replayTour}>
+              start
+            </button>
+          </Row>
         </Section>
 
         <p class="nbs-footnote font-ui">

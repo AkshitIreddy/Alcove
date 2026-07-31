@@ -6,6 +6,10 @@
  * there is no 'error' severity by design — parse() is total.
  */
 
+import type { DiagCode } from "./diagnostics";
+
+export type { DiagCode };
+
 // ---------------------------------------------------------------------------
 // Spans & diagnostics
 // ---------------------------------------------------------------------------
@@ -15,10 +19,25 @@ export interface Span {
   srcEnd: number;
 }
 
+/**
+ * A warning. There is no 'error' severity by design — parse() is total.
+ *
+ * `code` is the stable identity (tests and the Insert Script dialog filter on
+ * it), `message` is prose, `expected` says what the parser wanted here when it
+ * can say it precisely, and `line`/`column` are 1-based positions filled in
+ * once the document is parsed (0 while a sub-parser is still building them).
+ */
 export interface Diag {
   severity: "warn";
+  code: DiagCode;
   message: string;
   span: Span;
+  /** 1-based line of `span.srcStart`; 0 until the doc pass locates it. */
+  line: number;
+  /** 1-based column (UTF-16 code units) of `span.srcStart`. */
+  column: number;
+  /** What was expected here, e.g. "amber, terracotta or moss". */
+  expected?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,4 +309,16 @@ export interface ScriptDoc {
   frontmatter: Record<string, string>;
   blocks: Block[];
   diagnostics: Diag[];
+  /**
+   * `::let name = value` definitions, names lowercased, values fully resolved
+   * (references to other variables already substituted). Omitted entirely
+   * when the note defines none, so documents without variables keep the
+   * exact shape they had before v2.
+   */
+  vars?: Record<string, string>;
+  /**
+   * `::style name {attrs}` definitions — reusable attribute sets applied with
+   * `{use=name}`. Also omitted when the note defines none.
+   */
+  styles?: Record<string, Attrs>;
 }

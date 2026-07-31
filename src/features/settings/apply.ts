@@ -7,7 +7,8 @@
  *
  * What it touches:
  *  - `data-theme` / `data-ink` attributes on <html> (settings.css maps them)
- *  - `--motion-scale`, `--font-body`, `--text-body` inline vars on <html>
+ *  - `--motion-scale` (folded with the OS reduced-motion preference — see
+ *    `effectiveMotionScale`), `--font-body`, `--text-body` inline vars on <html>
  *  - `nb-minimalist` / `nb-no-doodles` root classes (decoration hooks)
  *  - sound engine volumes, mute, reduced-sound, and the ambient loop state
  *
@@ -35,6 +36,32 @@ export const MOTION_SCALES: Record<AnimationLevel, string> = {
   reduced: '0.5',
   off: '0',
 };
+
+/**
+ * The scale to actually write, given the app setting and the OS preference.
+ *
+ * This has to fold the OS preference in itself: we write `--motion-scale` as
+ * an INLINE style on <html>, and an inline declaration outranks the
+ * `@media (prefers-reduced-motion: reduce)` block in global.css that also sets
+ * it. So a user who had turned reduced motion on at the OS level got their
+ * preference silently overwritten by settings the moment settings applied —
+ * which is always. Someone who asked the OS for no motion means it, and the
+ * app cannot offer *more* motion than that: the OS wins, whatever the setting.
+ */
+export function effectiveMotionScale(
+  level: AnimationLevel,
+  osPrefersReduced: boolean,
+): string {
+  return osPrefersReduced ? MOTION_SCALES.off : MOTION_SCALES[level];
+}
+
+/** True when the OS asks for reduced motion (false where matchMedia is absent). */
+export function osPrefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 /**
  * Handwriting body-font choices -> full CSS stacks (all three families are
@@ -95,18 +122,27 @@ const engineAdapter: SettingsSoundAdapter = {
 
 /* --------------------------------- apply ----------------------------------- */
 
-/** Core apply step against injected targets (node tests use fakes). */
+/**
+ * Core apply step against injected targets (node tests use fakes).
+ *
+ * `osPrefersReduced` is a parameter rather than a read so the node tests can
+ * exercise both branches without a matchMedia stub.
+ */
 export function applySettingsTo(
   s: Settings,
   root: SettingsRoot,
   sound: SettingsSoundAdapter,
+  osPrefersReduced = osPrefersReducedMotion(),
 ): void {
   // Theme + ink: attributes on <html>; settings.css remaps the tokens.
   root.setAttribute('data-theme', s.theme);
   root.setAttribute('data-ink', s.inkColor);
 
   // Motion: GSAP code multiplies durations by this; CSS uses calc() with it.
-  root.style.setProperty('--motion-scale', MOTION_SCALES[s.animationLevel]);
+  root.style.setProperty(
+    '--motion-scale',
+    effectiveMotionScale(s.animationLevel, osPrefersReduced),
+  );
 
   // Body font override vars (fall back to the Patrick Hand stack).
   const stack =

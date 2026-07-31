@@ -13,6 +13,7 @@
 
 import type { Attrs, Diag, Inline, TextNode } from "./types";
 import { parseAttrBlock } from "./attrParser";
+import { pushDiag } from "./diagnostics";
 
 interface Frame {
   type: "root" | "strong" | "em" | "strike" | "highlight" | "sup" | "sub" | "link";
@@ -94,7 +95,10 @@ export function parseInline(text: string, base: number): InlineParseResult {
 
   /** Consume a trailing `{attrs}` if one immediately follows position `at`. */
   const maybeAttrs = (at: number): { attrs: Attrs | undefined; end: number } => {
-    if (text[at] !== "{") return { attrs: undefined, end: at };
+    // `**bold**{{name}}` is a variable reference, not an attribute list
+    if (text[at] !== "{" || text[at + 1] === "{") {
+      return { attrs: undefined, end: at };
+    }
     const res = parseAttrBlock(text.slice(at), base + at);
     diags.push(...res.diags);
     const has = Object.keys(res.attrs).length > 0;
@@ -278,11 +282,13 @@ export function parseInline(text: string, base: number): InlineParseResult {
   flush(text.length);
   while (stack.length > 1) {
     const frame = top();
-    diags.push({
-      severity: "warn",
-      message: `unclosed '${frame.marker}' — rendered as plain text`,
-      span: { srcStart: frame.start, srcEnd: frame.start + frame.marker.length },
-    });
+    pushDiag(
+      diags,
+      "inline-unclosed",
+      `unclosed '${frame.marker}' — rendered as plain text`,
+      { srcStart: frame.start, srcEnd: frame.start + frame.marker.length },
+      `a closing '${frame.marker === "[" ? "](url)" : frame.marker}'`,
+    );
     literalize(frame);
   }
   return { nodes: mergeText(root.children), diags };

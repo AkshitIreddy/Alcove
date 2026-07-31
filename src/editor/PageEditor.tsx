@@ -28,6 +28,7 @@ import { Flip } from 'gsap/Flip';
 import { createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
 import { savePageDoc } from '../data/pages';
 import type { PageDoc, PageStyle } from '../data/types';
+import { LINGER_MS, isMotionOff, tween } from '../styles/motion';
 import {
   DEFAULT_LINE_HEIGHT_PX,
   DEFAULT_PAGE_STYLE,
@@ -106,18 +107,8 @@ export interface PageEditorProps {
 }
 
 const SAVE_DEBOUNCE_MS = 400;
-const PAGE_FULL_HINT_MS = 1600;
 /** Safety bound on the overflow loop (a transaction per iteration). */
 const MAX_OVERFLOW_PASSES = 64;
-
-/** Respect reduced-motion: tokens.css zeroes --motion-scale. */
-function motionScale(): number {
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue('--motion-scale')
-    .trim();
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : 1;
-}
 
 /**
  * Hand-drawn grip: six slightly-scattered graphite dots. Starts hidden —
@@ -195,16 +186,18 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     _slice: Slice,
     moved: boolean,
   ): boolean => {
-    const scale = motionScale();
-    if (!moved || scale <= 0) return false;
+    // Flip animates transforms only, but it still measures — skip the whole
+    // capture when motion is off rather than tweening to a zero duration.
+    if (!moved || isMotionOff()) return false;
     const state = Flip.getState(topLevelBlocks(view));
     // ProseMirror applies the drop synchronously in this task; the microtask
     // runs right after, with the DOM already reordered.
     queueMicrotask(() => {
       Flip.from(state, {
         targets: topLevelBlocks(view),
-        duration: 0.4 * scale,
-        ease: 'power3.out',
+        // `enter`, not `spring`: these blocks are text, and an overshoot on
+        // a paragraph reads as the page wobbling rather than as weight.
+        ...tween('normal', 'enter'),
       });
     });
     return false; // let ProseMirror handle the actual drop
@@ -219,7 +212,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   const pulsePageFullHint = (): void => {
     setPageFullHint(true);
     if (hintTimer !== undefined) clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => setPageFullHint(false), PAGE_FULL_HINT_MS);
+    hintTimer = setTimeout(() => setPageFullHint(false), LINGER_MS.hint);
   };
   onCleanup(() => {
     if (hintTimer !== undefined) clearTimeout(hintTimer);

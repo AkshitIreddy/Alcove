@@ -560,6 +560,9 @@
   background: var(--wash-terracotta);
   border: var(--stroke-ink);
   border-radius: 10px 18px 18px 10px / 12px 16px 16px 12px;
+  /* The lift is the ink edge plus --shadow-lg, which is a ZERO-blur offset
+     plate (tokens.css). A book held above the shelf is the loudest place a
+     blurred ambient shadow wants to come back; it must not. */
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }

@@ -189,9 +189,20 @@ function DiagramView(props: SolidNodeViewProps): JSX.Element {
               }}
             />
             <Show when={diags().length > 0}>
+              {/* Same shape as the Insert Script dialog's warning list:
+                  located, and carrying `expected` when the parser knows it. */}
               <ul class="nb-diagram-diags">
                 <For each={diags()}>
-                  {(diag) => <li>{diag.message}</li>}
+                  {(diag) => (
+                    <li>
+                      <span class="nb-diagram-diag-line">
+                        line {diag.line}:{diag.column}
+                      </span>{' '}
+                      {diag.expected === undefined
+                        ? diag.message
+                        : `${diag.message} — expected ${diag.expected}`}
+                    </li>
+                  )}
                 </For>
               </ul>
             </Show>

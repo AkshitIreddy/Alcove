@@ -11,6 +11,7 @@
 
 import type { Diag, SrcLine, TimelineEntry } from "../types";
 import { parseBareAttrs } from "../attrParser";
+import { pushDiag } from "../diagnostics";
 
 const COMMENT_RE = /^\s*(\/\/|#)/;
 
@@ -40,11 +41,13 @@ export function parseTimeline(lines: SrcLine[], diags: Diag[]): TimelineEntry[] 
       label = main.slice(0, colonAt).trim();
       text = main.slice(colonAt + 1).trim();
     } else {
-      diags.push({
-        severity: "warn",
-        message: `timeline entry has no 'label:' separator — using the whole line as text`,
-        span: { srcStart: line.start, srcEnd: line.end },
-      });
+      pushDiag(
+        diags,
+        "timeline-missing-label",
+        `timeline entry has no 'label:' separator — using the whole line as text`,
+        { srcStart: line.start, srcEnd: line.end },
+        "label: text",
+      );
     }
 
     entries.push({

@@ -12,6 +12,7 @@
  */
 import { createEffect, createSignal, For, on, onCleanup, type JSX } from 'solid-js';
 import { lastSavedAt } from '../../editor/saveIndicator';
+import { LINGER_MS } from '../../styles/motion';
 import {
   AddPageIcon,
   AiSpecIcon,
@@ -125,7 +126,7 @@ export default function BookRail(props: BookRailProps): JSX.Element {
         if (at === 0) return;
         setScribbling(true);
         if (scribbleTimer !== undefined) clearTimeout(scribbleTimer);
-        scribbleTimer = setTimeout(() => setScribbling(false), 1400);
+        scribbleTimer = setTimeout(() => setScribbling(false), LINGER_MS.pulse);
       },
       { defer: true },
     ),

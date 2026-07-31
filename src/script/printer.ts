@@ -284,6 +284,23 @@ function printBlock(block: Block, inImageRow: boolean): string {
 
 const FM_KEY_ORDER = ["title", "paper", "ink", "wash"];
 
+/**
+ * `::let` values are rest-of-line, so only ambiguity needs quoting: an empty
+ * value, edge whitespace, a leading brace (would read as the `{a=1}` form) or
+ * a leading quote (would be stripped as a quote pair on the way back in).
+ */
+function printLetValue(value: string): string {
+  const needsQuotes =
+    value === "" ||
+    value !== value.trim() ||
+    value.startsWith("{") ||
+    value.startsWith('"') ||
+    value.startsWith("'");
+  if (!needsQuotes) return value;
+  const q = value.startsWith('"') ? "'" : '"';
+  return `${q}${value}${q}`;
+}
+
 export function printDoc(doc: ScriptDoc): string {
   const parts: string[] = [];
   const fmKeys = Object.keys(doc.frontmatter);
@@ -299,6 +316,25 @@ export function printDoc(doc: ScriptDoc): string {
       ["---", ...fmKeys.map((k) => `${k}: ${doc.frontmatter[k]}`), "---"].join(
         "\n",
       ),
+    );
+  }
+  // definitions come before the prose that uses them (they are document-scoped
+  // either way, but reading order matters to a human and to the next model)
+  const varNames = Object.keys(doc.vars ?? {}).sort();
+  if (varNames.length > 0) {
+    const vars = doc.vars as Record<string, string>;
+    parts.push(
+      varNames.map((k) => `::let ${k} = ${printLetValue(vars[k])}`).join("\n"),
+    );
+  }
+  const styleNames = Object.keys(doc.styles ?? {}).sort();
+  if (styleNames.length > 0) {
+    const styles = doc.styles as Record<string, Attrs>;
+    parts.push(
+      styleNames
+        // an attr-less style is pointless but must still round-trip
+        .map((k) => `::style ${k} ${printAttrs(styles[k]) || "{}"}`)
+        .join("\n"),
     );
   }
   for (const block of doc.blocks) parts.push(printBlock(block, false));

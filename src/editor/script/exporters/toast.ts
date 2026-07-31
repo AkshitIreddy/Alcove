@@ -4,12 +4,13 @@
  * hand-drawn styling from insert.css; self-mounting so the standalone
  * components need no host plumbing while rail wiring lands.
  */
+import { LINGER_MS } from '../../../styles/motion';
 
 let toastElement: HTMLDivElement | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Show a short transient message (bottom-center paper chip). */
-export function notify(message: string, ms = 2600): void {
+export function notify(message: string, ms = LINGER_MS.toast): void {
   if (typeof document === 'undefined') return;
   if (toastElement === null || !toastElement.isConnected) {
     toastElement = document.createElement('div');

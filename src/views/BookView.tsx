@@ -45,6 +45,7 @@ import {
 import { createPage, getPage, listPages, savePageDoc } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { save as saveSettings, settings } from '../data/settings';
+import { matchesBinding } from '../data/keybindings';
 import type { Book, Page, PageDoc, PageStyle } from '../data/types';
 import {
   coverDataUrl,
@@ -69,6 +70,7 @@ import FlipSurface, { type FlipSurfaceApi } from '../flip/FlipSurface';
 import type { LeafSide } from '../flip/PageFlipController';
 import type { FlipDirection } from '../flip/math';
 import { play } from '../sound/engine';
+import { LINGER_MS } from '../styles/motion';
 import { useSearchJump } from '../search/jump';
 import QuickSwitcher from '../features/quickswitch/QuickSwitcher';
 import BookRail, { type RailPanelId } from './rail/BookRail';
@@ -530,6 +532,21 @@ export default function BookView(): JSX.Element {
       setFocusMode((current) => !current);
       return;
     }
+
+    // The script tools live in the rail; these are the combos the settings
+    // sheet advertises for them, read from settings so the list stays true.
+    const keys = settings.keybindings;
+    if (matchesBinding(event, keys['insert-script'] ?? 'mod+alt+i')) {
+      event.preventDefault();
+      setInsertOpen(true);
+      return;
+    }
+    if (matchesBinding(event, keys['export-script'] ?? 'mod+alt+e')) {
+      event.preventDefault();
+      const page = activePage();
+      if (page) void exportScript(page.id);
+      return;
+    }
     if (cheatOpen() && (event.key === 'Escape' || event.key === '?')) {
       event.preventDefault();
       setCheatOpen(false);
@@ -577,7 +594,7 @@ export default function BookView(): JSX.Element {
   const notify = (message: string, tone: 'ok' | 'error' = 'ok'): void => {
     setToast({ message, tone });
     if (toastTimer !== undefined) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => setToast(null), 2600);
+    toastTimer = setTimeout(() => setToast(null), LINGER_MS.toast);
   };
   onCleanup(() => {
     if (toastTimer !== undefined) clearTimeout(toastTimer);

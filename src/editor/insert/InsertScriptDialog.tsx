@@ -37,16 +37,6 @@ export interface InsertScriptDialogProps {
 
 const PARSE_DEBOUNCE_MS = 150;
 
-/** 1-based line number of a source offset. */
-function lineOfOffset(source: string, offset: number): number {
-  let line = 1;
-  const end = Math.min(offset, source.length);
-  for (let i = 0; i < end; i += 1) {
-    if (source[i] === '\n') line += 1;
-  }
-  return line;
-}
-
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -82,14 +72,24 @@ export default function InsertScriptDialog(
     scheduleParse(value);
   };
 
-  const warnings = createMemo((): Array<{ line: number; message: string }> => {
-    const doc = parsed();
-    if (doc === null) return [];
-    return doc.diagnostics.map((diag: Diag) => ({
-      line: lineOfOffset(source(), diag.span.srcStart),
-      message: diag.message,
-    }));
-  });
+  /**
+   * Warnings, in source order, positioned by the PARSER rather than by a
+   * re-scan here: `parse()` locates every diagnostic (script/diagnostics.ts
+   * `locateDiags`), so line AND column are already exact, and a second scan
+   * over the textarea could only disagree with it. `expected` is appended when
+   * the parser knows what it wanted — that is the half that turns "unknown
+   * value" into something a writer can act on.
+   */
+  const warnings = createMemo(
+    (): Array<{ where: string; message: string }> =>
+      (parsed()?.diagnostics ?? []).map((diag: Diag) => ({
+        where: `line ${diag.line}:${diag.column}`,
+        message:
+          diag.expected === undefined
+            ? diag.message
+            : `${diag.message} — expected ${diag.expected}`,
+      })),
+  );
 
   // Escape closes the dialog.
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -183,7 +183,7 @@ export default function InsertScriptDialog(
                 <For each={warnings()}>
                   {(warning) => (
                     <li>
-                      <span class="nb-ins-warn-line">line {warning.line}</span>{' '}
+                      <span class="nb-ins-warn-line">{warning.where}</span>{' '}
                       {warning.message}
                     </li>
                   )}

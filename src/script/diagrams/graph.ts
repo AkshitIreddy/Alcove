@@ -11,14 +11,21 @@
  */
 
 import type { Diag, Graph, GraphNode, Span, SrcLine } from "../types";
-import { parseAttrBlock } from "../attrParser";
+import { findAttrBrace, parseAttrBlock } from "../attrParser";
+import { pushDiag, type DiagCode } from "../diagnostics";
 
 const COMMENT_RE = /^\s*(\/\/|#|%%)/;
 const HEADER_RE = /^\s*(graph|flowchart|digraph)\b\s*(TD|TB|LR|RL|BT)?\s*\{?\s*;?\s*$/i;
 const ARROW_RE = /\s*(?:-+>|=+>|→)\s*/;
 
-function warn(diags: Diag[], message: string, span: Span): void {
-  diags.push({ severity: "warn", message, span });
+function warn(
+  diags: Diag[],
+  code: DiagCode,
+  message: string,
+  span: Span,
+  expected?: string,
+): void {
+  pushDiag(diags, code, message, span, expected);
 }
 
 export function parseGraph(lines: SrcLine[], diags: Diag[]): Graph {
@@ -45,7 +52,7 @@ export function parseGraph(lines: SrcLine[], diags: Diag[]): Graph {
     let label: string | undefined;
     let attrs: GraphNode["attrs"];
 
-    const braceAt = s.indexOf("{");
+    const braceAt = findAttrBrace(s);
     if (braceAt !== -1) {
       const inner = s.slice(braceAt + 1, s.includes("}") ? s.lastIndexOf("}") : s.length);
       if (/[=:]/.test(inner)) {
@@ -54,7 +61,13 @@ export function parseGraph(lines: SrcLine[], diags: Diag[]): Graph {
         if (Object.keys(res.attrs).length > 0) attrs = res.attrs;
       } else if (inner.trim() !== "") {
         label = inner.trim();
-        warn(diags, `Mermaid-style '{...}' node label accepted — prefer 'id {shape=...}' attrs`, span);
+        warn(
+          diags,
+          "mermaid-node-label",
+          `Mermaid-style '{...}' node label accepted — prefer 'id {shape=...}' attrs`,
+          span,
+          "id {shape=cloud}",
+        );
       }
       s = s.slice(0, braceAt).trim();
     }
@@ -65,7 +78,13 @@ export function parseGraph(lines: SrcLine[], diags: Diag[]): Graph {
       const bracketLabel = (m[2] ?? m[3] ?? "").trim();
       if (bracketLabel !== "") {
         label = bracketLabel;
-        warn(diags, `Mermaid-style node label '[...]' accepted — prefer plain names`, span);
+        warn(
+          diags,
+          "mermaid-node-label",
+          `Mermaid-style node label '[...]' accepted — prefer plain names`,
+          span,
+          "a plain node name",
+        );
       }
     }
 
@@ -82,7 +101,13 @@ export function parseGraph(lines: SrcLine[], diags: Diag[]): Graph {
     const span: Span = { srcStart: line.start, srcEnd: line.end };
 
     if (HEADER_RE.test(text)) {
-      warn(diags, `Mermaid-style header '${text}' ignored — Notebook Script graphs need no header`, span);
+      warn(
+        diags,
+        "mermaid-header",
+        `Mermaid-style header '${text}' ignored — Notebook Script graphs need no header`,
+        span,
+        "A -> B",
+      );
       continue;
     }
     text = text.replace(/;+\s*$/, "");
@@ -136,9 +161,21 @@ export function parseGraph(lines: SrcLine[], diags: Diag[]): Graph {
 
       if (s > 0) {
         if (prevGroup.length === 0) {
-          warn(diags, "edge is missing its source — skipped", span);
+          warn(
+            diags,
+            "graph-missing-source",
+            "edge is missing its source — skipped",
+            span,
+            "A -> B",
+          );
         } else if (group.length === 0) {
-          warn(diags, "dangling arrow — edge target missing", span);
+          warn(
+            diags,
+            "graph-dangling-arrow",
+            "dangling arrow — edge target missing",
+            span,
+            "A -> B",
+          );
         } else {
           for (const from of prevGroup) {
             for (const to of group) {

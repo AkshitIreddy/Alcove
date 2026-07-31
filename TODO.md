@@ -49,21 +49,78 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
 
 ## 🧹 Last inconsistencies with the flat rule
 
-- [ ] Move-mode's drop-target hint (`world.ts` ~2072) still draws an additive
-      blurred glow — the last soft sprite in the shelf
-- [ ] `.pulled-book` in `src/styles/shelf.css` still carries a blurred
-      `box-shadow: var(--shadow-lg)`
+- [x] ~~Move-mode's drop-target hint still draws an additive blurred glow~~ —
+      `updateMove()` now spawns the same nine-sliced flat gilt+ink frame the
+      hover state uses, sized a hair proud of the incoming book
+- [x] ~~`.pulled-book` carries a blurred `box-shadow: var(--shadow-lg)`~~ —
+      the token itself is `0 5px 0` now, a zero-blur offset plate, which fixed
+      all ~80 call sites at once
+- [x] ~~Spoiler bodies hid behind `filter: blur(5px)`~~ — a live CSS filter in
+      an interactive path, *and* a readable spoiler (the glyphs survive a
+      squint). Now a flat taped-over strip: `--paper-edge` plate, one ink
+      outline, `visibility: hidden` under it so revealing costs no reflow
+- [x] ~~Sticky-note corner fold had the last soft `box-shadow` in `src/`~~ —
+      `-2px -2px 3px` → zero blur
+- [x] ~~Seven `createRadialGradient`/`createLinearGradient` calls in
+      `art/charms.ts`~~ — specular highlights, i.e. a light source. All of it
+      was dead code from before the restyle (`spines.drawSpineRibbon` and
+      `covers.paintCharm` draw charms flat now); `charms.ts` is the charm
+      vocabulary and nothing else
+- [x] ~~The flat rule was enforced by hand-auditing the tree~~ —
+      `tests/styles.test.ts` now gates every file in `src/styles/`: no
+      `blur()`, no `backdrop-filter`, no non-zero box-shadow blur radius, no
+      blend modes, and the handwriting font floors (13px, 20px for Caveat)
+- [ ] Smooth two-stop CSS gradients that are lighting rather than pattern:
+      `editor.css` 558/800, `effects.css` 42/241/262/387/431, `flip.css`
+      95/107/177/192. **Not** the `repeating-linear-gradient` ruled lines or
+      the scallop/stitch masks — those are flat by construction. Own sweep
 
 ## 🧩 Features still missing
 
-- [ ] Import/export only reachable via `Ctrl+Shift+E` / `Ctrl+Shift+I`
-- [ ] Settings row to replay the guided tutorial
-- [ ] Exportable diagnostics log users can hand to their AI
-- [ ] Motion design system: unified easing, transitions, spring physics
+- [x] ~~Import/export only reachable via `Ctrl+Shift+E` / `Ctrl+Shift+I`~~ —
+      a "Library files" section in settings, rows calling the same
+      `openTransferPanel()` the shortcuts do, each showing its combo
+- [x] ~~Settings row to replay the guided tutorial~~ — "Help → replay the
+      tour" clears `appState:tutorialCompleted` and restarts it
+- [x] ~~Exportable diagnostics log users can hand to their AI~~ — plain-text
+      report (build, GPU, library counts, resolved settings, last 30 errors).
+      No page content, no titles, no paths outside the app; stacks are never
+      collected and error text goes through `redactPaths`
+- [x] ~~Motion design system: unified easing, transitions, spring physics~~ —
+      `src/styles/motion.ts` mirrors the `--dur-*`/`--ease-*` tokens for GSAP
+      (four durations, four easing roles, unscaled `LINGER_MS` reading times).
+      One `motionScale()` decides reduced motion for the whole app
+- [x] ~~Notebook Script v2 — variables, reusable styles, strict validation~~ —
+      `::let` / `{{name}}`, `::style` + `{use=name}`, and ~55 diagnostic codes
+      carrying 1-based line/column and an `expected`. `parse()` stays total
 - [ ] Notion-depth writing: nested toggles, columns, math, footnotes,
       backlinks, sortable tables, selection toolbar
-- [ ] Notebook Script v2 — variables, reusable styles, strict validation
 - [ ] Rebuild and verify the NSIS installer
+
+## 🔩 Found while making the tree green
+
+- [x] ~~`export-script` and `insert-script` advertised `mod+shift+e/i` — the
+      exact combos App.tsx used for the library export/import~~ — the settings
+      sheet was naming a shortcut that opened something else. Script pair moved
+      to `mod+alt+e/i`; `export-library`/`import-library` are now real entries;
+      every handler matches through `data/keybindings.matchesBinding` against
+      `settings.keybindings`, so the advertised list *is* the binding
+- [x] ~~Settings wrote `--motion-scale` as an inline style, which outranks the
+      `prefers-reduced-motion` block in global.css~~ — the OS preference was
+      silently overwritten for everyone the moment settings applied (i.e.
+      always). `effectiveMotionScale()` folds the two, OS wins, and the
+      diagnostics report says so on its own line
+- [x] ~~Three private copies of `motionScale()`~~ (RailPanel, PageEditor,
+      confetti — plus SettingsPanel and TutorialOverlay, which the motion pass
+      did not own) — all now read the shared one
+- [x] ~~`parseDiagramSource` returned diagnostics at line 0~~ — it calls the
+      mini-language parsers directly, bypassing the `parseDoc` pass that
+      locates and sorts, so the diagram popover showed unlocated warnings.
+      Both diagnostic surfaces now render `line N:C` plus `expected`
+- [ ] Shortcuts are display-only in settings ("rebinding is on its way").
+      The map is now honest and centrally matched, so rebinding is a UI job
+- [ ] The task list in the harness is stale — several entries describe the
+      deleted painting/lighting stack
 
 ## 📈 Measured
 

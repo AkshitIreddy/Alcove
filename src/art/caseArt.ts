@@ -838,43 +838,80 @@ export function renderCarving(
       break;
     }
     case 'blossom': {
-      // A green swag looping along the frieze with a blossom at every dip.
+      // A blossom swag CARVED into the frieze, not painted onto it.
+      //
+      // This used to draw saturated green swags and pink petals straight onto
+      // the timber, at a perfectly regular pitch. Two problems: coloured decals
+      // on wood read as stickers rather than furniture, and mechanical spacing
+      // is the loudest tell of computer-generated art (ART-BIBLE §5).
+      //
+      // So it is now relief: a shadowed incision with a lit upper arris, in
+      // wood tones only, with each rosette jittered per unit.
       const pitch = 46;
-      ctx.strokeStyle = 'rgba(47, 125, 60, 0.85)';
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
+      const swag = (dx: number, off: number, colour: string, width: number): void => {
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(dx, y + h * 0.3 + off);
+        ctx.quadraticCurveTo(dx + pitch / 2, y + h * 1.02 + off, dx + pitch, y + h * 0.3 + off);
+        ctx.stroke();
+      };
+
       for (let dx = x; dx < x + w; dx += pitch) {
-        ctx.moveTo(dx, y + h * 0.3);
-        ctx.quadraticCurveTo(dx + pitch / 2, y + h * 1.05, dx + pitch, y + h * 0.3);
+        // Cut first (dark groove), then the light that catches its top edge.
+        swag(dx, 0.9, 'rgba(28, 16, 8, 0.42)', 3.0);
+        swag(dx, -0.5, 'rgba(255, 246, 224, 0.20)', 1.3);
       }
-      ctx.stroke();
+
       for (let dx = x; dx < x + w; dx += pitch) {
-        // Leaves either side of the dip.
-        const mx = dx + pitch / 2;
-        const my = y + h * 0.78;
-        ctx.fillStyle = 'rgba(95, 191, 98, 0.9)';
+        // Per-unit jitter: a chisel does not repeat exactly.
+        const jx = (rnd() - 0.5) * 3.2;
+        const jy = (rnd() - 0.5) * 1.8;
+        const scale = 0.86 + rnd() * 0.3;
+        const mx = dx + pitch / 2 + jx;
+        const my = y + h * 0.78 + jy;
+        if (mx + 8 > x + w) continue;
+
+        // Leaves either side — carved lobes, read by shadow under and light on top.
         for (const side of [-1, 1]) {
           ctx.save();
           ctx.translate(mx + side * 11, my - 2);
-          ctx.rotate(side * 0.7);
+          ctx.rotate(side * (0.62 + rnd() * 0.18));
+          ctx.fillStyle = 'rgba(30, 18, 9, 0.30)';
           ctx.beginPath();
-          ctx.ellipse(0, 0, 7, 3.4, 0, 0, Math.PI * 2);
+          ctx.ellipse(0, 1.1, 7 * scale, 3.4 * scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255, 244, 220, 0.16)';
+          ctx.beginPath();
+          ctx.ellipse(0, -0.5, 6.2 * scale, 2.8 * scale, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         }
-        // Blossom head: five petals + a sunny centre.
-        if (mx + 8 > x + w) continue;
-        ctx.fillStyle = 'rgba(255, 150, 190, 0.95)';
+
+        // Rosette: five petals sunk into the wood, with a proud boss.
+        const spin = rnd() * Math.PI;
         for (let p = 0; p < 5; p++) {
-          const a = (p / 5) * Math.PI * 2;
+          const a = spin + (p / 5) * Math.PI * 2;
+          const px = mx + Math.cos(a) * 3.4 * scale;
+          const py = my + Math.sin(a) * 3.4 * scale;
+          ctx.fillStyle = 'rgba(28, 16, 8, 0.34)';
           ctx.beginPath();
-          ctx.ellipse(mx + Math.cos(a) * 3.4, my + Math.sin(a) * 3.4, 3.4, 2.5, a, 0, Math.PI * 2);
+          ctx.ellipse(px, py + 0.8, 3.4 * scale, 2.5 * scale, a, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255, 246, 226, 0.17)';
+          ctx.beginPath();
+          ctx.ellipse(px, py - 0.5, 3.0 * scale, 2.1 * scale, a, 0, Math.PI * 2);
           ctx.fill();
         }
-        ctx.fillStyle = 'rgba(255, 222, 96, 0.95)';
+        // Centre boss catches the key light; `accent` lets a room gild it.
+        ctx.fillStyle = 'rgba(28, 16, 8, 0.34)';
         ctx.beginPath();
-        ctx.arc(mx, my, 1.9, 0, Math.PI * 2);
+        ctx.arc(mx, my + 0.7, 2.1 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = hexAlpha(accent, 0.5);
+        ctx.beginPath();
+        ctx.arc(mx, my - 0.3, 1.7 * scale, 0, Math.PI * 2);
         ctx.fill();
       }
       // A pale sap-line above the swag ties it to the crown.

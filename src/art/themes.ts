@@ -711,8 +711,8 @@ const BLOSSOM: LibraryTheme = {
     centrepiece: 'blossom',
   },
   rail: {
-    inlay: 'vine',
-    inlayColour: '#5fbf62',
+    inlay: 'brass-bead',
+    inlayColour: '#c9a24a',
     edge: 'rounded',
     width: 34,
     ink: 'rgba(92, 74, 52, 0.5)',

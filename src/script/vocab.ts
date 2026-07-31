@@ -85,15 +85,63 @@ export function isUserStickerName(value: string): boolean {
   return value.startsWith("user:") && value.length > "user:".length;
 }
 
-export const TAPE_VALUES = ["top", "corner", "both"] as const;
-export const WASHI_VALUES = ["top"] as const;
-export const BLOCK_PAPER_VALUES = ["torn", "lined"] as const;
-export const SHADOW_VALUES = ["soft"] as const;
-export const UNDERLINE_VALUES = ["squiggle", "marker"] as const;
-export const FRAME_VALUES = ["scallop", "stitch"] as const;
+export const TAPE_VALUES = ["top", "corner", "both", "left", "right"] as const;
+export const WASHI_VALUES = ["top", "left", "corner"] as const;
+export const BLOCK_PAPER_VALUES = ["torn", "lined", "graph", "aged", "index"] as const;
+export const SHADOW_VALUES = ["soft", "lifted", "stacked"] as const;
+export const UNDERLINE_VALUES = [
+  "squiggle",
+  "marker",
+  "dotted",
+  "double",
+  "circled",
+] as const;
+export const FRAME_VALUES = [
+  "scallop",
+  "stitch",
+  "double",
+  "rope",
+  "ticket",
+] as const;
 export const CALLOUT_VARIANTS = ["info", "tip", "warn", "star"] as const;
 export const GAP_VALUES = ["sm", "md", "lg"] as const;
 export const IMAGE_STYLE_VALUES = ["polaroid", "plain", "washi", "watercolor"] as const;
+
+/**
+ * The lettering a block can be set in.
+ *
+ * Every one of these is a face the app already bundles through @fontsource —
+ * a name here that nobody shipped is a block that silently falls back to the
+ * body face, which is worse than not offering it. Ordered roughly as a
+ * stationer would: the everyday hands first, then the display hands, then the
+ * two printed faces for the times you want the page to look typeset.
+ */
+export const FONT_VALUES = [
+  "hand",
+  "casual",
+  "marker",
+  "script",
+  "chalk",
+  "note",
+  "serif",
+  "book",
+  "mono",
+] as const;
+
+/** Ink a block is written in. The three page inks, plus two for emphasis. */
+export const BLOCK_INK_VALUES = [
+  "sepia",
+  "graphite",
+  "ink-blue",
+  "crimson",
+  "moss",
+] as const;
+
+/** Lettering size, relative to the page's body size. */
+export const SIZE_VALUES = ["xs", "sm", "md", "lg", "xl"] as const;
+
+/** Which way a block's lines are ranged. */
+export const ALIGN_VALUES = ["left", "center", "right"] as const;
 
 /**
  * Enum domain per attribute key. Values for these keys are fuzzy-matched
@@ -110,6 +158,10 @@ export const ATTR_ENUM_DOMAINS: Record<string, readonly string[]> = {
   shadow: SHADOW_VALUES,
   underline: UNDERLINE_VALUES,
   frame: FRAME_VALUES,
+  font: FONT_VALUES,
+  ink: BLOCK_INK_VALUES,
+  size: SIZE_VALUES,
+  align: ALIGN_VALUES,
   variant: CALLOUT_VARIANTS,
   gap: GAP_VALUES,
   style: IMAGE_STYLE_VALUES,
@@ -147,6 +199,10 @@ export const KNOWN_ATTR_KEYS = [
   "shadow",
   "underline",
   "frame",
+  "font",
+  "ink",
+  "size",
+  "align",
   "variant",
   "gap",
   "cols",
@@ -169,6 +225,19 @@ export const ATTR_KEY_ALIASES: Record<string, string> = {
   rotation: "rotate",
   columns: "cols",
   highlight: "color",
+  // The lettering axes, in the words a writer reaches for first.
+  typeface: "font",
+  face: "font",
+  family: "font",
+  fontfamily: "font",
+  pen: "ink",
+  inkcolor: "ink",
+  textcolor: "ink",
+  fontsize: "size",
+  scale: "size",
+  textalign: "align",
+  alignment: "align",
+  justify: "align",
   // v2 style application
   uses: "use",
   apply: "use",
@@ -221,6 +290,11 @@ export const CONTAINER_NAMES = [
   "quote-card",
   "spoiler",
   "banner",
+  "index-card",
+  "envelope",
+  "stamp",
+  "tag",
+  "marginalia",
 ] as const;
 
 /**
@@ -246,6 +320,11 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   quotecard: { name: "quote-card" },
   spoiler: { name: "spoiler" },
   banner: { name: "banner" },
+  indexcard: { name: "index-card" },
+  envelope: { name: "envelope" },
+  stamp: { name: "stamp" },
+  tag: { name: "tag" },
+  marginalia: { name: "marginalia" },
   // friendly aliases
   note: { name: "sticky-note" },
   sticky: { name: "sticky-note" },
@@ -264,6 +343,17 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   blockquote: { name: "quote-card" },
   photo: { name: "polaroid" },
   washi: { name: "washi-box" },
+  recipe: { name: "index-card" },
+  filecard: { name: "index-card" },
+  flashcard: { name: "index-card" },
+  letter: { name: "envelope" },
+  postcard: { name: "stamp" },
+  postage: { name: "stamp" },
+  luggagetag: { name: "tag" },
+  label: { name: "tag" },
+  sidenote: { name: "marginalia" },
+  margin: { name: "marginalia" },
+  aside: { name: "marginalia" },
   // callout variants as their own directive names
   info: { name: "callout", attrs: { variant: "info" } },
   tip: { name: "callout", attrs: { variant: "tip" } },
@@ -428,6 +518,10 @@ export const ATTR_DOCS: Record<KnownAttrKey, AttrDoc> = {
   shadow: { group: "effect", does: "soft drop shadow" },
   underline: { group: "effect", does: "hand-drawn underline" },
   frame: { group: "effect", does: "decorative border" },
+  font: { group: "effect", does: "lettering this block is written in" },
+  ink: { group: "effect", does: "ink colour for this block" },
+  size: { group: "effect", does: "lettering size" },
+  align: { group: "effect", does: "which way the lines are ranged" },
   // layout
   variant: { group: "layout", does: "which callout", where: "on `callout`" },
   gap: { group: "layout", does: "space between columns", where: "on `columns`" },
@@ -520,6 +614,17 @@ export const CONTAINER_DOCS: Record<ContainerDirectiveName, ContainerDoc> = {
   "quote-card": { renders: "decorated pull-quote" },
   spoiler: { renders: "click-to-reveal box (good for self-quizzing)" },
   banner: { renders: "full-width ribbon banner" },
+  "index-card": {
+    renders: "ruled index card with a red header rule",
+    note: "recipes, flashcards, one fact per card",
+  },
+  envelope: { renders: "paper envelope with an open flap (letters, keepsakes)" },
+  stamp: { renders: "perforated postage stamp with a postmark" },
+  tag: { renders: "luggage tag on a string (a short label for what follows)" },
+  marginalia: {
+    renders: "small side note in a ruled margin",
+    note: "an afterthought, in a smaller hand",
+  },
 };
 
 // --- Diagram fences ---------------------------------------------------------

@@ -55,6 +55,24 @@
   width: 48px;
   z-index: calc(var(--z-flip) - 1);
   cursor: grab;
+  /* A page turn is a DRAG, and a drag that begins on selectable content is
+     also the browser's own "sweep to select text" gesture: pulling the corner
+     across the spread swept a selection over every word it passed, so the
+     turn landed with the whole page highlighted — and the NEXT grab then
+     dragged that selection instead of the page. Nothing here is text; making
+     the strip unselectable stops the sweep from ever starting. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The gesture leaves the strip immediately (the corner travels across both
+   leaves), so the surface itself has to stay unselectable for the duration.
+   The controller adds this class in beginFlip and drops it in land(), before
+   a cancelled flip restores the selection it saved. */
+.nb-flip-surface.is-flip-gesture,
+.nb-flip-surface.is-flip-gesture * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* The strip stays COLOURLESS. spread.css fills it with --wash-amber-light on

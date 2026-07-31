@@ -26,13 +26,15 @@ import { DEFAULT_KEYBINDINGS } from '../../data/defaults';
 import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
 import { tween } from '../../styles/motion';
-import type { BookPalette, Settings } from '../../data/types';
+import type { Settings } from '../../data/types';
 import {
   formatRelativeTime,
   getLastBackupRun,
   runBackupNow,
 } from '../system/backup';
 import { exportDiagnostics } from '../system/diagnostics';
+import { SOUNDSCAPE_BLURBS, SOUNDSCAPE_NAMES } from '../../sound/engine';
+import SoundCredits from '../../sound/SoundCredits';
 import { openTransferPanel } from '../transfer';
 import { replayTutorial } from '../tutorial';
 import PerfHud from '../system/PerfHud';
@@ -66,20 +68,27 @@ const VOLUME_LABELS: Record<VolumeSettingKey, string> = {
   soundAmbient: 'ambient bed',
 };
 
-const BOOK_PALETTES: readonly BookPalette[] = [
-  'amber',
-  'terracotta',
-  'moss',
-  'lemon',
-  'sky',
-  'blush',
-  'plum',
-  'peach',
-  'sage',
-  'lavender',
-  'sand',
-  'slate',
-];
+/**
+ * The soundscape chips come from the engine's own list, so adding a bed to
+ * `SOUNDSCAPE_LOOPS` puts it in the sheet without a second edit here. `.nbs-seg`
+ * already wraps, which is what lets ten beds plus "none" sit in one wide row.
+ *
+ * The chips carry an explicit `aria-label` because `night` is also a theme:
+ * two buttons announcing the same single word in one dialog is ambiguous. The
+ * blurb becomes the tooltip, so a bed's character is readable before you
+ * commit to hearing it.
+ */
+const SOUNDSCAPE_OPTIONS: readonly {
+  value: string;
+  label: string;
+  ariaLabel: string;
+  title: string;
+}[] = SOUNDSCAPE_NAMES.map((name) => ({
+  value: name,
+  label: name,
+  ariaLabel: `${name} soundscape`,
+  title: SOUNDSCAPE_BLURBS[name],
+}));
 
 const AUTOSAVE_OPTIONS = [
   { value: 500, label: '0.5s' },
@@ -228,7 +237,18 @@ function Slider(props: {
 /** Segmented pick rendered as little paper chips. */
 function Seg(props: {
   label: string;
-  options: readonly { value: string | number; label: string }[];
+  /**
+   * `ariaLabel` disambiguates a chip whose visible word is used by another
+   * group in the same dialog — `night` is both a theme and a soundscape, and
+   * two buttons announcing "night" inside one dialog is ambiguous to a screen
+   * reader before it is ambiguous to a test.
+   */
+  options: readonly {
+    value: string | number;
+    label: string;
+    ariaLabel?: string;
+    title?: string;
+  }[];
   value: string | number;
   onSelect: (value: string | number) => void;
 }): JSX.Element {
@@ -239,6 +259,8 @@ function Seg(props: {
           <button
             type="button"
             class="nbs-seg-chip"
+            aria-label={opt.ariaLabel}
+            title={opt.title}
             aria-pressed={props.value === opt.value}
             onClick={() => props.onSelect(opt.value)}
           >
@@ -362,6 +384,9 @@ export default function SettingsPanel(props: {
       // Plugin unavailable — leave the stored setting untouched.
     }
   };
+
+  // Sound credits: collapsed by default — reference material, not a control.
+  const [creditsOpen, setCreditsOpen] = createSignal(false);
 
   // Backup surface: last-run stamp + manual "back up now".
   const [lastBackup, { refetch: refetchLastBackup }] =
@@ -720,23 +745,24 @@ export default function SettingsPanel(props: {
               onChange={(v) => put({ muteAll: v })}
             />
           </Row>
-          <Row label="library ambience" hint="a soft looping library hush">
+          {/* Not "ambient bed" — that name is already taken four rows up by
+              the bed's volume slider, and two controls with one label read as
+              a duplicate rather than as a switch and its level. */}
+          <Row label="play ambience" hint="run the chosen soundscape underneath">
             <Toggle
-              label="ambient library loop"
+              label="play ambience"
               checked={settings.ambientLoop}
               onChange={(v) => put({ ambientLoop: v })}
             />
           </Row>
-          <Row label="soundscape" wide>
+          <Row
+            label="soundscape"
+            hint={SOUNDSCAPE_BLURBS[settings.soundscape]}
+            wide
+          >
             <Seg
               label="soundscape"
-              options={[
-                { value: 'library', label: 'library' },
-                { value: 'rain', label: 'rain' },
-                { value: 'fireplace', label: 'fireplace' },
-                { value: 'crickets', label: 'crickets' },
-                { value: 'none', label: 'none' },
-              ]}
+              options={SOUNDSCAPE_OPTIONS}
               value={settings.soundscape}
               onSelect={(v) => put({ soundscape: v as Settings['soundscape'] })}
             />
@@ -762,6 +788,23 @@ export default function SettingsPanel(props: {
               onChange={(v) => put({ reducedSound: v })}
             />
           </Row>
+          {/* Every cue is a real recording, and one of them is CC BY — the
+              licence is only satisfied if the credit reaches a person. The
+              panel reads public/sounds/CREDITS.json at runtime rather than
+              repeating it here, so it cannot fall out of step with the audio. */}
+          <Row label="sound credits" hint="where every cue was recorded">
+            <button
+              type="button"
+              class="nbs-action-btn"
+              aria-expanded={creditsOpen()}
+              onClick={() => setCreditsOpen((open) => !open)}
+            >
+              {creditsOpen() ? 'hide' : 'show'}
+            </button>
+          </Row>
+          <Show when={creditsOpen()}>
+            <SoundCredits />
+          </Show>
         </Section>
 
         {/* ------------------------------- Writing ----------------------------- */}
@@ -799,27 +842,6 @@ export default function SettingsPanel(props: {
               checked={settings.thumbnailsStrip}
               onChange={(v) => put({ thumbnailsStrip: v })}
             />
-          </Row>
-          <Row label="new books wear" wide>
-            <div
-              class="nbs-swatches"
-              role="group"
-              aria-label="default book palette"
-            >
-              <For each={BOOK_PALETTES}>
-                {(palette) => (
-                  <button
-                    type="button"
-                    class="nbs-swatch"
-                    data-palette={palette}
-                    aria-label={`${palette} palette`}
-                    aria-pressed={settings.defaultBookPalette === palette}
-                    title={palette}
-                    onClick={() => put({ defaultBookPalette: palette })}
-                  />
-                )}
-              </For>
-            </div>
           </Row>
         </Section>
 

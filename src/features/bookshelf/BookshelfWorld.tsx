@@ -35,6 +35,7 @@ import {
   readShelfMeta,
   renameBook,
   setBookPinned,
+  touchBookOpened,
   trashBook,
   updateBookPageCount,
 } from '../../data/books';
@@ -405,7 +406,7 @@ export default function BookshelfWorld(): JSX.Element {
     const w = world;
     if (w === null) return;
     if (action === 'open') {
-      w.openFromList(book.id);
+      w.pullOut(book.id);
       return;
     }
     if (action === 'move') {
@@ -446,23 +447,40 @@ export default function BookshelfWorld(): JSX.Element {
     void saveFloorName(state.floor, value);
   }
 
-  function handleHandoff(state: OverlayState): void {
-    if (world === null) return;
-    if (state.mode === 'open') {
-      world.fadeGhost();
-    } else {
-      world.pushInBook(state.book, () => appState.clearOpenBook());
+  /**
+   * The canvas and the DOM swap the book between them. 'out': the DOM cover
+   * has taken over, so the canvas ghost fades. 'in': the cover is back on the
+   * spine, so the canvas pushes the book into the row — the same second half
+   * whether the reader put it back by hand or the book view just closed.
+   */
+  function handleHandoff(state: OverlayState, phase: 'out' | 'in'): void {
+    const w = world;
+    if (w === null) return;
+    if (phase === 'out') {
+      w.fadeGhost();
+      return;
     }
+    w.pushInBook(state.book, () => {
+      // Only a book that was actually OPEN has an id to clear; a book put
+      // back from the hand never reached the book view.
+      if (state.mode === 'close') appState.clearOpenBook();
+    });
   }
 
-  function handleDone(state: OverlayState): void {
-    if (state.mode === 'open') {
-      // Hand over to the book view; this unmounts the shelf (camera is
-      // preserved in the module-level session snapshot).
-      appState.openBook(state.book.id);
-    } else {
-      setOverlay(null);
-    }
+  /**
+   * The reader chose to read the book they are holding. This is the only path
+   * that counts as opening it — pulling a spine out no longer does, so the
+   * continue-reading ribbon is moved here rather than in the world.
+   */
+  function handleOpen(state: OverlayState): void {
+    void touchBookOpened(state.book.id);
+    // Hand over to the book view; this unmounts the shelf (camera is
+    // preserved in the module-level session snapshot).
+    appState.openBook(state.book.id);
+  }
+
+  function handleDone(): void {
+    setOverlay(null);
   }
 
   /* ------------------------------ chrome geometry ------------------------ */
@@ -653,14 +671,27 @@ export default function BookshelfWorld(): JSX.Element {
           }}
         </Show>
 
-        <Show when={overlay()}>
+        {/* `keyed`, so the callback gets the VALUE and not an accessor: the
+            overlay calls back during its own teardown (to drop the slot
+            outline it asked the world for), and reading a <Show> accessor
+            there is reading a state that has already gone. Every overlay is a
+            freshly built object anyway, so keying on identity remounts in
+            exactly the cases the accessor form did. */}
+        <Show when={overlay()} keyed>
           {(state) => (
             <PulledBookOverlay
-              book={state().book}
-              spineRect={state().rect}
-              mode={state().mode}
-              onHandoff={() => handleHandoff(state())}
-              onDone={() => handleDone(state())}
+              book={state.book}
+              spineRect={state.rect}
+              mode={state.mode}
+              // Read at the moment the book is sent back rather than captured
+              // at the pull: the row can have re-laid out under it (a rename,
+              // a sibling arriving) while the reader was deciding.
+              homeRect={() => world?.spineRectOf(state.book.id) ?? state.rect}
+              caseRect={() => world?.caseScreenRect() ?? null}
+              onOverCase={(over) => world?.showSlotHint(state.book.id, over)}
+              onHandoff={(phase) => handleHandoff(state, phase)}
+              onOpen={() => handleOpen(state)}
+              onDone={() => handleDone()}
             />
           )}
         </Show>
@@ -724,10 +755,13 @@ export default function BookshelfWorld(): JSX.Element {
             <For each={visibleBooks()}>
               {(book) => (
                 <li>
+                  {/* "Take out", not "Open": this pulls the book off the
+                      shelf and hands it over; the held card's own "read it"
+                      button is what opens it, and it takes focus. */}
                   <button
                     type="button"
-                    aria-label={`Open ${book.title}, floor ${book.floor + 1}`}
-                    onClick={() => world?.openFromList(book.id)}
+                    aria-label={`Take ${book.title} off the shelf, floor ${book.floor + 1}`}
+                    onClick={() => world?.pullOut(book.id)}
                   >
                     {book.title}
                   </button>

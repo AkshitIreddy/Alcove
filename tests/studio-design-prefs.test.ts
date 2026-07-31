@@ -4,8 +4,8 @@
  * Everything in `data/designPrefs.ts` is read back out of SQLite without
  * a schema, so the validators are the only thing between a corrupt row and an
  * exception inside a bake. These lock down the contract the drawing code
- * relies on: a resolved design always has a real build, a real pattern and all
- * four wallpaper axes, whatever was stored.
+ * relies on: a resolved design always has a real build, a real pattern and a
+ * real value on every wallpaper axis it names, whatever was stored.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -17,9 +17,11 @@ import {
 import { BUILD_IDS, PATTERN_IDS } from '../src/art/shelfDesign';
 import {
   WALLPAPER_DEPTHS,
+  WALLPAPER_EDGES,
   WALLPAPER_INKS,
   WALLPAPER_PATTERNS,
   WALLPAPER_SCALES,
+  WALLPAPER_TONES,
 } from '../src/art/wallpaperDesign';
 
 const JUNK: readonly unknown[] = [
@@ -88,5 +90,33 @@ describe('mergeWallpaperSpec', () => {
     expect(spec.pattern).toBe('trellis');
     expect(spec.ink).toBe('gilt');
     expect(spec.scale).toBe(DEFAULT_ROOM_DESIGN.wallpaper.scale);
+  });
+
+  it('carries the optional axes back off disk', () => {
+    // The spec is rebuilt field by field, so an axis this validator does not
+    // name is dropped on the next read: the reader's choice would hold for the
+    // session and be gone tomorrow. `tone` and `edge` arrived after the first
+    // four and were exactly that bug.
+    for (const tone of WALLPAPER_TONES) {
+      expect(mergeWallpaperSpec({ tone }).tone).toBe(tone);
+    }
+    for (const edge of WALLPAPER_EDGES) {
+      expect(mergeWallpaperSpec({ edge }).edge).toBe(edge);
+    }
+  });
+
+  it('leaves an unnamed optional axis unnamed rather than writing its default', () => {
+    // Absent means auto/crisp, which is the same picture — but materialising it
+    // would rewrite every stored blob and make "back to auto" unreachable once
+    // the picker offers it.
+    const spec = mergeWallpaperSpec({ pattern: 'trellis' });
+    expect(spec.tone).toBeUndefined();
+    expect(spec.edge).toBeUndefined();
+  });
+
+  it('drops junk in an optional axis instead of storing it', () => {
+    const spec = mergeWallpaperSpec({ tone: 'chartreuse', edge: 42 });
+    expect(spec.tone).toBeUndefined();
+    expect(spec.edge).toBeUndefined();
   });
 });

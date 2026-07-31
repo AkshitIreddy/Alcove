@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { freshBookStyleOverrides } from '../art/bookStyle';
 import { getDb } from './db';
 import type {
   Book,
@@ -197,14 +198,21 @@ export async function getBook(id: string): Promise<Book | null> {
 export async function createBook(input: CreateBookInput): Promise<Book> {
   const db = await getDb();
   const now = new Date().toISOString();
+  const spineSeed = input.spineSeed ?? randomSpineSeed();
   const book: Book = {
     id: nanoid(),
     bookcaseId: input.bookcaseId ?? (await readActiveBookcaseId()),
     title: input.title,
     floor: input.floor,
     slot: input.slot,
-    spineSeed: input.spineSeed ?? randomSpineSeed(),
-    coverMeta: input.coverMeta ?? null,
+    spineSeed,
+    // A new book arrives with a character of its own — see
+    // `freshBookStyleOverrides`. A caller that brought its own cover metadata
+    // (the seeded Welcome book, an import, a duplicate) is left alone: it has
+    // already said what the book should look like.
+    coverMeta:
+      input.coverMeta ??
+      ({ style: freshBookStyleOverrides(randomSpineSeed()) } as Record<string, unknown>),
     createdAt: now,
     updatedAt: now,
   };

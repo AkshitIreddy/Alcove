@@ -462,7 +462,12 @@ function blockFromNode(node: TiptapNode): Block[] {
       case 'card':
       case 'quote-card':
       case 'spoiler':
-      case 'banner': {
+      case 'banner':
+      case 'index-card':
+      case 'envelope':
+      case 'stamp':
+      case 'tag':
+      case 'marginalia': {
         const raw = nodeAttrs(node);
         const attrs = attrsFrom(raw, ['title']);
         if (node.type === 'card' && typeof raw.title === 'string' && raw.title !== '') {

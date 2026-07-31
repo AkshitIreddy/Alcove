@@ -154,7 +154,7 @@ export function doodleVariantFor(floorIndex: number): number {
  * run the app. Bumping this is the escape hatch; it must move whenever the
  * flat recipes change.
  */
-const FLAT_ART_VERSION = 'flat1';
+const FLAT_ART_VERSION = 'flat3';
 
 function textureFromBitmap(bitmap: ImageBitmap, mipmaps: boolean): Texture {
   const source = new ImageSource({
@@ -363,18 +363,28 @@ function bakeFlatRail(room: Room, w: number, h: number, dpr: number): Promise<Im
  * wall, but run PAST the bottom: the cornice's underside sits flush on the
  * case, and an inset there leaves a hairline of wall showing across the whole
  * top of the bookcase. (It does, visibly — that is what the first flat
- * specimen looked like.) The only outline lost is under the two 14px lips,
- * which nothing can see.
+ * specimen looked like.)
+ *
+ * The canvas stays exactly `h` tall, which crops that overrun away.
+ *
+ * What the box's BOTTOM edge means therefore matters: `drawCrown` draws the
+ * underside's ink line on it, and that line is what closes the case's four
+ * corners where the `CROWN_LIP` overhangs have wall behind them rather than
+ * case. So the box ends exactly at the canvas — `h - pad`, with the join's own
+ * bleed carrying the fill past it — and NOT at `h + pad`, which is where this
+ * used to put it and which parked the line four pixels below the bitmap. That
+ * is the whole of the "un-inked corner against the wall" defect.
  */
 function bakeFlatCrown(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
   const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|crown|${w}x${h}`;
   return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
-    // Top edge inset by `pad`, bottom edge (and its ink line) pushed clear of
-    // the canvas — hence a drawn height of h + pad rather than h - 2 * pad.
-    // This is the only part with transparency above it, so it is the only one
-    // whose outline a build can really cut (battlements, cresting, a pediment).
-    drawCrown(ctx, pad, pad, w - pad * 2, h + pad, 0x7ab3, room.design);
+    // Top and sides inset by `pad` so their outlines land on the bitmap; the
+    // bottom edge IS the bitmap's, because that is the cornice's real
+    // underside. This is the only part with transparency above it, so it is
+    // the only one whose outline a build can really cut (battlements,
+    // cresting, a pediment).
+    drawCrown(ctx, pad, pad, w - pad * 2, h - pad, 0x7ab3, room.design);
   });
 }
 

@@ -70,6 +70,33 @@ export function inflateRect(rect: Rect, pad: number): Rect {
   };
 }
 
+/**
+ * Per-side padding in px. Symmetric `pad` cannot express "reach 44px left to
+ * swallow the drag-handle gutter but stay tight on the other three sides",
+ * which is exactly what a step highlighting one editor block needs.
+ */
+export interface PadBox {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+}
+
+/** Grow a rect by a different amount on each side. Never inverts. */
+export function inflateBox(rect: Rect, pad: PadBox | undefined): Rect {
+  if (pad === undefined) return rect;
+  const top = pad.top ?? 0;
+  const right = pad.right ?? 0;
+  const bottom = pad.bottom ?? 0;
+  const left = pad.left ?? 0;
+  return {
+    x: rect.x - left,
+    y: rect.y - top,
+    width: Math.max(0, rect.width + left + right),
+    height: Math.max(0, rect.height + top + bottom),
+  };
+}
+
 /** Shrink a rect by fractional insets. Never collapses below 8×8. */
 export function applyInset(rect: Rect, inset: Inset | number | undefined): Rect {
   if (inset === undefined) return rect;
@@ -87,6 +114,25 @@ export function applyInset(rect: Rect, inset: Inset | number | undefined): Rect 
     width: Math.max(8, rect.width - left - right),
     height: Math.max(8, rect.height - top - bottom),
   };
+}
+
+/**
+ * Trim a spotlight to the visible viewport.
+ *
+ * A target can genuinely run off screen — the shelf band on a zoomed-in case,
+ * a rail taller than a short window — and a ring drawn around it then has one
+ * or two edges beyond the glass, which reads as a broken frame rather than a
+ * box. Trimming keeps every highlight a closed rounded rect. A target that is
+ * almost entirely off screen is left alone: there is nothing useful to frame,
+ * and the caller's own visibility test will have rejected it anyway.
+ */
+export function clipRectToViewport(rect: Rect, vp: Size, margin = 6): Rect {
+  const x0 = Math.max(rect.x, margin);
+  const y0 = Math.max(rect.y, margin);
+  const x1 = Math.min(rect.x + rect.width, vp.width - margin);
+  const y1 = Math.min(rect.y + rect.height, vp.height - margin);
+  if (x1 - x0 < 24 || y1 - y0 < 24) return rect;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
 /** Slide (never resize) a rect so it sits inside the viewport with a margin. */
@@ -402,81 +448,53 @@ export function arrowHeadPath(
 }
 
 /**
- * Perimeter samples of a rounded rect with per-corner pencil wobble — the
- * spotlight hole is drawn as a hand-traced ring, never a CSS border-radius.
+ * A straight rounded rectangle, corners as true quarter-circle arcs.
+ *
+ * The spotlight used to be a hand-traced ring: perimeter samples with a
+ * seeded wobble, smoothed into quadratics. On a 60px rail button that reads
+ * as charm; on a 900px page it reads as a broken line with dented corners and
+ * edges that drift a couple of pixels off the thing they are supposed to be
+ * framing. Every highlight is now a plain rounded rect — the hand-drawn voice
+ * of this app lives in the card, the arrow and the icons, not in a frame whose
+ * whole job is to say "exactly this box".
  */
-export function holeOutlinePoints(
-  rect: Rect,
-  radius: number,
-  seed: number,
-  wobble = 2.2,
-): Point[] {
-  const rng = seededRandom(seed ^ 0x1f2e3d4c);
-  const r = Math.max(0, Math.min(radius, rect.width / 2, rect.height / 2));
+export function roundedRectPath(rect: Rect, radius: number): string {
+  const w = Math.max(0, rect.width);
+  const h = Math.max(0, rect.height);
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
   const x0 = rect.x;
   const y0 = rect.y;
-  const x1 = rect.x + rect.width;
-  const y1 = rect.y + rect.height;
-  const points: Point[] = [];
-  const push = (x: number, y: number): void => {
-    points.push({
-      x: x + (rng() * 2 - 1) * wobble,
-      y: y + (rng() * 2 - 1) * wobble,
-    });
-  };
-  // How many samples an edge gets — long edges wobble more often, so a big
-  // spotlight does not read as a machine-straight line.
-  const along = (length: number): number =>
-    Math.max(1, Math.min(14, Math.round(length / 34)));
-  // Corner arc: 4 samples sweeping a quarter turn.
-  const corner = (cx: number, cy: number, startAngle: number): void => {
-    for (let i = 0; i <= 3; i += 1) {
-      const a = startAngle + (i / 3) * (Math.PI / 2);
-      push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    }
-  };
-  const edgeX = Math.max(0, x1 - x0 - r * 2);
-  const edgeY = Math.max(0, y1 - y0 - r * 2);
-
-  // Top edge, left -> right
-  const nTop = along(edgeX);
-  for (let i = 0; i < nTop; i += 1) push(x0 + r + (edgeX * i) / nTop, y0);
-  corner(x1 - r, y0 + r, -Math.PI / 2); // top-right
-  const nRight = along(edgeY);
-  for (let i = 0; i < nRight; i += 1) push(x1, y0 + r + (edgeY * i) / nRight);
-  corner(x1 - r, y1 - r, 0); // bottom-right
-  const nBottom = along(edgeX);
-  for (let i = 0; i < nBottom; i += 1) push(x1 - r - (edgeX * i) / nBottom, y1);
-  corner(x0 + r, y1 - r, Math.PI / 2); // bottom-left
-  const nLeft = along(edgeY);
-  for (let i = 0; i < nLeft; i += 1) push(x0, y1 - r - (edgeY * i) / nLeft);
-  corner(x0 + r, y0 + r, Math.PI); // top-left
-
-  return points;
+  const x1 = rect.x + w;
+  const y1 = rect.y + h;
+  if (r === 0) {
+    return `M ${n(x0)} ${n(y0)} H ${n(x1)} V ${n(y1)} H ${n(x0)} Z`;
+  }
+  return [
+    `M ${n(x0 + r)} ${n(y0)}`,
+    `H ${n(x1 - r)}`,
+    `A ${n(r)} ${n(r)} 0 0 1 ${n(x1)} ${n(y0 + r)}`,
+    `V ${n(y1 - r)}`,
+    `A ${n(r)} ${n(r)} 0 0 1 ${n(x1 - r)} ${n(y1)}`,
+    `H ${n(x0 + r)}`,
+    `A ${n(r)} ${n(r)} 0 0 1 ${n(x0)} ${n(y1 - r)}`,
+    `V ${n(y0 + r)}`,
+    `A ${n(r)} ${n(r)} 0 0 1 ${n(x0 + r)} ${n(y0)}`,
+    'Z',
+  ].join(' ');
 }
 
-/** Closed path around the spotlight hole (for the pencil ring). */
-export function holePath(
-  rect: Rect,
-  radius: number,
-  seed: number,
-  wobble?: number,
-): string {
-  return smoothPath(holeOutlinePoints(rect, radius, seed, wobble), true);
+/** Closed path around the spotlight hole (also the ring stroke). */
+export function holePath(rect: Rect, radius: number): string {
+  return roundedRectPath(rect, radius);
 }
 
 /**
  * The scrim: a full-viewport rect with the hole subtracted. Fill it with
  * `fill-rule: evenodd` and everything but the target dims.
  */
-export function spotlightPath(
-  hole: Rect,
-  vp: Size,
-  radius: number,
-  seed: number,
-): string {
+export function spotlightPath(hole: Rect, vp: Size, radius: number): string {
   const outer = `M 0 0 H ${n(vp.width)} V ${n(vp.height)} H 0 Z`;
-  return `${outer} ${holePath(hole, radius, seed)}`;
+  return `${outer} ${roundedRectPath(hole, radius)}`;
 }
 
 /** Scrim with no hole at all (anchorless steps dim the whole world). */
@@ -490,27 +508,44 @@ export function solidScrimPath(vp: Size): string {
 
 export type TutorialAction = 'next' | 'back' | 'skip';
 
-/** Keyboard contract: Enter/Space/→/↓ advance, ←/↑/Backspace go back, Esc skips. */
+/**
+ * Keyboard contract: Enter advances, Esc leaves. That is the whole list.
+ *
+ * The tour used to swallow Space, the arrow keys, Backspace and PageUp/Down
+ * as navigation. Every one of those is a key the reader needs for the thing
+ * the tour is asking them to do: Space types a word break on the "write
+ * something" step, ← → turn the page on the page-turning step, Backspace
+ * fixes a typo. A guided tour that eats the keys it is teaching is worse than
+ * no tour, so navigation now belongs to the buttons — plus Enter, which the
+ * card's own focused button owns anyway, and Esc, which must always work.
+ */
 export function keyAction(key: string): TutorialAction | null {
   switch (key) {
     case 'Enter':
-    case ' ':
-    case 'Spacebar':
-    case 'ArrowRight':
-    case 'ArrowDown':
-    case 'PageDown':
       return 'next';
-    case 'ArrowLeft':
-    case 'ArrowUp':
-    case 'Backspace':
-    case 'PageUp':
-      return 'back';
     case 'Escape':
     case 'Esc':
       return 'skip';
     default:
       return null;
   }
+}
+
+/**
+ * Is this element one the reader is typing into? Enter and Esc belong to the
+ * editor, the quick switcher and any text field while the caret is inside
+ * one — the tour must keep its hands off entirely.
+ */
+export function isTypingTarget(el: {
+  tagName?: string;
+  isContentEditable?: boolean;
+  closest?: (selector: string) => unknown;
+} | null): boolean {
+  if (el === null || el === undefined) return false;
+  if (el.isContentEditable === true) return true;
+  const tag = (el.tagName ?? '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return typeof el.closest === 'function' && el.closest('[contenteditable="true"]') !== null;
 }
 
 /** Minimal shape `stepIndexAfter` needs — the full step lives in steps.ts. */

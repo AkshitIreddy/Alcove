@@ -9,7 +9,9 @@
  *  - how the case is BUILT and what is worked into its timber
  *    (art/shelfDesign.ts — twelve carpentries x twelve treatments);
  *  - what is on the WALL (art/wallpaperDesign.ts — nineteen motifs across
- *    five scales, four reliefs and six ink slots).
+ *    five scales, four reliefs and six ink slots, every one of them offered
+ *    here: the ink slot used to be reachable only by finding a named paper
+ *    that happened to use it).
  *
  * Colour and carpentry are orthogonal on purpose: a gothic case is gothic in
  * every room, and repainting the room must not quietly rebuild the furniture.
@@ -28,8 +30,6 @@
  */
 import { For, Show, createMemo, createSignal, onMount, type JSX } from 'solid-js';
 import { type FlatScheme } from '../../art/flat';
-import { drawCaseCard } from '../../art/flatShelf';
-import { fnv1a } from '../../art/noise';
 import {
   BUILDS,
   BUILD_IDS,
@@ -52,7 +52,9 @@ import {
   WALLPAPER_PRESETS,
   drawWallpaperCard,
   getWallpaper,
+  wallpaperAxisKey,
   type WallpaperDepth,
+  type WallpaperInk,
   type WallpaperScale,
   type WallpaperSpec,
 } from '../../art/wallpaperDesign';
@@ -71,10 +73,14 @@ import { DesignCanvas } from './designArt';
 import {
   buildOptions,
   depthOptions,
+  inkOptions,
+  moodTags,
   patternOptions,
   scaleOptions,
   shelfPresetOptions,
+  themeOptions,
   wallpaperOptions,
+  withMood,
 } from './designOptions';
 import {
   DEFAULT_ROOM_DESIGN,
@@ -88,115 +94,92 @@ import {
 import { stopShelfKeys } from './shelfKeys';
 import '../../styles/studio.css';
 
-const CARD_W = 168;
-const CARD_H = 116;
 const WALL_W = 328;
 const WALL_H = 116;
 
 /** Which long sheet has taken over the panel, if any. */
-type Sheet = null | 'build' | 'pattern' | 'named' | 'wallpaper';
+type Sheet = null | 'room' | 'build' | 'pattern' | 'named' | 'wallpaper';
 
-/**
- * A room card: the case, drawn in the app's one style, in the room's colours
- * AND in the carpentry the reader has chosen.
- *
- * The design is in there rather than fixed at plank because these four cards
- * are the reader's picture of "the room" — showing a plain case on them while
- * the shelf behind the panel is a gothic arcade is the same drift that had
- * the cards previewing a watercolour room after the shelf went flat.
+/*
+ * A `ThemeCard` component lived here: one big card per room, four of them, in a
+ * two-across grid. It went when the rooms did — there are sixty now, and the
+ * card is `themeOptions()` in designOptions.ts so that the inline strip and the
+ * long sheet cannot disagree about what a room looks like. The rule it carried
+ * survives intact: the card is painted by `drawCaseCard` in that room's own
+ * colours AND in the carpentry the reader has chosen, because a picker that
+ * shows a plain plank case while the shelf behind it is a gothic arcade is the
+ * same drift that had the cards previewing a watercolour room after the shelf
+ * went flat.
  */
-function ThemeCard(props: {
-  id: ThemeId;
-  design: RoomDesign;
-  active: boolean;
-  onPick(): void;
-}): JSX.Element {
-  const theme = (): (typeof THEMES)[ThemeId] => getTheme(props.id);
-  const shelf = (): { build: BuildId; pattern: PatternId } => shelfDesignOf(props.design);
-
-  return (
-    <button
-      type="button"
-      class="nb-theme-card"
-      classList={{ 'is-active': props.active }}
-      aria-pressed={props.active}
-      onClick={() => props.onPick()}
-      title={theme().blurb}
-    >
-      <DesignCanvas
-        class="nb-theme-card-art"
-        key={`room|${props.id}|${shelf().build}|${shelf().pattern}`}
-        w={CARD_W}
-        h={CARD_H}
-        scheme={theme().scheme}
-        draw={(ctx, w, h) => drawCaseCard(ctx, w, h, fnv1a(`${props.id}|card`), shelf())}
-      />
-      <span class="nb-theme-card-name">{theme().name}</span>
-      <span class="nb-theme-card-blurb">{theme().blurb}</span>
-    </button>
-  );
-}
 
 /**
- * The active room's palette, spelled out.
+ * The active room's palette, spelled out — and now it says so.
  *
- * Not a control — a legend. A reader who can see the six cloths their next
- * book might be bound in understands what the cards above actually chose.
- * Inline styles because every swatch's colour comes from the data.
+ * This used to be a bare row of nine colour chips under its own "the palette"
+ * heading at the very foot of the sheet, two rows below the colour chips that
+ * ARE buttons. Every reader who found it pressed it, nothing happened, and the
+ * studio got reported as broken. It was never a control and there is nothing
+ * for it to control: a room's colours come from its theme, and there is no
+ * per-hex override in the model to offer without inventing one.
+ *
+ * So it stops pretending. Each swatch now carries the word for what it is, the
+ * six cloths are captioned with the one thing a reader wants them for, and the
+ * whole thing moved up under the four room cards — where it answers the
+ * question those cards raise instead of trailing the sheet like an orphan.
+ * Colours are inline because they come from the data; everything else is CSS.
  */
 function Swatches(props: { scheme: ColourScheme; name: string }): JSX.Element {
-  const chips = (): readonly { colour: string; label: string }[] => {
-    const s = props.scheme;
-    return [
-      { colour: s.timber, label: 'case timber' },
-      { colour: s.recess, label: 'behind the books' },
-      { colour: s.wall, label: 'wall' },
-      ...s.cloths.map(([face], i) => ({ colour: face, label: `book cloth ${i + 1}` })),
-    ];
-  };
+  const parts = (): readonly { colour: string; label: string }[] => [
+    { colour: props.scheme.timber, label: 'case' },
+    { colour: props.scheme.recess, label: 'behind' },
+    { colour: props.scheme.wall, label: 'wall' },
+  ];
 
   return (
-    <div
-      class="nb-swatch-row"
-      role="img"
-      aria-label={`${props.name} palette`}
-      style={{ display: 'flex', gap: '4px', 'flex-wrap': 'wrap' }}
-    >
-      <For each={chips()}>
-        {(chip) => (
-          <span
-            title={chip.label}
-            style={{
-              width: '18px',
-              height: '18px',
-              'border-radius': '5px',
-              background: chip.colour,
-              border: '1.5px solid #4f3120',
-            }}
-          />
-        )}
-      </For>
+    <div class="nb-legend" role="img" aria-label={`${props.name} palette`}>
+      <div class="nb-legend-line">
+        <For each={parts()}>
+          {(part) => (
+            <span class="nb-legend-item">
+              <span class="nb-legend-dot" style={{ background: part.colour }} />
+              {part.label}
+            </span>
+          )}
+        </For>
+      </div>
+      <div class="nb-legend-line">
+        <span class="nb-legend-caption">new books here are bound in</span>
+        <For each={props.scheme.cloths}>
+          {(cloth) => <span class="nb-legend-dot" style={{ background: cloth[0] }} />}
+        </For>
+      </div>
     </div>
   );
 }
 
 /**
- * One part's colour row: four rooms, as the colour that part would take.
+ * One part's colour row: every room, as the colour that part would take.
  *
  * Keyed by the `LibraryPrefs` field it writes, so a row cannot drift from the
- * pref it edits. Four room names stacked twice reads as a wall of text for
- * something the eye answers instantly, hence dots rather than labels.
+ * pref it edits. Sixty room names stacked twice would be a wall of text for
+ * something the eye answers instantly, hence dots rather than labels — though
+ * sixty dots is a wall of its own, and this row wants the same treatment the
+ * room axis above it already got: a strip of featured colours with the rest
+ * behind a picker.
  */
 function ColourRow(props: {
   part: 'shelf' | 'wall';
   label: string;
+  /** The row's own heading. The wall has two colour rows; they cannot both
+      be called "colour" or neither says which half it moves. */
+  title: string;
   colour(theme: LibraryTheme): string;
   onPick(id: ThemeId): void;
 }): JSX.Element {
   return (
     <div class="nb-panel-row nb-panel-row-stack">
       <span class="nb-panel-row-label">
-        colour{' '}
+        {props.title}{' '}
         <em class="nb-panel-row-hint">
           {getTheme(partTheme(libraryPrefs, props.part)).name.toLowerCase()}
         </em>
@@ -222,8 +205,15 @@ function ColourRow(props: {
   );
 }
 
+/**
+ * Is this the same paper? Through `wallpaperAxisKey`, because this answer
+ * decides which card the strip shows as chosen and what the panel calls the
+ * wall. Spelled out here as four comparisons it went stale the moment the
+ * spec grew a tone and a nib: nudging either left the panel still naming the
+ * preset the reader had moved away from.
+ */
 function sameSpec(a: WallpaperSpec, b: WallpaperSpec): boolean {
-  return a.pattern === b.pattern && a.scale === b.scale && a.depth === b.depth && a.ink === b.ink;
+  return wallpaperAxisKey(a) === wallpaperAxisKey(b);
 }
 
 function pickOne<T>(list: readonly T[], notThis?: T): T {
@@ -288,6 +278,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetOptions = createMemo<readonly PickerOption[]>(() => {
     switch (sheet()) {
+      case 'room':
+        return themeOptions(shelfDesignOf(design()));
       case 'build':
         return buildOptions(design().pattern);
       case 'pattern':
@@ -303,6 +295,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetActive = (): string => {
     switch (sheet()) {
+      case 'room':
+        return libraryPrefs.theme;
       case 'build':
         return design().build;
       case 'pattern':
@@ -318,6 +312,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetTitle = (): string => {
     switch (sheet()) {
+      case 'room':
+        return 'the room';
       case 'build':
         return 'how it is built';
       case 'pattern':
@@ -333,6 +329,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetHint = (): string => {
     switch (sheet()) {
+      case 'room':
+        return 'a colour scheme, and only that — the timber, the dark behind the books, the wall and the six cloths a new book is bound in. every card is your bookcase, repainted.';
       case 'build':
         return 'the case itself — its uprights, what fills the opening, and the cornice on top.';
       case 'pattern':
@@ -340,7 +338,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       case 'named':
         return 'a build and a treatment already chosen together.';
       case 'wallpaper':
-        return 'sets the motif, its size, its relief and which colour it borrows. tune the last two below.';
+        return 'sets the motif, its size, its relief and which colour it borrows. tune the last three below.';
       default:
         return '';
     }
@@ -348,6 +346,13 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const pickFromSheet = (id: string): void => {
     switch (sheet()) {
+      case 'room':
+        // Only the preset. A borrowed shelf or wall colour survives a room
+        // change on purpose — that is what "back to one room" is for — and the
+        // inline strip has to agree with this, or the same card would mean two
+        // different things depending on where it was pressed.
+        patch({ theme: id as ThemeId });
+        break;
       case 'build':
         patchDesign({ build: id as BuildId });
         break;
@@ -370,21 +375,45 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
   /* ------------------------------- the dice ------------------------------ */
 
   /**
+   * The mood the dice are loaded toward, or '' for anything.
+   *
+   * The words come from the vocabularies themselves (`moodTags`), so this row
+   * grows as they are tagged and simply does not appear while they are not —
+   * see designOptions.ts. Eight is as many chips as fit two tidy lines in a
+   * 376px sheet, and they arrive commonest-first, so the eight shown are the
+   * eight that actually narrow anything.
+   */
+  const [mood, setMood] = createSignal('');
+  const moods = createMemo<readonly string[]>(() => moodTags().slice(0, 8));
+
+  /**
    * Somewhere else entirely — a different room, a different case, a different
    * paper. Ranging over every axis is the point: a "surprise" that nudges one
    * field is a slider with extra steps.
+   *
+   * The mood narrows each axis independently rather than the roll as a whole.
+   * A reader asking for "goofy" wants a goofy ROOM, and if the papers happen
+   * not to know that word they should still get a paper — an axis with no
+   * match falls back to its whole vocabulary (`withMood`) instead of pinning
+   * itself to whatever it was already wearing.
    */
   const surprise = (): void => {
-    const nextTheme = pickOne(THEME_IDS, libraryPrefs.theme);
-    const paper = pickOne(WALLPAPER_PRESETS, getWallpaper(wallPresetId()));
+    const wanted = mood();
+    const rooms = withMood(THEME_IDS, wanted, (id) => THEMES[id]);
+    const builds = withMood(BUILD_IDS, wanted, (id) => BUILDS[id]);
+    const patterns = withMood(PATTERN_IDS, wanted, (id) => PATTERNS[id]);
+    const papers = withMood(WALLPAPER_PRESETS, wanted, (paper) => paper);
+
+    const nextTheme = pickOne(rooms, libraryPrefs.theme);
+    const paper = pickOne(papers, getWallpaper(wallPresetId()));
     setBusy(true);
     void Promise.all([
       saveLibraryPrefs({ theme: nextTheme, shelf: null, wall: null }).then((p) =>
         props.onChanged?.(p),
       ),
       saveRoomDesign({
-        build: pickOne(BUILD_IDS, design().build),
-        pattern: pickOne(PATTERN_IDS, design().pattern),
+        build: pickOne(builds, design().build),
+        pattern: pickOne(patterns, design().pattern),
         wallpaper: paper.spec,
       }),
     ]).finally(() => setBusy(false));
@@ -444,18 +473,32 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           <h3 class="nb-panel-section-title">
             the room <em class="nb-panel-row-hint">{theme().name.toLowerCase()}</em>
           </h3>
-          <div class="nb-theme-grid" role="group" aria-label="Library theme">
-            <For each={THEME_IDS}>
-              {(id) => (
-                <ThemeCard
-                  id={id}
-                  design={design()}
-                  active={libraryPrefs.theme === id}
-                  onPick={() => patch({ theme: id })}
-                />
-              )}
-            </For>
-          </div>
+          {/*
+            A strip, not the grid of big cards this used to be. There were four
+            rooms when the grid was written; there are sixty now, and sixty
+            cards in a 376px sheet put four thousand pixels of scrolling between
+            the reader and everything below them. Same treatment as the other
+            long axes.
+          */}
+          <DesignStrip
+            label="Library theme"
+            options={themeOptions(shelfDesignOf(design()))}
+            activeId={libraryPrefs.theme}
+            scheme={scheme()}
+            showNames
+            columns={2}
+            tileW={148}
+            tileH={96}
+            limit={5}
+            onPick={(id) => patch({ theme: id as ThemeId })}
+            onMore={() => setSheet('room')}
+          />
+          <Swatches scheme={scheme()} name={theme().name} />
+          <p class="nb-panel-footnote">
+            books keep their own colours in every room — that is how you spot
+            yours. to change one, right-click its spine and pick “dress this
+            book”; to move it, right-click and pick “move”.
+          </p>
         </section>
 
         {/* ------------------------------ shelves --------------------------- */}
@@ -473,6 +516,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           <ColourRow
             part="shelf"
             label="shelves"
+            title="colour"
             colour={(t) => t.scheme.timber}
             /* Clearing back to "follow the room" when the pick IS the room's
                own keeps the preset driving it, instead of freezing a value
@@ -526,6 +570,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           <ColourRow
             part="wall"
             label="wallpaper"
+            title="the wall behind it"
             colour={(t) => t.scheme.wall}
             onPick={(id) => patch({ wall: id === libraryPrefs.theme ? null : id })}
           />
@@ -538,6 +583,42 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             scheme={scheme()}
             onPick={(id) => patchDesign({ wallpaper: getWallpaper(id).spec })}
             onMore={() => setSheet('wallpaper')}
+          />
+
+          {/*
+            The three rows below all tune a MOTIF, and `plain` is the absence of
+            one — so on the paper a fresh library opens with, all three come out
+            as identical empty tiles. Say so rather than let the reader conclude
+            the rows are broken; it is the same mistake the palette legend was
+            making at the foot of the sheet.
+          */}
+          <Show when={wall().pattern === 'plain'}>
+            <p class="nb-panel-footnote nb-panel-footnote-tight">
+              plain is a bare wall. pick a paper above and the three rows below
+              start doing something.
+            </p>
+          </Show>
+
+          {/*
+            The other half of the wall's colour, and until now the half nobody
+            could reach: the ground comes from the room, the MOTIF's colour
+            comes from here. A reader who liked their trellis and wanted it in
+            gold used to have to go and hunt for a gold trellis among fifty-five
+            papers. Four grounds x six inks is twenty-four walls.
+          */}
+          <span class="nb-panel-row-label nb-strip-label">
+            what colour <em class="nb-panel-row-hint">{wall().ink}</em>
+          </span>
+          <DesignStrip
+            label="Paper colour"
+            options={inkOptions(wall())}
+            activeId={wall().ink}
+            scheme={scheme()}
+            showNames
+            columns={3}
+            tileW={100}
+            tileH={62}
+            onPick={(id) => patchWall({ ink: id as WallpaperInk })}
           />
 
           <span class="nb-panel-row-label nb-strip-label">
@@ -576,16 +657,40 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         </section>
 
         <section class="nb-panel-section nb-panel-section-divided">
-          <h3 class="nb-panel-section-title">the palette</h3>
-          <Swatches scheme={scheme()} name={theme().name} />
-          <p class="nb-panel-footnote">
-            Books keep their own colours in every room — that is how you spot
-            yours. To change one, right-click its spine and pick “dress this
-            book”; to move it, right-click and pick “move”.
-          </p>
-        </section>
+          <h3 class="nb-panel-section-title">start somewhere else</h3>
 
-        <section class="nb-panel-section">
+          {/* Absent until the vocabularies carry mood words — see moodTags(). */}
+          <Show when={moods().length > 0}>
+            <div class="nb-panel-row nb-panel-row-stack">
+              <span class="nb-panel-row-label">
+                in the mood for{' '}
+                <em class="nb-panel-row-hint">{mood() === '' ? 'anything' : mood()}</em>
+              </span>
+              <div class="nb-chip-row" role="group" aria-label="Surprise me mood">
+                <button
+                  type="button"
+                  class="nb-chip"
+                  aria-pressed={mood() === ''}
+                  onClick={() => setMood('')}
+                >
+                  anything
+                </button>
+                <For each={moods()}>
+                  {(word) => (
+                    <button
+                      type="button"
+                      class="nb-chip"
+                      aria-pressed={mood() === word}
+                      onClick={() => setMood(word)}
+                    >
+                      {word}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
           <div class="nb-chip-row">
             <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
               surprise me

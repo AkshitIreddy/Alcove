@@ -21,13 +21,15 @@ import {
   clampToViewport,
   edgePointToward,
   firstStepIndex,
-  holeOutlinePoints,
   holePath,
+  inflateBox,
   inflateRect,
   intersectionArea,
+  isTypingTarget,
   keyAction,
   placeCard,
   rectCenter,
+  roundedRectPath,
   seedFrom,
   seededRandom,
   sideSpace,
@@ -38,7 +40,11 @@ import {
   type Rect,
   type Size,
 } from '../src/features/tutorial/engine';
-import { TUTORIAL_STEPS, TUTORIAL_STEP_IDS } from '../src/features/tutorial/steps';
+import {
+  TUTORIAL_STEPS,
+  TUTORIAL_STEP_IDS,
+  stepTargets,
+} from '../src/features/tutorial/steps';
 
 const VP: Size = { width: 1440, height: 900 };
 const CARD: Size = { width: 348, height: 232 };
@@ -62,6 +68,20 @@ describe('rect helpers', () => {
     const collapsed = inflateRect({ x: 0, y: 0, width: 4, height: 4 }, -10);
     expect(collapsed.width).toBe(0);
     expect(collapsed.height).toBe(0);
+  });
+
+  it('grows a rect asymmetrically for the drag-handle gutter case', () => {
+    const block: Rect = { x: 229, y: 179, width: 465, height: 64 };
+    expect(inflateBox(block, { left: 46, right: 16, top: 10, bottom: 10 })).toEqual({
+      x: 183,
+      y: 169,
+      width: 527,
+      height: 84,
+    });
+    // The handle sits ~32px left of the text; the padded box must contain it.
+    expect(inflateBox(block, { left: 46 }).x).toBeLessThan(197);
+    expect(inflateBox(block, undefined)).toBe(block);
+    expect(inflateBox(block, {})).toEqual(block);
   });
 
   it('applies fractional insets and clamps runaway values', () => {
@@ -238,63 +258,96 @@ describe('pencil paths', () => {
     expect(arrowHeadPath([from], 9)).toBe('');
   });
 
-  it('traces a closed, wobbled ring that hugs the target rect', () => {
+  /* Every highlight is a straight rounded rect — see roundedRectPath's
+     docblock for why the hand-traced ring had to go. */
+  it('frames the target with exactly four straight edges and four arcs', () => {
     const rect: Rect = { x: 200, y: 150, width: 240, height: 90 };
-    const pts = holeOutlinePoints(rect, 18, seedFrom('left-rail'));
-    expect(pts.length).toBeGreaterThan(20);
-    for (const p of pts) {
-      expect(p.x).toBeGreaterThan(rect.x - 8);
-      expect(p.x).toBeLessThan(rect.x + rect.width + 8);
-      expect(p.y).toBeGreaterThan(rect.y - 8);
-      expect(p.y).toBeLessThan(rect.y + rect.height + 8);
-    }
-    const d = holePath(rect, 18, 3);
+    const d = roundedRectPath(rect, 14);
+    expect(d.match(/A /g)?.length).toBe(4);
+    expect(d.match(/[HV] /g)?.length).toBe(4);
+    // No quadratics: nothing bows off the box.
+    expect(d).not.toContain('Q ');
     expect(d.endsWith('Z')).toBe(true);
     expect(pathNumbersAreFinite(d)).toBe(true);
+    // The edges ARE the rect's edges — the old wobble drifted off them.
+    expect(d).toContain('M 214 150');
+    expect(d).toContain('H 426');
+  });
+
+  it('clamps the corner radius so a thin target never turns into a lozenge', () => {
+    const thin: Rect = { x: 0, y: 0, width: 200, height: 12 };
+    const d = roundedRectPath(thin, 40);
+    expect(d).toContain('A 6 6');
+    // Degenerate radius falls back to a plain rectangle.
+    expect(roundedRectPath({ x: 0, y: 0, width: 10, height: 10 }, 0)).toBe(
+      'M 0 0 H 10 V 10 H 0 Z',
+    );
   });
 
   it('builds the scrim as an outer rect plus a hole subpath (evenodd)', () => {
     const hole: Rect = { x: 300, y: 200, width: 200, height: 120 };
-    const d = spotlightPath(hole, VP, 18, 11);
+    const d = spotlightPath(hole, VP, 14);
     expect(d.startsWith('M 0 0 H 1440 V 900 H 0 Z')).toBe(true);
     expect(d.match(/M /g)?.length).toBeGreaterThanOrEqual(2);
     expect(d.endsWith('Z')).toBe(true);
     expect(pathNumbersAreFinite(d)).toBe(true);
+    expect(d).toContain(holePath(hole, 14));
   });
 
   it('falls back to a solid scrim with no hole', () => {
     expect(solidScrimPath(VP)).toBe('M 0 0 H 1440 V 900 H 0 Z');
   });
 
-  it('is stable across calls for the same seed (no per-frame shimmer)', () => {
-    const a = spotlightPath({ x: 10, y: 10, width: 50, height: 50 }, VP, 12, 99);
-    const b = spotlightPath({ x: 10, y: 10, width: 50, height: 50 }, VP, 12, 99);
-    expect(a).toBe(b);
-    const c = spotlightPath({ x: 10, y: 10, width: 50, height: 50 }, VP, 12, 100);
-    expect(c).not.toBe(a);
+  it('is deterministic — same rect, same path, no per-frame shimmer', () => {
+    const rect: Rect = { x: 10, y: 10, width: 50, height: 50 };
+    expect(spotlightPath(rect, VP, 12)).toBe(spotlightPath(rect, VP, 12));
+    expect(spotlightPath(rect, VP, 12)).not.toBe(spotlightPath(rect, VP, 4));
   });
 });
 
 /* ------------------------------ keyboard ---------------------------------- */
 
 describe('keyboard contract', () => {
-  it('maps advance keys', () => {
-    for (const key of ['Enter', ' ', 'Spacebar', 'ArrowRight', 'ArrowDown', 'PageDown']) {
-      expect(keyAction(key)).toBe('next');
+  it('advances on Enter and nothing else', () => {
+    expect(keyAction('Enter')).toBe('next');
+  });
+
+  /* The tour asks the reader to type, and to turn pages with ← →. Every key
+     it used to swallow is a key one of its own steps needs. */
+  it('never steals a key a step is teaching', () => {
+    for (const key of [
+      ' ',
+      'Spacebar',
+      'ArrowRight',
+      'ArrowLeft',
+      'ArrowUp',
+      'ArrowDown',
+      'PageUp',
+      'PageDown',
+      'Backspace',
+      'Delete',
+      '/',
+      'a',
+      'Tab',
+    ]) {
+      expect(keyAction(key)).toBeNull();
     }
   });
 
-  it('maps back keys', () => {
-    for (const key of ['ArrowLeft', 'ArrowUp', 'Backspace', 'PageUp']) {
-      expect(keyAction(key)).toBe('back');
-    }
-  });
-
-  it('maps escape to skip and ignores everything else', () => {
+  it('maps escape to skip', () => {
     expect(keyAction('Escape')).toBe('skip');
     expect(keyAction('Esc')).toBe('skip');
-    expect(keyAction('a')).toBeNull();
-    expect(keyAction('Tab')).toBeNull();
+  });
+
+  it('recognises the fields whose keys the tour must not touch at all', () => {
+    expect(isTypingTarget({ tagName: 'INPUT' })).toBe(true);
+    expect(isTypingTarget({ tagName: 'TEXTAREA' })).toBe(true);
+    expect(isTypingTarget({ tagName: 'DIV', isContentEditable: true })).toBe(true);
+    // A block inside the page editor: contenteditable lives on the root.
+    expect(isTypingTarget({ tagName: 'P', closest: () => ({}) })).toBe(true);
+    expect(isTypingTarget({ tagName: 'P', closest: () => null })).toBe(false);
+    expect(isTypingTarget({ tagName: 'BUTTON' })).toBe(false);
+    expect(isTypingTarget(null)).toBe(false);
   });
 });
 
@@ -339,18 +392,20 @@ describe('navigation never traps the user', () => {
 /* ------------------------------- content ---------------------------------- */
 
 describe('tour script', () => {
-  it('covers the eleven briefed beats in order', () => {
+  it('walks the shelf, then the book, then the library, in order', () => {
     expect(TUTORIAL_STEP_IDS).toEqual([
       'welcome',
-      'endless-shelf',
-      'pull-a-book',
-      'left-rail',
+      'shelf-moves',
+      'open-a-book',
+      'the-rail',
       'writing',
-      'block-menu',
-      'page-turning',
-      'make-it-yours',
+      'blocks',
+      'pages',
+      'customize-open',
+      'customize-do',
       'ai-script',
-      'quick-switcher',
+      'quick-switch',
+      'settings',
       'youre-set',
     ]);
   });
@@ -363,20 +418,52 @@ describe('tour script', () => {
     }
   });
 
-  it('selectors are syntactically plausible and insets are sane', () => {
+  /* The brief: every step gets completion detection, and a step that cannot
+     detect completion must not claim to. Only the greeting and the sign-off
+     are allowed to have nothing to do — and they must have no task object at
+     all, so the card renders the muted "just read" line instead of a tick. */
+  it('asks for one detectable thing on every step but the two bookends', () => {
+    const taskless = TUTORIAL_STEPS.filter((s) => s.task === undefined).map((s) => s.id);
+    expect(taskless).toEqual(['welcome', 'youre-set']);
+    const facts = new Set<string>();
     for (const step of TUTORIAL_STEPS) {
-      for (const selector of step.targets ?? []) {
-        expect(selector).toMatch(/^[.#[a-zA-Z]/);
-        expect(selector.trim()).toBe(selector);
-      }
-      if (typeof step.inset === 'object') {
-        for (const v of Object.values(step.inset)) {
-          expect(v).toBeGreaterThanOrEqual(0);
-          expect(v).toBeLessThan(0.9);
+      if (step.task === undefined) continue;
+      expect(step.task.ask.length).toBeGreaterThan(8);
+      expect(step.task.done.length).toBeGreaterThan(4);
+      // One fact per step: two steps sharing a fact would tick together.
+      expect(facts.has(step.task.fact)).toBe(false);
+      facts.add(step.task.fact);
+    }
+  });
+
+  /* Plain and warm: say what the thing is, not what it is like. The similes
+     the first script leaned on ("a bookshelf you can actually live in",
+     "pages turn like paper") are what read oddly. */
+  it('keeps the copy free of simile', () => {
+    for (const step of TUTORIAL_STEPS) {
+      const copy = `${step.title} ${step.body}`;
+      expect(copy).not.toMatch(/\b(like an?|as if|as though|reads like|feels like)\b/i);
+    }
+  });
+
+  it('normalises targets and keeps every selector plausible', () => {
+    for (const step of TUTORIAL_STEPS) {
+      for (const target of stepTargets(step)) {
+        expect(target.selector).toMatch(/^[.#[a-zA-Z]/);
+        expect(target.selector.trim()).toBe(target.selector);
+        if (typeof target.inset === 'object') {
+          for (const v of Object.values(target.inset)) {
+            expect(v).toBeGreaterThanOrEqual(0);
+            expect(v).toBeLessThan(0.9);
+          }
+          // Opposing pairs must leave a real region behind, not invert it.
+          expect((target.inset.top ?? 0) + (target.inset.bottom ?? 0)).toBeLessThan(0.92);
+          expect((target.inset.left ?? 0) + (target.inset.right ?? 0)).toBeLessThan(0.92);
         }
-        // Opposing pairs must leave a real region behind, not invert it.
-        expect((step.inset.top ?? 0) + (step.inset.bottom ?? 0)).toBeLessThan(0.92);
-        expect((step.inset.left ?? 0) + (step.inset.right ?? 0)).toBeLessThan(0.92);
+        for (const v of Object.values(target.padBox ?? {})) {
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(v).toBeLessThan(400);
+        }
       }
     }
   });

@@ -18,6 +18,7 @@ import { applySettings } from "./features/settings/apply";
 import SettingsPanel from "./features/settings/SettingsPanel";
 import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
 import { initSystemFeatures } from "./features/system";
+import { installUiClickSounds } from "./sound/uiClicks";
 import TutorialOverlay, { maybeAutoStartTutorial } from "./features/tutorial";
 import { openTransferPanel } from "./features/transfer";
 import ShelfView from "./views/ShelfView";
@@ -111,6 +112,8 @@ export default function App(): JSX.Element {
     onCleanup(unsubscribe);
     // Backup scheduler, tray, launch-into-last-book, perf HUD lifecycle.
     onCleanup(initSystemFeatures());
+    // One delegated listener gives every button in the app its soft click.
+    onCleanup(installUiClickSounds());
 
     // First run opens the guided tour; it no-ops once completed.
     void maybeAutoStartTutorial();

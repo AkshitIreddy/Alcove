@@ -195,6 +195,11 @@ export type ContainerName =
   | "quote-card"
   | "spoiler"
   | "banner"
+  | "index-card"
+  | "envelope"
+  | "stamp"
+  | "tag"
+  | "marginalia"
   | "generic";
 
 export interface ContainerBlock extends BlockBase {

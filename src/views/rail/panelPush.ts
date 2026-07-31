@@ -18,7 +18,14 @@
  *                    pinned to the window corner — the back arrow — is not
  *                    travelling with the book, it is getting out of the
  *                    sheet's lane, and that is a different number.
- * Both are 0 with nothing open.
+ *   --nb-panel-gutter how far a sheet HINGED ON THE WINDOW EDGE reaches, or 0.
+ *                    The shelf's studio is flush at left:0 and therefore owns
+ *                    the whole left gutter, including the corner the settings
+ *                    seal sits in; the book's sheets start at left:68 and never
+ *                    touch it. Chrome living in that gutter reads THIS, so it
+ *                    steps aside for the one sheet that actually lands on it
+ *                    and stays put for the ones that do not.
+ * All three are 0 with nothing open.
  *
  * Claims are keyed and the published offset is the LARGEST live one: swapping
  * panels overlaps an outgoing sheet with an incoming one, and two components
@@ -32,17 +39,22 @@
 import { gsap } from 'gsap';
 import { tween } from '../../styles/motion';
 
-/** One live claim: how wide the sheet is, and where its right edge lands. */
+/**
+ * One live claim: how wide the sheet is, where its right edge lands, and how
+ * much of the window's left gutter it swallows (its right edge when it is
+ * hinged on that edge, 0 when it starts further in).
+ */
 interface Claim {
   readonly width: number;
   readonly edge: number;
+  readonly gutter: number;
 }
 
 /** Live claims, keyed by panel instance. */
 const claims = new Map<string, Claim>();
 
 /** The tweened carrier — GSAP animates this, `publish` writes it out. */
-const carrier = { push: 0, edge: 0 };
+const carrier = { push: 0, edge: 0, gutter: 0 };
 
 /**
  * Whole pixels only. The stage under this is a canvas; a fractional translate
@@ -52,10 +64,11 @@ function publish(): void {
   const style = document.documentElement.style;
   style.setProperty('--nb-panel-push', `${Math.round(carrier.push)}px`);
   style.setProperty('--nb-panel-edge', `${Math.round(carrier.edge)}px`);
+  style.setProperty('--nb-panel-gutter', `${Math.round(carrier.gutter)}px`);
 }
 
 function largestClaim(): Claim {
-  let widest: Claim = { width: 0, edge: 0 };
+  let widest: Claim = { width: 0, edge: 0, gutter: 0 };
   for (const claim of claims.values()) {
     if (claim.width > widest.width) widest = claim;
   }
@@ -77,6 +90,7 @@ function retarget(): void {
   gsap.to(carrier, {
     push: target.width,
     edge: target.edge,
+    gutter: target.gutter,
     // Arriving is the `slow` step (a whole sheet crossing the screen);
     // leaving is a step quicker, matching RailPanel's own two tempos.
     ...tween(opening ? 'slow' : 'normal', opening ? 'enter' : 'exit'),
@@ -92,9 +106,20 @@ function retarget(): void {
  * This panel is open: `width` is the room the world must give up, `edge` is
  * where the sheet's right side lands in viewport px (chrome pinned to the
  * window corner clears THAT, not the width). Re-claiming re-measures.
+ *
+ * Whether the sheet takes the left gutter is derived rather than passed: it is
+ * hinged on the window edge exactly when its left side IS the window edge, and
+ * a caller that had to declare it could disagree with its own stylesheet. One
+ * pixel of tolerance for a fractional layout.
  */
 export function claimPanelPush(key: string, width: number, edge: number): void {
-  claims.set(key, { width: Math.max(0, width), edge: Math.max(0, edge) });
+  const safeWidth = Math.max(0, width);
+  const safeEdge = Math.max(0, edge);
+  claims.set(key, {
+    width: safeWidth,
+    edge: safeEdge,
+    gutter: safeEdge - safeWidth <= 1 ? safeEdge : 0,
+  });
   retarget();
 }
 

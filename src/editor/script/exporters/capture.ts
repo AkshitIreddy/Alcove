@@ -15,6 +15,7 @@
  */
 import { Editor, type JSONContent } from '@tiptap/core';
 import { getFontEmbedCSS, toCanvas } from 'html-to-image';
+import { settings } from '../../../data/settings';
 import type { PageDoc, PageStyle } from '../../../data/types';
 import {
   DEFAULT_LINE_HEIGHT_PX,
@@ -22,6 +23,7 @@ import {
   isPageStyle,
   normalizePageDoc,
 } from '../../document';
+import { mountMarginDoodles } from '../../effects/doodles';
 import { createEditorExtensions } from '../../extensions';
 
 /** Export pixel ratio (roadmap: "reuse snapshot pipeline at 2x"). */
@@ -165,6 +167,33 @@ export interface OffscreenPageSize {
 }
 
 /**
+ * How faithfully the staged sheet has to impersonate a mounted leaf.
+ *
+ * A bare `.nb-sheet-paper` on `<body>` is NOT what a page looks like inside a
+ * book: spread.css reshapes the sheet for life between covers through
+ * DESCENDANT selectors (`.nb-spread .nb-sheet-paper`, `.nb-spread .nb-page`,
+ * …) — tighter side padding, no deckled tear, flex column. Staged outside the
+ * spread none of that applies, so the same document rasterized offscreen came
+ * out with the text column 12px in from each side and every paragraph wrapped
+ * at a different word. The flip's back and revealed faces are exactly those
+ * offscreen rasters, so each landing swapped that mis-wrapped page for the
+ * live one and the whole spread visibly jumped: the "flicker after a turn".
+ *
+ * Pass `host` (the live `.nb-spread`) and the staged sheet inherits the real
+ * cascade instead of a copy of it that can rot.
+ */
+export interface OffscreenLeafContext {
+  /** Ancestor to stage inside, so the same descendant rules apply. */
+  host?: HTMLElement | null;
+  /** `data-side` on the sheet — the spread styles each fore-edge separately. */
+  side?: 'left' | 'right';
+  /** Mirrors PageEditor's `data-paginated` on `.nb-page`. */
+  paginated?: boolean;
+  /** Page id — mounts the same deterministic margin doodles the live page has. */
+  pageId?: string;
+}
+
+/**
  * Sheet size of the mounted book leaf, or a book-ish default. Scans every
  * mounted sheet (the collapsed left leaf of a single-page spread measures
  * 0×0) and takes the largest laid-out one.
@@ -217,11 +246,16 @@ const nextFrame = (): Promise<void> =>
  * classes as a live leaf: .nb-sheet-paper > .nb-page > .nb-page-editor >
  * .nb-prose), hand it to `run`, then tear everything down. The editor is
  * read-only and never registers as the active editor.
+ *
+ * `context` decides how closely the staging has to match a mounted leaf; see
+ * OffscreenLeafContext. Omitted, the sheet stages on `<body>` in its
+ * standalone form, which is what the whole-book export has always used.
  */
 export async function withOffscreenPage<T>(
   doc: PageDoc,
   size: OffscreenPageSize,
   run: (sheet: HTMLElement) => Promise<T>,
+  context: OffscreenLeafContext = {},
 ): Promise<T> {
   const host = document.createElement('div');
   host.className = 'nb-export-offscreen';
@@ -234,10 +268,12 @@ export async function withOffscreenPage<T>(
   sheet.className = 'nb-sheet-paper nb-leaf-paper nb-export-sheet';
   sheet.style.width = `${size.width}px`;
   sheet.style.height = `${size.height}px`;
+  if (context.side !== undefined) sheet.dataset.side = context.side;
 
   const page = document.createElement('div');
   page.className = 'nb-page';
   page.dataset.style = docPageStyle(doc);
+  if (context.paginated === true) page.dataset.paginated = 'true';
   page.style.setProperty('--page-line-height', `${docLineHeight(doc)}px`);
 
   const mount = document.createElement('div');
@@ -246,9 +282,12 @@ export async function withOffscreenPage<T>(
   page.appendChild(mount);
   sheet.appendChild(page);
   host.appendChild(sheet);
-  document.body.appendChild(host);
+  // Staged inside the live spread when the caller asks for it, so every
+  // `.nb-spread …` rule reaches this sheet exactly as it reaches a real leaf.
+  (context.host ?? document.body).appendChild(host);
 
   let editor: Editor | null = null;
+  let unmountDoodles: (() => void) | undefined;
   try {
     editor = new Editor({
       element: mount,
@@ -257,6 +296,15 @@ export async function withOffscreenPage<T>(
       content: normalizePageDoc(doc) as JSONContent,
       editorProps: { attributes: { class: 'nb-prose', spellcheck: 'false' } },
     });
+    // The margins carry deterministic pencil doodles on a mounted page; a
+    // staged sheet without them differs from the live one it stands in for.
+    if (
+      context.pageId !== undefined &&
+      settings.showMarginDoodles &&
+      !settings.minimalistMode
+    ) {
+      unmountDoodles = mountMarginDoodles(page, context.pageId);
+    }
     // Let node views mount, fonts resolve and images land before capturing.
     await nextFrame();
     await document.fonts?.ready.catch(() => undefined);
@@ -264,6 +312,7 @@ export async function withOffscreenPage<T>(
     await nextFrame();
     return await run(sheet);
   } finally {
+    unmountDoodles?.();
     editor?.destroy();
     host.remove();
   }

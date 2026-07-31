@@ -264,6 +264,57 @@ const blockCommands: SlashCommand[] = [
     run: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).wrapIn('spoiler').run(),
   },
+  /* --- the stationery drawer (script vocab: index-card … marginalia) ------ */
+  {
+    id: 'index-card',
+    title: 'Index card',
+    subtitle: 'Ruled card with a red header rule',
+    icon: glyph('▭'),
+    keywords: ['index', 'card', 'recipe', 'flashcard', 'file', 'ruled'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('index-card').run(),
+  },
+  {
+    id: 'envelope',
+    title: 'Envelope',
+    subtitle: 'Paper envelope with the flap open',
+    icon: glyph('✉'),
+    keywords: ['envelope', 'letter', 'mail', 'post', 'keepsake'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('envelope').run(),
+  },
+  {
+    id: 'stamp',
+    title: 'Stamp',
+    subtitle: 'Perforated postage stamp with a postmark',
+    icon: glyph('❖'),
+    keywords: ['stamp', 'postage', 'postmark', 'postcard', 'perforated'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('stamp').run(),
+  },
+  {
+    id: 'tag',
+    title: 'Tag',
+    subtitle: 'A luggage label on a string',
+    icon: glyph('⌁'),
+    keywords: ['tag', 'label', 'luggage', 'name', 'title'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('tag').run(),
+  },
+  {
+    id: 'marginalia',
+    title: 'Margin note',
+    subtitle: 'A small afterthought beside the text',
+    icon: glyph('❘'),
+    keywords: ['margin', 'marginalia', 'aside', 'side', 'note', 'afterthought'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('marginalia').run(),
+  },
   {
     id: 'today',
     title: 'Today',

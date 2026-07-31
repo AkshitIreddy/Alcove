@@ -56,7 +56,9 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
   let renameInput: HTMLInputElement | undefined;
 
   const items = (): MenuItem[] => [
-    { action: 'open', title: 'Open', glyph: '📖' },
+    // Not "Open": it takes the book off the shelf and hands it to you, and
+    // the held card is where reading it is decided.
+    { action: 'open', title: 'Take it out', glyph: '📖' },
     { action: 'rename', title: 'Rename…', glyph: '✎' },
     { action: 'customize', title: 'Dress this book…', glyph: '🎨' },
     {

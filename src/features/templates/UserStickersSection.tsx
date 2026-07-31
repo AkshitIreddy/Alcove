@@ -1,8 +1,8 @@
 /**
  * src/features/templates/UserStickersSection.tsx — "your stickers" panel
- * section (roadmap item 27). Standalone so the Stickers & effects rail panel
- * (src/views/rail/StickersPanel.tsx, owned by group B this wave) can mount
- * it with one line:
+ * section (roadmap item 27). Standalone so the catalogue rail panel
+ * (src/views/rail/CataloguePanel.tsx) can mount its stickers shelf with one
+ * line:
  *
  *   import UserStickersSection from '../../features/templates/UserStickersSection';
  *   …

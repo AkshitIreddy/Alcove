@@ -58,6 +58,16 @@ export const CROWN_H = 64;
 /** Horizontal overhang of the crown past the case sides (cornice lip). */
 export const CROWN_LIP = 14;
 
+/*
+ * There is no cornice ink-bleed constant here, and that is a decision rather
+ * than an omission. The cornice bake overruns the bottom of its slot on
+ * purpose (`textures.bakeFlatCrown`), and baking a taller bitmap so that
+ * overrun's outline lands on-canvas was tried and measured: it hangs 8px of
+ * un-inked timber below the case under each `CROWN_LIP`, because
+ * `shelfDesign.crownPath` draws the underside as a JOIN and never strokes it.
+ * The un-inked corner that leaves under the lips is a drawer-side fix.
+ */
+
 /** Hard upper bound for the camera (headroom above floor 0 incl. the crown). */
 export const Y_MIN = -80;
 

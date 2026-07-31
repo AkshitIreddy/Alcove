@@ -10,31 +10,94 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ### Design quality — the biggest item
 
-- [ ] **Where parts JOIN looks unnatural** across many builds — face-frame has
-      a connector that does not integrate with the structure. Colour, texture
-      and shading do not carry across a joint. This is the headline complaint;
-      fix the joinery before adding more builds.
-- [ ] Shading generally is poor. Raise the quality bar.
-- [ ] Then take builds to **50**, each vetted individually
-- [ ] **Timber patterns do not look like real furniture** and are not cool
-      enough to earn the exception. Analyse, fix, then take to **50**, vetting
-      each for natural / creative / high quality
-- [ ] **Shelf colours: at least 50** (today there are 4)
-- [ ] Wallpaper is good — trim to **50**, even spread across design families,
-      quality pass, more colour, let the reader colour the ELEMENTS inside a
-      pattern, and control element sharpness
-- [ ] **Tag every design** (formal, refined, fancy, goofy, natural…) so
-      randomisation can be steered
-- [ ] "Surprise me" gains **controllable randomisation** driven by those tags
-- [ ] Defaults for shelf, welcome book and wallpaper are **bland** — design a
-      refined, vivid custom default and add it to the options
+- [x] ~~**Where parts JOIN looks unnatural** across many builds~~ — rebuilt
+      around one rule: an edge is either a SILHOUETTE or a JOIN. A join squares
+      both corners, strokes no ink, and over-draws by `jointBleed` so abutting
+      bitmaps overlap; a silhouette flush against its own bitmap's edge is
+      pushed out so its ink lands on the canvas instead of half off it
+      (`shelfDesign.tracePart/strokePart/partPanel`). The face-frame connector
+      specifically: cornice profiles are now full width and band only
+      vertically, which makes the corner hole structurally impossible. Machine
+      gate: **312 cases (52 builds × 6 patterns × 4 rooms, 3 floors each) over
+      magenta, zero holes inside the case**, and zero recess colour on any
+      outer face.
+- [x] ~~Shading generally is poor~~ — `caseTimber()` derives five values from
+      the room's three (`face/arris/edge/deep/recess`); the old
+      timber→timberDark step was about a twelfth of a luminance step, which is
+      why a board's front edge did not read as a face turning away. Every face
+      boundary now gets an arris chamfer plus its ink line, at every boundary
+      rather than only where a lamp would be, so it stays carpentry and not a
+      light model. `EDGE_FRACTION` is shared by board, post and cornice so the
+      case has ONE depth. The patterns carry the same idea: five flat values
+      (`pale/face/mid/deep/through`), a cut is a darker face, a proud member is
+      read from the sunk ground around it.
+- [x] ~~Then take builds to **50**~~ — 52, each with a crest (9 cut
+      silhouettes) beside its crown (7 cornice profiles), 13 plank trims, 11
+      post trims, 17 openings. Every crest chosen to survive being turned
+      upside down, because the plinth is the same bitmap mirrored.
+- [x] ~~**Timber patterns do not look like real furniture**~~ — 50, and the
+      structural cause is fixed: the old painters sized every motif as
+      `face.thick`, so one bookcase carried the same bead at 48/27/22px and
+      nothing looked run off the same spindle. `SECTION = 12` world px is now
+      constant and a wider member carries the moulding twice with plain frieze
+      between, which is what a cornice actually is.
+- [x] ~~**Shelf colours: at least 50**~~ — 60, across five families, each
+      authored as ONE timber with the turned faces DERIVED in OKLCh (same hue,
+      a measured lightness step, a measured chroma loss). The steps are
+      measured off the app icon, so every room folds the way the icon does.
+- [x] ~~Wallpaper: trim to **50**, even spread, colour the ELEMENTS, control
+      sharpness~~ — 50 across 7 families, plus a `tone` axis (8 values,
+      resolved from the room's cloth slots so it repaints per theme) and an
+      `edge` axis (etched/crisp/soft/blotted, implemented as line weight ×
+      contrast × corner radius × wobble — not a blur, which would have to be
+      clipped at the tile edge).
+- [x] ~~**Tag every design**~~ — builds 16 words, patterns 13, rooms 19,
+      papers 12; all four vocabularies fully tagged (`tests/studio-moods.test.ts`
+      asserts every id on every axis carries at least one).
+- [x] ~~"Surprise me" gains **controllable randomisation**~~ — the studio's
+      "in the mood for" row reads `moodTags()` structurally and steers all four
+      axes through `withMood`, degrading to the whole vocabulary when a word
+      does not reach an axis. The row renders under
+      `<Show when={moods().length > 0}>`, so it was invisible until the tags
+      landed; the same test now pins that it narrows something.
+- [x] ~~Defaults for shelf and wallpaper are **bland**~~ — the default room is
+      **Verdigris Library**, a blue-green painted case on warm plaster in
+      copper/saffron/ink. Old Athenaeum is kept hex-for-hex (it is what
+      `art/flat.ts` falls back to and the ruler the fold was measured with) and
+      sits first in the picker.
+- [ ] The welcome BOOK's default binding is still the bland one — the shelf and
+      the wall were done, the book was not
 - [ ] Design brief throughout: **creative and vivid**
 
 ### Shelf rendering
 
 - [ ] The shelf is **not centred**
-- [ ] The **corner joins** where the top rail meets both uprights are missing
-      their ink outline; same at the bottom
+- [x] ~~The **corner joins** where the top rail meets both uprights are missing
+      their ink outline; same at the bottom~~ — the cornice's underside was a
+      join, and a join runs its FILL past the edge and strokes no ink. Under
+      the case body that is right; under the two `CROWN_LIP` overhangs it is
+      the only stretch with wall behind it rather than case, so all four
+      corners ended in a bare colour step while every other edge carried a
+      line. The bake was also handing `drawCrown` a box whose bottom sat ~4px
+      BELOW the bitmap, so there was nowhere to put the line even if it were
+      drawn. Both fixed: `bakeFlatCrown` ends the box on the canvas and lets
+      the bleed carry the fill past, and `drawCrown` draws the underside line
+      afterwards exactly as `drawPlank` already did. Verified at 12x over
+      magenta, top and bottom, on four builds.
+- [x] ~~Every new axis must reach the bake cache keys~~ — the invisible half of
+      the five vocabularies, and there were **four** hand-spelled copies of
+      "what makes this art different" downstream of `WallpaperSpec`, every one
+      of them two axes behind since `tone` and `edge` landed:
+      `world.wallpaperKeyOf` (would have left the old wall on screen),
+      `designPrefs.mergeWallpaperSpec` (rebuilt the spec field by field, so a
+      chosen tone survived the session and not the night),
+      `designOptions.wallpaperKey` (the picker's tile cache — two papers
+      previewing as one card) and `LibraryStudio.sameSpec` (the panel naming a
+      preset the reader had already moved away from). All four now call the
+      exported `wallpaperAxisKey`. `FLAT_ART_VERSION` → `flat3`, because the
+      disk cache validates nothing about a hit and this session changed the
+      cornice bake. `tests/design-cache-keys.test.ts` grew suites for the two
+      new axes, for the applied-room key and for the picker's card keys.
 
 ### Studio / panels
 
@@ -111,9 +174,19 @@ when written — and where two colours or two frames are hard to tell apart, use
       or the migration did not stamp existing books with a bookcase id. Verify
       against a library that existed before the migration — this is the risky
       half of that change.
-- [ ] Wallpaper defaults to `plain-parchment`, so none of the 55 patterns show
+- [ ] Wallpaper defaults to `plain-parchment`, so none of the 50 papers show
       until one is picked. Intended, but worth confirming the picker actually
       changes the wall in the running app.
+- [ ] The room axis now has 60 entries and `LibraryStudio`'s two `ColourRow`s
+      still render `<For each={THEME_IDS}>` — 60 swatch dots each, twice, in a
+      376px panel. Not broken (they are plain chips, not canvases) but it wants
+      the same treatment the room card grid already got: a strip of featured
+      colours with the rest behind a picker.
+- [ ] `data/bookcases.ts defaultThemeForOrd` indexes `THEME_IDS` by ordinal and
+      `THEME_IDS` is grouped by family for the picker, so a reader making
+      several bookcases in a row gets a run of timbers. Documented as a
+      deliberate trade at the declaration; stride or hash if it matters.
+- [ ] `docs/design/library-themes.md` still describes four rooms.
 
 ## 🔴 Reported 2026-08-01
 

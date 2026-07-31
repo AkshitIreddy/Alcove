@@ -37,15 +37,19 @@ import {
 import {
   DEFAULT_WALLPAPER_ID,
   WALLPAPER_DEPTHS,
+  WALLPAPER_EDGES,
   WALLPAPER_INKS,
   WALLPAPER_PATTERNS,
   WALLPAPER_SCALES,
+  WALLPAPER_TONES,
   wallpaperSpec,
   type WallpaperDepth,
+  type WallpaperEdge,
   type WallpaperInk,
   type WallpaperPattern,
   type WallpaperScale,
   type WallpaperSpec,
+  type WallpaperTone,
 } from '../art/wallpaperDesign';
 import { activeBookcaseId, loadBookcases, subscribeBookcases } from './bookcases';
 import { getDb } from './db';
@@ -86,6 +90,23 @@ function enumOr<T extends string>(value: unknown, allowed: readonly T[], fallbac
     : fallback;
 }
 
+/**
+ * The same, for an axis that is legitimately absent.
+ *
+ * `enumOr` with a hard fallback would write `tone: 'auto'` onto a paper that
+ * never named one, which is the same picture but a different stored blob —
+ * and, once the picker gains a "back to auto" chip, an unreachable state.
+ */
+function optEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T | undefined,
+): T | undefined {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
 /** Total: any junk resolves to the default paper rather than to a blank wall. */
 export function mergeWallpaperSpec(raw: unknown): WallpaperSpec {
   const d = DEFAULT_ROOM_DESIGN.wallpaper;
@@ -100,6 +121,12 @@ export function mergeWallpaperSpec(raw: unknown): WallpaperSpec {
     scale: enumOr<WallpaperScale>(s.scale, WALLPAPER_SCALES, d.scale),
     depth: enumOr<WallpaperDepth>(s.depth, WALLPAPER_DEPTHS, d.depth),
     ink: enumOr<WallpaperInk>(s.ink, WALLPAPER_INKS, d.ink),
+    // Optional on the spec, so they must be optional here too — but they still
+    // have to survive the round trip. Rebuilding the spec field by field means
+    // any axis missing from this list is silently dropped on the next read, so
+    // a reader's chosen tone would hold for the session and be gone tomorrow.
+    tone: optEnum<WallpaperTone>(s.tone, WALLPAPER_TONES, d.tone),
+    edge: optEnum<WallpaperEdge>(s.edge, WALLPAPER_EDGES, d.edge),
   };
 }
 

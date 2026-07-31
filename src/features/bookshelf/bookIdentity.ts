@@ -68,8 +68,8 @@ export function spineArtHeight(params: SpineParams): number {
 }
 
 /**
- * Pigment names the pre-studio data layer used (`cover_meta.palette`, and the
- * `defaultBookPalette` setting), mapped onto the 12 spine pigments.
+ * Pigment names the pre-studio data layer used (`cover_meta.palette`), mapped
+ * onto the 12 spine pigments.
  */
 const LEGACY_PALETTE_PIGMENT: Readonly<Record<string, number>> = {
   amber: 0,

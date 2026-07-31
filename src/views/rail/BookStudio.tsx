@@ -37,10 +37,9 @@ import {
   MAX_RAISED_BANDS,
   ORNAMENT_LABELS,
   ORNAMENT_NONE,
-  PIGMENT_COUNT,
-  PIGMENT_LABELS,
   SPINE_FORMATS,
   SPINE_FORMAT_IDS,
+  SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
   TITLE_FONTS,
   TITLE_PLATES,
@@ -48,28 +47,32 @@ import {
   WEAR_STOPS,
   bookStyleToOverrides,
   heightForFormat,
+  normalizeBookStyleOverrides,
   randomBookStyleOverrides,
   resolveBookStyle,
   type BookStyle,
   type BookStyleOverrides,
   type SpineFormat,
 } from '../../art/bookStyle';
+import { CLOTHS } from '../../art/flat';
 import {
   BOOK_PRESETS,
+  bindingMaterialFor,
   bookPreset,
+  materialLookFor,
   presetForSeed,
   resolveBookDesign,
   type BookDesign,
   type BookPresetId,
 } from '../../art/bookDesign';
-import { renderCoverInto } from '../../art/covers';
+import { COVER_ASPECT, renderCoverInto } from '../../art/covers';
 import { flatSpineFor } from '../../art/flatShelf';
 import type { FlatScheme } from '../../art/flat';
 import {
   coverOverridesFromStyle,
   themeSpineDefaults,
 } from '../../features/bookshelf/bookIdentity';
-import { clothForPalette, getSpinePalette, renderSpine, type Ctx2D } from '../../art/spines';
+import { clothForPalette, renderSpine, type Ctx2D } from '../../art/spines';
 import { getTheme } from '../../art/themes';
 import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
 import DesignPicker from './DesignPicker';
@@ -82,6 +85,18 @@ import '../../styles/studio.css';
 
 const PREVIEW_W = 214;
 const PREVIEW_H = 292;
+/**
+ * Air above the tallest book and below every book, in preview px.
+ *
+ * The two faces are drawn to ONE scale and stood on ONE baseline, so a pocket
+ * duodecimo previews short and a folio previews tall — which is the whole
+ * point of the format chips, and which the preview used to deny by stretching
+ * every spine to the full box and every board to a fixed 214×292.
+ */
+const STAGE_PAD_TOP = 12;
+const STAGE_PAD_BOTTOM = 10;
+/** Preview px per world px, set so the tallest legal book just fits. */
+const STAGE_SCALE = (PREVIEW_H - STAGE_PAD_TOP - STAGE_PAD_BOTTOM) / SPINE_HEIGHT_RANGE.max;
 /**
  * The binding's own preview. A spine's proportions, not a card's: the book
  * inside is drawn at a real 42 x 165, so a much wider card is mostly empty
@@ -114,8 +129,12 @@ export interface BookStudioProps {
 export default function BookStudio(props: BookStudioProps): JSX.Element {
   const [face, setFace] = createSignal<'spine' | 'cover'>('spine');
   const [bindingSheet, setBindingSheet] = createSignal(false);
-  let spineCanvas: HTMLCanvasElement | undefined;
-  let coverCanvas: HTMLCanvasElement | undefined;
+  // Signals rather than plain `let`s: opening the binding sheet unmounts the
+  // stage and remounting it hands back NEW canvases. With a bare ref the draw
+  // effect kept painting the detached ones and the reader came back to two
+  // blank rectangles.
+  const [spineCanvas, setSpineCanvas] = createSignal<HTMLCanvasElement | undefined>();
+  const [coverCanvas, setCoverCanvas] = createSignal<HTMLCanvasElement | undefined>();
 
   onMount(() => {
     void loadDesignPrefs();
@@ -148,6 +167,13 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       gilt: style().gilt,
       labelAt: flatSpineFor(props.spineSeed).labelAt,
       preset: pinned(),
+      // The same four axes `renderSpine` feeds it, so the binding card and the
+      // live preview are one book rather than two.
+      material: resolved().pinned.has('material') ? materialLookFor(style().material) : null,
+      bands: style().raisedBands,
+      bandGilt: style().bandGilt,
+      headTail: style().headTail ? style().headTailStyle : null,
+      wear: style().wear,
     }),
   );
 
@@ -165,50 +191,88 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
   const pickBinding = (id: BookPresetId): void => {
     void saveBookBinding(bindingKey(), id);
+    // A binding brings its own covering. Hand it back the say: otherwise
+    // picking "Antique Vellum" over a book whose cloth chip had been touched
+    // draws a morocco-grained "vellum", which is the studio disagreeing with
+    // itself in the same glance.
+    unpatch('material');
   };
 
-  /** Merge one field into the persisted override blob. */
+  /**
+   * The covering the reader is actually looking at: their own pick when they
+   * made one, the binding's otherwise. The chips read off this rather than off
+   * the merged style, whose `material` is a seed roll that nothing draws.
+   */
+  const covering = (): string =>
+    resolved().pinned.has('material') ? style().material : bindingMaterialFor(design().material);
+
+  /**
+   * Merge one field into the persisted override blob.
+   *
+   * Genuinely a MERGE, over the blob as stored — not over the merged style.
+   * The sheet's own footnote promises "unset knobs follow the library theme;
+   * anything you touch stays yours", and freezing all twenty-two knobs the
+   * first time one of them moved broke that promise on the first click. It
+   * also destroyed the only record of what the reader actually chose, which is
+   * what tells a binding whether its own covering has been overruled.
+   */
   const patch = (partial: Partial<BookStyle>): void => {
-    // Freezing the whole merged style makes every knob explicit, which is
-    // exactly the "an override always wins, in every room" contract.
-    props.onStyleChange({ ...bookStyleToOverrides(style()), ...partial });
+    const current = normalizeBookStyleOverrides(props.style) ?? {};
+    props.onStyleChange({ ...current, ...partial });
+  };
+
+  /** Drop fields back to "whatever the seed and the room say". */
+  const unpatch = (...keys: readonly (keyof BookStyle)[]): void => {
+    const current = { ...(normalizeBookStyleOverrides(props.style) ?? {}) };
+    for (const key of keys) delete current[key];
+    props.onStyleChange(Object.keys(current).length > 0 ? current : null);
   };
 
   /* --------------------------- live preview art -------------------------- */
 
   createEffect(
     on(
-      () => [resolved(), props.title, face()] as const,
+      () => [resolved(), props.title, face(), spineCanvas(), coverCanvas()] as const,
       () => {
         const r = resolved();
         const dpr = Math.min(2, window.devicePixelRatio || 1);
+        // ONE scale, ONE baseline, for both faces. Everything below is in
+        // preview px; the canvases are backing-store sized on top of that.
+        const scale = STAGE_SCALE;
+        const bookH = r.style.height * scale;
+        const baseline = PREVIEW_H - STAGE_PAD_BOTTOM;
 
-        const cover = coverCanvas;
+        const cover = coverCanvas();
         if (cover) {
           cover.width = Math.round(PREVIEW_W * dpr);
           cover.height = Math.round(PREVIEW_H * dpr);
           const ctx = cover.getContext('2d');
           if (ctx) {
             ctx.clearRect(0, 0, cover.width, cover.height);
-            renderCoverInto(ctx, cover.width, cover.height, r.cover, props.title);
+            const boardW = bookH * COVER_ASPECT;
+            ctx.save();
+            ctx.scale(dpr, dpr);
+            ctx.translate((PREVIEW_W - boardW) / 2, baseline - bookH);
+            renderCoverInto(ctx, boardW, bookH, r.cover, props.title);
+            ctx.restore();
           }
         }
 
-        const spine = spineCanvas;
+        const spine = spineCanvas();
         if (spine) {
           spine.width = Math.round(PREVIEW_W * dpr);
           spine.height = Math.round(PREVIEW_H * dpr);
           const ctx = spine.getContext('2d');
           if (ctx) {
             ctx.clearRect(0, 0, spine.width, spine.height);
-            // Fill the preview box with the spine drawn at its true aspect —
-            // a thin duodecimo really does look thin next to a folio.
-            const artH = r.style.height;
-            const scale = ((PREVIEW_H - 18) * dpr) / artH;
+            // The spine is drawn at the book's real thickness, so a pamphlet
+            // is a sliver beside a tome — and at the same height as the cover
+            // beside it, because they are two views of one object.
             const w = r.spine.w * scale;
             ctx.save();
-            ctx.translate((spine.width - w) / 2, 9 * dpr);
-            renderSpine(ctx as Ctx2D, r.spine, 0, 0, artH * scale, scale, props.title, {
+            ctx.scale(dpr, dpr);
+            ctx.translate((PREVIEW_W - w) / 2, baseline - bookH);
+            renderSpine(ctx as Ctx2D, r.spine, 0, 0, bookH, scale, props.title, {
               hiRes: true,
             });
             ctx.restore();
@@ -218,10 +282,26 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     ),
   );
 
-  const pigmentSwatch = (i: number): string => {
-    const p = getSpinePalette({ ...resolved().spine, palette: i, hueJitter: 0 });
-    return `linear-gradient(160deg, ${p.top}, ${p.bottom})`;
-  };
+  /**
+   * The six book cloths, painted in the colours the book will ACTUALLY be.
+   *
+   * There used to be twenty swatches here, each a two-stop gradient out of the
+   * painterly pigment table. Both halves were a lie after the flat restyle:
+   * the drawing has no gradients, and `clothForPalette` folds those twenty
+   * pigments onto six cloths — so fourteen of the twenty swatches repainted
+   * the book in a colour it already was, which is most of why the studio felt
+   * like it was ignoring the reader.
+   */
+  const CLOTH_SWATCHES: readonly { pigment: number; label: string }[] = [
+    { pigment: 1, label: 'Terracotta' },
+    { pigment: 10, label: 'Slate' },
+    { pigment: 4, label: 'Plum' },
+    { pigment: 5, label: 'Ochre' },
+    { pigment: 6, label: 'Sage' },
+    { pigment: 2, label: 'Moss' },
+  ];
+  /** Which swatch the current pigment folds onto. */
+  const activeCloth = (): number => clothForPalette(style().pigment);
 
   /**
    * The whole vocabulary, not one field.
@@ -236,13 +316,17 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    */
   const randomise = (): void => {
     const seed = (Math.random() * 0xffffffff) >>> 0;
-    const draw = randomBookStyleOverrides(seed);
+    // `material` is left out on purpose: the dice rolls a BINDING two lines
+    // down, and a covering rolled beside it would overrule the very thing it
+    // just chose — a "Limp Vellum" in morocco grain.
+    const { material: _material, hueJitter: _hue, ...draw } = randomBookStyleOverrides(seed);
     patch({
       ...draw,
       thickness:
         SPINE_THICKNESS_RANGE.min +
         Math.round(Math.random() * (SPINE_THICKNESS_RANGE.max - SPINE_THICKNESS_RANGE.min)),
     } as Partial<BookStyle>);
+    unpatch('material');
     let binding = presetForSeed(seed).id;
     // A press has to visibly move. Redraw when the weighted pick happens to be
     // the binding already on the book.
@@ -258,7 +342,8 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     const fresh = resolveBookStyle(seed, themeSpineDefaults(getTheme(libraryPrefs.theme)), null, {
       pageCount: props.pageCount,
     });
-    props.onStyleChange(bookStyleToOverrides(fresh.style));
+    const { material: _material, ...frozen } = bookStyleToOverrides(fresh.style);
+    props.onStyleChange(frozen);
     // Unpin the binding too: "a whole new book" means the seed gets its say
     // back on every axis, not on all but one.
     void saveBookBinding(bindingKey(), null);
@@ -274,7 +359,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     /* "binding" now names the whole bound book (shape + material + tooling),
        so this narrower knob goes back to what it actually is: the cloth. */
     material: ['material'],
-    pigment: ['pigment', 'hueJitter'],
+    /* `hueJitter` is deliberately absent — the flat palette has six cloths and
+       no hue rotation, so rolling it wrote a field nothing draws. */
+    pigment: ['pigment'],
     'bands & endbands': ['raisedBands', 'bandGilt', 'headTail', 'headTailStyle'],
     'ornament stamp': ['ornament'],
     'title plate': ['titlePlate', 'titleFont', 'gilt'],
@@ -340,14 +427,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         >
           <canvas
             class="nb-studio-face nb-studio-face-spine"
-            ref={(el) => (spineCanvas = el)}
+            ref={setSpineCanvas}
             width={PREVIEW_W}
             height={PREVIEW_H}
             aria-label="Spine preview"
           />
           <canvas
             class="nb-studio-face nb-studio-face-cover"
-            ref={(el) => (coverCanvas = el)}
+            ref={setCoverCanvas}
             width={PREVIEW_W}
             height={PREVIEW_H}
             aria-label="Cover preview"
@@ -430,8 +517,8 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">
-          cloth
-          <RerollDice section="cloth" onClick={() => reroll(REROLL_GROUPS.material)} />
+          covering
+          <RerollDice section="covering" onClick={() => reroll(REROLL_GROUPS.material)} />
         </h3>
         <div class="nb-chip-row" role="group" aria-label="Binding material">
           <For each={BINDING_MATERIALS}>
@@ -439,51 +526,58 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
               <button
                 type="button"
                 class="nb-chip"
-                aria-pressed={style().material === m}
+                aria-pressed={covering() === m}
                 onClick={() => patch({ material: m })}
               >
                 {MATERIAL_LABELS[m].toLowerCase()}
               </button>
             )}
           </For>
+          <Show when={resolved().pinned.has('material')}>
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost"
+              onClick={() => unpatch('material')}
+            >
+              as bound
+            </button>
+          </Show>
         </div>
       </section>
 
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">
-          pigment <em class="nb-panel-row-hint">{PIGMENT_LABELS[style().pigment]}</em>
+          pigment
+          <em class="nb-panel-row-hint">
+            {CLOTH_SWATCHES.find((c) => clothForPalette(c.pigment) === activeCloth())?.label ?? ''}
+          </em>
           <RerollDice section="pigment" onClick={() => reroll(REROLL_GROUPS.pigment)} />
         </h3>
         <div class="nb-swatch-grid" role="group" aria-label="Spine pigment">
-          <For each={Array.from({ length: PIGMENT_COUNT }, (_, i) => i)}>
-            {(i) => (
-              <button
-                type="button"
-                class="nb-swatch"
-                style={{ background: pigmentSwatch(i) }}
-                aria-label={PIGMENT_LABELS[i] ?? `pigment ${i + 1}`}
-                aria-pressed={style().pigment === i}
-                classList={{ 'is-active': style().pigment === i }}
-                onClick={() => patch({ pigment: i })}
-              />
-            )}
+          <For each={CLOTH_SWATCHES}>
+            {(swatch) => {
+              const cloth = clothForPalette(swatch.pigment);
+              const pair = CLOTHS[cloth] ?? CLOTHS[0]!;
+              return (
+                <button
+                  type="button"
+                  class="nb-swatch"
+                  /* Two flat halves, not a ramp: the face and the turned board,
+                     which is exactly what the spine will show. */
+                  style={{ background: `linear-gradient(105deg, ${pair[0]} 62%, ${pair[1]} 62%)` }}
+                  aria-label={swatch.label}
+                  title={swatch.label.toLowerCase()}
+                  aria-pressed={activeCloth() === cloth}
+                  classList={{ 'is-active': activeCloth() === cloth }}
+                  onClick={() => patch({ pigment: swatch.pigment })}
+                />
+              );
+            }}
           </For>
         </div>
-        <label class="nb-panel-row">
-          <span class="nb-panel-row-label">
-            hue shift <em class="nb-panel-row-hint">{style().hueJitter.toFixed(0)}°</em>
-          </span>
-          <input
-            type="range"
-            class="nb-panel-slider"
-            min={-12}
-            max={12}
-            step={1}
-            value={style().hueJitter}
-            aria-label="Hue shift"
-            onInput={(e) => patch({ hueJitter: Number(e.currentTarget.value) })}
-          />
-        </label>
+        <p class="nb-panel-footnote">
+          six cloths, and a book keeps its own in every room
+        </p>
       </section>
 
       {/* ------------------------------- bands ----------------------------- */}

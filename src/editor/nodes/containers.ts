@@ -163,6 +163,22 @@ export const WashiBox = Node.create({
   },
 });
 
+/** A `data-title` string attribute — a caption CSS sets above the block. */
+function titleAttribute(): {
+  default: string;
+  parseHTML: (element: HTMLElement) => string;
+  renderHTML: (attributes: Record<string, unknown>) => Record<string, unknown>;
+} {
+  return {
+    default: '',
+    parseHTML: (element) => element.getAttribute('data-title') ?? '',
+    renderHTML: (attributes) =>
+      typeof attributes.title === 'string' && attributes.title !== ''
+        ? { 'data-title': attributes.title }
+        : {},
+  };
+}
+
 // ---------------------------------------------------------------------------
 // card — clean aged-paper card with an optional pencil title
 // ---------------------------------------------------------------------------
@@ -179,17 +195,7 @@ export const Card = Node.create({
   draggable: true,
 
   addAttributes() {
-    return {
-      title: {
-        default: '',
-        parseHTML: (element: HTMLElement) =>
-          element.getAttribute('data-title') ?? '',
-        renderHTML: (attributes: Record<string, unknown>) =>
-          typeof attributes.title === 'string' && attributes.title !== ''
-            ? { 'data-title': attributes.title }
-            : {},
-      },
-    };
+    return { title: titleAttribute() };
   },
 
   parseHTML() {
@@ -262,6 +268,131 @@ export const Banner = Node.create({
       mergeAttributes(HTMLAttributes, { 'data-type': 'banner' }),
       0,
     ];
+  },
+});
+
+// ---------------------------------------------------------------------------
+// The stationery drawer — five more things a page can have stuck to it
+//
+// Same shape as everything above: a block container, CSS-only, named exactly
+// as the script vocabulary names it so the bridge wires it without a table.
+// What each one is FOR matters as much as what it looks like — a page full of
+// boxes that differ only in border radius is not five insertables, it is one.
+// ---------------------------------------------------------------------------
+
+/** Ruled index card: a red header rule, a squared corner, a small tilt. */
+export const IndexCard = Node.create({
+  name: 'index-card',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return { title: titleAttribute() };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="index-card"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'index-card' };
+    if (!hasExplicitRotate(node)) {
+      const seed = `${String(node.attrs.id ?? '')}|${String(node.attrs.title ?? '')}`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 1.4)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+/** An envelope with its flap open — for a letter, a keepsake, a long aside. */
+export const Envelope = Node.create({
+  name: 'envelope',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return { color: washColorAttribute('amber') };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="envelope"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'envelope' }), 0];
+  },
+});
+
+/** A postage stamp: perforated edge, a postmark ring, one line of text. */
+export const Stamp = Node.create({
+  name: 'stamp',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return { color: washColorAttribute('terracotta') };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="stamp"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'stamp' };
+    if (!hasExplicitRotate(node)) {
+      const seed = `${String(node.attrs.id ?? '')}|stamp|${node.childCount}`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 3.4)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+/** A luggage tag on a string. A short label for whatever comes next. */
+export const Tag = Node.create({
+  name: 'tag',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return { color: washColorAttribute('moss') };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="tag"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'tag' };
+    if (!hasExplicitRotate(node)) {
+      const seed = `${String(node.attrs.id ?? '')}|tag`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 2)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+/** A side note in a ruled margin, set smaller — an afterthought. */
+export const Marginalia = Node.create({
+  name: 'marginalia',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="marginalia"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'marginalia' }), 0];
   },
 });
 

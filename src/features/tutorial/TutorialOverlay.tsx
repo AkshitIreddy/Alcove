@@ -3,9 +3,18 @@
  *
  * One full-viewport SVG does the heavy lifting: a single evenodd path paints
  * the dim scrim *with the spotlight hole punched out*, so the highlighted
- * control stays fully lit and still clickable (the unpainted hole does not
- * receive pointer events — you can genuinely try the thing being explained).
- * A second pass draws the hand-wobbled ring and the pencil arrow.
+ * control stays fully lit. A second pass draws the ring and the pencil arrow.
+ *
+ * NOTHING IN THIS LAYER TAKES A CLICK except the card. The tour asks the
+ * reader to do a real thing on almost every step — drag the shelf, type on a
+ * page, right-click a block — and a scrim that swallows pointer events turns
+ * every one of those into "I clicked and nothing happened". The dim is
+ * emphasis, not a gate.
+ *
+ * COMPLETION: each step names a fact in ./probe.ts. The rAF loop asks whether
+ * that fact holds; the moment it does the card goes green, the ring goes
+ * green, the step's dot goes green, and after a short beat the tour moves on
+ * by itself. Completed steps stay green when you walk back through them.
  *
  * All geometry comes from ./engine (pure, unit-tested). This file only wires
  * it to the DOM: resolve the target, measure, tween with GSAP, and handle
@@ -15,7 +24,7 @@
  * Robustness: a step whose target has vanished renders as a centred,
  * anchorless card (the lesson still lands) unless it opted into
  * `skipIfMissing`, in which case the engine walks straight past it. There is
- * no state in which the tour can trap the user — Esc always leaves.
+ * no state in which the tour can trap the reader — Esc always leaves.
  */
 
 import {
@@ -38,10 +47,13 @@ import {
   arrowPoints,
   applyInset,
   centerCard,
+  clipRectToViewport,
   edgePointToward,
   firstStepIndex,
   holePath,
+  inflateBox,
   inflateRect,
+  isTypingTarget,
   keyAction,
   placeCard,
   rectCenter,
@@ -53,7 +65,8 @@ import {
   type Rect,
   type Size,
 } from './engine';
-import { TUTORIAL_STEPS, type TutorialStep } from './steps';
+import { TUTORIAL_STEPS, stepTargets, type StepTarget, type TutorialStep } from './steps';
+import { armProbe, attachProbe, factHolds, inBookView } from './probe';
 import {
   readCompleted,
   replayTutorial,
@@ -63,19 +76,24 @@ import {
   tutorialRunToken,
   tutorialRunning,
 } from './state';
-import { appState } from '../../state/app';
 import { motionScale } from '../../styles/motion';
 import '../../styles/tutorial.css';
 
 /* ------------------------------- helpers ---------------------------------- */
 
 /**
+ * How long the green "you did it" state holds before the tour walks on. Long
+ * enough to read the line and see the tick draw; short enough that finishing
+ * a step feels like it moved you forward rather than parked you.
+ */
+const CELEBRATE_MS = 1500;
+
+/**
  * The tour's beats (spotlight travel, pencil draw-on, card entrance) are
  * authored choreography rather than UI travel, so they keep their own seconds
  * instead of taking DUR from styles/motion.ts — but they scale through the
  * shared `motionScale()`, which is the one place that decides how much motion
- * to play. A private copy of that read used to live here and missed the OS
- * reduced-motion preference entirely.
+ * to play.
  */
 function sameRect(a: Rect | null, b: Rect | null): boolean {
   if (a === null || b === null) return a === b;
@@ -98,17 +116,17 @@ function isUsableTarget(el: Element): boolean {
   return Number.parseFloat(cs.opacity || '1') > 0.05;
 }
 
-/** First visible match among a step's candidate selectors. */
-function findTarget(step: TutorialStep): Element | null {
-  for (const selector of step.targets ?? []) {
+/** First visible match among a step's candidate targets, with its padding. */
+function findTarget(step: TutorialStep): { el: Element; target: StepTarget } | null {
+  for (const target of stepTargets(step)) {
     let matches: NodeListOf<Element>;
     try {
-      matches = document.querySelectorAll(selector);
+      matches = document.querySelectorAll(target.selector);
     } catch {
       continue; // a malformed selector must never break the tour
     }
     for (const el of Array.from(matches)) {
-      if (isUsableTarget(el)) return el;
+      if (isUsableTarget(el)) return { el, target };
     }
   }
   return null;
@@ -116,11 +134,16 @@ function findTarget(step: TutorialStep): Element | null {
 
 /** Spotlight rect for a step, or null when it has no live target. */
 function resolveAnchor(step: TutorialStep): Rect | null {
-  const el = findTarget(step);
-  if (el === null) return null;
-  const r = el.getBoundingClientRect();
+  const found = findTarget(step);
+  if (found === null) return null;
+  const r = found.el.getBoundingClientRect();
   const base: Rect = { x: r.x, y: r.y, width: r.width, height: r.height };
-  return inflateRect(applyInset(base, step.inset), step.pad ?? 4);
+  const inset = applyInset(base, found.target.inset);
+  const padded = inflateBox(inflateRect(inset, found.target.pad ?? 4), found.target.padBox);
+  return clipRectToViewport(padded, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 }
 
 const stepPresent = (step: TutorialStep): boolean => findTarget(step) !== null;
@@ -137,20 +160,35 @@ export default function TutorialOverlay(): JSX.Element {
   });
   const [cardSize, setCardSize] = createSignal<Size>({ width: 348, height: 232 });
   const [ready, setReady] = createSignal(false);
+  /** Ids of steps whose task the reader has satisfied, this run. */
+  const [finished, setFinished] = createSignal<readonly string[]>([]);
+  /** Live view, so a step can say "you are in the wrong scene for this". */
+  const [inBook, setInBook] = createSignal(false);
 
   let cardEl: HTMLDivElement | undefined;
   let arrowEl: SVGPathElement | undefined;
   let ringEl: SVGPathElement | undefined;
+  let tickEl: SVGPathElement | undefined;
   const holeObj: Rect = { x: 0, y: 0, width: 0, height: 0 };
   let lastStepShown = -1;
+  /** Pending auto-advance, cancelled by any manual navigation. */
+  let advanceTimer: ReturnType<typeof setTimeout> | undefined;
 
   const step = (): TutorialStep => TUTORIAL_STEPS[stepIndex()] ?? TUTORIAL_STEPS[0];
   const seed = (): number => seedFrom(step().id);
   const isLast = (): boolean => stepIndex() === TUTORIAL_STEPS.length - 1;
+  const isDone = (id: string): boolean => finished().includes(id);
+  const currentDone = (): boolean => isDone(step().id);
 
   /* --------------------------- navigation -------------------------------- */
 
+  function cancelAdvance(): void {
+    if (advanceTimer !== undefined) clearTimeout(advanceTimer);
+    advanceTimer = undefined;
+  }
+
   function goto(direction: 1 | -1): void {
+    cancelAdvance();
     const next = stepIndexAfter(TUTORIAL_STEPS, untrack(stepIndex), direction, stepPresent);
     if (next === null) {
       if (direction === 1) finish();
@@ -162,6 +200,7 @@ export default function TutorialOverlay(): JSX.Element {
   }
 
   function jumpTo(index: number): void {
+    cancelAdvance();
     if (index === untrack(stepIndex)) return;
     setReady(false);
     setStepIndex(index);
@@ -169,30 +208,48 @@ export default function TutorialOverlay(): JSX.Element {
   }
 
   function finish(): void {
+    cancelAdvance();
     void play('check-done', { volume: 0.6 });
     stopTutorial(true);
   }
 
   function skip(): void {
+    cancelAdvance();
     stopTutorial(true);
   }
 
-  /* ------------------------ target tracking ------------------------------ */
+  /* ------------------------ target + task tracking ----------------------- */
 
   // One rAF loop for the whole tour: re-resolve the current step's target so
-  // the spotlight follows panels sliding in, the shelf panning, resizes, etc.
-  // Cheap (one querySelector + one rect read) and only alive while running.
+  // the spotlight follows panels sliding in, the shelf panning, resizes — and
+  // ask the probe whether this step's task has been satisfied yet. Cheap (one
+  // querySelector, one rect read, and a throttled poll inside the probe) and
+  // only alive while the tour is running.
+  // The probe's listeners only exist while the tour does: a closed tour must
+  // not be walking the DOM on every pointerover and keystroke for the rest of
+  // the session.
+  createEffect(() => {
+    if (!tutorialRunning()) return;
+    onCleanup(attachProbe());
+  });
+
   onMount(() => {
     let frame = 0;
-    const tick = (): void => {
+    const tick = (now: number): void => {
       if (tutorialRunning()) {
         setViewport((prev) =>
           prev.width === window.innerWidth && prev.height === window.innerHeight
             ? prev
             : { width: window.innerWidth, height: window.innerHeight },
         );
-        const next = resolveAnchor(step());
+        const current = step();
+        const next = resolveAnchor(current);
         setAnchor((prev) => (sameRect(prev, next) ? prev : next));
+        setInBook(inBookView());
+        const task = current.task;
+        if (task !== undefined && !isDone(current.id) && factHolds(task.fact, now)) {
+          markDone(current.id);
+        }
       }
       frame = requestAnimationFrame(tick);
     };
@@ -200,15 +257,45 @@ export default function TutorialOverlay(): JSX.Element {
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
+  /** The reader just did the thing: celebrate, then walk on by ourselves. */
+  function markDone(id: string): void {
+    setFinished((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    void play('check-done', { volume: 0.55 });
+    if (isLast()) return;
+    cancelAdvance();
+    const ms = motionScale();
+    // With motion off there is no tick to watch draw, so do not sit there.
+    const wait = ms <= 0 ? 450 : CELEBRATE_MS * Math.max(0.6, ms);
+    const from = untrack(stepIndex);
+    advanceTimer = setTimeout(() => {
+      advanceTimer = undefined;
+      // A manual nav during the beat wins — never yank the reader sideways.
+      if (untrack(stepIndex) === from && untrack(tutorialRunning)) goto(1);
+    }, wait);
+  }
+
+  onCleanup(cancelAdvance);
+
   // Restart on every startTutorial() call (including "replay" while open).
   createEffect(
     on(tutorialRunToken, () => {
       if (!untrack(tutorialRunning)) return;
+      cancelAdvance();
       lastStepShown = -1;
       setHole(null);
       setReady(false);
+      setFinished([]);
       setStepIndex(firstStepIndex(TUTORIAL_STEPS, stepPresent) ?? 0);
       setAnchor(resolveAnchor(untrack(step)));
+    }),
+  );
+
+  // Entering a step forgets what happened during the last one, so "you turned
+  // a page" cannot be satisfied by a page turned three steps ago.
+  createEffect(
+    on([stepIndex, tutorialRunToken], () => {
+      if (!untrack(tutorialRunning)) return;
+      armProbe();
     }),
   );
 
@@ -253,7 +340,7 @@ export default function TutorialOverlay(): JSX.Element {
   });
 
   // Card size drives placement, so it has to be right before the first paint
-  // the user sees. `offsetWidth/Height` (not getBoundingClientRect) because
+  // the reader sees. `offsetWidth/Height` (not getBoundingClientRect) because
   // the entrance tween scales the card and would inflate a measured rect.
   function measureCard(): void {
     const el = cardEl;
@@ -269,7 +356,8 @@ export default function TutorialOverlay(): JSX.Element {
   }
 
   // A ResizeObserver catches every source of size change the effects miss:
-  // mounting, the wide/narrow class flipping, fonts finishing, text reflow.
+  // mounting, the wide/narrow class flipping, fonts finishing, text reflow —
+  // and now the task line swapping for a taller green one.
   const cardObserver =
     typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => measureCard());
   onCleanup(() => cardObserver?.disconnect());
@@ -347,6 +435,39 @@ export default function TutorialOverlay(): JSX.Element {
     }),
   );
 
+  // The tick draws itself the moment a task lands — the one bit of motion
+  // that is pure reward, so it gets its own beat rather than sharing the
+  // card's entrance.
+  createEffect(
+    on(currentDone, (done) => {
+      const el = tickEl;
+      if (el === undefined || !done) return;
+      const ms = motionScale();
+      gsap.killTweensOf(el);
+      if (ms <= 0) {
+        gsap.set(el, { strokeDasharray: 'none', strokeDashoffset: 0 });
+        return;
+      }
+      let length = 0;
+      try {
+        length = el.getTotalLength();
+      } catch {
+        length = 0;
+      }
+      if (length <= 0) return;
+      gsap.fromTo(
+        el,
+        { strokeDasharray: length, strokeDashoffset: length },
+        {
+          strokeDashoffset: 0,
+          duration: 0.34 * ms,
+          ease: 'power2.out',
+          onComplete: () => gsap.set(el, { strokeDasharray: 'none' }),
+        },
+      );
+    }),
+  );
+
   /* ---------------------------- geometry --------------------------------- */
 
   const placement = createMemo(() => {
@@ -358,19 +479,19 @@ export default function TutorialOverlay(): JSX.Element {
     }
     // A generous gap is what gives the pencil arrow room to read as a
     // gesture rather than a stub between two touching boxes.
-    const placed = placeCard(a, vp, card, { gap: 56, margin: 18, preferred: step().side });
+    const placed = placeCard(a, vp, card, { gap: 64, margin: 18, preferred: step().side });
     return { ...placed, anchored: true };
   });
 
   const scrimPath = createMemo(() => {
     const vp = viewport();
     const h = hole();
-    return h === null ? solidScrimPath(vp) : spotlightPath(h, vp, 18, seed());
+    return h === null ? solidScrimPath(vp) : spotlightPath(h, vp, 14);
   });
 
   const ringPath = createMemo(() => {
     const h = hole();
-    return h === null ? '' : holePath(h, 18, seed());
+    return h === null ? '' : holePath(h, 14);
   });
 
   const arrow = createMemo(() => {
@@ -384,9 +505,11 @@ export default function TutorialOverlay(): JSX.Element {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dist = Math.hypot(dx, dy);
-    // Too short to read as an arrow — a 20px stub is visual noise, not a
-    // pointer. The spotlight ring already says "this thing".
-    if (dist < 40) return { stroke: '', head: '' };
+    // Too short to read as an arrow — a stub between two nearly touching
+    // boxes is a squiggle, not a pointer, and the ring already says "this
+    // thing". Sits just under the 64px placement gap, so a card beside its
+    // target still gets its arrow while a clamped, crowded one does not.
+    if (dist < 46) return { stroke: '', head: '' };
     // Back both ends off the boxes so the pencil line breathes.
     const inset = Math.min(14, dist * 0.16);
     const start = { x: from.x + (dx / dist) * inset, y: from.y + (dy / dist) * inset };
@@ -395,11 +518,18 @@ export default function TutorialOverlay(): JSX.Element {
     return { stroke: smoothPath(pts), head: arrowHeadPath(pts, seed(), 14) };
   });
 
+  /**
+   * A nudge when the reader is in the wrong place for the step in front of
+   * them — walking back to "write something" from the shelf, say. Only shown
+   * while the task is still outstanding; once it is green it does not matter
+   * where they wandered off to.
+   */
   const sceneLabel = createMemo(() => {
     const scene = step().scene ?? 'any';
-    if (scene === 'any') return null;
-    if (scene === appState.viewState()) return null;
-    return scene === 'shelf' ? 'over on the shelf' : 'inside a book';
+    if (scene === 'any' || currentDone()) return null;
+    const here = inBook() ? 'book' : 'shelf';
+    if (scene === here) return null;
+    return scene === 'shelf' ? 'go back to the shelf for this one' : 'open a book for this one';
   });
 
   /* ---------------------------- keyboard --------------------------------- */
@@ -407,13 +537,14 @@ export default function TutorialOverlay(): JSX.Element {
   function onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Tab') return; // let focus cycle naturally inside the card
     const target = event.target as HTMLElement | null;
-    const onButton = target?.tagName === 'BUTTON';
+    // Hands off entirely while the caret is in a page, a search bar or any
+    // other field: Enter belongs to whatever the reader is typing into, and
+    // several steps ask them to type.
+    if (isTypingTarget(target)) return;
     const action = keyAction(event.key);
     if (action === null) return;
-    // A focused button owns Enter/Space; don't double-fire.
-    if (onButton && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) {
-      return;
-    }
+    // A focused button owns Enter; don't double-fire.
+    if (target?.tagName === 'BUTTON' && event.key === 'Enter') return;
     event.preventDefault();
     event.stopPropagation();
     if (action === 'next') goto(1);
@@ -430,11 +561,17 @@ export default function TutorialOverlay(): JSX.Element {
     onCleanup(() => window.removeEventListener('keydown', handler, true));
   });
 
-  // Focus the card so Enter/arrows work without the user clicking first.
+  // Focus the card so Enter works without the reader clicking first — but
+  // never steal it back from a page, panel or search bar they have moved into
+  // to do what the step asked.
   createEffect(
     on([tutorialRunning, stepIndex], () => {
       if (!tutorialRunning()) return;
-      queueMicrotask(() => cardEl?.focus({ preventScroll: true }));
+      queueMicrotask(() => {
+        const active = document.activeElement;
+        if (active !== null && active !== document.body && !cardEl?.contains(active)) return;
+        cardEl?.focus({ preventScroll: true });
+      });
     }),
   );
 
@@ -454,6 +591,8 @@ export default function TutorialOverlay(): JSX.Element {
       isCompleted: readCompleted,
       reset: resetTutorial,
       replay: replayTutorial,
+      /** Freeze the tour on this step — QA drives each task by hand. */
+      hold: () => cancelAdvance(),
       getState: () => ({
         running: tutorialRunning(),
         stepIndex: stepIndex(),
@@ -466,6 +605,10 @@ export default function TutorialOverlay(): JSX.Element {
         card: placement().rect,
         side: placement().side,
         arrow: arrow().stroke !== '',
+        /** The fact this step is waiting on, or null for a read-only step. */
+        fact: step().task?.fact ?? null,
+        done: currentDone(),
+        finished: [...finished()],
       }),
     };
     onCleanup(() => {
@@ -478,7 +621,11 @@ export default function TutorialOverlay(): JSX.Element {
   return (
     <Show when={tutorialRunning()}>
       <Portal>
-        <div class="nbt-layer" data-tutorial-step={step().id}>
+        <div
+          class="nbt-layer"
+          data-tutorial-step={step().id}
+          data-tutorial-done={currentDone() ? 'true' : 'false'}
+        >
           <svg
             class="nbt-canvas"
             width={viewport().width}
@@ -506,11 +653,14 @@ export default function TutorialOverlay(): JSX.Element {
 
           <div
             class="nbt-card"
-            classList={{ 'nbt-card--wide': !placement().anchored }}
+            classList={{
+              'nbt-card--wide': !placement().anchored,
+              'is-done': currentDone(),
+            }}
             data-side={placement().side}
             ref={attachCard}
             role="dialog"
-            aria-modal="true"
+            aria-modal="false"
             aria-labelledby="nbt-title"
             aria-describedby="nbt-body"
             tabindex="-1"
@@ -538,6 +688,54 @@ export default function TutorialOverlay(): JSX.Element {
               {(hint) => <p class="nbt-hint font-ui">{hint()}</p>}
             </Show>
 
+            {/* The task line, and the whole point of it: a box that goes green
+                when the tour has actually SEEN the reader do the thing. */}
+            <Show
+              when={step().task}
+              fallback={
+                <p class="nbt-task nbt-task--none font-ui" aria-live="polite">
+                  nothing to do on this one — just read
+                </p>
+              }
+            >
+              {(task) => (
+                <p
+                  class="nbt-task font-ui"
+                  classList={{ 'is-done': currentDone() }}
+                  aria-live="polite"
+                >
+                  <span class="nbt-task-mark" aria-hidden="true">
+                    <Show
+                      when={currentDone()}
+                      fallback={
+                        <svg viewBox="0 0 20 20">
+                          <path
+                            class="nbt-task-box"
+                            d="M 4.4 3.6 L 15.8 3.9 L 16.2 15.9 L 4.1 16.2 Z"
+                          />
+                        </svg>
+                      }
+                    >
+                      <svg viewBox="0 0 20 20">
+                        <path
+                          class="nbt-task-box"
+                          d="M 4.4 3.6 L 15.8 3.9 L 16.2 15.9 L 4.1 16.2 Z"
+                        />
+                        <path
+                          class="nbt-task-tick"
+                          d="M 6.4 10.2 L 9.1 13.6 L 14.4 5.6"
+                          ref={tickEl}
+                        />
+                      </svg>
+                    </Show>
+                  </span>
+                  <span class="nbt-task-text">
+                    {currentDone() ? task().done : task().ask}
+                  </span>
+                </p>
+              )}
+            </Show>
+
             <div class="nbt-dots" role="tablist" aria-label="Tour progress">
               <For each={TUTORIAL_STEPS}>
                 {(s, i) => (
@@ -546,16 +744,22 @@ export default function TutorialOverlay(): JSX.Element {
                     class="nbt-dot"
                     classList={{
                       'is-current': i() === stepIndex(),
-                      'is-done': i() < stepIndex(),
+                      'is-past': i() < stepIndex(),
+                      'is-done': isDone(s.id),
                     }}
                     role="tab"
                     aria-selected={i() === stepIndex()}
-                    aria-label={`Step ${i() + 1}: ${s.title}`}
-                    title={s.title}
+                    aria-label={
+                      `Step ${i() + 1}: ${s.title}` + (isDone(s.id) ? ' (done)' : '')
+                    }
+                    title={s.title + (isDone(s.id) ? ' — done' : '')}
                     onClick={() => jumpTo(i())}
                   >
                     <svg viewBox="0 0 14 14" aria-hidden="true">
                       <circle cx="7" cy="7" r="4.2" />
+                      <Show when={isDone(s.id)}>
+                        <path class="nbt-dot-tick" d="M 4.2 7.1 L 6.2 9.3 L 10 4.5" />
+                      </Show>
                     </svg>
                   </button>
                 )}
@@ -578,9 +782,10 @@ export default function TutorialOverlay(): JSX.Element {
               <button
                 type="button"
                 class="nbt-btn nbt-btn--primary font-ui"
+                classList={{ 'is-done': currentDone() }}
                 onClick={() => (isLast() ? finish() : goto(1))}
               >
-                {isLast() ? "I'm ready" : 'next'}
+                {isLast() ? "I'm ready" : currentDone() ? 'on we go' : 'next'}
               </button>
             </div>
           </div>
@@ -598,6 +803,7 @@ declare global {
       next: () => void;
       back: () => void;
       jumpTo: (index: number) => void;
+      hold: () => void;
       isCompleted: () => Promise<boolean>;
       reset: () => Promise<void>;
       replay: () => Promise<void>;
@@ -612,6 +818,9 @@ declare global {
         card: Rect;
         side: string;
         arrow: boolean;
+        fact: string | null;
+        done: boolean;
+        finished: string[];
       };
     };
   }

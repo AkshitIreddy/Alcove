@@ -13,8 +13,22 @@
  * reader is never told "are you sure?" without being told what is at stake.
  * The last case is never deletable; a library has to have somewhere to put
  * the next book.
+ *
+ * Cloning copies the FURNITURE and nothing else: the room's colours, the
+ * carpentry, the paper, the floor count — never the books. "I want another one
+ * of these to sort into" is the whole reason anyone asks for a second bookcase
+ * that looks like the first, and a copy that arrived pre-filled with duplicates
+ * of every book would be the opposite of that.
  */
-import { For, Show, createResource, createSignal, onMount, type JSX } from 'solid-js';
+import {
+  For,
+  Show,
+  createResource,
+  createSignal,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
 import { fnv1a } from '../../art/noise';
 import { drawCaseCard } from '../../art/flatShelf';
 import {
@@ -25,16 +39,37 @@ import {
   deleteBookcase,
   loadBookcases,
   renameBookcase,
+  setBookcaseRoom,
   switchBookcase,
   type Bookcase,
 } from '../../data/bookcases';
 import { countBooksInBookcase } from '../../data/books';
 import { prefsForBookcase, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
 import { DesignCanvas } from './designArt';
-import { loadDesignPrefs, roomDesign, shelfDesignOf } from '../../data/designPrefs';
+import {
+  loadDesignPrefs,
+  roomDesign,
+  saveRoomDesign,
+  shelfDesignOf,
+  snapshotRoomDesign,
+} from '../../data/designPrefs';
 
 const CARD_W = 152;
 const CARD_H = 104;
+
+/**
+ * "My Library copy", then "… copy 2". Numbered from the second copy rather
+ * than the first, because "copy 1" reads as though there is a copy 0.
+ */
+export function copyName(source: string, taken: readonly string[]): string {
+  const used = new Set(taken);
+  const base = `${source} copy`.slice(0, 60);
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const numbered = `${source} copy ${n}`.slice(0, 60);
+    if (!used.has(numbered)) return numbered;
+  }
+}
 
 export interface BookcasesPanelProps {
   /** Fired after a switch, so the host can close itself or cue a sound. */
@@ -48,22 +83,51 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
   /** A case that refused to go because it still holds books, and how many. */
   const [withBooks, setWithBooks] = createSignal<{ id: string; count: number } | null>(null);
   const [note, setNote] = createSignal<string | null>(null);
+  /** Bumped to re-ask the database how many books each case holds. */
+  const [stamp, setStamp] = createSignal(0);
+  let rootEl: HTMLDivElement | undefined;
+
+  const recount = (): void => {
+    setStamp((n) => n + 1);
+  };
 
   onMount(() => {
     void loadBookcases();
     void loadDesignPrefs();
+
+    /*
+     * `RailPanel` mounts its children at app start and only slides them into
+     * view later, so the first count below runs before the seed has shelved a
+     * single book — and the list of ids it keys on does not change when that
+     * book arrives, so it never asked again. Observed, not theorised: the card
+     * for a case holding the welcome book read "0 books" while
+     * `countBooksInBookcase` answered 1 for the same id from the console.
+     *
+     * Re-ask whenever the collection is actually on screen. Geometry, not a
+     * prop: the sheet parks itself off the left edge, so "did this come into
+     * view" is a question the platform can already answer, and it stays true
+     * for the copy of this panel that lives behind the book studio's tab.
+     */
+    const host = rootEl;
+    if (host === undefined || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) recount();
+    });
+    observer.observe(host);
+    onCleanup(() => observer.disconnect());
   });
 
   /**
-   * Book counts, re-fetched whenever the list changes. One small query per
-   * case: cheap next to the case art, and a card that says "empty" is what
-   * makes the delete button safe to press without thinking.
+   * Book counts, re-fetched whenever the list changes, whenever the panel is
+   * shown, and after every mutation. One small query per case: cheap next to
+   * the case art, and a card that says "empty" is what makes the delete button
+   * safe to press without thinking.
    */
   const [counts] = createResource(
-    () => bookcases.list.map((c) => c.id).join(','),
-    async (ids: string): Promise<Record<string, number>> => {
+    () => ({ stamp: stamp(), ids: bookcases.list.map((c) => c.id) }),
+    async (key: { ids: readonly string[] }): Promise<Record<string, number>> => {
       const out: Record<string, number> = {};
-      for (const id of ids.split(',').filter((s) => s.length > 0)) {
+      for (const id of key.ids) {
         try {
           out[id] = await countBooksInBookcase(id);
         } catch {
@@ -80,6 +144,9 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
       await work();
     } finally {
       setBusy(false);
+      // Everything this panel does can change a count — a delete takes books
+      // with it, a switch does not but costs one cheap query to prove it.
+      recount();
     }
   };
 
@@ -95,10 +162,42 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
     setNote(null);
     void run(async () => {
       const made = await createBookcase({});
-      // Created AND opened: the reader pressed "a new bookcase" to go and
-      // stand in one, not to add a row to a list they then have to click.
+      // Created AND opened: the reader pressed "add bookcase" to go and stand
+      // in one, not to add a row to a list they then have to click.
       await switchBookcase(made.id);
       props.onSwitched?.(made.id);
+    });
+  };
+
+  /**
+   * A second bookcase built exactly like this one, with nothing on it.
+   *
+   * Three stores hold "what this case looks like" and all three have to come
+   * across or the copy is not one: the validated room blob (its colours, which
+   * may borrow timber from one room and the wall from another — so the whole
+   * blob goes, not just `theme`), the carpentry and paper in `designPrefs`,
+   * and the floor count on the row itself.
+   *
+   * It does NOT switch. The copy is empty by design, and teleporting the
+   * reader into a case that looks identical to the one they were standing in
+   * but has lost every book reads as a catastrophe rather than as a copy. The
+   * card appears in the grid, one click away, and the note says what happened.
+   */
+  const cloneCase = (source: Bookcase): void => {
+    setNote(null);
+    setConfirming(null);
+    setWithBooks(null);
+    void run(async () => {
+      const room = prefsForBookcase(source.id);
+      const design = snapshotRoomDesign(source.id);
+      const made = await createBookcase({
+        name: copyName(source.name, bookcases.list.map((c) => c.name)),
+        theme: room.theme,
+        floors: source.floors,
+      });
+      await setBookcaseRoom(made.id, JSON.stringify(room));
+      await saveRoomDesign(design, made.id);
+      setNote(`“${made.name}” is the same bookcase, with nothing on it yet.`);
     });
   };
 
@@ -136,7 +235,11 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
   const floors = (): number => bookcases.list.find((c) => c.id === bookcases.activeId)?.floors ?? 0;
 
   return (
-    <div class="nb-cases" data-busy={busy() ? 'true' : 'false'}>
+    <div
+      class="nb-cases"
+      ref={(el) => (rootEl = el)}
+      data-busy={busy() ? 'true' : 'false'}
+    >
       <div class="nb-case-grid">
         <For each={bookcases.list}>
           {(bookcase: Bookcase) => {
@@ -235,6 +338,15 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
                   >
                     rename
                   </button>
+                  <button
+                    type="button"
+                    class="nb-chip nb-chip-ghost"
+                    aria-label={`Clone ${bookcase.name} without its books`}
+                    title="a second bookcase built the same way — the shelf only, no books"
+                    onClick={() => cloneCase(bookcase)}
+                  >
+                    clone
+                  </button>
                   <Show
                     when={confirming() === bookcase.id || withBooks()?.id === bookcase.id}
                     fallback={
@@ -286,7 +398,7 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
 
       <div class="nb-chip-row nb-case-actions">
         <button type="button" class="nb-chip nb-chip-gilt" onClick={addCase}>
-          a new bookcase
+          add bookcase
         </button>
         <button
           type="button"

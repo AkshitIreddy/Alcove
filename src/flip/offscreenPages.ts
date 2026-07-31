@@ -20,6 +20,7 @@ import type { PageDoc } from '../data/types';
 import {
   measureMountedSheet,
   withOffscreenPage,
+  type OffscreenLeafContext,
   type OffscreenPageSize,
 } from '../editor/script/exporters/capture';
 import { snapshotPixelRatio } from './math';
@@ -70,6 +71,13 @@ export interface OffscreenPageCaptureOptions {
    */
   pageSize?(): OffscreenPageSize | null;
   /**
+   * The live `.nb-spread` to stage inside. Without it the staged sheet keeps
+   * its standalone geometry (wider side padding, deckled top tear) while the
+   * live leaf uses the spread's, so every landing swapped a differently
+   * wrapped page for the real one — see OffscreenLeafContext.
+   */
+  spreadRoot?(): HTMLElement | null;
+  /**
    * Defaults to the raster cache's own formula (device ratio capped at 2,
    * 1.5 below 8GB deviceMemory) so offscreen and live bitmaps share texel
    * density. Pass the cache's ratio explicitly if it was overridden.
@@ -97,6 +105,14 @@ export function createOffscreenPageCapture(
     const doc = await options.loadPageDoc(pageId);
     if (doc === null) return null;
     const size = options.pageSize?.() ?? measureMountedSheet();
+    // Everything a mounted leaf is: inside the spread's cascade, paginated,
+    // and wearing its own margin doodles. Anything left out here shows up as
+    // a jump on the frame the landing swaps this raster for the live page.
+    const context: OffscreenLeafContext = {
+      host: options.spreadRoot?.() ?? null,
+      paginated: true,
+      pageId,
+    };
     try {
       return await withOffscreenPage(doc, size, async (sheet) => {
         // Font-embed CSS is built once and reused — the biggest per-capture
@@ -122,7 +138,7 @@ export function createOffscreenPageCapture(
           restoreSvg();
           sheet.classList.remove(SNAPSHOTTING_CLASS);
         }
-      });
+      }, context);
     } catch {
       return null; // staging/rasterization failure → caller's cream fallback
     }

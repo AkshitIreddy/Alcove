@@ -25,11 +25,17 @@
   display: block;
 }
 
-/* evenodd + the hole subpath = everything dims except the target. Because the
-   hole is unpainted it also fails hit-testing, so clicks pass through it. */
+/* evenodd + the hole subpath = everything dims except the target.
+
+   NOTHING in this SVG takes a pointer event. The scrim used to be `auto` so
+   the tour could funnel every click into the lit patch, and that made a
+   task-driven tour impossible: "drag the shelf", "type on a page" and
+   "right-click a block" all happen at least partly outside whatever box the
+   spotlight is framing, and the reader got a dead click instead. The dim is
+   emphasis. The app underneath stays completely live. */
 .nbt-scrim {
-  fill: rgba(41, 28, 16, 0.6);
-  pointer-events: auto;
+  fill: rgba(41, 28, 16, 0.58);
+  pointer-events: none;
 }
 
 :root[data-theme='night'] .nbt-scrim {
@@ -44,8 +50,13 @@
   pointer-events: none;
 }
 
-/* Warm pencil ring traced around the lit patch. Two stacked strokes fake the
-   candle-glow — no SVG filter (art-pipeline.md: never in a live path). */
+/* Warm ring around the lit patch. Two stacked strokes fake the candle-glow —
+   no SVG filter (art-pipeline.md: never in a live path).
+
+   The path is a STRAIGHT rounded rect (engine.roundedRectPath), not a traced
+   pencil wobble: a frame whose only job is to say "exactly this box" has to
+   actually sit on the box, and the wobble dented every corner and drifted a
+   couple of px off long edges. */
 .nbt-ring {
   fill: none;
   stroke: var(--wash-amber-deep);
@@ -54,12 +65,27 @@
   stroke-linejoin: round;
   opacity: 0.9;
   pointer-events: none;
+  transition: stroke calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-out);
 }
 
 .nbt-ring--halo {
   stroke: var(--wash-amber);
   stroke-width: 7;
   opacity: 0.26;
+}
+
+/* Task satisfied: the frame agrees with the card. */
+.nbt-layer[data-tutorial-done='true'] .nbt-ring {
+  stroke: var(--wash-moss-deep);
+}
+
+.nbt-layer[data-tutorial-done='true'] .nbt-ring--halo {
+  stroke: var(--wash-moss);
+  opacity: 0.32;
+}
+
+.nbt-layer[data-tutorial-done='true'] .nbt-glow {
+  fill: rgba(223, 231, 205, 0.14);
 }
 
 .nbt-arrow {
@@ -88,6 +114,12 @@
   position: absolute;
   width: 348px;
   max-width: calc(100vw - 36px);
+  /* The AI-script step is a long read by design. Cap the card at the window
+     rather than letting it run off the bottom — the actions and the progress
+     dots are the two things that must never be unreachable. */
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-20) var(--space-20) var(--space-16);
   box-sizing: border-box;
   pointer-events: auto;
@@ -189,6 +221,97 @@
 }
 
 /* ----------------------------------------------------------------------------
+   The task box — "do this, and I will tell you when I have seen you do it".
+
+   This is the load-bearing element of the whole tour, so it is the loudest
+   thing on the card after the heading: a solid box rather than a dashed hint,
+   sitting apart from the copy above it. Amber while outstanding, moss the
+   instant the probe reports the fact. Steps with nothing to do get the muted
+   variant and NO checkbox — a tick nobody earned is worse than no tick.
+   -------------------------------------------------------------------------- */
+
+.nbt-task {
+  margin: var(--space-12) 0 0;
+  padding: 9px 11px 9px 9px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink-sepia);
+  background: rgba(233, 196, 106, 0.42);
+  border: 1.5px solid var(--wash-amber-deep);
+  border-radius: 12px 5px 11px 6px / 6px 11px 5px 12px;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-out),
+    border-color calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-out),
+    color calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbt-task.is-done {
+  background: var(--wash-moss-light);
+  border-color: var(--wash-moss-deep);
+  color: var(--wash-moss-deep);
+  font-weight: 700;
+}
+
+.nbt-task--none {
+  background: transparent;
+  border: 1px dashed var(--ink-line-soft);
+  box-shadow: none;
+  color: var(--ink-sepia-soft);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.nbt-task-mark {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  line-height: 0;
+  margin-top: 1px;
+}
+
+.nbt-task-mark svg {
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+}
+
+/* Hand-drawn checkbox: four straight-ish sides that do not quite meet square,
+   the way the app's icons are pre-distorted rather than filtered at runtime. */
+.nbt-task-box {
+  fill: var(--paper-cream);
+  stroke: var(--wash-amber-deep);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.nbt-task.is-done .nbt-task-box {
+  fill: rgba(255, 255, 255, 0.6);
+  stroke: var(--wash-moss-deep);
+}
+
+.nbt-task-tick {
+  fill: none;
+  stroke: var(--wash-moss-deep);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nbt-task-text {
+  min-width: 0;
+}
+
+/* The whole card leans into the moment: a moss hairline around the paper. */
+.nbt-card.is-done {
+  border-color: var(--wash-moss-deep);
+}
+
+/* ----------------------------------------------------------------------------
    Progress — tiny inked circles.
    -------------------------------------------------------------------------- */
 
@@ -231,9 +354,26 @@
     stroke calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
 }
 
-.nbt-dot.is-done circle {
+/* Walked past, but the task was never satisfied — an ink dot, not a tick. */
+.nbt-dot.is-past circle {
   fill: var(--ink-sepia-soft);
-  opacity: 0.55;
+  opacity: 0.5;
+}
+
+/* Actually finished. Green, with the tick drawn inside it, and it STAYS that
+   way when the reader walks back through the tour. */
+.nbt-dot.is-done circle {
+  fill: var(--wash-moss-light);
+  stroke: var(--wash-moss-deep);
+  opacity: 1;
+}
+
+.nbt-dot-tick {
+  fill: none;
+  stroke: var(--wash-moss-deep);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .nbt-dot.is-current circle {
@@ -241,6 +381,15 @@
   stroke: var(--wash-amber-deep);
   stroke-width: 2;
   opacity: 1;
+}
+
+.nbt-dot.is-current.is-done circle {
+  fill: var(--wash-moss);
+  stroke: var(--wash-moss-deep);
+}
+
+.nbt-dot.is-current.is-done .nbt-dot-tick {
+  stroke: var(--paper-cream);
 }
 
 .nbt-dot.is-current svg {
@@ -312,6 +461,19 @@
 
 .nbt-btn--primary:hover:not(:disabled) {
   background: var(--wash-amber-light);
+}
+
+/* Task landed: the button that carries you on says so too. The tour advances
+   by itself after a beat, so this is a "you can hurry me" affordance rather
+   than the only way forward. */
+.nbt-btn--primary.is-done {
+  background: var(--wash-moss);
+  border-color: var(--wash-moss-deep);
+  color: var(--paper-cream);
+}
+
+.nbt-btn--primary.is-done:hover:not(:disabled) {
+  background: var(--wash-moss-deep);
 }
 
 .nbt-btn--ghost {

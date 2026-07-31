@@ -203,14 +203,19 @@ test.describe('the Book Studio', () => {
       ).toBeAttached();
     }
 
-    // The library tab paints four room cards from the real case art.
+    // The library tab paints room cards from the real case art. It was a grid
+    // of four; there are sixty rooms now, so it is a strip of five and a way
+    // through to the rest, exactly like the carpentry and the papers.
     await page.getByRole('tab', { name: 'this library' }).click();
-    await expect(page.locator('.nb-theme-card')).toHaveCount(4);
+    const rooms = page.locator('[aria-label="Library theme"]');
+    await expect(rooms).toBeVisible();
+    await expect(rooms.locator('.nb-strip-art')).toHaveCount(5);
+    await expect(rooms.locator('.nb-strip-more')).toBeVisible();
     await expect
       .poll(
         () =>
-          page
-            .locator('.nb-theme-card-art')
+          rooms
+            .locator('.nb-strip-art')
             .first()
             .evaluate((el: HTMLCanvasElement) => el.width),
         { timeout: 30_000, message: 'a theme card never baked' },
@@ -229,9 +234,15 @@ test.describe('the Book Studio', () => {
     await openBook(page);
     await page.locator('[data-tool="customize"]').click();
     await page.getByRole('tab', { name: 'this library' }).click();
-    await expect(page.locator('.nb-theme-card')).toHaveCount(4);
+    await expect(page.locator('[aria-label="Library theme"]')).toBeVisible();
 
-    await page.locator('.nb-theme-card', { hasText: 'Coral Reef' }).click();
+    // Reef is one of sixty rooms and not among the five the strip shows, so it
+    // is reached the way the reader reaches it: through the sheet, by name.
+    await page.locator('[aria-label="Library theme"] .nb-strip-more').click();
+    await expect(page.locator('.nb-pick-card').first()).toBeVisible({ timeout: 15_000 });
+    await page.locator('.nb-pick-search input').fill('coral reef');
+    await expect(page.locator('.nb-pick-card')).toHaveCount(1);
+    await page.locator('.nb-pick-card').first().click();
     await expect
       .poll(() => bridge(page).prefs().then((p) => p?.theme ?? null), {
         timeout: 30_000,

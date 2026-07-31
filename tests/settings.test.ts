@@ -168,7 +168,6 @@ describe('mergeSettings (stored blob over defaults)', () => {
       soundShelf: 0.25,
       ambientLoop: true,
       reducedSound: true,
-      defaultBookPalette: 'lavender',
       dragMomentum: 0,
     });
     expect(merged.theme).toBe('night');
@@ -178,7 +177,6 @@ describe('mergeSettings (stored blob over defaults)', () => {
     expect(merged.soundShelf).toBe(0.25);
     expect(merged.ambientLoop).toBe(true);
     expect(merged.reducedSound).toBe(true);
-    expect(merged.defaultBookPalette).toBe('lavender');
     expect(merged.dragMomentum).toBe(0);
   });
 
@@ -186,7 +184,6 @@ describe('mergeSettings (stored blob over defaults)', () => {
     const merged = mergeSettings({
       theme: 'neon', // not a ThemeName
       animationLevel: 'hyper', // not a level
-      defaultBookPalette: 'chartreuse', // not a palette
       bodyFontSize: '19', // string, not number
       soundMaster: Number.NaN, // non-finite
       muteAll: 'yes', // string, not boolean
@@ -195,7 +192,6 @@ describe('mergeSettings (stored blob over defaults)', () => {
     });
     expect(merged.theme).toBe(DEFAULT_SETTINGS.theme);
     expect(merged.animationLevel).toBe(DEFAULT_SETTINGS.animationLevel);
-    expect(merged.defaultBookPalette).toBe(DEFAULT_SETTINGS.defaultBookPalette);
     expect(merged.bodyFontSize).toBe(DEFAULT_SETTINGS.bodyFontSize);
     expect(merged.soundMaster).toBe(DEFAULT_SETTINGS.soundMaster);
     expect(merged.muteAll).toBe(DEFAULT_SETTINGS.muteAll);

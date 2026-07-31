@@ -32,7 +32,7 @@ import {
 export type RailPanelId =
   | 'customize'
   | 'page-style'
-  | 'stickers'
+  | 'catalogue'
   | 'toc'
   | 'history';
 
@@ -82,7 +82,15 @@ interface RailTool {
 const TOOLS: readonly RailTool[] = [
   { id: 'customize', label: 'Customize this book', icon: BrushIcon, panel: 'customize' },
   { id: 'page-style', label: 'Page style', icon: PageStyleIcon, panel: 'page-style' },
-  { id: 'stickers', label: 'Stickers & effects', icon: StickerIcon, panel: 'stickers' },
+  {
+    id: 'catalogue',
+    // Named for what the panel HOLDS, not for two of its seven shelves. A
+    // reader after a quote card or a flowchart had no reason to open
+    // something called "stickers", and so never found either.
+    label: 'Catalogue — everything you can add',
+    icon: StickerIcon,
+    panel: 'catalogue',
+  },
   { id: 'toc', label: 'Table of contents', icon: TocIcon, panel: 'toc' },
   { id: 'history', label: 'Page history', icon: HistoryIcon, panel: 'history' },
   {

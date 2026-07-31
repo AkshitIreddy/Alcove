@@ -24,10 +24,10 @@ async function gotoWithEngine(page: Page): Promise<void> {
 const state = (page: Page) =>
   page.evaluate(() => window.__nbSound!.getState());
 
-test('engine boots with wave-2 defaults: library scape, typing/chime off', async ({ page }) => {
+test('engine boots with wave-2 defaults: rain scape, typing/chime off', async ({ page }) => {
   await gotoWithEngine(page);
   const s = await state(page);
-  expect(s.soundscape).toBe('library');
+  expect(s.soundscape).toBe('rain');
   expect(s.ambientPlaying).toBeNull(); // ambientLoop defaults off
   expect(s.typingSounds).toBe(false);
   expect(s.hourlyChime).toBe(false);
@@ -40,13 +40,13 @@ test('soundscape picker: start, crossfade-switch, and none-stops (28)', async ({
   await page.evaluate(() => window.__nbSound!.startAmbient());
   await expect
     .poll(async () => (await state(page)).ambientPlaying, { timeout: 15_000 })
-    .toBe('ambient-library');
+    .toBe('ambient-rain');
 
   // Switching soundscapes retargets the bed (engine crossfades internally).
-  await page.evaluate(() => window.__nbSound!.setSoundscape('rain'));
+  await page.evaluate(() => window.__nbSound!.setSoundscape('stream'));
   await expect
     .poll(async () => (await state(page)).ambientPlaying, { timeout: 15_000 })
-    .toBe('ambient-rain');
+    .toBe('ambient-stream');
 
   await page.evaluate(() => window.__nbSound!.setSoundscape('fireplace'));
   await expect

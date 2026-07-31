@@ -10,6 +10,10 @@
  * Settings gets one row:
  *
  *   <button onClick={() => { onClose(); void replayTutorial(); }}>replay</button>
+ *
+ * The tour watches the app from the outside only — DOM events and selectors
+ * other features already render (see ./probe.ts). Nothing outside this folder
+ * has to know it exists, and nothing here can break the app it is describing.
  */
 
 export { default as TutorialOverlay, default } from './TutorialOverlay';
@@ -25,4 +29,12 @@ export {
   tutorialRunToken,
   tutorialRunning,
 } from './state';
-export { TUTORIAL_STEPS, TUTORIAL_STEP_IDS, type TutorialStep } from './steps';
+export {
+  TUTORIAL_STEPS,
+  TUTORIAL_STEP_IDS,
+  stepTargets,
+  type StepTarget,
+  type StepTask,
+  type TutorialStep,
+} from './steps';
+export type { TourFactKey } from './probe';

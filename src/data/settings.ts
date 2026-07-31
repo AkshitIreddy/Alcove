@@ -11,10 +11,10 @@
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
 import { getDb } from './db';
+import { SOUNDSCAPE_NAMES } from '../sound/engine';
 import { DEFAULT_SETTINGS } from './defaults';
 import type {
   AnimationLevel,
-  BookPalette,
   PageStyle,
   Settings,
   ThemeName,
@@ -47,21 +47,6 @@ export const settings: Settings = store;
 const THEMES: readonly ThemeName[] = ['parchment', 'pastel', 'botanical', 'night'];
 const PAGE_STYLES: readonly PageStyle[] = ['ruled', 'grid', 'blank', 'dotted'];
 const ANIMATION_LEVELS: readonly AnimationLevel[] = ['full', 'reduced', 'off'];
-const BOOK_PALETTES: readonly BookPalette[] = [
-  'amber',
-  'terracotta',
-  'moss',
-  'lemon',
-  'sky',
-  'blush',
-  'plum',
-  'peach',
-  'sage',
-  'lavender',
-  'sand',
-  'slate',
-];
-
 function takeBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
@@ -114,7 +99,6 @@ function mergeStored(raw: unknown): MutableSettings {
     minimalistMode: takeBoolean(s.minimalistMode, d.minimalistMode),
     showMarginDoodles: takeBoolean(s.showMarginDoodles, d.showMarginDoodles),
     confettiOnComplete: takeBoolean(s.confettiOnComplete, d.confettiOnComplete),
-    defaultBookPalette: takeEnum(s.defaultBookPalette, BOOK_PALETTES, d.defaultBookPalette),
     soundMaster: takeNumber(s.soundMaster, d.soundMaster),
     soundUi: takeNumber(s.soundUi, d.soundUi),
     soundPages: takeNumber(s.soundPages, d.soundPages),
@@ -137,9 +121,12 @@ function mergeStored(raw: unknown): MutableSettings {
       ['manual', 'recent', 'favorites'] as const,
       d.shelfSort,
     ),
+    // `library` is deliberately absent from the accepted list: the bed was
+    // withdrawn, so a blob still holding it falls through to the default
+    // rather than naming a loop that no longer ships.
     soundscape: takeEnum(
       s.soundscape,
-      ['library', 'rain', 'fireplace', 'crickets', 'none'] as const,
+      SOUNDSCAPE_NAMES,
       d.soundscape,
     ),
     typingSounds: takeBoolean(s.typingSounds, d.typingSounds),

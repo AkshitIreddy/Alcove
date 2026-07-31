@@ -20,6 +20,7 @@ import {
   lastSpreadIndex,
   leftSlot,
   newPageDoc,
+  pagesToCreateOnFlip,
   prependBlocksToDoc,
   rightSlot,
   shouldAutoCreatePage,
@@ -203,6 +204,40 @@ describe('shouldAutoCreatePage', () => {
     // a page that exists, or the flip animates onto nothing.
     expect(shouldAutoCreatePage(1, 0, 'next', false, 0)).toBe(true);
     expect(shouldAutoCreatePage(2, 0, 'next', false, 1)).toBe(true);
+  });
+});
+
+describe('pagesToCreateOnFlip', () => {
+  it('is zero wherever the flip creates nothing', () => {
+    expect(pagesToCreateOnFlip(2, 0, 'prev', true)).toBe(0);
+    expect(pagesToCreateOnFlip(6, 0, 'next', true)).toBe(0); // pages ahead
+    expect(
+      pagesToCreateOnFlip(2, 0, 'next', false, MAX_TRAILING_BLANK_PAGES),
+    ).toBe(0);
+  });
+
+  it('appends one page off an even-length book', () => {
+    // Slot 2 is the landing spread's left leaf and page 2 fills it.
+    expect(pagesToCreateOnFlip(2, 0, 'next', true)).toBe(1);
+    expect(pagesToCreateOnFlip(6, 2, 'next', true)).toBe(1);
+  });
+
+  it('appends TWO off an odd-length book, so the landing spread is not empty', () => {
+    // The seeded welcome book is five pages: spread 2 shows page 5 alone, and
+    // one appended page would fill the leaf being left behind rather than the
+    // one being turned to. Measured in the running app before the fix: both
+    // leaves of the landing spread mounted zero editors.
+    expect(pagesToCreateOnFlip(5, 2, 'next', false, 0)).toBe(2);
+    expect(pagesToCreateOnFlip(1, 0, 'next', false, 0)).toBe(2);
+    expect(pagesToCreateOnFlip(3, 1, 'next', false, 0)).toBe(2);
+  });
+
+  it('never leaves the landing spread short, whatever the count', () => {
+    for (let pageCount = 1; pageCount <= 12; pageCount += 1) {
+      const spreadIndex = lastSpreadIndex(pageCount);
+      const created = pagesToCreateOnFlip(pageCount, spreadIndex, 'next', true);
+      expect(pageCount + created).toBeGreaterThan(leftSlot(spreadIndex + 1));
+    }
   });
 });
 

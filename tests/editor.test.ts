@@ -134,6 +134,7 @@ describe('slash command registry', () => {
  * node types that declare attributes, so fixtures spell out defaults too
  * (id from UniqueID, language: null, the BlockEffects nulls, etc.).
  */
+/** Every BlockEffects global attribute at rest (src/editor/effects). */
 const FX = {
   rotate: null,
   tape: null,
@@ -142,6 +143,10 @@ const FX = {
   frame: null,
   paper: null,
   underline: null,
+  font: null,
+  ink: null,
+  size: null,
+  align: null,
 };
 
 const fixtureDoc: PageDoc = {

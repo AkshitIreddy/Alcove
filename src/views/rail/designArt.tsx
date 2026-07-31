@@ -85,6 +85,29 @@ function makeCanvas(w: number, h: number): Tile | null {
 }
 
 /**
+ * Draw one tile in a scheme OTHER than the strip's.
+ *
+ * Every picker paints its cards in the room the reader is standing in, which
+ * is right for a carpentry or a paper — you are judging it against your own
+ * timber. The ROOM picker is the one axis where that is backwards: sixty rooms
+ * all painted in the current room's colours is sixty identical cards. This lets
+ * one option carry its own palette, nested inside the swap `tileFor` already
+ * does, so the restore still happens exactly once and in the right order.
+ *
+ * The caller must put the theme in its `artKey`; the cache key only knows the
+ * scheme the STRIP was drawn under.
+ */
+export function drawInScheme(scheme: FlatScheme, draw: () => void): void {
+  const previous = flatScheme();
+  setFlatScheme(scheme);
+  try {
+    draw();
+  } finally {
+    setFlatScheme(previous);
+  }
+}
+
+/**
  * The drawn tile, ready to `drawImage` straight into a card's canvas.
  *
  * Synchronous on purpose. An `ImageBitmap` would be a little cheaper to blit

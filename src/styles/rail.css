@@ -123,6 +123,7 @@
 :root {
   --nb-panel-push: 0px;
   --nb-panel-edge: 0px;
+  --nb-panel-gutter: 0px;
 }
 
 /*
@@ -158,22 +159,37 @@
 }
 
 /*
- * The settings seal is a fixed bottom-left FAB, which is exactly where a
- * side panel lands — it used to sit ON the open sheet reading as a stray
- * dot. It drops off the bottom edge while any panel is out. `visibility`
- * is delayed by the slide so it also leaves the tab ring, but only once it
- * is out of sight. --dur-md is the CSS twin of motion.ts's `normal` step,
- * which is the tempo panelPush uses to give the room back.
+ * The settings seal is a fixed bottom-left FAB, which is exactly where a side
+ * panel lands. It used to DROP OFF the bottom edge while any panel was out —
+ * which was the right fix for a sheet that covered the world and the wrong one
+ * for a sheet that pushes it: nothing overlaps any more, and hiding it cost the
+ * reader their settings for as long as the studio was open.
+ *
+ * So it travels: clear the sheet's right edge, less the seal's own left offset,
+ * plus a hand's width of gap.
+ *
+ * --nb-panel-gutter, NOT --nb-panel-edge. Measured, not assumed: the shelf's
+ * studio is flush at left:0 and lands squarely on the seal (16..62), while the
+ * book's sheets start at left:68 and clear it by six pixels — so keying on the
+ * sheet's right edge sent the seal 420px right in the book view to escape a
+ * sheet that was never on it, and parked it on the book cover instead. The
+ * gutter number is 0 for any sheet that is not hinged on the window edge, so
+ * the seal only moves for the one that actually covers it.
+ *
+ * `translate`, not `transform`, on purpose. The seal's own transform belongs to
+ * its hover and press states (settings.css) and carries a spring transition; a
+ * translate written into that property would either be overwritten by the
+ * hover or lag a whole spring behind a sheet that is being tweened frame by
+ * frame. The individual transform properties compose, and this one is not
+ * transitioned — so the seal tracks the slide exactly and still bounces when
+ * pressed.
  */
-html[data-nb-panel='open'] .nbs-gear-button {
-  opacity: 0;
-  transform: translateY(150%) scale(0.86);
-  pointer-events: none;
-  visibility: hidden;
-  transition:
-    transform calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-in-out),
-    opacity calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-in-out),
-    visibility 0s linear calc(var(--dur-md) * var(--motion-scale, 1));
+.nbs-gear-button {
+  --nb-gear-clear: max(
+    0px,
+    calc(var(--nb-panel-gutter) + var(--space-12) - var(--space-16))
+  );
+  translate: var(--nb-gear-clear) 0;
 }
 
 /* ---------------------------------- panels -------------------------------- */
@@ -960,11 +976,12 @@ html[data-nb-panel='open'] .nbs-gear-button {
   padding: 3px var(--space-8);
 }
 
-/* The settings gear is a fixed bottom-left FAB. Once the studio grew its
-   mix-it-up rows the panel reached the bottom of the viewport and the last
-   chip row landed underneath it, so reserve the gear's lane. */
+/* The settings gear used to sit in this sheet's lane, so the sheet reserved a
+   whole 64px of it. The gear now steps aside with the world (see the seal's
+   own rule above), so this is back to being an ordinary bottom gutter — enough
+   that the last chip row does not touch the window edge. */
 .nb-library-studio {
-  padding-bottom: var(--space-64);
+  padding-bottom: var(--space-24);
 }
 
 /* Pale colourways (rice, ivory, limewash) need an edge to read on cream. */

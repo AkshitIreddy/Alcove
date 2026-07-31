@@ -11,14 +11,34 @@
  */
 import { expect, test, type Page } from 'playwright/test';
 
-async function openSettings(page: Page): Promise<void> {
+/**
+ * Load the app with the first-run tour already completed.
+ *
+ * The flag has to be set BEFORE the first navigation — dismissing the overlay
+ * afterwards races its mount. Without it the tour is on screen behind the
+ * sheet and it answers Escape first, so "Escape closes the settings sheet"
+ * failed against a tour that was quietly closing instead.
+ */
+async function gotoApp(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('appState:tutorialCompleted', 'true');
+    } catch {
+      // Private-mode storage failures are not this helper's problem.
+    }
+  });
   await page.goto('/');
+  await page.evaluate(() => window.__nbTutorial?.stop?.());
+}
+
+async function openSettings(page: Page): Promise<void> {
+  await gotoApp(page);
   await page.locator('.nbs-gear-button').click();
   await expect(page.locator('.nbs-sheet')).toBeVisible({ timeout: 15_000 });
 }
 
 test('settings panel opens and closes', async ({ page }) => {
-  await page.goto('/');
+  await gotoApp(page);
   await page.locator('.nbs-gear-button').click();
   const sheet = page.locator('.nbs-sheet');
   await expect(sheet).toBeVisible({ timeout: 15_000 });
@@ -29,7 +49,7 @@ test('settings panel opens and closes', async ({ page }) => {
 });
 
 test('theme switch flips data-theme on the document', async ({ page }) => {
-  await page.goto('/');
+  await gotoApp(page);
   const root = page.locator('html');
   await expect(root).toHaveAttribute('data-theme', 'parchment', {
     timeout: 30_000,
@@ -71,9 +91,13 @@ test('wave-2 shelf & ambience chips reflect selections', async ({ page }) => {
   await expect(recent).toHaveAttribute('aria-pressed', 'true');
 
   // Ambience: soundscape chip + typing sounds / hourly chime toggles.
-  const rain = sheet.getByRole('button', { name: 'rain', exact: true });
-  await rain.click();
-  await expect(rain).toHaveAttribute('aria-pressed', 'true');
+  // `stream`, not `rain` — rain is the default, so pressing it would prove
+  // nothing about the chip actually writing the setting. The "soundscape"
+  // suffix is the chip's aria-label: `night` is a theme name too, so the beds
+  // announce which group they belong to.
+  const stream = sheet.getByRole('button', { name: 'stream soundscape', exact: true });
+  await stream.click();
+  await expect(stream).toHaveAttribute('aria-pressed', 'true');
 
   for (const name of ['typing sounds', 'hourly chime']) {
     const toggle = sheet.getByRole('switch', { name, exact: true });

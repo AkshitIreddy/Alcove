@@ -186,6 +186,11 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
                 ? { width: el.clientWidth, height: el.clientHeight }
                 : null;
             },
+            // …and INSIDE the spread, so the staged sheet inherits the same
+            // cascade a mounted leaf does. Staged on <body> it kept the
+            // standalone sheet geometry, wrapped its text at different words,
+            // and every landing swapped that for the live page — the flicker.
+            spreadRoot: () => rootEl?.closest<HTMLElement>('.nb-spread') ?? null,
           }),
         }
       : {}),

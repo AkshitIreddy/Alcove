@@ -575,6 +575,167 @@
  * the whole cover — so none of them ever matched an element.
  */
 
+/* Held: the flight has landed and the book is in the reader's hands. It stops
+   being scenery and becomes the biggest target on the screen. */
+.pulled-book.is-held {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.pulled-book.is-carried {
+  cursor: grabbing;
+}
+
+/* Over the case, the drop would shelve it — say so on the book itself, since
+   the pointer is nowhere near the buttons at that moment. The world draws the
+   matching gilt outline in the gap the book came out of. */
+.pulled-book.is-over-case {
+  box-shadow: var(--shadow-sm);
+  opacity: 0.88;
+}
+
+/* ---- the wash behind a held book ---------------------------------------- */
+/*
+ * Flat, single alpha, no blur — the shelf is frozen under it and this is the
+ * only thing saying so. It also swallows clicks meant for the dock rail and
+ * the zoom pill, which are still on screen and would otherwise look live.
+ */
+.pulled-book-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) - 1);
+  background: var(--lift-ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.pulled-book-scrim.is-up {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* ---- the two verbs under a held book ------------------------------------ */
+/*
+ * A sibling of the cover, not a child: the cover is scaled, rotated on its
+ * hinge and carried around, and type riding those transforms is unreadable
+ * for most of the journey.
+ */
+/*
+ * A museum label under the exhibit: paper, one ink line, hand-drawn corners.
+ * The plate is not decoration — the wash behind it can be over a green case,
+ * a brown one or bare wall, and sepia type floating on that was legible over
+ * none of them.
+ */
+.pulled-book-hand {
+  position: fixed;
+  left: 50%;
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 10px var(--space-20) var(--space-8);
+  text-align: center;
+  background: var(--paper-aged);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-wobble-md);
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+  transition: opacity calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+  animation: pulled-book-hand-in calc(var(--dur-sm) * var(--motion-scale, 1))
+    var(--ease-out);
+}
+
+/* `animation: none` as well as the opacity: a running (or filled) keyframe
+   animation outranks a plain declaration, so the entrance would otherwise
+   pin this open and the plate would ride along with the carried book. */
+.pulled-book-hand.is-carried {
+  pointer-events: none;
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes pulled-book-hand-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.pulled-book-hand__title {
+  max-width: 34ch;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-heading);
+  font-size: var(--text-h4);
+  line-height: 1.1;
+  color: var(--ink-sepia);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pulled-book-hand__verbs {
+  display: flex;
+  gap: var(--space-12);
+  align-items: stretch;
+}
+
+.pulled-book-hand__btn {
+  padding: 7px var(--space-20);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--ink-sepia);
+  cursor: pointer;
+  /* Cream, not aged: these sit ON the aged plate and have to lift off it. */
+  background: var(--paper-cream);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-wobble-sm);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    background-color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.pulled-book-hand__btn:hover {
+  background: var(--wash-amber-light);
+  transform: translateY(-1px);
+}
+
+.pulled-book-hand__btn:active {
+  box-shadow: none;
+  transform: translateY(1px);
+}
+
+.pulled-book-hand__btn.is-primary {
+  color: var(--accent-ink);
+  background: var(--accent-light);
+  border-color: var(--accent-deep);
+}
+
+.pulled-book-hand__btn.is-primary:hover {
+  background: var(--wash-terracotta-light);
+}
+
+.pulled-book-hand__btn:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 3px;
+}
+
+/* Nunito Sans below 13px — the handwriting faces are illegible down here. */
+.pulled-book-hand__hint {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
 /* ----------------------------------------------------------------------------
    Shelf book menu (wave-2) — right-click card mirroring the editor context
    menu aesthetic: aged paper, lumpy hand-inked corners, dashed hover rows.

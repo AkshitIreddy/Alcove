@@ -214,6 +214,7 @@ export class PageFlipController {
     // Leave nothing of the overlay behind: the host may keep the leaves
     // mounted (book stays open, surface remounts) after this controller goes.
     this.options.canvas.classList.remove('is-flipping');
+    this.options.root.classList.remove('is-flip-gesture');
     if (this.leafElement) this.leafElement.style.visibility = '';
     this.leafElement = null;
     this.renderer?.dispose();
@@ -409,6 +410,8 @@ export class PageFlipController {
     // Blur the editor; remember selection so a cancelled flip restores it.
     this.saveSelection();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    // No text sweeping while the paper is being dragged (see flip.css).
+    this.options.root.classList.add('is-flip-gesture');
 
     if (this.usesWebGL && this.ctx && this.renderer) {
       // Cached bitmaps only — a ≤300ms-stale frame is accepted by design
@@ -528,6 +531,10 @@ export class PageFlipController {
     const dir = this.dir;
     const leafElement = this.leafElement;
 
+    // Selection is drag-and-drop-able again from here; restoreSelection()
+    // below also needs the surface selectable to put a cancelled flip back.
+    this.options.root.classList.remove('is-flip-gesture');
+
     if (this.fold) {
       this.fold.dispose();
       this.fold = null;
@@ -538,6 +545,13 @@ export class PageFlipController {
     this.renderNow();
 
     if (target === 1) {
+      // Drop the live selection BEFORE the swap. Its endpoints sit in the
+      // spread that is about to be unmounted, and a range whose container is
+      // removed does not vanish — the browser reparents the boundary onto the
+      // surviving ancestor, which leaves it spanning the entire new leaf. That
+      // is what made a turn arrive with every word on the page highlighted.
+      // The saved ranges are clones, so a cancelled flip can still restore.
+      this.clearSelection();
       this.options.navigate(dir); // new spread mounts under the canvas
     } else if (leafElement) {
       leafElement.style.visibility = '';
@@ -590,7 +604,10 @@ export class PageFlipController {
     void play('page-flip', { volume: 0.6 });
     this.cancelCrossfade = crossfadeSpread({
       container: this.options.root,
-      onSwap: () => this.options.navigate(dir),
+      onSwap: () => {
+        this.clearSelection(); // same reparenting trap as land() — see there
+        this.options.navigate(dir);
+      },
       onDone: () => {
         this.cancelCrossfade = null;
         this.phase = 'rest';
@@ -612,6 +629,7 @@ export class PageFlipController {
     const target: 0 | 1 = this.flip.p > 0.5 ? 1 : 0;
     const leafElement = this.leafElement;
     this.options.canvas.classList.remove('is-flipping');
+    this.options.root.classList.remove('is-flip-gesture');
 
     const finish = (): void => {
       this.phase = 'rest';
@@ -636,7 +654,10 @@ export class PageFlipController {
     crossfadeSpread({
       container: this.options.root,
       onSwap: () => {
-        if (target === 1) this.options.navigate(dir);
+        if (target === 1) {
+          this.clearSelection(); // see land()
+          this.options.navigate(dir);
+        }
         if (leafElement) leafElement.style.visibility = '';
       },
       onDone: finish,
@@ -694,6 +715,11 @@ export class PageFlipController {
       : [];
     this.savedActive =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+
+  /** Collapse the document selection (the pages it addressed are leaving). */
+  private clearSelection(): void {
+    window.getSelection()?.removeAllRanges();
   }
 
   private restoreSelection(): void {

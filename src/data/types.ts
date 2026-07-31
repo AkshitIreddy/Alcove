@@ -197,7 +197,6 @@ export interface Settings {
   minimalistMode: boolean;
   showMarginDoodles: boolean;
   confettiOnComplete: boolean;
-  defaultBookPalette: BookPalette;
 
   // Sound (all volumes 0..1)
   soundMaster: number;
@@ -240,7 +239,25 @@ export interface Settings {
   shelfSort: 'manual' | 'recent' | 'favorites';
 
   // Wave 2 — ambience & input feel
-  soundscape: 'library' | 'rain' | 'fireplace' | 'crickets' | 'none';
+  /**
+   * The ambient bed. `library` used to be here and was removed — it was the
+   * one bed synthesized rather than recorded and it read as a haunting; stored
+   * blobs holding it land on `rain` (see `mergeStored` in data/settings.ts).
+   * The names are the engine's `SoundscapeName`; `sound/engine.ts` owns the
+   * mapping from each to its loop file.
+   */
+  soundscape:
+    | 'rain'
+    | 'storm'
+    | 'fireplace'
+    | 'crickets'
+    | 'night'
+    | 'wind'
+    | 'stream'
+    | 'forest'
+    | 'shore'
+    | 'cafe'
+    | 'none';
   typingSounds: boolean;
   hourlyChime: boolean;
   cursorStyle: 'standard' | 'pencil' | 'quill';

@@ -120,13 +120,17 @@ are fine, `#some-id` and `.some-class` shorthands work.
 | --- | --- | --- |
 | `color` | `amber` `terracotta` `moss` `lemon` `sky` `blush` `graphite` | watercolor tint |
 | `sticker` | `star` `bee` `leaf` `microscope` `heart` `flower` `book` `pin` `sparkle` `moon` `sun` `cat` `coffee` `music` `arrow` | doodle sticker in the margin |
-| `tape` | `top` `corner` `both` | scotch-tape effect |
-| `washi` | `top` | washi tape strip |
+| `tape` | `top` `corner` `both` `left` `right` | scotch-tape effect |
+| `washi` | `top` `left` `corner` | washi tape strip |
 | `rotate` | number, `-3` to `3` | slight tilt, in degrees |
-| `paper` | `torn` `lined` | paper texture for this block |
-| `shadow` | `soft` | soft drop shadow |
-| `underline` | `squiggle` `marker` | hand-drawn underline |
-| `frame` | `scallop` `stitch` | decorative border |
+| `paper` | `torn` `lined` `graph` `aged` `index` | paper texture for this block |
+| `shadow` | `soft` `lifted` `stacked` | soft drop shadow |
+| `underline` | `squiggle` `marker` `dotted` `double` `circled` | hand-drawn underline |
+| `frame` | `scallop` `stitch` `double` `rope` `ticket` | decorative border |
+| `font` | `hand` `casual` `marker` `script` `chalk` `note` `serif` `book` `mono` | lettering this block is written in |
+| `ink` | `sepia` `graphite` `ink-blue` `crimson` `moss` | ink colour for this block |
+| `size` | `xs` `sm` `md` `lg` `xl` | lettering size |
+| `align` | `left` `center` `right` | which way the lines are ranged |
 
 Everything else is scoped to where it makes sense:
 
@@ -277,6 +281,11 @@ The container names:
 | `quote-card` | decorated pull-quote |
 | `spoiler` | click-to-reveal box (good for self-quizzing) |
 | `banner` | full-width ribbon banner |
+| `index-card` | ruled index card with a red header rule — recipes, flashcards, one fact per card |
+| `envelope` | paper envelope with an open flap (letters, keepsakes) |
+| `stamp` | perforated postage stamp with a postmark |
+| `tag` | luggage tag on a string (a short label for what follows) |
+| `marginalia` | small side note in a ruled margin — an afterthought, in a smaller hand |
 
 Unknown names are **not errors** — they render as a plain decorated box. Name
 matching is generous too: case, spaces, `-` and `_` are all ignored, so
@@ -293,6 +302,11 @@ matching is generous too: case, spaces, `-` and `_` are all ignored, so
 | `::: box`, `::: panel` | `::: card` |
 | `::: quote`, `::: blockquote` | `::: quote-card` |
 | `::: details`, `::: hidden` | `::: spoiler` |
+| `::: recipe`, `::: filecard`, `::: flashcard` | `::: index-card` |
+| `::: letter` | `::: envelope` |
+| `::: postcard`, `::: postage` | `::: stamp` |
+| `::: luggagetag`, `::: label` | `::: tag` |
+| `::: sidenote`, `::: margin`, `::: aside` | `::: marginalia` |
 | `::: info` | `::: callout {variant=info}` |
 | `::: tip`, `::: hint` | `::: callout {variant=tip}` |
 | `::: warn`, `::: warning`, `::: caution` | `::: callout {variant=warn}` |
@@ -460,7 +474,10 @@ gentle warnings. Specifically:
 - If you write `:` instead of `=` in attrs (`{color: amber}`), it still works.
 - Some attribute keys have accepted synonyms:
   `colour`/`bg`/`background`/`highlight` → `color`, `rotation` → `rotate`,
-  `columns` → `cols`, `uses`/`apply`/`usestyle` → `use`.
+  `columns` → `cols`, `typeface`/`face`/`family`/`fontfamily` → `font`,
+  `pen`/`inkcolor`/`textcolor` → `ink`, `fontsize`/`scale` → `size`,
+  `textalign`/`alignment`/`justify` → `align`, `uses`/`apply`/`usestyle` →
+  `use`.
 - If you misspell an enum value within reason (`color=ambr`, `color=terracota`),
   it is auto-corrected to the nearest known value, with a warning.
 - If you misspell or re-style a container name (`Sticky Note`, `stickynote`,
@@ -651,11 +668,12 @@ CONTAINERS (::: name ... :::)           DIAGRAM FENCES
 sticky-note  polaroid     washi-box     ```tree      indent = nesting
 callout      columns      col           ```mindmap   same, radial
 image-row    card         quote-card    ```graph     A -> B: label
-spoiler      banner                     ```flowchart same as graph
-                                        ```timeline  label: text | attrs
+spoiler      banner       index-card    ```flowchart same as graph
+envelope     stamp        tag           ```timeline  label: text | attrs
+marginalia
 ATTRS  {key=value, key2=value2}
 colors: amber terracotta moss lemon sky blush graphite
-color= sticker= tape= washi= rotate= paper= shadow= underline= frame=
+color= sticker= tape= washi= rotate= paper= shadow= underline= frame= font= ink= size= align=
 
 DEFINITIONS (leaf directives — no closing ':::')
 ::let course = Cell Biology   define a variable

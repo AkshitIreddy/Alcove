@@ -936,7 +936,12 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
    --gilt-ink is the value foil is allowed to be TYPE at, so this stays a
    legible mark rather than a decorative smudge. */
 .nbs-seg-chip[aria-pressed='true']::after {
-  content: '✓';
+  /* The `/ ''` is alt text, and it is load-bearing: generated content joins
+     the accessible name, so without it a chosen chip announced as "rain ✓"
+     and `getByRole({ name: 'rain', exact: true })` stopped matching the very
+     chip it had just pressed. Selection is already carried by aria-pressed;
+     the tick is decoration and now says so. */
+  content: '✓' / '';
   font-family: var(--font-ui);
   font-size: 11px;
   line-height: 1;
@@ -1164,4 +1169,135 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   color: var(--ink-sepia-soft);
   text-align: center;
   border-top: 1px dashed var(--ink-line-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Sound credits
+   The disclosure under the Sound section's "sound credits" row. It renders
+   from public/sounds/CREDITS.json, so the row count is whatever the last
+   audio build produced — the layout has to survive one entry or thirty.
+   -------------------------------------------------------------------------- */
+.nbs-credits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-top: var(--space-4);
+  padding: var(--space-12);
+  background: var(--paper-cream);
+  border: 1.4px dashed var(--ink-line-soft);
+  /* the same uneven inked edge the chips carry */
+  border-radius: 13px 10px 15px 11px / 11px 15px 10px 14px;
+}
+
+.nbs-credit-note {
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  color: var(--ink-sepia-soft);
+}
+
+/* The one obligation in the set gets the only filled panel here: a CC BY
+   credit that reads like the rest of the list has not been surfaced, it has
+   been filed. */
+.nbs-credit-required {
+  padding: var(--space-8) var(--space-12);
+  background: var(--wash-amber-light);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 9px 14px 10px / 10px 14px 9px 13px;
+}
+
+.nbs-credit-oblig {
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-16);
+  font-family: var(--font-accent);
+  font-size: var(--text-chip); /* 13px — handwriting floor */
+  line-height: 1.6;
+  color: var(--ink-sepia);
+}
+
+.nbs-credit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nbs-credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nbs-credit:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.nbs-credit-title {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip); /* 13px — handwriting floor */
+  line-height: 1.4;
+  color: var(--ink-sepia);
+  /* the title owns the row; everything after it is annotation */
+  flex: 1 1 100%;
+}
+
+.nbs-credit-by,
+.nbs-credit-cues {
+  font-size: var(--text-ui);
+  color: var(--ink-sepia-soft);
+}
+
+/* The cue list takes whatever width is left over so the source links keep
+   their place at the end of the row instead of being pushed onto one of
+   their own. `min-width: 0` is what lets it shrink inside the flex row. */
+.nbs-credit-cues {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.nbs-credit-licence {
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  text-transform: uppercase;
+  padding: 1px 7px;
+  color: var(--ink-sepia);
+  background: var(--wash-moss-light);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 9px 12px 8px 11px / 11px 8px 12px 9px;
+}
+
+/* CC BY is the one that costs us something; it is tinted apart so a reader
+   checking compliance can find it without reading every licence string. */
+.nbs-credit-licence[data-required='true'] {
+  background: var(--wash-terracotta-light);
+  border-color: var(--ink-line);
+  font-weight: 700;
+}
+
+.nbs-credit-links {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-8);
+  margin-left: auto;
+}
+
+.nbs-credit-link {
+  font-size: var(--text-ui);
+  color: var(--ink-sepia);
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--ink-line);
+  padding: 0;
+  transition: color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-credit-link:hover {
+  color: var(--ink-graphite);
+  border-bottom-style: solid;
 }

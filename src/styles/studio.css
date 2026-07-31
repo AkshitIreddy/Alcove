@@ -141,7 +141,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding-bottom: var(--space-64); /* clear the settings gear's lane */
+  /* An ordinary bottom gutter. It used to be 64px to clear the settings seal,
+     which now travels with the pushed world instead of sitting in this lane. */
+  padding-bottom: var(--space-24);
 }
 
 .nb-pick-head {
@@ -338,6 +340,58 @@
 }
 
 /* ----------------------------------------------------------------------------
+   The room's palette, as a LEGEND
+
+   Deliberately built out of nothing the eye reads as pressable: no paper face,
+   no border, no hover, no wobbled corners. The version this replaces was a bare
+   run of nine chips the same size and shape as the colour BUTTONS two rows
+   above it, and readers pressed it — reasonably — and reported the studio as
+   broken. A legend has to look like a caption, so it wears the caption's type
+   and carries its own words.
+   -------------------------------------------------------------------------- */
+.nb-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+
+.nb-legend-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+}
+
+.nb-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-legend-caption {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+/* Smaller than a chip's dot (20px) on purpose — this is a key, not a control,
+   and the size difference is most of what says so at a glance. */
+.nb-legend-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 5px 4px 5px 4px / 4px 5px 4px 5px;
+  border: var(--stroke-ink-thin);
+  background: var(--paper-cream);
+}
+
+/* ----------------------------------------------------------------------------
    Live previews inside the studio
    -------------------------------------------------------------------------- */
 .nb-wall-preview {
@@ -462,11 +516,20 @@
 }
 
 .nb-case-note {
-  margin-top: var(--space-8);
+  margin-top: var(--space-12);
 }
 
+/*
+ * The two collection-level buttons ("add bookcase", "add a floor") were sitting
+ * a hair under the last card's own rename/clone/delete row, so four buttons in
+ * two ranks read as one block and it was not obvious which of them acted on the
+ * card above. A rule and real air: the cards are the collection, these act ON
+ * it. The dashed hairline is the same one every other section break uses.
+ */
 .nb-case-actions {
-  margin-top: var(--space-12);
+  margin-top: var(--space-16);
+  padding-top: var(--space-12);
+  border-top: 1px dashed var(--ink-line-soft);
 }
 
 /* Destructive, and it says so in the one warm-red the palette has. Solid

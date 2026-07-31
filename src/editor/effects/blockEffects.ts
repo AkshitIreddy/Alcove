@@ -6,13 +6,22 @@
  *
  * Rendering is pure CSS (src/styles/effects.css) driven by data-attributes:
  *   rotate     → data-rotate + a `--nb-rotate` inline custom property
- *   tape       → data-tape ('top' | 'corner' | 'both') — gradient strips
- *   washi      → data-washi ('top') — patterned washi strip
- *   shadow     → data-shadow ('soft')
- *   frame      → data-frame ('scallop' | 'stitch')
- *   paper      → data-paper ('torn' | 'lined')
- *   underline  → data-underline ('squiggle' | 'marker'); squiggle additionally
- *                carries the wobble-generated SVG mask as `--nb-squiggle`
+ *   tape       → data-tape — scotch-tape strips, top/corner/both/left/right
+ *   washi      → data-washi — patterned washi strip, top/left/corner
+ *   shadow     → data-shadow — offset plates, soft/lifted/stacked
+ *   frame      → data-frame — scallop/stitch/double/rope/ticket
+ *   paper      → data-paper — torn/lined/graph/aged/index
+ *   underline  → data-underline — squiggle/marker/dotted/double/circled;
+ *                squiggle additionally carries the wobble-generated SVG mask
+ *                as `--nb-squiggle`
+ *   font       → data-font — which hand the block is written in
+ *   ink        → data-ink — its ink colour
+ *   size       → data-size — lettering size, relative to the body size
+ *   align      → data-align — which way the lines are ranged
+ *
+ * Every value domain lives in `src/script/vocab.ts`, not here: the writing
+ * language and the panel have to offer exactly the same set, and a second copy
+ * of the list is a second copy that drifts.
  *
  * The squiggle SVG is generated ONCE at module load through art/wobble
  * (deterministic seed ⇒ stable string) and embedded as a data URI used as a
@@ -20,9 +29,13 @@
  */
 import { Extension } from '@tiptap/core';
 import {
+  ALIGN_VALUES,
+  BLOCK_INK_VALUES,
   BLOCK_PAPER_VALUES,
+  FONT_VALUES,
   FRAME_VALUES,
   SHADOW_VALUES,
+  SIZE_VALUES,
   TAPE_VALUES,
   UNDERLINE_VALUES,
   WASHI_VALUES,
@@ -109,6 +122,11 @@ export const BLOCK_EFFECT_TYPES = [
   'banner',
   'spoiler',
   'columns',
+  'index-card',
+  'envelope',
+  'stamp',
+  'tag',
+  'marginalia',
 ] as const;
 
 export const BlockEffects = Extension.create({
@@ -149,6 +167,13 @@ export const BlockEffects = Extension.create({
           shadow: enumEffect('shadow', SHADOW_VALUES),
           frame: enumEffect('frame', FRAME_VALUES),
           paper: enumEffect('paper', BLOCK_PAPER_VALUES),
+          // The lettering axes. Same plumbing as the decorations because they
+          // are the same KIND of thing: something you do to a block you have
+          // already written, rather than a different sort of block.
+          font: enumEffect('font', FONT_VALUES),
+          ink: enumEffect('ink', BLOCK_INK_VALUES),
+          size: enumEffect('size', SIZE_VALUES),
+          align: enumEffect('align', ALIGN_VALUES),
           underline: {
             default: null,
             parseHTML: (element: HTMLElement) => {

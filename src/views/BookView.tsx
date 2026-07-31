@@ -78,7 +78,7 @@ import RailPanel from './rail/RailPanel';
 import CustomizePanel from './rail/CustomizePanel';
 import HistoryPanel from './rail/HistoryPanel';
 import PageStylePanel from './rail/PageStylePanel';
-import StickersPanel from './rail/StickersPanel';
+import CataloguePanel from './rail/CataloguePanel';
 import TocPanel from './rail/TocPanel';
 import CheatSheet from './CheatSheet';
 import ThumbStrip from './ThumbStrip';
@@ -94,8 +94,8 @@ import {
   docHasContent,
   leftSlot,
   newPageDoc,
+  pagesToCreateOnFlip,
   prependBlocksToDoc,
-  shouldAutoCreatePage,
   spreadOfSlot,
   spreadPageIds,
   type SpreadIds,
@@ -161,6 +161,21 @@ function BackArrowIcon(): JSX.Element {
         stroke-width="2.2"
         stroke-linecap="round"
         stroke-linejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Hand-drawn cross for the focus-mode exit chip (static wobbled path). */
+function CloseStrokeIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 18 18" class="nb-focus-exit-glyph" aria-hidden="true">
+      <path
+        d="M 4.2 4.6 C 7.1 7.4 10.4 10.6 13.6 13.5 M 13.7 4.4 C 10.6 7.5 7.4 10.5 4.3 13.6"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
       />
     </svg>
   );
@@ -312,18 +327,21 @@ export default function BookView(): JSX.Element {
 
   /** Contract rule 3: synchronous store work only — no awaits in here. */
   const onNavigate = (direction: FlipDirection): void => {
-    if (
-      shouldAutoCreatePage(
-        pages().length,
-        spreadIndex(),
-        direction,
-        rightHasContent(),
-        trailingBlanks(),
-      )
-    ) {
+    const toCreate = pagesToCreateOnFlip(
+      pages().length,
+      spreadIndex(),
+      direction,
+      rightHasContent(),
+      trailingBlanks(),
+    );
+    if (toCreate > 0) {
       // Fire-and-forget: the new spread shows cream blank faces for the few
-      // ms until the row lands, then the keyed leaf mounts the editor.
-      void appendPage();
+      // ms until the rows land, then the keyed leaves mount their editors.
+      // SEQUENCED, not Promise.all: createPage derives its ord from the store,
+      // so two in flight at once would both claim the same slot.
+      void (async () => {
+        for (let i = 0; i < toCreate; i += 1) await appendPage();
+      })();
     }
     setSpreadIndex((index) =>
       Math.max(0, index + (direction === 'next' ? 1 : -1)),
@@ -519,17 +537,46 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   const [focusMode, setFocusMode] = createSignal(false);
   const [cheatOpen, setCheatOpen] = createSignal(false);
+  const [activePanel, setActivePanel] = createSignal<RailPanelId | null>(null);
+
+  /**
+   * Entering focus mode CLOSES whatever the rail had open. A rail panel is a
+   * sheet that also pushes the spread sideways to make room for itself, and
+   * focus mode hides the rail — so entering with the Customize panel open
+   * left a wall of controls floating beside a book shoved off the right edge,
+   * with no rail icon left to close it with.
+   */
+  const setFocus = (on: boolean): void => {
+    if (on) setActivePanel(null);
+    setFocusMode(on);
+  };
+  const toggleFocus = (): void => setFocus(!focusMode());
 
   // -------------------------------------------------------------------------
   // Keyboard: ←/→ flip through the FlipSurface api unless the user is typing;
   // F9 toggles focus mode, '?' opens the cheat-sheet when not typing.
   // -------------------------------------------------------------------------
   const onKeyDown = (event: KeyboardEvent): void => {
+    // Leaving focus mode is checked BEFORE the defaultPrevented guard: the
+    // caret normally sits in a page while writing, and ProseMirror consumes
+    // Escape there, which left the only keyboard exit dead unless the user
+    // first clicked blank paper to blur the editor. Panels still own their
+    // own Escape, so a panel closes first (RailPanel's listener).
+    if (
+      event.key === 'Escape' &&
+      focusMode() &&
+      !insertOpen() &&
+      activePanel() === null
+    ) {
+      event.preventDefault();
+      setFocus(false);
+      return;
+    }
     if (event.defaultPrevented || insertOpen()) return;
 
     if (event.key === 'F9') {
       event.preventDefault();
-      setFocusMode((current) => !current);
+      toggleFocus();
       return;
     }
 
@@ -557,16 +604,6 @@ export default function BookView(): JSX.Element {
       setCheatOpen(true);
       return;
     }
-    if (
-      event.key === 'Escape' &&
-      focusMode() &&
-      activePanel() === null // panels own their Escape (RailPanel)
-    ) {
-      event.preventDefault();
-      setFocusMode(false);
-      return;
-    }
-
     const action = arrowFlipAction(
       event.key,
       isTypingTarget(document.activeElement),
@@ -582,7 +619,6 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   // Rail actions (script tools moved off the old top toolbar)
   // -------------------------------------------------------------------------
-  const [activePanel, setActivePanel] = createSignal<RailPanelId | null>(null);
   const [insertOpen, setInsertOpen] = createSignal(false);
   /** Toasts carry a tone so a failure never reads like a success. */
   const [toast, setToast] = createSignal<{
@@ -835,6 +871,21 @@ export default function BookView(): JSX.Element {
         <span>back to shelf</span>
       </button>
 
+      {/* The one thing left on screen in focus mode, because focus mode
+          hides the rail that toggles it: without this the only way out was
+          to guess at F9 or blur the editor first and then press Escape. */}
+      <button
+        type="button"
+        class="nb-focus-exit"
+        aria-label="Leave focus mode (Escape)"
+        tabindex={focusMode() ? 0 : -1}
+        onClick={() => setFocus(false)}
+      >
+        <CloseStrokeIcon />
+        <span class="nb-focus-exit-label font-ui">leave focus</span>
+        <kbd class="nb-focus-exit-key font-ui">Esc</kbd>
+      </button>
+
       <BookRail
         activePanel={activePanel()}
         onTogglePanel={(panel) =>
@@ -853,7 +904,7 @@ export default function BookView(): JSX.Element {
         }
         onAddPage={() => void addPage()}
         focusMode={focusMode()}
-        onToggleFocus={() => setFocusMode((current) => !current)}
+        onToggleFocus={toggleFocus}
         bookmarked={activeBookmarked()}
         onToggleBookmark={onToggleBookmark}
         thumbnails={settings.thumbnailsStrip}
@@ -989,11 +1040,11 @@ export default function BookView(): JSX.Element {
               </RailPanel>
 
               <RailPanel
-                open={activePanel() === 'stickers'}
-                title="Stickers & effects"
+                open={activePanel() === 'catalogue'}
+                title="Catalogue"
                 onClose={() => setActivePanel(null)}
               >
-                <StickersPanel />
+                <CataloguePanel />
               </RailPanel>
 
               <RailPanel

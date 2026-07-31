@@ -140,6 +140,11 @@ export const CONTAINER_NODE_NAMES: Record<
   'quote-card': 'quote-card',
   spoiler: 'spoiler',
   banner: 'banner',
+  'index-card': 'index-card',
+  envelope: 'envelope',
+  stamp: 'stamp',
+  tag: 'tag',
+  marginalia: 'marginalia',
 };
 
 const WASH_NAMES: readonly string[] = WASH_COLORS;
@@ -157,6 +162,11 @@ const CONTAINER_FALLBACK_ICON: Record<string, StickerId> = {
   'quote-card': 'heart',
   spoiler: 'cat',
   banner: 'sun',
+  'index-card': 'star',
+  envelope: 'heart',
+  stamp: 'flower',
+  tag: 'leaf',
+  marginalia: 'sparkle',
   generic: 'sparkle',
 };
 

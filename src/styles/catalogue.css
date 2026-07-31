@@ -1,0 +1,195 @@
+/* ============================================================================
+   The catalogue panel (src/views/rail/CataloguePanel.tsx).
+
+   A stationer's drawer, not a toolbar: a search line, a row of shelf tabs, and
+   then one grid per shelf where every tile shows the thing rather than naming
+   it. Sits on the rail panel's own chrome (rail.css) for sections, chips and
+   footnotes; only what is specific to the catalogue lives here.
+   ========================================================================== */
+
+.nb-catalogue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ----------------------------------------------------------------------------
+   Search
+   -------------------------------------------------------------------------- */
+.nb-cat-search {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: var(--space-4) 0 var(--space-8);
+  background: var(--paper-cream);
+}
+
+.nb-cat-search-input {
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  font-family: var(--font-body);
+  font-size: var(--text-chip);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-wobble-sm);
+  outline: none;
+}
+
+.nb-cat-search-input::placeholder {
+  color: var(--ink-line-soft);
+  opacity: 0.75;
+}
+
+.nb-cat-search-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--wash-amber);
+}
+
+/* ----------------------------------------------------------------------------
+   Shelf tabs
+   -------------------------------------------------------------------------- */
+.nb-cat-shelves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding-bottom: var(--space-8);
+  border-bottom: 1.5px dashed var(--paper-edge);
+}
+
+/* ----------------------------------------------------------------------------
+   One shelf
+   -------------------------------------------------------------------------- */
+.nb-cat-shelf {
+  scroll-margin-top: 48px;
+}
+
+.nb-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: var(--space-4);
+}
+
+.nb-cat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  min-height: 62px;
+  padding: var(--space-8) 3px var(--space-4);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-wobble-sm);
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast, 120ms) ease,
+    background var(--dur-fast, 120ms) ease;
+}
+
+.nb-cat-item:hover {
+  background: var(--paper-cream);
+  transform: translateY(-1px);
+}
+
+.nb-cat-item:active {
+  transform: translateY(1px);
+}
+
+/* An applied trim reads as pressed IN, not as merely highlighted. */
+.nb-cat-item.is-on {
+  background: var(--wash-amber-light);
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--ink-line) 22%, transparent);
+}
+
+.nb-cat-item:focus-visible {
+  outline: 2px solid var(--wash-amber);
+  outline-offset: 2px;
+}
+
+/* The tile's picture: a glyph, a sticker, or a type specimen. */
+.nb-cat-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  font-family: var(--font-accent);
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink-line);
+}
+
+.nb-cat-glyph svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* A callout tile wears its own wash behind the icon, so the four asides are
+   told apart by colour the way they will be on the page. */
+.nb-cat-glyph[data-tint] {
+  width: 28px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
+
+.nb-cat-glyph[data-tint='amber'] { background: var(--wash-amber-light); }
+.nb-cat-glyph[data-tint='terracotta'] { background: var(--wash-terracotta-light); }
+.nb-cat-glyph[data-tint='moss'] { background: var(--wash-moss-light); }
+.nb-cat-glyph[data-tint='lemon'] { background: var(--wash-lemon-light); }
+.nb-cat-glyph[data-tint='sky'] { background: var(--wash-sky-light); }
+.nb-cat-glyph[data-tint='blush'] { background: var(--wash-blush-light); }
+
+/* ----------------------------------------------------------------------------
+   Live specimens
+
+   A trim tile renders a fragment carrying the real data-attribute under
+   `.nb-fx-specimen` — effects.css's second scope — so it is painted by the
+   same declarations that will paint the page. The wrapper is what makes that
+   affordable in an 84px tile: it clips, and it scales the fragment down rather
+   than asking every effect to have a small variant. `contain` keeps a
+   specimen's absolutely-positioned tape from escaping into the grid.
+   -------------------------------------------------------------------------- */
+.nb-cat-demo {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 30px;
+  overflow: hidden;
+  contain: paint;
+}
+
+.nb-cat-demo > .nb-fx-specimen {
+  display: block;
+  transform: scale(0.6);
+}
+
+.nb-cat-demo-block {
+  display: inline-block;
+  min-width: 34px;
+  padding: 2px 5px;
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.1;
+  color: var(--ink-line);
+  white-space: nowrap;
+}
+
+/* 13px is the handwriting floor (CLAUDE.md), so the smallest label in the
+   panel is set in the UI face rather than in a hand. */
+.nb-cat-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  line-height: 1.2;
+  text-align: center;
+  color: var(--ink-line-soft);
+  overflow-wrap: anywhere;
+}
+
+.nb-cat-item.is-on .nb-cat-label {
+  color: var(--ink-sepia);
+}
+
+.nb-cat-empty {
+  padding: var(--space-16) var(--space-8);
+  text-align: center;
+}

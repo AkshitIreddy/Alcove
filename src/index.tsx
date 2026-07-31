@@ -10,6 +10,15 @@ import "@fontsource/architects-daughter"; /* diagram labels */
 import "@fontsource/nunito-sans/latin-400.css"; /* UI micro-copy < 13px */
 import "@fontsource/nunito-sans/latin-600.css";
 import "@fontsource/nunito-sans/latin-700.css";
+/* The catalogue's FONTS shelf. Not app roles — a writer picks these per block
+   (`{font=marker}`, src/script/vocab.ts FONT_VALUES). They were in
+   package.json and loaded by nobody, so every one of them rendered as the body
+   face. */
+import "@fontsource/gochi-hand"; /* "marker" */
+import "@fontsource/shadows-into-light"; /* "chalk" */
+import "@fontsource/lora/latin-400.css"; /* "serif" */
+import "@fontsource/lora/latin-600.css";
+import "@fontsource/crimson-pro"; /* "book" */
 
 /* Styles — tokens first, then globals that consume them */
 import "./styles/tokens.css";

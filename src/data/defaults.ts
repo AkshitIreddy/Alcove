@@ -32,7 +32,6 @@ export const DEFAULT_SETTINGS: Settings = {
   minimalistMode: false,
   showMarginDoodles: true,
   confettiOnComplete: true,
-  defaultBookPalette: 'amber',
 
   // Sound
   soundMaster: 0.8,
@@ -61,7 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shelfSort: 'manual',
 
   // Wave 2 — ambience & input feel
-  soundscape: 'library',
+  soundscape: 'rain',
   typingSounds: false,
   hourlyChime: false,
   cursorStyle: 'standard',

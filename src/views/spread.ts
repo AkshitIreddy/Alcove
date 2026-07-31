@@ -141,6 +141,43 @@ export function shouldAutoCreatePage(
   );
 }
 
+/**
+ * How many pages that flip has to append — which is not always one.
+ *
+ * A spread is two slots, so appending a single page off an ODD-length book
+ * fills the slot the reader is *leaving* (the current spread's right leaf)
+ * and lands them on a spread where both slots are still out of range. Driving
+ * the seeded 5-page welcome book: turn forward off the last spread and you
+ * arrive at two sheets of cream paper with no editor mounted under either —
+ * clicking them does nothing, typing does nothing, and the only way out is to
+ * turn back. `shouldAutoCreatePage` already promised the flip would "land on a
+ * page that exists"; this is the arithmetic that keeps the promise.
+ *
+ * So: create up to the landing spread's LEFT slot. Never more than that — the
+ * right leaf of the last spread is allowed to be bare paper, which is what the
+ * back of a notebook looks like.
+ */
+export function pagesToCreateOnFlip(
+  pageCount: number,
+  spreadIndex: number,
+  direction: FlipDirection,
+  rightLeafHasContent: boolean,
+  trailingBlankPages = 0,
+): number {
+  if (
+    !shouldAutoCreatePage(
+      pageCount,
+      spreadIndex,
+      direction,
+      rightLeafHasContent,
+      trailingBlankPages,
+    )
+  ) {
+    return 0;
+  }
+  return Math.max(1, leftSlot(spreadIndex + 1) + 1 - pageCount);
+}
+
 /* ----------------------------------------------------------------------------
    Doc content probe + starter doc
    -------------------------------------------------------------------------- */

@@ -80,6 +80,7 @@ import {
   BASE_H,
   BOOK_BASELINE,
   caseBottomY,
+  caseFootY,
   CROWN_H,
   CROWN_LIP,
   DEFAULT_FLOOR_COUNT,
@@ -135,6 +136,7 @@ import { computeRange, diffWindow, Pool, type FloorRange } from './virtualizer';
 import { shelfDesignTag } from '../../art/shelfDesign';
 import {
   renderWallpaperTile,
+  wallpaperAxisKey,
   wallpaperTileKey,
   wallpaperTilePx,
   type WallpaperSpec,
@@ -248,15 +250,18 @@ function wallTint(hex: string): number {
 }
 
 /**
- * The four wallpaper axes as one short string, for the applied-room key.
+ * Every wallpaper axis as one short string, for the applied-room key.
+ *
+ * Borrowed from the module that owns the spec rather than spelled here: this
+ * used to be a local four-axis copy, and when `tone` and `edge` were added it
+ * silently fell two axes behind — changing only the sharpness left the old
+ * wall on screen because nothing thought the room had changed.
  *
  * Not `wallpaperTileKey`, which also carries the scheme and the pixel size:
  * this only has to answer "is the reader looking at a different paper", and
  * the scheme is already in the key this gets appended to.
  */
-function wallpaperKeyOf(spec: WallpaperSpec): string {
-  return `${spec.pattern}.${spec.scale}.${spec.depth}.${spec.ink}`;
-}
+const wallpaperKeyOf = wallpaperAxisKey;
 
 /** Springy-lag constant for the dragged-book ghost (lerpExp k). */
 const PULL_FOLLOW_K = 11;
@@ -376,6 +381,10 @@ export class ShelfWorld {
   } | null = null;
   /** Drop-target slot highlight while moving (fx layer, screen space). */
   private movePreview: NineSliceSprite | null = null;
+  /** The same mark, standing in the gap a pulled-out book came from. */
+  private slotHint: NineSliceSprite | null = null;
+  /** Row-mates dimmed while a book is out, with the tint each wore before. */
+  private readonly dimmed: Array<{ sprite: Sprite; tint: number }> = [];
   /** Keyboard shelf-nav selection (floor + index into the floor's visuals). */
   private kbSel: { floor: number; index: number } | null = null;
   private kbVisual: { fv: FloorView; visual: BookVisual } | null = null;
@@ -484,8 +493,11 @@ export class ShelfWorld {
       const bx = xBounds(this.vp, this.camera.zoom);
       this.camera.x = clamp((SHELF_WIDTH - this.vp.width / this.camera.zoom) / 2, bx.min, bx.max);
     }
-    // A restored zoom may undershoot the viewport-aware floor (window grew).
+    // A restored zoom may undershoot the viewport-aware floor (window grew),
+    // and a restored X may sit outside the bounds that zoom implies — so the
+    // first painted frame is already centred rather than waiting for the loop.
     clampZoomBounds(this.camera, this.vp);
+    clampCamera(this.camera, this.vp);
     this.tier = nextLodTier(0, this.camera.zoom);
 
     this.input = new ShelfInput(app.canvas, {
@@ -736,10 +748,11 @@ export class ShelfWorld {
       };
       globals['__shelfBookMeta'] = (bookId: string): unknown =>
         this.store.findBook(bookId)?.coverMeta ?? null;
-      globals['__shelfSpineRect'] = (bookId: string): RectLike | null => {
-        const book = this.store.findBook(bookId);
-        return book === null ? null : this.spineScreenRect(book);
-      };
+      globals['__shelfSpineRect'] = (bookId: string): RectLike | null =>
+        this.spineRectOf(bookId);
+      // Take a book off the shelf the way a click does, for probes that need
+      // the held state without hunting for a spine's pixels.
+      globals['__shelfPullOut'] = (bookId: string): void => this.pullOut(bookId);
       globals['__shelfVisibleBooks'] = (): Array<{ id: string; title: string }> =>
         [...this.floors.values()].flatMap((fv) =>
           fv.visuals.map((v) => ({ id: v.book.id, title: v.book.title })),
@@ -832,6 +845,10 @@ export class ShelfWorld {
     this.clearKbSelection();
     this.clearHover();
     this.killNavTweens();
+    this.clearSlotHint();
+    // The new case's rows are different sprites; whatever was dimmed in the
+    // old one is about to be destroyed, so drop the bookkeeping with it.
+    this.dimmed.length = 0;
     this.disposeGhost();
     this.pull = null;
 
@@ -888,8 +905,18 @@ export class ShelfWorld {
 
   /* ------------------------------ public API ----------------------------- */
 
-  /** Open a book from the accessibility mirror (Enter/click on a list row). */
-  openFromList(bookId: string): void {
+  /**
+   * Take a book off the shelf by id — the accessibility mirror, the shelf
+   * menu, keyboard Enter. It does NOT open the book: it plays the same
+   * pull-out the pointer plays and leaves it held in front of the case, where
+   * the overlay asks whether to read it or put it back.
+   *
+   * The one case that still goes straight to the page is a book with no spine
+   * on screen to pull (its floor unmounted, or the far-zoom stamp view). There
+   * is nothing to animate there, and a list row that silently did nothing
+   * would be worse than an abrupt open.
+   */
+  pullOut(bookId: string): void {
     if (this.frozen || this.destroyed) return;
     const book = this.store.findBook(bookId);
     if (book === null) return;
@@ -901,6 +928,76 @@ export class ShelfWorld {
     }
     void touchBookOpened(book.id);
     appState.openBook(book.id);
+  }
+
+  /** Screen rect of a book's spine where it stands in the row, or null. */
+  spineRectOf(bookId: string): RectLike | null {
+    const book = this.store.findBook(bookId);
+    return book === null ? null : this.spineScreenRect(book);
+  }
+
+  /**
+   * The whole bookcase in screen px, cornice lips and plinth included.
+   *
+   * The overlay uses it as the drop target for dragging a held book back:
+   * "into the shelf" has to mean the piece of furniture you can see, not a
+   * slot you have to hit.
+   */
+  caseScreenRect(): RectLike {
+    const topLeft = worldToScreen(this.camera, { x: -CROWN_LIP, y: -CROWN_H });
+    const bottomRight = worldToScreen(this.camera, {
+      x: SHELF_WIDTH + CROWN_LIP,
+      y: caseFootY(this.floorCount),
+    });
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    };
+  }
+
+  /**
+   * Outline the gap a held book would drop back into.
+   *
+   * Deliberately the same mark as the move-mode drop preview: "this is where
+   * it goes" should look identical wherever the reader meets it, and the gap
+   * in the row is the one place on the shelf that answers "back where?".
+   */
+  showSlotHint(bookId: string, on: boolean): void {
+    if (this.destroyed) return;
+    if (!on) {
+      this.clearSlotHint();
+      return;
+    }
+    const book = this.store.findBook(bookId);
+    if (book === null) return;
+    const fv = this.floors.get(book.floor);
+    const visual = fv?.visuals.find((v) => v.book.id === bookId);
+    if (fv === undefined || visual === undefined) return;
+    let hint = this.slotHint;
+    if (hint === null) {
+      hint = makeFrameSprite(this.marks.hoverFrame);
+      hint.alpha = 0.95;
+      this.fx.addChild(hint);
+      this.slotHint = hint;
+    }
+    const cam = this.camera;
+    const screen = worldToScreen(cam, {
+      x: visual.centerX,
+      y: fv.index * FLOOR_H + visual.baseY,
+    });
+    hint.position.set(screen.x, screen.y + 6 * cam.zoom);
+    hint.width = (visual.w + 10) * cam.zoom;
+    hint.height = (visual.height + 8) * cam.zoom;
+    this.dirty = true;
+  }
+
+  private clearSlotHint(): void {
+    if (this.slotHint === null) return;
+    this.slotHint.destroy();
+    this.slotHint = null;
+    this.dirty = true;
   }
 
   /* --------------------------- zoom pill / keys --------------------------- */
@@ -995,6 +1092,10 @@ export class ShelfWorld {
   /** Close flow, step 2: canvas ghost settles the book back into its slot. */
   pushInBook(book: Book, onDone: () => void): void {
     void play('book-return');
+    this.clearSlotHint();
+    // The row lights back up as the book arrives, not after it has landed —
+    // the two are one movement.
+    this.undimSiblings();
     const fv = this.floors.get(book.floor);
     const visual = fv?.visuals.find((v) => v.book.id === book.id);
     const m = this.hooks.motion();
@@ -1076,6 +1177,9 @@ export class ShelfWorld {
     this.move = null;
     this.movePreview?.destroy();
     this.movePreview = null;
+    this.slotHint?.destroy();
+    this.slotHint = null;
+    this.dimmed.length = 0;
     this.disposeGhost();
     for (const fv of this.floors.values()) fv.destroy();
     this.floors.clear();
@@ -1100,6 +1204,29 @@ export class ShelfWorld {
     if (!this.frozen && !this.dragging) {
       moving = zoomTick(this.camera, dt, this.reducedMotion) || moving;
       moving = momentumTick(this.camera, dt, this.vp) || moving;
+      // The camera's own bounds have to be enforced HERE, after both
+      // integrators, rather than only where input arrives — this is what was
+      // leaving the bookcase parked against one side of the window.
+      //
+      // A wheel zoom writes cam.x/cam.y straight from its anchor
+      // (`zoomTick` → `applyAnchor`) so the world point under the cursor
+      // holds still. Nothing downstream re-clamps: `momentumTick` returns on
+      // its first line while the camera is at rest, and `clampCamera` was
+      // only ever reached from a pan or a resize. So zooming out with the
+      // cursor off to one side moved the camera past `xBounds` — which at
+      // that zoom has collapsed to the single centred position — and it
+      // stayed there for the rest of the session, through a book and back.
+      //
+      // The two nav tweens are excluded rather than fought: `springBack` IS
+      // the rubber-band release, and clamping the camera under it would
+      // delete the animation it exists to play.
+      if (
+        this.springTween === null &&
+        this.zoomTween === null &&
+        clampCamera(this.camera, this.vp)
+      ) {
+        moving = true;
+      }
       // Zooming out grows the visible height, which can leave the camera
       // below a case that no longer needs the room — so the bottom is
       // enforced after both integrators, every frame, not just on input.
@@ -2224,6 +2351,10 @@ export class ShelfWorld {
     const m = this.hooks.motion();
     for (const other of fv.visuals) {
       if (other === visual) continue;
+      // Remember the tint rather than assuming white: a spine still waiting
+      // for its bake wears `placeholderTint(params)`, and restoring that one
+      // to white would bleach it.
+      this.dimmed.push({ sprite: other.sprite, tint: other.sprite.tint });
       this.track(
         gsap.to(other.sprite, {
           pixi: { tint: 0xb9ab97 },
@@ -2232,6 +2363,35 @@ export class ShelfWorld {
         }),
       );
     }
+  }
+
+  /**
+   * Bring the row back up.
+   *
+   * There was nothing to undo while a pull-out always ran on into the book
+   * view — the shelf unmounted a heartbeat later and took the dim with it.
+   * Now that a book can come back, the row it left has to be exactly as it
+   * found it, or every book put back leaves a stripe of grey behind it.
+   */
+  private undimSiblings(): void {
+    if (this.dimmed.length === 0) return;
+    const m = this.hooks.motion();
+    for (const { sprite, tint } of this.dimmed) {
+      if (sprite.destroyed) continue;
+      if (m === 0) {
+        sprite.tint = tint;
+        continue;
+      }
+      this.track(
+        gsap.to(sprite, {
+          pixi: { tint },
+          duration: 0.28 * m,
+          onUpdate: this.hooks.markDirty,
+        }),
+      );
+    }
+    this.dimmed.length = 0;
+    this.dirty = true;
   }
 
   /**
@@ -2254,7 +2414,9 @@ export class ShelfWorld {
   private pullOutBook(fv: FloorView, visual: BookVisual): void {
     if (this.frozen) return;
     void play('book-pull');
-    void touchBookOpened(visual.book.id);
+    // Note what is NOT here: `touchBookOpened`. Taking a book off the shelf is
+    // no longer the same act as reading it, so the continue-reading ribbon
+    // only moves when the reader actually opens it (BookshelfWorld.handleOpen).
     this.frozen = true;
     this.input.frozen = true;
     this.dragging = false;
@@ -2399,7 +2561,6 @@ export class ShelfWorld {
     const pull = this.pull;
     if (pull === null || pull.finishing) return;
     pull.finishing = true;
-    void touchBookOpened(pull.visual.book.id);
     this.frozen = true;
     this.input.frozen = true;
     this.camera.vx = 0;

@@ -12,22 +12,17 @@
  * the moment they are made.
  */
 import { For, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
-import { renderCaseSection } from '../../art/caseArt';
+import type { FlatCtx } from '../../art/flat';
+import { drawCaseCard } from '../../art/flatShelf';
 import { fnv1a } from '../../art/noise';
-import type { Ctx2D } from '../../art/spines';
 import { WALLPAPER_PATTERNS } from '../../art/wallpaper';
 import {
   SHIPPED_THEME_IDS,
   THEMES,
   WALLPAPER_PATTERN_IDS,
   getTheme,
-  resolveBackdrop,
-  resolveWallpaper,
-  type BackdropId,
   type LibraryTheme,
   type ThemeId,
-  type WallpaperPatternId,
-  type WallpaperSpec,
 } from '../../art/themes';
 import {
   DEFAULT_LIBRARY_PREFS,
@@ -41,21 +36,24 @@ const CARD_W = 168;
 const CARD_H = 116;
 
 /**
- * Painted card art. `renderCaseSection` is the same renderer the specimen
- * board and the shelf case use â€” we drive it directly rather than through
- * `bakeThemeThumbnail` for one reason: the baked helper stamps the theme's
- * full display name onto the floor plate, which overflows a 168px card. The
- * card prints the name underneath instead, so the plate stays blank.
+ * Card art, drawn with the case's own vocabulary.
+ *
+ * `drawCaseCard` is built from the same four shapes `EnvTextures` bakes the
+ * real case from, so a card cannot preview a room you cannot get. It used to
+ * call `caseArt.renderCaseSection` — seconds of brush work per card, and after
+ * the shelf went flat it was previewing a wood-grained watercolour room that no
+ * longer existed anywhere in the app.
+ *
+ * The room is one room now: the flat palette has a single timber and a plain
+ * wall, so what still differs between cards is the seed — each theme gets its
+ * own arrangement of books, which is what keeps the grid legible as a grid.
+ * The lighting a theme carries (`theme.light`) is real and still applies to the
+ * shelf; it is simply not something a 168px case section can show.
  */
 const cardCache = new Map<string, Promise<ImageBitmap | null>>();
 
-function cardArt(
-  theme: LibraryTheme,
-  backdrop: BackdropId,
-  wallpaper: WallpaperSpec,
-  dpr: number,
-): Promise<ImageBitmap | null> {
-  const key = `${theme.id}|${backdrop}|${wallpaper.pattern}|${wallpaper.colourway}|${dpr}`;
+function cardArt(theme: LibraryTheme, dpr: number): Promise<ImageBitmap | null> {
+  const key = `${theme.id}|${dpr}`;
   const hit = cardCache.get(key);
   if (hit !== undefined) return hit;
   const pending = (async (): Promise<ImageBitmap | null> => {
@@ -69,11 +67,7 @@ function cardArt(
       const ctx = (canvas as OffscreenCanvas).getContext('2d');
       if (ctx === null) return null;
       ctx.scale(dpr, dpr);
-      renderCaseSection(ctx as Ctx2D, theme, CARD_W, CARD_H, fnv1a(`${theme.id}|card`), {
-        label: '',
-        backdrop,
-        wallpaper,
-      });
+      drawCaseCard(ctx as FlatCtx, CARD_W, CARD_H, fnv1a(`${theme.id}|card`));
       return await createImageBitmap(canvas as OffscreenCanvas);
     } catch {
       return null;
@@ -83,11 +77,16 @@ function cardArt(
   return pending;
 }
 
-/** Painted theme card â€” the room's own art, baked once per card recipe. */
+/**
+ * A theme card â€” the case, drawn in the app's one style, per theme seed.
+ *
+ * No `pattern` prop any more: it existed so the ACTIVE card could preview the
+ * reader's wall pick, and the wall is now one flat colour with nothing on it.
+ * Passing it in would have meant re-baking a card that cannot change.
+ */
 function ThemeCard(props: {
   id: ThemeId;
   active: boolean;
-  pattern: WallpaperPatternId | null;
   onPick(): void;
 }): JSX.Element {
   let canvas: HTMLCanvasElement | undefined;
@@ -95,12 +94,6 @@ function ThemeCard(props: {
 
   createEffect(() => {
     const t = theme();
-    // Only the ACTIVE card previews the reader's wall pick; the rest show each
-    // room as its author intended, so the grid reads as distinct worlds.
-    const wallpaper = props.active
-      ? resolveWallpaper(t, { pattern: props.pattern, colourway: null })
-      : t.wallpaper;
-    const backdrop = resolveBackdrop(t, null);
     const el = canvas;
     if (!el) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -108,7 +101,7 @@ function ThemeCard(props: {
     onCleanup(() => {
       stale = true;
     });
-    void cardArt(t, backdrop, wallpaper, dpr).then((bitmap) => {
+    void cardArt(t, dpr).then((bitmap) => {
       if (stale || bitmap === null) return;
       el.width = Math.round(CARD_W * dpr);
       el.height = Math.round(CARD_H * dpr);
@@ -207,7 +200,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
               <ThemeCard
                 id={id}
                 active={libraryPrefs.theme === id}
-                pattern={libraryPrefs.wallpaperPattern}
                 onPick={() => patch({ theme: id })}
               />
             )}

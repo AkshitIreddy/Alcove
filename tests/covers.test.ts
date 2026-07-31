@@ -18,7 +18,7 @@ import {
   deriveCoverParams,
   normalizeCoverOverrides,
 } from '../src/art/covers';
-import { deriveSpineParams } from '../src/art/spines';
+import { clothForPalette, deriveSpineParams } from '../src/art/spines';
 import { mergeCoverMetaSection, readCoverOverrides, readPageDefaults } from '../src/data/books';
 
 /* ─────────────────────────── deriveCoverParams ────────────────────────── */
@@ -137,6 +137,26 @@ describe('coverPaletteCss', () => {
     }
     expect(coverPaletteCss(COVER_PALETTE_COUNT)).toEqual(coverPaletteCss(0));
     expect(coverPaletteCss(-1)).toEqual(coverPaletteCss(COVER_PALETTE_COUNT - 1));
+  });
+
+  /**
+   * The shelf and the pull-out must agree about a book's colour.
+   *
+   * Both fold the same twenty-slot `palette` onto the flat vocabulary's six
+   * cloths, and for a while they folded it *differently* — the spine used the
+   * pigment table, the cover used `palette % 6` — so a book was one colour on
+   * the shelf and another in your hand. This pins the two together without
+   * reaching into either module's private colour tables: whenever the spine
+   * puts two palettes on the same cloth the cover must too, and vice versa.
+   */
+  it('agrees with the spine renderer about which palette is which cloth', () => {
+    for (let a = 0; a < COVER_PALETTE_COUNT; a += 1) {
+      for (let b = 0; b < COVER_PALETTE_COUNT; b += 1) {
+        const sameOnSpine = clothForPalette(a) === clothForPalette(b);
+        const sameOnCover = coverPaletteCss(a).top === coverPaletteCss(b).top;
+        expect(sameOnCover).toBe(sameOnSpine);
+      }
+    }
   });
 });
 

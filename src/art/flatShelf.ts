@@ -22,6 +22,7 @@ import {
   wobbleRect,
   type FlatCtx,
 } from './flat';
+import { mulberry32 } from './noise';
 
 /** How much of a board's height reads as its front edge. */
 const EDGE_FRACTION = 0.28;
@@ -229,4 +230,96 @@ export function drawSpine(
 
   // Where the book meets the plank.
   contactShadow(ctx, x + w / 2, y + h, w * 0.62, Math.max(1.5, w * 0.14), 0.18);
+}
+
+/**
+ * A row of books standing on a shelf board, filling the width given.
+ *
+ * Widths and heights come off one seeded stream, so a row is the same row every
+ * time it is drawn — which is what lets a preview thumbnail be cached by seed
+ * alone. Books are laid left to right and the last one is dropped rather than
+ * clipped, because a spine sliced in half by the post reads as a rendering bug.
+ */
+export function drawBookRow(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  seed = 1,
+): void {
+  const rnd = mulberry32(seed >>> 0);
+  const gap = Math.max(0.6, h * 0.012);
+  let cx = x;
+  // The width test is what ends the row; the counter is only a stop against a
+  // degenerate `h` (a zero-height zone would give zero-width books forever).
+  for (let i = 0; i < 512; i++) {
+    const bw = h * (0.11 + rnd() * 0.075);
+    if (bw <= 0 || cx + bw > x + w) break;
+    const bh = h * (0.74 + rnd() * 0.26);
+    // Math.imul, not `*`: the product overflows the 53-bit float mantissa and
+    // the mixing degrades to whatever survived the rounding.
+    const spec = flatSpineFor((Math.imul(seed, 2654435761) ^ Math.imul(i, 0x9e3779b1)) >>> 0);
+    drawSpine(ctx, cx, y + h - bh, bw, bh, spec);
+    cx += bw + gap;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   The whole case, small
+   -------------------------------------------------------------------------- */
+
+/**
+ * A bookcase in a box: wall, cornice, posts, two dressed floors.
+ *
+ * This is the preview art — the Library Studio's room cards, and anything else
+ * that needs to show "the shelf" without a Pixi world. It draws with exactly
+ * the same four functions the real case bakes through, so a card cannot drift
+ * away from the thing it is previewing. (It did: the cards kept painting a
+ * wood-grained, wallpapered, watercolour room for a while after the shelf
+ * itself had gone flat, and previewed a room you could no longer get.)
+ *
+ * Proportions are all fractions of the box, so it holds from a 168px card up
+ * to a full-page specimen.
+ */
+export function drawCaseCard(ctx: FlatCtx, w: number, h: number, seed = 1): void {
+  ctx.fillStyle = FLAT.wall;
+  ctx.fillRect(0, 0, w, h);
+
+  const s = seed >>> 0;
+  const margin = Math.min(w, h) * 0.06;
+  const caseX = margin * 1.5;
+  const caseW = w - caseX * 2;
+  const crownH = Math.max(5, h * 0.1);
+  const crownLip = caseW * 0.03;
+  const crownY = margin * 0.7;
+  // The cornice's underside sits ON the case, so the body starts inside it.
+  const bodyTop = crownY + crownH * 0.78;
+  const bodyH = h - margin * 0.8 - bodyTop;
+  const postW = Math.max(3, caseW * 0.05);
+
+  // One contact shadow where the case meets the floor — the only shadow here.
+  contactShadow(ctx, caseX + caseW / 2, bodyTop + bodyH, caseW * 0.5, Math.max(2, h * 0.022), 0.16);
+
+  drawRecess(ctx, caseX, bodyTop, caseW, bodyH, s + 1);
+
+  const floors = 2;
+  const floorH = bodyH / floors;
+  const plankH = Math.max(3, floorH * 0.17);
+  const innerX = caseX + postW;
+  const innerW = caseW - postW * 2;
+  for (let f = 0; f < floors; f++) {
+    const top = bodyTop + f * floorH;
+    const zoneH = floorH - plankH;
+    // Headroom: without it the tallest spine in a row butts into the board
+    // above and its rounded top reads as clipped rather than as a book.
+    const head = zoneH * 0.08;
+    drawBookRow(ctx, innerX + innerW * 0.03, top + head, innerW * 0.94, zoneH - head, s + f * 101 + 7);
+    drawPlank(ctx, caseX, top + zoneH, caseW, plankH, s + f * 13);
+  }
+
+  // Posts last of the body, so their ink lines close the recess and the planks.
+  drawPost(ctx, caseX, bodyTop, postW, bodyH, s + 3);
+  drawPost(ctx, caseX + caseW - postW, bodyTop, postW, bodyH, s + 4);
+  drawCrown(ctx, caseX - crownLip, crownY, caseW + crownLip * 2, crownH, s + 5);
 }

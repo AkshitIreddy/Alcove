@@ -240,9 +240,6 @@ const FLAT_WALL_TINT = 0xe9e2d0;
 const FLORA_DENSITY = 0;
 
 
-/** Mid tone of the baked trash-drawer art — the base `ratioTint` divides out. */
-const TRASH_ART_TONE = 0xddd0be;
-
 /** Springy-lag constant for the dragged-book ghost (lerpExp k). */
 const PULL_FOLLOW_K = 11;
 
@@ -260,20 +257,6 @@ export function hexToInt(colour: string, fallback = 0xfff2d8): number {
     return (Number(rgb[1]) << 16) | (Number(rgb[2]) << 8) | Number(rgb[3]);
   }
   return fallback;
-}
-
-/**
- * Renormalizing tint: what to multiply art whose average tone is `base` by so
- * it lands on `target`. Lets one baked brown sprite (the trash drawer) wear
- * every room's wood without re-baking.
- */
-export function ratioTint(target: number, base: number): number {
-  const ch = (shift: number): number => {
-    const t = (target >> shift) & 0xff;
-    const b = (base >> shift) & 0xff;
-    return Math.max(0, Math.min(255, Math.round((t / Math.max(1, b)) * 255)));
-  };
-  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
 /** Multiply two 0xRRGGBB tints channel-wise (Pixi's own tint semantics). */
@@ -541,8 +524,10 @@ export class ShelfWorld {
       haloTop.height = CASE_HALO_PAD + CROWN_H;
       this.world.addChild(haloTop);
     }
+    // Flat timber until the bake lands; `syncCrown` swaps the art in.
     this.crown = new Sprite(Texture.WHITE);
     this.crown.tint = PLACEHOLDER_TINTS.crown;
+    this.crown.eventMode = 'none';
     this.crown.position.set(-CROWN_LIP, -CROWN_H);
     this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
     this.crown.height = CROWN_H;
@@ -1288,9 +1273,6 @@ export class ShelfWorld {
 
     // Light + motes + spine bias react instantly; they cost nothing to redo.
     this.applyLightRig(next);
-    if (this.trashSprite !== null) {
-      this.trashSprite.tint = ratioTint(hexToInt(next.theme.wood.light), TRASH_ART_TONE);
-    }
     this.factory.setTheme(next.theme);
 
     if (!roomChanged) {
@@ -1620,9 +1602,11 @@ export class ShelfWorld {
       this.trashSprite.anchor.set(0.5, 0);
       this.trashSprite.width = TRASH_DRAWER_W;
       this.trashSprite.height = TRASH_DRAWER_H;
-      const wood = this.library?.theme.wood.light;
-      this.trashSprite.tint =
-        wood === undefined ? TRASH_ART_TONE : ratioTint(hexToInt(wood), TRASH_ART_TONE);
+      // Untinted, deliberately. The drawer front used to be baked in a pale
+      // neutral wood so a per-room `ratioTint` could push it to that theme's
+      // timber; it is now baked in the one flat timber the rest of the case
+      // uses, and any multiply on top of that only darkens it.
+      this.trashSprite.tint = 0xffffff;
     }
     this.trashSprite.position.set(SHELF_WIDTH / 2, y);
     // Keep on top of floor containers (mounts re-order world children). Only
@@ -1744,6 +1728,7 @@ export class ShelfWorld {
     this.backdrop.tint = FLAT_WALL_TINT;
     this.backdrop.alpha = 1;
     if (this.wallpaper !== null) this.wallpaper.visible = false;
+    this.syncCrown();
     this.dirty = true;
     // Floors still need telling that their env textures moved.
     for (const [index, fv] of this.floors) {
@@ -1752,6 +1737,34 @@ export class ShelfWorld {
       this.rebakeStamp(index, fv);
     }
     this.dirty = true;
+  }
+
+  /**
+   * Put the baked cornice on the cornice sprite.
+   *
+   * This is the only place the crown's art is ever attached, and for a long
+   * while nothing did it at all: the sprite was built on `Texture.WHITE` with a
+   * placeholder tint, `EnvTextures` baked a cornice complete with its lip line
+   * and gilt studs, and the two never met — the top of the case was a plain
+   * tinted rectangle no matter how good the bake got.
+   *
+   * Two details that are easy to get wrong here:
+   *  - the tint must return to white, or the art is multiplied by the
+   *    placeholder timber and comes out muddy;
+   *  - `width`/`height` are scale in disguise, so they have to be re-set after
+   *    the texture changes or the sprite takes the raster's own pixel size.
+   *
+   * `EnvTextures.landPart` notifies its listeners BEFORE freeing the texture it
+   * replaced, so swapping here can never leave a destroyed texture on screen.
+   */
+  private syncCrown(): void {
+    const tex = this.envTex.crown;
+    if (tex === null || tex.destroyed || this.crown.texture === tex) return;
+    this.crown.texture = tex;
+    this.crown.tint = 0xffffff;
+    this.crown.position.set(-CROWN_LIP, -CROWN_H);
+    this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
+    this.crown.height = CROWN_H;
   }
 
   /**

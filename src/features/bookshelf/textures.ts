@@ -200,6 +200,11 @@ function get2d(c: AnyCanvas): OffscreenCanvasRenderingContext2D | CanvasRenderin
 
 function textureFromCanvas(canvas: AnyCanvas): Texture {
   if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
+    // The canvas MUST already have had a 2d context taken from it. Transfer
+    // is not allowed otherwise, and the failure is a thrown InvalidStateError
+    // at runtime rather than anything the type system can catch — so take one
+    // here as well, which is a no-op when the caller already did.
+    get2d(canvas);
     return new Texture({
       source: new ImageSource({ resource: canvas.transferToImageBitmap() }),
     });
@@ -727,8 +732,15 @@ export class EnvTextures {
   /** The shared no-op texture (see the `blank` field). */
   private blankTexture(): Texture {
     if (this.blank !== null) return this.blank;
-    // An untouched canvas is fully transparent, which is the whole point.
-    this.blank = textureFromCanvas(makeCanvas(1, 1));
+    // An untouched canvas is fully transparent, which is the whole point —
+    // but it still has to be given a context before anyone can transfer an
+    // ImageBitmap out of it. `OffscreenCanvas.transferToImageBitmap()` throws
+    // InvalidStateError on a canvas that has never had one, which is not
+    // something tsc or a unit test can see: it only shows up as four thrown
+    // errors in the running app.
+    const canvas = makeCanvas(1, 1);
+    get2d(canvas);
+    this.blank = textureFromCanvas(canvas);
     return this.blank;
   }
 }

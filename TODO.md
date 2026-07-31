@@ -18,7 +18,10 @@ See `docs/design/RESET-render-architecture.md`. Measured on the live app: **4,97
 ## 🐛 Reported bugs
 
 **Shelf**
-- [ ] Wallpaper tiling repeat visible at top and bottom when zoomed out
+- [x] ~~Wallpaper tiling repeat / pale bands in the corners while panning~~ — authored 1536px panel + `wallTileScale` covers the viewport with one copy
+- [ ] **The case itself is still CPU-painted** — muddy timber, ghosting bands inside the openings. The authored oak is generated and shipped (`public/room/`) but only the wall consumes it so far
+- [ ] Repeating green sprigs along every plank front — not flora (that is off); they survive in the case bake
+- [ ] Dragging empty shelf space pulls a book out instead of panning
 - [ ] Flora pops in one specimen at a time on load
 - [x] ~~Books far too small relative to shelf height~~ — `artHeight` maps the sprite's own proportion onto the book zone (0.97 fill)
 - [ ] Tiny low-quality sprig stamps repeating along plank fronts at identical spacing

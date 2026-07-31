@@ -79,9 +79,17 @@ const SETS = {
   },
 };
 
-/** Minimal SDXL txt2img graph in ComfyUI API format. */
-function workflow({ prompt, negative, seed, size, steps = 28, cfg = 6.5 }) {
-  return {
+/**
+ * SDXL txt2img graph in ComfyUI API format.
+ *
+ * When `tile` is set, both the UNet and the VAE get circular padding
+ * (ComfyUI-seamless-tiling). Post-hoc mirroring is NOT an acceptable
+ * substitute — it produces visibly symmetrical tiles. Verified empirically:
+ * without this the edge discontinuity was ~2x the interior variation and the
+ * seams were plainly visible in a 2x2 composite.
+ */
+function workflow({ prompt, negative, seed, size, steps = 28, cfg = 6.5, tile = false }) {
+  const graph = {
     4: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: CKPT } },
     6: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['4', 1] } },
     7: { class_type: 'CLIPTextEncode', inputs: { text: negative, clip: ['4', 1] } },
@@ -93,15 +101,27 @@ function workflow({ prompt, negative, seed, size, steps = 28, cfg = 6.5 }) {
         sampler_name: 'dpmpp_2m',
         scheduler: 'karras',
         denoise: 1,
-        model: ['4', 0],
+        model: [tile ? '20' : '4', 0],
         positive: ['6', 0],
         negative: ['7', 0],
         latent_image: ['5', 0],
       },
     },
-    8: { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
+    8: {
+      class_type: tile ? 'CircularVAEDecode' : 'VAEDecode',
+      inputs: tile
+        ? { samples: ['3', 0], vae: ['4', 2], tiling: 'enable' }
+        : { samples: ['3', 0], vae: ['4', 2] },
+    },
     9: { class_type: 'SaveImage', inputs: { filename_prefix: 'nb', images: ['8', 0] } },
   };
+  if (tile) {
+    graph[20] = {
+      class_type: 'SeamlessTile',
+      inputs: { model: ['4', 0], copy_model: 'Make a copy', tiling: 'enable' },
+    };
+  }
+  return graph;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -188,7 +208,10 @@ async function main() {
       const seed = [...slug].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
       const t0 = Date.now();
       try {
-        const id = await queue(workflow({ prompt, negative: NEG, seed, size: set.size }), clientId);
+        const id = await queue(
+          workflow({ prompt, negative: NEG, seed, size: set.size, tile: set.tile === true }),
+          clientId,
+        );
         const entry = await waitFor(id);
         const ok = await saveOutputs(entry, outPath);
         process.stdout.write(`  ${slug} ${ok ? 'ok' : 'NO IMAGE'} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n`);

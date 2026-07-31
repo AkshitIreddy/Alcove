@@ -50,6 +50,20 @@ damask · botanical toile · constellation · ditsy floral · gingham-over-flora
 
 Low contrast is a hard requirement — the wallpaper must never compete with the books.
 
+## Validated setup (working as of first run)
+
+- ComfyUI at `C:\Users\akshi\ComfyUI`, own venv, torch 2.6.0+cu124 on the RTX 4080 (12GB, ~10.8GB free at idle).
+- Checkpoint: `sd_xl_base_1.0.safetensors` (6.46GB) in `models/checkpoints`.
+- **`ComfyUI-seamless-tiling` custom node is required** — it patches Conv2d padding to circular in both the UNet (`SeamlessTile`) and the VAE (`CircularVAEDecode`).
+- Start headless: `.\venv\Scripts\python.exe main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch` (takes ~60s to bind; do not assume failure early).
+- Generate: `node scripts/gen-assets.mjs --test` then `--set materials|foliage|wallpaper`.
+- Throughput: ~20–25s per 1024² image after the model is warm (first generation pays ~45–60s of load).
+
+### Gotchas hit, so they are not re-discovered
+- ComfyUI's `requirements.txt` pulls a **torchaudio built for a different torch**, which crashes at startup with `Windows fatal exception: code 0xc0000139`. Fix: install `torchaudio==2.6.0` from the cu124 index to match torch. It cannot be simply removed — ComfyUI imports it.
+- A stale ComfyUI process keeps a lock on `user/comfyui.db` and holds port 8188; kill leftover python processes before restarting.
+- **Tiling must be verified, not assumed.** Without the circular-padding node the leather tile measured an edge discontinuity of 15.1 against an interior reference of 7.7, with plainly visible seams in a 2×2 composite. With it: 8.8 / 9.5 against 9.1 — indistinguishable from interior variation. `qa/tiletest.py` performs this check.
+
 ## Quality gate
 
 Nothing enters the repo until it passes:

@@ -9,8 +9,9 @@
  * Lifecycle of a flip:
  *   pointerdown on a hotspot (right-edge 48px strip / corners)
  *     → save selection, blur editor, upload cached textures, hide the live
- *       leaf, show the canvas — all in the same frame (bitmaps are
- *       pre-cached so nothing rasterizes here)
+ *       leaf, show the canvas AND draw its first frame — all in the same
+ *       frame (bitmaps are pre-cached so nothing rasterizes here; page
+ *       snapshotting is suspended for the duration of the flip)
  *   pointermove → p = clamp mapping, corner grips tilt the fold; direct
  *       proxy writes + one rAF-coalesced GL render per frame
  *   pointerup → tap ⇒ tween p→1 (power2.inOut, 0.45s); drag ⇒ velocity
@@ -18,9 +19,10 @@
  *       duration clamp(0.55 − 0.1·|v|, 0.25, 0.55), or InertiaPlugin throw
  *       physics when the plugin is registered
  *   pointerdown mid-tween → tween.kill(), resume drag from current p
- *   land() → flat-state swap: commit navigation (p=1) or restore
- *       selection/focus (p=0), reveal live DOM under the canvas, wait one
- *       rAF for paint, then hide the canvas.
+ *   land() → flat-state swap: draw the end state, commit navigation (p=1) or
+ *       restore selection/focus (p=0) under the canvas, wait one rAF for the
+ *       new DOM to paint, clear the overlay and reveal the leaf together,
+ *       then hide the canvas a frame later (see land() for why)
  *
  * Fallbacks: WebGL unavailable → rigid CSS 3D fold (same gesture math);
  * context loss mid-flip → instant land via a crossfade veil; reduced motion
@@ -204,6 +206,9 @@ export class PageFlipController {
     this.tween?.kill();
     this.tween = null;
     this.cancelCrossfade?.();
+    // A flip torn down mid-flight never reaches land(), so release the
+    // capture hold here or the cache stays frozen for the rest of its life.
+    this.options.cache.resume();
     this.fold?.dispose();
     this.fold = null;
     // Leave nothing of the overlay behind: the host may keep the leaves
@@ -362,7 +367,7 @@ export class PageFlipController {
     this.lastP = this.flip.p;
     this.lastMoveTime = event.timeStamp;
     this.velocity = 0;
-    this.requestRender();
+    this.renderNow(); // same frame as the leaf hide — see beginFlip
     return true;
   }
 
@@ -381,6 +386,11 @@ export class PageFlipController {
     // canvas frame must not fire in the middle of this flip.
     this.landToken++;
     this.landing = false;
+
+    // No page rasterization from here until the overlay is down: one capture
+    // is 200ms+ of main thread and it lands wherever it likes — mid-tween
+    // (the turn stutters) or mid-landing (the swap frames stretch out).
+    this.options.cache.suspend();
 
     this.rootRect = this.options.root.getBoundingClientRect();
     const rect = leafElement.getBoundingClientRect();
@@ -416,8 +426,14 @@ export class PageFlipController {
         this.rootRect.height,
         Math.min(window.devicePixelRatio || 1, 2),
       );
+      // Draw the resting frame NOW, in the same task that hides the leaf.
+      // requestRender() would only paint on the NEXT rAF, and for that one
+      // frame the leaf is hidden with an empty canvas over it: the page
+      // blinks out at the start of every flip, which is most of what made a
+      // click-to-turn feel like it jumped rather than moved.
       leafElement.style.visibility = 'hidden'; // keeps layout
       this.options.canvas.classList.add('is-flipping');
+      this.renderNow();
     } else {
       // Rigid CSS 3D fold: the live leaf itself is the front face.
       this.fold = createRigidFold({
@@ -452,7 +468,11 @@ export class PageFlipController {
       return;
     }
     const vars: gsap.TweenVars = {
-      onUpdate: () => this.requestRender(),
+      // Draw inside GSAP's own tick rather than queueing another rAF: a
+      // queued render always paints the PREVIOUS tick's value, so the whole
+      // settle ran a frame behind the tween. Pointer moves stay coalesced
+      // (they can fire more than once per frame); a tween cannot.
+      onUpdate: () => this.renderNow(),
       onComplete: () => this.land(this.flip.p > 0.5 ? 1 : 0),
     };
     if (velocity !== null && inertiaRegistered()) {
@@ -470,16 +490,34 @@ export class PageFlipController {
 
   /**
    * Flat-state swap (the seamless trick): the page is geometrically flat at
-   * p∈{0,1}, so we commit/restore the live DOM under the canvas, wait one
-   * rAF so it paints, then wipe and hide the overlay — raster→DOM is
-   * pixel-identical.
+   * p∈{0,1}, so we commit/restore the live DOM under the canvas, let it
+   * paint, then wipe and hide the overlay — raster→DOM is pixel-identical.
    *
-   * The wipe and the hide are DELIBERATELY different frames. `display:none`
-   * pulls the canvas out of compositing, so a gl.clear() issued in the same
-   * frame is never presented: the layer keeps the last curl frame, and that
-   * ghost sheet hangs over the settled spread (and flashes straight back the
-   * next time the canvas is shown). Clear while it is still displayed, hide
-   * it once the transparent frame has been composited.
+   * FRAME ORDER (this is the whole trick, and it used to cost a frame more
+   * than it needed to):
+   *
+   *   frame N  — we are inside a rAF callback (GSAP's ticker drives the
+   *              tween, so onComplete lands here). Draw the p=target frame
+   *              synchronously, THEN commit navigation. Both the raster and
+   *              the new DOM are therefore painted at the end of this same
+   *              frame, one exactly on top of the other.
+   *   frame N+1 — the new DOM is on screen (under the canvas) and proven
+   *              painted. Clear the GL colour buffer and reveal the moving
+   *              leaf in the same callback, so they land in one paint.
+   *   frame N+2 — display:none the canvas.
+   *
+   * It used to wait two rAFs before the clear, which held a stale raster over
+   * the already-committed spread for an extra frame; with the main thread
+   * busy (a page capture used to be able to land right here) that frame
+   * stretched into hundreds of milliseconds and read as a second flip
+   * flickering over unchanged pages. Suspending captures for the whole
+   * landing keeps these frames short, and the render before navigate() means
+   * frame N can never show a half-updated overlay.
+   *
+   * The wipe and the hide stay DELIBERATELY on different frames. `display:
+   * none` pulls the canvas out of compositing, so a gl.clear() issued in the
+   * same frame is never presented: the layer keeps the last curl frame, and
+   * that ghost sheet flashes back the next time the canvas is shown.
    */
   private land(target: 0 | 1): void {
     if (this.landing) return; // a landing is already in flight
@@ -495,6 +533,10 @@ export class PageFlipController {
       this.fold = null;
     }
 
+    // Pin the overlay to the exact end state before the DOM changes beneath
+    // it. A queued render would arrive a frame late, i.e. after navigation.
+    this.renderNow();
+
     if (target === 1) {
       this.options.navigate(dir); // new spread mounts under the canvas
     } else if (leafElement) {
@@ -507,29 +549,29 @@ export class PageFlipController {
 
     requestAnimationFrame(() => {
       if (superseded()) return;
-      // One painted frame with the (new or restored) live DOM beneath the
-      // canvas; now the overlay can vanish without a visible pop.
+      // The live DOM committed above has now been painted once beneath the
+      // canvas, so the overlay can go without a visible pop.
+      this.renderer?.clear();
+      // The old leaf element may have been unmounted by navigation; clear
+      // the inline style anyway in case the host recycles it.
+      if (leafElement) leafElement.style.visibility = '';
+      this.phase = 'rest';
+      this.landing = false;
+      this.leafElement = null;
+      if (target === 1) {
+        this.savedRanges = [];
+        this.savedActive = null;
+        this.options.events?.onLanded?.(dir);
+      } else {
+        this.restoreSelection(); // focus/selection come back only on cancel
+        this.options.events?.onCancel?.(dir);
+      }
       requestAnimationFrame(() => {
         if (superseded()) return;
-        this.renderer?.clear();
-        // The old leaf element may have been unmounted by navigation; clear
-        // the inline style anyway in case the host recycles it.
-        if (leafElement) leafElement.style.visibility = '';
-        this.phase = 'rest';
-        this.landing = false;
-        this.leafElement = null;
-        if (target === 1) {
-          this.savedRanges = [];
-          this.savedActive = null;
-          this.options.events?.onLanded?.(dir);
-        } else {
-          this.restoreSelection(); // focus/selection come back only on cancel
-          this.options.events?.onCancel?.(dir);
-        }
-        requestAnimationFrame(() => {
-          if (superseded()) return;
-          this.options.canvas.classList.remove('is-flipping');
-        });
+        this.options.canvas.classList.remove('is-flipping');
+        // Snapshots may run again — the overlay is down and the new spread's
+        // neighbours are the next thing worth rasterizing.
+        this.options.cache.resume();
       });
     });
   }
@@ -574,6 +616,7 @@ export class PageFlipController {
     const finish = (): void => {
       this.phase = 'rest';
       this.leafElement = null;
+      this.options.cache.resume(); // the overlay is gone; snapshots may run
       if (target === 1) this.options.events?.onLanded?.(dir);
       else {
         this.restoreSelection();
@@ -617,18 +660,28 @@ export class PageFlipController {
     this.renderScheduled = true;
     requestAnimationFrame(() => {
       this.renderScheduled = false;
-      if (this.destroyed || this.phase === 'rest' || !this.renderer || !this.rootRect) return;
-      this.renderer.render({
-        p: this.flip.p,
-        baseTilt: this.baseTilt,
-        dir: this.dir,
-        leafX: this.leaf.x,
-        leafY: this.leaf.y,
-        leafW: this.leaf.w,
-        leafH: this.leaf.h,
-        canvasW: this.rootRect.width,
-        canvasH: this.rootRect.height,
-      });
+      if (this.phase === 'rest') return; // landing owns the overlay now
+      this.renderNow();
+    });
+  }
+
+  /**
+   * Draw immediately, inside the current task. Used where the overlay becomes
+   * visible (or must match the DOM) in this very frame — a queued rAF render
+   * would leave one frame of empty canvas over a hidden leaf.
+   */
+  private renderNow(): void {
+    if (this.destroyed || !this.renderer || !this.rootRect) return;
+    this.renderer.render({
+      p: this.flip.p,
+      baseTilt: this.baseTilt,
+      dir: this.dir,
+      leafX: this.leaf.x,
+      leafY: this.leaf.y,
+      leafW: this.leaf.w,
+      leafH: this.leaf.h,
+      canvasW: this.rootRect.width,
+      canvasH: this.rootRect.height,
     });
   }
 

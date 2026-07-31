@@ -14,6 +14,11 @@
  *   handles, style switcher, anything marked data-snapshot-hide) and images
  *   that cannot inline (still-resolving media) fall back to a transparent
  *   placeholder rather than rejecting the whole capture.
+ * - Inline SVG (diagrams) gets its class-based paint inlined for the duration
+ *   of the capture — html-to-image does not carry stylesheet rules into an
+ *   SVG subtree and unstyled shapes render BLACK (see svgSnapshot.ts).
+ * - Those live-DOM writes are guarded so the host's edit watcher does not
+ *   read them back as an edit and re-trigger the capture forever.
  * - Edit trigger: notifyEdited() debounces 300ms then rasterizes inside
  *   requestIdleCallback. ensureAdjacent() eagerly captures neighbours when
  *   a spread settles so both flip directions are instant.
@@ -25,6 +30,7 @@
 
 import { getFontEmbedCSS, toCanvas } from 'html-to-image';
 import { LruMap, RASTER_CACHE_CAPACITY, snapshotPixelRatio } from './math';
+import { inlineSvgStyles } from './svgSnapshot';
 
 /** Debounce window between an edit and its idle re-rasterization. */
 export const RASTER_DEBOUNCE_MS = 300;
@@ -131,6 +137,23 @@ export class PageRasterCache {
   private readonly pixelRatio: number;
   private disposed = false;
 
+  /**
+   * Pages whose live DOM this cache is mutating right now. A capture toggles
+   * `.snapshotting` on the sheet and inlines SVG paint styles inside it — all
+   * attribute writes, which the host's edit watcher (FlipSurface's
+   * MutationObserver) reads as "the user edited this page". That bumped the
+   * version, which made the fresh entry instantly stale, which scheduled
+   * another capture: a self-feeding loop that re-rasterized both live pages
+   * forever, ~200-300ms of main thread every ~300ms, for as long as a book
+   * was open. Everything downstream (flip smoothness, landing frames) was
+   * starved by it. notifyEdited ignores a page while it is in here.
+   */
+  private readonly capturing = new Set<string>();
+
+  /** Idle captures deferred by suspend(), replayed on resume(). */
+  private readonly deferred = new Set<string>();
+  private suspended = false;
+
   constructor(private readonly options: PageRasterCacheOptions) {
     this.pixelRatio = options.pixelRatio ?? defaultPixelRatio();
     this.entries = new LruMap(options.capacity ?? RASTER_CACHE_CAPACITY, (_id, entry) =>
@@ -181,16 +204,15 @@ export class PageRasterCache {
    */
   notifyEdited(pageId: string): void {
     if (this.disposed) return;
+    // Our own capture is mutating that page's DOM; treating it as an edit
+    // would restart the capture we are in the middle of (see `capturing`).
+    if (this.capturing.has(pageId)) return;
     this.invalidate(pageId);
     const existing = this.debounceTimers.get(pageId);
     if (existing !== undefined) window.clearTimeout(existing);
     const timer = window.setTimeout(() => {
       this.debounceTimers.delete(pageId);
-      const handle = whenIdle(() => {
-        this.idleHandles.delete(handle);
-        void this.ensure(pageId);
-      });
-      this.idleHandles.add(handle);
+      this.captureWhenIdle(pageId);
     }, RASTER_DEBOUNCE_MS);
     this.debounceTimers.set(pageId, timer);
   }
@@ -219,12 +241,29 @@ export class PageRasterCache {
     if (this.disposed) return;
     for (const pageId of pageIds) {
       if (!pageId) continue;
-      const handle = whenIdle(() => {
-        this.idleHandles.delete(handle);
-        void this.ensure(pageId);
-      });
-      this.idleHandles.add(handle);
+      this.captureWhenIdle(pageId);
     }
+  }
+
+  /**
+   * Hold every idle capture until resume(). A capture is 200ms+ of synchronous
+   * main-thread work (clone the sheet, embed fonts, rasterize an SVG the size
+   * of a page); one landing in the middle of a turn stalls the tween and
+   * stretches the landing's rAFs, which is what made a click-turn stutter and
+   * made the post-landing frame hang around long enough to read as a flicker.
+   * Requested pages are remembered and captured once the overlay is down.
+   */
+  suspend(): void {
+    this.suspended = true;
+  }
+
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this.disposed) return;
+    const pending = [...this.deferred];
+    this.deferred.clear();
+    for (const pageId of pending) this.captureWhenIdle(pageId);
   }
 
   /** Cancel pending work and close every bitmap (call on book close). */
@@ -234,11 +273,31 @@ export class PageRasterCache {
     this.debounceTimers.clear();
     for (const handle of this.idleHandles) handle.cancel();
     this.idleHandles.clear();
+    this.deferred.clear();
+    this.capturing.clear();
     this.entries.clear();
     this.versions.clear();
   }
 
   /* ------------------------------ internals ------------------------------ */
+
+  /** Queue one idle capture, or park it until resume() when suspended. */
+  private captureWhenIdle(pageId: string): void {
+    if (this.disposed) return;
+    if (this.suspended) {
+      this.deferred.add(pageId);
+      return;
+    }
+    const handle = whenIdle(() => {
+      this.idleHandles.delete(handle);
+      if (this.suspended) {
+        this.deferred.add(pageId);
+        return;
+      }
+      void this.ensure(pageId);
+    });
+    this.idleHandles.add(handle);
+  }
 
   private async capture(pageId: string): Promise<RasterEntry | null> {
     const element = this.options.getElement(pageId);
@@ -260,7 +319,14 @@ export class PageRasterCache {
     this.fontCss ??= getFontEmbedCSS(element).catch(() => '');
     const fontEmbedCSS = await this.fontCss;
 
+    // From here to the end of the rasterization we are writing to the live
+    // page (the marker class, then every SVG's inline paint) — mutations the
+    // edit watcher must not mistake for typing.
+    this.capturing.add(pageId);
     element.classList.add(SNAPSHOTTING_CLASS);
+    // Inline SVG loses class-based styling in html-to-image's clone and
+    // renders BLACK; see svgSnapshot.ts.
+    const restoreSvg = inlineSvgStyles(element);
     let canvas: HTMLCanvasElement;
     try {
       canvas = await toCanvas(element, {
@@ -277,7 +343,14 @@ export class PageRasterCache {
       console.warn('[rasterCache] snapshot capture failed for', pageId, err);
       return null;
     } finally {
+      restoreSvg();
       element.classList.remove(SNAPSHOTTING_CLASS);
+      // Release in a microtask, NOT synchronously: undoing our writes queues
+      // one more MutationObserver notification, and that notification is
+      // delivered before any microtask queued after it. Clearing the flag
+      // here would hand the watcher our own teardown as a user edit and the
+      // loop would start over.
+      queueMicrotask(() => this.capturing.delete(pageId));
     }
     if (this.disposed) return null;
 
@@ -305,8 +378,13 @@ export class PageRasterCache {
     let bitmap: ImageBitmap | null;
     try {
       bitmap = await captureOffscreen(pageId);
-    } catch {
-      return null; // staging failure → caller falls back (doc: CSS path)
+    } catch (err) {
+      // Same reasoning as the mounted path: a silently failing neighbour
+      // capture leaves the turning sheet's back face blank cream, which the
+      // landing then replaces with real content — a visible flash with no
+      // trace of why.
+      console.warn('[rasterCache] offscreen staging failed for', pageId, err);
+      return null;
     }
     if (bitmap === null) return null;
     if (this.disposed) {

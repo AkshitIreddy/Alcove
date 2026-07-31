@@ -1,0 +1,493 @@
+{
+  "note": "Provenance for every shipped cue. Rebuild with: node scripts/gen-sounds.mjs",
+  "generated": "2026-07-31",
+  "attributionsRequired": [
+    "Rain on Window Loop by alxl (OpenGameArt) — CC BY 4.0"
+  ],
+  "sounds": {
+    "page-flip-1": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "page-flip-2": {
+      "title": "10 Book Page Flips",
+      "author": "StarNinjas",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/10-book-page-flips",
+      "sourceFile": "https://opengameart.org/sites/default/files/book_flips_-_starninjas.zip"
+    },
+    "page-flip-3": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "page-flip-4": {
+      "title": "10 Book Page Flips",
+      "author": "StarNinjas",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/10-book-page-flips",
+      "sourceFile": "https://opengameart.org/sites/default/files/book_flips_-_starninjas.zip"
+    },
+    "page-flip-5": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "page-flip-6": {
+      "title": "10 Book Page Flips",
+      "author": "StarNinjas",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/10-book-page-flips",
+      "sourceFile": "https://opengameart.org/sites/default/files/book_flips_-_starninjas.zip"
+    },
+    "book-pull": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "book-pull-2": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "book-pull-3": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "book-pull-4": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "book-return": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "book-return-2": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "book-return-3": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "book-return-4": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "shelf-whoosh": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "shelf-whoosh-2": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "shelf-whoosh-3": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "pop-soft": {
+      "title": "Interface Sounds (1.0)",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/interface-sounds",
+      "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+    },
+    "pop-soft-2": {
+      "title": "Interface Sounds (1.0)",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/interface-sounds",
+      "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+    },
+    "pop-soft-3": {
+      "title": "Interface Sounds (1.0)",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/interface-sounds",
+      "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+    },
+    "pop-soft-4": {
+      "title": "Interface Sounds (1.0)",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/interface-sounds",
+      "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+    },
+    "pop-soft-5": {
+      "title": "Interface Sounds (1.0)",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/interface-sounds",
+      "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+    },
+    "tick-hover": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "tick-hover-2": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "tick-hover-3": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "tick-hover-4": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "tick-hover-5": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "check-done": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "check-done-2": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "check-done-3": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "check-done-4": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "crumple-delete": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "crumple-delete-2": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "crumple-delete-3": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "crumple-delete-4": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "drop-thump": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "drop-thump-2": {
+      "title": "Old book (leafing through pages, flicking pages, shutting book)",
+      "author": "cori",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Old_book.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Old_book.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/old_book"
+    },
+    "drop-thump-3": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "drop-thump-4": {
+      "title": "Book, Paper, Pages, assorted",
+      "author": "stephan",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/79/Book_paper_pages_assorted.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/book_paper_pages_assorted"
+    },
+    "confetti": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "confetti-2": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "confetti-3": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "typing-tick-1": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "typing-tick-2": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "typing-tick-3": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "typing-tick-4": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "typing-tick-5": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "typing-tick-6": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "pencil-scratch": {
+      "title": "Pencil Scratchings (mechanical pencil on paper on a wooden desk)",
+      "author": "gypsygirl",
+      "licence": "Public domain (PD-author, via pdsounds.org)",
+      "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-pdsounds.org",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg",
+      "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/9/9f/Pencil_scratchings.ogg",
+      "originallyFrom": "http://www.pdsounds.org/sounds/pencil_scratchings"
+    },
+    "ambient-library": {
+      "title": "30 CC0 SFX loops (ambient_01)",
+      "author": "rubberduck",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/30-cc0-sfx-loops",
+      "sourceFile": "https://opengameart.org/sites/default/files/sfx_loops.zip"
+    },
+    "ambient-rain": {
+      "title": "Rain on Window Loop",
+      "author": "alxl",
+      "licence": "CC BY 4.0",
+      "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "sourcePage": "https://opengameart.org/content/rain-on-window-loop",
+      "sourceFile": "https://opengameart.org/sites/default/files/rain_on_window_loop.wav",
+      "attributionRequired": true,
+      "attributionText": "Rain on Window Loop by alxl (OpenGameArt) — CC BY 4.0"
+    },
+    "ambient-fireplace": {
+      "title": "Fireplace Sound loop",
+      "author": "PagDev",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/fireplace-sound-loop",
+      "sourceFile": "https://opengameart.org/sites/default/files/fire.wav"
+    },
+    "ambient-crickets": {
+      "title": "Crickets Ambient Noise - loopable",
+      "author": "Wolfgang_ (Ted Kerr)",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/crickets-ambient-noise-loopable",
+      "sourceFile": "https://opengameart.org/sites/default/files/crickets-oneloop.mp3"
+    },
+    "chime-hour": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "chime-hour-2": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    },
+    "chime-hour-3": {
+      "title": "Bell dings/chimes",
+      "author": "PWL",
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://opengameart.org/content/bell-dingschimes",
+      "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+    }
+  }
+}

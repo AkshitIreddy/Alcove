@@ -9,7 +9,7 @@ LLMs are already fluent in every ingredient: plain Markdown (dominant in trainin
 ## Implementation plan
 ## 1. Surface syntax (what the spec file teaches)
 
-One self-contained spec file shipped at `src-tauri/resources/notebook-script-spec.md` (~450 lines, every feature shown as a copy-pasteable example; app has a "Copy spec for your AI" button that reads it via Tauri resource API).
+One self-contained spec file shipped at `src-tauri/resources/notebook-script-spec.md` (~620 lines, every feature shown as a copy-pasteable example; app has a "Copy spec for your AI" button that reads it via Tauri resource API). That file is **generated** — narrative from `scripts/spec-template.md`, every reference table from `src/script/vocab.ts` (see section 6).
 
 ### Complete mini-example note
 ```
@@ -112,6 +112,17 @@ All TypeScript in the renderer: `src/script/` â€” `lexer.ts` is unnecessary
 - v2 suite `tests/script/v2.test.ts`: diagnostic codes/positions/expected text, variables (forward references, nesting, cycles, code-span immunity), styles (merge order, chained use, cycles), plus adversarial input (broken definitions everywhere, unterminated fences around them, 200-deep variable chains) and fast-check fuzz asserting every diagnostic stays located and severity-'warn'.
 - Slop corpus: ~60 deliberately-broken variants (unclosed fences, `:` attrs, misspelled colors, mixed arrows) asserting parse-without-error + specific recoveries. Generate real samples by prompting 3â€“4 different LLMs with only the spec file and adding their raw outputs as fixtures.
 - fast-check property tests: printer round-trip invariant; parser totality (random unicode soup never throws).
+
+## 6. Keeping the spec honest (generated reference sections)
+
+The spec is the interface between a chatbot and the parser, and it is the one artifact with no compiler behind it: a directive, effect, sticker or diagram added to `src/script/vocab.ts` and not to the spec means the chatbot writes script the app cannot read, silently, forever. So the reference half of the spec is generated and the whole thing is gated.
+
+- **`src/script/vocab.ts` is the single source of truth.** Alongside the name tables it now carries doc tables — `CONTAINER_DOCS`, `STICKER_DOCS`, `ATTR_DOCS`, `DIAGRAM_DOCS`, `FRONTMATTER_DOCS`, `LEAF_DIRECTIVE_DOCS` — each typed `Record<NameUnion, Doc>` over the `as const` array it describes. Adding a name is therefore a *type error* until it has prose: `tsc` is what enforces documentation, not review. `SPEC_ATTR_DOMAINS` is the same as `ATTR_ENUM_DOMAINS` except `sticker`, whose live domain grows at runtime with the user's imported stickers while the shipped spec documents the built-ins.
+- **`scripts/spec-template.md` holds the hand-written half** — what the language is for, the tone, the tour, the worked example, the "this is NOT Mermaid" contrast, the checklist — with `<!-- gen:name -->` placeholders where a reference table belongs.
+- **`scripts/gen-spec.mjs` renders one into the other** (12 regions: frontmatter example, effects table, other-attrs table, sticker table, container table, container aliases, diagram fences, three quick-reference blocks, colour list, attr-key synonyms) and writes both `src-tauri/resources/notebook-script-spec.md` and the inlined `src/editor/script/spec.ts`. It loads the TypeScript vocab through esbuild's transform (no build step, no duplicated table in JS). A placeholder with no builder, or a builder with no placeholder, is a hard error — losing a whole table to a deleted placeholder is the failure mode this exists to prevent. `npm run spec` writes; `npm run spec:check` (and `npm run build`) verify.
+- **`tests/script/spec-generated.test.ts` is the gate.** It regenerates in memory from the same two inputs and fails if either checked-in file differs, printing the first differing lines and `Run: npm run spec`. `missingFromSpec()` then checks the other direction — every container, sticker, attr key, fence, page-style key, leaf directive and enum value must literally appear in the shipped text, so a name that no region happens to print is caught too. The rest of the file asserts the vocabulary is what the parser *implements*: every canonical name and alias resolves, every enum value parses without a diagnostic, every spelling of every leaf directive is understood, and `DIAGRAM_SHAPE_VALUES` still equals the renderer's `DIAGRAM_SHAPES`.
+
+Net effect: adding an insertable is "add the name, write one line of prose (the compiler insists), run `npm run spec`". Forgetting the last step is a red test, not a silent bug.
 
 ## Libraries
 No parser/markdown dependency â€” handwritten ~1200-line TS parser in src/script/ (core requirement: slop tolerance and source spans)

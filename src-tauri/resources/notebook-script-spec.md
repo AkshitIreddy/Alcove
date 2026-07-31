@@ -1,3 +1,5 @@
+<!-- Generated file — do not edit. Source: src/script/vocab.ts + scripts/spec-template.md (npm run spec). -->
+
 # Notebook Script — the complete guide
 
 You are (probably) an AI assistant that has been handed this file. A person
@@ -34,10 +36,10 @@ Optional. If present, it must be the very first thing in the note. Flat
 
 ```
 ---
-title: Cell Biology — Week 3
-paper: grid            # cream | grid | dotted | lined
-ink: sepia             # sepia | graphite | ink-blue
-wash: amber            # page-edge watercolor: amber | terracotta | moss | none
+title: Cell Biology — Week 3   # the note's own title
+paper: grid                    # paper style: cream | grid | dotted | lined
+ink: sepia                     # handwriting color: sepia | graphite | ink-blue
+wash: amber                    # page-edge watercolor: amber | terracotta | moss | none
 ---
 ```
 
@@ -116,18 +118,34 @@ are fine, `#some-id` and `.some-class` shorthands work.
 
 | attr | values | what it does |
 | --- | --- | --- |
-| `color` | `amber terracotta moss lemon sky blush graphite` | watercolor tint |
-| `sticker` | `star bee leaf microscope heart flower book pin sparkle moon sun cat coffee music arrow` | doodle sticker in the margin |
-| `tape` | `top corner both` | scotch-tape effect |
+| `color` | `amber` `terracotta` `moss` `lemon` `sky` `blush` `graphite` | watercolor tint |
+| `sticker` | `star` `bee` `leaf` `microscope` `heart` `flower` `book` `pin` `sparkle` `moon` `sun` `cat` `coffee` `music` `arrow` | doodle sticker in the margin |
+| `tape` | `top` `corner` `both` | scotch-tape effect |
 | `washi` | `top` | washi tape strip |
-| `rotate` | number, `-3` to `3` | slight tilt (degrees) |
-| `paper` | `torn lined` | paper texture for this block |
+| `rotate` | number, `-3` to `3` | slight tilt, in degrees |
+| `paper` | `torn` `lined` | paper texture for this block |
 | `shadow` | `soft` | soft drop shadow |
-| `underline` | `squiggle marker` | hand-drawn underline |
-| `frame` | `scallop stitch` | decorative border |
+| `underline` | `squiggle` `marker` | hand-drawn underline |
+| `frame` | `scallop` `stitch` | decorative border |
 
-Free-form attrs also exist: `cols` (column count for image rows), `gap`
-(`sm`/`md`/`lg` for columns), `caption`, `width`, `#id`, `.class`.
+Everything else is scoped to where it makes sense:
+
+| attr | values | what it does | where |
+| --- | --- | --- | --- |
+| `variant` | `info` `tip` `warn` `star` | which callout | on `callout` |
+| `gap` | `sm` `md` `lg` | space between columns | on `columns` |
+| `cols` | number | how many images per row | on `image-row` |
+| `style` | `polaroid` `plain` `washi` `watercolor` | how images and diagram nodes are framed | on `image-row`, images, diagram fences |
+| `shape` | `rect` `cloud` `circle` | node outline | on `graph`/`flowchart` nodes |
+| `width` | number | width in pixels | on images |
+| `query` | free text | what to search for | on `::fetch` |
+| `count` | number | how many images to fetch | on `::fetch` |
+| `caption` | free text | caption under the image | on images and `fetch:` lines |
+| `src` | a path | image path | on images (usually written as `![alt](src)`) |
+| `alt` | free text | image description | on images |
+| `id` | a word (`#name` works too) | anchor name | anywhere |
+| `class` | a word (`.name` works too) | extra class | anywhere |
+| `use` | a style name, or several in quotes | apply a named `::style` | anywhere |
 
 Examples:
 
@@ -145,10 +163,26 @@ Block attrs go on headings, paragraphs, quotes, dividers, images, tables,
 containers and diagram fences. List items don't take block attrs — decorate
 their inline spans instead (`- ==key idea=={color=amber}`).
 
-The full sticker set: `star`, `bee`, `leaf`, `microscope`, `heart`,
-`flower`, `book`, `pin`, `sparkle`, `moon`, `sun`, `cat`, `coffee`,
-`music`, `arrow`. Near-miss spellings (`sparkl`, `microscop`) are corrected
-automatically.
+The sticker set — near-miss spellings (`sparkl`, `microscop`) are corrected
+automatically:
+
+| sticker | what it draws — when to reach for it |
+| --- | --- |
+| `star` | a five-pointed doodle star — favourites, gold-star results |
+| `bee` | a little bee — nature, pollination, busywork |
+| `leaf` | a single leaf — biology, autumn, growth |
+| `microscope` | a microscope — lab work, close reading, science |
+| `heart` | a hand-drawn heart — things loved or cared about |
+| `flower` | a small bloom — spring, botany, something cheerful |
+| `book` | a closed book — reading lists, references, homework |
+| `pin` | a push-pin — pinned reminders, 'do not lose this' |
+| `sparkle` | a four-point sparkle — ideas, magic, a nice result |
+| `moon` | a crescent moon — night, sleep, phases, endings |
+| `sun` | a rayed sun — mornings, energy, weather |
+| `cat` | a curled cat — pets, comfort, a break |
+| `coffee` | a steaming mug — study breaks, mornings, long sessions |
+| `music` | an eighth note — songs, practice, rhythm |
+| `arrow` | a curved arrow — 'see this', a pointer to the next thing |
 
 Effects stack — a sticky note can be tinted, tilted and taped all at once:
 
@@ -234,20 +268,35 @@ The container names:
 | --- | --- |
 | `sticky-note` | a post-it note (great for reminders) |
 | `polaroid` | white-framed photo card |
-| `washi-box` | box held by washi tape |
-| `callout` | callout with an icon — `{variant=info}`, `tip`, `warn`, `star` |
-| `columns` / `col` | side-by-side layout (see below) |
-| `image-row` | row of images (see below) |
-| `card` | simple bordered card |
+| `washi-box` | box held to the page by washi tape |
+| `callout` | callout with a hand-drawn icon in the margin |
+| `columns` | side-by-side layout — holds `col` children |
+| `col` | one column — only inside `columns` |
+| `image-row` | row of images — see below |
+| `card` | simple bordered card (good for definitions) |
 | `quote-card` | decorated pull-quote |
-| `spoiler` | click-to-reveal box |
+| `spoiler` | click-to-reveal box (good for self-quizzing) |
 | `banner` | full-width ribbon banner |
 
-Shorthand callouts also work: `::: tip`, `::: warn`, `::: info`, `::: star`.
+Unknown names are **not errors** — they render as a plain decorated box. Name
+matching is generous too: case, spaces, `-` and `_` are all ignored, so
+`Sticky Note`, `sticky_note` and `stickynote` are one name. On top of that:
 
-Unknown names are **not errors** — they render as a plain decorated box.
-Name matching is generous: `Sticky Note`, `sticky_note`, `stickynote` and
-`note` all mean `sticky-note`.
+| you can write | you get |
+| --- | --- |
+| `::: note`, `::: sticky`, `::: postit` | `::: sticky-note` |
+| `::: photo` | `::: polaroid` |
+| `::: washi` | `::: washi-box` |
+| `::: twocolumns` | `::: columns` |
+| `::: column` | `::: col` |
+| `::: picrow`, `::: images`, `::: photorow`, `::: gallery` | `::: image-row` |
+| `::: box`, `::: panel` | `::: card` |
+| `::: quote`, `::: blockquote` | `::: quote-card` |
+| `::: details`, `::: hidden` | `::: spoiler` |
+| `::: info` | `::: callout {variant=info}` |
+| `::: tip`, `::: hint` | `::: callout {variant=tip}` |
+| `::: warn`, `::: warning`, `::: caution` | `::: callout {variant=warn}` |
+| `::: star`, `::: important` | `::: callout {variant=star}` |
 
 A tour of the containers:
 
@@ -327,7 +376,19 @@ You can also use regular Markdown images anywhere: `![alt](path){rotate=2}`.
 
 These are **not Mermaid** (see section 8). They are much simpler.
 
-### `tree` — indentation only, 2 spaces per level
+| fence | grammar | also accepted |
+| --- | --- | --- |
+| `` ```tree `` | indentation only, 2 spaces per level | `treediagram` |
+| `` ```mindmap `` | the `tree` grammar, laid out radially | `mind` |
+| `` ```graph `` | `A -> B: label`, one edge per line | `digraph`, `network` |
+| `` ```flowchart `` | the `graph` grammar, for processes | `flow` |
+| `` ```timeline `` | one `label: text` per line | `chronology` |
+
+A `` ```mermaid `` fence is read with the `flowchart` grammar and warned: it
+is a compatibility ramp, not the language. Write `` ```flowchart `` and the
+grammar below.
+
+### The `tree` fence
 
 ```tree {style=watercolor}
 Cell
@@ -353,7 +414,7 @@ Photosynthesis
     Oxygen
 ```
 
-### `graph` — arrows between names
+### The `graph` fence
 
 ```graph
 Sun -> Photosynthesis: light
@@ -378,7 +439,7 @@ Conclusion {shape=cloud, color=moss}
 
 - Comment lines start with `//` or `#`. Blank lines are ignored.
 
-### `timeline` — one `label: text` per line
+### The `timeline` fence
 
 ```timeline
 1665: Hooke names the "cell"
@@ -397,6 +458,9 @@ The parser **never rejects a note**. It always produces a page plus, at most,
 gentle warnings. Specifically:
 
 - If you write `:` instead of `=` in attrs (`{color: amber}`), it still works.
+- Some attribute keys have accepted synonyms:
+  `colour`/`bg`/`background`/`highlight` → `color`, `rotation` → `rotate`,
+  `columns` → `cols`, `uses`/`apply`/`usestyle` → `use`.
 - If you misspell an enum value within reason (`color=ambr`, `color=terracota`),
   it is auto-corrected to the nearest known value, with a warning.
 - If you misspell or re-style a container name (`Sticky Note`, `stickynote`,
@@ -583,23 +647,25 @@ BLOCKS                              INLINE
 | a | b |       table               [t](url)     link
 ![alt](src)     image               \*           literal star
 
-CONTAINERS (::: name ... :::)       DIAGRAM FENCES
-sticky-note  polaroid  washi-box    ```tree      indent = nesting
-callout      columns   col          ```mindmap   same, radial
-image-row    card      quote-card   ```graph     A -> B: label
-spoiler      banner                 ```flowchart same as graph
-                                    ```timeline  label: text | attrs
+CONTAINERS (::: name ... :::)           DIAGRAM FENCES
+sticky-note  polaroid     washi-box     ```tree      indent = nesting
+callout      columns      col           ```mindmap   same, radial
+image-row    card         quote-card    ```graph     A -> B: label
+spoiler      banner                     ```flowchart same as graph
+                                        ```timeline  label: text | attrs
 ATTRS  {key=value, key2=value2}
 colors: amber terracotta moss lemon sky blush graphite
-sticker= tape= washi= rotate= color= paper= shadow= underline= frame=
+color= sticker= tape= washi= rotate= paper= shadow= underline= frame=
 
 DEFINITIONS (leaf directives — no closing ':::')
-::let course = Cell Biology      define a variable
-::let {week=3, room=B12}         define several at once
-{{course}}                       use one, anywhere
-::style hero {color=amber}       name a set of attrs
-{use=hero}                       apply it to a block or span
-{use="hero quiet"}               apply several
+::let course = Cell Biology   define a variable
+::let {week=3, room=B12}      define several at once
+{{course}}                    use one, anywhere
+::style hero {color=amber}    name a set of attrs
+{use=hero}                    apply it to a block or span
+{use="hero quiet"}            apply several
+::fetch{query="a kitten"}     ask the app to find an image
+fetch: a kitten | caption=hi  one per line in an image-row
 ```
 
 ## 11. Final checklist (before you answer)

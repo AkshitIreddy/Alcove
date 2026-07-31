@@ -23,6 +23,7 @@ import {
   type OffscreenPageSize,
 } from '../editor/script/exporters/capture';
 import { snapshotPixelRatio } from './math';
+import { inlineSvgStyles } from './svgSnapshot';
 
 /** tokens.css --paper-cream — snapshot background must match resting CSS. */
 const PAPER_CREAM = '#f7f1e3';
@@ -103,6 +104,11 @@ export function createOffscreenPageCapture(
         fontCss ??= getFontEmbedCSS(sheet).catch(() => '');
         const fontEmbedCSS = await fontCss;
         sheet.classList.add(SNAPSHOTTING_CLASS);
+        // Diagrams on a staged page hit exactly the same html-to-image hole
+        // as on a mounted one: class-styled SVG children clone unstyled and
+        // paint black (svgSnapshot.ts). No mutation guard needed here — this
+        // sheet is ours and nothing is watching it for edits.
+        const restoreSvg = inlineSvgStyles(sheet);
         try {
           const canvas = await toCanvas(sheet, {
             pixelRatio,
@@ -113,6 +119,7 @@ export function createOffscreenPageCapture(
           });
           return await createImageBitmap(canvas);
         } finally {
+          restoreSvg();
           sheet.classList.remove(SNAPSHOTTING_CLASS);
         }
       });

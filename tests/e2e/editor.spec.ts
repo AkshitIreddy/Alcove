@@ -58,10 +58,10 @@ test('drag handle reorders blocks', async ({ page }) => {
   // Hover the first block so its drag handle appears, then drag the handle
   // below the second block.
   await paragraphs.first().hover();
-  // One drag handle exists per leaf editor — scope to the right leaf.
-  const handle = page.locator(
-    '.nb-leaf-paper[data-side="right"] .nb-drag-handle',
-  );
+  // One drag handle per leaf editor, but their layers live on <body> — see
+  // src/editor/dragHandle.ts for why they cannot live inside the page. Only
+  // the hovered editor's handle is visible, so visibility is the scope.
+  const handle = page.locator('.nb-drag-handle:visible');
   await expect(handle).toBeVisible({ timeout: 15_000 });
   const handleBox = await handle.boundingBox();
   const targetBox = await paragraphs.nth(1).boundingBox();

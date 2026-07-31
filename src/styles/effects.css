@@ -589,13 +589,15 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Confetti overlay canvas
+   Confetti overlay canvas.
+
+   Geometry is written inline by src/editor/effects/confetti.ts: the canvas is
+   sized to the bursts' own footprint, not the viewport, so the per-frame clear
+   costs a few hundred thousand pixels instead of millions and the compositing
+   layer it creates is small and short-lived. Do NOT put inset/100vw back here.
    -------------------------------------------------------------------------- */
 .nb-confetti-canvas {
   position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
   pointer-events: none;
   z-index: var(--z-toasts);
 }

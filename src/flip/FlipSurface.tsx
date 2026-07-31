@@ -38,9 +38,11 @@
  *    host store; Solid remounts the leaves while the flip canvas still
  *    covers the spread, then the controller hides the canvas one painted
  *    frame later — that unmount is what flushes pending edits.
- * 3. `onNavigate` must be SYNCHRONOUS store work (no await): the landing
- *    swap waits exactly two rAFs after calling it. Page data should already
- *    be in memory (the host preloads adjacent pages).
+ * 3. `onNavigate` must be SYNCHRONOUS store work (no await): the controller
+ *    draws the landed frame, calls it, and clears the overlay on the very
+ *    next rAF — by which point the new leaves must have painted underneath.
+ *    Page data should already be in memory (the host preloads adjacent
+ *    pages).
  * 4. `pageIds` null means "no page there" (e.g. cover): flipping renders a
  *    plain cream face. Omit `nextLeft`+`nextRight` as null to disable
  *    forward flips (same for prev), or pass `canFlip` for custom gating.

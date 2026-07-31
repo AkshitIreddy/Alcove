@@ -8,6 +8,10 @@
  * decision, tween duration, snapshot pixel-ratio cap, sound-volume scaling
  * and the LRU used by the raster cache.
  *
+ * The fold geometry (foldOffset + radiusForP) is the pair that keeps the
+ * turning leaf attached to the gutter; tests/flip.test.ts re-implements the
+ * vertex shader over them and asserts the pinning directly.
+ *
  * Conventions
  * - `p ∈ [0,1]` is flip progress (0 = page at rest, 1 = fully flipped).
  * - Leaf-local coords: x ∈ [0, W] measured from the spine (gutter) toward
@@ -37,9 +41,8 @@ export const VELOCITY_COMPLETE_THRESHOLD = 0.5;
 /** Max fold-line tilt for corner grips, radians (~22.5°). */
 export const MAX_FOLD_TILT = Math.PI / 8;
 
-/** Radius easing endpoints from the doc: mix(0.4W, 0.15W, sin(p·π)). */
-export const RADIUS_MAX_FRAC = 0.4;
-export const RADIUS_MIN_FRAC = 0.15;
+/** Curl radius at mid-flip, as a fraction of leaf width (doc: 0.15W). */
+export const RADIUS_MID_FRAC = 0.15;
 
 /** LRU capacity for cached page bitmaps (doc: 6). */
 export const RASTER_CACHE_CAPACITY = 6;
@@ -72,29 +75,66 @@ export const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
    -------------------------------------------------------------------------- */
 
 /**
- * Fold-line x (leaf-local, spine at 0) for progress `p`, leaf width `w`.
- * Sweeps from the outer edge (x = W at p=0) through the spine to x = -W at
- * p=1 — the doc's "fold line sweeps from x=W to x=-W". Values < 0 mean the
- * whole leaf is past the fold (fully wrapped, landing flat).
+ * Curl cylinder radius for progress `p`: a parabola that is exactly 0 at both
+ * ends and peaks at RADIUS_MID_FRAC·W mid-flip.
+ *
+ * The zero at p=1 is structural, not cosmetic: with r→0 the cylinder wrap
+ * degenerates into a pure reflection about the fold line, and since the fold
+ * line is AT the spine by then (see foldOffset), the sheet lands exactly on
+ * the mirrored flat page. That is what lets the raster↔DOM swap be
+ * pixel-identical without blending in a separate rigid rotation — the blend
+ * that used to do that job is what tore the leaf off the gutter (defect: the
+ * page reads as disconnected from the spine near the centre of the book).
  */
-export function foldLineX(p: number, w: number): number {
-  return w * (1 - 2 * clamp01(p));
+export function radiusForP(p: number, w: number): number {
+  const t = clamp01(p);
+  // 4·t·(1−t) peaks at 1 when t = 0.5, so the peak radius is exactly the frac.
+  return 4 * RADIUS_MID_FRAC * w * t * (1 - t);
 }
 
 /**
- * Curl cylinder radius for progress `p`: r = mix(0.4W, 0.15W, sin(p·π)).
- * Tight mid-flip (pronounced curl), relaxing toward both ends so the page
- * flattens as it lands.
+ * Distance from the spine to the FARTHEST point of the leaf, measured along
+ * the fold normal n = (cos tilt, sin tilt). Parking the fold line here means
+ * no part of the leaf is past it, i.e. the page is untouched — which is what
+ * p=0 must be, tilted corner grips included.
  */
-export function radiusForP(p: number, w: number): number {
-  return mix(RADIUS_MAX_FRAC * w, RADIUS_MIN_FRAC * w, Math.sin(clamp01(p) * Math.PI));
+export function foldReach(w: number, h: number, tilt: number): number {
+  return w * Math.cos(tilt) + (h / 2) * Math.abs(Math.sin(tilt));
+}
+
+/**
+ * Fold-line position for progress `p`, given as its signed distance from the
+ * SPINE line (the leaf-local line x=0 tilted by `tilt`). Vertices whose own
+ * distance exceeds this are past the fold and wrap around the cylinder.
+ *
+ * It sweeps from `foldReach` (p=0, whole leaf flat) to 0 (p=1, fold sitting
+ * on the gutter). It never goes negative, and that is the whole point: a fold
+ * line PAST the spine puts the leaf's inner edge on the cylinder, which
+ * translates it off the gutter — the page then reads as detached from the
+ * book. Here the strip between the spine and the fold is always untouched, so
+ * the inner edge is pinned by construction, for every p and every tilt.
+ *
+ * Two refinements on the plain (1−p)·reach sweep:
+ * - `-π·r/2` compensates for the arc length the curl eats. With it, the
+ *   leaf's grabbed outer edge lands exactly under the pointer that dragToP
+ *   derived `p` from (see the tip-tracking test), so the paper follows the
+ *   hand instead of lagging half a page behind it.
+ * - the max() floor keeps a tilted fold from cutting across the spine EDGE on
+ *   very tall leaves; it never engages at our aspect ratios but makes the
+ *   pinning guarantee unconditional rather than a matter of proportions.
+ */
+export function foldOffset(p: number, w: number, h: number, tilt: number): number {
+  const swept = (1 - clamp01(p)) * foldReach(w, h, tilt) - (Math.PI / 2) * radiusForP(p, w);
+  const spineClearance = (h / 2) * Math.abs(Math.sin(tilt));
+  return Math.max(swept, spineClearance, 0);
 }
 
 /**
  * Gesture→p mapping. `pointerX` is leaf-local x (spine at 0). Dragging the
  * outer edge (x = W) toward/past the spine sweeps p from 0 to 1:
- * p = clamp((W - pointerX) / (2W), 0, 1) — the grabbed edge travels 2W
- * (its full mirrored arc) over the gesture, matching foldLineX's sweep.
+ * p = clamp((W - pointerX) / (2W), 0, 1) — the grabbed edge travels 2W (its
+ * full mirrored arc) over the gesture, and foldOffset is built so the paper's
+ * edge sits under the pointer the whole way.
  */
 export function dragToP(pointerX: number, w: number): number {
   if (w <= 0) return 0;

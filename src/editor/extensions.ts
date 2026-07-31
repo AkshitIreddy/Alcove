@@ -89,9 +89,18 @@ export function createEditorExtensions(
         autolink: true,
         defaultProtocol: 'https',
       },
+      // The drop indicator is the only thing telling you where a dragged
+      // block will land, so it is inked rather than tinted, and thick enough
+      // to read against ruled paper at 20px body size.
+      //
+      // `class` is not decoration: prosemirror-dropcursor only names its
+      // element when this option is set, so without it NOTHING can style the
+      // indicator — including flip.css's rule that keeps it out of page
+      // snapshots, which is why the ProseMirror name is kept alongside ours.
       dropcursor: {
-        color: 'var(--wash-amber)',
-        width: 3,
+        color: 'var(--accent-deep)',
+        width: 4,
+        class: 'ProseMirror-dropcursor nb-dropcursor',
       },
     }),
 
@@ -142,8 +151,12 @@ export function createEditorExtensions(
         DragHandle.configure({
           ...options.dragHandle,
           computePositionConfig: {
+            // `left-start` anchors the grip to the block's FIRST line, which
+            // is what you aim at. The offset keeps it inside the 40px gutter
+            // the prose reserves (editor.css) with a couple of px of air, so
+            // the grab lane never overlaps the text it would drag.
             placement: 'left-start',
-            middleware: [offset(10)],
+            middleware: [offset(8)],
           },
         }),
       );

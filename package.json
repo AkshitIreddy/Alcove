@@ -6,9 +6,12 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run spec:check && vite build",
     "serve": "vite preview",
     "tauri": "tauri",
+    "spec": "node scripts/gen-spec.mjs",
+    "spec:check": "node scripts/gen-spec.mjs --check",
+    "sounds": "node scripts/gen-sounds.mjs",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui"
   },

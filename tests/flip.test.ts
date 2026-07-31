@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CURL_FRAG_SRC,
+  CURL_VERT_SRC,
   GROUND_FRAG_SRC,
   PAPER_CREAM_RGB,
 } from '../src/flip/curl';
@@ -29,8 +30,7 @@ import {
   HOTSPOT_STRIP_PX,
   LruMap,
   MAX_FOLD_TILT,
-  RADIUS_MAX_FRAC,
-  RADIUS_MIN_FRAC,
+  RADIUS_MID_FRAC,
   VELOCITY_COMPLETE_THRESHOLD,
   clamp,
   clamp01,
@@ -38,7 +38,8 @@ import {
   dragToP,
   flipDuration,
   flipFaceIds,
-  foldLineX,
+  foldOffset,
+  foldReach,
   foldTilt,
   foldTiltAtP,
   hitTestHotspot,
@@ -51,66 +52,200 @@ import {
 const W = 400; // leaf width used throughout
 const H = 600;
 
+/* ────────────────────── vertex shader, in TypeScript ───────────────────────
+ * A line-for-line transliteration of CURL_VERT_SRC's deformation so the
+ * geometry that decides whether the page stays attached to the book can be
+ * asserted in node. Keep the two in step: this is the only executable check
+ * on shader maths that never runs here.
+ * ------------------------------------------------------------------------ */
+
+interface DeformedVertex {
+  /** Leaf-local position after the fold (x measured from the spine). */
+  x: number;
+  y: number;
+  /** Lift off the page plane. */
+  z: number;
+}
+
+function deform(
+  x: number,
+  y: number,
+  p: number,
+  w: number,
+  h: number,
+  baseTilt = 0,
+): DeformedVertex {
+  const tilt = foldTiltAtP(baseTilt, p);
+  const foldD = foldOffset(p, w, h, tilt);
+  const r = Math.max(radiusForP(p, w), w * 1e-6); // curl.ts's floor
+  const n = { x: Math.cos(tilt), y: Math.sin(tilt) };
+  const d = x * n.x + (y - h / 2) * n.y - foldD;
+  if (d <= 0) return { x, y, z: 0 };
+  const tangential = { x: x - d * n.x, y: y - d * n.y };
+  const angle = d / r;
+  if (angle < Math.PI) {
+    return {
+      x: tangential.x + n.x * Math.sin(angle) * r,
+      y: tangential.y + n.y * Math.sin(angle) * r,
+      z: (1 - Math.cos(angle)) * r,
+    };
+  }
+  return {
+    x: tangential.x - n.x * (d - Math.PI * r),
+    y: tangential.y - n.y * (d - Math.PI * r),
+    z: 2 * r,
+  };
+}
+
+/** p values across the whole turn, ends included. */
+const sweep = (step = 0.02): number[] => {
+  const out: number[] = [];
+  for (let p = 0; p <= 1.0001; p += step) out.push(Math.min(p, 1));
+  return out;
+};
+
 /* ────────────────────────────── fold line ─────────────────────────────── */
 
-describe('foldLineX', () => {
-  it('sweeps from x=W (rest) through the spine to x=-W (landed)', () => {
-    expect(foldLineX(0, W)).toBe(W);
-    expect(foldLineX(0.5, W)).toBe(0);
-    expect(foldLineX(1, W)).toBe(-W);
+describe('foldOffset', () => {
+  it('parks beyond the whole leaf at rest and on the gutter at the landing', () => {
+    expect(foldOffset(0, W, H, 0)).toBeCloseTo(W, 10); // nothing past the fold
+    expect(foldOffset(1, W, H, 0)).toBe(0); // fold sits on the spine
   });
 
-  it('is strictly decreasing in p', () => {
-    let previous = foldLineX(0, W);
-    for (let p = 0.05; p <= 1.0001; p += 0.05) {
-      const current = foldLineX(p, W);
+  it('never crosses the spine — the regression that detached the page', () => {
+    for (const tilt of [0, MAX_FOLD_TILT, -MAX_FOLD_TILT]) {
+      for (const p of sweep()) {
+        expect(foldOffset(p, W, H, foldTiltAtP(tilt, p))).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('sweeps inward monotonically', () => {
+    let previous = foldOffset(0, W, H, 0);
+    for (const p of sweep(0.05).slice(1)) {
+      const current = foldOffset(p, W, H, 0);
       expect(current).toBeLessThan(previous);
       previous = current;
     }
   });
 
+  it('clears a tilted fold past the leaf corners at rest', () => {
+    // With a corner grip the fold is diagonal, so parking it at x=W would
+    // leave the near corner already folded before the drag has moved.
+    const tilt = MAX_FOLD_TILT;
+    const reach = foldReach(W, H, tilt);
+    expect(reach).toBeGreaterThan(W);
+    for (const y of [0, H / 2, H]) {
+      const distance = W * Math.cos(tilt) + (y - H / 2) * Math.sin(tilt);
+      expect(distance).toBeLessThanOrEqual(foldOffset(0, W, H, tilt) + 1e-9);
+    }
+  });
+
   it('clamps p outside [0,1]', () => {
-    expect(foldLineX(-2, W)).toBe(W);
-    expect(foldLineX(3, W)).toBe(-W);
+    expect(foldOffset(-2, W, H, 0)).toBeCloseTo(W, 10);
+    expect(foldOffset(3, W, H, 0)).toBe(0);
   });
 });
 
 /* ─────────────────────────── radius easing ────────────────────────────── */
 
 describe('radiusForP', () => {
-  it('matches mix(0.4W, 0.15W, sin(p·π)) at the anchors', () => {
-    expect(radiusForP(0, W)).toBeCloseTo(RADIUS_MAX_FRAC * W, 10);
-    expect(radiusForP(1, W)).toBeCloseTo(RADIUS_MAX_FRAC * W, 10);
-    expect(radiusForP(0.5, W)).toBeCloseTo(RADIUS_MIN_FRAC * W, 10);
-    expect(radiusForP(0.25, W)).toBeCloseTo(
-      mix(RADIUS_MAX_FRAC * W, RADIUS_MIN_FRAC * W, Math.sin(0.25 * Math.PI)),
-      10,
-    );
+  it('peaks at 0.15W mid-flip and is exactly 0 at both ends', () => {
+    expect(radiusForP(0, W)).toBe(0);
+    expect(radiusForP(1, W)).toBe(0);
+    expect(radiusForP(0.5, W)).toBeCloseTo(RADIUS_MID_FRAC * W, 10);
   });
 
-  it('is monotonically decreasing toward mid-flip and increasing after (flattens at the ends)', () => {
-    // Decreasing on [0, 0.5]…
+  it('swells to mid-flip then tightens toward the landing', () => {
     let previous = radiusForP(0, W);
-    for (let p = 0.05; p <= 0.5001; p += 0.05) {
-      const current = radiusForP(p, W);
-      expect(current).toBeLessThan(previous);
-      previous = current;
-    }
-    // …increasing on [0.5, 1].
-    previous = radiusForP(0.5, W);
-    for (let p = 0.55; p <= 1.0001; p += 0.05) {
+    for (const p of sweep(0.05).filter((p) => p > 0 && p <= 0.5)) {
       const current = radiusForP(p, W);
       expect(current).toBeGreaterThan(previous);
       previous = current;
     }
+    for (const p of sweep(0.05).filter((p) => p > 0.5)) {
+      const current = radiusForP(p, W);
+      expect(current).toBeLessThan(previous);
+      previous = current;
+    }
   });
 
-  it('stays within [0.15W, 0.4W]', () => {
-    for (let p = 0; p <= 1.0001; p += 0.01) {
-      const r = radiusForP(p, W);
-      expect(r).toBeGreaterThanOrEqual(RADIUS_MIN_FRAC * W - 1e-9);
-      expect(r).toBeLessThanOrEqual(RADIUS_MAX_FRAC * W + 1e-9);
+  it('never exceeds the mid-flip peak', () => {
+    for (const p of sweep(0.01)) {
+      expect(radiusForP(p, W)).toBeLessThanOrEqual(RADIUS_MID_FRAC * W + 1e-9);
     }
+  });
+
+  it('clamps p outside [0,1]', () => {
+    expect(radiusForP(-1, W)).toBe(0);
+    expect(radiusForP(2, W)).toBe(0);
+  });
+});
+
+/* ──────────────────── fold geometry (vertex transform) ─────────────────── */
+
+describe('curl deformation', () => {
+  it('PINS the leaf inner edge to the gutter for the whole turn', () => {
+    // The defect: at p≈0.85 the old model put leaf-local x=0 a sixth of a
+    // page to the left of the spine, so the turning sheet visibly came away
+    // from the book. Every y, every tilt, every p: x=0 must not move.
+    for (const baseTilt of [0, MAX_FOLD_TILT, -MAX_FOLD_TILT]) {
+      for (const p of sweep()) {
+        for (const y of [0, H / 3, H / 2, H]) {
+          const v = deform(0, y, p, W, H, baseTilt);
+          expect(v.x).toBeCloseTo(0, 9);
+          expect(v.y).toBeCloseTo(y, 9);
+          expect(v.z).toBeCloseTo(0, 9);
+        }
+      }
+    }
+  });
+
+  it('leaves the whole leaf untouched at p=0 (raster == resting DOM)', () => {
+    for (const baseTilt of [0, MAX_FOLD_TILT, -MAX_FOLD_TILT]) {
+      for (const x of [0, W / 4, W / 2, W]) {
+        for (const y of [0, H / 2, H]) {
+          const v = deform(x, y, 0, W, H, baseTilt);
+          expect(v.x).toBeCloseTo(x, 9);
+          expect(v.y).toBeCloseTo(y, 9);
+          expect(v.z).toBeCloseTo(0, 9);
+        }
+      }
+    }
+  });
+
+  it('lands on the exact mirrored page at p=1 (raster == swapped DOM)', () => {
+    for (const x of [0, 1, W / 3, W / 2, W]) {
+      const v = deform(x, H / 2, 1, W, H, MAX_FOLD_TILT);
+      // Off by exactly π·(radius floor) — about a thousandth of a pixel.
+      expect(v.x).toBeCloseTo(-x, 2);
+      expect(v.z).toBeCloseTo(0, 2);
+    }
+  });
+
+  it('keeps the grabbed outer edge under the pointer that drove p', () => {
+    // dragToP maps pointer → p; the fold offset compensates for the arc the
+    // curl eats, so the paper edge tracks the finger instead of lagging.
+    for (const p of sweep(0.05).filter((v) => v >= 0.1)) {
+      const edge = deform(W, H / 2, p, W, H);
+      const pointerX = W * (1 - 2 * p); // inverse of dragToP
+      expect(edge.x).toBeCloseTo(pointerX, 2);
+    }
+  });
+
+  it('never lifts the paper below the page plane', () => {
+    for (const p of sweep(0.05)) {
+      for (const x of [0, W / 4, W / 2, (3 * W) / 4, W]) {
+        expect(deform(x, H / 2, p, W, H).z).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('moves the sheet across the gutter as the turn completes', () => {
+    // Sanity that the fix did not simply freeze the page: the free edge has
+    // to end up over the facing leaf.
+    expect(deform(W, H / 2, 0.25, W, H).x).toBeGreaterThan(0);
+    expect(deform(W, H / 2, 0.9, W, H).x).toBeLessThan(0);
   });
 });
 
@@ -383,6 +518,27 @@ describe('curl shader sources', () => {
     for (const src of [CURL_FRAG_SRC, GROUND_FRAG_SRC]) {
       expect([...src.matchAll(/uniform float uDir;/g)]).toHaveLength(1);
     }
+  });
+
+  it('measures the fold from the SPINE, in both passes', () => {
+    // The fold offset is a distance from leaf-local x=0. Anchoring on the
+    // fold's own x (the old uFoldX) let it sweep past the spine, which is
+    // what pulled the leaf's inner edge off the gutter.
+    const spineAnchored = 'dot(local - vec2(0.0, uLeafSize.y * 0.5), n) - uFoldD';
+    expect(CURL_VERT_SRC).toContain(spineAnchored);
+    expect(GROUND_FRAG_SRC).toContain(spineAnchored);
+    for (const src of [CURL_VERT_SRC, GROUND_FRAG_SRC]) {
+      expect(src).not.toContain('uFoldX');
+    }
+  });
+
+  it('has no rigid-rotation blend fighting the cylinder near the landing', () => {
+    // radiusForP → 0 lands the wrap exactly on the mirrored page; the old
+    // mix() toward a spine rotation is what made the last third of the turn
+    // drift away from the gutter.
+    expect(CURL_VERT_SRC).not.toContain('rigid');
+    expect(CURL_VERT_SRC).not.toContain('flatten');
+    expect(CURL_VERT_SRC).not.toMatch(/uniform float uP;/); // progress unused
   });
 });
 

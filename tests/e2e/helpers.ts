@@ -186,9 +186,29 @@ export async function screenDiffRatio(
   );
 }
 
-/** Open the focused book view via the dev view switcher (deterministic). */
+/**
+ * Open the focused book view via the dev view switcher (deterministic).
+ *
+ * The first-run tutorial auto-starts and its `.nbt-scrim` path covers the
+ * viewport, so the view-switcher click was being intercepted and the whole
+ * e2e suite timed out here before a single test body ran. The completion flag
+ * lives in localStorage under `TUTORIAL_KEY`, and it has to be set BEFORE the
+ * first navigation — dismissing the overlay afterwards races its mount.
+ *
+ * (A report that `.nb-book-view` was also dead turned out to be wrong: it is
+ * still applied by BookView. Left as-is deliberately.)
+ */
 export async function openBookView(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('appState:tutorialCompleted', 'true');
+    } catch {
+      // Private-mode storage failures are not this helper's problem; the
+      // explicit stop() below still clears the overlay.
+    }
+  });
   await page.goto('/');
+  await page.evaluate(() => window.__nbTutorial?.stop?.());
   await page.getByRole('button', { name: 'book', exact: true }).click();
   await expect(page.locator('.nb-book-view')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.nb-prose').first()).toBeVisible({

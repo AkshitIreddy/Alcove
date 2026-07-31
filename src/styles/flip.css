@@ -57,6 +57,17 @@
   cursor: grab;
 }
 
+/* The strip stays COLOURLESS. spread.css fills it with --wash-amber-light on
+   hover, which paints a yellow band down the outer edge of the paper and a
+   hard vertical seam where the band ends — a coloured rectangle, not a page
+   about to lift. The corner wedge below is the whole affordance. Three
+   classes so this wins on specificity wherever the two files land in the
+   cascade; the amber declaration itself belongs to spread.css's owner. */
+.nb-flip-surface .nb-flip-hotspot.nb-flip-hotspot-next,
+.nb-flip-surface .nb-flip-hotspot.nb-flip-hotspot-prev {
+  background: none;
+}
+
 .nb-flip-hotspot:active {
   cursor: grabbing;
 }
@@ -116,6 +127,17 @@
 .nb-flip-hotspot:hover::after {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* The dog-ear at the bottom-right corner (spread.css .nb-page-curl) is drawn
+   as a flat triangle in a 34px box — but the box also carries a 1px left
+   border, and since the triangle only fills the lower-right half, that border
+   stands alone on blank paper as a dark vertical hairline beside the peel:
+   the "straight line near the bottom-right corner". The wedge is the
+   affordance; the line is a leftover edge of its box. Killed here (see the
+   note on the hotspot fill above about which file owns the declaration). */
+.nb-spread .nb-page-curl {
+  border-left: none;
 }
 
 /* ----------------------------------------------------------------------------

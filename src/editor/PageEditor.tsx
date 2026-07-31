@@ -7,7 +7,9 @@
  *   The BookView rail changes them through the imperative surface in
  *   src/editor/insert/activeEditor.ts (getPageStyle/setPageStyle/
  *   getLineHeight/setLineHeight) — the old in-page floating switcher is gone.
- * - Line-level drag handles (hand-drawn grip) + GSAP Flip settle on drop.
+ * - Line-level drag handles (src/editor/dragHandle.ts — the handle's layer
+ *   lives on <body>, NOT in the page; read that file's header before moving
+ *   it back) + GSAP Flip settle on drop.
  * - Click-below-to-type: clicking the empty ruled area below the last block
  *   drops the caret on a fresh line (or pulses the page-full hint when the
  *   page is paginated and cannot grow).
@@ -35,6 +37,7 @@ import {
   isPageStyle,
   normalizePageDoc,
 } from './document';
+import { createDragHandleWiring } from './dragHandle';
 import { createEditorExtensions } from './extensions';
 import { recordSnapshot } from './history/pageHistory';
 import { registerPageEditor, unregisterPageEditor } from './instances';
@@ -57,25 +60,33 @@ import '../styles/effects.css';
 /**
  * Soft pencil-tick when a todo checkbox is checked (delegated per page root)
  * — plus a confetti burst from the checkbox when the user opted in.
+ *
+ * Everything decorative is pushed to the next frame on purpose: the tick has
+ * to be the fastest thing on screen, and measuring the box (a forced layout)
+ * inside the change handler puts a layout read between the click and the
+ * checkbox actually looking checked.
  */
 function onTaskToggle(event: Event): void {
   const target = event.target;
   if (
-    target instanceof HTMLInputElement &&
-    target.type === 'checkbox' &&
-    target.closest('li[data-checked]') !== null &&
-    target.checked
+    !(target instanceof HTMLInputElement) ||
+    target.type !== 'checkbox' ||
+    target.closest('li[data-checked]') === null ||
+    !target.checked
   ) {
-    void play('check-done');
-    if (settings.confettiOnComplete && !settings.minimalistMode) {
-      const rect = target.getBoundingClientRect();
-      burstConfetti({
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-      });
-      void play('confetti');
-    }
+    return;
   }
+  void play('check-done');
+  if (!settings.confettiOnComplete || settings.minimalistMode) return;
+  requestAnimationFrame(() => {
+    if (!target.isConnected) return;
+    const rect = target.getBoundingClientRect();
+    burstConfetti({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    });
+    void play('confetti');
+  });
 }
 
 gsap.registerPlugin(Flip);
@@ -110,26 +121,6 @@ const SAVE_DEBOUNCE_MS = 400;
 /** Safety bound on the overflow loop (a transaction per iteration). */
 const MAX_OVERFLOW_PASSES = 64;
 
-/**
- * Hand-drawn grip: six slightly-scattered graphite dots. Starts hidden —
- * the DragHandle extension positions it on first block hover, and without
- * this it would sit unpositioned in the page corner until then.
- */
-function buildDragHandleElement(): HTMLElement {
-  const element = document.createElement('div');
-  element.className = 'nb-drag-handle';
-  element.setAttribute('aria-hidden', 'true');
-  element.style.visibility = 'hidden';
-  element.innerHTML =
-    '<svg viewBox="0 0 14 22" xmlns="http://www.w3.org/2000/svg">' +
-    '<g fill="var(--ink-graphite-soft)">' +
-    '<circle cx="4.2" cy="4.4" r="1.7"/><circle cx="10" cy="3.8" r="1.6"/>' +
-    '<circle cx="3.8" cy="11.2" r="1.6"/><circle cx="10.2" cy="10.8" r="1.7"/>' +
-    '<circle cx="4.4" cy="17.8" r="1.7"/><circle cx="9.8" cy="18.2" r="1.6"/>' +
-    '</g></svg>';
-  return element;
-}
-
 function topLevelBlocks(view: EditorView): HTMLElement[] {
   const blocks: HTMLElement[] = [];
   for (const child of Array.from(view.dom.children)) {
@@ -152,12 +143,35 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   const pageId = props.pageId;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingDoc: PageDoc | null = null;
+  /** Set on every update, cleared by `mirror()`. Non-null means "unserialized". */
+  let dirtyEditor: Editor | null = null;
+  let mirrorQueued = false;
+
+  /**
+   * Serialize the document ONCE and feed both consumers from it.
+   *
+   * getJSON() walks the whole doc, and a single user action routinely lands
+   * several transactions (the edit, UniqueID's appended one, a node view's
+   * own). Serializing per transaction meant paying for the whole page each
+   * time; a microtask collapses the burst into one pass without deferring
+   * anything past the current task, so unmount still flushes the latest doc.
+   */
+  const mirror = (): void => {
+    mirrorQueued = false;
+    const instance = dirtyEditor;
+    dirtyEditor = null;
+    if (instance === null || instance.isDestroyed) return;
+    const doc = instance.getJSON() as PageDoc;
+    pendingDoc = doc;
+    props.onDocChange?.(doc);
+  };
 
   const flushSave = (): void => {
     if (saveTimer !== undefined) {
       clearTimeout(saveTimer);
       saveTimer = undefined;
     }
+    mirror(); // materialize anything the microtask has not picked up yet
     if (pendingDoc !== null) {
       const doc = pendingDoc;
       pendingDoc = null;
@@ -168,8 +182,12 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     }
   };
 
-  const scheduleSave = (doc: PageDoc): void => {
-    pendingDoc = doc;
+  const scheduleSave = (instance: Editor): void => {
+    dirtyEditor = instance;
+    if (!mirrorQueued) {
+      mirrorQueued = true;
+      queueMicrotask(mirror);
+    }
     if (saveTimer !== undefined) clearTimeout(saveTimer);
     saveTimer = setTimeout(flushSave, SAVE_DEBOUNCE_MS);
   };
@@ -352,12 +370,21 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   // -------------------------------------------------------------------------
   // Editor
   // -------------------------------------------------------------------------
+  // Built before the editor: the extension calls render() while the editor is
+  // still under construction, so the wiring has to exist first and is bound
+  // to the instance afterwards.
+  const dragWiring = createDragHandleWiring(pageId);
+
   const editor = createTiptapEditor(() => ({
     element: mountElement,
     extensions: createEditorExtensions({
       interactive: true,
       placeholder: 'Type / for commands…',
-      dragHandle: { render: buildDragHandleElement },
+      dragHandle: {
+        render: dragWiring.render,
+        onElementDragStart: dragWiring.onElementDragStart,
+        onElementDragEnd: dragWiring.onElementDragEnd,
+      },
     }),
     // PageDoc's content is unknown[] on purpose (the data layer only owns the
     // envelope); the schema validates the deep shape when the editor parses it.
@@ -376,10 +403,10 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       },
     },
     onUpdate: ({ editor: instance }) => {
-      const doc = instance.getJSON() as PageDoc;
-      scheduleSave(doc);
-      props.onDocChange?.(doc);
+      // Overflow stays synchronous: the no-scrollbars contract has to hold on
+      // the frame the text was typed, not one frame later.
       extractOverflow(instance);
+      scheduleSave(instance);
     },
     // Two editors are mounted at once in the spread view; the focused one is
     // the "active" editor the script toolbar/dialog should target.
@@ -387,16 +414,23 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   }));
 
   // Publish the live editor for the script toolbar/dialog + install the media
-  // paste/drop plugin (once per instance).
+  // paste/drop plugin and the drag-handle wiring (once per instance).
   let mediaPluginInstalled: unknown = null;
+  let detachDragWiring: (() => void) | undefined;
   createEffect(() => {
     const instance = editor();
     setActiveEditor(instance ?? null);
     if (instance) registerPageEditor(pageId, instance);
     if (instance && mediaPluginInstalled !== instance) {
       instance.registerPlugin(createMediaPastePlugin());
+      detachDragWiring?.();
+      detachDragWiring = dragWiring.attach(instance);
       mediaPluginInstalled = instance;
     }
+  });
+  onCleanup(() => {
+    detachDragWiring?.();
+    detachDragWiring = undefined;
   });
   onCleanup(() => {
     setActiveEditor(null);
@@ -459,6 +493,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       ref={(el) => {
         pageRootElement = el;
         el.addEventListener('change', onTaskToggle);
+        onCleanup(() => el.removeEventListener('change', onTaskToggle));
       }}
     >
       <div class="nb-page-editor" ref={mountElement} />

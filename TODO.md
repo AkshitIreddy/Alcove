@@ -6,7 +6,19 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ---
 
-## 🔴 Reported 2026-08-01 — not yet started
+## 🔴 Reported 2026-08-01
+
+### Sound — LICENCE OBLIGATION, do not ship without this
+
+- [ ] **One shipped cue is CC BY 4.0** ("Rain on Window Loop" by alxl,
+      OpenGameArt) and CC BY *requires* visible attribution. `CREDITS.json`
+      records it but nothing shows it to a user. Either surface a credits view
+      in settings, or replace that one file with a CC0 alternative and drop the
+      obligation entirely. Everything else shipped is CC0 or public domain.
+- [ ] A human still needs to **listen**. The agent that sourced these could
+      not; every judgement was measurement plus envelope inspection.
+- [ ] `npm run sounds` needs ffmpeg on PATH and is Windows-only (PowerShell
+      unzip) — fine for a Tauri/Windows app, breaks if CI ever runs Linux.
 
 ### Sound — needs a real redesign, not another synthesis pass
 
@@ -15,38 +27,98 @@ reported bad. Stop synthesising. Find a **permissively licensed** effects
 library (CC0 / CC-BY with attribution we can actually ship) and curate real
 recordings.
 
-- [ ] Replace `scripts/gen-sounds.mjs` output with curated, licensed sounds
-- [ ] Page turn, confetti and checkbox are called out as the worst
-- [ ] Record the licence + attribution for every file we ship
+- [x] ~~Replace `scripts/gen-sounds.mjs` output with curated, licensed sounds~~
+      — all 56 shipped WAVs are now sliced from real field recordings; no cue
+      needed a synth fallback. The script is a source-to-cue pipeline now
+      (fetch → decode → slice → condition → emit). Payload unchanged at 6.6 MB
+- [x] ~~Page turn, confetti and checkbox are called out as the worst~~ — page
+      turns come from three different books so the rotation varies, checkbox is
+      a real bell allowed to ring out, confetti is one real strike sounded 3–4×
+- [x] ~~Record the licence + attribution for every file we ship~~ —
+      `public/sounds/CREDITS.json`, one entry per cue. **Verified split: 34
+      public domain, 21 CC0, 1 CC BY 4.0** (counted from the manifest, not from
+      the report)
+- [ ] **Nobody has listened to any of it.** Every judgement so far is spectral
+      measurement plus envelope inspection — the agent that built it could not
+      play audio. A human listening pass is the remaining acceptance gate, and
+      until it happens this section is sourced, not approved
+- [ ] **The one CC BY 4.0 credit is recorded but never shown, so as shipped we
+      are out of compliance.** `alxl`'s "Rain on Window Loop" requires visible
+      attribution; it sits in `CREDITS.json` under `attributionsRequired`, and
+      **nothing in `src/` reads that file** (verified by grep). Needs a credits
+      row — `SettingsPanel.tsx:1044`'s Help section is the natural home. Read
+      the manifest, do not hard-code the string
+- [ ] `pop-soft` (5 variants) is the one family sourced from an interface pack
+      rather than foley, so it is the least papery thing in the set. Kept
+      because the alternatives in that duration window were worse; the obvious
+      candidate for a second pass
+
+Sources that were **rejected, and why** — worth keeping so the next pass does
+not re-tread them: freesound.org is the best CC0 catalogue for this brief but
+its robots.txt disallows our agent, so it went unused; archive.org carries
+commercial libraries and outright console-game rips re-uploaded with CC0/PD
+tags by people who plainly do not own them, so none of it was trusted; pixabay
+sits behind a bot challenge; zapsplat needs an account; Sonniss is multi-GB.
+One licence ambiguity was resolved conservatively: alxl's file shows a CC0
+badge but its structured licence field says CC BY 4.0, so we honour the
+stricter reading and ship the credit, which satisfies either.
 
 ### Editor — block dragging is finicky
 
-- [ ] Hovering text makes the six-dot drag handle **flicker** for that section
-- [ ] After a failed move the handle **jumps to the centre** of the section,
-      making the next attempt harder
-- [ ] Moving sections generally: not smooth, not error-free
-- [ ] Checkbox click effect and the confetti animation are **laggy and slow**
-- [ ] Confetti colours are bland — it should be worth firing
+- [x] ~~Hovering text makes the six-dot drag handle **flicker**~~ — the handle
+      parented itself *inside* the page, so its own hover repositioning read as
+      an edit to FlipSurface's mutation observer → snapshot → `.snapshotting`
+      hid the handle → re-anchor → forever. Measured: **21 full page
+      rasterizations during 2.5 s of holding the pointer still**. Fix is
+      placement, not damping — `hoistHandleLayer()` moves the wrapper to
+      `<body>`, and the entry keyframe (which literally animated the box) is
+      gone. After: **1 distinct state across 30 frames, 1 rasterization**
+- [x] ~~After a failed move the handle **jumps to the centre**~~ — the
+      extension never cleared its cached node/pos on an abandoned drag, and
+      `dragHandler` left a stale `NodeRangeSelection` that the *next* grab
+      dragged instead of the block under the handle
+- [x] ~~Moving sections generally: not smooth, not error-free~~ — grab lane
+      widened to the full 40px gutter, a real inked drop indicator (the
+      dropcursor had no class at all, so it could not be styled), edge
+      auto-scroll on one rAF loop, drop-outside is a clean no-op
+- [x] ~~Checkbox click effect and the confetti animation are **laggy**~~ —
+      ~85% of an edit window was inside html-to-image, driven by the hover loop
+      above. Synchronous cost of a real tick is now **13.4 ms**
+- [x] ~~Confetti colours are bland~~ — four silhouettes over 14 real tokens
+      spanning hue *and* value, independent spin/sway/flip rates, and one
+      canvas sized to the burst footprint (**28% of the viewport, not 100%**)
 
 ### Page turn
 
-- [ ] Drop the **yellow corner tint** on the turn hotspot
-- [ ] A **straight line near the bottom-right corner** — the corner peel shadow
-      is fine, the line is not; find out what draws it
-- [ ] **Click** (not drag) to turn forward is not smooth
-- [ ] The page reads as **disconnected from the spine** near the centre — on
-      click, and worst at the end of a drag, both directions
-- [ ] Pages holding a **tree/timeline diagram go dark** during the turn
-- [ ] After a drag turn completes, a **half-second flicker** as though a second
-      flip fired
+- [x] ~~Drop the **yellow corner tint** on the turn hotspot~~ — `spread.css`
+      was filling the hotspot with `--wash-amber-light`; neutralised
+- [x] ~~A **straight line near the bottom-right corner**~~ — `.nb-page-curl`
+      carried a stray 1px left border standing beside the dog-ear wedge
+- [x] ~~**Click** (not drag) to turn forward is not smooth~~ — the first GL
+      draw was queued for the *next* rAF, so every flip began with one frame of
+      empty canvas over a hidden leaf; plus the snapshot loop below
+- [x] ~~The page reads as **disconnected from the spine**~~ — the fold line
+      swept past the gutter to x=−W, putting the leaf's inner edge on the
+      cylinder (**measured 101px off the gutter at p=0.85**). The fold is now a
+      distance from the spine that sweeps to 0 and never goes negative, with
+      the radius going to 0 at both ends so the landing is an exact mirror
+- [x] ~~Pages holding a **tree/timeline diagram go dark**~~ — html-to-image
+      deep-clones `<svg>` without copying computed styles, so class-styled
+      shapes lose their paint and SVG's initial fill is *opaque black*. New
+      `svgSnapshot.ts` inlines the resolved paint for the capture. Measured on
+      the real Diagrams page: **58,765 dark pixels before, 1,635 after**
+- [x] ~~After a drag turn completes, a **half-second flicker**~~ — the p=1
+      raster covered the freshly committed spread for two frames, and those
+      frames were ~300 ms each because of the snapshot loop. The end-state draw
+      and the navigate now happen in one task; clear and reveal in one callback
 
-### Focus mode
+### Focus mode — NOT STARTED this round
 
 - [ ] Entering focus mode does **not close an open side panel**
 - [ ] **No obvious way out.** Today: click blank space outside the book, then
       Esc. Needs a visible affordance.
 
-### The "what can I add" catalogue
+### The "what can I add" catalogue — NOT STARTED this round
 
 - [ ] "Stickers and effects" is where every insertable thing lives, but the
       name hides it. Rename to something that reads as a catalogue.
@@ -55,9 +127,20 @@ recordings.
 
 ### Spec automation
 
-- [ ] The AI-facing Notebook Script spec should **rebuild itself** whenever a
-      new insertable/effect/directive is added, so it can never drift. A check
-      that fails when the spec is stale is the minimum; generating it is better.
+- [x] ~~The AI-facing Notebook Script spec should **rebuild itself**~~ — it is
+      generated from the parser's own vocabulary now, not maintained by hand.
+      `src/script/vocab.ts` carries `*_DOCS` records typed over the `as const`
+      arrays they describe, so **adding a name without prose is a compile
+      error** — `tsc` enforces documentation, not a reviewer's memory.
+      `scripts/gen-spec.mjs` renders 12 generated regions into
+      `scripts/spec-template.md` and writes both shipped artifacts.
+      `npm run spec` writes, `npm run spec:check` verifies (**passes**), and
+      `tests/script/spec-generated.test.ts` fails with the stale lines if the
+      checked-in copies drift. It also checks the other direction: every
+      container, sticker, attr key, fence, page-style key and leaf directive
+      must literally appear in the shipped text, so a name no region happens to
+      print is caught too. Gate was proved by adding a fake sticker and
+      watching it go red
 
 ---
 
@@ -175,10 +258,184 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
       mini-language parsers directly, bypassing the `parseDoc` pass that
       locates and sorts, so the diagram popover showed unlocated warnings.
       Both diagnostic surfaces now render `line N:C` plus `expected`
+- [x] ~~The drop cursor had no class at all~~ — prosemirror-dropcursor only
+      names its element when the `class` option is set, and it wasn't. That
+      made `flip.css`'s `.snapshotting .ProseMirror-dropcursor` rule dead, so
+      the indicator could bake into a page snapshot. Now passes
+      `class: 'ProseMirror-dropcursor nb-dropcursor'`, keeping the ProseMirror
+      name so the flip rule works again
+- [x] ~~`onTaskToggle` was attached to the page root with no matching
+      `removeEventListener`~~ — now cleaned up
 - [ ] Shortcuts are display-only in settings ("rebinding is on its way").
       The map is now honest and centrally matched, so rebinding is a UI job
 - [ ] The task list in the harness is stale — several entries describe the
       deleted painting/lighting stack
+- [ ] **Rasterizing a page is still the largest cost in the editor** — each one
+      is a 300–400 ms long task under headless SwiftShader, nearly all of it
+      html-to-image's `cloneCSSStyle` copying every computed property of every
+      node. It is now correctly triggered only by *actual* edits (it used to
+      run forever on an idle book), so this is a cost problem, not a loop
+
+## 🔍 Found by audit
+
+A read-only hunt for bugs nobody had reported, ranked by severity. **Captured,
+not fixed** — deliberately, so each one gets its own change with its own
+verification. Every line number below was re-checked against the working tree
+while writing this list; where the hunt's note disagreed with the file, the
+file won (two paths and three line numbers were corrected).
+
+The hunt's original #1 — the page-snapshot cache feeding itself forever on an
+idle open book — **is already fixed** and is not listed here; it turned out to
+be the shared root cause of the drag-handle flicker, the checkbox lag and the
+post-flip flicker above.
+
+### High
+
+1. **Page history from previous sessions is destroyed by the first edit.**
+   `src/editor/history/pageHistory.ts:117` reads `rings.get(pageId) ?? []` and
+   `:128` persists that with `INSERT OR REPLACE`. Hydration from the DB happens
+   *only* in `listSnapshots` (`:150`), and the only caller is
+   `src/views/rail/HistoryPanel.tsx:45` — i.e. nothing hydrates unless the user
+   has already opened the History panel. **Trigger:** restart the app, open a
+   book, type, wait for a save flush (`PageEditor.tsx:181`). Up to 10 restore
+   points from earlier sessions are replaced by an array of one. The module
+   header explicitly promises the persisted tail "survives restarts". This is
+   silent user data loss on the happy path — fix it first.
+   *Weaker sibling, same file:* `:151` marks `hydrated` **before** the await, so
+   one transient DB read failure permanently disables hydration for that page.
+
+2. **The entire Playwright suite is red before any test body runs**, both
+   failures inside `tests/e2e/helpers.ts::openBookView` (`:190`).
+   (a) `:193` waits on `.nb-book-view`, which **no component applies any more**
+   — verified: the class survives only in `src/styles/editor.css` and
+   `src/styles/rail.css`. The book view root is `.nb-spread` now.
+   (b) The first-run tutorial auto-starts and its `.nbt-scrim` intercepts
+   pointer events, so the book click times out.
+   **Trigger:** `npx playwright test`, any spec. Until this is fixed we have no
+   end-to-end verification at all, which is why so much of this round had to be
+   measured with bespoke harnesses instead.
+
+### Medium-high
+
+3. **Every re-capture leaks an ImageBitmap.** `src/flip/math.ts:337` — `set()`
+   drops a replaced value without calling `onEvict`, and `onEvict` is the only
+   thing that closes bitmaps (`src/flip/rasterCache.ts` LRU wiring). The
+   contract at `rasterCache.ts:25` says "evicted/**replaced** bitmaps are
+   `close()`d"; only evicted ones are. `delete()` and `clear()` do fire it —
+   `set()`-over-existing is the single hole. **Trigger:** any re-capture of an
+   already-cached page, i.e. every real edit. At pixelRatio 2 a ~620×875 sheet
+   is ≈8.7 MB of native memory per leak. Note `tests/flip.test.ts:610`
+   currently *enshrines* the leak (`expect(evicted).toEqual([])`), so that
+   assertion has to be inverted as part of the fix.
+
+4. **A cancelled theme swap can pin a frozen full-viewport snapshot over the
+   shelf forever.** `src/features/bookshelf/world.ts:1309` — `applyLibrary`
+   calls `beginThemeFade()` (grabs the viewport into a sprite at alpha 1),
+   awaits the case bakes, then bails on the generation guard **before**
+   `endThemeFade()`. **Trigger:** with room A on screen pick room B, then pick
+   A again before B's four bakes land (cold disk cache). The second call sees
+   `roomChanged === false` and returns early; the first returns at the guard.
+   Nothing ever fades or destroys the snapshot, so the shelf is a still image
+   until an actual room *change* replaces it. Clicks still land, which makes it
+   read as a render freeze. Reduced-motion users are immune.
+   ⚠️ `world.ts` is being edited by another workflow — **re-confirm the control
+   flow survives their change before acting.** The bug is in the guard's
+   placement, not in the scheme composition they are reworking.
+
+### Medium
+
+5. **Diagrams bake as an empty skeleton into adjacent-page snapshots and into
+   whole-book exports.** `src/editor/nodes/diagram.tsx:96` lazy-mounts each
+   diagram behind an `IntersectionObserver`; the offscreen staging host sits at
+   `left:-12000px`, so it never intersects and the dashed
+   `.nb-diagram-skeleton` (`:146`) is what gets captured. **Trigger:** turn to a
+   page whose neighbour holds a diagram; also every PDF/PNG whole-book export.
+   Distinct from the "diagrams go dark" defect fixed above — empty frame, not
+   black. Fix is to treat a node inside `.nb-export-sheet` as immediately
+   visible.
+
+6. **Script/PDF export still has the black-SVG bug** that the page flip just
+   fixed. `src/editor/script/exporters/capture.ts:93` uses the same
+   html-to-image `toCanvas` recipe and does **not** import `inlineSvgStyles`
+   (verified). **Trigger:** export any page containing a diagram. One import
+   from `src/flip/svgSnapshot.ts` and the same wrap.
+
+7. **Pasting an image that fails to store does nothing at all, silently.**
+   `src/editor/media/pastePlugin.ts:89` returns on an empty source list; the
+   per-file `catch` at `:81` maps every failure to `null`, and `handlePaste`
+   has already called `preventDefault()` and returned `true`, so ProseMirror's
+   default paste is suppressed too. **Trigger:** paste an image when
+   `save_image_asset` rejects (unwritable app-data dir, disk full, refused
+   format) or the asset-row DB write fails. Clipboard consumed, no block, no
+   toast, no console line. A `notify()` helper already exists in
+   `src/editor/script/exporters/toast.ts`.
+
+8. **Modal dialogs with no focus management.** Four carry `aria-modal="true"` —
+   `src/features/templates/ExportPdfDialog.tsx:53`,
+   `src/features/templates/TemplatesGallery.tsx:149`,
+   `src/features/transfer/TransferPanel.tsx:990`,
+   `src/features/tutorial/TutorialOverlay.tsx:513` — and none moves focus in on
+   open, traps Tab, or restores focus on close (0 `focus()` calls in each).
+   `src/views/CheatSheet.tsx:55` is the milder case: `role="dialog"` without
+   `aria-modal`, same absence of focus handling. **Trigger:** open Export PDF
+   from the rail with the keyboard — focus stays on the rail button behind
+   while `aria-modal` tells assistive tech the rest of the page is inert, so a
+   screen-reader user is focused on something their AT has been told does not
+   exist. `src/features/settings/SettingsPanel.tsx:519` already does this
+   properly and is the pattern to copy.
+
+### Low
+
+9. **A timed-out art job leaks its transferred ImageBitmap.**
+   `src/features/bookshelf/artOffload.ts:251` returns when the pending entry is
+   already gone, dropping the transferred bitmap without `close()`. `inFlight`
+   accounting is fine. **Trigger:** a spine taking >30 s (6 s has been measured
+   on a software renderer, so reachable but rare).
+
+10. **dpr is a parameter of two texture caches but not of their keys.**
+    `src/features/bookshelf/textures.ts:555` (`getPlaque` keys on `label` only)
+    and `:525` (`getSelectCaret` keys on nothing). **Trigger:** move the window
+    between monitors of different DPI — the first scale is kept forever.
+    Colours are fixed, so there is no room-tag hole here.
+
+11. **Dead protocol plumbing in the art worker bridge.**
+    `artOffload.ts:245` writes `slot.ready = true`, which `pickSlot()` (`:236`)
+    never reads. `ART_PROTOCOL_VERSION` (`artJobs.ts:23`, documented as "bump
+    when a job's meaning changes so a stale worker bundle is obvious") is
+    posted by the worker and **never compared by the host** — bumping it does
+    nothing. Harmless today, actively misleading the day someone relies on it.
+
+12. **Purge leftovers that still allocate.** `floorView.ts:317`, `:323`, `:813`
+    build sprites from `getStarCharm`/`getRibbon`/`getEmptyDoodle`, all of which
+    now return the shared 1×1 transparent texture. Dead work, not a failure —
+    destroy paths were checked and the shared texture is not at risk.
+
+13. **Dead rules and doc drift left by this round's fixes** (each is a deletion
+    someone with ownership should make): the two `spread.css` declarations that
+    caused the yellow tint and the stray hairline are now overridden from
+    `flip.css` and can go at source; `src/styles/flip.css:135`'s
+    `.snapshotting .nb-drag-handle { display: none }` is the rule that *caused*
+    the handle flicker and is now unreachable; `.nb-drag-handle` still appears
+    in the exclude lists of `rasterCache.ts`, `offscreenPages.ts` and
+    `exporters/capture.ts` as no-ops; and `docs/design/page-flip.md:26` still
+    documents the fold sweeping to x=−W, which is precisely the geometry that
+    detached the page from the spine.
+
+14. **`{color=plum}` on a diagram node is unreachable from script** —
+    `DIAGRAM_WASHES` includes `plum`, `WASH_COLORS` does not. Either wire it up
+    or drop it.
+
+### Chased and cleared — do not re-investigate
+
+`bakeFlatPart` (`textures.ts:230`) looks like the classic set-scheme-then-await
+race, but the `setFlatScheme`/draw/restore sits inside the producer closure,
+which `bakeCached` runs synchronously. Every `bakeCached` key traced does carry
+the scheme axis, so the stale-art-forever class is genuinely closed.
+`PageRasterCache.dispose()`/`capture()` re-check `disposed` after every await.
+`PageFlipController.land()`'s `landToken` guard and the context-lost
+`committed` check are both correct. `ThumbStrip.tsx:34` never prunes its
+canvases, but they are bounded by page count and hold detached 104×132
+canvases — too small to call a bug.
 
 ## 📈 Measured
 

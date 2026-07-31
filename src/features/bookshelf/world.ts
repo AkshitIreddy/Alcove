@@ -114,6 +114,7 @@ import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
 import { DustMotes, makeGlowTexture } from './motes';
 import { rigForTheme, SceneLight, type LitFloor, type LitSpine } from './sceneLight';
+import { roomArt } from './roomArt';
 import { SpineFactory, type SpineRowContext } from './spineFactory';
 import { paletteCss } from './spinePalette';
 import {
@@ -472,6 +473,11 @@ export class ShelfWorld {
     this.backdrop.tint = PLACEHOLDER_TINTS.backdrop;
     this.backdrop.alpha = 0;
     this.backdrop.eventMode = 'none';
+    // Fire and forget, like the spine atlas: the procedural wall shows until
+    // the panel lands, then handleEnvReady swaps to it.
+    void roomArt.load().then((ok) => {
+      if (ok && !this.destroyed) this.handleEnvReady();
+    });
     this.glowTexture = makeGlowTexture();
     this.motes = new DustMotes(this.glowTexture);
     this.fx.addChild(this.motes.container);
@@ -1206,12 +1212,33 @@ export class ShelfWorld {
     }
   }
 
+  /**
+   * Tile scale for the wall, chosen so its seam is never on screen.
+   *
+   * The old rule was `max(zoom, 0.35)`, which at the zoom floor drew a tile
+   * at a third of its size and put three or four repeats across the viewport
+   * — the pale banding reported while panning. With an authored panel we can
+   * instead demand that ONE copy covers the viewport, plus the slack the
+   * parallax offset needs, and take the larger of that and the zoom.
+   */
+  private wallTileScale(zoom: number): number {
+    const tex = this.backdrop.texture;
+    const base = Math.max(zoom, 0.35);
+    if (tex.width < 2 || tex.height < 2) return base;
+    const cover = Math.max(
+      this.vp.width / tex.width,
+      this.vp.height / tex.height,
+    );
+    // 1.15 keeps a margin so the parallax drift cannot walk an edge into view.
+    return Math.max(base, cover * 1.15);
+  }
+
   private applyCamera(): void {
     const { x, y, zoom } = this.camera;
     this.world.position.set(-x * zoom, -y * zoom);
     this.world.scale.set(zoom);
     this.backdrop.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
-    this.backdrop.tileScale.set(Math.max(zoom, 0.35));
+    this.backdrop.tileScale.set(this.wallTileScale(zoom));
     if (this.wallpaper !== null) {
       this.wallpaper.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
       this.wallpaper.tileScale.set(Math.max(zoom, 0.35));
@@ -1710,6 +1737,20 @@ export class ShelfWorld {
   private handleEnvReady(): void {
     if (this.destroyed) return;
     const m = this.hooks.motion();
+    // The authored wall panel outranks every baked strip. Reported as pale
+    // horizontal banding while panning, worst in the corners: the baked wall
+    // is a small tile repeated across the viewport and its seam is visible.
+    // A 1536px panel is wider than the viewport usually is, so at the scale
+    // set in applyCamera the repeat is simply never on screen.
+    const authored = roomArt.get('wall-plaster');
+    if (authored !== undefined) {
+      if (this.backdrop.texture !== authored) this.backdrop.texture = authored;
+      this.backdrop.tint = WALL_TINT;
+      this.backdrop.alpha = 1;
+      if (this.wallpaper !== null) this.wallpaper.visible = this.envTex.wallpaper !== null;
+      this.dirty = true;
+      return;
+    }
     // The room's own wall (papered · panelled · plastered · boarded · shoji ·
     // glazed) supersedes the old paper+damask pair entirely.
     const strip = this.envTex.backdropStrip;

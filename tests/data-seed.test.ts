@@ -27,6 +27,7 @@ import {
   isEmptyPageDoc,
 } from '../src/data/seed';
 import { normalizeBookStyleOverrides } from '../src/art/bookStyle';
+import { clothForPalette } from '../src/art/spines';
 import { parse } from '../src/script';
 import type { PageDoc } from '../src/data/types';
 
@@ -184,11 +185,20 @@ describe('WELCOME_BINDING', () => {
     }
   });
 
-  it('is vivid rather than the default warm amber', () => {
-    // Pigment 0 is Amber, which is what the seed used to land on and what the
-    // reader called bland. Anything else is fine; this only pins that we did
-    // not drift back.
-    expect(WELCOME_BINDING.pigment).not.toBe(0);
+  /**
+   * Pin the CLOTH, not the pigment index.
+   *
+   * "pigment !== 0" was the first version of this test and it passed while the
+   * book shipped the wrong colour: twenty pigment names fold onto six flat
+   * cloths, and the oxblood that was authored came out as terracotta — the
+   * same cloth every unstyled book on the shelf already wears. The index is
+   * not the thing anyone can see, so it is not the thing worth asserting.
+   */
+  it('lands on a cloth that is not the unstyled default', () => {
+    const cloth = clothForPalette(WELCOME_BINDING.pigment as number);
+    expect(cloth).toBe(2); // plum
+    expect(cloth).not.toBe(clothForPalette(0)); // not amber→ochre
+    expect(cloth).not.toBe(0); // not terracotta, the commonest cloth
   });
 
   it('derives a stable spine seed from the current title', () => {

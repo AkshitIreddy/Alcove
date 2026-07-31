@@ -75,14 +75,25 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * This is the first object a reader ever sees on the shelf, and it was warm
  * amber cloth with whatever the seed happened to give it — which read as the
  * default it was. It is the app's calling card, so it is dressed like one:
- * oxblood leather, four raised cords with gilt rules either side, wrapped
+ * plum leather, four raised cords with gilt rules either side, wrapped
  * endbands, a gilt title plate and gilt edges, in quarto so it has some
  * presence beside a pocket paperback.
  *
- * Oxblood specifically because the default room is Verdigris Library — a
- * blue-green case on warm plaster. A warm red is the one thing on that wall
- * that cannot be mistaken for part of the furniture, and it ties to the deep
- * blue and gold of the app mark rather than competing with it.
+ * ## `pigment` is not the colour its name says
+ *
+ * `PIGMENT_LABELS` lists twenty names and choosing one by name is a trap: the
+ * flat renderer has exactly SIX cloths (terracotta, slate, plum, ochre, sage,
+ * moss) and `spines.clothForPalette` folds all twenty onto those. Oxblood,
+ * rust and clay all land on terracotta — so an "oxblood" binding paints the
+ * same colour as every unstyled book on the shelf. This was authored as
+ * oxblood first and shipped terracotta. Neither the compiler nor the test
+ * caught it; a screenshot did.
+ *
+ * Plum is chosen because it survives the fold as itself, and because the
+ * default room is Verdigris Library — a blue-green case on warm plaster.
+ * Against that wall sage and moss vanish, slate is too near the case, and
+ * terracotta is what an unstyled book already wears. Plum is the one that
+ * reads as a book somebody chose.
  *
  * Wear is low but not zero. A pristine 0 makes an object look like a render;
  * a little softening at the corners is what makes it look like a book.
@@ -93,7 +104,7 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  */
 export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   material: 'leather',
-  pigment: 12, // Oxblood
+  pigment: 4, // Plum — see the note above on what a pigment actually becomes
   hueJitter: 0,
   raisedBands: 4,
   bandGilt: true,

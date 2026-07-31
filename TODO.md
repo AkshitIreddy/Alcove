@@ -192,12 +192,32 @@ the right place, which congratulated people for things they had not done.
 
 ### Editor / pages
 
-- [ ] Large text sits **too high above its baseline** — visible in the Welcome
-      book on "Make it yours" and the Diagrams heading
+- [x] ~~Large text sits **too high above its baseline**~~ — Caveat is
+      top-heavy (ascent 0.952em, descent 0.310em), so centred leading in a
+      double-height line box parks the glyphs mid-band instead of on the rule.
+      The glyphs are pushed down by a `padding-top` lead that a negative
+      `margin-bottom` gives straight back, so block height stays an exact
+      multiple of two rules and pagination is untouched. Measured on the
+      welcome book's ruled leaf: a 42px H1 now sits **5.9px** above its rule
+      and a 33px H2 **4.2px**, against 4.8–8.8px for 20px body text — i.e.
+      headings share the body's relationship to the rule. It was 17.5 vs 7.5.
 - [x] ~~Turning a page **selects all the text**~~ — `PageFlipController`
       clears the selection at every reparenting point, and the flip surface is
-      `user-select: none`.
+      `user-select: none`. Driven both ways: **0 characters selected mid-drag
+      and 0 ranges after landing**, where a corner drag used to leave 417
+      characters swept across the new spread.
 - [x] ~~**Page flicker after a turn**~~
+- [x] ~~Turning forward off an odd-length book landed on a spread with **no
+      pages under either leaf**~~ — found by driving the seeded 5-page welcome
+      book. A spread is two slots, so appending one page off an odd count fills
+      the leaf the reader is *leaving* and lands them on two sheets of cream
+      paper with no editor mounted under either: clicking did nothing, typing
+      did nothing, and the only way out was to turn back. `shouldAutoCreatePage`
+      already promised the flip would "land on a page that exists";
+      `spread.pagesToCreateOnFlip` is the arithmetic that keeps the promise
+      (create up to the LANDING spread's left slot — one page or two, never
+      more). Verified in the app: four turns forward, every landing spread has
+      a live left leaf, and text typed on it sticks.
 
 ### Sound
 
@@ -223,10 +243,58 @@ processed by `gen-sounds.mjs` from one table that also writes the manifest.
 - [x] ~~Make a skill for: prefer physically trying it to reasoning about it~~ —
       `~/.claude/skills/try-it-first/`
 
+## 🧪 The end-to-end suite, 2026-08-01 — it was lying, and now it is not
+
+Six parallel workstreams landed in one session and the Playwright suite came
+out **30 failed / 62 passed**. Almost none of it was the app.
+
+- [x] ~~**The first-run tour was live in nearly every spec, and its card is a
+      real element.**~~ — this is the whole story of the 30. `suppressTour`
+      wrote a bare `localStorage['appState:tutorialCompleted']`; nothing reads
+      that. `tutorial/state.readCompleted()` selects the key out of the app's
+      **`settings` table**, which in browser mode is one JSON blob under the db
+      stub's own key — so the write always succeeded and never suppressed
+      anything. The suite only looked calm because `openBookView` also called
+      `stop()`; every spec that did not was racing a 13-step tour whose 350×600
+      card sits over the middle of the viewport and whose window keydown
+      listener eats arrows and Enter. That is why the shelf spot menu "would
+      not close on Enter" and why `transfer` clicks landed on `.nbt-actions`.
+      Fixed at the source (seed the stub's settings row, from the app's own
+      `STUB_STORAGE_KEY` and `TUTORIAL_KEY` rather than a copied literal), and
+      every spec's goto helper now calls it. **add-book 5/5 and pull-out 3/3
+      went green with no other change.**
+- [x] ~~**`waitForSpine` hunted for "warm amber".**~~ — true of the welcome
+      book's palette, never of the screen: a spine's cloth resolves against the
+      ROOM, so the day the default moved athenaeum → verdigris every optical
+      shelf test locked onto the nearest amber thing in frame (the gilt cornice
+      studs) and right-clicked the cornice. It reads the spine's rect off the
+      world hook and samples the colour actually painted there now; the
+      bounding box is still measured from real pixels, so "it shrank when I
+      zoomed out" is still a claim about the screen. Amber remains the fallback.
+- [x] ~~**Stale specs pinning behaviour that was deliberately changed**~~ —
+      named rather than deleted, per the rule: `pull-out.spec` asserted that a
+      drag opens the book (it holds it now — rewritten around the held card and
+      its two verbs, plus a new test that "put it back" shelves without
+      opening); `add-book`'s theme pick wanted `.nb-theme-card` (60 rooms live
+      behind a strip + searchable sheet now); `library-studio` assumed the boot
+      room is athenaeum (`startInRoom()` asks for one instead of assuming, so
+      the next default move cannot break it).
+- [x] ~~**`import-export`'s "collapsed leaf" guard counted `.nb-sheet-paper`
+      document-wide**~~ — which catches the flip's own offscreen staging sheets
+      whenever a snapshot happens to be running, so it failed at random.
+      `:not(.nb-export-sheet)`, exactly as `capture.measureMountedSheet()` does.
+- [ ] `playwright.config.ts` keeps `retries: 0` against a **shared dev server**.
+      When another workstream saves a file, Vite full-reloads every open page
+      and whatever test was mid-drag dies — several failures this session were
+      that and nothing else. Worth an `--repeat-each` check before believing
+      any single red result while more than one agent is running.
+
 ## 🔴 Found by looking, 2026-08-01 (after the variety waves)
 
 - [x] ~~**The settings gear is HIDDEN while a panel is open, not moved.**~~ —
       fixed via `--nb-panel-gutter`; see the Studio / panels section above.
+      Measured in the running app: the seal travels **16 → 388px** when the
+      studio sheet (376px) opens, and `elementFromPoint` still lands on it.
 - [x] ~~**A bookcase card reads "0 books" while books are visibly on its
       shelves.**~~ — `countBooksInBookcase`. Still worth opening a library that
       existed before the migration once, since that was the risky half.
@@ -243,6 +311,26 @@ processed by `gen-sounds.mjs` from one table that also writes the manifest.
       several bookcases in a row gets a run of timbers. Documented as a
       deliberate trade at the declaration; stride or hash if it matters.
 - [ ] `docs/design/library-themes.md` still describes four rooms.
+- [x] ~~The tour told readers the **wood stain and the wallpaper** are behind
+      the gear~~ — they moved to the library studio when they grew into real
+      vocabularies and settings has not carried either row since, so step 12
+      was sending a brand-new reader to look for controls that are not there.
+      Rewritten; it now points at the studio for anything about the bookcase.
+- [x] ~~The welcome book still said **"Drag a book off the shelf to open it"**~~
+      — dragging holds it now. Same class of drift as the tour copy above, in
+      `data/seed.ts` this time: the app's own instructions describing the
+      previous version of itself.
+- [ ] **Trailing blank leaves are not writable.** Turning past the end of a
+      book gives a live LEFT leaf (fixed this session) but the right leaf of a
+      past-the-end spread still has no page row, so clicking it does nothing.
+      "+ page" is the only way to fill it. Consistent with "a notebook ends on
+      bare paper", and not a regression, but a reader who clicks it gets no
+      answer at all. Either create the row on click, or draw that leaf as
+      obviously not-a-page.
+- [ ] The app is being renamed **Notebook → Bellanote** and the rename is
+      half-landed: `WELCOME_BOOK_TITLE` and the tour say Bellanote,
+      `WELCOME_PAGE_SOURCES` page 1's own H1 still says Notebook, and so do
+      `CLAUDE.md`, `README.md` and this file's heading.
 
 ## 🔴 Reported 2026-08-01
 

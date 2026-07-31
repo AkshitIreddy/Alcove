@@ -388,11 +388,17 @@ export class SpineFactory {
    * fraction onto the book zone reproduces the reference directly, and the
    * tallest books nearly touch the plank above.
    *
-   * An explicit studio height still wins. Someone who set a height meant it.
+   * An explicit studio height still wins — but only a genuinely explicit one.
+   * `resolveBookStyle` fills `spine.height` in from the seeded format band for
+   * every book, so testing the *resolved* value treats every seeded default as
+   * a deliberate choice and the authored proportions never get a look in. The
+   * override record is the only place a real user decision lives.
    */
   artHeight(book: Book): number {
     const params = this.getParams(book);
-    if (typeof params.height === 'number' && Number.isFinite(params.height)) {
+    const overrides = bookStyleOverridesFor(book);
+    const chosen = overrides?.['height'];
+    if (typeof chosen === 'number' && Number.isFinite(chosen)) {
       return spineArtHeight(params);
     }
     const fraction = this.heightFraction(book);

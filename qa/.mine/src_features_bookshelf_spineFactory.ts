@@ -57,28 +57,8 @@ export const LO_SCALE = 0.62;
 /** Hi-res bake scale: 2× world px, covers max zoom 2.5 without blur. */
 export const HI_SCALE = 2;
 
-/**
- * Time budget for one idle slice, in ms.
- *
- * This used to be a fixed count (6 spines per slice) — which is only a budget
- * if every spine costs the same, and they emphatically do not: a titled hi-res
- * spine measured at 1102ms on a software renderer while a lo-res one took 54ms.
- * Six of the former is a seven-second frozen window, and that (not the disk
- * cache) was the bulk of the startup freeze. A slice now bakes ONE spine, then
- * keeps going only while the budget and the idle deadline both allow, so the
- * worst case is a single spine no matter how expensive the recipe becomes.
- */
-const SLICE_BUDGET_MS = 8;
-
-/** Never bake more than this many in one slice even if they are all cheap. */
-const SLICE_MAX_BAKES = 12;
-
-/**
- * Cost of the most expensive spine seen so far, per variant. Used to stop a
- * slice BEFORE starting a bake that is likely to overrun the remaining budget,
- * rather than discovering it afterwards.
- */
-const observedCost: Record<SpineVariant, number> = { lo: 4, hi: 12 };
+/** Spines baked per idle slice. */
+const BAKES_PER_SLICE = 6;
 
 /**
  * Hard cap on how long hi-res (titled) bakes wait for the handwriting fonts.
@@ -98,15 +78,12 @@ interface QueueItem {
 
 type IdleHandle = number;
 
-/** Milliseconds of headroom the browser reports, or a pessimistic default. */
-type Deadline = { timeRemaining: () => number } | null;
-
-function scheduleIdle(cb: (deadline: Deadline) => void): { cancel: () => void } {
+function scheduleIdle(cb: () => void): { cancel: () => void } {
   if (typeof requestIdleCallback === 'function') {
-    const id: IdleHandle = requestIdleCallback((d) => cb(d), { timeout: 120 });
+    const id: IdleHandle = requestIdleCallback(() => cb(), { timeout: 120 });
     return { cancel: () => cancelIdleCallback(id) };
   }
-  const id = setTimeout(() => cb(null), 16) as unknown as number;
+  const id = setTimeout(cb, 16) as unknown as number;
   return { cancel: () => clearTimeout(id) };
 }
 
@@ -351,53 +328,27 @@ export class SpineFactory {
 
   private scheduleSlice(): void {
     if (this.destroyed || this.idle !== null || this.queue.size === 0) return;
-    this.idle = scheduleIdle((deadline) => {
+    this.idle = scheduleIdle(() => {
       this.idle = null;
-      this.processSlice(deadline);
+      this.processSlice();
     });
   }
 
-  /**
-   * Bake ordering. Two rules, both about what the user sees first:
-   *   1. EVERY lo-res spine outranks EVERY hi-res one. Lo is what makes the
-   *      shelf legible; hi only sharpens a title that is already readable, and
-   *      costs an order of magnitude more. Interleaving them meant a shelf that
-   *      was still half placeholder blocks while distant books sharpened.
-   *   2. Within a variant, nearest-to-viewport first (the caller's priority).
-   */
-  private static rank(item: QueueItem): number {
-    return (item.variant === 'hi' ? 1e6 : 0) + item.priority;
-  }
-
-  private processSlice(deadline: Deadline): void {
+  private processSlice(): void {
     if (this.destroyed) return;
     const items = [...this.queue.values()]
       // Hi-res title text needs the handwriting fonts; hold hi bakes till then.
       .filter((it) => it.variant === 'lo' || this.fontsReady)
-      .sort((a, b) => SpineFactory.rank(a) - SpineFactory.rank(b));
+      .sort((a, b) => a.priority - b.priority)
+      .slice(0, BAKES_PER_SLICE);
     if (items.length === 0) {
       // Everything pending is hi-res waiting on fonts; retry via preloadFonts.
       return;
     }
     const touchedSources = new Set<CanvasSource>();
     const bakedIds: string[] = [];
-    const started = performance.now();
-    /** ms of headroom left in this slice, per the budget AND the browser. */
-    const headroom = (): number =>
-      Math.min(
-        SLICE_BUDGET_MS - (performance.now() - started),
-        deadline !== null ? deadline.timeRemaining() : Number.POSITIVE_INFINITY,
-      );
-
     for (const item of items) {
-      // Always bake at least one — otherwise a permanently busy thread would
-      // starve the queue forever and the shelf would never leave placeholders.
-      if (bakedIds.length > 0) {
-        if (bakedIds.length >= SLICE_MAX_BAKES) break;
-        if (headroom() < observedCost[item.variant]) break;
-      }
       this.queue.delete(`${item.variant}|${item.book.id}`);
-      const t0 = performance.now();
       try {
         const source = this.bakeOne(item.book, item.variant, item.ctx);
         touchedSources.add(source);
@@ -405,11 +356,6 @@ export class SpineFactory {
       } catch {
         // A failed bake leaves the placeholder; never crash the loop.
       }
-      // Track the worst cost seen so the next slice can stop before it starts
-      // a bake it cannot afford. Decays slowly so one pathological title does
-      // not throttle the queue forever.
-      const cost = performance.now() - t0;
-      observedCost[item.variant] = Math.max(cost, observedCost[item.variant] * 0.9);
     }
     for (const source of touchedSources) source.update();
     if (bakedIds.length > 0) this.emit(bakedIds);

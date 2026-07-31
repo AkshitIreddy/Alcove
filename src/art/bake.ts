@@ -164,6 +164,67 @@ export function clearMemoryCache(): void {
   memoryCache.clear();
 }
 
+/* --------------------------- cooperative pump ----------------------------- */
+
+/**
+ * Art producers are heavy SYNCHRONOUS canvas work. Nothing stopped a dozen of
+ * them resuming inside one microtask drain, which is how a cold cache used to
+ * pin the main thread for a minute-plus with a white, unresponsive window.
+ *
+ * Every cache miss now waits its turn here. The pump runs at most ONE producer
+ * per idle callback, so:
+ *   - a producer can never chain onto the previous one inside a single task;
+ *   - the browser gets a paint + input opportunity between every two bakes;
+ *   - the worst-case block is one producer, not the whole storm.
+ *
+ * The `timeout` on requestIdleCallback guarantees progress on a thread that
+ * never actually goes idle (the shelf renders continuously while art lands),
+ * and the setTimeout fallback covers Safari/workers/vitest.
+ *
+ * Re-entrancy is safe: a producer that awaits another bakeCached simply queues
+ * behind the pump and suspends — it holds no lock, so there is no deadlock.
+ */
+const PUMP_IDLE_TIMEOUT_MS = 90;
+
+const pumpQueue: Array<() => void> = [];
+let pumpScheduled = false;
+
+function scheduleIdleTurn(cb: () => void): void {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => cb(), { timeout: PUMP_IDLE_TIMEOUT_MS });
+    return;
+  }
+  setTimeout(cb, 0);
+}
+
+function pump(): void {
+  if (pumpScheduled || pumpQueue.length === 0) return;
+  pumpScheduled = true;
+  scheduleIdleTurn(() => {
+    pumpScheduled = false;
+    // Release exactly one waiter. Its continuation (the producer) runs in this
+    // task's microtask drain; the next waiter gets a fresh idle callback.
+    pumpQueue.shift()?.();
+    pump();
+  });
+}
+
+/**
+ * Resolve on the next idle turn, one caller per turn. Exported so other
+ * bake-time producers (spine atlas slices) can share the same fairness queue.
+ */
+export function awaitBakeTurn(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    pumpQueue.push(resolve);
+    pump();
+  });
+}
+
+/** How many producers are still waiting for a turn (perf HUD / QA probes). */
+export function pendingBakeTurns(): number {
+  return pumpQueue.length;
+}
+
 /** A producer bakes the raster for a cache miss and hands back its canvas. */
 export type CanvasProducer = () => Promise<OffscreenCanvas>;
 
@@ -191,6 +252,9 @@ export function bakeCached(
       return fromDisk;
     }
 
+    // Wait for a turn so this producer's synchronous cost lands in a task of
+    // its own rather than chaining onto whatever bake just finished.
+    await awaitBakeTurn();
     const t1 = performance.now();
     const canvas = await produce();
     recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t1, kind: 'bake', at: t1 });

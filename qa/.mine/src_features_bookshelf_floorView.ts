@@ -19,7 +19,7 @@
  */
 
 import gsap from 'gsap';
-import { Container, Rectangle, Sprite, Texture, type RenderTexture } from 'pixi.js';
+import { Container, NineSliceSprite, Sprite, Texture, type RenderTexture } from 'pixi.js';
 import { SHADOW_STRIP } from '../../art/wood';
 import { SPINE_THICKNESS_RANGE, type SpineParams } from '../../art/spines';
 import { readShelfMeta } from '../../data/books';
@@ -67,29 +67,6 @@ export const HOVER_GLOW_TINT = 0xffd98f;
  */
 export const SELECT_GLOW_ALPHA = 0.42;
 export const SELECT_GLOW_TINT = 0xbcd9f2;
-
-/**
- * World-px width of the darker pool baked into each END of the under-plank
- * shadow strip (art/wood.ts paints a radial at cx = 0 and cx = w with radius
- * `inset * 1.6`, in world units, so this is DPR-independent). +2 covers the
- * radial's antialiased tail.
- *
- * WHY THIS EXISTS — the "corner boxes" bug: the strip used to be drawn with a
- * NineSliceSprite whose left/right inset was SHADOW_STRIP.inset (16). Two
- * things went wrong at once.
- *   1. Nine-slice insets are TEXTURE pixels, but the strip is baked at
- *      `dpr` scale, so 16 meant 16 world px at DPR 1 and only 8 at DPR 2 —
- *      the slice geometry silently changed with the display.
- *   2. Either way the inset was narrower than the 25.6 px pool, so most of
- *      each pool sat inside the CENTRE slice, which is then stretched from
- *      ~72 texels to ~1148 world px (≈12x). The pool smeared into a soft
- *      ~140 px translucent rectangle at both ends of every floor — the
- *      "weird shadowy corner boxes, repeating at shelf corners".
- * Measured before the fix (alpha under the plank edge, DPR 1): 126 at x=0
- * decaying to the flat 96 only by x≈140. After: flat 96 by x≈28, matching
- * the bake.
- */
-export const SHADOW_CAP_W = Math.ceil(SHADOW_STRIP.inset * 1.6) + 2;
 
 export interface WorldHooks {
   markDirty(): void;
@@ -142,17 +119,7 @@ export class FloorView {
   private backWood: Sprite | null = null;
   private readonly plankBase: Sprite;
   private plankWood: Sprite | null = null;
-  /**
-   * Under-plank shadow rig — three sprites, never a nine-slice (see
-   * SHADOW_CAP_W). `shadow` is the pool-free middle: horizontally uniform, so
-   * stretching it across the shelf is exact. `shadowCapL`/`shadowCapR` carry
-   * the baked corner pools at their true world width, so they cannot smear.
-   */
-  private shadow: Sprite | null = null;
-  private shadowCapL: Sprite | null = null;
-  private shadowCapR: Sprite | null = null;
-  /** Source the three shadow frames were cut from (re-cut when it changes). */
-  private shadowSource: Texture | null = null;
+  private shadow: NineSliceSprite | null = null;
   private shadeL: Sprite | null = null;
   private shadeR: Sprite | null = null;
   private railL: Sprite;
@@ -399,7 +366,7 @@ export class FloorView {
   /** Pull env art in (called on populate and again when bakes land). */
   applyEnv(env: EnvTextures, degrade: boolean, animate: boolean): void {
     const m = this.hooks.motion();
-    const fadeIn = (sprite: Sprite): void => {
+    const fadeIn = (sprite: Sprite | NineSliceSprite): void => {
       if (animate && m > 0) {
         sprite.alpha = 0;
         this.hooks.track(
@@ -440,7 +407,20 @@ export class FloorView {
     }
 
     // Under-plank shadow: cast by the shelf above onto this floor's zone top.
-    if (!degrade) this.syncUnderPlankShadow(env, fadeIn);
+    if (!degrade && env.shadow !== null && this.shadow === null) {
+      this.shadow = new NineSliceSprite({
+        texture: env.shadow,
+        leftWidth: SHADOW_STRIP.inset,
+        rightWidth: SHADOW_STRIP.inset,
+        topHeight: 10,
+        bottomHeight: 8,
+      });
+      this.shadow.width = SHELF_WIDTH;
+      this.shadow.height = TOP_SHADOW_H;
+      this.shadow.position.set(0, 0);
+      this.content.addChildAt(this.shadow, this.content.getChildIndex(this.plankBase));
+      fadeIn(this.shadow);
+    }
 
     if (env.plank !== null && this.plankWood === null) {
       this.plankWood = new Sprite(env.plank);
@@ -487,77 +467,6 @@ export class FloorView {
       fadeIn(this.railL);
       fadeIn(this.railR);
     }
-  }
-
-  /**
-   * Build (or re-cut) the three-piece under-plank shadow.
-   *
-   * The baked strip is `SHADOW_STRIP.w × SHADOW_STRIP.h` world px rasterised
-   * at some DPR, with a darker radial pool SHADOW_CAP_W wide at each end. We
-   * cut it into three frames and place them at their true world widths:
-   *
-   *   ├── cap L ──┼──────────── middle (stretched) ────────────┼── cap R ──┤
-   *   0        CAP_W                                  W-CAP_W           W
-   *
-   * The middle frame is horizontally uniform by construction, so stretching
-   * it ~1148 px wide is exact — no smear, no seam, no DPR dependence. The
-   * caps are drawn 1:1 in world px and so keep the pool the size the bake
-   * intended. Vertically every piece maps its full 26-px height onto
-   * TOP_SHADOW_H, which the old nine-slice did NOT (its 10/8 row insets were
-   * texture px, so the falloff curve changed shape with the display DPR).
-   *
-   * Idempotent: re-cuts only when `env.shadow` is a different Texture (theme
-   * or stain swap destroys the old one).
-   */
-  private syncUnderPlankShadow(env: EnvTextures, fadeIn: (s: Sprite) => void): void {
-    const src = env.shadow;
-    if (src === null || src === this.shadowSource) return;
-
-    // Texels per world px along the strip. `source.width` is in logical units
-    // (pixelWidth / resolution), which is what Texture frames are measured in.
-    const texels = src.source.width / SHADOW_STRIP.w;
-    const capPx = Math.max(
-      1,
-      Math.min(Math.round(SHADOW_CAP_W * texels), Math.floor(src.source.width / 2) - 1),
-    );
-    const srcW = src.source.width;
-    const srcH = src.source.height;
-    const cut = (x: number, w: number): Texture =>
-      new Texture({ source: src.source, frame: new Rectangle(x, 0, w, srcH) });
-
-    const place = (existing: Sprite | null, texture: Texture, x: number, w: number): Sprite => {
-      if (existing !== null) {
-        const old = existing.texture;
-        existing.texture = texture;
-        // Only the derived frame is ours to free; the shared source is not.
-        if (old !== texture) old.destroy(false);
-        return existing;
-      }
-      const sprite = new Sprite(texture);
-      sprite.eventMode = 'none';
-      sprite.position.set(x, 0);
-      sprite.width = w;
-      sprite.height = TOP_SHADOW_H;
-      this.content.addChildAt(sprite, this.content.getChildIndex(this.plankBase));
-      fadeIn(sprite);
-      return sprite;
-    };
-
-    this.shadow = place(
-      this.shadow,
-      cut(capPx, srcW - capPx * 2),
-      SHADOW_CAP_W,
-      SHELF_WIDTH - SHADOW_CAP_W * 2,
-    );
-    this.shadowCapL = place(this.shadowCapL, cut(0, capPx), 0, SHADOW_CAP_W);
-    this.shadowCapR = place(
-      this.shadowCapR,
-      cut(srcW - capPx, capPx),
-      SHELF_WIDTH - SHADOW_CAP_W,
-      SHADOW_CAP_W,
-    );
-    this.shadowSource = src;
-    this.hooks.markDirty();
   }
 
   /**
@@ -664,9 +573,6 @@ export class FloorView {
       this.railL.texture = env.rail;
       this.railR.texture = env.rail;
     }
-    // Re-cut the shadow frames if the strip texture itself was replaced —
-    // otherwise the three sprites keep pointing at a destroyed source.
-    if (this.shadow !== null) this.syncUnderPlankShadow(env, () => undefined);
     this.hooks.markDirty();
   }
 
@@ -929,15 +835,6 @@ export class FloorView {
 
   destroy(): void {
     this.reset();
-    // The three shadow sprites own derived frame Textures cut from the shared
-    // strip source; free the frames (never the source, which EnvTextures owns).
-    for (const s of [this.shadow, this.shadowCapL, this.shadowCapR]) {
-      if (s !== null && !s.destroyed) s.texture.destroy(false);
-    }
-    this.shadow = null;
-    this.shadowCapL = null;
-    this.shadowCapR = null;
-    this.shadowSource = null;
     this.root.destroy({ children: true });
   }
 

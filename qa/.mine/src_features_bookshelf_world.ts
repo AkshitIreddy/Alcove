@@ -18,7 +18,6 @@ import {
   Texture,
   TilingSprite,
 } from 'pixi.js';
-import { awaitBakeTurn } from '../../art/bake';
 import { clamp } from '../../art/noise';
 import { SPINE_BASE_HEIGHT } from '../../art/spines';
 import type { BookStyle } from '../../art/bookStyle';
@@ -1354,17 +1353,8 @@ export class ShelfWorld {
 
   /** Plan + bake + attach one floor's two flora layers. */
   private async growFloor(index: number, fv: FloorView, gen: number): Promise<void> {
-    if (this.destroyed || gen !== this.libraryGen) return;
-    // Flora is the last thing that has to be right on screen: the case, the
-    // spines and the plaques all read without it. Take a turn in the shared
-    // bake queue BEFORE planning, so a six-floor mount cannot run six flora
-    // plans back-to-back in the same task ahead of the spines that make the
-    // shelf legible. (Every guard is re-checked after the await — the floor
-    // may have been recycled or the room changed while we waited.)
-    await awaitBakeTurn();
     const lib = this.library;
     if (lib === null || this.destroyed || gen !== this.libraryGen) return;
-    if (this.floors.get(index) !== fv) return;
     if (this.degrade && lib.prefs.floraDensity <= 0) return;
     const plan: FloorFloraPlan = planFloorFlora({
       floorIndex: index,

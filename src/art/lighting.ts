@@ -1,11 +1,43 @@
 /**
- * art/lighting.ts — the shared light rig and its composable render passes.
+ * art/lighting.ts — the light rig: one description of one room's light.
  *
- * Per `docs/design/painterly-art-direction.md` §2, the single biggest gap
- * between our shelf and the reference painting was *light*: we had flat
- * ambient everywhere, no cast shadows, no rim, no temperature shift. This
- * module is the corrective, and it is shared by every art module (spines,
- * covers, wood, case, flora) so one room is lit by one sun.
+ * ## What this file is now (read this before changing anything)
+ *
+ * `docs/design/painted-rendering.md` Pillar 2 replaced the old model. It used
+ * to be true that every element shaded itself on the CPU — a book ran its own
+ * gradient stack, a leaf ran another, a plank a third — and the result was a
+ * thousand tiny independent lightings that averaged out to flat, at a cost of
+ * a 118-second startup bake.
+ *
+ * The rig is now **deferred**. Elements emit albedo and a cheap height/normal
+ * contribution (`src/render/normals.ts`); **one fullscreen GPU pass**
+ * (`src/render/deferredLighting.ts`, maths in `src/render/glsl.ts`) lights the
+ * whole composed scene. One light, one direction, one grade, across every
+ * object — which is most of the "painted" feeling — for one draw call, live,
+ * with no bake at all.
+ *
+ * So this file is the **authority on what a light is**, not the thing that
+ * applies it:
+ *
+ *  - {@link LightRig} — the complete description, including the deferred
+ *    parameters the shader consumes (key elevation, AO radius, shadow reach,
+ *    height scale, lift/gamma/gain, tonemap…).
+ *  - {@link LIGHT_RIGS} — the shipped presets. Themes name one.
+ *  - {@link resolveLightRig} — total normalization, so a rig can come straight
+ *    out of theme JSON or a user override.
+ *  - The colour and falloff primitives, which the rest of the art code uses
+ *    for its *albedo* decisions (a leather's local colour, a gilt's hue).
+ *
+ * ### The legacy CPU passes
+ *
+ * Everything below the `LEGACY` banner — `applyKeyLight`, `applyRimLight`,
+ * `castContactShadow`, `renderLitScene` and friends — is the old per-element
+ * path. It is retained only because bake-time art modules still call it while
+ * they are migrated onto the brush engine, and because a few of them (spine
+ * gilt, cover medallions) genuinely want a *material* highlight baked into
+ * their albedo rather than a scene light. Do not add new callers: anything
+ * that wants scene light should emit a height contribution and let the one
+ * pass do it.
  *
  * ## The model
  *
@@ -198,6 +230,135 @@ export interface LightRig {
   hazeColour: string;
   /** How fast contrast is lost with depth, 0–1. */
   hazeStrength: number;
+
+  /* ======================================================================== *
+   *                      deferred pass (the GPU parameters)                  *
+   * ======================================================================== *
+   *
+   * Everything above describes the light in painter's terms. Everything below
+   * is what the one fullscreen pass needs on top of that to actually compute
+   * it. Defaults are chosen so a rig authored before the deferred pass existed
+   * still lights correctly — you only reach for these to *shape* the pass.
+   */
+
+  /**
+   * How high the key sits out of the screen plane, 0–1.5.
+   *
+   * This is the single most expressive knob in the rig. Near 0 the light rakes
+   * along the surface: long shadows, every bump screaming, the reference
+   * image's look. Near 1 it is head-on: short shadows, flat forms, a
+   * photocopier. **0.18–0.35 is the painted range.**
+   */
+  keyElevation: number;
+  /**
+   * Terminator wrap, 0–1. 0 is a hard physical cosine; 0.35 wraps the light a
+   * sixth of a turn past the terminator, which is what a painter does to keep
+   * a form turning instead of snapping to black.
+   */
+  keyWrap: number;
+  /** Specular catch on gilt, varnish and wet leaves, 0–1. */
+  specular: number;
+
+  /**
+   * Where the light *enters the frame*, normalized (0–1 across the frame).
+   * Usually just outside an edge: `{ x: 1.05, y: -0.05 }` is a high window at
+   * the top right.
+   *
+   * `'auto'` — the default — derives it from {@link keyAngle}, which is almost
+   * always what you want: change the angle and the bright side of the picture
+   * follows it. Pin an explicit point only when the source is somewhere the
+   * angle does not imply (a lamp inside the frame, a window off to one side of
+   * a light that rakes down).
+   */
+  keyOrigin: Vec2 | 'auto';
+  /**
+   * How much the key falls off with distance from {@link keyOrigin}, 0–1.
+   *
+   * 0 is a sun at infinity: every object gets the same light, which is
+   * physically defensible and pictorially dead. Anything above ~0.35 gives the
+   * frame a bright side and a dark side *before* a single object is shaded —
+   * the compositional gradient that reads as a room with a window in it. This
+   * is a bigger contributor to the painted feeling than any per-object term.
+   */
+  keyFalloff: number;
+  /** Radius of that falloff, in frame widths. ~0.8–1.6. */
+  keyRadius: number;
+
+  /** Radius of the AO ring, in **pixels of the lit frame**. 8–40. */
+  aoRadius: number;
+  /** AO contrast curve. >1 crushes the occlusion toward the deepest recesses. */
+  aoPower: number;
+  /** Height difference ignored before a neighbour counts as occluding, 0–0.2. */
+  aoBias: number;
+
+  /** Bounce light thrown back *out* of occluded areas, 0–1. Keeps recesses alive. */
+  bounce: number;
+  /** Extra ambient on up-facing surfaces (skylight), 0–1. */
+  skyFill: number;
+
+  /**
+   * How far the screen-space shadow march reaches, in pixels. This is the
+   * length of the longest cast shadow in the frame; 60–220 reads right at
+   * shelf scale.
+   */
+  shadowReach: number;
+  /** Shadow edge softness, 0 (hard) → 1 (fully diffuse). */
+  shadowSoftness: number;
+  /**
+   * Pixels of screen height one full unit of the height buffer represents.
+   * Raising it makes everything stand further off the back plane, so shadows
+   * lengthen and AO deepens without touching any element's geometry.
+   */
+  heightScale: number;
+
+  /** Rim wrap, 0–1: how far around the form the rim is allowed to travel. */
+  rimWrap: number;
+
+  /** Exposure level the warm→cool split pivots around, 0–1. Default 0.5. */
+  temperaturePivot: number;
+  /** Extra push of shadows toward the fill hue, 0–1. */
+  shadowTint: number;
+  /** Extra push of highlights toward the key hue, 0–1. */
+  highlightTint: number;
+
+  /** Colourist lift (raises the floor), per channel, -0.5…0.5. */
+  lift: readonly [number, number, number];
+  /** Colourist gamma (bends the mids), per channel, 0.4…2.5. */
+  gamma: readonly [number, number, number];
+  /** Colourist gain (scales the ceiling), per channel, 0.4…2. */
+  gain: readonly [number, number, number];
+  /** 0 = Reinhard (keeps its mids), 1 = ACES (filmic shoulder). */
+  tonemap: number;
+
+  /**
+   * Bloom spiral radius in pixels, at the reference frame width.
+   *
+   * Capped at 18px when packed: the single-pass spiral is a real kernel at
+   * that scale and a streak generator beyond it. A rig that wants a bigger
+   * glow should raise {@link bloom} rather than this.
+   */
+  bloomRadius: number;
+  /** Bloom threshold knee width — how gradually a pixel starts to glow. */
+  bloomKnee: number;
+
+  /** Vignette feather width, 0.02–1.2. Wider = more of a painted falloff. */
+  vignetteFeather: number;
+  /** Exposure compensation inside the vignette, 0–0.5. Stops it just going grey. */
+  vignetteExposure: number;
+
+  /** Height below which haze starts, 0–1. */
+  hazeDepthBias: number;
+  /**
+   * How much of each surface's own **local colour** survives a strongly tinted
+   * light, 0–1.
+   *
+   * 0 is physically correct and turns every book the colour of the lamp. ~0.3
+   * keeps a red binding red under candlelight while still letting the light
+   * own the value. The coloured rigs (neon, ember, reef) want 0.35–0.5.
+   */
+  localColour: number;
+  /** Film grain, 0–0.1. The last thing that stops a render reading as vector. */
+  grain: number;
 }
 
 /** A partial rig, as themes and callers write them. */
@@ -718,12 +879,12 @@ export const DEFAULT_LIGHT_RIG: LightRig = {
   keyAngle: KEY_ANGLE.upperRight,
   keyColour: '#ffd79a',
   keyIntensity: 1,
-  hotSpot: 0.62,
+  hotSpot: 0.5,
   fillColour: '#7f93b8',
-  fillIntensity: 0.3,
+  fillIntensity: 0.4,
   ambientColour: '#4a3f33',
-  ambientLevel: 0.34,
-  ambientOcclusion: 0.72,
+  ambientLevel: 0.46,
+  ambientOcclusion: 0.55,
   shadowColour: '#2a1e14',
   contactStrength: 0.95,
   groundFlatten: 0.36,
@@ -758,11 +919,42 @@ export const DEFAULT_LIGHT_RIG: LightRig = {
   vignetteRoundness: 0.35,
   bloom: 0.4,
   bloomThreshold: 0.72,
-  exposure: 1.02,
-  contrast: 0.28,
+  exposure: 1.15,
+  contrast: 0.18,
   saturation: 1.08,
   hazeColour: '#6d5b46',
   hazeStrength: 0.45,
+
+  // --- deferred: a low, raking sun. Long shadows, every form turning. ---
+  keyElevation: 0.32,
+  keyWrap: 0.38,
+  specular: 0.34,
+  keyOrigin: 'auto',
+  keyFalloff: 0.35,
+  keyRadius: 1.15,
+  aoRadius: 16,
+  aoPower: 1.15,
+  aoBias: 0.012,
+  bounce: 0.16,
+  skyFill: 0.35,
+  shadowReach: 100,
+  shadowSoftness: 0.4,
+  heightScale: 190,
+  rimWrap: 0.25,
+  temperaturePivot: 0.46,
+  shadowTint: 0.2,
+  highlightTint: 0.16,
+  lift: [-0.06, -0.05, -0.02],
+  gamma: [1.0, 0.99, 0.96],
+  gain: [1.05, 1.0, 0.94],
+  tonemap: 0.75,
+  bloomRadius: 12,
+  bloomKnee: 0.22,
+  vignetteFeather: 0.62,
+  vignetteExposure: 0.08,
+  hazeDepthBias: 0.12,
+  localColour: 0.3,
+  grain: 0.009,
 };
 
 /**
@@ -809,6 +1001,30 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
         dust: 0.7,
       },
     ],
+      // --- deferred: higher sun, crisper edges, cooler grade. ---
+    keyOrigin: { x: 0.92, y: -0.08 },
+    keyFalloff: 0.55,
+    keyRadius: 1.1,
+    keyElevation: 0.42,
+    keyWrap: 0.26,
+    specular: 0.4,
+    aoRadius: 18,
+    aoPower: 1.0,
+    bounce: 0.2,
+    skyFill: 0.5,
+    shadowReach: 105,
+    shadowSoftness: 0.3,
+    heightScale: 175,
+    temperaturePivot: 0.5,
+    shadowTint: 0.24,
+    highlightTint: 0.1,
+    lift: [-0.03, -0.02, 0.02],
+    gamma: [1.0, 1.0, 1.02],
+    gain: [1.02, 1.02, 1.05],
+    tonemap: 0.6,
+    bloomRadius: 14,
+    vignetteFeather: 0.72,
+    grain: 0.011,
   },
 
   /** Flat north-light studio: gentle, almost shadowless, for legibility. */
@@ -838,6 +1054,31 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     contrast: 0.12,
     saturation: 0.96,
     hazeStrength: 0.2,
+      // --- deferred: no rake at all. Soft dome light, gentle AO, no shafts. ---
+    keyOrigin: { x: 0.5, y: -0.3 },
+    keyFalloff: 0.12,
+    keyRadius: 2.0,
+    keyElevation: 0.86,
+    keyWrap: 0.6,
+    specular: 0.1,
+    aoRadius: 26,
+    aoPower: 0.85,
+    bounce: 0.28,
+    skyFill: 0.7,
+    shadowReach: 44,
+    shadowSoftness: 0.9,
+    heightScale: 150,
+    rimWrap: 0.5,
+    temperaturePivot: 0.5,
+    shadowTint: 0.08,
+    highlightTint: 0.04,
+    lift: [0.03, 0.03, 0.04],
+    gamma: [1.02, 1.02, 1.03],
+    gain: [0.99, 0.99, 1.0],
+    tonemap: 0.35,
+    bloomRadius: 9,
+    vignetteFeather: 0.9,
+    grain: 0.009,
   },
 
   /** A single candle low and close: hot orange core, near-black beyond. */
@@ -870,6 +1111,35 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 1.16,
     hazeColour: '#4a3220',
     hazeStrength: 0.62,
+      // --- deferred: a low close flame. Enormous shadows, near-black beyond. ---
+    keyOrigin: { x: 0.32, y: 1.08 },
+    keyFalloff: 0.82,
+    keyRadius: 0.8,
+    localColour: 0.42,
+    keyElevation: 0.14,
+    keyWrap: 0.42,
+    specular: 0.55,
+    aoRadius: 30,
+    aoPower: 1.5,
+    aoBias: 0.008,
+    bounce: 0.1,
+    skyFill: 0.12,
+    shadowReach: 240,
+    shadowSoftness: 0.55,
+    heightScale: 230,
+    rimWrap: 0.15,
+    temperaturePivot: 0.4,
+    shadowTint: 0.34,
+    highlightTint: 0.3,
+    lift: [-0.1, -0.11, -0.09],
+    gamma: [0.96, 1.0, 1.06],
+    gain: [1.1, 0.98, 0.84],
+    tonemap: 0.9,
+    bloomRadius: 16,
+    bloomKnee: 0.3,
+    vignetteFeather: 0.45,
+    vignetteExposure: 0.12,
+    grain: 0.01,
   },
 
   /** Cold blue moon through a high window; silver rims, ink shadows. */
@@ -913,6 +1183,32 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 0.86,
     hazeColour: '#2b3a58',
     hazeStrength: 0.58,
+      // --- deferred: hard silver rake, ink shadows, everything cool. ---
+    keyOrigin: { x: 0.78, y: -0.12 },
+    keyFalloff: 0.6,
+    keyRadius: 1.05,
+    localColour: 0.4,
+    keyElevation: 0.3,
+    keyWrap: 0.2,
+    specular: 0.45,
+    aoRadius: 24,
+    aoPower: 1.4,
+    bounce: 0.08,
+    skyFill: 0.3,
+    shadowReach: 165,
+    shadowSoftness: 0.3,
+    heightScale: 200,
+    rimWrap: 0.18,
+    temperaturePivot: 0.55,
+    shadowTint: 0.4,
+    highlightTint: 0.12,
+    lift: [-0.08, -0.06, 0.0],
+    gamma: [1.04, 1.02, 0.94],
+    gain: [0.9, 0.96, 1.1],
+    tonemap: 0.85,
+    bloomRadius: 14,
+    vignetteFeather: 0.5,
+    grain: 0.015,
   },
 
   /** A brass reading lamp just off-frame left: pooled warm light. */
@@ -952,6 +1248,29 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     contrast: 0.32,
     saturation: 1.1,
     hazeStrength: 0.5,
+      // --- deferred: a pooled lamp low on the left. ---
+    keyOrigin: { x: -0.06, y: 0.18 },
+    keyFalloff: 0.72,
+    keyRadius: 0.95,
+    keyElevation: 0.22,
+    keyWrap: 0.34,
+    specular: 0.42,
+    aoRadius: 24,
+    aoPower: 1.25,
+    bounce: 0.14,
+    skyFill: 0.22,
+    shadowReach: 185,
+    shadowSoftness: 0.45,
+    heightScale: 205,
+    temperaturePivot: 0.44,
+    shadowTint: 0.26,
+    highlightTint: 0.24,
+    lift: [-0.07, -0.06, -0.04],
+    gamma: [0.98, 1.0, 1.04],
+    gain: [1.08, 1.0, 0.9],
+    tonemap: 0.8,
+    bloomRadius: 14,
+    grain: 0.013,
   },
 
   /** Storm light: cold, high-contrast, a hard blade of sun through cloud. */
@@ -995,6 +1314,31 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 0.92,
     hazeColour: '#54637a',
     hazeStrength: 0.6,
+      // --- deferred: a hard blade through cloud. The sharpest shadows we ship. ---
+    keyOrigin: { x: 0.96, y: -0.1 },
+    keyFalloff: 0.45,
+    keyRadius: 1.25,
+    keyElevation: 0.2,
+    keyWrap: 0.14,
+    specular: 0.5,
+    aoRadius: 20,
+    aoPower: 1.35,
+    bounce: 0.1,
+    skyFill: 0.3,
+    shadowReach: 200,
+    shadowSoftness: 0.16,
+    heightScale: 210,
+    rimWrap: 0.12,
+    temperaturePivot: 0.52,
+    shadowTint: 0.3,
+    highlightTint: 0.06,
+    lift: [-0.09, -0.08, -0.04],
+    gamma: [1.02, 1.01, 0.98],
+    gain: [0.96, 1.0, 1.06],
+    tonemap: 0.9,
+    bloomRadius: 15,
+    vignetteFeather: 0.5,
+    grain: 0.009,
   },
 
   /** Neon: magenta key, cyan fill, the complementary clash done deliberately. */
@@ -1049,6 +1393,33 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 1.3,
     hazeColour: '#3a2258',
     hazeStrength: 0.55,
+      // --- deferred: magenta rake, cyan bounce, everything glowing. ---
+    keyOrigin: { x: 0.9, y: -0.05 },
+    keyFalloff: 0.55,
+    keyRadius: 1.1,
+    localColour: 0.5,
+    keyElevation: 0.24,
+    keyWrap: 0.32,
+    specular: 0.6,
+    aoRadius: 22,
+    aoPower: 1.2,
+    bounce: 0.26,
+    skyFill: 0.28,
+    shadowReach: 170,
+    shadowSoftness: 0.35,
+    heightScale: 200,
+    rimWrap: 0.2,
+    temperaturePivot: 0.5,
+    shadowTint: 0.45,
+    highlightTint: 0.4,
+    lift: [-0.04, -0.08, 0.02],
+    gamma: [1.0, 1.02, 0.95],
+    gain: [1.06, 0.96, 1.12],
+    tonemap: 0.8,
+    bloomRadius: 16,
+    bloomKnee: 0.3,
+    vignetteFeather: 0.45,
+    grain: 0.009,
   },
 
   /** Underwater: green-blue key from above, everything hazed and soft. */
@@ -1111,6 +1482,33 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 1.04,
     hazeColour: '#2a7390',
     hazeStrength: 0.82,
+      // --- deferred: light from above through water. Soft, hazy, high skyFill. ---
+    keyOrigin: { x: 0.5, y: -0.25 },
+    keyFalloff: 0.3,
+    keyRadius: 1.6,
+    localColour: 0.45,
+    keyElevation: 0.6,
+    keyWrap: 0.5,
+    specular: 0.3,
+    aoRadius: 28,
+    aoPower: 0.95,
+    bounce: 0.3,
+    skyFill: 0.65,
+    shadowReach: 90,
+    shadowSoftness: 0.75,
+    heightScale: 165,
+    rimWrap: 0.4,
+    temperaturePivot: 0.5,
+    shadowTint: 0.3,
+    highlightTint: 0.1,
+    lift: [-0.02, 0.02, 0.05],
+    gamma: [1.05, 1.0, 0.97],
+    gain: [0.9, 1.02, 1.08],
+    tonemap: 0.55,
+    bloomRadius: 16,
+    vignetteFeather: 0.7,
+    hazeDepthBias: 0.04,
+    grain: 0.01,
   },
 
   /** A forge/hearth from below-right: dramatic uplight, sooty shadows. */
@@ -1143,6 +1541,32 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 1.22,
     hazeColour: '#4d2a16',
     hazeStrength: 0.7,
+      // --- deferred: uplight from a forge. Shadows climb the wall. ---
+    keyOrigin: { x: 0.6, y: 1.1 },
+    keyFalloff: 0.8,
+    keyRadius: 0.85,
+    localColour: 0.45,
+    keyElevation: 0.16,
+    keyWrap: 0.38,
+    specular: 0.6,
+    aoRadius: 28,
+    aoPower: 1.45,
+    bounce: 0.12,
+    skyFill: 0.1,
+    shadowReach: 230,
+    shadowSoftness: 0.4,
+    heightScale: 225,
+    rimWrap: 0.16,
+    temperaturePivot: 0.42,
+    shadowTint: 0.36,
+    highlightTint: 0.34,
+    lift: [-0.1, -0.1, -0.08],
+    gamma: [0.95, 1.0, 1.08],
+    gain: [1.14, 0.96, 0.8],
+    tonemap: 0.92,
+    bloomRadius: 16,
+    vignetteFeather: 0.42,
+    grain: 0.01,
   },
 
   /** Pale pink dawn with heavy mist — the softest rig in the set. */
@@ -1185,6 +1609,33 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     saturation: 0.94,
     hazeColour: '#b0a8b8',
     hazeStrength: 0.9,
+      // --- deferred: the softest rig. Haze everywhere, shadows barely there. ---
+    keyOrigin: { x: 1.06, y: 0.12 },
+    keyFalloff: 0.35,
+    keyRadius: 1.5,
+    localColour: 0.3,
+    keyElevation: 0.5,
+    keyWrap: 0.55,
+    specular: 0.16,
+    aoRadius: 30,
+    aoPower: 0.8,
+    bounce: 0.3,
+    skyFill: 0.6,
+    shadowReach: 70,
+    shadowSoftness: 0.85,
+    heightScale: 150,
+    rimWrap: 0.45,
+    temperaturePivot: 0.5,
+    shadowTint: 0.2,
+    highlightTint: 0.14,
+    lift: [0.05, 0.03, 0.05],
+    gamma: [1.0, 1.02, 1.04],
+    gain: [1.04, 1.0, 1.02],
+    tonemap: 0.4,
+    bloomRadius: 16,
+    vignetteFeather: 0.95,
+    hazeDepthBias: 0.02,
+    grain: 0.009,
   },
 
   /** Blazing midday: the highest-contrast, most blown-out rig we ship. */
@@ -1227,11 +1678,137 @@ export const LIGHT_RIGS: Readonly<Record<string, LightRig>> = {
     contrast: 0.44,
     saturation: 1.12,
     hazeStrength: 0.36,
+      // --- deferred: sun overhead. Short hard shadows, blown highlights. ---
+    keyOrigin: { x: 0.55, y: -0.2 },
+    keyFalloff: 0.3,
+    keyRadius: 1.6,
+    localColour: 0.34,
+    keyElevation: 0.72,
+    keyWrap: 0.18,
+    specular: 0.5,
+    aoRadius: 16,
+    aoPower: 1.3,
+    bounce: 0.18,
+    skyFill: 0.55,
+    shadowReach: 70,
+    shadowSoftness: 0.2,
+    heightScale: 180,
+    rimWrap: 0.2,
+    temperaturePivot: 0.55,
+    shadowTint: 0.24,
+    highlightTint: 0.18,
+    lift: [-0.05, -0.04, -0.02],
+    gamma: [1.0, 1.0, 0.98],
+    gain: [1.06, 1.03, 0.96],
+    tonemap: 0.95,
+    bloomRadius: 16,
+    vignetteFeather: 0.6,
+    grain: 0.009,
+  },
+
+  /**
+   * Sun through glass and leaves: green-gold, dappled, high skyFill, the light
+   * of a conservatory at eleven in the morning. The rig the flora themes want.
+   */
+  greenhouse: {
+    ...DEFAULT_LIGHT_RIG,
+    id: 'greenhouse',
+    label: 'Greenhouse daylight',
+    keyAngle: Math.PI * 0.64,
+    keyColour: '#f6f0c4',
+    keyIntensity: 1.08,
+    hotSpot: 0.6,
+    fillColour: '#8fc39a',
+    fillIntensity: 0.44,
+    ambientColour: '#4c5a42',
+    ambientLevel: 0.42,
+    ambientOcclusion: 0.62,
+    shadowColour: '#22301f',
+    contactStrength: 0.9,
+    rimStrength: 0.78,
+    rimColour: '#f2ffd8',
+    rimSharpness: 2.2,
+    shafts: [
+      {
+        origin: { x: 0.72, y: -0.06 },
+        angle: Math.PI * 0.62,
+        width: 0.2,
+        length: 1.55,
+        softness: 0.82,
+        opacity: 0.19,
+        colour: '#eaf7c0',
+        spread: 1.6,
+        dust: 0.75,
+      },
+      {
+        origin: { x: 0.24, y: -0.06 },
+        angle: Math.PI * 0.58,
+        width: 0.1,
+        length: 1.3,
+        softness: 0.9,
+        opacity: 0.12,
+        colour: '#d8f0a8',
+        spread: 2.1,
+        dust: 0.6,
+      },
+    ],
+    temperatureShift: 0.3,
+    vignette: 0.36,
+    vignetteColour: '#20291c',
+    bloom: 0.52,
+    bloomThreshold: 0.66,
+    exposure: 1.04,
+    contrast: 0.26,
+    saturation: 1.14,
+    hazeColour: '#7f9a68',
+    hazeStrength: 0.5,
+    // --- deferred: mid-high sun filtered through canopy. ---
+    keyOrigin: { x: 0.72, y: -0.14 },
+    keyFalloff: 0.42,
+    keyRadius: 1.3,
+    localColour: 0.36,
+    keyElevation: 0.44,
+    keyWrap: 0.36,
+    specular: 0.36,
+    aoRadius: 24,
+    aoPower: 1.05,
+    bounce: 0.24,
+    skyFill: 0.6,
+    shadowReach: 120,
+    shadowSoftness: 0.5,
+    heightScale: 180,
+    rimWrap: 0.3,
+    temperaturePivot: 0.48,
+    shadowTint: 0.28,
+    highlightTint: 0.14,
+    lift: [-0.03, 0.0, -0.02],
+    gamma: [1.0, 0.98, 1.02],
+    gain: [1.02, 1.05, 0.94],
+    tonemap: 0.65,
+    bloomRadius: 14,
+    vignetteFeather: 0.7,
+    grain: 0.011,
   },
 };
 
 /** Ids of every shipped rig, for pickers. */
 export const LIGHT_RIG_IDS: readonly string[] = Object.keys(LIGHT_RIGS);
+
+/**
+ * The headline set, in the order a picker should offer them — one rig per
+ * *kind of light*, rather than one per time of day. Every other id in
+ * {@link LIGHT_RIGS} is a variation on one of these.
+ */
+export const FEATURED_LIGHT_RIG_IDS: readonly string[] = [
+  'golden-hour', // low raking sun — the reference image's light
+  'overcast-studio', // flat soft dome, no shadow direction to speak of
+  'moonlit', // cool hard rake, ink shadows
+  'candlelit', // warm point source, low and close
+  'greenhouse', // green-gold daylight through glass
+  'neon-arcade', // magenta key, cyan bounce, everything glowing
+  'stormlight', // the hardest blade we ship
+  'ember-forge', // uplight, shadows climbing the wall
+];
 
 /** Look a rig up by id, falling back to the house default. */
 export function getLightRig(id: string | undefined): LightRig {
@@ -1247,6 +1824,49 @@ function n(v: unknown, fallback: number, lo = -Infinity, hi = Infinity): number 
 
 function str(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.trim().length > 0 ? v : fallback;
+}
+
+/**
+ * Where a key at `keyAngle` would enter the frame if nobody said otherwise:
+ * just outside the edge the light comes from.
+ *
+ * This is what makes the frame-wide gradient track the key. Without it,
+ * rotating a rig's angle rotates every object's shading while the bright side
+ * of the *picture* stays put — which reads instantly as fake.
+ */
+export function autoKeyOrigin(keyAngle: number): Vec2 {
+  const sx = -Math.cos(keyAngle);
+  const sy = -Math.sin(keyAngle);
+  const len = Math.hypot(sx, sy) || 1;
+  return { x: 0.5 + (sx / len) * 0.62, y: 0.5 + (sy / len) * 0.62 };
+}
+
+/** Normalize a `keyOrigin` field: `'auto'`, a point, or junk. Total. */
+function resolveKeyOrigin(v: unknown, fallback: Vec2 | 'auto'): Vec2 | 'auto' {
+  if (v === 'auto') return 'auto';
+  if (v !== null && typeof v === 'object') {
+    const o = v as Partial<Vec2>;
+    if (typeof o.x === 'number' || typeof o.y === 'number') {
+      const base = fallback === 'auto' ? { x: 0.5, y: 0 } : fallback;
+      return { x: n(o.x, base.x, -2, 3), y: n(o.y, base.y, -2, 3) };
+    }
+  }
+  return fallback;
+}
+
+/** Normalize a colourist triple (lift/gamma/gain). Total. */
+function triple(
+  v: unknown,
+  fallback: readonly [number, number, number],
+  lo: number,
+  hi: number,
+): [number, number, number] {
+  if (!Array.isArray(v)) return [fallback[0], fallback[1], fallback[2]];
+  return [
+    n(v[0], fallback[0], lo, hi),
+    n(v[1], fallback[1], lo, hi),
+    n(v[2], fallback[2], lo, hi),
+  ];
 }
 
 /** Normalize one shaft spec, filling every field. Total. */
@@ -1323,6 +1943,37 @@ export function resolveLightRig(input?: LightRigInput, base: LightRig = DEFAULT_
     saturation: n(i.saturation, base.saturation, 0, 2),
     hazeColour: str(i.hazeColour, base.hazeColour),
     hazeStrength: n(i.hazeStrength, base.hazeStrength, 0, 1),
+
+    /* ---- deferred ---- */
+    keyElevation: n(i.keyElevation, base.keyElevation, 0.01, 1.5),
+    keyWrap: n(i.keyWrap, base.keyWrap, 0, 1),
+    specular: n(i.specular, base.specular, 0, 1),
+    keyOrigin: resolveKeyOrigin(i.keyOrigin, base.keyOrigin),
+    keyFalloff: n(i.keyFalloff, base.keyFalloff, 0, 1),
+    keyRadius: n(i.keyRadius, base.keyRadius, 0.1, 4),
+    aoRadius: n(i.aoRadius, base.aoRadius, 0, 128),
+    aoPower: n(i.aoPower, base.aoPower, 0.05, 4),
+    aoBias: n(i.aoBias, base.aoBias, 0, 0.2),
+    bounce: n(i.bounce, base.bounce, 0, 1),
+    skyFill: n(i.skyFill, base.skyFill, 0, 1),
+    shadowReach: n(i.shadowReach, base.shadowReach, 0, 1024),
+    shadowSoftness: n(i.shadowSoftness, base.shadowSoftness, 0, 1),
+    heightScale: n(i.heightScale, base.heightScale, 1, 4096),
+    rimWrap: n(i.rimWrap, base.rimWrap, 0, 1),
+    temperaturePivot: n(i.temperaturePivot, base.temperaturePivot, 0, 1),
+    shadowTint: n(i.shadowTint, base.shadowTint, 0, 1),
+    highlightTint: n(i.highlightTint, base.highlightTint, 0, 1),
+    lift: triple(i.lift, base.lift, -0.5, 0.5),
+    gamma: triple(i.gamma, base.gamma, 0.4, 2.5),
+    gain: triple(i.gain, base.gain, 0.4, 2),
+    tonemap: n(i.tonemap, base.tonemap, 0, 1),
+    bloomRadius: n(i.bloomRadius, base.bloomRadius, 0, 256),
+    bloomKnee: n(i.bloomKnee, base.bloomKnee, 0.001, 1),
+    vignetteFeather: n(i.vignetteFeather, base.vignetteFeather, 0.02, 1.2),
+    vignetteExposure: n(i.vignetteExposure, base.vignetteExposure, 0, 0.5),
+    hazeDepthBias: n(i.hazeDepthBias, base.hazeDepthBias, 0, 1),
+    localColour: n(i.localColour, base.localColour, 0, 1),
+    grain: n(i.grain, base.grain, 0, 0.1),
   };
 }
 

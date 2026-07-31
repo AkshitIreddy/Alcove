@@ -1,21 +1,21 @@
-/**
- * art/themes.ts — the library theme system (docs/design/library-themes.md §1).
+﻿/**
+ * art/themes.ts â€” the library theme system (docs/design/library-themes.md Â§1).
  *
  * A theme is a complete art package, not a colour swap: wood palette + grain
  * character + finish, joinery vocabulary, cornice profile + carving, rail
- * inlay, floor-plate material, wallpaper (pattern × colourway), a light rig,
+ * inlay, floor-plate material, wallpaper (pattern Ã— colourway), a light rig,
  * flora/props/motes dressing, and the pigment bias new book spines inherit.
  *
  * This module is the TYPE + DATA root of the theme system and deliberately
  * imports nothing from the rest of src/art, so every other art module can
  * depend on it without a cycle:
  *
- *     themes.ts  ←  wood.ts  ←  caseArt.ts
- *          ↑                       ↑
- *          └──── wallpaper.ts ─────┘
+ *     themes.ts  â†  wood.ts  â†  caseArt.ts
+ *          â†‘                       â†‘
+ *          â””â”€â”€â”€â”€ wallpaper.ts â”€â”€â”€â”€â”€â”˜
  *
  * Everything downstream is procedural + baked once (art-pipeline.md) and
- * deterministic per seed. Themes only *bias* per-book art — an explicit
+ * deterministic per seed. Themes only *bias* per-book art â€” an explicit
  * per-book override always wins, so a favourite red leather book keeps its
  * identity in every room.
  */
@@ -51,17 +51,17 @@ export function isThemeId(value: unknown): value is ThemeId {
 
 /**
  * Cache-key salt for every raster produced by the theme system.
- * Owned by this module — `RECIPE_VERSION` in bake.ts belongs to the shelf
+ * Owned by this module â€” `RECIPE_VERSION` in bake.ts belongs to the shelf
  * pipeline and must not be bumped from here.
  *
  * v1: initial eight worlds + twelve wallpapers.
  * v2: backdrop variants; legible cornice carving + rail inlay; boarded back
  *     panels; scriptorium/attic show the room wall; cottage bunting and
  *     apothecary drawers wired up; wallpaper motif pass.
- * v3: six colourful worlds (blossom · robot · dino · candy · reef · voyager),
+ * v3: six colourful worlds (blossom Â· robot Â· dino Â· candy Â· reef Â· voyager),
  *     Blossom Grove becomes the default, and the original eight get a
- *     saturation pass — every palette, wallpaper colourway and light rig.
- * v4: creative-motif redo of every room except the grove — deeper contrast
+ *     saturation pass â€” every palette, wallpaper colourway and light rig.
+ * v4: creative-motif redo of every room except the grove â€” deeper contrast
  *     ramps, story-telling light rigs, re-coloured walls (jungle green for
  *     the dig, strawberry cream for the shop, lagoon blue for the reef) and
  *     a richer wallpaper pass (fish, planets, sprinkles, fossils, moons).
@@ -72,7 +72,7 @@ export const THEME_RECIPE_VERSION = 4;
 
 /**
  * Grain character. Drives ring shape, extra passes and defect vocabulary in
- * `paintWood` (wood.ts) — not just a colour swap.
+ * `paintWood` (wood.ts) â€” not just a colour swap.
  * - `quartersawn` tight straight rings + bright ray-fleck dashes
  * - `knotty`      wide soft rings, many knots, cathedral arches
  * - `straight`    even, near-featureless (pale ash / hinoki)
@@ -81,7 +81,7 @@ export const THEME_RECIPE_VERSION = 4;
  * - `flame`       wavy, ribboned figure (cherry / walnut crotch)
  * - `birch`       pale sheet with dark lenticel dashes and bark peel
  * - `brushed`     not timber at all: brushed metal, fine unidirectional satin
- * - `gloss`       moulded/enamelled body — almost no figure, all highlight
+ * - `gloss`       moulded/enamelled body â€” almost no figure, all highlight
  */
 export type WoodGrain =
   | 'quartersawn'
@@ -94,7 +94,7 @@ export type WoodGrain =
   | 'brushed'
   | 'gloss';
 
-/** Surface finish → specular character of the sheen pass. */
+/** Surface finish â†’ specular character of the sheen pass. */
 export type WoodFinish =
   | 'wax'
   | 'matte'
@@ -137,10 +137,10 @@ export interface WoodSpec {
   knots: number;
   /** Directional streak strokes per 100 world px across the grain. */
   streaks: number;
-  /** Overall light↔dark spread; <1 flattens the field. */
+  /** Overall lightâ†”dark spread; <1 flattens the field. */
   contrast: number;
   finish: WoodFinish;
-  /** Specular strength of the finish pass, 0–1. */
+  /** Specular strength of the finish pass, 0â€“1. */
   sheen: number;
   /** Optional paint film over the wood. */
   paint?: PaintSpec;
@@ -149,7 +149,7 @@ export interface WoodSpec {
 /* =============================== joinery ================================= */
 
 /**
- * How the case is held together — visible construction is most of what makes
+ * How the case is held together â€” visible construction is most of what makes
  * a room feel built rather than drawn.
  */
 export type JoineryKind =
@@ -176,7 +176,7 @@ export interface JoinerySpec {
   highlight: string;
   /** Fitting scale in world px (peg radius / strap width). */
   size: number;
-  /** 0–1 density of fittings along an edge. */
+  /** 0â€“1 density of fittings along an edge. */
   density: number;
 }
 
@@ -192,7 +192,7 @@ export type CrownProfile =
   | 'pediment' // shopfront pediment with a centre keystone
   | 'arch' // a soft round-topped arbour arch (grove, reef)
   | 'gantry' // industrial gantry beam with end plates and a lamp bar
-  | 'crest'; // scalloped/finned crest — candy awning, rocket fin
+  | 'crest'; // scalloped/finned crest â€” candy awning, rocket fin
 
 /** Carving vocabulary run along the cornice. */
 export type CrownCarving =
@@ -308,7 +308,7 @@ export interface PlateSpec {
   font: string;
   /** Label size in world px (handwriting faces never below 13). */
   fontSize: number;
-  /** 0–1 scorch amount for wood-burnt plates; 0 = a clean pale plaque. */
+  /** 0â€“1 scorch amount for wood-burnt plates; 0 = a clean pale plaque. */
   burn: number;
   /** Corner radius in world px. */
   radius: number;
@@ -317,7 +317,7 @@ export interface PlateSpec {
 /* ============================== wallpaper ================================ */
 
 /**
- * The twelve tileable patterns (§2). Pattern and colourway are independent so
+ * The twelve tileable patterns (Â§2). Pattern and colourway are independent so
  * users can mix any pattern with any colourway; the renderers live in
  * wallpaper.ts, the ids live here so themes.ts stays import-free.
  */
@@ -334,7 +334,7 @@ export const WALLPAPER_PATTERN_IDS = [
   'marbled-endpaper',
   'pin-dot',
   'plain-limewash',
-  // v3 — the colourful six.
+  // v3 â€” the colourful six.
   'blossom-sky',
   'circuit-trace',
   'fern-footprint',
@@ -363,7 +363,7 @@ export const COLOURWAY_IDS = [
   'slate-blue',
   'moss',
   'ivory',
-  // v3 — saturated colourways for the colourful worlds.
+  // v3 â€” saturated colourways for the colourful worlds.
   'blossom',
   'chrome',
   'jungle',
@@ -453,7 +453,7 @@ export const BACKDROPS: Readonly<Record<BackdropId, BackdropInfo>> = {
   glazed: {
     id: 'glazed',
     name: 'Glazed',
-    blurb: 'A glasshouse wall — mullions, condensation, green beyond.',
+    blurb: 'A glasshouse wall â€” mullions, condensation, green beyond.',
     usesPattern: false,
   },
 };
@@ -467,14 +467,14 @@ export function allBackdrops(): readonly BackdropInfo[] {
 
 /** A pool of light on the case, positioned in normalized case coordinates. */
 export interface LightPool {
-  /** 0–1 across the case. */
+  /** 0â€“1 across the case. */
   x: number;
-  /** 0–1 down the case (0 = crown). */
+  /** 0â€“1 down the case (0 = crown). */
   y: number;
   /** Pool radius as a fraction of the case's longest side. */
   radius: number;
   colour: string;
-  /** 0–1 peak intensity. */
+  /** 0â€“1 peak intensity. */
   intensity: number;
   /** Horizontal drift amplitude in world px for the (very slow) idle sway. */
   drift: number;
@@ -566,7 +566,7 @@ export type PropName =
   | 'glow-bottle'
   | 'inkwell'
   | 'candlestick'
-  // v3 — the colourful worlds' dressing.
+  // v3 â€” the colourful worlds' dressing.
   | 'blossom-sprig'
   | 'birdhouse'
   | 'robot-arm'
@@ -583,7 +583,7 @@ export type PropName =
   | 'rocket'
   | 'planet';
 
-/** Legacy prop kinds implemented today in props.ts (0–4). */
+/** Legacy prop kinds implemented today in props.ts (0â€“4). */
 export type LegacyPropKind = 0 | 1 | 2 | 3 | 4;
 
 export interface PropSpec {
@@ -605,11 +605,11 @@ export interface SpineTheming {
   materials: readonly SpineMaterial[];
   /** Pigment ramp new spines draw from (hex). */
   pigments: readonly string[];
-  /** 0–1 chance a new spine gets gilt bands/lettering. */
+  /** 0â€“1 chance a new spine gets gilt bands/lettering. */
   gilt: number;
-  /** 0–1 bias toward raised bands (leather) vs flat (paper/washi). */
+  /** 0â€“1 bias toward raised bands (leather) vs flat (paper/washi). */
   bands: number;
-  /** 0–1 wear bias: 0 pristine, 1 well-loved. */
+  /** 0â€“1 wear bias: 0 pristine, 1 well-loved. */
   wear: number;
 }
 
@@ -630,7 +630,7 @@ export type MoteKind =
 
 export interface MoteSpec {
   kind: MoteKind;
-  /** Particles per 1000×1000 world px. */
+  /** Particles per 1000Ã—1000 world px. */
   density: number;
   colour: string;
   /** Fall speed in world px/s (negative drifts upward). */
@@ -650,7 +650,7 @@ export interface LibraryTheme {
   plate: PlateSpec;
   wallpaper: WallpaperSpec;
   /**
-   * The room's two or three wall finishes, most characteristic first —
+   * The room's two or three wall finishes, most characteristic first â€”
    * `backdrops[0]` is the room's own wall. Any backdrop may be chosen for any
    * theme from the studio; this list is only the curated shortlist.
    */
@@ -731,7 +731,7 @@ const BLOSSOM: LibraryTheme = {
     radius: 9,
   },
   wallpaper: { pattern: 'blossom-sky', colourway: 'blossom', tile: 256 },
-  backdrops: ['papered', 'glazed', 'panelled'],
+  backdrops: ['plastered', 'glazed', 'panelled'],
   light: {
     pools: [
       { x: 0.24, y: 0.06, radius: 0.72, colour: '#fff4c2', intensity: 0.56, drift: 12 },
@@ -765,7 +765,7 @@ const BLOSSOM: LibraryTheme = {
   },
   motes: { kind: 'petals', density: 22, colour: '#ffb3cf', drift: 7 },
   // The grove is open to the sky: you see it straight through the case.
-  backing: 'wallpaper',
+  backing: 'wood',
 };
 
 const ROBOT: LibraryTheme = {
@@ -824,7 +824,7 @@ const ROBOT: LibraryTheme = {
     radius: 4,
   },
   wallpaper: { pattern: 'circuit-trace', colourway: 'chrome', tile: 256 },
-  backdrops: ['papered', 'panelled', 'boarded'],
+  backdrops: ['panelled', 'papered', 'boarded'],
   light: {
     pools: [
       { x: 0.13, y: 0.16, radius: 0.48, colour: '#38ecff', intensity: 0.56, drift: 5 },
@@ -911,7 +911,7 @@ const DINO: LibraryTheme = {
     radius: 12,
   },
   wallpaper: { pattern: 'fern-footprint', colourway: 'jungle', tile: 256 },
-  backdrops: ['papered', 'boarded', 'plastered'],
+  backdrops: ['boarded', 'papered', 'plastered'],
   light: {
     pools: [
       { x: 0.5, y: 0.98, radius: 0.78, colour: '#ff7a1f', intensity: 0.58, drift: 6 },
@@ -945,7 +945,7 @@ const DINO: LibraryTheme = {
   },
   motes: { kind: 'pollen', density: 30, colour: '#ffd88a', drift: 5 },
   // The dig site is open to the jungle and the volcano behind it.
-  backing: 'wallpaper',
+  backing: 'wood',
 };
 
 const CANDY: LibraryTheme = {
@@ -1004,7 +1004,7 @@ const CANDY: LibraryTheme = {
     radius: 10,
   },
   wallpaper: { pattern: 'peppermint-stripe', colourway: 'bubblegum', tile: 256 },
-  backdrops: ['papered', 'panelled', 'boarded'],
+  backdrops: ['panelled', 'papered', 'boarded'],
   light: {
     pools: [
       { x: 0.3, y: 0.08, radius: 0.66, colour: '#fffbe0', intensity: 0.5, drift: 8 },
@@ -1096,7 +1096,7 @@ const REEF: LibraryTheme = {
     radius: 14,
   },
   wallpaper: { pattern: 'reef-bubble', colourway: 'lagoon', tile: 256 },
-  backdrops: ['papered', 'glazed', 'panelled'],
+  backdrops: ['plastered', 'glazed', 'panelled'],
   light: {
     pools: [
       { x: 0.3, y: -0.06, radius: 0.62, colour: '#c8fbff', intensity: 0.54, drift: 10 },
@@ -1130,7 +1130,7 @@ const REEF: LibraryTheme = {
   },
   motes: { kind: 'bubbles', density: 32, colour: '#d6f9ff', drift: -12 },
   // Open water behind the shelves rather than a timber back.
-  backing: 'wallpaper',
+  backing: 'wood',
 };
 
 const VOYAGER: LibraryTheme = {
@@ -1218,7 +1218,7 @@ const VOYAGER: LibraryTheme = {
   },
   motes: { kind: 'stars', density: 24, colour: '#b6f0ff', drift: 2 },
   // There is no back to this case; there is only the nebula.
-  backing: 'wallpaper',
+  backing: 'wood',
 };
 
 /* --------------------------- the original eight -------------------------- */
@@ -1226,7 +1226,7 @@ const VOYAGER: LibraryTheme = {
 const ATHENAEUM: LibraryTheme = {
   id: 'athenaeum',
   name: 'Old Athenaeum',
-  blurb: 'Quartersawn oak, brass and gilt — the refined default.',
+  blurb: 'Quartersawn oak, brass and gilt â€” the refined default.',
   wood: {
     light: '#a87c45',
     dark: '#3c2410',
@@ -1453,7 +1453,7 @@ const OBSERVATORY: LibraryTheme = {
     radius: 2,
   },
   wallpaper: { pattern: 'constellation', colourway: 'midnight', tile: 256 },
-  backdrops: ['papered', 'glazed', 'panelled'],
+  backdrops: ['plastered', 'glazed', 'panelled'],
   light: {
     pools: [
       { x: 0.16, y: 0.1, radius: 0.7, colour: '#a8d0ff', intensity: 0.58, drift: 5 },
@@ -1486,7 +1486,7 @@ const OBSERVATORY: LibraryTheme = {
 const COTTAGE: LibraryTheme = {
   id: 'cottage',
   name: 'Cottage Nook',
-  blurb: 'Honey pine, knots and knitting — warm and thoroughly lived in.',
+  blurb: 'Honey pine, knots and knitting â€” warm and thoroughly lived in.',
   wood: {
     light: '#f5c877',
     dark: '#a5641e',
@@ -1804,7 +1804,7 @@ const ATTIC: LibraryTheme = {
     radius: 1,
   },
   wallpaper: { pattern: 'lath-plaster', colourway: 'greyboard', tile: 256 },
-  backdrops: ['papered', 'boarded', 'plastered'],
+  backdrops: ['boarded', 'papered', 'plastered'],
   light: {
     pools: [
       { x: 0.12, y: 0.12, radius: 0.3, colour: '#ffb347', intensity: 0.62, drift: 6 },
@@ -1834,7 +1834,7 @@ const ATTIC: LibraryTheme = {
     wear: 0.9,
   },
   motes: { kind: 'dust', density: 62, colour: '#e6d5b4', drift: 7 },
-  // No back boards at all in the attic — you see the lath straight through.
+  // No back boards at all in the attic â€” you see the lath straight through.
   backing: 'wallpaper',
 };
 
@@ -1893,7 +1893,7 @@ const APOTHECARY: LibraryTheme = {
     radius: 3,
   },
   wallpaper: { pattern: 'apothecary-labels', colourway: 'amber', tile: 256 },
-  backdrops: ['papered', 'panelled', 'plastered'],
+  backdrops: ['panelled', 'papered', 'plastered'],
   light: {
     pools: [
       { x: 0.22, y: 0.72, radius: 0.34, colour: '#ffb257', intensity: 0.5, drift: 4 },
@@ -1959,7 +1959,7 @@ export function allThemes(): readonly LibraryTheme[] {
 
 /**
  * Apply user wallpaper overrides on top of a theme's own wallpaper, so the
- * studio's "pattern + colourway" controls can mix freely (§4).
+ * studio's "pattern + colourway" controls can mix freely (Â§4).
  */
 export function resolveWallpaper(
   theme: LibraryTheme,
@@ -1971,7 +1971,7 @@ export function resolveWallpaper(
 }
 
 /**
- * Apply a user backdrop override on top of the room's own wall finish (§4).
+ * Apply a user backdrop override on top of the room's own wall finish (Â§4).
  * Any of the six treatments may be chosen for any theme; an unrecognised or
  * absent override falls back to the theme's first (most characteristic) wall.
  */
@@ -1985,8 +1985,8 @@ export function themeBackdrops(theme: LibraryTheme): readonly BackdropInfo[] {
 }
 
 /**
- * Scale a theme's flora density by the global settings slider (0–1).
- * 0 always yields a genuinely clean shelf (acceptance criterion §5).
+ * Scale a theme's flora density by the global settings slider (0â€“1).
+ * 0 always yields a genuinely clean shelf (acceptance criterion Â§5).
  */
 export function scaleFloraDensity(density: FloraDensity, slider: number): FloraDensity {
   if (slider <= 0.001 || density === 'none') return 'none';

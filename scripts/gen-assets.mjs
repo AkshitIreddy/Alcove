@@ -20,7 +20,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'assets', 'generated');
 const HOST = process.env.COMFY_HOST ?? 'http://127.0.0.1:8188';
-const CKPT = process.env.COMFY_CKPT ?? 'sd_xl_base_1.0.safetensors';
+const CKPT = process.env.COMFY_CKPT
+  ?? (process.argv.includes('--ckpt') ? process.argv[process.argv.indexOf('--ckpt') + 1] : null)
+  ?? 'sd_xl_base_1.0.safetensors';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -116,12 +118,29 @@ const SETS = {
  * without this the edge discontinuity was ~2x the interior variation and the
  * seams were plainly visible in a 2x2 composite.
  */
-function workflow({ prompt, negative, seed, size, steps = 28, cfg = 6.5, tile = false }) {
+function workflow({
+  prompt,
+  negative,
+  seed,
+  size,
+  steps = 28,
+  cfg = 6.5,
+  tile = false,
+  /**
+   * Hires fix: render at `size / hiresScale`, upscale the LATENT, then run a
+   * second short sampler pass at low denoise. The guides are unanimous that
+   * this is the largest single quality gain available — the first pass fixes
+   * composition, the second adds detail the base pass cannot resolve.
+   */
+  hires = 0,
+  hiresDenoise = 0.45,
+}) {
+  const firstSize = hires > 1 ? Math.round(size / hires / 8) * 8 : size;
   const graph = {
     4: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: CKPT } },
     6: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['4', 1] } },
     7: { class_type: 'CLIPTextEncode', inputs: { text: negative, clip: ['4', 1] } },
-    5: { class_type: 'EmptyLatentImage', inputs: { width: size, height: size, batch_size: 1 } },
+    5: { class_type: 'EmptyLatentImage', inputs: { width: firstSize, height: firstSize, batch_size: 1 } },
     3: {
       class_type: 'KSampler',
       inputs: {
@@ -138,8 +157,8 @@ function workflow({ prompt, negative, seed, size, steps = 28, cfg = 6.5, tile = 
     8: {
       class_type: tile ? 'CircularVAEDecode' : 'VAEDecode',
       inputs: tile
-        ? { samples: ['3', 0], vae: ['4', 2], tiling: 'enable' }
-        : { samples: ['3', 0], vae: ['4', 2] },
+        ? { samples: [hires > 1 ? '31' : '3', 0], vae: ['4', 2], tiling: 'enable' }
+        : { samples: [hires > 1 ? '31' : '3', 0], vae: ['4', 2] },
     },
     9: { class_type: 'SaveImage', inputs: { filename_prefix: 'nb', images: ['8', 0] } },
   };
@@ -147,6 +166,28 @@ function workflow({ prompt, negative, seed, size, steps = 28, cfg = 6.5, tile = 
     graph[20] = {
       class_type: 'SeamlessTile',
       inputs: { model: ['4', 0], copy_model: 'Make a copy', tiling: 'enable' },
+    };
+  }
+  if (hires > 1) {
+    graph[30] = {
+      class_type: 'LatentUpscale',
+      inputs: { samples: ['3', 0], upscale_method: 'nearest-exact', width: size, height: size, crop: 'disabled' },
+    };
+    graph[31] = {
+      class_type: 'KSampler',
+      inputs: {
+        // Same seed as the first pass keeps the two consistent.
+        seed,
+        steps: Math.max(8, Math.round(steps * 0.6)),
+        cfg,
+        sampler_name: 'dpmpp_2m',
+        scheduler: 'karras',
+        denoise: hiresDenoise,
+        model: [tile ? '20' : '4', 0],
+        positive: ['6', 0],
+        negative: ['7', 0],
+        latent_image: ['30', 0],
+      },
     };
   }
   return graph;
@@ -256,6 +297,9 @@ async function main() {
             seed: flag('reroll') ? (seed + 0x9e37) >>> 0 : seed,
             size: set.size,
             tile: set.tile === true,
+            hires: Number(opt('hires', 0)),
+            steps: Number(opt('steps', 28)),
+            cfg: Number(opt('cfg', 6.5)),
           }),
           clientId,
         );

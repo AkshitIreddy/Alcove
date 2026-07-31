@@ -1,5 +1,9 @@
 # Painted rendering — why the old approach failed and what replaces it
 
+> **"Painted" does not mean muted.** The user's words: *"when I say painted I mean it should still be pretty and beautiful vivid"*. Painterly technique — soft varied edges, brush texture, colour drift within a shape, one coherent light — is about **craft**, not about restraint. The output must be *vivid*: saturated pigment, luminous highlights, rich darks, colour that sings. A painting is not a desaturated photograph; the great ones are more colourful than life, not less.
+>
+> Any time a choice trades away colour for "tastefulness", it is the wrong choice here. Get depth from **value structure and light**, never by draining chroma.
+
 ## Why it looks cheap (root causes, not symptoms)
 
 Four sessions of "make the vines thicker, add more contrast tokens" failed because the problem is not parameters — it is **the drawing primitive itself**.

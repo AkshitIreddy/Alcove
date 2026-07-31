@@ -19,8 +19,24 @@
  */
 
 import type { CharmKind } from './charms';
+import {
+  bookLabelBox,
+  bookSpineBoxes,
+  drawBookSpine,
+  fitsLabelPlate,
+  hasDecoration,
+  resolveBookDesign,
+  type BookDesign,
+  type BookPresetId,
+  type DesignBox,
+} from './bookDesign';
 import { CLOTHS, FLAT, inkWidth, panel } from './flat';
-import { drawSpine, flatSpineFor, type FlatSpine } from './flatShelf';
+// `drawSpine` is no longer called from here — `drawBookSpine` covers the same
+// ground and adds the shape and material axes. `flatSpineFor` survives for the
+// one field the binding still takes from the old seeded spec: where the label
+// sits. `flatShelf.drawSpine` itself stays: `drawCaseCard` and `drawBookRow`
+// draw books at card scale, where a binding's fine work would be a smudge.
+import { flatSpineFor } from './flatShelf';
 import { clamp, mulberry32, type RandomFn } from './noise';
 
 /* ------------------------------ studio vocab ------------------------------ */
@@ -273,6 +289,17 @@ export interface SpineParams {
   charm?: CharmKind;
   /** Index into charms.CHARM_COLORS for the ribbon/twine/wax colourway. */
   charmColor?: number;
+  /**
+   * A binding pinned in the Book Studio (`art/bookDesign.ts`), overriding the
+   * one the seed would have picked.
+   *
+   * Null/absent is the normal case and is NOT the same as a default: it means
+   * "whatever `presetForSeed` says", so a book that has never been dressed
+   * still gets one of the 62 bindings rather than a house wrapper. It is last
+   * in the params on purpose — `deriveSpineParams` appends its draw, so adding
+   * it reshuffles nothing that came before.
+   */
+  binding?: BookPresetId | null;
 
   /* ------------------- painterly rebuild additions (§1, §3) ---------------- */
   /* All optional, all seed-derived, none exposed in the studio. These were the
@@ -1068,88 +1095,13 @@ const RIBBON_COLOURS: readonly string[] = [
 ];
 
 /**
- * The book's flat identity, taken from the params it already carries rather
- * than re-rolled: `flatSpineFor` supplies the seeded defaults, then the fields
- * that actually mean something here override it.
+ * …and room for *lettering* inside a plate. Stricter than `fitsLabelPlate`,
+ * because a plate only has to look like a plate whereas a title has to be
+ * read: below about 6px of glyph the run is a grey smear, and forcing a
+ * legible size into a sliver's label spills the letters out over the cloth.
  */
-function flatSpecFor(params: SpineParams): FlatSpine {
-  const base = flatSpineFor(params.seed);
-  const banded =
-    (params.raisedBands ?? 0) > 0 || params.bands.length > 0 || (params.bandGilt ?? params.gilt);
-  const plated = (params.titlePlate ?? 'none') !== 'none';
-  return {
-    ...base,
-    cloth: clothForPalette(params.palette),
-    // A book with tooling on it gets tooling drawn on it; the seeded default
-    // only decides the case where the params say nothing either way.
-    dress: plated ? 2 : banded ? Math.max(1, base.dress) : base.dress,
-  };
-}
-
-/** Does this spine have room for a label that reads as a label? */
-function fitsLabel(w: number, h: number): boolean {
-  return w > 14 && h > 60;
-}
-
-/**
- * …and room for *lettering* inside it. Stricter than `fitsLabel`, because a
- * plate only has to look like a plate whereas a title has to be read: below
- * about 6px of glyph the run is a grey smear, and forcing a legible size into
- * a sliver's label spills the letters out over the cloth.
- */
-function fitsTitle(w: number, h: number): boolean {
-  return fitsLabel(w, h) && w * 0.62 * 0.62 >= 6;
-}
-
-interface LabelBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/**
- * The band of the spine a label may occupy, as fractions of the height.
- *
- * The floor is `drawSpine`'s lowest `labelAt` (0.22) so an unstretched label
- * lands exactly where the ruled placeholder does; the ceiling clears the tail
- * band it puts at 0.82. Between them a label may grow as long as it likes —
- * a plate that crosses a gilt band reads as a mistake, not as ornament.
- */
-const LABEL_SPAN_TOP = 0.22;
-const LABEL_SPAN_BOTTOM = 0.78;
-
-/**
- * `drawSpine`'s label rectangle, recomputed here and allowed to stretch.
- *
- * The width and the resting height are duplicated from `drawSpine` on purpose:
- * the two callers want opposite things inside the same rectangle — at lo-res
- * the shelf bake gets the ruled placeholder `drawSpine` draws, at hi-res it
- * gets the real title — and sharing the rectangle is what stops a book
- * appearing to shift when the LOD flips. Change one and you must change the
- * other.
- *
- * `runLen` is how much room the lettering needs *along* the spine. A real
- * spine label is cut to its title, so the plate grows about its own centre
- * rather than truncating the words at a fixed size; that is the difference
- * between "The Long Winter" and "The Long…".
- */
-function labelBox(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  spec: FlatSpine,
-  runLen = 0,
-): LabelBox {
-  const lw = w * 0.62;
-  const rest = Math.min(h * 0.24, lw * 2.4);
-  const span = h * (LABEL_SPAN_BOTTOM - LABEL_SPAN_TOP);
-  const lh = clamp(runLen, rest, Math.max(rest, span));
-  // Grow about the placeholder's centre, then slide back inside the band.
-  const cy = y + h * spec.labelAt + rest / 2;
-  const ly = clamp(cy - lh / 2, y + h * LABEL_SPAN_TOP, y + h * LABEL_SPAN_BOTTOM - lh);
-  return { x: x + (w - lw) / 2, y: ly, w: lw, h: lh };
+function fitsTitle(d: DesignBox): boolean {
+  return fitsLabelPlate(d) && d.w * 0.62 * 0.62 >= 6;
 }
 
 /**
@@ -1164,34 +1116,46 @@ function measureCtx(): Ctx2D {
   return measureCanvasCtx;
 }
 
+/** A title, fitted to a binding's free compartment but not yet drawn. */
+interface TitleRun {
+  text: string;
+  fontPx: number;
+  family: string;
+  /** The glyph run's own length. */
+  len: number;
+  /** What the plate must be, along the spine, to hold it: `len` plus padding. */
+  runLen: number;
+}
+
 /**
- * The label with the book's title set down it, in soft ink.
+ * Fit the title to the compartment this binding leaves free — measure only.
  *
- * Flat means flat: no foil ramp, no relief copy, no burnished glint travelling
- * along the run. The one liberty is a hair of baseline wobble per glyph, which
- * is the same liberty every other shape in this style takes.
+ * Measuring and painting are separate because the plate's rectangle has to be
+ * known before `drawBookSpine` runs (it is passed in as `reserved`, so tooling
+ * that would cross the lettering is skipped and a gilt panel grows to frame it
+ * instead) while the lettering itself has to be painted after, on top of the
+ * cloth. One function that did both could only ever be called too late.
  *
- * The size is decided by the label's *width* — a run of letters has to sit
- * inside the plate across the spine — and the plate is then cut to the run's
- * length. Shrinking and ellipsising only happen when even the whole legal band
- * is too short, which for a real book title is rare.
- *
- * Returns the plate it drew, so the ornament below knows where the floor is.
+ * The size is decided by the plate's *width* — a run of letters has to sit
+ * inside it across the spine — and the plate is then cut to the run's length.
+ * Shrinking and ellipsising only happen when even the whole compartment is too
+ * short, which for a real book title is rare. How short that is depends on the
+ * binding: a corded book's 0.30–0.60 compartment is a good deal less than a
+ * plain wrapper's whole spine.
  */
-function drawSpineTitle(
-  ctx: Ctx2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  spec: FlatSpine,
+function measureSpineTitle(
+  decor: DesignBox,
+  design: BookDesign,
   title: string,
   font: number,
   scale: number,
-): LabelBox {
-  const lw = w * 0.62;
+): TitleRun {
+  const lw = decor.w * 0.62;
   const pad = Math.max(2, lw * 0.16);
-  const maxRun = h * (LABEL_SPAN_BOTTOM - LABEL_SPAN_TOP) - pad * 2;
+  // `decor.h` as the requested run is a stand-in for "as long as you'll give
+  // me": `bookLabelBox` clamps it to the compartment, which is never taller
+  // than the box itself. That keeps the compartment's extent in ONE place.
+  const maxRun = Math.max(pad * 2, bookLabelBox(decor, design, decor.h).h - pad * 2);
   const family = FONTS[font % FONTS.length] as string;
   const m = measureCtx();
 
@@ -1212,31 +1176,59 @@ function drawSpineTitle(
 
   m.font = `${fontPx.toFixed(2)}px ${family}`;
   const len = m.measureText(text).width;
-  const box = labelBox(x, y, w, h, spec, len + pad * 2);
+  return { text, fontPx, family, len, runLen: len + pad * 2 };
+}
 
-  panel(ctx, box.x, box.y, box.w, box.h, FLAT.cream, {
-    radius: box.w * 0.18,
-    seed: spec.seed + 3,
-    width: Math.max(1, inkWidth(box.w) * 0.7),
-  });
+/**
+ * Set the measured run down the spine, on a cream plate or straight on the
+ * cloth.
+ *
+ * Flat means flat: no foil ramp, no relief copy, no burnished glint travelling
+ * along the run. The one liberty is a hair of baseline wobble per glyph, which
+ * is the same liberty every other shape in this style takes.
+ *
+ * `plate` is false for the bindings that carry no lettering-piece — a plain
+ * wrapper, limp vellum, blind-tooled calf. Those books get their title stamped
+ * directly onto the covering, which is what the real thing does; painting a
+ * cream panel onto all 62 presets is what made a third of them stop meaning
+ * anything.
+ */
+function paintSpineTitle(
+  ctx: Ctx2D,
+  box: DesignBox,
+  run: TitleRun,
+  design: BookDesign,
+  scale: number,
+  plate: boolean,
+): void {
+  if (plate) {
+    panel(ctx, box.x, box.y, box.w, box.h, FLAT.cream, {
+      radius: box.w * 0.18,
+      seed: design.seed + 3,
+      width: Math.max(1, inkWidth(box.w) * 0.7),
+    });
+  }
 
-  const wob = mulberry32((spec.seed ^ 0x7115) >>> 0);
+  const m = measureCtx();
+  m.font = `${run.fontPx.toFixed(2)}px ${run.family}`;
+  const wob = mulberry32((design.seed ^ 0x7115) >>> 0);
   ctx.save();
   // A quarter turn clockwise, so the run reads top-to-bottom the way it does
   // on a real spine and the glyph tops face the fore-edge.
-  ctx.translate(box.x + box.w / 2, box.y + (box.h - len) / 2);
+  ctx.translate(box.x + box.w / 2, box.y + (box.h - run.len) / 2);
   ctx.rotate(Math.PI / 2);
-  ctx.font = `${fontPx.toFixed(2)}px ${family}`;
+  ctx.font = `${run.fontPx.toFixed(2)}px ${run.family}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = FLAT.inkSoft;
+  // Gilt lettering on a gilded book with no plate under it — otherwise soft
+  // ink, which is what reads on cream.
+  ctx.fillStyle = !plate && design.gilt ? FLAT.gilt : FLAT.inkSoft;
   let advance = 0;
-  for (const ch of text) {
+  for (const ch of run.text) {
     ctx.fillText(ch, advance, (wob() * 2 - 1) * 0.5 * scale);
     advance += m.measureText(ch).width;
   }
   ctx.restore();
-  return box;
 }
 
 /**
@@ -1249,19 +1241,18 @@ function drawSpineTitle(
  */
 function drawSpineOrnament(
   ctx: Ctx2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
+  decor: DesignBox,
   params: SpineParams,
   top: number,
+  bottom: number,
   scale: number,
 ): void {
-  // Sit between whatever is above (label or head bands) and the tail band
-  // drawSpine puts at 0.82 — an ornament crossing a band reads as a mistake.
-  const bottom = y + h * 0.79;
-  const size = Math.min(w * 0.3, 13 * scale, (bottom - top) / 2.2);
-  if (size < 2.4 || w < 12) return;
+  // `top`/`bottom` are the binding's OWN free compartment, not a fixed
+  // fraction of the height. The old floor of 0.79 was right for one dressing
+  // and wrong for the rest: on a corded book it lands on a cord, and on a half
+  // binding 0.30 puts the stamp on the leather rather than in the panel.
+  const size = Math.min(decor.w * 0.3, 13 * scale, (bottom - top) / 2.2);
+  if (size < 2.4 || decor.w < 12) return;
   const colour = params.gilt ? FLAT.gilt : FLAT.inkSoft;
   ctx.save();
   ctx.lineWidth = Math.max(1, size * 0.17);
@@ -1272,7 +1263,7 @@ function drawSpineOrnament(
   drawOrnament(
     ctx,
     params.ornament,
-    x + w / 2,
+    decor.x + decor.w / 2,
     (top + bottom) / 2,
     size,
     mulberry32((params.seed ^ 0x0c17) >>> 0),
@@ -1291,13 +1282,11 @@ function drawSpineOrnament(
  */
 function drawSpineRibbon(
   ctx: Ctx2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
+  body: DesignBox,
   params: SpineParams,
-  spec: FlatSpine,
+  design: BookDesign,
 ): void {
+  const { x, y, w, h } = body;
   const rw = Math.max(2, w * 0.2);
   if (rw < 2.5 || h < 40) return;
   const rh = Math.min(h * 0.16, rw * 6);
@@ -1309,7 +1298,7 @@ function drawSpineRibbon(
   // a pixel at shelf scale, so the foot is rounded like everything else.
   panel(ctx, x + w * 0.56 - rw / 2, y - rh * 0.22, rw, rh, colour, {
     radius: rw * 0.42,
-    seed: spec.seed + 5,
+    seed: design.seed + 5,
     width: Math.max(1, inkWidth(rw) * 0.8),
   });
 }
@@ -1347,9 +1336,16 @@ export interface RenderSpineOptions {
  * upright into atlas rects; the shelf compositor applies lean/height when
  * placing the sprite.
  *
- * Layer order: the cloth and its darker turned board → gilt bands → the label
- * with the title on it → the ornament → the ribbon. Five flat shapes and an
- * ink line around each, in the vocabulary of `art/flat.ts`.
+ * Layer order: the binding (silhouette, covering material, cords, tooling and
+ * — unless we are setting one ourselves — its lettering-piece) → the title →
+ * the ornament → the ribbon. `art/bookDesign.ts` owns the first of those; this
+ * function owns the three that carry the book's own identity.
+ *
+ * The binding is a THIRD axis on top of the params: `presetForSeed` gives every
+ * book one of 62 deterministically, and `params.binding` pins it when the
+ * reader has chosen in the studio. Nothing here consults `flatScheme()` — a
+ * book keeps its own colours in every room, which is what lets you recognise
+ * it after a repaint.
  */
 export function renderSpine(
   ctx: Ctx2D,
@@ -1363,35 +1359,62 @@ export function renderSpine(
 ): void {
   const w = params.w * scale;
   const h = hPx;
-  const spec = flatSpecFor(params);
+  const seeded = flatSpineFor(params.seed);
+  const design = resolveBookDesign({
+    seed: params.seed,
+    cloth: clothForPalette(params.palette),
+    gilt: params.gilt,
+    labelAt: seeded.labelAt,
+    preset: params.binding ?? null,
+  });
 
-  // Lettering is hi-res only — at the lo LOD the glyphs are a smudge, and
-  // `drawSpine`'s ruled placeholder says "this book is titled" for a fraction
+  // Geometry BEFORE any drawing: three shapes stand narrower than their slot
+  // and `slipcased` moves the decorated surface onto the case, so the title
+  // and the ornament belong on `decor`, not on the footprint.
+  const boxes = bookSpineBoxes(design, x, y, w, h);
+
+  // Lettering is hi-res only — at the lo LOD the glyphs are a smudge, and the
+  // binding's own ruled placeholder says "this book is titled" for a fraction
   // of the cost. But a titled book carries a *plate* at BOTH levels, so zooming
   // in fills the label rather than conjuring one out of nothing. (Slivers
   // under ~23 world px still pop: at the lo scale their label would be four
   // pixels wide, and drawing it would be worse than the pop.)
   const text = title.trim();
-  const titled = text.length > 0 && opts.hiRes === true && fitsTitle(w, h);
-  const plated = text.length > 0 && fitsLabel(w, h);
-  const dress = plated ? (titled ? Math.min(spec.dress, 1) : Math.max(spec.dress, 2)) : spec.dress;
+  const titled = text.length > 0 && opts.hiRes === true && fitsTitle(boxes.decor);
+  // Whether this book wears a lettering-piece is the BINDING's answer, with
+  // the studio's explicit `titlePlate` able to overrule it. Plating all 62
+  // presets regardless is what would make a third of them indistinguishable.
+  const plate =
+    fitsLabelPlate(boxes.decor) &&
+    (hasDecoration(design, 'label-plate') || (params.titlePlate ?? 'none') !== 'none');
 
-  // With a real title to set, drawSpine's placeholder ruling would sit under
-  // the lettering, so the label is drawn here instead. Everything else about
-  // the book — cloth, turned board, bands, contact shadow — is drawSpine's.
-  drawSpine(ctx, x, y, w, h, { ...spec, dress });
+  const run = titled ? measureSpineTitle(boxes.decor, design, text, params.font, scale) : null;
+  const box = run !== null ? bookLabelBox(boxes.decor, design, run.runLen) : null;
 
-  const box = titled
-    ? drawSpineTitle(ctx, x, y, w, h, spec, text, params.font, scale)
-    : dress >= 2 && fitsLabel(w, h)
-      ? labelBox(x, y, w, h, spec)
-      : null;
+  const f = drawBookSpine(ctx, x, y, w, h, design, {
+    // Reserve the band the lettering will occupy even when no plate goes under
+    // it: tooling struck across a title is the one thing worse than no tooling.
+    reserved: box !== null ? { y0: box.y, y1: box.y + box.h } : null,
+    ownLabel: titled,
+    noContact: false,
+  });
+
+  if (run !== null && box !== null) paintSpineTitle(ctx, box, run, design, scale, plate);
 
   if (params.ornamentOn ?? true) {
-    drawSpineOrnament(ctx, x, y, w, h, params, box ? box.y + box.h : y + h * 0.3, scale);
+    // Whatever ended up highest — our plate, or the binding's own — is the
+    // ornament's ceiling; the compartment's floor is its floor.
+    const above = box ?? f.label;
+    const top = above !== null ? above.y + above.h : f.freeTop;
+    drawSpineOrnament(ctx, f.decor, params, top, f.freeBottom, scale);
   }
 
-  if ((params.charm ?? 'none') !== 'none') drawSpineRibbon(ctx, x, y, w, h, params, spec);
+  // The design's `ribbon-marker` and the charm ribbon are different objects at
+  // different x. A book that has both wears two ribbons, which reads as a
+  // mistake rather than as a well-used book.
+  if ((params.charm ?? 'none') !== 'none' && !hasDecoration(design, 'ribbon-marker')) {
+    drawSpineRibbon(ctx, f.body, params, design);
+  }
 }
 
 /* ========================================================================== *

@@ -612,36 +612,13 @@ export default function SettingsPanel(props: {
 
         {/* --------------------------- Library & shelf ------------------------ */}
         <Section title="Library & shelf" accent="moss">
-          <Row label="wood stain" wide>
-            <Seg
-              label="shelf wood stain"
-              options={[
-                { value: 'oak', label: 'oak' },
-                { value: 'walnut', label: 'walnut' },
-                { value: 'cherry', label: 'cherry' },
-                { value: 'cream', label: 'painted cream' },
-              ]}
-              value={settings.shelfWoodStain}
-              onSelect={(v) =>
-                put({ shelfWoodStain: v as Settings['shelfWoodStain'] })
-              }
-            />
-          </Row>
-          <Row label="wallpaper" wide>
-            <Seg
-              label="wallpaper pattern"
-              options={[
-                { value: 'damask', label: 'damask' },
-                { value: 'stars', label: 'stars' },
-                { value: 'botanical', label: 'botanical' },
-                { value: 'plain', label: 'plain' },
-              ]}
-              value={settings.wallpaperPattern}
-              onSelect={(v) =>
-                put({ wallpaperPattern: v as Settings['wallpaperPattern'] })
-              }
-            />
-          </Row>
+          {/* The wood stain and the wallpaper pattern used to live here, as a
+              four-way each, and neither had reached the screen since the case
+              went flat — a segmented control that writes a setting nothing
+              reads is worse than no control. Both are real now, with far more
+              in them (12 builds x 12 timber patterns, 19 papers x 4 axes), and
+              both belong to the BOOKCASE rather than to the app: they are in
+              the library studio on the shelf's left rail. */}
           <Row label="mouse wheel" hint="what a plain wheel spin does" wide>
             <Seg
               label="wheel mode"

@@ -14,7 +14,17 @@
 export interface Book {
   id: string;
   title: string;
-  /** Floor index on the endless bookshelf (0 = top, grows downward). */
+  /**
+   * The bookcase this book stands in (`bookcases.id`).
+   *
+   * Optional only because two row→model mappings outside this layer
+   * (features/system/tray.ts, editor/journal.ts) build a `Book` by hand and
+   * predate bookcases. Anything that came out of src/data/books.ts always
+   * carries one; read it through `bookcaseOf()` there, which resolves an
+   * absent value to the default case rather than dropping the book.
+   */
+  bookcaseId?: string;
+  /** Floor index within its bookcase (0 = top, grows downward). */
   floor: number;
   /** Slot position within the floor (gaps are allowed and expected). */
   slot: number;
@@ -30,6 +40,8 @@ export interface Book {
 
 export interface CreateBookInput {
   title: string;
+  /** Omit to land in whichever bookcase is currently open. */
+  bookcaseId?: string;
   floor: number;
   slot: number;
   /** Omit for a random seed; pass explicitly for deterministic spines. */
@@ -47,6 +59,12 @@ export interface UpdateBookPatch {
 export interface BookRow {
   id: string;
   title: string;
+  /**
+   * Optional in the type, NOT NULL in SQLite: the browser-dev stub has no
+   * DDL, so rows written before the bookcase migration genuinely lack the
+   * key. `adoptOrphanBooks()` sweeps those on every start.
+   */
+  bookcase_id?: string | null;
   floor: number;
   slot: number;
   spine_seed: number;
@@ -212,8 +230,13 @@ export interface Settings {
   // Wave 2 — library & shelf
   /** Plain-wheel behavior on the shelf. */
   wheelMode: 'zoom' | 'scroll';
-  shelfWoodStain: 'oak' | 'walnut' | 'cherry' | 'cream';
-  wallpaperPattern: 'damask' | 'stars' | 'botanical' | 'plain';
+  /**
+   * `shelfWoodStain` and `wallpaperPattern` were here, and were app-wide.
+   * Both are per-BOOKCASE now and far larger than a four-way enum could
+   * carry — see `data/designPrefs.ts`, `art/shelfDesign.ts` and
+   * `art/wallpaperDesign.ts`. Old blobs still holding them parse fine: unknown
+   * keys are dropped by `mergeSettings` rather than rejected.
+   */
   shelfSort: 'manual' | 'recent' | 'favorites';
 
   // Wave 2 — ambience & input feel

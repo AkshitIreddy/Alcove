@@ -17,6 +17,7 @@ import * as PIXI from 'pixi.js';
 import {
   Application,
   Container,
+  ImageSource,
   NineSliceSprite,
   Sprite,
   Texture,
@@ -36,12 +37,21 @@ import {
   touchBookOpened,
 } from '../../data/books';
 import {
-  save as saveSettings,
-  settings,
-  subscribe as subscribeSettings,
-} from '../../data/settings';
+  activeBookcase,
+  addBookcaseFloor,
+  createBookcase,
+  deleteBookcase,
+  loadBookcases,
+  renameBookcase,
+  snapshotBookcases,
+  subscribeBookcases,
+  switchBookcase,
+  type BookcaseState,
+} from '../../data/bookcases';
+import { save as saveSettings, subscribe as subscribeSettings } from '../../data/settings';
 import type { Book } from '../../data/types';
-import { setFlatScheme } from '../../art/flat';
+import { flatScheme, setFlatScheme } from '../../art/flat';
+import type { ColourScheme } from '../../art/themes';
 import { floorLabel, loadFloorNames, onFloorNameChange } from './floorNames';
 import {
   addWheelZoom,
@@ -54,6 +64,7 @@ import {
   LOG_MAX_ZOOM,
   minZoomFor,
   momentumTick,
+  rubberBand,
   screenToWorld,
   weightedVelocity,
   worldToScreen,
@@ -66,17 +77,22 @@ import {
   type Viewport,
 } from './camera';
 import {
+  BASE_H,
   BOOK_BASELINE,
+  caseBottomY,
   CROWN_H,
   CROWN_LIP,
+  DEFAULT_FLOOR_COUNT,
   FLOOR_H,
   HIT_SLOP,
   SHELF_WIDTH,
   SLOT_MARGIN_X,
   SLOT_W,
+  clampFloorCount,
   slotCenterX,
   X_SLACK,
   Y_MIN,
+  yMaxFor,
 } from './constants';
 import { GHOST_H, GHOST_W, nextSpotX } from './addSpot';
 import { FloorStore } from './data';
@@ -116,6 +132,24 @@ import { SpineFactory, type SpineRowContext } from './spineFactory';
 import { paletteCss } from './spinePalette';
 import { EnvTextures, PLACEHOLDER_TINTS, PLAQUE_H, PLAQUE_W } from './textures';
 import { computeRange, diffWindow, Pool, type FloorRange } from './virtualizer';
+import { shelfDesignTag } from '../../art/shelfDesign';
+import {
+  renderWallpaperTile,
+  wallpaperTileKey,
+  wallpaperTilePx,
+  type WallpaperSpec,
+} from '../../art/wallpaperDesign';
+import {
+  loadDesignPrefs,
+  saveBookBinding,
+  saveRoomDesign,
+  shelfDesignOf,
+  snapshotRoomDesign,
+  subscribeBookBindings,
+  subscribeRoomDesign,
+  type RoomDesign,
+} from '../../data/designPrefs';
+import { bakeCached } from '../../art/bake';
 
 /* --------------------------- gsap registration ---------------------------- */
 
@@ -192,12 +226,18 @@ let sessionCamera: CameraSnapshot | null = null;
 const PARALLAX = 0.85;
 
 /**
- * The wall, as one flat colour — the room's `scheme.wall`.
+ * The room's `scheme.wall` as a tint, for the placeholder only.
  *
- * Drawn as a tint on a white pixel rather than any texture, which is the
- * whole point: a solid fill has no tile and therefore no seam, and the pale
- * banding in the corners while panning was a seam in every version that had
- * one — procedural strip and generated panel alike.
+ * The wall was ONE flat colour for a while, and for a good reason: a solid
+ * fill has no tile and therefore no seam, and the pale banding reported in
+ * the corners while panning was a seam in every version that had one —
+ * procedural strip and generated panel alike.
+ *
+ * `art/wallpaperDesign.ts` is the version that earns a tile back. Every mark
+ * on it is emitted through a torus-aware emitter and the lattice is fitted to
+ * the tile, so it is seamless by construction and there is a test that abuts
+ * two copies and measures it. This tint now only dresses the backdrop for the
+ * handful of frames before the first tile lands.
  *
  * Parsed rather than tabulated so a hex edited in `art/themes.ts` reaches the
  * wall without a second copy of it here going stale.
@@ -205,6 +245,17 @@ const PARALLAX = 0.85;
 function wallTint(hex: string): number {
   const n = Number.parseInt(hex.replace('#', ''), 16);
   return Number.isFinite(n) ? n : 0xe9e2d0;
+}
+
+/**
+ * The four wallpaper axes as one short string, for the applied-room key.
+ *
+ * Not `wallpaperTileKey`, which also carries the scheme and the pixel size:
+ * this only has to answer "is the reader looking at a different paper", and
+ * the scheme is already in the key this gets appended to.
+ */
+function wallpaperKeyOf(spec: WallpaperSpec): string {
+  return `${spec.pattern}.${spec.scale}.${spec.depth}.${spec.ink}`;
 }
 
 /** Springy-lag constant for the dragged-book ghost (lerpExp k). */
@@ -249,6 +300,16 @@ export class ShelfWorld {
   private readonly stamps = new FloorStampCache((floor) => this.floors.has(floor));
   private readonly input: ShelfInput;
 
+  /**
+   * Floors the open bookcase shows. Ten unless the reader grew it — the case
+   * has a bottom, and this is where it is.
+   */
+  private floorCount = DEFAULT_FLOOR_COUNT;
+  /** The bookcase on screen. Changing it reloads the case AND its books. */
+  private caseId = '';
+  /** Bumped per bookcase switch so stale async reloads drop. */
+  private caseGen = 0;
+
   /** Bumped per theme application so stale async case bakes drop. */
   private libraryGen = 0;
   /** The room key whose art is actually on screen. */
@@ -256,9 +317,18 @@ export class ShelfWorld {
   /** Full-viewport snapshot held over the stage during a theme crossfade. */
   private themeFade: Sprite | null = null;
 
+  /** The wall: one TilingSprite carrying the room's baked wallpaper tile. */
   private readonly backdrop: TilingSprite;
-  /** Damask wallpaper pattern tiled over the paper (parallax with backdrop). */
-  private wallpaper: TilingSprite | null = null;
+  /**
+   * The wallpaper currently ON the backdrop. A second parallax layer used to
+   * hang over this one and was hidden on the first env-ready; two tiling
+   * layers at different pitches beat against each other, so there is one.
+   */
+  private wallpaperKey = '';
+  /** Bumped per wallpaper bake so a stale tile cannot land after a newer one. */
+  private wallpaperGen = 0;
+  /** The open case's carpentry + paper. Kept so a repaint can re-read it. */
+  private roomDesign: RoomDesign = snapshotRoomDesign();
   /** World space: the case, under the camera transform. */
   private readonly world = new Container();
   /** Screen space, above everything: drag ghosts, drop-target hints. */
@@ -267,6 +337,8 @@ export class ShelfWorld {
   private readonly marks: ShelfMarks;
   /** Crown/header board capping the case above floor 0. */
   private readonly crown: Sprite;
+  /** The same board, mirrored, standing under the last floor. */
+  private readonly plinth: Sprite;
 
   private readonly floors = new Map<number, FloorView>();
   private readonly pool: Pool<FloorView>;
@@ -388,6 +460,15 @@ export class ShelfWorld {
     this.crown.height = CROWN_H;
     this.world.addChild(this.crown);
 
+    // The foot of the case. A bookcase that stops has to be SEEN to stop —
+    // the camera bound alone only tells you once you push against it, and a
+    // last plank flush with the window edge looks cut off, not finished.
+    this.plinth = new Sprite(Texture.WHITE);
+    this.plinth.tint = PLACEHOLDER_TINTS.crown;
+    this.plinth.eventMode = 'none';
+    this.world.addChild(this.plinth);
+    this.layoutPlinth();
+
     // Stage: flat wall, the case, then screen-space affordances. No filters —
     // every sprite here draws exactly the colours its art was authored in.
     this.world.eventMode = 'none';
@@ -432,8 +513,17 @@ export class ShelfWorld {
           target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT');
+      // A side panel is a dialog: while one is out, arrows and Enter belong to
+      // whatever is in it. This listener is on `document`, so without the
+      // check every panel's keyboard also drove the shelf behind it — arrowing
+      // a picker dragged the selection halo around, and Enter pulled a book
+      // out and opened it on top of the open sheet. The studio roots stop the
+      // event themselves (`views/rail/shelfKeys.ts`); this covers the trash,
+      // the TOC, the sticker tray and everything added later, which is why it
+      // reads the state flag rather than a list of selectors.
+      const panelOpen = document.documentElement.dataset['nbPanel'] === 'open';
       // Wave-2 shelf nav (arrows/Enter/Home) + move-mode Escape.
-      if (!editing && this.handleNavKey(e.key)) {
+      if (!editing && !panelOpen && this.handleNavKey(e.key)) {
         e.preventDefault();
         return;
       }
@@ -455,10 +545,12 @@ export class ShelfWorld {
         this.reducedMotion = reduced;
         this.dirty = true;
       }),
-      // Wave-2: live-apply wood stain / wallpaper / sort / wheel mode on save.
+      // Wave-2: live-apply sort / wheel mode on save. The wood stain and the
+      // wallpaper used to be pushed at `envTex` from here and had been inert
+      // for as long as the case has been flat; both are real choices again,
+      // but they belong to the BOOKCASE now, not to app settings, and they
+      // arrive through `subscribeRoomDesign` below.
       subscribeSettings((s) => {
-        this.envTex.setStain(s.shelfWoodStain);
-        this.envTex.setWallpaper(s.wallpaperPattern);
         this.store.setSort(s.shelfSort);
         this.input.wheelMode = s.wheelMode;
       }),
@@ -500,27 +592,56 @@ export class ShelfWorld {
       (fv) => fv.destroy(),
     );
 
-    this.envTex.load(
-      this.dpr,
-      this.degrade,
-      settings.shelfWoodStain,
-      settings.wallpaperPattern,
-    );
+    this.envTex.load(this.dpr, this.degrade);
 
     // The library theme (docs/design/library-themes.md). The first snapshot
     // arrives synchronously with the defaults, then again once the stored
-    // prefs load — and after every studio edit.
+    // prefs load — and after every studio edit. Since a room now belongs to a
+    // bookcase, this also fires on every case switch.
     this.unsubs.push(
       subscribeLibraryPrefs((prefs) => {
         void this.applyLibrary(prefs);
       }),
+      // The carpentry and the wallpaper are the room's other two axes and they
+      // live in their own store, so a build change never touches `prefs` and
+      // the subscription above would never fire for it. This one fires
+      // immediately, on every studio edit, AND on a bookcase switch.
+      subscribeRoomDesign(() => {
+        void this.applyLibrary(snapshotLibraryPrefs());
+      }),
+      // A binding is persisted outside `cover_meta`, so the studio's save does
+      // not travel the `persistBookStyle` → `invalidate` path the other style
+      // knobs use. Without this, picking a binding repaints the studio's own
+      // preview and nothing else on the shelf.
+      subscribeBookBindings((ids) => {
+        for (const id of ids) this.factory.invalidate(id);
+        this.dirty = true;
+      }),
     );
     void loadLibraryPrefs();
+    void loadDesignPrefs();
 
-    this.ready = this.store.init().then(() => {
-      if (this.destroyed) return;
-      this.dirty = true;
-    });
+    // Which bookcase is open has to be known BEFORE the first page load, and
+    // the subscription is only attached afterwards: `subscribeBookcases` fires
+    // immediately with whatever the store holds, and attaching it up here
+    // would deliver the pre-load default and switch the world to a case the
+    // reader did not ask for.
+    this.ready = loadBookcases()
+      .then((state) => {
+        if (this.destroyed) return;
+        this.adoptBookcase(state);
+        this.unsubs.push(
+          subscribeBookcases((next) => {
+            void this.applyBookcase(next);
+          }),
+        );
+        return this.store.init(state.activeId);
+      })
+      .then(() => {
+        if (this.destroyed) return;
+        this.clampCaseBottom();
+        this.dirty = true;
+      });
 
     this.updateCursor();
     this.lastTime = performance.now();
@@ -551,12 +672,53 @@ export class ShelfWorld {
         titles: readonly string[],
         floor = 0,
       ): Promise<void> => {
-        let slot = await nextFreeSlot(floor, 0);
+        let slot = await nextFreeSlot(floor, 0, this.caseId);
         for (const title of titles) {
-          await createBook({ title, floor, slot });
+          await createBook({ title, bookcaseId: this.caseId, floor, slot });
           slot += 1;
         }
         await this.store.refreshAll();
+      };
+      // What the case is actually BUILT and PAPERED in right now, as opposed
+      // to what the studio has stored. The two disagreeing is the whole class
+      // of bug this wiring exists to close, so the probe has to be able to
+      // read the applied side rather than the requested one.
+      globals['__shelfDesign'] = (): {
+        design: RoomDesign;
+        shelf: string;
+        wallpaperKey: string;
+        libraryKey: string;
+      } => ({
+        design: this.roomDesign,
+        shelf: shelfDesignTag(this.envTex.design),
+        wallpaperKey: this.wallpaperKey,
+        libraryKey: this.appliedLibraryKey,
+      });
+      // The WRITERS have to be handed out from here for the same reason
+      // `__shelfSaveSettings` is: a probe's own `import('/src/data/…')` can
+      // resolve to a second copy of the module on a dev server that has served
+      // HMR updates, and a store written on that copy never reaches the world
+      // that subscribed to this one. (Observed: the first run of
+      // `probe-vocabularies.mjs` saved a gothic case and timed out waiting for
+      // the shelf to notice.)
+      globals['__shelfSaveDesign'] = (
+        patch: Partial<RoomDesign>,
+        bookcaseId?: string,
+      ): Promise<RoomDesign> => saveRoomDesign(patch, bookcaseId);
+      globals['__shelfSaveBinding'] = (
+        bookId: string,
+        preset: string | null,
+      ): Promise<void> => saveBookBinding(bookId, preset);
+      // The bookcase collection, for switch/leak probes and specimen boards.
+      globals['__shelfBookcases'] = {
+        list: (): BookcaseState => snapshotBookcases(),
+        active: () => activeBookcase(),
+        floors: (): number => this.floorCount,
+        create: (name?: string) => createBookcase(name === undefined ? {} : { name }),
+        rename: (id: string, name: string) => renameBookcase(id, name),
+        remove: (id: string, withBooks = false) => deleteBookcase(id, { withBooks }),
+        switch: (id: string) => this.openBookcase(id),
+        addFloor: (): number => this.addFloor(),
       };
       // Add-a-book affordance probes: where the ghost stands, creating a
       // book through the same path the UI uses, and emptying the case so
@@ -566,7 +728,9 @@ export class ShelfWorld {
         floor?: number,
       ): Promise<{ book: Book; rect: RectLike } | null> => this.addBook(floor);
       globals['__shelfEmptyLibrary'] = async (): Promise<void> => {
-        const books = await listBooksByFloorRange(-1, 64);
+        // This case only — emptying every case would take the harness's other
+        // fixtures with it.
+        const books = await listBooksByFloorRange(-1, 999, this.caseId);
         for (const book of books) await deleteBook(book.id);
         await this.store.refreshAll();
       };
@@ -594,6 +758,132 @@ export class ShelfWorld {
         await this.store.refreshAll();
       };
     }
+  }
+
+  /* ------------------------------- bookcases ------------------------------ */
+
+  /** Record the open case's identity and height. No reload. */
+  private adoptBookcase(state: BookcaseState): boolean {
+    const open = state.list.find((c) => c.id === state.activeId);
+    const floors = clampFloorCount(open?.floors ?? DEFAULT_FLOOR_COUNT);
+    const changed = floors !== this.floorCount;
+    this.caseId = state.activeId;
+    this.floorCount = floors;
+    if (changed) this.layoutPlinth();
+    return changed;
+  }
+
+  /**
+   * Stand the plinth under the last floor.
+   *
+   * `height` on a Sprite is scale in disguise, so the mirroring has to come
+   * after it or the flip is undone; with a negative Y scale the sprite draws
+   * UPWARD from its position, which is why the anchor point is the plinth's
+   * bottom edge rather than its top.
+   */
+  private layoutPlinth(): void {
+    const top = caseBottomY(this.floorCount);
+    this.plinth.width = SHELF_WIDTH + CROWN_LIP * 2;
+    this.plinth.height = BASE_H;
+    this.plinth.scale.y = -Math.abs(this.plinth.scale.y);
+    this.plinth.position.set(-CROWN_LIP, top + BASE_H);
+    this.dirty = true;
+  }
+
+  /** The bookcase currently on screen (QA probes, the rail's own bookkeeping). */
+  get bookcaseId(): string {
+    return this.caseId;
+  }
+
+  /** Floors the open bookcase shows (the case's height, not the mounted set). */
+  get caseFloors(): number {
+    return this.floorCount;
+  }
+
+  /**
+   * The collection changed: a case was renamed, grown, added, deleted, or a
+   * different one was opened.
+   *
+   * The books change through the SAME path a reload takes: the store drops
+   * every cached floor and notifies each one that was loaded, so every mounted
+   * FloorView is emptied by `handleFloorData` before a single row of the new
+   * case arrives. Nothing is released to the pool and no texture is destroyed
+   * here on purpose — the room swap running alongside this (a case carries its
+   * own colours) is already re-baking the case parts, and remounting floors
+   * into the middle of that hands sprites textures that are about to be freed.
+   */
+  private async applyBookcase(state: BookcaseState): Promise<void> {
+    if (this.destroyed) return;
+    const previous = this.caseId;
+    const heightChanged = this.adoptBookcase(state);
+    if (state.activeId === previous) {
+      // Same case, but it may have grown a floor under us.
+      if (heightChanged) {
+        this.clampCaseBottom();
+        this.dirty = true;
+      }
+      return;
+    }
+
+    const gen = ++this.caseGen;
+    this.frozen = false;
+    this.input.frozen = false;
+    this.cancelMove();
+    this.clearKbSelection();
+    this.clearHover();
+    this.killNavTweens();
+    this.disposeGhost();
+    this.pull = null;
+
+    // Back to the top of the new case: a scroll position from a taller case
+    // would otherwise open this one halfway down, or past its bottom.
+    const cam = this.camera;
+    const bx = xBounds(this.vp, cam.zoom);
+    cam.vx = 0;
+    cam.vy = 0;
+    cam.x = clamp(cam.x, bx.min, bx.max);
+    cam.y = Y_MIN;
+    this.a11ySignature = '';
+    this.addSpotSig = '\0';
+    this.dirty = true;
+
+    await this.store.setBookcase(state.activeId);
+    if (this.destroyed || gen !== this.caseGen) return;
+    this.clampCaseBottom();
+    this.dirty = true;
+  }
+
+  /**
+   * Open a different bookcase. Persists the choice; the subscription above
+   * does the actual work, so calling this or `switchBookcase()` from the rail
+   * are the same thing.
+   */
+  async openBookcase(id: string): Promise<void> {
+    await switchBookcase(id);
+  }
+
+  /* ---------------------------- case geometry ----------------------------- */
+
+  /** Lowest camera Y allowed: the last plank resting on the viewport floor. */
+  private maxCameraY(): number {
+    return yMaxFor(this.floorCount, this.vp.height, this.camera.zoom);
+  }
+
+  /**
+   * Hold the camera inside the case's bottom.
+   *
+   * The camera model itself still says "endless downward" — `yBounds()` is
+   * shared with the tests and with a world that had no case height — so the
+   * floor of the case is enforced here, where the open bookcase is known.
+   * Returns true when the camera had to be moved.
+   */
+  private clampCaseBottom(): boolean {
+    const cam = this.camera;
+    const maxY = this.maxCameraY();
+    if (cam.y <= maxY) return false;
+    cam.y = maxY;
+    if (cam.vy > 0) cam.vy = 0;
+    return true;
   }
 
   /* ------------------------------ public API ----------------------------- */
@@ -810,6 +1100,10 @@ export class ShelfWorld {
     if (!this.frozen && !this.dragging) {
       moving = zoomTick(this.camera, dt, this.reducedMotion) || moving;
       moving = momentumTick(this.camera, dt, this.vp) || moving;
+      // Zooming out grows the visible height, which can leave the camera
+      // below a case that no longer needs the room — so the bottom is
+      // enforced after both integrators, every frame, not just on input.
+      if (this.clampCaseBottom()) moving = true;
     }
     if (this.pullTick(dt)) this.dirty = true;
     if (moving) this.dirty = true;
@@ -941,13 +1235,22 @@ export class ShelfWorld {
    */
   async addBook(floor?: number): Promise<{ book: Book; rect: RectLike } | null> {
     if (this.destroyed || this.frozen || this.pull !== null) return null;
-    const target = Math.max(0, floor ?? this.addSpot?.floor ?? this.centerFloor);
+    const target = clamp(
+      floor ?? this.addSpot?.floor ?? this.centerFloor,
+      0,
+      this.floorCount - 1,
+    );
     // Land past the floor's last book so the spine appears where the ghost
     // was standing rather than in some historical slot gap.
     const existing = this.store.get(target) ?? [];
     const after = existing.reduce((max, b) => Math.max(max, b.slot + 1), 0);
-    const slot = await nextFreeSlot(target, after);
-    const book = await createBook({ title: NEW_BOOK_TITLE, floor: target, slot });
+    const slot = await nextFreeSlot(target, after, this.caseId);
+    const book = await createBook({
+      title: NEW_BOOK_TITLE,
+      bookcaseId: this.caseId,
+      floor: target,
+      slot,
+    });
     if (this.destroyed) return null;
     await this.store.refreshAll();
     if (this.destroyed) return null;
@@ -1002,13 +1305,23 @@ export class ShelfWorld {
   }
 
   /**
-   * Extend the case downward: fly to the first floor past the last book,
-   * where the ghost slot is waiting. Returns the floor index.
+   * Extend the case downward by one floor, then fly to it. Returns the new
+   * floor's index.
+   *
+   * This used to be pure camera work — the shelf was endless, so "add a
+   * floor" only ever meant "look further down", and it did nothing at all
+   * once you were already there. A case is finite now, so the control means
+   * what it says: the bookcase grows by a floor and keeps it.
    */
   addFloor(): number {
-    const target = this.store.maxFloor + 1;
+    const target = this.floorCount;
+    // Grow first, locally, so the fly-to below has somewhere to land; the
+    // subscription confirms it once the row is written.
+    this.floorCount = clampFloorCount(this.floorCount + 1);
+    this.layoutPlinth();
+    void addBookcaseFloor(this.caseId);
     this.clearKbSelection();
-    this.zoomToFloor(target);
+    this.zoomToFloor(Math.min(target, this.floorCount - 1));
     return target;
   }
 
@@ -1035,24 +1348,20 @@ export class ShelfWorld {
   }
 
   /**
-   * Tile scale for the wall, chosen so its seam is never on screen.
+   * Tile scale for the wall.
    *
-   * The old rule was `max(zoom, 0.35)`, which at the zoom floor drew a tile
-   * at a third of its size and put three or four repeats across the viewport
-   * — the pale banding reported while panning. With an authored panel we can
-   * instead demand that ONE copy covers the viewport, plus the slack the
-   * parallax offset needs, and take the larger of that and the zoom.
+   * This briefly forced ONE copy of the texture to cover the whole viewport
+   * (`cover * 1.15`), because the backdrop was then an authored panel that
+   * could not tile and any repeat of it showed a seam. A real tile makes that
+   * rule actively harmful: it blows the motif up to four or five times its
+   * drawn size, so `petite` and `grand` land on screen at the same size and
+   * the whole scale axis of the wallpaper vocabulary becomes invisible.
+   *
+   * So it is back to tracking the camera, with a floor. Below ~0.35 the motif
+   * would be finer than the pixels available to draw it.
    */
   private wallTileScale(zoom: number): number {
-    const tex = this.backdrop.texture;
-    const base = Math.max(zoom, 0.35);
-    if (tex.width < 2 || tex.height < 2) return base;
-    const cover = Math.max(
-      this.vp.width / tex.width,
-      this.vp.height / tex.height,
-    );
-    // 1.15 keeps a margin so the parallax drift cannot walk an edge into view.
-    return Math.max(base, cover * 1.15);
+    return Math.max(zoom, 0.35);
   }
 
   private applyCamera(): void {
@@ -1061,10 +1370,6 @@ export class ShelfWorld {
     this.world.scale.set(zoom);
     this.backdrop.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
     this.backdrop.tileScale.set(this.wallTileScale(zoom));
-    if (this.wallpaper !== null) {
-      this.wallpaper.tilePosition.set(-x * PARALLAX * zoom, -y * PARALLAX * zoom);
-      this.wallpaper.tileScale.set(Math.max(zoom, 0.35));
-    }
     const pct = Math.round(zoom * 100);
     if (pct !== this.lastZoomPct) {
       this.lastZoomPct = pct;
@@ -1073,6 +1378,81 @@ export class ShelfWorld {
   }
 
   /* ------------------------------- theming -------------------------------- */
+
+  /**
+   * Bake the room's wallpaper and put it on the backdrop.
+   *
+   * Four details here are each load-bearing, and three of them were the
+   * reported "pale seam while panning" in one guise or another:
+   *
+   *  - the tile carries the wall COLOUR itself (`wallpaperColours().ground` is
+   *    `flatScheme().wall`), so the sprite tint goes to white. Leave the old
+   *    `wallTint` on and every mark is multiplied by the wall again;
+   *  - `addressMode: 'repeat'` makes the GPU wrap the texture, which is the
+   *    only way to lay it down that has no clip edge at all;
+   *  - `autoGenerateMipmaps` MUST be off. A wrapped non-power-of-two texture
+   *    bleeds across the wrap when a mip is sampled, and `tileScale < 1` is
+   *    exactly when a mip is sampled — so mipmaps put a soft seam back on the
+   *    wall at the zoom levels where you can see the most of it;
+   *  - the bake key already carries `flatSchemeTag()`, so the disk cache
+   *    cannot serve the athenaeum's damask into the reef.
+   */
+  private async applyWallpaper(spec: WallpaperSpec, scheme: ColourScheme): Promise<void> {
+    if (this.destroyed) return;
+    const css = wallpaperTilePx(spec, this.dpr) / this.dpr;
+    // The scheme has to be live around `wallpaperTileKey` as well as around
+    // the draw: the key is built from `flatSchemeTag()`, and reading it under
+    // the outgoing room's colours files the new room's tile under the old
+    // room's name.
+    const previous = flatScheme();
+    setFlatScheme(scheme);
+    let key: string;
+    try {
+      key = wallpaperTileKey(spec, css, this.dpr);
+    } finally {
+      setFlatScheme(previous);
+    }
+    if (key === this.wallpaperKey) return;
+    const gen = ++this.wallpaperGen;
+
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await bakeCached(key, this.dpr, async () => {
+        const px = Math.ceil(css * this.dpr);
+        const canvas = new OffscreenCanvas(px, px);
+        const ctx = canvas.getContext('2d');
+        if (ctx === null) throw new Error('world: 2d context unavailable for wallpaper');
+        ctx.scale(this.dpr, this.dpr);
+        // Synchronous set → draw → restore, same contract as every other bake:
+        // `flatScheme()` is module state and anything that awaited in between
+        // would let a second room repaint this one mid-flight.
+        const before = flatScheme();
+        setFlatScheme(scheme);
+        try {
+          renderWallpaperTile(ctx as unknown as Parameters<typeof renderWallpaperTile>[0], css, spec);
+        } finally {
+          setFlatScheme(before);
+        }
+        return canvas;
+      });
+    } catch {
+      // A wall that stays the placeholder colour beats a shelf that does not
+      // draw. The case parts are baked independently and are unaffected.
+      return;
+    }
+    if (this.destroyed || gen !== this.wallpaperGen) return;
+
+    const old = this.backdrop.texture;
+    const source = new ImageSource({ resource: bitmap, autoGenerateMipmaps: false });
+    source.addressMode = 'repeat';
+    source.scaleMode = 'linear';
+    this.backdrop.texture = new Texture({ source });
+    this.backdrop.tint = 0xffffff;
+    this.backdrop.alpha = 1;
+    this.wallpaperKey = key;
+    if (old !== Texture.WHITE && !old.destroyed) old.destroy(true);
+    this.dirty = true;
+  }
 
   /**
    * Dress the whole world in a library theme (§1). Order matters:
@@ -1084,11 +1464,20 @@ export class ShelfWorld {
   private async applyLibrary(prefs: LibraryPrefs): Promise<void> {
     if (this.destroyed) return;
     const next = resolveLibrary(prefs);
+    // The room is colours AND carpentry AND paper, and only the colours come
+    // through `prefs`. Fold the other two into the key here, or a reader who
+    // changes nothing but the build gets `roomChanged === false` and the case
+    // never re-bakes — which is precisely the shape of "the pickers persist
+    // but the shelf does not repaint".
+    const design = snapshotRoomDesign();
+    this.roomDesign = design;
+    const shelf = shelfDesignOf(design);
+    const key = `${next.key}|${shelfDesignTag(shelf)}|${wallpaperKeyOf(design.wallpaper)}`;
     // Compare against what is actually ON SCREEN, not just against the last
     // request: the initial snapshot and the "stored prefs loaded" snapshot
     // arrive back to back, and the second one must not cancel the first's
     // bake bookkeeping (which is what left `libraryKey` empty forever).
-    const roomChanged = this.appliedLibraryKey !== next.key;
+    const roomChanged = this.appliedLibraryKey !== key;
     const gen = ++this.libraryGen;
 
     // The palette every flat draw on this thread reads, set BEFORE the factory
@@ -1107,11 +1496,16 @@ export class ShelfWorld {
     // nothing to fade from.
     if (this.appliedLibraryKey !== '') this.beginThemeFade();
 
-    await this.envTex.setTheme({ themeId: next.theme.id, scheme: next.scheme });
-    // The wall is not a texture, so no env-ready callback carries it — set it
-    // here, on the same beat the case parts land.
-    this.backdrop.tint = wallTint(next.scheme.wall);
+    // The case and the wall are baked together so they land on the same beat:
+    // a gothic case against the outgoing room's wall, even for two frames,
+    // reads as a glitch rather than as a transition.
+    await Promise.all([
+      this.envTex.setTheme({ themeId: next.theme.id, scheme: next.scheme, design: shelf }),
+      this.applyWallpaper(design.wallpaper, next.scheme),
+    ]);
     if (this.destroyed || gen !== this.libraryGen) return;
+    // The old room's case textures are gone; nothing pooled may still hold one.
+    this.dropPooledFloors();
 
     // Re-plate every mounted floor in the new room's plate material.
     for (const [index, fv] of this.floors) {
@@ -1120,8 +1514,8 @@ export class ShelfWorld {
     }
     this.endThemeFade();
     this.dirty = true;
-    this.appliedLibraryKey = next.key;
-    this.events.onLibraryChange?.(next.key);
+    this.appliedLibraryKey = key;
+    this.events.onLibraryChange?.(key);
   }
 
   /** The room key currently ON SCREEN (bakes landed). QA + tests read this. */
@@ -1176,7 +1570,13 @@ export class ShelfWorld {
 
   private sync(): void {
     const cam = this.camera;
-    const range = computeRange(cam.y, this.vp.height, cam.zoom);
+    const raw = computeRange(cam.y, this.vp.height, cam.zoom);
+    // `computeRange` still windows an endless shelf (it is pure math shared
+    // with the tests); the case's height is applied here. Without this the
+    // virtualizer keeps mounting empty floors below the last plank and the
+    // bookcase reads as a shelf that forgot to stop.
+    const last = Math.min(raw.last, this.floorCount - 1);
+    const range: FloorRange = { first: Math.min(raw.first, Math.max(0, last)), last };
     const prevTier = this.tier;
     this.tier = nextLodTier(this.tier, cam.zoom);
     const tierChanged = this.tier !== prevTier;
@@ -1313,16 +1713,37 @@ export class ShelfWorld {
     this.dirty = true;
   }
 
+  /**
+   * Throw away every FloorView sitting in the pool.
+   *
+   * A pooled view is reset but not stripped: its plank, recess and rail
+   * sprites still point at the room's case textures, and `EnvTextures` frees
+   * those the moment a new room lands. The view is invisible, so nothing shows
+   * — but Pixi still validates it, and a freed texture there takes the whole
+   * renderer down on the next frame.
+   *
+   * It went unnoticed while a room swap left the mounted floors alone
+   * (`handleEnvReady` repairs those). Opening a different bookcase returns the
+   * camera to the top of the new case, which releases a screenful of floors
+   * into the pool on the same beat the room repaints — and then it is every
+   * frame. Rebuilding two or three FloorViews is far cheaper than tracking
+   * texture ownership across a pool.
+   */
+  private dropPooledFloors(): void {
+    if (this.pool.size === 0) return;
+    this.pool.drain();
+  }
+
   private handleEnvReady(): void {
     if (this.destroyed) return;
-    // The wall is one flat colour. Nothing is tiled, so nothing can seam —
-    // which is what the reported pale banding in the corners actually was,
-    // both when it was a procedural strip and when it was a generated panel.
-    // A backdrop is not a subject; the books are.
-    if (this.backdrop.texture !== Texture.WHITE) this.backdrop.texture = Texture.WHITE;
-    this.backdrop.tint = wallTint(this.envTex.scheme.wall);
+    this.dropPooledFloors();
+    // Show the wall as soon as the case does. Only the PLACEHOLDER is set
+    // here: this fires per case part, and re-asserting a tint over a landed
+    // wallpaper would flatten it back to a colour four times a room.
+    if (this.backdrop.texture === Texture.WHITE) {
+      this.backdrop.tint = wallTint(this.envTex.scheme.wall);
+    }
     this.backdrop.alpha = 1;
-    if (this.wallpaper !== null) this.wallpaper.visible = false;
     this.syncCrown();
     this.dirty = true;
     // Floors still need telling that their env textures moved.
@@ -1360,6 +1781,12 @@ export class ShelfWorld {
     this.crown.position.set(-CROWN_LIP, -CROWN_H);
     this.crown.width = SHELF_WIDTH + CROWN_LIP * 2;
     this.crown.height = CROWN_H;
+    // The plinth is the cornice upside down — one bake, two ends of the case,
+    // and the room's timber reaches both without a second recipe to keep in
+    // step with the first.
+    this.plinth.texture = tex;
+    this.plinth.tint = 0xffffff;
+    this.layoutPlinth();
   }
 
   /**
@@ -1403,6 +1830,7 @@ export class ShelfWorld {
     cam.x += dx / cam.zoom;
     cam.y += dy / cam.zoom;
     clampCamera(cam, this.vp);
+    this.clampCaseBottom();
     this.dirty = true;
   }
 
@@ -1454,6 +1882,9 @@ export class ShelfWorld {
     this.rawDragX -= dx / cam.zoom;
     this.rawDragY -= dy / cam.zoom;
     applyDragPosition(cam, this.rawDragX, this.rawDragY, this.vp);
+    // The case's bottom gets the same rubber band as its top: dragging past
+    // the last plank pulls, and lets go.
+    cam.y = rubberBand(cam.y, Y_MIN, this.maxCameraY());
     this.dirty = true;
   }
 
@@ -1467,7 +1898,7 @@ export class ShelfWorld {
     this.updateCursor();
     if (this.frozen) return;
     const cam = this.camera;
-    if (isOutOfBounds(cam, this.vp)) {
+    if (isOutOfBounds(cam, this.vp) || cam.y > this.maxCameraY()) {
       this.springBack();
     } else {
       const v = weightedVelocity(samples);
@@ -1524,8 +1955,10 @@ export class ShelfWorld {
       if (hit !== null) this.pullOutBook(hit.fv, hit.visual);
       return;
     }
+    // Clicking the plinth (or the wall under it) flies to the last floor
+    // rather than to a floor the case does not have.
     const floor = Math.floor(wy / FLOOR_H);
-    if (floor >= 0) this.zoomToFloor(floor);
+    if (floor >= 0) this.zoomToFloor(Math.min(floor, this.floorCount - 1));
   }
 
   private handleContextMenu(cursor: Vec2): void {
@@ -1548,8 +1981,9 @@ export class ShelfWorld {
     const cam = this.camera;
     const wx = cursor.x / cam.zoom + cam.x;
     const wy = cursor.y / cam.zoom + cam.y;
+    // "New book here" has to name a floor that exists — the plinth is not one.
     const floor = Math.floor(wy / FLOOR_H);
-    if (floor < 0 || wx < 0 || wx > SHELF_WIDTH) return;
+    if (floor < 0 || floor >= this.floorCount || wx < 0 || wx > SHELF_WIDTH) return;
     void play('pop-soft');
     this.events.onShelfMenu?.(floor, { x: cursor.x, y: cursor.y });
   }
@@ -1647,7 +2081,7 @@ export class ShelfWorld {
     const bx = xBounds(this.vp, cam.zoom);
     const by = yBounds();
     const targetX = clamp(cam.x, bx.min, bx.max);
-    const targetY = clamp(cam.y, by.min, by.max);
+    const targetY = clamp(cam.y, by.min, Math.min(by.max, this.maxCameraY()));
     const m = this.hooks.motion();
     if (m === 0) {
       cam.x = targetX;
@@ -1681,9 +2115,12 @@ export class ShelfWorld {
       bx.min,
       bx.max,
     );
-    const targetY = Math.max(
-      Y_MIN,
+    const targetY = clamp(
       floor * FLOOR_H - (this.vp.height / targetZoom - FLOOR_H) / 2,
+      Y_MIN,
+      // At the destination zoom, not the current one — flying to the last
+      // floor of a short case must not overshoot its bottom.
+      yMaxFor(this.floorCount, this.vp.height, targetZoom),
     );
     const m = this.hooks.motion();
     const proxy = { lz: Math.log(cam.zoom), x: cam.x, y: cam.y };
@@ -2130,7 +2567,8 @@ export class ShelfWorld {
     const cam = this.camera;
     const wx = cursor.x / cam.zoom + cam.x;
     const wy = cursor.y / cam.zoom + cam.y;
-    move.targetFloor = Math.max(0, Math.floor(wy / FLOOR_H));
+    // A book cannot be dropped through the bottom of the case.
+    move.targetFloor = clamp(Math.floor(wy / FLOOR_H), 0, this.floorCount - 1);
     move.targetSlot = Math.round(
       clamp((wx - SLOT_MARGIN_X - SLOT_W / 2) / SLOT_W, 0, 19),
     );
@@ -2167,7 +2605,7 @@ export class ShelfWorld {
     move.committing = true;
     void play('drop-thump');
     try {
-      const slot = await nextFreeSlot(move.targetFloor, move.targetSlot);
+      const slot = await nextFreeSlot(move.targetFloor, move.targetSlot, this.caseId);
       await moveBook(move.visual.book.id, move.targetFloor, slot);
     } catch {
       // DB failure: the refresh below re-syncs whatever state persisted.
@@ -2257,7 +2695,7 @@ export class ShelfWorld {
       else if (key === 'ArrowRight') index += 1;
       else if (key === 'ArrowUp') floor -= 1;
       else floor += 1;
-      if (floor < 0) floor = 0;
+      floor = clamp(floor, 0, this.floorCount - 1);
       if (index < 0) index = 0;
       this.kbSel = { floor, index };
     }
@@ -2282,7 +2720,11 @@ export class ShelfWorld {
       this.killNavTweens();
       cam.vx = 0;
       cam.vy = 0;
-      cam.y = Math.max(Y_MIN, floorTop - (viewH - FLOOR_H) / 2);
+      cam.y = clamp(
+        floorTop - (viewH - FLOOR_H) / 2,
+        Y_MIN,
+        this.maxCameraY(),
+      );
       this.dirty = true;
     }
   }
@@ -2325,12 +2767,12 @@ export class ShelfWorld {
     this.app.renderer.resize(w, h);
     this.backdrop.width = w;
     this.backdrop.height = h;
-    if (this.wallpaper !== null) {
-      this.wallpaper.width = w;
-      this.wallpaper.height = h;
-    }
     clampZoomBounds(this.camera, this.vp);
-    if (!this.dragging) clampCamera(this.camera, this.vp);
+    if (!this.dragging) {
+      clampCamera(this.camera, this.vp);
+      // A taller window shows more of the case, so its bottom moves up.
+      this.clampCaseBottom();
+    }
     this.dirty = true;
   }
 

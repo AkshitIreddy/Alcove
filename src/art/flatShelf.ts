@@ -15,6 +15,16 @@
  * is allowed to repaint it — the timber pair, the recess, the wall, the book
  * cloths. The ink and the gilt stay hard-coded, because one outline colour on
  * everything is what holds the four rooms together as one drawing.
+ *
+ * ## Two axes, not one
+ *
+ * The four part drawers now take an optional DESIGN as well (`art/shelfDesign.ts`):
+ * a build, which is the carpentry, and a pattern, which is what is worked into
+ * the timber. Both are optional and both default to the house case, so every
+ * existing call site draws exactly what it drew before. Anything that CACHES
+ * these pixels has to key on `shelfDesignTag()` next to `flatSchemeTag()` — a
+ * new axis of variation that is missing from a cache key is a stale PNG served
+ * forever off the disk cache.
  */
 
 import {
@@ -29,8 +39,22 @@ import {
   type FlatCtx,
 } from './flat';
 import { mulberry32 } from './noise';
+import {
+  BUILDS,
+  drawCrownBody,
+  faceOf,
+  paintCrownTrim,
+  paintFacePattern,
+  paintOpening,
+  paintPlankTrim,
+  paintPostTrim,
+  resolveShelfDesign,
+  withinFace,
+  type Box,
+  type ShelfDesignInput,
+} from './shelfDesign';
 
-/** How much of a board's height reads as its front edge. */
+/** How much of an upright's width reads as its turned-away edge. */
 const EDGE_FRACTION = 0.28;
 
 /**
@@ -38,7 +62,13 @@ const EDGE_FRACTION = 0.28;
  *
  * Two flat bands: the top surface and, below it, a darker front edge. That
  * pair is the entire illusion of thickness, and it holds at every zoom
- * because neither band is shaded.
+ * because neither band is shaded. The build only moves how thick that edge
+ * band is and how round the corners are; a board is 40 world px tall, and
+ * anything more ambitious than that at this size is mush.
+ *
+ * `frame` is the un-cropped part rectangle, for callers that deliberately draw
+ * the board oversize so an outline falls off-canvas. It only sets where the
+ * pattern's repeat is measured from, and defaults to the drawn rectangle.
  */
 export function drawPlank(
   ctx: FlatCtx,
@@ -47,29 +77,48 @@ export function drawPlank(
   w: number,
   h: number,
   seed = 1,
+  design?: ShelfDesignInput,
+  frame?: Box,
 ): void {
-  const edge = h * EDGE_FRACTION;
+  const resolved = resolveShelfDesign(design);
+  const spec = BUILDS[resolved.build];
+  const edge = h * spec.plankEdge;
+  const radius = h * spec.plankRadius;
   const room = flatScheme();
   // Draw the darker edge first as one tall shape, then the lighter top over
   // it, so there is a single outline around the whole board rather than two
   // stacked rectangles with a seam between them.
-  panel(ctx, x, y, w, h, room.timberDark, { radius: h * 0.22, seed });
-  ctx.save();
-  wobbleRect(ctx, x, y, w, h, h * 0.22, seed);
-  ctx.clip();
-  wobbleRect(ctx, x, y, w, h - edge, h * 0.22, seed + 7);
-  ctx.fillStyle = room.timber;
-  ctx.fill();
-  ctx.restore();
+  panel(ctx, x, y, w, h, room.timberDark, { radius, seed });
+  withinFace(ctx, x, y, w, h, radius, seed, () => {
+    wobbleRect(ctx, x, y, w, h - edge, radius, seed + 7);
+    ctx.fillStyle = room.timber;
+    ctx.fill();
+    // Only the tile's x and w are read for a horizontal face, so the board's
+    // own frame goes in unadjusted.
+    const face = { x, y, w, h: h - edge };
+    paintFacePattern(ctx, resolved.pattern, faceOf(face, 'x', frame), seed + 21);
+    paintPlankTrim(ctx, spec, { x, y, w, h }, seed + 33);
+  });
   // Re-stroke the outer edge so the clip cannot nibble it.
-  wobbleRect(ctx, x, y, w, h, h * 0.22, seed);
+  wobbleRect(ctx, x, y, w, h, radius, seed);
   ctx.strokeStyle = FLAT.ink;
   ctx.lineWidth = inkWidth(h);
   ctx.lineJoin = 'round';
   ctx.stroke();
 }
 
-/** A vertical side post. Same two-band trick, mirrored to the vertical. */
+/**
+ * A vertical side post. Same two-band trick, mirrored to the vertical.
+ *
+ * The build may narrow the shaft inside the width it is given — a ladder's
+ * rail is half a post — and the leftover shows the opening behind it, which is
+ * what makes the case read as built rather than as a border.
+ *
+ * `frame` matters here: this texture is ONE FLOOR and repeats down the case,
+ * so it is drawn past both ends to keep its rounded cap off-canvas. Pass the
+ * true floor rectangle and the pattern's pitch is snapped to divide it, which
+ * is the difference between an upright and a chain of stutters.
+ */
 export function drawPost(
   ctx: FlatCtx,
   x: number,
@@ -77,29 +126,51 @@ export function drawPost(
   w: number,
   h: number,
   seed = 1,
+  design?: ShelfDesignInput,
+  frame?: Box,
 ): void {
+  const resolved = resolveShelfDesign(design);
+  const spec = BUILDS[resolved.build];
   const room = flatScheme();
-  panel(ctx, x, y, w, h, room.timberDark, { radius: w * 0.3, seed });
-  ctx.save();
-  wobbleRect(ctx, x, y, w, h, w * 0.3, seed);
-  ctx.clip();
-  wobbleRect(ctx, x, y, w * (1 - EDGE_FRACTION), h, w * 0.3, seed + 7);
-  ctx.fillStyle = room.timber;
-  ctx.fill();
-  ctx.restore();
-  wobbleRect(ctx, x, y, w, h, w * 0.3, seed);
+  const shaftW = w * spec.postShaft;
+  const sx = x + (w - shaftW) / 2;
+  const radius = shaftW * 0.3;
+  const tile: Box = frame ?? { x, y, w, h };
+
+  panel(ctx, sx, y, shaftW, h, room.timberDark, { radius, seed });
+  withinFace(ctx, sx, y, shaftW, h, radius, seed, () => {
+    const faceW = shaftW * (1 - EDGE_FRACTION);
+    wobbleRect(ctx, sx, y, faceW, h, radius, seed + 7);
+    ctx.fillStyle = room.timber;
+    ctx.fill();
+    paintFacePattern(
+      ctx,
+      resolved.pattern,
+      faceOf({ x: sx, y, w: faceW, h }, 'y', tile),
+      seed + 21,
+    );
+  });
+  wobbleRect(ctx, sx, y, shaftW, h, radius, seed);
   ctx.strokeStyle = FLAT.ink;
-  ctx.lineWidth = inkWidth(w);
+  ctx.lineWidth = inkWidth(shaftW);
   ctx.lineJoin = 'round';
   ctx.stroke();
+  // Capitals, rungs and pegs sit ON the upright, outside its clip, because a
+  // capital that does not overhang its shaft is not a capital.
+  paintPostTrim(ctx, spec, { x: sx, y, w: shaftW, h }, tile, seed + 45);
 }
 
 /**
- * The recess behind the books.
+ * The recess behind the books, and whatever the build stands inside it.
  *
- * Flat and darker than the timber, with no texture at all. Its only job is to
- * make the books in front of it read as objects in a box; anything more
- * detailed competes with them.
+ * Flat and darker than the timber. Its own job is to make the books in front
+ * of it read as objects in a box, so the carpentry that goes in here is only
+ * ever the kind that sits HIGH in the opening — arch heads, a valance, the top
+ * rail of a compartment run — where the books are not.
+ *
+ * `frame` is the visible opening, between the uprights. It matters because
+ * this texture is baked oversize so its own outline lands off-canvas, and an
+ * arch springing from that rectangle springs from outside the bookcase.
  */
 export function drawRecess(
   ctx: FlatCtx,
@@ -108,15 +179,21 @@ export function drawRecess(
   w: number,
   h: number,
   seed = 1,
+  design?: ShelfDesignInput,
+  frame?: Box,
 ): void {
   panel(ctx, x, y, w, h, flatScheme().recess, { radius: Math.min(w, h) * 0.04, seed });
+  paintOpening(ctx, BUILDS[resolveShelfDesign(design).build], frame ?? { x, y, w, h }, seed + 17);
 }
 
 /**
- * The board that caps the case, with a lip along its underside.
+ * The board that caps the case.
  *
- * The lip is a single ink line rather than a shaded bevel — the icon does the
- * same on its cover's cornice, and it survives being drawn at 20px tall.
+ * The one part with nothing flush above it, and therefore the one part whose
+ * SILHOUETTE a build can really change — battlements, a scalloped cresting, a
+ * pediment, or the house board with its lip line and gilt studs. The lip stays
+ * a single ink line rather than a shaded bevel: the icon does the same on its
+ * cover's cornice, and it survives being drawn at 20px tall.
  */
 export function drawCrown(
   ctx: FlatCtx,
@@ -125,19 +202,32 @@ export function drawCrown(
   w: number,
   h: number,
   seed = 1,
+  design?: ShelfDesignInput,
+  frame?: Box,
 ): void {
-  panel(ctx, x, y, w, h, flatScheme().timber, { radius: h * 0.28, seed });
-  stroke(ctx, x + w * 0.04, y + h * 0.72, x + w * 0.96, y + h * 0.72, FLAT.ink, inkWidth(h) * 0.7, seed + 3);
+  const resolved = resolveShelfDesign(design);
+  const spec = BUILDS[resolved.build];
+  const box: Box = { x, y, w, h };
+  const body = drawCrownBody(ctx, spec, box, seed);
+  const { clip, face } = body;
+  withinFace(ctx, clip.x, clip.y, clip.w, clip.h, body.radius, body.seed, () => {
+    paintFacePattern(
+      ctx,
+      resolved.pattern,
+      faceOf(face, 'x', frame),
+      seed + 21,
+    );
+  });
+  // Re-stroke the board the pattern was clipped into, with the same wobble it
+  // was filled with, so the clip cannot nibble its outline.
+  wobbleRect(ctx, clip.x, clip.y, clip.w, clip.h, body.radius, body.seed);
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = inkWidth(Math.min(clip.w, clip.h));
+  ctx.lineJoin = 'round';
+  ctx.stroke();
   // A row of small gilt studs along the cornice — the icon earns its charm
   // from ornament like this, and a bare board reads as a placeholder.
-  const studs = Math.max(3, Math.round(w / 150));
-  for (let i = 0; i < studs; i++) {
-    const cx = x + w * ((i + 0.5) / studs);
-    ctx.beginPath();
-    ctx.arc(cx, y + h * 0.36, Math.max(1.4, h * 0.09), 0, Math.PI * 2);
-    ctx.fillStyle = FLAT.gilt;
-    ctx.fill();
-  }
+  paintCrownTrim(ctx, spec, box, face, seed);
 }
 
 /* ----------------------------------------------------------------------------
@@ -297,8 +387,21 @@ export function drawBookRow(
  *
  * Proportions are all fractions of the box, so it holds from a 168px card up
  * to a full-page specimen.
+ *
+ * The floor loop mirrors the real bake rather than simplifying it — one recess
+ * and one upright slice PER FLOOR, each over-drawn and clipped the way
+ * `textures.ts` bakes them. That is what makes an arched bay, a valance or a
+ * column's capital land on the card exactly where it lands on the shelf; a
+ * card that drew one tall recess showed a single arch across the whole case
+ * and previewed a bookcase nobody could get.
  */
-export function drawCaseCard(ctx: FlatCtx, w: number, h: number, seed = 1): void {
+export function drawCaseCard(
+  ctx: FlatCtx,
+  w: number,
+  h: number,
+  seed = 1,
+  design?: ShelfDesignInput,
+): void {
   ctx.fillStyle = flatScheme().wall;
   ctx.fillRect(0, 0, w, h);
 
@@ -317,25 +420,52 @@ export function drawCaseCard(ctx: FlatCtx, w: number, h: number, seed = 1): void
   // One contact shadow where the case meets the floor — the only shadow here.
   contactShadow(ctx, caseX + caseW / 2, bodyTop + bodyH, caseW * 0.5, Math.max(2, h * 0.022), 0.16);
 
-  drawRecess(ctx, caseX, bodyTop, caseW, bodyH, s + 1);
-
   const floors = 2;
   const floorH = bodyH / floors;
   const plankH = Math.max(3, floorH * 0.17);
   const innerX = caseX + postW;
   const innerW = caseW - postW * 2;
+  const over = postW * 0.5 + 3;
+
   for (let f = 0; f < floors; f++) {
     const top = bodyTop + f * floorH;
     const zoneH = floorH - plankH;
+    // Over-drawn so the recess's own outline lands outside the case, where the
+    // uprights and boards draw across it — the inside of a box has no edge of
+    // its own. The frame is the VISIBLE opening, which is what an arch springs
+    // from.
+    drawRecess(ctx, caseX - over, top - over, caseW + over * 2, zoneH + over * 2, s + 1 + f * 17, design, {
+      x: innerX,
+      y: top,
+      w: innerW,
+      h: zoneH,
+    });
     // Headroom: without it the tallest spine in a row butts into the board
     // above and its rounded top reads as clipped rather than as a book.
     const head = zoneH * 0.08;
     drawBookRow(ctx, innerX + innerW * 0.03, top + head, innerW * 0.94, zoneH - head, s + f * 101 + 7);
-    drawPlank(ctx, caseX, top + zoneH, caseW, plankH, s + f * 13);
+    drawPlank(ctx, caseX, top + zoneH, caseW, plankH, s + f * 13, design);
   }
 
-  // Posts last of the body, so their ink lines close the recess and the planks.
-  drawPost(ctx, caseX, bodyTop, postW, bodyH, s + 3);
-  drawPost(ctx, caseX + caseW - postW, bodyTop, postW, bodyH, s + 4);
-  drawCrown(ctx, caseX - crownLip, crownY, caseW + crownLip * 2, crownH, s + 5);
+  // Uprights last of the body, so their ink lines close the recess and the
+  // boards. Sliced per floor and clipped, exactly as the shelf tiles them.
+  const postOver = postW * 0.4 + 2;
+  for (let f = 0; f < floors; f++) {
+    const top = bodyTop + f * floorH;
+    for (const px of [caseX, caseX + caseW - postW]) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(px - postW, top, postW * 3, floorH);
+      ctx.clip();
+      drawPost(ctx, px, top - postOver, postW, floorH + postOver * 2, s + 3 + f * 29 + px, design, {
+        x: px,
+        y: top,
+        w: postW,
+        h: floorH,
+      });
+      ctx.restore();
+    }
+  }
+
+  drawCrown(ctx, caseX - crownLip, crownY, caseW + crownLip * 2, crownH, s + 5, design);
 }

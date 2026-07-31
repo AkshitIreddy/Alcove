@@ -11,6 +11,27 @@
   z-index: var(--z-shelf);
 }
 
+/* ----------------------------------------------------------------------------
+   The stage — the canvas plus every piece of chrome that is anchored to it.
+
+   A side panel used to be laid over the top of all this, hiding the dock you
+   had just pressed and the case you were recolouring. It now PUSHES: the
+   whole room steps right by the sheet's own width and steps back when it
+   goes. `--nb-panel-push` is published by views/rail/panelPush.ts, and this
+   is a transform because the canvas underneath re-rasterises for anything
+   that touches layout.
+
+   It lives here rather than on .shelf-root because a transform makes its box
+   the containing block for fixed descendants — and the studio sheet and the
+   trash card are exactly the fixed descendants that must NOT move. They are
+   rendered outside this element for the same reason.
+   -------------------------------------------------------------------------- */
+.shelf-stage {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(var(--nb-panel-push, 0px), 0, 0);
+}
+
 .shelf-root canvas.shelf-canvas {
   position: absolute;
   inset: 0;
@@ -127,9 +148,9 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Shelf dock — the left rail: the app's mark, then everything you can do to
-   a LIBRARY rather than to a book (new book, studio, add a floor, trash).
-   Vertical like the book view's own icon rail, which is the app's idiom.
+   Shelf dock — the left rail: everything you can do to a LIBRARY rather than
+   to a book (new book, studio, add a floor, trash). Vertical like the book
+   view's own icon rail, which is the app's idiom.
 
    Its `left` is NOT set here. BookshelfWorld derives it from the zoom so the
    rail stands on bare wall beside the case instead of on top of it; the
@@ -168,36 +189,11 @@
   gap: 4px;
 }
 
-/* ---- the app's mark, at a size that actually reads --------------------- */
 /*
- * The brand plate caps the rail. The mark is drawn at 52px (the icon's fine
- * detail is dropped in the SVG itself rather than scaled into mush) with the
- * wordmark under it in Caveat, which the font rules only allow at >= 20px.
+ * `.shelf-dock__brand` (the 52px mark + a Caveat wordmark) capped this rail
+ * until it was removed: it was the only thing on the rail that did nothing
+ * when pressed, and it cost 82px above four live buttons.
  */
-.shelf-dock__brand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 4px 4px;
-}
-
-.shelf-dock__mark {
-  width: 52px;
-  height: 52px;
-  flex: 0 0 auto;
-  /* Nothing in this world is axis-true; the mark leans back against the
-     book's own -4deg so the pair reads as placed by hand. */
-  transform: rotate(1.2deg);
-}
-
-.shelf-dock__wordmark {
-  font-family: var(--font-heading);
-  font-size: 21px;
-  line-height: 1;
-  color: var(--ink-sepia);
-  white-space: nowrap;
-}
 
 .shelf-dock__btn {
   appearance: none;
@@ -228,6 +224,22 @@
 
 .shelf-dock__btn:active {
   transform: translateY(1px) rotate(0.5deg);
+}
+
+/*
+ * A dock button that OWNS an open panel wears the same gilt plate the book
+ * rail's icons wear (rail.css .nb-rail-button.is-active) — pressing it again
+ * closes what it opened, and it has to look pressed while that is true.
+ */
+.shelf-dock__btn.is-active {
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+}
+
+.shelf-dock__btn.is-active:hover {
+  background: var(--gilt-face);
+  border-color: var(--ink-line);
 }
 
 /* The headline verb: the terracotta face, so the eye lands here first. */
@@ -280,18 +292,8 @@
   border-radius: var(--radius-wobble-md);
 }
 
-.shelf-dock.is-mini .shelf-dock__label,
-.shelf-dock.is-mini .shelf-dock__wordmark {
+.shelf-dock.is-mini .shelf-dock__label {
   display: none;
-}
-
-.shelf-dock.is-mini .shelf-dock__brand {
-  padding: 1px 2px 3px;
-}
-
-.shelf-dock.is-mini .shelf-dock__mark {
-  width: 34px;
-  height: 34px;
 }
 
 .shelf-dock.is-mini .shelf-dock__btn {

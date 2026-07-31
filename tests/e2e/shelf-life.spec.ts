@@ -262,40 +262,58 @@ test('keyboard shelf nav: arrows select, Enter opens', async ({ page }) => {
   await expect(page.locator('.nb-book-view')).toBeVisible({ timeout: 30_000 });
 });
 
-test('wood stain and wallpaper live-apply from settings', async ({ page }) => {
+/**
+ * The 'wood stain and wallpaper live-apply from settings' test stood here.
+ *
+ * Both settings are gone, not moved: they had been inert since the case went
+ * flat (one timber, a wall filled by `world.ts`), so the test's own claim —
+ * "cherry reddens every wood pixel" — had not been true for a long time. The
+ * axes they gestured at are real again as per-BOOKCASE choices with their own
+ * vocabularies, and the test below replaces it — asserting against the
+ * APPLIED design rather than against a settings field nothing read.
+ */
+test('carpentry and wallpaper repaint the case', async ({ page }) => {
   await gotoShelfQa(page);
   await waitForSpine(page);
   const before = await page.screenshot({ type: 'png' });
 
-  // 'cherry' + 'stars' both differ from the shipped defaults (walnut/damask),
-  // so this is a real repaint rather than a no-op write.
-  await saveSettings(page, {
-    shelfWoodStain: 'cherry',
-    wallpaperPattern: 'stars',
+  // Same module-instance reasoning as `saveSettings` above: the writer has to
+  // come from the world, not from a fresh dynamic import.
+  await page.evaluate(async () => {
+    const save = (window as unknown as Record<string, unknown>)
+      .__shelfSaveDesign as (patch: Record<string, unknown>) => Promise<unknown>;
+    await save({
+      build: 'gothic',
+      pattern: 'fluted',
+      wallpaper: { pattern: 'damask', scale: 'large', depth: 'raised', ink: 'timber' },
+    });
   });
 
+  // The APPLIED side: what `EnvTextures` and the backdrop are actually
+  // holding, not what the studio stored. The gap between those two is the
+  // whole reason this test exists.
   await expect
     .poll(
       () =>
         page.evaluate(() => {
-          const w = (window as unknown as Record<string, unknown>)
-            .__shelfWorld as {
-            envTex: { currentStain: string; currentPattern: string };
-          };
-          return `${w.envTex.currentStain}|${w.envTex.currentPattern}`;
+          const read = (window as unknown as Record<string, unknown>)
+            .__shelfDesign as () => { shelf: string; wallpaperKey: string };
+          const d = read();
+          return `${d.shelf}|${d.wallpaperKey.includes('damask') ? 'damask' : 'plain'}`;
         }),
-      { timeout: 20_000, message: 'stain/wallpaper setting never applied' },
+      { timeout: 30_000, message: 'the design never reached the case' },
     )
-    .toBe('cherry|stars');
+    .toBe('gothic.fluted|damask');
 
-  // The repaint really happened (cherry reddens every wood pixel).
+  // And it is really on screen: a gothic arcade and a damask wall move a lot
+  // of pixels that a plank case against a flat wall did not.
   await expect
     .poll(
       async () => {
         const after = await page.screenshot({ type: 'png' });
         return screenDiffRatio(page, before, after);
       },
-      { timeout: 25_000, message: 'restain never repainted the case' },
+      { timeout: 30_000, message: 'the case never repainted' },
     )
     .toBeGreaterThan(0.02);
 });

@@ -5,6 +5,11 @@
  * page). `get(floor)` returns undefined while a page is in flight, [] for a
  * known-empty floor, or the floor's books sorted by slot.
  *
+ * Every query is scoped to ONE bookcase. That scope is the whole reason a
+ * store instance can be reused across a case switch: `setBookcase` throws away
+ * every cached floor before the first new row arrives, so a book from the case
+ * you just left can never be drawn standing in the case you just opened.
+ *
  * Non-Tauri dev fallback: when the SQLite layer is a stub and returns nothing
  * even after seedIfEmpty(), ~40 deterministic demo books (spine_seed =
  * fnv1a(title), floors 0–5 with varied counts per floor) keep the shelf
@@ -12,10 +17,12 @@
  */
 
 import {
+  DEFAULT_BOOKCASE_ID,
   listBooksByFloorRange,
   maxOccupiedFloor,
   readShelfMeta,
 } from '../../data/books';
+import { ensureBookcases } from '../../data/bookcases';
 import { seedIfEmpty } from '../../data/seed';
 import type { Book } from '../../data/types';
 import { fnv1a } from '../../art/noise';
@@ -117,10 +124,11 @@ const DEMO_BOOKS: readonly DemoSpec[] = [
 ];
 
 /** Deterministic client-side demo library (browser dev without SQLite). */
-export function demoBooks(): Book[] {
+export function demoBooks(bookcaseId: string = DEFAULT_BOOKCASE_ID): Book[] {
   const now = new Date().toISOString();
   return DEMO_BOOKS.map((spec) => ({
     id: `demo-${fnv1a(spec.title).toString(16).padStart(8, '0')}`,
+    bookcaseId,
     title: spec.title,
     floor: spec.floor,
     slot: spec.slot,
@@ -143,21 +151,71 @@ export class FloorStore {
   private demoMode = false;
   private sort: ShelfSort = 'manual';
 
+  /** The bookcase every query in this store is scoped to. */
+  private caseId: string = DEFAULT_BOOKCASE_ID;
+
   /** Highest occupied floor (>= 0), refreshed on init and reloads. */
   maxFloor = 0;
 
+  /** Which bookcase is on screen (QA probes, the world's own bookkeeping). */
+  get bookcaseId(): string {
+    return this.caseId;
+  }
+
   /**
-   * First-run: seed the library, then load page 0. When even the seeded page
-   * comes back empty (stubbed SQLite in plain-browser dev), fall back to the
-   * deterministic demo library so the shelf is never blank.
+   * First-run: fold any pre-bookcase library into a case, seed, then load
+   * page 0. When even the seeded page comes back empty (stubbed SQLite in
+   * plain-browser dev), fall back to the deterministic demo library so the
+   * shelf is never blank.
+   *
+   * `ensureBookcases()` runs BEFORE `seedIfEmpty()` on purpose: the welcome
+   * book is created with no explicit case and resolves the open one from
+   * `settings`, so the case it belongs to has to exist first.
    */
-  async init(): Promise<void> {
+  async init(bookcaseId: string = DEFAULT_BOOKCASE_ID): Promise<void> {
+    this.caseId = bookcaseId;
+    try {
+      await ensureBookcases();
+    } catch {
+      // A failed migration must not stop the shelf drawing; the orphan sweep
+      // runs again next start.
+    }
     try {
       await seedIfEmpty();
     } catch {
       // Seeding is best-effort; the demo fallback below still populates.
     }
-    await this.loadPage(0, true);
+    // The demo library belongs to the default case only. A second bookcase
+    // that comes back empty IS empty, and filling it with forty invented
+    // books would be a lie the reader cannot delete.
+    await this.loadPage(0, bookcaseId === DEFAULT_BOOKCASE_ID);
+    await this.updateMaxFloor();
+  }
+
+  /**
+   * Open a different bookcase. Everything cached is dropped first — a floor
+   * that survived the switch would render the previous case's books against
+   * the new case's timber, which is precisely the leak this store exists to
+   * prevent. Listeners are notified for every floor that WAS loaded so the
+   * world can empty those FloorViews even if the new case leaves them bare.
+   */
+  async setBookcase(bookcaseId: string): Promise<void> {
+    if (this.destroyed || bookcaseId === this.caseId) return;
+    const stale = [...this.floors.keys()];
+    this.caseId = bookcaseId;
+    this.demoMode = false;
+    this.floors.clear();
+    this.pages.clear();
+    this.pendingPages.clear();
+    if (this.debounce !== null) {
+      clearTimeout(this.debounce);
+      this.debounce = null;
+    }
+    this.maxFloor = 0;
+    if (stale.length > 0) {
+      for (const cb of this.listeners) cb(stale);
+    }
+    await this.loadPage(0, bookcaseId === DEFAULT_BOOKCASE_ID);
     await this.updateMaxFloor();
   }
 
@@ -211,7 +269,7 @@ export class FloorStore {
 
   private async updateMaxFloor(): Promise<void> {
     try {
-      const max = await maxOccupiedFloor();
+      const max = await maxOccupiedFloor(this.caseId);
       if (!this.destroyed) this.maxFloor = Math.max(0, max);
     } catch {
       // keep the previous value
@@ -273,16 +331,20 @@ export class FloorStore {
     this.pages.set(page, 'loading');
     const start = page * FLOOR_PAGE_SIZE;
     const end = start + FLOOR_PAGE_SIZE - 1;
+    const caseId = this.caseId;
     let books: Book[] = [];
     try {
-      books = await listBooksByFloorRange(start, end);
+      books = await listBooksByFloorRange(start, end, caseId);
     } catch {
       books = [];
     }
-    if (this.destroyed) return;
+    // A switch that landed while this page was in flight: the rows belong to
+    // a case nobody is looking at any more, so drop them rather than shelve
+    // them in the wrong room.
+    if (this.destroyed || caseId !== this.caseId) return;
     if (allowDemoFallback && page === 0 && books.length === 0) {
       this.demoMode = true;
-      books = demoBooks();
+      books = demoBooks(caseId);
     } else if (this.demoMode) {
       // Demo library only stocks floors 0-5; deeper pages stay empty.
       books = [];

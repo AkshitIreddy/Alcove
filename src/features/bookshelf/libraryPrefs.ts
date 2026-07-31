@@ -1,14 +1,20 @@
 /**
  * features/bookshelf/libraryPrefs.ts — the "This library" half of the studio.
  *
- * Which room the shelf is, and nothing else. Persisted as one JSON blob in the
- * `settings` table under key 'library', mirroring src/data/settings.ts's
- * contract (validated merge over defaults, Solid store for components,
- * `subscribe` for the non-reactive Pixi world).
+ * Which room the shelf is, and nothing else. It used to be one JSON blob in
+ * `settings` under key 'library'; a room now belongs to a BOOKCASE, and this
+ * module is the validated view of whichever case is open. The public surface
+ * is unchanged on purpose — the studio still reads `libraryPrefs` and calls
+ * `saveLibraryPrefs`, and gets per-case rooms for free — but two consequences
+ * are worth knowing:
  *
- * These live outside `Settings` on purpose: the settings module is owned by
- * another wave. Folding the field into `Settings` later is a drop-in — nothing
- * here reaches into the shelf world directly.
+ *  - switching bookcase repaints the room, because the subscription below is
+ *    fed by the bookcase store rather than by a single settings key;
+ *  - saving writes to the OPEN case only, so decorating one bookcase never
+ *    touches another.
+ *
+ * The old 'library' key is read exactly once, by the bookcase migration, so an
+ * upgrading reader opens in the room they left.
  */
 
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
@@ -21,10 +27,15 @@ import {
   type LibraryTheme,
   type ThemeId,
 } from '../../art/themes';
-import { getDb } from '../../data/db';
+import {
+  activeBookcaseId,
+  loadBookcases,
+  setBookcaseRoom,
+  snapshotBookcases,
+  subscribeBookcases,
+  type BookcaseState,
+} from '../../data/bookcases';
 import { libraryKey } from './libraryKey';
-
-const PREFS_KEY = 'library';
 
 /**
  * What a reader can change about their library: the room.
@@ -97,29 +108,54 @@ const [revision, setRevision] = createSignal(0);
 export const libraryPrefs: LibraryPrefs = store;
 
 let loadPromise: Promise<LibraryPrefs> | null = null;
+let wired = false;
+
+/** Parse a bookcase's `room` column into validated prefs. Total. */
+export function roomToPrefs(room: string | null | undefined): LibraryPrefs {
+  if (typeof room !== 'string' || room.length === 0) {
+    return { ...DEFAULT_LIBRARY_PREFS };
+  }
+  try {
+    return mergeLibraryPrefs(JSON.parse(room));
+  } catch {
+    // A corrupt room blob opens the default room rather than a blank screen.
+    return { ...DEFAULT_LIBRARY_PREFS };
+  }
+}
+
+/** Publish the open case's room into the reactive store. */
+function adopt(state: BookcaseState): LibraryPrefs {
+  const open = state.list.find((c) => c.id === state.activeId);
+  const next = roomToPrefs(open?.room);
+  setStore(reconcile(next));
+  setRevision((r) => r + 1);
+  return { ...next };
+}
 
 export function loadLibraryPrefs(): Promise<LibraryPrefs> {
   loadPromise ??= (async () => {
-    let raw: unknown = null;
-    try {
-      const db = await getDb();
-      const rows = await db.select<Array<{ value: string }>>(
-        'SELECT value FROM settings WHERE key = $1 LIMIT 1',
-        [PREFS_KEY],
-      );
-      if (rows.length > 0) raw = JSON.parse(rows[0].value);
-    } catch {
-      raw = null; // missing table / corrupt blob → defaults, never throw
+    const state = await loadBookcases();
+    if (!wired) {
+      wired = true;
+      // Fires immediately, and then on every case switch / room save. This is
+      // what makes "switch bookcase" repaint the room without the studio or
+      // the world knowing that a room is stored on a case at all.
+      subscribeBookcases((next) => {
+        adopt(next);
+      });
     }
-    const merged = mergeLibraryPrefs(raw);
-    setStore(reconcile(merged));
-    setRevision((r) => r + 1);
-    return { ...merged };
+    return adopt(state);
   })();
   return loadPromise;
 }
 
-/** Apply a patch, update the reactive store, persist the whole blob. */
+/**
+ * Apply a patch to the OPEN bookcase's room and persist it.
+ *
+ * The store is updated optimistically before the write so the shelf repaints
+ * on the same frame the reader clicks; `setBookcaseRoom` then notifies, and
+ * `adopt` re-publishes the value that actually landed.
+ */
 export async function saveLibraryPrefs(
   patch: Partial<LibraryPrefs>,
 ): Promise<LibraryPrefs> {
@@ -127,16 +163,14 @@ export async function saveLibraryPrefs(
   const next: LibraryPrefs = mergeLibraryPrefs({ ...unwrap(store), ...patch });
   setStore(reconcile(next));
   setRevision((r) => r + 1);
-  try {
-    const db = await getDb();
-    await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)', [
-      PREFS_KEY,
-      JSON.stringify(next),
-    ]);
-  } catch {
-    // Persistence is best-effort; the session still shows the new room.
-  }
+  await setBookcaseRoom(activeBookcaseId(), JSON.stringify(next));
   return { ...next };
+}
+
+/** The room of a specific bookcase, without opening it (picker previews). */
+export function prefsForBookcase(id: string): LibraryPrefs {
+  const found = snapshotBookcases().list.find((c) => c.id === id);
+  return roomToPrefs(found?.room);
 }
 
 /** Detached snapshot of the current prefs (non-reactive readers, QA hooks). */

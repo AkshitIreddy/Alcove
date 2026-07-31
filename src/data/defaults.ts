@@ -58,8 +58,6 @@ export const DEFAULT_SETTINGS: Settings = {
 
   // Wave 2 — library & shelf
   wheelMode: 'zoom',
-  shelfWoodStain: 'walnut',
-  wallpaperPattern: 'damask',
   shelfSort: 'manual',
 
   // Wave 2 — ambience & input feel

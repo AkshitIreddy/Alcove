@@ -1,24 +1,45 @@
 /**
  * src/views/rail/LibraryStudio.tsx — the studio's "This library" tab.
  *
- * Picks the ROOM, and the room is a colour scheme: case timber, the recess
- * behind the books, the wall, and the six cloths new books are bound in.
+ * The room, and everything in it that is not a book. Four things are chosen
+ * here and they are deliberately independent:
  *
- * There is one control here now. The panel used to carry four — a theme grid, a
- * wall-finish row, an eighteen-button wallpaper row and a "surface depth"
- * slider — three of which had been inert since the flat restyle, and one of
- * which (the grid) only changed a seed because every room baked the identical
- * case. A picker whose buttons do nothing teaches readers to distrust the whole
- * panel, so the dead ones are gone and the live one now really repaints the room.
+ *  - WHICH BOOKCASE you are standing in (the collection, top of the sheet);
+ *  - the COLOUR SCHEME, whole-room or one part at a time;
+ *  - how the case is BUILT and what is worked into its timber
+ *    (art/shelfDesign.ts — twelve carpentries x twelve treatments);
+ *  - what is on the WALL (art/wallpaperDesign.ts — nineteen motifs across
+ *    five scales, four reliefs and six ink slots).
  *
- * The cards are painted from the REAL case art: `drawCaseCard` is the same
- * routine the shelf bakes its case from, run under the card's own scheme, so
- * what you preview is literally the room you get.
+ * Colour and carpentry are orthogonal on purpose: a gothic case is gothic in
+ * every room, and repainting the room must not quietly rebuild the furniture.
+ * That is also why they are separate rows rather than one long "style" list.
+ *
+ * The long axes do NOT live inline. Sixty named cases and fifty-five papers
+ * dumped into a 376px sheet is a wall of tiles nobody reads, so each axis
+ * shows eight real previews and a way through to the rest (DesignStrip →
+ * DesignPicker). The sheet swaps to the picker rather than floating it above:
+ * one sheet at a time keeps Escape, the panel push and the tab ring simple.
+ *
+ * Every tile is painted by the routine that paints the real thing —
+ * `drawCaseCard` for the case, `drawWallpaperCard` for the wall — under the
+ * room's own scheme. A picker that lies about what you get is worse than no
+ * picker.
  */
-import { For, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
-import { flatScheme, setFlatScheme, type FlatCtx } from '../../art/flat';
+import { For, Show, createMemo, createSignal, onMount, type JSX } from 'solid-js';
+import { type FlatScheme } from '../../art/flat';
 import { drawCaseCard } from '../../art/flatShelf';
 import { fnv1a } from '../../art/noise';
+import {
+  BUILDS,
+  BUILD_IDS,
+  PATTERNS,
+  PATTERN_IDS,
+  SHELF_PRESETS,
+  getShelfPreset,
+  type BuildId,
+  type PatternId,
+} from '../../art/shelfDesign';
 import {
   THEMES,
   THEME_IDS,
@@ -28,6 +49,14 @@ import {
   type ThemeId,
 } from '../../art/themes';
 import {
+  WALLPAPER_PRESETS,
+  drawWallpaperCard,
+  getWallpaper,
+  type WallpaperDepth,
+  type WallpaperScale,
+  type WallpaperSpec,
+} from '../../art/wallpaperDesign';
+import {
   libraryPrefs,
   loadLibraryPrefs,
   partTheme,
@@ -35,76 +64,55 @@ import {
   saveLibraryPrefs,
   type LibraryPrefs,
 } from '../../features/bookshelf/libraryPrefs';
+import BookcasesPanel from './BookcasesPanel';
+import DesignPicker, { type PickerOption } from './DesignPicker';
+import DesignStrip from './DesignStrip';
+import { DesignCanvas } from './designArt';
+import {
+  buildOptions,
+  depthOptions,
+  patternOptions,
+  scaleOptions,
+  shelfPresetOptions,
+  wallpaperOptions,
+} from './designOptions';
+import {
+  DEFAULT_ROOM_DESIGN,
+  activeRoomDesign,
+  loadDesignPrefs,
+  saveRoomDesign,
+  saveWallpaper,
+  shelfDesignOf,
+  type RoomDesign,
+} from '../../data/designPrefs';
+import { stopShelfKeys } from './shelfKeys';
+import '../../styles/studio.css';
 
 const CARD_W = 168;
 const CARD_H = 116;
+const WALL_W = 328;
+const WALL_H = 116;
+
+/** Which long sheet has taken over the panel, if any. */
+type Sheet = null | 'build' | 'pattern' | 'named' | 'wallpaper';
 
 /**
- * Card art, drawn with the case's own vocabulary under the room's own scheme.
+ * A room card: the case, drawn in the app's one style, in the room's colours
+ * AND in the carpentry the reader has chosen.
  *
- * `setFlatScheme` is module state in `art/flat.ts`, so the swap has to be
- * synchronous around the draw — no `await` between setting and restoring, or a
- * second card baking on the same tick would come out in the wrong palette. The
- * previous scheme is put back rather than cleared: the shelf's own bake sets it
- * too, and a card must not be able to repaint the room behind the panel.
+ * The design is in there rather than fixed at plank because these four cards
+ * are the reader's picture of "the room" — showing a plain case on them while
+ * the shelf behind the panel is a gothic arcade is the same drift that had
+ * the cards previewing a watercolour room after the shelf went flat.
  */
-const cardCache = new Map<string, Promise<ImageBitmap | null>>();
-
-function cardArt(theme: LibraryTheme, dpr: number): Promise<ImageBitmap | null> {
-  const key = `${theme.id}|${dpr}`;
-  const hit = cardCache.get(key);
-  if (hit !== undefined) return hit;
-  const pending = (async (): Promise<ImageBitmap | null> => {
-    try {
-      const w = Math.round(CARD_W * dpr);
-      const h = Math.round(CARD_H * dpr);
-      const canvas =
-        typeof OffscreenCanvas !== 'undefined'
-          ? new OffscreenCanvas(w, h)
-          : Object.assign(document.createElement('canvas'), { width: w, height: h });
-      const ctx = (canvas as OffscreenCanvas).getContext('2d');
-      if (ctx === null) return null;
-      ctx.scale(dpr, dpr);
-      const previous = flatScheme();
-      setFlatScheme(theme.scheme);
-      try {
-        drawCaseCard(ctx as FlatCtx, CARD_W, CARD_H, fnv1a(`${theme.id}|card`));
-      } finally {
-        setFlatScheme(previous);
-      }
-      return await createImageBitmap(canvas as OffscreenCanvas);
-    } catch {
-      return null;
-    }
-  })();
-  cardCache.set(key, pending);
-  return pending;
-}
-
-/** A room card: the case, drawn in the app's one style, in the room's colours. */
-function ThemeCard(props: { id: ThemeId; active: boolean; onPick(): void }): JSX.Element {
-  let canvas: HTMLCanvasElement | undefined;
+function ThemeCard(props: {
+  id: ThemeId;
+  design: RoomDesign;
+  active: boolean;
+  onPick(): void;
+}): JSX.Element {
   const theme = (): (typeof THEMES)[ThemeId] => getTheme(props.id);
-
-  createEffect(() => {
-    const t = theme();
-    const el = canvas;
-    if (!el) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    let stale = false;
-    onCleanup(() => {
-      stale = true;
-    });
-    void cardArt(t, dpr).then((bitmap) => {
-      if (stale || bitmap === null) return;
-      el.width = Math.round(CARD_W * dpr);
-      el.height = Math.round(CARD_H * dpr);
-      const ctx = el.getContext('2d');
-      if (!ctx) return;
-      ctx.clearRect(0, 0, el.width, el.height);
-      ctx.drawImage(bitmap, 0, 0, el.width, el.height);
-    });
-  });
+  const shelf = (): { build: BuildId; pattern: PatternId } => shelfDesignOf(props.design);
 
   return (
     <button
@@ -115,12 +123,13 @@ function ThemeCard(props: { id: ThemeId; active: boolean; onPick(): void }): JSX
       onClick={() => props.onPick()}
       title={theme().blurb}
     >
-      <canvas
+      <DesignCanvas
         class="nb-theme-card-art"
-        ref={(el) => (canvas = el)}
-        width={CARD_W}
-        height={CARD_H}
-        aria-hidden="true"
+        key={`room|${props.id}|${shelf().build}|${shelf().pattern}`}
+        w={CARD_W}
+        h={CARD_H}
+        scheme={theme().scheme}
+        draw={(ctx, w, h) => drawCaseCard(ctx, w, h, fnv1a(`${props.id}|card`), shelf())}
       />
       <span class="nb-theme-card-name">{theme().name}</span>
       <span class="nb-theme-card-blurb">{theme().blurb}</span>
@@ -131,10 +140,9 @@ function ThemeCard(props: { id: ThemeId; active: boolean; onPick(): void }): JSX
 /**
  * The active room's palette, spelled out.
  *
- * Not a control — a legend. A theme is now *only* colour, and a reader who can
- * see the six cloths their next book might be bound in understands what the
- * card above actually chose. Inline styles because every swatch's colour comes
- * from the data, not from the stylesheet.
+ * Not a control — a legend. A reader who can see the six cloths their next
+ * book might be bound in understands what the cards above actually chose.
+ * Inline styles because every swatch's colour comes from the data.
  */
 function Swatches(props: { scheme: ColourScheme; name: string }): JSX.Element {
   const chips = (): readonly { colour: string; label: string }[] => {
@@ -173,20 +181,56 @@ function Swatches(props: { scheme: ColourScheme; name: string }): JSX.Element {
 }
 
 /**
- * The three things on screen, and the swatch colour that stands for each.
+ * One part's colour row: four rooms, as the colour that part would take.
  *
- * Keyed by the `LibraryPrefs` field they write, so a row cannot drift from the
- * pref it edits. The swatch shows the colour that part would actually change:
- * picking a shelf shows timber, picking books shows the first cloth.
+ * Keyed by the `LibraryPrefs` field it writes, so a row cannot drift from the
+ * pref it edits. Four room names stacked twice reads as a wall of text for
+ * something the eye answers instantly, hence dots rather than labels.
  */
-const PARTS = [
-  { key: 'shelf', label: 'shelves', colour: (t: LibraryTheme) => t.scheme.timber },
-  { key: 'wall', label: 'wallpaper', colour: (t: LibraryTheme) => t.scheme.wall },
-] as const satisfies readonly {
-  key: 'shelf' | 'wall';
+function ColourRow(props: {
+  part: 'shelf' | 'wall';
   label: string;
-  colour: (t: LibraryTheme) => string;
-}[];
+  colour(theme: LibraryTheme): string;
+  onPick(id: ThemeId): void;
+}): JSX.Element {
+  return (
+    <div class="nb-panel-row nb-panel-row-stack">
+      <span class="nb-panel-row-label">
+        colour{' '}
+        <em class="nb-panel-row-hint">
+          {getTheme(partTheme(libraryPrefs, props.part)).name.toLowerCase()}
+        </em>
+      </span>
+      <div class="nb-chip-row" role="group" aria-label={`${props.label} colours`}>
+        <For each={THEME_IDS}>
+          {(id) => (
+            <button
+              type="button"
+              class="nb-chip nb-chip-swatch"
+              aria-pressed={partTheme(libraryPrefs, props.part) === id}
+              aria-label={`${props.label}: ${getTheme(id).name}`}
+              title={getTheme(id).name}
+              style={{ '--nb-swatch': props.colour(getTheme(id)) }}
+              onClick={() => props.onPick(id)}
+            >
+              <span class="nb-chip-swatch-dot" aria-hidden="true" />
+            </button>
+          )}
+        </For>
+      </div>
+    </div>
+  );
+}
+
+function sameSpec(a: WallpaperSpec, b: WallpaperSpec): boolean {
+  return a.pattern === b.pattern && a.scale === b.scale && a.depth === b.depth && a.ink === b.ink;
+}
+
+function pickOne<T>(list: readonly T[], notThis?: T): T {
+  const pool = notThis === undefined ? list : list.filter((v) => v !== notThis);
+  const from = pool.length > 0 ? pool : list;
+  return from[Math.floor(Math.random() * from.length)] as T;
+}
 
 export interface LibraryStudioProps {
   /** Optional: notified after every change (sound cue, toast…). */
@@ -195,8 +239,11 @@ export interface LibraryStudioProps {
 
 export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
+  const [sheet, setSheet] = createSignal<Sheet>(null);
+
   onMount(() => {
     void loadLibraryPrefs();
+    void loadDesignPrefs();
   });
 
   const patch = (next: Partial<LibraryPrefs>): void => {
@@ -206,102 +253,362 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       .finally(() => setBusy(false));
   };
 
-  const theme = (): LibraryTheme => getTheme(libraryPrefs.theme);
+  const patchDesign = (next: Partial<RoomDesign>): void => {
+    setBusy(true);
+    void saveRoomDesign(next).finally(() => setBusy(false));
+  };
 
-  /** Surprise me — any room but the one you are standing in. */
+  const patchWall = (next: Partial<WallpaperSpec>): void => {
+    setBusy(true);
+    void saveWallpaper(next).finally(() => setBusy(false));
+  };
+
+  const theme = (): LibraryTheme => getTheme(libraryPrefs.theme);
+  const scheme = (): FlatScheme => resolveLibrary(libraryPrefs).scheme;
+  const design = (): RoomDesign => activeRoomDesign();
+  const wall = (): WallpaperSpec => design().wallpaper;
+
+  /** The named paper the wall is wearing, or '' once an axis has been nudged. */
+  const wallPresetId = createMemo(() => {
+    const spec = wall();
+    return WALLPAPER_PRESETS.find((p) => sameSpec(p.spec, spec))?.id ?? '';
+  });
+  const wallName = (): string => {
+    const id = wallPresetId();
+    return id === '' ? `${wall().pattern}, your way` : getWallpaper(id).name;
+  };
+
+  /** Named-case id when the pair happens to have a name; '' otherwise. */
+  const namedCaseId = (): string => {
+    const id = `${design().build}.${design().pattern}`;
+    return getShelfPreset(id) === null ? '' : id;
+  };
+
+  /* --------------------------- the long sheets --------------------------- */
+
+  const sheetOptions = createMemo<readonly PickerOption[]>(() => {
+    switch (sheet()) {
+      case 'build':
+        return buildOptions(design().pattern);
+      case 'pattern':
+        return patternOptions(design().build);
+      case 'named':
+        return shelfPresetOptions();
+      case 'wallpaper':
+        return wallpaperOptions();
+      default:
+        return [];
+    }
+  });
+
+  const sheetActive = (): string => {
+    switch (sheet()) {
+      case 'build':
+        return design().build;
+      case 'pattern':
+        return design().pattern;
+      case 'named':
+        return namedCaseId();
+      case 'wallpaper':
+        return wallPresetId();
+      default:
+        return '';
+    }
+  };
+
+  const sheetTitle = (): string => {
+    switch (sheet()) {
+      case 'build':
+        return 'how it is built';
+      case 'pattern':
+        return 'worked into the timber';
+      case 'named':
+        return 'named bookcases';
+      case 'wallpaper':
+        return 'the paper on the wall';
+      default:
+        return '';
+    }
+  };
+
+  const sheetHint = (): string => {
+    switch (sheet()) {
+      case 'build':
+        return 'the case itself — its uprights, what fills the opening, and the cornice on top.';
+      case 'pattern':
+        return 'a treatment worked into the timber. it does not change the shape of the case.';
+      case 'named':
+        return 'a build and a treatment already chosen together.';
+      case 'wallpaper':
+        return 'sets the motif, its size, its relief and which colour it borrows. tune the last two below.';
+      default:
+        return '';
+    }
+  };
+
+  const pickFromSheet = (id: string): void => {
+    switch (sheet()) {
+      case 'build':
+        patchDesign({ build: id as BuildId });
+        break;
+      case 'pattern':
+        patchDesign({ pattern: id as PatternId });
+        break;
+      case 'named': {
+        const preset = getShelfPreset(id);
+        if (preset !== null) patchDesign({ build: preset.build, pattern: preset.pattern });
+        break;
+      }
+      case 'wallpaper':
+        patchDesign({ wallpaper: getWallpaper(id).spec });
+        break;
+      default:
+        break;
+    }
+  };
+
+  /* ------------------------------- the dice ------------------------------ */
+
+  /**
+   * Somewhere else entirely — a different room, a different case, a different
+   * paper. Ranging over every axis is the point: a "surprise" that nudges one
+   * field is a slider with extra steps.
+   */
   const surprise = (): void => {
-    const others = THEME_IDS.filter((id) => id !== libraryPrefs.theme);
-    const pick = others[Math.floor(Math.random() * others.length)];
-    if (pick !== undefined) patch({ theme: pick });
+    const nextTheme = pickOne(THEME_IDS, libraryPrefs.theme);
+    const paper = pickOne(WALLPAPER_PRESETS, getWallpaper(wallPresetId()));
+    setBusy(true);
+    void Promise.all([
+      saveLibraryPrefs({ theme: nextTheme, shelf: null, wall: null }).then((p) =>
+        props.onChanged?.(p),
+      ),
+      saveRoomDesign({
+        build: pickOne(BUILD_IDS, design().build),
+        pattern: pickOne(PATTERN_IDS, design().pattern),
+        wallpaper: paper.spec,
+      }),
+    ]).finally(() => setBusy(false));
   };
 
   return (
-    <div class="nb-library-studio" data-busy={busy() ? 'true' : 'false'}>
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">
-          the room <em class="nb-panel-row-hint">{theme().name.toLowerCase()}</em>
-        </h3>
-        <div class="nb-theme-grid" role="group" aria-label="Library theme">
-          <For each={THEME_IDS}>
-            {(id) => (
-              <ThemeCard
-                id={id}
-                active={libraryPrefs.theme === id}
-                onPick={() => patch({ theme: id })}
-              />
-            )}
-          </For>
-        </div>
-      </section>
-
+    <div
+      class="nb-library-studio"
+      /* The shelf listens for arrows/Home/Enter on `document`; while this
+         sheet is up those keys belong to it. See shelfKeys.ts. */
+      on:keydown={stopShelfKeys}
+      data-busy={busy() ? 'true' : 'false'}
+      /* Published so the host can stand down while a full-axis sheet is out:
+         ShelfStudio's "want to dress one book instead?" line sits below this
+         element and reads as a stray caption under a sixty-card gallery. */
+      data-sheet={sheet() ?? 'none'}
+    >
       {/*
-        The three parts, each free to come from a different room. A preset
-        above sets all three at once; these override it one at a time, so
-        liking one room's timber and another's books is finally expressible.
+        Two sibling Shows with callback children, NOT one Show with the picker
+        in `fallback`.
+
+        Solid evaluates `fallback` inside the Show's own memo, so every
+        reactive read the picker makes while it is being built belongs to that
+        memo — and `sheetOptions()` depends on the design, which is exactly
+        what a pick changes. The panel measurably re-created the whole picker
+        on every card press: focus was thrown to the body, and the
+        scroll-to-top in DesignPicker fired again and yanked the reader back to
+        the first row mid-browse. A callback child is called under `untrack`,
+        which is the documented way out.
       */}
-      <section class="nb-panel-section nb-panel-section-divided">
-        <h3 class="nb-panel-section-title">mix it up</h3>
-        <For each={PARTS}>
-          {(part) => (
-            <div class="nb-panel-row nb-panel-row-stack">
-              <span class="nb-panel-row-label">
-                {part.label}{' '}
-                <em class="nb-panel-row-hint">
-                  {getTheme(partTheme(libraryPrefs, part.key)).name.toLowerCase()}
-                </em>
-              </span>
-              <div class="nb-chip-row" role="group" aria-label={`${part.label} colours`}>
-                <For each={THEME_IDS}>
-                  {(id) => (
-                    <button
-                      type="button"
-                      class="nb-chip nb-chip-swatch"
-                      aria-pressed={partTheme(libraryPrefs, part.key) === id}
-                      aria-label={`${part.label}: ${getTheme(id).name}`}
-                      title={getTheme(id).name}
-                      style={{ '--nb-swatch': part.colour(getTheme(id)) }}
-                      onClick={() =>
-                        patch({
-                          // Clear back to "follow the room" when the pick IS
-                          // the room's own, so the preset keeps driving it.
-                          [part.key]: id === libraryPrefs.theme ? null : id,
-                        })
-                      }
-                    >
-                      <span class="nb-chip-swatch-dot" aria-hidden="true" />
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          )}
-        </For>
-        <p class="nb-panel-footnote">
-          Books keep their own colours in every room — that is how you spot
-          yours. To change one, right-click its spine and pick “dress this
-          book”; to move it, right-click and pick “move”.
-        </p>
-      </section>
+      <Show when={sheet() !== null}>
+        {(_open) => (
+          <DesignPicker
+            title={sheetTitle()}
+            hint={sheetHint()}
+            options={sheetOptions()}
+            activeId={sheetActive()}
+            scheme={scheme()}
+            onPick={pickFromSheet}
+            onBack={() => setSheet(null)}
+            cardW={148}
+            cardH={102}
+            columns={2}
+          />
+        )}
+      </Show>
 
-      <section class="nb-panel-section nb-panel-section-divided">
-        <h3 class="nb-panel-section-title">the palette</h3>
-        <Swatches scheme={resolveLibrary(libraryPrefs).scheme} name={theme().name} />
-      </section>
+      <Show when={sheet() === null}>
+        {(_closed) => (
+          <>
+        <section class="nb-panel-section">
+          <h3 class="nb-panel-section-title">bookcases</h3>
+          <BookcasesPanel />
+        </section>
 
-      <section class="nb-panel-section">
-        <div class="nb-chip-row">
-          <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
-            surprise me
-          </button>
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            onClick={() => patch({ shelf: null, wall: null })}
-          >
-            back to one room
-          </button>
-        </div>
-      </section>
+        <section class="nb-panel-section nb-panel-section-divided">
+          <h3 class="nb-panel-section-title">
+            the room <em class="nb-panel-row-hint">{theme().name.toLowerCase()}</em>
+          </h3>
+          <div class="nb-theme-grid" role="group" aria-label="Library theme">
+            <For each={THEME_IDS}>
+              {(id) => (
+                <ThemeCard
+                  id={id}
+                  design={design()}
+                  active={libraryPrefs.theme === id}
+                  onPick={() => patch({ theme: id })}
+                />
+              )}
+            </For>
+          </div>
+        </section>
+
+        {/* ------------------------------ shelves --------------------------- */}
+        <section class="nb-panel-section nb-panel-section-divided">
+          <h3 class="nb-panel-section-title">
+            shelves{' '}
+            <em class="nb-panel-row-hint">
+              {BUILDS[design().build].name.toLowerCase()}
+              {design().pattern === 'none'
+                ? ''
+                : ` · ${PATTERNS[design().pattern].name.toLowerCase()}`}
+            </em>
+          </h3>
+
+          <ColourRow
+            part="shelf"
+            label="shelves"
+            colour={(t) => t.scheme.timber}
+            /* Clearing back to "follow the room" when the pick IS the room's
+               own keeps the preset driving it, instead of freezing a value
+               that happens to match today. */
+            onPick={(id) => patch({ shelf: id === libraryPrefs.theme ? null : id })}
+          />
+
+          <span class="nb-panel-row-label nb-strip-label">how it is built</span>
+          <DesignStrip
+            label="Bookcase build"
+            options={buildOptions(design().pattern)}
+            activeId={design().build}
+            scheme={scheme()}
+            onPick={(id) => patchDesign({ build: id as BuildId })}
+            onMore={() => setSheet('build')}
+          />
+
+          <span class="nb-panel-row-label nb-strip-label">worked into the timber</span>
+          <DesignStrip
+            label="Timber pattern"
+            options={patternOptions(design().build)}
+            activeId={design().pattern}
+            scheme={scheme()}
+            onPick={(id) => patchDesign({ pattern: id as PatternId })}
+            onMore={() => setSheet('pattern')}
+          />
+
+          <div class="nb-chip-row">
+            <button type="button" class="nb-chip nb-chip-ghost" onClick={() => setSheet('named')}>
+              or a named bookcase ({SHELF_PRESETS.length})
+            </button>
+          </div>
+        </section>
+
+        {/* ----------------------------- wallpaper -------------------------- */}
+        <section class="nb-panel-section nb-panel-section-divided">
+          <h3 class="nb-panel-section-title">
+            wallpaper <em class="nb-panel-row-hint">{wallName().toLowerCase()}</em>
+          </h3>
+
+          <DesignCanvas
+            class="nb-wall-preview"
+            key={`wall|${wall().pattern}|${wall().scale}|${wall().depth}|${wall().ink}`}
+            w={WALL_W}
+            h={WALL_H}
+            scheme={scheme()}
+            alt={`${wallName()} on the wall`}
+            draw={(ctx, w, h) => drawWallpaperCard(ctx, w, h, wall())}
+          />
+
+          <ColourRow
+            part="wall"
+            label="wallpaper"
+            colour={(t) => t.scheme.wall}
+            onPick={(id) => patch({ wall: id === libraryPrefs.theme ? null : id })}
+          />
+
+          <span class="nb-panel-row-label nb-strip-label">the paper</span>
+          <DesignStrip
+            label="Wallpaper"
+            options={wallpaperOptions()}
+            activeId={wallPresetId()}
+            scheme={scheme()}
+            onPick={(id) => patchDesign({ wallpaper: getWallpaper(id).spec })}
+            onMore={() => setSheet('wallpaper')}
+          />
+
+          <span class="nb-panel-row-label nb-strip-label">
+            how big <em class="nb-panel-row-hint">{wall().scale}</em>
+          </span>
+          <DesignStrip
+            label="Motif size"
+            options={scaleOptions(wall())}
+            activeId={wall().scale}
+            scheme={scheme()}
+            showNames
+            columns={5}
+            tileW={62}
+            tileH={44}
+            onPick={(id) => patchWall({ scale: id as WallpaperScale })}
+          />
+
+          <span class="nb-panel-row-label nb-strip-label">
+            how deep <em class="nb-panel-row-hint">{wall().depth}</em>
+          </span>
+          <DesignStrip
+            label="Relief"
+            options={depthOptions(wall())}
+            activeId={wall().depth}
+            scheme={scheme()}
+            showNames
+            columns={4}
+            tileW={78}
+            tileH={54}
+            onPick={(id) => patchWall({ depth: id as WallpaperDepth })}
+          />
+          <p class="nb-panel-footnote">
+            relief is the motif's own thickness — a second flat face beside the
+            first. never a cast shadow: this room has no lamp in it.
+          </p>
+        </section>
+
+        <section class="nb-panel-section nb-panel-section-divided">
+          <h3 class="nb-panel-section-title">the palette</h3>
+          <Swatches scheme={scheme()} name={theme().name} />
+          <p class="nb-panel-footnote">
+            Books keep their own colours in every room — that is how you spot
+            yours. To change one, right-click its spine and pick “dress this
+            book”; to move it, right-click and pick “move”.
+          </p>
+        </section>
+
+        <section class="nb-panel-section">
+          <div class="nb-chip-row">
+            <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
+              surprise me
+            </button>
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost"
+              onClick={() => patch({ shelf: null, wall: null })}
+            >
+              back to one room
+            </button>
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost"
+              onClick={() => patchDesign({ ...DEFAULT_ROOM_DESIGN })}
+            >
+              plain again
+            </button>
+          </div>
+        </section>
+          </>
+        )}
+      </Show>
     </div>
   );
 }

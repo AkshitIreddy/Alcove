@@ -4,20 +4,27 @@
  * Every knob from docs/design/library-themes.md §4: binding material,
  * pigment + hue jitter, raised bands, endbands, ornament stamp, title plate
  * and face, wear, edge treatment, format/height/thickness, charms, and the
- * cover's frame · medallion · corner protectors · inset plate.
+ * cover's frame · medallion · corner protectors · inset plate. On top of
+ * those sits the BINDING — the sixty-two bound books of `art/bookDesign.ts`,
+ * three composable axes (silhouette × material × tooling) rolled into named
+ * presets.
  *
  * One live preview that FLIPS between the spine and the cover, both painted
  * with the real renderers (`renderSpine` / `renderCoverInto`) fed by
- * `resolveBookStyle`, so the preview and the shelf cannot disagree.
+ * `resolveBookStyle`, so the preview and the shelf cannot disagree. The
+ * binding has its own previews for the same reason: it is drawn by
+ * `drawBookSpine`, the routine that will draw it on the shelf.
  *
- * Persistence is two-headed on purpose:
+ * Persistence is three-headed:
  *  - the merged style goes to `cover_meta.style` (the shelf, the pull-out
  *    ghost and the studio all read it back through `resolveBookStyle`);
  *  - the cover-facing projection goes out through `onOverridesChange` to
- *    `cover_meta.cover`, which is what the OPEN book's cover art reads.
- * Writing both keeps a book recognisably itself in all three places.
+ *    `cover_meta.cover`, which is what the OPEN book's cover art reads;
+ *  - the binding goes to `designPrefs`, because `BookStyle` has no field for
+ *    it and `normalizeBookStyleOverrides` — in a file this panel does not own
+ *    — drops any key it does not know.
  */
-import { For, Show, createEffect, createMemo, createSignal, on, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on, onMount, type JSX } from 'solid-js';
 import {
   BINDING_MATERIALS,
   CHARMS,
@@ -47,17 +54,42 @@ import {
   type BookStyleOverrides,
   type SpineFormat,
 } from '../../art/bookStyle';
+import {
+  BOOK_PRESETS,
+  bookPreset,
+  presetForSeed,
+  resolveBookDesign,
+  type BookDesign,
+  type BookPresetId,
+} from '../../art/bookDesign';
 import { renderCoverInto } from '../../art/covers';
+import { flatSpineFor } from '../../art/flatShelf';
+import type { FlatScheme } from '../../art/flat';
 import {
   coverOverridesFromStyle,
   themeSpineDefaults,
 } from '../../features/bookshelf/bookIdentity';
-import { getSpinePalette, renderSpine, type Ctx2D } from '../../art/spines';
+import { clothForPalette, getSpinePalette, renderSpine, type Ctx2D } from '../../art/spines';
 import { getTheme } from '../../art/themes';
-import { libraryPrefs } from '../../features/bookshelf/libraryPrefs';
+import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
+import DesignPicker from './DesignPicker';
+import DesignStrip from './DesignStrip';
+import { DesignCanvas } from './designArt';
+import { bindingOptions, drawBindingCard } from './designOptions';
+import { bookBinding, loadDesignPrefs, saveBookBinding } from '../../data/designPrefs';
+import { stopShelfKeys } from './shelfKeys';
+import '../../styles/studio.css';
 
 const PREVIEW_W = 214;
 const PREVIEW_H = 292;
+/**
+ * The binding's own preview. A spine's proportions, not a card's: the book
+ * inside is drawn at a real 42 x 165, so a much wider card is mostly empty
+ * bay and a much narrower one crops the yapp lips and ribbons that are
+ * supposed to break the footprint.
+ */
+const BINDING_W = 106;
+const BINDING_H = 190;
 
 export { coverOverridesFromStyle };
 
@@ -68,12 +100,26 @@ export interface BookStudioProps {
   style: Record<string, unknown> | null;
   onStyleChange(next: BookStyleOverrides | null): void;
   pageCount?: number;
+  /**
+   * The book's row id, for the binding store.
+   *
+   * Optional because the panel above this one (CustomizePanel, not owned
+   * here) does not pass it yet. Falling back to the art seed is safe — it is
+   * per-book, stable for the life of the book, and derivable anywhere a `Book`
+   * is in hand — but an explicit id is better and should win when it arrives.
+   */
+  bookId?: string;
 }
 
 export default function BookStudio(props: BookStudioProps): JSX.Element {
   const [face, setFace] = createSignal<'spine' | 'cover'>('spine');
+  const [bindingSheet, setBindingSheet] = createSignal(false);
   let spineCanvas: HTMLCanvasElement | undefined;
   let coverCanvas: HTMLCanvasElement | undefined;
+
+  onMount(() => {
+    void loadDesignPrefs();
+  });
 
   const resolved = createMemo(() =>
     resolveBookStyle(props.spineSeed, themeSpineDefaults(getTheme(libraryPrefs.theme)), props.style, {
@@ -81,6 +127,45 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     }),
   );
   const style = (): BookStyle => resolved().style;
+
+  /* ------------------------------- binding ------------------------------- */
+
+  const bindingKey = (): string => props.bookId ?? `seed:${props.spineSeed >>> 0}`;
+  /** The pinned binding, or null while the book's seed is still choosing. */
+  const pinned = (): BookPresetId | null => bookBinding(bindingKey());
+  /** What the seed would pick on its own — the "follow the seed" answer. */
+  const seedBinding = (): BookPresetId => presetForSeed(props.spineSeed).id;
+
+  /**
+   * The design the shelf will draw. Built from the book's OWN cloth and gilt
+   * rather than from the room, because a book keeps its colours wherever it
+   * stands; only the ground behind the preview follows the room.
+   */
+  const design = createMemo<BookDesign>(() =>
+    resolveBookDesign({
+      seed: props.spineSeed,
+      cloth: clothForPalette(resolved().spine.palette),
+      gilt: style().gilt,
+      labelAt: flatSpineFor(props.spineSeed).labelAt,
+      preset: pinned(),
+    }),
+  );
+
+  /** The shelf the binding cards stand on — the room's timber and recess. */
+  const roomScheme = (): FlatScheme => resolveLibrary(libraryPrefs).scheme;
+
+  const bindings = createMemo(() =>
+    bindingOptions({
+      seed: props.spineSeed,
+      cloth: clothForPalette(resolved().spine.palette),
+      gilt: style().gilt,
+      labelAt: flatSpineFor(props.spineSeed).labelAt,
+    }),
+  );
+
+  const pickBinding = (id: BookPresetId): void => {
+    void saveBookBinding(bindingKey(), id);
+  };
 
   /** Merge one field into the persisted override blob. */
   const patch = (partial: Partial<BookStyle>): void => {
@@ -138,8 +223,33 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     return `linear-gradient(160deg, ${p.top}, ${p.bottom})`;
   };
 
+  /**
+   * The whole vocabulary, not one field.
+   *
+   * `randomBookStyleOverrides` already draws every knob in `BookStyle`; what
+   * it cannot reach is the binding, which lives in its own store, and the
+   * thickness, which it leaves to the page count. Rolling all three is the
+   * difference between a dice that redresses the book and one that nudges it.
+   * The binding is drawn WEIGHTED (`presetForSeed`), so the dice keeps landing
+   * on plain cloth and wrappers most of the time — the same distribution a
+   * real shelf has, and the reason the rare bindings feel rare.
+   */
   const randomise = (): void => {
-    patch(randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0) as Partial<BookStyle>);
+    const seed = (Math.random() * 0xffffffff) >>> 0;
+    const draw = randomBookStyleOverrides(seed);
+    patch({
+      ...draw,
+      thickness:
+        SPINE_THICKNESS_RANGE.min +
+        Math.round(Math.random() * (SPINE_THICKNESS_RANGE.max - SPINE_THICKNESS_RANGE.min)),
+    } as Partial<BookStyle>);
+    let binding = presetForSeed(seed).id;
+    // A press has to visibly move. Redraw when the weighted pick happens to be
+    // the binding already on the book.
+    for (let tries = 0; tries < 4 && binding === design().preset; tries += 1) {
+      binding = presetForSeed((Math.random() * 0xffffffff) >>> 0).id;
+    }
+    void saveBookBinding(bindingKey(), binding);
   };
 
   const surprise = (): void => {
@@ -149,6 +259,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       pageCount: props.pageCount,
     });
     props.onStyleChange(bookStyleToOverrides(fresh.style));
+    // Unpin the binding too: "a whole new book" means the seed gets its say
+    // back on every axis, not on all but one.
+    void saveBookBinding(bindingKey(), null);
   };
 
   /**
@@ -158,7 +271,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    * Format re-rolls height only — resolveBookStyle derives format from it.
    */
   const REROLL_GROUPS = {
-    binding: ['material'],
+    /* "binding" now names the whole bound book (shape + material + tooling),
+       so this narrower knob goes back to what it actually is: the cloth. */
+    material: ['material'],
     pigment: ['pigment', 'hueJitter'],
     'bands & endbands': ['raisedBands', 'bandGilt', 'headTail', 'headTailStyle'],
     'ornament stamp': ['ornament'],
@@ -186,7 +301,36 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   };
 
   return (
-    <div class="nb-book-studio">
+    /* Same guard as the library tab: the shelf's document-level arrows/Enter
+       must not reach past an open studio. See shelfKeys.ts. */
+    <div class="nb-book-studio" on:keydown={stopShelfKeys}>
+      {/*
+        Sibling Shows with callback children — see the same note in
+        LibraryStudio. A picker built inside a Show's `fallback` is rebuilt
+        every time the thing it edits changes, which threw focus to the body
+        and scrolled the reader back to the top on every card press.
+      */}
+      <Show when={bindingSheet()}>
+        {(_open) => (
+          <DesignPicker
+            title="how it is bound"
+            hint="silhouette, covering and tooling, chosen together. the cloth stays this book's own."
+            options={bindings()}
+            activeId={design().preset}
+            scheme={roomScheme()}
+            onPick={(id) => pickBinding(id)}
+            onBack={() => setBindingSheet(false)}
+            cardW={100}
+            cardH={150}
+            columns={3}
+            searchLabel="Search bindings"
+          />
+        )}
+      </Show>
+
+      <Show when={!bindingSheet()}>
+        {(_closed) => (
+          <>
       {/* ------------------------- flipping preview ------------------------ */}
       <div class="nb-studio-stage">
         <div
@@ -230,10 +374,64 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       </div>
 
       {/* ------------------------------ binding ---------------------------- */}
+      {/*
+        The biggest decision on the sheet, so it comes first. Its previews are
+        drawn by `drawBookSpine` — the routine that binds the book on the shelf
+        — standing on the room's own timber, because a pale vellum against reef
+        timber is a different book from the same vellum against athenaeum's.
+      */}
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">
-          binding
-          <RerollDice section="binding" onClick={() => reroll(REROLL_GROUPS.binding)} />
+          binding <em class="nb-panel-row-hint">{bookPreset(design().preset).label.toLowerCase()}</em>
+        </h3>
+        <div class="nb-binding-stage">
+          <DesignCanvas
+            class="nb-binding-preview"
+            key={`bind|${design().preset}|${design().cloth}|${design().accent}|${design().gilt ? 'g' : 'n'}|${design().labelAt.toFixed(2)}|big`}
+            w={BINDING_W}
+            h={BINDING_H}
+            scheme={roomScheme()}
+            alt={`${bookPreset(design().preset).label}, bound`}
+            draw={(ctx, w, h) => drawBindingCard(ctx, w, h, design())}
+          />
+        </div>
+        <DesignStrip
+          label="Binding"
+          options={bindings()}
+          activeId={design().preset}
+          scheme={roomScheme()}
+          onPick={(id) => pickBinding(id)}
+          onMore={() => setBindingSheet(true)}
+          /* Seven and the way through fill two rows of four exactly; eight
+             would leave the "more…" cell alone on a third row looking like an
+             afterthought. */
+          columns={4}
+          limit={7}
+          tileW={72}
+          tileH={104}
+        />
+        <Show when={pinned() !== null && pinned() !== seedBinding()}>
+          <div class="nb-chip-row">
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost"
+              onClick={() => void saveBookBinding(bindingKey(), null)}
+            >
+              back to {bookPreset(seedBinding()).label.toLowerCase()}
+            </button>
+          </div>
+        </Show>
+        <p class="nb-panel-footnote">
+          {BOOK_PRESETS.length} bindings. the cloth, the gilt and the lettering
+          stay yours — a binding changes how the book is MADE, not what colour
+          it is.
+        </p>
+      </section>
+
+      <section class="nb-panel-section">
+        <h3 class="nb-panel-section-title">
+          cloth
+          <RerollDice section="cloth" onClick={() => reroll(REROLL_GROUPS.material)} />
         </h3>
         <div class="nb-chip-row" role="group" aria-label="Binding material">
           <For each={BINDING_MATERIALS}>
@@ -610,7 +808,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           <button
             type="button"
             class="nb-chip nb-chip-ghost"
-            onClick={() => props.onStyleChange(null)}
+            onClick={() => {
+              props.onStyleChange(null);
+              void saveBookBinding(bindingKey(), null);
+            }}
           >
             follow the room
           </button>
@@ -619,6 +820,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           unset knobs follow the library theme; anything you touch stays yours in every room
         </p>
       </section>
+          </>
+        )}
+      </Show>
     </div>
   );
 }

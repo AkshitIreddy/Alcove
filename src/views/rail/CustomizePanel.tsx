@@ -147,6 +147,11 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
             style={style()}
             onStyleChange={changeStyle}
             pageCount={props.pageCount}
+            // The binding is keyed by book id, and without this the studio
+            // falls back to `seed:<spineSeed>` — stable, but a different key
+            // from the one the shelf's spine factory reads, so a pinned
+            // binding would show in the panel and nowhere else.
+            bookId={props.bookId}
           />
 
           <section class="nb-panel-section nb-panel-section-divided">

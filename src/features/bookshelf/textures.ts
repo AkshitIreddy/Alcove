@@ -11,6 +11,21 @@
  * the same four parts under `setFlatScheme` — same shapes, same ink, the
  * room's fills.
  *
+ * ## The second axis: carpentry
+ *
+ * Colour is not the only thing a bookcase can differ in, and for a while it
+ * was the only thing this file let it differ in — every room was the same
+ * plank case in new hexes. `art/shelfDesign.ts` supplies the other half: a
+ * BUILD (the silhouette — arch, valance, apothecary, colonnade…) and a
+ * PATTERN worked into the timber faces. It is deliberately orthogonal to the
+ * scheme, so the reader can keep their carpentry across a repaint, and it is
+ * carried on `ThemeRequest.design` rather than on the scheme.
+ *
+ * Both axes are in every bake key. The disk cache validates nothing about a
+ * hit, so a gothic case stored under a colour-only key would be served to a
+ * reader who had since gone back to plain planks — forever, on any machine
+ * that had ever drawn it.
+ *
  * ## What this replaced, and why the surface did not change
  *
  * This module used to be a thin dispatcher onto a runtime painting stack —
@@ -22,9 +37,11 @@
  *
  * ## Parts that are now deliberately empty
  *
- * The wall is ONE flat colour, owned by `world.ts`, so `wallpaper` and
- * `backdropStrip` stay null and nothing tiles a pattern behind the case. The
- * decorative extras the painting era accumulated — shelf props, flora, star
+ * The wall belongs to `world.ts`, so `wallpaper` and `backdropStrip` stay null
+ * here. It is no longer a flat fill — `art/wallpaperDesign.ts` bakes a
+ * seamless tile onto the backdrop sprite — but that tile is a wall, not a part
+ * of the case, and it is baked where it is used. The decorative extras the
+ * painting era accumulated — shelf props, flora, star
  * charms, ribbons, empty-floor doodles, under-shelf drawers and bunting, and
  * the blurred case halo — return a 1×1 transparent texture or null. One
  * option per thing was the brief, and a flat case that is also festooned with
@@ -48,7 +65,13 @@ import {
   type FlatScheme,
 } from '../../art/flat';
 import { drawCrown, drawPlank, drawPost, drawRecess } from '../../art/flatShelf';
-import { schemeKey } from './libraryKey';
+import {
+  DEFAULT_SHELF_DESIGN,
+  resolveShelfDesign,
+  shelfDesignTag,
+  type ShelfDesign,
+} from '../../art/shelfDesign';
+import { schemeKey, themeKeyOf, type ThemeRequest } from './libraryKey';
 import { getTheme, type ColourScheme, type LibraryTheme, type ThemeId } from '../../art/themes';
 import { fnv1a } from '../../art/noise';
 import {
@@ -84,34 +107,14 @@ export const BACKDROP_STRIP_FLOORS = 3;
 export const SHELF_DETAIL_H = 34;
 
 /**
- * A room to bake the case in.
+ * `ThemeRequest` and `themeKeyOf` are re-exported, not defined here.
  *
- * One field, because a room is one colour scheme. It carried a `wallpaper`
- * spec and a `backdrop` id alongside the id until the wall became a single
- * flat fill owned by `world.ts`; both were dead axes that still forced a
- * re-bake whenever they changed.
+ * They moved to `libraryKey.ts` so a node test can load them: this file
+ * imports Pixi, and "does every axis that changes a pixel reach the cache
+ * key" is the one property in the art pipeline that has to be tested rather
+ * than looked at (see `tests/design-cache-keys.test.ts`).
  */
-export interface ThemeRequest {
-  themeId: ThemeId;
-  /**
-   * The colours to draw, which are NOT necessarily `getTheme(themeId).scheme`.
-   * A reader can take the shelf from one room and the books from another, so
-   * the composed scheme is passed in rather than looked up — looking it up
-   * here would silently ignore every part that was borrowed.
-   */
-  scheme: ColourScheme;
-}
-
-/** Identity of a baked room — same key ⇒ same case art. */
-export function themeKeyOf(req: ThemeRequest): string {
-  return schemeKey(req.themeId, req.scheme);
-}
-
-/** Case wood stains (settings.shelfWoodStain). One flat timber now; inert. */
-export type WoodStain = 'oak' | 'walnut' | 'cherry' | 'cream';
-
-/** Wall patterns (settings.wallpaperPattern). The wall is plain now; inert. */
-export type WallpaperPattern = 'damask' | 'stars' | 'botanical' | 'plain';
+export { themeKeyOf, type ThemeRequest } from './libraryKey';
 
 /**
  * Flat placeholder tints shown until the FIRST bake lands.
@@ -261,14 +264,26 @@ function roomTag(themeId: ThemeId, scheme: ColourScheme): string {
   return fnv1a(schemeKey(themeId, scheme)).toString(36);
 }
 
-/** A room reduced to the two things a bake needs: its colours and its tag. */
+/**
+ * A room reduced to what a bake needs: its colours, its carpentry, and a tag
+ * for each. Two tags rather than one composite because they are two
+ * independent axes and reading a key should say which of them moved.
+ */
 interface Room {
   scheme: FlatScheme;
   tag: string;
+  design: ShelfDesign;
+  designTag: string;
 }
 
 function roomOf(req: ThemeRequest): Room {
-  return { scheme: req.scheme, tag: roomTag(req.themeId, req.scheme) };
+  const design = resolveShelfDesign(req.design);
+  return {
+    scheme: req.scheme,
+    tag: roomTag(req.themeId, req.scheme),
+    design,
+    designTag: shelfDesignTag(design),
+  };
 }
 
 /**
@@ -281,9 +296,12 @@ function roomOf(req: ThemeRequest): Room {
  * keeping — it is what the floor beneath sees of the board above it.
  */
 function bakeFlatPlank(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|plank|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
+  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|plank|${w}x${h}`;
+  return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
-    drawPlank(ctx, pad, pad, w - pad * 2, h - pad, 0x51a1);
+    // No `frame` — the pad is ~2px, so the drawn rect and the true part
+    // rectangle are the same thing to within less than a pattern cell.
+    drawPlank(ctx, pad, pad, w - pad * 2, h - pad, 0x51a1, room.design);
   });
 }
 
@@ -297,9 +315,18 @@ function bakeFlatPlank(room: Room, w: number, h: number, dpr: number): Promise<I
  * than the space inside one.
  */
 function bakeFlatBack(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|recess|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
+  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|recess|${w}x${h}`;
+  return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const over = Math.max(w, h) * 0.05 + 8;
-    drawRecess(ctx, -over, -over, w + over * 2, h + over * 2, 0x9c31);
+    // `frame` is the VISIBLE opening, between the two uprights — arcades,
+    // valances and compartment runs spring from it. Hand it the oversize rect
+    // instead and the arches spring from 68px outside the bookcase.
+    drawRecess(ctx, -over, -over, w + over * 2, h + over * 2, 0x9c31, room.design, {
+      x: RAIL_W,
+      y: 0,
+      w: w - RAIL_W * 2,
+      h,
+    });
   });
 }
 
@@ -312,10 +339,20 @@ function bakeFlatBack(room: Room, w: number, h: number, dpr: number): Promise<Im
  * side instead of two continuous uprights.
  */
 function bakeFlatRail(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|post|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
+  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|post|${w}x${h}`;
+  return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(w);
     const over = w * 0.3 + inkWidth(w) + 2;
-    drawPost(ctx, pad, -over, w - pad * 2, h + over * 2, 0x2f19);
+    // `frame` is the repeating TILE (one floor), NOT the overdrawn rectangle.
+    // It is what phase-locks the pattern: omit it and the pattern is measured
+    // from `-over`, which puts a visible stutter at every floor seam and lands
+    // capitals and rungs ~14px high on every floor.
+    drawPost(ctx, pad, -over, w - pad * 2, h + over * 2, 0x2f19, room.design, {
+      x: 0,
+      y: 0,
+      w,
+      h,
+    });
   });
 }
 
@@ -330,11 +367,14 @@ function bakeFlatRail(room: Room, w: number, h: number, dpr: number): Promise<Im
  * which nothing can see.
  */
 function bakeFlatCrown(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|crown|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
+  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|crown|${w}x${h}`;
+  return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
     // Top edge inset by `pad`, bottom edge (and its ink line) pushed clear of
     // the canvas — hence a drawn height of h + pad rather than h - 2 * pad.
-    drawCrown(ctx, pad, pad, w - pad * 2, h + pad, 0x7ab3);
+    // This is the only part with transparency above it, so it is the only one
+    // whose outline a build can really cut (battlements, cresting, a pediment).
+    drawCrown(ctx, pad, pad, w - pad * 2, h + pad, 0x7ab3, room.design);
   });
 }
 
@@ -348,9 +388,10 @@ export class EnvTextures {
    *
    * `shadow` was an under-plank ambient-occlusion strip (a light model, which
    * this style does not have); `paper` had no reader even before the restyle;
-   * `wallpaper` and `backdropStrip` were the wall, which is now one flat
-   * colour filled by `world.ts`. Every read site already guards for null —
-   * that was the degrade path — so they simply never light up.
+   * `wallpaper` and `backdropStrip` were this class's attempt at the wall,
+   * which `world.ts` now bakes for itself from the room's `WallpaperSpec`.
+   * Every read site already guards for null — that was the degrade path — so
+   * they simply never light up.
    */
   shadow: Texture | null = null;
   paper: Texture | null = null;
@@ -370,8 +411,6 @@ export class EnvTextures {
   private readonly listeners = new Set<(kind: EnvKind) => void>();
   private destroyed = false;
 
-  private stain: WoodStain = 'oak';
-  private pattern: WallpaperPattern = 'damask';
   private loadDpr = 1;
 
   /* ------------------------------ theming -------------------------------- */
@@ -395,6 +434,11 @@ export class EnvTextures {
    */
   get scheme(): ColourScheme {
     return this.themeReq?.scheme ?? getTheme(null).scheme;
+  }
+
+  /** The carpentry the case is currently built in (QA probes + world sync). */
+  get design(): ShelfDesign {
+    return resolveShelfDesign(this.themeReq?.design);
   }
 
   /** True once at least one themed part has been delivered. */
@@ -438,54 +482,25 @@ export class EnvTextures {
     return this.themeSettled;
   }
 
-  /** Current stain (QA probes + world sync). */
-  get currentStain(): WoodStain {
-    return this.stain;
-  }
-
-  /** Current wallpaper pattern. */
-  get currentPattern(): WallpaperPattern {
-    return this.pattern;
-  }
-
   /**
    * Kick off the case bakes.
    *
-   * `degrade`, `stain` and `pattern` no longer change what is drawn: the flat
-   * case is the same four parts at every quality level, in one timber, against
-   * a plain wall. They are still accepted so the settings pipeline that feeds
-   * them does not need to be unpicked.
+   * `degrade` no longer changes what is drawn — the flat case is the same four
+   * parts at every quality level — but it is still accepted rather than
+   * removed, because the caller computes it for the spine factory anyway.
+   *
+   * A `stain` and a `pattern` used to arrive here from `settings`, and both
+   * had been inert since the flat restyle: one timber, and a wall owned by
+   * `world.ts`. They are gone rather than still ignored — the reader now
+   * changes the timber PATTERN and the wallpaper for real, per bookcase, in
+   * the studio (`art/shelfDesign.ts`, `art/wallpaperDesign.ts`), and leaving
+   * two dead knobs pointing at the same nouns is how the settings panel came
+   * to offer choices the app could not honour.
    */
-  load(
-    dpr: number,
-    degrade: boolean,
-    stain: WoodStain = 'oak',
-    pattern: WallpaperPattern = 'damask',
-  ): void {
+  load(dpr: number, degrade: boolean): void {
     void degrade;
     this.loadDpr = dpr;
-    this.stain = stain;
-    this.pattern = pattern;
     void this.bakeCase(this.themeGen);
-  }
-
-  /**
-   * Switch the case wood stain. Inert: the flat palette has one timber, and
-   * tinting it would break the "one outline colour, one set of fills" rule
-   * that makes the case read as a single drawing.
-   */
-  setStain(stain: WoodStain): void {
-    if (this.destroyed) return;
-    this.stain = stain;
-  }
-
-  /**
-   * Switch the wallpaper pattern. Inert: the wall is one flat colour, filled
-   * by `world.ts`, and there is no tile layer left to swap.
-   */
-  setWallpaper(pattern: WallpaperPattern): void {
-    if (this.destroyed) return;
-    this.pattern = pattern;
   }
 
   onReady(cb: (kind: EnvKind) => void): () => void {
@@ -638,7 +653,13 @@ export class EnvTextures {
     // Snapshot the room here, not inside each bake: `setTheme` may land another
     // one while these are in flight, and a plank baked in the old scheme next
     // to a post baked in the new one is a two-tone bookcase.
-    const room = roomOf(this.themeReq ?? { themeId: this.theme.id, scheme: this.scheme });
+    const room = roomOf(
+      this.themeReq ?? {
+        themeId: this.theme.id,
+        scheme: this.scheme,
+        design: DEFAULT_SHELF_DESIGN,
+      },
+    );
     const jobs: Array<Promise<unknown>> = [
       bakeFlatPlank(room, SHELF_WIDTH, PLANK_H, dpr).then((b) => this.landPart('plank', b, gen)),
       bakeFlatBack(room, SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) => this.landPart('back', b, gen)),

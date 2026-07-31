@@ -1,35 +1,37 @@
 /**
- * art/bake.ts — the ONLY place SVG filters are ever evaluated.
+ * art/bake.ts — memoized rasters for art that is drawn once and reused.
  *
- * Pipeline (per art-pipeline.md): serialize a self-contained SVG string
- * (art + <defs><filter>), load it as an Image via a blob URL, draw to an
- * OffscreenCanvas at the bake scale, transfer to ImageBitmap.
+ * Two things live here: a promise-valued memory cache keyed by
+ * `params × dpr`, and a cooperative pump that keeps a storm of cache misses
+ * from landing in one task.
  *
- * Disk cache: baked canvases are persisted as PNG to
- * `appCacheDir()/art/{fnv1a(RECIPE_VERSION + params + dpr)}.png` via
- * @tauri-apps/plugin-fs, so the filter cost is paid once ever per
- * RECIPE_VERSION × params × DPR. Outside Tauri (plain vite dev in a browser,
- * vitest) every fs call degrades gracefully to the in-memory Map cache.
+ * ## Why there is no disk cache any more
+ *
+ * There used to be one: every baked canvas was PNG-encoded and written to
+ * `appCacheDir()/art/{hash}.png`, so a warm start could read bytes instead of
+ * repainting. That was the right trade for the painting stack it was built
+ * for — seconds of brush work per room. It is the wrong trade for flat art.
+ *
+ * Measured (Chromium, d3d11 raster, the four flat case parts textures.ts bakes
+ * at boot — plank 1200×40, recess 1200×280, post 34×320, crown 1228×64):
+ *
+ *   dpr 1        draw 23.2ms   PNG encode 38.0ms   PNG decode 12.1ms    30KB
+ *   dpr 2        draw 34.4ms   PNG encode 62.4ms   PNG decode 32.0ms    78KB
+ *
+ * A cold boot with the cache paid draw + encode (61ms / 97ms) where redrawing
+ * costs 23ms / 34ms — the cache made the first run of every room 2.6× more
+ * expensive, and the encode was awaited on the critical path (the blob had to
+ * be produced before `transferToImageBitmap` detached the canvas). A warm boot
+ * saved 11ms of CPU at dpr 1 and nothing at all at dpr 2, and spent a `mkdir`
+ * plus one `readFile` per part over the Tauri IPC bridge to do it — and every
+ * miss paid that IPC round trip *before* the producer was even allowed to
+ * start, because the disk read was awaited first.
+ *
+ * So: memory only. The parts are a few dozen path fills; redrawing them is
+ * cheaper than talking about them. This also takes `@tauri-apps/plugin-fs`
+ * off the eager startup module graph — it was the only static import of that
+ * plugin in the app, everything else loads it on demand.
  */
-
-import { BaseDirectory, mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
-import { fnv1a } from './noise';
-
-/**
- * Bump to invalidate every disk-cached raster (recipe/parameter changes,
- * Chromium feTurbulence drift, etc.).
- * v2: under-plank shadow became a gradient strip; case back/rail/crown added.
- * v3: magical-library overhaul — richer wood grain, joinery pegs, gold
- *     pinstripes, carved cornice, damask wallpaper tile, shelf props.
- */
-export const RECIPE_VERSION = 3;
-
-const ART_DIR = 'art';
-
-/** Cache key: fnv1a of (RECIPE_VERSION + params + dpr), as fixed-width hex. */
-export function cacheKey(params: string, dpr: number): string {
-  return fnv1a(`${RECIPE_VERSION}|${params}|${dpr}`).toString(16).padStart(8, '0');
-}
 
 /**
  * Rasterize a self-contained SVG string into an OffscreenCanvas at `scale`.
@@ -59,7 +61,7 @@ export async function rasterizeSvg(
 }
 
 /**
- * Bake an SVG string to an ImageBitmap — the doc recipe, verbatim.
+ * Bake an SVG string to an ImageBitmap.
  * Uncached; prefer bakeCached for anything keyed and reusable.
  */
 export async function bakeSvg(
@@ -72,70 +74,34 @@ export async function bakeSvg(
   return c.transferToImageBitmap();
 }
 
-/* ------------------------------ disk cache ------------------------------- */
-
-function isTauri(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    (window as unknown as Record<string, unknown>)['__TAURI_INTERNALS__'] !== undefined
-  );
-}
-
-/** false once any fs interaction fails — from then on, memory cache only. */
-let diskEnabled = isTauri();
-let artDirReady: Promise<void> | null = null;
-
-function ensureArtDir(): Promise<void> {
-  artDirReady ??= mkdir(ART_DIR, { baseDir: BaseDirectory.AppCache, recursive: true });
-  return artDirReady;
-}
-
-async function readDiskCache(key: string): Promise<ImageBitmap | null> {
-  if (!diskEnabled) return null;
-  try {
-    await ensureArtDir();
-  } catch {
-    diskEnabled = false;
-    return null;
-  }
-  try {
-    const bytes = await readFile(`${ART_DIR}/${key}.png`, { baseDir: BaseDirectory.AppCache });
-    return await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
-  } catch {
-    // Plain cache miss (or unreadable/corrupt file) — fall through to a bake.
-    return null;
-  }
-}
-
-async function writeDiskCache(key: string, blob: Blob): Promise<void> {
-  if (!diskEnabled) return;
-  try {
-    await ensureArtDir();
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    await writeFile(`${ART_DIR}/${key}.png`, bytes, { baseDir: BaseDirectory.AppCache });
-  } catch {
-    diskEnabled = false;
-  }
-}
-
 /* ----------------------------- memory cache ------------------------------ */
 
 /**
  * Promise-valued so concurrent requests for the same key share one bake.
  * The resolved ImageBitmaps are shared — callers must never close() them.
+ *
+ * Keyed by the full `params|dpr` string rather than a hash of it: the map is
+ * in-process and a few dozen entries deep, so there is nothing to gain from
+ * shortening the key and a (small) correctness risk in a 32-bit collision
+ * serving one room's plank to another.
  */
 const memoryCache = new Map<string, Promise<ImageBitmap>>();
 
+function memoryKey(params: string, dpr: number): string {
+  return `${params}|${dpr}`;
+}
+
 /* ------------------------------ profiling -------------------------------- */
 
-/** One timed unit of bake work (a disk read or a producer run). */
+/** One timed unit of bake work (a producer run, or a spine paint). */
 export interface BakeSample {
   /** Truncated params (first 96 chars) — enough to identify the art piece. */
   what: string;
   ms: number;
   /**
-   * `'disk'` — read back from the PNG cache; `'bake'` — the producer ran on
-   * this thread; `'spine'` — a spine, wherever it was painted.
+   * `'bake'` — the producer ran on this thread; `'spine'` — a spine, wherever
+   * it was painted. (`'disk'` is retained for compatibility with anything
+   * reading the ring buffer; nothing emits it since the disk cache went.)
    */
   kind: 'disk' | 'bake' | 'spine';
   at: number;
@@ -162,7 +128,7 @@ if (typeof location !== 'undefined' && /[?&](fx|bakeprof)=/.test(location.search
   (globalThis as Record<string, unknown>)['__bakeProfile'] = bakeSamples;
 }
 
-/** Drop every in-memory entry (debug/tests). Does not touch the disk cache. */
+/** Drop every in-memory entry (debug/tests). */
 export function clearMemoryCache(): void {
   memoryCache.clear();
 }
@@ -174,25 +140,89 @@ export function clearMemoryCache(): void {
  * them resuming inside one microtask drain, which is how a cold cache used to
  * pin the main thread for a minute-plus with a white, unresponsive window.
  *
- * Every cache miss now waits its turn here. The pump runs at most ONE producer
- * per idle callback, so:
+ * Every cache miss waits its turn here, and the pump still releases exactly
+ * ONE producer per turn, so:
  *   - a producer can never chain onto the previous one inside a single task;
  *   - the browser gets a paint + input opportunity between every two bakes;
  *   - the worst-case block is one producer, not the whole storm.
  *
- * The `timeout` on requestIdleCallback guarantees progress on a thread that
- * never actually goes idle (the shelf renders continuously while art lands),
- * and the setTimeout fallback covers Safari/workers/vitest.
+ * ## What a "turn" costs
  *
- * Re-entrancy is safe: a producer that awaits another bakeCached simply queues
- * behind the pump and suspends — it holds no lock, so there is no deadlock.
+ * The turn used to be a `requestIdleCallback` unconditionally. Measured on an
+ * idle main thread that is worth **16–17ms per turn** — a whole frame of
+ * latency handed to every producer, whatever it costs. The four flat case
+ * parts draw in 23.2ms of real work (dpr 1) and took **63.9ms** median from
+ * first request to all four settled; roughly 40ms of that was the pump.
+ *
+ * So the scheduler is now chosen by what the last producer actually cost.
+ * Cheap producers — the flat parts, a wallpaper tile — yield through a plain
+ * macrotask, which still ends the current task (the whole point: paint and
+ * input get their chance) but costs microseconds instead of a frame. A
+ * producer that overran a frame's worth of budget puts the pump back on
+ * `requestIdleCallback`, where the browser decides when there is room, with
+ * the timeout guaranteeing progress on a thread that never goes idle (the
+ * shelf renders continuously while art lands).
+ *
+ * Re-entrancy is unchanged and still safe: a producer that awaits another
+ * bakeCached queues behind the pump and suspends — it holds no lock, and the
+ * pump never waits on a producer, so there is no deadlock.
  */
 const PUMP_IDLE_TIMEOUT_MS = 90;
+
+/**
+ * A producer at or under this is not worth a frame of scheduling latency: it
+ * fits inside a frame next to the shelf's own render with room to spare.
+ */
+const CHEAP_PRODUCER_MS = 8;
+
+/** Cost of the most recent producer; picks the next turn's scheduler. */
+let lastProducerMs = 0;
 
 const pumpQueue: Array<() => void> = [];
 let pumpScheduled = false;
 
-function scheduleIdleTurn(cb: () => void): void {
+/** MessageChannel macrotask — the cheapest way to end a task and continue. */
+let fastPort: MessagePort | null = null;
+const fastPending: Array<() => void> = [];
+
+/**
+ * End this task and continue on the next one, without waiting for idle.
+ * Returns false when the environment offers no such primitive, in which case
+ * the caller falls back to requestIdleCallback/setTimeout.
+ *
+ * `scheduler.postTask` is preferred: the browser knows it is a task competing
+ * with rendering and schedules it accordingly. A MessageChannel round trip is
+ * the same shape without the priority hint.
+ */
+function fastTurn(cb: () => void): boolean {
+  const scheduler = (globalThis as { scheduler?: { postTask?: unknown } }).scheduler;
+  if (typeof scheduler?.postTask === 'function') {
+    (scheduler.postTask as (fn: () => void, opts: { priority: string }) => Promise<void>)(cb, {
+      priority: 'user-visible',
+    }).catch(() => {
+      // No signal is passed, so this cannot abort in practice — but a pump
+      // whose turn never arrives stalls every queued producer forever, so
+      // run it rather than risk that.
+      cb();
+    });
+    return true;
+  }
+  if (typeof MessageChannel === 'undefined') return false;
+  if (fastPort === null) {
+    const channel = new MessageChannel();
+    fastPort = channel.port2;
+    channel.port1.onmessage = (): void => {
+      fastPending.shift()?.();
+    };
+    fastPort.start?.();
+  }
+  fastPending.push(cb);
+  fastPort.postMessage(0);
+  return true;
+}
+
+function scheduleTurn(cb: () => void): void {
+  if (lastProducerMs <= CHEAP_PRODUCER_MS && fastTurn(cb)) return;
   if (typeof requestIdleCallback === 'function') {
     requestIdleCallback(() => cb(), { timeout: PUMP_IDLE_TIMEOUT_MS });
     return;
@@ -203,17 +233,17 @@ function scheduleIdleTurn(cb: () => void): void {
 function pump(): void {
   if (pumpScheduled || pumpQueue.length === 0) return;
   pumpScheduled = true;
-  scheduleIdleTurn(() => {
+  scheduleTurn(() => {
     pumpScheduled = false;
     // Release exactly one waiter. Its continuation (the producer) runs in this
-    // task's microtask drain; the next waiter gets a fresh idle callback.
+    // task's microtask drain; the next waiter gets a fresh turn.
     pumpQueue.shift()?.();
     pump();
   });
 }
 
 /**
- * Resolve on the next idle turn, one caller per turn. Exported so other
+ * Resolve on the next pump turn, one caller per turn. Exported so other
  * bake-time producers (spine atlas slices) can share the same fairness queue.
  */
 export function awaitBakeTurn(): Promise<void> {
@@ -234,50 +264,38 @@ export type CanvasProducer = () => Promise<OffscreenCanvas>;
 /**
  * The cached bake path every baker goes through:
  *  1. in-memory Map hit → shared ImageBitmap
- *  2. disk hit → readFile → createImageBitmap
- *  3. miss → produce() → convertToBlob → writeFile (best-effort) →
- *     transferToImageBitmap
+ *  2. miss → wait a pump turn → produce() → transferToImageBitmap
  *
- * There is no off-thread route here any more. Routing a bake to the art worker
- * only ever paid for the painting stack's brush work; the flat parts are a few
- * dozen path fills, less work than posting a message about them. Spines still
- * paint off-thread, but they go straight to `artOffload.spine()` from
- * `SpineFactory` with the recipe in hand rather than encoded in a cache key.
+ * There is no off-thread route here, and no disk. Routing a bake to the art
+ * worker only ever paid for the painting stack's brush work; the flat parts
+ * are a few dozen path fills, less work than posting a message about them.
+ * Spines still paint off-thread, but they go straight to `artOffload.spine()`
+ * from `SpineFactory` with the recipe in hand rather than encoded in a key.
  */
 export function bakeCached(
   params: string,
   dpr: number,
   produce: CanvasProducer,
 ): Promise<ImageBitmap> {
-  const key = cacheKey(params, dpr);
+  const key = memoryKey(params, dpr);
   const hit = memoryCache.get(key);
   if (hit) return hit;
 
   const pending = (async () => {
-    const t0 = performance.now();
-    const fromDisk = await readDiskCache(key);
-    if (fromDisk) {
-      recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t0, kind: 'disk', at: t0 });
-      return fromDisk;
-    }
-
     // Wait for a turn so this producer's synchronous cost lands in a task of
     // its own rather than chaining onto whatever bake just finished.
     await awaitBakeTurn();
-    const t1 = performance.now();
+    const t0 = performance.now();
     const canvas = await produce();
-    recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t1, kind: 'bake', at: t1 });
-    if (diskEnabled) {
-      // convertToBlob MUST precede transferToImageBitmap (transfer detaches
-      // the canvas bitmap). The write itself is fire-and-forget.
-      try {
-        const blob = await canvas.convertToBlob({ type: 'image/png' });
-        void writeDiskCache(key, blob);
-      } catch {
-        diskEnabled = false;
-      }
-    }
-    return canvas.transferToImageBitmap();
+    // Canvas 2D records commands lazily — `produce()` alone times the
+    // recording, not the raster. `transferToImageBitmap` is what forces the
+    // flush, so the cost the pump feeds back has to span both or it will
+    // read every producer as free.
+    const bitmap = canvas.transferToImageBitmap();
+    const ms = performance.now() - t0;
+    lastProducerMs = ms;
+    recordBakeSample({ what: params.slice(0, 96), ms, kind: 'bake', at: t0 });
+    return bitmap;
   })();
 
   // Do not poison the cache with rejected bakes.
@@ -289,95 +307,8 @@ export function bakeCached(
   return wrapped;
 }
 
-/* --------------------------- off-thread bridge ---------------------------- */
-
 /**
- * Is this piece already painted somewhere — memory or disk?
- *
- * The point of asking is to decide whether to send a recipe to the art worker.
- * A worker cannot reach the disk cache (`@tauri-apps/plugin-fs` talks to the
- * window's Tauri internals, which a worker does not have), so a caller that
- * dispatched blindly would repaint every warm-start layer from scratch on a
- * thread — costing seconds of CPU and a lot of heat to reproduce bytes that
- * were already sitting on disk.
- *
- * A `true` answer primes the memory cache as a side effect, so the follow-up
- * `bakeCached` resolves immediately rather than reading the file twice.
- */
-export async function peekBake(params: string, dpr: number): Promise<boolean> {
-  return (await readBake(params, dpr)) !== null;
-}
-
-/**
- * The cached bitmap for `params`, or null — never paints anything.
- *
- * The read side of {@link adoptBake}: a caller that intends to hand the recipe
- * to the art worker asks this first, so a warm cache short-circuits the whole
- * round trip. Memory hits are synchronous-ish (one already-resolved promise);
- * a disk hit is decoded once and then filed in memory.
- */
-export async function readBake(params: string, dpr: number): Promise<ImageBitmap | null> {
-  const key = cacheKey(params, dpr);
-  const hit = memoryCache.get(key);
-  if (hit !== undefined) {
-    try {
-      return await hit;
-    } catch {
-      return null;
-    }
-  }
-  if (!diskEnabled) return null;
-  const t0 = performance.now();
-  const fromDisk = await readDiskCache(key);
-  if (fromDisk === null) return null;
-  recordBakeSample({ what: params.slice(0, 96), ms: performance.now() - t0, kind: 'disk', at: t0 });
-  memoryCache.set(key, Promise.resolve(fromDisk));
-  return fromDisk;
-}
-
-/**
- * Take ownership of a bitmap painted elsewhere (the art worker) and file it
- * under `params` as though `bakeCached` had produced it: into the memory cache
- * immediately, and onto disk in the background so the next cold boot is a
- * disk read instead of a repaint.
- *
- * The bitmap stays owned by the caller for drawing — this only *shares* it,
- * which is the same contract every other cache entry has (callers must never
- * `close()` a bitmap that came out of this module).
- */
-export function adoptBake(params: string, dpr: number, bitmap: ImageBitmap): void {
-  const key = cacheKey(params, dpr);
-  if (!memoryCache.has(key)) memoryCache.set(key, Promise.resolve(bitmap));
-  persistBitmap(key, bitmap);
-}
-
-/**
- * PNG-encode a bitmap into the disk cache, off the critical path.
- *
- * Fire-and-forget by design: a failure only means the next cold boot repaints
- * the piece, and the encode must never land in the frame that is about to draw
- * it. `createImageBitmap` is deliberately not used to copy — the bitmap is
- * only read here, never transferred, so the caller keeps ownership.
- */
-function persistBitmap(key: string, bitmap: ImageBitmap): void {
-  if (!diskEnabled) return;
-  if (typeof OffscreenCanvas === 'undefined') return;
-  void (async () => {
-    try {
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-      const ctx = canvas.getContext('2d');
-      if (ctx === null) return;
-      ctx.drawImage(bitmap, 0, 0);
-      const blob = await canvas.convertToBlob({ type: 'image/png' });
-      await writeDiskCache(key, blob);
-    } catch {
-      /* best effort */
-    }
-  })();
-}
-
-/**
- * Convenience: cached bake of a filtered SVG document (the common case).
+ * Convenience: cached bake of an SVG document.
  * `params` must uniquely describe the SVG content and target size.
  */
 export function bakeSvgCached(

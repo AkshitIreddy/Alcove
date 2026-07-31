@@ -30,6 +30,7 @@ import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
 import { renderSpine, type Ctx2D, type SpineParams } from '../../art/spines';
 import { getTheme, type LibraryTheme } from '../../art/themes';
 import { readShelfMeta } from '../../data/books';
+import { bookBinding } from '../../data/designPrefs';
 import type { Book } from '../../data/types';
 import {
   bookStyleOverridesFor,
@@ -285,23 +286,41 @@ export class SpineFactory {
    */
   getStyle(book: Book): ResolvedBookStyle {
     this.known.add(book.id);
-    const key = `${this.styleEpoch}|${book.id}`;
+    // The binding is in the key as well as in the params: it is persisted
+    // outside `cover_meta` (in `data/designPrefs.ts`, because a binding is not
+    // a `BookStyle` field), so `bookStyleOverridesFor` cannot see it and the
+    // epoch alone would keep serving the old preset's params.
+    const pinned = bookBinding(book.id);
+    const key = `${this.styleEpoch}|${book.id}|${pinned ?? '-'}`;
     let resolved = this.paramsCache.get(key);
     if (resolved === undefined) {
-      resolved = resolveBookStyle(
+      const base = resolveBookStyle(
         book.spineSeed,
         themeSpineDefaults(this.theme),
         bookStyleOverridesFor(book),
         { pageCount: readShelfMeta(book)?.pageCount },
       );
+      // `null` is not a default here — it means "let the seed choose", which
+      // still gives the book one of the 62 bindings.
+      resolved = { ...base, spine: { ...base.spine, binding: pinned } };
       this.paramsCache.set(key, resolved);
     }
     return resolved;
   }
 
-  /** Drop one book's cached style (studio edit / rename). */
+  /**
+   * Drop one book's cached style (studio edit / rename).
+   *
+   * The binding is part of the key and is not known here, so every entry for
+   * this book at the current epoch goes rather than one computed key — a
+   * targeted delete would miss precisely the case where the binding is what
+   * changed.
+   */
   invalidateStyle(bookId: string): void {
-    this.paramsCache.delete(`${this.styleEpoch}|${bookId}`);
+    const prefix = `${this.styleEpoch}|${bookId}|`;
+    for (const key of this.paramsCache.keys()) {
+      if (key.startsWith(prefix)) this.paramsCache.delete(key);
+    }
   }
 
   getParams(book: Book): SpineParams {

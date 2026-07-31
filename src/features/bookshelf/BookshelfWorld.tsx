@@ -10,11 +10,22 @@
  * real focus rings, no re-bake when it moves:
  *  - the **ghost slot**: a dashed pencil outline of a book standing in the
  *    first free stretch of plank, following the camera (world.AddSpot);
- *  - the **shelf dock**: the left rail — the app's mark, then "new book",
- *    the studio, "add a floor" and the trash, so none of them is ever more
- *    than one click away;
+ *  - the **shelf dock**: the left rail — "new book", the studio, "add a
+ *    floor" and the trash, so none of them is ever more than one click away;
  *  - the **inline spine title**, written straight up the new book's spine;
  *  - the **first-run invitation** when the case is completely bare.
+ *
+ * Everything above rides inside `.shelf-stage`, which is the half of this
+ * tree a side panel PUSHES aside (styles/rail.css reads the offset that
+ * views/rail/panelPush.ts publishes). The panels themselves — the studio
+ * sheet and the trash card — are deliberately OUTSIDE it: they must keep the
+ * viewport as their containing block, and a panel cannot push itself.
+ *
+ * Everything inside the stage is positioned in CANVAS-LOCAL coordinates
+ * (world.ts publishes `clientX - canvasRect.left`; see input.ts), which is
+ * exactly what the stage's own transform undoes — so the menus, the plaque
+ * editor and the ghost slot all keep landing under the pointer while the
+ * room is stepped aside.
  */
 
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
@@ -75,6 +86,9 @@ interface NamingState {
   rect: RectLike;
 }
 
+/** The two panels the dock rail opens. Only one may be up at a time. */
+type DockPanel = 'studio' | 'trash';
+
 /** Smallest the ghost slot may shrink to on screen (a clickable target). */
 const GHOST_MIN_W = 30;
 const GHOST_MIN_H = 104;
@@ -109,10 +123,12 @@ const DOCK_GAP = 20;
 /** Never let the dock touch the window edge. */
 const DOCK_EDGE = 10;
 /**
- * Below this the labelled rail (386px tall) starts to crowd the window, so it
- * goes narrow for headroom rather than for horizontal room.
+ * Below this the labelled rail starts to crowd the window, so it goes narrow
+ * for headroom rather than for horizontal room. It was 620 while the brand
+ * plate stood on top of the four buttons; the rail is ~300px tall without it,
+ * so the labels now survive a much shorter window.
  */
-const DOCK_SHORT_H = 620;
+const DOCK_SHORT_H = 520;
 
 /* ------------------------------- chrome art ------------------------------- */
 /*
@@ -158,91 +174,13 @@ function TrashIcon(): JSX.Element {
   );
 }
 
-/**
- * The app's mark, redrawn for screen sizes.
- *
- * `assets/brand/icon.svg` is authored for a 1024px canvas: at rail size its
- * 16-unit outline lands under a pixel and the page ruling, cover frame and
- * medallion turn to fuzz — which is exactly why the logo read as "too small"
- * in-app. This is the same book in the same flat vocabulary (one ink
- * outline, a darker spine face beside the lighter cover, no gradients), with
- * the fine detail dropped and the strokes re-weighted for ~52px so the
- * silhouette still reads.
+/*
+ * The app's mark used to cap this rail, redrawn at 52px with a "Notebook"
+ * wordmark under it. It was the one thing on the rail that did nothing when
+ * pressed — a logo in a single-window desktop app has nowhere to go — so it
+ * was a permanent 82px of dead target above four live ones. Removed; the
+ * mark lives on in `assets/brand/icon.svg` and on the window itself.
  */
-function BrandMark(): JSX.Element {
-  return (
-    <svg viewBox="0 0 64 64" class="shelf-dock__mark" role="img" aria-label="Notebook">
-      <g transform="rotate(-4 32 32)" stroke-linejoin="round" stroke-linecap="round">
-        {/* page block, peeking out past the cover's fore-edge */}
-        <path
-          d="M17 9.6 C27 8.7, 42 8.9, 51 9.8 C52.6 10, 53.4 10.9, 53.5 12.4
-             C54 25.5, 54.1 42.5, 53.5 53.6 C53.4 55.1, 52.6 55.9, 51.1 56.1
-             C42 57, 27 57.1, 17.4 56.4 Z"
-          fill="#eee2c8"
-          stroke="#4f3120"
-          stroke-width="2.2"
-        />
-        {/* front cover */}
-        <path
-          d="M11.6 8.6 C13 7, 15.2 6.4, 18 6.3 C28 5.6, 40 5.8, 46.6 6.6
-             C48.6 6.8, 49.6 7.9, 49.7 9.9 C50.3 25, 50.4 42, 49.8 53.2
-             C49.7 55.2, 48.6 56.3, 46.6 56.5 C37 57.3, 26 57.4, 17 56.8
-             C14.4 56.6, 12.9 56.2, 11.7 55.2 Z"
-          fill="#c96f4a"
-          stroke="#4f3120"
-          stroke-width="2.4"
-        />
-        {/* spine — the darker flat face that carries all of the depth */}
-        <path
-          d="M11.6 8.6 C9.4 10.2, 8.4 12.4, 8.3 15.2 C7.9 27.6, 7.9 40.4, 8.3 50.8
-             C8.4 53.4, 9.3 55, 11.7 55.2 C13.5 56, 15 56.4, 17 56.8
-             C15.6 54.6, 15.1 52, 15 49.4 C14.7 37, 14.7 25, 15 13
-             C15.1 10.2, 15.9 8, 18 6.3 C15.2 6.4, 13 7, 11.6 8.6 Z"
-          fill="#a8552f"
-          stroke="#4f3120"
-          stroke-width="2.4"
-        />
-        {/* gilt bands */}
-        <g fill="none" stroke="#e8b64c">
-          <path d="M14.6 17.8 C13 18, 10.6 18.1, 9.1 18" stroke-width="2.6" />
-          <path d="M14.6 22.2 C13.2 22.3, 11 22.4, 9.5 22.3" stroke-width="1.5" />
-          <path d="M14.4 47.4 C12.8 47.6, 10.4 47.7, 8.9 47.6" stroke-width="2.6" />
-        </g>
-        {/* cream title label + its scribbled ruling */}
-        <path
-          d="M22.5 21 C28.5 20.5, 38 20.6, 43.2 21 C44.2 21.1, 44.8 21.7, 44.9 22.7
-             C45.1 26.3, 45.1 30, 44.9 33 C44.8 34, 44.2 34.6, 43.2 34.7
-             C37.4 35.2, 28.2 35.2, 22.8 34.8 C21.8 34.7, 21.2 34.1, 21.1 33.1
-             C20.9 29.8, 20.9 25.8, 21.1 22.6 C21.2 21.6, 21.6 21.1, 22.5 21 Z"
-          fill="#f7f1e3"
-          stroke="#4f3120"
-          stroke-width="1.9"
-        />
-        <g fill="none" stroke="#6b4a32">
-          <path d="M24.6 25.3 C28 24.9, 35.9 25, 41.2 25.3" stroke-width="1.7" />
-          <path d="M24.6 28.7 C27.5 28.3, 33.5 28.4, 37.5 28.7" stroke-width="1.4" />
-          <path d="M24.6 31.7 C27.1 31.4, 31.2 31.5, 33.7 31.7" stroke-width="1.3" />
-        </g>
-        {/* medallion + moss ribbon: the two bits of ornament worth keeping */}
-        <path
-          d="M32 39.4 L34 42.6 L32 45.9 L30 42.6 Z"
-          fill="none"
-          stroke="#e8b64c"
-          stroke-width="1.4"
-        />
-        <path
-          d="M38.1 56.5 C38 58.7, 38 59.9, 38.1 61.1 C38.2 61.9, 38.7 62.1, 39.2 61.7
-             C39.9 61.2, 40.5 61.2, 41.1 61.7 C41.6 62.1, 42.1 61.9, 42.1 61.1
-             C42.2 59.6, 42.1 58.3, 42 56.5 Z"
-          fill="#7d915c"
-          stroke="#4f6138"
-          stroke-width="1.5"
-        />
-      </g>
-    </svg>
-  );
-}
-
 function AddFloorIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
@@ -270,16 +208,43 @@ export default function BookshelfWorld(): JSX.Element {
   const [menu, setMenu] = createSignal<MenuState | null>(null);
   const [spotMenu, setSpotMenu] = createSignal<SpotMenuState | null>(null);
   const [plateEdit, setPlateEdit] = createSignal<PlateEditState | null>(null);
-  const [trashOpen, setTrashOpen] = createSignal(false);
   const [addSpot, setAddSpot] = createSignal<AddSpot | null>(null);
   const [naming, setNaming] = createSignal<NamingState | null>(null);
-  const [studio, setStudio] = createSignal<{ open: boolean; bookId: string | null }>({
-    open: false,
-    bookId: null,
-  });
+  /**
+   * At most one dock panel is up at a time — the studio sheet and the trash
+   * card both claim the left of the window, and each rail icon toggles its
+   * own. The book id is kept when the studio closes so the sheet does not
+   * blank out halfway through sliding away.
+   */
+  const [dockPanel, setDockPanel] = createSignal<DockPanel | null>(null);
+  const [studioBookId, setStudioBookId] = createSignal<string | null>(null);
   let world: ShelfWorld | null = null;
   let disposed = false;
   let creating = false;
+
+  /**
+   * Which panel was up at the moment the press STARTED.
+   *
+   * TrashPanel closes itself on any pointerdown outside its card — in the
+   * capture phase, so it has already run by the time the dock button's click
+   * fires and a naive toggle would read "closed" and re-open it on the spot.
+   * This listener is registered before any panel exists, so it always sees the
+   * state the user was actually looking at when they pressed. Keydown is
+   * covered too, or a keyboard toggle would act on a stale pointer snapshot.
+   */
+  let panelAtPress: DockPanel | null = null;
+
+  onMount(() => {
+    const snapshot = (): void => {
+      panelAtPress = dockPanel();
+    };
+    document.addEventListener('pointerdown', snapshot, true);
+    document.addEventListener('keydown', snapshot, true);
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', snapshot, true);
+      document.removeEventListener('keydown', snapshot, true);
+    });
+  });
 
   onMount(() => {
     // The dock's placement is derived from the window width, so it has to
@@ -297,7 +262,12 @@ export default function BookshelfWorld(): JSX.Element {
         if (!disposed) setVisibleBooks(books);
       },
       onGhostReady: (book, rect) => {
-        if (!disposed) setOverlay({ book, rect, mode: 'open' });
+        if (disposed) return;
+        // The pulled cover flies from a canvas-local spine rect to the CENTRE
+        // of the window, so it must not still be inside a stage that a panel
+        // has stepped aside. A book leaving the shelf ends the panel too.
+        setDockPanel(null);
+        setOverlay({ book, rect, mode: 'open' });
       },
       onZoomChange: (percent) => {
         if (!disposed) setZoomPct(percent);
@@ -395,9 +365,31 @@ export default function BookshelfWorld(): JSX.Element {
     })();
   }
 
+  /** Open the studio sheet, on the room (null) or on one book's wardrobe. */
   function openStudio(bookId: string | null): void {
     void play('pop-soft');
-    setStudio({ open: true, bookId });
+    setStudioBookId(bookId);
+    setDockPanel('studio');
+  }
+
+  /**
+   * A dock icon presses its OWN panel shut again. `panelAtPress` rather than
+   * `dockPanel()` because the trash card may already have closed itself under
+   * this very press — see the field's docblock.
+   */
+  function toggleDockPanel(panel: DockPanel, button: HTMLElement): void {
+    // A canvas gesture can swallow the focus a click would normally hand to a
+    // button; without this the sheet has no opener to give focus back to.
+    button.focus();
+    if (panelAtPress === panel) {
+      setDockPanel(null);
+      return;
+    }
+    if (panel === 'studio') openStudio(null);
+    else {
+      void play('pop-soft');
+      setDockPanel('trash');
+    }
   }
 
   function handleSpotAction(state: SpotMenuState, action: ShelfSpotAction): void {
@@ -541,341 +533,345 @@ export default function BookshelfWorld(): JSX.Element {
   };
 
   return (
-    <div class="shelf-root" ref={host}>
-      {/* ---- the dashed "put a book here" outline, standing on the plank -- */}
-      <Show when={ghostBox()}>
-        {(box) => (
-          <button
-            type="button"
-            class="shelf-addslot"
-            classList={{ 'is-firstrun': addSpot()?.firstRun === true }}
-            data-testid="shelf-addslot"
-            style={{
-              left: `${box().left}px`,
-              top: `${box().top}px`,
-              width: `${box().width}px`,
-              height: `${box().height}px`,
-            }}
-            aria-label={`Add a book to floor ${(addSpot()?.floor ?? 0) + 1}`}
-            title="Put a new book here"
-            onClick={() => addBook(addSpot()?.floor)}
-          >
-            <span class="shelf-addslot__band" aria-hidden="true" />
-            <span class="shelf-addslot__plus" aria-hidden="true">
-              +
-            </span>
-            <span class="shelf-addslot__tip" aria-hidden="true">
-              new book
-            </span>
-          </button>
-        )}
-      </Show>
-
-      {/* ---- first run: a bare case should ask for its first book -------- */}
-      <Show when={addSpot()?.firstRun === true && naming() === null && inviteBox()}>
-        {(box) => (
-          <div
-            class="shelf-firstrun"
-            data-testid="shelf-firstrun"
-            style={{ left: `${box().left}px`, top: `${box().top}px` }}
-          >
-            <p class="shelf-firstrun__eyebrow">an empty case</p>
-            <p class="shelf-firstrun__line">
-              every library starts with one book.
-            </p>
+    <div class="shelf-root">
+      {/* ==== the room itself — the half a side panel pushes aside ======== */}
+      <div class="shelf-stage" ref={host}>
+        {/* ---- the dashed "put a book here" outline, standing on the plank -- */}
+        <Show when={ghostBox()}>
+          {(box) => (
             <button
               type="button"
-              class="shelf-firstrun__btn"
+              class="shelf-addslot"
+              classList={{ 'is-firstrun': addSpot()?.firstRun === true }}
+              data-testid="shelf-addslot"
+              style={{
+                left: `${box().left}px`,
+                top: `${box().top}px`,
+                width: `${box().width}px`,
+                height: `${box().height}px`,
+              }}
+              aria-label={`Add a book to floor ${(addSpot()?.floor ?? 0) + 1}`}
+              title="Put a new book here"
               onClick={() => addBook(addSpot()?.floor)}
             >
-              write my first one
+              <span class="shelf-addslot__band" aria-hidden="true" />
+              <span class="shelf-addslot__plus" aria-hidden="true">
+                +
+              </span>
+              <span class="shelf-addslot__tip" aria-hidden="true">
+                new book
+              </span>
             </button>
-            <span class="shelf-firstrun__arrow" aria-hidden="true">
-              <svg viewBox="0 0 60 34">
-                <path
-                  d="M56 17.5 C44 9 30 7.5 8 15.5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M8 15.5 L18 11.6 M8 15.5 L16.4 22"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </span>
-          </div>
-        )}
-      </Show>
+          )}
+        </Show>
 
-      {/* ---- write the title straight up the new spine ------------------- */}
-      <Show when={naming()}>
-        {(state) => {
-          const rect = state().rect;
-          const boxW = Math.max(rect.height, 132);
-          const boxH = Math.max(rect.width, 26);
-          return (
+        {/* ---- first run: a bare case should ask for its first book -------- */}
+        <Show when={addSpot()?.firstRun === true && naming() === null && inviteBox()}>
+          {(box) => (
+            <div
+              class="shelf-firstrun"
+              data-testid="shelf-firstrun"
+              style={{ left: `${box().left}px`, top: `${box().top}px` }}
+            >
+              <p class="shelf-firstrun__eyebrow">an empty case</p>
+              <p class="shelf-firstrun__line">
+                every library starts with one book.
+              </p>
+              <button
+                type="button"
+                class="shelf-firstrun__btn"
+                onClick={() => addBook(addSpot()?.floor)}
+              >
+                write my first one
+              </button>
+              <span class="shelf-firstrun__arrow" aria-hidden="true">
+                <svg viewBox="0 0 60 34">
+                  <path
+                    d="M56 17.5 C44 9 30 7.5 8 15.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="M8 15.5 L18 11.6 M8 15.5 L16.4 22"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
+            </div>
+          )}
+        </Show>
+
+        {/* ---- write the title straight up the new spine ------------------- */}
+        <Show when={naming()}>
+          {(state) => {
+            const rect = state().rect;
+            const boxW = Math.max(rect.height, 132);
+            const boxH = Math.max(rect.width, 26);
+            return (
+              <input
+                class="shelf-spine-name"
+                data-testid="shelf-spine-name"
+                type="text"
+                maxLength={80}
+                aria-label="Name this book"
+                placeholder="name it…"
+                value={state().book.title === NEW_BOOK_TITLE ? '' : state().book.title}
+                style={{
+                  left: `${rect.x + rect.width / 2}px`,
+                  top: `${rect.y + rect.height / 2}px`,
+                  width: `${boxW}px`,
+                  height: `${boxH}px`,
+                  'font-size': `${Math.max(13, Math.min(19, boxH * 0.62))}px`,
+                }}
+                ref={(node) =>
+                  queueMicrotask(() => {
+                    node.focus();
+                    node.select();
+                  })
+                }
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitName(state(), e.currentTarget.value);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setNaming(null);
+                  }
+                }}
+                onBlur={(e) => {
+                  const current = naming();
+                  if (current !== null) commitName(current, e.currentTarget.value);
+                }}
+              />
+            );
+          }}
+        </Show>
+
+        <Show when={overlay()}>
+          {(state) => (
+            <PulledBookOverlay
+              book={state().book}
+              spineRect={state().rect}
+              mode={state().mode}
+              onHandoff={() => handleHandoff(state())}
+              onDone={() => handleDone(state())}
+            />
+          )}
+        </Show>
+        <Show when={menu()}>
+          {(state) => (
+            <ShelfMenu
+              book={state().book}
+              x={state().x}
+              y={state().y}
+              pinned={readShelfMeta(state().book)?.pinned === true}
+              onAction={(action) => handleMenuAction(state().book, action)}
+              onRename={(title) => handleRename(state().book, title)}
+              onClose={() => setMenu(null)}
+            />
+          )}
+        </Show>
+        <Show when={spotMenu()}>
+          {(state) => (
+            <ShelfSpotMenu
+              floor={state().floor}
+              x={state().x}
+              y={state().y}
+              onAction={(action) => handleSpotAction(state(), action)}
+              onClose={() => setSpotMenu(null)}
+            />
+          )}
+        </Show>
+        <Show when={plateEdit()}>
+          {(state) => (
             <input
-              class="shelf-spine-name"
-              data-testid="shelf-spine-name"
+              class="shelf-plate-edit"
               type="text"
-              maxLength={80}
-              aria-label="Name this book"
-              placeholder="name it…"
-              value={state().book.title === NEW_BOOK_TITLE ? '' : state().book.title}
+              maxLength={40}
+              aria-label={`Name for floor ${state().floor + 1}`}
+              value={floorNameSync(state().floor) ?? ''}
+              placeholder={`Floor ${state().floor + 1}`}
               style={{
-                left: `${rect.x + rect.width / 2}px`,
-                top: `${rect.y + rect.height / 2}px`,
-                width: `${boxW}px`,
-                height: `${boxH}px`,
-                'font-size': `${Math.max(13, Math.min(19, boxH * 0.62))}px`,
+                left: `${state().rect.x - 30}px`,
+                top: `${state().rect.y - 6}px`,
+                width: `${Math.max(state().rect.width + 60, 170)}px`,
+                height: `${Math.max(state().rect.height + 12, 30)}px`,
               }}
-              ref={(node) =>
-                queueMicrotask(() => {
-                  node.focus();
-                  node.select();
-                })
-              }
+              ref={(node) => queueMicrotask(() => {
+                node.focus();
+                node.select();
+              })}
               onKeyDown={(e) => {
                 e.stopPropagation();
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commitName(state(), e.currentTarget.value);
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setNaming(null);
-                }
+                if (e.key === 'Enter') commitPlate(state(), e.currentTarget.value);
+                else if (e.key === 'Escape') setPlateEdit(null);
               }}
               onBlur={(e) => {
-                const current = naming();
-                if (current !== null) commitName(current, e.currentTarget.value);
+                const current = plateEdit();
+                if (current !== null) commitPlate(current, e.currentTarget.value);
               }}
             />
-          );
-        }}
-      </Show>
+          )}
+        </Show>
+        <nav class="shelf-a11y" aria-label="Bookshelf">
+          <ul>
+            <For each={visibleBooks()}>
+              {(book) => (
+                <li>
+                  <button
+                    type="button"
+                    aria-label={`Open ${book.title}, floor ${book.floor + 1}`}
+                    onClick={() => world?.openFromList(book.id)}
+                  >
+                    {book.title}
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </nav>
 
-      <Show when={overlay()}>
-        {(state) => (
-          <PulledBookOverlay
-            book={state().book}
-            spineRect={state().rect}
-            mode={state().mode}
-            onHandoff={() => handleHandoff(state())}
-            onDone={() => handleDone(state())}
-          />
-        )}
-      </Show>
-      <Show when={menu()}>
-        {(state) => (
-          <ShelfMenu
-            book={state().book}
-            x={state().x}
-            y={state().y}
-            pinned={readShelfMeta(state().book)?.pinned === true}
-            onAction={(action) => handleMenuAction(state().book, action)}
-            onRename={(title) => handleRename(state().book, title)}
-            onClose={() => setMenu(null)}
-          />
-        )}
-      </Show>
-      <Show when={spotMenu()}>
-        {(state) => (
-          <ShelfSpotMenu
-            floor={state().floor}
-            x={state().x}
-            y={state().y}
-            onAction={(action) => handleSpotAction(state(), action)}
-            onClose={() => setSpotMenu(null)}
-          />
-        )}
-      </Show>
-      <Show when={plateEdit()}>
-        {(state) => (
-          <input
-            class="shelf-plate-edit"
-            type="text"
-            maxLength={40}
-            aria-label={`Name for floor ${state().floor + 1}`}
-            value={floorNameSync(state().floor) ?? ''}
-            placeholder={`Floor ${state().floor + 1}`}
-            style={{
-              left: `${state().rect.x - 30}px`,
-              top: `${state().rect.y - 6}px`,
-              width: `${Math.max(state().rect.width + 60, 170)}px`,
-              height: `${Math.max(state().rect.height + 12, 30)}px`,
-            }}
-            ref={(node) => queueMicrotask(() => {
-              node.focus();
-              node.select();
-            })}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === 'Enter') commitPlate(state(), e.currentTarget.value);
-              else if (e.key === 'Escape') setPlateEdit(null);
-            }}
-            onBlur={(e) => {
-              const current = plateEdit();
-              if (current !== null) commitPlate(current, e.currentTarget.value);
-            }}
-          />
-        )}
-      </Show>
-      <Show when={trashOpen()}>
+        {/* ---- the left rail: everything you can do to the LIBRARY (rather
+                than to a book). Its `left` is derived from the zoom so it
+                stands on bare wall instead of on the case. The two buttons
+                that open a panel TOGGLE it, and say so with aria-pressed. --- */}
+        <div
+          class="shelf-dock"
+          classList={{ 'is-mini': dockPlace().mini }}
+          data-testid="shelf-dock"
+          style={{ left: `${dockPlace().left}px` }}
+        >
+          <div
+            class="shelf-dock__tools"
+            role="toolbar"
+            aria-label="Shelf tools"
+            aria-orientation="vertical"
+          >
+            <button
+              type="button"
+              class="shelf-dock__btn is-primary"
+              data-shelf-dock="new-book"
+              aria-label="New book"
+              title="Put a new book on this floor"
+              onClick={() => addBook(addSpot()?.floor)}
+            >
+              <NewBookIcon />
+              <span class="shelf-dock__label">new book</span>
+            </button>
+            <span class="shelf-dock__rule" aria-hidden="true" />
+            <button
+              type="button"
+              class="shelf-dock__btn"
+              classList={{ 'is-active': dockPanel() === 'studio' }}
+              data-shelf-dock="studio"
+              aria-label="Library studio"
+              aria-pressed={dockPanel() === 'studio'}
+              title="Pick the room, the wall, the growing things"
+              onClick={(e) => toggleDockPanel('studio', e.currentTarget)}
+            >
+              <PaletteIcon />
+              <span class="shelf-dock__label">studio</span>
+            </button>
+            <button
+              type="button"
+              class="shelf-dock__btn"
+              data-shelf-dock="add-floor"
+              aria-label="Add a floor"
+              title="Grow the case downward"
+              onClick={() => world?.addFloor()}
+            >
+              <AddFloorIcon />
+              <span class="shelf-dock__label">add floor</span>
+            </button>
+            {/* Crumpled books used to live in a drawer drawn INSIDE the case,
+                which put a piece of filing furniture in the middle of the
+                artwork. It is a library action, so it belongs on the rail. */}
+            <button
+              type="button"
+              class="shelf-dock__btn"
+              classList={{ 'is-active': dockPanel() === 'trash' }}
+              data-shelf-dock="trash"
+              aria-label="Trash"
+              aria-pressed={dockPanel() === 'trash'}
+              title="Books you crumpled — restore or empty"
+              onClick={(e) => toggleDockPanel('trash', e.currentTarget)}
+            >
+              <TrashIcon />
+              <span class="shelf-dock__label">trash</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="shelf-zoom-pill" role="toolbar" aria-label="Zoom controls">
+          <button
+            type="button"
+            class="shelf-zoom-pill__btn"
+            aria-label="Zoom out"
+            title="Zoom out (-)"
+            onClick={() => world?.zoomOut()}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            class="shelf-zoom-pill__pct"
+            aria-label="Reset zoom to 100%"
+            title="Reset zoom (0)"
+            onClick={() => world?.zoomReset()}
+          >
+            {zoomPct()}%
+          </button>
+          <button
+            type="button"
+            class="shelf-zoom-pill__btn"
+            aria-label="Zoom in"
+            title="Zoom in (+)"
+            onClick={() => world?.zoomIn()}
+          >
+            +
+          </button>
+          <span class="shelf-zoom-pill__rule" aria-hidden="true" />
+          <button
+            type="button"
+            class="shelf-zoom-pill__fit"
+            aria-label="Fit bookcase to window"
+            title="Fit the whole case"
+            onClick={() => world?.zoomFit()}
+          >
+            fit
+          </button>
+        </div>
+      </div>
+      {/* ==== end of the pushed stage ===================================== */}
+
+      {/* The two dock panels live OUTSIDE the stage: they are what does the
+          pushing, and a fixed sheet inside a transformed box would be laid
+          out against that box instead of against the window. */}
+      <Show when={dockPanel() === 'trash'}>
         <TrashPanel
-          onClose={() => setTrashOpen(false)}
+          onClose={() => setDockPanel(null)}
           onChanged={() => void world?.refreshData()}
         />
       </Show>
 
       <ShelfStudio
-        open={studio().open}
-        bookId={studio().bookId}
-        onClose={() => setStudio((s) => ({ ...s, open: false }))}
+        open={dockPanel() === 'studio'}
+        bookId={studioBookId()}
+        onClose={() => setDockPanel(null)}
         onBookChanged={() => {
           const w = world;
-          const id = studio().bookId;
+          const id = studioBookId();
           if (w === null || id === null) return;
           w.invalidateSpine(id);
           void w.refreshData();
         }}
       />
-
-      <nav class="shelf-a11y" aria-label="Bookshelf">
-        <ul>
-          <For each={visibleBooks()}>
-            {(book) => (
-              <li>
-                <button
-                  type="button"
-                  aria-label={`Open ${book.title}, floor ${book.floor + 1}`}
-                  onClick={() => world?.openFromList(book.id)}
-                >
-                  {book.title}
-                </button>
-              </li>
-            )}
-          </For>
-        </ul>
-      </nav>
-
-      {/* ---- the left rail: the app's mark, then everything you can do to
-              the LIBRARY (rather than to a book). Its `left` is derived from
-              the zoom so it stands on bare wall instead of on the case. --- */}
-      <div
-        class="shelf-dock"
-        classList={{ 'is-mini': dockPlace().mini }}
-        data-testid="shelf-dock"
-        style={{ left: `${dockPlace().left}px` }}
-      >
-        <div class="shelf-dock__brand">
-          <BrandMark />
-          <span class="shelf-dock__wordmark">Notebook</span>
-        </div>
-        <span class="shelf-dock__rule" aria-hidden="true" />
-        <div
-          class="shelf-dock__tools"
-          role="toolbar"
-          aria-label="Shelf tools"
-          aria-orientation="vertical"
-        >
-          <button
-            type="button"
-            class="shelf-dock__btn is-primary"
-            data-shelf-dock="new-book"
-            aria-label="New book"
-            title="Put a new book on this floor"
-            onClick={() => addBook(addSpot()?.floor)}
-          >
-            <NewBookIcon />
-            <span class="shelf-dock__label">new book</span>
-          </button>
-          <span class="shelf-dock__rule" aria-hidden="true" />
-          <button
-            type="button"
-            class="shelf-dock__btn"
-            data-shelf-dock="studio"
-            aria-label="Library studio"
-            title="Pick the room, the wall, the growing things"
-            onClick={() => openStudio(null)}
-          >
-            <PaletteIcon />
-            <span class="shelf-dock__label">studio</span>
-          </button>
-          <button
-            type="button"
-            class="shelf-dock__btn"
-            data-shelf-dock="add-floor"
-            aria-label="Add a floor"
-            title="Grow the case downward"
-            onClick={() => world?.addFloor()}
-          >
-            <AddFloorIcon />
-            <span class="shelf-dock__label">add floor</span>
-          </button>
-          {/* Crumpled books used to live in a drawer drawn INSIDE the case,
-              which put a piece of filing furniture in the middle of the
-              artwork. It is a library action, so it belongs on the rail. */}
-          <button
-            type="button"
-            class="shelf-dock__btn"
-            data-shelf-dock="trash"
-            aria-label="Trash"
-            title="Books you crumpled — restore or empty"
-            onClick={() => {
-              void play('pop-soft');
-              setTrashOpen(true);
-            }}
-          >
-            <TrashIcon />
-            <span class="shelf-dock__label">trash</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="shelf-zoom-pill" role="toolbar" aria-label="Zoom controls">
-        <button
-          type="button"
-          class="shelf-zoom-pill__btn"
-          aria-label="Zoom out"
-          title="Zoom out (-)"
-          onClick={() => world?.zoomOut()}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          class="shelf-zoom-pill__pct"
-          aria-label="Reset zoom to 100%"
-          title="Reset zoom (0)"
-          onClick={() => world?.zoomReset()}
-        >
-          {zoomPct()}%
-        </button>
-        <button
-          type="button"
-          class="shelf-zoom-pill__btn"
-          aria-label="Zoom in"
-          title="Zoom in (+)"
-          onClick={() => world?.zoomIn()}
-        >
-          +
-        </button>
-        <span class="shelf-zoom-pill__rule" aria-hidden="true" />
-        <button
-          type="button"
-          class="shelf-zoom-pill__fit"
-          aria-label="Fit bookcase to window"
-          title="Fit the whole case"
-          onClick={() => world?.zoomFit()}
-        >
-          fit
-        </button>
-      </div>
     </div>
   );
 }

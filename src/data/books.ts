@@ -28,9 +28,81 @@ function serializeCoverMeta(
   return meta == null ? null : JSON.stringify(meta);
 }
 
+/* ------------------------------- bookcases -------------------------------- */
+/*
+ * A library is a collection of bookcases, and every book stands in exactly
+ * one of them. The bookcase TABLE lives in src/data/bookcases.ts; what is
+ * here is only what a book needs to know about its case — the id of the one
+ * every pre-bookcase library folds into, the settings key naming the open
+ * case, and the scoping argument every shelf query now takes.
+ *
+ * The scoping argument is optional everywhere, and omitting it means EVERY
+ * bookcase, not "the open one". That is deliberate: a dozen callers outside
+ * this layer (quick switcher, export bundle, journal, script templates) want
+ * the whole library, and silently narrowing them to one case would make books
+ * vanish from search. The shelf — the one surface that must not leak books
+ * between cases — always passes the id explicitly.
+ */
+
+/** The bookcase every library has, and the one a pre-bookcase library becomes. */
+export const DEFAULT_BOOKCASE_ID = 'case-default';
+
+/** `settings` key holding the id of the bookcase currently open. */
+export const ACTIVE_BOOKCASE_KEY = 'activeBookcase';
+
+/**
+ * The case a book stands in. Absent ⇒ the default case: a book whose
+ * `bookcase_id` never got written (a reverted import, a row from the stub
+ * predating the migration) is still SOMEBODY's book, and showing it in the
+ * default case beats dropping it on the floor.
+ */
+export function bookcaseOf(book: Pick<Book, 'bookcaseId'>): string {
+  const id = book.bookcaseId;
+  return typeof id === 'string' && id.length > 0 ? id : DEFAULT_BOOKCASE_ID;
+}
+
+/**
+ * The open bookcase, read straight from `settings`.
+ *
+ * Read from the DB rather than from the reactive store on purpose: this
+ * module must not import src/data/bookcases.ts (which imports this one to
+ * cascade-delete a case's books), and one tiny keyed select per book creation
+ * costs nothing next to the insert it precedes.
+ */
+export async function readActiveBookcaseId(): Promise<string> {
+  try {
+    const db = await getDb();
+    const rows = await db.select<Array<{ value: string }>>(
+      'SELECT value FROM settings WHERE key = $1 LIMIT 1',
+      [ACTIVE_BOOKCASE_KEY],
+    );
+    const value = rows[0]?.value;
+    return typeof value === 'string' && value.length > 0 ? value : DEFAULT_BOOKCASE_ID;
+  } catch {
+    return DEFAULT_BOOKCASE_ID;
+  }
+}
+
+/** Record which bookcase is open. Best-effort; never throws. */
+export async function writeActiveBookcaseId(id: string): Promise<void> {
+  try {
+    const db = await getDb();
+    await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)', [
+      ACTIVE_BOOKCASE_KEY,
+      id,
+    ]);
+  } catch {
+    // Persistence is best-effort; the session still shows the new case.
+  }
+}
+
 function rowToBook(row: BookRow): Book {
   return {
     id: row.id,
+    bookcaseId:
+      typeof row.bookcase_id === 'string' && row.bookcase_id.length > 0
+        ? row.bookcase_id
+        : DEFAULT_BOOKCASE_ID,
     title: row.title,
     floor: row.floor,
     slot: row.slot,
@@ -45,17 +117,66 @@ function randomSpineSeed(): number {
   return Math.floor(Math.random() * 0x100000000) >>> 0;
 }
 
-/** Books on floors `startFloor..endFloor` (inclusive), ordered by floor then slot. */
+/**
+ * Books on floors `startFloor..endFloor` (inclusive), ordered by floor then
+ * slot. Pass `bookcaseId` to scope to one case; omit it for the whole library.
+ */
 export async function listBooksByFloorRange(
   startFloor: number,
   endFloor: number,
+  bookcaseId?: string,
 ): Promise<Book[]> {
   const db = await getDb();
+  const rows =
+    bookcaseId === undefined
+      ? await db.select<BookRow[]>(
+          'SELECT * FROM books WHERE floor >= $1 AND floor <= $2 ORDER BY floor ASC, slot ASC',
+          [startFloor, endFloor],
+        )
+      : await db.select<BookRow[]>(
+          // Placeholders must appear in ascending order: SQLite numbers `$N`
+          // by first appearance, not by the digits, so a query reading
+          // `... = $3 AND ... >= $1` binds the arguments to the wrong columns.
+          'SELECT * FROM books WHERE floor >= $1 AND floor <= $2 AND bookcase_id = $3 ORDER BY floor ASC, slot ASC',
+          [startFloor, endFloor, bookcaseId],
+        );
+  return rows.map(rowToBook);
+}
+
+/** Every book in one bookcase, trash included. Used by the delete flow. */
+export async function listBooksInBookcase(bookcaseId: string): Promise<Book[]> {
+  const db = await getDb();
   const rows = await db.select<BookRow[]>(
-    'SELECT * FROM books WHERE floor >= $1 AND floor <= $2 ORDER BY floor ASC, slot ASC',
-    [startFloor, endFloor],
+    'SELECT * FROM books WHERE bookcase_id = $1 ORDER BY floor ASC, slot ASC',
+    [bookcaseId],
   );
   return rows.map(rowToBook);
+}
+
+/** How many books stand in a bookcase (trash included). */
+export async function countBooksInBookcase(bookcaseId: string): Promise<number> {
+  return (await listBooksInBookcase(bookcaseId)).length;
+}
+
+/**
+ * Reshelve a book into another bookcase, landing on the next free slot of
+ * `floor` there. Returns the moved book, or null when it does not exist.
+ */
+export async function moveBookToBookcase(
+  id: string,
+  bookcaseId: string,
+  floor?: number,
+): Promise<Book | null> {
+  const book = await getBook(id);
+  if (book === null) return null;
+  const targetFloor = Math.max(0, floor ?? book.floor);
+  const slot = await nextFreeSlot(targetFloor, book.slot, bookcaseId);
+  const db = await getDb();
+  await db.execute(
+    'UPDATE books SET bookcase_id = $1, floor = $2, slot = $3, updated_at = $4 WHERE id = $5',
+    [bookcaseId, targetFloor, slot, new Date().toISOString(), id],
+  );
+  return getBook(id);
 }
 
 export async function getBook(id: string): Promise<Book | null> {
@@ -67,11 +188,18 @@ export async function getBook(id: string): Promise<Book | null> {
   return rows.length > 0 ? rowToBook(rows[0]) : null;
 }
 
+/**
+ * Shelve a new book. Without an explicit `bookcaseId` it lands in the case
+ * that is currently OPEN — unlike the list queries, whose default is the whole
+ * library. A new book has to stand somewhere, and "the case you are looking
+ * at" is the only answer that is ever right.
+ */
 export async function createBook(input: CreateBookInput): Promise<Book> {
   const db = await getDb();
   const now = new Date().toISOString();
   const book: Book = {
     id: nanoid(),
+    bookcaseId: input.bookcaseId ?? (await readActiveBookcaseId()),
     title: input.title,
     floor: input.floor,
     slot: input.slot,
@@ -81,9 +209,10 @@ export async function createBook(input: CreateBookInput): Promise<Book> {
     updatedAt: now,
   };
   await db.execute(
-    'INSERT INTO books (id, title, floor, slot, spine_seed, cover_meta, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+    'INSERT INTO books (id, bookcase_id, title, floor, slot, spine_seed, cover_meta, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
     [
       book.id,
+      book.bookcaseId,
       book.title,
       book.floor,
       book.slot,
@@ -373,6 +502,10 @@ export async function deleteBook(id: string): Promise<boolean> {
    moved to floor -1 disappears from the case without any schema change. Its
    former position + deletion time live in cover_meta.shelf so restore puts it
    back where it came from. Permanent deletion = deleteBook on a trashed id.
+
+   A trashed book keeps its `bookcase_id`: each case has its own floor -1, so
+   restore knows which case to put the book back into, and deleting a case
+   takes its drawer with it.
    -------------------------------------------------------------------------- */
 
 /** The floor index that acts as the trash. */
@@ -416,22 +549,36 @@ export async function updateBookPageCount(id: string): Promise<Book | null> {
   return patchShelfMeta(id, { pageCount: rows.length });
 }
 
-/** Books on a single floor, ordered by slot. */
-async function listFloor(floor: number): Promise<Book[]> {
+/** Books on a single floor, ordered by slot; scoped to one case when given. */
+async function listFloor(floor: number, bookcaseId?: string): Promise<Book[]> {
   const db = await getDb();
-  const rows = await db.select<BookRow[]>(
-    'SELECT * FROM books WHERE floor = $1 ORDER BY slot ASC',
-    [floor],
-  );
+  const rows =
+    bookcaseId === undefined
+      ? await db.select<BookRow[]>(
+          'SELECT * FROM books WHERE floor = $1 ORDER BY slot ASC',
+          [floor],
+        )
+      : await db.select<BookRow[]>(
+          'SELECT * FROM books WHERE floor = $1 AND bookcase_id = $2 ORDER BY slot ASC',
+          [floor, bookcaseId],
+        );
   return rows.map(rowToBook);
 }
 
 /**
  * Smallest free slot index on a floor at or after `from`.
  * Slots are sparse integers; gaps are expected and fine.
+ *
+ * Scope it to a bookcase whenever the answer is about to be written back as a
+ * position: two cases each have their own slot 0, and an unscoped call would
+ * push a book sideways to dodge a neighbour standing in a different room.
  */
-export async function nextFreeSlot(floor: number, from = 0): Promise<number> {
-  const taken = new Set((await listFloor(floor)).map((b) => b.slot));
+export async function nextFreeSlot(
+  floor: number,
+  from = 0,
+  bookcaseId?: string,
+): Promise<number> {
+  const taken = new Set((await listFloor(floor, bookcaseId)).map((b) => b.slot));
   let slot = Math.max(0, Math.round(from));
   while (taken.has(slot)) slot += 1;
   return slot;
@@ -439,15 +586,18 @@ export async function nextFreeSlot(floor: number, from = 0): Promise<number> {
 
 /**
  * Duplicate a book (title gets a " copy" suffix) with all of its pages,
- * landing on the next free slot of the same floor. Returns the new book.
+ * landing on the next free slot of the same floor *of the same bookcase*.
+ * Returns the new book.
  */
 export async function duplicateBook(id: string): Promise<Book | null> {
   const source = await getBook(id);
   if (source === null) return null;
   const db = await getDb();
-  const slot = await nextFreeSlot(source.floor, source.slot + 1);
+  const home = bookcaseOf(source);
+  const slot = await nextFreeSlot(source.floor, source.slot + 1, home);
   const copy = await createBook({
     title: `${source.title} copy`,
+    bookcaseId: home,
     floor: source.floor,
     slot,
     coverMeta: source.coverMeta,
@@ -486,7 +636,7 @@ export async function restoreBook(id: string): Promise<Book | null> {
   if (book === null || book.floor !== TRASH_FLOOR) return book;
   const meta = readShelfMeta(book);
   const floor = Math.max(0, meta?.prevFloor ?? 0);
-  const slot = await nextFreeSlot(floor, meta?.prevSlot ?? 0);
+  const slot = await nextFreeSlot(floor, meta?.prevSlot ?? 0, bookcaseOf(book));
   await patchShelfMeta(id, {
     deletedAt: undefined,
     prevFloor: undefined,
@@ -495,29 +645,51 @@ export async function restoreBook(id: string): Promise<Book | null> {
   return moveBook(id, floor, slot);
 }
 
-/** Books currently in the trash, most recently deleted first. */
+function byDeletedAtDesc(a: Book, b: Book): number {
+  const da = readShelfMeta(a)?.deletedAt ?? '';
+  const db_ = readShelfMeta(b)?.deletedAt ?? '';
+  return da < db_ ? 1 : da > db_ ? -1 : 0;
+}
+
+/**
+ * Every trashed book in the library, most recently deleted first.
+ *
+ * Deliberately parameterless: the trash panel passes this straight to
+ * `createResource`, and an optional argument there would be bound to the
+ * resource's source value rather than to a bookcase. Use
+ * `listTrashedBooksIn()` for one case.
+ */
 export async function listTrashedBooks(): Promise<Book[]> {
-  const books = await listFloor(TRASH_FLOOR);
-  return books.sort((a, b) => {
-    const da = readShelfMeta(a)?.deletedAt ?? '';
-    const db_ = readShelfMeta(b)?.deletedAt ?? '';
-    return da < db_ ? 1 : da > db_ ? -1 : 0;
-  });
+  return (await listFloor(TRASH_FLOOR)).sort(byDeletedAtDesc);
+}
+
+/**
+ * One bookcase's trash drawer. A trashed book never leaves the case it came
+ * from — that is what lets restore put it back where it stood.
+ */
+export async function listTrashedBooksIn(bookcaseId: string): Promise<Book[]> {
+  return (await listFloor(TRASH_FLOOR, bookcaseId)).sort(byDeletedAtDesc);
 }
 
 /** Permanently delete every book in the trash. Returns count. */
-export async function emptyTrash(): Promise<number> {
-  const books = await listFloor(TRASH_FLOOR);
+export async function emptyTrash(bookcaseId?: string): Promise<number> {
+  const books = await listFloor(TRASH_FLOOR, bookcaseId);
   for (const book of books) await deleteBook(book.id);
   return books.length;
 }
 
-/** Highest occupied shelf floor (>= 0), or 0 for an empty library. */
-export async function maxOccupiedFloor(): Promise<number> {
+/** Highest occupied shelf floor (>= 0), or 0 for an empty case/library. */
+export async function maxOccupiedFloor(bookcaseId?: string): Promise<number> {
   const db = await getDb();
-  const rows = await db.select<Array<{ floor: number }>>(
-    'SELECT floor FROM books WHERE floor >= 0 ORDER BY floor DESC LIMIT 1',
-  );
+  const rows =
+    bookcaseId === undefined
+      ? await db.select<Array<{ floor: number }>>(
+          'SELECT floor FROM books WHERE floor >= 0 ORDER BY floor DESC LIMIT 1',
+        )
+      : await db.select<Array<{ floor: number }>>(
+          'SELECT floor FROM books WHERE floor >= 0 AND bookcase_id = $1 ORDER BY floor DESC LIMIT 1',
+          [bookcaseId],
+        );
   return rows.length > 0 ? rows[0].floor : 0;
 }
 

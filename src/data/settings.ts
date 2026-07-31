@@ -132,16 +132,6 @@ function mergeStored(raw: unknown): MutableSettings {
     spellcheck: takeBoolean(s.spellcheck, d.spellcheck),
     keybindings: takeKeybindings(s.keybindings, d.keybindings),
     wheelMode: takeEnum(s.wheelMode, ['zoom', 'scroll'] as const, d.wheelMode),
-    shelfWoodStain: takeEnum(
-      s.shelfWoodStain,
-      ['oak', 'walnut', 'cherry', 'cream'] as const,
-      d.shelfWoodStain,
-    ),
-    wallpaperPattern: takeEnum(
-      s.wallpaperPattern,
-      ['damask', 'stars', 'botanical', 'plain'] as const,
-      d.wallpaperPattern,
-    ),
     shelfSort: takeEnum(
       s.shelfSort,
       ['manual', 'recent', 'favorites'] as const,

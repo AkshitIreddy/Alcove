@@ -8,7 +8,25 @@ Everything drawn in this app follows `assets/brand/icon.svg`, implemented in `sr
 
 This replaced a runtime painting stack — brush engine, procedural wood and flora, deferred lighting, generated photoreal materials — that cost ~5s to first paint and still read as cheap. `docs/design/RESET-render-architecture.md` is the decision; several docs under `docs/design/` predate it and carry a superseded banner. Do not reintroduce a light model, a gradient or a blur "just here".
 
-A library theme is a colour scheme and nothing more (`FlatScheme` in `art/flat.ts`, `ColourScheme` in `art/themes.ts`): timber, timberDark, recess, wall and exactly six book cloths. `setFlatScheme()` swaps it; the swap must be synchronous around the draw, and every cache holding drawn pixels must key on `flatSchemeTag()`.
+One correction to the above, because the rule was written too wide: **gentle gradients are allowed** — the icon itself uses three, and a soft wash reading as pigment or tinted paper is inside the style. What is banned is a light MODEL: a highlight placed to imply a lamp, a specular, a shading pass, a blur, a blend mode. `tests/styles.test.ts` gates the real rules and deliberately does not gate gradients.
+
+A library theme is a colour scheme (`FlatScheme` in `art/flat.ts`, `ColourScheme` in `art/themes.ts`): timber, timberDark, recess, wall and exactly six book cloths. `setFlatScheme()` swaps it; the swap must be synchronous around the draw, and every cache holding drawn pixels must key on `flatSchemeTag()`.
+
+### The three design vocabularies (orthogonal to colour)
+
+Colour is no longer the only axis. Three modules add shape, and each is deliberately independent of the scheme — repainting a room must not straighten its arches, and rebuilding a case must not repaint it.
+
+- `art/shelfDesign.ts` — the bookcase's **carpentry**: 12 builds × 12 timber patterns, 60 named presets, `ShelfDesign = { build, pattern }`. Consumed by the four part drawers in `art/flatShelf.ts` and baked by `features/bookshelf/textures.ts`. `resolveShelfDesign` is total: junk out of SQLite gives the house plank case, never a throw.
+- `art/wallpaperDesign.ts` — the **wall**: 19 patterns × 5 scales × 4 reliefs × 6 ink slots, 55 presets. Seamless *by construction* (torus-aware mark emitter, lattice fitted to the tile), which is what earned the wall a tile back after it had been reduced to one flat fill to kill a seam. `world.ts` bakes it onto the backdrop TilingSprite — tint `0xffffff`, `addressMode: 'repeat'`, and **`autoGenerateMipmaps: false`** (a mip sampled on a wrapped NPOT texture bleeds across the wrap and the seam comes back).
+- `art/bookDesign.ts` — a book's **binding**: 10 spine shapes × 10 materials × 12 decorations, 62 presets picked deterministically from the book's seed. `drawBookSpine` replaces `flatShelf.drawSpine` inside `renderSpine`. **It reads no `flatScheme()` and must not start**: a book keeps its own colours in every room, which is what lets the reader recognise it. (`flatShelf.drawSpine` still exists for `drawCaseCard`/`drawBookRow` at card scale.)
+
+Where the choices live: `data/designPrefs.ts`, one `settings` blob — `{ rooms: {[bookcaseId]: RoomDesign}, books: {[bookId]: BookPresetId} }`. The **case** owns its build, pattern and wallpaper; the **book** owns its binding. Non-Solid readers use `snapshotRoomDesign()` / `subscribeRoomDesign()` / `subscribeBookBindings()`. `art/spines.ts` never imports it — the pin arrives as `SpineParams.binding`.
+
+**Every one of these axes is a new axis of variation in baked pixels**, so it must appear in the relevant cache key next to `flatSchemeTag()`: `shelfDesignTag()` in the four case bakes and in `themeKeyOf` (which lives in `libraryKey.ts`, not `textures.ts`, so a node test can load it), all four wallpaper axes in `wallpaperTileKey`, the binding in the spine factory's params key. `tests/design-cache-keys.test.ts` pins this. Getting it wrong is invisible — the disk cache validates nothing about a hit, so it serves the wrong art forever on any machine that has drawn it once.
+
+### A library is a collection of bookcases
+
+`data/bookcases.ts` — each bookcase has its own id, name, `room` (a LibraryPrefs JSON blob), floors and books; every book carries `bookcase_id`. Ten floors unless the reader grows it, and the case has a visible bottom (a plinth). Rust migration v2 in `src-tauri/src/lib.rs` plus `ensureBookcases()`; `features/bookshelf/libraryPrefs.ts` keeps its exact public surface but now reads and writes **the open bookcase's** room. Book queries take `bookcaseId` as an optional *trailing* argument, and **omitting it means the whole library, not the open case** — that is deliberate, so search and the quick switcher keep working.
 
 ## Architecture decisions (binding)
 
@@ -33,8 +51,10 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 
 ## Map of the app
 
+- `src/art/` — the drawing vocabulary: `flat.ts` (palette + primitives), `flatShelf.ts` (case parts), and the three design vocabularies `shelfDesign.ts` / `wallpaperDesign.ts` / `bookDesign.ts`
 - `src/features/bookshelf/` — Pixi world, gestures, spine/cover factories, shelf menu, left dock rail (new book / studio / add floor / trash), floor plates
-- `src/views/` — `BookView` spread + `rail/` (icon rail and its panels), TOC/thumbnails/cheat-sheet
+- `src/views/` — `BookView` spread + `rail/` (icon rail and its panels, incl. the library and book studios and their pickers), TOC/thumbnails/cheat-sheet
+- `src/data/` — SQLite access and the persisted stores: `bookcases.ts`, `designPrefs.ts`, `settings.ts`
 - `src/editor/` — TipTap setup, custom nodes, slash + context menus, effects, pagination, script bridge, exporters
 - `src/flip/` — WebGL page-curl engine and snapshot cache
 - `src/script/` — Notebook Script parser/printer (total, never throws)
@@ -60,3 +80,5 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 - Unit tests: `npx vitest run`
 - End-to-end: `npm run e2e` (Playwright; reuses a dev server on :1420). Headless uses SwiftShader — append `?fx=force` for full shelf effects and poll for state instead of fixed waits, because rAF is throttled there.
 - Visual QA: capture screenshots and *actually look at them* before calling a visual change done. Keep it proportionate — the surface you changed, batched into specimen boards where possible.
+- Seam QA: a specimen board proves a module draws well in isolation and says nothing about whether the app can reach it. For anything that has to travel store → world, drive the running app: `scripts/probe-vocabularies.mjs` (a design choice reaches the case, the wall and a second bookcase), `probe-bindings.mjs` (bindings through the whole spine bake path), `probe-studio-wiring.mjs` (the panel, driven only by clicking). All assert on the APPLIED state via the `?fx=force` bridges, never on what was merely saved.
+- QA bridges must be handed out from `world.ts` (`__shelfSaveDesign`, `__shelfSaveSettings`, …). A probe's own `import('/src/data/…')` can resolve to a **second copy** of the module on a dev server that has served HMR updates, and writes to that copy never reach the shelf.

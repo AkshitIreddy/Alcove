@@ -11,6 +11,12 @@ mod tray;
 /// `DB_PATH` in `src/data/db.ts` on the frontend.
 const DB_URL: &str = "sqlite:notebook.db";
 
+/// Migrations for the app database.
+///
+/// The `'case-default'` id spelled inside migration 2 must stay in sync with
+/// `DEFAULT_BOOKCASE_ID` in `src/data/books.ts`: the frontend's start-up sweep
+/// and this migration have to agree on it, or a library ends up split across
+/// two cases with one of them invisible.
 fn migrations() -> Vec<Migration> {
     vec![Migration {
         version: 1,
@@ -53,6 +59,53 @@ fn migrations() -> Vec<Migration> {
 
             CREATE INDEX IF NOT EXISTS idx_pages_book_ord ON pages (book_id, ord);
             CREATE INDEX IF NOT EXISTS idx_books_floor_slot ON books (floor, slot);
+        "#,
+    },
+    // A library is a COLLECTION of bookcases, and every book stands in one of
+    // them. This is the migration that must never lose a library, so the
+    // assignment is done by SQLite itself rather than by a sweep the frontend
+    // has to remember to run: `NOT NULL DEFAULT` back-fills every existing row
+    // in the same statement that adds the column, atomically, inside the
+    // migrator's transaction. There is no window in which a book has no case.
+    //
+    // sqlx records applied versions, so this runs exactly once; `ADD COLUMN`
+    // has no IF NOT EXISTS, which is fine — a second run would abort the whole
+    // transaction and change nothing. The frontend
+    // (`src/data/bookcases.ts::ensureBookcases`) re-checks the same invariants
+    // on every start anyway, because the browser-dev stub has no DDL at all.
+    Migration {
+        version: 2,
+        description: "bookcases",
+        kind: MigrationKind::Up,
+        sql: r#"
+            CREATE TABLE IF NOT EXISTS bookcases (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                ord        INTEGER NOT NULL DEFAULT 0,
+                -- LibraryPrefs JSON (the case's own room), or NULL to follow
+                -- the app default. Opaque here; validated on the JS side.
+                room       TEXT,
+                -- How many floors this case shows. 10 unless the reader grew it.
+                floors     INTEGER NOT NULL DEFAULT 10,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            INSERT OR IGNORE INTO bookcases (id, name, ord, room, floors, created_at, updated_at)
+            VALUES (
+                'case-default',
+                'My Library',
+                0,
+                NULL,
+                10,
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            );
+
+            ALTER TABLE books ADD COLUMN bookcase_id TEXT NOT NULL DEFAULT 'case-default';
+
+            CREATE INDEX IF NOT EXISTS idx_books_case_floor_slot
+                ON books (bookcase_id, floor, slot);
         "#,
     }]
 }

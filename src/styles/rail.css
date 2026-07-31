@@ -100,6 +100,82 @@
   transform: translateY(-50%) translateX(0);
 }
 
+/* The chip lands exactly where the open sheet starts, and the rail paints
+   above the sheet — so a pressed icon would label the panel it just opened,
+   over the panel's own title. The panel IS the label at that point. */
+.nb-rail-button.is-active[data-tip]::after {
+  content: none;
+}
+
+/* ============================ the panel push ================================
+   A side panel used to be laid ON TOP of the thing it dressed: the studio
+   sheet covered the shelf's own dock, and the customize sheet covered the
+   left page of the book it was recolouring. Panels now PUSH — whatever they
+   would have covered slides right by the sheet's own width.
+
+   `--nb-panel-push` is published on <html> by views/rail/panelPush.ts: one
+   GSAP tween on the motion scale's `slow`/`normal` steps, so the sheet and
+   the world it displaces move as one gesture. Everything it feeds is a
+   TRANSFORM. Nothing here may transition a layout property — the pagination
+   pass measures leaf geometry on the same frames, and a width/left animation
+   would re-measure every page of the book sixty times a second.
+   ========================================================================== */
+:root {
+  --nb-panel-push: 0px;
+  --nb-panel-edge: 0px;
+}
+
+/*
+ * The book area, named piece by piece rather than as `.nb-spread-stage`: the
+ * rail panels are children of that stage, and a transform there would drag
+ * the sheets along with the thing they are pushing.
+ */
+.nb-book-view .nb-spread-header,
+.nb-book-view .nb-book-cover,
+.nb-book-view .nb-thumb-strip {
+  transform: translate3d(var(--nb-panel-push), 0, 0);
+}
+
+/*
+ * The back arrow is pinned to the window's top-left corner — INSIDE the
+ * sheet's own lane — so it is not travelling with the book, it is getting out
+ * of the way. It clears the sheet's right edge instead: --nb-panel-edge, less
+ * the arrow's own left offset, plus a hand's width of gap. Both terms are 0
+ * with nothing open, and `max` keeps it from creeping left of home.
+ */
+.nb-book-view .nb-back-button {
+  --nb-back-clear: max(
+    0px,
+    calc(var(--nb-panel-edge) + var(--space-12) - var(--space-16))
+  );
+  transform: translate3d(var(--nb-back-clear), 0, 0);
+}
+
+/* The arrow's own hover nudge, rewritten so it composes with the clearance
+   instead of replacing it. */
+.nb-book-view .nb-back-button:hover {
+  transform: translate3d(calc(var(--nb-back-clear) - 2px), 0, 0);
+}
+
+/*
+ * The settings seal is a fixed bottom-left FAB, which is exactly where a
+ * side panel lands — it used to sit ON the open sheet reading as a stray
+ * dot. It drops off the bottom edge while any panel is out. `visibility`
+ * is delayed by the slide so it also leaves the tab ring, but only once it
+ * is out of sight. --dur-md is the CSS twin of motion.ts's `normal` step,
+ * which is the tempo panelPush uses to give the room back.
+ */
+html[data-nb-panel='open'] .nbs-gear-button {
+  opacity: 0;
+  transform: translateY(150%) scale(0.86);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    transform calc(var(--dur-md) * var(--motion-scale, 1)) var(--ease-in-out),
+    opacity calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-in-out),
+    visibility 0s linear calc(var(--dur-md) * var(--motion-scale, 1));
+}
+
 /* ---------------------------------- panels -------------------------------- */
 .nb-rail-panel {
   position: fixed;
@@ -158,10 +234,22 @@
 /*
  * The shelf has no icon rail to slide out of, so the studio sheet hugs the
  * window edge instead — a little wider, because theme cards want the room.
+ *
+ * FLUSH, not floated: the room behind it steps aside by exactly this sheet's
+ * width, and the strip that uncovers is only hidden if the sheet fills it
+ * corner to corner. A 16px margin here would show a band of bare desk down
+ * the left edge and around every rounded corner. The book view has no such
+ * problem — its panels float over a desk that is not going anywhere.
  */
 .nb-rail-panel.is-shelf {
-  left: var(--space-16);
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: min(376px, 84vw);
+  /* A board hinged on the window edge: square where it meets the frame,
+     drawn on the two corners that are actually in the room. */
+  border-radius: 0 var(--radius-wobble-lg) var(--radius-wobble-lg) 0;
+  border-left: none;
 }
 
 .nb-studio-hint {

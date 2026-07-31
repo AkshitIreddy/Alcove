@@ -113,7 +113,12 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
       >
         {(loaded) => (
           <CustomizePanel
-            initialTab="library"
+            /* A book was named, so open on the BOOK. This branch only renders
+               once a spine's "dress this book…" has loaded one; the room-only
+               studio is the fallback above and never reaches CustomizePanel.
+               Starting on "this library" here meant the one menu item that
+               asks for a book's wardrobe opened the room instead. */
+            initialTab="book"
             bookId={loaded().id}
             spineSeed={loaded().spineSeed}
             title={loaded().title}

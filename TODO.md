@@ -6,6 +6,21 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ---
 
+## 🔴 Found by looking, 2026-08-01 (after the variety waves)
+
+- [ ] **The settings gear is HIDDEN while a panel is open, not moved.** My
+      original brief said hide it; the reader pointed out that push-not-cover
+      already solves the overlap, so it should TRAVEL with the pushed content
+      and stay reachable. The corrected brief did not reach the running agent.
+- [ ] **A bookcase card reads "0 books" while books are visibly on its
+      shelves.** Either the count query does not filter to the active bookcase,
+      or the migration did not stamp existing books with a bookcase id. Verify
+      against a library that existed before the migration — this is the risky
+      half of that change.
+- [ ] Wallpaper defaults to `plain-parchment`, so none of the 55 patterns show
+      until one is picked. Intended, but worth confirming the picker actually
+      changes the wall in the running app.
+
 ## 🔴 Reported 2026-08-01
 
 ### Sound — LICENCE OBLIGATION, do not ship without this
@@ -152,7 +167,11 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
 - [x] ~~Purge the AI art pipeline~~ — every gen/pack/cut script, all generated
       assets, and the 30 GB ComfyUI install with its models
 - [x] ~~`flat.ts` + `flatShelf.ts`~~ — palette, primitives, case parts, spines
-- [x] ~~Wall is one flat tint~~ — nothing tiles, so nothing can seam
+- [x] ~~Wall is one flat tint~~ — nothing tiles, so nothing can seam.
+      **Superseded**: the wall is a tiled `WallpaperSpec` again (see the
+      vocabularies section), but only because `art/wallpaperDesign.ts` is
+      seamless *by construction* — every mark is emitted through a torus-aware
+      emitter and there is a test that abuts two copies and measures the seam
 - [x] ~~`specimen.html`~~ — judge the drawing on its own
 - [x] ~~Point the shelf at it~~ — case, spines and covers all draw through it
 - [x] ~~Delete the painting stack~~ — brush, materials, flora, leaves, props,
@@ -164,6 +183,88 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
       sample**: recess, wall, plank, crown and post all repaint on a swap
 - [x] ~~Restyle the covers and the pulled-book overlay~~ — the cover is the
       icon's own construction; the overlay hinges about the spine
+
+## 🏛️ Three design vocabularies, and the wiring that makes them real
+
+A room used to be a colour scheme and nothing else, so every library was the
+same plank bookcase in new hexes. It now has three orthogonal vocabularies,
+each with its own module, and — the part that took a second pass — each one
+actually reaches the screen.
+
+- [x] ~~Carpentry: `art/shelfDesign.ts`~~ — 12 builds × 12 timber patterns, 60
+      named presets. A build is a coherent set of choices across all four baked
+      parts (board trim, upright shaft, what fills the opening, cornice
+      silhouette), not a recolour
+- [x] ~~Wallpaper: `art/wallpaperDesign.ts`~~ — 19 patterns × 5 scales × 4
+      reliefs × 6 ink slots, 55 presets, seamless by construction
+- [x] ~~Bindings: `art/bookDesign.ts`~~ — 10 spine shapes × 10 materials × 12
+      decorations, 62 presets picked deterministically from the book's seed.
+      Reads no `flatScheme()`: **a book keeps its own colours in every room**
+- [x] ~~The pickers stored and previewed truthfully, and the Pixi world drew a
+      plain plank case against a bare wall anyway~~ — the gap is closed:
+      `textures.ts` takes `ThemeRequest.design` into all four part bakes,
+      `world.ts` bakes the wallpaper tile onto the backdrop, `spines.ts` draws
+      through `drawBookSpine`. Verified in the running app, not by unit test:
+      `scripts/probe-vocabularies.mjs`, `probe-bindings.mjs` and
+      `probe-studio-wiring.mjs`, screenshots in `qa/ui/vocab-*`, `binding-*`,
+      `studio-*`
+- [x] ~~`wallTileScale` forced one copy of the texture to cover the viewport~~ —
+      correct for an authored panel that could not tile, ruinous for a real
+      tile: it blew the motif up ~4× so `petite` and `grand` landed on screen
+      the same size and the whole scale axis was invisible. Back to
+      `max(zoom, 0.35)`
+- [x] ~~Mipmaps on the wallpaper tile~~ — off. A wrapped non-power-of-two
+      texture bleeds across the wrap when a mip is sampled, and `tileScale < 1`
+      is exactly when one is — a soft seam at the zooms that show the most wall
+- [x] ~~Every new axis is in every key that stores drawn pixels~~ —
+      `shelfDesignTag` in the four case bakes and in `themeKeyOf`, all four
+      wallpaper axes in `wallpaperTileKey`, the binding in the spine factory's
+      params key. `tests/design-cache-keys.test.ts` pins all three, because a
+      missing axis is invisible: the disk cache validates nothing about a hit,
+      so it serves the wrong art forever on any machine that drew it once
+- [x] ~~`themeKeyOf` sat in `textures.ts`, which imports Pixi~~ — moved to
+      `libraryKey.ts`, whose whole reason to exist is being loadable in node.
+      The key test could not otherwise run
+- [x] ~~A binding pinned in the studio repainted the panel preview and nothing
+      else~~ — a binding is persisted outside `cover_meta`, so it never
+      travelled the `persistBookStyle` → `invalidate` path the other style
+      knobs use. `subscribeBookBindings` now drops the affected books' textures
+- [x] ~~`data/designPrefs.ts` lived in `views/rail/`~~ — a persistence store
+      keyed by bookcase id and book id, imported by the Pixi world. Moved
+      beside `data/bookcases.ts`; `art/spines.ts` never imports it at all, the
+      pin arrives as `SpineParams.binding`
+- [x] ~~Settings offered a 4-way "wood stain" and a 4-way "wallpaper pattern",
+      neither of which had reached the screen since the case went flat~~ —
+      both rows removed, both fields dropped from `Settings`, and
+      `EnvTextures.setStain`/`setWallpaper` deleted. The axes they gestured at
+      are real now, far larger, and belong to the **bookcase** rather than to
+      the app. The e2e test that asserted they live-applied is deleted, named
+      in place — its own claim ("cherry reddens every wood pixel") had not been
+      true for a long time
+- [x] ~~The shelf's document-level key handler ate arrows/Home/Enter for every
+      open panel~~ — the two studio roots guarded themselves, so the trash, the
+      TOC and the sticker tray were still driving the shelf behind them. Now
+      keyed off `data-nb-panel="open"`, which covers panels added later
+- [x] ~~`CustomizePanel` had the book id and did not forward it~~ — the binding
+      key fell back to `seed:<spineSeed>`, stable but a *different* key from
+      the one the spine factory reads
+
+### Known, deliberate, and not worth chasing
+
+- The recess sprite sits behind the books, so `barrister`'s sash muntins and
+  `apothecary`/`pigeonhole`'s dividers are partly occluded. There is no layer
+  between reader and shelf to hang a door on; every build puts its signature
+  high in the opening, which is what survives
+- A board is 40 world px tall and the next floor starts at its bottom edge, so
+  a build cannot change the board's silhouette. Fretwork that really hangs
+  lives in the opening as the valance
+- `toile` and `bird` are only used at `grand`/`large` in the presets; at
+  `petite` they turn to mush. Nothing enforces it — preset curation
+- `covers.ts` does **not** need `bookDesignTag` in its memo key. Covers draw
+  their own front board and never call `renderSpine`, so the binding is not an
+  axis there. Recorded so nobody "fixes" it
+- The plinth is the crown bake mirrored. If a dedicated base board is ever
+  authored in `art/flatShelf.ts`, swap it in `syncCrown` and drop `scale.y=-1`
 
 ## 🐛 Reported bugs
 
@@ -234,9 +335,37 @@ outline, rounded corners, wobbling edges, no lighting. See `src/art/flat.ts`.
 - [x] ~~Notebook Script v2 — variables, reusable styles, strict validation~~ —
       `::let` / `{{name}}`, `::style` + `{use=name}`, and ~55 diagnostic codes
       carrying 1-based line/column and an `expected`. `parse()` stays total
+- [x] ~~A library is one endless bookcase~~ — it is a collection of them, each
+      with its own id, name, room and books, ten floors unless the reader grows
+      it. Rust migration v2 + `ensureBookcases()`, three overlapping guards so
+      no library can be lost, and the case now ends with a visible plinth
 - [ ] Notion-depth writing: nested toggles, columns, math, footnotes,
       backlinks, sortable tables, selection toolbar
 - [ ] Rebuild and verify the NSIS installer
+
+### Bookcases — the edges nobody owns yet
+
+All four are safe (nothing is lost, nothing throws); all four are places where
+the app quietly assumes one bookcase.
+
+- [ ] **`features/transfer` does not know about bookcases.** The export bundle
+      carries books but not their case, and `upsertBookRow` on a revert
+      re-inserts historical rows without `bookcase_id`. The start-up orphan
+      sweep adopts them into the first case — there is a test — so an imported
+      library lands entirely in the default case rather than being lost
+- [ ] **Quick switch and full-text search are library-wide**, deliberately, so
+      books never vanish from search. But opening a hit that lives in another
+      bookcase does not switch to it, so the reader lands on a shelf that does
+      not contain the book they just picked. Wants `switchBookcase` before
+      `appState.openBook`
+- [ ] **The trash is one drawer for the whole library.** `listTrashedBooksIn`
+      exists if it should be per-case; the panel passes the parameterless
+      version straight to `createResource`
+- [ ] **Moving a book between cases repaints it** when it has no studio style
+      override, because un-overridden spines follow the room. Inherent to the
+      existing design rather than new — but a book dragged into a
+      differently-themed case changes colour, which is the one thing that stops
+      you recognising it
 
 ## 🔩 Found while making the tree green
 

@@ -129,8 +129,6 @@ async function loadAssets(): Promise<AssetSnapshot[]> {
 export function themeSnapshot(): Record<string, unknown> {
   return {
     theme: settings.theme,
-    shelfWoodStain: settings.shelfWoodStain,
-    wallpaperPattern: settings.wallpaperPattern,
     defaultBookPalette: settings.defaultBookPalette,
     pageStyleDefault: settings.pageStyleDefault,
     inkColor: settings.inkColor,

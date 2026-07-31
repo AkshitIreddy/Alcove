@@ -1,4 +1,4 @@
-# Notebook
+# Bellanote
 
 A Windows desktop notes app built around a bookshelf. Books stand on shelves
 that go on forever; drag one off and it opens into pages you write on with a
@@ -6,7 +6,7 @@ block editor. Everything is stored locally in SQLite — no account, no sync, no
 network unless you ask for one.
 
 <p align="center">
-  <img src="assets/brand/icon-1024.png" width="160" alt="">
+  <img src="assets/brand/bellanote-1024.png" width="160" alt="">
 </p>
 
 ## What it does

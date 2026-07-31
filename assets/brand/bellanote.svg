@@ -1,0 +1,160 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Bellanote — the app mark.
+
+    Same vocabulary as everything the app draws (src/art/flat.ts): flat colour,
+    ONE dark outline on everything, rounded corners, edges that bow a little.
+    Gentle two-stop ramps are allowed; a light model is not.
+
+    ## How it got here
+
+    Six passes, and nearly all of them were about ONE question: what is the
+    bell attached to?
+
+      1. A green ribbon down the cover — read as a separate object taped on.
+      2. An open gold arc — read as a stray "C" floating on the cover.
+      3. A closed gold ring — a blob at 32px, fussy jewellery at 1024.
+      4. A red cord wrapped round the book like an elastic closure. Closer,
+         because it finally answered "attached to WHAT" — but it crossed the
+         cover and cut the label in half, and moving it to the fore edge left
+         it looking like a pole strapped to a book.
+      5. This one: the bell is the END OF A BOOKMARK, and the ribbon comes out
+         from between the pages at the top. It works because it is the one
+         attachment that is already part of a book — nothing has been added to
+         the object, only revealed.
+
+    Proportion went the other way at the same time. Chasing "cute" had pushed
+    the width to ~0.86 of the height, which stopped reading as a book and
+    started reading as a lunchbox. It is ~0.68 now: still round-cornered and
+    friendly, but recognisably a notebook.
+
+    Everything else is detail that survives 32px as a single mark: gold corner
+    protectors on the fore edge, a stitched line inset from the cover edge, two
+    fat bands on the spine, and a label with two chunky strokes.
+  -->
+  <defs>
+    <linearGradient id="cover" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#6d81cf"/>
+      <stop offset="58%" stop-color="#5468b4"/>
+      <stop offset="100%" stop-color="#3f5195"/>
+    </linearGradient>
+    <linearGradient id="spine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#374780"/>
+      <stop offset="100%" stop-color="#51649f"/>
+    </linearGradient>
+    <linearGradient id="pages" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#efe7d4"/>
+      <stop offset="100%" stop-color="#fffaf0"/>
+    </linearGradient>
+    <linearGradient id="bell" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#ffe49b"/>
+      <stop offset="100%" stop-color="#f0ad33"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#c8402f"/>
+      <stop offset="100%" stop-color="#e8604a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- one flat contact shadow, never a light model -->
+  <ellipse cx="512" cy="994" rx="264" ry="34" fill="#2c2a4a" opacity="0.22"/>
+
+  <g transform="rotate(-3.5 512 560)">
+
+    <!-- ==== the bookmark, drawn BEFORE the book so its tail is buried ==== -->
+    <path d="M 668 300 C 664 236, 668 176, 676 122" fill="none" stroke="#2c2a4a" stroke-width="40" stroke-linecap="round"/>
+    <path d="M 668 300 C 664 236, 668 176, 676 122" fill="none" stroke="url(#ribbon)" stroke-width="24" stroke-linecap="round"/>
+
+    <!-- ==== the book ====
+         Dropped 52px so a clear run of ribbon shows between the page block
+         and the bell. Without it the bell sat on the cover's top edge and read
+         as balanced there rather than hanging from a bookmark. -->
+    <g transform="translate(0 52)">
+
+    <!-- page block: sits behind the cover, proud on the fore edge -->
+    <path d="M 336 268
+             C 470 252, 660 256, 774 270
+             C 794 273, 804 286, 806 306
+             C 813 452, 815 700, 808 846
+             C 806 866, 796 877, 776 880
+             C 652 893, 466 895, 338 886 Z"
+          fill="url(#pages)" stroke="#2c2a4a" stroke-width="15" stroke-linejoin="round"/>
+    <path d="M 784 330 C 790 464, 792 686, 786 812" fill="none" stroke="#d3cab2" stroke-width="9" opacity="0.9"/>
+
+    <!-- front cover -->
+    <path d="M 262 240
+             C 282 218, 316 208, 352 206
+             C 490 196, 626 199, 702 210
+             C 738 215, 754 238, 756 274
+             C 764 452, 766 712, 758 856
+             C 756 892, 739 913, 703 918
+             C 588 930, 452 931, 344 922
+             C 306 919, 280 908, 262 886 Z"
+          fill="url(#cover)" stroke="#2c2a4a" stroke-width="18" stroke-linejoin="round"/>
+
+    <!-- stitched line, inset from the cover edge -->
+    <path d="M 386 262
+             C 496 254, 620 256, 694 264
+             C 707 266, 714 274, 715 287
+             C 721 448, 722 700, 715 838
+             C 714 851, 706 859, 693 861
+             C 596 871, 458 872, 372 863
+             C 359 861, 352 853, 351 840
+             C 345 696, 345 442, 350 284
+             C 351 271, 373 263, 386 262 Z"
+          fill="none" stroke="#93a6e0" stroke-width="6" stroke-dasharray="17 15" stroke-linecap="round" opacity="0.75"/>
+
+    <!-- spine: the darker face doing all the depth work -->
+    <path d="M 262 240
+             C 230 274, 216 316, 214 366
+             C 208 508, 208 618, 214 762
+             C 216 810, 230 858, 262 886
+             C 280 908, 306 919, 344 922
+             C 320 892, 312 860, 310 818
+             C 304 688, 304 452, 310 322
+             C 312 280, 324 258, 352 206
+             C 316 208, 282 218, 262 240 Z"
+          fill="url(#spine)" stroke="#2c2a4a" stroke-width="18" stroke-linejoin="round"/>
+
+    <!-- two fat butter bands on the spine -->
+    <path d="M 306 400 C 288 402, 240 404, 224 402" fill="none" stroke="#ffd782" stroke-width="28" stroke-linecap="round"/>
+    <path d="M 305 722 C 287 724, 239 726, 223 724" fill="none" stroke="#ffd782" stroke-width="28" stroke-linecap="round"/>
+
+    <!-- gold corner protectors on the fore edge -->
+    <path d="M 702 214 C 730 218, 750 238, 753 268 C 733 264, 713 248, 702 214 Z"
+          fill="#ffd782" stroke="#2c2a4a" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M 755 866 C 752 896, 734 913, 706 916 C 718 886, 736 870, 755 866 Z"
+          fill="#ffd782" stroke="#2c2a4a" stroke-width="12" stroke-linejoin="round"/>
+
+    <!-- a cream label with two chunky marks on it -->
+    <path d="M 400 412
+             C 476 403, 578 405, 640 413
+             C 657 415, 665 426, 666 443
+             C 669 496, 669 552, 666 598
+             C 665 615, 655 625, 638 627
+             C 562 636, 452 636, 404 629
+             C 387 627, 378 617, 377 600
+             C 374 552, 374 494, 377 445
+             C 378 428, 387 413, 400 412 Z"
+          fill="#fffaf0" stroke="#2c2a4a" stroke-width="14" stroke-linejoin="round"/>
+    <path d="M 428 478 C 480 470, 566 471, 622 478" fill="none" stroke="#5a5a86" stroke-width="21" stroke-linecap="round" opacity="0.85"/>
+    <path d="M 428 548 C 472 541, 540 542, 582 548" fill="none" stroke="#5a5a86" stroke-width="19" stroke-linecap="round" opacity="0.55"/>
+
+    </g>
+
+    <!-- ==== the bell, on the bookmark's end ==== -->
+    <path d="M 626 118
+             C 616 74, 636 34, 676 28
+             C 716 22, 745 52, 749 96
+             C 751 115, 758 127, 768 134
+             C 772 138, 770 146, 762 147
+             C 715 154, 659 156, 616 150
+             C 608 149, 605 141, 610 137
+             C 621 130, 624 126, 626 118 Z"
+          fill="url(#bell)" stroke="#2c2a4a" stroke-width="15" stroke-linejoin="round"/>
+    <circle cx="688" cy="172" r="23" fill="#f0ad33" stroke="#2c2a4a" stroke-width="14"/>
+    <!-- one soft catchlight on the bell's shoulder. Not a light model: a flat
+         lighter face, the same trick the spine uses. -->
+    <path d="M 649 82 C 655 55, 668 41, 687 38" fill="none" stroke="#fff4d2" stroke-width="13" stroke-linecap="round" opacity="0.8"/>
+  </g>
+</svg>

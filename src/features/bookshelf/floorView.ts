@@ -33,6 +33,7 @@ import {
   RAIL_W,
   SHELF_WIDTH,
   TOP_SHADOW_H,
+  underPlankShadowSlices,
 } from './constants';
 import { layoutFloor, LAYOUT_MARGIN_X } from './layout';
 import { PROP_H, PROP_KINDS, PROP_W, type PropKind } from '../../art/props';
@@ -513,17 +514,16 @@ export class FloorView {
     const src = env.shadow;
     if (src === null || src === this.shadowSource) return;
 
-    // Texels per world px along the strip. `source.width` is in logical units
-    // (pixelWidth / resolution), which is what Texture frames are measured in.
-    const texels = src.source.width / SHADOW_STRIP.w;
-    const capPx = Math.max(
-      1,
-      Math.min(Math.round(SHADOW_CAP_W * texels), Math.floor(src.source.width / 2) - 1),
-    );
-    const srcW = src.source.width;
+    // `source.width` is in logical units (pixelWidth / resolution), which is
+    // what Texture frames are measured in.
     const srcH = src.source.height;
-    const cut = (x: number, w: number): Texture =>
-      new Texture({ source: src.source, frame: new Rectangle(x, 0, w, srcH) });
+    const [mid, capL, capR] = underPlankShadowSlices(
+      src.source.width,
+      SHADOW_STRIP.w,
+      SHADOW_CAP_W,
+    );
+    const cut = (s: { x: number; w: number }): Texture =>
+      new Texture({ source: src.source, frame: new Rectangle(s.x, 0, s.w, srcH) });
 
     const place = (existing: Sprite | null, texture: Texture, x: number, w: number): Sprite => {
       if (existing !== null) {
@@ -543,19 +543,9 @@ export class FloorView {
       return sprite;
     };
 
-    this.shadow = place(
-      this.shadow,
-      cut(capPx, srcW - capPx * 2),
-      SHADOW_CAP_W,
-      SHELF_WIDTH - SHADOW_CAP_W * 2,
-    );
-    this.shadowCapL = place(this.shadowCapL, cut(0, capPx), 0, SHADOW_CAP_W);
-    this.shadowCapR = place(
-      this.shadowCapR,
-      cut(srcW - capPx, capPx),
-      SHELF_WIDTH - SHADOW_CAP_W,
-      SHADOW_CAP_W,
-    );
+    this.shadow = place(this.shadow, cut(mid), mid.destX, mid.destW);
+    this.shadowCapL = place(this.shadowCapL, cut(capL), capL.destX, capL.destW);
+    this.shadowCapR = place(this.shadowCapR, cut(capR), capR.destX, capR.destW);
     this.shadowSource = src;
     this.hooks.markDirty();
   }

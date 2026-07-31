@@ -13,7 +13,7 @@ const opt = (n, d) => {
   const h = args.find((a) => a.startsWith(`--${n}=`));
   return h ? h.split('=').slice(1).join('=') : d;
 };
-const URL_BASE = opt('url', 'http://localhost:1420');
+const URL_BASE = opt('url', 'http://localhost:1431');
 const DIR = opt('dir', 'qa/corner');
 const TAG = opt('tag', 'before');
 const DPR = Number(opt('dpr', '2'));

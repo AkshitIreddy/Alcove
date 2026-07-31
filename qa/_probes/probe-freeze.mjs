@@ -41,17 +41,17 @@ if (BOOKS > 0) {
     const w = globalThis.__shelfWorld;
     const store = w['store'];
     if ((store.totalBooks?.() ?? 0) >= count - 2) return 0;
-    const books = await import('/src/data/books.ts');
+    // Uses the world's own QA dressing hook so this works against a built
+    // bundle too (a dev-only /src import would 404 on `vite preview`).
+    const seed = globalThis.__shelfSeedBooks;
     const per = Math.ceil(count / 3);
-    for (let i = 0; i < count; i++) {
-      await books.createBook({
-        title: `Volume ${i + 1} of the Long Shelf`,
-        floor: Math.floor(i / per),
-        slot: i % per,
-        spineSeed: (0x9e3779b1 * (i + 1)) >>> 0,
-      });
+    for (let floor = 0; floor < 3; floor++) {
+      const titles = [];
+      for (let i = 0; i < per && floor * per + i < count; i++) {
+        titles.push(`Volume ${floor * per + i + 1} of the Long Shelf`);
+      }
+      await seed(titles, floor);
     }
-    await store.refreshAll();
     return count;
   }, BOOKS);
   const settings = await seedPage.evaluate(() => {
@@ -74,14 +74,19 @@ const page = await context.newPage();
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
 await page.addInitScript(() => {
+  // Lag = how much LATER than asked the callback ran. A responsive window
+  // answers within a frame; anything above ~50ms is a visible hitch and
+  // anything above 500ms is a frozen window.
+  window.__lagInterval = 100;
   window.__lag = [];
   window.__t0 = performance.now();
   const tick = () => {
     const t = performance.now();
     setTimeout(() => {
-      window.__lag.push([Math.round(t - window.__t0), Math.round(performance.now() - t)]);
+      const late = performance.now() - t - window.__lagInterval;
+      window.__lag.push([Math.round(t - window.__t0), Math.round(Math.max(0, late))]);
       tick();
-    }, 250);
+    }, window.__lagInterval);
   };
   tick();
   window.__longtasks = [];
@@ -145,10 +150,12 @@ console.log(`longtasks: ${report.tasks.length}, ${taskTotal}ms blocking total`);
 for (const [s, d] of [...report.tasks].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
   console.log(`   task @${s}ms dur=${d}ms`);
 }
-console.log(`main-thread lag samples (250ms cadence): n=${lag.length}`);
+console.log(`main-thread lag (100ms cadence, interval already subtracted): n=${lag.length}`);
 console.log(`  worst: ${worst.map(([t, d]) => `${d}ms@${t}ms`).join('  ')}`);
 console.log(`  samples over 500ms: ${frozenSamples.length} (${frozenMs}ms of frozen window)`);
-console.log(`  samples over 100ms: ${lag.filter(([, d]) => d > 100).length}`);
+console.log(`  samples over 100ms: ${lag.filter(([, d]) => d > 100).length}   over 50ms: ${lag.filter(([, d]) => d > 50).length}`);
+console.log('  timeline 0-6000ms (t=lag):');
+console.log('   ' + lag.filter(([t]) => t < 6000 ).filter(([, d]) => d > 30).map(([t, d]) => `${t}=${d}`).join(' '));
 
 const bakes = report.samples.filter((s) => s.kind !== 'disk').sort((a, b) => b.ms - a.ms);
 console.log(`\nbake producer runs: ${bakes.length}, ${bakes.reduce((n, s) => n + s.ms, 0).toFixed(0)}ms wall`);

@@ -83,6 +83,7 @@ import {
   RAIL_W,
   SHELF_WIDTH,
   SLOT_MARGIN_X,
+  underPlankShadowSlices,
   X_SLACK,
   Y_MIN,
 } from '../src/features/bookshelf/constants';
@@ -1145,5 +1146,70 @@ describe('themed env keys', () => {
     expect(base).toBe(libraryKey(theme.id, { ...theme.wallpaper }, theme.backdrops[0]));
     // The prefs store must agree with the texture cache on the same room.
     expect(resolveLibrary(mergeLibraryPrefs({ theme: 'apothecary' })).key).toBe(base);
+  });
+});
+
+/*
+ * Regression guard for the "shadowy transparent corner boxes" the user saw
+ * repeating at every shelf corner.
+ *
+ * Cause: the under-plank shadow was a NineSliceSprite with a fixed 16-TEXEL
+ * inset. The strip bakes a darker radial pool ~26 WORLD px wide into each end,
+ * so most of that pool fell inside the centre slice, which is then stretched
+ * ~12x across the shelf — smearing each pool into a soft ~140px rectangle.
+ * (Measured before the fix, DPR 1: alpha 126 at x=0 not reaching the flat 96
+ * until x≈140. After: flat by x=24, with zero deviation across the middle.)
+ *
+ * The cut plan below is what replaced it. These assertions encode the two
+ * invariants that make the smear impossible.
+ */
+describe('under-plank shadow cut plan', () => {
+  const STRIP_W = 128;
+  const CAP_W = 28;
+
+  it('never lets a corner pool texel into the stretched middle', () => {
+    for (const dpr of [1, 1.25, 1.5, 2, 3]) {
+      const sourceW = Math.ceil(STRIP_W * dpr);
+      const [mid, capL, capR] = underPlankShadowSlices(sourceW, STRIP_W, CAP_W);
+      const poolTexels = CAP_W * (sourceW / STRIP_W);
+      // The middle frame starts at or after the pool ends, and ends at or
+      // before the far pool begins.
+      expect(mid.x).toBeGreaterThanOrEqual(Math.floor(poolTexels));
+      expect(mid.x + mid.w).toBeLessThanOrEqual(Math.ceil(sourceW - poolTexels));
+      // The caps cover exactly the pool regions.
+      expect(capL.x).toBe(0);
+      expect(capR.x + capR.w).toBe(sourceW);
+    }
+  });
+
+  it('draws the caps 1:1 so the pool keeps its baked world size at any DPR', () => {
+    for (const dpr of [1, 1.5, 2, 3]) {
+      const sourceW = Math.ceil(STRIP_W * dpr);
+      const [, capL, capR] = underPlankShadowSlices(sourceW, STRIP_W, CAP_W);
+      // Destination width is the same world size regardless of DPR…
+      expect(capL.destW).toBe(CAP_W);
+      expect(capR.destW).toBe(CAP_W);
+      // …and the source frame scales with DPR to match it, i.e. a scale of 1
+      // world px per (dpr) texels — no magnification, hence no smear.
+      const scale = capL.destW / (capL.w / dpr);
+      expect(scale).toBeGreaterThan(0.9);
+      expect(scale).toBeLessThan(1.1);
+    }
+  });
+
+  it('tiles the full shelf width with no gap and no overlap', () => {
+    const [mid, capL, capR] = underPlankShadowSlices(256, STRIP_W, CAP_W);
+    expect(capL.destX).toBe(0);
+    expect(capL.destX + capL.destW).toBe(mid.destX);
+    expect(mid.destX + mid.destW).toBe(capR.destX);
+    expect(capR.destX + capR.destW).toBe(SHELF_WIDTH);
+  });
+
+  it('degrades safely when the strip is narrower than two caps', () => {
+    const [mid, capL, capR] = underPlankShadowSlices(8, STRIP_W, CAP_W);
+    expect(mid.w).toBeGreaterThan(0);
+    expect(capL.w).toBeGreaterThan(0);
+    expect(capR.w).toBeGreaterThan(0);
+    expect(capL.w + mid.w + capR.w).toBe(8);
   });
 });

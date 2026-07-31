@@ -1,5 +1,5 @@
-/**
- * scripts/gen-assets.mjs — drive a local ComfyUI to produce the art library.
+﻿/**
+ * scripts/gen-assets.mjs â€” drive a local ComfyUI to produce the art library.
  *
  * See docs/design/generated-assets.md for what we generate and why. The rule
  * that matters most: everything is generated with FLAT lighting, because the
@@ -29,10 +29,19 @@ const opt = (name, dflt) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
 
-/** Held constant across the whole library so every asset shares one hand. */
-const STYLE = 'hand-painted illustration, gouache and coloured pencil, soft painterly edges, subtle colour variation, warm muted palette, high detail';
-/** Flat lighting is non-negotiable — the runtime shader lights these. */
-const NEG = 'photograph, 3d render, dramatic lighting, harsh shadows, strong highlights, rim light, vignette, border, frame, watermark, text, signature, blurry, low quality';
+/**
+ * Held constant across the library so every asset shares one hand.
+ *
+ * Deliberately says nothing about COLOUR: the first pass carried "warm muted
+ * palette" and the model applied it to the material itself â€” linen came out
+ * purple-and-olive, morocco leather grew magenta flecks. The material's own
+ * natural colour must win; themes tint at runtime anyway.
+ */
+const STYLE = 'hand-painted illustration, gouache and coloured pencil, soft painterly edges, subtle tonal variation, natural colour, high detail';
+/** Flat lighting is non-negotiable â€” the runtime shader lights these. */
+const NEG_BASE = 'photograph, 3d render, dramatic lighting, harsh shadows, strong highlights, rim light, vignette, border, frame, watermark, text, signature, blurry, low quality';
+/** Cutouts kept coming back as multi-subject compositions instead of one specimen. */
+const NEG_SINGLE = `${NEG_BASE}, multiple objects, repeated pattern, collage, grid, tiled, several, group, bouquet, arrangement, scattered`;
 
 const SETS = {
   materials: {
@@ -64,7 +73,8 @@ const SETS = {
       ['wildflower-cluster', 'a small cluster of white and yellow wildflowers, botanical illustration'],
       ['moss-clump', 'a clump of soft green moss, botanical illustration'],
     ],
-    suffix: 'centred, isolated on plain flat white background, flat even lighting, no shadow, no pot, no vase',
+    suffix: 'ONE single specimen only, alone, centred, nothing else in frame, isolated on plain empty white background, flat even lighting, no shadow, no pot, no vase',
+    negative: NEG_SINGLE,
   },
   wallpaper: {
     size: 1024,
@@ -84,7 +94,7 @@ const SETS = {
  *
  * When `tile` is set, both the UNet and the VAE get circular padding
  * (ComfyUI-seamless-tiling). Post-hoc mirroring is NOT an acceptable
- * substitute — it produces visibly symmetrical tiles. Verified empirically:
+ * substitute â€” it produces visibly symmetrical tiles. Verified empirically:
  * without this the edge discontinuity was ~2x the interior variation and the
  * seams were plainly visible in a 2x2 composite.
  */
@@ -199,7 +209,7 @@ async function main() {
       const outPath = join(dir, `${slug}.png`);
       try {
         await access(outPath);
-        process.stdout.write(`  ${slug} — exists, skipping\n`);
+        process.stdout.write(`  ${slug} â€” exists, skipping\n`);
         continue;
       } catch {}
 
@@ -209,7 +219,15 @@ async function main() {
       const t0 = Date.now();
       try {
         const id = await queue(
-          workflow({ prompt, negative: NEG, seed, size: set.size, tile: set.tile === true }),
+          workflow({
+            prompt,
+            negative: set.negative ?? NEG_BASE,
+            // `--reroll` shifts the seed so a rejected asset gets a genuinely
+            // different draw rather than the same one again.
+            seed: flag('reroll') ? (seed + 0x9e37) >>> 0 : seed,
+            size: set.size,
+            tile: set.tile === true,
+          }),
           clientId,
         );
         const entry = await waitFor(id);
@@ -224,10 +242,10 @@ async function main() {
   // Keep prompts alongside output so any asset can be reproduced or re-rolled.
   await writeFile(
     join(OUT, 'prompts.json'),
-    JSON.stringify({ style: STYLE, negative: NEG, checkpoint: CKPT, sets: SETS }, null, 2),
+    JSON.stringify({ style: STYLE, negative: NEG_BASE, checkpoint: CKPT, sets: SETS }, null, 2),
     'utf8',
   );
-  process.stdout.write(`\nwrote assets/generated/ — LOOK at them before generating more.\n`);
+  process.stdout.write(`\nwrote assets/generated/ â€” LOOK at them before generating more.\n`);
 }
 
 await main();

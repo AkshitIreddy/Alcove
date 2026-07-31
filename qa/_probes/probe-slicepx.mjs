@@ -14,7 +14,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
-await page.goto('http://localhost:1420/?fx=force&bakeprof=1', { waitUntil: 'domcontentloaded', timeout: 180000 });
+await page.goto('http://localhost:1431/?fx=force&bakeprof=1', { waitUntil: 'domcontentloaded', timeout: 180000 });
 await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { timeout: 300000, polling: 400 });
 await page.evaluate(() => { void globalThis.__shelfWorld.ready.then(() => { globalThis.__worldReady = true; }); });
 await page.waitForFunction(() => globalThis.__worldReady === true, null, { timeout: 300000, polling: 400 }).catch(() => {});

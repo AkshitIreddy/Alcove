@@ -254,8 +254,29 @@ export default function BookView(): JSX.Element {
 
   const rightHasContent = (): boolean => docHasContent(rightPage()?.doc);
 
+  /**
+   * Empty pages at the very end of the book. This is the allowance that lets
+   * a reader deliberately skip a page (see MAX_TRAILING_BLANK_PAGES) while
+   * still stopping a held key from appending without bound.
+   */
+  const trailingBlanks = (): number => {
+    const all = pages();
+    let n = 0;
+    for (let i = all.length - 1; i >= 0; i--) {
+      if (docHasContent(all[i]?.doc)) break;
+      n++;
+    }
+    return n;
+  };
+
   const canFlip = (direction: FlipDirection): boolean =>
-    canFlipSpread(pages().length, spreadIndex(), direction, rightHasContent());
+    canFlipSpread(
+      pages().length,
+      spreadIndex(),
+      direction,
+      rightHasContent(),
+      trailingBlanks(),
+    );
 
   // -------------------------------------------------------------------------
   // Page creation ("+ page" rail tool + auto-create on forward flip)
@@ -295,6 +316,7 @@ export default function BookView(): JSX.Element {
         spreadIndex(),
         direction,
         rightHasContent(),
+        trailingBlanks(),
       )
     ) {
       // Fire-and-forget: the new spread shows cream blank faces for the few

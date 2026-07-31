@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PageDoc } from '../src/data/types';
 import {
+  MAX_TRAILING_BLANK_PAGES,
   arrowFlipAction,
   canFlipSpread,
   docHasContent,
@@ -158,14 +159,28 @@ describe('canFlipSpread', () => {
     expect(canFlipSpread(3, 0, 'next', false)).toBe(true);
   });
 
+  it('next off the last spread while the blank allowance holds', () => {
+    // Reported: the book refused to turn past a blank page, so a reader could
+    // not deliberately leave one. Blanks are allowed now, and only bounded.
+    expect(canFlipSpread(1, 0, 'next', false, 1)).toBe(true);
+    expect(canFlipSpread(2, 0, 'next', false, 2)).toBe(true);
+    // ...until the allowance runs out, which is what stops a held key from
+    // appending pages without end.
+    expect(canFlipSpread(5, 2, 'next', false, MAX_TRAILING_BLANK_PAGES)).toBe(false);
+    expect(canFlipSpread(9, 4, 'next', false, MAX_TRAILING_BLANK_PAGES + 3)).toBe(false);
+  });
+
   it('next on the last spread only when the right leaf holds ink', () => {
+    // Once the allowance is spent the original rule governs again: ink on the
+    // right leaf is what opens the next page.
+    const spent = MAX_TRAILING_BLANK_PAGES;
     // 1-page book: right leaf is a cream blank face — book ends here.
-    expect(canFlipSpread(1, 0, 'next', false)).toBe(false);
+    expect(canFlipSpread(1, 0, 'next', false, spent)).toBe(false);
     // 2-page book, right page empty: still no forward flip.
-    expect(canFlipSpread(2, 0, 'next', false)).toBe(false);
+    expect(canFlipSpread(2, 0, 'next', false, spent)).toBe(false);
     // 2-page book, right page written on: forward flip auto-creates.
-    expect(canFlipSpread(2, 0, 'next', true)).toBe(true);
-    expect(canFlipSpread(6, 2, 'next', true)).toBe(true);
+    expect(canFlipSpread(2, 0, 'next', true, spent)).toBe(true);
+    expect(canFlipSpread(6, 2, 'next', true, spent)).toBe(true);
   });
 });
 
@@ -175,11 +190,19 @@ describe('shouldAutoCreatePage', () => {
     expect(shouldAutoCreatePage(6, 2, 'next', true)).toBe(true);
   });
 
-  it('never fires backward, mid-book, or from a blank right leaf', () => {
+  it('never fires backward, mid-book, or past the blank allowance', () => {
+    const spent = MAX_TRAILING_BLANK_PAGES;
     expect(shouldAutoCreatePage(2, 0, 'prev', true)).toBe(false);
     expect(shouldAutoCreatePage(6, 0, 'next', true)).toBe(false); // pages ahead
-    expect(shouldAutoCreatePage(2, 0, 'next', false)).toBe(false);
-    expect(shouldAutoCreatePage(1, 0, 'next', false)).toBe(false);
+    expect(shouldAutoCreatePage(2, 0, 'next', false, spent)).toBe(false);
+    expect(shouldAutoCreatePage(1, 0, 'next', false, spent)).toBe(false);
+  });
+
+  it('fires for a blank right leaf while the allowance holds — the skipped page', () => {
+    // The other half of the reported bug: turning past a blank has to land on
+    // a page that exists, or the flip animates onto nothing.
+    expect(shouldAutoCreatePage(1, 0, 'next', false, 0)).toBe(true);
+    expect(shouldAutoCreatePage(2, 0, 'next', false, 1)).toBe(true);
   });
 });
 

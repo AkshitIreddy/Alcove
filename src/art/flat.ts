@@ -95,6 +95,96 @@ export const CLOTHS: readonly (readonly [string, string])[] = [
 ];
 
 /* ----------------------------------------------------------------------------
+   The one thing a room may change
+   -------------------------------------------------------------------------- */
+
+/**
+ * The subset of the palette a library theme is allowed to repaint.
+ *
+ * Structurally identical to `ColourScheme` in `art/themes.ts`, and deliberately
+ * NOT imported from it: themes.ts is the data root and imports nothing, so the
+ * two agree by shape rather than by dependency. Everything absent here — the
+ * ink, the cream, the gilt, the contact shadow — is fixed in every room on
+ * purpose. One outline colour on everything is most of why the app reads as a
+ * single drawing; letting a room pick its own would turn four palettes into
+ * four unrelated illustrations.
+ */
+export interface FlatScheme {
+  timber: string;
+  timberDark: string;
+  recess: string;
+  wall: string;
+  /**
+   * Exactly six, always. A book picks its cloth by `seed % length`, so a
+   * scheme with a different count would re-roll every book on the shelf
+   * instead of merely recolouring it.
+   */
+  cloths: readonly (readonly [string, string])[];
+}
+
+/** The house palette — Old Athenaeum, and what every drawing falls back to. */
+const DEFAULT_SCHEME: FlatScheme = {
+  timber: FLAT.timber,
+  timberDark: FLAT.timberDark,
+  recess: FLAT.recess,
+  wall: FLAT.wall,
+  cloths: CLOTHS,
+};
+
+let currentScheme: FlatScheme = DEFAULT_SCHEME;
+let currentTag = 'house';
+
+/**
+ * The scheme every drawing function reads.
+ *
+ * Module state rather than a parameter threaded through forty call sites: the
+ * shapes are the same in every room, so a scheme argument would have to be
+ * carried by `drawPlank`, `drawSpine`, `drawCaseCard`, `renderSpine` and every
+ * private helper under them purely to be forwarded. The cost of that choice is
+ * that a swap must be SYNCHRONOUS around its draw — set, draw, restore, with no
+ * `await` in between, or a second bake on the same tick comes out in the wrong
+ * palette. Both callers (`textures.ts`, `LibraryStudio.tsx`) do exactly that.
+ */
+export function flatScheme(): FlatScheme {
+  return currentScheme;
+}
+
+/** Swap the palette. `null` restores the house one. */
+export function setFlatScheme(scheme: FlatScheme | null): void {
+  currentScheme = scheme ?? DEFAULT_SCHEME;
+  currentTag = scheme === null ? 'house' : tagOf(scheme);
+}
+
+/**
+ * A short stable tag for the live scheme, for memo keys.
+ *
+ * Every cache that stores drawn pixels has to carry this or it will serve one
+ * room's art in another — the cover data-url memo did exactly that, handing
+ * back a terracotta board after the reader had moved to the reef. Derived from
+ * the hexes rather than from any theme id, so editing a colour invalidates the
+ * memo too.
+ */
+export function flatSchemeTag(): string {
+  return currentTag;
+}
+
+function tagOf(scheme: FlatScheme): string {
+  const source = [
+    scheme.timber,
+    scheme.timberDark,
+    scheme.recess,
+    scheme.wall,
+    ...scheme.cloths.flat(),
+  ].join('');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < source.length; i++) {
+    h ^= source.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/* ----------------------------------------------------------------------------
    Geometry
    -------------------------------------------------------------------------- */
 

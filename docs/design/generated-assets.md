@@ -1,5 +1,23 @@
 # Generated asset pipeline — AI-assisted material and element library
 
+> ## ⚠️ Superseded
+>
+> No generated asset ships in the app. The material library, the foliage cutouts,
+> the ornament stamps, the wallpaper patterns and the deferred lighting pass that
+> was to unify them are all deleted, along with `src/art/wallpaper.ts`,
+> `art/flora.ts`, `art/leaves.ts`, `art/wood.ts` and `art/props.ts`.
+>
+> The visual language is now `assets/brand/icon.svg` as implemented in
+> `src/art/flat.ts`: flat colour, one dark outline colour on everything, rounded
+> corners, edges that bow slightly, a tiny palette. Depth is a darker flat face
+> beside a lighter one, plus `contactShadow()`. A flat drawing makes no promise
+> of a real surface, so it never breaks one — which is exactly what the
+> half-simulated materials below could not manage.
+>
+> The **local generation setup** (ComfyUI, model choices, seam verification) is
+> still a usable authoring tool and is why this is kept. It is not part of the
+> runtime. See `RESET-render-architecture.md`.
+
 ## The idea
 
 Procedural drawing is good at **variation and interactivity**; it is bad at **surface beauty**. Generative models are the reverse — gorgeous surfaces, but no notion of "this book must be 34px wide and draggable".

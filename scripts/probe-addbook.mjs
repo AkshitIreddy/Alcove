@@ -128,15 +128,15 @@ await page.locator('.nb-theme-card').first().waitFor({ state: 'visible', timeout
 await page.waitForTimeout(2500);
 await shot('addbook-08-studio-cards');
 
-await page.locator('.nb-theme-card', { hasText: 'Moonlit' }).click();
+await page.locator('.nb-theme-card', { hasText: 'Coral Reef' }).click();
 await poll(
-  () => globalThis.__libraryPrefs?.current()?.theme === 'observatory',
+  () => globalThis.__libraryPrefs?.current()?.theme === 'reef',
   null,
   30000,
   'theme pref in the store',
 );
 await poll(
-  () => (globalThis.__shelfWorld.libraryKey ?? '').includes('observatory'),
+  () => (globalThis.__shelfWorld.libraryKey ?? '').includes('reef'),
   null,
   60000,
   'shelf re-theme',
@@ -158,7 +158,7 @@ await poll(
   'created book after reload',
 );
 await poll(
-  () => globalThis.__libraryPrefs?.current()?.theme === 'observatory',
+  () => globalThis.__libraryPrefs?.current()?.theme === 'reef',
   null,
   60000,
   'theme pref after reload',

@@ -7,6 +7,10 @@
  * wallpaper, no lighting, no flora. Depth is a darker flat face beside a
  * lighter one, exactly as the app icon does it.
  *
+ * A library theme is a colour scheme and nothing else, so `setTheme` re-bakes
+ * the same four parts under `setFlatScheme` — same shapes, same ink, the
+ * room's fills.
+ *
  * ## What this replaced, and why the surface did not change
  *
  * This module used to be a thin dispatcher onto a runtime painting stack —
@@ -25,27 +29,27 @@
  * the blurred case halo — return a 1×1 transparent texture or null. One
  * option per thing was the brief, and a flat case that is also festooned with
  * ornament is just the old mud in new colours.
+ *
+ * The trash-drawer front went further and is gone entirely: the trash is a
+ * button on the shelf's left rail now, not a piece of furniture bolted under
+ * the last floor.
  */
 
 import { CanvasSource, ImageSource, Texture } from 'pixi.js';
 import { bakeCached } from '../../art/bake';
 import {
   FLAT,
+  flatScheme,
   inkWidth,
   panel,
+  setFlatScheme,
   stroke,
-  wobbleRect,
   type FlatCtx,
+  type FlatScheme,
 } from '../../art/flat';
 import { drawCrown, drawPlank, drawPost, drawRecess } from '../../art/flatShelf';
 import { libraryKey } from './libraryKey';
-import {
-  getTheme,
-  type BackdropId,
-  type LibraryTheme,
-  type ThemeId,
-  type WallpaperSpec,
-} from '../../art/themes';
+import { getTheme, type LibraryTheme, type ThemeId } from '../../art/themes';
 import { fnv1a } from '../../art/noise';
 import {
   BOOK_ZONE_H,
@@ -79,16 +83,21 @@ export const BACKDROP_STRIP_FLOORS = 3;
 /** World-px height of the under-plank detail strip (no longer drawn). */
 export const SHELF_DETAIL_H = 34;
 
-/** A room to bake the case in. */
+/**
+ * A room to bake the case in.
+ *
+ * One field, because a room is one colour scheme. It carried a `wallpaper`
+ * spec and a `backdrop` id alongside the id until the wall became a single
+ * flat fill owned by `world.ts`; both were dead axes that still forced a
+ * re-bake whenever they changed.
+ */
 export interface ThemeRequest {
   themeId: ThemeId;
-  wallpaper: WallpaperSpec;
-  backdrop: BackdropId;
 }
 
 /** Identity of a baked room — same key ⇒ same case art. */
 export function themeKeyOf(req: ThemeRequest): string {
-  return libraryKey(req.themeId, req.wallpaper, req.backdrop);
+  return libraryKey(getTheme(req.themeId));
 }
 
 /** Case wood stains (settings.shelfWoodStain). One flat timber now; inert. */
@@ -98,11 +107,13 @@ export type WoodStain = 'oak' | 'walnut' | 'cherry' | 'cream';
 export type WallpaperPattern = 'damask' | 'stars' | 'botanical' | 'plain';
 
 /**
- * Flat placeholder tints shown until a bake lands.
+ * Flat placeholder tints shown until the FIRST bake lands.
  *
- * These are the FLAT palette's own hexes rather than approximations of a
- * painted average, so the placeholder and the art it fades into are the same
- * colour and the crossfade is invisible.
+ * The house palette's own hexes, so on a cold start in the default room the
+ * placeholder and the art it fades into are the same colour and the crossfade
+ * is invisible. A library saved in another room shows these for the handful of
+ * frames before its case arrives; a room swap does not go through them at all,
+ * because the sprites already hold the outgoing room's art.
  */
 export const PLACEHOLDER_TINTS = {
   plank: 0xc08a52,
@@ -197,9 +208,21 @@ function outlinePad(shortSide: number): number {
   return inkWidth(shortSide) / 2 + shortSide * 0.012 + 0.5;
 }
 
-/** Bake one flat part through the shared disk cache. */
+/**
+ * Bake one flat part, in one room's colours, through the shared disk cache.
+ *
+ * The scheme is applied around the draw and put straight back. It has to be
+ * this close to the `draw` call: `flatScheme()` is module state, `bakeCached`
+ * is async, and anything that awaited between the set and the draw would let a
+ * second room's bake repaint the first one mid-flight.
+ *
+ * `key` MUST carry the room (see `roomTag`) — the disk cache validates nothing
+ * about a hit, so a reef plank stored under a scheme-blind key would be served
+ * to every room forever, on any machine that had ever visited the reef.
+ */
 function bakeFlatPart(
   key: string,
+  scheme: FlatScheme,
   w: number,
   h: number,
   dpr: number,
@@ -210,9 +233,35 @@ function bakeFlatPart(
     const ctx = get2d(canvas);
     if (ctx === null) throw new Error(`textures: 2d context unavailable for ${key}`);
     ctx.scale(dpr, dpr);
-    draw(ctx as FlatCtx, w, h);
+    const previous = flatScheme();
+    setFlatScheme(scheme);
+    try {
+      draw(ctx as FlatCtx, w, h);
+    } finally {
+      setFlatScheme(previous);
+    }
     return canvas;
   });
+}
+
+/**
+ * Short stable tag for a scheme, for cache keys.
+ *
+ * The hexes, not the theme id: editing a colour in `art/themes.ts` has to
+ * invalidate the PNGs on disk, and an id-only tag would not notice.
+ */
+function roomTag(theme: LibraryTheme): string {
+  return fnv1a(libraryKey(theme)).toString(36);
+}
+
+/** A room reduced to the two things a bake needs: its colours and its tag. */
+interface Room {
+  scheme: FlatScheme;
+  tag: string;
+}
+
+function roomOf(theme: LibraryTheme): Room {
+  return { scheme: theme.scheme, tag: roomTag(theme) };
 }
 
 /**
@@ -224,8 +273,8 @@ function bakeFlatPart(
  * whatever happens to be behind the sprite. The underside line is worth
  * keeping — it is what the floor beneath sees of the board above it.
  */
-function bakeFlatPlank(w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|plank|${w}x${h}`, w, h, dpr, (ctx) => {
+function bakeFlatPlank(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
+  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|plank|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
     drawPlank(ctx, pad, pad, w - pad * 2, h - pad, 0x51a1);
   });
@@ -240,8 +289,8 @@ function bakeFlatPlank(w: number, h: number, dpr: number): Promise<ImageBitmap> 
  * own and the case reads as a dark rectangle pasted onto a bookcase rather
  * than the space inside one.
  */
-function bakeFlatBack(w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|recess|${w}x${h}`, w, h, dpr, (ctx) => {
+function bakeFlatBack(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
+  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|recess|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
     const over = Math.max(w, h) * 0.05 + 8;
     drawRecess(ctx, -over, -over, w + over * 2, h + over * 2, 0x9c31);
   });
@@ -255,8 +304,8 @@ function bakeFlatBack(w: number, h: number, dpr: number): Promise<ImageBitmap> {
  * ends inside the tile would give the case a chain of pill shapes down each
  * side instead of two continuous uprights.
  */
-function bakeFlatRail(w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|post|${w}x${h}`, w, h, dpr, (ctx) => {
+function bakeFlatRail(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
+  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|post|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(w);
     const over = w * 0.3 + inkWidth(w) + 2;
     drawPost(ctx, pad, -over, w - pad * 2, h + over * 2, 0x2f19);
@@ -273,8 +322,8 @@ function bakeFlatRail(w: number, h: number, dpr: number): Promise<ImageBitmap> {
  * specimen looked like.) The only outline lost is under the two 14px lips,
  * which nothing can see.
  */
-function bakeFlatCrown(w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  return bakeFlatPart(`${FLAT_ART_VERSION}|crown|${w}x${h}`, w, h, dpr, (ctx) => {
+function bakeFlatCrown(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
+  return bakeFlatPart(`${FLAT_ART_VERSION}|${room.tag}|crown|${w}x${h}`, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
     // Top edge inset by `pad`, bottom edge (and its ink line) pushed clear of
     // the canvas — hence a drawn height of h + pad rather than h - 2 * pad.
@@ -302,7 +351,6 @@ export class EnvTextures {
   backdropStrip: Texture | null = null;
 
   private readonly plaques = new Map<string, Texture>();
-  private trashDrawer: Texture | null = null;
   private selectCaret: Texture | null = null;
   /**
    * One shared 1×1 transparent texture, handed back by every getter whose art
@@ -357,10 +405,10 @@ export class EnvTextures {
   /**
    * Dress the case in a library theme.
    *
-   * The flat case has one palette, so every room now bakes the same four
-   * parts and the cache serves the second room instantly. The method stays
-   * because `world.ts` awaits it around the room crossfade, and because a
-   * future themed flat palette belongs exactly here.
+   * A room is a colour scheme, so the four parts really are re-baked in its
+   * hexes — same shapes, same ink, different fills. Revisiting a room is still
+   * instant: the bake keys carry the scheme (see `roomTag`), so the disk cache
+   * hits and the crossfade is over in a frame.
    */
   setTheme(req: ThemeRequest): Promise<void> {
     if (this.destroyed) return Promise.resolve();
@@ -530,58 +578,6 @@ export class EnvTextures {
     return texture;
   }
 
-  /**
-   * Trash-drawer front: a timber drawer face with an inset panel line, a gilt
-   * pull and a hand-written label.
-   *
-   * NOTE for whoever owns `world.ts`: this used to be baked in a deliberately
-   * pale neutral wood so a multiply tint could push it to the room's own
-   * timber. There is one timber now, and it is baked in — a multiply tint on
-   * top would only darken it. The tint should go with the theme wood it was
-   * serving.
-   */
-  getTrashDrawer(dpr: number): Texture {
-    if (this.trashDrawer !== null) return this.trashDrawer;
-    const w = TRASH_DRAWER_W;
-    const h = TRASH_DRAWER_H;
-    const scale = Math.max(1, dpr);
-    const canvas = makeCanvas(Math.ceil(w * scale), Math.ceil(h * scale));
-    const ctx = get2d(canvas);
-    if (ctx) {
-      ctx.scale(scale, scale);
-      const flat = ctx as FlatCtx;
-      const pad = outlinePad(h);
-      panel(flat, pad, pad, w - pad * 2, h - pad * 2, FLAT.timber, {
-        radius: h * 0.2,
-        seed: 0x7a5d,
-      });
-      // Inset panel line — the drawer's own frame, one ink line rather than a
-      // bevel, the same trick the cornice uses for its lip.
-      const inset = 8;
-      wobbleRect(flat, inset, inset, w - inset * 2, h - inset * 2, h * 0.16, 0x7a61);
-      ctx.strokeStyle = FLAT.inkSoft;
-      ctx.lineWidth = Math.max(1, inkWidth(h) * 0.5);
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-      // Gilt pull across the upper half, label under it — a drawer front reads
-      // as one because of that pairing, not because of any bevel.
-      const pullW = 88;
-      const pullH = 14;
-      panel(flat, (w - pullW) / 2, h * 0.24, pullW, pullH, FLAT.gilt, {
-        radius: pullH / 2,
-        seed: 0x7a77,
-        width: Math.max(1.4, inkWidth(pullH)),
-      });
-      ctx.font = '15px "Patrick Hand", "Segoe Print", cursive';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = FLAT.inkSoft;
-      ctx.fillText('~ waste paper ~', w / 2, h * 0.72, w - 40);
-    }
-    this.trashDrawer = textureFromCanvas(canvas);
-    return this.trashDrawer;
-  }
-
   destroy(): void {
     this.destroyed = true;
     this.listeners.clear();
@@ -593,7 +589,6 @@ export class EnvTextures {
     this.crown?.destroy(true);
     this.wallpaper?.destroy(true);
     this.backdropStrip?.destroy(true);
-    this.trashDrawer?.destroy(true);
     this.selectCaret?.destroy(true);
     this.blank?.destroy(true);
     for (const tex of this.plaques.values()) tex.destroy(true);
@@ -606,7 +601,6 @@ export class EnvTextures {
     this.crown = null;
     this.wallpaper = null;
     this.backdropStrip = null;
-    this.trashDrawer = null;
     this.selectCaret = null;
     this.blank = null;
   }
@@ -622,14 +616,18 @@ export class EnvTextures {
     return null;
   }
 
-  /** Fire the four case parts; resolves when all of them have settled. */
+  /** Fire the four case parts, in the current room's colours. */
   private bakeCase(gen: number): Promise<void> {
     const dpr = this.loadDpr;
+    // Snapshot the room here, not inside each bake: `setTheme` may land another
+    // one while these are in flight, and a plank baked in the old scheme next
+    // to a post baked in the new one is a two-tone bookcase.
+    const room = roomOf(this.theme);
     const jobs: Array<Promise<unknown>> = [
-      bakeFlatPlank(SHELF_WIDTH, PLANK_H, dpr).then((b) => this.landPart('plank', b, gen)),
-      bakeFlatBack(SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) => this.landPart('back', b, gen)),
-      bakeFlatRail(RAIL_W, FLOOR_H, dpr).then((b) => this.landPart('rail', b, gen)),
-      bakeFlatCrown(SHELF_WIDTH + CROWN_LIP * 2, CROWN_H, dpr).then((b) =>
+      bakeFlatPlank(room, SHELF_WIDTH, PLANK_H, dpr).then((b) => this.landPart('plank', b, gen)),
+      bakeFlatBack(room, SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) => this.landPart('back', b, gen)),
+      bakeFlatRail(room, RAIL_W, FLOOR_H, dpr).then((b) => this.landPart('rail', b, gen)),
+      bakeFlatCrown(room, SHELF_WIDTH + CROWN_LIP * 2, CROWN_H, dpr).then((b) =>
         this.landPart('crown', b, gen),
       ),
     ].map((p) => p.catch(() => undefined));
@@ -694,10 +692,6 @@ export class EnvTextures {
 /** Plaque design size, world px (drawn on the plank face). */
 export const PLAQUE_W = 132;
 export const PLAQUE_H = 22;
-
-/** Trash-drawer front design size, world px. */
-export const TRASH_DRAWER_W = 340;
-export const TRASH_DRAWER_H = 56;
 
 /** Keyboard-selection caret design size, world px. */
 export const SELECT_CARET_W = 26;

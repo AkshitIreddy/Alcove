@@ -28,7 +28,7 @@ Grouped for parallel agent ownership; each group lists its file territory so wav
 ## Group C — Search & navigation (new src/search, src/data)
 20. **Quick switcher**: Ctrl+K fuzzy palette over books + page headings (hand-drawn command bar), Enter opens with animation.
 21. **Full-text search**: SQLite FTS5 over page text (extract plain text on save); search panel with match snippets, click-to-jump with highlight pulse.
-22. **Trash & restore**: soft-delete books to a "trash drawer" under the last floor; restore or empty (permanent delete asks confirmation).
+22. **Trash & restore**: soft-delete books to the trash (floor -1); restore or empty (permanent delete asks confirmation). Opened from the shelf's left dock rail — the in-case drawer front it originally shipped as is gone.
 
 ## Group D — Import/export & templates (src/editor/script, src-tauri)
 23. **Export book/page to PDF**: print-quality paged render (Tauri print-to-PDF via hidden window or headless approach); "Export PDF" in rail.

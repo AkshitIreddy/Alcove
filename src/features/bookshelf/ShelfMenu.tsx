@@ -211,8 +211,8 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
       <Show when={mode() === 'confirm'}>
         <div class="shelf-menu__title">Crumple this book?</div>
         <p class="shelf-menu__hint">
-          “{props.book.title}” slides into the trash drawer under the last
-          floor. You can restore it from there.
+          “{props.book.title}” goes into the trash on the left rail. You can
+          restore it from there.
         </p>
         <div class="shelf-menu__row">
           <button

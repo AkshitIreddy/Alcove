@@ -10,8 +10,9 @@
  * real focus rings, no re-bake when it moves:
  *  - the **ghost slot**: a dashed pencil outline of a book standing in the
  *    first free stretch of plank, following the camera (world.AddSpot);
- *  - the **shelf dock**: a hand-drawn signboard with "new book", the
- *    studio and "add a floor", so neither is ever more than one click away;
+ *  - the **shelf dock**: the left rail — the app's mark, then "new book",
+ *    the studio, "add a floor" and the trash, so none of them is ever more
+ *    than one click away;
  *  - the **inline spine title**, written straight up the new book's spine;
  *  - the **first-run invitation** when the case is completely bare.
  */
@@ -78,6 +79,41 @@ interface NamingState {
 const GHOST_MIN_W = 30;
 const GHOST_MIN_H = 104;
 
+/* --------------------------- dock / case geometry -------------------------- */
+/*
+ * The dock is DOM floating over a full-bleed canvas, so "don't cover the
+ * bookcase" is a geometry problem, not a z-index one. The case is 1200 world
+ * px wide and the camera CENTRES it whenever the visible world is wider than
+ * SHELF_WIDTH + 2 * X_SLACK (camera.xBounds collapses to a single point
+ * there), so the free wall on each side is knowable from the zoom alone —
+ * no extra plumbing through world.ts.
+ *
+ * Above that zoom the case runs off both edges and there is no wall left to
+ * stand on; the dock shrinks to its icon-only form and hugs the window edge,
+ * where it sits over the case's outer stile rather than over any book.
+ */
+
+/** Case width in world px — camera.ts SHELF_WIDTH. */
+const CASE_W = 1200;
+/** Horizontal slack the camera keeps beside the case — camera.ts X_SLACK. */
+const CASE_SLACK = 60;
+/**
+ * Widths of the two dock forms, border included, measured in the browser and
+ * rounded up: 104 and 61. The slack means a font that renders a hair wider
+ * still lands on wall rather than on the case.
+ */
+const DOCK_FULL_W = 112;
+const DOCK_MINI_W = 68;
+/** Breathing room between the dock and the case's outer edge. */
+const DOCK_GAP = 20;
+/** Never let the dock touch the window edge. */
+const DOCK_EDGE = 10;
+/**
+ * Below this the labelled rail (386px tall) starts to crowd the window, so it
+ * goes narrow for headroom rather than for horizontal room.
+ */
+const DOCK_SHORT_H = 620;
+
 /* ------------------------------- chrome art ------------------------------- */
 /*
  * Pre-wobbled inline SVG — the same trick the settings gear uses. Strokes
@@ -109,6 +145,104 @@ function PaletteIcon(): JSX.Element {
   );
 }
 
+function TrashIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5.4 8.2 C11.2 7.6, 17.0 7.6, 22.8 8.1" />
+        <path d="M11.0 8.0 C11.1 6.2, 11.6 5.2, 14.0 5.1 C16.4 5.0, 17.0 6.0, 17.1 7.9" />
+        <path d="M7.4 9.6 C7.8 16.4, 8.2 20.6, 8.6 22.6 C8.8 23.7, 9.6 24.2, 11.0 24.3 C13.0 24.5, 15.2 24.5, 17.2 24.3 C18.6 24.2, 19.3 23.7, 19.5 22.6 C19.9 20.5, 20.4 16.3, 20.8 9.5" />
+        <path d="M11.7 12.6 L12.1 20.9 M16.4 12.5 L16.0 20.8" opacity="0.6" />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * The app's mark, redrawn for screen sizes.
+ *
+ * `assets/brand/icon.svg` is authored for a 1024px canvas: at rail size its
+ * 16-unit outline lands under a pixel and the page ruling, cover frame and
+ * medallion turn to fuzz — which is exactly why the logo read as "too small"
+ * in-app. This is the same book in the same flat vocabulary (one ink
+ * outline, a darker spine face beside the lighter cover, no gradients), with
+ * the fine detail dropped and the strokes re-weighted for ~52px so the
+ * silhouette still reads.
+ */
+function BrandMark(): JSX.Element {
+  return (
+    <svg viewBox="0 0 64 64" class="shelf-dock__mark" role="img" aria-label="Notebook">
+      <g transform="rotate(-4 32 32)" stroke-linejoin="round" stroke-linecap="round">
+        {/* page block, peeking out past the cover's fore-edge */}
+        <path
+          d="M17 9.6 C27 8.7, 42 8.9, 51 9.8 C52.6 10, 53.4 10.9, 53.5 12.4
+             C54 25.5, 54.1 42.5, 53.5 53.6 C53.4 55.1, 52.6 55.9, 51.1 56.1
+             C42 57, 27 57.1, 17.4 56.4 Z"
+          fill="#eee2c8"
+          stroke="#4f3120"
+          stroke-width="2.2"
+        />
+        {/* front cover */}
+        <path
+          d="M11.6 8.6 C13 7, 15.2 6.4, 18 6.3 C28 5.6, 40 5.8, 46.6 6.6
+             C48.6 6.8, 49.6 7.9, 49.7 9.9 C50.3 25, 50.4 42, 49.8 53.2
+             C49.7 55.2, 48.6 56.3, 46.6 56.5 C37 57.3, 26 57.4, 17 56.8
+             C14.4 56.6, 12.9 56.2, 11.7 55.2 Z"
+          fill="#c96f4a"
+          stroke="#4f3120"
+          stroke-width="2.4"
+        />
+        {/* spine — the darker flat face that carries all of the depth */}
+        <path
+          d="M11.6 8.6 C9.4 10.2, 8.4 12.4, 8.3 15.2 C7.9 27.6, 7.9 40.4, 8.3 50.8
+             C8.4 53.4, 9.3 55, 11.7 55.2 C13.5 56, 15 56.4, 17 56.8
+             C15.6 54.6, 15.1 52, 15 49.4 C14.7 37, 14.7 25, 15 13
+             C15.1 10.2, 15.9 8, 18 6.3 C15.2 6.4, 13 7, 11.6 8.6 Z"
+          fill="#a8552f"
+          stroke="#4f3120"
+          stroke-width="2.4"
+        />
+        {/* gilt bands */}
+        <g fill="none" stroke="#e8b64c">
+          <path d="M14.6 17.8 C13 18, 10.6 18.1, 9.1 18" stroke-width="2.6" />
+          <path d="M14.6 22.2 C13.2 22.3, 11 22.4, 9.5 22.3" stroke-width="1.5" />
+          <path d="M14.4 47.4 C12.8 47.6, 10.4 47.7, 8.9 47.6" stroke-width="2.6" />
+        </g>
+        {/* cream title label + its scribbled ruling */}
+        <path
+          d="M22.5 21 C28.5 20.5, 38 20.6, 43.2 21 C44.2 21.1, 44.8 21.7, 44.9 22.7
+             C45.1 26.3, 45.1 30, 44.9 33 C44.8 34, 44.2 34.6, 43.2 34.7
+             C37.4 35.2, 28.2 35.2, 22.8 34.8 C21.8 34.7, 21.2 34.1, 21.1 33.1
+             C20.9 29.8, 20.9 25.8, 21.1 22.6 C21.2 21.6, 21.6 21.1, 22.5 21 Z"
+          fill="#f7f1e3"
+          stroke="#4f3120"
+          stroke-width="1.9"
+        />
+        <g fill="none" stroke="#6b4a32">
+          <path d="M24.6 25.3 C28 24.9, 35.9 25, 41.2 25.3" stroke-width="1.7" />
+          <path d="M24.6 28.7 C27.5 28.3, 33.5 28.4, 37.5 28.7" stroke-width="1.4" />
+          <path d="M24.6 31.7 C27.1 31.4, 31.2 31.5, 33.7 31.7" stroke-width="1.3" />
+        </g>
+        {/* medallion + moss ribbon: the two bits of ornament worth keeping */}
+        <path
+          d="M32 39.4 L34 42.6 L32 45.9 L30 42.6 Z"
+          fill="none"
+          stroke="#e8b64c"
+          stroke-width="1.4"
+        />
+        <path
+          d="M38.1 56.5 C38 58.7, 38 59.9, 38.1 61.1 C38.2 61.9, 38.7 62.1, 39.2 61.7
+             C39.9 61.2, 40.5 61.2, 41.1 61.7 C41.6 62.1, 42.1 61.9, 42.1 61.1
+             C42.2 59.6, 42.1 58.3, 42 56.5 Z"
+          fill="#7d915c"
+          stroke="#4f6138"
+          stroke-width="1.5"
+        />
+      </g>
+    </svg>
+  );
+}
+
 function AddFloorIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
@@ -127,6 +261,12 @@ export default function BookshelfWorld(): JSX.Element {
   const [visibleBooks, setVisibleBooks] = createSignal<VisibleBook[]>([]);
   const [overlay, setOverlay] = createSignal<OverlayState | null>(null);
   const [zoomPct, setZoomPct] = createSignal(100);
+  const [viewportW, setViewportW] = createSignal(
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  );
+  const [viewportH, setViewportH] = createSignal(
+    typeof window === 'undefined' ? 800 : window.innerHeight,
+  );
   const [menu, setMenu] = createSignal<MenuState | null>(null);
   const [spotMenu, setSpotMenu] = createSignal<SpotMenuState | null>(null);
   const [plateEdit, setPlateEdit] = createSignal<PlateEditState | null>(null);
@@ -142,6 +282,16 @@ export default function BookshelfWorld(): JSX.Element {
   let creating = false;
 
   onMount(() => {
+    // The dock's placement is derived from the window width, so it has to
+    // re-derive when the window changes — the camera does not always publish
+    // a zoom change on resize.
+    const onResize = (): void => {
+      setViewportW(window.innerWidth);
+      setViewportH(window.innerHeight);
+    };
+    window.addEventListener('resize', onResize);
+    onCleanup(() => window.removeEventListener('resize', onResize));
+
     void ShelfWorld.create(host, {
       onVisibleBooksChange: (books) => {
         if (!disposed) setVisibleBooks(books);
@@ -167,9 +317,6 @@ export default function BookshelfWorld(): JSX.Element {
       onEditFloorPlate: (floor, rect) => {
         if (!disposed) setPlateEdit({ floor, rect });
       },
-      onOpenTrash: () => {
-        if (!disposed) setTrashOpen(true);
-      },
       onAddSpotChange: (spot) => {
         if (!disposed) setAddSpot(spot);
       },
@@ -179,6 +326,10 @@ export default function BookshelfWorld(): JSX.Element {
         return;
       }
       world = w;
+      // Seed the readout from the restored camera: onZoomChange only fires on
+      // a *change*, so without this the dock would lay itself out against a
+      // zoom of 100% until the first pan.
+      setZoomPct(w.zoomPercent);
       // Returning from an open book: fly the cover back onto the shelf.
       void w.ready.then(() => {
         if (!disposed) beginReturnIfPending(w);
@@ -342,6 +493,39 @@ export default function BookshelfWorld(): JSX.Element {
       width,
       height,
     };
+  };
+
+  /**
+   * Free wall to the LEFT of the bookcase, in screen px.
+   *
+   * Zero once the case is wider than the window can centre — at that point
+   * the camera is free to pan and the case's left edge is anywhere in
+   * [0, X_SLACK * zoom], so there is nothing safe to claim.
+   */
+  const leftWall = (): number => {
+    const zoom = zoomPct() / 100;
+    const vw = viewportW();
+    if (zoom <= 0 || vw / zoom < CASE_W + CASE_SLACK * 2) return 0;
+    return Math.max(0, (vw - CASE_W * zoom) / 2);
+  };
+
+  /**
+   * Where the dock stands, and in which form.
+   *
+   * Full while the wall can hold the labelled rail; icon-only when it can
+   * only hold that; and when the case has swallowed the window the mini rail
+   * hugs the edge, over the case's outer stile rather than over its books.
+   */
+  const dockPlace = (): { left: number; mini: boolean } => {
+    const wall = leftWall();
+    const roomy = viewportH() >= DOCK_SHORT_H;
+    if (roomy && wall >= DOCK_FULL_W + DOCK_GAP + DOCK_EDGE) {
+      return { left: Math.round((wall - DOCK_FULL_W) / 2), mini: false };
+    }
+    if (wall >= DOCK_MINI_W + DOCK_GAP + DOCK_EDGE) {
+      return { left: Math.round((wall - DOCK_MINI_W) / 2), mini: true };
+    }
+    return { left: DOCK_EDGE, mini: true };
   };
 
   /** The first-run card, parked beside the ghost and kept on screen. */
@@ -579,42 +763,78 @@ export default function BookshelfWorld(): JSX.Element {
         </ul>
       </nav>
 
-      {/* ---- the shelf's own signboard: make things, dress the room ------ */}
-      <div class="shelf-dock" role="toolbar" aria-label="Shelf tools" aria-orientation="vertical">
-        <button
-          type="button"
-          class="shelf-dock__btn is-primary"
-          data-shelf-dock="new-book"
-          aria-label="New book"
-          title="Put a new book on this floor"
-          onClick={() => addBook(addSpot()?.floor)}
-        >
-          <NewBookIcon />
-          <span class="shelf-dock__label">new book</span>
-        </button>
+      {/* ---- the left rail: the app's mark, then everything you can do to
+              the LIBRARY (rather than to a book). Its `left` is derived from
+              the zoom so it stands on bare wall instead of on the case. --- */}
+      <div
+        class="shelf-dock"
+        classList={{ 'is-mini': dockPlace().mini }}
+        data-testid="shelf-dock"
+        style={{ left: `${dockPlace().left}px` }}
+      >
+        <div class="shelf-dock__brand">
+          <BrandMark />
+          <span class="shelf-dock__wordmark">Notebook</span>
+        </div>
         <span class="shelf-dock__rule" aria-hidden="true" />
-        <button
-          type="button"
-          class="shelf-dock__btn"
-          data-shelf-dock="studio"
-          aria-label="Library studio"
-          title="Pick the room, the wall, the growing things"
-          onClick={() => openStudio(null)}
+        <div
+          class="shelf-dock__tools"
+          role="toolbar"
+          aria-label="Shelf tools"
+          aria-orientation="vertical"
         >
-          <PaletteIcon />
-          <span class="shelf-dock__label">studio</span>
-        </button>
-        <button
-          type="button"
-          class="shelf-dock__btn"
-          data-shelf-dock="add-floor"
-          aria-label="Add a floor"
-          title="Grow the case downward"
-          onClick={() => world?.addFloor()}
-        >
-          <AddFloorIcon />
-          <span class="shelf-dock__label">add floor</span>
-        </button>
+          <button
+            type="button"
+            class="shelf-dock__btn is-primary"
+            data-shelf-dock="new-book"
+            aria-label="New book"
+            title="Put a new book on this floor"
+            onClick={() => addBook(addSpot()?.floor)}
+          >
+            <NewBookIcon />
+            <span class="shelf-dock__label">new book</span>
+          </button>
+          <span class="shelf-dock__rule" aria-hidden="true" />
+          <button
+            type="button"
+            class="shelf-dock__btn"
+            data-shelf-dock="studio"
+            aria-label="Library studio"
+            title="Pick the room, the wall, the growing things"
+            onClick={() => openStudio(null)}
+          >
+            <PaletteIcon />
+            <span class="shelf-dock__label">studio</span>
+          </button>
+          <button
+            type="button"
+            class="shelf-dock__btn"
+            data-shelf-dock="add-floor"
+            aria-label="Add a floor"
+            title="Grow the case downward"
+            onClick={() => world?.addFloor()}
+          >
+            <AddFloorIcon />
+            <span class="shelf-dock__label">add floor</span>
+          </button>
+          {/* Crumpled books used to live in a drawer drawn INSIDE the case,
+              which put a piece of filing furniture in the middle of the
+              artwork. It is a library action, so it belongs on the rail. */}
+          <button
+            type="button"
+            class="shelf-dock__btn"
+            data-shelf-dock="trash"
+            aria-label="Trash"
+            title="Books you crumpled — restore or empty"
+            onClick={() => {
+              void play('pop-soft');
+              setTrashOpen(true);
+            }}
+          >
+            <TrashIcon />
+            <span class="shelf-dock__label">trash</span>
+          </button>
+        </div>
       </div>
 
       <div class="shelf-zoom-pill" role="toolbar" aria-label="Zoom controls">

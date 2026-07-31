@@ -1,17 +1,14 @@
 /**
  * features/bookshelf/libraryPrefs.ts — the "This library" half of the studio.
  *
- * Which room the shelf is (theme), how its wall is finished (backdrop),
- * which wallpaper pattern x colourway hangs on it, how much flora grows and
- * how warm the lamps burn. Persisted as one JSON blob in the `settings` table
- * under key 'library', mirroring src/data/settings.ts's contract (validated
- * merge over defaults, Solid store for components, `subscribe` for the
- * non-reactive Pixi world).
+ * Which room the shelf is, and nothing else. Persisted as one JSON blob in the
+ * `settings` table under key 'library', mirroring src/data/settings.ts's
+ * contract (validated merge over defaults, Solid store for components,
+ * `subscribe` for the non-reactive Pixi world).
  *
  * These live outside `Settings` on purpose: the settings module is owned by
- * another wave. Folding these six fields into `Settings` later is a drop-in
- * (see the integration note in the module docs) — nothing here reaches into
- * the shelf world directly.
+ * another wave. Folding the field into `Settings` later is a drop-in — nothing
+ * here reaches into the shelf world directly.
  */
 
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
@@ -20,14 +17,8 @@ import {
   DEFAULT_THEME_ID,
   getTheme,
   isThemeId,
-  isWallpaperPatternId,
-  resolveBackdrop,
-  resolveWallpaper,
-  type BackdropId,
   type LibraryTheme,
   type ThemeId,
-  type WallpaperPatternId,
-  type WallpaperSpec,
 } from '../../art/themes';
 import { getDb } from '../../data/db';
 import { libraryKey } from './libraryKey';
@@ -35,35 +26,21 @@ import { libraryKey } from './libraryKey';
 const PREFS_KEY = 'library';
 
 /**
- * What a reader can change about their library.
+ * What a reader can change about their library: the room.
  *
- * There are exactly three things on the screen — the books, the shelf they
- * stand on, and the wall behind it — and the studio used to offer four
- * overlapping controls for the last one: `theme` (which baked its own wall),
- * `backdrop` (papered / panelled / plastered / boarded / shoji), plus
- * `wallpaperPattern` and `colourway`. Picking a wallpaper did nothing
- * whenever the backdrop was a finish with nowhere to put one, which is
- * exactly the "sometimes clicking wallpaper changes nothing" report. The
- * model was wrong, not the reader.
- *
- * So the wall is one thing with two knobs: an optional pattern that defaults
- * to none, and how much physical relief that pattern has.
+ * It was five fields, then three. The wall carried `wallpaperPattern` and
+ * `wallDepth` right up until this pass, and both had been inert since the flat
+ * restyle — the wall is one flat fill, so eighteen patterns hung on nothing and
+ * a "surface depth" slider drove a relief that is not drawn. Persisting a
+ * control the app cannot honour is how the studio came to have knobs that do
+ * nothing; a room's colour scheme is the one thing here that reaches the screen.
  */
 export interface LibraryPrefs {
   theme: ThemeId;
-  /** `null` = a plain wall. The default, and it has to stay usable. */
-  wallpaperPattern: WallpaperPatternId | null;
-  /**
-   * How raised the wall's surface reads, 0 (flat paint) → 1 (deep relief).
-   * Drives the strength of the wall's own shading, not a separate texture.
-   */
-  wallDepth: number;
 }
 
 export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
   theme: DEFAULT_THEME_ID,
-  wallpaperPattern: null,
-  wallDepth: 0.35,
 };
 
 /** Validated merge of an unknown stored blob over the defaults. Total. */
@@ -71,12 +48,12 @@ export function mergeLibraryPrefs(raw: unknown): LibraryPrefs {
   const d = DEFAULT_LIBRARY_PREFS;
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { ...d };
   const s = raw as Record<string, unknown>;
-  const num = (v: unknown, fallback: number, lo: number, hi: number): number =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+  // Blobs written before this pass carry `wallpaperPattern`/`wallDepth`, and
+  // libraries saved in one of the ten retired rooms carry a `theme` that is no
+  // longer an id. Both are dropped here rather than migrated: the extra keys
+  // never round-trip back out, and an unknown room resolves to the default.
   return {
     theme: isThemeId(s.theme) ? s.theme : d.theme,
-    wallpaperPattern: isWallpaperPatternId(s.wallpaperPattern) ? s.wallpaperPattern : null,
-    wallDepth: num(s.wallDepth, d.wallDepth, 0, 1),
   };
 }
 
@@ -153,28 +130,11 @@ export function subscribeLibraryPrefs(
 export interface ResolvedLibrary {
   prefs: LibraryPrefs;
   theme: LibraryTheme;
-  wallpaper: WallpaperSpec;
-  backdrop: BackdropId;
   /** Cache/bake key — identical strings ⇒ identical case art. */
   key: string;
 }
 
 export function resolveLibrary(prefs: LibraryPrefs): ResolvedLibrary {
   const theme = getTheme(prefs.theme);
-  // Colourway is no longer a control — the wall is one authored surface and
-  // the pattern, if any, sits on top of it in the room's own colour.
-  const wallpaper = resolveWallpaper(theme, {
-    pattern: prefs.wallpaperPattern,
-    colourway: null,
-  });
-  // Likewise the backdrop finish: it duplicated the wall and silently voided
-  // the pattern picker. The room's own first choice stands.
-  const backdrop = resolveBackdrop(theme, null);
-  return {
-    prefs,
-    theme,
-    wallpaper,
-    backdrop,
-    key: libraryKey(theme.id, wallpaper, backdrop),
-  };
+  return { prefs, theme, key: libraryKey(theme) };
 }

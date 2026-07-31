@@ -31,7 +31,7 @@ import { createPage, listPages } from '../src/data/pages';
 import type { Book } from '../src/data/types';
 import { resolveBookStyle } from '../src/art/bookStyle';
 import { deriveSpineParams, PIGMENT_COUNT, SPINE_BASE_HEIGHT } from '../src/art/spines';
-import { getTheme } from '../src/art/themes';
+import { THEME_IDS, getTheme } from '../src/art/themes';
 import { readBookStyleOverrides } from '../src/data/books';
 import {
   coverOverridesFromStyle,
@@ -907,55 +907,43 @@ describe('library prefs: validated merge', () => {
     );
   });
 
-  it('keeps valid ids and clamps the sliders', () => {
-    const prefs = mergeLibraryPrefs({
-      theme: 'observatory',
-      wallpaperPattern: 'constellation',
-      wallDepth: 4,
-    });
-    expect(prefs.theme).toBe('observatory');
-    expect(prefs.wallpaperPattern).toBe('constellation');
-    expect(prefs.wallDepth).toBe(1);
+  it('keeps a valid room id', () => {
+    expect(mergeLibraryPrefs({ theme: 'reef' }).theme).toBe('reef');
   });
 
-  it('drops the retired wall controls rather than carrying them forward', () => {
-    // colourway / backdrop / floraDensity were three ways to change one
-    // surface, and two of them could silently void the third. lightWarmth
-    // tinted lamp pools that no longer exist. A stored blob from before the
-    // purge has to load without reviving any of them.
+  it('drops every retired control rather than carrying it forward', () => {
+    // The wall accumulated four pickers over three passes — colourway,
+    // backdrop, wallpaperPattern, wallDepth — plus floraDensity and
+    // lightWarmth for dressing that is no longer drawn. All of them were
+    // inert by the time the case went flat, and a blob written while they
+    // existed has to load without reviving any of them.
     const prefs = mergeLibraryPrefs({
-      theme: 'observatory',
+      theme: 'reef',
       colourway: 'midnight',
       backdrop: 'shoji',
+      wallpaperPattern: 'constellation',
+      wallDepth: 0.8,
       floraDensity: 2,
       lightWarmth: 0.9,
     });
-    expect(prefs).not.toHaveProperty('colourway');
-    expect(prefs).not.toHaveProperty('backdrop');
-    expect(prefs).not.toHaveProperty('floraDensity');
-    expect(prefs).not.toHaveProperty('lightWarmth');
-    expect(prefs.wallpaperPattern).toBeNull();
+    expect(prefs).toEqual({ theme: 'reef' });
   });
 
-  it('unset pickers mean "follow the room"', () => {
-    const prefs = mergeLibraryPrefs({ theme: 'sakura' });
-    expect(prefs.wallpaperPattern).toBeNull();
-    const lib = resolveLibrary(prefs);
-    expect(lib.wallpaper.pattern).toBe(getTheme('sakura').wallpaper.pattern);
-    expect(lib.backdrop).toBe(getTheme('sakura').backdrops[0]);
+  it('opens a library saved in a retired room in the default one', () => {
+    // Ten of the fourteen rooms went with the carpentry data they described.
+    expect(mergeLibraryPrefs({ theme: 'sakura' }).theme).toBe(DEFAULT_LIBRARY_PREFS.theme);
   });
 
-  it('resolveLibrary keys identical rooms identically', () => {
-    const a = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage' }));
-    // The depth slider does not touch the CASE art, so the bake key must
-    // match — this is what stops a drag from re-baking the whole bookcase.
-    const b = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage', wallDepth: 1 }));
-    expect(a.key).toBe(b.key);
-    // The wall pattern does, so it must not.
-    const c = resolveLibrary(
-      mergeLibraryPrefs({ theme: 'cottage', wallpaperPattern: 'constellation' }),
-    );
-    expect(c.key).not.toBe(a.key);
+  it('keys a room by its colour scheme, not just its id', () => {
+    const a = resolveLibrary(mergeLibraryPrefs({ theme: 'blossom' }));
+    expect(a.key).toBe(resolveLibrary(mergeLibraryPrefs({ theme: 'blossom' })).key);
+    // Different scheme ⇒ different case art ⇒ the bake cache must miss.
+    expect(a.key).not.toBe(resolveLibrary(mergeLibraryPrefs({ theme: 'reef' })).key);
+    // Every colour that reaches the case is in the key, so editing one hex
+    // cannot serve stale art out of the disk cache.
+    for (const colour of Object.values(getTheme('blossom').scheme).flat(2)) {
+      expect(a.key).toContain(colour as string);
+    }
   });
 });
 
@@ -978,11 +966,7 @@ describe('book studio: overrides win in every room', () => {
 
   it('keeps a customized book identical across themes', () => {
     const a = resolveBookStyle(0xabcdef, themeSpineDefaults(getTheme('athenaeum')), overrides);
-    const b = resolveBookStyle(
-      0xabcdef,
-      themeSpineDefaults(getTheme('observatory')),
-      overrides,
-    );
+    const b = resolveBookStyle(0xabcdef, themeSpineDefaults(getTheme('reef')), overrides);
     expect(b.style.material).toBe('silk');
     expect(b.style.pigment).toBe(4);
     expect(b.style.raisedBands).toBe(5);
@@ -993,17 +977,17 @@ describe('book studio: overrides win in every room', () => {
 
   it('lets the room bias an un-overridden book', () => {
     const seeds = [1, 7, 99, 4242, 31337];
-    const pigments = (id: 'athenaeum' | 'sakura'): number[] =>
+    const pigments = (id: 'athenaeum' | 'reef'): number[] =>
       seeds.map(
         (s) => resolveBookStyle(s, themeSpineDefaults(getTheme(id))).style.pigment,
       );
-    expect(pigments('athenaeum')).not.toEqual(pigments('sakura'));
+    expect(pigments('athenaeum')).not.toEqual(pigments('reef'));
   });
 
   it('projects a style onto cover overrides consistently', () => {
     const { style, cover } = resolveBookStyle(
       0x1234,
-      themeSpineDefaults(getTheme('cottage')),
+      themeSpineDefaults(getTheme('apothecary')),
       overrides,
     );
     const projected = coverOverridesFromStyle(style);
@@ -1046,41 +1030,48 @@ describe('spine art height', () => {
 });
 
 describe('theme spine bias adapter', () => {
-  it('maps a hex ramp onto real pigment indices', () => {
-    for (const id of ['athenaeum', 'observatory', 'sakura', 'apothecary'] as const) {
+  it('maps a room cloth ramp onto real pigment indices', () => {
+    for (const id of THEME_IDS) {
       const d = themeSpineDefaults(getTheme(id));
-      expect(d.pigments?.length).toBe(getTheme(id).spineDefaults.pigments.length);
+      // A theme's pigment ramp IS its cloth palette now — one entry per cloth.
+      expect(d.pigments?.length).toBe(getTheme(id).scheme.cloths.length);
       for (const p of d.pigments ?? []) {
         expect(Number.isInteger(p)).toBe(true);
         expect(p).toBeGreaterThanOrEqual(0);
-        // The deep range (12–19) is a legal map target: midnight, oxblood and
-        // forest ramps SHOULD land there, not collapse onto the heritage 12.
+        // The deep range (12–19) is a legal map target: oxblood, forest and
+        // ink-blue ramps SHOULD land there, not collapse onto the heritage 12.
         expect(p).toBeLessThan(PIGMENT_COUNT);
       }
     }
   });
 
-  it('turns the 0-1 band dial into a cord range', () => {
-    const banded = themeSpineDefaults(getTheme('athenaeum')).raisedBands;
-    const flat = themeSpineDefaults(getTheme('sakura')).raisedBands;
-    expect(Array.isArray(banded)).toBe(true);
-    expect(Array.isArray(flat)).toBe(true);
-    const hi = (r: unknown): number => (r as readonly number[])[1] as number;
-    expect(hi(banded)).toBeGreaterThanOrEqual(hi(flat));
+  it('turns the shared band dial into a cord range', () => {
+    // Banding is dressing, not colour, so every room now shares one dial —
+    // what still has to hold is that the dial becomes a RANGE, because a
+    // constant would stamp the same binding on every book in the room.
+    const range = themeSpineDefaults(getTheme('athenaeum')).raisedBands as
+      | readonly number[]
+      | undefined;
+    expect(Array.isArray(range)).toBe(true);
+    expect((range as readonly number[])[1]).toBeGreaterThan(
+      (range as readonly number[])[0] as number,
+    );
   });
 });
 
 describe('themed env keys', () => {
-  it('keys a room by theme x wallpaper x wall', () => {
+  it('keys a room by its scheme, and agrees with the prefs store', () => {
     const theme = getTheme('apothecary');
-    const base = libraryKey(theme.id, theme.wallpaper, theme.backdrops[0]);
-    const other = libraryKey(
-      theme.id,
-      { ...theme.wallpaper, colourway: 'midnight' },
-      theme.backdrops[0],
-    );
-    expect(base).not.toBe(other);
-    expect(base).toBe(libraryKey(theme.id, { ...theme.wallpaper }, theme.backdrops[0]));
+    const base = libraryKey(theme);
+    expect(base).toBe(libraryKey({ ...theme }));
+    expect(base).not.toBe(libraryKey(getTheme('blossom')));
+    // A recoloured room is a different room as far as the bake cache is
+    // concerned, even under the same id.
+    const restained = {
+      ...theme,
+      scheme: { ...theme.scheme, timber: '#123456' },
+    };
+    expect(libraryKey(restained)).not.toBe(base);
     // The prefs store must agree with the texture cache on the same room.
     expect(resolveLibrary(mergeLibraryPrefs({ theme: 'apothecary' })).key).toBe(base);
   });

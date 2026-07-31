@@ -17,6 +17,7 @@ import * as PIXI from 'pixi.js';
 import {
   Application,
   Container,
+  NineSliceSprite,
   Sprite,
   Texture,
   TilingSprite,
@@ -40,6 +41,7 @@ import {
   subscribe as subscribeSettings,
 } from '../../data/settings';
 import type { Book } from '../../data/types';
+import { setFlatScheme } from '../../art/flat';
 import { floorLabel, loadFloorNames, onFloorNameChange } from './floorNames';
 import {
   addWheelZoom,
@@ -109,17 +111,10 @@ import {
 } from './gestures';
 import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
-import { makeGlowTexture } from './glow';
+import { makeFrameSprite, makeShelfMarks, type ShelfMarks } from './glow';
 import { SpineFactory, type SpineRowContext } from './spineFactory';
 import { paletteCss } from './spinePalette';
-import {
-  EnvTextures,
-  PLACEHOLDER_TINTS,
-  PLAQUE_H,
-  PLAQUE_W,
-  TRASH_DRAWER_H,
-  TRASH_DRAWER_W,
-} from './textures';
+import { EnvTextures, PLACEHOLDER_TINTS, PLAQUE_H, PLAQUE_W } from './textures';
 import { computeRange, diffWindow, Pool, type FloorRange } from './virtualizer';
 
 /* --------------------------- gsap registration ---------------------------- */
@@ -180,8 +175,6 @@ export interface WorldEvents {
   onBookMenu?(book: Book, screen: Vec2): void;
   /** Double-click on a floor plaque: open the label editor over `rect`. */
   onEditFloorPlate?(floor: number, rect: RectLike): void;
-  /** The trash drawer under the last floor was clicked. */
-  onOpenTrash?(): void;
   /** The ghost add-a-book slot appeared, moved or vanished. */
   onAddSpotChange?(spot: AddSpot | null): void;
   /** Right-click on empty plank: the "new book here" menu at `screen`. */
@@ -199,14 +192,20 @@ let sessionCamera: CameraSnapshot | null = null;
 const PARALLAX = 0.85;
 
 /**
- * The wall, as one flat colour (`FLAT.wall`).
+ * The wall, as one flat colour — the room's `scheme.wall`.
  *
  * Drawn as a tint on a white pixel rather than any texture, which is the
  * whole point: a solid fill has no tile and therefore no seam, and the pale
  * banding in the corners while panning was a seam in every version that had
  * one — procedural strip and generated panel alike.
+ *
+ * Parsed rather than tabulated so a hex edited in `art/themes.ts` reaches the
+ * wall without a second copy of it here going stale.
  */
-const FLAT_WALL_TINT = 0xe9e2d0;
+function wallTint(hex: string): number {
+  const n = Number.parseInt(hex.replace('#', ''), 16);
+  return Number.isFinite(n) ? n : 0xe9e2d0;
+}
 
 /** Springy-lag constant for the dragged-book ghost (lerpExp k). */
 const PULL_FOLLOW_K = 11;
@@ -264,8 +263,8 @@ export class ShelfWorld {
   private readonly world = new Container();
   /** Screen space, above everything: drag ghosts, drop-target hints. */
   private readonly fx = new Container();
-  /** Shared soft radial — hover halo, drop-target hint, drag contact shadow. */
-  private readonly glowTexture: Texture;
+  /** Flat interaction marks — hover/selection outlines, contact shadow. */
+  private readonly marks: ShelfMarks;
   /** Crown/header board capping the case above floor 0. */
   private readonly crown: Sprite;
 
@@ -304,12 +303,10 @@ export class ShelfWorld {
     committing: boolean;
   } | null = null;
   /** Drop-target slot highlight while moving (fx layer, screen space). */
-  private movePreview: Sprite | null = null;
+  private movePreview: NineSliceSprite | null = null;
   /** Keyboard shelf-nav selection (floor + index into the floor's visuals). */
   private kbSel: { floor: number; index: number } | null = null;
   private kbVisual: { fv: FloorView; visual: BookVisual } | null = null;
-  /** Trash drawer front under the last occupied floor (world space). */
-  private trashSprite: Sprite | null = null;
   /** Previous tap (plaque double-click detection). */
   private lastTap: { x: number; y: number; t: number } | null = null;
   /** The ghost add-a-book slot last published to the overlay. */
@@ -323,7 +320,7 @@ export class ShelfWorld {
     },
     motion: () => (this.reducedMotion ? 0 : 1),
     track: (anim) => this.track(anim),
-    glow: () => this.glowTexture,
+    marks: () => this.marks,
   };
 
   private readonly unsubs: Array<() => void> = [];
@@ -377,7 +374,7 @@ export class ShelfWorld {
     this.backdrop.tint = PLACEHOLDER_TINTS.backdrop;
     this.backdrop.alpha = 0;
     this.backdrop.eventMode = 'none';
-    this.glowTexture = makeGlowTexture();
+    this.marks = makeShelfMarks();
 
     // The case crown above floor 0 — world-space, added before any FloorView
     // so floors always render above it.
@@ -733,23 +730,44 @@ export class ShelfWorld {
     ghost.anchor.set(0.5, 1);
     ghost.width = visual.w * zoom;
     ghost.height = visual.height * zoom;
-    ghost.rotation = visual.baseRotation;
-    ghost.position.set(screen.x, screen.y - 20 * zoom);
+    // Arrives tipped the other way from how it left, and straightens INTO the
+    // lean it lives at, so the book slots back between its neighbours instead
+    // of being deposited on top of them.
+    ghost.rotation = visual.baseRotation - 0.05;
+    ghost.position.set(screen.x, screen.y - 24 * zoom);
     const targetScaleX = ghost.scale.x;
     const targetScaleY = ghost.scale.y;
-    ghost.scale.set(targetScaleX * 1.15, targetScaleY * 1.15);
+    ghost.scale.set(targetScaleX * 1.16, targetScaleY * 1.16);
     this.ghost = ghost;
     this.fx.addChild(ghost);
     this.dirty = true;
-    this.track(
-      gsap.to(ghost, {
-        pixi: { scaleX: targetScaleX, scaleY: targetScaleY, y: screen.y },
-        duration: 0.4 * m,
-        ease: 'power3.out',
-        onUpdate: this.hooks.markDirty,
-        onComplete: finish,
-      }),
-    );
+    const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: finish });
+    tl
+      // Accelerating in: gravity, not a landing gear. `power3.out` had the
+      // book crawling the last few pixels, which is what made the return feel
+      // like a dialog closing rather than a book going away.
+      .to(
+        ghost,
+        {
+          pixi: { scaleX: targetScaleX, scaleY: targetScaleY, y: screen.y },
+          duration: 0.3 * m,
+          ease: 'power2.in',
+        },
+        0,
+      )
+      .to(ghost, { rotation: visual.baseRotation, duration: 0.42 * m, ease: 'power2.out' }, 0)
+      // The plank stops it: one frame of compression, then a small rebound.
+      .to(
+        ghost,
+        { pixi: { scaleY: targetScaleY * 0.955 }, duration: 0.06 * m, ease: 'power2.out' },
+        0.3 * m,
+      )
+      .to(
+        ghost,
+        { pixi: { scaleY: targetScaleY }, duration: 0.2 * m, ease: 'elastic.out(1, 0.5)' },
+        0.36 * m,
+      );
+    this.track(tl);
   }
 
   destroy(): void {
@@ -768,8 +786,6 @@ export class ShelfWorld {
     this.move = null;
     this.movePreview?.destroy();
     this.movePreview = null;
-    this.trashSprite?.destroy();
-    this.trashSprite = null;
     this.disposeGhost();
     for (const fv of this.floors.values()) fv.destroy();
     this.floors.clear();
@@ -778,7 +794,7 @@ export class ShelfWorld {
     this.store.destroy();
     this.factory.destroy();
     this.envTex.destroy();
-    this.glowTexture.destroy(true);
+    this.marks.destroy();
     this.app.destroy({ removeView: true }, { children: true });
   }
 
@@ -1004,12 +1020,17 @@ export class ShelfWorld {
     pull.x = m === 0 ? pull.targetX : lerpExp(pull.x, pull.targetX, dt, PULL_FOLLOW_K);
     pull.y = m === 0 ? pull.targetY : lerpExp(pull.y, pull.targetY, dt, PULL_FOLLOW_K);
     pull.ghost.position.set(pull.x, pull.y);
-    // Trail the pointer with a little tilt for life (capped ±0.14 rad).
-    const lag = pull.targetX - pull.x;
-    pull.ghost.rotation = clamp(lag * 0.004, -0.14, 0.14);
     // Contact shadow stays on the shelf and fades as the book lifts away.
     const away = Math.hypot(pull.x - pull.startX, pull.y - pull.startY);
-    pull.shadow.alpha = Math.max(0, 0.3 - away * 0.002);
+    pull.shadow.alpha = Math.max(0, 0.28 - away * 0.002);
+    // Trail the pointer with a little tilt for life (capped ±0.14 rad), on top
+    // of the lean the book still has while it is barely out of the row. The
+    // lean bleeds off over the first 130px of travel, so a leaning book comes
+    // free of the shelf rather than snapping upright the instant you grab it.
+    const lag = pull.targetX - pull.x;
+    const stillShelved = Math.max(0, 1 - away / 130);
+    pull.ghost.rotation =
+      pull.visual.baseRotation * stillShelved + clamp(lag * 0.004, -0.14, 0.14);
     return true;
   }
 
@@ -1070,6 +1091,10 @@ export class ShelfWorld {
     const roomChanged = this.appliedLibraryKey !== next.key;
     const gen = ++this.libraryGen;
 
+    // The palette every flat draw on this thread reads, set BEFORE the factory
+    // is told: `setTheme` invalidates every baked spine, and the re-bakes it
+    // provokes must already be finding the new room's cloths.
+    setFlatScheme(next.theme.scheme);
     // Spine bias reacts instantly; it costs nothing to redo.
     this.factory.setTheme(next.theme);
 
@@ -1082,11 +1107,10 @@ export class ShelfWorld {
     // nothing to fade from.
     if (this.appliedLibraryKey !== '') this.beginThemeFade();
 
-    await this.envTex.setTheme({
-      themeId: next.theme.id,
-      wallpaper: next.wallpaper,
-      backdrop: next.backdrop,
-    });
+    await this.envTex.setTheme({ themeId: next.theme.id });
+    // The wall is not a texture, so no env-ready callback carries it — set it
+    // here, on the same beat the case parts land.
+    this.backdrop.tint = wallTint(next.theme.scheme.wall);
     if (this.destroyed || gen !== this.libraryGen) return;
 
     // Re-plate every mounted floor in the new room's plate material.
@@ -1199,48 +1223,7 @@ export class ShelfWorld {
 
     this.range = range;
     this.store.ensureRange(range.first, range.last);
-    this.syncTrashDrawer();
     this.publishVisibleBooks();
-  }
-
-  /**
-   * The trash drawer front sits just under the last occupied floor's plank
-   * (wave-2 item 22). World-space sprite, re-appended after floor mounts so
-   * it always renders above the next floor's back panel.
-   */
-  private syncTrashDrawer(): void {
-    const floor = this.store.maxFloor;
-    const y = (floor + 1) * FLOOR_H + 3;
-    if (this.trashSprite === null) {
-      this.trashSprite = new Sprite(this.envTex.getTrashDrawer(this.dpr));
-      this.trashSprite.anchor.set(0.5, 0);
-      this.trashSprite.width = TRASH_DRAWER_W;
-      this.trashSprite.height = TRASH_DRAWER_H;
-      // Untinted, deliberately. The drawer front used to be baked in a pale
-      // neutral wood so a per-room `ratioTint` could push it to that theme's
-      // timber; it is now baked in the one flat timber the rest of the case
-      // uses, and any multiply on top of that only darkens it.
-      this.trashSprite.tint = 0xffffff;
-    }
-    this.trashSprite.position.set(SHELF_WIDTH / 2, y);
-    // Keep on top of floor containers (mounts re-order world children). Only
-    // re-append when it is not already last — addChild every frame would
-    // churn the child array on the hot path.
-    const kids = this.world.children;
-    if (kids[kids.length - 1] !== this.trashSprite) {
-      this.world.addChild(this.trashSprite);
-    }
-  }
-
-  /** World-space rect of the trash drawer (hit-testing). */
-  private trashDrawerHit(wx: number, wy: number): boolean {
-    if (this.trashSprite === null) return false;
-    const y0 = (this.store.maxFloor + 1) * FLOOR_H + 3;
-    return (
-      Math.abs(wx - SHELF_WIDTH / 2) <= TRASH_DRAWER_W / 2 &&
-      wy >= y0 &&
-      wy <= y0 + TRASH_DRAWER_H
-    );
   }
 
   private stampFor(index: number, fv: FloorView): PIXI.RenderTexture {
@@ -1337,7 +1320,7 @@ export class ShelfWorld {
     // both when it was a procedural strip and when it was a generated panel.
     // A backdrop is not a subject; the books are.
     if (this.backdrop.texture !== Texture.WHITE) this.backdrop.texture = Texture.WHITE;
-    this.backdrop.tint = FLAT_WALL_TINT;
+    this.backdrop.tint = wallTint(this.envTex.theme.scheme.wall);
     this.backdrop.alpha = 1;
     if (this.wallpaper !== null) this.wallpaper.visible = false;
     this.syncCrown();
@@ -1512,11 +1495,6 @@ export class ShelfWorld {
     const cam = this.camera;
     const wx = cursor.x / cam.zoom + cam.x;
     const wy = cursor.y / cam.zoom + cam.y;
-    if (this.trashDrawerHit(wx, wy)) {
-      void play('pop-soft');
-      this.events.onOpenTrash?.();
-      return;
-    }
     // Double-tap on a floor plaque (tier 0, where the label is legible)
     // opens the inline label editor.
     const prev = this.lastTap;
@@ -1782,13 +1760,17 @@ export class ShelfWorld {
     ghost.width = visual.w * zoom;
     ghost.height = visual.height * zoom;
     ghost.position.set(screen.x, screen.y);
+    // Inherit the lean. The ghost used to spawn bolt upright over a leaning
+    // spine, so every pull-out began with the book snapping straight one frame
+    // before it moved — the single loudest tell that this was two objects.
+    // Anchored bottom-center like the shelf sprite, so it pivots on the plank.
+    ghost.rotation = visual.baseRotation;
 
-    const shadow = new Sprite(this.glowTexture);
-    shadow.tint = 0x2e241a;
+    const shadow = new Sprite(this.marks.contactShadow);
     shadow.anchor.set(0.5);
-    shadow.width = visual.w * zoom * 1.7;
-    shadow.height = 16 * zoom;
-    shadow.position.set(screen.x, screen.y + 5 * zoom);
+    shadow.width = visual.w * zoom * 1.6;
+    shadow.height = 13 * zoom;
+    shadow.position.set(screen.x, screen.y + 4 * zoom);
     shadow.alpha = 0;
 
     this.fx.addChild(shadow, ghost);
@@ -1815,7 +1797,23 @@ export class ShelfWorld {
     }
   }
 
-  /** Tap pull-out: the full from-rest choreography. */
+  /**
+   * Tap pull-out: the full from-rest choreography.
+   *
+   * Taking a book off a shelf is not one movement, and animating it as one is
+   * exactly what made this read as a sticker being enlarged. It is four:
+   *
+   *   1. **anticipation** — the book presses back into the row before it comes
+   *      out at all. Nine frames, and it is most of the perceived weight.
+   *   2. **extraction** — it rises fast and tips its top toward you as the
+   *      shear it had while wedged between neighbours unwinds.
+   *   3. **drift** — it does not go straight up: it leans toward the middle of
+   *      the screen, which is where the DOM overlay is about to carry it, so
+   *      the handoff continues a motion instead of starting one.
+   *   4. **settle** — the overshoot resolves and the lean swings back through
+   *      upright. Nothing in the old version ever came to rest; it just
+   *      stopped, and stopping is what cheap animation does.
+   */
   private pullOutBook(fv: FloorView, visual: BookVisual): void {
     if (this.frozen) return;
     void play('book-pull');
@@ -1840,12 +1838,15 @@ export class ShelfWorld {
     const shadowScaleX = shadow.scale.x;
     this.dimSiblings(fv, visual);
 
-    const liftedY = screen.y - 40 * zoom;
+    const liftedY = screen.y - 46 * zoom;
+    // Beat 3: a few px toward the middle of the viewport — enough to bend the
+    // path, not enough to look like the book was thrown.
+    const liftedX = screen.x + Math.sign(this.vp.width / 2 - screen.x) * 7 * zoom;
     const finish = (): void => {
       const width = visual.w * zoom * 1.35;
       const height = visual.height * zoom * 1.35;
       this.events.onGhostReady(visual.book, {
-        x: screen.x - width / 2,
+        x: liftedX - width / 2,
         y: liftedY - height,
         width,
         height,
@@ -1853,37 +1854,76 @@ export class ShelfWorld {
     };
     if (m === 0) {
       ghost.scale.set(baseScaleX * 1.35, baseScaleY * 1.35);
-      ghost.position.y = liftedY;
+      ghost.position.set(liftedX, liftedY);
+      ghost.rotation = 0;
       ghost.skew.x = 0;
-      shadow.alpha = 0.3;
+      shadow.alpha = 0.24;
       this.dirty = true;
       finish();
       return;
     }
+    // m is 1 from here down — the reduced-motion path returned above — so the
+    // beats below are plain seconds and read as the score they are.
     const tl = gsap.timeline({
       onUpdate: this.hooks.markDirty,
       onComplete: finish,
     });
-    tl.to(
-      ghost,
-      {
-        pixi: { scaleX: baseScaleX * 1.35, scaleY: baseScaleY * 1.35, y: liftedY },
-        duration: 0.45 * m,
-        ease: 'back.out(1.4)',
-      },
-      0,
-    )
-      .to(ghost.skew, { x: 0, duration: 0.45 * m, ease: 'power2.out' }, 0)
+    tl
+      // 1. anticipation: sink into the row, squash a hair against the plank.
+      .to(
+        ghost,
+        {
+          pixi: { y: screen.y + 3 * zoom, scaleY: baseScaleY * 0.975 },
+          duration: 0.09,
+          ease: 'power2.in',
+        },
+        0,
+      )
+      .to(shadow, { alpha: 0.3, pixi: { scaleX: shadowScaleX * 0.82 }, duration: 0.09 }, 0)
+      // 2. extraction: out of the row, overshooting the final size slightly.
+      // Position and size are separate tweens so the size can hand over to the
+      // settle beat cleanly instead of two tweens writing scale on one frame.
+      .to(
+        ghost,
+        { pixi: { y: liftedY, x: liftedX }, duration: 0.27, ease: 'power3.out' },
+        0.09,
+      )
+      .to(
+        ghost,
+        {
+          pixi: { scaleX: baseScaleX * 1.42, scaleY: baseScaleY * 1.42 },
+          duration: 0.22,
+          ease: 'power3.out',
+        },
+        0.09,
+      )
+      // The lean unwinds into a tip toward the viewer, and the shear it was
+      // holding against its neighbours goes past zero before it relaxes.
+      .to(ghost, { rotation: -0.045, duration: 0.19, ease: 'power2.out' }, 0.09)
+      .to(ghost.skew, { x: -0.018, duration: 0.22, ease: 'power2.out' }, 0.09)
+      // The shadow widens and thins out as the book leaves the plank.
       .to(
         shadow,
         {
-          alpha: 0.3,
-          pixi: { scaleX: shadowScaleX * 1.35 },
-          duration: 0.45 * m,
+          alpha: 0.14,
+          pixi: { scaleX: shadowScaleX * 1.55, x: liftedX },
+          duration: 0.3,
           ease: 'power2.out',
         },
-        0,
-      );
+        0.09,
+      )
+      // 4. settle: size resolves, the tip swings back through upright.
+      .to(
+        ghost,
+        {
+          pixi: { scaleX: baseScaleX * 1.35, scaleY: baseScaleY * 1.35 },
+          duration: 0.2,
+          ease: 'power2.inOut',
+        },
+        0.31,
+      )
+      .to(ghost, { rotation: 0, duration: 0.23, ease: 'back.out(1.7)' }, 0.28)
+      .to(ghost.skew, { x: 0, duration: 0.2, ease: 'power2.out' }, 0.3);
     this.track(tl);
   }
 
@@ -1957,18 +1997,37 @@ export class ShelfWorld {
       finish();
       return;
     }
+    // Released mid-drag, so there is no anticipation to play — the hand
+    // already did it. What is missing from a release is the arrival: the book
+    // overshoots the size it is going to be, then eases back down onto it
+    // while the lean it was carried at swings through upright.
     const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: finish });
     tl.to(
       ghost,
       {
-        pixi: { scaleX: targetScaleX, scaleY: targetScaleY, x: liftX, y: liftY },
-        duration: 0.3,
-        ease: 'back.out(1.3)',
+        pixi: {
+          scaleX: targetScaleX * 1.05,
+          scaleY: targetScaleY * 1.05,
+          x: liftX,
+          y: liftY - 5 * zoom,
+        },
+        duration: 0.22,
+        ease: 'power3.out',
       },
       0,
     )
-      .to(ghost, { rotation: 0, duration: 0.3, ease: 'power2.out' }, 0)
-      .to(shadow, { alpha: 0, duration: 0.3 }, 0);
+      .to(
+        ghost,
+        {
+          pixi: { scaleX: targetScaleX, scaleY: targetScaleY, y: liftY },
+          duration: 0.18,
+          ease: 'power2.inOut',
+        },
+        0.2,
+      )
+      .to(ghost, { rotation: 0, duration: 0.34, ease: 'back.out(1.5)' }, 0)
+      .to(ghost.skew, { x: 0, duration: 0.26, ease: 'power2.out' }, 0)
+      .to(shadow, { alpha: 0, duration: 0.24, ease: 'power2.out' }, 0);
     this.track(tl);
   }
 
@@ -1978,7 +2037,7 @@ export class ShelfWorld {
     if (pull === null) return;
     this.pull = null;
     this.updateCursor();
-    const { ghost, visual } = pull;
+    const { ghost, shadow, visual } = pull;
     const m = this.hooks.motion();
     const done = (): void => {
       visual.sprite.visible = true;
@@ -1989,16 +2048,25 @@ export class ShelfWorld {
       done();
       return;
     }
-    this.track(
-      gsap.to(ghost, {
-        pixi: { x: pull.startX, y: pull.startY },
-        rotation: 0,
-        duration: 0.22,
-        ease: 'power2.out',
-        onUpdate: this.hooks.markDirty,
-        onComplete: done,
-      }),
-    );
+    const landedScaleY = ghost.scale.y;
+    // Back into the row, and it lands: a book dropped into its slot compresses
+    // against the plank for a frame or two. It also goes back to its LEAN, not
+    // to upright — the row it belongs to is not a picket fence.
+    const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: done });
+    tl.to(
+      ghost,
+      { pixi: { x: pull.startX, y: pull.startY }, duration: 0.26, ease: 'power3.inOut' },
+      0,
+    )
+      .to(ghost, { rotation: visual.baseRotation, duration: 0.26, ease: 'power2.inOut' }, 0)
+      .to(ghost, { pixi: { scaleY: landedScaleY * 0.965 }, duration: 0.06, ease: 'power2.in' }, 0.24)
+      .to(
+        ghost,
+        { pixi: { scaleY: landedScaleY }, duration: 0.16, ease: 'elastic.out(1, 0.55)' },
+        0.3,
+      )
+      .to(shadow, { alpha: 0, duration: 0.2, ease: 'power2.in' }, 0.1);
+    this.track(tl);
   }
 
   private disposeGhost(): void {
@@ -2069,11 +2137,14 @@ export class ShelfWorld {
     move.ghost.position.set(cursor.x, cursor.y + (move.visual.height * cam.zoom) / 2);
     move.shadow.alpha = 0;
     if (this.movePreview === null) {
-      const p = new Sprite(this.glowTexture);
-      p.anchor.set(0.5, 1);
-      p.blendMode = 'add';
-      p.tint = 0xffd98f;
-      p.alpha = 0.55;
+      // The drop hint is the hover mark, standing empty at the target slot: a
+      // gilt-and-ink outline the size of the book about to land in it. It was
+      // an additive blurred pool — the last lighting model in the shelf, and
+      // the one thing left that read as a different app leaking through. An
+      // outline also says something the pool could not, which is *how big* the
+      // gap has to be.
+      const p = makeFrameSprite(this.marks.hoverFrame);
+      p.alpha = 0.95;
       this.fx.addChild(p);
       this.movePreview = p;
     }
@@ -2082,8 +2153,10 @@ export class ShelfWorld {
       y: move.targetFloor * FLOOR_H + BOOK_BASELINE,
     });
     this.movePreview.position.set(screen.x, screen.y + 6 * cam.zoom);
-    this.movePreview.width = move.visual.w * 2.8 * cam.zoom;
-    this.movePreview.height = move.visual.height * 1.2 * cam.zoom;
+    // A hair proud of the book on every side, so the outline frames the slot
+    // rather than tracing the spine that is about to fill it.
+    this.movePreview.width = (move.visual.w + 10) * cam.zoom;
+    this.movePreview.height = (move.visual.height + 8) * cam.zoom;
     this.dirty = true;
   }
 

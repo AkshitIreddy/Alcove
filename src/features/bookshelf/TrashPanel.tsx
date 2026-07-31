@@ -1,9 +1,13 @@
 /**
- * features/bookshelf/TrashPanel.tsx — the trash drawer's contents.
+ * features/bookshelf/TrashPanel.tsx — what is in the trash.
  *
- * Opens when the drawer front under the last floor is clicked. Hand-drawn
- * aged-paper card listing crumpled books with per-book restore, and an
- * "empty drawer" action guarded by a two-step confirm (permanent delete).
+ * Opens from the trash button on the shelf's left rail. (It used to be a
+ * drawer front drawn under the last floor, inside the case — a piece of
+ * furniture you had to scroll to the bottom of the library to reach, and the
+ * only chrome that was not on a rail. The panel kept the name for a while
+ * after the drawer went.) Hand-drawn aged-paper card listing crumpled books
+ * with per-book restore, and an "empty" action guarded by a two-step confirm
+ * (permanent delete).
  */
 
 import {
@@ -87,15 +91,15 @@ export default function TrashPanel(props: TrashPanelProps): JSX.Element {
     <div
       class="shelf-trash"
       role="dialog"
-      aria-label="Trash drawer"
+      aria-label="Trash"
       ref={rootElement}
     >
       <div class="shelf-trash__head">
-        <span class="shelf-trash__title">Trash drawer</span>
+        <span class="shelf-trash__title">Trash</span>
         <button
           type="button"
           class="shelf-trash__close"
-          aria-label="Close trash drawer"
+          aria-label="Close trash"
           onClick={props.onClose}
         >
           ×
@@ -134,7 +138,7 @@ export default function TrashPanel(props: TrashPanelProps): JSX.Element {
             data-shelf-action="empty-trash"
             onClick={() => void handleEmpty()}
           >
-            {confirmingEmpty() ? 'Really shred everything?' : 'Empty drawer…'}
+            {confirmingEmpty() ? 'Really shred everything?' : 'Empty the trash…'}
           </button>
           <Show when={confirmingEmpty()}>
             <button

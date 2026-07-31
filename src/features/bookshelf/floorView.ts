@@ -4,7 +4,7 @@
  * root (positioned at y = i*FLOOR_H) → content (floor-local), bottom → top:
  *   back panel (flat tint placeholder, baked board wall crossfades in)
  *   → plank (flat tint placeholder, wood bitmap crossfades in)
- *   → empty-floor doodle → hover glow layer → book sprites
+ *   → empty-floor doodle → hover mark layer → book sprites → selection marks
  *   → side rails (the case frame, in front so shelves read as slotted in).
  * Because the whole case lives in `content`, LOD2 stamps inherit it and the
  * far-zoom tower still reads as a bookcase.
@@ -17,7 +17,13 @@
  */
 
 import gsap from 'gsap';
-import { Container, Sprite, Texture, type RenderTexture } from 'pixi.js';
+import {
+  Container,
+  Sprite,
+  Texture,
+  type NineSliceSprite,
+  type RenderTexture,
+} from 'pixi.js';
 import { SPINE_THICKNESS_RANGE, type SpineParams } from '../../art/spines';
 import { readShelfMeta } from '../../data/books';
 import type { Book } from '../../data/types';
@@ -41,6 +47,7 @@ import {
   type EnvTextures,
 } from './textures';
 import { placeholderTint, type SpineFactory } from './spineFactory';
+import { makeFrameSprite, type ShelfMarks } from './glow';
 import { fnv1a, mulberry32 } from '../../art/noise';
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -50,17 +57,59 @@ export const HOVER_LIFT = 6;
 export const HOVER_TILT = -0.015;
 export const HOVER_SECONDS = 0.18;
 
-/** Warm halo behind the hovered book (add-blended glow sprite). */
-export const HOVER_GLOW_ALPHA = 0.34;
-export const HOVER_GLOW_TINT = 0xffd98f;
+/**
+ * How far the hover outline stands off the spine, world px per side.
+ *
+ * Small: the mark is meant to read as the book's own edge catching the light
+ * of your attention, not as a box drawn around it. It sits BEHIND the books,
+ * so this number is also exactly how much of the outline you ever see.
+ */
+export const HOVER_FRAME_PAD = 4;
+
+/** Alpha of the flat contact ellipse under a hovered (lifted) book. */
+export const HOVER_SHADOW_ALPHA = 0.2;
 
 /**
- * Keyboard-selection halo (wave-2 item 8) — a cooler, tighter glow plus a
- * penciled caret on the plank, so it never reads as a mouse hover and the
- * two can coexist (mouse moving does not steal the keyboard selection).
+ * Keyboard-selection mark (wave-2 item 8) — a cream-and-ink outline standing
+ * further off the spine than the hover one, drawn OVER the books, plus the
+ * caret on the plank. Two hard marks at different radii in different colours:
+ * they read as different things when both land on the same book, and a mouse
+ * drifting across the shelf never looks like it stole the keyboard selection.
  */
-export const SELECT_GLOW_ALPHA = 0.42;
-export const SELECT_GLOW_TINT = 0xbcd9f2;
+export const SELECT_FRAME_PAD = 8;
+
+/**
+ * Floor-local Y of the selection caret's top edge.
+ *
+ * Below where the selection frame's bottom edge lands (baseline + the pad +
+ * half its line), because the two marks touching turns a bracket and a pointer
+ * into one smudge.
+ */
+export const SELECT_CARET_Y = BOOK_BASELINE + 12;
+
+/**
+ * Everything an outline needs to sit around one spine. Kept as a plain object
+ * because it is also the tween target — GSAP animates exactly these six, and a
+ * nine-slice rebuilds its geometry from `width`/`height` per frame, which is
+ * one buffer upload for one sprite and never a layout.
+ */
+interface FramePose {
+  x: number;
+  y: number;
+  rotation: number;
+  width: number;
+  height: number;
+  alpha: number;
+}
+
+function applyFramePose(frame: NineSliceSprite, pose: FramePose): void {
+  frame.x = pose.x;
+  frame.y = pose.y;
+  frame.rotation = pose.rotation;
+  frame.width = pose.width;
+  frame.height = pose.height;
+  frame.alpha = pose.alpha;
+}
 
 export interface WorldHooks {
   markDirty(): void;
@@ -68,8 +117,8 @@ export interface WorldHooks {
   motion(): number;
   /** Register a tween for kill-on-destroy; returns it for chaining. */
   track<T extends gsap.core.Animation>(anim: T): T;
-  /** Shared soft radial texture (hover halo, pull-out contact shadow). */
-  glow(): Texture;
+  /** The world's shared interaction-mark textures (hover, selection, shadow). */
+  marks(): ShelfMarks;
 }
 
 export interface BookVisual {
@@ -121,12 +170,14 @@ export class FloorView {
   /** DPR the world mounted this floor with (applyEnv needs it for detail). */
   private dprHint = 1;
   private hint: Sprite | null = null;
-  private hoverGlow: Sprite | null = null;
+  private hoverFrame: NineSliceSprite | null = null;
   private hoverShadow: Sprite | null = null;
-  private selectGlow: Sprite | null = null;
+  private selectFrame: NineSliceSprite | null = null;
   private selectCaret: Sprite | null = null;
   private readonly hoverLayer = new Container();
   private readonly booksLayer = new Container();
+  /** Above the books: the keyboard-selection outline, which must never hide. */
+  private readonly markLayer = new Container();
   private stampSprite: Sprite | null = null;
   private tier: LodTier = 0;
 
@@ -162,6 +213,7 @@ export class FloorView {
       this.plankBase,
       this.hoverLayer,
       this.booksLayer,
+      this.markLayer,
       this.railL,
       this.railR,
     );
@@ -502,12 +554,14 @@ export class FloorView {
   }
 
   /**
-   * Hover lift (LOD0 only; the world enforces the tier gate) plus a warm
-   * glow halo and contact shadow behind/below the book so the lift reads.
-   * All sprite transforms/alpha — no filters.
+   * Hover: the lift and tilt (LOD0 only; the world enforces the tier gate), a
+   * hard gilt outline hugging the spine, and a flat contact ellipse in the gap
+   * the lift opens up. Transforms and alpha only — no filters, and nothing
+   * that pretends to be light.
    */
   setHover(visual: BookVisual, on: boolean): void {
     const m = this.hooks.motion();
+    const fade = HOVER_SECONDS * m;
     gsap.killTweensOf(visual.sprite);
     this.hooks.track(
       gsap.to(visual.sprite, {
@@ -515,110 +569,156 @@ export class FloorView {
           y: on ? visual.baseY - HOVER_LIFT : visual.baseY,
           rotation: (on ? visual.baseRotation + HOVER_TILT : visual.baseRotation) / DEG_TO_RAD,
         },
-        duration: HOVER_SECONDS * m,
+        duration: fade,
         ease: 'power2.out',
         overwrite: true,
         onUpdate: () => this.hooks.markDirty(),
       }),
     );
 
-    if (this.hoverGlow === null) {
-      this.hoverGlow = new Sprite(this.hooks.glow());
-      this.hoverGlow.anchor.set(0.5);
-      this.hoverGlow.blendMode = 'add';
-      this.hoverGlow.tint = HOVER_GLOW_TINT;
-      this.hoverGlow.alpha = 0;
-      this.hoverShadow = new Sprite(this.hooks.glow());
-      this.hoverShadow.anchor.set(0.5);
-      this.hoverShadow.tint = 0x2e241a;
-      this.hoverShadow.alpha = 0;
-      this.hoverLayer.addChild(this.hoverGlow, this.hoverShadow);
+    if (this.hoverFrame === null) {
+      const marks = this.hooks.marks();
+      this.hoverFrame = makeFrameSprite(marks.hoverFrame);
+      const shadow = new Sprite(marks.contactShadow);
+      shadow.anchor.set(0.5);
+      shadow.alpha = 0;
+      shadow.eventMode = 'none';
+      this.hoverShadow = shadow;
+      // Behind the books: only the sliver of outline standing proud of the
+      // spine shows, which is the whole design — an edge, not a box.
+      this.hoverLayer.addChild(this.hoverFrame, shadow);
     }
-    const glow = this.hoverGlow;
+    const frame = this.hoverFrame;
     const shadow = this.hoverShadow as Sprite;
-    gsap.killTweensOf(glow);
+    gsap.killTweensOf(frame);
     gsap.killTweensOf(shadow);
+
+    // The outline rides the lift on the same curve as the spine, so the two
+    // never separate mid-tween.
+    const pose: FramePose = {
+      x: visual.centerX,
+      y: visual.baseY - (on ? HOVER_LIFT : 0) + HOVER_FRAME_PAD,
+      rotation: visual.baseRotation + (on ? HOVER_TILT : 0),
+      width: visual.w + HOVER_FRAME_PAD * 2,
+      height: visual.height + HOVER_FRAME_PAD * 2,
+      alpha: on ? 1 : 0,
+    };
     if (on) {
-      glow.position.set(visual.centerX, visual.baseY - visual.height * 0.52);
-      glow.width = visual.w * 3.4;
-      glow.height = visual.height * 1.3;
-      shadow.position.set(visual.centerX, visual.baseY + 3);
-      shadow.width = visual.w * 2.1;
-      shadow.height = 14;
+      // Appearing from nothing: park on the book's RESTING pose first, so the
+      // outline grows out of the spine rather than flying in from wherever the
+      // pointer was last. Already visible (a slide along the row) it keeps its
+      // current pose and travels, which reads as one mark following the mouse.
+      if (frame.alpha <= 0.02) {
+        applyFramePose(frame, {
+          ...pose,
+          y: visual.baseY + HOVER_FRAME_PAD,
+          rotation: visual.baseRotation,
+          alpha: 0,
+        });
+      }
+      shadow.position.set(visual.centerX, visual.baseY + 1);
+      shadow.width = visual.w * 1.35;
+      shadow.height = 9;
     }
-    const fade = HOVER_SECONDS * m;
     this.hooks.track(
-      gsap.to(glow, {
-        alpha: on ? HOVER_GLOW_ALPHA : 0,
+      gsap.to(frame, {
+        ...pose,
         duration: fade,
+        ease: 'power2.out',
         overwrite: true,
         onUpdate: () => this.hooks.markDirty(),
       }),
     );
     this.hooks.track(
       gsap.to(shadow, {
-        alpha: on ? 0.26 : 0,
+        alpha: on ? HOVER_SHADOW_ALPHA : 0,
         duration: fade,
         overwrite: true,
         onUpdate: () => this.hooks.markDirty(),
       }),
     );
     if (m === 0) {
-      glow.alpha = on ? HOVER_GLOW_ALPHA : 0;
-      shadow.alpha = on ? 0.26 : 0;
+      applyFramePose(frame, pose);
+      shadow.alpha = on ? HOVER_SHADOW_ALPHA : 0;
       this.hooks.markDirty();
     }
   }
 
   /**
-   * Keyboard-selection halo (wave-2 item 8): a cool glow behind the book plus
-   * a penciled caret on the plank under it. Deliberately does NOT move the
-   * spine — hover owns the lift tween, so the two never fight and a mouse
-   * drifting over the shelf cannot steal the keyboard selection.
+   * Keyboard selection (wave-2 item 8): a cream-and-ink outline standing off
+   * the spine, drawn OVER the books so no neighbour can bury it, plus the
+   * caret on the plank. Deliberately does NOT move the spine — hover owns the
+   * lift tween, so the two never fight and a mouse drifting over the shelf
+   * cannot steal the keyboard selection.
+   *
+   * It sits further out and in a cooler colour than the hover outline, which
+   * is what lets both land on one book and still read as two separate facts.
    */
   setSelected(visual: BookVisual | null, env: EnvTextures, dpr: number): void {
-    if (this.selectGlow === null) {
-      const glow = new Sprite(this.hooks.glow());
-      glow.anchor.set(0.5);
-      glow.blendMode = 'add';
-      glow.tint = SELECT_GLOW_TINT;
-      glow.alpha = 0;
+    if (this.selectFrame === null) {
+      this.selectFrame = makeFrameSprite(this.hooks.marks().selectFrame);
       const caret = new Sprite(env.getSelectCaret(dpr));
       caret.anchor.set(0.5, 0);
       caret.width = SELECT_CARET_W;
       caret.height = SELECT_CARET_H;
       caret.alpha = 0;
-      this.selectGlow = glow;
+      caret.eventMode = 'none';
       this.selectCaret = caret;
-      this.hoverLayer.addChild(glow, caret);
+      this.markLayer.addChild(this.selectFrame, caret);
     }
-    const glow = this.selectGlow;
+    const frame = this.selectFrame;
     const caret = this.selectCaret as Sprite;
     const on = visual !== null;
-    if (visual !== null) {
-      glow.position.set(visual.centerX, visual.baseY - visual.height * 0.5);
-      glow.width = visual.w * 3;
-      glow.height = visual.height * 1.24;
-      caret.position.set(visual.centerX, BOOK_BASELINE + 5);
-    }
     const m = this.hooks.motion();
     const fade = HOVER_SECONDS * m;
-    gsap.killTweensOf(glow);
+    gsap.killTweensOf(frame);
     gsap.killTweensOf(caret);
-    for (const [sprite, target] of [
-      [glow, on ? SELECT_GLOW_ALPHA : 0],
-      [caret, on ? 1 : 0],
-    ] as Array<[Sprite, number]>) {
+
+    if (visual !== null) {
+      const pose: FramePose = {
+        x: visual.centerX,
+        y: visual.baseY + SELECT_FRAME_PAD,
+        rotation: visual.baseRotation,
+        width: visual.w + SELECT_FRAME_PAD * 2,
+        height: visual.height + SELECT_FRAME_PAD * 2,
+        alpha: 1,
+      };
+      // Arrow keys walk the selection along a row; a mark that travels tells
+      // you which way you moved, where a blink leaves you hunting for it.
+      const travelling = frame.alpha > 0.02;
+      if (!travelling) applyFramePose(frame, { ...pose, alpha: 0 });
+      caret.position.set(visual.centerX, SELECT_CARET_Y);
       this.hooks.track(
-        gsap.to(sprite, {
-          alpha: target,
+        gsap.to(frame, {
+          ...pose,
+          duration: travelling ? fade * 1.5 : fade,
+          ease: travelling ? 'power3.out' : 'power2.out',
+          overwrite: true,
+          onUpdate: () => this.hooks.markDirty(),
+        }),
+      );
+      if (m === 0) applyFramePose(frame, pose);
+    } else {
+      this.hooks.track(
+        gsap.to(frame, {
+          alpha: 0,
           duration: fade,
           overwrite: true,
           onUpdate: () => this.hooks.markDirty(),
         }),
       );
-      if (m === 0) sprite.alpha = target;
+      if (m === 0) frame.alpha = 0;
     }
+
+    this.hooks.track(
+      gsap.to(caret, {
+        alpha: on ? 1 : 0,
+        duration: fade,
+        overwrite: true,
+        onUpdate: () => this.hooks.markDirty(),
+      }),
+    );
+    if (m === 0) caret.alpha = on ? 1 : 0;
     this.hooks.markDirty();
   }
 
@@ -654,9 +754,9 @@ export class FloorView {
 
   private clearHoverFx(): void {
     for (const fx of [
-      this.hoverGlow,
+      this.hoverFrame,
       this.hoverShadow,
-      this.selectGlow,
+      this.selectFrame,
       this.selectCaret,
     ]) {
       if (fx === null) continue;

@@ -159,22 +159,10 @@ test('crumple to trash, drawer restore brings the book back', async ({
     )
     .toBe(0);
 
-  // Open the trash drawer under the last floor (canvas click).
-  await expect
-    .poll(
-      async () => {
-        const world = await page.evaluate(() => {
-          const w = (window as unknown as Record<string, unknown>)
-            .__shelfWorld as { store: { maxFloor: number } };
-          return w.store.maxFloor;
-        });
-        const pt = await worldToScreenPt(page, 600, (world + 1) * 320 + 30);
-        await page.mouse.click(pt.x, pt.y);
-        return page.locator('.shelf-trash').count();
-      },
-      { timeout: 25_000, message: 'trash drawer never opened' },
-    )
-    .toBeGreaterThan(0);
+  // Open the trash from the shelf's left rail. It used to be a drawer front
+  // drawn inside the case, hit-tested in world space; it is chrome now.
+  await page.locator('[data-shelf-dock="trash"]').click();
+  await expect(page.locator('.shelf-trash')).toHaveCount(1, { timeout: 25_000 });
 
   await expect(page.locator('.shelf-trash')).toContainText(WELCOME_TITLE);
 
@@ -201,23 +189,10 @@ test('empty trash permanently deletes after a two-step confirm', async ({
     })
     .toBe(0);
 
-  await expect
-    .poll(
-      async () => {
-        const maxFloor = await page.evaluate(() => {
-          const w = (window as unknown as Record<string, unknown>)
-            .__shelfWorld as { store: { maxFloor: number } };
-          return w.store.maxFloor;
-        });
-        const pt = await worldToScreenPt(page, 600, (maxFloor + 1) * 320 + 30);
-        await page.mouse.click(pt.x, pt.y);
-        return page.locator('.shelf-trash').count();
-      },
-      { timeout: 25_000, message: 'trash drawer never opened' },
-    )
-    .toBeGreaterThan(0);
+  await page.locator('[data-shelf-dock="trash"]').click();
+  await expect(page.locator('.shelf-trash')).toHaveCount(1, { timeout: 25_000 });
 
-  // Two-step confirm, then the drawer reads empty.
+  // Two-step confirm, then the panel reads empty.
   await page.locator('[data-shelf-action="empty-trash"]').click();
   await expect(page.locator('[data-shelf-action="empty-trash"]')).toContainText(
     'Really',

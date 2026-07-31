@@ -27,6 +27,7 @@
  * `SpineFactory` survive the trip.
  */
 
+import { flatScheme } from '../../art/flat';
 import {
   ART_JOB_TIMEOUT_MS,
   type ArtJob,
@@ -136,9 +137,17 @@ export class ArtOffload {
   /**
    * Paint a spine off-thread. Resolves `null` when the caller must do it
    * itself; never rejects.
+   *
+   * The room's palette is attached here rather than asked of every caller:
+   * it is read at submit time from the same module state the inline fallback
+   * would read, so both paths cannot disagree about which room this is.
    */
-  async spine(job: Omit<SpineJob, 'id' | 'kind'>): Promise<SpinePaint | null> {
-    const res = await this.submit<{ bitmap: ImageBitmap; ms: number }>({ ...job, kind: 'spine' });
+  async spine(job: Omit<SpineJob, 'id' | 'kind' | 'scheme'>): Promise<SpinePaint | null> {
+    const res = await this.submit<{ bitmap: ImageBitmap; ms: number }>({
+      ...job,
+      kind: 'spine',
+      scheme: flatScheme(),
+    });
     return res === null ? null : { bitmap: res.bitmap, ms: res.ms };
   }
 

@@ -1,5 +1,21 @@
 # Photoreal asset direction
 
+> ## ⚠️ Superseded
+>
+> This describes the **generated-photoreal-material era**, which is deleted. No
+> model output ships in the app, `art/wood.ts` and `art/props.ts` are gone, and
+> there is no deferred lighting pass to sit generated and procedural pieces in
+> one world.
+>
+> The visual language is now `assets/brand/icon.svg` as implemented in
+> `src/art/flat.ts`: flat colour, one dark outline colour on everything, rounded
+> corners, edges that bow slightly, a tiny palette. No gradients, no texture, no
+> lighting, no glow, no bloom, no blurred shadows.
+>
+> Kept for the reasoning — the diagnosis of *why* half-simulated surfaces read as
+> cheap is what led to the flat language. `RESET-render-architecture.md` is the
+> live decision; `ART-BIBLE.md` and `art-pipeline.md` are the live blueprints.
+
 ## The reframe
 
 The user, looking at their reference image next to our output: *"on the assets try finding a set of good models and then prompt strategies, lora, etc… in fact photoreal is the way to get it then lets do that, basically analyse the reference image — that is the level of quality we are looking for."*

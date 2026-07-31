@@ -54,6 +54,7 @@ import caveatUrl from '@fontsource-variable/caveat/files/caveat-latin-wght-norma
 import kalamUrl from '@fontsource/kalam/files/kalam-latin-400-normal.woff2?url';
 import patrickUrl from '@fontsource/patrick-hand/files/patrick-hand-latin-400-normal.woff2?url';
 
+import { setFlatScheme } from '../../art/flat';
 import { renderSpine, type Ctx2D } from '../../art/spines';
 import {
   ART_PROTOCOL_VERSION,
@@ -104,6 +105,10 @@ function paintSpine(job: SpineJob): ImageBitmap {
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (ctx === null) throw new Error('artWorker: 2d context unavailable');
+  // The room rides on the job. A worker is its own module instance, so the
+  // main thread's `setFlatScheme` never reached it and every off-thread spine
+  // used to come out in the house palette regardless of the room on screen.
+  setFlatScheme(job.scheme);
   renderSpine(ctx as unknown as Ctx2D, job.params, 0, 0, h, job.scale, job.title, {
     hiRes: job.hiRes,
     rowPhase: job.rowPhase,

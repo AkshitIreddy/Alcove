@@ -27,7 +27,7 @@ const DIR = opt('dir', 'qa/themes');
 const SKIP_SEED = args.includes('--skip-seed');
 const THEME_IDS = opt(
   'themes',
-  'blossom,robot,dino,candy,reef,voyager,athenaeum,conservatory,observatory,cottage,scriptorium,sakura,attic,apothecary',
+  'athenaeum,blossom,reef,apothecary',
 ).split(',').map((s) => s.trim()).filter(Boolean);
 
 mkdirSync(DIR, { recursive: true });
@@ -74,12 +74,10 @@ for (const id of THEME_IDS) {
       const raw = localStorage.getItem(KEY);
       const tables = raw ? JSON.parse(raw) : {};
       const settings = Array.isArray(tables.settings) ? tables.settings : [];
-      const prefs = JSON.stringify({
-        theme: themeId,
-        wallpaperPattern: null,
-        colourway: null,
-        backdrop: null,
-      });
+      // One field. `mergeLibraryPrefs` drops everything else, so writing the
+      // retired wallpaper/colourway/backdrop keys only made the blob look like
+      // it still meant something.
+      const prefs = JSON.stringify({ theme: themeId });
       const hit = settings.find((r) => r && r.key === 'library');
       if (hit) hit.value = prefs;
       else settings.push({ key: 'library', value: prefs });

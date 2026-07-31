@@ -42,6 +42,8 @@ import type { CharmKind } from './charms';
 import {
   CLOTHS,
   FLAT,
+  flatScheme,
+  flatSchemeTag,
   inkWidth,
   panel,
   stroke,
@@ -230,9 +232,15 @@ const PALE_BOARD: readonly [string, string] = [FLAT.cream, FLAT.timber];
  * it, and this defers to it. A local `palette % CLOTHS.length` looked
  * equivalent and was not — it gave the same book two colours, terracotta in the
  * hand and ochre on the shelf.
+ *
+ * The hexes come from `flatScheme()` for the same reason: the spine reads the
+ * room's cloths, so a cover reading the house ones would re-open that exact
+ * split the moment anyone left the Old Athenaeum.
  */
 function clothFor(palette: number): readonly [string, string] {
-  return CLOTHS[clothForPalette(palette)] ?? CLOTHS[0]!;
+  const cloths = flatScheme().cloths;
+  const slot = clothForPalette(palette);
+  return (cloths[slot] ?? cloths[0] ?? CLOTHS[0]!) as readonly [string, string];
 }
 
 /**
@@ -1139,7 +1147,9 @@ export function coverDataUrl(
   title = '',
   opts: RenderCoverOptions = {},
 ): string {
-  const key = `${params.seed}|${params.palette}|${params.texture}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
+  // The room leads the key: a cover's cloth comes from the live scheme, so the
+  // same params in two rooms are two different PNGs.
+  const key = `${flatSchemeTag()}|${params.seed}|${params.palette}|${params.texture}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
   const cached = urlCache.get(key);
   if (cached !== undefined) return cached;
   const url = renderCover(w, h, params, title, opts).toDataURL('image/png');

@@ -175,7 +175,7 @@ test('rail "studio" opens the Library studio; a theme pick re-themes and persist
     timeout: 30_000,
   });
 
-  await page.locator('.nb-theme-card', { hasText: 'Moonlit' }).click();
+  await page.locator('.nb-theme-card', { hasText: 'Coral Reef' }).click();
   await expect
     .poll(
       () =>
@@ -186,7 +186,7 @@ test('rail "studio" opens the Library studio; a theme pick re-themes and persist
         }),
       { timeout: 30_000, message: 'the theme pick never reached the store' },
     )
-    .toBe('observatory');
+    .toBe('reef');
 
   // The shelf re-bakes into the picked room.
   await expect
@@ -199,7 +199,7 @@ test('rail "studio" opens the Library studio; a theme pick re-themes and persist
         }),
       { timeout: 45_000, message: 'the shelf never re-themed' },
     )
-    .toContain('observatory');
+    .toContain('reef');
 
   // And the pref survives a reload (settings table, persisted stub).
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -216,5 +216,5 @@ test('rail "studio" opens the Library studio; a theme pick re-themes and persist
         }),
       { timeout: 45_000, message: 'the theme pref did not survive a reload' },
     )
-    .toBe('observatory');
+    .toBe('reef');
 });

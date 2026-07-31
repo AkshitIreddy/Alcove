@@ -1,5 +1,28 @@
 ﻿# Design: art-pipeline
 
+> ## ⚠️ Partly superseded — what still runs, and what does not
+>
+> **Still true and load-bearing:**
+> - Bake once, never per frame. `src/art/bake.ts` persists results to
+>   `appCacheDir` as PNG, keyed by a recipe version × DPR. Bump the version to
+>   invalidate; the cache validates nothing about a hit.
+> - Seeded procedural spines from `src/art/spines.ts`, packed into atlas pages.
+> - Pre-distorted vector chrome (`src/art/wobble.ts`) — wobble baked into path
+>   data, so icons stay crisp at any zoom with zero runtime filter cost.
+> - The font rules, which are also in `CLAUDE.md`.
+>
+> **Deleted:** every SVG filter recipe below (pencil, watercolour, paper) and the
+> whole pencil/watercolour look they served, along with the procedural wood, the
+> brush engine, the deferred lighting pass and the generated-material library.
+> The app draws in the app icon's language now: `src/art/flat.ts` +
+> `src/art/flatShelf.ts` through `src/features/bookshelf/textures.ts`. Flat
+> colour, one ink, rounded corners, edges that bow — no gradients, no texture,
+> no lighting. What `bake.ts` caches today is four flat case parts per room.
+>
+> The filter recipes are kept as a record of a technique we may want for
+> something else one day. Nothing in the tree consumes them. See
+> `RESET-render-architecture.md` for why.
+
 ## Recommendation
 Bake-once hybrid pipeline: author art as SVG + procedural canvas, run SVG filters (pencil wobble, watercolor edge-darkening) exactly once at bake time into disk-persisted ImageBitmap/atlas rasters keyed by DPRÃ—zoom-bucket; pre-distort vector geometry (rough.js-style) for zoom-critical linework; render hundreds of seeded book spines from a canvas sprite atlas. Never leave a live feTurbulence filter attached to the DOM.
 
@@ -10,12 +33,12 @@ Live SVG filters are the one technique that nails the pencil/watercolor look but
 ## Layer model (bottom â†’ top)
 
 1. **L0 Paper ground** â€” tiled baked raster (CSS background-image from blob URL). 512Ã—512 tile per DPR bucket.
-2. **L1 Environment art** (bookshelf wood, shelf shadows, wall) â€” procedural canvas, baked to large rasters per zoom bucket.
+2. **L1 Environment art** (case parts) â€” flat canvas paths from `art/flatShelf.ts`, baked once per room per DPR. The wall is not art at all: one flat tint on a white pixel, so it has no tile and therefore no seam.
 3. **L2 Book spines/covers** â€” seeded procedural canvas â†’ sprite atlas; whole shelf composited on ONE canvas via drawImage.
 4. **L3 UI chrome & icons** â€” hand-authored SVG with wobble PRE-DISTORTED into path geometry (stays vector, crisp at any zoom). No runtime filters.
 5. **L4 Live layer** â€” the currently hovered/opened book promoted to its own DOM element (image from atlas) so GSAP can transform it at 60fps; editor doodles via rough.js canvas.
 
-Core rule: SVG filters exist ONLY inside a hidden `<svg width=0 height=0><defs>` and are consumed exclusively by the bake step.
+Core rule: SVG filters exist ONLY inside a hidden `<svg width=0 height=0><defs>` and are consumed exclusively by the bake step. (In practice there are now none at all — see the banner.)
 
 ## Bake step (module `art/bake.ts`)
 
@@ -34,7 +57,7 @@ async function bakeSvg(svg: string, w: number, h: number, scale: number): Promis
 
 **Disk cache**: after baking, `canvas.convertToBlob({type:'image/png'})` â†’ write to `appCacheDir()/art/{sha1(recipeVersion+params+dpr+bucket)}.png` via @tauri-apps/plugin-fs. On startup, cache-hit path is just `fetch(convertFileSrc(path)) â†’ createImageBitmap(blob)` â€” cold start never pays filter cost twice. Bump `recipeVersion` const to invalidate.
 
-## Exact SVG filter recipes
+## Exact SVG filter recipes — *historical; nothing consumes these*
 
 **Pencil line** (`#pencil`) â€” wobble + graphite grain eating into the stroke:
 ```xml

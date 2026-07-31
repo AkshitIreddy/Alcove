@@ -1,6 +1,14 @@
 # Notebook
 
-A Windows desktop notes app: an intricate hand-drawn bookshelf world (warm parchment aesthetic) where books open into Notion-grade block-edited pages. Built with Tauri 2 (Rust) + SolidJS + TypeScript + Vite.
+A Windows desktop notes app: a hand-drawn bookshelf world (warm parchment aesthetic) where books open into Notion-grade block-edited pages. Built with Tauri 2 (Rust) + SolidJS + TypeScript + Vite.
+
+## The visual language (binding, and the thing most often got wrong)
+
+Everything drawn in this app follows `assets/brand/icon.svg`, implemented in `src/art/flat.ts`: **flat colour, ONE dark outline colour (`FLAT.ink`) on everything, rounded corners, edges that bow slightly, a tiny palette. No gradients, no texture, no lighting, no glow, no bloom, no blurred shadows.** Depth is a darker flat face beside a lighter one, plus `contactShadow()` where an object meets a surface.
+
+This replaced a runtime painting stack — brush engine, procedural wood and flora, deferred lighting, generated photoreal materials — that cost ~5s to first paint and still read as cheap. `docs/design/RESET-render-architecture.md` is the decision; several docs under `docs/design/` predate it and carry a superseded banner. Do not reintroduce a light model, a gradient or a blur "just here".
+
+A library theme is a colour scheme and nothing more (`FlatScheme` in `art/flat.ts`, `ColourScheme` in `art/themes.ts`): timber, timberDark, recess, wall and exactly six book cloths. `setFlatScheme()` swaps it; the swap must be synchronous around the draw, and every cache holding drawn pixels must key on `flatSchemeTag()`.
 
 ## Architecture decisions (binding)
 
@@ -10,7 +18,7 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 - `page-flip.md` — live DOM at rest; during flip gestures swap to a WebGL cylinder-curl shader fed by pre-rasterized page snapshots (html-to-image, idle-time cached). CSS 3D rigid fold is the fallback only.
 - `block-editor.md` — TipTap v3 (@tiptap/core, framework-agnostic) with vendored SolidJS bindings in `src/editor/solid/`. One editor per page. Document JSON (editor.getJSON()) IS the storage format.
 - `script-language.md` — "Notebook Script": Markdown subset + `:::name {attrs}` directives + fenced mini-languages (tree/graph/timeline). Handwritten tolerant parser in `src/script/` — parse() is total, never throws, returns diagnostics.
-- `art-pipeline.md` — bake-once: SVG filters (pencil/watercolor recipes are in the doc) run only inside `art/bake.ts`, results persisted to appCacheDir as PNG. Icons/chrome are pre-distorted vector SVG. Spines are seeded procedural canvas.
+- `art-pipeline.md` — bake-once: flat case parts drawn by `art/flat.ts` + `art/flatShelf.ts`, persisted to appCacheDir as PNG by `art/bake.ts` (keys carry the room's colours, so a hex edit invalidates them). Icons/chrome are pre-distorted vector SVG. Spines are seeded procedural canvas, atlas-packed, painted off-thread. The SVG filter recipes in that doc are historical — nothing consumes them.
 
 `docs/ROADMAP-wave2.md` tracks the 33 customization / quality-of-life features and their group ownership.
 
@@ -20,12 +28,12 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 - **Books drag out of the shelf** (click also works as a quick pull). Plain wheel zooms; shift+wheel pans.
 - **Left icon rails, not top bars.** Book tools, page style, customization, stickers/effects all live in the left rail with hand-drawn tooltips. Freed space goes to the pages.
 - Right-click opens a Notion-style block context menu; clicking empty ruled space starts typing there.
-- Aesthetic bar is "intricate, magical library" — baked art, ornamented spines and covers, never flat rectangles.
+- Aesthetic bar is the app icon at shelf scale: ornamented spines and covers (gilt bands, cream label plates, cornice studs, charms), never bare rectangles — but always in the flat language above, never by adding shading to fake richness.
 - Seeding ships exactly one Welcome book; the migration removes old empty demo books without touching user content.
 
 ## Map of the app
 
-- `src/features/bookshelf/` — Pixi world, gestures, spine/cover factories, shelf menu, trash drawer, floor plates
+- `src/features/bookshelf/` — Pixi world, gestures, spine/cover factories, shelf menu, left dock rail (new book / studio / add floor / trash), floor plates
 - `src/views/` — `BookView` spread + `rail/` (icon rail and its panels), TOC/thumbnails/cheat-sheet
 - `src/editor/` — TipTap setup, custom nodes, slash + context menus, effects, pagination, script bridge, exporters
 - `src/flip/` — WebGL page-curl engine and snapshot cache

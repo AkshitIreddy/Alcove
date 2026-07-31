@@ -16,10 +16,11 @@
  * `FloraJob` half of the protocol went with the painting stack.
  */
 
+import type { FlatScheme } from '../../art/flat';
 import type { SpineParams } from '../../art/spines';
 
 /** Bump when a job's meaning changes so a stale worker bundle is obvious. */
-export const ART_PROTOCOL_VERSION = 2;
+export const ART_PROTOCOL_VERSION = 3;
 
 /* --------------------------------- jobs ---------------------------------- */
 
@@ -38,6 +39,16 @@ export interface SpineJob {
   depth: number | undefined;
   neighbourLeft: string | null;
   neighbourRight: string | null;
+  /**
+   * The room's palette, carried per job.
+   *
+   * `setFlatScheme` is module state, and a worker is a separate module
+   * instance — the main thread's swap simply does not reach it. Without this
+   * the off-thread spines bake in the house palette while the inline fallback
+   * bakes in the room's, and the same shelf comes out in two colour schemes
+   * depending on which path each book happened to take.
+   */
+  scheme: FlatScheme;
 }
 
 export type ArtJob = SpineJob;

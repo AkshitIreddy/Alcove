@@ -1,31 +1,26 @@
 /**
  * src/views/rail/LibraryStudio.tsx — the studio's "This library" tab.
  *
- * Picks the ROOM: which of the eight themes, what hangs on its wall (pattern
- * x colourway), how the wall itself is finished, how much grows on the case
- * and how warm the lamps burn (docs/design/library-themes.md §4).
+ * Picks the ROOM, and the room is a colour scheme: case timber, the recess
+ * behind the books, the wall, and the six cloths new books are bound in.
  *
- * The theme cards are painted from the REAL case art — `bakeThemeThumbnail`
- * is the same renderer the shelf uses, so what you preview is literally the
- * room you get. Every control writes straight through `saveLibraryPrefs`, and
- * the Pixi world is subscribed to that store, so changes land on the shelf
- * the moment they are made.
+ * There is one control here now. The panel used to carry four — a theme grid, a
+ * wall-finish row, an eighteen-button wallpaper row and a "surface depth"
+ * slider — three of which had been inert since the flat restyle, and one of
+ * which (the grid) only changed a seed because every room baked the identical
+ * case. A picker whose buttons do nothing teaches readers to distrust the whole
+ * panel, so the dead ones are gone and the live one now really repaints the room.
+ *
+ * The cards are painted from the REAL case art: `drawCaseCard` is the same
+ * routine the shelf bakes its case from, run under the card's own scheme, so
+ * what you preview is literally the room you get.
  */
 import { For, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
-import type { FlatCtx } from '../../art/flat';
+import { flatScheme, setFlatScheme, type FlatCtx } from '../../art/flat';
 import { drawCaseCard } from '../../art/flatShelf';
 import { fnv1a } from '../../art/noise';
-import { WALLPAPER_PATTERNS } from '../../art/wallpaper';
+import { THEMES, THEME_IDS, getTheme, type LibraryTheme, type ThemeId } from '../../art/themes';
 import {
-  SHIPPED_THEME_IDS,
-  THEMES,
-  WALLPAPER_PATTERN_IDS,
-  getTheme,
-  type LibraryTheme,
-  type ThemeId,
-} from '../../art/themes';
-import {
-  DEFAULT_LIBRARY_PREFS,
   libraryPrefs,
   loadLibraryPrefs,
   saveLibraryPrefs,
@@ -36,17 +31,13 @@ const CARD_W = 168;
 const CARD_H = 116;
 
 /**
- * Card art, drawn with the case's own vocabulary.
+ * Card art, drawn with the case's own vocabulary under the room's own scheme.
  *
- * `drawCaseCard` is built from the same four shapes `EnvTextures` bakes the
- * real case from, so a card cannot preview a room you cannot get. It used to
- * call `caseArt.renderCaseSection` — seconds of brush work per card, and after
- * the shelf went flat it was previewing a wood-grained watercolour room that no
- * longer existed anywhere in the app.
- *
- * The room is one room now: the flat palette has a single timber and a plain
- * wall, so what still differs between cards is the seed — each theme gets its
- * own arrangement of books, which is what keeps the grid legible as a grid.
+ * `setFlatScheme` is module state in `art/flat.ts`, so the swap has to be
+ * synchronous around the draw — no `await` between setting and restoring, or a
+ * second card baking on the same tick would come out in the wrong palette. The
+ * previous scheme is put back rather than cleared: the shelf's own bake sets it
+ * too, and a card must not be able to repaint the room behind the panel.
  */
 const cardCache = new Map<string, Promise<ImageBitmap | null>>();
 
@@ -65,7 +56,13 @@ function cardArt(theme: LibraryTheme, dpr: number): Promise<ImageBitmap | null> 
       const ctx = (canvas as OffscreenCanvas).getContext('2d');
       if (ctx === null) return null;
       ctx.scale(dpr, dpr);
-      drawCaseCard(ctx as FlatCtx, CARD_W, CARD_H, fnv1a(`${theme.id}|card`));
+      const previous = flatScheme();
+      setFlatScheme(theme.scheme);
+      try {
+        drawCaseCard(ctx as FlatCtx, CARD_W, CARD_H, fnv1a(`${theme.id}|card`));
+      } finally {
+        setFlatScheme(previous);
+      }
       return await createImageBitmap(canvas as OffscreenCanvas);
     } catch {
       return null;
@@ -75,18 +72,8 @@ function cardArt(theme: LibraryTheme, dpr: number): Promise<ImageBitmap | null> 
   return pending;
 }
 
-/**
- * A theme card — the case, drawn in the app's one style, per theme seed.
- *
- * No `pattern` prop any more: it existed so the ACTIVE card could preview the
- * reader's wall pick, and the wall is now one flat colour with nothing on it.
- * Passing it in would have meant re-baking a card that cannot change.
- */
-function ThemeCard(props: {
-  id: ThemeId;
-  active: boolean;
-  onPick(): void;
-}): JSX.Element {
+/** A room card: the case, drawn in the app's one style, in the room's colours. */
+function ThemeCard(props: { id: ThemeId; active: boolean; onPick(): void }): JSX.Element {
   let canvas: HTMLCanvasElement | undefined;
   const theme = (): (typeof THEMES)[ThemeId] => getTheme(props.id);
 
@@ -132,6 +119,50 @@ function ThemeCard(props: {
   );
 }
 
+/**
+ * The active room's palette, spelled out.
+ *
+ * Not a control — a legend. A theme is now *only* colour, and a reader who can
+ * see the six cloths their next book might be bound in understands what the
+ * card above actually chose. Inline styles because every swatch's colour comes
+ * from the data, not from the stylesheet.
+ */
+function Swatches(props: { theme: LibraryTheme }): JSX.Element {
+  const chips = (): readonly { colour: string; label: string }[] => {
+    const s = props.theme.scheme;
+    return [
+      { colour: s.timber, label: 'case timber' },
+      { colour: s.recess, label: 'behind the books' },
+      { colour: s.wall, label: 'wall' },
+      ...s.cloths.map(([face], i) => ({ colour: face, label: `book cloth ${i + 1}` })),
+    ];
+  };
+
+  return (
+    <div
+      class="nb-swatch-row"
+      role="img"
+      aria-label={`${props.theme.name} palette`}
+      style={{ display: 'flex', gap: '4px', 'flex-wrap': 'wrap' }}
+    >
+      <For each={chips()}>
+        {(chip) => (
+          <span
+            title={chip.label}
+            style={{
+              width: '18px',
+              height: '18px',
+              'border-radius': '5px',
+              background: chip.colour,
+              border: '1.5px solid #4f3120',
+            }}
+          />
+        )}
+      </For>
+    </div>
+  );
+}
+
 export interface LibraryStudioProps {
   /** Optional: notified after every change (sound cue, toast…). */
   onChanged?(prefs: LibraryPrefs): void;
@@ -150,40 +181,23 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       .finally(() => setBusy(false));
   };
 
-  const theme = (): (typeof THEMES)[ThemeId] => getTheme(libraryPrefs.theme);
+  const theme = (): LibraryTheme => getTheme(libraryPrefs.theme);
 
-  /** Surprise me — a whole different room, dressing and all. */
+  /** Surprise me — any room but the one you are standing in. */
   const surprise = (): void => {
-    const r = (n: number): number => Math.floor(Math.random() * n);
-    const id = SHIPPED_THEME_IDS[r(SHIPPED_THEME_IDS.length)] as ThemeId;
-    patch({
-      theme: id,
-      // Plain is weighted: a wall is a background, and a patterned one every
-      // time you roll turns the shelf into wallpaper with books in front.
-      wallpaperPattern: r(3) === 0 ? WALLPAPER_PATTERN_IDS[r(WALLPAPER_PATTERN_IDS.length)] ?? null : null,
-      wallDepth: 0.2 + Math.random() * 0.5,
-    });
-  };
-
-  const patternLabel = (): string => {
-    const id = libraryPrefs.wallpaperPattern;
-    return id === null ? 'plain' : (WALLPAPER_PATTERNS[id]?.name ?? id).toLowerCase();
-  };
-
-  const depthLabel = (): string => {
-    const d = libraryPrefs.wallDepth;
-    if (d < 0.12) return 'flat paint';
-    if (d < 0.4) return 'faint relief';
-    if (d < 0.7) return 'raised';
-    return 'deep relief';
+    const others = THEME_IDS.filter((id) => id !== libraryPrefs.theme);
+    const pick = others[Math.floor(Math.random() * others.length)];
+    if (pick !== undefined) patch({ theme: pick });
   };
 
   return (
     <div class="nb-library-studio" data-busy={busy() ? 'true' : 'false'}>
       <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">the room</h3>
+        <h3 class="nb-panel-section-title">
+          the room <em class="nb-panel-row-hint">{theme().name.toLowerCase()}</em>
+        </h3>
         <div class="nb-theme-grid" role="group" aria-label="Library theme">
-          <For each={SHIPPED_THEME_IDS}>
+          <For each={THEME_IDS}>
             {(id) => (
               <ThemeCard
                 id={id}
@@ -195,56 +209,13 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         </div>
       </section>
 
-      {/*
-        One wall, two knobs. The old panel offered a "wall finish" row
-        (papered / panelled / plastered / boarded / shoji) *and* a wallpaper
-        row *and* a colourway row, and picking a wallpaper silently did
-        nothing whenever the finish had nowhere to put one. Three controls for
-        one surface, two of which could cancel the third.
-      */}
       <section class="nb-panel-section nb-panel-section-divided">
-        <h3 class="nb-panel-section-title">
-          the wall <em class="nb-panel-row-hint">{patternLabel()}</em>
-        </h3>
-        <div class="nb-chip-row" role="group" aria-label="Wall pattern">
-          {/* Plain comes first and is the default: a wall with no pattern has
-              to be a real choice, not the absence of one. */}
-          <button
-            type="button"
-            class="nb-chip"
-            aria-pressed={libraryPrefs.wallpaperPattern === null}
-            onClick={() => patch({ wallpaperPattern: null })}
-          >
-            plain
-          </button>
-          <For each={WALLPAPER_PATTERN_IDS}>
-            {(id) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={libraryPrefs.wallpaperPattern === id}
-                onClick={() => patch({ wallpaperPattern: id })}
-              >
-                {(WALLPAPER_PATTERNS[id]?.name ?? id).toLowerCase()}
-              </button>
-            )}
-          </For>
-        </div>
-        <label class="nb-panel-row">
-          <span class="nb-panel-row-label">
-            surface depth <em class="nb-panel-row-hint">{depthLabel()}</em>
-          </span>
-          <input
-            type="range"
-            class="nb-panel-slider"
-            min={0}
-            max={1}
-            step={0.05}
-            value={libraryPrefs.wallDepth}
-            aria-label="Wall surface depth"
-            onInput={(e) => patch({ wallDepth: Number(e.currentTarget.value) })}
-          />
-        </label>
+        <h3 class="nb-panel-section-title">the palette</h3>
+        <Swatches theme={theme()} />
+        <p class="nb-panel-footnote">
+          The case, the wall and the cloth new books are bound in. Everything else
+          — the shapes, the ink, the ornament — is the same drawing in every room.
+        </p>
       </section>
 
       <section class="nb-panel-section">
@@ -252,17 +223,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
             surprise me
           </button>
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            onClick={() => patch({ ...DEFAULT_LIBRARY_PREFS, theme: libraryPrefs.theme })}
-          >
-            reset room
-          </button>
         </div>
-        <p class="nb-panel-footnote">
-          {`seed ${fnv1a(theme().id).toString(16)} · the room is laid out the same way every time`}
-        </p>
       </section>
     </div>
   );

@@ -213,7 +213,7 @@ export interface ShelfMeta {
   lastOpenedAt?: string;
   /** Cached page count driving auto spine thickness. */
   pageCount?: number;
-  /** Present only while the book sits in the trash drawer (floor -1). */
+  /** Present only while the book sits in the trash (floor -1). */
   deletedAt?: string;
   /** Shelf position to restore to when un-trashed. */
   prevFloor?: number;
@@ -368,14 +368,14 @@ export async function deleteBook(id: string): Promise<boolean> {
 /* ----------------------------------------------------------------------------
    Wave-2 shelf & library life
    ----------------------------------------------------------------------------
-   Trash convention: floor index -1 IS the trash drawer. The shelf only ever
+   Trash convention: floor index -1 IS the trash. The shelf only ever
    queries floors >= 0 (listBooksByFloorRange from the virtualizer), so a book
    moved to floor -1 disappears from the case without any schema change. Its
    former position + deletion time live in cover_meta.shelf so restore puts it
    back where it came from. Permanent deletion = deleteBook on a trashed id.
    -------------------------------------------------------------------------- */
 
-/** The floor index that acts as the trash drawer. */
+/** The floor index that acts as the trash. */
 export const TRASH_FLOOR = -1;
 
 /**
@@ -465,7 +465,7 @@ export async function duplicateBook(id: string): Promise<Book | null> {
   return copy;
 }
 
-/** Soft-delete: move the book to the trash drawer (floor -1). */
+/** Soft-delete: move the book to the trash (floor -1). */
 export async function trashBook(id: string): Promise<Book | null> {
   const book = await getBook(id);
   if (book === null || book.floor === TRASH_FLOOR) return book;
@@ -495,7 +495,7 @@ export async function restoreBook(id: string): Promise<Book | null> {
   return moveBook(id, floor, slot);
 }
 
-/** Books currently in the trash drawer, most recently deleted first. */
+/** Books currently in the trash, most recently deleted first. */
 export async function listTrashedBooks(): Promise<Book[]> {
   const books = await listFloor(TRASH_FLOOR);
   return books.sort((a, b) => {
@@ -505,7 +505,7 @@ export async function listTrashedBooks(): Promise<Book[]> {
   });
 }
 
-/** Permanently delete every book in the trash drawer. Returns count. */
+/** Permanently delete every book in the trash. Returns count. */
 export async function emptyTrash(): Promise<number> {
   const books = await listFloor(TRASH_FLOOR);
   for (const book of books) await deleteBook(book.id);

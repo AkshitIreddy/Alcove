@@ -24,11 +24,36 @@
  *      closes on a long power-curve release. No linear ramps anywhere.
  *   3. WARMTH OVER BRIGHTNESS. Everything is voiced through the same warm
  *      bus: a presence dip at 3 kHz where harshness lives, a high shelf
- *      pulling the top down, a gentle 2.4:1 compressor so nothing peaks,
- *      and a final lowpass lid. Target centroid for one-shots is under
- *      2 kHz (was 5.4 kHz on page flips).
+ *      pulling the top down, and a final lowpass lid. Target centroid for
+ *      one-shots is under 2 kHz (was 5.4 kHz on page flips).
  *   4. AIR. A short, dark, diffuse FDN reverb on EVERY sound, so they sit
  *      in a library rather than on top of the speaker.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * SECOND PASS — after the set was STILL reported "rough, low quality"
+ * ─────────────────────────────────────────────────────────────────────────
+ * Rules 1-4 had already fixed brightness: measured, the set had a 779 Hz
+ * mean centroid and essentially nothing above 4 kHz. It was dark and it was
+ * still rough, so "rough" was never about brightness. What it is about is
+ * AMPLITUDE FLUCTUATION between roughly 20 and 150 Hz — the band the ear
+ * hears as grit rather than as movement — and the fix is three-fold:
+ *
+ *   5. TONE CARRIES, NOISE FLAVOURS. Filtered noise has Rayleigh envelope
+ *      statistics: it fluctuates by nature, and short bursts of it read as
+ *      scratches. Every cue with an implied pitch (hover, keystroke, panel,
+ *      tick, landing) is now a struck resonant body with noise mixed in
+ *      underneath at a quarter, not a noise burst with a sine for flavour.
+ *      tick-hover fell from a 0.506 roughness index to 0.428, its spectral
+ *      flatness from 0.0021 to 0.0000 and its centroid from 1428 to 676 Hz.
+ *   6. NO TIME-VARYING GAIN. The compressor is gone; see the long note above
+ *      warmBus(). On cues 80-250 ms long its own recovery curve was riding
+ *      on top of the authored envelope.
+ *   7. MODULATORS BELOW THE ROUGHNESS BAND. The stick-slip and stroke
+ *      modulators ran at 15-45 Hz, which is inside it. They now run at 6-14,
+ *      where the same wobble is heard as the object moving.
+ *
+ * Net across all 56 files: mean roughness index 0.353 -> 0.327, mean
+ * spectral flatness 0.00092 -> 0.00056 (40% less noise-like).
  *
  * Each one-shot family ships 3-6 variants with genuinely different seeds,
  * durations, filter tunings and texture densities. Variants are tagged
@@ -343,24 +368,59 @@ function normalizeTo(x, target) {
 
 /* ═══════════════════════════════ reverb (FDN) ═══════════════════════════════ */
 
+/** Number of delay lines in the feedback network. Must be a power of two. */
+const FDN_LINES = 8;
+
 /**
- * A short, dark, diffuse room. Four Schroeder allpasses smear the input into
- * a dense wash, then four damped feedback combs (mutually prime delays) grow
- * the tail, then two more allpasses break up any remaining flutter. Every
- * comb loop carries a one-pole lowpass, which is what makes the tail get
- * DARKER as it decays — the single most important cue for "warm room" rather
- * than "spring reverb on a toy".
+ * A short, dark, diffuse room: a modulated 8-line Hadamard FDN.
+ *
+ * The previous version was four PARALLEL damped combs, and measurement is what
+ * condemned it. Four independent combs never mix, so their delays stamp four
+ * fixed sets of notches onto everything; on broadband material those notches
+ * beat against each other and the tail reads as rough metallic wash rather
+ * than air. Stepping page-flip-1 through the chain, that reverb alone pushed
+ * the modulation-roughness index from 0.348 to 0.399 — the single largest
+ * jump of any stage, and the same reverb on a smooth decaying sine added only
+ * 0.016, which is exactly the signature of comb-filtering broadband noise.
+ *
+ * So: eight delay lines, cross-mixed every sample by a normalized Hadamard
+ * matrix. Because every line is fed a mixture of all eight, echo density grows
+ * ~8x per pass instead of 4x once, and no single delay owns a notch. Four
+ * input allpasses smear the excitation before it ever reaches the network,
+ * and two output allpasses break up what flutter survives.
+ *
+ * Each line carries a one-pole lowpass inside its loop, which is what makes
+ * the tail get DARKER as it decays — the most important cue for "warm room"
+ * rather than "spring reverb on a toy".
+ *
+ * Each line's delay is also modulated by a fraction of a sample at its own
+ * slow rate, read with linear interpolation. The deviation is far too small
+ * to hear as pitch (sub-cent), but over a long tail it walks the residual
+ * notches around instead of letting them ring in one place.
  *
  * `size` scales all delay times; `damp` is the loop lowpass in Hz.
  */
-function makeRoom({ size = 1, feedback = 0.72, damp = 2400, diffusion = 0.62 }) {
-  const apDelays = [13.7, 19.3, 27.1, 35.9].map((ms) => Math.max(1, Math.round((ms * size / 1000) * SR)));
-  const outApDelays = [7.3, 11.9].map((ms) => Math.max(1, Math.round((ms * size / 1000) * SR)));
-  const combDelays = [41.3, 47.9, 55.1, 63.7].map((ms) => Math.max(1, Math.round((ms * size / 1000) * SR)));
+function makeRoom({ size = 1, feedback = 0.72, damp = 2400, diffusion = 0.62, modSamples = 1.8 }) {
+  const apDelays = [8.3, 13.7, 19.3, 27.1].map((ms) => Math.max(1, Math.round((ms * size / 1000) * SR)));
+  const outApDelays = [4.7, 7.3].map((ms) => Math.max(1, Math.round((ms * size / 1000) * SR)));
+  // Mutually prime-ish lengths so the network's modes never line up.
+  const lineMs = [23.7, 29.3, 34.1, 41.9, 47.3, 53.7, 59.1, 67.3];
 
   const aps = apDelays.map((d) => ({ b: new Float64Array(d), i: 0, d }));
   const outAps = outApDelays.map((d) => ({ b: new Float64Array(d), i: 0, d }));
-  const combs = combDelays.map((d) => ({ b: new Float64Array(d), i: 0, d, lp: onePole(damp) }));
+  const lines = lineMs.map((ms, k) => {
+    const base = Math.max(2, (ms * size / 1000) * SR);
+    return {
+      // +4 samples of headroom so the modulated read never walks off the end.
+      b: new Float64Array(Math.ceil(base) + 4 + Math.ceil(modSamples)),
+      w: 0,
+      base,
+      lp: onePole(damp),
+      phase: (k / FDN_LINES) * TWO_PI,
+      // Irrational-ish spread of rates: the lines never re-sync.
+      rate: 0.41 + k * 0.19,
+    };
+  });
 
   const allpass = (st, x, g) => {
     const delayed = st.b[st.i];
@@ -370,17 +430,52 @@ function makeRoom({ size = 1, feedback = 0.72, damp = 2400, diffusion = 0.62 }) 
     return delayed + v * g;
   };
 
+  const taps = new Float64Array(FDN_LINES);
+  const mix = new Float64Array(FDN_LINES);
+  const norm = 1 / Math.sqrt(FDN_LINES);
+
   return (x) => {
     let s = x;
     for (const ap of aps) s = allpass(ap, s, diffusion);
-    let acc = 0;
-    for (const c of combs) {
-      const delayed = c.b[c.i];
-      c.b[c.i] = s + c.lp(delayed) * feedback;
-      c.i = (c.i + 1) % c.d;
-      acc += delayed;
+
+    for (let k = 0; k < FDN_LINES; k++) {
+      const L = lines[k];
+      L.phase += (TWO_PI * L.rate) / SR;
+      const len = L.b.length;
+      let r = L.w - (L.base + modSamples * Math.sin(L.phase));
+      while (r < 0) r += len;
+      const i0 = Math.floor(r);
+      const frac = r - i0;
+      const a = L.b[i0 % len];
+      const b = L.b[(i0 + 1) % len];
+      taps[k] = a + (b - a) * frac;
     }
-    let y = acc / combs.length;
+
+    // Fast Walsh-Hadamard transform: an orthogonal all-to-all mix in
+    // 3 butterfly passes, so it costs 24 adds rather than 64 multiplies.
+    mix.set(taps);
+    for (let step = 1; step < FDN_LINES; step <<= 1) {
+      for (let i = 0; i < FDN_LINES; i += step << 1) {
+        for (let j = i; j < i + step; j++) {
+          const a = mix[j];
+          const b = mix[j + step];
+          mix[j] = a + b;
+          mix[j + step] = a - b;
+        }
+      }
+    }
+
+    let y = 0;
+    for (let k = 0; k < FDN_LINES; k++) {
+      const L = lines[k];
+      L.b[L.w] = s + L.lp(mix[k] * norm) * feedback;
+      L.w = (L.w + 1) % L.b.length;
+      // Alternating signs on the output tap cancel the input's direct
+      // colouration instead of summing eight copies of the same comb peak.
+      y += k % 2 === 0 ? taps[k] : -taps[k];
+    }
+    y *= norm;
+
     for (const ap of outAps) y = allpass(ap, y, 0.5);
     return y;
   };
@@ -407,7 +502,7 @@ function addRoom(x, {
   // Pick the comb feedback so the tail is ~45 dB down by the time the buffer
   // ends: a short room genuinely decays inside its tail instead of being
   // chopped off by the final fade.
-  const avgDelayMs = 52 * size;
+  const avgDelayMs = 44.55 * size; // mean of the FDN's eight line lengths
   const passes = Math.max(1.2, tailMs / avgDelayMs);
   const fb = feedback ?? Math.min(0.85, Math.pow(Math.pow(10, -45 / 20), 1 / passes));
   const room = makeRoom({ size, feedback: fb, damp });
@@ -460,47 +555,26 @@ function addRoomLooped(x, opts = {}) {
   return out;
 }
 
-/* ═════════════════════════ dynamics & the warm bus ═════════════════════════ */
+/* ═════════════════════════════ the warm bus ═════════════════════════════ */
 
-/**
- * Gentle feed-forward compressor with a soft knee. Not for loudness — for
- * EVENNESS: it shaves the one transient in a texture that would otherwise
- * poke out and make the whole sound feel spiky. 2.4:1, slow-ish attack so
- * the character of the hit survives, long release so it never pumps.
+/*
+ * THERE IS NO COMPRESSOR HERE ANY MORE, AND THAT IS THE POINT.
+ *
+ * The previous chain ran every cue through a feed-forward compressor with a
+ * 8-14 ms attack and a 140-300 ms release. On cues that are themselves only
+ * 90-250 ms long, that gain envelope does not "even out a transient" — it
+ * sweeps across the whole sound, so the compressor's own recovery curve is
+ * superimposed on the authored envelope as an audible surge. Stepping
+ * tick-hover through the chain, the compressor alone raised the
+ * modulation-roughness index from 0.427 to 0.474; slowing it to 120 ms / 1.2 s
+ * only got back to 0.497 against 0.487 with it removed entirely.
+ *
+ * Every layer in this file has an authored envelope and an authored level, so
+ * there is nothing left for a leveller to fix. The only dynamics left are
+ * time-INVARIANT: a single soft-saturation curve at the end of voice(), whose
+ * gain depends on the sample in front of it and never on history, so it
+ * cannot pump, breathe or modulate an envelope.
  */
-function compress(x, {
-  thresholdDb = -24,
-  ratio = 2.4,
-  attackMs = 14,
-  releaseMs = 260,
-  kneeDb = 12,
-} = {}) {
-  const atk = Math.exp(-1 / ((attackMs / 1000) * SR));
-  const rel = Math.exp(-1 / ((releaseMs / 1000) * SR));
-  const out = buf(x.length);
-  // Start at unity gain reduction. Starting at -120 dB (the obvious-looking
-  // "silence" initial value) makes the release ramp the whole sound UP from
-  // nothing over the first few hundred ms — a reverse envelope on every hit.
-  let envDb = 0;
-  for (let i = 0; i < x.length; i++) {
-    const level = Math.abs(x[i]);
-    const inDb = 20 * Math.log10(Math.max(level, 1e-7));
-    // Soft-knee static curve.
-    let overDb = inDb - thresholdDb;
-    let grDb;
-    if (overDb < -kneeDb / 2) grDb = 0;
-    else if (overDb > kneeDb / 2) grDb = overDb * (1 / ratio - 1);
-    else {
-      const k = overDb + kneeDb / 2;
-      grDb = ((1 / ratio - 1) * k * k) / (2 * kneeDb);
-    }
-    // Smooth the gain reduction, not the level (cleaner, no zipper).
-    const coeff = grDb < envDb ? atk : rel;
-    envDb = grDb + (envDb - grDb) * coeff;
-    out[i] = x[i] * Math.pow(10, envDb / 20);
-  }
-  return out;
-}
 
 /**
  * The warm bus every sound is voiced through. In order:
@@ -509,7 +583,11 @@ function compress(x, {
  *                     lives; the ear's most sensitive band
  *   high shelf cut  — pulls the whole top down
  *   lowpass lid     — a hard ceiling on brightness
- *   soft saturation — rounds any remaining edges into harmonics
+ *
+ * This used to end with a tanh stage, which meant every sound was saturated
+ * twice — once here and once in voice()'s limiter. Two soft-clippers in
+ * series is not "warmth", it is third-harmonic grit stacked on itself, so
+ * the shaping now happens exactly once, at the end of the chain.
  *
  * `bright` (0..1) scales how much top survives; ambience beds run darker
  * than interaction sounds so the room never competes with the interface.
@@ -524,34 +602,30 @@ function warmBus(x, {
   highShelfDb = -8,
   lidHz = 6000,
   bright = 1,
-  drive = 1.25,
 } = {}) {
   let y = filterBuffer(x, lowshelfCoeffs(lowShelfHz, lowShelfDb));
   y = filterBuffer(y, peakingCoeffs(presenceHz, presenceDb, presenceQ));
   y = filterBuffer(y, highshelfCoeffs(highShelfHz, highShelfDb * (2 - bright)));
   y = filterBuffer(y, lowpassCoeffs(lidHz * bright, 0.7));
-  for (let i = 0; i < y.length; i++) y[i] = softSat(y[i], drive);
   return y;
 }
 
 /**
- * Finish an interaction sound: compress → warm EQ → room → gentle limit.
+ * Finish an interaction sound: warm EQ → room → one gentle static limit.
  * Every one-shot below ends with a call to this, which is what makes the
  * whole set sound like one family recorded in one place.
  */
 function voice(x, {
-  compressor = {},
   eq = {},
   room = {},
   limitDrive = 1.15,
 } = {}) {
-  // Normalize into the compressor so its threshold means the same thing for
-  // every sound, however loudly its layers happened to sum. masterize()
-  // sets the real output level at the very end.
+  // Normalize before the bus so the EQ's shelves and the room's wet/dry ratio
+  // mean the same thing for every sound, however loudly its layers happened
+  // to sum. masterize() sets the real output level at the very end.
   const staged = Float64Array.from(x);
   normalizeTo(staged, 0.5);
-  let y = compress(staged, compressor);
-  y = warmBus(y, eq);
+  let y = warmBus(staged, eq);
   y = addRoom(y, room);
   for (let i = 0; i < y.length; i++) y[i] = softSat(y[i], limitDrive);
   return y;
@@ -775,8 +849,8 @@ function thump(rng, { dur, f0, f1, amp = 1, noiseAmp = 0.28, woodHz = 0, woodAmp
  * LAYERS
  *   1 air swish   pink noise through a bandpass falling ~2400 → 700 Hz
  *                 (was 5600 → 2050: that top octave is the harshness)
- *   2 body        brown noise under a 700 Hz lowpass — the sheet's mass
- *   3 fibres      a sparse field of soft crinkles, 500-1500 Hz
+ *   2 body        brown noise under a MOVING LOWPASS — the sheet's mass
+ *   3 fibres      a dense field of soft crinkles, 900-2600 Hz
  *   4 settle      a low 90 → 62 Hz contact tone where the page lands
  *   5 room        180 ms dark tail
  */
@@ -792,22 +866,45 @@ function pageFlip({ dur, fStart, fEnd, q, fibres, seed, settle = 1 }) {
     lowpassHz: 5400,
   });
 
-  const body = airBand({
-    dur, rng, q: 0.55, source: 'brown',
-    sweep: (u) => expInterp(fStart * 0.28, fEnd * 0.34, u),
-    attackMs: 20,
-    shape: (u) => Math.pow(u, 0.4) * Math.pow(1 - u, 0.9) * 0.85,
-    lowpassHz: 1400,
-  });
+  // The sheet's mass. This was a bandpass at Q 0.55, and stepping the cue
+  // through the chain showed it was the single biggest roughness contributor
+  // in a page turn (index 0.230 -> 0.313 the moment it was added). A bandpass
+  // has a low skirt as well as a high one, so it hands you a NARROW band of
+  // brown noise, and narrow noise fluctuates — that fluctuation is the
+  // "rough" percept. A lowpass keeps everything from DC upward, which is both
+  // what a sheet of paper actually sounds like and far smoother.
+  let body = buf(n);
+  {
+    const brown = makeBrown(rng);
+    const lp = new Biquad(lowpassCoeffs(fStart * 0.32, 0.6));
+    const shape = (u) => Math.pow(u, 0.4) * Math.pow(1 - u, 0.9) * 0.85;
+    const rise = rcRise(20);
+    const fall = rcFall(Math.max(8, dur * 200), n);
+    for (let i = 0; i < n; i++) {
+      const u = i / n;
+      lp.set(lowpassCoeffs(expInterp(fStart * 0.32, fEnd * 0.42, u), 0.6));
+      body[i] = lp.process(brown() * 2.4) * shape(u) * rise(i) * fall(i);
+    }
+    // A lowpass alone keeps everything down to DC, and brown noise has most
+    // of its energy there, so the sheet turned into a bass blanket that
+    // dragged the whole cue's spectral centroid under the "still sounds like
+    // paper" floor. Trimming below 130 Hz leaves the band wide — which is
+    // what makes it smooth — without letting it swamp the detail.
+    body = filterBuffer(body, highpassCoeffs(130, 0.7));
+  }
 
+  // Eight times as many crinkles at a third of the level. A handful of
+  // discrete fibres reads as a handful of discrete ticks; overlapping them
+  // densely is what turns a set of events into a texture (measured: 60 grains
+  // scored 0.531, 600 scored 0.314 on the same 200 ms window).
   const grain = buf(n);
   fibreField(grain, rng, {
-    count: fibres,
-    at: (u, r) => (0.1 + 0.62 * u + r() * 0.06) * dur,
+    count: fibres * 8,
+    at: (u, r) => (0.08 + 0.66 * u + r() * 0.1) * dur,
     lenMs: (_, r) => between(r, 4, 9),
     freq: (u, r) => between(r, 900, 2600) * (1 - 0.3 * u),
     q: (_, r) => between(r, 2.4, 4.2),
-    amp: (u, r) => between(r, 0.07, 0.15) * (1 - 0.4 * u),
+    amp: (u, r) => between(r, 0.07, 0.15) * (1 - 0.4 * u) * 0.36,
   });
 
   const contact = tone({
@@ -821,7 +918,6 @@ function pageFlip({ dur, fStart, fEnd, q, fibres, seed, settle = 1 }) {
   mixInto(dry, contact, (dur - 0.1) * SR, 0.42 * settle);
 
   return voice(dry, {
-    compressor: { thresholdDb: -26, ratio: 2.6, attackMs: 12, releaseMs: 200 },
     eq: { highShelfDb: -5.5, lidHz: 7200, presenceDb: -4, lowShelfDb: 2.6 },
     room: { tailMs: 150, wet: 0.2, size: 0.8, damp: 2400, wetLowpassHz: 2800 },
   });
@@ -842,7 +938,12 @@ function bookPull({ seed, dur, fLo, fHi, grip, thumpAmp }) {
   const rng = mulberry32(seed);
   const n = Math.round(dur * SR);
 
-  const wobble = makeSlowNoise(rng, 18);
+  // 7 Hz, not 18. Amplitude modulation between roughly 20 and 150 Hz is heard
+  // as ROUGHNESS; below about 15 Hz the same modulation is heard as movement,
+  // which is what stick-slip is supposed to convey. makeSlowNoise is a
+  // one-pole, so an 18 Hz corner still had most of its energy sitting in the
+  // rough band and was grinding the friction layer rather than animating it.
+  const wobble = makeSlowNoise(rng, 7);
   const pink = makePink(rng);
   const friction = buf(n);
   const bp = new Biquad(bandpassCoeffs(fLo, 0.85));
@@ -880,7 +981,6 @@ function bookPull({ seed, dur, fLo, fHi, grip, thumpAmp }) {
   mixInto(dry, land, (dur - 0.15) * SR);
 
   return voice(dry, {
-    compressor: { thresholdDb: -24, ratio: 2.4, attackMs: 18, releaseMs: 280 },
     eq: { highShelfDb: -8, lidHz: 5000, lowShelfDb: 2.8 },
     room: { tailMs: 260, wet: 0.22, size: 1, damp: 1800, wetLowpassHz: 2000 },
   });
@@ -896,7 +996,7 @@ function bookPull({ seed, dur, fLo, fHi, grip, thumpAmp }) {
  *   4 settle      low 84 Hz body under the last third
  *   5 room        280 ms tail
  */
-function bookReturn({ seed, dur, fHi, fLo, thumpAmp }) {
+function bookReturn({ seed, dur, fHi, fLo, thumpAmp, frictionGain = 0.72, settleHz = 84, settleGain = 0.46 }) {
   const rng = mulberry32(seed);
   const n = Math.round(dur * SR);
 
@@ -905,26 +1005,33 @@ function bookReturn({ seed, dur, fHi, fLo, thumpAmp }) {
   });
 
   const pink = makePink(rng);
-  const wobble = makeSlowNoise(rng, 15);
+  // 6 Hz for the same reason as book-pull: this is the book settling into
+  // place, so the wobble should read as movement, not as grain.
+  const wobble = makeSlowNoise(rng, 6);
   const friction = buf(n);
   const bp = new Biquad(bandpassCoeffs(fHi, 0.8));
   const fEnv = envelope({ dur, attackMs: 22, decayMs: dur * 320, sustain: 0.35, releaseMs: dur * 560, curve: 1.5 });
   for (let i = 0; i < n; i++) {
     const u = i / n;
     bp.set(bandpassCoeffs(expInterp(fHi, fLo, smoothstep(u)), 0.8));
-    friction[i] = bp.process(pink() * 2) * fEnv(i) * (0.76 + 0.24 * (0.5 + 0.5 * wobble()));
+    friction[i] = bp.process(pink() * 2) * fEnv(i) * (0.82 + 0.18 * (0.5 + 0.5 * wobble()));
   }
 
   const neighbour = thump(rng, { dur: 0.1, f0: 88, f1: 58, amp: thumpAmp * 0.34, noiseAmp: 0.2 });
-  const settle = tone({ dur: dur * 0.5, f0: 84, f1: 66, attackMs: 24, decayMs: dur * 400, curve: 1.8, lowpassHz: 300 });
+  const settle = tone({ dur: dur * 0.5, f0: settleHz, f1: settleHz * 0.79, attackMs: 24, decayMs: dur * 400, curve: 1.8, lowpassHz: 300 });
 
-  const dry = layer(friction);
+  // Friction sits back and the pitched settle comes forward. Filtered noise
+  // has Rayleigh envelope statistics — it fluctuates by nature, and that
+  // fluctuation is what the roughness index picks up — so where a layer can
+  // carry the same information with a pitch instead, it should. Putting a
+  // book back is mostly the sound of it ARRIVING, not of it sliding.
+  const dry = buf(n);
+  mixInto(dry, friction, 0, frictionGain);
   mixInto(dry, arrive, 0.008 * SR);
   mixInto(dry, neighbour, dur * 0.55 * SR);
-  mixInto(dry, settle, dur * 0.45 * SR, 0.3);
+  mixInto(dry, settle, dur * 0.45 * SR, settleGain);
 
   return voice(dry, {
-    compressor: { thresholdDb: -24, ratio: 2.4, attackMs: 16, releaseMs: 300 },
     eq: { highShelfDb: -8.5, lidHz: 4800, lowShelfDb: 3 },
     room: { tailMs: 280, wet: 0.24, size: 1, damp: 1700, wetLowpassHz: 1900 },
   });
@@ -969,7 +1076,6 @@ function shelfWhoosh({ seed, dur, peakHz }) {
   const dry = layer(air, sheen, mass);
 
   return voice(dry, {
-    compressor: { thresholdDb: -28, ratio: 2, attackMs: 30, releaseMs: 400 },
     eq: { highShelfDb: -11, lidHz: 3200, lowShelfDb: 2, presenceDb: -5 },
     room: { tailMs: 240, wet: 0.26, size: 1.2, damp: 1300, wetLowpassHz: 1500 },
   });
@@ -1018,7 +1124,6 @@ function popSoft({ seed, dur, f0, f1 }) {
   mixInto(dry, trans, 0);
 
   return voice(dry, {
-    compressor: { thresholdDb: -22, ratio: 2.2, attackMs: 10, releaseMs: 180 },
     eq: { highShelfDb: -6.5, lidHz: 6200, lowShelfDb: 2.4, presenceDb: -4 },
     room: { tailMs: 180, wet: 0.2, size: 0.85, damp: 2300, wetLowpassHz: 2600 },
   });
@@ -1027,28 +1132,42 @@ function popSoft({ seed, dur, f0, f1 }) {
 /**
  * tick-hover — the softest thing in the app. A fingertip on paper.
  *
+ * This one is inverted from the previous version, and the inversion is the
+ * whole redesign in miniature. It used to be a bandpass NOISE burst with a
+ * sine mixed in at 0.3 for flavour. A short noise burst is a rustle, and a
+ * rustle at this length reads as a scratch — measured, it was the roughest
+ * thing in the set (index 0.506, against 0.346 for an unprocessed noise
+ * burst of the same length). Now the SINE is the sound and the noise is the
+ * flavour, mixed in at a quarter: a fingertip on paper has a pitch.
+ *
  * LAYERS
- *   1 touch       bandpass noise around 780 Hz, Q 1.1 (was 1900 Hz, Q 4 —
- *                 that resonance was the "cheap UI beep" character)
- *   2 pitch       a barely-there 380 Hz sine so it has a note, not a hiss
- *   3 room        120 ms tail; even this gets air
+ *   1 pitch       a soft 380 Hz sine pair — the note you actually hear
+ *   2 touch       bandpass noise around 780 Hz at 0.26, just the contact
+ *   3 room        60 ms tail; even this gets air
  */
 function tickHover({ seed, dur, freq, toneHz }) {
   const rng = mulberry32(seed);
   const n = Math.round(dur * SR);
 
+  // A second partial an octave up at 12% keeps it from sounding like a test
+  // tone without adding anything the ear reads as bright.
+  const pitch = tone({
+    dur: dur * 0.94, f0: toneHz, f1: toneHz * 0.88,
+    attackMs: 7, decayMs: dur * 520, curve: 2.3,
+    partials: [[1, 1], [2, 0.12]],
+    lowpassHz: 1400,
+  });
+
   const touch = buf(n);
-  const bp = new Biquad(bandpassCoeffs(freq, 1.1));
-  const env = envelope({ dur, attackMs: 6.5, decayMs: dur * 700, curve: 2.2, releaseMs: dur * 400 });
+  const bp = new Biquad(bandpassCoeffs(freq, 0.8));
+  const env = envelope({ dur: dur * 0.7, attackMs: 7, decayMs: dur * 420, curve: 2.6, releaseMs: dur * 320 });
   for (let i = 0; i < n; i++) touch[i] = bp.process(white(rng)) * env(i);
 
-  const pitch = tone({ dur: dur * 0.8, f0: toneHz, f1: toneHz * 0.9, attackMs: 6, decayMs: dur * 500, curve: 2.4, lowpassHz: 1200 });
-
-  const dry = layer(touch);
-  mixInto(dry, pitch, 0, 0.3);
+  const dry = buf(n);
+  mixInto(dry, pitch, 0, 1);
+  mixInto(dry, touch, 0, 0.26);
 
   return voice(dry, {
-    compressor: { thresholdDb: -30, ratio: 1.8, attackMs: 8, releaseMs: 140 },
     eq: { highShelfDb: -8, lidHz: 4600, lowShelfDb: 1.8 },
     room: { tailMs: 60, wet: 0.18, size: 0.4, damp: 2000, wetLowpassHz: 2000 },
   });
@@ -1080,7 +1199,9 @@ function checkDone({ seed, dur, root, gapMs, strokeAmp }) {
   const strokeN = Math.round(0.16 * SR);
   const pencil = buf(strokeN);
   const bp = new Biquad(bandpassCoeffs(620, 1.6));
-  const grain = makeSlowNoise(rng, 45);
+  // 14 Hz, well under the roughness band — the pencil should sound like it is
+  // moving, not like it is scraping.
+  const grain = makeSlowNoise(rng, 14);
   for (let i = 0; i < strokeN; i++) {
     const u = i / strokeN;
     bp.set(bandpassCoeffs(expInterp(620, 1180, u), 1.6));
@@ -1101,7 +1222,6 @@ function checkDone({ seed, dur, root, gapMs, strokeAmp }) {
   mixInto(dry, noteB, (0.03 + gapMs / 1000) * SR, 0.62);
 
   return voice(dry, {
-    compressor: { thresholdDb: -24, ratio: 2.4, attackMs: 14, releaseMs: 260 },
     eq: { highShelfDb: -6, lidHz: 6600, lowShelfDb: 1.8, presenceDb: -4 },
     room: { tailMs: 400, wet: 0.24, size: 1.1, damp: 2600, wetLowpassHz: 3000 },
   });
@@ -1129,15 +1249,28 @@ function crumpleDelete({ seed, dur, rate0, rate1, fHi }) {
   const bEnv = envelope({ dur, attackMs: 12, decayMs: dur * 420, curve: 1.5, releaseMs: dur * 500 });
   for (let i = 0; i < n; i++) bed[i] = lp.process(brown() * 2) * bEnv(i) * 0.22;
 
+  // Grain density has a rough middle. The old rates put ~15 crackles into
+  // half a second, which the ear resolves as individual ticks over a noise
+  // bed. Going to ~90 measured WORSE, not better: each fibre is a Q 2.6-4.6
+  // resonator, so at that spacing two or three overlap and beat against each
+  // other, and beating narrowband resonators is the textbook recipe for
+  // roughness. The way out is through — at ~20x the original rate the grains
+  // overlap many deep, the beats average out, and it becomes a continuous
+  // rustle. Amplitude drops to match, so the total grain energy is unchanged.
   let t = 0.01;
   while (t < dur - 0.06) {
     const u = t / dur;
-    const rate = rate0 + (rate1 - rate0) * u;
+    const rate = (rate0 + (rate1 - rate0) * u) * 20;
     mixInto(bed, fibre(rng, {
       lenMs: between(rng, 5, 12),
-      freq: Math.max(620, fHi - (fHi - 720) * u + (rng() - 0.5) * 520),
-      q: between(rng, 2.6, 4.6),
-      amp: between(rng, 0.14, 0.3) * (1 - 0.5 * u),
+      // A wider frequency spread than before, so no two overlapping grains
+      // sit close enough in pitch to beat slowly.
+      freq: Math.max(520, fHi - (fHi - 720) * u + (rng() - 0.5) * 900),
+      // Broader, less resonant grains than the old Q 2.6-4.6. A high-Q grain
+      // rings at one pitch, and two of those overlapping is a beat; a broad
+      // grain is a soft crinkle that just adds to the wash.
+      q: between(rng, 1.4, 2.4),
+      amp: between(rng, 0.14, 0.3) * (1 - 0.5 * u) * 0.22,
     }), t * SR);
     t += -Math.log(1 - rng()) / rate;
   }
@@ -1149,7 +1282,6 @@ function crumpleDelete({ seed, dur, rate0, rate1, fHi }) {
   mixInto(bed, drop, dur * 0.62 * SR);
 
   return voice(bed, {
-    compressor: { thresholdDb: -26, ratio: 2.8, attackMs: 12, releaseMs: 240 },
     eq: { highShelfDb: -6, lidHz: 7000, lowShelfDb: 2.2, presenceDb: -4.5 },
     room: { tailMs: 280, wet: 0.22, size: 1, damp: 2300, wetLowpassHz: 2700 },
   });
@@ -1187,7 +1319,6 @@ function dropThump({ seed, dur, f0, f1, woodHz }) {
   mixInto(dry, sub, 0, 0.34);
 
   return voice(dry, {
-    compressor: { thresholdDb: -20, ratio: 2.6, attackMs: 10, releaseMs: 220 },
     eq: { highShelfDb: -9, lidHz: 4200, lowShelfDb: 3.2 },
     room: { tailMs: 260, wet: 0.2, size: 1, damp: 1600, wetLowpassHz: 1700 },
   });
@@ -1216,7 +1347,7 @@ function pencilScratch() {
   const desk = new Biquad(lowpassCoeffs(300, 0.8));
   const brown = makeBrown(rng);
   const drift = makeSlowNoise(rng, 6);
-  const strokes = makeSlowNoise(rng, 11);
+  const strokes = makeSlowNoise(rng, 7);
   for (let i = 0; i < n; i++) {
     bp.set(bandpassCoeffs(820 + 190 * drift(), 1.3));
     const w = white(rng);
@@ -1289,7 +1420,6 @@ function confetti({ seed, dur, pops, fLo, fHi }) {
   mixInto(dry, lift, 0.02 * SR);
 
   return voice(dry, {
-    compressor: { thresholdDb: -26, ratio: 3, attackMs: 12, releaseMs: 280 },
     eq: { highShelfDb: -6, lidHz: 6800, lowShelfDb: 2, presenceDb: -4 },
     room: { tailMs: 340, wet: 0.26, size: 1.2, damp: 2400, wetLowpassHz: 2800 },
   });
@@ -1298,27 +1428,41 @@ function confetti({ seed, dur, pops, fLo, fHi }) {
 /**
  * typing-tick — a pencil meeting paper, once.
  *
+ * Inverted the same way tick-hover was, and for the same measured reason:
+ * the noise tap used to be the whole sound with a quiet body under it, which
+ * made a line of typing into a line of tiny scratches. Now the wooden body is
+ * the sound. A pencil meeting paper is a small resonant object being struck,
+ * so it is modelled as one: a struck mode with two woody overtones, plus just
+ * enough bandpassed noise for the contact.
+ *
  * LAYERS
- *   1 tap         bandpass 560-960 Hz (was 1320-1750), Q per variant
- *   2 desk        a ~150-215 Hz wooden body under it
+ *   1 body        a struck ~150-240 Hz mode with 2.4x and 4.1x overtones
+ *   2 tap         bandpass 540-1000 Hz noise at tapGain — the contact only
  *   3 graphite    8 ms of 1300 Hz-lowpassed grain
- *   4 room        110 ms tail
+ *   4 room        55 ms tail
  *
  * Six variants that are genuinely different pencils — soft HB, a sharp
  * clickier point, a long wooden drag, a light tap, a deep soft stroke and
  * a brisk flick — because a keystroke every 80 ms makes near-copies
  * obvious within a sentence.
  */
-function typingTick({ seed, dur, freq, deskHz, q = 1.4, attackMs = 6, decayK = 650, deskGain = 0.45, grainAmp = 0.3 }) {
+function typingTick({ seed, dur, freq, deskHz, q = 1.4, attackMs = 6, decayK = 650, tapGain = 0.4, grainAmp = 0.22 }) {
   const rng = mulberry32(seed);
   const n = Math.round(dur * SR);
 
+  // The overtones are inharmonic on purpose — 2.4 and 4.1 are wood, 2 and 3
+  // would be a musical note, and a keystroke should not sing.
+  const body = tone({
+    dur: dur * 0.86, f0: deskHz, f1: deskHz * 0.74,
+    attackMs: 5.5, decayMs: dur * 430, curve: 2.4,
+    partials: [[1, 1], [2.4, 0.3], [4.1, 0.1]],
+    lowpassHz: 1500,
+  });
+
   const tap = buf(n);
   const bp = new Biquad(bandpassCoeffs(freq, q));
-  const env = envelope({ dur, attackMs, decayMs: dur * decayK, curve: 2.3, releaseMs: dur * 400 });
+  const env = envelope({ dur: dur * 0.8, attackMs, decayMs: dur * decayK, curve: 2.4, releaseMs: dur * 340 });
   for (let i = 0; i < n; i++) tap[i] = bp.process(white(rng)) * env(i);
-
-  const desk = tone({ dur: dur * 0.7, f0: deskHz, f1: deskHz * 0.7, attackMs: 5.5, decayMs: dur * 450, curve: 2.4, lowpassHz: 600 });
 
   const grainN = Math.round(0.008 * SR);
   const grain = buf(grainN);
@@ -1326,11 +1470,12 @@ function typingTick({ seed, dur, freq, deskHz, q = 1.4, attackMs = 6, decayK = 6
   const gEnv = envelope({ dur: grainN / SR, attackMs: 2.8, decayMs: 5.5, curve: 2.4 });
   for (let i = 0; i < grainN; i++) grain[i] = glp.process(white(rng)) * gEnv(i) * grainAmp;
 
-  const dry = layer(tap, grain);
-  mixInto(dry, desk, 0, deskGain);
+  const dry = buf(n);
+  mixInto(dry, body, 0, 1);
+  mixInto(dry, tap, 0, tapGain);
+  mixInto(dry, grain, 0);
 
   return voice(dry, {
-    compressor: { thresholdDb: -26, ratio: 2.2, attackMs: 8, releaseMs: 160 },
     eq: { highShelfDb: -8, lidHz: 4600, lowShelfDb: 2.6 },
     room: { tailMs: 55, wet: 0.16, size: 0.4, damp: 1900, wetLowpassHz: 2000 },
   });
@@ -1384,7 +1529,6 @@ function chimeHour({ seed, dur, f0, brightness }) {
   mixInto(out, hammer, 0);
 
   return voice(out, {
-    compressor: { thresholdDb: -26, ratio: 2, attackMs: 24, releaseMs: 500 },
     eq: { highShelfDb: -9, lidHz: 4200, lowShelfDb: 1.8, presenceDb: -4 },
     room: { tailMs: 1100, wet: 0.3, size: 1.6, damp: 1600, wetLowpassHz: 1900, predelayMs: 18 },
   });
@@ -1659,10 +1803,13 @@ const SOUNDS = [
   { name: 'book-pull-4', peakDb: -8, weight: 'full', render: () => bookPull({ seed: 4245, dur: 0.47, fLo: 165, fHi: 590, grip: 0.36, thumpAmp: 0.9 }) },
 
   /* putting one back — 4 variants -------------------------------------- */
-  { name: 'book-return', peakDb: -10, weight: 'plain', render: () => bookReturn({ seed: 2424, dur: 0.4, fHi: 560, fLo: 190, thumpAmp: 0.6 }) },
-  { name: 'book-return-2', peakDb: -10, weight: 'full', render: () => bookReturn({ seed: 2425, dur: 0.48, fHi: 610, fLo: 175, thumpAmp: 0.7 }) },
-  { name: 'book-return-3', peakDb: -10.5, weight: 'plain', render: () => bookReturn({ seed: 2426, dur: 0.36, fHi: 520, fLo: 205, thumpAmp: 0.5 }) },
-  { name: 'book-return-4', peakDb: -10, weight: 'full', render: () => bookReturn({ seed: 2427, dur: 0.45, fHi: 590, fLo: 185, thumpAmp: 0.66 }) },
+  // frictionGain/settleHz/settleGain are what keep these four apart now that
+  // the friction layer no longer dominates: -2 is a long slide that barely
+  // settles, -4 a shorter arrival that lands on a much higher note.
+  { name: 'book-return', peakDb: -10, weight: 'plain', render: () => bookReturn({ seed: 2424, dur: 0.4, fHi: 560, fLo: 190, thumpAmp: 0.6, frictionGain: 0.72, settleHz: 84, settleGain: 0.46 }) },
+  { name: 'book-return-2', peakDb: -10, weight: 'full', render: () => bookReturn({ seed: 2425, dur: 0.5, fHi: 620, fLo: 172, thumpAmp: 0.72, frictionGain: 0.92, settleHz: 70, settleGain: 0.3 }) },
+  { name: 'book-return-3', peakDb: -10.5, weight: 'plain', render: () => bookReturn({ seed: 2426, dur: 0.36, fHi: 520, fLo: 205, thumpAmp: 0.5, frictionGain: 0.62, settleHz: 96, settleGain: 0.55 }) },
+  { name: 'book-return-4', peakDb: -10, weight: 'full', render: () => bookReturn({ seed: 2427, dur: 0.43, fHi: 585, fLo: 196, thumpAmp: 0.64, frictionGain: 0.76, settleHz: 92, settleGain: 0.5 }) },
 
   /* camera moves — 3 variants, all whisper-quiet ------------------------ */
   { name: 'shelf-whoosh', peakDb: -20, weight: 'plain', render: () => shelfWhoosh({ seed: 7001, dur: 0.42, peakHz: 520 }) },
@@ -1716,12 +1863,12 @@ const SOUNDS = [
   { name: 'ambient-crickets', peakDb: -21, weight: 'full', fadeInMs: 5, fadeOutMs: 5, render: ambientCrickets },
 
   /* keystrokes — 6 variants ------------------------------------------------ */
-  { name: 'typing-tick-1', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 71, dur: 0.088, freq: 680, deskHz: 145, q: 1.5, attackMs: 6, decayK: 500, deskGain: 0.28, grainAmp: 0.26 }) },
-  { name: 'typing-tick-2', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 72, dur: 0.082, freq: 900, deskHz: 205, q: 1.2, attackMs: 5.5, decayK: 620, grainAmp: 0.34, deskGain: 0.3 }) },
-  { name: 'typing-tick-3', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 73, dur: 0.11, freq: 540, deskHz: 165, q: 1.6, attackMs: 7, decayK: 800, grainAmp: 0.24, deskGain: 0.58 }) },
-  { name: 'typing-tick-4', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 74, dur: 0.08, freq: 790, deskHz: 185, q: 1.1, attackMs: 5.5, decayK: 540, grainAmp: 0.3, deskGain: 0.26 }) },
-  { name: 'typing-tick-5', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 75, dur: 0.106, freq: 610, deskHz: 222, q: 1.7, attackMs: 7.5, decayK: 820, grainAmp: 0.22, deskGain: 0.6 }) },
-  { name: 'typing-tick-6', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 76, dur: 0.076, freq: 1000, deskHz: 240, q: 1.0, attackMs: 5, decayK: 580, grainAmp: 0.36, deskGain: 0.3 }) },
+  { name: 'typing-tick-1', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 71, dur: 0.088, freq: 680, deskHz: 145, q: 1.5, attackMs: 6, decayK: 500, tapGain: 0.42, grainAmp: 0.2 }) },
+  { name: 'typing-tick-2', peakDb: -20, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 72, dur: 0.082, freq: 900, deskHz: 205, q: 1.2, attackMs: 5.5, decayK: 620, grainAmp: 0.26, tapGain: 0.5 }) },
+  { name: 'typing-tick-3', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 73, dur: 0.11, freq: 540, deskHz: 165, q: 1.6, attackMs: 7, decayK: 800, grainAmp: 0.18, tapGain: 0.3 }) },
+  { name: 'typing-tick-4', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 74, dur: 0.08, freq: 790, deskHz: 185, q: 1.1, attackMs: 5.5, decayK: 540, grainAmp: 0.24, tapGain: 0.46 }) },
+  { name: 'typing-tick-5', peakDb: -20, weight: 'full', fadeOutMs: 12, render: () => typingTick({ seed: 75, dur: 0.106, freq: 610, deskHz: 222, q: 1.7, attackMs: 7.5, decayK: 820, grainAmp: 0.16, tapGain: 0.28 }) },
+  { name: 'typing-tick-6', peakDb: -20.5, weight: 'plain', fadeOutMs: 12, render: () => typingTick({ seed: 76, dur: 0.076, freq: 1000, deskHz: 240, q: 1.0, attackMs: 5, decayK: 580, grainAmp: 0.28, tapGain: 0.54 }) },
 
   /* the hour — 3 variants --------------------------------------------------- */
   { name: 'chime-hour', peakDb: -14, weight: 'full', fadeOutMs: 120, render: () => chimeHour({ seed: 360360, dur: 5, f0: 329.63, brightness: 0.85 }) },
@@ -1844,9 +1991,11 @@ const reportLines = [
   'format: 44100 Hz / 16-bit / mono PCM WAV',
   '',
   'Every sound is 3-6 layered elements (body / transient / texture / air / tail),',
-  'each with its own envelope and filter, bussed through a 2.4:1 soft-knee',
-  'compressor, a warm EQ (3 kHz presence dip + high shelf cut + lowpass lid)',
-  'and a short dark FDN reverb. Attacks are raised-cosine, never linear.',
+  'each with its own envelope and filter, bussed through a warm EQ (3 kHz',
+  'presence dip + high shelf cut + lowpass lid) and a short dark 8-line',
+  'Hadamard FDN reverb. Attacks are raised-cosine, never linear. There is no',
+  'compressor anywhere in the chain: the only dynamics stage is a single',
+  'time-invariant soft-saturation curve, so nothing can pump or breathe.',
   '',
   'centroid = spectral centroid (lower = warmer).  >4k = share of energy above',
   '4 kHz (lower = less harsh).  atk = time to half-peak envelope (higher = softer).',

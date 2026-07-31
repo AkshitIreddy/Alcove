@@ -100,14 +100,14 @@ async function openBook(page: Page): Promise<void> {
 }
 
 test.describe('library themes on the real shelf', () => {
-  test('each of the eight rooms redresses the case differently', async ({ page }) => {
+  test('each of the four rooms really recolours the case', async ({ page }) => {
     test.slow();
     await gotoShelfQa(page);
     const lib = bridge(page);
     await lib.seed(['Field Notes', 'The Long Hall', 'Marginalia', 'Ink & Ash']);
     await waitForRoom(page, 'athenaeum');
 
-    const ids = ['athenaeum', 'observatory', 'conservatory', 'sakura'] as const;
+    const ids = ['athenaeum', 'blossom', 'reef', 'apothecary'] as const;
     const shots: Record<string, Buffer> = {};
     for (const id of ids) {
       await lib.setPrefs({ theme: id });
@@ -115,7 +115,8 @@ test.describe('library themes on the real shelf', () => {
       shots[id] = await page.screenshot({ type: 'png' });
     }
 
-    // No two rooms may read as the same room recoloured.
+    // A theme is a colour scheme now, and the whole point of this pass is that
+    // it reaches the screen: same shapes, different paint, everywhere.
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
         const a = shots[ids[i] as string] as Buffer;
@@ -126,31 +127,24 @@ test.describe('library themes on the real shelf', () => {
     }
   });
 
-  test('wall finish and wallpaper are independent of the room', async ({ page }) => {
+  test('the retired wall controls are ignored, not resurrected', async ({ page }) => {
     await gotoShelfQa(page);
     const lib = bridge(page);
     await waitForRoom(page, 'athenaeum');
-    const papered = await page.screenshot({ type: 'png' });
 
-    // Cottage case, constellation paper in midnight, boarded wall — a mix no
-    // theme ships with. The key must record all three independently.
+    // wallpaperPattern / colourway / backdrop / wallDepth were four pickers for
+    // a wall that is one flat fill. A blob still carrying them must load as a
+    // plain room pick and leave nothing behind.
     await lib.setPrefs({
-      theme: 'cottage',
+      theme: 'reef',
       wallpaperPattern: 'constellation',
       colourway: 'midnight',
       backdrop: 'boarded',
+      wallDepth: 0.9,
     });
-    await waitForRoom(page, 'cottage');
-    const key = await lib.libraryKey();
-    expect(key).toBe('cottage|constellation|midnight|boarded');
-    const remixed = await page.screenshot({ type: 'png' });
-    expect(await screenDiffRatio(page, papered, remixed)).toBeGreaterThan(0.2);
-
-    // "as built" clears the overrides and returns the room's own dressing.
-    await lib.setPrefs({ wallpaperPattern: null, colourway: null, backdrop: null });
-    await expect
-      .poll(() => lib.libraryKey(), { timeout: 45_000 })
-      .not.toBe('cottage|constellation|midnight|boarded');
+    await waitForRoom(page, 'reef');
+    expect(await lib.prefs()).toEqual({ theme: 'reef' });
+    expect(await lib.libraryKey()).not.toContain('constellation');
   });
 });
 
@@ -209,9 +203,9 @@ test.describe('the Book Studio', () => {
       ).toBeAttached();
     }
 
-    // The library tab paints eight theme cards from the real case art.
+    // The library tab paints four room cards from the real case art.
     await page.getByRole('tab', { name: 'this library' }).click();
-    await expect(page.locator('.nb-theme-card')).toHaveCount(8);
+    await expect(page.locator('.nb-theme-card')).toHaveCount(4);
     await expect
       .poll(
         () =>
@@ -222,8 +216,11 @@ test.describe('the Book Studio', () => {
         { timeout: 30_000, message: 'a theme card never baked' },
       )
       .toBeGreaterThan(100);
-    await expect(page.getByRole('group', { name: 'Wall finish' })).toBeVisible();
+    // One control, and a legend for what it changed. The wall-finish and
+    // wallpaper rows are gone: they were pickers over a flat fill.
+    await expect(page.getByRole('group', { name: 'Wall finish' })).toHaveCount(0);
     await expect(page.getByRole('group', { name: 'Library theme' })).toBeVisible();
+    await expect(page.getByRole('img', { name: /palette$/ })).toBeVisible();
   });
 
   test('picking a theme card redresses the shelf', async ({ page }) => {
@@ -232,20 +229,20 @@ test.describe('the Book Studio', () => {
     await openBook(page);
     await page.locator('[data-tool="customize"]').click();
     await page.getByRole('tab', { name: 'this library' }).click();
-    await expect(page.locator('.nb-theme-card')).toHaveCount(8);
+    await expect(page.locator('.nb-theme-card')).toHaveCount(4);
 
-    await page.locator('.nb-theme-card', { hasText: 'Moonlit' }).click();
+    await page.locator('.nb-theme-card', { hasText: 'Coral Reef' }).click();
     await expect
       .poll(() => bridge(page).prefs().then((p) => p?.theme ?? null), {
         timeout: 30_000,
         message: 'the theme pick never reached the store',
       })
-      .toBe('observatory');
+      .toBe('reef');
 
     await page.locator('.nb-rail-panel-close').first().click();
     await page.getByRole('button', { name: 'shelf', exact: true }).click();
     await expect(page.locator('canvas.shelf-canvas')).toBeVisible({ timeout: 45_000 });
-    await waitForRoom(page, 'observatory');
+    await waitForRoom(page, 'reef');
   });
 });
 

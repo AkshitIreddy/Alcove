@@ -182,11 +182,11 @@ export const COLOURWAYS: Readonly<Record<ColourwayId, Colourway>> = {
   jungle: {
     id: 'jungle',
     name: 'Volcano Jungle',
-    base: '#c2561c',
-    baseAlt: '#ad4718',
-    ink: 'rgba(24, 74, 36, 0.18)',
-    inkSoft: 'rgba(24, 74, 36, 0.1)',
-    accent: 'rgba(86, 208, 118, 0.38)',
+    base: '#1f7a44',
+    baseAlt: '#1a6a3a',
+    ink: 'rgba(6, 46, 24, 0.4)',
+    inkSoft: 'rgba(6, 46, 24, 0.22)',
+    accent: 'rgba(255, 182, 62, 0.5)',
   },
   bubblegum: {
     id: 'bubblegum',
@@ -1437,6 +1437,49 @@ const circuitTrace: WallpaperPattern = {
       ctx.arc(cx - 9, cy - 5, 1.6, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    // A meshed gear pair ghosted into the board, teeth meshing at the pitch
+    // point — the workshop's signature hiding between the traces.
+    const gx = rnd() * size;
+    const gy = rnd() * size;
+    stamp(size, gx, gy, 30, (cx, cy) => {
+      ctx.strokeStyle = cw.inkSoft;
+      ctx.lineWidth = 1.4;
+      const gear = (x: number, y: number, r: number, teeth: number, phase: number): void => {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let t = 0; t < teeth; t++) {
+          const a = phase + (t / teeth) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+          ctx.lineTo(x + Math.cos(a) * (r + 4), y + Math.sin(a) * (r + 4));
+          ctx.stroke();
+        }
+      };
+      gear(cx - 8, cy - 5, 10, 9, 0.1);
+      gear(cx + 9, cy + 8, 7, 7, 0.55);
+    });
+
+    // A high-voltage tag: bolt in a rounded warning plate.
+    const vx = rnd() * size;
+    const vy = rnd() * size;
+    stamp(size, vx, vy, 18, (cx, cy) => {
+      ctx.strokeStyle = cw.accent;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(cx + 2, cy - 9);
+      ctx.lineTo(cx - 4, cy + 1);
+      ctx.lineTo(cx, cy + 1);
+      ctx.lineTo(cx - 2, cy + 9);
+      ctx.lineTo(cx + 4, cy - 1);
+      ctx.lineTo(cx, cy - 1);
+      ctx.closePath();
+      ctx.stroke();
+    });
   },
 };
 
@@ -1510,6 +1553,62 @@ const fernFootprint: WallpaperPattern = {
         ctx.restore();
       });
     }
+
+    // Fossils pressed into the jungle floor: one coiled ammonite per tile,
+    // chamber ribs ticking across the outer whorl like a museum imprint.
+    const fx = rnd() * size;
+    const fy = rnd() * size;
+    stamp(size, fx, fy, 38, (cx, cy) => {
+      ctx.strokeStyle = cw.inkSoft;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      let rr = 1.2;
+      let a = rnd() * Math.PI * 2;
+      ctx.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      for (let s = 0; s < 42; s++) {
+        a += 0.4;
+        rr *= 1.088;
+        ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.92);
+      }
+      ctx.stroke();
+      // Chamber ribs on the outer whorl.
+      rr = 1.2;
+      a -= 42 * 0.4;
+      for (let s = 0; s < 42; s++) {
+        a += 0.4;
+        rr *= 1.088;
+        if (s > 28 && s % 3 === 0) {
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * rr * 0.8, cy + Math.sin(a) * rr * 0.74);
+          ctx.lineTo(cx + Math.cos(a) * rr * 1.02, cy + Math.sin(a) * rr * 0.94);
+          ctx.stroke();
+        }
+      }
+    });
+
+    // A half-buried ribcage: spine with five curved ribs, dig-site graffiti.
+    const bx = rnd() * size;
+    const by = rnd() * size;
+    const bAng = rnd() * Math.PI;
+    stamp(size, bx, by, 34, (cx, cy) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(bAng);
+      ctx.strokeStyle = cw.inkSoft;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(-20, 0);
+      ctx.lineTo(20, 0);
+      ctx.stroke();
+      for (let rib = 0; rib < 5; rib++) {
+        const rx = -14 + rib * 7;
+        ctx.beginPath();
+        ctx.moveTo(rx, 0);
+        ctx.quadraticCurveTo(rx + 2, 9 + Math.sin(rib) * 1.5, rx - 2, 16);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
 
     // Accent motif: one amber drop with a trapped speck.
     const ax = rnd() * size;
@@ -1609,6 +1708,28 @@ const peppermintStripe: WallpaperPattern = {
         ctx.stroke();
       }
     });
+
+    // Gumdrops: soft sugar-crusted domes in the mint accent.
+    for (let i = 0; i < 3; i++) {
+      const dx = rnd() * size;
+      const dy = rnd() * size;
+      stamp(size, dx, dy, 12, (cx, cy) => {
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = cw.accent;
+        ctx.beginPath();
+        ctx.moveTo(cx - 6, cy + 4);
+        ctx.quadraticCurveTo(cx - 6.5, cy - 5.5, cx, cy - 6.5);
+        ctx.quadraticCurveTo(cx + 6.5, cy - 5.5, cx + 6, cy + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+        for (const [ox, oy] of [[-2.4, -2.4], [2, -3.4], [0.2, -0.6], [3.4, 0.8], [-3.6, 1.6]] as const) {
+          ctx.fillRect(cx + ox, cy + oy, 1.2, 1.2);
+        }
+      });
+    }
   },
 };
 
@@ -1704,6 +1825,55 @@ const reefBubble: WallpaperPattern = {
         });
       }
     }
+
+    // Fish: a loose school of coral-bright silhouettes swimming through the
+    // kelp, each with a forked tail and a punched-out eye.
+    for (let i = 0; i < 3; i++) {
+      const x = rnd() * size;
+      const y = rnd() * size;
+      const dir = rnd() < 0.5 ? 1 : -1;
+      const sc = 0.75 + rnd() * 0.5;
+      stamp(size, x, y, 18, (cx, cy) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(dir * sc, sc);
+        ctx.fillStyle = cw.accent;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 9, 4.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-8, 0);
+        ctx.lineTo(-14.5, -4.6);
+        ctx.lineTo(-12.4, 0);
+        ctx.lineTo(-14.5, 4.6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = cw.base;
+        ctx.beginPath();
+        ctx.arc(5, -1, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    // One little seahorse per tile, curled tail and all.
+    const hx2 = rnd() * size;
+    const hy2 = rnd() * size;
+    stamp(size, hx2, hy2, 16, (cx, cy) => {
+      ctx.strokeStyle = cw.ink;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(cx + 2, cy - 9);
+      ctx.quadraticCurveTo(cx - 5, cy - 9, cx - 5, cy - 4);
+      ctx.quadraticCurveTo(cx - 5, cy - 1, cx - 2, cy - 0.5);
+      ctx.quadraticCurveTo(cx + 1, cy + 3, cx + 0.5, cy + 7);
+      ctx.quadraticCurveTo(cx + 0.2, cy + 11, cx - 3, cy + 10);
+      ctx.stroke();
+      ctx.fillStyle = cw.ink;
+      ctx.beginPath();
+      ctx.arc(cx + 1.4, cy - 7.4, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    });
   },
 };
 

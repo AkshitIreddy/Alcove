@@ -3,10 +3,12 @@
  *
  * - Inside Tauri: `@tauri-apps/plugin-sql` against `sqlite:notebook.db`
  *   (schema/migrations are registered on the Rust side in src-tauri/src/lib.rs).
- * - Outside Tauri (plain `vite` in a browser): an in-memory stub implementing
- *   the same `select`/`execute` surface, so the UI runs in dev without Rust.
- *   The stub understands the small SQL dialect the repos in this directory
- *   actually use and degrades to empty results (never throws) on anything else.
+ * - Outside Tauri (plain `vite` in a browser): a stub implementing the same
+ *   `select`/`execute` surface, so the UI runs in dev without Rust. The stub
+ *   understands the small SQL dialect the repos in this directory actually
+ *   use and degrades to empty results (never throws) on anything else. Its
+ *   tables persist to localStorage, so a book created in the browser survives
+ *   a reload just like it does on the real SQLite file.
  */
 
 /** Must stay in sync with `DB_URL` in src-tauri/src/lib.rs. */
@@ -43,6 +45,27 @@ async function loadTauriDb(): Promise<Db> {
 // ---------------------------------------------------------------------------
 // In-memory stub (browser dev only)
 // ---------------------------------------------------------------------------
+
+/**
+ * localStorage key holding the browser stub's tables. Versioned so a future
+ * dialect change can abandon an old blob instead of misreading it.
+ */
+export const STUB_STORAGE_KEY = 'notebook.stubdb.v1';
+
+/**
+ * The stub persists only where a real Web Storage implementation exists
+ * (browser dev, Playwright). In node — the unit-test environment — there is
+ * no localStorage, so the stub stays purely in-memory and tests keep their
+ * fresh-module isolation.
+ */
+function stubStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    // Accessing localStorage can itself throw (denied storage). Never throw.
+    return null;
+  }
+}
 
 type SqlRow = Record<string, unknown>;
 type Predicate = (row: SqlRow) => boolean;
@@ -153,8 +176,51 @@ function sortRows(rows: SqlRow[], orderBy: string): SqlRow[] {
   });
 }
 
-class MemoryDb implements Db {
+export class MemoryDb implements Db {
   private readonly tables = new Map<string, SqlRow[]>();
+
+  constructor() {
+    const storage = stubStorage();
+    if (storage === null) return;
+    try {
+      const raw = storage.getItem(STUB_STORAGE_KEY);
+      if (raw === null) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return;
+      }
+      for (const [table, rows] of Object.entries(parsed)) {
+        if (!/^\w+$/.test(table) || !Array.isArray(rows)) continue;
+        this.tables.set(
+          table,
+          rows.filter(
+            (row): row is SqlRow =>
+              row !== null && typeof row === 'object' && !Array.isArray(row),
+          ),
+        );
+      }
+    } catch {
+      // A corrupt or unreadable blob means "start empty", never a crash.
+    }
+  }
+
+  /**
+   * Write every table back to localStorage after a mutation. Immediate (not
+   * debounced) on purpose: the blob is small in dev and a reload must never
+   * lose the book that was created a frame ago.
+   */
+  private persist(): void {
+    const storage = stubStorage();
+    if (storage === null) return;
+    try {
+      const out: Record<string, SqlRow[]> = {};
+      for (const [table, rows] of this.tables) out[table] = rows;
+      storage.setItem(STUB_STORAGE_KEY, JSON.stringify(out));
+    } catch {
+      // Quota or denied storage: the session still works, it just won't
+      // survive a reload — exactly the pre-persistence behavior.
+    }
+  }
 
   select<T>(query: string, bindValues: unknown[] = []): Promise<T> {
     return Promise.resolve(this.runSelect(query, bindValues) as T);
@@ -224,9 +290,11 @@ class MemoryDb implements Db {
       if (existing >= 0) {
         if (!orReplace) return { rowsAffected: 0 }; // PK conflict: no-op in dev
         rows[existing] = row;
+        this.persist();
         return { rowsAffected: 1 };
       }
       rows.push(row);
+      this.persist();
       return { rowsAffected: 1 };
     }
 
@@ -250,6 +318,7 @@ class MemoryDb implements Db {
         for (const a of assignments) row[a.col] = a.value;
         affected += 1;
       }
+      if (affected > 0) this.persist();
       return { rowsAffected: affected };
     }
 
@@ -274,6 +343,7 @@ class MemoryDb implements Db {
           this.rows(cascade.child).filter((r) => !removedKeys.has(r[cascade.fk])),
         );
       }
+      if (removed.length > 0) this.persist();
       return { rowsAffected: removed.length };
     }
 

@@ -61,8 +61,12 @@ export function isThemeId(value: unknown): value is ThemeId {
  * v3: six colourful worlds (blossom · robot · dino · candy · reef · voyager),
  *     Blossom Grove becomes the default, and the original eight get a
  *     saturation pass — every palette, wallpaper colourway and light rig.
+ * v4: creative-motif redo of every room except the grove — deeper contrast
+ *     ramps, story-telling light rigs, re-coloured walls (jungle green for
+ *     the dig, strawberry cream for the shop, lagoon blue for the reef) and
+ *     a richer wallpaper pass (fish, planets, sprinkles, fossils, moons).
  */
-export const THEME_RECIPE_VERSION = 3;
+export const THEME_RECIPE_VERSION = 4;
 
 /* ================================= wood ================================== */
 
@@ -767,10 +771,10 @@ const BLOSSOM: LibraryTheme = {
 const ROBOT: LibraryTheme = {
   id: 'robot',
   name: 'Robot Workshop',
-  blurb: 'Brushed steel, cherry-red enamel and LED strips humming cyan and magenta.',
+  blurb: 'Cherry-red enamel over navy steel, cyan LEDs and an amber bench lamp.',
   wood: {
-    light: '#d6e2ee',
-    dark: '#5a6b7c',
+    light: '#c7d8e8',
+    dark: '#2c3a48',
     grain: 'brushed',
     ringFreq: 1.8,
     ringGamma: 1,
@@ -778,10 +782,10 @@ const ROBOT: LibraryTheme = {
     across: 0.09,
     knots: 0,
     streaks: 14,
-    contrast: 0.7,
+    contrast: 0.8,
     finish: 'metal',
-    sheen: 0.82,
-    paint: { colour: '#e03040', shade: '#9c1626', chipping: 0.22, opacity: 0.93 },
+    sheen: 0.85,
+    paint: { colour: '#d81f36', shade: '#8e1122', chipping: 0.14, opacity: 0.94 },
   },
   joinery: {
     kind: 'hex-bolt',
@@ -823,13 +827,13 @@ const ROBOT: LibraryTheme = {
   backdrops: ['papered', 'panelled', 'boarded'],
   light: {
     pools: [
-      { x: 0.14, y: 0.2, radius: 0.44, colour: '#3ce8ff', intensity: 0.5, drift: 5 },
-      { x: 0.86, y: 0.66, radius: 0.4, colour: '#ff45c8', intensity: 0.44, drift: 5 },
-      { x: 0.52, y: 0.02, radius: 0.5, colour: '#ffe08a', intensity: 0.36, drift: 8 },
+      { x: 0.13, y: 0.16, radius: 0.48, colour: '#38ecff', intensity: 0.56, drift: 5 },
+      { x: 0.87, y: 0.64, radius: 0.42, colour: '#ff45c8', intensity: 0.48, drift: 5 },
+      { x: 0.52, y: 0.0, radius: 0.52, colour: '#ffcf6a', intensity: 0.4, drift: 8 },
     ],
-    ambient: { colour: '#7ad8ff', amount: 0.16 },
-    rim: { colour: '#8ff6ff', width: 2.6, intensity: 0.6 },
-    vignette: { amount: 0.42, colour: '#101c2c' },
+    ambient: { colour: '#5fcfff', amount: 0.17 },
+    rim: { colour: '#8ff6ff', width: 2.8, intensity: 0.64 },
+    vignette: { amount: 0.46, colour: '#0a141f' },
     driftSeconds: 26,
     flicker: 0.14,
     shafts: false,
@@ -855,10 +859,10 @@ const ROBOT: LibraryTheme = {
 const DINO: LibraryTheme = {
   id: 'dino',
   name: 'Dino Dig',
-  blurb: 'Jungle green and hot amber, giant fossil bones and a volcano sunset.',
+  blurb: 'Amber timber against jungle green, fossil bones and volcano sunset light.',
   wood: {
-    light: '#d08c38',
-    dark: '#5c3212',
+    light: '#d69340',
+    dark: '#46260a',
     grain: 'knotty',
     ringFreq: 2.8,
     ringGamma: 1.5,
@@ -866,7 +870,7 @@ const DINO: LibraryTheme = {
     across: 0.044,
     knots: 3.6,
     streaks: 8,
-    contrast: 1.05,
+    contrast: 1.08,
     finish: 'matte',
     sheen: 0.3,
   },
@@ -910,13 +914,13 @@ const DINO: LibraryTheme = {
   backdrops: ['papered', 'boarded', 'plastered'],
   light: {
     pools: [
-      { x: 0.5, y: 0.98, radius: 0.78, colour: '#ff7a1f', intensity: 0.56, drift: 6 },
-      { x: 0.12, y: 0.1, radius: 0.46, colour: '#ffd257', intensity: 0.38, drift: 8 },
-      { x: 0.9, y: 0.3, radius: 0.46, colour: '#4fd06a', intensity: 0.36, drift: 5 },
+      { x: 0.5, y: 0.98, radius: 0.78, colour: '#ff7a1f', intensity: 0.58, drift: 6 },
+      { x: 0.12, y: 0.1, radius: 0.46, colour: '#ffd257', intensity: 0.4, drift: 8 },
+      { x: 0.9, y: 0.3, radius: 0.46, colour: '#4fd06a', intensity: 0.38, drift: 5 },
     ],
-    ambient: { colour: '#ff8a2e', amount: 0.16 },
-    rim: { colour: '#ffd08a', width: 2.2, intensity: 0.4 },
-    vignette: { amount: 0.44, colour: '#2c1406' },
+    ambient: { colour: '#ffb03e', amount: 0.16 },
+    rim: { colour: '#ffd08a', width: 2.2, intensity: 0.5 },
+    vignette: { amount: 0.44, colour: '#16230a' },
     driftSeconds: 30,
     flicker: 0.08,
     shafts: false,
@@ -961,7 +965,7 @@ const CANDY: LibraryTheme = {
     contrast: 0.5,
     finish: 'gloss',
     sheen: 0.8,
-    paint: { colour: '#ff74b3', shade: '#d63f8c', chipping: 0.05, opacity: 0.94 },
+    paint: { colour: '#ff5f9e', shade: '#c22f7c', chipping: 0.05, opacity: 0.94 },
   },
   joinery: {
     kind: 'candy-stud',
@@ -1005,11 +1009,11 @@ const CANDY: LibraryTheme = {
     pools: [
       { x: 0.3, y: 0.08, radius: 0.66, colour: '#fffbe0', intensity: 0.5, drift: 8 },
       { x: 0.78, y: 0.6, radius: 0.46, colour: '#b8ffe8', intensity: 0.34, drift: 6 },
-      { x: 0.5, y: 1, radius: 0.44, colour: '#ffd9f0', intensity: 0.3, drift: 4 },
+      { x: 0.5, y: 1, radius: 0.44, colour: '#ffd9f0', intensity: 0.32, drift: 4 },
     ],
     ambient: { colour: '#ffd6ea', amount: 0.1 },
     rim: { colour: '#ffffff', width: 2.2, intensity: 0.5 },
-    vignette: { amount: 0.16, colour: '#b0567f' },
+    vignette: { amount: 0.18, colour: '#a33d74' },
     driftSeconds: 32,
     flicker: 0,
     shafts: false,
@@ -1097,7 +1101,7 @@ const REEF: LibraryTheme = {
     pools: [
       { x: 0.3, y: -0.06, radius: 0.62, colour: '#c8fbff', intensity: 0.54, drift: 10 },
       { x: 0.72, y: -0.02, radius: 0.5, colour: '#a6f0ff', intensity: 0.42, drift: 12 },
-      { x: 0.5, y: 0.9, radius: 0.44, colour: '#ff9c7a', intensity: 0.24, drift: 5 },
+      { x: 0.5, y: 0.9, radius: 0.44, colour: '#ff9c7a', intensity: 0.3, drift: 5 },
     ],
     ambient: { colour: '#2fd3d8', amount: 0.18 },
     rim: { colour: '#dcffff', width: 2.4, intensity: 0.46 },
@@ -1280,9 +1284,9 @@ const ATHENAEUM: LibraryTheme = {
       { x: 0.26, y: 0.16, radius: 0.44, colour: '#ffd070', intensity: 0.6, drift: 10 },
       { x: 0.78, y: 0.52, radius: 0.38, colour: '#ffbe62', intensity: 0.42, drift: 7 },
     ],
-    ambient: { colour: '#ffcf7a', amount: 0.16 },
+    ambient: { colour: '#ffc76a', amount: 0.17 },
     rim: null,
-    vignette: { amount: 0.46, colour: '#3a2a18' },
+    vignette: { amount: 0.46, colour: '#241708' },
     driftSeconds: 34,
     flicker: 0,
     shafts: false,
@@ -1321,7 +1325,7 @@ const CONSERVATORY: LibraryTheme = {
     contrast: 0.6,
     finish: 'painted',
     sheen: 0.22,
-    paint: { colour: '#6fbf78', shade: '#2f8a52', chipping: 0.55, opacity: 0.94 },
+    paint: { colour: '#5cb96b', shade: '#247a45', chipping: 0.55, opacity: 0.94 },
   },
   joinery: {
     kind: 'mitre',
@@ -1368,7 +1372,7 @@ const CONSERVATORY: LibraryTheme = {
     ],
     ambient: { colour: '#9fe6a8', amount: 0.15 },
     rim: { colour: '#f4fff2', width: 2.5, intensity: 0.3 },
-    vignette: { amount: 0.22, colour: '#4c5a48' },
+    vignette: { amount: 0.24, colour: '#2e4030' },
     driftSeconds: 46,
     flicker: 0,
     shafts: false,
@@ -1485,7 +1489,7 @@ const COTTAGE: LibraryTheme = {
   blurb: 'Honey pine, knots and knitting — warm and thoroughly lived in.',
   wood: {
     light: '#f5c877',
-    dark: '#bd7a2c',
+    dark: '#a5641e',
     grain: 'knotty',
     ringFreq: 2.6,
     ringGamma: 1.4,
@@ -1493,7 +1497,7 @@ const COTTAGE: LibraryTheme = {
     across: 0.042,
     knots: 4.2,
     streaks: 6,
-    contrast: 0.9,
+    contrast: 0.92,
     finish: 'matte',
     sheen: 0.28,
   },
@@ -1542,7 +1546,7 @@ const COTTAGE: LibraryTheme = {
     ],
     ambient: { colour: '#ffc98a', amount: 0.16 },
     rim: { colour: '#fff0d2', width: 2, intensity: 0.26 },
-    vignette: { amount: 0.34, colour: '#7a5334' },
+    vignette: { amount: 0.36, colour: '#5e3a20' },
     driftSeconds: 40,
     flicker: 0,
     shafts: false,
@@ -1716,11 +1720,11 @@ const SAKURA: LibraryTheme = {
   light: {
     pools: [
       { x: 0.5, y: 0.3, radius: 0.95, colour: '#fff2dc', intensity: 0.46, drift: 3 },
-      { x: 0.2, y: 0.82, radius: 0.44, colour: '#ffd6e4', intensity: 0.28, drift: 2 },
+      { x: 0.2, y: 0.82, radius: 0.44, colour: '#ffc6da', intensity: 0.34, drift: 2 },
     ],
     ambient: { colour: '#ffe4d0', amount: 0.11 },
     rim: { colour: '#fffaf2', width: 1.6, intensity: 0.22 },
-    vignette: { amount: 0.14, colour: '#8c7f6c' },
+    vignette: { amount: 0.16, colour: '#7c6a58' },
     driftSeconds: 60,
     flicker: 0,
     shafts: false,
@@ -1899,7 +1903,7 @@ const APOTHECARY: LibraryTheme = {
     ],
     ambient: { colour: '#ff9f22', amount: 0.2 },
     rim: { colour: '#ffdc9a', width: 2, intensity: 0.4 },
-    vignette: { amount: 0.52, colour: '#331a0c' },
+    vignette: { amount: 0.52, colour: '#2a1408' },
     driftSeconds: 30,
     flicker: 0.18,
     shafts: false,

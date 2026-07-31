@@ -1,10 +1,39 @@
 /**
  * art/flora.ts — the flora & growth system (docs/design/library-themes.md §3).
  *
- * "The thing that makes a shelf feel alive." Ten species grow on the case
- * itself — over rail tops, out of joint gaps, down from shelf undersides,
- * across crowns and into corners — all deterministic per
- * `(floorIndex, anchorId, themeSeed)` and all baked once into ImageBitmaps.
+ * "The thing that makes a shelf feel alive." The flora on the reference
+ * painting is flowering VINES: they climb the side rails, hang from the
+ * crown, trail along the bottom rail. This module grows exactly that.
+ *
+ * ## The growth model (why it no longer reads as lettuce)
+ *
+ * Painted foliage reads as real when it has a skeleton, clumps AND gaps, a
+ * scale hierarchy and a value range. Every specimen here is grown as:
+ *
+ *   1. **Vine skeleton** — a seeded climbing/hanging/trailing path anchored
+ *      at the shelf edge, woody at the base and tapering to the tip, with
+ *      side shoots and curling tendrils. The stem is drawn and stays visible
+ *      in the gaps between leaf knots.
+ *   2. **Leaves instanced at nodes** — a bare-streak/leafy-streak state
+ *      machine walks the skeleton, so foliage arrives in clumps separated by
+ *      bare internodes, never as a uniform rosette. Leaves near the interior
+ *      are small and dark (TIER_BACK); a few large heroes (TIER_LIT) stand
+ *      proud of the silhouette and catch the rim light.
+ *   3. **Inflorescences at nodes** — flowers arrive as rare focal clusters
+ *      of 3–7 varied blossoms with buds, each on its own pedicel, half
+ *      cupped by bract leaves. Never an even scatter of dots.
+ *   4. **Value discipline** — the draw lays down the near-black interior
+ *      mass first, the skeleton over it, then mid foliage, then lit rims and
+ *      backlit heroes. The `LightRig` drives every grading decision.
+ *
+ * ## Drawing = stamp instancing (why it is fast)
+ *
+ * Leaves are painted ONCE per (shape, palette tone, tier) into small
+ * offscreen canvases — the **leaf-stamp cache** — with full vector richness
+ * (gradients, veins, rim light, nibbled margins). Specimens then instance
+ * them with `drawImage` transforms. Bake canvases are CPU-resident
+ * (`willReadFrequently`), so this is both richer and dramatically cheaper
+ * than re-running a vector pipeline per leaf.
  *
  * Three layers, in order:
  *
@@ -12,7 +41,8 @@
  *      what scale, and returns placements with honest world-space bounds.
  *      No canvas, no DOM: safe to run in a worker or a unit test.
  *   2. **Grow**  `growFlora()` — turns a placement into `FloraGeometry`
- *      (stems, leaves, blooms, threads, pots, tags) in anchor-local coords.
+ *      (vines, leaf instances, bloom clusters, threads) in anchor-local
+ *      coords. Pure and DOM-free.
  *   3. **Draw**  `drawFlora()` / `renderFloraSprite()` / `bakeFloraLayer()` —
  *      Canvas2D rendering of that geometry, once, into a sprite.
  *
@@ -25,8 +55,8 @@
  *   - `enforceKeepOut()` → shrinks, then drops, any placement that would
  *     reach into one. `planFlora({ keepOut })` runs it for you.
  *
- * Bounds are deliberately conservative (leaves are bounded by a circle of
- * radius `leafBoundRadius`), so a placement that passes keep-out has margin.
+ * Bounds are deliberately conservative (leaves are bounded by a circle
+ * covering the whole blade), so a placement that passes keep-out has margin.
  */
 
 import { clamp, lerp, mulberry32, seededNoise1D, fnv1a, type RandomFn } from './noise';
@@ -40,6 +70,7 @@ import {
   leafBoundRadius,
   traceSmooth,
   traceTapered,
+  type LeafPaint,
   type LeafShape,
   type Pt,
 } from './leaves';
@@ -48,7 +79,7 @@ import { blowOut, keyToSource, rgbaToCss, type LightRig } from './lighting';
 import { getGranulationTile, type Canvas2D, type Ctx2D } from './spines';
 
 /** Bump when the growth model or drawing changes — invalidates baked sprites. */
-export const FLORA_RECIPE_VERSION = 4;
+export const FLORA_RECIPE_VERSION = 5;
 
 /**
  * Flora is decoration: the shelf compositor drops the whole layer below this
@@ -121,17 +152,14 @@ export const DENSITY_COVERAGE: Record<FloraDensity, number> = {
 /**
  * How many specimens pile onto ONE accepted anchor.
  *
- * This is the lever that was missing. Coverage alone can only ever produce
- * "one sprig per rail", and a single sprig is what made the old shelf read as
- * sprinkled decoration. A lush anchor now grows a **clump** — 2–4 specimens
- * fanned along the anchor's run at different scales and depths, which is what
- * turns individual plants into the *masses* the art direction asks for
- * (docs/design/painterly-art-direction.md §4).
+ * A lush anchor grows a **clump** — 2–3 specimens fanned along the anchor's
+ * run at different scales and depths, which is what turns individual plants
+ * into the *masses* the art direction asks for. (Four read as wallpaper.)
  */
 export const DENSITY_CLUMP: Record<FloraDensity, [number, number]> = {
   none: [0, 0],
   sparse: [1, 2],
-  lush: [2, 4],
+  lush: [2, 3],
 };
 
 /**
@@ -257,7 +285,7 @@ export const TIER_LIT: FloraTier = 2;
 
 export type FloraFacing = 'up' | 'down' | 'left' | 'right';
 
-/** A spot on the case that flora may grow from. `id` must be stable. */
+/** A spot on the case that flora may take hold. `id` must be stable. */
 export interface FloraAnchor {
   /** Stable identifier — part of the seed, so it must not change per frame. */
   id: string;
@@ -265,12 +293,18 @@ export interface FloraAnchor {
   /** Attachment point, world px (the shelf compositor's coordinate space). */
   x: number;
   y: number;
-  /** Primary growth direction. Defaults per `kind` (see `defaultFacing`). */
+  /** Primary growth direction. Defaults per `kind` (see `speciesFacing`). */
   facing?: FloraFacing;
   /** Mirror the growth laterally. Default: derived from the seed. */
   flip?: boolean;
   /** Run available along the anchor in px (rail width, gap width…). */
   run?: number;
+  /**
+   * Compositional weight, 0–1, supplied by the floor planner: how strongly
+   * this anchor participates in the frame around the book field. Edge and
+   * corner anchors weigh ~1, mid-field anchors near 0. Omit ⇒ 1 (neutral).
+   */
+  weight?: number;
 }
 
 /**
@@ -286,9 +320,9 @@ export type ToneTuple = readonly [number, number, number];
  * summer garden), so `{}` is still a perfectly good palette.
  *
  * Species do NOT own absolute colours: each declares a small delta off a role
- * (see `SPECIES_TINT`). That is what lets "Coral Reef" repaint every plant on
- * the shelf into weed-teal and coral-pink while ivy, pothos and hearts stay
- * recognisably different plants from each other.
+ * (see `VineRecipe.toneDelta`). That is what lets "Coral Reef" repaint every
+ * plant on the shelf into weed-teal and coral-pink while ivy, pothos and
+ * hearts stay recognisably different plants from each other.
  */
 export type FloraToneRole =
   /** Trailing vines and general foliage. */
@@ -376,35 +410,59 @@ export interface Tone {
   l: number;
 }
 
-export interface StemGeom {
+/**
+ * How a vine carries itself off its anchor:
+ *  - `climb`   — up the side of the case, hugging the vertical;
+ *  - `hang`    — spilling over an edge and draping downward;
+ *  - `trail`   — running horizontally along a plank or rail;
+ *  - `upright` — standing up out of a surface (fronds, pot plants).
+ */
+export type VineHabit = 'climb' | 'hang' | 'trail' | 'upright';
+
+/**
+ * One vine: the skeleton everything else hangs from. `pts` runs base → tip;
+ * `widths` tapers from woody base to fresh tip. Drawn as a tapered ribbon and
+ * deliberately left visible in the gaps between leaf clumps.
+ */
+export interface VineGeom {
   pts: Pt[];
   widths: number[];
   tone: Tone;
   /** 0 = green shoot, 1 = woody branch (drawn browner, harder-edged). */
   woody: number;
+  habit: VineHabit;
   /** Depth tier. Default `TIER_MID`. */
   tier?: FloraTier;
-  /** Draw bark striations along the length. Set on the thick woody stems. */
+  /** Draw bark striations along the length. Set on the thick woody vines. */
   bark?: boolean;
 }
 
-export interface LeafGeom {
+/**
+ * One instanced leaf. Geometry only — the pixels live in the leaf-stamp
+ * cache, keyed by (shape, palette tone bucket, tier). `x/y` is the petiole
+ * attachment on (or just off) the vine skeleton; the blade extends `len` px
+ * along `angle`.
+ */
+export interface LeafInstance {
   x: number;
   y: number;
   angle: number;
+  /** Blade length, world px. */
   len: number;
+  /** Blade full width, world px (bounds + stamp aspect). */
   width: number;
+  /** Stamp family — the leaf shape vocabulary of `leaves.ts`. */
   shape: LeafShape;
-  bend: number;
-  curl: number;
-  tone: Tone;
-  /** Variegated (pale-streaked) leaf — pothos and some herbs. */
+  /** Stamp variant index within the family's cached set. */
+  stamp: number;
+  /** Mirror the blade across its own axis (hand-drawn asymmetry). */
+  flip: boolean;
+  /** Variegated (pale-streaked) blade — pothos and the odd dry grass blade. */
   pale: boolean;
+  tone: Tone;
+  /** Depth tier — always explicit on instances. */
+  tier: FloraTier;
   seed: number;
-  /** Depth tier. Default `TIER_MID`. */
-  tier?: FloraTier;
-  /** 0–1 nibbled/torn margin. A canopy with no damage looks manufactured. */
-  damage?: number;
 }
 
 export type BloomKind =
@@ -437,6 +495,20 @@ export interface BloomGeom {
   angle?: number;
   /** Petal count override (rosettes want 8–13, blossoms 5). */
   petals?: number;
+}
+
+/**
+ * A focal point of flowers at one skeleton node: 3–7 blooms of varied radius
+ * (one hero, mid blooms, buds), each carried on its own pedicel back to the
+ * node. This is the unit that replaced "popcorn": flowers never appear singly
+ * scattered — they arrive as a small bouquet half-cupped by foliage.
+ */
+export interface BloomCluster {
+  /** The node heart the pedicels spring from (anchor-local). */
+  x: number;
+  y: number;
+  blooms: BloomGeom[];
+  pedicels: ThreadGeom[];
 }
 
 export interface ThreadGeom {
@@ -499,14 +571,14 @@ export interface MoundGeom {
 }
 
 export interface FloraGeometry {
-  stems: StemGeom[];
-  leaves: LeafGeom[];
-  blooms: BloomGeom[];
+  vines: VineGeom[];
+  leaves: LeafInstance[];
+  clusters: BloomCluster[];
   threads: ThreadGeom[];
-  pots: PotGeom[];
-  tags: TagGeom[];
   shades: ShadeGeom[];
   mounds: MoundGeom[];
+  pots: PotGeom[];
+  tags: TagGeom[];
   ink: string;
   /** Anchor-local bounding box (add the anchor position for world space). */
   bounds: Rect;
@@ -519,37 +591,23 @@ export function floraSeed(floorIndex: number, anchorId: string, themeSeed: numbe
   return fnv1a(`flora|${FLORA_RECIPE_VERSION}|${floorIndex}|${anchorId}|${themeSeed >>> 0}`);
 }
 
-/* ============================= species table ============================== */
-
-interface SpeciesDef {
-  id: FloraSpeciesId;
-  label: string;
-  /** Anchor kinds this species can grow from. */
-  anchors: readonly FloraAnchorKind[];
-  /** Scale range picked per specimen. */
-  scale: [number, number];
-  /** Nominal untransformed footprint width, used to fit `anchor.run`. */
-  nominalW: number;
-  grow: (gr: Grow) => void;
-}
+/* ============================== colour roles ============================== */
 
 /** Human-readable species names (settings UI, debug boards). */
 export const FLORA_LABELS: Record<FloraSpeciesId, string> = {
-  ivy: 'ivy trail',
-  pothos: 'pothos trail',
+  ivy: 'ivy vine',
+  pothos: 'pothos vine',
   moss: 'moss tuft',
   fern: 'fern frond',
   herbBundle: 'hanging herb bundle',
-  blossom: 'blossom branch',
-  hearts: 'string-of-hearts trail',
+  blossom: 'flowering vine',
+  hearts: 'string-of-hearts vine',
   potted: 'small potted plant',
   grassTuft: 'grass & dandelion tuft',
   cobweb: 'cobweb',
 };
 
 const DEFAULT_INK = 'hsl(112 34% 18%)';
-
-/* ============================== colour roles ============================== */
 
 /**
  * The default world: a summer garden in full colour. These are the numbers a
@@ -757,22 +815,10 @@ interface Grow {
   flip: number;
   pal: FloraPalette;
   g: FloraGeometry;
-  /**
-   * Depth tier everything emitted right now belongs to. Species functions set
-   * this as they build back→front; the emitters stamp it onto each element.
-   */
-  tier: FloraTier;
-}
-
-/** Run `body` with the grower temporarily on a different depth tier. */
-function onTier(gr: Grow, tier: FloraTier, body: () => void): void {
-  const prev = gr.tier;
-  gr.tier = tier;
-  try {
-    body();
-  } finally {
-    gr.tier = prev;
-  }
+  /** The anchor kind this specimen took hold of (habit resolution). */
+  anchorKind: FloraAnchorKind;
+  /** Resolved facing (post `speciesFacing`). */
+  facing: FloraFacing;
 }
 
 function tone(gr: Grow, h: number, s: number, l: number): Tone {
@@ -806,9 +852,9 @@ function variance(gr: Grow, fallback = 9): number {
 }
 
 /**
- * One flower's colour off the branch's petal tone. Most keep the hue and
+ * One flower's colour off the recipe's petal tone. Most keep the hue and
  * jitter around it; `paleChance` of them open near-white, which is what a
- * real cherry branch does and what stops a mass of blossom reading as one
+ * real cherry branch does and what stops a cluster of blossom reading as one
  * flat pink blob.
  */
 function petalTone(gr: Grow, petal: Tone, paleChance: number): Tone {
@@ -847,1503 +893,1105 @@ export function paletteKey(pal: FloraPalette): string {
     const v = pal[role];
     if (v) parts.push(`${role}${v[0]},${v[1]},${v[2]}`);
   }
-  return parts.join('/');
+  return parts.join('|');
 }
 
-/** Potting soil, derived from the palette's wood so it never clashes. */
-function soilTone(gr: Grow): [number, number, number] {
-  const t = roleTone(gr, 'wood', [4, -14, -6]);
-  return [t.h, t.s, t.l];
-}
-
-/** Uniform in [a, b). */
+/** Random in `[a, b)`. */
 function rr(gr: Grow, a: number, b: number): number {
   return a + gr.rnd() * (b - a);
 }
 
-/**
- * Contact shadow where growth meets wood. Every species that touches the case
- * lays one down: it is the single cheapest thing that stops a specimen from
- * looking like a sticker pasted on top of the shelf.
- *
- * `spread` is the half-width of the contact patch in *unscaled* px; the shade
- * is squashed along the growth axis so it hugs the surface, and offset a hair
- * along the facing direction so the plant sits *in front of* its own shadow.
- */
-function contactShade(gr: Grow, spread: number, alpha = 0.3, x = 0): void {
-  const s = gr.scale;
-  const down = Math.sin(gr.dir) >= 0 ? 1 : -1;
-  gr.g.shades.push({
-    x,
-    y: down * 0.8 * s,
-    rx: spread * s,
-    ry: Math.max(1.6, spread * 0.17) * s,
-    alpha,
-  });
+/** Random integer in `[a, b]` inclusive. */
+function rri(gr: Grow, a: number, b: number): number {
+  return a + Math.floor(gr.rnd() * (b - a + 1));
 }
 
-interface StemParams {
-  x: number;
-  y: number;
-  angle: number;
-  len: number;
-  width: number;
-  /** Tip width as a fraction of the base width. */
-  taper?: number;
-  /** 0 = ignores gravity, 1 = falls straight down within a few steps. */
-  gravity?: number;
-  /** Per-step angular noise amplitude (radians). */
-  wobble?: number;
-  woody?: number;
-  tone: Tone;
-  step?: number;
-  /** Draw bark striations. Only worth it above ~3px. */
-  bark?: boolean;
-  /** Override the current tier. */
-  tier?: FloraTier;
+/** Smallest signed difference between two angles. */
+function angleDelta(target: number, from: number): number {
+  return Math.atan2(Math.sin(target - from), Math.cos(target - from));
 }
+
+/* ============================ the vine recipe ============================= */
 
 /**
- * Grow one wobbled, gravity-aware stem. The spine is a random walk in *angle*
- * (simplex, so it curves rather than jitters) with a pull toward straight
- * down — that single term is what makes trails droop and blades arc.
+ * Everything that makes one species grow differently from another, expressed
+ * as numbers on the shared vine engine. No per-species draw code: ivy,
+ * pothos, hearts, blossom, moss, fern, herbs and pot plants are all the same
+ * skeleton + instanced leaves + rare clustered flowers, parameterised.
  */
-function growStem(gr: Grow, p: StemParams): StemGeom {
-  const step = p.step ?? 4;
-  const n = Math.max(2, Math.round(p.len / step));
-  const taper = p.taper ?? 0.3;
-  const gravity = p.gravity ?? 0;
-  const wobble = p.wobble ?? 0.05;
-  const phase = gr.rnd() * 400;
-
-  let a = p.angle;
-  let x = p.x;
-  let y = p.y;
-  const pts: Pt[] = [{ x, y }];
-  const widths: number[] = [p.width];
-
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    a += gr.noise(phase + i * 0.42) * wobble;
-    if (gravity > 0) {
-      const raw = Math.PI / 2 - a;
-      const d = Math.atan2(Math.sin(raw), Math.cos(raw));
-      a += clamp(d, -0.45, 0.45) * gravity;
-    }
-    x += Math.cos(a) * step;
-    y += Math.sin(a) * step;
-    pts.push({ x, y });
-    widths.push(Math.max(0.4, p.width * lerp(1, taper, t)));
-  }
-
-  const stem: StemGeom = {
-    pts,
-    widths,
-    tone: p.tone,
-    woody: p.woody ?? 0,
-    tier: p.tier ?? gr.tier,
-    bark: p.bark ?? p.width > 3.4,
-  };
-  gr.g.stems.push(stem);
-  return stem;
-}
-
-/** Tangent angle of a stem at index i. */
-function stemAngle(stem: StemGeom, i: number): number {
-  const a = stem.pts[Math.max(0, i - 1)] as Pt;
-  const b = stem.pts[Math.min(stem.pts.length - 1, i + 1)] as Pt;
-  return Math.atan2(b.y - a.y, b.x - a.x);
-}
-
-interface LeafParams {
-  shape: LeafShape | readonly LeafShape[];
-  /** Arclength between leaves (or leaf pairs), px. */
-  every: number;
-  len: number;
-  width: number;
-  /** Splay from the stem tangent, radians. */
-  splay: number;
-  paired?: boolean;
-  from?: number;
-  to?: number;
-  tone: Tone;
-  hueJitter?: number;
-  /** Relative leaf size at the stem tip (the taper the doc asks for). */
-  sizeTaper?: number;
-  /**
-   * `taper` (default) shrinks linearly toward the tip. `frond` uses a fern's
-   * envelope: short pinnae at the base, longest around a third of the way up,
-   * shrinking to nothing at the tip.
-   */
-  sizeProfile?: 'taper' | 'frond';
-  /** Per-leaf random size spread, ± this fraction. Default 0.17. */
-  sizeJitter?: number;
-  /**
-   * Signed bend pushed into every blade, as a fraction of leaf length. Fern
-   * pinnae and grass all sweep the same way; random-only bend reads as noise.
-   */
-  bendBias?: number;
-  curlChance?: number;
-  paleChance?: number;
-  /** Probability a leaf is an older, darker one. */
-  darkChance?: number;
-  /**
-   * How many leaves are emitted at each station. >1 builds a *rosette* at the
-   * node instead of a single blade — the difference between a strand of beads
-   * and an actual leafy shoot.
-   */
-  perNode?: number;
-  /** Probability a leaf has a bite taken out of it. Default 0.16. */
-  damageChance?: number;
-  /**
-   * Tier assignment. `'spread'` (default) puts roughly a third of the blades
-   * behind, a third mid and a third in front, which is what creates depth
-   * inside one mass. `'fixed'` keeps whatever tier the grower is on.
-   */
-  tiers?: 'spread' | 'fixed';
-  /** Weight of the back tier when spreading. Default 0.3. */
-  backWeight?: number;
-  /** Weight of the lit tier when spreading. Default 0.28. */
-  litWeight?: number;
-}
-
-/**
- * Alternate (or pair) leaves along a stem at jittered angles and sizes,
- * tapering toward the tip, with occasional curled/darker older leaves.
- */
-function leafify(gr: Grow, stem: StemGeom, p: LeafParams): void {
-  const from = p.from ?? 0.1;
-  const to = p.to ?? 0.98;
-  const sizeTaper = p.sizeTaper ?? 0.45;
-  const hueJitter = p.hueJitter ?? 9;
-  const curlChance = p.curlChance ?? 0.16;
-  const darkChance = p.darkChance ?? 0.18;
-  const paleChance = p.paleChance ?? 0;
-  const shapes: readonly LeafShape[] = Array.isArray(p.shape)
-    ? (p.shape as readonly LeafShape[])
-    : [p.shape as LeafShape];
-
-  let acc = 0;
-  let next = p.every * rr(gr, 0.45, 0.9);
-  let side = gr.rnd() < 0.5 ? 1 : -1;
-  const n = stem.pts.length;
-
-  for (let i = 1; i < n; i++) {
-    const a = stem.pts[i - 1] as Pt;
-    const b = stem.pts[i] as Pt;
-    acc += Math.hypot(b.x - a.x, b.y - a.y);
-    const t = i / (n - 1);
-    if (t < from || t > to || acc < next) continue;
-    acc = 0;
-    next = p.every * rr(gr, 0.72, 1.3);
-
-    const tangent = stemAngle(stem, i);
-    const jit = p.sizeJitter ?? 0.17;
-    const envelope =
-      p.sizeProfile === 'frond'
-        ? // Peaks around t≈0.3 and closes to `sizeTaper` at the tip.
-          lerp(sizeTaper, 1, Math.pow(Math.sin(Math.PI * Math.pow(clamp(t, 0, 1), 0.62)), 0.85))
-        : lerp(1, sizeTaper, t);
-    const size = envelope * rr(gr, 1 - jit, 1 + jit);
-    const sides = p.paired ? [1, -1] : [side];
-    const perNode = Math.max(1, Math.round(p.perNode ?? 1));
-    const spreadTiers = (p.tiers ?? 'spread') === 'spread';
-    const backW = p.backWeight ?? 0.3;
-    const litW = p.litWeight ?? 0.28;
-    for (const s of sides) {
-      for (let k = 0; k < perNode; k++) {
-        const dark = gr.rnd() < darkChance;
-        const curl = gr.rnd() < curlChance ? rr(gr, 0.28, 0.62) : 0;
-        // Tier drives value as well as draw order: a blade in the back tier
-        // is *painted* darker and flatter, which is what stops a dense mass
-        // from turning into one undifferentiated green slab.
-        let tier: FloraTier = gr.tier;
-        if (spreadTiers) {
-          const u = gr.rnd();
-          tier = u < backW ? TIER_BACK : u < 1 - litW ? TIER_MID : TIER_LIT;
-        }
-        // The reference's darks are genuinely dark. -17 lightness left the
-        // back tier still reading as bright foliage; -30 with the saturation
-        // pulled out of it is what turns it into shape rather than object.
-        const tierL = tier === TIER_BACK ? -30 : tier === TIER_LIT ? 9 : 0;
-        const tierS = tier === TIER_BACK ? -22 : tier === TIER_LIT ? 4 : 0;
-        // Temperature shift: lit foliage goes warm/yellow, shade goes cool.
-        const tierH = tier === TIER_BACK ? 16 : tier === TIER_LIT ? -13 : 0;
-        const lt: Tone = {
-          h: p.tone.h + (gr.rnd() * 2 - 1) * hueJitter + tierH,
-          s: clamp(p.tone.s + (gr.rnd() * 2 - 1) * 11 - (dark ? 6 : 0) + tierS, 0, 100),
-          l: clamp(p.tone.l + (gr.rnd() * 2 - 1) * 9 - (dark ? 11 : 0) + tierL, 0, 100),
-        };
-        // Extra blades at a node fan around the primary one and shrink a
-        // little, so the node reads as a shoot rather than a starburst.
-        const fan = perNode > 1 ? ((k + 0.5) / perNode - 0.5) * 1.45 : 0;
-        const shrink = perNode > 1 ? 1 - Math.abs(fan) * 0.3 : 1;
-        // Back-tier blades sit slightly deeper into the stem so the mass has
-        // a real interior instead of a fringe.
-        const inset = tier === TIER_BACK ? -2.2 : tier === TIER_LIT ? 1.4 : 0;
-        gr.g.leaves.push({
-          x: b.x + Math.cos(tangent) * inset,
-          y: b.y + Math.sin(tangent) * inset,
-          angle: tangent + s * gr.flip * (p.splay + fan + (gr.rnd() * 2 - 1) * 0.3),
-          len: p.len * size * shrink,
-          width: p.width * size * shrink,
-          shape: shapes[Math.floor(gr.rnd() * shapes.length) as number] ?? 'oval',
-          bend:
-            ((gr.rnd() * 2 - 1) * 0.16 + s * gr.flip * (p.bendBias ?? 0)) * p.len * size,
-          curl,
-          tone: lt,
-          pale: gr.rnd() < paleChance,
-          seed: (gr.rnd() * 0xffffffff) >>> 0,
-          tier,
-          damage: gr.rnd() < (p.damageChance ?? 0.16) ? rr(gr, 0.25, 0.8) : 0,
-        });
-      }
-    }
-    if (!p.paired) side = -side;
-  }
-}
-
-/* ---------------------------- mass primitives ---------------------------- */
-
-/**
- * A **flower cluster**: 5–15 blooms packed into a soft blob with real
- * variation in size, openness, tone and kind (§4 — "flower clusters of 5–15
- * blooms with visible centres and layered petals").
- *
- * The old code scattered one 5px blossom per twig, which is why the user saw
- * "flowers barely on shelf". A cluster instead owns a patch of the canvas:
- * buds and back-tier blooms first, the big open lit ones last and on top.
- */
-interface ClusterParams {
-  x: number;
-  y: number;
-  /** Radius of the patch the blooms are packed into, px. */
-  spread: number;
-  /** Bloom radius range, px. 20–40px flowers ⇒ r 10–20. */
-  r: [number, number];
-  count: [number, number];
-  tone: Tone;
-  /** Fraction that open near-white. */
-  paleChance?: number;
-  /** Fraction that stay closed buds. */
-  budChance?: number;
-  /** Kinds allowed in this cluster. */
-  kinds?: readonly BloomKind[];
-  /** Squash the patch along y (a raceme is tall, an umbel is flat). */
-  squash?: number;
-  /** Rotation of the whole patch. */
-  angle?: number;
-  petals?: number;
-}
-
-function growCluster(gr: Grow, p: ClusterParams): void {
-  const n = Math.round(rr(gr, p.count[0], p.count[1]));
-  const kinds = p.kinds ?? ['blossom'];
-  const squash = p.squash ?? 1;
-  const rot = p.angle ?? 0;
-  const paleChance = p.paleChance ?? 0.24;
-  const budChance = p.budChance ?? 0.22;
-
-  interface Placed {
-    x: number;
-    y: number;
-    r: number;
-    tier: FloraTier;
-    open: number;
-    kind: BloomKind;
-    tone: Tone;
-    seed: number;
-    angle: number;
-  }
-  const placed: Placed[] = [];
-  for (let i = 0; i < n; i++) {
-    // Dart-throwing: a few tries to find a spot not sitting on top of an
-    // existing bloom. Slight overlap is fine and desirable; concentric is not.
-    let bx = 0;
-    let by = 0;
-    let br = rr(gr, p.r[0], p.r[1]);
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const a = gr.rnd() * Math.PI * 2;
-      const rad = p.spread * Math.sqrt(gr.rnd());
-      const cx = Math.cos(a) * rad;
-      const cy = Math.sin(a) * rad * squash;
-      bx = p.x + cx * Math.cos(rot) - cy * Math.sin(rot);
-      by = p.y + cx * Math.sin(rot) + cy * Math.cos(rot);
-      let clear = true;
-      for (const q of placed) {
-        if (Math.hypot(q.x - bx, q.y - by) < (q.r + br) * 0.52) {
-          clear = false;
-          break;
-        }
-      }
-      if (clear) break;
-      br *= 0.94;
-    }
-    // Depth inside the cluster: the small tight ones sit behind.
-    const u = gr.rnd();
-    const tier: FloraTier = u < 0.3 ? TIER_BACK : u < 0.72 ? TIER_MID : TIER_LIT;
-    const bud = gr.rnd() < budChance;
-    if (bud) br *= 0.62;
-    const tierL = tier === TIER_BACK ? -14 : tier === TIER_LIT ? 6 : 0;
-    const base = petalTone(gr, p.tone, paleChance);
-    placed.push({
-      x: bx,
-      y: by,
-      r: tier === TIER_BACK ? br * 0.82 : tier === TIER_LIT ? br * 1.12 : br,
-      tier,
-      open: bud ? rr(gr, 0.08, 0.3) : rr(gr, 0.62, 1),
-      kind: bud ? 'bud' : (kinds[Math.floor(gr.rnd() * kinds.length)] as BloomKind),
-      tone: { h: base.h, s: base.s, l: clamp(base.l + tierL, 0, 100) },
-      seed: (gr.rnd() * 0xffffffff) >>> 0,
-      angle: gr.dir + (gr.rnd() * 2 - 1) * 0.9,
-    });
-  }
-  // Back to front, so the renderer's stable sort keeps cluster depth intact.
-  placed.sort((a, b) => a.tier - b.tier);
-  for (const q of placed) {
-    gr.g.blooms.push({
-      x: q.x,
-      y: q.y,
-      r: q.r,
-      kind: q.kind,
-      open: q.open,
-      tone: q.tone,
-      seed: q.seed,
-      tier: q.tier,
-      angle: q.angle,
-      petals: p.petals,
-    });
-  }
-}
-
-/**
- * A **foliage mass**: several strands radiating from one origin, whose leaves
- * are spaced *closer together than they are long* so the blades overlap into
- * a continuous canopy. This one function is the difference between the old
- * "sprinkled leaves" and the reference's solid drifts of foliage.
- */
-interface MassParams {
-  /** Number of strands. */
-  strands: [number, number];
-  /** Strand length range, unscaled px. */
+interface VineRecipe {
+  /** How many vines sprout from the anchor point. */
+  vines: [number, number];
+  /** Vine path length, px at scale 1 (before `Grow.scale`). */
   len: [number, number];
-  /** Base stem width, unscaled px — the spec asks for 3–6. */
-  width: number;
-  /** Angular half-spread of the fan off `gr.dir`, radians. */
-  fan: number;
-  /** Lateral spread of the strand origins, unscaled px. */
-  originSpread: number;
-  gravity: number;
-  wobble: number;
-  shape: LeafShape | readonly LeafShape[];
-  /** Leaf length range, unscaled px — the spec asks for 25–60. */
+  /** Average internode step, px at scale 1. */
+  step: number;
+  /** Stem width at the base, px at scale 1. */
+  width: [number, number];
+  /** 0 = green shoot … 1 = fully woody (bark, brown, harder edge). */
+  woody: number;
+  /** Habit when the resolved facing is up / down. */
+  habitUp: VineHabit;
+  habitDown: VineHabit;
+  /** Anchor kinds that force a horizontal trail along the plank. */
+  trailOn?: readonly FloraAnchorKind[];
+  /** Weighted leaf-shape pick, `[shape, weight]`. */
+  shapes: readonly (readonly [LeafShape, number])[];
+  /** Blade length range, px at scale 1. */
   leafLen: [number, number];
-  /** Leaf width as a fraction of its length. */
-  leafAspect: number;
-  /**
-   * Node spacing as a fraction of leaf length. **Below 1 the leaves overlap**,
-   * which is the entire point; 0.5–0.7 gives a proper canopy.
-   */
-  overlap: number;
-  splay: number;
-  tone: Tone;
-  stemTone: Tone;
-  perNode?: number;
-  paleChance?: number;
-  curlChance?: number;
-  sizeTaper?: number;
-  sizeJitter?: number;
-  bendBias?: number;
-  /** Sub-branches per strand. */
-  branches?: number;
-  woody?: number;
-  bark?: boolean;
+  /** Leaves per leafy node (1–2 alternate; exactly 2 when `opposite`). */
+  perNode: [number, number];
+  /** Opposite leaf pairs at a node (string-of-hearts, fern pinnae). */
+  opposite?: boolean;
+  /** Leafy-streak length in nodes, then a bare streak — clumps AND gaps. */
+  clumpRun: [number, number];
+  gapRun: [number, number];
+  /** Chance a leaf falls back into the dark interior tier. */
+  backChance: number;
+  /** Rim-lit hero leaves per vine. */
+  heroes: [number, number];
+  /** Expected side shoots per vine (0–2 in practice). */
+  branches: number;
+  /** Expected curling tendrils near the tip. */
+  tendrils: number;
+  /** Leaf angle off the stem, radians. */
+  splay: [number, number];
+  /** Per-step heading wobble, radians. */
+  curve: number;
+  /** Variegated blade chance. */
+  pale?: number;
+  /** Colour role + species character delta. */
+  role: FloraToneRole;
+  toneDelta: ToneTuple;
+  /** Flowers, when the species blooms. */
+  flowers?: {
+    kinds: readonly BloomKind[];
+    /** Roll per leafy clump. */
+    chance: number;
+    /** Hard cap per vine — flowers stay rare and focal. */
+    maxPerVine: number;
+    /** Hero blossom radius, px at scale 1. */
+    size: [number, number];
+    /** Near-white blossom chance. */
+    pale: number;
+    role: FloraToneRole;
+  };
 }
 
-function growMass(gr: Grow, m: MassParams): StemGeom[] {
-  const s = gr.scale;
-  const count = Math.round(rr(gr, m.strands[0], m.strands[1]));
-  const out: StemGeom[] = [];
-  for (let i = 0; i < count; i++) {
-    // Fan the strands, but jitter so they are not a neat protractor.
-    const u = count === 1 ? 0 : (i / (count - 1)) * 2 - 1;
-    const lean = u * m.fan * rr(gr, 0.7, 1.2) + (gr.rnd() * 2 - 1) * 0.12;
-    // Longest strand in the middle, shorter at the edges — the silhouette of
-    // a real cascade rather than a comb.
-    const lenScale = lerp(0.62, 1, 1 - Math.abs(u) * 0.75) * rr(gr, 0.85, 1.15);
-    const strandLen = rr(gr, m.len[0], m.len[1]) * s * lenScale;
-    const w = m.width * s * rr(gr, 0.82, 1.2) * lerp(0.7, 1, 1 - Math.abs(u) * 0.5);
-    const stem = growStem(gr, {
-      x: u * m.originSpread * s * rr(gr, 0.6, 1.15),
-      y: (gr.rnd() * 2 - 1) * 2 * s,
-      angle: gr.dir + gr.flip * lean,
-      len: strandLen,
-      width: w,
-      taper: 0.3,
-      gravity: m.gravity,
-      wobble: m.wobble,
-      woody: m.woody ?? 0,
-      bark: m.bark ?? w > 3.4,
-      tone: m.stemTone,
-      step: 5,
-    });
-    out.push(stem);
+/* ============================= the vine engine ============================ */
 
-    const leafLen = rr(gr, m.leafLen[0], m.leafLen[1]) * s;
-    const params: LeafParams = {
-      shape: m.shape,
-      // THE line that makes a mass: spacing derived from leaf size, < 1.
-      every: leafLen * m.overlap,
-      len: leafLen,
-      width: leafLen * m.leafAspect,
-      splay: m.splay,
-      tone: m.tone,
-      hueJitter: variance(gr, 11),
-      perNode: m.perNode ?? 1,
-      paleChance: m.paleChance ?? 0,
-      curlChance: m.curlChance ?? 0.14,
-      sizeTaper: m.sizeTaper ?? 0.5,
-      sizeJitter: m.sizeJitter ?? 0.3,
-      bendBias: m.bendBias ?? 0,
-      from: 0.05,
-    };
-    leafify(gr, stem, params);
-
-    // Sub-branches keep the mass from reading as a comb of parallel strands.
-    const nb = m.branches ?? 1;
-    for (let b = 0; b < nb; b++) {
-      if (gr.rnd() < 0.3) continue;
-      const at = Math.floor(stem.pts.length * rr(gr, 0.2, 0.68));
-      const q = stem.pts[at] as Pt;
-      const br = growStem(gr, {
-        x: q.x,
-        y: q.y,
-        angle: stemAngle(stem, at) + (gr.rnd() < 0.5 ? -1 : 1) * rr(gr, 0.42, 1),
-        len: strandLen * rr(gr, 0.35, 0.62),
-        width: w * 0.6,
-        taper: 0.3,
-        gravity: m.gravity * 1.2,
-        wobble: m.wobble * 1.25,
-        woody: m.woody ?? 0,
-        tone: m.stemTone,
-        step: 5,
-      });
-      leafify(gr, br, {
-        ...params,
-        len: params.len * 0.82,
-        width: params.width * 0.82,
-        every: params.every * 0.86,
-      });
-      out.push(br);
-    }
-  }
-  return out;
-}
-
-/**
- * A dark under-mass: a few big flat silhouette blades sitting behind
- * everything else, giving the canopy something to be *in front of*. Cheap —
- * a dozen flat fills — and it is what reads as depth from three feet away.
- */
-function growUnderMass(
-  gr: Grow,
-  count: number,
-  radius: number,
-  leafLen: number,
-  tone: Tone,
-  shape: LeafShape | readonly LeafShape[],
-): void {
-  const s = gr.scale;
-  const shapes: readonly LeafShape[] = Array.isArray(shape)
-    ? (shape as readonly LeafShape[])
-    : [shape as LeafShape];
-  for (let i = 0; i < count; i++) {
-    const a = gr.dir + (gr.rnd() * 2 - 1) * 1.5;
-    const rad = radius * s * Math.sqrt(gr.rnd());
-    const len = leafLen * s * rr(gr, 0.85, 1.35);
-    gr.g.leaves.push({
-      x: Math.cos(a) * rad,
-      y: Math.sin(a) * rad,
-      angle: a + (gr.rnd() * 2 - 1) * 0.8,
-      len,
-      width: len * rr(gr, 0.62, 0.95),
-      shape: shapes[Math.floor(gr.rnd() * shapes.length) as number] ?? 'oval',
-      bend: (gr.rnd() * 2 - 1) * len * 0.14,
-      curl: 0,
-      tone: {
-        h: tone.h + (gr.rnd() * 2 - 1) * 8,
-        s: clamp(tone.s - 12, 0, 100),
-        l: clamp(tone.l - rr(gr, 18, 26), 0, 100),
-      },
-      pale: false,
-      seed: (gr.rnd() * 0xffffffff) >>> 0,
-      tier: TIER_BACK,
-      damage: 0,
-    });
-  }
-}
-
-/* --------------------------- trailing species ---------------------------- */
-
-/**
- * The three trailing vines, rebuilt to the reference standard.
- *
- * Every number here moved in the same direction: **stems 3–6px** instead of
- * 1–3, **leaves 28–58px** instead of 10–26, node spacing derived from leaf
- * length at `overlap < 1` so blades cover each other, and 3–6 strands per
- * specimen instead of one. A single ivy specimen now paints roughly eight
- * times the area it used to, which is what "foliage occupies ~30% of the
- * frame" actually requires.
- */
-const TRAILS: Record<'ivy' | 'pothos' | 'hearts', MassParams & { role: FloraToneRole; tint: ToneTuple; underMass?: number; berries?: boolean }> = {
-  ivy: {
-    // English ivy: the darkest, bluest-green of the three, big palmate hands.
-    role: 'leaf',
-    tint: [-4, -2, -2],
-    strands: [4, 7],
-    len: [150, 235],
-    width: 4.2,
-    fan: 0.95,
-    originSpread: 13,
-    gravity: 0.2,
-    wobble: 0.06,
-    shape: ['palmate', 'lobed', 'lobed'],
-    leafLen: [30, 52],
-    leafAspect: 1.06,
-    overlap: 0.6,
-    splay: 0.95,
-    perNode: 1,
-    curlChance: 0.16,
-    sizeTaper: 0.45,
-    sizeJitter: 0.32,
-    branches: 2,
-    woody: 0.55,
-    bark: true,
-    underMass: 14,
-    tone: { h: 0, s: 0, l: 0 },
-    stemTone: { h: 0, s: 0, l: 0 },
-    berries: true,
-  },
-  pothos: {
-    // Pothos: warmer, yellower, enormous variegated hearts.
-    role: 'leaf',
-    tint: [-11, -2, 2],
-    strands: [3, 6],
-    len: [140, 215],
-    width: 4.8,
-    fan: 1.05,
-    originSpread: 15,
-    gravity: 0.24,
-    wobble: 0.05,
-    shape: ['heart', 'heart', 'oval'],
-    leafLen: [34, 58],
-    leafAspect: 0.94,
-    overlap: 0.62,
-    splay: 0.9,
-    perNode: 1,
-    paleChance: 0.44,
-    curlChance: 0.12,
-    sizeTaper: 0.48,
-    sizeJitter: 0.28,
-    branches: 1,
-    woody: 0.2,
-    underMass: 12,
-    tone: { h: 0, s: 0, l: 0 },
-    stemTone: { h: 0, s: 0, l: 0 },
-  },
-  hearts: {
-    // String-of-hearts: silvered, fine, but now a *curtain* of many strands
-    // rather than one lonely bead chain.
-    role: 'leaf',
-    tint: [12, -32, 10],
-    strands: [7, 12],
-    len: [180, 280],
-    width: 1.9,
-    fan: 0.42,
-    originSpread: 20,
-    gravity: 0.46,
-    wobble: 0.028,
-    shape: 'heart',
-    leafLen: [13, 22],
-    leafAspect: 1.08,
-    overlap: 0.95,
-    splay: 1.4,
-    perNode: 1,
-    curlChance: 0.1,
-    sizeTaper: 0.7,
-    sizeJitter: 0.36,
-    branches: 0,
-    underMass: 0,
-    tone: { h: 0, s: 0, l: 0 },
-    stemTone: { h: 0, s: 0, l: 0 },
-  },
+/** The full-fan spread of vine base angles off the anchor, per habit. */
+const HABIT_FAN: Record<VineHabit, number> = {
+  climb: 0.55,
+  hang: 0.95,
+  trail: 0.7,
+  upright: 1.25,
 };
 
-function growTrail(gr: Grow, def: (typeof TRAILS)[keyof typeof TRAILS]): void {
-  const s = gr.scale;
-  const t = roleTone(gr, def.role, def.tint);
-  const stemTone: Tone = {
-    h: t.h - 6,
-    s: clamp(t.s - 6, 0, 100),
-    l: clamp(t.l - 4, 0, 100),
-  };
-  // Where the vine grips the wood — a wide, soft patch, not a dot.
-  contactShade(gr, 16, 0.4);
-  contactShade(gr, 7, 0.34, rr(gr, -10, 10) * s);
-
-  // 1. The dark under-mass first: blades that will never be seen whole, only
-  //    as shadow shapes between the lit ones.
-  if (def.underMass) {
-    onTier(gr, TIER_BACK, () => {
-      growUnderMass(gr, def.underMass as number, 26, 30, t, def.shape);
-    });
+function pickShape(gr: Grow, rec: VineRecipe): LeafShape {
+  let total = 0;
+  for (const [, w] of rec.shapes) total += w;
+  let roll = gr.rnd() * total;
+  for (const [shape, w] of rec.shapes) {
+    roll -= w;
+    if (roll <= 0) return shape;
   }
-
-  // 2. The cascade proper.
-  const stems = growMass(gr, { ...def, tone: t, stemTone });
-
-  // 3. Ivy fruits in autumn: little dark umbels on a few tips. One more
-  //    reason for the eye to stop somewhere inside the mass.
-  if (def.berries && gr.rnd() < 0.55) {
-    const stem = stems[Math.floor(gr.rnd() * stems.length)];
-    if (stem) {
-      const tip = stem.pts[stem.pts.length - 1] as Pt;
-      onTier(gr, TIER_LIT, () => {
-        growCluster(gr, {
-          x: tip.x,
-          y: tip.y,
-          spread: 7 * s,
-          r: [2.2 * s, 3.6 * s],
-          count: [7, 13],
-          tone: roleTone(gr, 'wood', [200, -6, -14]),
-          kinds: ['berry'],
-          budChance: 0,
-          paleChance: 0,
-        });
-      });
-    }
-  }
-
-  // 4. A couple of big lit blades hanging proud of everything else. Painters
-  //    call these "read leaves": they establish the scale of the whole mass.
-  onTier(gr, TIER_LIT, () => {
-    const n = 2 + Math.floor(gr.rnd() * 3);
-    for (let i = 0; i < n; i++) {
-      const stem = stems[Math.floor(gr.rnd() * stems.length)];
-      if (!stem) continue;
-      const at = Math.floor(stem.pts.length * rr(gr, 0.25, 0.9));
-      const q = stem.pts[at] as Pt;
-      const len = rr(gr, def.leafLen[1] * 0.95, def.leafLen[1] * 1.3) * s;
-      gr.g.leaves.push({
-        x: q.x,
-        y: q.y,
-        angle: stemAngle(stem, at) + gr.flip * rr(gr, 0.6, 1.3) * (gr.rnd() < 0.5 ? 1 : -1),
-        len,
-        width: len * def.leafAspect * rr(gr, 0.9, 1.1),
-        shape: Array.isArray(def.shape)
-          ? ((def.shape as readonly LeafShape[])[0] as LeafShape)
-          : (def.shape as LeafShape),
-        bend: (gr.rnd() * 2 - 1) * len * 0.18,
-        curl: gr.rnd() < 0.2 ? rr(gr, 0.25, 0.5) : 0,
-        tone: { h: t.h + rr(gr, -6, 6), s: clamp(t.s + 4, 0, 100), l: clamp(t.l + 9, 0, 100) },
-        pale: gr.rnd() < (def.paleChance ?? 0),
-        seed: (gr.rnd() * 0xffffffff) >>> 0,
-        tier: TIER_LIT,
-        damage: gr.rnd() < 0.22 ? rr(gr, 0.2, 0.6) : 0,
-      });
-    }
-  });
+  return rec.shapes[0]![0];
 }
 
-/* --------------------------- the ten species ----------------------------- */
+/** Blade aspect per shape: full width as a fraction of length. */
+function shapeAspect(shape: LeafShape): number {
+  switch (shape) {
+    case 'heart':
+      return 0.9;
+    case 'lobed':
+      return 0.95;
+    case 'palmate':
+      return 1.05;
+    case 'round':
+      return 0.95;
+    case 'serrate':
+      return 0.5;
+    case 'needle':
+      return 0.2;
+    case 'strap':
+      return 0.26;
+    case 'petal':
+      return 0.55;
+    case 'fan':
+      return 0.9;
+    case 'pinnate':
+      return 0.5;
+    default:
+      return 0.62;
+  }
+}
+
+function habitFor(gr: Grow, rec: VineRecipe): VineHabit {
+  if (rec.trailOn && rec.trailOn.includes(gr.anchorKind)) return 'trail';
+  return gr.facing === 'down' ? rec.habitDown : rec.habitUp;
+}
 
 /**
- * One arching frond: a thick rachis with two ranks of pinnae under a proper
- * frond envelope. Rebuilt at roughly double the old scale — a fern at 100px
- * tall with 21px pinnae is a herb; the reference's ferns are shrubs.
+ * Integrate one vine's skeleton: a steered random walk whose target heading
+ * depends on the habit, with per-step noise for the hand-drawn wobble.
+ * Returns the path base → tip plus the per-point widths (tapered).
  */
-function growFrond(
+function vinePath(
   gr: Grow,
-  s: number,
-  t: Tone,
-  lean: number,
-  size: number,
-  tier: FloraTier,
-): StemGeom {
-  const rachis = growStem(gr, {
-    x: (gr.rnd() * 2 - 1) * 5 * s,
-    y: 0,
-    angle: gr.dir + gr.flip * lean,
-    len: 168 * s * size * rr(gr, 0.88, 1.12),
-    width: 4.6 * s * size,
-    taper: 0.12,
-    // Gravity is integrated per step, so over a 30-step rachis even 0.14
-    // accumulates a full 90° turn and the frond flops onto its side. 0.045
-    // buys the ~30° nod a fern actually has.
-    gravity: 0.045,
-    wobble: 0.035,
-    bark: false,
-    tier,
-    tone: { h: t.h - 6, s: t.s + 6, l: clamp(t.l + 8 - (tier === TIER_BACK ? 18 : 0), 0, 100) },
-  });
-  leafify(gr, rachis, {
-    // Real pinnae are themselves lobed; 'pinnate' cuts them, which reads far
-    // better at 34px than a plain needle did at 21px.
-    shape: ['pinnate', 'needle'],
-    // Overlapping ranks: spacing well under the pinna length.
-    every: 12 * s * size,
-    len: 38 * s * size,
-    width: 11 * s * size,
-    splay: 1.06,
-    paired: true,
-    perNode: 2,
-    from: 0.08,
-    tone: t,
-    // Short at the base, longest a third of the way up, closing at the tip —
-    // the silhouette that separates a frond from a fish skeleton.
-    sizeProfile: 'frond',
-    sizeTaper: 0.28,
-    sizeJitter: 0.16,
-    // Every pinna sweeps toward the tip of the frond.
-    bendBias: -0.3,
-    curlChance: 0.07,
-    darkChance: 0.15,
-    damageChance: 0.1,
-    hueJitter: variance(gr),
-    tiers: tier === TIER_BACK ? 'fixed' : 'spread',
-    backWeight: 0.34,
-    litWeight: 0.24,
-  });
-  return rachis;
-}
+  rec: VineRecipe,
+  habit: VineHabit,
+  ox: number,
+  oy: number,
+  baseAngle: number,
+  len: number,
+  baseWidth: number,
+  vineIdx: number,
+): { pts: Pt[]; widths: number[] } {
+  const step = Math.max(4, rec.step * gr.scale * rr(gr, 0.9, 1.1));
+  const steps = Math.max(3, Math.round(len / step));
+  const pts: Pt[] = [{ x: ox, y: oy }];
+  const widths: number[] = [baseWidth];
+  const phase = gr.rnd() * Math.PI * 2;
+  // Trail runs left or right depending on the mirror; the flip picks which.
+  const trailDir = gr.flip > 0 ? 0 : Math.PI;
+  // Upright fronds arc outward as they rise; the fan position sets the side.
+  const uprightSide = Math.sin(phase) >= 0 ? 1 : -1;
 
-function growFern(gr: Grow): void {
-  const s = gr.scale;
-  const t = roleTone(gr, 'leafDeep');
-  contactShade(gr, 26, 0.42);
-  contactShade(gr, 11, 0.3, rr(gr, -16, 16) * s);
-
-  // A shuttlecock of fronds fanning from one crown. Three ranks of depth: a
-  // dark back row, the body, and two lit fronds thrown forward.
-  const base = rr(gr, 0.05, 0.3);
-  onTier(gr, TIER_BACK, () => {
-    for (let i = 0; i < 3; i++) {
-      const side = i % 2 === 0 ? 1 : -1;
-      growFrond(gr, s, t, base + side * rr(gr, 0.35, 1.0), rr(gr, 0.6, 0.92), TIER_BACK);
-    }
-  });
-
-  const fronds = 5 + Math.floor(gr.rnd() * 3);
-  const main = growFrond(gr, s, t, base, 1, TIER_MID);
-  for (let i = 1; i < fronds; i++) {
-    // Alternate sides, widening as we go, each frond shorter than the last.
-    const side = i % 2 === 0 ? 1 : -1;
-    const lean = base + side * (0.26 + Math.floor(i / 2) * 0.3) * rr(gr, 0.85, 1.15);
-    growFrond(gr, s, t, lean, rr(gr, 0.58, 0.86) - i * 0.03, TIER_MID);
-  }
-  onTier(gr, TIER_LIT, () => {
-    for (let i = 0; i < 2; i++) {
-      growFrond(
-        gr,
-        s,
-        { h: t.h + 4, s: clamp(t.s + 6, 0, 100), l: clamp(t.l + 10, 0, 100) },
-        base + (i === 0 ? -1 : 1) * rr(gr, 0.18, 0.5),
-        rr(gr, 0.7, 0.95),
-        TIER_LIT,
-      );
-    }
-  });
-
-  // Fiddleheads: unfurling spirals, now on thick croziers with a furry scale
-  // texture rather than a hairline spiral.
-  const heads = 1 + Math.floor(gr.rnd() * 3);
-  for (let k = 0; k < heads; k++) {
-    const src = k === 0 ? main : main;
-    const tip = src.pts[src.pts.length - 1] as Pt;
-    const a0 = stemAngle(src, src.pts.length - 1);
-    const off = k === 0 ? 0 : rr(gr, -30, 30) * s;
-    const pts: Pt[] = [];
-    const turn = gr.flip * (gr.rnd() < 0.5 ? 1 : -1);
-    const R = rr(gr, 12, 19) * s;
-    for (let i = 0; i <= 30; i++) {
-      const u = i / 30;
-      const r = R * (1 - u * 0.93);
-      const a = a0 + turn * u * Math.PI * 2.2;
-      pts.push({
-        x: tip.x + off + Math.cos(a) * r - Math.cos(a0) * R,
-        y: tip.y + Math.sin(a) * r - Math.sin(a0) * R,
-      });
-    }
-    gr.g.threads.push({
-      pts,
-      width: 3.4 * s,
-      alpha: 0.95,
-      colour: hsl(t.h - 4, t.s + 10, t.l + 12),
-      halo: hsl(t.h - 8, t.s + 4, t.l - 16, 0.7),
-      tier: TIER_LIT,
-    });
-  }
-}
-
-function growMoss(gr: Grow): void {
-  const s = gr.scale;
-  const t = roleTone(gr, 'moss');
-  const up = gr.dir;
-  const flipY = up < 0 ? 1 : -1;
-  // Cushions are lumpy and wide, not neat and low. Doubled from the old
-  // 20–30 × 15–23: a 50px-wide moss bank is a feature, a 25px one is lint.
-  const halfW = rr(gr, 42, 68) * s;
-  const height = rr(gr, 26, 42) * s;
-  contactShade(gr, halfW / s + 8, 0.44);
-
-  // 1. The body. FOUR overlapping domes at three tiers give the bank an
-  //    uneven crest with real internal depth — the silhouette stops reading
-  //    as a drawn semicircle and starts reading as a landscape.
-  const domes: Array<{ x: number; rx: number; ry: number; dl: number; tier: FloraTier }> = [
-    { x: rr(gr, -0.5, -0.15) * halfW, rx: halfW * rr(gr, 0.5, 0.7), ry: height * rr(gr, 0.85, 1.2), dl: -14, tier: TIER_BACK },
-    { x: rr(gr, 0.1, 0.5) * halfW, rx: halfW * rr(gr, 0.45, 0.66), ry: height * rr(gr, 0.75, 1.1), dl: -10, tier: TIER_BACK },
-    { x: 0, rx: halfW, ry: height * 0.94, dl: -4, tier: TIER_MID },
-    { x: rr(gr, -0.42, 0.42) * halfW, rx: halfW * rr(gr, 0.5, 0.76), ry: height * rr(gr, 0.6, 0.9), dl: 4, tier: TIER_LIT },
-  ];
-  for (const d of domes) {
-    gr.g.mounds.push({
-      x: d.x,
-      y: 0,
-      rx: d.rx,
-      ry: d.ry,
-      up: flipY,
-      tone: {
-        h: t.h + rr(gr, -7, 9),
-        s: clamp(t.s + rr(gr, -4, 6), 0, 100),
-        l: clamp(t.l + d.dl, 0, 100),
-      },
-      seed: (gr.rnd() * 0xffffffff) >>> 0,
-      tier: d.tier,
-    });
-  }
-
-  // 2. Five fringes of blades, back to front. Moss is legible only as
-  //    *texture*, so the count went up as hard as the size did.
-  const LAYERS: Array<{ count: number; spread: number; rise: number; size: number; dl: number; front: number; tier: FloraTier }> = [
-    { count: 46, spread: 0.72, rise: 1.14, size: 1.05, dl: -20, front: -0.1, tier: TIER_BACK },
-    { count: 44, spread: 0.86, rise: 1.02, size: 1, dl: -11, front: 0, tier: TIER_BACK },
-    { count: 52, spread: 0.98, rise: 0.86, size: 0.96, dl: 0, front: 0.2, tier: TIER_MID },
-    { count: 46, spread: 1.06, rise: 0.6, size: 0.88, dl: 8, front: 0.44, tier: TIER_MID },
-    { count: 34, spread: 1.1, rise: 0.4, size: 0.8, dl: 16, front: 0.66, tier: TIER_LIT },
-  ];
-  for (const layer of LAYERS) {
-    const count = layer.count + Math.floor(gr.rnd() * 12);
-    for (let i = 0; i < count; i++) {
-      const u = ((i + gr.rnd()) / count) * 2 - 1;
-      // A cushion: tallest in the middle, thinning at the edges.
-      const mound = Math.pow(Math.max(0, 1 - u * u), 0.5);
-      const x = u * halfW * layer.spread;
-      // The front fringe is pushed down the face of the cushion, but never
-      // *through* the surface — at the edges the mound falls to zero and an
-      // unclamped offset buried the outermost blades inside the shelf.
-      const y = Math.min(
-        0.5 * s,
-        -mound * rr(gr, 0.5, 1.05) * height * layer.rise + layer.front * height * 0.42,
-      );
-      gr.g.leaves.push({
-        x,
-        y: y * flipY,
-        angle: up + (gr.rnd() * 2 - 1) * 0.7 + u * 0.85,
-        len: rr(gr, 9, 19) * s * layer.size,
-        width: rr(gr, 5, 10) * s * layer.size,
-        shape: gr.rnd() < 0.4 ? 'round' : gr.rnd() < 0.7 ? 'needle' : 'oval',
-        bend: (gr.rnd() * 2 - 1) * 3.5 * s,
-        curl: 0,
-        tone: {
-          h: t.h + (gr.rnd() * 2 - 1) * variance(gr, 15) * 1.6,
-          s: clamp(t.s + (gr.rnd() * 2 - 1) * 12, 0, 100),
-          l: clamp(t.l + (gr.rnd() * 2 - 1) * 8 + layer.dl - (gr.rnd() < 0.14 ? 8 : 0), 0, 100),
-        },
-        pale: false,
-        seed: (gr.rnd() * 0xffffffff) >>> 0,
-        tier: layer.tier,
-      });
-    }
-  }
-  // 3. Sporophytes: a proper forest of them, bare hairs each with a capsule.
-  //    They are what identify the shape as moss rather than lawn.
-  const hairs = 12 + Math.floor(gr.rnd() * 10);
-  for (let i = 0; i < hairs; i++) {
-    const x = (gr.rnd() * 2 - 1) * halfW * 0.78;
-    const len = rr(gr, 24, 48) * s;
-    const lit = gr.rnd() < 0.4;
-    const stem = growStem(gr, {
-      x,
-      y: -height * rr(gr, 0.2, 0.5) * flipY,
-      angle: up + (gr.rnd() * 2 - 1) * 0.4,
-      len,
-      width: 1.5 * s,
-      taper: 0.65,
-      gravity: up < 0 ? 0.06 : 0,
-      wobble: 0.05,
-      step: 3.5,
-      tier: lit ? TIER_LIT : TIER_MID,
-      tone: { h: t.h + 10, s: clamp(t.s - 14, 0, 100), l: clamp(t.l + (lit ? 28 : 18), 0, 100) },
-    });
-    const tip = stem.pts[stem.pts.length - 1] as Pt;
-    gr.g.blooms.push({
-      x: tip.x,
-      y: tip.y,
-      r: rr(gr, 2.4, 4) * s,
-      kind: 'capsule',
-      open: 1,
-      tone: roleTone(gr, 'wood', [14, 8, 14]),
-      seed: (gr.rnd() * 0xffffffff) >>> 0,
-      tier: lit ? TIER_LIT : TIER_MID,
-    });
-  }
-  // 4. A few tiny flowers scattered through the bank — the reference's moss
-  //    is never pure green.
-  if (gr.rnd() < 0.6) {
-    onTier(gr, TIER_LIT, () => {
-      growCluster(gr, {
-        x: rr(gr, -0.5, 0.5) * halfW,
-        y: -height * 0.5 * flipY,
-        spread: halfW * 0.5,
-        r: [3 * s, 5.5 * s],
-        count: [5, 9],
-        tone: roleTone(gr, 'bloomAlt'),
-        squash: 0.55,
-        budChance: 0.3,
-      });
-    });
-  }
-}
-
-function growHerbBundle(gr: Grow): void {
-  const s = gr.scale;
-  // A drying bundle is dustier than living growth — but "dusty" is a
-  // lightness/saturation move off the palette's `dry` role, not a hardcoded
-  // sage-grey: a reef or a candy shelf hangs quite different bundles.
-  const t = roleTone(gr, 'dry', [38, -30, -6]);
-  const twine = roleColour(gr, 'twine');
-  const knotY = 15 * s;
-  contactShade(gr, 5, 0.24);
-
-  // 1. Twine: a hanging loop from the shelf edge down to the knot.
-  for (const side of [-1, 1]) {
-    gr.g.threads.push({
-      pts: [
-        { x: side * 5.2 * s, y: -9 * s },
-        { x: side * 4.4 * s, y: 0 },
-        { x: side * 2.2 * s, y: knotY - 3 * s },
-      ],
-      width: 1.35 * s,
-      alpha: 0.92,
-      colour: twine,
-    });
-  }
-
-  // 2. Three ranks of sprigs. A hanging bundle is a solid body of dried
-  //    material — the old 4–6 wands read as a whisk.
-  const RANKS: Array<{ n: [number, number]; tier: FloraTier; dl: number; len: [number, number] }> = [
-    { n: [5, 8], tier: TIER_BACK, dl: -20, len: [62, 108] },
-    { n: [6, 9], tier: TIER_MID, dl: 0, len: [70, 122] },
-    { n: [4, 6], tier: TIER_LIT, dl: 10, len: [54, 96] },
-  ];
-  const tips: Pt[] = [];
-  for (const rank of RANKS) {
-    const stems = Math.round(rr(gr, rank.n[0], rank.n[1]));
-    for (let i = 0; i < stems; i++) {
-      const spread = ((i + gr.rnd()) / stems - 0.5) * 1.3;
-      const stem = growStem(gr, {
-        x: (gr.rnd() * 2 - 1) * 3 * s,
-        y: knotY + 2 * s,
-        angle: Math.PI / 2 + spread,
-        len: rr(gr, rank.len[0], rank.len[1]) * s,
-        width: rr(gr, 2.2, 3.4) * s,
-        taper: 0.45,
-        gravity: 0.16,
-        wobble: 0.04,
-        step: 4,
-        tier: rank.tier,
-        tone: {
-          h: t.h - 8,
-          s: clamp(t.s + 4, 0, 100),
-          l: clamp(t.l - 12 + rank.dl * 0.6, 0, 100),
-        },
-      });
-      tips.push(stem.pts[stem.pts.length - 1] as Pt);
-      leafify(gr, stem, {
-        shape: ['needle', 'pinnate', 'oval'],
-        every: 12 * s,
-        len: 24 * s,
-        width: 9 * s,
-        splay: 1.2,
-        paired: true,
-        perNode: 2,
-        from: 0.1,
-        tone: { h: t.h, s: t.s, l: clamp(t.l + rank.dl, 0, 100) },
-        // Dried herbs are a scrapyard of tones: that variety is the legibility.
-        hueJitter: variance(gr, 20) + 11,
-        sizeTaper: 0.55,
-        sizeJitter: 0.3,
-        bendBias: -0.16,
-        curlChance: 0.34,
-        darkChance: 0.22,
-        damageChance: 0.3,
-        tiers: 'fixed',
-      });
-      // Lavender spikes: proper racemes of little bells, not five dots.
-      if (gr.rnd() < 0.5) {
-        const tip = stem.pts[stem.pts.length - 1] as Pt;
-        onTier(gr, rank.tier, () => {
-          growCluster(gr, {
-            x: tip.x,
-            y: tip.y - 12 * s,
-            spread: 8 * s,
-            r: [2.6 * s, 5 * s],
-            count: [8, 15],
-            tone: roleTone(gr, 'bloomCool'),
-            squash: 2.6,
-            budChance: 0.55,
-            kinds: ['blossom', 'bell'],
-          });
-        });
+  let ang = baseAngle;
+  let x = ox;
+  let y = oy;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const wob = (gr.noise(i * 0.42 + vineIdx * 13.7) - 0.5) * 2 * rec.curve;
+    switch (habit) {
+      case 'hang': {
+        // Spill outward first, then settle into a slow S-swing downward.
+        const target = Math.PI / 2 + Math.sin(t * Math.PI * 1.7 + phase) * 0.5 * (1 - t * 0.35);
+        ang += angleDelta(target, ang) * 0.22 + wob;
+        break;
+      }
+      case 'climb': {
+        // Reach upward with a gentle weave, hugging the vertical.
+        const target = -Math.PI / 2 + Math.sin(t * Math.PI * 2.1 + phase) * 0.36;
+        ang += angleDelta(target, ang) * 0.2 + wob;
+        break;
+      }
+      case 'trail': {
+        // Along the plank, undulating; the last stretch droops over the edge.
+        const undulate = Math.sin(t * 5.2 + phase) * 0.3;
+        const droop = t > 0.78 ? ((t - 0.78) / 0.22) * 0.55 : 0;
+        const target = trailDir + undulate + (trailDir === 0 ? droop : -droop);
+        ang += angleDelta(target, ang) * 0.26 + wob * 0.7;
+        break;
+      }
+      default: {
+        // Upright: rise steeply, then arc outward toward the fan side.
+        const arc = (1 - (1 - t) * (1 - t)) * 0.75 * uprightSide;
+        ang = baseAngle + arc + wob;
+        break;
       }
     }
+    const stepLen = step * (0.86 + gr.rnd() * 0.28);
+    x += Math.cos(ang) * stepLen;
+    y += Math.sin(ang) * stepLen;
+    pts.push({ x, y });
+    widths.push(Math.max(0.45, baseWidth * Math.pow(1 - t, 0.72) + 0.3));
+  }
+  return { pts, widths };
+}
+
+/** A curling tendril thread off a node near the vine tip. */
+function growTendril(gr: Grow, p: Pt, stemAngle: number, tone0: Tone): ThreadGeom {
+  const side = gr.rnd() < 0.5 ? 1 : -1;
+  let ang = stemAngle + side * rr(gr, 1.0, 1.6);
+  const pts: Pt[] = [{ x: p.x, y: p.y }];
+  let x = p.x;
+  let y = p.y;
+  const segs = rri(gr, 8, 11);
+  const curl = side * rr(gr, 0.32, 0.5);
+  for (let i = 1; i <= segs; i++) {
+    ang += curl;
+    const d = 2.6 * gr.scale * (1 - (i / segs) * 0.45);
+    x += Math.cos(ang) * d;
+    y += Math.sin(ang) * d;
+    pts.push({ x, y });
+  }
+  return {
+    pts,
+    width: Math.max(0.45, 0.62 * gr.scale),
+    alpha: 0.85,
+    colour: toneStr(tone0, 6, -4),
+    taper: true,
+  };
+}
+
+/**
+ * The inflorescence: one focal flower cluster at a leafy node.
+ *
+ * Structure, always: one large open hero, 1–4 mid blooms at 55–85% of its
+ * radius, 1–2 closed buds at 35–55% — every bloom on its own visible pedicel
+ * back to the node, and 1–2 small bract leaves cupping the cluster from
+ * below (they land in the mid tier, so they half-hide the buds behind them).
+ */
+function growInflorescence(
+  gr: Grow,
+  rec: VineRecipe,
+  flowers: NonNullable<VineRecipe['flowers']>,
+  node: Pt,
+  stemAngle: number,
+  hero: boolean,
+  stemTone: Tone,
+): void {
+  const petal = roleTone(gr, flowers.role);
+  const heroR = rr(gr, flowers.size[0], flowers.size[1]) * 1.2 * gr.scale;
+  // The cluster leans out from the stem on the side the leaves already face.
+  const lean = stemAngle + (gr.rnd() < 0.5 ? 1 : -1) * rr(gr, 0.2, 0.65);
+  const hx = node.x + Math.cos(lean) * heroR * 1.15;
+  const hy = node.y + Math.sin(lean) * heroR * 1.15;
+
+  const nB = rri(gr, 3, 7);
+  const nBuds = clamp(rri(gr, 1, 2), 1, nB - 2);
+  const blooms: BloomGeom[] = [];
+  const pedicels: ThreadGeom[] = [];
+  const cluster: BloomCluster = { x: node.x, y: node.y, blooms, pedicels };
+
+  const place = (px: number, py: number, r: number, kind: BloomKind, open: number, tier: FloraTier): void => {
+    const b: BloomGeom = {
+      x: px,
+      y: py,
+      r,
+      kind,
+      open,
+      tone: petalTone(gr, petal, flowers.pale),
+      seed: (gr.rnd() * 0xffffffff) >>> 0,
+      tier,
+      petals: 5,
+    };
+    blooms.push(b);
+    // Pedicel: node → bloom with a soft outward bow.
+    const mx = (node.x + px) / 2;
+    const my = (node.y + py) / 2;
+    const dx = px - node.x;
+    const dy = py - node.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const bow = dist * rr(gr, 0.14, 0.3) * (gr.rnd() < 0.5 ? 1 : -1);
+    pedicels.push({
+      pts: [
+        { x: node.x, y: node.y },
+        { x: mx - (dy / dist) * bow, y: my + (dx / dist) * bow },
+        { x: px, y: py },
+      ],
+      width: Math.max(0.5, 0.7 * gr.scale + r * 0.045),
+      alpha: 0.92,
+      colour: toneStr(stemTone, -4, 2),
+      taper: true,
+      tier,
+    });
+  };
+
+  // The hero sits at the cluster heart.
+  place(hx, hy, heroR, flowers.kinds[0] ?? 'blossom', rr(gr, 0.85, 1), hero ? TIER_LIT : TIER_MID);
+
+  // Mid blooms dart-thrown around the hero, buds tucked nearer the node.
+  let placed = 1;
+  let guard = 0;
+  while (placed < nB - nBuds && guard++ < 24) {
+    const a = gr.rnd() * Math.PI * 2;
+    const d = heroR * rr(gr, 0.9, 2.05);
+    const px = hx + Math.cos(a) * d;
+    const py = hy + Math.sin(a) * d * 0.9;
+    let ok = true;
+    for (const b of blooms) {
+      if (Math.hypot(b.x - px, b.y - py) < (b.r + heroR * 0.62) * 0.72) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    const kind = flowers.kinds[rri(gr, 0, flowers.kinds.length - 1)] ?? 'blossom';
+    place(px, py, heroR * rr(gr, 0.55, 0.85), kind, rr(gr, 0.5, 0.95), TIER_MID);
+    placed++;
+  }
+  for (let k = 0; k < nBuds; k++) {
+    const a = gr.rnd() * Math.PI * 2;
+    const d = heroR * rr(gr, 0.5, 1.25);
+    place(
+      node.x + (hx - node.x) * 0.55 + Math.cos(a) * d * 0.5,
+      node.y + (hy - node.y) * 0.55 + Math.sin(a) * d * 0.45,
+      heroR * rr(gr, 0.35, 0.55),
+      'bud',
+      rr(gr, 0.12, 0.3),
+      TIER_BACK,
+    );
   }
 
-  // 3. The knot: three wraps round the neck plus a loose tail, so it reads as
-  //    *tied* rather than as a stripe painted across the stems.
-  for (let k = 0; k < 3; k++) {
-    const y = knotY + k * 2.6 * s;
-    gr.g.threads.push({
-      pts: [
-        { x: -5 * s, y: y + 0.4 * s },
-        { x: 0, y: y - 0.5 * s },
-        { x: 5 * s, y: y + 0.5 * s },
-      ],
-      width: 1.7 * s,
-      alpha: 0.96,
-      colour: twine,
+  // Bracts: small leaves cupping the cluster, emitted into the leaf list so
+  // they draw with the rest of the mid foliage — over the buds, under the
+  // open faces.
+  const nBracts = rri(gr, 1, 2);
+  for (let k = 0; k < nBracts; k++) {
+    const ba = lean + (gr.rnd() < 0.5 ? 1 : -1) * rr(gr, 0.9, 1.7);
+    const bl = heroR * rr(gr, 0.75, 1.05);
+    g_pushLeaf(gr, rec, {
+      x: node.x + Math.cos(ba) * heroR * 0.5,
+      y: node.y + Math.sin(ba) * heroR * 0.5,
+      angle: ba,
+      len: bl,
+      tier: TIER_MID,
     });
   }
+
+  gr.g.clusters.push(cluster);
+}
+
+/** Push one leaf instance, with per-leaf tone jitter and stamp pick. */
+function g_pushLeaf(
+  gr: Grow,
+  rec: VineRecipe,
+  o: { x: number; y: number; angle: number; len: number; tier: FloraTier; shape?: LeafShape },
+): number {
+  const shape = o.shape ?? pickShape(gr, rec);
+  const v = variance(gr);
+  const base = roleTone(gr, rec.role, rec.toneDelta);
+  const t: Tone = {
+    h: base.h + (gr.rnd() * 2 - 1) * v * 0.5,
+    s: clamp(base.s + (gr.rnd() * 2 - 1) * 5, 0, 100),
+    l: clamp(base.l + (gr.rnd() * 2 - 1) * 4, 0, 100),
+  };
+  gr.g.leaves.push({
+    x: o.x,
+    y: o.y,
+    angle: o.angle,
+    len: o.len,
+    width: o.len * shapeAspect(shape),
+    shape,
+    stamp: rri(gr, 0, 3),
+    flip: gr.rnd() < 0.5,
+    pale: (rec.pale ?? 0) > 0 && gr.rnd() < (rec.pale ?? 0),
+    tone: t,
+    tier: o.tier,
+    seed: (gr.rnd() * 0xffffffff) >>> 0,
+  });
+  return gr.g.leaves.length - 1;
+}
+
+/**
+ * Grow one vine (and its side shoots) from a base point: skeleton, node
+ * clumps/gaps, leaf instances, heroes, tendrils, inflorescences.
+ */
+function growVine(
+  gr: Grow,
+  rec: VineRecipe,
+  habit: VineHabit,
+  ox: number,
+  oy: number,
+  baseAngle: number,
+  len: number,
+  baseWidth: number,
+  vineIdx: number,
+  depth: number,
+): void {
+  const { pts, widths } = vinePath(gr, rec, habit, ox, oy, baseAngle, len, baseWidth, vineIdx);
+  const steps = pts.length - 1;
+  const stemTone =
+    rec.woody > 0.5
+      ? roleTone(gr, 'wood', [rec.toneDelta[0] * 0.4, rec.toneDelta[1] * 0.4, rec.toneDelta[2] * 0.4])
+      : roleTone(gr, rec.role, [rec.toneDelta[0], rec.toneDelta[1] - 6, rec.toneDelta[2] - 8]);
+
+  gr.g.vines.push({
+    pts,
+    widths,
+    tone: stemTone,
+    woody: rec.woody,
+    habit,
+    bark: rec.woody > 0.5 && baseWidth * 1 > 2.6,
+  });
+
+  // Smoothed stem angle at node i.
+  const stemAngleAt = (i: number): number => {
+    const a = pts[Math.max(0, i - 1)] as Pt;
+    const b = pts[Math.min(steps, i + 1)] as Pt;
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  };
+
+  // -- The clump/gap rhythm: leafy streaks alternate with bare streaks, so
+  // foliage knots at nodes and the skeleton stays visible between them.
+  const leafy: boolean[] = new Array<boolean>(steps + 1).fill(false);
+  leafy[0] = true; // the grip is always clothed
+  {
+    let i = 1;
+    let state = true;
+    while (i <= steps) {
+      const run = state ? rri(gr, rec.clumpRun[0], rec.clumpRun[1]) : rri(gr, rec.gapRun[0], rec.gapRun[1]);
+      for (let k = 0; k < run && i <= steps; k++, i++) leafy[i] = state;
+      state = !state;
+    }
+    // Fresh growth: the tip node is bare more often than not.
+    if (gr.rnd() < 0.6) leafy[steps] = false;
+  }
+
+  // -- Leaves at the leafy nodes.
+  const nodeLeafIdx: number[][] = [];
+  for (let i = 1; i <= steps; i++) {
+    if (!leafy[i]) continue;
+    const p = pts[i] as Pt;
+    const stemA = stemAngleAt(i);
+    const n = rec.opposite ? 2 : rri(gr, rec.perNode[0], rec.perNode[1]);
+    const idxs: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const sideSign = rec.opposite
+        ? k === 0
+          ? 1
+          : -1
+        : ((i + k) % 2 === 0 ? 1 : -1) * gr.flip;
+      const splay = rr(gr, rec.splay[0], rec.splay[1]);
+      const la = stemA + sideSign * splay + (gr.rnd() - 0.5) * 0.24;
+      // Big leaves low and mid-vine, small toward the tip; interior leaves
+      // (near the base, where foliage overlaps) fall back into the dark tier.
+      const taper = lerp(1.14, 0.6, i / steps);
+      const len = rr(gr, rec.leafLen[0], rec.leafLen[1]) * taper * (0.9 + gr.rnd() * 0.2) * gr.scale;
+      const backRoll = rec.backChance + (i < steps * 0.3 ? 0.18 : 0);
+      const tier: FloraTier = gr.rnd() < backRoll ? TIER_BACK : TIER_MID;
+      idxs.push(
+        g_pushLeaf(gr, rec, {
+          x: p.x + Math.cos(la) * len * 0.1,
+          y: p.y + Math.sin(la) * len * 0.1,
+          angle: la,
+          len,
+          tier,
+        }),
+      );
+    }
+    nodeLeafIdx.push(idxs);
+  }
+
+  // -- Heroes: a few leaves upgraded to the lit tier — bigger, pushed proud
+  // of the silhouette. They are the leaves that catch the rim light.
+  const heroN = rri(gr, rec.heroes[0], rec.heroes[1]);
+  const midIdx: number[] = [];
+  for (const idxs of nodeLeafIdx) {
+    for (const idx of idxs) {
+      const l = gr.g.leaves[idx] as LeafInstance;
+      if (l.tier === TIER_MID) midIdx.push(idx);
+    }
+  }
+  if (heroN > 0 && midIdx.length > 3) {
+    for (let h = 0; h < Math.min(heroN, midIdx.length); h++) {
+      const idx = midIdx[Math.floor(((h + 0.5) / Math.min(heroN, midIdx.length)) * midIdx.length)] as number;
+      const l = gr.g.leaves[idx] as LeafInstance;
+      l.tier = TIER_LIT;
+      l.len *= 1.26;
+      l.width *= 1.26;
+      l.x += Math.cos(l.angle) * l.len * 0.08;
+      l.y += Math.sin(l.angle) * l.len * 0.08;
+    }
+  }
+
+  // -- Side shoots, off nodes in the vine's midsection.
+  if (depth === 0 && rec.branches > 0) {
+    let n = Math.floor(rec.branches);
+    if (gr.rnd() < rec.branches - n) n++;
+    for (let b = 0; b < n && steps > 4; b++) {
+      const i = rri(gr, Math.max(2, Math.floor(steps * 0.28)), Math.floor(steps * 0.65));
+      const p = pts[i] as Pt;
+      const side = (b % 2 === 0 ? 1 : -1) * gr.flip;
+      growVine(
+        gr,
+        rec,
+        habit,
+        p.x,
+        p.y,
+        stemAngleAt(i) + side * rr(gr, 0.5, 0.95),
+        len * rr(gr, 0.36, 0.55),
+        Math.max(0.5, (widths[i] ?? 1) * 0.62),
+        vineIdx * 10 + b + 1,
+        depth + 1,
+      );
+    }
+  }
+
+  // -- Tendrils, off nodes in the tip half.
+  if (rec.tendrils > 0) {
+    let n = Math.floor(rec.tendrils);
+    if (gr.rnd() < rec.tendrils - n) n++;
+    for (let k = 0; k < n && steps > 3; k++) {
+      const i = rri(gr, Math.floor(steps * 0.55), steps);
+      const p = pts[i] as Pt;
+      gr.g.threads.push(growTendril(gr, p, stemAngleAt(i), stemTone));
+    }
+  }
+
+  // -- Inflorescences: one roll per leafy clump, hard-capped per vine.
+  if (rec.flowers && depth === 0) {
+    const fl = rec.flowers;
+    let used = 0;
+    let i = 1;
+    let clusterIdx = 0;
+    while (i <= steps && used < fl.maxPerVine) {
+      if (!leafy[i]) {
+        i++;
+        continue;
+      }
+      // Found the start of a clump; walk to its end — the outer node is the
+      // showpiece position, poking out of the foliage that cups it.
+      let j = i;
+      while (j + 1 <= steps && leafy[j + 1]) j++;
+      const clumpLen = j - i + 1;
+      if (clumpLen >= 2 && gr.rnd() < fl.chance) {
+        const p = pts[j] as Pt;
+        growInflorescence(gr, rec, fl, p, stemAngleAt(j), used === 0, stemTone);
+        used++;
+        clusterIdx++;
+      }
+      i = j + 1;
+    }
+    void clusterIdx;
+  }
+}
+
+/** Grow a whole specimen of vines from the anchor point. */
+function growVineSpecimen(gr: Grow, rec: VineRecipe): void {
+  const habit = habitFor(gr, rec);
+  const total = rri(gr, rec.vines[0], rec.vines[1]);
+  const fan = HABIT_FAN[habit];
+  const baseDir = habit === 'trail' ? (gr.flip > 0 ? 0 : Math.PI) : gr.dir;
+  for (let v = 0; v < total; v++) {
+    const spread = total > 1 ? (v / (total - 1) - 0.5) * fan : 0;
+    const angle = baseDir + spread * gr.flip + (gr.rnd() - 0.5) * 0.16;
+    const len = rr(gr, rec.len[0], rec.len[1]) * gr.scale * lerp(1, 0.72, total > 1 ? v / (total - 1) : 0);
+    const w = rr(gr, rec.width[0], rec.width[1]) * Math.min(1.25, gr.scale);
+    // Siblings spread a little along the anchor's run so they don't stack.
+    const ox = (gr.rnd() * 2 - 1) * 7 * gr.scale;
+    const oy = (gr.rnd() * 2 - 1) * 2.5 * gr.scale;
+    growVine(gr, rec, habit, ox, oy, angle, len, w, v, 0);
+  }
+}
+
+/* --------------------------- species add-ons ----------------------------- */
+
+/** Moss creeps; its body is a filled cushion under the creeping vines. */
+function addMossMound(gr: Grow, rec: VineRecipe): void {
+  const up = gr.facing === 'down' ? -1 : 1;
+  const rx = rr(gr, 30, 48) * gr.scale;
+  gr.g.mounds.push({
+    x: rr(gr, -4, 4) * gr.scale,
+    y: 0,
+    rx,
+    ry: rx * rr(gr, 0.4, 0.52),
+    up,
+    tone: roleTone(gr, 'moss', rec.toneDelta),
+    seed: (gr.rnd() * 0xffffffff) >>> 0,
+  });
+}
+
+/** Herb bundles hang from twine wraps, with the occasional paper tag. */
+function addTwineAndTag(gr: Grow): void {
+  const twine = roleColour(gr, 'twine');
+  const wrapY = rr(gr, 7, 11) * gr.scale;
+  const wrapW = rr(gr, 9, 13) * gr.scale;
+  for (let k = 0; k < 2; k++) {
+    const y = wrapY + k * 3.2 * gr.scale;
+    const pts: Pt[] = [];
+    for (let i = 0; i <= 8; i++) {
+      const a = Math.PI * (i / 8);
+      pts.push({ x: -Math.cos(a) * wrapW, y: y + Math.sin(a) * 2.6 * gr.scale });
+    }
+    gr.g.threads.push({ pts, width: Math.max(0.7, 1.1 * gr.scale), alpha: 0.95, colour: twine });
+  }
+  // The loop the bunch hangs from.
   gr.g.threads.push({
     pts: [
-      { x: 3 * s, y: knotY + 5 * s },
-      { x: 7 * s, y: knotY + 8 * s },
-      { x: 6 * s, y: knotY + 13 * s },
+      { x: 0, y: -9 * gr.scale },
+      { x: -1.5 * gr.scale, y: -3 * gr.scale },
+      { x: 0, y: wrapY },
+      { x: 1.5 * gr.scale, y: -3 * gr.scale },
+      { x: 0.4 * gr.scale, y: -9 * gr.scale },
     ],
-    width: 1.1 * s,
-    alpha: 0.8,
+    width: Math.max(0.6, 0.9 * gr.scale),
+    alpha: 0.9,
     colour: twine,
   });
   if (gr.rnd() < 0.55) {
+    const tx = wrapW * rr(gr, 0.7, 1.05);
+    const ty = wrapY + rr(gr, 4, 8) * gr.scale;
+    gr.g.threads.push({
+      pts: [
+        { x: wrapW * 0.55, y: wrapY },
+        { x: tx * 0.8, y: ty - 2 * gr.scale },
+        { x: tx, y: ty },
+      ],
+      width: Math.max(0.5, 0.7 * gr.scale),
+      alpha: 0.85,
+      colour: twine,
+    });
     gr.g.tags.push({
-      x: 6.5 * s,
-      y: knotY + 5 * s,
-      w: 12 * s,
-      h: 8 * s,
-      angle: rr(gr, -0.4, 0.12),
+      x: tx,
+      y: ty,
+      w: 12 * gr.scale,
+      h: 8 * gr.scale,
+      angle: rr(gr, -0.15, 0.3),
     });
   }
 }
+
+/* ------------------------- bespoke: grass tuft ---------------------------- */
 
 /**
- * A flowering branch — rebuilt from "a stick with sprinkles" into the thing
- * the art direction actually asks for: a **woody armature** 5–7px at the butt
- * carrying 6–10 twigs, each ending in a **cluster of 5–15 blooms at 20–40px**,
- * over a dark under-canopy of foliage, with a scatter of fallen petals.
+ * Grass is not a vine — it is a fan of strap blades off a basal point, plus
+ * 1–3 thin flower stalks carrying a single dandelion clock or seed puff.
+ * The blades still instance stamps and still tier back→lit.
  */
-function growBlossom(gr: Grow): void {
-  const s = gr.scale;
-  const wood: Tone = roleTone(gr, 'wood', [4, -12, -6]);
-  const petal: Tone = roleTone(gr, 'bloom');
-  const leafT = roleTone(gr, 'leaf', [6, -8, 1]);
-  // Roughly a quarter of a branch's flowers open near-white, the way a real
-  // cherry does — the pale ones are what make the pink ones read as pink.
-  const paleChance = 0.15;
-  contactShade(gr, 20, 0.42);
-  contactShade(gr, 9, 0.32, rr(gr, -14, 14) * s);
-
-  // 0. Dark leaf mass behind, so the blossom has something to sit against.
-  onTier(gr, TIER_BACK, () => {
-    growUnderMass(gr, 16, 40, 30, leafT, ['serrate', 'oval']);
-  });
-
-  // 1. The armature: a proper limb, 6px at the butt, tapering hard.
-  const branch = growStem(gr, {
-    x: 0,
-    y: 0,
-    angle: gr.dir + gr.flip * rr(gr, 0.8, 1.2),
-    len: 190 * s * rr(gr, 0.86, 1.16),
-    width: 6.2 * s,
-    taper: 0.2,
-    gravity: 0.07,
-    wobble: 0.05,
-    woody: 1,
-    bark: true,
-    step: 5,
-    tone: wood,
-  });
-  // A second limb off the butt: one stick is a diagram, two is a tree.
-  const limb = growStem(gr, {
-    x: (branch.pts[2] as Pt).x,
-    y: (branch.pts[2] as Pt).y,
-    angle: stemAngle(branch, 2) + gr.flip * rr(gr, 0.55, 1.05) * (gr.rnd() < 0.5 ? 1 : -1),
-    len: 128 * s * rr(gr, 0.8, 1.2),
-    width: 4.4 * s,
-    taper: 0.22,
-    gravity: 0.09,
-    wobble: 0.055,
-    woody: 1,
-    bark: true,
-    step: 5,
-    tone: { h: wood.h, s: wood.s, l: clamp(wood.l - 5, 0, 100) },
-  });
-
-  const clusterSpots: Array<{ p: Pt; a: number; big: boolean }> = [];
-  for (const [host, count] of [
-    [branch, 5 + Math.floor(gr.rnd() * 3)],
-    [limb, 3 + Math.floor(gr.rnd() * 3)],
-  ] as const) {
-    for (let i = 0; i < count; i++) {
-      const at = Math.floor(host.pts.length * ((i + 0.6) / (count + 0.6)) * 0.96);
-      const p = host.pts[at] as Pt;
-      const twig = growStem(gr, {
-        x: p.x,
-        y: p.y,
-        angle: stemAngle(host, at) + (gr.rnd() < 0.5 ? -1 : 1) * rr(gr, 0.45, 1.05),
-        len: rr(gr, 36, 70) * s,
-        width: 2.6 * s,
-        taper: 0.32,
-        gravity: 0.05,
-        wobble: 0.05,
-        step: 4,
-        woody: 1,
-        tone: wood,
-      });
-      const tip = twig.pts[twig.pts.length - 1] as Pt;
-      clusterSpots.push({
-        p: tip,
-        a: stemAngle(twig, twig.pts.length - 1),
-        big: gr.rnd() < 0.45,
-      });
-      // Mid-twig cluster on some twigs, so blossom is not only at the ends.
-      if (gr.rnd() < 0.5) {
-        const mid = twig.pts[Math.floor(twig.pts.length * 0.55)] as Pt;
-        clusterSpots.push({ p: mid, a: stemAngle(twig, 3), big: false });
-      }
-      // Young leaves — much bigger than the old 11px, and overlapping.
-      leafify(gr, twig, {
-        shape: ['serrate', 'oval'],
-        every: 15 * s,
-        len: 26 * s,
-        width: 15 * s,
-        splay: 1.05,
-        from: 0.05,
-        tone: leafT,
-        hueJitter: variance(gr),
-        sizeTaper: 0.62,
-        sizeJitter: 0.3,
-        curlChance: 0.1,
-        darkChance: 0.16,
-        damageChance: 0.12,
-      });
-    }
-  }
-
-  // 2. The clusters. THIS is the change the user asked for: 5–15 blooms of
-  //    20–40px per cluster, half a dozen clusters per branch.
-  for (const spot of clusterSpots) {
-    growCluster(gr, {
-      x: spot.p.x,
-      y: spot.p.y,
-      spread: (spot.big ? 26 : 17) * s,
-      r: [(spot.big ? 9 : 6.5) * s, (spot.big ? 19 : 13) * s],
-      count: spot.big ? [8, 15] : [5, 9],
-      tone: petal,
-      paleChance,
-      budChance: 0.24,
-      kinds: ['blossom', 'blossom', 'rosette'],
-      squash: rr(gr, 0.7, 1),
-      angle: spot.a,
-    });
-  }
-
-  // 3. Fallen petals drifting off the branch — the detail that makes a
-  //    blossom tree read as *in bloom* rather than as decorated.
-  const fallen = 7 + Math.floor(gr.rnd() * 9);
-  for (let i = 0; i < fallen; i++) {
-    const host = clusterSpots[Math.floor(gr.rnd() * clusterSpots.length)];
-    if (!host) break;
-    gr.g.leaves.push({
-      x: host.p.x + rr(gr, -46, 46) * s,
-      y: host.p.y + rr(gr, 12, 84) * s * (Math.sin(gr.dir) >= 0 ? 1 : -1),
-      angle: gr.rnd() * Math.PI * 2,
-      len: rr(gr, 7, 13) * s,
-      width: rr(gr, 5, 9) * s,
-      shape: 'petal',
-      bend: rr(gr, -2, 2) * s,
-      curl: rr(gr, 0, 0.4),
-      tone: petalTone(gr, petal, paleChance + 0.2),
-      pale: false,
-      seed: (gr.rnd() * 0xffffffff) >>> 0,
-      tier: gr.rnd() < 0.5 ? TIER_LIT : TIER_MID,
-    });
-  }
-}
-
-function growPotted(gr: Grow): void {
-  const s = gr.scale;
-  const t = roleTone(gr, 'leaf', [6, -6, -2]);
-  const potW = 56 * s;
-  const potH = 44 * s;
-  contactShade(gr, 40, 0.5);
-  const kinds: PotGeom['kind'][] = ['terracotta', 'terracotta', 'enamel', 'brass'];
-  gr.g.pots.push({
-    x: -potW / 2,
-    y: -potH,
-    w: potW,
-    h: potH,
-    kind: kinds[Math.floor(gr.rnd() * kinds.length)] ?? 'terracotta',
-  });
-
-  // A real houseplant is a *dome* of foliage, not a handful of wands. Back
-  // rank dark and low, mid rank the body, front rank the lit big leaves.
-  const RANKS: Array<{ n: [number, number]; len: [number, number]; leaf: [number, number]; tier: FloraTier; dl: number }> = [
-    { n: [4, 6], len: [30, 52], leaf: [20, 32], tier: TIER_BACK, dl: -18 },
-    { n: [5, 8], len: [42, 78], leaf: [26, 42], tier: TIER_MID, dl: 0 },
-    { n: [3, 5], len: [34, 62], leaf: [30, 50], tier: TIER_LIT, dl: 9 },
-  ];
-  for (const rank of RANKS) {
-    onTier(gr, rank.tier, () => {
-      const stems = Math.round(rr(gr, rank.n[0], rank.n[1]));
-      for (let i = 0; i < stems; i++) {
-        const spread = ((i + 0.5) / stems - 0.5) * 2.05 + (gr.rnd() * 2 - 1) * 0.12;
-        const stem = growStem(gr, {
-          x: (gr.rnd() * 2 - 1) * 8 * s,
-          y: -potH - 2 * s,
-          angle: -Math.PI / 2 + spread,
-          len: rr(gr, rank.len[0], rank.len[1]) * s,
-          width: rr(gr, 2.6, 4) * s,
-          taper: 0.42,
-          gravity: 0.2,
-          wobble: 0.05,
-          step: 4.5,
-          tone: {
-            h: t.h - 4,
-            s: clamp(t.s + 6, 0, 100),
-            l: clamp(t.l + 6 + rank.dl * 0.6, 0, 100),
-          },
-        });
-        const ll = rr(gr, rank.leaf[0], rank.leaf[1]) * s;
-        leafify(gr, stem, {
-          shape: ['round', 'oval', 'fan'],
-          every: ll * 0.62,
-          len: ll,
-          width: ll * 0.92,
-          splay: 1.0,
-          from: 0.18,
-          tone: { h: t.h, s: t.s, l: clamp(t.l + rank.dl, 0, 100) },
-          hueJitter: variance(gr),
-          sizeTaper: 0.72,
-          sizeJitter: 0.3,
-          curlChance: 0.14,
-          darkChance: 0.2,
-          damageChance: 0.14,
-          tiers: 'fixed',
-        });
-      }
-    });
-  }
-  // Soil: a dark crumbly line, plus a couple of pebbles.
-  gr.g.threads.push({
-    pts: [
-      { x: -potW * 0.42, y: -potH + 2.5 * s },
-      { x: 0, y: -potH + 4.2 * s },
-      { x: potW * 0.42, y: -potH + 2.5 * s },
-    ],
-    width: 5 * s,
-    alpha: 0.7,
-    colour: hsl(...soilTone(gr)),
-    tier: TIER_BACK,
-  });
-  // A flower or two on about half of them.
-  if (gr.rnd() < 0.5) {
-    onTier(gr, TIER_LIT, () => {
-      growCluster(gr, {
-        x: rr(gr, -14, 14) * s,
-        y: -potH - rr(gr, 44, 72) * s,
-        spread: 18 * s,
-        r: [6 * s, 12 * s],
-        count: [5, 10],
-        tone: roleTone(gr, 'bloom'),
-        budChance: 0.28,
-      });
-    });
-  }
-}
-
 function growGrassTuft(gr: Grow): void {
-  const s = gr.scale;
-  const t = roleTone(gr, 'grass');
-  const dryTone = roleTone(gr, 'dry');
-  contactShade(gr, 22, 0.4);
-  // Three ranks of blades — a tuft with a back, a body and a lit front.
-  const RANKS: Array<{ n: number; tier: FloraTier; dl: number; len: [number, number]; sp: number }> = [
-    { n: 16, tier: TIER_BACK, dl: -19, len: [38, 76], sp: 22 },
-    { n: 20, tier: TIER_MID, dl: 0, len: [32, 68], sp: 26 },
-    { n: 13, tier: TIER_LIT, dl: 10, len: [26, 56], sp: 24 },
-  ];
-  for (const rank of RANKS) {
-    const blades = rank.n + Math.floor(gr.rnd() * 7);
-    for (let i = 0; i < blades; i++) {
-      const u = (i + gr.rnd()) / blades - 0.5;
-      const dry = gr.rnd() < 0.2;
-      gr.g.leaves.push({
-        x: u * rank.sp * s + (gr.rnd() * 2 - 1) * 3 * s,
-        y: (gr.rnd() * 2 - 1) * 1.5 * s,
-        angle: gr.dir + u * 1.6 + (gr.rnd() * 2 - 1) * 0.24,
-        len: rr(gr, rank.len[0], rank.len[1]) * s,
-        width: rr(gr, 4, 8) * s,
-        shape: gr.rnd() < 0.75 ? 'needle' : 'strap',
-        bend: (u >= 0 ? 1 : -1) * rr(gr, 9, 26) * s,
-        curl: gr.rnd() < 0.12 ? rr(gr, 0.3, 0.6) : 0,
-        tone: dry
-          ? { h: dryTone.h, s: dryTone.s, l: clamp(dryTone.l + rank.dl * 0.5, 0, 100) }
-          : {
-              h: t.h + (gr.rnd() * 2 - 1) * variance(gr, 12) * 1.3,
-              s: clamp(t.s + (gr.rnd() * 2 - 1) * 10, 0, 100),
-              l: clamp(t.l + (gr.rnd() * 2 - 1) * 9 + rank.dl, 0, 100),
-            },
-        pale: false,
-        seed: (gr.rnd() * 0xffffffff) >>> 0,
-        tier: rank.tier,
+  const g = gr.g;
+  g.shades.push({
+    x: 0,
+    y: 1.5 * gr.scale,
+    rx: 15 * gr.scale,
+    ry: 4.5 * gr.scale,
+    alpha: 0.42,
+  });
+
+  const bladeN = rri(gr, 9, 16);
+  const bladeIdx: number[] = [];
+  for (let b = 0; b < bladeN; b++) {
+    const angle = -Math.PI / 2 + (gr.rnd() - 0.5) * rr(gr, 0.9, 1.5);
+    const len = rr(gr, 34, 78) * gr.scale;
+    const dry = gr.rnd() < 0.14;
+    const base = dry ? roleTone(gr, 'dry') : roleTone(gr, 'grass');
+    const v = variance(gr);
+    const tier: FloraTier = gr.rnd() < 0.24 ? TIER_BACK : TIER_MID;
+    g.leaves.push({
+      x: (gr.rnd() * 2 - 1) * 5 * gr.scale,
+      y: (gr.rnd() - 0.5) * 2 * gr.scale,
+      angle,
+      len,
+      width: len * 0.16,
+      shape: 'strap',
+      stamp: rri(gr, 0, 3),
+      flip: gr.rnd() < 0.5,
+      pale: dry,
+      tone: {
+        h: base.h + (gr.rnd() * 2 - 1) * v * 0.5,
+        s: clamp(base.s + (gr.rnd() * 2 - 1) * 6, 0, 100),
+        l: clamp(base.l + (gr.rnd() * 2 - 1) * 5, 0, 100),
+      },
+      tier,
+      seed: (gr.rnd() * 0xffffffff) >>> 0,
+    });
+    bladeIdx.push(g.leaves.length - 1);
+  }
+  // A couple of hero blades catch the light.
+  const heroes = rri(gr, 0, 2);
+  for (let h = 0; h < heroes && bladeIdx.length > 4; h++) {
+    const idx = bladeIdx[rri(gr, 0, bladeIdx.length - 1)] as number;
+    const l = g.leaves[idx] as LeafInstance;
+    if (l.tier !== TIER_MID) continue;
+    l.tier = TIER_LIT;
+    l.len *= 1.14;
+    l.width *= 1.14;
+  }
+
+  // Flower stalks: a slim upright vine each, crowned with one clock or puff.
+  const stalks = rri(gr, 1, 3);
+  for (let s = 0; s < stalks; s++) {
+    const ox = (gr.rnd() * 2 - 1) * 7 * gr.scale;
+    const len = rr(gr, 74, 118) * gr.scale;
+    const lean = (gr.rnd() - 0.5) * 0.5;
+    const pts: Pt[] = [{ x: ox, y: 0 }];
+    const segs = 5;
+    for (let i = 1; i <= segs; i++) {
+      const t = i / segs;
+      pts.push({
+        x: ox + Math.sin(lean) * len * t + Math.sin(t * 4 + s) * 1.5 * gr.scale,
+        y: -Math.cos(lean) * len * t,
       });
     }
-  }
-  // Dandelions and a little meadow of small flowers on tall stalks.
-  const stalks = 3 + Math.floor(gr.rnd() * 4);
-  for (let i = 0; i < stalks; i++) {
-    const lit = gr.rnd() < 0.45;
-    const stem = growStem(gr, {
-      x: (gr.rnd() * 2 - 1) * 16 * s,
-      y: 0,
-      angle: gr.dir + (gr.rnd() * 2 - 1) * 0.34,
-      len: rr(gr, 52, 96) * s,
-      width: 2.2 * s,
-      taper: 0.72,
-      gravity: 0.06,
-      wobble: 0.035,
-      step: 4.5,
-      tier: lit ? TIER_LIT : TIER_MID,
-      tone: { h: t.h - 6, s: clamp(t.s - 6, 0, 100), l: clamp(t.l + 4, 0, 100) },
+    const stemTone = roleTone(gr, 'grass', [0, -6, -8]);
+    g.vines.push({
+      pts,
+      widths: pts.map((_, i) => Math.max(0.4, (1.1 - (i / segs) * 0.6) * gr.scale)),
+      tone: stemTone,
+      woody: 0,
+      habit: 'upright',
     });
-    const tip = stem.pts[stem.pts.length - 1] as Pt;
-    const roll = gr.rnd();
-    if (roll < 0.3) {
-      gr.g.blooms.push({
-        x: tip.x,
-        y: tip.y,
-        r: rr(gr, 10, 15) * s,
-        kind: 'puff',
-        open: 1,
-        tone: roleTone(gr, 'dry', [4, -40, 26]),
-        seed: (gr.rnd() * 0xffffffff) >>> 0,
-        tier: lit ? TIER_LIT : TIER_MID,
-      });
-    } else if (roll < 0.62) {
-      gr.g.blooms.push({
-        x: tip.x,
-        y: tip.y,
-        r: rr(gr, 7, 11) * s,
-        kind: 'dandelion',
-        open: 1,
-        tone: roleTone(gr, 'bloomAlt'),
-        seed: (gr.rnd() * 0xffffffff) >>> 0,
-        tier: lit ? TIER_LIT : TIER_MID,
-      });
-    } else {
-      onTier(gr, lit ? TIER_LIT : TIER_MID, () => {
-        growCluster(gr, {
+    const tip = pts[segs] as Pt;
+    const clock = gr.rnd() < 0.55;
+    const r = rr(gr, 5.5, 8.5) * gr.scale;
+    g.clusters.push({
+      x: tip.x,
+      y: tip.y,
+      blooms: [
+        {
           x: tip.x,
           y: tip.y,
-          spread: 11 * s,
-          r: [4 * s, 8 * s],
-          count: [5, 11],
-          tone: gr.rnd() < 0.5 ? roleTone(gr, 'bloomCool') : roleTone(gr, 'bloom'),
-          squash: 0.7,
-          budChance: 0.3,
-        });
-      });
-    }
+          r,
+          kind: clock ? 'dandelion' : 'puff',
+          open: 1,
+          tone: clock ? roleTone(gr, 'bloomAlt') : tone(gr, 42, 22, 78),
+          seed: (gr.rnd() * 0xffffffff) >>> 0,
+          tier: TIER_LIT,
+        },
+      ],
+      pedicels: [],
+    });
   }
 }
 
+/* --------------------------- bespoke: cobweb ------------------------------ */
+
+/**
+ * A cobweb is not foliage at all: a fan of radial silk threads across a case
+ * corner, joined by a few sagging concentric arcs. Threads only.
+ */
 function growCobweb(gr: Grow): void {
-  const s = gr.scale;
-  const colour = roleColour(gr, 'silk');
-  // Pale silk vanishes on parchment; a dark halo under every strand keeps the
-  // web readable on both a cream wall and dark walnut. It carries its own
-  // alpha, so it must stay a colour string rather than a palette role.
-  const halo = 'hsl(206 26% 18% / 0.5)';
-  const spokes = 6 + Math.floor(gr.rnd() * 3);
-  const reach = rr(gr, 46, 72) * s;
-  // Sweep from the facing direction toward the horizontal on the flip side.
-  const a0 = gr.dir;
-  const a1 = gr.flip > 0 ? gr.dir + Math.PI / 2 : gr.dir - Math.PI / 2;
+  const g = gr.g;
+  const silk = roleColour(gr, 'silk');
+  const halo = 'hsl(140 20% 22% / 0.5)';
+  const cx = 0;
+  const cy = 0;
+  // The web spans the corner's inner diagonal; flip mirrors it.
+  const baseA = (gr.flip > 0 ? 1 : -1) * (Math.PI / 4);
   const radials: Pt[][] = [];
-  const ends: number[] = [];
-  for (let i = 0; i < spokes; i++) {
-    const a = lerp(a0, a1, (i + 0.5) / spokes) + (gr.rnd() * 2 - 1) * 0.05;
-    const len = reach * rr(gr, 0.72, 1);
-    ends.push(len);
-    const pts: Pt[] = [];
-    for (let k = 0; k <= 5; k++) {
-      const u = k / 5;
-      // A touch of sag so the threads are not laser-straight.
-      const sag = Math.sin(Math.PI * u) * len * 0.035;
-      pts.push({
-        x: Math.cos(a) * len * u + Math.cos(a + Math.PI / 2) * sag,
-        y: Math.sin(a) * len * u + Math.sin(a + Math.PI / 2) * sag,
-      });
-    }
+  const n = rri(gr, 5, 8);
+  for (let i = 0; i < n; i++) {
+    const a = baseA + (gr.flip > 0 ? 1 : -1) * ((i / (n - 1)) - 0.5) * rr(gr, 1.2, 1.7);
+    const len = rr(gr, 34, 74) * gr.scale;
+    const pts: Pt[] = [
+      { x: cx, y: cy },
+      { x: cx + Math.cos(a) * len * 0.55, y: cy + Math.sin(a) * len * 0.55 },
+      { x: cx + Math.cos(a) * len, y: cy + Math.sin(a) * len },
+    ];
     radials.push(pts);
-    gr.g.threads.push({ pts, width: 0.8, alpha: 0.42, colour, halo });
+    g.threads.push({ pts, width: 0.6, alpha: rr(gr, 0.35, 0.55), colour: silk, halo });
   }
-  // Catenary rings between consecutive radials, with a few missing spans.
-  const rings = 4 + Math.floor(gr.rnd() * 3);
-  for (let r = 1; r <= rings; r++) {
-    const u = 0.22 + (r / rings) * 0.78;
-    for (let i = 0; i < spokes - 1; i++) {
-      if (gr.rnd() < 0.13) continue; // broken web
-      const aA = lerp(a0, a1, (i + 0.5) / spokes);
-      const aB = lerp(a0, a1, (i + 1.5) / spokes);
-      const lA = (ends[i] as number) * u;
-      const lB = (ends[i + 1] as number) * u;
-      const pA = { x: Math.cos(aA) * lA, y: Math.sin(aA) * lA };
-      const pB = { x: Math.cos(aB) * lB, y: Math.sin(aB) * lB };
-      const mid = { x: (pA.x + pB.x) / 2, y: (pA.y + pB.y) / 2 };
-      const sag = 1 + u * 0.18;
-      gr.g.threads.push({
-        pts: [pA, { x: mid.x * sag, y: mid.y * sag }, pB],
-        width: 0.72,
-        alpha: 0.34 + gr.rnd() * 0.12,
-        colour,
+  // Concentric arcs between adjacent radials, sagging toward the centre.
+  const rings = rri(gr, 2, 4);
+  for (let k = 1; k <= rings; k++) {
+    const f = 0.3 + (k / (rings + 1)) * 0.62;
+    for (let i = 0; i + 1 < radials.length; i++) {
+      const a = radials[i] as Pt[];
+      const b = radials[i + 1] as Pt[];
+      const p0 = a[2] as Pt;
+      const p1 = b[2] as Pt;
+      const ax = p0.x * f;
+      const ay = p0.y * f;
+      const bx = p1.x * f;
+      const by = p1.y * f;
+      const sag = rr(gr, 3, 7) * gr.scale;
+      g.threads.push({
+        pts: [
+          { x: ax, y: ay },
+          { x: (ax + bx) / 2, y: (ay + by) / 2 + sag },
+          { x: bx, y: by },
+        ],
+        width: 0.5,
+        alpha: rr(gr, 0.3, 0.5),
+        colour: silk,
         halo,
       });
     }
   }
-  // Dust caught in the silk.
-  for (let i = 0; i < 3; i++) {
-    const a = lerp(a0, a1, gr.rnd());
-    const l = reach * rr(gr, 0.25, 0.9);
-    gr.g.blooms.push({
-      x: Math.cos(a) * l,
-      y: Math.sin(a) * l,
-      r: rr(gr, 0.7, 1.5),
-      kind: 'dust',
-      open: 1,
-      tone: roleTone(gr, 'dry', [0, -34, 14]),
-      seed: (gr.rnd() * 0xffffffff) >>> 0,
+  // One or two drift threads hanging loose.
+  const drifts = rri(gr, 1, 2);
+  for (let d = 0; d < drifts; d++) {
+    const x = rr(gr, -20, 20) * gr.scale;
+    const len = rr(gr, 24, 52) * gr.scale;
+    g.threads.push({
+      pts: [
+        { x, y: cy },
+        { x: x + rr(gr, -3, 3), y: cy + len * 0.6 },
+        { x: x + rr(gr, -5, 5), y: cy + len },
+      ],
+      width: 0.5,
+      alpha: rr(gr, 0.4, 0.6),
+      colour: silk,
+      halo,
     });
+  }
+}
+
+/* ============================= species table ============================== */
+
+interface SpeciesDef {
+  id: FloraSpeciesId;
+  label: string;
+  /** Anchor kinds this species can grow from. */
+  anchors: readonly FloraAnchorKind[];
+  /** Scale range picked per specimen. */
+  scale: [number, number];
+  /** Nominal untransformed footprint width, used to fit `anchor.run`. */
+  nominalW: number;
+  grow: (gr: Grow) => void;
+}
+
+/** Grow a vine specimen from a recipe, plus any species add-ons. */
+function vineGrower(rec: VineRecipe, addons?: (gr: Grow) => void): (gr: Grow) => void {
+  return (gr: Grow) => {
+    // Contact shadow first — everything else lands on top of it.
+    const reach = ((rec.len[0] + rec.len[1]) / 2) * gr.scale;
+    gr.g.shades.push({
+      x: 0,
+      y: gr.facing === 'down' ? 3 * gr.scale : 1.5 * gr.scale,
+      rx: clamp(reach * 0.3, 8, 60),
+      ry: clamp(reach * 0.3, 8, 60) * 0.3,
+      alpha: 0.4,
+    });
+    growVineSpecimen(gr, rec);
+    if (addons) addons(gr);
+  };
+}
+
+const IVY: VineRecipe = {
+  vines: [2, 3],
+  len: [90, 160],
+  step: 13,
+  width: [2.2, 3.2],
+  woody: 0.55,
+  habitUp: 'climb',
+  habitDown: 'hang',
+  shapes: [
+    ['lobed', 0.7],
+    ['palmate', 0.3],
+  ],
+  leafLen: [22, 38],
+  perNode: [1, 2],
+  clumpRun: [2, 4],
+  gapRun: [1, 3],
+  backChance: 0.3,
+  heroes: [1, 2],
+  branches: 1.1,
+  tendrils: 1.4,
+  splay: [0.55, 1.0],
+  curve: 0.22,
+  role: 'leaf',
+  toneDelta: [-5, -1, -2],
+};
+
+const POTHOS: VineRecipe = {
+  vines: [1, 3],
+  len: [90, 170],
+  step: 14,
+  width: [2.0, 2.8],
+  woody: 0.25,
+  habitUp: 'climb',
+  habitDown: 'hang',
+  shapes: [['heart', 1]],
+  leafLen: [24, 42],
+  perNode: [1, 2],
+  clumpRun: [1, 3],
+  gapRun: [1, 2],
+  backChance: 0.26,
+  heroes: [1, 2],
+  branches: 0.9,
+  tendrils: 0.8,
+  splay: [0.6, 1.1],
+  curve: 0.24,
+  pale: 0.4,
+  role: 'leaf',
+  toneDelta: [-11, -2, 2],
+};
+
+const HEARTS: VineRecipe = {
+  vines: [4, 7],
+  len: [60, 130],
+  step: 11,
+  width: [0.8, 1.2],
+  woody: 0.1,
+  habitUp: 'hang',
+  habitDown: 'hang',
+  shapes: [['heart', 1]],
+  leafLen: [8, 15],
+  perNode: [2, 2],
+  opposite: true,
+  clumpRun: [1, 2],
+  gapRun: [1, 2],
+  backChance: 0.22,
+  heroes: [0, 1],
+  branches: 0.3,
+  tendrils: 0.6,
+  splay: [0.9, 1.5],
+  curve: 0.18,
+  role: 'leaf',
+  toneDelta: [12, -32, 10],
+};
+
+const BLOSSOM: VineRecipe = {
+  vines: [1, 2],
+  len: [110, 200],
+  step: 15,
+  width: [2.6, 3.8],
+  woody: 0.75,
+  habitUp: 'climb',
+  habitDown: 'hang',
+  trailOn: ['jointGap', 'potPosition'],
+  shapes: [
+    ['serrate', 0.6],
+    ['oval', 0.4],
+  ],
+  leafLen: [15, 25],
+  perNode: [1, 2],
+  clumpRun: [2, 3],
+  gapRun: [1, 2],
+  backChance: 0.3,
+  heroes: [1, 2],
+  branches: 0.8,
+  tendrils: 0.3,
+  splay: [0.5, 0.9],
+  curve: 0.2,
+  role: 'leaf',
+  toneDelta: [6, -8, 1],
+  flowers: {
+    kinds: ['blossom'],
+    chance: 0.5,
+    maxPerVine: 3,
+    size: [6.5, 11],
+    pale: 0.3,
+    role: 'bloom',
+  },
+};
+
+const MOSS: VineRecipe = {
+  vines: [2, 4],
+  len: [28, 62],
+  step: 8,
+  width: [1.4, 2.0],
+  woody: 0.15,
+  habitUp: 'trail',
+  habitDown: 'trail',
+  shapes: [['round', 1]],
+  leafLen: [4.5, 8.5],
+  perNode: [2, 3],
+  clumpRun: [3, 6],
+  gapRun: [0, 1],
+  backChance: 0.35,
+  heroes: [0, 0],
+  branches: 0.6,
+  tendrils: 0,
+  splay: [0.4, 1.2],
+  curve: 0.26,
+  role: 'moss',
+  toneDelta: [0, 0, 0],
+};
+
+const FERN: VineRecipe = {
+  vines: [5, 8],
+  len: [60, 110],
+  step: 10,
+  width: [1.6, 2.2],
+  woody: 0.2,
+  habitUp: 'upright',
+  habitDown: 'hang',
+  shapes: [['needle', 1]],
+  leafLen: [7, 13],
+  perNode: [2, 2],
+  opposite: true,
+  clumpRun: [8, 12],
+  gapRun: [0, 1],
+  backChance: 0.3,
+  heroes: [0, 1],
+  branches: 0,
+  tendrils: 0,
+  splay: [1.1, 1.5],
+  curve: 0.14,
+  role: 'leafDeep',
+  toneDelta: [0, 0, 0],
+};
+
+const HERB: VineRecipe = {
+  vines: [3, 5],
+  len: [34, 62],
+  step: 9,
+  width: [1.0, 1.5],
+  woody: 0.35,
+  habitUp: 'hang',
+  habitDown: 'hang',
+  shapes: [['strap', 1]],
+  leafLen: [11, 20],
+  perNode: [1, 2],
+  clumpRun: [2, 4],
+  gapRun: [1, 2],
+  backChance: 0.3,
+  heroes: [0, 0],
+  branches: 0.2,
+  tendrils: 0,
+  splay: [0.3, 0.8],
+  curve: 0.12,
+  role: 'dry',
+  toneDelta: [0, 0, 0],
+};
+
+const POTTED: VineRecipe = {
+  vines: [2, 4],
+  len: [44, 85],
+  step: 11,
+  width: [1.6, 2.4],
+  woody: 0.4,
+  habitUp: 'upright',
+  habitDown: 'upright',
+  shapes: [
+    ['oval', 0.7],
+    ['round', 0.3],
+  ],
+  leafLen: [13, 23],
+  perNode: [1, 2],
+  clumpRun: [2, 4],
+  gapRun: [1, 2],
+  backChance: 0.28,
+  heroes: [1, 2],
+  branches: 0.7,
+  tendrils: 0,
+  splay: [0.6, 1.1],
+  curve: 0.16,
+  role: 'leaf',
+  toneDelta: [4, -2, 0],
+  flowers: {
+    kinds: ['blossom'],
+    chance: 0.22,
+    maxPerVine: 1,
+    size: [3.6, 5.5],
+    pale: 0.15,
+    role: 'bloomAlt',
+  },
+};
+
+/** The pot itself, then vines out of its soil. */
+function growPotted(gr: Grow): void {
+  const w = rr(gr, 30, 42) * gr.scale;
+  const h = w * rr(gr, 0.72, 0.85);
+  const kinds: PotGeom['kind'][] = ['terracotta', 'terracotta', 'brass', 'enamel'];
+  gr.g.pots.push({
+    x: -w / 2,
+    y: -h,
+    w,
+    h,
+    kind: kinds[rri(gr, 0, kinds.length - 1)] ?? 'terracotta',
+  });
+  gr.g.shades.push({
+    x: 0,
+    y: 2 * gr.scale,
+    rx: w * 0.62,
+    ry: w * 0.2,
+    alpha: 0.45,
+  });
+  // Vines sprout from the soil line, not the plank.
+  const soilY = -h + 3 * gr.scale;
+  const rec = POTTED;
+  const total = rri(gr, rec.vines[0], rec.vines[1]);
+  for (let v = 0; v < total; v++) {
+    const spread = total > 1 ? (v / (total - 1) - 0.5) * HABIT_FAN.upright : 0;
+    growVine(
+      gr,
+      rec,
+      'upright',
+      (gr.rnd() * 2 - 1) * w * 0.22,
+      soilY,
+      gr.dir + spread + (gr.rnd() - 0.5) * 0.2,
+      rr(gr, rec.len[0], rec.len[1]) * gr.scale * lerp(1, 0.7, total > 1 ? v / (total - 1) : 0),
+      rr(gr, rec.width[0], rec.width[1]) * Math.min(1.25, gr.scale),
+      v,
+      0,
+    );
   }
 }
 
@@ -2351,82 +1999,80 @@ const SPECIES: Record<FloraSpeciesId, SpeciesDef> = {
   ivy: {
     id: 'ivy',
     label: FLORA_LABELS.ivy,
-    anchors: ['railTop', 'caseCorner', 'crownTop', 'shelfUnderside'],
-    scale: [1.0, 1.45],
-    nominalW: 300,
-    grow: (gr) => growTrail(gr, TRAILS.ivy),
+    anchors: ['railTop', 'shelfUnderside', 'caseCorner', 'crownTop', 'jointGap'],
+    scale: [0.75, 1.25],
+    nominalW: 160,
+    grow: vineGrower(IVY),
   },
   pothos: {
     id: 'pothos',
     label: FLORA_LABELS.pothos,
-    anchors: ['railTop', 'shelfUnderside', 'caseCorner'],
-    scale: [1.0, 1.4],
-    nominalW: 290,
-    grow: (gr) => growTrail(gr, TRAILS.pothos),
-  },
-  hearts: {
-    id: 'hearts',
-    label: FLORA_LABELS.hearts,
-    anchors: ['railTop', 'shelfUnderside'],
-    scale: [0.95, 1.35],
+    anchors: ['railTop', 'shelfUnderside', 'crownTop'],
+    scale: [0.7, 1.2],
     nominalW: 150,
-    grow: (gr) => growTrail(gr, TRAILS.hearts),
-  },
-  fern: {
-    id: 'fern',
-    label: FLORA_LABELS.fern,
-    // Ferns stand up out of a surface, so no undersides and no top corners.
-    anchors: ['railTop', 'jointGap', 'crownTop', 'potPosition'],
-    scale: [0.95, 1.35],
-    nominalW: 260,
-    grow: growFern,
+    grow: vineGrower(POTHOS),
   },
   moss: {
     id: 'moss',
     label: FLORA_LABELS.moss,
-    anchors: ['jointGap', 'railTop', 'crownTop', 'potPosition'],
-    scale: [0.9, 1.4],
-    nominalW: 130,
-    grow: growMoss,
+    anchors: ['railTop', 'jointGap', 'caseCorner', 'crownTop', 'potPosition'],
+    scale: [0.7, 1.35],
+    nominalW: 100,
+    grow: vineGrower(MOSS, (gr) => addMossMound(gr, MOSS)),
+  },
+  fern: {
+    id: 'fern',
+    label: FLORA_LABELS.fern,
+    anchors: ['railTop', 'jointGap', 'potPosition', 'caseCorner'],
+    scale: [0.7, 1.2],
+    nominalW: 120,
+    grow: vineGrower(FERN),
   },
   herbBundle: {
     id: 'herbBundle',
     label: FLORA_LABELS.herbBundle,
-    anchors: ['shelfUnderside'],
-    scale: [0.95, 1.3],
-    nominalW: 130,
-    grow: growHerbBundle,
+    anchors: ['railTop', 'shelfUnderside'],
+    scale: [0.7, 1.15],
+    nominalW: 60,
+    grow: vineGrower(HERB, addTwineAndTag),
   },
   blossom: {
     id: 'blossom',
     label: FLORA_LABELS.blossom,
-    anchors: ['crownTop', 'railTop'],
-    scale: [0.95, 1.3],
-    nominalW: 330,
-    grow: growBlossom,
+    anchors: ['railTop', 'crownTop', 'shelfUnderside', 'caseCorner', 'jointGap', 'potPosition'],
+    scale: [0.8, 1.3],
+    nominalW: 180,
+    grow: vineGrower(BLOSSOM),
+  },
+  hearts: {
+    id: 'hearts',
+    label: FLORA_LABELS.hearts,
+    anchors: ['railTop', 'shelfUnderside', 'caseCorner', 'crownTop'],
+    scale: [0.75, 1.25],
+    nominalW: 100,
+    grow: vineGrower(HEARTS),
   },
   potted: {
     id: 'potted',
     label: FLORA_LABELS.potted,
-    anchors: ['potPosition', 'railTop'],
-    scale: [0.9, 1.3],
-    nominalW: 150,
+    anchors: ['potPosition', 'railTop', 'jointGap'],
+    scale: [0.7, 1.2],
+    nominalW: 90,
     grow: growPotted,
   },
   grassTuft: {
     id: 'grassTuft',
     label: FLORA_LABELS.grassTuft,
-    anchors: ['jointGap', 'railTop', 'crownTop', 'potPosition'],
-    scale: [0.9, 1.35],
-    nominalW: 130,
+    anchors: ['jointGap', 'railTop', 'potPosition'],
+    scale: [0.7, 1.25],
+    nominalW: 90,
     grow: growGrassTuft,
   },
   cobweb: {
     id: 'cobweb',
     label: FLORA_LABELS.cobweb,
-    // Webs live in corners and dark undersides, never out on an open crown.
-    anchors: ['caseCorner', 'shelfUnderside', 'jointGap'],
-    scale: [0.95, 1.4],
+    anchors: ['caseCorner', 'shelfUnderside'],
+    scale: [0.8, 1.2],
     nominalW: 150,
     grow: growCobweb,
   },
@@ -2449,14 +2095,14 @@ const GEOMETRY_MEMO_CAP = 512;
 
 function emptyGeometry(ink: string): FloraGeometry {
   return {
-    stems: [],
+    vines: [],
     leaves: [],
-    blooms: [],
+    clusters: [],
     threads: [],
-    pots: [],
-    tags: [],
     shades: [],
     mounds: [],
+    pots: [],
+    tags: [],
     ink,
     bounds: { x: 0, y: 0, w: 0, h: 0 },
   };
@@ -2473,14 +2119,19 @@ function computeBounds(g: FloraGeometry): Rect {
     if (x + r > maxX) maxX = x + r;
     if (y + r > maxY) maxY = y + r;
   };
-  for (const s of g.stems) {
-    for (let i = 0; i < s.pts.length; i++) {
-      const p = s.pts[i] as Pt;
-      hit(p.x, p.y, (s.widths[i] ?? 1) / 2 + 0.5);
+  for (const v of g.vines) {
+    for (let i = 0; i < v.pts.length; i++) {
+      const p = v.pts[i] as Pt;
+      hit(p.x, p.y, (v.widths[i] ?? 1) / 2 + 0.5);
     }
   }
-  for (const l of g.leaves) hit(l.x, l.y, leafBoundRadius(l.len, l.width) + Math.abs(l.bend));
-  for (const b of g.blooms) hit(b.x, b.y, b.r * 1.35 + 1);
+  // A leaf is bounded by the circle that covers its whole blade from the
+  // petiole — deliberately conservative (keep-out runs on these numbers).
+  for (const l of g.leaves) hit(l.x, l.y, leafBoundRadius(l.len, l.width) + 0.5);
+  for (const c of g.clusters) {
+    for (const b of c.blooms) hit(b.x, b.y, b.r * 1.35 + 1);
+    for (const t of c.pedicels) for (const p of t.pts) hit(p.x, p.y, t.width + 0.5);
+  }
   for (const t of g.threads) for (const p of t.pts) hit(p.x, p.y, t.width + 0.5);
   for (const p of g.pots) {
     hit(p.x, p.y, 0);
@@ -2527,7 +2178,8 @@ export function growFlora(p: FloraPlacement): FloraGeometry {
     flip: p.flip ? -1 : 1,
     pal,
     g,
-    tier: TIER_MID,
+    anchorKind: p.anchor.kind,
+    facing: p.facing,
   };
   SPECIES[p.species].grow(gr);
   g.bounds = computeBounds(g);
@@ -2654,6 +2306,11 @@ export interface FloraPlanOptions {
  * test is a threshold on a per-anchor random value, so raising the density
  * multiplier only ever *adds* specimens (a sparse shelf is a subset of a
  * lush one — no reshuffling as the user drags the slider).
+ *
+ * An anchor's compositional `weight` (0–1, from the floor planner's frame
+ * field) gates acceptance, clump size and specimen scale — edge anchors grow
+ * full vines while mid-field anchors shrink toward nothing, which is what
+ * keeps the central book field clear.
  */
 export function planFlora(o: FloraPlanOptions): FloraPlacement[] {
   const mult = clamp(o.densityMultiplier ?? 1, 0, 2);
@@ -2671,16 +2328,17 @@ export function planFlora(o: FloraPlanOptions): FloraPlacement[] {
     const candidates = o.spec.species.filter((s) => speciesFitsAnchor(s, anchor.kind));
     if (candidates.length === 0) continue;
 
+    const weight = clamp(anchor.weight ?? 1, 0, 1);
     const seed = floraSeed(o.floorIndex, anchor.id, o.themeSeed);
     const rnd = mulberry32(seed);
-    if (rnd() >= coverage) continue;
+    if (rnd() >= coverage * weight) continue;
 
     // How many specimens pile onto this anchor. The slider pushes this as
     // well as coverage, so dragging density to 2 genuinely overgrows the case
     // instead of merely accepting more anchors.
     const clumpN = Math.max(
       1,
-      Math.round(lerp(clumpRange[0], clumpRange[1], rnd()) * clamp(mult, 0.5, 2)),
+      Math.round(lerp(clumpRange[0], clumpRange[1], rnd()) * clamp(mult, 0.5, 2) * lerp(0.55, 1, weight)),
     );
 
     for (let c = 0; c < clumpN; c++) {
@@ -2689,7 +2347,8 @@ export function planFlora(o: FloraPlanOptions): FloraPlacement[] {
       const def = SPECIES[species];
       // Lush rooms grow larger specimens as well as more of them, and within
       // a clump the members differ in size — equal siblings read as a stencil.
-      const densityScale = densityScaleBase * lerp(0.94, 1.1, clamp(coverage, 0, 1));
+      const densityScale =
+        densityScaleBase * lerp(0.94, 1.1, clamp(coverage, 0, 1)) * lerp(0.66, 1, weight);
       const sibling = c === 0 ? 1 : lerp(0.62, 1.02, csRnd());
       let scale = lerp(def.scale[0], def.scale[1], csRnd()) * densityScale * sibling;
       if (anchor.run && anchor.run > 0) {
@@ -2698,6 +2357,8 @@ export function planFlora(o: FloraPlanOptions): FloraPlacement[] {
         // very biggest species rather than shrinking everything to fit.
         scale = Math.min(scale, Math.max(0.55, (anchor.run * 3.2) / def.nominalW));
       }
+      // A drape past ~1.7 reads as a curtain smothering the books; cap it.
+      if (TRAILING.has(species)) scale = Math.min(scale, 1.7);
       const facing = anchor.facing ?? speciesFacing(species, anchor.kind);
       const flip = c === 0 ? (anchor.flip ?? csRnd() < 0.5) : csRnd() < 0.5;
       // Siblings are shuffled along the anchor's run so a clump spreads out
@@ -2742,7 +2403,9 @@ export function floraLayerBounds(placements: readonly FloraPlacement[]): Rect | 
     maxX = Math.max(maxX, p.bounds.x + p.bounds.w);
     maxY = Math.max(maxY, p.bounds.y + p.bounds.h);
   }
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  // A hair of epsilon: callers test containment with <=, and float summation
+  // otherwise makes a placement sit *just* outside its own layer bounds.
+  return { x: minX, y: minY, w: maxX - minX + 1e-9, h: maxY - minY + 1e-9 };
 }
 
 /* ================================ drawing ================================= */
@@ -2752,14 +2415,10 @@ function toneStr(t: Tone, dl = 0, ds = 0, a = 1): string {
 }
 
 /**
- * Draw one stem as a tapered ribbon with real *round* form: a shaded side, a
- * lit side, a bark texture on the thick woody ones and a pencil arris.
- *
- * A stem at the spec's 3–6px is wide enough to be a cylinder rather than a
- * line, and painting it as one is most of what makes growth look woody
- * instead of drawn with a technical pen.
+ * Draw one vine as a tapered ribbon with real *round* form: a shaded side, a
+ * lit side, bark striations on the thick woody ones and a pencil arris.
  */
-function drawRibbon(ctx: Ctx2D, s: StemGeom, ink: string, light: FloraLight): void {
+function drawVineRibbon(ctx: Ctx2D, s: VineGeom, ink: string, light: FloraLight): void {
   const n = s.pts.length;
   if (n < 2) return;
   const left: Pt[] = [];
@@ -3080,13 +2739,17 @@ function drawBloom(ctx: Ctx2D, b: BloomGeom, ink: string, light: FloraLight): vo
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      ctx.fillStyle = toneStr(b.tone, 14, 8);
+      ctx.beginPath();
+      ctx.arc(0, 0, b.r * 0.42, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
     case 'puff': {
-      // Seed head: fine radiating hairs, each tipped with a seed.
-      ctx.strokeStyle = 'hsl(46 14% 88% / 0.85)';
+      // A seed clock: radiating filaments with tiny seed dots.
+      ctx.strokeStyle = 'hsl(48 14% 88% / 0.75)';
       ctx.lineWidth = 0.55;
-      for (let i = 0; i < 34; i++) {
+      for (let i = 0; i < 26; i++) {
         const a = rnd() * Math.PI * 2;
         const r = b.r * (0.55 + rnd() * 0.5);
         ctx.beginPath();
@@ -3246,75 +2909,153 @@ function drawTag(ctx: Ctx2D, t: TagGeom, ink: string): void {
   ctx.restore();
 }
 
-export interface FloraDrawOptions {
-  /** Overall opacity, e.g. for a crossfade on theme switch. Default 1. */
-  alpha?: number;
-  /** Add the shared granulation tile over the specimen. Default false. */
-  granulate?: boolean;
-  /**
-   * Draw contact shadows. Default true. Turn off when the compositor already
-   * lays down its own occlusion pass under the flora layer.
-   */
-  shadows?: boolean;
-  /** Light rig for this draw. Defaults to whatever `setFloraLight()` set. */
-  light?: Partial<FloraLight>;
-  /**
-   * Draw the ambient-occlusion pass that darkens the *interior* of a foliage
-   * mass. Default true; it is the single largest contributor to a canopy
-   * reading as a solid volume rather than a collage of leaves.
-   */
-  occlude?: boolean;
+/* ---------------------------- leaf stamp cache --------------------------- */
+
+/**
+ * The performance heart of the rebuild.
+ *
+ * Painting one leaf the vector way costs a dozen paths and gradients; a vine
+ * carries dozens of leaves and a floor carries hundreds. Instead, each
+ * (shape, palette tone bucket, tier, pale) combination is painted ONCE into
+ * `STAMP_VARIANTS` small canvases — full richness: gradient, veins, mottle,
+ * rim light, nibbled margins — and every leaf instance is a single
+ * transformed `drawImage`. Bake canvases are CPU-resident Skia rasters, so
+ * blitting is the cheapest thing we can do per leaf.
+ */
+interface LeafStamp {
+  c: Canvas2D;
+  /** Petiole (attachment) point inside the stamp canvas. */
+  px: number;
+  py: number;
+  /** Native blade length the stamp was painted at. */
+  len: number;
 }
 
-/** Draw one leaf at its own transform, tier-graded and (maybe) rim-lit. */
-function drawLeafGeom(ctx: Ctx2D, l: LeafGeom, ink: string, light: FloraLight): void {
-  const tier = l.tier ?? TIER_MID;
+/** Native blade length per tier: heroes are painted big (crisp when lit). */
+const STAMP_NATIVE: Record<FloraTier, number> = {
+  [TIER_BACK]: 30,
+  [TIER_MID]: 46,
+  [TIER_LIT]: 66,
+};
+
+const STAMP_VARIANTS = 4;
+
+const stampCache = new Map<string, LeafStamp[]>();
+const STAMP_CACHE_CAP = 160;
+
+/** Paint options per tier — this is where the value discipline is baked in. */
+function stampPaint(
+  tier: FloraTier,
+  tone0: Tone,
+  pale: boolean,
+  ink: string,
+  light: FloraLight,
+  len: number,
+): LeafPaint {
+  const back = tier === TIER_BACK;
+  const lit = tier === TIER_LIT;
+  return {
+    fillBase: back ? toneStr(tone0, -12, -10) : toneStr(tone0),
+    // The tip catches light: LIGHTER but no less saturated. Bleeding
+    // saturation out of the gradient is what turns a leaf into a faded
+    // pressed specimen.
+    fillTip: back ? toneStr(tone0, -4, -10) : toneStr(tone0, lit ? 15 : 11, 3),
+    ink,
+    vein: back ? toneStr(tone0, -8, -6) : toneStr(tone0, -16, 8),
+    lineWidth: clamp(len * 0.045, 0.5, 1.3),
+    // Variegation is a *pattern on* the leaf, not a different leaf colour.
+    variegation: pale ? toneStr(tone0, 27, -19) : undefined,
+    sheen: toneStr(tone0, 22, 0),
+    shade: toneStr(tone0, -22, -4),
+    lightAngle: light.angle,
+    rim: back ? undefined : light.rim,
+    rimStrength: (lit ? 0.85 : 0.38) * light.strength,
+    specular: lit ? hsl(48, 70, 96, 0.5) : undefined,
+    translucent: lit ? toneStr(tone0, 26, 16, 0.5) : undefined,
+    mottle: back ? 0 : 0.55,
+    // The back tier is a silhouette: interior detail there is invisible at
+    // shelf scale and only costs contrast.
+    flat: back,
+  };
+}
+
+/** Build (or fetch) the stamp set for one (shape, pale, tier, tone bucket). */
+function leafStamps(
+  shape: LeafShape,
+  pale: boolean,
+  tier: FloraTier,
+  tone0: Tone,
+  ink: string,
+  light: FloraLight,
+): LeafStamp[] {
+  // Quantize the tone so per-leaf jitter doesn't fragment the cache: leaves
+  // within ~6°/8%/8% of each other share stamps, and the variants +
+  // transforms supply the visible variety.
+  const q = (v: number, step: number): number => Math.round(v / step);
+  const key = [
+    shape,
+    pale ? 1 : 0,
+    tier,
+    q(tone0.h, 6),
+    q(tone0.s, 8),
+    q(tone0.l, 8),
+    ink,
+    light.angle.toFixed(2),
+  ].join('|');
+  const hit = stampCache.get(key);
+  if (hit) return hit;
+
+  const len = STAMP_NATIVE[tier];
+  const width = Math.max(3, len * shapeAspect(shape));
+  const paint = stampPaint(tier, tone0, pale, ink, light, len);
+  const rnd = mulberry32(fnv1a(key));
+  const stamps: LeafStamp[] = [];
+  for (let v = 0; v < STAMP_VARIANTS; v++) {
+    const bend = (rnd() * 2 - 1) * len * 0.16;
+    const curl = rnd() < 0.35 ? rnd() * 0.3 : 0;
+    const damage = rnd() < 0.3 ? 0.12 + rnd() * 0.3 : 0;
+    const seed = (rnd() * 0xffffffff) >>> 0;
+    const padX = 7;
+    const padY = 7 + Math.abs(bend);
+    const w = Math.ceil(len * 1.28 + padX * 2);
+    const h = Math.ceil(width + padY * 2);
+    const c = makeCanvas(w, h);
+    const ctx = get2d(c);
+    const px = padX + len * 0.14;
+    const py = h / 2;
+    ctx.translate(px, py);
+    drawLeaf(
+      ctx,
+      {
+        shape,
+        len,
+        width,
+        bend,
+        curl,
+        jitter: clamp(len * 0.028, 0.2, 0.9),
+        seed,
+        damage,
+        lobes: shape === 'palmate' ? 2.5 : undefined,
+      },
+      paint,
+    );
+    stamps.push({ c, px, py, len });
+  }
+  if (stampCache.size > STAMP_CACHE_CAP) stampCache.clear();
+  stampCache.set(key, stamps);
+  return stamps;
+}
+
+/** Instance one leaf: a single transformed blit from the stamp cache. */
+function drawLeafInstance(ctx: Ctx2D, l: LeafInstance, ink: string, light: FloraLight): void {
+  const stamps = leafStamps(l.shape, l.pale, l.tier, l.tone, ink, light);
+  const s = stamps[l.stamp % stamps.length] as LeafStamp;
+  const k = l.len / s.len;
   ctx.save();
   ctx.translate(l.x, l.y);
   ctx.rotate(l.angle);
-  const back = tier === TIER_BACK;
-  const lit = tier === TIER_LIT;
-  // The key vector expressed in this leaf's own frame.
-  const localLight = light.angle - l.angle;
-  drawLeaf(
-    ctx,
-    {
-      shape: l.shape,
-      len: l.len,
-      width: l.width,
-      bend: l.bend,
-      curl: l.curl,
-      // Hand-wobble has to scale with the blade: a fixed 0.45px wobble on a
-      // 9px string-of-hearts leaf turns the heart into a lump.
-      jitter: clamp(l.len * 0.028, 0.2, 0.9),
-      seed: l.seed,
-      damage: l.damage ?? 0,
-      lobes: l.shape === 'palmate' ? 2.5 : undefined,
-    },
-    {
-      fillBase: back ? toneStr(l.tone, -6, -6) : toneStr(l.tone),
-      // The tip catches light: LIGHTER but no less saturated. Bleeding
-      // saturation out of the gradient is exactly what turned a leaf into a
-      // faded pressed specimen.
-      fillTip: back ? toneStr(l.tone, 2, -6) : toneStr(l.tone, lit ? 15 : 11, 3),
-      ink,
-      vein: toneStr(l.tone, -16, 8),
-      lineWidth: clamp(l.len * 0.045, 0.5, 1.3),
-      // Variegation is a *pattern on* the leaf, not a different leaf colour.
-      variegation: l.pale ? toneStr(l.tone, 27, -19) : undefined,
-      sheen: toneStr(l.tone, 22, 0),
-      shade: toneStr(l.tone, -22, -4),
-      lightAngle: localLight,
-      rim: back ? undefined : light.rim,
-      rimStrength: (lit ? 0.85 : 0.38) * light.strength,
-      specular: lit ? hsl(48, 70, 96, 0.5) : undefined,
-      translucent: lit ? toneStr(l.tone, 26, 16, 0.5) : undefined,
-      mottle: back ? 0 : 0.55,
-      // The back tier is a silhouette: interior detail there is invisible at
-      // shelf scale and only costs contrast.
-      flat: back,
-    },
-  );
+  if (l.flip) ctx.scale(1, -1);
+  ctx.drawImage(s.c as CanvasImageSource, -s.px * k, -s.py * k, s.c.width * k, s.c.height * k);
   ctx.restore();
 }
 
@@ -3324,7 +3065,7 @@ function drawLeafGeom(ctx: Ctx2D, l: LeafGeom, ink: string, light: FloraLight): 
  * canopies are almost black in their interior; without this pass a hundred
  * leaves still read as a hundred separate stickers.
  */
-function drawMassOcclusion(ctx: Ctx2D, leaves: readonly LeafGeom[], alpha: number): void {
+function drawMassOcclusion(ctx: Ctx2D, leaves: readonly LeafInstance[], alpha: number): void {
   if (leaves.length < 6) return;
   // Coarse grid histogram — cheap, deterministic, no clustering library.
   const cell = 26;
@@ -3352,7 +3093,7 @@ function drawMassOcclusion(ctx: Ctx2D, leaves: readonly LeafGeom[], alpha: numbe
     // Deliberately *smaller* than the cell: this pass darkens the gaps
     // between overlapping blades, it does not fog the air around the plant.
     const r = Math.min(cell * 1.15, Math.max(cell * 0.55, b.r * 0.8));
-    const strength = clamp(0.04 + b.n * 0.026, 0, 0.24) * alpha;
+    const strength = clamp(0.04 + b.n * 0.026, 0, 0.26) * alpha;
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     g.addColorStop(0, `hsl(120 40% 8% / ${strength})`);
     g.addColorStop(0.55, `hsl(120 40% 10% / ${strength * 0.45})`);
@@ -3396,13 +3137,36 @@ class BakePacer {
   }
 }
 
+export interface FloraDrawOptions {
+  /** Overall opacity, e.g. for a crossfade on theme switch. Default 1. */
+  alpha?: number;
+  /** Add the shared granulation tile over the specimen. Default false. */
+  granulate?: boolean;
+  /**
+   * Draw contact shadows. Default true. Turn off when the compositor already
+   * lays down its own occlusion pass under the flora layer.
+   */
+  shadows?: boolean;
+  /** Light rig for this draw. Defaults to whatever `setFloraLight()` set. */
+  light?: Partial<FloraLight>;
+  /**
+   * Draw the ambient-occlusion pass that darkens the *interior* of a foliage
+   * mass. Default true; it is the single largest contributor to a canopy
+   * reading as a solid volume rather than a collage of leaves.
+   */
+  occlude?: boolean;
+}
+
 /**
  * Draw a grown specimen at the current transform origin (= its anchor).
  *
- * Draw order is now **by depth tier, not by element kind** — the whole point
- * of the rebuild. Within a tier the order is threads → mounds → stems →
- * leaves → blooms, and between the back and mid tiers sits the mass occlusion
- * pass that gives the canopy an interior.
+ * Draw order is the value discipline made literal:
+ *
+ *   contact shades → back-tier mounds + leaves (the near-black interior
+ *   mass) → the occlusion pass over that mass → the vine skeleton (visible
+ *   in the gaps) → back blooms (buds nestled in shadow) → mid mounds →
+ *   mid threads → mid leaves (the body) → mid blooms → lit leaves (heroes)
+ *   → lit blooms (the focal faces) → pots and tags.
  *
  * The body is a generator that yields between top-level elements, at points
  * where the canvas state is back at the baseline established by the opening
@@ -3461,32 +3225,84 @@ function* drawFloraGeometrySteps(
     ctx.restore();
   };
 
-  for (const tier of [TIER_BACK, TIER_MID, TIER_LIT] as const) {
-    for (const t of tierOf(g.threads, tier)) {
-      drawThread(t);
-      yield;
-    }
-    for (const m of tierOf(g.mounds, tier)) {
-      drawMound(ctx, m, g.ink, light);
-      yield;
-    }
-    for (const s of tierOf(g.stems, tier)) {
-      drawRibbon(ctx, s, g.ink, light);
-      yield;
-    }
-    for (const l of tierOf(g.leaves, tier)) {
-      drawLeafGeom(ctx, l, g.ink, light);
-      yield;
-    }
-    for (const b of tierOf(g.blooms, tier)) {
-      drawBloom(ctx, b, g.ink, light);
-      yield;
-    }
-    // Between the silhouette and the body: darken the interior of the mass.
-    if (tier === TIER_BACK && (opts.occlude ?? true)) {
-      drawMassOcclusion(ctx, g.leaves, A * light.occlusion);
-      yield;
-    }
+  const pedicelsOf = (tier: FloraTier): ThreadGeom[] =>
+    g.clusters.flatMap((c) => tierOf(c.pedicels, tier));
+  const bloomsOf = (tier: FloraTier): BloomGeom[] =>
+    g.clusters.flatMap((c) => tierOf(c.blooms, tier));
+
+  // 1. The interior mass: back mounds + back leaves, then the occlusion pass
+  //    multiplied over it — the near-black heart every cluster needs.
+  for (const m of tierOf(g.mounds, TIER_BACK)) {
+    drawMound(ctx, m, g.ink, light);
+    yield;
+  }
+  for (const l of tierOf(g.leaves, TIER_BACK)) {
+    drawLeafInstance(ctx, l, g.ink, light);
+    yield;
+  }
+  if (opts.occlude ?? true) {
+    drawMassOcclusion(ctx, g.leaves, A * light.occlusion);
+    yield;
+  }
+
+  // 2. The skeleton, over the dark mass so the vines stay visible in gaps.
+  for (const v of g.vines) {
+    drawVineRibbon(ctx, v, g.ink, light);
+    yield;
+  }
+
+  // 3. Back-tier threads + buds: the shadowed, half-hidden parts of a cluster.
+  for (const t of tierOf(g.threads, TIER_BACK)) {
+    drawThread(t);
+    yield;
+  }
+  for (const t of pedicelsOf(TIER_BACK)) {
+    drawThread(t);
+    yield;
+  }
+  for (const b of bloomsOf(TIER_BACK)) {
+    drawBloom(ctx, b, g.ink, light);
+    yield;
+  }
+
+  // 4. The mid body: mounds, threads, foliage, open blooms.
+  for (const m of tierOf(g.mounds, TIER_MID)) {
+    drawMound(ctx, m, g.ink, light);
+    yield;
+  }
+  for (const t of tierOf(g.threads, TIER_MID)) {
+    drawThread(t);
+    yield;
+  }
+  for (const t of pedicelsOf(TIER_MID)) {
+    drawThread(t);
+    yield;
+  }
+  for (const l of tierOf(g.leaves, TIER_MID)) {
+    drawLeafInstance(ctx, l, g.ink, light);
+    yield;
+  }
+  for (const b of bloomsOf(TIER_MID)) {
+    drawBloom(ctx, b, g.ink, light);
+    yield;
+  }
+
+  // 5. The lit accents: hero leaves first, then the focal flower faces.
+  for (const t of tierOf(g.threads, TIER_LIT)) {
+    drawThread(t);
+    yield;
+  }
+  for (const l of tierOf(g.leaves, TIER_LIT)) {
+    drawLeafInstance(ctx, l, g.ink, light);
+    yield;
+  }
+  for (const t of pedicelsOf(TIER_LIT)) {
+    drawThread(t);
+    yield;
+  }
+  for (const b of bloomsOf(TIER_LIT)) {
+    drawBloom(ctx, b, g.ink, light);
+    yield;
   }
 
   // Pots and tags are objects, not foliage: they belong in front of the

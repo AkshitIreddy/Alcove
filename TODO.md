@@ -1,71 +1,82 @@
 # Notebook — running TODO
 
-The one place nothing gets forgotten. Add items as they come up; tick them when *verified*, not when written.
-Ordered roughly by priority within each section.
+Nothing gets forgotten here. Tick items when *verified in the running app*, not when written.
 
 ---
 
-## 🔥 Blocking / quality
+## 🔴 Architecture reset (blocks everything visual)
 
-- [ ] **Shelf art still reads cheap** — mid-tone mush, no deep darks or hot highlights, vector-crisp edges, flat even light. See `docs/design/painterly-art-direction.md` and the new `docs/design/painted-rendering.md`.
-- [ ] **Corner shadow artifacts** — repeating transparent shadowy boxes at shelf corners (texture/atlas/9-slice reuse bug).
-- [ ] **Startup bake blocks the main thread** (~118s measured at worst). Must be chunked/worker'd — the window must never freeze.
-- [ ] Failing unit tests from the half-finished art/sound rebuild.
+See `docs/design/RESET-render-architecture.md`. Measured on the live app: **4,977 ms** to first paint, **15,314 ms** max main-thread block, **0.1 fps** idle.
 
-## 🎨 Art & themes
+- [ ] Generate high-res sprite libraries offline: ~40 book spines, case elevation per theme, foliage (reuse existing)
+- [ ] Replace runtime CPU brush/bake pipeline with sprite blits; keep `src/art/brush.ts` as an offline authoring tool only
+- [ ] Re-measure and hold the line: **first paint < 500 ms · no block > 100 ms · 60 fps · no tiling · no pop-in**
 
-- [ ] Books: varied thickness/height/lean, visible page-block edges, real materials, foil that catches light, contact shadows.
-- [ ] Flora: composed at edges and corners (not uniform cover), thick woody stems, large overlapping leaves, flower clusters, real depth tiers.
-- [ ] Wallpapers: hand-painted feel, not flat printed repeats.
-- [ ] Six colorful worlds — Blossom Grove (default), Robot Workshop, Dino Dig, Candy Shop, Coral Reef, Star Voyager — plus 2–3 backdrop variants each.
-- [ ] Saturation pass on the original eight themes so none reads as drab.
-- [ ] Saturated UI palette in `src/styles/tokens.css` — livelier accents and washes, contrast re-checked in all four UI themes.
-- [ ] **App logo/icon is too small** — the book should fill more of the canvas and read clearly at 16–32px. *(Raised by the user and previously forgotten — do not lose again.)*
-- [ ] Living motion: wind field swaying leaves, drifting petals, plus per-theme events (butterfly, robot head turn, pterodactyl, fish + caustics, comet).
+## 🐛 Reported bugs
 
-## 🧩 Missing features
+**Shelf**
+- [ ] Wallpaper tiling repeat visible at top and bottom when zoomed out
+- [ ] Flora pops in one specimen at a time on load
+- [ ] Books far too small relative to shelf height (reference: books nearly fill the opening)
+- [ ] Tiny low-quality sprig stamps repeating along plank fronts at identical spacing
+- [x] ~~Weird vine painted on the wood (rail inlay + crown garland)~~ — replaced with brass bead + carved relief
+- [x] ~~Floral wallpaper behind every theme~~ — quiet wall + timber case backing now default
+- [ ] Chrome card ("new book / studio / add floor") overlaps the top of the bookcase
+- [ ] Unexplained dark band across the top of the shelf view
+- [ ] Trash drawer sits inside the bookcase as "waste paper" — should be a side option
 
-- [ ] **No way to create a book anywhere in the app** — needs a shelf affordance (empty slot with pencil outline + `+`), "add floor", and a right-click "New book here".
-- [ ] Library/Book studios exist (`src/views/rail/`) but nothing opens them from the shelf.
-- [ ] Book Studio randomise — "surprise me" plus per-field re-roll dice and undo.
-- [ ] Import/export only reachable via `Ctrl+Shift+E` / `Ctrl+Shift+I` — needs real rail/settings entries.
-- [ ] Settings row to replay the guided tutorial.
+**Book / pages**
+- [ ] Page content **blackens** during the turn
+- [ ] Turning **backwards inverts the pages** for a second
+- [ ] **Cannot advance to a fresh blank page** — user wants to leave blanks deliberately
+- [ ] Stray page-turn effect persists after the flip completes
+- [ ] Pull-out animation looks cheap
+- [ ] Book cover material looks cheap
 
-## 🐛 Bugs
+**Quality (whole app)**
+- [ ] Muddy, low texture resolution, pixelated, jittery lines
+- [ ] Massive lag and load time
+- [ ] Sound effects still low quality — want smoother, calmer, warmer
 
-- [ ] Page turn: content clips near the end of the flip; the turning page's back face shows no text (should show that leaf's reverse content).
-- [ ] Chrome card ("new book / studio / add floor") overlaps the top of the bookcase.
-- [ ] Unexplained dark band across the top of the shelf view.
+**Branding**
+- [ ] App logo/icon too small — book should fill the canvas and read at 16–32px
 
-## 🔊 Sound
+## ✂️ Pruning (user-approved)
 
-- [ ] Effects are rough/thin — want smoother, calmer, warmer: layered elements, soft envelopes, heavy lowpass, short warm reverb, 4–6 variants each with pitch/level jitter.
-- [ ] Sound-character presets (calm / rich / minimal).
+- [ ] Cut the theme roster hard. 14 themes each need their own authored art set under the new architecture; quality beats quantity. Ship **one** excellent enchanted-library theme first, add others only when each meets the bar.
+- [ ] Remove or retool studio / wallpaper / book-studio options that exist only to fill a list
 
-## ✍️ Editor & script
+## 🧩 Features still missing
 
-- [ ] Notion-depth writing: nested toggles, columns, math, footnotes, sync blocks, backlinks, sortable tables, selection formatting toolbar, more markdown shortcuts.
-- [ ] Notebook Script v2 — tighter mini-language (variables, reusable styles, strict validation).
-- [ ] Diagnostics log users can export and hand to their AI when something goes wrong (logic *and* visual issues).
+- [ ] Split studio into **Shelf** and **Wallpaper** sections
+- [ ] Book Studio randomise ("surprise me" + per-field re-roll + undo)
+- [ ] Import/export only reachable via `Ctrl+Shift+E` / `Ctrl+Shift+I` — needs real rail/settings entries
+- [ ] Settings row to replay the guided tutorial
+- [ ] Living motion: wind sway, drifting petals, per-theme events (butterfly, etc.)
+- [ ] Structurally distinct shelves per theme (not just a recolour) — only if themes survive the prune
 
-## 🏗 Systems
+## 🏗 Systems / polish
 
-- [ ] Motion design system — unified easing/duration/choreography, page transitions, micro-interactions, spring physics, user-facing motion options.
-- [ ] Apply the unaddressed findings in `docs/design/ui-audit.md`.
-- [ ] Rebuild and verify the NSIS installer once the above lands.
+- [ ] Motion design system: unified easing, page transitions, micro-interactions, spring physics
+- [ ] Notion-depth writing: nested toggles, columns, math, footnotes, backlinks, sortable tables, selection toolbar
+- [ ] Notebook Script v2 — tighter mini-language (variables, reusable styles, strict validation)
+- [ ] Exportable diagnostics log users can hand to their AI when something breaks
+- [ ] Apply unaddressed findings in `docs/design/ui-audit.md`
+- [ ] Rebuild and verify the NSIS installer once the above lands
 
 ---
 
 ## ✅ Done
 
-- Tauri 2 + SolidJS scaffold, warm design system, SQLite data layer
-- Infinite bookshelf world (PixiJS v8): virtualized floors, semantic zoom, drag-to-pull books
-- Block editor: slash menu, drag handles, right-click block menu, tables, callouts, toggles, stickers, effects, pagination without scrollbars
+- Tauri 2 + SolidJS scaffold, SQLite data layer, warm design system
+- Infinite bookshelf world: virtualized floors, semantic zoom, drag-to-pull books
+- Block editor: slash menu, drag handles, right-click menu, tables, callouts, toggles, stickers, effects, pagination without scrollbars
 - Two-page spread with WebGL page-curl flip
 - Notebook Script: tolerant parser, canonical printer, AI-facing spec, Insert Script dialog
 - Hand-drawn diagram renderers (tree, mindmap, flowchart, timeline)
 - Media: image paste/drop, link-preview cards, Openverse fetch
 - Full-text search + Ctrl+K quick switcher
-- Procedural sound engine + settings panel (~25 options, 4 UI themes)
-- Guided tutorial; export/import bundles with restore points; backups, tray, perf HUD
+- Settings panel (~25 options, 4 UI themes); guided tutorial; export/import bundles with restore points; backups, tray, perf HUD
 - Custom icon + NSIS installer; GitHub Actions release on version tags
+- Local generation stack: ComfyUI + Juggernaut XL + Detail Tweaker + LayerDiffuse, seam verification, photoreal material library
+- `ART-BIBLE.md` — canonical art direction derived from the user's analysis of the reference

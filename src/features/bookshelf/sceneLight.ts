@@ -122,44 +122,14 @@ function q(v: number, step: number): number {
   return Math.round(v / step) * step;
 }
 
-/**
- * The back of the case: flat, and set back from everything on it — but well
- * clear of the WALL, which is height 0. The case is furniture standing in a
- * room, so it has to occlude and cast onto the wall behind it; at the old 0.06
- * the whole bookcase was practically flush with the plaster.
- */
-const BACK_PANEL: HeightShape = { kind: 'plane', height: 0.16 };
+/** The back of the case: flat, and set back from everything on it. */
+const BACK_PANEL: HeightShape = { kind: 'plane', height: 0.06 };
 
-/**
- * The plank's front edge — a dark board with ONE hot arris along its top.
- *
- * This profile is the app's clearest hierarchy control. A four-sided bevel
- * (what this was) turns the whole 40px strip into a surface angled toward a
- * raking key, so every plank in the frame lit up gold along its entire length
- * and the shelf fronts became the brightest thing in the picture — above the
- * books they are supposed to be framing. The reference does the opposite: its
- * shelf fronts are dark boards, and only the top few pixels of the lip catch
- * the sun. So: bevel the top only, keep the face flat and facing the viewer
- * (which a low key barely reaches), and let the arris be the highlight.
- */
-const PLANK: HeightShape = {
-  kind: 'bevel',
-  size: 0.3,
-  height: 0.5,
-  edgeHeight: 0.34,
-  edges: { top: true },
-  round: 0.75,
-};
+/** The plank: a plateau with a chamfered front lip. */
+const PLANK: HeightShape = { kind: 'bevel', size: 0.16, height: 0.46 };
 
-/** The cornice: a deeper plateau, it overhangs. Same top-only lit lip. */
-const CROWN: HeightShape = {
-  kind: 'bevel',
-  size: 0.24,
-  height: 0.78,
-  edgeHeight: 0.52,
-  edges: { top: true, bottom: true },
-  round: 0.6,
-};
+/** The cornice: a deeper plateau, it overhangs. */
+const CROWN: HeightShape = { kind: 'bevel', size: 0.12, height: 0.72 };
 
 /** A side rail: a tall rounded column standing off the back panel. */
 const RAIL: HeightShape = { kind: 'roundedBox', axis: 'x', radius: 0.3, height: 0.6 };
@@ -265,15 +235,13 @@ export class SceneLight {
     if (scene.viewportW !== this.vpW || scene.viewportH !== this.vpH) {
       this.resize(scene.viewportW, scene.viewportH);
     }
-    // The pass hangs on the SCREEN-SPACE scene container (`world.ts` puts the
-    // wall, the wall lighting, the camera-transformed case and the lamp pools
-    // inside it), so the filter area is the viewport, full stop. It used to
-    // hang on the camera-transformed `world`, where Pixi transforms the rect
-    // by the container's world matrix and the area therefore had to be given
-    // in world units — get that wrong there and the pass rendered the entire
-    // endless shelf into one texture.
     if (this.target !== null) {
-      this.target.filterArea = new Rectangle(0, 0, scene.viewportW, scene.viewportH);
+      this.target.filterArea = new Rectangle(
+        scene.cameraX,
+        scene.cameraY,
+        scene.viewportW / scene.zoom,
+        scene.viewportH / scene.zoom,
+      );
     }
 
     const sig = signature(scene);

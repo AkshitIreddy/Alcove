@@ -1,11 +1,11 @@
-/**
- * src/views/rail/LibraryStudio.tsx — the studio's "This library" tab.
+﻿/**
+ * src/views/rail/LibraryStudio.tsx â€” the studio's "This library" tab.
  *
  * Picks the ROOM: which of the eight themes, what hangs on its wall (pattern
  * x colourway), how the wall itself is finished, how much grows on the case
- * and how warm the lamps burn (docs/design/library-themes.md §4).
+ * and how warm the lamps burn (docs/design/library-themes.md Â§4).
  *
- * The theme cards are painted from the REAL case art — `bakeThemeThumbnail`
+ * The theme cards are painted from the REAL case art â€” `bakeThemeThumbnail`
  * is the same renderer the shelf uses, so what you preview is literally the
  * room you get. Every control writes straight through `saveLibraryPrefs`, and
  * the Pixi world is subscribed to that store, so changes land on the shelf
@@ -20,7 +20,7 @@ import {
   BACKDROP_IDS,
   BACKDROPS,
   COLOURWAY_IDS,
-  THEME_IDS,
+  SHIPPED_THEME_IDS,
   THEMES,
   WALLPAPER_PATTERN_IDS,
   getTheme,
@@ -46,7 +46,7 @@ const CARD_H = 116;
 
 /**
  * Painted card art. `renderCaseSection` is the same renderer the specimen
- * board and the shelf case use — we drive it directly rather than through
+ * board and the shelf case use â€” we drive it directly rather than through
  * `bakeThemeThumbnail` for one reason: the baked helper stamps the theme's
  * full display name onto the floor plate, which overflows a 168px card. The
  * card prints the name underneath instead, so the plate stays blank.
@@ -87,7 +87,7 @@ function cardArt(
   return pending;
 }
 
-/** Painted theme card — the room's own art, baked once per card recipe. */
+/** Painted theme card â€” the room's own art, baked once per card recipe. */
 function ThemeCard(props: {
   id: ThemeId;
   active: boolean;
@@ -172,7 +172,7 @@ function ColourwaySwatch(props: {
 }
 
 export interface LibraryStudioProps {
-  /** Optional: notified after every change (sound cue, toast…). */
+  /** Optional: notified after every change (sound cue, toastâ€¦). */
   onChanged?(prefs: LibraryPrefs): void;
 }
 
@@ -197,7 +197,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
   const effectiveBackdrop = (): BackdropId =>
     libraryPrefs.backdrop ?? theme().backdrops[0];
 
-  /** Shuffle only the dressing — same room, new clothes. */
+  /** Shuffle only the dressing â€” same room, new clothes. */
   const randomise = (): void => {
     const r = (n: number): number => Math.floor(Math.random() * n);
     patch({
@@ -207,10 +207,10 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     });
   };
 
-  /** Surprise me — a whole different room, dressing and all. */
+  /** Surprise me â€” a whole different room, dressing and all. */
   const surprise = (): void => {
     const r = (n: number): number => Math.floor(Math.random() * n);
-    const id = THEME_IDS[r(THEME_IDS.length)] as ThemeId;
+    const id = SHIPPED_THEME_IDS[r(SHIPPED_THEME_IDS.length)] as ThemeId;
     patch({
       theme: id,
       wallpaperPattern: null,
@@ -243,7 +243,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       <section class="nb-panel-section">
         <h3 class="nb-panel-section-title">the room</h3>
         <div class="nb-theme-grid" role="group" aria-label="Library theme">
-          <For each={THEME_IDS}>
+          <For each={SHIPPED_THEME_IDS}>
             {(id) => (
               <ThemeCard
                 id={id}
@@ -370,7 +370,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           </button>
         </div>
         <p class="nb-panel-footnote">
-          {`seed ${fnv1a(theme().id).toString(16)} · every plant grows in the same place every time`}
+          {`seed ${fnv1a(theme().id).toString(16)} Â· every plant grows in the same place every time`}
         </p>
       </section>
     </div>

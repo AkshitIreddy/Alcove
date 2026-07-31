@@ -41,6 +41,28 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
+/**
+ * The rooms actually OFFERED in the studio.
+ *
+ * Under the authored-art architecture every theme needs its own generated set
+ * — case elevation, wall, props, spine bias — produced and quality-checked by
+ * hand. Fourteen half-finished rooms is exactly how the app came to look
+ * cheap; two rooms that hold up beat a long list that does not.
+ *
+ * The other themes remain as data (and remain valid `ThemeId`s, so a saved
+ * library that names one still loads). Promoting one back is a single line
+ * here, once its art meets the bar in ART-BIBLE.md.
+ */
+export const SHIPPED_THEME_IDS = [
+  'blossom', // the enchanted overgrown library — the reference look
+  'athenaeum', // dark oak, gilt and brass — a genuinely different mood
+] as const satisfies readonly ThemeId[];
+
+/** True when a theme is offered in the studio (as opposed to merely valid). */
+export function isShippedTheme(id: ThemeId): boolean {
+  return (SHIPPED_THEME_IDS as readonly ThemeId[]).includes(id);
+}
+
 /** The room a brand-new library opens in: a tree in blossom. */
 export const DEFAULT_THEME_ID: ThemeId = 'blossom';
 

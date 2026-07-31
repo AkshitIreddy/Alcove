@@ -8,8 +8,11 @@ Nothing gets forgotten here. Tick items when *verified in the running app*, not 
 
 See `docs/design/RESET-render-architecture.md`. Measured on the live app: **4,977 ms** to first paint, **15,314 ms** max main-thread block, **0.1 fps** idle.
 
-- [ ] Generate high-res sprite libraries offline: ~40 book spines, case elevation per theme, foliage (reuse existing)
-- [ ] Replace runtime CPU brush/bake pipeline with sprite blits; keep `src/art/brush.ts` as an offline authoring tool only
+- [x] ~~Spine sprite library~~ — ControlNet Union over authored layouts; composition is dictated, not prompted (`gen-spinewall-cn.mjs` → `cut-spines.py` → `pack-spines.py`)
+- [x] ~~Spine blits replace spine painting~~ — `spineAtlas.ts`; `request()` returns without scheduling work
+- [ ] Case elevation per theme (same ControlNet approach — depth hint rather than canny)
+- [ ] Wall panels at 2048px+, one authored image rather than a repeating tile
+- [ ] Foliage sprite sheet placed compositionally (reuse `assets/atoms`)
 - [ ] Re-measure and hold the line: **first paint < 500 ms · no block > 100 ms · 60 fps · no tiling · no pop-in**
 
 ## 🐛 Reported bugs
@@ -17,7 +20,7 @@ See `docs/design/RESET-render-architecture.md`. Measured on the live app: **4,97
 **Shelf**
 - [ ] Wallpaper tiling repeat visible at top and bottom when zoomed out
 - [ ] Flora pops in one specimen at a time on load
-- [ ] Books far too small relative to shelf height (reference: books nearly fill the opening)
+- [x] ~~Books far too small relative to shelf height~~ — `artHeight` maps the sprite's own proportion onto the book zone (0.97 fill)
 - [ ] Tiny low-quality sprig stamps repeating along plank fronts at identical spacing
 - [x] ~~Weird vine painted on the wood (rail inlay + crown garland)~~ — replaced with brass bead + carved relief
 - [x] ~~Floral wallpaper behind every theme~~ — quiet wall + timber case backing now default
@@ -28,7 +31,7 @@ See `docs/design/RESET-render-architecture.md`. Measured on the live app: **4,97
 **Book / pages**
 - [ ] Page content **blackens** during the turn
 - [ ] Turning **backwards inverts the pages** for a second
-- [ ] **Cannot advance to a fresh blank page** — user wants to leave blanks deliberately
+- [x] ~~**Cannot advance to a fresh blank page**~~ — blanks allowed, bounded at 4 trailing (`MAX_TRAILING_BLANK_PAGES`)
 - [ ] Stray page-turn effect persists after the flip completes
 - [ ] Pull-out animation looks cheap
 - [ ] Book cover material looks cheap
@@ -43,7 +46,7 @@ See `docs/design/RESET-render-architecture.md`. Measured on the live app: **4,97
 
 ## ✂️ Pruning (user-approved)
 
-- [ ] Cut the theme roster hard. 14 themes each need their own authored art set under the new architecture; quality beats quantity. Ship **one** excellent enchanted-library theme first, add others only when each meets the bar.
+- [x] ~~Cut the theme roster hard~~ — `SHIPPED_THEME_IDS` = blossom + athenaeum; the rest stay as data so saved libraries still load
 - [ ] Remove or retool studio / wallpaper / book-studio options that exist only to fill a list
 
 ## 🧩 Features still missing

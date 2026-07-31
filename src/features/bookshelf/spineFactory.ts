@@ -329,7 +329,11 @@ export class SpineFactory {
    */
   heightFraction(book: Book): number {
     const h = fnv1a(`${book.id}|${book.spineSeed}|h`) >>> 0;
-    return 0.5 + ((h % 50) / 100);
+    // Bottom of the range is 0.62, not 0.5. A shelf wants an uneven skyline,
+    // but half-height books read as paperbacks lost in a cabinet, and with the
+    // range starting at 0.5 too many rows came out looking stubby against a
+    // tall opening — the reference's volumes very nearly fill theirs.
+    return 0.62 + ((h % 38) / 100);
   }
 
   /**

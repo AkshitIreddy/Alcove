@@ -33,6 +33,17 @@ export const LEAN_MAX_DEG = 7;
 /** A cluster gap must be at least this wide for a neighbor to lean into it. */
 const LEAN_GAP_MIN = 26;
 
+/**
+ * How wide a gap between two clusters may grow.
+ *
+ * It exists because the row used to absorb ALL of a floor's spare width into
+ * its gaps: fourteen books in a 1200px case came out as four little islands
+ * with a hand's width of empty plank between them. Capping the gap packs the
+ * books into something that reads as a shelf, and the surplus goes to the two
+ * ends instead, centring the row.
+ */
+const INTER_CLUSTER_GAP_MAX = 34;
+
 export interface LayoutBookIn {
   /** Persisted slot index — only the ORDER matters to the layout. */
   slot: number;
@@ -108,6 +119,15 @@ export function layoutFloor(
   }
 
   // --- distribute leftover width into the k+1 outer gaps ---
+  //
+  // Only SOME of it. Spreading every spare pixel across the row is what made
+  // a lightly-filled floor read as islands of books floating in a wide case,
+  // which is nothing like a shelf and nothing like the reference: real books
+  // lean on each other and the empty part of the shelf stays in one piece.
+  //
+  // So each gap is capped, and whatever will not fit is left over at the
+  // right-hand end, where it reads as room for more books rather than as
+  // deliberate spacing.
   let free = avail - totalW;
   const outer = new Array<number>(k + 1).fill(0);
   if (free < 0) {
@@ -124,7 +144,20 @@ export function layoutFloor(
       weights.push(wt);
       wSum += wt;
     }
-    for (let g = 0; g <= k; g++) outer[g] = (free * (weights[g] as number)) / wSum;
+    for (let g = 1; g < k; g++) {
+      const share = (free * (weights[g] as number)) / wSum;
+      outer[g] = Math.min(share, INTER_CLUSTER_GAP_MAX);
+    }
+    // Whatever the capped inner gaps did not take is split evenly between the
+    // two ends, which centres the packed row in the case. Left-packing would
+    // be just as truthful about a part-filled shelf, but it makes the case
+    // look lopsided, and centring keeps the composition the old spread-out
+    // layout was reaching for without scattering the books to get it.
+    let used = 0;
+    for (let g = 1; g < k; g++) used += outer[g] as number;
+    const ends = Math.max(0, (free - used) / 2);
+    outer[0] = ends;
+    outer[k] = ends;
   }
 
   // --- emit centers ---

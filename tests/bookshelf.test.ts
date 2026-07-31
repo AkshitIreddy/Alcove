@@ -429,17 +429,33 @@ describe('layout: seeded cluster layout', () => {
     }
   });
 
-  it('spreads a populated floor across the shelf (no left-cluster dead space)', () => {
+  it('packs a populated floor and centres it (no islands, no dead side)', () => {
+    // This used to assert the row SPANS at least 45% of the case. That was the
+    // old aesthetic — spare width was poured into the gaps — and it is exactly
+    // what made a lightly-filled floor read as islands of books floating apart.
+    // Books now pack together and the surplus goes to the two ends.
     for (let floor = 0; floor < 12; floor++) {
       const items = mkItems([34, 40, 28, 46, 30, 38, 36, 33]);
       const placed = layoutFloor(items, floor);
       const first = placed[0];
       const last = placed[placed.length - 1];
-      const span = last!.centerX - first!.centerX;
-      expect(span).toBeGreaterThanOrEqual(SHELF_WIDTH * 0.45);
-      // The row's midpoint sits reasonably near the case center.
+
+      // Still centred: the concern the old assertion was really protecting.
       const mid = (first!.centerX + last!.centerX) / 2;
       expect(Math.abs(mid - SHELF_WIDTH / 2)).toBeLessThanOrEqual(SHELF_WIDTH * 0.2);
+
+      // And packed: no two neighbours sit further apart than one capped gap.
+      // Widths come from the INPUT items — LayoutBookOut carries only the
+      // placement, not the geometry.
+      for (let i = 1; i < placed.length; i++) {
+        const a = placed[i - 1]!;
+        const b = placed[i]!;
+        const aw = items[i - 1]!.w;
+        const bw = items[i]!.w;
+        const edgeGap = b.centerX - bw / 2 - (a.centerX + aw / 2);
+        expect(edgeGap).toBeLessThanOrEqual(40);
+        expect(edgeGap).toBeGreaterThanOrEqual(0);
+      }
     }
   });
 

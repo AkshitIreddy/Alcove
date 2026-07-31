@@ -6,6 +6,61 @@ when written — and where two colours or two frames are hard to tell apart, use
 
 ---
 
+## 🔴 Reported 2026-08-01 — not yet started
+
+### Sound — needs a real redesign, not another synthesis pass
+
+Synthesising every cue from scratch has now been tried twice and is still
+reported bad. Stop synthesising. Find a **permissively licensed** effects
+library (CC0 / CC-BY with attribution we can actually ship) and curate real
+recordings.
+
+- [ ] Replace `scripts/gen-sounds.mjs` output with curated, licensed sounds
+- [ ] Page turn, confetti and checkbox are called out as the worst
+- [ ] Record the licence + attribution for every file we ship
+
+### Editor — block dragging is finicky
+
+- [ ] Hovering text makes the six-dot drag handle **flicker** for that section
+- [ ] After a failed move the handle **jumps to the centre** of the section,
+      making the next attempt harder
+- [ ] Moving sections generally: not smooth, not error-free
+- [ ] Checkbox click effect and the confetti animation are **laggy and slow**
+- [ ] Confetti colours are bland — it should be worth firing
+
+### Page turn
+
+- [ ] Drop the **yellow corner tint** on the turn hotspot
+- [ ] A **straight line near the bottom-right corner** — the corner peel shadow
+      is fine, the line is not; find out what draws it
+- [ ] **Click** (not drag) to turn forward is not smooth
+- [ ] The page reads as **disconnected from the spine** near the centre — on
+      click, and worst at the end of a drag, both directions
+- [ ] Pages holding a **tree/timeline diagram go dark** during the turn
+- [ ] After a drag turn completes, a **half-second flicker** as though a second
+      flip fired
+
+### Focus mode
+
+- [ ] Entering focus mode does **not close an open side panel**
+- [ ] **No obvious way out.** Today: click blank space outside the book, then
+      Esc. Needs a visible affordance.
+
+### The "what can I add" catalogue
+
+- [ ] "Stickers and effects" is where every insertable thing lives, but the
+      name hides it. Rename to something that reads as a catalogue.
+- [ ] Add a **fonts** category alongside it
+- [ ] Many more effects, and more custom element types worth inserting
+
+### Spec automation
+
+- [ ] The AI-facing Notebook Script spec should **rebuild itself** whenever a
+      new insertable/effect/directive is added, so it can never drift. A check
+      that fails when the spec is stale is the minimum; generating it is better.
+
+---
+
 ## 🎨 Flat restyle
 
 The app icon's style is the whole visual language: flat colour, one dark

@@ -20,9 +20,23 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'assets', 'generated');
 const HOST = process.env.COMFY_HOST ?? 'http://127.0.0.1:8188';
+/**
+ * Checkpoint + its sampler settings travel together — a distilled/turbo model
+ * wants few steps and low CFG, and feeding it base-SDXL settings burns the
+ * image. Measured on a 4-way contact sheet (qa/sheet-compare.png):
+ * DreamShaper XL beat base SDXL clearly on every subject — deeper crack
+ * detail in leather, far richer figure in walnut, better-resolved foliage.
+ */
+const CHECKPOINTS = {
+  'dreamshaperXL.safetensors': { steps: 8, cfg: 2.0 },
+  'sd_xl_base_1.0.safetensors': { steps: 28, cfg: 6.5 },
+};
+
 const CKPT = process.env.COMFY_CKPT
   ?? (process.argv.includes('--ckpt') ? process.argv[process.argv.indexOf('--ckpt') + 1] : null)
-  ?? 'sd_xl_base_1.0.safetensors';
+  ?? 'dreamshaperXL.safetensors';
+
+const CKPT_DEFAULTS = CHECKPOINTS[CKPT] ?? { steps: 28, cfg: 6.5 };
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -297,9 +311,12 @@ async function main() {
             seed: flag('reroll') ? (seed + 0x9e37) >>> 0 : seed,
             size: set.size,
             tile: set.tile === true,
+            // Hires is OFF by default: the latent-upscale second pass was
+            // measured to destroy the image (see qa/sheet-compare.png), so it
+            // stays opt-in until reworked as decode -> image upscale -> encode.
             hires: Number(opt('hires', 0)),
-            steps: Number(opt('steps', 28)),
-            cfg: Number(opt('cfg', 6.5)),
+            steps: Number(opt('steps', CKPT_DEFAULTS.steps)),
+            cfg: Number(opt('cfg', CKPT_DEFAULTS.cfg)),
           }),
           clientId,
         );

@@ -63,10 +63,25 @@ import {
   type FamilyName,
   type HowlLike,
   type HowlOptions,
+  msSinceVoicedPlay,
   type SoundName,
 } from '../src/sound/engine';
+import {
+  SILENT_ATTR,
+  isSoundedButton,
+  shouldClick,
+} from '../src/sound/uiClicks';
+import {
+  groupCredits,
+  shortLicence,
+  summariseCues,
+  type CreditsManifest,
+} from '../src/sound/credits';
 
 const SOUNDS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sounds');
+
+/** Every ambient bed, derived from the engine so a new soundscape is covered. */
+const SOUNDSCAPE_LOOP_NAMES = Object.values(SOUNDSCAPE_LOOPS) as readonly SoundName[];
 
 /* ────────────────────────────── WAV parsing ─────────────────────────────── */
 
@@ -265,6 +280,10 @@ const DURATION_BOUNDS: Record<SoundName, readonly [number, number]> = {
   'pop-soft-3': [280, 420],
   'pop-soft-4': [280, 420],
   'pop-soft-5': [280, 420],
+  'click-soft': [110, 210],
+  'click-soft-2': [110, 210],
+  'click-soft-3': [110, 210],
+  'click-soft-4': [110, 210],
   'tick-hover': [110, 210],
   'tick-hover-2': [110, 210],
   'tick-hover-3': [110, 210],
@@ -286,10 +305,18 @@ const DURATION_BOUNDS: Record<SoundName, readonly [number, number]> = {
   confetti: [820, 1140],
   'confetti-2': [820, 1140],
   'confetti-3': [820, 1140],
-  'ambient-library': [7990, 8010],
   'ambient-rain': [7990, 8010],
+  'ambient-storm': [7990, 8010],
   'ambient-fireplace': [7990, 8010],
   'ambient-crickets': [7990, 8010],
+  'ambient-wind': [7990, 8010],
+  'ambient-stream': [7990, 8010],
+  'ambient-forest': [7990, 8010],
+  'ambient-cafe': [7990, 8010],
+  // Twelve seconds, not eight: waves and a two-layer night bed both repeat
+  // audibly inside an eight-second window.
+  'ambient-shore': [11990, 12010],
+  'ambient-night': [11990, 12010],
   'typing-tick-1': [110, 200],
   'typing-tick-2': [110, 200],
   'typing-tick-3': [110, 200],
@@ -308,7 +335,15 @@ const DURATION_BOUNDS: Record<SoundName, readonly [number, number]> = {
  * loop) and 2332 Hz (crumple) — all three fail these thresholds outright.
  */
 const CENTROID_MAX_ONESHOT_HZ = 2000;
-const CENTROID_MAX_AMBIENT_HZ = 1400;
+/**
+ * 1650, up from the 1400 that fitted the original four beds. Running water and
+ * woodland carry genuine air — pull a stream under 1400 Hz and it stops being
+ * water and becomes a hum. The gate that actually catches hiss is
+ * HIGH_SHARE_MAX, which every bed clears by an order of magnitude (0.16-0.57%
+ * against a 3% ceiling); the per-bed `centroidMax` in gen-sounds.mjs is the
+ * tight, individual limit and this is only the outer bound.
+ */
+const CENTROID_MAX_AMBIENT_HZ = 1650;
 /** Share of energy above 4 kHz. The old crickets bed measured 51%. */
 const HIGH_SHARE_MAX = 0.03;
 /** Largest adjacent-sample jump, as a share of peak. Old worst case: 78%. */
@@ -408,11 +443,16 @@ describe('generated WAV files', () => {
   it('quiet-by-design sounds actually sit far below the pack', () => {
     for (const n of SOUND_FAMILIES['shelf-whoosh']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-19.5);
     for (const n of SOUND_FAMILIES['tick-hover']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-25.5);
-    for (const n of TYPING_TICK_VARIANTS) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-19.5);
-    for (const n of ['ambient-library', 'ambient-rain', 'ambient-fireplace'] as const) {
+    // −17.5, relaxed from −19.5: the ticks came up 3 dB after review reported
+    // them inaudible. They are still the second-quietest one-shot in the set.
+    for (const n of TYPING_TICK_VARIANTS) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-17.5);
+    for (const n of SOUNDSCAPE_LOOP_NAMES) {
       expect(wav(n).peakDb, n).toBeLessThanOrEqual(-18.5);
     }
-    expect(wav('ambient-crickets').peakDb).toBeLessThanOrEqual(-20.5);
+    for (const n of ['ambient-crickets', 'ambient-night', 'ambient-forest', 'ambient-cafe'] as const) {
+      expect(wav(n).peakDb, n).toBeLessThanOrEqual(-20.5);
+    }
+    for (const n of SOUND_FAMILIES['click-soft']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-18.5);
     for (const n of SOUND_FAMILIES['chime-hour']) expect(wav(n).peakDb, n).toBeLessThanOrEqual(-13.5);
     expect(wav('pencil-scratch').peakDb).toBeLessThanOrEqual(-17.5);
   });
@@ -423,8 +463,20 @@ describe('generated WAV files', () => {
     for (const n of [...SOUND_FAMILIES['book-pull'], ...SOUND_FAMILIES['drop-thump'], ...SOUND_FAMILIES['check-done']]) {
       expect(wav(n).peakDb - hover, n).toBeGreaterThan(15);
     }
-    // And the ambience bed sits below every one-shot it plays under.
-    expect(wav('ambient-library').peakDb).toBeLessThan(wav('page-flip-1').peakDb - 8);
+    // And every ambience bed sits below the one-shots it plays under.
+    for (const n of SOUNDSCAPE_LOOP_NAMES) {
+      expect(wav(n).peakDb, n).toBeLessThan(wav('page-flip-1').peakDb - 6);
+    }
+  });
+
+  it('the button click is a whisper under the panel pop it sits beside', () => {
+    // Every button in the app fires click-soft, so it has to be clearly the
+    // smaller gesture — but still above the hover tick, which is passive.
+    const hover = wav('tick-hover').peakDb;
+    for (const n of SOUND_FAMILIES['click-soft']) {
+      expect(wav('pop-soft').peakDb - wav(n).peakDb, n).toBeGreaterThanOrEqual(4);
+      expect(wav(n).peakDb - hover, n).toBeGreaterThan(4);
+    }
   });
 
   /* ── variety ────────────────────────────────────────────────────────── */
@@ -473,19 +525,13 @@ describe('generated WAV files', () => {
 
   /* ── loops ──────────────────────────────────────────────────────────── */
 
-  it('ambient-library loops seamlessly: head/tail RMS continuity within 3 dB', () => {
-    const w = wav('ambient-library');
-    const win = Math.round(0.4 * w.sampleRate); // 400 ms windows
-    const head = rmsDb(w.samples, 0, win);
-    const tail = rmsDb(w.samples, w.samples.length - win, w.samples.length);
-    expect(Math.abs(head - tail)).toBeLessThanOrEqual(3);
-  });
-
-  it.each([['ambient-rain'], ['ambient-fireplace'], ['ambient-crickets']] as const)(
+  it.each(SOUNDSCAPE_LOOP_NAMES.map((n) => [n] as const))(
     '%s loops seamlessly: head/tail RMS continuity within 6 dB',
     (name) => {
-      // Event-based textures (droplets, crackles, chirps) vary more per window
-      // than the library room tone — 1 s windows, 6 dB tolerance.
+      // Every bed is an event-based texture (droplets, crackles, chirps, a
+      // wave arriving), so windows vary — 1 s windows, 6 dB tolerance. What
+      // this catches is a loop point cut across a swell, where the head comes
+      // back an octave louder than the tail it follows.
       const w = wav(name);
       const win = w.sampleRate; // 1 s windows
       const head = rmsDb(w.samples, 0, win);
@@ -495,7 +541,7 @@ describe('generated WAV files', () => {
   );
 
   it('ambient loops keep continuous energy — no silent stretch mid-loop', () => {
-    for (const name of ['ambient-rain', 'ambient-fireplace', 'ambient-crickets'] as const) {
+    for (const name of SOUNDSCAPE_LOOP_NAMES) {
       const w = wav(name);
       const win = w.sampleRate; // 1 s windows across the whole loop
       for (let from = 0; from + win <= w.samples.length; from += win) {
@@ -762,7 +808,7 @@ describe('sound engine (stub Howler)', () => {
   it('ambient loop starts with a 600 ms fade-in at the ambient gain', async () => {
     setVolumes({ master: 0.5, ambient: 0.4 });
     await startAmbient();
-    const stub = findStub('ambient-library');
+    const stub = findStub('ambient-rain');
     expect(stub).toBeDefined();
     expect(stub?.options.loop).toBe(true);
     expect(stub?.fades).toHaveLength(1);
@@ -775,7 +821,7 @@ describe('sound engine (stub Howler)', () => {
 
   it('ambient stop fades out over 600 ms, then stops on fade completion', async () => {
     await startAmbient();
-    const stub = findStub('ambient-library') as StubHowl;
+    const stub = findStub('ambient-rain') as StubHowl;
     const id = stub.fades[0]?.id as number;
     expect(stub.playing(id)).toBe(true);
     stopAmbient();
@@ -787,7 +833,7 @@ describe('sound engine (stub Howler)', () => {
 
   it('muteAll fades the ambient bed out and unmute resumes it', async () => {
     await startAmbient();
-    const stub = findStub('ambient-library') as StubHowl;
+    const stub = findStub('ambient-rain') as StubHowl;
     muteAll(true);
     const muteFade = stub.fades[stub.fades.length - 1];
     expect(muteFade?.to).toBe(0);
@@ -800,15 +846,15 @@ describe('sound engine (stub Howler)', () => {
 
   it('setVolumes live-updates the running ambient bed', async () => {
     await startAmbient();
-    const stub = findStub('ambient-library') as StubHowl;
+    const stub = findStub('ambient-rain') as StubHowl;
     const id = stub.fades[0]?.id as number;
     setVolumes({ ambient: 0.1, master: 1 });
     expect(stub.volumes.get(id)).toBeCloseTo(0.1, 10);
   });
 
-  it("play('ambient-library') delegates to the fading ambient loop", async () => {
-    const id = await play('ambient-library');
-    const stub = findStub('ambient-library') as StubHowl;
+  it("play('ambient-rain') delegates to the fading ambient loop", async () => {
+    const id = await play('ambient-rain');
+    const stub = findStub('ambient-rain') as StubHowl;
     expect(id).toBeDefined();
     expect(stub.fades).toHaveLength(1); // faded in, not raw-played
   });
@@ -900,7 +946,7 @@ describe('sound-character presets (stub Howler)', () => {
   it('switching character live-updates the running ambient bed', async () => {
     setVolumes({ master: 1, ambient: 0.5 });
     await startAmbient();
-    const stub = findStub('ambient-library') as StubHowl;
+    const stub = findStub('ambient-rain') as StubHowl;
     const id = stub.fades[0]?.id as number;
     setSoundCharacter('rich');
     expect(stub.volumes.get(id)).toBeCloseTo(
@@ -931,29 +977,29 @@ describe('soundscape picker (stub Howler)', () => {
     setSoundscape('fireplace');
     await startAmbient();
     expect(findStub('ambient-fireplace')?.fades[0]).toMatchObject({ from: 0, duration: 600 });
-    expect(findStub('ambient-library')).toBeUndefined();
+    expect(findStub('ambient-rain')).toBeUndefined();
     expect(getEngineState().ambientPlaying).toBe('ambient-fireplace');
   });
 
   it('switching soundscapes crossfades: old bed out, new bed in', async () => {
-    await startAmbient(); // default 'library'
-    const lib = findStub('ambient-library') as StubHowl;
-    const libId = lib.fades[0]?.id as number;
-    setSoundscape('rain');
-    await flush();
+    await startAmbient(); // default 'rain'
     const rain = findStub('ambient-rain') as StubHowl;
-    expect(lib.fades[lib.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
-    lib.emit('fade');
-    expect(lib.playing(libId)).toBe(false);
-    expect(rain.fades[0]).toMatchObject({ from: 0, duration: 600 });
-    expect(getEngineState()).toMatchObject({ soundscape: 'rain', ambientPlaying: 'ambient-rain' });
+    const rainId = rain.fades[0]?.id as number;
+    setSoundscape('storm');
+    await flush();
+    const storm = findStub('ambient-storm') as StubHowl;
+    expect(rain.fades[rain.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
+    rain.emit('fade');
+    expect(rain.playing(rainId)).toBe(false);
+    expect(storm.fades[0]).toMatchObject({ from: 0, duration: 600 });
+    expect(getEngineState()).toMatchObject({ soundscape: 'storm', ambientPlaying: 'ambient-storm' });
   });
 
   it("setSoundscape('none') stops the bed; re-selecting a scape resumes it", async () => {
     await startAmbient();
-    const lib = findStub('ambient-library') as StubHowl;
+    const bed = findStub('ambient-rain') as StubHowl;
     setSoundscape('none');
-    expect(lib.fades[lib.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
+    expect(bed.fades[bed.fades.length - 1]).toMatchObject({ to: 0, duration: 600 });
     expect(getEngineState().ambientPlaying).toBeNull();
     await startAmbient();
     expect(getEngineState().ambientPlaying).toBeNull();
@@ -1172,5 +1218,153 @@ describe('legacy exports', () => {
   it('PAGE_FLIP_VARIANTS and TYPING_TICK_VARIANTS still name their families', () => {
     expect(PAGE_FLIP_VARIANTS).toEqual(SOUND_FAMILIES['page-flip']);
     expect(TYPING_TICK_VARIANTS).toEqual(SOUND_FAMILIES['typing-tick']);
+  });
+});
+
+/* ────────────────── button clicks (delegated, DOM-free half) ─────────────── */
+
+/**
+ * `installUiClickSounds` needs a document, which this environment does not
+ * have; the two halves it is made of do not, and they are where the rules
+ * live. `isSoundedButton` is fed the minimal shape it actually consumes.
+ */
+describe('button click delegation', () => {
+  interface FakeNode {
+    closest(selector: string): FakeNode | null;
+    hasAttribute(name: string): boolean;
+    getAttribute(name: string): string | null;
+  }
+
+  const node = (opts: {
+    isButton?: boolean;
+    silent?: boolean;
+    disabled?: boolean;
+    ariaDisabled?: boolean;
+  }): FakeNode => {
+    const self: FakeNode = {
+      closest: (selector) => {
+        if (selector.includes(SILENT_ATTR)) return opts.silent === true ? self : null;
+        return opts.isButton === false ? null : self;
+      },
+      hasAttribute: (name) => name === 'disabled' && opts.disabled === true,
+      getAttribute: (name) =>
+        name === 'aria-disabled' && opts.ariaDisabled === true ? 'true' : null,
+    };
+    return self;
+  };
+
+  it('voices a button, and nothing else', () => {
+    expect(isSoundedButton(node({}) as unknown as EventTarget)).toBe(true);
+    expect(isSoundedButton(node({ isButton: false }) as unknown as EventTarget)).toBe(false);
+    expect(isSoundedButton(null)).toBe(false);
+    // A bare EventTarget (window, a media element) has no closest().
+    expect(isSoundedButton({} as EventTarget)).toBe(false);
+  });
+
+  it('stays silent for disabled controls and anything opted out', () => {
+    expect(isSoundedButton(node({ disabled: true }) as unknown as EventTarget)).toBe(false);
+    expect(isSoundedButton(node({ ariaDisabled: true }) as unknown as EventTarget)).toBe(false);
+    expect(isSoundedButton(node({ silent: true }) as unknown as EventTarget)).toBe(false);
+  });
+
+  it('steps aside for a control that already voiced itself', () => {
+    // The shelf menu popping open is the whole reason this rule exists: the
+    // click fires AFTER the element's own handler, so a recent non-click play
+    // means "this control has a voice already".
+    expect(shouldClick(1000, 20, Number.NEGATIVE_INFINITY)).toBe(false);
+    expect(shouldClick(1000, 179, Number.NEGATIVE_INFINITY)).toBe(false);
+    expect(shouldClick(1000, 180, Number.NEGATIVE_INFINITY)).toBe(true);
+    expect(shouldClick(1000, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY)).toBe(true);
+  });
+
+  it('collapses a double-click into one sound', () => {
+    const quiet = Number.POSITIVE_INFINITY;
+    expect(shouldClick(1000, quiet, 980)).toBe(false); // 20 ms apart
+    expect(shouldClick(1045, quiet, 1000)).toBe(true); // 45 ms apart
+  });
+
+  it('msSinceVoicedPlay ignores the click family itself', async () => {
+    await init();
+    const before = msSinceVoicedPlay(1_000_000);
+    await play('click-soft', { noJitter: true });
+    expect(msSinceVoicedPlay(1_000_000)).toBe(before); // unchanged: clicks do not count
+    await play('pop-soft', { noJitter: true });
+    expect(msSinceVoicedPlay(Date.now())).toBeLessThan(1000);
+  });
+});
+
+/* ──────────────────────────── credits manifest ───────────────────────────── */
+
+/**
+ * The CC BY obligation is only satisfied if the credit reaches a reader, and
+ * the panel renders whatever the last audio build wrote. So this reads the
+ * REAL public/sounds/CREDITS.json rather than a fixture: a rebuild that
+ * dropped the attribution, or shipped a cue with no provenance at all, has to
+ * fail here rather than in a licence complaint.
+ */
+describe('public/sounds/CREDITS.json', () => {
+  const manifest = JSON.parse(
+    readFileSync(join(SOUNDS_DIR, 'CREDITS.json'), 'utf8'),
+  ) as CreditsManifest;
+
+  it('carries provenance for every shipped cue', () => {
+    for (const name of SOUND_NAMES) {
+      const entry = manifest.sounds?.[name];
+      expect(Array.isArray(entry), `${name} has no credit`).toBe(true);
+      for (const credit of entry ?? []) {
+        expect(credit.title, name).toBeTruthy();
+        expect(credit.author, name).toBeTruthy();
+        expect(credit.licence, name).toMatch(/CC0|CC BY|Public domain/i);
+        expect(credit.sourcePage, name).toMatch(/^https?:\/\//);
+        expect(credit.licenceUrl, name).toMatch(/^https?:\/\//);
+      }
+    }
+  });
+
+  it('lists every attribution the licences actually require', () => {
+    const required = new Set<string>();
+    for (const credits of Object.values(manifest.sounds ?? {})) {
+      for (const credit of credits) {
+        if (credit.attributionRequired) required.add(credit.attributionText as string);
+      }
+    }
+    expect(new Set(manifest.attributionsRequired ?? [])).toEqual(required);
+    // Anything under a CC BY licence MUST be flagged, or the panel stays quiet
+    // about the one credit that is not optional.
+    for (const credits of Object.values(manifest.sounds ?? {})) {
+      for (const credit of credits) {
+        if (/CC BY/i.test(credit.licence)) expect(credit.attributionRequired).toBe(true);
+      }
+    }
+  });
+
+  it('regroups per-recording for display, obligations first', () => {
+    const groups = groupCredits(manifest);
+    expect(groups.length).toBeGreaterThan(5);
+    expect(groups[0]?.credit.attributionRequired).toBe(true);
+    // Every cue appears exactly once per recording it was built from.
+    const seen = groups.flatMap((g) => g.cues);
+    expect(new Set(seen).size).toBe(SOUND_NAMES.length);
+    // A layered bed is credited to each of its sources.
+    const night = groups.filter((g) => g.cues.includes('ambient-night'));
+    expect(night).toHaveLength(2);
+  });
+
+  it('tolerates a manifest from another build shape', () => {
+    expect(groupCredits(undefined)).toEqual([]);
+    expect(groupCredits({ sounds: {} })).toEqual([]);
+    // The pre-array shape (one object per cue) still renders.
+    const legacy = {
+      sounds: { 'pop-soft': { title: 'x', author: 'y' } },
+    } as unknown as CreditsManifest;
+    expect(groupCredits(legacy)).toHaveLength(1);
+  });
+
+  it('summarises cue lists and licences for the badge', () => {
+    expect(summariseCues(['page-flip-1', 'page-flip-2', 'pencil-scratch'])).toBe(
+      'page-flip ×2, pencil-scratch',
+    );
+    expect(shortLicence('Public domain (PD-author, via pdsounds.org)')).toBe('Public domain');
+    expect(shortLicence('CC0 1.0')).toBe('CC0 1.0');
   });
 });

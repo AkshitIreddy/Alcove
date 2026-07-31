@@ -62,6 +62,11 @@ export type SoundName =
   | 'pop-soft-3'
   | 'pop-soft-4'
   | 'pop-soft-5'
+  /* pressing a button */
+  | 'click-soft'
+  | 'click-soft-2'
+  | 'click-soft-3'
+  | 'click-soft-4'
   /* hover */
   | 'tick-hover'
   | 'tick-hover-2'
@@ -90,10 +95,16 @@ export type SoundName =
   | 'confetti-2'
   | 'confetti-3'
   /* ambience beds */
-  | 'ambient-library'
   | 'ambient-rain'
+  | 'ambient-storm'
   | 'ambient-fireplace'
   | 'ambient-crickets'
+  | 'ambient-night'
+  | 'ambient-wind'
+  | 'ambient-stream'
+  | 'ambient-forest'
+  | 'ambient-shore'
+  | 'ambient-cafe'
   /* keystrokes */
   | 'typing-tick-1'
   | 'typing-tick-2'
@@ -124,6 +135,7 @@ export const SOUND_FAMILIES = {
   'book-return': ['book-return', 'book-return-2', 'book-return-3', 'book-return-4'],
   'shelf-whoosh': ['shelf-whoosh', 'shelf-whoosh-2', 'shelf-whoosh-3'],
   'pop-soft': ['pop-soft', 'pop-soft-2', 'pop-soft-3', 'pop-soft-4', 'pop-soft-5'],
+  'click-soft': ['click-soft', 'click-soft-2', 'click-soft-3', 'click-soft-4'],
   'tick-hover': ['tick-hover', 'tick-hover-2', 'tick-hover-3', 'tick-hover-4', 'tick-hover-5'],
   'check-done': ['check-done', 'check-done-2', 'check-done-3', 'check-done-4'],
   'crumple-delete': ['crumple-delete', 'crumple-delete-2', 'crumple-delete-3', 'crumple-delete-4'],
@@ -172,6 +184,10 @@ export const VARIANT_WEIGHTS: Record<SoundName, VariantWeight> = {
   'pop-soft-3': 'plain',
   'pop-soft-4': 'full',
   'pop-soft-5': 'plain',
+  'click-soft': 'plain',
+  'click-soft-2': 'full',
+  'click-soft-3': 'plain',
+  'click-soft-4': 'full',
   'tick-hover': 'plain',
   'tick-hover-2': 'full',
   'tick-hover-3': 'plain',
@@ -193,10 +209,16 @@ export const VARIANT_WEIGHTS: Record<SoundName, VariantWeight> = {
   confetti: 'plain',
   'confetti-2': 'full',
   'confetti-3': 'plain',
-  'ambient-library': 'full',
   'ambient-rain': 'full',
+  'ambient-storm': 'full',
   'ambient-fireplace': 'full',
   'ambient-crickets': 'full',
+  'ambient-night': 'full',
+  'ambient-wind': 'full',
+  'ambient-stream': 'full',
+  'ambient-forest': 'full',
+  'ambient-shore': 'full',
+  'ambient-cafe': 'full',
   'typing-tick-1': 'plain',
   'typing-tick-2': 'plain',
   'typing-tick-3': 'full',
@@ -212,16 +234,60 @@ export const VARIANT_WEIGHTS: Record<SoundName, VariantWeight> = {
 export const PAGE_FLIP_VARIANTS = SOUND_FAMILIES['page-flip'];
 export const TYPING_TICK_VARIANTS = SOUND_FAMILIES['typing-tick'];
 
-/** The user-facing soundscape choice (settings.soundscape). */
-export type SoundscapeName = 'library' | 'rain' | 'fireplace' | 'crickets' | 'none';
+/**
+ * The user-facing soundscape choice (settings.soundscape).
+ *
+ * `library` was here and is gone: it was the one bed built from a synthesized
+ * loop rather than a field recording, and review's word for it was "creepy".
+ * `mergeSettings` maps the stored value onto `rain`.
+ */
+export type SoundscapeName =
+  | 'rain'
+  | 'storm'
+  | 'fireplace'
+  | 'crickets'
+  | 'night'
+  | 'wind'
+  | 'stream'
+  | 'forest'
+  | 'shore'
+  | 'cafe'
+  | 'none';
 
 /** Soundscape -> the seamless ambient loop that realizes it. */
 export const SOUNDSCAPE_LOOPS = {
-  library: 'ambient-library',
   rain: 'ambient-rain',
+  storm: 'ambient-storm',
   fireplace: 'ambient-fireplace',
   crickets: 'ambient-crickets',
+  night: 'ambient-night',
+  wind: 'ambient-wind',
+  stream: 'ambient-stream',
+  forest: 'ambient-forest',
+  shore: 'ambient-shore',
+  cafe: 'ambient-cafe',
 } as const satisfies Record<Exclude<SoundscapeName, 'none'>, SoundName>;
+
+/** Every selectable soundscape, in the order the settings row lays them out. */
+export const SOUNDSCAPE_NAMES = [
+  ...(Object.keys(SOUNDSCAPE_LOOPS) as Exclude<SoundscapeName, 'none'>[]),
+  'none',
+] as const satisfies readonly SoundscapeName[];
+
+/** One-line description per soundscape, for the settings row's tooltips. */
+export const SOUNDSCAPE_BLURBS: Record<SoundscapeName, string> = {
+  rain: 'rain on the window',
+  storm: 'light rain, thunder a long way off',
+  fireplace: 'a fire in the grate',
+  crickets: 'a field full of crickets',
+  night: 'crickets, with wind in the far trees',
+  wind: 'wind around the building',
+  stream: 'water over stones',
+  forest: 'woodland, midday, nobody about',
+  shore: 'small waves on a pebble beach',
+  cafe: 'the far end of a busy room',
+  none: 'silence',
+};
 
 const AMBIENT_LOOP_NAMES: ReadonlySet<SoundName> = new Set(Object.values(SOUNDSCAPE_LOOPS));
 
@@ -249,16 +315,14 @@ const ALL_SOUND_NAMES: readonly SoundName[] = [
   ...SOUND_FAMILIES['book-return'],
   ...SOUND_FAMILIES['shelf-whoosh'],
   ...SOUND_FAMILIES['pop-soft'],
+  ...SOUND_FAMILIES['click-soft'],
   ...SOUND_FAMILIES['tick-hover'],
   ...SOUND_FAMILIES['check-done'],
   ...SOUND_FAMILIES['crumple-delete'],
   ...SOUND_FAMILIES['drop-thump'],
   'pencil-scratch',
   ...SOUND_FAMILIES.confetti,
-  'ambient-library',
-  'ambient-rain',
-  'ambient-fireplace',
-  'ambient-crickets',
+  ...(Object.values(SOUNDSCAPE_LOOPS) as SoundName[]),
   ...SOUND_FAMILIES['typing-tick'],
   ...SOUND_FAMILIES['chime-hour'],
 ];
@@ -410,10 +474,26 @@ let ambient: AmbientState | undefined;
 /** Whether the ambient bed should be running (survives mute/unmute). */
 let ambientWanted = false;
 /** Which soundscape the bed realizes when it runs ('none' = silence). */
-let soundscape: SoundscapeName = 'library';
+let soundscape: SoundscapeName = 'rain';
 
 /** RNG behind variant choice, pitch jitter and level jitter. */
 let playRng: () => number = Math.random;
+
+const CLICK_NAMES: ReadonlySet<SoundName> = new Set(SOUND_FAMILIES['click-soft']);
+
+/**
+ * When a sound other than the button click last actually started.
+ *
+ * The delegated click handler reads this to stay out of the way: a control
+ * that already voices itself (a shelf menu popping open, a checkbox ringing)
+ * does not also get a click stacked under it. See `msSinceVoicedPlay`.
+ */
+let lastVoicedPlayMs = Number.NEGATIVE_INFINITY;
+
+/** Milliseconds since the last non-click sound started. Infinity if none. */
+export function msSinceVoicedPlay(nowMs: number = Date.now()): number {
+  return nowMs - lastVoicedPlayMs;
+}
 
 /* -------------------------- variant rotation logic ------------------------- */
 
@@ -547,6 +627,10 @@ export async function play(name: PlayableName, options: PlayOptions = {}): Promi
   if (reducedSound && REDUCED_SKIP.has(resolved)) return undefined;
   const profile = CHARACTER_PROFILES[character];
   if (profile.skip.has(resolved)) return undefined;
+  // Stamped synchronously, before the first await, so the delegated button
+  // click in `sound/uiClicks.ts` can tell whether the control it just saw
+  // pressed already made a sound of its own.
+  if (!CLICK_NAMES.has(resolved)) lastVoicedPlayMs = Date.now();
 
   const jitterOn = options.noJitter !== true;
   const level = jitterOn ? jitter(profile.levelJitter) : 1;
@@ -717,7 +801,11 @@ export function keystroke(nowMs: number = Date.now()): void {
   if (nowMs - lastTypingTickMs < TYPING_MIN_INTERVAL_MS) return;
   lastTypingTickMs = nowMs;
   typingTicksPlayed += 1;
-  const velocity = 0.45 + 0.55 * typingRng();
+  // Floor 0.6, not 0.45: the spread is there so a run of keystrokes does not
+  // metronome, but at 0.45 the soft end of the range put a tick 7 dB under its
+  // own family and review heard nothing at all. 0.6-1.0 keeps the unevenness
+  // and costs 2.5 dB of it.
+  const velocity = 0.6 + 0.4 * typingRng();
   void play('typing-tick', { volume: velocity });
 }
 
@@ -894,12 +982,13 @@ export function resetEngineForTests(): void {
   character = 'calm';
   ambient = undefined;
   ambientWanted = false;
-  soundscape = 'library';
+  soundscape = 'rain';
   howls.clear();
   howlerModule = undefined;
   loadHowler = defaultLoader;
   pickers.clear();
   playRng = Math.random;
+  lastVoicedPlayMs = Number.NEGATIVE_INFINITY;
   typingSoundsEnabled = false;
   lastTypingTickMs = Number.NEGATIVE_INFINITY;
   typingTicksPlayed = 0;

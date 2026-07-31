@@ -19,14 +19,11 @@ import { createStore, reconcile, unwrap } from 'solid-js/store';
 import {
   DEFAULT_THEME_ID,
   getTheme,
-  isBackdropId,
-  isColourwayId,
   isThemeId,
   isWallpaperPatternId,
   resolveBackdrop,
   resolveWallpaper,
   type BackdropId,
-  type ColourwayId,
   type LibraryTheme,
   type ThemeId,
   type WallpaperPatternId,
@@ -37,14 +34,30 @@ import { libraryKey } from './libraryKey';
 
 const PREFS_KEY = 'library';
 
-/** `null` on the three pickers means "follow the room's own choice". */
+/**
+ * What a reader can change about their library.
+ *
+ * There are exactly three things on the screen — the books, the shelf they
+ * stand on, and the wall behind it — and the studio used to offer four
+ * overlapping controls for the last one: `theme` (which baked its own wall),
+ * `backdrop` (papered / panelled / plastered / boarded / shoji), plus
+ * `wallpaperPattern` and `colourway`. Picking a wallpaper did nothing
+ * whenever the backdrop was a finish with nowhere to put one, which is
+ * exactly the "sometimes clicking wallpaper changes nothing" report. The
+ * model was wrong, not the reader.
+ *
+ * So the wall is one thing with two knobs: an optional pattern that defaults
+ * to none, and how much physical relief that pattern has.
+ */
 export interface LibraryPrefs {
   theme: ThemeId;
+  /** `null` = a plain wall. The default, and it has to stay usable. */
   wallpaperPattern: WallpaperPatternId | null;
-  colourway: ColourwayId | null;
-  backdrop: BackdropId | null;
-  /** Flora density multiplier, 0 (clean) → 2 (overgrown). 1 = the room's own. */
-  floraDensity: number;
+  /**
+   * How raised the wall's surface reads, 0 (flat paint) → 1 (deep relief).
+   * Drives the strength of the wall's own shading, not a separate texture.
+   */
+  wallDepth: number;
   /** Lamp warmth, 0 (cool moonlight) → 1 (deep amber). 0.5 = the room's own. */
   lightWarmth: number;
 }
@@ -52,9 +65,7 @@ export interface LibraryPrefs {
 export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
   theme: DEFAULT_THEME_ID,
   wallpaperPattern: null,
-  colourway: null,
-  backdrop: null,
-  floraDensity: 1,
+  wallDepth: 0.35,
   lightWarmth: 0.5,
 };
 
@@ -68,9 +79,7 @@ export function mergeLibraryPrefs(raw: unknown): LibraryPrefs {
   return {
     theme: isThemeId(s.theme) ? s.theme : d.theme,
     wallpaperPattern: isWallpaperPatternId(s.wallpaperPattern) ? s.wallpaperPattern : null,
-    colourway: isColourwayId(s.colourway) ? s.colourway : null,
-    backdrop: isBackdropId(s.backdrop) ? s.backdrop : null,
-    floraDensity: num(s.floraDensity, d.floraDensity, 0, 2),
+    wallDepth: num(s.wallDepth, d.wallDepth, 0, 1),
     lightWarmth: num(s.lightWarmth, d.lightWarmth, 0, 1),
   };
 }
@@ -156,11 +165,15 @@ export interface ResolvedLibrary {
 
 export function resolveLibrary(prefs: LibraryPrefs): ResolvedLibrary {
   const theme = getTheme(prefs.theme);
+  // Colourway is no longer a control — the wall is one authored surface and
+  // the pattern, if any, sits on top of it in the room's own colour.
   const wallpaper = resolveWallpaper(theme, {
     pattern: prefs.wallpaperPattern,
-    colourway: prefs.colourway,
+    colourway: null,
   });
-  const backdrop = resolveBackdrop(theme, prefs.backdrop);
+  // Likewise the backdrop finish: it duplicated the wall and silently voided
+  // the pattern picker. The room's own first choice stands.
+  const backdrop = resolveBackdrop(theme, null);
   return {
     prefs,
     theme,

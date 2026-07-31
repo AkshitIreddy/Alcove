@@ -11,15 +11,12 @@
  * the Pixi world is subscribed to that store, so changes land on the shelf
  * the moment they are made.
  */
-import { For, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { renderCaseSection } from '../../art/caseArt';
 import { fnv1a } from '../../art/noise';
 import type { Ctx2D } from '../../art/spines';
-import { COLOURWAYS, WALLPAPER_PATTERNS, type Colourway } from '../../art/wallpaper';
+import { WALLPAPER_PATTERNS } from '../../art/wallpaper';
 import {
-  BACKDROP_IDS,
-  BACKDROPS,
-  COLOURWAY_IDS,
   SHIPPED_THEME_IDS,
   THEMES,
   WALLPAPER_PATTERN_IDS,
@@ -27,7 +24,6 @@ import {
   resolveBackdrop,
   resolveWallpaper,
   type BackdropId,
-  type ColourwayId,
   type LibraryTheme,
   type ThemeId,
   type WallpaperPatternId,
@@ -92,8 +88,6 @@ function ThemeCard(props: {
   id: ThemeId;
   active: boolean;
   pattern: WallpaperPatternId | null;
-  colourway: ColourwayId | null;
-  backdrop: BackdropId | null;
   onPick(): void;
 }): JSX.Element {
   let canvas: HTMLCanvasElement | undefined;
@@ -101,12 +95,12 @@ function ThemeCard(props: {
 
   createEffect(() => {
     const t = theme();
-    // Only the ACTIVE card previews the user's wallpaper/wall picks; the rest
-    // show each room as its author intended, so the grid reads as eight worlds.
+    // Only the ACTIVE card previews the reader's wall pick; the rest show each
+    // room as its author intended, so the grid reads as distinct worlds.
     const wallpaper = props.active
-      ? resolveWallpaper(t, { pattern: props.pattern, colourway: props.colourway })
+      ? resolveWallpaper(t, { pattern: props.pattern, colourway: null })
       : t.wallpaper;
-    const backdrop = props.active ? resolveBackdrop(t, props.backdrop) : t.backdrops[0];
+    const backdrop = resolveBackdrop(t, null);
     const el = canvas;
     if (!el) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -147,30 +141,6 @@ function ThemeCard(props: {
   );
 }
 
-/** Little painted swatch for one colourway (its own paper + ink tones). */
-function ColourwaySwatch(props: {
-  id: ColourwayId;
-  active: boolean;
-  onPick(): void;
-}): JSX.Element {
-  const c = (): Colourway => COLOURWAYS[props.id];
-  return (
-    <button
-      type="button"
-      class="nb-swatch nb-swatch-colourway"
-      aria-pressed={props.active}
-      classList={{ 'is-active': props.active }}
-      aria-label={c().name}
-      title={c().name}
-      style={{
-        background: `linear-gradient(150deg, ${c().base} 56%, ${c().baseAlt} 56%)`,
-        'box-shadow': `inset 0 0 0 2px ${c().accent}`,
-      }}
-      onClick={() => props.onPick()}
-    />
-  );
-}
-
 export interface LibraryStudioProps {
   /** Optional: notified after every change (sound cue, toastâ€¦). */
   onChanged?(prefs: LibraryPrefs): void;
@@ -190,22 +160,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
   };
 
   const theme = (): (typeof THEMES)[ThemeId] => getTheme(libraryPrefs.theme);
-  const effectivePattern = (): WallpaperPatternId =>
-    libraryPrefs.wallpaperPattern ?? theme().wallpaper.pattern;
-  const effectiveColourway = (): ColourwayId =>
-    libraryPrefs.colourway ?? theme().wallpaper.colourway;
-  const effectiveBackdrop = (): BackdropId =>
-    libraryPrefs.backdrop ?? theme().backdrops[0];
-
-  /** Shuffle only the dressing â€” same room, new clothes. */
-  const randomise = (): void => {
-    const r = (n: number): number => Math.floor(Math.random() * n);
-    patch({
-      wallpaperPattern: WALLPAPER_PATTERN_IDS[r(WALLPAPER_PATTERN_IDS.length)] ?? null,
-      colourway: COLOURWAY_IDS[r(COLOURWAY_IDS.length)] ?? null,
-      backdrop: BACKDROP_IDS[r(BACKDROP_IDS.length)] ?? null,
-    });
-  };
 
   /** Surprise me â€” a whole different room, dressing and all. */
   const surprise = (): void => {
@@ -213,20 +167,25 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     const id = SHIPPED_THEME_IDS[r(SHIPPED_THEME_IDS.length)] as ThemeId;
     patch({
       theme: id,
-      wallpaperPattern: null,
-      colourway: null,
-      backdrop: null,
-      floraDensity: [0.4, 1, 1, 1.6][r(4)] ?? 1,
+      // Plain is weighted: a wall is a background, and a patterned one every
+      // time you roll turns the shelf into wallpaper with books in front.
+      wallpaperPattern: r(3) === 0 ? WALLPAPER_PATTERN_IDS[r(WALLPAPER_PATTERN_IDS.length)] ?? null : null,
+      wallDepth: 0.2 + Math.random() * 0.5,
       lightWarmth: 0.25 + Math.random() * 0.6,
     });
   };
 
-  const floraLabel = (): string => {
-    const d = libraryPrefs.floraDensity;
-    if (d <= 0.02) return 'bare';
-    if (d < 0.7) return 'sparse';
-    if (d < 1.35) return "the room's own";
-    return 'overgrown';
+  const patternLabel = (): string => {
+    const id = libraryPrefs.wallpaperPattern;
+    return id === null ? 'plain' : (WALLPAPER_PATTERNS[id]?.name ?? id).toLowerCase();
+  };
+
+  const depthLabel = (): string => {
+    const d = libraryPrefs.wallDepth;
+    if (d < 0.12) return 'flat paint';
+    if (d < 0.4) return 'faint relief';
+    if (d < 0.7) return 'raised';
+    return 'deep relief';
   };
 
   const warmthLabel = (): string => {
@@ -249,8 +208,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
                 id={id}
                 active={libraryPrefs.theme === id}
                 pattern={libraryPrefs.wallpaperPattern}
-                colourway={libraryPrefs.colourway}
-                backdrop={libraryPrefs.backdrop}
                 onPick={() => patch({ theme: id })}
               />
             )}
@@ -258,84 +215,59 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         </div>
       </section>
 
+      {/*
+        One wall, two knobs. The old panel offered a "wall finish" row
+        (papered / panelled / plastered / boarded / shoji) *and* a wallpaper
+        row *and* a colourway row, and picking a wallpaper silently did
+        nothing whenever the finish had nowhere to put one. Three controls for
+        one surface, two of which could cancel the third.
+      */}
       <section class="nb-panel-section nb-panel-section-divided">
         <h3 class="nb-panel-section-title">
-          the wall <em class="nb-panel-row-hint">{BACKDROPS[effectiveBackdrop()].name}</em>
+          the wall <em class="nb-panel-row-hint">{patternLabel()}</em>
         </h3>
-        <p class="nb-panel-footnote nb-panel-footnote-tight">
-          {BACKDROPS[effectiveBackdrop()].blurb}
-        </p>
-        <div class="nb-chip-row" role="group" aria-label="Wall finish">
-          <For each={BACKDROP_IDS}>
+        <div class="nb-chip-row" role="group" aria-label="Wall pattern">
+          {/* Plain comes first and is the default: a wall with no pattern has
+              to be a real choice, not the absence of one. */}
+          <button
+            type="button"
+            class="nb-chip"
+            aria-pressed={libraryPrefs.wallpaperPattern === null}
+            onClick={() => patch({ wallpaperPattern: null })}
+          >
+            plain
+          </button>
+          <For each={WALLPAPER_PATTERN_IDS}>
             {(id) => (
               <button
                 type="button"
                 class="nb-chip"
-                aria-pressed={effectiveBackdrop() === id}
-                onClick={() => patch({ backdrop: id })}
+                aria-pressed={libraryPrefs.wallpaperPattern === id}
+                onClick={() => patch({ wallpaperPattern: id })}
               >
-                {BACKDROPS[id].name.toLowerCase()}
+                {(WALLPAPER_PATTERNS[id]?.name ?? id).toLowerCase()}
               </button>
             )}
           </For>
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            onClick={() => patch({ backdrop: null })}
-          >
-            as built
-          </button>
         </div>
-      </section>
-
-      <Show when={BACKDROPS[effectiveBackdrop()].usesPattern}>
-        <section class="nb-panel-section">
-          <h3 class="nb-panel-section-title">wallpaper</h3>
-          <div class="nb-chip-grid" role="group" aria-label="Wallpaper pattern">
-            <For each={WALLPAPER_PATTERN_IDS}>
-              {(id) => (
-                <button
-                  type="button"
-                  class="nb-chip"
-                  aria-pressed={effectivePattern() === id}
-                  onClick={() => patch({ wallpaperPattern: id })}
-                >
-                  {(WALLPAPER_PATTERNS[id]?.name ?? id).toLowerCase()}
-                </button>
-              )}
-            </For>
-          </div>
-          <h3 class="nb-panel-section-title nb-panel-section-title-sub">colourway</h3>
-          <div class="nb-swatch-grid" role="group" aria-label="Wallpaper colourway">
-            <For each={COLOURWAY_IDS}>
-              {(id) => (
-                <ColourwaySwatch
-                  id={id}
-                  active={effectiveColourway() === id}
-                  onPick={() => patch({ colourway: id })}
-                />
-              )}
-            </For>
-          </div>
-        </section>
-      </Show>
-
-      <section class="nb-panel-section nb-panel-section-divided">
         <label class="nb-panel-row">
           <span class="nb-panel-row-label">
-            things growing <em class="nb-panel-row-hint">{floraLabel()}</em>
+            surface depth <em class="nb-panel-row-hint">{depthLabel()}</em>
           </span>
           <input
             type="range"
             class="nb-panel-slider"
             min={0}
-            max={2}
-            step={0.1}
-            value={libraryPrefs.floraDensity}
-            aria-label="Flora density"
-            onInput={(e) => patch({ floraDensity: Number(e.currentTarget.value) })}
+            max={1}
+            step={0.05}
+            value={libraryPrefs.wallDepth}
+            aria-label="Wall surface depth"
+            onInput={(e) => patch({ wallDepth: Number(e.currentTarget.value) })}
           />
         </label>
+      </section>
+
+      <section class="nb-panel-section nb-panel-section-divided">
         <label class="nb-panel-row">
           <span class="nb-panel-row-label">
             lamp warmth <em class="nb-panel-row-hint">{warmthLabel()}</em>
@@ -355,9 +287,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
       <section class="nb-panel-section">
         <div class="nb-chip-row">
-          <button type="button" class="nb-chip" onClick={randomise}>
-            randomise
-          </button>
           <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
             surprise me
           </button>
@@ -370,7 +299,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           </button>
         </div>
         <p class="nb-panel-footnote">
-          {`seed ${fnv1a(theme().id).toString(16)} Â· every plant grows in the same place every time`}
+          {`seed ${fnv1a(theme().id).toString(16)} Â· the room is laid out the same way every time`}
         </p>
       </section>
     </div>

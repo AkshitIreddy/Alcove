@@ -219,6 +219,19 @@ const WALLPAPER_ALPHA = 0.6;
  */
 const WALL_TINT = 0x9a7f61;
 
+/**
+ * How much grows on the case. Zero.
+ *
+ * Flora was a slider, a per-theme species list, a per-floor placement plan and
+ * a pair of baked layers per floor — and it never once looked good: thin
+ * vines, tiny leaves, specimens popping in one at a time. "Forget about the
+ * flower floral." The planning code stays behind this constant rather than
+ * being deleted, because the placement logic is sound and the failure was
+ * entirely in the art; if authored foliage sprites ever meet the bar, this is
+ * the one line that brings it back.
+ */
+const FLORA_DENSITY = 0;
+
 
 /** Mid tone of the baked trash-drawer art — the base `ratioTint` divides out. */
 const TRASH_ART_TONE = 0xddd0be;
@@ -397,7 +410,7 @@ export class ShelfWorld {
   /** The ghost add-a-book slot last published to the overlay. */
   private addSpot: AddSpot | null = null;
   /** Change signature for the ghost slot (publish only on a real move). */
-  private addSpotSig = ' ';
+  private addSpotSig = '\0';
 
   private readonly hooks: WorldHooks = {
     markDirty: () => {
@@ -1235,13 +1248,14 @@ export class ShelfWorld {
   private async applyLibrary(prefs: LibraryPrefs): Promise<void> {
     if (this.destroyed) return;
     const next = resolveLibrary(prefs);
-    const prev = this.library;
     // Compare against what is actually ON SCREEN, not just against the last
     // request: the initial snapshot and the "stored prefs loaded" snapshot
     // arrive back to back, and the second one must not cancel the first's
     // bake bookkeeping (which is what left `libraryKey` empty forever).
     const roomChanged = this.appliedLibraryKey !== next.key;
-    const densityChanged = prev !== null && prev.prefs.floraDensity !== prefs.floraDensity;
+    // Flora is gone as a control and as art (see FLORA_DENSITY), so nothing
+    // about it can change any more.
+    const densityChanged = false;
     this.library = next;
     const gen = ++this.libraryGen;
 
@@ -1421,11 +1435,11 @@ export class ShelfWorld {
     const lib = this.library;
     if (lib === null || this.destroyed || gen !== this.libraryGen) return;
     if (this.floors.get(index) !== fv) return;
-    if (this.degrade && lib.prefs.floraDensity <= 0) return;
+    if (FLORA_DENSITY <= 0) return;
     const plan: FloorFloraPlan = planFloorFlora({
       floorIndex: index,
       theme: lib.theme,
-      densityMultiplier: lib.prefs.floraDensity,
+      densityMultiplier: FLORA_DENSITY,
       spines: fv.visuals.map((v) => ({ centerX: v.centerX, w: v.w, height: v.height })),
     });
     for (const layer of ['back', 'rail'] as const) {

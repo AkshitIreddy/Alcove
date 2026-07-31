@@ -905,17 +905,29 @@ describe('library prefs: validated merge', () => {
     const prefs = mergeLibraryPrefs({
       theme: 'observatory',
       wallpaperPattern: 'constellation',
-      colourway: 'midnight',
-      backdrop: 'shoji',
-      floraDensity: 9,
+      wallDepth: 4,
       lightWarmth: -3,
     });
     expect(prefs.theme).toBe('observatory');
     expect(prefs.wallpaperPattern).toBe('constellation');
-    expect(prefs.colourway).toBe('midnight');
-    expect(prefs.backdrop).toBe('shoji');
-    expect(prefs.floraDensity).toBe(2);
+    expect(prefs.wallDepth).toBe(1);
     expect(prefs.lightWarmth).toBe(0);
+  });
+
+  it('drops the retired wall controls rather than carrying them forward', () => {
+    // colourway / backdrop / floraDensity were three ways to change one
+    // surface, and two of them could silently void the third. A stored blob
+    // from before the purge has to load without reviving them.
+    const prefs = mergeLibraryPrefs({
+      theme: 'observatory',
+      colourway: 'midnight',
+      backdrop: 'shoji',
+      floraDensity: 2,
+    });
+    expect(prefs).not.toHaveProperty('colourway');
+    expect(prefs).not.toHaveProperty('backdrop');
+    expect(prefs).not.toHaveProperty('floraDensity');
+    expect(prefs.wallpaperPattern).toBeNull();
   });
 
   it('unset pickers mean "follow the room"', () => {
@@ -928,11 +940,16 @@ describe('library prefs: validated merge', () => {
 
   it('resolveLibrary keys identical rooms identically', () => {
     const a = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage' }));
-    const b = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage', floraDensity: 2 }));
-    // Flora density does not change the CASE art, so the bake key must match.
+    // Neither slider touches the CASE art, so the bake key must match — this
+    // is what stops a wall-depth drag from re-baking the whole bookcase.
+    const b = resolveLibrary(
+      mergeLibraryPrefs({ theme: 'cottage', wallDepth: 1, lightWarmth: 0.9 }),
+    );
     expect(a.key).toBe(b.key);
-    const other = getTheme('cottage').backdrops[0] === 'shoji' ? 'boarded' : 'shoji';
-    const c = resolveLibrary(mergeLibraryPrefs({ theme: 'cottage', backdrop: other }));
+    // The wall pattern does, so it must not.
+    const c = resolveLibrary(
+      mergeLibraryPrefs({ theme: 'cottage', wallpaperPattern: 'constellation' }),
+    );
     expect(c.key).not.toBe(a.key);
   });
 });

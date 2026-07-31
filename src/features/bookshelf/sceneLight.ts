@@ -51,8 +51,8 @@
 
 import { Rectangle, type Container, type Renderer } from 'pixi.js';
 
-import { DEFAULT_LIGHT_RIG, type LightRig } from '../../art/lighting';
-import type { LibraryTheme } from '../../art/themes';
+import type { LightRig } from '../../art/lighting';
+import { SHELF_DEFAULT_RIG } from './lightRig';
 import {
   CanvasNormalBuffer,
   DeferredLightingFilter,
@@ -62,6 +62,8 @@ import {
   type LightingQuality,
 } from '../../render';
 import { BOOK_ZONE_H, CROWN_H, CROWN_LIP, FLOOR_H, RAIL_W, SHELF_WIDTH } from './constants';
+
+export { rigForTheme, SHELF_DEFAULT_RIG } from './lightRig';
 
 /* ========================================================================== *
  *                              scene description                             *
@@ -146,58 +148,6 @@ function spineShape(lean: number, radius: number, height: number): HeightShape {
 }
 
 /* ========================================================================== *
- *                               the rig, per room                            *
- * ========================================================================== */
-
-/**
- * Fold a theme's painterly light description into a deferred rig.
- *
- * `LightSpec` (themes.ts) talks about lamp pools, an ambient cast, a rim and a
- * vignette — the vocabulary the old sprite-based fake used. The deferred pass
- * wants a physical rig. Rather than add a second, redundant light description
- * to every theme, this maps one onto the other so a room's existing art
- * direction drives the real light: an attic's warm pools become a warm key
- * with deep ambient occlusion, a moonlit study's cool cast becomes a cool key
- * with a hard rim.
- *
- * `warmth` is the user's own slider (0 = moonlight, 1 = candlelit).
- */
-export function rigForTheme(theme: LibraryTheme, warmth: number): LightRig {
-  const light = theme.light;
-  const w = Number.isFinite(warmth) ? Math.min(1, Math.max(0, warmth)) : 0.5;
-  // The brightest pool is the room's key; its position gives the key's angle.
-  const key = [...light.pools].sort((a, b) => b.intensity - a.intensity)[0];
-  // Pool coordinates are viewport fractions; a pool up and to the right means
-  // light travelling down and to the left.
-  const angle =
-    key === undefined
-      ? DEFAULT_LIGHT_RIG.keyAngle
-      : Math.atan2(0.5 - key.y, 0.5 - key.x) + Math.PI;
-
-  const ambient = light.ambient;
-  const rim = light.rim;
-  return {
-    ...DEFAULT_LIGHT_RIG,
-    id: `theme:${theme.id}`,
-    label: theme.name,
-    keyAngle: angle,
-    keyColour: key?.colour ?? DEFAULT_LIGHT_RIG.keyColour,
-    // A candlelit room is not a brighter room — it is a warmer, lower one, so
-    // warmth moves the key only a little and the temperature split a lot.
-    keyIntensity: 0.86 + (key?.intensity ?? 0.5) * 0.4,
-    ambientColour: ambient.colour,
-    ambientLevel: 0.1 + ambient.amount * 0.22,
-    fillIntensity: 0.2 + (1 - w) * 0.16,
-    rimColour: rim?.colour ?? DEFAULT_LIGHT_RIG.rimColour,
-    rimStrength: rim === null ? 0.28 : 0.3 + rim.intensity * 0.5,
-    vignette: Math.min(0.6, light.vignette.amount * 0.9),
-    vignetteColour: light.vignette.colour,
-    temperatureShift: -0.25 + w * 0.85,
-    shafts: light.shafts ? DEFAULT_LIGHT_RIG.shafts : [],
-  };
-}
-
-/* ========================================================================== *
  *                                 the pass                                   *
  * ========================================================================== */
 
@@ -233,7 +183,7 @@ export class SceneLight {
       resolution: opts.resolution ?? 0.5,
     });
     this.filter = new DeferredLightingFilter({
-      rig: DEFAULT_LIGHT_RIG,
+      rig: SHELF_DEFAULT_RIG,
       normals: this.buffer,
       quality: opts.quality ?? 'medium',
       sceneWidth: 1,

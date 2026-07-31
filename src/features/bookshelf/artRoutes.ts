@@ -86,12 +86,17 @@ const BASE_WOOD = /^wood\|(?:[^|]+\|)?(plank|back|rail|crown|shadow)\|(\d+)x(\d+
 
 /**
  * The shelf's multi-floor wall strip, written by `textures.bakeWallStrip`:
- *   `wall|{themeId}|{backdrop}|{pattern}|{colourway}|{w}x{h}`
+ *   `wall|[vN|]{themeId}|{backdrop}|{pattern}|{colourway}|{w}x{h}`
+ * The optional recipe-version segment is not decoration — the key gained a
+ * `v2` the same afternoon this router was written, and a pattern that did not
+ * tolerate it would have silently stopped routing the single largest bake in
+ * the case.
+ *
  * `tile` is absent from the key on purpose (the pattern and colourway are the
  * identity), so the worker uses the theme's own tile size, which is what every
  * caller passes.
  */
-const WALL = /^wall\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|(\d+)x(\d+)$/;
+const WALL = /^wall\|(?:v\d+\|)?([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|(\d+)x(\d+)$/;
 
 const ROUTES: readonly Route[] = [
   {

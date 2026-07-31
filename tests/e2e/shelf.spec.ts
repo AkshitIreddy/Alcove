@@ -3,7 +3,7 @@
  * momentum. The world renders to a WebGL canvas, so scale/position asserts
  * are optical (amber-spine tracking — see helpers.ts).
  */
-import { expect, test } from 'playwright/test';
+import { expect, test, type Page } from 'playwright/test';
 import {
   WELCOME_TITLE,
   gotoShelf,
@@ -151,4 +151,137 @@ test('drag-pan scrolls the shelf and coasts with momentum', async ({ page }) => 
       { timeout: 25_000, message: 'the fling never came to rest' },
     )
     .toBeLessThan(0.003);
+});
+
+/* ========================================================================== *
+ *              the window stays alive while the art lands                    *
+ * ========================================================================== */
+
+/**
+ * The regression this guards.
+ *
+ * The painted pipeline pays for its look in CPU: a single spine measured 6.0s
+ * and one flora layer 5.1s on a software renderer. With all of it on the main
+ * thread a cold shelf produced **20 blocks over 100ms, 18.0s of frozen window
+ * and a 2.8s single stall** — the app was unusable while it drew itself.
+ * Moving the painting into `artOffload`'s worker pool took the same boot to
+ * 3 blocks and 3.1s (`qa/_probes/probe-responsive.mjs`, 42 books).
+ *
+ * The probe measures lag the only way a user experiences it: schedule a
+ * zero-delay callback, and see how much LATER than that it actually ran.
+ * Anything the main thread is doing shows up as the difference.
+ *
+ * Thresholds are deliberately loose. This runs on SwiftShader, on whatever
+ * machine CI happens to be, against a Vite dev server that is also compiling
+ * modules — it is a tripwire for "the freeze came back", not a benchmark.
+ */
+test('the shelf never freezes the window while it paints itself', async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __lag?: number[][]; __t0?: number };
+    w.__t0 = performance.now();
+    w.__lag = [];
+    const tick = (): void => {
+      const t = performance.now();
+      setTimeout(() => {
+        w.__lag?.push([
+          Math.round(t - (w.__t0 ?? 0)),
+          Math.round(Math.max(0, performance.now() - t)),
+        ]);
+        tick();
+      }, 0);
+    };
+    tick();
+  });
+
+  await gotoShelf(page);
+  // Long enough for the case, the spines and both flora layers to land.
+  await page.waitForTimeout(20_000);
+
+  const lag = await page.evaluate(
+    () => (window as unknown as { __lag?: number[][] }).__lag ?? [],
+  );
+  expect(lag.length, 'the lag sampler never ran').toBeGreaterThan(50);
+
+  const worst = Math.max(...lag.map(([, d]) => d as number));
+  const blocks = lag.filter(([, d]) => (d as number) > 400);
+  const frozenMs = blocks.reduce((n, [, d]) => n + (d as number), 0);
+  const detail = `worst=${worst}ms blocks>400ms=${blocks.length} frozen=${frozenMs}ms`;
+
+  // No single stall anywhere near the 15.5s one that started this.
+  expect(worst, `a single stall dominated the boot (${detail})`).toBeLessThan(6_000);
+  // …and the boot as a whole is not a slideshow. Measured after the fix: 3
+  // blocks / 3.1s; before: 20 blocks / 18.0s.
+  expect(blocks.length, `too many long stalls (${detail})`).toBeLessThan(10);
+  expect(frozenMs, `too much of the boot was frozen (${detail})`).toBeLessThan(12_000);
+
+  // And once the storm is over the window is genuinely responsive: the last
+  // five seconds of samples must contain nothing a user would feel.
+  const t0 = Math.max(...lag.map(([t]) => t as number)) - 5_000;
+  const tail = lag.filter(([t]) => (t as number) >= t0);
+  const tailWorst = Math.max(0, ...tail.map(([, d]) => d as number));
+  expect(tailWorst, 'the window was still hitching after the art landed').toBeLessThan(400);
+});
+
+/**
+ * Boot the shelf with the QA hooks on.
+ *
+ * `?fx=force` is what publishes `globalThis.__shelfWorld`, and going through
+ * the world is the only way to reach the LIVE singletons — a dynamic
+ * `import()` of the same module URL from the test gets its own fresh instance
+ * of the pool (with zero workers), which is a very convincing way to fail.
+ */
+async function gotoShelfQa(page: Page): Promise<void> {
+  await page.goto('/?fx=force');
+  await expect(page.locator('canvas.shelf-canvas')).toBeVisible({ timeout: 45_000 });
+  await page.waitForFunction(
+    () => (globalThis as Record<string, unknown>)['__shelfWorld'] !== undefined,
+    null,
+    { timeout: 60_000, polling: 300 },
+  );
+}
+
+test('the art worker pool is alive and taking the painting off the main thread', async ({
+  page,
+}) => {
+  await gotoShelfQa(page);
+  await page.waitForTimeout(15_000);
+
+  const stats = await page.evaluate(() => {
+    const world = (globalThis as Record<string, unknown>)['__shelfWorld'] as
+      | Record<string, Record<string, { available?: boolean; stats?: () => unknown }>>
+      | undefined;
+    const pool = world?.['factory']?.['offload'];
+    if (pool === undefined) return null;
+    return { available: pool.available === true, ...(pool.stats?.() as object) } as {
+      available: boolean;
+      jobs: number;
+      ms: number;
+      workers: number;
+    };
+  });
+
+  // If this fails, every painted spine is being drawn on the main thread and
+  // the freeze is back — the app still WORKS, which is why the unit tests stay
+  // green, so this is the only place that would notice.
+  expect(stats, 'the spine factory has no art offload pool').not.toBeNull();
+  expect(stats?.available, 'the art worker pool never started').toBe(true);
+  expect(stats?.workers ?? 0, 'no painting threads were spawned').toBeGreaterThan(0);
+  expect(stats?.jobs ?? 0, 'nothing was painted off the main thread').toBeGreaterThan(0);
+});
+
+test('the case is lit by the deferred pass, not by itself', async ({ page }) => {
+  await gotoShelfQa(page);
+  await page.waitForTimeout(8_000);
+
+  const light = await page.evaluate(() => {
+    const world = (globalThis as Record<string, unknown>)['__shelfWorld'] as
+      | Record<string, { enabled?: boolean }>
+      | undefined;
+    const scene = world?.['sceneLight'];
+    return { present: scene !== undefined, enabled: scene?.enabled === true };
+  });
+  expect(light.present, 'the world has no scene light').toBe(true);
+  // SwiftShader is still WebGL, so the pass must be on here too. A WebGPU
+  // renderer would legitimately report false — see isDeferredLightingSupported.
+  expect(light.enabled, 'the deferred lighting pass did not attach').toBe(true);
 });

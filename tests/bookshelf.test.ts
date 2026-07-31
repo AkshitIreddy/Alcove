@@ -33,6 +33,8 @@ import { resolveBookStyle } from '../src/art/bookStyle';
 import { rectsOverlap, spineKeepOuts } from '../src/art/flora';
 import { deriveSpineParams, PIGMENT_COUNT, SPINE_BASE_HEIGHT } from '../src/art/spines';
 import { getTheme } from '../src/art/themes';
+import { routeFor } from '../src/features/bookshelf/artRoutes';
+import { rigForTheme } from '../src/features/bookshelf/lightRig';
 import { readBookStyleOverrides } from '../src/data/books';
 import {
   coverOverridesFromStyle,
@@ -1211,5 +1213,100 @@ describe('under-plank shadow cut plan', () => {
     expect(capL.w).toBeGreaterThan(0);
     expect(capR.w).toBeGreaterThan(0);
     expect(capL.w + mid.w + capR.w).toBe(8);
+  });
+});
+
+/* ========================================================================== *
+ *          off-thread art: which recipes the worker can reproduce            *
+ * ========================================================================== */
+
+describe('art offload routing', () => {
+  it('routes every themed case part the shelf asks for', () => {
+    expect(routeFor('theme4|crown|blossom|1228x50')).toBe('crown');
+    expect(routeFor('theme4|rail|blossom|34x320')).toBe('rail');
+    expect(routeFor('theme4|plank|blossom|1200x40')).toBe('plank');
+    // The back panel carries its own recipe suffix; the route must survive it.
+    expect(routeFor('theme4|back-v2|blossom|1200x280')).toBe('back');
+    expect(routeFor('theme9|back-v7|attic|1200x280')).toBe('back');
+  });
+
+  it('routes the base wood with or without a material segment', () => {
+    // `wood.ts` gained an `m1` segment mid-flight; both shapes must route, or
+    // a recipe bump silently puts a second of brush work back on the main
+    // thread with nothing to say so.
+    expect(routeFor('wood|plank|1200x40')).toBe('base-plank');
+    expect(routeFor('wood|m1|plank|1200x40')).toBe('base-plank');
+    expect(routeFor('wood|m1|back|1200x280')).toBe('base-back');
+    expect(routeFor('wood|m1|rail|34x320')).toBe('base-rail');
+    expect(routeFor('wood|m1|crown|1228x64')).toBe('base-crown');
+    expect(routeFor('wood|shadow|128x26')).toBe('base-shadow');
+  });
+
+  it('routes the multi-floor wall strip, versioned or not', () => {
+    expect(routeFor('wall|blossom|papered|blossom|sky|640x960')).toBe('wall');
+    expect(routeFor('wall|v2|blossom|papered|blossom|sky|640x960')).toBe('wall');
+  });
+
+  it('declines anything it cannot reproduce from the key alone', () => {
+    // Flora: the key is a digest of a placement list and cannot be inverted.
+    expect(routeFor('flora|v6|ivy:8d53035e:0.68:1:down:1183,4')).toBe(null);
+    // SVG rasterisation needs `new Image()`, which a worker does not have.
+    expect(routeFor('paper|aged|512')).toBe(null);
+    expect(routeFor('wallpaper|damask|256')).toBe(null);
+    // Junk, and near-misses.
+    expect(routeFor('')).toBe(null);
+    expect(routeFor('theme4|crown|blossom')).toBe(null);
+    expect(routeFor('wood|m1|plank|1200')).toBe(null);
+  });
+});
+
+/* ========================================================================== *
+ *                    the shelf's light rig, per room                         *
+ * ========================================================================== */
+
+describe('rigForTheme', () => {
+  it('keeps the shelf grade whatever the room is', () => {
+    for (const id of ['athenaeum', 'attic'] as const) {
+      const rig = rigForTheme(getTheme(id), 0.5);
+      // The tuned grade (qa/lit/sheet-rigs.png) — less glow, more separation.
+      expect(rig.bloom).toBeLessThanOrEqual(0.2);
+      expect(rig.exposure).toBeLessThanOrEqual(1);
+      expect(rig.ambientLevel).toBeLessThanOrEqual(0.2);
+      expect(rig.ambientOcclusion).toBeGreaterThan(0.7);
+      // A low sun: this is what turns a row of rectangles into cylinders.
+      expect(rig.keyElevation).toBeLessThan(0.3);
+    }
+  });
+
+  it('takes its key direction and colour from the room s brightest lamp', () => {
+    const theme = getTheme('athenaeum');
+    const rig = rigForTheme(theme, 0.5);
+    const brightest = [...theme.light.pools].sort(
+      (a, b) => b.intensity - a.intensity,
+    )[0];
+    if (brightest !== undefined) {
+      expect(rig.keyColour).toBe(brightest.colour);
+      // The key travels FROM the lamp toward the middle of the frame.
+      const expected = Math.atan2(0.5 - brightest.y, 0.5 - brightest.x) + Math.PI;
+      expect(rig.keyAngle).toBeCloseTo(expected, 6);
+    }
+  });
+
+  it('moves the temperature split, not the exposure, with the warmth slider', () => {
+    const theme = getTheme('athenaeum');
+    const cold = rigForTheme(theme, 0);
+    const warm = rigForTheme(theme, 1);
+    expect(warm.temperatureShift).toBeGreaterThan(cold.temperatureShift);
+    expect(warm.exposure).toBe(cold.exposure);
+    expect(warm.keyIntensity).toBe(cold.keyIntensity);
+    // Out-of-range / NaN warmth must not produce a NaN rig.
+    expect(Number.isFinite(rigForTheme(theme, Number.NaN).temperatureShift)).toBe(true);
+    expect(Number.isFinite(rigForTheme(theme, 9).temperatureShift)).toBe(true);
+  });
+
+  it('drops the volumetric shafts in rooms that do not have them', () => {
+    const theme = getTheme('athenaeum');
+    const rig = rigForTheme(theme, 0.5);
+    expect(rig.shafts.length === 0).toBe(!theme.light.shafts);
   });
 });

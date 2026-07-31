@@ -27,6 +27,7 @@
  * system docs).
  */
 
+import * as P from './brush';
 import { bakeCached } from './bake';
 import { clamp, fnv1a, mulberry32, type RandomFn } from './noise';
 import type { Canvas2D, Ctx2D } from './spines';
@@ -44,6 +45,11 @@ import { getColourway, renderWallpaper } from './wallpaper';
 import { hexAlpha, mixHex, paintWood, parseHex } from './wood';
 import { doubleStroke } from './wobble';
 import type { BackdropId, WallpaperSpec } from './themes';
+
+/** Local 0..1 clamp for the painted passes. */
+function clamp01Case(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
 
 /* ============================== primitives =============================== */
 
@@ -2199,70 +2205,124 @@ export function renderPlank(
   const { wood, joinery, rail } = theme;
   const rnd = mulberry32(seed >>> 0);
   ctx.save();
-  paintWood(ctx, wood, w, h, { seed: seed ^ 0x9147, direction: 'horizontal' });
+  // The front edge of a shelf is END-ish grain seen nearly edge-on, in its own
+  // shadow for most of its depth. Painting it in the theme's full-brightness
+  // face tone made every plank a pale bar across the frame; a real one is a
+  // dark board with a lit arris.
+  const edgeWood = {
+    ...wood,
+    light: mixHex(wood.light, wood.dark, 0.42),
+    dark: mixHex(wood.dark, '#120c07', 0.34),
+    contrast: wood.contrast * 1.15,
+  };
+  paintWood(ctx, edgeWood, w, h, { seed: seed ^ 0x9147, direction: 'horizontal' });
 
-  // Lit face: bright top lip fading to a dark under-edge.
-  const face = ctx.createLinearGradient(0, 0, 0, h);
-  face.addColorStop(0, 'rgba(255, 248, 232, 0.4)');
-  face.addColorStop(0.22, 'rgba(255, 246, 228, 0.14)');
-  face.addColorStop(0.75, 'rgba(255, 255, 255, 0)');
-  face.addColorStop(1, 'rgba(50, 38, 26, 0.24)');
-  ctx.fillStyle = face;
-  ctx.fillRect(0, 0, w, h);
+  // --- the profile, painted ----------------------------------------------
+  //
+  // The old version laid four `fillRect`s of translucent white and brown down
+  // the front face. At any zoom that reads as sticky tape: a hard-edged band
+  // of the same value for the plank's whole length. A plank's front edge is
+  // the brightest line in a case and it has to behave like one — broken where
+  // the arris is dinged, hotter where the key rakes it, gone where a book
+  // sits proud of the lip.
+  const timber = P.parseColour(mixHex(wood.light, wood.dark, 0.45));
+  const arris = P.mixRgb(P.parseColour(wood.light), { r: 1, g: 0.97, b: 0.9 }, 0.55);
+  const under = P.mixRgb(P.parseColour(wood.dark), { r: 0.04, g: 0.03, b: 0.025 }, 0.55);
+  const psf = P.createSurface(Math.ceil(w), Math.ceil(h));
 
-  // Front-edge profile — the same stock worked four different ways, which is
-  // most of what tells one carpenter's shelf from another's at a glance.
+  /** One long broken line along the plank at `y`, `n` px thick. */
+  const runLine = (y: number, thick: number, colour: P.Rgb, alpha: number, sd: number): void => {
+    const r2 = mulberry32(sd >>> 0);
+    let x = -4;
+    while (x < w) {
+      const seg = 18 + r2() * 140;
+      if (r2() > 0.14) {
+        P.stroke(
+          psf,
+          [
+            { x, y: y + (r2() - 0.5) * thick * 0.5 },
+            { x: x + seg, y: y + (r2() - 0.5) * thick * 0.5 },
+          ],
+          P.brush('blade', {
+            size: Math.max(0.8, thick),
+            colour,
+            opacity: alpha,
+            spacing: 0.12,
+            hardness: 0.82,
+            jitter: { lum: 0.1, hue: 5, opacity: 0.45, position: 0.3, size: 0.25 },
+          }),
+          { passes: 1, pressure: P.PRESSURE.arc, taper: 0.12, wobble: thick * 0.35, seed: (sd + x * 13) >>> 0 },
+        );
+      }
+      x += seg + r2() * 22;
+    }
+  };
+
+  const lipY = Math.max(0.8, h * 0.05);
   switch (rail.edge) {
     case 'rounded': {
-      // Bullnose: light rolls over the top and dies under the belly.
-      const g = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-      g.addColorStop(0, 'rgba(255, 252, 240, 0.42)');
-      g.addColorStop(1, 'rgba(255, 252, 240, 0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h * 0.5);
-      const u = ctx.createLinearGradient(0, h * 0.6, 0, h);
-      u.addColorStop(0, 'rgba(46, 32, 18, 0)');
-      u.addColorStop(1, 'rgba(46, 32, 18, 0.34)');
-      ctx.fillStyle = u;
-      ctx.fillRect(0, h * 0.6, w, h * 0.4);
+      // Bullnose: the light rolls over the top and dies under the belly.
+      P.glaze(psf, null, arris, 0.34, {
+        blend: 'screen',
+        gradient: (_x, y) => Math.exp(-Math.pow((y / h - 0.1) / 0.16, 2)),
+        mottle: 0.4,
+        mottleScale: Math.max(24, w * 0.04),
+        seed: seed ^ 0x11,
+      });
+      runLine(lipY, Math.max(0.9, h * 0.06), arris, 0.5, seed ^ 0x21);
       break;
     }
     case 'chamfer': {
-      // A crisp 45 taken off the top arris: two flat tonal steps, no rolloff.
-      ctx.fillStyle = 'rgba(255, 252, 244, 0.34)';
-      ctx.fillRect(0, 0, w, h * 0.2);
-      ctx.fillStyle = 'rgba(60, 46, 28, 0.16)';
-      ctx.fillRect(0, h * 0.2, w, 1.6);
-      ctx.fillStyle = 'rgba(48, 34, 20, 0.26)';
-      ctx.fillRect(0, h - h * 0.16, w, h * 0.16);
+      P.glaze(psf, null, arris, 0.3, {
+        blend: 'screen',
+        gradient: (_x, y) => (y / h < 0.2 ? 1 : 0),
+        mottle: 0.35,
+        seed: seed ^ 0x12,
+      });
+      runLine(h * 0.2, Math.max(0.8, h * 0.05), under, 0.4, seed ^ 0x22);
+      runLine(lipY * 0.8, Math.max(0.8, h * 0.05), arris, 0.55, seed ^ 0x32);
       break;
     }
     case 'rough': {
-      // Sawn and left: a ragged arris with torn fibres along the top edge.
-      ctx.strokeStyle = 'rgba(28, 20, 12, 0.34)';
-      ctx.lineWidth = 1;
-      for (let sx = 0; sx < w; sx += 5 + rnd() * 9) {
-        const d = rnd() * 2.6;
-        ctx.beginPath();
-        ctx.moveTo(sx, 0);
-        ctx.lineTo(sx + 1 + rnd() * 3, d);
-        ctx.stroke();
+      // Sawn and left: a ragged arris with torn fibres along the top.
+      const tear = P.brush('chalk', { size: Math.max(1, h * 0.1), colour: under, opacity: 0.28, grain: 1, jitter: { opacity: 0.7, size: 0.7 } });
+      for (let sx = 0; sx < w; sx += 4 + rnd() * 9) {
+        P.stroke(psf, [{ x: sx, y: 0 }, { x: sx + 1 + rnd() * 3, y: rnd() * h * 0.14 }], tear, {
+          passes: 1,
+          pressure: P.PRESSURE.flick,
+          seed: (seed + sx * 7) >>> 0,
+        });
       }
-      ctx.fillStyle = 'rgba(24, 17, 10, 0.2)';
-      ctx.fillRect(0, h - 5, w, 5);
+      runLine(lipY * 1.4, Math.max(0.8, h * 0.045), arris, 0.34, seed ^ 0x23);
       break;
     }
     default: {
       // Sharp: a hard bright arris with a fine quirk bead under it.
-      ctx.fillStyle = 'rgba(255, 250, 236, 0.5)';
-      ctx.fillRect(0, 0, w, 2);
-      ctx.fillStyle = 'rgba(38, 26, 14, 0.3)';
-      ctx.fillRect(0, h * 0.34, w, 1.6);
-      ctx.fillStyle = 'rgba(255, 246, 222, 0.18)';
-      ctx.fillRect(0, h * 0.34 + 1.6, w, 1);
+      runLine(lipY * 0.7, Math.max(0.9, h * 0.07), arris, 0.62, seed ^ 0x24);
+      runLine(h * 0.34, Math.max(0.7, h * 0.05), under, 0.45, seed ^ 0x34);
+      runLine(h * 0.34 + Math.max(1, h * 0.06), Math.max(0.7, h * 0.04), arris, 0.24, seed ^ 0x44);
       break;
     }
   }
+
+  // The face falls away from the lit lip into a genuinely dark under-edge:
+  // the shelf below is a cave and this is its ceiling.
+  P.glaze(psf, null, under, 0.72, {
+    blend: 'multiply',
+    gradient: (_x, y) => clamp01Case((y / h - 0.42) / 0.58) ** 1.5,
+    mottle: 0.28,
+    mottleScale: Math.max(20, w * 0.03),
+    seed: seed ^ 0x55,
+  });
+  // …and the timber warms toward the middle of the face rather than staying
+  // one flat tone the whole length of the run.
+  P.glaze(psf, null, P.shiftHsl(timber, 6, 0.1, 0.02), 0.14, {
+    blend: 'softlight',
+    gradient: (x) => 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(x / Math.max(60, w * 0.09))),
+    mottle: 0.3,
+    seed: seed ^ 0x66,
+  });
+  P.drawSurface(ctx as CanvasRenderingContext2D, psf, 0, 0);
 
   // Plank seams.
   ctx.strokeStyle = rail.ink;
@@ -2277,14 +2337,39 @@ export function renderPlank(
   pencil(ctx, `M 0 1.4 L ${w} 1.4`, seed ^ 0x70e, 0.5);
   pencil(ctx, `M 0 ${h - 1.5} L ${w} ${h - 1.5}`, seed ^ 0xed6e, 0.6);
 
-  // Inlay pinstripe along the lip.
+  // Inlay pinstripe along the lip. Painted, broken, and knocked back into the
+  // timber: a full-strength saturated hairline running the entire length of
+  // the shelf was the loudest un-painterly mark left in the case — one pink
+  // vector line across a metre of oak.
   if (rail.inlay !== 'none') {
-    ctx.strokeStyle = rail.inlayColour;
-    ctx.lineWidth = rail.inlay === 'painted-line' ? 2.4 : 1;
-    ctx.beginPath();
-    ctx.moveTo(12, 6.5);
-    ctx.lineTo(w - 12, 6.5);
-    ctx.stroke();
+    const inlay = P.parseColour(mixHex(rail.inlayColour, wood.dark, 0.42));
+    const isf = P.createSurface(Math.ceil(w), Math.ceil(h));
+    const r3 = mulberry32((seed ^ 0x1a1a) >>> 0);
+    const thick = rail.inlay === 'painted-line' ? 2.2 : 1.1;
+    let ix = 12;
+    while (ix < w - 12) {
+      const seg = 40 + r3() * 220;
+      if (r3() > 0.12) {
+        P.stroke(
+          isf,
+          [
+            { x: ix, y: h * 0.24 + (r3() - 0.5) },
+            { x: Math.min(w - 12, ix + seg), y: h * 0.24 + (r3() - 0.5) },
+          ],
+          P.brush('blade', {
+            size: thick,
+            colour: inlay,
+            opacity: 0.55,
+            spacing: 0.12,
+            hardness: 0.8,
+            jitter: { lum: 0.09, hue: 6, opacity: 0.5, position: 0.25 },
+          }),
+          { passes: 1, pressure: P.PRESSURE.arc, taper: 0.1, wobble: 0.4, seed: (seed + ix * 17) >>> 0 },
+        );
+      }
+      ix += seg + r3() * 30;
+    }
+    P.drawSurface(ctx as CanvasRenderingContext2D, isf, 0, 0);
   }
 
   // Joinery run along the plank.
@@ -3128,10 +3213,10 @@ export function renderBackPanel(
   //    the case sits in thrown shadow (spines take keyTake 0.45 → 1.15 the
   //    same way). The far left is the reference's near-black recess.
   const rake = ctx.createLinearGradient(0, 0, w, 0);
-  rake.addColorStop(0, shade('#2c2013'));
-  rake.addColorStop(0.38, shade('#5d4d3c'));
-  rake.addColorStop(0.72, shade('#9c8f7c'));
-  rake.addColorStop(1, '#ffffff');
+  rake.addColorStop(0, shade('#160f08'));
+  rake.addColorStop(0.38, shade('#382c20'));
+  rake.addColorStop(0.72, shade('#6b5f4e'));
+  rake.addColorStop(1, shade('#b8a992'));
   ctx.fillStyle = rake;
   ctx.fillRect(0, 0, w, h);
 
@@ -3140,12 +3225,12 @@ export function renderBackPanel(
   //    the contact band behind the book tails — the near-black line the
   //    reference has at every shelf joint.
   const fall = ctx.createLinearGradient(0, 0, 0, h);
-  fall.addColorStop(0, shade('#3a2d1f'));
-  fall.addColorStop(0.16, shade('#8d7f6c'));
-  fall.addColorStop(0.42, '#ffffff');
-  fall.addColorStop(0.72, '#ffffff');
-  fall.addColorStop(0.9, shade('#6d5c47'));
-  fall.addColorStop(1, shade('#1f150c'));
+  fall.addColorStop(0, shade('#241a10'));
+  fall.addColorStop(0.16, shade('#6b5f4c'));
+  fall.addColorStop(0.42, shade('#d6cbb8'));
+  fall.addColorStop(0.72, shade('#cfc3af'));
+  fall.addColorStop(0.9, shade('#4c3f30'));
+  fall.addColorStop(1, shade('#120c07'));
   ctx.fillStyle = fall;
   ctx.fillRect(0, 0, w, h);
 

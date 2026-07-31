@@ -404,7 +404,9 @@ export function deriveSpineParams(seed: number): SpineParams {
   const ornament = Math.floor(rnd() * 12);
   const texture = Math.floor(rnd() * 3) as 0 | 1 | 2;
   const font = Math.floor(rnd() * 3) as 0 | 1 | 2;
-  const gilt = rnd() < 0.3;
+  // Gold is the reference row's sparkle: rather more than half its spines
+  // carry tooled foil somewhere. At 0.3 our shelf had almost none of it.
+  const gilt = rnd() < 0.55;
   const lean = (rnd() * 2 - 1) * 1.2;
   // Spine thickness. The old recipe (triangular, 28–46) is exactly the
   // "near-uniform widths" the art direction calls out: a triangular
@@ -597,11 +599,11 @@ const MATERIAL_WEIGHTS: ReadonlyArray<readonly [BindingMaterial, number]> = [
 
 /** `none` = chance of zero cords; `max` = cords drawn as 1 + floor(r*max). */
 const MATERIAL_CORD_BIAS: Readonly<Record<BindingMaterial, { none: number; max: number }>> = {
-  leather: { none: 0.2, max: 5 },
-  vellum: { none: 0.4, max: 4 },
-  cloth: { none: 0.66, max: 3 },
-  linen: { none: 0.7, max: 3 },
-  paper: { none: 0.86, max: 2 },
+  leather: { none: 0.1, max: 5 },
+  vellum: { none: 0.3, max: 4 },
+  cloth: { none: 0.48, max: 3 },
+  linen: { none: 0.55, max: 3 },
+  paper: { none: 0.74, max: 2 },
   silk: { none: 0.78, max: 2 },
   // Marbled boards are the classic half-leather binding: the spine IS leather,
   // so cords are the norm.
@@ -2247,16 +2249,26 @@ function valueTargetFor(seed: number): number {
   return 0.22;
 }
 
+function clampTo01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 /** Move a colour to a target luminance while keeping its hue and bite. */
 function retone(c: P.Rgb, target: number): P.Rgb {
   const lum = P.luminance(c);
   if (lum <= 0.002) return target <= 0.02 ? c : P.mixRgb(c, { r: 1, g: 1, b: 1 }, target);
   if (target < lum) {
-    // Toward black, but not a flat multiply: shadows in paint go cool and keep
-    // a little chroma rather than sliding to grey.
-    const k = 1 - target / lum;
-    const shadow = P.shiftHsl(c, -6, 0.06, -0.02);
-    return P.mixRgb(c, P.mixRgb(shadow, { r: 0.03, g: 0.035, b: 0.055 }, 0.9), k);
+    // Darkening MULTIPLICATIVELY rather than mixing toward black is the whole
+    // difference between "oxblood in shadow" and "brown mud": a mix drags every
+    // pigment toward the same grey, while a scale keeps the channel ratios —
+    // and therefore the hue — intact all the way down.
+    const k = target / lum;
+    const sat = P.shiftHsl(c, -5, 0.16, 0);
+    return {
+      r: clampTo01(sat.r * k * 0.97),
+      g: clampTo01(sat.g * k * 0.99),
+      b: clampTo01(sat.b * k * 1.12),
+    };
   }
   const k = Math.min(0.92, (target - lum) / Math.max(0.08, 1 - lum));
   return P.mixRgb(c, P.shiftHsl(c, 4, -0.12, 0.2), k);
@@ -2328,16 +2340,16 @@ function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec
   const grainSize = clamp(w * 0.16, 2.4 * s, 7 * s);
 
   // 1. pebble grain — two sponge passes, one sinking, one lifting.
-  P.scumble(sf, mask, P.brush('sponge', { size: grainSize, colour: pig.deep, opacity: 0.1, spacing: 0.5, grain: 0.95 }), {
-    coverage: 0.52,
-    passes: 2,
+  P.scumble(sf, mask, P.brush('sponge', { size: grainSize, colour: pig.deep, opacity: 0.15, spacing: 0.5, grain: 0.95 }), {
+    coverage: 0.15,
+    passes: 1,
     patchScale: grainSize * 3.4,
     edgeBias: 0.25,
     seed: (spec.seed ^ 0x1e47) >>> 0,
     targetBuildup: 0.45,
   });
-  P.scumble(sf, mask, P.brush('sponge', { size: grainSize * 0.8, colour: pig.lift, opacity: 0.07, spacing: 0.55, grain: 0.95 }), {
-    coverage: 0.34,
+  P.scumble(sf, mask, P.brush('sponge', { size: grainSize * 0.8, colour: pig.lift, opacity: 0.11, spacing: 0.55, grain: 0.95 }), {
+    coverage: 0.11,
     passes: 1,
     patchScale: grainSize * 5,
     // Grain catches the light on the side the key comes from.
@@ -2347,7 +2359,7 @@ function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec
   });
 
   // 2. creases — the soft folds where the spine has been opened.
-  const creases = 2 + Math.floor(rnd() * 3);
+  const creases = 1 + Math.floor(rnd() * 2);
   const creaseBrush = P.brush('soft', {
     size: Math.max(1.6, w * 0.2),
     colour: pig.deep,
@@ -2373,7 +2385,7 @@ function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec
   }
 
   // 3. craquelure — short, hard, dark, and only where wear says so.
-  const cracks = Math.round(spec.wear * 34 + 4);
+  const cracks = Math.round(spec.wear * 18 + 3);
   const crackBrush = P.brush('ink', {
     size: Math.max(0.9, 1.1 * s),
     colour: pig.deep,
@@ -2427,17 +2439,17 @@ function paintLeatherPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec
 function paintClothPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
   const { w, h, scale, pig, boardStyle } = spec;
   const s = Math.max(0.6, scale);
-  const ribGap = boardStyle === 1 ? 3.4 * s : boardStyle === 2 ? 5.2 * s : 2.2 * s;
+  const ribGap = boardStyle === 1 ? 4.2 * s : boardStyle === 2 ? 6 * s : 2.9 * s;
   const warpBrush = P.brush('bristle', {
     size: Math.max(1.1, ribGap * 0.85),
     colour: pig.deep,
-    opacity: 0.075,
+    opacity: 0.115,
     spacing: 0.3,
     grain: 0.8,
     followPath: true,
     jitter: { lum: 0.09, hue: 6, opacity: 0.55, position: 0.35 },
   });
-  const warpLift = P.withBrush(warpBrush, { colour: pig.lift, opacity: 0.055 });
+  const warpLift = P.withBrush(warpBrush, { colour: pig.lift, opacity: 0.085 });
   for (let x = -ribGap; x < w + ribGap; x += ribGap) {
     const jx = x + (rnd() - 0.5) * ribGap * 0.3;
     const b = rnd() < 0.42 ? warpLift : warpBrush;
@@ -2461,7 +2473,7 @@ function paintClothPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
     grain: 0.85,
     jitter: { lum: 0.07, opacity: 0.7, position: 0.4 },
   });
-  for (let y = 0; y < h; y += ribGap * 1.15) {
+  for (let y = 0; y < h; y += ribGap * 1.7) {
     const jy = y + (rnd() - 0.5) * ribGap * 0.4;
     P.stroke(
       sf,
@@ -2475,7 +2487,7 @@ function paintClothPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
   }
   // Slubs — the little thick spots any woven cloth has.
   P.scumble(sf, mask, P.brush('chalk', { size: Math.max(1.4, 2.2 * s), colour: pig.lift, opacity: 0.11, grain: 0.9 }), {
-    coverage: 0.12,
+    coverage: 0.07,
     passes: 1,
     patchScale: Math.max(12, w * 1.1),
     seed: (spec.seed ^ 0x3fa1) >>> 0,
@@ -2503,7 +2515,7 @@ function paintPaperPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
     grain: 0.95,
     jitter: { lum: 0.12, opacity: 0.8, position: 0.7 },
   });
-  const fibres = Math.round(h / (2.4 * s)) + 6;
+  const fibres = Math.round(h / (5 * s)) + 4;
   for (let i = 0; i < fibres; i++) {
     const x0 = rnd() * w;
     const y0 = rnd() * h;
@@ -2519,7 +2531,7 @@ function paintPaperPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, 
     );
   }
   // Foxing: rust specks that bloom where damp got in.
-  const spots = Math.round(6 + spec.wear * 40);
+  const spots = Math.round(4 + spec.wear * 22);
   const fox = P.brush('soft', { size: Math.max(1.2, 2.4 * s), colour: '#8a5a30', opacity: 0.09, jitter: { hue: 14, lum: 0.12, size: 0.7 } });
   for (let i = 0; i < spots; i++) {
     P.dab(sf, rnd() * w, rnd() * h, fox, { size: (0.7 + rnd() * 2.6) * s, opacity: 0.04 + rnd() * 0.11 });
@@ -2544,7 +2556,7 @@ function paintVellumPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec,
     P.dab(sf, rnd() * w, rnd() * h, cloud, { size: w * (0.5 + rnd() * 1.1), opacity: 0.03 + rnd() * 0.06 });
   }
   P.scumble(sf, mask, P.brush('soft', { size: Math.max(2, w * 0.3), colour: P.shiftHsl(pig.deep, 20, -0.1, 0.08), opacity: 0.05 }), {
-    coverage: 0.3,
+    coverage: 0.16,
     passes: 1,
     patchScale: Math.max(18, w * 2.4),
     seed: (spec.seed ^ 0x77c2) >>> 0,
@@ -2552,7 +2564,7 @@ function paintVellumPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec,
   });
   // Follicles: the hair pattern, in little arcs of three or four dots.
   const dot = P.brush('ink', { size: Math.max(0.8, 0.9 * s), colour: P.shiftHsl(pig.deep, 8, 0, 0.06), opacity: 0.22 });
-  const groups = Math.round(10 + h / (6 * s));
+  const groups = Math.round(6 + h / (12 * s));
   for (let i = 0; i < groups; i++) {
     const gx = rnd() * w;
     const gy = rnd() * h;
@@ -2568,7 +2580,7 @@ function paintVellumPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec,
 function paintLinenPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, rnd: RandomFn): void {
   const { w, h, scale, pig } = spec;
   const s = Math.max(0.6, scale);
-  const gap = 3.1 * s;
+  const gap = 4.6 * s;
   const hatch = P.brush('chalk', {
     size: Math.max(1.2, gap * 0.9),
     colour: pig.deep,
@@ -2639,7 +2651,7 @@ function paintSilkPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpec, r
   }
   // Watered ripple: sinusoidal horizontals of alternating tone.
   const ripple = P.brush('soft', { size: Math.max(1.2, 1.8 * s), colour: pig.lift, opacity: 0.06, spacing: 0.2 });
-  for (let y = 0; y < h; y += 3.6 * s) {
+  for (let y = 0; y < h; y += 6 * s) {
     const path: P.Vec2[] = [];
     const phase = rnd() * 6.28;
     for (let k = 0; k <= 6; k++) {
@@ -2682,7 +2694,7 @@ function paintMarbledPainterly(
     '#1e3a52',
     '#c8a24a',
   ];
-  const veinCount = Math.round(h / (3.2 * s));
+  const veinCount = Math.round(h / (5.5 * s));
   const veinBrush = P.brush('soft', {
     size: Math.max(1.2, 2.4 * s),
     colour: inks[0],
@@ -2754,6 +2766,86 @@ function paintMaterialPainterly(sf: P.Surface, mask: P.Mask, spec: SpinePaintSpe
 
 function clamp01Local(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/**
+ * Lay the spine's mass.
+ *
+ * This is `blockIn` specialised for the one shape the shelf draws two hundred
+ * of. The general routine has to make *any* silhouette opaque, so it lays a
+ * dense soft underpainting at ~16× overdraw before its visible passes — a
+ * hundred milliseconds a book, which a shelf cannot pay. A spine is a tall
+ * thin rectangle whose mass can be laid in four vertical strokes, so it is,
+ * and the silhouette is cut afterwards exactly as `blockIn` does it.
+ *
+ * Returns the mask so the material and light passes can clip to it.
+ */
+function paintSpineMass(
+  sf: P.Surface,
+  shape: readonly P.Vec2[],
+  colour: P.Rgb,
+  w: number,
+  h: number,
+  scale: number,
+  seed: number,
+): P.Mask {
+  const s = Math.max(0.6, scale);
+  const mask = P.rasterizeShape(shape, Math.max(3, Math.min(10, w * 0.25)));
+  const rng = mulberry32(seed >>> 0);
+  const hsl = P.rgbToHsl(colour);
+  const size = Math.max(2.6, w * 0.62);
+  const b = P.brush('chalk', {
+    size,
+    colour,
+    opacity: 0.5,
+    spacing: 0.3,
+    grain: 0.62,
+    scatter: 0.06,
+    jitter: { lum: 0.075, hue: 9, sat: 0.05, opacity: 0.3, position: 0.5, size: 0.22, angle: 0.5 },
+  });
+
+  for (let pass = 0; pass < 2; pass++) {
+    const lean = (pass - 0.5) * 0.1;
+    const step = size * (pass === 0 ? 0.5 : 0.72);
+    for (let x = -size * 0.35; x < w + size * 0.35; x += step) {
+      // Value and hue drift across the mass — the thing a flat fill can never
+      // have, and cheap here because it is per stroke rather than per stamp.
+      const gx = x / Math.max(1, w) - 0.5;
+      const drift = P.fbm(x * 0.06, pass * 13.7, seed + 11, 2) - 0.5;
+      const c = P.hslToRgb({
+        h: hsl.h + (drift + gx * 0.5) * 16,
+        s: clamp01Local(hsl.s + drift * 0.07),
+        l: clamp01Local(hsl.l + (drift * 1.5 + gx * 0.35) * 0.11),
+      });
+      const jx = x + (rng() - 0.5) * step * 0.4;
+      P.stroke(
+        sf,
+        [
+          { x: jx - h * lean * 0.5, y: -size * 0.4 },
+          { x: jx + (rng() - 0.5) * s, y: h * 0.5 },
+          { x: jx + h * lean * 0.5, y: h + size * 0.4 },
+        ],
+        P.withBrush(b, { colour: c, opacity: pass === 0 ? 0.5 : 0.24 }),
+        {
+          passes: 1,
+          pressure: P.PRESSURE.flat,
+          taper: 0.015,
+          wobble: size * 0.12,
+          smooth: false,
+          rng,
+          gradient: (t) => ({ dl: (t - 0.5) * 0.09, dh: (t - 0.5) * 10 }),
+        },
+      );
+    }
+  }
+
+  P.clipToMask(sf, mask, {
+    feather: 1.1,
+    noise: 0.45 * s,
+    noiseScale: Math.max(4, Math.min(w, h) * 0.16),
+    seed: (seed + 41) >>> 0,
+  });
+  return mask;
 }
 
 /** Push a colour toward white without losing its temperature. */
@@ -2874,15 +2966,19 @@ function stampStencil(sf: P.Surface, st: Stencil, ox: number, oy: number, opts: 
 
 /** The burnished ramp a real gold-foil letter carries across its stroke. */
 function foilColour(u: number, warm: P.Rgb, hot: P.Rgb, dark: P.Rgb): P.Rgb {
-  if (u < 0.26) return P.mixRgb(dark, warm, u / 0.26);
-  if (u < 0.5) return P.mixRgb(warm, hot, (u - 0.26) / 0.24);
-  if (u < 0.74) return P.mixRgb(hot, warm, (u - 0.5) / 0.24);
-  return P.mixRgb(warm, dark, (u - 0.74) / 0.26);
+  // The dark ends are deliberately narrow. A burnished ramp that spends half
+  // its width in the shadow tone reads as brown paint at spine scale, and the
+  // whole point of foil is that it is the brightest thing on the shelf.
+  if (u < 0.14) return P.mixRgb(dark, warm, u / 0.14);
+  if (u < 0.44) return P.mixRgb(warm, hot, (u - 0.14) / 0.3);
+  if (u < 0.7) return P.mixRgb(hot, warm, (u - 0.44) / 0.26);
+  if (u < 0.88) return P.mixRgb(warm, hot, (u - 0.7) / 0.18);
+  return P.mixRgb(hot, dark, (u - 0.88) / 0.12);
 }
 
-const FOIL_WARM: P.Rgb = P.parseColour('#c9a227');
+const FOIL_WARM: P.Rgb = P.parseColour('#dcb03a');
 const FOIL_HOT: P.Rgb = P.parseColour('#fff3c6');
-const FOIL_DARK: P.Rgb = P.parseColour('#6d4f0e');
+const FOIL_DARK: P.Rgb = P.parseColour('#8a6412');
 const FOIL_SILVER: P.Rgb = P.parseColour('#cdd3d8');
 
 /* ---------------------------- painted furniture --------------------------- */
@@ -2913,7 +3009,7 @@ function paintRule(
       { x: x0, y: y + th * 0.85 },
       { x: x1, y: y + th * 0.85 },
     ],
-    P.brush('soft', { size: th * 1.5, colour: spec.pig.deep, opacity: 0.16, spacing: 0.2, jitter: { lum: 0.05, position: 0.2 } }),
+    P.brush('soft', { size: th * 2.2, colour: spec.pig.deep, opacity: 0.34, spacing: 0.2, jitter: { lum: 0.05, position: 0.2 } }),
     { passes: 1, pressure: P.PRESSURE.flat, taper: 0.04, seed: seed ^ 0x11, alpha: 0.8 },
   );
   const steps = Math.max(2, Math.round((x1 - x0) / Math.max(1.2, th * 1.6)));
@@ -2932,7 +3028,7 @@ function paintRule(
       P.brush('blade', {
         size: th,
         colour: c,
-        opacity: (opts.alpha ?? 0.75) * (0.7 + rnd() * 0.5),
+        opacity: (opts.alpha ?? 0.92) * (0.75 + rnd() * 0.45),
         spacing: 0.12,
         hardness: 0.9,
         jitter: { lum: gold ? 0.14 : 0.06, hue: gold ? 8 : 3, opacity: 0.4, position: 0.25 },
@@ -2985,7 +3081,7 @@ function paintCord(sf: P.Surface, cy: number, cordH: number, spec: SpinePaintSpe
       P.brush('flat', {
         size: Math.max(1, cordH / rows + 0.6),
         colour,
-        opacity: 0.42,
+        opacity: 0.6,
         spacing: 0.14,
         jitter: { lum: 0.05, hue: 4, opacity: 0.3, position: 0.25 },
       }),
@@ -3038,18 +3134,26 @@ function paintPageBlockPainterly(
   // years is the colour of weak tea; painting it cream-white was what made
   // every book look like it had a strip of masking tape down one side.
   const paper = edge === 'gilt' ? '#9c7c2e' : '#bcab86';
-  const mask = P.blockIn(sf, shape, paper, {
-    brush: P.brush('flat', { size: Math.max(1.4, bw * 0.7), colour: paper, opacity: 0.3, grain: 0.5 }),
-    passes: 2,
-    valueSpread: 0.1,
-    hueSpread: 8,
-    roughness: 0.35 * s,
-    rowFactor: 0.4,
-    direction: Math.PI / 2,
-    openness: 0.04,
-    feather: 0.9,
-    seed: (spec.seed ^ 0x5511) >>> 0,
-  });
+  // A 4px strip does not need the whole block-in machinery — its mass is
+  // three strokes wide. Rasterise the silhouette for the glazes to clip to,
+  // then lay the ground by hand.
+  const mask = P.rasterizeShape(shape, 3);
+  P.stroke(
+    sf,
+    [
+      { x: x + bw * 0.5, y: y - 0.5 },
+      { x: x + bw * 0.5, y: y + bh + 0.5 },
+    ],
+    P.brush('flat', {
+      size: Math.max(1.6, bw * 1.05),
+      colour: paper,
+      opacity: 0.72,
+      spacing: 0.3,
+      grain: 0.5,
+      jitter: { lum: 0.1, hue: 8, opacity: 0.25, position: 0.3, size: 0.16 },
+    }),
+    { passes: 2, pressure: P.PRESSURE.flat, taper: 0.02, wobble: 0.3 * s, seed: (spec.seed ^ 0x5511) >>> 0 },
+  );
 
   // The leaves. Every few are darker (dust between them) and a few catch light.
   const leafBrush = P.brush('blade', {
@@ -3060,7 +3164,7 @@ function paintPageBlockPainterly(
     hardness: 0.85,
     jitter: { lum: 0.12, hue: 8, opacity: 0.6, position: 0.25 },
   });
-  const count = Math.max(3, Math.round(bw / (0.9 * s)));
+  const count = Math.max(3, Math.round(bw / (1.5 * s)));
   for (let i = 0; i < count; i++) {
     const lx = x + ((i + 0.5) / count) * bw + (rnd() - 0.5) * 0.5 * s;
     const dark = rnd() < 0.34;
@@ -3354,6 +3458,11 @@ export function renderSpine(
     depth,
     seed: params.seed >>> 0,
   };
+  // Stamp budget for the whole spine. The brush engine's default budget is
+  // tuned for a full-frame painting; a 30x230px spine at that density spends
+  // most of its stamps on detail no one will ever see.
+  const restoreQuality = P.getPaintQuality();
+  P.setPaintQuality(0.62);
   const sf = P.createSurface(Math.max(2, Math.ceil(w)), Math.max(2, Math.ceil(h)));
   const s = Math.max(0.6, scale);
   // The silhouette is INSET rather than the surface padded: a stroke that
@@ -3378,66 +3487,32 @@ export function renderSpine(
 
   /* --- 1. the mass ------------------------------------------------------ */
   const crown = crownAt(spec);
-  const mask = P.blockIn(sf, shape, pig.base, {
-    brush: P.brush('chalk', {
-      size: Math.max(2.2, w * 0.42),
-      colour: pig.base,
-      opacity: 0.2,
-      spacing: 0.2,
-      grain: 0.7,
-      jitter: { lum: 0.07, hue: 8, opacity: 0.45, position: 0.5, size: 0.3, angle: 0.4, sat: 0.06 },
-    }),
-    passes: 3,
-    valueSpread: 0.1,
-    hueSpread: 12,
-    roughness: 0.5 * s,
-    overshoot: 1.8 * s,
-    direction: Math.PI / 2,
-    openness: 0.05,
-    rowFactor: 0.42,
-    feather: 1.1,
-    edgeNoise: 0.4 * s,
-    seed: (params.seed ^ 0x81ac) >>> 0,
+  const mask = paintSpineMass(sf, shape, pig.base, w, h, scale, (params.seed ^ 0x81ac) >>> 0);
+
+  /* --- 2. underpainting: sink the joints ------------------------------ */
+  // Both vertical joints are where the covering turns onto the boards: the
+  // darkest lines on any book, and the reason a row reads as objects rather
+  // than as a barcode. A glaze rather than a scumble — this is a broad tonal
+  // move, and paying two thousand stamps for a gradient is how a shelf ends
+  // up costing a hundred milliseconds a book.
+  // The band is capped in PIXELS, not as a fraction of the width: a joint is
+  // the same few millimetres of turned-over covering on a sliver and on a
+  // folio, and expressing it as 28% of the width swallowed the whole face of
+  // every fat book.
+  const jointBand = clamp((3.4 * s) / Math.max(1, w), 0.08, 0.26);
+  P.glaze(sf, mask, pig.deep, 0.46, {
+    blend: 'multiply',
+    gradient: (px) => {
+      const u = px / w;
+      return clamp01Local(Math.max(1 - u / jointBand, (u - (1 - jointBand)) / jointBand)) ** 1.4;
+    },
+    mottle: 0.42,
+    mottleScale: Math.max(6, w * 0.9),
+    seed: (params.seed ^ 0x1c0d) >>> 0,
   });
 
-  /* --- 2. underpainting: sink the joints, lift the crown ---------------- */
-  P.scumble(
-    sf,
-    mask,
-    P.brush('chalk', { size: Math.max(2, w * 0.38), colour: pig.deep, opacity: 0.09, grain: 0.8, spacing: 0.3 }),
-    {
-      coverage: 0.55,
-      passes: 2,
-      // Both vertical joints are where the covering turns onto the boards:
-      // the darkest lines on any book, and the reason a row reads as objects.
-      weight: (px) => {
-        const u = px / w;
-        return clamp01Local(Math.max(1 - u / 0.3, (u - 0.7) / 0.3)) ** 1.3;
-      },
-      patchScale: Math.max(6, w * 0.9),
-      seed: (params.seed ^ 0x1c0d) >>> 0,
-      targetBuildup: 0.55,
-    },
-  );
-  P.scumble(
-    sf,
-    mask,
-    P.brush('chalk', { size: Math.max(2, w * 0.3), colour: pig.lift, opacity: 0.07, grain: 0.75, spacing: 0.32 }),
-    {
-      coverage: 0.4,
-      passes: 1,
-      weight: (px, py) => {
-        const band = Math.exp(-Math.pow((px / w - crown) / 0.26, 2));
-        return band * (0.4 + 0.6 * Math.sin(Math.PI * clamp01Local(py / h)));
-      },
-      patchScale: Math.max(8, h * 0.12),
-      seed: (params.seed ^ 0x2d1e) >>> 0,
-      targetBuildup: 0.45,
-    },
-  );
-
   /* --- 3. the binding material ----------------------------------------- */
-  paintMaterialPainterly(sf, mask, spec, rnd);
+  if (opts.hiRes !== false || h > 90) paintMaterialPainterly(sf, mask, spec, rnd);
 
   /* --- 4. two-tone binding: a darker label panel over the head ---------- */
   if (params.twoTone) {
@@ -3833,13 +3908,13 @@ export function renderSpine(
     P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.18), 0.42 * (0.7 + depth * 0.5), {
       blend: 'multiply',
       gradient: (_x, py) => clamp01Local((py / h - 0.86) / 0.14) ** 1.5,
-      mottle: 0.2,
+      mottle: 0,
       seed: (params.seed ^ 0x3a01) >>> 0,
     });
     P.glaze(sf, mask, P.mixRgb(pig.deep, P.parseColour(rig.ambientColour), 0.24), 0.26 * (0.6 + depth * 0.6), {
       blend: 'multiply',
       gradient: (_x, py) => clamp01Local((0.12 - py / h) / 0.12) ** 1.6,
-      mottle: 0.2,
+      mottle: 0,
       seed: (params.seed ^ 0x3a02) >>> 0,
     });
     // The neighbour's occlusion, on the side away from the key. Kept to a
@@ -3927,7 +4002,7 @@ export function renderSpine(
   });
 
   // Canvas tooth, faint, tying the book to every other painted thing.
-  P.addGrain(sf, 0.045, 1.5, (params.seed ^ 0x7e11) >>> 0, mask);
+  P.addGrain(sf, 0.028, 1.5, (params.seed ^ 0x7e11) >>> 0, mask);
 
   /* --- 15. one blit ----------------------------------------------------- */
   ctx.save();
@@ -3948,6 +4023,7 @@ export function renderSpine(
   // The height contribution for the deferred pass. Emitted whether or not the
   // albedo was lit, so a scene can light a pre-lit bake for free extra depth
   // or take `light: false` art and do all of it on the GPU.
+  P.setPaintQuality(restoreQuality);
   const nctx = opts.normalCtx;
   if (nctx) {
     emitSpines(nctx, [

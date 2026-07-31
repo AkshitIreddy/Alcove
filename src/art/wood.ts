@@ -9,6 +9,7 @@
  * through the bake.ts disk cache.
  */
 
+import * as P from './brush';
 import { bakeCached } from './bake';
 import { fnv1a, fract, lerp, mulberry32, seededNoise2D } from './noise';
 import { getGranulationTile, type Canvas2D, type Ctx2D } from './spines';
@@ -757,7 +758,7 @@ export function bakeCrown(
  */
 
 /** Small canvas factory that works in workers, the DOM and vitest alike. */
-function makeCanvas2D(w: number, h: number): Canvas2D {
+export function makeCanvas2D(w: number, h: number): Canvas2D {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
   const c = document.createElement('canvas');
   c.width = w;
@@ -827,13 +828,22 @@ interface KnotSite {
 
 /**
  * Paint a themed wood field into the current transform, filling `w × h` in
- * world px. Passes, in order:
- *   1. anisotropic ring field at 1/3 resolution, smooth-scaled
- *   2. grain-character extras (ray fleck / splits / cathedral figure)
- *   3. directional streaks
- *   4. granulation multiply
- *   5. optional paint film with chipped arrises
- *   6. finish sheen (wax bloom, lacquer specular, chalky limewash…)
+ * world px.
+ *
+ * Rewritten for `docs/design/painted-rendering.md` Pillar 1. The old version
+ * evaluated a ring function per pixel into an ImageData: mathematically it was
+ * wood, but every board came out as the same isotropic fizz, because a noise
+ * field has no *direction* and no *event*. Real timber is a sequence of
+ * decisions — this ring is dark and that one is not, the figure sweeps around
+ * that knot, someone planed the surface in that direction.
+ *
+ * So the board is now painted:
+ *   1. a blocked-in ground with value drifting along the run
+ *   2. earlywood/latewood ring pairs as long tapering strokes that FOLLOW a
+ *      cathedral curve, grouped into bands rather than evenly spaced
+ *   3. per-grain-character extras (ray fleck, silvering, checks, brushing)
+ *   4. knots painted as swirls, with the surrounding grain deflected round them
+ *   5. plane-iron chatter and the finish sheen
  */
 export function paintWood(
   ctx: Ctx2D,
@@ -842,283 +852,283 @@ export function paintWood(
   h: number,
   opts: WoodFieldOptions,
 ): void {
+  if (!(w > 0.5) || !(h > 0.5)) return;
   const vertical = opts.direction === 'vertical';
-  const scale = opts.pixelScale ?? 1;
   const contrast = (opts.contrast ?? 1) * wood.contrast;
   const rnd = mulberry32(opts.seed >>> 0);
-  const noise = seededNoise2D(opts.seed >>> 0);
-  const light = parseHex(wood.light);
-  const dark = parseHex(wood.dark);
+  const seed = opts.seed >>> 0;
+
+  const light = P.parseColour(wood.light);
+  const dark = P.parseColour(wood.dark);
+  // Timber is not a two-stop ramp: it is a family of browns around a mean.
+  const mid = P.mixRgb(dark, light, 0.5);
+  const early = P.mixRgb(mid, light, 0.55 * contrast + 0.2);
+  const late = P.mixRgb(mid, dark, 0.6 * contrast + 0.2);
+  const deepest = P.mixRgb(dark, { r: 0.07, g: 0.05, b: 0.035 }, 0.42);
 
   const alongLen = vertical ? h : w;
   const acrossLen = vertical ? w : h;
+  const sf = P.createSurface(Math.ceil(w), Math.ceil(h));
 
-  // --- knots -------------------------------------------------------------
-  const knotCount = opts.knots ?? Math.max(0, Math.round((wood.knots * alongLen) / 240));
+  /** Map (along, across) in board space to surface coordinates. */
+  const pt = (a: number, c: number): P.Vec2 => (vertical ? { x: c, y: a } : { x: a, y: c });
+
+  /* --- 1. ground -------------------------------------------------------- */
+  P.blockIn(sf, P.rectShape(-2, -2, w + 4, h + 4), mid, {
+    brush: P.brush('chalk', {
+      size: Math.max(4, acrossLen * 0.22),
+      colour: mid,
+      opacity: 0.24,
+      spacing: 0.2,
+      grain: 0.7,
+      jitter: { lum: 0.08, hue: 7, sat: 0.05, opacity: 0.4, position: 0.6, size: 0.3, angle: 0.4 },
+    }),
+    passes: 2,
+    valueSpread: 0.11,
+    hueSpread: 10,
+    roughness: 0,
+    direction: vertical ? Math.PI / 2 : 0,
+    openness: 0.02,
+    rowFactor: 0.5,
+    feather: 0.8,
+    seed: seed ^ 0x9101,
+  });
+
+  /* --- 2. knots, planned first so the figure can sweep around them ------ */
+  const knotCount = opts.knots ?? Math.max(0, Math.round((wood.knots * alongLen) / 260));
   const knots: KnotSite[] = [];
   for (let i = 0; i < knotCount; i++) {
     knots.push({
       along: rnd() * alongLen,
-      across: acrossLen * (0.15 + rnd() * 0.7),
-      r: 4 + rnd() * (wood.grain === 'knotty' ? 9 : 5),
+      across: acrossLen * (0.12 + rnd() * 0.76),
+      r: (3.5 + rnd() * (wood.grain === 'knotty' ? 9 : 4.5)) * (1 + acrossLen / 300),
     });
   }
 
-  // --- ring field --------------------------------------------------------
-  const BAND = 3;
-  const devW = Math.max(1, Math.ceil(w * scale));
-  const devH = Math.max(1, Math.ceil(h * scale));
-  const lw = Math.max(1, Math.ceil(devW / BAND));
-  const lh = Math.max(1, Math.ceil(devH / BAND));
-  const low = makeCanvas2D(lw, lh);
-  const lowCtx = low.getContext('2d') as Ctx2D | null;
-  if (!lowCtx) throw new Error('wood: 2d context unavailable');
-  const img = lowCtx.createImageData(lw, lh);
-  const data = img.data;
-  // 'flame' ribbons the rings with a second low-frequency wave; 'weathered'
-  // washes tone toward the light end (silvering) as it goes.
+  /** How far the figure is pushed aside at this point by the nearby knots. */
+  const deflect = (a: number, c: number): number => {
+    let d = 0;
+    for (const k of knots) {
+      const da = a - k.along;
+      const dc = c - k.across;
+      const r2 = da * da + dc * dc;
+      const infl = k.r * 5.5;
+      if (r2 > infl * infl) continue;
+      const dist = Math.sqrt(r2) || 0.001;
+      // Push perpendicular to the grain, away from the knot, falling off fast.
+      d += Math.sign(dc || 1) * k.r * 1.7 * Math.exp(-dist / (k.r * 2.1));
+    }
+    return d;
+  };
+
+  /* --- 3. the figure ---------------------------------------------------- */
+  // Rings come in bands: a run of tight dark ones then a wide pale stretch,
+  // which is what a growth season actually looks like and what a uniform
+  // frequency can never be.
+  const ringStep = Math.max(1.6, acrossLen / Math.max(3, wood.ringFreq * 4.2 + wood.across * 90));
+  const fineness = wood.grain === 'fine' || wood.grain === 'birch' ? 0.62 : 1;
+  const step = ringStep * fineness;
+  const ringBrush = P.brush('blade', {
+    size: Math.max(0.9, step * 0.62),
+    colour: late,
+    opacity: 0.14,
+    spacing: 0.14,
+    hardness: 0.7,
+    grain: 0.55,
+    followPath: true,
+    jitter: { lum: 0.09, hue: 6, sat: 0.05, opacity: 0.55, position: 0.35, size: 0.35, angle: 0.12 },
+  });
+  const paleBrush = P.withBrush(ringBrush, { colour: early, opacity: 0.1, size: Math.max(1.2, step * 0.9) });
+
   const flame = wood.grain === 'flame';
   const weathered = wood.grain === 'weathered';
-
-  for (let py = 0; py < lh; py++) {
-    const sy = (py * BAND) / scale;
-    for (let px = 0; px < lw; px++) {
-      const sx = (px * BAND) / scale;
-      const a = vertical ? sy : sx; // along-grain coordinate
-      const c = vertical ? sx : sy; // across-grain coordinate
-      let g = noise(a * wood.along, c * wood.across);
-      if (flame) g += 0.35 * noise(a * wood.along * 3.1 + 40, c * wood.across * 0.35);
-      let ring = g * wood.ringFreq;
-      for (const k of knots) {
-        const d = Math.hypot(a - k.along, c - k.across);
-        ring += 0.55 * Math.exp(-(d * d) / (k.r * k.r)) * Math.sin(d * 0.35);
-      }
-      let t = Math.pow(fract(ring), wood.ringGamma);
-      t = 0.5 + (t - 0.5) * contrast;
-      if (weathered) t *= 0.72; // silvered, sun-bleached surface
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const i = (py * lw + px) * 4;
-      data[i] = Math.round(lerp(light.r, dark.r, t));
-      data[i + 1] = Math.round(lerp(light.g, dark.g, t));
-      data[i + 2] = Math.round(lerp(light.b, dark.b, t));
-      data[i + 3] = 255;
+  const cathedral = alongLen > acrossLen * 1.4 ? 1 : 0.45;
+  let band = 0;
+  let bandLeft = 0;
+  let bandTight = false;
+  for (let c = -step; c < acrossLen + step; c += step) {
+    if (bandLeft <= 0) {
+      bandTight = rnd() < 0.45;
+      bandLeft = bandTight ? 2 + Math.floor(rnd() * 4) : 1 + Math.floor(rnd() * 3);
+      band++;
     }
+    bandLeft--;
+    const tight = bandTight;
+    // Cathedral figure: the ring arcs toward the board's centre line, more so
+    // near the middle of the run — the classic plainsawn "flame".
+    const centre = acrossLen * 0.5;
+    const swing = (1 - Math.abs(c - centre) / centre) * acrossLen * 0.16 * cathedral;
+    const phase = rnd() * 6.28;
+    const path: P.Vec2[] = [];
+    const segs = Math.max(6, Math.round(alongLen / 22));
+    for (let k = 0; k <= segs; k++) {
+      const t = k / segs;
+      const a = -2 + t * (alongLen + 4);
+      let cc = c;
+      cc += Math.sin(phase + t * (flame ? 7.4 : 2.6)) * swing * (flame ? 1.5 : 1);
+      cc += (P.fbm(a * (wood.along * 42 + 0.01), c * 0.05, seed + band, 2) - 0.5) * step * 2.2;
+      cc += deflect(a, c);
+      path.push(pt(a, cc));
+    }
+    const b = tight ? ringBrush : paleBrush;
+    const colour = tight
+      ? P.mixRgb(late, deepest, rnd() * 0.45)
+      : P.mixRgb(early, mid, rnd() * 0.6);
+    P.stroke(sf, path, P.withBrush(b, { colour }), {
+      passes: 1,
+      pressure: (t) => 0.55 + 0.45 * Math.sin(Math.PI * t) ** 0.4,
+      taper: 0.02,
+      wobble: step * 0.35,
+      seed: (seed + band * 733 + c * 17) >>> 0,
+      alpha: (tight ? 0.85 : 0.6) * (0.55 + rnd() * 0.7),
+    });
   }
-  lowCtx.putImageData(img, 0, 0);
 
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(low as CanvasImageSource, 0, 0, lw, lh, 0, 0, w, h);
-  ctx.restore();
-
-  // --- grain-character extras -------------------------------------------
-  ctx.save();
-  ctx.lineCap = 'round';
+  /* --- 4. grain character ---------------------------------------------- */
   if (wood.grain === 'quartersawn') {
-    // Ray fleck: short pale dashes lying ACROSS the grain — the signature of
-    // quartersawn oak and the reason it looks expensive.
-    const flecks = Math.round((alongLen * acrossLen) / 900);
-    for (let i = 0; i < flecks; i++) {
+    // Medullary ray fleck: short pale dashes lying ACROSS the grain, the
+    // signature of a quartersawn oak board.
+    const fleck = P.brush('flat', {
+      size: Math.max(1, step * 0.8),
+      colour: P.mixRgb(early, { r: 1, g: 0.97, b: 0.9 }, 0.28),
+      opacity: 0.16,
+      spacing: 0.2,
+      grain: 0.5,
+      jitter: { lum: 0.12, opacity: 0.6, size: 0.5, position: 0.4 },
+    });
+    const n = Math.round((alongLen * acrossLen) / 900);
+    for (let i = 0; i < n; i++) {
       const a = rnd() * alongLen;
       const c = rnd() * acrossLen;
-      const len = 3 + rnd() * 9;
-      const tilt = (rnd() * 2 - 1) * 0.5;
-      ctx.strokeStyle = `rgba(255, 236, 200, ${0.05 + rnd() * 0.1})`;
-      ctx.lineWidth = 0.8 + rnd() * 1.1;
-      const x0 = vertical ? c : a;
-      const y0 = vertical ? a : c;
-      const dx = vertical ? len : len * tilt;
-      const dy = vertical ? len * tilt : len;
-      ctx.beginPath();
-      ctx.moveTo(x0 - dx / 2, y0 - dy / 2);
-      ctx.lineTo(x0 + dx / 2, y0 + dy / 2);
-      ctx.stroke();
+      const len = (2 + rnd() * 7) * (1 + acrossLen / 400);
+      P.stroke(sf, [pt(a - len / 2, c), pt(a + len / 2, c + (rnd() - 0.5) * 2)], fleck, {
+        passes: 1,
+        pressure: P.PRESSURE.arc,
+        taper: 0.35,
+        seed: (seed + i * 271) >>> 0,
+        alpha: 0.4 + rnd() * 0.6,
+      });
     }
   } else if (weathered) {
-    // Splits and checks: long thin dark fissures running with the grain,
-    // with a bright weathered lip on one side.
-    const splits = Math.max(2, Math.round(alongLen / 90));
-    for (let i = 0; i < splits; i++) {
+    // Silvered surface, split open along the grain.
+    P.glaze(sf, null, '#b9b2a4', 0.2, { blend: 'softlight', mottle: 0.5, mottleScale: Math.max(14, acrossLen * 0.6), seed: seed ^ 0x77 });
+    const check = P.brush('ink', { size: Math.max(0.8, 1.1), colour: deepest, opacity: 0.3, jitter: { opacity: 0.6, position: 0.3 } });
+    const n = Math.round(alongLen / 26) + 2;
+    for (let i = 0; i < n; i++) {
       const c = rnd() * acrossLen;
-      const a0 = rnd() * alongLen * 0.7;
-      const len = alongLen * (0.15 + rnd() * 0.45);
-      for (const [colour, off, width] of [
-        ['rgba(28, 24, 18, 0.42)', 0, 1.1],
-        ['rgba(255, 250, 238, 0.16)', 1.2, 0.8],
-      ] as const) {
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = width;
-        ctx.beginPath();
-        for (let s = 0; s <= 6; s++) {
-          const a = a0 + (len * s) / 6;
-          const cc = c + off + (rnd() * 2 - 1) * 1.2;
-          const x = vertical ? cc : a;
-          const y = vertical ? a : cc;
-          if (s === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
+      const a0 = rnd() * alongLen;
+      const len = alongLen * (0.1 + rnd() * 0.4);
+      const path: P.Vec2[] = [];
+      for (let k = 0; k <= 5; k++) {
+        const t = k / 5;
+        path.push(pt(a0 + t * len, c + (rnd() - 0.5) * 1.6));
       }
+      P.stroke(sf, path, check, { passes: 1, pressure: P.PRESSURE.arc, taper: 0.3, seed: (seed + i * 97) >>> 0 });
     }
   } else if (wood.grain === 'birch') {
-    // Birch bark: dark lenticel dashes lying ACROSS the sheet, a few papery
-    // peels lifting at the edges, and a chalky bloom over the whole surface.
-    const marks = Math.round((alongLen * acrossLen) / 1400);
-    for (let i = 0; i < marks; i++) {
+    // Lenticels: the dark horizontal dashes on a pale bark-like face.
+    const lent = P.brush('flat', { size: Math.max(1, step), colour: deepest, opacity: 0.2, jitter: { opacity: 0.6, size: 0.6 } });
+    const n = Math.round((alongLen * acrossLen) / 1400);
+    for (let i = 0; i < n; i++) {
       const a = rnd() * alongLen;
       const c = rnd() * acrossLen;
-      const len = 4 + rnd() * 14;
-      const thick = 0.8 + rnd() * 1.6;
-      ctx.strokeStyle = `rgba(74, 58, 42, ${0.16 + rnd() * 0.22})`;
-      ctx.lineWidth = thick;
-      ctx.lineCap = 'butt';
-      const x0 = vertical ? c : a;
-      const y0 = vertical ? a : c;
-      // Lenticels run perpendicular to the grain.
-      const dx = vertical ? 0 : len * 0.06;
-      const dy = vertical ? len * 0.06 : 0;
-      const px = vertical ? len : 0;
-      const py = vertical ? 0 : len;
-      ctx.beginPath();
-      ctx.moveTo(x0 - px / 2 - dx, y0 - py / 2 - dy);
-      ctx.lineTo(x0 + px / 2 + dx, y0 + py / 2 + dy);
-      ctx.stroke();
-      // A pale lip just under the dash: the bark curling away.
-      ctx.strokeStyle = 'rgba(255, 252, 244, 0.3)';
-      ctx.lineWidth = thick * 0.6;
-      ctx.beginPath();
-      ctx.moveTo(x0 - px / 2, y0 - py / 2 + (vertical ? 1.4 : 1.4));
-      ctx.lineTo(x0 + px / 2, y0 + py / 2 + 1.4);
-      ctx.stroke();
+      const len = (3 + rnd() * 10) * (1 + acrossLen / 500);
+      P.stroke(sf, [pt(a, c - len / 2), pt(a, c + len / 2)], lent, {
+        passes: 1,
+        pressure: P.PRESSURE.arc,
+        taper: 0.4,
+        seed: (seed + i * 313) >>> 0,
+        alpha: 0.35 + rnd() * 0.5,
+      });
     }
-    // Chalky bloom.
-    ctx.fillStyle = 'rgba(255, 253, 246, 0.14)';
-    ctx.fillRect(0, 0, w, h);
   } else if (wood.grain === 'brushed') {
-    // Brushed metal: dense fine satin lines along the grain, a couple of
-    // deeper scores, and no ring figure at all.
-    const lines = Math.round(acrossLen * 1.6);
-    for (let i = 0; i < lines; i++) {
+    // Anisotropic brushing: long, near-parallel, very low-contrast scratches.
+    const scr = P.brush('bristle', { size: Math.max(0.8, step * 0.5), colour: early, opacity: 0.06, grain: 0.9, followPath: true, jitter: { lum: 0.1, opacity: 0.7 } });
+    for (let i = 0; i < Math.round(acrossLen * 1.4); i++) {
       const c = rnd() * acrossLen;
-      const bright = rnd() < 0.5;
-      ctx.strokeStyle = bright
-        ? `rgba(255, 255, 255, ${0.03 + rnd() * 0.07})`
-        : `rgba(20, 30, 42, ${0.03 + rnd() * 0.08})`;
-      ctx.lineWidth = 0.5 + rnd() * 0.9;
-      const a0 = rnd() * alongLen * 0.5;
-      const len = alongLen * (0.4 + rnd() * 0.6);
-      ctx.beginPath();
-      if (vertical) {
-        ctx.moveTo(c, a0);
-        ctx.lineTo(c + (rnd() * 2 - 1) * 0.6, a0 + len);
-      } else {
-        ctx.moveTo(a0, c);
-        ctx.lineTo(a0 + len, c + (rnd() * 2 - 1) * 0.6);
-      }
-      ctx.stroke();
-    }
-    // A few machining scores that catch hard.
-    for (let i = 0; i < Math.max(2, Math.round(acrossLen / 40)); i++) {
-      const c = rnd() * acrossLen;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      if (vertical) {
-        ctx.moveTo(c, 0);
-        ctx.lineTo(c, alongLen);
-      } else {
-        ctx.moveTo(0, c);
-        ctx.lineTo(alongLen, c);
-      }
-      ctx.stroke();
-    }
-  } else if (wood.grain === 'gloss') {
-    // A moulded, enamelled body: no figure, just a broad diffuse falloff and
-    // a scattering of tiny bubbles trapped in the coat.
-    const g = vertical ? ctx.createLinearGradient(0, 0, w, 0) : ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, hexAlpha(wood.light, 0.5));
-    g.addColorStop(0.45, 'rgba(255, 255, 255, 0)');
-    g.addColorStop(1, hexAlpha(wood.dark, 0.35));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < Math.round((w * h) / 900); i++) {
-      ctx.fillStyle = rnd() < 0.5 ? 'rgba(255, 255, 255, 0.3)' : hexAlpha(wood.dark, 0.16);
-      ctx.beginPath();
-      ctx.arc(rnd() * w, rnd() * h, 0.4 + rnd() * 1.1, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (wood.grain === 'knotty') {
-    // Cathedral arches around each knot — nested pointed rings.
-    for (const k of knots) {
-      ctx.strokeStyle = 'rgba(96, 60, 28, 0.2)';
-      for (let r = k.r + 3; r < k.r + 22; r += 3.5) {
-        ctx.lineWidth = 0.9;
-        ctx.beginPath();
-        const steps = 14;
-        const side = rnd() < 0.5 ? 1 : -1;
-        for (let s = 0; s <= steps; s++) {
-          const u = -1 + (2 * s) / steps;
-          const aa = k.along + u * r * 2.6;
-          const cc = k.across + (1 - u * u) * r * side * 0.9;
-          const x = vertical ? cc : aa;
-          const y = vertical ? aa : cc;
-          if (s === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-      // Dark knot eye.
-      const kx = vertical ? k.across : k.along;
-      const ky = vertical ? k.along : k.across;
-      const eye = ctx.createRadialGradient(kx, ky, 0, kx, ky, k.r);
-      eye.addColorStop(0, 'rgba(70, 40, 16, 0.72)');
-      eye.addColorStop(0.6, 'rgba(102, 64, 28, 0.35)');
-      eye.addColorStop(1, 'rgba(102, 64, 28, 0)');
-      ctx.fillStyle = eye;
-      ctx.beginPath();
-      ctx.arc(kx, ky, k.r, 0, Math.PI * 2);
-      ctx.fill();
+      P.stroke(sf, [pt(-2, c), pt(alongLen + 2, c + (rnd() - 0.5) * 2)], rnd() < 0.5 ? scr : P.withBrush(scr, { colour: late }), {
+        passes: 1,
+        pressure: P.PRESSURE.flat,
+        taper: 0.02,
+        seed: (seed + i * 61) >>> 0,
+        alpha: 0.4 + rnd() * 0.6,
+      });
     }
   }
-  ctx.restore();
 
-  // --- directional streaks ----------------------------------------------
-  const streakCount = Math.max(2, Math.round((wood.streaks * alongLen) / 100));
-  ctx.save();
-  ctx.lineCap = 'round';
+  /* --- 5. the knots themselves ------------------------------------------ */
+  for (const k of knots) {
+    const rings = 3 + Math.floor(rnd() * 4);
+    for (let i = rings; i >= 1; i--) {
+      const rr = (k.r * i) / rings;
+      const path: P.Vec2[] = [];
+      const segs = 22;
+      for (let s2 = 0; s2 <= segs; s2++) {
+        const ang = (s2 / segs) * Math.PI * 2;
+        const wob = 1 + (P.fbm(Math.cos(ang) * 3, Math.sin(ang) * 3, seed + i, 2) - 0.5) * 0.5;
+        path.push(pt(k.along + Math.cos(ang) * rr * 1.5 * wob, k.across + Math.sin(ang) * rr * wob));
+      }
+      P.stroke(
+        sf,
+        path,
+        P.brush('soft', {
+          size: Math.max(1, k.r * 0.34),
+          colour: P.mixRgb(late, deepest, 0.3 + (1 - i / rings) * 0.6),
+          opacity: 0.16,
+          spacing: 0.16,
+          jitter: { lum: 0.1, hue: 6, opacity: 0.5, position: 0.4 },
+        }),
+        { passes: 1, pressure: P.PRESSURE.flat, closed: true, wobble: k.r * 0.1, seed: (seed + i * 191 + k.along) >>> 0 },
+      );
+    }
+    P.dab(
+      sf,
+      pt(k.along, k.across).x,
+      pt(k.along, k.across).y,
+      P.brush('soft', { size: k.r * 1.1, colour: deepest, opacity: 0.5, jitter: { lum: 0.06 } }),
+      { size: k.r * 1.2 },
+    );
+  }
+
+  /* --- 6. plane chatter and directional streaks ------------------------- */
+  const streakCount = Math.round((wood.streaks * acrossLen) / 100) + 2;
+  const streak = P.brush('bristle', {
+    size: Math.max(0.8, step * 0.45),
+    colour: late,
+    opacity: 0.055,
+    grain: 0.85,
+    followPath: true,
+    jitter: { lum: 0.12, hue: 6, opacity: 0.7, position: 0.5 },
+  });
   for (let i = 0; i < streakCount; i++) {
-    const darkStroke = rnd() < 0.55;
-    ctx.strokeStyle = darkStroke
-      ? hexAlpha(wood.dark, 0.05 + rnd() * 0.09)
-      : hexAlpha(wood.light, 0.06 + rnd() * 0.1);
-    ctx.lineWidth = 0.6 + rnd() * 1.3;
-    const c0 = rnd() * acrossLen;
-    const drift = (rnd() * 2 - 1) * 5;
-    const a0 = -10 + rnd() * alongLen * 0.4;
-    const len = alongLen * (0.3 + rnd() * 0.7);
-    ctx.beginPath();
-    for (let s = 0; s <= 5; s++) {
-      const a = a0 + (len * s) / 5;
-      const c = c0 + (drift * s) / 5 + (rnd() * 2 - 1) * 1.3;
-      const x = vertical ? c : a;
-      const y = vertical ? a : c;
-      if (s === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    const c = rnd() * acrossLen;
+    const a0 = rnd() * alongLen * 0.6;
+    const len = alongLen * (0.25 + rnd() * 0.75);
+    P.stroke(sf, [pt(a0, c), pt(Math.min(alongLen + 2, a0 + len), c + (rnd() - 0.5) * step)], rnd() < 0.45 ? P.withBrush(streak, { colour: early }) : streak, {
+      passes: 1,
+      pressure: P.PRESSURE.arc,
+      taper: 0.25,
+      seed: (seed + i * 431) >>> 0,
+      alpha: 0.5 + rnd() * 0.6,
+    });
   }
-  ctx.restore();
 
-  // --- granulation -------------------------------------------------------
-  const tile = getGranulationTile();
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.07;
-  for (let ty = 0; ty < h; ty += 256) {
-    for (let tx = 0; tx < w; tx += 256) ctx.drawImage(tile as CanvasImageSource, tx, ty);
-  }
-  ctx.restore();
+  /* --- 7. unify --------------------------------------------------------- */
+  // One warm glaze so every stroke belongs to the same board, plus a slow
+  // value drift along the run — no plank is evenly toned end to end.
+  P.glaze(sf, null, P.shiftHsl(mid, 4, 0.08, -0.04), 0.14, {
+    blend: 'multiply',
+    gradient: (px, py) => {
+      const t = (vertical ? py / h : px / w);
+      return 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 4.1 + seed * 0.01));
+    },
+    mottle: 0.35,
+    mottleScale: Math.max(20, alongLen * 0.35),
+    seed: seed ^ 0x3311,
+  });
+  P.addGrain(sf, 0.05, 1.5, seed ^ 0x1234);
+
+  P.drawSurface(ctx as CanvasRenderingContext2D, sf, 0, 0);
 
   // --- paint film --------------------------------------------------------
   if (wood.paint && !opts.bare) paintFilm(ctx, wood.paint, w, h, vertical, rnd);

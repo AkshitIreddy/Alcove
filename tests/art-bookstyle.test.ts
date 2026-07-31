@@ -45,6 +45,7 @@ import {
   thicknessFromPageCount,
   type BookStyle,
 } from '../src/art/bookStyle';
+import { SPINE_PALETTES, composeShelfRow, deriveSpineParams } from '../src/art/spines';
 
 const SEEDS = [0, 1, 7, 42, 1337, 0xbeef, 0xfeedface, 0xffffffff];
 
@@ -437,3 +438,126 @@ describe('studio helpers', () => {
     expect(TITLE_FONTS.every((f) => f.length > 0)).toBe(true);
   });
 });
+
+/* ========================================================================== *
+ *          the painted rebuild: value structure and row density              *
+ * ========================================================================== *
+ *
+ * `docs/design/painted-rendering.md` Pillar 3 says a theme must declare a
+ * value structure and a test must reject mid-tone mush. These two properties
+ * are the ones the shelf kept regressing on, and they are cheap to pin:
+ *
+ *  - the row of pigments a shelf draws from spans a real value range, with a
+ *    committed dark mass rather than a hump in the middle;
+ *  - a composed row is DENSE — the books cover most of the plank, and no one
+ *    hole is big enough to read as a missing shelf.
+ */
+
+describe('painted rebuild — value structure', () => {
+  const luminance = (hex: string): number => {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return 0.5;
+    const n = parseInt(m[1] as string, 16);
+    const to = (v: number): number => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * to((n >> 16) & 255) + 0.7152 * to((n >> 8) & 255) + 0.0722 * to(n & 255);
+  };
+
+  it('the pigment table commits to darks instead of sitting mid-tone', () => {
+    const darks = SPINE_PALETTES.map(([, dark]) => dark);
+    const lums = darks.map((d) => luminance(`#${hslHex(d.h, d.s, d.l)}`));
+    const min = Math.min(...lums);
+    const max = Math.max(...lums);
+    // A real range, not a band: the darkest partner tone is genuinely dark and
+    // the lightest is genuinely light.
+    expect(min).toBeLessThan(0.06);
+    expect(max).toBeGreaterThan(0.3);
+    // And at least a third of the table is in the bottom of the range — the
+    // "large areas of genuine dark" the art direction asks for.
+    expect(lums.filter((l) => l < 0.12).length / lums.length).toBeGreaterThan(0.3);
+  });
+
+  it('derives a spread of binding materials, not one default', () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed < 400; seed++) seen.add(deriveSpineParams(seed).material ?? 'x');
+    expect(seen.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('puts tooled foil on more than half the shelf', () => {
+    let gilt = 0;
+    for (let seed = 1; seed < 500; seed++) if (deriveSpineParams(seed).gilt) gilt++;
+    expect(gilt / 499).toBeGreaterThan(0.45);
+  });
+
+  it('gives most books raised bands so the row has horizontal structure', () => {
+    let corded = 0;
+    for (let seed = 1; seed < 500; seed++) {
+      if ((deriveSpineParams(seed).raisedBands ?? 0) > 0) corded++;
+    }
+    expect(corded / 499).toBeGreaterThan(0.4);
+  });
+});
+
+describe('painted rebuild — row density', () => {
+  const inputs = (n: number, base = 1): Array<{ id: string; seed: number; title: string }> =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `b${i}`,
+      seed: (base * 7919 + i * 2654435761) >>> 0,
+      title: `Book ${i}`,
+    }));
+
+  it('fills the plank rather than pouring the slack into voids', () => {
+    for (const seed of [1, 2, 3, 5, 8, 13]) {
+      const width = 1160;
+      const comp = composeShelfRow(inputs(26, seed), { width, seed });
+      const covered = comp.placements.reduce(
+        (s, p) => s + (p.pose === 'flat' ? 0 : p.width),
+        0,
+      );
+      const flat = comp.placements.filter((p) => p.pose === 'flat');
+      const flatSpan = flat.length
+        ? Math.max(...flat.map((p) => p.x + p.width)) - Math.min(...flat.map((p) => p.x))
+        : 0;
+      // Books (upright footprints plus any flat stacks) own most of the run.
+      expect((covered + flatSpan) / width).toBeGreaterThan(0.78);
+      // …and no single hole reads as a missing shelf.
+      const worst = comp.gaps.reduce((m, g) => Math.max(m, g.width), 0);
+      expect(worst).toBeLessThan(width * 0.09);
+    }
+  });
+
+  it('keeps the wild thickness range while packing tight', () => {
+    const comp = composeShelfRow(inputs(30, 4), { width: 1200, seed: 4 });
+    const uprights = comp.placements.filter((p) => p.pose !== 'flat');
+    const widths = uprights.map((p) => p.params.w);
+    expect(Math.max(...widths) / Math.min(...widths)).toBeGreaterThan(3);
+    expect(comp.skylineVariation).toBeGreaterThan(0.15);
+  });
+
+  it('is deterministic after the repack', () => {
+    const a = composeShelfRow(inputs(24, 9), { width: 900, seed: 9 });
+    const b = composeShelfRow(inputs(24, 9), { width: 900, seed: 9 });
+    expect(a.placements.map((p) => [p.id, Math.round(p.x), Math.round(p.width)])).toEqual(
+      b.placements.map((p) => [p.id, Math.round(p.x), Math.round(p.width)]),
+    );
+  });
+});
+
+/** hsl → #rrggbb, so the value test can work in the same space as the render. */
+function hslHex(h: number, s: number, l: number): string {
+  const sn = s / 100;
+  const ln = l / 100;
+  const c = (1 - Math.abs(2 * ln - 1)) * sn;
+  const hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  const [r1, g1, b1] =
+    hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+  const m = ln - c / 2;
+  const to = (v: number): string =>
+    Math.round(Math.min(255, Math.max(0, (v + m) * 255)))
+      .toString(16)
+      .padStart(2, '0');
+  return `${to(r1)}${to(g1)}${to(b1)}`;
+}

@@ -1024,3 +1024,16 @@
 .nb-library-studio .nb-chip-swatch[aria-pressed='true'] {
   box-shadow: 0 0 0 2px var(--ink-sepia);
 }
+
+/* "all 60" / "fewer".
+   Deliberately NOT a swatch: it is the only chip in the row that is not a
+   colour, and giving it a dot would make it look like a sixty-first one. Sized
+   to the dots beside it so the row keeps one rhythm. */
+.nb-library-studio .nb-chip-more {
+  min-height: 26px;
+  padding: 0 var(--space-3);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--ink-sepia);
+  white-space: nowrap;
+}

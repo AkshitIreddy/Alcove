@@ -41,6 +41,7 @@ import {
   type PatternId,
 } from '../../art/shelfDesign';
 import {
+  FEATURED_THEME_IDS,
   THEMES,
   THEME_IDS,
   getTheme,
@@ -162,10 +163,17 @@ function Swatches(props: { scheme: ColourScheme; name: string }): JSX.Element {
  *
  * Keyed by the `LibraryPrefs` field it writes, so a row cannot drift from the
  * pref it edits. Sixty room names stacked twice would be a wall of text for
- * something the eye answers instantly, hence dots rather than labels — though
- * sixty dots is a wall of its own, and this row wants the same treatment the
- * room axis above it already got: a strip of featured colours with the rest
- * behind a picker.
+ * something the eye answers instantly, hence dots rather than labels.
+ *
+ * Sixty dots is a wall of its own, though, and there are TWO of these rows in a
+ * 376px sheet. So it shows the featured eight and opens to the rest — the same
+ * shape `DesignStrip` gives the card axes, done in place rather than through
+ * `DesignPicker`: a sheet is worth it for tiles you have to study, and heavier
+ * than the thing it contains for a grid of dots.
+ *
+ * The current choice is always among the eight. Without that, picking a colour
+ * from the expanded grid and collapsing it again would leave no dot pressed,
+ * and the row would read as though the choice had been forgotten.
  */
 function ColourRow(props: {
   part: 'shelf' | 'wall';
@@ -176,21 +184,31 @@ function ColourRow(props: {
   colour(theme: LibraryTheme): string;
   onPick(id: ThemeId): void;
 }): JSX.Element {
+  const [expanded, setExpanded] = createSignal(false);
+  const active = (): ThemeId => partTheme(libraryPrefs, props.part);
+
+  const shown = (): readonly ThemeId[] => {
+    if (expanded()) return THEME_IDS;
+    const head = FEATURED_THEME_IDS;
+    if (head.includes(active())) return head;
+    // Swap into the LAST slot: the head is ordered, and pushing the run along
+    // to make room at the front would move every dot under the cursor.
+    return [...head.slice(0, head.length - 1), active()];
+  };
+
   return (
     <div class="nb-panel-row nb-panel-row-stack">
       <span class="nb-panel-row-label">
         {props.title}{' '}
-        <em class="nb-panel-row-hint">
-          {getTheme(partTheme(libraryPrefs, props.part)).name.toLowerCase()}
-        </em>
+        <em class="nb-panel-row-hint">{getTheme(active()).name.toLowerCase()}</em>
       </span>
       <div class="nb-chip-row" role="group" aria-label={`${props.label} colours`}>
-        <For each={THEME_IDS}>
+        <For each={shown()}>
           {(id) => (
             <button
               type="button"
               class="nb-chip nb-chip-swatch"
-              aria-pressed={partTheme(libraryPrefs, props.part) === id}
+              aria-pressed={active() === id}
               aria-label={`${props.label}: ${getTheme(id).name}`}
               title={getTheme(id).name}
               style={{ '--nb-swatch': props.colour(getTheme(id)) }}
@@ -200,6 +218,16 @@ function ColourRow(props: {
             </button>
           )}
         </For>
+        <Show when={THEME_IDS.length > FEATURED_THEME_IDS.length}>
+          <button
+            type="button"
+            class="nb-chip nb-chip-more font-ui"
+            aria-expanded={expanded()}
+            onClick={() => setExpanded(!expanded())}
+          >
+            {expanded() ? 'fewer' : `all ${THEME_IDS.length}`}
+          </button>
+        </Show>
       </div>
     </div>
   );

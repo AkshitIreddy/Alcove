@@ -4626,7 +4626,16 @@ export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = [
     { pattern: 'toile', scale: 'grand', depth: 'low', ink: 'timber', tone: 'bay', edge: 'soft' }, ['antique', 'warm']),
 ];
 
-/** The wallpaper a library opens with — the wall as it has always been. */
+/**
+ * The wallpaper a library opens with — the wall as it has always been.
+ *
+ * NOTE, before changing this again: it is doing two jobs. It is the opening
+ * wall, and it is the FALLBACK an unknown id resolves to
+ * (`resolveWallpaper`), which several tests pin as "junk gives you the plain
+ * wall". Repointing it at a patterned paper to show the fifty off also means a
+ * corrupt setting silently paints stripes, which is the wrong answer to a
+ * different question. Split the two constants first, then change the default.
+ */
 export const DEFAULT_WALLPAPER_ID = 'plain-parchment';
 
 const BY_ID = new Map(WALLPAPER_PRESETS.map((p) => [p.id, p]));

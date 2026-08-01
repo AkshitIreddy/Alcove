@@ -1,5 +1,42 @@
 # Bellanote — running TODO
 
+## ⏭️ NEXT UP (2026-08-01, end of session)
+
+Six of the nine items from the "fifty of everything + fix all" pass are done and
+pushed. These three are what is left, in the order worth doing them.
+
+- [ ] **Ship readiness — NOT STARTED.** Rebuild and verify the NSIS installer
+      carries the Bellanote name, icon and `com.bellanote.app` identity. Sweep
+      for stale "Notebook" — but keep TWO deliberate exceptions: the script
+      language is called *Notebook Script* (a product name) and
+      `seed.LEGACY_WELCOME_BOOK_TITLE` must keep its old value (a migration
+      constant). Also: `playwright.config.ts` has `retries: 0` against a shared
+      dev server; `npm run sounds` should fail clearly when ffmpeg is missing
+      rather than confusingly; settings still says shortcut rebinding "is on its
+      way" — implement it or make the copy honest.
+- [ ] **The cover collapses fifty coverings to a binary.** `covers.ts:1074`
+      picks pale parchment or dyed cloth and nothing else, on the reasoning that
+      flat art has no grain. That held when materials were seven look-alikes;
+      `bookDesign` now has fifty MATERIALS with real painters (twill, laid
+      lines, ribbed, chequer, half-bound), so the board a reader actually holds
+      is markedly less expressive than the spine it belongs to. Reuse
+      `bookDesign`'s material painters at cover scale.
+- [ ] **Split `DEFAULT_WALLPAPER_ID` before repointing it.** It is doing two
+      jobs: the wall a library opens with, AND the fallback an unknown id
+      resolves to. Pointing it at a patterned paper to show the fifty off also
+      makes a corrupt setting silently paint stripes — four tests pin "junk
+      gives you the plain wall", and they are right to. Split the constants,
+      then give a new library a wall that shows the feature exists.
+
+Also open, from the same pass:
+
+- [ ] The studio's card axes use `DesignStrip` + `DesignPicker` ("more…"); the
+      two `ColourRow`s now expand in place. Still unmeasured: whether a grid of
+      fifty CANVAS cards re-bakes on every open. `designOptions.ts` holds the
+      card cache key — measure before assuming.
+- [ ] Right-clicking a shelf inside the library tab should offer book options.
+- [ ] `docs/design/library-themes.md` still describes four rooms.
+
 ## ✅ Fifty of everything (2026-08-01)
 
 Delivered, counted by loading the modules rather than grepping:

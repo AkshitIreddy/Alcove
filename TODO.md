@@ -1,5 +1,53 @@
 # Bellanote — running TODO
 
+## ✅ Fifty of everything (2026-08-01)
+
+Delivered, counted by loading the modules rather than grepping:
+
+| axis | was | now |
+| --- | --- | --- |
+| `flat.CLOTHS` | 6 | **50** |
+| `spines.PIGMENT_COUNT` | 20 | **50** |
+| `spines.ORNAMENT_COUNT` | 12 | **50** |
+| `spines.TITLE_PLATES` | 4 | **50** |
+| `spines.EDGE_TREATMENTS` | 4 | **50** |
+| `bookDesign.SPINE_SHAPES` | 10 | **50** |
+| `bookDesign.MATERIAL_LOOKS` | 10 | **50** |
+| `bookDesign.DECORATIONS` | 12 | **50** |
+| `bookDesign.BOOK_PRESETS` | 62 | **189** |
+| `wallpaper.WALLPAPER_PATTERNS` | 22 | **50** |
+| `wallpaper.WALLPAPER_TONES` | 8 | **50** |
+| `wallpaper.WALLPAPER_PRESETS` | 50 | **126** |
+| `stickers.STICKER_IDS` | 8 | **50** |
+
+Already at or past 50 and left alone: shelf builds (52), timber patterns (50),
+shelf presets (113), colour schemes (60).
+
+### Still short of fifty
+
+- [ ] `blockEffects.BLOCK_EFFECT_TYPES` reached **27**, not 50 — the page-side
+      agent was stopped mid-run
+- [ ] The COVER's own vocabularies were never expanded: `COVER_TEXTURES` 3,
+      `COVER_FONTS` 3, `COVER_FRAME_COUNT` 4, `COVER_MEDALLION_COUNT` 8. The
+      spine got fifty of everything and the board a reader actually holds did
+      not
+- [ ] Deliberately NOT fifty, and worth defending rather than growing:
+      `SPINE_FORMATS` (5 — these are bibliographic sizes, folio to pocket, not
+      a catalogue), `WALLPAPER_SCALES` (5), `WALLPAPER_EDGES` (4),
+      `WALLPAPER_DEPTHS` (4), charms. These are modifier axes; fifty steps of
+      "scale" is a slider, not fifty designs
+
+### What the shapes board shows, honestly
+
+Roughly thirty of the fifty silhouettes read as clearly distinct at shelf
+scale — gabled, notched, crenellated, ogee, wave, scalloped, tapered, splayed,
+rolled, coptic, stab-sewn, ring-binder, wallet, clasped. The remaining twenty
+cluster into "plain rectangle with a slightly different top": at a spine width
+of 20–45 world px the difference between square, chamfered, round-cap and
+rounded is one or two pixels of corner radius. Real bookbinding distinctions,
+but a reader will not tell them apart on the shelf. Worth a pass that pushes
+those apart, or accepting that they are variety rather than choices.
+
 Nothing gets forgotten here. Tick items when *verified in the running app*, not
 when written — and where two colours or two frames are hard to tell apart, use
 `shots-now/sample.py` rather than an opinion.

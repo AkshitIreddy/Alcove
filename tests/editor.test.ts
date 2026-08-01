@@ -23,6 +23,7 @@ import {
   fuzzyScore,
 } from '../src/editor/slash/registry';
 import { STICKER_IDS, stickerSvg } from '../src/editor/nodes/stickers';
+import { BLOCK_EFFECT_ATTRS } from '../src/editor/effects/blockEffects';
 import { emptyPageDoc } from '../src/data/pages';
 import type { PageDoc } from '../src/data/types';
 
@@ -134,20 +135,19 @@ describe('slash command registry', () => {
  * node types that declare attributes, so fixtures spell out defaults too
  * (id from UniqueID, language: null, the BlockEffects nulls, etc.).
  */
-/** Every BlockEffects global attribute at rest (src/editor/effects). */
-const FX = {
-  rotate: null,
-  tape: null,
-  washi: null,
-  shadow: null,
-  frame: null,
-  paper: null,
-  underline: null,
-  font: null,
-  ink: null,
-  size: null,
-  align: null,
-};
+/**
+ * Every BlockEffects global attribute at rest (src/editor/effects).
+ *
+ * Built from BLOCK_EFFECT_ATTRS rather than listed, because this fixture is
+ * the storage format: a global attribute added to the extension appears on
+ * EVERY block of every saved page, and spelling the list out here means the
+ * round-trip test fails on the addition rather than on anything being wrong.
+ * That is noise, and noise in a storage test is how a real regression gets
+ * waved through.
+ */
+const FX: Record<string, null> = Object.fromEntries(
+  BLOCK_EFFECT_ATTRS.map((k) => [k, null]),
+);
 
 const fixtureDoc: PageDoc = {
   type: 'doc',

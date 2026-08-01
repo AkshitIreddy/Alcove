@@ -22,9 +22,16 @@
  *  - **One source of truth per shelf.** Insertables come from the slash-menu
  *    registry (`SLASH_COMMANDS`), so a block added there appears here for
  *    free and the two menus can never offer different sets. Effects come from
- *    `src/script/vocab.ts`, which is also what the writing language and the
- *    AI-facing spec read, so the panel cannot offer a value the parser would
- *    reject or miss one it accepts.
+ *    `src/editor/effects/vocabulary.ts` — the EDITOR's domain, which is what
+ *    `BlockEffects` will accept as an attribute value.
+ *
+ *    Not `src/script/vocab.ts`, which is the writing *language's* domain and is
+ *    deliberately smaller and slower-moving, because a name there is a promise
+ *    to a chatbot. This panel read that one for a while and the two drifted
+ *    hard: it offered five tapes and three washis while the editor accepted
+ *    fifty of each, so forty-five values per axis existed, validated, rendered
+ *    and could not be reached from any menu. A reader's panel has to offer what
+ *    the editor accepts; the script domain stays small on purpose.
  *  - **Everything is searchable.** The shelves are for browsing; the search
  *    box is for when you already know the word.
  */
@@ -35,18 +42,7 @@ import { STICKER_IDS, stickerSvg, type StickerId } from '../../editor/nodes/stic
 import { SQUIGGLE_DATA_URI } from '../../editor/effects/blockEffects';
 import type { CalloutTint } from '../../editor/nodes/callout';
 import { SLASH_COMMANDS, fuzzyScore, type SlashCommand } from '../../editor/slash/registry';
-import {
-  ALIGN_VALUES,
-  BLOCK_INK_VALUES,
-  BLOCK_PAPER_VALUES,
-  FONT_VALUES,
-  FRAME_VALUES,
-  SHADOW_VALUES,
-  SIZE_VALUES,
-  TAPE_VALUES,
-  UNDERLINE_VALUES,
-  WASHI_VALUES,
-} from '../../script/vocab';
+import { EFFECT_AXES, type EffectAxis } from '../../editor/effects/vocabulary';
 import UserStickersSection from '../../features/templates/UserStickersSection';
 import '../../styles/catalogue.css';
 
@@ -152,85 +148,35 @@ interface EffectSpec {
   readonly keywords?: readonly string[];
 }
 
-/** Human words for the enum values. Anything unnamed prints as written. */
-const VALUE_LABELS: Readonly<Record<string, string>> = {
-  'tape:top': 'tape, top',
-  'tape:corner': 'tape, corner',
-  'tape:both': 'tape, both ends',
-  'tape:left': 'tape, left',
-  'tape:right': 'tape, right',
-  'washi:top': 'washi, top',
-  'washi:left': 'washi, left',
-  'washi:corner': 'washi, corner',
-  'shadow:soft': 'soft shadow',
-  'shadow:lifted': 'lifted',
-  'shadow:stacked': 'stacked',
-  'frame:scallop': 'scallop frame',
-  'frame:stitch': 'stitch frame',
-  'frame:double': 'double rule',
-  'frame:rope': 'rope border',
-  'frame:ticket': 'torn ticket',
-  'paper:torn': 'torn paper',
-  'paper:lined': 'lined paper',
-  'paper:graph': 'graph paper',
-  'paper:aged': 'aged paper',
-  'paper:index': 'index stock',
-  'underline:squiggle': 'squiggle',
-  'underline:marker': 'marker sweep',
-  'underline:dotted': 'dotted rule',
-  'underline:double': 'double rule',
-  'underline:circled': 'ringed round',
-  'font:hand': 'everyday hand',
-  'font:casual': 'casual',
-  'font:marker': 'marker pen',
-  'font:script': 'flowing script',
-  'font:chalk': 'chalk',
-  'font:note': 'field note',
-  'font:serif': 'serif',
-  'font:book': 'book type',
-  'font:mono': 'typewriter',
-  'ink:sepia': 'sepia',
-  'ink:graphite': 'graphite',
-  'ink:ink-blue': 'ink blue',
-  'ink:crimson': 'crimson',
-  'ink:moss': 'moss',
-  'size:xs': 'tiny',
-  'size:sm': 'small',
-  'size:md': 'normal',
-  'size:lg': 'large',
-  'size:xl': 'huge',
-  'align:left': 'ranged left',
-  'align:center': 'centred',
-  'align:right': 'ranged right',
-};
-
-function valueLabel(key: string, value: string): string {
-  return VALUE_LABELS[`${key}:${value}`] ?? `${key} ${value}`;
-}
-
-function enumEffects(key: string, values: readonly string[], shelf: ShelfId): EffectSpec[] {
-  return values.map((value) => ({
-    key,
-    value,
-    label: valueLabel(key, value),
+/**
+ * Every effect the editor accepts, built from the EDITOR's own vocabulary.
+ *
+ * This used to read `src/script/vocab.ts` plus a hand-written label map, and
+ * the two drifted badly: the script domain offers five tapes and three washis
+ * because a name there is a promise to a chatbot and moves slowly, while
+ * `effects/vocabulary.ts` grew to fifty of each. The panel is a READER's menu,
+ * so it must offer what the editor will accept — otherwise forty-five values
+ * per axis exist, validate, render, and are unreachable from any UI.
+ *
+ * Labels and search tags come from the vocabulary too, so a value added there
+ * appears here named correctly, for free. The hand-written map this replaces
+ * was a second place to forget.
+ */
+function enumEffects(axis: EffectAxis): EffectSpec[] {
+  const shelf: ShelfId = axis.shelf === 'colour' ? 'trim' : axis.shelf;
+  return axis.values.map((entry) => ({
+    key: axis.key,
+    value: entry.value,
+    label: entry.label,
     shelf,
-    keywords: [key, value],
+    keywords: [axis.key, entry.value, axis.label, ...entry.tags],
   }));
 }
 
 const EFFECTS: readonly EffectSpec[] = [
   { key: 'rotate', value: -2, label: 'tilt left', shelf: 'trim', keywords: ['rotate', 'tilt'] },
   { key: 'rotate', value: 2, label: 'tilt right', shelf: 'trim', keywords: ['rotate', 'tilt'] },
-  ...enumEffects('tape', TAPE_VALUES, 'trim'),
-  ...enumEffects('washi', WASHI_VALUES, 'trim'),
-  ...enumEffects('shadow', SHADOW_VALUES, 'trim'),
-  ...enumEffects('frame', FRAME_VALUES, 'trim'),
-  ...enumEffects('paper', BLOCK_PAPER_VALUES, 'trim'),
-  ...enumEffects('underline', UNDERLINE_VALUES, 'trim'),
-  ...enumEffects('font', FONT_VALUES, 'lettering'),
-  ...enumEffects('ink', BLOCK_INK_VALUES, 'lettering'),
-  ...enumEffects('size', SIZE_VALUES, 'lettering'),
-  ...enumEffects('align', ALIGN_VALUES, 'lettering'),
+  ...EFFECT_AXES.flatMap(enumEffects),
 ];
 
 /** Every attribute the "start again" button clears. */

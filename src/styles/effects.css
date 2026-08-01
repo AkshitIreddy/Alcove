@@ -2771,3 +2771,308 @@
     5% calc(100% - 8px), 0% calc(100% - 3px)
   );
 }
+
+/* === BEGIN generated tints (scripts/gen-tints.mjs) === */
+/* 50 pigments, each mixed from the wash families in tokens.css.
+   Do not edit by hand — run: node scripts/gen-tints.mjs */
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='amber'] {
+  --fx-light: color-mix(in srgb, var(--wash-amber-light) 62%, var(--wash-amber));
+  --fx-base: var(--wash-amber);
+  --fx-deep: color-mix(in srgb, var(--wash-amber-deep) 58%, var(--wash-amber));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='terracotta'] {
+  --fx-light: color-mix(in srgb, var(--wash-terracotta-light) 62%, var(--wash-terracotta));
+  --fx-base: var(--wash-terracotta);
+  --fx-deep: color-mix(in srgb, var(--wash-terracotta-deep) 58%, var(--wash-terracotta));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='moss'] {
+  --fx-light: color-mix(in srgb, var(--wash-moss-light) 62%, var(--wash-moss));
+  --fx-base: var(--wash-moss);
+  --fx-deep: color-mix(in srgb, var(--wash-moss-deep) 58%, var(--wash-moss));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='lemon'] {
+  --fx-light: color-mix(in srgb, var(--wash-lemon-light) 62%, var(--wash-lemon));
+  --fx-base: var(--wash-lemon);
+  --fx-deep: color-mix(in srgb, var(--wash-lemon-deep) 58%, var(--wash-lemon));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='sky'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, var(--wash-sky));
+  --fx-base: var(--wash-sky);
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, var(--wash-sky));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='blush'] {
+  --fx-light: color-mix(in srgb, var(--wash-blush-light) 62%, var(--wash-blush));
+  --fx-base: var(--wash-blush);
+  --fx-deep: color-mix(in srgb, var(--wash-blush-deep) 58%, var(--wash-blush));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='graphite'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-deep) 100%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-deep) 100%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-deep) 100%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='honey'] {
+  --fx-light: color-mix(in srgb, var(--wash-amber-light) 62%, color-mix(in srgb, var(--wash-amber-light) 35%, var(--wash-amber)));
+  --fx-base: color-mix(in srgb, var(--wash-amber-light) 35%, var(--wash-amber));
+  --fx-deep: color-mix(in srgb, var(--wash-amber-deep) 58%, color-mix(in srgb, var(--wash-amber-light) 35%, var(--wash-amber)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='apricot'] {
+  --fx-light: color-mix(in srgb, var(--wash-coral-light) 62%, color-mix(in srgb, var(--wash-coral-light) 50%, var(--wash-coral)));
+  --fx-base: color-mix(in srgb, var(--wash-coral-light) 50%, var(--wash-coral));
+  --fx-deep: color-mix(in srgb, var(--wash-coral-deep) 58%, color-mix(in srgb, var(--wash-coral-light) 50%, var(--wash-coral)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='peach'] {
+  --fx-light: color-mix(in srgb, var(--wash-coral-light) 62%, color-mix(in srgb, var(--wash-coral-light) 70%, var(--wash-coral)));
+  --fx-base: color-mix(in srgb, var(--wash-coral-light) 70%, var(--wash-coral));
+  --fx-deep: color-mix(in srgb, var(--wash-coral-deep) 58%, color-mix(in srgb, var(--wash-coral-light) 70%, var(--wash-coral)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='straw'] {
+  --fx-light: color-mix(in srgb, var(--wash-lemon-light) 62%, color-mix(in srgb, var(--wash-lemon-light) 55%, var(--wash-lemon)));
+  --fx-base: color-mix(in srgb, var(--wash-lemon-light) 55%, var(--wash-lemon));
+  --fx-deep: color-mix(in srgb, var(--wash-lemon-deep) 58%, color-mix(in srgb, var(--wash-lemon-light) 55%, var(--wash-lemon)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='mustard'] {
+  --fx-light: color-mix(in srgb, var(--wash-lemon-light) 62%, color-mix(in srgb, var(--wash-lemon-deep) 45%, var(--wash-lemon)));
+  --fx-base: color-mix(in srgb, var(--wash-lemon-deep) 45%, var(--wash-lemon));
+  --fx-deep: color-mix(in srgb, var(--wash-lemon-deep) 58%, color-mix(in srgb, var(--wash-lemon-deep) 45%, var(--wash-lemon)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='ochre'] {
+  --fx-light: color-mix(in srgb, var(--wash-amber-light) 62%, color-mix(in srgb, var(--wash-amber-deep) 40%, var(--wash-amber)));
+  --fx-base: color-mix(in srgb, var(--wash-amber-deep) 40%, var(--wash-amber));
+  --fx-deep: color-mix(in srgb, var(--wash-amber-deep) 58%, color-mix(in srgb, var(--wash-amber-deep) 40%, var(--wash-amber)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='sand'] {
+  --fx-light: color-mix(in srgb, var(--wash-amber-light) 62%, color-mix(in srgb, var(--wash-amber-light) 60%, var(--wash-amber)));
+  --fx-base: color-mix(in srgb, var(--wash-amber-light) 60%, var(--wash-amber));
+  --fx-deep: color-mix(in srgb, var(--wash-amber-deep) 58%, color-mix(in srgb, var(--wash-amber-light) 60%, var(--wash-amber)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='coral'] {
+  --fx-light: color-mix(in srgb, var(--wash-coral-light) 62%, var(--wash-coral));
+  --fx-base: var(--wash-coral);
+  --fx-deep: color-mix(in srgb, var(--wash-coral-deep) 58%, var(--wash-coral));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='cherry'] {
+  --fx-light: color-mix(in srgb, var(--wash-coral-light) 62%, color-mix(in srgb, var(--wash-coral-deep) 35%, var(--wash-coral)));
+  --fx-base: color-mix(in srgb, var(--wash-coral-deep) 35%, var(--wash-coral));
+  --fx-deep: color-mix(in srgb, var(--wash-coral-deep) 58%, color-mix(in srgb, var(--wash-coral-deep) 35%, var(--wash-coral)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='brick'] {
+  --fx-light: color-mix(in srgb, var(--wash-terracotta-light) 62%, color-mix(in srgb, var(--wash-terracotta-deep) 40%, var(--wash-terracotta)));
+  --fx-base: color-mix(in srgb, var(--wash-terracotta-deep) 40%, var(--wash-terracotta));
+  --fx-deep: color-mix(in srgb, var(--wash-terracotta-deep) 58%, color-mix(in srgb, var(--wash-terracotta-deep) 40%, var(--wash-terracotta)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='rust'] {
+  --fx-light: color-mix(in srgb, var(--wash-terracotta-light) 62%, color-mix(in srgb, var(--wash-terracotta-deep) 70%, var(--wash-terracotta)));
+  --fx-base: color-mix(in srgb, var(--wash-terracotta-deep) 70%, var(--wash-terracotta));
+  --fx-deep: color-mix(in srgb, var(--wash-terracotta-deep) 58%, color-mix(in srgb, var(--wash-terracotta-deep) 70%, var(--wash-terracotta)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='wine'] {
+  --fx-light: color-mix(in srgb, var(--wash-plum-light) 62%, color-mix(in srgb, var(--wash-plum-deep) 75%, var(--wash-plum)));
+  --fx-base: color-mix(in srgb, var(--wash-plum-deep) 75%, var(--wash-plum));
+  --fx-deep: color-mix(in srgb, var(--wash-plum-deep) 58%, color-mix(in srgb, var(--wash-plum-deep) 75%, var(--wash-plum)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='petal'] {
+  --fx-light: color-mix(in srgb, var(--wash-blush-light) 62%, color-mix(in srgb, var(--wash-blush-light) 55%, var(--wash-blush)));
+  --fx-base: color-mix(in srgb, var(--wash-blush-light) 55%, var(--wash-blush));
+  --fx-deep: color-mix(in srgb, var(--wash-blush-deep) 58%, color-mix(in srgb, var(--wash-blush-light) 55%, var(--wash-blush)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='mulberry'] {
+  --fx-light: color-mix(in srgb, var(--wash-blush-light) 62%, color-mix(in srgb, var(--wash-blush-deep) 60%, var(--wash-blush)));
+  --fx-base: color-mix(in srgb, var(--wash-blush-deep) 60%, var(--wash-blush));
+  --fx-deep: color-mix(in srgb, var(--wash-blush-deep) 58%, color-mix(in srgb, var(--wash-blush-deep) 60%, var(--wash-blush)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='plum'] {
+  --fx-light: color-mix(in srgb, var(--wash-plum-light) 62%, var(--wash-plum));
+  --fx-base: var(--wash-plum);
+  --fx-deep: color-mix(in srgb, var(--wash-plum-deep) 58%, var(--wash-plum));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='violet'] {
+  --fx-light: color-mix(in srgb, var(--wash-violet-light) 62%, var(--wash-violet));
+  --fx-base: var(--wash-violet);
+  --fx-deep: color-mix(in srgb, var(--wash-violet-deep) 58%, var(--wash-violet));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='orchid'] {
+  --fx-light: color-mix(in srgb, var(--wash-violet-light) 62%, color-mix(in srgb, var(--wash-violet-light) 30%, var(--wash-violet)));
+  --fx-base: color-mix(in srgb, var(--wash-violet-light) 30%, var(--wash-violet));
+  --fx-deep: color-mix(in srgb, var(--wash-violet-deep) 58%, color-mix(in srgb, var(--wash-violet-light) 30%, var(--wash-violet)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='lilac'] {
+  --fx-light: color-mix(in srgb, var(--wash-violet-light) 62%, color-mix(in srgb, var(--wash-violet-light) 55%, var(--wash-violet)));
+  --fx-base: color-mix(in srgb, var(--wash-violet-light) 55%, var(--wash-violet));
+  --fx-deep: color-mix(in srgb, var(--wash-violet-deep) 58%, color-mix(in srgb, var(--wash-violet-light) 55%, var(--wash-violet)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='lavender'] {
+  --fx-light: color-mix(in srgb, var(--wash-violet-light) 62%, color-mix(in srgb, var(--wash-violet-light) 70%, var(--wash-violet)));
+  --fx-base: color-mix(in srgb, var(--wash-violet-light) 70%, var(--wash-violet));
+  --fx-deep: color-mix(in srgb, var(--wash-violet-deep) 58%, color-mix(in srgb, var(--wash-violet-light) 70%, var(--wash-violet)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='periwinkle'] {
+  --fx-light: color-mix(in srgb, var(--wash-violet-light) 62%, color-mix(in srgb, var(--wash-violet-light) 15%, var(--wash-violet)));
+  --fx-base: color-mix(in srgb, var(--wash-violet-light) 15%, var(--wash-violet));
+  --fx-deep: color-mix(in srgb, var(--wash-violet-deep) 58%, color-mix(in srgb, var(--wash-violet-light) 15%, var(--wash-violet)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='cornflower'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-light) 45%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-light) 45%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-light) 45%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='denim'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-deep) 30%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-deep) 30%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-deep) 30%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='navy'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-deep) 80%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-deep) 80%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-deep) 80%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='indigo'] {
+  --fx-light: color-mix(in srgb, var(--wash-violet-light) 62%, color-mix(in srgb, var(--wash-violet-deep) 70%, var(--wash-violet)));
+  --fx-base: color-mix(in srgb, var(--wash-violet-deep) 70%, var(--wash-violet));
+  --fx-deep: color-mix(in srgb, var(--wash-violet-deep) 58%, color-mix(in srgb, var(--wash-violet-deep) 70%, var(--wash-violet)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='teal'] {
+  --fx-light: color-mix(in srgb, var(--wash-turquoise-light) 62%, color-mix(in srgb, var(--wash-turquoise-deep) 35%, var(--wash-turquoise)));
+  --fx-base: color-mix(in srgb, var(--wash-turquoise-deep) 35%, var(--wash-turquoise));
+  --fx-deep: color-mix(in srgb, var(--wash-turquoise-deep) 58%, color-mix(in srgb, var(--wash-turquoise-deep) 35%, var(--wash-turquoise)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='turquoise'] {
+  --fx-light: color-mix(in srgb, var(--wash-turquoise-light) 62%, var(--wash-turquoise));
+  --fx-base: var(--wash-turquoise);
+  --fx-deep: color-mix(in srgb, var(--wash-turquoise-deep) 58%, var(--wash-turquoise));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='seafoam'] {
+  --fx-light: color-mix(in srgb, var(--wash-turquoise-light) 62%, color-mix(in srgb, var(--wash-turquoise-light) 55%, var(--wash-turquoise)));
+  --fx-base: color-mix(in srgb, var(--wash-turquoise-light) 55%, var(--wash-turquoise));
+  --fx-deep: color-mix(in srgb, var(--wash-turquoise-deep) 58%, color-mix(in srgb, var(--wash-turquoise-light) 55%, var(--wash-turquoise)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='mint'] {
+  --fx-light: color-mix(in srgb, var(--wash-turquoise-light) 62%, color-mix(in srgb, var(--wash-turquoise-light) 75%, var(--wash-turquoise)));
+  --fx-base: color-mix(in srgb, var(--wash-turquoise-light) 75%, var(--wash-turquoise));
+  --fx-deep: color-mix(in srgb, var(--wash-turquoise-deep) 58%, color-mix(in srgb, var(--wash-turquoise-light) 75%, var(--wash-turquoise)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='jade'] {
+  --fx-light: color-mix(in srgb, var(--wash-turquoise-light) 62%, color-mix(in srgb, var(--wash-turquoise-deep) 60%, var(--wash-turquoise)));
+  --fx-base: color-mix(in srgb, var(--wash-turquoise-deep) 60%, var(--wash-turquoise));
+  --fx-deep: color-mix(in srgb, var(--wash-turquoise-deep) 58%, color-mix(in srgb, var(--wash-turquoise-deep) 60%, var(--wash-turquoise)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='fernwash'] {
+  --fx-light: color-mix(in srgb, var(--wash-moss-light) 62%, color-mix(in srgb, var(--wash-moss-light) 40%, var(--wash-moss)));
+  --fx-base: color-mix(in srgb, var(--wash-moss-light) 40%, var(--wash-moss));
+  --fx-deep: color-mix(in srgb, var(--wash-moss-deep) 58%, color-mix(in srgb, var(--wash-moss-light) 40%, var(--wash-moss)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='olive'] {
+  --fx-light: color-mix(in srgb, var(--wash-lime-light) 62%, color-mix(in srgb, var(--wash-lime-deep) 50%, var(--wash-lime)));
+  --fx-base: color-mix(in srgb, var(--wash-lime-deep) 50%, var(--wash-lime));
+  --fx-deep: color-mix(in srgb, var(--wash-lime-deep) 58%, color-mix(in srgb, var(--wash-lime-deep) 50%, var(--wash-lime)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='sage'] {
+  --fx-light: color-mix(in srgb, var(--wash-moss-light) 62%, color-mix(in srgb, var(--wash-moss-light) 60%, var(--wash-moss)));
+  --fx-base: color-mix(in srgb, var(--wash-moss-light) 60%, var(--wash-moss));
+  --fx-deep: color-mix(in srgb, var(--wash-moss-deep) 58%, color-mix(in srgb, var(--wash-moss-light) 60%, var(--wash-moss)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='lime'] {
+  --fx-light: color-mix(in srgb, var(--wash-lime-light) 62%, var(--wash-lime));
+  --fx-base: var(--wash-lime);
+  --fx-deep: color-mix(in srgb, var(--wash-lime-deep) 58%, var(--wash-lime));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='forest'] {
+  --fx-light: color-mix(in srgb, var(--wash-moss-light) 62%, color-mix(in srgb, var(--wash-moss-deep) 70%, var(--wash-moss)));
+  --fx-base: color-mix(in srgb, var(--wash-moss-deep) 70%, var(--wash-moss));
+  --fx-deep: color-mix(in srgb, var(--wash-moss-deep) 58%, color-mix(in srgb, var(--wash-moss-deep) 70%, var(--wash-moss)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='clay'] {
+  --fx-light: color-mix(in srgb, var(--wash-terracotta-light) 62%, color-mix(in srgb, var(--wash-terracotta-light) 35%, var(--wash-terracotta)));
+  --fx-base: color-mix(in srgb, var(--wash-terracotta-light) 35%, var(--wash-terracotta));
+  --fx-deep: color-mix(in srgb, var(--wash-terracotta-deep) 58%, color-mix(in srgb, var(--wash-terracotta-light) 35%, var(--wash-terracotta)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='copper'] {
+  --fx-light: color-mix(in srgb, var(--wash-coral-light) 62%, color-mix(in srgb, var(--wash-coral-deep) 20%, var(--wash-coral)));
+  --fx-base: color-mix(in srgb, var(--wash-coral-deep) 20%, var(--wash-coral));
+  --fx-deep: color-mix(in srgb, var(--wash-coral-deep) 58%, color-mix(in srgb, var(--wash-coral-deep) 20%, var(--wash-coral)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='bronze'] {
+  --fx-light: color-mix(in srgb, var(--wash-amber-light) 62%, color-mix(in srgb, var(--wash-amber-deep) 65%, var(--wash-amber)));
+  --fx-base: color-mix(in srgb, var(--wash-amber-deep) 65%, var(--wash-amber));
+  --fx-deep: color-mix(in srgb, var(--wash-amber-deep) 58%, color-mix(in srgb, var(--wash-amber-deep) 65%, var(--wash-amber)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='cocoa'] {
+  --fx-light: color-mix(in srgb, var(--wash-terracotta-light) 62%, color-mix(in srgb, var(--wash-terracotta-deep) 85%, var(--wash-terracotta)));
+  --fx-base: color-mix(in srgb, var(--wash-terracotta-deep) 85%, var(--wash-terracotta));
+  --fx-deep: color-mix(in srgb, var(--wash-terracotta-deep) 58%, color-mix(in srgb, var(--wash-terracotta-deep) 85%, var(--wash-terracotta)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='walnut'] {
+  --fx-light: color-mix(in srgb, var(--wash-amber-light) 62%, color-mix(in srgb, var(--wash-amber-deep) 85%, var(--wash-amber)));
+  --fx-base: color-mix(in srgb, var(--wash-amber-deep) 85%, var(--wash-amber));
+  --fx-deep: color-mix(in srgb, var(--wash-amber-deep) 58%, color-mix(in srgb, var(--wash-amber-deep) 85%, var(--wash-amber)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='ash'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-deep) 55%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-deep) 55%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-deep) 55%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='stone'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-light) 20%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-light) 20%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-light) 20%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='pebble'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-light) 65%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-light) 65%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-light) 65%, var(--wash-sky)));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-color='slate'] {
+  --fx-light: color-mix(in srgb, var(--wash-sky-light) 62%, color-mix(in srgb, var(--wash-sky-deep) 45%, var(--wash-sky)));
+  --fx-base: color-mix(in srgb, var(--wash-sky-deep) 45%, var(--wash-sky));
+  --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-deep) 45%, var(--wash-sky)));
+}
+/* === END generated tints === */

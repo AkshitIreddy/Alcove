@@ -120,6 +120,37 @@ export const BLOCK_EFFECT_TYPES = [
   'marginalia',
 ] as const;
 
+/**
+ * Every attribute the extension below declares.
+ *
+ * Exported so a test can check that the reader-facing menus and the extension
+ * agree. They did not: the `color` axis carried fifty pigments in the
+ * vocabulary and had no attribute here, so every one of them was inert — and
+ * nothing failed, because an attribute that does not exist is simply never
+ * written. `rotate` is in the list and is not an axis; it takes a number
+ * rather than a named value, which is why it is hand-rolled below.
+ *
+ * WRITTEN OUT, not derived from `EFFECT_KEYS`. Deriving it would make the test
+ * that reads it tautological — it would have agreed with the vocabulary on the
+ * day `color` was missing, which is the exact day it needed to disagree. This
+ * list must be kept in step with the attributes block below by hand; the test
+ * is what makes that safe.
+ */
+export const BLOCK_EFFECT_ATTRS: readonly string[] = [
+  'rotate',
+  'tape',
+  'washi',
+  'shadow',
+  'frame',
+  'paper',
+  'font',
+  'ink',
+  'size',
+  'align',
+  'color',
+  'underline',
+];
+
 export const BlockEffects = Extension.create({
   name: 'blockEffects',
 
@@ -165,6 +196,11 @@ export const BlockEffects = Extension.create({
           ink: enumEffect('ink', effectValues('ink')),
           size: enumEffect('size', effectValues('size')),
           align: enumEffect('align', effectValues('align')),
+          // The tint. It shipped named in the vocabulary and wired to nothing:
+          // fifty pigments with no attribute here and no rules in effects.css,
+          // so the washi strip read `--fx-base` and nothing on the page ever
+          // set it. Naming a value and making it work are the same job.
+          color: enumEffect('color', effectValues('color')),
           underline: {
             default: null,
             parseHTML: (element: HTMLElement) => {

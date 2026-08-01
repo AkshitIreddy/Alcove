@@ -163,6 +163,49 @@
     8px 5px 0 0 var(--paper-edge);
 }
 
+/*
+ * A leaf with no page behind it yet.
+ *
+ * It has to keep looking like the back of a notebook — bare paper, which is
+ * what it is — while being obviously usable, because for a long time it looked
+ * exactly right and did nothing at all when clicked. So: no button chrome, no
+ * border, no fill. The whole leaf is the target, and the only mark is a line of
+ * micro-copy that shows up when you go near it.
+ */
+.nb-leaf-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: text;
+  color: var(--ink-faint, #a99b86);
+}
+
+.nb-leaf-blank-hint {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity var(--dur-quick, 120ms) ease;
+}
+
+.nb-leaf-blank:hover .nb-leaf-blank-hint,
+.nb-leaf-blank:focus-visible .nb-leaf-blank-hint {
+  opacity: 1;
+}
+
+/* Keyboard users get the same affordance the pointer gets — the hint above is
+   hover-only, and a focus ring on bare paper is the only thing that says the
+   leaf is reachable at all. */
+.nb-leaf-blank:focus-visible {
+  outline: 2px solid var(--wash-amber, #e8b64c);
+  outline-offset: -6px;
+  border-radius: inherit;
+}
+
 /* Short pages still fill the leaf so the rules run to the bottom; larger
    inner padding gives the bigger book its margins. */
 .nb-spread .nb-page {

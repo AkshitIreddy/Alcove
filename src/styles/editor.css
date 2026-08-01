@@ -325,16 +325,31 @@
   font-weight: 700;
 }
 
+/* h3 and h4 need the SAME nudge and did not have it.
+   The correction above was applied to h1 and h2 only, and the reason it looked
+   finished is that those are the headings the Welcome book opens with. h3 and
+   h4 are the same face with the same lopsided em box, so they floated in
+   exactly the same way — just less obviously, because a smaller glyph floating
+   by a proportional amount is a smaller gap.
+   The lead is a function of the grid and the two faces' metrics, not of how
+   many rules the heading owns, so the same expression carries over unchanged;
+   only the line-height differs (one band rather than two). */
+.nb-prose h3,
+.nb-prose h4 {
+  --nb-heading-lead: calc(var(--page-line-height) / 2 + 8.5px - 0.321em);
+  padding-top: var(--nb-heading-lead);
+  margin-bottom: calc(-1 * var(--nb-heading-lead));
+  line-height: var(--page-line-height);
+}
+
 .nb-prose h3 {
   font-size: 26px;
   font-weight: 600;
-  line-height: var(--page-line-height);
 }
 
 .nb-prose h4 {
   font-size: 21px;
   font-weight: 600;
-  line-height: var(--page-line-height);
 }
 
 /* Placeholder — a soft pencil whisper */

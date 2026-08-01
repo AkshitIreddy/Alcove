@@ -817,6 +817,33 @@ export default function BookView(): JSX.Element {
   const leafKey = (page: Page | null): string | null =>
     page ? `${page.id}@${docVersions()[page.id] ?? 0}` : null;
 
+  /**
+   * Bring a blank leaf into existence so it can be written on.
+   *
+   * Turning past the end of a book lands on cream paper with no page behind it
+   * — `pagesToCreateOnFlip` deliberately stops at the landing spread's LEFT
+   * slot, because the right leaf of the last spread being bare is what the back
+   * of a notebook looks like. The look was right and the behaviour was not:
+   * clicking it did nothing, typing did nothing, and the only way out was to
+   * turn back.
+   *
+   * So the paper stays bare until someone actually wants it, and then becomes a
+   * page. Appends as many as the slot needs rather than one, because a blank
+   * LEFT leaf sits two slots past the end and creating a single page would fill
+   * the wrong one.
+   */
+  const writeOnBlankLeaf = async (side: LeafSide): Promise<void> => {
+    const slot = spreadIndex() * 2 + (side === 'right' ? 1 : 0);
+    for (let i = pages().length; i <= slot; i += 1) {
+      if (!(await appendPage())) return;
+    }
+    void play('pop-soft');
+    setFocusedSide(side);
+    queueMicrotask(() => {
+      paperElements[side]?.querySelector<HTMLElement>('.ProseMirror')?.focus();
+    });
+  };
+
   const leafFace = (side: LeafSide, page: () => Page | null): JSX.Element => (
     <div
       class="nb-sheet-paper nb-leaf-paper"
@@ -828,7 +855,20 @@ export default function BookView(): JSX.Element {
       }}
       onFocusIn={() => setFocusedSide(side)}
     >
-      <Show when={leafKey(page())} keyed>
+      <Show
+        when={leafKey(page())}
+        keyed
+        fallback={
+          <button
+            type="button"
+            class="nb-leaf-blank"
+            aria-label="Write on this page"
+            onClick={() => void writeOnBlankLeaf(side)}
+          >
+            <span class="nb-leaf-blank-hint font-ui">start writing</span>
+          </button>
+        }
+      >
         {(_key: string) => {
           const current = page();
           return current ? (

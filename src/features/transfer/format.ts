@@ -14,9 +14,30 @@
  * archive plumbing lives in ./zip, the data-layer plumbing in ./library.
  */
 
+/*
+ * The archive's own name, NOT the app's. It is written into every bundle ever
+ * exported, so renaming it would make files this build wrote unreadable by the
+ * builds that wrote them. The app is called Bellanote; its bundles are still
+ * `notebook-bundle`.
+ */
 export const BUNDLE_FORMAT = 'notebook-bundle';
-export const BUNDLE_SCHEMA_VERSION = 1;
-/** Oldest schema this build can still read. */
+
+/**
+ * 2 — books carry the bookcase they stood in.
+ *
+ * Bumped rather than added silently because the change is legible in the file:
+ * a reader (or a future importer) can tell a bundle that omits `bookcaseId`
+ * because it predates cases from one that omits it because the book had none.
+ */
+export const BUNDLE_SCHEMA_VERSION = 2;
+
+/**
+ * Oldest schema this build can still read.
+ *
+ * Stays at 1. A v1 bundle is missing exactly one field, and the importer has a
+ * good answer for it (the active case), so refusing to open one would be
+ * throwing away someone's library for no reason.
+ */
 export const BUNDLE_MIN_READABLE_VERSION = 1;
 export const BUNDLE_EXTENSION = 'nbk';
 export const MANIFEST_PATH = 'manifest.json';
@@ -49,6 +70,20 @@ export interface ManifestPage {
 export interface ManifestBook {
   id: string;
   title: string;
+  /**
+   * Which bookcase the book stood in, or null.
+   *
+   * Null means one of two different things and the importer treats them the
+   * same way: a bundle written before bookcases existed (schema < 3), or a
+   * book exported from a library that only ever had one case. Either way the
+   * importer puts it in the active case, because "the case I am looking at" is
+   * the only answer that is never surprising.
+   *
+   * A non-null id is only honoured when a case with that id actually exists
+   * here. Bundles move between machines, and an id from someone else's library
+   * would otherwise send books to a case that is not there.
+   */
+  bookcaseId: string | null;
   floor: number;
   slot: number;
   spineSeed: number;
@@ -283,9 +318,15 @@ function parseBook(
     const parsed = parsePage(page, i, slugify(title), warnings);
     if (parsed !== null) pages.push(parsed);
   });
+  const bookcaseId = typeof record.bookcaseId === 'string' && record.bookcaseId !== ''
+    ? record.bookcaseId
+    : null;
   return {
     id: asString(record.id, `book-${index}`),
     title,
+    // Absent in every bundle written before schema 3. Null rather than a
+    // guessed id, so the importer can tell "no case recorded" from "this case".
+    bookcaseId,
     floor: Math.max(0, asInt(record.floor, 0)),
     slot: Math.max(0, asInt(record.slot, index)),
     spineSeed: asInt(record.spineSeed, 0) >>> 0,

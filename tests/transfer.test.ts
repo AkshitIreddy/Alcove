@@ -94,10 +94,17 @@ function page(id: string, title: string, body = 'hello there'): BookSnapshot['pa
   };
 }
 
-function book(id: string, title: string, pageTitles: string[], floor = 0): BookSnapshot {
+function book(
+  id: string,
+  title: string,
+  pageTitles: string[],
+  floor = 0,
+  bookcaseId: string | null = 'case-1',
+): BookSnapshot {
   return {
     id,
     title,
+    bookcaseId,
     floor,
     slot: 0,
     spineSeed: 42,
@@ -184,6 +191,73 @@ describe('bundle format', () => {
     expect(slugify('   ')).toBe('untitled');
     expect(slugify('../../etc/passwd')).toBe('etc-passwd');
     expect(slugify('日本語')).toBe('日本語');
+  });
+
+  /*
+   * Bookcases arrived after this format did, and for a while the bundle simply
+   * did not mention them: exporting a library with three cases and importing it
+   * back gave one flat shelf, because every book landed in whichever case
+   * happened to be open. Nothing failed — the books were all there, just not
+   * where they had been.
+   */
+  describe('bookcases survive a round trip', () => {
+    const manifestOf = (mutate: (s: LibrarySnapshot) => void = () => {}) => {
+      const snapshot = library();
+      mutate(snapshot);
+      return buildBundleFiles({
+        snapshot,
+        plan: buildExportPlan(snapshot, allPages(snapshot), OPTIONS),
+        options: OPTIONS,
+        label: 'The whole library',
+        createdAt: '2026-07-30T09:00:00.000Z',
+        appVersion: '0.1.0',
+      }).manifest;
+    };
+
+    it('carries the case a book stood in', () => {
+      const manifest = manifestOf((s) => {
+        s.books[0]!.bookcaseId = 'case-a';
+        s.books[1]!.bookcaseId = 'case-b';
+      });
+      const byId = new Map(manifest.books.map((b) => [b.id, b]));
+      expect(byId.get('b1')?.bookcaseId).toBe('case-a');
+      expect(byId.get('b2')?.bookcaseId).toBe('case-b');
+    });
+
+    it('parses the case back out', () => {
+      const manifest = manifestOf((s) => {
+        s.books[0]!.bookcaseId = 'case-a';
+      });
+      const round = parseManifest(JSON.parse(JSON.stringify(manifest)) as unknown);
+      expect(round.manifest?.books[0]?.bookcaseId).toBe('case-a');
+    });
+
+    /**
+     * The compatibility case, and the reason the field is nullable rather than
+     * defaulted to something. A v1 bundle has no `bookcaseId` at all; parsing
+     * must say "none recorded" rather than inventing an id, so the importer can
+     * choose the active case instead of filing books into one that is not here.
+     */
+    it('reads a pre-bookcases bundle as no case, not a made-up one', () => {
+      const raw = JSON.parse(JSON.stringify(manifestOf())) as {
+        schemaVersion: number;
+        books: Array<Record<string, unknown>>;
+      };
+      for (const b of raw.books) delete b.bookcaseId;
+      raw.schemaVersion = 1;
+
+      const round = parseManifest(raw as unknown);
+      expect(round.manifest).not.toBeNull();
+      expect(round.manifest?.books.every((b) => b.bookcaseId === null)).toBe(true);
+    });
+
+    it('treats an empty string as no case', () => {
+      const raw = JSON.parse(JSON.stringify(manifestOf())) as {
+        books: Array<Record<string, unknown>>;
+      };
+      raw.books[0]!.bookcaseId = '';
+      expect(parseManifest(raw as unknown).manifest?.books[0]?.bookcaseId).toBeNull();
+    });
   });
 
   it('page paths are ordered, slugged and extension-aware', () => {

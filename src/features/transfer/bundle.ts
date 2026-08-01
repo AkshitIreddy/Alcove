@@ -146,6 +146,10 @@ export function buildBundleFiles(input: BuildBundleInput): BuiltBundle {
     manifestBooks.push({
       id: source.id,
       title: source.title,
+      // Which case it stood in. Without this a round trip through a bundle
+      // flattened a multi-case library into whichever case happened to be open
+      // on import.
+      bookcaseId: source.bookcaseId ?? null,
       floor: source.floor,
       slot: source.slot,
       spineSeed: source.spineSeed,

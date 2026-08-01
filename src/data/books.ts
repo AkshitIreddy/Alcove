@@ -162,14 +162,42 @@ export async function countBooksInBookcase(bookcaseId: string): Promise<number> 
 /**
  * Reshelve a book into another bookcase, landing on the next free slot of
  * `floor` there. Returns the moved book, or null when it does not exist.
+ *
+ * ## Why a move can repaint a book, and what `keepAppearance` is for
+ *
+ * A room carries a spine bias (`themeSpineDefaults`): an unstyled book draws
+ * its pigment from the ROOM's ramp, which is what makes one case read
+ * midnight-and-silver and another blush-and-butter. That is deliberate, and it
+ * rests on an assumption written down in `defaultThemeForOrd` — that a book
+ * lives in exactly one case and therefore only ever sees one room.
+ *
+ * This function breaks that assumption. A book that has never been dressed will
+ * come out a different colour in its new case, and recognising a spine is how a
+ * reader finds a book — so the object they were looking for stops being the
+ * object they remember.
+ *
+ * `keepAppearance` is the resolved style to pin before moving, so the book
+ * keeps the look it had. The caller supplies it because resolving a style needs
+ * `src/art`, and the data layer does not import art. Pass `null` (the default)
+ * only when the book already has an explicit style, or when the reader has
+ * asked for it to take on its new room.
  */
 export async function moveBookToBookcase(
   id: string,
   bookcaseId: string,
   floor?: number,
+  keepAppearance: Record<string, unknown> | null = null,
 ): Promise<Book | null> {
   const book = await getBook(id);
   if (book === null) return null;
+
+  // Freeze first, move second: if the write below succeeds and the style write
+  // does not, the book is already in the new room wearing the new room's
+  // colours, which is the state this exists to prevent.
+  if (keepAppearance !== null && readBookStyleOverrides(book) === null) {
+    await saveBookStyleOverrides(id, keepAppearance);
+  }
+
   const targetFloor = Math.max(0, floor ?? book.floor);
   const slot = await nextFreeSlot(targetFloor, book.slot, bookcaseId);
   const db = await getDb();

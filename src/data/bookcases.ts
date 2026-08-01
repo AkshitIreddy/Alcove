@@ -473,7 +473,21 @@ export function nextBookcaseName(existing: readonly Bookcase[]): string {
  */
 export function defaultThemeForOrd(ord: number): ThemeId {
   const ids = THEME_IDS;
-  const index = ((Math.round(ord) % ids.length) + ids.length) % ids.length;
+  /*
+   * Strided, not consecutive.
+   *
+   * `THEME_IDS` is grouped by FAMILY so the picker reads as a palette, which
+   * means ids 0..n next to each other are shades of the same timber. Walking it
+   * one at a time gave a reader who made four cases in a row four browns and
+   * the impression the feature did nothing.
+   *
+   * 23 is coprime with 60, so it still visits all sixty before repeating — the
+   * cycle is preserved, only the order changes. It stays coprime for any table
+   * size not divisible by 23, and the `% ids.length` keeps it total if it ever
+   * is not.
+   */
+  const STRIDE = 23;
+  const index = ((Math.round(ord) * STRIDE) % ids.length + ids.length) % ids.length;
   return ids[index] ?? DEFAULT_THEME_ID;
 }
 

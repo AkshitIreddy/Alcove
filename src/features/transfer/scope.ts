@@ -43,6 +43,8 @@ export interface PageSnapshot {
 export interface BookSnapshot {
   id: string;
   title: string;
+  /** Which bookcase it stood in. Null for a library that predates cases. */
+  bookcaseId: string | null;
   floor: number;
   slot: number;
   spineSeed: number;

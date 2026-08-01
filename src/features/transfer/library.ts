@@ -16,6 +16,7 @@
  */
 
 import { nanoid } from 'nanoid';
+import { listBookcaseRows } from '../../data/bookcases';
 import { getDb } from '../../data/db';
 import {
   createBook,
@@ -156,6 +157,7 @@ export async function loadLibrarySnapshot(): Promise<LibrarySnapshot> {
     out.push({
       id: book.id,
       title: book.title,
+      bookcaseId: book.bookcaseId ?? null,
       floor: book.floor,
       slot: book.slot,
       spineSeed: book.spineSeed,
@@ -343,6 +345,10 @@ export async function applyImportPlan(
   const shelved = await listBooksByFloorRange(0, 9999);
   let cursorFloor = shelved.reduce((max, book) => Math.max(max, book.floor), 0);
 
+  // Which cases exist HERE, read once. A bundle's bookcase ids belong to the
+  // library that exported it; only the ones this library also has may be used.
+  const knownBookcaseIds = new Set((await listBookcaseRows()).map((c) => c.id));
+
   for (const planned of plan.books) {
     if (planned.action === 'skip') continue;
     const source = bookLookup.get(planned.sourceId);
@@ -356,6 +362,14 @@ export async function applyImportPlan(
         title: planned.title,
         floor,
         slot,
+        // Honoured only when a case with that id is actually here. A bundle
+        // carries ids from the library that wrote it, and a machine that has
+        // never seen that library would otherwise file books into a case that
+        // does not exist. `undefined` lets createBook fall back to the active
+        // case, which is also what a pre-bookcases bundle gets.
+        bookcaseId: knownBookcaseIds.has(source.bookcaseId ?? '')
+          ? (source.bookcaseId ?? undefined)
+          : undefined,
         spineSeed: source.spineSeed > 0 ? source.spineSeed : undefined,
         coverMeta: source.coverMeta,
       });

@@ -1956,7 +1956,7 @@ function strokePts(ctx: Ctx2D, pts: readonly Pt[], close: boolean): void {
  * `rnd` supplies a per-book wobble so two copies of the same tool are not
  * pixel-identical, exactly as the rest of the flat vocabulary does.
  */
-function drawOrnament(
+export function drawOrnament(
   ctx: Ctx2D,
   kind: number,
   cx: number,

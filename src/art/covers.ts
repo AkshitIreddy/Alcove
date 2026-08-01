@@ -51,9 +51,11 @@ import {
 } from './flat';
 import { clamp, mulberry32 } from './noise';
 import {
+  ORNAMENT_COUNT,
   PIGMENT_COUNT,
   clothForPalette,
   deriveSpineParams,
+  drawOrnament,
   materialFromTexture,
   textureFromMaterial,
   type BindingMaterial,
@@ -90,8 +92,20 @@ export const COVER_ASPECT = 0.72;
  * their own declared bound.
  */
 export const COVER_PALETTE_COUNT = PIGMENT_COUNT;
-export const COVER_FRAME_COUNT = 4;
-export const COVER_MEDALLION_COUNT = 8;
+/* COVER_FRAME_COUNT is exported beside the FRAMES table it counts, further
+ * down. Restating it here as a literal is the exact mistake COVER_PALETTE_COUNT
+ * made — it sat at 20 while the table it described grew to 50. */
+
+/**
+ * DERIVED from the spine's stamp table, not restated.
+ *
+ * The medallion IS the spine's ornament drawn large — one book, one tool. It
+ * was hard-coded 8 and folded from a 12-then-50 entry table with `% 8`, so a
+ * book's board carried a different device from its spine. Deriving it is also
+ * the rule this file learned the hard way with COVER_PALETTE_COUNT, which sat
+ * at 20 while the pigment table it described grew to 50.
+ */
+export const COVER_MEDALLION_COUNT = ORNAMENT_COUNT;
 /** Labels for the legacy `texture` bucket (see CoverParams.texture). */
 export const COVER_TEXTURES = ['cloth', 'leather', 'paper'] as const;
 export const COVER_FONTS = ['Caveat', 'Kalam', 'Patrick Hand'] as const;
@@ -526,12 +540,329 @@ function paintSpineStrip(
 }
 
 /**
- * The ornamental frame inset into the face.
+ * The ornamental frame inset into the face — fifty of them.
  *
- * Four styles, all built from the same pale rule so they stay siblings: the
- * bare rule, the icon's rule-with-corner-dots, a double rule, and a rule with
- * a tick at the middle of each side.
+ * ## Composed, not enumerated
+ *
+ * Fifty hand-written branches would be fifty chances to draw a frame that does
+ * not match its siblings, and the family resemblance is the point: every one of
+ * these is the same pale rule the app icon carries, elaborated. So a frame is a
+ * spec of five orthogonal traits and the painter reads them:
+ *
+ *   rules    how many concentric rules, and their relative weights
+ *   corner   what sits at the four corners
+ *   side     what sits at the middle of each side
+ *   radius   how the rule turns — square, soft, or a drawn-out ogee
+ *   band     an optional filled border between two of the rules
+ *
+ * Fifty combinations that a reader can tell apart, all provably siblings,
+ * because they are made of the same four marks in different arrangements.
+ *
+ * ## Why these marks and not others
+ *
+ * A cover is seen LARGE — the pull-out overlay and the open book — which is the
+ * opposite constraint to a spine, where an ornament has thirty pixels and has
+ * to survive being a smudge. Here detail reads, so the marks can be finer. What
+ * does NOT change is the flat rule: one ink colour, no shading, no blur. Depth
+ * on a frame is a second rule at a different weight, never a shadow.
+ *
+ * The lozenge at the middle of each side is the one mark that was got wrong
+ * first time and is worth keeping a note about: it started as a tick laid ALONG
+ * the rule, which was invisible, because a mark drawn on top of a line reads as
+ * a thicker line. A mark that sits ACROSS the rule is the only kind that reads
+ * on a frame.
  */
+
+/** What sits at the four corners of a frame. */
+type FrameCorner = 'none' | 'dot' | 'ring' | 'lozenge' | 'bracket' | 'fleuron' | 'stud';
+
+/** What sits at the middle of each side. */
+type FrameSide = 'none' | 'lozenge' | 'tick' | 'dot' | 'arc' | 'pair';
+
+/** How the rule turns at a corner. */
+type FrameTurn = 'square' | 'soft' | 'round' | 'ogee';
+
+interface FrameSpec {
+  id: string;
+  name: string;
+  /** Relative weights of the concentric rules, outermost first. 1 = full. */
+  rules: readonly number[];
+  corner: FrameCorner;
+  side: FrameSide;
+  turn: FrameTurn;
+  /** Fill the gap between rule 0 and rule 1 with a flat band. */
+  band?: boolean;
+}
+
+function frame(
+  id: string,
+  name: string,
+  rules: readonly number[],
+  corner: FrameCorner,
+  side: FrameSide,
+  turn: FrameTurn,
+  band = false,
+): FrameSpec {
+  return { id, name, rules, corner, side, turn, band };
+}
+
+/**
+ * Fifty frames. The first four are the originals, hex-for-hex in behaviour —
+ * `frame` is index-addressed by saved book data, so reordering the head of this
+ * table silently redresses every book anyone has already customised.
+ */
+const FRAMES: readonly FrameSpec[] = [
+  frame('plain-rule', 'Plain Rule', [1], 'none', 'none', 'soft'),
+  frame('corner-dots', 'Corner Dots', [1], 'dot', 'none', 'soft'),
+  frame('double-rule', 'Double Rule', [1, 0.7], 'none', 'none', 'soft'),
+  frame('tooled-lozenge', 'Tooled Lozenge', [1], 'dot', 'lozenge', 'soft'),
+
+  /* --- single rules, varying the corner --- */
+  frame('ringed', 'Ringed Corners', [1], 'ring', 'none', 'soft'),
+  frame('bracketed', 'Bracketed', [1], 'bracket', 'none', 'square'),
+  frame('fleuron-corners', 'Fleuron Corners', [1], 'fleuron', 'none', 'soft'),
+  frame('studded', 'Studded', [1], 'stud', 'none', 'square'),
+  frame('lozenge-corners', 'Lozenge Corners', [1], 'lozenge', 'none', 'soft'),
+  frame('round-rule', 'Round Rule', [1], 'none', 'none', 'round'),
+
+  /* --- single rules, varying the side mark --- */
+  frame('side-ticks', 'Side Ticks', [1], 'none', 'tick', 'soft'),
+  frame('side-dots', 'Side Dots', [1], 'none', 'dot', 'soft'),
+  frame('side-arcs', 'Side Arcs', [1], 'none', 'arc', 'round'),
+  frame('side-pairs', 'Paired Sides', [1], 'none', 'pair', 'soft'),
+  frame('centred-lozenge', 'Centred Lozenge', [1], 'none', 'lozenge', 'square'),
+
+  /* --- double rules --- */
+  frame('double-dots', 'Double with Dots', [1, 0.7], 'dot', 'none', 'soft'),
+  frame('double-rings', 'Double with Rings', [1, 0.7], 'ring', 'none', 'soft'),
+  frame('double-brackets', 'Double Bracketed', [1, 0.7], 'bracket', 'none', 'square'),
+  frame('double-ticks', 'Double with Ticks', [1, 0.7], 'none', 'tick', 'soft'),
+  frame('double-lozenge', 'Double Lozenge', [1, 0.7], 'lozenge', 'lozenge', 'soft'),
+  frame('double-ogee', 'Double Ogee', [1, 0.7], 'none', 'none', 'ogee'),
+  frame('double-fleuron', 'Double Fleuron', [1, 0.7], 'fleuron', 'none', 'soft'),
+  frame('double-round', 'Double Round', [1, 0.7], 'none', 'arc', 'round'),
+  frame('double-stud', 'Double Studded', [1, 0.7], 'stud', 'dot', 'square'),
+
+  /* --- fillet: a heavy rule with a fine one inside --- */
+  frame('fillet', 'Fillet', [1, 0.4], 'none', 'none', 'soft'),
+  frame('fillet-dots', 'Fillet & Dots', [1, 0.4], 'dot', 'none', 'soft'),
+  frame('fillet-fleuron', 'Fillet & Fleurons', [1, 0.4], 'fleuron', 'none', 'soft'),
+  frame('fillet-ogee', 'Fillet Ogee', [1, 0.4], 'none', 'lozenge', 'ogee'),
+  frame('fine-fillet', 'Fine Fillet', [0.5, 1], 'none', 'none', 'soft'),
+  frame('fine-fillet-ring', 'Fine Fillet & Ring', [0.5, 1], 'ring', 'none', 'soft'),
+
+  /* --- triple rules --- */
+  frame('triple-rule', 'Triple Rule', [1, 0.7, 0.45], 'none', 'none', 'soft'),
+  frame('triple-dots', 'Triple with Dots', [1, 0.7, 0.45], 'dot', 'none', 'soft'),
+  frame('triple-lozenge', 'Triple Lozenge', [1, 0.7, 0.45], 'lozenge', 'lozenge', 'soft'),
+  frame('triple-square', 'Triple Square', [1, 0.7, 0.45], 'stud', 'none', 'square'),
+  frame('triple-ogee', 'Triple Ogee', [1, 0.6, 0.35], 'none', 'arc', 'ogee'),
+  frame('triple-bracket', 'Triple Bracketed', [1, 0.7, 0.45], 'bracket', 'tick', 'square'),
+
+  /* --- banded: a flat border between two rules --- */
+  frame('banded', 'Banded', [1, 0.7], 'none', 'none', 'soft', true),
+  frame('banded-dots', 'Banded & Dots', [1, 0.7], 'dot', 'none', 'soft', true),
+  frame('banded-ring', 'Banded & Rings', [1, 0.7], 'ring', 'none', 'soft', true),
+  frame('banded-lozenge', 'Banded Lozenge', [1, 0.7], 'lozenge', 'lozenge', 'soft', true),
+  frame('banded-square', 'Banded Square', [1, 0.7], 'stud', 'none', 'square', true),
+  frame('banded-ogee', 'Banded Ogee', [1, 0.7], 'none', 'arc', 'ogee', true),
+  frame('banded-triple', 'Banded Triple', [1, 0.7, 0.4], 'dot', 'tick', 'soft', true),
+  frame('banded-fleuron', 'Banded Fleuron', [1, 0.7], 'fleuron', 'none', 'round', true),
+
+  /* --- the elaborate end --- */
+  frame('panelled', 'Panelled', [1, 0.75, 0.5, 0.3], 'dot', 'lozenge', 'soft'),
+  frame('cathedral', 'Cathedral', [1, 0.6, 0.35], 'fleuron', 'arc', 'ogee'),
+  frame('coffered', 'Coffered', [1, 0.8, 0.55, 0.35], 'stud', 'dot', 'square', true),
+  frame('rosace', 'Rosace', [1, 0.5], 'fleuron', 'pair', 'round'),
+  frame('court', 'Court Binding', [1, 0.7, 0.45], 'ring', 'lozenge', 'soft', true),
+  frame('gothic-panel', 'Gothic Panel', [1, 0.65, 0.4], 'bracket', 'arc', 'ogee', true),
+];
+
+/** How many tooled frames a cover can wear. Derived, never restated. */
+export const COVER_FRAME_COUNT = FRAMES.length;
+
+/** Display names for the studio's frame picker. */
+export const FRAME_LABELS: readonly string[] = FRAMES.map((f) => f.name);
+
+/** Trace one rectangle in the frame's turn style. */
+function traceFrameRect(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  turn: FrameTurn,
+  seed: number,
+): void {
+  const m = Math.min(w, h);
+  if (turn === 'square') {
+    wobbleRect(ctx, x, y, w, h, m * 0.008, seed);
+    return;
+  }
+  if (turn === 'round') {
+    wobbleRect(ctx, x, y, w, h, m * 0.16, seed);
+    return;
+  }
+  if (turn === 'soft') {
+    wobbleRect(ctx, x, y, w, h, m * 0.05, seed);
+    return;
+  }
+  // ogee — the corner is drawn out into a shallow S, which is what separates a
+  // "binding" frame from a rounded rectangle. Traced by hand because a radius
+  // cannot express a reversing curve.
+  const r = m * 0.13;
+  const k = r * 0.55;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.bezierCurveTo(x + w - k, y, x + w, y + k, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.bezierCurveTo(x + w, y + h - k, x + w - k, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.bezierCurveTo(x + k, y + h, x, y + h - k, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.bezierCurveTo(x, y + k, x + k, y, x + r, y);
+  ctx.closePath();
+}
+
+function paintFrameCorner(
+  ctx: FlatCtx,
+  kind: FrameCorner,
+  cx: number,
+  cy: number,
+  s: number,
+  colour: string,
+  line: number,
+  sx: number,
+  sy: number,
+): void {
+  switch (kind) {
+    case 'none':
+      return;
+    case 'dot':
+      dot(ctx, cx, cy, line * 1.6, colour);
+      return;
+    case 'stud':
+      dot(ctx, cx, cy, line * 2.4, colour);
+      return;
+    case 'ring':
+      pen(ctx, colour, line * 0.8);
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.9, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    case 'lozenge':
+      tracePoly(ctx, [
+        { x: cx, y: cy - s },
+        { x: cx + s * 0.68, y: cy },
+        { x: cx, y: cy + s },
+        { x: cx - s * 0.68, y: cy },
+      ]);
+      ctx.fillStyle = colour;
+      ctx.fill();
+      return;
+    case 'bracket': {
+      // Two strokes running back along the rules from the corner: the mark a
+      // binder's corner tool actually leaves.
+      pen(ctx, colour, line);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * s * 2.2, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + sy * s * 2.2);
+      ctx.stroke();
+      return;
+    }
+    case 'fleuron': {
+      // Three petals thrown inward along the diagonal. Filled, because a
+      // hairline flourish disappears the moment the cover is a thumbnail.
+      for (const a of [0, 1, 2]) {
+        const ang = Math.atan2(sy, sx) + Math.PI + (a - 1) * 0.55;
+        const px = cx + Math.cos(ang) * s * 1.5;
+        const py = cy + Math.sin(ang) * s * 1.5;
+        tracePoly(ctx, [
+          { x: cx, y: cy },
+          { x: px + Math.cos(ang + 0.5) * s * 0.5, y: py + Math.sin(ang + 0.5) * s * 0.5 },
+          { x: px, y: py },
+          { x: px + Math.cos(ang - 0.5) * s * 0.5, y: py + Math.sin(ang - 0.5) * s * 0.5 },
+        ]);
+        ctx.fillStyle = colour;
+        ctx.fill();
+      }
+      return;
+    }
+  }
+}
+
+function paintFrameSide(
+  ctx: FlatCtx,
+  kind: FrameSide,
+  mx: number,
+  my: number,
+  s: number,
+  colour: string,
+  line: number,
+  horizontal: boolean,
+): void {
+  switch (kind) {
+    case 'none':
+      return;
+    case 'dot':
+      dot(ctx, mx, my, line * 1.5, colour);
+      return;
+    case 'lozenge':
+      tracePoly(ctx, [
+        { x: mx, y: my - s },
+        { x: mx + s * 0.72, y: my },
+        { x: mx, y: my + s },
+        { x: mx - s * 0.72, y: my },
+      ]);
+      ctx.fillStyle = colour;
+      ctx.fill();
+      return;
+    case 'tick': {
+      // ACROSS the rule, never along it — a mark laid along a line is just a
+      // thicker line.
+      pen(ctx, colour, line);
+      ctx.beginPath();
+      if (horizontal) {
+        ctx.moveTo(mx, my - s);
+        ctx.lineTo(mx, my + s);
+      } else {
+        ctx.moveTo(mx - s, my);
+        ctx.lineTo(mx + s, my);
+      }
+      ctx.stroke();
+      return;
+    }
+    case 'pair': {
+      pen(ctx, colour, line * 0.8);
+      const off = s * 1.3;
+      ctx.beginPath();
+      if (horizontal) {
+        ctx.moveTo(mx - off, my - s);
+        ctx.lineTo(mx - off, my + s);
+        ctx.moveTo(mx + off, my - s);
+        ctx.lineTo(mx + off, my + s);
+      } else {
+        ctx.moveTo(mx - s, my - off);
+        ctx.lineTo(mx + s, my - off);
+        ctx.moveTo(mx - s, my + off);
+        ctx.lineTo(mx + s, my + off);
+      }
+      ctx.stroke();
+      return;
+    }
+    case 'arc': {
+      pen(ctx, colour, line * 0.9);
+      ctx.beginPath();
+      const a0 = horizontal ? Math.PI : Math.PI * 1.5;
+      ctx.arc(mx, my, s * 1.1, a0, a0 + Math.PI);
+      ctx.stroke();
+      return;
+    }
+  }
+}
+
 function paintFrame(
   ctx: FlatCtx,
   x: number,
@@ -543,64 +874,67 @@ function paintFrame(
   detail: boolean,
   seed: number,
 ): void {
-  const line = Math.max(1, Math.min(w, h) * 0.012);
-  const radius = Math.min(w, h) * 0.05;
+  const spec = FRAMES[((Math.trunc(style) % FRAMES.length) + FRAMES.length) % FRAMES.length]!;
+  const base = Math.max(1, Math.min(w, h) * 0.012);
+  const gap = Math.min(w, h) * 0.042;
 
-  wobbleRect(ctx, x, y, w, h, radius, seed);
-  pen(ctx, colour, line);
-  ctx.stroke();
-
-  const kind = ((style % COVER_FRAME_COUNT) + COVER_FRAME_COUNT) % COVER_FRAME_COUNT;
-  const inset = Math.min(w, h) * 0.035;
-
-  if (kind === 1 || kind === 3) {
-    // The icon's four corner dots, sat just inside the rule.
-    if (detail) {
-      for (const [cx, cy] of [
-        [x + inset, y + inset],
-        [x + w - inset, y + inset],
-        [x + w - inset, y + h - inset],
-        [x + inset, y + h - inset],
-      ] as const) {
-        dot(ctx, cx, cy, line * 1.6, colour);
-      }
-    }
+  // The band goes down FIRST, so the rules land on top of their own border
+  // rather than being half-covered by it.
+  if (spec.band === true && spec.rules.length > 1) {
+    traceFrameRect(ctx, x, y, w, h, spec.turn, seed + 3);
+    traceFrameRect(ctx, x + gap, y + gap, w - gap * 2, h - gap * 2, spec.turn, seed + 4);
+    ctx.fillStyle = colour;
+    ctx.globalAlpha = 0.16;
+    ctx.fill('evenodd');
+    ctx.globalAlpha = 1;
   }
-  if (kind === 2) {
-    // A second rule inside the first: the plainest way to make a frame feel
-    // tooled rather than drawn once.
-    const g = Math.min(w, h) * 0.045;
-    wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, radius * 0.8, seed + 9);
-    pen(ctx, colour, line * 0.7);
+
+  spec.rules.forEach((weight, i) => {
+    const g = gap * i;
+    if (w - g * 2 < base * 6 || h - g * 2 < base * 6) return;
+    traceFrameRect(ctx, x + g, y + g, w - g * 2, h - g * 2, spec.turn, seed + i * 7);
+    pen(ctx, colour, base * weight);
     ctx.stroke();
+  });
+
+  if (!detail) return;
+
+  const s = Math.min(w, h) * 0.022;
+  const inset = Math.min(w, h) * 0.035;
+  for (const [cx, cy, sx, sy] of [
+    [x + inset, y + inset, 1, 1],
+    [x + w - inset, y + inset, -1, 1],
+    [x + w - inset, y + h - inset, -1, -1],
+    [x + inset, y + h - inset, 1, -1],
+  ] as const) {
+    paintFrameCorner(ctx, spec.corner, cx, cy, s, colour, base, sx, sy);
   }
-  if (kind === 3 && detail) {
-    // A tooled lozenge at the middle of every side. This started as a tick
-    // laid along the rule, which was invisible — a mark that sits ACROSS the
-    // line is the only kind that reads on a frame.
-    const t = Math.min(w, h) * 0.022;
-    for (const [mx, my] of [
-      [x + w / 2, y],
-      [x + w / 2, y + h],
-      [x, y + h / 2],
-      [x + w, y + h / 2],
-    ] as const) {
-      tracePoly(ctx, [
-        { x: mx, y: my - t },
-        { x: mx + t * 0.72, y: my },
-        { x: mx, y: my + t },
-        { x: mx - t * 0.72, y: my },
-      ]);
-      ctx.fillStyle = colour;
-      ctx.fill();
-    }
+
+  for (const [mx, my, horiz] of [
+    [x + w / 2, y, true],
+    [x + w / 2, y + h, true],
+    [x, y + h / 2, false],
+    [x + w, y + h / 2, false],
+  ] as const) {
+    paintFrameSide(ctx, spec.side, mx, my, s, colour, base, horiz);
   }
 }
 
 /**
- * The medallion below the label — eight stamps sharing the spine's ornament
- * vocabulary. Each is one weight of one colour with round ends: at cover size
- * that reads as pressed metal, and at thumbnail size it survives as a mark.
+ * The medallion below the label — the SAME device the spine wears, drawn large.
+ *
+ * It used to be eight stamps of its own, hand-written here and folded from the
+ * spine's ornament with `% 8`. That was duplicate art with a lossy join: a
+ * spine tooled with a beehive got whichever of the eight the modulo landed on,
+ * so the two faces of one book carried different devices. A real binding
+ * strikes the same tool on the spine and the board — that is what makes them
+ * one book rather than two objects — so this now delegates to the spine's own
+ * fifty stamps and `COVER_MEDALLION_COUNT` is `ORNAMENT_COUNT` by derivation.
+ *
+ * `drawOrnament` works in unit space scaled by `s`, so cover size is only a
+ * bigger `s`. It takes a `rnd` for the per-book wobble the rest of the flat
+ * vocabulary uses; seeding it from the stamp and the radius keeps one book's
+ * medallion identical between redraws without making every book's identical.
  */
 function paintMedallion(
   ctx: FlatCtx,
@@ -610,105 +944,15 @@ function paintMedallion(
   kind: number,
   colour: string,
 ): void {
-  const line = Math.max(1, r * 0.16);
-  pen(ctx, colour, line);
-
-  switch (((kind % 8) + 8) % 8) {
-    case 0: {
-      // The icon's lozenge: a tall diamond with a dot at its heart.
-      tracePoly(ctx, [
-        { x: cx, y: cy - r },
-        { x: cx + r * 0.6, y: cy },
-        { x: cx, y: cy + r },
-        { x: cx - r * 0.6, y: cy },
-      ]);
-      ctx.stroke();
-      dot(ctx, cx, cy, line * 0.85, colour);
-      break;
-    }
-    case 1: {
-      // A plain boss: ring and centre.
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.8, 0, Math.PI * 2);
-      ctx.stroke();
-      dot(ctx, cx, cy, r * 0.22, colour);
-      break;
-    }
-    case 2: {
-      tracePoly(ctx, starPts(cx, cy, r, r * 0.44, 5));
-      ctx.stroke();
-      break;
-    }
-    case 3: {
-      // Rosette: six petals swung around a centre.
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.ellipse(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5, r * 0.32, r * 0.17, a, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      dot(ctx, cx, cy, r * 0.18, colour);
-      break;
-    }
-    case 4: {
-      // Crescent and a star, drawn as one open arc rather than a filled moon
-      // so it keeps the same line weight as its siblings.
-      ctx.beginPath();
-      ctx.arc(cx + r * 0.12, cy, r * 0.78, Math.PI * 0.32, Math.PI * 1.68);
-      ctx.stroke();
-      tracePoly(ctx, starPts(cx + r * 0.62, cy - r * 0.5, r * 0.26, r * 0.11, 4));
-      ctx.stroke();
-      break;
-    }
-    case 5: {
-      // Sun: a small disc with eight short rays.
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.4, 0, Math.PI * 2);
-      ctx.stroke();
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(a) * r * 0.58, cy + Math.sin(a) * r * 0.58);
-        ctx.lineTo(cx + Math.cos(a) * r * 0.95, cy + Math.sin(a) * r * 0.95);
-        ctx.stroke();
-      }
-      break;
-    }
-    case 6: {
-      // A sprig: stem with two leaves either side.
-      ctx.beginPath();
-      ctx.moveTo(cx, cy + r * 0.9);
-      ctx.quadraticCurveTo(cx + r * 0.12, cy, cx, cy - r * 0.9);
-      ctx.stroke();
-      for (const [t, side] of [
-        [0.42, -1],
-        [0.1, 1],
-        [-0.28, -1],
-      ] as const) {
-        ctx.beginPath();
-        ctx.ellipse(cx + side * r * 0.36, cy + r * t, r * 0.32, r * 0.15, side * 0.7, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      break;
-    }
-    default: {
-      // Escutcheon: a shield with a keyhole.
-      tracePoly(ctx, [
-        { x: cx - r * 0.66, y: cy - r * 0.72 },
-        { x: cx + r * 0.66, y: cy - r * 0.72 },
-        { x: cx + r * 0.58, y: cy + r * 0.24 },
-        { x: cx, y: cy + r * 0.86 },
-        { x: cx - r * 0.58, y: cy + r * 0.24 },
-      ]);
-      ctx.stroke();
-      dot(ctx, cx, cy - r * 0.16, r * 0.16, colour);
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - r * 0.02);
-      ctx.lineTo(cx, cy + r * 0.4);
-      ctx.stroke();
-      break;
-    }
-  }
+  const k = ((Math.trunc(kind) % ORNAMENT_COUNT) + ORNAMENT_COUNT) % ORNAMENT_COUNT;
+  ctx.save();
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = Math.max(1, r * 0.16);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  drawOrnament(ctx as never, k, cx, cy, r, mulberry32((k * 2654435761) ^ Math.round(r * 16)));
+  ctx.restore();
 }
 
 /** Everything the label needs to know about the book it belongs to. */

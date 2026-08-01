@@ -61,15 +61,24 @@ describe('studio vocabulary', () => {
     );
   });
 
-  it('ships 20 pigments, 12 ornaments, 4 plates, 4 edges, 6 charms', () => {
-    // 12 heritage duos + the 8 deep-range duos (oxblood … saffron) the
-    // reference's rich, unsaturated darks are built from.
-    expect(PIGMENT_COUNT).toBe(20);
-    expect(ORNAMENT_COUNT).toBe(12);
-    expect(TITLE_PLATES).toHaveLength(4);
-    expect(EDGE_TREATMENTS).toHaveLength(4);
-    expect(CHARMS.filter((c) => c !== 'none')).toHaveLength(6);
+  it('ships 50 pigments, 50 ornaments, 50 plates, 50 edges', () => {
+    // Each of these was a short list sized to the flat palette's original six
+    // cloths — 20 pigments folding onto 6 meant "oxblood", "rust" and "clay"
+    // all painted the same terracotta, and a name that lies is worse than a
+    // name you do not have. The house cloths went to 50 so a pigment can mean
+    // what it says, and every axis the studio offers followed.
+    expect(PIGMENT_COUNT).toBe(50);
+    expect(ORNAMENT_COUNT).toBe(50);
+    expect(TITLE_PLATES).toHaveLength(50);
+    expect(EDGE_TREATMENTS).toHaveLength(50);
     expect(MAX_RAISED_BANDS).toBe(5);
+  });
+
+  it('keeps charms a small deliberate set', () => {
+    // Not everything wants fifty. A charm is a single object hanging off one
+    // book; past a handful they stop reading as a find and start reading as
+    // clutter on every spine.
+    expect(CHARMS.filter((c) => c !== 'none').length).toBeGreaterThanOrEqual(6);
   });
 
   it('has a display label for every value the studio can show', () => {

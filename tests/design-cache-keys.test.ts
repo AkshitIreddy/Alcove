@@ -43,6 +43,7 @@ import {
 } from '../src/art/wallpaperDesign';
 import { wallpaperOptions } from '../src/views/rail/designOptions';
 import { bookDesignTag, BOOK_PRESETS, resolveBookDesign } from '../src/art/bookDesign';
+import { CLOTHS } from '../src/art/flat';
 
 const scheme = getTheme(THEME_IDS[0]).scheme;
 
@@ -221,5 +222,41 @@ describe('the book design tag distinguishes bindings', () => {
     const pinned = resolveBookDesign({ seed: 7, cloth: 1, preset: other!.id });
     expect(pinned.preset).toBe(other!.id);
     expect(bookDesignTag(pinned)).not.toBe(bookDesignTag(seeded));
+  });
+
+  /**
+   * Multi-digit indices must not run together.
+   *
+   * The tag concatenated its numeric fields bare, which was unambiguous only
+   * while every one of them was a single digit. Cloths went to 50 and it broke
+   * silently: cloth 1 + accent 23 and cloth 12 + accent 3 both spelled "123",
+   * so two different books shared a cache key and one was served the other's
+   * spine. Nothing fails when that happens — the cache validates nothing about
+   * a hit — which is exactly why it needs a test rather than a comment.
+   */
+  it('never lets two different bindings collide on one tag', () => {
+    const a = resolveBookDesign({ seed: 1, cloth: 1, accent: 23, preset: BOOK_PRESETS[0]!.id });
+    const b = resolveBookDesign({ seed: 1, cloth: 12, accent: 3, preset: BOOK_PRESETS[0]!.id });
+    expect(a.cloth).not.toBe(b.cloth);
+    expect(bookDesignTag(a)).not.toBe(bookDesignTag(b));
+  });
+
+  /*
+   * Swept across all 50 x 50, keyed on the RESOLVED pair rather than the
+   * requested one: asking for accent === cloth bumps the accent to cloth + 1
+   * (a half-binding in a single colour is just a full binding), so 50 of the
+   * 2500 requests legitimately land on a pair another request already made.
+   * Counting requests would fail on correct behaviour.
+   */
+  it('gives every distinct cloth x accent pair its own tag', () => {
+    const byPair = new Map<string, string>();
+    for (let cloth = 0; cloth < CLOTHS.length; cloth += 1) {
+      for (let accent = 0; accent < CLOTHS.length; accent += 1) {
+        const d = resolveBookDesign({ seed: 3, cloth, accent, preset: BOOK_PRESETS[0]!.id });
+        byPair.set(`${d.cloth}.${d.accent}`, bookDesignTag(d));
+      }
+    }
+    expect(new Set(byPair.values()).size).toBe(byPair.size);
+    expect(byPair.size).toBeGreaterThan(CLOTHS.length * (CLOTHS.length - 1) - 1);
   });
 });

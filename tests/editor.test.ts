@@ -490,8 +490,8 @@ describe('editor rail API (no live editor)', () => {
 /* ------------------------------- stickers -------------------------------- */
 
 describe('procedural stickers', () => {
-  it('renders deterministic markup for all 8 stickers', () => {
-    expect(STICKER_IDS).toHaveLength(8);
+  it('renders deterministic markup for every sticker', () => {
+    expect(STICKER_IDS).toHaveLength(50);
     for (const id of STICKER_IDS) {
       const first = stickerSvg(id);
       expect(first.startsWith('<svg')).toBe(true);

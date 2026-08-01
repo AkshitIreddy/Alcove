@@ -1,9 +1,10 @@
 /* ============================================================================
    Notebook — delight effects
-   Universal block effects (tape, washi, rotate, shadow, frame, paper,
-   underline) + the script-vocabulary container blocks (sticky-note,
-   polaroid, washi-box, card, quote-card, banner, spoiler, columns) +
-   margin doodles + confetti overlay.
+   The eleven page vocabularies (tape, washi, lift, frame, paper, underline,
+   hand, ink, size, ranging, tint) + the script-vocabulary container blocks
+   (sticky-note, polaroid, washi-box, card, quote-card, banner, spoiler,
+   columns, index-card, envelope, stamp, tag, marginalia) + margin doodles +
+   confetti overlay.
 
    Pure CSS everywhere: gradient tape, static pre-jittered clip-paths,
    radial-gradient scallop masks. No live SVG filters (CLAUDE.md).
@@ -28,6 +29,32 @@
    -------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------------
+   HOW FOUR HUNDRED AND SEVENTY-TWO VALUES ARE AFFORDABLE
+
+   src/editor/effects/vocabulary.ts offers fifty values on eight of its axes.
+   Written the obvious way — one full rule block per value — that is thousands
+   of declarations, most of them repeating the same six properties.
+
+   So each axis has ONE base rule that reads custom properties, and each value
+   is a rule that sets only what it actually changes: usually three or four
+   lines. Two consequences worth knowing before editing:
+
+     1. A pseudo-element is switched on by `content: var(--x, none)`. An unset
+        custom property falls back to `none`, which removes the box entirely —
+        so a value that wants a second strip writes `--tp2: ''` and a value
+        that does not writes nothing and pays nothing.
+     2. Nothing here is animated, transitioned, filtered or blurred. The file
+        is backgrounds, borders, clip-paths and font properties, because ~85%
+        of an edit window once turned out to be html-to-image rasterizing
+        pages, and an effect that costs a repaint on hover is a regression
+        rather than a feature.
+
+   The flat rule (CLAUDE.md) shapes the LIFT axis in particular: every entry is
+   an offset plate, a ring or an inset face, and not one carries a blur radius.
+   tests/styles.test.ts gates that mechanically.
+   -------------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------------
    Rotate — BlockEffects writes `--nb-rotate` inline; sticky notes and
    polaroids get a seeded default tilt through the same variable.
    -------------------------------------------------------------------------- */
@@ -43,138 +70,2195 @@
 :is(.nb-prose, .nb-fx-specimen) [data-tape],
 :is(.nb-prose, .nb-fx-specimen) [data-washi],
 :is(.nb-prose, .nb-fx-specimen) [data-frame],
+:is(.nb-prose, .nb-fx-specimen) [data-underline],
 :is(.nb-prose, .nb-fx-specimen) [data-paper] {
   position: relative;
 }
 
-/* ----------------------------------------------------------------------------
-   Tape — translucent scotch-tape strips (gradients, slight rotation)
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-tape]::before,
-:is(.nb-prose, .nb-fx-specimen) [data-tape='both']::after {
-  content: '';
-  position: absolute;
-  width: 74px;
-  height: 22px;
-  background: linear-gradient(
+/* ============================================================================
+   1. TAPE — what is holding the block to the page
+   ==========================================================================
+
+   Fifty answers in four groups: nine placements of plain scotch, seven
+   arrangements of more than one strip, fourteen adhesive stocks and fifteen
+   fasteners that are not tape at all (a staple, a bulldog clip, a wax seal).
+
+   Geometry lives in `--tp-*` on the block and is read by `::before`; a second
+   strip is `--tp2-*` read by `::after`, switched on by `--tp2: ''`.
+   ========================================================================== */
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape] {
+  /* The stocks, declared once and pointed at by --tp-bg below. Each is a
+     different adhesive: how translucent it is, and what colour it goes on
+     cream paper. */
+  --tp-scotch: linear-gradient(
     178deg,
     color-mix(in srgb, var(--wash-amber-light) 72%, transparent) 0%,
     color-mix(in srgb, var(--wash-amber) 38%, transparent) 60%,
     color-mix(in srgb, var(--wash-amber-deep) 30%, transparent) 100%
   );
-  clip-path: polygon(
-    3% 6%, 97% 0%, 100% 42%, 96% 100%, 4% 96%, 0% 55%
+  --tp-stock-masking: linear-gradient(
+    176deg,
+    color-mix(in srgb, var(--paper-cream) 92%, var(--wash-lemon-light)) 0%,
+    color-mix(in srgb, var(--paper-aged) 88%, transparent) 100%
   );
+  --tp-stock-parcel: linear-gradient(
+    177deg,
+    color-mix(in srgb, var(--wash-amber-light) 80%, var(--paper-edge)) 0%,
+    color-mix(in srgb, var(--paper-edge) 82%, var(--wash-amber-deep)) 100%
+  );
+  --tp-stock-duct: linear-gradient(
+    177deg,
+    color-mix(in srgb, var(--ink-graphite-soft) 44%, var(--paper-deep)) 0%,
+    color-mix(in srgb, var(--ink-graphite) 40%, var(--paper-edge)) 100%
+  );
+  --tp-stock-gaffer: linear-gradient(
+    177deg,
+    color-mix(in srgb, var(--ink-line) 84%, var(--ink-graphite)) 0%,
+    var(--ink-line) 100%
+  );
+  --tp-stock-electric: linear-gradient(
+    172deg,
+    color-mix(in srgb, var(--ink-blue) 72%, var(--ink-line)) 0%,
+    color-mix(in srgb, var(--ink-blue-soft) 90%, var(--paper-cream)) 46%,
+    color-mix(in srgb, var(--ink-blue) 82%, var(--ink-line)) 100%
+  );
+  --tp-stock-white: linear-gradient(
+    178deg,
+    color-mix(in srgb, var(--paper-cream) 60%, #ffffff) 0%,
+    color-mix(in srgb, var(--paper-cream) 96%, var(--paper-edge)) 100%
+  );
+  --tp-stock-frosted: linear-gradient(
+    178deg,
+    color-mix(in srgb, var(--paper-cream) 46%, transparent) 0%,
+    color-mix(in srgb, var(--paper-edge) 24%, transparent) 100%
+  );
+  --tp-stock-glassy: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--wash-sky-light) 30%, transparent) 0%,
+    color-mix(in srgb, var(--paper-cream) 70%, transparent) 34%,
+    color-mix(in srgb, var(--wash-sky-light) 22%, transparent) 62%,
+    color-mix(in srgb, var(--paper-cream) 58%, transparent) 100%
+  );
+  --tp-stock-gilt: linear-gradient(
+    98deg,
+    color-mix(in srgb, var(--wash-amber-deep) 74%, transparent) 0%,
+    var(--wash-amber) 30%,
+    color-mix(in srgb, var(--wash-amber-light) 92%, transparent) 52%,
+    var(--wash-amber) 74%,
+    color-mix(in srgb, var(--wash-amber-deep) 70%, transparent) 100%
+  );
+  --tp-metal: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--paper-edge) 70%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--ink-graphite-soft) 62%, var(--paper-edge)) 100%
+  );
+  --tp-brass: linear-gradient(
+    170deg,
+    var(--wash-amber-light) 0%,
+    var(--wash-amber) 55%,
+    var(--wash-amber-deep) 100%
+  );
+  /* The torn-ended silhouette every plain strip wears. */
+  --tp-torn: polygon(3% 6%, 97% 0%, 100% 42%, 96% 100%, 4% 96%, 0% 55%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape]::before {
+  content: '';
+  position: absolute;
+  width: var(--tp-w, 74px);
+  height: var(--tp-h, 22px);
+  top: var(--tp-top, -11px);
+  bottom: var(--tp-bottom, auto);
+  left: var(--tp-left, 50%);
+  right: var(--tp-right, auto);
+  margin-left: var(--tp-ml, -37px);
+  margin-top: var(--tp-mt, 0);
+  background: var(--tp-bg, var(--tp-scotch));
+  clip-path: var(--tp-clip, var(--tp-torn));
+  border-radius: var(--tp-radius, 0);
+  border: var(--tp-border, none);
+  transform: rotate(var(--tp-rot, -2.5deg));
   box-shadow: var(--shadow-xs);
   pointer-events: none;
   z-index: 2;
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-tape='top']::before {
-  top: -11px;
-  left: 50%;
-  margin-left: -37px;
-  transform: rotate(-2.5deg);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-tape='corner']::before {
-  top: -8px;
-  right: -20px;
-  transform: rotate(42deg);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-tape='both']::before {
-  top: -8px;
-  left: -20px;
-  transform: rotate(-42deg);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-tape='both']::after {
-  top: -8px;
-  right: -20px;
-  transform: rotate(42deg);
-}
-
-/* ----------------------------------------------------------------------------
-   Washi — a patterned paper-tape strip across the top edge
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-washi='top']::before {
-  content: '';
+:is(.nb-prose, .nb-fx-specimen) [data-tape]::after {
+  content: var(--tp2, none);
   position: absolute;
-  top: -10px;
-  left: 22%;
-  width: 56%;
-  height: 19px;
-  background:
+  width: var(--tp2-w, var(--tp-w, 74px));
+  height: var(--tp2-h, var(--tp-h, 22px));
+  top: var(--tp2-top, auto);
+  bottom: var(--tp2-bottom, auto);
+  left: var(--tp2-left, auto);
+  right: var(--tp2-right, auto);
+  margin-left: var(--tp2-ml, 0);
+  margin-top: var(--tp2-mt, 0);
+  background: var(--tp2-bg, var(--tp-bg, var(--tp-scotch)));
+  clip-path: var(--tp2-clip, var(--tp-clip, var(--tp-torn)));
+  border-radius: var(--tp2-radius, var(--tp-radius, 0));
+  border: var(--tp2-border, none);
+  transform: rotate(var(--tp2-rot, 2.5deg));
+  box-shadow: var(--shadow-xs);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* --- 1a. the nine placements --------------------------------------------- */
+
+/* `top` is the base geometry — nothing to override. */
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='corner'] {
+  --tp-top: -8px;
+  --tp-left: auto;
+  --tp-right: -20px;
+  --tp-ml: 0;
+  --tp-rot: 42deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='both'] {
+  --tp-top: -8px;
+  --tp-left: -20px;
+  --tp-ml: 0;
+  --tp-rot: -42deg;
+  --tp2: '';
+  --tp2-top: -8px;
+  --tp2-right: -20px;
+  --tp2-rot: 42deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='left'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='right'] {
+  --tp-w: 22px;
+  --tp-h: 68px;
+  --tp-top: 50%;
+  --tp-mt: -34px;
+  --tp-ml: 0;
+  --tp-clip: polygon(6% 3%, 100% 0%, 94% 97%, 0% 100%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='left'] {
+  --tp-left: -12px;
+  --tp-rot: 2deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='right'] {
+  --tp-left: auto;
+  --tp-right: -12px;
+  --tp-rot: -2deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='bottom'] {
+  --tp-top: auto;
+  --tp-bottom: -11px;
+  --tp-rot: 1.8deg;
+}
+
+/* An X over the middle: two long strips at opposing angles. */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='cross'] {
+  --tp-w: 96px;
+  --tp-h: 20px;
+  --tp-top: 50%;
+  --tp-mt: -10px;
+  --tp-ml: -48px;
+  --tp-rot: 24deg;
+  --tp2: '';
+  --tp2-w: 96px;
+  --tp2-h: 20px;
+  --tp2-top: 50%;
+  --tp2-mt: -10px;
+  --tp2-left: 50%;
+  --tp2-ml: -48px;
+  --tp2-rot: -24deg;
+}
+
+/* Four corners at once: one inset box carrying four diagonal strips as
+   background layers, which is cheaper and squarer than four pseudo-elements
+   we do not have. */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='quad'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='mounts'] {
+  --tp-w: calc(100% + 30px);
+  --tp-h: calc(100% + 30px);
+  --tp-top: -15px;
+  --tp-left: -15px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='quad'] {
+  --tp-scotch-solid: color-mix(in srgb, var(--wash-amber) 34%, transparent);
+  --tp-bg:
+    linear-gradient(45deg, var(--tp-scotch-solid) 0 30px, transparent 30px) top left / 34px 34px no-repeat,
+    linear-gradient(-45deg, var(--tp-scotch-solid) 0 30px, transparent 30px) top right / 34px 34px no-repeat,
+    linear-gradient(135deg, var(--tp-scotch-solid) 0 30px, transparent 30px) bottom left / 34px 34px no-repeat,
+    linear-gradient(-135deg, var(--tp-scotch-solid) 0 30px, transparent 30px) bottom right / 34px 34px no-repeat;
+}
+
+/* Photo corners: paper triangles, not adhesive — darker, and opaque. */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='mounts'] {
+  --tp-corner: color-mix(in srgb, var(--paper-edge) 82%, var(--ink-line));
+  --tp-bg:
+    linear-gradient(45deg, var(--tp-corner) 0 22px, transparent 22px) top left / 26px 26px no-repeat,
+    linear-gradient(-45deg, var(--tp-corner) 0 22px, transparent 22px) top right / 26px 26px no-repeat,
+    linear-gradient(135deg, var(--tp-corner) 0 22px, transparent 22px) bottom left / 26px 26px no-repeat,
+    linear-gradient(-135deg, var(--tp-corner) 0 22px, transparent 22px) bottom right / 26px 26px no-repeat;
+}
+
+/* A wide band running behind the block's head — the label on a box file. */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='band'] {
+  --tp-w: calc(100% + 24px);
+  --tp-h: 30px;
+  --tp-top: -6px;
+  --tp-left: -12px;
+  --tp-ml: 0;
+  --tp-rot: -0.6deg;
+  --tp-clip: polygon(0.5% 8%, 99.5% 0%, 100% 92%, 0% 100%);
+}
+
+/* --- 1b. seven arrangements ---------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='sliver'] {
+  --tp-w: 46px;
+  --tp-h: 11px;
+  --tp-top: -5px;
+  --tp-ml: -23px;
+  --tp-rot: -3.5deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='twin'] {
+  --tp-w: 54px;
+  --tp-ml: -78px;
+  --tp-rot: -1.6deg;
+  --tp2: '';
+  --tp2-w: 54px;
+  --tp2-top: -11px;
+  --tp2-left: 50%;
+  --tp2-ml: 24px;
+  --tp2-rot: 1.6deg;
+}
+
+/* Two strips as pseudo-elements and the third as a ring on the block, because
+   there is no third pseudo-element and an over-taped block wants three. */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='triple'] {
+  --tp-w: 40px;
+  --tp-ml: -20px;
+  --tp-rot: -1deg;
+  --tp2: '';
+  --tp2-w: 40px;
+  --tp2-h: 22px;
+  --tp2-top: -11px;
+  --tp2-left: 50%;
+  --tp2-ml: -78px;
+  --tp2-rot: -4deg;
+  box-shadow: 38px -11px 0 -3px color-mix(in srgb, var(--wash-amber) 26%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='ladder'] {
+  --tp-w: 20px;
+  --tp-h: calc(100% + 8px);
+  --tp-top: -4px;
+  --tp-left: -10px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-bg: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--wash-amber) 34%, transparent) 0 16px,
+    transparent 16px 30px
+  );
+  --tp2: '';
+  --tp2-w: 20px;
+  --tp2-h: calc(100% + 8px);
+  --tp2-top: -4px;
+  --tp2-right: -10px;
+  --tp2-rot: 0deg;
+  --tp2-clip: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='seam'] {
+  --tp-w: 24px;
+  --tp-h: calc(100% + 16px);
+  --tp-top: -8px;
+  --tp-ml: -12px;
+  --tp-rot: 0.6deg;
+  --tp-clip: polygon(14% 0%, 86% 1%, 100% 99%, 0% 100%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='splice'] {
+  --tp-w: 150%;
+  --tp-h: 18px;
+  --tp-top: 46%;
+  --tp-ml: -75%;
+  --tp-rot: -8deg;
+  --tp-clip: polygon(0% 0%, 100% 6%, 100% 100%, 0% 92%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='vee'] {
+  --tp-w: 60px;
+  --tp-h: 18px;
+  --tp-top: -9px;
+  --tp-ml: -58px;
+  --tp-rot: -26deg;
+  --tp2: '';
+  --tp2-w: 60px;
+  --tp2-h: 18px;
+  --tp2-top: -9px;
+  --tp2-left: 50%;
+  --tp2-ml: 0;
+  --tp2-rot: 26deg;
+}
+
+/* --- 1c. fourteen stocks (across the head, so the material shows) --------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='masking'] {
+  --tp-bg: var(--tp-stock-masking);
+  --tp-h: 24px;
+  --tp-clip: polygon(0% 8%, 4% 0%, 96% 2%, 100% 10%, 98% 100%, 2% 96%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='parcel'] {
+  --tp-bg: var(--tp-stock-parcel);
+  --tp-w: 96px;
+  --tp-h: 26px;
+  --tp-ml: -48px;
+  --tp-rot: -1.4deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='duct'] {
+  --tp-bg: var(--tp-stock-duct);
+  --tp-w: 104px;
+  --tp-h: 30px;
+  --tp-ml: -52px;
+  --tp-rot: -1.8deg;
+  --tp-clip: polygon(0% 10%, 6% 0%, 94% 4%, 100% 12%, 96% 100%, 4% 94%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='gaffer'] {
+  --tp-bg: var(--tp-stock-gaffer);
+  --tp-w: 100px;
+  --tp-h: 26px;
+  --tp-ml: -50px;
+  --tp-rot: -1deg;
+  --tp-clip: polygon(0% 4%, 100% 0%, 100% 96%, 0% 100%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='electric'] {
+  --tp-bg: var(--tp-stock-electric);
+  --tp-w: 82px;
+  --tp-h: 17px;
+  --tp-ml: -41px;
+  --tp-rot: -3deg;
+  --tp-radius: 2px;
+  --tp-clip: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='surgical'] {
+  --tp-bg:
+    repeating-linear-gradient(
+      to right,
+      transparent 0 6px,
+      color-mix(in srgb, var(--paper-edge) 40%, transparent) 6px 7px
+    ),
+    var(--tp-stock-white);
+  --tp-w: 88px;
+  --tp-h: 22px;
+  --tp-ml: -44px;
+  --tp-rot: -1.2deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='frosted'] {
+  --tp-bg: var(--tp-stock-frosted);
+  --tp-rot: -1.5deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='glassy'] {
+  --tp-bg: var(--tp-stock-glassy);
+  --tp-h: 20px;
+  --tp-clip: polygon(0% 4%, 100% 0%, 100% 100%, 0% 96%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='crepe'] {
+  --tp-bg:
+    repeating-linear-gradient(
+      82deg,
+      color-mix(in srgb, var(--paper-edge) 26%, transparent) 0 2px,
+      transparent 2px 5px
+    ),
+    var(--tp-stock-masking);
+  --tp-h: 24px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='gummed'] {
+  --tp-bg:
+    repeating-linear-gradient(
+      to right,
+      color-mix(in srgb, var(--wash-amber-deep) 22%, transparent) 0 1px,
+      transparent 1px 9px
+    ),
+    var(--tp-stock-parcel);
+  --tp-w: 92px;
+  --tp-h: 24px;
+  --tp-ml: -46px;
+  --tp-clip: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='strapping'] {
+  --tp-bg:
+    repeating-linear-gradient(
+      to right,
+      color-mix(in srgb, var(--wash-amber-deep) 34%, transparent) 0 1px,
+      transparent 1px 5px
+    ),
+    var(--tp-stock-parcel);
+  --tp-w: 100px;
+  --tp-h: 20px;
+  --tp-ml: -50px;
+  --tp-rot: -1deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='bookcloth'] {
+  --tp-bg:
     repeating-linear-gradient(
       45deg,
-      color-mix(in srgb, var(--paper-cream) 55%, transparent) 0 5px,
-      transparent 5px 10px
+      color-mix(in srgb, var(--ink-line) 16%, transparent) 0 2px,
+      transparent 2px 4px
     ),
-    color-mix(in srgb, var(--wash-terracotta) 55%, transparent);
-  clip-path: polygon(2% 4%, 98% 0%, 100% 94%, 0% 100%);
-  transform: rotate(-1.2deg);
+    linear-gradient(
+      178deg,
+      color-mix(in srgb, var(--wash-terracotta) 88%, var(--ink-line)) 0%,
+      color-mix(in srgb, var(--wash-terracotta-deep) 92%, transparent) 100%
+    );
+  --tp-w: 26px;
+  --tp-h: calc(100% + 12px);
+  --tp-top: -6px;
+  --tp-left: -13px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 2px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='kraft'] {
+  --tp-bg: linear-gradient(
+    177deg,
+    color-mix(in srgb, var(--paper-edge) 88%, var(--wash-amber-light)) 0%,
+    color-mix(in srgb, var(--paper-edge) 96%, var(--ink-line)) 100%
+  );
+  --tp-w: 86px;
+  --tp-h: 25px;
+  --tp-ml: -43px;
+  --tp-clip: polygon(2% 10%, 8% 0%, 92% 3%, 99% 12%, 96% 100%, 5% 93%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='foilstrip'] {
+  --tp-bg: var(--tp-stock-gilt);
+  --tp-w: 92px;
+  --tp-h: 16px;
+  --tp-ml: -46px;
+  --tp-rot: -1deg;
+  --tp-clip: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
+}
+
+/* --- 1d. fifteen fasteners ----------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='staple'] {
+  --tp-w: 26px;
+  --tp-h: 7px;
+  --tp-top: 8px;
+  --tp-left: 10px;
+  --tp-ml: 0;
+  --tp-rot: -32deg;
+  --tp-clip: none;
+  --tp-radius: 1px;
+  --tp-bg: var(--tp-metal);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='clip'] {
+  --tp-w: 15px;
+  --tp-h: 40px;
+  --tp-top: -12px;
+  --tp-left: 22px;
+  --tp-ml: 0;
+  --tp-rot: 9deg;
+  --tp-clip: none;
+  --tp-radius: 8px;
+  --tp-bg: none;
+  --tp-border: 2.5px solid color-mix(in srgb, var(--ink-graphite-soft) 70%, var(--paper-edge));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='bulldog'] {
+  --tp-w: 46px;
+  --tp-h: 20px;
+  --tp-top: -12px;
+  --tp-ml: -23px;
+  --tp-rot: -1.5deg;
+  --tp-clip: polygon(0% 0%, 100% 0%, 88% 100%, 12% 100%);
+  --tp-radius: 2px;
+  --tp-bg: var(--tp-metal);
+  --tp2: '';
+  --tp2-w: 14px;
+  --tp2-h: 9px;
+  --tp2-top: -18px;
+  --tp2-left: 50%;
+  --tp2-ml: -7px;
+  --tp2-rot: 0deg;
+  --tp2-clip: none;
+  --tp2-radius: 4px 4px 0 0;
+  --tp2-bg: none;
+  --tp2-border: 2px solid color-mix(in srgb, var(--ink-graphite-soft) 74%, var(--paper-edge));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='pushpin'] {
+  --tp-w: 17px;
+  --tp-h: 17px;
+  --tp-top: -8px;
+  --tp-ml: -8px;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 50%;
+  --tp-bg: radial-gradient(
+    circle at 34% 30%,
+    var(--wash-coral) 0 38%,
+    var(--wash-coral-deep) 39% 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='tack'] {
+  --tp-w: 11px;
+  --tp-h: 11px;
+  --tp-top: 9px;
+  --tp-left: 12px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 50%;
+  --tp-bg: var(--tp-brass);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='eyelet'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='grommet'] {
+  --tp-w: 13px;
+  --tp-h: 13px;
+  --tp-top: 12px;
+  --tp-left: -7px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 50%;
+  --tp-bg: var(--paper-cream);
+  --tp-border: 2.5px solid var(--paper-edge);
+  --tp2: '';
+  --tp2-w: 13px;
+  --tp2-h: 13px;
+  --tp2-bottom: 12px;
+  --tp2-left: -7px;
+  --tp2-rot: 0deg;
+  --tp2-clip: none;
+  --tp2-radius: 50%;
+  --tp2-bg: var(--paper-cream);
+  --tp2-border: 2.5px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='grommet'] {
+  --tp-w: 17px;
+  --tp-h: 17px;
+  --tp2-w: 17px;
+  --tp2-h: 17px;
+  --tp-border: 3px solid color-mix(in srgb, var(--ink-graphite-soft) 66%, var(--paper-edge));
+  --tp2-border: 3px solid color-mix(in srgb, var(--ink-graphite-soft) 66%, var(--paper-edge));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='studded'] {
+  --tp-w: calc(100% + 18px);
+  --tp-h: calc(100% + 18px);
+  --tp-top: -9px;
+  --tp-left: -9px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-stud: radial-gradient(
+    circle at 50% 42%,
+    color-mix(in srgb, var(--paper-edge) 90%, var(--paper-cream)) 0 34%,
+    color-mix(in srgb, var(--ink-graphite-soft) 74%, var(--paper-edge)) 36% 100%
+  );
+  --tp-bg:
+    var(--tp-stud) top left / 11px 11px no-repeat,
+    var(--tp-stud) top right / 11px 11px no-repeat,
+    var(--tp-stud) bottom left / 11px 11px no-repeat,
+    var(--tp-stud) bottom right / 11px 11px no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='brad'] {
+  --tp-w: 14px;
+  --tp-h: 14px;
+  --tp-top: -7px;
+  --tp-left: 26px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 50%;
+  --tp-bg:
+    linear-gradient(
+      to bottom,
+      transparent 0 46%,
+      color-mix(in srgb, var(--wash-amber-deep) 70%, transparent) 46% 54%,
+      transparent 54%
+    ),
+    var(--tp-brass);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='wax'] {
+  --tp-w: 30px;
+  --tp-h: 30px;
+  --tp-top: -14px;
+  --tp-left: auto;
+  --tp-right: 18px;
+  --tp-ml: 0;
+  --tp-rot: -6deg;
+  --tp-radius: 46% 54% 52% 48% / 50% 46% 54% 50%;
+  --tp-clip: none;
+  --tp-bg: radial-gradient(
+    circle at 40% 34%,
+    var(--wash-coral) 0 40%,
+    var(--wash-coral-deep) 42% 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='ribbon'] {
+  --tp-w: calc(100% + 20px);
+  --tp-h: 14px;
+  --tp-top: 22%;
+  --tp-left: -10px;
+  --tp-ml: 0;
+  --tp-rot: -1deg;
+  --tp-clip: none;
+  --tp-bg: linear-gradient(
+    178deg,
+    color-mix(in srgb, var(--wash-blush-light) 90%, transparent) 0%,
+    color-mix(in srgb, var(--wash-blush) 82%, transparent) 100%
+  );
+  --tp2: '';
+  --tp2-w: 26px;
+  --tp2-h: 26px;
+  --tp2-top: calc(22% - 6px);
+  --tp2-left: 34%;
+  --tp2-rot: 45deg;
+  --tp2-clip: polygon(0% 50%, 50% 0%, 100% 50%, 50% 100%);
+  --tp2-bg: color-mix(in srgb, var(--wash-blush) 88%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='string'] {
+  --tp-w: 14px;
+  --tp-h: 14px;
+  --tp-top: -7px;
+  --tp-left: auto;
+  --tp-right: 24px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 50%;
+  --tp-bg: var(--paper-edge);
+  --tp-border: 1.5px solid var(--ink-line);
+  --tp2: '';
+  --tp2-w: 70px;
+  --tp2-h: 2px;
+  --tp2-top: 0;
+  --tp2-right: 30px;
+  --tp2-rot: -14deg;
+  --tp2-clip: none;
+  --tp2-bg: var(--ink-line-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='pouch'] {
+  --tp-w: calc(100% + 22px);
+  --tp-h: 34px;
+  --tp-top: auto;
+  --tp-bottom: -14px;
+  --tp-left: -11px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: none;
+  --tp-radius: 0 0 4px 4px;
+  --tp-bg: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--paper-aged) 96%, transparent) 0%,
+    color-mix(in srgb, var(--paper-deep) 96%, transparent) 100%
+  );
+  --tp-border: 1.5px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='dogear'] {
+  --tp-w: 30px;
+  --tp-h: 30px;
+  --tp-top: -1px;
+  --tp-left: auto;
+  --tp-right: -1px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: polygon(0% 0%, 100% 0%, 100% 100%);
+  --tp-bg: linear-gradient(
+    225deg,
+    var(--paper-aged) 0 52%,
+    color-mix(in srgb, var(--paper-edge) 78%, transparent) 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='hinge'] {
+  --tp-w: 18px;
+  --tp-h: 34px;
+  --tp-top: 14%;
+  --tp-left: -9px;
+  --tp-ml: 0;
+  --tp-rot: 0deg;
+  --tp-clip: polygon(4% 4%, 100% 0%, 96% 100%, 0% 96%);
+  --tp2: '';
+  --tp2-w: 18px;
+  --tp2-h: 34px;
+  --tp2-bottom: 14%;
+  --tp2-left: -9px;
+  --tp2-rot: 0deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='patch'] {
+  --tp-w: 62px;
+  --tp-h: 40px;
+  --tp-top: -8px;
+  --tp-left: auto;
+  --tp-right: 12%;
+  --tp-ml: 0;
+  --tp-rot: 12deg;
+  --tp-clip: polygon(6% 2%, 94% 0%, 100% 46%, 92% 98%, 8% 100%, 0% 52%);
+  --tp-bg: color-mix(in srgb, var(--wash-amber-light) 46%, transparent);
+}
+
+/* --- 1e. tape that has been on the page a while --------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='ripped'] {
+  --tp-w: 80px;
+  --tp-h: 24px;
+  --tp-ml: -40px;
+  --tp-clip: polygon(
+    0% 12%, 9% 0%, 18% 14%, 27% 2%, 38% 16%, 50% 3%, 62% 15%, 74% 4%, 86% 14%,
+    100% 6%, 96% 96%, 84% 84%, 72% 100%, 58% 86%, 44% 98%, 30% 84%, 16% 100%,
+    4% 88%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='curled'] {
+  --tp-w: 80px;
+  --tp-h: 26px;
+  --tp-ml: -40px;
+  --tp-rot: -3deg;
+  --tp-clip: polygon(0% 34%, 12% 4%, 88% 0%, 100% 30%, 96% 100%, 4% 96%);
+  --tp-bg: linear-gradient(
+    172deg,
+    color-mix(in srgb, var(--paper-edge) 62%, transparent) 0%,
+    color-mix(in srgb, var(--wash-amber-light) 70%, transparent) 34%,
+    color-mix(in srgb, var(--wash-amber) 30%, transparent) 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-tape='yellowed'] {
+  --tp-w: 84px;
+  --tp-h: 24px;
+  --tp-ml: -42px;
+  --tp-bg: linear-gradient(
+    176deg,
+    color-mix(in srgb, var(--wash-lemon) 44%, transparent) 0%,
+    color-mix(in srgb, var(--wash-amber-deep) 34%, transparent) 100%
+  );
+}
+
+/* ============================================================================
+   2. WASHI — patterned paper tape
+   ==========================================================================
+
+   Seven placements of a plain strip, then forty-three PRINTS. A print sets
+   `--ws-pat` (one or more repeating-gradient layers) and, where the print is
+   about pigment rather than motif, `--ws-ground`. Every print reads the
+   block's own tint through `--fx-base`, so a washi strip on a sky-tinted
+   sticky note comes out sky.
+   ========================================================================== */
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi] {
+  --ws-ink: color-mix(in srgb, var(--paper-cream) 62%, transparent);
+  --ws-ink2: color-mix(in srgb, var(--ink-line) 24%, transparent);
+  --ws-ground: color-mix(in srgb, var(--fx-base, var(--wash-terracotta)) 55%, transparent);
+  --ws-pat: repeating-linear-gradient(
+    45deg,
+    var(--ws-ink) 0 5px,
+    transparent 5px 10px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi]::before {
+  content: '';
+  position: absolute;
+  width: var(--ws-w, 56%);
+  height: var(--ws-h, 19px);
+  top: var(--ws-top, -10px);
+  bottom: var(--ws-bottom, auto);
+  left: var(--ws-left, 22%);
+  right: var(--ws-right, auto);
+  background: var(--ws-pat), var(--ws-ground);
+  clip-path: var(--ws-clip, polygon(2% 4%, 98% 0%, 100% 94%, 0% 100%));
+  transform: rotate(var(--ws-rot, -1.2deg));
   box-shadow: var(--shadow-xs);
   pointer-events: none;
   z-index: 2;
 }
 
-/* ----------------------------------------------------------------------------
-   Shadow — the block lifts gently off the page
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-shadow='soft'] {
-  background: var(--paper-cream);
-  border-radius: var(--radius-md);
-  padding: var(--space-8) var(--space-12);
-  box-shadow: var(--shadow-md);
-}
-
-/* ----------------------------------------------------------------------------
-   Frame — scallop (radial-gradient border mask) and stitch (dashed outline)
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-frame='scallop'] {
-  padding: var(--space-12) var(--space-16);
-  isolation: isolate; /* keeps the z-index:-1 frame behind content only */
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-frame='scallop']::before {
-  content: '';
+:is(.nb-prose, .nb-fx-specimen) [data-washi]::after {
+  content: var(--ws2, none);
   position: absolute;
-  inset: -9px;
-  z-index: -1;
-  --nb-sc: 7px;
-  background: color-mix(in srgb, var(--wash-amber) 28%, var(--paper-cream));
-  -webkit-mask:
-    radial-gradient(var(--nb-sc), #000 97%, transparent) round
-      calc(-1.5 * var(--nb-sc)) calc(-1.5 * var(--nb-sc)) /
-      calc(3 * var(--nb-sc)) calc(3 * var(--nb-sc)),
-    linear-gradient(#000 0 0) 50% 50% /
-      calc(100% - 2 * var(--nb-sc)) calc(100% - 2 * var(--nb-sc)) no-repeat;
-  mask:
-    radial-gradient(var(--nb-sc), #000 97%, transparent) round
-      calc(-1.5 * var(--nb-sc)) calc(-1.5 * var(--nb-sc)) /
-      calc(3 * var(--nb-sc)) calc(3 * var(--nb-sc)),
-    linear-gradient(#000 0 0) 50% 50% /
-      calc(100% - 2 * var(--nb-sc)) calc(100% - 2 * var(--nb-sc)) no-repeat;
+  width: var(--ws2-w, var(--ws-w, 56%));
+  height: var(--ws2-h, var(--ws-h, 19px));
+  top: var(--ws2-top, auto);
+  bottom: var(--ws2-bottom, auto);
+  left: var(--ws2-left, auto);
+  right: var(--ws2-right, auto);
+  background: var(--ws-pat), var(--ws-ground);
+  clip-path: var(--ws-clip, polygon(2% 4%, 98% 0%, 100% 94%, 0% 100%));
+  transform: rotate(var(--ws2-rot, 1.2deg));
+  box-shadow: var(--shadow-xs);
   pointer-events: none;
+  z-index: 2;
+}
+
+/* --- 2a. the seven placements -------------------------------------------- */
+
+/* `top` is the base geometry. */
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='left'],
+:is(.nb-prose, .nb-fx-specimen) [data-washi='right'] {
+  --ws-w: 18px;
+  --ws-h: 62%;
+  --ws-top: 14%;
+  --ws-clip: polygon(4% 2%, 100% 0%, 96% 100%, 0% 98%);
+  --ws-rot: 0.8deg;
+  --ws-ground: color-mix(in srgb, var(--fx-base, var(--wash-moss)) 55%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='left'] {
+  --ws-left: -9px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='right'] {
+  --ws-left: auto;
+  --ws-right: -9px;
+  --ws-rot: -0.8deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='corner'] {
+  --ws-w: 62px;
+  --ws-h: 18px;
+  --ws-top: -9px;
+  --ws-left: -14px;
+  --ws-rot: -38deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='bottom'] {
+  --ws-top: auto;
+  --ws-bottom: -10px;
+  --ws-rot: 1.2deg;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='cross'] {
+  --ws-w: 120%;
+  --ws-h: 18px;
+  --ws-top: 46%;
+  --ws-left: -10%;
+  --ws-rot: 11deg;
+  --ws2: '';
+  --ws2-w: 120%;
+  --ws2-top: 46%;
+  --ws2-left: -10%;
+  --ws2-rot: -11deg;
+}
+
+/* All four edges: one inset ring, clipped hollow, so the print turns the
+   corners the way a taped-down border does. */
+:is(.nb-prose, .nb-fx-specimen) [data-washi='edge'] {
+  --ws-w: calc(100% + 20px);
+  --ws-h: calc(100% + 20px);
+  --ws-top: -10px;
+  --ws-left: -10px;
+  --ws-rot: 0deg;
+  --ws-clip: polygon(
+    0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 18px,
+    18px 18px, 18px calc(100% - 18px), calc(100% - 18px) calc(100% - 18px),
+    calc(100% - 18px) 18px, 0% 18px
+  );
+}
+
+/* --- 2b. forty-three prints ---------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='stripe'] {
+  --ws-pat: repeating-linear-gradient(62deg, var(--ws-ink) 0 6px, transparent 6px 13px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='pinstripe'] {
+  --ws-pat: repeating-linear-gradient(90deg, var(--ws-ink) 0 1.5px, transparent 1.5px 7px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='gingham'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 6px, transparent 6px 12px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='check'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink2) 0 1.5px, transparent 1.5px 11px),
+    repeating-linear-gradient(0deg, var(--ws-ink2) 0 1.5px, transparent 1.5px 11px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='tartan'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 3px, transparent 3px 9px, var(--ws-ink2) 9px 11px, transparent 11px 18px),
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 3px, transparent 3px 9px, var(--ws-ink2) 9px 11px, transparent 11px 18px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='plaid'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 8px, transparent 8px 16px),
+    repeating-linear-gradient(0deg, var(--ws-ink2) 0 4px, transparent 4px 16px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='chevron'] {
+  --ws-pat:
+    repeating-linear-gradient(58deg, var(--ws-ink) 0 4px, transparent 4px 9px) 0 0 / 100% 50% no-repeat,
+    repeating-linear-gradient(-58deg, var(--ws-ink) 0 4px, transparent 4px 9px) 0 100% / 100% 50% no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='herringbone'] {
+  --ws-pat:
+    repeating-linear-gradient(45deg, var(--ws-ink) 0 2px, transparent 2px 6px) 0 0 / 12px 100% repeat-x,
+    repeating-linear-gradient(-45deg, var(--ws-ink) 0 2px, transparent 2px 6px) 6px 0 / 12px 100% repeat-x;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='zigzag'] {
+  --ws-pat: repeating-linear-gradient(45deg, var(--ws-ink) 0 4px, transparent 4px 8px);
+  --ws-clip: polygon(
+    0% 0%, 100% 0%, 100% 74%, 94% 100%, 88% 74%, 82% 100%, 76% 74%, 70% 100%,
+    64% 74%, 58% 100%, 52% 74%, 46% 100%, 40% 74%, 34% 100%, 28% 74%, 22% 100%,
+    16% 74%, 10% 100%, 4% 74%, 0% 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='wavy'] {
+  --ws-pat: repeating-radial-gradient(
+    circle at 50% 130%,
+    transparent 0 5px,
+    var(--ws-ink) 5px 7px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='scalloped'] {
+  --ws-pat: radial-gradient(circle at 50% 0%, var(--ws-ink) 0 6px, transparent 6.5px)
+    0 0 / 14px 14px repeat-x;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='diamond'] {
+  --ws-pat:
+    repeating-linear-gradient(45deg, var(--ws-ink) 0 1.5px, transparent 1.5px 10px),
+    repeating-linear-gradient(-45deg, var(--ws-ink) 0 1.5px, transparent 1.5px 10px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='argyle'] {
+  --ws-pat:
+    repeating-linear-gradient(45deg, var(--ws-ink) 0 6px, transparent 6px 20px),
+    repeating-linear-gradient(-45deg, var(--ws-ink) 0 6px, transparent 6px 20px),
+    repeating-linear-gradient(45deg, var(--ws-ink2) 0 1px, transparent 1px 20px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='lattice'] {
+  --ws-pat:
+    repeating-linear-gradient(30deg, var(--ws-ink) 0 1.5px, transparent 1.5px 9px),
+    repeating-linear-gradient(-30deg, var(--ws-ink) 0 1.5px, transparent 1.5px 9px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='honeycomb'] {
+  --ws-pat:
+    repeating-linear-gradient(60deg, var(--ws-ink) 0 1.5px, transparent 1.5px 8px),
+    repeating-linear-gradient(-60deg, var(--ws-ink) 0 1.5px, transparent 1.5px 8px),
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 1.5px, transparent 1.5px 14px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='brickwork'] {
+  --ws-pat:
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 1.5px, transparent 1.5px 8px),
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 1.5px, transparent 1.5px 16px) 0 0 / 16px 16px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='mosaic'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 5px, transparent 5px 7px),
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 5px, transparent 5px 7px),
+    repeating-linear-gradient(45deg, var(--ws-ink2) 0 2px, transparent 2px 14px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='ticking'] {
+  --ws-pat: repeating-linear-gradient(
+    90deg,
+    var(--ws-ink2) 0 2px,
+    transparent 2px 4px,
+    var(--ws-ink2) 4px 5px,
+    transparent 5px 16px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='seersucker'] {
+  --ws-pat: repeating-linear-gradient(
+    90deg,
+    var(--ws-ink) 0 4px,
+    transparent 4px 6px,
+    var(--ws-ink) 6px 7px,
+    transparent 7px 12px
+  );
+  --ws-clip: polygon(0% 6%, 100% 0%, 100% 92%, 0% 100%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='spots'] {
+  --ws-pat: radial-gradient(var(--ws-ink) 1.8px, transparent 2.2px) 0 0 / 9px 9px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='polka'] {
+  --ws-pat: radial-gradient(var(--ws-ink) 4px, transparent 4.6px) 0 0 / 15px 15px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='confetti'] {
+  --ws-pat:
+    radial-gradient(var(--ws-ink) 1.6px, transparent 2px) 2px 3px / 13px 11px,
+    radial-gradient(var(--ws-ink2) 1.4px, transparent 1.8px) 8px 9px / 17px 13px,
+    radial-gradient(var(--ws-ink) 1.2px, transparent 1.6px) 13px 2px / 11px 15px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='beads'] {
+  --ws-pat: radial-gradient(circle at 50% 50%, var(--ws-ink) 0 3px, transparent 3.4px)
+    0 50% / 9px 100% repeat-x;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='speckle'] {
+  --ws-pat:
+    radial-gradient(var(--ws-ink2) 0.9px, transparent 1.2px) 0 0 / 7px 6px,
+    radial-gradient(var(--ws-ink2) 0.7px, transparent 1px) 3px 4px / 5px 9px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='ricrac'] {
+  --ws-pat:
+    repeating-linear-gradient(52deg, var(--ws-ink) 0 3px, transparent 3px 7px) 0 0 / 100% 50% no-repeat,
+    repeating-linear-gradient(-52deg, var(--ws-ink) 0 3px, transparent 3px 7px) 0 100% / 100% 50% no-repeat;
+  --ws-clip: polygon(
+    0% 12%, 8% 0%, 16% 12%, 24% 0%, 32% 12%, 40% 0%, 48% 12%, 56% 0%, 64% 12%,
+    72% 0%, 80% 12%, 88% 0%, 96% 12%, 100% 4%,
+    100% 88%, 92% 100%, 84% 88%, 76% 100%, 68% 88%, 60% 100%, 52% 88%,
+    44% 100%, 36% 88%, 28% 100%, 20% 88%, 12% 100%, 4% 88%, 0% 96%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='floral'] {
+  --ws-pat:
+    radial-gradient(circle, var(--ws-ink) 0 2.2px, transparent 2.6px) 0 0 / 14px 14px,
+    radial-gradient(circle, var(--ws-ink) 0 1.4px, transparent 1.8px) 7px 7px / 14px 14px,
+    radial-gradient(circle, var(--ws-ink2) 0 1px, transparent 1.4px) 4px 10px / 14px 14px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='ivy'] {
+  --ws-pat:
+    repeating-linear-gradient(74deg, var(--ws-ink) 0 1.5px, transparent 1.5px 12px),
+    radial-gradient(ellipse 4px 2.4px, var(--ws-ink) 0 100%, transparent 100%) 3px 4px / 12px 11px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='vine'] {
+  --ws-pat:
+    repeating-radial-gradient(circle at 0 50%, transparent 0 5px, var(--ws-ink) 5px 6.5px) 0 0 / 12px 100%,
+    radial-gradient(ellipse 3px 2px, var(--ws-ink) 0 100%, transparent 100%) 6px 3px / 12px 13px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='fern'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 1.4px, transparent 1.4px 11px),
+    repeating-linear-gradient(38deg, var(--ws-ink) 0 1.2px, transparent 1.2px 6px) 0 0 / 11px 100%,
+    repeating-linear-gradient(-38deg, var(--ws-ink) 0 1.2px, transparent 1.2px 6px) 0 0 / 11px 100%;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='bamboo'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink2) 0 2px, transparent 2px 15px),
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 1.2px, transparent 1.2px 6px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='clouds'] {
+  --ws-pat:
+    radial-gradient(circle at 50% 100%, var(--ws-ink) 0 5px, transparent 5.4px) 0 -2px / 18px 12px,
+    radial-gradient(circle at 20% 100%, var(--ws-ink) 0 3.4px, transparent 3.8px) 0 -2px / 18px 12px,
+    radial-gradient(circle at 80% 100%, var(--ws-ink) 0 3.4px, transparent 3.8px) 0 -2px / 18px 12px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='rainbow'] {
+  --ws-ground: transparent;
+  --ws-pat: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--wash-coral) 74%, transparent) 0 20%,
+    color-mix(in srgb, var(--wash-amber) 74%, transparent) 20% 40%,
+    color-mix(in srgb, var(--wash-moss) 74%, transparent) 40% 60%,
+    color-mix(in srgb, var(--wash-sky) 68%, transparent) 60% 80%,
+    color-mix(in srgb, var(--wash-violet) 68%, transparent) 80% 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='moons'] {
+  --ws-pat:
+    radial-gradient(circle at 42% 50%, var(--ws-ink) 0 4.6px, transparent 5px) 0 0 / 16px 100%,
+    radial-gradient(circle at 62% 50%, var(--ws-ground) 0 4.6px, transparent 5px) 0 0 / 16px 100%;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='sunbeam'] {
+  --ws-pat: repeating-conic-gradient(
+    from 0deg at 50% 140%,
+    var(--ws-ink) 0deg 6deg,
+    transparent 6deg 14deg
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='stars'] {
+  --ws-pat:
+    conic-gradient(from 45deg at 50% 50%, var(--ws-ink) 0 25%, transparent 0 50%, var(--ws-ink) 0 75%, transparent 0)
+      0 0 / 13px 13px,
+    radial-gradient(var(--ws-ink) 1px, transparent 1.4px) 6px 6px / 13px 13px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='hearts'] {
+  --ws-pat:
+    radial-gradient(circle at 32% 38%, var(--ws-ink) 0 3px, transparent 3.4px) 0 0 / 14px 14px,
+    radial-gradient(circle at 66% 38%, var(--ws-ink) 0 3px, transparent 3.4px) 0 0 / 14px 14px,
+    linear-gradient(45deg, transparent 45%, var(--ws-ink) 45% 62%, transparent 62%) 0 0 / 14px 14px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='arrows'] {
+  --ws-pat:
+    repeating-linear-gradient(56deg, var(--ws-ink) 0 2px, transparent 2px 12px) 0 0 / 100% 50% no-repeat,
+    repeating-linear-gradient(-56deg, var(--ws-ink) 0 2px, transparent 2px 12px) 0 100% / 100% 50% no-repeat,
+    repeating-linear-gradient(90deg, var(--ws-ink2) 0 1px, transparent 1px 12px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='ticks'] {
+  --ws-pat:
+    repeating-linear-gradient(48deg, var(--ws-ink) 0 2px, transparent 2px 14px) 0 30% / 100% 44% no-repeat,
+    repeating-linear-gradient(-64deg, var(--ws-ink) 0 2px, transparent 2px 14px) 4px 62% / 100% 34% no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='grid'] {
+  --ws-pat:
+    repeating-linear-gradient(90deg, var(--ws-ink) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(0deg, var(--ws-ink) 0 1px, transparent 1px 6px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='ombre'] {
+  --ws-pat: linear-gradient(
+    92deg,
+    color-mix(in srgb, var(--paper-cream) 84%, transparent) 0%,
+    transparent 46%,
+    color-mix(in srgb, var(--ink-line) 20%, transparent) 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='marble'] {
+  --ws-pat:
+    repeating-radial-gradient(ellipse 30px 6px at 20% 40%, var(--ws-ink) 0 2px, transparent 2px 7px),
+    repeating-radial-gradient(ellipse 26px 5px at 70% 60%, var(--ws-ink2) 0 1.5px, transparent 1.5px 8px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='lace'] {
+  --ws-ground: color-mix(in srgb, var(--paper-cream) 82%, transparent);
+  --ws-pat:
+    radial-gradient(circle, transparent 0 2.6px, var(--ws-ink2) 2.6px 3.4px, transparent 3.4px) 0 0 / 10px 10px,
+    radial-gradient(circle, transparent 0 1.2px, var(--ws-ink2) 1.2px 1.8px, transparent 1.8px) 5px 5px / 10px 10px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-washi='gilt'] {
+  --ws-ground: transparent;
+  --ws-pat: linear-gradient(
+    98deg,
+    color-mix(in srgb, var(--wash-amber-deep) 78%, transparent) 0%,
+    var(--wash-amber) 28%,
+    color-mix(in srgb, var(--wash-amber-light) 94%, transparent) 50%,
+    var(--wash-amber) 72%,
+    color-mix(in srgb, var(--wash-amber-deep) 74%, transparent) 100%
+  );
+}
+
+/* ============================================================================
+   3. LIFT — how the block sits on the page (`shadow` in the script language)
+   ==========================================================================
+
+   Fifty, and NOT ONE has a blur radius: the flat rule says depth is a darker
+   flat face beside a lighter one, so an entry here varies by the direction of
+   its plate, how many plates, what colour they are, and whether the block
+   rises out of the page or is sunk into it. `0px` rather than `0` in every
+   blur slot on purpose — tests/styles.test.ts reads the THIRD length token,
+   and a unitless zero is not a length token.
+   ========================================================================== */
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow] {
+  padding: var(--lf-pad, var(--space-8) var(--space-12));
+  background: var(--lf-bg, var(--paper-cream));
+  border: var(--lf-border, none);
+  border-radius: var(--lf-radius, var(--radius-wobble-sm));
+  box-shadow: var(--lf-shadow, none);
+}
+
+/* --- raised: an offset plate, alone or in a stack ------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='soft'] {
+  --lf-radius: var(--radius-md);
+  --lf-shadow: var(--shadow-md);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='lifted'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow: 5px 5px 0px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='stacked'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow:
+    4px 4px 0px var(--paper-aged),
+    4px 4px 0px 1.5px var(--ink-line),
+    8px 8px 0px var(--paper-deep),
+    8px 8px 0px 1.5px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='plate'] {
+  --lf-border: 2px solid var(--ink-line);
+  --lf-radius: 2px;
+  --lf-shadow: 6px 6px 0px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='deep'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow: 12px 12px 0px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='float'] {
+  --lf-border: 1.5px solid var(--paper-edge);
+  --lf-shadow: 0px 10px 0px color-mix(in srgb, var(--paper-deep) 70%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='hover'] {
+  --lf-border: 1px solid var(--paper-edge);
+  --lf-shadow: 0px 4px 0px color-mix(in srgb, var(--paper-edge) 60%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='drop'] {
+  --lf-border: 1.5px solid var(--ink-line-soft);
+  --lf-shadow: 4px 4px 0px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='longcast'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow: 18px 8px 0px color-mix(in srgb, var(--paper-deep) 82%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='hard'] {
+  --lf-border: 2.5px solid var(--ink-line);
+  --lf-radius: 0;
+  --lf-shadow: 7px 7px 0px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='halo'] {
+  --lf-radius: var(--radius-md);
+  --lf-shadow: 0px 0px 0px 7px color-mix(in srgb, var(--wash-amber-light) 62%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='ring'] {
+  --lf-radius: var(--radius-md);
+  --lf-shadow:
+    0px 0px 0px 2px var(--paper-cream),
+    0px 0px 0px 4px var(--ink-line);
+}
+
+/* --- mounted: the block is stuck to something ---------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='card'] {
+  --lf-bg: var(--paper-aged);
+  --lf-border: 1.5px solid var(--paper-edge);
+  --lf-shadow: 3px 3px 0px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='mat'] {
+  --lf-radius: 1px;
+  --lf-shadow:
+    0px 0px 0px 14px var(--paper-aged),
+    0px 0px 0px 15.5px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='mount'] {
+  --lf-radius: 1px;
+  --lf-shadow: 0px 0px 0px 9px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='passepartout'] {
+  --lf-radius: 0;
+  --lf-shadow:
+    0px 0px 0px 10px var(--paper-cream),
+    0px 0px 0px 11px var(--paper-edge),
+    0px 0px 0px 20px var(--paper-aged),
+    0px 0px 0px 22px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='gallery'] {
+  --lf-radius: 0;
+  --lf-shadow:
+    0px 0px 0px 16px var(--paper-cream),
+    0px 0px 0px 19px var(--ink-line),
+    22px 22px 0px -3px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='vitrine'] {
+  --lf-bg: linear-gradient(
+    112deg,
+    color-mix(in srgb, var(--wash-sky-light) 34%, var(--paper-cream)) 0%,
+    var(--paper-cream) 44%,
+    color-mix(in srgb, var(--wash-sky-light) 26%, var(--paper-cream)) 100%
+  );
+  --lf-border: 2px solid var(--wash-sky-deep);
+  --lf-radius: 2px;
+  --lf-shadow: 0px 0px 0px 5px color-mix(in srgb, var(--wash-sky-light) 50%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='board'] {
+  --lf-radius: 0;
+  --lf-shadow: 0px 0px 0px 11px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='cork'] {
+  --lf-bg:
+    radial-gradient(color-mix(in srgb, var(--wash-amber-deep) 22%, transparent) 1.1px, transparent 1.5px)
+      0 0 / 7px 6px,
+    color-mix(in srgb, var(--wash-amber-light) 78%, var(--paper-edge));
+  --lf-shadow: 0px 0px 0px 10px color-mix(in srgb, var(--wash-amber-light) 70%, var(--paper-edge));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='felt'] {
+  --lf-bg: color-mix(in srgb, var(--wash-moss-light) 74%, var(--paper-aged));
+  --lf-radius: var(--radius-md);
+  --lf-shadow: 0px 0px 0px 8px color-mix(in srgb, var(--wash-moss) 40%, var(--paper-aged));
+}
+
+/* --- sunk: the page is cut, hollowed or pressed -------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='sunken'] {
+  --lf-bg: var(--paper-deep);
+  --lf-border: 1.5px solid var(--paper-edge);
+  --lf-shadow: inset 3px 3px 0px color-mix(in srgb, var(--ink-line) 16%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='well'] {
+  --lf-bg: var(--paper-deep);
+  --lf-radius: var(--radius-md);
+  --lf-shadow:
+    inset 0px 5px 0px color-mix(in srgb, var(--ink-line) 20%, transparent),
+    inset 0px -3px 0px color-mix(in srgb, var(--paper-cream) 80%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='groove'] {
+  --lf-bg: color-mix(in srgb, var(--paper-deep) 60%, var(--paper-cream));
+  --lf-radius: var(--radius-pill);
+  --lf-shadow: inset 0px 2px 0px color-mix(in srgb, var(--ink-line) 18%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='letterbox'] {
+  --lf-radius: 0;
+  --lf-shadow:
+    inset 0px 6px 0px var(--paper-deep),
+    inset 0px -6px 0px var(--paper-deep),
+    0px 0px 0px 1.5px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='emboss'] {
+  --lf-bg: transparent;
+  --lf-shadow:
+    inset 1px 1px 0px var(--paper-cream),
+    inset -1px -1px 0px var(--paper-edge),
+    0px 0px 0px 1px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='deboss'] {
+  --lf-bg: transparent;
+  --lf-shadow:
+    inset -1px -1px 0px var(--paper-cream),
+    inset 1px 1px 0px var(--paper-edge),
+    0px 0px 0px 1px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='press'] {
+  --lf-bg: color-mix(in srgb, var(--paper-aged) 70%, var(--paper-cream));
+  --lf-radius: 1px;
+  --lf-shadow:
+    inset 0px 0px 0px 1.5px var(--paper-edge),
+    inset 2px 2px 0px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='relief'] {
+  --lf-bg: color-mix(in srgb, var(--paper-deep) 55%, var(--paper-aged));
+  --lf-radius: 2px;
+  --lf-shadow:
+    inset 0px 3px 0px color-mix(in srgb, var(--paper-cream) 80%, transparent),
+    inset 0px -3px 0px color-mix(in srgb, var(--ink-line) 14%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='inlay'] {
+  --lf-bg: var(--paper-aged);
+  --lf-radius: 1px;
+  --lf-shadow:
+    0px 0px 0px 2px var(--wash-amber-deep),
+    0px 0px 0px 4px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='cameo'] {
+  --lf-bg: color-mix(in srgb, var(--wash-blush-light) 60%, var(--paper-cream));
+  --lf-radius: 46% 46% 46% 46% / 22% 22% 22% 22%;
+  --lf-pad: var(--space-16) var(--space-24);
+  --lf-shadow: 0px 0px 0px 4px color-mix(in srgb, var(--wash-blush) 44%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='cutout'] {
+  --lf-radius: 0;
+  --lf-shadow: 0px 0px 0px 5px var(--paper-cream), 5px 6px 0px 5px var(--paper-edge);
+}
+
+/* --- standing on something ----------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='riser'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow: 0px 8px 0px var(--paper-deep), 0px 8px 0px 1.5px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='ledge'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  --lf-shadow: 0px 6px 0px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='shelfline'] {
+  --lf-bg: transparent;
+  --lf-radius: 0;
+  --lf-shadow: 0px 4px 0px -1px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='plinth'] {
+  --lf-border: 2px solid var(--ink-line);
+  --lf-radius: 2px;
+  --lf-shadow:
+    0px 10px 0px -2px var(--paper-deep),
+    0px 10px 0px 0px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='pedestal'] {
+  --lf-border: 2px solid var(--ink-line);
+  --lf-shadow:
+    0px 8px 0px -4px var(--paper-aged),
+    0px 8px 0px -2px var(--ink-line),
+    0px 18px 0px -6px var(--paper-deep),
+    0px 18px 0px -4px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='buttress'] {
+  --lf-border: 2px solid var(--ink-line);
+  --lf-shadow:
+    -8px 8px 0px -2px var(--paper-deep),
+    8px 8px 0px -2px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='slab'] {
+  --lf-bg: color-mix(in srgb, var(--paper-deep) 70%, var(--paper-aged));
+  --lf-border: 2px solid var(--ink-line);
+  --lf-radius: 3px;
+  --lf-shadow: 0px 9px 0px color-mix(in srgb, var(--ink-line) 62%, var(--paper-edge));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='tile'] {
+  --lf-bg: linear-gradient(
+    168deg,
+    color-mix(in srgb, var(--wash-turquoise-light) 76%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--wash-turquoise) 26%, var(--paper-cream)) 100%
+  );
+  --lf-border: 1.5px solid var(--wash-turquoise-deep);
+  --lf-radius: 3px;
+  --lf-shadow: 0px 3px 0px color-mix(in srgb, var(--wash-turquoise-deep) 40%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='coaster'] {
+  --lf-bg: var(--paper-aged);
+  --lf-border: 2px solid var(--paper-edge);
+  --lf-radius: var(--radius-md);
+  --lf-shadow: 0px 5px 0px var(--paper-edge), 0px 5px 0px 2px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='pad'] {
+  --lf-bg: var(--paper-aged);
+  --lf-radius: var(--radius-md);
+  --lf-shadow: 0px 0px 0px 6px var(--paper-aged), 0px 6px 0px 6px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='tray'] {
+  --lf-radius: 2px;
+  --lf-shadow:
+    0px 0px 0px 8px var(--paper-aged),
+    0px 0px 0px 10px var(--ink-line),
+    0px 12px 0px 8px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='drawer'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  --lf-shadow: -10px 0px 0px -4px var(--paper-deep), 6px 6px 0px var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='pouched'] {
+  --lf-border: 1.5px solid var(--paper-edge);
+  --lf-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  --lf-shadow:
+    0px 8px 0px -2px var(--paper-aged),
+    0px 8px 0px 0px var(--paper-edge);
+}
+
+/* --- more than one of it ------------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='shingle'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow:
+    0px 6px 0px -2px var(--paper-aged),
+    0px 6px 0px 0px var(--ink-line),
+    0px 12px 0px -4px var(--paper-deep),
+    0px 12px 0px -2px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='fan'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow:
+    7px 3px 0px -1px var(--paper-aged),
+    7px 3px 0px 0.5px var(--ink-line),
+    13px 8px 0px -2px var(--paper-deep),
+    13px 8px 0px -0.5px var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='step'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow:
+    5px 5px 0px var(--paper-aged),
+    10px 10px 0px var(--paper-edge),
+    15px 15px 0px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='terrace'] {
+  --lf-border: 1.5px solid var(--ink-line);
+  --lf-shadow:
+    0px 7px 0px -2px var(--paper-aged),
+    0px 15px 0px -5px var(--paper-edge),
+    0px 23px 0px -8px var(--paper-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-shadow='cliff'] {
+  --lf-border: 2px solid var(--ink-line);
+  --lf-radius: 2px;
+  --lf-shadow: 0px 22px 0px -2px var(--paper-deep), 0px 22px 0px 0px var(--ink-line);
+}
+
+/* ============================================================================
+   4. FRAME — a border round the block
+   ==========================================================================
+
+   Fifty borders is the easiest fifty in the app to get wrong, because each is
+   "a rectangle with something on the edge". They are held apart by pulling on
+   four traditions: haberdashery (stitch, pinked, lacing, pompom), classical
+   ornament (meander, dentil, egg-and-dart, laurel), print and ticketing
+   (sprocket, coupon, postmark, die-cut) and paper itself (deckle, jagged,
+   scorched).
+
+   The plain ones are `border` + `outline`. The ones with a repeating motif
+   set `--fr-mark: ''` and paint `::before` — an inset plate, masked or
+   gradient-tiled, sitting at z-index -1 behind the writing.
+   ========================================================================== */
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame] {
+  isolation: isolate; /* keeps the z-index:-1 frame behind content only */
+  padding: var(--fr-pad, var(--space-12) var(--space-16));
+  background: var(--fr-bg, transparent);
+  border: var(--fr-border, none);
+  border-radius: var(--fr-radius, var(--radius-wobble-sm));
+  outline: var(--fr-outline, none);
+  outline-offset: var(--fr-offset, 4px);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame]::before {
+  content: var(--fr-mark, none);
+  position: absolute;
+  inset: var(--fr-inset, -9px);
+  z-index: -1;
+  background: var(--fr-mark-bg, transparent);
+  border: var(--fr-mark-border, none);
+  border-radius: var(--fr-mark-radius, 0);
+  clip-path: var(--fr-mark-clip, none);
+  -webkit-mask: var(--fr-mask, none);
+  mask: var(--fr-mask, none);
+  pointer-events: none;
+}
+
+/* --- 4a. cut and torn edges ---------------------------------------------- */
+
+/* The scallop mask: a tiled ring of discs unioned with a solid inset panel,
+   so the wavy edge appears round the outside and the middle stays whole.
+   Reused by `bobble`, `cumulus` and the stamp's perforation at other radii. */
+:is(.nb-prose, .nb-fx-specimen) [data-frame='scallop'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='pompom'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='cumulus'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='perfed'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='sprocket'] {
+  --fr-mark: '';
+  --fr-mark-bg: color-mix(in srgb, var(--wash-amber) 28%, var(--paper-cream));
+  --fr-mask:
+    radial-gradient(var(--nb-sc, 7px), #000 97%, transparent) round
+      calc(-1.5 * var(--nb-sc, 7px)) calc(-1.5 * var(--nb-sc, 7px)) /
+      calc(3 * var(--nb-sc, 7px)) calc(3 * var(--nb-sc, 7px)),
+    linear-gradient(#000 0 0) 50% 50% /
+      calc(100% - 2 * var(--nb-sc, 7px)) calc(100% - 2 * var(--nb-sc, 7px)) no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='pompom'] {
+  --nb-sc: 10px;
+  --fr-mark-bg: color-mix(in srgb, var(--wash-blush) 42%, var(--paper-cream));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='cumulus'] {
+  --nb-sc: 13px;
+  --fr-mark-bg: color-mix(in srgb, var(--wash-sky-light) 84%, var(--paper-cream));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='perfed'] {
+  --nb-sc: 5px;
+  --fr-mark-bg: var(--paper-aged);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='sprocket'] {
+  --nb-sc: 4px;
+  --fr-inset: -8px;
+  --fr-mark-bg: color-mix(in srgb, var(--ink-graphite) 82%, var(--paper-edge));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='deckle'] {
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg: var(--paper-aged);
+  --fr-mark-clip: polygon(
+    0% 6px, 5% 1px, 11% 7px, 17% 2px, 23% 8px, 29% 1px, 35% 6px, 41% 3px,
+    47% 8px, 53% 1px, 59% 7px, 65% 2px, 71% 8px, 77% 3px, 83% 6px, 89% 1px,
+    95% 7px, 100% 3px,
+    100% calc(100% - 6px), 95% calc(100% - 1px), 89% calc(100% - 7px),
+    83% calc(100% - 2px), 77% calc(100% - 8px), 71% calc(100% - 3px),
+    65% calc(100% - 6px), 59% calc(100% - 1px), 53% calc(100% - 7px),
+    47% calc(100% - 2px), 41% calc(100% - 8px), 35% calc(100% - 3px),
+    29% calc(100% - 6px), 23% calc(100% - 1px), 17% calc(100% - 7px),
+    11% calc(100% - 2px), 5% calc(100% - 8px), 0% calc(100% - 3px)
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='jagged'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-mark-bg: var(--paper-aged);
+  --fr-mark-clip: polygon(
+    0% 14px, 8% 0%, 16% 12px, 24% 1px, 32% 13px, 40% 2px, 48% 14px, 56% 0%,
+    64% 12px, 72% 2px, 80% 13px, 88% 1px, 96% 12px, 100% 4px,
+    100% calc(100% - 12px), 92% 100%, 84% calc(100% - 13px), 76% calc(100% - 1px),
+    68% calc(100% - 12px), 60% calc(100% - 2px), 52% calc(100% - 14px),
+    44% 100%, 36% calc(100% - 12px), 28% calc(100% - 2px), 20% calc(100% - 13px),
+    12% calc(100% - 1px), 4% calc(100% - 12px), 0% calc(100% - 4px)
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='sawedge'] {
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg: color-mix(in srgb, var(--wash-terracotta) 30%, var(--paper-cream));
+  --fr-mark-clip: polygon(
+    0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 8px,
+    4% 0px, 8% 8px, 12% 0px, 16% 8px, 20% 0px, 24% 8px, 28% 0px, 32% 8px,
+    36% 0px, 40% 8px, 44% 0px, 48% 8px, 52% 0px, 56% 8px, 60% 0px, 64% 8px,
+    68% 0px, 72% 8px, 76% 0px, 80% 8px, 84% 0px, 88% 8px, 92% 0px, 96% 8px,
+    100% 0px, 0% 0%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='pinked'] {
+  --fr-mark: '';
+  --fr-inset: -7px;
+  --fr-mark-bg: color-mix(in srgb, var(--wash-moss) 34%, var(--paper-cream));
+  --fr-mask:
+    conic-gradient(from 45deg at 50% 50%, #000 0 25%, transparent 0 50%, #000 0 75%, transparent 0)
+      0 0 / 9px 9px,
+    linear-gradient(#000 0 0) 50% 50% / calc(100% - 9px) calc(100% - 9px) no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='scorch'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-mark-bg: radial-gradient(
+    120% 120% at 50% 50%,
+    var(--paper-aged) 0 58%,
+    color-mix(in srgb, var(--wash-amber-deep) 44%, var(--paper-edge)) 78%,
+    color-mix(in srgb, var(--ink-line) 74%, var(--wash-coral-deep)) 100%
+  );
+  --fr-mark-clip: polygon(
+    0% 10px, 7% 2px, 14% 11px, 22% 1px, 30% 9px, 38% 3px, 46% 12px, 54% 2px,
+    62% 10px, 70% 1px, 78% 11px, 86% 3px, 94% 9px, 100% 4px,
+    100% calc(100% - 10px), 93% calc(100% - 2px), 85% calc(100% - 11px),
+    77% calc(100% - 1px), 69% calc(100% - 9px), 61% calc(100% - 3px),
+    53% calc(100% - 12px), 45% calc(100% - 2px), 37% calc(100% - 10px),
+    29% calc(100% - 1px), 21% calc(100% - 11px), 13% calc(100% - 3px),
+    5% calc(100% - 9px), 0% calc(100% - 4px)
+  );
+}
+
+/* --- 4b. drawn rules ----------------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='ruled'] {
+  --fr-border: 1.5px solid var(--paper-edge);
+  --fr-radius: var(--radius-sm);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='double'] {
+  --fr-border: 1.5px solid var(--ink-line);
+  --fr-outline: 1.5px solid var(--ink-line);
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-frame='stitch'] {
-  padding: var(--space-8) var(--space-12);
-  background: color-mix(in srgb, var(--paper-aged) 55%, transparent);
-  border-radius: var(--radius-sm);
-  outline: 2px dashed var(--ink-sepia-soft);
-  outline-offset: 5px;
+  --fr-bg: color-mix(in srgb, var(--paper-aged) 55%, transparent);
+  --fr-radius: var(--radius-sm);
+  --fr-outline: 2px dashed var(--ink-sepia-soft);
+  --fr-offset: 5px;
+  --fr-pad: var(--space-8) var(--space-12);
 }
 
-/* ----------------------------------------------------------------------------
-   Paper — per-block paper textures
-   torn: static pre-jittered clip-path deckle on top and bottom edges
-   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-frame='dashes'] {
+  --fr-border: 2px dashed var(--ink-line-soft);
+  --fr-radius: var(--radius-sm);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='pips'] {
+  --fr-border: 3px dotted color-mix(in srgb, var(--ink-line-soft) 70%, transparent);
+  --fr-radius: var(--radius-md);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='rope'] {
+  --fr-border: 4px dotted var(--ink-line-soft);
+  --fr-radius: var(--radius-wobble-md);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='hatched'] {
+  --fr-mark: '';
+  --fr-inset: -7px;
+  --fr-mark-bg: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--ink-line-soft) 40%, transparent) 0 1.5px,
+    transparent 1.5px 5px
+  );
+  --fr-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  --fr-mark-border: 7px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='wave'] {
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg: color-mix(in srgb, var(--wash-sky) 26%, var(--paper-cream));
+  --fr-mask:
+    radial-gradient(circle 8px at 50% 0%, transparent 0 7px, #000 7px) 0 0 / 16px 100% repeat-x,
+    linear-gradient(#000 0 0) 50% 50% / 100% calc(100% - 16px) no-repeat,
+    radial-gradient(circle 8px at 50% 100%, transparent 0 7px, #000 7px) 0 100% / 16px 100% repeat-x;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='guilloche'] {
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg:
+    repeating-radial-gradient(circle 9px at 0 50%, transparent 0 6px, color-mix(in srgb, var(--wash-sky-deep) 44%, transparent) 6px 7.2px)
+      0 0 / 14px 100%,
+    repeating-radial-gradient(circle 9px at 100% 50%, transparent 0 6px, color-mix(in srgb, var(--wash-sky-deep) 30%, transparent) 6px 7.2px)
+      0 0 / 14px 100%;
+  --fr-mark-border: 8px solid transparent;
+}
+
+/* --- 4c. classical ornament ---------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='bead'] {
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg: radial-gradient(
+      circle 3.4px,
+      color-mix(in srgb, var(--wash-amber-deep) 62%, transparent) 0 100%,
+      transparent 100%
+    ) 0 0 / 9px 9px;
+  --fr-mark-border: 8px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='braid'] {
+  --fr-mark: '';
+  --fr-inset: -9px;
+  --fr-mark-bg:
+    repeating-linear-gradient(58deg, color-mix(in srgb, var(--wash-terracotta) 60%, transparent) 0 3px, transparent 3px 7px),
+    repeating-linear-gradient(-58deg, color-mix(in srgb, var(--wash-terracotta-deep) 46%, transparent) 0 3px, transparent 3px 7px);
+  --fr-mark-border: 9px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='meander'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-mark-bg:
+    repeating-linear-gradient(90deg, var(--ink-line) 0 2px, transparent 2px 10px),
+    repeating-linear-gradient(0deg, var(--ink-line) 0 2px, transparent 2px 10px) 0 0 / 10px 10px;
+  --fr-mark-border: 10px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='dentil'] {
+  --fr-mark: '';
+  --fr-inset: -9px;
+  --fr-mark-bg: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--paper-edge) 92%, var(--ink-line)) 0 6px,
+    transparent 6px 12px
+  );
+  --fr-mark-border: 9px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='eggdart'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-mark-bg:
+    radial-gradient(ellipse 4px 6px at 25% 50%, color-mix(in srgb, var(--paper-edge) 96%, var(--ink-line)) 0 100%, transparent 100%)
+      0 0 / 16px 100%,
+    linear-gradient(to bottom, transparent 30%, color-mix(in srgb, var(--ink-line-soft) 60%, transparent) 30% 70%, transparent 70%)
+      9px 0 / 16px 100%;
+  --fr-mark-border: 10px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='laurel'] {
+  --fr-mark: '';
+  --fr-inset: -11px;
+  --fr-mark-bg:
+    repeating-linear-gradient(66deg, color-mix(in srgb, var(--wash-moss-deep) 54%, transparent) 0 2px, transparent 2px 9px),
+    repeating-linear-gradient(-66deg, color-mix(in srgb, var(--wash-moss) 62%, transparent) 0 2px, transparent 2px 9px);
+  --fr-mark-border: 11px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='ivyframe'] {
+  --fr-mark: '';
+  --fr-inset: -11px;
+  --fr-mark-bg:
+    repeating-radial-gradient(circle 7px at 0 50%, transparent 0 5px, color-mix(in srgb, var(--wash-moss-deep) 52%, transparent) 5px 6.4px)
+      0 0 / 12px 100%,
+    radial-gradient(ellipse 4px 2.6px, color-mix(in srgb, var(--wash-moss) 72%, transparent) 0 100%, transparent 100%)
+      6px 2px / 12px 12px;
+  --fr-mark-border: 11px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='fret'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-mark-bg:
+    repeating-linear-gradient(45deg, color-mix(in srgb, var(--wash-amber-deep) 46%, transparent) 0 2px, transparent 2px 8px),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--wash-amber-deep) 46%, transparent) 0 2px, transparent 2px 8px);
+  --fr-mark-border: 10px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='filigree'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-mark-bg:
+    radial-gradient(circle 2px, color-mix(in srgb, var(--wash-amber-deep) 66%, transparent) 0 100%, transparent 100%) 0 0 / 8px 8px,
+    radial-gradient(circle 1.1px, color-mix(in srgb, var(--wash-amber-deep) 50%, transparent) 0 100%, transparent 100%) 4px 4px / 8px 8px;
+  --fr-mark-border: 10px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='chain'] {
+  --fr-mark: '';
+  --fr-inset: -9px;
+  --fr-mark-bg: radial-gradient(
+      circle 4.4px,
+      transparent 0 2.4px,
+      var(--wash-amber) 2.6px 4.2px,
+      transparent 4.4px
+    ) 0 0 / 8px 8px;
+  --fr-mark-border: 9px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='rosette'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='fleur'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='tabs'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='bracket'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='rivets'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='eyelets'] {
+  --fr-mark: '';
+  --fr-inset: -10px;
+  --fr-corner-size: 14px;
+  --fr-mark-bg:
+    var(--fr-corner) top left / var(--fr-corner-size) var(--fr-corner-size) no-repeat,
+    var(--fr-corner) top right / var(--fr-corner-size) var(--fr-corner-size) no-repeat,
+    var(--fr-corner) bottom left / var(--fr-corner-size) var(--fr-corner-size) no-repeat,
+    var(--fr-corner) bottom right / var(--fr-corner-size) var(--fr-corner-size) no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='rosette'] {
+  --fr-corner: radial-gradient(
+    circle 7px,
+    color-mix(in srgb, var(--wash-amber) 76%, transparent) 0 3px,
+    transparent 3.4px 4.4px,
+    color-mix(in srgb, var(--wash-amber-deep) 56%, transparent) 4.8px 6.4px,
+    transparent 7px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='fleur'] {
+  --fr-corner-size: 16px;
+  --fr-corner: conic-gradient(
+    from 45deg at 50% 50%,
+    color-mix(in srgb, var(--wash-violet-deep) 60%, transparent) 0 12%,
+    transparent 12% 25%,
+    color-mix(in srgb, var(--wash-violet-deep) 60%, transparent) 25% 37%,
+    transparent 37% 50%,
+    color-mix(in srgb, var(--wash-violet-deep) 60%, transparent) 50% 62%,
+    transparent 62%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='tabs'] {
+  --fr-corner-size: 20px;
+  --fr-corner: linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--paper-edge) 88%, var(--ink-line)) 0 16px,
+    transparent 16px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='bracket'] {
+  --fr-corner-size: 18px;
+  --fr-corner:
+    linear-gradient(var(--ink-line) 0 0) 0 0 / 18px 2px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) 0 0 / 2px 18px no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='rivets'] {
+  --fr-border: 2px solid var(--paper-edge);
+  --fr-corner: radial-gradient(
+    circle 5px,
+    color-mix(in srgb, var(--ink-graphite-soft) 76%, var(--paper-edge)) 0 100%,
+    transparent 100%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='eyelets'] {
+  --fr-border: 1.5px solid var(--paper-edge);
+  --fr-corner: radial-gradient(
+    circle 6px,
+    transparent 0 2.6px,
+    color-mix(in srgb, var(--ink-graphite-soft) 70%, var(--paper-edge)) 3px 5.4px,
+    transparent 6px
+  );
+}
+
+/* --- 4d. print, post and ticketing --------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket'] {
+  --fr-bg: var(--paper-aged);
+  --fr-border: 2px dashed var(--ink-line-soft);
+  --fr-radius: var(--radius-sm);
+  --fr-pad: var(--space-12) var(--space-20);
+}
+
+/* The punched notch bitten out of each side — the shape a torn stub has. */
+:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket']::after,
+:is(.nb-prose, .nb-fx-specimen) [data-frame='coupon']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -9px;
+  right: -9px;
+  height: 16px;
+  margin-top: -8px;
+  background:
+    radial-gradient(circle 8px at 8px 8px, var(--paper-cream) 0 6px, var(--ink-line-soft) 6px 8px, transparent 8px)
+      left center / 16px 16px no-repeat,
+    radial-gradient(circle 8px at 8px 8px, var(--paper-cream) 0 6px, var(--ink-line-soft) 6px 8px, transparent 8px)
+      right center / 16px 16px no-repeat;
+  pointer-events: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='coupon'] {
+  --fr-bg: color-mix(in srgb, var(--wash-lemon-light) 66%, var(--paper-cream));
+  --fr-border: 2px dashed var(--wash-amber-deep);
+  --fr-radius: 2px;
+  --fr-pad: var(--space-12) var(--space-24);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='punch'] {
+  --fr-bg: var(--paper-aged);
+  --fr-border: 1.5px solid var(--paper-edge);
+  --fr-radius: 0 0 0 12px;
+  --fr-mark: '';
+  --fr-inset: -14px;
+  --fr-mark-bg: radial-gradient(
+      circle 3.4px,
+      color-mix(in srgb, var(--ink-line) 60%, transparent) 0 100%,
+      transparent 100%
+    ) 0 4px / 11px 11px repeat-y;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='postmark'] {
+  --fr-border: 1.5px solid var(--paper-edge);
+  --fr-radius: 2px;
+  --fr-mark: '';
+  --fr-inset: -6px;
+  --fr-mark-bg: repeating-linear-gradient(
+      -18deg,
+      color-mix(in srgb, var(--ink-graphite) 34%, transparent) 0 2px,
+      transparent 2px 6px
+    ) top right / 88px 46px no-repeat;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='diecut'] {
+  --fr-radius: var(--radius-md);
+  --fr-mark: '';
+  --fr-inset: -7px;
+  --fr-mark-bg: var(--paper-cream);
+  --fr-mark-radius: calc(var(--radius-md) + 7px);
+  --fr-mark-border: 1.5px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='badge'] {
+  --fr-bg: color-mix(in srgb, var(--wash-terracotta-light) 70%, var(--paper-cream));
+  --fr-border: 3px solid var(--wash-terracotta-deep);
+  --fr-radius: var(--radius-pill);
+  --fr-pad: var(--space-12) var(--space-24);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='notch'] {
+  --fr-bg: var(--paper-aged);
+  --fr-border: 1.5px solid var(--ink-line);
+  --fr-radius: 0;
+  --fr-mark: '';
+  --fr-inset: 0;
+  --fr-mark-bg: var(--paper-cream);
+  --fr-mark-clip: polygon(
+    0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%,
+    12px 0%, 0% 12px, 0% 0%
+  );
+}
+
+/* --- 4e. shapes ---------------------------------------------------------- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='shield'] {
+  --fr-bg: color-mix(in srgb, var(--wash-sky-light) 62%, var(--paper-cream));
+  --fr-border: 2px solid var(--wash-sky-deep);
+  --fr-radius: var(--radius-sm) var(--radius-sm) 42% 42% / var(--radius-sm) var(--radius-sm) 34% 34%;
+  --fr-pad: var(--space-16) var(--space-24) var(--space-32);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='cartouche'] {
+  --fr-bg: color-mix(in srgb, var(--paper-aged) 80%, var(--wash-amber-light));
+  --fr-border: 2px solid var(--wash-amber-deep);
+  --fr-radius: 46% / 22%;
+  --fr-outline: 1px solid var(--wash-amber-deep);
+  --fr-offset: 5px;
+  --fr-pad: var(--space-16) var(--space-32);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='oval'] {
+  --fr-bg: color-mix(in srgb, var(--wash-blush-light) 52%, var(--paper-cream));
+  --fr-border: 2px solid color-mix(in srgb, var(--wash-blush-deep) 70%, transparent);
+  --fr-radius: 50% / 34%;
+  --fr-pad: var(--space-24) var(--space-40);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='arch'] {
+  --fr-bg: color-mix(in srgb, var(--paper-aged) 70%, transparent);
+  --fr-border: 2px solid var(--ink-line);
+  --fr-radius: 48% 48% var(--radius-sm) var(--radius-sm) / 34% 34% var(--radius-sm) var(--radius-sm);
+  --fr-pad: var(--space-24) var(--space-24) var(--space-16);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='gable'] {
+  --fr-bg: color-mix(in srgb, var(--wash-lemon-light) 50%, var(--paper-cream));
+  --fr-border: 2px solid var(--ink-line);
+  --fr-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  --fr-pad: var(--space-24) var(--space-20) var(--space-12);
+  --fr-mark: '';
+  --fr-inset: -22px -1.5px auto -1.5px;
+  --fr-mark-bg: var(--ink-line);
+  --fr-mark-clip: polygon(0% 100%, 50% 0%, 100% 100%);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='dogtooth'] {
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg:
+    conic-gradient(
+      color-mix(in srgb, var(--ink-line) 78%, transparent) 0 25%,
+      transparent 0 50%,
+      color-mix(in srgb, var(--ink-line) 78%, transparent) 0 75%,
+      transparent 0
+    ) 0 0 / 8px 8px;
+  --fr-mark-border: 8px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='lacing'] {
+  --fr-border: 2px solid var(--paper-edge);
+  --fr-radius: var(--radius-sm);
+  --fr-mark: '';
+  --fr-inset: -8px;
+  --fr-mark-bg:
+    repeating-linear-gradient(70deg, color-mix(in srgb, var(--wash-terracotta) 70%, transparent) 0 2.5px, transparent 2.5px 11px),
+    repeating-linear-gradient(-70deg, color-mix(in srgb, var(--wash-terracotta) 70%, transparent) 0 2.5px, transparent 2.5px 11px);
+  --fr-mark-border: 8px solid transparent;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-frame='seamed'] {
+  --fr-border: 1.5px solid var(--paper-edge);
+  --fr-radius: var(--radius-sm);
+  --fr-outline: 1px dashed color-mix(in srgb, var(--ink-line-soft) 60%, transparent);
+  --fr-offset: -6px;
+}
+
+/* ============================================================================
+   5. PAPER — what this block is written on
+   ==========================================================================
+
+   Split the way a paper merchant's catalogue is split: twenty-two STOCKS
+   (what the sheet is made of), nineteen RULINGS (what is printed on it) and
+   nine FORMS (what it was cut into). `--pa-bg` carries the printed layers,
+   `--pa-ground` the sheet colour underneath.
+   ========================================================================== */
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper] {
+  padding: var(--pa-pad, var(--space-12) var(--space-16));
+  background-color: var(--pa-ground, var(--paper-cream));
+  background-image: var(--pa-bg, none);
+  background-position: var(--pa-pos, 0 0);
+  border: var(--pa-border, 1px solid var(--paper-edge));
+  border-radius: var(--pa-radius, var(--radius-sm));
+  clip-path: var(--pa-clip, none);
+  color: var(--pa-ink, inherit);
+}
+
+/* --- 5a. twenty-two stocks ----------------------------------------------- */
+
 :is(.nb-prose, .nb-fx-specimen) [data-paper='torn'] {
-  padding: var(--space-16) var(--space-20);
-  background: var(--paper-aged);
-  clip-path: polygon(
+  --pa-pad: var(--space-16) var(--space-20);
+  --pa-ground: var(--paper-aged);
+  --pa-border: none;
+  --pa-clip: polygon(
     0% 7px, 4% 2px, 9% 8px, 14% 3px, 19% 9px, 24% 2px, 29% 7px, 34% 4px,
     39% 9px, 44% 2px, 49% 8px, 54% 3px, 59% 9px, 64% 2px, 69% 6px, 74% 3px,
     79% 9px, 84% 4px, 89% 8px, 94% 2px, 100% 6px,
@@ -188,10 +2272,185 @@
   );
 }
 
+:is(.nb-prose, .nb-fx-specimen) [data-paper='aged'] {
+  --pa-ground: var(--paper-deep);
+  --pa-radius: var(--radius-wobble-sm);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='kraft'] {
+  --pa-ground: color-mix(in srgb, var(--paper-edge) 84%, var(--wash-amber-light));
+  --pa-bg: repeating-linear-gradient(
+    97deg,
+    color-mix(in srgb, var(--ink-line) 7%, transparent) 0 1px,
+    transparent 1px 4px
+  );
+  --pa-border: 1px solid color-mix(in srgb, var(--paper-edge) 70%, var(--ink-line));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='vellum'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 40%, transparent);
+  --pa-border: 1px solid color-mix(in srgb, var(--paper-edge) 55%, transparent);
+  --pa-bg: linear-gradient(
+    98deg,
+    color-mix(in srgb, var(--paper-cream) 34%, transparent) 0%,
+    transparent 60%
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='parchment'] {
+  --pa-ground: color-mix(in srgb, var(--paper-deep) 62%, var(--wash-amber-light));
+  --pa-bg: radial-gradient(
+    130% 130% at 30% 20%,
+    color-mix(in srgb, var(--wash-amber-light) 60%, transparent) 0%,
+    transparent 62%,
+    color-mix(in srgb, var(--wash-amber-deep) 18%, transparent) 100%
+  );
+  --pa-radius: 10px 4px 12px 5px;
+  --pa-border: 1px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='papyrus'] {
+  --pa-ground: color-mix(in srgb, var(--paper-deep) 74%, var(--wash-amber));
+  --pa-bg:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink-line) 10%, transparent) 0 1.5px, transparent 1.5px 7px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--ink-line) 8%, transparent) 0 1.5px, transparent 1.5px 9px);
+  --pa-border: 1px solid color-mix(in srgb, var(--paper-edge) 76%, var(--ink-line));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='newsprint'] {
+  --pa-ground: color-mix(in srgb, var(--paper-aged) 62%, var(--ink-graphite-soft));
+  --pa-bg: radial-gradient(
+    color-mix(in srgb, var(--ink-graphite) 8%, transparent) 0.7px,
+    transparent 1px
+  ) 0 0 / 4px 4px;
+  --pa-border: none;
+  --pa-radius: 0;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='tracing'] {
+  --pa-ground: color-mix(in srgb, var(--wash-sky-light) 30%, transparent);
+  --pa-border: 1px dashed color-mix(in srgb, var(--wash-sky-deep) 40%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='onion'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 62%, transparent);
+  --pa-bg: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--paper-edge) 12%, transparent) 0 1px,
+    transparent 1px 6px
+  );
+  --pa-border: 1px solid color-mix(in srgb, var(--paper-edge) 60%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='cartridge'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 90%, var(--paper-aged));
+  --pa-bg:
+    radial-gradient(color-mix(in srgb, var(--paper-edge) 24%, transparent) 0.8px, transparent 1.1px) 0 0 / 5px 5px,
+    radial-gradient(color-mix(in srgb, var(--paper-edge) 18%, transparent) 0.6px, transparent 0.9px) 2px 3px / 5px 5px;
+  --pa-border: 1.5px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='coldpress'] {
+  --pa-ground: var(--paper-cream);
+  --pa-bg:
+    radial-gradient(color-mix(in srgb, var(--paper-edge) 30%, transparent) 1.2px, transparent 1.6px) 0 0 / 7px 6px,
+    radial-gradient(color-mix(in srgb, var(--paper-edge) 22%, transparent) 1px, transparent 1.4px) 4px 3px / 6px 7px;
+  --pa-border: 1.5px solid var(--paper-edge);
+  --pa-radius: var(--radius-wobble-sm);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='hotpress'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 96%, #ffffff);
+  --pa-border: 1.5px solid var(--paper-edge);
+  --pa-radius: 1px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='handmade'] {
+  --pa-ground: color-mix(in srgb, var(--paper-aged) 86%, var(--paper-cream));
+  --pa-bg: radial-gradient(
+    color-mix(in srgb, var(--paper-edge) 26%, transparent) 1.4px,
+    transparent 1.9px
+  ) 0 0 / 9px 8px;
+  --pa-border: none;
+  --pa-radius: 12px 6px 14px 7px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='marbled'] {
+  --pa-ground: color-mix(in srgb, var(--wash-blush-light) 60%, var(--paper-cream));
+  --pa-bg:
+    repeating-radial-gradient(ellipse 60px 12px at 20% 30%, color-mix(in srgb, var(--wash-plum) 26%, transparent) 0 3px, transparent 3px 11px),
+    repeating-radial-gradient(ellipse 50px 10px at 70% 70%, color-mix(in srgb, var(--wash-turquoise) 24%, transparent) 0 3px, transparent 3px 13px);
+  --pa-border: 1px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='mulberry'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 88%, var(--paper-aged));
+  --pa-bg:
+    repeating-linear-gradient(24deg, color-mix(in srgb, var(--paper-edge) 22%, transparent) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(-38deg, color-mix(in srgb, var(--paper-edge) 16%, transparent) 0 1px, transparent 1px 13px);
+  --pa-border: none;
+  --pa-radius: 10px 5px 11px 6px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='linenstock'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 92%, var(--paper-aged));
+  --pa-bg:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--paper-edge) 20%, transparent) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--paper-edge) 20%, transparent) 0 1px, transparent 1px 4px);
+  --pa-border: 1px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='laid'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 88%, var(--paper-aged));
+  --pa-bg:
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--paper-edge) 26%, transparent) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--paper-edge) 34%, transparent) 0 1px, transparent 1px 26px);
+  --pa-border: 1px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='cotton'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 82%, #ffffff);
+  --pa-border: 3px solid var(--paper-aged);
+  --pa-radius: 3px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='foilpaper'] {
+  --pa-ground: var(--paper-cream);
+  --pa-bg: linear-gradient(
+    104deg,
+    color-mix(in srgb, var(--wash-amber-deep) 26%, transparent) 0%,
+    color-mix(in srgb, var(--wash-amber-light) 78%, transparent) 26%,
+    color-mix(in srgb, var(--wash-amber) 40%, transparent) 52%,
+    color-mix(in srgb, var(--wash-amber-light) 74%, transparent) 74%,
+    color-mix(in srgb, var(--wash-amber-deep) 24%, transparent) 100%
+  );
+  --pa-border: 1.5px solid var(--wash-amber-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='carbon'] {
+  --pa-ground: color-mix(in srgb, var(--wash-violet-light) 62%, var(--paper-cream));
+  --pa-ink: var(--wash-violet-deep);
+  --pa-border: 1px dashed color-mix(in srgb, var(--wash-violet-deep) 50%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='thermal'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 94%, var(--wash-sky-light));
+  --pa-bg: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--wash-sky-light) 30%, transparent) 0%,
+    transparent 30%,
+    transparent 70%,
+    color-mix(in srgb, var(--wash-sky-light) 30%, transparent) 100%
+  );
+  --pa-border: none;
+  --pa-radius: 0;
+}
+
+/* --- 5b. nineteen rulings ------------------------------------------------ */
+
 :is(.nb-prose, .nb-fx-specimen) [data-paper='lined'] {
-  padding: var(--space-8) var(--space-16);
-  background-color: var(--paper-cream);
-  background-image: repeating-linear-gradient(
+  --pa-pad: var(--space-8) var(--space-16);
+  --pa-bg: repeating-linear-gradient(
     to bottom,
     transparent 0,
     transparent calc(var(--page-line-height, 32px) - 1px),
@@ -200,626 +2459,17 @@
     color-mix(in srgb, var(--paper-edge) 80%, transparent)
       var(--page-line-height, 32px)
   );
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-sm);
 }
 
-/* ----------------------------------------------------------------------------
-   Underline — squiggle (wobble-baked SVG mask) and marker sweep
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-underline='squiggle'] {
-  position: relative;
-  padding-bottom: 8px;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-underline='squiggle']::after {
-  content: '';
-  position: absolute;
-  left: 2px;
-  right: 10%;
-  bottom: 0;
-  height: 9px;
-  background: var(--wash-amber-deep);
-  opacity: 0.75;
-  /* --nb-squiggle carries the module-load-baked wobble SVG data URI */
-  -webkit-mask: var(--nb-squiggle) repeat-x 0 50% / 28px 9px;
-  mask: var(--nb-squiggle) repeat-x 0 50% / 28px 9px;
-  pointer-events: none;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-underline='marker'] {
-  background-image: linear-gradient(
-    color-mix(in srgb, var(--wash-amber) 55%, transparent),
-    color-mix(in srgb, var(--wash-amber) 55%, transparent)
-  );
-  background-repeat: no-repeat;
-  background-position: 0 76%;
-  background-size: 100% 0.42em;
-}
-
-/* ----------------------------------------------------------------------------
-   Wash-color hooks — containers read --fx-light/base/deep; a data-color
-   attribute retargets them. Declared AFTER the container bases below would
-   lose the cascade, so bases only set fallbacks and these come last in the
-   container section (see bottom of file).
-   -------------------------------------------------------------------------- */
-
-/* ----------------------------------------------------------------------------
-   Sticky note — folded corner, soft shadow, seeded tilt
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='sticky-note'] {
-  --fx-light: var(--wash-lemon-light);
-  --fx-base: var(--wash-lemon);
-  --fx-deep: var(--wash-lemon-deep);
-  position: relative;
-  max-width: 520px;
-  margin: var(--space-12) 0;
-  padding: var(--space-16) var(--space-20) var(--space-24);
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--fx-light) 88%, var(--paper-cream)) 0%,
-    color-mix(in srgb, var(--fx-base) 42%, var(--paper-cream)) 100%
-  );
-  border: 1px solid color-mix(in srgb, var(--fx-deep) 28%, transparent);
-  border-radius: 2px 4px 3px 5px;
-  box-shadow: var(--shadow-sm);
-  font-family: var(--font-accent);
-  font-size: 17px;
-  line-height: 1.55;
-}
-
-/* Folded bottom-right corner */
-:is(.nb-prose, .nb-fx-specimen) [data-type='sticky-note']::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 26px;
-  height: 26px;
-  background: linear-gradient(
-    315deg,
-    var(--paper-cream) 0 47%,
-    color-mix(in srgb, var(--fx-deep) 30%, var(--fx-light)) 50%,
-    color-mix(in srgb, var(--fx-base) 72%, var(--paper-cream)) 100%
-  );
-  border-top-left-radius: 5px;
-  /* The curl's lift, as an offset plate with NO blur radius — the flat rule.
-     This was the last soft box-shadow in src/. */
-  box-shadow: -2px -2px 0 rgba(94, 70, 45, 0.14);
-  pointer-events: none;
-}
-
-/* ----------------------------------------------------------------------------
-   Polaroid — white frame, Kalam caption under the photo, seeded tilt
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] {
-  max-width: 440px;
-  margin: var(--space-16) auto;
-  padding: var(--space-12) var(--space-12) var(--space-4);
-  background: var(--paper-cream);
-  border: 1px solid var(--paper-edge);
-  border-radius: 2px;
-  box-shadow: var(--shadow-md);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] img {
-  display: block;
-  width: 100%;
-  border: none;
-  border-radius: 1px;
-  box-shadow: var(--shadow-inset-paper);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] p {
-  font-family: var(--font-accent);
-  font-size: 15px;
-  line-height: 1.6;
-  text-align: center;
-  color: var(--ink-sepia-soft);
-  padding: var(--space-8) var(--space-4);
-}
-
-/* ----------------------------------------------------------------------------
-   Washi box — patterned wash panel taped down top and bottom
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box'] {
-  --fx-light: var(--wash-sky-light);
-  --fx-base: var(--wash-sky);
-  --fx-deep: var(--wash-sky-deep);
-  position: relative;
-  margin: var(--space-16) 0 var(--space-12);
-  padding: var(--space-16) var(--space-20);
-  background:
-    radial-gradient(
-      color-mix(in srgb, var(--fx-base) 28%, transparent) 1px,
-      transparent 1.4px
-    ) 0 0 / 14px 14px,
-    color-mix(in srgb, var(--fx-light) 58%, var(--paper-cream));
-  border: 1.5px solid color-mix(in srgb, var(--fx-deep) 35%, transparent);
-  border-radius: var(--radius-md);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::before,
-:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::after {
-  content: '';
-  position: absolute;
-  width: 86px;
-  height: 20px;
-  background:
-    repeating-linear-gradient(
-      45deg,
-      color-mix(in srgb, var(--paper-cream) 50%, transparent) 0 5px,
-      transparent 5px 10px
-    ),
-    color-mix(in srgb, var(--fx-base) 62%, transparent);
-  clip-path: polygon(3% 0%, 97% 4%, 100% 96%, 0% 100%);
-  box-shadow: var(--shadow-xs);
-  pointer-events: none;
-  z-index: 2;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::before {
-  top: -10px;
-  left: 12%;
-  transform: rotate(-3deg);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::after {
-  bottom: -10px;
-  right: 12%;
-  transform: rotate(2.5deg);
-}
-
-/* ----------------------------------------------------------------------------
-   Card — clean aged-paper card, optional pencil title (data-title)
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='card'] {
-  margin: var(--space-12) 0;
-  padding: var(--space-16) var(--space-20);
-  background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: var(--radius-hand);
-  box-shadow: var(--shadow-xs);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='card'][data-title]::before {
-  content: attr(data-title);
-  display: block;
-  font-family: var(--font-heading);
-  font-size: 23px;
-  font-weight: 700;
-  color: var(--ink-sepia);
-  margin-bottom: var(--space-4);
-  transform: rotate(-0.5deg);
-}
-
-/* ----------------------------------------------------------------------------
-   Quote card — big decorative quotes, Caveat, wash tint
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card'] {
-  --fx-light: var(--wash-blush-light);
-  --fx-base: var(--wash-blush);
-  --fx-deep: var(--wash-blush-deep);
-  position: relative;
-  margin: var(--space-16) 0;
-  padding: var(--space-20) var(--space-48);
-  background: radial-gradient(
-    130% 120% at 30% 12%,
-    color-mix(in srgb, var(--fx-light) 74%, var(--paper-cream)) 0%,
-    color-mix(in srgb, var(--fx-base) 30%, var(--paper-cream)) 100%
-  );
-  border-radius: var(--radius-hand);
-  font-family: var(--font-heading);
-  font-size: 25px;
-  line-height: 1.35;
-  text-align: center;
-  color: var(--ink-sepia);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::before,
-:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::after {
-  position: absolute;
-  font-family: var(--font-heading);
-  font-size: 62px;
-  line-height: 1;
-  color: color-mix(in srgb, var(--fx-deep) 55%, transparent);
-  pointer-events: none;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::before {
-  content: '\201C';
-  top: 4px;
-  left: 12px;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::after {
-  content: '\201D';
-  bottom: -16px;
-  right: 14px;
-}
-
-/* ----------------------------------------------------------------------------
-   Banner — full-width ribbon, chevron ends via clip-path, Caveat text
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='banner'] {
-  --fx-light: var(--wash-amber-light);
-  --fx-base: var(--wash-amber);
-  --fx-deep: var(--wash-amber-deep);
-  margin: var(--space-16) calc(-1 * var(--space-8));
-  padding: var(--space-8) var(--space-48);
-  background: linear-gradient(
-    178deg,
-    color-mix(in srgb, var(--fx-base) 62%, var(--paper-cream)) 0%,
-    color-mix(in srgb, var(--fx-base) 86%, var(--fx-deep)) 100%
-  );
-  clip-path: polygon(
-    0% 0%, 100% 0%, calc(100% - 24px) 50%, 100% 100%, 0% 100%, 24px 50%
-  );
-  font-family: var(--font-heading);
-  font-size: 26px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--ink-sepia);
-}
-
-/* ----------------------------------------------------------------------------
-   Spoiler — a flat ink plate until clicked, pencil "psst…" label
-   -------------------------------------------------------------------------- */
-.nb-spoiler {
-  position: relative;
-  margin: var(--space-12) 0;
-  padding: var(--space-8) var(--space-16) var(--space-12);
-  background: color-mix(in srgb, var(--paper-aged) 60%, transparent);
-  border: 1.5px dashed var(--paper-edge);
-  border-radius: var(--radius-md);
-}
-
-.nb-spoiler.is-selected {
-  outline: 2px dashed var(--wash-amber-deep);
-  outline-offset: 3px;
-}
-
-.nb-spoiler-toggle {
-  font-family: var(--font-label);
-  font-size: 13px;
-  color: var(--ink-graphite-soft);
-  padding: 1px var(--space-8);
-  border-radius: var(--radius-pill);
-  transform: rotate(-0.8deg);
-  transition:
-    background var(--dur-xs) var(--ease-out),
-    color var(--dur-xs) var(--ease-out);
-}
-
-.nb-spoiler-toggle:hover {
-  background: var(--wash-amber-light);
-  color: var(--ink-graphite);
-}
-
-/* Hidden behind one flat band of ink, not behind a blur. Two reasons, and both
-   matter: blur() is a live CSS filter in an interactive path, which
-   art-pipeline.md rules out, and it was transitioned, so the filter re-ran
-   every frame of the reveal. It is also a *readable* spoiler — the glyph
-   shapes survive a squint or a screenshot. The body keeps its box while
-   hidden, so revealing costs no reflow. */
-.nb-spoiler:not(.is-revealed) .nb-spoiler-body {
-  position: relative;
-  visibility: hidden;
-  pointer-events: none;
-  user-select: none;
-}
-
-/* A strip of tape over the words, not a redaction bar. Tried the ink tokens
-   first: at full opacity they read as a hole punched in the page and shout
-   louder than anything else on it. --paper-edge is the same family as the
-   tape and washi effects above, hides the text just as completely, and takes
-   the one dark outline every object in this language carries. */
-.nb-spoiler:not(.is-revealed) .nb-spoiler-body::after {
-  content: '';
-  visibility: visible;
-  position: absolute;
-  inset: -2px -4px;
-  background: var(--paper-edge);
-  border: 1px solid var(--ink-line-soft);
-  border-radius: var(--radius-sm);
-}
-
-/* ----------------------------------------------------------------------------
-   Columns — 2-4 flexible columns; col weights render as flex-grow
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-type='columns'] {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-16);
-  margin: var(--space-8) 0;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='columns'][data-gap='sm'] {
-  gap: var(--space-8);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='columns'][data-gap='lg'] {
-  gap: var(--space-32);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-type='col'] {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-/* ----------------------------------------------------------------------------
-   Wash-color retargeting (comes after container bases so it wins)
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-color='amber'] {
-  --fx-light: var(--wash-amber-light);
-  --fx-base: var(--wash-amber);
-  --fx-deep: var(--wash-amber-deep);
-}
-:is(.nb-prose, .nb-fx-specimen) [data-color='terracotta'] {
-  --fx-light: var(--wash-terracotta-light);
-  --fx-base: var(--wash-terracotta);
-  --fx-deep: var(--wash-terracotta-deep);
-}
-:is(.nb-prose, .nb-fx-specimen) [data-color='moss'] {
-  --fx-light: var(--wash-moss-light);
-  --fx-base: var(--wash-moss);
-  --fx-deep: var(--wash-moss-deep);
-}
-:is(.nb-prose, .nb-fx-specimen) [data-color='lemon'] {
-  --fx-light: var(--wash-lemon-light);
-  --fx-base: var(--wash-lemon);
-  --fx-deep: var(--wash-lemon-deep);
-}
-:is(.nb-prose, .nb-fx-specimen) [data-color='sky'] {
-  --fx-light: var(--wash-sky-light);
-  --fx-base: var(--wash-sky);
-  --fx-deep: var(--wash-sky-deep);
-}
-:is(.nb-prose, .nb-fx-specimen) [data-color='blush'] {
-  --fx-light: var(--wash-blush-light);
-  --fx-base: var(--wash-blush);
-  --fx-deep: var(--wash-blush-deep);
-}
-:is(.nb-prose, .nb-fx-specimen) [data-color='graphite'] {
-  /* No graphite wash pigment in tokens — compose from paper/ink neutrals. */
-  --fx-light: var(--paper-aged);
-  --fx-base: var(--paper-deep);
-  --fx-deep: var(--ink-graphite-soft);
-}
-
-/* ----------------------------------------------------------------------------
-   Margin doodles — deterministic pencil sketches in the page margins
-   -------------------------------------------------------------------------- */
-.nb-margin-doodle {
-  position: absolute;
-  z-index: 1;
-  opacity: 0.35;
-  color: var(--ink-graphite-soft);
-  pointer-events: none;
-  user-select: none;
-}
-
-.nb-margin-doodle svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-/* ----------------------------------------------------------------------------
-   Confetti overlay canvas.
-
-   Geometry is written inline by src/editor/effects/confetti.ts: the canvas is
-   sized to the bursts' own footprint, not the viewport, so the per-frame clear
-   costs a few hundred thousand pixels instead of millions and the compositing
-   layer it creates is small and short-lived. Do NOT put inset/100vw back here.
-   -------------------------------------------------------------------------- */
-.nb-confetti-canvas {
-  position: fixed;
-  pointer-events: none;
-  z-index: var(--z-toasts);
-}
-
-/* ----------------------------------------------------------------------------
-   Minimalist mode — decorations stand down (root class from settings)
-   -------------------------------------------------------------------------- */
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-tape]::before,
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-tape='both']::after,
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-washi='top']::before,
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::before,
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::after,
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-frame='scallop']::before,
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-underline='squiggle']::after {
-  display: none;
-}
-
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-rotate],
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='sticky-note'],
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] {
-  transform: none;
-}
-
-/* ============================================================================
-   THE CATALOGUE — everything the left rail's catalogue panel can add
-   ==========================================================================
-
-   Three groups, all pure CSS off data-attributes, all inside the flat rules:
-   offset plates rather than blurred shadows, one outline colour, wobbled radii.
-
-     1. more values on the effects that already existed (tape, washi, shadow,
-        frame, paper, underline);
-     2. the lettering axes — font, ink, size, align;
-     3. five more pieces of stationery — index card, envelope, stamp, tag,
-        marginalia.
-   ========================================================================== */
-
-/* ----------------------------------------------------------------------------
-   1a. Tape down a side, not just across the top
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-tape='left']::before,
-:is(.nb-prose, .nb-fx-specimen) [data-tape='right']::before {
-  width: 22px;
-  height: 68px;
-  top: 50%;
-  margin-top: -34px;
-  clip-path: polygon(6% 3%, 100% 0%, 94% 97%, 0% 100%);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-tape='left']::before {
-  left: -12px;
-  transform: rotate(2deg);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-tape='right']::before {
-  right: -12px;
-  transform: rotate(-2deg);
-}
-
-/* ----------------------------------------------------------------------------
-   1b. Washi down the left edge, and one square across a corner
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-washi='left']::before,
-:is(.nb-prose, .nb-fx-specimen) [data-washi='corner']::before {
-  content: '';
-  position: absolute;
-  background:
-    repeating-linear-gradient(
-      45deg,
-      color-mix(in srgb, var(--paper-cream) 55%, transparent) 0 5px,
-      transparent 5px 10px
-    ),
-    color-mix(in srgb, var(--wash-moss) 55%, transparent);
-  box-shadow: var(--shadow-xs);
-  pointer-events: none;
-  z-index: 2;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-washi='left']::before {
-  top: 14%;
-  left: -9px;
-  width: 18px;
-  height: 62%;
-  clip-path: polygon(4% 2%, 100% 0%, 96% 100%, 0% 98%);
-  transform: rotate(0.8deg);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-washi='corner']::before {
-  top: -9px;
-  left: -14px;
-  width: 62px;
-  height: 18px;
-  clip-path: polygon(2% 4%, 98% 0%, 100% 94%, 0% 100%);
-  transform: rotate(-38deg);
-}
-
-/* ----------------------------------------------------------------------------
-   1c. Shadow — an offset PLATE and a little stack of them.
-
-   Zero blur radius throughout: the flat language says depth is a darker flat
-   face beside a lighter one, and tests/styles.test.ts gates the alternative.
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-shadow='lifted'] {
-  background: var(--paper-cream);
-  border: 1.5px solid var(--ink-line);
-  border-radius: var(--radius-wobble-sm);
-  padding: var(--space-8) var(--space-12);
-  box-shadow: 5px 5px 0 var(--paper-edge);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-shadow='stacked'] {
-  background: var(--paper-cream);
-  border: 1.5px solid var(--ink-line);
-  border-radius: var(--radius-wobble-sm);
-  padding: var(--space-8) var(--space-12);
-  /* Blur radius written as `0px` rather than `0`: the flat-rule test reads the
-     THIRD length token, and a unitless zero is not a length token. */
-  box-shadow:
-    4px 4px 0px var(--paper-aged),
-    4px 4px 0px 1.5px var(--ink-line),
-    8px 8px 0px var(--paper-deep),
-    8px 8px 0px 1.5px var(--ink-line);
-}
-
-/* ----------------------------------------------------------------------------
-   1d. Frames — a double rule, a rope of beads, a torn ticket
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-frame='double'] {
-  padding: var(--space-12) var(--space-16);
-  border: 1.5px solid var(--ink-line);
-  border-radius: var(--radius-wobble-sm);
-  outline: 1.5px solid var(--ink-line);
-  outline-offset: 4px;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-frame='rope'] {
-  padding: var(--space-12) var(--space-16);
-  border: 4px dotted var(--ink-line-soft);
-  border-radius: var(--radius-wobble-md);
-}
-
-/* A ticket: dashed rule all round, with a punched notch bitten out of each
-   side — the shape a torn stub actually has. */
-:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket'] {
-  padding: var(--space-12) var(--space-20);
-  background: var(--paper-aged);
-  border: 2px dashed var(--ink-line-soft);
-  border-radius: var(--radius-sm);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket']::before,
-:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket']::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 16px;
-  height: 16px;
-  margin-top: -8px;
-  background: var(--paper-cream);
-  border: 2px dashed var(--ink-line-soft);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket']::before {
-  left: -9px;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-frame='ticket']::after {
-  right: -9px;
-}
-
-/* ----------------------------------------------------------------------------
-   1e. Paper — graph, aged and index stock
-   -------------------------------------------------------------------------- */
 :is(.nb-prose, .nb-fx-specimen) [data-paper='graph'] {
-  padding: var(--space-12) var(--space-16);
-  background-color: var(--paper-cream);
-  background-image:
-    repeating-linear-gradient(
-      to right,
-      color-mix(in srgb, var(--wash-sky) 22%, transparent) 0 1px,
-      transparent 1px 16px
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--wash-sky) 22%, transparent) 0 1px,
-      transparent 1px 16px
-    );
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-sm);
+  --pa-bg:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--wash-sky) 22%, transparent) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--wash-sky) 22%, transparent) 0 1px, transparent 1px 16px);
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-paper='aged'] {
-  padding: var(--space-12) var(--space-16);
-  background: var(--paper-deep);
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-wobble-sm);
-}
-
-/* Index stock: the red rule under the head, then blue feints. */
 :is(.nb-prose, .nb-fx-specimen) [data-paper='index'] {
-  padding: var(--space-16) var(--space-16) var(--space-12);
-  background-color: var(--paper-cream);
-  background-image:
+  --pa-pad: var(--space-16) var(--space-16) var(--space-12);
+  --pa-bg:
     linear-gradient(
       to bottom,
       transparent 0 26px,
@@ -831,340 +2481,293 @@
       transparent 0 27px,
       color-mix(in srgb, var(--wash-sky) 26%, transparent) 27px 28px
     );
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-sm);
 }
 
-/* ----------------------------------------------------------------------------
-   1f. Underlines — dotted, double-ruled, and ringed round
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-underline='dotted'] {
-  background-image: radial-gradient(
-    circle,
-    var(--wash-terracotta-deep) 45%,
-    transparent 46%
-  );
-  background-repeat: repeat-x;
-  background-position: 0 100%;
-  background-size: 7px 3px;
-  padding-bottom: 6px;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='dotgrid'] {
+  --pa-bg: radial-gradient(
+    color-mix(in srgb, var(--paper-edge) 80%, transparent) 1.2px,
+    transparent 1.5px
+  ) 0 0 / 16px 16px;
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-underline='double'] {
-  background-image:
-    linear-gradient(var(--ink-line-soft), var(--ink-line-soft)),
-    linear-gradient(var(--ink-line-soft), var(--ink-line-soft));
-  background-repeat: no-repeat;
-  background-position:
-    0 calc(100% - 5px),
-    0 100%;
-  background-size:
-    100% 1.5px,
-    100% 1.5px;
-  padding-bottom: 8px;
-}
-
-/* Ringed: the loop you draw round a word you want back later. */
-:is(.nb-prose, .nb-fx-specimen) [data-underline='circled'] {
-  padding: var(--space-4) var(--space-12);
-  border: 2px solid color-mix(in srgb, var(--wash-terracotta) 78%, transparent);
-  border-radius: 62% 38% 55% 45% / 45% 55% 42% 58%;
-}
-
-/* ----------------------------------------------------------------------------
-   2. The lettering axes — font, ink, size, align
-
-   `font` names a hand rather than a family, because "casual" is a choice a
-   writer can make and "Kalam" is one only a typographer can. Every stack here
-   is a face src/index.tsx actually loads; a name with nothing behind it would
-   silently render as the body face, which is worse than not offering it.
-   -------------------------------------------------------------------------- */
-:is(.nb-prose, .nb-fx-specimen) [data-font='hand'] {
-  font-family: var(--font-body);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='casual'] {
-  font-family: var(--font-accent);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='note'] {
-  font-family: var(--font-label);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='marker'] {
-  font-family: 'Gochi Hand', var(--font-accent);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='chalk'] {
-  font-family: 'Shadows Into Light', var(--font-body);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='serif'] {
-  font-family: 'Lora', Georgia, serif;
-  letter-spacing: 0;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='book'] {
-  font-family: 'Crimson Pro', Georgia, serif;
-  letter-spacing: 0;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-font='mono'] {
-  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas,
-    monospace;
-  letter-spacing: 0;
-  font-size: 0.92em;
-}
-
-/* Caveat's floor is 20px (CLAUDE.md), so the face carries its own minimum
-   rather than trusting every block that reaches for it to remember. */
-:is(.nb-prose, .nb-fx-specimen) [data-font='script'] {
-  font-family: var(--font-heading);
-  font-size: max(20px, 1.18em);
-  line-height: 1.3;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-ink='sepia'] {
-  color: var(--ink-sepia);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-ink='graphite'] {
-  color: var(--ink-graphite);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-ink='ink-blue'] {
-  color: var(--ink-blue);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-ink='crimson'] {
-  color: var(--wash-coral-deep);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-ink='moss'] {
-  color: var(--wash-moss-deep);
-}
-
-/* Sizes are relative, so they compose with the reader's own body size and
-   with the script face's floor instead of fighting either. */
-:is(.nb-prose, .nb-fx-specimen) [data-size='xs'] {
-  font-size: max(13px, 0.8em);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-size='sm'] {
-  font-size: max(13px, 0.9em);
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-size='md'] {
-  font-size: 1em;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-size='lg'] {
-  font-size: 1.25em;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-size='xl'] {
-  font-size: 1.6em;
-  line-height: 1.25;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-align='left'] {
-  text-align: left;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-align='center'] {
-  text-align: center;
-}
-
-:is(.nb-prose, .nb-fx-specimen) [data-align='right'] {
-  text-align: right;
-}
-
-/* ----------------------------------------------------------------------------
-   3. Five more pieces of stationery
-   -------------------------------------------------------------------------- */
-
-/* index-card — ruled stock, a red rule under the head, one squared corner. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='index-card'] {
-  position: relative;
-  margin: var(--space-20) 0;
-  padding: var(--space-20) var(--space-20) var(--space-16);
-  background-color: var(--paper-cream);
-  background-image: repeating-linear-gradient(
+:is(.nb-prose, .nb-fx-specimen) [data-paper='stave'] {
+  --pa-pad: var(--space-20) var(--space-16);
+  --pa-bg: repeating-linear-gradient(
     to bottom,
-    transparent 0 27px,
-    color-mix(in srgb, var(--wash-sky) 24%, transparent) 27px 28px
+    var(--ink-line-soft) 0 1px,
+    transparent 1px 9px,
+    var(--ink-line-soft) 9px 10px,
+    transparent 10px 18px,
+    var(--ink-line-soft) 18px 19px,
+    transparent 19px 27px,
+    var(--ink-line-soft) 27px 28px,
+    transparent 28px 36px,
+    var(--ink-line-soft) 36px 37px,
+    transparent 37px 68px
   );
-  background-position: 0 var(--space-20);
-  border: 1.5px solid var(--ink-line);
-  /* Three rounded corners and one cut square: a filed card, not a coaster. */
-  border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 0;
-  box-shadow: var(--shadow-sm);
-  transform: rotate(var(--nb-rotate, 0deg));
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-type='index-card']::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--space-16);
-  height: 2px;
-  background: color-mix(in srgb, var(--wash-coral) 70%, transparent);
-  pointer-events: none;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='tablature'] {
+  --pa-pad: var(--space-20) var(--space-16);
+  --pa-bg: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--ink-line-soft) 70%, transparent) 0 1px,
+    transparent 1px 8px,
+    color-mix(in srgb, var(--ink-line-soft) 70%, transparent) 8px 9px,
+    transparent 9px 16px,
+    color-mix(in srgb, var(--ink-line-soft) 70%, transparent) 16px 17px,
+    transparent 17px 24px,
+    color-mix(in srgb, var(--ink-line-soft) 70%, transparent) 24px 25px,
+    transparent 25px 32px,
+    color-mix(in srgb, var(--ink-line-soft) 70%, transparent) 32px 33px,
+    transparent 33px 40px,
+    color-mix(in srgb, var(--ink-line-soft) 70%, transparent) 40px 41px,
+    transparent 41px 72px
+  );
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-type='index-card'][data-title]::after {
-  content: attr(data-title);
-  position: absolute;
-  top: -11px;
-  left: var(--space-16);
-  padding: 0 var(--space-8);
-  background: var(--paper-cream);
-  font-family: var(--font-label);
-  font-size: var(--text-chip);
-  color: var(--ink-line-soft);
+:is(.nb-prose, .nb-fx-specimen) [data-paper='ledger'] {
+  --pa-ground: color-mix(in srgb, var(--wash-moss-light) 44%, var(--paper-cream));
+  --pa-bg:
+    repeating-linear-gradient(to bottom, transparent 0 27px, color-mix(in srgb, var(--wash-moss) 30%, transparent) 27px 28px),
+    repeating-linear-gradient(to right, transparent 0 78px, color-mix(in srgb, var(--wash-moss) 26%, transparent) 78px 79px);
 }
 
-/* envelope — the flap stands open above the pocket. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='envelope'] {
-  position: relative;
-  margin: var(--space-32) 0 var(--space-24);
-  padding: var(--space-16) var(--space-20);
-  background: var(--fx-light, var(--paper-aged));
-  border: 1.5px solid var(--ink-line);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  box-shadow: var(--shadow-sm);
+:is(.nb-prose, .nb-fx-specimen) [data-paper='accounts'] {
+  --pa-ground: color-mix(in srgb, var(--wash-lemon-light) 30%, var(--paper-cream));
+  --pa-bg:
+    repeating-linear-gradient(to bottom, transparent 0 27px, color-mix(in srgb, var(--paper-edge) 60%, transparent) 27px 28px),
+    linear-gradient(to right, transparent calc(100% - 132px), color-mix(in srgb, var(--wash-coral) 40%, transparent) calc(100% - 132px) calc(100% - 131px), transparent calc(100% - 131px)),
+    linear-gradient(to right, transparent calc(100% - 66px), color-mix(in srgb, var(--wash-coral) 40%, transparent) calc(100% - 66px) calc(100% - 65px), transparent calc(100% - 65px));
 }
 
-/* The flap is two stacked triangles, dark under light, because a clip-path
-   cuts a border off with everything else — the darker one IS the outline. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::before,
-:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::after {
-  content: '';
-  position: absolute;
-  clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
-  pointer-events: none;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='blueprint'] {
+  --pa-ground: var(--wash-sky-deep);
+  --pa-ink: color-mix(in srgb, var(--paper-cream) 88%, var(--wash-sky-light));
+  --pa-bg:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--paper-cream) 22%, transparent) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--paper-cream) 22%, transparent) 0 1px, transparent 1px 14px);
+  --pa-border: 2px solid color-mix(in srgb, var(--paper-cream) 40%, transparent);
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::before {
-  left: -1.5px;
-  right: -1.5px;
-  top: -24px;
-  height: 26px;
-  background: var(--ink-line);
+:is(.nb-prose, .nb-fx-specimen) [data-paper='cornell'] {
+  --pa-pad: var(--space-12) var(--space-16) var(--space-32) var(--space-48);
+  --pa-bg:
+    linear-gradient(to right, transparent 38px, color-mix(in srgb, var(--wash-coral) 48%, transparent) 38px 40px, transparent 40px),
+    linear-gradient(to bottom, transparent calc(100% - 26px), color-mix(in srgb, var(--wash-coral) 48%, transparent) calc(100% - 26px) calc(100% - 24px), transparent calc(100% - 24px)),
+    repeating-linear-gradient(to bottom, transparent 0 27px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 27px 28px);
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::after {
-  left: 2px;
-  right: 2px;
-  top: -20px;
-  height: 22px;
-  background: color-mix(in srgb, var(--fx-base, var(--wash-amber)) 62%, var(--paper-cream));
+:is(.nb-prose, .nb-fx-specimen) [data-paper='isometric'] {
+  --pa-bg:
+    repeating-linear-gradient(60deg, color-mix(in srgb, var(--wash-sky) 22%, transparent) 0 1px, transparent 1px 15px),
+    repeating-linear-gradient(-60deg, color-mix(in srgb, var(--wash-sky) 22%, transparent) 0 1px, transparent 1px 15px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--wash-sky) 16%, transparent) 0 1px, transparent 1px 26px);
 }
 
-/* stamp — perforations round the edge and a postmark ring over one corner. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='stamp'] {
-  position: relative;
-  /* Its own stacking context, so the perforated sheet behind the writing
-     cannot fall through to the page. */
-  isolation: isolate;
-  width: fit-content;
-  min-width: 190px;
-  max-width: 100%;
-  margin: var(--space-20) auto;
-  padding: var(--space-20) var(--space-24);
-  transform: rotate(var(--nb-rotate, 0deg));
-  --nb-perf: 5px;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='hexes'] {
+  --pa-bg:
+    repeating-linear-gradient(60deg, color-mix(in srgb, var(--wash-moss) 26%, transparent) 0 1px, transparent 1px 18px),
+    repeating-linear-gradient(-60deg, color-mix(in srgb, var(--wash-moss) 26%, transparent) 0 1px, transparent 1px 18px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--wash-moss) 26%, transparent) 0 1px, transparent 1px 31px);
 }
 
-/* The sheet, cut with a perforated edge.
- *
- * Masked rather than the element itself: a mask on the block would take a bite
- * out of the first and last letter of every line. The mask is the scallop
- * frame's, at a tighter radius — two layers unioned, a tiled ring of discs
- * plus a solid inset rectangle, so the wavy edge appears round the outside and
- * the middle stays whole. A stamp's edge really is convex: the paper between
- * the punched holes is what is left, and that is a row of bumps. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='stamp']::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--paper-aged);
-  -webkit-mask:
-    radial-gradient(var(--nb-perf), #000 97%, transparent) round
-      calc(-1.5 * var(--nb-perf)) calc(-1.5 * var(--nb-perf)) /
-      calc(3 * var(--nb-perf)) calc(3 * var(--nb-perf)),
-    linear-gradient(#000 0 0) 50% 50% /
-      calc(100% - 2 * var(--nb-perf)) calc(100% - 2 * var(--nb-perf)) no-repeat;
-  mask:
-    radial-gradient(var(--nb-perf), #000 97%, transparent) round
-      calc(-1.5 * var(--nb-perf)) calc(-1.5 * var(--nb-perf)) /
-      calc(3 * var(--nb-perf)) calc(3 * var(--nb-perf)),
-    linear-gradient(#000 0 0) 50% 50% /
-      calc(100% - 2 * var(--nb-perf)) calc(100% - 2 * var(--nb-perf)) no-repeat;
-  pointer-events: none;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='millimetre'] {
+  --pa-bg:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--wash-coral) 40%, transparent) 0 1px, transparent 1px 25px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--wash-coral) 40%, transparent) 0 1px, transparent 1px 25px),
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--wash-coral) 16%, transparent) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--wash-coral) 16%, transparent) 0 1px, transparent 1px 5px);
 }
 
-/* The printed rule inside the perforation — what makes it read as printed
-   rather than as a torn scrap. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='stamp']::after {
-  content: '';
-  position: absolute;
-  inset: calc(var(--nb-perf) + 3px);
-  z-index: -1;
-  border: 2px solid var(--fx-base, var(--wash-terracotta));
-  border-radius: 2px;
-  pointer-events: none;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='logarithmic'] {
+  --pa-bg:
+    linear-gradient(to right, color-mix(in srgb, var(--wash-sky) 34%, transparent) 0 1px, transparent 1px) 0 0 / 100% 100%,
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--wash-sky) 26%, transparent) 0 1px, transparent 1px 24px),
+    linear-gradient(
+      to right,
+      transparent 0 30px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 30px 31px,
+      transparent 31px 58px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 58px 59px,
+      transparent 59px 82px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 82px 83px,
+      transparent 83px 102px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 102px 103px,
+      transparent 103px 120px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 120px 121px,
+      transparent 121px
+    ) 0 0 / 140px 100%;
 }
 
-/* tag — a luggage label, hole punched, hanging on its string. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='tag'] {
-  position: relative;
-  width: fit-content;
-  max-width: 100%;
-  margin: var(--space-20) 0;
-  min-width: 150px;
-  padding: var(--space-12) var(--space-20) var(--space-12) var(--space-32);
-  background: var(--fx-light, var(--paper-aged));
-  border: 1.5px solid var(--ink-line);
-  /* The pointed end a real tag has, cut on the left. */
-  clip-path: polygon(0% 50%, 22px 0%, 100% 0%, 100% 100%, 22px 100%);
-  border-radius: var(--radius-sm);
-  transform: rotate(var(--nb-rotate, 0deg));
-  font-family: var(--font-label);
+:is(.nb-prose, .nb-fx-specimen) [data-paper='polar'] {
+  --pa-bg:
+    repeating-radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--wash-sky) 26%, transparent) 0 1px, transparent 1px 18px),
+    repeating-conic-gradient(from 0deg at 50% 50%, color-mix(in srgb, var(--wash-sky) 22%, transparent) 0deg 0.6deg, transparent 0.6deg 15deg);
 }
 
-:is(.nb-prose, .nb-fx-specimen) [data-type='tag']::before {
-  content: '';
-  position: absolute;
-  /* In the wedge, where a real tag's eyelet is — not out in the writing,
-     where a 9px circle reads as a stray letter o. */
-  left: 9px;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  border: 1.5px solid var(--ink-line);
-  border-radius: 50%;
-  background: var(--paper-cream);
-  pointer-events: none;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='engineer'] {
+  --pa-ground: color-mix(in srgb, var(--wash-moss-light) 50%, var(--paper-cream));
+  --pa-bg:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--wash-moss) 24%, transparent) 0 1px, transparent 1px 10px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--wash-moss) 24%, transparent) 0 1px, transparent 1px 10px);
+  --pa-border: 1.5px solid var(--wash-moss);
 }
 
-/* marginalia — an afterthought, indented behind its own rule. */
-:is(.nb-prose, .nb-fx-specimen) [data-type='marginalia'] {
-  margin: var(--space-12) 0 var(--space-12) var(--space-32);
-  padding: var(--space-4) 0 var(--space-4) var(--space-16);
-  border-left: 2px solid var(--paper-edge);
-  color: var(--ink-line-soft);
-  font-family: var(--font-accent);
-  font-size: max(13px, 0.9em);
+:is(.nb-prose, .nb-fx-specimen) [data-paper='legal'] {
+  --pa-ground: color-mix(in srgb, var(--wash-lemon-light) 76%, var(--paper-cream));
+  --pa-pad: var(--space-12) var(--space-16) var(--space-12) var(--space-40);
+  --pa-bg:
+    linear-gradient(to right, transparent 30px, color-mix(in srgb, var(--wash-coral) 50%, transparent) 30px 31px, transparent 31px 34px, color-mix(in srgb, var(--wash-coral) 50%, transparent) 34px 35px, transparent 35px),
+    repeating-linear-gradient(to bottom, transparent 0 31px, color-mix(in srgb, var(--wash-sky) 26%, transparent) 31px 32px);
+  --pa-border: none;
 }
 
-/* Minimalist mode: the stationery keeps its shape and drops its tilt, the same
-   bargain the sticky note and the polaroid make. */
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='index-card'],
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='stamp'],
-:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='tag'] {
-  transform: none;
+:is(.nb-prose, .nb-fx-specimen) [data-paper='copybook'] {
+  --pa-bg: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--wash-sky) 30%, transparent) 0 1px,
+    transparent 1px 13px,
+    color-mix(in srgb, var(--wash-sky) 14%, transparent) 13px 14px,
+    transparent 14px 27px,
+    color-mix(in srgb, var(--wash-sky) 30%, transparent) 27px 28px,
+    transparent 28px 42px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='crossword'] {
+  --pa-bg:
+    repeating-linear-gradient(to right, var(--ink-line) 0 1.5px, transparent 1.5px 22px),
+    repeating-linear-gradient(to bottom, var(--ink-line) 0 1.5px, transparent 1.5px 22px),
+    repeating-conic-gradient(from 0deg at 50% 50%, color-mix(in srgb, var(--ink-line) 82%, transparent) 0% 25%, transparent 0% 100%)
+      0 0 / 66px 66px;
+  --pa-border: 2px solid var(--ink-line);
+  --pa-radius: 0;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='calendar'] {
+  --pa-bg:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--paper-edge) 80%, transparent) 0 1px, transparent 1px 14.28%),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--paper-edge) 80%, transparent) 0 1px, transparent 1px 30px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--wash-terracotta) 34%, transparent) 0 28px, transparent 28px);
+  --pa-border: 1.5px solid var(--paper-edge);
+  --pa-pad: var(--space-32) var(--space-8) var(--space-8);
+}
+
+/* --- 5c. nine forms ------------------------------------------------------ */
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='notepad'] {
+  --pa-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  --pa-pad: var(--space-20) var(--space-16) var(--space-12);
+  --pa-bg: radial-gradient(
+    circle 4px at 50% 0,
+    transparent 0 3.4px,
+    color-mix(in srgb, var(--paper-edge) 70%, transparent) 3.4px 4px,
+    transparent 4px
+  ) 0 6px / 12px 12px repeat-x;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='receipt'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 96%, var(--wash-sky-light));
+  --pa-border: none;
+  --pa-radius: 0;
+  --pa-pad: var(--space-16) var(--space-12);
+  --pa-bg:
+    repeating-linear-gradient(to bottom, transparent 0 25px, color-mix(in srgb, var(--paper-edge) 30%, transparent) 25px 26px);
+  --pa-clip: polygon(
+    0% 5px, 6% 0px, 12% 5px, 18% 0px, 24% 5px, 30% 0px, 36% 5px, 42% 0px,
+    48% 5px, 54% 0px, 60% 5px, 66% 0px, 72% 5px, 78% 0px, 84% 5px, 90% 0px,
+    96% 5px, 100% 1px,
+    100% calc(100% - 5px), 94% 100%, 88% calc(100% - 5px), 82% 100%,
+    76% calc(100% - 5px), 70% 100%, 64% calc(100% - 5px), 58% 100%,
+    52% calc(100% - 5px), 46% 100%, 40% calc(100% - 5px), 34% 100%,
+    28% calc(100% - 5px), 22% 100%, 16% calc(100% - 5px), 10% 100%,
+    4% calc(100% - 5px), 0% calc(100% - 1px)
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='airmail'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 96%, #ffffff);
+  --pa-pad: var(--space-20) var(--space-24);
+  --pa-bg: repeating-linear-gradient(
+    -45deg,
+    var(--wash-coral) 0 8px,
+    var(--paper-cream) 8px 16px,
+    var(--wash-sky-deep) 16px 24px,
+    var(--paper-cream) 24px 32px
+  );
+  --pa-border: 9px solid transparent;
+  --pa-radius: 2px;
+  background-clip: padding-box;
+  background-origin: border-box;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='telegram'] {
+  --pa-ground: color-mix(in srgb, var(--paper-aged) 88%, var(--wash-amber-light));
+  --pa-border: 3px double var(--ink-line);
+  --pa-radius: 0;
+  --pa-pad: var(--space-20) var(--space-24);
+  --pa-bg: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--wash-sky-deep) 26%, transparent) 0 3px,
+    transparent 3px
+  );
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='punchcard'] {
+  --pa-ground: color-mix(in srgb, var(--wash-lemon-light) 44%, var(--paper-aged));
+  --pa-radius: 0 0 0 14px;
+  --pa-pad: var(--space-20) var(--space-16);
+  --pa-bg: repeating-linear-gradient(
+      to right,
+      color-mix(in srgb, var(--ink-line) 24%, transparent) 0 5px,
+      transparent 5px 13px
+    ) 0 8px / 100% 9px repeat-x;
+  --pa-border: 1.5px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='manuscript'] {
+  --pa-ground: color-mix(in srgb, var(--paper-cream) 92%, var(--paper-aged));
+  --pa-pad: var(--space-16) var(--space-32);
+  --pa-bg:
+    linear-gradient(to right, transparent 22px, color-mix(in srgb, var(--wash-terracotta) 34%, transparent) 22px 23px, transparent 23px),
+    linear-gradient(to left, transparent 22px, color-mix(in srgb, var(--wash-terracotta) 34%, transparent) 22px 23px, transparent 23px);
+  --pa-border: 1px solid var(--paper-edge);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='foxed'] {
+  --pa-ground: var(--paper-aged);
+  --pa-bg:
+    radial-gradient(circle 5px at 18% 24%, color-mix(in srgb, var(--wash-amber-deep) 26%, transparent) 0 60%, transparent 100%),
+    radial-gradient(circle 3px at 72% 40%, color-mix(in srgb, var(--wash-amber-deep) 24%, transparent) 0 60%, transparent 100%),
+    radial-gradient(circle 6px at 44% 78%, color-mix(in srgb, var(--wash-amber-deep) 20%, transparent) 0 60%, transparent 100%),
+    radial-gradient(circle 4px at 88% 84%, color-mix(in srgb, var(--wash-amber-deep) 22%, transparent) 0 60%, transparent 100%);
+  --pa-radius: var(--radius-wobble-sm);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='stained'] {
+  --pa-ground: var(--paper-cream);
+  --pa-bg: radial-gradient(
+    circle 34px at 78% 24%,
+    transparent 0 26px,
+    color-mix(in srgb, var(--wash-amber-deep) 26%, transparent) 26px 31px,
+    color-mix(in srgb, var(--wash-amber-deep) 12%, transparent) 31px 34px,
+    transparent 34px
+  );
+  --pa-radius: var(--radius-wobble-sm);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-paper='scorched'] {
+  --pa-ground: color-mix(in srgb, var(--paper-deep) 80%, var(--wash-amber-light));
+  --pa-bg: radial-gradient(
+    140% 140% at 50% 50%,
+    transparent 0 52%,
+    color-mix(in srgb, var(--wash-amber-deep) 40%, transparent) 76%,
+    color-mix(in srgb, var(--ink-line) 66%, transparent) 100%
+  );
+  --pa-border: none;
+  --pa-clip: polygon(
+    0% 9px, 7% 1px, 14% 10px, 22% 2px, 30% 8px, 38% 3px, 46% 11px, 54% 1px,
+    62% 9px, 70% 2px, 78% 10px, 86% 3px, 94% 8px, 100% 3px,
+    100% calc(100% - 9px), 93% calc(100% - 1px), 85% calc(100% - 10px),
+    77% calc(100% - 2px), 69% calc(100% - 8px), 61% calc(100% - 3px),
+    53% calc(100% - 11px), 45% calc(100% - 1px), 37% calc(100% - 9px),
+    29% calc(100% - 2px), 21% calc(100% - 10px), 13% calc(100% - 3px),
+    5% calc(100% - 8px), 0% calc(100% - 3px)
+  );
 }

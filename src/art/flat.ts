@@ -50,6 +50,12 @@
  * Deliberately tiny. A short palette used consistently is what makes a set of
  * flat shapes look designed; the previous themes offered dozens of colourways
  * and every room ended up a slightly different mud.
+ *
+ * The one thing that outgrew it is the book cloth — see `CLOTH_SPECS` below.
+ * That is not a second palette so much as the same one spread out: a room is
+ * still built from the dozen hexes here, and the fifty cloths only ever appear
+ * a spine at a time, on the one object in the app that is supposed to be
+ * telling you apart from its neighbour.
  */
 export const FLAT = {
   /** The one outline colour. Everything is drawn with this. */
@@ -93,15 +99,231 @@ export const FLAT = {
   shadow: '#5d3a26',
 } as const;
 
-/** Every book-cloth colour, as [face, darker edge] pairs. */
-export const CLOTHS: readonly (readonly [string, string])[] = [
-  [FLAT.terracotta, FLAT.terracottaDark],
-  [FLAT.slate, FLAT.slateDark],
-  [FLAT.plum, FLAT.plumDark],
-  [FLAT.ochre, FLAT.ochreDark],
-  [FLAT.sage, FLAT.sageDark],
-  [FLAT.moss, FLAT.mossDark],
+/* ----------------------------------------------------------------------------
+   The book cloths
+   -------------------------------------------------------------------------- */
+
+/**
+ * Mood words for a cloth, so "surprise me, something cosy" can be answered.
+ *
+ * Deliberately the same vocabulary `themes.ts` gives a room (`ThemeTag`) rather
+ * than a private one: the studio's "in the mood for" row counts tags across
+ * every design vocabulary at once, and two words meaning the same thing would
+ * show up as two chips that each find half the answers.
+ */
+export type ClothTag =
+  | 'warm'
+  | 'cool'
+  | 'muted'
+  | 'vivid'
+  | 'natural'
+  | 'formal'
+  | 'playful'
+  | 'dark'
+  | 'pale'
+  | 'cosy'
+  | 'quiet'
+  | 'coastal'
+  | 'botanical'
+  | 'autumn'
+  | 'winter'
+  | 'spring'
+  | 'summer';
+
+/** Every cloth mood, in the order a picker should offer them. */
+export const CLOTH_TAGS: readonly ClothTag[] = [
+  'warm',
+  'cool',
+  'natural',
+  'muted',
+  'vivid',
+  'pale',
+  'dark',
+  'quiet',
+  'playful',
+  'formal',
+  'cosy',
+  'botanical',
+  'coastal',
+  'spring',
+  'summer',
+  'autumn',
+  'winter',
 ];
+
+export function isClothTag(value: unknown): value is ClothTag {
+  return typeof value === 'string' && (CLOTH_TAGS as readonly string[]).includes(value);
+}
+
+/** One bound cloth: what it is called, what it is, and what it feels like. */
+export interface ClothSpec {
+  /** Display name, for the studio's swatch caption. */
+  label: string;
+  /** The lit face. */
+  face: string;
+  /** The same cloth turning away — see the note on the fold below. */
+  dark: string;
+  /** Mood words. Never drawn; they only steer the dice. */
+  tags: readonly ClothTag[];
+}
+
+function cloth(
+  label: string,
+  face: string,
+  dark: string,
+  tags: readonly ClothTag[],
+): ClothSpec {
+  return { label, face, dark, tags };
+}
+
+/**
+ * Fifty book cloths — the HOUSE palette, and the whole colour vocabulary a
+ * book has.
+ *
+ * ## Why fifty and not six
+ *
+ * Six was the icon's own count and it worked as long as a book's colour was
+ * something the app chose. It stopped working the moment the reader could:
+ * `spines.clothForPalette` folds twenty named pigments onto these cloths, so at
+ * six, "oxblood", "rust" and "clay" were three chips in the Book Studio that
+ * all painted the same terracotta. Every colour control in the app was sitting
+ * on this array, and every one of them was lying about what it could do.
+ *
+ * ## How the pairs were made
+ *
+ * `dark` is not a second opinion about the colour — it is the SAME cloth
+ * turning away from us, and the flat style has nothing but that step to say so.
+ * Mixed by eye, fifty of them would drift in hue and saturation as well as
+ * lightness and the fold would stop reading as a fold. So every pair below
+ * except the first six is `palette.clothPair(face)`: one measured OKLCh step
+ * of lightness (−0.10 L), a little chroma lost into the dark (×0.95), a couple
+ * of degrees of hue turned warmer, and a floor that keeps the darker face above
+ * the one brown ink. The hexes are baked in rather than computed here because
+ * `palette.ts` imports THIS file — deriving them at runtime would be a cycle.
+ *
+ * The first six are the app icon's own cloths at the icon's own hand-authored
+ * values, unchanged and first on purpose: they are what `FlatScheme` hands a
+ * room, and other code and tests know them by index.
+ *
+ * ## What was vetted
+ *
+ * Every face clears the ink floor with room for its own turned edge, every pair
+ * keeps at least 16 points of sRGB brightness between face and edge (the
+ * narrowest step that still reads on a 25px spine), and the fifty were checked
+ * against each other in OKLab: the closest two are the icon's own sage and moss,
+ * and nothing added here comes nearer to a neighbour than that. They were also
+ * checked against the things a book is always seen NEXT to — the cream page
+ * block and label plate, the timber, the dark of the recess — so no cloth
+ * disappears into the furniture it is standing in.
+ *
+ * A book keeps these colours in every room. That is the point: you find a book
+ * by recognising its spine, and a shelf that repaints itself when the reader
+ * redecorates is a shelf they have to learn twice.
+ */
+export const CLOTH_SPECS: readonly ClothSpec[] = [
+  /* --- the icon's six, hex for hex (indices other code knows by heart) --- */
+  cloth('Terracotta', FLAT.terracotta, FLAT.terracottaDark, ['warm', 'natural', 'cosy']),
+  cloth('Slate', FLAT.slate, FLAT.slateDark, ['cool', 'muted', 'quiet']),
+  cloth('Plum', FLAT.plum, FLAT.plumDark, ['muted', 'dark', 'formal']),
+  cloth('Ochre', FLAT.ochre, FLAT.ochreDark, ['warm', 'natural', 'autumn']),
+  cloth('Sage', FLAT.sage, FLAT.sageDark, ['natural', 'muted', 'botanical']),
+  cloth('Moss', FLAT.moss, FLAT.mossDark, ['natural', 'botanical', 'quiet']),
+
+  /* --- reds and oranges --- */
+  cloth('Vermilion', '#d2543c', '#ac3727', ['warm', 'vivid', 'playful']),
+  cloth('Oxblood', '#ae4e40', '#983f36', ['warm', 'dark', 'formal']),
+  cloth('Rust', '#bc6427', '#99470b', ['warm', 'natural', 'autumn']),
+  cloth('Tangerine', '#e08a3f', '#bd6c26', ['warm', 'vivid', 'playful']),
+  cloth('Coral', '#e08063', '#bc634c', ['warm', 'playful', 'summer']),
+  cloth('Blush', '#dfa393', '#bc8578', ['warm', 'pale', 'quiet']),
+  cloth('Apricot', '#f2b694', '#cf9779', ['warm', 'pale', 'summer']),
+
+  /* --- yellows --- */
+  cloth('Saffron', '#e0a63a', '#bf861c', ['warm', 'vivid', 'autumn']),
+  cloth('Butter', '#e8c25e', '#c8a144', ['warm', 'pale', 'playful']),
+  cloth('Lemon', '#d6cd52', '#b8ac34', ['vivid', 'playful', 'spring']),
+
+  /* --- greens --- */
+  cloth('Pistachio', '#a8c96f', '#8da852', ['pale', 'botanical', 'spring']),
+  cloth('Leaf', '#7fae5f', '#668e42', ['natural', 'botanical', 'spring']),
+  cloth('Olive', '#8f8438', '#73661c', ['muted', 'natural', 'autumn']),
+  cloth('Bottle green', '#5f8a63', '#466c47', ['natural', 'formal', 'botanical']),
+  cloth('Forest', '#4e7a55', '#416844', ['dark', 'natural', 'botanical']),
+  cloth('Emerald', '#3f9a68', '#267a4b', ['vivid', 'natural', 'formal']),
+
+  /* --- blue-greens --- */
+  cloth('Jade', '#6fb598', '#559579', ['cool', 'natural', 'quiet']),
+  cloth('Seafoam', '#a3d0c1', '#87afa1', ['pale', 'cool', 'coastal']),
+  cloth('Verdigris', '#46907f', '#2c7161', ['cool', 'muted', 'natural']),
+  cloth('Turquoise', '#4fb0b4', '#329092', ['cool', 'vivid', 'coastal']),
+  cloth('Teal', '#3f8f9c', '#21717b', ['cool', 'formal', 'coastal']),
+  cloth('Peacock', '#347a99', '#246a85', ['cool', 'dark', 'vivid']),
+
+  /* --- blues --- */
+  cloth('Sky', '#7aa8c9', '#5d89a7', ['cool', 'pale', 'coastal']),
+  cloth('Mist', '#b0cadf', '#91aabd', ['pale', 'quiet', 'winter']),
+  cloth('Cornflower', '#7d95d0', '#5f78ad', ['cool', 'playful', 'summer']),
+  cloth('Denim', '#6b8aab', '#4f6d8a', ['cool', 'muted', 'quiet']),
+  cloth('Cobalt', '#4a72c4', '#335ca6', ['cool', 'vivid', 'formal']),
+  cloth('Ink blue', '#566a94', '#455a80', ['cool', 'dark', 'formal']),
+  cloth('Indigo', '#6f6fae', '#52538c', ['cool', 'dark', 'quiet']),
+
+  /* --- purples and pinks --- */
+  cloth('Violet', '#9a7fc4', '#7a63a3', ['cool', 'playful', 'spring']),
+  cloth('Lavender', '#c3b3dc', '#a295bb', ['pale', 'cool', 'quiet']),
+  cloth('Aubergine', '#7a5a92', '#664a7e', ['dark', 'formal', 'muted']),
+  cloth('Mulberry', '#9c5a86', '#7c426c', ['muted', 'dark', 'cosy']),
+  cloth('Magenta', '#c05f95', '#9b4479', ['vivid', 'playful', 'summer']),
+  cloth('Blossom', '#eaadbe', '#c68fa0', ['pale', 'playful', 'spring']),
+  cloth('Rose', '#d9799b', '#b45d80', ['warm', 'playful', 'summer']),
+  cloth('Claret', '#a44c60', '#8e3e53', ['dark', 'formal', 'cosy']),
+
+  /* --- browns --- */
+  cloth('Chestnut', '#975841', '#834935', ['warm', 'dark', 'cosy']),
+  cloth('Camel', '#c69771', '#a57957', ['warm', 'muted', 'natural']),
+  cloth('Sand', '#dcb87a', '#bc9860', ['warm', 'pale', 'coastal']),
+
+  /* --- neutrals --- */
+  cloth('Bone', '#dcc9a0', '#bca984', ['pale', 'quiet', 'natural']),
+  cloth('Ash', '#c6bfb4', '#a6a096', ['muted', 'pale', 'quiet']),
+  cloth('Pewter', '#a3a8a8', '#858989', ['cool', 'muted', 'winter']),
+  cloth('Graphite', '#6b6a70', '#58585d', ['dark', 'formal', 'winter']),
+];
+
+/**
+ * Every book-cloth colour, as [face, darker edge] pairs.
+ *
+ * Derived from `CLOTH_SPECS` rather than written twice: the label, the mood and
+ * the two hexes are one decision, and two parallel arrays of fifty rows would
+ * be one rename away from a book whose swatch says Cobalt and whose spine is
+ * indigo.
+ */
+export const CLOTHS: readonly (readonly [string, string])[] = CLOTH_SPECS.map(
+  (c) => [c.face, c.dark] as const,
+);
+
+/** Display names for the fifty cloths, index-aligned with `CLOTHS`. */
+export const CLOTH_LABELS: readonly string[] = CLOTH_SPECS.map((c) => c.label);
+
+/** Every cloth carrying `tag`, as indices into `CLOTHS`. For steered dice. */
+export function clothsTagged(tag: ClothTag): readonly number[] {
+  const out: number[] = [];
+  for (let i = 0; i < CLOTH_SPECS.length; i++) {
+    if ((CLOTH_SPECS[i] as ClothSpec).tags.includes(tag)) out.push(i);
+  }
+  return out;
+}
+
+/**
+ * The six a ROOM is dressed in — the icon's own, and the default `FlatScheme`.
+ *
+ * Not the same concept as `CLOTHS`, which is why it is a separate export rather
+ * than "the array, obviously". `CLOTHS` is the house palette a BOOK owns and
+ * carries from room to room; a scheme's `cloths` are what a ROOM offers a book
+ * that has not been dressed yet, and there are always exactly six of them (see
+ * `FlatScheme.cloths` for why the count is fixed).
+ */
+export const HOUSE_CLOTHS: readonly (readonly [string, string])[] = CLOTHS.slice(0, 6);
 
 /* ----------------------------------------------------------------------------
    The one thing a room may change
@@ -124,9 +346,13 @@ export interface FlatScheme {
   recess: string;
   wall: string;
   /**
-   * Exactly six, always. A book picks its cloth by `seed % length`, so a
-   * scheme with a different count would re-roll every book on the shelf
-   * instead of merely recolouring it.
+   * Exactly six, always — `HOUSE_CLOTHS` for the default room.
+   *
+   * A book picks its cloth by `seed % length`, so a scheme with a different
+   * count would re-roll every book on the shelf instead of merely recolouring
+   * it. This is emphatically NOT the fifty in `CLOTHS`: those are the house
+   * palette a book owns and keeps in every room, and a scheme is the six a room
+   * offers a book it is dressing for the first time.
    */
   cloths: readonly (readonly [string, string])[];
 }
@@ -137,7 +363,7 @@ const DEFAULT_SCHEME: FlatScheme = {
   timberDark: FLAT.timberDark,
   recess: FLAT.recess,
   wall: FLAT.wall,
-  cloths: CLOTHS,
+  cloths: HOUSE_CLOTHS,
 };
 
 let currentScheme: FlatScheme = DEFAULT_SCHEME;

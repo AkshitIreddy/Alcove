@@ -31,7 +31,7 @@ import {
   type BookPresetId,
   type DesignBox,
 } from './bookDesign';
-import { CLOTHS, FLAT, inkWidth, panel } from './flat';
+import { CLOTH_LABELS, CLOTHS, FLAT, inkWidth, panel, stroke as inkLine, wobbleRect } from './flat';
 // `drawSpine` is no longer called from here — `drawBookSpine` covers the same
 // ground and adds the shape and material axes. `flatSpineFor` survives for the
 // one field the binding still takes from the old seeded spec: where the label
@@ -80,18 +80,220 @@ export type BindingMaterial = (typeof BINDING_MATERIALS)[number];
  */
 export const MAX_BOARD_STYLE = 2;
 
-/** Title panel treatments on the spine (and, mirrored, on the cover). */
-export const TITLE_PLATES = ['none', 'gilt', 'label', 'debossed'] as const;
+/**
+ * Words for what a binding FEELS like, so a picker can be steered.
+ *
+ * The same shape as `shelfDesign.BUILD_TAGS` and read by the same structural
+ * `tagsOf` in `views/rail/designOptions.ts` — a spec is tagged if it carries a
+ * `tags` array, and nothing imports anything to find that out. The list
+ * deliberately overlaps the carpentry's words (`plain`, `ornate`, `antique`,
+ * `cosy`…) so one "in the mood for" row can steer the case, the wall AND the
+ * book instead of three disjoint rows of chips.
+ */
+export type SpineTag =
+  | 'plain'
+  | 'formal'
+  | 'refined'
+  | 'ornate'
+  | 'fancy'
+  | 'whimsical'
+  | 'cosy'
+  | 'rustic'
+  | 'natural'
+  | 'antique'
+  | 'modern'
+  | 'severe'
+  | 'airy'
+  | 'heavy'
+  | 'utilitarian'
+  | 'gilded'
+  | 'dark'
+  | 'pale'
+  | 'warm'
+  | 'cool'
+  | 'bright'
+  | 'muted'
+  | 'botanical'
+  | 'celestial'
+  | 'nautical'
+  | 'heraldic'
+  | 'scholarly'
+  | 'romantic';
+
+/** Every mood word the binding vocabularies use, in picker order. */
+export const SPINE_TAGS: readonly SpineTag[] = [
+  'plain',
+  'formal',
+  'refined',
+  'ornate',
+  'fancy',
+  'whimsical',
+  'cosy',
+  'rustic',
+  'natural',
+  'antique',
+  'modern',
+  'severe',
+  'airy',
+  'heavy',
+  'utilitarian',
+  'gilded',
+  'dark',
+  'pale',
+  'warm',
+  'cool',
+  'bright',
+  'muted',
+  'botanical',
+  'celestial',
+  'nautical',
+  'heraldic',
+  'scholarly',
+  'romantic',
+];
+
+export function isSpineTag(value: unknown): value is SpineTag {
+  return typeof value === 'string' && (SPINE_TAGS as readonly string[]).includes(value);
+}
+
+/**
+ * Title panel treatments on the spine (and, mirrored, on the cover).
+ *
+ * Fifty lettering-piece treatments, from "nothing at all" through paper slips,
+ * sunk morocco labels, ruled boxes, roundels and gilt cartouches. The first
+ * four ids are the originals and are pinned in that order: they are persisted
+ * per book in `cover_meta.style`, and renaming one would silently redress
+ * every book that already wears it. `none` stays first because it is the
+ * commonest answer and because `PLATE_WEIGHTS` and the studio's picker both
+ * lead with it.
+ *
+ * What each id MEANS lives in `TITLE_PLATE_SPECS` below — a plate is a ground,
+ * a silhouette, a frame, a pair of end marks and a lettering colour, and it is
+ * data rather than fifty branches so that `drawTitlePlate` stays one function
+ * you can read in a screenful.
+ */
+export const TITLE_PLATES = [
+  'none',
+  'gilt',
+  'label',
+  'debossed',
+  'morocco-label',
+  'double-fillet',
+  'triple-fillet',
+  'blind-panel',
+  'gilt-cartouche',
+  'paper-slip',
+  'ruled-box',
+  'roundel',
+  'lozenge-plate',
+  'shield-plate',
+  'scroll-plate',
+  'stone-tablet',
+  'oval-medallion',
+  'bead-frame',
+  'rope-frame',
+  'dotted-rule',
+  'corner-brackets',
+  'notched-corners',
+  'scallop-edge',
+  'sunk-panel',
+  'leather-onlay',
+  'inlay-strip',
+  'vellum-slip',
+  'linen-tag',
+  'gilt-band',
+  'twin-rules',
+  'ribbon-band',
+  'blind-lettered',
+  'gilt-direct',
+  'ink-panel',
+  'ivory-plate',
+  'ebony-plate',
+  'copper-plate',
+  'enamel-plate',
+  'crest-plate',
+  'arched-plate',
+  'pedimented',
+  'chamfered-plate',
+  'stepped-frame',
+  'hatched-ground',
+  'stippled-ground',
+  'wreathed-plate',
+  'starred-ends',
+  'fleuron-ends',
+  'lozenge-ends',
+  'gothic-panel',
+] as const;
 export type TitlePlateStyle = (typeof TITLE_PLATES)[number];
 
-/** Text-block edge treatments (the sliver of pages visible at the joint). */
-export const EDGE_TREATMENTS = ['plain', 'gilt', 'marbled', 'speckled'] as const;
+/**
+ * Text-block edge treatments (the sliver of pages visible at the joint).
+ *
+ * Fifty, and the first four are the originals in their original order for the
+ * same persistence reason as the plates. The rest are the real vocabulary a
+ * finisher works in: sprinkled and stained edges, the six named marblings,
+ * gauffering, a painted fore-edge, rough-cut and deckle blocks, top-gilt only,
+ * and the two that are not decoration at all — `foxed` and `well-thumbed`.
+ *
+ * `EDGE_SPECS` carries what each one draws. The spine itself never paints the
+ * text block (the binding in `art/bookDesign.ts` owns the body), so the specs
+ * exist for `art/covers.ts`, which paints the fore-edge sliver on the pull-out
+ * board — see `edgeSpec`.
+ */
+export const EDGE_TREATMENTS = [
+  'plain',
+  'gilt',
+  'marbled',
+  'speckled',
+  'sprinkled',
+  'stained-red',
+  'stained-blue',
+  'stained-green',
+  'yellow-edges',
+  'top-gilt',
+  'fore-edge-gilt',
+  'all-edges-gilt',
+  'gauffered',
+  'rough-cut',
+  'deckle',
+  'uncut',
+  'burnished',
+  'antique-gilt',
+  'red-under-gold',
+  'stippled',
+  'agate',
+  'comb-marbled',
+  'spanish-wave',
+  'stone-marbled',
+  'shell-marbled',
+  'nonpareil',
+  'peacock-marbled',
+  'painted-fore-edge',
+  'landscape-edge',
+  'mottled',
+  'tree-calf-edge',
+  'spattered',
+  'dusted',
+  'charcoal-edge',
+  'ink-edge',
+  'sepia-edge',
+  'tea-stained',
+  'saffron-edge',
+  'rose-edge',
+  'sea-green-edge',
+  'violet-edge',
+  'two-tone',
+  'banded',
+  'striped',
+  'chequered',
+  'silvered',
+  'copper-edge',
+  'verdigris-edge',
+  'foxed',
+  'well-thumbed',
+] as const;
 export type EdgeTreatment = (typeof EDGE_TREATMENTS)[number];
 
-/** Number of curated pigment duos (shared with covers.ts). */
-export const PIGMENT_COUNT = 20;
-/** Number of ornament stamps (a book may also have none). */
-export const ORNAMENT_COUNT = 12;
 /** Maximum raised bands (cords) across a spine. */
 export const MAX_RAISED_BANDS = 5;
 
@@ -151,31 +353,20 @@ export const MATERIAL_LABELS: Readonly<Record<BindingMaterial, string>> = {
   marbled: 'Marbled boards',
 };
 
-/** Display names for the 20 pigment duos, index-aligned with PALETTES. */
-export const PIGMENT_LABELS: readonly string[] = [
-  'Amber',
-  'Terracotta',
-  'Moss',
-  'Dusty blue',
-  'Plum',
-  'Ochre',
-  'Sage',
-  'Rust',
-  'Clay',
-  'Olive',
-  'Slate',
-  'Blush',
-  'Oxblood',
-  'Navy',
-  'Forest',
-  'Tan',
-  'Cream',
-  'Ink',
-  'Teal',
-  'Saffron',
-];
-
-/** Display names for the 12 ornament stamps, index-aligned with drawOrnament. */
+/**
+ * Display names for the 50 ornament stamps, index-aligned with `drawOrnament`.
+ *
+ * The first twelve are the originals and keep their indices: `ornament` is
+ * persisted per book, so shifting one would restamp somebody's book with a
+ * different tool. Everything from 12 up is the binder's own brass: fleurons,
+ * acorns, thistles, anchors, keys, bees, shells, crowns, lyres, hourglasses.
+ *
+ * Every one of them is vetted at true size. A stamp is struck at roughly a
+ * third of the spine's width — 20–60 world px on an ordinary octavo, less on a
+ * pamphlet — so anything that needs interior detail to be recognisable has no
+ * business here. The rule the whole table follows: ONE silhouette, filled or
+ * stroked in a single ink, plus at most two accents.
+ */
 export const ORNAMENT_LABELS: readonly string[] = [
   'Diamond',
   'Laurel spray',
@@ -189,23 +380,798 @@ export const ORNAMENT_LABELS: readonly string[] = [
   'Quill',
   'Tree',
   'Crescent & stars',
+  'Fleuron',
+  'Acorn',
+  'Thistle',
+  'Anchor',
+  'Key',
+  'Compass rose',
+  'Bee',
+  'Scallop shell',
+  'Crown',
+  'Lyre',
+  'Hourglass',
+  'Rosette',
+  'Trefoil',
+  'Quatrefoil',
+  'Fleur-de-lis',
+  'Ivy leaf',
+  'Oak leaf',
+  'Wheatsheaf',
+  'Pomegranate',
+  'Tulip',
+  'Heraldic rose',
+  'Comet',
+  'Lantern',
+  'Inkpot',
+  'Open book',
+  'Spectacles',
+  'Pine cone',
+  'Beehive',
+  'Butterfly',
+  'Swallow',
+  'Fish',
+  'Horseshoe',
+  'Bell',
+  'Little ship',
+  'Mountain',
+  'Wave',
+  'Snowflake',
+  'Heart',
 ];
 
+/** Number of ornament stamps (a book may also have none). */
+export const ORNAMENT_COUNT = ORNAMENT_LABELS.length;
+
+/** What each stamp feels like, index-aligned with ORNAMENT_LABELS. */
+export const ORNAMENT_TAGS: readonly (readonly SpineTag[])[] = [
+  ['plain', 'formal', 'severe'], // 0  diamond
+  ['botanical', 'refined', 'antique'], // 1  laurel spray
+  ['celestial', 'bright', 'plain'], // 2  star
+  ['whimsical', 'rustic', 'plain'], // 3  blot
+  ['modern', 'plain', 'utilitarian'], // 4  chevron
+  ['celestial', 'bright', 'ornate'], // 5  sun
+  ['celestial', 'romantic', 'cool'], // 6  moon
+  ['antique', 'scholarly', 'plain'], // 7  keyhole
+  ['botanical', 'formal', 'heraldic'], // 8  laurel wreath
+  ['scholarly', 'antique', 'refined'], // 9  quill
+  ['botanical', 'natural', 'cosy'], // 10 tree
+  ['celestial', 'romantic', 'ornate'], // 11 crescent & stars
+  ['ornate', 'antique', 'refined'], // 12 fleuron
+  ['botanical', 'natural', 'cosy'], // 13 acorn
+  ['botanical', 'rustic', 'heraldic'], // 14 thistle
+  ['nautical', 'heavy', 'utilitarian'], // 15 anchor
+  ['antique', 'scholarly', 'whimsical'], // 16 key
+  ['nautical', 'formal', 'celestial'], // 17 compass rose
+  ['whimsical', 'natural', 'bright'], // 18 bee
+  ['nautical', 'natural', 'refined'], // 19 scallop shell
+  ['heraldic', 'formal', 'gilded'], // 20 crown
+  ['refined', 'romantic', 'antique'], // 21 lyre
+  ['scholarly', 'severe', 'antique'], // 22 hourglass
+  ['ornate', 'formal', 'fancy'], // 23 rosette
+  ['heraldic', 'plain', 'refined'], // 24 trefoil
+  ['heraldic', 'ornate', 'formal'], // 25 quatrefoil
+  ['heraldic', 'formal', 'fancy'], // 26 fleur-de-lis
+  ['botanical', 'natural', 'romantic'], // 27 ivy leaf
+  ['botanical', 'rustic', 'natural'], // 28 oak leaf
+  ['botanical', 'rustic', 'warm'], // 29 wheatsheaf
+  ['botanical', 'ornate', 'warm'], // 30 pomegranate
+  ['botanical', 'romantic', 'bright'], // 31 tulip
+  ['heraldic', 'romantic', 'formal'], // 32 heraldic rose
+  ['celestial', 'whimsical', 'bright'], // 33 comet
+  ['cosy', 'antique', 'warm'], // 34 lantern
+  ['scholarly', 'antique', 'utilitarian'], // 35 inkpot
+  ['scholarly', 'plain', 'formal'], // 36 open book
+  ['scholarly', 'whimsical', 'antique'], // 37 spectacles
+  ['botanical', 'natural', 'cosy'], // 38 pine cone
+  ['rustic', 'natural', 'cosy'], // 39 beehive
+  ['whimsical', 'romantic', 'airy'], // 40 butterfly
+  ['natural', 'airy', 'romantic'], // 41 swallow
+  ['nautical', 'natural', 'whimsical'], // 42 fish
+  ['rustic', 'whimsical', 'antique'], // 43 horseshoe
+  ['formal', 'antique', 'heavy'], // 44 bell
+  ['nautical', 'whimsical', 'cosy'], // 45 little ship
+  ['natural', 'severe', 'cool'], // 46 mountain
+  ['nautical', 'natural', 'cool'], // 47 wave
+  ['celestial', 'cool', 'refined'], // 48 snowflake
+  ['romantic', 'whimsical', 'warm'], // 49 heart
+];
+
+/* --------------------------- title-plate specs ---------------------------- */
+
+/** The ground a plate is filled with. `none` sets the title on bare covering. */
+export type PlateGround =
+  | 'none'
+  | 'cream'
+  | 'creamDeep'
+  | 'gilt'
+  | 'giltPale'
+  | 'ink'
+  | 'timber'
+  | 'terracotta'
+  | 'slate'
+  | 'moss'
+  | 'plum';
+
+/** The plate's silhouette. All of them are long and narrow — a spine label. */
+export type PlateShape =
+  | 'rect'
+  | 'capsule'
+  | 'oval'
+  | 'lozenge'
+  | 'shield'
+  | 'scroll'
+  | 'octagon'
+  | 'arch'
+  | 'stepped';
+
+/** Rules and beading struck around the plate. */
+export type PlateFrame =
+  | 'none'
+  | 'single'
+  | 'double'
+  | 'triple'
+  | 'dotted'
+  | 'bead'
+  | 'rope'
+  | 'scallop'
+  | 'brackets'
+  | 'notched'
+  | 'wreath'
+  | 'gothic';
+
+/** The marks that close the lettering off, head and tail. */
+export type PlateEnds =
+  | 'none'
+  | 'rule'
+  | 'double-rule'
+  | 'dots'
+  | 'lozenge'
+  | 'star'
+  | 'fleuron'
+  | 'bracket';
+
+/** Which ink a plate's frame, ground pattern and lettering are struck in. */
+export type PlateInk = 'gilt' | 'ink' | 'soft' | 'cream' | 'auto';
+
+/** A ground texture struck INTO the plate, under the lettering. */
+export type PlateGrain = 'none' | 'hatch' | 'stipple' | 'rule';
+
+/** One lettering-piece treatment, as the numbers `drawTitlePlate` reads. */
+export interface TitlePlateSpec {
+  id: TitlePlateStyle;
+  label: string;
+  /** One line for the studio card. */
+  blurb: string;
+  tags: readonly SpineTag[];
+  ground: PlateGround;
+  shape: PlateShape;
+  frame: PlateFrame;
+  frameInk: PlateInk;
+  ends: PlateEnds;
+  /** Lettering colour. `auto` = gilt on a gilded book, soft ink otherwise. */
+  letter: PlateInk;
+  grain: PlateGrain;
+  /** Outline weight multiplier on the plate itself; 0 draws no outline. */
+  outline: number;
+  /** Corner radius as a fraction of the plate's width. */
+  radius: number;
+}
+
+function plate(
+  id: TitlePlateStyle,
+  label: string,
+  blurb: string,
+  tags: readonly SpineTag[],
+  spec: Omit<TitlePlateSpec, 'id' | 'label' | 'blurb' | 'tags'>,
+): TitlePlateSpec {
+  return { id, label, blurb, tags, ...spec };
+}
+
+/**
+ * The fifty lettering-piece treatments, keyed by id.
+ *
+ * Composed rather than drawn: a plate is (ground × silhouette × frame × ends ×
+ * grain × lettering ink), and every one of those pieces was drawn once and
+ * checked at 24 world px. That is what makes fifty of them worth having — each
+ * entry is a composition somebody chose, not a number somebody incremented,
+ * and no two share all six slots.
+ */
+export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>> = {
+  /* ---- nothing, and the three originals ---- */
+
+  none: plate('none', 'None', 'The title struck straight onto the covering, and nothing else.',
+    ['plain', 'utilitarian', 'severe'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'auto', ends: 'none',
+      letter: 'auto', grain: 'none', outline: 0, radius: 0.18 }),
+
+  gilt: plate('gilt', 'Gilt panel', 'A panel of foil with the title reserved out of it.',
+    ['gilded', 'formal', 'fancy'],
+    { ground: 'gilt', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'rule',
+      letter: 'ink', grain: 'none', outline: 0.7, radius: 0.16 }),
+
+  label: plate('label', 'Paper label', 'A slip of cream paper, pasted on and lettered by hand.',
+    ['plain', 'cosy', 'antique'],
+    { ground: 'cream', shape: 'rect', frame: 'none', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0.7, radius: 0.18 }),
+
+  debossed: plate('debossed', 'Debossed', 'Struck into the covering with no colour in the depression.',
+    ['severe', 'modern', 'plain'],
+    { ground: 'none', shape: 'rect', frame: 'single', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0, radius: 0.12 }),
+
+  /* ---- sunk and laid-on labels ---- */
+
+  'morocco-label': plate('morocco-label', 'Sunk morocco', 'A dark goatskin label let into the leather, lettered in gold.',
+    ['formal', 'gilded', 'refined'],
+    { ground: 'plum', shape: 'rect', frame: 'single', frameInk: 'gilt', ends: 'rule',
+      letter: 'gilt', grain: 'none', outline: 1, radius: 0.14 }),
+
+  'leather-onlay': plate('leather-onlay', 'Leather onlay', 'A second skin pared thin and laid over the first.',
+    ['ornate', 'warm', 'antique'],
+    { ground: 'terracotta', shape: 'rect', frame: 'double', frameInk: 'gilt', ends: 'none',
+      letter: 'cream', grain: 'none', outline: 1, radius: 0.2 }),
+
+  'inlay-strip': plate('inlay-strip', 'Inlaid strip', 'A band of contrasting cloth inlaid flush with the covering.',
+    ['modern', 'refined', 'plain'],
+    { ground: 'slate', shape: 'rect', frame: 'none', frameInk: 'cream', ends: 'rule',
+      letter: 'cream', grain: 'none', outline: 0.5, radius: 0.04 }),
+
+  'vellum-slip': plate('vellum-slip', 'Vellum slip', 'A pale skin label, cut a shade proud of its panel.',
+    ['pale', 'antique', 'refined'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'soft', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.9, radius: 0.1 }),
+
+  'paper-slip': plate('paper-slip', 'Paper slip', 'A printed slip, corners already lifting.',
+    ['plain', 'cosy', 'rustic'],
+    { ground: 'cream', shape: 'rect', frame: 'dotted', frameInk: 'soft', ends: 'rule',
+      letter: 'soft', grain: 'none', outline: 0.6, radius: 0.06 }),
+
+  'linen-tag': plate('linen-tag', 'Linen tag', 'A woven tag stitched down at both ends.',
+    ['rustic', 'natural', 'cosy'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'notched', frameInk: 'soft', ends: 'dots',
+      letter: 'soft', grain: 'rule', outline: 0.8, radius: 0.05 }),
+
+  'ivory-plate': plate('ivory-plate', 'Ivory plate', 'A pale tablet, cool against a dark binding.',
+    ['pale', 'formal', 'refined'],
+    { ground: 'cream', shape: 'octagon', frame: 'single', frameInk: 'ink', ends: 'lozenge',
+      letter: 'ink', grain: 'none', outline: 1, radius: 0.1 }),
+
+  'ebony-plate': plate('ebony-plate', 'Ebony plate', 'Near-black, with the letters cut back to gold.',
+    ['dark', 'severe', 'gilded'],
+    { ground: 'ink', shape: 'rect', frame: 'single', frameInk: 'gilt', ends: 'rule',
+      letter: 'gilt', grain: 'none', outline: 0.6, radius: 0.08 }),
+
+  'copper-plate': plate('copper-plate', 'Copper plate', 'A beaten metal plate pinned at the corners.',
+    ['antique', 'heavy', 'warm'],
+    { ground: 'timber', shape: 'rect', frame: 'bead', frameInk: 'ink', ends: 'dots',
+      letter: 'ink', grain: 'hatch', outline: 1.1, radius: 0.06 }),
+
+  'enamel-plate': plate('enamel-plate', 'Enamelled', 'A field of green enamel with a fine gold border.',
+    ['ornate', 'fancy', 'cool'],
+    { ground: 'moss', shape: 'capsule', frame: 'double', frameInk: 'gilt', ends: 'dots',
+      letter: 'gilt', grain: 'none', outline: 0.8, radius: 0.5 }),
+
+  /* ---- ruled and filleted panels, no label at all ---- */
+
+  'double-fillet': plate('double-fillet', 'Double fillet', 'Two gold lines run round the panel and nothing more.',
+    ['formal', 'gilded', 'plain'],
+    { ground: 'none', shape: 'rect', frame: 'double', frameInk: 'gilt', ends: 'none',
+      letter: 'gilt', grain: 'none', outline: 0, radius: 0.1 }),
+
+  'triple-fillet': plate('triple-fillet', 'Triple fillet', 'Three rules, the middle one heavier than its neighbours.',
+    ['formal', 'ornate', 'gilded'],
+    { ground: 'none', shape: 'rect', frame: 'triple', frameInk: 'gilt', ends: 'rule',
+      letter: 'gilt', grain: 'none', outline: 0, radius: 0.08 }),
+
+  'blind-panel': plate('blind-panel', 'Blind panel', 'Tooled without foil — you read it by the shadow in the leather.',
+    ['severe', 'antique', 'muted'],
+    { ground: 'none', shape: 'rect', frame: 'double', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0, radius: 0.1 }),
+
+  'ruled-box': plate('ruled-box', 'Ruled box', 'A plain box in ink, the way a clerk would rule it.',
+    ['plain', 'utilitarian', 'scholarly'],
+    { ground: 'none', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'rule',
+      letter: 'ink', grain: 'none', outline: 0, radius: 0.02 }),
+
+  'twin-rules': plate('twin-rules', 'Twin rules', 'One rule above the title, one below, and open sides.',
+    ['plain', 'modern', 'airy'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'double-rule',
+      letter: 'auto', grain: 'none', outline: 0, radius: 0 }),
+
+  'dotted-rule': plate('dotted-rule', 'Dotted rule', 'A border of small round tools, struck one at a time.',
+    ['refined', 'antique', 'ornate'],
+    { ground: 'none', shape: 'rect', frame: 'dotted', frameInk: 'gilt', ends: 'dots',
+      letter: 'auto', grain: 'none', outline: 0, radius: 0.1 }),
+
+  'corner-brackets': plate('corner-brackets', 'Corner brackets', 'Four right angles that suggest a box without closing one.',
+    ['modern', 'refined', 'airy'],
+    { ground: 'none', shape: 'rect', frame: 'brackets', frameInk: 'gilt', ends: 'none',
+      letter: 'auto', grain: 'none', outline: 0, radius: 0.04 }),
+
+  'sunk-panel': plate('sunk-panel', 'Sunk panel', 'The whole compartment dropped a hair below the covering.',
+    ['severe', 'heavy', 'formal'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'rule',
+      letter: 'ink', grain: 'none', outline: 1.2, radius: 0.06 }),
+
+  'chamfered-plate': plate('chamfered-plate', 'Chamfered', 'Every corner taken off with one stroke.',
+    ['modern', 'plain', 'refined'],
+    { ground: 'cream', shape: 'octagon', frame: 'none', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0.8, radius: 0.1 }),
+
+  'stepped-frame': plate('stepped-frame', 'Stepped frame', 'A frame inside a frame, each step a little narrower.',
+    ['ornate', 'formal', 'heavy'],
+    { ground: 'creamDeep', shape: 'stepped', frame: 'double', frameInk: 'ink', ends: 'rule',
+      letter: 'ink', grain: 'none', outline: 1, radius: 0.06 }),
+
+  /* ---- shaped cartouches ---- */
+
+  'gilt-cartouche': plate('gilt-cartouche', 'Gilt cartouche', 'A scrolled gold cartouche with the title inside it.',
+    ['ornate', 'gilded', 'fancy'],
+    { ground: 'giltPale', shape: 'scroll', frame: 'single', frameInk: 'ink', ends: 'fleuron',
+      letter: 'ink', grain: 'none', outline: 0.9, radius: 0.24 }),
+
+  roundel: plate('roundel', 'Roundel', 'A long capsule with the lettering running through it.',
+    ['refined', 'modern', 'plain'],
+    { ground: 'cream', shape: 'capsule', frame: 'none', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0.8, radius: 0.5 }),
+
+  'oval-medallion': plate('oval-medallion', 'Oval medallion', 'A true oval, bordered with a fine bead.',
+    ['ornate', 'romantic', 'refined'],
+    { ground: 'creamDeep', shape: 'oval', frame: 'bead', frameInk: 'gilt', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.9, radius: 0.5 }),
+
+  'lozenge-plate': plate('lozenge-plate', 'Lozenge', 'A long diamond, points to head and tail.',
+    ['heraldic', 'formal', 'fancy'],
+    { ground: 'cream', shape: 'lozenge', frame: 'none', frameInk: 'gilt', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.9, radius: 0.1 }),
+
+  'shield-plate': plate('shield-plate', 'Shield', 'A little escutcheon, pointed at the tail.',
+    ['heraldic', 'formal', 'antique'],
+    { ground: 'terracotta', shape: 'shield', frame: 'single', frameInk: 'gilt', ends: 'none',
+      letter: 'cream', grain: 'none', outline: 1, radius: 0.14 }),
+
+  'scroll-plate': plate('scroll-plate', 'Scroll', 'A ribbon of paper with both ends curled under.',
+    ['romantic', 'antique', 'whimsical'],
+    { ground: 'cream', shape: 'scroll', frame: 'none', frameInk: 'soft', ends: 'rule',
+      letter: 'soft', grain: 'none', outline: 0.9, radius: 0.2 }),
+
+  'stone-tablet': plate('stone-tablet', 'Tablet', 'A slab with a square shoulder, lettered like an inscription.',
+    ['severe', 'heavy', 'formal'],
+    { ground: 'slate', shape: 'rect', frame: 'double', frameInk: 'cream', ends: 'rule',
+      letter: 'cream', grain: 'none', outline: 1.2, radius: 0.03 }),
+
+  'arched-plate': plate('arched-plate', 'Arched', 'A round-headed panel, like a window in a chapter house.',
+    ['antique', 'formal', 'romantic'],
+    { ground: 'creamDeep', shape: 'arch', frame: 'single', frameInk: 'ink', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 1, radius: 0.5 }),
+
+  pedimented: plate('pedimented', 'Pedimented', 'A gable over the head of the panel.',
+    ['formal', 'heavy', 'antique'],
+    { ground: 'cream', shape: 'shield', frame: 'double', frameInk: 'ink', ends: 'lozenge',
+      letter: 'ink', grain: 'none', outline: 1.1, radius: 0.08 }),
+
+  'gothic-panel': plate('gothic-panel', 'Gothic panel', 'A pointed arch with a cusp at each shoulder.',
+    ['ornate', 'antique', 'formal'],
+    { ground: 'plum', shape: 'arch', frame: 'gothic', frameInk: 'gilt', ends: 'none',
+      letter: 'gilt', grain: 'none', outline: 1, radius: 0.5 }),
+
+  'crest-plate': plate('crest-plate', 'Crested', 'A plate with a small crest struck above the lettering.',
+    ['heraldic', 'ornate', 'gilded'],
+    { ground: 'giltPale', shape: 'shield', frame: 'single', frameInk: 'ink', ends: 'star',
+      letter: 'ink', grain: 'none', outline: 1, radius: 0.12 }),
+
+  /* ---- borders with a character of their own ---- */
+
+  'bead-frame': plate('bead-frame', 'Beaded', 'A row of beads all the way round, struck with one tool.',
+    ['ornate', 'refined', 'antique'],
+    { ground: 'cream', shape: 'rect', frame: 'bead', frameInk: 'gilt', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0.7, radius: 0.14 }),
+
+  'rope-frame': plate('rope-frame', 'Roped', 'A twisted cable border — a binder’s rope roll.',
+    ['nautical', 'ornate', 'rustic'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'rope', frameInk: 'ink', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.7, radius: 0.16 }),
+
+  'scallop-edge': plate('scallop-edge', 'Scalloped', 'The label cut with a scalloped edge, like a paper doily.',
+    ['whimsical', 'romantic', 'fancy'],
+    { ground: 'cream', shape: 'rect', frame: 'scallop', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0.6, radius: 0.2 }),
+
+  'notched-corners': plate('notched-corners', 'Notched', 'Corners nicked out, the way a ticket is punched.',
+    ['modern', 'utilitarian', 'plain'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'notched', frameInk: 'ink', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.8, radius: 0.02 }),
+
+  'wreathed-plate': plate('wreathed-plate', 'Wreathed', 'A ring of small leaves closing the panel top and bottom.',
+    ['botanical', 'ornate', 'formal'],
+    { ground: 'cream', shape: 'rect', frame: 'wreath', frameInk: 'gilt', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0.7, radius: 0.16 }),
+
+  'gilt-band': plate('gilt-band', 'Gilt band', 'A broad gold band across the spine, edge to edge.',
+    ['gilded', 'heavy', 'formal'],
+    { ground: 'gilt', shape: 'rect', frame: 'none', frameInk: 'ink', ends: 'double-rule',
+      letter: 'ink', grain: 'none', outline: 0, radius: 0 }),
+
+  'ribbon-band': plate('ribbon-band', 'Ribbon band', 'A band of coloured cloth wrapped round the compartment.',
+    ['cosy', 'whimsical', 'warm'],
+    { ground: 'terracotta', shape: 'rect', frame: 'none', frameInk: 'cream', ends: 'double-rule',
+      letter: 'cream', grain: 'none', outline: 0.6, radius: 0 }),
+
+  'ink-panel': plate('ink-panel', 'Ink panel', 'A block of solid ink with the title left out of it.',
+    ['dark', 'modern', 'severe'],
+    { ground: 'ink', shape: 'rect', frame: 'none', frameInk: 'cream', ends: 'none',
+      letter: 'cream', grain: 'none', outline: 0, radius: 0.08 }),
+
+  /* ---- grounds and end marks ---- */
+
+  'hatched-ground': plate('hatched-ground', 'Hatched ground', 'The panel cross-hatched so the letters sit proud of it.',
+    ['ornate', 'antique', 'scholarly'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'none',
+      letter: 'ink', grain: 'hatch', outline: 0.9, radius: 0.1 }),
+
+  'stippled-ground': plate('stippled-ground', 'Stippled ground', 'A ground of fine dots, punched rather than ruled.',
+    ['refined', 'antique', 'muted'],
+    { ground: 'cream', shape: 'rect', frame: 'single', frameInk: 'soft', ends: 'none',
+      letter: 'ink', grain: 'stipple', outline: 0.8, radius: 0.12 }),
+
+  'starred-ends': plate('starred-ends', 'Starred ends', 'A small star closing the title at head and tail.',
+    ['celestial', 'whimsical', 'gilded'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'star',
+      letter: 'gilt', grain: 'none', outline: 0, radius: 0 }),
+
+  'fleuron-ends': plate('fleuron-ends', 'Fleuron ends', 'A printer’s leaf above and below the lettering.',
+    ['botanical', 'ornate', 'refined'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'fleuron',
+      letter: 'auto', grain: 'none', outline: 0, radius: 0 }),
+
+  'lozenge-ends': plate('lozenge-ends', 'Lozenge ends', 'One small diamond at each end of the run.',
+    ['formal', 'plain', 'refined'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'lozenge',
+      letter: 'auto', grain: 'none', outline: 0, radius: 0 }),
+
+  'blind-lettered': plate('blind-lettered', 'Blind lettered', 'No panel, no foil — the title pressed into the covering.',
+    ['severe', 'muted', 'plain'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0, radius: 0 }),
+
+  'gilt-direct': plate('gilt-direct', 'Gilt direct', 'Gold laid straight onto the covering, no ground beneath it.',
+    ['gilded', 'plain', 'formal'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'none',
+      letter: 'gilt', grain: 'none', outline: 0, radius: 0 }),
+};
+
 /** Display names for the title-plate treatments. */
-export const TITLE_PLATE_LABELS: Readonly<Record<TitlePlateStyle, string>> = {
-  none: 'None',
-  gilt: 'Gilt panel',
-  label: 'Paper label',
-  debossed: 'Debossed',
+export const TITLE_PLATE_LABELS: Readonly<Record<TitlePlateStyle, string>> =
+  Object.fromEntries(
+    TITLE_PLATES.map((id) => [id, TITLE_PLATE_SPECS[id].label]),
+  ) as Record<TitlePlateStyle, string>;
+
+/** Mood words for the title-plate treatments. */
+export const TITLE_PLATE_TAGS: Readonly<Record<TitlePlateStyle, readonly SpineTag[]>> =
+  Object.fromEntries(
+    TITLE_PLATES.map((id) => [id, TITLE_PLATE_SPECS[id].tags]),
+  ) as Record<TitlePlateStyle, readonly SpineTag[]>;
+
+/** The spec for a plate id, total: junk falls back to the plain paper label. */
+export function titlePlateSpec(id: unknown): TitlePlateSpec {
+  return (
+    (typeof id === 'string' ? TITLE_PLATE_SPECS[id as TitlePlateStyle] : undefined) ??
+    TITLE_PLATE_SPECS.none
+  );
+}
+
+/* ------------------------------- edge specs ------------------------------- */
+
+/**
+ * The text block's own colour before anything is laid over it.
+ *
+ * `ink` is the only near-black, and it exists because without it the two
+ * treatments that are supposed to be BLACK — `ink-edge` and `charcoal-edge` —
+ * had to borrow `slate`, which made "Ink edges" a byte-for-byte duplicate of
+ * "Blue edges". Two rows of a fifty-row picker that paint the same pixels are
+ * worse than forty-nine rows.
+ */
+export type EdgeGround =
+  | 'cream'
+  | 'creamDeep'
+  | 'gilt'
+  | 'giltPale'
+  | 'timber'
+  | 'terracotta'
+  | 'slate'
+  | 'sage'
+  | 'moss'
+  | 'plum'
+  | 'ochre'
+  | 'ink';
+
+/** The marks laid over the block. */
+export type EdgePattern =
+  | 'none'
+  | 'fleck'
+  | 'sprinkle'
+  | 'comb'
+  | 'wave'
+  | 'stone'
+  | 'shell'
+  | 'band'
+  | 'stripe'
+  | 'cheque'
+  | 'ripple'
+  | 'scene'
+  | 'hatch';
+
+/** Which edges of the block carry foil. */
+export type EdgeGild = 'none' | 'top' | 'fore' | 'all';
+
+/** How the block was cut. */
+export type EdgeCut = 'smooth' | 'rough' | 'deckle';
+
+/** One text-block edge treatment. */
+export interface EdgeSpec {
+  id: EdgeTreatment;
+  label: string;
+  blurb: string;
+  tags: readonly SpineTag[];
+  ground: EdgeGround;
+  pattern: EdgePattern;
+  /** How busy the pattern is, 0 → 1. */
+  density: number;
+  /** Pattern colour. */
+  mark: EdgeGround;
+  /** Second pattern colour, for the two-colour marblings. */
+  mark2: EdgeGround;
+  gild: EdgeGild;
+  cut: EdgeCut;
+}
+
+function edge(
+  id: EdgeTreatment,
+  label: string,
+  blurb: string,
+  tags: readonly SpineTag[],
+  spec: Omit<EdgeSpec, 'id' | 'label' | 'blurb' | 'tags'>,
+): EdgeSpec {
+  return { id, label, blurb, tags, ...spec };
+}
+
+/**
+ * The fifty text-block edges, keyed by id.
+ *
+ * Only a two-or-three-px sliver of this is ever visible beside the boards, so
+ * every entry is judged on ONE question: does it change the colour or the
+ * rhythm of that sliver? `plain` and `burnished` differ by a shade of cream and
+ * that is enough; `agate` and `stone-marbled` differ by which two colours comb
+ * through each other. Anything whose difference lives in the middle of the
+ * block — where no one can see it — is not in the table.
+ */
+export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
+  plain: edge('plain', 'Plain', 'Cut smooth and left alone.',
+    ['plain', 'utilitarian', 'pale'],
+    { ground: 'cream', pattern: 'none', density: 0, mark: 'creamDeep', mark2: 'creamDeep', gild: 'none', cut: 'smooth' }),
+
+  gilt: edge('gilt', 'Gilt', 'All three edges laid with gold leaf and burnished.',
+    ['gilded', 'formal', 'fancy'],
+    { ground: 'gilt', pattern: 'none', density: 0, mark: 'ochre', mark2: 'ochre', gild: 'all', cut: 'smooth' }),
+
+  marbled: edge('marbled', 'Marbled', 'Combed pigment floated on size and lifted onto the block.',
+    ['ornate', 'antique', 'warm'],
+    { ground: 'cream', pattern: 'comb', density: 0.7, mark: 'terracotta', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  speckled: edge('speckled', 'Speckled', 'Flicked with ink from a brush held over the block.',
+    ['rustic', 'plain', 'muted'],
+    { ground: 'cream', pattern: 'fleck', density: 0.5, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  sprinkled: edge('sprinkled', 'Sprinkled', 'A finer, denser spray than speckling, in two colours.',
+    ['rustic', 'antique', 'warm'],
+    { ground: 'creamDeep', pattern: 'sprinkle', density: 0.8, mark: 'terracotta', mark2: 'moss', gild: 'none', cut: 'smooth' }),
+
+  'stained-red': edge('stained-red', 'Red edges', 'Dipped in red, the commonest edge on a schoolbook.',
+    ['warm', 'plain', 'bright'],
+    { ground: 'terracotta', pattern: 'none', density: 0, mark: 'terracotta', mark2: 'terracotta', gild: 'none', cut: 'smooth' }),
+
+  'stained-blue': edge('stained-blue', 'Blue edges', 'Stained a flat slate blue right through.',
+    ['cool', 'plain', 'muted'],
+    { ground: 'slate', pattern: 'none', density: 0, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  'stained-green': edge('stained-green', 'Green edges', 'A quiet moss stain, faded unevenly at the head.',
+    ['natural', 'muted', 'cool'],
+    { ground: 'moss', pattern: 'none', density: 0, mark: 'moss', mark2: 'moss', gild: 'none', cut: 'smooth' }),
+
+  'yellow-edges': edge('yellow-edges', 'Yellow edges', 'The bright yellow of a cheap edition, and none the worse.',
+    ['bright', 'plain', 'warm'],
+    { ground: 'ochre', pattern: 'none', density: 0, mark: 'ochre', mark2: 'ochre', gild: 'none', cut: 'smooth' }),
+
+  'top-gilt': edge('top-gilt', 'Top edge gilt', 'Gold on the head only; the other two left rough.',
+    ['gilded', 'refined', 'antique'],
+    { ground: 'creamDeep', pattern: 'none', density: 0, mark: 'gilt', mark2: 'gilt', gild: 'top', cut: 'rough' }),
+
+  'fore-edge-gilt': edge('fore-edge-gilt', 'Fore-edge gilt', 'Only the long edge is gilded, and it glows.',
+    ['gilded', 'refined', 'formal'],
+    { ground: 'cream', pattern: 'none', density: 0, mark: 'gilt', mark2: 'gilt', gild: 'fore', cut: 'smooth' }),
+
+  'all-edges-gilt': edge('all-edges-gilt', 'All edges gilt', 'Gilt on solid gold, the full presentation binding.',
+    ['gilded', 'fancy', 'formal'],
+    { ground: 'gilt', pattern: 'none', density: 0.2, mark: 'giltPale', mark2: 'ochre', gild: 'all', cut: 'smooth' }),
+
+  gauffered: edge('gauffered', 'Gauffered', 'Gilt, then tooled with heated brass into a lattice.',
+    ['ornate', 'gilded', 'fancy'],
+    { ground: 'gilt', pattern: 'cheque', density: 0.7, mark: 'ochre', mark2: 'ochre', gild: 'all', cut: 'smooth' }),
+
+  'rough-cut': edge('rough-cut', 'Rough cut', 'Trimmed with a knife and not much care.',
+    ['rustic', 'plain', 'natural'],
+    { ground: 'creamDeep', pattern: 'none', density: 0, mark: 'creamDeep', mark2: 'creamDeep', gild: 'none', cut: 'rough' }),
+
+  deckle: edge('deckle', 'Deckle', 'The paper’s own feathered edge, never trimmed at all.',
+    ['natural', 'refined', 'pale'],
+    { ground: 'cream', pattern: 'none', density: 0, mark: 'creamDeep', mark2: 'creamDeep', gild: 'none', cut: 'deckle' }),
+
+  uncut: edge('uncut', 'Uncut', 'Folded sheets still joined at the head, waiting for a paperknife.',
+    ['antique', 'natural', 'scholarly'],
+    { ground: 'creamDeep', pattern: 'stripe', density: 0.3, mark: 'cream', mark2: 'cream', gild: 'none', cut: 'deckle' }),
+
+  burnished: edge('burnished', 'Burnished', 'Rubbed with an agate until the paper takes a sheen.',
+    ['refined', 'pale', 'plain'],
+    { ground: 'creamDeep', pattern: 'none', density: 0, mark: 'cream', mark2: 'cream', gild: 'none', cut: 'smooth' }),
+
+  'antique-gilt': edge('antique-gilt', 'Antique gilt', 'Old gold gone dull and brown at the corners.',
+    ['antique', 'gilded', 'muted'],
+    { ground: 'ochre', pattern: 'fleck', density: 0.3, mark: 'timber', mark2: 'timber', gild: 'all', cut: 'rough' }),
+
+  'red-under-gold': edge('red-under-gold', 'Red under gold', 'Gold laid over a red stain, so the edge burns where it wears.',
+    ['gilded', 'ornate', 'warm'],
+    { ground: 'gilt', pattern: 'band', density: 0.4, mark: 'terracotta', mark2: 'terracotta', gild: 'all', cut: 'smooth' }),
+
+  stippled: edge('stippled', 'Stippled', 'A dense punched dot pattern, almost a tone.',
+    ['refined', 'muted', 'antique'],
+    { ground: 'cream', pattern: 'fleck', density: 0.9, mark: 'timber', mark2: 'timber', gild: 'none', cut: 'smooth' }),
+
+  agate: edge('agate', 'Agate', 'Bands of grey and cream like a cut stone.',
+    ['cool', 'refined', 'muted'],
+    { ground: 'creamDeep', pattern: 'band', density: 0.6, mark: 'slate', mark2: 'cream', gild: 'none', cut: 'smooth' }),
+
+  'comb-marbled': edge('comb-marbled', 'Comb marbled', 'Drawn once with a wide comb — long even teeth of colour.',
+    ['ornate', 'formal', 'cool'],
+    { ground: 'cream', pattern: 'comb', density: 0.9, mark: 'slate', mark2: 'moss', gild: 'none', cut: 'smooth' }),
+
+  'spanish-wave': edge('spanish-wave', 'Spanish wave', 'Rocked as it is lifted, so the colour ripples across.',
+    ['ornate', 'antique', 'warm'],
+    { ground: 'cream', pattern: 'wave', density: 0.8, mark: 'terracotta', mark2: 'ochre', gild: 'none', cut: 'smooth' }),
+
+  'stone-marbled': edge('stone-marbled', 'Stone marbled', 'Thrown on without combing; it breaks into islands.',
+    ['rustic', 'antique', 'muted'],
+    { ground: 'creamDeep', pattern: 'stone', density: 0.7, mark: 'timber', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  'shell-marbled': edge('shell-marbled', 'Shell marbled', 'Each drop haloed in pale, the way a shell pattern breaks.',
+    ['ornate', 'refined', 'warm'],
+    { ground: 'cream', pattern: 'shell', density: 0.7, mark: 'ochre', mark2: 'terracotta', gild: 'none', cut: 'smooth' }),
+
+  nonpareil: edge('nonpareil', 'Nonpareil', 'The finest comb of all — teeth barely a hair apart.',
+    ['refined', 'ornate', 'formal'],
+    { ground: 'cream', pattern: 'comb', density: 1, mark: 'plum', mark2: 'sage', gild: 'none', cut: 'smooth' }),
+
+  'peacock-marbled': edge('peacock-marbled', 'Peacock', 'Combed twice at right angles into rows of feather eyes.',
+    ['ornate', 'fancy', 'cool'],
+    { ground: 'cream', pattern: 'shell', density: 0.9, mark: 'slate', mark2: 'moss', gild: 'none', cut: 'smooth' }),
+
+  'painted-fore-edge': edge('painted-fore-edge', 'Painted fore-edge', 'A picture painted on the fanned block, hidden when shut.',
+    ['romantic', 'fancy', 'ornate'],
+    { ground: 'gilt', pattern: 'scene', density: 0.8, mark: 'sage', mark2: 'slate', gild: 'all', cut: 'smooth' }),
+
+  'landscape-edge': edge('landscape-edge', 'Landscape edge', 'Hills and a sky, in three colours and no more.',
+    ['romantic', 'natural', 'whimsical'],
+    { ground: 'creamDeep', pattern: 'scene', density: 0.6, mark: 'moss', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  mottled: edge('mottled', 'Mottled', 'Blotched with acid, the way a calf binding is mottled.',
+    ['antique', 'rustic', 'warm'],
+    { ground: 'creamDeep', pattern: 'stone', density: 0.5, mark: 'timber', mark2: 'timber', gild: 'none', cut: 'smooth' }),
+
+  'tree-calf-edge': edge('tree-calf-edge', 'Tree pattern', 'Water run down the block so the stain branches like a tree.',
+    ['antique', 'ornate', 'warm'],
+    { ground: 'creamDeep', pattern: 'ripple', density: 0.7, mark: 'timber', mark2: 'ochre', gild: 'none', cut: 'smooth' }),
+
+  spattered: edge('spattered', 'Spattered', 'Big careless drops, half of them run together.',
+    ['rustic', 'whimsical', 'muted'],
+    { ground: 'cream', pattern: 'sprinkle', density: 0.5, mark: 'plum', mark2: 'plum', gild: 'none', cut: 'rough' }),
+
+  dusted: edge('dusted', 'Dusted', 'A faint bloom of colour, as if breathed onto the paper.',
+    ['pale', 'muted', 'airy'],
+    { ground: 'cream', pattern: 'fleck', density: 0.2, mark: 'sage', mark2: 'sage', gild: 'none', cut: 'smooth' }),
+
+  'charcoal-edge': edge('charcoal-edge', 'Charcoal edges', 'Rubbed black, so the closed book is a solid dark slab.',
+    ['dark', 'modern', 'severe'],
+    { ground: 'ink', pattern: 'fleck', density: 0.35, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'rough' }),
+
+  'ink-edge': edge('ink-edge', 'Ink edges', 'Dipped in ink to the depth of a fingernail.',
+    ['dark', 'severe', 'cool'],
+    { ground: 'ink', pattern: 'none', density: 0, mark: 'ink', mark2: 'ink', gild: 'none', cut: 'smooth' }),
+
+  'sepia-edge': edge('sepia-edge', 'Sepia edges', 'The warm brown of an old photograph.',
+    ['antique', 'warm', 'muted'],
+    { ground: 'timber', pattern: 'none', density: 0, mark: 'timber', mark2: 'timber', gild: 'none', cut: 'smooth' }),
+
+  'tea-stained': edge('tea-stained', 'Tea stained', 'Tannin, unevenly, and a tide line where it stopped.',
+    ['antique', 'cosy', 'warm'],
+    { ground: 'creamDeep', pattern: 'ripple', density: 0.4, mark: 'timber', mark2: 'timber', gild: 'none', cut: 'rough' }),
+
+  'saffron-edge': edge('saffron-edge', 'Saffron edges', 'A hot orange-yellow that catches the eye across a room.',
+    ['bright', 'warm', 'fancy'],
+    { ground: 'ochre', pattern: 'band', density: 0.3, mark: 'terracotta', mark2: 'terracotta', gild: 'none', cut: 'smooth' }),
+
+  'rose-edge': edge('rose-edge', 'Rose edges', 'A soft pink stain, deeper toward the head.',
+    ['romantic', 'pale', 'warm'],
+    { ground: 'plum', pattern: 'none', density: 0, mark: 'plum', mark2: 'plum', gild: 'none', cut: 'smooth' }),
+
+  'sea-green-edge': edge('sea-green-edge', 'Sea green edges', 'The colour of shallow water over sand.',
+    ['cool', 'nautical', 'natural'],
+    { ground: 'sage', pattern: 'none', density: 0, mark: 'sage', mark2: 'sage', gild: 'none', cut: 'smooth' }),
+
+  'violet-edge': edge('violet-edge', 'Violet edges', 'A deep purple that reads almost black at a distance.',
+    ['dark', 'romantic', 'cool'],
+    { ground: 'plum', pattern: 'fleck', density: 0.2, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  'two-tone': edge('two-tone', 'Two tone', 'Head one colour, tail another, meeting halfway.',
+    ['modern', 'whimsical', 'bright'],
+    { ground: 'cream', pattern: 'band', density: 0.5, mark: 'terracotta', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  banded: edge('banded', 'Banded', 'Three broad bands down the block, evenly spaced.',
+    ['modern', 'plain', 'cool'],
+    { ground: 'cream', pattern: 'band', density: 0.7, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  striped: edge('striped', 'Striped', 'Fine stripes the whole length, like a ticking.',
+    ['plain', 'utilitarian', 'modern'],
+    { ground: 'cream', pattern: 'stripe', density: 0.8, mark: 'terracotta', mark2: 'terracotta', gild: 'none', cut: 'smooth' }),
+
+  chequered: edge('chequered', 'Chequered', 'A small checker, struck through a stencil.',
+    ['whimsical', 'modern', 'bright'],
+    { ground: 'cream', pattern: 'cheque', density: 0.8, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+
+  silvered: edge('silvered', 'Silvered', 'White metal leaf instead of gold; cooler, and it tarnishes.',
+    ['cool', 'refined', 'formal'],
+    { ground: 'slate', pattern: 'none', density: 0.1, mark: 'cream', mark2: 'cream', gild: 'all', cut: 'smooth' }),
+
+  'copper-edge': edge('copper-edge', 'Copper', 'Copper leaf, gone a little green in the hollows.',
+    ['warm', 'antique', 'ornate'],
+    { ground: 'timber', pattern: 'fleck', density: 0.3, mark: 'moss', mark2: 'moss', gild: 'all', cut: 'smooth' }),
+
+  'verdigris-edge': edge('verdigris-edge', 'Verdigris', 'The blue-green bloom that grows on old bronze.',
+    ['antique', 'cool', 'natural'],
+    { ground: 'sage', pattern: 'stone', density: 0.5, mark: 'moss', mark2: 'cream', gild: 'none', cut: 'rough' }),
+
+  foxed: edge('foxed', 'Foxed', 'Rust-brown spots through the paper, and no way back.',
+    ['antique', 'rustic', 'muted'],
+    { ground: 'creamDeep', pattern: 'fleck', density: 0.6, mark: 'timber', mark2: 'ochre', gild: 'none', cut: 'rough' }),
+
+  'well-thumbed': edge('well-thumbed', 'Well thumbed', 'Grey where a hand has held it for thirty years.',
+    ['cosy', 'rustic', 'muted'],
+    { ground: 'creamDeep', pattern: 'ripple', density: 0.5, mark: 'slate', mark2: 'timber', gild: 'none', cut: 'rough' }),
 };
 
 /** Display names for the text-block edge treatments. */
-export const EDGE_LABELS: Readonly<Record<EdgeTreatment, string>> = {
-  plain: 'Plain',
-  gilt: 'Gilt',
-  marbled: 'Marbled',
-  speckled: 'Speckled',
-};
+export const EDGE_LABELS: Readonly<Record<EdgeTreatment, string>> = Object.fromEntries(
+  EDGE_TREATMENTS.map((id) => [id, EDGE_SPECS[id].label]),
+) as Record<EdgeTreatment, string>;
+
+/** Mood words for the text-block edge treatments. */
+export const EDGE_TAGS: Readonly<Record<EdgeTreatment, readonly SpineTag[]>> =
+  Object.fromEntries(
+    EDGE_TREATMENTS.map((id) => [id, EDGE_SPECS[id].tags]),
+  ) as Record<EdgeTreatment, readonly SpineTag[]>;
+
+/**
+ * The spec for an edge id, total: junk falls back to `plain`.
+ *
+ * This is the seam `art/covers.ts` should read. The cover paints the fore-edge
+ * sliver, and it currently branches on three id strings by hand — which was
+ * fine at four treatments and is a lie at fifty, since the other forty-six
+ * would all fall through to plain cream.
+ */
+export function edgeSpec(id: unknown): EdgeSpec {
+  return (
+    (typeof id === 'string' ? EDGE_SPECS[id as EdgeTreatment] : undefined) ?? EDGE_SPECS.plain
+  );
+}
 
 export function isBindingMaterial(v: unknown): v is BindingMaterial {
   return typeof v === 'string' && (BINDING_MATERIALS as readonly string[]).includes(v);
@@ -356,54 +1322,126 @@ interface HSL {
   l: number;
 }
 
-/**
- * 20 curated pigment duos (top/light, bottom/dark).
- *
- * Two changes from the original twelve, both straight out of the painterly
- * spec's "deep colour range" line:
- *
- *  1. Every dark partner tone was pushed down 4–7 points of lightness and up a
- *     little in saturation. The whole shelf used to sit mid-tone; "genuinely
- *     dark darks" is what a painting has and a diagram does not.
- *  2. Eight pigments were appended — oxblood, navy, forest, tan, cream, ink,
- *     teal and saffron. The reference's row is built out of exactly this kind
- *     of spread: a couple of near-black bindings anchoring a run of tans and
- *     creams, with one saturated red doing all the work.
- *
- * Order is append-only: index 0–11 keep their hue family so an existing
- * book's identity survives the change.
- */
-const PALETTES: ReadonlyArray<readonly [HSL, HSL]> = [
-  [{ h: 38, s: 64, l: 52 }, { h: 28, s: 62, l: 31 }], // 0  amber
-  [{ h: 16, s: 58, l: 47 }, { h: 8, s: 56, l: 27 }], // 1  terracotta
-  [{ h: 95, s: 30, l: 41 }, { h: 102, s: 34, l: 23 }], // 2  moss
-  [{ h: 210, s: 28, l: 46 }, { h: 216, s: 34, l: 26 }], // 3  dusty blue
-  [{ h: 315, s: 26, l: 39 }, { h: 322, s: 32, l: 21 }], // 4  plum
-  [{ h: 44, s: 62, l: 46 }, { h: 38, s: 58, l: 27 }], // 5  ochre
-  [{ h: 130, s: 18, l: 51 }, { h: 136, s: 22, l: 31 }], // 6  sage
-  [{ h: 22, s: 62, l: 39 }, { h: 16, s: 62, l: 22 }], // 7  rust
-  [{ h: 28, s: 40, l: 51 }, { h: 22, s: 38, l: 31 }], // 8  clay
-  [{ h: 70, s: 32, l: 37 }, { h: 64, s: 36, l: 21 }], // 9  olive
-  [{ h: 200, s: 20, l: 41 }, { h: 206, s: 24, l: 23 }], // 10 slate
-  [{ h: 355, s: 34, l: 55 }, { h: 348, s: 34, l: 35 }], // 11 blush
-  // --- the deep range the reference is actually built from -----------------
-  [{ h: 2, s: 54, l: 33 }, { h: 356, s: 56, l: 17 }], // 12 oxblood
-  [{ h: 220, s: 46, l: 29 }, { h: 226, s: 50, l: 15 }], // 13 navy
-  [{ h: 148, s: 36, l: 27 }, { h: 154, s: 40, l: 14 }], // 14 forest
-  [{ h: 33, s: 46, l: 60 }, { h: 27, s: 42, l: 40 }], // 15 tan
-  [{ h: 44, s: 40, l: 83 }, { h: 38, s: 32, l: 62 }], // 16 cream
-  [{ h: 212, s: 12, l: 25 }, { h: 214, s: 14, l: 11 }], // 17 ink
-  [{ h: 186, s: 36, l: 33 }, { h: 192, s: 40, l: 18 }], // 18 teal
-  [{ h: 36, s: 76, l: 55 }, { h: 28, s: 72, l: 34 }], // 19 saffron
-];
+/** One pigment: a name, its mood words, and the light/dark duo it paints. */
+interface PigmentSpec {
+  name: string;
+  tags: readonly SpineTag[];
+  /** Light/top pigment. */
+  top: HSL;
+  /** Dark/bottom pigment. */
+  bottom: HSL;
+}
+
+const pig = (
+  name: string,
+  tags: readonly SpineTag[],
+  top: HSL,
+  bottom: HSL,
+): PigmentSpec => ({ name, tags, top, bottom });
 
 /**
- * The 20 pigment duos, exported for features-side helpers that must mirror
+ * The 50 curated pigment duos (top/light, bottom/dark).
+ *
+ * Order is append-only and always has been: 0–11 are the original hue
+ * families, 12–19 the deep range the reference row is built from, and 20–49
+ * the thirty added when the cloth vocabulary went to fifty. A book's colour
+ * identity lives in `palette`, so an index that moved would repaint somebody's
+ * shelf.
+ *
+ * The thirty new ones are not a gradient of the old twenty. They fill the
+ * holes: there were no true purples, no honest reds between terracotta and
+ * oxblood, one pink, no pale cool neutrals, and nothing between `sage` and
+ * `forest`. Every duo was checked against its nearest existing neighbour on
+ * hue AND on value — two pigments 8° apart at the same lightness are one
+ * pigment with two names, and the picker would be lying about how much choice
+ * it offers.
+ *
+ * Dark partners are genuinely dark (the flat style has no shading pass, so the
+ * dark face beside the light one IS the depth) and every entry carries mood
+ * words, so "something dark and formal" can steer the roll.
+ */
+const PIGMENTS: readonly PigmentSpec[] = [
+  /* ---- the original hue families ---- */
+  pig('Amber', ['warm', 'bright', 'cosy'], { h: 38, s: 64, l: 52 }, { h: 28, s: 62, l: 31 }),
+  pig('Terracotta', ['warm', 'rustic', 'natural'], { h: 16, s: 58, l: 47 }, { h: 8, s: 56, l: 27 }),
+  pig('Moss', ['natural', 'botanical', 'cosy'], { h: 95, s: 30, l: 41 }, { h: 102, s: 34, l: 23 }),
+  pig('Dusty blue', ['cool', 'muted', 'refined'], { h: 210, s: 28, l: 46 }, { h: 216, s: 34, l: 26 }),
+  pig('Plum', ['romantic', 'muted', 'refined'], { h: 315, s: 26, l: 39 }, { h: 322, s: 32, l: 21 }),
+  pig('Ochre', ['warm', 'antique', 'rustic'], { h: 44, s: 62, l: 46 }, { h: 38, s: 58, l: 27 }),
+  pig('Sage', ['natural', 'muted', 'pale'], { h: 130, s: 18, l: 51 }, { h: 136, s: 22, l: 31 }),
+  pig('Rust', ['warm', 'rustic', 'antique'], { h: 22, s: 62, l: 39 }, { h: 16, s: 62, l: 22 }),
+  pig('Clay', ['warm', 'muted', 'natural'], { h: 28, s: 40, l: 51 }, { h: 22, s: 38, l: 31 }),
+  pig('Olive', ['natural', 'muted', 'utilitarian'], { h: 70, s: 32, l: 37 }, { h: 64, s: 36, l: 21 }),
+  pig('Slate', ['cool', 'severe', 'muted'], { h: 200, s: 20, l: 41 }, { h: 206, s: 24, l: 23 }),
+  pig('Blush', ['pale', 'romantic', 'warm'], { h: 355, s: 34, l: 55 }, { h: 348, s: 34, l: 35 }),
+  /* ---- the deep range the reference is actually built from ---- */
+  pig('Oxblood', ['dark', 'formal', 'antique'], { h: 2, s: 54, l: 33 }, { h: 356, s: 56, l: 17 }),
+  pig('Navy', ['dark', 'formal', 'cool'], { h: 220, s: 46, l: 29 }, { h: 226, s: 50, l: 15 }),
+  pig('Forest', ['dark', 'natural', 'botanical'], { h: 148, s: 36, l: 27 }, { h: 154, s: 40, l: 14 }),
+  pig('Tan', ['warm', 'plain', 'rustic'], { h: 33, s: 46, l: 60 }, { h: 27, s: 42, l: 40 }),
+  pig('Cream', ['pale', 'refined', 'airy'], { h: 44, s: 40, l: 83 }, { h: 38, s: 32, l: 62 }),
+  pig('Ink', ['dark', 'severe', 'modern'], { h: 212, s: 12, l: 25 }, { h: 214, s: 14, l: 11 }),
+  pig('Teal', ['cool', 'refined', 'nautical'], { h: 186, s: 36, l: 33 }, { h: 192, s: 40, l: 18 }),
+  pig('Saffron', ['bright', 'warm', 'fancy'], { h: 36, s: 76, l: 55 }, { h: 28, s: 72, l: 34 }),
+  /* ---- reds and pinks ---- */
+  pig('Burgundy', ['dark', 'formal', 'romantic'], { h: 338, s: 44, l: 31 }, { h: 332, s: 48, l: 17 }),
+  pig('Vermilion', ['bright', 'warm', 'fancy'], { h: 6, s: 78, l: 52 }, { h: 0, s: 74, l: 32 }),
+  pig('Coral', ['bright', 'warm', 'whimsical'], { h: 14, s: 66, l: 63 }, { h: 8, s: 58, l: 43 }),
+  pig('Rose', ['romantic', 'warm', 'fancy'], { h: 338, s: 50, l: 57 }, { h: 332, s: 48, l: 37 }),
+  /* ---- purples ---- */
+  pig('Aubergine', ['dark', 'severe', 'formal'], { h: 300, s: 30, l: 25 }, { h: 294, s: 34, l: 13 }),
+  pig('Amethyst', ['romantic', 'ornate', 'cool'], { h: 272, s: 32, l: 49 }, { h: 266, s: 36, l: 30 }),
+  pig('Lavender', ['pale', 'romantic', 'airy'], { h: 260, s: 30, l: 67 }, { h: 254, s: 28, l: 47 }),
+  pig('Heather', ['muted', 'natural', 'cosy'], { h: 288, s: 18, l: 57 }, { h: 282, s: 20, l: 37 }),
+  /* ---- blues ---- */
+  pig('Indigo', ['dark', 'cool', 'scholarly'], { h: 246, s: 38, l: 33 }, { h: 250, s: 42, l: 18 }),
+  pig('Lapis', ['bright', 'cool', 'formal'], { h: 222, s: 56, l: 43 }, { h: 228, s: 58, l: 26 }),
+  pig('Storm', ['muted', 'cool', 'severe'], { h: 232, s: 20, l: 39 }, { h: 238, s: 24, l: 23 }),
+  pig('Sky', ['pale', 'cool', 'airy'], { h: 202, s: 44, l: 65 }, { h: 206, s: 42, l: 45 }),
+  pig('Peacock', ['bright', 'cool', 'ornate'], { h: 192, s: 54, l: 37 }, { h: 196, s: 58, l: 21 }),
+  /* ---- greens ---- */
+  pig('Verdigris', ['cool', 'antique', 'natural'], { h: 176, s: 40, l: 44 }, { h: 180, s: 44, l: 26 }),
+  pig('Jade', ['cool', 'refined', 'botanical'], { h: 156, s: 38, l: 48 }, { h: 160, s: 42, l: 29 }),
+  pig('Celadon', ['pale', 'refined', 'airy'], { h: 140, s: 22, l: 67 }, { h: 144, s: 24, l: 47 }),
+  pig('Fern', ['botanical', 'natural', 'bright'], { h: 120, s: 38, l: 37 }, { h: 116, s: 42, l: 22 }),
+  pig('Bottle green', ['dark', 'formal', 'severe'], { h: 124, s: 50, l: 19 }, { h: 128, s: 54, l: 10 }),
+  /* ---- yellows ---- */
+  pig('Chartreuse', ['bright', 'whimsical', 'botanical'], { h: 76, s: 46, l: 53 }, { h: 70, s: 46, l: 33 }),
+  pig('Buttercup', ['bright', 'warm', 'whimsical'], { h: 50, s: 72, l: 61 }, { h: 44, s: 68, l: 41 }),
+  pig('Straw', ['pale', 'warm', 'rustic'], { h: 52, s: 46, l: 71 }, { h: 46, s: 40, l: 51 }),
+  /* ---- browns ---- */
+  pig('Chocolate', ['dark', 'warm', 'cosy'], { h: 22, s: 32, l: 27 }, { h: 18, s: 34, l: 15 }),
+  pig('Chestnut', ['warm', 'rustic', 'antique'], { h: 14, s: 38, l: 35 }, { h: 8, s: 40, l: 21 }),
+  pig('Umber', ['muted', 'antique', 'scholarly'], { h: 32, s: 26, l: 37 }, { h: 26, s: 28, l: 22 }),
+  pig('Bronze', ['warm', 'antique', 'gilded'], { h: 36, s: 50, l: 41 }, { h: 30, s: 50, l: 24 }),
+  /* ---- neutrals ---- */
+  pig('Linen', ['pale', 'plain', 'natural'], { h: 40, s: 16, l: 85 }, { h: 34, s: 16, l: 65 }),
+  pig('Oyster', ['pale', 'muted', 'refined'], { h: 38, s: 14, l: 72 }, { h: 32, s: 14, l: 52 }),
+  pig('Dove', ['pale', 'cool', 'refined'], { h: 216, s: 10, l: 66 }, { h: 220, s: 12, l: 46 }),
+  pig('Pewter', ['muted', 'cool', 'utilitarian'], { h: 210, s: 8, l: 45 }, { h: 214, s: 10, l: 27 }),
+  pig('Charcoal', ['dark', 'severe', 'modern'], { h: 28, s: 7, l: 26 }, { h: 24, s: 9, l: 14 }),
+];
+
+const PALETTES: ReadonlyArray<readonly [HSL, HSL]> = PIGMENTS.map(
+  (p) => [p.top, p.bottom] as readonly [HSL, HSL],
+);
+
+/**
+ * The 50 pigment duos, exported for features-side helpers that must mirror
  * the renderer's exact colours (placeholder tints, DOM pull-out gradients,
  * neighbour-bleed colours). `spinePalette.ts` used to keep a hand-copied —
  * and silently drifting — 12-entry duplicate of this table.
  */
 export const SPINE_PALETTES = PALETTES;
+
+/** Number of curated pigment duos (shared with covers.ts). */
+export const PIGMENT_COUNT = PIGMENTS.length;
+
+/** Display names for the pigment duos, index-aligned with SPINE_PALETTES. */
+export const PIGMENT_LABELS: readonly string[] = PIGMENTS.map((p) => p.name);
+
+/** Mood words for the pigment duos, index-aligned with PIGMENT_LABELS. */
+export const PIGMENT_TAGS: readonly (readonly SpineTag[])[] = PIGMENTS.map((p) => p.tags);
 
 const FONTS: readonly string[] = [
   '"Caveat Variable", "Caveat", cursive',
@@ -434,7 +1472,7 @@ export function deriveSpineParams(seed: number): SpineParams {
   }
   bands.sort((a, b) => a.y - b.y);
 
-  const ornament = Math.floor(rnd() * 12);
+  const ornament = Math.floor(rnd() * ORNAMENT_COUNT);
   const texture = Math.floor(rnd() * 3) as 0 | 1 | 2;
   const font = Math.floor(rnd() * 3) as 0 | 1 | 2;
   // Gold is the reference row's sparkle: rather more than half its spines
@@ -654,12 +1692,51 @@ const MATERIAL_WEAR_BIAS: Readonly<Record<BindingMaterial, number>> = {
   marbled: 0.4,
 };
 
-const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = [
-  ['none', 38],
-  ['gilt', 24],
-  ['label', 22],
-  ['debossed', 16],
-];
+/**
+ * How often each lettering-piece turns up on a book nobody has dressed.
+ *
+ * Heavily skewed, and deliberately: a shelf where every book wears a different
+ * one of fifty plates reads as a sample sheet. `none`, the paper label and the
+ * two plain rules carry most of the weight — the ordinary answers — and the
+ * shaped cartouches, enamels and gothic panels are rare enough that finding
+ * one feels like finding something. Everything not named here gets `1`, so
+ * adding a treatment cannot silently fall out of the roll.
+ */
+const PLATE_WEIGHT_OVERRIDES: Readonly<Partial<Record<TitlePlateStyle, number>>> = {
+  none: 150,
+  label: 60,
+  gilt: 42,
+  debossed: 32,
+  'paper-slip': 26,
+  'morocco-label': 22,
+  'double-fillet': 20,
+  'ruled-box': 18,
+  'blind-panel': 16,
+  'gilt-direct': 15,
+  'blind-lettered': 14,
+  'twin-rules': 13,
+  'vellum-slip': 12,
+  'sunk-panel': 11,
+  'triple-fillet': 10,
+  roundel: 9,
+  'dotted-rule': 9,
+  'corner-brackets': 8,
+  'gilt-band': 8,
+  'linen-tag': 7,
+  'ink-panel': 6,
+  'lozenge-ends': 6,
+  'stone-tablet': 5,
+  'bead-frame': 5,
+  'gilt-cartouche': 4,
+  'oval-medallion': 4,
+  'gothic-panel': 2,
+  'enamel-plate': 2,
+  'crest-plate': 2,
+};
+
+const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = TITLE_PLATES.map(
+  (id) => [id, PLATE_WEIGHT_OVERRIDES[id] ?? 1] as const,
+);
 
 const FORMAT_WEIGHTS: ReadonlyArray<readonly [SpineFormat, number]> = [
   ['folio', 12],
@@ -669,12 +1746,46 @@ const FORMAT_WEIGHTS: ReadonlyArray<readonly [SpineFormat, number]> = [
   ['pocket', 14],
 ];
 
-const EDGE_WEIGHTS: ReadonlyArray<readonly [EdgeTreatment, number]> = [
-  ['plain', 58],
-  ['gilt', 18],
-  ['speckled', 14],
-  ['marbled', 10],
-];
+/**
+ * How often each edge turns up unasked. Same shape and same reasoning as
+ * `PLATE_WEIGHT_OVERRIDES`: most books were simply cut and left, a fair number
+ * were stained or sprinkled, and the six named marblings and the painted
+ * fore-edge are the ones worth finding. Unlisted ids get `1`.
+ */
+const EDGE_WEIGHT_OVERRIDES: Readonly<Partial<Record<EdgeTreatment, number>>> = {
+  plain: 190,
+  speckled: 42,
+  gilt: 34,
+  sprinkled: 26,
+  'rough-cut': 24,
+  'stained-red': 20,
+  marbled: 18,
+  'top-gilt': 16,
+  burnished: 14,
+  'stained-blue': 12,
+  'well-thumbed': 12,
+  foxed: 11,
+  deckle: 10,
+  'yellow-edges': 9,
+  'stained-green': 9,
+  mottled: 8,
+  spattered: 8,
+  stippled: 7,
+  dusted: 7,
+  'sepia-edge': 6,
+  'antique-gilt': 6,
+  'comb-marbled': 5,
+  'stone-marbled': 5,
+  'tea-stained': 5,
+  'ink-edge': 4,
+  'all-edges-gilt': 3,
+  gauffered: 2,
+  'painted-fore-edge': 1,
+};
+
+const EDGE_WEIGHTS: ReadonlyArray<readonly [EdgeTreatment, number]> = EDGE_TREATMENTS.map(
+  (id) => [id, EDGE_WEIGHT_OVERRIDES[id] ?? 1] as const,
+);
 
 /** Material implied by the legacy 0|1|2 `texture` field. */
 export function materialFromTexture(texture: 0 | 1 | 2): BindingMaterial {
@@ -823,9 +1934,27 @@ function strokePts(ctx: Ctx2D, pts: readonly Pt[], close: boolean): void {
 }
 
 /**
- * The 12 procedural ornament stamps, drawn as simple wobbled paths:
- * 0 diamond, 1 laurel, 2 star, 3 blot, 4 chevron, 5 sun, 6 moon, 7 keyhole,
- * 8 laurel wreath, 9 quill, 10 tree, 11 crescent-with-stars.
+ * The 50 procedural ornament stamps — a binder's brass, drawn as paths.
+ *
+ * Index-aligned with `ORNAMENT_LABELS`. The unit box is roughly [-1, 1] in
+ * both axes and `s` is the half-size in canvas px, so a stamp is struck about
+ * `2s` across; `drawSpineOrnament` caps `s` at a third of the spine's width,
+ * which on the shelf means 20–60 px for the whole mark.
+ *
+ * **Everything here is designed for that size and nothing else.** The rules
+ * every stamp follows, learned the hard way from the first twelve:
+ *
+ *  - one silhouette, not an assembly. If you have to explain which bit is
+ *    which, it will be four grey pixels on a pamphlet.
+ *  - fill beats stroke. A hairline vanishes; a filled leaf survives. Where a
+ *    stamp must be open (the fish, the pine cone, the beehive) it is STROKED
+ *    at `lineWidth` ≈ 0.17s, never hatched — fill and stroke are the same ink
+ *    here, so an interior line drawn on a filled body is invisible by
+ *    construction.
+ *  - at most two accent marks after the main shape.
+ *
+ * `rnd` supplies a per-book wobble so two copies of the same tool are not
+ * pixel-identical, exactly as the rest of the flat vocabulary does.
  */
 function drawOrnament(
   ctx: Ctx2D,
@@ -837,6 +1966,39 @@ function drawOrnament(
 ): void {
   const j = (v: number) => v + (rnd() * 2 - 1) * s * 0.06;
   const pt = (x: number, y: number): Pt => ({ x: j(cx + x * s), y: j(cy + y * s) });
+  /** Filled closed polygon in unit space. */
+  const fillPoly = (pts: readonly Pt[]): void => {
+    tracePoly(ctx, pts, true);
+    ctx.fill();
+  };
+  /** Filled disc. */
+  const disc = (x: number, y: number, r: number): void => {
+    ctx.beginPath();
+    ctx.arc(cx + x * s, cy + y * s, r * s, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  /** Stroked circle. */
+  const ring = (x: number, y: number, r: number): void => {
+    ctx.beginPath();
+    ctx.arc(cx + x * s, cy + y * s, r * s, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+  /** Filled ellipse, `rot` in radians. */
+  const blob = (x: number, y: number, rx: number, ry: number, rot = 0): void => {
+    ctx.beginPath();
+    ctx.ellipse(cx + x * s, cy + y * s, rx * s, ry * s, rot, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  /** Stroked arc. */
+  const bow = (x: number, y: number, r: number, a0: number, a1: number, ccw = false): void => {
+    ctx.beginPath();
+    ctx.arc(cx + x * s, cy + y * s, r * s, a0, a1, ccw);
+    ctx.stroke();
+  };
+  /** A straight run between two unit-space points. */
+  const line = (x0: number, y0: number, x1: number, y1: number): void => {
+    strokePts(ctx, [pt(x0, y0), pt(x1, y1)], false);
+  };
 
   switch (kind) {
     case 0: { // diamond
@@ -961,28 +2123,16 @@ function drawOrnament(
       strokePts(ctx, [pt(-0.26, 1.02), pt(0, 0.8), pt(0.26, 1.02)], false);
       break;
     }
-    case 9: { // quill — a solid feather blade on a curved shaft
-      const shaftPt = (t: number): Pt =>
-        pt(-0.72 + t * 1.44, 0.9 - t * 1.6 - Math.sin(t * Math.PI) * 0.3);
-      // Blade: one closed vane down one side of the shaft.
-      const vane: Pt[] = [];
-      for (let i = 0; i <= 8; i++) vane.push(shaftPt(0.2 + (i / 8) * 0.8));
-      for (let i = 8; i >= 0; i--) {
-        const t = 0.2 + (i / 8) * 0.8;
-        const p = shaftPt(t);
-        const bulge = Math.sin(((t - 0.2) / 0.8) * Math.PI) * 0.42;
-        vane.push({ x: p.x - bulge * s, y: p.y + bulge * 0.42 * s });
-      }
-      tracePoly(ctx, vane, true);
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = prevAlpha * 0.85;
-      ctx.fill();
-      ctx.globalAlpha = prevAlpha;
-      // Shaft + nib, drawn over the blade.
-      const shaft: Pt[] = [];
-      for (let i = 0; i <= 8; i++) shaft.push(shaftPt(i / 8));
-      strokePts(ctx, shaft, false);
-      strokePts(ctx, [shaftPt(0), pt(-0.94, 1.06)], false);
+    case 9: { // quill — one fat tilted vane, with the nib run out below it
+      // The old recipe traced a thin vane AROUND a curved shaft and then
+      // stroked the shaft over it. At the size this is actually struck (s≈9,
+      // an ordinary octavo) the vane was a couple of pixels deep and the whole
+      // mark collapsed to a bare diagonal slash. Fill beats stroke: the feather
+      // has to BE a solid shape, not an outline drawn around a line.
+      blob(0.12, -0.26, 0.6, 0.26, -0.62);
+      // The nib. Only the stretch below the vane shows — inside it the stroke
+      // is the same ink as the fill — and that is exactly the bit that says pen.
+      line(-0.66, 0.84, 0.36, -0.46);
       break;
     }
     case 10: { // tree — trunk, three branch tiers, root flare
@@ -1001,28 +2151,438 @@ function drawOrnament(
       ctx.fill();
       break;
     }
-    default: { // 11 crescent-with-stars
-      // A fatter crescent tipped back, so the horns read even at 14px.
+    case 11: { // crescent & star
+      // Built from the SAME arc pair as the moon (case 6), which is the one
+      // construction here proven to hold its horns. The bespoke pair this used
+      // to carry cut a lune only a pixel or two deep at s≈9 and broke into a
+      // squiggle; there is no reason for two crescents in one table to be
+      // drawn two different ways.
       ctx.beginPath();
-      ctx.arc(cx - s * 0.22, cy, s * 0.86, -Math.PI * 0.46, Math.PI * 0.46, false);
-      ctx.arc(cx + s * 0.16, cy, s * 0.6, Math.PI * 0.62, -Math.PI * 0.62, true);
+      ctx.arc(cx - s * 0.18, cy + s * 0.06, s * 0.78, -Math.PI * 0.55, Math.PI * 0.55, false);
+      ctx.arc(cx + s * 0.26, cy + s * 0.06, s * 0.57, Math.PI * 0.62, -Math.PI * 0.62, true);
       ctx.closePath();
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = prevAlpha * 0.92;
       ctx.fill();
-      ctx.globalAlpha = prevAlpha;
-      // Filled four-point sparkles instead of hairline outlines.
-      for (const [sx, sy, sr] of [
-        [0.6, -0.62, 0.3],
-        [0.86, 0.16, 0.19],
-      ] as const) {
-        tracePoly(
-          ctx,
-          [pt(sx, sy - sr), pt(sx + sr * 0.36, sy), pt(sx, sy + sr), pt(sx - sr * 0.36, sy)],
-          true,
-        );
-        ctx.fill();
+      // ONE star, and a big one. The old pair put a 0.19 sparkle on the shelf,
+      // which at this size is a speck of dirt rather than a second mark.
+      const sr = 0.34;
+      tracePoly(
+        ctx,
+        [pt(0.66, -0.66 - sr), pt(0.66 + sr * 0.42, -0.66), pt(0.66, -0.66 + sr), pt(0.66 - sr * 0.42, -0.66)],
+        true,
+      );
+      ctx.fill();
+      break;
+    }
+
+    /* ---------------------------- the brass ------------------------------ */
+
+    case 12: { // fleuron — the printer's leaf, a three-lobed palmette
+      // The lobes have to sweep UP and out. Laid flat they read as wings and
+      // the whole mark turns into a small bird.
+      fillPoly([pt(0, -1), pt(0.22, -0.34), pt(0, 0.12), pt(-0.22, -0.34)]);
+      blob(-0.44, -0.36, 0.44, 0.17, -0.95);
+      blob(0.44, -0.36, 0.44, 0.17, 0.95);
+      line(0, 0.08, 0, 0.82);
+      blob(0, 0.9, 0.24, 0.1);
+      break;
+    }
+    case 13: { // acorn
+      blob(0, 0.3, 0.44, 0.56);
+      // The cup: a filled half-ellipse sitting on the nut.
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 0.18 * s, 0.56 * s, 0.34 * s, 0, Math.PI, Math.PI * 2);
+      ctx.closePath();
+      ctx.fill();
+      line(0, -0.52, 0.08, -0.94);
+      break;
+    }
+    case 14: { // thistle
+      // Spikes struck from ONE point at the crown of the bulb; fanned from the
+      // bulb's edge instead they splay into something like a hand.
+      for (let i = 0; i < 7; i++) {
+        const a = -Math.PI / 2 + (i - 3) * 0.2;
+        line(0, 0.1, Math.cos(a) * 0.58, 0.1 + Math.sin(a) * 0.86);
       }
+      blob(0, 0.4, 0.42, 0.42);
+      blob(-0.46, 0.86, 0.3, 0.12, -0.45);
+      blob(0.46, 0.86, 0.3, 0.12, 0.45);
+      break;
+    }
+    case 15: { // anchor
+      ring(0, -0.76, 0.22);
+      line(0, -0.52, 0, 0.62);
+      line(-0.52, -0.26, 0.52, -0.26);
+      bow(0, 0.16, 0.72, Math.PI * 0.12, Math.PI * 0.88);
+      line(-0.7, 0.26, -0.9, 0.06);
+      line(0.7, 0.26, 0.9, 0.06);
+      break;
+    }
+    case 16: { // key
+      ring(0, -0.58, 0.34);
+      line(0, -0.22, 0, 0.96);
+      line(0, 0.5, 0.44, 0.5);
+      line(0, 0.78, 0.32, 0.78);
+      break;
+    }
+    case 17: { // compass rose
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 2;
+        const px = Math.cos(a);
+        const py = Math.sin(a);
+        fillPoly([
+          pt(px, py),
+          pt(-py * 0.24, px * 0.24),
+          pt(-px * 0.2, -py * 0.2),
+          pt(py * 0.24, -px * 0.24),
+        ]);
+      }
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI / 4 + (i * Math.PI) / 2;
+        line(0, 0, Math.cos(a) * 0.6, Math.sin(a) * 0.6);
+      }
+      disc(0, 0, 0.15);
+      break;
+    }
+    case 18: { // bee
+      blob(0, 0.2, 0.32, 0.5);
+      disc(0, -0.48, 0.2);
+      blob(-0.5, -0.14, 0.4, 0.19, -0.7);
+      blob(0.5, -0.14, 0.4, 0.19, 0.7);
+      line(-0.1, -0.64, -0.28, -0.94);
+      line(0.1, -0.64, 0.28, -0.94);
+      break;
+    }
+    case 19: { // scallop shell
+      const fan: Pt[] = [pt(0, 0.72)];
+      for (let i = 0; i <= 8; i++) {
+        const a = Math.PI * (1.06 + (i / 8) * 0.88);
+        fan.push(pt(Math.cos(a) * 0.98, 0.62 + Math.sin(a) * 1.3));
+      }
+      strokePts(ctx, fan, true);
+      for (let i = 1; i < 5; i++) {
+        const a = Math.PI * (1.1 + (i / 5) * 0.8);
+        line(0, 0.72, Math.cos(a) * 0.82, 0.62 + Math.sin(a) * 1.08);
+      }
+      break;
+    }
+    case 20: { // crown
+      fillPoly([
+        pt(-0.92, 0.52),
+        pt(-0.92, -0.3),
+        pt(-0.46, 0.12),
+        pt(0, -0.6),
+        pt(0.46, 0.12),
+        pt(0.92, -0.3),
+        pt(0.92, 0.52),
+      ]);
+      disc(-0.92, -0.44, 0.14);
+      disc(0, -0.76, 0.15);
+      disc(0.92, -0.44, 0.14);
+      break;
+    }
+    case 21: { // lyre
+      // The arms must bow OUTSIDE the strings and the crossbar overhang them,
+      // or the three parts close up into a shield with lines ruled on it.
+      strokePts(ctx, [pt(-0.26, 0.72), pt(-0.7, 0.3), pt(-0.9, -0.3), pt(-0.62, -0.66)], false);
+      strokePts(ctx, [pt(0.26, 0.72), pt(0.7, 0.3), pt(0.9, -0.3), pt(0.62, -0.66)], false);
+      line(-0.78, -0.62, 0.78, -0.62);
+      for (const sx of [-0.22, 0, 0.22]) line(sx, -0.56, sx, 0.6);
+      fillPoly([pt(-0.44, 0.72), pt(0.44, 0.72), pt(0.3, 0.98), pt(-0.3, 0.98)]);
+      break;
+    }
+    case 22: { // hourglass
+      fillPoly([pt(-0.6, -0.82), pt(0.6, -0.82), pt(0, 0)]);
+      fillPoly([pt(-0.6, 0.82), pt(0.6, 0.82), pt(0, 0)]);
+      line(-0.76, -0.94, 0.76, -0.94);
+      line(-0.76, 0.94, 0.76, 0.94);
+      break;
+    }
+    case 23: { // rosette
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        blob(Math.cos(a) * 0.56, Math.sin(a) * 0.56, 0.34, 0.18, a);
+      }
+      disc(0, 0, 0.22);
+      break;
+    }
+    case 24: { // trefoil
+      for (let i = 0; i < 3; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI * 2) / 3;
+        disc(Math.cos(a) * 0.5, Math.sin(a) * 0.5 - 0.1, 0.4);
+      }
+      line(0, 0.42, 0, 1);
+      break;
+    }
+    case 25: { // quatrefoil
+      // Lobes just barely overlapping. At the obvious spacing (offset 0.5,
+      // radius 0.46) four circles in one ink merge into a rounded square.
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 2;
+        disc(Math.cos(a) * 0.58, Math.sin(a) * 0.58, 0.44);
+      }
+      break;
+    }
+    case 26: { // fleur-de-lis
+      // Lance, two petals curling DOWN and out, a band across the waist and a
+      // foot below it. The petals swept up read as a pair of horns.
+      fillPoly([pt(0, -1), pt(0.19, -0.4), pt(0.16, 0.3), pt(-0.16, 0.3), pt(-0.19, -0.4)]);
+      blob(-0.54, -0.06, 0.46, 0.18, -0.55);
+      blob(0.54, -0.06, 0.46, 0.18, 0.55);
+      fillPoly([pt(-0.54, 0.3), pt(0.54, 0.3), pt(0.54, 0.5), pt(-0.54, 0.5)]);
+      fillPoly([pt(-0.3, 0.5), pt(0.3, 0.5), pt(0.17, 0.98), pt(-0.17, 0.98)]);
+      break;
+    }
+    case 27: { // ivy leaf
+      fillPoly([
+        pt(0, -0.94),
+        pt(0.36, -0.54),
+        pt(0.82, -0.22),
+        pt(0.5, 0.18),
+        pt(0.17, 0.22),
+        pt(0.1, 0.96),
+        pt(-0.1, 0.96),
+        pt(-0.17, 0.22),
+        pt(-0.5, 0.18),
+        pt(-0.82, -0.22),
+        pt(-0.36, -0.54),
+      ]);
+      break;
+    }
+    case 28: { // oak leaf
+      const lobes: Pt[] = [];
+      for (let i = 0; i < 20; i++) {
+        const a = (i / 20) * Math.PI * 2;
+        const r = 0.62 + 0.26 * Math.cos(5 * a);
+        lobes.push(pt(Math.sin(a) * r * 0.66, -Math.cos(a) * r * 1.05));
+      }
+      fillPoly(lobes);
+      break;
+    }
+    case 29: { // wheatsheaf
+      line(0, 1, 0, -0.2);
+      for (let i = 0; i < 3; i++) {
+        const y = -0.12 - i * 0.3;
+        blob(-0.24, y, 0.28, 0.13, -0.85);
+        blob(0.24, y, 0.28, 0.13, 0.85);
+      }
+      blob(0, -0.84, 0.13, 0.28);
+      line(-0.32, 0.64, 0.32, 0.5);
+      break;
+    }
+    case 30: { // pomegranate
+      disc(0, 0.2, 0.68);
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI / 2 + (i - 1.5) * 0.42;
+        line(0, -0.42, Math.cos(a) * 0.46, -0.42 + Math.sin(a) * 0.62);
+      }
+      break;
+    }
+    case 31: { // tulip
+      fillPoly([
+        pt(-0.56, -0.42),
+        pt(-0.34, -0.98),
+        pt(-0.12, -0.46),
+        pt(0, -0.96),
+        pt(0.12, -0.46),
+        pt(0.34, -0.98),
+        pt(0.56, -0.42),
+        pt(0.3, 0.06),
+        pt(-0.3, 0.06),
+      ]);
+      line(0, 0.06, 0, 1);
+      blob(-0.34, 0.56, 0.3, 0.12, -0.45);
+      blob(0.34, 0.66, 0.3, 0.12, 0.45);
+      break;
+    }
+    case 32: { // heraldic rose
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+        disc(Math.cos(a) * 0.54, Math.sin(a) * 0.54, 0.42);
+      }
+      disc(0, 0, 0.25);
+      break;
+    }
+    case 33: { // comet
+      disc(0.44, -0.44, 0.36);
+      for (let i = 0; i < 3; i++) {
+        const off = (i - 1) * 0.28;
+        line(0.18 + off * 0.3, -0.18 + off, -0.86 + off * 0.5, 0.68 + off * 0.5);
+      }
+      break;
+    }
+    case 34: { // lantern
+      fillPoly([pt(-0.42, -0.32), pt(0.42, -0.32), pt(0.52, 0.5), pt(-0.52, 0.5)]);
+      fillPoly([pt(-0.56, -0.34), pt(0.56, -0.34), pt(0.3, -0.62), pt(-0.3, -0.62)]);
+      fillPoly([pt(-0.62, 0.52), pt(0.62, 0.52), pt(0.62, 0.72), pt(-0.62, 0.72)]);
+      bow(0, -0.68, 0.24, Math.PI, Math.PI * 2);
+      break;
+    }
+    case 35: { // inkpot
+      fillPoly([pt(-0.56, 0.12), pt(0.56, 0.12), pt(0.64, 0.9), pt(-0.64, 0.9)]);
+      fillPoly([pt(-0.28, -0.2), pt(0.28, -0.2), pt(0.32, 0.12), pt(-0.32, 0.12)]);
+      line(-0.4, -0.2, 0.4, -0.2);
+      line(0.1, -0.24, 0.72, -0.96);
+      blob(0.78, -1.02, 0.14, 0.08, -0.85);
+      break;
+    }
+    case 36: { // open book
+      fillPoly([pt(-0.96, -0.28), pt(-0.06, -0.56), pt(-0.06, 0.5), pt(-0.96, 0.74)]);
+      fillPoly([pt(0.96, -0.28), pt(0.06, -0.56), pt(0.06, 0.5), pt(0.96, 0.74)]);
+      break;
+    }
+    case 37: { // spectacles
+      ring(-0.52, 0.02, 0.4);
+      ring(0.52, 0.02, 0.4);
+      strokePts(ctx, [pt(-0.12, -0.02), pt(0, -0.2), pt(0.12, -0.02)], false);
+      line(-0.92, -0.06, -1.06, -0.4);
+      line(0.92, -0.06, 1.06, -0.4);
+      break;
+    }
+    case 38: { // pine cone — stroked, so the scales read
+      const shell: Pt[] = [];
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        shell.push(pt(Math.sin(a) * 0.46, -Math.cos(a) * 0.76 + 0.08));
+      }
+      strokePts(ctx, shell, true);
+      for (let i = 0; i < 3; i++) {
+        const y = -0.34 + i * 0.36;
+        strokePts(ctx, [pt(-0.34, y), pt(0, y + 0.22), pt(0.34, y)], false);
+      }
+      line(-0.12, -0.7, -0.28, -1);
+      line(0.12, -0.7, 0.28, -1);
+      break;
+    }
+    case 39: { // beehive (skep)
+      bow(0, 0.62, 0.88, Math.PI, Math.PI * 2);
+      line(-0.88, 0.62, 0.88, 0.62);
+      for (let i = 1; i <= 3; i++) bow(0, 0.62, 0.88 - i * 0.22, Math.PI, Math.PI * 2);
+      disc(0, 0.44, 0.15);
+      break;
+    }
+    case 40: { // butterfly — ONE waisted silhouette, not four merging blobs
+      // Four overlapping ellipses plus a body line was the obvious build and
+      // the wrong one: in a single ink the overlaps fuse, the body line is
+      // invisible against the fill it sits on, and at s≈9 the whole thing came
+      // out a lumpy disc with two antennae. Wings only read if the OUTLINE
+      // says butterfly — so the notches at head and tail do the work the
+      // (invisible) body line was supposed to do.
+      fillPoly([
+        pt(0, -0.34),
+        pt(0.38, -0.94),
+        pt(0.94, -0.58),
+        pt(0.62, -0.04),
+        pt(0.92, 0.5),
+        pt(0.38, 0.9),
+        pt(0, 0.32),
+        pt(-0.38, 0.9),
+        pt(-0.92, 0.5),
+        pt(-0.62, -0.04),
+        pt(-0.94, -0.58),
+        pt(-0.38, -0.94),
+      ]);
+      break;
+    }
+    case 41: { // swallow
+      fillPoly([
+        pt(-1, -0.4),
+        pt(-0.16, 0.05),
+        pt(0, -0.12),
+        pt(0.16, 0.05),
+        pt(1, -0.4),
+        pt(0.34, 0.36),
+        pt(0, 0.64),
+        pt(-0.34, 0.36),
+      ]);
+      break;
+    }
+    case 42: { // fish — stroked outline, one filled eye
+      strokePts(
+        ctx,
+        [pt(0.82, 0), pt(0.32, -0.4), pt(-0.2, -0.36), pt(-0.5, 0), pt(-0.2, 0.36), pt(0.32, 0.4)],
+        true,
+      );
+      strokePts(ctx, [pt(-0.5, 0), pt(-0.98, -0.42), pt(-0.98, 0.42)], true);
+      disc(0.44, -0.12, 0.11);
+      break;
+    }
+    case 43: { // horseshoe
+      ctx.save();
+      ctx.lineWidth = Math.max(1.4, ctx.lineWidth * 2);
+      bow(0, -0.08, 0.66, Math.PI * 0.18, Math.PI * 0.82, true);
+      ctx.restore();
+      for (let i = 0; i < 5; i++) {
+        const a = Math.PI * (1.16 + (i / 4) * 0.68);
+        disc(Math.cos(a) * 0.66, -0.08 + Math.sin(a) * 0.66, 0.09);
+      }
+      break;
+    }
+    case 44: { // bell
+      fillPoly([
+        pt(-0.68, 0.52),
+        pt(-0.48, -0.1),
+        pt(-0.22, -0.6),
+        pt(0.22, -0.6),
+        pt(0.48, -0.1),
+        pt(0.68, 0.52),
+      ]);
+      fillPoly([pt(-0.8, 0.52), pt(0.8, 0.52), pt(0.8, 0.7), pt(-0.8, 0.7)]);
+      bow(0, -0.68, 0.18, Math.PI, Math.PI * 2);
+      disc(0, 0.88, 0.14);
+      break;
+    }
+    case 45: { // little ship
+      fillPoly([pt(-0.92, 0.44), pt(0.92, 0.44), pt(0.6, 0.86), pt(-0.6, 0.86)]);
+      line(0, 0.44, 0, -0.96);
+      fillPoly([pt(0.07, -0.84), pt(0.07, 0.3), pt(0.76, 0.3)]);
+      fillPoly([pt(-0.07, -0.58), pt(-0.07, 0.3), pt(-0.64, 0.3)]);
+      break;
+    }
+    case 46: { // mountain
+      fillPoly([pt(-1, 0.7), pt(-0.36, -0.5), pt(-0.06, -0.04), pt(0.26, -0.86), pt(1, 0.7)]);
+      break;
+    }
+    case 47: { // wave
+      for (let row = 0; row < 3; row++) {
+        const y = -0.5 + row * 0.5;
+        const run: Pt[] = [];
+        for (let i = 0; i <= 8; i++) {
+          const t = i / 8;
+          run.push(pt(-1 + t * 2, y + Math.sin(t * Math.PI * 2 + row * 0.6) * 0.22));
+        }
+        strokePts(ctx, run, false);
+      }
+      break;
+    }
+    case 48: { // snowflake
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3;
+        const ax = Math.cos(a);
+        const ay = Math.sin(a);
+        line(0, 0, ax, ay);
+        for (const side of [-0.6, 0.6]) {
+          const b = a + side;
+          line(ax * 0.58, ay * 0.58, ax * 0.58 + Math.cos(b) * 0.36, ay * 0.58 + Math.sin(b) * 0.36);
+        }
+      }
+      disc(0, 0, 0.13);
+      break;
+    }
+    case 49: { // heart
+      const heart: Pt[] = [];
+      for (let i = 0; i < 24; i++) {
+        const t = (i / 24) * Math.PI * 2;
+        const hx = Math.pow(Math.sin(t), 3);
+        const hy =
+          -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16;
+        heart.push(pt(hx * 1.02, hy * 1.02));
+      }
+      fillPoly(heart);
+      break;
+    }
+
+    default: { // an index from a future table: the house diamond, never nothing
+      strokePts(ctx, [pt(0, -1), pt(0.62, 0), pt(0, 1), pt(-0.62, 0)], true);
       break;
     }
   }
@@ -1033,37 +2593,143 @@ function drawOrnament(
  * ========================================================================== */
 
 /**
- * Every pigment mapped onto one of the flat palette's six book cloths.
+ * Every pigment mapped onto a book cloth in `art/flat.ts`'s CLOTHS.
  *
  * The cloth comes from `palette` rather than from the raw seed on purpose:
  * `palette` is the field a book's colour identity has always lived in, so a
- * book that was amber stays in the amber family — it just stops being a
- * hand-mixed gradient and becomes one flat ochre. Indices are into CLOTHS
- * (terracotta, slate, plum, ochre, sage, moss) and the twenty entries line up
- * one-for-one with PALETTES above; add a pigment there, add a row here.
+ * book that was amber stays amber.
+ *
+ * ## This table is why the pigment names used to lie
+ *
+ * There were six cloths and twenty pigments, so fourteen of the twenty names
+ * were decoration: "Oxblood" folded onto terracotta, the same cloth every
+ * unstyled book already wore, and the studio's swatch row had to be cut down
+ * to six entries because the other fourteen repainted nothing. The Welcome
+ * book shipped the wrong colour behind exactly that fold — authored oxblood,
+ * drawn terracotta — and neither the compiler nor a test caught it.
+ *
+ * ## What fifty cloths actually bought
+ *
+ * Twenty-six of the fifty pigments now land on a cloth of the SAME NAME, which
+ * is the whole point of the change: Oxblood paints oxblood, Aubergine paints
+ * aubergine, Plum finally paints plum.
+ *
+ * The other twenty-four land on the nearest cloth by eye, because `art/flat.ts`
+ * has no cloth of that name to give them. That is not laziness in this table —
+ * it is a real gap between two vocabularies that were drawn independently. The
+ * cloths run rich in bright greens, cyans and pinks (Emerald, Turquoise,
+ * Magenta, Blossom, Apricot are the five no pigment can reach) and thin in the
+ * deep browns and near-blacks a library is mostly made of: there is exactly ONE
+ * dark brown (Chestnut) for Chocolate, Chestnut and Umber to share, and exactly
+ * one near-black (Graphite) for Ink and Charcoal. Closing that gap means adding
+ * cloths in `art/flat.ts`, not shuffling numbers here.
+ *
+ * ## Why this is not written as `pigment N wears cloth N`
+ *
+ * It was, and it was wrong for forty-one of the fifty. Both tables are ordered
+ * append-only and both keep the icon's six cloths at 0–5, and from that it
+ * looked as though the two would stay in lockstep. They do not and cannot:
+ * `flat.ts` groups its fifty by hue family (all the reds, then the yellows,
+ * then the greens…) while `PIGMENTS` grows in the order colours were needed.
+ * Index parity between two independently ordered tables is a coincidence, and
+ * writing it down as a contract is how "Oxblood" came to paint apricot.
+ *
+ * So every row below is stated explicitly, and `PIGMENT_CLOTH_NAMES` reads the
+ * result back out of `flat.ts`'s own labels — if a cloth is renamed or the
+ * order changes again, the mismatch is a value a test can see rather than a
+ * comment that has quietly gone stale.
  */
 const CLOTH_FOR_PIGMENT: readonly number[] = [
-  3, // 0  amber      → ochre
-  0, // 1  terracotta → terracotta
-  5, // 2  moss       → moss
-  1, // 3  dusty blue → slate
-  2, // 4  plum       → plum
-  3, // 5  ochre      → ochre
-  4, // 6  sage       → sage
-  0, // 7  rust       → terracotta
-  0, // 8  clay       → terracotta
-  4, // 9  olive      → sage
-  1, // 10 slate      → slate
-  2, // 11 blush      → plum
-  0, // 12 oxblood    → terracotta
-  1, // 13 navy       → slate
-  5, // 14 forest     → moss
-  3, // 15 tan        → ochre
-  3, // 16 cream      → ochre
-  1, // 17 ink        → slate
-  1, // 18 teal       → slate
-  3, // 19 saffron    → ochre
+  /* ---- the twenty-six that carry their own name ---- *
+     Read these as the table's spine. Everything else is an approximation; these
+     are the rows where the studio's caption and the drawn cloth are the same
+     word, and they are what "fifty cloths" was for. */
+  9, //  0 Amber        → Tangerine   · golden orange; Ochre is its namesake's
+  0, //  1 Terracotta   → Terracotta  ✔ (house)
+  5, //  2 Moss         → Moss        ✔ (house)
+  31, //  3 Dusty blue  → Denim       · 209°/26/55 against 210°/28/46
+  2, //  4 Plum         → Plum        ✔ (house)
+  3, //  5 Ochre        → Ochre       ✔ (house)
+  4, //  6 Sage         → Sage        ✔ (house)
+  8, //  7 Rust         → Rust        ✔
+  44, //  8 Clay        → Camel       · the muted mid-brown
+  18, //  9 Olive       → Olive       ✔
+  1, // 10 Slate        → Slate       ✔ (house)
+  11, // 11 Blush       → Blush       ✔
+  7, // 12 Oxblood      → Oxblood     ✔ — the fold this whole change existed for
+  33, // 13 Navy        → Ink blue    · the deepest formal blue on offer
+  20, // 14 Forest      → Forest      ✔
+  45, // 15 Tan         → Sand        · tan and sand are the same cloth twice
+  46, // 16 Cream       → Bone        · the warm off-white
+  49, // 17 Ink         → Graphite    · pigment is 12% sat, so read as neutral
+  26, // 18 Teal        → Teal        ✔
+  13, // 19 Saffron     → Saffron     ✔
+  42, // 20 Burgundy    → Claret      · 347°/37/47 against 338°/44/31
+  6, // 21 Vermilion    → Vermilion   ✔
+  10, // 22 Coral       → Coral       ✔
+  41, // 23 Rose        → Rose        ✔
+  37, // 24 Aubergine   → Aubergine   ✔
+  35, // 25 Amethyst    → Violet      · the light-purple slot
+  36, // 26 Lavender    → Lavender    ✔
+  38, // 27 Heather     → Mulberry    · muted mauve, the nearest heather there is
+  34, // 28 Indigo      → Indigo      ✔
+  32, // 29 Lapis       → Cobalt      · 220°/52/53 against 222°/56/43
+  30, // 30 Storm       → Cornflower  · hue is right, value is not; only mid blue
+  28, // 31 Sky         → Sky         ✔
+  27, // 32 Peacock     → Peacock     ✔
+  24, // 33 Verdigris   → Verdigris   ✔
+  22, // 34 Jade        → Jade        ✔
+  23, // 35 Celadon     → Seafoam     · the pale blue-green
+  17, // 36 Fern        → Leaf        ✔ in all but spelling
+  19, // 37 Bottle green→ Bottle green ✔
+  16, // 38 Chartreuse  → Pistachio   · 80°/47/61 against 76°/46/53
+  14, // 39 Buttercup   → Butter      ✔ in all but spelling
+  15, // 40 Straw       → Lemon       · the pale-yellow slot
+  43, // 41 Chocolate   → Chestnut    · see the note on browns above
+  43, // 42 Chestnut    → Chestnut    ✔
+  43, // 43 Umber       → Chestnut    · the only dark brown, shared three ways
+  3, // 44 Bronze       → Ochre       · 37°/57/52 against 36°/50/41
+  47, // 45 Linen       → Ash         · the pale neutral, shared with Oyster
+  47, // 46 Oyster      → Ash         · 35°/14/74 against 38°/14/72
+  29, // 47 Dove        → Mist        · the one pale cool neutral
+  48, // 48 Pewter      → Pewter      ✔
+  49, // 49 Charcoal    → Graphite    · shared with Ink, the only near-black
 ];
+
+/**
+ * The name of the cloth each pigment actually paints, index-aligned with
+ * `PIGMENT_LABELS`.
+ *
+ * Read out of `art/flat.ts`'s own `CLOTH_LABELS` rather than restated here, so
+ * it cannot go stale: this is the honest answer to "the studio says Oxblood —
+ * what colour is the book?", and comparing it against `PIGMENT_LABELS` is how a
+ * test sees the fold drifting instead of a reader seeing it on a shelf.
+ *
+ * The predecessor of this export ran the other way — it declared what `flat.ts`
+ * SHOULD name each slot — and that inversion is precisely how forty-one
+ * pigments came to lie: a comment cannot impose an order on another module, and
+ * when `flat.ts` grouped its fifty by hue instead, nothing anywhere noticed.
+ */
+export const PIGMENT_CLOTH_NAMES: readonly string[] = CLOTH_FOR_PIGMENT.map(
+  (slot) => CLOTH_LABELS[slot % CLOTH_LABELS.length] ?? '',
+);
+
+/**
+ * The pigments whose name is exactly the name of the cloth they paint.
+ *
+ * Twenty-six of fifty today. This is the number the vocabulary is judged by, so
+ * it is worth being able to read it: it can only go up by `art/flat.ts` gaining
+ * a cloth that a pigment is named for (a dark brown for Chocolate, a near-black
+ * for Ink), never by editing this file.
+ */
+export function pigmentsMatchingTheirCloth(): readonly number[] {
+  const out: number[] = [];
+  for (let i = 0; i < PIGMENT_LABELS.length; i++) {
+    const pigment = (PIGMENT_LABELS[i] ?? '').toLowerCase();
+    if (pigment === (PIGMENT_CLOTH_NAMES[i] ?? '').toLowerCase()) out.push(i);
+  }
+  return out;
+}
 
 /**
  * THE palette → cloth rule, for the spine and the cover alike.
@@ -1076,9 +2742,15 @@ const CLOTH_FOR_PIGMENT: readonly number[] = [
  * up. (It did — the spine used this table while the cover used `palette % 6`,
  * so an amber book was ochre on the shelf and terracotta in your hand.)
  *
- * Wrapping happens at the TWENTY pigment slots first, so `palette` keeps its
- * full range as a knob (`COVER_PALETTE_COUNT`), then lands on one of six.
- * Negative and fractional inputs normalise rather than falling off the end.
+ * Wrapping happens at the pigment slots first, so `palette` keeps its full
+ * range as a knob (`COVER_PALETTE_COUNT` must therefore stay equal to
+ * `PIGMENT_COUNT`), and only then lands inside CLOTHS. Negative and fractional
+ * inputs normalise rather than falling off the end.
+ *
+ * The trailing `% CLOTHS.length` is what makes this safe while `art/flat.ts`
+ * is still growing its palette: against six cloths the fifty pigments fold
+ * back onto six the way they always did, against fifty they are one-to-one,
+ * and against any count in between nothing throws and nothing goes blank.
  */
 export function clothForPalette(palette: number): number {
   const n = CLOTH_FOR_PIGMENT.length;
@@ -1189,15 +2861,475 @@ function measureSpineTitle(
   return { text, fontPx, family, len, runLen: len + pad * 2 };
 }
 
+/* --------------------------- drawing one plate ---------------------------- */
+
+const PLATE_GROUND_HEX: Readonly<Record<Exclude<PlateGround, 'none'>, string>> = {
+  cream: FLAT.cream,
+  creamDeep: FLAT.creamDeep,
+  gilt: FLAT.gilt,
+  giltPale: FLAT.giltPale,
+  ink: FLAT.ink,
+  timber: FLAT.timber,
+  terracotta: FLAT.terracotta,
+  slate: FLAT.slate,
+  moss: FLAT.moss,
+  plum: FLAT.plum,
+};
+
+const PLATE_INK_HEX: Readonly<Record<Exclude<PlateInk, 'auto'>, string>> = {
+  gilt: FLAT.gilt,
+  ink: FLAT.ink,
+  soft: FLAT.inkSoft,
+  cream: FLAT.cream,
+};
+
+/** Resolve a plate ink, with `auto` meaning "gilt on a gilded book". */
+function plateInk(which: PlateInk, gilt: boolean): string {
+  if (which === 'auto') return gilt ? FLAT.gilt : FLAT.inkSoft;
+  return PLATE_INK_HEX[which];
+}
+
 /**
- * Set the measured run down the spine, on a cream plate or straight on the
- * cloth.
+ * Trace one plate silhouette into the current path.
+ *
+ * Every shape is fitted to the SAME box — the compartment `bookLabelBox` cut
+ * for the lettering — which is always tall and narrow. That constraint is why
+ * there is no circle here and why `oval` is a long capsule rather than a disc:
+ * a shape that only reads when it is as wide as it is tall has no business on
+ * a spine, however handsome it is on a specimen board.
+ */
+function tracePlate(
+  ctx: Ctx2D,
+  b: DesignBox,
+  shape: PlateShape,
+  radius: number,
+  seed: number,
+): void {
+  const { x, y, w, h } = b;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const poly = (pts: readonly Pt[]): void => tracePoly(ctx, pts, true);
+
+  switch (shape) {
+    case 'capsule':
+      wobbleRect(ctx, x, y, w, h, Math.min(w / 2, h / 2), seed);
+      return;
+    case 'oval':
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+      ctx.closePath();
+      return;
+    case 'lozenge':
+      poly([
+        { x: cx, y },
+        { x: x + w, y: cy },
+        { x: cx, y: y + h },
+        { x, y: cy },
+      ]);
+      return;
+    case 'shield':
+      poly([
+        { x, y },
+        { x: x + w, y },
+        { x: x + w, y: y + h * 0.74 },
+        { x: cx, y: y + h },
+        { x, y: y + h * 0.74 },
+      ]);
+      return;
+    case 'octagon': {
+      const c = Math.min(w * 0.3, h * 0.12);
+      poly([
+        { x: x + c, y },
+        { x: x + w - c, y },
+        { x: x + w, y: y + c },
+        { x: x + w, y: y + h - c },
+        { x: x + w - c, y: y + h },
+        { x: x + c, y: y + h },
+        { x, y: y + h - c },
+        { x, y: y + c },
+      ]);
+      return;
+    }
+    case 'arch': {
+      // A round head at the top, square shoulders at the tail.
+      const r = w / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y + r);
+      ctx.arc(cx, y + r, r, Math.PI, 0);
+      ctx.lineTo(x + w, y + h);
+      ctx.lineTo(x, y + h);
+      ctx.closePath();
+      return;
+    }
+    case 'scroll': {
+      // Both ends curled under: the long sides bow in, the ends bow out.
+      const e = Math.min(h * 0.1, w * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(x, y + e);
+      ctx.quadraticCurveTo(cx, y - e * 0.8, x + w, y + e);
+      ctx.quadraticCurveTo(x + w - w * 0.14, cy, x + w, y + h - e);
+      ctx.quadraticCurveTo(cx, y + h + e * 0.8, x, y + h - e);
+      ctx.quadraticCurveTo(x + w * 0.14, cy, x, y + e);
+      ctx.closePath();
+      return;
+    }
+    case 'stepped': {
+      const c = Math.min(w * 0.22, h * 0.06);
+      poly([
+        { x: x + c, y },
+        { x: x + w - c, y },
+        { x: x + w - c, y: y + c },
+        { x: x + w, y: y + c },
+        { x: x + w, y: y + h - c },
+        { x: x + w - c, y: y + h - c },
+        { x: x + w - c, y: y + h },
+        { x: x + c, y: y + h },
+        { x: x + c, y: y + h - c },
+        { x, y: y + h - c },
+        { x, y: y + c },
+        { x: x + c, y: y + c },
+      ]);
+      return;
+    }
+    default:
+      wobbleRect(ctx, x, y, w, h, Math.min(w * radius, h / 2), seed);
+  }
+}
+
+/** A small filled diamond, the workhorse end mark. */
+function plateLozenge(ctx: Ctx2D, x: number, y: number, r: number): void {
+  tracePoly(
+    ctx,
+    [
+      { x, y: y - r },
+      { x: x + r * 0.62, y },
+      { x, y: y + r },
+      { x: x - r * 0.62, y },
+    ],
+    true,
+  );
+  ctx.fill();
+}
+
+/** A small filled four-point sparkle. */
+function plateStar(ctx: Ctx2D, x: number, y: number, r: number): void {
+  tracePoly(
+    ctx,
+    [
+      { x, y: y - r },
+      { x: x + r * 0.3, y: y - r * 0.3 },
+      { x: x + r, y },
+      { x: x + r * 0.3, y: y + r * 0.3 },
+      { x, y: y + r },
+      { x: x - r * 0.3, y: y + r * 0.3 },
+      { x: x - r, y },
+      { x: x - r * 0.3, y: y - r * 0.3 },
+    ],
+    true,
+  );
+  ctx.fill();
+}
+
+/** A printer's leaf: one filled body and two lobes. */
+function plateFleuron(ctx: Ctx2D, x: number, y: number, r: number, up: number): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 0.4, r * 0.85, 0, 0, Math.PI * 2);
+  ctx.fill();
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(x + side * r * 0.72, y + up * r * 0.24, r * 0.5, r * 0.22, side * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/**
+ * Draw the lettering-piece the spec asks for, ground through frame.
+ *
+ * Composed, not branched fifty ways: the ground fills the silhouette, the
+ * grain is clipped inside it, the frame runs round it and the end marks close
+ * the run off. Any spec whose ground is `none` skips the first two and tools
+ * straight onto the covering, which is what half the real treatments do.
+ */
+function drawTitlePlate(
+  ctx: Ctx2D,
+  b: DesignBox,
+  spec: TitlePlateSpec,
+  design: BookDesign,
+  scale: number,
+): void {
+  const { x, y, w, h } = b;
+  const seed = design.seed + 3;
+  const ink = Math.max(0.8, inkWidth(w) * 0.7);
+  const frameInk = plateInk(spec.frameInk, design.gilt);
+  const pad = Math.max(1.2, w * 0.13);
+
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  /* ---- ground ---- */
+  if (spec.ground !== 'none') {
+    tracePlate(ctx, b, spec.shape, spec.radius, seed);
+    ctx.fillStyle = PLATE_GROUND_HEX[spec.ground];
+    ctx.fill();
+    if (spec.outline > 0) {
+      ctx.strokeStyle = FLAT.ink;
+      ctx.lineWidth = ink * spec.outline;
+      ctx.stroke();
+    }
+  }
+
+  /* ---- grain, clipped inside the plate ---- */
+  if (spec.grain !== 'none' && spec.ground !== 'none') {
+    ctx.save();
+    tracePlate(ctx, b, spec.shape, spec.radius, seed);
+    ctx.clip();
+    ctx.strokeStyle = FLAT.inkSoft;
+    ctx.fillStyle = FLAT.inkSoft;
+    ctx.globalAlpha = 0.5;
+    if (spec.grain === 'hatch') {
+      const step = Math.max(2.4, w * 0.3);
+      for (let d = -h; d < w + h; d += step) {
+        inkLine(ctx, x + d, y, x + d + h, y + h, FLAT.inkSoft, Math.max(0.6, ink * 0.35), seed + d);
+      }
+    } else if (spec.grain === 'stipple') {
+      const rows = Math.max(3, Math.round(h / Math.max(2.6, w * 0.34)));
+      for (let i = 0; i < rows; i++) {
+        for (let k = 0; k < 2; k++) {
+          ctx.beginPath();
+          ctx.arc(
+            x + w * (k === 0 ? 0.32 : 0.68),
+            y + (h * (i + 0.5)) / rows,
+            Math.max(0.5, w * 0.055),
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+        }
+      }
+    } else {
+      const rows = Math.max(3, Math.round(h / Math.max(3.2, w * 0.42)));
+      for (let i = 1; i < rows; i++) {
+        const ry = y + (h * i) / rows;
+        inkLine(ctx, x + w * 0.16, ry, x + w * 0.84, ry, FLAT.inkSoft, Math.max(0.5, ink * 0.3), seed + i);
+      }
+    }
+    ctx.restore();
+  }
+
+  /* ---- frame ---- */
+  ctx.strokeStyle = frameInk;
+  ctx.fillStyle = frameInk;
+  const inset = (k: number, weight: number): void => {
+    const p = pad * k;
+    if (w - p * 2 <= 1.5 || h - p * 2 <= 1.5) return;
+    wobbleRect(ctx, x + p, y + p, w - p * 2, h - p * 2, Math.max(0, w * spec.radius - p), seed + k);
+    ctx.lineWidth = Math.max(0.7, ink * weight);
+    ctx.stroke();
+  };
+  switch (spec.frame) {
+    case 'single':
+      inset(0.55, 0.62);
+      break;
+    case 'double':
+      inset(0.35, 0.55);
+      inset(1, 0.42);
+      break;
+    case 'triple':
+      inset(0.28, 0.42);
+      inset(0.78, 0.85);
+      inset(1.4, 0.42);
+      break;
+    case 'dotted':
+    case 'bead': {
+      const r = Math.max(0.55, w * (spec.frame === 'bead' ? 0.055 : 0.075));
+      const gap = Math.max(2, r * (spec.frame === 'bead' ? 2.6 : 3.6));
+      const px = x + pad * 0.55;
+      const pw = w - pad * 1.1;
+      const py = y + pad * 0.55;
+      const ph = h - pad * 1.1;
+      const down = Math.max(2, Math.round(ph / gap));
+      for (let i = 0; i <= down; i++) {
+        const dy = py + (ph * i) / down;
+        for (const dx of [px, px + pw]) {
+          ctx.beginPath();
+          ctx.arc(dx, dy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      for (const dy of [py, py + ph]) {
+        ctx.beginPath();
+        ctx.arc(px + pw / 2, dy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'rope': {
+      const step = Math.max(2.4, w * 0.34);
+      const px = x + pad * 0.5;
+      const pw = w - pad;
+      for (let dy = y + pad; dy < y + h - pad; dy += step) {
+        inkLine(ctx, px, dy, px + w * 0.14, dy + step * 0.7, frameInk, Math.max(0.7, ink * 0.5), seed + dy);
+        inkLine(
+          ctx,
+          px + pw,
+          dy,
+          px + pw - w * 0.14,
+          dy + step * 0.7,
+          frameInk,
+          Math.max(0.7, ink * 0.5),
+          seed + dy + 1,
+        );
+      }
+      break;
+    }
+    case 'scallop': {
+      const r = Math.max(1, w * 0.15);
+      const step = r * 2;
+      ctx.lineWidth = Math.max(0.6, ink * 0.45);
+      for (let dy = y + r; dy < y + h - r * 0.5; dy += step) {
+        ctx.beginPath();
+        ctx.arc(x, dy, r, -Math.PI / 2, Math.PI / 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x + w, dy, r, Math.PI / 2, -Math.PI / 2);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'brackets': {
+      const arm = Math.min(w * 0.5, h * 0.1);
+      ctx.lineWidth = Math.max(0.8, ink * 0.7);
+      for (const [bx, sx] of [
+        [x + pad * 0.4, 1],
+        [x + w - pad * 0.4, -1],
+      ] as const) {
+        for (const [by, sy] of [
+          [y + pad * 0.4, 1],
+          [y + h - pad * 0.4, -1],
+        ] as const) {
+          ctx.beginPath();
+          ctx.moveTo(bx + sx * arm * 0.7, by);
+          ctx.lineTo(bx, by);
+          ctx.lineTo(bx, by + sy * arm);
+          ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'notched': {
+      const c = Math.min(w * 0.24, h * 0.05);
+      ctx.lineWidth = Math.max(0.7, ink * 0.6);
+      for (const [bx, sx] of [
+        [x, 1],
+        [x + w, -1],
+      ] as const) {
+        for (const [by, sy] of [
+          [y, 1],
+          [y + h, -1],
+        ] as const) {
+          ctx.beginPath();
+          ctx.moveTo(bx + sx * c, by);
+          ctx.lineTo(bx, by + sy * c);
+          ctx.stroke();
+        }
+      }
+      break;
+    }
+    case 'wreath': {
+      const r = Math.max(1, w * 0.18);
+      const step = r * 2.1;
+      for (let dy = y + r; dy < y + h - r * 0.4; dy += step) {
+        for (const [dx, rot] of [
+          [x + pad * 0.4, -0.6],
+          [x + w - pad * 0.4, 0.6],
+        ] as const) {
+          ctx.beginPath();
+          ctx.ellipse(dx, dy, r * 0.9, r * 0.38, rot, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      break;
+    }
+    case 'gothic': {
+      // A pointed arch struck inside the head of the panel, cusped either side.
+      const p = pad * 0.7;
+      const top = y + p;
+      const spring = Math.min(y + h - p, top + w * 1.1);
+      ctx.lineWidth = Math.max(0.8, ink * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(x + p, spring);
+      ctx.quadraticCurveTo(x + p, top + (spring - top) * 0.2, x + w / 2, top);
+      ctx.quadraticCurveTo(x + w - p, top + (spring - top) * 0.2, x + w - p, spring);
+      ctx.stroke();
+      inkLine(ctx, x + p, spring, x + p, y + h - p, frameInk, Math.max(0.7, ink * 0.5), seed + 7);
+      inkLine(ctx, x + w - p, spring, x + w - p, y + h - p, frameInk, Math.max(0.7, ink * 0.5), seed + 8);
+      break;
+    }
+    default:
+      break;
+  }
+
+  /* ---- end marks ---- */
+  if (spec.ends !== 'none') {
+    const r = Math.min(w * 0.2, 4 * scale);
+    const yTop = y + pad * 1.1 + r;
+    const yBot = y + h - pad * 1.1 - r;
+    if (yBot - yTop > r * 2) {
+      const mx = x + w / 2;
+      for (const [ey, up] of [
+        [yTop, -1],
+        [yBot, 1],
+      ] as const) {
+        switch (spec.ends) {
+          case 'rule':
+            inkLine(ctx, x + w * 0.2, ey, x + w * 0.8, ey, frameInk, Math.max(0.7, ink * 0.6), seed + ey);
+            break;
+          case 'double-rule':
+            inkLine(ctx, x + w * 0.14, ey - r * 0.35, x + w * 0.86, ey - r * 0.35, frameInk, Math.max(0.7, ink * 0.6), seed + ey);
+            inkLine(ctx, x + w * 0.14, ey + r * 0.35, x + w * 0.86, ey + r * 0.35, frameInk, Math.max(0.6, ink * 0.4), seed + ey + 1);
+            break;
+          case 'dots':
+            for (const t of [0.3, 0.5, 0.7]) {
+              ctx.beginPath();
+              ctx.arc(x + w * t, ey, Math.max(0.5, r * 0.28), 0, Math.PI * 2);
+              ctx.fill();
+            }
+            break;
+          case 'lozenge':
+            plateLozenge(ctx, mx, ey, r * 0.8);
+            break;
+          case 'star':
+            plateStar(ctx, mx, ey, r * 0.9);
+            break;
+          case 'fleuron':
+            plateFleuron(ctx, mx, ey, r, up);
+            break;
+          default:
+            ctx.lineWidth = Math.max(0.7, ink * 0.6);
+            ctx.beginPath();
+            ctx.moveTo(x + w * 0.2, ey + up * r * 0.6);
+            ctx.lineTo(x + w * 0.2, ey);
+            ctx.lineTo(x + w * 0.8, ey);
+            ctx.lineTo(x + w * 0.8, ey + up * r * 0.6);
+            ctx.stroke();
+            break;
+        }
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Set the measured run down the spine, on the plate its treatment asks for.
  *
  * Flat means flat: no foil ramp, no relief copy, no burnished glint travelling
  * along the run. The one liberty is a hair of baseline wobble per glyph, which
  * is the same liberty every other shape in this style takes.
  *
- * `plate` is false for the bindings that carry no lettering-piece — a plain
+ * `spec` is `none` for the bindings that carry no lettering-piece — a plain
  * wrapper, limp vellum, blind-tooled calf. Those books get their title stamped
  * directly onto the covering, which is what the real thing does; painting a
  * cream panel onto all 62 presets is what made a third of them stop meaning
@@ -1209,15 +3341,9 @@ function paintSpineTitle(
   run: TitleRun,
   design: BookDesign,
   scale: number,
-  plate: boolean,
+  spec: TitlePlateSpec,
 ): void {
-  if (plate) {
-    panel(ctx, box.x, box.y, box.w, box.h, FLAT.cream, {
-      radius: box.w * 0.18,
-      seed: design.seed + 3,
-      width: Math.max(1, inkWidth(box.w) * 0.7),
-    });
-  }
+  drawTitlePlate(ctx, box, spec, design, scale);
 
   const m = measureCtx();
   m.font = `${run.fontPx.toFixed(2)}px ${run.family}`;
@@ -1230,9 +3356,11 @@ function paintSpineTitle(
   ctx.font = `${run.fontPx.toFixed(2)}px ${run.family}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  // Gilt lettering on a gilded book with no plate under it — otherwise soft
-  // ink, which is what reads on cream.
-  ctx.fillStyle = !plate && design.gilt ? FLAT.gilt : FLAT.inkSoft;
+  // The treatment names its own lettering ink, and it has to: a cream label
+  // wants soft ink, a sunk morocco label wants gold, an ink panel wants the
+  // letters cut back to cream. `auto` is the old rule — gilt on a gilded book,
+  // soft ink otherwise — and is what every treatment with no ground uses.
+  ctx.fillStyle = plateInk(spec.letter, design.gilt);
   let advance = 0;
   for (const ch of run.text) {
     ctx.fillText(ch, advance, (wob() * 2 - 1) * 0.5 * scale);
@@ -1402,9 +3530,20 @@ export function renderSpine(
   // Whether this book wears a lettering-piece is the BINDING's answer, with
   // the studio's explicit `titlePlate` able to overrule it. Plating all 62
   // presets regardless is what would make a third of them indistinguishable.
-  const plate =
-    fitsLabelPlate(boxes.decor) &&
-    (hasDecoration(design, 'label-plate') || (params.titlePlate ?? 'none') !== 'none');
+  //
+  // `none` from the studio is not "no plate" — it is "no OPINION": a binding
+  // that wants a label-plate still gets the house paper label, exactly as it
+  // did when this was a boolean. An explicit treatment wins over the binding.
+  const chosen = params.titlePlate ?? 'none';
+  const wanted =
+    chosen !== 'none'
+      ? titlePlateSpec(chosen)
+      : hasDecoration(design, 'label-plate')
+        ? TITLE_PLATE_SPECS.label
+        : TITLE_PLATE_SPECS.none;
+  // A sliver has no room for a ground, and a plate too small to letter reads
+  // as a smear of paint rather than as a label.
+  const spec = fitsLabelPlate(boxes.decor) ? wanted : TITLE_PLATE_SPECS.none;
 
   const run = titled ? measureSpineTitle(boxes.decor, design, text, params.font, scale) : null;
   const box = run !== null ? bookLabelBox(boxes.decor, design, run.runLen) : null;
@@ -1412,12 +3551,20 @@ export function renderSpine(
   const f = drawBookSpine(ctx, x, y, w, h, design, {
     // Reserve the band the lettering will occupy even when no plate goes under
     // it: tooling struck across a title is the one thing worse than no tooling.
-    reserved: box !== null ? { y0: box.y, y1: box.y + box.h } : null,
+    //
+    // The x extent goes with it. It was dropped here, so the decoration painter
+    // had to guess the plate's width from a constant — and vertical rules sited
+    // just outside that constant, but inside the plate a design actually drew,
+    // ran straight through the title.
+    reserved:
+      box !== null
+        ? { y0: box.y, y1: box.y + box.h, x0: box.x, x1: box.x + box.w }
+        : null,
     ownLabel: titled,
     noContact: false,
   });
 
-  if (run !== null && box !== null) paintSpineTitle(ctx, box, run, design, scale, plate);
+  if (run !== null && box !== null) paintSpineTitle(ctx, box, run, design, scale, spec);
 
   if (params.ornamentOn ?? true) {
     // Whatever ended up highest — our plate, or the binding's own — is the

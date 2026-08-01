@@ -5,7 +5,7 @@
 import type { Editor, Range } from '@tiptap/core';
 import { SLASH_DIAGRAM_COMMANDS } from '../../diagrams/slashCommands';
 import { openToday } from '../journal';
-import { STICKER_IDS, type StickerId } from '../nodes/stickers';
+import { STICKER_IDS, STICKER_TAGS, type StickerId } from '../nodes/stickers';
 
 export interface SlashCommandContext {
   readonly editor: Editor;
@@ -352,29 +352,39 @@ const blockCommands: SlashCommand[] = [
   },
 ];
 
-const STICKER_TILT: Record<StickerId, number> = {
-  star: -6,
-  bee: 5,
-  leaf: -4,
-  heart: 4,
-  sparkle: -3,
-  cat: 3,
-  sun: -5,
-  flower: 6,
-};
+/**
+ * The tilt a sticker lands at.
+ *
+ * Was a hand-written table of eight. A table cannot survive a sheet of fifty —
+ * `Record<StickerId, number>` makes every new sticker a compile error, and the
+ * only honest fix is a number nobody chose anyway. Seeded from the name, so a
+ * given sticker always lands at the same angle (a rubber stamp, not a dice
+ * roll) and no two neighbours in the sheet share one.
+ */
+export function stickerTilt(stickerId: StickerId): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < stickerId.length; i += 1) {
+    hash ^= stickerId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  // −7°…+7°, never dead flat: a sticker laid down by hand is never square.
+  const unit = ((hash >>> 0) % 1000) / 999;
+  const tilt = Math.round((unit * 2 - 1) * 70) / 10;
+  return tilt === 0 ? 3 : tilt;
+}
 
 const stickerCommands: SlashCommand[] = STICKER_IDS.map((stickerId) => ({
   id: `sticker-${stickerId}`,
   title: `${stickerId.charAt(0).toUpperCase()}${stickerId.slice(1)} sticker`,
   icon: { kind: 'sticker', stickerId },
-  keywords: ['sticker', stickerId, 'doodle', 'decoration'],
+  keywords: ['sticker', stickerId, 'doodle', 'decoration', ...STICKER_TAGS[stickerId]],
   section: 'stickers',
   run: ({ editor, range }) =>
     editor
       .chain()
       .focus()
       .deleteRange(range)
-      .insertSticker({ stickerId, rotate: STICKER_TILT[stickerId] })
+      .insertSticker({ stickerId, rotate: stickerTilt(stickerId) })
       .run(),
 }));
 

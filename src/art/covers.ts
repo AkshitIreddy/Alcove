@@ -42,7 +42,6 @@ import type { CharmKind } from './charms';
 import {
   CLOTHS,
   FLAT,
-  flatScheme,
   flatSchemeTag,
   inkWidth,
   panel,
@@ -52,6 +51,7 @@ import {
 } from './flat';
 import { clamp, mulberry32 } from './noise';
 import {
+  PIGMENT_COUNT,
   clothForPalette,
   deriveSpineParams,
   materialFromTexture,
@@ -78,7 +78,18 @@ import {
  */
 export const COVER_ASPECT = 0.72;
 
-export const COVER_PALETTE_COUNT = 20;
+/**
+ * How many pigment slots a cover's `palette` spans.
+ *
+ * DERIVED from `spines.PIGMENT_COUNT`, never written as a number. The spine
+ * derives `palette` from the pigment table and `deriveCoverParams` copies it
+ * across verbatim so the shelf and the pull-out agree about which book this is
+ * — so the moment this constant disagrees with that table, the cover is
+ * validating a range it does not actually receive. It was hard-coded 20, the
+ * pigment table grew to 50, and covers started arriving with a palette outside
+ * their own declared bound.
+ */
+export const COVER_PALETTE_COUNT = PIGMENT_COUNT;
 export const COVER_FRAME_COUNT = 4;
 export const COVER_MEDALLION_COUNT = 8;
 /** Labels for the legacy `texture` bucket (see CoverParams.texture). */
@@ -248,14 +259,23 @@ const PALE_BOARD: readonly [string, string] = [FLAT.cream, FLAT.timber];
  * equivalent and was not — it gave the same book two colours, terracotta in the
  * hand and ochre on the shelf.
  *
- * The hexes come from `flatScheme()` for the same reason: the spine reads the
- * room's cloths, so a cover reading the house ones would re-open that exact
- * split the moment anyone left the Old Athenaeum.
+ * The hexes come from the HOUSE `CLOTHS`, because that is what the spine reads.
+ *
+ * This used to read `flatScheme().cloths` — the ROOM's palette — on the
+ * reasoning that the spine did too. The spine stopped doing that when a book
+ * was made to keep its own colours in every room (see flatShelf.drawSpine), and
+ * this was left behind. It survived only because both tables had six entries
+ * and the room's six were near enough to the house six to pass for them.
+ *
+ * The day `CLOTHS` grew to fifty it became a real bug: a room has six cloths, so
+ * every slot from 6 up hit the `?? cloths[0]` fallback and the cover came out
+ * terracotta while the spine wore whatever it had been dressed in. That is the
+ * exact split `tests/covers.test.ts` exists to catch — a book that changes
+ * colour when you pick it up.
  */
 function clothFor(palette: number): readonly [string, string] {
-  const cloths = flatScheme().cloths;
   const slot = clothForPalette(palette);
-  return (cloths[slot] ?? cloths[0] ?? CLOTHS[0]!) as readonly [string, string];
+  return (CLOTHS[slot] ?? CLOTHS[0]!) as readonly [string, string];
 }
 
 /**

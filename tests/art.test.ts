@@ -15,6 +15,7 @@ import { doubleStroke, wobbleLine, wobblePath, wobbleRect } from '../src/art/wob
 import {
   BINDING_MATERIALS,
   MAX_RAISED_BANDS,
+  ORNAMENT_COUNT,
   PIGMENT_COUNT,
   SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
@@ -100,7 +101,9 @@ describe('deriveSpineParams', () => {
         expect([0, 1, 2]).toContain(band.kind);
       }
       expect(p.ornament).toBeGreaterThanOrEqual(0);
-      expect(p.ornament).toBeLessThanOrEqual(11);
+      // Bound by the stamp table, not a literal — it was hard-coded 11 and the
+      // table grew to 50.
+      expect(p.ornament).toBeLessThanOrEqual(ORNAMENT_COUNT - 1);
       expect([0, 1, 2]).toContain(p.texture);
       expect([0, 1, 2]).toContain(p.font);
       expect(typeof p.gilt).toBe('boolean');
@@ -156,10 +159,13 @@ describe('deriveSpineParams', () => {
     expect(Math.max(...palettes)).toBeGreaterThanOrEqual(12);
   });
 
-  it('uses all 12 ornament stamps across many seeds', () => {
+  it('uses every ornament stamp across many seeds', () => {
+    // Every stamp must be REACHABLE. A stamp no seed ever draws is a stamp
+    // nobody will see, which is the failure mode of growing a table from 12 to
+    // 50 without widening the draw that indexes it.
     const seen = new Set<number>();
-    for (let seed = 0; seed < 2000; seed++) seen.add(deriveSpineParams(seed).ornament);
-    expect(seen.size).toBe(12);
+    for (let seed = 0; seed < 20000; seed++) seen.add(deriveSpineParams(seed).ornament);
+    expect(seen.size).toBe(ORNAMENT_COUNT);
   });
 
   it('getSpineParams is the public alias used by cover modules', () => {

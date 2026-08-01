@@ -219,10 +219,11 @@ async function probe(size: number, spec: WallpaperSpec, inset = 0): Promise<Prob
 /* ============================ structural tests =========================== */
 
 describe('wallpaper presets', () => {
-  it('offers exactly fifty papers, all with unique ids', () => {
-    // Exactly, not "at least": the number is the shape of the book, and the
-    // fifty-five that preceded it were fifty-five because nobody was counting.
-    expect(WALLPAPER_PRESETS.length).toBe(50);
+  it('offers exactly a hundred and twenty-six papers, all with unique ids', () => {
+    // Exactly, not "at least": the number is the shape of the book — seven
+    // families of eighteen — and the fifty-five that preceded the first
+    // rebalance were fifty-five because nobody was counting.
+    expect(WALLPAPER_PRESETS.length).toBe(WALLPAPER_FAMILIES.length * 18);
     const ids = new Set(WALLPAPER_PRESETS.map((p) => p.id));
     expect(ids.size).toBe(WALLPAPER_PRESETS.length);
   });
@@ -249,23 +250,43 @@ describe('wallpaper presets', () => {
   it('spreads evenly across the families, which is the point of the number', () => {
     // The complaint the rebalance answered: twelve geometrics against five
     // scenics, so the picker's geometry section scrolled and its scenic
-    // section fitted on one row. Seven each, eight for the family carrying
-    // four motifs. A drift of one is a mistake, not a decision.
+    // section fitted on one row. Eighteen each, exactly. A drift of one is a
+    // mistake, not a decision.
     const counts = new Map<string, number>();
     for (const preset of WALLPAPER_PRESETS) {
       counts.set(preset.family, (counts.get(preset.family) ?? 0) + 1);
     }
     expect([...counts.keys()].sort()).toEqual([...WALLPAPER_FAMILIES].sort());
-    for (const n of counts.values()) {
-      expect(n).toBeGreaterThanOrEqual(7);
-      expect(n).toBeLessThanOrEqual(8);
-    }
-    // And no motif hogs its family either.
+    for (const n of counts.values()) expect(n).toBe(18);
+    // And no motif hogs its family either — a section of eighteen papers built
+    // out of three motifs is one motif recoloured six times.
     const perPattern = new Map<string, number>();
     for (const preset of WALLPAPER_PRESETS) {
       perPattern.set(preset.spec.pattern, (perPattern.get(preset.spec.pattern) ?? 0) + 1);
     }
     for (const n of perPattern.values()) expect(n).toBeLessThanOrEqual(3);
+  });
+
+  it('reaches every value of every axis — an unreachable one is dead art', () => {
+    // The same rule as the pattern coverage above, extended to the axes that
+    // grew with the book. Fifty tones is fifty recipes, and a recipe no paper
+    // ever asks for is code that has never once been looked at: it can be
+    // wrong, or identical to its neighbour, and nothing in the app would say
+    // so. The two optional axes are counted at their DEFAULT, since that is
+    // what a preset which omits them actually draws.
+    const used = <T>(pick: (s: WallpaperSpec) => T): Set<T> =>
+      new Set(WALLPAPER_PRESETS.map((p) => pick(p.spec)));
+    const axes = [
+      ['scale', WALLPAPER_SCALES, used((s) => s.scale)],
+      ['depth', WALLPAPER_DEPTHS, used((s) => s.depth)],
+      ['ink', WALLPAPER_INKS, used((s) => s.ink)],
+      ['tone', WALLPAPER_TONES, used((s) => s.tone ?? 'auto')],
+      ['edge', WALLPAPER_EDGES, used((s) => s.edge ?? 'crisp')],
+    ] as const;
+    for (const [name, vocabulary, seen] of axes) {
+      const missing = (vocabulary as readonly string[]).filter((v) => !seen.has(v as never));
+      expect(`${name}: ${missing.join(', ')}`).toBe(`${name}: `);
+    }
   });
 
   it('tags every paper from the closed mood vocabulary, none of them rare', () => {
@@ -279,9 +300,11 @@ describe('wallpaper presets', () => {
     }
     // A mood only one or two papers carry narrows a steered roll to a single
     // answer, which is a preset with extra steps. Every word has to be a real
-    // filter, and every word in the vocabulary has to be used at all.
+    // filter, and every word in the vocabulary has to be used at all. The bar
+    // rose with the book: four papers out of fifty was a tenth of it, and ten
+    // out of a hundred and twenty-six is the same share.
     for (const mood of WALLPAPER_MOODS) {
-      expect(counts.get(mood) ?? 0).toBeGreaterThanOrEqual(4);
+      expect(counts.get(mood) ?? 0).toBeGreaterThanOrEqual(10);
     }
   });
 
@@ -469,10 +492,15 @@ describe.skipIf(!ready)('wallpaper tiles are seamless', () => {
    * edge and the motif's widest point lands there. Demanding `seam <= max
    * interior` would be demanding that the seam never win a fair draw.
    *
-   * Measured rather than guessed: across all fifty presets at both sizes the
-   * worst real tile is 1.05, and it only reaches that because the grand damask
-   * puts a motif's widest point on the edge. 1.6 leaves half again as much room
-   * as anything in the book actually uses.
+   * Measured rather than guessed: across the whole book at both sizes the
+   * worst real tile is a little over 1.0, and it only reaches that because the
+   * grand damask puts a motif's widest point on the edge. 1.6 leaves half again
+   * as much room as anything in the book actually uses.
+   *
+   * The bar has NOT moved as the book grew from fifty papers to a hundred and
+   * twenty-six. It is the one number in this file that must never be relaxed to
+   * make a new paper fit: a paper that cannot clear it is a paper that shows a
+   * vertical band down the wall, and the answer is to change the paper.
    *
    * The control below no longer uses this ratio at all — see the note there.
    * Dividing by the busiest interior column pair is a fair test on a pattern

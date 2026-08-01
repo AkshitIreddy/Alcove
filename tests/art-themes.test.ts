@@ -38,6 +38,7 @@ import { INK_FLOOR, caseFaces, clothPair, lum as paletteLum, toOklch } from '../
 import {
   CLOTHS,
   FLAT,
+  HOUSE_CLOTHS,
   flatSchemeTag,
   setFlatScheme,
   type FlatCtx,
@@ -233,7 +234,14 @@ describe('the default room is the flat palette', () => {
     expect(s.timberDark).toBe(FLAT.timberDark);
     expect(s.recess).toBe(FLAT.recess);
     expect(s.wall).toBe(FLAT.wall);
-    expect(s.cloths.map(([a, b]) => [a, b])).toEqual(CLOTHS.map(([a, b]) => [a, b]));
+    // Against HOUSE_CLOTHS, not CLOTHS. A room carries exactly six cloths; the
+    // house palette grew to fifty so a pigment name can mean what it says. The
+    // six the icon established are still the first six of both, and those are
+    // what "the default room IS the flat palette" is claiming.
+    expect(s.cloths.map(([a, b]) => [a, b])).toEqual(
+      HOUSE_CLOTHS.map(([a, b]) => [a, b]),
+    );
+    expect(CLOTHS.slice(0, HOUSE_CLOTHS.length)).toEqual(HOUSE_CLOTHS);
   });
 });
 

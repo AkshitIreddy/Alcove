@@ -19,27 +19,18 @@
  *   size       → data-size — lettering size, relative to the body size
  *   align      → data-align — which way the lines are ranged
  *
- * Every value domain lives in `src/script/vocab.ts`, not here: the writing
- * language and the panel have to offer exactly the same set, and a second copy
- * of the list is a second copy that drifts.
+ * Every value domain lives in `./vocabulary.ts`, not here — one table for the
+ * attributes, the menus, the catalogue and the stylesheet, so the panel can
+ * never offer a value the editor would drop. That table in turn starts from
+ * `src/script/vocab.ts` and extends it, which is what keeps the writing
+ * language and the editor from becoming two lists that drift.
  *
  * The squiggle SVG is generated ONCE at module load through art/wobble
  * (deterministic seed ⇒ stable string) and embedded as a data URI used as a
  * CSS mask, so its color stays token-driven. No runtime SVG filters.
  */
 import { Extension } from '@tiptap/core';
-import {
-  ALIGN_VALUES,
-  BLOCK_INK_VALUES,
-  BLOCK_PAPER_VALUES,
-  FONT_VALUES,
-  FRAME_VALUES,
-  SHADOW_VALUES,
-  SIZE_VALUES,
-  TAPE_VALUES,
-  UNDERLINE_VALUES,
-  WASHI_VALUES,
-} from '../../script/vocab';
+import { UNDERLINE_ALL, effectValues } from './vocabulary';
 import { wobbleLine } from '../../art/wobble';
 
 // ---------------------------------------------------------------------------
@@ -162,33 +153,27 @@ export const BlockEffects = Extension.create({
               };
             },
           },
-          tape: enumEffect('tape', TAPE_VALUES),
-          washi: enumEffect('washi', WASHI_VALUES),
-          shadow: enumEffect('shadow', SHADOW_VALUES),
-          frame: enumEffect('frame', FRAME_VALUES),
-          paper: enumEffect('paper', BLOCK_PAPER_VALUES),
+          tape: enumEffect('tape', effectValues('tape')),
+          washi: enumEffect('washi', effectValues('washi')),
+          shadow: enumEffect('shadow', effectValues('shadow')),
+          frame: enumEffect('frame', effectValues('frame')),
+          paper: enumEffect('paper', effectValues('paper')),
           // The lettering axes. Same plumbing as the decorations because they
           // are the same KIND of thing: something you do to a block you have
           // already written, rather than a different sort of block.
-          font: enumEffect('font', FONT_VALUES),
-          ink: enumEffect('ink', BLOCK_INK_VALUES),
-          size: enumEffect('size', SIZE_VALUES),
-          align: enumEffect('align', ALIGN_VALUES),
+          font: enumEffect('font', effectValues('font')),
+          ink: enumEffect('ink', effectValues('ink')),
+          size: enumEffect('size', effectValues('size')),
+          align: enumEffect('align', effectValues('align')),
           underline: {
             default: null,
             parseHTML: (element: HTMLElement) => {
               const raw = element.getAttribute('data-underline');
-              return raw !== null &&
-                (UNDERLINE_VALUES as readonly string[]).includes(raw)
-                ? raw
-                : null;
+              return raw !== null && UNDERLINE_ALL.includes(raw) ? raw : null;
             },
             renderHTML: (attributes: Record<string, unknown>) => {
               const value = attributes.underline;
-              if (
-                typeof value !== 'string' ||
-                !(UNDERLINE_VALUES as readonly string[]).includes(value)
-              ) {
+              if (typeof value !== 'string' || !UNDERLINE_ALL.includes(value)) {
                 return {};
               }
               const out: Record<string, string> = { 'data-underline': value };

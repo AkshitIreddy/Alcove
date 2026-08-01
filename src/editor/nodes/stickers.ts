@@ -1,14 +1,27 @@
 /**
- * Procedural hand-drawn stickers — 8 little SVG friends rendered inline.
+ * Procedural hand-drawn stickers — a 50-strong sheet of little SVG friends,
+ * rendered inline.
  *
  * Pure string generation, deterministic per sticker id (seeded wobble), no
  * runtime SVG filters (CLAUDE.md: filters are bake-only). The wobble comes
  * from jittered control points + round strokes, which reads as pencil-drawn
  * without any feTurbulence. Colors are CSS custom properties so stickers
  * follow the token palette (inline SVG inherits page CSS variables).
+ *
+ * The sheet is ordered the way a sticker sheet is printed — by drawer, not
+ * alphabetically — because that is the order a reader browses it in. Every
+ * entry earns its place by SILHOUETTE: two stickers that read the same at
+ * 20px are one sticker, however different their insides are. That is the rule
+ * that kept `mountain` (a pine tree with the branches rubbed off) and `shell`
+ * (a snail with no snail) off the sheet.
+ *
+ * `STICKER_TAGS` is the mood row — the same idea as `BUILD_TAGS` in
+ * art/shelfDesign.ts. It feeds the slash menu's and the catalogue's keyword
+ * search, so "study" finds the microscope and "well done" finds the tick.
  */
 
 export const STICKER_IDS = [
+  /* --- the original eight, still the first row of the sheet -------------- */
   'star',
   'bee',
   'leaf',
@@ -17,9 +30,160 @@ export const STICKER_IDS = [
   'cat',
   'sun',
   'flower',
+  /* --- garden & ground --------------------------------------------------- */
+  'clover',
+  'mushroom',
+  'acorn',
+  'pine',
+  'cactus',
+  'feather',
+  'wave',
+  'rainbow',
+  /* --- sky & weather ----------------------------------------------------- */
+  'moon',
+  'cloud',
+  'raindrop',
+  'snowflake',
+  'bolt',
+  /* --- small creatures --------------------------------------------------- */
+  'bird',
+  'fish',
+  'butterfly',
+  'snail',
+  'whale',
+  'fox',
+  /* --- the desk ---------------------------------------------------------- */
+  'book',
+  'pencil',
+  'microscope',
+  'bulb',
+  'clip',
+  'pin',
+  'ruler',
+  'flask',
+  'atom',
+  /* --- the kitchen ------------------------------------------------------- */
+  'coffee',
+  'teapot',
+  'cake',
+  'apple',
+  'cherry',
+  /* --- marks & keepsakes ------------------------------------------------- */
+  'music',
+  'arrow',
+  'check',
+  'key',
+  'crown',
+  'gift',
+  'ticket',
+  'compass',
+  'globe',
 ] as const;
 
 export type BuiltinStickerId = (typeof STICKER_IDS)[number];
+
+/**
+ * The drawers, in sheet order. A picker that shows fifty stickers in one
+ * undifferentiated grid is a worse picker than one that shows six drawers.
+ */
+export interface StickerFamily {
+  readonly id: string;
+  /** Shown as the drawer heading. Lowercase, a stationer's words. */
+  readonly label: string;
+  readonly ids: readonly BuiltinStickerId[];
+}
+
+export const STICKER_FAMILIES: readonly StickerFamily[] = [
+  {
+    id: 'favourites',
+    label: 'the usual eight',
+    ids: ['star', 'bee', 'leaf', 'heart', 'sparkle', 'cat', 'sun', 'flower'],
+  },
+  {
+    id: 'garden',
+    label: 'garden & ground',
+    ids: ['clover', 'mushroom', 'acorn', 'pine', 'cactus', 'feather', 'wave', 'rainbow'],
+  },
+  {
+    id: 'weather',
+    label: 'sky & weather',
+    ids: ['moon', 'cloud', 'raindrop', 'snowflake', 'bolt'],
+  },
+  {
+    id: 'creatures',
+    label: 'small creatures',
+    ids: ['bird', 'fish', 'butterfly', 'snail', 'whale', 'fox'],
+  },
+  {
+    id: 'desk',
+    label: 'the desk',
+    ids: ['book', 'pencil', 'microscope', 'bulb', 'clip', 'pin', 'ruler', 'flask', 'atom'],
+  },
+  { id: 'kitchen', label: 'the kitchen', ids: ['coffee', 'teapot', 'cake', 'apple', 'cherry'] },
+  {
+    id: 'marks',
+    label: 'marks & keepsakes',
+    ids: ['music', 'arrow', 'check', 'key', 'crown', 'gift', 'ticket', 'compass', 'globe'],
+  },
+];
+
+/**
+ * What each sticker is FOR, in the words someone would search with. Three to
+ * five per sticker: the thing itself is already the label, so these are the
+ * *occasions* — "revision" on the flask, "well done" on the tick.
+ */
+export const STICKER_TAGS: Record<BuiltinStickerId, readonly string[]> = {
+  star: ['favourite', 'gold star', 'top marks', 'pick'],
+  bee: ['busy', 'nature', 'pollination', 'spring'],
+  leaf: ['biology', 'autumn', 'growth', 'plant'],
+  heart: ['loved', 'care', 'kind', 'valentine'],
+  sparkle: ['idea', 'magic', 'nice result', 'shiny'],
+  cat: ['pet', 'comfort', 'a break', 'nap'],
+  sun: ['morning', 'energy', 'weather', 'summer'],
+  flower: ['bloom', 'botany', 'cheerful', 'spring'],
+  clover: ['luck', 'wish', 'irish', 'fortune'],
+  mushroom: ['fungi', 'forest', 'foraging', 'damp'],
+  acorn: ['autumn', 'small beginnings', 'oak', 'saving'],
+  pine: ['forest', 'winter', 'christmas', 'camping'],
+  cactus: ['desert', 'hardy', 'prickly', 'houseplant'],
+  feather: ['light', 'writing', 'bird', 'quill'],
+  wave: ['sea', 'swim', 'holiday', 'tide'],
+  rainbow: ['after the rain', 'hope', 'colour', 'pride'],
+  moon: ['night', 'sleep', 'phases', 'ending'],
+  cloud: ['weather', 'daydream', 'vague', 'overcast'],
+  raindrop: ['rain', 'water', 'wet', 'tear'],
+  snowflake: ['winter', 'cold', 'unique', 'snow'],
+  bolt: ['fast', 'energy', 'urgent', 'power'],
+  bird: ['song', 'spring', 'migration', 'flight'],
+  fish: ['sea', 'aquarium', 'friday', 'swim'],
+  butterfly: ['change', 'metamorphosis', 'summer', 'delicate'],
+  snail: ['slow', 'patience', 'no rush', 'garden'],
+  whale: ['big', 'ocean', 'deep', 'gentle'],
+  fox: ['clever', 'woodland', 'sly', 'autumn'],
+  book: ['reading list', 'reference', 'homework', 'library'],
+  pencil: ['draft', 'note to self', 'edit', 'sketch'],
+  microscope: ['lab', 'close reading', 'science', 'detail'],
+  bulb: ['idea', 'insight', 'invention', 'aha'],
+  clip: ['attached', 'see also', 'together', 'paperclip'],
+  pin: ['pinned', 'do not lose', 'reminder', 'important'],
+  ruler: ['measure', 'exact', 'geometry', 'plan'],
+  flask: ['experiment', 'chemistry', 'revision', 'test'],
+  atom: ['physics', 'science', 'element', 'tiny'],
+  coffee: ['study break', 'morning', 'long session', 'caffeine'],
+  teapot: ['tea', 'calm', 'afternoon', 'brew'],
+  cake: ['birthday', 'celebrate', 'treat', 'party'],
+  apple: ['school', 'healthy', 'teacher', 'autumn'],
+  cherry: ['sweet', 'summer', 'pair', 'fruit'],
+  music: ['song', 'practice', 'rhythm', 'playlist'],
+  arrow: ['see this', 'next', 'pointer', 'follow'],
+  check: ['done', 'well done', 'correct', 'tick'],
+  key: ['the key point', 'unlock', 'password', 'access'],
+  crown: ['best', 'winner', 'royal', 'first'],
+  gift: ['present', 'birthday', 'surprise', 'thanks'],
+  ticket: ['event', 'admit one', 'booking', 'travel'],
+  compass: ['direction', 'plan', 'north', 'find your way'],
+  globe: ['world', 'geography', 'travel', 'everywhere'],
+};
 
 /**
  * Wave 2 (custom stickers): user-imported stickers live in the `user:`
@@ -208,6 +372,65 @@ function starPoints(
     pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
   }
   return pts;
+}
+
+/** `pts([16,3, 24,9])` → `[{x:16,y:3},{x:24,y:9}]`. Keeps outlines readable. */
+function pts(flat: readonly number[]): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i + 1 < flat.length; i += 2) out.push({ x: flat[i], y: flat[i + 1] });
+  return out;
+}
+
+/** An ellipse as a point ring, optionally rotated about its own centre. */
+function ell(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  segments = 10,
+  rotate = 0,
+): Pt[] {
+  const cos = Math.cos(rotate);
+  const sin = Math.sin(rotate);
+  const out: Pt[] = [];
+  for (let i = 0; i < segments; i += 1) {
+    const a = (i / segments) * Math.PI * 2;
+    const x = Math.cos(a) * rx;
+    const y = Math.sin(a) * ry;
+    out.push({ x: cx + x * cos - y * sin, y: cy + x * sin + y * cos });
+  }
+  return out;
+}
+
+/** A rectangle as an 8-point ring, so `wobblyLoop` rounds its corners. */
+function boxPts(x: number, y: number, w: number, h: number): Pt[] {
+  return pts([
+    x, y,
+    x + w / 2, y,
+    x + w, y,
+    x + w, y + h / 2,
+    x + w, y + h,
+    x + w / 2, y + h,
+    x, y + h,
+    x, y + h / 2,
+  ]);
+}
+
+/** An open arc as a stroke path (angles in radians, clockwise). */
+function arcPts(
+  cx: number,
+  cy: number,
+  r: number,
+  from: number,
+  to: number,
+  segments = 8,
+): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const a = from + ((to - from) * i) / segments;
+    out.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+  }
+  return out;
 }
 
 const STROKE = 'stroke-linecap="round" stroke-linejoin="round"';
@@ -519,6 +742,786 @@ function drawFlower(rng: Rng): string {
   return svg(petals + center + stemDot, 'flower sticker');
 }
 
+// ---------------------------------------------------------------------------
+// The other forty-two
+//
+// Same three moves as the eight above — a wobbly filled loop for the mass, a
+// wobbly stroke for the lines, a plain circle for anything smaller than the
+// wobble amplitude (jitter on a 1px dot is just a misplaced dot). Colours are
+// tokens only, one darker outline per shape, and nothing here implies a light
+// source: the "shine" on the old heart is a drawn pencil mark, not a specular,
+// and none of these add a second one.
+// ---------------------------------------------------------------------------
+
+/** Token shorthands. Keeps a drawing to its shape rather than its strings. */
+const T = {
+  cream: 'var(--paper-cream)',
+  aged: 'var(--paper-aged)',
+  edge: 'var(--paper-edge)',
+  ink: 'var(--ink-line)',
+  inkSoft: 'var(--ink-line-soft)',
+  graphite: 'var(--ink-graphite)',
+  graphiteSoft: 'var(--ink-graphite-soft)',
+  sepia: 'var(--ink-sepia)',
+  amberL: 'var(--wash-amber-light)',
+  amber: 'var(--wash-amber)',
+  amberD: 'var(--wash-amber-deep)',
+  terraL: 'var(--wash-terracotta-light)',
+  terra: 'var(--wash-terracotta)',
+  terraD: 'var(--wash-terracotta-deep)',
+  mossL: 'var(--wash-moss-light)',
+  moss: 'var(--wash-moss)',
+  mossD: 'var(--wash-moss-deep)',
+  lemonL: 'var(--wash-lemon-light)',
+  lemon: 'var(--wash-lemon)',
+  lemonD: 'var(--wash-lemon-deep)',
+  skyL: 'var(--wash-sky-light)',
+  sky: 'var(--wash-sky)',
+  skyD: 'var(--wash-sky-deep)',
+  blushL: 'var(--wash-blush-light)',
+  blush: 'var(--wash-blush)',
+  blushD: 'var(--wash-blush-deep)',
+  plumL: 'var(--wash-plum-light)',
+  plum: 'var(--wash-plum)',
+  plumD: 'var(--wash-plum-deep)',
+  coralL: 'var(--wash-coral-light)',
+  coral: 'var(--wash-coral)',
+  coralD: 'var(--wash-coral-deep)',
+  turqL: 'var(--wash-turquoise-light)',
+  turq: 'var(--wash-turquoise)',
+  turqD: 'var(--wash-turquoise-deep)',
+  violetL: 'var(--wash-violet-light)',
+  violet: 'var(--wash-violet)',
+  violetD: 'var(--wash-violet-deep)',
+  limeL: 'var(--wash-lime-light)',
+  lime: 'var(--wash-lime)',
+  limeD: 'var(--wash-lime-deep)',
+} as const;
+
+/** Filled wobbly outline. */
+function shape(
+  points: readonly Pt[],
+  rng: Rng,
+  fill: string,
+  stroke: string,
+  width = 1.6,
+  amp = 0.6,
+): string {
+  return path(wobblyLoop(points, rng, amp), fill, stroke, width);
+}
+
+/** Wobbly open stroke. */
+function mark(
+  points: readonly Pt[],
+  rng: Rng,
+  stroke: string,
+  width = 1.4,
+  amp = 0.35,
+): string {
+  return path(wobblyStroke(points, rng, amp), 'none', stroke, width);
+}
+
+/** A true circle — below ~3px the wobble reads as a mistake, not a hand. */
+function dot(cx: number, cy: number, r: number, fill: string, stroke?: string): string {
+  const edge =
+    stroke === undefined ? '' : ` stroke="${stroke}" stroke-width="1.2"`;
+  return `<circle cx="${n2(cx)}" cy="${n2(cy)}" r="${n2(r)}" fill="${fill}"${edge}/>`;
+}
+
+/** An ellipse offset `dist` from a centre along `angle`, and turned to face it. */
+function petalPts(
+  cx: number,
+  cy: number,
+  angle: number,
+  dist: number,
+  rx: number,
+  ry: number,
+  segments = 8,
+): Pt[] {
+  return ell(
+    cx + Math.cos(angle) * dist,
+    cy + Math.sin(angle) * dist,
+    rx,
+    ry,
+    segments,
+    angle,
+  );
+}
+
+/* --- garden & ground ------------------------------------------------------ */
+
+function drawClover(rng: Rng): string {
+  let leaves = '';
+  for (let i = 0; i < 4; i += 1) {
+    const a = (i / 4) * Math.PI * 2 - Math.PI / 2;
+    leaves += shape(petalPts(16, 14, a, 6, 5.4, 4.6), rng, T.mossL, T.mossD, 1.3);
+  }
+  const stem = mark(pts([16, 19, 17.4, 24, 16.2, 29]), rng, T.mossD, 1.7);
+  return svg(leaves + dot(16, 14, 2, T.moss) + stem, 'clover sticker');
+}
+
+function drawMushroom(rng: Rng): string {
+  const stem = shape(
+    pts([12.6, 18, 19.4, 18, 19, 25, 17.6, 29, 14.4, 29, 13, 25]),
+    rng,
+    T.cream,
+    T.inkSoft,
+    1.4,
+  );
+  const cap = shape(
+    pts([3.5, 18.5, 5, 12.5, 9, 7.6, 16, 5.5, 23, 7.6, 27, 12.5, 28.5, 18.5, 22, 20, 16, 20.6, 10, 20]),
+    rng,
+    T.coral,
+    T.coralD,
+    1.6,
+    0.7,
+  );
+  const spots =
+    dot(10, 13, 2.4, T.cream) + dot(17.5, 10.5, 2.9, T.cream) + dot(23, 15, 2, T.cream);
+  return svg(stem + cap + spots, 'mushroom sticker');
+}
+
+function drawAcorn(rng: Rng): string {
+  const nut = shape(
+    pts([9.5, 13.5, 22.5, 13.5, 23.5, 19, 21, 25.5, 16, 29, 11, 25.5, 8.5, 19]),
+    rng,
+    T.terra,
+    T.terraD,
+  );
+  const cap = shape(
+    pts([7.5, 13.8, 7.6, 10, 10.5, 7, 16, 5.8, 21.5, 7, 24.4, 10, 24.5, 13.8]),
+    rng,
+    T.amber,
+    T.amberD,
+  );
+  const hatch =
+    mark(pts([10, 12.6, 22, 12.6]), rng, T.amberD, 1) +
+    mark(pts([9.4, 9.6, 22.6, 9.6]), rng, T.amberD, 1);
+  const stalk = mark(pts([16, 6, 16.4, 3]), rng, T.terraD, 1.8);
+  return svg(nut + cap + hatch + stalk, 'acorn sticker');
+}
+
+function drawPine(rng: Rng): string {
+  const trunk = shape(boxPts(14, 24, 4, 6), rng, T.terraD, T.inkSoft, 1.2);
+  const tiers =
+    shape(pts([16, 15, 28, 26, 4, 26]), rng, T.mossD, T.mossD, 1.4) +
+    shape(pts([16, 9, 25, 19.5, 7, 19.5]), rng, T.moss, T.mossD, 1.4) +
+    shape(pts([16, 3, 22, 12.5, 10, 12.5]), rng, T.mossL, T.mossD, 1.4);
+  return svg(trunk + tiers, 'pine tree sticker');
+}
+
+function drawCactus(rng: Rng): string {
+  // The arms carry a stub back into the trunk, or they float beside it.
+  const arms =
+    shape(pts([8.6, 15.5, 14, 15.5, 14, 19, 8.6, 19]), rng, T.moss, T.moss, 0.8) +
+    shape(pts([18, 17.5, 23.4, 17.5, 23.4, 21, 18, 21]), rng, T.moss, T.moss, 0.8) +
+    shape(ell(8.6, 15.5, 2.8, 6, 8, -0.2), rng, T.moss, T.mossD, 1.3) +
+    shape(ell(23.4, 17.5, 2.8, 5.4, 8, 0.2), rng, T.moss, T.mossD, 1.3);
+  const body = shape(ell(16, 16, 4.6, 11, 12), rng, T.mossL, T.mossD, 1.5);
+  const ribs =
+    mark(pts([16, 8, 15.6, 14, 16.2, 21]), rng, T.moss, 1) +
+    mark(pts([13.6, 10, 13.3, 20]), rng, T.moss, 0.9);
+  const pot = shape(
+    pts([8.5, 24.5, 23.5, 24.5, 22, 30, 10, 30]),
+    rng,
+    T.terra,
+    T.terraD,
+    1.5,
+  );
+  const bloom = dot(16, 5.4, 2.6, T.blush, T.blushD);
+  return svg(arms + body + ribs + pot + bloom, 'cactus sticker');
+}
+
+function drawFeather(rng: Rng): string {
+  // The vane's outer edge is SERRATED, and the quill runs on below it bare.
+  // Both are the whole difference between a feather and a leaf, and the first
+  // draft — a smooth almond with two hairlines — was a leaf.
+  const vane = shape(
+    pts([16.8, 3.4, 14, 6.6, 12.2, 8.6, 10, 10.2, 11.4, 11.8, 9, 13.4, 10.6, 14.8,
+      8.4, 16.4, 10.2, 17.8, 8.6, 19.4, 11, 20.4, 13.4, 21.6, 15.6, 22.6,
+      18, 21.8, 20.6, 20.8, 23, 19.8, 21.4, 18.2, 23.8, 16.6, 22.2, 15,
+      24.4, 13.4, 22.6, 11.8, 24, 10.2, 21.8, 8.6, 19.6, 6.6]),
+    rng,
+    T.skyL,
+    T.skyD,
+    1.4,
+    0.45,
+  );
+  const shaft = mark(pts([16.6, 4.4, 16.2, 14, 16, 22, 15.6, 30]), rng, T.skyD, 1.7);
+  const barbs =
+    mark(pts([16.3, 10, 12.8, 12]), rng, T.sky, 0.9) +
+    mark(pts([16.3, 14.6, 12.4, 16.6]), rng, T.sky, 0.9) +
+    mark(pts([16.2, 10, 19.8, 12]), rng, T.sky, 0.9) +
+    mark(pts([16.2, 14.6, 20.2, 16.6]), rng, T.sky, 0.9);
+  return svg(vane + barbs + shaft, 'feather sticker');
+}
+
+function drawWave(rng: Rng): string {
+  const row = (y: number, colour: string): string =>
+    mark(pts([3, y, 8, y - 3.4, 13, y, 18, y - 3.4, 23, y, 28, y - 3.4]), rng, colour, 2.4, 0.3);
+  const crest = shape(
+    pts([21, 8, 26, 5.5, 29, 8.5, 26.5, 11, 23.5, 10.5]),
+    rng,
+    T.turqL,
+    T.turqD,
+    1.3,
+  );
+  return svg(
+    crest + row(14, T.turqD) + row(20, T.turq) + row(26, T.turqL),
+    'wave sticker',
+  );
+}
+
+function drawRainbow(rng: Rng): string {
+  const band = (r: number, colour: string): string =>
+    mark(arcPts(16, 25, r, Math.PI, Math.PI * 2, 8), rng, colour, 3.2, 0.25);
+  const clouds =
+    shape(ell(5.5, 25.5, 5, 3.4, 9), rng, T.cream, T.edge, 1.3) +
+    shape(ell(26.5, 25.5, 5, 3.4, 9), rng, T.cream, T.edge, 1.3);
+  return svg(
+    band(13, T.coral) + band(10, T.amber) + band(7, T.moss) + band(4, T.sky) + clouds,
+    'rainbow sticker',
+  );
+}
+
+/* --- sky & weather -------------------------------------------------------- */
+
+function drawMoon(rng: Rng): string {
+  const crescent = shape(
+    pts([16, 3.2, 11, 4.8, 7, 8.4, 5, 13.4, 5.2, 18.6, 7.6, 23, 11.6, 26.6, 16.6, 28.6,
+      13, 24, 11, 19, 10.8, 14, 12.6, 8.8]),
+    rng,
+    T.lemonL,
+    T.amberD,
+    1.6,
+    0.7,
+  );
+  const stars =
+    path(wobblyLoop(starPoints(24, 8, 3.4, 1.2, 4, 0), rng, 0.3), T.lemon, T.amberD, 1) +
+    path(wobblyLoop(starPoints(26.5, 17, 2.4, 0.9, 4, 0), rng, 0.25), T.lemon, T.amberD, 0.9);
+  return svg(crescent + stars, 'moon sticker');
+}
+
+function drawCloud(rng: Rng): string {
+  const puff = shape(
+    pts([5.5, 22.5, 4.6, 18.5, 7, 14.6, 11, 12.6, 15, 9.6, 20.5, 10.4, 23.5, 13.6,
+      27, 15.4, 27.6, 20, 25, 23]),
+    rng,
+    T.skyL,
+    T.skyD,
+    1.6,
+    0.7,
+  );
+  const inner = mark(pts([9, 19.5, 13.5, 17.6, 18, 18.4]), rng, T.sky, 1.1);
+  return svg(puff + inner, 'cloud sticker');
+}
+
+function drawRaindrop(rng: Rng): string {
+  const body = shape(
+    pts([16, 2.5, 19.5, 8, 22.6, 13.5, 23.6, 18.6, 21.6, 24, 16, 28.5, 10.4, 24,
+      8.4, 18.6, 9.4, 13.5, 12.5, 8]),
+    rng,
+    T.skyL,
+    T.skyD,
+    1.6,
+    0.6,
+  );
+  const inner = mark(pts([12.4, 16, 11.6, 20, 13.4, 23.6]), rng, T.sky, 1.4);
+  return svg(body + inner, 'raindrop sticker');
+}
+
+function drawSnowflake(rng: Rng): string {
+  let arms = '';
+  for (let i = 0; i < 6; i += 1) {
+    const a = (i / 6) * Math.PI * 2;
+    const tip = { x: 16 + Math.cos(a) * 13, y: 16 + Math.sin(a) * 13 };
+    const mid = { x: 16 + Math.cos(a) * 7, y: 16 + Math.sin(a) * 7 };
+    arms += mark([{ x: 16, y: 16 }, mid, tip], rng, T.skyD, 1.7, 0.3);
+    // Two barbs off the midpoint of each arm — the six-fold branching that is
+    // the whole reason a snowflake is not a star.
+    for (const fork of [-0.7, 0.7]) {
+      arms += mark(
+        [mid, { x: mid.x + Math.cos(a + fork) * 4.4, y: mid.y + Math.sin(a + fork) * 4.4 }],
+        rng,
+        T.sky,
+        1.3,
+        0.25,
+      );
+    }
+  }
+  return svg(arms + dot(16, 16, 2.4, T.skyL, T.skyD), 'snowflake sticker');
+}
+
+function drawBolt(rng: Rng): string {
+  const flash = shape(
+    pts([13, 2.5, 21, 2.5, 16, 14, 21.5, 14, 10.5, 29.5, 14, 18, 8.6, 18]),
+    rng,
+    T.lemon,
+    T.amberD,
+    1.6,
+    0.45,
+  );
+  return svg(flash, 'lightning bolt sticker');
+}
+
+/* --- small creatures ------------------------------------------------------ */
+
+function drawBird(rng: Rng): string {
+  const tail = shape(pts([9, 15, 2, 11.5, 3.5, 20.5]), rng, T.skyD, T.skyD, 1.2);
+  const body = shape(ell(15, 17.5, 8.4, 7, 11, -0.18), rng, T.skyL, T.skyD, 1.6);
+  const wing = shape(ell(14.5, 17, 5.4, 3.2, 9, -0.5), rng, T.sky, T.skyD, 1.2);
+  const head = shape(ell(22.6, 11.4, 5, 4.6, 10), rng, T.skyL, T.skyD, 1.5);
+  const beak = shape(pts([26.5, 10.6, 31, 12.4, 26.5, 14.2]), rng, T.amber, T.amberD, 1.1);
+  const legs =
+    mark(pts([14, 24, 13.4, 28]), rng, T.amberD, 1.4) +
+    mark(pts([18, 24, 18.6, 28]), rng, T.amberD, 1.4);
+  return svg(tail + legs + body + wing + head + beak + dot(23.4, 10.6, 1.1, T.ink), 'bird sticker');
+}
+
+function drawFish(rng: Rng): string {
+  const tail = shape(pts([22, 16, 30.5, 9.5, 29, 16, 30.5, 23]), rng, T.turq, T.turqD, 1.3);
+  const body = shape(ell(14.5, 16, 9.4, 6.8, 12), rng, T.turqL, T.turqD, 1.6);
+  const fin = shape(ell(15, 21.6, 4, 2.2, 8, 0.25), rng, T.turq, T.turqD, 1.1);
+  const dorsal = shape(pts([11, 10.4, 17, 6.4, 18.5, 10.6]), rng, T.turq, T.turqD, 1.1);
+  const gill = mark(pts([10.4, 11.6, 9.2, 16, 10.4, 20.4]), rng, T.turqD, 1.2);
+  const bubbles = dot(4.4, 10, 1.6, T.turqL, T.turqD) + dot(2.6, 6, 1, T.turqL, T.turqD);
+  return svg(
+    tail + dorsal + body + fin + gill + dot(7.6, 14, 1.3, T.ink) + bubbles,
+    'fish sticker',
+  );
+}
+
+function drawButterfly(rng: Rng): string {
+  const upper =
+    shape(petalPts(16, 15, Math.PI * 1.18, 7.6, 6.4, 5, 9), rng, T.violetL, T.violetD, 1.3) +
+    shape(petalPts(16, 15, -Math.PI * 0.18, 7.6, 6.4, 5, 9), rng, T.violetL, T.violetD, 1.3);
+  const lower =
+    shape(petalPts(16, 21, Math.PI * 0.78, 6.2, 4.8, 3.8, 9), rng, T.blushL, T.blushD, 1.2) +
+    shape(petalPts(16, 21, Math.PI * 0.22, 6.2, 4.8, 3.8, 9), rng, T.blushL, T.blushD, 1.2);
+  const body = shape(ell(16, 18, 1.7, 8.4, 10), rng, T.graphite, T.graphite, 1);
+  const antennae =
+    mark(pts([15.6, 10.4, 12.6, 5.6, 11, 4]), rng, T.graphite, 1.1) +
+    mark(pts([16.4, 10.4, 19.4, 5.6, 21, 4]), rng, T.graphite, 1.1);
+  const spots = dot(10.6, 12.6, 1.6, T.plum) + dot(21.4, 12.6, 1.6, T.plum);
+  return svg(upper + lower + body + antennae + spots, 'butterfly sticker');
+}
+
+function drawSnail(rng: Rng): string {
+  const body = shape(
+    pts([3, 26.5, 4, 21.5, 8, 19.2, 13, 19.6, 17.5, 22, 19.6, 26.5, 12, 28.4, 5.5, 28]),
+    rng,
+    T.mossL,
+    T.mossD,
+    1.5,
+  );
+  const eyes =
+    mark(pts([5.6, 20.6, 3.6, 15.6, 3, 12.6]), rng, T.mossD, 1.2) +
+    mark(pts([8.6, 20, 8.4, 14.6, 8.6, 11.6]), rng, T.mossD, 1.2) +
+    dot(2.8, 11.4, 1.5, T.mossD) +
+    dot(8.7, 10.4, 1.5, T.mossD);
+  const shell = shape(ell(19.5, 14.5, 8.4, 8.4, 12), rng, T.amberL, T.amberD, 1.6);
+  const spiralPts: Pt[] = [];
+  for (let i = 0; i <= 22; i += 1) {
+    const a = i * 0.56;
+    const r = 7.2 - i * 0.3;
+    spiralPts.push({ x: 19.5 + Math.cos(a) * r, y: 14.5 + Math.sin(a) * r });
+  }
+  return svg(
+    eyes + body + shell + mark(spiralPts, rng, T.amberD, 1.3, 0.2),
+    'snail sticker',
+  );
+}
+
+function drawWhale(rng: Rng): string {
+  // Round to the point of comedy, and the flukes lie FLAT — a whale read at
+  // 22px is a fat blue barrel with a fountain on top. The first draft was an
+  // oval with a vertical tail, which is a fish, and the sheet already has one.
+  const spray =
+    mark(pts([12.6, 9.4, 10.6, 5.6, 8.4, 3]), rng, T.sky, 1.6) +
+    mark(pts([13.6, 9, 13.2, 4.8, 13, 2.2]), rng, T.sky, 1.6) +
+    mark(pts([14.6, 9.4, 17, 5.8, 18.8, 3.4]), rng, T.sky, 1.6) +
+    dot(8, 2.4, 1.5, T.skyL, T.sky) +
+    dot(12.9, 1.6, 1.5, T.skyL, T.sky) +
+    dot(19.4, 2.8, 1.5, T.skyL, T.sky);
+  const flukes = shape(
+    pts([23, 21, 30.5, 16.6, 27.6, 21, 30.8, 25.4, 24.6, 25]),
+    rng,
+    T.skyD,
+    T.skyD,
+    1.2,
+  );
+  const body = shape(
+    pts([2.6, 20, 3.4, 14.6, 7, 11.2, 12.6, 9.6, 18.6, 10.2, 23, 13.4, 25, 18,
+      24.4, 23.2, 20.4, 26.6, 13.6, 27.8, 7, 26.2, 3.4, 23.4]),
+    rng,
+    T.sky,
+    T.skyD,
+    1.7,
+    0.7,
+  );
+  const belly = shape(
+    pts([4.4, 23.2, 10, 26, 17.6, 26.4, 22.6, 24, 20.6, 27, 13.6, 28, 6.6, 26.4]),
+    rng,
+    T.skyL,
+    T.skyD,
+    1.1,
+  );
+  const fin = shape(ell(13, 22.6, 4.6, 2.4, 9, 0.25), rng, T.skyD, T.skyD, 1);
+  const smile = mark(pts([3.6, 19.6, 5.6, 21.4, 8.4, 20.4]), rng, T.skyD, 1.2);
+  return svg(
+    spray + flukes + body + belly + fin + smile + dot(7.6, 16.4, 1.5, T.ink),
+    'whale sticker',
+  );
+}
+
+function drawFox(rng: Rng): string {
+  const tail = shape(ell(4.6, 22, 4.4, 6, 9, -0.5), rng, T.terraL, T.terraD, 1.3);
+  const head = shape(
+    pts([16, 29, 6.4, 17, 7.6, 6, 13, 11, 19, 11, 24.4, 6, 25.6, 17]),
+    rng,
+    T.terra,
+    T.terraD,
+    1.6,
+    0.65,
+  );
+  const ears =
+    shape(pts([9.4, 8.6, 12.6, 12.4, 8.8, 13]), rng, T.blushL, T.terraD, 1.1) +
+    shape(pts([22.6, 8.6, 23.2, 13, 19.4, 12.4]), rng, T.blushL, T.terraD, 1.1);
+  const snout = shape(
+    pts([11.6, 19.6, 20.4, 19.6, 18.4, 25.6, 16, 28.4, 13.6, 25.6]),
+    rng,
+    T.cream,
+    T.terraD,
+    1.2,
+  );
+  return svg(
+    tail + head + ears + snout + dot(12.4, 16.6, 1.4, T.ink) + dot(19.6, 16.6, 1.4, T.ink) +
+      dot(16, 22.4, 1.7, T.ink),
+    'fox sticker',
+  );
+}
+
+/* --- the desk ------------------------------------------------------------- */
+
+function drawBook(rng: Rng): string {
+  const pages = shape(boxPts(9, 5.5, 19, 21), rng, T.cream, T.edge, 1.3);
+  const cover = shape(boxPts(4.5, 4.5, 21, 22), rng, T.terra, T.terraD, 1.6);
+  const spine = shape(boxPts(4.5, 4.5, 4.6, 22), rng, T.terraD, T.terraD, 1.2);
+  const rules =
+    mark(pts([12.5, 11, 22, 11]), rng, T.amber, 1.5) +
+    mark(pts([12.5, 15, 20, 15]), rng, T.amberL, 1.3);
+  const ribbon = shape(pts([19, 26, 22, 26, 22, 30.5, 20.5, 28.6, 19, 30.5]), rng, T.amber, T.amberD, 1);
+  return svg(pages + cover + spine + rules + ribbon, 'book sticker');
+}
+
+function drawPencil(rng: Rng): string {
+  const shaft = shape(pts([7, 24, 20.5, 9, 24.5, 12.5, 11, 27.5]), rng, T.amber, T.amberD, 1.5);
+  const ferrule = shape(pts([7, 24, 11, 27.5, 8.6, 30, 4.6, 26.5]), rng, T.skyL, T.skyD, 1.3);
+  const wood = shape(pts([20.5, 9, 24.5, 12.5, 27.4, 4.6]), rng, T.cream, T.inkSoft, 1.3);
+  const lead = shape(pts([24.6, 7.4, 27.4, 4.6, 26.2, 8.6]), rng, T.graphite, T.graphite, 1);
+  const grain = mark(pts([9.6, 21.4, 22.6, 7]), rng, T.amberD, 1);
+  return svg(ferrule + shaft + grain + wood + lead, 'pencil sticker');
+}
+
+function drawMicroscope(rng: Rng): string {
+  const base = shape(pts([5.4, 29.5, 26.6, 29.5, 24, 25.4, 8, 25.4]), rng, T.skyD, T.skyD, 1.3);
+  const arm = mark(pts([10.4, 25.4, 8.6, 20, 10, 14, 14, 10]), rng, T.sky, 3);
+  const stage = shape(boxPts(6.5, 21.4, 17.5, 3), rng, T.aged, T.ink, 1.3);
+  const slide = mark(pts([11, 21.4, 18, 21.4]), rng, T.amber, 1.6);
+  const tube = shape(boxPts(12.8, 5, 7, 13), rng, T.cream, T.ink, 1.4);
+  const eyepiece = shape(boxPts(13.6, 2.2, 5.4, 3.4), rng, T.skyD, T.skyD, 1.2);
+  const objective = shape(pts([13.4, 18, 19.4, 18, 17.4, 22]), rng, T.sky, T.skyD, 1.2);
+  return svg(base + arm + stage + slide + tube + eyepiece + objective, 'microscope sticker');
+}
+
+function drawBulb(rng: Rng): string {
+  let rays = '';
+  for (const a of [-2.5, -1.9, -1.25, -0.65]) {
+    rays += mark(
+      [
+        { x: 16 + Math.cos(a) * 11, y: 14 + Math.sin(a) * 11 },
+        { x: 16 + Math.cos(a) * 14.8, y: 14 + Math.sin(a) * 14.8 },
+      ],
+      rng,
+      T.amberD,
+      1.4,
+    );
+  }
+  const glass = shape(ell(16, 14, 8.4, 9, 12), rng, T.lemonL, T.amberD, 1.6);
+  const filament = mark(pts([13, 16, 14.6, 12.4, 16, 15.6, 17.4, 12.4, 19, 16]), rng, T.amberD, 1.4);
+  const neck = shape(boxPts(12.4, 21.4, 7.2, 2.8), rng, T.aged, T.inkSoft, 1.2);
+  const screw = shape(boxPts(12.8, 24, 6.4, 5), rng, T.edge, T.inkSoft, 1.2);
+  const thread = mark(pts([13, 26.4, 19, 26.4]), rng, T.inkSoft, 1);
+  return svg(rays + glass + filament + neck + screw + thread, 'lightbulb sticker');
+}
+
+function drawClip(rng: Rng): string {
+  // Tilted, and wide enough that the three nested passes read as three. Drawn
+  // upright at 8px of width it was a lowercase "o".
+  const wire = mark(
+    pts([9.4, 28.4, 6.2, 12.6, 6.4, 8.2, 9.4, 5, 14, 4.2, 18.2, 6, 19.8, 9.8,
+      22.4, 22.6, 22, 26, 19.4, 28.2, 16.2, 27.6, 14.8, 24.6, 12, 11.4,
+      11.8, 8.8, 14, 7.6, 16.6, 8.2, 17.8, 11]),
+    rng,
+    T.graphite,
+    2.4,
+    0.3,
+  );
+  return svg(wire, 'paperclip sticker');
+}
+
+function drawPin(rng: Rng): string {
+  const needle = shape(pts([14.4, 15.6, 17.6, 15.6, 16, 29.6]), rng, T.graphite, T.graphite, 1);
+  const collar = shape(boxPts(12.6, 12.4, 6.8, 3.4), rng, T.coralD, T.coralD, 1.2);
+  const head = shape(ell(16, 8.4, 7.4, 5.6, 10), rng, T.coral, T.coralD, 1.6);
+  const facet = mark(pts([11.6, 8.6, 14.6, 5.6]), rng, T.coralD, 1.2);
+  return svg(needle + collar + head + facet, 'push-pin sticker');
+}
+
+function drawRuler(rng: Rng): string {
+  const body = shape(boxPts(2.5, 11.5, 27, 9), rng, T.amberL, T.amberD, 1.6);
+  let ticks = '';
+  for (let i = 0; i < 8; i += 1) {
+    const x = 5 + i * 3.2;
+    const long = i % 2 === 0;
+    ticks += mark(pts([x, 11.5, x, long ? 17 : 14.8]), rng, T.amberD, 1.1, 0.2);
+  }
+  const edge = mark(pts([3, 20.4, 29, 20.4]), rng, T.amber, 1.2);
+  return svg(body + ticks + edge, 'ruler sticker');
+}
+
+function drawFlask(rng: Rng): string {
+  const glass = shape(
+    pts([12.4, 3, 19.6, 3, 19.6, 12, 27, 25.6, 25, 29.4, 7, 29.4, 5, 25.6, 12.4, 12]),
+    rng,
+    T.cream,
+    T.ink,
+    1.6,
+    0.5,
+  );
+  const liquid = shape(
+    pts([9.6, 21, 22.4, 21, 25.4, 26, 23.4, 29, 8.6, 29, 6.6, 26]),
+    rng,
+    T.turq,
+    T.turqD,
+    1.2,
+  );
+  const collar = mark(pts([11.6, 6, 20.4, 6]), rng, T.ink, 1.6);
+  const bubbles = dot(13, 25, 1.6, T.turqL) + dot(18.4, 26.4, 1.2, T.turqL) + dot(16, 23, 1, T.turqL);
+  return svg(glass + liquid + collar + bubbles, 'flask sticker');
+}
+
+function drawAtom(rng: Rng): string {
+  let rings = '';
+  for (let i = 0; i < 3; i += 1) {
+    rings += path(
+      wobblyLoop(ell(16, 16, 13, 5, 14, (i / 3) * Math.PI), rng, 0.35),
+      'none',
+      i === 0 ? T.violetD : T.violet,
+      1.4,
+    );
+  }
+  const electrons =
+    dot(28.4, 18.4, 1.8, T.plum, T.plumD) +
+    dot(9.4, 5.6, 1.8, T.plum, T.plumD) +
+    dot(7.4, 22.6, 1.8, T.plum, T.plumD);
+  return svg(rings + dot(16, 16, 3.6, T.violetL, T.violetD) + electrons, 'atom sticker');
+}
+
+/* --- the kitchen ---------------------------------------------------------- */
+
+function drawCoffee(rng: Rng): string {
+  const handle = path(
+    wobblyStroke(arcPts(21.5, 17.5, 5.6, -Math.PI * 0.45, Math.PI * 0.45, 6), rng, 0.3),
+    'none',
+    T.ink,
+    2.4,
+  );
+  const mug = shape(
+    pts([7, 10.5, 22, 10.5, 21.2, 23.5, 18.4, 27.6, 10.6, 27.6, 7.8, 23.5]),
+    rng,
+    T.cream,
+    T.ink,
+    1.6,
+  );
+  const band = shape(boxPts(7.4, 15, 14.2, 4), rng, T.terra, T.terraD, 1.1);
+  const steam =
+    mark(pts([11.6, 8.4, 10.4, 5.4, 12, 2.6]), rng, T.graphiteSoft, 1.5) +
+    mark(pts([17.4, 8.4, 16.2, 5.4, 17.8, 2.6]), rng, T.graphiteSoft, 1.5);
+  return svg(steam + handle + mug + band, 'coffee sticker');
+}
+
+function drawTeapot(rng: Rng): string {
+  const spout = shape(pts([23, 15.4, 30.4, 10.6, 31.4, 13.6, 25.6, 19.4]), rng, T.blushL, T.blushD, 1.3);
+  const handle = path(
+    wobblyStroke(arcPts(6.6, 18.5, 4.6, -Math.PI * 0.55, Math.PI * 0.55, 6), rng, 0.3),
+    'none',
+    T.blushD,
+    2.4,
+  );
+  const body = shape(ell(15.5, 19.5, 10, 8, 12), rng, T.blushL, T.blushD, 1.6);
+  const belt = mark(pts([7.4, 19.4, 15.5, 21, 23.4, 19.4]), rng, T.blush, 1.5);
+  const lid = shape(pts([9, 12, 22, 12, 20, 8.4, 11, 8.4]), rng, T.blush, T.blushD, 1.4);
+  const knob = dot(15.5, 6.4, 2.4, T.blushL, T.blushD);
+  return svg(spout + handle + body + belt + lid + knob, 'teapot sticker');
+}
+
+function drawCake(rng: Rng): string {
+  const plate = shape(pts([2.5, 27.4, 29.5, 27.4, 27.4, 30.4, 4.6, 30.4]), rng, T.aged, T.edge, 1.2);
+  const sponge = shape(boxPts(5.5, 15.5, 21, 11.5), rng, T.blushL, T.blushD, 1.5);
+  const filling = shape(boxPts(5.5, 19.5, 21, 3), rng, T.coral, T.coralD, 1);
+  const icing = shape(
+    pts([5.5, 15.5, 5.5, 10, 26.5, 10, 26.5, 15.8, 23, 13.6, 19.6, 16, 16, 13.4,
+      12.4, 16, 9, 13.4]),
+    rng,
+    T.cream,
+    T.blushD,
+    1.4,
+    0.5,
+  );
+  const candle = shape(boxPts(14.6, 3.4, 2.8, 7), rng, T.lemon, T.amberD, 1.1);
+  const flame = shape(ell(16, 2.4, 1.8, 2.8, 8), rng, T.amber, T.amberD, 1);
+  return svg(plate + sponge + filling + icing + candle + flame, 'cake sticker');
+}
+
+function drawApple(rng: Rng): string {
+  const body = shape(
+    pts([16, 11, 19, 7.4, 23, 6.6, 26, 9.6, 27, 15.4, 25, 22, 20.6, 27.4, 16, 28.4,
+      11.4, 27.4, 7, 22, 5, 15.4, 6, 9.6, 9, 6.6, 13, 7.4]),
+    rng,
+    T.coral,
+    T.coralD,
+    1.6,
+    0.7,
+  );
+  const stem = mark(pts([16, 10, 16.6, 6, 17.4, 3.4]), rng, T.terraD, 1.8);
+  const leaf = shape(petalPts(18.4, 5, -0.35, 4.6, 4.4, 2.2), rng, T.mossL, T.mossD, 1.2);
+  const shine = mark(pts([10.6, 13.4, 9.6, 17, 10.6, 20.4]), rng, T.coralL, 1.8);
+  return svg(body + shine + stem + leaf, 'apple sticker');
+}
+
+function drawCherry(rng: Rng): string {
+  const stems =
+    mark(pts([10, 21, 12.4, 12.6, 16.4, 6.4]), rng, T.mossD, 1.6) +
+    mark(pts([22, 22.6, 21.4, 13.6, 16.4, 6.4]), rng, T.mossD, 1.6);
+  const leaf = shape(petalPts(19.4, 5.6, 0.15, 5, 5, 2.4), rng, T.mossL, T.mossD, 1.2);
+  const berries =
+    shape(ell(9.6, 24.4, 5.8, 5.6, 10), rng, T.coral, T.coralD, 1.5) +
+    shape(ell(22.4, 25.6, 5.2, 5, 10), rng, T.coral, T.coralD, 1.5);
+  const glints = mark(pts([6.6, 22.6, 6, 25.4]), rng, T.coralL, 1.6);
+  return svg(stems + leaf + berries + glints, 'cherry sticker');
+}
+
+/* --- marks & keepsakes ---------------------------------------------------- */
+
+function drawMusic(rng: Rng): string {
+  const head = shape(ell(11, 24, 5.8, 4.4, 10, -0.35), rng, T.sepia, T.sepia, 1.2);
+  const stem = mark(pts([16.2, 23, 16.6, 14, 16.4, 5.6]), rng, T.sepia, 2.2);
+  const flag = shape(
+    pts([16.4, 5, 21.6, 8, 23.4, 13, 21, 17.4, 21.4, 12, 18.6, 9, 16.4, 9]),
+    rng,
+    T.sepia,
+    T.sepia,
+    1.2,
+    0.4,
+  );
+  return svg(head + stem + flag, 'music note sticker');
+}
+
+function drawArrow(rng: Rng): string {
+  const shaft = mark(pts([4.6, 26.4, 6.4, 17, 12, 10.4, 20, 7.4]), rng, T.sepia, 2.6, 0.3);
+  const head = shape(pts([27.4, 5.6, 18.6, 3.4, 20.4, 12.4]), rng, T.sepia, T.sepia, 1.2, 0.4);
+  return svg(shaft + head, 'arrow sticker');
+}
+
+function drawCheck(rng: Rng): string {
+  const tick = mark(pts([5, 17.4, 9.4, 22, 12.6, 25.4, 19, 14, 27, 5.4]), rng, T.mossD, 4, 0.4);
+  return svg(tick, 'tick sticker');
+}
+
+function drawKey(rng: Rng): string {
+  const shaft = shape(pts([12, 14.4, 15.4, 11.4, 28, 24.4, 25, 27.4]), rng, T.amber, T.amberD, 1.4);
+  const teeth =
+    shape(pts([20.4, 20.6, 23.4, 17.6, 25.4, 19.6, 22.4, 22.6]), rng, T.amber, T.amberD, 1.2) +
+    shape(pts([17, 17.2, 19.6, 14.6, 21.4, 16.4, 18.6, 19]), rng, T.amber, T.amberD, 1.2);
+  const bow = shape(ell(9.4, 11.4, 7, 7, 11), rng, T.amber, T.amberD, 1.6);
+  return svg(shaft + teeth + bow + dot(9.4, 11.4, 2.8, T.cream, T.amberD), 'key sticker');
+}
+
+function drawCrown(rng: Rng): string {
+  const band = shape(
+    pts([3.6, 25.6, 5.6, 9, 11, 17, 16, 5.6, 21, 17, 26.4, 9, 28.4, 25.6]),
+    rng,
+    T.amber,
+    T.amberD,
+    1.6,
+    0.55,
+  );
+  const rim = mark(pts([4.6, 22.4, 16, 23.6, 27.4, 22.4]), rng, T.amberD, 1.4);
+  const gems =
+    dot(5.8, 8, 2, T.blush, T.blushD) +
+    dot(16, 5, 2.3, T.coral, T.coralD) +
+    dot(26.2, 8, 2, T.blush, T.blushD);
+  return svg(band + rim + gems, 'crown sticker');
+}
+
+function drawGift(rng: Rng): string {
+  const box = shape(boxPts(4.5, 13, 23, 15), rng, T.terra, T.terraD, 1.6);
+  const ribbonV = shape(boxPts(13.6, 13, 4.8, 15), rng, T.lemon, T.amberD, 1.1);
+  const ribbonH = shape(boxPts(4.5, 17.4, 23, 3.6), rng, T.lemon, T.amberD, 1.1);
+  const bow =
+    shape(ell(11.4, 9.6, 4.6, 3.4, 9, -0.42), rng, T.lemon, T.amberD, 1.2) +
+    shape(ell(20.6, 9.6, 4.6, 3.4, 9, 0.42), rng, T.lemon, T.amberD, 1.2);
+  return svg(box + ribbonH + ribbonV + bow + dot(16, 11.4, 2.2, T.amber, T.amberD), 'gift sticker');
+}
+
+function drawTicket(rng: Rng): string {
+  // A stub, a perforation and a bite out of the top and bottom edges — a
+  // torn-off admission ticket. The bites belong on the perforation line, not
+  // on the left and right ends, which is what made the first draft a capsule
+  // with two eyes.
+  const card = shape(boxPts(2.5, 6.5, 27, 19), rng, T.amberL, T.amberD, 1.7);
+  const perforation =
+    `<path d="M 20.5 8 L 20.5 24" fill="none" stroke="${T.amberD}" ` +
+    `stroke-width="1.3" stroke-dasharray="2.4 2.6" stroke-linecap="round"/>`;
+  const bites = dot(20.5, 6.5, 2.6, T.cream, T.amberD) + dot(20.5, 25.5, 2.6, T.cream, T.amberD);
+  const star = path(
+    wobblyLoop(starPoints(25.4, 15.8, 3.4, 1.4, 5), rng, 0.3),
+    T.amber,
+    T.amberD,
+    1.1,
+  );
+  const lines =
+    mark(pts([6, 12, 17, 12]), rng, T.amberD, 1.6) +
+    mark(pts([6, 16.4, 17, 16.4]), rng, T.amber, 1.3) +
+    mark(pts([6, 20.4, 13.4, 20.4]), rng, T.amber, 1.3);
+  return svg(card + lines + perforation + star + bites, 'ticket sticker');
+}
+
+function drawCompass(rng: Rng): string {
+  const face = shape(ell(16, 16, 12.6, 12.6, 14), rng, T.skyL, T.skyD, 1.7);
+  const ticks =
+    mark(pts([16, 3.4, 16, 6]), rng, T.skyD, 1.3) +
+    mark(pts([16, 26, 16, 28.6]), rng, T.skyD, 1.3) +
+    mark(pts([3.4, 16, 6, 16]), rng, T.skyD, 1.3) +
+    mark(pts([26, 16, 28.6, 16]), rng, T.skyD, 1.3);
+  const north = shape(pts([16, 6.4, 19.6, 16, 12.4, 16]), rng, T.coral, T.coralD, 1.2);
+  const south = shape(pts([16, 25.6, 19.6, 16, 12.4, 16]), rng, T.cream, T.skyD, 1.2);
+  return svg(face + ticks + north + south + dot(16, 16, 1.8, T.skyD), 'compass sticker');
+}
+
+function drawGlobe(rng: Rng): string {
+  const sphere = shape(ell(16, 16, 12.6, 12.6, 14), rng, T.turqL, T.turqD, 1.7);
+  const land =
+    shape(pts([8, 12, 13.6, 9.6, 17, 12.6, 13.4, 16.4, 8.6, 15.6]), rng, T.moss, T.mossD, 1.1) +
+    shape(pts([17.4, 18.4, 23.4, 17.6, 24.4, 22, 19.4, 24.4]), rng, T.moss, T.mossD, 1.1);
+  const grid =
+    path(wobblyLoop(ell(16, 16, 12.6, 4.6, 12), rng, 0.3), 'none', T.turqD, 1.2) +
+    path(wobblyLoop(ell(16, 16, 4.6, 12.6, 12), rng, 0.3), 'none', T.turqD, 1.2) +
+    mark(pts([3.6, 16, 28.4, 16]), rng, T.turqD, 1.2);
+  return svg(sphere + land + grid, 'globe sticker');
+}
+
 const DRAWERS: Record<BuiltinStickerId, (rng: Rng) => string> = {
   star: drawStar,
   bee: drawBee,
@@ -528,6 +1531,48 @@ const DRAWERS: Record<BuiltinStickerId, (rng: Rng) => string> = {
   cat: drawCat,
   sun: drawSun,
   flower: drawFlower,
+  clover: drawClover,
+  mushroom: drawMushroom,
+  acorn: drawAcorn,
+  pine: drawPine,
+  cactus: drawCactus,
+  feather: drawFeather,
+  wave: drawWave,
+  rainbow: drawRainbow,
+  moon: drawMoon,
+  cloud: drawCloud,
+  raindrop: drawRaindrop,
+  snowflake: drawSnowflake,
+  bolt: drawBolt,
+  bird: drawBird,
+  fish: drawFish,
+  butterfly: drawButterfly,
+  snail: drawSnail,
+  whale: drawWhale,
+  fox: drawFox,
+  book: drawBook,
+  pencil: drawPencil,
+  microscope: drawMicroscope,
+  bulb: drawBulb,
+  clip: drawClip,
+  pin: drawPin,
+  ruler: drawRuler,
+  flask: drawFlask,
+  atom: drawAtom,
+  coffee: drawCoffee,
+  teapot: drawTeapot,
+  cake: drawCake,
+  apple: drawApple,
+  cherry: drawCherry,
+  music: drawMusic,
+  arrow: drawArrow,
+  check: drawCheck,
+  key: drawKey,
+  crown: drawCrown,
+  gift: drawGift,
+  ticket: drawTicket,
+  compass: drawCompass,
+  globe: drawGlobe,
 };
 
 const cache = new Map<string, string>();

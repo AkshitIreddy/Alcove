@@ -103,9 +103,25 @@ const where = (d: Decl): string =>
    1. The flat rule
    ------------------------------------------------------------------------ */
 
-/** Length tokens in a single (comma-free) shadow, in order. */
+/**
+ * Length tokens in a single (comma-free) shadow, in order.
+ *
+ * A unitless `0` IS a length, and it is the ordinary way to write "no blur".
+ * Missing it was worse than a false negative: the positions are read by index,
+ * so skipping the `0` shifted the SPREAD into the blur slot and
+ * `38px -11px 0 -3px` — a hard flat offset, entirely inside the house style —
+ * was reported as a 3px blur.
+ *
+ * Function calls are stripped first, because once bare numbers count,
+ * `color-mix(in srgb, var(--wash-amber) 26%, transparent)` contributes a `26`
+ * that is a percentage rather than a length and shifts every position again.
+ */
 function shadowLengths(shadow: string): string[] {
-  return shadow.match(/-?\d*\.?\d+(?:px|rem|em)\b/g) ?? [];
+  const withoutFns = shadow.replace(
+    /[\w-]+\([^()]*(?:\([^()]*\)[^()]*)*\)/g,
+    ' ',
+  );
+  return withoutFns.match(/-?\d*\.?\d+(?:px|rem|em)?\b/g) ?? [];
 }
 
 /** Split a box-shadow value on top-level commas (colour functions nest them). */
@@ -146,6 +162,26 @@ describe('the flat rule holds across src/styles', () => {
       )
       .map(where);
     expect(offenders).toEqual([]);
+  });
+
+  /*
+   * The gate only means something if it still fires. It briefly did not: the
+   * length matcher required a unit, so a unitless `0` blur went unseen and the
+   * spread was read as the blur — which flagged a legal hard offset and would
+   * equally have MISSED `0 0 12px` had the 12px sat one slot further along.
+   * Pin both directions before trusting the sweep below.
+   */
+  it('reads blur from the right slot', () => {
+    expect(hasBlurRadius('38px -11px 0 -3px')).toBe(false); // hard offset
+    expect(hasBlurRadius('0 2px 0 var(--x)')).toBe(false);
+    expect(hasBlurRadius('2px 2px 6px')).toBe(true); // a real blur
+    expect(hasBlurRadius('0 0 12px 2px')).toBe(true);
+    expect(
+      hasBlurRadius('38px -11px 0 -3px color-mix(in srgb, var(--a) 26%, transparent)'),
+    ).toBe(false); // the percentage must not count as a length
+    expect(
+      hasBlurRadius('0 0 4px color-mix(in srgb, var(--a) 26%, transparent)'),
+    ).toBe(true);
   });
 
   it('has no box-shadow with a non-zero blur radius', () => {

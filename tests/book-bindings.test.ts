@@ -124,6 +124,25 @@ function designOf(over: Partial<BookDesign> = {}): BookDesign {
   return { ...resolveBookDesign({ seed: 0x51e5, cloth: 3, accent: 11 }), ...over };
 }
 
+/**
+ * How many pixels two shots disagree on, ignoring rounding on an edge.
+ *
+ * Counts PIXELS, not channels, and needs a real step — one value of difference
+ * on an antialiased edge is not something a reader can see, and counting it
+ * would let two identical shapes pass by being noisy.
+ */
+function pixelsDiffering(a: Raster, b: Raster): number {
+  let n = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    const d =
+      Math.abs((a.data[i] as number) - (b.data[i] as number)) +
+      Math.abs((a.data[i + 1] as number) - (b.data[i + 1] as number)) +
+      Math.abs((a.data[i + 2] as number) - (b.data[i + 2] as number));
+    if (d > 24) n++;
+  }
+  return n;
+}
+
 /* -------------------------------------------------------------------------- *
  *                             the three gates                                 *
  * -------------------------------------------------------------------------- */
@@ -543,6 +562,48 @@ describe('every combination survives being drawn', () => {
       const design = designOf({ shape: c.shape, material: c.material, decorations: [c.mark] });
       expect(hashPixels(paint(design).raster)).toBe(hashPixels(paint(design).raster));
     }
+  }, DRAW_TIMEOUT);
+
+  /**
+   * Fifty shapes a reader can tell apart, not fifty entries in a table.
+   *
+   * A silhouette earns its place by being recognisable IN A ROW OF OTHERS at
+   * the size a spine is really drawn — 20 to 45 world px wide. Nameable is not
+   * the test; every one of these was nameable when the closest pair differed by
+   * 218 pixels out of ten thousand, which on a head profile meant a cut five
+   * pixels deep that nobody would ever notice.
+   *
+   * The threshold is deliberately a floor on the CLOSEST pair rather than an
+   * average: an average hides exactly the clusters this is here to catch. Two
+   * families were doing that — the cut heads (notch, step, crenel, wave,
+   * scallop, bevel, dome), whose cuts were too shallow to read, and a
+   * plain-rectangle group (square, clasped, chained, chamfered, ledger,
+   * tab-index) that differed only by small marks on an identical body.
+   */
+  it('gives every shape a silhouette a reader can pick out', () => {
+    const shots = SPINE_SHAPES.map((shape) =>
+      paint(
+        designOf({ shape, material: 'smooth-cloth' as MaterialLook, decorations: ['plain'] as Decoration[] }),
+      ).raster,
+    );
+
+    let worst = Number.POSITIVE_INFINITY;
+    let worstPair = '';
+    for (let i = 0; i < shots.length; i++) {
+      for (let j = i + 1; j < shots.length; j++) {
+        const d = pixelsDiffering(shots[i]!, shots[j]!);
+        if (d < worst) {
+          worst = d;
+          worstPair = `${SPINE_SHAPES[i]} / ${SPINE_SHAPES[j]}`;
+        }
+      }
+    }
+    // 300 is a floor under a measured 328, not a target. When this gate was
+    // written the closest pair was 218px and the median 1818; deepening the
+    // head and tail cuts and giving each shape a proportion of its own moved
+    // those to 328 and 2000. Raise the floor if the family is worked on again;
+    // do not lower it to make a new shape fit.
+    expect(worst, `closest pair is ${worstPair} at ${worst}px`).toBeGreaterThanOrEqual(300);
   }, DRAW_TIMEOUT);
 });
 

@@ -653,24 +653,50 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
   'double-hinge': shape('double-hinge', 'French Groove', 'Two grooves at each joint, so the covers open like doors.',
     ['formal', 'refined', 'luxe'], { corner: 0.06, endDepth: 0.022, marks: ['frenchGrooves'] }),
 
+  // The side is WAISTED because the blurb already said so — "the spine arcs
+  // away from the text block" — and it was drawn with straight sides, which
+  // left it 164px from `chamfered` across the whole spine.
   'hollow-back': shape('hollow-back', 'Hollow Back', 'The spine arcs away from the text block, so head and tail dome.',
-    ['antique', 'refined', 'airy'], { head: 'dome', tail: 'dome', corner: 0.1, endDepth: 0.04 }),
+    ['antique', 'refined', 'airy'],
+    { head: 'dome', tail: 'dome', side: 'waist', corner: 0.1, endDepth: 0.072 }),
 
   'spring-back': shape('spring-back', 'Spring Back', 'The stationer’s swell: a back that bulges out under its own sewing.',
     ['heavy', 'utilitarian', 'antique'],
     { side: 'bulge', head: 'cushion', tail: 'cushion', headWidth: 0.9, tailWidth: 0.9, corner: 0.3 }),
 
+  // A padded board swells at BOTH ends; a rounded back only bellies. With the
+  // same belly and near-identical corner the two were 190px apart and read as
+  // one shape, so this takes the swelling all the way.
   cushioned: shape('cushioned', 'Cushioned', 'Padded boards: every edge swollen, nothing sharp anywhere.',
-    ['cosy', 'luxe', 'devotional'], { head: 'cushion', tail: 'cushion', side: 'belly', corner: 0.44 }),
+    ['cosy', 'luxe', 'devotional'],
+    { head: 'cushion', tail: 'cushion', side: 'bulge', headWidth: 0.82, tailWidth: 0.82,
+      endDepth: 0.06, corner: 0.62 }),
 
   ledger: shape('ledger', 'Ledger', 'Square shoulders and a strap across the tail. Built to be written in.',
     ['utilitarian', 'heavy', 'sober'],
-    { corner: 0.04, endDepth: 0.022, marks: ['grooves', 'ledgerStrap'], claimBottom: 0.74 }),
+    // Its blurb said "square shoulders" and it had none — a plain rectangle
+    // 282px from `tight-back`, which also wears grooves. Now the shoulder is in
+    // the silhouette where the name always claimed it was.
+    { side: 'shoulder', headWidth: 0.88, shoulderAt: 0.17, corner: 0.04, endDepth: 0.022,
+      marks: ['grooves', 'ledgerStrap'], claimBottom: 0.74 }),
 
   /* -------------------------------- cut heads -------------------------------- */
 
+  /*
+   * The cut-head family — dome, gable, ogee, notch, step, crenel, wave,
+   * scallop, bevel — all differ ONLY in the top of the spine, and they shipped
+   * with cuts 5 to 9 px deep on a 200px book. Nine shapes that were nameable
+   * and not distinguishable: `domed-head` alone sat within 360px of six others.
+   *
+   * Two changes, both applied across the whole family. The cuts are twice as
+   * deep, so the profile is a shape rather than a nick. And each carries its
+   * own `headWidth`, so the difference runs the FULL height instead of living
+   * in the top twelfth — which is the only way a head profile can be told apart
+   * in a row of spines at 34px wide.
+   */
   'domed-head': shape('domed-head', 'Domed Head', 'One arc over the head, and a flat foot to stand on.',
-    ['refined', 'antique'], { head: 'dome', corner: 0.14, endDepth: 0.045, decorTop: 0.03 }),
+    ['refined', 'antique'],
+    { head: 'dome', headWidth: 0.9, corner: 0.14, endDepth: 0.075, decorTop: 0.08 }),
 
   'round-cap': shape('round-cap', 'Rolled Caps', 'Leather turned over a cord at head and tail, and rolled round.',
     ['luxe', 'antique', 'refined'],
@@ -678,28 +704,37 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
       claimTop: 0.12, claimBottom: 0.88 }),
 
   gabled: shape('gabled', 'Gabled', 'A pitched roof over the head, as on a reliquary.',
-    ['ornate', 'devotional', 'antique'], { head: 'gable', endDepth: 0.035, corner: 0.07, decorTop: 0.04 }),
+    ['ornate', 'devotional', 'antique'],
+    { head: 'gable', headWidth: 0.66, endDepth: 0.1, corner: 0.07, decorTop: 0.1 }),
 
   'ogee-head': shape('ogee-head', 'Ogee Head', 'The S-curve of a chapel door, taken to a point.',
-    ['ornate', 'devotional', 'fancy'], { head: 'ogee', endDepth: 0.04, corner: 0.07, decorTop: 0.04 }),
+    ['ornate', 'devotional', 'fancy'],
+    { head: 'ogee', headWidth: 0.78, endDepth: 0.095, corner: 0.07, decorTop: 0.1 }),
 
   'notched-head': shape('notched-head', 'Notched Head', 'A thumb notch cut into the head, for pulling it off the shelf.',
-    ['utilitarian', 'modern', 'plain'], { head: 'notch', endDepth: 0.035, corner: 0.1, decorTop: 0.04 }),
+    ['utilitarian', 'modern', 'plain'],
+    { head: 'notch', side: 'shoulder', headWidth: 0.93, shoulderAt: 0.14,
+      endDepth: 0.085, corner: 0.1, decorTop: 0.09 }),
 
   'stepped-head': shape('stepped-head', 'Stepped Head', 'A two-tier ziggurat, cut square with a saw.',
-    ['modern', 'goofy', 'formal'], { head: 'step', endDepth: 0.025, corner: 0.04, decorTop: 0.04 }),
+    ['modern', 'goofy', 'formal'],
+    { head: 'step', headWidth: 0.84, endDepth: 0.075, corner: 0.04, decorTop: 0.08 }),
 
   crenellated: shape('crenellated', 'Crenellated', 'Battlements: two teeth and the merlons between them.',
-    ['goofy', 'ornate', 'whimsical'], { head: 'crenel', endDepth: 0.03, corner: 0.04, decorTop: 0.04 }),
+    ['goofy', 'ornate', 'whimsical'],
+    { head: 'crenel', headWidth: 1, endDepth: 0.07, corner: 0.04, decorTop: 0.08 }),
 
   'wave-head': shape('wave-head', 'Wave Head', 'One S across the head, as though the cover had curled.',
-    ['whimsical', 'handmade', 'battered'], { head: 'wave', endDepth: 0.035, corner: 0.1, decorTop: 0.04 }),
+    ['whimsical', 'handmade', 'battered'],
+    { head: 'wave', side: 'ripple', headWidth: 0.96, endDepth: 0.08, corner: 0.1, decorTop: 0.085 }),
 
   'scalloped-head': shape('scalloped-head', 'Scalloped Head', 'The head cut into three lobes, as on a child’s primer.',
-    ['whimsical', 'goofy', 'cosy'], { head: 'scallop3', endDepth: 0.032, corner: 0.14, decorTop: 0.04 }),
+    ['whimsical', 'goofy', 'cosy'],
+    { head: 'scallop3', headWidth: 1, endDepth: 0.085, corner: 0.14, decorTop: 0.09 }),
 
   'scalloped-tail': shape('scalloped-tail', 'Scalloped Tail', 'Three lobes at the foot, so it stands like a valance.',
-    ['whimsical', 'fancy', 'cosy'], { tail: 'scallop3', endDepth: 0.032, corner: 0.14, decorBottom: 0.04 }),
+    ['whimsical', 'fancy', 'cosy'],
+    { tail: 'scallop3', tailWidth: 0.97, endDepth: 0.085, corner: 0.14, decorBottom: 0.09 }),
 
   /* ---------------------------- changing widths ----------------------------- */
 
@@ -725,10 +760,13 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     ['battered', 'handmade', 'cosy'], { side: 'waist', corner: 0.2, decorInset: 0.05 }),
 
   chamfered: shape('chamfered', 'Bevelled Boards', 'All four corners cut off at a slant, never rounded.',
-    ['formal', 'severe', 'luxe'], { corner: 0.34, bevelCorner: true, endDepth: 0.025 }),
+    // At 0.34 of the width the bevel read as a slightly soft corner rather than
+    // a cut one. Half the width is what a bevelled board actually looks like.
+    ['formal', 'severe', 'luxe'], { corner: 0.52, bevelCorner: true, endDepth: 0.03 }),
 
   'bevel-head': shape('bevel-head', 'Bevelled Head', 'One long slant across the head — a book cut on the skew.',
-    ['modern', 'goofy', 'whimsical'], { head: 'bevel', endDepth: 0.035, corner: 0.08, decorTop: 0.05 }),
+    ['modern', 'goofy', 'whimsical'],
+    { head: 'bevel', headWidth: 0.86, endDepth: 0.09, corner: 0.08, decorTop: 0.095 }),
 
   /* ------------------------------ soft and limp ----------------------------- */
 
@@ -741,7 +779,7 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   'two-lobe': shape('two-lobe', 'Twin Lobes', 'Two humps at each end: a fat pill of a book.',
     ['goofy', 'whimsical', 'cosy'],
-    { head: 'scallop2', tail: 'scallop2', endDepth: 0.035, corner: 0.2 }),
+    { head: 'scallop2', tail: 'scallop2', endDepth: 0.08, corner: 0.2 }),
 
   rolled: shape('rolled', 'Scroll', 'Barely a book: a roll with a turned knob at each end.',
     ['antique', 'whimsical', 'handmade'],
@@ -766,7 +804,13 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   'long-stitch': shape('long-stitch', 'Long Stitch', 'Three runs of stitching straight through a limp cover.',
     ['handmade', 'rustic', 'natural'],
-    { head: 'cushion', tail: 'cushion', corner: 0.24, marks: ['longStitch'] }),
+    // A LIMP cover, sewn through: it has no boards to hold it straight, so it
+    // sags in the middle and the sewing pulls the ends in. Drawn upright with
+    // faint stitch marks it was 270px from a plain square — the closest pair
+    // left — and "limp" was a word in the blurb rather than a thing you could
+    // see.
+    { head: 'cushion', tail: 'cushion', side: 'waist', headWidth: 0.9, tailWidth: 0.9,
+      endDepth: 0.05, corner: 0.24, marks: ['longStitch'] }),
 
   'sewn-sections': shape('sewn-sections', 'Unbound Sections', 'No cover: five folded gatherings and their sewing.',
     ['handmade', 'plain', 'natural'], { inset: 0.08, corner: 0.06, marks: ['sections'] }),
@@ -818,13 +862,27 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     ['devotional', 'cosy', 'antique'],
     { inset: 0.07, dropTop: 0.015, dropBottom: 0.015, corner: 0.22, marks: ['yappLips'] }),
 
+  /*
+   * The plain-rectangle group — square, clasped, chained, chamfered, ledger,
+   * tab-index — all had the identical body and differed only by small marks
+   * drawn on it. `clasped` sat 218px from `square` across the whole spine, the
+   * closest pair in the table.
+   *
+   * Each now carries a proportion its own name already claimed. `square` is
+   * left alone deliberately: it is the plain case binding, and the baseline the
+   * others are read against.
+   */
   clasped: shape('clasped', 'Clasped', 'Two metal clasps hold it shut, and mean it.',
     ['antique', 'devotional', 'heavy'],
-    { corner: 0.08, marks: ['clasps'], claimTop: 0.34, claimBottom: 0.66 }),
+    // A book that needs clasps is one whose text block is trying to spring
+    // open, and the swell between them is the reason they are there.
+    { side: 'belly', corner: 0.08, marks: ['clasps'], claimTop: 0.34, claimBottom: 0.66 }),
 
   chained: shape('chained', 'Chained', 'A ring and a link at the foot: this one does not leave the room.',
     ['antique', 'severe', 'scholarly'],
-    { corner: 0.06, marks: ['chainLink'], claimBottom: 0.78 }),
+    // It hangs. A chained book took its weight on the ring at its foot, and the
+    // lean says so at a size where the chain link itself is four pixels.
+    { side: 'sway', corner: 0.06, marks: ['chainLink'], claimBottom: 0.78 }),
 
   'tab-index': shape('tab-index', 'Thumb Index', 'A cut card tab standing at the fore edge, halfway down.',
     ['utilitarian', 'scholarly', 'modern'],
@@ -2875,8 +2933,10 @@ function drawShapeMarks(
         // next to it. Cap the overhang instead of the position, so it holds at
         // both ends of the 8-58px thickness range rather than only at the
         // width it happened to be drawn at.
+        // A real thumb index is a card you can get a thumb onto. At 9% of the
+        // height it was a chip, and the shape sat 284px from a plain square.
         const tw = Math.max(3, w * 0.42);
-        const th = Math.max(4, h * 0.09);
+        const th = Math.max(6, h * 0.17);
         const proud = Math.min(tw * 0.7, w * 0.08 + 1);
         panel(ctx, x + w + proud - tw, y + h * 0.44, tw, th, FLAT.cream, {
           radius: tw * 0.3,

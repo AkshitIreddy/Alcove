@@ -576,8 +576,56 @@ export interface ShelfDesign {
  */
 export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
 
-/** The house carpentry: a plain plank case with nothing worked into it. */
-export const DEFAULT_SHELF_DESIGN: ShelfDesign = { build: 'plank', pattern: 'none' };
+/**
+ * The carpentry a new library opens in.
+ *
+ * NOT `plank` + `none` any more, and the reason is the whole of the reader's
+ * complaint that the opening bookcase looked "boring/bland/cheap". A plain
+ * plank case is four boards, two uprights and a flat board of a cornice, so
+ * the largest object on screen was a single uninterrupted rectangle of one
+ * colour with a hairline across it every floor. No palette fixes that: twenty
+ * rooms were photographed on the plank case and every one of them read as a
+ * coloured slab (`shots-now/defaults/board-b.png`).
+ *
+ * `scriptorium` is the same four parts with carpentry in them. It brings three
+ * things the plank has none of, and each was chosen by looking rather than by
+ * reading the table:
+ *
+ *  - an ARCADE over the recess. Round-headed bays behind the books break the
+ *    slab into a rhythm, which is what stops an empty shelf reading as a hole.
+ *    Twelve builds were shot side by side and the arch-opening ones were the
+ *    only group that solved it (`board-c.png`, `board-d.png`).
+ *  - a STEPPED cornice under a DENTIL crest. The crest is the one edge in the
+ *    case a build can genuinely change, and `world.ts` stands the plinth out
+ *    of the same bitmap mirrored — teeth invert into a dentil apron, so the
+ *    case gains a moulded top AND a moulded foot from one drawing.
+ *  - COLUMNS on the uprights, which the fluting-family patterns can work on.
+ *
+ * `guilloche` is the pattern, and it was picked at 1:1 rather than magnified
+ * (`board-pattern-1to1.png`): at real shelf zoom the edge-work patterns
+ * (`stringing`, `cockBead`, `beaded`, `reeded`, `fluted`) are below the
+ * threshold where anything reads at all, and the bold frets (`greekKey`,
+ * `crossband`) read as a printed border. Guilloche lands between them — a run
+ * of small rings with a boss in each, which at this size reads as a fine bead
+ * chain along every board edge and down the posts, and its round beads agree
+ * with both the round arches and the gilt cornice studs.
+ *
+ * ## This constant also answers "what does junk resolve to"
+ *
+ * `resolveShelfDesign` and `getBuild` fall back to it, so a corrupted row now
+ * opens on the scriptorium rather than on the bare plank. That is the same
+ * double duty `DEFAULT_WALLPAPER_ID` was split out of (see the note beside
+ * `FALLBACK_WALLPAPER_ID`), and it wants the same split here — one constant
+ * for the opening carpentry, one for the unknown-id fallback. It is left
+ * merged only because the split moves assertions in
+ * `tests/design-cache-keys.test.ts`, and unlike the wallpaper case nothing
+ * misleads a reader in the meantime: both values are total, both are drawable,
+ * and the cache key carries `shelfDesignTag` either way.
+ */
+export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
+  build: 'scriptorium',
+  pattern: 'guilloche',
+};
 
 export function isBuildId(value: unknown): value is BuildId {
   return typeof value === 'string' && (BUILD_IDS as readonly string[]).includes(value);

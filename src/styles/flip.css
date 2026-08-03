@@ -208,32 +208,28 @@
   pointer-events: none;
 }
 
-/* Leaf shading overlay (inside the leaf): darkens as the page turns away.
-   Animated with opacity only. */
-.nb-flip-fallback-shade {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: linear-gradient(
-    90deg,
-    rgba(94, 70, 45, 0.28) 0%,
-    rgba(94, 70, 45, 0.1) 35%,
-    transparent 75%
-  );
-  opacity: 0;
-  pointer-events: none;
-  will-change: opacity;
-}
+/* Contact shadow on the revealed page beneath, beside the spine the leaf is
+   rotating around. Opacity only — cssFallback.ts animates sin(p·π), and the
+   contactShadow alpha itself already lives in --lift-ink ("FLAT.shadow at
+   contactShadow alpha", tokens.css), the same 22% the GL curl multiplies by.
 
-/* Cast shadow on the revealed page beneath. Opacity only. */
+   A FLAT band with a hard stop, not a wash. The three-stop gradients this
+   replaced faded across three quarters of the page — a soft shadow and, on
+   the leaf itself, a second overlay that darkened the front face as it
+   rotated away: a light model. CLAUDE.md has neither. Depth here is the
+   band, the rotation, and the plain backside face.
+
+   --nb-contact-reach is set inline by cssFallback.ts from the shader's
+   CONTACT_SHADOW_REACH_PX, so the two paths draw the same width; the
+   fallback in the var() only matters if the element is ever styled without
+   its script. */
 .nb-flip-fallback-shadow {
   position: absolute;
   z-index: calc(var(--z-flip) - 1);
   background: linear-gradient(
     90deg,
-    rgba(94, 70, 45, 0.3) 0%,
-    rgba(94, 70, 45, 0.12) 40%,
-    transparent 78%
+    var(--lift-ink) 0 var(--nb-contact-reach, 18px),
+    transparent var(--nb-contact-reach, 18px)
   );
   opacity: 0;
   pointer-events: none;
@@ -243,9 +239,8 @@
 .nb-flip-fallback-shadow.is-prev {
   background: linear-gradient(
     270deg,
-    rgba(94, 70, 45, 0.3) 0%,
-    rgba(94, 70, 45, 0.12) 40%,
-    transparent 78%
+    var(--lift-ink) 0 var(--nb-contact-reach, 18px),
+    transparent var(--nb-contact-reach, 18px)
   );
 }
 

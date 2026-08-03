@@ -45,12 +45,17 @@ import {
   BOOK_PRESETS,
   BOOK_PRESET_IDS,
   BOOK_TAGS,
+  BOOK_TIERS,
   DECORATIONS,
   DECORATION_LABELS,
   DECORS,
   MATERIALS,
   MATERIAL_LOOKS,
   MATERIAL_LOOK_LABELS,
+  ROLLABLE_DECORATIONS,
+  ROLLABLE_MATERIALS,
+  ROLLABLE_PRESETS,
+  ROLLABLE_SHAPES,
   SHAPES,
   SHAPE_LABELS,
   SPINE_SHAPES,
@@ -61,10 +66,12 @@ import {
   bookSpineBoxes,
   drawBookSpine,
   isBookPresetId,
+  isRollable,
   materialLookFor,
   presetForSeed,
   resolveBookDesign,
   type BookDesign,
+  type BookTier,
   type Decoration,
   type MaterialLook,
   type SpineShape,
@@ -311,6 +318,131 @@ describe('the three vocabularies', () => {
 });
 
 /* -------------------------------------------------------------------------- *
+ *                             rank and the dice                               *
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The quality gate, and the only thing holding it up.
+ *
+ * A bizarre silhouette is a SILENT bug. Nothing throws, nothing renders red,
+ * the atlas bakes it happily and the first anybody hears is a reader saying
+ * some of the books "are literally pencil shape". So the ranking that keeps
+ * those off a randomly generated shelf has to be checked here or it is not
+ * checked at all — and the two halves of it fail in opposite directions:
+ *
+ *  - an entry with NO tier would default to whatever the sort happened to do
+ *    with it, so every row of every table must declare one;
+ *  - a randomiser that ignores the tier hands out the odd ones anyway, so the
+ *    roll a new book makes is walked exhaustively rather than sampled.
+ */
+describe('every entry knows how good it is', () => {
+  const axes = [
+    ['shape', SPINE_SHAPES.map((id) => SHAPES[id])],
+    ['covering', MATERIAL_LOOKS.map((id) => MATERIALS[id])],
+    ['ornament', DECORATIONS.map((id) => DECORS[id])],
+    ['binding', BOOK_PRESETS],
+  ] as const;
+
+  it('declares a tier and a family on every row of every table', () => {
+    for (const [what, rows] of axes) {
+      for (const row of rows) {
+        expect(BOOK_TIERS, `${what} "${row.id}" has no tier`).toContain(row.tier);
+        expect(typeof row.group, `${what} "${row.id}" has no family`).toBe('string');
+        expect(row.group.length, `${what} "${row.id}" has an empty family`).toBeGreaterThan(2);
+      }
+    }
+  });
+
+  it('sorts each family best-first, and the odd ones to the bottom of it', () => {
+    for (const [what, rows] of axes) {
+      const rank: Record<BookTier, number> = { signature: 0, shelf: 1, niche: 2, oddity: 3 };
+      const seen = new Map<string, number>();
+      let group = '';
+      for (const row of rows) {
+        if (row.group !== group) {
+          // A family may not be interleaved with another: once the list has
+          // left it, it is finished. Otherwise "first in its family" means
+          // nothing, because the family is in three pieces.
+          expect(seen.has(row.group), `${what}: family "${row.group}" appears twice`).toBe(false);
+          seen.set(row.group, rank[row.tier]);
+          group = row.group;
+        }
+        const worstSoFar = seen.get(group) as number;
+        expect(
+          rank[row.tier],
+          `${what} "${row.id}" (${row.tier}) is listed after a worse entry in "${group}"`,
+        ).toBeGreaterThanOrEqual(worstSoFar);
+        seen.set(group, rank[row.tier]);
+      }
+    }
+  });
+
+  it('keeps something in every tier, so the ranking is a judgement', () => {
+    // A table where everything is `shelf` has not been looked at; one where
+    // nothing is an `oddity` has not been looked at either, since the whole
+    // reason this field exists is that some entries were.
+    for (const [what, rows] of axes) {
+      const tiers = new Set(rows.map((r) => r.tier));
+      expect([...tiers].sort(), `${what}: nothing was ranked`).toContain('signature');
+      expect([...tiers].sort(), `${what}: nothing was demoted`).toContain('oddity');
+    }
+  });
+
+  it('never rolls an oddity — the whole point of the field', () => {
+    // Exhaustive over the stream `resolveBookDesign` uses, not a sample: this
+    // is the one place a reader who never opens the studio meets the table, so
+    // "we tried a thousand and none were odd" is not an answer.
+    for (let seed = 0; seed < 60000; seed++) {
+      const p = presetForSeed(seed);
+      expect(isRollable(p.tier), `seed ${seed} rolled "${p.id}", which is an ${p.tier}`).toBe(true);
+    }
+    // …and a book made with no preset pinned goes through exactly that roll.
+    for (let seed = 0; seed < 4000; seed++) {
+      const d = resolveBookDesign({ seed, cloth: seed % 7, accent: (seed + 3) % 11 });
+      expect(isRollable(bookPreset(d.preset).tier), `seed ${seed} was bound as ${d.preset}`)
+        .toBe(true);
+    }
+  });
+
+  it('still OFFERS every entry, because this is a demotion and not a deletion', () => {
+    // The studio's lists are the full tables. A reader who goes looking for the
+    // scroll on two knobs finds it; they are simply never handed one.
+    expect(SPINE_SHAPES).toHaveLength(50);
+    expect(MATERIAL_LOOKS).toHaveLength(50);
+    expect(DECORATIONS).toHaveLength(50);
+    expect(BOOK_PRESET_IDS).toHaveLength(BOOK_PRESETS.length);
+    for (const [what, rows] of axes) {
+      const odd = rows.filter((r) => !isRollable(r.tier));
+      expect(odd.length, `${what}: nothing was demoted at all`).toBeGreaterThan(0);
+      expect(odd.length, `${what}: more than a fifth of the table was demoted`)
+        .toBeLessThanOrEqual(Math.ceil(rows.length / 5));
+    }
+  });
+
+  it('keeps the rollable lists a strict subset of the offered ones', () => {
+    const pairs = [
+      [SPINE_SHAPES, ROLLABLE_SHAPES, SHAPES],
+      [MATERIAL_LOOKS, ROLLABLE_MATERIALS, MATERIALS],
+      [DECORATIONS, ROLLABLE_DECORATIONS, DECORS],
+    ] as const;
+    for (const [all, rollable, table] of pairs) {
+      expect(rollable.length).toBeLessThan(all.length);
+      for (const id of rollable) {
+        expect(all as readonly string[]).toContain(id);
+        expect(isRollable((table as Record<string, { tier: BookTier }>)[id]!.tier)).toBe(true);
+      }
+      const offered = new Set<string>(rollable as readonly string[]);
+      for (const id of all) {
+        const tier = (table as Record<string, { tier: BookTier }>)[id]!.tier;
+        expect(offered.has(id), `"${id}" is ${tier} but ${offered.has(id) ? 'is' : "isn't"} rolled`)
+          .toBe(isRollable(tier));
+      }
+    }
+    expect(ROLLABLE_PRESETS.length).toBeLessThan(BOOK_PRESETS.length);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
  *                                the presets                                  *
  * -------------------------------------------------------------------------- */
 
@@ -357,10 +489,10 @@ describe('the named bindings', () => {
     for (const id of original) expect(isBookPresetId(id), `${id} was retired`).toBe(true);
   });
 
-  it('reaches most of the named bindings from seeds alone', () => {
+  it('reaches every ROLLABLE binding from seeds alone, and no other', () => {
     const hit = new Set<string>();
     for (let seed = 0; seed < 40000; seed++) hit.add(presetForSeed(seed).id);
-    expect(hit.size).toBe(BOOK_PRESETS.length);
+    expect([...hit].sort()).toEqual([...ROLLABLE_PRESETS.map((p) => p.id)].sort());
   });
 
   it('resolves total: junk in gives the first binding, never a throw', () => {
@@ -598,11 +730,14 @@ describe('every combination survives being drawn', () => {
         }
       }
     }
-    // 300 is a floor under a measured 328, not a target. When this gate was
+    // 300 is a floor under a measured 316, not a target. When this gate was
     // written the closest pair was 218px and the median 1818; deepening the
     // head and tail cuts and giving each shape a proportion of its own moved
-    // those to 328 and 2000. Raise the floor if the family is worked on again;
-    // do not lower it to make a new shape fit.
+    // those to 328. Softening those same cuts afterwards — because deep enough
+    // to measure had turned the gable into a pencil and the scallops into
+    // teeth — cost 12px of it, paid back by giving each of that family a head
+    // width of its own instead. Raise the floor if the family is worked on
+    // again; do not lower it to make a new shape fit.
     expect(worst, `closest pair is ${worstPair} at ${worst}px`).toBeGreaterThanOrEqual(300);
   }, DRAW_TIMEOUT);
 });
@@ -672,5 +807,8 @@ describe.runIf(process.env.BOOK_SPECIMENS === '1')('specimen boards', () => {
       );
     }
     expect(true).toBe(true);
-  });
+    // Four hundred spines rasterized on the CPU. Vitest's default is 5s and
+    // this took eight, so the board it exists to write was produced and the run
+    // still went red — which trains you to ignore a red run.
+  }, DRAW_TIMEOUT);
 });

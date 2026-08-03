@@ -210,12 +210,32 @@
   will-change: transform;
 }
 
+/*
+ * The way out sits FIRST, on the left.
+ *
+ * House rule (reader's words: *"it should ALWAYS be on top left, maybe do a
+ * check"*): every control that leaves somewhere — back, close, exit — anchors
+ * top-left of the thing it leaves. `tests/top-left-exits.test.ts` is the check.
+ *
+ * This header was `space-between` with the × last in the markup, which put it
+ * top-RIGHT on every rail panel in the app — Customize, Page style, Catalogue,
+ * TOC, Turn back time, and both studio sheets. One rule reaches all of them.
+ *
+ * Done with `order` rather than by moving the markup so the DOM order stays the
+ * reading order: the title still announces before the button, and tab order
+ * follows the visual left-to-right.
+ */
 .nb-rail-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: var(--space-8);
   padding: var(--space-12) var(--space-16) var(--space-8);
   border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nb-rail-panel-header .nb-rail-panel-close {
+  order: -1;
 }
 
 .nb-rail-panel-title {
@@ -274,13 +294,120 @@
   border-top: 1px dashed var(--ink-line-soft);
 }
 
+/*
+ * The scroller.
+ *
+ * Its top gutter is a SPACER, not padding, and that is load-bearing rather than
+ * fussy. A sticky header inside a scroll container pins to the container's
+ * content box in Blink but to its padding box per spec, so a scroller with
+ * `padding-top: 12px` leaves a 12px band that a pinned header does not cover and
+ * cards visibly scroll through — measured in the real panel, not guessed. With
+ * the gutter as a first-child spacer the two boxes coincide, `top: 0` means the
+ * same thing under either reading, and the gutter scrolls away with the content
+ * the way a gutter should. The 12px of air every panel had is unchanged.
+ */
 .nb-rail-panel-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-12) var(--space-16) var(--space-24);
+  padding: 0 var(--space-16) var(--space-24);
   scrollbar-width: thin;
   scrollbar-color: var(--paper-edge) transparent;
+}
+
+.nb-rail-panel-body::before {
+  content: '';
+  display: block;
+  height: var(--space-12);
+}
+
+/* ============================ two shared shapes =============================
+   Both of these belong to rail.css rather than to any one panel's stylesheet
+   because rail.css is the panel CHROME — the sheet, its header, its scroller,
+   its chips — and both are answers to a complaint about panels in general.
+   They are loaded everywhere: BookView imports this file statically, so it is
+   in the app's one CSS bundle whether or not a book is open, which is what
+   lets the shelf's own studio sheet wear them too.
+   ========================================================================== */
+
+/*
+ * A header that STAYS PUT while its panel's body scrolls.
+ *
+ * The reported bug: "when you go somewhere which has a lot of options in its
+ * submenu and scroll down the back button is not visible until you scroll fully
+ * up". The rail sheet's own header is a flex sibling of the scroller and was
+ * never the problem; the header a SHEET draws inside the scroller was, and it
+ * carries the only way back.
+ *
+ * `top: 0` lands it flush against the top of the scrollport — which is only
+ * true because the scroller's top gutter is a spacer rather than padding; see
+ * `.nb-rail-panel-body` above for why that had to change. The background is the
+ * sheet's own paper, because content passing underneath must not show through.
+ *
+ * Deliberately NOT a shadow or a fade at the join: content simply goes behind
+ * one flat fill, which is the whole depth model this app has.
+ */
+.nb-sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--paper-cream);
+}
+
+/*
+ * "37 more" / "show fewer" — one control for "there is more behind this".
+ *
+ * Dashed, like every other way-through in the app (the strip's ninth cell, the
+ * studio's "all 60"), so it never reads as one of the things it is hiding. The
+ * number is always the REMAINING count: a reader can see how many are on
+ * screen, so a control that repeats the total is a claim they can disprove.
+ */
+.nb-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+  background: transparent;
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: 10px 14px 12px 15px / 13px 11px 15px 12px;
+  padding: var(--space-4) var(--space-8);
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-more:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border-color: var(--ink-line);
+  transform: rotate(-0.8deg);
+}
+
+.nb-more-count {
+  font-family: var(--font-heading);
+  font-size: 20px; /* Caveat floor */
+  line-height: 1;
+  color: var(--ink-sepia);
+}
+
+.nb-more:hover .nb-more-count {
+  color: var(--ink-sepia);
+}
+
+/* The row form: a full-width rule across the foot of a grid, for a sheet whose
+   cards are too big to give one of their slots up to a control. */
+.nb-more-row {
+  display: flex;
+  width: 100%;
+  margin-top: var(--space-12);
+  padding: var(--space-8);
 }
 
 /* ------------------------------ panel building bits ------------------------ */

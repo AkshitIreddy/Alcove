@@ -32,6 +32,16 @@ export interface AtlasHandle {
   readonly key: string;
   readonly page: AtlasPage;
   readonly rect: AtlasRect;
+  /**
+   * `rect` plus its gutter — the whole region this key reserved.
+   *
+   * Consumers need it to CLEAR before they draw. Wiping `rect` alone leaves
+   * whatever the previous occupant painted in the gutter, and a gutter is not
+   * dead pixels: every mip level of the page averages across it, so at any
+   * minified zoom the stale ink bleeds back into the neighbour it was supposed
+   * to be keeping out. (Clearing `rect` ±1 was fine while the padding *was* 1.)
+   */
+  readonly padded: AtlasRect;
 }
 
 export interface AtlasManagerOptions {
@@ -61,10 +71,26 @@ interface PageState {
   nextY: number;
   keys: Set<string>;
   lastUsed: number;
+  /** Texels handed out so far (never reclaimed — see the file header). */
+  reserved: number;
 }
 
 /** A shelf accepts a rect whose height fits within [h*..., h] tolerance. */
 const SHELF_HEIGHT_SLACK = 1.35;
+
+/** Per-page bookkeeping the budget report reads. */
+export interface AtlasUsage {
+  /** Page id. */
+  id: number;
+  /** Live rects on this page. */
+  rects: number;
+  /** Texels reserved by those rects, gutters included. */
+  used: number;
+  /** Texels the page has. */
+  capacity: number;
+  /** used / capacity, 0-1. */
+  fill: number;
+}
 
 function defaultCreateCanvas(size: number): AtlasCanvas {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(size, size);
@@ -102,6 +128,24 @@ export class AtlasManager {
   /** Live pages (LRU metadata not exposed). */
   get pages(): readonly AtlasPage[] {
     return this.pageStates.map((s) => s.page);
+  }
+
+  /**
+   * How full each live page is.
+   *
+   * Exists because raising a bake scale is a decision about MEMORY, and the
+   * only honest way to make it is to know how many spines a page actually
+   * holds rather than how many the arithmetic says it should.
+   */
+  usage(): AtlasUsage[] {
+    const capacity = this.pageSize * this.pageSize;
+    return this.pageStates.map((s) => ({
+      id: s.page.id,
+      rects: s.keys.size,
+      used: s.reserved,
+      capacity,
+      fill: s.reserved / capacity,
+    }));
   }
 
   /** Look up an existing handle; touches its page for LRU. */
@@ -185,12 +229,23 @@ export class AtlasManager {
       nextY: 0,
       keys: new Set(),
       lastUsed: ++this.tick,
+      reserved: 0,
     };
     this.pageStates.push(state);
     return state;
   }
 
-  /** Shelf-order packing: reuse a fitting shelf, else open a new one. */
+  /**
+   * Shelf-order packing: reuse a fitting shelf, else open a new one.
+   *
+   * First-fit, and deliberately not best-fit — they are the same function
+   * here. A shelf's height is exactly the height of the rect that opened it,
+   * so if two shelves both accept a rect of height `ph` (both heights inside
+   * `[ph, ph·SLACK]`, i.e. within SLACK of each other), the later one must be
+   * the TALLER: a shorter opener would have landed on the earlier shelf
+   * instead of starting its own. The first shelf that fits is therefore always
+   * the tightest one, and a best-fit scan was measured to change no placement.
+   */
   private placeInPage(state: PageState, pw: number, ph: number): AtlasRect | null {
     for (const shelf of state.shelves) {
       if (ph <= shelf.h && ph * SHELF_HEIGHT_SLACK >= shelf.h && shelf.x + pw <= this.pageSize) {
@@ -219,10 +274,12 @@ export class AtlasManager {
       key,
       page: state.page,
       rect: { x: padded.x + this.padding, y: padded.y + this.padding, w, h },
+      padded: { ...padded },
     };
     this.handles.set(key, handle);
     state.keys.add(key);
     state.lastUsed = ++this.tick;
+    state.reserved += padded.w * padded.h;
     return handle;
   }
 

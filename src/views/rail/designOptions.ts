@@ -18,13 +18,14 @@ import {
   drawBookSpine,
   resolveBookDesign,
 } from '../../art/bookDesign';
-import { flatScheme, type FlatCtx } from '../../art/flat';
+import { flatScheme, type FlatCtx, type FlatScheme } from '../../art/flat';
 import { drawCaseCard, drawPlank, drawPost } from '../../art/flatShelf';
 import { fnv1a } from '../../art/noise';
 import { FLOOR_H, PLANK_H, RAIL_W } from '../../features/bookshelf/constants';
 import {
   BUILDS,
   BUILD_IDS,
+  DEFAULT_SHELF_DESIGN,
   PATTERNS,
   PATTERN_IDS,
   SHELF_PRESETS,
@@ -34,23 +35,492 @@ import {
 } from '../../art/shelfDesign';
 import { drawInScheme } from './designArt';
 import {
+  DEFAULT_WALLPAPER_ID,
   WALLPAPER_DEPTHS,
   WALLPAPER_INKS,
   WALLPAPER_PRESETS,
   WALLPAPER_SCALES,
   drawWallpaperCard,
+  getWallpaper,
+  renderWallpaperTile,
   wallpaperAxisKey,
+  wallpaperColours,
+  wallpaperTileKey,
+  wallpaperTilePx,
   type WallpaperDepth,
   type WallpaperFamily,
   type WallpaperInk,
   type WallpaperScale,
   type WallpaperSpec,
 } from '../../art/wallpaperDesign';
-import { THEMES, THEME_IDS } from '../../art/themes';
+import {
+  DEFAULT_THEME_ID,
+  THEMES,
+  THEME_IDS,
+  getTheme,
+  type ThemeId,
+} from '../../art/themes';
 import type { PickerOption } from './DesignPicker';
 
 /** One seed for every case tile in the studio, so only the design varies. */
 const CASE_SEED = fnv1a('studio|case');
+
+/* ------------------------------ the presets ------------------------------ */
+
+/**
+ * A whole room in one value: its colours, its carpentry and its paper.
+ *
+ * This is NOT a new place to store anything. `RoomDesign` already carries the
+ * build, the pattern and the wallpaper, and `LibraryPrefs.theme` already
+ * carries the colours; a preset is a named bundle of values that already
+ * exist, and applying one is two writes the studio was already making.
+ *
+ * It exists because a "room" was colour ONLY, and a reader reasonably expects
+ * the thing at the top of the panel to set the look of the room rather than to
+ * repaint it. The colour axis is still there underneath, still orthogonal —
+ * you can repaint a preset without rebuilding it, which is the whole reason
+ * the three vocabularies were kept independent in the first place.
+ */
+export interface RoomLook {
+  theme: ThemeId;
+  build: BuildId;
+  pattern: PatternId;
+  wallpaper: WallpaperSpec;
+}
+
+/**
+ * How the presets are shelved in the picker.
+ *
+ * One word each, and every word is taken from a mood vocabulary the art
+ * already carries (`BuildTag`, `ThemeTag`, `WallpaperMood`), because that is
+ * how the presets were composed: a class is a steer applied to all four axes,
+ * rolled with `withMood`, and then judged by eye. Searching the picker for
+ * "cosy" therefore finds the cosy rooms as well as the cosy papers.
+ */
+export const ROOM_PRESET_GROUPS = [
+  'Formal',
+  'Grand',
+  'Antique',
+  'Quiet',
+  'Cosy',
+  'Botanical',
+  'Coastal',
+  'Storybook',
+  'Rustic',
+] as const;
+
+export type RoomPresetGroup = (typeof ROOM_PRESET_GROUPS)[number];
+
+export interface RoomPreset extends RoomLook {
+  id: string;
+  name: string;
+  /** One line for the card. */
+  blurb: string;
+  group: RoomPresetGroup;
+  /** The named paper this room hangs, kept so the blurb and search can use it. */
+  paper: string;
+}
+
+/**
+ * The wall a room card and the shelf both end up wearing.
+ *
+ * Papers are referenced by NAME rather than spelled out as four axes, so a
+ * preset cannot quietly invent a paper that was never vetted — and so a paper
+ * that carries a tone or a nib brings them along. `getWallpaper` is total, but
+ * a typo would land on the bare wall silently, which is what
+ * `tests/room-presets.test.ts` exists to catch.
+ */
+function room(
+  id: string,
+  name: string,
+  blurb: string,
+  group: RoomPresetGroup,
+  theme: ThemeId,
+  build: BuildId,
+  pattern: PatternId,
+  paper: string,
+): RoomPreset {
+  return { id, name, blurb, group, theme, build, pattern, paper, wallpaper: getWallpaper(paper).spec };
+}
+
+/**
+ * Which classification a build's own mood words put it in.
+ *
+ * Used for exactly one entry — the house room, whose carpentry is whatever
+ * `DEFAULT_SHELF_DESIGN` currently is and therefore cannot be classified by
+ * hand. Writing "Quiet" next to it was true on the morning it was written and
+ * false by the afternoon, when the default moved to a scriptorium; a card
+ * filed under Quiet that is a toothed classical arcade reads as a bug.
+ *
+ * It doubles as the written-down relationship between `BuildTag` and these
+ * nine words, which was otherwise only in the roll script.
+ */
+const GROUP_FOR_BUILD_TAG: Readonly<Record<string, RoomPresetGroup>> = {
+  formal: 'Formal',
+  refined: 'Formal',
+  ornate: 'Grand',
+  fancy: 'Grand',
+  antique: 'Antique',
+  severe: 'Antique',
+  heavy: 'Antique',
+  cosy: 'Cosy',
+  whimsical: 'Storybook',
+  goofy: 'Storybook',
+  rustic: 'Rustic',
+  natural: 'Botanical',
+  airy: 'Botanical',
+  plain: 'Quiet',
+  modern: 'Quiet',
+  utilitarian: 'Quiet',
+};
+
+function groupForBuild(build: BuildId): RoomPresetGroup {
+  for (const tag of BUILDS[build].tags) {
+    const group = GROUP_FOR_BUILD_TAG[tag];
+    if (group !== undefined) return group;
+  }
+  return 'Quiet';
+}
+
+/* --------------------------- drawing a whole room ------------------------ */
+
+/**
+ * How much bigger than life the paper is drawn on a card.
+ *
+ * A card is ~148px wide and the real case is 1200 world px, so a wall drawn to
+ * true scale would be five-pixel motifs — honest, and useless, since a reader
+ * is looking at these cards precisely to see WHICH paper a preset hangs.
+ *
+ * This is the tile's size as a fraction of the card's short side, so a paper
+ * keeps its own scale relative to its neighbours (a petite pinstripe stays
+ * finer than a grand damask) while the whole family is magnified to where it
+ * reads. Started at 1.15 and came down to 0.85 by looking at the sheets from
+ * `scripts/probe-room-presets.mjs --mode=table`: at 1.15 the wall band showed
+ * a single enormous motif and read as a picture hung behind the case rather
+ * than as paper on it.
+ */
+const PAPER_ZOOM = 0.85;
+
+/** The case's share of the card. The rest is wall, and has to stay wall. */
+const CASE_SHARE_W = 0.73;
+const CASE_SHARE_H = 0.92;
+
+type Scratch = OffscreenCanvas | HTMLCanvasElement;
+
+/**
+ * Rendered wallpaper tiles, keyed by scheme AND by every axis of the spec.
+ *
+ * Deliberately TINY, and the reason is worth knowing before anyone raises it:
+ * a room card's tile is keyed on the paper AND the room's colours, and every
+ * preset brings its own colours, so two different preset cards essentially
+ * never share a tile. What this saves is the repeat — the same card drawn in
+ * the inline strip and again in the sheet, or redrawn after `designArt`'s FIFO
+ * evicted the finished tile. A big cache here would buy nothing and hold
+ * megabytes: one 768px tile is ~2.3MB of backing store.
+ */
+const PAPER_TILES = new Map<string, Scratch | null>();
+const MAX_PAPER_TILES = 8;
+
+function paperTile(spec: WallpaperSpec): Scratch | null {
+  const size = Math.max(8, Math.round(wallpaperTilePx(spec)));
+  // The module's OWN key function, not a hand-spelled copy of its axes. It
+  // already carries the live scheme (every colour in a tile is derived from
+  // it), every axis of the spec, the size, and the art revision — and it is
+  // the fourth place in this app to have spelled those out by hand and the
+  // fourth to have fallen behind them.
+  const key = wallpaperTileKey(spec, size);
+  const hit = PAPER_TILES.get(key);
+  if (hit !== undefined) return hit;
+
+  let tile: Scratch | null = null;
+  try {
+    if (typeof OffscreenCanvas !== 'undefined') {
+      tile = new OffscreenCanvas(size, size);
+    } else if (typeof document !== 'undefined') {
+      const el = document.createElement('canvas');
+      el.width = size;
+      el.height = size;
+      tile = el;
+    }
+    const ctx = (tile as OffscreenCanvas | null)?.getContext('2d') as FlatCtx | null;
+    if (ctx === null || ctx === undefined) tile = null;
+    else renderWallpaperTile(ctx, size, spec);
+  } catch {
+    tile = null;
+  }
+
+  PAPER_TILES.set(key, tile);
+  if (PAPER_TILES.size > MAX_PAPER_TILES) {
+    const oldest = PAPER_TILES.keys().next();
+    if (oldest.done !== true) PAPER_TILES.delete(oldest.value);
+  }
+  return tile;
+}
+
+/**
+ * The papered wall, full bleed.
+ *
+ * Through `createPattern` off one rendered tile, never by calling
+ * `renderWallpaperTile` repeatedly at an offset — see the note on
+ * `drawWallpaperCard`: the tile's own clip lands on a fractional pixel and
+ * draws a pale cross through the card. Any caller tiling this art has the same
+ * obligation.
+ */
+export function drawPaperWall(ctx: FlatCtx, w: number, h: number, spec: WallpaperSpec): void {
+  const tile = paperTile(spec);
+  const pattern = tile === null ? null : ctx.createPattern(tile as CanvasImageSource, 'repeat');
+  if (pattern === null) {
+    ctx.fillStyle = wallpaperColours(spec).ground;
+    ctx.fillRect(0, 0, w, h);
+    return;
+  }
+  const size = (tile as HTMLCanvasElement).width;
+  const k = Math.max(0.08, Math.min(1, (Math.min(w, h) * PAPER_ZOOM) / size));
+  pattern.setTransform({ a: k, b: 0, c: 0, d: k, e: 0, f: 0 });
+  ctx.fillStyle = pattern;
+  ctx.fillRect(0, 0, w, h);
+}
+
+/**
+ * A room, as one card: the paper on the wall, and the case standing against it.
+ *
+ * The case is drawn by `drawCaseCard` — the routine that draws every other case
+ * preview in the studio — with ONE change, and it is worth spelling out because
+ * it looks like a trick: the scheme handed in has a transparent `wall`. That
+ * field is read in exactly one place in the whole case drawing (`flatShelf.ts`
+ * fills the card's background with it), so a transparent value leaves the paper
+ * showing through and every other pixel identical. The alternative was to clip
+ * the case to its own silhouette, which means this file guessing the margins
+ * `drawCaseCard` uses internally — a 1.8px arithmetic clearance of exactly the
+ * kind this codebase has already shipped a bug for.
+ */
+export function drawRoomCard(ctx: FlatCtx, w: number, h: number, look: RoomLook): void {
+  const scheme = getTheme(look.theme).scheme as FlatScheme;
+
+  drawInScheme(scheme, () => drawPaperWall(ctx, w, h, look.wallpaper));
+
+  drawInScheme({ ...scheme, wall: 'rgba(0,0,0,0)' }, () => {
+    const caseW = w * CASE_SHARE_W;
+    const caseH = h * CASE_SHARE_H;
+    ctx.save();
+    ctx.translate(w - caseW, h - caseH);
+    drawCaseCard(ctx, caseW, caseH, CASE_SEED, { build: look.build, pattern: look.pattern });
+    ctx.restore();
+  });
+}
+
+/**
+ * The rooms, already decorated.
+ *
+ * ## How these were composed, because it is not by taste alone
+ *
+ * Each classification is a STEER — one mood word per axis, taken from the
+ * words the vocabularies already carry (`BuildTag`, `PatternSpec.tags`,
+ * `ThemeTag`, `WallpaperMood`). `scripts/probe-room-presets.mjs --mode=roll`
+ * applies that steer through `withMood`, rolls candidates, and draws them
+ * through `drawRoomCard`; what survived being LOOKED at is below. Neither half
+ * is optional — the dice found pairings nobody would have typed (a beehive
+ * case under a honeycomb paper), and the eye threw out most of what the dice
+ * offered (a gothic case in fairground pink).
+ *
+ * ## What the table is checked against
+ *
+ * Every build (52) and every timber pattern (50) appears at least once, so a
+ * reader who only ever presses preset cards still meets the whole carpentry
+ * vocabulary; no two presets share a paper; and no two are the same room. All
+ * three are pinned by `tests/room-presets.test.ts` — a preset list that
+ * quietly stopped covering the vocabulary would look exactly like one that
+ * still did.
+ *
+ * ## The house room
+ *
+ * `quiet.house` is DERIVED from the three defaults rather than spelled out.
+ * The room a fresh library opens in has to be a card the strip can show as
+ * pressed, and writing today's default into this table by hand would make it
+ * a second source of truth that goes stale the day somebody repoints one.
+ */
+export const ROOM_PRESETS: readonly RoomPreset[] = [
+  /* ------------------------------- Formal -------------------------------- */
+  room('formal.reading-room', 'The Reading Room', 'Walnut cabinet work and a wide drawing-room rule.',
+    'Formal', 'walnut', 'faceFrame', 'greekKey', 'pin-wide'),
+  room('formal.chambers', 'Chambers', 'Glazed barrister fronts under a broad regency stripe.',
+    'Formal', 'mahogany', 'barrister', 'beaded', 'stripe-regency'),
+  room('formal.athenaeum', 'Old Athenaeum', 'Beaded boards, scrolled brackets, and the house damask in sepia.',
+    'Formal', 'athenaeum', 'bookbinder', 'modillion', 'damask-library'),
+  room('formal.card-room', 'Card Room', 'Deep green panels and a cool herringbone, for long evenings.',
+    'Formal', 'cardroom', 'vestry', 'linenfold', 'herring-slate'),
+  room('formal.common-room', 'Common Room', 'A fumed oak arcade, fluted, under a running Greek key.',
+    'Formal', 'fumed', 'cloister', 'fluted', 'fret-meander'),
+  room('formal.blue-cabinet', 'Blue Cabinet', 'Brass straps and corner brackets against an Adam patera.',
+    'Formal', 'lapis', 'campaign', 'strapwork', 'medallion-adam'),
+
+  /* -------------------------------- Grand -------------------------------- */
+  room('grand.gilt-salon', 'Gilt Salon', 'Columns and egg-and-dart, under a damask carved in gold.',
+    'Grand', 'topaz', 'colonnade', 'eggDart', 'damask-gilt'),
+  room('grand.observatory', 'The Observatory', 'Turned uprights and finials, beneath a gilded chain of stars.',
+    'Grand', 'indigoroom', 'observatory', 'barleyTwist', 'const-astrolabe'),
+  room('grand.orangery', 'The Orangery', 'Round-headed bays and a scalloped cresting on a gilt arcade.',
+    'Grand', 'malachite', 'orangery', 'gadroon', 'arch-gilt'),
+  room('grand.state-room', 'State Room', 'A stepped, toothed cornice over a wall of gold paterae.',
+    'Grand', 'aubergine', 'scriptorium', 'guilloche', 'medallion-gilt'),
+  room('grand.curiosity', 'Cabinet of Curiosities', 'Compartments, pulls and finials on gilded scrollwork.',
+    'Grand', 'garnet', 'curiosity', 'marquetry', 'arab-gilt'),
+  room('grand.lacquer-room', 'The Lacquer Room', 'A geometric fret, and a gold grove on a cloth ground.',
+    'Grand', 'souk', 'chinoiserie', 'chineseFret', 'bamboo-lacquer'),
+
+  /* ------------------------------- Antique ------------------------------- */
+  room('antique.chapter-house', 'Chapter House', 'Pointed bays and battlements on a ruled chapel diaper.',
+    'Antique', 'ebonised', 'gothic', 'trefoil', 'diaper-chapel'),
+  room('antique.chantry', 'The Chantry', 'Trefoil heads, battlements, and a fleur-de-lys wall.',
+    'Antique', 'tulipwood', 'chapel', 'quatrefoil', 'fleur-lys'),
+  room('antique.refectory', 'Refectory', 'Ogee heads on heavy pegged timber, and a soft country toile.',
+    'Antique', 'orchard', 'refectory', 'adzed', 'toile-timber'),
+  room('antique.minster', 'The Minster', 'A gabled run over pointed bays, and low arches in stone.',
+    'Antique', 'slateroof', 'minster', 'dogtooth', 'arch-crypt'),
+  room('antique.counting-house', 'Counting House', 'Toothed boards over deep runs, on an illuminated ground.',
+    'Antique', 'bramble', 'mercantile', 'blindArcade', 'diaper-illumination'),
+  room('antique.lychgate', 'Lychgate', 'Strapped oak left out in the weather, and orchard pomegranates.',
+    'Antique', 'cedar', 'lychgate', 'billet', 'pom-orchard'),
+
+  /* -------------------------------- Quiet -------------------------------- */
+  room('quiet.house', 'The House Room', 'Where every new bookcase starts, before you change a thing.',
+    groupForBuild(DEFAULT_SHELF_DESIGN.build), DEFAULT_THEME_ID, DEFAULT_SHELF_DESIGN.build,
+    DEFAULT_SHELF_DESIGN.pattern, DEFAULT_WALLPAPER_ID),
+  /*
+   * The plainest room there is, and it is spelled out rather than left to the
+   * house room above. The house room follows `DEFAULT_SHELF_DESIGN`, which
+   * moved from a plank case to a scriptorium while this table was being
+   * written — taking the only plank preset with it, and with it the guarantee
+   * that a reader who only presses preset cards can reach every carpentry.
+   */
+  room('quiet.plank', 'Plain Plank', 'A board, two uprights, and a finely woven paper behind them.',
+    'Quiet', 'heather', 'plank', 'none', 'grass-reed'),
+  room('quiet.atelier', 'Atelier', 'Thin uprights, thin boards, and a wall with nothing on it.',
+    'Quiet', 'bone', 'atelier', 'cockBead', 'plain-parchment'),
+  room('quiet.limed-study', 'Limed Study', 'Planed arrises, close ruling, and no other decisions.',
+    'Quiet', 'limed', 'shaker', 'stringing', 'pin-study'),
+  room('quiet.snowline', 'Snowline', 'Slim rails, and small even shells drifting up the wall.',
+    'Quiet', 'snowline', 'ladder', 'reeded', 'scallop-shell'),
+  room('quiet.drawing-office', 'Drawing Office', 'A fine grid of cubbies, and two crossing rules.',
+    'Quiet', 'hallway', 'pigeonhole', 'chequer', 'tatter-shirting'),
+  room('quiet.smoke-room', 'Smoke Room', 'Blue-grey boards with a ledge, under watered silk.',
+    'Quiet', 'smoke', 'schoolroom', 'oyster', 'moire-watered'),
+
+  /* --------------------------------- Cosy -------------------------------- */
+  room('cosy.parlour', 'The Good Parlour', 'Nulled boards, a reeded cornice, and full-face chintz roses.',
+    'Cosy', 'plaster', 'parlour', 'bobbin', 'rose-chintz'),
+  room('cosy.tea-room', 'Tea Room', 'Turned spindles over every bay, and a sun-faded awning.',
+    'Cosy', 'clotted', 'tearoom', 'beadReel', 'awning-tearoom'),
+  room('cosy.scullery', 'Scullery', 'A fretted pelmet on every shelf, and a kitchen gingham.',
+    'Cosy', 'pantry', 'valance', 'cane', 'gingham-kitchen'),
+  room('cosy.inglenook', 'Inglenook', 'A cornice that will not lie straight, and a country check.',
+    'Cosy', 'beech', 'cottage', 'lunette', 'tatter-country'),
+  room('cosy.lantern', 'Paper Lantern', 'Little arched holes behind the books, and a cottage sprig.',
+    'Cosy', 'lantern', 'dovecote', 'dotPunch', 'sprig-cottage'),
+  room('cosy.hearthside', 'Hearthside', 'Turned posts, pegged boards, and knitted lozenges.',
+    'Cosy', 'cherry', 'tavern', 'chipCarve', 'argyle-lambswool'),
+
+  /* ------------------------------ Botanical ------------------------------ */
+  room('botanical.conservatory', 'The Conservatory', 'Slender glazing bars against a garden trellis.',
+    'Botanical', 'duckegg', 'conservatory', 'lattice', 'trellis-garden'),
+  room('botanical.fernery', 'The Fernery', 'Round-headed bays, leaf and dart, and hothouse fronds.',
+    'Botanical', 'forest', 'arch', 'waterLeaf', 'fern-hothouse'),
+  room('botanical.potting-shed', 'Potting Shed', 'Ladder rails, sawn boards, one vine crossing the wall.',
+    'Botanical', 'lichen', 'hayloft', 'sawn', 'vine-trailing'),
+  room('botanical.tea-house', 'The Tea House', 'Stepped eaves and spindles, with canes and nodes behind.',
+    'Botanical', 'ash', 'pagoda', 'lozenge', 'bamboo-grove'),
+  room('botanical.apiary', 'The Apiary', 'Rounded cells in courses, and honey in one comb of five.',
+    'Botanical', 'pistachio', 'beehive', 'burl', 'honey-comb'),
+  room('botanical.herbarium', 'Herbarium', 'Small compartments, and mossy branches mirrored row by row.',
+    'Botanical', 'laurel', 'apothecary', 'diaper', 'laurel-victory'),
+
+  /* ------------------------------- Coastal ------------------------------- */
+  room('coastal.harbour', 'Harbour Light', 'Beadboard and spindles, under two strands twisting in gold.',
+    'Coastal', 'harbour', 'seaside', 'rope', 'rope-guilloche'),
+  room('coastal.driftwood', 'Driftwood', 'Every edge worn round, against a woven natural paper.',
+    'Coastal', 'driftwood', 'driftwood', 'wormy', 'grass-sisal'),
+  room('coastal.boathouse', 'Boathouse', 'Strapped uprights and a plate rail, and mattress ticking.',
+    'Coastal', 'chalkblue', 'stable', 'notched', 'ticking-mattress'),
+  room('coastal.tide-pool', 'Tide Pool', 'Round uprights and braced bays, under indigo wave crests.',
+    'Coastal', 'turquoise', 'cabin', 'gouged', 'scallop-seigaiha'),
+  room('coastal.stern-gallery', 'Stern Gallery', 'A carved wave along the top, and deep water behind it.',
+    'Coastal', 'reef', 'galleon', 'vitruvian', 'serp-lagoon'),
+  room('coastal.sea-fret', 'Sea Fret', 'Banded and bossed, with shells drawn softly in the haze.',
+    'Coastal', 'seafret', 'steamer', 'herringbone', 'scallop-tide'),
+
+  /* ------------------------------ Storybook ------------------------------ */
+  room('storybook.toy-box', 'The Toy Box', 'Fat rounded boards, a big brass knob, and spots in book cloth.',
+    'Storybook', 'watermelon', 'toybox', 'sunburst', 'polka-cloth'),
+  room('storybook.carnival', 'Carnival', 'A sawtooth awning, brass buttons, and harlequin lozenges.',
+    'Storybook', 'carousel', 'carnival', 'chevron', 'harlequin-carnival'),
+  room('storybook.gingerbread', 'Gingerbread', 'Scallops everywhere, and pinwheels turning on the wall.',
+    'Storybook', 'cornflower', 'gingerbread', 'cableFlute', 'pinwheel-nursery'),
+  room('storybook.treehouse', 'Treehouse', 'Rungs, braces and pegs, under a crescent moon and star.',
+    'Storybook', 'violetroom', 'treehouse', 'tiled', 'moon-nursery'),
+  room('storybook.windmill', 'Windmill', 'Braced bays and a sawtooth crest, with a little sun above.',
+    'Storybook', 'marigold', 'windmill', 'bookMatch', 'sun-marigold'),
+  room('storybook.rookery', 'Rookery', 'Too many small holes, and bees sown small across the wall.',
+    'Storybook', 'lemongrove', 'rookery', 'cube', 'bee-skep'),
+
+  /* -------------------------------- Rustic ------------------------------- */
+  room('rustic.crate-stack', 'Crate Stack', 'Stacked packing crates, and slats woven over and under.',
+    'Rustic', 'teak', 'crate', 'crossband', 'basket-rush'),
+  room('rustic.slab', 'Rustic Slab', 'Thick pegged boards, planed once, over pale linen ticking.',
+    'Rustic', 'birch', 'slab', 'adzed', 'ticking-linen'),
+  room('rustic.sawmill', 'Sawmill', 'Toothed boards and a sawtooth crest, and rows of flame stitch.',
+    'Rustic', 'pine', 'sawmill', 'sawn', 'flame-bargello'),
+  room('rustic.workbench', 'Workbench', 'Strapped and braced, with one big comb of a wall behind it.',
+    'Rustic', 'apothecary', 'workbench', 'strapwork', 'honey-grand'),
+  room('rustic.tavern', 'Tavern', 'Turned posts and spindles over every bay, and a picnic check.',
+    'Rustic', 'tangerine', 'tavern', 'bobbin', 'gingham-picnic'),
+  room('rustic.country-store', 'Country Store', 'Counter-shop carpentry, and the weaver’s fruit behind it.',
+    'Rustic', 'lacquerred', 'mercantile', 'dentil', 'pom-velvet'),
+];
+
+/** Look up a preset by id. Null rather than a fallback — the caller decides. */
+export function getRoomPreset(id: string): RoomPreset | null {
+  return ROOM_PRESETS.find((p) => p.id === id) ?? null;
+}
+
+/**
+ * Which preset the room is currently wearing, or '' for a room of your own.
+ *
+ * Compared through `wallpaperAxisKey` rather than field by field, for the same
+ * reason `LibraryStudio.sameSpec` is: a spec that grows an axis leaves a
+ * hand-spelled comparison quietly stale, and this answer decides which card the
+ * strip shows as chosen.
+ */
+export function matchRoomPreset(look: RoomLook): string {
+  const wall = wallpaperAxisKey(look.wallpaper);
+  return (
+    ROOM_PRESETS.find(
+      (p) =>
+        p.theme === look.theme &&
+        p.build === look.build &&
+        p.pattern === look.pattern &&
+        wallpaperAxisKey(p.wallpaper) === wall,
+    )?.id ?? ''
+  );
+}
+
+/** The presets, as cards — each one painted in ITS OWN colours and paper. */
+export function roomPresetOptions(): readonly PickerOption[] {
+  return ROOM_PRESETS.map((preset) => ({
+    id: preset.id,
+    name: preset.name,
+    blurb: preset.blurb,
+    group: preset.group,
+    // Every axis the drawing varies on. The theme has to be here because the
+    // card paints itself in a scheme the tile cache knows nothing about (see
+    // `drawInScheme`), and the paper has to be here through `wallpaperAxisKey`
+    // because two papers can differ in only a tone or a nib.
+    artKey: `preset|${preset.theme}|${preset.build}.${preset.pattern}|${wallpaperAxisKey(preset.wallpaper)}`,
+    terms: `${preset.group} ${getTheme(preset.theme).name} ${BUILDS[preset.build].name} ${
+      PATTERNS[preset.pattern].name
+    } ${getWallpaper(preset.paper).name} ${getTheme(preset.theme).tags.join(' ')}`,
+    draw: (ctx: FlatCtx, w: number, h: number) => drawRoomCard(ctx, w, h, preset),
+  }));
+}
 
 /* ------------------------------- the case -------------------------------- */
 

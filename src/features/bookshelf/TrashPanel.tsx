@@ -8,6 +8,9 @@
  * after the drawer went.) Hand-drawn aged-paper card listing crumpled books
  * with per-book restore, and an "empty" action guarded by a two-step confirm
  * (permanent delete).
+ *
+ * The tooltip layer it leans on is mounted by BookshelfWorld, which is the
+ * only thing that opens this card.
  */
 
 import {
@@ -114,7 +117,16 @@ export default function TrashPanel(props: TrashPanelProps): JSX.Element {
           <For each={books() ?? []}>
             {(book) => (
               <li class="shelf-trash__row">
-                <span class="shelf-trash__name" title={book.title}>
+                {/* Long names clip in this column; the app's own tooltip
+                    (views/Tooltip.tsx) gives the whole one back — and only
+                    then, which is what `-clipped` means. The card hugs the
+                    left edge, so it opens to the right. */}
+                <span
+                  class="shelf-trash__name"
+                  data-tooltip={book.title}
+                  data-tooltip-side="right"
+                  data-tooltip-clipped=""
+                >
                   {book.title}
                 </span>
                 <span class="shelf-trash__when">

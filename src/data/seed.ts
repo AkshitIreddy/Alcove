@@ -75,25 +75,45 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * This is the first object a reader ever sees on the shelf, and it was warm
  * amber cloth with whatever the seed happened to give it — which read as the
  * default it was. It is the app's calling card, so it is dressed like one:
- * plum leather, four raised cords with gilt rules either side, wrapped
- * endbands, a gilt title plate and gilt edges, in quarto so it has some
+ * claret leather, four raised cords with gilt rules either side, wrapped
+ * endbands, a gilt title plate and gilt edges, quarto and stout so it has some
  * presence beside a pocket paperback.
  *
  * ## `pigment` is not the colour its name says
  *
- * `PIGMENT_LABELS` lists twenty names and choosing one by name is a trap: the
- * flat renderer has exactly SIX cloths (terracotta, slate, plum, ochre, sage,
- * moss) and `spines.clothForPalette` folds all twenty onto those. Oxblood,
- * rust and clay all land on terracotta — so an "oxblood" binding paints the
- * same colour as every unstyled book on the shelf. This was authored as
- * oxblood first and shipped terracotta. Neither the compiler nor the test
- * caught it; a screenshot did.
+ * Choosing one by name is a trap. `PIGMENT_LABELS` and `flat.CLOTH_SPECS` are
+ * two independently ordered tables and `spines.clothForPalette` folds one onto
+ * the other; twenty-six of the fifty pigments now land on a cloth of the same
+ * name and the other twenty-four land on the nearest one there is. This
+ * binding was authored as *oxblood* when the fold still sent oxblood, rust and
+ * clay all to terracotta, and it shipped terracotta. Neither the compiler nor
+ * a test caught it; a screenshot did. So every candidate below was rendered on
+ * the real shelf before it was written down (`shots-now/welcome-binding.mjs`,
+ * `shots-now/defaults/board-pigment3.png`).
  *
- * Plum is chosen because it survives the fold as itself, and because the
- * default room is Verdigris Library — a blue-green case on warm plaster.
- * Against that wall sage and moss vanish, slate is too near the case, and
- * terracotta is what an unstyled book already wears. Plum is the one that
- * reads as a book somebody chose.
+ * ## Why claret
+ *
+ * Pigment 20 is captioned *Burgundy* and paints cloth **Claret** `#a44c60` —
+ * verified, not assumed. Five deep candidates were photographed against the
+ * default room, and claret won for reasons the names would not have given:
+ *
+ *  - the room is Verdigris Library, a blue-green case, so a red is the
+ *    complement and the book separates from the case at any zoom. `forest`
+ *    disappeared into the timber, `navy` went quiet against it;
+ *  - **oxblood now folds correctly, and that is exactly why it is wrong here**
+ *    — `#ae4e40` is one hop from the `oxblood` cloth in Verdigris's own six,
+ *    so the calling card would have worn what a random new book wears. This is
+ *    the same trap as before, arriving from the opposite direction;
+ *  - `plum` (what this shipped previously) survives the fold as itself but is
+ *    a muted mauve: beside gilt bands and a gilt plate it reads dusty rather
+ *    than bound. Claret is the same family with the value a fine binding has.
+ *
+ * `thickness` is pinned, which the seed did not do before. It defaults from
+ * page count, and five pages gave a sliver whose raised bands and title plate
+ * had no room to be anything; 44 world px is the `stout` class, and it is what
+ * makes the object read as a bound volume rather than a coloured stripe
+ * (`shots-now/defaults/board-thickness.png`). `format` stays quarto — folio
+ * measurably changed nothing on screen.
  *
  * Wear is low but not zero. A pristine 0 makes an object look like a render;
  * a little softening at the corners is what makes it look like a book.
@@ -104,7 +124,9 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  */
 export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   material: 'leather',
-  pigment: 4, // Plum — see the note above on what a pigment actually becomes
+  // Captioned "Burgundy"; paints cloth Claret #a44c60. See the note above —
+  // the caption and the cloth are two tables, and only a render settles it.
+  pigment: 20,
   hueJitter: 0,
   raisedBands: 4,
   bandGilt: true,
@@ -116,6 +138,7 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   wear: 0.1,
   edge: 'gilt',
   format: 'quarto',
+  thickness: 44, // 'stout' — a five-page book would otherwise be a sliver
 };
 
 /**
@@ -174,7 +197,7 @@ Click anywhere below the ink and just start typing. Everything autosaves as you 
 :::
 
 - The **shelf** goes on forever — drag to pan, scroll to zoom
-- **Click a spine** and the book comes out and rests in front of the case — then *read it*, or put it back
+- **Click a spine** and the book comes off the shelf and opens. Wrong one? Press \`Esc\` and it goes back
 - Use the **arrow keys** to flip through a book's pages
 
 > Flip to the next page to meet the editor → {washi=top}

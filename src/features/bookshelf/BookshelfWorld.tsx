@@ -41,6 +41,7 @@ import {
 } from '../../data/books';
 import type { Book } from '../../data/types';
 import { play } from '../../sound/engine';
+import Tooltips from '../../views/Tooltip';
 import ShelfStudio from '../../views/rail/ShelfStudio';
 import { floorNameSync, saveFloorName } from './floorNames';
 import PulledBookOverlay from './PulledBookOverlay';
@@ -552,6 +553,10 @@ export default function BookshelfWorld(): JSX.Element {
 
   return (
     <div class="shelf-root">
+      {/* The app's own tooltip layer (views/Tooltip.tsx). It parks itself on
+          <body>, so it is safe to ask for from more than one view — and the
+          shelf is the first view a reader ever sees. */}
+      <Tooltips />
       {/* ==== the room itself — the half a side panel pushes aside ======== */}
       <div class="shelf-stage" ref={host}>
         {/* ---- the dashed "put a book here" outline, standing on the plank -- */}
@@ -569,7 +574,10 @@ export default function BookshelfWorld(): JSX.Element {
                 height: `${box().height}px`,
               }}
               aria-label={`Add a book to floor ${(addSpot()?.floor ?? 0) + 1}`}
-              title="Put a new book here"
+              // The slot stands mid-case, so the bubble goes ABOVE it rather
+              // than beside it, where it would cover the next book along.
+              data-tooltip="Put a new book here"
+              data-tooltip-side="top"
               onClick={() => addBook(addSpot()?.floor)}
             >
               <span class="shelf-addslot__band" aria-hidden="true" />
@@ -792,7 +800,8 @@ export default function BookshelfWorld(): JSX.Element {
               class="shelf-dock__btn is-primary"
               data-shelf-dock="new-book"
               aria-label="New book"
-              title="Put a new book on this floor"
+              data-tooltip="Put a new book on this floor"
+              data-tooltip-side="right"
               onClick={() => addBook(addSpot()?.floor)}
             >
               <NewBookIcon />
@@ -806,7 +815,14 @@ export default function BookshelfWorld(): JSX.Element {
               data-shelf-dock="studio"
               aria-label="Library studio"
               aria-pressed={dockPanel() === 'studio'}
-              title="Pick the room, the wall, the growing things"
+              // Suppressed while the sheet is open: the sheet lands where the
+              // bubble would, and it carries its own title.
+              data-tooltip={
+                dockPanel() === 'studio'
+                  ? undefined
+                  : 'Pick the room, the wall, the growing things'
+              }
+              data-tooltip-side="right"
               onClick={(e) => toggleDockPanel('studio', e.currentTarget)}
             >
               <PaletteIcon />
@@ -817,7 +833,8 @@ export default function BookshelfWorld(): JSX.Element {
               class="shelf-dock__btn"
               data-shelf-dock="add-floor"
               aria-label="Add a floor"
-              title="Grow the case downward"
+              data-tooltip="Grow the case downward"
+              data-tooltip-side="right"
               onClick={() => world?.addFloor()}
             >
               <AddFloorIcon />
@@ -833,7 +850,12 @@ export default function BookshelfWorld(): JSX.Element {
               data-shelf-dock="trash"
               aria-label="Trash"
               aria-pressed={dockPanel() === 'trash'}
-              title="Books you crumpled — restore or empty"
+              data-tooltip={
+                dockPanel() === 'trash'
+                  ? undefined
+                  : 'Books you crumpled — restore or empty'
+              }
+              data-tooltip-side="right"
               onClick={(e) => toggleDockPanel('trash', e.currentTarget)}
             >
               <TrashIcon />
@@ -842,12 +864,16 @@ export default function BookshelfWorld(): JSX.Element {
           </div>
         </div>
 
+        {/* The pill sits on the bottom edge, so every bubble here opens
+            UPWARD, and each shortcut rides a key cap instead of a bracket. */}
         <div class="shelf-zoom-pill" role="toolbar" aria-label="Zoom controls">
           <button
             type="button"
             class="shelf-zoom-pill__btn"
             aria-label="Zoom out"
-            title="Zoom out (-)"
+            data-tooltip="Zoom out"
+            data-tooltip-side="top"
+            data-tooltip-key="−"
             onClick={() => world?.zoomOut()}
           >
             −
@@ -856,7 +882,9 @@ export default function BookshelfWorld(): JSX.Element {
             type="button"
             class="shelf-zoom-pill__pct"
             aria-label="Reset zoom to 100%"
-            title="Reset zoom (0)"
+            data-tooltip="Back to 100%"
+            data-tooltip-side="top"
+            data-tooltip-key="0"
             onClick={() => world?.zoomReset()}
           >
             {zoomPct()}%
@@ -865,7 +893,9 @@ export default function BookshelfWorld(): JSX.Element {
             type="button"
             class="shelf-zoom-pill__btn"
             aria-label="Zoom in"
-            title="Zoom in (+)"
+            data-tooltip="Zoom in"
+            data-tooltip-side="top"
+            data-tooltip-key="+"
             onClick={() => world?.zoomIn()}
           >
             +
@@ -875,7 +905,8 @@ export default function BookshelfWorld(): JSX.Element {
             type="button"
             class="shelf-zoom-pill__fit"
             aria-label="Fit bookcase to window"
-            title="Fit the whole case"
+            data-tooltip="Fit the whole case in the window"
+            data-tooltip-side="top"
             onClick={() => world?.zoomFit()}
           >
             fit

@@ -1,0 +1,154 @@
+/**
+ * src/sound/soundSetPrefs.ts — where the reader's chosen sound set lives.
+ *
+ * Its own key in the `settings` table, exactly like `data/designPrefs.ts`
+ * keeps the studio's vocabularies out of `data/settings.ts`. The reason is the
+ * same one: `data/settings.ts` validates its blob field by field, so a value
+ * it does not know about is silently dropped on the next read, and widening a
+ * validator this module does not own to carry one string is the wrong trade.
+ *
+ * It also keeps the layering honest. `engine.ts` documents that it never
+ * imports `src/data`; this module is the one place that touches both, and it
+ * only ever pushes one way — store → `setSoundSet()`.
+ *
+ * Every read is total: junk out of SQLite gives the house set, never a throw
+ * and never an unvoiced engine.
+ */
+
+import { createEffect, createRoot, createSignal, on } from 'solid-js';
+import { getDb } from '../data/db';
+import { setSoundSet } from './engine';
+import {
+  DEFAULT_SOUND_SET_ID,
+  resolveSoundSetId,
+  type SoundSetId,
+} from './soundSets';
+
+const SETTINGS_KEY = 'soundSet';
+
+const [current, setCurrent] = createSignal<SoundSetId>(DEFAULT_SOUND_SET_ID);
+
+let loadPromise: Promise<SoundSetId> | null = null;
+
+/** Reactive read — tracks inside a Solid computation. */
+export function activeSoundSetId(): SoundSetId {
+  return current();
+}
+
+/** Detached read, for non-Solid callers (QA bridges, the preview helper). */
+export function snapshotSoundSetId(): SoundSetId {
+  return current();
+}
+
+/**
+ * Read the stored choice once and push it into the engine.
+ *
+ * Idempotent, and safe to call from anywhere that runs at start-up: it is
+ * kicked from `installUiClickSounds()` (which App.tsx already calls on mount)
+ * and again from the settings sheet, because a reader who never opens
+ * settings must still hear the set they chose last week.
+ */
+export function loadSoundSet(): Promise<SoundSetId> {
+  loadPromise ??= (async () => {
+    let stored: unknown = null;
+    try {
+      const db = await getDb();
+      const rows = await db.select<Array<{ value: string }>>(
+        'SELECT value FROM settings WHERE key = $1 LIMIT 1',
+        [SETTINGS_KEY],
+      );
+      stored = rows[0]?.value ?? null;
+    } catch {
+      // No row, no table, no database: the house set is a fine answer.
+    }
+    const id = resolveSoundSetId(parseStored(stored));
+    setCurrent(id);
+    setSoundSet(id);
+    return id;
+  })();
+  return loadPromise;
+}
+
+/**
+ * The stored value is a bare id, but tolerate a JSON-wrapped one: an earlier
+ * hand-set QA value or a future blob shape should degrade to the house set
+ * rather than being read as a nonsense id.
+ */
+function parseStored(raw: unknown): unknown {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('"')) return trimmed;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return (parsed as Record<string, unknown>).set;
+    }
+  } catch {
+    // Not JSON after all — fall through to the house set.
+  }
+  return null;
+}
+
+/**
+ * Choose a set. Optimistic: the engine and the picker move on the frame the
+ * reader clicked, and the write lands afterwards — the same bargain
+ * `saveRoomDesign` makes, for the same reason (a set that forgets itself
+ * beats a click that waits on SQLite).
+ */
+export async function saveSoundSet(id: SoundSetId | string): Promise<SoundSetId> {
+  const resolved = resolveSoundSetId(id);
+  await loadSoundSet();
+  setCurrent(resolved);
+  setSoundSet(resolved);
+  try {
+    const db = await getDb();
+    await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)', [
+      SETTINGS_KEY,
+      resolved,
+    ]);
+  } catch {
+    // Best effort, like every other keyed preference in this app.
+  }
+  return resolved;
+}
+
+/** Subscribe from non-Solid code. Fires immediately, then on every change. */
+export function subscribeSoundSet(listener: (id: SoundSetId) => void): () => void {
+  return createRoot((dispose) => {
+    createEffect(on(current, (id) => listener(id)));
+    return dispose;
+  });
+}
+
+/** Test seam: forget the load so a fresh database is read again. */
+export function resetSoundSetPrefsForTests(): void {
+  loadPromise = null;
+  setCurrent(DEFAULT_SOUND_SET_ID);
+  setSoundSet(DEFAULT_SOUND_SET_ID);
+}
+
+/* --------------------------------- QA bridge ------------------------------- */
+
+/**
+ * The bridge a probe should drive, handed out from the module that owns the
+ * write path. `save` goes through the store, so what it asserts is the
+ * APPLIED state and not merely what was persisted.
+ */
+declare global {
+  interface Window {
+    __nbSoundSets?: {
+      get: () => SoundSetId;
+      save: (id: string) => Promise<SoundSetId>;
+      load: () => Promise<SoundSetId>;
+    };
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.__nbSoundSets = {
+    get: snapshotSoundSetId,
+    save: saveSoundSet,
+    load: loadSoundSet,
+  };
+}

@@ -182,7 +182,10 @@ const fixtureDoc: PageDoc = {
     },
     {
       type: 'callout',
-      attrs: { id: 'b_call1', icon: 'leaf', tint: 'moss', ...FX },
+      // `tintHex` is null on a NAMED tint and holds the reader's own colour
+      // when `tint` is `custom` — both spellings are legal in a document, and
+      // the round-trip has to carry the key either way.
+      attrs: { id: 'b_call1', icon: 'leaf', tint: 'moss', tintHex: null, ...FX },
       content: [
         {
           type: 'paragraph',

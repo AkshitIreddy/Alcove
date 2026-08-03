@@ -34,6 +34,14 @@
  *    the editor accepts; the script domain stays small on purpose.
  *  - **Everything is searchable.** The shelves are for browsing; the search
  *    box is for when you already know the word.
+ *  - **A shelf is not a heap.** "tape & trim" is eight vocabularies, not one:
+ *    fifty tapes, fifty washis, fifty lifts, fifty frames, fifty papers, fifty
+ *    underlines, fifty tints and the two tilts. They used to arrive as one
+ *    undivided run of 352 tiles, so a reader who scrolled past the tapes had no
+ *    way to know the frames existed. Each axis is now its own captioned run,
+ *    capped at `CAP` with the real remaining count on the way in — which is
+ *    what the reader asked for, and also what stops one panel open from
+ *    building 557 tiles and three thousand DOM nodes.
  */
 import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { NodeSelection } from '@tiptap/pm/state';
@@ -44,6 +52,9 @@ import type { CalloutTint } from '../../editor/nodes/callout';
 import { SLASH_COMMANDS, fuzzyScore, type SlashCommand } from '../../editor/slash/registry';
 import { EFFECT_AXES, type EffectAxis } from '../../editor/effects/vocabulary';
 import UserStickersSection from '../../features/templates/UserStickersSection';
+// The studio's strip worked this out first; there is one implementation of
+// "show a head, offer the rest" and this is a customer of it, not a copy.
+import { CAP, Capped } from './DesignStrip';
 import '../../styles/catalogue.css';
 
 /* ========================================================================== *
@@ -84,6 +95,14 @@ interface CatalogueEntry {
   readonly id: string;
   readonly label: string;
   readonly shelf: ShelfId;
+  /**
+   * The run within the shelf this belongs to — an axis name, "tape", "ink".
+   * Omitted for the things that are simply themselves: a stamp is not one of
+   * fifty stamps. Every entry with a group gets its own captioned, capped run.
+   */
+  readonly group?: string;
+  /** One line under the group heading, the axis's own words. */
+  readonly groupBlurb?: string;
   /** Extra words the search should match ("post-it" finds the sticky note). */
   readonly keywords: readonly string[];
   /** A tiny picture of the thing, drawn in its own idiom where one exists. */
@@ -145,6 +164,9 @@ interface EffectSpec {
   readonly value: string | number;
   readonly label: string;
   readonly shelf: ShelfId;
+  /** The axis's own heading — `EffectAxis.label`, never re-worded here. */
+  readonly group: string;
+  readonly groupBlurb: string;
   readonly keywords?: readonly string[];
 }
 
@@ -169,13 +191,35 @@ function enumEffects(axis: EffectAxis): EffectSpec[] {
     value: entry.value,
     label: entry.label,
     shelf,
+    // Straight off the axis. `EffectAxis.label` is documented as "heading for
+    // the axis inside its shelf" — this is the shelf, and this is the heading.
+    group: axis.label,
+    groupBlurb: axis.blurb,
     keywords: [axis.key, entry.value, axis.label, ...entry.tags],
   }));
 }
 
+const TILT_BLURB = 'lean the whole block off square';
+
 const EFFECTS: readonly EffectSpec[] = [
-  { key: 'rotate', value: -2, label: 'tilt left', shelf: 'trim', keywords: ['rotate', 'tilt'] },
-  { key: 'rotate', value: 2, label: 'tilt right', shelf: 'trim', keywords: ['rotate', 'tilt'] },
+  {
+    key: 'rotate',
+    value: -2,
+    label: 'tilt left',
+    shelf: 'trim',
+    group: 'tilt',
+    groupBlurb: TILT_BLURB,
+    keywords: ['rotate', 'tilt'],
+  },
+  {
+    key: 'rotate',
+    value: 2,
+    label: 'tilt right',
+    shelf: 'trim',
+    group: 'tilt',
+    groupBlurb: TILT_BLURB,
+    keywords: ['rotate', 'tilt'],
+  },
   ...EFFECT_AXES.flatMap(enumEffects),
 ];
 
@@ -233,6 +277,14 @@ function topBlockPos(): { pos: number; attrs: Record<string, unknown> } | null {
   const node = editor.state.doc.nodeAt(pos);
   if (!node) return null;
   return { pos, attrs: node.attrs as Record<string, unknown> };
+}
+
+/** One captioned, capped run of tiles inside a shelf. */
+interface CatalogueRun {
+  /** The axis's heading, or '' for the shelf's own ungrouped things. */
+  readonly name: string;
+  readonly blurb: string;
+  readonly items: CatalogueEntry[];
 }
 
 /** A slash command's icon as a catalogue tile picture. */
@@ -360,6 +412,8 @@ export default function CataloguePanel(): JSX.Element {
         id: `fx-${spec.key}-${String(spec.value)}`,
         label: spec.label,
         shelf: spec.shelf,
+        group: spec.group,
+        groupBlurb: spec.groupBlurb,
         keywords: spec.keywords ?? [spec.key],
         art: effectArt(spec),
         pressed: () => isApplied(spec),
@@ -414,43 +468,79 @@ export default function CataloguePanel(): JSX.Element {
 
   const searching = (): boolean => query().trim() !== '';
 
+  /**
+   * One shelf, split into its runs.
+   *
+   * Gathered by NAME rather than by consecutive block, for the same reason
+   * DesignPicker gathers its groups that way: an ordering that is nearly but
+   * not quite sorted prints the same heading twice with cards in between, and
+   * that reads as a bug. The ungrouped run keeps the empty name and therefore
+   * keeps its place — for "paper & cards" it is the whole shelf, and for
+   * "stickers" it is the fifty doodles.
+   *
+   * Built per shelf rather than once for everything, because the shelves are
+   * rendered independently and a shared index would be a second thing to keep
+   * in step with `visible()`.
+   */
+  const runsOn = (shelfId: ShelfId): readonly CatalogueRun[] => {
+    const runs: CatalogueRun[] = [];
+    const byName = new Map<string, CatalogueRun>();
+    for (const entry of visible()) {
+      if (entry.shelf !== shelfId) continue;
+      const name = entry.group ?? '';
+      let run = byName.get(name);
+      if (run === undefined) {
+        run = { name, blurb: entry.groupBlurb ?? '', items: [] };
+        byName.set(name, run);
+        runs.push(run);
+      }
+      run.items.push(entry);
+    }
+    return runs;
+  };
+
   return (
     <div class="nb-catalogue">
-      <div class="nb-cat-search">
-        <input
-          type="search"
-          class="nb-cat-search-input"
-          placeholder="search the catalogue…"
-          aria-label="Search the catalogue"
-          value={query()}
-          onInput={(e) => setQuery(e.currentTarget.value)}
-        />
-      </div>
-
-      <Show when={!searching()}>
-        <div class="nb-cat-shelves" role="group" aria-label="Shelves">
-          <button
-            type="button"
-            class="nb-chip"
-            aria-pressed={shelf() === null}
-            onClick={() => setShelf(null)}
-          >
-            everything
-          </button>
-          <For each={SHELVES}>
-            {(s) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={shelf() === s.id}
-                onClick={() => setShelf(shelf() === s.id ? null : s.id)}
-              >
-                {s.label}
-              </button>
-            )}
-          </For>
+      {/* Search AND the shelf tabs, in one block that stays put. They are how
+          you get anywhere else in the drawer, and losing them four hundred
+          pixels down a shelf is the same complaint as losing a back button. */}
+      <div class="nb-cat-head nb-sheet-head">
+        <div class="nb-cat-search">
+          <input
+            type="search"
+            class="nb-cat-search-input"
+            placeholder="search the catalogue…"
+            aria-label="Search the catalogue"
+            value={query()}
+            onInput={(e) => setQuery(e.currentTarget.value)}
+          />
         </div>
-      </Show>
+
+        <Show when={!searching()}>
+          <div class="nb-cat-shelves" role="group" aria-label="Shelves">
+            <button
+              type="button"
+              class="nb-chip"
+              aria-pressed={shelf() === null}
+              onClick={() => setShelf(null)}
+            >
+              everything
+            </button>
+            <For each={SHELVES}>
+              {(s) => (
+                <button
+                  type="button"
+                  class="nb-chip"
+                  aria-pressed={shelf() === s.id}
+                  onClick={() => setShelf(shelf() === s.id ? null : s.id)}
+                >
+                  {s.label}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
 
       <Show
         when={visible().length > 0}
@@ -466,23 +556,54 @@ export default function CataloguePanel(): JSX.Element {
               <h3 class="nb-panel-section-title">
                 {s.label} <em class="nb-panel-row-hint">{s.blurb}</em>
               </h3>
-              <div class="nb-cat-grid" role="group" aria-label={s.label}>
-                <For each={visible().filter((e) => e.shelf === s.id)}>
-                  {(entry) => (
-                    <button
-                      type="button"
-                      class="nb-cat-item"
-                      data-entry={entry.id}
-                      aria-pressed={entry.pressed?.() ?? undefined}
-                      classList={{ 'is-on': entry.pressed?.() ?? false }}
-                      onClick={() => entry.run()}
+              <For each={runsOn(s.id)}>
+                {(run) => (
+                  <>
+                    <Show when={run.name !== ''}>
+                      <h4 class="nb-cat-run-title">
+                        {run.name}
+                        <span class="nb-cat-run-count">{run.items.length}</span>
+                        <em class="nb-cat-run-blurb">{run.blurb}</em>
+                      </h4>
+                    </Show>
+                    <div
+                      class="nb-cat-grid"
+                      role="group"
+                      aria-label={run.name === '' ? s.label : `${s.label}: ${run.name}`}
                     >
-                      <Show when={entry.art}>{(art) => art()()}</Show>
-                      <span class="nb-cat-label">{entry.label}</span>
-                    </button>
-                  )}
-                </For>
-              </div>
+                      <Capped
+                        each={run.items}
+                        limit={CAP}
+                        label={run.name === '' ? s.label : run.name}
+                        /* NOT `nb-cat-item`: probes and tests count that class
+                           to mean "a thing you can add", and a reveal control
+                           wearing it would inflate every one of those counts.
+                           It borrows the tile's box in CSS instead. */
+                        moreClass="nb-cat-more"
+                        /* No pinning inside a hit list — see cappedTo. */
+                        isActive={
+                          searching() ? undefined : (entry) => entry.pressed?.() ?? false
+                        }
+                        resetKey={`${query()}|${shelf() ?? ''}`}
+                      >
+                        {(entry) => (
+                          <button
+                            type="button"
+                            class="nb-cat-item"
+                            data-entry={entry().id}
+                            aria-pressed={entry().pressed?.() ?? undefined}
+                            classList={{ 'is-on': entry().pressed?.() ?? false }}
+                            onClick={() => entry().run()}
+                          >
+                            <Show when={entry().art}>{(art) => art()()}</Show>
+                            <span class="nb-cat-label">{entry().label}</span>
+                          </button>
+                        )}
+                      </Capped>
+                    </div>
+                  </>
+                )}
+              </For>
             </section>
           )}
         </For>

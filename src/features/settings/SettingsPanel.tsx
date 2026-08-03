@@ -35,6 +35,24 @@ import {
 import { exportDiagnostics } from '../system/diagnostics';
 import { SOUNDSCAPE_BLURBS, SOUNDSCAPE_NAMES } from '../../sound/engine';
 import SoundCredits from '../../sound/SoundCredits';
+import {
+  SOUND_SETS,
+  SOUND_SET_GROUPS,
+  SOUND_SET_GROUP_IDS,
+  SOUND_SET_IDS,
+  SOUND_SET_SHORTLIST,
+  soundSetSpec,
+  soundSetsInGroup,
+  type SoundSetGroupId,
+  type SoundSetId,
+} from '../../sound/soundSets';
+import {
+  activeSoundSetId,
+  loadSoundSet,
+  saveSoundSet,
+} from '../../sound/soundSetPrefs';
+import { cancelSoundSetPreview, previewSoundSet } from '../../sound/preview';
+import { SILENT_ATTR } from '../../sound/uiClicks';
 import { openTransferPanel } from '../transfer';
 import { replayTutorial } from '../tutorial';
 import PerfHud from '../system/PerfHud';
@@ -89,6 +107,58 @@ const SOUNDSCAPE_OPTIONS: readonly {
   ariaLabel: `${name} soundscape`,
   title: SOUNDSCAPE_BLURBS[name],
 }));
+
+/* ------------------------------- sound sets -------------------------------- */
+
+/**
+ * A sound set is picked the way a binding or a room is: by name, from a list
+ * with characters in it. Twenty-eight of them is too many to spread across a
+ * settings sheet at rest, so the row opens on ONE set per character — the
+ * shortlist the table derives from its own group order — and the reader asks
+ * for the rest.
+ *
+ * That cap is not only tidiness. These chips are cheap (text on paper, unlike
+ * the studio's drawn cards), but the panel is a focus-trapped dialog whose Tab
+ * cycle walks every button in it, and twenty-eight extra stops between the
+ * volume sliders and the credits is a real cost to anyone on a keyboard.
+ */
+interface SegOption {
+  value: string;
+  label: string;
+  ariaLabel: string;
+  title: string;
+}
+
+/**
+ * One chip descriptor per set, built ONCE.
+ *
+ * Identity matters here, not just allocation count. `Seg` renders its options
+ * through `<For>`, which reuses a row's DOM only while the item reference is
+ * unchanged — so building fresh objects on every read would tear down and
+ * rebuild all 28 chips each time the selection moved, taking the focus ring
+ * off the chip that was just pressed with it. Anyone picking a set from the
+ * keyboard would be dropped back to the top of the dialog on every press.
+ */
+const SOUND_SET_OPTION: Record<SoundSetId, SegOption> = Object.fromEntries(
+  SOUND_SET_IDS.map((id) => [
+    id,
+    {
+      value: id,
+      label: SOUND_SETS[id].name,
+      // Several set names are ordinary words that appear elsewhere in this same
+      // dialog ("House", "Paper Only"), so each chip says what kind of thing it is.
+      ariaLabel: `${SOUND_SETS[id].name} sound set`,
+      title: SOUND_SETS[id].blurb,
+    },
+  ]),
+) as Record<SoundSetId, SegOption>;
+
+const soundSetOption = (id: SoundSetId): SegOption => SOUND_SET_OPTION[id];
+
+/** Per-character chip rows, also built once — these never change. */
+const SOUND_SET_GROUP_OPTIONS = Object.fromEntries(
+  SOUND_SET_GROUP_IDS.map((group) => [group, soundSetsInGroup(group).map(soundSetOption)]),
+) as unknown as Record<SoundSetGroupId, readonly SegOption[]>;
 
 const AUTOSAVE_OPTIONS = [
   { value: 500, label: '0.5s' },
@@ -387,6 +457,34 @@ export default function SettingsPanel(props: {
 
   // Sound credits: collapsed by default — reference material, not a control.
   const [creditsOpen, setCreditsOpen] = createSignal(false);
+
+  // Sound sets: the shortlist at rest, every character on request.
+  const [allSetsOpen, setAllSetsOpen] = createSignal(false);
+  void loadSoundSet();
+
+  /**
+   * The chips shown while the picker is collapsed: one set per character,
+   * plus the reader's own if it is not among them — collapsing the list must
+   * never hide the thing that is currently selected.
+   */
+  const shortlist = (): readonly SoundSetId[] => {
+    const active = activeSoundSetId();
+    return SOUND_SET_SHORTLIST.includes(active)
+      ? SOUND_SET_SHORTLIST
+      : [...SOUND_SET_SHORTLIST, active];
+  };
+
+  /**
+   * Apply, persist, then audition. The chips are wrapped in a `data-nb-silent`
+   * container so the app-wide button click does NOT fire for them: the
+   * audition's own first beat is the response, played through the set that was
+   * just chosen, which is the whole point of picking a voicing by ear.
+   */
+  const chooseSoundSet = (id: string): void => {
+    void saveSoundSet(id).then(previewSoundSet);
+  };
+
+  onCleanup(cancelSoundSetPreview);
 
   // Backup surface: last-run stamp + manual "back up now".
   const [lastBackup, { refetch: refetchLastBackup }] =
@@ -722,6 +820,85 @@ export default function SettingsPanel(props: {
 
         {/* -------------------------------- Sound ----------------------------- */}
         <Section title="Sound" accent="turquoise">
+          {/* The headline choice, above the sliders: the sliders set how loud
+              the app is, the set decides what it sounds like. Every cue is the
+              same licensed recording either way — a set conditions them
+              (substitutes, re-pitches, trims, layers), it never adds audio. */}
+          {/* Collapsed: the shortlist, one set per character. Expanded: the
+              shortlist row folds away entirely rather than sitting above the
+              full list repeating seven of its chips — a duplicate chip is a
+              duplicate Tab stop inside a focus-trapped dialog, and the row's
+              hint already names what is selected. */}
+          <Show
+            when={!allSetsOpen()}
+            fallback={
+              <Row
+                label="sound set"
+                hint={`${soundSetSpec(activeSoundSetId()).name} — ${soundSetSpec(activeSoundSetId()).blurb}`}
+              >
+                <button
+                  type="button"
+                  class="nbs-action-btn"
+                  aria-expanded
+                  aria-controls="nbs-sound-sets"
+                  onClick={() => setAllSetsOpen(false)}
+                >
+                  show fewer
+                </button>
+              </Row>
+            }
+          >
+            <Row
+              label="sound set"
+              hint={`${soundSetSpec(activeSoundSetId()).name} — ${soundSetSpec(activeSoundSetId()).blurb}`}
+              wide
+            >
+              <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
+                <Seg
+                  label="sound set"
+                  options={shortlist().map(soundSetOption)}
+                  value={activeSoundSetId()}
+                  onSelect={(v) => chooseSoundSet(String(v))}
+                />
+              </div>
+            </Row>
+            <Row
+              label="more sound sets"
+              hint={`${SOUND_SET_IDS.length - shortlist().length} more, in ${SOUND_SET_GROUP_IDS.length} characters`}
+            >
+              <button
+                type="button"
+                class="nbs-action-btn"
+                aria-expanded={false}
+                aria-controls="nbs-sound-sets"
+                onClick={() => setAllSetsOpen(true)}
+              >
+                show all {SOUND_SET_IDS.length}
+              </button>
+            </Row>
+          </Show>
+          <Show when={allSetsOpen()}>
+            <div id="nbs-sound-sets">
+              <For each={SOUND_SET_GROUP_IDS}>
+                {(group: SoundSetGroupId) => (
+                  <Row
+                    label={SOUND_SET_GROUPS[group].name.toLowerCase()}
+                    hint={SOUND_SET_GROUPS[group].blurb}
+                    wide
+                  >
+                    <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
+                      <Seg
+                        label={`${SOUND_SET_GROUPS[group].name} sound sets`}
+                        options={SOUND_SET_GROUP_OPTIONS[group]}
+                        value={activeSoundSetId()}
+                        onSelect={(v) => chooseSoundSet(String(v))}
+                      />
+                    </div>
+                  </Row>
+                )}
+              </For>
+            </div>
+          </Show>
           <For each={VOLUME_KEYS}>
             {(key) => (
               <Row label={VOLUME_LABELS[key]}>

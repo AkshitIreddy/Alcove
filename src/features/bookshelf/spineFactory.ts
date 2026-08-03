@@ -27,7 +27,12 @@ import { AtlasManager, type AtlasPage } from '../../art/atlas';
 import { recordBakeSample } from '../../art/bake';
 import { artOffload, type ArtOffload } from './artOffload';
 import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
-import { renderSpine, type Ctx2D, type SpineParams } from '../../art/spines';
+import {
+  renderSpine,
+  SPINE_THICKNESS_RANGE,
+  type Ctx2D,
+  type SpineParams,
+} from '../../art/spines';
 import { getTheme, type LibraryTheme } from '../../art/themes';
 import { readShelfMeta } from '../../data/books';
 import { bookBinding } from '../../data/designPrefs';
@@ -40,10 +45,19 @@ import {
 import { paletteCss, placeholderTint } from './spinePalette';
 import { fnv1a } from '../../art/noise';
 import { FLOOR_H, PLANK_H } from './constants';
+import {
+  bakeDpr,
+  hiAtlasPages,
+  HI_SCALE_BASE,
+  LO_SCALE_BASE,
+  spineBakeScale,
+  spineGutter,
+  type SpineVariant,
+} from './spineScale';
 
 export { paletteCss, placeholderTint, spineArtHeight };
 
-export type SpineVariant = 'lo' | 'hi';
+export type { SpineVariant };
 
 /** Clear height inside one floor cell — FLOOR_H 320 less the 40px plank. */
 const BOOK_ZONE_H = FLOOR_H - PLANK_H;
@@ -76,11 +90,23 @@ export interface SpineRowContext {
   neighbourRight?: string | null;
 }
 
-/** Lo-res bake scale: 232 world px → ~144 texture px (doc: 32×146-ish). */
-export const LO_SCALE = 0.62;
+/**
+ * Bake scales live in `spineScale.ts` — device pixels per world pixel, and the
+ * reason they are a module of their own is written up there.
+ */
+export {
+  bakeDpr,
+  HI_SCALE_BASE,
+  LO_SCALE_BASE,
+  spineBakeScale,
+  spineSampling,
+} from './spineScale';
 
-/** Hi-res bake scale: 2× world px, covers max zoom 2.5 without blur. */
-export const HI_SCALE = 2;
+/** Lo-res bake scale at dpr 1: 232 world px → ~144 texture px. */
+export const LO_SCALE = LO_SCALE_BASE;
+
+/** Hi-res bake scale at dpr 1: covers max zoom 2.5 without blur. */
+export const HI_SCALE = HI_SCALE_BASE;
 
 /**
  * Time budget for one idle slice, in ms.
@@ -213,17 +239,36 @@ export class SpineFactory {
   /** Degrade mode never bakes hi-res. */
   readonly hiEnabled: boolean;
 
-  constructor(opts: { hiEnabled?: boolean; offload?: ArtOffload } = {}) {
+  /**
+   * Device pixels per world pixel the bakes are sized against. One number for
+   * the session: the renderer's own resolution never changes after `init`.
+   */
+  readonly dpr: number;
+
+  /**
+   * Gutter texels around each atlas rect, scaled with the bake.
+   *
+   * The pad exists so a mip level cannot average one spine's edge into its
+   * neighbour's, and a mip texel is 2^k page texels — so a gutter that was
+   * enough at bake scale 2 is half a gutter at scale 4.
+   */
+  private readonly gutter: number;
+
+  constructor(opts: { hiEnabled?: boolean; offload?: ArtOffload; dpr?: number } = {}) {
     this.hiEnabled = opts.hiEnabled ?? true;
+    // Degrade mode (software renderer) runs the renderer at resolution 1, and
+    // it is also the mode where a 4× bake would be least affordable.
+    this.dpr = opts.dpr ?? bakeDpr(!this.hiEnabled);
+    this.gutter = spineGutter(this.dpr);
     this.offload = opts.offload ?? artOffload();
     this.loAtlas = new AtlasManager({
       maxPages: 2,
-      padding: 2,
+      padding: this.gutter,
       onEvict: (page, keys) => this.handleEvict('lo', page, keys, this.loTextures),
     });
     this.hiAtlas = new AtlasManager({
-      maxPages: 4,
-      padding: 2,
+      maxPages: hiAtlasPages(this.dpr),
+      padding: this.gutter,
       onEvict: (page, keys) => this.handleEvict('hi', page, keys, this.hiTextures),
     });
     this.preloadFonts();
@@ -390,6 +435,56 @@ export class SpineFactory {
   }
 
   /**
+   * World-px width to draw this book at — the same clamp `floorView` lays the
+   * row out with, so the bake and the sprite agree on the aspect ratio.
+   *
+   * `params.w` is not it: the row rounds to whole world px and clamps to the
+   * legal spine range, and a bake sized off the unrounded value is resampled
+   * by a hair on every frame for nothing.
+   */
+  artWidth(book: Book): number {
+    const w = this.getParams(book).w;
+    return Math.min(
+      SPINE_THICKNESS_RANGE.max,
+      Math.max(SPINE_THICKNESS_RANGE.min, Math.round(w)),
+    );
+  }
+
+  /**
+   * The exact texture size to bake this book at, in texels, plus the params to
+   * draw with.
+   *
+   * One function, because the two bake paths (worker and inline) had a copy
+   * each and they are the only thing standing between "the art is the shape
+   * the book is" and a spine squashed by a quarter. It also closes the older
+   * split: the sprite's height came from {@link artHeight} (the seeded
+   * skyline) while the bake's came from `spineArtHeight(params)` (the
+   * bibliographic format band), so every book WITHOUT an explicit studio
+   * height — which is every book a reader has not edited, the Welcome book
+   * included — was drawn at up to ±25% of the proportions it was painted at.
+   */
+  private bakeGeometry(
+    book: Book,
+    variant: SpineVariant,
+  ): { params: SpineParams; scale: number; w: number; h: number } {
+    const base = this.getParams(book);
+    const worldW = this.artWidth(book);
+    const worldH = this.artHeight(book);
+    const scale = this.scaleFor(variant);
+    return {
+      params: { ...base, w: worldW },
+      scale,
+      w: Math.max(1, Math.ceil(worldW * scale)),
+      h: Math.max(1, Math.ceil(worldH * scale)),
+    };
+  }
+
+  /** Device-pixel bake scale for a bucket (see `spineScale.ts`). */
+  scaleFor(variant: SpineVariant): number {
+    return spineBakeScale(variant, this.dpr);
+  }
+
+  /**
    * Best texture available for a tier: tier 0 prefers hi, everything falls
    * back lo → undefined (placeholder).
    */
@@ -552,10 +647,7 @@ export class SpineFactory {
   private async paintOffThread(key: string, item: QueueItem): Promise<void> {
     const epoch = this.bakeEpoch;
     const { book, variant, ctx: rowCtx } = item;
-    const params = this.getParams(book);
-    const scale = variant === 'hi' ? HI_SCALE : LO_SCALE;
-    const w = Math.ceil(params.w * scale);
-    const h = Math.ceil(spineArtHeight(params) * scale);
+    const { params, scale, w, h } = this.bakeGeometry(book, variant);
 
     let paint: Awaited<ReturnType<ArtOffload['spine']>> = null;
     try {
@@ -622,9 +714,11 @@ export class SpineFactory {
   ): void {
     const atlas = variant === 'hi' ? this.hiAtlas : this.loAtlas;
     const handle = atlas.alloc(`${variant}|${book.id}`, w, h);
-    const { rect, page } = handle;
+    const { rect, padded, page } = handle;
     const ctx = get2d(page.canvas);
-    ctx.clearRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
+    // The WHOLE reserved region, gutter included: stale ink left in a gutter is
+    // averaged into every mip level and bleeds back out at minified zooms.
+    ctx.clearRect(padded.x, padded.y, padded.w, padded.h);
     ctx.drawImage(bitmap as unknown as CanvasImageSource, rect.x, rect.y);
 
     const source = this.sourceFor(variant, page);
@@ -745,23 +839,20 @@ export class SpineFactory {
   }
 
   private bakeOneTimed(book: Book, variant: SpineVariant, rowCtx?: SpineRowContext): CanvasSource {
-    const params = this.getParams(book);
-    const scale = variant === 'hi' ? HI_SCALE : LO_SCALE;
-    const w = Math.ceil(params.w * scale);
-    // Bake at the book's OWN height so a duodecimo's ornament is not stretched
-    // when the compositor sizes the sprite (studio height/format control).
-    const h = Math.ceil(spineArtHeight(params) * scale);
+    // Bake at the size the shelf DRAWS this book at, so a duodecimo's ornament
+    // is not stretched when the compositor sizes the sprite.
+    const { params, scale, w, h } = this.bakeGeometry(book, variant);
     const atlas = variant === 'hi' ? this.hiAtlas : this.loAtlas;
     const handle = atlas.alloc(`${variant}|${book.id}`, w, h);
-    const { rect, page } = handle;
+    const { rect, padded, page } = handle;
 
     const ctx = get2d(page.canvas);
     ctx.save();
     // Clip to the padded rect so jittered strokes never bleed into neighbors.
     ctx.beginPath();
-    ctx.rect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
+    ctx.rect(padded.x, padded.y, padded.w, padded.h);
     ctx.clip();
-    ctx.clearRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
+    ctx.clearRect(padded.x, padded.y, padded.w, padded.h);
     renderSpine(ctx, params, rect.x, rect.y, h, scale, book.title, {
       hiRes: variant === 'hi',
       rowPhase: rowCtx?.rowPhase,
@@ -787,6 +878,17 @@ export class SpineFactory {
       source = new CanvasSource({
         resource: page.canvas as unknown as HTMLCanvasElement,
         autoGenerateMipmaps: true,
+        // Mips, but no BLEND between two of them.
+        //
+        // Trilinear is right for photographic texture and wrong for flat ink:
+        // at the zoom the shelf rests at, the sampler sat at LOD ~0.3 and mixed
+        // 30% of a half-resolution page into every pixel, which is a 30% blur
+        // applied to art whose whole language is one hard outline. Measured on
+        // the running shelf (mean |Laplacian| over the same crop): 10.09
+        // trilinear → 11.41 with nearest mip selection, +13% edge energy for
+        // nothing. The chain itself stays: without it, panning at tier 1
+        // shimmers.
+        mipmapFilter: 'nearest',
         label: `spine-atlas-${key}`,
       });
       this.sources.set(key, source);

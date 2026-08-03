@@ -1,0 +1,1453 @@
+{
+  "buttons": [
+    {
+      "t": "+new book",
+      "x": 1160,
+      "y": 130,
+      "w": 35,
+      "h": 158,
+      "cls": "shelf-addslot"
+    },
+    {
+      "t": "Welcome to Bellanote ✎",
+      "x": 375,
+      "y": -1,
+      "w": 160,
+      "h": 30,
+      "cls": ""
+    },
+    {
+      "t": "new book",
+      "x": 463,
+      "y": 340,
+      "w": 86,
+      "h": 63,
+      "cls": "shelf-dock__btn is-primary"
+    },
+    {
+      "t": "studio",
+      "x": 464,
+      "y": 416,
+      "w": 86,
+      "h": 63,
+      "cls": "shelf-dock__btn is-active"
+    },
+    {
+      "t": "add floor",
+      "x": 464,
+      "y": 482,
+      "w": 86,
+      "h": 63,
+      "cls": "shelf-dock__btn"
+    },
+    {
+      "t": "trash",
+      "x": 464,
+      "y": 548,
+      "w": 86,
+      "h": 63,
+      "cls": "shelf-dock__btn"
+    },
+    {
+      "t": "−",
+      "x": 1044,
+      "y": 894,
+      "w": 32,
+      "h": 32,
+      "cls": "shelf-zoom-pill__btn"
+    },
+    {
+      "t": "80%",
+      "x": 1079,
+      "y": 896,
+      "w": 52,
+      "h": 27,
+      "cls": "shelf-zoom-pill__pct"
+    },
+    {
+      "t": "+",
+      "x": 1132,
+      "y": 894,
+      "w": 32,
+      "h": 32,
+      "cls": "shelf-zoom-pill__btn"
+    },
+    {
+      "t": "fit",
+      "x": 1179,
+      "y": 896,
+      "w": 29,
+      "h": 26,
+      "cls": "shelf-zoom-pill__fit"
+    },
+    {
+      "t": "Close Library studio",
+      "x": 328,
+      "y": 14,
+      "w": 30,
+      "h": 30,
+      "cls": "nb-rail-panel-close"
+    },
+    {
+      "t": "Open bookcase My Library",
+      "x": 21,
+      "y": 110,
+      "w": 157,
+      "h": 107,
+      "cls": "nb-case-open"
+    },
+    {
+      "t": "rename",
+      "x": 23,
+      "y": 271,
+      "w": 56,
+      "h": 26,
+      "cls": "nb-chip nb-chip-ghost"
+    },
+    {
+      "t": "clone",
+      "x": 82,
+      "y": 271,
+      "w": 46,
+      "h": 26,
+      "cls": "nb-chip nb-chip-ghost"
+    },
+    {
+      "t": "delete",
+      "x": 23,
+      "y": 300,
+      "w": 50,
+      "h": 26,
+      "cls": "nb-chip nb-chip-ghost"
+    },
+    {
+      "t": "add bookcase",
+      "x": 16,
+      "y": 350,
+      "w": 95,
+      "h": 28,
+      "cls": "nb-chip nb-chip-gilt"
+    },
+    {
+      "t": "add a floor",
+      "x": 115,
+      "y": 350,
+      "w": 79,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "The Reading Room",
+      "x": 16,
+      "y": 478,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Chambers",
+      "x": 189,
+      "y": 478,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Old Athenaeum",
+      "x": 16,
+      "y": 610,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Card Room",
+      "x": 189,
+      "y": 610,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "The House Room",
+      "x": 16,
+      "y": 742,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "50more…",
+      "x": 189,
+      "y": 742,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile nb-strip-more"
+    },
+    {
+      "t": "Old Athenaeum",
+      "x": 16,
+      "y": 994,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Limed Oak",
+      "x": 189,
+      "y": 994,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "English Walnut",
+      "x": 16,
+      "y": 1125,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "American Cherry",
+      "x": 189,
+      "y": 1125,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Verdigris Library",
+      "x": 16,
+      "y": 1257,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "55more…",
+      "x": 189,
+      "y": 1257,
+      "w": 169,
+      "h": 128,
+      "cls": "nb-strip-tile nb-strip-more"
+    },
+    {
+      "t": "shelves: Verdigris Library",
+      "x": 16,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: Old Athenaeum",
+      "x": 48,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: English Walnut",
+      "x": 80,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: Limed Oak",
+      "x": 112,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: Card Room Green",
+      "x": 144,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: Rose Plaster",
+      "x": 176,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: Lapis Cabinet",
+      "x": 208,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "shelves: Carousel",
+      "x": 240,
+      "y": 1626,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "all 60",
+      "x": 272,
+      "y": 1626,
+      "w": 32,
+      "h": 28,
+      "cls": "nb-chip nb-chip-more font-ui"
+    },
+    {
+      "t": "Plain Plank — A board, two uprights, nothing in th",
+      "x": 16,
+      "y": 1694,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Shaker — Every arris taken off with two strokes of",
+      "x": 131,
+      "y": 1694,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Schoolroom — A ledge along every shelf, worn smoot",
+      "x": 247,
+      "y": 1694,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Atelier — Thin uprights, thin boards, and as much ",
+      "x": 16,
+      "y": 1778,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Ladder Shelf — Slim rails with rungs; the boards a",
+      "x": 131,
+      "y": 1778,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Workbench — Strapped and braced, built to be stood",
+      "x": 247,
+      "y": 1778,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Face Frame — Cabinet work: a proud rail on every b",
+      "x": 16,
+      "y": 1861,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Scriptorium — A stepped cornice with teeth, over a",
+      "x": 131,
+      "y": 1861,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "44more…",
+      "x": 247,
+      "y": 1861,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile nb-strip-more"
+    },
+    {
+      "t": "Plain — Bare timber. The books do the talking.",
+      "x": 16,
+      "y": 1982,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Stringing — Two hair-fine lines of pale wood let i",
+      "x": 131,
+      "y": 1982,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Cock Bead — A small half-round standing proud of e",
+      "x": 247,
+      "y": 1982,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Bead & Quirk — A run of touching half-rounds, sunk",
+      "x": 16,
+      "y": 2065,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Reeded — Fluting inside out: the timber left proud",
+      "x": 131,
+      "y": 2065,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Fluted — Round-bottomed grooves with narrow fillet",
+      "x": 247,
+      "y": 2065,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Cabled Flute — Flutes with a carved cord laid into",
+      "x": 16,
+      "y": 2149,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Guilloche — Interlaced rings plaited along the ban",
+      "x": 131,
+      "y": 2149,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "42more…",
+      "x": 247,
+      "y": 2149,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile nb-strip-more"
+    },
+    {
+      "t": "or a named bookcase (113)",
+      "x": 16,
+      "y": 2240,
+      "w": 170,
+      "h": 28,
+      "cls": "nb-chip nb-chip-ghost"
+    },
+    {
+      "t": "wallpaper: Verdigris Library",
+      "x": 16,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: Old Athenaeum",
+      "x": 48,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: English Walnut",
+      "x": 80,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: Limed Oak",
+      "x": 112,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: Card Room Green",
+      "x": 144,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: Rose Plaster",
+      "x": 176,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: Lapis Cabinet",
+      "x": 208,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "wallpaper: Carousel",
+      "x": 240,
+      "y": 2479,
+      "w": 28,
+      "h": 28,
+      "cls": "nb-chip nb-chip-swatch"
+    },
+    {
+      "t": "all 60",
+      "x": 272,
+      "y": 2479,
+      "w": 32,
+      "h": 28,
+      "cls": "nb-chip nb-chip-more font-ui"
+    },
+    {
+      "t": "Plain Parchment — The wall, and nothing on it.",
+      "x": 16,
+      "y": 2548,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Quiet Pinstripe — A hairline every inch, and a pal",
+      "x": 131,
+      "y": 2548,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "Study Pinstripe — Close-ruled in the case timber.",
+      "x": 247,
+      "y": 2548,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Watered Silk — A comb of hairlines that interfere ",
+      "x": 16,
+      "y": 2631,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Reed Cloth — Fine fibres, close-woven, a slub ever",
+      "x": 131,
+      "y": 2631,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Mattress Ticking — A solid band flanked by its thi",
+      "x": 247,
+      "y": 2631,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Deck Awning — Horizontal bands with a sky thread i",
+      "x": 16,
+      "y": 2715,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "Drawing Room Rule — Wider ruling, with a blue thre",
+      "x": 131,
+      "y": 2715,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "118more…",
+      "x": 247,
+      "y": 2715,
+      "w": 111,
+      "h": 80,
+      "cls": "nb-strip-tile nb-strip-more"
+    },
+    {
+      "t": "paper",
+      "x": 16,
+      "y": 2835,
+      "w": 111,
+      "h": 87,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "deep",
+      "x": 131,
+      "y": 2835,
+      "w": 111,
+      "h": 87,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "timber",
+      "x": 247,
+      "y": 2835,
+      "w": 111,
+      "h": 87,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "recess",
+      "x": 16,
+      "y": 2926,
+      "w": 111,
+      "h": 87,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "gilt",
+      "x": 131,
+      "y": 2926,
+      "w": 111,
+      "h": 87,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "cloth",
+      "x": 247,
+      "y": 2926,
+      "w": 111,
+      "h": 87,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "petite",
+      "x": 16,
+      "y": 3054,
+      "w": 65,
+      "h": 64,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "small",
+      "x": 85,
+      "y": 3054,
+      "w": 65,
+      "h": 64,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "medium",
+      "x": 154,
+      "y": 3054,
+      "w": 65,
+      "h": 64,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "large",
+      "x": 224,
+      "y": 3054,
+      "w": 65,
+      "h": 64,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "grand",
+      "x": 293,
+      "y": 3054,
+      "w": 65,
+      "h": 64,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "flat",
+      "x": 16,
+      "y": 3159,
+      "w": 83,
+      "h": 75,
+      "cls": "nb-strip-tile is-active"
+    },
+    {
+      "t": "low",
+      "x": 103,
+      "y": 3159,
+      "w": 83,
+      "h": 75,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "raised",
+      "x": 189,
+      "y": 3159,
+      "w": 83,
+      "h": 75,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "carved",
+      "x": 276,
+      "y": 3159,
+      "w": 83,
+      "h": 75,
+      "cls": "nb-strip-tile"
+    },
+    {
+      "t": "anything",
+      "x": 16,
+      "y": 3367,
+      "w": 69,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "formal",
+      "x": 89,
+      "y": 3367,
+      "w": 54,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "grand",
+      "x": 147,
+      "y": 3367,
+      "w": 51,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "warm",
+      "x": 202,
+      "y": 3367,
+      "w": 50,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "quiet",
+      "x": 256,
+      "y": 3367,
+      "w": 46,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "cool",
+      "x": 306,
+      "y": 3367,
+      "w": 41,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "antique",
+      "x": 16,
+      "y": 3399,
+      "w": 60,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "bold",
+      "x": 80,
+      "y": 3399,
+      "w": 43,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "cosy",
+      "x": 127,
+      "y": 3399,
+      "w": 43,
+      "h": 28,
+      "cls": "nb-chip"
+    },
+    {
+      "t": "surprise me",
+      "x": 16,
+      "y": 3439,
+      "w": 83,
+      "h": 28,
+      "cls": "nb-chip nb-chip-gilt"
+    },
+    {
+      "t": "back to one room",
+      "x": 103,
+      "y": 3439,
+      "w": 115,
+      "h": 28,
+      "cls": "nb-chip nb-chip-ghost"
+    },
+    {
+      "t": "plain again",
+      "x": 222,
+      "y": 3439,
+      "w": 80,
+      "h": 28,
+      "cls": "nb-chip nb-chip-ghost"
+    },
+    {
+      "t": "shelf",
+      "x": 1380,
+      "y": 913,
+      "w": 53,
+      "h": 25,
+      "cls": "font-ui"
+    },
+    {
+      "t": "book",
+      "x": 1437,
+      "y": 913,
+      "w": 51,
+      "h": 25,
+      "cls": "font-ui"
+    },
+    {
+      "t": "Settings",
+      "x": 388,
+      "y": 888,
+      "w": 46,
+      "h": 46,
+      "cls": "nbs-gear-button"
+    },
+    {
+      "t": "Close settings",
+      "x": 1904,
+      "y": 21,
+      "w": 34,
+      "h": 34,
+      "cls": "nbs-close"
+    },
+    {
+      "t": "parchment",
+      "x": 1548,
+      "y": 187,
+      "w": 87,
+      "h": 28,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "pastel",
+      "x": 1642,
+      "y": 188,
+      "w": 56,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "botanical",
+      "x": 1706,
+      "y": 188,
+      "w": 73,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "night",
+      "x": 1787,
+      "y": 188,
+      "w": 52,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Caveat",
+      "x": 1548,
+      "y": 257,
+      "w": 60,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Patrick Hand",
+      "x": 1616,
+      "y": 256,
+      "w": 99,
+      "h": 28,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Kalam",
+      "x": 1723,
+      "y": 257,
+      "w": 57,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "sepia",
+      "x": 1548,
+      "y": 379,
+      "w": 54,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "graphite",
+      "x": 1609,
+      "y": 380,
+      "w": 68,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "ink blue",
+      "x": 1685,
+      "y": 380,
+      "w": 67,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "ruled",
+      "x": 1548,
+      "y": 448,
+      "w": 52,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "grid",
+      "x": 1608,
+      "y": 449,
+      "w": 44,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "blank",
+      "x": 1660,
+      "y": 449,
+      "w": 53,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "dotted",
+      "x": 1721,
+      "y": 449,
+      "w": 59,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "show margin doodles",
+      "x": 1892,
+      "y": 496,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "zooms",
+      "x": 1548,
+      "y": 677,
+      "w": 59,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "scrolls floors",
+      "x": 1615,
+      "y": 677,
+      "w": 91,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "my order",
+      "x": 1548,
+      "y": 745,
+      "w": 76,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "recent first",
+      "x": 1631,
+      "y": 746,
+      "w": 85,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "favorites first",
+      "x": 1724,
+      "y": 746,
+      "w": 97,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "full",
+      "x": 1548,
+      "y": 903,
+      "w": 44,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "reduced",
+      "x": 1599,
+      "y": 903,
+      "w": 65,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "off",
+      "x": 1672,
+      "y": 903,
+      "w": 40,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "drag momentum",
+      "x": 1892,
+      "y": 1004,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "confetti on complete",
+      "x": 1892,
+      "y": 1057,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "minimalist mode",
+      "x": 1892,
+      "y": 1111,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "House",
+      "x": 1548,
+      "y": 1292,
+      "w": 58,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Loose Leaf",
+      "x": 1613,
+      "y": 1293,
+      "w": 83,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Reading Room",
+      "x": 1705,
+      "y": 1293,
+      "w": 101,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Brass Bell",
+      "x": 1814,
+      "y": 1293,
+      "w": 79,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Drafting Table",
+      "x": 1548,
+      "y": 1326,
+      "w": 103,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Quiet Hours",
+      "x": 1659,
+      "y": 1326,
+      "w": 88,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "Paper Birds",
+      "x": 1756,
+      "y": 1326,
+      "w": 86,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "show all 28",
+      "x": 1847,
+      "y": 1374,
+      "w": 91,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "mute all sounds",
+      "x": 1892,
+      "y": 1631,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "play ambience",
+      "x": 1892,
+      "y": 1680,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "rain",
+      "x": 1548,
+      "y": 1773,
+      "w": 47,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "storm",
+      "x": 1602,
+      "y": 1774,
+      "w": 55,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "fireplace",
+      "x": 1665,
+      "y": 1774,
+      "w": 68,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "crickets",
+      "x": 1741,
+      "y": 1774,
+      "w": 65,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "night",
+      "x": 1815,
+      "y": 1774,
+      "w": 52,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "wind",
+      "x": 1875,
+      "y": 1774,
+      "w": 49,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "stream",
+      "x": 1548,
+      "y": 1807,
+      "w": 61,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "forest",
+      "x": 1617,
+      "y": 1807,
+      "w": 56,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "shore",
+      "x": 1681,
+      "y": 1807,
+      "w": 53,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "cafe",
+      "x": 1741,
+      "y": 1807,
+      "w": 47,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "none",
+      "x": 1796,
+      "y": 1807,
+      "w": 50,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "typing sounds",
+      "x": 1892,
+      "y": 1854,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "hourly chime",
+      "x": 1892,
+      "y": 1908,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "reduced sound",
+      "x": 1892,
+      "y": 1962,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "show",
+      "x": 1885,
+      "y": 2016,
+      "w": 53,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "spellcheck",
+      "x": 1892,
+      "y": 2151,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "0.5s",
+      "x": 1548,
+      "y": 2221,
+      "w": 47,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "1s",
+      "x": 1602,
+      "y": 2222,
+      "w": 34,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "3s",
+      "x": 1644,
+      "y": 2222,
+      "w": 37,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "standard",
+      "x": 1548,
+      "y": 2290,
+      "w": 76,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "pencil",
+      "x": 1631,
+      "y": 2291,
+      "w": 55,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "quill",
+      "x": 1694,
+      "y": 2291,
+      "w": 46,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "page thumbnails strip",
+      "x": 1892,
+      "y": 2338,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "autostart",
+      "x": 1892,
+      "y": 2479,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "backups",
+      "x": 1892,
+      "y": 2533,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "daily",
+      "x": 1548,
+      "y": 2609,
+      "w": 49,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "weekly",
+      "x": 1605,
+      "y": 2608,
+      "w": 63,
+      "h": 27,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "monthly",
+      "x": 1676,
+      "y": 2609,
+      "w": 68,
+      "h": 26,
+      "cls": "nbs-seg-chip"
+    },
+    {
+      "t": "choose…",
+      "x": 1867,
+      "y": 2656,
+      "w": 71,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "back up now",
+      "x": 1843,
+      "y": 2710,
+      "w": 95,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "launch into last book",
+      "x": 1892,
+      "y": 2763,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "tray quick capture",
+      "x": 1892,
+      "y": 2817,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "performance HUD",
+      "x": 1892,
+      "y": 2870,
+      "w": 46,
+      "h": 27,
+      "cls": "nbs-toggle"
+    },
+    {
+      "t": "export…",
+      "x": 1871,
+      "y": 3306,
+      "w": 68,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "import…",
+      "x": 1868,
+      "y": 3366,
+      "w": 70,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "save report…",
+      "x": 1844,
+      "y": 3422,
+      "w": 94,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    },
+    {
+      "t": "start",
+      "x": 1886,
+      "y": 3564,
+      "w": 52,
+      "h": 26,
+      "cls": "nbs-action-btn"
+    }
+  ],
+  "scrollers": [
+    {
+      "cls": "shelf-addslot",
+      "sh": 183,
+      "ch": 152
+    },
+    {
+      "cls": "nb-rail-panel-body",
+      "sh": 3526,
+      "ch": 895
+    },
+    {
+      "cls": "nbs-sheet",
+      "sh": 3689,
+      "ch": 950
+    }
+  ]
+}

@@ -28,9 +28,36 @@
  *            (hover ticks, typing ticks, pencil loop, confetti, whooshes)
  *            never plays at all
  *
+ * ─────────────────────────────────────────────────────────────────────────
+ * SOUND SETS
+ * ─────────────────────────────────────────────────────────────────────────
+ * Above the character sits the reader-facing choice: a named SOUND SET
+ * (`sound/soundSets.ts`) — the way a room has carpentry and a book has a
+ * binding. A set decides, per ROLE, which family actually sounds, at what
+ * playback rate and gain, with what (if anything) layered underneath, and
+ * whether the role is heard at all. `play('book-pull')` therefore means
+ * "the book-off-the-shelf role", and what the reader hears depends on their
+ * set; `play('book-pull-2')` still means exactly that file.
+ *
+ * Sets add no new recordings — they condition the shipped, licensed cues at
+ * play time. See the header of soundSets.ts for why, and for the credits
+ * consequence (there is none: a set plays a cue, so it plays that cue's
+ * provenance).
+ *
  * For tests, the Howler dependency is injectable via setHowlerLoader() and
  * the jitter RNG via setPlayRngForTests().
  */
+
+import {
+  DEFAULT_SOUND_SET_ID,
+  resolveSoundSetId,
+  resolveVoice,
+  soundSetJitterScale,
+  soundSetPool,
+  type SoundLayer,
+  type SoundSetId,
+  type SoundVoice,
+} from './soundSets';
 
 /* ------------------------------- sound names ------------------------------ */
 
@@ -340,6 +367,25 @@ const REDUCED_SKIP: ReadonlySet<SoundName> = new Set<SoundName>([
   ...SOUND_FAMILIES['typing-tick'],
 ]);
 
+/**
+ * The ROLES a name-based skip list covers — derived, never listed twice: a
+ * role is skipped when every take in its family is.
+ *
+ * Skipping has to be role-based as well as file-based now that a sound set
+ * can voice a role with a different family. A reader who asked for reduced
+ * sound wants no hover tick, whichever recording their set would have reached
+ * for; and a set that voices the hover role with a crisp interface blip must
+ * not smuggle that blip past the preference.
+ */
+const rolesFullyInside = (names: ReadonlySet<SoundName>): ReadonlySet<FamilyName> =>
+  new Set(
+    FAMILY_NAMES.filter((family) =>
+      (SOUND_FAMILIES[family] as readonly SoundName[]).every((name) => names.has(name)),
+    ),
+  );
+
+const REDUCED_SKIP_ROLES: ReadonlySet<FamilyName> = rolesFullyInside(REDUCED_SKIP);
+
 export const soundUrl = (name: SoundName): string => `/sounds/${name}.wav`;
 
 /* --------------------------- sound character ------------------------------ */
@@ -402,6 +448,12 @@ export const CHARACTER_PROFILES: Record<SoundCharacter, CharacterProfile> = {
   },
 };
 
+/** The same skip lists as roles, derived once (see `rolesFullyInside`). */
+const CHARACTER_SKIP_ROLES: Record<SoundCharacter, ReadonlySet<FamilyName>> =
+  Object.fromEntries(
+    SOUND_CHARACTERS.map((name) => [name, rolesFullyInside(CHARACTER_PROFILES[name].skip)]),
+  ) as Record<SoundCharacter, ReadonlySet<FamilyName>>;
+
 /* --------------------------- injectable Howler ---------------------------- */
 
 /**
@@ -461,6 +513,8 @@ let volumes: Volumes = defaultVolumes();
 let muted = false;
 let reducedSound = false;
 let character: SoundCharacter = 'calm';
+/** The reader's chosen voicing (see sound/soundSets.ts). */
+let soundSet: SoundSetId = DEFAULT_SOUND_SET_ID;
 
 const howls = new Map<SoundName, Promise<HowlLike>>();
 
@@ -473,13 +527,54 @@ interface AmbientState {
 let ambient: AmbientState | undefined;
 /** Whether the ambient bed should be running (survives mute/unmute). */
 let ambientWanted = false;
-/** Which soundscape the bed realizes when it runs ('none' = silence). */
+/**
+ * The soundscape a NEW LIBRARY should open with.
+ *
+ * A fire in the grate rather than rain on the window. Both are quiet enough
+ * to write under, and the difference is what they say about the room: rain is
+ * weather happening TO a building, and a fire is somebody having lit one. The
+ * app is a warm parchment library, so the bed that matches it is the hearth.
+ * It is also the bed with the slowest irregular events in it — a settle, a
+ * crack — which is what keeps a loop from turning into a hiss after an hour.
+ *
+ * ## This is NOT the variable below, and the difference is load-bearing
+ *
+ * `features/settings/apply.ts` calls `setSoundscape(settings.soundscape)` on
+ * boot, so what a new install actually hears is `DEFAULT_SETTINGS.soundscape`
+ * in `src/data/defaults.ts` — this module never gets to decide. That file
+ * should import this constant rather than restate the word, so the product
+ * decision has one home. (Whether the bed runs at all is `ambientLoop`, a
+ * separate setting, and also lives there.)
+ *
+ * `soundscape` below stays `'rain'` on purpose: it is the placeholder the
+ * engine holds in the milliseconds before settings apply, and seven cases in
+ * `tests/sound.test.ts` call `startAmbient()` with no scape set and then look
+ * for `ambient-rain`. Moving the placeholder is a test change, not an engine
+ * change, and it changes nothing a reader can hear.
+ */
+export const DEFAULT_SOUNDSCAPE: SoundscapeName = 'fireplace';
+
+/**
+ * Which soundscape the bed realizes when it runs ('none' = silence).
+ *
+ * The engine's placeholder, overwritten by the settings store on boot — see
+ * `DEFAULT_SOUNDSCAPE` above for the one a new library opens with.
+ */
 let soundscape: SoundscapeName = 'rain';
 
 /** RNG behind variant choice, pitch jitter and level jitter. */
 let playRng: () => number = Math.random;
 
 const CLICK_NAMES: ReadonlySet<SoundName> = new Set(SOUND_FAMILIES['click-soft']);
+
+/**
+ * The button-press ROLE. Whether a play counts as "this control voiced
+ * itself" is a question about the role, not about the file: a set that
+ * presses buttons with a page turn must still let the delegated click handler
+ * in `uiClicks.ts` know that was only a click, and a set that opens panels
+ * with a board tap must still count that as a voice of its own.
+ */
+const CLICK_ROLE: FamilyName = 'click-soft';
 
 /**
  * When a sound other than the button click last actually started.
@@ -521,27 +616,39 @@ export function createVariantPicker<T>(variants: readonly T[], rng: () => number
 }
 
 /**
- * The variants of `family` this character is allowed to draw from. Falls
- * back to the whole family when the character's slice would be empty, so a
- * one-variant family can never starve the picker.
+ * The variants of `family` the current voicing is allowed to draw from. Falls
+ * back to the whole family when the slice would be empty, so a one-variant
+ * family can never starve the picker.
+ *
+ * Two things narrow the pool and the SET wins: it is the reader's own choice,
+ * where the character is a refinement underneath it. A set that names no pool
+ * leaves the question to the character, which is why the house set is a pure
+ * pass-through of everything that came before it.
  */
 export function poolFor(family: FamilyName, forCharacter: SoundCharacter = character): readonly SoundName[] {
   const all = SOUND_FAMILIES[family] as readonly SoundName[];
-  const { pool } = CHARACTER_PROFILES[forCharacter];
+  const fromSet = soundSetPool(soundSet);
+  const pool = fromSet === 'all' ? CHARACTER_PROFILES[forCharacter].pool : fromSet;
   if (pool === 'all') return all;
   const slice = all.filter((n) => VARIANT_WEIGHTS[n] === pool);
   return slice.length > 0 ? slice : all;
 }
 
 /**
- * One rotating picker per family per character. Keyed by both so switching
- * character does not have to reset every family's rotation, and so a family
- * whose pool changed picks up the new pool immediately.
+ * One rotating picker per family per character per set. Keyed by all three so
+ * switching any of them does not have to reset every family's rotation, and
+ * so a family whose pool changed picks up the new pool immediately.
+ *
+ * The separators are load-bearing for the same reason they are in
+ * `resolveVoice`: family names, character names and set ids all contain
+ * hyphens, and a key glued together without them would let two different
+ * (family, character, set) triples share one rotation. Nothing would throw —
+ * the rotation would simply be wrong for the rest of the session.
  */
 const pickers = new Map<string, () => SoundName>();
 
 function pickVariant(family: FamilyName): SoundName {
-  const key = `${family}|${character}`;
+  const key = `${family}|${character}|${soundSet}`;
   let pick = pickers.get(key);
   if (pick === undefined) {
     pick = createVariantPicker(poolFor(family), () => playRng());
@@ -552,11 +659,6 @@ function pickVariant(family: FamilyName): SoundName {
 
 const isFamily = (name: PlayableName): name is FamilyName =>
   Object.prototype.hasOwnProperty.call(SOUND_FAMILIES, name);
-
-/** Resolve a playable name to the concrete file this play() will use. */
-function resolveName(name: PlayableName): SoundName {
-  return isFamily(name) ? pickVariant(name) : name;
-}
 
 /* -------------------------------- internals -------------------------------- */
 
@@ -576,10 +678,18 @@ function ensureHowl(name: SoundName): Promise<HowlLike> {
   return entry;
 }
 
-function effectiveVolume(name: SoundName, requested: number | undefined): number {
+/**
+ * `setGain` is the sound set's per-role trim and sits OUTSIDE the first clamp
+ * on purpose: `requested` is a per-call 0..1 gain, but a set's trim is allowed
+ * to be greater than one — that is how a set voices a button with the pencil
+ * tick, which ships 8 dB under the board tap it replaces. It can only spend
+ * headroom the reader's own sliders left; the single clamp at the end is what
+ * keeps that honest.
+ */
+function effectiveVolume(name: SoundName, requested: number | undefined, setGain = 1): number {
   const category = SOUND_MANIFEST[name].category;
   const trim = CHARACTER_PROFILES[character].gain[category];
-  return clamp01(clamp01(requested ?? 1) * volumes[category] * volumes.master * trim);
+  return clamp01(clamp01(requested ?? 1) * volumes[category] * volumes.master * trim * setGain);
 }
 
 /** A symmetric ±half multiplier around 1, from the play RNG. */
@@ -606,40 +716,137 @@ export async function init(): Promise<void> {
 
 /**
  * Fire-and-forget playback. Resolves with the Howler sound id, or undefined
- * when the sound was skipped (muted, reduced-sound, character-skipped, or
- * ambient delegation).
+ * when the sound was skipped (muted, reduced-sound, character-skipped,
+ * silenced by the sound set, or ambient delegation).
  *
- * A family name rotates through that family's variants; every play also gets
- * a small pitch and level nudge so repetition never fatigues.
+ * A FAMILY name names a ROLE: the sound set decides which family actually
+ * sounds for it, at what rate and gain, and with what (if anything) layered
+ * underneath. A CONCRETE name is played exactly as asked — the set never
+ * substitutes for a caller who named a file.
+ *
+ * Either way the play gets a small pitch and level nudge so repetition never
+ * fatigues.
  */
 export async function play(name: PlayableName, options: PlayOptions = {}): Promise<number | undefined> {
-  const resolved = resolveName(name);
-  if (AMBIENT_LOOP_NAMES.has(resolved)) {
+  if (isFamily(name)) return playRole(name, options);
+  return playFile(name, options, {
+    gain: 1,
+    rate: undefined,
+    stamp: !CLICK_NAMES.has(name),
+    gateByName: true,
+  });
+}
+
+/** What the set decided about this play, handed down to `playFile`. */
+interface FilePlan {
+  /** The set's per-role trim. */
+  readonly gain: number;
+  /** The set's playback rate, or undefined for "no opinion". */
+  readonly rate: number | undefined;
+  /** Whether this counts as a control voicing itself (see CLICK_ROLE). */
+  readonly stamp: boolean;
+  /**
+   * Whether the file-name skip lists still apply.
+   *
+   * FALSE whenever a ROLE chose this file, and that is not an optimisation.
+   * The skip lists name the files a preference is about — the hover ticks, the
+   * pencil — and a set may voice a perfectly ordinary role with one of them
+   * (the paper sets press buttons with a pencil tap). Re-checking by name
+   * there would silence the button, not the hover. The role-level gates in
+   * `roleSilent` have already asked the question that was actually meant.
+   */
+  readonly gateByName: boolean;
+}
+
+/**
+ * Whether a role is inaudible right now, for every reason there is. Shared
+ * with `keystroke()`, which has to make the same decision without playing —
+ * otherwise a silenced role would still be counted as a tick.
+ */
+function roleSilent(role: FamilyName): boolean {
+  if (muted) return true;
+  if (reducedSound && REDUCED_SKIP_ROLES.has(role)) return true;
+  if (CHARACTER_SKIP_ROLES[character].has(role)) return true;
+  return resolveVoice(soundSet, role) === null;
+}
+
+/** Play one interaction role through the reader's sound set. */
+async function playRole(role: FamilyName, options: PlayOptions): Promise<number | undefined> {
+  if (roleSilent(role)) return undefined;
+  const voice = resolveVoice(soundSet, role);
+  if (voice === null) return undefined;
+  // Reduced sound means one sound per action, so a set's body layer is the
+  // first thing to go — it is exactly the "extra" that preference asks about.
+  if (voice.layer !== null && !reducedSound) scheduleLayer(voice.layer);
+  return playFile(pickVariant(voice.cue), options, {
+    gain: voice.gain,
+    rate: voice.rate,
+    stamp: role !== CLICK_ROLE,
+    gateByName: false,
+  });
+}
+
+/**
+ * A second, quieter cue under the first — a soft thump behind a book coming
+ * off the shelf. Never stamps `lastVoicedPlayMs`: a layer is part of the
+ * gesture that scheduled it, not an event of its own.
+ */
+function scheduleLayer(layer: SoundLayer): void {
+  const fire = (): void => {
+    void playFile(pickVariant(layer.cue), {}, {
+      gain: layer.gain,
+      rate: layer.rate,
+      stamp: false,
+      gateByName: false,
+    });
+  };
+  if (layer.delayMs > 0) setTimeout(fire, layer.delayMs);
+  else fire();
+}
+
+/** Play one concrete file, under a plan the caller (or the set) decided. */
+async function playFile(
+  name: SoundName,
+  options: PlayOptions,
+  plan: FilePlan,
+): Promise<number | undefined> {
+  if (AMBIENT_LOOP_NAMES.has(name)) {
     // Playing an ambient loop directly means "switch the bed to it".
     const entry = (Object.entries(SOUNDSCAPE_LOOPS) as Array<[SoundscapeName, SoundName]>).find(
-      ([, loop]) => loop === resolved,
+      ([, loop]) => loop === name,
     );
     if (entry) soundscape = entry[0];
     await startAmbient();
     return ambient?.id;
   }
   if (muted) return undefined;
-  if (reducedSound && REDUCED_SKIP.has(resolved)) return undefined;
   const profile = CHARACTER_PROFILES[character];
-  if (profile.skip.has(resolved)) return undefined;
+  if (plan.gateByName) {
+    if (reducedSound && REDUCED_SKIP.has(name)) return undefined;
+    if (profile.skip.has(name)) return undefined;
+  }
   // Stamped synchronously, before the first await, so the delegated button
   // click in `sound/uiClicks.ts` can tell whether the control it just saw
   // pressed already made a sound of its own.
-  if (!CLICK_NAMES.has(resolved)) lastVoicedPlayMs = Date.now();
+  if (plan.stamp) lastVoicedPlayMs = Date.now();
 
   const jitterOn = options.noJitter !== true;
-  const level = jitterOn ? jitter(profile.levelJitter) : 1;
-  const rate =
-    options.rate ?? (jitterOn && profile.pitchJitter > 0 ? jitter(profile.pitchJitter) : undefined);
+  const wobble = soundSetJitterScale(soundSet);
+  const level = jitterOn ? jitter(profile.levelJitter * wobble) : 1;
+  const nudge =
+    jitterOn && profile.pitchJitter * wobble > 0 ? jitter(profile.pitchJitter * wobble) : undefined;
+  // A set rate of exactly 1 is "no opinion", so the house set leaves rate()
+  // untouched exactly as it did before sets existed.
+  const base = plan.rate === undefined || plan.rate === 1 ? undefined : plan.rate;
+  let rate = options.rate;
+  if (rate === undefined) {
+    if (base !== undefined) rate = nudge === undefined ? base : base * nudge;
+    else rate = nudge;
+  }
 
-  const howl = await ensureHowl(resolved);
+  const howl = await ensureHowl(name);
   const id = howl.play();
-  howl.volume(effectiveVolume(resolved, (options.volume ?? 1) * level), id);
+  howl.volume(effectiveVolume(name, (options.volume ?? 1) * level, plan.gain), id);
   if (rate !== undefined) howl.rate(rate, id);
   return id;
 }
@@ -733,6 +940,23 @@ export function getSoundCharacter(): SoundCharacter {
   return character;
 }
 
+/**
+ * The reader's chosen sound set (see sound/soundSets.ts). Total: an unknown
+ * id resolves to the house set rather than leaving the engine unvoiced.
+ *
+ * `sound/soundSetPrefs.ts` owns the persisted value and calls this; the
+ * engine itself still never imports src/data.
+ */
+export function setSoundSet(next: SoundSetId | string): void {
+  const resolved = resolveSoundSetId(next);
+  if (soundSet === resolved) return;
+  soundSet = resolved;
+}
+
+export function getSoundSet(): SoundSetId {
+  return soundSet;
+}
+
 /** Hard mute for every sound; restores the ambient bed on unmute. */
 export function muteAll(mute: boolean): void {
   if (muted === mute) return;
@@ -796,8 +1020,10 @@ export function isTypingSounds(): boolean {
  * deterministic tests.
  */
 export function keystroke(nowMs: number = Date.now()): void {
-  if (!typingSoundsEnabled || muted || reducedSound) return;
-  if (CHARACTER_PROFILES[character].skip.has('typing-tick-1')) return;
+  // `roleSilent` covers mute, reduced sound, the character's skip list and a
+  // set that voices the keystroke role as silence — the same decision play()
+  // is about to make, asked before the tick is counted rather than after.
+  if (!typingSoundsEnabled || roleSilent('typing-tick')) return;
   if (nowMs - lastTypingTickMs < TYPING_MIN_INTERVAL_MS) return;
   lastTypingTickMs = nowMs;
   typingTicksPlayed += 1;
@@ -892,6 +1118,8 @@ export interface SoundEngineState {
   muted: boolean;
   reducedSound: boolean;
   character: SoundCharacter;
+  /** The reader's chosen voicing — what QA asserts a picker actually applied. */
+  set: SoundSetId;
   typingSounds: boolean;
   /** Ticks actually played this session — E2E asserts the rate limiter with it. */
   typingTicksPlayed: number;
@@ -909,6 +1137,7 @@ export function getEngineState(): SoundEngineState {
     muted,
     reducedSound,
     character,
+    set: soundSet,
     typingSounds: typingSoundsEnabled,
     typingTicksPlayed,
     hourlyChime: hourlyChimeEnabled,
@@ -933,6 +1162,17 @@ declare global {
       setHourlyChime: typeof setHourlyChime;
       chimeTick: typeof chimeTick;
       setSoundCharacter: typeof setSoundCharacter;
+      /**
+       * Set the voicing WITHOUT persisting it — the engine-level seam.
+       * A probe that wants to assert the picker's whole path (store → engine)
+       * should use `__nbSoundSets.save` from `soundSetPrefs.ts` instead: a
+       * probe's own `import('/src/sound/…')` on a dev server that has served
+       * HMR updates can resolve to a second copy of the module, and writes to
+       * that copy never reach the engine the app is actually playing through.
+       */
+      setSoundSet: typeof setSoundSet;
+      getSoundSet: typeof getSoundSet;
+      resolveVoice: (role: FamilyName) => SoundVoice | null;
       poolFor: typeof poolFor;
       play: typeof play;
     };
@@ -950,6 +1190,9 @@ if (typeof window !== 'undefined') {
     setHourlyChime,
     chimeTick,
     setSoundCharacter,
+    setSoundSet,
+    getSoundSet,
+    resolveVoice: (role: FamilyName) => resolveVoice(soundSet, role),
     poolFor,
     play,
   };
@@ -980,6 +1223,7 @@ export function resetEngineForTests(): void {
   muted = false;
   reducedSound = false;
   character = 'calm';
+  soundSet = DEFAULT_SOUND_SET_ID;
   ambient = undefined;
   ambientWanted = false;
   soundscape = 'rain';

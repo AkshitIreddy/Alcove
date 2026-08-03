@@ -15,16 +15,43 @@
  *   reflection about the gutter — the exact mirrored page the land() swap
  *   needs, with no separate rigid-rotation blend to fight the cylinder.
  * - Fragment: back face samples the destination page 4% lighter/desaturated
- *   (paper backside); lighting is smoothstep bands — crest highlight,
- *   pre-fold darkening, self-shadow on the flat part — plus a paper-texture
- *   multiply (uPaperTex) so raster matches resting CSS.
+ *   (paper backside), plus a paper-texture multiply (uPaperTex) so raster
+ *   matches resting CSS. NO light model — see "the shading that was removed".
  * - Every page sample goes through samplePage()/faceUv() in FRAG_COMMON:
  *   snapshots composite over paper cream (a transparent texel must read as
  *   paper, never black) and mirror per direction/face (leaf-local x runs
  *   from the spine, snapshots run from the page's left edge).
  * - Ground pass: opaque quad under the curl showing the revealed page's
- *   raster with the cast shadow composited in the same fragment — drawn
- *   first in the same GL frame, so shadow and mesh can never desync.
+ *   raster with one flat contact shadow composited in the same fragment —
+ *   drawn first in the same GL frame, so shadow and mesh can never desync.
+ *
+ * THE SHADING THAT WAS REMOVED (reader: "when i turn pages sometimes, mid
+ * way, the bottom half of page with lines has some weird shadowey effect")
+ *
+ * The turning sheet used to carry the design doc's lighting model: a warm
+ * crest highlight, a curvature darkening band before the crest, a
+ * quarter-page-wide self-shadow on the still-flat paper, and a 26px-soft
+ * cast shadow on the ground. All four are what CLAUDE.md's flat language
+ * forbids — a highlight placed to imply a lamp, a shading pass, blurred
+ * shadows — and the self-shadow is the one the reader actually saw, for a
+ * reason worth writing down:
+ *
+ *   Past a half turn the sheet lies back flat at z = 2r, ON TOP of the
+ *   un-deformed strip between the spine and the fold. Perspective scales
+ *   that lifted paper outward from the canvas centre, so at the foot of the
+ *   page it is pushed DOWN by ~38px while the flat strip underneath is not.
+ *   The mesh is indexed row-major, so row j's lifted tail is drawn BEFORE
+ *   row j+1's flat strip — and with no depth buffer the flat strip painted
+ *   over the sheet lying on top of it. What showed through, once per mesh
+ *   row, was the self-shadow's gradient: a soft slab, hard at the fold,
+ *   fading toward the spine. Only ever BELOW the canvas centre, because
+ *   above it the displacement runs upward into rows already drawn.
+ *
+ * So there were two defects stacked: painter's order that a lift can break,
+ * and shading rich enough to make the break obvious. Both are fixed — the
+ * context now has a depth buffer (gl.ts) so the physically-higher paper
+ * always wins, and the lighting is down to one flat contact shadow at the
+ * crease, the sanctioned depth cue (art/flat.ts contactShadow).
  *
  * Shaders are inline template strings (no loader), per the doc.
  */
@@ -59,6 +86,31 @@ export const PAPER_CREAM_RGB: readonly [number, number, number] = [247, 241, 227
 
 /** The same cream as a GLSL literal, so shader and CPU can never drift. */
 const PAPER_CREAM_GLSL = PAPER_CREAM_RGB.map((channel) => (channel / 255).toFixed(6)).join(', ');
+
+/**
+ * art/flat.ts FLAT.shadow (#5d3a26) as 0-255 RGB — the app's ONE shadow
+ * colour, and the only ink the flip is allowed to darken paper with. Warm
+ * brown, never black, never a neutral grey.
+ */
+export const FLAT_SHADOW_RGB: readonly [number, number, number] = [93, 58, 38];
+
+const FLAT_SHADOW_GLSL = FLAT_SHADOW_RGB.map((channel) => (channel / 255).toFixed(6)).join(', ');
+
+/**
+ * Contact-shadow alpha at full lift — art/flat.ts contactShadow()'s own
+ * default, so the crease of a turning page is exactly as dark as the shadow
+ * under a book on a shelf. The rigid CSS fold (cssFallback.ts) reads this
+ * too: one turning page, one shadow, whichever path draws it.
+ */
+export const CONTACT_SHADOW_ALPHA = 0.22;
+
+/**
+ * How far the contact shadow reaches beyond the lifted sheet's edge, CSS px.
+ * A contact shadow is a CONTACT: it hugs the paper and stops. The terms this
+ * replaced ran 0.25·W (~165px) and a 26px-soft band, which are lighting
+ * washes, not contacts. Fixed, so no value of p can grow it back into one.
+ */
+export const CONTACT_SHADOW_REACH_PX = 18;
 
 /* ----------------------------------------------------------------------------
    Shader sources
@@ -95,8 +147,6 @@ uniform float uTilt;    // fold-line tilt, radians (0 = vertical fold)
 uniform float uRadius;  // cylinder radius, px (> 0; math.ts floors it)
 ${VERT_COMMON}
 out vec2 vUv;
-out float vD;      // signed distance from fold line (px, + = wrapped side)
-out float vAngle;  // wrap angle around the cylinder (0 = flat)
 
 const float PI = 3.14159265;
 
@@ -118,10 +168,9 @@ void main() {
   // then — so the landing is the exact mirrored page, to sub-pixel.
   vec2 pos = local;
   float z = 0.0;
-  float angle = 0.0;
   if (d > 0.0) {
     vec2 tangential = local - d * n;
-    angle = d / uRadius;
+    float angle = d / uRadius;
     if (angle < PI) {
       pos = tangential + n * (sin(angle) * uRadius);
       z = (1.0 - cos(angle)) * uRadius;
@@ -131,9 +180,9 @@ void main() {
     }
   }
 
+  // z is the whole depth story now: the fragment pass carries no lighting,
+  // so the fold distance and wrap angle stop at this shader.
   vUv = a_uv;
-  vD = d;
-  vAngle = angle;
   gl_Position = project(pos, z);
 }
 `;
@@ -151,6 +200,7 @@ uniform float uPaperMix;   // fibre multiply strength (0 disables)
 uniform float uPaperMean;  // mean luminance of the paper tile (normalizer)
 
 const vec3 PAPER_CREAM = vec3(${PAPER_CREAM_GLSL});
+const vec3 FLAT_SHADOW = vec3(${FLAT_SHADOW_GLSL});
 
 /**
  * Leaf-local uv → page-snapshot uv. Leaf-local x runs from the SPINE, but a
@@ -188,17 +238,11 @@ export const CURL_FRAG_SRC = /* glsl */ `#version 300 es
 precision highp float;
 
 in vec2 vUv;
-in float vD;
-in float vAngle;
 
 uniform sampler2D uTexFront;
 uniform sampler2D uTexBack;
-uniform vec2 uLeafSize;
-uniform float uLift;       // sin(p·π): 0 at rest/landed, 1 mid-flip
 ${FRAG_COMMON}
 out vec4 outColor;
-
-const float HALF_PI = 1.57079633;
 
 void main() {
   // Face selection: mirroring flips winding once for the wrapped part and
@@ -208,7 +252,10 @@ void main() {
   vec3 color;
   if (isBack) {
     // Paper backside = the sheet's other page, 4% lighter and slightly
-    // desaturated. faceUv owns the mirroring for both directions.
+    // desaturated. A flat face tint, not a light model: it is the same
+    // trick as a lighter timber face beside a darker one in art/flat.ts,
+    // and it is the ONLY depth cue the moving sheet carries. faceUv owns
+    // the mirroring for both directions.
     vec3 c = samplePage(uTexBack, faceUv(vUv, true));
     c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), 0.12);
     color = mix(c, vec3(1.0), 0.04);
@@ -220,31 +267,16 @@ void main() {
   // the fibre relief modulates (base tone already lives in the snapshot).
   color = paperMultiply(color, vUv);
 
-  // Crest highlight: 3-5% warm light on the cylinder crest (upper-left key
-  // light per the art direction). Gaussian band around angle = π/2.
-  float crest = exp(-pow((vAngle - HALF_PI) / 0.55, 2.0));
-  color += vec3(0.050, 0.045, 0.035) * crest * uLift;
-
-  // Pre-crest darkening: ~10% band as the surface turns away from the light,
-  // just before the crest catches it.
-  float preFold = smoothstep(0.0, 1.1, vAngle) * (1.0 - smoothstep(1.1, HALF_PI + 1.0, vAngle));
-  color *= 1.0 - 0.10 * preFold * uLift;
-
-  // Self-shadow: the lifted portion shades the still-flat paper just before
-  // the fold — smoothstep over 0.25·W, strongest at the fold, ∝ sin(p·π).
-  if (vD <= 0.0) {
-    float s = 1.0 - smoothstep(0.0, 0.25 * uLeafSize.x, -vD);
-    float amount = 0.22 * s * uLift;
-    color *= vec3(1.0) - amount * vec3(0.78, 0.84, 0.95); // warm shadow
-  }
-
+  // Nothing else. No crest highlight, no curvature band, no self-shadow —
+  // the curl reads from its geometry (the rules bend, the ink foreshortens)
+  // and from the flat backside tint above. See the header note.
   outColor = vec4(color, 1.0);
 }
 `;
 
 /**
  * Ground pass: opaque quad over the moving leaf's rect showing the revealed
- * page beneath the curl, with the curl's soft cast shadow composited in.
+ * page beneath the curl, with the crease's flat contact shadow composited in.
  */
 export const GROUND_VERT_SRC = /* glsl */ `#version 300 es
 precision highp float;
@@ -269,8 +301,13 @@ uniform float uFoldD;
 uniform float uTilt;
 uniform float uRadius;
 uniform float uLift;
+uniform float uShadowStart; // leaf-local px past the fold where the sheet's
+                            // silhouette ends — measured, not assumed
 ${FRAG_COMMON}
 out vec4 outColor;
+
+const float CONTACT_ALPHA = ${CONTACT_SHADOW_ALPHA.toFixed(3)};
+const float CONTACT_REACH = ${CONTACT_SHADOW_REACH_PX.toFixed(1)};
 
 void main() {
   // The revealed page sits the same way round as the leaf's front face.
@@ -283,14 +320,25 @@ void main() {
   vec2 n = vec2(cos(uTilt), sin(uTilt));
   float d = dot(local - vec2(0.0, uLeafSize.y * 0.5), n) - uFoldD;
 
-  // The curled sheet hovers just past the fold; its cast shadow is a soft
-  // band centered under the cylinder. Width tracks curl height, softness
-  // grows with lift.
-  float center = uRadius * 0.6;
-  float halfWidth = uRadius * 1.5 + uLift * 26.0;
-  float a = 0.30 * uLift * (1.0 - smoothstep(0.0, halfWidth, abs(d - center)));
+  // Contact shadow: ONE flat band, hugging the outside of the lifted sheet's
+  // silhouette and stopping CONTACT_REACH px later. Constant alpha inside —
+  // the 1px smoothsteps are edge antialiasing, which is how a flat shape is
+  // rasterized, not a soft falloff. uLift takes it to exactly 0 at p=0 and
+  // p=1 so the landing frame stays pixel-identical to the DOM it swaps for.
+  //
+  // It starts at uShadowStart, not at the fold: the crease itself is UNDER
+  // the paper (the cylinder covers the ground for its whole radius, and
+  // perspective pushes that silhouette a further ~12px outward mid-flip), so
+  // a band drawn at the fold is a band nobody ever sees. curl.ts's render()
+  // projects the silhouette the same way the vertex shader does and hands
+  // the answer over.
+  float end = uShadowStart + CONTACT_REACH;
+  float band =
+    smoothstep(uShadowStart - 1.0, uShadowStart + 1.0, d) *
+    (1.0 - smoothstep(end - 1.0, end + 1.0, d));
+  float a = CONTACT_ALPHA * uLift * band;
 
-  color *= vec3(1.0) - a * vec3(0.70, 0.78, 0.87); // warm brown, never black
+  color *= mix(vec3(1.0), FLAT_SHADOW, a); // the app's one shadow colour
   outColor = vec4(color, 1.0);
 }
 `;
@@ -298,6 +346,47 @@ void main() {
 /* ----------------------------------------------------------------------------
    Renderer
    -------------------------------------------------------------------------- */
+
+/**
+ * Where the lifted sheet's OUTER SILHOUETTE lands on the flat page beneath
+ * it, as a leaf-local distance past the fold — i.e. where the ground stops
+ * being hidden and the contact shadow may begin.
+ *
+ * Two corrections over the naive "the cylinder is r wide, so r":
+ *
+ * 1. The sheet only reaches angle π/2 (the widest point of the cylinder) if
+ *    it is long enough. Early in a flip the fold is still out near the leaf
+ *    edge, the paper past it is a shallow arc, and its own edge is the
+ *    silhouette — sin(angle) of that, not sin(π/2).
+ * 2. The silhouette is LIFTED (z = (1 − cos angle)·r), so the camera pushes
+ *    it outward from the canvas centre. Skipping this puts the band up to
+ *    ~12px inside the paper mid-flip, where it is invisible. This is the
+ *    same projection the vertex shader's project() applies, evaluated for
+ *    one point — including the 'prev' mirror, which flips which way
+ *    "outward" runs.
+ *
+ * Returned in GROUND space (the ground quad is at z=0 and maps 1:1 to the
+ * canvas), so the fragment shader can compare it against its own `d`.
+ */
+function silhouetteOffset(
+  leafW: number,
+  foldD: number,
+  radius: number,
+  camDist: number,
+  frame: CurlFrame,
+  dirSign: number,
+): number {
+  const angle = Math.min(Math.max(leafW - foldD, 0) / radius, Math.PI / 2);
+  const localX = foldD + Math.sin(angle) * radius;
+  const z = (1 - Math.cos(angle)) * radius;
+  const scale = camDist / Math.max(camDist - z, 1e-3);
+  const centreX = frame.canvasW * 0.5;
+  // project()'s x mapping, for this one vertex.
+  const canvasX = dirSign > 0 ? frame.leafX + localX : frame.leafX + leafW - localX;
+  const screenX = centreX + (canvasX - centreX) * scale;
+  const groundLocalX = dirSign > 0 ? screenX - frame.leafX : frame.leafX + leafW - screenX;
+  return Math.max(groundLocalX - foldD, 0);
+}
 
 export interface CurlFrame {
   /** Flip progress 0..1. */
@@ -396,6 +485,7 @@ export class CurlRenderer {
     const lift = Math.sin(Math.min(Math.max(p, 0), 1) * Math.PI);
 
     const camDist = cameraDistanceForViewport(frame.canvasH, CURL_FOV_RAD);
+    const shadowStart = silhouetteOffset(leafW, foldD, radius, camDist, frame, dirSign);
     const proj = perspectiveMatrix(
       CURL_FOV_RAD,
       frame.canvasW / frame.canvasH,
@@ -404,7 +494,10 @@ export class CurlRenderer {
     );
 
     gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    // DEPTH too, every frame: without it the previous frame's curl height
+    // rejects this frame's fragments and the sheet stops redrawing where it
+    // used to be higher. (gl.ts turns the test on and picks LEQUAL.)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     const setCommon = (prog: GlProgram): void => {
       prog.set2f('uLeafSize', leafW, leafH);
@@ -417,6 +510,7 @@ export class CurlRenderer {
       prog.set1f('uTilt', tilt);
       prog.set1f('uRadius', radius);
       prog.set1f('uLift', lift);
+      prog.set1f('uShadowStart', shadowStart);
       prog.set2f('uPaperScale', leafW / this.paperTileCss, leafH / this.paperTileCss);
       prog.set1f('uPaperMix', this.paperMix);
       prog.set1f('uPaperMean', 0.94);
@@ -440,7 +534,7 @@ export class CurlRenderer {
     if (this.disposed || this.ctx.isLost()) return;
     const gl = this.gl;
     gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
 
   dispose(): void {

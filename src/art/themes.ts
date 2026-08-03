@@ -913,13 +913,33 @@ export type ThemeId = (typeof THEME_IDS)[number];
 /**
  * The room a brand-new library opens in.
  *
- * NOT the app icon's oak any more, and that is the point of this pass. The oak
- * is the house *fallback* — it is what `art/flat.ts` draws in when no scheme is
- * set — but as a first impression it was the blandest thing the app could have
- * chosen: a brown case on a beige wall, which is what every stock bookshelf
+ * NOT the app icon's oak, and that was the point of the pass that moved it. The
+ * oak is the house *fallback* — it is what `art/flat.ts` draws in when no scheme
+ * is set — but as a first impression it was the blandest thing the app could
+ * have chosen: a brown case on a beige wall, which is what every stock bookshelf
  * illustration looks like. Verdigris is the same drawing with a decision in it,
  * and it shows off the two fixed colours the flat style leans on hardest, since
  * gilt and cream both sing against a blue-green.
+ *
+ * ## Re-opened when the reader called the opening shelf bland, and kept
+ *
+ * The complaint turned out to be about the CARPENTRY, not the palette: the case
+ * was a plain plank build, so every room read as a coloured slab. Twenty-two
+ * rooms were then photographed on the new opening carpentry — the whole colour
+ * axis on one build (`shots-now/defaults/board-b.png`, `board-h.png`) — and
+ * verdigris still won, on three counts that only show up in a photograph:
+ *
+ *  - its recess sits far enough under its timber that the arcade behind the
+ *    books reads as arches. On `walnut`, `fumed` and `ebonised` the same
+ *    arches all but vanish, which is the difference between carpentry and mud;
+ *  - its wall (`#f1e8d2`) is warm plaster against a cool case, so the wall
+ *    reads as a room rather than as backdrop. The cool-walled rooms —
+ *    `cardroom`, `slateroof`, `harbour` — go grey next to the app's cream
+ *    pages;
+ *  - its six cloths (rust, saffron, inkblue, oxblood, sand, mulberry) are the
+ *    most elegant set in the file, and they are what every new book is dressed
+ *    from. `peacock` beats it on the case alone and loses badly here: tangerine,
+ *    magenta and lemon make a circus of the shelf a week later.
  *
  * `Old Athenaeum` is first in the picker and one click away, so nothing is lost.
  */

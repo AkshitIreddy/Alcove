@@ -150,6 +150,36 @@ async function loadSession(source: {
   return { book, pages };
 }
 
+/* ---------------------------------------------------------------------------
+ * The way back, and where every way back lives.
+ *
+ * CONVENTION (reader's words: *"when in focus mode the leave focus mode is in
+ * top right, it should be top left instead, similar for all other types of
+ * options, it should ALWAYS be on top left, maybe do a check"*):
+ *
+ *   Every control that LEAVES somewhere — back, close, exit, leave, cancel —
+ *   is anchored to the TOP-LEFT of whatever it leaves: the window for a view,
+ *   the sheet for a panel. Never the top-right, never the bottom.
+ *
+ * `tests/top-left-exits.test.ts` is the check: it fails any exit-ish selector
+ * in src/styles that anchors itself with `right:`.
+ *
+ * The way back out of a book also has to stop being a permanent chrome bar
+ * (*"placed in a way tasteful and goes away after it is used"*), so it fades
+ * to a pencil mark once the reader has settled in, and comes back on intent:
+ * the pointer entering the corner, Escape, or a Tab that lands on it.
+ * ------------------------------------------------------------------------- */
+
+/** The corner box that summons the way back, in px from the top-left. */
+const BACK_ZONE_W = 280;
+const BACK_ZONE_H = 160;
+
+/** How long it stays out on arrival, and after a reveal. */
+const BACK_LINGER_MS = 2800;
+
+/** How long it stays once the pointer has left the corner again. */
+const BACK_LEAVE_MS = 650;
+
 /** Hand-drawn back arrow (pre-wobbled static path — no runtime filters). */
 function BackArrowIcon(): JSX.Element {
   return (
@@ -553,6 +583,61 @@ export default function BookView(): JSX.Element {
   const toggleFocus = (): void => setFocus(!focusMode());
 
   // -------------------------------------------------------------------------
+  // The way back (see the convention docblock at the top of this file)
+  // -------------------------------------------------------------------------
+  const [backShown, setBackShown] = createSignal(true);
+  let backTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Pointer is inside the summoning corner. Plain flag: read on every move. */
+  let backNear = false;
+
+  const clearBackTimer = (): void => {
+    if (backTimer !== undefined) {
+      clearTimeout(backTimer);
+      backTimer = undefined;
+    }
+  };
+
+  /** Out, and staying out (the pointer is in the corner, or it has focus). */
+  const holdBack = (): void => {
+    clearBackTimer();
+    setBackShown(true);
+  };
+
+  /** Out, then receding again after `ms`. */
+  const showBack = (ms: number): void => {
+    clearBackTimer();
+    setBackShown(true);
+    backTimer = setTimeout(() => {
+      backTimer = undefined;
+      setBackShown(false);
+    }, ms);
+  };
+
+  /**
+   * Only crossings of the corner boundary touch state — a pointer moving
+   * across the page does one boolean compare per event and writes nothing.
+   * (The page-flip rasterizes pages; nothing here may add work to a move.)
+   */
+  const onPointerMove = (event: PointerEvent): void => {
+    const near = event.clientX <= BACK_ZONE_W && event.clientY <= BACK_ZONE_H;
+    if (near === backNear) return;
+    backNear = near;
+    if (near) holdBack();
+    else showBack(BACK_LEAVE_MS);
+  };
+
+  onMount(() => {
+    // It is out when the reader arrives — that is the moment they most need to
+    // know the door is there — and then it gets out of the way.
+    showBack(BACK_LINGER_MS);
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+  });
+  onCleanup(() => {
+    clearBackTimer();
+    window.removeEventListener('pointermove', onPointerMove);
+  });
+
+  // -------------------------------------------------------------------------
   // Keyboard: ←/→ flip through the FlipSurface api unless the user is typing;
   // F9 toggles focus mode, '?' opens the cheat-sheet when not typing.
   // -------------------------------------------------------------------------
@@ -572,6 +657,12 @@ export default function BookView(): JSX.Element {
       setFocus(false);
       return;
     }
+    // Escape is also how you SUMMON the way back without reaching for the
+    // corner — it is the key every other "get me out of here" in the app
+    // answers to, and here it only lights the door rather than opening it.
+    // Deliberately before the defaultPrevented guard: ProseMirror eats Escape
+    // while the caret is in a page, which is exactly when you want the door.
+    if (event.key === 'Escape' && !focusMode()) showBack(BACK_LINGER_MS);
     if (event.defaultPrevented || insertOpen()) return;
 
     if (event.key === 'F9') {
@@ -902,13 +993,24 @@ export default function BookView(): JSX.Element {
     >
       {/* Ctrl+K quick switcher (single-instance; safe if also mounted in App). */}
       <QuickSwitcher />
+      {/* The only way out of a book, top-left, and quiet about it. It is not
+          removed when it recedes — a control you cannot Tab to is not a way
+          out — it just stops being ink you have to look past.
+
+          The label keeps "back to shelf" as its leading words: that is the
+          accessible name the e2e suite and the tour both find it by. */}
       <button
         type="button"
         class="nb-back-button font-accent"
+        classList={{ 'is-away': !backShown() }}
+        aria-label="back to shelf (Escape shows this)"
+        tabindex={focusMode() ? -1 : 0}
+        onFocus={() => holdBack()}
+        onBlur={() => showBack(BACK_LEAVE_MS)}
         onClick={() => appState.closeBook()}
       >
         <BackArrowIcon />
-        <span>back to shelf</span>
+        <span class="nb-back-label">back to shelf</span>
       </button>
 
       {/* The one thing left on screen in focus mode, because focus mode

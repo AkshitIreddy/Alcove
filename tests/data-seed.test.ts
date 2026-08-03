@@ -28,6 +28,7 @@ import {
 } from '../src/data/seed';
 import { normalizeBookStyleOverrides } from '../src/art/bookStyle';
 import { clothForPalette } from '../src/art/spines';
+import { CLOTHS, CLOTH_LABELS } from '../src/art/flat';
 import { parse } from '../src/script';
 import type { PageDoc } from '../src/data/types';
 
@@ -186,19 +187,29 @@ describe('WELCOME_BINDING', () => {
   });
 
   /**
-   * Pin the CLOTH, not the pigment index.
+   * Pin the CLOTH, not the pigment index — and pin it by NAME AND HEX.
    *
    * "pigment !== 0" was the first version of this test and it passed while the
-   * book shipped the wrong colour: twenty pigment names fold onto six flat
-   * cloths, and the oxblood that was authored came out as terracotta — the
-   * same cloth every unstyled book on the shelf already wears. The index is
-   * not the thing anyone can see, so it is not the thing worth asserting.
+   * book shipped the wrong colour: the pigment names fold onto the flat cloths
+   * through a table, and the oxblood that was authored came out as terracotta
+   * — the same cloth every unstyled book on the shelf already wears. The index
+   * is not the thing anyone can see, so it is not the thing worth asserting.
+   *
+   * The version after that pinned the raw slot (`toBe(2) // plum`), and that
+   * went stale the moment `art/flat.ts` grew from six cloths to fifty: the
+   * trailing `% CLOTHS.length` in `clothForPalette` stopped wrapping, so
+   * pigment 20 stopped landing on slot 2 and started landing on slot 42. The
+   * BOOK did not change colour — slot 42 is Claret `#a44c60`, exactly what
+   * `seed.ts` authored and photographed — only the number did. So assert the
+   * cloth's identity (its label and its two hexes), which is what a reader
+   * sees, and let the slot be wherever the table puts it.
    */
   it('lands on a cloth that is not the unstyled default', () => {
     const cloth = clothForPalette(WELCOME_BINDING.pigment as number);
-    expect(cloth).toBe(2); // plum
-    expect(cloth).not.toBe(clothForPalette(0)); // not amber→ochre
-    expect(cloth).not.toBe(0); // not terracotta, the commonest cloth
+    expect(CLOTH_LABELS[cloth]).toBe('Claret');
+    expect(CLOTHS[cloth]).toEqual(['#a44c60', '#8e3e53']);
+    expect(cloth).not.toBe(clothForPalette(0)); // not whatever Amber paints
+    expect(cloth).not.toBe(0); // not slot 0, the commonest cloth
   });
 
   it('derives a stable spine seed from the current title', () => {

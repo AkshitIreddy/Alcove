@@ -5,10 +5,17 @@
  *    two-faced leaf rotating around the spine, driven by the same p∈[0,1]
  *    progress as the GL curl so PageFlipController can swap paths without
  *    changing its gesture logic. The live leaf is the front face; a plain
- *    paper-backside div is the back face. Two gradient overlay divs (leaf
- *    shading + cast shadow) animate with OPACITY ONLY — no layout, no
- *    filter, per the doc. Used when WebGL is unavailable, after context
- *    loss, or when a snapshot fails.
+ *    paper-backside div is the back face; ONE flat contact-shadow div sits
+ *    on the revealed page beside the spine, animated with OPACITY ONLY — no
+ *    layout, no filter. Used when WebGL is unavailable, after context loss,
+ *    or when a snapshot fails.
+ *
+ *    It used to carry a second overlay as well: a 90deg wash across the
+ *    whole leaf that darkened as the page rotated away. That is a light
+ *    model, which CLAUDE.md's flat language does not have, and it was the
+ *    fallback's copy of the same shading the GL curl has now shed (see the
+ *    header of curl.ts). The rotation is the cue; the backside showing is
+ *    the cue. Neither needs a lamp.
  *
  * 2. 160ms opacity crossfade for prefers-reduced-motion: the spread swaps
  *    under a brief cream veil so live DOM is never seen mid-swap. GSAP
@@ -19,6 +26,7 @@
  */
 
 import { gsap } from 'gsap';
+import { CONTACT_SHADOW_REACH_PX } from './curl';
 import { CROSSFADE_MS, clamp01, type FlipDirection } from './math';
 
 /* ----------------------------------------------------------------------------
@@ -69,18 +77,19 @@ export function createRigidFold(options: RigidFoldOptions): RigidFoldHandle {
   backside.style.height = `${leafRect.height}px`;
   backside.style.transformOrigin = leaf.style.transformOrigin;
 
-  // Gradient overlays — opacity-only animation.
-  const shade = document.createElement('div');
-  shade.className = 'nb-flip-fallback-shade';
+  // The one overlay — a flat contact band beside the spine, on the page the
+  // rotating leaf uncovers. Opacity-only animation. The band's width comes
+  // from the shader's constant rather than a second copy of the number, so
+  // GL and CSS creases cannot end up different widths.
   const shadow = document.createElement('div');
   shadow.className = 'nb-flip-fallback-shadow';
   shadow.style.left = backside.style.left;
   shadow.style.top = backside.style.top;
   shadow.style.width = backside.style.width;
   shadow.style.height = backside.style.height;
+  shadow.style.setProperty('--nb-contact-reach', `${CONTACT_SHADOW_REACH_PX}px`);
   if (dir === 'prev') shadow.classList.add('is-prev');
 
-  leaf.appendChild(shade);
   container.appendChild(backside);
   container.appendChild(shadow);
 
@@ -94,9 +103,11 @@ export function createRigidFold(options: RigidFoldOptions): RigidFoldHandle {
     const lift = Math.sin(t * Math.PI);
     leaf.style.transform = `rotateY(${angle}deg)`;
     backside.style.transform = `rotateY(${angle + sign * 180}deg)`;
-    // Front shading reads only while the front face is visible (t < 0.5).
-    shade.style.opacity = String(0.18 * lift * (t < 0.5 ? 1 : 0.35));
-    shadow.style.opacity = String(0.3 * lift);
+    // Only the lift envelope, sin(p·π): the contactShadow alpha is already
+    // inside --lift-ink (flip.css), so multiplying by it here would apply it
+    // twice and leave a 5% ghost. Both ends of the turn land on exactly 0,
+    // so the swap to live DOM has nothing to fade out.
+    shadow.style.opacity = String(lift);
   };
 
   return {
@@ -128,7 +139,6 @@ export function createRigidFold(options: RigidFoldOptions): RigidFoldHandle {
       disposed = true;
       tween?.kill();
       tween = null;
-      shade.remove();
       backside.remove();
       shadow.remove();
       leaf.classList.remove('nb-flip-fallback-leaf');

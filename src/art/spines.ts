@@ -18,7 +18,7 @@
  * untouched: they are data and layout, and nothing about them was painterly.
  */
 
-import type { CharmKind } from './charms';
+import { CHARM_COLORS, CHARM_KINDS_WITH_ART, charmColorCss, type CharmKind } from './charms';
 import {
   bookLabelBox,
   bookSpineBoxes,
@@ -1263,7 +1263,16 @@ export interface SpineParams {
   height?: number;
   /** Charm carried on the shelf AND into the pull-out / open book. */
   charm?: CharmKind;
-  /** Index into charms.CHARM_COLORS for the ribbon/twine/wax colourway. */
+  /**
+   * The ribbon/twine/wax colourway: an index into `charms.CHARM_COLORS`.
+   *
+   * Read through `charms.charmColorCss`, which also accepts a HEX — so the day
+   * `art/bookStyle.ts` lets a reader pin a colour of their own, the drawing
+   * side already honours it and only the persisted type has to widen. Widening
+   * it here first does not work: `bookStyle.resolveBookStyle` rounds and clamps
+   * this value, so a union arriving early is a type error in a module that has
+   * no way to use it yet.
+   */
   charmColor?: number;
   /**
    * A binding pinned in the Book Studio (`art/bookDesign.ts`), overriding the
@@ -1513,13 +1522,16 @@ export function deriveSpineParams(seed: number): SpineParams {
   const wear = clamp(wearRoll * wearRoll * (0.55 + MATERIAL_WEAR_BIAS[material]), 0, 1);
   const edge = pickWeighted(rnd(), EDGE_WEIGHTS);
   const charmRoll = rnd();
+  // Both pools are READ from `art/charms.ts` rather than copied out of it. The
+  // copies that used to be here restated their sizes as the literals 6 and 8,
+  // which is the quietest way this codebase has found to lose a vocabulary: add
+  // a charm or a colourway there and the seed would simply never roll it, with
+  // nothing failing anywhere.
   const charm: CharmKind =
     charmRoll < 0.66
       ? 'none'
-      : (['ribbon', 'tassel', 'pressed-flower', 'clasp', 'wax-seal', 'tag'] as const)[
-          Math.floor(rnd() * 6)
-        ] ?? 'none';
-  const charmColor = Math.floor(rnd() * 8);
+      : (CHARM_KINDS_WITH_ART[Math.floor(rnd() * CHARM_KINDS_WITH_ART.length)] ?? 'none');
+  const charmColor = Math.floor(rnd() * CHARM_COLORS.length);
 
   // --- painterly rebuild rolls (appended: earlier fields keep their values) ---
   const boardStyle = Math.floor(rnd() * (MAX_BOARD_STYLE + 1));
@@ -2759,24 +2771,6 @@ export function clothForPalette(palette: number): number {
 }
 
 /**
- * Ribbon colourways, `charmColor` mapped into the flat palette.
- *
- * Every one is saturated. The palette's creams are deliberately absent: a pale
- * ribbon at the head of a spine reads as a second, smaller label rather than
- * as a ribbon, which is the one thing it must not do.
- */
-const RIBBON_COLOURS: readonly string[] = [
-  FLAT.moss,
-  FLAT.terracotta,
-  FLAT.gilt,
-  FLAT.slate,
-  FLAT.plum,
-  FLAT.sage,
-  FLAT.ochre,
-  FLAT.mossDark,
-];
-
-/**
  * …and room for *lettering* inside a plate. Stricter than `fitsLabelPlate`,
  * because a plate only has to look like a plate whereas a title has to be
  * read: below about 6px of glyph the run is a grey smear, and forcing a
@@ -3428,7 +3422,16 @@ function drawSpineRibbon(
   const rw = Math.max(2, w * 0.2);
   if (rw < 2.5 || h < 40) return;
   const rh = Math.min(h * 0.16, rw * 6);
-  const colour = RIBBON_COLOURS[(params.charmColor ?? 0) % RIBBON_COLOURS.length] as string;
+  // ONE folding of the charm colourway, shared with `art/covers.ts` and with
+  // the Book Studio's swatch. This used to be a local table of eight FLAT
+  // constants in an order of its own — `[moss, terracotta, gilt, slate, plum,
+  // sage, ochre, mossDark]` — while the studio's swatch row was
+  // `[crimson, forest, navy, …]` and the cover had a third table again. Same
+  // index, three foldings, so a reader who pressed **Crimson** got a green
+  // ribbon on the shelf and a terracotta one in their hand, and nothing
+  // anywhere failed. `charmColorCss` is now the only place that answers this
+  // question, and it takes a reader's own hex as readily as an index.
+  const colour = charmColorCss(params.charmColor);
   // It starts ABOVE the head so its top cap and outline are cut off by the
   // bake's own bounds — that is what makes it read as coming out of the book
   // rather than as a pill painted on the cloth. Right of centre for the same

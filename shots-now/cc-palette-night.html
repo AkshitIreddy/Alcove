@@ -1,0 +1,2025 @@
+<!doctype html><html data-theme="night"><meta charset="utf-8"><style>
+/* ============================================================================
+   Notebook — design tokens
+
+   ONE drawing vocabulary, shared by the canvas and the chrome. `src/art/flat.ts`
+   owns the shelf world's version of it; this file is the CSS mirror, and the
+   two must not drift — a dock that is soft-shadowed parchment floating over a
+   flat-illustrated bookcase reads as two apps stapled together.
+
+   The rules, taken from the app icon (assets/brand/icon.svg):
+
+     - flat colour, never a gradient, never a texture, never a light model;
+     - ONE outline colour (--ink-line) on everything, at a confident weight;
+     - corners always rounded, generously;
+     - depth = a darker flat face beside a lighter one, plus ONE flat contact
+       shadow where an object meets a surface. No ambient blur.
+
+   Every color in the app lives here. No hardcoded colors elsewhere.
+
+   Contrast contract (checked by scripts/check-contrast.mjs, not guessed):
+     - body ink >= 8:1 on every paper ground and every `-light` wash;
+     - "soft" inks >= 4.5:1 on the DARKEST ground they sit on (--paper-aged);
+     - `-deep` pigments are RIM/BORDER colours first, but the ones that are
+       also used as type (terracotta, moss, sky, blush, plum, amber) clear
+       4.5:1 on --paper-aged too.
+   ========================================================================== */
+
+:root {
+  /* ------------------------------------------------------------------------
+     Paper — the flat cream of the icon's page block. Three rungs, all light
+     enough to carry ink at 7:1+, because "shadowed paper" in this language is
+     a second flat fill rather than a darkened one.
+     ---------------------------------------------------------------------- */
+  --paper-cream: #f7f1e3; /* FLAT.cream — default page/ground */
+  --paper-aged: #eee2c8; /* FLAT.creamDeep — cards, panels, chips */
+  --paper-deep: #e0cfaa; /* the third face: wells, tracks, thumbnails */
+  --paper-edge: #c9ab7c; /* rules, hairlines, scrollbar thumbs */
+
+  /* The room the shelf is drawn in. Chrome that overlays the world borrows
+     these so a panel edge and a bookcase edge are the same brown. */
+  --wall: #e9e2d0; /* FLAT.wall — one flat backdrop, not a subject */
+  --timber: #c08a52; /* FLAT.timber — case body */
+  --timber-dark: #9d6b3c; /* FLAT.timberDark — the darker face beside it */
+  --recess: #7d5638; /* FLAT.recess — inside the case, behind the books */
+
+  /* ------------------------------------------------------------------------
+     Ink
+
+     --ink-line is the one outline colour. Every bordered thing in the chrome
+     is drawn with it — not with a darker shade of its own fill, which is what
+     made the old chrome read as a pile of unrelated cards.
+     ---------------------------------------------------------------------- */
+  --ink-line: #4f3120; /* FLAT.ink — THE outline */
+  --ink-line-soft: #6b4a32; /* FLAT.inkSoft — marks INSIDE a shape */
+  /* Drop-in border shorthands. `border: var(--stroke-ink)` is valid CSS and
+     keeps the weight consistent; the -thin variant is for hairline rules and
+     divider lines only, never for the edge of a panel. */
+  --stroke-ink: 2px solid var(--ink-line);
+  --stroke-ink-thin: 1.5px solid var(--ink-line);
+
+  --ink-sepia: #4f3120; /* primary reading ink — 9.12:1 aged / 10.40 cream */
+  /* "soft" inks are secondary, never decorative: they carry hints, captions,
+     meta and inactive control labels, so they are tuned to clear WCAG AA
+     (>= 4.5:1) against the DARKEST paper ground they ever sit on
+     (--paper-aged #eee2c8). Measured: 6.17:1 aged / 7.03:1 cream. */
+  --ink-sepia-soft: #6b4a32;
+  --ink-graphite: #3f3a33; /* the cooler ink option — 10.35:1 aged */
+  --ink-graphite-soft: #5d554a; /* 5.71:1 aged / 6.50:1 cream */
+  --ink-blue: #3c5a70; /* the blue ink option — 5.66:1 aged */
+  --ink-blue-soft: #456170; /* FLAT.slateDark — 5.11:1 aged */
+
+  /* Accent INK (readable text), distinct from the wash PIGMENTS below: the
+     pigments are tuned for paint, this for type. 5.33:1 aged / 6.08 cream. */
+  --ink-accent: #92441f;
+
+  /* ------------------------------------------------------------------------
+     Pigments — light face / base face / deep face
+
+     Base pigments are the ones you SEE: fills, chips, swatches, sticker
+     bodies, book cloth. `-light` is the pale face a callout or hover state is
+     painted with; `-deep` is the darker face set beside it, and the value
+     that a glyph or a rim on that pigment is drawn in.
+
+     Value discipline: all twelve base faces sit in the SAME value and chroma
+     band as FLAT.terracotta (#c96f4a). That is what makes a set of flat
+     shapes read as one drawing — the previous palette ran the full neon gamut
+     (#ff4785, #63c92c, #29b0f5) and every panel looked like a different app.
+     Six of them ARE the shelf's book cloths, so a swatch in a panel and a
+     spine on the plank are literally the same colour.
+     ---------------------------------------------------------------------- */
+  --wash-amber-light: #f7e6bb;
+  --wash-amber: #e8b64c; /* FLAT.gilt — the gilt band, as a fill */
+  --wash-amber-deep: #7d5806;
+
+  --wash-terracotta-light: #f4d9c8;
+  --wash-terracotta: #c96f4a; /* FLAT.terracotta — the icon's own cloth */
+  --wash-terracotta-deep: #96421d;
+
+  --wash-moss-light: #dfe7cd;
+  --wash-moss: #7d915c; /* FLAT.moss — the ribbon green */
+  --wash-moss-deep: #4f6138; /* FLAT.mossDark */
+
+  --wash-lemon-light: #f8eec0;
+  --wash-lemon: #dfc451;
+  --wash-lemon-deep: #786608;
+
+  --wash-sky-light: #d6e3ea;
+  --wash-sky: #5f7d8c; /* FLAT.slate */
+  --wash-sky-deep: #3a5666;
+
+  --wash-blush-light: #f4dbe4;
+  --wash-blush: #bd7791;
+  --wash-blush-deep: #7c3b55;
+
+  --wash-plum-light: #e6d9e2;
+  --wash-plum: #8a5a72; /* FLAT.plum */
+  --wash-plum-deep: #5c3448;
+
+  /* Four more faces in the same band, so the sticker / highlight / callout
+     palettes have somewhere to go without leaving the drawing. */
+  --wash-coral-light: #f7dbd0;
+  --wash-coral: #d4674c;
+  --wash-coral-deep: #8f3319;
+
+  --wash-turquoise-light: #d2e7e1;
+  --wash-turquoise: #5ea597;
+  --wash-turquoise-deep: #2c5f56;
+
+  --wash-violet-light: #dedbeb;
+  --wash-violet: #7c749f;
+  --wash-violet-deep: #444063;
+
+  --wash-lime-light: #e9eec8;
+  --wash-lime: #a9b45e;
+  --wash-lime-deep: #5c6a1c;
+
+  /* ------------------------------------------------------------------------
+     UI accent — the colour the interface uses to say "this one".
+
+     It is the icon's terracotta, because the app already has a signature
+     colour and inventing a second one for the chrome is exactly the drift
+     this file exists to prevent. It stays clear of the amber/lemon faces that
+     content uses for highlights, so a selected control never reads as a
+     highlighted word.
+     ---------------------------------------------------------------------- */
+  --accent-light: #f4dccd;
+  --accent: #c96f4a; /* FLAT.terracotta */
+  --accent-deep: #a8552f; /* FLAT.terracottaDark — rims, focus ring */
+  --accent-ink: #92441f; /* accent as TYPE: 5.33:1 aged / 6.08 cream */
+  /* The label a FILLED accent control wears. Every other accent rung is a
+     paper tint, so this is the one token that has to flip with the theme:
+     on the three light themes it is warm paper-white sitting on a deep
+     pigment; on night, accent-deep IS the bright rung, so this goes to ink.
+     Gated at 4.5:1 against --accent-deep in all four themes. */
+  --on-accent: #fdf9f0;
+
+  /* ------------------------------------------------------------------------
+     Gilt — the ornament colour.
+
+     Flat gilt is a FILL with an ink outline (--gilt-face), not a metal: no
+     catch-light, no bronze recess, no bevel. The darker rungs survive only
+     because gilt is also allowed to be a rule and a tick, and those have to
+     clear their contrast gates on pale grounds.
+     ---------------------------------------------------------------------- */
+  --gilt-face: #e8b64c; /* FLAT.gilt — the flat band / seal / tick fill */
+  /* Label AND outline on a gilt face. It cannot be --ink-line, because the
+     gilt face is bright in EVERY theme while the outline inverts on night —
+     a chosen chip's label then vanished into its own gold. 6.26:1 here. */
+  --on-gilt: #4f3120;
+  --gilt-light: #f0d9a8; /* FLAT.giltPale — the pale face beside it */
+  --gilt: #9c7414; /* gilt as a RULE — 3.32:1 on aged paper */
+  --gilt-deep: #7a5a0c; /* the darker face of a stamped rule */
+  --gilt-ink: #6a4e0a; /* gilt as TYPE — clears 4.5:1 on lemon-light */
+
+  /* Supporting accents for surfaces that want a second/third voice. All in
+     the same band as the cloths, so nothing shouts over the drawing. */
+  --accent-leaf: #7d915c;
+  --accent-leaf-ink: #4f6138;
+  --accent-sun: #e8b64c;
+  --accent-sea: #5ea597;
+
+  /* Text selection — a flat amber swipe, translucent so ink reads through */
+  --selection-wash: rgba(232, 182, 76, 0.5);
+
+  /* ------------------------------------------------------------------------
+     Spacing scale (px values match names)
+     ---------------------------------------------------------------------- */
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* ------------------------------------------------------------------------
+     Radii — generous, because in this language a corner is either round or
+     wrong. Nothing in the chrome is allowed a 2px corner.
+     ---------------------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+  /* Corners that bow a hair, the way the icon's do.
+     CAREFUL: this is a COMPLETE border-radius shorthand (it carries its own
+     `/`). It is only valid as the WHOLE value — `border-radius: var(--radius-lg)
+     var(--radius-hand) …` produces an invalid declaration the browser drops,
+     which silently squares the corners off. Use the --radius-wobble-* pairs
+     below when you want a per-corner hand-drawn shape.
+     This used to be the extreme 255px/15px "leaf" blob, which is a
+     watercolour idiom, not a flat-illustration one — every rail button was a
+     petal. It is now a generous round with a wobble you feel and don't see. */
+  --radius-hand: 15px 18px 14px 19px / 18px 14px 19px 15px;
+  /* Safe per-corner wobbles: complete 8-value shorthands, drop-in ready. */
+  --radius-wobble-sm: 8px 11px 7px 12px / 11px 7px 12px 8px;
+  --radius-wobble-md: 13px 18px 14px 19px / 17px 13px 19px 14px;
+  --radius-wobble-lg: 20px 28px 22px 30px / 26px 20px 30px 22px;
+
+  /* ------------------------------------------------------------------------
+     Lift — the ONE shadow in the app.
+
+     flat.ts spends exactly one mark on depth: a contact shadow at ~22% under
+     an object, saying "this sits on that" and nothing more. The CSS mirror is
+     a flat offset in the same brown with ZERO blur radius. A blurred ambient
+     shadow is a light model, and this app does not have one.
+
+     The four rungs are the same mark at four heights; they stay named
+     --shadow-* so the ~80 existing call sites keep working.
+     ---------------------------------------------------------------------- */
+  --lift-ink: rgba(93, 58, 38, 0.22); /* FLAT.shadow at contactShadow alpha */
+  --lift-ink-strong: rgba(93, 58, 38, 0.34);
+
+  --shadow-xs: 0 1px 0 var(--lift-ink);
+  --shadow-sm: 0 2px 0 var(--lift-ink);
+  --shadow-md: 0 3px 0 var(--lift-ink);
+  --shadow-lg: 0 5px 0 var(--lift-ink-strong);
+  /* A pressed face reads as a darker flat band along its top edge. */
+  --shadow-inset-paper: inset 0 2px 0 var(--lift-ink);
+
+  /* ------------------------------------------------------------------------
+     Z-index layers
+     ---------------------------------------------------------------------- */
+  --z-shelf: 10; /* bookshelf world canvas */
+  --z-overlay: 100; /* focused-book DOM overlay */
+  --z-flip: 200; /* page-flip WebGL layer */
+  --z-menus: 300; /* popovers, context menus, dev chrome */
+  --z-toasts: 400; /* notifications */
+
+  /* ------------------------------------------------------------------------
+     Motion
+     ---------------------------------------------------------------------- */
+  --dur-xs: 120ms; /* micro feedback: hover tints, press */
+  --dur-sm: 180ms; /* small reveals, fades */
+  --dur-md: 300ms; /* standard transitions */
+  --dur-lg: 450ms; /* book pull-out, larger movement */
+  --dur-xl: 600ms; /* page flips, view changes */
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* playful overshoot */
+
+  /* Multiply JS/GSAP durations by this; reduced-motion sets it to 0 */
+  --motion-scale: 1;
+
+  /* ------------------------------------------------------------------------
+     Type — font roles (see CLAUDE.md: handwriting never below 13px)
+     ---------------------------------------------------------------------- */
+  --font-heading: "Caveat Variable", "Segoe Script", cursive; /* >= 20px only */
+  --font-body: "Patrick Hand", "Segoe Print", cursive;
+  --font-accent: "Kalam", "Segoe Print", cursive;
+  --font-label: "Architects Daughter", "Segoe Print", cursive;
+  --font-ui: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+
+  /* Type scale */
+  --text-h1: 44px;
+  --text-h2: 34px;
+  --text-h3: 26px;
+  --text-h4: 21px; /* Caveat floor is 20px — h4 stays above it */
+  --text-body: 17px;
+  --text-sm: 15px;
+  --text-chip: 13px; /* handwriting floor — chips, inline buttons, meta */
+  --text-label: 14px;
+  --text-ui: 12px; /* Nunito Sans territory (below 13px) */
+  /* Reserved for non-essential ornament ONLY. Anything a user must READ
+     (hints, captions, counts, keyboard legends) uses --text-ui or larger:
+     11px secondary ink is the single most common legibility failure. */
+  --text-ui-xs: 11px;
+
+  --leading-body: 1.65;
+  --leading-heading: 1.15;
+  --tracking-body: 0.01em;
+  --tracking-ui: 0.02em;
+}
+
+/* ============================================================================
+   Notebook — settings feature styles
+   Theme token remaps, extra book-palette washes, decoration hooks, the
+   floating gear button, and the slide-in paper settings sheet.
+
+   NOTE ON COLORS: tokens.css owns the base palette. The [data-theme=...] and
+   [data-ink=...] blocks below are the one sanctioned place that REMAPS those
+   tokens (a theme is by definition a new set of token values), and the five
+   extra book washes extend the wash family in the same spirit.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   Themes — applied as data-theme on <html> by applySettings().
+   'parchment' is the tokens.css default and needs no override.
+   -------------------------------------------------------------------------- */
+
+/* Every theme is the SAME drawing in a different room: the flat band from
+   tokens.css, hue-rotated. A theme may move the paper and the accent; it may
+   not reintroduce gradients, neon chroma or a light model. */
+
+/* Pastel — blossom paper and a rose accent. Pastel means the PAPER is soft;
+   the pigments stay in the flat band so the drawing still reads. */
+:root[data-theme='pastel'] {
+  --paper-cream: #f9eff2;
+  --paper-aged: #f0dfe6;
+  --paper-deep: #e2c8d3;
+  --paper-edge: #c9a2b3;
+
+  --wall: #efe1e6;
+  --timber: #c08a6a;
+  --timber-dark: #9d6b52;
+  --recess: #7d5648;
+
+  --ink-line: #4e2f3d;
+  --ink-line-soft: #6b4756;
+
+  --ink-sepia: #4e2f3d; /* 9.55:1 aged */
+  --ink-sepia-soft: #6b4756; /* 5.87:1 aged */
+  --ink-graphite: #453a44;
+  --ink-graphite-soft: #5c505b; /* 5.51:1 aged */
+  --ink-blue: #3f5270;
+  --ink-blue-soft: #4a5a72; /* 5.11:1 aged */
+  --ink-accent: #8e3b5a;
+
+  /* Same twelve faces, warmed toward the blossom ground. */
+  --wash-amber: #e5b357;
+  --wash-amber-deep: #7d5806;
+  --wash-terracotta: #d0785a;
+  --wash-terracotta-deep: #96421d;
+  --wash-moss: #86975f;
+  --wash-moss-deep: #4f6138;
+  --wash-lemon: #ddc45c;
+  --wash-lemon-deep: #786608;
+  --wash-sky: #6a8496;
+  --wash-sky-deep: #3a5666;
+  --wash-blush: #c47c96;
+  --wash-blush-deep: #7c3b55;
+  --wash-plum: #93607b;
+  --wash-plum-deep: #5c3448;
+  --wash-coral: #d76f56;
+  --wash-coral-deep: #8f3319;
+  --wash-turquoise: #63a99c;
+  --wash-turquoise-deep: #2c5f56;
+  --wash-violet: #837aa6;
+  --wash-violet-deep: #444063;
+  --wash-lime: #adb865;
+  --wash-lime-deep: #5c6a1c;
+
+  --accent-light: #f4d6e0;
+  --accent: #c96186;
+  --accent-deep: #9c3b5e;
+  --accent-ink: #8e3355;
+  --accent-leaf: #86975f;
+  --accent-leaf-ink: #4f6138;
+  --accent-sun: #e5b357;
+  --accent-sea: #63a99c;
+
+  /* Rose gold — pastel's ornament is pinked, the way blush leaf reads over a
+     blossom ground. Same value band as the base gilt, different hue. */
+  --gilt-face: #e5a878;
+  --on-gilt: #4e2f3d;
+  --gilt-light: #f0d4b8;
+  --gilt: #9a6626;
+  --gilt-deep: #7a4d19;
+  --gilt-ink: #6a4116;
+
+  --selection-wash: rgba(201, 97, 134, 0.34);
+}
+
+/* Botanical — pressed-leaf paper, moss ink, a terracotta-pot accent. */
+:root[data-theme='botanical'] {
+  --paper-cream: #f0f2e0;
+  --paper-aged: #e4e8ca;
+  --paper-deep: #d2d9ac;
+  --paper-edge: #a9b47e;
+
+  --wall: #e3e7d2;
+  --timber: #b58f52;
+  --timber-dark: #91703c;
+  --recess: #6d5b34;
+
+  --ink-line: #37402a;
+  --ink-line-soft: #55603f;
+
+  --ink-sepia: #37402a; /* 8.65:1 aged */
+  --ink-sepia-soft: #55603f; /* 5.19:1 aged */
+  --ink-graphite: #363c30;
+  --ink-graphite-soft: #565e49; /* 5.14:1 aged */
+  --ink-blue: #2f5a58;
+  --ink-blue-soft: #3d6260; /* 5.09:1 aged */
+  --ink-accent: #8c4a1c;
+
+  --wash-amber: #d9ae4e;
+  --wash-amber-deep: #7d5806;
+  --wash-terracotta: #c4714a;
+  --wash-terracotta-deep: #96421d;
+  --wash-moss: #7d915c;
+  --wash-moss-deep: #4f6138;
+  --wash-lemon: #d3c04f;
+  --wash-lemon-deep: #786608;
+  --wash-sky: #5f8288;
+  --wash-sky-deep: #3a5666;
+  --wash-blush: #b87c8c;
+  --wash-blush-deep: #7c3b55;
+  --wash-plum: #855e72;
+  --wash-plum-deep: #5c3448;
+  --wash-coral: #cd6a4c;
+  --wash-coral-deep: #8f3319;
+  --wash-turquoise: #59a392;
+  --wash-turquoise-deep: #2c5f56;
+  --wash-violet: #7a789c;
+  --wash-violet-deep: #444063;
+  --wash-lime: #a3b356;
+  --wash-lime-deep: #5c6a1c;
+
+  --accent-light: #eddcc2;
+  --accent: #c07a3a;
+  --accent-deep: #8f4a18;
+  --accent-ink: #7f4213;
+  --accent-leaf: #7d915c;
+  --accent-leaf-ink: #4f6138;
+  --accent-sun: #d9ae4e;
+  --accent-sea: #59a392;
+
+  /* Greenhouse brass — ornament that has been out in the damp, pulled toward
+     olive so it belongs to the pressed-leaf ground. */
+  --gilt-face: #cfc35c;
+  --on-gilt: #37402a;
+  --gilt-light: #e4dfa6;
+  --gilt: #7d7411;
+  --gilt-deep: #635b0c;
+  --gilt-ink: #545009;
+
+  --selection-wash: rgba(169, 180, 94, 0.45);
+}
+
+/* Night — the same drawing after dark. The ink and the paper swap ends of
+   the value scale and every ramp inverts with them: `-light` becomes the
+   deep tint a callout is filled with, `-deep` becomes the bright face. The
+   faces stay in their band — a flat drawing does not glow. */
+:root[data-theme='night'] {
+  --paper-cream: #2b211a;
+  --paper-aged: #352a20;
+  --paper-deep: #443528;
+  --paper-edge: #6b533a;
+
+  --wall: #302620;
+  --timber: #8a6236;
+  --timber-dark: #6b4a28;
+  --recess: #4a3320;
+
+  /* After dark the outline is the LIGHTEST thing in the drawing, or every
+     shape loses its edge against the ground. */
+  --ink-line: #d8c8ad;
+  --ink-line-soft: #a8937a;
+
+  --ink-sepia: #f2e8d4; /* 11.49:1 aged */
+  --ink-sepia-soft: #c4ad8d; /* 6.46:1 aged */
+  --ink-graphite: #ded6c8;
+  --ink-graphite-soft: #b1a48f; /* 5.71:1 aged */
+  --ink-blue: #9fbecd;
+  --ink-blue-soft: #93aab8;
+  --ink-accent: #e8a184;
+
+  --wash-amber-light: #443c18;
+  --wash-amber: #e8b64c;
+  --wash-amber-deep: #f2d79a;
+  --wash-terracotta-light: #4a2a1a;
+  --wash-terracotta: #d4805c;
+  --wash-terracotta-deep: #eeb99f;
+  --wash-moss-light: #2e3823;
+  --wash-moss: #93a771;
+  --wash-moss-deep: #c6d4ab;
+  --wash-lemon-light: #443c18;
+  --wash-lemon: #dfc451;
+  --wash-lemon-deep: #eee0a0;
+  --wash-sky-light: #24333c;
+  --wash-sky: #7b9aab;
+  --wash-sky-deep: #b6cbd6;
+  --wash-blush-light: #3f2530;
+  --wash-blush: #c78ba1;
+  --wash-blush-deep: #e4bfcb;
+  --wash-plum-light: #33222c;
+  --wash-plum: #a4778c;
+  --wash-plum-deep: #d0b4c1;
+  --wash-coral-light: #452419;
+  --wash-coral: #dc7d61;
+  --wash-coral-deep: #f0b7a4;
+  --wash-turquoise-light: #1f3733;
+  --wash-turquoise: #6fb3a5;
+  --wash-turquoise-deep: #aed6cd;
+  --wash-violet-light: #2c2938;
+  --wash-violet: #948cb5;
+  --wash-violet-deep: #c5c0d8;
+  --wash-lime-light: #3a3c1c;
+  --wash-lime: #b5c072;
+  --wash-lime-deep: #d9deb0;
+
+  --wash-peach-light: #452f1d;
+  --wash-peach: #d9a06e;
+  --wash-peach-deep: #eecfb0;
+  --wash-sage-light: #2f3a2a;
+  --wash-sage: #9aae83;
+  --wash-sage-deep: #cbd8bb;
+  --wash-lavender-light: #322c40;
+  --wash-lavender: #a397c4;
+  --wash-lavender-deep: #cfc7e0;
+  --wash-sand-light: #423618;
+  --wash-sand: #d9bc6a;
+  --wash-sand-deep: #eeddaa;
+  --wash-slate-light: #26323a;
+  --wash-slate: #8aa5b5;
+  --wash-slate-deep: #bfd2dc;
+
+  --accent-light: #472a1c;
+  --accent: #d98a63;
+  --accent-deep: #f0b89b;
+  --accent-ink: #e8a184;
+  --accent-leaf: #93a771;
+  --accent-leaf-ink: #c6d4ab;
+  --accent-sun: #e8b64c;
+  --accent-sea: #6fb3a5;
+  /* accent-deep is the BRIGHT rung after dark, so the label on a filled
+     accent control inverts with it: near-black wine instead of paper. */
+  --on-accent: #2b1a10;
+
+  /* The gilt face stays bright after dark, so what sits ON it stays dark —
+     this is the one ink token that does NOT invert with the theme. */
+  --gilt-face: #e8b64c;
+  --on-gilt: #2b211a;
+  --gilt-light: #5a4514;
+  --gilt: #e0bd5f;
+  --gilt-deep: #f2dc9e;
+  --gilt-ink: #f7e8bd;
+
+  --selection-wash: rgba(232, 182, 76, 0.32);
+
+  /* The one shadow, restated for a dark room: still flat, still offset,
+     never a blur. */
+  --lift-ink: rgba(0, 0, 0, 0.4);
+  --lift-ink-strong: rgba(0, 0, 0, 0.55);
+}
+
+/* ----------------------------------------------------------------------------
+   Ink color — applied as data-ink on <html>. 'sepia' is the default.
+   -------------------------------------------------------------------------- */
+:root[data-ink='graphite'] {
+  --ink-sepia: var(--ink-graphite);
+  --ink-sepia-soft: var(--ink-graphite-soft);
+}
+
+:root[data-ink='ink-blue'] {
+  --ink-sepia: var(--ink-blue);
+  --ink-sepia-soft: var(--ink-blue-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Extra book-palette faces (light / base / deep) — extends the tokens.css
+   family to 12 book palettes, in the SAME flat band. Sage, sand and slate are
+   literally FLAT.sage / FLAT.ochre / FLAT.slate, so a swatch here and a spine
+   on the plank are the same colour.
+   -------------------------------------------------------------------------- */
+:root {
+  --wash-peach-light: #f7e0cc;
+  --wash-peach: #d99257;
+  --wash-peach-deep: #8a4d10;
+
+  --wash-sage-light: #e0e8d3;
+  --wash-sage: #8a9a6b; /* FLAT.sage */
+  --wash-sage-deep: #556442;
+
+  --wash-lavender-light: #e0dced;
+  --wash-lavender: #8b83ad;
+  --wash-lavender-deep: #4e4a70;
+
+  --wash-sand-light: #f4e7c4;
+  --wash-sand: #c9973f; /* FLAT.ochre */
+  --wash-sand-deep: #7d5e14;
+
+  --wash-slate-light: #d8e2e9;
+  --wash-slate: #6a8494;
+  --wash-slate-deep: #3d5a6b;
+}
+
+/* ----------------------------------------------------------------------------
+   Decoration hooks — features opt in by using these class names.
+   .nb-doodle / [data-decor]  : any purely decorative flourish
+   .nb-margin-doodle          : margin sketches specifically
+   -------------------------------------------------------------------------- */
+:root.nb-minimalist .nb-doodle,
+:root.nb-minimalist [data-decor],
+:root.nb-minimalist .nb-margin-doodle,
+:root.nb-no-doodles .nb-margin-doodle {
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------------------
+   Floating gear button (bottom-left)
+   -------------------------------------------------------------------------- */
+.nbs-gear-button {
+  position: fixed;
+  left: var(--space-16);
+  bottom: var(--space-16);
+  z-index: var(--z-menus);
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  /* A FILLED accent seal: the one control that lives loose on the desk should
+     read as a wax stamp. It used to be a radial gradient with a foil
+     catch-light and an inset pool — a lit sphere, in an app with no lights.
+     Now: one flat accent face, the one ink outline, one flat lift.
+     --on-accent is the label token gated at 4.5:1 against --accent-deep. */
+  color: var(--on-accent);
+  background: var(--accent-deep);
+  border: var(--stroke-ink);
+  /* slightly-off circle: reads as inked, not stamped */
+  border-radius: 50% 47% 52% 48% / 48% 52% 46% 54%;
+  box-shadow: var(--shadow-sm);
+  opacity: 0.96;
+  transition:
+    transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring),
+    box-shadow calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
+    opacity calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-gear-button:hover {
+  opacity: 1;
+  transform: scale(1.06);
+  box-shadow: var(--shadow-md);
+}
+
+.nbs-gear-button:hover .nbs-gear-icon {
+  animation: nbs-wobble calc(0.7s * var(--motion-scale, 1)) var(--ease-in-out);
+}
+
+.nbs-gear-button:active {
+  transform: scale(0.96);
+}
+
+/* ----------------------------------------------------------------------------
+   Dev view switcher (App.tsx, gated behind ?dev=1 / import.meta.env.DEV).
+   A margin note in the corner, not a toolbar: it used to sit at 0.85 opacity
+   directly over the book cover's bottom-right corner in every build.
+   -------------------------------------------------------------------------- */
+.nb-dev-switcher {
+  position: fixed;
+  right: var(--space-8);
+  bottom: var(--space-8);
+  z-index: var(--z-menus);
+  display: flex;
+  gap: var(--space-4);
+  padding: 3px;
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-xs);
+  opacity: 0.45;
+  transition: opacity calc(var(--dur-sm) * var(--motion-scale, 1))
+    var(--ease-out);
+}
+
+.nb-dev-switcher:hover,
+.nb-dev-switcher:focus-within {
+  opacity: 1;
+}
+
+/* Focus mode promises "the chrome melts away", but the gear and the dev
+   switcher live OUTSIDE .nb-book-view (App.tsx renders them as siblings), so
+   the rail's fade never reached them and they stayed at full strength over a
+   dimmed desk. :has() bridges the gap. Hover/focus brings them back, so
+   nothing becomes unreachable. */
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button,
+body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher {
+  opacity: 0.1;
+  transition: opacity calc(var(--dur-md) * var(--motion-scale, 1))
+    var(--ease-out);
+}
+
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:hover,
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible,
+body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:hover,
+body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
+  opacity: 1;
+}
+
+/* The gear is a 1.4px stroke sitting on a saturated seal, so it gets a
+   one-pixel halo in the seal's own deep pigment: the line keeps its
+   --on-accent value but stops dissolving into the mid-tone of the fill. */
+.nbs-gear-icon {
+  width: 26px;
+  height: 26px;
+}
+
+@keyframes nbs-wobble {
+  0% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(14deg);
+  }
+  60% {
+    transform: rotate(-8deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Panel layer, scrim, sheet
+   -------------------------------------------------------------------------- */
+.nbs-layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-toasts) - 1);
+  pointer-events: none;
+}
+
+.nbs-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--lift-ink-strong);
+  opacity: 0;
+  visibility: hidden; /* gsap autoAlpha drives opacity+visibility */
+  pointer-events: auto;
+}
+
+.nbs-sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 94vw);
+  /* Off-screen rest position is applied by GSAP (xPercent) on mount —
+     a CSS translateX(%) here would be read back by GSAP as a pixel `x`,
+     making the xPercent slide-in tween a no-op. */
+  visibility: hidden;
+  pointer-events: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-20) var(--space-24) var(--space-48);
+  color: var(--ink-sepia);
+  /* One flat sheet of paper. The four stacked gradients this replaces (top
+     light, two blotches, a pressed crease) were a texture AND a light model,
+     and they cost a full-height repaint on every scroll of a 3200px sheet. */
+  background-color: var(--paper-aged);
+  /* The sheet's bound edge, in the one ink. */
+  border-left: var(--stroke-ink);
+  box-shadow: var(--shadow-lg);
+  /* Self-styled slim bar: the sheet is 3200px of content in an 800px window,
+     so it MUST scroll — but the 12px global bar reads as browser chrome
+     against hand-drawn paper. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-edge) transparent;
+}
+
+.nbs-sheet::-webkit-scrollbar {
+  width: 9px;
+}
+
+.nbs-sheet::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nbs-sheet::-webkit-scrollbar-thumb {
+  background: var(--paper-edge);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--radius-pill);
+}
+
+/* ----------------------------------------------------------------------------
+   Sheet header + sections
+   -------------------------------------------------------------------------- */
+/* Sticky so the title + close cross stay reachable through 3200px of
+   content; the paper wash keeps rows from showing through as they pass. */
+.nbs-header {
+  position: sticky;
+  top: calc(var(--space-20) * -1);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: calc(var(--space-20) * -1) calc(var(--space-24) * -1) 0;
+  padding: var(--space-20) var(--space-24) var(--space-12);
+  /* Fully opaque paper — a partial gradient let row text ghost through the
+     title as it scrolled past. The fade lives in ::after, below the header. */
+  background: var(--paper-aged);
+}
+
+/* The header used to dissolve into the sheet over 14px so rows would not be
+   guillotined. A fade is a soft edge, and this drawing does not have any: the
+   boundary is now stated outright, as a hairline rule in the soft ink. */
+.nbs-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 2px;
+  pointer-events: none;
+  background: var(--ink-line-soft);
+}
+
+.nbs-title {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  line-height: var(--leading-heading);
+  transform: rotate(-1deg);
+}
+
+.nbs-doodle {
+  color: var(--ink-sepia-soft);
+  font-size: 18px;
+  transform: rotate(12deg) translateY(-4px);
+}
+
+.nbs-close {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-sepia-soft);
+  border-radius: 46% 54% 50% 50% / 52% 48% 54% 46%;
+  transition:
+    color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-close:hover {
+  color: var(--ink-sepia);
+  background: var(--paper-deep);
+  transform: rotate(90deg);
+}
+
+.nbs-close-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Vertical rhythm: every section opens with 20px of air above its rule and
+   16px below the title, so the dashed rules read as evenly spaced staves
+   rather than crowding whichever row happened to end last. */
+.nbs-section {
+  /* Per-section pigment. `data-accent` (set by SettingsPanel's Section)
+     rebinds these three, and every control inside the section paints from
+     them — one hand-tinted chapter per topic instead of one amber list. */
+  --sec-light: var(--accent-light);
+  --sec: var(--accent);
+  --sec-deep: var(--accent-deep);
+  margin-top: var(--space-20);
+  padding: var(--space-16) 0 var(--space-4);
+  border-top: 1px dashed var(--ink-line-soft);
+}
+
+.nbs-section[data-accent='blush'] {
+  --sec-light: var(--wash-blush-light);
+  --sec: var(--wash-blush);
+  --sec-deep: var(--wash-blush-deep);
+}
+.nbs-section[data-accent='moss'] {
+  --sec-light: var(--wash-moss-light);
+  --sec: var(--wash-moss);
+  --sec-deep: var(--wash-moss-deep);
+}
+.nbs-section[data-accent='violet'] {
+  --sec-light: var(--wash-violet-light);
+  --sec: var(--wash-violet);
+  --sec-deep: var(--wash-violet-deep);
+}
+.nbs-section[data-accent='turquoise'] {
+  --sec-light: var(--wash-turquoise-light);
+  --sec: var(--wash-turquoise);
+  --sec-deep: var(--wash-turquoise-deep);
+}
+.nbs-section[data-accent='amber'] {
+  --sec-light: var(--wash-amber-light);
+  --sec: var(--wash-amber);
+  --sec-deep: var(--wash-amber-deep);
+}
+.nbs-section[data-accent='sky'] {
+  --sec-light: var(--wash-sky-light);
+  --sec: var(--wash-sky);
+  --sec-deep: var(--wash-sky-deep);
+}
+.nbs-section[data-accent='coral'] {
+  --sec-light: var(--wash-coral-light);
+  --sec: var(--wash-coral);
+  --sec-deep: var(--wash-coral-deep);
+}
+.nbs-section[data-accent='lime'] {
+  --sec-light: var(--wash-lime-light);
+  --sec: var(--wash-lime);
+  --sec-deep: var(--wash-lime-deep);
+}
+
+/* The title is the section's colour statement: full-strength ink for the
+   word (contrast is non-negotiable) with the pigment carried by a painted
+   underline swipe, so hue never has to do the legibility work. */
+.nbs-section-title {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-heading);
+  font-size: 25px; /* Caveat stays above its 20px floor */
+  font-weight: 700;
+  color: var(--ink-sepia);
+  margin-bottom: var(--space-16);
+  padding: 0 4px 2px;
+  transform: rotate(-0.6deg);
+}
+
+/* Sits BELOW the baseline rather than under the glyphs: a negative z-index
+   would drop the swipe behind the sheet's own painted background and vanish,
+   and blending it over the text would cost contrast. */
+.nbs-section-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 7px;
+  /* Was a four-stop gradient fading out at both ends — a wet brush. A flat
+     drawing underlines with a flat bar. */
+  background: var(--sec);
+  border-radius: var(--radius-pill);
+  transform: rotate(0.5deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Rows
+   -------------------------------------------------------------------------- */
+.nbs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-8) 0;
+}
+
+.nbs-row--wide {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-8);
+}
+
+.nbs-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nbs-row-label {
+  font-family: var(--font-accent);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--ink-sepia);
+  white-space: nowrap;
+}
+
+/* The name line. Shortcut chips sit BESIDE the label, not under it: the combo
+   is part of what the row is called ("export library… Ctrl Shift E"), and
+   parking it on its own line cost a row 30px of height for no reading gain. */
+.nbs-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+}
+
+.nbs-row-keys {
+  display: inline-flex;
+  gap: var(--space-4);
+  flex: 0 0 auto;
+}
+
+/* Hints are read, not decoration: 12px (was 11px) in the re-tuned soft ink
+   lands at 4.7:1 instead of 3.5:1. */
+.nbs-row-hint {
+  color: var(--ink-sepia-soft);
+  font-size: var(--text-ui);
+  line-height: 1.35;
+}
+
+.nbs-row-control {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.nbs-row--wide .nbs-row-control {
+  flex: 1 1 auto;
+}
+
+/* ----------------------------------------------------------------------------
+   Toggle — a drawn switch: inked track, graphite pebble thumb
+   -------------------------------------------------------------------------- */
+.nbs-toggle {
+  display: inline-flex;
+  padding: 2px;
+}
+
+.nbs-toggle:disabled {
+  opacity: 0.62; /* still legibly a switch, plainly inert (was 0.4) */
+  cursor: not-allowed;
+}
+
+.nbs-toggle-track {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 23px;
+  background: var(--paper-deep);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 14px 11px 13px / 13px 11px 14px 12px;
+  transition: background calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 48% 52% 55% 45% / 52% 48% 45% 55%;
+  transform: translateX(0) rotate(-8deg);
+  transition: transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-toggle[aria-checked='true'] .nbs-toggle-track {
+  background: var(--sec);
+  border-color: var(--ink-line);
+}
+
+.nbs-toggle[aria-checked='true'] .nbs-toggle-thumb {
+  transform: translateX(19px) rotate(10deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Slider — pencil line track, tick marks, pebble thumb
+   -------------------------------------------------------------------------- */
+.nbs-slider-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  /* Was a fixed 170px pinned to the far right of a space-between row, which
+     left 120–180px of dead air between a value and the control it belongs
+     to. Now the group grows to fill the row and carries its own readout. */
+  flex: 1 1 auto;
+  min-width: 150px;
+  max-width: 260px;
+}
+
+.nbs-slider-wrap {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+/* pencil tick marks under the line */
+.nbs-slider-wrap::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 7px;
+  top: 16px;
+  height: 5px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--ink-sepia-soft) 0 1px,
+    transparent 1px calc(100% / var(--nbs-ticks, 6))
+  );
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.nbs-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 26px;
+  background: transparent;
+}
+
+/* Value FILL: the ink runs dark up to the thumb and drops to a hairline
+   past it, so the level is readable at a glance without hunting the pebble.
+   --nbs-fill is set inline (0–100) by SettingsPanel's Slider. */
+.nbs-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: linear-gradient(
+      to right,
+      var(--sec-deep) 0 calc(var(--nbs-fill, 50) * 1%),
+      transparent calc(var(--nbs-fill, 50) * 1%)
+    ),
+    linear-gradient(var(--ink-sepia-soft), var(--ink-sepia-soft));
+  border-radius: var(--radius-pill);
+}
+
+.nbs-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6.5px;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
+  box-shadow: var(--shadow-xs);
+  cursor: grab;
+}
+
+.nbs-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+
+.nbs-slider::-moz-range-track {
+  height: 3px;
+  background: var(--ink-sepia-soft);
+  border-radius: var(--radius-pill);
+}
+
+.nbs-slider::-moz-range-progress {
+  height: 3px;
+  background: var(--ink-sepia);
+  border-radius: var(--radius-pill);
+}
+
+.nbs-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 47% 53% 50% 50% / 55% 45% 55% 45%;
+}
+
+/* Readout sits ON the control it describes (it used to live in the row hint,
+   a full row-width away). Tabular figures so it never jitters while dragging. */
+.nbs-slider-value {
+  flex: 0 0 auto;
+  min-width: 42px;
+  padding: 1px var(--space-4);
+  font-size: var(--text-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-wobble-sm);
+}
+
+/* ----------------------------------------------------------------------------
+   Segmented pick — paper chips, active one gets an amber wash + tilt
+   -------------------------------------------------------------------------- */
+.nbs-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* Resting chips used to be bare text on paper — "pastel / botanical / night"
+   read as a caption, not as three things you can press. They now carry a
+   drawn paper edge at rest, so the whole group reads as a control; the
+   pressed one wins on FILL + WEIGHT + TILT rather than on being the only
+   thing with a border. */
+.nbs-seg-chip {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip); /* 13px — Kalam floor */
+  line-height: 1.5;
+  padding: 2px 11px;
+  color: var(--ink-graphite-soft);
+  background: var(--paper-cream);
+  border: 1.4px dashed var(--ink-line-soft);
+  border-radius: 11px 14px 10px 15px / 14px 11px 15px 10px;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring),
+    border-color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+/* Hover previews the pressed look (it used to paint --paper-deep, a muddy
+   brown that was DARKER than the selected state — inverted visual weight). */
+.nbs-seg-chip:hover:not([aria-pressed='true']) {
+  color: var(--ink-sepia);
+  background: var(--sec-light);
+  border-color: var(--ink-line);
+  transform: translateY(-1px) rotate(-0.8deg);
+}
+
+/* The pressed chip is the loudest thing in its section: a real wash of the
+   section pigment, rimmed in the deep pigment the way wet paint pools. Ink
+   stays --ink-sepia, so the win is FILL + WEIGHT + TILT, never contrast. */
+.nbs-seg-chip[aria-pressed='true'] {
+  position: relative;
+  color: var(--ink-sepia);
+  font-weight: 700;
+  /* The chosen chip was a radial gradient inside a foil bezel — a stamped,
+     lit object. Flat: the section's own pale face, the one ink outline, and
+     the one flat lift. It still wins on FILL + WEIGHT + TILT, never on ink. */
+  background: var(--sec-light);
+  border-style: solid;
+  border-color: var(--ink-line);
+  box-shadow: var(--shadow-xs);
+  transform: rotate(-1.4deg);
+}
+
+/* The chosen chip carries a gilt tick struck into the paper beside it.
+   --gilt-ink is the value foil is allowed to be TYPE at, so this stays a
+   legible mark rather than a decorative smudge. */
+.nbs-seg-chip[aria-pressed='true']::after {
+  /* The `/ ''` is alt text, and it is load-bearing: generated content joins
+     the accessible name, so without it a chosen chip announced as "rain ✓"
+     and `getByRole({ name: 'rain', exact: true })` stopped matching the very
+     chip it had just pressed. Selection is already carried by aria-pressed;
+     the tick is decoration and now says so. */
+  content: '✓' / '';
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  position: absolute;
+  right: -3px;
+  top: -6px;
+  padding: 1px 3px;
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: 1px solid var(--on-gilt);
+  border-radius: 50% 45% 52% 48% / 48% 52% 45% 55%;
+  transform: rotate(9deg);
+}
+
+.nbs-seg-chip:active {
+  transform: scale(0.96) rotate(-0.6deg);
+}
+
+/* ----------------------------------------------------------------------------
+   Watercolor swatches — 12 palette blobs
+   -------------------------------------------------------------------------- */
+.nbs-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: var(--space-4) 0;
+}
+
+.nbs-swatch {
+  width: 27px;
+  height: 25px;
+  /* uneven blob: pigment pooling toward the lower rim */
+  border-radius: 47% 53% 44% 56% / 55% 46% 54% 45%;
+  /* These blobs preview the cloth a NEW BOOK will wear, so they are drawn the
+     way that book will be: the base face flat, the one ink outline round it.
+     They used to be a three-stop radial with a catch-light and pigment
+     pooling at the wet lower rim — the exact painting idiom the flat palette
+     replaced, and on night it turned twelve faces into twelve mud pies. */
+  background: var(--sw);
+  border: var(--stroke-ink-thin);
+  box-shadow: var(--shadow-xs);
+  transition: transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-swatch:hover {
+  transform: scale(1.14) rotate(-4deg);
+}
+
+/* Chosen palette blob: a gilt setting rather than a dashed pencil ring. The
+   blob gains a foil bezel (gilt rim + catch-light) and keeps its own pigment,
+   so what you see is the colour you picked, mounted. */
+.nbs-swatch[aria-pressed='true'] {
+  outline: 3px solid var(--accent-deep);
+  outline-offset: 3px;
+  box-shadow: var(--shadow-sm);
+  transform: rotate(-4deg) scale(1.12);
+}
+
+.nbs-swatch[data-palette='amber'] { --sw-light: var(--wash-amber-light); --sw: var(--wash-amber); --sw-deep: var(--wash-amber-deep); }
+.nbs-swatch[data-palette='terracotta'] { --sw-light: var(--wash-terracotta-light); --sw: var(--wash-terracotta); --sw-deep: var(--wash-terracotta-deep); }
+.nbs-swatch[data-palette='moss'] { --sw-light: var(--wash-moss-light); --sw: var(--wash-moss); --sw-deep: var(--wash-moss-deep); }
+.nbs-swatch[data-palette='lemon'] { --sw-light: var(--wash-lemon-light); --sw: var(--wash-lemon); --sw-deep: var(--wash-lemon-deep); }
+.nbs-swatch[data-palette='sky'] { --sw-light: var(--wash-sky-light); --sw: var(--wash-sky); --sw-deep: var(--wash-sky-deep); }
+.nbs-swatch[data-palette='blush'] { --sw-light: var(--wash-blush-light); --sw: var(--wash-blush); --sw-deep: var(--wash-blush-deep); }
+.nbs-swatch[data-palette='plum'] { --sw-light: var(--wash-plum-light); --sw: var(--wash-plum); --sw-deep: var(--wash-plum-deep); }
+.nbs-swatch[data-palette='peach'] { --sw-light: var(--wash-peach-light); --sw: var(--wash-peach); --sw-deep: var(--wash-peach-deep); }
+.nbs-swatch[data-palette='sage'] { --sw-light: var(--wash-sage-light); --sw: var(--wash-sage); --sw-deep: var(--wash-sage-deep); }
+.nbs-swatch[data-palette='lavender'] { --sw-light: var(--wash-lavender-light); --sw: var(--wash-lavender); --sw-deep: var(--wash-lavender-deep); }
+.nbs-swatch[data-palette='sand'] { --sw-light: var(--wash-sand-light); --sw: var(--wash-sand); --sw-deep: var(--wash-sand-deep); }
+.nbs-swatch[data-palette='slate'] { --sw-light: var(--wash-slate-light); --sw: var(--wash-slate); --sw-deep: var(--wash-slate-deep); }
+
+/* ----------------------------------------------------------------------------
+   Keybindings list (read-only)
+   -------------------------------------------------------------------------- */
+.nbs-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-8);
+}
+
+.nbs-keys-list {
+  list-style: none;
+  padding: var(--space-8) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Two columns, not space-between: combos of one, two and three chips used to
+   produce a ragged left edge down the whole list. The fixed combo column
+   right-aligns every binding on ONE edge and left-aligns the actions. */
+.nbs-keys-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 22px;
+}
+
+.nbs-keys-action {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip);
+  color: var(--ink-sepia-soft);
+}
+
+.nbs-keys-combo {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.nbs-kbd {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-bottom-width: 3px;
+  border-radius: 7px 8px 7px 9px;
+  padding: 1px 6px;
+}
+
+/* ----------------------------------------------------------------------------
+   Action buttons (backup folder picker, back-up-now) — inked paper chips
+   -------------------------------------------------------------------------- */
+.nbs-btn-pair {
+  display: inline-flex;
+  gap: var(--space-4);
+}
+
+.nbs-action-btn {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip); /* 13px — Kalam floor */
+  line-height: 1.5;
+  padding: 2px 12px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  /* uneven inked pill */
+  border-radius: 10px 13px 9px 12px / 12px 9px 13px 10px;
+  box-shadow: var(--shadow-xs);
+  white-space: nowrap;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring),
+    box-shadow calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-action-btn:hover:not(:disabled) {
+  background: var(--sec-light);
+  border-color: var(--ink-line);
+  transform: rotate(-1.2deg) scale(1.03);
+  box-shadow: var(--shadow-sm);
+}
+
+.nbs-action-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* These chips are the only rows you can *press* (export, import, diagnostics,
+   replay the tour, back up now), so keyboard focus on them must be obvious.
+   The global ring is inherited; the chip additionally sits up on its paper so
+   the ring reads against the section wash rather than against ink-on-ink. */
+.nbs-action-btn:focus-visible {
+  outline-offset: 3px;
+  background: var(--sec-light);
+  border-color: var(--ink-line);
+}
+
+/* Disabled must still be READABLE, just plainly inert. At 0.4 opacity the
+   desktop-only actions ("choose…", "back up now") were unreadable smudges;
+   they now keep their ink and lose their paper + shadow instead. */
+.nbs-action-btn:disabled {
+  opacity: 1;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--ink-line-soft);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------------------
+   Performance HUD (dev overlay, gated by settings.perfHud) — a tiny
+   parchment card pinned top-left, pointer-transparent, UI microtype.
+   -------------------------------------------------------------------------- */
+.nb-perfhud {
+  position: fixed;
+  top: var(--space-12);
+  left: var(--space-12);
+  z-index: var(--z-toasts);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-4) var(--space-8);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 14px 10px 13px / 13px 10px 14px 11px;
+  box-shadow: var(--shadow-sm);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.nb-perfhud-title {
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  text-transform: uppercase;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-perfhud-line {
+  font-size: var(--text-ui-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------------------
+   Footnote
+   -------------------------------------------------------------------------- */
+.nbs-footnote {
+  padding-top: var(--space-16);
+  color: var(--ink-sepia-soft);
+  text-align: center;
+  border-top: 1px dashed var(--ink-line-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Sound credits
+   The disclosure under the Sound section's "sound credits" row. It renders
+   from public/sounds/CREDITS.json, so the row count is whatever the last
+   audio build produced — the layout has to survive one entry or thirty.
+   -------------------------------------------------------------------------- */
+.nbs-credits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-top: var(--space-4);
+  padding: var(--space-12);
+  background: var(--paper-cream);
+  border: 1.4px dashed var(--ink-line-soft);
+  /* the same uneven inked edge the chips carry */
+  border-radius: 13px 10px 15px 11px / 11px 15px 10px 14px;
+}
+
+.nbs-credit-note {
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  color: var(--ink-sepia-soft);
+}
+
+/* The one obligation in the set gets the only filled panel here: a CC BY
+   credit that reads like the rest of the list has not been surfaced, it has
+   been filed. */
+.nbs-credit-required {
+  padding: var(--space-8) var(--space-12);
+  background: var(--wash-amber-light);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 9px 14px 10px / 10px 14px 9px 13px;
+}
+
+.nbs-credit-oblig {
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-16);
+  font-family: var(--font-accent);
+  font-size: var(--text-chip); /* 13px — handwriting floor */
+  line-height: 1.6;
+  color: var(--ink-sepia);
+}
+
+.nbs-credit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nbs-credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nbs-credit:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.nbs-credit-title {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip); /* 13px — handwriting floor */
+  line-height: 1.4;
+  color: var(--ink-sepia);
+  /* the title owns the row; everything after it is annotation */
+  flex: 1 1 100%;
+}
+
+.nbs-credit-by,
+.nbs-credit-cues {
+  font-size: var(--text-ui);
+  color: var(--ink-sepia-soft);
+}
+
+/* The cue list takes whatever width is left over so the source links keep
+   their place at the end of the row instead of being pushed onto one of
+   their own. `min-width: 0` is what lets it shrink inside the flex row. */
+.nbs-credit-cues {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.nbs-credit-licence {
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  text-transform: uppercase;
+  padding: 1px 7px;
+  color: var(--ink-sepia);
+  background: var(--wash-moss-light);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 9px 12px 8px 11px / 11px 8px 12px 9px;
+}
+
+/* CC BY is the one that costs us something; it is tinted apart so a reader
+   checking compliance can find it without reading every licence string. */
+.nbs-credit-licence[data-required='true'] {
+  background: var(--wash-terracotta-light);
+  border-color: var(--ink-line);
+  font-weight: 700;
+}
+
+.nbs-credit-links {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-8);
+  margin-left: auto;
+}
+
+.nbs-credit-link {
+  font-size: var(--text-ui);
+  color: var(--ink-sepia);
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--ink-line);
+  padding: 0;
+  transition: color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbs-credit-link:hover {
+  color: var(--ink-graphite);
+  border-bottom-style: solid;
+}
+
+.nb-callout {
+  --co-light: var(--wash-amber-light);
+  --co-base: var(--wash-amber);
+  --co-deep: var(--wash-amber-deep);
+  position: relative;
+  display: flex;
+  gap: var(--space-12);
+  align-items: flex-start;
+  margin: var(--space-8) 0;
+  padding: var(--space-12) var(--space-20) var(--space-12) var(--space-12);
+  border-radius: var(--radius-hand);
+  border: 1.5px solid color-mix(in srgb, var(--co-deep) 45%, transparent);
+  /* Watercolor: light pooling center, pigment gathering at the rim */
+  background:
+    radial-gradient(
+      130% 110% at 28% 16%,
+      color-mix(in srgb, var(--co-light) 80%, var(--paper-cream)) 0%,
+      color-mix(in srgb, var(--co-base) 34%, var(--paper-cream)) 72%,
+      color-mix(in srgb, var(--co-deep) 26%, var(--paper-cream)) 100%
+    );
+}
+
+.nb-callout[data-tint='terracotta'] {
+  --co-light: var(--wash-terracotta-light);
+  --co-base: var(--wash-terracotta);
+  --co-deep: var(--wash-terracotta-deep);
+}
+.nb-callout[data-tint='moss'] {
+  --co-light: var(--wash-moss-light);
+  --co-base: var(--wash-moss);
+  --co-deep: var(--wash-moss-deep);
+}
+.nb-callout[data-tint='lemon'] {
+  --co-light: var(--wash-lemon-light);
+  --co-base: var(--wash-lemon);
+  --co-deep: var(--wash-lemon-deep);
+}
+.nb-callout[data-tint='sky'] {
+  --co-light: var(--wash-sky-light);
+  --co-base: var(--wash-sky);
+  --co-deep: var(--wash-sky-deep);
+}
+.nb-callout[data-tint='blush'] {
+  --co-light: var(--wash-blush-light);
+  --co-base: var(--wash-blush);
+  --co-deep: var(--wash-blush-deep);
+}
+.nb-callout[data-tint='plum'] {
+  --co-light: var(--wash-plum-light);
+  --co-base: var(--wash-plum);
+  --co-deep: var(--wash-plum-deep);
+}
+.nb-callout[data-tint='coral'] {
+  --co-light: var(--wash-coral-light);
+  --co-base: var(--wash-coral);
+  --co-deep: var(--wash-coral-deep);
+}
+.nb-callout[data-tint='turquoise'] {
+  --co-light: var(--wash-turquoise-light);
+  --co-base: var(--wash-turquoise);
+  --co-deep: var(--wash-turquoise-deep);
+}
+.nb-callout[data-tint='violet'] {
+  --co-light: var(--wash-violet-light);
+  --co-base: var(--wash-violet);
+  --co-deep: var(--wash-violet-deep);
+}
+.nb-callout[data-tint='lime'] {
+  --co-light: var(--wash-lime-light);
+  --co-base: var(--wash-lime);
+  --co-deep: var(--wash-lime-deep);
+}
+
+
+body { margin:0; padding:24px; background:var(--wall); font-family:"Nunito Sans",system-ui,sans-serif; }
+h2 { font:600 15px/1.3 "Nunito Sans",system-ui; color:var(--ink-line); margin:24px 0 10px; }
+.grid { display:grid; grid-template-columns:repeat(8,1fr); gap:12px; }
+.cell.fold .stack { outline:2px dashed var(--accent-deep); outline-offset:3px }
+.stack { display:flex; height:62px; border:2px solid var(--ink-line);
+  border-radius:10px 13px 9px 14px/13px 9px 14px 10px; overflow:hidden }
+.f { flex:1 }
+.lbl { font:600 11px/1.4 "Nunito Sans"; color:var(--ink-line); margin-top:5px }
+.hex { font:500 10px/1.3 ui-monospace,monospace; color:var(--ink-sepia-soft) }
+.callouts { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; max-width:1200px }
+.nb-callout .body { font:400 16px/1.5 system-ui; color:var(--ink-sepia) }
+</style>
+<h2>The pigment shelf — 24 swatches, light / base / deep. Dashed = where the picker folds to "more".</h2>
+<div class="grid">
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-coral-light)"></div>
+      <div class="f" style="background:var(--wash-coral)"></div>
+      <div class="f" style="background:var(--wash-coral-deep)"></div>
+    </div>
+    <div class="lbl">1. Coral</div>
+    <div class="hex">#d4674c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-terracotta-light)"></div>
+      <div class="f" style="background:var(--wash-terracotta)"></div>
+      <div class="f" style="background:var(--wash-terracotta-deep)"></div>
+    </div>
+    <div class="lbl">2. Terracotta</div>
+    <div class="hex">#c96f4a</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-coral-light) 70%, var(--wash-amber-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-coral) 70%, var(--wash-amber))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-coral-deep) 70%, var(--wash-amber-deep))"></div>
+    </div>
+    <div class="lbl">3. Persimmon</div>
+    <div class="hex">#db804d</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-amber-light) 50%, var(--wash-terracotta-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-amber) 50%, var(--wash-terracotta))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-amber-deep) 50%, var(--wash-terracotta-deep))"></div>
+    </div>
+    <div class="lbl">4. Marmalade</div>
+    <div class="hex">#d9934c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-amber-light)"></div>
+      <div class="f" style="background:var(--wash-amber)"></div>
+      <div class="f" style="background:var(--wash-amber-deep)"></div>
+    </div>
+    <div class="lbl">5. Amber</div>
+    <div class="hex">#e8b64c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-lemon-light)"></div>
+      <div class="f" style="background:var(--wash-lemon)"></div>
+      <div class="f" style="background:var(--wash-lemon-deep)"></div>
+    </div>
+    <div class="lbl">6. Lemon</div>
+    <div class="hex">#dfc451</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-lime-light) 50%, var(--wash-lemon-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-lime) 50%, var(--wash-lemon))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-lime-deep) 50%, var(--wash-lemon-deep))"></div>
+    </div>
+    <div class="lbl">7. Chartreuse</div>
+    <div class="hex">#c4bc58</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-lime-light)"></div>
+      <div class="f" style="background:var(--wash-lime)"></div>
+      <div class="f" style="background:var(--wash-lime-deep)"></div>
+    </div>
+    <div class="lbl">8. Lime</div>
+    <div class="hex">#a9b45e</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-moss-light) 55%, var(--wash-lime-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-moss) 55%, var(--wash-lime))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-moss-deep) 55%, var(--wash-lime-deep))"></div>
+    </div>
+    <div class="lbl">9. Fern</div>
+    <div class="hex">#91a15d</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-moss-light)"></div>
+      <div class="f" style="background:var(--wash-moss)"></div>
+      <div class="f" style="background:var(--wash-moss-deep)"></div>
+    </div>
+    <div class="lbl">10. Moss</div>
+    <div class="hex">#7d915c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-turquoise-light) 50%, var(--wash-moss-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-turquoise) 50%, var(--wash-moss))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-turquoise-deep) 50%, var(--wash-moss-deep))"></div>
+    </div>
+    <div class="lbl">11. Eucalyptus</div>
+    <div class="hex">#6f9b7a</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-turquoise-light)"></div>
+      <div class="f" style="background:var(--wash-turquoise)"></div>
+      <div class="f" style="background:var(--wash-turquoise-deep)"></div>
+    </div>
+    <div class="lbl">12. Turquoise</div>
+    <div class="hex">#5ea597</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-sky-light) 50%, var(--wash-turquoise-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-sky) 50%, var(--wash-turquoise))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-sky-deep) 50%, var(--wash-turquoise-deep))"></div>
+    </div>
+    <div class="lbl">13. Teal</div>
+    <div class="hex">#5f9192</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-sky-light)"></div>
+      <div class="f" style="background:var(--wash-sky)"></div>
+      <div class="f" style="background:var(--wash-sky-deep)"></div>
+    </div>
+    <div class="lbl">14. Sky</div>
+    <div class="hex">#5f7d8c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-violet-light) 50%, var(--wash-sky-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-violet) 50%, var(--wash-sky))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-violet-deep) 50%, var(--wash-sky-deep))"></div>
+    </div>
+    <div class="lbl">15. Denim</div>
+    <div class="hex">#6e7996</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-violet-light)"></div>
+      <div class="f" style="background:var(--wash-violet)"></div>
+      <div class="f" style="background:var(--wash-violet-deep)"></div>
+    </div>
+    <div class="lbl">16. Violet</div>
+    <div class="hex">#7c749f</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-plum-light) 50%, var(--wash-violet-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-plum) 50%, var(--wash-violet))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-plum-deep) 50%, var(--wash-violet-deep))"></div>
+    </div>
+    <div class="lbl">17. Mulberry</div>
+    <div class="hex">#846788</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-plum-light)"></div>
+      <div class="f" style="background:var(--wash-plum)"></div>
+      <div class="f" style="background:var(--wash-plum-deep)"></div>
+    </div>
+    <div class="lbl">18. Plum</div>
+    <div class="hex">#8a5a72</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:var(--wash-blush-light)"></div>
+      <div class="f" style="background:var(--wash-blush)"></div>
+      <div class="f" style="background:var(--wash-blush-deep)"></div>
+    </div>
+    <div class="lbl">19. Blush</div>
+    <div class="hex">#bd7791</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:color-mix(in oklab, var(--wash-coral-light) 50%, var(--wash-blush-light))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-coral) 50%, var(--wash-blush))"></div>
+      <div class="f" style="background:color-mix(in oklab, var(--wash-coral-deep) 50%, var(--wash-blush-deep))"></div>
+    </div>
+    <div class="lbl">20. Rose</div>
+    <div class="hex">#c97071</div>
+  </div>
+  <div class="cell fold">
+    <div class="stack">
+      <div class="f" style="background:#f4dfcb"></div>
+      <div class="f" style="background:#c08a52"></div>
+      <div class="f" style="background:#774b18"></div>
+    </div>
+    <div class="lbl">21. Timber</div>
+    <div class="hex">#c08a52</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#ede2d1"></div>
+      <div class="f" style="background:#c9ab7c"></div>
+      <div class="f" style="background:#6a522b"></div>
+    </div>
+    <div class="lbl">22. Parchment</div>
+    <div class="hex">#c9ab7c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#e6e3de"></div>
+      <div class="f" style="background:#726a5e"></div>
+      <div class="f" style="background:#5c554b"></div>
+    </div>
+    <div class="lbl">23. Graphite</div>
+    <div class="hex">#726a5e</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#d9e5ef"></div>
+      <div class="f" style="background:#516f86"></div>
+      <div class="f" style="background:#405a6d"></div>
+    </div>
+    <div class="lbl">24. Ink blue</div>
+    <div class="hex">#516f86</div>
+  </div></div>
+<h2>A colour the reader typed, pulled into the band</h2>
+<div class="grid">
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#e3e3e3"></div>
+      <div class="f" style="background:#6b6b6b"></div>
+      <div class="f" style="background:#565656"></div>
+    </div>
+    <div class="lbl">typed #000000</div>
+    <div class="hex">painted #6b6b6b</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#cfedcc"></div>
+      <div class="f" style="background:#88dd81"></div>
+      <div class="f" style="background:#1d6819"></div>
+    </div>
+    <div class="lbl">typed #00ff00</div>
+    <div class="hex">painted #88dd81</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#ffd9d3"></div>
+      <div class="f" style="background:#d45f51"></div>
+      <div class="f" style="background:#923027"></div>
+    </div>
+    <div class="lbl">typed #ff0000</div>
+    <div class="hex">painted #d45f51</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#d4e9dd"></div>
+      <div class="f" style="background:#3f7a5c"></div>
+      <div class="f" style="background:#2f6249"></div>
+    </div>
+    <div class="lbl">typed #3f7a5c</div>
+    <div class="hex">painted #3f7a5c</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#fbd8e9"></div>
+      <div class="f" style="background:#9d4a78"></div>
+      <div class="f" style="background:#813a61"></div>
+    </div>
+    <div class="lbl">typed #8e3d6b</div>
+    <div class="hex">painted #9d4a78</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#e8e3d7"></div>
+      <div class="f" style="background:#d1c4a2"></div>
+      <div class="f" style="background:#60563b"></div>
+    </div>
+    <div class="lbl">typed #e2d4b2</div>
+    <div class="hex">painted #d1c4a2</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#e3e3e3"></div>
+      <div class="f" style="background:#7f7f7f"></div>
+      <div class="f" style="background:#565656"></div>
+    </div>
+    <div class="lbl">typed #7f7f7f</div>
+    <div class="hex">painted #7f7f7f</div>
+  </div>
+  <div class="cell">
+    <div class="stack">
+      <div class="f" style="background:#dae4f2"></div>
+      <div class="f" style="background:#546d8d"></div>
+      <div class="f" style="background:#425873"></div>
+    </div>
+    <div class="lbl">typed #2b4260</div>
+    <div class="hex">painted #546d8d</div>
+  </div></div>
+<h2>Real callouts: the six that existed, the four neutrals, four custom colours</h2>
+<div class="callouts">
+  <div class="nb-callout" style="--co-light:var(--wash-coral-light);--co-base:var(--wash-coral);--co-deep:var(--wash-coral-deep)">
+    <div class="body"><b>Coral</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:var(--wash-terracotta-light);--co-base:var(--wash-terracotta);--co-deep:var(--wash-terracotta-deep)">
+    <div class="body"><b>Terracotta</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:color-mix(in oklab, var(--wash-coral-light) 70%, var(--wash-amber-light));--co-base:color-mix(in oklab, var(--wash-coral) 70%, var(--wash-amber));--co-deep:color-mix(in oklab, var(--wash-coral-deep) 70%, var(--wash-amber-deep))">
+    <div class="body"><b>Persimmon</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:color-mix(in oklab, var(--wash-amber-light) 50%, var(--wash-terracotta-light));--co-base:color-mix(in oklab, var(--wash-amber) 50%, var(--wash-terracotta));--co-deep:color-mix(in oklab, var(--wash-amber-deep) 50%, var(--wash-terracotta-deep))">
+    <div class="body"><b>Marmalade</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:var(--wash-amber-light);--co-base:var(--wash-amber);--co-deep:var(--wash-amber-deep)">
+    <div class="body"><b>Amber</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:var(--wash-lemon-light);--co-base:var(--wash-lemon);--co-deep:var(--wash-lemon-deep)">
+    <div class="body"><b>Lemon</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#f4dfcb;--co-base:#c08a52;--co-deep:#774b18">
+    <div class="body"><b>Timber</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#ede2d1;--co-base:#c9ab7c;--co-deep:#6a522b">
+    <div class="body"><b>Parchment</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#e6e3de;--co-base:#726a5e;--co-deep:#5c554b">
+    <div class="body"><b>Graphite</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#d9e5ef;--co-base:#516f86;--co-deep:#405a6d">
+    <div class="body"><b>Ink blue</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#e3e3e3;--co-base:#6b6b6b;--co-deep:#565656">
+    <div class="body"><b>custom #000000</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#cfedcc;--co-base:#88dd81;--co-deep:#1d6819">
+    <div class="body"><b>custom #00ff00</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#ffd9d3;--co-base:#d45f51;--co-deep:#923027">
+    <div class="body"><b>custom #ff0000</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div>
+  <div class="nb-callout" style="--co-light:#d4e9dd;--co-base:#3f7a5c;--co-deep:#2f6249">
+    <div class="body"><b>custom #3f7a5c</b> — the quick brown fox jumps over the lazy dog, twice over.</div>
+  </div></div>
+</html>

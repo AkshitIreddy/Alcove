@@ -83,7 +83,14 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'shelf-moves',
     title: 'Moving around the shelf',
-    body: 'Drag the shelf to move it. Roll the wheel to zoom in and out, and hold Shift while you roll to slide sideways instead. New floors appear below as you fill the ones above, so the case grows with the library.',
+    // The reader is only on the shelf once before they open a book, so this is
+    // where the studio gets named — the case and the wall are the largest
+    // things they can change and the least obvious, since the palette icon on
+    // the left says nothing about how much is behind it. The spotlight below
+    // reaches to 3% on the left rather than 16% so the dock is lit while this
+    // is being read; a step that points at a tool in the dark is worse than one
+    // that never mentions it.
+    body: 'Drag the shelf to move it. Roll the wheel to zoom in and out, and hold Shift while you roll to slide sideways instead. New floors appear below as you fill the ones above, so the case grows with the library. The palette on the left opens the studio, and the bookcase is yours in there — how it is built, what is worked into the timber, its colours, and the paper on the wall, with dozens of each to choose from.',
     hint: 'drag to move · wheel to zoom · shift+wheel to slide',
     task: {
       ask: 'Drag the shelf, or zoom it with the wheel.',
@@ -91,7 +98,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       done: 'The shelf goes wherever you take it.',
     },
     targets: [
-      { selector: '.shelf-root', inset: { top: 0.05, bottom: 0.11, left: 0.16, right: 0.16 } },
+      { selector: '.shelf-root', inset: { top: 0.05, bottom: 0.11, left: 0.03, right: 0.16 } },
     ],
     side: 'right',
     scene: 'shelf',
@@ -99,21 +106,24 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'open-a-book',
     title: 'Opening a book',
-    body: 'Click a spine and the book tips out of the case and comes to rest in front of it, held. Now click the cover — or read it — to open it, or put it back if you picked the wrong one. You can also drag a book out by hand, and drag it back onto the case to shelve it again.',
-    hint: 'click a spine · then read it',
+    body: 'Click a spine and the book tips out of the case and opens. Wrong one? Catch it mid-flight and drag it back onto the case, or press Escape and it goes home. The way back to the shelf waits in the top-left corner.',
+    hint: 'click a spine · Esc puts it back',
     task: {
       ask: 'Take the book off the shelf and open it.',
       fact: 'book-open',
       done: 'The book is open.',
     },
-    // Three scenes, one step: the books standing on the shelf, the book held
-    // in front of the case (the bottom padding reaches down over its two
-    // verbs, which are a sibling element rather than part of the cover), and
-    // — the moment it lands — the whole opened book. That last one is why the
-    // highlight no longer ends up smaller than the thing it is framing.
+    // Three scenes, one step: the books standing on the shelf, the book in
+    // flight, and — the moment it lands — the whole opened book. That last one
+    // is why the highlight no longer ends up smaller than the thing it frames.
+    //
+    // The flight's padding used to reserve 150px below the cover for a plate of
+    // two verbs ("read it" / "put it back") that sat under it. The reader threw
+    // that plate out, so the padding is even again: a book in flight is now
+    // just a cover.
     targets: [
       { selector: '.nb-book-cover', pad: 8 },
-      { selector: '.pulled-book', padBox: { top: 12, left: 12, right: 12, bottom: 150 } },
+      { selector: '.pulled-book', pad: 12 },
       {
         selector: '.shelf-addslot',
         padBox: { left: 176, right: 18, top: 20, bottom: 20 },
@@ -211,7 +221,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'customize-do',
     title: 'Change how this book looks',
-    body: 'Binding sets the shape of the cover — wrapper, cloth, boards. Below it, the material and pigment rows decide what it is made of and what colour it takes, and Reroll picks a fresh one for you. Every change lands on the shelf immediately, so the book will look different when you put it back.',
+    body: 'Binding sets the shape of the cover — wrapper, cloth, boards. Below it, the material and pigment rows decide what it is made of and what colour it takes, and Reroll picks a fresh one for you. Every book carries its own, so no two have to match, and every change lands on the shelf immediately — the book will look different when you put it back.',
     hint: 'pick a binding · then a colour',
     task: {
       ask: 'Pick a binding, a material or a colour.',
@@ -270,7 +280,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     // the library studio when they grew into real vocabularies, and settings
     // has not carried either row since. Sending a new reader to the gear to
     // look for them is the one thing a tour must not do.
-    body: 'The gear in the corner covers everything that is not one book: how the app looks, the sounds the shelf makes, how much of it moves, backups, import and export — and this walk again whenever you want it. How the bookcase itself is built and painted lives in the studio on the shelf.',
+    body: 'The gear in the corner covers everything that is not one book: how the app looks, how much of it moves, backups, import and export — and this walk again whenever you want it. The sounds are in here too, and they have their own choices: a bed to write under, and a preset for how loud and how busy everything else is. How the bookcase itself is built and painted lives in the studio on the shelf.',
     hint: 'gear → settings',
     task: {
       ask: 'Open Settings.',
@@ -287,7 +297,11 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'youre-set',
     title: "You're set",
-    body: 'That is the tour. Nothing you do here is permanent — rename things, restyle them, throw a book in the trash and take it back out. If you want this walk again it is in Settings, under replay the tour.',
+    // The sign-off is where the openness gets stated plainly rather than
+    // implied. What the app opens with is one pick out of thousands of
+    // combinations, and a reader who never learns that treats the shipped
+    // library as the product instead of as a starting point.
+    body: 'That is the tour. Almost nothing here is fixed: the case and the wall are yours in the studio, every book has its own binding, the paper and ink change per page, and the sounds have their own settings. What the app opened with is one pick out of thousands. Nothing is permanent either — rename things, restyle them, throw a book in the trash and take it back out. If you want this walk again it is in Settings, under replay the tour.',
     hint: 'gear → replay the tour',
     targets: [{ selector: '.nbs-gear-button', pad: 10 }],
     side: 'right',

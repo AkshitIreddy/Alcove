@@ -38,7 +38,7 @@
  * (seed+overrides+size+title) key so overlays and backdrops never re-paint.
  */
 
-import type { CharmKind } from './charms';
+import { CHARM_COLORS, charmCloth, type CharmKind } from './charms';
 import { MATERIALS, materialLookFor } from './bookDesign';
 import { mixHex } from './shelfDesign';
 import {
@@ -158,8 +158,8 @@ export interface CoverParams {
   wear?: number;
   /** The book's charm, drawn cover-side. */
   charm?: CharmKind;
-  /** Index into charms.CHARM_COLORS. */
-  charmColor?: number;
+  /** Index into charms.CHARM_COLORS, or a hex the reader chose themselves. */
+  charmColor?: number | string;
   /**
    * Sub-treatment within the material (crackled vs pebbled leather, ribbed vs
    * flat cloth…), inherited from the spine. It described a grain, so nothing
@@ -369,21 +369,6 @@ export function coverPaletteCss(palette: number): { top: string; bottom: string 
   return { top: hexToHsl(face), bottom: hexToHsl(dark) };
 }
 
-/**
- * The eight charm colourways, index-aligned with `charms.CHARM_COLORS` so a
- * book keeps the colour it was saved with. Each is a flat pair: the ribbon
- * face and the darker tone its knot and tail turn away in.
- */
-const CHARM_CLOTHS: readonly (readonly [string, string])[] = [
-  [FLAT.terracotta, FLAT.terracottaDark], // crimson
-  [FLAT.moss, FLAT.mossDark], // forest
-  [FLAT.slate, FLAT.slateDark], // navy
-  [FLAT.cream, FLAT.creamDeep], // cream
-  [FLAT.gilt, FLAT.ochreDark], // gold
-  [FLAT.plum, FLAT.plumDark], // plum
-  [FLAT.ochre, FLAT.ochreDark], // rust
-  [FLAT.sage, FLAT.sageDark], // teal
-];
 
 const FONT_STACKS: readonly string[] = [
   '"Caveat Variable", "Caveat", cursive',
@@ -1171,18 +1156,32 @@ function paintCharm(
   y: number,
   w: number,
   h: number,
-  colourIndex: number,
+  colourway: number | string,
   /** The board's own face, so the charm never disappears into it. */
   board: string,
   ink: number,
   seed: number,
 ): void {
-  // A crimson ribbon on a terracotta board is a ribbon nobody can see. Rather
-  // than tint it (which would put a colour outside FLAT on screen), step to the
-  // next colourway — six of the eight are always safe.
-  let slot = ((colourIndex % 8) + 8) % 8;
-  if ((CHARM_CLOTHS[slot] ?? CHARM_CLOTHS[0]!)[0] === board) slot = (slot + 1) % 8;
-  const [face, dark] = CHARM_CLOTHS[slot] ?? CHARM_CLOTHS[0]!;
+  // ONE folding of the colourway, shared with the spine and the studio swatch:
+  // `charms.charmCloth` hands back the ribbon face and the tone its knot turns
+  // away in. This used to be a local table of eight FLAT constants in an order
+  // of its own, so the chip labelled *Crimson* painted a terracotta ribbon
+  // here, a green one on the shelf, and a third colour in the panel.
+  //
+  // The wrap is the TABLE's length, not the literal 8 it used to be: the day
+  // the colourways grew past eight, `% 8` would have quietly folded every new
+  // choice back onto an old one, with nothing failing anywhere.
+  const wrap = CHARM_COLORS.length;
+  let slot: number | string = colourway;
+  if (typeof slot === 'number') slot = ((Math.trunc(slot) % wrap) + wrap) % wrap;
+  // A crimson ribbon on a crimson board is a ribbon nobody can see. Step to
+  // the next colourway rather than tinting this one, which would put a colour
+  // outside the palette on screen. A reader's own hex has no "next", so it is
+  // folded darker instead — still their colour, still visible.
+  if (charmCloth(slot)[0] === board) {
+    slot = typeof slot === 'number' ? (slot + 1) % wrap : charmCloth(slot)[1];
+  }
+  const [face, dark] = charmCloth(slot);
   const unit = Math.min(w, h);
 
   switch (kind) {

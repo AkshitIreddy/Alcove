@@ -1,21 +1,29 @@
 /**
  * src/views/rail/LibraryStudio.tsx — the studio's "This library" tab.
  *
- * The room, and everything in it that is not a book. Four things are chosen
+ * The room, and everything in it that is not a book. Five things are chosen
  * here and they are deliberately independent:
  *
  *  - WHICH BOOKCASE you are standing in (the collection, top of the sheet);
+ *  - a PRESET, which sets the next three at once — the whole room in one
+ *    press, classified (formal, cosy, storybook…) so it can be browsed;
  *  - the COLOUR SCHEME, whole-room or one part at a time;
  *  - how the case is BUILT and what is worked into its timber
- *    (art/shelfDesign.ts — twelve carpentries x twelve treatments);
- *  - what is on the WALL (art/wallpaperDesign.ts — nineteen motifs across
- *    five scales, four reliefs and six ink slots, every one of them offered
- *    here: the ink slot used to be reachable only by finding a named paper
- *    that happened to use it).
+ *    (art/shelfDesign.ts — fifty-two carpentries x fifty treatments);
+ *  - what is on the WALL (art/wallpaperDesign.ts — motifs across five scales,
+ *    four reliefs and six ink slots, every one of them offered here: the ink
+ *    slot used to be reachable only by finding a named paper that used it).
  *
- * Colour and carpentry are orthogonal on purpose: a gothic case is gothic in
- * every room, and repainting the room must not quietly rebuild the furniture.
- * That is also why they are separate rows rather than one long "style" list.
+ * The presets are why this order changed. The top of the sheet used to be
+ * sixty ROOMS, and a room is a colour scheme — so the one control that looked
+ * like "set the look of this library" repainted the case and left its
+ * carpentry and its wall exactly as they were, which is the opposite of what
+ * the word promises. Presets keep the promise; the colour row underneath now
+ * says out loud that it is colour and only colour.
+ *
+ * Colour and carpentry are still orthogonal underneath: a gothic case is
+ * gothic in every room, and repainting the room must not quietly rebuild the
+ * furniture. A preset writes both — it is a bundle of values, not a coupling.
  *
  * The long axes do NOT live inline. Sixty named cases and fifty-five papers
  * dumped into a 376px sheet is a wall of tiles nobody reads, so each axis
@@ -72,16 +80,21 @@ import DesignPicker, { type PickerOption } from './DesignPicker';
 import DesignStrip from './DesignStrip';
 import { DesignCanvas } from './designArt';
 import {
+  ROOM_PRESETS,
   buildOptions,
   depthOptions,
+  getRoomPreset,
   inkOptions,
+  matchRoomPreset,
   moodTags,
   patternOptions,
+  roomPresetOptions,
   scaleOptions,
   shelfPresetOptions,
   themeOptions,
   wallpaperOptions,
   withMood,
+  type RoomLook,
 } from './designOptions';
 import {
   DEFAULT_ROOM_DESIGN,
@@ -99,7 +112,7 @@ const WALL_W = 328;
 const WALL_H = 116;
 
 /** Which long sheet has taken over the panel, if any. */
-type Sheet = null | 'room' | 'build' | 'pattern' | 'named' | 'wallpaper';
+type Sheet = null | 'preset' | 'room' | 'build' | 'pattern' | 'named' | 'wallpaper';
 
 /*
  * A `ThemeCard` component lived here: one big card per room, four of them, in a
@@ -302,10 +315,70 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     return getShelfPreset(id) === null ? '' : id;
   };
 
+  /* ------------------------------ the presets ----------------------------- */
+
+  /** Everything a preset sets, as the room currently stands. */
+  const look = (): RoomLook => ({
+    theme: libraryPrefs.theme,
+    build: design().build,
+    pattern: design().pattern,
+    wallpaper: wall(),
+  });
+
+  /**
+   * The preset the room is wearing, or '' for a room of the reader's own.
+   *
+   * A borrowed part colour disqualifies it. That is not pedantry: the card
+   * shown as pressed is a picture of a room, and a library whose shelves have
+   * been repainted out of another scheme is not that picture any more. Read
+   * through `partTheme` rather than off the raw fields so an override that
+   * happens to name the room's own scheme still counts as following it.
+   */
+  const presetId = createMemo<string>(() => {
+    if (partTheme(libraryPrefs, 'shelf') !== libraryPrefs.theme) return '';
+    if (partTheme(libraryPrefs, 'wall') !== libraryPrefs.theme) return '';
+    return matchRoomPreset(look());
+  });
+
+  const presetName = (): string => {
+    const id = presetId();
+    return id === '' ? 'a room of your own' : getRoomPreset(id)!.name;
+  };
+
+  /**
+   * One press, a whole room: the colours, the carpentry and the paper.
+   *
+   * Two writes rather than one, because the two halves have two owners — the
+   * scheme belongs to the bookcase's `room` blob and the rest to the studio's
+   * own settings key — and neither validator would accept the other's fields.
+   * They go out together so the shelf re-bakes once.
+   *
+   * The borrowed part colours are cleared, exactly as "surprise me" clears
+   * them. Leaving them would hand the reader a room that does not look like
+   * the card they just pressed, and no way to tell why.
+   */
+  const applyPreset = (id: string): void => {
+    const preset = getRoomPreset(id);
+    if (preset === null) return;
+    setBusy(true);
+    void Promise.all([
+      saveLibraryPrefs({ theme: preset.theme, shelf: null, wall: null }).then((p) =>
+        props.onChanged?.(p),
+      ),
+      saveRoomDesign({
+        build: preset.build,
+        pattern: preset.pattern,
+        wallpaper: preset.wallpaper,
+      }),
+    ]).finally(() => setBusy(false));
+  };
+
   /* --------------------------- the long sheets --------------------------- */
 
   const sheetOptions = createMemo<readonly PickerOption[]>(() => {
     switch (sheet()) {
+      case 'preset':
+        return roomPresetOptions();
       case 'room':
         return themeOptions(shelfDesignOf(design()));
       case 'build':
@@ -323,6 +396,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetActive = (): string => {
     switch (sheet()) {
+      case 'preset':
+        return presetId();
       case 'room':
         return libraryPrefs.theme;
       case 'build':
@@ -340,8 +415,10 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetTitle = (): string => {
     switch (sheet()) {
+      case 'preset':
+        return 'presets';
       case 'room':
-        return 'the room';
+        return 'the colour scheme';
       case 'build':
         return 'how it is built';
       case 'pattern':
@@ -357,6 +434,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const sheetHint = (): string => {
     switch (sheet()) {
+      case 'preset':
+        return 'a whole room in one press: the colours, how the case is built, what is worked into its timber and the paper behind it. every card is the room you would get. change any of it below afterwards.';
       case 'room':
         return 'a colour scheme, and only that — the timber, the dark behind the books, the wall and the six cloths a new book is bound in. every card is your bookcase, repainted.';
       case 'build':
@@ -374,6 +453,9 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
 
   const pickFromSheet = (id: string): void => {
     switch (sheet()) {
+      case 'preset':
+        applyPreset(id);
+        break;
       case 'room':
         // Only the preset. A borrowed shelf or wall colour survives a room
         // change on purpose — that is what "back to one room" is for — and the
@@ -497,9 +579,42 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           <BookcasesPanel />
         </section>
 
+        {/* ------------------------------ presets --------------------------- */}
         <section class="nb-panel-section nb-panel-section-divided">
           <h3 class="nb-panel-section-title">
-            the room <em class="nb-panel-row-hint">{theme().name.toLowerCase()}</em>
+            presets <em class="nb-panel-row-hint">{presetName().toLowerCase()}</em>
+          </h3>
+          {/*
+            The one control in the panel that sets the WHOLE room, and it is
+            first because it is the answer to "make this library mine" — the
+            rows below it are for afterwards. Each card is painted by
+            `drawRoomCard`: the case in its own carpentry and colours, standing
+            on its own paper, so the card is the room rather than a swatch of
+            it.
+          */}
+          <DesignStrip
+            label="Room presets"
+            options={roomPresetOptions()}
+            activeId={presetId()}
+            scheme={scheme()}
+            showNames
+            columns={2}
+            tileW={148}
+            tileH={96}
+            limit={5}
+            onPick={applyPreset}
+            onMore={() => setSheet('preset')}
+          />
+          <p class="nb-panel-footnote nb-panel-footnote-tight">
+            {ROOM_PRESETS.length} rooms, sorted by the kind of room they are.
+            each one sets the colours, the carpentry and the paper together —
+            and everything under here stays yours to change afterwards.
+          </p>
+        </section>
+
+        <section class="nb-panel-section nb-panel-section-divided">
+          <h3 class="nb-panel-section-title">
+            colour <em class="nb-panel-row-hint">{theme().name.toLowerCase()}</em>
           </h3>
           {/*
             A strip, not the grid of big cards this used to be. There were four
@@ -507,9 +622,14 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             cards in a 376px sheet put four thousand pixels of scrolling between
             the reader and everything below them. Same treatment as the other
             long axes.
+
+            It is called "colour" and not "the room" because that is all it is,
+            and calling it the room was read — correctly — as a promise that
+            picking one would restyle the library. The presets above keep that
+            promise; this repaints, on purpose, without touching the carpentry.
           */}
           <DesignStrip
-            label="Library theme"
+            label="Library colours"
             options={themeOptions(shelfDesignOf(design()))}
             activeId={libraryPrefs.theme}
             scheme={scheme()}
@@ -523,9 +643,10 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           />
           <Swatches scheme={scheme()} name={theme().name} />
           <p class="nb-panel-footnote">
-            books keep their own colours in every room — that is how you spot
-            yours. to change one, right-click its spine and pick “dress this
-            book”; to move it, right-click and pick “move”.
+            a colour scheme only — it repaints the case and the wall and leaves
+            the carpentry alone. books keep their own colours in every room:
+            that is how you spot yours. to change one, right-click its spine and
+            pick “dress this book”; to move it, right-click and pick “move”.
           </p>
         </section>
 

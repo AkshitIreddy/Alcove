@@ -12,10 +12,31 @@
  * designArt.tsx). Cards are ordinary buttons, so they are in the tab ring for
  * free and wear the app's focus ring; the arrow keys are added on top because
  * tabbing through sixty cards to reach the last one is not browsing.
+ *
+ * Two things it does NOT do any more.
+ *
+ * It does not paint the whole vocabulary the instant it opens. Every card is a
+ * canvas bake, so the bindings sheet was 189 of them on one frame and the
+ * papers 126 — measurably a second and a half of dead panel before anything was
+ * legible. It shows `SHEET_CAP` and offers the rest, which is the same bargain
+ * the strip that led here already struck.
+ *
+ * And its head does not scroll away. The back button is the only way out of a
+ * sheet that has taken over the panel, and it used to be seven hundred pixels
+ * above the reader by the time they had browsed a third of the cards.
  */
-import { Index, Show, createMemo, createSignal, onMount, type JSX } from 'solid-js';
+import {
+  Index,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onMount,
+  type JSX,
+} from 'solid-js';
 import type { FlatScheme } from '../../art/flat';
 import { DesignCanvas, type TileDraw } from './designArt';
+import { MoreControl, cappedTo } from './DesignStrip';
 
 export interface PickerOption {
   id: string;
@@ -57,8 +78,19 @@ function fold(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+/**
+ * Cards before the "N more" control.
+ *
+ * Higher than the app-wide `CAP` of twenty on purpose: this sheet IS the long
+ * list, the reader crossed a "more…" cell to get here, and a card is what they
+ * came to look at. Twenty-four fills whole rows at two, three and four across,
+ * so the control never lands alone at the end of a ragged rank.
+ */
+const SHEET_CAP = 24;
+
 export default function DesignPicker(props: DesignPickerProps): JSX.Element {
   const [query, setQuery] = createSignal('');
+  const [showAll, setShowAll] = createSignal(false);
   let grid: HTMLDivElement | undefined;
   let root: HTMLDivElement | undefined;
 
@@ -90,6 +122,44 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
   });
 
   /**
+   * Collapse again on a new search or a new axis — but NOT on a pick.
+   *
+   * `props.options` is rebuilt every time a card is chosen (each card is drawn
+   * against the axis being edited), so keying the reset on the option list
+   * would snap a reader who had expanded all 189 bindings back to 24 the moment
+   * they tried one. The title is what actually names the axis, and it is stable
+   * across picks.
+   */
+  createEffect(() => {
+    // Read, do not use: the reads are the subscription.
+    void props.title;
+    void query();
+    setShowAll(false);
+  });
+
+  /**
+   * What is actually mounted: the head of the hits, plus the current choice.
+   *
+   * The cap spans the whole sheet rather than each group, so the sections come
+   * out in the vocabulary's own order and the tail of the list is simply not
+   * built yet — twenty-four cards over three groups, not twenty-four per group.
+   * No pinning while a query is live: a hit list is answering the reader's
+   * word, and the active card is only in it if it matched.
+   */
+  const capped = createMemo<readonly PickerOption[]>(() => {
+    const hits = matches();
+    if (showAll()) return hits;
+    const activeId = props.activeId;
+    return cappedTo(
+      hits,
+      SHEET_CAP,
+      query().length > 0 ? undefined : (option) => option.id === activeId,
+    );
+  });
+
+  const hiddenCount = (): number => matches().length - capped().length;
+
+  /**
    * Grouped when the vocabulary has groups AND nobody is searching. A search
    * result split into eleven one-card sections is harder to scan than a plain
    * run of hits, which is the whole reason someone typed.
@@ -100,7 +170,7 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
    * cards between them, which reads as a bug rather than as an ordering.
    */
   const groups = createMemo<readonly { name: string; items: readonly PickerOption[] }[]>(() => {
-    const list = matches();
+    const list = capped();
     if (query().length > 0 || !list.some((o) => o.group !== undefined)) {
       return [{ name: '', items: list }];
     }
@@ -148,7 +218,10 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
 
   return (
     <div class="nb-pick" ref={(el) => (root = el)}>
-      <div class="nb-pick-head">
+      {/* nb-sheet-head (rail.css) is the shared "stays put while the body
+          scrolls" utility. The way OUT of a sheet cannot be the one control
+          that needs a scroll to the top to reach. */}
+      <div class="nb-pick-head nb-sheet-head">
         <button type="button" class="nb-pick-back" onClick={() => props.onBack()}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -176,9 +249,13 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
         />
       </label>
 
+      {/* Says what is ON SCREEN as well as what exists, because those are two
+          different numbers now and the reader can count the first one. */}
       <p class="nb-pick-count" aria-live="polite">
         {matches().length === props.options.length
-          ? `${props.options.length} to choose from`
+          ? hiddenCount() > 0
+            ? `showing ${capped().length} of ${props.options.length}`
+            : `${props.options.length} to choose from`
           : `${matches().length} of ${props.options.length}`}
       </p>
 
@@ -230,6 +307,15 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
             </>
           )}
         </Index>
+        <Show when={showAll() || hiddenCount() > 0}>
+          <MoreControl
+            class="nb-more-row"
+            hidden={hiddenCount()}
+            open={showAll()}
+            label={props.title}
+            onToggle={() => setShowAll(!showAll())}
+          />
+        </Show>
         <Show when={matches().length === 0}>
           <p class="nb-panel-footnote">nothing by that name. try a shorter word.</p>
         </Show>

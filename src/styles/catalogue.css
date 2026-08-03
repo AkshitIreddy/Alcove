@@ -2,9 +2,11 @@
    The catalogue panel (src/views/rail/CataloguePanel.tsx).
 
    A stationer's drawer, not a toolbar: a search line, a row of shelf tabs, and
-   then one grid per shelf where every tile shows the thing rather than naming
-   it. Sits on the rail panel's own chrome (rail.css) for sections, chips and
-   footnotes; only what is specific to the catalogue lives here.
+   then one captioned grid per RUN — an axis, not a whole shelf — where every
+   tile shows the thing rather than naming it. Sits on the rail panel's own
+   chrome (rail.css) for sections, chips, footnotes, the pinned head
+   (`.nb-sheet-head`) and the reveal control (`.nb-more`); only what is specific
+   to the catalogue lives here.
    ========================================================================== */
 
 .nb-catalogue {
@@ -14,14 +16,19 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Search
+   The head — search + shelf tabs, together, and pinned
+
+   These used to be two siblings with only the search box sticky, so scrolling
+   into a shelf left the reader with a search field and no way to change shelves
+   without going all the way back up. They are one block now; `.nb-sheet-head`
+   (rail.css) does the pinning, and this only has to say how the block is
+   stacked and how much air it keeps around itself.
    -------------------------------------------------------------------------- */
-.nb-cat-search {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+.nb-cat-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
   padding: var(--space-4) 0 var(--space-8);
-  background: var(--paper-cream);
 }
 
 .nb-cat-search-input {
@@ -57,16 +64,107 @@
 }
 
 /* ----------------------------------------------------------------------------
-   One shelf
+   One shelf, and the runs inside it
+
+   A shelf is not one list: "tape & trim" is eight vocabularies of up to fifty.
+   Each gets a caption, its own count, and its own cap — so a reader scrolling
+   past the tapes can SEE that frames and underlines exist, which was not true
+   when all 352 arrived as one undivided grid.
    -------------------------------------------------------------------------- */
-.nb-cat-shelf {
-  scroll-margin-top: 48px;
+/*
+ * Clearance for the pinned head, and ONLY for scroll-into-view.
+ *
+ * `.nb-sheet-head` now covers the top ~170px of the scrollport, so anything the
+ * browser scrolls to — a focused tile, a probe's `scrollIntoViewIfNeeded` —
+ * lands underneath it unless it asks for room. This was 48px against a head
+ * that was only the search box; the head grew and the number did not, which is
+ * the quiet kind of staleness.
+ *
+ * A rough number on purpose. It never affects layout, being generous costs
+ * nothing, and being short is what parks a tile under a header.
+ */
+.nb-cat-shelf,
+.nb-cat-run-title,
+.nb-cat-grid > * {
+  scroll-margin-top: 176px;
+}
+
+/* Deliberately quieter than the shelf heading above it and louder than a tile
+   label: it is a sub-heading, and if it competed with the shelf title the panel
+   would read as fifteen sections rather than seven with runs inside them. */
+.nb-cat-run-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  margin: var(--space-12) 0 var(--space-4);
+  padding-bottom: 2px;
+  border-bottom: 1px dashed var(--paper-edge);
+  font-family: var(--font-label);
+  font-size: var(--text-label);
+  color: var(--ink-sepia-soft);
+}
+
+/* The size of the run, said once, so "20 shown / 30 more" adds up in the
+   reader's head instead of being two numbers that never meet. */
+.nb-cat-run-count {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+  background: var(--paper-aged);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-pill);
+  padding: 0 5px;
+}
+
+.nb-cat-run-blurb {
+  font-family: var(--font-ui);
+  font-style: normal;
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nb-cat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: var(--space-4);
+}
+
+/* The reveal, as one more cell in the grid. It borrows the tile's BOX — same
+   height, same corners, same rhythm — from here and its dashed voice from
+   `.nb-more` (rail.css), so it lines up exactly while never being mistaken
+   for one of the things it is hiding.
+
+   Every property `.nb-more` also sets is restated here, and the selector is
+   deliberately one class heavier than `.nb-more` so it wins on SPECIFICITY
+   rather than on source order — which of the two stylesheets lands last in the
+   bundle is a build detail, not a decision, and it differs between the dev
+   server and a production build. */
+.nb-cat-grid .nb-cat-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-height: 62px;
+  padding: var(--space-8) 3px var(--space-4);
+  background: transparent;
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: var(--radius-wobble-sm);
+}
+
+.nb-cat-grid .nb-cat-more:hover {
+  background: var(--wash-lemon-light);
+  transform: translateY(-1px) rotate(-1deg);
+}
+
+.nb-cat-more .nb-more-word {
+  font-size: var(--text-ui-xs);
 }
 
 .nb-cat-item {

@@ -39,7 +39,17 @@ export function createFlipContext(
     alpha: true,
     premultipliedAlpha: true,
     antialias: true,
-    depth: false,
+    // A turning sheet OVERLAPS ITSELF: past a half turn its tail lies back
+    // flat on top of the strip between the spine and the fold, and the
+    // camera's perspective pushes that lifted tail up to ~38px off the
+    // paper it covers. Without a depth buffer the winner was whatever the
+    // index buffer drew last, and the mesh is indexed row-major — so row
+    // j's lifted tail was painted over by row j+1's flat strip, once per
+    // mesh row, everywhere below the canvas centre. That leak is the
+    // "weird shadowey effect" in the bottom half of a turning page (see
+    // the header of curl.ts). Depth makes draw order irrelevant: the paper
+    // that is physically higher always wins, at every tilt and every p.
+    depth: true,
     stencil: false,
     preserveDrawingBuffer: false,
   });
@@ -62,6 +72,15 @@ export function createFlipContext(
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // premultiplied alpha
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+
+  // LEQUAL, not LESS: the ground quad and the un-deformed strip of the curl
+  // mesh are BOTH at z=0, and the ground is drawn first. Under LESS the
+  // mesh would lose the tie and the flat part of the moving page would
+  // never be drawn at all — the revealed page would show through it. Under
+  // LEQUAL the later draw wins a tie (the old, correct painter's order)
+  // while anything genuinely lifted still wins outright.
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
 
   let width = 0;
   let height = 0;

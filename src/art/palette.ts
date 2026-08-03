@@ -214,7 +214,7 @@ function lightnessFor(seed: Oklch, target: number): number {
 }
 
 /** Raise a colour's lightness until it is at least `target` bright. */
-function liftTo(hex: string, target: number): string {
+export function liftTo(hex: string, target: number): string {
   if (lum(hex) >= target) return hex;
   const c = toOklch(hex);
   return toHex({ ...c, L: lightnessFor(c, target) });
@@ -357,4 +357,113 @@ export function clothPair(face: string): readonly [string, string] {
   const shortfall = CLOTH_GAP - (lum(lifted) - lum(edge));
   if (shortfall <= 0) return [lifted, edge] as const;
   return [toHex({ ...base, L: lightnessFor(base, lum(lifted) + shortfall) }), edge] as const;
+}
+
+/* ================================= mixing ================================= */
+
+/**
+ * Two colours mixed in OKLab, `t` of the way from `a` to `b`.
+ *
+ * Rectangular OKLab, NOT the polar arc, and that is a deliberate choice about
+ * agreement rather than about colour. Mixed pigments in this app have to be
+ * painted twice — once onto a canvas from a hex, once into the DOM as
+ * `color-mix(in oklab, …)` so a library theme can retint the parents — and the
+ * two renderings must land on the same colour or a swatch will disagree with
+ * the block it paints. CSS's `oklab` interpolation is rectangular, so this is.
+ *
+ * The cost is the chord instead of the arc: a mix loses a little chroma the
+ * further apart its parents' hues are. Measured on the eleven token families,
+ * the widest gap any swatch below spans is 63° (sky → violet), where the chord
+ * gives up about 15% of an already-quiet chroma of 0.05. That is under a step
+ * of 8-bit colour on screen, and worth it to have one colour, not two.
+ */
+export function mixOklab(a: string, b: string, t: number): string {
+  const k = t < 0 ? 0 : t > 1 ? 1 : t;
+  const A = toOklch(a);
+  const B = toOklch(b);
+  const ax = Math.cos((A.h * Math.PI) / 180) * A.C;
+  const ay = Math.sin((A.h * Math.PI) / 180) * A.C;
+  const bx = Math.cos((B.h * Math.PI) / 180) * B.C;
+  const by = Math.sin((B.h * Math.PI) / 180) * B.C;
+  const x = ax + (bx - ax) * k;
+  const y = ay + (by - ay) * k;
+  return toHex({
+    L: A.L + (B.L - A.L) * k,
+    C: Math.hypot(x, y),
+    h: ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360,
+  });
+}
+
+/* =============================== wash faces =============================== */
+
+/**
+ * A pigment as `styles/tokens.css` states it: the pale face, the face you see,
+ * and the darker face set beside it. Same three rungs the eleven `--wash-*`
+ * families are authored in.
+ */
+export interface WashFaces {
+  light: string;
+  base: string;
+  deep: string;
+}
+
+/**
+ * The band the app's own pigments occupy, MEASURED off `styles/tokens.css`
+ * rather than chosen — the eleven families were hand-tuned to read as one
+ * drawing, so the honest way to let a reader's own colour join them is to put
+ * it on the rungs they already stand on.
+ *
+ * Read out of the eleven families in OKLCh:
+ *
+ *   base   L 0.528 (plum) … 0.822 (lemon),  mean 0.661;  C 0.041 … 0.144
+ *   light  L 0.898 … 0.946, mean 0.916;     C = base's × 0.24 … 0.45, mean 0.36
+ *   deep   L 0.382 … 0.513, mean 0.454;     C = base's × 0.74 … 1.03, mean 0.89
+ *
+ * So the light and deep faces are not a fixed STEP away from the base — they
+ * are fixed LIGHTNESSES with the base's own hue and a measured amount of its
+ * chroma. That is why an amber and a plum, whose bases are 0.29 of lightness
+ * apart, still hand back light faces you can set the same ink on.
+ */
+export const WASH_BAND = {
+  /** Base faces are clamped into this range, so nothing lands off the drawing. */
+  baseMin: 0.528,
+  baseMax: 0.822,
+  /** Nothing may out-shout the loudest token family (coral, C 0.144). */
+  chromaMax: 0.15,
+  light: { L: 0.916, keep: 0.36 },
+  deep: { L: 0.454, keep: 0.89 },
+} as const;
+
+/**
+ * Pull any colour into the band the eleven token families live in.
+ *
+ * Lightness is clamped, not replaced: a reader who picks a pale sage and a
+ * reader who picks a deep one should still get two different colours. Chroma
+ * is only ever clamped DOWNWARD — a neon out of a system colour picker is the
+ * one input that would visibly leave the drawing, and a grey is a legitimate
+ * choice that must survive as a grey. Finally the result is held above
+ * `INK_FLOOR`, because `FLAT.ink` has to sit on it in the art.
+ */
+export function intoWashBand(hex: string): string {
+  const c = toOklch(hex);
+  const L = c.L < WASH_BAND.baseMin ? WASH_BAND.baseMin : c.L > WASH_BAND.baseMax ? WASH_BAND.baseMax : c.L;
+  const C = c.C > WASH_BAND.chromaMax ? WASH_BAND.chromaMax : c.C;
+  return liftTo(toHex({ L, C, h: c.h }), INK_FLOOR);
+}
+
+/**
+ * The three faces of one pigment, derived the way the token families fold.
+ *
+ * `base` is passed through `intoWashBand` first, so this is total for any hex
+ * a reader can type — including `#000000`, which comes back as the darkest
+ * pigment the drawing allows rather than as a hole in the page.
+ */
+export function washFaces(base: string): WashFaces {
+  const fitted = intoWashBand(base);
+  const c = toOklch(fitted);
+  return {
+    light: toHex({ L: WASH_BAND.light.L, C: c.C * WASH_BAND.light.keep, h: c.h }),
+    base: fitted,
+    deep: toHex({ L: WASH_BAND.deep.L, C: c.C * WASH_BAND.deep.keep, h: c.h }),
+  };
 }

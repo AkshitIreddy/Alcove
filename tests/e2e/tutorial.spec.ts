@@ -274,9 +274,11 @@ test('the spotlight actually lands on the left rail in the book view', async ({ 
   await page.evaluate(() => window.__nbTutorial!.stop());
 
   // Open the seeded Welcome book through the shelf's accessible book list.
-  // Taking a book off the shelf is not the same as reading it: the flight
-  // ends with the book HELD in front of the case, and "read it" is the second
-  // half of the gesture (see PulledBookOverlay).
+  //
+  // One gesture, not two. The flight used to end with the book HELD in front of
+  // the case behind a "read it" button, and this waited on that button; the
+  // reader threw the whole card out, so the pull opens the book itself and
+  // there is nothing to click in between.
   await expect
     .poll(() => page.evaluate(() => document.querySelectorAll('.shelf-a11y button').length), {
       timeout: 60_000,
@@ -285,7 +287,6 @@ test('the spotlight actually lands on the left rail in the book view', async ({ 
   await page.evaluate(() => {
     (document.querySelector('.shelf-a11y button') as HTMLButtonElement).click();
   });
-  await page.locator('[data-testid="pulled-book-read"]').click({ timeout: 60_000 });
   await expect
     .poll(() => page.evaluate(() => document.querySelector('.nb-rail') !== null), {
       timeout: 60_000,

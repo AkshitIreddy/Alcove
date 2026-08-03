@@ -38,11 +38,15 @@ import {
   WALLPAPER_MOODS,
   WALLPAPER_PATTERNS,
   WALLPAPER_PRESETS,
+  WALLPAPER_ROLL,
   WALLPAPER_SCALES,
+  WALLPAPER_TIERS,
   WALLPAPER_TONES,
   getWallpaper,
+  isRollableWallpaper,
   isWallpaperId,
   renderWallpaperTile,
+  rollWallpaper,
   wallpaperAxisKey,
   wallpaperColours,
   wallpaperFamily,
@@ -360,6 +364,13 @@ describe('wallpaper presets', () => {
     expect(wallpaperSpec(DEFAULT_WALLPAPER_ID).pattern).not.toBe('plain');
   });
 
+  it('opens on a paper the dice would also have been happy to give', () => {
+    // The opening wall is the one paper every new library sees, so it has to
+    // clear the same bar the dice do. It is another agent's constant; this
+    // ranks around it rather than moving it.
+    expect(isRollableWallpaper(getWallpaper(DEFAULT_WALLPAPER_ID))).toBe(true);
+  });
+
   it('honours the four names settings.wallpaperPattern has been storing', () => {
     // The setting was live in the picker the whole time the wall was a flat
     // tint. Landing those readers on a bare wall would look like their choice
@@ -369,6 +380,145 @@ describe('wallpaper presets', () => {
     expect(getWallpaper('botanical').spec.pattern).toBe('sprig');
     expect(getWallpaper('plain').id).toBe(FALLBACK_WALLPAPER_ID);
     expect(isWallpaperId('botanical')).toBe(true);
+  });
+});
+
+/* ============================ rank and the dice =========================== */
+
+/**
+ * The quality axis, and the only thing keeping it honest.
+ *
+ * Nothing in this section fails loudly on its own. A wall that reads as a row
+ * of headstones renders perfectly, tiles perfectly, and ships — the defect is
+ * entirely in what it looks like, which no assertion can see. What CAN be
+ * asserted is the discipline around it: that every paper has been judged, that
+ * the judgement is what decides the order rather than where the line happens to
+ * sit in the file, and that the demoted ones are genuinely out of the dice.
+ *
+ * The judging itself is `scripts/probe-wallpapers.mjs` plus a pair of eyes.
+ */
+describe('wallpaper ranking', () => {
+  it('gives every paper a tier — a paper nobody judged is a paper nobody looked at', () => {
+    for (const preset of WALLPAPER_PRESETS) {
+      expect(WALLPAPER_TIERS).toContain(preset.tier);
+    }
+    // And every tier is used. A tier no paper is in is a distinction that has
+    // quietly stopped being made.
+    const used = new Set(WALLPAPER_PRESETS.map((p) => p.tier));
+    for (const tier of WALLPAPER_TIERS) expect(used).toContain(tier);
+  });
+
+  it('shelves the good ones first, in every section', () => {
+    // The export order is DERIVED — family rank, then tier, then the order the
+    // paper was written in. This is the assertion that the derivation is what
+    // the reader actually gets: walking the list, a section's tier index never
+    // goes backwards. It fails the moment someone reintroduces a hand-sorted
+    // array, which is the failure mode the derivation exists to remove.
+    const tierRank = new Map(WALLPAPER_TIERS.map((t, i) => [t, i] as const));
+    const familyRank = new Map(WALLPAPER_FAMILIES.map((f, i) => [f, i] as const));
+    let lastFamily = -1;
+    let lastTier = -1;
+    const seenFamilies = new Set<string>();
+    for (const preset of WALLPAPER_PRESETS) {
+      const fam = familyRank.get(preset.family)!;
+      if (fam !== lastFamily) {
+        // Families come in order, and a family's papers are contiguous — a
+        // section split in two is a section heading printed twice.
+        expect(fam).toBeGreaterThan(lastFamily);
+        expect(seenFamilies.has(preset.family)).toBe(false);
+        seenFamilies.add(preset.family);
+        lastFamily = fam;
+        lastTier = -1;
+      }
+      const tier = tierRank.get(preset.tier)!;
+      expect(tier).toBeGreaterThanOrEqual(lastTier);
+      lastTier = tier;
+    }
+  });
+
+  it('keeps the bare wall the very first card', () => {
+    // Whatever the ranking does, the reader who wants no wallpaper has to find
+    // that in the first place they look.
+    expect(WALLPAPER_PRESETS[0]?.id).toBe(FALLBACK_WALLPAPER_ID);
+  });
+
+  it('leads every section with real choices, and demotes rather than deletes', () => {
+    // Two bars, pulling opposite ways on purpose. A section whose first row is
+    // one paper and then the also-rans is a section that has been triaged, not
+    // ranked; and a book with half of it at the back is a deletion wearing a
+    // tier field. The reader asked for neither.
+    const perFamily = new Map<string, Map<string, number>>();
+    for (const preset of WALLPAPER_PRESETS) {
+      const tiers = perFamily.get(preset.family) ?? new Map<string, number>();
+      tiers.set(preset.tier, (tiers.get(preset.tier) ?? 0) + 1);
+      perFamily.set(preset.family, tiers);
+    }
+    for (const family of WALLPAPER_FAMILIES) {
+      expect(`${family}: ${perFamily.get(family)?.get('front') ?? 0}`).toBe(
+        `${family}: ${Math.max(4, perFamily.get(family)?.get('front') ?? 0)}`,
+      );
+    }
+    const back = WALLPAPER_PRESETS.filter((p) => p.tier === 'back').length;
+    expect(back).toBeLessThanOrEqual(Math.floor(WALLPAPER_PRESETS.length / 4));
+    expect(back).toBeGreaterThan(0);
+  });
+});
+
+describe('the wallpaper dice', () => {
+  it('never rolls a paper that was demoted, or the bare wall', () => {
+    // The gate. `back` papers stay in the picker and out of the dice, and the
+    // bare wall is out of the dice at any tier — a "surprise me" that takes the
+    // wallpaper OFF reads as the button being broken.
+    for (const preset of WALLPAPER_ROLL) {
+      expect(preset.tier).not.toBe('back');
+      expect(preset.id).not.toBe(FALLBACK_WALLPAPER_ID);
+    }
+    expect(WALLPAPER_ROLL.length).toBe(
+      WALLPAPER_PRESETS.filter((p) => p.tier !== 'back' && p.id !== FALLBACK_WALLPAPER_ID).length,
+    );
+    // Not an empty pool, and not the whole book either — both would mean the
+    // filter is doing nothing.
+    expect(WALLPAPER_ROLL.length).toBeGreaterThan(60);
+    expect(WALLPAPER_ROLL.length).toBeLessThan(WALLPAPER_PRESETS.length);
+  });
+
+  it('rolls only rollable papers, at any seed and under any steer', () => {
+    // The function, not just the pool: a roll that indexes past the end, or
+    // that falls back to `WALLPAPER_PRESETS` when a mood matches nothing, is
+    // exactly how a demoted paper reaches a reader who never went looking.
+    const steers = ['', ...WALLPAPER_MOODS] as const;
+    for (const mood of steers) {
+      for (let i = 0; i < 400; i++) {
+        const rolled = rollWallpaper(() => i / 400, mood);
+        expect(isRollableWallpaper(rolled)).toBe(true);
+        if (mood !== '') expect(rolled.tags).toContain(mood);
+      }
+    }
+    // Degenerate generators are the other way in. A roll that throws or lands
+    // on `undefined` in a studio button is worse than a dull paper.
+    for (const value of [0, 0.999999, 1, -0.3, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(isRollableWallpaper(rollWallpaper(() => value))).toBe(true);
+    }
+  });
+
+  it('leaves every mood with enough rollable papers to be worth steering by', () => {
+    // Gating the dice narrows every steered roll too, and a mood that comes
+    // down to two papers is a preset with extra steps — the exact complaint the
+    // mood vocabulary was written against. If a demotion pass ever empties one
+    // out, this is where it says so.
+    for (const mood of WALLPAPER_MOODS) {
+      const n = WALLPAPER_ROLL.filter((p) => p.tags.includes(mood)).length;
+      expect(`${mood}: ${n >= 6}`).toBe(`${mood}: true`);
+    }
+  });
+
+  it('spreads across the pool rather than favouring the front of it', () => {
+    // A sanity check on the index arithmetic. Sweeping the unit interval has
+    // to visit most of the pool; a modulo bug or an off-by-one that clamps to
+    // the first entry would still pass every assertion above.
+    const seen = new Set<string>();
+    for (let i = 0; i < 2000; i++) seen.add(rollWallpaper(() => i / 2000).id);
+    expect(seen.size).toBe(WALLPAPER_ROLL.length);
   });
 });
 
@@ -452,6 +602,27 @@ describe('wallpaper cache key', () => {
       wallpaperTileKey(base, 256, 2),
     ]);
     expect(keys.size).toBe(9);
+  });
+
+  it('carries a drawing revision the axes cannot express', () => {
+    // The hole this closes: `world.ts` bakes through `bakeCached(tileKey)` onto
+    // DISK, and a disk hit is never validated. Redrawing a motif without
+    // touching an axis therefore leaves every machine that has already seen the
+    // paper showing the old art forever — which is exactly what happened when
+    // the moire was fixed. The tests passed, the specimen board showed watered
+    // silk, and the running app kept painting the chain-link fence.
+    //
+    // Asserted structurally rather than by pinning the number: the tile key has
+    // to carry something the AXIS key does not, and the axis key must not carry
+    // it — the axis key answers "is this a different paper" and is compared
+    // against stored specs, so a revision in there would make every saved room
+    // stop matching the preset it was chosen from.
+    const spec = wallpaperSpec('moire-tabby');
+    const tile = wallpaperTileKey(spec, 256);
+    const axis = wallpaperAxisKey(spec);
+    expect(tile).toContain(axis);
+    expect(tile.replace(axis, '')).toMatch(/\br\d+\b/);
+    expect(axis).not.toMatch(/\br\d+\b/);
   });
 
   it('an axis absent from the key is an axis the disk cache eats', () => {

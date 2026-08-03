@@ -105,7 +105,14 @@
   flex: 1;
 }
 
+/* Top of the rail, not the bottom — see .nb-rail-panel-header in rail.css.
+   This sat AFTER .nb-tr-rail-spacer, which pushed it to the foot of the left
+   nav, so the way out of the transfer desk was the last thing on screen rather
+   than the first. `order: -1` lifts it above the tab list; the spacer keeps
+   doing its job for everything after it. */
 .nb-tr-rail-close {
+  order: -1;
+  margin-bottom: var(--space-8);
   padding: 4px 0 6px;
   font-size: 14px;
   color: var(--ink-sepia-soft);

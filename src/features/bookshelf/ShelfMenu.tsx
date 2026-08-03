@@ -150,7 +150,17 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
       style={pos()}
     >
       <Show when={mode() === 'menu'}>
-        <div class="shelf-menu__title" title={props.book.title}>
+        {/* The title clips when a book is long-named, and the whole name is
+            what tells two drafts apart — so it gets the app's own tooltip
+            (views/Tooltip.tsx) rather than the browser's grey one. Above the
+            card, because the menu already owns everything to its right, and
+            `-clipped` so a short title is not read back to you over itself. */}
+        <div
+          class="shelf-menu__title"
+          data-tooltip={props.book.title}
+          data-tooltip-side="top"
+          data-tooltip-clipped=""
+        >
           {props.book.title}
         </div>
         <For each={items()}>

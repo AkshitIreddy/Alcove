@@ -536,8 +536,13 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   transform: rotate(12deg) translateY(-4px);
 }
 
+/* The way out sits FIRST, on the left — see the note on .nb-rail-panel-header
+   in rail.css. `margin-left: auto` pushed it to the far right of the header;
+   `order` moves it without disturbing the DOM order, so the sheet's title is
+   still what a screen reader reaches first. */
 .nbs-close {
-  margin-left: auto;
+  order: -1;
+  margin-right: auto;
   width: 34px;
   height: 34px;
   display: grid;

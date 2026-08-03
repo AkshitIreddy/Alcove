@@ -96,6 +96,13 @@ export function shouldClick(nowMs: number, sinceVoiced: number, lastClickAtMs: n
 export function installUiClickSounds(root: Document = document): () => void {
   if (installed) return installed;
 
+  // App start is the only moment the app reliably passes through on its way
+  // to making a sound, and this is the one sound module App.tsx already calls.
+  // The import is dynamic so the static graph of this module stays DOM-free
+  // (the unit suite loads it in a node environment) and so the settings read
+  // costs nothing until after first paint.
+  void import('./soundSetPrefs').then((prefs) => prefs.loadSoundSet()).catch(() => undefined);
+
   const onClick = (event: Event): void => {
     if (!isSoundedButton(event.target)) return;
     const now = Date.now();

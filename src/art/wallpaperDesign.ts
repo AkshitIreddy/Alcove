@@ -86,6 +86,26 @@
  * be REACHABLE: `tests/art-wallpaper.test.ts` fails if a motif, a scale, a
  * depth, an ink slot, a tone or a nib exists that no paper in the book ever
  * asks for. A value nothing reaches is drawing code nobody will ever see.
+ *
+ * ## Ranking, and why a wall is judged differently
+ *
+ * A hundred and twenty-six papers that are all equally offered is a hundred and
+ * twenty-six papers of which a dozen are the reason someone stops trusting the
+ * picker. So every paper carries a {@link WallpaperTier} — `front`, `book` or
+ * `back` — decided by rendering it onto a wall-sized patch at the pitch the app
+ * actually shows it at and LOOKING at it (`scripts/probe-wallpapers.mjs`).
+ *
+ * The bar is not a book spine's. A spine is an inch of a shelf; a wall is the
+ * largest flat area on screen and the thing a reader looks past all day, so a
+ * paper fails three ways a spine cannot — by being BUSY, by having a motif that
+ * reads as something else once it is a foot across (a row of headstones, a
+ * chain-link fence, a stack of Christmas trees), or by being so faint that it
+ * is Plain Parchment with extra steps.
+ *
+ * Nothing is deleted for it. `WALLPAPER_PRESETS` is DERIVED from the tier so
+ * the good ones lead their section; {@link WALLPAPER_ROLL} drops the demoted
+ * ones so "surprise me" never hands one to somebody who did not go looking; and
+ * every one of the hundred and twenty-six is still there to be picked.
  */
 
 import {
@@ -168,7 +188,16 @@ export const WALLPAPER_PATTERNS = [
 export type WallpaperPattern = (typeof WALLPAPER_PATTERNS)[number];
 
 /**
- * The design families, in the order a wallpaper book prints them.
+ * The design families, in the order a wallpaper book prints them — and that
+ * order is a JUDGEMENT, not the order the sections happened to be written in.
+ *
+ * A wall is the largest flat area on screen and the reader looks past it all
+ * day, so the sections that lead are the ones that can be looked past: ruling
+ * and stripes first, then the nets, then the figured papers a library actually
+ * wants behind it. `spot` is last because it is where a motif is most likely to
+ * read as a sticker — a hand-sized crescent or a five-point star at wall scale
+ * is the loudest thing a paper in this book can be — and `check` is next to
+ * last because its densest members read as a FLOOR rather than as a wall.
  *
  * `figured` is the odd one: damasks, urns, birds and toiles are four different
  * things, but they are all a DEVICE repeated rather than a geometry, and a
@@ -177,13 +206,35 @@ export type WallpaperPattern = (typeof WALLPAPER_PATTERNS)[number];
 export const WALLPAPER_FAMILIES = [
   'ruled',
   'stripe',
-  'check',
   'lattice',
-  'spot',
-  'botanical',
   'figured',
+  'botanical',
+  'check',
+  'spot',
 ] as const;
 export type WallpaperFamily = (typeof WALLPAPER_FAMILIES)[number];
+
+/**
+ * Where in its section a paper is printed — the quality axis.
+ *
+ * Every one of the hundred and twenty-six was rendered onto a wall-sized patch
+ * at the pitch `world.ts` actually shows it at and LOOKED AT
+ * (`scripts/probe-wallpapers.mjs`). A paper on a wall can fail three ways that
+ * a paper on a picker card cannot: it can be BUSY, its motif can read as
+ * something it is not once it is a foot across, and it can be so faint that it
+ * is Plain Parchment with extra steps. All three land a paper at the back.
+ *
+ * Nothing was deleted. A demotion moves a paper down its section and takes it
+ * out of the dice; it stays fully pickable, because the reader who goes looking
+ * for a hand-sized gold crescent should find one.
+ *
+ *  - `front` — leads its section. The ones to reach for.
+ *  - `book`  — the body of the book. Good papers, none of them the best.
+ *  - `back`  — printed at the back, and never rolled. Odd, busy, or a motif
+ *              that reads as something else at wall size.
+ */
+export const WALLPAPER_TIERS = ['front', 'book', 'back'] as const;
+export type WallpaperTier = (typeof WALLPAPER_TIERS)[number];
 
 /** Which family each motif belongs to. Seven each, eight for `figured`. */
 const PATTERN_FAMILY: Record<WallpaperPattern, WallpaperFamily> = {
@@ -2429,18 +2480,50 @@ const urn: MotifFn = (ctx, r, seed, c) => {
 const BLEED = 0.6;
 
 /**
+ * The widest a moire's comb may be drawn, and how many swells run down its
+ * tile at each scale.
+ *
+ * A moire is not a motif — it is an INTERFERENCE, and it only exists while the
+ * comb is fine enough that the eye averages the crossings into a band. Draw the
+ * same construction at a 35px pitch and every hairline becomes an object, every
+ * crossing becomes a knot, and the wall is a chain-link fence. So the comb is
+ * pinned to a hairline in every room and `scale` moves the thing a reader can
+ * actually see change: how broad the watering is.
+ *
+ * Nine, and the two pixels between nine and the eleven it was first set to were
+ * the difference between silk and fencing on the real wall. The specimen board
+ * draws a tile at 0.6 and the shelf draws it at the camera's zoom, so eleven
+ * looked fine on the board and still knotted in the app — which is why a paper
+ * gets driven through the running world before it is called done.
+ */
+const MOIRE_PITCH_MAX = 9;
+const MOIRE_SWELLS: Record<WallpaperScale, number> = {
+  petite: 5,
+  small: 4,
+  medium: 3,
+  large: 2,
+  grand: 1,
+};
+
+/**
  * A rule with a bead on it — the bead-and-reel moulding, run vertically.
  *
  * The rod is drawn a hair past the cell top and bottom, so a column reads as
  * one continuous rule rather than as a stack of dashes; everything else is
  * comfortably inside. Measured off the fitted cell because the rod has to meet
  * the rod above it exactly.
+ *
+ * The rod is FAT — two thirds of the bead rather than a third of it — and that
+ * ratio is what makes this a moulding instead of a necklace. A thin rod with a
+ * fat bead threaded on it is a string of beads, and a wall of them read as
+ * hanging chains; a carved bead-and-reel is a rod that SWELLS, so the bead has
+ * to be barely wider than the thing it grows out of.
  */
 const beading: MotifFn = (ctx, r, seed, c, at) => {
   const W = at.w > 0 ? at.w : r * 2;
   const H = at.h > 0 ? at.h : r * 2;
   const w = motifInk(r * 0.7, c);
-  const rod = Math.max(1.6, W * 0.13);
+  const rod = Math.max(2.2, W * 0.22);
   roundedRect(ctx, -rod / 2, -H / 2 - BLEED, rod, H + BLEED * 2, rod * 0.4 * c.edge.round);
   ink(ctx, c, w * 0.7);
   // Reel, bead, reel. The reels are flat discs and the bead is round, which is
@@ -2448,26 +2531,33 @@ const beading: MotifFn = (ctx, r, seed, c, at) => {
   for (const s of [-1, 1] as const) {
     roundedRect(
       ctx,
-      -W * 0.09,
+      -W * 0.14,
       s * H * 0.3 - H * 0.035,
-      W * 0.18,
+      W * 0.28,
       H * 0.07,
       W * 0.03 * c.edge.round,
     );
     ink(ctx, c, w * 0.55, c.bloom);
   }
   ctx.beginPath();
-  ctx.ellipse(0, 0, W * 0.2, H * 0.17, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, W * 0.17, H * 0.13, 0, 0, Math.PI * 2);
   ink(ctx, c, w * 0.8, c.accent);
   void seed;
 };
 
 /**
- * One length of bamboo cane, with the node it grows from and a leaf pair.
+ * One length of bamboo cane, with the node it grows from and a spray of leaves.
  *
  * The cane runs the whole height of the cell so the grove is continuous; the
  * node sits well inside it. Leaves spring off the node and alternate side by
  * ROW, which is what stops the grove reading as a printed barcode.
+ *
+ * The spray is THREE leaves, two up and one turned down, and they are half as
+ * wide again as they were. Both changes answer the same report: a single narrow
+ * blade tilted off the top of a straight rod is a sharpened pencil, and the
+ * grand cane read as a box of them. A leaf has to be wide enough to have a
+ * belly, and a spray has to fan rather than point, or the cane is a stick with
+ * a nib on it.
  */
 const bamboo: MotifFn = (ctx, r, seed, c, at) => {
   const W = at.w > 0 ? at.w : r * 2;
@@ -2480,13 +2570,14 @@ const bamboo: MotifFn = (ctx, r, seed, c, at) => {
   ctx.save();
   ctx.translate(0, H * 0.33);
   ctx.scale(flip, 1);
-  for (const [tilt, len, fill] of [
-    [-0.72, 0.62, true],
-    [-1.18, 0.44, false],
+  for (const [tilt, len, wide, fill] of [
+    [-0.58, 0.60, 0.40, true],
+    [-1.14, 0.46, 0.36, false],
+    [0.42, 0.34, 0.34, true],
   ] as const) {
     ctx.save();
     ctx.rotate(tilt);
-    leaf(ctx, W * len * 1.5, W * len * 0.26, -Math.PI / 2);
+    leaf(ctx, W * len * 1.5, W * len * wide, -Math.PI / 2);
     ink(ctx, c, w * 0.55, fill ? true : c.bloom);
     ctx.restore();
   }
@@ -3953,8 +4044,18 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number, paint: Pain
       // The phase drift is irrational-ish on purpose. A drift that divides the
       // count puts the same bunching in the same place every few lines and the
       // wall gets a visible vertical rhythm instead of a watered one.
-      const n = fitCount(size, nominal * plan.cell, 1, 8);
+      //
+      // The comb PITCH is capped, and that cap is the whole difference between
+      // silk and chain-link fencing. The interference only exists while the
+      // eye averages the crossings; past about a dozen pixels each hairline is
+      // an object in its own right, the crossings become knots, and a medium
+      // moire came out as a diagonal net of cords — which is exactly what the
+      // wall looked like before this line existed. So `scale` moves the size of
+      // the WATERING (how many swells run down the tile) and never the comb.
+      const pitchWanted = Math.max(6, Math.min(MOIRE_PITCH_MAX, nominal * plan.cell));
+      const n = fitCount(size, pitchWanted, 1, 8);
       const pitch = size / n;
+      const swell = MOIRE_SWELLS[spec.scale];
       for (let i = 0; i < n; i++) {
         const centre = (i + 0.5) * pitch;
         marks.push(
@@ -3962,7 +4063,7 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number, paint: Pain
             size,
             'y',
             centre,
-            periodic(size, pitch * 0.78 * feel.wobble, 2, i * 0.618 * Math.PI),
+            periodic(size, pitch * 0.78 * feel.wobble, swell, i * 0.618 * Math.PI),
             Math.max(0.85, pitch * 0.12 * feel.weight),
             (c) => c.ink,
           ),
@@ -3972,7 +4073,7 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number, paint: Pain
             size,
             'y',
             centre + pitch * 0.5,
-            periodic(size, pitch * 0.62 * feel.wobble, 3, i * 0.382 * Math.PI + 1.1),
+            periodic(size, pitch * 0.62 * feel.wobble, swell + 1, i * 0.382 * Math.PI + 1.1),
             Math.max(0.75, pitch * 0.08 * feel.weight),
             thread,
           ),
@@ -4265,18 +4366,47 @@ export function wallpaperTilePx(spec: WallpaperSpec, dpr = 1): number {
 }
 
 /**
+ * The revision of the DRAWING itself. Bump it when a motif's geometry changes.
+ *
+ * The axes were never the only way a tile's pixels move, and this is the hole
+ * that left. `world.ts` bakes through `bakeCached(wallpaperTileKey(…))` onto
+ * disk, and the disk cache validates NOTHING about a hit — so redrawing a motif
+ * while leaving every axis alone means every machine that has already seen that
+ * paper keeps the old art forever. Caught the honest way: the moire was fixed,
+ * the tests passed, the specimen board showed watered silk, and the running app
+ * carried on painting the chain-link fence it had baked an hour earlier.
+ *
+ * It rides on the TILE key and deliberately not on `wallpaperAxisKey`, which
+ * answers a different question — "is the reader looking at a different paper" —
+ * and is compared against stored specs by `world.ts`, `LibraryStudio` and
+ * `matchRoomPreset`. A revision in there would make every saved room stop
+ * matching the preset it was chosen from.
+ *
+ * Revisions:
+ *  2 — moire pinned to a hairline comb (it read as chain-link past `small`);
+ *      bamboo's single narrow blade became a three-leaf spray (it read as a
+ *      pencil); bead-and-reel's rod fattened (it read as a hanging chain).
+ *  3 — the moire's comb taken finer still. 12px was fine enough on a specimen
+ *      board at 0.6 and not on the real wall at 0.8, which is the whole reason
+ *      a paper gets judged in the running app and not only on a board.
+ */
+const WALLPAPER_ART_REV = 3;
+
+/**
  * Cache key for a rendered tile.
  *
  * Carries `flatSchemeTag()` because every colour in the tile is derived from
  * the live scheme — without it the disk cache would serve the athenaeum's
  * damask forever after the reader moved to the reef, which is the exact bug the
- * cover memo had.
+ * cover memo had. And {@link WALLPAPER_ART_REV}, because a redrawn motif is the
+ * same class of change with none of the same warning signs.
  */
 export function wallpaperTileKey(spec: WallpaperSpec, size: number, dpr = 1): string {
   // Every axis, through `wallpaperAxisKey`, so a new one cannot be added
   // without entering the key — a tone that is not in the key is a tone the
-  // disk cache overwrites with whatever it baked first.
-  return `wall|${flatSchemeTag()}|${wallpaperAxisKey(spec)}|${Math.round(size)}|${dpr}`;
+  // disk cache overwrites with whatever it baked first. Plus the revision of
+  // the DRAWING, which is the other way the same pixels change.
+  return `wall|r${WALLPAPER_ART_REV}|${flatSchemeTag()}|${wallpaperAxisKey(spec)}|${Math.round(size)}|${dpr}`;
 }
 
 /* ============================== the presets ============================== */
@@ -4314,36 +4444,56 @@ export interface WallpaperPreset {
   blurb: string;
   /** Which section of the book this paper is printed in. */
   family: WallpaperFamily;
+  /**
+   * Where in that section it is printed, and whether the dice may hand it out.
+   * See {@link WALLPAPER_TIERS}. Required, so a new paper cannot be added
+   * without somebody having looked at it on a wall.
+   */
+  tier: WallpaperTier;
   /** Mood words, for filtering and for steering the dice. */
   tags: readonly WallpaperMood[];
   spec: WallpaperSpec;
 }
 
+/**
+ * One paper.
+ *
+ * `tier` is LAST and required rather than defaulted, and that is the whole
+ * mechanism behind the ranking: a default would let a new paper join the book
+ * without anyone deciding whether it belongs at the front of its section or at
+ * the back, and "which tier is this in" is exactly the question that stops the
+ * book drifting back into a list.
+ */
 function paper(
   id: string,
   name: string,
   blurb: string,
   spec: WallpaperSpec,
   tags: readonly WallpaperMood[],
+  tier: WallpaperTier,
 ): WallpaperPreset {
-  return { id, name, blurb, family: PATTERN_FAMILY[spec.pattern], tags, spec };
+  return { id, name, blurb, family: PATTERN_FAMILY[spec.pattern], tier, tags, spec };
 }
 
 /**
- * The book of papers.
+ * The book of papers, AS AUTHORED.
  *
  * Composed rather than enumerated: fifty motifs across five scales, four
  * reliefs, six ink slots, fifty tones and four nibs is three hundred thousand
  * combinations, and the job of a preset list is to be the hundred-odd that are
  * actually worth hanging.
  *
- * Grouped by FAMILY, EIGHTEEN each, and ordered quiet → loud within each —
- * which is the order someone shops in. The balance is the point: an earlier
- * book was built motif by motif and ended up twelve geometrics against five
- * scenics, so the picker's geometry section scrolled while its scenic section
- * fitted on one row.
+ * Written by FAMILY, EIGHTEEN each, quiet → loud inside each — which is how a
+ * person composes a section and NOT the order the picker shows. The shelf order
+ * is derived from the `tier` on each entry by {@link WALLPAPER_PRESETS} below,
+ * so ranking a paper is an edit to that paper rather than a move within this
+ * array. A hand-sorted list is one somebody re-sorts by accident.
  *
- * Four constraints hold across the whole list, all tested:
+ * The balance is the point: an earlier book was built motif by motif and ended
+ * up twelve geometrics against five scenics, so the picker's geometry section
+ * scrolled while its scenic section fitted on one row.
+ *
+ * Five constraints hold across the whole list, all tested:
  *  - no two papers agree on all four of pattern/scale/depth/ink, because a
  *    consumer that has not moved to `wallpaperAxisKey` would fail to notice
  *    the swap and would keep the old wall on screen;
@@ -4352,279 +4502,309 @@ function paper(
  *  - every value of every axis is reachable from some paper — a tone or a nib
  *    the book never asks for is drawing code nobody will ever see;
  *  - every mood word lands on at least ten papers, or steering the dice with
- *    it is just a preset with extra steps.
+ *    it is just a preset with extra steps;
+ *  - every family leads with at least four `front` papers, and no more than a
+ *    quarter of the book is at the `back` — a demotion is a demotion, not a
+ *    quiet deletion.
  *
  * `plain` is the one motif deliberately hung ONCE. It draws no marks at all, so
  * a second plain paper would be the same wall under a different name however
  * its other axes were set.
  */
-export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = [
+const WALLPAPER_BOOK: readonly WallpaperPreset[] = [
   /* ------------------------------- ruled -------------------------------- */
   paper('plain-parchment', 'Plain Parchment', 'The wall, and nothing on it.',
-    { pattern: 'plain', scale: 'medium', depth: 'flat', ink: 'paper' }, ['quiet', 'warm']),
+    { pattern: 'plain', scale: 'medium', depth: 'flat', ink: 'paper' }, ['quiet', 'warm'], 'front'),
   paper('pin-quiet', 'Quiet Pinstripe', 'A hairline every inch, and a paler one between.',
-    { pattern: 'pinstripe', scale: 'petite', depth: 'flat', ink: 'paper', tone: 'gilt', edge: 'etched' }, ['quiet', 'formal']),
+    { pattern: 'pinstripe', scale: 'petite', depth: 'flat', ink: 'paper', tone: 'gilt', edge: 'etched' }, ['quiet', 'formal'], 'front'),
   paper('pin-study', 'Study Pinstripe', 'Close-ruled in the case timber.',
-    { pattern: 'pinstripe', scale: 'petite', depth: 'flat', ink: 'timber', tone: 'ember' }, ['quiet', 'warm', 'formal']),
+    { pattern: 'pinstripe', scale: 'petite', depth: 'flat', ink: 'timber', tone: 'ember' }, ['quiet', 'warm', 'formal'], 'front'),
   paper('pin-wide', 'Drawing Room Rule', 'Wider ruling, with a blue thread between.',
-    { pattern: 'pinstripe', scale: 'small', depth: 'flat', ink: 'deep', tone: 'sea' }, ['formal', 'cool']),
+    { pattern: 'pinstripe', scale: 'small', depth: 'flat', ink: 'deep', tone: 'sea' }, ['formal', 'cool'], 'book'),
   paper('moire-watered', 'Watered Silk', 'A comb of hairlines that interfere into bands.',
-    { pattern: 'moire', scale: 'small', depth: 'flat', ink: 'deep', tone: 'soot', edge: 'etched' }, ['quiet', 'formal', 'nocturnal']),
+    { pattern: 'moire', scale: 'small', depth: 'flat', ink: 'deep', tone: 'soot', edge: 'etched' }, ['quiet', 'formal', 'nocturnal'], 'front'),
   paper('moire-tabby', 'Tabby Moire', 'The same watering, warmed and widened.',
-    { pattern: 'moire', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'cocoa' }, ['warm', 'antique', 'quiet']),
+    { pattern: 'moire', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'cocoa' }, ['warm', 'antique', 'quiet'], 'book'),
   paper('moire-midnight', 'Midnight Moire', 'Broad watering, drawn in the recess colour.',
-    { pattern: 'moire', scale: 'large', depth: 'flat', ink: 'recess', tone: 'mist' }, ['nocturnal', 'cool', 'grand']),
+    { pattern: 'moire', scale: 'large', depth: 'flat', ink: 'recess', tone: 'mist' }, ['nocturnal', 'cool', 'grand'], 'book'),
   paper('grass-reed', 'Reed Cloth', 'Fine fibres, close-woven, a slub every ninth.',
-    { pattern: 'grasscloth', scale: 'small', depth: 'flat', ink: 'recess', tone: 'olive', edge: 'etched' }, ['quiet', 'fresh', 'cool']),
+    { pattern: 'grasscloth', scale: 'small', depth: 'flat', ink: 'recess', tone: 'olive', edge: 'etched' }, ['quiet', 'fresh', 'cool'], 'front'),
   paper('grass-sisal', 'Sisal Grasscloth', 'A woven natural paper in the case timber.',
-    { pattern: 'grasscloth', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'straw' }, ['warm', 'quiet', 'cosy']),
+    { pattern: 'grasscloth', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'straw' }, ['warm', 'quiet', 'cosy'], 'book'),
   paper('grass-arrow', 'Arrowroot', 'The coarsest weave, pale and dry.',
-    { pattern: 'grasscloth', scale: 'large', depth: 'flat', ink: 'paper', tone: 'linen' }, ['quiet', 'cosy', 'warm']),
+    { pattern: 'grasscloth', scale: 'large', depth: 'flat', ink: 'paper', tone: 'linen' }, ['quiet', 'cosy', 'warm'], 'back'),
   paper('ticking-mattress', 'Mattress Ticking', 'A solid band flanked by its thin twin.',
-    { pattern: 'ticking', scale: 'small', depth: 'flat', ink: 'deep', tone: 'ink' }, ['quiet', 'antique']),
+    { pattern: 'ticking', scale: 'small', depth: 'flat', ink: 'deep', tone: 'ink' }, ['quiet', 'antique'], 'front'),
   paper('ticking-linen', 'Linen Ticking', 'Ticking in pale timber, chalk-threaded.',
-    { pattern: 'ticking', scale: 'medium', depth: 'low', ink: 'timber', tone: 'chalk' }, ['warm', 'cosy']),
+    { pattern: 'ticking', scale: 'medium', depth: 'low', ink: 'timber', tone: 'chalk' }, ['warm', 'cosy'], 'book'),
   paper('ticking-cloth', 'Bindery Ticking', 'Ticking taken from the book cloth.',
-    { pattern: 'ticking', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'berry' }, ['bold', 'warm']),
+    { pattern: 'ticking', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'berry' }, ['bold', 'warm'], 'back'),
   paper('bead-reel', 'Bead and Reel', 'The moulding, run in columns down the wall.',
-    { pattern: 'beading', scale: 'small', depth: 'low', ink: 'paper', tone: 'pearl' }, ['formal', 'quiet', 'antique']),
+    { pattern: 'beading', scale: 'small', depth: 'low', ink: 'paper', tone: 'pearl' }, ['formal', 'quiet', 'antique'], 'book'),
   paper('bead-gilt', 'Gilt Beading', 'The same rod and bead, in gold leaf.',
-    { pattern: 'beading', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'formal', 'grand']),
+    { pattern: 'beading', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'formal', 'grand'], 'book'),
   paper('awning-tearoom', 'Tea Room Awning', 'Sun-faded banding, blotted at the edge.',
-    { pattern: 'awning', scale: 'small', depth: 'flat', ink: 'timber', tone: 'coral', edge: 'blotted' }, ['warm', 'cosy']),
+    { pattern: 'awning', scale: 'small', depth: 'flat', ink: 'timber', tone: 'coral', edge: 'blotted' }, ['warm', 'cosy'], 'book'),
   paper('awning-deck', 'Deck Awning', 'Horizontal bands with a sky thread inside.',
-    { pattern: 'awning', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sky' }, ['fresh', 'cool']),
+    { pattern: 'awning', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sky' }, ['fresh', 'cool'], 'front'),
   paper('awning-marquee', 'Marquee Stripe', 'Fairground banding in the book cloth.',
-    { pattern: 'awning', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful']),
+    { pattern: 'awning', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful'], 'book'),
 
   /* ------------------------------- stripe ------------------------------- */
   paper('stripe-regency', 'Regency Stripe', 'A broad band, and a gilt rule either side.',
-    { pattern: 'stripe', scale: 'medium', depth: 'low', ink: 'paper', tone: 'gilt' }, ['formal', 'quiet', 'gilded']),
+    { pattern: 'stripe', scale: 'medium', depth: 'low', ink: 'paper', tone: 'gilt' }, ['formal', 'quiet', 'gilded'], 'front'),
   paper('stripe-tea', 'Tea Room Stripe', 'Warm timber bands, gently raised.',
-    { pattern: 'stripe', scale: 'medium', depth: 'raised', ink: 'timber', tone: 'ember' }, ['warm', 'cosy']),
+    { pattern: 'stripe', scale: 'medium', depth: 'raised', ink: 'timber', tone: 'ember' }, ['warm', 'cosy'], 'front'),
   paper('stripe-hall', 'Long Hall Stripe', 'Grand bands for a tall wall.',
-    { pattern: 'stripe', scale: 'grand', depth: 'raised', ink: 'recess', tone: 'chalk' }, ['grand', 'formal']),
+    { pattern: 'stripe', scale: 'grand', depth: 'raised', ink: 'recess', tone: 'chalk' }, ['grand', 'formal'], 'front'),
   paper('serp-ripple', 'Ripple Stripe', 'A stripe that will not hold still.',
-    { pattern: 'serpentine', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sky', edge: 'soft' }, ['quiet', 'fresh', 'cool']),
+    { pattern: 'serpentine', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sky', edge: 'soft' }, ['quiet', 'fresh', 'cool'], 'book'),
   paper('serp-current', 'Current', 'Undulating bands in the binding colour.',
-    { pattern: 'serpentine', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'teal' }, ['cool', 'bold']),
+    { pattern: 'serpentine', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'teal' }, ['cool', 'bold'], 'back'),
   paper('serp-lagoon', 'Lagoon', 'Deep water, standing off the plaster.',
-    { pattern: 'serpentine', scale: 'large', depth: 'raised', ink: 'deep', tone: 'verdigris' }, ['cool', 'grand', 'nocturnal']),
+    { pattern: 'serpentine', scale: 'large', depth: 'raised', ink: 'deep', tone: 'verdigris' }, ['cool', 'grand', 'nocturnal'], 'back'),
   paper('chevron-zig', 'Chevron', 'Rows of tidy zigzag, braided down the middle.',
-    { pattern: 'chevron', scale: 'small', depth: 'flat', ink: 'deep', tone: 'sea' }, ['cool', 'playful']),
+    { pattern: 'chevron', scale: 'small', depth: 'flat', ink: 'deep', tone: 'sea' }, ['cool', 'playful'], 'front'),
   paper('chevron-cadet', 'Cadet Chevron', 'Zigzag in the recess colour, denim-braided.',
-    { pattern: 'chevron', scale: 'medium', depth: 'low', ink: 'recess', tone: 'denim' }, ['cool', 'formal']),
+    { pattern: 'chevron', scale: 'medium', depth: 'low', ink: 'recess', tone: 'denim' }, ['cool', 'formal'], 'book'),
   paper('chevron-bold', 'Bold Chevron', 'The same zigzag, three times the size.',
-    { pattern: 'chevron', scale: 'large', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful']),
+    { pattern: 'chevron', scale: 'large', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful'], 'book'),
   paper('herring-tweed', 'Tweed Herringbone', 'A fine weave, close to the eye.',
-    { pattern: 'herringbone', scale: 'petite', depth: 'flat', ink: 'recess', tone: 'bay', edge: 'etched' }, ['cool', 'formal']),
+    { pattern: 'herringbone', scale: 'petite', depth: 'flat', ink: 'recess', tone: 'bay', edge: 'etched' }, ['cool', 'formal'], 'front'),
   paper('herring-parquet', 'Parquet Herringbone', 'The floor pattern, laid on the wall.',
-    { pattern: 'herringbone', scale: 'small', depth: 'low', ink: 'timber', tone: 'ember' }, ['warm', 'antique']),
+    { pattern: 'herringbone', scale: 'small', depth: 'low', ink: 'timber', tone: 'ember' }, ['warm', 'antique'], 'book'),
   paper('herring-slate', 'Slate Herringbone', 'A cool parquet, laid large.',
-    { pattern: 'herringbone', scale: 'medium', depth: 'raised', ink: 'deep', tone: 'smoke' }, ['cool', 'grand', 'formal']),
+    { pattern: 'herringbone', scale: 'medium', depth: 'raised', ink: 'deep', tone: 'smoke' }, ['cool', 'grand', 'formal'], 'book'),
   paper('bamboo-grove', 'Bamboo Grove', 'Canes and nodes, a leaf pair at every joint.',
-    { pattern: 'bamboo', scale: 'medium', depth: 'low', ink: 'paper', tone: 'jade' }, ['fresh', 'quiet', 'cosy']),
+    { pattern: 'bamboo', scale: 'medium', depth: 'low', ink: 'paper', tone: 'jade' }, ['fresh', 'quiet', 'cosy'], 'book'),
   paper('bamboo-lacquer', 'Lacquer Cane', 'The grove in gold on a cloth ground.',
-    { pattern: 'bamboo', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['gilded', 'bold', 'grand']),
+    { pattern: 'bamboo', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['gilded', 'bold', 'grand'], 'book'),
   paper('rope-guilloche', 'Guilloche', 'Two strands twisting, knotted where they cross.',
-    { pattern: 'rope', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'formal']),
+    { pattern: 'rope', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'formal'], 'front'),
   paper('rope-cable', 'Cable Twist', 'A heavier rope, knotted in copper.',
-    { pattern: 'rope', scale: 'large', depth: 'raised', ink: 'timber', tone: 'copper' }, ['warm', 'grand', 'bold']),
+    { pattern: 'rope', scale: 'large', depth: 'raised', ink: 'timber', tone: 'copper' }, ['warm', 'grand', 'bold'], 'back'),
   paper('flame-bargello', 'Bargello', 'Rows of flame stitch in three graded faces.',
-    { pattern: 'flamestitch', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'rust' }, ['bold', 'warm', 'antique']),
+    { pattern: 'flamestitch', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'rust' }, ['bold', 'warm', 'antique'], 'book'),
   paper('flame-florentine', 'Florentine Flame', 'The needlework, at full size.',
-    { pattern: 'flamestitch', scale: 'large', depth: 'raised', ink: 'recess', tone: 'wine' }, ['grand', 'bold', 'antique']),
+    { pattern: 'flamestitch', scale: 'large', depth: 'raised', ink: 'recess', tone: 'wine' }, ['grand', 'bold', 'antique'], 'back'),
 
   /* -------------------------------- check ------------------------------- */
   paper('tatter-shirting', 'Shirting Tattersall', 'Two crossing rules on bare paper.',
-    { pattern: 'tattersall', scale: 'small', depth: 'flat', ink: 'paper', tone: 'slate', edge: 'etched' }, ['quiet', 'formal', 'cool']),
+    { pattern: 'tattersall', scale: 'small', depth: 'flat', ink: 'paper', tone: 'slate', edge: 'etched' }, ['quiet', 'formal', 'cool'], 'front'),
   paper('tatter-country', 'Country Tattersall', 'The overcheck warmed to brick.',
-    { pattern: 'tattersall', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'brick' }, ['warm', 'cosy']),
+    { pattern: 'tattersall', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'brick' }, ['warm', 'cosy'], 'front'),
   paper('tatter-windowpane', 'Windowpane', 'A wide check, drawn once and left alone.',
-    { pattern: 'tattersall', scale: 'large', depth: 'flat', ink: 'deep', tone: 'moss' }, ['quiet', 'fresh', 'formal']),
+    { pattern: 'tattersall', scale: 'large', depth: 'flat', ink: 'deep', tone: 'moss' }, ['quiet', 'fresh', 'formal'], 'book'),
   paper('gingham-kitchen', 'Kitchen Gingham', 'Warp, weft, and the darker square between.',
-    { pattern: 'gingham', scale: 'small', depth: 'flat', ink: 'paper', tone: 'ember' }, ['cosy', 'fresh']),
+    { pattern: 'gingham', scale: 'small', depth: 'flat', ink: 'paper', tone: 'ember' }, ['cosy', 'fresh'], 'front'),
   paper('gingham-picnic', 'Picnic Check', 'A bolder check in book cloth.',
-    { pattern: 'gingham', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['playful', 'bold', 'warm']),
+    { pattern: 'gingham', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['playful', 'bold', 'warm'], 'book'),
   paper('gingham-shadow', 'Shadow Check', 'Deep check, deeply set.',
-    { pattern: 'gingham', scale: 'medium', depth: 'raised', ink: 'recess', tone: 'sea' }, ['cool', 'quiet']),
+    { pattern: 'gingham', scale: 'medium', depth: 'raised', ink: 'recess', tone: 'sea' }, ['cool', 'quiet'], 'book'),
   paper('pinwheel-nursery', 'Pinwheel', 'Four quadrants turning, and turning back.',
-    { pattern: 'pinwheel', scale: 'small', depth: 'flat', ink: 'paper', tone: 'coral' }, ['playful', 'fresh']),
+    { pattern: 'pinwheel', scale: 'small', depth: 'flat', ink: 'paper', tone: 'coral' }, ['playful', 'fresh'], 'book'),
   paper('pinwheel-quilt', 'Quilt Block', 'The same block in book cloth, chalk-lined.',
-    { pattern: 'pinwheel', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'chalk' }, ['cosy', 'playful', 'warm']),
+    { pattern: 'pinwheel', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'chalk' }, ['cosy', 'playful', 'warm'], 'back'),
   paper('basket-rush', 'Rush Basketweave', 'Slats over and under, three at a time.',
-    { pattern: 'basketweave', scale: 'medium', depth: 'low', ink: 'timber', tone: 'straw' }, ['warm', 'quiet', 'cosy']),
+    { pattern: 'basketweave', scale: 'medium', depth: 'low', ink: 'timber', tone: 'straw' }, ['warm', 'quiet', 'cosy'], 'back'),
   paper('basket-parquet', 'Basket Parquet', 'The weave laid large, in walnut.',
-    { pattern: 'basketweave', scale: 'large', depth: 'raised', ink: 'recess', tone: 'walnut' }, ['grand', 'warm', 'formal']),
+    { pattern: 'basketweave', scale: 'large', depth: 'raised', ink: 'recess', tone: 'walnut' }, ['grand', 'warm', 'formal'], 'back'),
   paper('argyle-lambswool', 'Lambswool Argyle', 'Knitted lozenges with a dashed overcheck.',
-    { pattern: 'argyle', scale: 'medium', depth: 'low', ink: 'timber', tone: 'clay' }, ['cosy', 'warm']),
+    { pattern: 'argyle', scale: 'medium', depth: 'low', ink: 'timber', tone: 'clay' }, ['cosy', 'warm'], 'front'),
   paper('argyle-links', 'Links Argyle', 'The golf sock, at wall scale.',
-    { pattern: 'argyle', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'bay' }, ['playful', 'bold']),
+    { pattern: 'argyle', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'bay' }, ['playful', 'bold'], 'book'),
   paper('honey-comb', 'Honeycomb', 'Hexagons, and honey in one cell of five.',
-    { pattern: 'honeycomb', scale: 'small', depth: 'flat', ink: 'gilt' }, ['gilded', 'warm']),
+    { pattern: 'honeycomb', scale: 'small', depth: 'flat', ink: 'gilt' }, ['gilded', 'warm'], 'book'),
   paper('honey-apiary', 'Apiary', 'A deeper comb, capped with honey.',
-    { pattern: 'honeycomb', scale: 'medium', depth: 'raised', ink: 'deep', tone: 'honey' }, ['warm', 'gilded', 'cosy']),
+    { pattern: 'honeycomb', scale: 'medium', depth: 'raised', ink: 'deep', tone: 'honey' }, ['warm', 'gilded', 'cosy'], 'book'),
   paper('honey-grand', 'Grand Honeycomb', 'One big comb for a big room.',
-    { pattern: 'honeycomb', scale: 'large', depth: 'low', ink: 'timber', tone: 'ember' }, ['bold', 'warm']),
+    { pattern: 'honeycomb', scale: 'large', depth: 'low', ink: 'timber', tone: 'ember' }, ['bold', 'warm'], 'back'),
   paper('harlequin-pierrot', 'Pierrot', 'Small lozenges, two tones, a heather pip.',
-    { pattern: 'harlequin', scale: 'small', depth: 'flat', ink: 'deep', tone: 'heather' }, ['playful', 'cool']),
+    { pattern: 'harlequin', scale: 'small', depth: 'flat', ink: 'deep', tone: 'heather' }, ['playful', 'cool'], 'front'),
   paper('harlequin-carnival', 'Carnival Harlequin', 'Big two-tone lozenges, edge to edge.',
-    { pattern: 'harlequin', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['playful', 'bold']),
+    { pattern: 'harlequin', scale: 'medium', depth: 'flat', ink: 'cloth', tone: 'chalk' }, ['playful', 'bold'], 'book'),
   paper('harlequin-court', 'Court Harlequin', 'The same diamonds, gilded and grave.',
-    { pattern: 'harlequin', scale: 'large', depth: 'low', ink: 'recess', tone: 'gilt' }, ['grand', 'formal', 'gilded', 'nocturnal']),
+    { pattern: 'harlequin', scale: 'large', depth: 'low', ink: 'recess', tone: 'gilt' }, ['grand', 'formal', 'gilded', 'nocturnal'], 'front'),
 
   /* ------------------------------- lattice ------------------------------ */
   paper('trellis-garden', 'Garden Trellis', 'Battens, knots, and a leaf at every waist.',
-    { pattern: 'trellis', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'bay' }, ['fresh', 'quiet']),
+    { pattern: 'trellis', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'bay' }, ['fresh', 'quiet'], 'front'),
   paper('trellis-conservatory', 'Conservatory Trellis', 'Trellis in painted timber.',
-    { pattern: 'trellis', scale: 'large', depth: 'low', ink: 'timber', tone: 'bay' }, ['fresh', 'warm']),
+    { pattern: 'trellis', scale: 'large', depth: 'low', ink: 'timber', tone: 'bay' }, ['fresh', 'warm'], 'front'),
   paper('trellis-gilt', 'Gilt Trellis', 'A gilded lattice, raised.',
-    { pattern: 'trellis', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'formal']),
+    { pattern: 'trellis', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'formal'], 'front'),
   paper('quatre-cloister', 'Quatrefoil', 'Four-lobed foils, kissing at every joint.',
-    { pattern: 'quatrefoil', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'bay' }, ['quiet', 'fresh', 'formal']),
+    { pattern: 'quatrefoil', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'bay' }, ['quiet', 'fresh', 'formal'], 'book'),
   paper('quatre-morocco', 'Morocco Foil', 'The same foils in book cloth, raised.',
-    { pattern: 'quatrefoil', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'teal' }, ['bold', 'cool', 'grand']),
+    { pattern: 'quatrefoil', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'teal' }, ['bold', 'cool', 'grand'], 'back'),
   paper('ogee-onion', 'Onion Lattice', 'An ogee net with a boss at every junction.',
-    { pattern: 'ogee', scale: 'medium', depth: 'low', ink: 'paper', tone: 'oak' }, ['quiet', 'warm', 'antique']),
+    { pattern: 'ogee', scale: 'medium', depth: 'low', ink: 'paper', tone: 'oak' }, ['quiet', 'warm', 'antique'], 'front'),
   paper('ogee-damascene', 'Damascene Ogee', 'The onion net in brass on a deep ground.',
-    { pattern: 'ogee', scale: 'large', depth: 'raised', ink: 'deep', tone: 'brass' }, ['grand', 'formal', 'gilded']),
+    { pattern: 'ogee', scale: 'large', depth: 'raised', ink: 'deep', tone: 'brass' }, ['grand', 'formal', 'gilded'], 'book'),
   paper('arch-crypt', 'Crypt Arcade', 'Low arches in stone, set close together.',
-    { pattern: 'arch', scale: 'small', depth: 'flat', ink: 'recess', tone: 'stone' }, ['quiet', 'cool', 'antique']),
+    { pattern: 'arch', scale: 'small', depth: 'flat', ink: 'recess', tone: 'stone' }, ['quiet', 'cool', 'antique'], 'back'),
   paper('arch-cloister', 'Cloister Arches', 'An arcade, drawn flat on.',
-    { pattern: 'arch', scale: 'medium', depth: 'low', ink: 'paper', tone: 'chalk' }, ['formal', 'quiet']),
+    { pattern: 'arch', scale: 'medium', depth: 'low', ink: 'paper', tone: 'chalk' }, ['formal', 'quiet'], 'book'),
   paper('arch-gilt', 'Gilded Arcade', 'Arches with a gilt keystone in every bay.',
-    { pattern: 'arch', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'formal']),
+    { pattern: 'arch', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'formal'], 'book'),
   paper('scallop-shell', 'Scallop', 'Overlapping shells, small and even.',
-    { pattern: 'scallop', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sea' }, ['fresh', 'cool']),
+    { pattern: 'scallop', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sea' }, ['fresh', 'cool'], 'front'),
   paper('scallop-tide', 'Tide Scallop', 'Shells in the deeper wash, softly drawn.',
-    { pattern: 'scallop', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sea', edge: 'soft' }, ['cool', 'quiet', 'nocturnal']),
+    { pattern: 'scallop', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sea', edge: 'soft' }, ['cool', 'quiet', 'nocturnal'], 'book'),
   paper('scallop-seigaiha', 'Seigaiha', 'The wave crest, drawn large and indigo.',
-    { pattern: 'scallop', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'indigo' }, ['bold', 'cool']),
+    { pattern: 'scallop', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'indigo' }, ['bold', 'cool'], 'back'),
   paper('diaper-chapel', 'Chapel Diaper', 'A ruled diamond ground with a foil caught in it.',
-    { pattern: 'diaper', scale: 'small', depth: 'flat', ink: 'deep', tone: 'mulberry', edge: 'etched' }, ['formal', 'quiet', 'antique']),
+    { pattern: 'diaper', scale: 'small', depth: 'flat', ink: 'deep', tone: 'mulberry', edge: 'etched' }, ['formal', 'quiet', 'antique'], 'back'),
   paper('diaper-illumination', 'Illuminated Diaper', 'The gilded ground of a book of hours.',
-    { pattern: 'diaper', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'formal', 'antique']),
+    { pattern: 'diaper', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'formal', 'antique'], 'book'),
   paper('diaper-scriptorium', 'Scriptorium', 'The same compartments, ivory on timber.',
-    { pattern: 'diaper', scale: 'large', depth: 'raised', ink: 'timber', tone: 'ivory' }, ['grand', 'antique', 'warm']),
+    { pattern: 'diaper', scale: 'large', depth: 'raised', ink: 'timber', tone: 'ivory' }, ['grand', 'antique', 'warm'], 'book'),
   paper('fret-meander', 'Greek Key', 'A meander band, unit joined to unit.',
-    { pattern: 'fret', scale: 'medium', depth: 'low', ink: 'paper', tone: 'ink' }, ['formal', 'quiet']),
+    { pattern: 'fret', scale: 'medium', depth: 'low', ink: 'paper', tone: 'ink' }, ['formal', 'quiet'], 'front'),
   paper('fret-empire', 'Empire Fret', 'The key run large, bronzed and raised.',
-    { pattern: 'fret', scale: 'large', depth: 'raised', ink: 'recess', tone: 'bronze' }, ['grand', 'formal', 'gilded']),
+    { pattern: 'fret', scale: 'large', depth: 'raised', ink: 'recess', tone: 'bronze' }, ['grand', 'formal', 'gilded'], 'book'),
 
   /* -------------------------------- spot -------------------------------- */
   paper('polka-confetti', 'Confetti', 'Small dots sown close, blotted at the edge.',
-    { pattern: 'polka', scale: 'petite', depth: 'flat', ink: 'deep', tone: 'rose', edge: 'blotted' }, ['playful', 'fresh']),
+    { pattern: 'polka', scale: 'petite', depth: 'flat', ink: 'deep', tone: 'rose', edge: 'blotted' }, ['playful', 'fresh'], 'book'),
   paper('polka-parlour', 'Parlour Spot', 'A ringed dot, with a small one between.',
-    { pattern: 'polka', scale: 'small', depth: 'low', ink: 'paper', tone: 'ember' }, ['cosy', 'playful']),
+    { pattern: 'polka', scale: 'small', depth: 'low', ink: 'paper', tone: 'ember' }, ['cosy', 'playful'], 'book'),
   paper('polka-cloth', 'Bindery Spot', 'Dots taken from the book cloth.',
-    { pattern: 'polka', scale: 'medium', depth: 'raised', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful']),
+    { pattern: 'polka', scale: 'medium', depth: 'raised', ink: 'cloth', tone: 'chalk' }, ['bold', 'playful'], 'book'),
   paper('star-night', 'Star Field', 'Small stars, evenly sown, sparks between.',
-    { pattern: 'star', scale: 'small', depth: 'flat', ink: 'deep', tone: 'chalk' }, ['nocturnal', 'quiet']),
+    { pattern: 'star', scale: 'small', depth: 'flat', ink: 'deep', tone: 'chalk' }, ['nocturnal', 'quiet'], 'front'),
   paper('star-gilt', 'Gilt Stars', 'Gold stars with a pale pip.',
-    { pattern: 'star', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'playful']),
+    { pattern: 'star', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'playful'], 'front'),
   paper('star-grand', 'Grand Stars', 'Big stars, standing proud of the plaster.',
-    { pattern: 'star', scale: 'large', depth: 'carved', ink: 'recess', tone: 'gilt' }, ['grand', 'nocturnal', 'gilded']),
+    { pattern: 'star', scale: 'large', depth: 'carved', ink: 'recess', tone: 'gilt' }, ['grand', 'nocturnal', 'gilded'], 'back'),
   paper('const-orrery', 'Orrery', 'Stars linked one to the next, right or down.',
-    { pattern: 'constellation', scale: 'medium', depth: 'flat', ink: 'deep', tone: 'straw' }, ['nocturnal', 'quiet']),
+    { pattern: 'constellation', scale: 'medium', depth: 'flat', ink: 'deep', tone: 'straw' }, ['nocturnal', 'quiet'], 'book'),
   paper('const-astrolabe', 'Astrolabe', 'The same chain, gilded and set back.',
-    { pattern: 'constellation', scale: 'large', depth: 'low', ink: 'recess', tone: 'gilt' }, ['nocturnal', 'gilded', 'grand']),
+    { pattern: 'constellation', scale: 'large', depth: 'low', ink: 'recess', tone: 'gilt' }, ['nocturnal', 'gilded', 'grand'], 'book'),
   paper('moon-nursery', 'Moon and Star', 'A crescent with a star in its horn.',
-    { pattern: 'moonstar', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sea' }, ['nocturnal', 'cosy']),
+    { pattern: 'moonstar', scale: 'small', depth: 'flat', ink: 'paper', tone: 'sea' }, ['nocturnal', 'cosy'], 'book'),
   paper('moon-gilt', 'Gilded Crescents', 'Moons in gold leaf.',
-    { pattern: 'moonstar', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'nocturnal']),
+    { pattern: 'moonstar', scale: 'medium', depth: 'raised', ink: 'gilt' }, ['gilded', 'nocturnal'], 'book'),
   paper('moon-eclipse', 'Eclipse', 'Great crescents carved into the plaster.',
-    { pattern: 'moonstar', scale: 'large', depth: 'carved', ink: 'recess', tone: 'mist' }, ['nocturnal', 'grand', 'cool']),
+    { pattern: 'moonstar', scale: 'large', depth: 'carved', ink: 'recess', tone: 'mist' }, ['nocturnal', 'grand', 'cool'], 'back'),
   paper('sun-marigold', 'Marigold', 'A little sun with long and short rays.',
-    { pattern: 'sunburst', scale: 'small', depth: 'flat', ink: 'paper', tone: 'harvest' }, ['warm', 'playful', 'fresh']),
+    { pattern: 'sunburst', scale: 'small', depth: 'flat', ink: 'paper', tone: 'harvest' }, ['warm', 'playful', 'fresh'], 'front'),
   paper('sun-solstice', 'Solstice', 'The same sun, bronzed and raised.',
-    { pattern: 'sunburst', scale: 'large', depth: 'raised', ink: 'timber', tone: 'bronze' }, ['grand', 'warm', 'gilded']),
+    { pattern: 'sunburst', scale: 'large', depth: 'raised', ink: 'timber', tone: 'bronze' }, ['grand', 'warm', 'gilded'], 'back'),
   paper('fleur-lys', 'Fleur-de-Lys', 'Three petals, a band and a tail.',
-    { pattern: 'fleur', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sky' }, ['formal', 'cool', 'antique']),
+    { pattern: 'fleur', scale: 'medium', depth: 'low', ink: 'deep', tone: 'sky' }, ['formal', 'cool', 'antique'], 'front'),
   paper('fleur-royal', 'Royal Lys', 'The lys in gold on the binding cloth.',
-    { pattern: 'fleur', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['grand', 'gilded', 'formal']),
+    { pattern: 'fleur', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['grand', 'gilded', 'formal'], 'book'),
   paper('bee-skep', 'Skep Bees', 'Banded bodies and gauze wings, sown small.',
-    { pattern: 'bee', scale: 'small', depth: 'flat', ink: 'timber', tone: 'amber' }, ['warm', 'cosy', 'playful']),
+    { pattern: 'bee', scale: 'small', depth: 'flat', ink: 'timber', tone: 'amber' }, ['warm', 'cosy', 'playful'], 'front'),
   paper('bee-empire', 'Empire Bee', 'The emperor’s bee, in gold leaf.',
-    { pattern: 'bee', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'formal', 'antique']),
+    { pattern: 'bee', scale: 'medium', depth: 'low', ink: 'gilt' }, ['gilded', 'formal', 'antique'], 'front'),
   paper('bee-coronation', 'Coronation Bee', 'Great bees on the recess, honey-winged.',
-    { pattern: 'bee', scale: 'large', depth: 'raised', ink: 'recess', tone: 'honey' }, ['grand', 'gilded', 'nocturnal']),
+    { pattern: 'bee', scale: 'large', depth: 'raised', ink: 'recess', tone: 'honey' }, ['grand', 'gilded', 'nocturnal'], 'back'),
 
   /* ------------------------------ botanical ----------------------------- */
   paper('sprig-cottage', 'Cottage Sprig', 'A stem, four leaves and a five-petalled head.',
-    { pattern: 'sprig', scale: 'small', depth: 'flat', ink: 'paper', tone: 'ember' }, ['cosy', 'fresh']),
+    { pattern: 'sprig', scale: 'small', depth: 'flat', ink: 'paper', tone: 'ember' }, ['cosy', 'fresh'], 'front'),
   paper('sprig-meadow', 'Meadow Sprig', 'The same sprig, larger and lifted.',
-    { pattern: 'sprig', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'bay' }, ['fresh', 'warm']),
+    { pattern: 'sprig', scale: 'medium', depth: 'low', ink: 'cloth', tone: 'bay' }, ['fresh', 'warm'], 'book'),
   paper('sprig-shade', 'Shaded Sprig', 'Sprigs in the recess colour, softly printed.',
-    { pattern: 'sprig', scale: 'medium', depth: 'raised', ink: 'recess', tone: 'chalk', edge: 'soft' }, ['quiet', 'cool']),
+    { pattern: 'sprig', scale: 'medium', depth: 'raised', ink: 'recess', tone: 'chalk', edge: 'soft' }, ['quiet', 'cool'], 'book'),
   paper('fern-frond', 'Fern Frond', 'Eight pairs of pinnae and a curled tip.',
-    { pattern: 'fern', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'fern' }, ['fresh', 'quiet']),
+    { pattern: 'fern', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'fern' }, ['fresh', 'quiet'], 'front'),
   paper('fern-fossil', 'Fossil Fern', 'Fronds pressed into a peat ground.',
-    { pattern: 'fern', scale: 'small', depth: 'raised', ink: 'recess', tone: 'peat', edge: 'soft' }, ['quiet', 'cool', 'antique']),
+    { pattern: 'fern', scale: 'small', depth: 'raised', ink: 'recess', tone: 'peat', edge: 'soft' }, ['quiet', 'cool', 'antique'], 'book'),
   paper('fern-hothouse', 'Hothouse Fern', 'Big fronds in the deepest green.',
-    { pattern: 'fern', scale: 'large', depth: 'low', ink: 'cloth', tone: 'forest' }, ['fresh', 'bold']),
+    { pattern: 'fern', scale: 'large', depth: 'low', ink: 'cloth', tone: 'forest' }, ['fresh', 'bold'], 'front'),
   paper('vine-trailing', 'Trailing Vine', 'One stem, crossing the wall without a joint.',
-    { pattern: 'vine', scale: 'medium', depth: 'low', ink: 'paper', tone: 'myrtle' }, ['fresh', 'quiet']),
+    { pattern: 'vine', scale: 'medium', depth: 'low', ink: 'paper', tone: 'myrtle' }, ['fresh', 'quiet'], 'front'),
   paper('vine-arbour', 'Arbour Vine', 'The trail in timber, berried and raised.',
-    { pattern: 'vine', scale: 'large', depth: 'raised', ink: 'timber', tone: 'berry' }, ['warm', 'cosy', 'grand']),
+    { pattern: 'vine', scale: 'large', depth: 'raised', ink: 'timber', tone: 'berry' }, ['warm', 'cosy', 'grand'], 'book'),
   paper('laurel-victory', 'Victory Laurel', 'Small branches, mossy, mirrored row by row.',
-    { pattern: 'laurel', scale: 'small', depth: 'low', ink: 'deep', tone: 'moss' }, ['fresh', 'formal', 'quiet']),
+    { pattern: 'laurel', scale: 'small', depth: 'low', ink: 'deep', tone: 'moss' }, ['fresh', 'formal', 'quiet'], 'front'),
   paper('laurel-wreath', 'Laurel', 'Branches with three berries at every tip.',
-    { pattern: 'laurel', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'berry' }, ['formal', 'fresh']),
+    { pattern: 'laurel', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'berry' }, ['formal', 'fresh'], 'front'),
   paper('laurel-gilt', 'Gilt Laurel', 'Laurel in gold, standing off the wall.',
-    { pattern: 'laurel', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'formal']),
+    { pattern: 'laurel', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'formal'], 'book'),
   paper('rose-chintz', 'Chintz Rose', 'A full-face rose, printed and blotted.',
-    { pattern: 'rose', scale: 'medium', depth: 'low', ink: 'paper', tone: 'blush', edge: 'blotted' }, ['cosy', 'warm', 'playful']),
+    { pattern: 'rose', scale: 'medium', depth: 'low', ink: 'paper', tone: 'blush', edge: 'blotted' }, ['cosy', 'warm', 'playful'], 'book'),
   paper('rose-tudor', 'Tudor Rose', 'The rose gilded, on the binding cloth.',
-    { pattern: 'rose', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['grand', 'gilded', 'antique']),
+    { pattern: 'rose', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['grand', 'gilded', 'antique'], 'back'),
   paper('thistle-braes', 'Braes Thistle', 'Spiked heads over a scaled calyx.',
-    { pattern: 'thistle', scale: 'medium', depth: 'flat', ink: 'deep', tone: 'heather' }, ['cool', 'fresh']),
+    { pattern: 'thistle', scale: 'medium', depth: 'flat', ink: 'deep', tone: 'heather' }, ['cool', 'fresh'], 'back'),
   paper('thistle-highland', 'Highland Thistle', 'The same thistle at twice the size.',
-    { pattern: 'thistle', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'plum' }, ['bold', 'grand']),
+    { pattern: 'thistle', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'plum' }, ['bold', 'grand'], 'back'),
   paper('pom-orchard', 'Orchard Pomegranate', 'The cut fruit, seeds and all.',
-    { pattern: 'pomegranate', scale: 'medium', depth: 'low', ink: 'timber', tone: 'ember' }, ['warm', 'antique']),
+    { pattern: 'pomegranate', scale: 'medium', depth: 'low', ink: 'timber', tone: 'ember' }, ['warm', 'antique'], 'book'),
   paper('pom-velvet', 'Velvet Pomegranate', 'The weaver’s fruit, at velvet scale.',
-    { pattern: 'pomegranate', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'berry' }, ['grand', 'bold', 'antique']),
+    { pattern: 'pomegranate', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'berry' }, ['grand', 'bold', 'antique'], 'book'),
   paper('pom-granada', 'Granada', 'The cut fruit carved deep, seeded in wine.',
-    { pattern: 'pomegranate', scale: 'grand', depth: 'carved', ink: 'recess', tone: 'wine' }, ['grand', 'bold', 'antique', 'nocturnal']),
+    { pattern: 'pomegranate', scale: 'grand', depth: 'carved', ink: 'recess', tone: 'wine' }, ['grand', 'bold', 'antique', 'nocturnal'], 'back'),
 
   /* ------------------------------- figured ------------------------------ */
   paper('damask-library', 'Library Damask', 'The house device, ruled fine and sepia.',
-    { pattern: 'damask', scale: 'medium', depth: 'low', ink: 'recess', tone: 'sepia', edge: 'etched' }, ['formal', 'quiet', 'antique']),
+    { pattern: 'damask', scale: 'medium', depth: 'low', ink: 'recess', tone: 'sepia', edge: 'etched' }, ['formal', 'quiet', 'antique'], 'front'),
   paper('damask-athenaeum', 'Athenaeum Damask', 'The house damask — ogee, palmette and crown.',
-    { pattern: 'damask', scale: 'large', depth: 'raised', ink: 'paper', tone: 'gilt' }, ['formal', 'grand', 'antique']),
+    { pattern: 'damask', scale: 'large', depth: 'raised', ink: 'paper', tone: 'gilt' }, ['formal', 'grand', 'antique'], 'front'),
   paper('damask-gilt', 'Gilt Damask', 'The grand one. Gold, and carved.',
-    { pattern: 'damask', scale: 'grand', depth: 'carved', ink: 'gilt' }, ['grand', 'gilded', 'formal']),
+    { pattern: 'damask', scale: 'grand', depth: 'carved', ink: 'gilt' }, ['grand', 'gilded', 'formal'], 'front'),
   paper('medallion-adam', 'Adam Patera', 'An oval medallion, ribboned, with husks below.',
-    { pattern: 'medallion', scale: 'medium', depth: 'low', ink: 'deep', tone: 'chalk' }, ['formal', 'quiet', 'antique']),
+    { pattern: 'medallion', scale: 'medium', depth: 'low', ink: 'deep', tone: 'chalk' }, ['formal', 'quiet', 'antique'], 'front'),
   paper('medallion-gilt', 'Gilt Patera', 'The patera in gold, standing off the wall.',
-    { pattern: 'medallion', scale: 'large', depth: 'raised', ink: 'gilt' }, ['gilded', 'grand', 'formal']),
+    { pattern: 'medallion', scale: 'large', depth: 'raised', ink: 'gilt' }, ['gilded', 'grand', 'formal'], 'front'),
   paper('urn-mantel', 'Mantel Urn', 'A classical urn with a spray of three.',
-    { pattern: 'urn', scale: 'medium', depth: 'low', ink: 'deep', tone: 'bay' }, ['formal', 'antique']),
+    { pattern: 'urn', scale: 'medium', depth: 'low', ink: 'deep', tone: 'bay' }, ['formal', 'antique'], 'book'),
   paper('urn-gilt', 'Gilded Urn', 'The same urn, banded in gold.',
-    { pattern: 'urn', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'antique']),
+    { pattern: 'urn', scale: 'large', depth: 'raised', ink: 'gilt' }, ['grand', 'gilded', 'antique'], 'book'),
   paper('arab-alhambra', 'Alhambra', 'Open scrollwork, with nothing framed.',
-    { pattern: 'arabesque', scale: 'medium', depth: 'low', ink: 'paper', tone: 'verdigris' }, ['formal', 'cool', 'quiet']),
+    { pattern: 'arabesque', scale: 'medium', depth: 'low', ink: 'paper', tone: 'verdigris' }, ['formal', 'cool', 'quiet'], 'book'),
   paper('arab-gilt', 'Gilded Arabesque', 'The scrolls in gold, raised.',
-    { pattern: 'arabesque', scale: 'large', depth: 'raised', ink: 'gilt' }, ['gilded', 'grand', 'formal']),
+    { pattern: 'arabesque', scale: 'large', depth: 'raised', ink: 'gilt' }, ['gilded', 'grand', 'formal'], 'book'),
   paper('arab-ottoman', 'Ottoman Scroll', 'Volutes and palmettes, carved and saffroned.',
-    { pattern: 'arabesque', scale: 'grand', depth: 'carved', ink: 'cloth', tone: 'saffron' }, ['grand', 'bold', 'warm']),
+    { pattern: 'arabesque', scale: 'grand', depth: 'carved', ink: 'cloth', tone: 'saffron' }, ['grand', 'bold', 'warm'], 'back'),
   paper('pagoda-garden', 'Garden Pagoda', 'Three upswept roofs, a finial and bells.',
-    { pattern: 'pagoda', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'sea' }, ['playful', 'fresh', 'cool']),
+    { pattern: 'pagoda', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'sea' }, ['playful', 'fresh', 'cool'], 'book'),
   paper('pagoda-lacquer', 'Lacquer Pagoda', 'The pavilion in gold on book cloth.',
-    { pattern: 'pagoda', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['bold', 'gilded', 'grand']),
+    { pattern: 'pagoda', scale: 'large', depth: 'raised', ink: 'cloth', tone: 'gilt' }, ['bold', 'gilded', 'grand'], 'back'),
   paper('bird-chinoiserie', 'Chinoiserie Birds', 'A bird on a berried twig, facing both ways.',
-    { pattern: 'bird', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'sea' }, ['playful', 'fresh']),
+    { pattern: 'bird', scale: 'medium', depth: 'flat', ink: 'paper', tone: 'sea' }, ['playful', 'fresh'], 'book'),
   paper('bird-cloth', 'Aviary Cloth', 'Birds in the binding colour.',
-    { pattern: 'bird', scale: 'large', depth: 'low', ink: 'cloth', tone: 'bay' }, ['warm', 'playful']),
+    { pattern: 'bird', scale: 'large', depth: 'low', ink: 'cloth', tone: 'bay' }, ['warm', 'playful'], 'book'),
   paper('hare-meadow', 'Meadow Hare', 'A sitting hare, facing both ways by turn.',
-    { pattern: 'hare', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'clay' }, ['playful', 'warm', 'cosy']),
+    { pattern: 'hare', scale: 'medium', depth: 'flat', ink: 'timber', tone: 'clay' }, ['playful', 'warm', 'cosy'], 'book'),
   paper('hare-moonlit', 'Moonlit Hare', 'The hare set back, in a soft mist.',
-    { pattern: 'hare', scale: 'large', depth: 'low', ink: 'recess', tone: 'mist', edge: 'soft' }, ['nocturnal', 'playful', 'quiet']),
+    { pattern: 'hare', scale: 'large', depth: 'low', ink: 'recess', tone: 'mist', edge: 'soft' }, ['nocturnal', 'playful', 'quiet'], 'book'),
   paper('toile-cottage', 'Cottage Toile', 'A cottage, a fence and two birds, in a cartouche.',
-    { pattern: 'toile', scale: 'large', depth: 'flat', ink: 'deep', tone: 'ember' }, ['antique', 'cosy']),
+    { pattern: 'toile', scale: 'large', depth: 'flat', ink: 'deep', tone: 'ember' }, ['antique', 'cosy'], 'front'),
   paper('toile-timber', 'Country Toile', 'The same vignette, washed warm and soft.',
-    { pattern: 'toile', scale: 'grand', depth: 'low', ink: 'timber', tone: 'bay', edge: 'soft' }, ['antique', 'warm']),
+    { pattern: 'toile', scale: 'grand', depth: 'low', ink: 'timber', tone: 'bay', edge: 'soft' }, ['antique', 'warm'], 'book'),
 ];
+
+const FAMILY_RANK = new Map(WALLPAPER_FAMILIES.map((f, i) => [f, i] as const));
+const TIER_RANK = new Map(WALLPAPER_TIERS.map((t, i) => [t, i] as const));
+const AUTHORED_AT = new Map(WALLPAPER_BOOK.map((p, i) => [p.id, i] as const));
+
+/**
+ * The book as the reader is offered it: strongest section first, and inside
+ * each section the papers that lead it first.
+ *
+ * DERIVED, from three pieces of data on the entries themselves — the family
+ * order in {@link WALLPAPER_FAMILIES}, the `tier` on each paper, and finally
+ * the order it was written in, which is the quiet → loud run a person composed
+ * a section in. Nothing here is a hand-kept list, which is the point: the
+ * previous version of this array was BOTH the ranking and the authoring order,
+ * so re-ranking a paper meant moving a line, and moving a line by accident
+ * silently re-ranked a paper.
+ *
+ * Every consumer that shows the papers in order gets the ranking for free —
+ * `wallpaperOptions()` maps this straight onto picker cards and the picker
+ * groups by first appearance, so the section order is this order.
+ */
+export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = [...WALLPAPER_BOOK].sort(
+  (a, b) =>
+    (FAMILY_RANK.get(a.family) ?? 0) - (FAMILY_RANK.get(b.family) ?? 0) ||
+    (TIER_RANK.get(a.tier) ?? 0) - (TIER_RANK.get(b.tier) ?? 0) ||
+    (AUTHORED_AT.get(a.id) ?? 0) - (AUTHORED_AT.get(b.id) ?? 0),
+);
 
 /**
  * What an id we do not recognise resolves to.
@@ -4717,6 +4897,64 @@ export function getWallpaper(id: string | null | undefined): WallpaperPreset {
 /** The spec for an id, for callers that only want to draw. */
 export function wallpaperSpec(id: string | null | undefined): WallpaperSpec {
   return getWallpaper(id).spec;
+}
+
+/* ------------------------------- the dice -------------------------------- */
+
+/**
+ * Whether "surprise me" is allowed to hand this paper out.
+ *
+ * Two exclusions, and they fail differently:
+ *
+ *  - a `back` paper was looked at on a wall and demoted. It stays in the
+ *    picker, because somebody will want the hand-sized gold crescent; it does
+ *    not come out of the dice, because the reader who rolled the dice did not
+ *    ask for one.
+ *  - the bare wall is excluded whatever its tier, and it has to be `front`
+ *    because it is the first card in the picker. A "surprise me" that lands on
+ *    Plain Parchment has taken the wallpaper OFF rather than chosen one, which
+ *    reads as the button being broken.
+ *
+ * The rule lives here rather than in the studio for the same reason the mood
+ * vocabulary does: the art file knows which of its papers are odd, and a
+ * consumer that has to remember to filter is a consumer that will forget.
+ */
+export function isRollableWallpaper(preset: WallpaperPreset): boolean {
+  return preset.tier !== 'back' && preset.id !== FALLBACK_WALLPAPER_ID;
+}
+
+/**
+ * The papers the dice may return, in shelf order.
+ *
+ * This — not `WALLPAPER_PRESETS` — is what a "surprise me" rolls over, and what
+ * anything picking a paper from a seed should read. Rolling the whole book is
+ * how an average reader ends up looking at a wall of hand-sized bees they never
+ * asked for.
+ */
+export const WALLPAPER_ROLL: readonly WallpaperPreset[] =
+  WALLPAPER_PRESETS.filter(isRollableWallpaper);
+
+/**
+ * Roll one paper, optionally steered by a mood.
+ *
+ * `pick` returns a number in [0, 1) — `Math.random`, or a seeded generator when
+ * the roll has to be reproducible. A mood no rollable paper carries degrades to
+ * the whole pool rather than to nothing, exactly as `withMood` does for the
+ * other vocabularies: a reader asking for "something goofy" wants a paper, and
+ * an axis with no match should widen rather than refuse.
+ *
+ * Never returns a `back` paper and never returns the bare wall, whatever the
+ * mood — the filter is applied to the pool, not to the book.
+ */
+export function rollWallpaper(pick: () => number, mood?: WallpaperMood | ''): WallpaperPreset {
+  const steered =
+    mood === undefined || mood === ''
+      ? WALLPAPER_ROLL
+      : WALLPAPER_ROLL.filter((p) => p.tags.includes(mood));
+  const pool = steered.length > 0 ? steered : WALLPAPER_ROLL;
+  const raw = pick();
+  const i = Number.isFinite(raw) ? Math.floor(Math.abs(raw) * pool.length) % pool.length : 0;
+  return pool[i] ?? pool[0]!;
 }
 
 /* ---------------------------- preview drawing ---------------------------- */

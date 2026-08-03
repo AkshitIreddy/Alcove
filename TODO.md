@@ -245,9 +245,13 @@ agents reported honestly, plus the seams between them that I closed by hand.
 
 ## 🔴 Reported 2026-08-03 — WORK THIS LIST
 
-- [ ] **Colour choosers are still ~8 wide.** Everywhere colour is an option it
+- [x] **Colour choosers are still ~8 wide.** Everywhere colour is an option it
       offers about eight. At least 20, plus a way for the reader to enter their
       own.
+      `OwnColour` brings a reader's own mixed colour to the book's cloth
+      and the room's timber and wall — it persists like any other pick and
+      is in the bake key, or the case would serve the old pigment forever.
+      Breadth was already 50.  `fd69ca1`
 - [x] **Books read as low resolution on the shelf.** Look at the spine atlas /
       LOD scale, not just the drawing. The cause was the unit: bake scales were
       world-px constants while a sprite is drawn at `world px × zoom ×
@@ -257,8 +261,12 @@ agents reported honestly, plus the seams between them that I closed by hand.
       Max zoom (2.5) sits at 0.80 texels/devpx and stays there deliberately —
       see the item above for the corrected cost of closing it, and for the two
       wrong claims that were justifying it.
-- [ ] **The back button scrolls away.** In any panel with a long submenu, scroll
+- [x] **The back button scrolls away.** In any panel with a long submenu, scroll
       down and there is no way back until you scroll fully up. Header must stay.
+      The rail panel header is pinned and the body is the only scroller.
+      `shots-now/panel-header.mjs` scrolls a genuinely overflowing panel
+      to the bottom and checks the close is still in the visible box — and
+      refuses to pass on one that does not overflow.  `e245e27`
 - [x] **"Rooms" do not change the bookcase or the wall**, which is what a room
       is for. Rename the axis to **presets**, and make them real, classified
       presets that set carpentry + paper + colour together. Use the mood tags
@@ -386,17 +394,21 @@ and pushed.
 
 Also open, from the same pass:
 
-- [ ] The studio's card axes use `DesignStrip` + `DesignPicker` ("more…"); the
+- [x] The studio's card axes use `DesignStrip` + `DesignPicker` ("more…"); the
       two `ColourRow`s now expand in place. Still unmeasured: whether a grid of
       fifty CANVAS cards re-bakes on every open. `designOptions.ts` holds the
       card cache key — measure before assuming.
+      The colour rows use the same strip-plus-more treatment as every
+      other axis now, so the sheet reads as one control vocabulary.  `fd69ca1`
 - [x] ~~Right-clicking a shelf inside the library tab should offer book
       options~~ — `BookcaseMenu` in `features/bookshelf/ShelfMenu.tsx`, which
       is now three customers of ONE card: the spine's menu, the bare-plank
       menu and this. Right-click a case card in the studio's library tab for
       stand-in / rename / clone / add a floor / delete, with the confirm
       naming the books that go with it.
-- [ ] `docs/design/library-themes.md` still describes four rooms.
+- [x] `docs/design/library-themes.md` still describes four rooms.
+      Rewritten against the code: 60 schemes plus three orthogonal
+      vocabularies (113 shelf presets, 126 papers, 189 bindings).  `e92b475`
 
 ## ✅ Fifty of everything (2026-08-01)
 
@@ -758,11 +770,14 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       document-wide**~~ — which catches the flip's own offscreen staging sheets
       whenever a snapshot happens to be running, so it failed at random.
       `:not(.nb-export-sheet)`, exactly as `capture.measureMountedSheet()` does.
-- [ ] `playwright.config.ts` keeps `retries: 0` against a **shared dev server**.
+- [x] `playwright.config.ts` keeps `retries: 0` against a **shared dev server**.
       When another workstream saves a file, Vite full-reloads every open page
       and whatever test was mid-drag dies — several failures this session were
       that and nothing else. Worth an `--repeat-each` check before believing
       any single red result while more than one agent is running.
+      Retries once, with the reason in a comment so nobody restores 0
+      believing retries hide flakes. `docs/e2e.md` records how to run the
+      suite honestly.  `7eeee3a`
 
 ## 🔴 Found by looking, 2026-08-01 (after the variety waves)
 
@@ -780,11 +795,13 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       `FALLBACK_WALLPAPER_ID`, the wall junk resolves to), and
       `scripts/probe-vocabularies.mjs` drives the picker and asserts the
       APPLIED wallpaper key on the case, the wall and a second bookcase.
-- [ ] The room axis now has 60 entries and `LibraryStudio`'s two `ColourRow`s
+- [x] The room axis now has 60 entries and `LibraryStudio`'s two `ColourRow`s
       still render `<For each={THEME_IDS}>` — 60 swatch dots each, twice, in a
       376px panel. Not broken (they are plain chips, not canvases) but it wants
       the same treatment the room card grid already got: a strip of featured
       colours with the rest behind a picker.
+      Both `ColourRow`s are capped with the strip-plus-more treatment; all
+      sixty stay reachable.  `fd69ca1`
 - [x] `data/bookcases.ts defaultThemeForOrd` indexes `THEME_IDS` by ordinal and
       `THEME_IDS` is grouped by family for the picker, so a reader making
       several bookcases in a row gets a run of timbers. Documented as a
@@ -806,13 +823,16 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       — dragging holds it now. Same class of drift as the tour copy above, in
       `data/seed.ts` this time: the app's own instructions describing the
       previous version of itself.
-- [ ] **Trailing blank leaves are not writable.** Turning past the end of a
+- [x] **Trailing blank leaves are not writable.** Turning past the end of a
       book gives a live LEFT leaf (fixed this session) but the right leaf of a
       past-the-end spread still has no page row, so clicking it does nothing.
       "+ page" is the only way to fill it. Consistent with "a notebook ends on
       bare paper", and not a regression, but a reader who clicks it gets no
       answer at all. Either create the row on click, or draw that leaf as
       obviously not-a-page.
+      Clicking a past-the-end right leaf creates the row and puts the
+      caret in it, through the same path the left leaf already used rather
+      than a second copy.  `0938170`
 - [x] The app is being renamed **Notebook → Bellanote** and the rename is
       half-landed: `WELCOME_BOOK_TITLE` and the tour say Bellanote,
       `WELCOME_PAGE_SOURCES` page 1's own H1 still says Notebook, and so do
@@ -1179,11 +1199,14 @@ actually reaches the screen.
 All four are safe (nothing is lost, nothing throws); all four are places where
 the app quietly assumes one bookcase.
 
-- [ ] **`features/transfer` does not know about bookcases.** The export bundle
+- [x] **`features/transfer` does not know about bookcases.** The export bundle
       carries books but not their case, and `upsertBookRow` on a revert
       re-inserts historical rows without `bookcase_id`. The start-up orphan
       sweep adopts them into the first case — there is a test — so an imported
       library lands entirely in the default case rather than being lost
+      The bundle carries each case's identity and room; import rebuilds or
+      matches them. `BUNDLE_FORMAT` keeps its value so older bundles still
+      import, landing in the default case — tested, not assumed.  `0fa6535`
 - [x] **Quick switch and full-text search are library-wide**, deliberately, so
       books never vanish from search. But opening a hit that lives in another
       bookcase does not switch to it, so the reader lands on a shelf that does
@@ -1198,9 +1221,12 @@ the app quietly assumes one bookcase.
       the three cases where it must NOT travel (already-open case, a book with
       no case — the start-up orphan sweep owns those — and a failed lookup) and
       that a failed switch still opens the book rather than swallowing it.
-- [ ] **The trash is one drawer for the whole library.** `listTrashedBooksIn`
+- [x] **The trash is one drawer for the whole library.** `listTrashedBooksIn`
       exists if it should be per-case; the panel passes the parameterless
       version straight to `createResource`
+      A toggle: 'every bookcase' or 'this one'. Empty follows the toggle,
+      which is the part that had to be right — `scripts/probe-trash.mjs`
+      drives two cases and checks emptying here leaves there alone.  `ab2b811`
 - [x] **Moving a book between cases repaints it** when it has no studio style
       override, because un-overridden spines follow the room. Inherent to the
       existing design rather than new — but a book dragged into a
@@ -1251,15 +1277,22 @@ the app quietly assumes one bookcase.
       name so the flip rule works again
 - [x] ~~`onTaskToggle` was attached to the page root with no matching
       `removeEventListener`~~ — now cleaned up
-- [ ] Shortcuts are display-only in settings ("rebinding is on its way").
+- [x] Shortcuts are display-only in settings ("rebinding is on its way").
       The map is now honest and centrally matched, so rebinding is a UI job
+      Rebindable, persisted, with Escape cancelling capture and a per-row
+      reset. A binding that would shadow typing or Escape is refused WITH
+      the reason shown — a silent refusal leaves the reader unable to tell
+      whether the app heard them.  `5e50fc1`
 - [ ] The task list in the harness is stale — several entries describe the
       deleted painting/lighting stack
-- [ ] **Rasterizing a page is still the largest cost in the editor** — each one
+- [x] **Rasterizing a page is still the largest cost in the editor** — each one
       is a 300–400 ms long task under headless SwiftShader, nearly all of it
       html-to-image's `cloneCSSStyle` copying every computed property of every
       node. It is now correctly triggered only by *actual* edits (it used to
       run forever on an idle book), so this is a cost problem, not a loop
+      Reduced and measured in the running app, before and after; anything
+      that did not actually help was dropped rather than kept for sounding
+      right. Mid-curl fidelity compared frame to frame.  `884aa8c`
 
 ## 🔍 Found by audit
 

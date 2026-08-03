@@ -12,3 +12,6 @@ playwright-report
 assets/spinewalls/
 assets/spinelayouts/*.png
 assets/spines/
+
+# Probe screenshots are regenerated on demand by shots-now/*.mjs.
+shots-now/out/

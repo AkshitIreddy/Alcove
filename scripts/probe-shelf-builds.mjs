@@ -37,9 +37,13 @@
  * screenshotted through a locator: the dev server can reload underneath a long
  * board, and half a sheet is worse than no sheet.
  *
+ * The tier each entry ended up in is printed in its caption and on stdout, and
+ * `--tier=` re-shoots one band alone — which is how a demotion gets re-argued
+ * later without re-reading nine sheets.
+ *
  * Usage: node scripts/probe-shelf-builds.mjs --dir=qa/ui [--mode=builds|patterns]
- *        [--only=id,id] [--tier=signature|shelf|niche|oddity] [--build=scriptorium]
- *        [--pattern=none] [--cols=3 --rows=3] [--tag=shelf]
+ *        [--only=id,id] [--tier=showpiece|catalogue|offcut] [--build=scriptorium]
+ *        [--pattern=none] [--cols=3 --rows=3] [--tag=shelf] [--rollable]
  */
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -60,6 +64,10 @@ const THEME = opt('theme', '');
 const COLS = Number(opt('cols', MODE === 'patterns' ? '4' : '3'));
 const ROWS = Number(opt('rows', MODE === 'patterns' ? '5' : '3'));
 const TAG = opt('tag', MODE === 'patterns' ? 'shelf-patterns' : 'shelf-builds');
+// Shoot exactly what "surprise me" can hand out — `isRollableBuild` /
+// `isRollablePattern`, read from the module rather than reimplemented here, so
+// this sheet cannot disagree with the pool the studio actually rolls.
+const ROLLABLE = args.includes('--rollable');
 
 mkdirSync(DIR, { recursive: true });
 
@@ -78,7 +86,7 @@ await page.goto(`${URL_BASE}/?fx=force`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
 
 const result = await page.evaluate(
-  async ({ mode, only, tier, build, pattern, cols, rows, themeId }) => {
+  async ({ mode, only, tier, rollable, build, pattern, cols, rows, themeId }) => {
     const S = await import('/src/art/shelfDesign.ts');
     const F = await import('/src/art/flatShelf.ts');
     const flat = await import('/src/art/flat.ts');
@@ -210,6 +218,7 @@ const result = await page.evaluate(
         ? S.PATTERN_IDS.map((id) => S.PATTERNS[id])
             .filter((p) => wanted.length === 0 || wanted.includes(p.id))
             .filter((p) => tier.length === 0 || p.tier === tier)
+            .filter((p) => !rollable || S.isRollablePattern(p))
             .map((p) => ({
               id: p.id,
               name: p.name,
@@ -220,6 +229,7 @@ const result = await page.evaluate(
         : S.BUILD_IDS.map((id) => S.BUILDS[id])
             .filter((b) => wanted.length === 0 || wanted.includes(b.id))
             .filter((b) => tier.length === 0 || b.tier === tier)
+            .filter((b) => !rollable || S.isRollableBuild(b))
             .map((b) => ({
               id: b.id,
               name: b.name,
@@ -320,6 +330,7 @@ const result = await page.evaluate(
     mode: MODE,
     only: ONLY,
     tier: TIER,
+    rollable: ROLLABLE,
     build: BUILD,
     pattern: PATTERN,
     cols: COLS,

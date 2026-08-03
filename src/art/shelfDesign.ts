@@ -23,6 +23,36 @@
  * so "surprise me, something cosy" can be answered without a lookup table
  * living somewhere else.
  *
+ * ## Ranking, and why the carpentry is judged at 1:1
+ *
+ * The bindings rank themselves (`bookDesign.BookTier`) and the papers rank
+ * themselves (`wallpaperDesign.WallpaperTier`); the carpentry was the last
+ * vocabulary offering all of itself equally, which meant "surprise me" could
+ * hand somebody a case whose only distinguishing feature was a soft wobble on
+ * the cornice. So every build and every pattern now carries a
+ * {@link ShelfTier} — `showpiece`, `catalogue` or `offcut` — and three things
+ * follow from it and nothing else decides them:
+ *
+ *  - {@link BUILD_IDS} and {@link PATTERN_IDS} are DERIVED (family, then tier,
+ *    then the order the entry was authored in), so no exported list here is
+ *    hand-sorted and none can be re-sorted by accident;
+ *  - {@link ROLLABLE_BUILDS} / {@link ROLLABLE_PATTERNS} drop the `offcut`s and
+ *    the fallback case, and that — not the full table — is what the studio's
+ *    "surprise me" rolls over;
+ *  - the pickers still offer every one of the hundred and two. This is a
+ *    demotion, never a deletion: a build and a pattern are persisted per
+ *    bookcase in SQLite, so retiring one would silently rebuild a library.
+ *
+ * The tier is decided by LOOKING, at the pitch the shelf actually shows —
+ * `scripts/probe-shelf-builds.mjs`, which draws the case exactly as
+ * `features/bookshelf/textures.ts` bakes it and crops it 1:1 rather than
+ * shrinking a whole bookcase into a studio card. A studio card is 148×102 and
+ * every carpentry in it is a brown rectangle with a fringe, which is precisely
+ * the picture that cannot answer "is this one worth offering first".
+ *
+ * `tests/roll-gates.test.ts` checks the CALLER, because an authored gate with
+ * no caller is the bug this repo has already shipped twice.
+ *
  * ## Joinery comes before ornament
  *
  * The case is baked as four separate bitmaps and composited by the shelf, so
@@ -399,16 +429,84 @@ export function caseTimber(): Timber {
   };
 }
 
+/* ----------------------------------------------------------------------------
+   Ranking — the quality axis, shared by both vocabularies
+   -------------------------------------------------------------------------- */
+
 /**
- * The fifty-two carpentries, in picker order.
+ * Where in its family a carpentry is printed.
+ *
+ * Decided by rendering the case the way the shelf bakes it and looking at it at
+ * 1:1 — `scripts/probe-shelf-builds.mjs`. A build or a pattern fails at shelf
+ * scale in ways a studio card cannot show: it can be so quiet that it is the
+ * plank case with extra steps, it can be a near-copy of the entry two rows up,
+ * and it can promise something in its name that the drawing does not deliver.
+ *
+ * Nothing is deleted for any of that. A demotion moves an entry down its family
+ * and takes it out of the dice; it stays fully pickable, because the reader who
+ * goes looking for a driftwood case should find one.
+ *
+ *  - `showpiece` — leads its family. The ones to reach for.
+ *  - `catalogue` — the body of the book. Sound carpentry, none of it the best.
+ *  - `offcut`    — printed last, and never rolled. Still timber, just not what
+ *                  you show a customer unasked.
+ */
+export const SHELF_TIERS = ['showpiece', 'catalogue', 'offcut'] as const;
+export type ShelfTier = (typeof SHELF_TIERS)[number];
+
+const SHELF_TIER_RANK = new Map(SHELF_TIERS.map((t, i) => [t, i] as const));
+
+/**
+ * The families a carpentry belongs to, strongest section first.
+ *
+ * These were the comment headings in the authored list. They are a field now
+ * because the picker order is derived from them, and an order derived from a
+ * comment is an order nothing can check.
+ */
+export const BUILD_FAMILIES = [
+  'quiet',
+  'cabinet',
+  'compartment',
+  'classical',
+  'gothic',
+  'cottage',
+  'rustic',
+] as const;
+export type BuildFamily = (typeof BUILD_FAMILIES)[number];
+
+const BUILD_FAMILY_RANK = new Map(BUILD_FAMILIES.map((f, i) => [f, i] as const));
+
+/** The families a timber treatment belongs to, in the same spirit. */
+export const PATTERN_FAMILIES = [
+  'edge',
+  'turned',
+  'classical',
+  'gothic',
+  'fret',
+  'inlay',
+  'worked',
+] as const;
+export type PatternFamily = (typeof PATTERN_FAMILIES)[number];
+
+const PATTERN_FAMILY_RANK = new Map(PATTERN_FAMILIES.map((f, i) => [f, i] as const));
+
+/**
+ * The fifty-two carpentries, AS AUTHORED.
  *
  * Grouped rather than alphabetised, and the groups run plain → cabinet →
- * classical → gothic → whimsical → rustic, so the studio's grid reads as a
- * progression. The twelve original ids all survive and still mean what they
- * meant: a build is persisted per bookcase in SQLite, so retiring one would
- * silently rebuild somebody's library.
+ * classical → gothic → whimsical → rustic, which is how a person composes a
+ * list and NOT the order the picker shows. The shelf order is derived from the
+ * `family` and `tier` on each entry by {@link BUILD_IDS} below, so ranking a
+ * build is an edit to that build rather than a move within this array — a
+ * hand-sorted list is one somebody re-sorts by accident.
+ *
+ * This array's only other job is to be the source of {@link BuildId}, so the
+ * type stays a union of literals however the exported order is computed. The
+ * twelve original ids all survive and still mean what they meant: a build is
+ * persisted per bookcase in SQLite, so retiring one would silently rebuild
+ * somebody's library.
  */
-export const BUILD_IDS = [
+const AUTHORED_BUILD_IDS = [
   // Quiet carpentry. Nothing between the reader and the books.
   'plank',
   'shaker',
@@ -476,10 +574,13 @@ export const BUILD_IDS = [
   'treehouse',
 ] as const;
 
-export type BuildId = (typeof BUILD_IDS)[number];
+export type BuildId = (typeof AUTHORED_BUILD_IDS)[number];
+
+const BUILD_ID_SET: ReadonlySet<string> = new Set(AUTHORED_BUILD_IDS);
+const BUILD_AUTHORED_AT = new Map(AUTHORED_BUILD_IDS.map((id, i) => [id, i] as const));
 
 /**
- * The fifty timber treatments, in picker order (`none` first, always).
+ * The fifty timber treatments, AS AUTHORED (`none` first, always).
  *
  * Grouped rather than alphabetised, because the groups ARE the vocabulary a
  * furniture maker works in and a reader scrolling the picker learns it for
@@ -487,12 +588,16 @@ export type BuildId = (typeof BUILD_IDS)[number];
  * classical enrichments, the gothic and Norman courses, the frets, the
  * veneers, and last the carved and worked surfaces.
  *
+ * As with the builds, this is the AUTHORING order and the source of
+ * {@link PatternId}; the order the picker shows is derived from each entry's
+ * family and tier by {@link PATTERN_IDS} below.
+ *
  * The twelve original ids are all still here and still mean what they meant.
  * They are persisted per library in SQLite, so retiring one would silently
  * repaint somebody's bookcase; every one of them was reimplemented in place
  * instead.
  */
-export const PATTERN_IDS = [
+const AUTHORED_PATTERN_IDS = [
   'none',
 
   // Edge work: what a joiner does to a face when he is not decorating it.
@@ -559,7 +664,10 @@ export const PATTERN_IDS = [
   'notched',
 ] as const;
 
-export type PatternId = (typeof PATTERN_IDS)[number];
+export type PatternId = (typeof AUTHORED_PATTERN_IDS)[number];
+
+const PATTERN_ID_SET: ReadonlySet<string> = new Set(AUTHORED_PATTERN_IDS);
+const PATTERN_AUTHORED_AT = new Map(AUTHORED_PATTERN_IDS.map((id, i) => [id, i] as const));
 
 /** What the shelf is made of and what is worked into it. */
 export interface ShelfDesign {
@@ -612,6 +720,11 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  *
  * Paired with {@link FALLBACK_SHELF_DESIGN}, which answers a different
  * question — see the note there.
+ *
+ * Both halves of this pair stay in the dice ({@link ROLLABLE_BUILDS},
+ * {@link ROLLABLE_PATTERNS}), which is the opposite of what happens to the
+ * fallback. Being the case a new library opens on is a reason to be handed out
+ * MORE often, not less: it was chosen by looking at twelve builds side by side.
  */
 export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
   build: 'scriptorium',
@@ -632,18 +745,31 @@ export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
  * The house plank is the right answer here for the same reason Plain Parchment
  * is on the wall: it is the least surprising thing that is still drawable, and
  * a reader who lands on it can tell something went wrong.
+ *
+ * BOTH of its fields are excluded from the dice for exactly that reason — see
+ * {@link isRollableBuild} and {@link isRollablePattern}. If "surprise me" could
+ * roll the plank and the bare timber, a reader could not tell a roll from a
+ * fault, which is the distinction this constant exists to make.
  */
 export const FALLBACK_SHELF_DESIGN: ShelfDesign = {
   build: 'plank',
   pattern: 'none',
 };
 
+/*
+ * Both guards read the AUTHORED tuples rather than the exported picker lists,
+ * and that is load-bearing rather than tidy: `BUILD_IDS` is now derived from
+ * `BUILDS`, which is declared further down this file, so a guard that read it
+ * would sit in the temporal dead zone for anything evaluated at module level.
+ * A Set also turns `resolveShelfDesign` — which every bake calls — from a
+ * fifty-element scan into a hash.
+ */
 export function isBuildId(value: unknown): value is BuildId {
-  return typeof value === 'string' && (BUILD_IDS as readonly string[]).includes(value);
+  return typeof value === 'string' && BUILD_ID_SET.has(value);
 }
 
 export function isPatternId(value: unknown): value is PatternId {
-  return typeof value === 'string' && (PATTERN_IDS as readonly string[]).includes(value);
+  return typeof value === 'string' && PATTERN_ID_SET.has(value);
 }
 
 /**
@@ -828,6 +954,15 @@ export interface BuildSpec {
   blurb: string;
   /** What this build feels like. At least two, so a steer has something to hit. */
   tags: readonly BuildTag[];
+  /** Which section of the picker it belongs to. Sections are ordered too. */
+  family: BuildFamily;
+  /**
+   * Where in that section it is printed, and whether the dice may hand it out.
+   * See {@link ShelfTier}. Required, so a fifty-third carpentry cannot be added
+   * without somebody having looked at it at 1:1 and said which of the three
+   * it is.
+   */
+  tier: ShelfTier;
   /** Board: fraction of its height that reads as the front edge. */
   plankEdge: number;
   /** Board: corner radius as a fraction of its height, on its free corners only. */
@@ -850,14 +985,25 @@ export interface BuildSpec {
   crownStuds: boolean;
 }
 
+/**
+ * One row of the table.
+ *
+ * `family` and `tier` come LAST and are required rather than defaulted, which
+ * is the whole mechanism behind the ranking: a default would let a new build
+ * join the list without anyone deciding whether it leads its section or sinks
+ * to the back of it, and "which of the three is this" is exactly the question
+ * that stops a ranked book drifting back into a flat list.
+ */
 function build(
   id: BuildId,
   name: string,
   blurb: string,
   tags: readonly BuildTag[],
-  spec: Omit<BuildSpec, 'id' | 'name' | 'blurb' | 'tags'>,
+  spec: Omit<BuildSpec, 'id' | 'name' | 'blurb' | 'tags' | 'family' | 'tier'>,
+  family: BuildFamily,
+  tier: ShelfTier,
 ): BuildSpec {
-  return { id, name, blurb, tags, ...spec };
+  return { id, name, blurb, tags, family, tier, ...spec };
 }
 
 /** Every carpentry, keyed by id. */
@@ -867,275 +1013,363 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   plank: build('plank', 'Plain Plank', 'A board, two uprights, nothing in the way of the books.',
     ['plain', 'natural', 'utilitarian'],
     { plankEdge: 0.28, plankRadius: 0.22, plankTrim: 'none', postShaft: 1, postTrim: 'none',
-      opening: 'plain', crown: 'board', crest: 'flat', crownStuds: true }),
+      opening: 'plain', crown: 'board', crest: 'flat', crownStuds: true }, 'quiet', 'showpiece'),
 
+  // OFFCUT, and the only build in the table that repeats the FALLBACK case's
+  // whole silhouette: `plain` opening, `board` cornice, `flat` crest, full-width
+  // post. Shot beside the plank at 1:1 (`--mode=builds --only=plank,shaker`),
+  // the two differ by the three gilt studs the plank has and this one turns
+  // off, plus one chamfer hairline down the post and another along the board's
+  // front edge — and by nothing else at all. It is a
+  // legitimate case to CHOOSE — the reader who wants the quietest carpentry in
+  // the book should find it — but a roll that lands on it looks like the
+  // carpentry was switched off rather than chosen, which is the exact failure
+  // the fallback's own exclusion exists to prevent.
   shaker: build('shaker', 'Shaker', 'Every arris taken off with two strokes of a plane, and nothing else.',
     ['plain', 'refined', 'natural'],
     { plankEdge: 0.24, plankRadius: 0.1, plankTrim: 'chamfer', postShaft: 1, postTrim: 'chamfer',
-      opening: 'plain', crown: 'board', crest: 'flat', crownStuds: false }),
+      opening: 'plain', crown: 'board', crest: 'flat', crownStuds: false }, 'quiet', 'offcut'),
 
   schoolroom: build('schoolroom', 'Schoolroom', 'A ledge along every shelf, worn smooth by a century of satchels.',
     ['plain', 'utilitarian', 'antique'],
     { plankEdge: 0.3, plankRadius: 0.12, plankTrim: 'lip', postShaft: 1, postTrim: 'stile',
-      opening: 'ledge', crown: 'bedMould', crest: 'flat', crownStuds: true }),
+      opening: 'ledge', crown: 'bedMould', crest: 'flat', crownStuds: true }, 'quiet', 'catalogue'),
 
   atelier: build('atelier', 'Atelier', 'Thin uprights, thin boards, and as much air as the books allow.',
     ['modern', 'plain', 'airy'],
     { plankEdge: 0.2, plankRadius: 0.06, plankTrim: 'none', postShaft: 0.72, postTrim: 'none',
-      opening: 'plain', crown: 'rail', crest: 'flat', crownStuds: false }),
+      opening: 'plain', crown: 'rail', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
 
   ladder: build('ladder', 'Ladder Shelf', 'Slim rails with rungs; the boards are simply laid across them.',
     ['plain', 'airy', 'modern'],
     { plankEdge: 0.22, plankRadius: 0.3, plankTrim: 'rail', postShaft: 0.56, postTrim: 'ladder',
-      opening: 'plain', crown: 'rail', crest: 'flat', crownStuds: false }),
+      opening: 'plain', crown: 'rail', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
 
   workbench: build('workbench', 'Workbench', 'Strapped and braced, built to be stood on rather than admired.',
     ['utilitarian', 'heavy', 'rustic'],
     { plankEdge: 0.36, plankRadius: 0.08, plankTrim: 'strap', postShaft: 1, postTrim: 'strap',
-      opening: 'xbrace', crown: 'slab', crest: 'flat', crownStuds: false }),
+      opening: 'xbrace', crown: 'slab', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
 
   /* ---- cabinet work ---- */
 
   faceFrame: build('faceFrame', 'Face Frame', 'Cabinet work: a proud rail on every board and a framed opening.',
     ['formal', 'refined', 'plain'],
     { plankEdge: 0.3, plankRadius: 0.14, plankTrim: 'lip', postShaft: 1, postTrim: 'stile',
-      opening: 'frame', crown: 'stepped', crest: 'flat', crownStuds: true }),
+      opening: 'frame', crown: 'stepped', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
 
   barrister: build('barrister', 'Barrister', 'Glazed fronts hinted at by their sashes, with a pull on every board.',
     ['formal', 'refined', 'antique'],
     { plankEdge: 0.26, plankRadius: 0.16, plankTrim: 'knob', postShaft: 1, postTrim: 'stile',
-      opening: 'glass', crown: 'stepped', crest: 'flat', crownStuds: true }),
+      opening: 'glass', crown: 'stepped', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
 
   bookbinder: build('bookbinder', 'Bookbinder', 'Beaded boards between fielded pilasters, under a course of teeth.',
     ['refined', 'formal', 'antique'],
     { plankEdge: 0.28, plankRadius: 0.18, plankTrim: 'bead', postShaft: 1, postTrim: 'pilaster',
-      opening: 'frame', crown: 'bedMould', crest: 'dentil', crownStuds: true }),
+      opening: 'frame', crown: 'bedMould', crest: 'dentil', crownStuds: true }, 'cabinet', 'showpiece'),
 
+  // OFFCUT. Its two distinctives are `glass`, which `barrister` draws better
+  // (same sashes, plus a pull on every board), and the `finial` crest — which
+  // at 1:1 is a flat cornice with two small square notches taken out of it and
+  // one block standing at the end, not a finial. What is left is a barrister
+  // with a thinner post.
   conservatory: build('conservatory', 'Conservatory', 'Slender glazing bars and a finial at each end of the cornice.',
     ['airy', 'refined', 'formal'],
     { plankEdge: 0.22, plankRadius: 0.2, plankTrim: 'lip', postShaft: 0.9, postTrim: 'stile',
-      opening: 'glass', crown: 'board', crest: 'finial', crownStuds: true }),
+      opening: 'glass', crown: 'board', crest: 'finial', crownStuds: true }, 'cabinet', 'offcut'),
 
   orangery: build('orangery', 'Orangery', 'Round-headed bays under a scalloped cresting, all light and lime.',
     ['airy', 'refined', 'ornate'],
     { plankEdge: 0.24, plankRadius: 0.24, plankTrim: 'bead', postShaft: 0.9, postTrim: 'pilaster',
-      opening: 'arch', crown: 'bedMould', crest: 'scallop', crownStuds: true }),
+      opening: 'arch', crown: 'bedMould', crest: 'scallop', crownStuds: true }, 'cabinet', 'showpiece'),
 
   campaign: build('campaign', 'Campaign Chest', 'Brass straps and corner brackets: a bookcase that has been shipped.',
     ['utilitarian', 'formal', 'antique'],
     { plankEdge: 0.32, plankRadius: 0.08, plankTrim: 'strap', postShaft: 1, postTrim: 'bracket',
-      opening: 'panelled', crown: 'slab', crest: 'flat', crownStuds: true }),
+      opening: 'panelled', crown: 'slab', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
 
   vestry: build('vestry', 'Vestry', 'Deep panels and a plain frieze. Sober, and rather good at it.',
     ['formal', 'severe', 'antique'],
     { plankEdge: 0.3, plankRadius: 0.1, plankTrim: 'lip', postShaft: 1, postTrim: 'pilaster',
-      opening: 'panelled', crown: 'frieze', crest: 'flat', crownStuds: false }),
+      opening: 'panelled', crown: 'frieze', crest: 'flat', crownStuds: false }, 'cabinet', 'catalogue'),
 
   /* ---- compartments and grids ---- */
 
   apothecary: build('apothecary', 'Apothecary', 'Many small compartments behind the books, and a dentil course above.',
     ['refined', 'utilitarian', 'antique'],
     { plankEdge: 0.32, plankRadius: 0.12, plankTrim: 'cleat', postShaft: 0.9, postTrim: 'batten',
-      opening: 'divided', crown: 'bedMould', crest: 'dentil', crownStuds: false }),
+      opening: 'divided', crown: 'bedMould', crest: 'dentil', crownStuds: false }, 'compartment', 'showpiece'),
 
   pigeonhole: build('pigeonhole', 'Pigeonhole', 'A fine grid of cubbies — a sorting office that took up reading.',
     ['utilitarian', 'plain', 'antique'],
     { plankEdge: 0.24, plankRadius: 0.12, plankTrim: 'none', postShaft: 0.85, postTrim: 'stile',
-      opening: 'grid', crown: 'board', crest: 'flat', crownStuds: false }),
+      opening: 'grid', crown: 'board', crest: 'flat', crownStuds: false }, 'compartment', 'catalogue'),
 
   mercantile: build('mercantile', 'Mercantile', 'Counter-shop carpentry: toothed boards over deep pigeon runs.',
     ['utilitarian', 'antique', 'formal'],
     { plankEdge: 0.3, plankRadius: 0.1, plankTrim: 'dentil', postShaft: 0.9, postTrim: 'batten',
-      opening: 'divided', crown: 'stepped', crest: 'dentil', crownStuds: false }),
+      opening: 'divided', crown: 'stepped', crest: 'dentil', crownStuds: false }, 'compartment', 'catalogue'),
 
+  // OFFCUT. The same regular `grid` opening as `pigeonhole` — at 1:1 the two
+  // foot crops are the same picture — and the irregularity the name sells
+  // ("more enthusiasm than plan") is nowhere in the drawing. It survives on a
+  // scalloped crest and a slightly narrower post.
   rookery: build('rookery', 'Rookery', 'Too many small holes, arranged with more enthusiasm than plan.',
     ['whimsical', 'plain', 'cosy'],
     { plankEdge: 0.22, plankRadius: 0.16, plankTrim: 'none', postShaft: 0.8, postTrim: 'batten',
-      opening: 'grid', crown: 'board', crest: 'scallop', crownStuds: false }),
+      opening: 'grid', crown: 'board', crest: 'scallop', crownStuds: false }, 'compartment', 'offcut'),
 
   dovecote: build('dovecote', 'Dovecote', 'Little arched holes behind the books, as if something might nest.',
     ['whimsical', 'cosy', 'natural'],
     { plankEdge: 0.24, plankRadius: 0.2, plankTrim: 'bead', postShaft: 0.82, postTrim: 'batten',
-      opening: 'dovecote', crown: 'board', crest: 'flat', crownStuds: false }),
+      opening: 'dovecote', crown: 'board', crest: 'flat', crownStuds: false }, 'compartment', 'showpiece'),
 
   curiosity: build('curiosity', 'Curiosity Cabinet', 'Compartments, pulls and finials: everything is worth showing.',
     ['ornate', 'fancy', 'whimsical'],
     { plankEdge: 0.28, plankRadius: 0.14, plankTrim: 'knob', postShaft: 0.88, postTrim: 'pilaster',
-      opening: 'divided', crown: 'bedMould', crest: 'finial', crownStuds: true }),
+      opening: 'divided', crown: 'bedMould', crest: 'finial', crownStuds: true }, 'compartment', 'catalogue'),
 
   /* ---- the classical orders ---- */
 
   arch: build('arch', 'Arch Opening', 'Round-headed bays, the way a reading room carries its ceiling.',
     ['formal', 'refined', 'airy'],
     { plankEdge: 0.26, plankRadius: 0.24, plankTrim: 'bead', postShaft: 1, postTrim: 'none',
-      opening: 'arch', crown: 'board', crest: 'flat', crownStuds: true }),
+      opening: 'arch', crown: 'board', crest: 'flat', crownStuds: true }, 'classical', 'showpiece'),
 
   cloister: build('cloister', 'Cloister', 'An arcade on plain columns under a deep, undecorated frieze.',
     ['formal', 'severe', 'antique'],
     { plankEdge: 0.26, plankRadius: 0.18, plankTrim: 'bead', postShaft: 0.94, postTrim: 'column',
-      opening: 'arch', crown: 'frieze', crest: 'flat', crownStuds: false }),
+      opening: 'arch', crown: 'frieze', crest: 'flat', crownStuds: false }, 'classical', 'catalogue'),
 
   colonnade: build('colonnade', 'Cornice & Column', 'Columns with capitals, carrying a pedimented entablature.',
     ['formal', 'ornate', 'antique'],
     { plankEdge: 0.26, plankRadius: 0.18, plankTrim: 'bead', postShaft: 0.86, postTrim: 'column',
-      opening: 'frame', crown: 'frieze', crest: 'pediment', crownStuds: true }),
+      opening: 'frame', crown: 'frieze', crest: 'pediment', crownStuds: true }, 'classical', 'catalogue'),
 
   scriptorium: build('scriptorium', 'Scriptorium', 'A stepped cornice with teeth, over an arcade you could work under.',
     ['formal', 'antique', 'refined'],
     { plankEdge: 0.28, plankRadius: 0.16, plankTrim: 'lip', postShaft: 0.92, postTrim: 'column',
-      opening: 'arch', crown: 'stepped', crest: 'dentil', crownStuds: true }),
+      opening: 'arch', crown: 'stepped', crest: 'dentil', crownStuds: true }, 'classical', 'showpiece'),
 
   observatory: build('observatory', 'Observatory', 'Turned uprights and finials, for instruments as much as books.',
     ['formal', 'ornate', 'fancy'],
     { plankEdge: 0.26, plankRadius: 0.2, plankTrim: 'bead', postShaft: 0.9, postTrim: 'turned',
-      opening: 'arch', crown: 'bedMould', crest: 'finial', crownStuds: true }),
+      opening: 'arch', crown: 'bedMould', crest: 'finial', crownStuds: true }, 'classical', 'catalogue'),
 
   parlour: build('parlour', 'Parlour', 'Nulled boards and a reeded cornice: the good room, kept for company.',
     ['cosy', 'refined', 'fancy'],
     { plankEdge: 0.26, plankRadius: 0.22, plankTrim: 'nulling', postShaft: 0.95, postTrim: 'pilaster',
-      opening: 'frame', crown: 'reeded', crest: 'scallop', crownStuds: true }),
+      opening: 'frame', crown: 'reeded', crest: 'scallop', crownStuds: true }, 'classical', 'catalogue'),
 
   /* ---- gothic ---- */
 
   gothic: build('gothic', 'Gothic Arch', 'Pointed bays under a battlemented cornice.',
     ['ornate', 'severe', 'antique'],
     { plankEdge: 0.24, plankRadius: 0.12, plankTrim: 'bead', postShaft: 0.92, postTrim: 'column',
-      opening: 'gothic', crown: 'bedMould', crest: 'battlement', crownStuds: false }),
+      opening: 'gothic', crown: 'bedMould', crest: 'battlement', crownStuds: false }, 'gothic', 'showpiece'),
 
   chapel: build('chapel', 'Chapel', 'Trefoil heads in every bay, and battlements to finish the wall.',
     ['ornate', 'severe', 'formal'],
     { plankEdge: 0.26, plankRadius: 0.1, plankTrim: 'dentil', postShaft: 0.9, postTrim: 'pilaster',
-      opening: 'trefoil', crown: 'frieze', crest: 'battlement', crownStuds: false }),
+      opening: 'trefoil', crown: 'frieze', crest: 'battlement', crownStuds: false }, 'gothic', 'catalogue'),
 
   minster: build('minster', 'Minster', 'Pointed bays under a gabled run — the whole nave, at shelf scale.',
     ['ornate', 'antique', 'severe'],
     { plankEdge: 0.28, plankRadius: 0.1, plankTrim: 'lip', postShaft: 0.9, postTrim: 'column',
-      opening: 'gothic', crown: 'stepped', crest: 'sawtooth', crownStuds: false }),
+      opening: 'gothic', crown: 'stepped', crest: 'sawtooth', crownStuds: false }, 'gothic', 'catalogue'),
 
   refectory: build('refectory', 'Refectory', 'Ogee heads on heavy pegged timber. Built to outlast the order.',
     ['heavy', 'antique', 'severe'],
     { plankEdge: 0.34, plankRadius: 0.1, plankTrim: 'peg', postShaft: 1, postTrim: 'slab',
-      opening: 'ogee', crown: 'slab', crest: 'flat', crownStuds: false }),
+      opening: 'ogee', crown: 'slab', crest: 'flat', crownStuds: false }, 'gothic', 'catalogue'),
 
   lychgate: build('lychgate', 'Lychgate', 'Strapped oak and an ogee opening, as if it stood out in the weather.',
     ['rustic', 'antique', 'heavy'],
     { plankEdge: 0.32, plankRadius: 0.14, plankTrim: 'strap', postShaft: 0.95, postTrim: 'strap',
-      opening: 'ogee', crown: 'board', crest: 'sawtooth', crownStuds: false }),
+      opening: 'ogee', crown: 'board', crest: 'sawtooth', crownStuds: false }, 'gothic', 'catalogue'),
 
   /* ---- cottage, fret and fancy ---- */
 
   valance: build('valance', 'Scalloped Valance', 'A fretted pelmet hangs over every shelf; the cornice waves back.',
     ['cosy', 'whimsical', 'fancy'],
     { plankEdge: 0.28, plankRadius: 0.28, plankTrim: 'scallop', postShaft: 1, postTrim: 'none',
-      opening: 'valance', crown: 'board', crest: 'scallop', crownStuds: true }),
+      opening: 'valance', crown: 'board', crest: 'scallop', crownStuds: true }, 'cottage', 'showpiece'),
 
   cottage: build('cottage', 'Cottage', 'Chamfered posts, a pelmet, and a cornice that will not lie straight.',
     ['cosy', 'natural', 'whimsical'],
     { plankEdge: 0.26, plankRadius: 0.26, plankTrim: 'bead', postShaft: 1, postTrim: 'chamfer',
-      opening: 'valance', crown: 'board', crest: 'wave', crownStuds: false }),
+      opening: 'valance', crown: 'board', crest: 'wave', crownStuds: false }, 'cottage', 'catalogue'),
 
   tearoom: build('tearoom', 'Tea Room', 'Turned spindles across the top of every bay, and nulled boards under.',
     ['cosy', 'refined', 'fancy'],
     { plankEdge: 0.24, plankRadius: 0.24, plankTrim: 'nulling', postShaft: 0.92, postTrim: 'turned',
-      opening: 'spindle', crown: 'reeded', crest: 'scallop', crownStuds: true }),
+      opening: 'spindle', crown: 'reeded', crest: 'scallop', crownStuds: true }, 'cottage', 'showpiece'),
 
   gingerbread: build('gingerbread', 'Gingerbread', 'Scallops on the boards, scallops in the bays, a wave on top.',
     ['goofy', 'fancy', 'whimsical'],
     { plankEdge: 0.26, plankRadius: 0.3, plankTrim: 'scallop', postShaft: 0.88, postTrim: 'turned',
-      opening: 'valance', crown: 'reeded', crest: 'wave', crownStuds: true }),
+      opening: 'valance', crown: 'reeded', crest: 'wave', crownStuds: true }, 'cottage', 'catalogue'),
 
   chinoiserie: build('chinoiserie', 'Fretwork', 'A geometric fret across every opening, stepped at the cornice.',
     ['ornate', 'fancy', 'refined'],
     { plankEdge: 0.24, plankRadius: 0.16, plankTrim: 'lip', postShaft: 0.9, postTrim: 'pilaster',
-      opening: 'fret', crown: 'stepped', crest: 'steps', crownStuds: true }),
+      opening: 'fret', crown: 'stepped', crest: 'steps', crownStuds: true }, 'cottage', 'showpiece'),
 
   pagoda: build('pagoda', 'Pagoda', 'Stepped eaves and a run of spindles: a tea house that reads.',
     ['whimsical', 'ornate', 'fancy'],
     { plankEdge: 0.26, plankRadius: 0.2, plankTrim: 'tray', postShaft: 0.86, postTrim: 'turned',
-      opening: 'spindle', crown: 'board', crest: 'steps', crownStuds: true }),
+      opening: 'spindle', crown: 'board', crest: 'steps', crownStuds: true }, 'cottage', 'catalogue'),
 
   seaside: build('seaside', 'Seaside', 'Beadboard, spindles and a rolling cornice. Salt not included.',
     ['cosy', 'airy', 'whimsical'],
     { plankEdge: 0.22, plankRadius: 0.28, plankTrim: 'bead', postShaft: 0.9, postTrim: 'chamfer',
-      opening: 'spindle', crown: 'board', crest: 'wave', crownStuds: false }),
+      opening: 'spindle', crown: 'board', crest: 'wave', crownStuds: false }, 'cottage', 'catalogue'),
 
   galleon: build('galleon', 'Galleon', 'A carved wave along the top and an arcade like a stern gallery.',
     ['fancy', 'ornate', 'whimsical'],
     { plankEdge: 0.3, plankRadius: 0.26, plankTrim: 'nulling', postShaft: 0.94, postTrim: 'turned',
-      opening: 'arch', crown: 'reeded', crest: 'wave', crownStuds: true }),
+      opening: 'arch', crown: 'reeded', crest: 'wave', crownStuds: true }, 'cottage', 'catalogue'),
 
   carnival: build('carnival', 'Carnival', 'Pulls like brass buttons and a sawtooth awning. Loud, on purpose.',
     ['goofy', 'fancy', 'whimsical'],
     { plankEdge: 0.28, plankRadius: 0.32, plankTrim: 'knob', postShaft: 0.86, postTrim: 'turned',
-      opening: 'valance', crown: 'board', crest: 'sawtooth', crownStuds: true }),
+      opening: 'valance', crown: 'board', crest: 'sawtooth', crownStuds: true }, 'cottage', 'catalogue'),
 
   toybox: build('toybox', 'Toy Box', 'Fat rounded boards, corner blocks and a big brass knob.',
     ['goofy', 'cosy', 'whimsical'],
     { plankEdge: 0.34, plankRadius: 0.34, plankTrim: 'knob', postShaft: 0.9, postTrim: 'bracket',
-      opening: 'crate', crown: 'slab', crest: 'scallop', crownStuds: true }),
+      opening: 'crate', crown: 'slab', crest: 'scallop', crownStuds: true }, 'cottage', 'catalogue'),
 
   beehive: build('beehive', 'Beehive', 'Rounded cells stacked in courses, and a reeded skep of a cornice.',
     ['whimsical', 'cosy', 'natural'],
     { plankEdge: 0.26, plankRadius: 0.3, plankTrim: 'bead', postShaft: 0.85, postTrim: 'turned',
-      opening: 'dovecote', crown: 'reeded', crest: 'scallop', crownStuds: false }),
+      opening: 'dovecote', crown: 'reeded', crest: 'scallop', crownStuds: false }, 'cottage', 'catalogue'),
 
+  // OFFCUT. The same braced bay as `workbench` on the same strapped post, with
+  // a sawtooth on top — at 1:1 the two head crops differ by the crest and
+  // nothing else. Nothing in the drawing is a sail, which is the whole of what
+  // the name sells.
   windmill: build('windmill', 'Windmill', 'Braced bays and a sawtooth crest, like a sail caught mid-turn.',
     ['whimsical', 'rustic', 'goofy'],
     { plankEdge: 0.3, plankRadius: 0.18, plankTrim: 'strap', postShaft: 0.9, postTrim: 'strap',
-      opening: 'xbrace', crown: 'board', crest: 'sawtooth', crownStuds: false }),
+      opening: 'xbrace', crown: 'board', crest: 'sawtooth', crownStuds: false }, 'cottage', 'offcut'),
 
   /* ---- rustic ---- */
 
   crate: build('crate', 'Crate Stack', 'Stacked packing crates: corner blocks, batten ends, no ceremony.',
     ['rustic', 'plain', 'utilitarian'],
     { plankEdge: 0.34, plankRadius: 0.1, plankTrim: 'cleat', postShaft: 0.95, postTrim: 'batten',
-      opening: 'crate', crown: 'slab', crest: 'flat', crownStuds: false }),
+      opening: 'crate', crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   steamer: build('steamer', 'Steamer Trunk', 'Banded and bossed, as though it had been round the world twice.',
     ['antique', 'utilitarian', 'heavy'],
     { plankEdge: 0.32, plankRadius: 0.12, plankTrim: 'strap', postShaft: 0.95, postTrim: 'strap',
-      opening: 'crate', crown: 'slab', crest: 'flat', crownStuds: true }),
+      opening: 'crate', crown: 'slab', crest: 'flat', crownStuds: true }, 'rustic', 'catalogue'),
 
   slab: build('slab', 'Rustic Slab', 'Thick pegged boards on rough uprights, planed once and left alone.',
     ['rustic', 'heavy', 'natural'],
     { plankEdge: 0.38, plankRadius: 0.3, plankTrim: 'peg', postShaft: 1, postTrim: 'slab',
-      opening: 'plain', crown: 'slab', crest: 'flat', crownStuds: false }),
+      opening: 'plain', crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   cabin: build('cabin', 'Log Cabin', 'Round uprights, braced bays, and boards pegged straight through.',
     ['rustic', 'heavy', 'natural'],
     { plankEdge: 0.36, plankRadius: 0.34, plankTrim: 'peg', postShaft: 1, postTrim: 'turned',
-      opening: 'xbrace', crown: 'slab', crest: 'flat', crownStuds: false }),
+      opening: 'xbrace', crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
+  // OFFCUT, and the clearest case on the board. Its opening is `plain` and its
+  // trims are chamfers, so the `wave` crest IS the build — and at 3x the wave
+  // is a low, characterless undulation with no repeat you can name: a board
+  // sanded unevenly rather than a crest that was cut. The mirrored plinth is
+  // the same wobble upside down. The other four `wave` builds keep a valance,
+  // an arcade or a spindle run carrying them, so they stay in the dice; this
+  // one has nothing behind it.
   driftwood: build('driftwood', 'Driftwood', 'Every edge worn round and every line slightly out of true.',
     ['rustic', 'natural', 'plain'],
     { plankEdge: 0.3, plankRadius: 0.3, plankTrim: 'chamfer', postShaft: 0.92, postTrim: 'chamfer',
-      opening: 'plain', crown: 'board', crest: 'wave', crownStuds: false }),
+      opening: 'plain', crown: 'board', crest: 'wave', crownStuds: false }, 'rustic', 'offcut'),
 
   hayloft: build('hayloft', 'Hayloft', 'Ladder rails and a braced back, with as much daylight as timber.',
     ['rustic', 'airy', 'natural'],
     { plankEdge: 0.26, plankRadius: 0.16, plankTrim: 'rail', postShaft: 0.6, postTrim: 'ladder',
-      opening: 'xbrace', crown: 'rail', crest: 'flat', crownStuds: false }),
+      opening: 'xbrace', crown: 'rail', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   sawmill: build('sawmill', 'Sawmill', 'Toothed boards and a sawtooth crest. The blade left its opinion.',
     ['rustic', 'utilitarian', 'heavy'],
     { plankEdge: 0.34, plankRadius: 0.06, plankTrim: 'dentil', postShaft: 0.96, postTrim: 'batten',
-      opening: 'ledge', crown: 'slab', crest: 'sawtooth', crownStuds: false }),
+      opening: 'ledge', crown: 'slab', crest: 'sawtooth', crownStuds: false }, 'rustic', 'showpiece'),
 
   stable: build('stable', 'Stable', 'Strapped uprights and a plate rail, built for tack and taking books.',
     ['rustic', 'heavy', 'natural'],
     { plankEdge: 0.34, plankRadius: 0.12, plankTrim: 'strap', postShaft: 1, postTrim: 'strap',
-      opening: 'ledge', crown: 'board', crest: 'flat', crownStuds: false }),
+      opening: 'ledge', crown: 'board', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   tavern: build('tavern', 'Tavern', 'Turned posts, pegged boards and spindles over every bay.',
     ['rustic', 'cosy', 'antique'],
     { plankEdge: 0.32, plankRadius: 0.22, plankTrim: 'peg', postShaft: 0.95, postTrim: 'turned',
-      opening: 'spindle', crown: 'board', crest: 'scallop', crownStuds: false }),
+      opening: 'spindle', crown: 'board', crest: 'scallop', crownStuds: false }, 'rustic', 'showpiece'),
 
   treehouse: build('treehouse', 'Treehouse', 'Rungs, braces and pegs, nailed up by somebody in a hurry.',
     ['goofy', 'rustic', 'whimsical'],
     { plankEdge: 0.3, plankRadius: 0.34, plankTrim: 'peg', postShaft: 0.86, postTrim: 'ladder',
-      opening: 'xbrace', crown: 'board', crest: 'sawtooth', crownStuds: false }),
+      opening: 'xbrace', crown: 'board', crest: 'sawtooth', crownStuds: false }, 'rustic', 'catalogue'),
 };
+
+/**
+ * The carpentries as the reader is offered them: strongest family first, and
+ * inside each family the builds that lead it first.
+ *
+ * DERIVED, from three pieces of data on the entries themselves — the family
+ * order in {@link BUILD_FAMILIES}, the `tier` on each build, and last the order
+ * it was authored in, which is the progression a person composed each group in.
+ * Nothing here is a hand-kept list, which is the point: `AUTHORED_BUILD_IDS`
+ * used to be BOTH the ranking and the authoring order, so re-ranking a build
+ * meant moving a line, and moving a line by accident silently re-ranked one.
+ *
+ * Same membership as the authored array, always — only the order differs — so
+ * every consumer that treats this as "all of them" (`design-cache-keys`,
+ * `room-presets`, `designOptions.buildOptions`) keeps being right.
+ */
+export const BUILD_IDS: readonly BuildId[] = [...AUTHORED_BUILD_IDS].sort(
+  (a, b) =>
+    (BUILD_FAMILY_RANK.get(BUILDS[a].family) ?? 0) - (BUILD_FAMILY_RANK.get(BUILDS[b].family) ?? 0) ||
+    (SHELF_TIER_RANK.get(BUILDS[a].tier) ?? 0) - (SHELF_TIER_RANK.get(BUILDS[b].tier) ?? 0) ||
+    (BUILD_AUTHORED_AT.get(a) ?? 0) - (BUILD_AUTHORED_AT.get(b) ?? 0),
+);
+
+/**
+ * May a roll of the dice land on this carpentry?
+ *
+ * Two exclusions, and they fail differently — the same pair
+ * `isRollableWallpaper` draws:
+ *
+ *  - an `offcut` was looked at at 1:1 and demoted. It stays in the picker,
+ *    because somebody will want the driftwood case; it does not come out of the
+ *    dice, because the reader who pressed "surprise me" did not ask for one.
+ *  - the FALLBACK build is excluded whatever its tier, and its tier is
+ *    `showpiece` because the plain plank leads the quiet family and is a
+ *    perfectly good case to choose. It is excluded for the reason Plain
+ *    Parchment is: a surprise that lands on the plainest carpentry in the book
+ *    has taken the carpentry OFF rather than chosen some, which reads as the
+ *    button being broken. It is also the case a corrupt row resolves to, so a
+ *    reader who is handed it cannot tell a roll from a fault.
+ *
+ * A function of the tier and the id alone rather than a second boolean on every
+ * row: two fields that must agree is two fields that will one day disagree.
+ */
+export function isRollableBuild(spec: BuildSpec): boolean {
+  return spec.tier !== 'offcut' && spec.id !== FALLBACK_SHELF_DESIGN.build;
+}
+
+/**
+ * The carpentries the dice may return, in picker order.
+ *
+ * This — not {@link BUILD_IDS} — is what "surprise me" rolls over, and what
+ * anything picking a case from a seed should read. `DEFAULT_SHELF_DESIGN`'s
+ * `scriptorium` is in here on purpose: the case a new library opens on is a
+ * case worth being handed.
+ */
+export const ROLLABLE_BUILDS: readonly BuildSpec[] = BUILD_IDS.map((id) => BUILDS[id]).filter(
+  isRollableBuild,
+);
 
 /** Every build carrying `tag`, in picker order. For steered randomisation. */
 export function buildsTagged(tag: BuildTag): readonly BuildSpec[] {
@@ -1176,79 +1410,151 @@ export interface PatternSpec {
    * steps.
    */
   tags: readonly string[];
+  /** Which section of the picker it belongs to. Sections are ordered too. */
+  family: PatternFamily;
+  /**
+   * Where in that section it is printed, and whether the dice may hand it out.
+   * See {@link ShelfTier}. Required for the same reason it is required on a
+   * build: a fifty-first treatment cannot be added without somebody having
+   * looked at it on a real board and a real upright at 1:1.
+   */
+  tier: ShelfTier;
 }
 
 /**
- * Every treatment: id, name, one line for the card, and its moods.
+ * Every treatment: id, name, one line for the card, its moods, its family and
+ * its rank.
  *
  * The blurbs name the real thing — a cabinetmaker's word for it, not a
  * description of the marks. "Two courses of strokes leaning against each
  * other" is what the old herringbone drew; it is not what herringbone IS, and
  * writing the honest name is what forced the drawing to become honest too.
+ *
+ * The last two columns are the ranking, and they are decided ON A BOARD: a
+ * plank is 40 world px tall and an upright 34 wide, so `probe-shelf-builds.mjs
+ * --mode=patterns` crops the real parts at true scale instead of shrinking a
+ * bookcase. Half of these treatments are within a hair of Plain when they are
+ * judged any other way.
  */
-const PATTERN_TABLE: readonly (readonly [PatternId, string, string, readonly string[]])[] = [
-  ['none', 'Plain', 'Bare timber. The books do the talking.', ['plain']],
+const PATTERN_TABLE: readonly (readonly [
+  PatternId,
+  string,
+  string,
+  readonly string[],
+  PatternFamily,
+  ShelfTier,
+])[] = [
+  ['none', 'Plain', 'Bare timber. The books do the talking.', ['plain'], 'edge', 'showpiece'],
 
-  ['stringing', 'Stringing', 'Two hair-fine lines of pale wood let into the face.', ['plain', 'fine', 'inlay']],
-  ['cockBead', 'Cock Bead', 'A small half-round standing proud of each edge.', ['plain', 'fine', 'carved']],
-  ['beaded', 'Bead & Quirk', 'A run of touching half-rounds, sunk between two quirks.', ['fine', 'carved', 'classical']],
-  ['reeded', 'Reeded', 'Fluting inside out: the timber left proud in half-round reeds.', ['fine', 'carved', 'classical']],
-  ['fluted', 'Fluted', 'Round-bottomed grooves with narrow fillets between them.', ['classical', 'carved', 'grand']],
-  ['cableFlute', 'Cabled Flute', 'Flutes with a carved cord laid into every other one.', ['classical', 'grand', 'carved']],
+  // OFFCUT: two hairlines. At 1:1 on a real board this is Plain — you have to
+  // already know it is there to find it, which is the timber equivalent of
+  // "Plain Parchment with extra steps".
+  ['stringing', 'Stringing', 'Two hair-fine lines of pale wood let into the face.', ['plain', 'fine', 'inlay'], 'edge', 'offcut'],
+  ['cockBead', 'Cock Bead', 'A small half-round standing proud of each edge.', ['plain', 'fine', 'carved'], 'edge', 'catalogue'],
+  ['beaded', 'Bead & Quirk', 'A run of touching half-rounds, sunk between two quirks.', ['fine', 'carved', 'classical'], 'edge', 'showpiece'],
+  ['reeded', 'Reeded', 'Fluting inside out: the timber left proud in half-round reeds.', ['fine', 'carved', 'classical'], 'edge', 'catalogue'],
+  ['fluted', 'Fluted', 'Round-bottomed grooves with narrow fillets between them.', ['classical', 'carved', 'grand'], 'edge', 'showpiece'],
+  ['cableFlute', 'Cabled Flute', 'Flutes with a carved cord laid into every other one.', ['classical', 'grand', 'carved'], 'edge', 'catalogue'],
 
-  ['gadroon', 'Gadrooned', 'A run of fat lobes leaning together, as a silver rim does.', ['grand', 'carved', 'bold']],
-  ['bobbin', 'Bobbin', 'Ball and reel, turned on a lathe and run along the timber.', ['cottage', 'carved', 'folk']],
-  ['barleyTwist', 'Barley Twist', 'The spiral of a barley-sugar column, opened out flat.', ['grand', 'carved', 'nautical']],
-  ['rope', 'Rope Twist', 'A tight carved cable between two quirks.', ['nautical', 'carved', 'bold']],
+  ['gadroon', 'Gadrooned', 'A run of fat lobes leaning together, as a silver rim does.', ['grand', 'carved', 'bold'], 'turned', 'catalogue'],
+  ['bobbin', 'Bobbin', 'Ball and reel, turned on a lathe and run along the timber.', ['cottage', 'carved', 'folk'], 'turned', 'catalogue'],
+  ['barleyTwist', 'Barley Twist', 'The spiral of a barley-sugar column, opened out flat.', ['grand', 'carved', 'nautical'], 'turned', 'catalogue'],
+  ['rope', 'Rope Twist', 'A tight carved cable between two quirks.', ['nautical', 'carved', 'bold'], 'turned', 'showpiece'],
 
-  ['dentil', 'Dentil', 'Teeth hanging below a corona, with the gaps cut clean through.', ['classical', 'grand', 'bold']],
-  ['modillion', 'Modillion', 'Scrolled brackets carrying the corona, spaced wide.', ['classical', 'grand', 'bold']],
-  ['eggDart', 'Egg & Dart', 'The oldest enrichment there is: an egg, an arrowhead, repeat.', ['classical', 'grand', 'carved']],
-  ['beadReel', 'Bead & Reel', 'Two beads and a reel, the astragal enriched.', ['classical', 'fine', 'carved']],
-  ['waterLeaf', 'Water Leaf', 'Leaf and dart, alternating along the moulding.', ['classical', 'fine', 'carved']],
-  ['guilloche', 'Guilloche', 'Interlaced rings plaited along the band, a boss in every eye.', ['classical', 'grand', 'geometric']],
-  ['vitruvian', 'Vitruvian Wave', 'A running scroll, breaking the same way every time.', ['classical', 'grand', 'carved']],
-  ['greekKey', 'Greek Key', 'The meander, folded and folded back.', ['classical', 'geometric', 'bold']],
+  ['dentil', 'Dentil', 'Teeth hanging below a corona, with the gaps cut clean through.', ['classical', 'grand', 'bold'], 'classical', 'showpiece'],
+  ['modillion', 'Modillion', 'Scrolled brackets carrying the corona, spaced wide.', ['classical', 'grand', 'bold'], 'classical', 'catalogue'],
+  ['eggDart', 'Egg & Dart', 'The oldest enrichment there is: an egg, an arrowhead, repeat.', ['classical', 'grand', 'carved'], 'classical', 'catalogue'],
+  ['beadReel', 'Bead & Reel', 'Two beads and a reel, the astragal enriched.', ['classical', 'fine', 'carved'], 'classical', 'catalogue'],
+  ['waterLeaf', 'Water Leaf', 'Leaf and dart, alternating along the moulding.', ['classical', 'fine', 'carved'], 'classical', 'catalogue'],
+  ['guilloche', 'Guilloche', 'Interlaced rings plaited along the band, a boss in every eye.', ['classical', 'grand', 'geometric'], 'classical', 'showpiece'],
+  ['vitruvian', 'Vitruvian Wave', 'A running scroll, breaking the same way every time.', ['classical', 'grand', 'carved'], 'classical', 'catalogue'],
+  ['greekKey', 'Greek Key', 'The meander, folded and folded back.', ['classical', 'geometric', 'bold'], 'classical', 'showpiece'],
 
-  ['blindArcade', 'Blind Arcade', 'A run of pointed arches cut into the solid.', ['gothic', 'carved', 'bold']],
-  ['trefoil', 'Trefoil', 'Three-lobed tracery, pierced through the band.', ['gothic', 'fine', 'carved']],
-  ['quatrefoil', 'Quatrefoil', 'Four lobes and a point: the tracery of a chantry screen.', ['gothic', 'geometric', 'carved']],
-  ['dogtooth', 'Dog Tooth', 'Norman pyramids, each cut on four faces.', ['gothic', 'bold', 'carved']],
-  ['billet', 'Billet', 'Short cylinders in two staggered rows. Pure Romanesque.', ['gothic', 'bold', 'geometric']],
-  ['chevron', 'Chevron', 'The Norman zigzag, chopped as a V-groove.', ['gothic', 'bold', 'geometric']],
-  ['lunette', 'Lunette', 'Jacobean half-moons, each with a fan struck inside it.', ['gothic', 'folk', 'carved']],
+  ['blindArcade', 'Blind Arcade', 'A run of pointed arches cut into the solid.', ['gothic', 'carved', 'bold'], 'gothic', 'showpiece'],
+  ['trefoil', 'Trefoil', 'Three-lobed tracery, pierced through the band.', ['gothic', 'fine', 'carved'], 'gothic', 'catalogue'],
+  ['quatrefoil', 'Quatrefoil', 'Four lobes and a point: the tracery of a chantry screen.', ['gothic', 'geometric', 'carved'], 'gothic', 'catalogue'],
+  ['dogtooth', 'Dog Tooth', 'Norman pyramids, each cut on four faces.', ['gothic', 'bold', 'carved'], 'gothic', 'catalogue'],
+  ['billet', 'Billet', 'Short cylinders in two staggered rows. Pure Romanesque.', ['gothic', 'bold', 'geometric'], 'gothic', 'catalogue'],
+  ['chevron', 'Chevron', 'The Norman zigzag, chopped as a V-groove.', ['gothic', 'bold', 'geometric'], 'gothic', 'showpiece'],
+  ['lunette', 'Lunette', 'Jacobean half-moons, each with a fan struck inside it.', ['gothic', 'folk', 'carved'], 'gothic', 'catalogue'],
 
-  ['lattice', 'Lattice', 'A trellis of crossed laths, square whatever it runs on.', ['geometric', 'cottage', 'fine']],
-  ['chineseFret', 'Chinese Fret', 'Chippendale fretwork, alternating up and down.', ['geometric', 'fine', 'grand']],
-  ['lozenge', 'Lozenge', 'Raised diamonds, point to point along the run.', ['geometric', 'bold', 'carved']],
-  ['diaper', 'Diaper', 'An all-over Tudor grid, pricked at every crossing.', ['geometric', 'fine', 'gothic']],
-  ['strapwork', 'Strapwork', 'Jacobean straps, buckled at intervals and pierced.', ['gothic', 'bold', 'geometric']],
-  ['sunburst', 'Sunburst', 'A row of struck fans, rays out from the base line.', ['folk', 'bold', 'cottage']],
+  ['lattice', 'Lattice', 'A trellis of crossed laths, square whatever it runs on.', ['geometric', 'cottage', 'fine'], 'fret', 'showpiece'],
+  ['chineseFret', 'Chinese Fret', 'Chippendale fretwork, alternating up and down.', ['geometric', 'fine', 'grand'], 'fret', 'catalogue'],
+  ['lozenge', 'Lozenge', 'Raised diamonds, point to point along the run.', ['geometric', 'bold', 'carved'], 'fret', 'catalogue'],
+  ['diaper', 'Diaper', 'An all-over Tudor grid, pricked at every crossing.', ['geometric', 'fine', 'gothic'], 'fret', 'catalogue'],
+  ['strapwork', 'Strapwork', 'Jacobean straps, buckled at intervals and pierced.', ['gothic', 'bold', 'geometric'], 'fret', 'showpiece'],
+  ['sunburst', 'Sunburst', 'A row of struck fans, rays out from the base line.', ['folk', 'bold', 'cottage'], 'fret', 'catalogue'],
 
-  ['crossband', 'Crossbanding', 'A border of short cross-grain strips around the field.', ['inlay', 'fine', 'grand']],
-  ['chequer', 'Chequer Stringing', 'A fine two-course chequer, framed top and bottom.', ['inlay', 'fine', 'geometric']],
-  ['herringbone', 'Herringbone', 'Parquetry: billets butted end to side, course against course.', ['inlay', 'geometric', 'grand']],
-  ['bookMatch', 'Book-Match', 'Two leaves of veneer opened like a book about the centre.', ['inlay', 'grand', 'fine']],
-  ['cube', 'Tumbling Block', 'Three tones of timber, and the eye insists they are cubes.', ['inlay', 'geometric', 'bold']],
-  ['marquetry', 'Marquetry Band', 'Pale and dark triangles let in between two strings.', ['inlay', 'geometric', 'grand']],
-  ['oyster', 'Oyster Veneer', 'Laburnum cut across the branch: rings, laid side by side.', ['inlay', 'grand', 'bold']],
-  ['burl', 'Burr Panel', 'A burr of figured timber, framed by a string.', ['inlay', 'rustic', 'grand']],
+  ['crossband', 'Crossbanding', 'A border of short cross-grain strips around the field.', ['inlay', 'fine', 'grand'], 'inlay', 'catalogue'],
+  ['chequer', 'Chequer Stringing', 'A fine two-course chequer, framed top and bottom.', ['inlay', 'fine', 'geometric'], 'inlay', 'showpiece'],
+  ['herringbone', 'Herringbone', 'Parquetry: billets butted end to side, course against course.', ['inlay', 'geometric', 'grand'], 'inlay', 'showpiece'],
+  ['bookMatch', 'Book-Match', 'Two leaves of veneer opened like a book about the centre.', ['inlay', 'grand', 'fine'], 'inlay', 'catalogue'],
+  ['cube', 'Tumbling Block', 'Three tones of timber, and the eye insists they are cubes.', ['inlay', 'geometric', 'bold'], 'inlay', 'catalogue'],
+  ['marquetry', 'Marquetry Band', 'Pale and dark triangles let in between two strings.', ['inlay', 'geometric', 'grand'], 'inlay', 'catalogue'],
+  ['oyster', 'Oyster Veneer', 'Laburnum cut across the branch: rings, laid side by side.', ['inlay', 'grand', 'bold'], 'inlay', 'catalogue'],
+  // OFFCUT: at 4x this is irregular dark blobs scattered at random over the
+  // board, which is what "figure" turns into when nothing frames it — it reads
+  // as splatter on the timber, or as dirt on the screen, rather than as burr.
+  ['burl', 'Burr Panel', 'A burr of figured timber, framed by a string.', ['inlay', 'rustic', 'grand'], 'inlay', 'offcut'],
 
-  ['linenfold', 'Linenfold', 'Tudor panelling: cloth folded over and over, in oak.', ['gothic', 'carved', 'bold']],
-  ['chipCarve', 'Chip Carving', 'Triangular chips taken out with a knife, row on row.', ['folk', 'rustic', 'carved']],
-  ['gouged', 'Gouge Cut', 'Scallops bitten out of both edges with a gouge.', ['folk', 'rustic', 'carved']],
-  ['dotPunch', 'Punched Ground', 'A sunk ground, matted all over with a ring punch.', ['folk', 'fine', 'carved']],
-  ['cane', 'Caned', 'Laths woven over and under, with the holes between.', ['cottage', 'fine', 'folk']],
-  ['adzed', 'Adzed', 'The scoops an adze leaves when a board is dressed by hand.', ['rustic', 'bold', 'folk']],
-  ['sawn', 'Saw-Kerf', 'The fine slanting marks of a pit saw, left unplaned.', ['rustic', 'fine', 'plain']],
-  ['wormy', 'Wormed Oak', 'Old timber: flight holes, and a track or two.', ['rustic', 'folk', 'fine']],
-  ['tiled', 'Fielded Panels', 'Raised panels inside mitred frames, the way a wall is lined.', ['plain', 'bold', 'cottage']],
-  ['notched', 'Notched', 'Vs chopped out of the edge until it is a saw.', ['rustic', 'folk', 'bold']],
+  ['linenfold', 'Linenfold', 'Tudor panelling: cloth folded over and over, in oak.', ['gothic', 'carved', 'bold'], 'worked', 'showpiece'],
+  ['chipCarve', 'Chip Carving', 'Triangular chips taken out with a knife, row on row.', ['folk', 'rustic', 'carved'], 'worked', 'catalogue'],
+  ['gouged', 'Gouge Cut', 'Scallops bitten out of both edges with a gouge.', ['folk', 'rustic', 'carved'], 'worked', 'catalogue'],
+  ['dotPunch', 'Punched Ground', 'A sunk ground, matted all over with a ring punch.', ['folk', 'fine', 'carved'], 'worked', 'catalogue'],
+  ['cane', 'Caned', 'Laths woven over and under, with the holes between.', ['cottage', 'fine', 'folk'], 'worked', 'catalogue'],
+  ['adzed', 'Adzed', 'The scoops an adze leaves when a board is dressed by hand.', ['rustic', 'bold', 'folk'], 'worked', 'catalogue'],
+  ['sawn', 'Saw-Kerf', 'The fine slanting marks of a pit saw, left unplaned.', ['rustic', 'fine', 'plain'], 'worked', 'catalogue'],
+  // OFFCUT: the same failure as the burr, and the same picture — specks at
+  // random over the face. Honest to its name and still, at shelf distance,
+  // indistinguishable from a dirty screen.
+  ['wormy', 'Wormed Oak', 'Old timber: flight holes, and a track or two.', ['rustic', 'folk', 'fine'], 'worked', 'offcut'],
+  ['tiled', 'Fielded Panels', 'Raised panels inside mitred frames, the way a wall is lined.', ['plain', 'bold', 'cottage'], 'worked', 'showpiece'],
+  ['notched', 'Notched', 'Vs chopped out of the edge until it is a saw.', ['rustic', 'folk', 'bold'], 'worked', 'showpiece'],
 ];
 
 export const PATTERNS: Readonly<Record<PatternId, PatternSpec>> = Object.fromEntries(
-  PATTERN_TABLE.map(([id, name, blurb, tags]) => [id, { id, name, blurb, tags }]),
+  PATTERN_TABLE.map(([id, name, blurb, tags, family, tier]) => [
+    id,
+    { id, name, blurb, tags, family, tier },
+  ]),
 ) as Record<PatternId, PatternSpec>;
+
+/**
+ * The treatments as the reader is offered them — family, then tier, then the
+ * order they were authored in. Derived for the same reason {@link BUILD_IDS}
+ * is; see the note there.
+ */
+export const PATTERN_IDS: readonly PatternId[] = [...AUTHORED_PATTERN_IDS].sort(
+  (a, b) =>
+    (PATTERN_FAMILY_RANK.get(PATTERNS[a].family) ?? 0) -
+      (PATTERN_FAMILY_RANK.get(PATTERNS[b].family) ?? 0) ||
+    (SHELF_TIER_RANK.get(PATTERNS[a].tier) ?? 0) - (SHELF_TIER_RANK.get(PATTERNS[b].tier) ?? 0) ||
+    (PATTERN_AUTHORED_AT.get(a) ?? 0) - (PATTERN_AUTHORED_AT.get(b) ?? 0),
+);
+
+/**
+ * May a roll of the dice land on this treatment?
+ *
+ * The same two exclusions as {@link isRollableBuild}, for the same two reasons.
+ * `none` is the fallback half of {@link FALLBACK_SHELF_DESIGN} and is out of
+ * the dice however good it is: a "surprise me" that lands on bare timber has
+ * taken the pattern off rather than chosen one. It leads its family in the
+ * picker, where choosing it is a decision rather than an accident.
+ */
+export function isRollablePattern(spec: PatternSpec): boolean {
+  return spec.tier !== 'offcut' && spec.id !== FALLBACK_SHELF_DESIGN.pattern;
+}
+
+/**
+ * The treatments the dice may return, in picker order.
+ *
+ * This — not {@link PATTERN_IDS} — is what "surprise me" rolls over.
+ * `DEFAULT_SHELF_DESIGN`'s `guilloche` is in here on purpose: the pattern a new
+ * library opens on is a pattern worth being handed.
+ */
+export const ROLLABLE_PATTERNS: readonly PatternSpec[] = PATTERN_IDS.map(
+  (id) => PATTERNS[id],
+).filter(isRollablePattern);
 
 /** All patterns in picker order. */
 export function allPatterns(): readonly PatternSpec[] {

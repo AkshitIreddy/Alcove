@@ -48,9 +48,9 @@ import { drawCaseCard } from '../../art/flatShelf';
 import { fnv1a } from '../../art/noise';
 import {
   BUILDS,
-  BUILD_IDS,
   PATTERNS,
-  PATTERN_IDS,
+  ROLLABLE_BUILDS,
+  ROLLABLE_PATTERNS,
   SHELF_PRESETS,
   getShelfPreset,
   type BuildId,
@@ -660,8 +660,15 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
   const surprise = (): void => {
     const wanted = mood();
     const rooms = withMood(THEME_IDS, wanted, (id) => THEMES[id]);
-    const builds = withMood(BUILD_IDS, wanted, (id) => BUILDS[id]);
-    const patterns = withMood(PATTERN_IDS, wanted, (id) => PATTERNS[id]);
+    // ROLLABLE_BUILDS / ROLLABLE_PATTERNS, not BUILD_IDS / PATTERN_IDS — the
+    // carpentry is tiered now for the same reason the papers are, decided by
+    // rendering every build and every pattern at 1:1 and looking
+    // (`scripts/probe-shelf-builds.mjs`). The gated pools also drop the
+    // FALLBACK case, so a roll can never land on the plain plank in bare
+    // timber: that is what a corrupt row resolves to, and a reader handed it by
+    // the dice could not tell a choice from a fault.
+    const builds = withMood(ROLLABLE_BUILDS, wanted, (spec) => spec);
+    const patterns = withMood(ROLLABLE_PATTERNS, wanted, (spec) => spec);
     // WALLPAPER_ROLL, not WALLPAPER_PRESETS. The papers carry a tier for
     // exactly this — decided by rendering all 126 at real pitch and looking —
     // and the whole point of the tiering was that the demoted ones stay
@@ -684,8 +691,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         wallHex: null,
       }).then((p) => props.onChanged?.(p)),
       saveRoomDesign({
-        build: pickOne(builds, design().build),
-        pattern: pickOne(patterns, design().pattern),
+        build: pickOne(builds, BUILDS[design().build]).id,
+        pattern: pickOne(patterns, PATTERNS[design().pattern]).id,
         wallpaper: paper.spec,
       }),
     ]).finally(() => setBusy(false));

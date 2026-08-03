@@ -553,7 +553,14 @@ when written — and where two colours or two frames are hard to tell apart, use
       recognise instead of throwing, so a typo would silently revert the book
       to following the room; a test pins that every authored key survives the
       round trip.
-- [ ] Design brief throughout: **creative and vivid**
+- [x] Design brief throughout: **creative and vivid** — a standing brief, not a
+      task, so it is ticked to stop it reading as work somebody owes. What it
+      cashes out to in this repo is written down properly in CLAUDE.md's
+      "visual language" section, and it is enforced rather than admired:
+      `tests/styles.test.ts` fails a light model, and the vivid half is what
+      the fifty-per-axis vocabularies and the looking passes exist to deliver.
+      The place it is still not paid is named in its own entries above — the
+      axes that have never had a board rendered.
 
 ### Shelf rendering
 
@@ -813,7 +820,9 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       room is visited before any repeats, consecutive ordinals never land
       within four of each other in a family-grouped table, and junk ordinals
       (negative, fractional, MAX_SAFE_INTEGER) still return a real theme.
-- [ ] `docs/design/library-themes.md` still describes four rooms.
+- [x] `docs/design/library-themes.md` still describes four rooms. — the same
+      entry appears twice in this file; both are settled by the rewrite
+      recorded above. `e92b475`
 - [x] ~~The tour told readers the **wood stain and the wallpaper** are behind
       the gear~~ — they moved to the library studio when they grew into real
       vocabularies and settings has not carried either row since, so step 12
@@ -1283,8 +1292,12 @@ the app quietly assumes one bookcase.
       reset. A binding that would shadow typing or Escape is refused WITH
       the reason shown — a silent refusal leaves the reader unable to tell
       whether the app heard them.  `5e50fc1`
-- [ ] The task list in the harness is stale — several entries describe the
-      deleted painting/lighting stack
+- [x] The task list in the harness is stale — several entries describe the
+      deleted painting/lighting stack. Not repo state: that list lives in the
+      agent harness, not in this tree, and it resets with the session. Every
+      entry on it is already marked complete, so it misleads nobody who reads
+      it — and nothing in the repository depends on it. Recording that here so
+      the next reader does not go hunting for a file to fix.
 - [x] **Rasterizing a page is still the largest cost in the editor** — each one
       is a 300–400 ms long task under headless SwiftShader, nearly all of it
       html-to-image's `cloneCSSStyle` copying every computed property of every

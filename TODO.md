@@ -187,17 +187,42 @@ agents reported honestly, plus the seams between them that I closed by hand.
       odd ones sit at the bottom, and **omit the odd ones from randomise** so
       the average reader is never handed one — while they stay pickable for
       anyone who wants them.
-      Done exactly that way — nothing deleted. Every entry declares a `group`
-      and a `tier` (signature / shelf / niche / oddity) and TypeScript refuses
-      one that does not; the exported order is DERIVED from them, so a good
-      binding cannot drift to the bottom of the list by accident. The dice walk
-      `ROLLABLE_PRESETS` only, so an oddity is never handed out — while all 189
-      stay fully pickable in the studio. `tests/book-bindings.test.ts` pins it
-      (31 checks, including that the rollable set is strictly smaller than the
-      whole and that the seed only ever lands inside it).
+      **BOOKS: done.** Nothing deleted. Every binding declares a `group` and a
+      `tier` (signature / shelf / niche / oddity) and TypeScript refuses one
+      that does not; the exported order is DERIVED from them, so a good binding
+      cannot drift down the list by accident. The dice walk `ROLLABLE_PRESETS`
+      only — all 189 stay pickable. `tests/book-bindings.test.ts`, 31 checks.
+      **WALLPAPERS: tiered, and the gate was unplugged.** `WALLPAPER_ROLL`
+      existed, was tested, and had no caller anywhere in `src/`, so the
+      studio's surprise still rolled all 126 including the demoted ones. Now
+      wired, with `tests/roll-gates.test.ts` checking the CALLER rather than
+      the pool — verified to fail against the old line. `c2aa7d8`
+      **CARPENTRY: not started.** This tick was premature and is corrected in
+      the item below — `src/art/shelfDesign.ts` has no tier axis at all, and
+      the studio rolls the full `BUILD_IDS` / `PATTERN_IDS`.
+- [ ] **The shelf carpentry has no tier axis.** The books and the papers both
+      rank their weak entries to the bottom and keep them out of the dice;
+      `src/art/shelfDesign.ts` has nothing of the kind — 52 builds, 50 timber
+      patterns and 113 presets in hand order, and `LibraryStudio`'s surprise
+      rolls all of them. Mirror `wallpaperDesign.ts`: a REQUIRED tier on
+      `BuildSpec` and `PatternSpec` so TypeScript refuses an untiered entry,
+      the exported order derived from family → tier → authored order, and a
+      `ROLLABLE_*` pool the studio rolls. Decide the tiers BY LOOKING — a probe
+      that renders every build at the pitch the shelf actually shows.
+      `FALLBACK_SHELF_DESIGN` (plank/none) must be excluded from the dice for
+      the same reason `plain-parchment` is.
+
 - [ ] **Go through every design and refine it by looking.** Not just the
       outliers — visual inspection and improvement across the whole vocabulary.
       Then the same for everything else in the app.
+      Split into bounded passes, because as written this can never be ticked.
+      Axes that HAVE had the pass and left a board: wallpapers, book
+      silhouettes, covers, lettering, underlines. Axes with no board yet:
+      - [ ] the 52 shelf builds and 50 timber patterns (no probe exists)
+      - [ ] the ~20 book silhouettes this file already admits cluster into
+            "plain rectangle with a slightly different top" at shelf scale
+      - [ ] `art/spines.ts` ornaments / title plates / edge treatments (50 each)
+      - [ ] the 472 block-effect values not yet measured for distinctness
 - [x] **The README, properly.** Long, and clever about what it pulls in: the
       code should carry the documentation and the README should draw from it
       rather than duplicate it. Check current best practice. Two halves:

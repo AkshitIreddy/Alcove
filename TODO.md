@@ -180,17 +180,25 @@ agents reported honestly, plus the seams between them that I closed by hand.
 
 ## 🔴 Reported 2026-08-03 (second pass)
 
-- [ ] **Some book shapes are bizarre** — "some of them are literally pencil
+- [x] **Some book shapes are bizarre** — "some of them are literally pencil
       shape or other just bizarre shapes". Same for any shelf or paper that
       looks weird, bad or cheap. **Do not be cruel and do not delete**: rank
       them so the good ones and good categories come FIRST in their list and the
       odd ones sit at the bottom, and **omit the odd ones from randomise** so
       the average reader is never handed one — while they stay pickable for
       anyone who wants them.
+      Done exactly that way — nothing deleted. Every entry declares a `group`
+      and a `tier` (signature / shelf / niche / oddity) and TypeScript refuses
+      one that does not; the exported order is DERIVED from them, so a good
+      binding cannot drift to the bottom of the list by accident. The dice walk
+      `ROLLABLE_PRESETS` only, so an oddity is never handed out — while all 189
+      stay fully pickable in the studio. `tests/book-bindings.test.ts` pins it
+      (31 checks, including that the rollable set is strictly smaller than the
+      whole and that the seed only ever lands inside it).
 - [ ] **Go through every design and refine it by looking.** Not just the
       outliers — visual inspection and improvement across the whole vocabulary.
       Then the same for everything else in the app.
-- [ ] **The README, properly.** Long, and clever about what it pulls in: the
+- [x] **The README, properly.** Long, and clever about what it pulls in: the
       code should carry the documentation and the README should draw from it
       rather than duplicate it. Check current best practice. Two halves:
       - **For readers** — what it is, how to use it, releases/version badges,
@@ -198,6 +206,17 @@ agents reported honestly, plus the seams between them that I closed by hand.
       - **For developers** — the stack, how it works, what it uses and WHY,
         how to add a feature, the architecture docs, the conventions, the
         gates. Add whatever further sections earn their place.
+      Both halves shipped: `docs/readme/part-1-users.md` and
+      `part-2-developers.md`, with 13 screenshots captured from the running app
+      under `docs/readme/img/`.
+      The "draw from the code rather than duplicate it" part is the bit worth
+      keeping honest, and it is enforced: every counted claim is wrapped in a
+      `<!--f:name-->N<!--/f-->` marker and `tests/readme.test.ts` recomputes all
+      nineteen from the tree — source files, docstring lines, unit tests, e2e
+      specs, probes, design docs, Rust commands, and each vocabulary's size.
+      It has already caught this session's prose drifting twice, which is the
+      whole point: a README that quotes numbers is a README that goes stale
+      silently.
 
 ## 🔴 Reported 2026-08-03 — WORK THIS LIST
 

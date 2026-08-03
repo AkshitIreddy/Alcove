@@ -253,8 +253,22 @@ agents reported honestly, plus the seams between them that I closed by hand.
       sign-off says it in real numbers — 113 bookcases, 126 papers, 189
       bindings — read out of the vocabularies rather than typed, so the claim
       cannot go stale. `5d1fea2`
-- [ ] Throughout: fast and smooth, without giving up fidelity. Be clever rather
-      than cheap.
+- [x] Throughout: fast and smooth, without giving up fidelity. Be clever rather
+      than cheap. A standing brief rather than a task, so here is the ledger of
+      what was actually bought this pass, each measured rather than asserted:
+      one room-preset click now costs ONE case+wall bake instead of two
+      (`shots-now/preset-bakes.mjs` reads a real counter: +2 → +1); every long
+      option list is capped at ~20 with "N more", which is a render-cost fix as
+      much as a layout one; the disk cache stayed OUT after measuring the
+      transient it would have shortened (846ms, on the slowest renderer this
+      app runs on); and max zoom stayed at 0.80 texels/devpx after correcting
+      the cost of closing it from a wrong 6.25× to a true 1.56× — a change that
+      would be paid on every launch by every reader for the top sliver of the
+      zoom range.
+      The one place cleverness actually won something back: a spine whose room
+      changed mid-bake used to be thrown away and re-painted from scratch on
+      the next request. It is re-queued now, which is both faster and the fix
+      for a book that never got painted at all.
 
 ## ⏭️ NEXT UP (2026-08-01, end of session)
 
@@ -298,7 +312,12 @@ Also open, from the same pass:
       two `ColourRow`s now expand in place. Still unmeasured: whether a grid of
       fifty CANVAS cards re-bakes on every open. `designOptions.ts` holds the
       card cache key — measure before assuming.
-- [ ] Right-clicking a shelf inside the library tab should offer book options.
+- [x] ~~Right-clicking a shelf inside the library tab should offer book
+      options~~ — `BookcaseMenu` in `features/bookshelf/ShelfMenu.tsx`, which
+      is now three customers of ONE card: the spine's menu, the bare-plank
+      menu and this. Right-click a case card in the studio's library tab for
+      stand-in / rename / clone / add a floor / delete, with the confirm
+      naming the books that go with it.
 - [ ] `docs/design/library-themes.md` still describes four rooms.
 
 ## ✅ Fifty of everything (2026-08-01)
@@ -326,17 +345,37 @@ shelf presets (113), colour schemes (60).
 
 ### Still short of fifty
 
-- [ ] `blockEffects.BLOCK_EFFECT_TYPES` reached **27**, not 50 — the page-side
-      agent was stopped mid-run
+- [x] `blockEffects.BLOCK_EFFECT_TYPES` reached **27**, not 50 — the page-side
+      agent was stopped mid-run.
+      **This was filed wrong and should not be acted on.** It is not a
+      vocabulary: it is the list of NODE TYPES the effect attributes are
+      installed on (paragraph, heading, table, callout, diagram). Fifty would
+      mean inventing twenty-nine block types nobody asked for. The fifty live
+      on the other axis — the effect VALUES, 472 across eleven axes, guarded by
+      `tests/catalogue-reach.test.ts`.
+      The property that DOES matter is coverage, and it is now gated:
+      `tests/block-effect-coverage.test.ts` fails if any block-level node under
+      `src/editor/nodes` is missing from the list, since a forgotten one takes
+      no tape, no paper, no frame and no hand while the catalogue's chips
+      silently do nothing on it — the same shape as the three inert axes found
+      this session. It passes: the only exclusions are `sticker` (inline, no
+      box to dress) and `col` (may only live inside `columns`, which is itself
+      dressable), and the test refuses an exclusion for a node that no longer
+      exists.
 - [ ] The COVER's own vocabularies were never expanded: `COVER_TEXTURES` 3,
       `COVER_FONTS` 3, `COVER_FRAME_COUNT` 4, `COVER_MEDALLION_COUNT` 8. The
       spine got fifty of everything and the board a reader actually holds did
       not
-- [ ] Deliberately NOT fifty, and worth defending rather than growing:
+- [x] Deliberately NOT fifty, and worth defending rather than growing:
       `SPINE_FORMATS` (5 — these are bibliographic sizes, folio to pocket, not
       a catalogue), `WALLPAPER_SCALES` (5), `WALLPAPER_EDGES` (4),
       `WALLPAPER_DEPTHS` (4), charms. These are modifier axes; fifty steps of
-      "scale" is a slider, not fifty designs
+      "scale" is a slider, not fifty designs.
+      **Decision recorded, not a task.** Ticked so it stops reading as work
+      somebody still owes. If a later pass is tempted to grow one of these to
+      fifty, this is the entry arguing against it: a reader picks a scale by
+      feel between a few named steps, and fifty of them is a worse control than
+      five, not a richer one.
 
 ### What the shapes board shows, honestly
 
@@ -488,8 +527,17 @@ when written — and where two colours or two frames are hard to tell apart, use
       not switch to the copy: landing in an identical-looking case with every
       book gone reads as a catastrophe. Seen in the running app — "My Library"
       → rename / clone / delete, and the copy comes up "0 books · 10 floors".
-- [ ] Book options on right-clicking a shelf inside the library tab — the other
-      half of that line, not started
+- [x] ~~Book options on right-clicking a shelf inside the library tab — the
+      other half of that line~~ — `BookcaseMenu`, and it is the SAME card the
+      shelf answers a right-click with rather than a second one: `MenuCard`
+      (paper, viewport clamp, Escape, click-away) and `MenuList` (rows and the
+      arrow/Enter ring) came out of `ShelfMenu.tsx` and all three menus are
+      customers. It portals out to `<body>` because the sheet it opens from is
+      slid on `xPercent` and a `fixed` box inside a transform is laid out
+      against the transform. It also closes a gap the chips could not: "add a
+      floor to it" grows the case you AIMED at, where the sheet's own button
+      grows the one you are standing in. Driven in the running app — the first
+      card went 10 → 11 floors while the second stayed at 10.
 - [x] ~~Rooms may be redundant now that they only change colour~~ — **keep
       them.** They stopped being only colour: a room is a colour scheme *and*
       the default carpentry and paper a new bookcase is dressed in, and there

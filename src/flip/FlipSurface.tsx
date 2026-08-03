@@ -275,6 +275,56 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
     onCleanup(() => observers.forEach((observer) => observer.disconnect()));
   });
 
+  /**
+   * A settings change repaints every page and touches no page.
+   *
+   * `applySettings` writes `data-theme` / `data-ink` on `<html>`, the body font
+   * stack and size as inline custom properties on the same element, and the
+   * minimalist / no-doodles classes beside them. All of it re-renders the
+   * leaves — a theme swaps every colour on the page, a font size re-wraps every
+   * line — and NONE of it is a mutation inside `.nb-sheet-paper`, so the
+   * per-leaf observers above never fire and the cached snapshots stay in the
+   * old look. The reader then turns a page and watches it change colour and
+   * change back, which is the report this exists for (see flip/paperTone.ts).
+   *
+   * Marking them edited runs the normal path: debounce, then re-rasterize at
+   * idle. `paperToneTag()` in the cache's freshness check is the backstop for
+   * the window before that lands.
+   *
+   * WHY A SIGNATURE RATHER THAN "the style attribute changed": `<html>`'s
+   * inline style is also where `rail/panelPush.ts` publishes `--nb-panel-push`
+   * on every GSAP tick of a panel slide. Watching the attribute alone would
+   * hand this callback a hundred notifications per slide and re-rasterize both
+   * leaves for a panel that changed nothing about the page. Only the six values
+   * that can actually change a captured pixel are compared, and all of them are
+   * read off the element itself — never through getComputedStyle, which would
+   * force a style recalculation inside a mutation callback mid-tween.
+   */
+  onMount(() => {
+    const root = document.documentElement;
+    const lookSignature = (): string =>
+      [
+        root.getAttribute('data-theme') ?? '',
+        root.getAttribute('data-ink') ?? '',
+        root.className,
+        root.style.getPropertyValue('--font-body'),
+        root.style.getPropertyValue('--text-body'),
+      ].join('|');
+
+    let signature = lookSignature();
+    const observer = new MutationObserver(() => {
+      const next = lookSignature();
+      if (next === signature) return;
+      signature = next;
+      api.invalidateSnapshots();
+    });
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'data-ink', 'style', 'class'],
+    });
+    onCleanup(() => observer.disconnect());
+  });
+
   onCleanup(() => {
     window.removeEventListener('keydown', onKeyDown);
     controller?.destroy();

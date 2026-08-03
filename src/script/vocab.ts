@@ -207,6 +207,11 @@ export const KNOWN_ATTR_KEYS = [
   "gap",
   "cols",
   "style",
+  // `title` was read by nine containers and known to none of them: the parser
+  // warned "unknown attribute 'title'" on the one attr an index card, a
+  // ticket stub or a wax seal cannot do without, and the spec never taught it.
+  // A key the renderer USES has to be a key the language admits to.
+  "title",
   "query",
   "count",
   "caption",
@@ -312,6 +317,11 @@ export const CONTAINER_NAMES = [
   // arrive on top of writing.
   "wax-seal",
   "map-pin",
+  // A fold in the page. Not a `spoiler` with a different border: a spoiler
+  // hides an ANSWER (one thing, revealed once), a toggle organises a
+  // DOCUMENT — it nests, it holds whole sections, and it remembers whether it
+  // was open. They map to different editor nodes for that reason.
+  "toggle",
 ] as const;
 
 /**
@@ -349,6 +359,7 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   photocorner: { name: "photo-corner" },
   waxseal: { name: "wax-seal" },
   mappin: { name: "map-pin" },
+  toggle: { name: "toggle" },
   // friendly aliases
   note: { name: "sticky-note" },
   sticky: { name: "sticky-note" },
@@ -403,6 +414,16 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   place: { name: "map-pin" },
   location: { name: "map-pin" },
   waypoint: { name: "map-pin" },
+  // `details` is deliberately NOT here: it has meant `spoiler` since before
+  // the toggle existed, and quietly re-pointing a spelling somebody already
+  // wrote would change their page under them. These are the spellings that
+  // were never claimed.
+  fold: { name: "toggle" },
+  foldout: { name: "toggle" },
+  collapse: { name: "toggle" },
+  collapsible: { name: "toggle" },
+  accordion: { name: "toggle" },
+  disclosure: { name: "toggle" },
   // callout variants as their own directive names
   info: { name: "callout", attrs: { variant: "info" } },
   tip: { name: "callout", attrs: { variant: "tip" } },
@@ -591,6 +612,13 @@ export const ATTR_DOCS: Record<KnownAttrKey, AttrDoc> = {
     values: "number",
     where: "on images",
   },
+  title: {
+    group: "layout",
+    does: "the label written on the thing",
+    values: "free text",
+    where:
+      "on `card`, `index-card`, `toggle`, `pressed-flower`, `ticket-stub`, `postcard`, `ledger`, `photo-corner`, `wax-seal`, `map-pin`",
+  },
   shape: {
     group: "layout",
     does: "node outline",
@@ -701,6 +729,10 @@ export const CONTAINER_DOCS: Record<ContainerDirectiveName, ContainerDoc> = {
   "map-pin": {
     renders: "a pin dropped in the margin with the walk in behind it",
     note: "places, travel notes; `title` is the place name",
+  },
+  toggle: {
+    renders: "a fold in the page — click the title to open it",
+    note: "`title` is the summary line; toggles may hold anything, including other toggles",
   },
 };
 

@@ -1,0 +1,635 @@
+/* ============================================================================
+   packs.css — bringing your own work into the app.
+
+   Three surfaces:
+     1. the popup (.nb-pack-*)   — upload, instructions, and the AI prompt
+     2. the studio tab (.nb-packs-*) — what you have brought in, and the way out
+     3. the strip (.nb-yours-*)  — your papers and cases, where they get chosen
+
+   House rules, both gated by tests/styles.test.ts and worth restating because
+   this file is mostly new chrome: depth is a DARKER FLAT FACE beside a lighter
+   one plus a hard offset plate, never a blurred shadow; and no handwriting
+   face below 13px — small copy is Nunito Sans via .font-ui or --font-ui.
+
+   Exits are top-left (tests/top-left-exits.test.ts). The popup borrows
+   .nb-ins-close from insert.css, which is already anchored there, so nothing
+   in this file re-positions a way out.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   1. The popup
+   -------------------------------------------------------------------------- */
+
+/*
+ * Wider than the script-insert card it is built on. This one carries two
+ * columns of reading — how to do it on the left, the generated prompt on the
+ * right — and at the base 980px the prompt wrapped every enum list onto three
+ * lines, which made a list of fifty motifs look like a page of prose.
+ */
+.nb-pack-card {
+  width: min(1140px, 100%);
+  max-height: min(90vh, 860px);
+}
+
+.nb-pack-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: var(--space-4) 0 var(--space-12);
+}
+
+.nb-pack-tab {
+  padding: 5px var(--space-16) 6px;
+  font-family: var(--font-ui);
+  font-size: var(--text-chip);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: color-mix(in srgb, var(--paper-cream) 70%, transparent);
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-pack-tab:hover:not(:disabled) {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+}
+
+.nb-pack-tab.is-active {
+  color: var(--ink-sepia);
+  font-weight: 700;
+  background: var(--wash-amber);
+  border-style: solid;
+  border-color: var(--ink-line);
+  box-shadow: var(--shadow-xs);
+}
+
+.nb-pack-tab:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.nb-pack-body {
+  gap: var(--space-24);
+}
+
+.nb-pack-left,
+.nb-pack-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-height: 0;
+  /* The dialog scrolls its own columns. This is chrome, not a page — the
+     no-scrollbars rule is about book pages, whose overflow flows onward. */
+  overflow-y: auto;
+  padding-right: var(--space-4);
+}
+
+.nb-pack-left {
+  flex: 1 1 46%;
+}
+
+.nb-pack-right {
+  flex: 1 1 54%;
+}
+
+/* ---- a numbered step ---- */
+
+.nb-pack-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.nb-pack-step-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-family: var(--font-accent);
+  font-size: 17px;
+  line-height: 1.2;
+  color: var(--ink-sepia);
+}
+
+/* The step number as a drawn counter, not a bullet: paper face, ink rim, and
+   the same wobbled radius every pressable thing here carries. */
+.nb-pack-step-number {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: var(--text-chip);
+  font-weight: 700;
+  color: var(--ink-sepia);
+  background: var(--wash-amber);
+  border: 1.5px solid var(--ink-line);
+  border-radius: 11px 9px 12px 10px / 10px 12px 9px 11px;
+}
+
+.nb-pack-sub {
+  margin-top: var(--space-4);
+  font-family: var(--font-ui);
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+}
+
+/* ---- 1. bring it in ---- */
+
+.nb-pack-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.nb-pack-or {
+  margin-top: var(--space-4);
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-paste {
+  width: 100%;
+  min-height: 92px;
+  padding: var(--space-8) var(--space-12);
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--ink-graphite);
+  background: var(--paper-cream);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+  resize: vertical;
+}
+
+.nb-pack-paste:focus-visible {
+  outline: none;
+  border-style: solid;
+  border-color: var(--ink-line);
+}
+
+.nb-pack-paste-go {
+  align-self: flex-start;
+}
+
+/* ---- the outcome ---- */
+
+/*
+ * A refusal is a PANEL, not a toast. It has to survive being read twice and
+ * compared against the file the reader has open in another window, so it sits
+ * in the card until they act on it.
+ */
+.nb-pack-refusal,
+.nb-pack-done {
+  padding: var(--space-12) var(--space-16);
+  border: 2px dashed var(--ink-line-soft);
+  border-radius: var(--radius-hand);
+  background: var(--paper-cream);
+}
+
+.nb-pack-refusal {
+  border-color: var(--ink-accent);
+}
+
+.nb-pack-refusal-title,
+.nb-pack-done-title {
+  font-family: var(--font-accent);
+  font-size: 17px;
+  color: var(--ink-sepia);
+}
+
+.nb-pack-refusal-file {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  font-style: normal;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-refusal-lead {
+  margin: 2px 0 var(--space-8);
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-problems,
+.nb-pack-done-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-chip);
+  line-height: 1.45;
+  color: var(--ink-graphite);
+  list-style: none;
+}
+
+.nb-pack-problems > li {
+  padding-left: var(--space-12);
+  border-left: 2px solid var(--paper-edge);
+}
+
+.nb-pack-where {
+  font-family: Consolas, monospace;
+  font-size: var(--text-ui);
+  color: var(--ink-accent);
+}
+
+.nb-pack-more-problems {
+  margin-top: var(--space-8);
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-note {
+  color: var(--ink-graphite-soft);
+}
+
+/* ---- 2. how it works ---- */
+
+.nb-pack-howto {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: var(--space-20);
+  font-size: var(--text-chip);
+  line-height: 1.5;
+  color: var(--ink-graphite);
+}
+
+.nb-pack-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px var(--space-12);
+  margin: 0;
+  font-size: var(--text-chip);
+  line-height: 1.45;
+  color: var(--ink-graphite);
+}
+
+.nb-pack-fields dt {
+  font-weight: 700;
+  color: var(--ink-sepia);
+  white-space: nowrap;
+}
+
+.nb-pack-fields dt code {
+  font-family: Consolas, monospace;
+  font-size: var(--text-ui);
+}
+
+.nb-pack-fields dd {
+  margin: 0;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-optional {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  font-weight: 400;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-caveat {
+  margin-top: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--ink-sepia-soft);
+  background: var(--wash-amber-light);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+}
+
+/* ---- 3. the prompt ---- */
+
+/*
+ * `flex: none`, and it matters.
+ *
+ * This was `flex: 1 1 auto` — which in a scrolling column means the step is
+ * allowed to SHRINK below its content, and the <pre> inside it (capped at
+ * 340px, and not itself a flex item that could be squeezed) spilled straight
+ * over the "what you cannot bring in yet" panel below. The prompt was legible
+ * through a translucent card, which reads as a rendering fault rather than as
+ * a layout one. The column scrolls; nothing in it needs to shrink.
+ */
+.nb-pack-prompt-step {
+  flex: none;
+}
+
+.nb-pack-prompt-lead {
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-pack-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/*
+ * The generated prompt, shown whole.
+ *
+ * It is long — a wallpaper prompt lists every one of the fifty motifs — and
+ * showing it whole is the point: the reader is being asked to hand this to a
+ * model on trust, and a collapsed box saying "1,900 words" earns none.
+ */
+.nb-pack-prompt {
+  max-height: 340px;
+  margin: 0;
+  padding: var(--space-12);
+  overflow: auto;
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: var(--text-ui-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-graphite);
+  background: var(--paper-deep);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+}
+
+.nb-pack-prompt:focus-visible {
+  outline: none;
+  border-color: var(--ink-line);
+}
+
+/* ---- the honest list ---- */
+
+.nb-pack-notyet {
+  flex: none;
+  padding: var(--space-12) var(--space-16);
+  background: color-mix(in srgb, var(--paper-deep) 55%, transparent);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+}
+
+.nb-pack-notyet-title {
+  color: var(--ink-sepia-soft);
+}
+
+/* Stacked, not two columns: these titles are phrases rather than field names,
+   so a `auto 1fr` grid gave the left column a third of the card and left the
+   reasons in a gutter. */
+.nb-pack-notyet .nb-pack-fields {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+.nb-pack-notyet .nb-pack-fields dd + dt {
+  margin-top: var(--space-8);
+}
+
+.nb-pack-notyet-name {
+  font-weight: 700;
+  color: var(--ink-sepia);
+  white-space: normal;
+}
+
+.nb-pack-instead {
+  color: var(--ink-sepia-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   2. The studio tab
+   -------------------------------------------------------------------------- */
+
+.nb-packs {
+  display: flex;
+  flex-direction: column;
+}
+
+.nb-packs-lead {
+  margin-bottom: var(--space-12);
+}
+
+.nb-packs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+}
+
+.nb-packs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-12);
+  text-align: left;
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-line-soft);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out),
+    box-shadow var(--dur-xs) var(--ease-out);
+}
+
+.nb-packs-card:hover,
+.nb-packs-card:focus-visible {
+  background: var(--wash-amber-light);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.nb-packs-card-title {
+  font-family: var(--font-accent);
+  font-size: 16px;
+  color: var(--ink-sepia);
+}
+
+.nb-packs-card-blurb {
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-packs-card-count {
+  margin-top: var(--space-4);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  text-transform: lowercase;
+  color: var(--ink-accent);
+}
+
+.nb-packs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nb-packs-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  background: var(--paper-cream);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+}
+
+.nb-packs-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.nb-packs-row-name {
+  font-family: var(--font-accent);
+  font-size: 16px;
+  color: var(--ink-sepia);
+}
+
+.nb-packs-row-meta {
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-packs-row-dropped {
+  margin-top: 2px;
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  color: var(--ink-accent);
+}
+
+.nb-packs-forget {
+  flex: none;
+  padding: 3px var(--space-12) 4px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out);
+}
+
+.nb-packs-forget:hover,
+.nb-packs-forget:focus-visible {
+  color: var(--ink-accent);
+  background: var(--paper-deep);
+}
+
+/* Armed: solid rim and the accent ink, so "sure?" reads as a different state
+   rather than as the same button with new text. */
+.nb-packs-forget.is-arming {
+  color: var(--ink-accent);
+  font-weight: 700;
+  background: var(--wash-blush-light);
+  border-style: solid;
+  border-color: var(--ink-accent);
+}
+
+.nb-packs-notyet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 var(--space-8);
+  padding: 0;
+  font-size: var(--text-chip);
+  line-height: 1.45;
+  color: var(--ink-graphite-soft);
+  list-style: none;
+}
+
+.nb-packs-notyet-name {
+  font-weight: 700;
+  color: var(--ink-sepia-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   3. "yours", in the studio's own rows
+   -------------------------------------------------------------------------- */
+
+.nb-yours {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+
+.nb-yours-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.nb-yours-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  font-weight: 700;
+  letter-spacing: var(--tracking-ui);
+  text-transform: lowercase;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-yours-add {
+  padding: 2px var(--space-8) 3px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-accent);
+  background: transparent;
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-yours-add:hover,
+.nb-yours-add:focus-visible {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line-soft);
+}
+
+.nb-yours-empty {
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  color: var(--ink-graphite-soft);
+}
+
+/*
+ * Narrow windows: the two columns stack, and the SCROLL MOVES UP a level.
+ *
+ * Both halves at once, or neither works. Stacking without handing the scroll
+ * to the body leaves two `overflow-y: visible` columns inside a card with a
+ * `max-height`, and the second one simply runs off the bottom edge and paints
+ * over the shelf — which is what it did.
+ */
+@media (max-width: 900px) {
+  .nb-pack-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .nb-pack-left,
+  .nb-pack-right {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .nb-packs-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

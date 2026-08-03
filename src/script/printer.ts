@@ -71,9 +71,24 @@ function attrSuffix(attrs: Attrs): string {
 // Inline
 // ---------------------------------------------------------------------------
 
-/** Escape everything the inline parser treats as markup. */
+/**
+ * Escape everything the inline parser treats as markup.
+ *
+ * `$` is in the set because maths is: without it a sentence about money
+ * ("$5 … $10") would come back from a round trip as a formula the moment the
+ * spacing happened to allow it.
+ */
 function escapeText(s: string): string {
-  return s.replace(/[\\`*_~^=[\]{}|]/g, (m) => "\\" + m);
+  return s.replace(/[\\`*_~^=$[\]{}|]/g, (m) => "\\" + m);
+}
+
+/**
+ * A footnote's note and a page reference's label are plain text inside
+ * brackets, and the scanner that reads them back honours backslash escapes —
+ * so exactly the closer and the backslash need escaping, and nothing else.
+ */
+function escapeBracketed(s: string): string {
+  return s.replace(/[\\\]]/g, (m) => "\\" + m);
 }
 
 function printCode(text: string): string {
@@ -113,6 +128,17 @@ export function printInlines(nodes: Inline[]): string {
         break;
       case "sub":
         out += `~${printInlines(n.children)}~` + attrs;
+        break;
+      case "math":
+        out += `$${n.text}$` + attrs;
+        break;
+      case "footnote":
+        // The canonical form is the note inside the marker; a `[^1]: …`
+        // definition read on the way in has already been folded into it.
+        out += `[^ ${escapeBracketed(n.text)} ]` + attrs;
+        break;
+      case "pageref":
+        out += `[[${escapeBracketed(n.label)}]]` + attrs;
         break;
     }
   }
@@ -224,6 +250,10 @@ function printBlock(block: Block, inImageRow: boolean): string {
     }
     case "image":
       return `![${block.alt}](${block.src})` + printAttrs(block.attrs);
+    case "mathBlock":
+      // Always the fenced form, even for a one-liner: the body is verbatim,
+      // and `$$ … $$` on one line cannot hold a formula containing `$$`.
+      return ["$$" + attrSuffix(block.attrs), block.latex, "$$"].join("\n");
     case "fetchDirective": {
       if (inImageRow) {
         const tail =

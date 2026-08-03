@@ -88,7 +88,28 @@
    strip is `--tp2-*` read by `::after`, switched on by `--tp2: ''`.
    ========================================================================== */
 
+/*
+ * Tape needs somewhere to be stuck. (Reader: "look at how weird this effect
+ * is" — a strip lying across somebody else's sentence.)
+ *
+ * Every strip in this axis hangs at `--tp-top: -11px`, straddling the block's
+ * top edge, which is what tape does to a photograph. A prose block has no air
+ * up there: paragraphs carry `margin: 0` because they ride the rule grid. So
+ * the strip landed on the LINE ABOVE and struck through words that belong to
+ * another paragraph — every one of the fourteen stocks did it, and `gaffer`
+ * did it with an opaque black bar.
+ *
+ * ONE WHOLE RULE of air, never a few pixels: the page is ruled, and a block
+ * offset by anything other than a full band knocks every line after it off the
+ * printed rules. This is the fix the washi axis already carries; tape never
+ * got it. The rule is only spent where a mark is actually overhead, and only
+ * given below where one hangs underfoot — the two reset lists below say which,
+ * and `isolation` lets a decoration that belongs UNDER the words say so with
+ * `--tp-z`.
+ */
 :is(.nb-prose, .nb-fx-specimen) [data-tape] {
+  margin-top: var(--page-line-height, 32px);
+  isolation: isolate; /* keeps a --tp-z:-1 strip behind THIS block's text only */
   /* The stocks, declared once and pointed at by --tp-bg below. Each is a
      different adhesive: how translucent it is, and what colour it goes on
      cream paper. */
@@ -182,7 +203,7 @@
   transform: rotate(var(--tp-rot, -2.5deg));
   box-shadow: var(--shadow-xs);
   pointer-events: none;
-  z-index: 2;
+  z-index: var(--tp-z, 2);
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-tape]::after {
@@ -203,7 +224,42 @@
   transform: rotate(var(--tp2-rot, 2.5deg));
   box-shadow: var(--shadow-xs);
   pointer-events: none;
-  z-index: 2;
+  z-index: var(--tp-z, 2);
+}
+
+/*
+ * Which marks are NOT overhead, and give the rule back.
+ *
+ * Side strips, feet, seams and the fasteners that bite the block's own left
+ * edge all live inside or beside the block; a rule of air above them would be
+ * a gap nobody asked for.
+ */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='left'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='right'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='bottom'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='cross'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='seam'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='ladder'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='splice'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='ribbon'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='pouch'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='dogear'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='hinge'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='eyelet'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='grommet'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='tack'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='staple'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='bookcloth'] {
+  margin-top: 0;
+}
+
+/* …and which hang BELOW, and need the same rule under them. */
+:is(.nb-prose, .nb-fx-specimen) [data-tape='bottom'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='pouch'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='quad'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='mounts'],
+:is(.nb-prose, .nb-fx-specimen) [data-tape='studded'] {
+  margin-bottom: var(--page-line-height, 32px);
 }
 
 /* --- 1a. the nine placements --------------------------------------------- */
@@ -229,6 +285,10 @@
   --tp2-rot: 42deg;
 }
 
+/* Hinged at the side. Clear of the measure, not half over the first letter:
+   at -12px a 22px strip put 10px of adhesive across the "P" of the first word
+   (and the last glyph on the right). The page keeps 40px of side padding, so a
+   strip sitting fully outside the text still sits on paper. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='left'],
 :is(.nb-prose, .nb-fx-specimen) [data-tape='right'] {
   --tp-w: 22px;
@@ -240,13 +300,13 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-tape='left'] {
-  --tp-left: -12px;
+  --tp-left: -26px;
   --tp-rot: 2deg;
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-tape='right'] {
   --tp-left: auto;
-  --tp-right: -12px;
+  --tp-right: -26px;
   --tp-rot: -2deg;
 }
 
@@ -307,7 +367,10 @@
     linear-gradient(-135deg, var(--tp-corner) 0 22px, transparent 22px) bottom right / 26px 26px no-repeat;
 }
 
-/* A wide band running behind the block's head — the label on a box file. */
+/* A wide band running BEHIND the block's head — the label on a box file.
+   It said "behind" and drew in front, so the first line of every banded block
+   was read through 30px of amber adhesive. `--tp-z: -1` is what the word
+   meant; `isolation` on the block keeps it out of the page beneath. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='band'] {
   --tp-w: calc(100% + 24px);
   --tp-h: 30px;
@@ -315,6 +378,7 @@
   --tp-left: -12px;
   --tp-ml: 0;
   --tp-rot: -0.6deg;
+  --tp-z: -1;
   --tp-clip: polygon(0.5% 8%, 99.5% 0%, 100% 92%, 0% 100%);
 }
 
@@ -356,11 +420,13 @@
   box-shadow: 38px -11px 0 -3px color-mix(in srgb, var(--wash-amber) 26%, transparent);
 }
 
+/* Rungs down both sides. Exactly the block's height — the 4px it used to poke
+   out at each end was 4px into a neighbour's ascenders. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='ladder'] {
   --tp-w: 20px;
-  --tp-h: calc(100% + 8px);
-  --tp-top: -4px;
-  --tp-left: -10px;
+  --tp-h: 100%;
+  --tp-top: 0;
+  --tp-left: -24px;
   --tp-ml: 0;
   --tp-rot: 0deg;
   --tp-clip: none;
@@ -371,28 +437,34 @@
   );
   --tp2: '';
   --tp2-w: 20px;
-  --tp2-h: calc(100% + 8px);
-  --tp2-top: -4px;
-  --tp2-right: -10px;
+  --tp2-h: 100%;
+  --tp2-top: 0;
+  --tp2-right: -24px;
   --tp2-rot: 0deg;
   --tp2-clip: none;
 }
 
+/* A seam joining two halves: the block's own height, nothing spilling. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='seam'] {
   --tp-w: 24px;
-  --tp-h: calc(100% + 16px);
-  --tp-top: -8px;
+  --tp-h: 100%;
+  --tp-top: 0;
   --tp-ml: -12px;
   --tp-rot: 0.6deg;
   --tp-clip: polygon(14% 0%, 86% 1%, 100% 99%, 0% 100%);
 }
 
+/* Spliced across — tape on the BACK, joining two pieces of a strip, which is
+   what a splice is. It was 150% wide at 8°: a bar running clean off both sides
+   of the page and through the paragraphs above and below. Now it reaches a
+   little past the block, leans gently, and sits under the words. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='splice'] {
-  --tp-w: 150%;
+  --tp-w: calc(100% + 44px);
   --tp-h: 18px;
   --tp-top: 46%;
-  --tp-ml: -75%;
-  --tp-rot: -8deg;
+  --tp-ml: calc(-50% - 22px);
+  --tp-rot: -3.5deg;
+  --tp-z: -1;
   --tp-clip: polygon(0% 0%, 100% 6%, 100% 100%, 0% 92%);
 }
 
@@ -532,9 +604,11 @@
       color-mix(in srgb, var(--wash-terracotta-deep) 92%, transparent) 100%
     );
   --tp-w: 26px;
-  --tp-h: calc(100% + 12px);
-  --tp-top: -6px;
-  --tp-left: -13px;
+  --tp-h: 100%;
+  --tp-top: 0;
+  /* Fully outside the measure: at -13px half the cloth lay over the first
+     letter of every line it passed. */
+  --tp-left: -32px;
   --tp-ml: 0;
   --tp-rot: 0deg;
   --tp-clip: none;
@@ -564,11 +638,14 @@
 
 /* --- 1d. fifteen fasteners ----------------------------------------------- */
 
+/* A staple through the corner — in the MARGIN, not through the first word.
+   Every one of the small fasteners below sat at a positive `--tp-left`, which
+   on a paragraph means "on top of the letter P". */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='staple'] {
   --tp-w: 26px;
   --tp-h: 7px;
   --tp-top: 8px;
-  --tp-left: 10px;
+  --tp-left: -30px;
   --tp-ml: 0;
   --tp-rot: -32deg;
   --tp-clip: none;
@@ -630,7 +707,7 @@
   --tp-w: 11px;
   --tp-h: 11px;
   --tp-top: 9px;
-  --tp-left: 12px;
+  --tp-left: -24px;
   --tp-ml: 0;
   --tp-rot: 0deg;
   --tp-clip: none;
@@ -643,7 +720,7 @@
   --tp-w: 13px;
   --tp-h: 13px;
   --tp-top: 12px;
-  --tp-left: -7px;
+  --tp-left: -26px;
   --tp-ml: 0;
   --tp-rot: 0deg;
   --tp-clip: none;
@@ -654,7 +731,7 @@
   --tp2-w: 13px;
   --tp2-h: 13px;
   --tp2-bottom: 12px;
-  --tp2-left: -7px;
+  --tp2-left: -26px;
   --tp2-rot: 0deg;
   --tp2-clip: none;
   --tp2-radius: 50%;
@@ -727,6 +804,9 @@
   );
 }
 
+/* A ribbon TIE round the block — under the words, the way a ribbon round a
+   bundle of letters passes behind what is written on them. Drawn in front it
+   was an opaque pink bar through the first line. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='ribbon'] {
   --tp-w: calc(100% + 20px);
   --tp-h: 14px;
@@ -734,6 +814,7 @@
   --tp-left: -10px;
   --tp-ml: 0;
   --tp-rot: -1deg;
+  --tp-z: -1;
   --tp-clip: none;
   --tp-bg: linear-gradient(
     178deg,
@@ -772,14 +853,19 @@
   --tp2-bg: var(--ink-line-soft);
 }
 
+/* Slid into a paper pocket: the block's FOOT is tucked in, so the pocket is
+   mostly below it and the words that do overlap read over the pocket rather
+   than under it. It used to be a 34px opaque tan slab drawn across the last
+   line — the reader's "look at how weird this effect is", exactly. */
 :is(.nb-prose, .nb-fx-specimen) [data-tape='pouch'] {
   --tp-w: calc(100% + 22px);
   --tp-h: 34px;
   --tp-top: auto;
-  --tp-bottom: -14px;
+  --tp-bottom: -26px;
   --tp-left: -11px;
   --tp-ml: 0;
   --tp-rot: 0deg;
+  --tp-z: -1;
   --tp-clip: none;
   --tp-radius: 0 0 4px 4px;
   --tp-bg: linear-gradient(
@@ -810,7 +896,7 @@
   --tp-w: 18px;
   --tp-h: 34px;
   --tp-top: 14%;
-  --tp-left: -9px;
+  --tp-left: -28px;
   --tp-ml: 0;
   --tp-rot: 0deg;
   --tp-clip: polygon(4% 4%, 100% 0%, 96% 100%, 0% 96%);
@@ -818,7 +904,7 @@
   --tp2-w: 18px;
   --tp2-h: 34px;
   --tp2-bottom: 14%;
-  --tp2-left: -9px;
+  --tp2-left: -28px;
   --tp2-rot: 0deg;
 }
 
@@ -950,10 +1036,21 @@
 /* Nothing overhead — give the rule back. */
 :is(.nb-prose, .nb-fx-specimen) [data-washi='left'],
 :is(.nb-prose, .nb-fx-specimen) [data-washi='right'],
+:is(.nb-prose, .nb-fx-specimen) [data-washi='cross'],
 :is(.nb-prose, .nb-fx-specimen) [data-washi='bottom'] {
   margin-top: 0;
 }
 
+/* …and the two that hang below need a rule under them, for the same reason
+   the overhead ones need one above: `bottom` sat squarely on the next line,
+   and `edge` wrapped its bottom band round onto it. */
+:is(.nb-prose, .nb-fx-specimen) [data-washi='bottom'],
+:is(.nb-prose, .nb-fx-specimen) [data-washi='edge'] {
+  margin-bottom: var(--page-line-height, 32px);
+}
+
+/* Side strips clear of the measure — at -9px, half of an 18px strip lay over
+   the first (or last) letter of every line beside it. */
 :is(.nb-prose, .nb-fx-specimen) [data-washi='left'],
 :is(.nb-prose, .nb-fx-specimen) [data-washi='right'] {
   --ws-w: 18px;
@@ -965,12 +1062,12 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-washi='left'] {
-  --ws-left: -9px;
+  --ws-left: -26px;
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-washi='right'] {
   --ws-left: auto;
-  --ws-right: -9px;
+  --ws-right: -26px;
   --ws-rot: -0.8deg;
 }
 
@@ -988,26 +1085,32 @@
   --ws-rot: 1.2deg;
 }
 
+/* Crossed washi over the block. At 120% and 11° the two strips ran clean off
+   both sides of the page and swept through the paragraphs above and below —
+   a saltire over the whole spread, not an X on one block. Kept to the block's
+   own width and leaned gently, so the X stays where it was put. */
 :is(.nb-prose, .nb-fx-specimen) [data-washi='cross'] {
-  --ws-w: 120%;
+  --ws-w: 100%;
   --ws-h: 18px;
-  --ws-top: 46%;
-  --ws-left: -10%;
-  --ws-rot: 11deg;
+  --ws-top: calc(50% - 9px);
+  --ws-left: 0;
+  --ws-rot: 4deg;
   --ws2: '';
-  --ws2-w: 120%;
-  --ws2-top: 46%;
-  --ws2-left: -10%;
-  --ws2-rot: -11deg;
+  --ws2-w: 100%;
+  --ws2-top: calc(50% - 9px);
+  --ws2-left: 0;
+  --ws2-rot: -4deg;
 }
 
 /* All four edges: one inset ring, clipped hollow, so the print turns the
-   corners the way a taped-down border does. */
+   corners the way a taped-down border does. Held OFF the writing — at ±10px
+   the 18px bands crossed the first line's caps and the last line's descenders,
+   because a prose block's border box is exactly its text. */
 :is(.nb-prose, .nb-fx-specimen) [data-washi='edge'] {
-  --ws-w: calc(100% + 20px);
-  --ws-h: calc(100% + 20px);
-  --ws-top: -10px;
-  --ws-left: -10px;
+  --ws-w: calc(100% + 48px);
+  --ws-h: calc(100% + 32px);
+  --ws-top: -16px;
+  --ws-left: -24px;
   --ws-rot: 0deg;
   --ws-clip: polygon(
     0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 18px,
@@ -1327,6 +1430,12 @@
    ========================================================================== */
 
 :is(.nb-prose, .nb-fx-specimen) [data-shadow] {
+  /* A lifted block is a CARD, and a card butted against the lines above and
+     below is a card somebody sat on. Its plate reaches up to 18px past the
+     border box (`longcast`, `deep`), and `mat` rings it by 15.5px on every
+     side — all of that was landing in a neighbouring paragraph. A whole rule
+     each side, for the same grid reason as tape and washi. */
+  margin: var(--page-line-height, 32px) 0;
   padding: var(--lf-pad, var(--space-8) var(--space-12));
   background: var(--lf-bg, var(--paper-cream));
   border: var(--lf-border, none);
@@ -1710,6 +1819,11 @@
 
 :is(.nb-prose, .nb-fx-specimen) [data-frame] {
   isolation: isolate; /* keeps the z-index:-1 frame behind content only */
+  /* A framed block is a panel, and a panel butted against the lines above and
+     below it reads as a mistake. One WHOLE rule of air each side, never a few
+     pixels: the page is ruled, and a block offset by anything but a full band
+     knocks every line after it off the printed rules. */
+  margin: var(--page-line-height, 32px) 0;
   padding: var(--fr-pad, var(--space-12) var(--space-16));
   background: var(--fr-bg, transparent);
   border: var(--fr-border, none);
@@ -1729,7 +1843,55 @@
   clip-path: var(--fr-mark-clip, none);
   -webkit-mask: var(--fr-mask, none);
   mask: var(--fr-mask, none);
+  /* The missing half of the ring trick — see MOTIF FRAMES below. Defaults are
+     the no-op ones, so a mask that wants its layers simply unioned (the
+     scallop family) is unaffected. */
+  -webkit-mask-composite: var(--fr-mask-join-wk, source-over);
+  mask-composite: var(--fr-mask-join, add);
   pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   MOTIF FRAMES — a border, not a fill.
+
+   Fourteen of these paint the plate with a repeating gradient: a greek key, a
+   dentil course, a chain, a braid, a hatch, houndstooth. Each declares
+   `--fr-mark-border: Npx solid transparent` to keep the motif in the border
+   band — but a background paints across the BORDER box, so the transparent
+   border did nothing at all and the pattern filled the plate edge to edge. The
+   reader's paragraph then sat on top of a greek key: `frame=meander` and
+   `frame=dogtooth` were flatly unreadable at page size, and `frame=dentil`,
+   `fret`, `filigree`, `guilloche`, `ivyframe`, `bead`, `braid`, `chain`,
+   `laurel` and `lacing` were all somewhere between busy and illegible.
+   Rendered and looked at: shots-now/effects-sweep/frame-01.png, frame-02.png.
+
+   `hatched` alone already carried the right mask — two layers, one clipped to
+   the padding box — and it did not work either, because the property that
+   turns two stacked layers into a RING (`mask-composite: exclude`, the
+   non-overlapping region of the two) was never declared. It is declared above
+   now, and every motif frame gets the pair.
+
+   Deliberately NOT in this list: `diecut` (a solid keyline plate, which is the
+   whole design) and the scallop/deckle/scorch family (a mounted card with a
+   cut edge, whose fill is what a reader is choosing).
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-frame='hatched'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='guilloche'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='bead'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='braid'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='meander'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='dentil'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='eggdart'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='laurel'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='ivyframe'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='fret'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='filigree'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='chain'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='dogtooth'],
+:is(.nb-prose, .nb-fx-specimen) [data-frame='lacing'] {
+  --fr-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  --fr-mask-join: exclude;
+  --fr-mask-join-wk: xor;
 }
 
 /* --- 4a. cut and torn edges ---------------------------------------------- */
@@ -1767,10 +1929,19 @@
   --fr-mark-bg: var(--paper-aged);
 }
 
+/* Film sprockets: two perforated strips, top and foot, the way a frame of film
+   is bordered. It used to inherit the scallop family's solid inner panel and
+   paint a near-black slab over the whole block — sepia writing on charcoal,
+   which is unreadable at any size. The strips keep the dark stock (a film base
+   IS dark); the middle is simply not painted, so the words stay on paper. */
 :is(.nb-prose, .nb-fx-specimen) [data-frame='sprocket'] {
   --nb-sc: 4px;
-  --fr-inset: -8px;
+  --fr-inset: -15px;
   --fr-mark-bg: color-mix(in srgb, var(--ink-graphite) 82%, var(--paper-edge));
+  --fr-mask:
+    radial-gradient(circle 3px at 50% 50%, transparent 0 3px, #000 3.4px) 0 0 / 13px 15px repeat-x,
+    radial-gradient(circle 3px at 50% 50%, transparent 0 3px, #000 3.4px) 0 100% / 13px 15px repeat-x;
+  --fr-mask-join: add;
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-frame='deckle'] {
@@ -1960,11 +2131,15 @@
 :is(.nb-prose, .nb-fx-specimen) [data-frame='eggdart'] {
   --fr-mark: '';
   --fr-inset: -10px;
+  /* Tiled in BOTH directions (it used to be `16px 100%`, one row centred down
+     the middle of the plate) so the egg and the dart run along the top and
+     foot of the ring as well as its sides — otherwise the ring mask leaves
+     two lonely ticks at the left and right and nothing else. */
   --fr-mark-bg:
-    radial-gradient(ellipse 4px 6px at 25% 50%, color-mix(in srgb, var(--paper-edge) 96%, var(--ink-line)) 0 100%, transparent 100%)
-      0 0 / 16px 100%,
-    linear-gradient(to bottom, transparent 30%, color-mix(in srgb, var(--ink-line-soft) 60%, transparent) 30% 70%, transparent 70%)
-      9px 0 / 16px 100%;
+    radial-gradient(ellipse 4px 4.5px at 25% 50%, color-mix(in srgb, var(--paper-edge) 96%, var(--ink-line)) 0 100%, transparent 100%)
+      0 0 / 16px 12px,
+    linear-gradient(to bottom, transparent 24%, color-mix(in srgb, var(--ink-line-soft) 60%, transparent) 24% 76%, transparent 76%)
+      9px 0 / 16px 12px;
   --fr-mark-border: 10px solid transparent;
 }
 
@@ -2265,6 +2440,10 @@
    ========================================================================== */
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper] {
+  /* A different sheet, laid on the page. It needs an edge of the page's own
+     paper round it or it reads as a stripe of colour rather than as a piece
+     of stock somebody put there. A whole rule, to keep the grid. */
+  margin: var(--page-line-height, 32px) 0;
   padding: var(--pa-pad, var(--space-12) var(--space-16));
   background-color: var(--pa-ground, var(--paper-cream));
   background-image: var(--pa-bg, none);
@@ -4947,6 +5126,42 @@
   max-width: 26ch;
 }
 /* === END generated lettering === */
+
+/* ----------------------------------------------------------------------------
+   Lettering, hand-written addendum: big type needs a line box to live in.
+
+   The generated block above sets `--fx-size-scale` and nothing else, so a
+   `size=marquee` paragraph is 3.2× body type inside `.nb-prose`'s 32px line
+   box. Past about `jumbo` the lines OVERLAP — at `colossal` and `marquee` the
+   paragraph is an unreadable pile of glyphs sitting on top of each other, and
+   the last line lands on the block below. Rendered at page size and looked at:
+   shots-now/effects-sweep/size-01.png.
+
+   The fix is the one `.nb-prose h1/h2` already uses: a line height that is a
+   WHOLE multiple of the rule band, so the big type still writes on the printed
+   rules and every line after it stays in step. Two rules from `jumbo`, three
+   from `colossal`, four at `marquee` — each the smallest multiple that clears
+   the face's own ascent and descent at that scale.
+
+   It lives OUTSIDE the generated markers on purpose: scripts/gen-lettering.mjs
+   rewrites only what is between them, so this survives regeneration. The
+   generator should learn to emit it; until it does, this is the guard.
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-size='jumbo'] {
+  line-height: calc(2 * var(--page-line-height, 32px));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='giant'] {
+  line-height: calc(2 * var(--page-line-height, 32px));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='colossal'] {
+  line-height: calc(3 * var(--page-line-height, 32px));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='marquee'] {
+  line-height: calc(4 * var(--page-line-height, 32px));
+}
 
 /* === BEGIN generated underlines (scripts/gen-underlines.mjs) === */
 /* 50 marks, drawn with text-decoration and text-emphasis because

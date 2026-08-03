@@ -101,6 +101,55 @@ The ==mitochondria=={color=moss} is the powerhouse.
 
 Backslash escapes any punctuation you want literal: `\*not bold\*`.
 
+### Maths
+
+Write TeX between dollars. Inline inside a sentence, `$$` for an equation on
+its own line:
+
+```
+The area is $\pi r^2$, and the error term stays below $\epsilon$.
+
+$$
+E = mc^2
+$$
+```
+
+`$$ x = 1 $$` on one line works too. Everything between the dollars is handed
+to the maths renderer untouched — no Notebook Script markup applies inside a
+formula. A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
+because a formula may not open or close against a space.
+
+### Footnotes
+
+A marker in the prose, carrying its own note:
+
+```
+The mitochondrion has its own genome[^ 16,569 base pairs in humans. ].
+```
+
+The Markdown two-part form is understood as well, and folds into the same
+thing:
+
+```
+The mitochondrion has its own genome[^dna].
+
+[^dna]: 16,569 base pairs in humans.
+```
+
+Notes are plain text (no bold, no links inside a note) and are printed at the
+foot of the page they land on.
+
+### Links to other pages
+
+Double brackets name another page in the reader's library:
+
+```
+The numbers are on [[Photosynthesis]], and the method on [[Method notes]].
+```
+
+If a page by that name exists, this becomes a live reference and the other
+page grows a backlink; if not, it quietly reads as the words themselves.
+
 ## 4. Attributes: `{key=value}`
 
 Attributes decorate the block or span they're attached to.
@@ -140,6 +189,7 @@ Everything else is scoped to where it makes sense:
 | `gap` | `sm` `md` `lg` | space between columns | on `columns` |
 | `cols` | number | how many images per row | on `image-row` |
 | `style` | `polaroid` `plain` `washi` `watercolor` | how images and diagram nodes are framed | on `image-row`, images, diagram fences |
+| `title` | free text | the label written on the thing | on `card`, `index-card`, `toggle`, `pressed-flower`, `ticket-stub`, `postcard`, `ledger`, `photo-corner`, `wax-seal`, `map-pin` |
 | `shape` | `rect` `cloud` `circle` | node outline | on `graph`/`flowchart` nodes |
 | `width` | number | width in pixels | on images |
 | `query` | free text | what to search for | on `::fetch` |
@@ -293,6 +343,7 @@ The container names:
 | `photo-corner` | a print held to the page by four paper corners — `title` is the pencil caption underneath |
 | `wax-seal` | a blob of sealing wax over a ribbon, pressed with a monogram — `title` is the monogram — one or two letters |
 | `map-pin` | a pin dropped in the margin with the walk in behind it — places, travel notes; `title` is the place name |
+| `toggle` | a fold in the page — click the title to open it — `title` is the summary line; toggles may hold anything, including other toggles |
 
 Unknown names are **not errors** — they render as a plain decorated box. Name
 matching is generous too: case, spaces, `-` and `_` are all ignored, so
@@ -321,6 +372,7 @@ matching is generous too: case, spaces, `-` and `_` are all ignored, so
 | `::: photocorners`, `::: photomount`, `::: snapshot` | `::: photo-corner` |
 | `::: seal`, `::: wax`, `::: sealingwax`, `::: sealed` | `::: wax-seal` |
 | `::: pin`, `::: place`, `::: location`, `::: waypoint` | `::: map-pin` |
+| `::: fold`, `::: foldout`, `::: collapse`, `::: collapsible`, `::: accordion`, `::: disclosure` | `::: toggle` |
 | `::: info` | `::: callout {variant=info}` |
 | `::: tip`, `::: hint` | `::: callout {variant=tip}` |
 | `::: warn`, `::: warning`, `::: caution` | `::: callout {variant=warn}` |
@@ -677,6 +729,9 @@ BLOCKS                              INLINE
 ---             divider             x^2^  H~2~O  sup / sub
 | a | b |       table               [t](url)     link
 ![alt](src)     image               \*           literal star
+$$ … $$         equation            $x^2$        maths
+                                    [^ note ]    footnote
+                                    [[Page]]     link to a page
 
 CONTAINERS (::: name ... :::)                   DIAGRAM FENCES
 sticky-note     polaroid        washi-box       ```tree      indent = nesting
@@ -686,7 +741,7 @@ spoiler         banner          index-card      ```flowchart same as graph
 envelope        stamp           tag             ```timeline  label: text | attrs
 marginalia      pressed-flower  ticket-stub
 postcard        ledger          photo-corner
-wax-seal        map-pin
+wax-seal        map-pin         toggle
 ATTRS  {key=value, key2=value2}
 colors: amber terracotta moss lemon sky blush graphite
 color= sticker= tape= washi= rotate= paper= shadow= underline= frame= font= ink= size= align=

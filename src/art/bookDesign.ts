@@ -41,13 +41,51 @@
  *    this file is hand-sorted and none can be re-sorted by accident;
  *  - `presetForSeed` — the roll a new book makes, and the only binding decision
  *    a reader who never opens the studio ever meets — walks `ROLLABLE_PRESETS`,
- *    which is every tier but `oddity`;
+ *    which is every tier but `oddity`, floored by the worst part the binding is
+ *    built out of (see `worstPartRollable`);
  *  - the studio still offers all fifty of everything. This is a demotion, never
  *    a deletion.
  *
  * Both halves are gated in `tests/book-bindings.test.ts`, because a bizarre
  * silhouette is a silent bug: nothing throws, the atlas bakes it happily, and
  * the first anybody hears about it is a reader saying the shelf looks wrong.
+ *
+ * ## The second pass, and why the first one missed
+ *
+ * The same complaint came back: still "too weird … look at how weird this is",
+ * with a photograph of a shelf. The mechanism was working — no `oddity` had
+ * been rolled — so what was wrong was the threshold, and the reason it was
+ * wrong is that the first pass judged the table on a SPECIMEN BOARD. A board
+ * asks "is this a good drawing of a wire coil?" and the answer is yes; the
+ * reader is asking "does this read as a book in a row of books I did not ask
+ * for?", and only a shelf can answer that. `shots-now/dice-shelf.mjs` builds
+ * that shelf — thirty books dressed by the real roll, shot at the 80% the app
+ * opens on — and `shots-now/suspect-row.mjs` stands one suspect at a time
+ * between two plain cloth octavos.
+ *
+ * Six silhouettes went on that evidence, each of them a good drawing of
+ * something that is not a book: the wire coil (a step-ladder), the ring binder
+ * (an office ring binder), the springback (a cigar — the "pencil shape" from
+ * the first report, still in the roll), the coptic chain (a zip), the bare
+ * cords (a bandaged stick) and the wave head (a crayon). Nine head cuts were
+ * looked at and eight of them KEPT: at the zoom a reader actually meets a shelf
+ * at, a notch or a bevel is invisible, and spending the demotion budget on
+ * those would have been the cruelty rather than the fix. (Budget is literal —
+ * `tests/book-bindings.test.ts` refuses to let any table send more than a fifth
+ * of itself to the bottom, and the silhouettes are now exactly at ten of fifty.
+ * A third pass wanting to demote one has to promote one back.)
+ *
+ * Two things were tried and CLEARED, so a third pass does not spend itself on
+ * them. The dressing axes — plates, ornament stamps, applied decorations — were
+ * each stood on a shelf between plain cloth octavos and none of them reads as
+ * an object: a plate is a label and a stamp is a third of the spine's width.
+ * And the gabled head, which looks exactly like the reader's "pencil" when a
+ * seeded shelf hands you a tall thin one, is innocent: held at ordinary
+ * proportions all four gabled bindings read as psalters. What made rockets of
+ * them is that a book's HEIGHT and its THICKNESS are drawn independently
+ * (`randomBookStyleOverrides` in `art/bookStyle.ts` picks a format uniformly
+ * and the thickness comes from a different stream), so a folio height can land
+ * on a pamphlet width. That is a real defect and it is not in this file.
  *
  * ## Why every axis is a TABLE and not a switch
  *
@@ -1008,7 +1046,12 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     // between two square boards, and the two dark joints are what keep it clear
     // of `two-lobe`, whose spec — bulged sides, ends pulled in to about three
     // quarters, soft crowns — is otherwise the same sentence.
-    { group: 'case', tier: 'niche', side: 'bulge', head: 'cushion', tail: 'cushion', headWidth: 0.74, tailWidth: 0.74,
+    // ODDITY on the second report. Everything above is true of a springback and
+    // none of it survives the trip to a shelf: bulged sides pulled in to three
+    // quarters at both ends, rounded off, is a CIGAR, and on a thin roll it is
+    // the fat pencil the reader named the first time. Two of them turned up in
+    // one thirty-book shelf and both were the first thing the eye went to.
+    { group: 'case', tier: 'oddity', side: 'bulge', head: 'cushion', tail: 'cushion', headWidth: 0.74, tailWidth: 0.74,
       corner: 0.36, endDepth: 0.05, marks: ['grooves'] }),
 
   // A padded board swells at BOTH ends; a rounded back only bellies. With the
@@ -1087,7 +1130,15 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   'wave-head': shape('wave-head', 'Wave Head', 'One S across the head, as though the cover had curled.',
     ['whimsical', 'handmade', 'battered'],
-    { group: 'cut', tier: 'niche', head: 'wave', side: 'ripple', headWidth: 1, endDepth: 0.045, corner: 0.1, decorTop: 0.06 }),
+    // ODDITY on the second report, and the only one of the nine cut heads that
+    // went. A rippling side under a peaked head is a CRAYON — it was the one
+    // shape in this family still nameable as another object at the 80% the app
+    // opens on, where the notch, the step and the bevel are simply invisible.
+    // Those three stay: a demotion has to be paid for out of a budget (the
+    // table may not send more than a fifth of itself to the bottom), and
+    // spending it on cuts nobody can see would have been the cruelty the brief
+    // warns against.
+    { group: 'cut', tier: 'oddity', head: 'wave', side: 'ripple', headWidth: 1, endDepth: 0.045, corner: 0.1, decorTop: 0.06 }),
 
   // The scallops are shallow by necessity (see `lobes`), so each of these
   // carries a width of its own as well — the same trick the rest of the
@@ -1200,10 +1251,18 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
    */
   'exposed-cords': shape('exposed-cords', 'Exposed Cords', 'The cords never got covered — five bare ropes and the thread between them.',
     ['handmade', 'rustic', 'natural'],
-    { group: 'sewn', tier: 'niche', inset: 0.035, corner: 0.1, marks: ['bareCords'], claimTop: 0.47, claimBottom: 0.7 }),
+    // ODDITY on the second report. Five bare cords laid across a pale narrow
+    // spine is a BANDAGED STICK — a roll of gauze, a splint — and the fact that
+    // the drawing is a correct picture of an uncovered sewing is exactly the
+    // trap: it is a good drawing of a thing that is not a book.
+    { group: 'sewn', tier: 'oddity', inset: 0.035, corner: 0.1, marks: ['bareCords'], claimTop: 0.47, claimBottom: 0.7 }),
 
   coptic: shape('coptic', 'Coptic Sewing', 'A chain of link stitches runs the length of a bare spine.',
-    ['handmade', 'natural', 'antique'], { group: 'sewn', tier: 'niche', inset: 0.055, corner: 0.08, marks: ['chainStitch'] }),
+    // ODDITY on the second report. At 30px a chain of link stitches is a row of
+    // big pale ovals down the whole spine, and what that reads as is a ZIP or a
+    // bicycle chain. Three of them landed on one dice shelf and every one was
+    // read as hardware before it was read as a book.
+    ['handmade', 'natural', 'antique'], { group: 'sewn', tier: 'oddity', inset: 0.055, corner: 0.08, marks: ['chainStitch'] }),
 
   'japanese-stab': shape('japanese-stab', 'Stab Sewn', 'Four knots down one side, and the thread that ties them.',
     ['handmade', 'refined', 'natural'], { group: 'sewn', tier: 'shelf', corner: 0.06, marks: ['stabKnots'] }),
@@ -1234,14 +1293,23 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     // table with ground biting into its sides. Filling the slot and laying fat
     // grey bars across it made the whole spine one solid mass, and it read as
     // `rounded`, `chamfered` and `waisted` — three shapes with nothing on them.
-    { group: 'mechanical', tier: 'niche', inset: 0.11, corner: 0.06, marks: ['coil'] }),
+    // ODDITY on the second report. A coil is grey rungs the full height of the
+    // spine at even spacing, and on a shelf that is not a notebook, it is a
+    // STEP-LADDER — it was the loudest thing on a thirty-book dice shelf and it
+    // came up twice in the same thirty.
+    { group: 'mechanical', tier: 'oddity', inset: 0.11, corner: 0.06, marks: ['coil'] }),
 
   'comb-bound': shape('comb-bound', 'Comb Bound', 'A plastic comb, nine teeth of it, gripping the edge.',
     ['modern', 'utilitarian', 'goofy'], { group: 'mechanical', tier: 'oddity', inset: 0.04, corner: 0.04, marks: ['comb'] }),
 
   'ring-binder': shape('ring-binder', 'Ring Binder', 'Three rings and a rigid back that will not bend.',
     ['modern', 'utilitarian', 'heavy'],
-    { group: 'mechanical', tier: 'niche', corner: 0.05, marks: ['rings'], claimTop: 0.58, claimBottom: 0.72 }),
+    // ODDITY on the second report. Two big open rings on the fore edge is an
+    // office ring binder and reads as one from across the room — which is the
+    // whole of what "mechanical bindings are office supplies with a book's
+    // proportions" was already saying about this family. The family is now
+    // entirely un-rolled, and that is the honest end of that sentence.
+    { group: 'mechanical', tier: 'oddity', corner: 0.05, marks: ['rings'], claimTop: 0.58, claimBottom: 0.72 }),
 
   // Two staples and nothing else is not much to be told apart by, so the shape
   // has to do it: a stapled pamphlet has no back at all and FLOPS, which is
@@ -2355,7 +2423,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('snakeskin-folly', 'Snakeskin Folly', 'waisted', 'snakeskin', ['star-tooling'], true, 2, ['fancy', 'goofy', 'ornate'], { group: 'leather', tier: 'niche' }),
   preset('crocodile-folio', 'Crocodile Folio', 'shoulder', 'crocodile', ['edge-piping', 'crest'], true, 2, ['luxe', 'heavy', 'fancy'], { group: 'leather', tier: 'niche' }),
   preset('pigskin-antiphonal', 'Pigskin Antiphonal', 'clasped', 'pigskin', ['bosses'], false, 2, ['antique', 'devotional', 'heavy'], { group: 'leather', tier: 'niche' }),
-  preset('pigskin-lectern', 'Lectern Pigskin', 'chained', 'pigskin', ['blind-panel'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'leather', tier: 'niche' }),
+  preset('pigskin-lectern', 'Lectern Pigskin', 'chained', 'pigskin', ['blind-panel'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'leather', tier: 'oddity' }),
   preset('oilcloth-logbook', 'Oilcloth Logbook', 'ledger', 'oilcloth', ['tally-rules'], false, 3, ['utilitarian', 'battered', 'rustic'], { group: 'leather', tier: 'niche' }),
 
   /* -------------------------------- vellum --------------------------------- */
@@ -2367,7 +2435,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('parchment-roll', 'Parchment Roll', 'rolled', 'parchment', ['plain'], false, 2, ['antique', 'whimsical', 'handmade'], { group: 'vellum', tier: 'oddity' }),
   preset('parchment-cartulary', 'Cartulary', 'clasped', 'parchment', ['blind-stamped-frame'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'vellum', tier: 'niche' }),
   preset('tawed-psalter', 'Tawed Psalter', 'gabled', 'alum-tawed', ['gothic-panel', 'ribbon-marker'], false, 2, ['devotional', 'antique', 'severe'], { group: 'vellum', tier: 'niche' }),
-  preset('tawed-boards', 'Tawed Boards', 'exposed-cords', 'alum-tawed', ['plain'], false, 2, ['antique', 'handmade', 'natural'], { group: 'vellum', tier: 'niche' }),
+  preset('tawed-boards', 'Tawed Boards', 'exposed-cords', 'alum-tawed', ['plain'], false, 2, ['antique', 'handmade', 'natural'], { group: 'vellum', tier: 'oddity' }),
 
   /* --------------------------- decorated papers ---------------------------- */
   preset('marbled-boards', 'Marbled Boards', 'square', 'marbled-paper', ['label-plate'], false, 6, ['fancy', 'antique', 'handmade'], { group: 'papers', tier: 'signature' }),
@@ -2375,7 +2443,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('shell-marble', 'Shell Marble', 'rounded', 'shell-marble', ['double-bands', 'label-plate'], true, 3, ['fancy', 'refined', 'antique'], { group: 'papers', tier: 'shelf' }),
   preset('spanish-wave', 'Spanish Wave', 'tight-back', 'spanish-marble', ['marbled-band'], false, 3, ['fancy', 'ornate', 'handmade'], { group: 'papers', tier: 'shelf' }),
   preset('stone-quarto', 'Stone Quarto', 'square', 'stone-marble', ['spine-rule'], false, 3, ['sober', 'antique', 'handmade'], { group: 'papers', tier: 'niche' }),
-  preset('paste-paper-book', 'Paste Paper Book', 'coptic', 'paste-paper', ['plain'], false, 3, ['handmade', 'cosy', 'natural'], { group: 'papers', tier: 'niche' }),
+  preset('paste-paper-book', 'Paste Paper Book', 'coptic', 'paste-paper', ['plain'], false, 3, ['handmade', 'cosy', 'natural'], { group: 'papers', tier: 'oddity' }),
   preset('patterned-boards', 'Patterned Boards', 'square', 'patterned-paper', ['label-plate'], false, 5, ['plain', 'cosy', 'whimsical'], { group: 'papers', tier: 'signature' }),
   preset('diaper-paper', 'Diaper Paper', 'square', 'patterned-paper', ['spine-rule'], false, 4, ['plain', 'cosy', 'refined'], { group: 'papers', tier: 'shelf' }),
   preset('block-printed', 'Block-Printed Boards', 'tapered-head', 'block-print', ['double-bands', 'label-plate'], false, 3, ['handmade', 'ornate', 'cosy'], { group: 'papers', tier: 'shelf' }),
@@ -2407,21 +2475,21 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('rebacked-quarto', 'Rebacked Quarto', 'shoulder', 'boards-exposed', ['shelf-ticket'], false, 3, ['battered', 'antique', 'scholarly'], { group: 'halfQuarter', tier: 'niche' }),
 
   /* -------------------------- the sewing you can see ------------------------ */
-  preset('coptic-sketchbook', 'Coptic Sketchbook', 'coptic', 'linen', ['plain'], false, 4, ['handmade', 'natural', 'modern'], { group: 'sewn', tier: 'niche' }),
-  preset('coptic-hardcase', 'Coptic Hard Case', 'coptic', 'boards-exposed', ['corner-tooling'], false, 3, ['handmade', 'battered', 'natural'], { group: 'sewn', tier: 'niche' }),
+  preset('coptic-sketchbook', 'Coptic Sketchbook', 'coptic', 'linen', ['plain'], false, 4, ['handmade', 'natural', 'modern'], { group: 'sewn', tier: 'oddity' }),
+  preset('coptic-hardcase', 'Coptic Hard Case', 'coptic', 'boards-exposed', ['corner-tooling'], false, 3, ['handmade', 'battered', 'natural'], { group: 'sewn', tier: 'oddity' }),
   preset('long-stitch-journal', 'Long-Stitch Journal', 'long-stitch', 'suede', ['plain'], false, 4, ['handmade', 'cosy', 'rustic'], { group: 'sewn', tier: 'shelf' }),
   preset('long-stitch-limp', 'Limp Long-Stitch', 'long-stitch', 'parchment', ['plain'], false, 3, ['handmade', 'antique', 'natural'], { group: 'sewn', tier: 'shelf' }),
   preset('unbound-quire', 'Unbound Quire', 'sewn-sections', 'paper-wrapper', ['plain'], false, 3, ['plain', 'handmade', 'airy'], { group: 'sewn', tier: 'niche' }),
-  preset('bare-cords', 'Bare Cords', 'exposed-cords', 'boards-exposed', ['plain'], false, 3, ['handmade', 'rustic', 'natural'], { group: 'sewn', tier: 'niche' }),
-  preset('binders-mock-up', 'Binder’s Mock-Up', 'exposed-cords', 'linen', ['shelf-ticket'], false, 2, ['handmade', 'utilitarian', 'plain'], { group: 'sewn', tier: 'niche' }),
+  preset('bare-cords', 'Bare Cords', 'exposed-cords', 'boards-exposed', ['plain'], false, 3, ['handmade', 'rustic', 'natural'], { group: 'sewn', tier: 'oddity' }),
+  preset('binders-mock-up', 'Binder’s Mock-Up', 'exposed-cords', 'linen', ['shelf-ticket'], false, 2, ['handmade', 'utilitarian', 'plain'], { group: 'sewn', tier: 'oddity' }),
   preset('raised-cord-folio', 'Raised-Cord Folio', 'ribbed', 'morocco-grain', ['triple-bands', 'label-plate'], true, 3, ['luxe', 'formal', 'gilt'], { group: 'sewn', tier: 'shelf' }),
 
   /* -------------------------- mechanical bindings --------------------------- */
-  preset('spiral-notebook', 'Spiral Notebook', 'spiral-wire', 'canvas', ['plain'], false, 5, ['modern', 'utilitarian', 'plain'], { group: 'mechanical', tier: 'niche' }),
-  preset('spiral-sketchpad', 'Spiral Sketchpad', 'spiral-wire', 'newsprint', ['tally-rules'], false, 3, ['modern', 'utilitarian', 'battered'], { group: 'mechanical', tier: 'niche' }),
+  preset('spiral-notebook', 'Spiral Notebook', 'spiral-wire', 'canvas', ['plain'], false, 5, ['modern', 'utilitarian', 'plain'], { group: 'mechanical', tier: 'oddity' }),
+  preset('spiral-sketchpad', 'Spiral Sketchpad', 'spiral-wire', 'newsprint', ['tally-rules'], false, 3, ['modern', 'utilitarian', 'battered'], { group: 'mechanical', tier: 'oddity' }),
   preset('comb-report', 'Comb-Bound Report', 'comb-bound', 'paper-wrapper', ['label-plate'], false, 4, ['modern', 'utilitarian', 'plain'], { group: 'mechanical', tier: 'oddity' }),
-  preset('ring-file', 'Ring File', 'ring-binder', 'buckram', ['shelf-ticket'], false, 4, ['modern', 'utilitarian', 'heavy'], { group: 'mechanical', tier: 'niche' }),
-  preset('ring-catalogue', 'Ring Catalogue', 'ring-binder', 'oilcloth', ['spine-rule'], false, 3, ['utilitarian', 'sober', 'modern'], { group: 'mechanical', tier: 'niche' }),
+  preset('ring-file', 'Ring File', 'ring-binder', 'buckram', ['shelf-ticket'], false, 4, ['modern', 'utilitarian', 'heavy'], { group: 'mechanical', tier: 'oddity' }),
+  preset('ring-catalogue', 'Ring Catalogue', 'ring-binder', 'oilcloth', ['spine-rule'], false, 3, ['utilitarian', 'sober', 'modern'], { group: 'mechanical', tier: 'oddity' }),
   preset('thumb-index-lexicon', 'Thumb-Index Lexicon', 'tab-index', 'roan', ['label-plate'], true, 3, ['scholarly', 'utilitarian', 'formal'], { group: 'mechanical', tier: 'shelf' }),
   preset('stapled-bulletin', 'Stapled Bulletin', 'saddle-stapled', 'paper-wrapper', ['plain'], false, 4, ['plain', 'utilitarian', 'pocket'], { group: 'mechanical', tier: 'shelf' }),
 
@@ -2432,7 +2500,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('notched-manual', 'Notched Manual', 'notched-head', 'canvas', ['spine-rule'], false, 3, ['modern', 'utilitarian', 'plain'], { group: 'profiles', tier: 'niche' }),
   preset('stepped-monograph', 'Stepped Monograph', 'stepped-head', 'buckram', ['centre-rule'], true, 2, ['modern', 'severe', 'formal'], { group: 'profiles', tier: 'niche' }),
   preset('crenellated-history', 'Crenellated History', 'crenellated', 'russia-calf', ['dentil-band', 'crest'], true, 2, ['ornate', 'goofy', 'antique'], { group: 'profiles', tier: 'oddity' }),
-  preset('wave-head-reader', 'Wave-Head Reader', 'wave-head', 'paste-paper', ['plain'], false, 3, ['whimsical', 'handmade', 'battered'], { group: 'profiles', tier: 'niche' }),
+  preset('wave-head-reader', 'Wave-Head Reader', 'wave-head', 'paste-paper', ['plain'], false, 3, ['whimsical', 'handmade', 'battered'], { group: 'profiles', tier: 'oddity' }),
   preset('valance-primer', 'Valance Primer', 'scalloped-tail', 'patterned-paper', ['rosette'], true, 2, ['whimsical', 'fancy', 'cosy'], { group: 'profiles', tier: 'niche' }),
   preset('bevel-head-annual', 'Bevel-Head Annual', 'bevel-head', 'stripe-paper', ['centre-rule'], false, 2, ['modern', 'goofy', 'whimsical'], { group: 'profiles', tier: 'niche' }),
   preset('splayed-scrapbook', 'Splayed Scrapbook', 'splayed', 'hessian', ['wax-seal'], false, 3, ['battered', 'handmade', 'rustic'], { group: 'profiles', tier: 'niche' }),
@@ -2444,7 +2512,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('creased-pocketbook', 'Creased Pocketbook', 'creased', 'skiver', ['plain'], false, 4, ['pocket', 'battered', 'cosy'], { group: 'profiles', tier: 'niche' }),
   preset('limp-commonplace', 'Limp Commonplace', 'limp', 'linen', ['plain'], false, 4, ['handmade', 'natural', 'cosy'], { group: 'profiles', tier: 'shelf' }),
   preset('scroll-case', 'Scroll', 'rolled', 'parchment', ['plain'], false, 1, ['antique', 'whimsical', 'handmade'], { group: 'profiles', tier: 'oddity' }),
-  preset('spring-back-ledger', 'Spring-Back Ledger', 'spring-back', 'canvas', ['corner-tooling', 'shelf-ticket'], false, 3, ['utilitarian', 'heavy', 'antique'], { group: 'profiles', tier: 'niche' }),
+  preset('spring-back-ledger', 'Spring-Back Ledger', 'spring-back', 'canvas', ['corner-tooling', 'shelf-ticket'], false, 3, ['utilitarian', 'heavy', 'antique'], { group: 'profiles', tier: 'oddity' }),
   preset('cushioned-album', 'Cushioned Album', 'cushioned', 'velvet', ['bosses'], true, 2, ['luxe', 'cosy', 'ornate'], { group: 'profiles', tier: 'niche' }),
   preset('tapered-anthology', 'Tapered Anthology', 'tapered-tail', 'marbled-paper', ['label-plate'], false, 3, ['handmade', 'fancy', 'whimsical'], { group: 'profiles', tier: 'shelf' }),
 
@@ -2460,8 +2528,8 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('wallet-diary', 'Wallet Diary', 'wallet', 'suede', ['plain'], false, 4, ['pocket', 'cosy', 'handmade'], { group: 'boxed', tier: 'shelf' }),
   preset('clasped-bible', 'Clasped Bible', 'clasped', 'morocco-grain', ['blind-panel', 'ribbon-marker'], false, 3, ['devotional', 'antique', 'heavy'], { group: 'boxed', tier: 'shelf' }),
   preset('clasped-grimoire', 'Clasped Grimoire', 'clasped', 'shagreen', ['pin-studs', 'wax-seal'], false, 2, ['antique', 'ornate', 'heavy'], { group: 'boxed', tier: 'niche' }),
-  preset('chained-cartulary', 'Chained Cartulary', 'chained', 'alum-tawed', ['bosses'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'boxed', tier: 'niche' }),
-  preset('chained-lectionary', 'Chained Lectionary', 'chained', 'pigskin', ['blind-stamped-frame'], false, 2, ['devotional', 'severe', 'antique'], { group: 'boxed', tier: 'niche' }),
+  preset('chained-cartulary', 'Chained Cartulary', 'chained', 'alum-tawed', ['bosses'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'boxed', tier: 'oddity' }),
+  preset('chained-lectionary', 'Chained Lectionary', 'chained', 'pigskin', ['blind-stamped-frame'], false, 2, ['devotional', 'severe', 'antique'], { group: 'boxed', tier: 'oddity' }),
   preset('yapp-testament', 'Yapp Testament', 'yapp', 'skiver', ['edge-piping', 'ribbon-marker'], true, 3, ['devotional', 'pocket', 'cosy'], { group: 'boxed', tier: 'niche' }),
 
   /* --------------------------- the very ornamented -------------------------- */
@@ -2620,15 +2688,39 @@ export function presetsTagged(tag: BookTag): readonly BookPreset[] {
 }
 
 /**
+ * A binding is only ever as good as its worst part.
+ *
+ * `BookPreset.tier` says so in prose and used to be the only gate, which is how
+ * the second report happened: a preset writes its own tier down by hand, so a
+ * `niche` named binding could sit on a silhouette that reads as a step-ladder
+ * and nothing anywhere disagreed with it. Fifteen of them did.
+ *
+ * This makes the sentence load-bearing. A preset is rollable only if it AND
+ * every vocabulary row it names is rollable — so demoting a shape now demotes
+ * every binding built on it, whatever those bindings say about themselves, and
+ * a fifty-first silhouette that turns out to be a stapler cannot leak back onto
+ * a shelf through a preset somebody forgot to re-rank.
+ *
+ * Deliberately a floor and not a recomputation of the tier: the ORDER of the
+ * studio's list stays hand-written (a table that decides its own order is one
+ * nobody can overrule), and this only ever removes from the dice.
+ */
+function worstPartRollable(p: BookPreset): boolean {
+  if (!isRollable(SHAPES[p.shape].tier)) return false;
+  if (!isRollable(MATERIALS[p.material].tier)) return false;
+  return p.decorations.every((d) => isRollable(DECORS[d].tier));
+}
+
+/**
  * The bindings the dice may hand out.
  *
- * Everything an `oddity` — a scroll on two knobs, a comb-bound report, a
- * chequerboard nursery annual — is fully pickable in the studio and never
- * rolled, which is the whole request: the shelf a reader is given should be a
- * library, and the odd things should be there because somebody chose them.
+ * Everything an `oddity` — a scroll on two knobs, a comb-bound report, a wire
+ * spiral, a chequerboard nursery annual — is fully pickable in the studio and
+ * never rolled, which is the whole request: the shelf a reader is given should
+ * be a library, and the odd things should be there because somebody chose them.
  */
-export const ROLLABLE_PRESETS: readonly BookPreset[] = BOOK_PRESETS.filter((p) =>
-  isRollable(p.tier),
+export const ROLLABLE_PRESETS: readonly BookPreset[] = BOOK_PRESETS.filter(
+  (p) => isRollable(p.tier) && worstPartRollable(p),
 );
 
 const TOTAL_WEIGHT = ROLLABLE_PRESETS.reduce((sum, p) => sum + p.weight, 0);

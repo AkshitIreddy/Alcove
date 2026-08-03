@@ -34,6 +34,7 @@ import { play } from '../sound/engine';
 import { CurlRenderer } from './curl';
 import { createFlipContext, type FlipContext } from './gl';
 import { createRigidFold, crossfadeSpread, type RigidFoldHandle } from './cssFallback';
+import { refreshPaperTone } from './paperTone';
 import type { PageRasterCache } from './rasterCache';
 import {
   TAP_FLIP_DURATION_S,
@@ -414,6 +415,12 @@ export class PageFlipController {
     this.options.root.classList.add('is-flip-gesture');
 
     if (this.usesWebGL && this.ctx && this.renderer) {
+      // What colour is blank paper today? The reader may have changed theme
+      // since the last turn, and `--paper-cream` is a theme token — the shader
+      // bakes it in, so this has to happen BEFORE anything is drawn or the
+      // page turns parchment for the length of the flip (see paperTone.ts).
+      refreshPaperTone();
+      this.renderer.setPaperCream();
       // Cached bitmaps only — a ≤300ms-stale frame is accepted by design
       // (content is unreadable mid-flip; landings always swap to live DOM).
       const cache = this.options.cache;

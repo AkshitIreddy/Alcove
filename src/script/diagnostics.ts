@@ -60,6 +60,14 @@ export type DiagCode =
   | "attr-stray-marker"
   // inline
   | "inline-unclosed"
+  // maths, footnotes and page references
+  | "math-unclosed"
+  | "math-empty"
+  | "footnote-empty"
+  | "footnote-undefined"
+  | "footnote-duplicate"
+  | "footnote-unused"
+  | "pageref-empty"
   // diagram mini-languages
   | "timeline-missing-label"
   | "graph-missing-source"

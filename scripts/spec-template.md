@@ -98,6 +98,55 @@ The ==mitochondria=={color=moss} is the powerhouse.
 
 Backslash escapes any punctuation you want literal: `\*not bold\*`.
 
+### Maths
+
+Write TeX between dollars. Inline inside a sentence, `$$` for an equation on
+its own line:
+
+```
+The area is $\pi r^2$, and the error term stays below $\epsilon$.
+
+$$
+E = mc^2
+$$
+```
+
+`$$ x = 1 $$` on one line works too. Everything between the dollars is handed
+to the maths renderer untouched — no Notebook Script markup applies inside a
+formula. A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
+because a formula may not open or close against a space.
+
+### Footnotes
+
+A marker in the prose, carrying its own note:
+
+```
+The mitochondrion has its own genome[^ 16,569 base pairs in humans. ].
+```
+
+The Markdown two-part form is understood as well, and folds into the same
+thing:
+
+```
+The mitochondrion has its own genome[^dna].
+
+[^dna]: 16,569 base pairs in humans.
+```
+
+Notes are plain text (no bold, no links inside a note) and are printed at the
+foot of the page they land on.
+
+### Links to other pages
+
+Double brackets name another page in the reader's library:
+
+```
+The numbers are on [[Photosynthesis]], and the method on [[Method notes]].
+```
+
+If a page by that name exists, this becomes a live reference and the other
+page grows a backlink; if not, it quietly reads as the words themselves.
+
 ## 4. Attributes: `{key=value}`
 
 Attributes decorate the block or span they're attached to.
@@ -564,6 +613,9 @@ BLOCKS                              INLINE
 ---             divider             x^2^  H~2~O  sup / sub
 | a | b |       table               [t](url)     link
 ![alt](src)     image               \*           literal star
+$$ … $$         equation            $x^2$        maths
+                                    [^ note ]    footnote
+                                    [[Page]]     link to a page
 
 <!-- gen:quickref-containers -->
 <!-- gen:quickref-attrs -->

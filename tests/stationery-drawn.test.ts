@@ -80,6 +80,10 @@ const PAINTED_BY_ANOTHER_SELECTOR: Record<string, string> = {
   spoiler: '.nb-spoiler',
   columns: "[data-type='columns']",
   col: "[data-type='col']",
+  // `toggle` is the script's name for TipTap's disclosure element, which is
+  // called `details` everywhere else — the node, the CSS and the slash
+  // command all predate the container name. Same block, one spelling.
+  toggle: "[data-type='details']",
 };
 
 /** `image-row` and `callout` are node views with their own class names. */
@@ -109,10 +113,14 @@ describe('every script container is a real, drawn, reachable block', () => {
   it('has an editor node for every container name', () => {
     const nodes = new Set(Object.values(CONTAINER_NODE_NAMES));
     const missing = CONTAINER_NAMES.filter((name) => !nodes.has(name));
-    // `image-row` alone: the bridge sorts its children into `image` nodes
-    // before it builds the row, so it has an arm of its own rather than a
-    // name in the straight-through table.
-    expect(missing.slice().sort()).toEqual(['image-row']);
+    // Two, and both are named rather than being an escape hatch:
+    //   `image-row` — the bridge sorts its children into `image` nodes before
+    //                 it builds the row, so it has an arm of its own rather
+    //                 than a name in the straight-through table;
+    //   `toggle`    — maps to TipTap's `details`, and to its `detailsSummary`
+    //                 and `detailsContent` as well. One container name, three
+    //                 nodes, so it cannot be a one-to-one entry either.
+    expect(missing.slice().sort()).toEqual(['image-row', 'toggle']);
   });
 
   /**

@@ -77,6 +77,19 @@ function InlineNodes(props: { nodes: Inline[] }): JSX.Element {
                 <InlineNodes nodes={n.children} />
               </a>
             );
+          // The three leaf spans. The preview shows the SOURCE of a formula
+          // rather than drawing it: this card exists to tell the reader what
+          // is about to be inserted, and the TeX is what they can check.
+          case 'math':
+            return <code class="nb-ins-math">{`$${n.text}$`}</code>;
+          case 'footnote':
+            return (
+              <sup class="nb-ins-note" data-tooltip={n.text}>
+                note
+              </sup>
+            );
+          case 'pageref':
+            return <span class="nb-ins-pageref">{n.label}</span>;
         }
       }}
     </For>
@@ -251,6 +264,8 @@ function PreviewBlock(props: { block: Block }): JSX.Element {
           <span class="nb-ins-diagram-note font-ui">{diagramSummary(b)}</span>
         </div>
       );
+    case 'mathBlock':
+      return <pre class="nb-ins-mathblock">{b.latex}</pre>;
     case 'fetchDirective':
       return (
         <div class="nb-ins-fetch font-ui">

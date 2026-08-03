@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A ginger kitten sitting up, tail curled.
+     Drawn in the app's flat language (CLAUDE.md): flat colour, one ink
+     outline (#4f3120), rounded corners, no lighting of any kind. It ships
+     with the app rather than being fetched, because the welcome book has
+     to look like this on a machine that has never been online. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" width="240" height="200">
+  <rect x="1" y="1" width="118" height="98" rx="8" fill="#f3e4c8"/>
+  <!-- tail -->
+  <path d="M80 88 C 98 88 104 70 95 61 C 90 56 83 58 82 63 C 81 68 87 70 89 66"
+        fill="none" stroke="#4f3120" stroke-width="7" stroke-linecap="round"/>
+  <path d="M80 88 C 98 88 104 70 95 61 C 90 56 83 58 82 63 C 81 68 87 70 89 66"
+        fill="none" stroke="#d98a4a" stroke-width="3.4" stroke-linecap="round"/>
+  <!-- body -->
+  <path d="M38 90 C 36 76 42 62 60 62 C 78 62 84 76 82 90 C 68 93 52 93 38 90 Z"
+        fill="#d98a4a" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M44 91 C 44 84 56 84 56 91 Z M64 91 C 64 84 76 84 76 91 Z"
+        fill="#e79a58" stroke="#4f3120" stroke-width="2.6" stroke-linejoin="round"/>
+  <!-- ears (behind the head, so only the tips show) -->
+  <path d="M40 34 L 36 10 L 58 24 Z" fill="#d98a4a" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M80 34 L 84 10 L 62 24 Z" fill="#d98a4a" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- head -->
+  <path d="M60 22 C 80 22 90 32 90 46 C 90 60 78 68 60 68 C 42 68 30 60 30 46 C 30 32 40 22 60 22 Z"
+        fill="#e79a58" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- forehead stripes -->
+  <path d="M52 28 L 54 34 M60 26 L 60 33 M68 28 L 66 34" stroke="#4f3120" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- eyes + nose -->
+  <path d="M45 46 C 47 41 52 41 54 46" fill="none" stroke="#4f3120" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M66 46 C 68 41 73 41 75 46" fill="none" stroke="#4f3120" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M56 52 L 64 52 L 60 57 Z" fill="#4f3120"/>
+  <path d="M60 57 C 57 61 53 60 52 58 M60 57 C 63 61 67 60 68 58"
+        fill="none" stroke="#4f3120" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- whiskers -->
+  <path d="M22 46 L 38 50 M22 54 L 38 55 M98 46 L 82 50 M98 54 L 82 55"
+        stroke="#4f3120" stroke-width="2" stroke-linecap="round"/>
+</svg>

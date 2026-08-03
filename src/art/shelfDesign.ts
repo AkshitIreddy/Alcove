@@ -687,7 +687,7 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
 /**
  * The carpentry a new library opens in.
  *
- * NOT `plank` + `none` any more, and the reason is the whole of the reader's
+ * NOT `plank` + `none`, and the reason is the whole of the reader's first
  * complaint that the opening bookcase looked "boring/bland/cheap". A plain
  * plank case is four boards, two uprights and a flat board of a cornice, so
  * the largest object on screen was a single uninterrupted rectangle of one
@@ -695,28 +695,48 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * rooms were photographed on the plank case and every one of them read as a
  * coloured slab (`shots-now/defaults/board-b.png`).
  *
- * `scriptorium` is the same four parts with carpentry in them. It brings three
- * things the plank has none of, and each was chosen by looking rather than by
- * reading the table:
+ * ## Moved again, from `scriptorium` + `guilloche`, and why
  *
- *  - an ARCADE over the recess. Round-headed bays behind the books break the
- *    slab into a rhythm, which is what stops an empty shelf reading as a hole.
- *    Twelve builds were shot side by side and the arch-opening ones were the
- *    only group that solved it (`board-c.png`, `board-d.png`).
- *  - a STEPPED cornice under a DENTIL crest. The crest is the one edge in the
- *    case a build can genuinely change, and `world.ts` stands the plinth out
- *    of the same bitmap mirrored — teeth invert into a dentil apron, so the
- *    case gains a moulded top AND a moulded foot from one drawing.
- *  - COLUMNS on the uprights, which the fluting-family patterns can work on.
+ * The reader came back with "the default bookshelf colour, wallpaper colour
+ * and design looks weird" and named six studio presets they *did* like —
+ * counting house, card room, chapter house, minster, snowline, sawmill. Every
+ * one of the fifty-five presets was then photographed as a whole FIRST-RUN
+ * SCREEN rather than as a 148px card (`shots-now/room-firstrun-sweep.mjs`,
+ * boards under `shots-now/room-rank/`), which is the only way this axis can be
+ * judged: a card shows a case the size of a postage stamp, and at true shelf
+ * zoom the case is the largest object on screen.
  *
- * `guilloche` is the pattern, and it was picked at 1:1 rather than magnified
- * (`board-pattern-1to1.png`): at real shelf zoom the edge-work patterns
- * (`stringing`, `cockBead`, `beaded`, `reeded`, `fluted`) are below the
- * threshold where anything reads at all, and the bold frets (`greekKey`,
- * `crossband`) read as a printed border. Guilloche lands between them — a run
- * of small rings with a boss in each, which at this size reads as a fine bead
- * chain along every board edge and down the posts, and its round beads agree
- * with both the round arches and the gilt cornice studs.
+ * What the six have in common, seen at that size, is a recess silhouette you
+ * can NAME — a gable, an ogee, a pointed bay, a run of compartments. The
+ * scriptorium's round-headed arcade is the shallowest of the arch openings, and
+ * repeated five times across 1200px at 80% zoom it reads as bumps along the top
+ * of a slab rather than as architecture (`shots-now/room-rank/board-07.png`,
+ * the house room beside `coastal.stern-gallery`, which is the same arcade with
+ * a lighter timber and reads far better).
+ *
+ * `chapel` is the answer, and it was picked out of twelve builds shot in one
+ * colour so only the carpentry varied (`board-builds.png`):
+ *
+ *  - TREFOIL heads in every bay. A three-lobed opening keeps its shape at
+ *    shelf zoom where a shallow round one does not, and it is the silhouette
+ *    the reader's own chapter house and minster are built on.
+ *  - a BATTLEMENTED crest. The crest is the one edge in the case a build can
+ *    genuinely change, and `world.ts` stands the plinth out of the same bitmap
+ *    mirrored — so the case gains a crenellated top AND a moulded foot from one
+ *    drawing.
+ *  - PILASTERS on the uprights, which the fine edge patterns can work on.
+ *
+ * Its mood words are `ornate, severe, formal`, so the derived card for the
+ * house room (`views/rail/designOptions.ts`) files under Grand — which is what
+ * the picture actually is. That check matters: `lychgate` shot slightly better
+ * still, and was dropped because its tags are `rustic, antique, heavy` and a
+ * blue battlemented cabinet filed under Rustic reads as a bug.
+ *
+ * `quatrefoil` is the pattern, and it is the one gothic motif in the book that
+ * still reads at nine pixels (see its drawer). It puts a pierced four-lobe
+ * rosette along every board edge and down the posts, agreeing with the trefoil
+ * bays above it; `guilloche`'s bead chain was the previous default and is
+ * quieter than this case can carry.
  *
  * Paired with {@link FALLBACK_SHELF_DESIGN}, which answers a different
  * question — see the note there.
@@ -727,8 +747,8 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * MORE often, not less: it was chosen by looking at twelve builds side by side.
  */
 export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
-  build: 'scriptorium',
-  pattern: 'guilloche',
+  build: 'chapel',
+  pattern: 'quatrefoil',
 };
 
 /**
@@ -1364,8 +1384,8 @@ export function isRollableBuild(spec: BuildSpec): boolean {
  *
  * This — not {@link BUILD_IDS} — is what "surprise me" rolls over, and what
  * anything picking a case from a seed should read. `DEFAULT_SHELF_DESIGN`'s
- * `scriptorium` is in here on purpose: the case a new library opens on is a
- * case worth being handed.
+ * `chapel` is in here on purpose: the case a new library opens on is a case
+ * worth being handed.
  */
 export const ROLLABLE_BUILDS: readonly BuildSpec[] = BUILD_IDS.map((id) => BUILDS[id]).filter(
   isRollableBuild,
@@ -1549,8 +1569,8 @@ export function isRollablePattern(spec: PatternSpec): boolean {
  * The treatments the dice may return, in picker order.
  *
  * This — not {@link PATTERN_IDS} — is what "surprise me" rolls over.
- * `DEFAULT_SHELF_DESIGN`'s `guilloche` is in here on purpose: the pattern a new
- * library opens on is a pattern worth being handed.
+ * `DEFAULT_SHELF_DESIGN`'s `quatrefoil` is in here on purpose: the pattern a
+ * new library opens on is a pattern worth being handed.
  */
 export const ROLLABLE_PATTERNS: readonly PatternSpec[] = PATTERN_IDS.map(
   (id) => PATTERNS[id],

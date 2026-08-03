@@ -114,6 +114,15 @@ const QUOTE_RE = /^\s*>[ \t]?(.*)$/;
 const TABLE_RE = /^\s*\|/;
 const IMAGE_RE = /^\s*!\[([^\]]*)\]\(([^)]*)\)\s*(\{.*)?$/;
 const FETCH_LINE_RE = /^\s*fetch\s*:\s*(.*)$/i;
+/**
+ * An equation on its own line. Both shapes a writer reaches for are here:
+ * `$$` alone opens a block that runs to the next `$$`, and `$$ x = 1 $$` is
+ * the whole thing on one line. The trailing ` {attrs}` is optional.
+ */
+const MATH_ONELINE_RE = new RegExp(
+  `^\\s*\\$\\$(.+?)\\$\\$[ \\t]*(${ATTR_BLOCK})?\\s*$`,
+);
+const MATH_OPEN_RE = new RegExp(`^\\s*\\$\\$[ \\t]*(${ATTR_BLOCK})?\\s*$`);
 const IMAGE_LINE_RE = /^\s*image\s*:\s*(.*)$/i;
 const PURE_ATTR_RE = new RegExp(`^\\s*${ATTR_BLOCK}\\s*$`);
 /** A block's trailing ` {attrs}` — the space before the brace is required. */
@@ -140,6 +149,7 @@ type LineClass =
   | "quote"
   | "table"
   | "image"
+  | "math"
   | "fetchline"
   | "imageline"
   | "paragraph";
@@ -148,6 +158,9 @@ function classify(text: string, inImageRow: boolean): LineClass {
   if (text.trim() === "") return "blank";
   if (COLON_RE.test(text)) return "colon";
   if (TICK_OPEN_RE.test(text)) return "tick";
+  // Before the heading test: `$$` cannot collide with anything else, and
+  // putting it first keeps a formula starting with `#` out of the heading arm.
+  if (MATH_ONELINE_RE.test(text) || MATH_OPEN_RE.test(text)) return "math";
   if (HEADING_RE.test(text)) return "heading";
   if (DIVIDER_RE.test(text)) return "divider";
   if (LIST_RE.test(text)) return "list";
@@ -738,6 +751,80 @@ export function parseDoc(source: string): ScriptDoc {
     i = closed ? j + 1 : j;
   };
 
+  /**
+   * `$$ … $$` — an equation block.
+   *
+   * The body is taken VERBATIM: no inline pass, no trimming of interior
+   * lines, no `{{var}}` substitution. A formula is source for a different
+   * renderer, and every one of those passes would be this parser editing a
+   * language it does not speak. Unclosed is a warning, never a loss — the
+   * rest of the note would otherwise vanish into an equation.
+   */
+  const handleMath = (line: SrcLine): void => {
+    const attrsFrom = (raw: string | undefined): Attrs => {
+      if (raw === undefined) return {};
+      const res = parseAttrBlock(raw, line.start + line.text.lastIndexOf(raw));
+      diags.push(...res.diags);
+      return res.attrs;
+    };
+
+    const one = MATH_ONELINE_RE.exec(line.text);
+    if (one !== null) {
+      const latex = one[1].trim();
+      if (latex === "") {
+        warn(
+          "math-empty",
+          "'$$ $$' has no formula in it",
+          lineSpan(line),
+          "$$ e = mc^2 $$",
+        );
+      }
+      target().push({
+        kind: "mathBlock",
+        latex,
+        attrs: attrsFrom(one[2]),
+        srcStart: line.start,
+        srcEnd: line.end,
+      });
+      i++;
+      return;
+    }
+
+    const open = MATH_OPEN_RE.exec(line.text) as RegExpExecArray;
+    let j = i + 1;
+    while (j < lines.length && !/^\s*\$\$\s*$/.test(lines[j].text)) j++;
+    const closed = j < lines.length;
+    if (!closed) {
+      warn(
+        "math-unclosed",
+        "equation opened with '$$' but never closed — everything to the end of the note is inside it",
+        lineSpan(line),
+        "a closing '$$' line",
+      );
+    }
+    const body = lines
+      .slice(i + 1, j)
+      .map((l) => l.text)
+      .join("\n")
+      .trim();
+    if (body === "") {
+      warn(
+        "math-empty",
+        "'$$' block has no formula in it",
+        lineSpan(line),
+        "$$ e = mc^2 $$",
+      );
+    }
+    target().push({
+      kind: "mathBlock",
+      latex: body,
+      attrs: attrsFrom(open[1]),
+      srcStart: line.start,
+      srcEnd: closed ? lines[j].end : source.length,
+    });
+    i = closed ? j + 1 : j;
+  };
+
   const handleList = (): void => {
     let current: ListBlock | TaskListBlock | null = null;
     const istack: { indent: number; item: ListItem }[] = [];
@@ -970,6 +1057,9 @@ export function parseDoc(source: string): ScriptDoc {
       case "tick":
         handleTick(line);
         break;
+      case "math":
+        handleMath(line);
+        break;
       case "heading": {
         const m = HEADING_RE.exec(line.text) as RegExpExecArray;
         let level = m[1].length;
@@ -1118,11 +1208,11 @@ export function parseDoc(source: string): ScriptDoc {
     );
   }
 
-  // --- v2 post-pass: {{variables}} and {use=style} -------------------------
+  // --- v2 post-pass: {{variables}}, {use=style}, [^footnote]: definitions --
   // Runs even with no definitions: a stray `{{placeholder}}` an AI left behind
   // is exactly the kind of thing the author needs told about.
   const doc: ScriptDoc = { frontmatter, blocks, diagnostics: diags };
-  applyDefinitions(doc, vars, styles, diags, fmSpans);
+  applyDefinitions(doc, vars, styles, diags, fmSpans, scan.notes);
   if (Object.keys(vars).length > 0) doc.vars = vars;
   if (Object.keys(styles).length > 0) doc.styles = styles;
 

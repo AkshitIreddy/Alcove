@@ -5447,14 +5447,35 @@ export const FALLBACK_WALLPAPER_ID = 'plain-parchment';
  * the plain wall" and they are right to, so the answer is two constants rather
  * than a compromise between them.
  *
- * `pin-quiet` is a hairline pinstripe — enough to say the wall is a surface
- * somebody chose, quiet enough to sit behind a shelf of books all day. The old
- * default said "the wall, and nothing on it", which meant a new reader saw a
- * blank wall and none of the fifty papers until they went looking for a picker
- * they had no reason to think existed. Plain Parchment is still first in the
- * picker for anyone who wants the bare wall back.
+ * ## Moved from `pin-quiet`, after the wall was photographed instead of read
+ *
+ * A hairline pinstripe was chosen as "enough to say the wall is a surface
+ * somebody chose, quiet enough to sit behind a shelf of books all day". Shot as
+ * a whole first-run screen rather than as a picker card
+ * (`shots-now/room-rank/before-first-run.png`) it does not survive the second
+ * half of that sentence: at 80% zoom the repeat lands at a couple of pixels, so
+ * the cream ground reads as fine vertical noise — a scanning artefact, not
+ * paper — and the reader duly reported the opening wallpaper as "weird".
+ *
+ * `fleur-royal` is the lys at `large` scale on a `gilt`-warmed ground, and it
+ * was picked out of six papers hung on the same case
+ * (`shots-now/room-rank/board-paper.png`) on the two things that decide a wall
+ * at this size:
+ *
+ *  - the motif has to READ. A spot repeat with air around it survives being
+ *    seen across a room; a fine line repeat turns into texture and a grand
+ *    damask turns into a picture hung behind the bookcase.
+ *  - it has to carry a SECOND colour. Every wall the reader singled out — the
+ *    illuminated diaper behind the counting house, the stone courses behind the
+ *    card room — puts an ink on the ground rather than tinting it. This one's
+ *    ink slot is `cloth`, so the lys is drawn in the room's own first book
+ *    cloth: it is amber in the opening room, and it re-tunes itself rather than
+ *    fighting whichever colours the reader repaints with afterwards.
+ *
+ * Plain Parchment is still first in the picker for anyone who wants the bare
+ * wall back, and `pin-quiet` is still in the book one search away.
  */
-export const DEFAULT_WALLPAPER_ID = 'pin-quiet';
+export const DEFAULT_WALLPAPER_ID = 'fleur-royal';
 
 const BY_ID = new Map(WALLPAPER_PRESETS.map((p) => [p.id, p]));
 

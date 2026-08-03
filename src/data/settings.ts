@@ -11,9 +11,20 @@
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
 import { getDb } from './db';
+import { CURSOR_SET_IDS } from '../art/cursors';
 import { SOUNDSCAPE_NAMES } from '../sound/engine';
+import { APP_THEME_IDS } from '../features/settings/appearance';
 import { DEFAULT_KEYBINDINGS, DEFAULT_SETTINGS } from './defaults';
-import { formatBinding } from './keybindings';
+import {
+  FIXED_BINDING_REASONS,
+  LISTED_ACTION_IDS,
+  SHORTCUT_GROUPS,
+  UNHANDLED_ACTION_IDS,
+  bindingActionLabel,
+  formatBinding,
+  shortcutAction,
+  type ShortcutGroupId,
+} from './keybindings';
 import type {
   AnimationLevel,
   PageStyle,
@@ -45,7 +56,24 @@ export const settings: Settings = store;
 // Validated merge of stored JSON over defaults
 // ---------------------------------------------------------------------------
 
-const THEMES: readonly ThemeName[] = ['parchment', 'pastel', 'botanical', 'night'];
+/**
+ * The rooms a stored blob may name.
+ *
+ * This was the four names in `ThemeName` and is now the whole appearance
+ * vocabulary (`features/settings/appearance.ts`), for the same reason
+ * `soundscape` above validates against `SOUNDSCAPE_NAMES` rather than a list
+ * copied out of the engine: a picker and its validator that are typed out
+ * twice drift, and the half that drifts is always the one the reader can see.
+ *
+ * The cast is deliberate and it is the whole design. `ThemeName` in
+ * `data/types.ts` names the four hand-tuned rooms in `styles/settings.css`,
+ * and it still does — a theme id is one of those rooms plus a paper and an
+ * accent, and `applySettings` sets `data-theme` to the ROOM. Widening the
+ * union would put a list of thirty ids in `data/`, where every new room would
+ * then need a type edit in a file that owns none of the art. That is exactly
+ * the coupling the three art vocabularies were built to remove.
+ */
+const THEMES = APP_THEME_IDS as readonly ThemeName[];
 const PAGE_STYLES: readonly PageStyle[] = ['ruled', 'grid', 'blank', 'dotted'];
 const ANIMATION_LEVELS: readonly AnimationLevel[] = ['full', 'reduced', 'off'];
 function takeBoolean(value: unknown, fallback: boolean): boolean {
@@ -140,6 +168,11 @@ function mergeStored(raw: unknown): MutableSettings {
       ['standard', 'pencil', 'quill'] as const,
       d.cursorStyle,
     ),
+    // Validated against the art module's own list rather than a copy of it.
+    // `CURSOR_SET_IDS` is typed `readonly CursorSetId[]`, so `takeEnum` returns
+    // a `CursorSetId` — and assigning that to the union spelled out in
+    // `data/types.ts` is what makes TypeScript refuse the day the two drift.
+    cursorSet: takeEnum(s.cursorSet, CURSOR_SET_IDS, d.cursorSet),
     journalBookId:
       typeof s.journalBookId === 'string' ? s.journalBookId : d.journalBookId,
     thumbnailsStrip: takeBoolean(s.thumbnailsStrip, d.thumbnailsStrip),
@@ -329,10 +362,15 @@ export function canonicalBinding(binding: string): string {
   return [...MODIFIER_ORDER.filter((mod) => held.has(mod)), key].join('+');
 }
 
-/** An action id as the settings sheet says it out loud. */
-export function bindingActionLabel(action: string): string {
-  return action.replace(/-/g, ' ');
-}
+/**
+ * An action id as the settings sheet says it out loud.
+ *
+ * Re-exported from the registry, which is where the words live now: the row
+ * used to read "table of contents" because that happened to be the id with
+ * its hyphens taken out, and an id that has to double as a sentence is an id
+ * nobody can rename.
+ */
+export { bindingActionLabel };
 
 // ---------------------------------------------------------------------------
 // What the sheet is allowed to offer
@@ -348,26 +386,19 @@ export function bindingActionLabel(action: string): string {
 /**
  * Actions the map names that NO handler in the app performs.
  *
- * Both were written down when the map was a wish list. Nothing has ever called
- * `matchesBinding` for either, and `handwritingEnabled` — the flag the second
- * would flip — is read by no code at all outside this file's own merge.
+ * Derived from the registry's `handled: false` flag, so the set and the reason
+ * for it sit on the same line as the action. `new-page` used to be in here —
+ * it is a real command now — and only `toggle-handwriting` is left, because
+ * `handwritingEnabled` is read by no code at all outside this file's merge.
  *
- * They stay in the stored map (churning a reader's blob to delete two dead
- * keys buys nothing) and out of the sheet, and they reserve no combination:
- * a key nothing listens for is a free key, so `mod+n` is available to any row
- * that wants it. Wiring one back is a two-part job and both parts are here —
- * match on it through `matchesBinding`, delete the id from this set — after
- * which the conflict check covers it again and the wiring change is the one
- * that has to find it a combo nobody else is on.
+ * Such ids stay in the stored map (churning a reader's blob to delete a dead
+ * key buys nothing) and out of the sheet, and they reserve no combination: a
+ * key nothing listens for is a free key.
  */
-const UNHANDLED_ACTIONS: ReadonlySet<string> = new Set([
-  'new-page',
-  'toggle-handwriting',
-]);
+const UNHANDLED_ACTIONS: ReadonlySet<string> = UNHANDLED_ACTION_IDS;
 
 /**
- * Actions that DO happen, on a key the handler spells out itself rather than
- * reading from this map — with the reason moving it is not on offer.
+ * Actions that DO happen on a key that cannot be moved, with the reason.
  *
  * `zoom-to-shelf` is BookView's literal `event.key === 'Escape'`. That is not
  * an oversight waiting on a rebind: Escape is also how every panel, dialog and
@@ -375,10 +406,7 @@ const UNHANDLED_ACTIONS: ReadonlySet<string> = new Set([
  * to anything else either. The row is LISTED — the reader wants to know the
  * key — and it answers in words when pressed.
  */
-const FIXED_BINDINGS: Readonly<Record<string, string>> = {
-  'zoom-to-shelf':
-    'Escape is how you step back out of a book, and how every panel and dialog here closes. One key doing one thing everywhere is worth more than this row being adjustable, so it stays.',
-};
+const FIXED_BINDINGS: Readonly<Record<string, string>> = FIXED_BINDING_REASONS;
 
 /** Why `action` cannot be moved off the combination it ships with, or `null`. */
 export function fixedBindingReason(action: string): string | null {
@@ -388,17 +416,51 @@ export function fixedBindingReason(action: string): string | null {
 /**
  * The action ids the shortcut list shows, in the order it shows them.
  *
- * Sorted here rather than in the panel so the row order is a property of the
+ * Registry order — which is ROOM order (finding your way, the shelf, a book,
+ * writing, the library) — rather than alphabetical. Twenty-one rows sorted by
+ * their own names is a wall; sorted by where the reader is standing when they
+ * want one, it is four short lists.
+ *
+ * Ordered here rather than in the panel so the row order is a property of the
  * data, and so `<For>` is handed plain strings that compare by value — a fresh
  * array of pairs per settings write rebuilds every row and takes the focus
  * ring off the button that was just pressed.
+ *
+ * A stored blob may hold ids the registry has never heard of (a hand edit, or
+ * a build that shipped a shortcut this one dropped). Those are listed too,
+ * after the known ones: a row the reader can see and reset is how they get rid
+ * of it, and silently hiding a combination that still occupies a key would
+ * make the conflict messages point at nothing.
  */
 export function listedBindingActions(
   map: Readonly<Record<string, string>>,
 ): string[] {
-  return Object.keys(map)
-    .filter((action) => !UNHANDLED_ACTIONS.has(action))
+  const known = LISTED_ACTION_IDS.filter((action) => action in map);
+  const strays = Object.keys(map)
+    .filter((action) => !UNHANDLED_ACTIONS.has(action) && shortcutAction(action) === null)
     .sort((a, b) => a.localeCompare(b));
+  return [...known, ...strays];
+}
+
+/**
+ * The same ids, split into the sheet's headings.
+ *
+ * Empty groups are dropped, and stray ids (see above) land under the group
+ * they belong to least badly — "the whole library", which is where the sheet's
+ * own file rows already are.
+ */
+export function listedBindingGroups(
+  map: Readonly<Record<string, string>>,
+): Array<{ id: ShortcutGroupId; title: string; blurb: string; actions: string[] }> {
+  const listed = listedBindingActions(map);
+  return SHORTCUT_GROUPS.map((group) => ({
+    id: group.id,
+    title: group.title,
+    blurb: group.blurb,
+    actions: listed.filter(
+      (action) => (shortcutAction(action)?.group ?? 'library') === group.id,
+    ),
+  })).filter((group) => group.actions.length > 0);
 }
 
 /**

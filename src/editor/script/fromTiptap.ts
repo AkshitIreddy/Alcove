@@ -155,16 +155,32 @@ function inlinesFrom(content: TiptapNode[]): InlineResult {
       inlines.push(inlineFromText(n));
     } else if (n.type === 'hardBreak') {
       inlines.push({ kind: 'text', text: ' ', ...ZERO });
+    } else if (n.type === 'mathInline') {
+      const latex = nodeAttrs(n).latex;
+      inlines.push({
+        kind: 'math',
+        text: typeof latex === 'string' ? latex : '',
+        ...ZERO,
+      });
+    } else if (n.type === 'footnote') {
+      const text = nodeAttrs(n).text;
+      inlines.push({
+        kind: 'footnote',
+        // Trimmed because the printed form pads the brackets (`[^ note ]`)
+        // and the parser trims on the way back — untrimmed here would mean a
+        // note that grows a space every time the page is exported.
+        text: typeof text === 'string' ? text.trim() : '',
+        ...ZERO,
+      });
     } else if (n.type === 'pageLink') {
-      // A page reference has no script form — the script language has no way
-      // to name another page, and inventing one here would be a vocabulary
-      // change nothing can read back. Its WORDS are not nothing, though: the
-      // sentence "see Photosynthesis for the numbers" is still a sentence
-      // without the link, and dropping the atom silently would print "see for
-      // the numbers".
+      // `[[Name]]` names the page and nothing else — ids belong to a library,
+      // not to a document, so what survives an export is the NAME. Re-inserted
+      // into a library that has a page by that name, the reference comes back
+      // (see ToTiptapOptions.resolvePageLink); anywhere else it degrades to
+      // its own words, which is still a sentence.
       const label = nodeAttrs(n).label;
       if (typeof label === 'string' && label.trim() !== '') {
-        inlines.push({ kind: 'text', text: label, ...ZERO });
+        inlines.push({ kind: 'pageref', label: label.trim(), ...ZERO });
       }
     }
     // Mid-run stickers and unknown inline atoms have no script form — dropped.
@@ -436,6 +452,17 @@ function blockFromNode(node: TiptapNode): Block[] {
             ...ZERO,
           },
         ];
+      case 'math': {
+        const latex = nodeAttrs(node).latex;
+        return [
+          {
+            kind: 'mathBlock',
+            latex: typeof latex === 'string' ? latex : '',
+            attrs: attrsFrom(nodeAttrs(node), ['latex']),
+            ...ZERO,
+          },
+        ];
+      }
       case 'table':
         return [tableFrom(node)];
       case 'image': {
@@ -530,34 +557,27 @@ function blockFromNode(node: TiptapNode): Block[] {
         // A col outside columns has no script form of its own — flatten.
         return childNodes(node).flatMap(blockFromNode);
       case 'details': {
+        // A toggle now HAS a script form, so it exports as one. It used to
+        // come back as a `spoiler` with its summary flattened into a bold
+        // paragraph — the fold was lost, and re-importing built a different
+        // block from the one that was exported.
         const body = childNodes(node);
         const summary = body.find((c) => c.type === 'detailsSummary');
         const content = body.find((c) => c.type === 'detailsContent');
-        const children: Block[] = [];
-        const summaryText = summary !== undefined ? flattenText(summary) : '';
-        if (summaryText.trim() !== '') {
-          children.push({
-            kind: 'paragraph',
-            content: [
-              {
-                kind: 'strong',
-                children: [{ kind: 'text', text: summaryText, ...ZERO }],
-                ...ZERO,
-              },
-            ],
-            attrs: {},
-            ...ZERO,
-          });
-        }
-        if (content !== undefined) {
-          children.push(...childNodes(content).flatMap(blockFromNode));
-        }
+        const summaryText =
+          summary !== undefined ? flattenText(summary).trim() : '';
+        const attrs = attrsFrom(nodeAttrs(node), ['open', 'title']);
+        if (summaryText !== '') attrs.title = summaryText;
+        if (nodeAttrs(node).open === true) attrs.open = true;
         return [
           {
             kind: 'container',
-            name: 'spoiler',
-            children,
-            attrs: attrsFrom(nodeAttrs(node), ['open']),
+            name: 'toggle',
+            children:
+              content !== undefined
+                ? childNodes(content).flatMap(blockFromNode)
+                : [],
+            attrs,
             ...ZERO,
           },
         ];

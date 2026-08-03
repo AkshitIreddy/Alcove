@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A cream kitten looking out of a cardboard box.
+     Drawn in the app's flat language (CLAUDE.md): flat colour, one ink
+     outline (#4f3120), rounded corners, no lighting of any kind. It ships
+     with the app rather than being fetched, because the welcome book has
+     to look like this on a machine that has never been online. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" width="240" height="200">
+  <rect x="1" y="1" width="118" height="98" rx="8" fill="#efe3d0"/>
+  <!-- ears -->
+  <path d="M42 30 L 38 8 L 58 22 Z" fill="#f0dcbb" stroke="#4f3120" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M78 30 L 82 8 L 62 22 Z" fill="#f0dcbb" stroke="#4f3120" stroke-width="3" stroke-linejoin="round"/>
+  <!-- head -->
+  <path d="M60 18 C 76 18 86 28 86 40 C 86 52 74 58 60 58 C 46 58 34 52 34 40 C 34 28 44 18 60 18 Z"
+        fill="#f0dcbb" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <circle cx="50" cy="38" r="3.4" fill="#4f3120"/>
+  <circle cx="70" cy="38" r="3.4" fill="#4f3120"/>
+  <path d="M56 45 L 64 45 L 60 50 Z" fill="#4f3120"/>
+  <path d="M26 36 L 40 40 M26 44 L 40 44 M94 36 L 80 40 M94 44 L 80 44"
+        stroke="#4f3120" stroke-width="2" stroke-linecap="round"/>
+  <!-- box, drawn over the chin so the cat is IN it -->
+  <path d="M16 58 L 104 58 L 97 93 L 23 93 Z" fill="#d9b483" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M16 58 L 4 46 L 30 46 L 42 58 Z" fill="#e6c79b" stroke="#4f3120" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M104 58 L 116 46 L 90 46 L 78 58 Z" fill="#e6c79b" stroke="#4f3120" stroke-width="3" stroke-linejoin="round"/>
+  <!-- paws hooked over the rim -->
+  <path d="M44 58 C 44 52 53 52 53 58 Z" fill="#f0dcbb" stroke="#4f3120" stroke-width="2.8" stroke-linejoin="round"/>
+  <path d="M67 58 C 67 52 76 52 76 58 Z" fill="#f0dcbb" stroke="#4f3120" stroke-width="2.8" stroke-linejoin="round"/>
+  <path d="M30 70 L 90 70" stroke="#4f3120" stroke-width="2.4" stroke-linecap="round" opacity="0.55"/>
+</svg>

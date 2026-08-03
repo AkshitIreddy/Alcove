@@ -1,24 +1,16 @@
 import type { Settings } from './types';
 
 /**
- * Every combo the settings sheet advertises, and the only place they are
- * chosen. Handlers read this map through `settings.keybindings` and match with
- * `data/keybindings.matchesBinding`, so a rebind here moves the real shortcut.
+ * Every combo the settings sheet advertises.
  *
- * The script pair sits on mod+alt rather than mod+shift because mod+shift+e /
- * mod+shift+i belong to the library export/import — the settings sheet shows
- * those two on their own rows, so they are the ones a reader will hit first.
+ * Re-exported rather than written out: the combos are DERIVED from
+ * `SHORTCUT_ACTIONS` in ./keybindings, which is also what the settings sheet
+ * lists, what the cheat sheet draws and what the one keydown dispatcher
+ * matches on. This literal used to be a ninth place a shortcut had to be
+ * spelled correctly, and the drift it allowed is written up in that file.
  */
-export const DEFAULT_KEYBINDINGS: Readonly<Record<string, string>> = {
-  'command-palette': 'mod+k',
-  'new-page': 'mod+n',
-  'export-library': 'mod+shift+e',
-  'import-library': 'mod+shift+i',
-  'insert-script': 'mod+alt+i',
-  'export-script': 'mod+alt+e',
-  'toggle-handwriting': 'mod+shift+h',
-  'zoom-to-shelf': 'escape',
-};
+export { DEFAULT_KEYBINDINGS } from './keybindings';
+import { DEFAULT_KEYBINDINGS as SHIPPED_KEYBINDINGS } from './keybindings';
 
 export const DEFAULT_SETTINGS: Settings = {
   // Appearance
@@ -67,7 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spellcheck: true,
 
   // Input
-  keybindings: { ...DEFAULT_KEYBINDINGS },
+  keybindings: { ...SHIPPED_KEYBINDINGS },
 
   // Wave 2 — library & shelf
   wheelMode: 'zoom',
@@ -83,6 +75,12 @@ export const DEFAULT_SETTINGS: Settings = {
   typingSounds: false,
   hourlyChime: false,
   cursorStyle: 'standard',
+  // The house arrow, not `system`: an app that draws its own bookcase, wall,
+  // bindings and icons and then borrows the OS pointer is one borrowed thing
+  // away from consistent. `system` stays one keypress away in the sheet, and
+  // `cursorSkin.effectiveCursorSet` hands it back on its own under Windows
+  // High Contrast, where a drawn cursor is the wrong answer.
+  cursorSet: 'paper',
 
   // Wave 2 — books & pages
   journalBookId: null,

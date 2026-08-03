@@ -1,0 +1,388 @@
+/* ============================================================================
+   cursors.css — where the drawn pointer meets the app.
+
+   `art/cursors.ts` draws fourteen states. This file decides where each one
+   lands, and it does it through ONE indirection: every state is published as a
+   custom property, and every rule that wants a cursor reads the property
+   rather than an image.
+
+       :root { --nb-cur-pointer: pointer }            <- this file, the floor
+       :root { --nb-cur-pointer: url(...) 14 3, pointer }  <- cursorSkin.ts
+
+   That indirection is the whole design, and it buys three things:
+
+     1. **Switching sets is fourteen property writes.** No stylesheet is
+        rebuilt, no rule is re-matched by selector, nothing is invalidated
+        beyond the cursor itself.
+     2. **"System" is free and always correct.** The declarations below define
+        every property as the plain CSS keyword, so with no custom properties
+        written the app behaves EXACTLY as it did before this file existed —
+        including every accessibility and HiDPI cursor the reader has set up in
+        Windows. `cursorSkin.ts` reaches that state by REMOVING properties, not
+        by adding an off switch, so there is no third state to get wrong.
+     3. **Every `var()` carries the keyword as its fallback.** A custom
+        property that failed to parse makes `cursor` invalid at computed-value
+        time, and an invalid inherited property does not fall back to the UA
+        default — it inherits, so one bad string would drag the arrow across
+        every text field in the app. With the fallback in place the worst case
+        is the cursor the app had before.
+
+   The rules here are deliberately only the ones the app's own stylesheets do
+   NOT already state. `features/settings/cursorSkin.ts` sweeps the loaded
+   stylesheets and rewrites every `cursor: <keyword>` it finds in place, so the
+   forty-eight `cursor: pointer` declarations across editor.css, rail.css,
+   settings.css and the rest need no duplicate here — and duplicating them is
+   how the two copies drift.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   The floor: every state, as the keyword it replaces.
+   -------------------------------------------------------------------------- */
+:root {
+  --nb-cur-default: default;
+  --nb-cur-pointer: pointer;
+  --nb-cur-text: text;
+  --nb-cur-grab: grab;
+  --nb-cur-grabbing: grabbing;
+  --nb-cur-not-allowed: not-allowed;
+  --nb-cur-ew-resize: ew-resize;
+  --nb-cur-ns-resize: ns-resize;
+  --nb-cur-nwse-resize: nwse-resize;
+  --nb-cur-nesw-resize: nesw-resize;
+  --nb-cur-move: move;
+  --nb-cur-zoom-in: zoom-in;
+  --nb-cur-zoom-out: zoom-out;
+  --nb-cur-progress: progress;
+  --nb-cur-crosshair: crosshair;
+  --nb-cur-help: help;
+}
+
+/* ----------------------------------------------------------------------------
+   The default arrow.
+
+   Set on the root so it inherits into every corner of the app — including the
+   Pixi canvas, the portals on <body> and anything drawn after load. Gated on
+   the attribute rather than on the properties, because `cursor: default` and
+   the UA's `cursor: auto` are NOT the same thing: `auto` still produces an
+   I-beam over selectable text, and a "system" reader must keep that exactly.
+   -------------------------------------------------------------------------- */
+:root[data-cursor-set]:not([data-cursor-set='system']) {
+  cursor: var(--nb-cur-default, default);
+}
+
+/* ----------------------------------------------------------------------------
+   Putting back what `auto` was doing.
+
+   The rule above trades the UA's `auto` for a real arrow, and `auto` was
+   quietly earning its keep in one place: over editable and selectable text it
+   is what produces the I-beam. So each region that used to get an I-beam for
+   free is named here — and named inside `:where()`, which is the load-bearing
+   detail. `:where()` contributes NOTHING to specificity, so these rules beat
+   an inherited value (any declaration does) and lose to every rule in the app
+   that has an opinion of its own. The editor's own writing cursors
+   (`.nb-book-view[data-cursor='pencil'] .nb-prose`, settings.cursorStyle)
+   therefore keep winning inside a page, which is right: the nib you write with
+   is a finer-grained choice than the pointer you point with.
+   -------------------------------------------------------------------------- */
+:where(:root[data-cursor-set]:not([data-cursor-set='system']))
+  :where(
+    .ProseMirror,
+    .nb-prose,
+    input[type='text'],
+    input[type='search'],
+    input[type='email'],
+    input[type='url'],
+    input[type='tel'],
+    input[type='password'],
+    input[type='number'],
+    input:not([type]),
+    textarea,
+    [contenteditable='true'],
+    [contenteditable='plaintext-only']
+  ) {
+  cursor: var(--nb-cur-text, text);
+}
+
+/* The interactive natives, for the handful the app never gave a cursor to.
+   Zero specificity again: anywhere the app said `default` on purpose (the rail
+   backdrop, the insert dialog's inert rows) that `default` still wins. */
+:where(:root[data-cursor-set]:not([data-cursor-set='system']))
+  :where(
+    a[href],
+    button:enabled,
+    select:enabled,
+    summary,
+    label[for],
+    input[type='checkbox']:enabled,
+    input[type='radio']:enabled,
+    [role='button'],
+    [role='tab'],
+    [role='switch'],
+    [role='option'],
+    [role='menuitem']
+  ) {
+  cursor: var(--nb-cur-pointer, pointer);
+}
+
+:where(:root[data-cursor-set]:not([data-cursor-set='system']))
+  :where(button:disabled, select:disabled, input:disabled, [aria-disabled='true']) {
+  cursor: var(--nb-cur-not-allowed, not-allowed);
+}
+
+:where(:root[data-cursor-set]:not([data-cursor-set='system']))
+  :where(input[type='range']:enabled) {
+  cursor: var(--nb-cur-ew-resize, ew-resize);
+}
+
+/* ----------------------------------------------------------------------------
+   Cursors the app writes as an inline style.
+
+   The sweep in cursorSkin.ts can rewrite a STYLESHEET; it cannot rewrite an
+   inline `style` attribute, and an inline declaration outranks every rule that
+   is not `!important`. Three places in the app assign one directly, and one of
+   them is the most important cursor in the whole product:
+
+     - `features/bookshelf/world.ts` sets `canvas.style.cursor` to grab and
+       grabbing on every pointer move. Books drag out of the shelf; if any
+       cursor in this app has to be the drawn one, it is that pair.
+     - `editor/nodes/callout.tsx` sets pointer / default on its swatches.
+
+   Hence `!important`, and hence matching on the serialized attribute. The
+   order of the next two rules is load-bearing: `[style*='cursor: grab']` also
+   matches `grabbing`, so the grabbing rule must come second to win the tie.
+
+   Under the system set these still fire, and are still correct — the property
+   resolves to the very keyword the element asked for.
+   -------------------------------------------------------------------------- */
+:root[data-cursor-set]:not([data-cursor-set='system']) [style*='cursor: grab'] {
+  cursor: var(--nb-cur-grab, grab) !important;
+}
+
+:root[data-cursor-set]:not([data-cursor-set='system']) [style*='cursor: grabbing'] {
+  cursor: var(--nb-cur-grabbing, grabbing) !important;
+}
+
+:root[data-cursor-set]:not([data-cursor-set='system']) [style*='cursor: pointer'] {
+  cursor: var(--nb-cur-pointer, pointer) !important;
+}
+
+:root[data-cursor-set]:not([data-cursor-set='system']) [style*='cursor: text'] {
+  cursor: var(--nb-cur-text, text) !important;
+}
+
+:root[data-cursor-set]:not([data-cursor-set='system']) [style*='cursor: not-allowed'] {
+  cursor: var(--nb-cur-not-allowed, not-allowed) !important;
+}
+
+/* ----------------------------------------------------------------------------
+   Utility classes.
+
+   A state nothing can reach is a drawing, not a feature — and two of the
+   fourteen (the magnifiers) name no element in the tree yet. These give any
+   feature a one-class way to ask, without importing the art module or building
+   a data URI at a call site.
+   -------------------------------------------------------------------------- */
+.nb-cur-default {
+  cursor: var(--nb-cur-default, default);
+}
+
+.nb-cur-pointer {
+  cursor: var(--nb-cur-pointer, pointer);
+}
+
+.nb-cur-text {
+  cursor: var(--nb-cur-text, text);
+}
+
+.nb-cur-grab {
+  cursor: var(--nb-cur-grab, grab);
+}
+
+.nb-cur-grabbing {
+  cursor: var(--nb-cur-grabbing, grabbing);
+}
+
+.nb-cur-not-allowed {
+  cursor: var(--nb-cur-not-allowed, not-allowed);
+}
+
+.nb-cur-ew-resize {
+  cursor: var(--nb-cur-ew-resize, ew-resize);
+}
+
+.nb-cur-ns-resize {
+  cursor: var(--nb-cur-ns-resize, ns-resize);
+}
+
+.nb-cur-nwse-resize {
+  cursor: var(--nb-cur-nwse-resize, nwse-resize);
+}
+
+.nb-cur-nesw-resize {
+  cursor: var(--nb-cur-nesw-resize, nesw-resize);
+}
+
+.nb-cur-move {
+  cursor: var(--nb-cur-move, move);
+}
+
+.nb-cur-zoom-in {
+  cursor: var(--nb-cur-zoom-in, zoom-in);
+}
+
+.nb-cur-zoom-out {
+  cursor: var(--nb-cur-zoom-out, zoom-out);
+}
+
+.nb-cur-progress {
+  cursor: var(--nb-cur-progress, progress);
+}
+
+.nb-cur-crosshair {
+  cursor: var(--nb-cur-crosshair, crosshair);
+}
+
+.nb-cur-help {
+  cursor: var(--nb-cur-help, help);
+}
+
+/* ----------------------------------------------------------------------------
+   The picker, in the settings sheet.
+
+   Not a row of word chips: a cursor is a DRAWING, and the whole reason this
+   feature exists is that the reader wanted to choose one. So each card shows
+   the set's own arrow at the exact size it will be on screen — 32px, or 40 for
+   Bold — standing half on cream paper and half on shelf timber, which is the
+   pair of grounds the art has to survive. The name is under it, not instead
+   of it.
+
+   These rules live here rather than in settings.css because they belong to the
+   cursor feature, not to the sheet: the same picker is what the onboarding
+   taste questionnaire will want, and a class that is only defined next to the
+   panel that first used it is a class the next surface copies instead.
+   -------------------------------------------------------------------------- */
+.nb-cursorset-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.nb-cursorset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  justify-content: flex-end;
+}
+
+.nb-cursorset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8) 5px;
+  border: 2px solid var(--ink-line-soft);
+  border-radius: var(--radius-wobble-sm);
+  background: var(--paper-aged);
+  color: var(--ink-line);
+  cursor: var(--nb-cur-pointer, pointer);
+}
+
+/* The chosen card wins on FILL, on LIFT, and on a struck gilt tick — the same
+   three signals `.nbs-seg-chip[aria-pressed='true']` uses two rows above it in
+   the sheet, so "chosen" means one thing on this page. A border colour alone
+   was not enough: these cards are already outlined, and at a glance six
+   outlined cards look like six outlined cards.
+   The `/ ''` on the tick is alt text and is load-bearing — generated content
+   joins the accessible name, and without it a card announced as
+   "drafting cursors ✓". Selection is carried by aria-checked; this is
+   decoration and says so. */
+.nb-cursorset-card[aria-checked='true'] {
+  position: relative;
+  border-color: var(--ink-line);
+  background: var(--paper-cream);
+  box-shadow: var(--shadow-sm);
+}
+
+.nb-cursorset-card[aria-checked='true']::after {
+  content: '✓' / '';
+  position: absolute;
+  right: -4px;
+  top: -7px;
+  padding: 1px 3px;
+  /* Named explicitly: the tick is 11px, and every handwriting face in this app
+     is illegible below 13. --font-ui (Nunito Sans) is the only face allowed
+     down here — see tests/styles.test.ts. */
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: 1px solid var(--on-gilt);
+  border-radius: 50% 45% 52% 48% / 48% 52% 45% 55%;
+  transform: rotate(9deg);
+}
+
+/* Half cream page, half shelf timber — the two grounds every cursor in this
+   app crosses, so a set that only reads on one of them is visible here. */
+.nb-cursorset-plate {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 44px;
+  border: 2px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--paper-cream) 0 50%,
+    var(--recess) 50% 100%
+  );
+}
+
+.nb-cursorset-plate img,
+.nb-cursorset-states img {
+  display: block;
+}
+
+/* The system card has no drawing to show, so it shows the absence of one. */
+.nb-cursorset-plate--system {
+  background: var(--paper-deep);
+  border-style: dashed;
+}
+
+.nb-cursorset-name {
+  max-width: 76px;
+  text-align: center;
+}
+
+/* Every state of the chosen set, so "what am I actually getting" is answerable
+   without hunting for a resize handle to hover. */
+.nb-cursorset-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: flex-end;
+  padding: var(--space-4) 0 0;
+}
+
+.nb-cursorset-state {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--ink-line-soft);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--paper-cream) 0 50%,
+    var(--recess) 50% 100%
+  );
+}
+
+/* Bold ships a 40px cursor and the swatch is 30 — shown to scale rather than
+   cropped, because the size IS what that set is offering. */
+.nb-cursorset-state img {
+  max-width: 26px;
+  max-height: 26px;
+}

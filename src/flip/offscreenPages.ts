@@ -11,8 +11,9 @@
  * Reuses the exporter's offscreen staging (withOffscreenPage): a read-only
  * TipTap editor parked at left:-12000px with the same sheet classes as a
  * live leaf, rasterized through the same html-to-image recipe the cache
- * uses for mounted pages — same device-memory-capped pixel ratio, cream
- * background, chrome elements filtered out, font-embed CSS built once.
+ * uses for mounted pages — same device-memory-capped pixel ratio, the live
+ * paper colour behind it (paperTone.ts), chrome elements filtered out,
+ * font-embed CSS built once.
  */
 
 import { getFontEmbedCSS, toCanvas } from 'html-to-image';
@@ -24,10 +25,8 @@ import {
   type OffscreenPageSize,
 } from '../editor/script/exporters/capture';
 import { snapshotPixelRatio } from './math';
+import { snapshotBackground } from './paperTone';
 import { inlineSvgStyles } from './svgSnapshot';
-
-/** tokens.css --paper-cream — snapshot background must match resting CSS. */
-const PAPER_CREAM = '#f7f1e3';
 
 /** Marker class while capturing; flip.css hides caret/selection under it. */
 const SNAPSHOTTING_CLASS = 'snapshotting';
@@ -128,7 +127,11 @@ export function createOffscreenPageCapture(
         try {
           const canvas = await toCanvas(sheet, {
             pixelRatio,
-            backgroundColor: PAPER_CREAM,
+            // The staged sheet is inside the live spread, so its own resolved
+            // background IS the reader's paper — theme and all. A literal
+            // cream here was the offscreen half of the mid-turn colour change
+            // (see paperTone.ts).
+            backgroundColor: snapshotBackground(sheet),
             fontEmbedCSS,
             imagePlaceholder: TRANSPARENT_PX,
             filter: snapshotFilter,

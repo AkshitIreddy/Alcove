@@ -64,6 +64,18 @@ export interface ToTiptapOptions {
    * optional node is treated as absent (resilient placeholder path).
    */
   hasNode?: (name: string) => boolean;
+  /**
+   * Turn `[[Another page]]` into a real reference.
+   *
+   * A script can only name a page; page ids belong to a library and a
+   * document has no way to know them, so whoever is doing the inserting is
+   * the only one who can look them up. Return null (or supply nothing) and
+   * the reference degrades to the words the writer wrote — which is still a
+   * sentence, where a chip pointing at no page would be a dead end.
+   */
+  resolvePageLink?: (
+    label: string,
+  ) => { pageId: string; bookId: string; label?: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +164,10 @@ export const CONTAINER_NODE_NAMES: Record<
   'photo-corner': 'photo-corner',
   'wax-seal': 'wax-seal',
   'map-pin': 'map-pin',
+  // The one container whose editor node is not called what the script calls
+  // it: TipTap's disclosure element is `details`, and its summary and body
+  // are separate nodes (see mapToggle).
+  toggle: 'details',
 };
 
 const WASH_NAMES: readonly string[] = WASH_COLORS;
@@ -181,6 +197,7 @@ const CONTAINER_FALLBACK_ICON: Record<string, StickerId> = {
   'photo-corner': 'sun',
   'wax-seal': 'heart',
   'map-pin': 'pin',
+  toggle: 'arrow',
   generic: 'sparkle',
 };
 
@@ -228,9 +245,56 @@ function pushInlines(
   nodes: Inline[],
   out: TiptapNode[],
   marks: TiptapMark[],
+  options: ToTiptapOptions = {},
 ): void {
+  /** An inline atom, wearing whatever marks the run it sits in is wearing. */
+  const atom = (type: string, attrs: Record<string, unknown>): TiptapNode => {
+    const node: TiptapNode = { type, attrs };
+    if (marks.length > 0) node.marks = [...marks];
+    return node;
+  };
+  const available = (name: string): boolean =>
+    options.hasNode === undefined || options.hasNode(name);
+
   for (const n of nodes) {
     switch (n.kind) {
+      case 'math':
+        if (available('mathInline')) {
+          out.push(atom('mathInline', { latex: n.text }));
+        } else if (n.text !== '') {
+          // No maths in this schema — the formula is still what it says.
+          out.push({ type: 'text', text: `$${n.text}$`, ...(marks.length > 0 ? { marks: [...marks] } : {}) });
+        }
+        break;
+      case 'footnote':
+        if (available('footnote')) {
+          out.push(atom('footnote', { text: n.text }));
+        } else if (n.text !== '') {
+          out.push({ type: 'text', text: ` (${n.text})`, ...(marks.length > 0 ? { marks: [...marks] } : {}) });
+        }
+        break;
+      case 'pageref': {
+        const target =
+          n.label === '' ? null : (options.resolvePageLink?.(n.label) ?? null);
+        if (target !== null && available('pageLink')) {
+          out.push(
+            atom('pageLink', {
+              pageId: target.pageId,
+              bookId: target.bookId,
+              label: target.label ?? n.label,
+            }),
+          );
+        } else if (n.label !== '') {
+          // Nothing to point at: keep the words. "see Photosynthesis for the
+          // numbers" is a sentence; a chip pointing nowhere is a dead end.
+          out.push({
+            type: 'text',
+            text: n.label,
+            ...(marks.length > 0 ? { marks: [...marks] } : {}),
+          });
+        }
+        break;
+      }
       case 'text':
         if (n.text !== '') {
           const t: TiptapNode = { type: 'text', text: n.text };
@@ -248,40 +312,45 @@ function pushInlines(
         }
         break;
       case 'strong':
-        pushInlines(n.children, out, [...marks, { type: 'bold' }]);
+        pushInlines(n.children, out, [...marks, { type: 'bold' }], options);
         break;
       case 'em':
-        pushInlines(n.children, out, [...marks, { type: 'italic' }]);
+        pushInlines(n.children, out, [...marks, { type: 'italic' }], options);
         break;
       case 'strike':
-        pushInlines(n.children, out, [...marks, { type: 'strike' }]);
+        pushInlines(n.children, out, [...marks, { type: 'strike' }], options);
         break;
       case 'highlight': {
         const mark: TiptapMark = { type: 'highlight' };
         if (typeof n.attrs?.color === 'string') {
           mark.attrs = { color: n.attrs.color };
         }
-        pushInlines(n.children, out, [...marks, mark]);
+        pushInlines(n.children, out, [...marks, mark], options);
         break;
       }
       case 'link':
-        pushInlines(n.children, out, [
-          ...marks,
-          { type: 'link', attrs: { href: n.href } },
-        ]);
+        pushInlines(
+          n.children,
+          out,
+          [...marks, { type: 'link', attrs: { href: n.href } }],
+          options,
+        );
         break;
       case 'sup':
       case 'sub':
         // No sub/superscript mark installed — degrade to plain text.
-        pushInlines(n.children, out, marks);
+        pushInlines(n.children, out, marks, options);
         break;
     }
   }
 }
 
-function inlineNodes(content: Inline[]): TiptapNode[] {
+function inlineNodes(
+  content: Inline[],
+  options: ToTiptapOptions = {},
+): TiptapNode[] {
   const out: TiptapNode[] = [];
-  pushInlines(content, out, []);
+  pushInlines(content, out, [], options);
   return out;
 }
 
@@ -293,8 +362,15 @@ function stickerNode(stickerId: StickerId): TiptapNode {
 function inlineText(content: Inline[]): string {
   let out = '';
   for (const n of content) {
-    if (n.kind === 'text' || n.kind === 'code') out += n.text;
-    else out += inlineText(n.children);
+    if (n.kind === 'text' || n.kind === 'code' || n.kind === 'footnote') {
+      out += n.text;
+    } else if (n.kind === 'math') {
+      out += `$${n.text}$`;
+    } else if (n.kind === 'pageref') {
+      out += n.label;
+    } else {
+      out += inlineText(n.children);
+    }
   }
   return out;
 }
@@ -310,10 +386,11 @@ function inlineText(content: Inline[]): string {
 function contentWithSticker(
   content: Inline[],
   attrs: Attrs,
+  options: ToTiptapOptions = {},
 ): { content: TiptapNode[]; exclude: string[] } {
   const sticker =
     typeof attrs.sticker === 'string' ? mapStickerName(attrs.sticker) : null;
-  const nodes = inlineNodes(content);
+  const nodes = inlineNodes(content, options);
   if (sticker !== null) nodes.push(stickerNode(sticker));
   return { content: nodes, exclude: sticker !== null ? ['sticker'] : [] };
 }
@@ -321,14 +398,17 @@ function contentWithSticker(
 function mapListItems(
   items: ListItem[],
   listType: 'bulletList' | 'orderedList' | 'taskList',
+  options: ToTiptapOptions = {},
 ): TiptapNode[] {
   const itemType = listType === 'taskList' ? 'taskItem' : 'listItem';
   return items.map((item) => {
     const body: TiptapNode[] = [
-      node('paragraph', {}, inlineNodes(item.content)),
+      node('paragraph', {}, inlineNodes(item.content, options)),
     ];
     if (item.children.length > 0) {
-      body.push(node(listType, {}, mapListItems(item.children, listType)));
+      body.push(
+        node(listType, {}, mapListItems(item.children, listType, options)),
+      );
     }
     const attrs: Record<string, unknown> =
       itemType === 'taskItem' ? { checked: item.checked === true } : {};
@@ -336,12 +416,16 @@ function mapListItems(
   });
 }
 
-function mapTableRow(row: TableRow, cellType: string): TiptapNode {
+function mapTableRow(
+  row: TableRow,
+  cellType: string,
+  options: ToTiptapOptions = {},
+): TiptapNode {
   return node(
     'tableRow',
     {},
     row.cells.map((cell) =>
-      node(cellType, {}, [node('paragraph', {}, inlineNodes(cell))]),
+      node(cellType, {}, [node('paragraph', {}, inlineNodes(cell, options))]),
     ),
   );
 }
@@ -407,19 +491,20 @@ function degradeToParagraphs(
         const { content, exclude } = contentWithSticker(
           child.content,
           child.attrs,
+          options,
         );
         out.push(node('paragraph', extraAttrs(child.attrs, exclude), content));
         break;
       }
       case 'heading':
       case 'quote':
-        out.push(node('paragraph', {}, inlineNodes(child.content)));
+        out.push(node('paragraph', {}, inlineNodes(child.content, options)));
         break;
       case 'list':
       case 'taskList': {
         const flat = (items: ListItem[]): void => {
           for (const item of items) {
-            out.push(node('paragraph', {}, inlineNodes(item.content)));
+            out.push(node('paragraph', {}, inlineNodes(item.content, options)));
             flat(item.children);
           }
         };
@@ -438,6 +523,13 @@ function degradeToParagraphs(
         break;
       case 'diagram':
         out.push(mapDiagram(child, options, true));
+        break;
+      case 'mathBlock':
+        out.push(
+          node('paragraph', {}, [
+            { type: 'text', text: `$$${child.latex}$$` },
+          ]),
+        );
         break;
       case 'fetchDirective':
         out.push(
@@ -589,6 +681,39 @@ function plainContainer(
   ];
 }
 
+/**
+ * `::: toggle {title=…}` → TipTap's `details` triple.
+ *
+ * Three nodes, not one: `details` holds a `detailsSummary` (the line you
+ * click, text only) and a `detailsContent` (everything folded away, block+).
+ * The summary comes from `title`; a toggle with no title still gets a summary
+ * node, because the schema requires one and a fold with no handle cannot be
+ * opened.
+ */
+function mapToggle(
+  block: ContainerBlock,
+  options: ToTiptapOptions,
+): TiptapNode[] {
+  if (
+    !hasContainerNode('toggle', options) ||
+    options.hasNode?.('detailsSummary') === false ||
+    options.hasNode?.('detailsContent') === false
+  ) {
+    return fallbackContainer(block, options);
+  }
+  const title =
+    typeof block.attrs.title === 'string' && block.attrs.title !== ''
+      ? block.attrs.title
+      : 'More';
+  const open = block.attrs.open === true ? { open: true } : {};
+  return [
+    node('details', { ...open, ...extraAttrs(block.attrs, ['title', 'open']) }, [
+      node('detailsSummary', {}, [{ type: 'text', text: title }]),
+      node('detailsContent', {}, blockChildren(block.children, options)),
+    ]),
+  ];
+}
+
 /** One `col` node from a script col container. */
 function mapColumn(block: ContainerBlock, options: ToTiptapOptions): TiptapNode {
   const width =
@@ -674,6 +799,9 @@ function mapContainer(
     case 'wax-seal':
     case 'map-pin':
       return plainContainer(block, options);
+
+    case 'toggle':
+      return mapToggle(block, options);
 
     case 'spoiler': {
       if (!hasContainerNode('spoiler', options)) {
@@ -772,6 +900,7 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
       const { content, exclude } = contentWithSticker(
         block.content,
         block.attrs,
+        options,
       );
       return [
         node(
@@ -785,6 +914,7 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
       const { content, exclude } = contentWithSticker(
         block.content,
         block.attrs,
+        options,
       );
       return [node('paragraph', extraAttrs(block.attrs, exclude), content)];
     }
@@ -792,6 +922,7 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
       const { content, exclude } = contentWithSticker(
         block.content,
         block.attrs,
+        options,
       );
       return [
         node('blockquote', extraAttrs(block.attrs, exclude), [
@@ -807,7 +938,7 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
         node(
           listType,
           extraAttrs(block.attrs),
-          mapListItems(block.items, listType),
+          mapListItems(block.items, listType, options),
         ),
       ];
     }
@@ -816,15 +947,17 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
         node(
           'taskList',
           extraAttrs(block.attrs),
-          mapListItems(block.items, 'taskList'),
+          mapListItems(block.items, 'taskList', options),
         ),
       ];
     case 'table': {
       const rows: TiptapNode[] = [];
       if (block.header !== null) {
-        rows.push(mapTableRow(block.header, 'tableHeader'));
+        rows.push(mapTableRow(block.header, 'tableHeader', options));
       }
-      for (const row of block.rows) rows.push(mapTableRow(row, 'tableCell'));
+      for (const row of block.rows) {
+        rows.push(mapTableRow(row, 'tableCell', options));
+      }
       if (rows.length === 0) return [];
       return [node('table', extraAttrs(block.attrs), rows)];
     }
@@ -836,6 +969,17 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
           ...extraAttrs(block.attrs),
         }),
       ];
+    case 'mathBlock':
+      // No maths node in this schema: the formula is kept as its own source,
+      // which is exactly what the reader typed and still says everything.
+      if (options.hasNode?.('math') === false) {
+        return [
+          node('paragraph', extraAttrs(block.attrs), [
+            { type: 'text', text: `$$${block.latex}$$` },
+          ]),
+        ];
+      }
+      return [node('math', { latex: block.latex, ...extraAttrs(block.attrs) })];
     case 'container':
       return mapContainer(block, options);
     case 'diagram':

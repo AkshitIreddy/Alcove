@@ -582,7 +582,8 @@ const PAINTED: readonly LibraryTheme[] = [
 /* -------------------------------- jewels --------------------------------- */
 
 const JEWELS: readonly LibraryTheme[] = [
-  /* The default room. See DEFAULT_THEME_ID for why it is not the oak. */
+  /* Held DEFAULT_THEME_ID until the opening room was judged as a whole screen
+   * rather than as a card; see the note there for what it lost on. */
   room(
     'verdigris',
     'Verdigris Library',
@@ -601,6 +602,7 @@ const JEWELS: readonly LibraryTheme[] = [
       wall: '#f0eeda',
       cloths: ['saffron', 'oxblood', 'sand', 'inkblue', 'shell', 'mulberry'],
     }),
+  /* The default room. See DEFAULT_THEME_ID for why it is not the oak. */
   room('lapis', 'Lapis Cabinet', 'Deep blue paint with gilt — a cabinet of small precious things.', 'jewel',
     ['vivid', 'cool', 'formal', 'grand'], {
       timber: '#4a6fa5',
@@ -913,37 +915,50 @@ export type ThemeId = (typeof THEME_IDS)[number];
 /**
  * The room a brand-new library opens in.
  *
- * NOT the app icon's oak, and that was the point of the pass that moved it. The
- * oak is the house *fallback* — it is what `art/flat.ts` draws in when no scheme
- * is set — but as a first impression it was the blandest thing the app could
- * have chosen: a brown case on a beige wall, which is what every stock bookshelf
- * illustration looks like. Verdigris is the same drawing with a decision in it,
- * and it shows off the two fixed colours the flat style leans on hardest, since
- * gilt and cream both sing against a blue-green.
+ * NOT the app icon's oak, and that has survived two passes over this constant.
+ * The oak is the house *fallback* — it is what `art/flat.ts` draws in when no
+ * scheme is set — but as a first impression it is the blandest thing the app
+ * could choose: a brown case on a beige wall, which is what every stock
+ * bookshelf illustration looks like. The opening room should be the same
+ * drawing with a decision in it.
  *
- * ## Re-opened when the reader called the opening shelf bland, and kept
+ * ## Verdigris held this slot, and lost it to a photograph
  *
- * The complaint turned out to be about the CARPENTRY, not the palette: the case
- * was a plain plank build, so every room read as a coloured slab. Twenty-two
- * rooms were then photographed on the new opening carpentry — the whole colour
- * axis on one build (`shots-now/defaults/board-b.png`, `board-h.png`) — and
- * verdigris still won, on three counts that only show up in a photograph:
+ * The green-blue case was chosen because gilt and cream sing against it, and
+ * that is still true. What it could not survive was being looked at as a whole
+ * FIRST-RUN SCREEN with the case's other two axes settled around it
+ * (`shots-now/room-rank/before-first-run.png`): a mid-dark blue-green timber
+ * folds to a blue-green recess only a step under it, so at 80% zoom two thirds
+ * of the screen is one flat green field and the arcade behind the books all but
+ * disappears. The reader's words were "the default bookshelf colour, wallpaper
+ * colour and design looks weird", and colour was a third of it.
  *
- *  - its recess sits far enough under its timber that the arcade behind the
- *    books reads as arches. On `walnut`, `fumed` and `ebonised` the same
- *    arches all but vanish, which is the difference between carpentry and mud;
- *  - its wall (`#f1e8d2`) is warm plaster against a cool case, so the wall
- *    reads as a room rather than as backdrop. The cool-walled rooms —
- *    `cardroom`, `slateroof`, `harbour` — go grey next to the app's cream
- *    pages;
- *  - its six cloths (rust, saffron, inkblue, oxblood, sand, mulberry) are the
- *    most elegant set in the file, and they are what every new book is dressed
- *    from. `peacock` beats it on the case alone and loses badly here: tangerine,
- *    magenta and lemon make a circus of the shelf a week later.
+ * ## Why `lapis`
  *
- * `Old Athenaeum` is first in the picker and one click away, so nothing is lost.
+ * Six colours were shot on the new opening carpentry, one board, only the
+ * palette varying (`shots-now/room-rank/board-z.png`), and lapis won on the
+ * three counts that only show up in a photograph:
+ *
+ *  - its timber is light enough that the fold to `recess` lands somewhere the
+ *    eye can find, so the trefoil bays behind the books read as bays. That is
+ *    the difference between carpentry and mud, and it is the whole of what went
+ *    wrong with verdigris here;
+ *  - it is the strongest HUE CONTRAST in the file against the app's own cream:
+ *    the wall, the book plates, the page overlay and the rail are all warm
+ *    parchment, and a deep blue is the one case colour that makes all four read
+ *    as light rather than as beige-on-beige. Its own wall (`#eeeee2`) stays
+ *    warm-neutral, so the room does not go grey the way `cardroom`, `slateroof`
+ *    and `harbour` do;
+ *  - its six cloths (amber, coral, sand, bottle, shell, mulberry) are what
+ *    every new book is dressed from, and warm cloth on blue is the most
+ *    forgiving combination in the file. `peacock` beats it on the case alone
+ *    and loses badly here — tangerine, magenta and lemon make a circus of the
+ *    shelf a week later.
+ *
+ * `Old Athenaeum` is first in the picker and `Verdigris Library` is one click
+ * away, so nothing is lost.
  */
-export const DEFAULT_THEME_ID: ThemeId = 'verdigris';
+export const DEFAULT_THEME_ID: ThemeId = 'lapis';
 
 /**
  * The eight rooms a panel should show before it offers the other fifty-two.
@@ -957,13 +972,13 @@ export const DEFAULT_THEME_ID: ThemeId = 'verdigris';
  * sells the individuals.
  */
 export const FEATURED_THEME_IDS: readonly ThemeId[] = [
-  'verdigris',
+  'lapis',
   'athenaeum',
   'walnut',
   'limed',
   'cardroom',
   'plaster',
-  'lapis',
+  'garnet',
   'carousel',
 ];
 

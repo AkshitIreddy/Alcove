@@ -51,6 +51,7 @@ import {
   type BookcaseState,
 } from '../../data/bookcases';
 import { save as saveSettings, subscribe as subscribeSettings } from '../../data/settings';
+import { liveCommandIds } from '../../data/keybindings';
 import type { Book } from '../../data/types';
 import { flatScheme, setFlatScheme } from '../../art/flat';
 import type { ColourScheme } from '../../art/themes';
@@ -658,15 +659,22 @@ export class ShelfWorld {
     // would deliver the pre-load default and switch the world to a case the
     // reader did not ask for.
     this.ready = loadBookcases()
+      // `store.init` MUST run. It is what opens the store's seed gate, and a
+      // gate nobody opens is a shelf with no floors at all — strictly worse
+      // than the empty case a dead database used to draw. So a rejected load
+      // falls through to the default case rather than skipping the init.
+      .catch(() => null)
       .then((state) => {
         if (this.destroyed) return;
-        this.adoptBookcase(state);
-        this.unsubs.push(
-          subscribeBookcases((next) => {
-            void this.applyBookcase(next);
-          }),
-        );
-        return this.store.init(state.activeId);
+        if (state !== null) {
+          this.adoptBookcase(state);
+          this.unsubs.push(
+            subscribeBookcases((next) => {
+              void this.applyBookcase(next);
+            }),
+          );
+        }
+        return this.store.init(state?.activeId ?? this.caseId);
       })
       .then(() => {
         if (this.destroyed) return;
@@ -689,6 +697,12 @@ export class ShelfWorld {
       const globals = globalThis as Record<string, unknown>;
       globals['__shelfWorld'] = this;
       globals['__shelfSaveSettings'] = saveSettings;
+      // Which keyboard commands are LIVE right now. Handed out from here for
+      // the same reason everything else on this list is: a probe's own
+      // `import('/src/data/keybindings')` can resolve to a second copy of the
+      // module on a dev server that has served HMR updates, and that copy's
+      // command table is empty no matter what the app has registered.
+      globals['__shelfCommands'] = liveCommandIds;
       // Library studio bridge — same module instance the world subscribed to.
       globals['__libraryPrefs'] = {
         save: (patch: Partial<LibraryPrefs>) => saveLibraryPrefsFn(patch),

@@ -36,7 +36,7 @@ import {
   type IndexedPage,
 } from '../../data/search';
 import { settings } from '../../data/settings';
-import { matchesBinding } from '../../data/keybindings';
+import { matchesBinding, registerCommands } from '../../data/keybindings';
 import type { Book } from '../../data/types';
 import { fuzzyMatch } from '../../search/fuzzy';
 import { tokenize } from '../../search/rank';
@@ -176,8 +176,14 @@ export default function QuickSwitcher(): JSX.Element {
     }
   };
 
-  const openSwitcher = (): void => {
-    setRaw('');
+  /**
+   * `scope` is which of the bar's two modes it opens in. The `>` prefix IS the
+   * mode (see `mode()`), so opening straight into full-text search is a matter
+   * of seeding the field with it — no second piece of state that could
+   * disagree with the tabs.
+   */
+  const openSwitcher = (scope: 'nav' | 'content' = 'nav'): void => {
+    setRaw(scope === 'content' ? '>' : '');
     setSel(0);
     setRecents(recentBookIds());
     setOpen(true);
@@ -330,6 +336,33 @@ export default function QuickSwitcher(): JSX.Element {
   onCleanup(() =>
     window.removeEventListener('keydown', onGlobalKeyDown, { capture: true }),
   );
+
+  /**
+   * The bar's second door: straight into "search text".
+   *
+   * Through the command bus rather than a second `matchesBinding` branch in
+   * the handler above, because that handler runs in the CAPTURE phase — which
+   * is right for the palette (it must beat the editor's own Mod-k link tray)
+   * and wrong for everything else, since a capture listener also beats a
+   * settings row that is in the middle of recording a new combination.
+   *
+   * Only the primary instance claims it, for the same reason only the primary
+   * instance draws the overlay — and it is an effect rather than an `onMount`
+   * because the primary slot MOVES: shelf and book each mount a switcher, so
+   * the instance that is primary on the shelf hands the slot over when that
+   * view goes away, and the one that inherits it has long since mounted.
+   */
+  createEffect(() => {
+    if (!isPrimary()) return;
+    onCleanup(
+      registerCommands({
+        'search-text': () => {
+          if (open() && mode() === 'content') close();
+          else openSwitcher('content');
+        },
+      }),
+    );
+  });
 
   const toggleMode = (): void => {
     setRaw((value) => (value.startsWith('>') ? value.slice(1) : `>${value}`));

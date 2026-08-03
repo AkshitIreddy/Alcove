@@ -21,6 +21,8 @@ export function inlineText(content: readonly Inline[]): string {
   let out = '';
   for (const node of content) {
     if (node.kind === 'text' || node.kind === 'code') out += node.text;
+    else if (node.kind === 'math' || node.kind === 'footnote') out += node.text;
+    else if (node.kind === 'pageref') out += node.label;
     else out += inlineText(node.children);
   }
   return out;
@@ -58,13 +60,20 @@ export function blockLineCost(block: Block): number {
       return block.rows.length + (block.header !== null ? 1 : 0) + 2;
     case 'image':
       return 9;
+    case 'mathBlock':
+      // An equation is drawn a good deal taller than the line it sits on, and
+      // a multi-line aligned environment taller again.
+      return 2 + block.latex.split('\n').length;
     case 'diagram':
       return 10;
     case 'fetchDirective':
       return 9;
     case 'container': {
-      // Side-by-side columns are as tall as their tallest column.
-      if (block.name === 'columns') {
+      // Side-by-side columns are as tall as their tallest column — and so is
+      // an image row, which is the same layout with pictures in it. Summing
+      // its children counted a row of three kittens as three full-width
+      // photographs and cut the page before it.
+      if (block.name === 'columns' || block.name === 'image-row') {
         let tallest = 0;
         for (const child of block.children) {
           tallest = Math.max(tallest, blockLineCost(child));

@@ -14,6 +14,26 @@
  * even after seedIfEmpty(), ~40 deterministic demo books (spine_seed =
  * fnv1a(title), floors 0–5 with varied counts per floor) keep the shelf
  * visually populated.
+ *
+ * ## Nothing may read the books table before the seed has written to it
+ *
+ * `init()` is not the only thing that loads a page. The world starts its rAF
+ * loop the moment it is constructed, the virtualizer asks for the visible
+ * range on the very first frame, and `ensureRange` fetches 60ms later — while
+ * `init()` is still inside `ensureBookcases()` + `seedIfEmpty()`. On the real
+ * SQLite file (every call an IPC round trip, plus the welcome book's six
+ * inserts) that fetch wins, comes back EMPTY, marks page 0 `ready`, and then
+ * `init`'s own load returns at the front door because `pages.has(0)`.
+ *
+ * The result on a brand-new install was a bookcase that read as bare while the
+ * welcome book sat in the database: the shelf showed the first-run invitation,
+ * and the reader's first click on it appeared to create TWO books — the one
+ * they asked for, plus the welcome book that `refreshAll()` finally revealed.
+ *
+ * So the seed is a GATE (`seeded`), opened by `init()` and awaited by every
+ * page load before it queries. Whoever wins the race now reads a database the
+ * seed has finished with. `destroy()` opens it too, so a store torn down
+ * before init can never strand a pending load.
  */
 
 import {
@@ -145,6 +165,13 @@ export class FloorStore {
   private readonly floors = new Map<number, Book[]>();
   private readonly pages = new Map<number, PageStatus>();
   private readonly pendingPages = new Set<number>();
+  /**
+   * Page loads currently in flight, so `init` can AWAIT the one the
+   * virtualizer started rather than skipping it. Without this, `init` would
+   * resolve while page 0 was still parked on the seed gate and the world
+   * would call `ready` on a shelf whose first floor had not arrived.
+   */
+  private readonly pageLoads = new Map<number, Promise<void>>();
   private readonly listeners = new Set<(floors: readonly number[]) => void>();
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
@@ -153,6 +180,24 @@ export class FloorStore {
 
   /** The bookcase every query in this store is scoped to. */
   private caseId: string = DEFAULT_BOOKCASE_ID;
+
+  /**
+   * Opens the seed gate. Assigned by the promise below, whose executor runs
+   * synchronously during field initialization — so the resolver exists before
+   * any method can be called.
+   */
+  private openSeedGate: () => void = () => {};
+
+  /**
+   * Resolves once `init()` has finished seeding (or given up on it). Every
+   * page load waits on this before touching the books table — see the module
+   * docblock. It is created here rather than in `init` because the virtualizer
+   * can ask for a page before `init` is even called: the world only reaches it
+   * after `loadBookcases()` resolves, and that is itself a database round trip.
+   */
+  private readonly seeded: Promise<void> = new Promise<void>((resolve) => {
+    this.openSeedGate = resolve;
+  });
 
   /** Highest occupied floor (>= 0), refreshed on init and reloads. */
   maxFloor = 0;
@@ -185,10 +230,12 @@ export class FloorStore {
     } catch {
       // Seeding is best-effort; the demo fallback below still populates.
     }
-    // The demo library belongs to the default case only. A second bookcase
-    // that comes back empty IS empty, and filling it with forty invented
-    // books would be a lie the reader cannot delete.
-    await this.loadPage(0, bookcaseId === DEFAULT_BOOKCASE_ID);
+    // Whatever the virtualizer queued while the above was running may query
+    // now — and only now.
+    this.openSeedGate();
+    // Its load, if it got there first; ours otherwise. Either way `init` does
+    // not resolve until floor 0 is really on the shelf.
+    await (this.pageLoads.get(0) ?? this.loadPage(0, false));
     await this.updateMaxFloor();
   }
 
@@ -215,7 +262,7 @@ export class FloorStore {
     if (stale.length > 0) {
       for (const cb of this.listeners) cb(stale);
     }
-    await this.loadPage(0, bookcaseId === DEFAULT_BOOKCASE_ID);
+    await this.loadPage(0, false);
     await this.updateMaxFloor();
   }
 
@@ -243,7 +290,7 @@ export class FloorStore {
     const loaded = [...this.pages.keys()];
     this.pages.clear();
     for (const page of loaded) {
-      await this.loadPage(page, page === 0 && this.demoMode);
+      await this.loadPage(page, true);
     }
     await this.updateMaxFloor();
   }
@@ -307,6 +354,10 @@ export class FloorStore {
       this.debounce = null;
       const pages = [...this.pendingPages];
       this.pendingPages.clear();
+      // `false`, not "never a demo library": this fetch can legitimately be
+      // the one that loads page 0 first, and it must then answer exactly as
+      // `init` would have. The seed gate inside `loadPage` is what makes the
+      // two interchangeable.
       for (const page of pages) void this.loadPage(page, false);
     }, FETCH_DEBOUNCE_MS);
   }
@@ -318,20 +369,55 @@ export class FloorStore {
 
   destroy(): void {
     this.destroyed = true;
+    // A store torn down before `init` ran must not leave a page load parked
+    // on a gate nobody will ever open.
+    this.openSeedGate();
     if (this.debounce !== null) clearTimeout(this.debounce);
     this.debounce = null;
     this.listeners.clear();
     this.floors.clear();
     this.pages.clear();
     this.pendingPages.clear();
+    this.pageLoads.clear();
   }
 
-  private async loadPage(page: number, allowDemoFallback: boolean): Promise<void> {
-    if (this.destroyed || this.pages.has(page)) return;
+  /**
+   * May page `page` fall back to the invented demo library?
+   *
+   * Only page 0, only the default case — a second bookcase that comes back
+   * empty IS empty, and filling it with forty invented books would be a lie
+   * the reader cannot delete.
+   *
+   * `sticky` is the refresh rule: a re-read must never INVENT the demo
+   * library, or emptying the case and re-reading it would repopulate it. It
+   * only keeps a demo library that is already on screen.
+   */
+  private demoFallbackFor(page: number, sticky: boolean): boolean {
+    if (page !== 0) return false;
+    return sticky ? this.demoMode : this.caseId === DEFAULT_BOOKCASE_ID;
+  }
+
+  private loadPage(page: number, sticky: boolean): Promise<void> {
+    if (this.destroyed || this.pages.has(page)) return Promise.resolve();
+    const run = this.loadPageNow(page, sticky);
+    this.pageLoads.set(page, run);
+    return run.finally(() => {
+      if (this.pageLoads.get(page) === run) this.pageLoads.delete(page);
+    });
+  }
+
+  private async loadPageNow(page: number, sticky: boolean): Promise<void> {
     this.pages.set(page, 'loading');
+    // THE SEED GATE (module docblock). Claiming the page above and querying
+    // below are deliberately on opposite sides of it: the claim is what stops
+    // two loads of the same page, and the wait is what stops any of them
+    // reading a books table `seedIfEmpty()` has not finished writing.
+    await this.seeded;
+    if (this.destroyed) return;
     const start = page * FLOOR_PAGE_SIZE;
     const end = start + FLOOR_PAGE_SIZE - 1;
     const caseId = this.caseId;
+    const allowDemoFallback = this.demoFallbackFor(page, sticky);
     let books: Book[] = [];
     try {
       books = await listBooksByFloorRange(start, end, caseId);

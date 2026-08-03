@@ -13,7 +13,7 @@ import {
   settings,
   subscribe as subscribeSettings,
 } from "./data/settings";
-import { matchesBinding } from "./data/keybindings";
+import { installShortcuts, registerCommands } from "./data/keybindings";
 import { applySettings } from "./features/settings/apply";
 import SettingsPanel from "./features/settings/SettingsPanel";
 import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
@@ -23,6 +23,7 @@ import TutorialOverlay, { maybeAutoStartTutorial } from "./features/tutorial";
 import { openTransferPanel } from "./features/transfer";
 import ShelfView from "./views/ShelfView";
 import BookView from "./views/BookView";
+import { CheatSheetHost } from "./views/CheatSheet";
 import "./styles/settings.css";
 
 const VIEWS: readonly ViewState[] = ["shelf", "book"];
@@ -118,20 +119,23 @@ export default function App(): JSX.Element {
     // First run opens the guided tour; it no-ops once completed.
     void maybeAutoStartTutorial();
 
-    // Library import/export: rows in the settings sheet, plus these two combos.
-    // Read from settings so the shortcut list the sheet renders IS the binding.
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const keys = settings.keybindings;
-      if (matchesBinding(event, keys["export-library"] ?? "mod+shift+e")) {
-        event.preventDefault();
-        openTransferPanel("export");
-      } else if (matchesBinding(event, keys["import-library"] ?? "mod+shift+i")) {
-        event.preventDefault();
-        openTransferPanel("import");
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+    // THE keyboard listener, for the whole app. Every rebindable shortcut runs
+    // through it; a view says what its commands DO by registering them (see
+    // data/keybindings), never which key runs them. Installed here rather than
+    // in a view because it must outlive both scenes — the shelf and the book
+    // swap under it, and their commands come and go with them.
+    onCleanup(installShortcuts(() => settings.keybindings));
+
+    // The commands the shell itself performs. These were three hand-rolled
+    // `matchesBinding` branches in a keydown handler; the dispatcher does the
+    // matching now, so what is left here is only the doing.
+    onCleanup(
+      registerCommands({
+        "export-library": () => openTransferPanel("export"),
+        "import-library": () => openTransferPanel("import"),
+        "open-settings": () => setSettingsOpen((open) => !open),
+      }),
+    );
 
     // The OS reduced-motion switch can flip while the app is open; re-apply so
     // the inline --motion-scale follows it (see settings/apply.ts).
@@ -153,6 +157,10 @@ export default function App(): JSX.Element {
       </Show>
       <QuickSwitcher />
       <TutorialOverlay />
+      {/* The cheat-sheet lives at the root so `?` answers on the shelf too —
+          it used to belong to BookView, which meant the first screen a reader
+          ever sees was the one screen that could not tell them the keys. */}
+      <CheatSheetHost />
 
       <button
         type="button"

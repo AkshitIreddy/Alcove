@@ -84,6 +84,7 @@ import {
   saveLibraryPrefs,
   type LibraryPrefs,
 } from '../../features/bookshelf/libraryPrefs';
+import YourDesigns from '../../features/packs/YourDesigns';
 import BookcasesPanel from './BookcasesPanel';
 import DesignPicker, { type PickerOption } from './DesignPicker';
 import OwnColour from './OwnColour';
@@ -880,6 +881,12 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
               or a named bookcase ({SHELF_PRESETS.length})
             </button>
           </div>
+
+          {/* The reader's own carpentry, where carpentry is chosen. See the
+              header of features/packs/YourDesigns.tsx: a vocabulary reachable
+              only from a panel nobody opens is the failure this tree keeps
+              having, and it is the same one tests/roll-gates.test.ts watches. */}
+          <YourDesigns axis="carpentry" />
         </section>
 
         {/* ----------------------------- wallpaper -------------------------- */}
@@ -935,6 +942,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             onPick={(id) => patchDesign({ wallpaper: getWallpaper(id).spec })}
             onMore={() => setSheet('wallpaper')}
           />
+
+          <YourDesigns axis="wallpaper" />
 
           {/*
             The three rows below all tune a MOTIF, and `plain` is the absence of

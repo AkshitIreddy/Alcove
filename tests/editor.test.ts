@@ -175,7 +175,20 @@ const fixtureDoc: PageDoc = {
         { type: 'text', text: 'A cell divides ' },
         {
           type: 'sticker',
-          attrs: { stickerId: 'bee', scale: 1.5, rotate: -8 },
+          // `placement`/`x`/`y` are the free-placement attrs (see
+          // src/editor/effects/freePlacement.ts). They carry defaults, so the
+          // schema puts them back on the way out and the fixture has to state
+          // them for the round-trip to be byte-identical — a stored sticker
+          // with none of them IS an inline one, which is what a doc written
+          // before free placement existed says.
+          attrs: {
+            stickerId: 'bee',
+            scale: 1.5,
+            rotate: -8,
+            placement: 'inline',
+            x: 50,
+            y: 50,
+          },
         },
         { type: 'text', text: ' carefully.' },
       ],

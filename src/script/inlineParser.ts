@@ -9,6 +9,18 @@
  * Markers: `**`/`__` strong, `*`/`_` em, `~~` strike, `==` highlight,
  * `^` sup, `~` sub, `` ` `` code, `[text](url)` link. Backslash escapes any
  * ASCII punctuation character.
+ *
+ * THREE LEAF SPANS sit alongside those, and all three are scanned before the
+ * bracket/emphasis machinery gets a look, because each one owns a character
+ * the machinery would otherwise claim:
+ *
+ *   `$x^2$`            maths — the TeX is one opaque string, never markup
+ *   `[[Another page]]` a reference to another page in the library
+ *   `[^ a note ]`      a footnote marker carrying its own note
+ *
+ * Each of them fails SOFT into literal text, which is the whole reason the
+ * dollar rule is written the way it is: "it costs $5 and $10" must stay a
+ * sentence about money, so a formula may not open or close against a space.
  */
 
 import type { Attrs, Diag, Inline, TextNode } from "./types";
@@ -25,6 +37,31 @@ interface Frame {
 
 const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
 const WORD = /[A-Za-z0-9]/;
+
+/**
+ * Scan from `at` (just past an opener) to an unescaped `close`, honouring
+ * backslash escapes so a note may contain the bracket that ends it. Returns
+ * the raw slice and the index of the closer, or null when there is none.
+ */
+function scanTo(
+  text: string,
+  at: number,
+  close: string,
+): { raw: string; end: number } | null {
+  let out = "";
+  let k = at;
+  while (k < text.length) {
+    if (text[k] === "\\" && k + 1 < text.length) {
+      out += text[k + 1];
+      k += 2;
+      continue;
+    }
+    if (text.startsWith(close, k)) return { raw: out, end: k };
+    out += text[k];
+    k += 1;
+  }
+  return null;
+}
 
 /** Merge adjacent text nodes and drop empty ones (canonical shape). */
 function mergeText(nodes: Inline[]): Inline[] {
@@ -156,6 +193,91 @@ export function parseInline(text: string, base: number): InlineParseResult {
       });
       i = end;
       continue;
+    }
+
+    // maths: `$x^2$`. Content may not be empty and may not touch a space on
+    // either side, which is what keeps "$5 and $10" a sentence about money.
+    if (ch === "$" && text[i + 1] !== "$") {
+      const close = text.indexOf("$", i + 1);
+      const body = close === -1 ? "" : text.slice(i + 1, close);
+      if (
+        close !== -1 &&
+        body !== "" &&
+        !/^\s/.test(body) &&
+        !/\s$/.test(body)
+      ) {
+        flush(i);
+        const { attrs, end } = maybeAttrs(close + 1);
+        top().children.push({
+          kind: "math",
+          text: body,
+          srcStart: base + i,
+          srcEnd: base + end,
+          ...(attrs !== undefined ? { attrs } : {}),
+        });
+        i = end;
+        continue;
+      }
+      appendText("$", i);
+      i++;
+      continue;
+    }
+
+    // `[[Another page]]` — a reference to a page, before `[` opens a link.
+    if (ch === "[" && text[i + 1] === "[") {
+      const found = scanTo(text, i + 2, "]]");
+      if (found !== null) {
+        const label = found.raw.trim();
+        flush(i);
+        if (label === "") {
+          pushDiag(
+            diags,
+            "pageref-empty",
+            "'[[]]' names no page",
+            { srcStart: base + i, srcEnd: base + found.end + 2 },
+            "[[the page's title]]",
+          );
+        }
+        const { attrs, end } = maybeAttrs(found.end + 2);
+        top().children.push({
+          kind: "pageref",
+          label,
+          srcStart: base + i,
+          srcEnd: base + end,
+          ...(attrs !== undefined ? { attrs } : {}),
+        });
+        i = end;
+        continue;
+      }
+      // no closer — fall through and let `[` open a link frame as before
+    }
+
+    // `[^ a note ]` — the marker carries the note (see FootnoteNode).
+    if (ch === "[" && text[i + 1] === "^") {
+      const found = scanTo(text, i + 2, "]");
+      if (found !== null) {
+        const note = found.raw.trim();
+        flush(i);
+        if (note === "") {
+          pushDiag(
+            diags,
+            "footnote-empty",
+            "'[^]' carries no note — the page will show an empty one",
+            { srcStart: base + i, srcEnd: base + found.end + 1 },
+            "[^ what the note says ]",
+          );
+        }
+        const { attrs, end } = maybeAttrs(found.end + 1);
+        top().children.push({
+          kind: "footnote",
+          text: note,
+          srcStart: base + i,
+          srcEnd: base + end,
+          ...(attrs !== undefined ? { attrs } : {}),
+        });
+        i = end;
+        continue;
+      }
     }
 
     if (ch === "[") {

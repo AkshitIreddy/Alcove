@@ -32,13 +32,11 @@
 
 import { getFontEmbedCSS, toCanvas } from 'html-to-image';
 import { LruMap, RASTER_CACHE_CAPACITY, snapshotPixelRatio } from './math';
+import { paperToneTag, refreshPaperTone, snapshotBackground } from './paperTone';
 import { inlineSvgStyles } from './svgSnapshot';
 
 /** Debounce window between an edit and its idle re-rasterization. */
 export const RASTER_DEBOUNCE_MS = 300;
-
-/** tokens.css --paper-cream — snapshot background must match resting CSS. */
-const PAPER_CREAM = '#f7f1e3';
 
 /** Marker class while capturing; flip.css hides caret/selection under it. */
 const SNAPSHOTTING_CLASS = 'snapshotting';
@@ -330,6 +328,18 @@ export interface RasterEntry {
   readonly bitmap: ImageBitmap;
   /** Page version at capture time (compare with `version()` for staleness). */
   readonly version: number;
+  /**
+   * `paperTone.paperToneTag()` at capture time.
+   *
+   * The theme is an axis of variation in these baked pixels — every colour on
+   * the page comes from a token settings.css remaps — and a theme is applied
+   * by writing `data-theme` on `<html>`, which is nowhere near the leaf the
+   * host's MutationObserver watches. Without this in the entry, a reader who
+   * changed theme kept turning pages of the old one until they happened to
+   * edit something. CLAUDE.md's rule about cache keys, applied to the one
+   * cache in this folder.
+   */
+  readonly tone: string;
   readonly width: number;
   readonly height: number;
   readonly pixelRatio: number;
@@ -427,10 +437,17 @@ export class PageRasterCache {
     return this.entries.peek(pageId);
   }
 
-  /** Whether the cached bitmap matches the page's current version. */
+  /**
+   * Whether the cached bitmap matches the page's current version AND was taken
+   * under the paper tone in force now (see RasterEntry.tone).
+   */
   isFresh(pageId: string): boolean {
     const entry = this.entries.peek(pageId);
-    return entry !== undefined && entry.version === this.version(pageId);
+    return (
+      entry !== undefined &&
+      entry.version === this.version(pageId) &&
+      entry.tone === paperToneTag()
+    );
   }
 
   /**
@@ -561,6 +578,11 @@ export class PageRasterCache {
       return this.captureUnmounted(pageId);
     }
     const versionAtStart = this.version(pageId);
+    // The theme can have changed since the last capture; re-read it now so the
+    // canvas is backed with TODAY's paper and the entry is stamped with it.
+    refreshPaperTone();
+    const toneAtStart = paperToneTag();
+    const background = snapshotBackground(element);
 
     // Font-embed CSS is built once for the whole app lifetime and reused —
     // per the doc this removes the biggest per-capture cost.
@@ -579,7 +601,7 @@ export class PageRasterCache {
     try {
       canvas = await toCanvas(element, {
         pixelRatio: this.pixelRatio,
-        backgroundColor: PAPER_CREAM,
+        backgroundColor: background,
         fontEmbedCSS,
         imagePlaceholder: TRANSPARENT_PX,
         filter: snapshotFilter,
@@ -611,6 +633,7 @@ export class PageRasterCache {
     const entry: RasterEntry = {
       bitmap,
       version: versionAtStart,
+      tone: toneAtStart,
       width: canvas.width,
       height: canvas.height,
       pixelRatio: this.pixelRatio,
@@ -624,6 +647,8 @@ export class PageRasterCache {
     const captureOffscreen = this.options.captureOffscreen;
     if (captureOffscreen === undefined) return null;
     const versionAtStart = this.version(pageId);
+    refreshPaperTone();
+    const toneAtStart = paperToneTag();
     let bitmap: ImageBitmap | null;
     try {
       bitmap = await captureOffscreen(pageId);
@@ -643,6 +668,7 @@ export class PageRasterCache {
     const entry: RasterEntry = {
       bitmap,
       version: versionAtStart,
+      tone: toneAtStart,
       width: bitmap.width,
       height: bitmap.height,
       pixelRatio: this.pixelRatio,

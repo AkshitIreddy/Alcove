@@ -45,7 +45,7 @@ import {
 import { createPage, getPage, listPages, savePageDoc } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { save as saveSettings, settings } from '../data/settings';
-import { matchesBinding } from '../data/keybindings';
+import { registerCommands } from '../data/keybindings';
 import type { Book, Page, PageDoc, PageStyle } from '../data/types';
 import {
   coverDataUrl,
@@ -80,13 +80,29 @@ import HistoryPanel from './rail/HistoryPanel';
 import PageStylePanel from './rail/PageStylePanel';
 import CataloguePanel from './rail/CataloguePanel';
 import TocPanel from './rail/TocPanel';
-import CheatSheet from './CheatSheet';
+import FocusDial from './rail/FocusDial';
+import {
+  ZOOM_REST,
+  clampPan,
+  clampZoom,
+  stepFocusLevel,
+  stepZoom,
+  type FocusLevel,
+} from './rail/focusLevels';
+import {
+  armedSticker,
+  disarmSticker,
+  freeStickerNode,
+  pointToPagePct,
+  splitFreeStickers,
+} from '../editor/effects/freePlacement';
 import ThumbStrip from './ThumbStrip';
 import {
   readBookmarks,
   saveBookmarks,
   toggleBookmark,
   type Bookmark,
+  type RibbonColor,
 } from './bookmarks';
 import {
   arrowFlipAction,
@@ -104,6 +120,9 @@ import '../styles/editor.css';
 import '../styles/insert.css';
 import '../styles/spread.css';
 import '../styles/rail.css';
+// Last on purpose: the reader's own controls (the focus range, free-placed
+// stickers, the merged ribbon plate) extend rules spread.css states first.
+import '../styles/reader.css';
 
 interface BookSession {
   readonly book: Book;
@@ -448,23 +467,94 @@ export default function BookView(): JSX.Element {
    * the carried blocks addresses the same spot in the new doc (clamped
    * defensively).
    */
-  const focusPageCaret = (
+  /**
+   * Run something against a page's editor as soon as that editor exists.
+   *
+   * The rAF chaser described above, on its own, so the caret carry and the
+   * sticker placement below share one answer to "the leaf is keyed on
+   * id@version and may not have mounted yet".
+   */
+  const withPageEditor = (
     pageId: string,
-    offset: number | 'end' | null,
+    run: (editor: NonNullable<ReturnType<typeof getPageEditor>>) => void,
   ): void => {
     const deadline = performance.now() + 6000;
     const attempt = (): void => {
       const instance = getPageEditor(pageId);
       if (instance && instance.view.dom.isConnected) {
-        const size = instance.state.doc.content.size;
-        const pos =
-          offset === 'end' ? 'end' : Math.max(0, Math.min(offset ?? 0, size));
-        instance.chain().focus(pos, { scrollIntoView: false }).run();
+        run(instance);
         return;
       }
       if (performance.now() < deadline) requestAnimationFrame(attempt);
     };
     attempt();
+  };
+
+  const focusPageCaret = (
+    pageId: string,
+    offset: number | 'end' | null,
+  ): void => {
+    withPageEditor(pageId, (instance) => {
+      const size = instance.state.doc.content.size;
+      const pos =
+        offset === 'end' ? 'end' : Math.max(0, Math.min(offset ?? 0, size));
+      instance.chain().focus(pos, { scrollIntoView: false }).run();
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Free-placed stickers (see src/editor/effects/freePlacement.ts for the
+  // contract this upholds — in one line: a free sticker belongs to the PAGE,
+  // and the pagination carry may never take it anywhere).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Where a free sticker is anchored: just inside the page's first block.
+   *
+   * That is the one position on a page the overflow drain provably cannot
+   * reach — `trailingOverflowCount` removes trailing blocks and always leaves
+   * at least one. Returns null on a page with no textblock at all, which is
+   * the caller's cue to do nothing rather than to invent a paragraph.
+   */
+  const freeAnchorPos = (doc: {
+    forEach(fn: (node: { isTextblock: boolean }, offset: number) => void): void;
+  }): number | null => {
+    let at: number | null = null;
+    doc.forEach((node, offset) => {
+      if (at === null && node.isTextblock) at = offset + 1;
+    });
+    return at;
+  };
+
+  /**
+   * Put free-placed stickers back on the page they were placed on.
+   *
+   * Called on every carry with whatever `splitFreeStickers` found in the
+   * blocks on their way out. Dispatched with `addToHistory: false` for the
+   * same reason the drain itself is: a page break is not an edit the reader
+   * made, and one Ctrl+Z should never half-undo one.
+   */
+  const anchorFreeStickers = (
+    pageId: string,
+    nodes: readonly Record<string, unknown>[],
+  ): void => {
+    if (nodes.length === 0) return;
+    withPageEditor(pageId, (editor) => {
+      const at = freeAnchorPos(editor.state.doc);
+      if (at === null) return;
+      const tr = editor.state.tr;
+      let inserted = false;
+      for (const json of nodes) {
+        try {
+          tr.insert(at, editor.schema.nodeFromJSON(json));
+          inserted = true;
+        } catch {
+          // A sticker id the schema no longer knows: dropping it quietly is
+          // better than throwing inside a page break.
+        }
+      }
+      if (inserted) editor.view.dispatch(tr.setMeta('addToHistory', false));
+    });
   };
 
   const carryOverflow = async (
@@ -476,6 +566,15 @@ export default function BookView(): JSX.Element {
     const slot = pages().findIndex((page) => page.id === pageId);
     if (slot < 0) return;
 
+    // A free-placed sticker belongs to the PAGE, not to the paragraph it was
+    // anchored in — so the blocks travel and the stickers stay. This is the
+    // second half of the contract in effects/freePlacement.ts (the first is
+    // the anchor position, which the drain provably cannot reach; this catches
+    // the case where an earlier carry PREPENDED enough to push that anchor
+    // into the tail).
+    const { kept, freed } = splitFreeStickers(blocks);
+    anchorFreeStickers(pageId, freed);
+
     let next: Page | null = pages()[slot + 1] ?? null;
     if (!next) {
       next = await appendPage();
@@ -486,7 +585,7 @@ export default function BookView(): JSX.Element {
     const line = bookLineHeight();
     if (line !== undefined) fallbackAttrs.lineHeightPx = line;
 
-    const merged = prependBlocksToDoc(next.doc, blocks, fallbackAttrs);
+    const merged = prependBlocksToDoc(next.doc, kept, fallbackAttrs);
     updatePageDoc(next.id, merged);
     bumpDocVersion(next.id); // remounts the leaf when it is on this spread
     await savePageDoc(next.id, merged);
@@ -577,11 +676,50 @@ export default function BookView(): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
-  // Focus mode (roadmap #12) + keyboard cheat-sheet (roadmap #14)
+  // Focus mode (roadmap #12) — a RANGE, not a switch (see rail/focusLevels.ts)
+  // + keyboard cheat-sheet (roadmap #14)
+  //
+  // The reader: *"focus mode should allow user to basically zoom in and also
+  // even just get into full page mode where the book isnt even visible and it
+  // just page and even go as far just making one page visible, so basically it
+  // should be controllable by user"*.
+  //
+  // So: four rungs (off → spread → page → leaf), a zoom the reader sets, and a
+  // pan for when the zoom has made the leaf bigger than the window. `focusMode`
+  // survives as a derived boolean because the class it drives — `is-focus-mode`
+  // — is what the e2e suite and the tour both find the mode by.
   // -------------------------------------------------------------------------
-  const [focusMode, setFocusMode] = createSignal(false);
-  const [cheatOpen, setCheatOpen] = createSignal(false);
+  const [focusLevel, setFocusLevel] = createSignal<FocusLevel>('off');
+  const [focusZoom, setFocusZoom] = createSignal(ZOOM_REST);
+  const [focusPan, setFocusPan] = createSignal({ x: 0, y: 0 });
+  /** Which leaf survives at the `leaf` rung. */
+  const [soloLeaf, setSoloLeaf] = createSignal<LeafSide>('left');
   const [activePanel, setActivePanel] = createSignal<RailPanelId | null>(null);
+
+  const focusMode = (): boolean => focusLevel() !== 'off';
+  /** The two rungs where the book itself is out of the way. */
+  const boardsOff = (): boolean =>
+    focusLevel() === 'page' || focusLevel() === 'leaf';
+
+  /** The window box the pan is clamped against (the stage fills it). */
+  const viewportBox = (): { width: number; height: number } => ({
+    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+    height: typeof window === 'undefined' ? 800 : window.innerHeight,
+  });
+
+  const recentre = (): void => {
+    setFocusZoom(ZOOM_REST);
+    setFocusPan({ x: 0, y: 0 });
+  };
+
+  const changeZoom = (direction: 1 | -1): void => {
+    const next = stepZoom(focusZoom(), direction);
+    setFocusZoom(next);
+    // Zooming back out has to bring the book back with it, or the reader ends
+    // up at 100% with the spread parked off the left edge and no way to tell
+    // that the pan — not the zoom — is what is wrong.
+    setFocusPan((pan) => clampPan(pan, next, viewportBox()));
+  };
 
   /**
    * Entering focus mode CLOSES whatever the rail had open. A rail panel is a
@@ -589,12 +727,49 @@ export default function BookView(): JSX.Element {
    * focus mode hides the rail — so entering with the Customize panel open
    * left a wall of controls floating beside a book shoved off the right edge,
    * with no rail icon left to close it with.
+   *
+   * Leaving also puts the zoom and the pan back: the rungs are a way of
+   * READING, and coming back to the desk at 220% and off-centre would look
+   * like the app had broken rather than like a setting the reader left on.
    */
-  const setFocus = (on: boolean): void => {
-    if (on) setActivePanel(null);
-    setFocusMode(on);
+  const goToFocus = (level: FocusLevel): void => {
+    if (level !== 'off') {
+      setActivePanel(null);
+      // The solo leaf adopts whichever page the reader was last in, so
+      // stepping to "one page" never hides the page they were writing on.
+      if (level === 'leaf' && focusLevel() !== 'leaf') setSoloLeaf(focusedSide());
+    } else {
+      recentre();
+    }
+    setFocusLevel(level);
   };
+
+  const setFocus = (on: boolean): void => goToFocus(on ? 'spread' : 'off');
   const toggleFocus = (): void => setFocus(!focusMode());
+  const stepFocus = (direction: 1 | -1): void =>
+    goToFocus(stepFocusLevel(focusLevel(), direction));
+
+  /**
+   * At the `leaf` rung an arrow key means ONE page, not one spread.
+   *
+   * Reading a single leaf and having the arrow skip the page next to it is the
+   * kind of thing that loses a reader their place. The side flips first and the
+   * spread follows only when the side runs out, which is what turning a page in
+   * a real book does.
+   */
+  const stepLeaf = (direction: 1 | -1): void => {
+    if (direction > 0) {
+      if (soloLeaf() === 'left') setSoloLeaf('right');
+      else {
+        setSoloLeaf('left');
+        flipApi?.flipNext();
+      }
+    } else if (soloLeaf() === 'right') setSoloLeaf('left');
+    else {
+      setSoloLeaf('right');
+      flipApi?.flipPrev();
+    }
+  };
 
   // -------------------------------------------------------------------------
   // The way back (see the convention docblock at the top of this file)
@@ -677,49 +852,185 @@ export default function BookView(): JSX.Element {
     // Deliberately before the defaultPrevented guard: ProseMirror eats Escape
     // while the caret is in a page, which is exactly when you want the door.
     if (event.key === 'Escape' && !focusMode()) showBack(BACK_LINGER_MS);
+    // Escape also disarms a sticker waiting for somewhere to land — before the
+    // defaultPrevented guard for the same reason as everything else here: the
+    // caret is usually in a page, and ProseMirror eats its own Escape.
+    if (event.key === 'Escape' && armedSticker() !== null) {
+      event.preventDefault();
+      disarmSticker();
+      return;
+    }
     if (event.defaultPrevented || insertOpen()) return;
 
-    if (event.key === 'F9') {
-      event.preventDefault();
-      toggleFocus();
-      return;
+    // F9 used to be spelled out right here, which is why it never appeared in
+    // the shortcut list and could not be moved. It is `toggle-focus` in the
+    // registry now and arrives through the dispatcher, like everything else
+    // this view answers to — see the registration block below.
+
+    // The focus range, on the keyboard. `[` and `]` walk the rungs and the
+    // usual zoom combo works the zoom — a dial you have to reach for is one
+    // more thing in front of the page focus mode exists to clear.
+    if (focusMode() && !isTypingTarget(document.activeElement)) {
+      if (event.key === '[' || event.key === ']') {
+        event.preventDefault();
+        stepFocus(event.key === ']' ? 1 : -1);
+        return;
+      }
+    }
+    if (focusMode() && (event.ctrlKey || event.metaKey)) {
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault();
+        changeZoom(1);
+        return;
+      }
+      if (event.key === '-' || event.key === '_') {
+        event.preventDefault();
+        changeZoom(-1);
+        return;
+      }
+      if (event.key === '0') {
+        event.preventDefault();
+        recentre();
+        return;
+      }
     }
 
-    // The script tools live in the rail; these are the combos the settings
-    // sheet advertises for them, read from settings so the list stays true.
-    const keys = settings.keybindings;
-    if (matchesBinding(event, keys['insert-script'] ?? 'mod+alt+i')) {
-      event.preventDefault();
-      setInsertOpen(true);
-      return;
-    }
-    if (matchesBinding(event, keys['export-script'] ?? 'mod+alt+e')) {
-      event.preventDefault();
-      const page = activePage();
-      if (page) void exportScript(page.id);
-      return;
-    }
-    if (cheatOpen() && (event.key === 'Escape' || event.key === '?')) {
-      event.preventDefault();
-      setCheatOpen(false);
-      return;
-    }
-    if (event.key === '?' && !isTypingTarget(document.activeElement)) {
-      event.preventDefault();
-      setCheatOpen(true);
-      return;
-    }
+    // The script tools, the rail's panels, the ribbon and the rest of what
+    // this view can be told to do are COMMANDS now (see the block under this
+    // handler) — matched once by the app's dispatcher instead of by a ladder
+    // of `matchesBinding` calls here, which is what let F9 and '?' fire for a
+    // year without ever appearing in the settings sheet. The cheat-sheet moved
+    // out too: it lives at the root so it answers on the shelf as well.
     const action = arrowFlipAction(
       event.key,
       isTypingTarget(document.activeElement),
     );
     if (action === null) return;
     event.preventDefault();
+    if (focusLevel() === 'leaf') {
+      stepLeaf(action === 'next' ? 1 : -1);
+      return;
+    }
     if (action === 'next') flipApi?.flipNext();
     else flipApi?.flipPrev();
   };
   onMount(() => window.addEventListener('keydown', onKeyDown));
   onCleanup(() => window.removeEventListener('keydown', onKeyDown));
+
+  /**
+   * Everything this view can be told to do from the keyboard.
+   *
+   * One entry per rail button that a reader presses more than once a session,
+   * pointed at the SAME closure the button calls — the icon and the key can
+   * therefore never drift, which is the whole reason this list is here rather
+   * than a second set of handlers. Registered on mount and released on
+   * cleanup, so none of them fires while the shelf is on screen: a key with no
+   * live command is left completely alone by the dispatcher.
+   *
+   * The panel four are toggles because the rail icons are: pressing the key
+   * again is how you put the sheet away, and a reader who has just opened the
+   * catalogue with Ctrl+Alt+A should not have to find the mouse to close it.
+   */
+  onMount(() => {
+    const togglePanel = (panel: RailPanelId) => (): void => {
+      setActivePanel((current) => (current === panel ? null : panel));
+    };
+    onCleanup(
+      registerCommands({
+        'toggle-focus': toggleFocus,
+        'new-page': () => void addPage(),
+        'toggle-bookmark': onToggleBookmark,
+        'table-of-contents': togglePanel('toc'),
+        catalogue: togglePanel('catalogue'),
+        'page-style': togglePanel('page-style'),
+        'customize-book': togglePanel('customize'),
+        thumbnails: () =>
+          void saveSettings({ thumbnailsStrip: !settings.thumbnailsStrip }),
+        'insert-script': () => setInsertOpen(true),
+        'export-script': () => {
+          const page = activePage();
+          if (page) void exportScript(page.id);
+        },
+      }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Zoom by wheel, and pan by drag — the two gestures the reader already knows
+  // from the shelf (CLAUDE.md: plain wheel zooms out there). In here plain
+  // wheel belongs to the page, so the zoom takes the modifier and nothing else
+  // changes for someone who never enters focus mode.
+  // -------------------------------------------------------------------------
+  const onWheel = (event: WheelEvent): void => {
+    if (!focusMode()) return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      changeZoom(event.deltaY < 0 ? 1 : -1);
+      return;
+    }
+    // Once the book is bigger than the window the wheel walks it around.
+    // Free to claim: pages never scroll, so a plain wheel over a leaf has
+    // never meant anything until now.
+    if (focusZoom() <= ZOOM_REST) return;
+    event.preventDefault();
+    const step = event.shiftKey
+      ? { x: -event.deltaY, y: 0 }
+      : { x: -event.deltaX, y: -event.deltaY };
+    setFocusPan((pan) =>
+      clampPan(
+        { x: pan.x + step.x, y: pan.y + step.y },
+        focusZoom(),
+        viewportBox(),
+      ),
+    );
+  };
+  onMount(() =>
+    window.addEventListener('wheel', onWheel, { passive: false }),
+  );
+  onCleanup(() => window.removeEventListener('wheel', onWheel));
+
+  /**
+   * Drag the zoomed book around.
+   *
+   * Only past 100% — at rest the book already fits, and a pan there would only
+   * ever be a way to push it off screen. Only off the paper, too: a drag that
+   * starts inside the prose is the browser's own sweep-to-select and the page
+   * turn's own grab, and stealing either would be worse than not panning.
+   */
+  const onPanDown = (event: PointerEvent): void => {
+    if (!focusMode() || focusZoom() <= ZOOM_REST || event.button !== 0) return;
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      (isTypingTarget(target) ||
+        target.closest('button, a, input, .nb-free-sticker, .nb-flip-hotspot') !==
+          null)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const from = { px: event.clientX, py: event.clientY, ...focusPan() };
+    const onMove = (move: PointerEvent): void => {
+      setFocusPan(
+        clampPan(
+          {
+            x: from.x + (move.clientX - from.px),
+            y: from.y + (move.clientY - from.py),
+          },
+          focusZoom(),
+          viewportBox(),
+        ),
+      );
+    };
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
 
   // -------------------------------------------------------------------------
   // Rail actions (script tools moved off the old top toolbar)
@@ -844,12 +1155,20 @@ export default function BookView(): JSX.Element {
     }),
   );
 
-  const activeBookmarked = createMemo((): boolean => {
+  const activeMark = createMemo((): Bookmark | null => {
     const page = activePage();
-    return page
-      ? bookmarks().some((mark) => mark.pageId === page.id)
-      : false;
+    if (!page) return null;
+    return bookmarks().find((mark) => mark.pageId === page.id) ?? null;
   });
+
+  const activeBookmarked = createMemo((): boolean => activeMark() !== null);
+
+  const commitBookmarks = (next: Bookmark[]): void => {
+    const loaded = session();
+    if (!loaded) return;
+    setBookmarks(next);
+    void saveBookmarks(loaded.book.id, next);
+  };
 
   const onToggleBookmark = (): void => {
     const loaded = session();
@@ -857,10 +1176,36 @@ export default function BookView(): JSX.Element {
     if (!loaded || !page) return;
     const next = toggleBookmark(bookmarks(), page.id);
     const added = next.length > bookmarks().length;
-    setBookmarks(next);
-    void saveBookmarks(loaded.book.id, next);
+    commitBookmarks(next);
     void play('pop-soft');
     notify(added ? 'ribbon tucked into this page' : 'ribbon removed');
+  };
+
+  /**
+   * Which of the six ribbons marks this page.
+   *
+   * The merged rail control (see `rail/BookRail.tsx`) offers the set; this
+   * applies the pick, and marks the page first if it was not marked at all —
+   * so choosing a ribbon on an unmarked page IS bookmarking it, and nobody has
+   * to press twice to get the ribbon they wanted.
+   *
+   * Done here rather than in `views/bookmarks.ts` because that module's
+   * `toggleBookmark` is a pure list operation shared with its own tests, and
+   * "which slot" is a decision the view is making.
+   */
+  const onPickBookmarkSlot = (slot: RibbonColor): void => {
+    const loaded = session();
+    const page = activePage();
+    if (!loaded || !page) return;
+    const base =
+      activeMark() === null ? toggleBookmark(bookmarks(), page.id) : bookmarks();
+    commitBookmarks(
+      base.map((mark) =>
+        mark.pageId === page.id ? { ...mark, color: slot } : mark,
+      ),
+    );
+    void play('pop-soft');
+    notify(`the ${slot} ribbon marks this page`);
   };
 
   /** Bookmarks resolved to live slots (dropped pages disappear quietly). */
@@ -959,6 +1304,72 @@ export default function BookView(): JSX.Element {
     focusPageCaret(target.id, 'end');
   };
 
+  /**
+   * Drop the armed sticker where the reader clicked.
+   *
+   * The catalogue arms one (`effects/freePlacement.ts`); this is the other
+   * half — *"click on it and put it anywhere on the page, not caring about
+   * where lines are"*. The x/y are a percentage of the LEAF's own box, so the
+   * sticker keeps its place when the window resizes or the reader zooms.
+   *
+   * Bare paper answers too, by becoming a page first: a leaf you can stick a
+   * sticker on but not write on would be a strange thing to hand anyone.
+   */
+  const placeArmedSticker = async (
+    side: LeafSide,
+    at: { x: number; y: number },
+  ): Promise<void> => {
+    const stickerId = armedSticker();
+    if (stickerId === null) return;
+    disarmSticker();
+    const slot = leftSlot(spreadIndex()) + (side === 'right' ? 1 : 0);
+    while (pages().length <= slot) {
+      if (!(await appendPage())) return;
+    }
+    const target = pageAt(slot);
+    if (!target) return;
+    withPageEditor(target.id, (editor) => {
+      const pos = freeAnchorPos(editor.state.doc);
+      if (pos === null) return;
+      editor.view.dispatch(
+        editor.state.tr.insert(
+          pos,
+          editor.schema.nodeFromJSON(
+            freeStickerNode({ stickerId, x: at.x, y: at.y }),
+          ),
+        ),
+      );
+    });
+    void play('pop-soft');
+    notify(`${stickerId} stuck to this page — drag it wherever you like`);
+  };
+
+  /**
+   * The armed sticker's click is taken in the CAPTURE phase on the leaf.
+   *
+   * A bubble-phase handler would fire after ProseMirror had already moved the
+   * caret to wherever the reader pressed, which is exactly the "where the
+   * lines are" the whole feature exists to stop mattering.
+   */
+  const armLeafCapture = (el: HTMLElement, side: LeafSide): void => {
+    const onDown = (event: PointerEvent): void => {
+      if (armedSticker() === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      // Measured off the LAYER, not off the paper: that is the box the mark's
+      // own `left`/`top` percentages resolve against and the box its drag math
+      // reads, so the sticker lands exactly under the pointer even if the two
+      // boxes ever stop coinciding.
+      const layer = el.querySelector('.nb-free-layer') ?? el;
+      void placeArmedSticker(
+        side,
+        pointToPagePct(layer.getBoundingClientRect(), event.clientX, event.clientY),
+      );
+    };
+    el.addEventListener('pointerdown', onDown, true);
+    onCleanup(() => el.removeEventListener('pointerdown', onDown, true));
+  };
+
   const leafFace = (side: LeafSide, page: () => Page | null): JSX.Element => (
     <div
       class="nb-sheet-paper nb-leaf-paper"
@@ -966,10 +1377,22 @@ export default function BookView(): JSX.Element {
       ref={(el) => {
         paperElements[side] = el;
         capacityObserver?.observe(el);
+        armLeafCapture(el, side);
         queueMicrotask(() => measureCapacity(el));
       }}
       onFocusIn={() => setFocusedSide(side)}
     >
+      {/*
+        The layer free-placed stickers paint into — a child of the leaf, so it
+        travels with the page into the flip snapshots and clips at the paper's
+        own edge. The sticker node views portal into it (see
+        editor/nodes/sticker.tsx); nothing else may render here.
+      */}
+      <div
+        class="nb-free-layer"
+        role="group"
+        aria-label="Stickers placed on this page"
+      />
       <Show
         when={leafKey(page())}
         keyed
@@ -1011,9 +1434,24 @@ export default function BookView(): JSX.Element {
   return (
     <main
       class="nb-book-view"
-      classList={{ 'is-focus-mode': focusMode() }}
+      classList={{
+        'is-focus-mode': focusMode(),
+        'is-zoomed': focusMode() && focusZoom() !== ZOOM_REST,
+        'is-placing': armedSticker() !== null,
+      }}
       data-focus-mode={focusMode() ? 'true' : 'false'}
+      /* The rung, for CSS and for anything measuring the mode from outside.
+         `is-focus-mode` stays exactly what it was — the e2e suite and the tour
+         both find focus mode by that class. */
+      data-focus-level={focusLevel()}
+      data-solo-leaf={focusLevel() === 'leaf' ? soloLeaf() : undefined}
       data-cursor={settings.cursorStyle}
+      style={{
+        '--nb-focus-zoom': String(clampZoom(focusZoom())),
+        '--nb-focus-pan-x': `${focusPan().x}px`,
+        '--nb-focus-pan-y': `${focusPan().y}px`,
+      }}
+      onPointerDown={onPanDown}
     >
       {/* Ctrl+K quick switcher (single-instance; safe if also mounted in App). */}
       <QuickSwitcher />
@@ -1052,6 +1490,23 @@ export default function BookView(): JSX.Element {
         <kbd class="nb-focus-exit-key font-ui">Esc</kbd>
       </button>
 
+      {/* The reader's hand on the mode: which rung, how big, which leaf. Under
+          the exit chip, in the same corner, because that is where this app
+          keeps everything you reach for without looking. */}
+      <Show when={focusMode()}>
+        <FocusDial
+          level={focusLevel()}
+          onPickLevel={goToFocus}
+          zoom={focusZoom()}
+          onZoom={changeZoom}
+          onZoomRest={recentre}
+          leaf={soloLeaf()}
+          onPickLeaf={setSoloLeaf}
+          panned={focusPan().x !== 0 || focusPan().y !== 0}
+          onRecentre={recentre}
+        />
+      </Show>
+
       <BookRail
         activePanel={activePanel()}
         onTogglePanel={(panel) =>
@@ -1073,6 +1528,8 @@ export default function BookView(): JSX.Element {
         onToggleFocus={toggleFocus}
         bookmarked={activeBookmarked()}
         onToggleBookmark={onToggleBookmark}
+        bookmarkSlot={activeMark()?.color ?? null}
+        onPickBookmarkSlot={onPickBookmarkSlot}
         thumbnails={settings.thumbnailsStrip}
         onToggleThumbnails={() =>
           void saveSettings({ thumbnailsStrip: !settings.thumbnailsStrip })
@@ -1125,7 +1582,15 @@ export default function BookView(): JSX.Element {
 
               <div
                 class="nb-book-cover"
-                style={{ 'background-image': `url("${backdropUrl()}")` }}
+                style={{
+                  // At the "pages" and "one page" rungs the boards come off,
+                  // and the cover art has to go with them — an inline
+                  // background-image outranks any stylesheet, so the rung is
+                  // decided here rather than fought with `!important`.
+                  'background-image': boardsOff()
+                    ? undefined
+                    : `url("${backdropUrl()}")`,
+                }}
               >
                 {/* Ribbon bookmarks peeking over the top edge (roadmap #19). */}
                 <Show when={ribbons().length > 0}>
@@ -1261,9 +1726,27 @@ export default function BookView(): JSX.Element {
         }}
       </Show>
 
-      {/* '?' keyboard cheat-sheet (roadmap #14). */}
-      <Show when={cheatOpen()}>
-        <CheatSheet onClose={() => setCheatOpen(false)} />
+      {/* The keyboard cheat-sheet (roadmap #14) used to hang here, which made
+          '?' a book-only key. It is mounted at the app root now (App.tsx →
+          CheatSheetHost) so the shelf can answer it too. */}
+
+      {/* A sticker is waiting for somewhere to land. It says so, and it says
+          how to change its mind — an armed cursor with no way out is a trap. */}
+      <Show when={armedSticker()} keyed>
+        {(stickerId) => (
+          <div class="nb-place-hint" role="status" aria-live="polite">
+            <span class="nb-place-hint-text font-ui">
+              click anywhere on a page to stick the {stickerId} there
+            </span>
+            <button
+              type="button"
+              class="nb-place-hint-stop font-ui"
+              onClick={() => disarmSticker()}
+            >
+              never mind <kbd>Esc</kbd>
+            </button>
+          </div>
+        )}
       </Show>
 
       <Show when={toast()} keyed>

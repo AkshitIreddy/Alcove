@@ -28,7 +28,7 @@ import {
   bindingRefusal,
   canonicalBinding,
   fixedBindingReason,
-  listedBindingActions,
+  listedBindingGroups,
   rebind,
   resetBinding,
   save,
@@ -84,6 +84,7 @@ import {
   setUserSoundSetBase,
   type ImportReport,
 } from '../../sound/userSoundSetStore';
+import CursorSetPicker from './CursorSetPicker';
 import { notify } from '../../editor/script/exporters/toast';
 import {
   activeSoundSetId,
@@ -92,8 +93,41 @@ import {
 } from '../../sound/soundSetPrefs';
 import { cancelSoundSetPreview, previewSoundSet } from '../../sound/preview';
 import { SILENT_ATTR } from '../../sound/uiClicks';
+import {
+  APP_THEMES,
+  APP_THEME_FAMILIES,
+  AUTO_PAPER,
+  FAMILY_LABELS as THEME_FAMILY_LABELS,
+  HANDS,
+  HAND_FAMILIES,
+  HAND_FAMILY_LABELS,
+  HAND_ROLL,
+  HAND_SHORTLIST,
+  INKS,
+  INK_FAMILIES,
+  INK_ROLL,
+  INK_SHORTLIST,
+  PAPERS,
+  PAPER_FAMILIES,
+  PAPER_ROLL,
+  PAPER_SHORTLIST,
+  THEME_ROLL,
+  THEME_SHORTLIST,
+  resolveHand,
+  resolveInk,
+  resolvePaper,
+  resolveTheme,
+  swatchFor,
+  type AppThemeSpec,
+  type HandSpec,
+  type InkSpec,
+  type PaperSpec,
+} from './appearance';
+import { loadPaperStock, paperStock, savePaperStock } from './appearancePrefs';
 import { openTransferPanel } from '../transfer';
 import { replayTutorial } from '../tutorial';
+import { ensureTasteMounted } from '../tutorial/tasteMount';
+import { replayTaste } from '../tutorial/tasteStore';
 import PerfHud from '../system/PerfHud';
 
 /* ------------------------------- helpers ---------------------------------- */
@@ -166,6 +200,21 @@ interface SegOption {
   label: string;
   ariaLabel: string;
   title: string;
+  /**
+   * A little swatch tile drawn before the label — the chip showing what it
+   * does rather than only naming it. Any CSS `background`, because a theme's
+   * tile is TWO flat faces (its paper beside its accent) inside one ink
+   * outline: the drawing's own way of saying two colours, and a hard-stop
+   * gradient is how CSS states a face boundary. No soft ramp, no light model.
+   */
+  swatch?: string;
+  /**
+   * Set the label in this face. A hand is the one thing on this sheet that
+   * cannot be described, only shown, so its chip is written in itself.
+   */
+  face?: string;
+  /** px, when the face may not be set at the chip's own 13. */
+  faceSize?: number;
 }
 
 /**
@@ -198,6 +247,219 @@ const soundSetOption = (id: SoundSetId): SegOption => SOUND_SET_OPTION[id];
 const SOUND_SET_GROUP_OPTIONS = Object.fromEntries(
   SOUND_SET_GROUP_IDS.map((group) => [group, soundSetsInGroup(group).map(soundSetOption)]),
 ) as unknown as Record<SoundSetGroupId, readonly SegOption[]>;
+
+/* ------------------------------- appearance -------------------------------- */
+
+/**
+ * The Appearance section's four pickers, built from `./appearance.ts`.
+ *
+ * This section used to be four literal arrays in the JSX below — four themes,
+ * three hands, three inks — and the reader counted them: *"in appearance i
+ * noticed only 4 themes… same bug for handwriting… same issue for ink, paper
+ * type"*. They were right about the cause too: the vocabularies existed (fifty
+ * named inks and fifty named papers in `editor/effects/vocabulary.ts`, nine
+ * type families loaded in `src/index.tsx`) and the picker was reading none of
+ * them. Everything below is DERIVED from the vocabulary, so the two can no
+ * longer be different sizes.
+ *
+ * The chips are built ONCE, for the reason the sound-set chips are: `<For>`
+ * reuses a row's DOM only while the item reference is unchanged, so rebuilding
+ * the options on every read would tear down and rebuild every chip each time
+ * the selection moved — taking the focus ring off the chip that was just
+ * pressed with it, on a keyboard, inside a focus trap.
+ */
+const themeOption = (spec: AppThemeSpec): SegOption => {
+  const swatch = swatchFor(spec.id, 'sepia', null);
+  return {
+    value: spec.id,
+    label: spec.label,
+    // "night" is a theme, a soundscape AND a bed in this one dialog.
+    ariaLabel: `${spec.label} theme`,
+    title: spec.blurb,
+    // Its paper, and its accent standing beside it — the two things the room
+    // actually decides.
+    swatch: `linear-gradient(101deg, ${swatch.paper} 0 60%, ${swatch.accent} 60% 100%)`,
+  };
+};
+
+const inkOption = (spec: InkSpec): SegOption => ({
+  value: spec.id,
+  label: spec.label,
+  ariaLabel: `${spec.label} ink`,
+  title: spec.blurb,
+  swatch: spec.pigment,
+});
+
+const paperOption = (spec: PaperSpec): SegOption => ({
+  value: spec.id,
+  label: spec.label,
+  ariaLabel: `${spec.label} paper`,
+  title: spec.blurb,
+  swatch: spec.ground,
+});
+
+const handOption = (spec: HandSpec): SegOption => ({
+  value: spec.id,
+  label: spec.label,
+  ariaLabel: `${spec.label}, ${spec.id}`,
+  // The face's real name belongs in the tooltip: the label says what the hand
+  // is FOR, and a reader looking for Georgia still has to be able to find it.
+  title: `${spec.id} — ${spec.blurb}`,
+  face: spec.stack,
+  ...(spec.floorPx === undefined ? {} : { faceSize: spec.floorPx }),
+});
+
+/** The chip for "leave the paper to the room", first in the paper row. */
+const AUTO_PAPER_OPTION: SegOption = {
+  value: AUTO_PAPER,
+  label: 'as the room',
+  ariaLabel: 'paper as the room',
+  title: 'whatever the theme is printed on',
+};
+
+const THEME_OPTIONS = new Map(APP_THEMES.map((s) => [s.id, themeOption(s)] as const));
+const HAND_OPTIONS = new Map(HANDS.map((s) => [s.id, handOption(s)] as const));
+
+/**
+ * Ink and paper chips are built per ROOM, not once.
+ *
+ * A pigment's authored hex is its hue, not the colour a page gets: on a dark
+ * theme the same burgundy is derived light so it can be read. A chip painted
+ * with the authored hex would therefore show a near-black tile for an ink the
+ * page draws in pink — the chip lying about the one thing it exists to show.
+ *
+ * Rebuilt on a theme or paper change and on nothing else, so `<For>` still
+ * reuses every chip's DOM while the reader is picking an INK, which is when
+ * the focus ring matters.
+ */
+function inkOptionsFor(themeId: string, paperId: string): ReadonlyMap<string, SegOption> {
+  return new Map(
+    INKS.map(
+      (spec) =>
+        [spec.id, { ...inkOption(spec), swatch: swatchFor(themeId, spec.id, paperId).ink }] as const,
+    ),
+  );
+}
+
+function paperOptionsFor(themeId: string): ReadonlyMap<string, SegOption> {
+  return new Map<string, SegOption>([
+    [
+      AUTO_PAPER,
+      { ...AUTO_PAPER_OPTION, swatch: swatchFor(themeId, 'sepia', null).paper },
+    ],
+    ...PAPERS.map(
+      (spec) =>
+        [
+          spec.id,
+          { ...paperOption(spec), swatch: swatchFor(themeId, 'sepia', spec.id).paper },
+        ] as const,
+    ),
+  ]);
+}
+
+/**
+ * Is this face actually on this machine?
+ *
+ * Nine of the hands ship with the app and are always there. The rest are
+ * Windows' own, and a chip for a face this machine does not have would draw
+ * itself in the next thing down its fallback chain — two chips painting the
+ * same letters, one of them lying about which face it is. `document.fonts.check`
+ * answers for an installed local family without loading anything.
+ */
+function handAvailable(spec: HandSpec): boolean {
+  if (spec.probe === undefined) return true;
+  const fonts = typeof document === 'undefined' ? undefined : document.fonts;
+  if (fonts === undefined || typeof fonts.check !== 'function') return false;
+  try {
+    return fonts.check(`16px "${spec.probe}"`);
+  } catch {
+    return false;
+  }
+}
+
+/** One shelf of chips: a heading, a line about it, and the options under it. */
+interface ChipGroup {
+  readonly title: string;
+  readonly blurb: string;
+  readonly options: readonly SegOption[];
+}
+
+function groupsOf<T extends { family: string; id: string }>(
+  table: readonly T[],
+  families: readonly string[],
+  labels: Readonly<Record<string, string>>,
+  blurbs: Readonly<Record<string, string>>,
+  options: ReadonlyMap<string, SegOption>,
+): readonly ChipGroup[] {
+  return families
+    .map((family) => ({
+      title: labels[family] ?? family,
+      blurb: blurbs[family] ?? '',
+      options: table
+        .filter((entry) => entry.family === family)
+        .map((entry) => options.get(entry.id))
+        .filter((opt): opt is SegOption => opt !== undefined),
+    }))
+    .filter((group) => group.options.length > 0);
+}
+
+const INK_FAMILY_LABELS: Readonly<Record<string, string>> = {
+  neutral: 'the plain inks',
+  warm: 'warm inks',
+  red: 'reds',
+  green: 'greens',
+  blue: 'blues',
+  purple: 'purples',
+};
+
+const PAPER_FAMILY_LABELS: Readonly<Record<string, string>> = {
+  plain: 'plain stock',
+  made: 'made paper',
+  coloured: 'coloured stock',
+  technical: 'technical paper',
+};
+
+const THEME_FAMILY_BLURBS: Readonly<Record<string, string>> = {
+  parchment: 'cream grounds, warm accents',
+  blossom: 'pale grounds, gentle accents',
+  garden: 'pressed-leaf grounds',
+  lamplight: 'the same drawing, after dark',
+};
+
+const INK_FAMILY_BLURBS: Readonly<Record<string, string>> = {
+  neutral: 'what most pages are written in',
+  warm: 'browns, earths and metals',
+  red: 'from rose madder to oxblood',
+  green: 'woodland, field and moss',
+  blue: 'sea, sky and cold water',
+  purple: 'evening colours',
+};
+
+const PAPER_FAMILY_BLURBS: Readonly<Record<string, string>> = {
+  plain: 'the stock a stationer sells by the ream',
+  made: 'sheets with a history',
+  coloured: 'paper that is not trying to be white',
+  technical: 'drawing-office stock',
+};
+
+const HAND_FAMILY_BLURBS: Readonly<Record<string, string>> = {
+  bundled: 'drawn hands, shipped with the app',
+  printed: 'faces for pages you sit and read',
+  system: 'faces Windows already gave you',
+};
+
+const THEME_GROUPS = groupsOf(
+  APP_THEMES,
+  APP_THEME_FAMILIES,
+  THEME_FAMILY_LABELS,
+  THEME_FAMILY_BLURBS,
+  THEME_OPTIONS,
+);
+
+/** One item out of a pool, for "surprise me". */
+function pick<T>(pool: readonly T[]): T {
+  return pool[Math.floor(Math.random() * pool.length)] as T;
+}
 
 /* --------------------------- the reader's own sets -------------------------- */
 
@@ -407,6 +669,10 @@ function Seg(props: {
     label: string;
     ariaLabel?: string;
     title?: string;
+    swatch?: string;
+    swatchRing?: string;
+    face?: string;
+    faceSize?: number;
   }[];
   value: string | number;
   onSelect: (value: string | number) => void;
@@ -421,8 +687,48 @@ function Seg(props: {
             aria-label={opt.ariaLabel}
             data-tooltip={opt.title}
             aria-pressed={props.value === opt.value}
+            /* The face is set on the BUTTON rather than on a span inside it,
+               so the chip's own padding grows with the letters — a wide face
+               in a chip sized for Patrick Hand crops its own descenders.
+               `faceSize` is the face's own legibility floor: 20px for Caveat,
+               which is the number CLAUDE.md states, and 16 for the two or
+               three whose lower case is markedly smaller than the rest. */
+            style={
+              opt.face === undefined
+                ? undefined
+                : {
+                    'font-family': opt.face,
+                    ...(opt.faceSize === undefined
+                      ? {}
+                      : { 'font-size': `${opt.faceSize}px` }),
+                  }
+            }
             onClick={() => props.onSelect(opt.value)}
           >
+            {/* A little swatch tile: flat fill, ONE ink outline, corners that
+                bow — the drawing's own three rules at 16 by 10. It was a round
+                dot and a round dot is mostly outline at this size, so a navy
+                and a forest both came out as a dark bead.
+
+                Inline because the colour IS the data: there is no stylesheet
+                rule that could know a pigment picked out of a table. */}
+            <Show when={opt.swatch}>
+              {(fill) => (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: 'inline-block',
+                    width: '17px',
+                    height: '11px',
+                    'margin-right': '7px',
+                    'vertical-align': '-1px',
+                    'border-radius': '5px 6px 5px 7px / 6px 5px 7px 5px',
+                    background: fill(),
+                    border: '1.5px solid var(--ink-line)',
+                  }}
+                />
+              )}
+            </Show>
             {opt.label}
           </button>
         )}
@@ -457,6 +763,97 @@ function Section(props: {
       <h3 class="nbs-section-title">{props.title}</h3>
       {props.children}
     </section>
+  );
+}
+
+/**
+ * A vocabulary picker: a shortlist at rest, every shelf on request.
+ *
+ * The house rule is that a long option list caps at about twenty with an "N
+ * more" control, and here it is a rule with teeth — this is a focus-trapped
+ * dialog whose Tab cycle walks every button inside it, so a hundred and ten
+ * chips laid out flat would put a hundred stops between the theme row and the
+ * body-size slider. Expanded, the shortlist row folds away rather than sitting
+ * above the full list repeating half of it: a duplicate chip is a duplicate
+ * Tab stop, and the row's hint already names what is selected.
+ */
+function Picker(props: {
+  /** Row label; also the group's accessible name. */
+  label: string;
+  hint: string;
+  /** Chips shown while collapsed. Always contains the current value. */
+  shortlist: readonly SegOption[];
+  /** Every chip, shelved, shown while open. */
+  groups: readonly ChipGroup[];
+  total: number;
+  value: string;
+  open: boolean;
+  /** id for aria-controls — unique per picker within the dialog. */
+  region: string;
+  onOpen: (open: boolean) => void;
+  onSelect: (value: string) => void;
+}): JSX.Element {
+  return (
+    <>
+      <Show
+        when={!props.open}
+        fallback={
+          <Row label={props.label} hint={props.hint}>
+            <button
+              type="button"
+              class="nbs-action-btn"
+              aria-expanded
+              aria-controls={props.region}
+              onClick={() => props.onOpen(false)}
+            >
+              show fewer
+            </button>
+          </Row>
+        }
+      >
+        <Row label={props.label} hint={props.hint} wide>
+          <Seg
+            label={props.label}
+            options={props.shortlist}
+            value={props.value}
+            onSelect={(v) => props.onSelect(String(v))}
+          />
+        </Row>
+        <Show when={props.total > props.shortlist.length}>
+          <Row
+            label={`more ${props.label}`}
+            hint={`${props.total - props.shortlist.length} more, in ${props.groups.length} shelves`}
+            holdControl
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              aria-expanded={false}
+              aria-controls={props.region}
+              onClick={() => props.onOpen(true)}
+            >
+              show all {props.total}
+            </button>
+          </Row>
+        </Show>
+      </Show>
+      <Show when={props.open}>
+        <div id={props.region}>
+          <For each={props.groups}>
+            {(group) => (
+              <Row label={group.title} hint={group.blurb} wide>
+                <Seg
+                  label={`${props.label}: ${group.title}`}
+                  options={group.options}
+                  value={props.value}
+                  onSelect={(v) => props.onSelect(String(v))}
+                />
+              </Row>
+            )}
+          </For>
+        </div>
+      </Show>
+    </>
   );
 }
 
@@ -568,6 +965,115 @@ export default function SettingsPanel(props: {
     } catch {
       // Plugin unavailable — leave the stored setting untouched.
     }
+  };
+
+  /* ------------------------------ appearance ------------------------------
+     Four vocabularies, four disclosures. The paper stock is the one appearance
+     choice `Settings` has no field for, so it lives in the settings feature's
+     own row (./appearancePrefs.ts) — the same answer `data/designPrefs.ts`
+     gave for the carpentry, and for the same reason. */
+  const [allThemesOpen, setAllThemesOpen] = createSignal(false);
+  const [allHandsOpen, setAllHandsOpen] = createSignal(false);
+  const [allInksOpen, setAllInksOpen] = createSignal(false);
+  const [allPapersOpen, setAllPapersOpen] = createSignal(false);
+  void loadPaperStock();
+
+  /**
+   * A shortlist that always contains the current value.
+   *
+   * Collapsing a list must never hide the thing that is selected — a row whose
+   * chips are all unpressed reads as "nothing is chosen", which is a lie the
+   * reader then tries to fix by choosing something else.
+   */
+  const withCurrent = (
+    shortlist: readonly SegOption[],
+    current: string,
+    options: ReadonlyMap<string, SegOption>,
+  ): readonly SegOption[] => {
+    if (shortlist.some((opt) => opt.value === current)) return shortlist;
+    const extra = options.get(current);
+    return extra === undefined ? shortlist : [...shortlist, extra];
+  };
+
+  /** Only the hands this machine can actually draw. */
+  const hands = createMemo(() => HANDS.filter(handAvailable));
+  const handGroups = createMemo(() =>
+    groupsOf(
+      hands(),
+      HAND_FAMILIES,
+      HAND_FAMILY_LABELS,
+      HAND_FAMILY_BLURBS,
+      HAND_OPTIONS,
+    ),
+  );
+  const handShortlist = createMemo(() =>
+    withCurrent(
+      HAND_SHORTLIST.filter(handAvailable).map((spec) => HAND_OPTIONS.get(spec.id) as SegOption),
+      settings.handwritingFont,
+      HAND_OPTIONS,
+    ),
+  );
+
+  const themeShortlist = createMemo(() =>
+    withCurrent(
+      THEME_SHORTLIST.map((spec) => THEME_OPTIONS.get(spec.id) as SegOption),
+      settings.theme,
+      THEME_OPTIONS,
+    ),
+  );
+
+  // The two that are painted in the room's own colours — see `inkOptionsFor`.
+  const inkOptions = createMemo(() => inkOptionsFor(settings.theme, paperStock()));
+  const paperOptions = createMemo(() => paperOptionsFor(settings.theme));
+  const inkGroups = createMemo(() =>
+    groupsOf(INKS, INK_FAMILIES, INK_FAMILY_LABELS, INK_FAMILY_BLURBS, inkOptions()),
+  );
+  const paperGroups = createMemo(() =>
+    groupsOf(PAPERS, PAPER_FAMILIES, PAPER_FAMILY_LABELS, PAPER_FAMILY_BLURBS, paperOptions()),
+  );
+
+  const inkShortlist = createMemo(() =>
+    withCurrent(
+      INK_SHORTLIST.map((spec) => inkOptions().get(spec.id) as SegOption),
+      settings.inkColor,
+      inkOptions(),
+    ),
+  );
+  const paperShortlist = createMemo(() =>
+    withCurrent(
+      [
+        paperOptions().get(AUTO_PAPER) as SegOption,
+        ...PAPER_SHORTLIST.map((spec) => paperOptions().get(spec.id) as SegOption),
+      ],
+      paperStock(),
+      paperOptions(),
+    ),
+  );
+
+  /** What the four rows add up to, said in one line above them. */
+  const lookHint = (): string => {
+    const stock = resolvePaper(paperStock());
+    return `${resolveTheme(settings.theme).label} · ${resolveInk(settings.inkColor).label} ink · ${
+      stock?.label ?? 'the room’s own paper'
+    } · ${resolveHand(settings.handwritingFont).label}`;
+  };
+
+  /**
+   * A whole look at once, from the gated pools.
+   *
+   * `*_ROLL` and not the full tables: an entry ranked `oddity` stays pickable
+   * and stays out of the dice. The reader's rule, in their words — *"you dont
+   * have to be too cruel"* — is that odd is a reason to rank down, never to
+   * delete, and never a reason to be handed one unasked.
+   */
+  const surpriseLook = (): void => {
+    const usable = HAND_ROLL.filter(handAvailable);
+    put({
+      theme: pick(THEME_ROLL).id as Settings['theme'],
+      inkColor: pick(INK_ROLL).id,
+      handwritingFont: (usable.length > 0 ? pick(usable) : pick(HAND_ROLL)).id,
+    });
+    void savePaperStock(pick(PAPER_ROLL).id);
   };
 
   // Sound credits: collapsed by default — reference material, not a control.
@@ -759,6 +1265,25 @@ export default function SettingsPanel(props: {
     void replayTutorial();
   };
 
+  /**
+   * Reopen the taste questionnaire on the reader's previous answers.
+   *
+   * The sheet closes first for the same reason `openTransfer` closes it: this
+   * one is modal and traps Tab, and the questionnaire claims focus the moment
+   * it mounts. Nothing is written until the reader presses "dress my library",
+   * so opening this and leaving costs them nothing.
+   */
+  const chooseLookAgain = (): void => {
+    props.onClose();
+    queueMicrotask(() => {
+      // A no-op when the app shell already renders `<TasteQuestionnaire />`;
+      // this sheet cannot render it itself, because it unmounts the moment it
+      // closes and it has to close before the panel can take focus.
+      ensureTasteMounted();
+      void replayTaste();
+    });
+  };
+
   // Diagnostics: a plain-text report for a bug thread. See the privacy note in
   // features/system/diagnostics.ts — no page content ever reaches the file.
   const [diagBusy, setDiagBusy] = createSignal(false);
@@ -801,16 +1326,24 @@ export default function SettingsPanel(props: {
   let keysRef: HTMLDivElement | undefined;
 
   /**
-   * The action ids this sheet offers — NOT every key in the map, and NOT
-   * `Object.entries`, which would hand `<For>` a fresh pair array per settings
-   * write and rebuild every row (taking the focus ring off the button that was
-   * just pressed with them). `listedBindingActions` returns sorted strings,
-   * which compare by value, so the rows survive a rebind, a volume drag and
-   * every other save — and it drops the ids no handler in the app performs,
-   * because a row that captures a key and then does nothing with it is a
-   * worse lie than a row that was never offered.
+   * The action ids this sheet offers, under their headings — NOT every key in
+   * the map, and NOT `Object.entries`, which would hand `<For>` a fresh pair
+   * array per settings write and rebuild every row (taking the focus ring off
+   * the button that was just pressed with them). The inner arrays are plain
+   * strings, which compare by value, so the rows survive a rebind, a volume
+   * drag and every other save — and the list drops the ids no handler in the
+   * app performs, because a row that captures a key and then does nothing with
+   * it is a worse lie than a row that was never offered.
+   *
+   * Grouped rather than capped. The app's usual answer to a long list is a
+   * shortlist plus "show all N", and it is the wrong answer here: those lists
+   * offer ALTERNATIVES for one choice, where twenty of twenty-eight can wait
+   * behind a button because picking any one of them ends the task. A shortcut
+   * list is a reference — every row is a separate thing the reader might be
+   * looking for, and the one they want is exactly the one a shortlist would
+   * have hidden. Four headings is what makes twenty-one rows readable.
    */
-  const shortcutActions = createMemo(() => listedBindingActions(settings.keybindings));
+  const shortcutGroups = createMemo(() => listedBindingGroups(settings.keybindings));
 
   const listening = (action: string): boolean => capturing() === action;
 
@@ -1029,31 +1562,57 @@ export default function SettingsPanel(props: {
 
         {/* ------------------------------ Appearance -------------------------- */}
         <Section title="Appearance" accent="blush">
-          <Row label="theme" wide>
-            <Seg
-              label="theme"
-              options={[
-                { value: 'parchment', label: 'parchment' },
-                { value: 'pastel', label: 'pastel' },
-                { value: 'botanical', label: 'botanical' },
-                { value: 'night', label: 'night' },
-              ]}
-              value={settings.theme}
-              onSelect={(v) => put({ theme: v as Settings['theme'] })}
-            />
+          {/*
+            The four questions the tour opens with, offered again.
+
+            It sits at the TOP of Appearance rather than beside "replay the
+            tour" in Help because of what it writes: the room, the case, the
+            wall, the welcome book's binding, the sound set and the two rows
+            immediately below it. That is this section's whole subject, and a
+            reader who does not like the look they are in is going to look here
+            first. It replaces nothing — every one of those choices still has
+            its own control, and this is only the fast way to move all of them
+            at once.
+          */}
+          <Row
+            label="choose my look again"
+            hint="four questions, and the whole library takes after your answers"
+          >
+            <button type="button" class="nbs-action-btn" onClick={chooseLookAgain}>
+              start
+            </button>
           </Row>
-          <Row label="handwriting" wide>
-            <Seg
-              label="handwriting font"
-              options={[
-                { value: 'Caveat', label: 'Caveat' },
-                { value: 'Patrick Hand', label: 'Patrick Hand' },
-                { value: 'Kalam', label: 'Kalam' },
-              ]}
-              value={settings.handwritingFont}
-              onSelect={(v) => put({ handwritingFont: String(v) })}
-            />
+          {/* The whole look, in one line, above the four rows that make it —
+              so the section can be read before it is operated. */}
+          <Row label="surprise me" hint={lookHint()} holdControl>
+            <button type="button" class="nbs-action-btn" onClick={surpriseLook}>
+              roll a whole look
+            </button>
           </Row>
+          <Picker
+            label="theme"
+            hint="the room this app is drawn in"
+            shortlist={themeShortlist()}
+            groups={THEME_GROUPS}
+            total={APP_THEMES.length}
+            value={settings.theme}
+            open={allThemesOpen()}
+            region="nbs-themes"
+            onOpen={setAllThemesOpen}
+            onSelect={(v) => put({ theme: v as Settings['theme'] })}
+          />
+          <Picker
+            label="hand"
+            hint="the face every page is written in"
+            shortlist={handShortlist()}
+            groups={handGroups()}
+            total={hands().length}
+            value={settings.handwritingFont}
+            open={allHandsOpen()}
+            region="nbs-hands"
+            onOpen={setAllHandsOpen}
+            onSelect={(v) => put({ handwritingFont: v })}
+          />
           <Row label="body size" hint="reading type on every page">
             <Slider
               label="body font size"
@@ -1066,21 +1625,38 @@ export default function SettingsPanel(props: {
               onInput={(v) => put({ bodyFontSize: v })}
             />
           </Row>
-          <Row label="ink" wide>
+          <Picker
+            label="ink"
+            hint="what the reading type is written with"
+            shortlist={inkShortlist()}
+            groups={inkGroups()}
+            total={INKS.length}
+            value={settings.inkColor}
+            open={allInksOpen()}
+            region="nbs-inks"
+            onOpen={setAllInksOpen}
+            onSelect={(v) => put({ inkColor: v })}
+          />
+          <Picker
+            label="paper"
+            hint="the stock every page is printed on"
+            shortlist={paperShortlist()}
+            groups={paperGroups()}
+            total={PAPERS.length + 1}
+            value={paperStock()}
+            open={allPapersOpen()}
+            region="nbs-papers"
+            onOpen={setAllPapersOpen}
+            onSelect={(v) => void savePaperStock(v)}
+          />
+          {/* The RULING, which is a different question from the stock above:
+              four of them, because four is what the editor draws
+              (`.nb-page[data-style]` in styles/editor.css) and a fifth chip
+              here would write a document attribute nothing knows how to
+              paint. Growing this one is an editor job, not a settings job. */}
+          <Row label="new pages are ruled" wide>
             <Seg
-              label="ink color"
-              options={[
-                { value: 'sepia', label: 'sepia' },
-                { value: 'graphite', label: 'graphite' },
-                { value: 'ink-blue', label: 'ink blue' },
-              ]}
-              value={settings.inkColor}
-              onSelect={(v) => put({ inkColor: String(v) })}
-            />
-          </Row>
-          <Row label="new pages are" wide>
-            <Seg
-              label="default page style"
+              label="default page ruling"
               options={[
                 { value: 'ruled', label: 'ruled' },
                 { value: 'grid', label: 'grid' },
@@ -1098,6 +1674,21 @@ export default function SettingsPanel(props: {
               label="show margin doodles"
               checked={settings.showMarginDoodles}
               onChange={(v) => put({ showMarginDoodles: v })}
+            />
+          </Row>
+          {/* The pointer itself. Drawn cards rather than word chips — see
+              ./CursorSetPicker.tsx for why, and `art/cursors.ts` for the art.
+              This is NOT the "editor cursor" row down in Writing: that one is
+              the nib you write with inside a page, this is the arrow you point
+              at the whole app with, and the two are deliberately separate. */}
+          <Row
+            label="cursors"
+            hint="the pointer, drawn — or the one Windows gives you"
+            wide
+          >
+            <CursorSetPicker
+              value={settings.cursorSet}
+              onSelect={(v) => put({ cursorSet: v })}
             />
           </Row>
         </Section>
@@ -1702,84 +2293,106 @@ export default function SettingsPanel(props: {
             <span class="nbs-row-hint font-ui">
               press a combination to change it · Escape leaves it as it was
             </span>
-            <ul class="nbs-keys-list">
-              <For each={shortcutActions()}>
-                {(action) => (
-                  <li class="nbs-keys-item" classList={{ 'is-listening': listening(action) }}>
-                    <span class="nbs-keys-text">
-                      <span class="nbs-keys-action">{bindingActionLabel(action)}</span>
-                      {/* Why a press was turned down, beside the row that
-                          turned it down — never a silent nothing-happened.
-                          role=alert because the reader is looking at the
-                          keyboard, not at this line, when it appears. */}
-                      <Show when={refusalFor(action)}>
-                        {(why) => (
-                          <span class="nbs-keys-why font-ui" role="alert">
-                            {why()}
+            <For each={shortcutGroups()}>
+              {(group) => (
+                <>
+                  {/* The heading says WHERE, not just what: half of these only
+                      do anything in one room, and a reader hunting for "the
+                      catalogue" finds it faster under "In a book" than in one
+                      alphabetical run of twenty-one. */}
+                  <p class="nbs-keys-group font-ui">
+                    <span class="nbs-keys-group-title">{group.title}</span>
+                    <span class="nbs-keys-group-where">{group.blurb}</span>
+                  </p>
+                  <ul class="nbs-keys-list">
+                    <For each={group.actions}>
+                      {(action) => (
+                        <li
+                          class="nbs-keys-item"
+                          classList={{ 'is-listening': listening(action) }}
+                        >
+                          <span class="nbs-keys-text">
+                            <span class="nbs-keys-action">
+                              {bindingActionLabel(action)}
+                            </span>
+                            {/* Why a press was turned down, beside the row that
+                                turned it down — never a silent nothing-happened.
+                                role=alert because the reader is looking at the
+                                keyboard, not at this line, when it appears. */}
+                            <Show when={refusalFor(action)}>
+                              {(why) => (
+                                <span class="nbs-keys-why font-ui" role="alert">
+                                  {why()}
+                                </span>
+                              )}
+                            </Show>
                           </span>
-                        )}
-                      </Show>
-                    </span>
-                    <span class="nbs-keys-controls">
-                      <button
-                        type="button"
-                        class="nbs-keys-combo"
-                        data-listening={listening(action) ? 'true' : undefined}
-                        data-fixed={fixed(action) !== null ? 'true' : undefined}
-                        aria-label={
-                          listening(action)
-                            ? `press the new combination for ${bindingActionLabel(action)}, or Escape to leave it`
-                            : fixed(action) !== null
-                              ? `${bindingActionLabel(action)}, ${formatBinding(binding(action))} — this one cannot be changed`
-                              : `${bindingActionLabel(action)}, ${formatBinding(binding(action))} — press to change it`
-                        }
-                        aria-keyshortcuts={ariaKeyshortcuts(binding(action))}
-                        /* NO data-tooltip, deliberately. This button carries a
-                           visible label (the action name beside it) and the
-                           line above the list already says "press a
-                           combination to change it" — Tooltip.tsx's own rule is
-                           that a bubble repeating text sitting in full
-                           underneath it is noise. It was also actively harmful
-                           here: the sheet is against the right edge, so the
-                           bubble flips left and lands on the row's own words,
-                           including the sentence saying why a key was just
-                           turned down. And it would not stay away — pressing
-                           the row re-renders it, and the fresh node fires
-                           `pointerover` under a pointer that never moved. The
-                           icon-only reset button below still has one; it has no
-                           label to read. */
-                        onClick={() => startCapture(action)}
-                      >
-                        {/* formatBinding, not the raw combo: 'mod' is a storage
-                            token, and a chip reading "mod" is a key nobody has. */}
-                        <Show
-                          when={!listening(action)}
-                          fallback={<span class="nbs-keys-listen">press the keys…</span>}
-                        >
-                          <For each={formatBinding(binding(action)).split('+')}>
-                            {(part) => <kbd class="nbs-kbd">{part}</kbd>}
-                          </For>
-                        </Show>
-                      </button>
-                      {/* Only on a row that has actually moved: a column of
-                          eight identical undo arrows, seven of which do
-                          nothing, teaches the reader to stop reading them. */}
-                      <Show when={isRebound(action)}>
-                        <button
-                          type="button"
-                          class="nbs-keys-reset"
-                          aria-label={`put ${bindingActionLabel(action)} back to ${formatBinding(DEFAULT_KEYBINDINGS[action] ?? '')}`}
-                          data-tooltip={`back to ${formatBinding(DEFAULT_KEYBINDINGS[action] ?? '')}`}
-                          onClick={() => resetShortcut(action)}
-                        >
-                          <ResetIcon />
-                        </button>
-                      </Show>
-                    </span>
-                  </li>
-                )}
-              </For>
-            </ul>
+                          <span class="nbs-keys-controls">
+                            <button
+                              type="button"
+                              class="nbs-keys-combo"
+                              data-listening={listening(action) ? 'true' : undefined}
+                              data-fixed={fixed(action) !== null ? 'true' : undefined}
+                              aria-label={
+                                listening(action)
+                                  ? `press the new combination for ${bindingActionLabel(action)}, or Escape to leave it`
+                                  : fixed(action) !== null
+                                    ? `${bindingActionLabel(action)}, ${formatBinding(binding(action))} — this one cannot be changed`
+                                    : `${bindingActionLabel(action)}, ${formatBinding(binding(action))} — press to change it`
+                              }
+                              aria-keyshortcuts={ariaKeyshortcuts(binding(action))}
+                              /* NO data-tooltip, deliberately. This button carries
+                                 a visible label (the action name beside it) and the
+                                 line above the list already says "press a
+                                 combination to change it" — Tooltip.tsx's own rule
+                                 is that a bubble repeating text sitting in full
+                                 underneath it is noise. It was also actively
+                                 harmful here: the sheet is against the right edge,
+                                 so the bubble flips left and lands on the row's own
+                                 words, including the sentence saying why a key was
+                                 just turned down. And it would not stay away —
+                                 pressing the row re-renders it, and the fresh node
+                                 fires `pointerover` under a pointer that never
+                                 moved. The icon-only reset button below still has
+                                 one; it has no label to read. */
+                              onClick={() => startCapture(action)}
+                            >
+                              {/* formatBinding, not the raw combo: 'mod' is a
+                                  storage token, and a chip reading "mod" is a key
+                                  nobody has. */}
+                              <Show
+                                when={!listening(action)}
+                                fallback={
+                                  <span class="nbs-keys-listen">press the keys…</span>
+                                }
+                              >
+                                <For each={formatBinding(binding(action)).split('+')}>
+                                  {(part) => <kbd class="nbs-kbd">{part}</kbd>}
+                                </For>
+                              </Show>
+                            </button>
+                            {/* Only on a row that has actually moved: a column of
+                                identical undo arrows, all but one of which do
+                                nothing, teaches the reader to stop reading them. */}
+                            <Show when={isRebound(action)}>
+                              <button
+                                type="button"
+                                class="nbs-keys-reset"
+                                aria-label={`put ${bindingActionLabel(action)} back to ${formatBinding(DEFAULT_KEYBINDINGS[action] ?? '')}`}
+                                data-tooltip={`back to ${formatBinding(DEFAULT_KEYBINDINGS[action] ?? '')}`}
+                                onClick={() => resetShortcut(action)}
+                              >
+                                <ResetIcon />
+                              </button>
+                            </Show>
+                          </span>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </>
+              )}
+            </For>
           </div>
         </Section>
 

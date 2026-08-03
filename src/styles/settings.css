@@ -1071,6 +1071,47 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   gap: var(--space-4);
 }
 
+/* The heading over each run of rows.
+   Twenty-one shortcuts in one alphabetical column is a wall; four short lists
+   labelled by the room they work in is a reference. A dashed rule rather than
+   a solid one, and the section's own pigment, so a heading inside the sheet
+   never competes with the sheet's own section titles above it. */
+.nbs-keys-group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+  padding-bottom: 3px;
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nbs-keys-list + .nbs-keys-group {
+  margin-top: var(--space-16);
+}
+
+.nbs-keys-group-title {
+  font-size: var(--text-ui);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  /* --ink-accent, not the section's --sec-deep: the wash pigments are paint,
+     and this is type. The same reasoning is written out over
+     `.nb-cheat-heading`, which is the other place a heading in this hand had
+     to choose between the two. */
+  color: var(--ink-accent);
+}
+
+/* Where these work, said quietly beside the heading. Shrinks first: the sheet
+   is narrow and the title is the part that has to survive. */
+.nbs-keys-group-where {
+  font-size: var(--text-ui-xs);
+  color: var(--ink-sepia-soft);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Two columns, not space-between: combos of one, two and three chips used to
    produce a ragged left edge down the whole list. The fixed combo column
    right-aligns every binding on ONE edge and left-aligns the actions. */

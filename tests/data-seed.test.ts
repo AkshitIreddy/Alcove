@@ -1,14 +1,17 @@
 // @vitest-environment node
 /**
- * tests/data-seed.test.ts — the welcome-book seed + its two migrations:
+ * tests/data-seed.test.ts — the welcome-book seed and every migration on it:
  *
  *  - isEmptyPageDoc(): what counts as "no user content"
  *  - isDeletableDemoBook(): kept/deleted decision matrix
- *  - welcome content: 4-6 pages, warning-free Notebook Script, real nodes
+ *  - welcome content: warning-free Notebook Script, real nodes, pages that
+ *    fit on a leaf, and `[[…]]` references that resolve to pages of this book
  *  - WELCOME_BINDING: the authored binding, and that it is a valid style
- *  - seedIfEmpty(): end-to-end migration against the in-memory dev DB
- *    (old demo books deleted only when pristine, welcome book created once,
- *    seedVersion recorded) and fresh-install seeding.
+ *  - isReplaceableWelcomeBook(): the v4 -> v5 decision, which is the one that
+ *    can destroy somebody's writing if it is wrong
+ *  - seedIfEmpty(): end-to-end against the in-memory dev DB — fresh install,
+ *    the v1 demo cleanup, every past rename, and the v5 page swap on a
+ *    library that already has a welcome book AND a book of the reader's own.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,7 +29,16 @@ import {
   buildWelcomePageDocs,
   isDeletableDemoBook,
   isEmptyPageDoc,
+  isReplaceableWelcomeBook,
+  isUnchangedSeededPage,
+  welcomePageTitles,
+  docFromSeededSource,
+  LEGACY_WELCOME_PAGE_SOURCES,
 } from '../src/data/seed';
+import {
+  PAGE_LINE_BUDGET,
+  blockLineCost,
+} from '../src/features/templates/split';
 import { normalizeBookStyleOverrides } from '../src/art/bookStyle';
 import { clothForPalette } from '../src/art/spines';
 import { CLOTHS, CLOTH_LABELS } from '../src/art/flat';
@@ -124,18 +136,80 @@ describe('isDeletableDemoBook (kept/deleted matrix)', () => {
 
 /* --------------------------- welcome content ------------------------------ */
 
+/** Every node type the built welcome book actually contains. */
+function welcomeNodeTypes(ids?: {
+  bookId: string;
+  pageIds: readonly string[];
+}): Set<string> {
+  const types = new Set<string>();
+  const walk = (nodes: unknown[]): void => {
+    for (const n of nodes) {
+      if (n === null || typeof n !== 'object') continue;
+      const node = n as { type?: unknown; content?: unknown[] };
+      if (typeof node.type === 'string') types.add(node.type);
+      if (Array.isArray(node.content)) walk(node.content);
+    }
+  };
+  for (const page of buildWelcomePageDocs(ids)) walk(page.doc.content ?? []);
+  return types;
+}
+
+/** Every `pageLink` node in the built book, with ids supplied. */
+function resolvedPageLinks(): number {
+  const pageIds = WELCOME_PAGE_SOURCES.map((_, i) => `page-${i}`);
+  let count = 0;
+  const walk = (nodes: unknown[]): void => {
+    for (const n of nodes) {
+      if (n === null || typeof n !== 'object') continue;
+      const node = n as { type?: unknown; content?: unknown[] };
+      if (node.type === 'pageLink') count += 1;
+      if (Array.isArray(node.content)) walk(node.content);
+    }
+  };
+  for (const page of buildWelcomePageDocs({ bookId: 'book-1', pageIds })) {
+    walk(page.doc.content ?? []);
+  }
+  return count;
+}
+
 describe('welcome book content', () => {
-  it('has 4-6 pages', () => {
-    expect(WELCOME_PAGE_SOURCES.length).toBeGreaterThanOrEqual(4);
-    expect(WELCOME_PAGE_SOURCES.length).toBeLessThanOrEqual(6);
+  it('is a proper tour, not a leaflet', () => {
+    expect(WELCOME_PAGE_SOURCES.length).toBeGreaterThanOrEqual(10);
+    expect(WELCOME_PAGE_SOURCES.length).toBeLessThanOrEqual(24);
   });
 
+  /**
+   * The book that teaches the language may not be written in slop — and this
+   * is also the widest test the language has, because these pages reach into
+   * nearly all of it.
+   */
   it('every page parses as warning-free Notebook Script', () => {
     for (const source of WELCOME_PAGE_SOURCES) {
       const doc = parse(source);
-      expect(doc.diagnostics).toEqual([]);
+      expect(doc.diagnostics, `page: ${source.slice(0, 60)}`).toEqual([]);
       expect(doc.blocks.length).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * Leaves are fixed height and overflow FLOWS onward, so a page written past
+   * its capacity does not clip — it rearranges the tour the first time anybody
+   * opens the book. That is not hypothetical: pages authored at ~30 estimated
+   * lines pushed their tails forward and left blank leaves behind, measured in
+   * `shots-now/welcome-tour.mjs`, which is what this budget is calibrated from.
+   */
+  it('every page fits on a leaf', () => {
+    const titles = welcomePageTitles();
+    WELCOME_PAGE_SOURCES.forEach((source, i) => {
+      const cost = parse(source).blocks.reduce(
+        (n, block) => n + blockLineCost(block),
+        0,
+      );
+      expect(
+        cost,
+        `page ${i + 1} "${titles[i]}" is too long for one leaf`,
+      ).toBeLessThanOrEqual(PAGE_LINE_BUDGET);
+    });
   });
 
   it('maps every page to a non-empty editor document', () => {
@@ -149,22 +223,75 @@ describe('welcome book content', () => {
     }
   });
 
-  it('includes a real diagram node (showcase page)', () => {
-    const pages = buildWelcomePageDocs();
-    const types = new Set<string>();
-    const walk = (nodes: unknown[]): void => {
-      for (const n of nodes) {
-        if (n === null || typeof n !== 'object') continue;
-        const node = n as { type?: unknown; content?: unknown[] };
-        if (typeof node.type === 'string') types.add(node.type);
-        if (Array.isArray(node.content)) walk(node.content);
-      }
-    };
-    for (const page of pages) walk(page.doc.content ?? []);
-    expect(types.has('diagram')).toBe(true);
-    // Effects showcase containers made it through as real nodes too.
-    expect(types.has('sticky-note')).toBe(true);
-    expect(types.has('callout')).toBe(true);
+  /**
+   * The showcase is the entire point of this book, and every one of these
+   * arrives ONLY if `EDITOR_NODE_NAMES` in seed.ts knows about it. A name
+   * missing from that set is not an error — it is a silent downgrade to a
+   * paragraph, so nothing but a list like this one would ever notice.
+   */
+  it('contains a real node for everything it claims to show', () => {
+    const types = welcomeNodeTypes();
+    for (const type of [
+      'diagram',
+      'sticky-note',
+      'callout',
+      'banner',
+      'card',
+      'index-card',
+      'quote-card',
+      'envelope',
+      'tag',
+      'marginalia',
+      'pressed-flower',
+      'ticket-stub',
+      'postcard',
+      'wax-seal',
+      'map-pin',
+      'polaroid',
+      'imageRow',
+      'image',
+      'columns',
+      'col',
+      'spoiler',
+      'table',
+      'taskList',
+      // The four this rewrite exists for: an equation, maths in a sentence,
+      // a note at the foot of the page, and a fold.
+      'math',
+      'mathInline',
+      'footnote',
+      'details',
+    ]) {
+      expect(types.has(type), `no ${type} node in the welcome book`).toBe(true);
+    }
+  });
+
+  /**
+   * `[[Maths, in a notebook hand]]` has to match page three's heading
+   * character for character. When it does not the reference degrades to plain
+   * words — which is the right behaviour and completely invisible, so counting
+   * is the only way to know the backlinks page demonstrates anything at all.
+   */
+  it('resolves every [[page reference]] against its own pages', () => {
+    const written =
+      WELCOME_PAGE_SOURCES.join('\n').match(/\[\[[^\]]+\]\]/g) ?? [];
+    expect(written.length).toBeGreaterThan(0);
+    expect(resolvedPageLinks()).toBe(written.length);
+  });
+
+  /** With no ids there is nothing to point at, and the words survive instead. */
+  it('degrades a page reference to its own words when nothing resolves', () => {
+    expect(welcomeNodeTypes().has('pageLink')).toBe(false);
+    expect(JSON.stringify(buildWelcomePageDocs())).toContain(
+      'Maths, in a notebook hand',
+    );
+  });
+
+  it('gives every page a title, and no two the same', () => {
+    const titles = welcomePageTitles();
+    expect(titles).toHaveLength(WELCOME_PAGE_SOURCES.length);
+    for (const title of titles) expect(title.length).toBeGreaterThan(0);
+    expect(new Set(titles).size).toBe(titles.length);
   });
 });
 
@@ -234,6 +361,88 @@ describe('the rename migration', () => {
   });
 });
 
+/* --------------------- v4 -> v5: replace, or leave alone ------------------ */
+
+/**
+ * The decision that can destroy somebody's writing if it is wrong, so it is
+ * tested from both sides: what it agrees to replace, and — far more important
+ * — everything it refuses to touch.
+ */
+describe('isReplaceableWelcomeBook (the v5 swap decision)', () => {
+  const seeded = () =>
+    buildWelcomePageDocs().map((page) => ({
+      scriptSource: page.source,
+      doc: page.doc,
+    }));
+
+  it('replaces a book that is still exactly what was seeded', () => {
+    expect(isReplaceableWelcomeBook(seeded())).toBe(true);
+  });
+
+  /**
+   * Simply OPENING a page saves it once, because TipTap's UniqueID extension
+   * mints a block id for every block that has none. That is why the decision
+   * ignores `source_dirty` and compares documents with ids stripped: a book
+   * the reader has merely LOOKED at must still count as untouched.
+   */
+  it('replaces a book whose blocks have picked up ids from being opened', () => {
+    const withIds = seeded().map((page) => ({
+      ...page,
+      doc: {
+        ...page.doc,
+        content: (page.doc.content ?? []).map((node, i) => ({
+          ...(node as Record<string, unknown>),
+          attrs: {
+            ...((node as { attrs?: Record<string, unknown> }).attrs ?? {}),
+            id: `b_opened${i}`,
+          },
+        })),
+      } as PageDoc,
+    }));
+    expect(isReplaceableWelcomeBook(withIds)).toBe(true);
+  });
+
+  it('replaces a book with a blank leaf somebody added and never filled', () => {
+    expect(
+      isReplaceableWelcomeBook([
+        ...seeded(),
+        { scriptSource: null, doc: emptyDoc() },
+      ]),
+    ).toBe(true);
+  });
+
+  it('refuses a book with one written page in it', () => {
+    const pages = seeded();
+    pages[2] = { scriptSource: pages[2].scriptSource, doc: textDoc('my notes') };
+    expect(isReplaceableWelcomeBook(pages)).toBe(false);
+  });
+
+  it('refuses a book with an extra page the reader wrote', () => {
+    expect(
+      isReplaceableWelcomeBook([
+        ...seeded(),
+        { scriptSource: null, doc: textDoc('a shopping list') },
+      ]),
+    ).toBe(false);
+  });
+
+  it('refuses a page whose source is not one we ever shipped', () => {
+    expect(
+      isUnchangedSeededPage({
+        scriptSource: '# Something the reader inserted',
+        doc: textDoc('Something the reader inserted'),
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses an empty book (nothing to recognise it by)', () => {
+    expect(isReplaceableWelcomeBook([])).toBe(false);
+    expect(
+      isReplaceableWelcomeBook([{ scriptSource: null, doc: emptyDoc() }]),
+    ).toBe(false);
+  });
+});
+
 /* ------------------------- end-to-end migration ---------------------------- */
 
 /**
@@ -245,6 +454,13 @@ describe('the rename migration', () => {
 function seedTitlesForTest(): readonly string[] {
   return LEGACY_WELCOME_BOOK_TITLES;
 }
+
+/** The v4 welcome book, exactly as the v4 seeder wrote it. */
+function legacyWelcomeSources(): readonly string[] {
+  return LEGACY_WELCOME_PAGE_SOURCES;
+}
+
+const docFromLegacySource = docFromSeededSource;
 
 /**
  * Fresh module registry per scenario so the MemoryDb singleton in
@@ -410,6 +626,129 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
    * Runs over EVERY past title rather than naming one, so a third rename is
    * covered by appending to the list and nothing else.
    */
+  /**
+   * The v4 -> v5 case, and the one this rewrite exists for.
+   *
+   * A library that already ran the old seed is holding the five-page welcome
+   * book AND a book the reader wrote themselves. The migration has to swap the
+   * first for the new sixteen-page tour and not go anywhere near the second —
+   * same book row, same id, same spine, new pages.
+   */
+  it('v4 install: swaps the old welcome pages, leaves the reader’s book alone', async () => {
+    const { seed, books, pages, db } = await freshDataLayer();
+    const conn = await db.getDb();
+
+    // A library exactly as v4 left it: the old welcome book, verbatim.
+    const welcome = await books.createBook({
+      title: seed.WELCOME_BOOK_TITLE,
+      floor: 0,
+      slot: 3,
+      spineSeed: seed.WELCOME_SPINE_SEED,
+    });
+    const oldSources = legacyWelcomeSources();
+    for (let i = 0; i < oldSources.length; i += 1) {
+      await pages.createPage({
+        bookId: welcome.id,
+        ord: i,
+        doc: docFromLegacySource(oldSources[i]),
+        scriptSource: oldSources[i],
+      });
+    }
+
+    // …and a book of their own, with something in it.
+    const theirs = await books.createBook({
+      title: 'Recipes I actually make',
+      floor: 1,
+      slot: 2,
+    });
+    await pages.createPage({ bookId: theirs.id, ord: 0 });
+    const theirPage = (await pages.listPages(theirs.id))[0];
+    await pages.savePageDoc(theirPage.id, {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'lemon, thyme' }] },
+      ],
+    });
+    await conn.execute(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
+      [seed.SEED_VERSION_KEY, '4'],
+    );
+
+    // Nothing was CREATED — the welcome book was already there.
+    await expect(seed.seedIfEmpty()).resolves.toBe(false);
+
+    // Same book row, new pages.
+    const shelved = await books.listBooksByFloorRange(0, 999);
+    expect(shelved.map((b) => b.title).sort()).toEqual(
+      ['Recipes I actually make', seed.WELCOME_BOOK_TITLE].sort(),
+    );
+    const same = shelved.find((b) => b.title === seed.WELCOME_BOOK_TITLE);
+    expect(same?.id).toBe(welcome.id);
+    expect(same?.spineSeed).toBe(seed.WELCOME_SPINE_SEED);
+
+    const fresh = await pages.listPages(welcome.id);
+    expect(fresh).toHaveLength(seed.WELCOME_PAGE_SOURCES.length);
+    expect(fresh.map((p) => p.scriptSource)).toEqual([
+      ...seed.WELCOME_PAGE_SOURCES,
+    ]);
+    // The new pages are real documents, and their references resolved.
+    expect(JSON.stringify(fresh.map((p) => p.doc))).toContain('pageLink');
+
+    // Their book is untouched, down to the page id.
+    const theirsAfter = await pages.listPages(theirs.id);
+    expect(theirsAfter).toHaveLength(1);
+    expect(theirsAfter[0].id).toBe(theirPage.id);
+    expect(seed.isEmptyPageDoc(theirsAfter[0].doc)).toBe(false);
+    expect(JSON.stringify(theirsAfter[0].doc)).toContain('lemon, thyme');
+  });
+
+  /**
+   * The other half of the same decision, and the one worth being strict about:
+   * a reader who wrote in their welcome book keeps every word of it, and the
+   * nicer tour is simply not installed. A small loss against the alternative.
+   */
+  it('v4 install: a welcome book that was written in is left completely alone', async () => {
+    const { seed, books, pages, db } = await freshDataLayer();
+    const conn = await db.getDb();
+
+    const welcome = await books.createBook({
+      title: seed.WELCOME_BOOK_TITLE,
+      floor: 0,
+      slot: 3,
+    });
+    const oldSources = legacyWelcomeSources();
+    for (let i = 0; i < oldSources.length; i += 1) {
+      await pages.createPage({
+        bookId: welcome.id,
+        ord: i,
+        doc: docFromLegacySource(oldSources[i]),
+        scriptSource: oldSources[i],
+      });
+    }
+    // They wrote on page two.
+    const before = await pages.listPages(welcome.id);
+    await pages.savePageDoc(before[1].id, {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'note to self: buy stamps' }],
+        },
+      ],
+    });
+    await conn.execute(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
+      [seed.SEED_VERSION_KEY, '4'],
+    );
+
+    await expect(seed.seedIfEmpty()).resolves.toBe(false);
+
+    const after = await pages.listPages(welcome.id);
+    expect(after).toHaveLength(oldSources.length);
+    expect(after.map((p) => p.id)).toEqual(before.map((p) => p.id));
+    expect(JSON.stringify(after[1].doc)).toContain('buy stamps');
+  });
+
   it.each([...seedTitlesForTest()])(
     'a library still on %s is retitled, not duplicated',
     async (oldTitle: string) => {
@@ -436,6 +775,6 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
 
 // Re-exported constants stay wired (guards against accidental renames).
 it('exports the current seed version constants', () => {
-  expect(SEED_VERSION).toBe(4);
+  expect(SEED_VERSION).toBe(5);
   expect(SEED_VERSION_KEY).toBe('seedVersion');
 });

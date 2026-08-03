@@ -1,0 +1,609 @@
+[
+ {
+  "floor": 0,
+  "slot": 0,
+  "title": "Cell Biology",
+  "seed": 816202609,
+  "preset": "limp-commonplace",
+  "presetLabel": "Limp Commonplace",
+  "tier": "shelf",
+  "shape": "limp",
+  "material": "linen",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "gothic-panel",
+  "edge": "top-gilt",
+  "ornament": -1,
+  "charm": "tassel",
+  "bands": 0,
+  "wear": 0.31
+ },
+ {
+  "floor": 0,
+  "slot": 1,
+  "title": "Kanji Practice",
+  "seed": 3501608159,
+  "preset": "skiver-diary",
+  "presetLabel": "Skiver Diary",
+  "tier": "niche",
+  "shape": "wallet",
+  "material": "skiver",
+  "decorations": [
+   "edge-piping"
+  ],
+  "plate": "lozenge-ends",
+  "edge": "striped",
+  "ornament": 6,
+  "charm": "tassel",
+  "bands": 3,
+  "wear": 0.25
+ },
+ {
+  "floor": 0,
+  "slot": 2,
+  "title": "Watercolour",
+  "seed": 2641653975,
+  "preset": "shell-marble",
+  "presetLabel": "Shell Marble",
+  "tier": "shelf",
+  "shape": "rounded",
+  "material": "shell-marble",
+  "decorations": [
+   "double-bands",
+   "label-plate"
+  ],
+  "plate": "gilt",
+  "edge": "shell-marbled",
+  "ornament": 11,
+  "charm": "tag",
+  "bands": 1,
+  "wear": 0.16
+ },
+ {
+  "floor": 0,
+  "slot": 3,
+  "title": "Tea Journal",
+  "seed": 1637716671,
+  "preset": "hessian-folio",
+  "presetLabel": "Hessian Folio",
+  "tier": "shelf",
+  "shape": "splayed",
+  "material": "hessian",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "stepped-frame",
+  "edge": "deckle",
+  "ornament": 34,
+  "charm": "tassel",
+  "bands": 1,
+  "wear": 0.05
+ },
+ {
+  "floor": 0,
+  "slot": 4,
+  "title": "Linear Algebra",
+  "seed": 3866150627,
+  "preset": "creased-pocketbook",
+  "presetLabel": "Creased Pocketbook",
+  "tier": "niche",
+  "shape": "creased",
+  "material": "skiver",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "stippled-ground",
+  "edge": "violet-edge",
+  "ornament": 23,
+  "charm": "tag",
+  "bands": 4,
+  "wear": 0.41
+ },
+ {
+  "floor": 0,
+  "slot": 5,
+  "title": "SQL Spellbook",
+  "seed": 1021582802,
+  "preset": "antique-vellum",
+  "presetLabel": "Antique Vellum",
+  "tier": "shelf",
+  "shape": "tapered-head",
+  "material": "vellum",
+  "decorations": [
+   "spine-rule",
+   "label-plate"
+  ],
+  "plate": "inlay-strip",
+  "edge": "saffron-edge",
+  "ornament": 2,
+  "charm": "pressed-flower",
+  "bands": 1,
+  "wear": 0
+ },
+ {
+  "floor": 0,
+  "slot": 6,
+  "title": "Birdsong",
+  "seed": 4265462036,
+  "preset": "washi-notebook",
+  "presetLabel": "Washi Notebook",
+  "tier": "shelf",
+  "shape": "japanese-stab",
+  "material": "washi-print",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "blind-lettered",
+  "edge": "marbled",
+  "ornament": -1,
+  "charm": "pressed-flower",
+  "bands": 0,
+  "wear": 0.03
+ },
+ {
+  "floor": 0,
+  "slot": 7,
+  "title": "Field Notes",
+  "seed": 4030228708,
+  "preset": "velvet-album",
+  "presetLabel": "Velvet Album",
+  "tier": "niche",
+  "shape": "clasped",
+  "material": "velvet",
+  "decorations": [
+   "corner-tooling"
+  ],
+  "plate": "dotted-rule",
+  "edge": "agate",
+  "ornament": 38,
+  "charm": "none",
+  "bands": 2,
+  "wear": 0.08
+ },
+ {
+  "floor": 0,
+  "slot": 8,
+  "title": "The Long Winter",
+  "seed": 3017546599,
+  "preset": "shell-marble",
+  "presetLabel": "Shell Marble",
+  "tier": "shelf",
+  "shape": "rounded",
+  "material": "shell-marble",
+  "decorations": [
+   "double-bands",
+   "label-plate"
+  ],
+  "plate": "inlay-strip",
+  "edge": "shell-marbled",
+  "ornament": -1,
+  "charm": "clasp",
+  "bands": 2,
+  "wear": 0.15
+ },
+ {
+  "floor": 0,
+  "slot": 9,
+  "title": "Sourdough",
+  "seed": 3904432847,
+  "preset": "quarter-cloth",
+  "presetLabel": "Quarter Cloth",
+  "tier": "signature",
+  "shape": "square",
+  "material": "quarter-bound",
+  "decorations": [
+   "label-plate"
+  ],
+  "plate": "gilt",
+  "edge": "landscape-edge",
+  "ornament": -1,
+  "charm": "tag",
+  "bands": 2,
+  "wear": 0.36
+ },
+ {
+  "floor": 0,
+  "slot": 10,
+  "title": "Alpine Flora",
+  "seed": 3376340789,
+  "preset": "sailmakers-quarto",
+  "presetLabel": "Sailmaker’s Quarto",
+  "tier": "niche",
+  "shape": "long-stitch",
+  "material": "sailcloth",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "stepped-frame",
+  "edge": "comb-marbled",
+  "ornament": 14,
+  "charm": "none",
+  "bands": 3,
+  "wear": 0.33
+ },
+ {
+  "floor": 0,
+  "slot": 11,
+  "title": "Letters Home",
+  "seed": 2720569838,
+  "preset": "portfolio-drawings",
+  "presetLabel": "Drawing Portfolio",
+  "tier": "niche",
+  "shape": "portfolio",
+  "material": "boards-exposed",
+  "decorations": [
+   "shelf-ticket"
+  ],
+  "plate": "gilt-direct",
+  "edge": "plain",
+  "ornament": 43,
+  "charm": "pressed-flower",
+  "bands": 3,
+  "wear": 0.08
+ },
+ {
+  "floor": 0,
+  "slot": 12,
+  "title": "The Salt Road",
+  "seed": 1248694768,
+  "preset": "canvas-ledger",
+  "presetLabel": "Canvas Ledger",
+  "tier": "shelf",
+  "shape": "ledger",
+  "material": "canvas",
+  "decorations": [
+   "corner-tooling"
+  ],
+  "plate": "debossed",
+  "edge": "gauffered",
+  "ornament": 3,
+  "charm": "none",
+  "bands": 0,
+  "wear": 0.3
+ },
+ {
+  "floor": 0,
+  "slot": 13,
+  "title": "Recipes",
+  "seed": 3164161050,
+  "preset": "plain-cloth",
+  "presetLabel": "Plain Cloth",
+  "tier": "signature",
+  "shape": "square",
+  "material": "smooth-cloth",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "shield-plate",
+  "edge": "stained-blue",
+  "ornament": 21,
+  "charm": "wax-seal",
+  "bands": 4,
+  "wear": 0.08
+ },
+ {
+  "floor": 0,
+  "slot": 14,
+  "title": "Marginalia",
+  "seed": 3915847237,
+  "preset": "quarter-cloth",
+  "presetLabel": "Quarter Cloth",
+  "tier": "signature",
+  "shape": "square",
+  "material": "quarter-bound",
+  "decorations": [
+   "label-plate"
+  ],
+  "plate": "gilt-direct",
+  "edge": "nonpareil",
+  "ornament": 48,
+  "charm": "wax-seal",
+  "bands": 0,
+  "wear": 0.05
+ },
+ {
+  "floor": 1,
+  "slot": 0,
+  "title": "Cloud Atlas",
+  "seed": 214632446,
+  "preset": "gilt-vellum",
+  "presetLabel": "Gilt Vellum",
+  "tier": "shelf",
+  "shape": "rounded",
+  "material": "vellum",
+  "decorations": [
+   "gilt-bands",
+   "label-plate"
+  ],
+  "plate": "roundel",
+  "edge": "gilt",
+  "ornament": 31,
+  "charm": "none",
+  "bands": 3,
+  "wear": 0.07
+ },
+ {
+  "floor": 1,
+  "slot": 1,
+  "title": "Bee Keeping",
+  "seed": 1564446522,
+  "preset": "blind-cloth",
+  "presetLabel": "Blind-Stamped Cloth",
+  "tier": "shelf",
+  "shape": "square",
+  "material": "smooth-cloth",
+  "decorations": [
+   "blind-stamped-frame"
+  ],
+  "plate": "lozenge-ends",
+  "edge": "gauffered",
+  "ornament": -1,
+  "charm": "tag",
+  "bands": 2,
+  "wear": 0.17
+ },
+ {
+  "floor": 1,
+  "slot": 2,
+  "title": "Grammar",
+  "seed": 3815575709,
+  "preset": "plain-calf",
+  "presetLabel": "Plain Calf",
+  "tier": "shelf",
+  "shape": "rounded",
+  "material": "polished-calf",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "rope-frame",
+  "edge": "stained-blue",
+  "ornament": 43,
+  "charm": "pressed-flower",
+  "bands": 1,
+  "wear": 0.07
+ },
+ {
+  "floor": 1,
+  "slot": 3,
+  "title": "Night Sky",
+  "seed": 1333538656,
+  "preset": "limp-commonplace",
+  "presetLabel": "Limp Commonplace",
+  "tier": "shelf",
+  "shape": "limp",
+  "material": "linen",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "inlay-strip",
+  "edge": "tree-calf-edge",
+  "ornament": -1,
+  "charm": "ribbon",
+  "bands": 4,
+  "wear": 0.65
+ },
+ {
+  "floor": 1,
+  "slot": 4,
+  "title": "Ledger",
+  "seed": 3467978359,
+  "preset": "spanish-wave",
+  "presetLabel": "Spanish Wave",
+  "tier": "shelf",
+  "shape": "tight-back",
+  "material": "spanish-marble",
+  "decorations": [
+   "marbled-band"
+  ],
+  "plate": "scallop-edge",
+  "edge": "shell-marbled",
+  "ornament": -1,
+  "charm": "none",
+  "bands": 1,
+  "wear": 0.39
+ },
+ {
+  "floor": 1,
+  "slot": 5,
+  "title": "Poems",
+  "seed": 3466423262,
+  "preset": "rebacked-quarto",
+  "presetLabel": "Rebacked Quarto",
+  "tier": "niche",
+  "shape": "shoulder",
+  "material": "boards-exposed",
+  "decorations": [
+   "shelf-ticket"
+  ],
+  "plate": "blind-panel",
+  "edge": "silvered",
+  "ornament": 23,
+  "charm": "tag",
+  "bands": 3,
+  "wear": 0.01
+ },
+ {
+  "floor": 1,
+  "slot": 6,
+  "title": "Sketches",
+  "seed": 2107024713,
+  "preset": "limp-vellum",
+  "presetLabel": "Limp Vellum",
+  "tier": "shelf",
+  "shape": "limp",
+  "material": "vellum",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "oval-medallion",
+  "edge": "stone-marbled",
+  "ornament": 22,
+  "charm": "ribbon",
+  "bands": 0,
+  "wear": 0
+ },
+ {
+  "floor": 1,
+  "slot": 7,
+  "title": "Harbour Log",
+  "seed": 3526662976,
+  "preset": "plain-cloth",
+  "presetLabel": "Plain Cloth",
+  "tier": "signature",
+  "shape": "square",
+  "material": "smooth-cloth",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "ebony-plate",
+  "edge": "nonpareil",
+  "ornament": 10,
+  "charm": "tassel",
+  "bands": 5,
+  "wear": 0.23
+ },
+ {
+  "floor": 1,
+  "slot": 8,
+  "title": "Dream Diary",
+  "seed": 505838346,
+  "preset": "corded-rep",
+  "presetLabel": "Corded Rep",
+  "tier": "shelf",
+  "shape": "ribbed",
+  "material": "ribbed-cloth",
+  "decorations": [
+   "gilt-bands",
+   "label-plate"
+  ],
+  "plate": "copper-plate",
+  "edge": "agate",
+  "ornament": 25,
+  "charm": "none",
+  "bands": 4,
+  "wear": 0.52
+ },
+ {
+  "floor": 1,
+  "slot": 9,
+  "title": "Herbal",
+  "seed": 2177242366,
+  "preset": "plain-buckram",
+  "presetLabel": "Plain Buckram",
+  "tier": "shelf",
+  "shape": "square",
+  "material": "buckram",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "bead-frame",
+  "edge": "red-under-gold",
+  "ornament": 23,
+  "charm": "none",
+  "bands": 4,
+  "wear": 0
+ },
+ {
+  "floor": 1,
+  "slot": 10,
+  "title": "Chess Games",
+  "seed": 139614930,
+  "preset": "plain-cloth",
+  "presetLabel": "Plain Cloth",
+  "tier": "signature",
+  "shape": "square",
+  "material": "smooth-cloth",
+  "decorations": [
+   "plain"
+  ],
+  "plate": "ruled-box",
+  "edge": "silvered",
+  "ornament": 39,
+  "charm": "ribbon",
+  "bands": 5,
+  "wear": 0.07
+ },
+ {
+  "floor": 1,
+  "slot": 11,
+  "title": "Old Maps",
+  "seed": 332718843,
+  "preset": "linen-quarto",
+  "presetLabel": "Linen Quarto",
+  "tier": "shelf",
+  "shape": "square",
+  "material": "linen",
+  "decorations": [
+   "label-plate"
+  ],
+  "plate": "sunk-panel",
+  "edge": "stained-red",
+  "ornament": 42,
+  "charm": "tassel",
+  "bands": 2,
+  "wear": 0
+ },
+ {
+  "floor": 1,
+  "slot": 12,
+  "title": "Quiet Hours",
+  "seed": 2199027951,
+  "preset": "tooled-tail",
+  "presetLabel": "Tooled Tail",
+  "tier": "niche",
+  "shape": "rounded",
+  "material": "half-bound",
+  "decorations": [
+   "foot-ornament",
+   "spine-rule"
+  ],
+  "plate": "stepped-frame",
+  "edge": "tea-stained",
+  "ornament": 41,
+  "charm": "tag",
+  "bands": 0,
+  "wear": 0.21
+ },
+ {
+  "floor": 1,
+  "slot": 13,
+  "title": "The Orchard",
+  "seed": 2699307761,
+  "preset": "moire-panelled",
+  "presetLabel": "Panelled Moiré",
+  "tier": "niche",
+  "shape": "round-cap",
+  "material": "silk-moire",
+  "decorations": [
+   "gilt-panel",
+   "label-plate"
+  ],
+  "plate": "gilt-band",
+  "edge": "sea-green-edge",
+  "ornament": 30,
+  "charm": "none",
+  "bands": 1,
+  "wear": 0.07
+ },
+ {
+  "floor": 1,
+  "slot": 14,
+  "title": "Almanac",
+  "seed": 568904366,
+  "preset": "blind-calf",
+  "presetLabel": "Blind-Tooled Calf",
+  "tier": "shelf",
+  "shape": "rounded",
+  "material": "polished-calf",
+  "decorations": [
+   "blind-stamped-frame"
+  ],
+  "plate": "lozenge-ends",
+  "edge": "burnished",
+  "ornament": 8,
+  "charm": "tag",
+  "bands": 1,
+  "wear": 0.16
+ }
+]

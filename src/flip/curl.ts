@@ -68,6 +68,7 @@ import {
   type GlMesh,
 } from './gl';
 import { foldOffset, foldTiltAtP, radiusForP, type FlipDirection } from './math';
+import { DEFAULT_PAPER_CREAM_RGB, paperCreamRgb } from './paperTone';
 
 /**
  * Curl mesh resolution. The doc says 40x8; we run finer because the radius
@@ -81,11 +82,22 @@ export const CURL_GRID_ROWS = 16;
 /** Camera field of view (doc: ~20°). */
 export const CURL_FOV_RAD = (20 * Math.PI) / 180;
 
-/** Paper cream (tokens.css --paper-cream #f7f1e3) as 0-255 RGB. */
-export const PAPER_CREAM_RGB: readonly [number, number, number] = [247, 241, 227];
+/**
+ * Paper cream (tokens.css --paper-cream #f7f1e3) as 0-255 RGB — the PARCHMENT
+ * theme's paper, and the default the exported shader sources below are built
+ * with.
+ *
+ * It is not "the" paper colour: settings.css remaps `--paper-cream` per theme
+ * (night's is #2b211a), so the running renderer compiles its fragment shaders
+ * against `paperTone.paperCreamRgb()` and recompiles them when that moves. See
+ * setPaperCream() and the header of paperTone.ts — a page that turned
+ * parchment mid-flip and went back on landing is the defect this split fixes.
+ */
+export const PAPER_CREAM_RGB: readonly [number, number, number] = DEFAULT_PAPER_CREAM_RGB;
 
-/** The same cream as a GLSL literal, so shader and CPU can never drift. */
-const PAPER_CREAM_GLSL = PAPER_CREAM_RGB.map((channel) => (channel / 255).toFixed(6)).join(', ');
+/** A cream as a GLSL vec3 body, so shader and CPU can never drift. */
+const creamGlsl = (rgb: readonly [number, number, number]): string =>
+  rgb.map((channel) => (channel / 255).toFixed(6)).join(', ');
 
 /**
  * art/flat.ts FLAT.shadow (#5d3a26) as 0-255 RGB — the app's ONE shadow
@@ -192,14 +204,18 @@ void main() {
  * multiply. Both passes must agree on face orientation and on what an
  * uncovered texel means, so the rules live in exactly one place.
  */
-const FRAG_COMMON = /* glsl */ `
+const fragCommon = (cream: readonly [number, number, number]): string => /* glsl */ `
 uniform float uDir;        // +1 = next (right leaf), -1 = prev (left leaf)
 uniform sampler2D uPaperTex;
 uniform vec2 uPaperScale;  // leaf size / paper tile css size (repeat count)
 uniform float uPaperMix;   // fibre multiply strength (0 disables)
 uniform float uPaperMean;  // mean luminance of the paper tile (normalizer)
 
-const vec3 PAPER_CREAM = vec3(${PAPER_CREAM_GLSL});
+// The LIVE --paper-cream, baked in at compile time (paperTone.ts). A constant
+// rather than a uniform because it changes only when the reader changes theme,
+// and a uniform would cost a set on every frame of every turn to say the same
+// thing. CurlRenderer.setPaperCream recompiles when it moves.
+const vec3 PAPER_CREAM = vec3(${creamGlsl(cream)});
 const vec3 FLAT_SHADOW = vec3(${FLAT_SHADOW_GLSL});
 
 /**
@@ -234,14 +250,16 @@ vec3 paperMultiply(vec3 color, vec2 uv) {
 }
 `;
 
-export const CURL_FRAG_SRC = /* glsl */ `#version 300 es
+export const curlFragSrc = (
+  cream: readonly [number, number, number],
+): string => /* glsl */ `#version 300 es
 precision highp float;
 
 in vec2 vUv;
 
 uniform sampler2D uTexFront;
 uniform sampler2D uTexBack;
-${FRAG_COMMON}
+${fragCommon(cream)}
 out vec4 outColor;
 
 void main() {
@@ -275,6 +293,16 @@ void main() {
 `;
 
 /**
+ * The curl fragment shader at the PARCHMENT default.
+ *
+ * Kept as a plain exported string because it is the shader's canonical text —
+ * what tests read and what a reader greps for. The renderer compiles
+ * `curlFragSrc(paperCreamRgb())` instead, which is the same source with the
+ * live theme's paper in it.
+ */
+export const CURL_FRAG_SRC = curlFragSrc(PAPER_CREAM_RGB);
+
+/**
  * Ground pass: opaque quad over the moving leaf's rect showing the revealed
  * page beneath the curl, with the crease's flat contact shadow composited in.
  */
@@ -290,7 +318,9 @@ void main() {
 }
 `;
 
-export const GROUND_FRAG_SRC = /* glsl */ `#version 300 es
+export const groundFragSrc = (
+  cream: readonly [number, number, number],
+): string => /* glsl */ `#version 300 es
 precision highp float;
 
 in vec2 vUv;
@@ -303,7 +333,7 @@ uniform float uRadius;
 uniform float uLift;
 uniform float uShadowStart; // leaf-local px past the fold where the sheet's
                             // silhouette ends — measured, not assumed
-${FRAG_COMMON}
+${fragCommon(cream)}
 out vec4 outColor;
 
 const float CONTACT_ALPHA = ${CONTACT_SHADOW_ALPHA.toFixed(3)};
@@ -342,6 +372,9 @@ void main() {
   outColor = vec4(color, 1.0);
 }
 `;
+
+/** The ground fragment shader at the parchment default — see CURL_FRAG_SRC. */
+export const GROUND_FRAG_SRC = groundFragSrc(PAPER_CREAM_RGB);
 
 /* ----------------------------------------------------------------------------
    Renderer
@@ -411,8 +444,8 @@ export interface CurlFrame {
  */
 export class CurlRenderer {
   private readonly gl: WebGL2RenderingContext;
-  private readonly curlProgram: GlProgram;
-  private readonly groundProgram: GlProgram;
+  private curlProgram: GlProgram;
+  private groundProgram: GlProgram;
   private readonly mesh: GlMesh;
   private readonly quad: GlMesh;
   private front: WebGLTexture;
@@ -423,11 +456,20 @@ export class CurlRenderer {
   private paperMix = 0;
   private disposed = false;
 
+  /**
+   * The paper cream the two fragment programs were compiled against. Blank
+   * paper is a compile-time constant in the shader (see fragCommon), so a
+   * theme change has to rebuild the programs — that is the whole of
+   * setPaperCream below.
+   */
+  private cream: readonly [number, number, number];
+
   constructor(private readonly ctx: FlipContext) {
     const gl = ctx.gl;
     this.gl = gl;
-    this.curlProgram = new GlProgram(gl, CURL_VERT_SRC, CURL_FRAG_SRC);
-    this.groundProgram = new GlProgram(gl, GROUND_VERT_SRC, GROUND_FRAG_SRC);
+    this.cream = paperCreamRgb();
+    this.curlProgram = new GlProgram(gl, CURL_VERT_SRC, curlFragSrc(this.cream));
+    this.groundProgram = new GlProgram(gl, GROUND_VERT_SRC, groundFragSrc(this.cream));
     this.mesh = createGridMesh(gl, CURL_GRID_COLS, CURL_GRID_ROWS);
     this.quad = createQuadMesh(gl);
     this.front = this.creamTexture();
@@ -437,8 +479,48 @@ export class CurlRenderer {
   }
 
   private creamTexture(): WebGLTexture {
-    const [r, g, b] = PAPER_CREAM_RGB;
+    const [r, g, b] = this.cream;
     return createSolidTexture(this.gl, r, g, b);
+  }
+
+  /**
+   * Adopt the live `--paper-cream` (paperTone.ts), recompiling the two
+   * fragment programs if it moved. A no-op on every call but the first after a
+   * theme change, which is why the flip can afford to call it at gesture start
+   * rather than watching for the change itself.
+   *
+   * The cream FALLBACK textures — what a face with no snapshot shows, and on
+   * the night theme the difference between a dark sheet and a white one — pick
+   * the new colour up on their own: setPageTextures rebuilds them from
+   * `this.cream` and the controller calls it immediately after this, in the
+   * same beginFlip.
+   */
+  setPaperCream(): void {
+    if (this.disposed || this.ctx.isLost()) return;
+    const cream = paperCreamRgb();
+    // The COLOUR, not paperToneTag(): an ink change moves the tag (a snapshot
+    // taken in sepia is stale under graphite) and leaves the paper exactly
+    // where it was, and recompiling two programs to bake in the same number
+    // would be work for nothing.
+    if (cream.every((channel, i) => channel === this.cream[i])) return;
+    const gl = this.gl;
+    let curl: GlProgram;
+    let ground: GlProgram;
+    try {
+      curl = new GlProgram(gl, CURL_VERT_SRC, curlFragSrc(cream));
+      ground = new GlProgram(gl, GROUND_VERT_SRC, groundFragSrc(cream));
+    } catch {
+      // A failed recompile leaves the OLD programs in place and drawing, and
+      // `this.cream` unchanged so the next flip tries again. The paper is then
+      // one theme stale — the defect this method exists to fix — but that is a
+      // great deal better than a flip that cannot draw at all.
+      return;
+    }
+    this.curlProgram.dispose();
+    this.groundProgram.dispose();
+    this.curlProgram = curl;
+    this.groundProgram = ground;
+    this.cream = cream;
   }
 
   /**

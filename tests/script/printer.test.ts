@@ -95,7 +95,52 @@ const linkArb: fc.Arbitrary<Inline> = fc
     ...withAttrs(attrs),
   }));
 
-const spanNodeArb = fc.oneof(markArb, codeArb, linkArb);
+/**
+ * The three leaf spans, and every one of them is a round-trip hazard of its
+ * own kind: a formula is opaque text between dollars, a footnote is text
+ * inside brackets the printer pads, and a page reference is a name. Generating
+ * them here is what pins `parse(print(doc)) === doc` for all three.
+ */
+const mathArb: fc.Arbitrary<Inline> = fc
+  .tuple(
+    fc.constantFrom(
+      "x^2",
+      "\\pi r^2",
+      "a_i + b_i",
+      "\\frac{1}{2}",
+      "\\sqrt{n}",
+      "e^{i\\pi}",
+    ),
+    optAttrsArb,
+  )
+  .map(([text, attrs]) => ({ kind: "math", text, ...span0, ...withAttrs(attrs) }));
+
+const footnoteArb: fc.Arbitrary<Inline> = fc
+  .tuple(textArb, optAttrsArb)
+  .map(([text, attrs]) => ({
+    kind: "footnote",
+    text,
+    ...span0,
+    ...withAttrs(attrs),
+  }));
+
+const pagerefArb: fc.Arbitrary<Inline> = fc
+  .tuple(textArb, optAttrsArb)
+  .map(([label, attrs]) => ({
+    kind: "pageref",
+    label,
+    ...span0,
+    ...withAttrs(attrs),
+  }));
+
+const spanNodeArb = fc.oneof(
+  markArb,
+  codeArb,
+  linkArb,
+  mathArb,
+  footnoteArb,
+  pagerefArb,
+);
 
 /** Alternating text/span sequence — never two adjacent text nodes, and a
  *  text separator between spans (adjacent emphasis markers are ambiguous). */
@@ -213,6 +258,17 @@ const imageArb: fc.Arbitrary<Block> = fc
     ...span0,
   }));
 
+const mathBlockArb: fc.Arbitrary<Block> = fc
+  .tuple(
+    fc.constantFrom(
+      "e^{i\\pi} + 1 = 0",
+      "\\sum_{n=1}^{\\infty} \\frac{1}{n^2}",
+      "a^2 + b^2 = c^2",
+    ),
+    attrsArb,
+  )
+  .map(([latex, attrs]) => ({ kind: "mathBlock", latex, attrs, ...span0 }));
+
 const fetchArb: fc.Arbitrary<Block> = fc
   .tuple(textArb, attrsArb)
   .map(([query, attrs]) => ({ kind: "fetchDirective", query, attrs, ...span0 }));
@@ -230,6 +286,7 @@ const namedContainerArb: fc.Arbitrary<Block> = fc
       "quote-card" as const,
       "spoiler" as const,
       "banner" as const,
+      "toggle" as const,
     ),
     attrsArb,
     fc.array(simpleChildArb, { maxLength: 2 }),
@@ -388,6 +445,7 @@ const topBlockArb: fc.Arbitrary<Block> = fc.oneof(
   taskListArb,
   tableArb,
   imageArb,
+  mathBlockArb,
   fetchArb,
   namedContainerArb,
   columnsArb,

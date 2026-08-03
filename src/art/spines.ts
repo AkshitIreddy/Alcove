@@ -1810,6 +1810,27 @@ const MATERIAL_WEAR_BIAS: Readonly<Record<BindingMaterial, number>> = {
  * shaped cartouches, enamels and gothic panels are rare enough that finding
  * one feels like finding something. Everything not named here gets `1`, so
  * adding a treatment cannot silently fall out of the roll.
+ *
+ * CHECKED AND CLEARED, second "too weird" report (2026-08-04). The reader said
+ * the randomiser hands out spines that do not read as books and named the new
+ * book creator, so all three of a rolled spine's dressing axes were put on a
+ * real shelf beside plain cloth octavos — `shots-now/suspect-row.mjs`, with
+ * `--plates=`, `--ornaments=` and a hand-composed `own:` binding per
+ * decoration. None of them is the problem, and the reason is the same in every
+ * case: a plate is a LABEL and a stamp is a third of the spine's width, so at
+ * 20–45 world px they are small marks on a book rather than objects competing
+ * with it. What went instead was six SILHOUETTES (`art/bookDesign.ts`) — a
+ * wire coil reads as a step-ladder from across the room and no weighting of
+ * this table would have helped. Do not spend a third pass here.
+ *
+ * The one thing left on this axis that IS wrong is not in this file:
+ * `randomBookStyleOverrides` in `art/bookStyle.ts` — which is what dresses
+ * every NEW book, through `freshBookStyleOverrides` — reaches past these tables
+ * and picks `pick(TITLE_PLATES, …)` and `pick(EDGE_TREATMENTS, …)` UNIFORMLY.
+ * So the skew described above applies to a seeded spine and to nothing a reader
+ * actually makes: the 21 treatments that fall through to weight 1 here are ~42%
+ * of a new book's plates. That does not make a book weird — it makes a shelf a
+ * sample sheet, which is the complaint this comment was written to prevent.
  */
 const PLATE_WEIGHT_OVERRIDES: Readonly<Partial<Record<TitlePlateStyle, number>>> = {
   none: 150,

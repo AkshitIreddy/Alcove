@@ -43,9 +43,14 @@
  *    what the reader asked for, and also what stops one panel open from
  *    building 557 tiles and three thousand DOM nodes.
  */
-import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { For, Show, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
 import { NodeSelection } from '@tiptap/pm/state';
 import { activeEditor } from '../../editor/insert/activeEditor';
+import {
+  armSticker,
+  armedSticker,
+  disarmSticker,
+} from '../../editor/effects/freePlacement';
 import { STICKER_IDS, stickerSvg, type StickerId } from '../../editor/nodes/stickers';
 import { SQUIGGLE_DATA_URI } from '../../editor/effects/blockEffects';
 import type { CalloutTint } from '../../editor/nodes/callout';
@@ -84,7 +89,9 @@ const SHELVES: readonly Shelf[] = [
   { id: 'diagrams', label: 'diagrams', blurb: 'drawn from a few lines of text' },
   { id: 'trim', label: 'tape & trim', blurb: 'dresses the block your cursor is on' },
   { id: 'lettering', label: 'lettering', blurb: 'which hand, what ink, how big' },
-  { id: 'stickers', label: 'stickers', blurb: 'drops in at your cursor' },
+  // Not "drops in at your cursor" any more: this shelf now has two modes and
+  // the heading was flatly contradicting the one the reader had just chosen.
+  { id: 'stickers', label: 'stickers', blurb: 'at your cursor, or anywhere you point' },
 ];
 
 /* ========================================================================== *
@@ -313,6 +320,31 @@ export default function CataloguePanel(): JSX.Element {
   // editor's own selection is not a Solid signal, so nothing else would.
   const [pulse, setPulse] = createSignal(0);
 
+  /**
+   * How a sticker lands: at the caret, or wherever the reader points.
+   *
+   * The reader: *"give user the option to drag and place stickers or any
+   * effects, like i mean click on it and put it anywhere on the page, not
+   * caring about where lines are"*. So the sticker shelf has two modes, and
+   * the second one is the one they asked for: pick a sticker here, then click
+   * the page, and it sticks there — above the ruling, above the text, dragged
+   * afterwards with the pointer. `editor/effects/freePlacement.ts` holds the
+   * one fact the two ends share.
+   *
+   * The mode is remembered so somebody decorating a page can place six
+   * stickers without re-choosing between each one — and a pick SURVIVES
+   * closing the sheet, which is deliberate: the panel pushes the book
+   * sideways, so "put this one in the far corner" wants the sheet out of the
+   * way first. What makes that safe rather than mysterious is that the armed
+   * sticker says so at the foot of the page and offers the way out
+   * (`.nb-place-hint` in BookView), so there is never a crosshair cursor with
+   * no visible cause. The cleanup below is the last resort: closing the BOOK
+   * puts the sticker down, since this panel lives as long as the book view
+   * does and only unmounts with it.
+   */
+  const [freeMode, setFreeMode] = createSignal(false);
+  onCleanup(() => disarmSticker());
+
   const toggleEffect = (spec: EffectSpec): void => {
     const editor = activeEditor();
     const target = topBlockPos();
@@ -365,6 +397,14 @@ export default function CataloguePanel(): JSX.Element {
   };
 
   const insertSticker = (stickerId: StickerId): void => {
+    if (freeMode()) {
+      // Arm it; `BookView` places it on the next click on a leaf. Clicking the
+      // armed sticker again puts it down — a mode you cannot leave by pressing
+      // the thing that started it is a mode people get stuck in.
+      if (armedSticker() === stickerId) disarmSticker();
+      else armSticker(stickerId);
+      return;
+    }
     const editor = activeEditor();
     if (!editor) return;
     editor.chain().focus().insertSticker({ stickerId }).run();
@@ -434,7 +474,7 @@ export default function CataloguePanel(): JSX.Element {
         id: `sticker-${id}`,
         label: id,
         shelf: 'stickers',
-        keywords: ['sticker', 'doodle', id],
+        keywords: ['sticker', 'doodle', id, 'place', 'anywhere'],
         art: () => (
           <span
             class="nb-cat-glyph"
@@ -442,6 +482,8 @@ export default function CataloguePanel(): JSX.Element {
             innerHTML={stickerSvg(id)}
           />
         ),
+        // Lit while it is the one waiting for somewhere to land.
+        pressed: () => armedSticker() === id,
         run: () => insertSticker(id),
       });
     }
@@ -564,6 +606,48 @@ export default function CataloguePanel(): JSX.Element {
               <h3 class="nb-panel-section-title">
                 {s.label} <em class="nb-panel-row-hint">{s.blurb}</em>
               </h3>
+
+              {/* Where a sticker lands. Only this shelf has the choice, so the
+                  control lives on the shelf rather than in the panel head. */}
+              <Show when={s.id === 'stickers'}>
+                <div
+                  class="nb-cat-mode nb-chip-row"
+                  role="group"
+                  aria-label="Where a sticker lands"
+                >
+                  <button
+                    type="button"
+                    class="nb-chip"
+                    aria-pressed={!freeMode()}
+                    onClick={() => {
+                      setFreeMode(false);
+                      disarmSticker();
+                    }}
+                  >
+                    at the cursor
+                  </button>
+                  <button
+                    type="button"
+                    class="nb-chip"
+                    aria-pressed={freeMode()}
+                    onClick={() => setFreeMode(true)}
+                  >
+                    anywhere on the page
+                  </button>
+                </div>
+                <p class="nb-panel-footnote nb-cat-mode-note">
+                  <Show
+                    when={freeMode()}
+                    fallback={
+                      <>the sticker drops in beside your caret, like a word</>
+                    }
+                  >
+                    pick one, then click the page — it sticks where you point,
+                    over the ruling, and you can drag it after
+                  </Show>
+                </p>
+              </Show>
+
               <For each={runsOn(s.id)}>
                 {(run) => (
                   <>

@@ -40,6 +40,7 @@ import {
   updateBookPageCount,
 } from '../../data/books';
 import type { Book } from '../../data/types';
+import { registerCommands } from '../../data/keybindings';
 import { play } from '../../sound/engine';
 import Tooltips from '../../views/Tooltip';
 import ShelfStudio from '../../views/rail/ShelfStudio';
@@ -394,6 +395,48 @@ export default function BookshelfWorld(): JSX.Element {
     }
   }
 
+  /**
+   * The shelf's four keyboard commands.
+   *
+   * Registered from the view rather than from world.ts, because these are what
+   * the DOCK buttons do — the dock owns the panels and the "which floor is the
+   * ghost slot on" answer, and a key that did something subtly different from
+   * the button beside it would be a second implementation to keep in step.
+   * Registered on mount and dropped on cleanup, so none of them fires while a
+   * book is open and the case is not on screen.
+   */
+  onMount(() => {
+    onCleanup(
+      registerCommands({
+        'new-book': () => addBook(addSpot()?.floor),
+        'library-studio': () => toggleDock('studio'),
+        'open-trash': () => toggleDock('trash'),
+        'add-floor': () => world?.addFloor(),
+      }),
+    );
+  });
+
+  /**
+   * The keyboard's version of pressing a dock icon.
+   *
+   * `dockPanel()` and not `panelAtPress`: that snapshot exists because a
+   * pointerdown closes the trash card before the button's click lands, and a
+   * command has no such race — it runs once, after the panel state has
+   * settled. Reading the snapshot here would toggle against a value taken by
+   * whatever the reader last clicked, which may have been minutes ago.
+   */
+  function toggleDock(panel: DockPanel): void {
+    if (dockPanel() === panel) {
+      setDockPanel(null);
+      return;
+    }
+    if (panel === 'studio') openStudio(null);
+    else {
+      void play('pop-soft');
+      setDockPanel('trash');
+    }
+  }
+
   function handleSpotAction(state: SpotMenuState, action: ShelfSpotAction): void {
     if (action === 'new-book') addBook(state.floor);
     else if (action === 'add-floor') world?.addFloor();
@@ -646,7 +689,23 @@ export default function BookshelfWorld(): JSX.Element {
         <Show when={naming()}>
           {(state) => {
             const rect = state().rect;
-            const boxW = Math.max(rect.height, 132);
+            /*
+             * A LABEL PLATE across the spine, not a slab over the whole book.
+             *
+             * Reported: *"for some reason the new book is white"*. It was not —
+             * it was this input, which is cream (`--paper-cream`) and used to be
+             * sized to the entire spine: `Math.max(rect.height, 132)` long by
+             * the spine's full width. A book had just been made, and what stood
+             * on the plank was a white rectangle where its colour should be.
+             *
+             * Just under two thirds of the height, so the book's own cloth
+             * reads above and below it and the plate lands where a title plate
+             * belongs. The 84px floor is what "name it…" needs to stay legible
+             * on a spine seen at a distance; the 90% cap is what stops that
+             * floor from swallowing a short one again. (Rotated -90°, so `boxW`
+             * runs along the spine's HEIGHT and `boxH` across its width.)
+             */
+            const boxW = Math.min(Math.max(rect.height * 0.62, 84), rect.height * 0.9);
             const boxH = Math.max(rect.width, 26);
             return (
               <input

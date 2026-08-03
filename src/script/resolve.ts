@@ -51,6 +51,8 @@ interface StyleDef {
 export interface DirectiveScan {
   vars: Map<string, VarDef>;
   styles: Map<string, StyleDef>;
+  /** `[^label]: note` definitions, label lowercased. */
+  notes: Map<string, VarDef>;
   /** Line indices the block parser must skip. */
   consumed: Set<number>;
   diags: Diag[];
@@ -58,6 +60,16 @@ export interface DirectiveScan {
 
 /** `::let`, `:: let`, `:::var` … — colons counted so we can warn about `:::`. */
 const DIRECTIVE_RE = /^\s*(:{2,})\s*([A-Za-z][\w-]*)(?![\w-])\s*(.*)$/;
+/**
+ * `[^1]: the note` — Markdown's own footnote definition, on its own line.
+ *
+ * Notebook Script's canonical form puts the note inside the marker
+ * (`[^ like this ]`), because that is how the editor stores it. But every
+ * chatbot alive writes the two-part Markdown form, and a language that only
+ * accepts its own canon is a language that gets slop and renders it as prose.
+ * So both are read; only one is printed.
+ */
+const NOTE_DEF_RE = /^\s*\[\^([^\]\n]+)\]:[ \t]*(.*)$/;
 const TICK_OPEN_RE = /^\s*`{3,}/;
 const TICK_CLOSE_RE = /^\s*`{2,}\s*$/;
 
@@ -80,6 +92,7 @@ function unquote(raw: string): string {
 export function scanDirectives(lines: SrcLine[], from: number): DirectiveScan {
   const vars = new Map<string, VarDef>();
   const styles = new Map<string, StyleDef>();
+  const notes = new Map<string, VarDef>();
   const consumed = new Set<number>();
   const diags: Diag[] = [];
   let inFence = false;
@@ -94,6 +107,22 @@ export function scanDirectives(lines: SrcLine[], from: number): DirectiveScan {
     }
     if (TICK_OPEN_RE.test(line.text)) {
       inFence = true;
+      continue;
+    }
+
+    const note = NOTE_DEF_RE.exec(line.text);
+    if (note !== null) {
+      consumed.add(i);
+      const label = note[1].trim().toLowerCase();
+      if (notes.has(label)) {
+        pushDiag(
+          diags,
+          "footnote-duplicate",
+          `footnote '${note[1].trim()}' is defined twice — the later one wins`,
+          span,
+        );
+      }
+      notes.set(label, { value: note[2].trim(), span });
       continue;
     }
 
@@ -123,7 +152,7 @@ export function scanDirectives(lines: SrcLine[], from: number): DirectiveScan {
     else collectStyle(rest, restBase, span, styles, diags);
   }
 
-  return { vars, styles, consumed, diags };
+  return { vars, styles, notes, consumed, diags };
 }
 
 /** Warn when a name is defined twice; the later definition still wins. */
@@ -379,6 +408,10 @@ function definedList(defs: Map<string, unknown>): string {
 interface ApplyCtx {
   vars: Record<string, string>;
   styles: Record<string, Attrs>;
+  /** `[^label]: note` definitions, label lowercased. */
+  notes: Map<string, VarDef>;
+  /** Definitions a marker actually reached — the rest are reported unused. */
+  notesUsed: Set<string>;
   diags: Diag[];
   /** Names already reported missing — one diagnostic per name is plenty. */
   reported: Set<string>;
@@ -458,6 +491,39 @@ function applyAttrs(attrs: Attrs, span: Span, ctx: ApplyCtx): Attrs {
   return result;
 }
 
+/**
+ * Turn `[^1]` into the note `[^1]: …` defined for it.
+ *
+ * The marker's own text is the note UNLESS a definition claims that exact
+ * label, which is what lets both spellings live in one language: a note
+ * somebody wrote inline stays what they wrote, and a bare Markdown label
+ * finds its definition. A label with no definition keeps its own text (there
+ * is nothing better to show) and earns a warning naming what was defined.
+ */
+function resolveNote(node: { text: string }, span: Span, ctx: ApplyCtx): void {
+  const label = node.text.trim().toLowerCase();
+  if (label === "") return;
+  const def = ctx.notes.get(label);
+  if (def !== undefined) {
+    ctx.notesUsed.add(label);
+    node.text = def.value;
+    return;
+  }
+  // Only a BARE label looks like a reference to a definition. Anything with a
+  // space in it is prose, and prose is a note that was written in place.
+  if (ctx.notes.size === 0 || /\s/.test(node.text.trim())) return;
+  const key = `note:${label}`;
+  if (ctx.reported.has(key)) return;
+  ctx.reported.add(key);
+  pushDiag(
+    ctx.diags,
+    "footnote-undefined",
+    `footnote '${node.text.trim()}' has no '[^${node.text.trim()}]: …' line — the marker reads as its own note`,
+    span,
+    definedList(ctx.notes),
+  );
+}
+
 function applyInlines(nodes: Inline[], ctx: ApplyCtx): void {
   for (const n of nodes) {
     if (n.attrs !== undefined) {
@@ -468,7 +534,17 @@ function applyInlines(nodes: Inline[], ctx: ApplyCtx): void {
         n.text = substitute(n.text, n.srcStart, ctx);
         break;
       case "code":
-        // code spans are literal by definition — never substituted
+      case "math":
+        // Literal by definition. A code span is the reader's own characters
+        // and a formula is another language's source; substituting into
+        // either would be this parser editing something it cannot read.
+        break;
+      case "footnote":
+        resolveNote(n, { srcStart: n.srcStart, srcEnd: n.srcEnd }, ctx);
+        n.text = substitute(n.text, n.srcStart, ctx);
+        break;
+      case "pageref":
+        n.label = substitute(n.label, n.srcStart, ctx);
         break;
       case "link":
         n.href = substitute(n.href, n.srcStart, ctx);
@@ -602,8 +678,16 @@ export function applyDefinitions(
   styles: Record<string, Attrs>,
   diags: Diag[],
   frontmatterSpans: Record<string, Span> = {},
+  notes: Map<string, { value: string; span: Span }> = new Map(),
 ): void {
-  const ctx: ApplyCtx = { vars, styles, diags, reported: new Set() };
+  const ctx: ApplyCtx = {
+    vars,
+    styles,
+    notes,
+    notesUsed: new Set(),
+    diags,
+    reported: new Set(),
+  };
   for (const key of Object.keys(doc.frontmatter)) {
     const span = frontmatterSpans[key];
     doc.frontmatter[key] = substitute(
@@ -613,4 +697,16 @@ export function applyDefinitions(
     );
   }
   applyBlocks(doc.blocks, ctx);
+  // A definition nothing points at is a note the reader will never see: the
+  // line was lifted out of the page, so silence would simply lose it.
+  for (const [label, def] of notes) {
+    if (ctx.notesUsed.has(label)) continue;
+    pushDiag(
+      diags,
+      "footnote-unused",
+      `'[^${label}]: …' is defined but never referenced — nothing on the page points at it`,
+      def.span,
+      `a '[^${label}]' marker in the text`,
+    );
+  }
 }

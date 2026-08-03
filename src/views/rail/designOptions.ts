@@ -100,27 +100,65 @@ export interface RoomLook {
 }
 
 /**
- * How the presets are shelved in the picker.
+ * How the presets are shelved in the picker, STRONGEST FAMILY FIRST.
  *
  * One word each, and every word is taken from a mood vocabulary the art
  * already carries (`BuildTag`, `ThemeTag`, `WallpaperMood`), because that is
  * how the presets were composed: a class is a steer applied to all four axes,
  * rolled with `withMood`, and then judged by eye. Searching the picker for
  * "cosy" therefore finds the cosy rooms as well as the cosy papers.
+ *
+ * The ORDER is not alphabetical and is not the order they were written. It ran
+ * Formal, Grand, Antique, Quiet, … and the reader who browsed it named six
+ * rooms they liked — counting house, card room, chapter house, minster,
+ * snowline, sawmill — and said "presets like that should be first". Three of
+ * the six are Antique and none of them are the brown-panelled Formal rooms that
+ * used to open the sheet, so Antique leads and Quiet, which is deliberately the
+ * plainest family, brings up the rear. The heading order the reader sees is
+ * this array's order; see {@link shelveRooms} for how that is arranged without
+ * a second hand-kept list.
  */
 export const ROOM_PRESET_GROUPS = [
-  'Formal',
-  'Grand',
   'Antique',
-  'Quiet',
-  'Cosy',
-  'Botanical',
-  'Coastal',
+  'Grand',
+  'Formal',
   'Storybook',
+  'Coastal',
+  'Botanical',
+  'Cosy',
   'Rustic',
+  'Quiet',
 ] as const;
 
 export type RoomPresetGroup = (typeof ROOM_PRESET_GROUPS)[number];
+
+/**
+ * How strongly a room leads, judged at the size a reader actually meets it.
+ *
+ * The same device `art/bookDesign.ts` uses for its 189 bindings, and for the
+ * same reason: a curated list that is ALSO its own ranking makes re-ranking a
+ * room mean moving a line, and moving a line by accident silently re-ranks a
+ * room. `tier` is declared on the entry; the exported order is derived from it.
+ *
+ * The three words mean something specific, and all three were assigned by
+ * looking at every room as a whole first-run screen rather than as a 148px card
+ * (`shots-now/room-firstrun-sweep.mjs`, boards under `shots-now/room-rank/`):
+ *
+ *  - `signature` — the recess has a silhouette you can NAME (a gable, an ogee,
+ *    a run of compartments) AND the wall's motif still reads at shelf zoom.
+ *    Both halves are required. This is what the six rooms the reader singled
+ *    out have in common, and it is not the same thing as being loud: the
+ *    counting house is dusty purple and the chapter house is charcoal.
+ *  - `shelf` — a good room that leans on one of the two rather than both.
+ *  - `plain` — deliberately quiet, or a case whose carpentry disappears into
+ *    its own timber at this size. NOT a rejection: "you dont have to be too
+ *    cruel". Plain Plank and Atelier are *supposed* to be plain, and the rooms
+ *    that merely went muddy are still in the book, still searchable, still one
+ *    click from anywhere — they just stop being the first thing offered.
+ */
+export const ROOM_PRESET_TIERS = ['signature', 'shelf', 'plain'] as const;
+
+export type RoomPresetTier = (typeof ROOM_PRESET_TIERS)[number];
 
 export interface RoomPreset extends RoomLook {
   id: string;
@@ -128,6 +166,8 @@ export interface RoomPreset extends RoomLook {
   /** One line for the card. */
   blurb: string;
   group: RoomPresetGroup;
+  /** How strongly it leads. Never drawn; decides the order — see the tiers. */
+  tier: RoomPresetTier;
   /** The named paper this room hangs, kept so the blurb and search can use it. */
   paper: string;
 }
@@ -146,12 +186,24 @@ function room(
   name: string,
   blurb: string,
   group: RoomPresetGroup,
+  tier: RoomPresetTier,
   theme: ThemeId,
   build: BuildId,
   pattern: PatternId,
   paper: string,
 ): RoomPreset {
-  return { id, name, blurb, group, theme, build, pattern, paper, wallpaper: getWallpaper(paper).spec };
+  return {
+    id,
+    name,
+    blurb,
+    group,
+    tier,
+    theme,
+    build,
+    pattern,
+    paper,
+    wallpaper: getWallpaper(paper).spec,
+  };
 }
 
 /**
@@ -321,7 +373,12 @@ export function drawRoomCard(ctx: FlatCtx, w: number, h: number, look: RoomLook)
 }
 
 /**
- * The rooms, already decorated.
+ * The rooms, already decorated — AUTHORED order, family by family.
+ *
+ * Not what the picker shows. `ROOM_PRESETS` is derived from this by
+ * {@link shelveRooms}; this array is where a room is written and where its
+ * neighbours are the other rooms of its own family, which is the order a person
+ * composes and edits in.
  *
  * ## How these were composed, because it is not by taste alone
  *
@@ -334,6 +391,17 @@ export function drawRoomCard(ctx: FlatCtx, w: number, h: number, look: RoomLook)
  * case under a honeycomb paper), and the eye threw out most of what the dice
  * offered (a gothic case in fairground pink).
  *
+ * ## The fourteen loud ones, and why they were added
+ *
+ * "a lot of presets while they look good physically on the colour side seem to
+ * be to be bland, which is not bad but it sohuld be balanced with presets that
+ * are vivid too right?" — so the answer is ADDITION, not repainting. Nothing
+ * below was made louder; fourteen saturated rooms were composed alongside the
+ * muted ones (`shots-now/room-rank/board-new.png`), at least one per family
+ * except Quiet, which is the family whose whole job is to be quiet. With the
+ * tiering below, a reader browsing any section meets both kinds in the first
+ * row of it.
+ *
  * ## What the table is checked against
  *
  * Every build (52) and every timber pattern (50) appears at least once, so a
@@ -343,150 +411,247 @@ export function drawRoomCard(ctx: FlatCtx, w: number, h: number, look: RoomLook)
  * quietly stopped covering the vocabulary would look exactly like one that
  * still did.
  *
+ * One more rule, and it is worth knowing before adding a room: no two presets
+ * share a (build, pattern) PAIR. Two rooms may share a build, and many do, but
+ * two cards built and carved identically read as the same bookcase repainted —
+ * which is exactly what the colour axis below already offers, one row down in
+ * the panel. `quiet.house` is exempt, for the same reason it is exempt from the
+ * one-paper-each rule: its carpentry is not chosen here, it is whatever
+ * `DEFAULT_SHELF_DESIGN` currently is, and a default that lands on a pair the
+ * table already names is mildly untidy rather than a reason to fail a build in
+ * a file that did not choose it. (It does today: the opening room and The
+ * Chantry are both a chapel worked in quatrefoil, in different colours, in
+ * different families, thirty cards apart. The Chantry is what keeps that
+ * carpentry reachable if the default ever moves off it again.)
+ *
  * ## The house room
  *
- * `quiet.house` is DERIVED from the three defaults rather than spelled out.
- * The room a fresh library opens in has to be a card the strip can show as
- * pressed, and writing today's default into this table by hand would make it
- * a second source of truth that goes stale the day somebody repoints one.
+ * `quiet.house` is DERIVED from the three defaults rather than spelled out, and
+ * is written first so it leads whichever family those defaults put it in. The
+ * room a fresh library opens in has to be a card the strip can show as pressed,
+ * and writing today's default into this table by hand would make it a second
+ * source of truth that goes stale the day somebody repoints one. Its id keeps
+ * the `quiet.` prefix it was born with even though the opening carpentry has
+ * since moved out of that family — the prefix is not the group, and renaming an
+ * id to chase a group would be a second thing to keep in step.
  */
-export const ROOM_PRESETS: readonly RoomPreset[] = [
-  /* ------------------------------- Formal -------------------------------- */
-  room('formal.reading-room', 'The Reading Room', 'Walnut cabinet work and a wide drawing-room rule.',
-    'Formal', 'walnut', 'faceFrame', 'greekKey', 'pin-wide'),
-  room('formal.chambers', 'Chambers', 'Glazed barrister fronts under a broad regency stripe.',
-    'Formal', 'mahogany', 'barrister', 'beaded', 'stripe-regency'),
-  room('formal.athenaeum', 'Old Athenaeum', 'Beaded boards, scrolled brackets, and the house damask in sepia.',
-    'Formal', 'athenaeum', 'bookbinder', 'modillion', 'damask-library'),
-  room('formal.card-room', 'Card Room', 'Deep green panels and a cool herringbone, for long evenings.',
-    'Formal', 'cardroom', 'vestry', 'linenfold', 'herring-slate'),
-  room('formal.common-room', 'Common Room', 'A fumed oak arcade, fluted, under a running Greek key.',
-    'Formal', 'fumed', 'cloister', 'fluted', 'fret-meander'),
-  room('formal.blue-cabinet', 'Blue Cabinet', 'Brass straps and corner brackets against an Adam patera.',
-    'Formal', 'lapis', 'campaign', 'strapwork', 'medallion-adam'),
-
-  /* -------------------------------- Grand -------------------------------- */
-  room('grand.gilt-salon', 'Gilt Salon', 'Columns and egg-and-dart, under a damask carved in gold.',
-    'Grand', 'topaz', 'colonnade', 'eggDart', 'damask-gilt'),
-  room('grand.observatory', 'The Observatory', 'Turned uprights and finials, beneath a gilded chain of stars.',
-    'Grand', 'indigoroom', 'observatory', 'barleyTwist', 'const-astrolabe'),
-  room('grand.orangery', 'The Orangery', 'Round-headed bays and a scalloped cresting on a gilt arcade.',
-    'Grand', 'malachite', 'orangery', 'gadroon', 'arch-gilt'),
-  room('grand.state-room', 'State Room', 'A stepped, toothed cornice over a wall of gold paterae.',
-    'Grand', 'aubergine', 'scriptorium', 'guilloche', 'medallion-gilt'),
-  room('grand.curiosity', 'Cabinet of Curiosities', 'Compartments, pulls and finials on gilded scrollwork.',
-    'Grand', 'garnet', 'curiosity', 'marquetry', 'arab-gilt'),
-  room('grand.lacquer-room', 'The Lacquer Room', 'A geometric fret, and a gold grove on a cloth ground.',
-    'Grand', 'souk', 'chinoiserie', 'chineseFret', 'bamboo-lacquer'),
+const ROOM_BOOK: readonly RoomPreset[] = [
+  room('quiet.house', 'The House Room', 'Where every new bookcase starts, before you change a thing.',
+    groupForBuild(DEFAULT_SHELF_DESIGN.build), 'signature', DEFAULT_THEME_ID,
+    DEFAULT_SHELF_DESIGN.build, DEFAULT_SHELF_DESIGN.pattern, DEFAULT_WALLPAPER_ID),
 
   /* ------------------------------- Antique ------------------------------- */
   room('antique.chapter-house', 'Chapter House', 'Pointed bays and battlements on a ruled chapel diaper.',
-    'Antique', 'ebonised', 'gothic', 'trefoil', 'diaper-chapel'),
-  room('antique.chantry', 'The Chantry', 'Trefoil heads, battlements, and a fleur-de-lys wall.',
-    'Antique', 'tulipwood', 'chapel', 'quatrefoil', 'fleur-lys'),
-  room('antique.refectory', 'Refectory', 'Ogee heads on heavy pegged timber, and a soft country toile.',
-    'Antique', 'orchard', 'refectory', 'adzed', 'toile-timber'),
+    'Antique', 'signature', 'ebonised', 'gothic', 'trefoil', 'diaper-chapel'),
   room('antique.minster', 'The Minster', 'A gabled run over pointed bays, and low arches in stone.',
-    'Antique', 'slateroof', 'minster', 'dogtooth', 'arch-crypt'),
+    'Antique', 'signature', 'slateroof', 'minster', 'dogtooth', 'arch-crypt'),
   room('antique.counting-house', 'Counting House', 'Toothed boards over deep runs, on an illuminated ground.',
-    'Antique', 'bramble', 'mercantile', 'blindArcade', 'diaper-illumination'),
+    'Antique', 'signature', 'bramble', 'mercantile', 'blindArcade', 'diaper-illumination'),
+  room('antique.souk-gate', 'The Souk Gate', 'Pointed bays strapped in iron, under a scrolling Ottoman wall.',
+    'Antique', 'signature', 'souk', 'gothic', 'strapwork', 'arab-ottoman'),
+  room('antique.green-nave', 'The Green Nave', 'A gabled run in leaf green, with pomegranates in the dark.',
+    'Antique', 'signature', 'laurel', 'minster', 'guilloche', 'pom-granada'),
+  room('antique.chantry', 'The Chantry', 'Trefoil heads, battlements, and a fleur-de-lys wall.',
+    'Antique', 'shelf', 'tulipwood', 'chapel', 'quatrefoil', 'fleur-lys'),
   room('antique.lychgate', 'Lychgate', 'Strapped oak left out in the weather, and orchard pomegranates.',
-    'Antique', 'cedar', 'lychgate', 'billet', 'pom-orchard'),
+    'Antique', 'shelf', 'cedar', 'lychgate', 'billet', 'pom-orchard'),
+  room('antique.refectory', 'Refectory', 'Ogee heads on heavy pegged timber, and a soft country toile.',
+    'Antique', 'plain', 'orchard', 'refectory', 'adzed', 'toile-timber'),
 
-  /* -------------------------------- Quiet -------------------------------- */
-  room('quiet.house', 'The House Room', 'Where every new bookcase starts, before you change a thing.',
-    groupForBuild(DEFAULT_SHELF_DESIGN.build), DEFAULT_THEME_ID, DEFAULT_SHELF_DESIGN.build,
-    DEFAULT_SHELF_DESIGN.pattern, DEFAULT_WALLPAPER_ID),
-  /*
-   * The plainest room there is, and it is spelled out rather than left to the
-   * house room above. The house room follows `DEFAULT_SHELF_DESIGN`, which
-   * moved from a plank case to a scriptorium while this table was being
-   * written — taking the only plank preset with it, and with it the guarantee
-   * that a reader who only presses preset cards can reach every carpentry.
-   */
-  room('quiet.plank', 'Plain Plank', 'A board, two uprights, and a finely woven paper behind them.',
-    'Quiet', 'heather', 'plank', 'none', 'grass-reed'),
-  room('quiet.atelier', 'Atelier', 'Thin uprights, thin boards, and a wall with nothing on it.',
-    'Quiet', 'bone', 'atelier', 'cockBead', 'plain-parchment'),
-  room('quiet.limed-study', 'Limed Study', 'Planed arrises, close ruling, and no other decisions.',
-    'Quiet', 'limed', 'shaker', 'stringing', 'pin-study'),
-  room('quiet.snowline', 'Snowline', 'Slim rails, and small even shells drifting up the wall.',
-    'Quiet', 'snowline', 'ladder', 'reeded', 'scallop-shell'),
-  room('quiet.drawing-office', 'Drawing Office', 'A fine grid of cubbies, and two crossing rules.',
-    'Quiet', 'hallway', 'pigeonhole', 'chequer', 'tatter-shirting'),
-  room('quiet.smoke-room', 'Smoke Room', 'Blue-grey boards with a ledge, under watered silk.',
-    'Quiet', 'smoke', 'schoolroom', 'oyster', 'moire-watered'),
+  /* -------------------------------- Grand -------------------------------- */
+  room('grand.gilt-salon', 'Gilt Salon', 'Columns and egg-and-dart, under a damask carved in gold.',
+    'Grand', 'signature', 'topaz', 'colonnade', 'eggDart', 'damask-gilt'),
+  room('grand.observatory', 'The Observatory', 'Turned uprights and finials, beneath a gilded chain of stars.',
+    'Grand', 'signature', 'indigoroom', 'observatory', 'barleyTwist', 'const-astrolabe'),
+  room('grand.lacquer-room', 'The Lacquer Room', 'A geometric fret, and a gold grove on a cloth ground.',
+    'Grand', 'signature', 'souk', 'chinoiserie', 'chineseFret', 'bamboo-lacquer'),
+  room('grand.red-campaign', 'Red Campaign', 'Brass straps and toothed boards on scarlet, and a court harlequin.',
+    'Grand', 'signature', 'lacquerred', 'campaign', 'dentil', 'harlequin-court'),
+  room('grand.orangery', 'The Orangery', 'Round-headed bays and a scalloped cresting on a gilt arcade.',
+    'Grand', 'shelf', 'malachite', 'orangery', 'gadroon', 'arch-gilt'),
+  room('grand.state-room', 'State Room', 'A stepped, toothed cornice over a wall of gold paterae.',
+    'Grand', 'shelf', 'aubergine', 'scriptorium', 'guilloche', 'medallion-gilt'),
+  room('grand.curiosity', 'Cabinet of Curiosities', 'Compartments, pulls and finials on gilded scrollwork.',
+    'Grand', 'shelf', 'garnet', 'curiosity', 'marquetry', 'arab-gilt'),
+  room('grand.tile-cabinet', 'The Tile Cabinet', 'Glazed turquoise fretwork, and a quatrefoil beaten in foil.',
+    'Grand', 'shelf', 'turquoise', 'chinoiserie', 'lozenge', 'quatre-morocco'),
+
+  /* ------------------------------- Formal -------------------------------- */
+  room('formal.card-room', 'Card Room', 'Deep green panels and a cool herringbone, for long evenings.',
+    'Formal', 'signature', 'cardroom', 'vestry', 'linenfold', 'herring-slate'),
+  room('formal.peacock-room', 'The Peacock Room', 'Columns in peacock blue-green, under a running Empire fret.',
+    'Formal', 'signature', 'peacock', 'colonnade', 'gadroon', 'fret-empire'),
+  room('formal.blue-cabinet', 'Blue Cabinet', 'Brass straps and corner brackets against an Adam patera.',
+    'Formal', 'signature', 'lapis', 'campaign', 'strapwork', 'medallion-adam'),
+  room('formal.athenaeum', 'Old Athenaeum', 'Beaded boards, scrolled brackets, and the house damask in sepia.',
+    'Formal', 'shelf', 'athenaeum', 'bookbinder', 'modillion', 'damask-library'),
+  room('formal.chambers', 'Chambers', 'Glazed barrister fronts under a broad regency stripe.',
+    'Formal', 'shelf', 'mahogany', 'barrister', 'beaded', 'stripe-regency'),
+  room('formal.vermilion-office', 'Vermilion Office', 'Small drawers in bright lacquer, and a gold pagoda garden.',
+    'Formal', 'shelf', 'vermilionroom', 'curiosity', 'chequer', 'pagoda-lacquer'),
+  room('formal.reading-room', 'The Reading Room', 'Walnut cabinet work and a wide drawing-room rule.',
+    'Formal', 'plain', 'walnut', 'faceFrame', 'greekKey', 'pin-wide'),
+  room('formal.common-room', 'Common Room', 'A fumed oak arcade, fluted, under a running Greek key.',
+    'Formal', 'plain', 'fumed', 'cloister', 'fluted', 'fret-meander'),
+
+  /* ------------------------------ Storybook ------------------------------ */
+  room('storybook.carnival', 'Carnival', 'A sawtooth awning, brass buttons, and harlequin lozenges.',
+    'Storybook', 'signature', 'carousel', 'carnival', 'chevron', 'harlequin-carnival'),
+  room('storybook.gingerbread', 'Gingerbread', 'Scallops everywhere, and pinwheels turning on the wall.',
+    'Storybook', 'signature', 'cornflower', 'gingerbread', 'cableFlute', 'pinwheel-nursery'),
+  room('storybook.orrery', 'The Orrery', 'Twisted posts in tangerine, under stars the size of your hand.',
+    'Storybook', 'signature', 'tangerine', 'observatory', 'sunburst', 'star-grand'),
+  room('storybook.confetti', 'Confetti', 'A fat turquoise toy box, and the whole wall throwing confetti.',
+    'Storybook', 'signature', 'turquoise', 'toybox', 'cube', 'polka-confetti'),
+  room('storybook.toy-box', 'The Toy Box', 'Fat rounded boards, a big brass knob, and spots in book cloth.',
+    'Storybook', 'shelf', 'watermelon', 'toybox', 'sunburst', 'polka-cloth'),
+  room('storybook.treehouse', 'Treehouse', 'Rungs, braces and pegs, under a crescent moon and star.',
+    'Storybook', 'shelf', 'violetroom', 'treehouse', 'tiled', 'moon-nursery'),
+  room('storybook.windmill', 'Windmill', 'Braced bays and a sawtooth crest, with a little sun above.',
+    'Storybook', 'shelf', 'marigold', 'windmill', 'bookMatch', 'sun-marigold'),
+  room('storybook.rookery', 'Rookery', 'Too many small holes, and bees sown small across the wall.',
+    'Storybook', 'shelf', 'lemongrove', 'rookery', 'cube', 'bee-skep'),
+
+  /* ------------------------------- Coastal ------------------------------- */
+  room('coastal.stern-gallery', 'Stern Gallery', 'A carved wave along the top, and deep water behind it.',
+    'Coastal', 'signature', 'reef', 'galleon', 'vitruvian', 'serp-lagoon'),
+  room('coastal.tide-pool', 'Tide Pool', 'Round uprights and braced bays, under indigo wave crests.',
+    'Coastal', 'signature', 'turquoise', 'cabin', 'gouged', 'scallop-seigaiha'),
+  room('coastal.the-deep', 'The Deep', 'Roped bays in peacock, with a current running behind them.',
+    'Coastal', 'signature', 'peacock', 'galleon', 'rope', 'serp-current'),
+  room('coastal.harbour', 'Harbour Light', 'Beadboard and spindles, under two strands twisting in gold.',
+    'Coastal', 'shelf', 'harbour', 'seaside', 'rope', 'rope-guilloche'),
+  room('coastal.sea-fret', 'Sea Fret', 'Banded and bossed, with shells drawn softly in the haze.',
+    'Coastal', 'shelf', 'seafret', 'steamer', 'herringbone', 'scallop-tide'),
+  room('coastal.boathouse', 'Boathouse', 'Strapped uprights and a plate rail, and mattress ticking.',
+    'Coastal', 'shelf', 'chalkblue', 'stable', 'notched', 'ticking-mattress'),
+  room('coastal.driftwood', 'Driftwood', 'Every edge worn round, against a woven natural paper.',
+    'Coastal', 'plain', 'driftwood', 'driftwood', 'wormy', 'grass-sisal'),
+
+  /* ------------------------------ Botanical ------------------------------ */
+  room('botanical.fernery', 'The Fernery', 'Round-headed bays, leaf and dart, and hothouse fronds.',
+    'Botanical', 'signature', 'forest', 'arch', 'waterLeaf', 'fern-hothouse'),
+  room('botanical.apiary', 'The Apiary', 'Rounded cells in courses, and honey in one comb of five.',
+    'Botanical', 'signature', 'pistachio', 'beehive', 'burl', 'honey-comb'),
+  room('botanical.glasshouse', 'The Glasshouse', 'Acid-green glazing bars, and a trellis grown up the wall.',
+    'Botanical', 'signature', 'chartreuse', 'conservatory', 'cane', 'trellis-conservatory'),
+  room('botanical.malachite-bower', 'Malachite Bower', 'Round-headed bays in stone green, with highland thistles.',
+    'Botanical', 'signature', 'malachite', 'arch', 'reeded', 'thistle-highland'),
+  room('botanical.conservatory', 'The Conservatory', 'Slender glazing bars against a garden trellis.',
+    'Botanical', 'shelf', 'duckegg', 'conservatory', 'lattice', 'trellis-garden'),
+  room('botanical.herbarium', 'Herbarium', 'Small compartments, and mossy branches mirrored row by row.',
+    'Botanical', 'shelf', 'laurel', 'apothecary', 'diaper', 'laurel-victory'),
+  room('botanical.tea-house', 'The Tea House', 'Stepped eaves and spindles, with canes and nodes behind.',
+    'Botanical', 'shelf', 'ash', 'pagoda', 'lozenge', 'bamboo-grove'),
+  room('botanical.potting-shed', 'Potting Shed', 'Ladder rails, sawn boards, one vine crossing the wall.',
+    'Botanical', 'plain', 'lichen', 'hayloft', 'sawn', 'vine-trailing'),
 
   /* --------------------------------- Cosy -------------------------------- */
   room('cosy.parlour', 'The Good Parlour', 'Nulled boards, a reeded cornice, and full-face chintz roses.',
-    'Cosy', 'plaster', 'parlour', 'bobbin', 'rose-chintz'),
-  room('cosy.tea-room', 'Tea Room', 'Turned spindles over every bay, and a sun-faded awning.',
-    'Cosy', 'clotted', 'tearoom', 'beadReel', 'awning-tearoom'),
-  room('cosy.scullery', 'Scullery', 'A fretted pelmet on every shelf, and a kitchen gingham.',
-    'Cosy', 'pantry', 'valance', 'cane', 'gingham-kitchen'),
-  room('cosy.inglenook', 'Inglenook', 'A cornice that will not lie straight, and a country check.',
-    'Cosy', 'beech', 'cottage', 'lunette', 'tatter-country'),
+    'Cosy', 'signature', 'plaster', 'parlour', 'bobbin', 'rose-chintz'),
   room('cosy.lantern', 'Paper Lantern', 'Little arched holes behind the books, and a cottage sprig.',
-    'Cosy', 'lantern', 'dovecote', 'dotPunch', 'sprig-cottage'),
+    'Cosy', 'signature', 'lantern', 'dovecote', 'dotPunch', 'sprig-cottage'),
+  room('cosy.red-kitchen', 'The Red Kitchen', 'Scallops in postbox red, and a tea-room stripe behind them.',
+    'Cosy', 'signature', 'vermilionroom', 'gingerbread', 'beadReel', 'stripe-tea'),
+  room('cosy.sugar-mouse', 'Sugar Mouse', 'Little arched holes in fairground pink, and parlour spots.',
+    'Cosy', 'signature', 'carousel', 'dovecote', 'bobbin', 'polka-parlour'),
+  room('cosy.tea-room', 'Tea Room', 'Turned spindles over every bay, and a sun-faded awning.',
+    'Cosy', 'shelf', 'clotted', 'tearoom', 'beadReel', 'awning-tearoom'),
+  room('cosy.scullery', 'Scullery', 'A fretted pelmet on every shelf, and a kitchen gingham.',
+    'Cosy', 'shelf', 'pantry', 'valance', 'cane', 'gingham-kitchen'),
   room('cosy.hearthside', 'Hearthside', 'Turned posts, pegged boards, and knitted lozenges.',
-    'Cosy', 'cherry', 'tavern', 'chipCarve', 'argyle-lambswool'),
-
-  /* ------------------------------ Botanical ------------------------------ */
-  room('botanical.conservatory', 'The Conservatory', 'Slender glazing bars against a garden trellis.',
-    'Botanical', 'duckegg', 'conservatory', 'lattice', 'trellis-garden'),
-  room('botanical.fernery', 'The Fernery', 'Round-headed bays, leaf and dart, and hothouse fronds.',
-    'Botanical', 'forest', 'arch', 'waterLeaf', 'fern-hothouse'),
-  room('botanical.potting-shed', 'Potting Shed', 'Ladder rails, sawn boards, one vine crossing the wall.',
-    'Botanical', 'lichen', 'hayloft', 'sawn', 'vine-trailing'),
-  room('botanical.tea-house', 'The Tea House', 'Stepped eaves and spindles, with canes and nodes behind.',
-    'Botanical', 'ash', 'pagoda', 'lozenge', 'bamboo-grove'),
-  room('botanical.apiary', 'The Apiary', 'Rounded cells in courses, and honey in one comb of five.',
-    'Botanical', 'pistachio', 'beehive', 'burl', 'honey-comb'),
-  room('botanical.herbarium', 'Herbarium', 'Small compartments, and mossy branches mirrored row by row.',
-    'Botanical', 'laurel', 'apothecary', 'diaper', 'laurel-victory'),
-
-  /* ------------------------------- Coastal ------------------------------- */
-  room('coastal.harbour', 'Harbour Light', 'Beadboard and spindles, under two strands twisting in gold.',
-    'Coastal', 'harbour', 'seaside', 'rope', 'rope-guilloche'),
-  room('coastal.driftwood', 'Driftwood', 'Every edge worn round, against a woven natural paper.',
-    'Coastal', 'driftwood', 'driftwood', 'wormy', 'grass-sisal'),
-  room('coastal.boathouse', 'Boathouse', 'Strapped uprights and a plate rail, and mattress ticking.',
-    'Coastal', 'chalkblue', 'stable', 'notched', 'ticking-mattress'),
-  room('coastal.tide-pool', 'Tide Pool', 'Round uprights and braced bays, under indigo wave crests.',
-    'Coastal', 'turquoise', 'cabin', 'gouged', 'scallop-seigaiha'),
-  room('coastal.stern-gallery', 'Stern Gallery', 'A carved wave along the top, and deep water behind it.',
-    'Coastal', 'reef', 'galleon', 'vitruvian', 'serp-lagoon'),
-  room('coastal.sea-fret', 'Sea Fret', 'Banded and bossed, with shells drawn softly in the haze.',
-    'Coastal', 'seafret', 'steamer', 'herringbone', 'scallop-tide'),
-
-  /* ------------------------------ Storybook ------------------------------ */
-  room('storybook.toy-box', 'The Toy Box', 'Fat rounded boards, a big brass knob, and spots in book cloth.',
-    'Storybook', 'watermelon', 'toybox', 'sunburst', 'polka-cloth'),
-  room('storybook.carnival', 'Carnival', 'A sawtooth awning, brass buttons, and harlequin lozenges.',
-    'Storybook', 'carousel', 'carnival', 'chevron', 'harlequin-carnival'),
-  room('storybook.gingerbread', 'Gingerbread', 'Scallops everywhere, and pinwheels turning on the wall.',
-    'Storybook', 'cornflower', 'gingerbread', 'cableFlute', 'pinwheel-nursery'),
-  room('storybook.treehouse', 'Treehouse', 'Rungs, braces and pegs, under a crescent moon and star.',
-    'Storybook', 'violetroom', 'treehouse', 'tiled', 'moon-nursery'),
-  room('storybook.windmill', 'Windmill', 'Braced bays and a sawtooth crest, with a little sun above.',
-    'Storybook', 'marigold', 'windmill', 'bookMatch', 'sun-marigold'),
-  room('storybook.rookery', 'Rookery', 'Too many small holes, and bees sown small across the wall.',
-    'Storybook', 'lemongrove', 'rookery', 'cube', 'bee-skep'),
+    'Cosy', 'shelf', 'cherry', 'tavern', 'chipCarve', 'argyle-lambswool'),
+  room('cosy.inglenook', 'Inglenook', 'A cornice that will not lie straight, and a country check.',
+    'Cosy', 'plain', 'beech', 'cottage', 'lunette', 'tatter-country'),
 
   /* -------------------------------- Rustic ------------------------------- */
-  room('rustic.crate-stack', 'Crate Stack', 'Stacked packing crates, and slats woven over and under.',
-    'Rustic', 'teak', 'crate', 'crossband', 'basket-rush'),
-  room('rustic.slab', 'Rustic Slab', 'Thick pegged boards, planed once, over pale linen ticking.',
-    'Rustic', 'birch', 'slab', 'adzed', 'ticking-linen'),
   room('rustic.sawmill', 'Sawmill', 'Toothed boards and a sawtooth crest, and rows of flame stitch.',
-    'Rustic', 'pine', 'sawmill', 'sawn', 'flame-bargello'),
-  room('rustic.workbench', 'Workbench', 'Strapped and braced, with one big comb of a wall behind it.',
-    'Rustic', 'apothecary', 'workbench', 'strapwork', 'honey-grand'),
-  room('rustic.tavern', 'Tavern', 'Turned posts and spindles over every bay, and a picnic check.',
-    'Rustic', 'tangerine', 'tavern', 'bobbin', 'gingham-picnic'),
+    'Rustic', 'signature', 'pine', 'sawmill', 'sawn', 'flame-bargello'),
   room('rustic.country-store', 'Country Store', 'Counter-shop carpentry, and the weaver’s fruit behind it.',
-    'Rustic', 'lacquerred', 'mercantile', 'dentil', 'pom-velvet'),
+    'Rustic', 'signature', 'lacquerred', 'mercantile', 'dentil', 'pom-velvet'),
+  room('rustic.lemon-crates', 'Lemon Crates', 'Stacked crates in hard yellow, and argyle knitted behind.',
+    'Rustic', 'signature', 'lemongrove', 'crate', 'sawn', 'argyle-links'),
+  room('rustic.workbench', 'Workbench', 'Strapped and braced, with one big comb of a wall behind it.',
+    'Rustic', 'shelf', 'apothecary', 'workbench', 'strapwork', 'honey-grand'),
+  room('rustic.tavern', 'Tavern', 'Turned posts and spindles over every bay, and a picnic check.',
+    'Rustic', 'shelf', 'tangerine', 'tavern', 'bobbin', 'gingham-picnic'),
+  room('rustic.crate-stack', 'Crate Stack', 'Stacked packing crates, and slats woven over and under.',
+    'Rustic', 'shelf', 'teak', 'crate', 'crossband', 'basket-rush'),
+  room('rustic.slab', 'Rustic Slab', 'Thick pegged boards, planed once, over pale linen ticking.',
+    'Rustic', 'plain', 'birch', 'slab', 'adzed', 'ticking-linen'),
+
+  /* -------------------------------- Quiet -------------------------------- */
+  room('quiet.snowline', 'Snowline', 'Slim rails, and small even shells drifting up the wall.',
+    'Quiet', 'signature', 'snowline', 'ladder', 'reeded', 'scallop-shell'),
+  room('quiet.drawing-office', 'Drawing Office', 'A fine grid of cubbies, and two crossing rules.',
+    'Quiet', 'signature', 'hallway', 'pigeonhole', 'chequer', 'tatter-shirting'),
+  room('quiet.limed-study', 'Limed Study', 'Planed arrises, close ruling, and no other decisions.',
+    'Quiet', 'shelf', 'limed', 'shaker', 'stringing', 'pin-study'),
+  room('quiet.smoke-room', 'Smoke Room', 'Blue-grey boards with a ledge, under watered silk.',
+    'Quiet', 'shelf', 'smoke', 'schoolroom', 'oyster', 'moire-watered'),
+  /*
+   * The plainest room there is, and it is spelled out rather than left to the
+   * house room above. The house room follows `DEFAULT_SHELF_DESIGN`, which has
+   * moved twice since this table was written — from a plank case to an arcade
+   * and then to a chapel — and each move took its carpentry with it. Written
+   * out here, the guarantee that a reader who only presses preset cards can
+   * reach the plank case does not depend on where the default happens to be.
+   */
+  room('quiet.plank', 'Plain Plank', 'A board, two uprights, and a finely woven paper behind them.',
+    'Quiet', 'plain', 'heather', 'plank', 'none', 'grass-reed'),
+  room('quiet.atelier', 'Atelier', 'Thin uprights, thin boards, and a wall with nothing on it.',
+    'Quiet', 'plain', 'bone', 'atelier', 'cockBead', 'plain-parchment'),
 ];
+
+/**
+ * The rooms as the reader is offered them: strongest first, and every family
+ * represented before any family shows its second card.
+ *
+ * DERIVED, from two pieces of data on the entries themselves — the `tier` each
+ * room declares and the family order in {@link ROOM_PRESET_GROUPS} — plus the
+ * order each family was written in. Nothing here is a hand-kept list, which is
+ * the point: the previous version of `ROOM_PRESETS` was BOTH the ranking and
+ * the authoring order, so re-ranking a room meant moving a line and moving a
+ * line by accident silently re-ranked a room. Same treatment
+ * `WALLPAPER_PRESETS` and `BOOK_PRESETS` already get.
+ *
+ * ## Why round-robin rather than a plain sort
+ *
+ * The obvious derivation is tier, then group, then authored index — and it puts
+ * the whole of one family at the head of the list. That matters more than it
+ * sounds, because the panel shows only the first FIVE cards inline before
+ * "N more" (`DesignStrip`, `limit={5}`), and five cards from one family is a
+ * taster that advertises one room rather than a library. Dealing one card per
+ * family per round instead means the strip's five are five different families,
+ * all of them the family's own best, while the long sheet still groups
+ * perfectly: `DesignPicker` buckets by group name and orders the headings by
+ * first appearance, so round one fixes the heading order to
+ * {@link ROOM_PRESET_GROUPS} and every later round lands inside a bucket that
+ * already exists.
+ */
+function shelveRooms(book: readonly RoomPreset[]): readonly RoomPreset[] {
+  const shelved: RoomPreset[] = [];
+  for (const tier of ROOM_PRESET_TIERS) {
+    const queues = ROOM_PRESET_GROUPS.map((group) =>
+      book.filter((preset) => preset.tier === tier && preset.group === group),
+    );
+    for (let round = 0; ; round += 1) {
+      let dealt = false;
+      for (const queue of queues) {
+        const preset = queue[round];
+        if (preset !== undefined) {
+          shelved.push(preset);
+          dealt = true;
+        }
+      }
+      if (!dealt) break;
+    }
+  }
+  return shelved;
+}
+
+/** The rooms, in the order the strip and the sheet show them. */
+export const ROOM_PRESETS: readonly RoomPreset[] = shelveRooms(ROOM_BOOK);
 
 /** Look up a preset by id. Null rather than a fallback — the caller decides. */
 export function getRoomPreset(id: string): RoomPreset | null {

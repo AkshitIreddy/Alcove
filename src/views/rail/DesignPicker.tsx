@@ -35,8 +35,9 @@ import {
   type JSX,
 } from 'solid-js';
 import type { FlatScheme } from '../../art/flat';
+import type { CurationAxis, Stars } from '../../data/shelfOfMine';
 import { DesignCanvas, type TileDraw } from './designArt';
-import { MoreControl, cappedTo } from './DesignStrip';
+import { MoreControl, StarMark, cappedTo, createCuration, starWords } from './DesignStrip';
 
 export interface PickerOption {
   id: string;
@@ -71,7 +72,22 @@ export interface DesignPickerProps {
   /** Cards per row. Tall cards fit three, landscape ones two. */
   columns?: number;
   searchLabel?: string;
+  /**
+   * Name this axis and the reader's own arrangement applies here too — the
+   * same removals, the same stars, the same right-click menu as the strip that
+   * led here. Pass the SAME word both places or the sheet and the strip will
+   * disagree about one list, which is the bug the shared controller exists to
+   * make impossible.
+   */
+  axis?: CurationAxis;
+  /** Offer "keep what you have…" in the right-click menu. See CurationHost. */
+  onSaveCurrent?(name: string, stars: Stars): void;
+  saveLabel?: string;
+  savePlaceholder?: string;
 }
+
+/** The heading the two-star entries sit under, above every family. */
+const STARRED_GROUP = 'Starred';
 
 /** Fold to lowercase and drop punctuation, so "half-morocco" finds "Half Morocco". */
 function fold(text: string): string {
@@ -109,11 +125,24 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
   const cardH = (): number => props.cardH ?? 102;
   const columns = (): number => props.columns ?? 2;
 
+  const curation = createCuration(() => ({
+    axis: props.axis,
+    label: props.title,
+    options: props.options,
+    activeId: props.activeId,
+    onSaveCurrent: props.onSaveCurrent,
+    saveLabel: props.saveLabel,
+    savePlaceholder: props.savePlaceholder,
+  }));
+
+  /** The list as the reader arranged it — identity when no axis was named. */
+  const arranged = createMemo<readonly PickerOption[]>(() => curation.list());
+
   const matches = createMemo<readonly PickerOption[]>(() => {
     const q = fold(query());
-    if (q.length === 0) return props.options;
+    if (q.length === 0) return arranged();
     const words = q.split(' ');
-    return props.options.filter((option) => {
+    return arranged().filter((option) => {
       const hay = fold(
         `${option.name} ${option.blurb} ${option.group ?? ''} ${option.terms ?? ''}`,
       );
@@ -168,6 +197,15 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
    * family but not strictly — a patterned-paper wrapper sits between two plain
    * ones — and a run-based grouping printed "Paper wrapper" twice with four
    * cards between them, which reads as a bug rather than as an ordering.
+   *
+   * Two stars get their own heading rather than their family's. `orderByStars`
+   * has already put them at the head of the flat list, which is exactly what
+   * the reader asked for ("at the top within the category as a whole") — but a
+   * sheet that gathers by name would then find that entry's family FIRST and
+   * drag the whole family to the top with it. One star on one rustic room is
+   * not a request to lead with every rustic room. So the two-star entries are
+   * lifted into a section of their own; the one-star ones stay at the head of
+   * their families, which is the notation working exactly as described.
    */
   const groups = createMemo<readonly { name: string; items: readonly PickerOption[] }[]>(() => {
     const list = capped();
@@ -176,7 +214,7 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
     }
     const byName = new Map<string, PickerOption[]>();
     for (const option of list) {
-      const name = option.group ?? '';
+      const name = curation.starsFor(option.id) === 2 ? STARRED_GROUP : option.group ?? '';
       const bucket = byName.get(name);
       if (bucket === undefined) byName.set(name, [option]);
       else bucket.push(option);
@@ -251,12 +289,16 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
 
       {/* Says what is ON SCREEN as well as what exists, because those are two
           different numbers now and the reader can count the first one. */}
+      {/* Counted against the ARRANGED list, not the raw one. A reader who has
+          removed six papers is choosing from the ones that are left, and
+          "showing 24 of 126" over a sheet that can only ever reach 120 is the
+          kind of number they can check. */}
       <p class="nb-pick-count" aria-live="polite">
-        {matches().length === props.options.length
+        {matches().length === arranged().length
           ? hiddenCount() > 0
-            ? `showing ${capped().length} of ${props.options.length}`
-            : `${props.options.length} to choose from`
-          : `${matches().length} of ${props.options.length}`}
+            ? `showing ${capped().length} of ${arranged().length}`
+            : `${arranged().length} to choose from`
+          : `${matches().length} of ${arranged().length}`}
       </p>
 
       {/*
@@ -267,7 +309,11 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
         the buttons survive and only their contents update; keyboard browsing
         stays where it was, which is measurable and was not true before.
       */}
-      <div ref={(el) => (grid = el)} on:keydown={onGridKeyDown}>
+      <div
+        ref={(el) => (grid = el)}
+        on:keydown={onGridKeyDown}
+        on:contextmenu={(event) => curation.onListContext(event)}
+      >
         <Index each={groups()}>
           {(group) => (
             <>
@@ -285,19 +331,29 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
                     <button
                       type="button"
                       class="nb-pick-card"
-                      classList={{ 'is-active': option().id === props.activeId }}
+                      classList={{
+                        'is-active': option().id === props.activeId,
+                        'nb-cur-gone': curation.removed(option().id),
+                      }}
                       aria-pressed={option().id === props.activeId}
+                      aria-label={`${option().name} — ${option().blurb}${starWords(
+                        curation.starsFor(option().id),
+                      )}`}
                       data-tooltip={option().blurb}
                       onClick={() => props.onPick(option().id)}
+                      on:contextmenu={(event) => curation.onEntryContext(event, option().id)}
                     >
-                      <DesignCanvas
-                        class="nb-pick-art"
-                        key={option().artKey}
-                        w={cardW()}
-                        h={cardH()}
-                        scheme={props.scheme}
-                        draw={(ctx, w, h) => option().draw(ctx, w, h)}
-                      />
+                      <span class="nb-mark-wrap">
+                        <DesignCanvas
+                          class="nb-pick-art"
+                          key={option().artKey}
+                          w={cardW()}
+                          h={cardH()}
+                          scheme={props.scheme}
+                          draw={(ctx, w, h) => option().draw(ctx, w, h)}
+                        />
+                        <StarMark stars={curation.starsFor(option().id)} />
+                      </span>
                       <span class="nb-pick-name">{option().name}</span>
                       <span class="nb-pick-blurb">{option().blurb}</span>
                     </button>
@@ -317,9 +373,16 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
           />
         </Show>
         <Show when={matches().length === 0}>
-          <p class="nb-panel-footnote">nothing by that name. try a shorter word.</p>
+          <p class="nb-panel-footnote">
+            {query().length === 0
+              ? 'you have taken every one of these off the list. right-click here to get some back.'
+              : 'nothing by that name. try a shorter word.'}
+          </p>
         </Show>
       </div>
+      {/* The menu, the restore drawer and the keep-this form. Below the grid so
+          the drawer is obviously attached to the list it belongs to. */}
+      <curation.Overlay />
     </div>
   );
 }

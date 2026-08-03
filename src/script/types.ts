@@ -104,6 +104,47 @@ export interface LinkNode extends InlineBase {
   children: Inline[];
 }
 
+/**
+ * `$x^2$` — maths inside a sentence. A LEAF, like `code`: the TeX is one
+ * string the reader types and the renderer draws, never a tree of inline
+ * nodes. Storing it any other way would mean the parser deciding what `^`
+ * means inside a formula, which is the renderer's job (src/editor/nodes/
+ * mathTex.ts) and nobody else's.
+ */
+export interface MathNode extends InlineBase {
+  kind: "math";
+  /** TeX source, verbatim — never markup-parsed. */
+  text: string;
+}
+
+/**
+ * `[^ a note at the foot of the page ]` — the marker, carrying its own note.
+ *
+ * The note travels INSIDE the marker because that is how the editor stores it
+ * (src/editor/nodes/footnote.ts): pages here are fixed-height and overflow
+ * flows onward, so a note kept anywhere else would be left behind by the
+ * paragraph that references it. The script model matches the document model.
+ */
+export interface FootnoteNode extends InlineBase {
+  kind: "footnote";
+  /** Plain text — a note has no marks, by the same design as the editor's. */
+  text: string;
+}
+
+/**
+ * `[[Another page]]` — a reference to another page in the library.
+ *
+ * A script can only ever name the page; ids belong to a library, not to a
+ * document. Resolution happens on the way into the editor
+ * (`ToTiptapOptions.resolvePageLink`), and an unresolved reference degrades to
+ * its own words rather than to a dead chip.
+ */
+export interface PageRefNode extends InlineBase {
+  kind: "pageref";
+  /** The page's name as written between the brackets. */
+  label: string;
+}
+
 export type Inline =
   | TextNode
   | StrongNode
@@ -113,7 +154,10 @@ export type Inline =
   | HighlightNode
   | SupNode
   | SubNode
-  | LinkNode;
+  | LinkNode
+  | MathNode
+  | FootnoteNode
+  | PageRefNode;
 
 // ---------------------------------------------------------------------------
 // Blocks
@@ -182,6 +226,17 @@ export interface ImageBlock extends BlockBase {
   alt: string;
 }
 
+/**
+ * `$$ … $$` — an equation on its own line.
+ *
+ * The body is kept verbatim, newlines and all: a multi-line `\begin{aligned}`
+ * is one formula, and re-flowing it would change what the renderer is handed.
+ */
+export interface MathBlock extends BlockBase {
+  kind: "mathBlock";
+  latex: string;
+}
+
 /** Canonical container names. Unknown names become "generic" (never an error). */
 export type ContainerName =
   | "sticky-note"
@@ -207,6 +262,7 @@ export type ContainerName =
   | "photo-corner"
   | "wax-seal"
   | "map-pin"
+  | "toggle"
   | "generic";
 
 export interface ContainerBlock extends BlockBase {
@@ -297,6 +353,7 @@ export type Block =
   | DividerBlock
   | TableBlock
   | ImageBlock
+  | MathBlock
   | ContainerBlock
   | DiagramBlock
   | FetchDirectiveBlock;

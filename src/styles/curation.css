@@ -1,0 +1,410 @@
+/* ============================================================================
+   curation.css — the reader's own hand on a list: stars, removals, and the
+   drawer that gives a removal back.
+
+   Everything here dresses `src/data/shelfOfMine.ts`, and it is worn by every
+   list in the app that names an axis — the strip, the picker sheet, and
+   whatever borrows them next. So it is deliberately NOT scoped to the studio:
+   the classes are `.nb-cur-*` and they work wherever a curated list lands.
+
+   Imported by DesignStrip.tsx, which is where the shared list machinery
+   already lives, so the styles arrive with the behaviour rather than with a
+   panel that happens to use it.
+
+   The flat rule holds: one ink outline, flat faces, offset plates. The star is
+   drawn as type on a gilt plate, which is exactly how the shelf draws a floor
+   plaque — no glow, nothing to say "this is special" except gold.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   The star mark — the one badge, on a tile or on a card
+
+   It sits over the art rather than beside the name, because a strip tile may
+   not be showing its name at all and the mark has to be legible either way.
+   The wrapper is the positioning context: adding `position: relative` to
+   `.nb-strip-tile` from another file would be a rule fighting studio.css for
+   the same selector, and a wrapper cannot lose that fight.
+   -------------------------------------------------------------------------- */
+.nb-mark-wrap {
+  position: relative;
+  display: block;
+}
+
+.nb-mark {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  line-height: 1;
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: 1px solid var(--on-gilt);
+  border-radius: 6px 8px 6px 8px / 7px 6px 8px 6px;
+  pointer-events: none;
+}
+
+/* Two stars is the louder notation, so it gets the louder plate: the same gilt
+   with the ink rim doubled, which is the app's whole vocabulary for "more". */
+.nb-mark.is-double {
+  border-width: 1.5px;
+  letter-spacing: -1px;
+  padding: 0 4px;
+}
+
+/* A tile the reader has removed but is still WEARING. It stays on the list
+   because a strip with nothing pressed reads as a panel that forgot, and it is
+   dashed so it does not read as an ordinary member of the list either. */
+.nb-cur-gone {
+  border-style: dashed;
+}
+
+/* ----------------------------------------------------------------------------
+   The menu — right-click a tile
+
+   Fixed at the pointer, like every other context menu in the app, and clamped
+   to the window by the component so a tile at the foot of the panel does not
+   open a menu below the fold.
+   -------------------------------------------------------------------------- */
+.nb-cur-menu {
+  position: fixed;
+  z-index: calc(var(--z-menus) + 20);
+  width: 218px;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-4);
+  background: var(--paper-aged);
+  border: var(--stroke-ink);
+  border-radius: 13px 17px 14px 18px / 16px 13px 18px 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.nb-cur-menu-name {
+  font-family: var(--font-label);
+  font-size: var(--text-label);
+  line-height: 1.15;
+  color: var(--ink-sepia);
+  padding: 2px var(--space-8) var(--space-4);
+  border-bottom: 1px dashed var(--ink-line-soft);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-cur-menu-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  width: 100%;
+  padding: 4px var(--space-8);
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 9px 12px 10px 11px / 11px 9px 12px 10px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-cur-menu-item:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line-soft);
+}
+
+.nb-cur-menu-item:disabled {
+  color: var(--ink-graphite-soft);
+  opacity: 0.75;
+}
+
+.nb-cur-menu-item.is-on {
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
+  font-weight: 700;
+}
+
+/* Removing is the one item here that takes something away, so it wears the
+   terracotta the shelf menu already uses for exactly that. */
+.nb-cur-menu-item.is-away {
+  color: var(--wash-terracotta-deep);
+}
+
+.nb-cur-menu-item.is-away:hover:not(:disabled) {
+  background: var(--wash-terracotta-light);
+  border-color: var(--wash-terracotta-deep);
+}
+
+/* The star glyphs in a menu row, held at a fixed width so the words after them
+   all start on the same rule. */
+.nb-cur-menu-stars {
+  flex: 0 0 22px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  color: var(--gilt-ink);
+  letter-spacing: -1px;
+}
+
+.nb-cur-menu-item.is-on .nb-cur-menu-stars {
+  color: var(--on-gilt);
+}
+
+.nb-cur-menu-sep {
+  height: 0;
+  margin: 3px var(--space-4);
+  border-top: 1px dashed var(--ink-line-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   The drawer — what was removed, with a checkbox apiece
+
+   Inline, directly under the list it belongs to, rather than floated. A rail
+   panel is 376px and scrolls; a floating card would need to chase that scroll,
+   and the one thing this panel has to be is obviously attached to the strip
+   the reader just right-clicked.
+   -------------------------------------------------------------------------- */
+.nb-cur-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-12);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-wobble-md);
+  box-shadow: var(--shadow-xs);
+}
+
+/*
+ * Head: the way out first, then the title. House rule (reader's words) — every
+ * control that leaves somewhere sits top-left of the thing it leaves. `order`
+ * rather than reordered markup so visual order and tab order agree.
+ * See tests/top-left-exits.test.ts.
+ */
+.nb-cur-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-8);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nb-cur-drawer-close {
+  order: -1;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+  background: transparent;
+  border: 1.5px solid var(--ink-line-soft);
+  border-radius: 8px 11px 7px 12px / 11px 7px 12px 8px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    color var(--dur-xs) var(--ease-out);
+}
+
+.nb-cur-drawer-close:hover {
+  background: var(--wash-amber-light);
+  color: var(--ink-sepia);
+}
+
+.nb-cur-drawer-close svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.nb-cur-drawer-title {
+  font-family: var(--font-label);
+  font-size: var(--text-label);
+  line-height: 1.15;
+  color: var(--ink-sepia);
+}
+
+.nb-cur-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nb-cur-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 3px var(--space-4);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  border: 1.5px solid transparent;
+  border-radius: 8px 11px 9px 12px / 10px 8px 12px 9px;
+  cursor: pointer;
+  transition: background var(--dur-xs) var(--ease-out);
+}
+
+.nb-cur-row:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-cur-row input {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-deep);
+}
+
+.nb-cur-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An id with no card behind it any more — a paper that was renamed under the
+   reader's removal. Shown rather than hidden: it is still theirs to give back,
+   and a drawer that silently drops rows is a drawer nobody trusts. */
+.nb-cur-row-orphan {
+  font-style: italic;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-cur-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding-top: var(--space-4);
+}
+
+.nb-cur-btn {
+  padding: 3px var(--space-12);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 14px 12px 15px / 13px 11px 15px 12px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-cur-btn:hover:not(:disabled) {
+  background: var(--wash-amber-light);
+}
+
+.nb-cur-btn:active:not(:disabled) {
+  transform: translateY(1px) rotate(0.4deg);
+}
+
+.nb-cur-btn:disabled {
+  color: var(--ink-graphite-soft);
+  opacity: 0.6;
+}
+
+.nb-cur-btn.is-primary {
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
+  font-weight: 700;
+}
+
+.nb-cur-btn.is-primary:hover:not(:disabled) {
+  background: var(--gilt-light);
+}
+
+/* The line that runs when there is nothing in the drawer. It is a sentence and
+   not an empty list on purpose: an empty panel says "broken", a sentence says
+   "you have not removed anything yet, and here is how you would". */
+.nb-cur-note {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Keeping what you have — the name, and the stars, in one small form
+   -------------------------------------------------------------------------- */
+.nb-cur-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.nb-cur-input {
+  width: 100%;
+  padding: 5px var(--space-8);
+  font-family: var(--font-body);
+  font-size: var(--text-sm); /* handwriting, so never below 13px */
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 15px 12px 14px / 13px 11px 15px 12px;
+}
+
+.nb-cur-input::placeholder {
+  color: var(--ink-graphite-soft);
+  opacity: 0.8;
+}
+
+.nb-cur-stars {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.nb-cur-star-btn {
+  min-width: 34px;
+  padding: 2px var(--space-8);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  color: var(--gilt-ink);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 9px 12px 10px 11px / 11px 9px 12px 10px;
+  letter-spacing: -1px;
+  transition: background var(--dur-xs) var(--ease-out);
+}
+
+.nb-cur-star-btn:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-cur-star-btn.is-on {
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
+}
+
+/* The one-line caption under the star row: what the notation means, said in
+   words, because two gold glyphs are not self-explanatory the first time. */
+.nb-cur-star-hint {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}

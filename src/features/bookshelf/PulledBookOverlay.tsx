@@ -11,29 +11,31 @@
  * overrides), so the pull-out shows the same intricate tooled cover the
  * opened BookView rests on — no more flat gradient rectangle.
  *
- * ## Pulling a book out opens it
+ * ## Pulling a book out brings it FORWARD. A second click opens it.
  *
- * The flight used to END here: the book came to rest HELD in front of the
- * case, on a little label plate with two verbs under it — "read it" and "put
- * it back". The reader's verdict on that was flat: *"when i click on a book no
- * need for the menu with read it put it back, remove that and just have back
- * button on top left"*. It was a dialog wearing a book's clothes, and it cost
- * a second click on every single open.
+ * *"the book is auto opening when i click it should isntead just come in
+ * foreview and only if user clicks on it does it go inside, with a back button
+ * on top left"*
  *
- * So the flight runs straight on into the book view again. What is kept is the
- * flight itself — the hinge, the arc, the overshoot — because that was never
- * the complaint, and the landing is now sized to the thing it turns into, so
- * the swap into the spread reads as the same object opening.
+ * So the flight ends here, with the book at rest in front of the case: out of
+ * the shelf, big enough to read the cover, still in the room. Nothing has been
+ * committed yet. From there:
  *
- * ## Catching it in mid-air
+ *  - a tap on the cover opens it (Enter or Space, if you got here by keyboard);
+ *  - the back arrow in the TOP-LEFT corner sends it home, and so does Escape;
+ *  - it is still grabbable — carry it over the bookcase and drop it, and it
+ *    goes back in its slot (the world draws the gilt outline of the gap it
+ *    came from). Dropped anywhere else it simply stays where you put it.
  *
- * "Wrong one" still needs an answer, and the answer is the gesture the object
- * already suggests: the cover is grabbable for the whole flight, and a book
- * carried back over the bookcase and dropped goes back in its slot (the world
- * draws the gilt outline of the gap it came from). Escape does the same thing
- * with one key. Everything else — a tap on the cover, a drop in mid-air, the
- * flight simply landing — opens the book, because that is what pulling a book
- * off a shelf means.
+ * What this does NOT bring back is the label plate with "read it" and "put it
+ * back" printed under the cover, which is what the reader threw out before
+ * (*"no need for the menu with read it put it back, remove that and just have
+ * back button on top left"*). The book itself is the button, and the way back
+ * is one arrow in the corner every other exit in this app lives in.
+ *
+ * The flight is unchanged — the hinge, the arc, the overshoot — and it still
+ * lands at the size the opened spread's cover board is, so the swap into the
+ * pages reads as the same object opening.
  *
  * ## Why the flight is a hinge and not a scale
  *
@@ -86,8 +88,8 @@ export interface PulledOverlayProps {
    */
   onHandoff(phase: 'out' | 'in'): void;
   /**
-   * Open the book. Fired when the flight lands — or earlier, if the reader
-   * taps the cover on its way in — and exactly once.
+   * Open the book. Fired when the reader taps (or keys) the cover — never on
+   * the landing itself, which only brings the book forward. Exactly once.
    */
   onOpen(): void;
   /** The overlay is finished with — unmount it. */
@@ -207,6 +209,18 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
   const [overCase, setOverCase] = createSignal(false);
   /** The wash over the frozen room. Raised a frame late so it fades in. */
   const [dim, setDim] = createSignal(false);
+  /** True once the flight has landed and the book is resting in the room. */
+  const [held, setHeld] = createSignal(false);
+
+  /**
+   * "Put it back", reachable from the JSX below.
+   *
+   * It is built inside `onMount` because it closes over the timeline, the pose
+   * bookkeeping and the press state; the corner arrow is rendered out here, so
+   * it needs a handle rather than a copy. (Opening needs no such handle — the
+   * cover's own pointer and key handlers are the only way in.)
+   */
+  let putBackNow: () => void = () => {};
 
   const center = centerLayout();
 
@@ -323,9 +337,15 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
         onComplete: () => {
           progress.t = 1;
           path();
-          // Caught on the way in? Then the reader is holding it and they
-          // decide where it goes. Otherwise the pull means what it says.
-          if (press === null && !carrying()) openNow();
+          // The landing decides NOTHING. The book is simply out here now,
+          // face on, waiting to be opened, put back, or picked up again.
+          setHeld(true);
+          // Focus follows the book out of the case: `held` is what gives the
+          // cover its tabindex, so this has to come after the flag, and after
+          // Solid has written the attribute.
+          queueMicrotask(() => {
+            if (!opened && !returning && !finished) el.focus({ preventScroll: true });
+          });
         },
       });
       tl
@@ -388,6 +408,7 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       opened = true;
       press = null;
       setLive(false);
+      setHeld(false);
       setCarrying(false);
       if (overCase()) {
         setOverCase(false);
@@ -403,11 +424,14 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       returning = true;
       press = null;
       setLive(false);
+      setHeld(false);
       setCarrying(false);
       setOverCase(false);
       p.onOverCase(false);
       flyHome(currentPose(), spinePose(p.homeRect()));
     };
+
+    putBackNow = putBack;
 
     if (p.mode === 'open') {
       flyOut();
@@ -483,13 +507,28 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
     };
 
     /**
-     * Every release resolves the book: back on the plank if it was carried
-     * home, open in the reader's hands otherwise. There is no third state to
-     * leave it in any more.
+     * What a release means, which depends entirely on whether the pointer
+     * MOVED.
+     *
+     * A tap is the second click the reader asked for: it opens the book. A
+     * carry that ends over the bookcase shelves it. A carry that ends anywhere
+     * else leaves the book exactly where it was dropped and still held — that
+     * third state is the whole point of the change, and it must not be
+     * collapsed back into "any release opens it".
      */
     const settle = (): void => {
-      if (carrying() && overCase()) putBack();
-      else openNow();
+      if (carrying()) {
+        if (overCase()) putBack();
+        else {
+          setCarrying(false);
+          // A book caught in mid-flight never ran the landing, so this is
+          // where it comes to rest — and the corner arrow has to appear for
+          // it exactly as it would have.
+          setHeld(true);
+        }
+        return;
+      }
+      openNow();
     };
 
     const onUp = (e: PointerEvent): void => {
@@ -511,15 +550,26 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onCancel);
 
-    // Escape puts it back — the one key that always means "I did not mean
-    // this one", and now the only way to say it without the pointer. Capture
-    // phase, because the shelf's own document listener is still attached
-    // behind the overlay.
+    // The two verbs from the keyboard: Escape always means "I did not mean
+    // this one", and Enter/Space on the resting book is the second click that
+    // opens it. Capture phase, because the shelf's own document listener is
+    // still attached behind the overlay.
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || !live()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      putBack();
+      if (!live()) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        putBack();
+        return;
+      }
+      // Only once it has landed: a book still in the air has not arrived at
+      // the thing the key would be confirming.
+      if (!held()) return;
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        e.stopPropagation();
+        openNow();
+      }
     };
     document.addEventListener('keydown', onKey, true);
 
@@ -555,16 +605,73 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
         />
       </Show>
 
+      {/*
+        The way back, and it is the TOP-LEFT corner because every exit in this
+        app is (docs in views/BookView.tsx; tests/top-left-exits.test.ts is the
+        check). Inline-styled for the same reason the cover canvas below is:
+        this overlay adds nothing to shelf.css. It appears only once the book
+        has actually landed — an arrow chasing a book through the air is chrome
+        arguing with the animation.
+      */}
+      <Show when={p.mode === 'open' && held() && live()}>
+        <button
+          type="button"
+          class="pulled-book-back"
+          data-testid="pulled-book-back"
+          aria-label="Put the book back on the shelf"
+          onClick={() => putBackNow()}
+          style={{
+            position: 'fixed',
+            left: '20px',
+            top: '18px',
+            'z-index': 'calc(var(--z-overlay) + 1)',
+            display: 'inline-flex',
+            'align-items': 'center',
+            gap: '8px',
+            padding: '7px 14px 7px 11px',
+            color: 'var(--ink-sepia)',
+            background: 'var(--paper-aged)',
+            border: 'var(--stroke-ink)',
+            'border-radius': 'var(--radius-wobble-sm)',
+            'box-shadow': 'var(--shadow-md)',
+            font: '500 13px/1 var(--font-ui)',
+            'letter-spacing': '0.01em',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Pre-wobbled static path — the same hand as the book view's own
+              back arrow. Stroke only, so a missing stylesheet cannot turn it
+              into a black box. */}
+          <svg viewBox="0 0 34 20" width="20" height="12" aria-hidden="true">
+            <path
+              d="M 31.5 10.4 C 24 9.6 14.5 10.5 6.2 10.1 M 12.8 3.4 C 10.4 5.8 7.6 8.2 4.1 10.2 C 7.4 12 10.2 14.4 12.4 16.9"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          back to the shelf
+        </button>
+      </Show>
+
       <div
         class="pulled-book"
         classList={{
           'is-live': live(),
           'is-carried': carrying(),
           'is-over-case': overCase(),
+          'is-held': held(),
         }}
         data-testid="pulled-book"
         ref={el}
-        role="presentation"
+        // The book at rest IS the button that opens it — there is no plate of
+        // verbs under it. Keyboard readers get the same two moves the pointer
+        // has: Enter/Space opens, Escape shelves it (see `onKey`).
+        role={held() ? 'button' : 'presentation'}
+        tabindex={held() ? 0 : undefined}
+        aria-label={held() ? `Open ${p.book.title}` : undefined}
       >
         {/* Inline-styled so the overlay needs no shelf.css additions
             (that stylesheet belongs to the shelf art wave). */}

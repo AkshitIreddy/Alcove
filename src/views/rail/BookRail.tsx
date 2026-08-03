@@ -15,6 +15,25 @@
  * outright rather than asking `BookView` to open: it needs no book prop, since
  * `views/bookmarks.ts` already knows which book is on screen, and everything
  * it edits is that module's vocabulary.
+ *
+ * ## One ribbon control, not two
+ *
+ * The rail used to carry a "bookmark this page" button AND a "ribbons" button,
+ * and the reader found the seam:
+ *
+ *   "right now it just places a bokomark when i click on bookmark button […]
+ *    oh wait never mind you just have it as options in sidebar called ribbon,
+ *    maybe it might be worth merging those two instead having a seperate
+ *    button"
+ *
+ * They are one control now. A press still marks the page in ONE press — that is
+ * the thing worth protecting, and a chooser you have to walk through would have
+ * made bookmarking slower to fix a naming problem. What the press also does is
+ * open the ribbon plate beside the rail: the six ribbons of the book's own set,
+ * so the reader can say which one marks this page, take it out again, or go on
+ * into the full drawer and re-cut every ribbon in the book. A right-click opens
+ * that plate without touching the bookmark, which is how you get at the ribbons
+ * of a page you have already marked.
  */
 import {
   createEffect,
@@ -38,12 +57,14 @@ import {
   ribbonSvg,
   RIBBON_CHARMS,
   RIBBON_CLOTHS,
+  RIBBON_COLORS,
   RIBBON_FAMILIES,
   RIBBON_MATERIALS,
   RIBBON_TAILS,
   RIBBON_WEIGHTS,
   saveRibbonDesign,
   type RibbonCharmTone,
+  type RibbonColor,
   type RibbonDesign,
   type RibbonFamily,
 } from '../bookmarks';
@@ -85,6 +106,13 @@ export interface BookRailProps {
   /** Whether the active page is ribbon-bookmarked (roadmap #19). */
   bookmarked: boolean;
   onToggleBookmark(): void;
+  /**
+   * Which of the book's six ribbons marks the active page, or null when the
+   * page is unmarked. The merged control (see the docblock) hands the reader
+   * the set so the choice and the act are one button.
+   */
+  bookmarkSlot: RibbonColor | null;
+  onPickBookmarkSlot(slot: RibbonColor): void;
   /** Thumbnails strip visibility (roadmap #10, settings.thumbnailsStrip). */
   thumbnails: boolean;
   onToggleThumbnails(): void;
@@ -105,49 +133,11 @@ const compact = (n: number): string =>
       ? `${(n / 1000).toFixed(1)}k`
       : String(n);
 
-/**
- * Ribbon-and-charm — the ribbon DRAWER, next to the ribbon TOGGLE.
- *
- * Local to this file rather than added to `icons.tsx`, which is another
- * group's territory this week. Same construction as everything in there: a
- * 24×24 frame, `currentColor`, slightly drunken curves, pre-wobbled.
- */
-function RibbonStyleIcon(): JSX.Element {
-  const s = {
-    fill: 'none',
-    stroke: 'currentColor',
-    'stroke-width': 1.8,
-    'stroke-linecap': 'round',
-    'stroke-linejoin': 'round',
-  } as const;
-  return (
-    <svg viewBox="0 0 24 24" class="nb-rail-icon" aria-hidden="true">
-      <path
-        d="M 6.4 3.6 C 8.6 3.3 10.8 3.3 13 3.7 C 13.3 8 13.3 12.4 12.9 16.8 C 11.8 15.7 10.7 14.7 9.7 13.7 C 8.7 14.7 7.6 15.7 6.5 16.8 C 6.1 12.4 6.1 8 6.4 3.6 Z"
-        {...s}
-      />
-      <path d="M 8.2 6.7 C 9.2 6.6 10.2 6.6 11.2 6.7" {...s} stroke-width="1.3" opacity="0.6" />
-      <path
-        d="M 17.6 12.4 C 18.9 12.7 19.6 13.5 19.8 14.8 C 19.5 16 18.8 16.7 17.6 17 C 16.4 16.7 15.7 16 15.4 14.8 C 15.7 13.5 16.4 12.7 17.6 12.4 Z"
-        {...s}
-        stroke-width="1.5"
-      />
-      <path d="M 17.6 17.1 C 17.4 18.6 17.4 20 17.7 21.3" {...s} stroke-width="1.3" />
-    </svg>
-  );
-}
-
 interface RailTool {
   readonly id: string;
   readonly label: string;
   readonly icon: () => JSX.Element;
   readonly panel?: RailPanelId;
-  /**
-   * A sheet this file opens itself. `panel` asks BookView to open one of its
-   * five; this one is the rail's own, and the difference matters only to the
-   * click handler and the pressed state.
-   */
-  readonly ownPanel?: 'ribbons';
   readonly action?: (p: BookRailProps) => void;
   /** Non-panel buttons that still show a pressed state (toggles). */
   readonly pressed?: (p: BookRailProps) => boolean;
@@ -174,17 +164,13 @@ const TOOLS: readonly RailTool[] = [
   { id: 'toc', label: 'Table of contents', icon: TocIcon, panel: 'toc' },
   { id: 'history', label: 'Page history', icon: HistoryIcon, panel: 'history' },
   {
+    // ONE control (see the docblock): the press marks the page, and the plate
+    // it opens is where the ribbons live. `action` is not used — the click is
+    // handled in place, because it has to open the plate as well as toggle.
     id: 'bookmark',
-    label: 'Bookmark this page',
+    label: 'Ribbon this page — and pick which ribbon',
     icon: RibbonIcon,
-    action: (p) => p.onToggleBookmark(),
     pressed: (p) => p.bookmarked,
-  },
-  {
-    id: 'ribbon-style',
-    label: 'Ribbons — choose how yours are cut',
-    icon: RibbonStyleIcon,
-    ownPanel: 'ribbons',
   },
   {
     id: 'focus',
@@ -232,6 +218,76 @@ export default function BookRail(props: BookRailProps): JSX.Element {
     setRibbonsOpen(true);
   };
 
+  /* ---------------------- the merged ribbon control ---------------------- */
+
+  /**
+   * The plate lives beside the rail button, so it needs that button's place on
+   * screen. Measured at open time rather than anchored in CSS: `.nb-rail`
+   * carries `translateY(-50%)`, which makes it the containing block for any
+   * `position: fixed` child — the same trap the ribbon drawer's Portal exists
+   * to dodge (see the Portal comment at the bottom of the nav).
+   */
+  const [plateAt, setPlateAt] = createSignal<{ top: number; left: number } | null>(
+    null,
+  );
+  const plateOpen = (): boolean => plateAt() !== null;
+  const closePlate = (): void => {
+    setPlateAt(null);
+  };
+
+  const openPlateFrom = (button: HTMLElement): void => {
+    const box = button.getBoundingClientRect();
+    // Held to the window so a page near the top or bottom of the rail cannot
+    // push the plate off screen. 232 is the plate's own width in rail.css.
+    const top = Math.min(Math.max(12, box.top - 8), window.innerHeight - 300);
+    setPlateAt({ top, left: box.right + 10 });
+  };
+
+  /**
+   * The press. One press marks the page — that was the thing worth keeping —
+   * and the plate follows so the choice of ribbon is one reach away rather
+   * than one button away. Pressing again on a marked page takes the ribbon out
+   * and puts the plate away with it.
+   */
+  const pressBookmark = (button: HTMLElement): void => {
+    const wasMarked = props.bookmarked;
+    props.onToggleBookmark();
+    if (wasMarked) closePlate();
+    else openPlateFrom(button);
+  };
+
+  createEffect(() => {
+    // A panel sliding out from the rail would sit on top of the plate.
+    if (props.activePanel !== null || ribbonsOpen()) closePlate();
+  });
+
+  createEffect(() => {
+    if (!plateOpen()) return;
+    const onDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        (target.closest('.nb-ribbon-plate') !== null ||
+          target.closest('.nb-rail-button[data-tool="bookmark"]') !== null)
+      ) {
+        return;
+      }
+      closePlate();
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePlate();
+      }
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    onCleanup(() => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    });
+  });
+
   // Autosave pencil: scribble for a beat on every save pulse.
   const [scribbling, setScribbling] = createSignal(false);
   let scribbleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -253,8 +309,8 @@ export default function BookRail(props: BookRailProps): JSX.Element {
 
   /** The panel this icon opens is already up — see the tooltip note below. */
   const panelOpen = (tool: RailTool): boolean =>
-    tool.ownPanel !== undefined
-      ? ribbonsOpen()
+    tool.id === 'bookmark'
+      ? plateOpen()
       : tool.panel !== undefined && props.activePanel === tool.panel;
 
   return (
@@ -272,11 +328,13 @@ export default function BookRail(props: BookRailProps): JSX.Element {
               class="nb-rail-button"
               classList={{
                 'is-active':
-                  tool.ownPanel !== undefined
-                    ? ribbonsOpen()
-                    : tool.panel !== undefined
-                      ? props.activePanel === tool.panel
-                      : (tool.pressed?.(props) ?? false),
+                  tool.panel !== undefined
+                    ? props.activePanel === tool.panel
+                    : (tool.pressed?.(props) ?? false),
+                // Not "pressed" — the plate being open is a second, quieter
+                // state on the same button, and it must not read as "this page
+                // is bookmarked" when it is only "the ribbons are showing".
+                'is-open': tool.id === 'bookmark' && plateOpen(),
               }}
               // The shortcut rides the accessible name even though the visible
               // bubble draws it as a key cap: a screen reader gets one string.
@@ -284,13 +342,11 @@ export default function BookRail(props: BookRailProps): JSX.Element {
                 tool.key === undefined ? tool.label : `${tool.label} (${tool.key})`
               }
               aria-pressed={
-                tool.ownPanel !== undefined
-                  ? ribbonsOpen()
-                  : tool.panel !== undefined
-                    ? props.activePanel === tool.panel
-                    : tool.pressed
-                      ? tool.pressed(props)
-                      : undefined
+                tool.panel !== undefined
+                  ? props.activePanel === tool.panel
+                  : tool.pressed
+                    ? tool.pressed(props)
+                    : undefined
               }
               // The bubble lands exactly where an open sheet starts, and the
               // rail paints above the sheet — so a pressed icon would label
@@ -300,11 +356,17 @@ export default function BookRail(props: BookRailProps): JSX.Element {
               data-tooltip-side="right"
               data-tooltip-key={tool.key}
               data-tool={tool.id}
-              onClick={() => {
-                if (tool.ownPanel !== undefined) {
-                  if (ribbonsOpen()) setRibbonsOpen(false);
-                  else openRibbons();
-                } else if (tool.panel !== undefined) props.onTogglePanel(tool.panel);
+              onContextMenu={(event) => {
+                if (tool.id !== 'bookmark') return;
+                // Reaching the ribbons of a page you already marked, without
+                // un-marking it on the way in.
+                event.preventDefault();
+                if (plateOpen()) closePlate();
+                else openPlateFrom(event.currentTarget);
+              }}
+              onClick={(event) => {
+                if (tool.id === 'bookmark') pressBookmark(event.currentTarget);
+                else if (tool.panel !== undefined) props.onTogglePanel(tool.panel);
                 else tool.action?.(props);
               }}
             >
@@ -352,9 +414,108 @@ export default function BookRail(props: BookRailProps): JSX.Element {
         at half a viewport's offset.
       */}
       <Portal>
+        <Show when={plateAt()} keyed>
+          {(at) => (
+            <RibbonPlate
+              top={at.top}
+              left={at.left}
+              marked={props.bookmarked}
+              slot={props.bookmarkSlot}
+              onPick={(slot) => props.onPickBookmarkSlot(slot)}
+              onRemove={() => {
+                props.onToggleBookmark();
+                closePlate();
+              }}
+              onOpenDrawer={() => {
+                closePlate();
+                openRibbons();
+              }}
+            />
+          )}
+        </Show>
         <RibbonDrawer open={ribbonsOpen()} onClose={() => setRibbonsOpen(false)} />
       </Portal>
     </nav>
+  );
+}
+
+/* ========================================================================== *
+ *                              the ribbon plate                              *
+ * ========================================================================== */
+
+/**
+ * The small plate the merged control opens: the book's six ribbons, the one
+ * marking this page lit, and the two ways on — out of the page, or into the
+ * drawer where every ribbon in the book is cut.
+ *
+ * It draws the CURRENT design in all six slots rather than six generic
+ * colours, so what the reader picks from is what will actually be sticking out
+ * of their book — same `ribbonSvg` the drawer previews with and the same
+ * `ribbonCss` paints the cover with, so the three can never disagree.
+ */
+function RibbonPlate(props: {
+  top: number;
+  left: number;
+  marked: boolean;
+  slot: RibbonColor | null;
+  onPick(slot: RibbonColor): void;
+  onRemove(): void;
+  onOpenDrawer(): void;
+}): JSX.Element {
+  const design = createMemo<RibbonDesign>(() => currentRibbon().design);
+  return (
+    <div
+      class="nb-ribbon-plate"
+      role="group"
+      aria-label="Ribbon on this page"
+      style={{ top: `${props.top}px`, left: `${props.left}px` }}
+    >
+      <p class="nb-ribbon-plate-title font-ui">
+        {props.marked ? 'ribbon on this page' : 'no ribbon on this page'}
+      </p>
+      <div class="nb-ribbon-plate-row" role="group" aria-label="Which ribbon">
+        <For each={RIBBON_COLORS}>
+          {(slot) => (
+            <button
+              type="button"
+              class="nb-ribbon-plate-slot"
+              classList={{ 'is-active': props.slot === slot }}
+              aria-pressed={props.slot === slot}
+              aria-label={`Mark this page with the ${slot} ribbon`}
+              data-slot={slot}
+              data-tooltip={slot}
+              data-tooltip-side="top"
+              onClick={() => props.onPick(slot)}
+            >
+              <span
+                class="nb-ribbon-plate-art"
+                // eslint-disable-next-line solid/no-innerhtml -- ribbonSvg is
+                // our own deterministic markup (views/bookmarks.ts).
+                innerHTML={ribbonSvg(design(), { height: 52, slot, lip: true })}
+              />
+            </button>
+          )}
+        </For>
+      </div>
+      <div class="nb-ribbon-plate-actions">
+        <Show when={props.marked}>
+          <button
+            type="button"
+            class="nb-chip nb-chip-ghost"
+            onClick={() => props.onRemove()}
+          >
+            take it out
+          </button>
+        </Show>
+        <button type="button" class="nb-chip" onClick={() => props.onOpenDrawer()}>
+          ribbons…
+        </button>
+      </div>
+      <p class="nb-ribbon-plate-note font-ui">
+        the ribbon button marks the page in one press — come back here to change
+        which ribbon, or to cut a new set
+      </p>
+    </div>
   );
 }
 

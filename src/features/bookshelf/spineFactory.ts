@@ -321,10 +321,20 @@ export class SpineFactory {
     this.invalidateAll();
   }
 
-  /** Drop every baked spine (theme switch). Listeners re-request. */
+  /**
+   * Drop every baked spine (theme switch). Listeners re-request.
+   *
+   * The announcement covers every book the shelf has ever ASKED about, not
+   * just the ones holding a texture — that is what `known` is for, and it went
+   * unread for a long time. `this.queue.clear()` below throws away pending
+   * requests, and a book whose first bake had not landed yet has no texture to
+   * report, so it was dropped in silence: nothing remembered it wanted a
+   * spine, and it sat as a flat placeholder for the rest of the session. Same
+   * defect as the stale-epoch branch in `paintOffThread`, one door along.
+   */
   invalidateAll(): void {
     if (this.destroyed) return;
-    const ids = new Set<string>();
+    const ids = new Set<string>(this.known);
     for (const bucket of [this.loTextures, this.hiTextures]) {
       for (const [bookId, tex] of bucket) {
         ids.add(bookId);
@@ -513,6 +523,13 @@ export class SpineFactory {
    * Drop a book's baked textures (title rename, spine reseed). The atlas
    * rects are released (pixels stay until page eviction) and listeners are
    * notified so live sprites fall back to placeholders + re-request.
+   *
+   * A PENDING request counts as something to announce, not just a landed
+   * texture. Naming a brand-new book calls straight through to here while its
+   * very first bake is usually still in the queue: the loop below deletes that
+   * queue entry, and announcing only when a texture existed meant nobody was
+   * ever told the book still wanted one. The book kept the flat placeholder it
+   * was born with — a white rectangle where the reader's first book should be.
    */
   invalidate(bookId: string): void {
     if (this.destroyed) return;
@@ -527,7 +544,7 @@ export class SpineFactory {
         touched = true;
       }
       (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
-      this.queue.delete(`${variant}|${bookId}`);
+      if (this.queue.delete(`${variant}|${bookId}`)) touched = true;
     }
     if (touched) this.emit([bookId]);
   }

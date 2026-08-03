@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A grey kitten curled up asleep.
+     Drawn in the app's flat language (CLAUDE.md): flat colour, one ink
+     outline (#4f3120), rounded corners, no lighting of any kind. It ships
+     with the app rather than being fetched, because the welcome book has
+     to look like this on a machine that has never been online. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" width="240" height="200">
+  <rect x="1" y="1" width="118" height="98" rx="8" fill="#dfe9ee"/>
+  <!-- zzz -->
+  <path d="M78 22 L 92 22 L 78 36 L 92 36" fill="none" stroke="#4f3120" stroke-width="2.8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M97 8 L 106 8 L 97 17 L 106 17" fill="none" stroke="#4f3120" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- curled body -->
+  <path d="M18 70 C 18 48 40 40 62 42 C 88 44 102 56 98 72 C 95 86 66 92 44 90 C 26 88 18 80 18 70 Z"
+        fill="#9aa7b0" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- tail laid round the front -->
+  <path d="M97 76 C 88 88 62 90 46 85 C 40 83 41 76 47 77"
+        fill="none" stroke="#4f3120" stroke-width="6.4" stroke-linecap="round"/>
+  <path d="M97 76 C 88 88 62 90 46 85 C 40 83 41 76 47 77"
+        fill="none" stroke="#b9c4cc" stroke-width="3" stroke-linecap="round"/>
+  <!-- ears -->
+  <path d="M28 54 L 22 34 L 42 44 Z" fill="#9aa7b0" stroke="#4f3120" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M56 52 L 62 33 L 44 42 Z" fill="#9aa7b0" stroke="#4f3120" stroke-width="3" stroke-linejoin="round"/>
+  <!-- head tucked in -->
+  <path d="M42 40 C 56 40 64 48 64 58 C 64 68 54 74 42 74 C 30 74 20 68 20 58 C 20 48 28 40 42 40 Z"
+        fill="#b9c4cc" stroke="#4f3120" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- shut eyes + nose -->
+  <path d="M28 56 C 31 61 35 61 38 56 M46 56 C 49 61 53 61 56 56"
+        fill="none" stroke="#4f3120" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M39 62 L 45 62 L 42 66 Z" fill="#4f3120"/>
+</svg>

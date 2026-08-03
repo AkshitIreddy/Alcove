@@ -6,8 +6,16 @@
  *     that flips between the two faces (BookStudio.tsx).
  *  2. **this library** — the room: theme, wall finish, wallpaper pattern x
  *     colourway, flora density, lamp warmth (LibraryStudio.tsx).
+ *  3. **your own** — work the reader brought in themselves: papers, cases,
+ *     stickers and sounds, each with instructions and a generated AI prompt
+ *     (features/packs/PacksPanel.tsx).
  * Page defaults (line spacing / page style / ink) stay on the book tab, since
  * they are also "about this book".
+ *
+ * The third tab is a LIBRARY, not the only way in. A reader's papers also
+ * stand in the wallpaper row of tab 2, where papers are actually chosen — a
+ * vocabulary reachable from one panel nobody opens is the shape of failure
+ * this repo already has a test for (tests/roll-gates.test.ts).
  *
  * Persistence:
  *  - library choices go through `features/bookshelf/libraryPrefs` (the Pixi
@@ -29,6 +37,7 @@ import { persistBookStyle } from '../../features/bookshelf/bookIdentity';
 import type { PageStyle } from '../../data/types';
 import BookStudio, { coverOverridesFromStyle } from './BookStudio';
 import LibraryStudio from './LibraryStudio';
+import PacksPanel from '../../features/packs/PacksPanel';
 
 const PAGE_STYLES: readonly PageStyle[] = ['ruled', 'grid', 'blank', 'dotted'];
 const INKS = [
@@ -41,7 +50,7 @@ export const LINE_SPACING_MIN = 26;
 export const LINE_SPACING_MAX = 40;
 const DEFAULT_LINE_SPACING = 32;
 
-type StudioTab = 'book' | 'library';
+type StudioTab = 'book' | 'library' | 'own';
 
 export interface CustomizePanelProps {
   spineSeed: number;
@@ -123,6 +132,7 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
           role="tab"
           aria-selected={tab() === 'book'}
           classList={{ 'is-active': tab() === 'book' }}
+          data-studio-tab="book"
           onClick={() => setTab('book')}
         >
           this book
@@ -133,9 +143,21 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
           role="tab"
           aria-selected={tab() === 'library'}
           classList={{ 'is-active': tab() === 'library' }}
+          data-studio-tab="library"
           onClick={() => setTab('library')}
         >
           this library
+        </button>
+        <button
+          type="button"
+          class="nb-studio-tab"
+          role="tab"
+          aria-selected={tab() === 'own'}
+          classList={{ 'is-active': tab() === 'own' }}
+          data-studio-tab="own"
+          onClick={() => setTab('own')}
+        >
+          your own
         </button>
       </div>
 
@@ -211,6 +233,12 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
       <Show when={tab() === 'library'}>
         <div class="nb-studio-pane" role="tabpanel" aria-label="This library">
           <LibraryStudio />
+        </div>
+      </Show>
+
+      <Show when={tab() === 'own'}>
+        <div class="nb-studio-pane" role="tabpanel" aria-label="Your own">
+          <PacksPanel />
         </div>
       </Show>
     </div>

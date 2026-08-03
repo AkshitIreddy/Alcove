@@ -14,6 +14,14 @@
  * Everything persists through the existing stores: `libraryPrefs` for the
  * room (the Pixi world subscribes, so the shelf re-bakes and crossfades the
  * moment a card is picked) and `cover_meta` for the book.
+ *
+ * The room-only branch carries its own two tabs, and that is not decoration.
+ * It does NOT go through `CustomizePanel` — it mounts `LibraryStudio` straight
+ * — so when the reader's own packs gained a home on that panel's third tab,
+ * the whole hub was unreachable from the shelf, which is where somebody
+ * standing in a library they have not opened would look for it. The strips
+ * inside LibraryStudio could reach the popup; nothing could reach the list of
+ * what had already been brought in.
  */
 import { Show, createEffect, createSignal, on, type JSX } from 'solid-js';
 import { normalizeCoverOverrides, type CoverOverrides } from '../../art/covers';
@@ -28,6 +36,7 @@ import type { Book } from '../../data/types';
 import CustomizePanel from './CustomizePanel';
 import LibraryStudio from './LibraryStudio';
 import RailPanel from './RailPanel';
+import PacksPanel from '../../features/packs/PacksPanel';
 
 export interface ShelfStudioProps {
   open: boolean;
@@ -42,6 +51,7 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
   const [book, setBook] = createSignal<Book | null>(null);
   const [overrides, setOverrides] = createSignal<CoverOverrides | null>(null);
   const [pageDefaults, setPageDefaults] = createSignal<BookPageDefaults | null>(null);
+  const [roomTab, setRoomTab] = createSignal<'library' | 'own'>('library');
 
   createEffect(
     on(
@@ -101,13 +111,44 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
         when={book()}
         fallback={
           <div class="nb-customize nb-studio">
-            <div class="nb-studio-pane">
-              <LibraryStudio />
-              <p class="nb-panel-footnote nb-studio-hint">
-                want to dress one book instead? right-click its spine on the
-                shelf and pick “dress this book”.
-              </p>
+            <div class="nb-studio-tabs" role="tablist" aria-label="Studio">
+              <button
+                type="button"
+                class="nb-studio-tab"
+                role="tab"
+                aria-selected={roomTab() === 'library'}
+                classList={{ 'is-active': roomTab() === 'library' }}
+                data-studio-tab="library"
+                onClick={() => setRoomTab('library')}
+              >
+                this library
+              </button>
+              <button
+                type="button"
+                class="nb-studio-tab"
+                role="tab"
+                aria-selected={roomTab() === 'own'}
+                classList={{ 'is-active': roomTab() === 'own' }}
+                data-studio-tab="own"
+                onClick={() => setRoomTab('own')}
+              >
+                your own
+              </button>
             </div>
+            <Show when={roomTab() === 'library'}>
+              <div class="nb-studio-pane" role="tabpanel" aria-label="This library">
+                <LibraryStudio />
+                <p class="nb-panel-footnote nb-studio-hint">
+                  want to dress one book instead? right-click its spine on the
+                  shelf and pick “dress this book”.
+                </p>
+              </div>
+            </Show>
+            <Show when={roomTab() === 'own'}>
+              <div class="nb-studio-pane" role="tabpanel" aria-label="Your own">
+                <PacksPanel />
+              </div>
+            </Show>
           </div>
         }
       >

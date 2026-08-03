@@ -260,7 +260,34 @@ export interface Settings {
     | 'none';
   typingSounds: boolean;
   hourlyChime: boolean;
+  /**
+   * The WRITING cursor, inside a page only (`BookView` writes `data-cursor`,
+   * `styles/editor.css` draws it). Deliberately NOT the same setting as
+   * `cursorSet` below: this one is a nib you write with and it applies to the
+   * prose and nothing else, that one is the pointer you point at the whole app
+   * with. The editor's rules are the more specific of the two, so a reader can
+   * hold a quill over the page while a pencil points at the shelf.
+   */
   cursorStyle: 'standard' | 'pencil' | 'quill';
+  /**
+   * The app-wide drawn cursor set — see `art/cursors.ts` for the fourteen
+   * states and the seven sets, `styles/cursors.css` for where they land.
+   *
+   * The union is spelled out here rather than imported so this module stays
+   * dependency-free; `data/settings.ts` validates against `CURSOR_SET_IDS`,
+   * which makes TypeScript refuse the two lists if they ever disagree.
+   *
+   * `system` is a real choice and must stay one: a reader with a HiDPI screen
+   * or a Windows accessibility cursor scheme has already picked their pointer.
+   */
+  cursorSet:
+    | 'system'
+    | 'paper'
+    | 'gilt'
+    | 'quill'
+    | 'pencil'
+    | 'botanical'
+    | 'bold';
 
   // Wave 2 — books & pages
   /** Book id receiving /today journal pages, or null when unset. */

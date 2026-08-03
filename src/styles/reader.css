@@ -1,0 +1,636 @@
+/* ============================================================================
+   Notebook — the reader's own controls
+   ============================================================================
+   Three things the reader asked to be in charge of, and the one stylesheet
+   that dresses them. Imported LAST by views/BookView.tsx, so where a rule here
+   and a rule in spread.css both fit an element at the same weight, this one is
+   the later word.
+
+     1. FOCUS AS A RANGE (views/rail/focusLevels.ts) — four rungs and a zoom.
+        `data-focus-level` on `.nb-book-view` says which rung; `is-focus-mode`
+        stays exactly what it was, because the e2e suite and the tour both find
+        the mode by that class.
+     2. STICKERS PLACED ANYWHERE (editor/effects/freePlacement.ts) — the layer
+        they live on, the mark itself, and the little puck it opens.
+     3. ONE RIBBON CONTROL (views/rail/BookRail.tsx) — the plate the merged
+        bookmark button opens beside the rail.
+
+   Flat language throughout (CLAUDE.md): flat fills, one ink outline, rounded
+   corners, an offset plate for lift. No blur, no glow, no blend mode. Motion
+   is transform/opacity only, on the token durations.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. FOCUS AS A RANGE
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   The zoom, and the pan that has to come with it.
+
+   A TRANSFORM, deliberately, and focusLevels.ts says why at length: growing
+   the leaf's layout box would change `pageCapacityPx`, and `pageCapacityPx` is
+   what the pagination contract measures against — so zooming out would
+   repaginate the reader's whole book behind their back. This way the page
+   holds exactly as many words at 240% as it does at 60%.
+
+   It sits on `.nb-spread-stage`, which in focus mode holds nothing but the
+   book: the rail sheets are also children of the stage, and scaling them with
+   it would be absurd — but every rung clears the panels on the way in, so
+   there is never one open to scale.
+   -------------------------------------------------------------------------- */
+.nb-book-view.is-focus-mode .nb-spread-stage {
+  transform: translate3d(var(--nb-focus-pan-x, 0px), var(--nb-focus-pan-y, 0px), 0)
+    scale(var(--nb-focus-zoom, 1));
+  transform-origin: 50% 50%;
+  transition: transform var(--dur-sm) var(--ease-out);
+}
+
+/* Only while it is actually moving. A permanent `will-change` on a stage that
+   contains every mounted editor keeps a compositor layer alive for the whole
+   session, which is the opposite of what the hint is for. */
+.nb-book-view.is-zoomed .nb-spread-stage {
+  will-change: transform;
+}
+
+/* Somewhere to take hold of the zoomed book. The paper keeps its own cursor —
+   a drag that starts in the prose is the browser's sweep-to-select, and the
+   pan handler in BookView stands aside for it. */
+.nb-book-view.is-zoomed .nb-book-cover {
+  cursor: grab;
+}
+
+.nb-book-view.is-zoomed .nb-book-cover:active {
+  cursor: grabbing;
+}
+
+/* --------------------------------------------------------------------------
+   Rung 2 — "the pages". The boards come off: no cover art, no border, no
+   padding ring, no ribbons hanging over the top edge. Two bare leaves.
+   -------------------------------------------------------------------------- */
+.nb-book-view[data-focus-level='page'],
+.nb-book-view[data-focus-level='leaf'] {
+  /* The chrome is gone; give the freed height to the paper. */
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+
+.nb-book-view[data-focus-level='page'] .nb-spread-stage {
+  width: min(100%, calc((100vh - 28px) * 1.58), 1860px);
+}
+
+.nb-book-view[data-focus-level='page'] .nb-book-cover,
+.nb-book-view[data-focus-level='leaf'] .nb-book-cover {
+  padding: 0;
+  background: none;
+  border-color: transparent;
+  /* The room still dims — the ring simply moves to the thing that is left. */
+  box-shadow: none;
+}
+
+.nb-book-view[data-focus-level='page'] .nb-spread,
+.nb-book-view[data-focus-level='leaf'] .nb-spread {
+  /* Zero blur, 100vmax spread: a flat plate over the room, not an ambient
+     glow. Same trick spread.css uses on the board at the first rung. */
+  box-shadow: 0 0 0 100vmax var(--lift-ink-strong);
+}
+
+/* Nothing to hang a ribbon off once the boards are gone. */
+.nb-book-view[data-focus-level='page'] .nb-ribbon-row,
+.nb-book-view[data-focus-level='leaf'] .nb-ribbon-row {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The leaves keep an edge of their own so they do not bleed into the dim. */
+.nb-book-view[data-focus-level='page'] .nb-leaf-paper,
+.nb-book-view[data-focus-level='leaf'] .nb-leaf-paper {
+  box-shadow: 0 0 0 1.5px var(--paper-edge);
+}
+
+/* --------------------------------------------------------------------------
+   Rung 3 — "one page". The other leaf folds away and the stage narrows to a
+   single page's proportions, so what is left reads as a page rather than as a
+   spread with a hole in it. `flex: 0 0 0` is flip.css's own move for a
+   single-page book (`.nb-flip-leaf-left.is-empty`) — same mechanism, so the
+   flip surface needs no new idea to lay it out.
+   -------------------------------------------------------------------------- */
+.nb-book-view[data-focus-level='leaf'] .nb-spread-stage {
+  width: min(100%, calc((100vh - 28px) * 0.8), 980px);
+}
+
+.nb-book-view[data-focus-level='leaf'][data-solo-leaf='left'] .nb-flip-leaf-right,
+.nb-book-view[data-focus-level='leaf'][data-solo-leaf='right'] .nb-flip-leaf-left {
+  flex: 0 0 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* One leaf, so both of its corners are outer corners. */
+.nb-book-view[data-focus-level='leaf'] .nb-leaf-paper {
+  border-radius: var(--radius-sm);
+}
+
+/* No facing page means no crease between them. */
+.nb-book-view[data-focus-level='leaf'] .nb-spread-gutter {
+  opacity: 0;
+}
+
+/* --------------------------------------------------------------------------
+   The dial — TOP-LEFT, under the exit chip, because that is the corner this
+   app keeps everything you reach for without looking (see the convention
+   docblock in views/BookView.tsx and tests/top-left-exits.test.ts).
+   -------------------------------------------------------------------------- */
+
+/*
+ * It arrives out, and then it gets out of the way.
+ *
+ * The same manners as the back arrow (spread.css): focus mode exists to clear
+ * the page, so a permanent control plate sitting on the top-left corner of the
+ * paper would be the exact chrome the reader asked to be rid of — *"placed in
+ * a way tasteful and goes away after it is used"*. It holds at full ink long
+ * enough to be read, settles to a pencil weight, and comes back on hover or on
+ * a Tab that lands inside it. It is never removed and never
+ * `pointer-events: none`: a control you cannot reach is not a control.
+ *
+ * Opacity only, and CSS only — this needs no signal, because the element
+ * mounts exactly when focus mode begins.
+ */
+@keyframes nb-focus-dial-settle {
+  0%,
+  74% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.38;
+  }
+}
+
+.nb-focus-dial {
+  position: fixed;
+  top: calc(var(--space-16) + 44px);
+  left: var(--space-16);
+  z-index: var(--z-overlay);
+  width: 214px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-sm);
+  opacity: 0.38;
+  animation: nb-focus-dial-settle 3.8s var(--ease-out) both;
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+.nb-focus-dial:hover,
+.nb-focus-dial:focus-within {
+  opacity: 1;
+  animation: none;
+}
+
+.nb-focus-rungs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.nb-focus-rung {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-4) 2px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-focus-rung:hover {
+  background: var(--wash-amber-light);
+  transform: translateY(-1px);
+}
+
+.nb-focus-rung.is-active {
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border-color: var(--ink-line);
+}
+
+.nb-focus-rung-glyph {
+  width: 30px;
+  height: 22px;
+}
+
+/* Nunito Sans below 13px — the handwriting faces are unreadable this small. */
+.nb-focus-rung-name {
+  font-size: 11px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
+.nb-focus-zoom {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.nb-focus-zoom-step,
+.nb-focus-zoom-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) 0;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-focus-zoom-step:hover:not(:disabled),
+.nb-focus-zoom-value:hover {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line);
+}
+
+.nb-focus-zoom-step:disabled {
+  opacity: 0.4;
+}
+
+.nb-focus-zoom-glyph {
+  width: 15px;
+  height: 15px;
+}
+
+.nb-focus-zoom-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.nb-focus-leafpick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.nb-focus-leaf-button {
+  padding: var(--space-4) 0;
+  font-size: 12px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
+}
+
+.nb-focus-leaf-button:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-focus-leaf-button.is-active {
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border-color: var(--ink-line);
+}
+
+.nb-focus-recentre {
+  padding: var(--space-4) var(--space-8);
+  font-size: 12px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
+}
+
+.nb-focus-recentre:hover {
+  background: var(--wash-amber-light);
+  border-style: solid;
+}
+
+.nb-focus-dial-keys {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-focus-dial-keys kbd {
+  padding: 0 4px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 5px 3px 6px 4px / 4px 6px 3px 5px;
+}
+
+/* ==========================================================================
+   2. STICKERS PLACED ANYWHERE
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   The layer. A child of the leaf, so a free sticker travels with the page into
+   the flip snapshots and clips at the paper's own edge — a sticker that hung
+   over the fore-edge would be a sticker on the desk, not on the page.
+
+   `pointer-events: none` on the layer and `auto` on each mark: everywhere the
+   reader has NOT stuck something, the click still belongs to the text.
+   -------------------------------------------------------------------------- */
+.nb-free-layer {
+  position: absolute;
+  inset: 0;
+  /*
+   * Above the block DRAG HANDLE, and measured rather than guessed.
+   *
+   * The handle's layer is hoisted onto <body> at `calc(var(--z-flip) + 5)`
+   * (editor.css says why), which is a different stacking context from
+   * anything inside the leaf — so a sticker at z-index 6 lost the hit test to
+   * a 24×28 handle parked over it, and neither dragging a sticker nor opening
+   * its puck worked wherever the two overlapped. Measured on the running app:
+   * handle at [577,349,24,28], sticker at [548,347,46,46], `elementFromPoint`
+   * returning the handle.
+   *
+   * One rung above the handle and well below `--z-menus` (300), so every
+   * panel, tooltip, dialog and toast still covers the page. The leaf's
+   * `overflow: hidden` keeps a sticker from ever painting outside its own
+   * page whatever this number is.
+   */
+  z-index: calc(var(--z-flip) + 6);
+  pointer-events: none;
+}
+
+/*
+ * …except while a page is turning. The curl canvas draws pre-rasterized
+ * pages — stickers included, they are children of the leaf — so a live
+ * sticker painting OVER that canvas would show the same mark twice, once
+ * curling and once floating flat above it.
+ */
+.nb-flip-surface:has(.nb-flip-canvas.is-flipping) .nb-free-layer {
+  z-index: 1;
+}
+
+/* The zero-width anchor left behind in the text flow. It has to render (it is
+   the node ProseMirror is drawing) and it has to cost the line nothing. */
+.nb-sticker.is-free-anchor {
+  display: inline;
+  width: 0;
+  overflow: hidden;
+}
+
+.nb-free-sticker {
+  position: absolute;
+  width: var(--nb-free-size, 46px);
+  height: var(--nb-free-size, 46px);
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  transform: translate(-50%, -50%) rotate(var(--nb-free-tilt, 0deg));
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  transition: transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-free-sticker:hover {
+  transform: translate(-50%, -50%) rotate(var(--nb-free-tilt, 0deg)) scale(1.06);
+}
+
+.nb-free-sticker.is-dragging {
+  cursor: grabbing;
+  /* Nothing eases while the pointer owns the position, or the mark lags the
+     hand by a whole duration step. */
+  transition: none;
+}
+
+.nb-free-sticker.is-held {
+  z-index: 2;
+}
+
+.nb-free-sticker:focus-visible {
+  outline: 2px solid var(--gilt-face);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.nb-free-sticker-art,
+.nb-free-sticker-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* A held sticker wears a dashed ring so it is obvious which one the puck
+   belongs to. Flat and hard-edged — a ring, never a halo. */
+.nb-free-sticker.is-held .nb-free-sticker-art {
+  outline: 1.5px dashed var(--ink-line);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* --------------------------------------------------------------------------
+   The puck — bigger, smaller, two tilts, back into the text, away.
+
+   Counter-rotated off the sticker's own tilt so the controls stay level on a
+   mark the reader has leaned over; it hangs below rather than above, because
+   the top of a page is where the ribbons and the title live.
+   -------------------------------------------------------------------------- */
+.nb-free-puck {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 13px 10px 14px / 13px 10px 14px 11px;
+  box-shadow: var(--shadow-sm);
+  transform: translateX(-50%) rotate(calc(-1 * var(--nb-free-tilt, 0deg)));
+  cursor: default;
+}
+
+.nb-free-puck-button {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-free-puck-button:hover {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line);
+}
+
+.nb-free-puck-button[data-puck='remove']:hover {
+  background: var(--wash-terracotta-light, var(--wash-amber-light));
+}
+
+.nb-free-puck-glyph {
+  width: 14px;
+  height: 14px;
+}
+
+/* --------------------------------------------------------------------------
+   Arming — a sticker picked out of the catalogue, waiting for somewhere to
+   land. The leaves take a crosshair so it is obvious the next click is a
+   placement and not a caret.
+   -------------------------------------------------------------------------- */
+.nb-book-view.is-placing .nb-leaf-paper,
+.nb-book-view.is-placing .nb-leaf-paper .nb-prose {
+  cursor: crosshair;
+}
+
+.nb-place-hint {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-20);
+  z-index: var(--z-menus);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-16);
+  background: var(--paper-aged);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%) rotate(-0.4deg);
+}
+
+.nb-place-hint-text {
+  font-size: 12px;
+  color: var(--ink-sepia);
+}
+
+.nb-place-hint-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 2px var(--space-8);
+  font-size: 11px;
+  color: var(--ink-graphite-soft);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 7px 9px 6px 10px / 9px 6px 10px 7px;
+}
+
+.nb-place-hint-stop:hover {
+  background: var(--wash-amber-light);
+  color: var(--ink-sepia);
+}
+
+.nb-place-hint-stop kbd {
+  font-family: var(--font-ui);
+  font-size: 10px;
+}
+
+/* The catalogue's own row of the same idea. */
+.nb-cat-mode {
+  margin-top: var(--space-4);
+}
+
+.nb-cat-mode-note {
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   3. ONE RIBBON CONTROL
+   ========================================================================== */
+
+/* The rail button carries two states now: pressed (this page is marked) and
+   open (the plate is showing). They must not look the same, or "the ribbons
+   are out" would read as "the page is bookmarked". */
+.nb-rail-button.is-open:not(.is-active) {
+  border-color: var(--ink-line);
+  background: var(--paper-cream);
+}
+
+.nb-ribbon-plate {
+  position: fixed;
+  z-index: calc(var(--z-menus) + 12);
+  width: 232px;
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  background: var(--paper-aged);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-md);
+}
+
+.nb-ribbon-plate-title {
+  margin: 0 0 var(--space-4);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-ribbon-plate-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+  padding: var(--space-4) 0;
+}
+
+.nb-ribbon-plate-slot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2px 0 0;
+  background: var(--paper-cream);
+  border: 1.5px solid transparent;
+  border-radius: 8px 6px 9px 7px / 7px 9px 6px 8px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-ribbon-plate-slot:hover {
+  transform: translateY(1px);
+  border-color: var(--paper-edge);
+}
+
+.nb-ribbon-plate-slot.is-active {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line);
+}
+
+.nb-ribbon-plate-art,
+.nb-ribbon-plate-art svg {
+  display: block;
+}
+
+.nb-ribbon-plate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.nb-ribbon-plate-note {
+  margin: var(--space-8) 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-graphite-soft);
+}

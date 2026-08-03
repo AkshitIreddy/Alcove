@@ -663,7 +663,19 @@
    it, plus a drawn double rule that reads as a pressed card edge. */
 .nb-cheat-card {
   position: relative; /* anchors .nb-cheat-close */
-  width: min(640px, 92vw);
+  /* Wider than it was, because the card is generated from the shortcut
+     registry now and that has five rooms in it rather than two hand-written
+     columns. `max-height` + a scrolling body is deliberate here and is NOT
+     the banned page scrollbar: this is a dialog, not a page — the pagination
+     contract is about paper, and a cheat-sheet taller than a laptop screen
+     otherwise loses its last group off the bottom with no way to reach it. */
+  /* Wide enough that a shortcut's description fits on ONE line in a three-up
+     card: at 1000px the text column was 154px and nearly every row wrapped,
+     which doubled the height of the whole thing for no extra information. */
+  width: min(1180px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-20) var(--space-24) var(--space-16);
   background: var(--paper-aged);
   border: var(--stroke-ink-thin);
@@ -721,10 +733,28 @@
   margin-bottom: var(--space-12);
 }
 
+/* Newspaper columns, not a grid.
+   The card is generated from the shortcut registry, so a new group must not
+   mean re-picking a column count here — and a GRID of five groups leaves a
+   hole the size of the shortest one under it (measured: "Finding your way" is
+   five rows, "In a book" is fourteen). Multi-column BALANCES instead: the
+   groups flow, `break-inside: avoid` keeps a group whole, and the column
+   count follows the window from `column-width`. */
 .nb-cheat-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-24);
+  column-width: 340px;
+  column-gap: var(--space-24);
+  /* A pencil rule between columns, in the same dashed hand as the headings. */
+  column-rule: 1px dashed var(--ink-line-soft);
+}
+
+.nb-cheat-column {
+  break-inside: avoid;
+  /* `inline-block` + full width is the old trick that makes break-inside
+     actually hold in every engine, and it also stops a heading's top margin
+     collapsing out of the column box. */
+  display: inline-block;
+  width: 100%;
+  margin-bottom: var(--space-12);
 }
 
 .nb-cheat-heading {
@@ -734,19 +764,31 @@
   color: var(--ink-accent);
   border-bottom: 1px dashed var(--ink-line-soft);
   padding-bottom: 3px;
-  margin-bottom: var(--space-8);
   transform: rotate(-0.4deg);
+}
+
+/* Where this group's keys work, under its heading. Nunito Sans, because it is
+   micro-copy below the handwriting floor. */
+.nb-cheat-where {
+  font-size: var(--text-ui-xs);
+  color: var(--ink-sepia-soft);
+  margin: 2px 0 var(--space-8);
 }
 
 /* Grid, not flex: `min-width: 92px` let "drag page edge" and "click corner
    curl" blow past the others, so the description column started at three
-   different x positions down each column. One fixed key column = one edge. */
+   different x positions down each column. One fixed key column = one edge.
+   128px, not 118: the caps carry a rebindable combo AND the unrebindable key
+   it also answers to ("Ctrl+/ · ?"), which is the longest thing here. */
 .nb-cheat-row {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
+  grid-template-columns: 128px minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-8);
-  margin: 5px 0;
+  /* 3px, not 5: thirty-six rows in three columns, and the tallest column has
+     to clear the card's max-height or the last group ends up behind a scroll
+     nobody looks for on a reference card. */
+  margin: 3px 0;
 }
 
 .nb-cheat-keys {
@@ -774,7 +816,7 @@
 .nb-cheat-footnote {
   text-align: center;
   color: var(--ink-sepia-soft);
-  margin-top: var(--space-16);
+  margin-top: var(--space-12);
   padding-top: var(--space-8);
   border-top: 1px dashed var(--ink-line-soft);
 }

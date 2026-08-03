@@ -221,6 +221,90 @@
 }
 
 /* ----------------------------------------------------------------------------
+   The length chooser — two cards on the greeting step.
+
+   Flat, in the app's own language: one ink hairline, a hand-cut corner radius,
+   no shading. The picked one takes the amber face the primary button uses, so
+   "this is the one you are on" is said with the same colour everywhere.
+   -------------------------------------------------------------------------- */
+
+.nbt-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-12) 0 0;
+}
+
+.nbt-choice-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  text-align: left;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 13px 6px 12px 7px / 7px 12px 6px 13px;
+  cursor: pointer;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring),
+    box-shadow calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbt-choice-btn:hover {
+  background: var(--wash-amber-light);
+  transform: translateY(-1px) rotate(-0.4deg);
+  box-shadow: var(--shadow-xs);
+}
+
+.nbt-choice-btn:active {
+  transform: translateY(1px);
+}
+
+.nbt-choice-btn.is-picked {
+  background: var(--wash-amber);
+  border-color: var(--wash-amber-deep);
+  box-shadow: var(--shadow-xs);
+}
+
+.nbt-choice-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-ui);
+}
+
+.nbt-choice-sub {
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+}
+
+.nbt-choice-btn.is-picked .nbt-choice-sub {
+  color: var(--ink-sepia);
+}
+
+/* ----------------------------------------------------------------------------
+   The wrong-turn line — "you did something, but not this step's something".
+
+   Sits directly under the task box and borrows nothing from it: dashed, quiet,
+   terracotta rather than amber, so it reads as an aside and never as a second
+   task competing with the first.
+   -------------------------------------------------------------------------- */
+
+.nbt-nudge {
+  margin: var(--space-8) 0 0;
+  padding: 6px 10px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  line-height: 1.45;
+  color: var(--wash-terracotta-deep);
+  background: rgba(201, 111, 74, 0.16);
+  border: 1px dashed var(--wash-terracotta-deep);
+  border-radius: 11px 5px 10px 6px / 6px 10px 5px 11px;
+}
+
+/* ----------------------------------------------------------------------------
    The task box — "do this, and I will tell you when I have seen you do it".
 
    This is the load-bearing element of the whole tour, so it is the loudest
@@ -348,10 +432,15 @@
   padding-bottom: var(--space-4);
 }
 
+/* The full rundown is twenty steps and the card is 348px wide, so the row
+   WRAPS — a single line of dots overflowed the card and the last few were
+   simply unreachable. `bottom` above still clears the actions row; a wrapped
+   second line grows upward from it. */
 .nbt-dots {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 3px;
+  gap: 3px 2px;
   margin: var(--space-16) 0 var(--space-12);
   padding: 0;
 }

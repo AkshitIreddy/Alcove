@@ -1168,11 +1168,27 @@ the app quietly assumes one bookcase.
 - [ ] **The trash is one drawer for the whole library.** `listTrashedBooksIn`
       exists if it should be per-case; the panel passes the parameterless
       version straight to `createResource`
-- [ ] **Moving a book between cases repaints it** when it has no studio style
+- [x] **Moving a book between cases repaints it** when it has no studio style
       override, because un-overridden spines follow the room. Inherent to the
       existing design rather than new — but a book dragged into a
       differently-themed case changes colour, which is the one thing that stops
-      you recognising it
+      you recognising it.
+      **The guard is built and the concern is currently unreachable.**
+      `moveBookToBookcase` takes `keepAppearance` and freezes the resolved
+      style BEFORE the move — deliberately in that order, so a half-failed move
+      cannot leave the book already in the new room wearing the new room's
+      colours. It also only freezes when the book has no explicit style, so a
+      reader who dressed a book is not overridden.
+      What the audit turned up: **the function has no caller outside a test.**
+      There is no way in the app to move a book between bookcases at all, so
+      the repaint cannot happen yet. That is the real gap, and it is the next
+      item rather than this one.
+- [ ] **There is no way to move a book between bookcases.** `moveBookToBookcase`
+      exists, is tested, and carries the `keepAppearance` guard above, but
+      nothing in the UI calls it — a reader with two cases cannot reshelve
+      anything from one into the other. Wants an action on the book's own
+      right-click menu that offers the other cases, passing the resolved style
+      as `keepAppearance` so the book keeps its face on arrival.
 
 ## 🔩 Found while making the tree green
 

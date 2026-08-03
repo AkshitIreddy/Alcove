@@ -1,4 +1,4 @@
-public/sounds — built by scripts/gen-sounds.mjs from real recordings.
+public/sounds â€” built by scripts/gen-sounds.mjs from real recordings.
 Provenance and licences: CREDITS.json and docs/design/sound.md.
 
 name                      ms    peakDb  centroid   >4kHz%  maxStep%
@@ -19,11 +19,11 @@ book-return-4            770       -10      1421     0.27      17.9
 shelf-whoosh             600       -21      1101      0.1      10.1
 shelf-whoosh-2           800       -21      1087     0.05      13.7
 shelf-whoosh-3           620       -21      1095     0.09      13.5
-pop-soft                 300       -14       358        0       4.1
-pop-soft-2               380       -14      1433        0      21.1
-pop-soft-3               300       -14       427        0       4.5
-pop-soft-4               400       -14      1251        0      18.8
-pop-soft-5               290       -14       487        0         7
+pop-soft                 300       -14      1601     0.44      14.1
+pop-soft-2               340       -14      1605     0.12      15.4
+pop-soft-3               300       -14      1314     0.62      18.6
+pop-soft-4               320       -14      1603     0.26       6.8
+pop-soft-5               300       -14      1640     0.28      14.1
 click-soft               140       -19      1369     0.18      16.9
 click-soft-2             170       -19       909     0.03       3.3
 click-soft-3             130       -19      1004     0.07      18.5

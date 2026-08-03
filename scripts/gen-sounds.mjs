@@ -1,5 +1,5 @@
-/**
- * scripts/gen-sounds.mjs — builds public/sounds/ from real, licensed recordings.
+﻿/**
+ * scripts/gen-sounds.mjs â€” builds public/sounds/ from real, licensed recordings.
  *
  *   node scripts/gen-sounds.mjs
  *
@@ -10,22 +10,22 @@
  *
  * PLATFORM: plain Node plus ffmpeg, on any OS. The zip reader used to shell
  * out to PowerShell's .NET assemblies, which made this the build's one
- * Windows-only step — fine for a Tauri/Windows app right up until CI runs
+ * Windows-only step â€” fine for a Tauri/Windows app right up until CI runs
  * Linux. It reads the central directory with `node:zlib` now (see
  * `unzipMember`). ffmpeg stays: decoding mp3/ogg needs a decoder, and it is
- * a build-time dependency only — nothing ships with it.
+ * a build-time dependency only â€” nothing ships with it.
  *
- * ─────────────────────────────────────────────────────────────────────────
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * WHY THIS FILE NO LONGER SYNTHESIZES ANYTHING
- * ─────────────────────────────────────────────────────────────────────────
- * It used to. Every cue was rendered from scratch — layered noise, struck
- * resonators, an 8-line FDN room — and it was tuned twice against review
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * It used to. Every cue was rendered from scratch â€” layered noise, struck
+ * resonators, an 8-line FDN room â€” and it was tuned twice against review
  * feedback ("very rough, low quality", then "very bad"). The second pass
  * measured a 779 Hz mean spectral centroid with essentially nothing above
  * 4 kHz, i.e. it had comprehensively won the argument it was having about
  * brightness, and the result was still rejected. That falsifies the premise
  * rather than the tuning: what was missing is not a filter setting but the
- * irregularity of a real object being handled — no two page turns sharing an
+ * irregularity of a real object being handled â€” no two page turns sharing an
  * envelope, a book shutting with a body resonance no oscillator was asked to
  * model. So a third synthesis pass was not attempted.
  *
@@ -34,9 +34,9 @@
  * file is in SOURCES below, is re-emitted to public/sounds/CREDITS.json on
  * every build, and is written up in docs/design/sound.md.
  *
- * ─────────────────────────────────────────────────────────────────────────
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * THE ONE PROCESSING IDEA: WARM ONLY AS MUCH AS IS NEEDED
- * ─────────────────────────────────────────────────────────────────────────
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * A close-miked page turn measures a 5-7 kHz spectral centroid. That is too
  * bright and too present for an app you sit inside all day, and the house
  * style is a quiet room. But a fixed "warm it up" EQ is how the synthesized
@@ -47,7 +47,7 @@
  * under its own centroid ceiling (fitWarmth) and stops there. A recording
  * that is already warm is left nearly alone; only the bright ones are pulled
  * down, and only as far as the ceiling. That keeps the transient structure
- * and the per-take variation — the part synthesis could not fake — while
+ * and the per-take variation â€” the part synthesis could not fake â€” while
  * still landing the whole set in one room.
  */
 
@@ -65,7 +65,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(HERE, '..', 'public', 'sounds');
 const CACHE_DIR = join(tmpdir(), 'notebook-sound-sources');
 
-/* ═════════════════════════════════ sources ═════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• sources â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /**
  * Every recording this app is built from, with the provenance that makes it
@@ -74,8 +74,8 @@ const CACHE_DIR = join(tmpdir(), 'notebook-sound-sources');
  *
  * Two rules were applied while sourcing, and both rejected candidates:
  *   - The licence has to be asserted by someone in a position to grant it.
- *     archive.org carries commercial SFX libraries — and outright console
- *     game rips — re-uploaded with a CC0 tag by people who plainly do not own
+ *     archive.org carries commercial SFX libraries â€” and outright console
+ *     game rips â€” re-uploaded with a CC0 tag by people who plainly do not own
  *     them; none of that is used here regardless of how good it sounds.
  *   - The site has to permit automated access. freesound.org has by far the
  *     best CC0 catalogue for this brief, and its robots.txt disallows
@@ -119,15 +119,70 @@ const SOURCES = {
     member: 'book_flip.%d.ogg',
     zip: true,
   },
-  kenney: {
-    title: 'Interface Sounds (1.0)',
-    author: 'Kenney (kenney.nl)',
-    licence: 'CC0 1.0',
-    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
-    page: 'https://opengameart.org/content/interface-sounds',
-    url: 'https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip',
-    member: '%s.ogg',
-    zip: true,
+  /*
+   * THE FIVE RECORDINGS THAT REPLACED THE SYNTHESISED `pop-soft` FAMILY.
+   *
+   * `pop-soft` is the most-used role in the app by call count, and it was cut
+   * from Kenney's *Interface Sounds* â€” synthesised game-UI blips, and the only
+   * non-recorded material in the whole set. That contradicted this file's own
+   * header and docs/design/sound.md, both of which say nothing here is
+   * synthesised, and it was shipping the exact thing the owner rejected twice.
+   *
+   * The measurements found it without anyone listening: those five were the
+   * only cues in all sixty-six with a >4 kHz share of exactly 0.00%. A
+   * filtered synthetic tone has no noise floor; a recording always has one.
+   * The family was also internally incoherent â€” the two "question" members sat
+   * 3-4x brighter than their three siblings, so the rotation audibly
+   * alternated between two different instruments.
+   *
+   * These five are real objects being handled, which is the quality two
+   * synthesis passes could not produce: a drawer stop, wooden dolls coming
+   * apart, a sprung lid, a shell giving way. All public domain.
+   */
+  drawer: {
+    title: 'Wooden desk drawer',
+    author: 'hugh (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Wooden_desk_drawer.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/6/67/Wooden_desk_drawer.ogg',
+    origin: 'http://www.pdsounds.org/sounds/wooden_desk_drawer',
+  },
+  dollsOpen: {
+    title: 'Russian dolls opening',
+    author: 'ezwa (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Russian_dolls_opening.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Russian_dolls_opening.ogg',
+    origin: 'http://www.pdsounds.org/sounds/russian_dolls_opening',
+  },
+  dollsClose: {
+    title: 'Russian dolls closing',
+    author: 'ezwa (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Russian_dolls_closing.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/5/52/Russian_dolls_closing.ogg',
+    origin: 'http://www.pdsounds.org/sounds/russian_dolls_closing',
+  },
+  metalBox: {
+    title: 'Metal box springs open',
+    author: 'stephan (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Metal_box_springs_open.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/7/7a/Metal_box_springs_open.ogg',
+    origin: 'http://www.pdsounds.org/sounds/metal_box_springs_open',
+  },
+  peanuts: {
+    title: 'Cracking peanuts',
+    author: 'stephan (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Cracking_peanuts.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/8/88/Cracking_peanuts.ogg',
+    origin: 'http://www.pdsounds.org/sounds/cracking_peanuts',
   },
   bell: {
     title: 'Bell dings/chimes',
@@ -167,16 +222,16 @@ const SOURCES = {
     // the set carries an obligation; the in-app credits panel reads this flag
     // out of CREDITS.json rather than hard-coding the sentence.
     attribution: true,
-    attributionNote: 'Rain on Window Loop by alxl (OpenGameArt) — CC BY 4.0',
+    attributionNote: 'Rain on Window Loop by alxl (OpenGameArt) â€” CC BY 4.0',
   },
 
-  /* ── the soundscape beds ──────────────────────────────────────────────────
+  /* â”€â”€ the soundscape beds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    * Wikimedia Commons rather than the recordists' own sites: Commons carries
    * a reviewed licence template per file, serves upload.wikimedia.org to
    * automated clients, and (for the two freesound mirrors below) preserves the
    * CC0 the recordist chose there without us touching a site whose robots.txt
    * says no. Every one of these is a single continuous field recording, which
-   * is what an ambience bed has to be — the loop that got cut was a synthesized
+   * is what an ambience bed has to be â€” the loop that got cut was a synthesized
    * "room tone" and it read as a haunting.
    */
   wind: {
@@ -234,7 +289,7 @@ const SOURCES = {
   },
 };
 
-/* ══════════════════════════════ fetch + decode ══════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• fetch + decode â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /**
  * Wikimedia's policy asks automated clients to identify themselves and give a
@@ -267,8 +322,8 @@ const safeName = (s) => s.replace(/[^a-z0-9.]+/gi, '_');
  * Decode anything ffmpeg understands into mono 44.1 kHz **32-bit float**.
  *
  * Float, not the 16-bit the cues ship at, because the field recordings behind
- * the soundscapes are quiet: the stream measures −59 dBFS RMS and the woodland
- * −47. Quantizing those to 16 bits before conditioning leaves five or six
+ * the soundscapes are quiet: the stream measures âˆ’59 dBFS RMS and the woodland
+ * âˆ’47. Quantizing those to 16 bits before conditioning leaves five or six
  * usable bits, and the 25 dB of make-up gain that `normalizeTo` then applies
  * brings the quantization floor up with the water. Decoding to float costs
  * disk in a cache that is thrown away and nothing else.
@@ -280,14 +335,14 @@ function decode(src, dest) {
       '-c:a', 'pcm_f32le', dest], { stdio: 'pipe' });
   } catch (err) {
     // ENOENT here means ffmpeg is not on PATH, and the raw failure is a spawn
-    // error naming a file in a temp cache — which reads as "the download is
+    // error naming a file in a temp cache â€” which reads as "the download is
     // corrupt" and sends you looking in the wrong place entirely. Anything else
     // is a real decode failure and is rethrown untouched.
     if (err?.code === 'ENOENT') {
       throw new Error(
         'ffmpeg is not on PATH.\n\n' +
         '  `npm run sounds` rebuilds every cue from source recordings and uses\n' +
-        '  ffmpeg to decode them. It is a BUILD-TIME dependency only — the app\n' +
+        '  ffmpeg to decode them. It is a BUILD-TIME dependency only â€” the app\n' +
         '  ships the finished .wav files in public/sounds and does not need it.\n\n' +
         '  Install it (winget install Gyan.FFmpeg), or skip this script: the\n' +
         '  cues in public/sounds are committed and already current.',
@@ -302,9 +357,9 @@ function decode(src, dest) {
  * Pull one member out of a cached zip.
  *
  * Node's own zlib, not PowerShell. This used to shell out to
- * `powershell -Command … [IO.Compression.ZipFile]::OpenRead(…)`, which is
+ * `powershell -Command â€¦ [IO.Compression.ZipFile]::OpenRead(â€¦)`, which is
  * fine on the machine this app ships from and simply does not run anywhere
- * else — the build's only Windows-only step, and the one thing that would
+ * else â€” the build's only Windows-only step, and the one thing that would
  * have stopped `npm run sounds` on a Linux CI box. `zlib.inflateRawSync` is
  * built into Node, so this is now the same code on every platform and one
  * fewer process per member.
@@ -344,7 +399,7 @@ function unzipMember(zipPath, member, destDir) {
     const localAt = buf.readUInt32LE(p + 42);
     const name = buf.toString('utf8', p + 46, p + 46 + nameLen);
 
-    // Match on the BASENAME, which is what the old PowerShell `$_.Name` did —
+    // Match on the BASENAME, which is what the old PowerShell `$_.Name` did â€”
     // the SOURCES table names members without their directory.
     if (name === member || name.split('/').pop() === member) {
       // The local header's own name/extra lengths decide where the bytes
@@ -396,9 +451,9 @@ async function load(key, arg) {
   return samples;
 }
 
-/* ═══════════════════════════════ WAV I/O ═══════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• WAV I/O â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** Read a mono RIFF/WAVE file — 16-bit PCM or 32-bit IEEE float — as floats. */
+/** Read a mono RIFF/WAVE file â€” 16-bit PCM or 32-bit IEEE float â€” as floats. */
 function readWav(path) {
   const file = readFileSync(path);
   const ab = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
@@ -415,7 +470,7 @@ function readWav(path) {
     if (id === 'fmt ') {
       format = view.getUint16(off + 8, true);
       bits = view.getUint16(off + 22, true);
-      // WAVE_FORMAT_EXTENSIBLE — which is what ffmpeg writes for float — puts
+      // WAVE_FORMAT_EXTENSIBLE â€” which is what ffmpeg writes for float â€” puts
       // the real format code in the first two bytes of the SubFormat GUID.
       if (format === 0xfffe && size >= 40) format = view.getUint16(off + 32, true);
     } else if (id === 'data') {
@@ -462,7 +517,7 @@ function writeWav(path, x, rng) {
   b.write('data', 36, 'ascii');
   b.writeUInt32LE(n * 2, 40);
   for (let i = 0; i < n; i++) {
-    const dither = (rng() + rng() - 1) * 0.5; // TPDF, ±0.5 LSB
+    const dither = (rng() + rng() - 1) * 0.5; // TPDF, Â±0.5 LSB
     let v = Math.round(Math.max(-1, Math.min(1, x[i])) * 32767 + dither);
     if (v > 32767) v = 32767;
     if (v < -32768) v = -32768;
@@ -481,7 +536,7 @@ function mulberry32(seed) {
   };
 }
 
-/* ══════════════════════════════ RBJ biquads ══════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• RBJ biquads â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function lowpassCoeffs(f0, q = 0.707) {
   const w0 = (TWO_PI * Math.min(f0, SR * 0.45)) / SR;
@@ -540,7 +595,7 @@ function filtfilt(x, c) {
   return Float64Array.from(rev).reverse();
 }
 
-/* ═══════════════════════════════ measurement ═══════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• measurement â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function fft(re, im) {
   const n = re.length;
@@ -614,7 +669,7 @@ function rmsDb(x, from, to) {
   return 20 * Math.log10(Math.max(Math.sqrt(s / Math.max(1, to - from)), 1e-9));
 }
 
-/** Largest adjacent-sample jump as a share of peak — a click's signature. */
+/** Largest adjacent-sample jump as a share of peak â€” a click's signature. */
 function maxStepShare(x) {
   const peak = peakOf(x);
   let max = 0;
@@ -625,7 +680,7 @@ function maxStepShare(x) {
   return max / Math.max(peak * 32768, 1);
 }
 
-/* ═══════════════════════════════ shaping ═══════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• shaping â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function normalizeTo(x, targetDb) {
   const p = peakOf(x);
@@ -636,7 +691,7 @@ function normalizeTo(x, targetDb) {
   return out;
 }
 
-/** Raised-cosine fades to exact zero at both ends — the anti-click primitive. */
+/** Raised-cosine fades to exact zero at both ends â€” the anti-click primitive. */
 function fadeEdges(x, inMs, outMs) {
   const out = Float64Array.from(x);
   const fi = Math.min(out.length, Math.max(1, Math.round((inMs / 1000) * SR)));
@@ -739,8 +794,8 @@ const LIDS = [9000, 8000, 7000, 6000, 5000, 4200, 3500, 3000, 2500, 2000, 1600];
  *
  * Two things go wrong when you keep a real recording's top end, and both are
  * measurable. Energy above 4 kHz is what reads as hiss on a cue heard all day.
- * And the largest adjacent-sample jump — which for a sinusoid is 2πfA/SR, i.e.
- * proportional to frequency — is what reads as a click: a transient whose peak
+ * And the largest adjacent-sample jump â€” which for a sinusoid is 2Ï€fA/SR, i.e.
+ * proportional to frequency â€” is what reads as a click: a transient whose peak
  * IS its high-frequency content jumps most of full scale between samples.
  *
  * Both fall as the lid comes down, so rather than picking one lid for
@@ -749,8 +804,8 @@ const LIDS = [9000, 8000, 7000, 6000, 5000, 4200, 3500, 3000, 2500, 2000, 1600];
  * material gets filtered hard; a book thump that was never bright keeps its
  * 9 kHz lid and is left alone.
  *
- * `centroidMin` guards the other direction — a page turn that lands under
- * ~900 Hz has stopped sounding like paper — and is reported rather than
+ * `centroidMin` guards the other direction â€” a page turn that lands under
+ * ~900 Hz has stopped sounding like paper â€” and is reported rather than
  * silently accepted, because that means no lid satisfies the cue.
  */
 function fitVoicing(x, {
@@ -771,7 +826,7 @@ function fitVoicing(x, {
     if (step <= maxStep && highShare <= maxHighShare) {
       if (centroid < centroidMin) {
         console.warn(`  ! ${name}: clean at ${lid} Hz but centroid ${Math.round(centroid)} Hz `
-          + `is under the ${centroidMin} Hz floor — source is too dull for this cue`);
+          + `is under the ${centroidMin} Hz floor â€” source is too dull for this cue`);
       }
       return y;
     }
@@ -809,12 +864,12 @@ function condition(x, {
   return normalizeTo(y, peakDb);
 }
 
-/* ═══════════════════════════════ the cues ═══════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• the cues â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /*
  * Timings are seconds into the decoded source, read off an onset analysis of
  * each recording; snapOnset() then walks each one to the exact attack. Where a
- * family draws on two different recordings that is deliberate — variant
+ * family draws on two different recordings that is deliberate â€” variant
  * rotation is only worth having if the takes differ in body, not just in seed.
  *
  * `centroidMax` is the warmth ceiling the cue is fitted to and the main
@@ -823,11 +878,11 @@ function condition(x, {
  * constantly. `peakDb` sets the loudness hierarchy directly.
  *
  * The plain/full split has to agree with VARIANT_WEIGHTS in src/sound/engine.ts,
- * where `full` means the longer, more textured take — so within each family
+ * where `full` means the longer, more textured take â€” so within each family
  * the `full` entries are cut longer.
  */
 const CUES = [
-  /* ── page turns: the signature cue, so these keep the most air ── */
+  /* â”€â”€ page turns: the signature cue, so these keep the most air â”€â”€ */
   // Take 8 of the StarNinjas set, not the Old-book slice that used to be here:
   // that slice measured a 1317 Hz centroid against 1846-1860 for the rest of
   // the family, i.e. it was audibly the thud among five sheets of paper, and
@@ -840,68 +895,74 @@ const CUES = [
   { name: 'page-flip-5', src: ['bookPaper'], at: 13.03, dur: 0.31, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
   { name: 'page-flip-6', src: ['flips', 4], at: 0.02, dur: 0.43, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
 
-  /* ── pulling a book out: pages riffling past each other ── */
+  /* â”€â”€ pulling a book out: pages riffling past each other â”€â”€ */
   { name: 'book-pull', src: ['oldBook'], at: 4.70, dur: 0.64, centroidMax: 1500, peakDb: -10 },
   { name: 'book-pull-2', src: ['oldBook'], at: 7.31, dur: 0.78, centroidMax: 1500, peakDb: -10 },
   { name: 'book-pull-3', src: ['oldBook'], at: 6.30, dur: 0.65, centroidMax: 1500, peakDb: -10 },
   { name: 'book-pull-4', src: ['bookPaper'], at: 2.23, dur: 0.76, centroidMax: 1500, peakDb: -10 },
 
-  /* ── putting one back ── */
+  /* â”€â”€ putting one back â”€â”€ */
   { name: 'book-return', src: ['oldBook'], at: 68.10, dur: 0.64, centroidMax: 1400, peakDb: -10 },
   { name: 'book-return-2', src: ['oldBook'], at: 69.14, dur: 0.79, centroidMax: 1400, peakDb: -10 },
   { name: 'book-return-3', src: ['oldBook'], at: 62.80, dur: 0.66, centroidMax: 1400, peakDb: -10 },
   { name: 'book-return-4', src: ['bookPaper'], at: 25.30, dur: 0.77, centroidMax: 1400, peakDb: -10 },
 
-  /* ── camera moves: a long riffle, warmed hard and kept well down ── */
+  /* â”€â”€ camera moves: a long riffle, warmed hard and kept well down â”€â”€ */
   { name: 'shelf-whoosh', src: ['bookPaper'], at: 8.34, dur: 0.60, centroidMax: 1100, peakDb: -21 },
   { name: 'shelf-whoosh-2', src: ['bookPaper'], at: 19.10, dur: 0.80, centroidMax: 1100, peakDb: -21 },
   { name: 'shelf-whoosh-3', src: ['bookPaper'], at: 10.54, dur: 0.62, centroidMax: 1100, peakDb: -21 },
 
-  /* ── menus and panels ── */
-  { name: 'pop-soft', src: ['kenney', 'maximize_006'], at: 0.0, dur: 0.30, centroidMax: 1600, peakDb: -14, snap: false },
-  { name: 'pop-soft-2', src: ['kenney', 'question_001'], at: 0.0, dur: 0.38, centroidMax: 1600, peakDb: -14, snap: false },
-  { name: 'pop-soft-3', src: ['kenney', 'minimize_006'], at: 0.0, dur: 0.30, centroidMax: 1600, peakDb: -14, snap: false },
-  { name: 'pop-soft-4', src: ['kenney', 'confirmation_004'], at: 0.0, dur: 0.40, centroidMax: 1600, peakDb: -14, snap: false },
-  { name: 'pop-soft-5', src: ['kenney', 'question_004'], at: 0.0, dur: 0.29, centroidMax: 1600, peakDb: -14, snap: false },
+  /* â”€â”€ menus and panels â”€â”€ */
+  /*
+   * Five real objects, replacing five synthesised blips. `snap: true` because
+   * these are contact events with an actual transient to find â€” the old
+   * synthetic ones had none, which is why they were cut from 0.0 flat.
+   * `centroidMax` stays 1600: a panel arriving should still be soft.
+   */
+  { name: 'pop-soft', src: ['drawer'], at: 0.55, dur: 0.30, centroidMax: 1600, peakDb: -14, snap: true },
+  { name: 'pop-soft-2', src: ['dollsOpen'], at: 1.20, dur: 0.34, centroidMax: 1600, peakDb: -14, snap: true },
+  { name: 'pop-soft-3', src: ['metalBox'], at: 0.10, dur: 0.30, centroidMax: 1600, peakDb: -14, snap: true },
+  { name: 'pop-soft-4', src: ['dollsClose'], at: 0.90, dur: 0.32, centroidMax: 1600, peakDb: -14, snap: true },
+  { name: 'pop-soft-5', src: ['peanuts'], at: 0.35, dur: 0.30, centroidMax: 1600, peakDb: -14, snap: true },
 
-  /* ── buttons: a fingertip landing on a board cover ──
+  /* â”€â”€ buttons: a fingertip landing on a board cover â”€â”€
    * Every button in the app fires this, so it has to be the least eventful
    * thing in the set that is still unmistakably a response: ~140 ms, no ring,
    * and 5 dB under `pop-soft` so opening a panel still reads as the bigger
-   * gesture. These four are real taps from the Old-book recording — the same
-   * physical object the shelf cues come from — rather than a synthesized blip,
+   * gesture. These four are real taps from the Old-book recording â€” the same
+   * physical object the shelf cues come from â€” rather than a synthesized blip,
    * which is why they can sit this quiet and still register. */
   { name: 'click-soft', src: ['oldBook'], at: 5.679, dur: 0.14, centroidMax: 1300, peakDb: -19, fadeOutMs: 70 },
   { name: 'click-soft-2', src: ['oldBook'], at: 6.789, dur: 0.17, centroidMax: 1300, peakDb: -19, fadeOutMs: 80 },
   { name: 'click-soft-3', src: ['oldBook'], at: 7.512, dur: 0.13, centroidMax: 1300, peakDb: -19, fadeOutMs: 70 },
   { name: 'click-soft-4', src: ['oldBook'], at: 11.306, dur: 0.16, centroidMax: 1300, peakDb: -19, fadeOutMs: 80 },
 
-  /* ── hover: graphite on paper, by far the quietest thing here ── */
+  /* â”€â”€ hover: graphite on paper, by far the quietest thing here â”€â”€ */
   { name: 'tick-hover', src: ['pencil'], at: 6.10, dur: 0.14, centroidMax: 1500, peakDb: -27, snap: false },
   { name: 'tick-hover-2', src: ['pencil'], at: 12.40, dur: 0.17, centroidMax: 1500, peakDb: -27, snap: false },
   { name: 'tick-hover-3', src: ['pencil'], at: 20.70, dur: 0.13, centroidMax: 1500, peakDb: -27, snap: false },
   { name: 'tick-hover-4', src: ['pencil'], at: 31.20, dur: 0.18, centroidMax: 1500, peakDb: -27, snap: false },
   { name: 'tick-hover-5', src: ['pencil'], at: 44.60, dur: 0.13, centroidMax: 1500, peakDb: -27, snap: false },
 
-  /* ── ticking a box: a small bell allowed to ring out ── */
+  /* â”€â”€ ticking a box: a small bell allowed to ring out â”€â”€ */
   { name: 'check-done', src: ['bell', 3], at: 0.0, dur: 0.90, centroidMax: 1500, peakDb: -10, fadeOutMs: 220 },
   { name: 'check-done-2', src: ['bell', 4], at: 0.0, dur: 1.02, centroidMax: 1500, peakDb: -10, fadeOutMs: 240 },
   { name: 'check-done-3', src: ['bell', 2], at: 0.0, dur: 0.92, centroidMax: 1500, peakDb: -10, fadeOutMs: 220 },
   { name: 'check-done-4', src: ['bell', 1], at: 0.0, dur: 1.04, centroidMax: 1500, peakDb: -10, fadeOutMs: 240 },
 
-  /* ── deleting: paper being crushed ── */
+  /* â”€â”€ deleting: paper being crushed â”€â”€ */
   { name: 'crumple-delete', src: ['bookPaper'], at: 5.10, dur: 0.70, centroidMax: 1500, peakDb: -12 },
   { name: 'crumple-delete-2', src: ['bookPaper'], at: 15.04, dur: 0.88, centroidMax: 1500, peakDb: -12 },
   { name: 'crumple-delete-3', src: ['bookPaper'], at: 6.97, dur: 0.72, centroidMax: 1500, peakDb: -12 },
   { name: 'crumple-delete-4', src: ['bookPaper'], at: 17.72, dur: 0.86, centroidMax: 1500, peakDb: -12 },
 
-  /* ── landing: the book meeting a surface ── */
+  /* â”€â”€ landing: the book meeting a surface â”€â”€ */
   { name: 'drop-thump', src: ['oldBook'], at: 71.10, dur: 0.52, centroidMax: 900, peakDb: -10, fadeOutMs: 140 },
   { name: 'drop-thump-2', src: ['oldBook'], at: 58.16, dur: 0.62, centroidMax: 900, peakDb: -10, fadeOutMs: 160 },
   { name: 'drop-thump-3', src: ['bookPaper'], at: 27.40, dur: 0.50, centroidMax: 900, peakDb: -10, fadeOutMs: 140 },
   { name: 'drop-thump-4', src: ['bookPaper'], at: 34.10, dur: 0.60, centroidMax: 900, peakDb: -10, fadeOutMs: 160 },
 
-  /* ── celebration: one strike sounded a few times, not a jingle ── */
+  /* â”€â”€ celebration: one strike sounded a few times, not a jingle â”€â”€ */
   { name: 'confetti', src: ['bell', 4], at: 0.0, dur: 0.95, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.09, 0.19] },
   { name: 'confetti-2', src: ['bell', 3], at: 0.0, dur: 1.05, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.07, 0.16, 0.26] },
   { name: 'confetti-3', src: ['bell', 2], at: 0.0, dur: 0.92, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.11, 0.21] },
@@ -925,7 +986,7 @@ const TYPING = [
  * the loop point announces itself) and the head/tail level ratio (the
  * crossfade hides a small mismatch, not a big one). The winners run 5-17%
  * coefficient of variation. `shore` is the exception at ~39% and gets a 12 s
- * window instead of 8, because waves ARE the variation — squeeze them into
+ * window instead of 8, because waves ARE the variation â€” squeeze them into
  * eight seconds and the swell turns into a pulse you can set a metronome to.
  *
  * A `layers` bed is mixed from more than one recording before conditioning;
@@ -938,7 +999,7 @@ const LOOPS = [
   { name: 'ambient-crickets', src: ['crickets'], at: 1.5, ms: 8000, centroidMax: 1300, peakDb: -22, fade: 1.2 },
   { name: 'ambient-storm', src: ['storm'], at: 56.0, ms: 8000, centroidMax: 1400, peakDb: -20, fade: 1.2 },
   // 104 s, not the steadiest window at 34 s: that one holds a 921 Hz resonance
-  // 17 dB above its neighbours — a building whistling — and a whistle that
+  // 17 dB above its neighbours â€” a building whistling â€” and a whistle that
   // survives an 8 s loop is a kettle, not weather. Every window's strongest
   // narrow peak was measured; the ones that score ~10 dB put it up at 5.4 kHz
   // instead, where the 950 Hz centroid fit buries it anyway.
@@ -949,7 +1010,7 @@ const LOOPS = [
   { name: 'ambient-shore', src: ['shore'], at: 16.0, ms: 12000, centroidMax: 1300, peakDb: -20, fade: 1.6 },
   {
     // Crickets alone is already a bed; night is the same field with weather in
-    // it — the wind sits 9 dB under and is warmed to nothing but movement, so
+    // it â€” the wind sits 9 dB under and is warmed to nothing but movement, so
     // the loop breathes on a period that has no common factor with the
     // crickets' own. Twelve seconds because two layers repeat more audibly
     // than one.
@@ -966,10 +1027,10 @@ const LOOPS = [
  * The hour chime is a sequence, not a sample: a real hour bell strikes several
  * times. Three or four strikes of one recording at falling level, spaced so the
  * tails overlap, reaches the ~6 s the cue wants without stretching or looping a
- * single hit — both of which are audible on a bell.
+ * single hit â€” both of which are audible on a bell.
  */
 const CHIMES = [
-  // A different bell each — two variants built from the same strike would be
+  // A different bell each â€” two variants built from the same strike would be
   // near-identical for their first two seconds, which is neither useful
   // variation nor distinguishable to a listener.
   { name: 'chime-hour', bell: 3, strikes: [0, 1.55, 3.1], total: 6.0 },
@@ -977,7 +1038,7 @@ const CHIMES = [
   { name: 'chime-hour-3', bell: 1, strikes: [0, 1.5, 3.0, 4.4], total: 6.3 },
 ];
 
-/* ═══════════════════════════════ the build ═══════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• the build â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function slice(x, at, dur, snap = true) {
   const want = Math.round(dur * SR);
@@ -1055,13 +1116,13 @@ async function build() {
   /* keystrokes */
   for (const t of TYPING) {
     const raw = await load('pencil');
-    // −18 dB, not the −21 these shipped at, and the engine's velocity floor
-    // came up from 0.45 to 0.6 alongside — review reported the ticks as
-    // inaudible. Peak was the wrong dial to read them by: at −21 a 140 ms tick
-    // measured −33.7 dB RMS against a page turn's −31.2, and the velocity
+    // âˆ’18 dB, not the âˆ’21 these shipped at, and the engine's velocity floor
+    // came up from 0.45 to 0.6 alongside â€” review reported the ticks as
+    // inaudible. Peak was the wrong dial to read them by: at âˆ’21 a 140 ms tick
+    // measured âˆ’33.7 dB RMS against a page turn's âˆ’31.2, and the velocity
     // scaling put the quiet strokes another 7 dB down from there. The two
     // changes together are +3.9 dB at mean velocity, which lands the tick just
-    // under a page turn — audible as a keystroke, not as a typewriter.
+    // under a page turn â€” audible as a keystroke, not as a typewriter.
     emit(t.name, condition(slice(raw, t.at, t.dur, false), {
       name: t.name, centroidMax: 1600, peakDb: -18, fadeInMs: 8, fadeOutMs: 55,
     }), ['pencil']);
@@ -1096,8 +1157,8 @@ async function build() {
       peakDb: l.peakDb, cornerHz: 1400, name: l.name,
     });
     y = dcBlock(y);
-    // Loops still have to start and end at zero — nothing may click when Howler
-    // restarts them — but the fade has to be short enough not to punch an
+    // Loops still have to start and end at zero â€” nothing may click when Howler
+    // restarts them â€” but the fade has to be short enough not to punch an
     // audible hole in the seam. 5 ms is the balance: a steady bed like the
     // rain is still at only ~2% of its own level half a millisecond in (a
     // 1.5 ms fade left it at 14%, which reads as a soft thud on every loop
@@ -1134,7 +1195,7 @@ async function build() {
 
   const pad = (s, n) => String(s).padStart(n);
   const lines = [
-    'public/sounds — built by scripts/gen-sounds.mjs from real recordings.',
+    'public/sounds â€” built by scripts/gen-sounds.mjs from real recordings.',
     'Provenance and licences: CREDITS.json and docs/design/sound.md.',
     '',
     'name                      ms    peakDb  centroid   >4kHz%  maxStep%',

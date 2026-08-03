@@ -6,6 +6,23 @@ Every cue in `public/sounds/` is a **real recording** under a public-domain
 dedication or CC0, sliced to a single event and conditioned by
 `scripts/gen-sounds.mjs`. Nothing in the shipped set is synthesized.
 
+> That last sentence was **untrue for months**, and the way it was caught is
+> worth keeping. The `pop-soft` family — the most-used role in the app by call
+> count, every menu and panel — was cut from Kenney's *Interface Sounds*, which
+> are synthesised game-UI blips. So this document, and the header of
+> `gen-sounds.mjs`, both asserted a property the set did not have, while
+> shipping the exact thing the owner had rejected twice.
+>
+> No one heard it. A measurement found it: those five were the only cues in all
+> sixty-six with a **>4 kHz share of exactly 0.00%**. A filtered synthetic tone
+> has no noise floor; a recording always has one. They are five real objects
+> now — a desk drawer's stop, nested wooden dolls coming apart and seating
+> home, a sprung metal lid, a peanut shell giving way — and the same
+> measurement reads 6.8–19.9%.
+>
+> The lesson for the next pass: the set's own report is the cheapest reviewer
+> it has, and a claim in prose is not a property until something checks it.
+
 One source (the rain bed) is CC BY 4.0. **The obligation is discharged in the
 UI, not by dropping the source**: Settings → Sound → *sound credits* opens a
 panel that fetches `public/sounds/CREDITS.json` at runtime and renders every

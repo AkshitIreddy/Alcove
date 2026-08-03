@@ -1,8 +1,8 @@
 {
   "note": "Provenance for every shipped cue. Rebuild with: node scripts/gen-sounds.mjs",
-  "generated": "2026-07-31",
+  "generated": "2026-08-03",
   "attributionsRequired": [
-    "Rain on Window Loop by alxl (OpenGameArt) — CC BY 4.0"
+    "Rain on Window Loop by alxl (OpenGameArt) â€” CC BY 4.0"
   ],
   "sounds": {
     "page-flip-1": [
@@ -190,52 +190,57 @@
     ],
     "pop-soft": [
       {
-        "title": "Interface Sounds (1.0)",
-        "author": "Kenney (kenney.nl)",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/interface-sounds",
-        "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+        "title": "Wooden desk drawer",
+        "author": "hugh (via pdsounds.org)",
+        "licence": "Public domain",
+        "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-author",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Wooden_desk_drawer.ogg",
+        "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/6/67/Wooden_desk_drawer.ogg",
+        "originallyFrom": "http://www.pdsounds.org/sounds/wooden_desk_drawer"
       }
     ],
     "pop-soft-2": [
       {
-        "title": "Interface Sounds (1.0)",
-        "author": "Kenney (kenney.nl)",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/interface-sounds",
-        "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+        "title": "Russian dolls opening",
+        "author": "ezwa (via pdsounds.org)",
+        "licence": "Public domain",
+        "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-author",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Russian_dolls_opening.ogg",
+        "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/70/Russian_dolls_opening.ogg",
+        "originallyFrom": "http://www.pdsounds.org/sounds/russian_dolls_opening"
       }
     ],
     "pop-soft-3": [
       {
-        "title": "Interface Sounds (1.0)",
-        "author": "Kenney (kenney.nl)",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/interface-sounds",
-        "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+        "title": "Metal box springs open",
+        "author": "stephan (via pdsounds.org)",
+        "licence": "Public domain",
+        "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-author",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Metal_box_springs_open.ogg",
+        "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Metal_box_springs_open.ogg",
+        "originallyFrom": "http://www.pdsounds.org/sounds/metal_box_springs_open"
       }
     ],
     "pop-soft-4": [
       {
-        "title": "Interface Sounds (1.0)",
-        "author": "Kenney (kenney.nl)",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/interface-sounds",
-        "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+        "title": "Russian dolls closing",
+        "author": "ezwa (via pdsounds.org)",
+        "licence": "Public domain",
+        "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-author",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Russian_dolls_closing.ogg",
+        "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/5/52/Russian_dolls_closing.ogg",
+        "originallyFrom": "http://www.pdsounds.org/sounds/russian_dolls_closing"
       }
     ],
     "pop-soft-5": [
       {
-        "title": "Interface Sounds (1.0)",
-        "author": "Kenney (kenney.nl)",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/interface-sounds",
-        "sourceFile": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip"
+        "title": "Cracking peanuts",
+        "author": "stephan (via pdsounds.org)",
+        "licence": "Public domain",
+        "licenceUrl": "https://commons.wikimedia.org/wiki/Template:PD-author",
+        "sourcePage": "https://commons.wikimedia.org/wiki/File:Cracking_peanuts.ogg",
+        "sourceFile": "https://upload.wikimedia.org/wikipedia/commons/8/88/Cracking_peanuts.ogg",
+        "originallyFrom": "http://www.pdsounds.org/sounds/cracking_peanuts"
       }
     ],
     "click-soft": [
@@ -581,7 +586,7 @@
         "sourcePage": "https://opengameart.org/content/rain-on-window-loop",
         "sourceFile": "https://opengameart.org/sites/default/files/rain_on_window_loop.wav",
         "attributionRequired": true,
-        "attributionText": "Rain on Window Loop by alxl (OpenGameArt) — CC BY 4.0"
+        "attributionText": "Rain on Window Loop by alxl (OpenGameArt) â€” CC BY 4.0"
       }
     ],
     "ambient-fireplace": [

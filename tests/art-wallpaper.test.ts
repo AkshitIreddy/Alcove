@@ -30,6 +30,7 @@ import { flatScheme, setFlatScheme, type FlatCtx } from '../src/art/flat';
 import { getTheme } from '../src/art/themes';
 import {
   DEFAULT_WALLPAPER_ID,
+  FALLBACK_WALLPAPER_ID,
   WALLPAPER_DEPTHS,
   WALLPAPER_EDGES,
   WALLPAPER_FAMILIES,
@@ -327,17 +328,36 @@ describe('wallpaper presets', () => {
     // choice having been discarded.
     for (const old of ['stripe-awning', 'herring-carved', 'damask-quiet', 'bird-gilt', 'moon-deep']) {
       expect(isWallpaperId(old)).toBe(true);
-      expect(getWallpaper(old).id).not.toBe(DEFAULT_WALLPAPER_ID);
+      expect(getWallpaper(old).id).not.toBe(FALLBACK_WALLPAPER_ID);
     }
   });
 
   it('falls back to the plain wall for an id it does not know', () => {
-    expect(getWallpaper('sakura-pavilion-1998').id).toBe(DEFAULT_WALLPAPER_ID);
-    expect(getWallpaper(null).id).toBe(DEFAULT_WALLPAPER_ID);
-    expect(getWallpaper(undefined).id).toBe(DEFAULT_WALLPAPER_ID);
+    expect(getWallpaper('sakura-pavilion-1998').id).toBe(FALLBACK_WALLPAPER_ID);
+    expect(getWallpaper(null).id).toBe(FALLBACK_WALLPAPER_ID);
+    expect(getWallpaper(undefined).id).toBe(FALLBACK_WALLPAPER_ID);
     expect(isWallpaperId('sakura-pavilion-1998')).toBe(false);
+    expect(isWallpaperId(FALLBACK_WALLPAPER_ID)).toBe(true);
     expect(isWallpaperId(DEFAULT_WALLPAPER_ID)).toBe(true);
-    expect(wallpaperSpec(DEFAULT_WALLPAPER_ID).pattern).toBe('plain');
+    expect(wallpaperSpec(FALLBACK_WALLPAPER_ID).pattern).toBe('plain');
+  });
+
+  /**
+   * The opening wall and the junk-resolves-to wall are DIFFERENT questions.
+   *
+   * They were one constant, and the second silently vetoed the first: giving a
+   * new library a wall that shows some of the fifty also meant a corrupted
+   * setting quietly started painting stripes. A reader whose setting went bad
+   * should get a visible nothing they can fix, not a choice they never made and
+   * cannot tell from one they did.
+   */
+  it('opens on a paper, but falls back to bare', () => {
+    expect(DEFAULT_WALLPAPER_ID).not.toBe(FALLBACK_WALLPAPER_ID);
+    // The fallback must stay the bare wall whatever the opening default becomes.
+    expect(wallpaperSpec(FALLBACK_WALLPAPER_ID).pattern).toBe('plain');
+    // …and the opening wall must actually show something, or it is not doing
+    // the job it was split out to do.
+    expect(wallpaperSpec(DEFAULT_WALLPAPER_ID).pattern).not.toBe('plain');
   });
 
   it('honours the four names settings.wallpaperPattern has been storing', () => {
@@ -347,7 +367,7 @@ describe('wallpaper presets', () => {
     expect(getWallpaper('damask').spec.pattern).toBe('damask');
     expect(getWallpaper('stars').spec.pattern).toBe('star');
     expect(getWallpaper('botanical').spec.pattern).toBe('sprig');
-    expect(getWallpaper('plain').id).toBe(DEFAULT_WALLPAPER_ID);
+    expect(getWallpaper('plain').id).toBe(FALLBACK_WALLPAPER_ID);
     expect(isWallpaperId('botanical')).toBe(true);
   });
 });

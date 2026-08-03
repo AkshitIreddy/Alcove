@@ -4627,16 +4627,32 @@ export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = [
 ];
 
 /**
- * The wallpaper a library opens with — the wall as it has always been.
+ * What an id we do not recognise resolves to.
  *
- * NOTE, before changing this again: it is doing two jobs. It is the opening
- * wall, and it is the FALLBACK an unknown id resolves to
- * (`resolveWallpaper`), which several tests pin as "junk gives you the plain
- * wall". Repointing it at a patterned paper to show the fifty off also means a
- * corrupt setting silently paints stripes, which is the wrong answer to a
- * different question. Split the two constants first, then change the default.
+ * Always the bare wall. A saved paper that has since been renamed, or a setting
+ * that got corrupted, should open on nothing rather than on a decision — a
+ * library that quietly starts wearing stripes it was never given is worse than
+ * one that opens plain and lets you choose.
  */
-export const DEFAULT_WALLPAPER_ID = 'plain-parchment';
+export const FALLBACK_WALLPAPER_ID = 'plain-parchment';
+
+/**
+ * The wallpaper a NEW library opens with.
+ *
+ * These were one constant doing two jobs, and the second job silently vetoed
+ * the first: repointing it so a new reader sees something of the fifty also
+ * repointed what a corrupt setting resolves to. Four tests pin "junk gives you
+ * the plain wall" and they are right to, so the answer is two constants rather
+ * than a compromise between them.
+ *
+ * `pin-quiet` is a hairline pinstripe — enough to say the wall is a surface
+ * somebody chose, quiet enough to sit behind a shelf of books all day. The old
+ * default said "the wall, and nothing on it", which meant a new reader saw a
+ * blank wall and none of the fifty papers until they went looking for a picker
+ * they had no reason to think existed. Plain Parchment is still first in the
+ * picker for anyone who wants the bare wall back.
+ */
+export const DEFAULT_WALLPAPER_ID = 'pin-quiet';
 
 const BY_ID = new Map(WALLPAPER_PRESETS.map((p) => [p.id, p]));
 
@@ -4683,13 +4699,18 @@ export function isWallpaperId(value: unknown): value is string {
  * Look up a preset. Unknown ids fall back to plain, the same way `getTheme`
  * falls back to the athenaeum — a library saved against a paper that has since
  * been renamed opens on a bare wall rather than failing to open.
+ *
+ * Resolves to `FALLBACK_WALLPAPER_ID`, NOT to the opening default. A reader
+ * whose setting went bad should get the bare wall, not whichever paper a new
+ * library happens to start on: the first is a visible nothing they can fix, the
+ * second is a choice they never made and cannot tell from one they did.
  */
 export function getWallpaper(id: string | null | undefined): WallpaperPreset {
-  if (id === null || id === undefined) return BY_ID.get(DEFAULT_WALLPAPER_ID)!;
+  if (id === null || id === undefined) return BY_ID.get(FALLBACK_WALLPAPER_ID)!;
   return (
     BY_ID.get(id) ??
     BY_ID.get(LEGACY_IDS[id] ?? '') ??
-    BY_ID.get(DEFAULT_WALLPAPER_ID)!
+    BY_ID.get(FALLBACK_WALLPAPER_ID)!
   );
 }
 

@@ -109,6 +109,12 @@ describe('mergeWallpaperSpec', () => {
     // Absent means auto/crisp, which is the same picture — but materialising it
     // would rewrite every stored blob and make "back to auto" unreachable once
     // the picker offers it.
+    //
+    // This held for a while by accident: the merge fell back to the DEFAULT
+    // PAPER's tone, and the default paper named none. Changing the opening wall
+    // to one that does made it start writing 'gilt' into specs nobody had given
+    // a tone. The fallback is `undefined` now, on purpose — tone and edge are
+    // properties of a particular paper, not house defaults.
     const spec = mergeWallpaperSpec({ pattern: 'trellis' });
     expect(spec.tone).toBeUndefined();
     expect(spec.edge).toBeUndefined();
@@ -118,5 +124,16 @@ describe('mergeWallpaperSpec', () => {
     const spec = mergeWallpaperSpec({ tone: 'chartreuse', edge: 42 });
     expect(spec.tone).toBeUndefined();
     expect(spec.edge).toBeUndefined();
+  });
+
+  /**
+   * The other half: a NAMED axis still has to survive, or a reader's chosen
+   * tone holds for the session and is gone tomorrow. Loosening the fallback to
+   * `undefined` is only safe while this holds.
+   */
+  it('keeps an optional axis that WAS named', () => {
+    const spec = mergeWallpaperSpec({ pattern: 'trellis', tone: 'gilt', edge: 'etched' });
+    expect(spec.tone).toBe('gilt');
+    expect(spec.edge).toBe('etched');
   });
 });

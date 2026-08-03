@@ -125,8 +125,16 @@ export function mergeWallpaperSpec(raw: unknown): WallpaperSpec {
     // have to survive the round trip. Rebuilding the spec field by field means
     // any axis missing from this list is silently dropped on the next read, so
     // a reader's chosen tone would hold for the session and be gone tomorrow.
-    tone: optEnum<WallpaperTone>(s.tone, WALLPAPER_TONES, d.tone),
-    edge: optEnum<WallpaperEdge>(s.edge, WALLPAPER_EDGES, d.edge),
+    //
+    // Absent falls back to ABSENT, not to the default paper's value. These are
+    // properties of a particular paper, not house defaults: a reader who picks
+    // a trellis and names no tone wants the trellis's own, and inheriting the
+    // opening paper's would give them a pinstripe's. It read as correct for as
+    // long as the default paper happened to name neither axis, and became
+    // wrong the moment one did — which is the argument for not writing a
+    // default you did not mean.
+    tone: optEnum<WallpaperTone>(s.tone, WALLPAPER_TONES, undefined),
+    edge: optEnum<WallpaperEdge>(s.edge, WALLPAPER_EDGES, undefined),
   };
 }
 

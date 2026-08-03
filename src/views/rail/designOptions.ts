@@ -14,9 +14,20 @@
 import type { BookDesign } from '../../art/bookDesign';
 import {
   BOOK_PRESETS,
+  DECORATION_LABELS,
   MATERIAL_LOOK_LABELS,
+  ROLLABLE_DECORATIONS,
+  ROLLABLE_MATERIALS,
+  ROLLABLE_SHAPES,
+  SHAPE_LABELS,
+  bookPreset,
   drawBookSpine,
+  ownBindingId,
   resolveBookDesign,
+  type Decoration,
+  type MaterialLook,
+  type OwnBinding,
+  type SpineShape,
 } from '../../art/bookDesign';
 import { flatScheme, type FlatCtx, type FlatScheme } from '../../art/flat';
 import { drawCaseCard, drawPlank, drawPost } from '../../art/flatShelf';
@@ -884,6 +895,66 @@ export function bindingOptions(book: BindingCardOptions): readonly PickerOption[
       // showing the same preset are two different pictures.
       artKey: `bind|${preset.id}|${design.cloth}|${design.accent}|${design.gilt ? 'g' : 'n'}|${design.labelAt.toFixed(2)}`,
       terms: `${preset.shape} ${preset.material} ${preset.decorations.join(' ')}`,
+      draw: (ctx: FlatCtx, w: number, h: number) => drawBindingCard(ctx, w, h, design),
+    };
+  });
+}
+
+/* ------------------------ one axis of a binding at a time ----------------- */
+
+/**
+ * The three axes as their own pickers, each holding the other two still.
+ *
+ * The 189 presets are curated whole bindings; these are for the reader who
+ * wants THIS book's shape with THAT covering. 50 × 50 × 50 cannot be a table,
+ * so a composed choice is an id (`ownBindingId`) resolved on read, and every
+ * cache key that already carried a binding id carries this one unchanged.
+ *
+ * Each list is the ROLLABLE half of its axis, not all fifty. The tiering that
+ * keeps the dice off the oddities exists per axis as well as per preset, and
+ * these three lists had been exported and gated with no consumer since — this
+ * is the consumer. The full fifty stay reachable through the preset sheet,
+ * which is where the odd ones were always meant to be found on purpose.
+ *
+ * Every tile draws the WHOLE book rebound, not a swatch of the axis: a spine
+ * shape is not a thing you can look at on its own, and the question a reader
+ * is asking is what their book would look like.
+ */
+export function ownAxisOptions(
+  book: BindingCardOptions,
+  current: OwnBinding,
+  axis: 'shape' | 'material' | 'decoration',
+): readonly PickerOption[] {
+  const values: readonly string[] =
+    axis === 'shape'
+      ? ROLLABLE_SHAPES
+      : axis === 'material'
+        ? ROLLABLE_MATERIALS
+        : // "no marks" is a real choice on this axis and not a value in the
+          // vocabulary, so it is prepended rather than filtered for later.
+          ['none', ...ROLLABLE_DECORATIONS];
+
+  return values.map((value) => {
+    const parts: OwnBinding = { ...current, [axis]: value } as OwnBinding;
+    const id = ownBindingId(parts);
+    const design = resolveBookDesign({ ...book, preset: id });
+    const preset = bookPreset(id);
+    const name =
+      axis === 'shape'
+        ? SHAPE_LABELS[value as SpineShape]
+        : axis === 'material'
+          ? MATERIAL_LOOK_LABELS[value as MaterialLook]
+          : value === 'none'
+            ? 'no marks'
+            : DECORATION_LABELS[value as Decoration];
+    return {
+      id,
+      name,
+      blurb: `${SHAPE_LABELS[preset.shape]} · ${MATERIAL_LOOK_LABELS[preset.material]}`,
+      // Keyed on the composed id, which spells out all four axes, plus the
+      // book's own colours — the same rule the whole-preset cards follow.
+      artKey: `own|${id}|${design.cloth}|${design.accent}|${design.gilt ? 'g' : 'n'}|${design.labelAt.toFixed(2)}`,
+      terms: `${name} ${value}`,
       draw: (ctx: FlatCtx, w: number, h: number) => drawBindingCard(ctx, w, h, design),
     };
   });

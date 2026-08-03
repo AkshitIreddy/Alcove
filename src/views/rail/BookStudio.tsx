@@ -57,13 +57,20 @@ import {
 import { CLOTHS } from '../../art/flat';
 import {
   BOOK_PRESETS,
+  ROLLABLE_DECORATIONS,
+  ROLLABLE_MATERIALS,
+  ROLLABLE_SHAPES,
+  SHAPE_LABELS,
   bindingMaterialFor,
   bookPreset,
   materialLookFor,
+  ownBindingId,
+  parseOwnBinding,
   presetForSeed,
   resolveBookDesign,
   type BookDesign,
   type BookPresetId,
+  type OwnBinding,
 } from '../../art/bookDesign';
 import { COVER_ASPECT, renderCoverInto } from '../../art/covers';
 import { flatSpineFor } from '../../art/flatShelf';
@@ -75,10 +82,10 @@ import {
 import { clothForPalette, renderSpine, type Ctx2D } from '../../art/spines';
 import { getTheme } from '../../art/themes';
 import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
-import DesignPicker from './DesignPicker';
+import DesignPicker, { type PickerOption } from './DesignPicker';
 import DesignStrip from './DesignStrip';
 import { DesignCanvas } from './designArt';
-import { bindingOptions, drawBindingCard } from './designOptions';
+import { bindingOptions, drawBindingCard, ownAxisOptions } from './designOptions';
 import { bookBinding, loadDesignPrefs, saveBookBinding } from '../../data/designPrefs';
 import { stopShelfKeys } from './shelfKeys';
 import '../../styles/studio.css';
@@ -129,6 +136,8 @@ export interface BookStudioProps {
 export default function BookStudio(props: BookStudioProps): JSX.Element {
   const [face, setFace] = createSignal<'spine' | 'cover'>('spine');
   const [bindingSheet, setBindingSheet] = createSignal(false);
+  /** Which single axis has its long sheet open, or null. */
+  const [axisSheet, setAxisSheet] = createSignal<'shape' | 'material' | 'decoration' | null>(null);
   // Signals rather than plain `let`s: opening the binding sheet unmounts the
   // stage and remounting it hands back NEW canvases. With a bare ref the draw
   // effect kept painting the detached ones and the reader came back to two
@@ -188,6 +197,51 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       labelAt: flatSpineFor(props.spineSeed).labelAt,
     }),
   );
+
+  /**
+   * The binding the axis pickers below are editing.
+   *
+   * A reader can arrive at those pickers from a curated preset ("Half
+   * Morocco") rather than from a composed one, so the starting point is
+   * whatever is bound NOW, decomposed — its shape, its covering, its first
+   * mark, its foil. Touching one axis then keeps the other three, which is the
+   * whole point of picking an axis at a time.
+   *
+   * `decorations[0]`, because a composed binding carries one mark and several
+   * presets carry two. Dropping the second is visible and honest — the tile
+   * shows the book you would get — where silently keeping it would make the
+   * marks picker disagree with what is on the shelf.
+   */
+  const ownParts = createMemo<OwnBinding>(() => {
+    const now = bookPreset(pinned() ?? seedBinding());
+    return {
+      shape: now.shape,
+      material: now.material,
+      decoration: now.decorations[0] ?? 'none',
+      gilt: now.gilt,
+    };
+  });
+
+  const axisOptions = (axis: 'shape' | 'material' | 'decoration'): readonly PickerOption[] =>
+    ownAxisOptions(
+      {
+        seed: props.spineSeed,
+        cloth: clothForPalette(resolved().spine.palette),
+        gilt: style().gilt,
+        labelAt: flatSpineFor(props.spineSeed).labelAt,
+      },
+      ownParts(),
+      axis,
+    );
+
+  /** Compose and pin, keeping the three axes the reader did not touch. */
+  const pickOwn = (patch: Partial<OwnBinding>): void => {
+    void saveBookBinding(bindingKey(), ownBindingId({ ...ownParts(), ...patch }));
+    // Same reason `pickBinding` does it: a composed binding names its own
+    // covering, so a stale material override would redraw it as something
+    // else and the sheet would disagree with itself in one glance.
+    unpatch('material');
+  };
 
   const pickBinding = (id: BookPresetId): void => {
     void saveBookBinding(bindingKey(), id);
@@ -415,7 +469,37 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         )}
       </Show>
 
-      <Show when={!bindingSheet()}>
+      {/*
+        One sheet per axis, keyed so switching axes rebuilds it rather than
+        re-labelling the one already open.
+      */}
+      <Show when={axisSheet()} keyed>
+        {(axis) => (
+          <DesignPicker
+            title={
+              axis === 'shape' ? 'the shape of it' : axis === 'material' ? 'what it is covered in' : 'the marks on it'
+            }
+            hint="one axis at a time — the rest of the binding stays as it is."
+            options={axisOptions(axis)}
+            activeId={ownBindingId(ownParts())}
+            scheme={roomScheme()}
+            onPick={(id) => {
+              const parts = parseOwnBinding(id);
+              if (parts === null) return;
+              if (axis === 'shape') pickOwn({ shape: parts.shape });
+              else if (axis === 'material') pickOwn({ material: parts.material });
+              else pickOwn({ decoration: parts.decoration });
+            }}
+            onBack={() => setAxisSheet(null)}
+            cardW={100}
+            cardH={150}
+            columns={3}
+            searchLabel={`Search ${axis === 'decoration' ? 'marks' : axis}s`}
+          />
+        )}
+      </Show>
+
+      <Show when={!bindingSheet() && axisSheet() === null}>
         {(_closed) => (
           <>
       {/* ------------------------- flipping preview ------------------------ */}
@@ -512,6 +596,97 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           {BOOK_PRESETS.length} bindings. the cloth, the gilt and the lettering
           stay yours — a binding changes how the book is MADE, not what colour
           it is.
+        </p>
+      </section>
+
+      {/* --------------------------- bind it yourself ---------------------- */}
+      {/*
+        The same three axes the presets are built from, pickable one at a time.
+        Each strip holds the other two still, so a reader can keep the shape
+        they like and try every covering against it.
+        Each list is the ROLLABLE half of its axis — the odd ones are all still
+        there in the preset sheet above, where somebody finds them on purpose
+        rather than being handed one.
+      */}
+      <section class="nb-panel-section nb-panel-section-divided">
+        <h3 class="nb-panel-section-title">
+          bind it yourself{' '}
+          <em class="nb-panel-row-hint">{SHAPE_LABELS[ownParts().shape].toLowerCase()}</em>
+        </h3>
+        {/*
+          Visible captions, not just the strips' aria-labels: `DesignStrip`
+          renders its `label` only to assistive tech, so three stacked strips
+          read to the eye as one 24-tile grid with no idea which four tiles
+          answer which question.
+        */}
+        <p class="nb-panel-row-label nb-strip-label font-ui">Spine shape</p>
+        <DesignStrip
+          label="Spine shape"
+          options={axisOptions('shape')}
+          activeId={ownBindingId(ownParts())}
+          scheme={roomScheme()}
+          onPick={(id) => {
+            const parts = parseOwnBinding(id);
+            if (parts !== null) pickOwn({ shape: parts.shape });
+          }}
+          onMore={() => setAxisSheet('shape')}
+          columns={4}
+          limit={7}
+          tileW={72}
+          tileH={104}
+        />
+        <p class="nb-panel-row-label nb-strip-label font-ui">Covered in</p>
+        <DesignStrip
+          label="Covering"
+          options={axisOptions('material')}
+          activeId={ownBindingId(ownParts())}
+          scheme={roomScheme()}
+          onPick={(id) => {
+            const parts = parseOwnBinding(id);
+            if (parts !== null) pickOwn({ material: parts.material });
+          }}
+          onMore={() => setAxisSheet('material')}
+          columns={4}
+          limit={7}
+          tileW={72}
+          tileH={104}
+        />
+        <p class="nb-panel-row-label nb-strip-label font-ui">Marks on the spine</p>
+        <DesignStrip
+          label="Marks"
+          options={axisOptions('decoration')}
+          activeId={ownBindingId(ownParts())}
+          scheme={roomScheme()}
+          onPick={(id) => {
+            const parts = parseOwnBinding(id);
+            if (parts !== null) pickOwn({ decoration: parts.decoration });
+          }}
+          onMore={() => setAxisSheet('decoration')}
+          columns={4}
+          limit={7}
+          tileW={72}
+          tileH={104}
+        />
+        <div class="nb-chip-row" role="group" aria-label="Tooling">
+          {/*
+            Gilt is its own axis and not a consequence of the other two — the
+            preset table has `double-bands` struck in foil on one binding and
+            blind on another, so this is a choice, not a derivation.
+          */}
+          <button
+            type="button"
+            class="nb-chip"
+            aria-pressed={ownParts().gilt}
+            classList={{ 'is-active': ownParts().gilt }}
+            onClick={() => pickOwn({ gilt: !ownParts().gilt })}
+          >
+            {ownParts().gilt ? 'struck in gilt' : 'blind tooled'}
+          </button>
+        </div>
+        <p class="nb-panel-footnote">
+          {ROLLABLE_SHAPES.length} shapes × {ROLLABLE_MATERIALS.length} coverings ×{' '}
+          {ROLLABLE_DECORATIONS.length + 1} marks, either tooling — your own
+          binding, kept with the book.
         </p>
       </section>
 

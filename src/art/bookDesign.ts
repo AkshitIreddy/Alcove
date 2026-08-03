@@ -2351,13 +2351,105 @@ const PRESET_BY_ID: ReadonlyMap<string, BookPreset> = new Map(
 /** Every preset id, in list order (the studio's dropdown). */
 export const BOOK_PRESET_IDS: readonly string[] = BOOK_PRESETS.map((p) => p.id);
 
+/* ------------------------- bindings built by hand ------------------------- */
+
+/**
+ * A binding a reader composed themselves, as an id.
+ *
+ * The 189 presets are the curated bindings — combinations somebody chose and
+ * named. But the three axes are independently pickable in the studio, and
+ * 50 × 50 × 50 of them cannot be a table.
+ *
+ * So a composed binding is written as `own:shape/material/decoration/gilt` and
+ * resolved on read. That is deliberately an ID rather than a new shape of
+ * stored value: `designPrefs` persists `Record<bookId, BookPresetId>`, every
+ * cache key that varies with a binding already carries that string
+ * (`bookDesignTag`, the spine factory's params key), and `SpineParams.binding`
+ * passes it through untouched. Widening the stored type would have meant a
+ * migration, a second validator, and a new axis for every one of those keys to
+ * forget.
+ *
+ * `decoration` may be `none`, which is how a reader takes the marks off.
+ *
+ * GILT IS ITS OWN SEGMENT because the preset table says it has to be. It looks
+ * derivable and is not: `smooth-cloth` carries presets both gilt and plain,
+ * and of the 189 rows only 134 agree with "gilt iff the decoration is a gilt
+ * one" — `double-bands`, `label-plate` and `corner-tooling` all appear struck
+ * in foil on one binding and blind on another. It is an editorial choice about
+ * the whole book, so a reader composing one gets to make it too rather than
+ * have it guessed from the other two.
+ */
+const OWN_PREFIX = 'own:';
+
+const SHAPE_SET = new Set<string>(SPINE_SHAPES);
+const MATERIAL_SET = new Set<string>(MATERIAL_LOOKS);
+const DECOR_SET = new Set<string>(DECORATIONS);
+
+/** The axes of a hand-composed binding. */
+export interface OwnBinding {
+  shape: SpineShape;
+  material: MaterialLook;
+  decoration: Decoration | 'none';
+  gilt: boolean;
+}
+
+/** Compose an id for a hand-picked binding. */
+export function ownBindingId(parts: OwnBinding): BookPresetId {
+  const foil = parts.gilt ? 'gilt' : 'blind';
+  return `${OWN_PREFIX}${parts.shape}/${parts.material}/${parts.decoration}/${foil}`;
+}
+
+/** The axes of an id, or null when it is not a composed one this build knows. */
+export function parseOwnBinding(id: BookPresetId | null | undefined): OwnBinding | null {
+  if (typeof id !== 'string' || !id.startsWith(OWN_PREFIX)) return null;
+  const [shape, material, decoration, foil, ...rest] = id.slice(OWN_PREFIX.length).split('/');
+  if (rest.length > 0) return null;
+  if (shape === undefined || material === undefined || decoration === undefined) return null;
+  if (foil !== 'gilt' && foil !== 'blind') return null;
+  // Validated part by part, so one stale axis cannot smuggle the other two
+  // past — an unknown name here means the vocabulary changed under a saved
+  // choice, and the whole id is then not a binding this build can draw.
+  if (!SHAPE_SET.has(shape) || !MATERIAL_SET.has(material)) return null;
+  if (decoration !== 'none' && !DECOR_SET.has(decoration)) return null;
+  return {
+    shape: shape as SpineShape,
+    material: material as MaterialLook,
+    decoration: decoration as Decoration | 'none',
+    gilt: foil === 'gilt',
+  };
+}
+
+/**
+ * The preset a composed id stands for.
+ *
+ * Spread from the first preset so that every field this interface grows in
+ * future has a value here without this function being edited — the four the
+ * reader chose are then written over it. `weight` is inherited and meaningless:
+ * a composed binding is never rolled, only chosen.
+ */
+function ownPreset(parts: OwnBinding): BookPreset {
+  const base = BOOK_PRESETS[0] as BookPreset;
+  return {
+    ...base,
+    id: ownBindingId(parts),
+    label: 'your own',
+    shape: parts.shape,
+    material: parts.material,
+    decorations: parts.decoration === 'none' ? [] : [parts.decoration],
+    gilt: parts.gilt,
+  };
+}
+
 /** Look up a preset. Unknown ids fall back to the first, never throw. */
 export function bookPreset(id: BookPresetId | null | undefined): BookPreset {
+  const own = parseOwnBinding(id);
+  if (own !== null) return ownPreset(own);
   return (id ? PRESET_BY_ID.get(id) : undefined) ?? (BOOK_PRESETS[0] as BookPreset);
 }
 
 export function isBookPresetId(v: unknown): v is BookPresetId {
-  return typeof v === 'string' && PRESET_BY_ID.has(v);
+  if (typeof v !== 'string') return false;
+  return PRESET_BY_ID.has(v) || parseOwnBinding(v) !== null;
 }
 
 /** Every preset carrying `tag`, in list order. For a studio steer. */

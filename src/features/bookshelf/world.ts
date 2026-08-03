@@ -142,6 +142,7 @@ import {
   type WallpaperSpec,
 } from '../../art/wallpaperDesign';
 import {
+  bookBinding,
   loadDesignPrefs,
   saveBookBinding,
   saveRoomDesign,
@@ -735,6 +736,12 @@ export class ShelfWorld {
         bookId: string,
         preset: string | null,
       ): Promise<void> => saveBookBinding(bookId, preset);
+      // The READER beside the writer. A probe that drives the studio by
+      // clicking has no other way to ask what actually got pinned, and its own
+      // `import('/src/data/designPrefs')` can land on a second copy of the
+      // module — the same trap `__shelfSaveDesign` exists to avoid, one
+      // direction over.
+      globals['__shelfBinding'] = (bookId: string): string | null => bookBinding(bookId);
       // The bookcase collection, for switch/leak probes and specimen boards.
       globals['__shelfBookcases'] = {
         list: (): BookcaseState => snapshotBookcases(),

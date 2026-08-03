@@ -54,9 +54,18 @@ agents reported honestly, plus the seams between them that I closed by hand.
       awaits its own store's load() and those resolve a different number of
       ticks apart. `shots-now/preset-bakes.mjs` reads the new bake counter:
       +2 each before, +1 each after. `360a8c1`
-- [ ] `ROLLABLE_SHAPES` / `ROLLABLE_MATERIALS` / `ROLLABLE_DECORATIONS` are
-      exported and gated but have no consumer — the studio has no per-axis
-      shape/covering/ornament grid yet, only whole presets.
+- [x] `ROLLABLE_SHAPES` / `ROLLABLE_MATERIALS` / `ROLLABLE_DECORATIONS` are
+      exported and gated but have no consumer. **They have one now**: the book
+      studio's "bind it yourself" section picks each axis on its own, every
+      strip holding the other two still.
+      A composed binding is an id — `own:shape/material/decoration/gilt` — so
+      it rides the existing `Record<bookId, BookPresetId>` with no migration
+      and no new axis for `bookDesignTag` or the spine factory's params key to
+      forget. Gilt is its own segment because the preset table says it must be:
+      only 134 of 189 rows agree with "gilt iff the decoration is a gilt one",
+      so it is a choice, not a derivation.
+      `shots-now/own-binding.mjs` drives the real strips and checks the trap
+      that matters — picking one axis KEEPS the other three — then reloads.
 - [ ] No "add your own set" for sound, and no runtime filtering in a set's
       levers (Howler exposes rate and volume per play, not a filter node).
 - [x] `docs/design/page-flip.md` specified the shadow/lighting model that was

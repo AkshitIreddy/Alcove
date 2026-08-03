@@ -1,0 +1,49 @@
+{
+  "$comment": [
+    "The app's identity, in ONE place.",
+    "",
+    "Renaming this app used to be a scavenger hunt across fifteen files, and the",
+    "last one (Notebook -> Bellanote) left main.rs calling notebook_lib::run()",
+    "after the crate had become bellanote — so src-tauri did not compile at all,",
+    "and tsc plus 1,480 tests were green through the whole thing because neither",
+    "of them can see Rust.",
+    "",
+    "So: this file is the source of truth, `npm run rename` rewrites every",
+    "surface from it, and tests/brand-consistency.test.ts fails when any surface",
+    "disagrees with it. Change the name HERE and run the script; do not hand-edit",
+    "the surfaces.",
+    "",
+    "`legacyWelcomeTitles` is the one field that must only ever GROW. The welcome",
+    "book's title is also the identity check that stops a second one being",
+    "seeded, so every past title has to stay listed or a rename hands existing",
+    "readers a duplicate book beside the one they have been writing in."
+  ],
+
+  "name": "Bellanote",
+  "slug": "bellanote",
+  "identifier": "com.bellanote.app",
+  "repo": "AkshitIreddy/bellanote",
+  "tagline": "a hand-drawn bookshelf for beautiful study notes",
+
+  "art": {
+    "master": "assets/brand/bellanote-art.png",
+    "$comment": "The illustration every shipped icon is rendered from. scripts/gen-icons.py cuts its baked frame to alpha and close-crops the small sizes."
+  },
+
+  "welcomeBookTitle": "Welcome to Bellanote ✎",
+  "legacyWelcomeTitles": ["Welcome to Notebook ✎"],
+
+  "doNotRename": {
+    "$comment": [
+      "Strings that contain a past app name and must survive every rename.",
+      "The script refuses to touch these and the consistency test asserts they",
+      "are still present, because each one breaks something real if it changes."
+    ],
+    "Notebook Script": "the writing language's product name — it is not the app",
+    "notebook-bundle": "BUNDLE_FORMAT, written into every .nbk ever exported; renaming it orphans files this build already wrote",
+    "LEGACY_WELCOME_BOOK_TITLE": "a migration constant — see legacyWelcomeTitles",
+    "NotebookDocument": "internal TipTap symbol, not user-visible",
+    "NotebookHighlight": "internal TipTap symbol, not user-visible",
+    "NotebookTemplate": "internal type name, not user-visible"
+  }
+}

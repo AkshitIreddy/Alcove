@@ -1,5 +1,39 @@
 # Bellanote — running TODO
 
+## 🏷️ Rename to **Alcove** — DEFERRED until the running workflows land
+
+Held back on purpose: two workflows are editing this tree, and a rename touching
+nineteen files across four languages during that is how work gets clobbered.
+
+The icon is already safe — moved (not copied) out of Downloads to
+`assets/brand/incoming/alcove-art.png`. A classical alcove: arch, columns, a
+shelf of books, an open book, a quill. It carries the same baked black frame the
+last one did, which `scripts/gen-icons.py` flood-fills to alpha already.
+
+**Tooling is in place so this and every future rename is one command:**
+
+- `brand.json` — the name, slug, identifier, repo, welcome-book title, the art
+  master, and the strings a rename must NEVER touch.
+- `npm run rename Alcove --art assets/brand/incoming/alcove-art.png`
+  (`--dry` first; the dry run currently reports 19 files).
+- `tests/brand-consistency.test.ts` — 13 checks that every surface agrees with
+  `brand.json`. It exists because the last rename left `main.rs` calling
+  `notebook_lib::run()` after the crate became `bellanote`: **the Rust binary
+  did not compile for several commits** while tsc and 1,480 tests stayed green,
+  because neither of them can see Rust.
+
+**Still by hand after the script runs, and the script prints all four:**
+
+1. Seed migration — bump `SEED_VERSION`, extend the retitle. Without it every
+   existing reader gets a SECOND welcome book, because the title is also the
+   identity check that stops one being seeded.
+2. Icons, in this order — the Tauri CLI overwrites the close-cropped small
+   sizes, so it must run first:
+   `npx @tauri-apps/cli icon <master>` then `python scripts/gen-icons.py`.
+3. `gh repo rename alcove` + `git remote set-url origin`.
+4. **`cargo check --manifest-path src-tauri/Cargo.toml`** — the toolchain the
+   last rename broke and the only one that would have noticed.
+
 ## 🔴 Reported 2026-08-03 (second pass)
 
 - [ ] **Some book shapes are bizarre** — "some of them are literally pencil

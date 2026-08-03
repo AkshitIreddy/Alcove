@@ -429,22 +429,36 @@ export default function BookView(): JSX.Element {
   };
 
   /**
-   * Caret carry (roadmap first-duty fix): drop the caret inside the carried
-   * content of the target page's editor. The leaf remounts (keyed on
-   * id@version), so the instance may not exist for a frame or two — poll
-   * across rAF until the registry hands back a live, connected editor.
+   * Put the caret inside a page's editor as soon as that editor exists.
    *
-   * `offset` is the caret's PM token offset within the carried blocks;
-   * since carries PREPEND to the target doc, the same offset addresses the
-   * caret's spot in the new doc (clamped defensively).
+   * Two callers, and both hand the reader a page whose leaf is mounting in
+   * the same breath: the overflow carry (the caret has to chase its own text
+   * onto the next leaf) and `writeOnBlankLeaf` (bare paper becoming the page
+   * the reader just asked to write on). Leaves are keyed on id@version, so
+   * the instance may not exist for a frame or two — poll across rAF until the
+   * registry hands back a live, connected editor.
+   *
+   * A plain `.ProseMirror.focus()` on the next microtask is NOT the same
+   * thing and was the bug on the blank leaf: the element is not in the DOM
+   * yet that soon, the call quietly hit nothing, and everything the reader
+   * then typed went to <body>. Ask the registry, and keep asking.
+   *
+   * `offset` is a PM token offset — `'end'` for a page with nothing in it
+   * yet. Since carries PREPEND to the target doc, the caret's offset within
+   * the carried blocks addresses the same spot in the new doc (clamped
+   * defensively).
    */
-  const focusCarriedCaret = (pageId: string, offset: number | null): void => {
+  const focusPageCaret = (
+    pageId: string,
+    offset: number | 'end' | null,
+  ): void => {
     const deadline = performance.now() + 6000;
     const attempt = (): void => {
       const instance = getPageEditor(pageId);
       if (instance && instance.view.dom.isConnected) {
         const size = instance.state.doc.content.size;
-        const pos = Math.max(0, Math.min(offset ?? 0, size));
+        const pos =
+          offset === 'end' ? 'end' : Math.max(0, Math.min(offset ?? 0, size));
         instance.chain().focus(pos, { scrollIntoView: false }).run();
         return;
       }
@@ -500,7 +514,7 @@ export default function BookView(): JSX.Element {
         setSpreadIndex(targetSpread);
         void play('page-flip');
       }
-      focusCarriedCaret(next.id, caretOffset);
+      focusPageCaret(next.id, caretOffset);
     }
   };
 
@@ -921,18 +935,28 @@ export default function BookView(): JSX.Element {
    * So the paper stays bare until someone actually wants it, and then becomes a
    * page. Appends as many as the slot needs rather than one, because a blank
    * LEFT leaf sits two slots past the end and creating a single page would fill
-   * the wrong one.
+   * the wrong one — and BOTH leaves come through here, so the right leaf of a
+   * past-the-end spread answers a click exactly as the left one does.
+   *
+   * The row is only half of it: a page nobody can type on is still "clicking
+   * it does nothing" from where the reader sits. The caret goes in through the
+   * SAME rAF chaser the overflow carry uses (`focusPageCaret`) rather than a
+   * DOM `.focus()` a microtask later, because the leaf that is about to hold
+   * the editor has not mounted one yet at that point.
+   *
+   * Re-entrant on purpose: a double-click finds the slot already filled, skips
+   * straight to the caret, and never appends a second sheet.
    */
   const writeOnBlankLeaf = async (side: LeafSide): Promise<void> => {
-    const slot = spreadIndex() * 2 + (side === 'right' ? 1 : 0);
-    for (let i = pages().length; i <= slot; i += 1) {
+    const slot = leftSlot(spreadIndex()) + (side === 'right' ? 1 : 0);
+    while (pages().length <= slot) {
       if (!(await appendPage())) return;
     }
+    const target = pageAt(slot);
+    if (!target) return;
     void play('pop-soft');
     setFocusedSide(side);
-    queueMicrotask(() => {
-      paperElements[side]?.querySelector<HTMLElement>('.ProseMirror')?.focus();
-    });
+    focusPageCaret(target.id, 'end');
   };
 
   const leafFace = (side: LeafSide, page: () => Page | null): JSX.Element => (

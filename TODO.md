@@ -181,16 +181,23 @@ agents reported honestly, plus the seams between them that I closed by hand.
       wrong claims that were justifying it.
 - [ ] **The back button scrolls away.** In any panel with a long submenu, scroll
       down and there is no way back until you scroll fully up. Header must stay.
-- [ ] **"Rooms" do not change the bookcase or the wall**, which is what a room
+- [x] **"Rooms" do not change the bookcase or the wall**, which is what a room
       is for. Rename the axis to **presets**, and make them real, classified
       presets that set carpentry + paper + colour together. Use the mood tags
       (formal, refined, fancy, goofy…) to generate candidates, then FINE-TUNE BY
-      LOOKING.
+      LOOKING. The studio's top axis is "Room preset" now (`getRoomPreset` /
+      `roomPresetOptions`), and one click sets colour + build + pattern +
+      wallpaper together — measured end to end by
+      `shots-now/preset-bakes.mjs`, which also proved it costs one bake rather
+      than two.
 - [ ] **Default shelf, wallpaper and welcome book look bland / cheap.** Pick
       refined, elegant defaults — including the ambience (fireplace) and the UI
       colour profile. The reader must still be able to change all of it.
-- [ ] **Drop the "read it / put it back" card.** A book that comes off the shelf
+- [x] **Drop the "read it / put it back" card.** A book that comes off the shelf
       just opens. Put a tasteful back control top-left that fades once used.
+      `PulledBookOverlay.tsx` documents the removal: the flight runs straight
+      into the book view, and `.nb-back-button` is the top-left way out (pinned
+      by `tests/top-left-exits.test.ts`).
 - [ ] **Page-turn artefact:** mid-turn, the bottom half of the ruled page shows
       a shadowy band. Reproduce it and look.
 - [x] **Cap every long option list at ~20 + "N more".** The catalogue's tape and
@@ -207,8 +214,10 @@ agents reported honestly, plus the seams between them that I closed by hand.
       export, script insert — got visible top-left closes with one shared
       drawn-ring look. `shots-now/dialog-exits.mjs` opens each through its real
       trigger and measures the close is inside the card, left half, top half.
-- [ ] **Sound presets:** the reader picks a set (clicks and the rest), the same
-      way they pick a binding or a room.
+- [x] **Sound presets:** the reader picks a set (clicks and the rest), the same
+      way they pick a binding or a room. `src/sound/soundSets.ts` +
+      `soundSetPrefs.ts`, offered from the settings sheet. (The remaining
+      half — importing your OWN set — is the open item further up this file.)
 - [x] **Tooltips are the browser's grey bubble.** They need the app's own UI.
       `src/views/Tooltip.tsx` is the app's own, and 22 controls were still
       handing the job back to the OS with a native `title=` — thumbnails,
@@ -219,7 +228,10 @@ agents reported honestly, plus the seams between them that I closed by hand.
       `tests/tooltips.test.ts` gates it — `title=` on a lowercase tag only, so
       `<RailPanel title=…>` (a prop, not a label) stays untouched, and it
       proves its own matcher fires before trusting an empty result. `ea5198c`
-- [ ] **Onboarding should say how open the customisation is.**
+- [x] **Onboarding should say how open the customisation is.** The tour's
+      sign-off says it in real numbers — 113 bookcases, 126 papers, 189
+      bindings — read out of the vocabularies rather than typed, so the claim
+      cannot go stale. `5d1fea2`
 - [ ] Throughout: fast and smooth, without giving up fidelity. Be clever rather
       than cheap.
 

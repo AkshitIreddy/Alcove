@@ -27,21 +27,41 @@
 
 /** What a step can ask the reader to do. */
 export type TourFactKey =
+  | 'first-book-made'
   | 'shelf-moved'
+  | 'shelf-dock-hovered'
+  | 'shelf-studio-open'
   | 'book-open'
   | 'rail-hovered'
   | 'typed'
   | 'block-handled'
   | 'page-turned'
+  | 'page-style-open'
+  | 'catalogue-open'
+  | 'toc-open'
   | 'customize-open'
   | 'book-restyled'
+  | 'thumbs-toggled'
   | 'spec-copied'
   | 'quick-switcher'
   | 'settings-open';
 
+/** An OPEN rail sheet with this title. Closed sheets stay in the DOM. */
+const openPanel = (label: string): string =>
+  `.nb-rail-panel[aria-hidden="false"][aria-label="${label}"]`;
+
 /** Selector for the customize sheet — matched on the OPEN one only. */
-const CUSTOMIZE_PANEL =
-  '.nb-rail-panel[aria-hidden="false"][aria-label="Customize this book"]';
+const CUSTOMIZE_PANEL = openPanel('Customize this book');
+
+/** The shelf's own studio sheet (RailPanel with `is-shelf`). */
+const SHELF_STUDIO_PANEL = '.nb-rail-panel.is-shelf[aria-hidden="false"]';
+
+/** The first-run invite that stands on an empty case. */
+const FIRSTRUN_INVITE = '.shelf-firstrun';
+
+/** Controls that put a new book on the shelf. */
+const NEW_BOOK_CONTROL =
+  '.shelf-firstrun__btn, .shelf-addslot, [data-shelf-dock="new-book"]';
 
 /** Controls inside that sheet which restyle the book rather than navigate it. */
 const RESTYLE_CONTROL = '.nb-strip-tile, .nb-swatch, .nb-reroll, .nb-design-tile';
@@ -56,11 +76,17 @@ const DRAG_THRESHOLD = 34;
 const POLL_MS = 120;
 
 interface Observed {
+  /** Shelf: asked for the first book, or the empty-case invite went away. */
+  firstBook: boolean;
   /** Shelf: dragged the case, or zoomed it. */
   panned: boolean;
   zoomed: boolean;
+  /** Shelf: pointed at (or pressed) one of the four library tools. */
+  dockHovered: boolean;
   /** Book view: hovered/opened any tool on the left rail. */
   railHovered: boolean;
+  /** Book view: pressed one of the two view toggles under the divider. */
+  viewToggled: boolean;
   /** Printable characters typed inside the page editor. */
   typedChars: number;
   /** Right-clicked a block, or picked one up by its handle. */
@@ -81,9 +107,12 @@ interface Observed {
 }
 
 const blank = (): Observed => ({
+  firstBook: false,
   panned: false,
   zoomed: false,
+  dockHovered: false,
   railHovered: false,
+  viewToggled: false,
   typedChars: 0,
   blockMenu: false,
   blockDragged: false,
@@ -100,6 +129,8 @@ let seen = blank();
 /** Baselines captured at `arm()` — "changed" is meaningless without them. */
 let spreadAtArm: string | null = null;
 let coverAtArm: string | null = null;
+/** Was the empty-case invite on screen when this step began? */
+let inviteAtArm = false;
 
 /** Live pointer drag, for telling a shelf pan from a click on a spine. */
 let dragFrom: { x: number; y: number } | null = null;
@@ -193,6 +224,7 @@ function onWheel(event: WheelEvent): void {
 
 function onPointerOver(event: PointerEvent): void {
   if (closestMatch(event.target, '.nb-rail-button') !== null) seen.railHovered = true;
+  if (closestMatch(event.target, '[data-shelf-dock]') !== null) seen.dockHovered = true;
 }
 
 function onKeyDown(event: KeyboardEvent): void {
@@ -227,7 +259,15 @@ function onClick(event: MouseEvent): void {
     seen.railHovered = true; // a click implies the reader found the rail
     const id = tool.getAttribute('data-tool');
     if (id === 'spec' || id === 'insert') seen.specCopied = true;
+    // Either view toggle counts: the step teaches both, and the filmstrip is
+    // the one it asks for only because focus mode takes the rail away.
+    if (id === 'thumbs' || id === 'focus') seen.viewToggled = true;
   }
+  if (closestMatch(event.target, '[data-shelf-dock]') !== null) seen.dockHovered = true;
+  // The invite, the ghost slot and the dock's own button all make a book. The
+  // fact is confirmed by the invite going away (see `poll`); this is what
+  // makes it land the instant the reader presses, rather than a frame later.
+  if (closestMatch(event.target, NEW_BOOK_CONTROL) !== null) seen.firstBook = true;
   if (closestMatch(event.target, '.shelf-zoom-pill') !== null) seen.zoomed = true;
   if (
     closestMatch(event.target, RESTYLE_CONTROL) !== null &&
@@ -275,6 +315,7 @@ export function armProbe(): void {
   dragOnShelf = false;
   spreadAtArm = spreadIndex();
   coverAtArm = coverFingerprint();
+  inviteAtArm = present(FIRSTRUN_INVITE);
   lastPoll = 0;
 }
 
@@ -295,6 +336,12 @@ function poll(now: number): void {
     }
     if (spreadAtArm === null) spreadAtArm = index;
   }
+  // The empty-case invite is rendered only while the library IS empty, so it
+  // going away is the library gaining its first book. Requires the baseline:
+  // "absent now" on a shelf that never had one proves nothing.
+  if (!seen.firstBook && inviteAtArm && !present(FIRSTRUN_INVITE)) seen.firstBook = true;
+  // Naming the new spine happens between the press and the book landing.
+  if (!seen.firstBook && present('.shelf-spine-name')) seen.firstBook = true;
   if (!seen.blockMenu && present('.nb-ctx-menu')) seen.blockMenu = true;
   if (!seen.blockDragged && document.documentElement.dataset.nbBlockDrag === 'true') {
     seen.blockDragged = true;
@@ -316,14 +363,29 @@ export function inBookView(): boolean {
 }
 
 /**
+ * Is this element on screen? Exported for ./dismiss.ts, which has the same
+ * question about the settings sheet (always mounted, `visibility: hidden`
+ * while closed) and must not "close" something that is not open.
+ */
+export function isVisible(node: Element | null): boolean {
+  return onScreen(node);
+}
+
+/**
  * Has this fact been observed? `now` is the rAF timestamp — passing it in
  * keeps the throttle honest without this module owning a clock.
  */
 export function factHolds(fact: TourFactKey, now: number): boolean {
   poll(now);
   switch (fact) {
+    case 'first-book-made':
+      return seen.firstBook;
     case 'shelf-moved':
       return seen.panned || seen.zoomed;
+    case 'shelf-dock-hovered':
+      return seen.dockHovered;
+    case 'shelf-studio-open':
+      return present(SHELF_STUDIO_PANEL);
     case 'book-open':
       return inBookView();
     case 'rail-hovered':
@@ -334,10 +396,24 @@ export function factHolds(fact: TourFactKey, now: number): boolean {
       return seen.blockMenu || seen.blockDragged;
     case 'page-turned':
       return seen.pageTurned;
+    case 'page-style-open':
+      return present(openPanel('Page style'));
+    case 'catalogue-open':
+      return present(openPanel('Catalogue'));
+    // One step covers the four "get me back to something" tools, so any of
+    // the three sheets among them satisfies it.
+    case 'toc-open':
+      return (
+        present(openPanel('Table of contents')) ||
+        present(openPanel('Turn back time')) ||
+        present(openPanel('Ribbons'))
+      );
     case 'customize-open':
       return present(CUSTOMIZE_PANEL);
     case 'book-restyled':
       return seen.coverChanged || seen.restyleClicked;
+    case 'thumbs-toggled':
+      return seen.viewToggled;
     case 'spec-copied':
       return seen.specCopied;
     case 'quick-switcher':

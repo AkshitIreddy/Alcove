@@ -65,14 +65,25 @@ import {
   type Rect,
   type Size,
 } from './engine';
-import { TUTORIAL_STEPS, stepTargets, type StepTarget, type TutorialStep } from './steps';
+import {
+  TUTORIAL_STEPS,
+  stepTargets,
+  tourSteps,
+  type StepTarget,
+  type TourLength,
+  type TutorialStep,
+} from './steps';
 import { armProbe, attachProbe, factHolds, inBookView } from './probe';
+import { dismissStale, isDismissing, openSurfaceIds } from './dismiss';
 import {
   readCompleted,
   replayTutorial,
   resetTutorial,
+  setTutorialLength,
   startTutorial,
   stopTutorial,
+  tutorialLength,
+  tutorialLengthChosen,
   tutorialRunToken,
   tutorialRunning,
 } from './state';
@@ -174,11 +185,24 @@ export default function TutorialOverlay(): JSX.Element {
   /** Pending auto-advance, cancelled by any manual navigation. */
   let advanceTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const step = (): TutorialStep => TUTORIAL_STEPS[stepIndex()] ?? TUTORIAL_STEPS[0];
+  /**
+   * The steps of THIS run. Everything below indexes into this list, never into
+   * `TUTORIAL_STEPS` — the short tour is a subset of the same script, so the
+   * dots, the "step n of m" and the navigation all have to count the tour the
+   * reader actually asked for.
+   */
+  const steps = createMemo<readonly TutorialStep[]>(() => tourSteps(tutorialLength()));
+
+  const step = (): TutorialStep => {
+    const list = steps();
+    return list[stepIndex()] ?? list[0] ?? TUTORIAL_STEPS[0];
+  };
   const seed = (): number => seedFrom(step().id);
-  const isLast = (): boolean => stepIndex() === TUTORIAL_STEPS.length - 1;
+  const isLast = (): boolean => stepIndex() >= steps().length - 1;
   const isDone = (id: string): boolean => finished().includes(id);
   const currentDone = (): boolean => isDone(step().id);
+  /** The greeting doubles as the "how much of this do you want?" question. */
+  const isChooser = (): boolean => stepIndex() === 0;
 
   /* --------------------------- navigation -------------------------------- */
 
@@ -189,7 +213,7 @@ export default function TutorialOverlay(): JSX.Element {
 
   function goto(direction: 1 | -1): void {
     cancelAdvance();
-    const next = stepIndexAfter(TUTORIAL_STEPS, untrack(stepIndex), direction, stepPresent);
+    const next = stepIndexAfter(untrack(steps), untrack(stepIndex), direction, stepPresent);
     if (next === null) {
       if (direction === 1) finish();
       return; // walking back off step one is a no-op, never a dead end
@@ -216,6 +240,21 @@ export default function TutorialOverlay(): JSX.Element {
   function skip(): void {
     cancelAdvance();
     stopTutorial(true);
+  }
+
+  /**
+   * Answer the greeting's question and get going. Picking a length IS the
+   * answer to "shall we start", so it advances rather than leaving the reader
+   * to press next as well.
+   */
+  function chooseLength(next: TourLength): void {
+    setTutorialLength(next);
+    void play('pop-soft', { volume: 0.5 });
+    // The list has just changed shape underneath us; step on from the
+    // greeting, which is index 0 of both tours.
+    queueMicrotask(() => {
+      if (untrack(tutorialRunning) && untrack(stepIndex) === 0) goto(1);
+    });
   }
 
   /* ------------------------ target + task tracking ----------------------- */
@@ -250,6 +289,10 @@ export default function TutorialOverlay(): JSX.Element {
         if (task !== undefined && !isDone(current.id) && factHolds(task.fact, now)) {
           markDone(current.id);
         }
+        // The wrong-turn watch: only ever asked about on a step that declares
+        // one, so this is a no-op on nearly every step.
+        const nudge = task?.nudge;
+        setNudged(nudge !== undefined && factHolds(nudge.when, now));
       }
       frame = requestAnimationFrame(tick);
     };
@@ -285,16 +328,27 @@ export default function TutorialOverlay(): JSX.Element {
       setHole(null);
       setReady(false);
       setFinished([]);
-      setStepIndex(firstStepIndex(TUTORIAL_STEPS, stepPresent) ?? 0);
+      setStepIndex(firstStepIndex(untrack(steps), stepPresent) ?? 0);
       setAnchor(resolveAnchor(untrack(step)));
     }),
   );
 
+  // Switching tours mid-run shortens the list under the cursor. The chooser
+  // only appears on step one, so this is belt and braces — but an index past
+  // the end would render the fallback step forever.
+  createEffect(() => {
+    const last = steps().length - 1;
+    if (untrack(stepIndex) > last) setStepIndex(Math.max(0, last));
+  });
+
   // Entering a step forgets what happened during the last one, so "you turned
-  // a page" cannot be satisfied by a page turned three steps ago.
+  // a page" cannot be satisfied by a page turned three steps ago — and puts
+  // away whatever the previous step left standing (see ./dismiss.ts).
   createEffect(
     on([stepIndex, tutorialRunToken], () => {
       if (!untrack(tutorialRunning)) return;
+      const current = untrack(step);
+      dismissStale(stepTargets(current).map((t) => t.selector));
       armProbe();
     }),
   );
@@ -519,6 +573,21 @@ export default function TutorialOverlay(): JSX.Element {
   });
 
   /**
+   * The wrong-turn line. A step can name a gesture that will NOT satisfy it
+   * (steps.ts → StepNudge); when the probe sees that gesture and the step is
+   * still outstanding, the card says so out loud. Without it, a gated step
+   * looks like a tour that has stopped working.
+   *
+   * Read off the live signal rather than latched: the moment the real task
+   * lands the nudge is gone, replaced by the green line.
+   */
+  const [nudged, setNudged] = createSignal(false);
+  const nudgeLine = createMemo(() => {
+    if (currentDone() || !nudged()) return null;
+    return step().task?.nudge?.say ?? null;
+  });
+
+  /**
    * A nudge when the reader is in the wrong place for the step in front of
    * them — walking back to "write something" from the shelf, say. Only shown
    * while the task is still outstanding; once it is green it does not matter
@@ -536,6 +605,9 @@ export default function TutorialOverlay(): JSX.Element {
 
   function onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Tab') return; // let focus cycle naturally inside the card
+    // The tour is pressing Escape at a menu it is tidying away — that is not
+    // the reader asking to leave (see ./dismiss.ts).
+    if (isDismissing()) return;
     const target = event.target as HTMLElement | null;
     // Hands off entirely while the caret is in a page, a search bar or any
     // other field: Enter belongs to whatever the reader is typing into, and
@@ -593,11 +665,16 @@ export default function TutorialOverlay(): JSX.Element {
       replay: replayTutorial,
       /** Freeze the tour on this step — QA drives each task by hand. */
       hold: () => cancelAdvance(),
+      /** Answer the greeting's question from a probe, exactly as a click does. */
+      chooseLength,
       getState: () => ({
         running: tutorialRunning(),
         stepIndex: stepIndex(),
         stepId: step().id,
-        total: TUTORIAL_STEPS.length,
+        length: tutorialLength(),
+        lengthChosen: tutorialLengthChosen(),
+        stepIds: steps().map((s) => s.id),
+        total: steps().length,
         anchored: anchor() !== null,
         anchor: anchor(),
         /** Live spotlight rect — lags `anchor` while the GSAP tween runs. */
@@ -608,7 +685,11 @@ export default function TutorialOverlay(): JSX.Element {
         /** The fact this step is waiting on, or null for a read-only step. */
         fact: step().task?.fact ?? null,
         done: currentDone(),
+        /** The wrong-turn line, when one is showing. */
+        nudge: nudgeLine(),
         finished: [...finished()],
+        /** Panels/sheets/menus still standing — QA asserts this is empty. */
+        openSurfaces: openSurfaceIds(),
       }),
     };
     onCleanup(() => {
@@ -672,7 +753,7 @@ export default function TutorialOverlay(): JSX.Element {
             <span class="nbt-tape" aria-hidden="true" />
             <p class="nbt-eyebrow font-ui">
               <span>
-                step {stepIndex() + 1} of {TUTORIAL_STEPS.length}
+                step {stepIndex() + 1} of {steps().length}
               </span>
               <Show when={sceneLabel()}>
                 {(label) => <span class="nbt-scene">· {label()}</span>}
@@ -688,14 +769,55 @@ export default function TutorialOverlay(): JSX.Element {
               {(hint) => <p class="nbt-hint font-ui">{hint()}</p>}
             </Show>
 
+            {/* HOW MUCH OF THIS DO YOU WANT? Asked once, on the greeting, and
+                the answer picks the step list for the whole run. The full
+                rundown is the default, so pressing "next" past the question
+                gives the reader everything rather than quietly less. */}
+            <Show when={isChooser()}>
+              <div class="nbt-choice" role="group" aria-label="How long a tour">
+                <button
+                  type="button"
+                  class="nbt-choice-btn font-ui"
+                  classList={{
+                    'is-picked': tutorialLengthChosen() && tutorialLength() === 'short',
+                  }}
+                  aria-pressed={tutorialLengthChosen() && tutorialLength() === 'short'}
+                  onClick={() => chooseLength('short')}
+                >
+                  <span class="nbt-choice-name">the short way</span>
+                  <span class="nbt-choice-sub">
+                    {tourSteps('short').length} steps — open a book, write, find things
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="nbt-choice-btn font-ui"
+                  classList={{
+                    'is-picked': tutorialLengthChosen() && tutorialLength() === 'full',
+                  }}
+                  aria-pressed={tutorialLengthChosen() && tutorialLength() === 'full'}
+                  onClick={() => chooseLength('full')}
+                >
+                  <span class="nbt-choice-name">the full rundown</span>
+                  <span class="nbt-choice-sub">
+                    {tourSteps('full').length} steps — every tool on both rails
+                  </span>
+                </button>
+              </div>
+            </Show>
+
             {/* The task line, and the whole point of it: a box that goes green
                 when the tour has actually SEEN the reader do the thing. */}
             <Show
               when={step().task}
               fallback={
-                <p class="nbt-task nbt-task--none font-ui" aria-live="polite">
-                  nothing to do on this one — just read
-                </p>
+                // The greeting HAS something to do — it is the two buttons
+                // above — so it must not also say there is nothing to do.
+                <Show when={!isChooser()}>
+                  <p class="nbt-task nbt-task--none font-ui" aria-live="polite">
+                    nothing to do on this one — just read
+                  </p>
+                </Show>
               }
             >
               {(task) => (
@@ -736,8 +858,17 @@ export default function TutorialOverlay(): JSX.Element {
               )}
             </Show>
 
+            {/* Did something, but not the thing this step is waiting for. */}
+            <Show when={nudgeLine()}>
+              {(line) => (
+                <p class="nbt-nudge font-ui" aria-live="polite">
+                  {line()}
+                </p>
+              )}
+            </Show>
+
             <div class="nbt-dots" role="tablist" aria-label="Tour progress">
-              <For each={TUTORIAL_STEPS}>
+              <For each={steps()}>
                 {(s, i) => (
                   <button
                     type="button"
@@ -805,6 +936,7 @@ declare global {
       back: () => void;
       jumpTo: (index: number) => void;
       hold: () => void;
+      chooseLength: (length: TourLength) => void;
       isCompleted: () => Promise<boolean>;
       reset: () => Promise<void>;
       replay: () => Promise<void>;
@@ -812,6 +944,9 @@ declare global {
         running: boolean;
         stepIndex: number;
         stepId: string;
+        length: TourLength;
+        lengthChosen: boolean;
+        stepIds: string[];
         total: number;
         anchored: boolean;
         anchor: Rect | null;
@@ -821,7 +956,9 @@ declare global {
         arrow: boolean;
         fact: string | null;
         done: boolean;
+        nudge: string | null;
         finished: string[];
+        openSurfaces: readonly string[];
       };
     };
   }

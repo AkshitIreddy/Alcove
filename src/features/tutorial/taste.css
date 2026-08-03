@@ -1,0 +1,492 @@
+/* ============================================================================
+   Alcove — the taste questionnaire (src/features/tutorial/tasteQuestionnaire)
+
+   One paper sheet over a flat scrim, with real drawn cards on it. Colours come
+   from tokens.css only, so the panel is already in whichever theme the reader
+   is about to choose; every transition is scaled by --motion-scale.
+
+   THE FLAT RULE, in full, because this file lives beside the feature rather
+   than in src/styles and so is not swept by tests/styles.test.ts:
+   no `filter: blur()`, no `backdrop-filter`, no box-shadow with a non-zero
+   blur radius, no gradients that model a light. Depth is a darker flat face
+   beside a lighter one. `tests/taste-onboarding.test.ts` gates this file with
+   the same checks so the exemption is on paper only.
+
+   THE HANDWRITING FLOOR: Caveat / Patrick Hand / Kalam are never set below
+   13px. Anything smaller carries `font-ui` (Nunito Sans) in the markup.
+   ========================================================================== */
+
+.nbq-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toasts);
+  display: grid;
+  place-items: center;
+  padding: var(--space-16);
+  box-sizing: border-box;
+}
+
+/* Flat dim, the same value the tour's scrim uses. This one DOES take pointer
+   events: unlike the tour, the questionnaire is a question with an answer, and
+   the app behind it is not what the reader is being asked about. */
+.nbq-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(41, 28, 16, 0.62);
+}
+
+:root[data-theme='night'] .nbq-scrim {
+  background: rgba(8, 5, 3, 0.72);
+}
+
+/* ----------------------------------------------------------------------------
+   The sheet
+   -------------------------------------------------------------------------- */
+
+.nbq-sheet {
+  position: relative;
+  width: min(864px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-24) var(--space-24) var(--space-16);
+  box-sizing: border-box;
+  background: var(--paper-aged);
+  color: var(--ink-sepia);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+
+/* The doubled pencil edge the rest of the app draws. */
+.nbq-sheet::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-hand);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.nbq-sheet:focus-visible {
+  box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-deep);
+}
+
+/* Washi tape, one flat gilt face with torn ink ends. */
+.nbq-tape {
+  position: absolute;
+  top: -11px;
+  left: 46px;
+  width: 86px;
+  height: 22px;
+  background: var(--gilt-face);
+  border-left: 1px dashed var(--on-gilt);
+  border-right: 1px dashed var(--on-gilt);
+  transform: rotate(-2.4deg);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ----------------------------------------------------------------------------
+   Exits — top-left, always (tests/top-left-exits.test.ts states the rule).
+   -------------------------------------------------------------------------- */
+
+.nbq-exits {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-bottom: var(--space-12);
+}
+
+.nbq-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.nbq-exit:hover {
+  color: var(--ink-sepia);
+  border-style: solid;
+}
+
+.nbq-exit svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nbq-exit--quiet {
+  border-color: transparent;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* ----------------------------------------------------------------------------
+   Copy
+   -------------------------------------------------------------------------- */
+
+.nbq-eyebrow {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  text-transform: lowercase;
+  color: var(--ink-sepia-soft);
+}
+
+.nbq-title {
+  margin: 0 0 var(--space-8);
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+}
+
+.nbq-body {
+  margin: 0 0 var(--space-16);
+  max-width: 62ch;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--ink-graphite);
+}
+
+/* ----------------------------------------------------------------------------
+   The option cards — the whole point of the panel: real drawings, not words.
+   -------------------------------------------------------------------------- */
+
+/* Four across at the sheet's full width, so question one's eight rooms are two
+   rows and the whole question is on screen at once. */
+.nbq-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+}
+
+.nbq-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  text-align: left;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  color: var(--ink-sepia);
+  transition:
+    transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring),
+    border-color calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
+    background calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbq-option:hover {
+  transform: translateY(-2px);
+  border-color: var(--wash-amber-deep);
+}
+
+.nbq-option:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+/* Chosen: a flat amber plate under the card, and a solid ink edge. Depth here
+   is a darker face beside a lighter one — never a shadow with blur in it. */
+.nbq-option.is-picked {
+  background: var(--wash-amber-light);
+  border: 2px solid var(--wash-amber-deep);
+  box-shadow: 0 3px 0 0 var(--wash-amber-deep);
+}
+
+.nbq-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-md);
+}
+
+.nbq-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nbq-option-name {
+  font-family: var(--font-heading);
+  /* Caveat below 20px reads as a smudge; --text-h4 is the smallest heading
+     step the app sets it at. */
+  font-size: var(--text-h4);
+  line-height: 1.15;
+  color: var(--ink-sepia);
+}
+
+.nbq-option-line {
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  color: var(--ink-sepia-soft);
+}
+
+/* The tick on a chosen card. Hand-drawn, same stroke as the tour's. */
+.nbq-picked {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: var(--wash-moss-light);
+  border: 1.6px solid var(--wash-moss-deep);
+  border-radius: 50%;
+}
+
+.nbq-picked svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: var(--wash-moss-deep);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ----------------------------------------------------------------------------
+   The sound question — nothing to draw, so it is a list with a mark.
+   -------------------------------------------------------------------------- */
+
+.nbq-options--sounds {
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+}
+
+.nbq-options--sounds .nbq-option {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+}
+
+.nbq-mark {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-md);
+}
+
+.nbq-mark svg {
+  width: 26px;
+  height: 26px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ----------------------------------------------------------------------------
+   The last panel — the room, the book, and everything it decided in a list.
+   -------------------------------------------------------------------------- */
+
+.nbq-final-art {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12);
+  margin-bottom: var(--space-16);
+}
+
+.nbq-art--big {
+  width: auto;
+  max-width: 100%;
+  flex: 1 1 320px;
+}
+
+.nbq-art--book {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.nbq-ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-8) var(--space-16);
+  margin: 0 0 var(--space-12);
+}
+
+.nbq-ledger > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nbq-ledger dt {
+  flex: 0 0 auto;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+}
+
+.nbq-ledger dd {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  color: var(--ink-sepia);
+}
+
+.nbq-note-inline {
+  color: var(--wash-amber-deep);
+  font-style: italic;
+}
+
+.nbq-note {
+  margin: 0 0 var(--space-8);
+  padding: 7px 10px;
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--ink-sepia-soft);
+  background: rgba(233, 196, 106, 0.18);
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: var(--radius-md);
+}
+
+/* ----------------------------------------------------------------------------
+   Foot — dots on the left, the one forward action on the right.
+   -------------------------------------------------------------------------- */
+
+.nbq-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-16);
+  position: sticky;
+  bottom: 0;
+  background: var(--paper-aged);
+  padding-top: var(--space-8);
+}
+
+.nbq-spacer {
+  flex: 1 1 auto;
+}
+
+.nbq-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.nbq-dot {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.nbq-dot svg {
+  width: 14px;
+  height: 14px;
+  overflow: visible;
+}
+
+.nbq-dot circle {
+  fill: none;
+  stroke: var(--ink-sepia-soft);
+  stroke-width: 1.5;
+  opacity: 0.45;
+}
+
+.nbq-dot.is-done circle {
+  fill: var(--wash-moss-light);
+  stroke: var(--wash-moss-deep);
+  opacity: 1;
+}
+
+.nbq-dot.is-current circle {
+  fill: var(--wash-amber);
+  stroke: var(--wash-amber-deep);
+  stroke-width: 2;
+  opacity: 1;
+}
+
+.nbq-btn {
+  padding: 7px 16px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+}
+
+.nbq-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.nbq-btn--primary {
+  background: var(--accent);
+  color: var(--paper-cream);
+  border-color: var(--accent-deep);
+  box-shadow: 0 3px 0 0 var(--accent-deep);
+  font-weight: 700;
+}
+
+.nbq-btn--primary:hover:not(:disabled) {
+  background: var(--accent-deep);
+}
+
+.nbq-btn--primary:disabled {
+  box-shadow: none;
+}
+
+.nbq-summary-line {
+  margin: var(--space-8) 0 0;
+  font-size: var(--text-ui);
+  font-style: italic;
+  color: var(--ink-sepia-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Narrow windows — the app ships at 1280x800 but is resizable, and eight room
+   cards at 178px is the first thing to break.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .nbq-options {
+    grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+  }
+
+  .nbq-sheet {
+    padding: var(--space-16) var(--space-16) var(--space-12);
+  }
+}

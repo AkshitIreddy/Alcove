@@ -15,6 +15,7 @@
 
 import { batch, createSignal, type Accessor } from 'solid-js';
 import { getDb } from '../../data/db';
+import type { TourLength } from './steps';
 
 /** settings-table key holding the tour's completion marker. */
 export const TUTORIAL_KEY = 'appState:tutorialCompleted';
@@ -65,9 +66,30 @@ async function writeCompleted(done: boolean): Promise<void> {
 
 const [running, setRunning] = createSignal(false);
 const [runToken, setRunToken] = createSignal(0);
+/**
+ * How much of the tour to show. The greeting asks; until it is answered this
+ * is the full rundown, so a reader who presses "next" straight past the
+ * question is given everything rather than quietly given less.
+ */
+const [length, setLengthSignal] = createSignal<TourLength>('full');
+const [lengthChosen, setLengthChosen] = createSignal(false);
 
 /** True while the tour overlay is on screen. */
 export const tutorialRunning: Accessor<boolean> = running;
+
+/** Which tour the reader is on. */
+export const tutorialLength: Accessor<TourLength> = length;
+
+/** Has the reader answered the greeting's question yet? */
+export const tutorialLengthChosen: Accessor<boolean> = lengthChosen;
+
+/** Answer it. Called by the two buttons on the greeting card. */
+export function setTutorialLength(next: TourLength): void {
+  batch(() => {
+    setLengthSignal(next);
+    setLengthChosen(true);
+  });
+}
 
 /**
  * Bumped on every `startTutorial()` — the overlay watches it so "replay"
@@ -87,6 +109,10 @@ export function startTutorial(): void {
   batch(() => {
     setRunning(true);
     setRunToken((t) => t + 1);
+    // A replay asks the question again — the reader who took the short way in
+    // is exactly the one most likely to come back for the rest.
+    setLengthSignal('full');
+    setLengthChosen(false);
   });
 }
 

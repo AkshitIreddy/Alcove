@@ -41,10 +41,13 @@ import {
   type Size,
 } from '../src/features/tutorial/engine';
 import {
+  SHORT_TOUR_STEP_IDS,
   TUTORIAL_STEPS,
   TUTORIAL_STEP_IDS,
   stepTargets,
+  tourSteps,
 } from '../src/features/tutorial/steps';
+import { DISMISSIBLE, dismissStale, openSurfaceIds } from '../src/features/tutorial/dismiss';
 
 const VP: Size = { width: 1440, height: 900 };
 const CARD: Size = { width: 348, height: 232 };
@@ -395,19 +398,47 @@ describe('tour script', () => {
   it('walks the shelf, then the book, then the library, in order', () => {
     expect(TUTORIAL_STEP_IDS).toEqual([
       'welcome',
+      'first-book',
       'shelf-moves',
+      'shelf-dock',
+      'shelf-studio',
       'open-a-book',
       'the-rail',
       'writing',
       'blocks',
       'pages',
+      'page-style',
+      'catalogue',
+      'finding-in-book',
       'customize-open',
       'customize-do',
+      'rail-actions',
       'ai-script',
       'quick-switch',
       'settings',
       'youre-set',
     ]);
+  });
+
+  /* The reader's report: "the tutorial did not show all the stuff in the
+     sidebar in the notebook and also did not show the option in sidebar when
+     bookshelf is open". Both rails are now walked, panel by panel, and this
+     is the test that notices when a rail grows a tool the tour never mentions.
+     Selectors are hints, not contracts — so this asserts on the tour's own
+     coverage, naming each tool it must have pointed at. */
+  it('points at both rails — every book panel and every shelf tool', () => {
+    const selectors = TUTORIAL_STEPS.flatMap((s) =>
+      stepTargets(s).map((t) => t.selector),
+    ).join(' ');
+    for (const tool of ['customize', 'page-style', 'catalogue', 'toc', 'focus', 'spec']) {
+      expect(selectors).toContain(`data-tool="${tool}"`);
+    }
+    expect(selectors).toContain('.shelf-dock');
+    expect(selectors).toContain('data-shelf-dock="studio"');
+    // The panels themselves, matched only while open.
+    for (const label of ['Page style', 'Catalogue', 'Table of contents', 'Customize this book']) {
+      expect(selectors).toContain(`aria-label="${label}"`);
+    }
   });
 
   it('every step has unique id, title and body copy', () => {
@@ -446,6 +477,50 @@ describe('tour script', () => {
     }
   });
 
+  /* "A step should close what the step before it opened, GENERALLY — not two
+     special cases." The rule lives in dismiss.ts and reads the incoming step's
+     own target list, so this asserts the two halves that make it work:
+     a step that is about a surface points inside it, and a step that is not
+     does not. Steps 10 and 12 of the reported build are the two cases. */
+  it('lets each step declare, through its targets, what it needs kept open', () => {
+    const targetsOf = (id: string): string[] =>
+      stepTargets(TUTORIAL_STEPS.find((s) => s.id === id)!).map((t) => t.selector);
+    // Talks about the open customize sheet → points at it → it survives.
+    expect(targetsOf('customize-do').some((s) => s.includes('Customize this book'))).toBe(
+      true,
+    );
+    // The step AFTER it points at a rail button instead, which is not inside
+    // any sheet — so the sheet is put away on the way in.
+    for (const after of ['rail-actions', 'ai-script']) {
+      for (const selector of targetsOf(after)) {
+        expect(selector).not.toContain('nb-rail-panel');
+      }
+    }
+    // Same shape one step later: the quick-switcher bar, then Settings.
+    expect(targetsOf('quick-switch')).toContain('.nb-qs-bar');
+    for (const selector of targetsOf('settings')) {
+      expect(selector).not.toContain('nb-qs');
+    }
+  });
+
+  it('knows how to put away every surface a step can open', () => {
+    const ids = DISMISSIBLE.map((d) => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const kind of DISMISSIBLE) {
+      expect(kind.open.length).toBeGreaterThan(3);
+      // Either a control inside the surface, or the one key that always works.
+      expect(kind.close === 'escape' || kind.close.startsWith('.')).toBe(true);
+    }
+    // Every sheet the tour asks a reader to open is covered by one of them.
+    expect(ids).toContain('rail-panel'); // customize, page style, catalogue, toc, studio
+    expect(ids).toContain('quick-switcher');
+    expect(ids).toContain('settings');
+    // DOM-free: in node both are inert rather than a throw, which is what lets
+    // the overlay call them unconditionally on every step entry.
+    expect(dismissStale(['.nb-rail-panel'])).toEqual([]);
+    expect(openSurfaceIds()).toEqual([]);
+  });
+
   it('normalises targets and keeps every selector plausible', () => {
     for (const step of TUTORIAL_STEPS) {
       for (const target of stepTargets(step)) {
@@ -466,6 +541,74 @@ describe('tour script', () => {
         }
       }
     }
+  });
+
+  /* Two lengths, one script (the reader asked to be offered "bare minimum or
+     full the rundown"). The short tour must be a genuine SUBSET in the same
+     order — not a second list that drifts — or the reader who takes the short
+     way is being shown a different app from the one the full tour describes. */
+  it('offers a short tour that is a real subset of the full one', () => {
+    const full = tourSteps('full').map((s) => s.id);
+    const short = tourSteps('short').map((s) => s.id);
+    expect(full).toEqual(TUTORIAL_STEP_IDS);
+    expect(short).toEqual(SHORT_TOUR_STEP_IDS);
+    expect(short.length).toBeGreaterThan(4);
+    expect(short.length).toBeLessThan(full.length);
+    // Subset...
+    for (const id of short) expect(full).toContain(id);
+    // ...and in the same order.
+    expect(full.filter((id) => short.includes(id))).toEqual(short);
+    // The bookends are in both: the greeting asks the question, and nobody
+    // should reach the end of a tour without being told how to replay it.
+    expect(short[0]).toBe('welcome');
+    expect(short[short.length - 1]).toBe('youre-set');
+  });
+
+  /* The first-run gate. An empty case shows a "write my first one" invite; the
+     reported bug is that dragging the shelf counted as progress and dumped the
+     reader on "click a spine" with no spines. The step must wait for the book,
+     must say what to do when the wrong thing is tried, and must never appear
+     for a reader whose library already has books in it. */
+  it('gates the first book, and only on an empty case', () => {
+    const gate = TUTORIAL_STEPS.find((s) => s.id === 'first-book');
+    expect(gate).toBeDefined();
+    if (gate === undefined) return;
+    expect(gate.skipIfMissing).toBe(true);
+    expect(gate.task?.fact).toBe('first-book-made');
+    // Not satisfiable by a shelf gesture — that is the whole point.
+    expect(gate.task?.fact).not.toBe('shelf-moved');
+    expect(gate.task?.nudge?.when).toBe('shelf-moved');
+    expect((gate.task?.nudge?.say ?? '').length).toBeGreaterThan(12);
+    // Every target matches the empty-case invite ONLY, or the step would fail
+    // to skip itself and every reader would meet a gate they cannot pass.
+    for (const target of stepTargets(gate)) {
+      expect(target.selector.startsWith('.shelf-firstrun')).toBe(true);
+    }
+  });
+
+  /* Nudges name a fact the probe can actually observe, and never the step's
+     own fact (which would fire the aside at the same moment as the tick). */
+  it('keeps every nudge honest', () => {
+    for (const step of TUTORIAL_STEPS) {
+      const nudge = step.task?.nudge;
+      if (nudge === undefined) continue;
+      expect(nudge.when).not.toBe(step.task?.fact);
+      expect(nudge.say.length).toBeGreaterThan(12);
+    }
+  });
+
+  /* The block-drag step's spotlight IS the editable column. Padding it would
+     light paper that rejects the drop, which is the reported "stop sign on his
+     cursor"; shrinking it back to one paragraph is what made the target too
+     small to drag inside. Both regressions are one number. */
+  it('frames the whole writing column on the block step, with no padding', () => {
+    const blocks = TUTORIAL_STEPS.find((s) => s.id === 'blocks');
+    expect(blocks).toBeDefined();
+    const first = stepTargets(blocks!)[0];
+    expect(first.selector).toBe('.nb-prose');
+    expect(first.pad).toBe(0);
+    expect(first.padBox).toBeUndefined();
+    expect(first.inset).toBeUndefined();
   });
 
   it('placement works for every step against a real-ish anchor', () => {

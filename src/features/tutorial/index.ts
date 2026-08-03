@@ -24,17 +24,24 @@ export {
   readCompleted as isTutorialCompleted,
   replayTutorial,
   resetTutorial,
+  setTutorialLength,
   startTutorial,
   stopTutorial,
+  tutorialLength,
+  tutorialLengthChosen,
   tutorialRunToken,
   tutorialRunning,
 } from './state';
 export {
+  SHORT_TOUR_STEP_IDS,
   TUTORIAL_STEPS,
   TUTORIAL_STEP_IDS,
   stepTargets,
+  tourSteps,
   type StepTarget,
   type StepTask,
+  type TourLength,
   type TutorialStep,
 } from './steps';
+export { DISMISSIBLE, dismissStale, openSurfaceIds } from './dismiss';
 export type { TourFactKey } from './probe';

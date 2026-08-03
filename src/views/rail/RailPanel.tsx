@@ -15,6 +15,16 @@
  * claim is released on close AND on unmount, because leaving a book with a
  * panel open unmounts the sheet without ever closing it.
  *
+ * Two children, and the split is the contract: the header is OUTSIDE the
+ * scroller and `.nb-rail-panel-body` is the only thing in the sheet that
+ * overflows. That is what keeps the × — the way out — on screen at the bottom
+ * of a six-thousand-pixel catalogue; the reported bug was "scroll down and
+ * there is no way back until you scroll fully up". Do not fold the header into
+ * the body and re-pin it with `position: sticky`: a sticky strip is only as
+ * reliable as the rules layered over it, and this one cannot move at all.
+ * `shots-now/panel-header.mjs` measures it, at both ends of a real scroll, and
+ * refuses to pass a panel that does not actually overflow.
+ *
  * Focus: opening does NOT steal focus, or a sticker button would lose the
  * editor selection it is about to act on. The exception is a keyboard opener —
  * `:focus-visible` on the rail button is the browser's own answer to "was this

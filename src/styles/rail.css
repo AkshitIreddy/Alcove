@@ -202,12 +202,41 @@
  * reading order: the title still announces before the button, and tab order
  * follows the visual left-to-right.
  */
+/*
+ * And it STAYS PUT while the body scrolls.
+ *
+ * Not with `position: sticky`: the header is a flex sibling of the scroller,
+ * outside it, so sticky would have nothing to stick to. The pin is the flex
+ * column — `.nb-rail-panel` is `flex-direction: column` and
+ * `.nb-rail-panel-body` is the only thing in it that overflows.
+ *
+ * `flex: 0 0 auto` is the load-bearing half of that and it was implicit.
+ * A flex item defaults to `flex-shrink: 1`, and the body's flex BASE size is
+ * its content — six thousand pixels of catalogue against a six-hundred pixel
+ * sheet. Shrinkage is handed out in proportion to base size, so the header was
+ * being asked to give up its whole height and only kept it because
+ * `min-height: auto` clamps a flex item at its min-content size. That clamp is
+ * a backstop, not a promise: any future rule that gives this header a
+ * `min-height: 0`, or an `overflow` (which changes what the automatic minimum
+ * resolves to), silently squeezes the one control that leaves the panel down to
+ * nothing. Say it outright instead.
+ *
+ * Opaque, and above the body, for the reason the tour card's pinned footer
+ * needs a background (tutorial.css): a sheet inside the scroller pins its own
+ * head at `top: 0` with `z-index: 3`, which is the very edge this header ends
+ * at — so the header has to win the overlap and must not be see-through when
+ * it does. A transparent strip lets the cards scroll through the exit.
+ */
 .nb-rail-panel-header {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-8);
   padding: var(--space-12) var(--space-16) var(--space-8);
+  background: var(--paper-cream);
   border-bottom: 1px dashed var(--ink-line-soft);
 }
 
@@ -323,6 +352,12 @@
  *
  * Deliberately NOT a shadow or a fade at the join: content simply goes behind
  * one flat fill, which is the whole depth model this app has.
+ *
+ * There are now three pinned strips in a rail panel and they are ordered on
+ * purpose, top of the stack down: the sheet's own header (`z-index: 4`, outside
+ * the scroller, never moves), this one (3), and the studio's tab row (2, which
+ * stands down when this one is on screen). A fourth must pick a lane too — two
+ * strips at `top: 0` on the same frame land on top of each other.
  */
 .nb-sheet-head {
   position: sticky;
@@ -834,11 +869,44 @@
    "this book" (spine + cover, live flipping preview) and "this library"
    (theme cards painted from the real case art, wall, wallpaper, flora, light).
    ========================================================================== */
+/*
+ * The tab row is pinned, for the same reason the sheet header is.
+ *
+ * These two tabs are the only way between the studio's halves, and the book
+ * half is four and a half THOUSAND pixels tall — measured, at a 620px window,
+ * by shots-now/panel-header.mjs. Scroll down to the cover knobs and the way to
+ * "this library" is gone until you scroll all the way back up, which is the
+ * reader's reported complaint arriving one level in from the panel's own ×.
+ *
+ * `.nb-sheet-head` is the utility for exactly this, and this row deliberately
+ * does NOT use it: a `.nb-pick` sheet opening below carries a `.nb-sheet-head`
+ * of its own, both would pin at `top: 0`, and two strips claiming the same
+ * three centimetres of scrollport is worse than either alone. So this pins one
+ * step lower in the stack (`z-index: 2` under the picker's 3) and stands down
+ * entirely while a picker owns the sheet — see below.
+ *
+ * Background for the usual reason: a transparent pinned strip lets the chips
+ * scroll straight through the words.
+ */
 .nb-studio-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   gap: var(--space-4);
   padding-bottom: var(--space-8);
+  background: var(--paper-cream);
   border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+/*
+ * A picker has taken the sheet over: it has its own pinned head with the way
+ * back on it, and the tabs are not what the reader is steering with. Standing
+ * down is what keeps the two pins from stacking on the same line — and the
+ * tabs are still there, at the top of the scroll, the moment `back` is pressed.
+ */
+.nb-customize:has(.nb-pick) .nb-studio-tabs {
+  position: static;
 }
 
 .nb-studio-tab {

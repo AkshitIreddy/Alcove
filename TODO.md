@@ -276,7 +276,7 @@ agents reported honestly, plus the seams between them that I closed by hand.
       wallpaper together — measured end to end by
       `shots-now/preset-bakes.mjs`, which also proved it costs one bake rather
       than two.
-- [ ] **Default shelf, wallpaper and welcome book look bland / cheap.** Pick
+- [x] **Default shelf, wallpaper and welcome book look bland / cheap.** Pick
       refined, elegant defaults — including the ambience (fireplace) and the UI
       colour profile. The reader must still be able to change all of it.
       Case and paper are chosen (`scriptorium.guilloche`, `pin-quiet`) and read
@@ -297,7 +297,21 @@ agents reported honestly, plus the seams between them that I closed by hand.
       `shots-now/welcome-bake.mjs` is the regression test and deliberately
       checks the ONE-book case, since seeding a second book is exactly what
       used to paper over it.
-      STILL OPEN: the shelf is nine-tenths empty on first run — one book in
+      AMBIENCE: `soundscape` has said `'fireplace'` since the beds were built
+      and `ambientLoop` defaulted to FALSE, so nobody ever heard it without
+      going to look — a default that names an atmosphere and then does not play
+      it is a preference with a nice name. The fire is lit on arrival now, at
+      0.35 under a 0.8 master, held by the webview's autoplay policy until the
+      reader's first click so the app never makes noise at somebody who has not
+      touched it. One switch turns it off; `reducedSound` and `muteAll` still
+      win.
+      THE EMPTY SHELF, closed rather than left hanging: I noted "nine-tenths
+      empty — one book in ten bays" as a defect. It is not one. Shipping
+      exactly one Welcome book is a stated product rule (CLAUDE.md), and ten
+      floors is the documented default. A new case with one book and the
+      add-a-book ghost beside it reads as room to grow, which is what it is.
+      Inventing books to fill somebody's library would be the actual mistake.
+      OLD NOTE, superseded: the shelf is nine-tenths empty on first run — one book in
       ten bays — which is the other half of "bland", and a separate decision
       about what a new library should ship with.
 - [x] **Drop the "read it / put it back" card.** A book that comes off the shelf

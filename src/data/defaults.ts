@@ -40,7 +40,21 @@ export const DEFAULT_SETTINGS: Settings = {
   soundShelf: 0.7,
   soundAmbient: 0.35,
   muteAll: false,
-  ambientLoop: false,
+  /*
+   * The room has a fire in it when you arrive.
+   *
+   * `soundscape` below has said 'fireplace' since the beds were built, and
+   * this flag being false meant nobody ever heard it without going to look —
+   * a default that names an atmosphere and then does not play it is not a
+   * default, it is a preference with a nice name.
+   *
+   * Safe to have on: it is a BED, not a cue, mixed at 0.35 under a 0.8 master,
+   * and the webview's autoplay policy holds it until the reader's first click
+   * — so the app is never making noise at somebody who has not touched it yet.
+   * One switch in the settings sheet turns it off, and `reducedSound` and
+   * `muteAll` both still win over it.
+   */
+  ambientLoop: true,
   reducedSound: false,
 
   // Behavior

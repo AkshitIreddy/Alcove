@@ -20,8 +20,26 @@
  * features and treated as hints, never contracts.
  */
 
+import { BOOK_PRESETS } from '../../art/bookDesign';
+import { SHELF_PRESETS } from '../../art/shelfDesign';
+import { WALLPAPER_PRESETS } from '../../art/wallpaperDesign';
 import type { Inset, PadBox, Side } from './engine';
 import type { TourFactKey } from './probe';
+
+/**
+ * The sign-off quotes real counts rather than an adjective.
+ *
+ * Read from the vocabularies, never typed here: a tour that says "over a
+ * hundred" is a sentence somebody has to remember to update, and the first
+ * time it goes stale it is the app lying to a reader in their first five
+ * minutes. These three are pure data modules with no `window` at import, so
+ * the tour can hold them.
+ */
+const OPENNESS = {
+  cases: SHELF_PRESETS.length,
+  papers: WALLPAPER_PRESETS.length,
+  bindings: BOOK_PRESETS.length,
+} as const;
 
 /** Which top-level scene a step is really about. */
 export type StepScene = 'shelf' | 'book' | 'any';
@@ -301,7 +319,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     // implied. What the app opens with is one pick out of thousands of
     // combinations, and a reader who never learns that treats the shipped
     // library as the product instead of as a starting point.
-    body: 'That is the tour. Almost nothing here is fixed: the case and the wall are yours in the studio, every book has its own binding, the paper and ink change per page, and the sounds have their own settings. What the app opened with is one pick out of thousands. Nothing is permanent either — rename things, restyle them, throw a book in the trash and take it back out. If you want this walk again it is in Settings, under replay the tour.',
+    body: `That is the tour. Almost nothing here is fixed: ${OPENNESS.cases} bookcases to build and ${OPENNESS.papers} papers to hang behind them in the studio, ${OPENNESS.bindings} bindings for any book — or pick its shape, covering and tooling yourself — and the hand, ink and size change per block. What the app opened with is one pick out of all that. Nothing is permanent either — rename things, restyle them, throw a book in the trash and take it back out. If you want this walk again it is in Settings, under replay the tour.`,
     hint: 'gear → replay the tour',
     targets: [{ selector: '.nbs-gear-button', pad: 10 }],
     side: 'right',

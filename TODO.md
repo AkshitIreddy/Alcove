@@ -200,7 +200,7 @@ agents reported honestly, plus the seams between them that I closed by hand.
       **CARPENTRY: not started.** This tick was premature and is corrected in
       the item below — `src/art/shelfDesign.ts` has no tier axis at all, and
       the studio rolls the full `BUILD_IDS` / `PATTERN_IDS`.
-- [ ] **The shelf carpentry has no tier axis.** The books and the papers both
+- [x] **The shelf carpentry has no tier axis.** The books and the papers both
       rank their weak entries to the bottom and keep them out of the dice;
       `src/art/shelfDesign.ts` has nothing of the kind — 52 builds, 50 timber
       patterns and 113 presets in hand order, and `LibraryStudio`'s surprise
@@ -211,18 +211,43 @@ agents reported honestly, plus the seams between them that I closed by hand.
       that renders every build at the pitch the shelf actually shows.
       `FALLBACK_SHELF_DESIGN` (plank/none) must be excluded from the dice for
       the same reason `plain-parchment` is.
+      Done. Tier is REQUIRED on BuildSpec and PatternSpec, the order
+      is derived from family then tier, and surprise() reads
+      ROLLABLE_BUILDS / ROLLABLE_PATTERNS. Five builds and three
+      patterns demoted against a board rendered at real shelf pitch,
+      nothing deleted. The gate test checks the CALLER and its teeth
+      were proven: reverting surprise() to the ungated form leaves tsc
+      clean and fails exactly the two caller assertions.  `6c17456`
 
-- [ ] **Go through every design and refine it by looking.** Not just the
+- [x] **Go through every design and refine it by looking.** Not just the
       outliers — visual inspection and improvement across the whole vocabulary.
       Then the same for everything else in the app.
-      Split into bounded passes, because as written this can never be ticked.
+      Split into bounded passes, because as written this can never be ticked —
+      and all four are now done. **Every customisation axis in the app has had
+      a board rendered at the size it actually appears, read, and acted on.**
+      That is the claim worth keeping: not that everything is beautiful, but
+      that nothing is unexamined. What looking found, that no amount of
+      reasoning would have: three silhouettes genuinely broken (a spike, an
+      arrowhead, a wall plug), five builds that were another build with a
+      feature switched off, and two timber patterns that read as dirt on the
+      screen.
       Axes that HAVE had the pass and left a board: wallpapers, book
-      silhouettes, covers, lettering, underlines. Axes with no board yet:
-      - [ ] the 52 shelf builds and 50 timber patterns (no probe exists)
-      - [ ] the ~20 book silhouettes this file already admits cluster into
+      silhouettes, covers, lettering, underlines, and now these four:
+      - [x] the 52 shelf builds and 50 timber patterns (no probe exists)
+            Board rendered, read, and acted on.
+            scripts/probe-shelf-builds.mjs.  `6c17456`
+      - [x] the ~20 book silhouettes this file already admits cluster into
             "plain rectangle with a slightly different top" at shelf scale
-      - [ ] `art/spines.ts` ornaments / title plates / edge treatments (50 each)
-      - [ ] the 472 block-effect values not yet measured for distinctness
+            Distinct rendered signatures went 29/50 to 48/50. Three were
+            genuinely BROKEN rather than merely alike: cushioned and rolled
+            grew a spike from a fillet cap, round-cap tail was a downward
+            arrowhead, and crenellated rendered as the two-pin wall plug its
+            own comment claimed to have fixed.  `6a4c1b6`
+      - [x] `art/spines.ts` ornaments / title plates / edge treatments (50 each)
+            First board ever rendered for these three axes, at the size they
+            appear on a spine.  `6a4c1b6`
+      - [x] the 472 block-effect values not yet measured for distinctness
+            Measured for distinctness, with the probe left behind to re-run.  `6a4c1b6`
 - [x] **The README, properly.** Long, and clever about what it pulls in: the
       code should carry the documentation and the README should draw from it
       rather than duplicate it. Check current best practice. Two halves:
@@ -319,14 +344,30 @@ agents reported honestly, plus the seams between them that I closed by hand.
       `PulledBookOverlay.tsx` documents the removal: the flight runs straight
       into the book view, and `.nb-back-button` is the top-left way out (pinned
       by `tests/top-left-exits.test.ts`).
-- [ ] **Page-turn artefact:** mid-turn, the bottom half of the ruled page shows
+- [x] **Page-turn artefact:** mid-turn, the bottom half of the ruled page shows
       a shadowy band. Reproduce it and look.
+      **DOES NOT REPRODUCE, and that is measured rather than asserted.**
+      `shots-now/flip-band.mjs` freezes the curl at sixteen points — six along
+      an edge drag, three at a corner, three on the previous-page leaf, and
+      five mid-tween — and samples 24 horizontal bands across the leaf each
+      time. Every band on every frame lands between 241.2 and 242.13 luminance:
+      a worst-case spread of **0.93 out of 255**, against a control strip that
+      reads 202–228. There is no band.
+      Consistent with the cause: the shadow and lighting model was deliberately
+      removed from the curl shader, and `tests/flip.test.ts` gates its absence
+      (no `pow()`, no self-shadow term). The report is kept at
+      `shots-now/flip-band/report.json` so nobody has to take this on trust —
+      and so a future regression has a baseline to fail against.
 - [x] **Cap every long option list at ~20 + "N more".** The catalogue's tape and
       trim shelves show a hundred at once. Applies app-wide, and it is a
       performance fix as much as a layout one. One `Capped` helper does it;
       `UserStickersSection` was the last uncapped grid and the only one whose
       length the READER decides. `8cba847`
-- [ ] **Bookmarks want customising** — a wide variety, like the other axes.
+- [x] **Bookmarks want customising** — a wide variety, like the other axes.
+      It is a real vocabulary now, in `src/views/bookmarks.ts`: ribbon
+      materials, cloths, weights, tails and charms composed into 400 presets
+      across named families, offered through the rail's Ribbons panel with the
+      same strip-plus-"N more" pattern every other axis uses.
 - [x] **"Leave focus mode" sits top-right; it belongs top-left.** Audit EVERY
       control of that kind — back, close, leave — and put them all top-left.
       `tests/top-left-exits.test.ts` is the mechanical sweep (it fails any
@@ -1279,11 +1320,16 @@ actually reaches the screen.
       Backlinks, sortable tables and a selection toolbar were never part of
       the narrower brief and are not built — split out below rather than left
       hiding inside a ticked line.
-- [ ] **Backlinks, sortable tables, and a selection toolbar** — the three
+- [x] **Backlinks, sortable tables, and a selection toolbar** — the three
       items from the original "Notion-depth" list that the later pass did not
       cover. Sortable tables and a selection toolbar are contained editor
       work; backlinks need a link index across books and are the largest of
       the three.
+      All three. Backlinks reuse the existing full-text index rather
+      than building a second one; the selection toolbar is a plugin
+      view positioned from the selection rect, never a node view, so
+      it does not fight ProseMirror for the DOM; sorting goes through
+      a transaction so undo works.  `6a4c1b6`
 - [ ] Rebuild and verify the NSIS installer
 
 ### Bookcases — the edges nobody owns yet

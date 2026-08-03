@@ -33,6 +33,7 @@ import {
 } from './containers';
 import { Column, Columns } from './columns';
 import { Footnote } from './footnote';
+import { PageLink } from './pageLink';
 import { MathBlock, MathInline } from './math';
 import { Spoiler } from './spoiler';
 import { BlockEffects } from '../effects/blockEffects';
@@ -60,6 +61,9 @@ const registry: CustomNodeRegistration[] = [
   { name: Columns.name, extension: Columns },
   { name: Column.name, extension: Column },
   { name: Footnote.name, extension: Footnote },
+  // A reference to another page. Inline, so it is not in BLOCK_EFFECT_TYPES —
+  // tests/block-effect-coverage.test.ts holds the stated reason.
+  { name: PageLink.name, extension: PageLink },
   { name: MathBlock.name, extension: MathBlock },
   { name: MathInline.name, extension: MathInline },
   { name: IndexCard.name, extension: IndexCard },
@@ -150,6 +154,7 @@ export {
   type FootnoteRef,
 } from './footnote';
 export { MathBlock, MathInline } from './math';
+export { PageLink, type PageLinkAttributes } from './pageLink';
 export {
   KNOWN_MACROS,
   atomHeight,

@@ -51,6 +51,11 @@ const NOT_A_DRESSABLE_BLOCK: Readonly<Record<string, string>> = {
   // `inline: true` — maths inside a sentence, drawn in the run of the text.
   // The equation BLOCK (`math`) is dressable and is in the list.
   mathInline: 'inline maths, not a block',
+  // `inline: true` — a reference to another page, set in the run of a
+  // sentence. It is a word with a rule under it, not a box: tape on it would
+  // hang off the line it is written in, and paper behind it would be paper
+  // behind three words in the middle of a paragraph.
+  pageLink: 'inline reference, not a block',
 };
 
 /** Every node name registered under src/editor/nodes. */

@@ -104,8 +104,8 @@ defending â€” why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->231<!--/f--> of <!--f:srcFiles-->239<!--/f--> source files
-open with a module docstring â€” <!--f:docstringLines-->4357<!--/f--> lines in total,
+<!--f:srcDocstrings-->244<!--/f--> of <!--f:srcFiles-->252<!--/f--> source files
+open with a module docstring â€” <!--f:docstringLines-->4701<!--/f--> lines in total,
 about one line of file-level prose for every twenty-three lines of code. That
 number is not asserted here; `npm run readme:check` recomputes it from the tree and
 `tests/readme.test.ts` fails if this sentence has drifted.
@@ -417,7 +417,7 @@ path: it is what the entire Playwright harness runs against.
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` â€” `tests/` is not in the `tsconfig` include. |
-| `npx vitest run` | <!--f:unitTests-->59<!--/f--> unit-test files, node environment (jsdom is deliberately not installed). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->62<!--/f--> unit-test files, node environment (jsdom is deliberately not installed). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](docs/e2e.md). |
 

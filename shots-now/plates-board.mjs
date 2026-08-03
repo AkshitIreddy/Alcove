@@ -39,7 +39,22 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1400 } });
 page.setDefaultTimeout(120000);
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto(`${URL_BASE}/?fx=force`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
+/*
+ * These four boards draw straight out of `art/`; they never touch the shelf, so
+ * waiting on `__shelfWorld` made them hostage to whether the whole app happened
+ * to boot. It stopped a measuring run dead while another agent's half-saved
+ * module was on the dev server, and the thing being measured was fine the whole
+ * time. Wait for the module the board actually imports instead.
+ */
+await page.waitForFunction(
+  () =>
+    import('/src/art/flat.ts').then(
+      () => true,
+      () => false,
+    ),
+  null,
+  { polling: 500 },
+);
 // The handwriting faces are what the title is set in; an unloaded face
 // silently falls back to a system serif and the board lies about the fit.
 await page.evaluate(() => document.fonts.ready);

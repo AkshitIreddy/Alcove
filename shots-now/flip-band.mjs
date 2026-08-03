@@ -205,6 +205,27 @@ if (!opened) throw new Error('could not open the seeded book');
 // texture count printed below is the guard: three uploads = three real faces.
 await page.waitForTimeout(6000);
 
+/**
+ * One shot of the spread, surviving a dev-server reload.
+ *
+ * The dev server is shared with other agents editing this tree, so a save can
+ * full-reload the page at any moment — which closes the book and leaves every
+ * locator waiting on a spread that no longer exists. Without this the run dies
+ * on whichever screenshot happened to be in flight, having thrown away the
+ * frames it already had.
+ */
+async function surfaceShot(recover = true) {
+  try {
+    return await page.locator('.nb-flip-surface').screenshot({ timeout: 25_000 });
+  } catch (error) {
+    if (!recover) throw error;
+    console.log('    lost the spread (dev-server reload?) — reopening');
+    await openBook();
+    await page.waitForTimeout(5000);
+    return await page.locator('.nb-flip-surface').screenshot({ timeout: 25_000 });
+  }
+}
+
 /* ------------------------------------------------------- geometry + freezing */
 
 const geom = await page.evaluate(() => {
@@ -238,11 +259,24 @@ const settleFrames = () =>
  * preserveDrawingBuffer:false cannot be read any other way), split into 24
  * horizontal bands, and each band's PAPER tone is taken as the 90th percentile
  * of its luminance. Ink and rules sit far below that percentile, so the number
- * is the paper itself. Unshaded paper gives the identical value in every band;
- * any wash, slab or gradient over a band drags that band's percentile down.
+ * is the paper itself. Unshaded paper gives the identical value in every band.
  *
- * A quarter-page-wide slab (what the removed self-shadow was) covers ~25% of a
- * row, well past the 10% the percentile tolerates, so it cannot hide from this.
+ * WHAT THIS CAN AND CANNOT SEE — read before trusting a green result.
+ *
+ * It sees a wash that covers essentially the WHOLE width of a row, and
+ * nothing narrower. An earlier version of this comment claimed a
+ * quarter-page-wide slab "cannot hide from this", reasoning that 25% is well
+ * past the 10% a 90th percentile tolerates. That is backwards: sorted
+ * ascending, the 90th percentile is a value out of the BRIGHTEST tenth, so it
+ * does not move until more than 90% of the row is darker than paper —
+ *
+ *     10% of a row darkened -> reports 242 (clean paper)
+ *     25%  ->  242      75%  ->  242      90%  ->  242      95%  ->  207
+ *
+ * — and the slab that produced the reader's report was a quarter of a leaf.
+ * So this number is a full-width-wash check plus a live control, and the
+ * LOCAL check is `shots-now/flip-band-scan.mjs`, which differences each frame
+ * against the `rest-*.png` shot taken beside it.
  *
  * `control` is a narrow column through the contact shadow: it MUST come back
  * darker than the paper, otherwise the measurement has gone blind and a clean
@@ -401,6 +435,15 @@ async function frozenFrame(label, p, gripYFrac, side = 'right') {
     [p, leaf.w, leaf.h],
   );
 
+  // The SAME spread, at rest, before anything is dragged — the content
+  // reference flip-band-scan.mjs differences against. curl.ts pins the strip
+  // between the gutter and the fold exactly where the DOM drew it, so over
+  // that strip the two frames must agree pixel for pixel; any darkening there
+  // is the reported artefact and cannot be page content, because the content
+  // is identical in both shots. Taken here rather than once at the top: the
+  // probe turns pages as it goes, so "the spread at rest" is not one image.
+  writeFileSync(`${OUT}/rest-${label}.png`, await surfaceShot());
+
   // Drag, then confirm the curl actually MOVED there before believing the
   // frame. A pointerdown that lands while a previous landing is still in
   // flight is ignored, and the shot would then be of a page at p≈0 wearing
@@ -445,7 +488,7 @@ async function frozenFrame(label, p, gripYFrac, side = 'right') {
   }
   await page.evaluate(() => globalThis.__glTap.stop());
 
-  const shot = await page.locator('.nb-flip-surface').screenshot();
+  const shot = await surfaceShot();
   writeFileSync(`${OUT}/${label}.png`, shot);
   writeFileSync(`${OUT}/boost-${label}.png`, await boosted(shot));
 
@@ -534,10 +577,14 @@ for (const p of [0.35, 0.6, 0.85]) {
  */
 await page.waitForTimeout(2500);
 for (const delay of [60, 120, 180, 240, 300]) {
+  writeFileSync(
+    `${OUT}/rest-tween-${delay}.png`,
+    await surfaceShot(),
+  );
   await page.evaluate(() => globalThis.__glTap.start());
   await page.keyboard.press('ArrowLeft');
   await page.waitForTimeout(delay);
-  const shot = await page.locator('.nb-flip-surface').screenshot();
+  const shot = await surfaceShot();
   writeFileSync(`${OUT}/tween-${delay}.png`, shot);
   writeFileSync(`${OUT}/boost-tween-${delay}.png`, await boosted(shot));
   const draws = await page.evaluate(() => globalThis.__glTap.draws());

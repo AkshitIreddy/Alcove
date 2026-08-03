@@ -29,3 +29,21 @@ export function getPageEditor(pageId: string): Editor | null {
   const editor = instances.get(pageId) ?? null;
   return editor !== null && !editor.isDestroyed ? editor : null;
 }
+
+/**
+ * The page an editor is showing, or null.
+ *
+ * The reverse of the map, walked rather than kept as a second index: an
+ * editor's page never changes (PageEditor remounts instead), so there is no
+ * second map to keep in step, and the walk is over the two or three editors a
+ * spread has mounted.
+ *
+ * The `[[` picker (src/editor/links) is what needs it — a page must not be
+ * offered as a link target on itself, and a plugin only ever gets the editor.
+ */
+export function pageIdOfEditor(editor: Editor): string | null {
+  for (const [pageId, instance] of instances) {
+    if (instance === editor) return pageId;
+  }
+  return null;
+}

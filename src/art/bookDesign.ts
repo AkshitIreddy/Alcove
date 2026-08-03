@@ -630,8 +630,26 @@ type EndProfile =
   | 'wave'
   | 'bevel';
 
-/** What the long edges do between the two ends. */
-type SideProfile = 'straight' | 'belly' | 'bulge' | 'waist' | 'ripple' | 'sway' | 'shoulder';
+/**
+ * What the long edges do between the two ends.
+ *
+ * `pinch` and `crumple` are the same idea as `waist` and `ripple` taken far
+ * enough to survive 34px. They exist as their own values rather than as bigger
+ * numbers on the old two because the old two are shared: `waist` also carries
+ * `hollow-back` and `long-stitch`, and `ripple` also carries `wave-head`, whose
+ * differences live at their ENDS. Deepening the shared curve moved all six
+ * together and separated none of them.
+ */
+type SideProfile =
+  | 'straight'
+  | 'belly'
+  | 'bulge'
+  | 'waist'
+  | 'pinch'
+  | 'ripple'
+  | 'crumple'
+  | 'sway'
+  | 'shoulder';
 
 /**
  * The parts of a shape that are separate OBJECTS rather than silhouette.
@@ -714,15 +732,49 @@ function lobes(count: number, height: number, valley: number): readonly Knot[] {
 const END_PROFILES: Readonly<Record<EndProfile, EndProfileSpec>> = {
   // The house edge: a hair of outward bow and nothing else.
   flat: endProfile(0, [{ u: 1, v: 0, cu: 0.5, cv: 0.3 }]),
-  // A gently swollen end — a padded board, a springback's roll.
-  cushion: endProfile(0, [{ u: 1, v: 0, cu: 0.5, cv: 1 }]),
-  // The hollow back: the spine arcs away from the text block.
-  dome: endProfile(0, [{ u: 1, v: 0, cu: 0.5, cv: 2 }]),
-  // A rolled leather cap: flat across the crown, turned down hard at the sides.
+  /*
+   * A gently swollen end — a padded board, a springback's roll.
+   *
+   * One quadratic across the whole edge is an ARCH, not a cushion, and once the
+   * corner fillets stopped eating four fifths of the span that is exactly what
+   * `cushioned`, `spring-back` and `limp` all turned into: a lozenge with a
+   * soft point on it. A padded board is flat over most of its width and only
+   * turns near the corners, so the crown is held from 0.22 to 0.78 and the
+   * turn-down is a fifth of the edge at each side.
+   */
+  cushion: endProfile(0, [
+    { u: 0.24, v: 0.46, cu: 0.1, cv: 0.26 },
+    { u: 0.76, v: 0.46, cu: 0.5, cv: 0.56 },
+    { u: 1, v: 0, cu: 0.9, cv: 0.26 },
+  ]),
+  /*
+   * The hollow back: the spine arcs away from the text block.
+   *
+   * A single quadratic is a PARABOLA, and a parabola 16px tall over a 29px
+   * edge has a point on it — `hollow-back` and `domed-head` were both reading
+   * as leaves. The knot at the crown with both controls pulled out to the
+   * sides is the same total rise taken as an arch: the shoulders climb faster
+   * and the top is round.
+   */
+  dome: endProfile(0, [
+    { u: 0.5, v: 1, cu: 0.13, cv: 1 },
+    { u: 1, v: 0, cu: 0.87, cv: 1 },
+  ]),
+  /*
+   * A rolled leather cap: flat across the crown, turned down at the sides.
+   *
+   * It was not flat across anything. The crown ran 0.26→0.74 with its control
+   * at cv 2.15 — a third of a unit ABOVE both knots — so the middle bulged
+   * while the flanks fell away from 1.55 to 0 over a quarter of the width
+   * each, and what `round-cap` actually put at its foot was a shallow
+   * ARROWHEAD under a pill. A pencil tip, which is the thing the reader named.
+   * The crown is wider now, the control sits barely proud of it, and the turn
+   * down is a fifth of the width at each side — a cap turned over a cord.
+   */
   round: endProfile(0, [
-    { u: 0.26, v: 1.55, cu: 0.04, cv: 1.2 },
-    { u: 0.74, v: 1.55, cu: 0.5, cv: 2.15 },
-    { u: 1, v: 0, cu: 0.96, cv: 1.2 },
+    { u: 0.2, v: 1.5, cu: 0.06, cv: 1.35 },
+    { u: 0.8, v: 1.5, cu: 0.5, cv: 1.62 },
+    { u: 1, v: 0, cu: 0.94, cv: 1.35 },
   ]),
   /*
    * A pitched roof, TRUNCATED. Both controls sit on the ramps, so the runs are
@@ -742,10 +794,13 @@ const END_PROFILES: Readonly<Record<EndProfile, EndProfileSpec>> = {
   // for the same reason the gable is: a point at 34px is a nib, not an arch.
   // The crown is narrower and the rise taller than the gable's, which is the
   // whole difference between the two once neither of them comes to a point.
+  // A third of the width and 1.8 units up was not narrow or tall enough for
+  // that to be true of `domed-head` as well, which is one arc over nearly the
+  // same span: the two read as one picture. A quarter, and taller again.
   ogee: endProfile(0, [
-    { u: 0.34, v: 1.8, cu: 0.24, cv: 0.12 },
-    { u: 0.66, v: 1.8, cu: 0.5, cv: 2.15 },
-    { u: 1, v: 0, cu: 0.76, cv: 0.12 },
+    { u: 0.34, v: 2, cu: 0.24, cv: 0.05 },
+    { u: 0.66, v: 2, cu: 0.5, cv: 2.3 },
+    { u: 1, v: 0, cu: 0.76, cv: 0.05 },
   ]),
   /*
    * A thumb notch cut INTO the end — a scoop you could get a finger in, not a
@@ -775,22 +830,29 @@ const END_PROFILES: Readonly<Record<EndProfile, EndProfileSpec>> = {
    * Battlements: three broad MERLONS and the two narrow embrasures between
    * them, cut shallow.
    *
-   * It was two teeth 0.22 wide and 25px deep, and what came out of the
-   * rasterizer was a two-pin wall plug — because at 34px an ink outline is two
-   * pixels on each side of everything, so a tooth a fifth of the width across
-   * has almost no fill left in it and the eye reads the gaps instead. Wide
-   * merlons, thin embrasures, and a third of the old depth.
+   * That sentence was already here and the numbers under it said something
+   * else. The run started and ended at v 0 with two raised teeth 0.16 wide in
+   * the middle of it, so the outer "merlons" were not raised at all and what
+   * the rasterizer drew was the two-pin wall plug the comment claimed to have
+   * fixed — verified on `shots-now/out/shapes-detail.png` before this edit.
+   *
+   * A crenellation starts and ends ON a merlon, which is why `v0` is now the
+   * full rise and the last knot lands there too: three teeth 0.22 wide, two
+   * gaps 0.17 wide, and the corners of the spine are the outer two merlons.
+   * Embrasures are held a hair proud of the shoulder (0.1) for the same reason
+   * the scallops hold their valleys proud — a floor at zero puts a cusp where
+   * the ink of two walls meets and the gap fills in with outline.
    */
-  crenel: endProfile(0, [
-    { u: 0.2267, v: 0, cu: 0.11, cv: 0 },
-    { u: 0.2267, v: 1.45, cu: 0.2267, cv: 0.725 },
-    { u: 0.3867, v: 1.45, cu: 0.31, cv: 1.45 },
-    { u: 0.3867, v: 0.1, cu: 0.3867, cv: 0.78 },
-    { u: 0.6133, v: 0.1, cu: 0.5, cv: 0.1 },
-    { u: 0.6133, v: 1.45, cu: 0.6133, cv: 0.78 },
-    { u: 0.7733, v: 1.45, cu: 0.69, cv: 1.45 },
-    { u: 0.7733, v: 0, cu: 0.7733, cv: 0.725 },
-    { u: 1, v: 0, cu: 0.89, cv: 0 },
+  crenel: endProfile(1.45, [
+    { u: 0.22, v: 1.45, cu: 0.11, cv: 1.45 },
+    { u: 0.22, v: 0.1, cu: 0.22, cv: 0.775 },
+    { u: 0.39, v: 0.1, cu: 0.305, cv: 0.1 },
+    { u: 0.39, v: 1.45, cu: 0.39, cv: 0.775 },
+    { u: 0.61, v: 1.45, cu: 0.5, cv: 1.45 },
+    { u: 0.61, v: 0.1, cu: 0.61, cv: 0.775 },
+    { u: 0.78, v: 0.1, cu: 0.695, cv: 0.1 },
+    { u: 0.78, v: 1.45, cu: 0.78, cv: 0.775 },
+    { u: 1, v: 1.45, cu: 0.89, cv: 1.45 },
   ]),
   /*
    * Scallops, with the valleys held PROUD of the corners.
@@ -909,8 +971,15 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
   square: shape('square', 'Square', 'The ordinary case binding: near-square corners, dead upright.',
     ['plain', 'utilitarian'], { group: 'case', tier: 'signature' }),
 
+  // An 11px fillet on a 34px spine is the same picture as a 12px chamfer, which
+  // is how a rounded back came to read as bevelled boards, and generous corners
+  // alone never separated it from `square` either. The ROUND is the belly, and
+  // a back that is round is WIDEST IN THE MIDDLE — so it stands in at the head
+  // and the foot, which is the one difference that runs the full height.
   rounded: shape('rounded', 'Rounded Back', 'The sides belly out and the corners are generous.',
-    ['plain', 'antique', 'cosy'], { group: 'case', tier: 'signature', side: 'belly', corner: 0.46 }),
+    ['plain', 'antique', 'cosy'],
+    { group: 'case', tier: 'signature', side: 'belly', corner: 0.4, headWidth: 0.86, tailWidth: 0.86,
+      head: 'cushion', tail: 'cushion', endDepth: 0.042 }),
 
   'tight-back': shape('tight-back', 'Tight Back', 'Flat back with the joints creased in: crisp corners, two grooves.',
     ['formal', 'severe', 'refined'], { group: 'case', tier: 'shelf', corner: 0.06, endDepth: 0.022, marks: ['grooves'] }),
@@ -921,13 +990,26 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
   // The side is WAISTED because the blurb already said so — "the spine arcs
   // away from the text block" — and it was drawn with straight sides, which
   // left it 164px from `chamfered` across the whole spine.
+  // The domes carry the whole name, so they are cut to a tenth of the height
+  // rather than to 0.072 — at the old depth the arc was fourteen pixels on a
+  // 200px book and `hollow-back` read as `waisted` with a rounded top.
   'hollow-back': shape('hollow-back', 'Hollow Back', 'The spine arcs away from the text block, so head and tail dome.',
     ['antique', 'refined', 'airy'],
-    { group: 'case', tier: 'shelf', head: 'dome', tail: 'dome', side: 'waist', corner: 0.1, endDepth: 0.072 }),
+    { group: 'case', tier: 'shelf', head: 'dome', tail: 'dome', side: 'waist', corner: 0.1, endDepth: 0.078 }),
 
+  // A springback is a BARREL — the swell is the whole object, and the boards
+  // are pulled in tight above and below it. At 0.9 either end against a 0.15
+  // bulge the swing was a pixel and a half and it sat in the middle of the
+  // plain-rectangle cluster; three quarters against the same bulge is a
+  // sixteenth of the slot at the ends and a shape you can name from the door.
   'spring-back': shape('spring-back', 'Spring Back', 'The stationer’s swell: a back that bulges out under its own sewing.',
     ['heavy', 'utilitarian', 'antique'],
-    { group: 'case', tier: 'niche', side: 'bulge', head: 'cushion', tail: 'cushion', headWidth: 0.9, tailWidth: 0.9, corner: 0.3 }),
+    // The joints come with it. A stationer's springback is a swollen back
+    // between two square boards, and the two dark joints are what keep it clear
+    // of `two-lobe`, whose spec — bulged sides, ends pulled in to about three
+    // quarters, soft crowns — is otherwise the same sentence.
+    { group: 'case', tier: 'niche', side: 'bulge', head: 'cushion', tail: 'cushion', headWidth: 0.74, tailWidth: 0.74,
+      corner: 0.36, endDepth: 0.05, marks: ['grooves'] }),
 
   // A padded board swells at BOTH ends; a rounded back only bellies. With the
   // same belly and near-identical corner the two were 190px apart and read as
@@ -959,9 +1041,21 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
    * in the top twelfth — which is the only way a head profile can be told apart
    * in a row of spines at 34px wide.
    */
+  // The arc is the entry, so it is a NINTH of the book and the body under it is
+  // pulled in a little: at 0.075 deep and 0.96 wide the dome was a rounded
+  // corner on a full-width rectangle and it read as one of the five plain
+  // backs at every coarseness a reader meets a shelf at.
   'domed-head': shape('domed-head', 'Domed Head', 'One arc over the head, and a flat foot to stand on.',
     ['refined', 'antique'],
-    { group: 'cut', tier: 'signature', head: 'dome', headWidth: 0.96, corner: 0.14, endDepth: 0.075, decorTop: 0.08 }),
+    // …and a taper up the WHOLE height rather than a taller and taller arch.
+    // At 0.115 deep the dome was 23px on a 200px book and what stood on the
+    // shelf was a bullet — the reader's word for that family is "pencil", and
+    // winning a signature count by growing one is not winning. The arc is back
+    // to a ninth, and what holds it clear of `ogee-head` at every coarseness is
+    // that the foot is full width and the head is not: "a flat foot to stand
+    // on" was already in the blurb.
+    { group: 'cut', tier: 'signature', head: 'dome', headWidth: 0.84, tailWidth: 1, corner: 0.14,
+      endDepth: 0.088, decorTop: 0.1 }),
 
   'round-cap': shape('round-cap', 'Rolled Caps', 'Leather turned over a cord at head and tail, and rolled round.',
     ['luxe', 'antique', 'refined'],
@@ -976,7 +1070,7 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   'ogee-head': shape('ogee-head', 'Ogee Head', 'The S-curve of a chapel door, crowned flat.',
     ['ornate', 'devotional', 'fancy'],
-    { group: 'cut', tier: 'niche', head: 'ogee', headWidth: 1, endDepth: 0.072, corner: 0.07, decorTop: 0.14 }),
+    { group: 'cut', tier: 'niche', head: 'ogee', headWidth: 1, endDepth: 0.055, corner: 0.07, decorTop: 0.14 }),
 
   'notched-head': shape('notched-head', 'Notched Head', 'A thumb notch cut into the head, for pulling it off the shelf.',
     ['utilitarian', 'modern', 'plain'],
@@ -1027,8 +1121,11 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     ['formal', 'modern', 'refined'],
     { group: 'profile', tier: 'shelf', headWidth: 0.8, side: 'shoulder', shoulderAt: 0.3, corner: 0.12, decorInset: 0.05 }),
 
+  // `pinch`, not `waist`: sharing the waist with `hollow-back` is what made the
+  // two of them one picture, and the difference between them was supposed to be
+  // that one of them is domed at both ends.
   waisted: shape('waisted', 'Waisted', 'Pinched in at the middle, the way a book read to death goes.',
-    ['battered', 'handmade', 'cosy'], { group: 'profile', tier: 'shelf', side: 'waist', corner: 0.2, decorInset: 0.05 }),
+    ['battered', 'handmade', 'cosy'], { group: 'profile', tier: 'shelf', side: 'pinch', corner: 0.2, decorInset: 0.05 }),
 
   chamfered: shape('chamfered', 'Bevelled Boards', 'All four corners cut off at a slant, never rounded.',
     // 0.52 of the width, cut on all four corners, is not a bevelled board — it
@@ -1038,8 +1135,11 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     // being cut at the corners. Cutting harder was the other way to keep it
     // clear of a plain square, and it took the silhouette back to a hexagonal
     // pencil — this says the same thing without the point.
+    // Full width, though. The cut corners ARE the shape; standing it in at 0.89
+    // as well made it one more narrow soft-ended book and it read as
+    // `long-stitch`, `pamphlet-thin`, `two-lobe` and `spring-back` in turn.
     ['formal', 'severe', 'luxe'],
-    { group: 'profile', tier: 'signature', corner: 0.42, bevelCorner: true, endDepth: 0.026, headWidth: 0.89, tailWidth: 0.89 }),
+    { group: 'profile', tier: 'signature', corner: 0.42, bevelCorner: true, endDepth: 0.026, headWidth: 0.96, tailWidth: 0.96 }),
 
   'bevel-head': shape('bevel-head', 'Bevelled Head', 'One long slant across the head — a book cut on the skew.',
     ['modern', 'goofy', 'whimsical'],
@@ -1047,27 +1147,37 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   /* ------------------------------ soft and limp ----------------------------- */
 
+  // No boards means no boards: a limp cover is the thickness of the block and
+  // the hide round it, so it stands narrower than every cased book beside it.
+  // That, and the deeper sway, are what took it out of the five-way plain-back
+  // cluster it was sitting in at full width.
   limp: shape('limp', 'Limp Binding', 'No boards at all: the whole spine leans and sways.',
     ['handmade', 'antique', 'devotional'],
-    { group: 'soft', tier: 'signature', side: 'sway', head: 'cushion', tail: 'cushion', corner: 0.34 }),
+    { group: 'soft', tier: 'signature', side: 'sway', head: 'cushion', tail: 'cushion', headWidth: 0.86,
+      tailWidth: 0.89, corner: 0.34, endDepth: 0.055 }),
 
+  // Its own `crumple` rather than the shared `ripple`, which it was reading as
+  // `wave-head` under — the closest pair in the whole table at 534px, two
+  // shapes whose only difference was a cut at one end of one of them.
   creased: shape('creased', 'Creased', 'Three soft creases down a cover that has been rolled in a pocket.',
-    ['battered', 'pocket', 'rustic'], { group: 'soft', tier: 'shelf', side: 'ripple', corner: 0.2 }),
+    ['battered', 'pocket', 'rustic'], { group: 'soft', tier: 'shelf', side: 'crumple', corner: 0.2 }),
 
   'two-lobe': shape('two-lobe', 'Twin Lobes', 'Two soft humps at each end: a fat pill of a book.',
     ['goofy', 'whimsical', 'cosy'],
     // "A fat pill" is a proportion, not just two bumps — pinched at both ends
     // and swollen in the middle, which is also what keeps it clear of the
     // bevelled boards, the only other shape rounded off at both ends.
-    { group: 'soft', tier: 'oddity', head: 'scallop2', tail: 'scallop2', side: 'bulge', headWidth: 0.76, tailWidth: 0.76,
-      endDepth: 0.055, corner: 0.2 }),
+    { group: 'soft', tier: 'oddity', head: 'scallop2', tail: 'scallop2', side: 'bulge', headWidth: 0.62, tailWidth: 0.62,
+      endDepth: 0.075, corner: 0.2 }),
 
   rolled: shape('rolled', 'Scroll', 'Barely a book: a roll with a turned knob at each end.',
     ['antique', 'whimsical', 'handmade'],
     // A straight roll, not a rolled CAP: with `round` at both ends the body
     // pinched to half its width where the knob sits and the crown poked through
     // the middle of it, which is a spindle, not a scroll.
-    { group: 'soft', tier: 'oddity', head: 'cushion', tail: 'cushion', endDepth: 0.022, inset: 0.1, corner: 0.45,
+    // …and rolled thin, which is the other half of being a scroll and the half
+    // that keeps it clear of `yapp`.
+    { group: 'soft', tier: 'oddity', head: 'cushion', tail: 'cushion', endDepth: 0.022, inset: 0.26, corner: 0.45,
       marks: ['knobs'], claimTop: 0.14, claimBottom: 0.86 }),
 
   /* --------------------------- sewing you can see --------------------------- */
@@ -1076,12 +1186,24 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     ['formal', 'luxe', 'antique'],
     { group: 'sewn', tier: 'signature', inset: 0.055, marks: ['cords'], claimTop: 0.32, claimBottom: 0.58 }),
 
+  /*
+   * The five insets — 0.13, 0.10, 0.10, 0.09, 0.06 — were the whole cluster.
+   * `pamphlet-thin`, `saddle-stapled`, `exposed-cords`, `coptic` and
+   * `spiral-wire` all stood the same width, all carried thread-coloured marks
+   * a pixel or two thick, and at four cells across a forty-pixel window they
+   * were one narrow rectangle five times over: `coptic` and `saddle-stapled`
+   * collided at four of the five coarsenesses measured.
+   *
+   * They are spread across the whole range now — 0.02 to 0.23 — and each one's
+   * inset is the one its own name argues for. A book whose sewing is exposed
+   * has no covering to stand inside; a stitched sliver is a sliver.
+   */
   'exposed-cords': shape('exposed-cords', 'Exposed Cords', 'The cords never got covered — five bare ropes and the thread between them.',
     ['handmade', 'rustic', 'natural'],
-    { group: 'sewn', tier: 'niche', inset: 0.1, corner: 0.1, marks: ['bareCords'], claimTop: 0.47, claimBottom: 0.7 }),
+    { group: 'sewn', tier: 'niche', inset: 0.035, corner: 0.1, marks: ['bareCords'], claimTop: 0.47, claimBottom: 0.7 }),
 
   coptic: shape('coptic', 'Coptic Sewing', 'A chain of link stitches runs the length of a bare spine.',
-    ['handmade', 'natural', 'antique'], { group: 'sewn', tier: 'niche', inset: 0.09, corner: 0.08, marks: ['chainStitch'] }),
+    ['handmade', 'natural', 'antique'], { group: 'sewn', tier: 'niche', inset: 0.055, corner: 0.08, marks: ['chainStitch'] }),
 
   'japanese-stab': shape('japanese-stab', 'Stab Sewn', 'Four knots down one side, and the thread that ties them.',
     ['handmade', 'refined', 'natural'], { group: 'sewn', tier: 'shelf', corner: 0.06, marks: ['stabKnots'] }),
@@ -1093,19 +1215,26 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     // faint stitch marks it was 270px from a plain square — the closest pair
     // left — and "limp" was a word in the blurb rather than a thing you could
     // see.
-    { group: 'sewn', tier: 'shelf', head: 'cushion', tail: 'cushion', side: 'waist', headWidth: 0.9, tailWidth: 0.9,
+    // …and narrower than a cased book for the same reason `limp` is: there is a
+    // cover and sewing here and nothing else. At 0.9 it was reading as the
+    // bevelled boards, which is the other shape rounded off at both ends.
+    { group: 'sewn', tier: 'shelf', head: 'cushion', tail: 'cushion', side: 'waist', headWidth: 0.95, tailWidth: 0.95,
       endDepth: 0.05, corner: 0.24, marks: ['longStitch'] }),
 
   'sewn-sections': shape('sewn-sections', 'Unbound Sections', 'No cover: five folded gatherings and their sewing.',
-    ['handmade', 'plain', 'natural'], { group: 'sewn', tier: 'niche', inset: 0.08, corner: 0.06, marks: ['sections'] }),
+    ['handmade', 'plain', 'natural'], { group: 'sewn', tier: 'niche', inset: 0.015, corner: 0.06, marks: ['sections'] }),
 
   'pamphlet-thin': shape('pamphlet-thin', 'Pamphlet', 'A stitched sliver, squared off, with a folded edge.',
-    ['plain', 'pocket', 'utilitarian'], { group: 'sewn', tier: 'shelf', inset: 0.13, corner: 0.1, endDepth: 0.02, marks: ['stitchLine'] }),
+    ['plain', 'pocket', 'utilitarian'], { group: 'sewn', tier: 'shelf', inset: 0.27, corner: 0.1, endDepth: 0.02, marks: ['stitchLine'] }),
 
   /* ---------------------------- mechanical binding -------------------------- */
 
   'spiral-wire': shape('spiral-wire', 'Spiral Wire', 'A wire coil threaded through the whole spine.',
-    ['modern', 'utilitarian', 'plain'], { group: 'mechanical', tier: 'niche', inset: 0.06, corner: 0.06, marks: ['coil'] }),
+    ['modern', 'utilitarian', 'plain'], // The block stands INSIDE the wire, which is the only silhouette in the
+    // table with ground biting into its sides. Filling the slot and laying fat
+    // grey bars across it made the whole spine one solid mass, and it read as
+    // `rounded`, `chamfered` and `waisted` — three shapes with nothing on them.
+    { group: 'mechanical', tier: 'niche', inset: 0.11, corner: 0.06, marks: ['coil'] }),
 
   'comb-bound': shape('comb-bound', 'Comb Bound', 'A plastic comb, nine teeth of it, gripping the edge.',
     ['modern', 'utilitarian', 'goofy'], { group: 'mechanical', tier: 'oddity', inset: 0.04, corner: 0.04, marks: ['comb'] }),
@@ -1114,9 +1243,14 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     ['modern', 'utilitarian', 'heavy'],
     { group: 'mechanical', tier: 'niche', corner: 0.05, marks: ['rings'], claimTop: 0.58, claimBottom: 0.72 }),
 
+  // Two staples and nothing else is not much to be told apart by, so the shape
+  // has to do it: a stapled pamphlet has no back at all and FLOPS, which is
+  // why it leans like a limp binding and rounds off at the corners while
+  // `pamphlet-thin`, the other stitched sliver, stays crisp and square.
   'saddle-stapled': shape('saddle-stapled', 'Saddle Stapled', 'Two wire staples through the fold, and nothing else.',
     ['plain', 'utilitarian', 'pocket'],
-    { group: 'mechanical', tier: 'shelf', inset: 0.1, corner: 0.08, marks: ['staples'], claimTop: 0.32, claimBottom: 0.7 }),
+    { group: 'mechanical', tier: 'shelf', inset: 0.14, side: 'sway', corner: 0.34, marks: ['staples'],
+      claimTop: 0.32, claimBottom: 0.7 }),
 
   /* ----------------------------- boxed and wrapped -------------------------- */
 
@@ -1134,7 +1268,7 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   portfolio: shape('portfolio', 'Portfolio', 'A flap folds across from the left and fastens with a stud.',
     ['utilitarian', 'formal', 'antique'],
-    { group: 'boxed', tier: 'shelf', inset: 0.02, corner: 0.1, marks: ['flange'], decorInset: 0.12 }),
+    { group: 'boxed', tier: 'shelf', inset: 0.02, corner: 0.035, marks: ['flange'], decorInset: 0.12 }),
 
   wallet: shape('wallet', 'Wallet Edge', 'An envelope flap over the foot, with a tongue to tuck in.',
     ['pocket', 'cosy', 'handmade'],
@@ -1142,9 +1276,13 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   /* --------------------------------- fastened -------------------------------- */
 
+  // The overhang is the point, so the block stands well inside its covers —
+  // and that is also what separates it from `rolled`, the other shape that is
+  // a narrow body with a cap at each end. It was 0.07 in and the two of them
+  // were one picture.
   yapp: shape('yapp', 'Yapp Edges', 'The covers overhang the block at head and tail.',
     ['devotional', 'cosy', 'antique'],
-    { group: 'fastened', tier: 'shelf', inset: 0.07, dropTop: 0.015, dropBottom: 0.015, corner: 0.22, marks: ['yappLips'] }),
+    { group: 'fastened', tier: 'shelf', inset: 0.115, dropTop: 0.04, dropBottom: 0.04, corner: 0.22, marks: ['yappLips'] }),
 
   /*
    * The plain-rectangle group — square, clasped, chained, chamfered, ledger,
@@ -3022,13 +3160,26 @@ function widthAt(spec: ShapeSpec, t: number): number {
   const run = spec.headWidth + (spec.tailWidth - spec.headWidth) * t;
   switch (spec.side) {
     case 'belly':
-      return run + Math.sin(Math.PI * t) * 0.06;
+      return run + Math.sin(Math.PI * t) * 0.095;
     case 'bulge':
       return run + Math.sin(Math.PI * t) * 0.15;
     case 'waist':
       return run - Math.sin(Math.PI * t) * 0.13;
+    // A book read to death, not a book that has been leaned on: the waist goes
+    // to a fifth of the width, which at 34px is seven pixels off the middle and
+    // the only amount a reader picks out of a row of forty spines.
+    case 'pinch':
+      return run - Math.sin(Math.PI * t) * 0.2;
     case 'ripple':
       return run + Math.sin(Math.PI * 3 * t) * 0.035;
+    // Rolled in a pocket: four folds, uneven, because a crease that repeats on
+    // a beat reads as a moulding rather than as damage.
+    case 'crumple':
+      return (
+        run +
+        Math.sin(Math.PI * 3.6 * t + 0.4) * 0.06 +
+        Math.sin(Math.PI * 7.4 * t + 2.1) * 0.028
+      );
     default:
       return run;
   }
@@ -3040,9 +3191,14 @@ function centreAt(spec: ShapeSpec, t: number): number {
     case 'sway':
       // A limp binding has no boards to hold it upright, so the whole spine
       // leans. One slow S, never a wobble — a wobble reads as a mistake.
-      return Math.sin(Math.PI * t * 1.15 + 0.55) * 0.045;
+      // At 0.045 the lean was a pixel and a half at each end of a 34px spine
+      // and `limp` sat inside the plain-rectangle cluster; a lean has to be
+      // seen against its upright neighbours or it is not a lean.
+      return Math.sin(Math.PI * t * 1.15 + 0.55) * 0.07;
     case 'ripple':
       return Math.sin(Math.PI * 3 * t + 1) * 0.014;
+    case 'crumple':
+      return Math.sin(Math.PI * 3.6 * t + 0.4) * 0.03 + Math.sin(Math.PI * 7.4 * t + 2.1) * 0.012;
     default:
       return 0;
   }
@@ -3088,8 +3244,37 @@ function traceBookShape(ctx: FlatCtx, b: DesignBox, spec: ShapeSpec, seed: numbe
   const tL = left(1);
   const tR = right(1);
   const radius = Math.min(spec.corner * w, spec.corner * 0.12 * h, h * 0.06);
-  const rH = Math.max(0, Math.min(radius, (hR - hL) * 0.44));
-  const rT = Math.max(0, Math.min(radius, (tR - tL) * 0.44));
+  /*
+   * A generous corner and a profiled end fight over the same span, and the
+   * corner used to win — twice over.
+   *
+   * ACROSS: `cushioned` (corner 0.62, headWidth 0.82) left the head profile
+   * 3.9px of a 27.9px edge to swell across, so the cushion's control point —
+   * six pixels above the crown and under four wide — came out of the rasterizer
+   * as a NIB. A padded board with a spike on it; `rolled` grew a smaller one at
+   * its foot. So a corner may eat at most three tenths of a profiled end.
+   *
+   * DEEP: capping the width alone left a fillet 8.4px deep flanking a swell
+   * 6px high, and a fillet deeper than the profile beside it INVERTS it — the
+   * cushion came back as a crown with a dip on either side, which is not what a
+   * padded board does either. So a fillet on a profiled end is also never
+   * deeper than that profile's own reach.
+   *
+   * Three tenths was still too much across: at 0.62 of the width `cushioned`
+   * kept 11px of a 28px edge, and a swell that has to happen in 11px is a HAT,
+   * however gently the profile is written. An end that carries a profile has
+   * already said how it meets its sides, so the fillet only rounds the join —
+   * a sixth, no more.
+   *
+   * A flat end has no profile to protect and keeps the whole 0.44, which is
+   * what `rounded` and `two-lobe` were tuned against.
+   */
+  const cornerCap = (end: EndProfile, span: number): number =>
+    end === 'flat'
+      ? span * 0.44
+      : Math.min(span * 0.18, Math.max(1.2, END_PROFILES[end].reach * dep));
+  const rH = Math.max(0, Math.min(radius, cornerCap(spec.head, hR - hL)));
+  const rT = Math.max(0, Math.min(radius, cornerCap(spec.tail, tR - tL)));
 
   const hSpan = Math.max(0.5, hR - hL - rH * 2);
   const tSpan = Math.max(0.5, tR - tL - rT * 2);
@@ -3208,7 +3393,10 @@ function drawShapeMarks(
         break;
       }
       case 'bareCords': {
-        const ch = Math.max(2.2, h * 0.022);
+        // Fatter than a covered cord, because there is no leather over these —
+        // it is the rope itself, and five ropes at h*0.022 averaged away into
+        // the cloth at every coarseness a reader sees a shelf at.
+        const ch = Math.max(2.6, h * 0.032);
         for (let i = 0; i < BARE_CORD_STATIONS.length; i++) {
           const s = BARE_CORD_STATIONS[i] as number;
           pill(foot.x, y + h * s - ch / 2, foot.w, ch, thread, 44 + i);
@@ -3219,31 +3407,95 @@ function drawShapeMarks(
       }
       case 'grooves':
       case 'frenchGrooves': {
-        // The creases where the covers hinge — the one thing that tells a flat
-        // back from a rounded one at this size.
-        const c = mix(board, FLAT.ink, 0.35);
-        const at = mark === 'grooves' ? [0.17, 0.83] : [0.1, 0.21, 0.79, 0.9];
-        for (let i = 0; i < at.length; i++) {
-          const t = at[i] as number;
-          stroke(ctx, x + w * t, y + h * 0.035, x + w * t, y + h * 0.965, c, Math.max(1, w * 0.04), seed + 60 + i);
-        }
+        /*
+         * The creases where the covers hinge — the one thing that tells a flat
+         * back from a rounded one at this size, and it was drawn as two
+         * hairlines a twenty-fifth of the width across. On a 34px spine that is
+         * one and a third pixels of a colour a third of the way to ink, which
+         * is to say nothing: `tight-back` sat inside the plain-rectangle
+         * cluster with `square`, `clasped` and `creased` at three of the five
+         * coarsenesses measured.
+         *
+         * A board creased hard against a spine is a FLAT DARKER FACE beside a
+         * lighter one — the way this app says depth everywhere else — with the
+         * crease inked where the two meet. A tight back turns its whole joint
+         * away; french grooves are two sunk channels with cloth either side,
+         * which is the actual difference between the two bindings.
+         */
+        const deep = mix(board, FLAT.ink, 0.44);
+        const crease = mix(board, FLAT.ink, 0.66);
+        const bands: readonly (readonly [number, number])[] =
+          mark === 'grooves'
+            ? [
+                [0, 0.2],
+                [0.8, 1],
+              ]
+            : [
+                [0.075, 0.15],
+                [0.85, 0.925],
+              ];
+        ctx.save();
+        traceBookShape(ctx, b, spec, seed);
+        ctx.clip();
+        bands.forEach(([a, bb], i) =>
+          fillBand(ctx, x + w * a, y - h * 0.03, w * (bb - a), h * 1.06, deep, 0, seed + 60 + i),
+        );
+        ctx.restore();
+        const cw2 = Math.max(1, w * 0.035);
+        bands.forEach(([a, bb], i) => {
+          for (const t of [a, bb]) {
+            // The silhouette's own outline already inks the two outer edges.
+            if (t <= 0.001 || t >= 0.999) continue;
+            stroke(ctx, x + w * t, y + h * 0.03, x + w * t, y + h * 0.97, crease, cw2, seed + 64 + i * 2 + (t === a ? 0 : 1));
+          }
+        });
         break;
       }
       case 'stitchLine': {
-        stroke(ctx, x + w * 0.3, y + h * 0.03, x + w * 0.3, y + h * 0.97, mix(board, FLAT.ink, 0.3), Math.max(1, w * 0.07), seed + 70);
-        const st = Math.max(1.4, h * 0.028);
+        // "A folded edge" is in the blurb, and it was a single stroke a
+        // fourteenth of the width — so a pamphlet was a bare sliver, which is
+        // what every other bare sliver on the shelf also was. The fold is the
+        // sheet doubled back on itself: a narrower, darker face down the near
+        // side, with the sewing worked through it.
+        ctx.save();
+        traceBookShape(ctx, b, spec, seed);
+        ctx.clip();
+        fillBand(ctx, x - w * 0.04, y - h * 0.03, w * 0.42, h * 1.06, mix(board, FLAT.ink, 0.28), 0, seed + 69);
+        ctx.restore();
+        stroke(ctx, x + w * 0.38, y + h * 0.03, x + w * 0.38, y + h * 0.97, mix(board, FLAT.ink, 0.5), Math.max(1, w * 0.06), seed + 70);
+        const st = Math.max(1.6, h * 0.032);
         for (let i = 0; i < 3; i++) {
           const t = 0.26 + i * 0.24;
-          stroke(ctx, x + w * 0.64, y + h * t - st / 2, x + w * 0.64, y + h * t + st / 2, FLAT.inkSoft, Math.max(1, w * 0.1), seed + 71 + i);
+          stroke(ctx, x + w * 0.19, y + h * t - st / 2, x + w * 0.19, y + h * t + st / 2, thread, Math.max(1.2, w * 0.14), seed + 71 + i);
         }
         break;
       }
       case 'stabKnots': {
-        // Four knots down one side and the thread that ties them — the whole
-        // of a stab binding, seen edge on.
-        const kx = x + w * 0.26;
-        stroke(ctx, kx, y + h * 0.12, kx, y + h * 0.88, thread, Math.max(1, w * 0.06), seed + 74);
-        const kr = Math.max(1.6, w * 0.13);
+        /*
+         * Four knots down one side and the thread that ties them — the whole
+         * of a stab binding, seen edge on.
+         *
+         * A stab binding is sewn through a MARGIN: the holes are punched a
+         * finger's width in from the fold and the strip between the fold and
+         * the sewing is dead ground that never opens. Drawn as a thread and
+         * four dots on a plain field it was a plain field, and the shape read
+         * as `square` and `tight-back`.
+         *
+         * The margin sits on the FORE-EDGE side, and that is not arbitrary.
+         * Every covering in `paintMaterial` lays its turned board down the near
+         * side, so a darker band drawn there lands on top of a darker band and
+         * changes nothing — measured on the dominant-class grid, `japanese-stab`
+         * with a left-hand margin was pixel-for-pixel `square` at five columns.
+         * A mark has to be put where the covering is not already dark.
+         */
+        const kx = x + w * 0.68;
+        ctx.save();
+        traceBookShape(ctx, b, spec, seed);
+        ctx.clip();
+        fillBand(ctx, x + w * 0.6, y - h * 0.03, w * 0.43, h * 1.06, mix(board, FLAT.ink, 0.34), 0, seed + 73);
+        ctx.restore();
+        stroke(ctx, kx, y + h * 0.08, kx, y + h * 0.92, thread, Math.max(1, w * 0.07), seed + 74);
+        const kr = Math.max(1.6, w * 0.14);
         for (let i = 0; i < 4; i++) {
           pill(kx - kr, y + h * (0.16 + i * 0.23) - kr, kr * 2, kr * 2, thread, 75 + i);
         }
@@ -3252,11 +3504,14 @@ function drawShapeMarks(
       case 'longStitch': {
         // Three runs of stitching straight through a limp cover: dashes, not
         // lines, because a line at this width is a rule and reads as tooling.
+        // …and at h*0.008 they were a pixel and a half of thread on a 200px
+        // book, which is a smudge. Linen sewn through a limp cover stands
+        // proud of it; three dashes per run, each a fifth of the width.
         for (let r = 0; r < 3; r++) {
           const ly = y + h * (0.2 + r * 0.3);
           for (let i = 0; i < 3; i++) {
-            const sx = x + w * (0.16 + i * 0.28);
-            stroke(ctx, sx, ly, sx + w * 0.18, ly, thread, Math.max(1, h * 0.008), seed + 80 + r * 3 + i);
+            const sx = x + w * (0.13 + i * 0.29);
+            stroke(ctx, sx, ly, sx + w * 0.22, ly, thread, Math.max(1.4, h * 0.016), seed + 80 + r * 3 + i);
           }
         }
         break;
@@ -3268,11 +3523,15 @@ function drawShapeMarks(
         // — a lightning bolt on a stick — because the segments join end to end
         // and the eye reads the join, not the links. Overlapping loops read as a
         // CHAIN: each one closes, and each one bites into the one above it.
-        const links = 7;
-        const lw = Math.min(w * 0.22, h * 0.024);
+        // Six fatter links, not seven thin ones: at w*0.22 the chain was
+        // narrower than a third of the spine and `coptic` collided with
+        // `saddle-stapled` at four of the five coarsenesses measured — the
+        // worst pair in the table.
+        const links = 6;
+        const lw = Math.min(w * 0.3, h * 0.03);
         const lh = (h * 0.84) / links;
         ctx.strokeStyle = thread;
-        ctx.lineWidth = Math.max(1, w * 0.07);
+        ctx.lineWidth = Math.max(1.2, w * 0.09);
         for (let i = 0; i < links; i++) {
           // Half-height, so consecutive links touch and bite rather than
           // swallowing each other into one long tube.
@@ -3285,10 +3544,19 @@ function drawShapeMarks(
       case 'coil': {
         // A wire coil threaded through the spine: every turn is one slanted
         // bar, and the bars are all parallel because the wire is one spiral.
-        const turns = 11;
+        // Eight fat turns rather than eleven thin ones: at w*0.09 the wire was
+        // three pixels on a 34px spine and averaged into the cloth, which left
+        // `spiral-wire` reading as `rounded` and as `waisted` — two shapes that
+        // have nothing on them at all.
+        // …and the wire wraps AROUND the block, so every turn runs the full
+        // width of the slot and stands proud of the body on both sides. The
+        // gaps of bare ground between the turns down each edge are the whole
+        // point: no other shape in the table has ground biting into its sides,
+        // and drawn inside the body this was eight grey bars on a rectangle.
+        const turns = 13;
         for (let i = 0; i < turns; i++) {
-          const ty0 = y + h * (0.05 + (i * 0.9) / turns);
-          stroke(ctx, x + w * 0.14, ty0, x + w * 0.86, ty0 + h * 0.032, steel, Math.max(1.2, w * 0.09), seed + 100 + i);
+          const ty0 = y + h * (0.045 + (i * 0.91) / turns);
+          stroke(ctx, foot.x, ty0, foot.x + foot.w, ty0 + h * 0.03, steel, Math.max(1.8, w * 0.21), seed + 100 + i);
         }
         break;
       }
@@ -3296,11 +3564,14 @@ function drawShapeMarks(
         // A plastic comb gripping the edge: teeth that curl back on themselves.
         // Narrow and many, so the run reads as one comb rather than as a column
         // of separate lozenges lying on a book.
+        // The teeth reach two thirds across, not under a half: at 0.46 the run
+        // sat entirely in the left half and `comb-bound` read as
+        // `sewn-sections`, whose gatherings are the full width.
         const teeth = 13;
         const th = Math.max(1.6, (h * 0.9) / (teeth * 1.9));
         for (let i = 0; i < teeth; i++) {
           const ty0 = y + h * (0.05 + (i * 0.9) / teeth);
-          pill(x + w * 0.1, ty0, w * 0.46, th, steel, 110 + i);
+          pill(x + w * 0.08, ty0, w * 0.5, th, steel, 110 + i);
         }
         // The spine of the comb, holding the teeth together.
         stroke(ctx, x + w * 0.12, y + h * 0.05, x + w * 0.12, y + h * 0.95, steel, Math.max(1, w * 0.07), seed + 109);
@@ -3323,12 +3594,16 @@ function drawShapeMarks(
         break;
       }
       case 'staples': {
-        const sh = Math.max(3, h * 0.05);
+        // A staple goes through the FOLD, so it wraps the near edge and both
+        // its legs show — which is a bar across most of the width, not a chip
+        // in the middle of one. The chip is what made this shape one picture
+        // with `coptic`, `exposed-cords` and `spiral-wire`.
+        const sh = Math.max(3, h * 0.055);
         for (const [t, n] of [
           [0.25, 0],
           [0.75, 1],
         ] as const) {
-          pill(x + w * 0.36, y + h * t - sh / 2, w * 0.28, sh, steel, 120 + n);
+          pill(x + w * 0.08, y + h * t - sh / 2, w * 0.84, sh, steel, 120 + n);
         }
         break;
       }
@@ -3404,13 +3679,20 @@ function drawShapeMarks(
       }
       case 'flange': {
         // A portfolio flap folded across from the left, with a stud to hold it.
-        const fw = w * 0.34;
-        panel(ctx, x - w * 0.01, y + h * 0.02, fw, h * 0.96, mix(board, FLAT.ink, 0.14), {
-          radius: fw * 0.28,
+        //
+        // Fourteen per cent of the way to ink is not a fold, it is the same
+        // colour with a rounding error on it — the flap was invisible at 34px
+        // and `portfolio` read as `rounded`, `limp`, `spring-back` and
+        // `domed-head`. A flap is a second thickness of the covering lying on
+        // top of the first, so it is a properly darker face, and it covers the
+        // two fifths of the width a portfolio flap actually covers.
+        const fw = w * 0.53;
+        panel(ctx, x - w * 0.01, y + h * 0.02, fw, h * 0.96, mix(board, FLAT.ink, 0.44), {
+          radius: fw * 0.2,
           seed: seed + 155,
           width: fine,
         });
-        const sr = Math.max(1.4, w * 0.09);
+        const sr = Math.max(1.4, w * 0.1);
         pill(x + fw - sr, y + h * 0.5 - sr, sr * 2, sr * 2, brass, 156);
         break;
       }
@@ -3427,25 +3709,36 @@ function drawShapeMarks(
         break;
       }
       case 'clasps': {
-        const cw = Math.max(3, w * 0.36);
-        const chh = Math.max(2.4, h * 0.036);
+        // Clasps do not sit on a spine, they run ACROSS it: the strap is
+        // anchored to the far board, comes over the fore edge and catches on
+        // the near one, so what a shelf shows is two bands right across the
+        // book with the catch plate in the middle of each. At 0.36 of the
+        // width they were two brass pips in the centre of a plain rectangle,
+        // and `clasped` was one picture with `square` and `rounded`.
+        const cw = Math.max(3, w * 0.94);
+        const chh = Math.max(3.2, h * 0.055);
+        const pw = Math.max(2.4, w * 0.34);
         for (const [t, n] of [
           [0.22, 0],
           [0.78, 1],
         ] as const) {
-          pill(x + w * 0.5 - cw / 2, y + h * t - chh / 2, cw, chh, brass, 160 + n);
-          stroke(ctx, x + w * 0.5, y + h * t - chh * 0.9, x + w * 0.5, y + h * t + chh * 0.9, brass, Math.max(1, w * 0.06), seed + 162 + n);
+          pill(x + w * 0.5 - cw / 2, y + h * t - chh / 2, cw, chh, mix(brass, FLAT.ink, 0.18), 160 + n);
+          pill(x + w * 0.5 - pw / 2, y + h * t - chh * 0.85, pw, chh * 1.7, brass, 162 + n);
         }
         break;
       }
       case 'chainLink': {
-        // A ring at the foot and one link hanging off it. This book stays.
-        const rr = Math.max(2, Math.min(w * 0.2, h * 0.024));
+        // A staple plate at the foot and the chain hanging off it. This book
+        // stays. Three small O's alone read as printing rather than as
+        // hardware, which is the same reason the ring binder got a back plate.
+        const rr = Math.max(2.2, Math.min(w * 0.24, h * 0.03));
+        const ph = Math.max(2.6, h * 0.034);
+        pill(x + w * 0.22, y + h * 0.8 - ph / 2, w * 0.56, ph, mix(steel, FLAT.ink, 0.2), 172);
         for (let i = 0; i < 3; i++) {
           ctx.beginPath();
-          ctx.ellipse(x + w * 0.5, y + h * (0.88 + i * 0.045), rr, rr * 1.3, 0, 0, Math.PI * 2);
+          ctx.ellipse(x + w * 0.5, y + h * (0.855 + i * 0.05), rr, rr * 1.3, 0, 0, Math.PI * 2);
           ctx.strokeStyle = steel;
-          ctx.lineWidth = Math.max(1.2, w * 0.07);
+          ctx.lineWidth = Math.max(1.3, w * 0.085);
           ctx.stroke();
         }
         break;

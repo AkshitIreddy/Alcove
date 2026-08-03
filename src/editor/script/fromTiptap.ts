@@ -155,6 +155,17 @@ function inlinesFrom(content: TiptapNode[]): InlineResult {
       inlines.push(inlineFromText(n));
     } else if (n.type === 'hardBreak') {
       inlines.push({ kind: 'text', text: ' ', ...ZERO });
+    } else if (n.type === 'pageLink') {
+      // A page reference has no script form — the script language has no way
+      // to name another page, and inventing one here would be a vocabulary
+      // change nothing can read back. Its WORDS are not nothing, though: the
+      // sentence "see Photosynthesis for the numbers" is still a sentence
+      // without the link, and dropping the atom silently would print "see for
+      // the numbers".
+      const label = nodeAttrs(n).label;
+      if (typeof label === 'string' && label.trim() !== '') {
+        inlines.push({ kind: 'text', text: label, ...ZERO });
+      }
     }
     // Mid-run stickers and unknown inline atoms have no script form — dropped.
   }

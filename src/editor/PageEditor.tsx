@@ -30,7 +30,10 @@ import { Flip } from 'gsap/Flip';
 import { createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
 import { savePageDoc } from '../data/pages';
 import type { PageDoc, PageStyle } from '../data/types';
+import { bumpLinkGraph } from '../search/backlinks';
 import { LINGER_MS, isMotionOff, tween } from '../styles/motion';
+import BacklinksTab from './backlinks/BacklinksTab';
+import { createPageBacklinks } from './backlinks/usePageBacklinks';
 import {
   DEFAULT_LINE_HEIGHT_PX,
   DEFAULT_PAGE_STYLE,
@@ -175,7 +178,13 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     if (pendingDoc !== null) {
       const doc = pendingDoc;
       pendingDoc = null;
-      void savePageDoc(pageId, doc).then(() => notifySaved());
+      void savePageDoc(pageId, doc).then(() => {
+        notifySaved();
+        // The save rewrote this page's row in the search index, and the link
+        // graph is built from those rows — so any page this one now points at
+        // (or has stopped pointing at) has a stale backlinks tab until this.
+        bumpLinkGraph();
+      });
       // Page history (roadmap #13): the flushed doc is snapshot-worthy —
       // the ring throttles internally so bursts collapse to one snapshot.
       recordSnapshot(pageId, doc);
@@ -484,12 +493,26 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     doodleCleanup = undefined;
   });
 
+  // -------------------------------------------------------------------------
+  // Backlinks — the pages that point at this one, listed at the foot of the
+  // page. The strip is reserved through a custom property rather than
+  // measured, because the overflow drain above re-reads the prose's
+  // padding-bottom on every pass and a measured height would be a second
+  // answer to the same question (src/editor/backlinks/BacklinksTab.tsx).
+  // -------------------------------------------------------------------------
+  const backlinks = createPageBacklinks(() => pageId);
+  const backlinkRailPx = (): string =>
+    backlinks().length > 0 ? 'var(--nb-backlink-tab-h)' : '0px';
+
   return (
     <div
       class="nb-page"
       data-style={pageStyle()}
       data-paginated={isPaginated() ? 'true' : undefined}
-      style={{ '--page-line-height': `${lineHeightPx()}px` }}
+      style={{
+        '--page-line-height': `${lineHeightPx()}px`,
+        '--nb-backlink-rail': backlinkRailPx(),
+      }}
       ref={(el) => {
         pageRootElement = el;
         el.addEventListener('change', onTaskToggle);
@@ -497,6 +520,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       }}
     >
       <div class="nb-page-editor" ref={mountElement} />
+      <BacklinksTab cards={backlinks()} />
       <div
         class="nb-page-full-hint font-accent"
         classList={{ 'is-active': pageFullHint() }}

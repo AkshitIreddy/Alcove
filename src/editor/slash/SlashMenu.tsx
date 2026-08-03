@@ -4,6 +4,7 @@
  * extension.ts owns positioning, filtering, and keyboard state.
  */
 import { For, Show, createEffect, type JSX } from 'solid-js';
+import { createHoverIntent } from '../menu/hoverIntent';
 import { stickerSvg } from '../nodes/stickers';
 import {
   SLASH_SECTION_LABELS,
@@ -46,6 +47,11 @@ function Icon(props: { readonly icon: SlashIcon }): JSX.Element {
 
 export default function SlashMenu(props: SlashMenuProps): JSX.Element {
   let listElement: HTMLDivElement | undefined;
+
+  // The card opens at the caret, and an element that appears under a
+  // stationary pointer still fires mouseenter — so without this the highlight
+  // silently leaves the row the reader is looking at (see menu/hoverIntent.ts).
+  const pointerMoved = createHoverIntent();
 
   // Keep the keyboard-selected row in view.
   createEffect(() => {
@@ -92,7 +98,9 @@ export default function SlashMenu(props: SlashMenuProps): JSX.Element {
                     event.preventDefault();
                     props.onSelect(item);
                   }}
-                  onMouseEnter={() => props.onHover(index())}
+                  onMouseEnter={() => {
+                    if (pointerMoved()) props.onHover(index());
+                  }}
                 >
                   <Icon icon={item.icon} />
                   <span class="nb-slash-text">

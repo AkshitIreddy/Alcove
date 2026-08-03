@@ -26,7 +26,10 @@ import { NotebookDocument } from './document';
 import { NotebookHighlight } from './highlightStyles';
 import { MediaImage } from './media';
 import { customNodeExtensions } from './nodes';
+import { PageLinkSuggestions } from './links/extension';
 import { SlashCommands } from './slash/extension';
+import { TableSort } from './tables/sortable';
+import { SelectionToolbarExtension } from './toolbar/extension';
 
 /** Block-level types that carry a stable UniqueID `id` attribute. */
 export const BLOCK_ID_TYPES = [
@@ -137,6 +140,11 @@ export function createEditorExtensions(
     TableKit.configure({
       table: { resizable: true, lastColumnResizable: false },
     }),
+    // Column sorting. Not interactive-only: the `sortCol`/`sortDir`/`docOrder`
+    // attributes are part of the STORAGE schema, so a doc saved sorted has to
+    // parse back the same way in a schema-only context (script round-tripping,
+    // the export capture) or the sort would be dropped on the way through.
+    TableSort,
 
     TaskList,
     TaskItem.configure({ nested: true }),
@@ -165,6 +173,15 @@ export function createEditorExtensions(
         includeChildren: true,
       }),
       SlashCommands,
+      // `[[` opens the page picker. Interactive-only, unlike the pageLink NODE
+      // it inserts (which is a custom node and therefore in the schema
+      // everywhere) — a read-only page still has to DRAW its references, it
+      // just cannot be used to make new ones.
+      PageLinkSuggestions,
+      // The six inline marks, on a card that follows the selection. A plugin
+      // view on <body> — see toolbar/extension.ts for why it must not be a
+      // node view.
+      SelectionToolbarExtension,
     );
     if (options.dragHandle) {
       extensions.push(

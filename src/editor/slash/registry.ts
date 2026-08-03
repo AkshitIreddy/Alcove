@@ -555,6 +555,30 @@ const blockCommands: SlashCommand[] = [
       });
     },
   },
+  {
+    id: 'page-link',
+    title: 'Link to a page',
+    subtitle: 'Point at another page — it will list this one back',
+    icon: glyph('[['),
+    keywords: [
+      'link',
+      'page',
+      'backlink',
+      'reference',
+      'mention',
+      'wiki',
+      'connect',
+      'jump',
+    ],
+    section: 'blocks',
+    // Types the shorthand rather than opening a second picker of its own: the
+    // `[[` suggestion (src/editor/links/extension.ts) matches on the text
+    // before the caret, so inserting the brackets IS opening the picker — and
+    // the reader who came in through the menu is shown the shorthand they can
+    // use next time, in the line they are writing.
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).insertContent('[[').run(),
+  },
 ];
 
 /**

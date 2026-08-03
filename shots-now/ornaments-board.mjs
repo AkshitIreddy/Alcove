@@ -43,7 +43,22 @@ const page = await browser.newPage({ viewport: { width: 1500, height: 1200 } });
 page.setDefaultTimeout(120000);
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto(`${URL_BASE}/?fx=force`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
+/*
+ * These four boards draw straight out of `art/`; they never touch the shelf, so
+ * waiting on `__shelfWorld` made them hostage to whether the whole app happened
+ * to boot. It stopped a measuring run dead while another agent's half-saved
+ * module was on the dev server, and the thing being measured was fine the whole
+ * time. Wait for the module the board actually imports instead.
+ */
+await page.waitForFunction(
+  () =>
+    import('/src/art/flat.ts').then(
+      () => true,
+      () => false,
+    ),
+  null,
+  { polling: 500 },
+);
 
 await page.evaluate(async () => {
   const sp = await import('/src/art/spines.ts');
@@ -58,7 +73,7 @@ await page.evaluate(async () => {
   const TILE_H = 84;
   const S = Math.min(TILE_W * 0.9 * 0.3, 13 * BAKE); // ≈ 18
 
-  const cloth = flat.CLOTHS[7]?.mid ?? '#8c4a3a'; // oxblood, a mid cloth
+  const cloth = flat.CLOTHS[7]?.[0] ?? '#8c4a3a'; // oxblood, a mid cloth
   const ink = flat.FLAT.inkSoft;
 
   /** One stamp, baked exactly as the spine bakes it. */

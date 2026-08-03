@@ -654,6 +654,28 @@ export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>
     { ground: 'slate', shape: 'rect', frame: 'none', frameInk: 'cream', ends: 'rule',
       letter: 'cream', grain: 'none', outline: 0.5, radius: 0.04, seat: 'flush' }),
 
+  /*
+   * The nine-plate cream cluster, and what was wrong with it.
+   *
+   * `shots-now/plate-signatures.mjs` renders every plate through `renderSpine`
+   * and reduces the label band at the shelf's RESTING size — 34 world px baked
+   * at 2 and drawn at zoom 0.8, so the whole plate is about 27 screen pixels
+   * across and 10 down. At that size nine of these read as one plate:
+   * `paper-slip`, `scroll-plate`, `rope-frame`, `notched-corners`,
+   * `sunk-panel`, `vellum-slip`, `linen-tag`, `hatched-ground` and
+   * `stippled-ground`. Every one of them was a `cream` or `creamDeep`
+   * rectangle, and cream against creamDeep is one step of value; everything
+   * that was supposed to tell them apart — a rope roll, a notch, a stitch, a
+   * hatch, a stipple — is a sub-pixel mark at ten pixels tall.
+   *
+   * There are eleven grounds and this cluster was using two of them. So five of
+   * the nine take a ground their own NAME already argues for: a woven tag is
+   * not the colour of printed paper, a rope roll belongs on tan, a sunk panel
+   * shows the covering it was cut into rather than a pale label. The frames and
+   * grains stay exactly as they were — they are what the reader sees when the
+   * book is pulled off the shelf, and this is only about which of them can be
+   * told apart while it is still on it.
+   */
   'vellum-slip': plate('vellum-slip', 'Vellum slip', 'A pale skin label, cut a shade proud of its panel.',
     ['pale', 'antique', 'refined'],
     { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'soft', ends: 'none',
@@ -666,7 +688,7 @@ export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>
 
   'linen-tag': plate('linen-tag', 'Linen tag', 'A woven tag stitched down at both ends.',
     ['rustic', 'natural', 'cosy'],
-    { ground: 'creamDeep', shape: 'rect', frame: 'notched', frameInk: 'soft', ends: 'dots',
+    { ground: 'timber', shape: 'rect', frame: 'notched', frameInk: 'soft', ends: 'dots',
       letter: 'soft', grain: 'rule', outline: 0.8, radius: 0.05, stud: 'stitches' }),
 
   'ivory-plate': plate('ivory-plate', 'Ivory plate', 'A pale tablet, cool against a dark binding.',
@@ -728,7 +750,12 @@ export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>
 
   'sunk-panel': plate('sunk-panel', 'Sunk panel', 'The whole compartment dropped a hair below the covering.',
     ['severe', 'heavy', 'formal'],
-    { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'rule',
+    // Its own ground is the COVERING — that is what "sunk" means, and a slate
+    // label pasted on top said the opposite while also looking like
+    // `stone-tablet` and `inlay-strip`, the two other blue plates. `none` plus
+    // `sunk` leaves the sunk seat to do the whole job, which is the one thing
+    // in this table that reads as a compartment rather than as a label.
+    { ground: 'none', shape: 'rect', frame: 'double', frameInk: 'ink', ends: 'rule',
       letter: 'ink', grain: 'none', outline: 1.2, radius: 0.06, seat: 'sunk' }),
 
   'chamfered-plate': plate('chamfered-plate', 'Chamfered', 'Every corner taken off with one stroke.',
@@ -802,28 +829,28 @@ export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>
 
   'bead-frame': plate('bead-frame', 'Beaded', 'A row of beads all the way round, struck with one tool.',
     ['ornate', 'refined', 'antique'],
-    { ground: 'cream', shape: 'rect', frame: 'bead', frameInk: 'gilt', ends: 'none',
-      letter: 'soft', grain: 'none', outline: 0.7, radius: 0.14 }),
+    { ground: 'giltPale', shape: 'rect', frame: 'bead', frameInk: 'ink', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.7, radius: 0.14 }),
 
   'rope-frame': plate('rope-frame', 'Roped', 'A twisted cable border — a binder’s rope roll.',
     ['nautical', 'ornate', 'rustic'],
-    { ground: 'creamDeep', shape: 'rect', frame: 'rope', frameInk: 'ink', ends: 'none',
-      letter: 'ink', grain: 'none', outline: 0.7, radius: 0.16 }),
+    { ground: 'terracotta', shape: 'rect', frame: 'rope', frameInk: 'cream', ends: 'none',
+      letter: 'cream', grain: 'none', outline: 0.7, radius: 0.16 }),
 
   'scallop-edge': plate('scallop-edge', 'Scalloped', 'The label cut with a scalloped edge, like a paper doily.',
     ['whimsical', 'romantic', 'fancy'],
-    { ground: 'cream', shape: 'rect', frame: 'scallop', frameInk: 'soft', ends: 'none',
+    { ground: 'cream', shape: 'capsule', frame: 'scallop', frameInk: 'soft', ends: 'none',
       letter: 'soft', grain: 'none', outline: 0.6, radius: 0.2 }),
 
   'notched-corners': plate('notched-corners', 'Notched', 'Corners nicked out, the way a ticket is punched.',
     ['modern', 'utilitarian', 'plain'],
-    { ground: 'creamDeep', shape: 'rect', frame: 'notched', frameInk: 'ink', ends: 'none',
+    { ground: 'cream', shape: 'octagon', frame: 'notched', frameInk: 'ink', ends: 'none',
       letter: 'ink', grain: 'none', outline: 0.8, radius: 0.02 }),
 
   'wreathed-plate': plate('wreathed-plate', 'Wreathed', 'A ring of small leaves closing the panel top and bottom.',
     ['botanical', 'ornate', 'formal'],
-    { ground: 'cream', shape: 'rect', frame: 'wreath', frameInk: 'gilt', ends: 'none',
-      letter: 'soft', grain: 'none', outline: 0.7, radius: 0.16 }),
+    { ground: 'plum', shape: 'lozenge', frame: 'wreath', frameInk: 'gilt', ends: 'none',
+      letter: 'gilt', grain: 'none', outline: 0.7, radius: 0.16 }),
 
   'gilt-band': plate('gilt-band', 'Gilt band', 'A broad gold band across the spine, edge to edge.',
     ['gilded', 'heavy', 'formal'],
@@ -844,8 +871,8 @@ export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>
 
   'hatched-ground': plate('hatched-ground', 'Hatched ground', 'The panel cross-hatched so the letters sit proud of it.',
     ['ornate', 'antique', 'scholarly'],
-    { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'none',
-      letter: 'ink', grain: 'hatch', outline: 0.9, radius: 0.1 }),
+    { ground: 'moss', shape: 'rect', frame: 'single', frameInk: 'cream', ends: 'none',
+      letter: 'cream', grain: 'hatch', outline: 0.9, radius: 0.1 }),
 
   'stippled-ground': plate('stippled-ground', 'Stippled ground', 'A ground of fine dots, punched rather than ruled.',
     ['refined', 'antique', 'muted'],
@@ -2083,8 +2110,12 @@ export function drawOrnament(
   };
 
   switch (kind) {
-    case 0: { // diamond
-      strokePts(ctx, [pt(0, -1), pt(0.62, 0), pt(0, 1), pt(-0.62, 0)], true);
+    case 0: { // diamond — a solid lozenge with a hairline keeping it open
+      // A stroked lozenge is a RING at 15px, filed in with the star, the sun,
+      // the laurel wreath, the acorn and the oak leaf — six stamps whose only
+      // shared property was "an outline round some cloth". A binder's lozenge
+      // is a solid tool; filled, it is the only pointed solid in the table.
+      fillPoly([pt(0, -1), pt(0.62, 0), pt(0, 1), pt(-0.62, 0)]);
       break;
     }
     case 1: { // laurel spray — two mirrored stems with FILLED leaves
@@ -2123,18 +2154,32 @@ export function drawOrnament(
       strokePts(ctx, star, true);
       break;
     }
-    case 3: { // blot — irregular filled blob
-      const blob: Pt[] = [];
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        const r = 0.55 + rnd() * 0.4;
-        blob.push({ x: cx + Math.cos(a) * r * s, y: cy + Math.sin(a) * r * s });
+    case 3: { // blot — a splat, and a droplet that flew off it
+      /*
+       * Eight vertices at radius 0.55–0.95 is a CIRCLE with a rough edge, and
+       * a rough edge two pixels deep is no edge at all: rendered at the size
+       * this is really struck (`shots-now/out/ornaments-before-rest.png`) the
+       * inkblot came out as a rounded square, one of eight stamps in the table
+       * that all reduced to the same solid lump.
+       *
+       * A blot is recognised by two things and neither of them is roughness:
+       * lobes that reach much further than the body, and the satellite droplet
+       * beside it. Ten vertices alternating 0.42 and 1.0 give the lobes; the
+       * droplet is the only detached mark in the table and does the rest.
+       *
+       * Solid, too. It was filled at 0.8 alpha — a lighter ink, which is a
+       * shading trick rather than a flat colour, and which cost the faintest
+       * stamps in the table the little contrast they had.
+       */
+      const splat: Pt[] = [];
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + rnd() * 0.2;
+        const r = (i % 2 === 0 ? 0.98 : 0.42) * (0.86 + rnd() * 0.28);
+        splat.push({ x: cx + Math.cos(a) * r * s, y: cy + Math.sin(a) * r * s });
       }
-      tracePoly(ctx, blob, true);
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = prevAlpha * 0.8;
+      tracePoly(ctx, splat, true);
       ctx.fill();
-      ctx.globalAlpha = prevAlpha;
+      disc(0.78, 0.74, 0.22);
       break;
     }
     case 4: { // chevron — two stacked zigzags
@@ -2165,14 +2210,24 @@ export function drawOrnament(
       break;
     }
     case 6: { // moon — crescent
+      /*
+       * The faintest mark in the whole table, measured: 3.8% of its own box,
+       * the only one under the floor `shots-now/ornament-signatures.mjs`
+       * reports. The lune was degenerate — the bite circle (centre +0.42,
+       * r 0.62) reaches x = 1.04 while the disc it is cut out of only reaches
+       * 0.85, so along the middle of the mark the crescent had NO body at all
+       * and what survived was two hairline horns. Then it was filled at 0.8
+       * alpha on top of that.
+       *
+       * Two full circles, the second wound the other way, is the construction
+       * that cannot degenerate: the bite is always strictly inside the disc on
+       * the far side, so the belly of the crescent is 0.6s wherever the horns
+       * are. Solid ink, for the same reason as the blot above.
+       */
       ctx.beginPath();
-      ctx.arc(cx, cy, s * 0.85, -Math.PI * 0.55, Math.PI * 0.55, false);
-      ctx.arc(cx + s * 0.42, cy, s * 0.62, Math.PI * 0.62, -Math.PI * 0.62, true);
-      ctx.closePath();
-      const prevAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = prevAlpha * 0.8;
+      ctx.arc(cx - s * 0.1, cy, s * 0.88, 0, Math.PI * 2, false);
+      ctx.arc(cx + s * 0.42, cy, s * 0.8, 0, Math.PI * 2, true);
       ctx.fill();
-      ctx.globalAlpha = prevAlpha;
       break;
     }
     case 7: { // keyhole
@@ -2239,17 +2294,20 @@ export function drawOrnament(
       // to carry cut a lune only a pixel or two deep at s≈9 and broke into a
       // squiggle; there is no reason for two crescents in one table to be
       // drawn two different ways.
+      // …and it inherited the moon's degenerate lune along with the idea. Same
+      // two-full-circles fix, pulled left and down so the star has its corner.
+      // Smaller and pushed into its own corner, because the fix made it the
+      // same fat crescent as case 6 and the pair of them read as one mark.
       ctx.beginPath();
-      ctx.arc(cx - s * 0.18, cy + s * 0.06, s * 0.78, -Math.PI * 0.55, Math.PI * 0.55, false);
-      ctx.arc(cx + s * 0.26, cy + s * 0.06, s * 0.57, Math.PI * 0.62, -Math.PI * 0.62, true);
-      ctx.closePath();
+      ctx.arc(cx - s * 0.3, cy + s * 0.28, s * 0.68, 0, Math.PI * 2, false);
+      ctx.arc(cx + s * 0.14, cy + s * 0.28, s * 0.62, 0, Math.PI * 2, true);
       ctx.fill();
       // ONE star, and a big one. The old pair put a 0.19 sparkle on the shelf,
       // which at this size is a speck of dirt rather than a second mark.
-      const sr = 0.34;
+      const sr = 0.42;
       tracePoly(
         ctx,
-        [pt(0.66, -0.66 - sr), pt(0.66 + sr * 0.42, -0.66), pt(0.66, -0.66 + sr), pt(0.66 - sr * 0.42, -0.66)],
+        [pt(0.5, -0.62 - sr), pt(0.5 + sr * 0.44, -0.62), pt(0.5, -0.62 + sr), pt(0.5 - sr * 0.44, -0.62)],
         true,
       );
       ctx.fill();
@@ -2379,12 +2437,20 @@ export function drawOrnament(
       line(-0.76, 0.94, 0.76, 0.94);
       break;
     }
-    case 23: { // rosette
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        blob(Math.cos(a) * 0.56, Math.sin(a) * 0.56, 0.34, 0.18, a);
+    case 23: { // rosette — eight petals with the bays cut between them
+      // Eight overlapping ellipses in one ink is a CIRCLE: they merge, the
+      // centre disc is invisible inside the merge, and it landed in the same
+      // cluster as the bee, the trefoil, the tulip and the lantern. A rosette
+      // is read from its BAYS, so it is drawn as the outline that has them —
+      // sixteen points alternating 1.0 and 0.46, which at 15px is a mark with
+      // eight bites out of it and nothing else in the table has that.
+      const rose: Pt[] = [];
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const r = i % 2 === 0 ? 1 : 0.46;
+        rose.push(pt(Math.cos(a) * r, Math.sin(a) * r));
       }
-      disc(0, 0, 0.22);
+      fillPoly(rose);
       break;
     }
     case 24: { // trefoil
@@ -2398,9 +2464,12 @@ export function drawOrnament(
     case 25: { // quatrefoil
       // Lobes just barely overlapping. At the obvious spacing (offset 0.5,
       // radius 0.46) four circles in one ink merge into a rounded square.
+      // Pushed further out again, because at 0.58/0.44 the four bays were
+      // shallower than the five of `heraldic rose` and the two read as one
+      // mark: a quatrefoil is a CROSS of lobes, and the cross is the bays.
       for (let i = 0; i < 4; i++) {
         const a = -Math.PI / 2 + (i * Math.PI) / 2;
-        disc(Math.cos(a) * 0.58, Math.sin(a) * 0.58, 0.44);
+        disc(Math.cos(a) * 0.66, Math.sin(a) * 0.66, 0.42);
       }
       break;
     }
@@ -2415,40 +2484,70 @@ export function drawOrnament(
       break;
     }
     case 27: { // ivy leaf
+      /*
+       * A five-lobed leaf on a stalk a fifth of a pixel wide is a LOLLIPOP at
+       * the size this is struck, and it was: a round head over a stick, sitting
+       * in the same cluster as the rosette, the trefoil and the pine cone.
+       *
+       * Ivy is recognised by its NOTCHES, and a notch has to be a third of the
+       * mark to exist at 15px. Three deep points, two deep bays, a heart-cut
+       * base — one silhouette, no stalk. The stalk is the part nobody can see
+       * and the part that was making it a lollipop.
+       */
+      // Five equal points is a STAR, which is what the first attempt at this
+      // drew and what the board showed — checked, not assumed. An ivy leaf is
+      // THREE lobes over a notch with the tip hanging down: one long point at
+      // the foot, two shoulders, and a bay cut into the head between them.
       fillPoly([
-        pt(0, -0.94),
-        pt(0.36, -0.54),
-        pt(0.82, -0.22),
-        pt(0.5, 0.18),
-        pt(0.17, 0.22),
-        pt(0.1, 0.96),
-        pt(-0.1, 0.96),
-        pt(-0.17, 0.22),
-        pt(-0.5, 0.18),
-        pt(-0.82, -0.22),
-        pt(-0.36, -0.54),
+        pt(0, 1),
+        pt(0.72, 0.12),
+        pt(0.98, -0.62),
+        pt(0.32, -0.5),
+        pt(0, -0.98),
+        pt(-0.32, -0.5),
+        pt(-0.98, -0.62),
+        pt(-0.72, 0.12),
       ]);
       break;
     }
     case 28: { // oak leaf
+      // 7.5% of its own box — one of the smallest marks in the table, and a
+      // 0.26 wobble on a 0.62 radius is a scalloped edge rather than the deep
+      // paired lobes an oak leaf is known by. Bigger, and cut nearly twice as
+      // deep, so the lobes survive the downsample.
       const lobes: Pt[] = [];
-      for (let i = 0; i < 20; i++) {
-        const a = (i / 20) * Math.PI * 2;
-        const r = 0.62 + 0.26 * Math.cos(5 * a);
-        lobes.push(pt(Math.sin(a) * r * 0.66, -Math.cos(a) * r * 1.05));
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        // 0.44 of 0.74 is a five-pointed star, not a lobed leaf — the board
+        // said so. 0.28 is a lobe you can see that is still an edge, not a point.
+        const r = 0.78 + 0.28 * Math.cos(5 * a);
+        lobes.push(pt(Math.sin(a) * r * 0.74, -Math.cos(a) * r * 1.1));
       }
       fillPoly(lobes);
       break;
     }
-    case 29: { // wheatsheaf
-      line(0, 1, 0, -0.2);
-      for (let i = 0; i < 3; i++) {
-        const y = -0.12 - i * 0.3;
-        blob(-0.24, y, 0.28, 0.13, -0.85);
-        blob(0.24, y, 0.28, 0.13, 0.85);
+    case 29: { // wheatsheaf — one ear of wheat, not a bundle
+      /*
+       * Six grains 0.28 × 0.13 either side of a hairline stem, plus a tie: at
+       * 15px that is a PLUS SIGN with a dot on it, filed in with the keyhole,
+       * the key and the anchor. Fewer grains, much fatter, swept up hard, and
+       * a stem thick enough to be a stem — an ear of wheat is a feathered
+       * spike, and the feathering is the whole recognition.
+       *
+       * A sheaf proper (bound in the middle, flaring at both ends) was the
+       * other way to draw it and would have collided with the hourglass, which
+       * is exactly that outline.
+       */
+      strokePts(ctx, [pt(0, 1), pt(0, -0.1)], false);
+      // Swept up and held APART: at 0.42 long on a 0.3 offset the four pairs
+      // ran into each other and the ear came out as one solid spade. The gap
+      // between grains is the feathering, and the feathering is the mark.
+      for (let i = 0; i < 4; i++) {
+        const y = -0.14 - i * 0.3;
+        blob(-0.26, y, 0.36, 0.15, -1.05);
+        blob(0.26, y, 0.36, 0.15, 1.05);
       }
-      blob(0, -0.84, 0.13, 0.28);
-      line(-0.32, 0.64, 0.32, 0.5);
+      blob(0, -0.9, 0.15, 0.3);
       break;
     }
     case 30: { // pomegranate
@@ -2484,12 +2583,20 @@ export function drawOrnament(
       disc(0, 0, 0.25);
       break;
     }
-    case 33: { // comet
-      disc(0.44, -0.44, 0.36);
-      for (let i = 0; i < 3; i++) {
-        const off = (i - 1) * 0.28;
-        line(0.18 + off * 0.3, -0.18 + off, -0.86 + off * 0.5, 0.68 + off * 0.5);
-      }
+    case 33: { // comet — a head and one wedge of tail
+      // Three parallel strokes behind a disc read as a SLASH: the strokes are
+      // the same ink as the head, they touch it, and the eye joins the lot into
+      // one diagonal bar. The table's own rule is one silhouette — so the tail
+      // is a wedge that starts at the head's width and runs out to a point,
+      // which is also what a comet's tail does.
+      // …and a SHORT wide wedge under a big head is a ladle. The tail has to
+      // be much longer than the head is wide, and run out to an actual point.
+      fillPoly([
+        pt(0.5, -0.3),
+        pt(-1, 0.94),
+        pt(0.12, -0.66),
+      ]);
+      disc(0.5, -0.52, 0.36);
       break;
     }
     case 34: { // lantern

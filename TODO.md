@@ -1,4 +1,245 @@
-# Bellanote — running TODO
+# Alcove — running TODO
+
+## 🔴 Reported 2026-08-04, from the INSTALLED build — WORK THIS LIST
+
+The reader's words are quoted verbatim under each item, then the task as I
+understand it. Where I think the report and the fix differ, that is said out
+loud rather than quietly reinterpreted.
+
+### Packaging
+
+- [ ] **No icon in the Start menu.**
+      > "the app does not have icon in start menu, probably the same bug for
+      > installer"
+
+      The shortcut exists at `%APPDATA%\…\Start Menu\Programs\Alcove.lnk` and
+      shows no icon. Their guess is worth taking seriously — the `.ico` is the
+      same file the NSIS installer uses, so one malformed multi-frame icon
+      would explain both. Check the frames actually present in
+      `src-tauri/icons/icon.ico`, that the shortcut points at an icon index the
+      file has, and that Windows' icon cache is not just stale (test on a fresh
+      shortcut, not by rebuilding the cache).
+
+- [ ] **Pin to Start.** Windows blocks the scripted verb
+      (`E_ACCESSDENIED`) and the UI attempt needs an access grant that was
+      denied while the reader was away. Retry through the real right-click menu
+      when they are at the machine. Do NOT use the `ConfigureStartPins` policy:
+      it needs admin and REPLACES their whole pinned layout.
+
+### The icon itself — do this WITH the reader, not in an agent
+
+- [ ] **The icon is too detailed and reads pixelated.**
+      > "also btw the icon looks very pixelated probably because it has so much
+      > detail in it, so help me craft a new icon as well"
+      > "the icon thing do it with me dont hand it to a agent, we do together ,
+      > if i like then you update it"
+
+      Their diagnosis is almost certainly right: `alcove-art.png` is a rendered
+      illustration downsampled to 16/32/48px, and detail that survives at 256
+      turns to mush at 16. Draft options together, iterate on their call, and
+      only then regenerate the icon set. **Not delegated.**
+
+### Defaults and first impression
+
+- [ ] **The out-of-the-box room looks weird.**
+      > "the default bookshelf colour, wallpaper colour and design looks weird,
+      > try to hand pick the best one to make it good out of the box when user
+      > first opens the app"
+
+      Hand-pick the opening scheme + carpentry + wallpaper as one composed
+      room, judged by looking at the first-run screen, not by picking each axis
+      on its own merits.
+
+- [ ] **Presets are weighted bland; the interesting ones should lead.**
+      > "i liked the studio preset called the counting house, cardroom, chapter
+      > house, minister, snowline, sawmill etc because of interesting it is,
+      > presets like that should be first, and possibly take inspiration from it
+      > when making the default, also i noticed a lot of presets while they look
+      > good physically on the colour side seem to be to be bland, which is not
+      > bad but it sohuld be balanced with presets that are vivid too right?"
+
+      Two jobs: re-rank so the characterful presets lead their families, and
+      ADD vivid ones so the set is balanced rather than uniformly muted. Bland
+      is not wrong — unbalanced is.
+
+- [ ] **Onboarding should choose the reader's whole look for them.**
+      > "during onboarding ask thee user whether they like bland or vivid, what
+      > kind of pattern and style they like(make it sound better) and then auto
+      > pick their colour profile, from the preset to how their shelf, wlecome
+      > book, wallpapper, etc etc etc, as well as their sound profile , the
+      > colour profile on the settings icons and other app ui icons etc"
+
+      A short taste questionnaire early in the tour that writes: room preset,
+      shelf carpentry, wallpaper, welcome-book binding, sound set, and the UI
+      icon colour profile. Phrase the questions in the app's own voice, not as
+      "bland or vivid".
+
+### Onboarding
+
+- [ ] **Step 2 has no guard: dragging before clicking skips the step.**
+      > "in onboading step 2 it doesnt tell user to click on the pop up that
+      > says write my first one before dragging on shelf, so if user drags on
+      > shelf before clicking write my first, it goes to step 3, there should be
+      > safety here"
+
+- [ ] **"Write my first" creates TWO books, and the new one is white.**
+      > "when i click on write m y first, it creates two books, basially the
+      > welcome book popups along with my new book, also for some reason the new
+      > book is white"
+
+      Two bugs in one action. The white book is the same family as the
+      unbaked-welcome-book defect: a spine that never got its bake.
+
+- [ ] **Step 6's drop target is too small, and the cursor says no.**
+      > "in step 6 the highlighted box is too small to allow for draggin, it
+      > works but the user might get confused to move the below the higlighted
+      > box especially if it shows stop sign on his cursor when he is donig it"
+
+- [ ] **Steps 10 and 12 do not close the panel the previous step opened.**
+      > "step 10 it goes to explainig the next thing without auto closing the
+      > customise book thing that was opened in step 9"
+      > "same when going to step 12 from 11"
+
+- [ ] **The task-complete sound is wrong.**
+      > "the sound effects for onboarding when completing a task is very weird,
+      > its like a metal tong"
+
+- [ ] **The tour does not cover the rails.**
+      > "the tutorial did not show all the stuff in the sidebar in the notebook
+      > and also did not show the option in sidebar when bookshelf is open"
+
+- [ ] **Offer a short tour and a long one.**
+      > "it fine if the onboarding is very big"
+      > "in fact at the start of onboarding ask user if they want bare minimum
+      > or full the rundown, like that we show them information accordingly"
+
+### Sound
+
+- [ ] **MAJOR: cues degrade into "jittery sand paper".**
+      > "i have just discovered a major ting, a lot of time i said bad but
+      > actually there is a sound bug that turns that sound effects into jitterry
+      > sand paper , for example when i click on studio its a nice tap when i
+      > click again to close it becomes jittery sand paper(happens like maybe 2
+      > times every 3 times)"
+
+      **This reframes months of "the sound is bad" feedback.** A cue that is
+      fine on one play and gritty on the next is not a sourcing problem — it is
+      playback: overlapping voices on one Howl, a rate/detune jitter, a sprite
+      window cutting into the next take, or the new filter node resonating.
+      Reproduce it by TOGGLING the studio repeatedly and capturing the actual
+      output, not by listening.
+
+### Customisation — the big one
+
+- [ ] **Delete, restore, favourite, and add-your-own, everywhere.**
+      > "we should also give the user to delete stuff in the customisation in
+      > all possible areas with option to restore it again by right clicking its
+      > menu which then opens up the list of deleted ones with checkbox style
+      > options to restore what they want, along with option for user to favorite
+      > stuff which then puts it in first in its category or sub cateofry
+      > depending favorite level the user sets for it, and option for user to add
+      > their own customisation options like textures or effects or sound
+      > whatever, when uploading for category it will open a popup with upload
+      > button information on how to do it along with a custom ai prompt they
+      > give to an ai that will tell it the specifications of how to build and
+      > package it for the user to upload it here"
+
+      Four capabilities across EVERY vocabulary, as one shared mechanism:
+      hide/delete an entry; restore from a right-click list with checkboxes;
+      favourite with a level; and import your own. The upload dialog carries
+      instructions AND a copyable AI prompt describing the exact format, so a
+      reader can have a model build a pack for them.
+
+- [ ] **Save the current room as a preset, and star it.**
+      > "give the user the option to save their current room as preset and also
+      > star it simuntaosuly to make sure it stays up top, ( single star to pin
+      > it to top of a subcateogyr while double star for it to be at top within
+      > the category as a whole , this notation for pretty much anything)"
+
+      The star notation is the same favourite-level mechanism as above and must
+      share it, not be a second implementation.
+
+- [ ] **Appearance offers 4 themes; handwriting, ink and paper are thin too.**
+      > "in appearance i noticed only 4 themes, are there fix it to atleat have
+      > 20, same bug for handwriting, you know what though i feel you have
+      > already done this thouhg and the option is not showing but anyway might
+      > be worth to check the code for stuff that may have been written but not
+      > plugged"
+      > "btw same issue for ink, paper type , atleast 20 options"
+
+      Their instinct is right and this has happened four times already (the
+      colour axis, the lettering shelf, the underlines, the wallpaper roll
+      gate). Find the written-but-unplugged surfaces and plug them.
+
+- [ ] **A standing alarm for written-but-unplugged code.**
+      > "perhaps even a safety clever functionality sort of like alarm to every
+      > part of the code to basically spit out errors if it isn't plugged in"
+
+      Generalise `tests/roll-gates.test.ts`: a gate that every exported
+      vocabulary / pool / gate has a real consumer in `src/`, failing loudly
+      when something is authored and reachable by nobody.
+
+### Book, page and editor
+
+- [ ] **A click should bring the book forward, not open it.**
+      > "the book is auto opening when i click it should isntead just come in
+      > foreview and only if user clicks on it does it go inside , with a back
+      > button on top left"
+
+- [ ] **The page changes colour mid-turn.**
+      > "i noticed when turining the page the colour of page changes before
+      > going back to original colour"
+
+- [ ] **Stickers and effects should be placeable anywhere.**
+      > "give user the option to drag and place stickers or any effects, like i
+      > mean click on it and put it anywhere on the page, not caring about where
+      > lines are"
+
+- [ ] **Merge the bookmark button into Ribbons.**
+      > "there should be an option for user to make their own custom bookmarks,
+      > right now it just places a bokomark when i click on bookmark button, i
+      > feel you may have written code for this but not plugged in, oh wait never
+      > mind you just have it as options in sidebar called ribbon, maybe it might
+      > be worth merging those two instead having a seperate button"
+
+- [ ] **Focus mode should be a range, not a switch.**
+      > "focus mode should allow user to basically zoom in and also even just
+      > get into full page mode where the book isnt even visible and it just page
+      > and even go as far just making one page visible, so basically it should
+      > be controllable by user"
+
+- [ ] **Rework the welcome book to show everything off.**
+      > "completely rework the welcome book content to showcase all the
+      > different possiblities, also i hope you added math latex options etc"
+      > "make the welcome book very detailed and beautofil and playful and fun
+      > showing what all can be done like adding images, banenrs, also ithink the
+      > code even shows how to add random images based on a search query, so
+      > maybe add some cute kittens"
+
+- [ ] **More shortcuts.**
+      > "more shortcuts would be nice"
+
+### Art quality
+
+- [ ] **Some spine designs are still too weird for the dice.**
+      > "we might need to do a purge or atleast remove the randomise/new book
+      > creator some new book designs on spine and perhaps elsewhere because they
+      > too weird like look at how weird this is"
+
+      They attached a shelf shot. Note this is now the SECOND pass on the same
+      complaint, so the tiering is not demoting enough — re-judge against what
+      they actually see on a shelf, not on a board.
+
+- [ ] **An effect renders wrongly.**
+      > "fix and verify the effects, for example look at how weird this effect
+      > is"
+
+      They attached a page shot: a washi/tape strip sitting across the text
+      rather than behind or above it.
+
+- [ ] **Custom cursors.**
+      > "add custom cursor states and cursor icons wiht customisation options
+      > for the user pick"
 
 ## 🏷️ Rename to **Alcove** — DEFERRED until the running workflows land
 

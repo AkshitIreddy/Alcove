@@ -7,8 +7,10 @@
  * same frame.
  *
  * - `toCanvas` with pixelRatio capped at 2 (1.5 when deviceMemory < 8).
- * - Font-embed CSS built ONCE via getFontEmbedCSS and reused per capture
- *   (the biggest per-capture cost).
+ * - Font-embed CSS built ONCE via getFontEmbedCSS and reused per capture.
+ * - `includeStyleProperties` narrowed to the properties that can actually
+ *   change a pixel — the single biggest cost in a capture (see
+ *   snapshotStyleProperties below).
  * - `.snapshotting` class added to the captured root during the clone so CSS
  *   can hide caret/selection UI; a `filter` drops chrome elements (drag
  *   handles, style switcher, anything marked data-snapshot-hide) and images
@@ -76,6 +78,252 @@ function snapshotFilter(node: HTMLElement): boolean {
     typeof node.matches !== 'function' ||
     !node.matches(SNAPSHOT_EXCLUDE_SELECTOR)
   );
+}
+
+/* -------------------------------------------------------------------------
+   Which computed properties are worth copying onto the clone
+   ------------------------------------------------------------------------- */
+
+/**
+ * Every property CSS inherits, plus the two html-to-image cannot work without.
+ *
+ * The derived list below is built by reading the app's own stylesheets, and a
+ * scan of stylesheets is blind to exactly one thing: a value that reaches the
+ * captured subtree by INHERITANCE from an inline style on an ancestor above
+ * the snapshot root (`document.body.style.fontFamily = …`). Inherited
+ * properties are a closed, specified set, so they are simply always kept
+ * rather than guessed at. SVG's inherited paint is in here too — the `<svg>`
+ * root element is cloned by html-to-image like any other element (only its
+ * descendants are stranded, which is svgSnapshot.ts's problem).
+ *
+ * `content` is not inherited but must be present: html-to-image rebuilds
+ * ::before/::after as a real stylesheet from this same list (its
+ * clone-pseudos.ts), and without `content` every pseudo element in the
+ * snapshot loses its glyph. `unicode-bidi` likewise pairs with `direction`.
+ */
+const ALWAYS_KEEP_PROPERTIES: readonly string[] = [
+  'border-collapse',
+  'border-spacing',
+  'caption-side',
+  'color',
+  // Inherited, and it decides the UA's own default colours — a snapshot taken
+  // under a dark scheme must not paint UA-default text on a light one.
+  'color-scheme',
+  'content',
+  'cursor',
+  'direction',
+  'dominant-baseline',
+  'empty-cells',
+  'fill',
+  'fill-opacity',
+  'fill-rule',
+  'font-family',
+  'font-feature-settings',
+  'font-kerning',
+  'font-language-override',
+  'font-optical-sizing',
+  'font-palette',
+  'font-size',
+  'font-size-adjust',
+  'font-stretch',
+  'font-style',
+  'font-synthesis-small-caps',
+  'font-synthesis-style',
+  'font-synthesis-weight',
+  'font-variant',
+  'font-variant-alternates',
+  'font-variant-caps',
+  'font-variant-east-asian',
+  'font-variant-emoji',
+  'font-variant-ligatures',
+  'font-variant-numeric',
+  'font-variant-position',
+  'font-variation-settings',
+  'font-weight',
+  'hyphenate-character',
+  'hyphenate-limit-chars',
+  'hyphens',
+  'image-orientation',
+  'image-rendering',
+  'letter-spacing',
+  'line-break',
+  'line-height',
+  'list-style-image',
+  'list-style-position',
+  'list-style-type',
+  'marker-end',
+  'marker-mid',
+  'marker-start',
+  'orphans',
+  'overflow-wrap',
+  'paint-order',
+  'print-color-adjust',
+  'quotes',
+  'shape-rendering',
+  'stroke',
+  'stroke-dasharray',
+  'stroke-dashoffset',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'stroke-miterlimit',
+  'stroke-opacity',
+  'stroke-width',
+  'tab-size',
+  'text-align',
+  'text-align-last',
+  'text-anchor',
+  'text-combine-upright',
+  'text-decoration-skip-ink',
+  'text-emphasis-color',
+  'text-emphasis-position',
+  'text-emphasis-style',
+  'text-indent',
+  'text-justify',
+  'text-orientation',
+  'text-rendering',
+  'text-shadow',
+  'text-size-adjust',
+  'text-transform',
+  'text-underline-offset',
+  'text-underline-position',
+  'text-wrap-mode',
+  'text-wrap-style',
+  'unicode-bidi',
+  'vector-effect',
+  'visibility',
+  'white-space-collapse',
+  'widows',
+  'word-break',
+  'word-spacing',
+  'writing-mode',
+  // Chromium exposes inherited `border-spacing` under these two names only.
+  '-webkit-border-horizontal-spacing',
+  '-webkit-border-vertical-spacing',
+  '-webkit-font-smoothing',
+  '-webkit-line-break',
+  '-webkit-rtl-ordering',
+  '-webkit-text-fill-color',
+  '-webkit-text-security',
+  '-webkit-text-stroke-color',
+  '-webkit-text-stroke-width',
+];
+
+/**
+ * Below this many properties the derivation has clearly gone wrong (an empty
+ * document, a stylesheet that parsed to nothing) and the full list is used.
+ * A page's own CSS reaches well past 150 longhands.
+ */
+const MIN_PLAUSIBLE_PROPERTIES = 80;
+
+let derivedStyleProperties: string[] | null | undefined;
+
+/**
+ * Every longhand any rule in any of the document's own stylesheets sets.
+ *
+ * Read out of the CSSOM rather than off the source text, so the ENGINE
+ * expands the shorthands: `margin: 0` enumerates as margin-top/right/bottom/
+ * left, `font:` as its fourteen longhands. A regex here would have to know
+ * every shorthand in CSS and would be wrong the week a new one shipped.
+ *
+ * Returns null if any sheet refuses to be read (a cross-origin stylesheet
+ * throws on `.cssRules`) — a partial scan is worse than no scan, because the
+ * properties it missed are exactly the ones that would go unpainted.
+ */
+function collectAuthoredProperties(): Set<string> | null {
+  const sheets: CSSStyleSheet[] = [
+    ...Array.from(document.styleSheets),
+    ...Array.from(document.adoptedStyleSheets ?? []),
+  ];
+  if (sheets.length === 0) return null;
+
+  const authored = new Set<string>();
+  const visit = (rules: CSSRuleList): void => {
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i] as CSSRule & {
+        style?: CSSStyleDeclaration;
+        cssRules?: CSSRuleList;
+      };
+      const style = rule.style;
+      if (style !== undefined) {
+        for (let p = 0; p < style.length; p++) authored.add(style[p]);
+      }
+      // @media / @supports / @layer / @container / @keyframes all nest.
+      if (rule.cssRules !== undefined) visit(rule.cssRules);
+    }
+  };
+
+  for (const sheet of sheets) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      return null;
+    }
+    visit(rules);
+  }
+  return authored;
+}
+
+/**
+ * The `includeStyleProperties` html-to-image should use, or undefined to let
+ * it keep its own (full) list.
+ *
+ * WHY THIS EXISTS — measured with shots-now/flip-raster-perf.mjs on a
+ * 58-element page: a capture cost ~205ms, and 120ms of that (63%) was
+ * html-to-image's cloneCSSStyle. It has no property list of its own: it
+ * enumerates `getComputedStyle(document.documentElement)` and copies EVERY
+ * entry onto EVERY cloned element. On this engine that is 620 names, ~160 of
+ * them our own `--token` custom properties, at three CSSOM calls each — 31k
+ * setProperty + 31k getPropertyValue + 31k getPropertyPriority for one page.
+ *
+ * Nearly all of it cannot change a pixel. The clone is rasterized inside an
+ * `<svg><foreignObject>` data URL — an isolated document where NONE of the
+ * app's stylesheets apply — so a property the app's CSS never sets computes to
+ * the same UA-initial value on both sides and copying it is pure cost. Custom
+ * properties are pure cost too: cloneCSSStyle copies COMPUTED values, and by
+ * then every `var()` has already been substituted.
+ *
+ * Two things need no entry here. Properties set INLINE on a captured element
+ * survive on their own — html-to-image clones with `cloneNode()`, which copies
+ * the style attribute verbatim (that is also why svgSnapshot.ts's inlining
+ * works). And properties only ever set inside `<svg>` descendants are handled
+ * by svgSnapshot.ts for the same reason.
+ *
+ * Fail-safe: an unreadable stylesheet or an implausibly short result returns
+ * undefined and html-to-image keeps the full list. Slow beats wrong.
+ *
+ * ONE-SHOT AND GLOBAL — html-to-image caches the first list it is handed for
+ * the lifetime of the page (`styleProps` in its util.ts), so whichever capture
+ * site runs first decides for every other one. That is why this is exported:
+ * offscreenPages.ts and editor/script/exporters/capture.ts should pass the
+ * same array, or the winner of that race decides whether anyone is quick.
+ */
+export function snapshotStyleProperties(): string[] | undefined {
+  if (derivedStyleProperties !== undefined) return derivedStyleProperties ?? undefined;
+  derivedStyleProperties = null;
+  try {
+    const authored = collectAuthoredProperties();
+    if (authored === null) return undefined;
+    for (const name of ALWAYS_KEEP_PROPERTIES) authored.add(name);
+    const wanted = [...authored].filter((name) => !name.startsWith('--'));
+
+    // Keep an engine property when the app touches it, its family, or one of
+    // its sub-longhands: the two vocabularies do not line up name for name
+    // (a rule enumerates `background-position-x`, a computed style exposes
+    // `background-position`), and a near miss there would drop paint.
+    const keep = Array.from(getComputedStyle(document.documentElement)).filter(
+      (name) =>
+        !name.startsWith('--') &&
+        wanted.some(
+          (want) =>
+            want === name || name.startsWith(`${want}-`) || want.startsWith(`${name}-`),
+        ),
+    );
+    if (keep.length >= MIN_PLAUSIBLE_PROPERTIES) derivedStyleProperties = keep;
+  } catch {
+    derivedStyleProperties = null;
+  }
+  return derivedStyleProperties ?? undefined;
 }
 
 export interface RasterEntry {
@@ -335,6 +583,7 @@ export class PageRasterCache {
         fontEmbedCSS,
         imagePlaceholder: TRANSPARENT_PX,
         filter: snapshotFilter,
+        includeStyleProperties: snapshotStyleProperties(),
       });
     } catch (err) {
       // Snapshot failure → caller falls back (doc: CSS path). Warn rather

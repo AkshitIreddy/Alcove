@@ -319,6 +319,17 @@ export class ShelfWorld {
   private libraryGen = 0;
   /** The room key whose art is actually on screen. */
   private appliedLibraryKey = '';
+  /** Set while a coalesced `applyLibrary` is already queued for this tick. */
+  private libraryQueued = false;
+  /**
+   * How many times the case + wall have actually been BAKED.
+   *
+   * Only meaningful to QA (`shots-now/preset-bakes.mjs`), and cheap enough to
+   * carry always: the number is the whole evidence that applying a preset
+   * costs one bake rather than two, and a claim like that needs a counter
+   * rather than a stopwatch.
+   */
+  private roomBakes = 0;
   /** Full-viewport snapshot held over the stage during a theme crossfade. */
   private themeFade: Sprite | null = null;
 
@@ -611,15 +622,15 @@ export class ShelfWorld {
     // prefs load — and after every studio edit. Since a room now belongs to a
     // bookcase, this also fires on every case switch.
     this.unsubs.push(
-      subscribeLibraryPrefs((prefs) => {
-        void this.applyLibrary(prefs);
+      subscribeLibraryPrefs(() => {
+        this.queueApplyLibrary();
       }),
       // The carpentry and the wallpaper are the room's other two axes and they
       // live in their own store, so a build change never touches `prefs` and
       // the subscription above would never fire for it. This one fires
       // immediately, on every studio edit, AND on a bookcase switch.
       subscribeRoomDesign(() => {
-        void this.applyLibrary(snapshotLibraryPrefs());
+        this.queueApplyLibrary();
       }),
       // A binding is persisted outside `cover_meta`, so the studio's save does
       // not travel the `persistBookStyle` → `invalidate` path the other style
@@ -700,11 +711,14 @@ export class ShelfWorld {
         shelf: string;
         wallpaperKey: string;
         libraryKey: string;
+        bakes: number;
       } => ({
         design: this.roomDesign,
         shelf: shelfDesignTag(this.envTex.design),
         wallpaperKey: this.wallpaperKey,
         libraryKey: this.appliedLibraryKey,
+        /** Case + wall bakes since launch — see `roomBakes`. */
+        bakes: this.roomBakes,
       });
       // The WRITERS have to be handed out from here for the same reason
       // `__shelfSaveSettings` is: a probe's own `import('/src/data/…')` can
@@ -1588,6 +1602,45 @@ export class ShelfWorld {
    *  3. kick the case bakes — disk-cached, so a revisited room is instant;
    *  4. when they land, fade the snapshot out.
    */
+  /**
+   * Fold every room notification that lands in one tick into ONE application.
+   *
+   * A room lives in two stores — the colours in the bookcase's `room` blob,
+   * the carpentry and paper in the studio's settings key — and neither
+   * validator would accept the other's fields, so applying a preset is two
+   * writes. Both publish synchronously, before their own persist await, so
+   * both land in the same microtask drain; without this the world ran
+   * `applyLibrary` twice and BAKED the case and wall twice for one click.
+   *
+   * `libraryGen` already made that safe — the first bake's result is dropped —
+   * but safe is not the same as free, and dropping work you have already paid
+   * for is the expensive way to be correct.
+   *
+   * END OF TASK, not `queueMicrotask`. The first cut used a microtask and
+   * `shots-now/preset-bakes.mjs` still counted two bakes per click: each save
+   * awaits its own store's `load…()` first, those resolve a different number
+   * of ticks apart, and the queued call fired in the gap between them. A
+   * `setTimeout(0)` runs only once the whole microtask drain is done, so every
+   * notification whose write was started in this task is folded in. The cost
+   * is a few milliseconds before a bake that takes far longer than that.
+   *
+   * Still degrades safely: if a notification genuinely arrives in a later task
+   * (a cold store whose load has not resolved yet, a bookcase switch) it gets
+   * its own application, exactly as before.
+   *
+   * Deliberately takes no prefs argument. The one snapshot worth applying is
+   * the newest, and by the time this runs a captured one may be a write old.
+   */
+  private queueApplyLibrary(): void {
+    if (this.destroyed || this.libraryQueued) return;
+    this.libraryQueued = true;
+    setTimeout(() => {
+      this.libraryQueued = false;
+      if (this.destroyed) return;
+      void this.applyLibrary(snapshotLibraryPrefs());
+    }, 0);
+  }
+
   private async applyLibrary(prefs: LibraryPrefs): Promise<void> {
     if (this.destroyed) return;
     const next = resolveLibrary(prefs);
@@ -1626,6 +1679,7 @@ export class ShelfWorld {
     // The case and the wall are baked together so they land on the same beat:
     // a gothic case against the outgoing room's wall, even for two frames,
     // reads as a glitch rather than as a transition.
+    this.roomBakes += 1;
     await Promise.all([
       this.envTex.setTheme({ themeId: next.theme.id, scheme: next.scheme, design: shelf }),
       this.applyWallpaper(design.wallpaper, next.scheme),

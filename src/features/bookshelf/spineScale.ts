@@ -26,9 +26,31 @@
  * | 1.60 | hi     |  0.63  | 1.25  |
  * | 2.50 | hi     |  0.40  | 0.80  |
  *
- * Max zoom stays the one soft spot on a 2× display, deliberately: covering
- * 2.5 × 2 exactly would need scale 5, which is 6.25× the bake area of the
- * shipped scale-2 for the top sliver of the zoom range.
+ * ## Max zoom is the one soft spot, and here is what it actually costs
+ *
+ * Note the "after" column is the same at every dpr, which is the point of the
+ * change above: `spineBakeScale` already multiplies by dpr, so
+ *
+ *     sampling = (HI_SCALE_BASE × dpr) / (zoom × dpr) = HI_SCALE_BASE / zoom
+ *
+ * The dpr cancels. Softness at max zoom is therefore NOT a retina problem —
+ * 2 / 2.5 = 0.80 on every display alike.
+ *
+ * Which also means covering zoom 2.5 needs `HI_SCALE_BASE = 2.5`, not 5. An
+ * earlier note here (and in tests/spine-resolution.test.ts) said 5, and called
+ * it "6.25× the bake area"; that double-counted the dpr the code applies for
+ * you. The real cost of a crisp max zoom is (2.5/2)² = **1.56×** the bake
+ * area.
+ *
+ * Still not taken, but now for the true reason rather than an inflated one.
+ * 1.56× the texels is 1.56× the CPU in every hi bake, paid on every launch by
+ * every reader; and at dpr 2 a 2048² page drops from ~32 spines to ~20, so the
+ * measured 121-book worst case needs 7 pages instead of 5 — about 33MB more
+ * atlas on a retina display. All of that is spent for the top sliver of the
+ * zoom range, while the shelf RESTS at 0.8 where the hi bucket already
+ * delivers 2.5 texels per device pixel. If max zoom ever becomes somewhere
+ * readers spend time, this is a one-constant change plus a bump to
+ * `hiAtlasPages`.
  */
 
 /** Bake buckets: `lo` serves LOD tier 1, `hi` serves tier 0 (titles baked in). */
@@ -37,7 +59,13 @@ export type SpineVariant = 'lo' | 'hi';
 /** Lo-res bake: device px per world px. 232 world px → ~144 texels at dpr 1. */
 export const LO_SCALE_BASE = 0.62;
 
-/** Hi-res bake: device px per world px. Covers max zoom 2.5 at dpr 1. */
+/**
+ * Hi-res bake: device px per world px, on every display (see the header).
+ *
+ * Covers the shelf's resting zoom 0.8 at 2.5 texels per device pixel and zoom
+ * 1.6 at 1.25. Max zoom 2.5 lands at 0.80 — 2.5 would make it exactly 1, at
+ * 1.56× the bake area everywhere.
+ */
 export const HI_SCALE_BASE = 2;
 
 /**

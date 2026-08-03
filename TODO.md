@@ -84,8 +84,22 @@ agents reported honestly, plus the seams between them that I closed by hand.
       it stayed lit while the room dimmed. Dropped to just under the scrim,
       with `shots-now/seal-layer.mjs` confirming it is still the topmost thing
       at its own coordinates on a resting shelf. `cab49e7`
-- [ ] Max zoom on a 2× display is the one soft spot left: 0.80 texels per device
-      pixel at zoom 2.5. Twice what it was, still under 1.
+- [x] Max zoom on a 2× display is the one soft spot left: 0.80 texels per device
+      pixel at zoom 2.5. **Two corrections, one decision unchanged.**
+      It is not "on a 2× display": `spineBakeScale` already multiplies by dpr,
+      so sampling is `HI_SCALE_BASE / zoom` and the dpr cancels — 0.80 at max
+      zoom on every display alike.
+      And sharpening it does not cost "6.25× the bake area" as the comment in
+      `spineScale.ts` and `spine-resolution.test.ts` both claimed. That figure
+      came from `HI_SCALE_BASE = 5`, which double-counts the dpr. Covering zoom
+      2.5 needs 2.5, i.e. **1.56×** the area.
+      Still not taken, now for the real reason: 1.56× the texels is 1.56× the
+      CPU in every hi bake on every launch, and at dpr 2 a page drops from ~32
+      spines to ~20 so the 121-book worst case needs 7 pages instead of 5
+      (~33MB more atlas). The shelf RESTS at zoom 0.8, where the hi bucket
+      already gives 2.5 texels per device pixel. Documented as a one-constant
+      change if max zoom ever becomes somewhere readers spend time, and the
+      dpr-cancelling arithmetic is now pinned by a test rather than by prose.
 - [x] Spines are not disk-cached, so every launch shows the lo bake until the hi
       one lands. **Measured, and not worth doing.** `shots-now/spine-transient.mjs`
       polls the factory's two buckets against the visible books: every visible

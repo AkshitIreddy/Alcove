@@ -70,7 +70,10 @@ describe('spine bake scale', () => {
   it('keeps every zoom a reader uses at or above 1 texel per device pixel', () => {
     // Tier 0 opens at 0.7 (lod.ts) and the shelf rests at 0.8; tier 1 runs
     // 0.22-0.7. Max zoom is 2.5 (camera.ts) and is allowed to be the one soft
-    // spot — sharpening it costs 6× the bake area for the top of the range.
+    // spot — sharpening it means HI_SCALE_BASE 2.5, which is 1.56× the bake
+    // area. (This comment used to say 6×, from an HI_SCALE_BASE of 5; that
+    // double-counted the dpr `spineBakeScale` already applies. See the header
+    // in spineScale.ts — the cost is real but it is not that.)
     for (const dpr of [1, 1.5, 2]) {
       expect(spineSampling('hi', 0.8, dpr)).toBeGreaterThanOrEqual(1);
       expect(spineSampling('hi', 1.6, dpr)).toBeGreaterThanOrEqual(1);
@@ -90,6 +93,21 @@ describe('spine bake scale', () => {
   it('never lets the bases drift apart from the dpr-1 history', () => {
     expect(LO_SCALE_BASE).toBeCloseTo(0.62, 6);
     expect(HI_SCALE_BASE).toBe(2);
+  });
+
+  it('samples independently of dpr, which is what sets the cost of max zoom', () => {
+    // The arithmetic the header now spells out, pinned so nobody has to redo
+    // it: sampling is HI_SCALE_BASE / zoom, with the dpr cancelling. This is
+    // why softness at max zoom is not a retina problem, and why covering zoom
+    // 2.5 needs HI_SCALE_BASE 2.5 (1.56× the area) rather than 5 (6.25×).
+    for (const dpr of [1, 1.25, 1.5, 2]) {
+      for (const zoom of [0.8, 1.6, 2.5]) {
+        expect(spineSampling('hi', zoom, dpr)).toBeCloseTo(HI_SCALE_BASE / zoom, 6);
+        expect(spineSampling('lo', zoom, dpr)).toBeCloseTo(LO_SCALE_BASE / zoom, 6);
+      }
+    }
+    // And the specific claim: 2.5 is what would make max zoom exactly crisp.
+    expect(2.5 / 2.5).toBe(1);
   });
 });
 

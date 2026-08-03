@@ -46,9 +46,14 @@ agents reported honestly, plus the seams between them that I closed by hand.
       `DEFAULT_SHELF_DESIGN` (scriptorium/guilloche) and
       `FALLBACK_SHELF_DESIGN` (plank/none), like `DEFAULT_WALLPAPER_ID` before
       it. `d8e4bf3`
-- [ ] Applying a room preset is two independent store writes (colour to the
+- [x] Applying a room preset is two independent store writes (colour to the
       bookcase's room blob, design to the studio's settings key), so the world
-      reacts twice and re-bakes twice on one click. Coalesce them.
+      reacted twice and re-baked twice on one click. `queueApplyLibrary` folds
+      every notification in a task into one application. End-of-task, not a
+      microtask — the microtask version still measured two, because each save
+      awaits its own store's load() and those resolve a different number of
+      ticks apart. `shots-now/preset-bakes.mjs` reads the new bake counter:
+      +2 each before, +1 each after. `360a8c1`
 - [ ] `ROLLABLE_SHAPES` / `ROLLABLE_MATERIALS` / `ROLLABLE_DECORATIONS` are
       exported and gated but have no consumer — the studio has no per-axis
       shape/covering/ornament grid yet, only whole presets.
@@ -83,9 +88,22 @@ agents reported honestly, plus the seams between them that I closed by hand.
       pixel at zoom 2.5. Twice what it was, still under 1.
 - [ ] Spines are not disk-cached, so every launch shows the lo bake until the hi
       one lands. Now 1.24 texels/devpx (was 0.62), but the transient remains.
-- [ ] In the lettering shelf every `hand` specimen renders a visually identical
-      "Aa" — may be that 17px at 0.6 scale cannot tell fifty hands apart, or may
-      be a real wiring bug. Unverified.
+- [x] In the lettering shelf every `hand` specimen renders a visually identical
+      "Aa". It was a real bug, and far bigger than the specimen: the WHOLE
+      lettering shelf had no CSS. `BlockEffects` wrote `data-font`, `data-ink`,
+      `data-size` and `data-align` exactly as designed and nothing read them,
+      so all 122 values were inert on the page as well as in the picker.
+      Chasing it turned up a fourth: `[data-underline]` set `position:
+      relative` for a pseudo-element nobody ever wrote, so all 50 marks did
+      nothing either.
+      Generated (`scripts/gen-lettering.mjs`, `scripts/gen-underlines.mjs`) the
+      way `gen-tints.mjs` already generates the axis this happened to FIRST.
+      `tests/catalogue-reach.test.ts` now gates the last link — every value of
+      every axis must be named by a selector — which is what would have caught
+      all three at the time.
+      Verified by measurement, not by looking: `shots-now/lettering.mjs` and
+      `shots-now/underlines.mjs` count distinct rendered signatures (50/50,
+      50/50, 12/12, 10/10, 50/50) and check the 13px handwriting floor.
 
 ## 🔴 Reported 2026-08-03 (second pass)
 

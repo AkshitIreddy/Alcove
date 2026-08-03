@@ -15,6 +15,8 @@
  * These do. They are deliberately about REACHABILITY rather than about counts:
  * a number here would just be a third place to update.
  */
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EFFECT_AXES, EFFECT_KEYS } from '../src/editor/effects/vocabulary';
@@ -91,5 +93,69 @@ describe('everything the catalogue offers, the editor accepts', () => {
 
   it('keeps EFFECT_KEYS aligned with the axes', () => {
     for (const axis of EFFECT_AXES) expect(EFFECT_KEYS).toContain(axis.key);
+  });
+});
+
+describe('everything the editor accepts, the stylesheet paints', () => {
+  /*
+   * THE LAST LINK, and the one that had been missing twice.
+   *
+   * The tests above walk the chain panel → vocabulary → attribute and stop
+   * there. But an attribute is only a promise: BlockEffects writes
+   * `data-font="copperplate"` onto the block exactly as designed, and if no
+   * rule reads it the block looks precisely as it did before. Nothing errors,
+   * because an attribute nobody styles is not a mistake in CSS — it is
+   * ordinary markup.
+   *
+   * It has now happened twice. First the `color` axis: fifty pigments, no
+   * rules, all inert (see scripts/gen-tints.mjs). Then the entire "lettering"
+   * shelf — hand, ink, size, ranging, 122 values — same way, and the only
+   * evidence was a reader noticing every specimen looked the same.
+   *
+   * So: every value of every axis must be named by a selector in the
+   * stylesheets. Per VALUE, not per axis — one rule for `data-font='hand'`
+   * would otherwise vouch for the other forty-nine.
+   */
+  const CSS_DIR = join(import.meta.dirname, '..', 'src', 'styles');
+  const css = readdirSync(CSS_DIR)
+    .filter((n) => n.endsWith('.css'))
+    .map((n) => readFileSync(join(CSS_DIR, n), 'utf8'))
+    .join('\n');
+
+  /*
+   * The only values allowed to have no rule of their own, and why.
+   *
+   * `tape` and `washi` both open on `top`, and the bare `[data-tape]` /
+   * `[data-washi]` rules set the default geometry — a strip across the top —
+   * which IS that value. A `[data-tape='top']` rule would only restate it, and
+   * restating a default is how a default drifts.
+   *
+   * Written as an allowlist rather than "the first value of any axis is
+   * exempt": that looser rule would have excused `underline: squiggle`, whose
+   * bare rule sets `position: relative` and paints nothing at all.
+   */
+  const PAINTED_BY_THE_DEFAULT_RULE = new Set(['tape:top', 'washi:top']);
+
+  it.each(EFFECT_AXES.map((axis) => [axis.key, axis] as const))(
+    'paints every value of %s',
+    (key, axis) => {
+      const unpainted = axis.values
+        .map((entry) => entry.value)
+        .filter((value) => !PAINTED_BY_THE_DEFAULT_RULE.has(`${key}:${value}`))
+        .filter((value) => !css.includes(`[data-${key}='${value}']`));
+      expect(
+        unpainted,
+        `${unpainted.length} of ${axis.values.length} ${key} values have no rule. ` +
+          `If this axis is generated, re-run its script (scripts/gen-lettering.mjs, ` +
+          `scripts/gen-tints.mjs); otherwise the values are inert.`,
+      ).toEqual([]);
+    },
+  );
+
+  it('would notice if a whole axis lost its rules', () => {
+    // Guards the check itself: if the quoting convention above ever changes,
+    // `css.includes` silently matches nothing and every axis "passes" empty.
+    expect(css).toContain(`[data-font='copperplate']`);
+    expect(css).toContain(`[data-color='amber']`);
   });
 });

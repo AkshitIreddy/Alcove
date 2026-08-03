@@ -3098,3 +3098,1087 @@
   --fx-deep: color-mix(in srgb, var(--wash-sky-deep) 58%, color-mix(in srgb, var(--wash-sky-deep) 45%, var(--wash-sky)));
 }
 /* === END generated tints === */
+
+/* === BEGIN generated lettering (scripts/gen-lettering.mjs) === */
+/* 50 hands, 50 inks, 12 sizes,
+   10 ways of ranging — the whole "lettering" shelf, which
+   shipped with no CSS at all and so did nothing at all.
+   Do not edit by hand — run: node scripts/gen-lettering.mjs */
+
+/* The hands and the sizes both scale the type, so they meet HERE rather
+   than each writing font-size and the last one winning. max() is the 13px
+   floor from CLAUDE.md, applied to every combination by construction. */
+:is(.nb-prose, .nb-fx-specimen) [data-font],
+:is(.nb-prose, .nb-fx-specimen) [data-size] {
+  font-size: max(13px, calc(1em * var(--fx-font-scale, 1) * var(--fx-size-scale, 1)));
+}
+
+/* ---- hands ---- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='hand'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='casual'] {
+  font-family: var(--font-accent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='marker'] {
+  font-family: var(--font-accent);
+  --fx-font-scale: 1.06;
+  font-weight: 700;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='script'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.25;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='chalk'] {
+  font-family: var(--font-label);
+  letter-spacing: 0.02em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='note'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 0.88;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='serif'] {
+  font-family: Georgia, "Times New Roman", serif;
+  --fx-font-scale: 0.96;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='book'] {
+  font-family: Georgia, "Times New Roman", serif;
+  --fx-font-scale: 0.98;
+  letter-spacing: 0.005em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='mono'] {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --fx-font-scale: 0.92;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='display'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.6;
+  font-weight: 700;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='smallcaps'] {
+  font-family: var(--font-ui);
+  --fx-font-scale: 0.92;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='wide'] {
+  font-family: var(--font-body);
+  letter-spacing: 0.14em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='tight'] {
+  font-family: var(--font-body);
+  letter-spacing: -0.02em;
+  word-spacing: -0.04em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='shout'] {
+  font-family: var(--font-accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='quiet'] {
+  font-family: var(--font-body);
+  --fx-font-scale: 0.84;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='typed'] {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --fx-font-scale: 0.92;
+  letter-spacing: 0.02em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='ledger'] {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --fx-font-scale: 0.9;
+  letter-spacing: 0.04em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='italic'] {
+  font-family: var(--font-body);
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='heavy'] {
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='light'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 0.96;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='label'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 0.86;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='copperplate'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.3;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='engrave'] {
+  font-family: var(--font-ui);
+  --fx-font-scale: 0.9;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='titling'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.45;
+  letter-spacing: 0.02em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='byline'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 0.88;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='stencil'] {
+  font-family: var(--font-ui);
+  --fx-font-scale: 0.94;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='telegram'] {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --fx-font-scale: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='receipt'] {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --fx-font-scale: 0.86;
+  letter-spacing: 0.01em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='blackboard'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='lecture'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.3;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='signature'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.35;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='flyleaf'] {
+  font-family: Georgia, "Times New Roman", serif;
+  --fx-font-scale: 1;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='colophon'] {
+  font-family: Georgia, "Times New Roman", serif;
+  --fx-font-scale: 0.84;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='footnote'] {
+  font-family: var(--font-body);
+  --fx-font-scale: 0.8;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='epigraph'] {
+  font-family: Georgia, "Times New Roman", serif;
+  --fx-font-scale: 0.94;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='pullquote'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.5;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='headline'] {
+  font-family: var(--font-accent);
+  --fx-font-scale: 1.35;
+  font-weight: 700;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='poster'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.7;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='graffiti'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.4;
+  font-weight: 700;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='sharpie'] {
+  font-family: var(--font-accent);
+  --fx-font-scale: 1.12;
+  font-weight: 700;
+  word-spacing: 0.02em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='crayon'] {
+  font-family: var(--font-accent);
+  --fx-font-scale: 1.08;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='pencilled'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 0.98;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='biro'] {
+  font-family: var(--font-body);
+  --fx-font-scale: 0.98;
+  letter-spacing: 0.01em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='fountain'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.22;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='copybook'] {
+  font-family: var(--font-label);
+  letter-spacing: 0.04em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='primer'] {
+  font-family: var(--font-heading);
+  --fx-font-scale: 1.28;
+  letter-spacing: 0.03em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='scrawl'] {
+  font-family: var(--font-accent);
+  font-style: italic;
+  letter-spacing: -0.01em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='neat'] {
+  font-family: var(--font-ui);
+  --fx-font-scale: 0.95;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='draft'] {
+  font-family: var(--font-label);
+  --fx-font-scale: 0.95;
+  font-style: italic;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='archive'] {
+  font-family: var(--font-ui);
+  --fx-font-scale: 0.85;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+/* 22 pairs where a small size would drag the heading face under
+   20px, which it is documented never to go. */
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='script'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='script'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='script'][data-size='sm'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='copperplate'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='copperplate'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='copperplate'][data-size='sm'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='titling'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='lecture'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='lecture'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='lecture'][data-size='sm'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='signature'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='signature'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='pullquote'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='graffiti'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='graffiti'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='fountain'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='fountain'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='fountain'][data-size='sm'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='fountain'][data-size='compact'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='primer'][data-size='caption'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='primer'][data-size='xs'] {
+  font-family: var(--font-body);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-font='primer'][data-size='sm'] {
+  font-family: var(--font-body);
+}
+
+/* ---- inks ---- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='sepia'] {
+  color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='graphite'] {
+  color: var(--ink-graphite);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='ink-blue'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, color-mix(in srgb, var(--wash-sky-deep) 70%, var(--wash-sky))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='charcoal'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, color-mix(in srgb, var(--wash-sky-deep) 90%, var(--wash-sky))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='irongall'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-violet-deep) 55%, color-mix(in srgb, var(--wash-violet-deep) 85%, var(--wash-violet))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='slate'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, color-mix(in srgb, var(--wash-sky-deep) 45%, var(--wash-sky))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='amber'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-amber-deep) 55%, var(--wash-amber)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='gold'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-amber-deep) 55%, color-mix(in srgb, var(--wash-amber-light) 20%, var(--wash-amber))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='ochre'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-amber-deep) 55%, color-mix(in srgb, var(--wash-amber-deep) 40%, var(--wash-amber))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='mustard'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-lemon-deep) 55%, color-mix(in srgb, var(--wash-lemon-deep) 45%, var(--wash-lemon))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='sand'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-amber-deep) 55%, color-mix(in srgb, var(--wash-amber-light) 60%, var(--wash-amber))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='bronze'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-amber-deep) 55%, color-mix(in srgb, var(--wash-amber-deep) 65%, var(--wash-amber))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='copper'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-coral-deep) 55%, color-mix(in srgb, var(--wash-coral-deep) 20%, var(--wash-coral))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='crimson'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-coral-deep) 55%, color-mix(in srgb, var(--wash-coral-deep) 50%, var(--wash-coral))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='terracotta'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-terracotta-deep) 55%, var(--wash-terracotta)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='coral'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-coral-deep) 55%, var(--wash-coral)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='brick'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-terracotta-deep) 55%, color-mix(in srgb, var(--wash-terracotta-deep) 40%, var(--wash-terracotta))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='rust'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-terracotta-deep) 55%, color-mix(in srgb, var(--wash-terracotta-deep) 70%, var(--wash-terracotta))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='wine'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-plum-deep) 55%, color-mix(in srgb, var(--wash-plum-deep) 75%, var(--wash-plum))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='burgundy'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-plum-deep) 55%, color-mix(in srgb, var(--wash-plum-deep) 85%, var(--wash-plum))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='madder'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-coral-deep) 55%, color-mix(in srgb, var(--wash-coral-deep) 40%, var(--wash-coral))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='oxblood'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-terracotta-deep) 55%, color-mix(in srgb, var(--wash-terracotta-deep) 90%, var(--wash-terracotta))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='blossom'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-blush-deep) 55%, color-mix(in srgb, var(--wash-blush-light) 50%, var(--wash-blush))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='peach'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-coral-deep) 55%, color-mix(in srgb, var(--wash-coral-light) 70%, var(--wash-coral))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='moss'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-moss-deep) 55%, var(--wash-moss)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='olive'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-lime-deep) 55%, color-mix(in srgb, var(--wash-lime-deep) 50%, var(--wash-lime))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='forest'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-moss-deep) 55%, color-mix(in srgb, var(--wash-moss-deep) 70%, var(--wash-moss))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='pine'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-moss-deep) 55%, color-mix(in srgb, var(--wash-moss-deep) 85%, var(--wash-moss))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='sage'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-moss-deep) 55%, color-mix(in srgb, var(--wash-moss-light) 60%, var(--wash-moss))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='lime'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-lime-deep) 55%, var(--wash-lime)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='fern'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-moss-deep) 55%, color-mix(in srgb, var(--wash-moss-light) 30%, var(--wash-moss))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='teal'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-turquoise-deep) 55%, color-mix(in srgb, var(--wash-turquoise-deep) 35%, var(--wash-turquoise))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='turquoise'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-turquoise-deep) 55%, var(--wash-turquoise)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='jade'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-turquoise-deep) 55%, color-mix(in srgb, var(--wash-turquoise-deep) 60%, var(--wash-turquoise))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='mint'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-turquoise-deep) 55%, color-mix(in srgb, var(--wash-turquoise-light) 75%, var(--wash-turquoise))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='seafoam'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-turquoise-deep) 55%, color-mix(in srgb, var(--wash-turquoise-light) 55%, var(--wash-turquoise))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='skyink'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, var(--wash-sky)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='denim'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, color-mix(in srgb, var(--wash-sky-deep) 30%, var(--wash-sky))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='cobalt'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, color-mix(in srgb, var(--wash-sky-deep) 60%, var(--wash-sky))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='navy'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-sky-deep) 55%, color-mix(in srgb, var(--wash-sky-deep) 80%, var(--wash-sky))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='indigo'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-violet-deep) 55%, color-mix(in srgb, var(--wash-violet-deep) 70%, var(--wash-violet))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='violet'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-violet-deep) 55%, var(--wash-violet)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='plum'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-plum-deep) 55%, var(--wash-plum)) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='mulberry'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-blush-deep) 55%, color-mix(in srgb, var(--wash-blush-deep) 60%, var(--wash-blush))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='orchid'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-violet-deep) 55%, color-mix(in srgb, var(--wash-violet-light) 30%, var(--wash-violet))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='lilac'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-violet-deep) 55%, color-mix(in srgb, var(--wash-violet-light) 55%, var(--wash-violet))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='lavender'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-violet-deep) 55%, color-mix(in srgb, var(--wash-violet-light) 70%, var(--wash-violet))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='umber'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-terracotta-deep) 55%, color-mix(in srgb, var(--wash-terracotta-deep) 80%, var(--wash-terracotta))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='walnut'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-amber-deep) 55%, color-mix(in srgb, var(--wash-amber-deep) 85%, var(--wash-amber))) 82%, var(--ink-graphite));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-ink='clay'] {
+  color: color-mix(in srgb, color-mix(in srgb, var(--wash-terracotta-deep) 55%, color-mix(in srgb, var(--wash-terracotta-light) 35%, var(--wash-terracotta))) 82%, var(--ink-graphite));
+}
+
+/* ---- sizes ---- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='caption'] {
+  --fx-size-scale: 0.78;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='xs'] {
+  --fx-size-scale: 0.84;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='sm'] {
+  --fx-size-scale: 0.9;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='compact'] {
+  --fx-size-scale: 0.95;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='md'] {
+  --fx-size-scale: 1;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='roomy'] {
+  --fx-size-scale: 1.08;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='lg'] {
+  --fx-size-scale: 1.2;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='xl'] {
+  --fx-size-scale: 1.4;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='jumbo'] {
+  --fx-size-scale: 1.7;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='giant'] {
+  --fx-size-scale: 2.1;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='colossal'] {
+  --fx-size-scale: 2.6;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-size='marquee'] {
+  --fx-size-scale: 3.2;
+}
+
+/* ---- ranging ---- */
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='left'] {
+  text-align: left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='center'] {
+  text-align: center;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='right'] {
+  text-align: right;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='justify'] {
+  text-align: justify;
+  hyphens: auto;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='indent'] {
+  text-align: left;
+  text-indent: 2.2em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='hanging'] {
+  text-align: left;
+  text-indent: -1.8em;
+  padding-left: 1.8em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='outdent'] {
+  text-align: left;
+  text-indent: -0.9em;
+  margin-left: 0.9em;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='balance'] {
+  text-align: left;
+  text-wrap: balance;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='tidy'] {
+  text-align: left;
+  text-wrap: pretty;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-align='narrow'] {
+  text-align: left;
+  max-width: 26ch;
+}
+/* === END generated lettering === */
+
+/* === BEGIN generated underlines (scripts/gen-underlines.mjs) === */
+/* 50 marks, drawn with text-decoration and text-emphasis because
+   this block's ::before, ::after, border, outline and background already
+   belong to tape, washi, frame and paper — and a mark that follows the text
+   when it wraps is the right one anyway.
+   Do not edit by hand — run: node scripts/gen-underlines.mjs */
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='squiggle'] {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='marker'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 0.7em;
+  text-underline-offset: -0.5em;
+  text-decoration-color: color-mix(in srgb, var(--wash-lemon) 55%, transparent);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='dotted'] {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='double'] {
+  text-decoration-line: underline;
+  text-decoration-style: double;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.14em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='circled'] {
+  text-decoration-line: underline overline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.12em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='dashed'] {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='scribble'] {
+  text-decoration-line: line-through;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.1em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='ruled'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='boxed'] {
+  text-decoration-line: underline overline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.12em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='brush'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 5px;
+  text-underline-offset: 0.05em;
+  text-decoration-color: var(--wash-terracotta);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='arrow'] {
+  text-emphasis-style: '›';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='zigzag'] {
+  text-emphasis-style: 'v';
+  text-emphasis-color: var(--ink-sepia-soft);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='dotdash'] {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='triple'] {
+  text-decoration-line: underline overline line-through;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='thick'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 6px;
+  text-underline-offset: 0.12em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='hairline'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='tapered'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.14em;
+  text-decoration-color: var(--ink-sepia-soft);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='chalked'] {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--wash-sky-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='pencilled'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.17em;
+  text-decoration-color: color-mix(in srgb, var(--ink-graphite) 55%, transparent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='crayoned'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 4px;
+  text-underline-offset: 0.13em;
+  text-decoration-color: var(--wash-coral-deep);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='gel'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 2.5px;
+  text-underline-offset: 0.15em;
+  text-decoration-color: var(--wash-violet-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='fineliner'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.1em;
+  text-decoration-color: var(--ink-graphite);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='sweep'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1.1em;
+  text-underline-offset: -0.78em;
+  text-decoration-color: color-mix(in srgb, var(--wash-lemon) 40%, transparent);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='halfsweep'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 0.5em;
+  text-underline-offset: -0.28em;
+  text-decoration-color: color-mix(in srgb, var(--wash-lemon) 48%, transparent);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='fade'] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 0.8em;
+  text-underline-offset: -0.55em;
+  text-decoration-color: color-mix(in srgb, var(--wash-amber) 22%, transparent);
+  text-decoration-skip-ink: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='bracketed'] {
+  text-decoration-line: underline overline;
+  text-decoration-style: double;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.14em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='parens'] {
+  text-decoration-line: underline overline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='pill'] {
+  text-decoration-line: underline overline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='struck'] {
+  text-decoration-line: line-through;
+  text-decoration-style: solid;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.1em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='redline'] {
+  text-decoration-line: line-through;
+  text-decoration-style: solid;
+  text-decoration-thickness: 2.5px;
+  text-underline-offset: 0.1em;
+  text-decoration-color: var(--wash-terracotta-deep);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='caret'] {
+  text-emphasis-style: '^';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='tickmark'] {
+  text-emphasis-style: '✓';
+  text-emphasis-color: var(--wash-moss-deep);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='chevrons'] {
+  text-emphasis-style: '˅';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='wavy'] {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='loops'] {
+  text-emphasis-style: '◡';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='coil'] {
+  text-emphasis-style: '∿';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='rungs'] {
+  text-emphasis-style: '|';
+  text-emphasis-color: var(--ink-sepia-soft);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='rail'] {
+  text-decoration-line: underline;
+  text-decoration-style: double;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: var(--ink-sepia-soft);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='comb'] {
+  text-emphasis-style: 'ı';
+  text-emphasis-color: var(--ink-sepia-soft);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='sawtooth'] {
+  text-emphasis-style: '˄';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='beaded'] {
+  text-emphasis-style: filled dot;
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='starred'] {
+  text-emphasis-style: '*';
+  text-emphasis-color: var(--wash-amber-deep);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='macron'] {
+  text-decoration-line: overline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.1em;
+  text-decoration-color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='ogee'] {
+  text-emphasis-style: '˷';
+  text-emphasis-color: var(--ink-sepia-soft);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='swash'] {
+  text-emphasis-style: '~';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='flourish'] {
+  text-emphasis-style: '⁓';
+  text-emphasis-color: var(--wash-plum-deep);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='tail'] {
+  text-emphasis-style: '_';
+  text-emphasis-color: var(--ink-sepia-soft);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='hook'] {
+  text-emphasis-style: '˒';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='curl'] {
+  text-emphasis-style: '˓';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-underline='kick'] {
+  text-emphasis-style: '´';
+  text-emphasis-color: var(--ink-sepia);
+  text-emphasis-position: under left;
+}
+/* === END generated underlines === */

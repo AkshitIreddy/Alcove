@@ -53,6 +53,21 @@ export function ExportPdfDialog(props: ExportPdfDialogProps): JSX.Element {
         aria-modal="true"
         aria-label="Export PDF"
       >
+        {/*
+          Disabled while a render is running, for the same reason the scrim
+          above ignores clicks then: half an export is not a thing to leave
+          behind. Not hidden — a control that vanishes reads as a bug, whereas
+          a dimmed one reads as "not yet".
+        */}
+        <button
+          type="button"
+          class="nb-ins-close"
+          aria-label="Close export"
+          disabled={busy() !== null}
+          onClick={() => props.onClose()}
+        >
+          ×
+        </button>
         <h2 class="nb-ins-title">Export PDF</h2>
         <p class="nb-ins-hint font-ui">
           print-quality pages, rendered at 2× — pick how much to take
@@ -121,17 +136,6 @@ export function ExportPdfDialog(props: ExportPdfDialogProps): JSX.Element {
         <Show when={busy() !== null}>
           <p class="nb-ins-hint font-ui">rendering…</p>
         </Show>
-        <div class="nb-ins-actions">
-          <span class="nb-ins-spacer" />
-          <button
-            type="button"
-            class="nb-ins-button font-ui"
-            disabled={busy() !== null}
-            onClick={() => props.onClose()}
-          >
-            Cancel
-          </button>
-        </div>
       </div>
     </div>
   );

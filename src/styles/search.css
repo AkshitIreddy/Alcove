@@ -63,10 +63,43 @@
 }
 
 /* --------------------------------- tabs ----------------------------------- */
+/* The close and the mode tabs share the bar's top row. The close is first, so
+   the app's one exit corner holds here too — see tests/top-left-exits.test.ts. */
+.nb-qs-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+
+/* Same drawn ring as .nb-ins-close — one exit look across the app. */
+.nb-qs-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-sepia);
+  background: color-mix(in srgb, var(--paper-aged) 70%, transparent);
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: 12px 10px 13px 11px / 11px 13px 10px 12px;
+  cursor: pointer;
+  transition: color var(--dur-xs) var(--ease-out), background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-qs-close:hover,
+.nb-qs-close:focus-visible {
+  color: var(--ink-sepia);
+  background: color-mix(in srgb, var(--ink-sepia) 12%, var(--paper-aged));
+  border-color: var(--ink-line);
+}
+
 .nb-qs-tabs {
   display: flex;
   gap: var(--space-8);
-  margin-bottom: var(--space-8);
 }
 
 /* Inactive tabs used to be bare text with a transparent border, so only one

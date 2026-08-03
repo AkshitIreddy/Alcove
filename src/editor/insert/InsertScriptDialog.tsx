@@ -163,6 +163,15 @@ export default function InsertScriptDialog(
         aria-modal="true"
         aria-label="Insert script"
       >
+        {/* A way out you can see — top-left, like every exit in this app. */}
+        <button
+          type="button"
+          class="nb-ins-close"
+          aria-label="Close insert script"
+          onClick={() => props.onClose()}
+        >
+          ×
+        </button>
         <h2 class="nb-ins-title">Insert script</h2>
         <p class="nb-ins-hint font-ui">
           paste Notebook Script — from your AI, or your own pen

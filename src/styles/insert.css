@@ -101,6 +101,7 @@
 }
 
 .nb-ins-card {
+  position: relative; /* anchors .nb-ins-close */
   display: flex;
   flex-direction: column;
   width: min(980px, 100%);
@@ -113,7 +114,63 @@
   transform: rotate(-0.35deg);
 }
 
+/*
+ * The way out of every dialog built on .nb-ins-card — the templates gallery,
+ * the PDF export sheet and the script-insert sheet.
+ *
+ * All three were dismissed by the scrim or Escape alone (the gallery had a
+ * "Close" at the BOTTOM-right, under a grid that scrolls, so on a short window
+ * it was below the fold as well as in the wrong corner). Top-left, matching
+ * .nb-cheat-close and .nb-rail-panel-close; tests/top-left-exits.test.ts is the
+ * gate that keeps it there.
+ *
+ * The card's own top padding is the space this sits in, so the title does not
+ * need to move aside — see .nb-ins-title's `padding-left` below, which reserves
+ * exactly this width and only on the dialogs that carry a title at the top.
+ */
+.nb-ins-close {
+  position: absolute;
+  top: var(--space-8);
+  left: var(--space-8);
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ink-sepia);
+  /*
+    A DRAWN RING, not a bare glyph. First cut was `background: none; border: 0`
+    and a soft-sepia ×; on the templates card it read as a speck rather than a
+    control, which defeats the whole point of adding a visible exit. Paper +
+    dashed ink is the same treatment every other pressable thing in this app
+    gets (see .nb-qs-tab), so it reads as a button without shouting.
+  */
+  background: color-mix(in srgb, var(--paper-cream) 70%, transparent);
+  border: 1.5px dashed var(--ink-line-soft);
+  /* Wobbled, like every hand-drawn corner here — never a true circle. */
+  border-radius: 13px 11px 14px 12px / 12px 14px 11px 13px;
+  cursor: pointer;
+  transition: color var(--dur-xs) var(--ease-out), background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-ins-close:hover,
+.nb-ins-close:focus-visible {
+  color: var(--ink-sepia);
+  background: color-mix(in srgb, var(--ink-sepia) 12%, var(--paper-cream));
+  border-color: var(--ink-line);
+}
+
+.nb-ins-close:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .nb-ins-title {
+  /* Clear of the close button in the same corner. */
+  padding-left: 30px;
   font-family: var(--font-heading);
   font-size: 32px;
   line-height: var(--leading-heading);

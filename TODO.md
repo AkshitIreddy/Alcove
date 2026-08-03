@@ -41,10 +41,11 @@ agents reported honestly, plus the seams between them that I closed by hand.
 
 **Still open:**
 
-- [ ] `DEFAULT_SHELF_DESIGN` does two jobs — the opening carpentry AND the
-      unknown-id fallback for `resolveShelfDesign`/`getBuild`. Exactly the merge
-      `DEFAULT_WALLPAPER_ID` was just split out of, and it needs the same split
-      before the opening case can be chosen freely.
+- [x] `DEFAULT_SHELF_DESIGN` did two jobs — the opening carpentry AND the
+      unknown-id fallback for `resolveShelfDesign`/`getBuild`. Split into
+      `DEFAULT_SHELF_DESIGN` (scriptorium/guilloche) and
+      `FALLBACK_SHELF_DESIGN` (plank/none), like `DEFAULT_WALLPAPER_ID` before
+      it. `d8e4bf3`
 - [ ] Applying a room preset is two independent store writes (colour to the
       bookcase's room blob, design to the studio's settings key), so the world
       reacts twice and re-bakes twice on one click. Coalesce them.
@@ -53,22 +54,31 @@ agents reported honestly, plus the seams between them that I closed by hand.
       shape/covering/ornament grid yet, only whole presets.
 - [ ] No "add your own set" for sound, and no runtime filtering in a set's
       levers (Howler exposes rate and volume per play, not a filter node).
-- [ ] `docs/design/page-flip.md` still specifies the shadow/lighting model that
-      was removed — the warm crest highlight, the pre-fold darkening, the
-      self-shadow. `tests/flip.test.ts` now gates their absence; the doc still
-      promises them.
-- [ ] `CLAUDE.md` says "a library theme is a colour scheme" with no mention that
-      presets bundle colour + carpentry + paper, and still cites the house plank
-      case as the default. `docs/ROADMAP-wave2.md` unreviewed.
-- [ ] `UserStickersSection`'s imported-sticker grid is still uncapped.
-- [ ] `tutorial.css`'s `.nbt-card` is its own scroller with the actions and
+- [x] `docs/design/page-flip.md` specified the shadow/lighting model that was
+      removed — warm crest highlight, pre-fold darkening, self-shadow. Doc
+      corrected; `tests/flip.test.ts` gates their absence. `2cf330e`
+- [x] `CLAUDE.md` said "a library theme is a colour scheme" with no mention
+      that presets bundle colour + carpentry + paper. Corrected. `2cf330e`
+      (`docs/ROADMAP-wave2.md` still unreviewed — see below.)
+- [x] `UserStickersSection`'s imported-sticker grid is capped now. `8cba847`
+- [x] `tutorial.css`'s `.nbt-card` is its own scroller with the actions and
       progress dots at the bottom — same family as the reported scroll bug,
-      inverted.
-- [ ] CheatSheet, QuickSwitcher, TemplatesGallery and ExportPdfDialog have NO
-      visible way out at all — Escape or the scrim only. Different gap, same
-      rule as the top-left sweep.
-- [ ] The settings seal (bottom-left) renders ABOVE the pulled-book scrim, so it
-      stays lit while the room behind it dims. Pre-existing.
+      inverted. Both pinned with `position: sticky`; `shots-now/tour-footer.mjs`
+      measures a 223px scroll at a 400px window and refuses to pass on less
+      than 120px of overflow, because at a normal window the worst step
+      overflows by 3px and such a run proves nothing. `cab49e7`
+- [x] CheatSheet, QuickSwitcher, TemplatesGallery and ExportPdfDialog had NO
+      visible way out — Escape or the scrim only. All four have a top-left
+      close now, one shared drawn-ring look (`.nb-ins-close` serves the three
+      `.nb-ins-card` dialogs). Dropped two duplicate exits while there: the
+      gallery's bottom-right "Close" and the PDF sheet's "Cancel", both of
+      which were the same action in the wrong corner.
+      `shots-now/dialog-exits.mjs` opens all four through their real triggers
+      and measures the close is inside the card, left half, top half.
+- [x] The settings seal (bottom-left) rendered ABOVE the pulled-book scrim, so
+      it stayed lit while the room dimmed. Dropped to just under the scrim,
+      with `shots-now/seal-layer.mjs` confirming it is still the topmost thing
+      at its own coordinates on a resting shelf. `cab49e7`
 - [ ] Max zoom on a 2× display is the one soft spot left: 0.80 texels per device
       pixel at zoom 2.5. Twice what it was, still under 1.
 - [ ] Spines are not disk-cached, so every launch shows the lo bake until the hi

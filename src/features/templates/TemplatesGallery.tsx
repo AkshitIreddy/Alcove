@@ -149,6 +149,19 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
         aria-modal="true"
         aria-label="Start from a template"
       >
+        {/*
+          Moved here from a "Close" at the bottom-right of the card. That put
+          the only visible exit in the wrong corner AND under a grid that
+          scrolls, so on a short window it was below the fold too.
+        */}
+        <button
+          type="button"
+          class="nb-ins-close"
+          aria-label="Close templates"
+          onClick={() => props.onClose()}
+        >
+          ×
+        </button>
         <h2 class="nb-ins-title">Start from a template</h2>
         <p class="nb-ins-hint font-ui">
           five hand-drawn starting points — each becomes real, editable pages
@@ -165,16 +178,6 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
               />
             )}
           </For>
-        </div>
-        <div class="nb-ins-actions">
-          <span class="nb-ins-spacer" />
-          <button
-            type="button"
-            class="nb-ins-button font-ui"
-            onClick={() => props.onClose()}
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>

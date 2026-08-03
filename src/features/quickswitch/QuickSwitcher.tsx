@@ -389,31 +389,48 @@ export default function QuickSwitcher(): JSX.Element {
             aria-label="Quick switcher"
             onClick={(event) => event.stopPropagation()}
           >
-            <div class="nb-qs-tabs" role="tablist" aria-label="Search mode">
+            {/*
+              The close sits BESIDE the tablist, not inside it: a plain button
+              among role="tab" children is announced as a tab it cannot be.
+              First in the row, so the visible top-left corner and the tab
+              order agree — same reasoning as `order: -1` elsewhere, except
+              here the markup can simply say it.
+            */}
+            <div class="nb-qs-head">
               <button
                 type="button"
-                role="tab"
-                class="nb-qs-tab font-label"
-                classList={{ 'is-active': mode() === 'nav' }}
-                aria-selected={mode() === 'nav'}
-                onClick={() => {
-                  if (mode() === 'content') toggleMode();
-                }}
+                class="nb-qs-close"
+                aria-label="Close search"
+                onClick={close}
               >
-                go to
+                ×
               </button>
-              <button
-                type="button"
-                role="tab"
-                class="nb-qs-tab font-label"
-                classList={{ 'is-active': mode() === 'content' }}
-                aria-selected={mode() === 'content'}
-                onClick={() => {
-                  if (mode() === 'nav') toggleMode();
-                }}
-              >
-                search text
-              </button>
+              <div class="nb-qs-tabs" role="tablist" aria-label="Search mode">
+                <button
+                  type="button"
+                  role="tab"
+                  class="nb-qs-tab font-label"
+                  classList={{ 'is-active': mode() === 'nav' }}
+                  aria-selected={mode() === 'nav'}
+                  onClick={() => {
+                    if (mode() === 'content') toggleMode();
+                  }}
+                >
+                  go to
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="nb-qs-tab font-label"
+                  classList={{ 'is-active': mode() === 'content' }}
+                  aria-selected={mode() === 'content'}
+                  onClick={() => {
+                    if (mode() === 'nav') toggleMode();
+                  }}
+                >
+                  search text
+                </button>
+              </div>
             </div>
 
             <input

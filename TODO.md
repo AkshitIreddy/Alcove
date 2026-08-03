@@ -742,8 +742,14 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       skipped.
 - [ ] A human still needs to **listen**. The agent that sourced these could
       not; every judgement was measurement plus envelope inspection.
-- [ ] `npm run sounds` needs ffmpeg on PATH and is Windows-only (PowerShell
+- [x] `npm run sounds` needs ffmpeg on PATH and is Windows-only (PowerShell
       unzip) — fine for a Tauri/Windows app, breaks if CI ever runs Linux.
+      The Windows-only half is gone: `unzipMember` reads the zip's central
+      directory with `node:zlib` instead of shelling out to PowerShell's .NET
+      assemblies, so it is the same code everywhere and one fewer process per
+      member. Verified against real zips built both deflated and stored, plus
+      the member-not-found path. ffmpeg stays — decoding mp3/ogg needs a
+      decoder — and it is build-time only, so nothing ships with it.
 
 ### Sound — needs a real redesign, not another synthesis pass
 

@@ -8,6 +8,13 @@
  * (os.tmpdir()/notebook-sound-sources) so the ~20 MB of raw material never
  * lands in git; only the conditioned cues under public/sounds/ are committed.
  *
+ * PLATFORM: plain Node plus ffmpeg, on any OS. The zip reader used to shell
+ * out to PowerShell's .NET assemblies, which made this the build's one
+ * Windows-only step — fine for a Tauri/Windows app right up until CI runs
+ * Linux. It reads the central directory with `node:zlib` now (see
+ * `unzipMember`). ffmpeg stays: decoding mp3/ogg needs a decoder, and it is
+ * a build-time dependency only — nothing ships with it.
+ *
  * ─────────────────────────────────────────────────────────────────────────
  * WHY THIS FILE NO LONGER SYNTHESIZES ANYTHING
  * ─────────────────────────────────────────────────────────────────────────
@@ -49,6 +56,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inflateRawSync } from 'node:zlib';
 
 const SR = 44100;
 const TWO_PI = Math.PI * 2;
@@ -290,21 +298,71 @@ function decode(src, dest) {
   return dest;
 }
 
-/** Pull one member out of a cached zip via .NET's zip reader (no unzip needed). */
+/**
+ * Pull one member out of a cached zip.
+ *
+ * Node's own zlib, not PowerShell. This used to shell out to
+ * `powershell -Command … [IO.Compression.ZipFile]::OpenRead(…)`, which is
+ * fine on the machine this app ships from and simply does not run anywhere
+ * else — the build's only Windows-only step, and the one thing that would
+ * have stopped `npm run sounds` on a Linux CI box. `zlib.inflateRawSync` is
+ * built into Node, so this is now the same code on every platform and one
+ * fewer process per member.
+ *
+ * Reads the CENTRAL DIRECTORY rather than scanning for local headers: a local
+ * header may carry zeroed sizes with the real ones in a trailing data
+ * descriptor, and the central directory always has them. Stored (method 0)
+ * and deflated (method 8) are the only methods these sources use; anything
+ * else is reported by name rather than silently producing a broken file.
+ */
 function unzipMember(zipPath, member, destDir) {
   const out = join(destDir, safeName(member));
   if (existsSync(out)) return out;
   mkdirSync(destDir, { recursive: true });
-  const q = (s) => s.replace(/'/g, "''");
-  execFileSync('powershell', ['-NoProfile', '-Command',
-    "$ErrorActionPreference='Stop';"
-    + 'Add-Type -AssemblyName System.IO.Compression.FileSystem;'
-    + `$z=[IO.Compression.ZipFile]::OpenRead('${q(zipPath)}');`
-    + `$e=$z.Entries|Where-Object{$_.Name -eq '${q(member)}'}|Select-Object -First 1;`
-    + `if(-not $e){$z.Dispose();throw 'member not found: ${q(member)}'};`
-    + `[IO.Compression.ZipFileExtensions]::ExtractToFile($e,'${q(out)}',$true);`
-    + '$z.Dispose()'], { stdio: 'pipe' });
-  return out;
+
+  const buf = readFileSync(zipPath);
+  // End of central directory: scan back for its signature. The comment field
+  // is almost always empty, so this finds it in the first few bytes.
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 22 - 0xffff; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error(`not a zip (no end-of-central-directory): ${zipPath}`);
+
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(p + 10);
+    const compSize = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    const localAt = buf.readUInt32LE(p + 42);
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen);
+
+    // Match on the BASENAME, which is what the old PowerShell `$_.Name` did —
+    // the SOURCES table names members without their directory.
+    if (name === member || name.split('/').pop() === member) {
+      // The local header's own name/extra lengths decide where the bytes
+      // start; they may differ from the central directory's.
+      const lNameLen = buf.readUInt16LE(localAt + 26);
+      const lExtraLen = buf.readUInt16LE(localAt + 28);
+      const start = localAt + 30 + lNameLen + lExtraLen;
+      const raw = buf.subarray(start, start + compSize);
+      let bytes;
+      if (method === 0) bytes = raw;
+      else if (method === 8) bytes = inflateRawSync(raw);
+      else throw new Error(`unsupported zip method ${method} for member ${member}`);
+      writeFileSync(out, bytes);
+      return out;
+    }
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  throw new Error(`member not found: ${member} in ${zipPath}`);
 }
 
 const cache = new Map();

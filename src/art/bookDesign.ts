@@ -1249,7 +1249,20 @@ type Grain =
   | 'twill'
   | 'coarse'
   | 'fleck'
-  | 'nap'
+  /**
+   * Three naps, not one.
+   *
+   * Felt, velvet and suede all used to be `nap`, and one drawing in three
+   * colours is not three coverings — on the specimen board the felt and the
+   * suede were the same set of vertical strokes and the reader had no way to
+   * tell which was which. They are different surfaces and they are told apart
+   * by different marks: felt is CUT (a soft band with a tufted edge), velvet
+   * is PILE (two steps of it down the fore edge, crushed across), suede is
+   * BRUSHED (short strokes at every angle, which is what flesh side out is).
+   */
+  | 'napEdge'
+  | 'pile'
+  | 'brushed'
   | 'watered'
   | 'figured'
   | 'damask'
@@ -1359,11 +1372,11 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
   tweed: material('tweed', 'Tweed', 'Flecked through with the second cloth, like a coat off a hook.',
     ['cosy', 'rustic', 'natural'], { group: 'cloth', tier: 'shelf', turn: 0.24, grain: 'fleck', grainTone: 'accent', grainCount: 16 }),
 
-  felt: material('felt', 'Felt', 'Thick and soft: a wide turned board and a napped edge that eats the light.',
-    ['cosy', 'handmade', 'plain'], { group: 'cloth', tier: 'shelf', turn: 0.36, grain: 'nap', grainCount: 3 }),
+  felt: material('felt', 'Felt', 'Thick and soft: a wide turned board and a cut edge standing in tufts.',
+    ['cosy', 'handmade', 'plain'], { group: 'cloth', tier: 'shelf', turn: 0.36, grain: 'napEdge', grainCount: 3 }),
 
-  velvet: material('velvet', 'Velvet', 'Deep pile, a broad dark board, and the accent lying along the fore edge.',
-    ['luxe', 'ornate', 'cosy'], { group: 'cloth', tier: 'shelf', body: 'deep', turn: 0.4, grain: 'nap', grainTone: 'accent', grainCount: 3 }),
+  velvet: material('velvet', 'Velvet', 'Deep pile in two steps down the fore edge, crushed across the middle.',
+    ['luxe', 'ornate', 'cosy'], { group: 'cloth', tier: 'shelf', body: 'deep', turn: 0.4, grain: 'pile', grainTone: 'accent', grainCount: 3 }),
 
   /* ------------------------------- figured silks ----------------------------- */
 
@@ -1402,8 +1415,8 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
   skiver: material('skiver', 'Skiver', 'Split so thin it takes the board’s own colour; pricked all over.',
     ['plain', 'pocket', 'battered'], { group: 'leather', tier: 'niche', body: 'pale', turn: 0.16, grain: 'pinDot', grainTone: 'deeper', grainCount: 14 }),
 
-  suede: material('suede', 'Suede', 'Flesh side out: a wide soft board and no joint you could find.',
-    ['cosy', 'handmade', 'natural'], { group: 'leather', tier: 'shelf', turn: 0.32, grain: 'nap', grainTone: 'deeper', grainCount: 4 }),
+  suede: material('suede', 'Suede', 'Flesh side out: a wide soft board, and the nap brushed every way at once.',
+    ['cosy', 'handmade', 'natural'], { group: 'leather', tier: 'shelf', turn: 0.32, grain: 'brushed', grainTone: 'deeper', grainCount: 4 }),
 
   shagreen: material('shagreen', 'Shagreen', 'Rayskin: a ring of pale pearls round one still centre.',
     ['luxe', 'fancy', 'modern'], { group: 'exotic', tier: 'niche', turn: 0.18, farTurn: 0.12, grain: 'shagreen', grainTone: 'pale', grainCount: 9 }),
@@ -3541,6 +3554,24 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
   const seed = design.seed;
   const r = Math.min(w * 0.3, h * 0.03);
 
+  // Below its floor the fine work of a covering — veins, lozenges, joint lines
+  // — lands on less than a pixel and reads as dirt, so a sliver gets the plain
+  // two-tone case and nothing else. The two-tone still carries the colour. A
+  // thoroughly worn book loses the same detail for the same reason it loses its
+  // gilt: it has been rubbed off.
+  const fine = w >= spec.floor && design.wear < 0.78;
+
+  /**
+   * One line, and it survives narrower than the grain does.
+   *
+   * The turn-in below is a single stroke where two flat faces already meet, so
+   * it costs nothing to read even on a sliver — unlike a vein or a lozenge,
+   * which needs room to be a shape at all. Gating it on the material's own
+   * `floor` would have taken the fold off exactly the books that most need
+   * telling apart from a painted rectangle.
+   */
+  const inked = w >= 8;
+
   /** One covering laid over a span of the spine: board, then face beside it. */
   const lay = (top: number, bottom: number, f: string, d: string, n: number): void => {
     const ty = y + h * top;
@@ -3554,16 +3585,22 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
     if (spec.farTurn > 0) {
       fillBand(ctx, x + w * (1 - spec.farTurn), ty, w * 2, th, d, 0, seed + n + 2);
     }
+    if (!inked) return;
+    // The turn-in: the covering's own cut edge, folded over the board and
+    // pared. Without it a turned board is a COLOUR STEP and nothing more, and
+    // a colour step is what a gradient does — every one of the fifty coverings
+    // read as a painted rectangle because this one line was missing from all
+    // of them. It is the darker board pushed further, never a shadow.
+    const crease = mix(d, FLAT.ink, 0.4);
+    const wt = Math.max(0.9, w * 0.028);
+    stroke(ctx, x + w * spec.turn, ty, x + w * spec.turn, ty + th, crease, wt, seed + n + 6);
+    if (spec.farTurn > 0) {
+      const far = x + w * (1 - spec.farTurn);
+      stroke(ctx, far, ty, far, ty + th, crease, wt, seed + n + 7);
+    }
   };
 
   lay(-0.03, 1.03, face, board, 10);
-
-  // Below its floor the fine work of a covering — veins, lozenges, joint lines
-  // — lands on less than a pixel and reads as dirt, so a sliver gets the plain
-  // two-tone case and nothing else. The two-tone still carries the colour. A
-  // thoroughly worn book loses the same detail for the same reason it loses its
-  // gilt: it has been rubbed off.
-  const fine = w >= spec.floor && design.wear < 0.78;
 
   /* ------------------------------- the grain ------------------------------- */
 
@@ -3608,251 +3645,497 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
 
   if (fine) {
     switch (spec.grain) {
-      case 'ribs':
-        for (let i = 1; i < n; i++) hLine(i / n, f0 - 0.02, 1.04, h * 0.006, i);
-        break;
-      case 'weave': {
-        for (let i = 1; i < n; i++) hLine(i / n, f0, f1, h * 0.005, i);
-        for (let i = 1; i < 4; i++) vLine(f0 + (fw * i) / 4, 0.04, 0.96, w * 0.03, i);
+      case 'ribs': {
+        // Rep is a WEFT rib: a cord lying across the cloth, and the near side
+        // of each cord is the same cloth a step paler. Eight bare rules run
+        // edge to edge made the spine a ladder — worse, a ladder with rungs at
+        // exactly the stations a raised cord uses, so a rep cloth read as a
+        // corded binding. Two lines to a course, held inside the field.
+        const lit = mix(face, FLAT.cream, 0.2);
+        const courses = n * 2;
+        for (let i = 1; i < courses; i++) {
+          const t = i / courses;
+          hLine(t, f0 - 0.01, f1 + 0.01, h * 0.0042, i);
+          stroke(ctx, x + w * (f0 - 0.01), y + h * (t + 0.0065), x + w * (f1 + 0.01), y + h * (t + 0.0065), lit, Math.max(0.7, h * 0.003), seed + 330 + i);
+        }
         break;
       }
-      case 'twill':
-        for (let i = 0; i < n; i++) {
-          const t = 0.05 + (i * 0.9) / n;
-          stroke(ctx, x + w * f0, y + h * t, x + w * f1, y + h * (t + 0.028), gc, Math.max(0.8, h * 0.005), seed + 200 + i);
+      case 'weave': {
+        // A plain weave is over-under, so it has to be drawn as a CHEQUER of
+        // short marks. Long lines both ways gave a sheet of graph paper, which
+        // is the one thing a loose open linen is not — and at 30px the eye
+        // reads the alternation long before it counts the threads.
+        const cols = 3;
+        const cw = fw / cols;
+        const rows = n * 2;
+        for (let row = 0; row < rows; row++) {
+          const t = 0.03 + (row * 0.94) / rows;
+          for (let col = 0; col < cols; col++) {
+            const a = f0 + cw * col;
+            if ((row + col) % 2 === 0) hLine(t, a + cw * 0.12, a + cw * 0.88, h * 0.0048, row * 4 + col);
+            else vLine(a + cw * 0.5, t - 0.013, t + 0.013, w * 0.028, row * 4 + col);
+          }
         }
         break;
+      }
+      case 'twill': {
+        // A twill is a BROKEN diagonal — short slants stepping one place
+        // across each course. Nine long diagonals across the whole width read
+        // as scratches on the cloth rather than as the weave of it.
+        const step = fw / 3;
+        for (let i = 0; i < n; i++) {
+          const t = 0.04 + (i * 0.9) / n;
+          for (let col = 0; col < 3; col++) {
+            const a = f0 + ((col + (i % 3) * 0.34) % 3) * step;
+            if (a + step * 0.8 > f1) continue;
+            stroke(ctx, x + w * a, y + h * (t + 0.014), x + w * (a + step * 0.8), y + h * t, gc, Math.max(0.8, h * 0.005), seed + 200 + i * 4 + col);
+          }
+        }
+        break;
+      }
       case 'coarse':
+        // Sackcloth is never even: a thick slub, then a thin pick beside it,
+        // and both of them stopping short of the joints at different places.
         for (let i = 0; i < n; i++) {
-          const t = 0.08 + (i * 0.86) / n;
-          hLine(t, f0 + rand() * 0.1, f1 - rand() * 0.12, h * 0.009, i);
+          const t = 0.07 + (i * 0.86) / n;
+          hLine(t, f0 + rand() * 0.08, f1 - rand() * 0.1, h * 0.012, i);
+          hLine(t + 0.052, f0 + rand() * 0.16, f1 - rand() * 0.18, h * 0.005, i + 30);
         }
         break;
-      case 'fleck':
+      case 'fleck': {
         // Stratified, not scattered: `rand()` alone put sixteen flecks anywhere,
         // and "anywhere" on a strip 30px wide and 200 tall means clumps at one
         // end and a bare middle. One fleck per band, jittered inside its band,
         // is what a flecked cloth actually looks like from three feet away.
+        //
+        // Two colours, because a tweed IS two: the second yarn showing through
+        // and the dark of the first twisted with it. One tone made a row of
+        // identical dashes, which reads as a printed dot rather than as a fibre.
+        const second = mix(board, FLAT.ink, 0.24);
         for (let i = 0; i < n; i++) {
           const t = 0.04 + ((i + rand() * 0.9) / n) * 0.92;
-          const a = f0 + rand() * fw * 0.74;
-          hLine(t, a, a + fw * 0.2, h * 0.006, i);
+          const a = f0 + rand() * fw * 0.7;
+          const len = fw * (0.16 + rand() * 0.12);
+          stroke(ctx, x + w * a, y + h * t, x + w * (a + len), y + h * t, i % 3 === 0 ? second : gc, Math.max(1, h * 0.0065), seed + 200 + i);
         }
         break;
-      case 'nap': {
-        // Pile: a broad soft band along the fore edge, in the second value.
-        // Depth said as a darker flat face beside a lighter one, never as light.
-        fillBand(ctx, x + w * (f1 - 0.2), y - h * 0.02, w * (0.2 + 0.06), h * 1.04, gc, w * 0.14, seed + 205);
-        for (let i = 1; i <= n; i++) vLine(f0 + (fw * i) / (n + 1) - 0.03, 0.06, 0.94, w * 0.025, i);
+      }
+      case 'napEdge': {
+        // Felt is thick and it is CUT, not woven: a broad soft band down the
+        // fore edge in the second value, and tufts standing out of its inner
+        // edge where the shears left it. Depth as a darker flat face beside a
+        // lighter one; the tufts are what stop the band being a printed stripe.
+        const bw = fw * 0.34;
+        fillBand(ctx, x + w * (f1 - bw), y - h * 0.02, w * (bw + 0.06), h * 1.04, gc, w * 0.1, seed + 205);
+        const tufts = Math.max(8, n * 4);
+        for (let i = 0; i < tufts; i++) {
+          const t = 0.03 + (i * 0.94) / tufts;
+          const j = wob(seed + i * 7) * fw * 0.06;
+          stroke(ctx, x + w * (f1 - bw + j), y + h * t, x + w * (f1 - bw + j), y + h * (t + 0.055), gc, Math.max(1, w * 0.05), seed + 206 + i);
+        }
+        break;
+      }
+      case 'pile': {
+        // Velvet is pile, and pile turns: TWO steps of it down the fore edge,
+        // the outer one the accent and the inner one half way back to the
+        // ground, plus the crush marks across where the nap has been pressed
+        // flat. One hard stripe of accent read as a bookmark laid on the book.
+        const outer = fw * 0.24;
+        fillBand(ctx, x + w * (f1 - outer), y - h * 0.02, w * (outer + 0.06), h * 1.04, gc, w * 0.1, seed + 205);
+        fillBand(ctx, x + w * (f1 - outer * 1.95), y - h * 0.02, w * outer * 0.8, h * 1.04, mix(gc, board, 0.45), w * 0.1, seed + 207);
+        const crush = Math.max(4, n * 2);
+        for (let i = 1; i <= crush; i++) {
+          hLine((i * 0.92) / (crush + 1) + 0.04, f1 - outer * 1.95, f1 + 0.02, h * 0.006, i);
+        }
+        break;
+      }
+      case 'brushed': {
+        // Flesh side out: the nap lies every way at once, so it is short
+        // strokes at scattered angles. Long verticals were the same drawing
+        // the felt had, in a different colour — which is not a second covering.
+        const strokes = Math.max(24, n * 9);
+        for (let i = 0; i < strokes; i++) {
+          const t = 0.03 + rand() * 0.94;
+          const a = f0 + rand() * fw * 0.76;
+          const len = fw * (0.1 + rand() * 0.15);
+          const rise = (rand() - 0.5) * 0.032;
+          stroke(ctx, x + w * a, y + h * t, x + w * (a + len), y + h * (t + rise), gc, Math.max(0.9, w * 0.028), seed + 250 + i);
+        }
         break;
       }
       case 'watered':
-      case 'combedVeins':
-        for (let i = 0; i < n; i++) {
-          const vx = x + w * (f0 + (fw * (i + 0.5)) / n);
-          const amp = w * (spec.grain === 'watered' ? 0.035 : 0.055) * (1 + wob(seed + i) * 0.3);
+      case 'combedVeins': {
+        const moire = spec.grain === 'watered';
+        /** One ripple pulled the height of the sheet. */
+        const vein = (at: number, amp: number, colour: string, width: number, k: number): void => {
+          const vx = x + w * at;
           ctx.beginPath();
           ctx.moveTo(vx, y + h * 0.02);
           const steps = 5;
           for (let s = 0; s < steps; s++) {
             const y0 = y + h * (0.02 + (0.96 * s) / steps);
             const y1 = y + h * (0.02 + (0.96 * (s + 1)) / steps);
-            ctx.quadraticCurveTo(vx + (s % 2 === 0 ? amp : -amp), (y0 + y1) / 2, vx, y1);
+            ctx.quadraticCurveTo(vx + ((s + k) % 2 === 0 ? amp : -amp), (y0 + y1) / 2, vx, y1);
           }
-          ctx.strokeStyle = i % 2 === 0 ? gc : mix(gc, FLAT.cream, 0.3);
-          ctx.lineWidth = Math.max(1, w * (spec.grain === 'watered' ? 0.035 : 0.05));
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = width;
           ctx.lineCap = 'round';
           ctx.stroke();
+        };
+        for (let i = 0; i < n; i++) {
+          const at = f0 + (fw * (i + 0.5)) / n;
+          const amp = w * (moire ? 0.035 : 0.055) * (1 + wob(seed + i) * 0.3);
+          vein(at, amp, i % 2 === 0 ? gc : mix(gc, FLAT.cream, 0.3), Math.max(1, w * (moire ? 0.035 : 0.05)), 0);
+          // A comb pulls the colours in PAIRS — one full vein and the darker
+          // one dragged along beside it. Five lonely ripples is a stripe.
+          if (!moire) {
+            vein(at + fw * 0.07, amp * 0.7, mix(gc, FLAT.ink, 0.3), Math.max(0.8, w * 0.024), 0);
+          }
+        }
+        // Moiré is two moves of the same water, and it is the crossing of them
+        // that makes the shimmer. A second, finer set of ripples between the
+        // first, breaking the other way.
+        if (moire) {
+          for (let i = 0; i < n - 1; i++) {
+            vein(f0 + (fw * (i + 1)) / n, w * 0.022, mix(gc, face, 0.4), Math.max(0.8, w * 0.02), 1);
+          }
         }
         break;
+      }
       case 'figured':
         // Two columns, offset row by row. One column down the middle is a
         // stripe of beads, not a woven figure — a brocade is a REPEAT, and a
         // repeat needs at least two of it side by side to be seen as one.
+        //
+        // …and the figure is RAISED out of a ground, so it needs the ground: a
+        // fine pick line under each row, and the weft showing through the
+        // middle of the figure itself. Bare lozenges were a scatter of pips.
         for (let row = 0; row < n; row++) {
-          const cy = y + h * (0.08 + (row * 0.84) / (n - 1 || 1));
-          const s = Math.min(w * 0.11, h * 0.016);
+          const t = 0.08 + (row * 0.84) / (n - 1 || 1);
+          const cy = y + h * t;
+          const s = Math.min(w * 0.13, h * 0.019);
+          hLine(t + 0.016, f0 + 0.01, f1 - 0.01, h * 0.0032, row);
           for (let col = 0; col < 2; col++) {
             const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.28 + col * 0.44 : 0.5 + col * 0.44));
             if (cxx > x + w * f1) continue;
             ctx.beginPath();
             ctx.moveTo(cxx, cy - s);
-            ctx.quadraticCurveTo(cxx + s, cy, cxx, cy + s);
-            ctx.quadraticCurveTo(cxx - s, cy, cxx, cy - s);
+            ctx.quadraticCurveTo(cxx + s * 0.85, cy, cxx, cy + s);
+            ctx.quadraticCurveTo(cxx - s * 0.85, cy, cxx, cy - s);
             ctx.fillStyle = gc;
             ctx.fill();
+            stroke(ctx, cxx - s * 0.4, cy, cxx + s * 0.4, cy, mix(gc, board, 0.5), Math.max(0.7, s * 0.32), seed + 218 + row * 2 + col);
           }
         }
         break;
       case 'damask':
+        // Reversed weave: the SAME figure facing the other way, in the same
+        // silk. So every filled leaf gets its mirror struck beside it as an
+        // outline — no second colour anywhere, which is the whole trick of a
+        // damask and the reason a row of pale blobs was not one.
         for (let i = 0; i < n; i++) {
           const cy = y + h * (0.1 + (i * 0.8) / (n - 1 || 1));
-          const cxx = x + w * (f0 + fw * (i % 2 === 0 ? 0.36 : 0.64));
-          const s = Math.min(w * 0.18, h * 0.024);
-          ctx.beginPath();
-          ctx.moveTo(cxx, cy - s);
-          ctx.quadraticCurveTo(cxx + s * 0.9, cy - s * 0.2, cxx, cy + s);
-          ctx.quadraticCurveTo(cxx - s * 0.9, cy - s * 0.2, cxx, cy - s);
+          const left = i % 2 === 0;
+          const cxx = x + w * (f0 + fw * (left ? 0.34 : 0.66));
+          const echo = x + w * (f0 + fw * (left ? 0.68 : 0.32));
+          const s = Math.min(w * 0.2, h * 0.026);
+          const leaf = (px: number, dir: number): void => {
+            ctx.beginPath();
+            ctx.moveTo(px, cy - s);
+            ctx.quadraticCurveTo(px + s * 0.9 * dir, cy - s * 0.2, px, cy + s);
+            ctx.quadraticCurveTo(px - s * 0.9 * dir, cy - s * 0.2, px, cy - s);
+          };
+          leaf(cxx, left ? 1 : -1);
           ctx.fillStyle = gc;
           ctx.fill();
+          leaf(echo, left ? -1 : 1);
+          ctx.strokeStyle = mix(gc, face, 0.42);
+          ctx.lineWidth = Math.max(0.8, w * 0.026);
+          ctx.stroke();
+          // the stem the two figures hang off
+          stroke(ctx, cxx, cy + s * 0.9, echo, cy + s * 0.9, mix(gc, face, 0.5), Math.max(0.7, w * 0.018), seed + 222 + i);
         }
         break;
       case 'pebble': {
-        const rows = Math.max(4, Math.round(n / 2));
+        // Morocco's grain is the whole reason to bind a book in goat, and two
+        // columns of one-pixel dots is a book with a rash: at 30px it read as
+        // a smooth cloth somebody had specked. Three staggered columns,
+        // pebbles that vary in size, and a smaller pebble tucked against each
+        // — dense enough that the eye reads a GRAIN instead of counting spots.
+        const rows = Math.max(9, n);
         for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < 2; col++) {
-            const cy = y + h * (0.06 + (row * 0.88) / (rows - 1 || 1));
-            const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.3 + col * 0.4 : 0.5 + col * 0.4));
-            dot(cxx, cy, Math.min(w * 0.05, h * 0.006));
+          const cy = y + h * (0.04 + (row * 0.92) / (rows - 1 || 1));
+          for (let col = 0; col < 3; col++) {
+            const fx = f0 + fw * ((row % 2 === 0 ? 0.1 : 0.26) + col * 0.32);
+            if (fx > f1 - 0.01) continue;
+            const rr = Math.min(w * 0.075, h * 0.0092) * (0.7 + ((row * 5 + col) % 3) * 0.2);
+            dot(x + w * fx, cy, rr);
+            dot(x + w * fx + rr * 0.55, cy + rr * 0.6, rr * 0.5, mix(gc, board, 0.45));
           }
         }
         break;
       }
-      case 'panelled':
-        fillBand(ctx, x + w * (f0 + fw * 0.24), y - h * 0.02, w * fw * 0.5, h * 1.04, gc, w * 0.12, seed + 210);
+      case 'panelled': {
+        // A burnished panel is BOUNDED: the calf either side of it is a
+        // different surface, and a flat drawing says that with a line. Struck
+        // as a bare band it was a gradient's worth of information — a paler
+        // stripe, which is exactly what a light model would have drawn.
+        const px0 = f0 + fw * 0.24;
+        const pw = fw * 0.5;
+        fillBand(ctx, x + w * px0, y - h * 0.02, w * pw, h * 1.04, gc, w * 0.12, seed + 210);
+        const fillet = mix(board, FLAT.ink, 0.3);
+        for (const at of [px0, px0 + pw]) {
+          stroke(ctx, x + w * at, y + h * 0.02, x + w * at, y + h * 0.98, fillet, Math.max(0.8, w * 0.022), seed + 211 + at * 40);
+        }
         break;
+      }
       case 'flame': {
+        // The acid tree. Drawn as one even line with four ticks off it, this
+        // was a stem — a tree needs a trunk that THICKENS toward its root, a
+        // bough that forks, and a spread of root at the foot. Four marks
+        // instead of one, and the same tool becomes a drawing.
         const stem = f0 + fw * 0.5;
-        vLine(stem, 0.06, 0.94, w * 0.05, 0);
+        const dark = mix(gc, FLAT.ink, 0.22);
+        for (let s = 0; s < 5; s++) {
+          const t0 = 0.94 - (s * 0.88) / 5;
+          const t1 = 0.94 - ((s + 1) * 0.88) / 5;
+          stroke(ctx, x + w * stem, y + h * t0, x + w * stem, y + h * t1, gc, Math.max(1, w * (0.085 - s * 0.013)), seed + 211 + s);
+        }
         for (let i = 0; i < n; i++) {
-          const t = 0.18 + (i * 0.62) / (n - 1 || 1);
+          const t = 0.2 + (i * 0.6) / (n - 1 || 1);
           const dir = i % 2 === 0 ? 1 : -1;
-          stroke(ctx, x + w * stem, y + h * t, x + w * (stem + fw * 0.42 * dir), y + h * (t - 0.07), gc, Math.max(1, w * 0.04), seed + 212 + i);
+          const reach = fw * (0.46 - i * 0.03);
+          stroke(ctx, x + w * stem, y + h * t, x + w * (stem + reach * dir), y + h * (t - 0.075), gc, Math.max(1, w * 0.04), seed + 212 + i);
+          stroke(ctx, x + w * (stem + reach * 0.58 * dir), y + h * (t - 0.044), x + w * (stem + reach * 1.02 * dir), y + h * (t - 0.115), dark, Math.max(0.9, w * 0.026), seed + 216 + i);
+        }
+        for (const dir of [-1, 1]) {
+          stroke(ctx, x + w * stem, y + h * 0.92, x + w * (stem + fw * 0.28 * dir), y + h * 0.965, gc, Math.max(0.9, w * 0.03), seed + 219 + dir);
         }
         break;
       }
       case 'sprinkle':
+        // Flicked off a brush: the drops are not all one size, and some of
+        // them landed twice. Twenty-six identical discs read as a screen tint.
         for (let i = 0; i < n; i++) {
-          dot(x + w * (f0 + rand() * fw), y + h * (0.03 + rand() * 0.94), Math.min(w * 0.035, h * 0.004));
+          const cxx = x + w * (f0 + rand() * fw);
+          const cy = y + h * (0.03 + rand() * 0.94);
+          const rr = Math.min(w * 0.05, h * 0.006) * (0.55 + rand() * 0.9);
+          dot(cxx, cy, rr);
+          if (i % 4 === 0) dot(cxx + rr * 1.9, cy + rr * 1.3, rr * 0.6);
         }
         break;
       case 'mottle':
+        // A cloudy hide: the blot ran thin in the middle of itself, which is a
+        // second flat face inside the first and the only depth this style has.
         for (let i = 0; i < n; i++) {
           const s = Math.min(w * 0.14, h * 0.017) * (0.6 + rand() * 0.8);
+          const cxx = x + w * (f0 + rand() * fw);
+          const cy = y + h * (0.05 + rand() * 0.9);
           ctx.beginPath();
-          ctx.ellipse(x + w * (f0 + rand() * fw), y + h * (0.05 + rand() * 0.9), s, s * 0.7, 0, 0, TAU);
+          ctx.ellipse(cxx, cy, s, s * 0.7, 0, 0, TAU);
           ctx.fillStyle = gc;
+          ctx.fill();
+          if (i % 2 !== 0) continue;
+          ctx.beginPath();
+          ctx.ellipse(cxx - s * 0.2, cy - s * 0.04, s * 0.46, s * 0.3, 0, 0, TAU);
+          ctx.fillStyle = mix(gc, face, 0.5);
           ctx.fill();
         }
         break;
-      case 'scales':
+      case 'scales': {
+        // Scales OVERLAP. Drawn as bare arcs with air between them this was a
+        // column of eyebrows; each one needs a body of its own, a lip where
+        // the course above laps it, and three across so the stagger reads.
+        const lit = mix(face, FLAT.cream, 0.16);
+        const rx = Math.min(w * 0.13, h * 0.016);
+        const ry = Math.min(w * 0.11, h * 0.014);
         for (let row = 0; row < n; row++) {
           const cy = y + h * (0.07 + (row * 0.86) / n);
-          for (let col = 0; col < 2; col++) {
-            const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.28 + col * 0.44 : 0.5 + col * 0.44));
+          for (let col = 0; col < 3; col++) {
+            const cxx = x + w * (f0 + fw * ((row % 2 === 0 ? 0.16 : 0.31) + col * 0.3));
+            if (cxx + rx > x + w * f1) continue;
             ctx.beginPath();
-            ctx.ellipse(cxx, cy, Math.min(w * 0.14, h * 0.016), Math.min(w * 0.1, h * 0.012), 0, Math.PI, TAU);
+            ctx.ellipse(cxx, cy, rx, ry, 0, Math.PI, TAU);
+            ctx.lineTo(cxx - rx, cy + ry * 0.34);
+            ctx.closePath();
+            ctx.fillStyle = lit;
+            ctx.fill();
             ctx.strokeStyle = gc;
-            ctx.lineWidth = Math.max(0.8, w * 0.03);
+            ctx.lineWidth = Math.max(0.8, w * 0.024);
             ctx.stroke();
           }
         }
         break;
+      }
       case 'shagreen': {
-        // Rayskin: rings of pale pearls round a still centre. ONE ring, struck
-        // in the middle of the spine, read as a smudge somebody had left on an
-        // otherwise plain book — a defect, not a hide. Three of them down the
-        // height read as a pattern, which is the only thing that makes a mark
-        // look deliberate.
-        const cxx = x + w * (f0 + fw * 0.5);
-        const rr = Math.min(w * 0.22, h * 0.026);
-        const pearls = Math.max(5, Math.round(n * 0.7));
-        for (let g = 0; g < 3; g++) {
-          const cy = y + h * (0.22 + g * 0.28);
+        // Rayskin is a FIELD of pearls, not three medallions: rings overlapping
+        // down the whole height with the small pearls filling between them.
+        // Three tight clusters on a bare ground read as three smudges somebody
+        // had left on a plain book — a defect rather than a hide.
+        const rr = Math.min(w * 0.2, h * 0.024);
+        const pearls = Math.max(6, Math.round(n * 0.8));
+        for (let g = 0; g < 6; g++) {
+          const cxx = x + w * (f0 + fw * (g % 2 === 0 ? 0.36 : 0.64));
+          const cy = y + h * (0.1 + g * 0.16);
           for (let i = 0; i < pearls; i++) {
-            const a = (i / pearls) * TAU;
-            dot(cxx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 1.5, Math.min(w * 0.04, h * 0.0045));
+            const a = (i / pearls) * TAU + g;
+            dot(cxx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 1.2, Math.min(w * 0.048, h * 0.0058));
           }
-          dot(cxx, cy, Math.min(w * 0.045, h * 0.005));
+          dot(cxx, cy, Math.min(w * 0.055, h * 0.0066));
         }
         break;
       }
-      case 'plates':
+      case 'plates': {
         // Squared plates, staggered. Two straight columns of big rectangles is
         // a WINDOW — the strongest not-a-book reading anything on this board
         // had — so the plates are smaller, there are more of them, and every
         // other row steps half a plate across.
+        //
+        // …and each one is an OBJECT: a seam round it, and no two the same
+        // width. A grid of identical filled rectangles is tiling, not hide.
+        const seam = mix(board, FLAT.ink, 0.3);
         for (let row = 0; row < n; row++) {
           for (let col = 0; col < 2; col++) {
             const off = row % 2 === 0 ? 0.03 : 0.16;
+            const pw = fw * (col === 0 ? 0.4 : 0.34) * (row % 3 === 0 ? 0.86 : 1);
             const px = x + w * (f0 + fw * (off + col * 0.44));
             const py = y + h * (0.04 + (row * 0.92) / n);
-            if (px + w * fw * 0.38 > x + w * f1) continue;
-            fillBand(ctx, px, py, w * fw * 0.38, h * (0.92 / n) * 0.7, gc, w * 0.04, seed + 220 + row * 2 + col);
+            const ph = h * (0.92 / n) * 0.7;
+            if (px + w * pw > x + w * f1) continue;
+            fillBand(ctx, px, py, w * pw, ph, gc, w * 0.04, seed + 220 + row * 2 + col);
+            wobbleRect(ctx, px, py, w * pw, ph, w * 0.04, seed + 220 + row * 2 + col);
+            ctx.strokeStyle = seam;
+            ctx.lineWidth = Math.max(0.7, w * 0.02);
+            ctx.lineJoin = 'round';
+            ctx.stroke();
           }
         }
         break;
-      case 'pinDot':
+      }
+      case 'pinDot': {
+        // A bristle hole is a PIT, and a pit in flat art is a dark disc with
+        // the hide standing up round it. Bare specks were the same mark the
+        // sprinkled calf makes and half of them vanished into the cloth.
+        const rim = mix(face, FLAT.cream, 0.22);
+        const s = Math.min(w * 0.036, h * 0.0042);
         for (let i = 0; i < n; i++) {
           const cy = y + h * (0.05 + (i * 0.9) / n);
-          const cxx = x + w * (f0 + fw * (i % 2 === 0 ? 0.34 : 0.62));
-          const s = Math.min(w * 0.03, h * 0.0035);
-          dot(cxx, cy, s);
-          dot(cxx + w * 0.09, cy + h * 0.006, s);
-          dot(cxx + w * 0.045, cy - h * 0.008, s);
+          const cxx = x + w * (f0 + fw * (i % 2 === 0 ? 0.3 : 0.58));
+          for (const [dx, dy] of [
+            [0, 0],
+            [w * 0.1, h * 0.0065],
+            [w * 0.05, -h * 0.0085],
+          ] as const) {
+            dot(cxx + dx, cy + dy, s * 1.9, rim);
+            dot(cxx + dx, cy + dy, s);
+          }
         }
         break;
-      case 'creases':
+      }
+      case 'creases': {
+        // A crease is a FOLD: the side that stands up is one value, the side
+        // that turns away is another, and one line on its own is a scratch.
+        // Both the oilcloth and the parchment were three pale slashes.
+        const under = mix(board, FLAT.ink, 0.3);
         for (let i = 0; i < n; i++) {
           const t = 0.16 + (i * 0.68) / (n - 1 || 1);
           stroke(ctx, x + w * f0, y + h * t, x + w * f1, y + h * (t + 0.05), gc, Math.max(1, w * 0.035), seed + 226 + i);
+          stroke(ctx, x + w * f0, y + h * (t + 0.014), x + w * f1, y + h * (t + 0.064), under, Math.max(0.9, w * 0.024), seed + 236 + i);
+          // the cockle where the sheet has pulled away from the joint
+          stroke(ctx, x + w * f0, y + h * t, x + w * (f0 + fw * 0.22), y + h * (t - 0.022), gc, Math.max(0.8, w * 0.022), seed + 246 + i);
         }
         break;
-      case 'stitchRun':
+      }
+      case 'stitchRun': {
+        // The seam the stitching holds. Dashes on a bare ground read as a
+        // dotted line somebody forgot to finish; run them along two rules and
+        // the same dashes become a doubled seam in heavy canvas.
+        const seam = mix(board, FLAT.ink, 0.24);
+        for (const a of [f0 + fw * 0.22, f0 + fw * 0.74]) {
+          stroke(ctx, x + w * a, y + h * 0.03, x + w * a, y + h * 0.97, seam, Math.max(0.9, w * 0.03), seed + 201 + a * 40);
+        }
         for (let i = 0; i < n; i++) {
           const t = 0.05 + (i * 0.9) / n;
           hLine(t, f0 + fw * 0.1, f0 + fw * 0.34, h * 0.008, i);
           hLine(t, f0 + fw * 0.62, f0 + fw * 0.86, h * 0.008, i + 40);
         }
         break;
-      case 'spanishWave':
-        for (let row = 0; row < n; row++) {
-          const cy = y + h * (0.06 + (row * 0.88) / n);
+      }
+      case 'spanishWave': {
+        // The bath was rocked, so every wave has the echo of the one before it
+        // dragged half a step behind. Single zigzags were a knitting stitch.
+        const zig = (cy: number, amp: number, colour: string, width: number): void => {
           ctx.beginPath();
-          const peaks = 3;
+          const peaks = 4;
           for (let i = 0; i <= peaks * 2; i++) {
             const px = x + w * (f0 + (fw * i) / (peaks * 2));
-            const py = cy + (i % 2 === 0 ? -1 : 1) * h * 0.012;
+            const py = cy + (i % 2 === 0 ? -1 : 1) * amp;
             if (i === 0) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
           }
-          ctx.strokeStyle = row % 2 === 0 ? gc : mix(gc, FLAT.ink, 0.25);
-          ctx.lineWidth = Math.max(0.9, h * 0.006);
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = width;
           ctx.lineJoin = 'round';
           ctx.stroke();
+        };
+        for (let row = 0; row < n; row++) {
+          const cy = y + h * (0.06 + (row * 0.88) / n);
+          zig(cy, h * 0.013, gc, Math.max(0.9, h * 0.0062));
+          zig(cy + h * 0.011, h * 0.009, mix(gc, FLAT.ink, 0.32), Math.max(0.8, h * 0.0038));
         }
         break;
+      }
       case 'stoneVein':
+        // A stone marble is a NET. A stroke with one tick on it came out as a
+        // small bird, five times down the spine; a vein wants two hairs
+        // splitting off it at different angles before it reads as stone.
         for (let i = 0; i < n; i++) {
-          const t = 0.08 + (i * 0.84) / n;
-          const a = f0 + rand() * fw * 0.5;
-          stroke(ctx, x + w * a, y + h * t, x + w * (a + fw * 0.45), y + h * (t + 0.04), gc, Math.max(0.9, w * 0.03), seed + 230 + i);
-          stroke(ctx, x + w * (a + fw * 0.22), y + h * (t + 0.02), x + w * (a + fw * 0.3), y + h * (t - 0.03), gc, Math.max(0.8, w * 0.025), seed + 235 + i);
+          const t = 0.06 + (i * 0.86) / n;
+          const a = f0 + rand() * fw * 0.34;
+          const bx = a + fw * (0.4 + rand() * 0.24);
+          const bt = t + 0.05 + rand() * 0.04;
+          stroke(ctx, x + w * a, y + h * t, x + w * bx, y + h * bt, gc, Math.max(0.9, w * 0.028), seed + 230 + i);
+          stroke(ctx, x + w * ((a + bx) / 2), y + h * ((t + bt) / 2), x + w * (bx - fw * 0.08), y + h * (bt - 0.055), gc, Math.max(0.8, w * 0.02), seed + 235 + i);
+          stroke(ctx, x + w * (a + fw * 0.13), y + h * (t + 0.016), x + w * Math.max(f0, a - fw * 0.05), y + h * (t + 0.058), gc, Math.max(0.7, w * 0.016), seed + 239 + i);
         }
         break;
-      case 'shellSpots':
+      case 'shellSpots': {
+        // The drop of colour broke round its own oil, so the SPOT is the ring
+        // and the eye inside it is the paper. One disc with a speck on top was
+        // indistinguishable from the dutch gilt's dots at any width.
+        const eye = mix(FLAT.cream, gc, 0.18);
         for (let i = 0; i < n; i++) {
           const cy = y + h * (0.07 + (i * 0.86) / n);
-          const cxx = x + w * (f0 + fw * (i % 2 === 0 ? 0.34 : 0.62));
-          const rr = Math.min(w * 0.12, h * 0.015);
+          const cxx = x + w * (f0 + fw * (i % 2 === 0 ? 0.3 : 0.6));
+          const rr = Math.min(w * 0.155, h * 0.019);
           dot(cxx, cy, rr);
-          dot(cxx, cy, rr * 0.45, mix(gc, FLAT.cream, 0.6));
+          dot(cxx - rr * 0.16, cy - rr * 0.14, rr * 0.5, eye);
+          dot(cxx + rr * 1.55, cy + rr * 0.95, rr * 0.36);
         }
         break;
+      }
       case 'pasteComb':
+        // A comb has TEETH: one pass leaves three waves at once, and the paste
+        // drags thinner under the middle tooth. One arc a row was a smile.
         for (let i = 0; i < n; i++) {
-          const cy = y + h * (0.08 + (i * 0.84) / (n - 1 || 1));
-          ctx.beginPath();
-          ctx.moveTo(x + w * f0, cy);
-          ctx.quadraticCurveTo(x + w * (f0 + fw * 0.5), cy + h * 0.022, x + w * f1, cy);
-          ctx.strokeStyle = gc;
-          ctx.lineWidth = Math.max(1, h * 0.008);
-          ctx.stroke();
+          const cy = y + h * (0.07 + (i * 0.86) / (n - 1 || 1));
+          for (let k = 0; k < 3; k++) {
+            const oy = cy + h * 0.011 * k;
+            ctx.beginPath();
+            ctx.moveTo(x + w * f0, oy);
+            ctx.quadraticCurveTo(x + w * (f0 + fw * 0.5), oy + h * 0.024, x + w * f1, oy);
+            ctx.strokeStyle = k === 1 ? mix(gc, face, 0.42) : gc;
+            ctx.lineWidth = Math.max(0.9, h * 0.005);
+            ctx.stroke();
+          }
         }
         break;
       case 'lozenges': {
+        // A diaper, which is a lozenge with something IN it — the block that
+        // printed the paper carried a pip, and without it the field is a row
+        // of pale rhombs that reads as noise at 22px.
         const size = Math.min(w * 0.15, h * 0.018);
-        ctx.fillStyle = gc;
+        const pip = mix(gc, FLAT.ink, 0.34);
         for (let row = 0; row < n; row++) {
           const cy = y + h * (0.06 + (row * 0.88) / (n - 1 || 1));
           for (let col = 0; col < 2; col++) {
@@ -3864,18 +4147,24 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
             ctx.lineTo(cxx, cy + size);
             ctx.lineTo(cxx - size * 0.7, cy);
             ctx.closePath();
+            ctx.fillStyle = gc;
             ctx.fill();
+            dot(cxx, cy, Math.max(0.55, size * 0.26), pip);
           }
         }
         break;
       }
       case 'floret': {
+        // One carved block, inked and struck over and over SLIGHTLY OUT OF
+        // TRUE — which the blurb has always claimed and the drawing never did.
+        // The wobble is the whole difference between a hand press and a tile.
         const s = Math.min(w * 0.09, h * 0.011);
         for (let row = 0; row < n; row++) {
-          const cy = y + h * (0.08 + (row * 0.84) / (n - 1 || 1));
-          const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.34 : 0.62));
+          const cy = y + h * (0.08 + (row * 0.84) / (n - 1 || 1)) + wob(seed + row * 3) * h * 0.006;
+          const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.34 : 0.62)) + wob(seed + row * 5) * w * 0.03;
+          const tilt = wob(seed + row * 7) * 0.4;
           for (let p = 0; p < 4; p++) {
-            const a = (p / 4) * TAU + 0.4;
+            const a = (p / 4) * TAU + 0.4 + tilt;
             dot(cxx + Math.cos(a) * s * 1.5, cy + Math.sin(a) * s * 1.5, s);
           }
           dot(cxx, cy, s * 0.8, mix(gc, FLAT.ink, 0.3));
@@ -3889,28 +4178,59 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
           stroke(ctx, x + w * a, y + h * t, x + w * (a + fw * (0.2 + rand() * 0.3)), y + h * (t + (rand() - 0.5) * 0.05), gc, Math.max(0.8, w * 0.02), seed + 250 + i);
         }
         break;
-      case 'laidLines':
-        for (let i = 1; i <= n; i++) vLine(f0 + (fw * i) / (n + 1), 0.03, 0.97, w * 0.022, i);
+      case 'laidLines': {
+        // Laid paper carries TWO marks, not one: the chain lines standing wide
+        // apart where the mould's stitches were, and the fine laid wires close
+        // together across them. With only the chains it was corduroy — and it
+        // was the same drawing the napped suede used to have.
+        for (let i = 1; i <= n; i++) vLine(f0 + (fw * i) / (n + 1), 0.03, 0.97, w * 0.024, i);
+        const wires = mix(gc, face, 0.45);
+        for (let i = 1; i < 26; i++) {
+          const ly = y + h * (i / 26);
+          stroke(ctx, x + w * f0, ly, x + w * f1, ly, wires, Math.max(0.7, h * 0.0028), seed + 256 + i);
+        }
         break;
+      }
       case 'giltDots': {
-        const rows = Math.max(5, n);
+        // Dutch gilt is EMBOSSED and then gilded, so the mark is a struck star
+        // sitting in a ruled grid. A field of plain discs is a polka dot, and
+        // the cheapest way to look rich is not the same as looking cheap.
+        const rows = Math.max(6, n);
+        const rule = mix(gc, board, 0.5);
+        const s = Math.min(w * 0.07, h * 0.0085);
         for (let row = 0; row < rows; row++) {
+          const cy = y + h * (0.05 + (row * 0.9) / (rows - 1 || 1));
+          stroke(ctx, x + w * f0, cy + h * 0.024, x + w * f1, cy + h * 0.024, rule, Math.max(0.7, h * 0.003), seed + 262 + row);
           for (let col = 0; col < 2; col++) {
-            dot(
-              x + w * (f0 + fw * (row % 2 === 0 ? 0.28 + col * 0.42 : 0.49 + col * 0.42)),
-              y + h * (0.06 + (row * 0.88) / (rows - 1 || 1)),
-              Math.min(w * 0.05, h * 0.006),
-            );
+            const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.28 + col * 0.42 : 0.49 + col * 0.42));
+            if (cxx > x + w * f1) continue;
+            dot(cxx, cy, s * 0.6);
+            for (const [dx, dy] of [
+              [1, 0],
+              [-1, 0],
+              [0, 1],
+              [0, -1],
+            ] as const) {
+              stroke(ctx, cxx, cy, cxx + dx * s * 1.3, cy + dy * s * 1.3, gc, Math.max(0.7, s * 0.5), seed + 266 + row * 4 + col * 2 + dx + dy);
+            }
           }
         }
         break;
       }
-      case 'stripes':
+      case 'stripes': {
+        // Three broad stripes, and the printer's own register line down each
+        // edge of them — which is what stops the sheet reading as a flag.
+        const reg = mix(gc, FLAT.ink, 0.45);
         for (let i = 0; i < n; i++) {
           const sw = fw / (n * 2 - 1);
-          fillBand(ctx, x + w * (f0 + i * sw * 2), y - h * 0.02, w * sw, h * 1.04, i % 2 === 0 ? gc : mix(gc, FLAT.ink, 0.28), 0, seed + 260 + i);
+          const sx = f0 + i * sw * 2;
+          fillBand(ctx, x + w * sx, y - h * 0.02, w * sw, h * 1.04, i % 2 === 0 ? gc : mix(gc, FLAT.ink, 0.28), 0, seed + 260 + i);
+          for (const e of [sx, sx + sw]) {
+            stroke(ctx, x + w * e, y - h * 0.01, x + w * e, y + h * 1.01, reg, Math.max(0.7, w * 0.016), seed + 264 + i * 2 + e * 10);
+          }
         }
         break;
+      }
       case 'chequer': {
         const cols = 2;
         const cw = (fw * w) / cols;
@@ -3923,22 +4243,45 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
         }
         break;
       }
-      case 'newsRules':
+      case 'newsRules': {
+        // A newspaper is COLUMNS: a rule down the gutter, a heavier one under
+        // the masthead, and short lines of type either side that stop where a
+        // paragraph stops. Fourteen full-width rules was ruled writing paper.
+        const gutter = f0 + fw * 0.52;
+        vLine(gutter, 0.055, 0.95, w * 0.018, 1);
+        hLine(0.045, f0, f1, h * 0.0075, 90);
         for (let i = 0; i < n; i++) {
-          const block = Math.floor(i / 5);
-          hLine(0.06 + i * 0.06 + block * 0.02, f0, f1 - 0.06 * (i % 3), h * 0.004, i);
+          const t = 0.085 + (i * 0.85) / n;
+          hLine(t, f0, gutter - fw * (i % 3 === 0 ? 0.16 : 0.05), h * 0.0035, i);
+          hLine(t + 0.019, gutter + fw * 0.05, f1 - fw * (i % 2 === 0 ? 0.14 : 0.02), h * 0.0035, i + 50);
         }
         break;
+      }
       case 'wrapperRules':
-        for (let i = 0; i < n; i++) hLine(i === 0 ? 0.09 : 0.91, 0.14, 0.86, w * 0.05, i);
-        break;
-      case 'scuffs':
+        // The printer set a thick rule and a thin one under it, because that
+        // is what a wrapper's head and foot have always been.
         for (let i = 0; i < n; i++) {
-          const t = i % 2 === 0 ? 0.04 + rand() * 0.1 : 0.86 + rand() * 0.1;
-          const a = f0 + rand() * fw * 0.6;
-          stroke(ctx, x + w * a, y + h * t, x + w * (a + fw * 0.35), y + h * (t + 0.02), gc, Math.max(0.9, w * 0.03), seed + 280 + i);
+          const t = i === 0 ? 0.09 : 0.91;
+          hLine(t, 0.14, 0.86, w * 0.05, i);
+          hLine(t + (i === 0 ? 0.026 : -0.026), 0.2, 0.8, w * 0.02, i + 10);
         }
         break;
+      case 'scuffs': {
+        // A raw board wears at its EDGES and nowhere else. Scattered up the
+        // middle the marks read as somebody's pencil; put against the fore
+        // edge, with the bare millboard showing pale under each rub, they read
+        // as a book that has been handled.
+        const bare = mix(face, FLAT.cream, 0.3);
+        for (let i = 0; i < n; i++) {
+          const t = i % 2 === 0 ? 0.03 + rand() * 0.1 : 0.87 + rand() * 0.09;
+          const a = f0 + rand() * fw * 0.5;
+          stroke(ctx, x + w * a, y + h * t, x + w * (a + fw * 0.42), y + h * (t + 0.018), gc, Math.max(0.9, w * 0.03), seed + 280 + i);
+          stroke(ctx, x + w * (a + fw * 0.07), y + h * (t + 0.012), x + w * (a + fw * 0.36), y + h * (t + 0.027), bare, Math.max(0.8, w * 0.02), seed + 286 + i);
+        }
+        // …and the edge of the board itself, never covered by anything.
+        vLine(f1 - 0.02, 0.03, 0.97, w * 0.024, 3);
+        break;
+      }
       default:
         break;
     }
@@ -3952,16 +4295,33 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
     // one skin ends and another begins, and a binder turns the leather over it.
     const edge = top < 0 ? bottom : top;
     stroke(ctx, x - w * 0.02, y + h * edge, x + w * 1.02, y + h * edge, FLAT.ink, Math.max(1, inkWidth(w) * 0.6), seed + 300 + i);
+    if (!fine) continue;
+    // …and the fillet run just inside it. Every half binding ever made has
+    // this rule, for a reason a drawing needs too: the join is the one edge on
+    // the book the eye goes to first, and a bare colour change there reads as
+    // two rectangles stacked rather than as one book bound in two skins.
+    const inward = top < 0 ? -1 : 1;
+    const fy = y + h * (edge + 0.013 * inward);
+    const fillet = rubbed(design.gilt ? FLAT.gilt : FLAT.creamDeep, accentBoard, design.wear);
+    const from = spec.turn > 0 ? spec.turn * 0.55 : 0.04;
+    stroke(ctx, x + w * from, fy, x + w * 0.96, fy, fillet, Math.max(0.9, w * 0.03), seed + 306 + i);
   }
 
   /* -------------------------------- the joints ------------------------------ */
 
   if (fine && spec.joints > 0) {
-    const joint = mix(board, FLAT.ink, 0.32);
+    const joint = mix(board, FLAT.ink, 0.42);
+    // The board standing up out of the crease — the OTHER side of the same
+    // fold, said the only way this style says depth: a second flat face beside
+    // the first. One line on its own was a pencil mark down the spine.
+    const ridge = mix(face, FLAT.cream, 0.2);
     const at = [spec.turn > 0 ? spec.turn : 0.22];
     if (spec.joints > 1) at.push(1 - (spec.farTurn > 0 ? spec.farTurn : 0.14));
     for (let i = 0; i < at.length; i++) {
-      stroke(ctx, x + w * (at[i] as number), y + h * 0.02, x + w * (at[i] as number), y + h * 0.98, joint, Math.max(1, w * 0.032), seed + 310 + i);
+      const px = x + w * (at[i] as number);
+      stroke(ctx, px, y + h * 0.02, px, y + h * 0.98, joint, Math.max(1, w * 0.04), seed + 310 + i);
+      const rx = px + w * 0.052 * (i === 0 ? 1 : -1);
+      stroke(ctx, rx, y + h * 0.045, rx, y + h * 0.955, ridge, Math.max(0.8, w * 0.024), seed + 316 + i);
     }
   }
 }

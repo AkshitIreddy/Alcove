@@ -467,10 +467,20 @@ function blockFromNode(node: TiptapNode): Block[] {
       case 'envelope':
       case 'stamp':
       case 'tag':
-      case 'marginalia': {
+      case 'marginalia':
+      case 'pressed-flower':
+      case 'ticket-stub':
+      case 'postcard':
+      case 'ledger':
+      case 'photo-corner': {
         const raw = nodeAttrs(node);
+        // `title` is excluded and then put back only when it carries text.
+        // It used to come back for `card` alone, which quietly dropped the
+        // index card's own label — and the label is the whole point of a card
+        // you file. Every titled container gets it back now; an empty default
+        // still never reaches the script, so an untitled card prints bare.
         const attrs = attrsFrom(raw, ['title']);
-        if (node.type === 'card' && typeof raw.title === 'string' && raw.title !== '') {
+        if (typeof raw.title === 'string' && raw.title !== '') {
           attrs.title = raw.title;
         }
         return [

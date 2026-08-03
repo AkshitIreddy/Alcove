@@ -433,6 +433,16 @@ export default function BookshelfWorld(): JSX.Element {
     })();
   }
 
+  /**
+   * Send a book to another bookcase. The world owns the whole verb — pinning
+   * the face the book wears in THIS room, clamping the landing floor into a
+   * shorter case, and re-syncing the shelf it just left — because all three
+   * need things this component does not have (see `world.moveBookToCase`).
+   */
+  function handleMoveToCase(book: Book, bookcaseId: string): void {
+    void world?.moveBookToCase(book.id, bookcaseId);
+  }
+
   function handleRename(book: Book, title: string): void {
     const w = world;
     if (w === null) return;
@@ -712,6 +722,7 @@ export default function BookshelfWorld(): JSX.Element {
               pinned={readShelfMeta(state().book)?.pinned === true}
               onAction={(action) => handleMenuAction(state().book, action)}
               onRename={(title) => handleRename(state().book, title)}
+              onMoveTo={(caseId) => handleMoveToCase(state().book, caseId)}
               onClose={() => setMenu(null)}
             />
           )}

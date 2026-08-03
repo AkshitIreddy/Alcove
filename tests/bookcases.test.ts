@@ -316,6 +316,219 @@ describe('per-bookcase book queries', () => {
   });
 });
 
+/* ===================== moving a book between bookcases ==================== */
+/*
+ * The verb behind the spine card's "Move to another case…". It reaches the
+ * data layer through `ShelfWorld.moveBookToCase`, which is where the two
+ * decisions `data/books.ts` cannot make for itself are taken: what face to pin
+ * before the room changes underneath the book, and which floor of the new case
+ * it may land on. Both are silent when wrong — the book is in the table either
+ * way, just a different colour or on a floor nothing draws.
+ */
+
+describe('“move to another case” keeps the book recognisable', () => {
+  /**
+   * A book with nothing at all under `cover_meta.style` — a row from before
+   * the studio, or one that arrived in a bundle. `createBook` will not make
+   * one (it dresses every new book), so the blob is cleared afterwards.
+   */
+  async function undressed(lib: Library, title: string) {
+    const book = await lib.books.createBook({
+      title,
+      bookcaseId: lib.books.DEFAULT_BOOKCASE_ID,
+      floor: 0,
+      slot: 0,
+    });
+    await lib.books.saveBookStyleOverrides(book.id, null);
+    const bare = await lib.books.getBook(book.id);
+    expect(lib.books.readBookStyleOverrides(bare)).toBeNull();
+    return bare!;
+  }
+
+  it('pins the face an undressed book is wearing before it leaves', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+    const bare = await undressed(lib, 'Bare');
+
+    const face = { pigment: 4, material: 'leather', clothHex: '#7a3b2e' };
+    const moved = await lib.books.moveBookToBookcase(bare.id, attic.id, 0, face);
+
+    expect(moved?.bookcaseId).toBe(attic.id);
+    expect(lib.books.readBookStyleOverrides(moved)).toEqual(face);
+  });
+
+  it('never overwrites a field the reader chose', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+
+    const dressed = await lib.books.createBook({
+      title: 'Dressed',
+      bookcaseId: lib.books.DEFAULT_BOOKCASE_ID,
+      floor: 0,
+      slot: 0,
+      coverMeta: { style: { pigment: 1, clothHex: '#2f4858' } },
+    });
+
+    const moved = await lib.books.moveBookToBookcase(dressed.id, attic.id, 0, {
+      pigment: 9,
+      clothHex: '#bada55',
+      material: 'leather',
+    });
+    // Both of the reader's entries survive; only the field they never touched
+    // is filled in from the room they are leaving.
+    expect(lib.books.readBookStyleOverrides(moved)).toEqual({
+      pigment: 1,
+      clothHex: '#2f4858',
+      material: 'leather',
+    });
+  });
+
+  /*
+   * THE case this exists for, and the one the first guard missed. Every book
+   * `createBook` shelves already has a style — `freshBookStyleOverrides` pins
+   * seventeen fields — but it deliberately leaves out `pigment` and
+   * `hueJitter`, which are exactly the fields a room repaints. An
+   * all-or-nothing guard sees "this book has a style" and walks away, and the
+   * book changes colour on arrival anyway.
+   */
+  it('fills in the colour a dressed book was still taking from the room', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+
+    const book = await lib.books.createBook({
+      title: 'Ordinary',
+      bookcaseId: lib.books.DEFAULT_BOOKCASE_ID,
+      floor: 0,
+      slot: 0,
+    });
+    const before = lib.books.readBookStyleOverrides(book);
+    expect(before).not.toBeNull();
+    expect(before).not.toHaveProperty('pigment');
+
+    // What the room this book is standing in resolved for it.
+    const resolved = { ...before, pigment: 7, hueJitter: -3.5, material: 'silk' };
+    const moved = await lib.books.moveBookToBookcase(
+      book.id,
+      attic.id,
+      0,
+      resolved,
+    );
+
+    const after = lib.books.readBookStyleOverrides(moved);
+    expect(after?.pigment).toBe(7);
+    expect(after?.hueJitter).toBe(-3.5);
+    // …and nothing the book already said about itself moved.
+    expect(after).toMatchObject(before!);
+  });
+
+  it('leaves a book alone when no face is offered', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+    const bare = await undressed(lib, 'Bare');
+
+    const moved = await lib.books.moveBookToBookcase(bare.id, attic.id);
+    expect(moved?.bookcaseId).toBe(attic.id);
+    // "Take on the new room" is a real answer, and it is this one.
+    expect(lib.books.readBookStyleOverrides(moved)).toBeNull();
+  });
+
+  it('does not rewrite a book that already pins everything offered', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+    const book = await lib.books.createBook({
+      title: 'Complete',
+      bookcaseId: lib.books.DEFAULT_BOOKCASE_ID,
+      floor: 0,
+      slot: 0,
+      coverMeta: { style: { pigment: 2, material: 'cloth' } },
+    });
+
+    const moved = await lib.books.moveBookToBookcase(book.id, attic.id, 0, {
+      pigment: 5,
+    });
+    expect(lib.books.readBookStyleOverrides(moved)).toEqual({
+      pigment: 2,
+      material: 'cloth',
+    });
+  });
+
+  /*
+   * The floor clamp. `moveBookToBookcase` keeps the book's own floor when the
+   * caller does not name one, which is right for cases of equal height and
+   * wrong the moment the target is shorter: floor 9 in an eight-floor case is
+   * a row that case never draws. The caller does the clamping because
+   * `data/books.ts` may not import `data/bookcases.ts`, so this pins the
+   * arithmetic `ShelfWorld.moveBookToCase` performs.
+   */
+  it('a floor past the end of a shorter case has to be clamped by the caller', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const short = await lib.bookcases.createBookcase({ name: 'Short' });
+    await lib.bookcases.setBookcaseFloors(short.id, 4);
+
+    const deep = await lib.books.createBook({
+      title: 'Deep',
+      bookcaseId: lib.books.DEFAULT_BOOKCASE_ID,
+      floor: 9,
+      slot: 0,
+    });
+
+    // Unclamped: the row exists but the case has no floor 9 to draw it on.
+    const naive = await lib.books.moveBookToBookcase(deep.id, short.id);
+    expect(naive?.floor).toBe(9);
+
+    const rows = (await lib.bookcases.listBookcaseRows()).find(
+      (c) => c.id === short.id,
+    );
+    const floors = lib.bookcases.clampFloorCount(rows?.floors);
+    expect(floors).toBe(4);
+    const landing = Math.max(0, Math.min(deep.floor, floors - 1));
+    const clamped = await lib.books.moveBookToBookcase(deep.id, short.id, landing);
+    expect(clamped?.floor).toBe(3);
+    expect(clamped?.floor).toBeLessThan(floors);
+  });
+
+  it('the moved book leaves its old case and stands in exactly one', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+    const home = lib.books.DEFAULT_BOOKCASE_ID;
+    const book = await lib.books.createBook({
+      title: 'Traveller',
+      bookcaseId: home,
+      floor: 1,
+      slot: 0,
+    });
+
+    await lib.books.moveBookToBookcase(book.id, attic.id, 1, { pigment: 3 });
+
+    expect(await lib.books.listBooksInBookcase(home)).toHaveLength(0);
+    expect(
+      (await lib.books.listBooksInBookcase(attic.id)).map((b) => b.id),
+    ).toEqual([book.id]);
+    // And it can come back, still wearing the face the first move pinned —
+    // the attic's ramp does not get a second go at a book already holding a
+    // colour, however many times it is carried across the room.
+    const back = await lib.books.moveBookToBookcase(book.id, home, 1, {
+      pigment: 11,
+    });
+    expect(back?.bookcaseId).toBe(home);
+    expect(lib.books.readBookStyleOverrides(back)?.pigment).toBe(3);
+  });
+
+  it('moving a book that is not there reports it rather than throwing', async () => {
+    const lib = await freshLibrary();
+    await lib.bookcases.loadBookcases();
+    const attic = await lib.bookcases.createBookcase({ name: 'Attic' });
+    expect(await lib.books.moveBookToBookcase('book-nope', attic.id)).toBeNull();
+  });
+});
+
 /* ============================== floor defaults =========================== */
 
 describe('floors: ten per bookcase, growing only on request', () => {

@@ -55,6 +55,12 @@ await page.evaluate(async () => {
   const PAD = 6;
 
   const base = sp.deriveSpineParams(0x51e5a3);
+  /** The fourteen worth a magnifier: every seat, every stud, the odd shapes. */
+  const DETAIL = [
+    'label', 'paper-slip', 'linen-tag', 'vellum-slip', 'copper-plate', 'debossed', 'blind-panel',
+    'sunk-panel', 'morocco-label', 'pedimented', 'lozenge-plate', 'wreathed-plate',
+    'blind-lettered', 'ink-panel',
+  ];
 
   function bakeSpine(plate) {
     const w = Math.round(WORLD_W * BAKE);
@@ -117,6 +123,35 @@ await page.evaluate(async () => {
   }
   document.body.append(restBoard);
 
+  /* ---- board 3: the label band only, 5× nearest-neighbour ---- */
+  // The seat shadow, the pins, the stitches and the lifted corner are two or
+  // three baked pixels each. They have to be looked at somewhere, and the
+  // whole-spine board is not that somewhere.
+  const detail = document.createElement('div');
+  detail.id = 'detail-board';
+  detail.style.cssText =
+    `display:grid;grid-template-columns:repeat(7,1fr);gap:10px 8px;padding:14px;background:${ground};` +
+    'width:max-content;font:11px "Nunito Sans",system-ui,sans-serif;color:#4f3120;';
+  for (const [id, b] of baked) {
+    if (!DETAIL.includes(id)) continue;
+    // `bookLabelBox` puts a plain-cloth binding's label just below the head
+    // third, so this is the band it lands in — not the top of the spine.
+    const cropY = Math.round(b.height * 0.28);
+    const cropH = Math.round(b.height * 0.34);
+    const c = document.createElement('canvas');
+    c.width = b.width * 5;
+    c.height = cropH * 5;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(b, 0, cropY, b.width, cropH, 0, 0, c.width, c.height);
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;';
+    c.style.cssText = 'display:block;image-rendering:pixelated;';
+    cell.append(c, cap(id));
+    detail.append(cell);
+  }
+  document.body.append(detail);
+
   const bakeBoard = document.createElement('div');
   bakeBoard.id = 'bake-board';
   bakeBoard.style.cssText = restBoard.style.cssText;
@@ -134,6 +169,7 @@ await page.waitForTimeout(700);
 for (const [id, name] of [
   ['#rest-board', 'rest'],
   ['#bake-board', 'bake'],
+  ['#detail-board', 'detail'],
 ]) {
   const path = `shots-now/out/plates-${TAG}-${name}.png`;
   await page.locator(id).screenshot({ path });

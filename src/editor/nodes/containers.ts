@@ -397,6 +397,159 @@ export const Marginalia = Node.create({
 });
 
 // ---------------------------------------------------------------------------
+// The keepsake drawer — five things a notebook has stuck INTO it
+//
+// Everything above is something you WRITE ON. These five are things you KEEP:
+// a flower off a walk, the stub of a ticket, a card someone posted you, the
+// week's spending, a photograph. Each carries BOTH `color` (its pigment) and
+// `title` (the hand-written label the object really has — a species name, a
+// stub legend, a postmark, an account, a pencil caption), because in every
+// case the label is the half that makes it a keepsake rather than a box.
+//
+// Same plumbing as everything above: block containers, CSS-only, named
+// exactly as src/script/vocab.ts names them so the script bridge wires them
+// with no mapping table.
+// ---------------------------------------------------------------------------
+
+/** `color` + `title` together — the shape every keepsake below wants. */
+function keepsakeAttributes(fallback: WashColor): {
+  color: ReturnType<typeof washColorAttribute>;
+  title: ReturnType<typeof titleAttribute>;
+} {
+  return { color: washColorAttribute(fallback), title: titleAttribute() };
+}
+
+/** A pressed specimen on a mount card, with its herbarium label. */
+export const PressedFlower = Node.create({
+  name: 'pressed-flower',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return keepsakeAttributes('blush');
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="pressed-flower"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'pressed-flower' };
+    // The bloom sits at a seeded angle on the mount. No two specimens on a
+    // page were pressed the same way up, and a column of identical sprigs is
+    // the exact "clip art" reading this block has to avoid.
+    const seed = `${String(node.attrs.id ?? '')}|${String(node.attrs.title ?? '')}|petal`;
+    attrs.style = `--nb-sprig: ${seededTilt(seed, 13)}deg`;
+    if (!hasExplicitRotate(node)) {
+      attrs.style += `; --nb-rotate: ${seededTilt(`${seed}|card`, 1.2)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+/** A torn ticket: body, perforation, stub. */
+export const TicketStub = Node.create({
+  name: 'ticket-stub',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return keepsakeAttributes('terracotta');
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="ticket-stub"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'ticket-stub' };
+    if (!hasExplicitRotate(node)) {
+      const seed = `${String(node.attrs.id ?? '')}|ticket|${String(node.attrs.title ?? '')}`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 1.6)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+/** A divided-back postcard: message on the left, address rules on the right. */
+export const Postcard = Node.create({
+  name: 'postcard',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return keepsakeAttributes('sky');
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="postcard"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'postcard' };
+    if (!hasExplicitRotate(node)) {
+      const seed = `${String(node.attrs.id ?? '')}|post`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 1)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+/** A ruled accounts strip with a figures column down the right. */
+export const Ledger = Node.create({
+  name: 'ledger',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return keepsakeAttributes('moss');
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="ledger"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    // Deliberately untilted: ruled account paper is bound in, not stuck on.
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'ledger' }), 0];
+  },
+});
+
+/** A print held down by four paper corners, with a pencil caption. */
+export const PhotoCorner = Node.create({
+  name: 'photo-corner',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  draggable: true,
+
+  addAttributes() {
+    return keepsakeAttributes('graphite');
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="photo-corner"]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'photo-corner' };
+    if (!hasExplicitRotate(node)) {
+      const seed = `${String(node.attrs.id ?? '')}|mount|${node.childCount}`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 1.8)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
+  },
+});
+
+// ---------------------------------------------------------------------------
 // columns / col — 2-4 side-by-side columns, equal or weighted widths
 // ---------------------------------------------------------------------------
 

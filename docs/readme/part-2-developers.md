@@ -104,8 +104,8 @@ defending â€” why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->227<!--/f--> of <!--f:srcFiles-->235<!--/f--> source files
-open with a module docstring â€” <!--f:docstringLines-->4203<!--/f--> lines in total,
+<!--f:srcDocstrings-->228<!--/f--> of <!--f:srcFiles-->236<!--/f--> source files
+open with a module docstring â€” <!--f:docstringLines-->4239<!--/f--> lines in total,
 about one line of file-level prose for every twenty-three lines of code. That
 number is not asserted here; `npm run readme:check` recomputes it from the tree and
 `tests/readme.test.ts` fails if this sentence has drifted.

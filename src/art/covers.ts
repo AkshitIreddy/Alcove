@@ -1091,7 +1091,13 @@ function paintGrain(
         hLine((cy - y) / h, (cx - x) / w, (cx - x) / w + 0.07, fine, i);
       });
       break;
-    case 'nap':
+    // The three naps. `bookDesign` split the old single `nap` because at spine
+    // width the felt, the velvet and the suede were one drawing in three
+    // colours; a cover is drawn ten times that size and has never told them
+    // apart either, so all three keep the board treatment they already had.
+    case 'napEdge':
+    case 'pile':
+    case 'brushed':
       // Pile: a broad darker band along the fore edge. Depth as a second flat
       // face, never as a sheen.
       ctx.fillStyle = colour;
@@ -1491,6 +1497,22 @@ function paintSpineStrip(
   wobbleRect(ctx, bx - radius, by - radius, spineW + radius, bh + radius * 2, radius, seed + 5);
   ctx.fillStyle = dark;
   ctx.fill();
+  // The board TURNING AWAY: the outermost sliver of the strip is the round of
+  // the back, a third flat face deeper again. The icon does exactly this and
+  // the cover was drawing the spine as one flat slab, which is why it read as
+  // a stripe painted on rather than as an edge.
+  ctx.fillStyle = mixHex(dark, FLAT.ink, 0.3);
+  ctx.fillRect(bx - radius, by - radius, spineW * 0.2 + radius, bh + radius * 2);
+  stroke(
+    ctx,
+    bx + spineW * 0.2,
+    by + bh * 0.012,
+    bx + spineW * 0.2,
+    by + bh * 0.988,
+    FLAT.ink,
+    Math.max(0.8, ink * 0.45),
+    seed + 6,
+  );
   ctx.restore();
 
   wobbleRect(ctx, bx, by, bw, bh, radius, seed);
@@ -1510,16 +1532,42 @@ function paintSpineStrip(
   // Without foil the band becomes the board's own lighter face, so a raised
   // cord still shows as the strip stepping back up towards us. That is the
   // icon's depth model rather than a highlight.
+  //
+  // Each band is a CORD now, not a stripe: one ink hairline along each edge of
+  // it, which is what a raised band under the leather actually shows and what
+  // separates three painted lines from three ridges.
   const band = spineW * 0.26;
   const x0 = bx + spineW * 0.16;
   const x1 = bx + spineW * 0.84;
   const gold = gilded ? FLAT.gilt : face;
+  const cord = Math.max(0.7, ink * 0.35);
   for (const [t, weight] of [
     [0.218, 1],
     [0.296, 0.58],
     [0.785, 1],
   ] as const) {
-    stroke(ctx, x0, by + bh * t, x1, by + bh * t, gold, band * weight, seed + t * 100);
+    const cy = by + bh * t;
+    stroke(ctx, x0, cy, x1, cy, gold, band * weight, seed + t * 100);
+    for (const s of [-1, 1] as const) {
+      const ey = cy + (s * band * weight) / 2;
+      stroke(ctx, x0, ey, x1, ey, FLAT.ink, cord, seed + t * 100 + s * 3);
+    }
+  }
+
+  // Head and tail caps: the two short rules across the strip that every bound
+  // book has and this one did not. They also stop the strip reading as a
+  // rectangle that runs off the top and bottom of the board.
+  for (const t of [0.035, 0.965] as const) {
+    stroke(
+      ctx,
+      bx + spineW * 0.24,
+      by + bh * t,
+      bx + spineW * 0.94,
+      by + bh * t,
+      FLAT.ink,
+      Math.max(0.8, ink * 0.5),
+      seed + t * 70,
+    );
   }
 }
 
@@ -1576,6 +1624,22 @@ interface FrameSpec {
   turn: FrameTurn;
   /** Fill the gap between rule 0 and rule 1 with a flat band. */
   band?: boolean;
+}
+
+/**
+ * How far a rule's corner is rounded off, so a corner TOOL can be put where
+ * the rule actually turns rather than where the maths corner is.
+ *
+ * Shared with `traceFrameRect` — the two read the same number, because a corner
+ * ornament placed at the geometric corner of a `round` frame floats outside its
+ * own rule, which is precisely how the first specimen's corner marks came to
+ * look like specks flicked at the board.
+ */
+function frameTurnRadius(turn: FrameTurn, m: number): number {
+  if (turn === 'square') return m * 0.008;
+  if (turn === 'round') return m * 0.16;
+  if (turn === 'soft') return m * 0.05;
+  return m * 0.13; // ogee
 }
 
 function frame(
@@ -1679,22 +1743,14 @@ function traceFrameRect(
   seed: number,
 ): void {
   const m = Math.min(w, h);
-  if (turn === 'square') {
-    wobbleRect(ctx, x, y, w, h, m * 0.008, seed);
-    return;
-  }
-  if (turn === 'round') {
-    wobbleRect(ctx, x, y, w, h, m * 0.16, seed);
-    return;
-  }
-  if (turn === 'soft') {
-    wobbleRect(ctx, x, y, w, h, m * 0.05, seed);
+  if (turn !== 'ogee') {
+    wobbleRect(ctx, x, y, w, h, frameTurnRadius(turn, m), seed);
     return;
   }
   // ogee — the corner is drawn out into a shallow S, which is what separates a
   // "binding" frame from a rounded rectangle. Traced by hand because a radius
   // cannot express a reversing curve.
-  const r = m * 0.13;
+  const r = frameTurnRadius('ogee', m);
   const k = r * 0.55;
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -1709,6 +1765,99 @@ function traceFrameRect(
   ctx.closePath();
 }
 
+/** A hairline circle. The collar on half the corner tools. */
+function ringMark(ctx: FlatCtx, cx: number, cy: number, r: number, colour: string, line: number): void {
+  pen(ctx, colour, line);
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(0.8, r), 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+/** A filled lozenge, `r` tall and 0.68r wide. The binder's commonest tool. */
+function lozengeMark(ctx: FlatCtx, cx: number, cy: number, r: number, colour: string): void {
+  tracePoly(ctx, [
+    { x: cx, y: cy - r },
+    { x: cx + r * 0.68, y: cy },
+    { x: cx, y: cy + r },
+    { x: cx - r * 0.68, y: cy },
+  ]);
+  ctx.fillStyle = colour;
+  ctx.fill();
+}
+
+/** The same lozenge, open. */
+function lozengeOutline(
+  ctx: FlatCtx,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+): void {
+  tracePoly(ctx, [
+    { x: cx, y: cy - r },
+    { x: cx + r * 0.68, y: cy },
+    { x: cx, y: cy + r },
+    { x: cx - r * 0.68, y: cy },
+  ]);
+  pen(ctx, colour, line);
+  ctx.stroke();
+}
+
+/**
+ * One petal of a fleuron: a teardrop thrown from (x0,y0) along `ang`.
+ *
+ * Two quadratics rather than the four-point polygon this used to be. The
+ * polygon's petal was a kite — straight sides, a hard point at the base — and
+ * three kites in a corner read as a scratch rather than a flower. A curve costs
+ * the same and is the difference between "ornament" and "damage".
+ */
+function petal(
+  ctx: FlatCtx,
+  x0: number,
+  y0: number,
+  ang: number,
+  len: number,
+  wide: number,
+  colour: string,
+  /** How far the tip swings off the petal's own axis. 0 is a straight leaf. */
+  curl = 0,
+): void {
+  const tx = x0 + Math.cos(ang + curl) * len;
+  const ty = y0 + Math.sin(ang + curl) * len;
+  const nx = Math.cos(ang + Math.PI / 2) * wide;
+  const ny = Math.sin(ang + Math.PI / 2) * wide;
+  const mx = x0 + Math.cos(ang) * len * 0.45;
+  const my = y0 + Math.sin(ang) * len * 0.45;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.quadraticCurveTo(mx + nx, my + ny, tx, ty);
+  ctx.quadraticCurveTo(mx - nx, my - ny, x0, y0);
+  ctx.closePath();
+  ctx.fillStyle = colour;
+  ctx.fill();
+}
+
+/**
+ * The four corner tools, drawn as TOOLS rather than as marks.
+ *
+ * ## Why each of these is now two or three shapes instead of one
+ *
+ * The first cut gave every corner a single primitive at `min(w,h) * 0.022` —
+ * about two pixels on the studio preview and six on the pull-out. On the sheet
+ * that mattered (`shots-now/out/*-frames-studio.png`) entries 0 through 14 were
+ * one picture: fifty frames that a reader could sort into six. A dot the size
+ * of a full stop cannot be told from a ring the size of a full stop, so the
+ * vocabulary was real in the table and absent on the board.
+ *
+ * So each tool is a small COMPOSITION — a filled centre with a collar, a
+ * bracket with an inner return, a fleuron with a heart and a tip — sized off
+ * the frame rather than off nothing. That is richness by drawing: no shading
+ * was added, and the only colour is still the frame's own.
+ *
+ * `sx`/`sy` point inward along the two rules, so a bracket knows which way its
+ * arms run and a fleuron knows which way to throw its petals.
+ */
 function paintFrameCorner(
   ctx: FlatCtx,
   kind: FrameCorner,
@@ -1724,59 +1873,96 @@ function paintFrameCorner(
     case 'none':
       return;
     case 'dot':
-      dot(ctx, cx, cy, line * 1.6, colour);
+      // A dot struck inside a collar — the plainest corner tool there is, and
+      // the one a plain rule wants. Two circles, not one.
+      dot(ctx, cx, cy, s * 0.3, colour);
+      ringMark(ctx, cx, cy, s * 0.74, colour, line * 0.7);
       return;
-    case 'stud':
-      dot(ctx, cx, cy, line * 2.4, colour);
-      return;
-    case 'ring':
+    case 'stud': {
+      // A metal boss: a heavy centre, a collar, and two spurs running back
+      // along the rules so it reads as fixed to the frame rather than laid on.
+      dot(ctx, cx, cy, s * 0.46, colour);
+      ringMark(ctx, cx, cy, s * 0.92, colour, line * 0.85);
       pen(ctx, colour, line * 0.8);
       ctx.beginPath();
-      ctx.arc(cx, cy, s * 0.9, 0, Math.PI * 2);
-      ctx.stroke();
-      return;
-    case 'lozenge':
-      tracePoly(ctx, [
-        { x: cx, y: cy - s },
-        { x: cx + s * 0.68, y: cy },
-        { x: cx, y: cy + s },
-        { x: cx - s * 0.68, y: cy },
-      ]);
-      ctx.fillStyle = colour;
-      ctx.fill();
-      return;
-    case 'bracket': {
-      // Two strokes running back along the rules from the corner: the mark a
-      // binder's corner tool actually leaves.
-      pen(ctx, colour, line);
-      ctx.beginPath();
-      ctx.moveTo(cx + sx * s * 2.2, cy);
-      ctx.lineTo(cx, cy);
-      ctx.lineTo(cx, cy + sy * s * 2.2);
+      ctx.moveTo(cx + sx * s * 1.15, cy);
+      ctx.lineTo(cx + sx * s * 1.95, cy);
+      ctx.moveTo(cx, cy + sy * s * 1.15);
+      ctx.lineTo(cx, cy + sy * s * 1.95);
       ctx.stroke();
       return;
     }
+    case 'ring':
+      // An eyelet: two concentric rules and a pip in the middle.
+      ringMark(ctx, cx, cy, s * 0.95, colour, line * 0.85);
+      ringMark(ctx, cx, cy, s * 0.5, colour, line * 0.6);
+      dot(ctx, cx, cy, line * 0.85, colour);
+      return;
+    case 'lozenge':
+      // A lozenge inside a lozenge, which is how a corner diaper is actually
+      // built up; one alone was a speck.
+      lozengeOutline(ctx, cx, cy, s * 1.2, colour, line * 0.7);
+      lozengeMark(ctx, cx, cy, s * 0.62, colour);
+      return;
+    case 'bracket': {
+      // The mark a binder's corner tool leaves: an L along both rules, a
+      // shorter L returning inside it, and a pip in the elbow.
+      pen(ctx, colour, line);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * s * 2.4, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + sy * s * 2.4);
+      ctx.stroke();
+      const g = s * 0.72;
+      pen(ctx, colour, line * 0.68);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * s * 1.9, cy + sy * g);
+      ctx.lineTo(cx + sx * g, cy + sy * g);
+      ctx.lineTo(cx + sx * g, cy + sy * s * 1.9);
+      ctx.stroke();
+      dot(ctx, cx + sx * s * 1.5, cy + sy * s * 1.5, line * 0.95, colour);
+      return;
+    }
     case 'fleuron': {
-      // Three petals thrown inward along the diagonal. Filled, because a
-      // hairline flourish disappears the moment the cover is a thumbnail.
-      for (const a of [0, 1, 2]) {
-        const ang = Math.atan2(sy, sx) + Math.PI + (a - 1) * 0.55;
-        const px = cx + Math.cos(ang) * s * 1.5;
-        const py = cy + Math.sin(ang) * s * 1.5;
-        tracePoly(ctx, [
-          { x: cx, y: cy },
-          { x: px + Math.cos(ang + 0.5) * s * 0.5, y: py + Math.sin(ang + 0.5) * s * 0.5 },
-          { x: px, y: py },
-          { x: px + Math.cos(ang - 0.5) * s * 0.5, y: py + Math.sin(ang - 0.5) * s * 0.5 },
-        ]);
-        ctx.fillStyle = colour;
-        ctx.fill();
+      // A palmette: five curved petals thrown inward off a heart, opening into
+      // a fan, with a pip beyond the middle tip.
+      //
+      // Three petals at ±0.62rad with the middle one longest is an ARROWHEAD,
+      // and that is exactly what the first specimen sheet showed — four little
+      // arrows pointing at the label. A fleuron is wide and it curls; the fan
+      // has to be wider than it is long before the eye reads a flower.
+      const base = Math.atan2(sy, sx);
+      for (const a of [-2, -1, 0, 1, 2]) {
+        const m = Math.abs(a);
+        petal(
+          ctx,
+          cx,
+          cy,
+          base + a * 0.56,
+          s * (m === 0 ? 1.9 : m === 1 ? 1.62 : 1.1),
+          // Leaves, not rays. At 0.36 the fan came back as a firework; a petal
+          // has to be about a third as wide as it is long before it reads as
+          // foliage at pull-out size.
+          s * (m === 2 ? 0.4 : 0.52),
+          colour,
+          a * 0.36,
+        );
       }
+      dot(ctx, cx, cy, s * 0.4, colour);
+      dot(ctx, cx + Math.cos(base) * s * 2.35, cy + Math.sin(base) * s * 2.35, line * 1.05, colour);
       return;
     }
   }
 }
 
+/**
+ * The four side tools, at the middle of each rule.
+ *
+ * Same enlargement as the corners, and the same rule they were already written
+ * to: a mark laid ALONG the rule is just a thicker rule, so every one of these
+ * crosses it. The additions are flanking pips — a tool is struck between two
+ * stops on a real board, and two pips are what turn one mark into a run.
+ */
 function paintFrameSide(
   ctx: FlatCtx,
   kind: FrameSide,
@@ -1786,41 +1972,55 @@ function paintFrameSide(
   colour: string,
   line: number,
   horizontal: boolean,
+  /** +1 if the board's middle lies in the positive direction across the rule. */
+  dir: number,
 ): void {
+  /** Step along the rule, whichever way it runs. */
+  const along = (d: number): [number, number] =>
+    horizontal ? [mx + d, my] : [mx, my + d];
+
   switch (kind) {
     case 'none':
       return;
-    case 'dot':
-      dot(ctx, mx, my, line * 1.5, colour);
+    case 'dot': {
+      dot(ctx, mx, my, s * 0.32, colour);
+      ringMark(ctx, mx, my, s * 0.78, colour, line * 0.65);
+      for (const d of [-s * 1.7, s * 1.7]) {
+        const [px, py] = along(d);
+        dot(ctx, px, py, line * 0.85, colour);
+      }
       return;
-    case 'lozenge':
-      tracePoly(ctx, [
-        { x: mx, y: my - s },
-        { x: mx + s * 0.72, y: my },
-        { x: mx, y: my + s },
-        { x: mx - s * 0.72, y: my },
-      ]);
-      ctx.fillStyle = colour;
-      ctx.fill();
+    }
+    case 'lozenge': {
+      lozengeMark(ctx, mx, my, s * 1.05, colour);
+      for (const d of [-s * 1.75, s * 1.75]) {
+        const [px, py] = along(d);
+        dot(ctx, px, py, line * 0.95, colour);
+      }
       return;
+    }
     case 'tick': {
-      // ACROSS the rule, never along it — a mark laid along a line is just a
-      // thicker line.
       pen(ctx, colour, line);
       ctx.beginPath();
       if (horizontal) {
-        ctx.moveTo(mx, my - s);
-        ctx.lineTo(mx, my + s);
+        ctx.moveTo(mx, my - s * 1.15);
+        ctx.lineTo(mx, my + s * 1.15);
       } else {
-        ctx.moveTo(mx - s, my);
-        ctx.lineTo(mx + s, my);
+        ctx.moveTo(mx - s * 1.15, my);
+        ctx.lineTo(mx + s * 1.15, my);
       }
       ctx.stroke();
+      // Stops at both ends, so the tick reads as a bar and not as a nick in
+      // the rule it crosses.
+      const ends: Array<[number, number]> = horizontal
+        ? [[mx, my - s * 1.15], [mx, my + s * 1.15]]
+        : [[mx - s * 1.15, my], [mx + s * 1.15, my]];
+      for (const [px, py] of ends) dot(ctx, px, py, line * 0.9, colour);
       return;
     }
     case 'pair': {
-      pen(ctx, colour, line * 0.8);
-      const off = s * 1.3;
+      pen(ctx, colour, line * 0.85);
+      const off = s * 1.5;
       ctx.beginPath();
       if (horizontal) {
         ctx.moveTo(mx - off, my - s);
@@ -1834,14 +2034,35 @@ function paintFrameSide(
         ctx.lineTo(mx + s, my + off);
       }
       ctx.stroke();
+      lozengeMark(ctx, mx, my, s * 0.72, colour);
       return;
     }
     case 'arc': {
+      // A fan: two arcs one inside the other, with the tool's pip at the apex
+      // and a foot at each end. It opens toward the middle of the board — the
+      // first cut used one angle for all four sides, so the fan at the head
+      // pointed off the board while the one at the tail pointed into it.
+      const inward = horizontal
+        ? dir > 0
+          ? 0
+          : Math.PI
+        : dir > 0
+          ? Math.PI * 1.5
+          : Math.PI * 0.5;
       pen(ctx, colour, line * 0.9);
       ctx.beginPath();
-      const a0 = horizontal ? Math.PI : Math.PI * 1.5;
-      ctx.arc(mx, my, s * 1.1, a0, a0 + Math.PI);
+      ctx.arc(mx, my, s * 1.35, inward, inward + Math.PI);
       ctx.stroke();
+      pen(ctx, colour, line * 0.6);
+      ctx.beginPath();
+      ctx.arc(mx, my, s * 0.78, inward, inward + Math.PI);
+      ctx.stroke();
+      const [ax, ay] = horizontal ? [mx, my + dir * s * 1.35] : [mx + dir * s * 1.35, my];
+      dot(ctx, ax, ay, line * 0.95, colour);
+      for (const d of [-s * 1.35, s * 1.35]) {
+        const [px, py] = along(d);
+        dot(ctx, px, py, line * 0.8, colour);
+      }
       return;
     }
   }
@@ -1855,22 +2076,39 @@ function paintFrame(
   h: number,
   style: number,
   colour: string,
+  /** The flat tone a `band` frame's border is filled in. */
+  bandFill: string,
   detail: boolean,
   seed: number,
 ): void {
   const spec = FRAMES[((Math.trunc(style) % FRAMES.length) + FRAMES.length) % FRAMES.length]!;
-  const base = Math.max(1, Math.min(w, h) * 0.012);
-  const gap = Math.min(w, h) * 0.042;
+  const m = Math.min(w, h);
+  const base = Math.max(1, m * 0.012);
+  const gap = m * 0.042;
 
-  // The band goes down FIRST, so the rules land on top of their own border
-  // rather than being half-covered by it.
+  /**
+   * The band, drawn as a band.
+   *
+   * It used to be two traced rects and one `fill('evenodd')`, which never drew
+   * a border at all: `wobbleRect` opens a fresh path, so the second trace threw
+   * the first away and the even-odd fill flooded the WHOLE panel with the frame
+   * colour at 0.16 alpha. Every one of the ten banded frames therefore painted
+   * the same picture — a board a shade lighter, with the covering's grain
+   * washed out under it — and the sheet showed ten names and one entry.
+   *
+   * The fix is also the simpler drawing: the gap between rule 0 and rule 1 IS a
+   * stroke of width `gap` down the middle of that gap, so one stroked path in a
+   * flat opaque tone gives a real border, follows the turn for free, and leaves
+   * the two rules to land on its edges.
+   */
   if (spec.band === true && spec.rules.length > 1) {
-    traceFrameRect(ctx, x, y, w, h, spec.turn, seed + 3);
-    traceFrameRect(ctx, x + gap, y + gap, w - gap * 2, h - gap * 2, spec.turn, seed + 4);
-    ctx.fillStyle = colour;
-    ctx.globalAlpha = 0.16;
-    ctx.fill('evenodd');
-    ctx.globalAlpha = 1;
+    traceFrameRect(ctx, x + gap / 2, y + gap / 2, w - gap, h - gap, spec.turn, seed + 3);
+    ctx.strokeStyle = bandFill;
+    ctx.lineWidth = gap;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+    ctx.lineCap = 'round';
   }
 
   spec.rules.forEach((weight, i) => {
@@ -1883,24 +2121,34 @@ function paintFrame(
 
   if (!detail) return;
 
-  const s = Math.min(w, h) * 0.022;
-  const inset = Math.min(w, h) * 0.035;
+  // Tools are struck on the INNERMOST rule, and big enough to be a tool.
+  //
+  // 0.022 of the frame's short side is two pixels on the studio preview, which
+  // is why fifty frames sorted into six pictures there: a two-pixel ring, dot,
+  // stud and lozenge are one two-pixel speck. 0.048 is a mark a reader can name
+  // at 160px and an ornament at pull-out size.
+  const s = m * 0.048;
+  const inner = gap * Math.max(0, spec.rules.length - 1);
+  // …and pushed in far enough to clear the turn. A mark at the geometric corner
+  // of a `round` frame floats outside its own rule.
+  const off = inner + frameTurnRadius(spec.turn, m) * 0.34 + s * 0.55;
+
   for (const [cx, cy, sx, sy] of [
-    [x + inset, y + inset, 1, 1],
-    [x + w - inset, y + inset, -1, 1],
-    [x + w - inset, y + h - inset, -1, -1],
-    [x + inset, y + h - inset, 1, -1],
+    [x + off, y + off, 1, 1],
+    [x + w - off, y + off, -1, 1],
+    [x + w - off, y + h - off, -1, -1],
+    [x + off, y + h - off, 1, -1],
   ] as const) {
     paintFrameCorner(ctx, spec.corner, cx, cy, s, colour, base, sx, sy);
   }
 
-  for (const [mx, my, horiz] of [
-    [x + w / 2, y, true],
-    [x + w / 2, y + h, true],
-    [x, y + h / 2, false],
-    [x + w, y + h / 2, false],
+  for (const [mx, my, horiz, dir] of [
+    [x + w / 2, y + inner, true, 1],
+    [x + w / 2, y + h - inner, true, -1],
+    [x + inner, y + h / 2, false, 1],
+    [x + w - inner, y + h / 2, false, -1],
   ] as const) {
-    paintFrameSide(ctx, spec.side, mx, my, s, colour, base, horiz);
+    paintFrameSide(ctx, spec.side, mx, my, s, colour, base, horiz, dir);
   }
 }
 
@@ -1927,8 +2175,96 @@ function paintMedallion(
   r: number,
   kind: number,
   colour: string,
+  /** The sunk field the stamp is struck into: the board's own tone, deeper. */
+  field: string,
+  /** False once the book is worn enough to have lost its fine tooling. */
+  detail: boolean,
 ): void {
   const k = ((Math.trunc(kind) % ORNAMENT_COUNT) + ORNAMENT_COUNT) % ORNAMENT_COUNT;
+  const line = Math.max(0.9, r * 0.075);
+
+  /**
+   * The cartouche the stamp sits in — five of them, chosen by the stamp itself.
+   *
+   * Deliberately DERIVED from `kind` rather than added as a knob: the cover's
+   * whole history in this file is counts and tables drifting apart, and a sixth
+   * axis nothing stores is a sixth thing to keep in step. Derived, it is
+   * already in `coverCacheKey` (through `medallion`) and already in the studio
+   * (turning the stamp turns the surround with it), for free.
+   *
+   * It exists because the stamp on its own was a sticker. `drawOrnament` puts
+   * one small gilt pictogram on the lower half of a board that has nothing else
+   * on it, and at pull-out size — 420px, the size a reader actually holds —
+   * that read as clip art dropped on cloth. A binder's centre tool is struck
+   * into a field and ringed; the ring is what makes it tooling.
+   */
+  if (detail) {
+    const lozengeField = k % 5 === 2;
+    ctx.save();
+    if (lozengeField) {
+      tracePoly(ctx, [
+        { x: cx, y: cy - r * 1.5 },
+        { x: cx + r * 1.16, y: cy },
+        { x: cx, y: cy + r * 1.5 },
+        { x: cx - r * 1.16, y: cy },
+      ]);
+    } else {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.3, 0, Math.PI * 2);
+    }
+    // A second flat face, not a shadow: concentric, so it cannot read as a
+    // light direction. The note this replaces is still true — the first
+    // specimen put a contact ELLIPSE under the stamp, offset, and it read as a
+    // thumbprint. A field the stamp sits IN is the opposite mark.
+    ctx.fillStyle = field;
+    ctx.fill();
+    ctx.strokeStyle = FLAT.ink;
+    ctx.lineWidth = line * 0.8;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    switch (k % 5) {
+      case 0:
+        ringMark(ctx, cx, cy, r * 1.56, colour, line);
+        break;
+      case 1:
+        // Rayed: the ring, with the tool's own points struck outside it.
+        ringMark(ctx, cx, cy, r * 1.54, colour, line);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+          stroke(
+            ctx,
+            cx + Math.cos(a) * r * 1.7,
+            cy + Math.sin(a) * r * 1.7,
+            cx + Math.cos(a) * r * 2.02,
+            cy + Math.sin(a) * r * 2.02,
+            colour,
+            line * 0.85,
+            k * 7 + i,
+          );
+        }
+        break;
+      case 2:
+        // Clear of the field by a real gap: at 1.78 the outline touched the
+        // lozenge it surrounds and the two read as one thick diamond.
+        lozengeOutline(ctx, cx, cy, r * 1.95, colour, line);
+        break;
+      case 3:
+        ringMark(ctx, cx, cy, r * 1.48, colour, line);
+        ringMark(ctx, cx, cy, r * 1.72, colour, line * 0.6);
+        break;
+      default:
+        // Studded: the ring with four pips on the diagonals, the commonest
+        // centre-piece on a nineteenth-century trade binding.
+        ringMark(ctx, cx, cy, r * 1.5, colour, line);
+        for (const a of [0.25, 0.75, 1.25, 1.75]) {
+          const ang = a * Math.PI;
+          dot(ctx, cx + Math.cos(ang) * r * 1.86, cy + Math.sin(ang) * r * 1.86, line * 1.3, colour);
+        }
+    }
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.fillStyle = colour;
   ctx.strokeStyle = colour;
@@ -1946,6 +2282,14 @@ interface LabelSpec {
   gilded: boolean;
   /** The board's darker tone, for plates tooled straight onto the binding. */
   dark: string;
+  /**
+   * The board's own colour taken a step toward the ink — the flat second face
+   * used for the sunk panel behind an inset plate and for the offset plate
+   * under a paper label. Never a blur, and never derived from a light
+   * direction: it is the same "darker face beside a lighter one" the spine
+   * strip and the medallion field are.
+   */
+  sunk: string;
   /** Pale bindings need a label that is not the same cream as the board. */
   paleBoard: boolean;
   /** Which of the fifty hands the title is lettered in. */
@@ -1999,11 +2343,35 @@ function paintLabel(
 
   if (spec.inset && spec.style !== 'none') {
     // A recess, flattened into what a recess actually looks like when it is
-    // drawn rather than lit: one more line around the plate.
-    const g = h * 0.16;
-    wobbleRect(ctx, x - g, y - g, w + g * 2, h + g * 2, h * 0.2, spec.seed + 4);
-    pen(ctx, spec.gilded ? FLAT.giltPale : spec.dark, line * 0.8);
+    // DRAWN rather than lit: a sunk face a step deeper than the board, its own
+    // ink outline, a fine rule inside it, and a nick across each corner where
+    // the panel is cut away. One stroked rounded rectangle — which is all this
+    // was — reads as a stray box somebody forgot to erase.
+    const g = h * 0.22;
+    const px = x - g;
+    const py = y - g * 0.86;
+    const pw = w + g * 2;
+    const ph = h + g * 1.72;
+    panel(ctx, px, py, pw, ph, spec.sunk, {
+      radius: h * 0.24,
+      seed: spec.seed + 4,
+      width: Math.max(1, line * 0.7),
+    });
+    const rule = spec.gilded ? FLAT.giltPale : spec.dark;
+    const inset = g * 0.34;
+    wobbleRect(ctx, px + inset, py + inset, pw - inset * 2, ph - inset * 2, h * 0.2, spec.seed + 6);
+    pen(ctx, rule, line * 0.55);
     ctx.stroke();
+    // The four cut corners: the mark that says "sunk" without a light source.
+    const nick = g * 0.62;
+    for (const [nx, ny, sx, sy] of [
+      [px + inset, py + inset, 1, 1],
+      [px + pw - inset, py + inset, -1, 1],
+      [px + pw - inset, py + ph - inset, -1, -1],
+      [px + inset, py + ph - inset, 1, -1],
+    ] as const) {
+      stroke(ctx, nx + sx * nick, ny, nx, ny + sy * nick, rule, line * 0.5, spec.seed + nx + ny);
+    }
   }
 
   // Annotated: `FLAT` is `as const`, so an inferred `ink` would be pinned to
@@ -2015,6 +2383,17 @@ function paintLabel(
     // only in what outlines them.
     const paper = spec.style === 'label';
     const fill = paper ? (spec.paleBoard ? FLAT.creamDeep : FLAT.cream) : spec.dark;
+    if (paper) {
+      // An offset plate under the label — the app's whole shadow vocabulary
+      // (`0 3px 0`, gated by tests/styles.test.ts), which is a hard flat face
+      // and not a blur. A paper label is the one thing on this board that
+      // genuinely SITS ON the binding rather than being tooled into it, and
+      // without the offset it read as printed on.
+      const lift = Math.max(1, h * 0.075);
+      wobbleRect(ctx, x + lift * 0.5, y + lift, w, h, h * 0.2, spec.seed + 9);
+      ctx.fillStyle = spec.sunk;
+      ctx.fill();
+    }
     panel(ctx, x, y, w, h, fill, {
       radius: h * 0.2,
       seed: spec.seed,
@@ -2120,7 +2499,22 @@ function paintLabel(
  * Metal corner plates.
  *
  * Flat, so a plate is a filled corner shape with the one ink outline — no
- * bevel, no rivet catchlight, nothing that implies a light source.
+ * bevel, no rivet catchlight, nothing that implies a light source. Depth is
+ * where it is everywhere else: a darker flat face beside a lighter one, here a
+ * lip of the second metal tone along the plate's cut edge.
+ *
+ * ## The silhouette was wrong, and that is what read as cheap
+ *
+ * The first cut turned a hard right angle at the board's corner while the board
+ * itself is drawn with a `radius` — so every plate's point stuck out past the
+ * cover's own outline, four times per book. A corner piece is dressed to the
+ * board it protects; this one now follows the same curve, which is the whole
+ * fix for "a gold triangle stuck on".
+ *
+ * The rest is drawing rather than lighting: a lip along the cut, a fine rule
+ * inside it, and three rivets — one in the elbow and one down each arm, which
+ * is where they are on a real plate because that is where the leather needs
+ * holding.
  */
 function paintCornerPlates(
   ctx: FlatCtx,
@@ -2128,29 +2522,77 @@ function paintCornerPlates(
   y: number,
   w: number,
   h: number,
+  radius: number,
   gilded: boolean,
   ink: number,
 ): void {
   const size = Math.min(w * 0.17, h * 0.13);
   const fill = gilded ? FLAT.gilt : FLAT.timber;
+  const deep = gilded ? FLAT.ochreDark : FLAT.timberDark;
+  // Never let the corner curve eat the plate: a well-worn book rounds to
+  // `radius`, and a plate the size of its own corner is not a plate.
+  const r = Math.min(radius, size * 0.55);
+
   for (const [cx, cy, dx, dy] of [
     [x, y, 1, 1],
     [x + w, y, -1, 1],
     [x + w, y + h, -1, -1],
     [x, y + h, 1, -1],
   ] as const) {
-    ctx.beginPath();
-    ctx.moveTo(cx, cy + dy * size);
-    ctx.lineTo(cx, cy);
-    ctx.lineTo(cx + dx * size, cy);
-    // The inner edge is scooped, exactly as a real corner piece is cut.
-    ctx.quadraticCurveTo(cx + dx * size * 0.4, cy + dy * size * 0.4, cx, cy + dy * size);
+    /** The outer edge: down one side, round the board's own corner, out the other. */
+    const traceOuter = (): void => {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + dy * size);
+      ctx.lineTo(cx, cy + dy * r);
+      ctx.quadraticCurveTo(cx, cy, cx + dx * r, cy);
+      ctx.lineTo(cx + dx * size, cy);
+    };
+    /** The cut, scooped toward the corner exactly as a real plate is cut. */
+    const scoop = (): void => {
+      ctx.quadraticCurveTo(cx + dx * size * 0.4, cy + dy * size * 0.4, cx, cy + dy * size);
+    };
+
+    traceOuter();
+    scoop();
     ctx.closePath();
     ctx.fillStyle = fill;
     ctx.fill();
+
+    // The lip: the second metal face, laid along the cut and clipped to the
+    // plate so it cannot bleed onto the board.
+    ctx.save();
+    ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * size, cy);
+    scoop();
+    pen(ctx, deep, size * 0.19);
+    ctx.stroke();
+    ctx.restore();
+
+    traceOuter();
+    scoop();
+    ctx.closePath();
     pen(ctx, FLAT.ink, ink * 0.7);
     ctx.stroke();
-    dot(ctx, cx + dx * size * 0.24, cy + dy * size * 0.24, ink * 0.7, FLAT.ink);
+
+    // A fine rule inside the cut, and the three rivets.
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * size * 0.72, cy + dy * size * 0.06);
+    ctx.quadraticCurveTo(
+      cx + dx * size * 0.3,
+      cy + dy * size * 0.3,
+      cx + dx * size * 0.06,
+      cy + dy * size * 0.72,
+    );
+    pen(ctx, FLAT.ink, ink * 0.4);
+    ctx.stroke();
+    for (const [ax, ay] of [
+      [0.26, 0.26],
+      [0.6, 0.13],
+      [0.13, 0.6],
+    ] as const) {
+      dot(ctx, cx + dx * size * ax, cy + dy * size * ay, ink * 0.6, FLAT.ink);
+    }
   }
 }
 
@@ -2437,11 +2879,33 @@ export function renderCoverInto(
   // swallows both pale tones, so parchment tools in the deeper ochre.
   const frameInk = pale ? FLAT.ochreDark : gilded ? FLAT.giltPale : dark;
   const ornInk = pale ? FLAT.ochreDark : gilded ? FLAT.gilt : dark;
+  /**
+   * The board's own colour taken a step toward the ink.
+   *
+   * ONE tone, shared by the three places this file now shows depth as a second
+   * flat face — a banded frame's border, the sunk panel behind an inset plate,
+   * the field a medallion is struck into. Deriving all three from `face` is
+   * what keeps them reading as the same board rather than as three
+   * decorations: a board darkens one way, and it darkens by the same amount
+   * wherever it is cut into.
+   */
+  const sunk = mixHex(face, FLAT.ink, 0.17);
   // Fine ornament is the first thing to go as a book wears.
   const fineDetail = wear < 0.7;
   const fx = faceX + faceW * 0.085;
   const fy = by + bh * 0.055;
-  paintFrame(ctx, fx, fy, faceW * 0.83, bh * 0.89, params.frame, frameInk, fineDetail, seed + 31);
+  paintFrame(
+    ctx,
+    fx,
+    fy,
+    faceW * 0.83,
+    bh * 0.89,
+    params.frame,
+    frameInk,
+    sunk,
+    fineDetail,
+    seed + 31,
+  );
 
   /* ---- label ---- */
   const labelW = faceW * 0.62;
@@ -2455,6 +2919,7 @@ export function renderCoverInto(
       inset: params.insetPlate === true,
       gilded,
       dark,
+      sunk,
       paleBoard: pale,
       hand: handFor(params.titleFont),
       seed: seed + 41,
@@ -2469,12 +2934,21 @@ export function renderCoverInto(
   const medX = faceX + faceW * 0.5;
   const medY = by + bh * (opts.plate === false ? 0.62 : 0.72);
   // No shadow under it. A medallion is tooled *into* the board, not resting on
-  // it, and the first specimen's contact ellipse read as a thumbprint.
-  paintMedallion(ctx, medX, medY, medR, params.medallion, ornInk);
+  // it, and the first specimen's contact ellipse read as a thumbprint. The
+  // field it is struck into is concentric for exactly that reason.
+  //
+  // Which WAY the field steps is decided by the stamp, not by a light: a gilt
+  // stamp is pale, so it wants the deeper face under it; a blind-tooled one is
+  // the board's own dark, so a deeper field swallowed it — the specimen came
+  // back with the lyre on the green Smooth Cloth board less visible than
+  // before the field existed. Stepping the other way is the same depth model
+  // (a flat face beside another) and keeps the stamp readable either way.
+  const medField = gilded || pale ? sunk : mixHex(face, FLAT.cream, 0.24);
+  paintMedallion(ctx, medX, medY, medR, params.medallion, ornInk, medField, fineDetail);
 
   /* ---- fittings ---- */
   if (params.cornerProtectors) {
-    paintCornerPlates(ctx, bx, by, bw, bh, gilded, ink);
+    paintCornerPlates(ctx, bx, by, bw, bh, radius, gilded, ink);
   }
   if (params.charm && params.charm !== 'none') {
     paintCharm(ctx, params.charm, bx, by, bw, bh, params.charmColor ?? 0, face, ink, seed + 51);

@@ -10,7 +10,8 @@
  * ArrowUp / ArrowDown / Enter ring. What each menu adds is only its own verbs
  * and its own extra modes (an inline rename, a hand-drawn confirm):
  *
- *  - `ShelfMenu`      right-click a SPINE — the book's own verbs.
+ *  - `ShelfMenu`      right-click a SPINE — the book's own verbs, including
+ *                     the list of OTHER bookcases to send it to.
  *  - `ShelfSpotMenu`  right-click BARE PLANK — put a book here, grow the case,
  *                     dress the room.
  *  - `BookcaseMenu`   right-click a CASE CARD in the studio's library tab. The
@@ -33,12 +34,15 @@
 import {
   For,
   Show,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
   type JSX,
 } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { bookcases } from '../../data/bookcases';
+import { bookcaseOf } from '../../data/books';
 import type { Book } from '../../data/types';
 
 const MENU_W = 216;
@@ -54,6 +58,16 @@ export interface MenuItemSpec<A extends string = string> {
   readonly glyph: string;
   /** Ends something. Painted in the palette's one warm red. */
   readonly danger?: boolean;
+  /**
+   * Full text for the app's own tooltip, shown only when the label is CLIPPED.
+   *
+   * Every fixed row in these cards was written to fit; a row naming something
+   * the READER named (a bookcase) was not, and 216px of card is not much. It
+   * rides on the label span rather than on the button because that is the box
+   * that actually overflows, and `data-tooltip-clipped` compares scrollWidth
+   * against clientWidth on the element carrying it.
+   */
+  readonly tooltip?: string;
 }
 
 /**
@@ -64,7 +78,12 @@ export interface MenuItemSpec<A extends string = string> {
  * "delete"]` matching a row in a card the spec was not looking at is the kind
  * of failure that reads as flake.
  */
-type MenuAttr = 'data-shelf-action' | 'data-shelf-spot' | 'data-case-action';
+type MenuAttr =
+  | 'data-shelf-action'
+  | 'data-shelf-spot'
+  | 'data-case-action'
+  /** The "move to…" list — one row per OTHER bookcase, keyed by its id. */
+  | 'data-shelf-case';
 
 interface MenuCardProps {
   /** Anchor position, CSS px. Viewport coords when `portal`, else canvas-local. */
@@ -205,7 +224,13 @@ function MenuList<A extends string>(props: {
           <span class="shelf-menu__glyph" aria-hidden="true">
             {item.glyph}
           </span>
-          <span class="shelf-menu__label">{item.title}</span>
+          <span
+            class="shelf-menu__label"
+            data-tooltip={item.tooltip}
+            data-tooltip-clipped={item.tooltip === undefined ? undefined : ''}
+          >
+            {item.title}
+          </span>
         </button>
       )}
     </For>
@@ -242,7 +267,27 @@ export type ShelfMenuAction =
   | 'pin'
   | 'duplicate'
   | 'move'
+  /** Opens the list of other bookcases; the pick arrives on `onMoveTo`. */
+  | 'move-to'
   | 'delete';
+
+/**
+ * How many bookcases the "move to…" list shows before it offers "N more".
+ *
+ * Same cap the design pickers use (`rail/DesignStrip.CAP`). It is a ceiling
+ * rather than a page: a library with three cases sees three rows and no more
+ * control at all, and the reader who really does keep two dozen bookcases
+ * asks for the rest once.
+ */
+const CASE_CAP = 20;
+
+/*
+ * A row in the "move to…" list carries a BOOKCASE ID as its action, so the two
+ * rows that are not a bookcase need values no id can take. Ids are nanoid or
+ * `case-default`; the `nb:` prefix is not in either alphabet.
+ */
+const CASE_BACK = 'nb:back';
+const CASE_MORE = 'nb:more';
 
 export interface ShelfMenuProps {
   book: Book;
@@ -253,28 +298,93 @@ export interface ShelfMenuProps {
   onAction(action: ShelfMenuAction): void;
   /** Commit a rename (trimmed, non-empty). */
   onRename(title: string): void;
+  /** Reshelve the book into another bookcase, by id. */
+  onMoveTo(bookcaseId: string): void;
   onClose(): void;
 }
 
 export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
-  const [mode, setMode] = createSignal<'menu' | 'rename' | 'confirm'>('menu');
+  const [mode, setMode] = createSignal<'menu' | 'rename' | 'confirm' | 'move-to'>(
+    'menu',
+  );
+  /** The "N more" row was taken: show every case, not just the first CASE_CAP. */
+  const [allCases, setAllCases] = createSignal(false);
   let renameInput: HTMLInputElement | undefined;
 
-  const items = (): MenuItemSpec<ShelfMenuAction>[] => [
-    // Not "Open": it takes the book off the shelf and hands it to you, and
-    // the held card is where reading it is decided.
-    { action: 'open', title: 'Take it out', glyph: '📖' },
-    { action: 'rename', title: 'Rename…', glyph: '✎' },
-    { action: 'customize', title: 'Dress this book…', glyph: '🎨' },
-    {
-      action: 'pin',
-      title: props.pinned ? 'Unpin favorite' : 'Pin as favorite',
-      glyph: props.pinned ? '☆' : '⭐',
-    },
-    { action: 'duplicate', title: 'Duplicate', glyph: '⧉' },
-    { action: 'move', title: 'Move…', glyph: '⇄' },
-    { action: 'delete', title: 'Crumple (to trash)', glyph: '🗑', danger: true },
-  ];
+  /**
+   * The bookcases this book could go to — every one except the case it is
+   * already standing in.
+   *
+   * Read straight from the collection store rather than handed in as a prop:
+   * the card NAMES these, so it should be looking at the same list the library
+   * tab is. A case renamed behind the card re-labels its row instead of
+   * offering a name that no longer exists.
+   */
+  const otherCases = createMemo(() => {
+    const home = bookcaseOf(props.book);
+    return bookcases.list.filter((c) => c.id !== home);
+  });
+
+  const items = (): MenuItemSpec<ShelfMenuAction>[] => {
+    const out: MenuItemSpec<ShelfMenuAction>[] = [
+      // Not "Open": it takes the book off the shelf and hands it to you, and
+      // the held card is where reading it is decided.
+      { action: 'open', title: 'Take it out', glyph: '📖' },
+      { action: 'rename', title: 'Rename…', glyph: '✎' },
+      { action: 'customize', title: 'Dress this book…', glyph: '🎨' },
+      {
+        action: 'pin',
+        title: props.pinned ? 'Unpin favorite' : 'Pin as favorite',
+        glyph: props.pinned ? '☆' : '⭐',
+      },
+      { action: 'duplicate', title: 'Duplicate', glyph: '⧉' },
+      // Two moves, and the labels have to say which is which: this one is the
+      // ghost that follows the pointer to another slot on THIS case.
+      { action: 'move', title: 'Move on this shelf…', glyph: '⇄' },
+    ];
+    // Offered only when there is somewhere to go. A one-bookcase library would
+    // otherwise get a verb that opens an empty list, which is a worse answer
+    // than not being asked.
+    if (otherCases().length > 0) {
+      out.push({ action: 'move-to', title: 'Move to another case…', glyph: '📚' });
+    }
+    out.push({
+      action: 'delete',
+      title: 'Crumple (to trash)',
+      glyph: '🗑',
+      danger: true,
+    });
+    return out;
+  };
+
+  /** The other bookcases as rows, with the way back at the top-left. */
+  const caseItems = (): MenuItemSpec<string>[] => {
+    const all = otherCases();
+    const shown = allCases() ? all : all.slice(0, CASE_CAP);
+    const rows: MenuItemSpec<string>[] = [
+      { action: CASE_BACK, title: 'Back', glyph: '‹' },
+      ...shown.map((c) => ({
+        action: c.id,
+        title: c.name,
+        glyph: '📚',
+        tooltip: c.name,
+      })),
+    ];
+    const hidden = all.length - shown.length;
+    if (hidden > 0) {
+      rows.push({ action: CASE_MORE, title: `${hidden} more…`, glyph: '⋯' });
+    }
+    return rows;
+  };
+
+  /**
+   * How tall the card is allowed to get, for `MenuCard`'s bottom clamp. Fixed
+   * at the base card's height everywhere except the case list, which is as
+   * long as the reader's library — a clamp that assumed eight rows would let a
+   * twelve-case list run off the bottom of the window.
+   */
+  const reach = (): number =>
+    mode() === 'move-to' ? Math.min(620, 96 + caseItems().length * 34) : 300;
 
   function run(action: ShelfMenuAction): void {
     if (action === 'rename') {
@@ -289,7 +399,25 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
       setMode('confirm');
       return;
     }
+    if (action === 'move-to') {
+      setAllCases(false);
+      setMode('move-to');
+      return;
+    }
     props.onAction(action);
+    props.onClose();
+  }
+
+  function runCase(action: string): void {
+    if (action === CASE_BACK) {
+      setMode('menu');
+      return;
+    }
+    if (action === CASE_MORE) {
+      setAllCases(true);
+      return;
+    }
+    props.onMoveTo(action);
     props.onClose();
   }
 
@@ -304,11 +432,24 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
       x={props.x}
       y={props.y}
       label={`Book actions for ${props.book.title}`}
+      reach={reach()}
       onClose={() => props.onClose()}
     >
       <Show when={mode() === 'menu'}>
         <MenuTitle name={props.book.title} />
         <MenuList items={items()} attr="data-shelf-action" onRun={run} />
+      </Show>
+
+      <Show when={mode() === 'move-to'}>
+        <div class="shelf-menu__title">Move to another case</div>
+        {/* The promise the move actually keeps. An undressed book takes its
+            pigment from the room, so this one is about to have the colours it
+            wears HERE pinned to it — say so, because "it will look different
+            over there" is the fear that stops the reader clicking. */}
+        <p class="shelf-menu__hint shelf-menu__hint-tight">
+          It keeps the colours it has here.
+        </p>
+        <MenuList items={caseItems()} attr="data-shelf-case" onRun={runCase} />
       </Show>
 
       <Show when={mode() === 'rename'}>

@@ -118,6 +118,11 @@ export const BLOCK_EFFECT_TYPES = [
   'stamp',
   'tag',
   'marginalia',
+  'pressed-flower',
+  'ticket-stub',
+  'postcard',
+  'ledger',
+  'photo-corner',
 ] as const;
 
 /**

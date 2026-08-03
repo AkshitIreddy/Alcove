@@ -145,6 +145,11 @@ export const CONTAINER_NODE_NAMES: Record<
   stamp: 'stamp',
   tag: 'tag',
   marginalia: 'marginalia',
+  'pressed-flower': 'pressed-flower',
+  'ticket-stub': 'ticket-stub',
+  postcard: 'postcard',
+  ledger: 'ledger',
+  'photo-corner': 'photo-corner',
 };
 
 const WASH_NAMES: readonly string[] = WASH_COLORS;
@@ -167,6 +172,11 @@ const CONTAINER_FALLBACK_ICON: Record<string, StickerId> = {
   stamp: 'flower',
   tag: 'leaf',
   marginalia: 'sparkle',
+  'pressed-flower': 'flower',
+  'ticket-stub': 'star',
+  postcard: 'sun',
+  ledger: 'leaf',
+  'photo-corner': 'sun',
   generic: 'sparkle',
 };
 
@@ -500,6 +510,77 @@ function fallbackContainer(
   ];
 }
 
+/**
+ * Which containers declare a `color` attribute, and which declare a `title`.
+ *
+ * These mirror `addAttributes()` in src/editor/nodes/containers.ts. They are
+ * tables rather than a `case` per container because the mapping had already
+ * drifted once: index-card, envelope, stamp, tag and marginalia are REAL nodes
+ * and were nowhere in this switch, so every one of them arrived from script as
+ * a callout wearing a `containerName` marker — the script round-tripped, and
+ * the page showed the wrong object. `CONTAINER_NODE_NAMES` above is
+ * compile-checked against `ContainerName`; the switch that fed it was not.
+ */
+const COLOR_CONTAINERS: readonly string[] = [
+  'sticky-note',
+  'washi-box',
+  'quote-card',
+  'banner',
+  'envelope',
+  'stamp',
+  'tag',
+  'pressed-flower',
+  'ticket-stub',
+  'postcard',
+  'ledger',
+  'photo-corner',
+];
+
+const TITLE_CONTAINERS: readonly string[] = [
+  'card',
+  'index-card',
+  'pressed-flower',
+  'ticket-stub',
+  'postcard',
+  'ledger',
+  'photo-corner',
+];
+
+/**
+ * The ordinary case: a block container whose children map straight through,
+ * with `color` and/or `title` promoted to real node attrs where the node
+ * declares them. Everything else on the block stays in the extras so the
+ * export round-trips.
+ */
+function plainContainer(
+  block: ContainerBlock,
+  options: ToTiptapOptions,
+): TiptapNode[] {
+  const name = block.name as Exclude<ContainerName, 'generic'>;
+  if (!hasContainerNode(name, options)) return fallbackContainer(block, options);
+  const promoted: Record<string, unknown> = {};
+  const used: string[] = [];
+  if (COLOR_CONTAINERS.includes(name) && isWashName(block.attrs.color)) {
+    promoted.color = block.attrs.color;
+    used.push('color');
+  }
+  if (
+    TITLE_CONTAINERS.includes(name) &&
+    typeof block.attrs.title === 'string' &&
+    block.attrs.title !== ''
+  ) {
+    promoted.title = block.attrs.title;
+    used.push('title');
+  }
+  return [
+    node(
+      CONTAINER_NODE_NAMES[name],
+      { ...promoted, ...extraAttrs(block.attrs, used) },
+      blockChildren(block.children, options),
+    ),
+  ];
+}
+
 /** One `col` node from a script col container. */
 function mapColumn(block: ContainerBlock, options: ToTiptapOptions): TiptapNode {
   const width =
@@ -570,38 +651,19 @@ function mapContainer(
     case 'sticky-note':
     case 'washi-box':
     case 'quote-card':
-    case 'banner': {
-      if (!hasContainerNode(block.name, options)) {
-        return fallbackContainer(block, options);
-      }
-      const color = isWashName(block.attrs.color)
-        ? { color: block.attrs.color }
-        : {};
-      return [
-        node(
-          block.name,
-          { ...color, ...extraAttrs(block.attrs, 'color' in color ? ['color'] : []) },
-          blockChildren(block.children, options),
-        ),
-      ];
-    }
-
-    case 'card': {
-      if (!hasContainerNode('card', options)) {
-        return fallbackContainer(block, options);
-      }
-      const title =
-        typeof block.attrs.title === 'string' && block.attrs.title !== ''
-          ? { title: block.attrs.title }
-          : {};
-      return [
-        node(
-          'card',
-          { ...title, ...extraAttrs(block.attrs, 'title' in title ? ['title'] : []) },
-          blockChildren(block.children, options),
-        ),
-      ];
-    }
+    case 'banner':
+    case 'card':
+    case 'index-card':
+    case 'envelope':
+    case 'stamp':
+    case 'tag':
+    case 'marginalia':
+    case 'pressed-flower':
+    case 'ticket-stub':
+    case 'postcard':
+    case 'ledger':
+    case 'photo-corner':
+      return plainContainer(block, options);
 
     case 'spoiler': {
       if (!hasContainerNode('spoiler', options)) {

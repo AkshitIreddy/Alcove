@@ -200,6 +200,11 @@ export type ContainerName =
   | "stamp"
   | "tag"
   | "marginalia"
+  | "pressed-flower"
+  | "ticket-stub"
+  | "postcard"
+  | "ledger"
+  | "photo-corner"
   | "generic";
 
 export interface ContainerBlock extends BlockBase {

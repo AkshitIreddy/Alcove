@@ -171,16 +171,29 @@ export async function countBooksInBookcase(bookcaseId: string): Promise<number> 
  * rests on an assumption written down in `defaultThemeForOrd` — that a book
  * lives in exactly one case and therefore only ever sees one room.
  *
- * This function breaks that assumption. A book that has never been dressed will
- * come out a different colour in its new case, and recognising a spine is how a
- * reader finds a book — so the object they were looking for stops being the
- * object they remember.
+ * This function breaks that assumption. A book will come out a different colour
+ * in its new case, and recognising a spine is how a reader finds a book — so
+ * the object they were looking for stops being the object they remember.
  *
  * `keepAppearance` is the resolved style to pin before moving, so the book
  * keeps the look it had. The caller supplies it because resolving a style needs
  * `src/art`, and the data layer does not import art. Pass `null` (the default)
- * only when the book already has an explicit style, or when the reader has
- * asked for it to take on its new room.
+ * when the reader has asked for the book to take on its new room.
+ *
+ * ## It is a FLOOR under the book's own style, not a replacement for it
+ *
+ * This started as all-or-nothing — pin the whole blob, but only for a book
+ * with no `cover_meta.style` at all — and that guard protected almost nothing.
+ * `createBook` dresses every new book with `freshBookStyleOverrides`, which
+ * pins seventeen fields and *deliberately drops `pigment` and `hueJitter`* so
+ * the colour still follows the room. So the typical book has a style, was
+ * therefore skipped, and went on being repainted by the very field the guard
+ * existed to hold still.
+ *
+ * So the merge runs the other way: the resolved face fills the gaps and the
+ * book's own entries win outright, which keeps the older rule ("an explicit
+ * per-book override always wins", library-themes.md §4) exactly as it was
+ * while finally covering the fields nobody chose.
  */
 export async function moveBookToBookcase(
   id: string,
@@ -194,8 +207,15 @@ export async function moveBookToBookcase(
   // Freeze first, move second: if the write below succeeds and the style write
   // does not, the book is already in the new room wearing the new room's
   // colours, which is the state this exists to prevent.
-  if (keepAppearance !== null && readBookStyleOverrides(book) === null) {
-    await saveBookStyleOverrides(id, keepAppearance);
+  if (keepAppearance !== null) {
+    const own = readBookStyleOverrides(book);
+    if (own === null) {
+      await saveBookStyleOverrides(id, keepAppearance);
+    } else if (Object.keys(keepAppearance).some((key) => !(key in own))) {
+      await saveBookStyleOverrides(id, { ...keepAppearance, ...own });
+    }
+    // else: the book already pins everything the caller resolved. Writing an
+    // identical blob would only bump `updated_at` and re-sort "recent".
   }
 
   const targetFloor = Math.max(0, floor ?? book.floor);

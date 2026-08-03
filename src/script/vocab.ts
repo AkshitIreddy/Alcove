@@ -295,6 +295,16 @@ export const CONTAINER_NAMES = [
   "stamp",
   "tag",
   "marginalia",
+  // The keepsake drawer — things a hand-made notebook has stuck INTO it
+  // rather than written on it. Each one is a different OCCASION, which is the
+  // only reason a new container earns its name: a pressed flower is a day in
+  // a field, a ticket stub is an evening out, a ledger is money. A set that
+  // differed only in border radius would be one container with a colour attr.
+  "pressed-flower",
+  "ticket-stub",
+  "postcard",
+  "ledger",
+  "photo-corner",
 ] as const;
 
 /**
@@ -325,6 +335,11 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   stamp: { name: "stamp" },
   tag: { name: "tag" },
   marginalia: { name: "marginalia" },
+  pressedflower: { name: "pressed-flower" },
+  ticketstub: { name: "ticket-stub" },
+  postcard: { name: "postcard" },
+  ledger: { name: "ledger" },
+  photocorner: { name: "photo-corner" },
   // friendly aliases
   note: { name: "sticky-note" },
   sticky: { name: "sticky-note" },
@@ -347,13 +362,30 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   filecard: { name: "index-card" },
   flashcard: { name: "index-card" },
   letter: { name: "envelope" },
-  postcard: { name: "stamp" },
+  // `postcard` USED to land on `stamp`, back when the stamp was the only
+  // postal thing in the drawer. It is a container of its own now, and a
+  // divided-back card is what anyone writing `::: postcard` meant; the stamp
+  // keeps `postage`, which is what it actually is.
   postage: { name: "stamp" },
   luggagetag: { name: "tag" },
   label: { name: "tag" },
   sidenote: { name: "marginalia" },
   margin: { name: "marginalia" },
   aside: { name: "marginalia" },
+  specimen: { name: "pressed-flower" },
+  herbarium: { name: "pressed-flower" },
+  botanical: { name: "pressed-flower" },
+  pressed: { name: "pressed-flower" },
+  ticket: { name: "ticket-stub" },
+  stub: { name: "ticket-stub" },
+  admitone: { name: "ticket-stub" },
+  postalcard: { name: "postcard" },
+  accounts: { name: "ledger" },
+  tally: { name: "ledger" },
+  expenses: { name: "ledger" },
+  photocorners: { name: "photo-corner" },
+  photomount: { name: "photo-corner" },
+  snapshot: { name: "photo-corner" },
   // callout variants as their own directive names
   info: { name: "callout", attrs: { variant: "info" } },
   tip: { name: "callout", attrs: { variant: "tip" } },
@@ -624,6 +656,26 @@ export const CONTAINER_DOCS: Record<ContainerDirectiveName, ContainerDoc> = {
   marginalia: {
     renders: "small side note in a ruled margin",
     note: "an afterthought, in a smaller hand",
+  },
+  "pressed-flower": {
+    renders: "a botanical specimen taped to a mount card",
+    note: "`title` is the label — species, place, date",
+  },
+  "ticket-stub": {
+    renders: "a torn ticket with a perforated stub",
+    note: "concerts, trains, cinemas; `title` is the stub legend",
+  },
+  postcard: {
+    renders: "a divided-back postcard — message left, address lines right",
+    note: "`title` is the postmark",
+  },
+  ledger: {
+    renders: "a ruled accounts strip with a figures column",
+    note: "money, tallies, scores; `title` names the account",
+  },
+  "photo-corner": {
+    renders: "a print held to the page by four paper corners",
+    note: "`title` is the pencil caption underneath",
   },
 };
 

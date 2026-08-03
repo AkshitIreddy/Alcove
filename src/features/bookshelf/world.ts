@@ -33,6 +33,7 @@ import {
   deleteBook,
   listBooksByFloorRange,
   moveBook,
+  moveBookToBookcase,
   nextFreeSlot,
   touchBookOpened,
 } from '../../data/books';
@@ -769,6 +770,20 @@ export class ShelfWorld {
       };
       globals['__shelfBookMeta'] = (bookId: string): unknown =>
         this.store.findBook(bookId)?.coverMeta ?? null;
+      // The book's APPLIED face — the merged style the spine on screen was
+      // baked from, room bias and all. `__shelfBookMeta` shows what is stored,
+      // which for an undressed book is nothing at all; only this can answer
+      // "does it still look like itself over here?".
+      globals['__shelfBookStyle'] = (bookId: string): unknown => {
+        const book = this.store.findBook(bookId);
+        return book === null ? null : { ...this.factory.getStyle(book).style };
+      };
+      // Reshelving between cases, driven the way the right-click card drives
+      // it — appearance guard, floor clamp and refresh included.
+      globals['__shelfMoveBookToCase'] = (
+        bookId: string,
+        bookcaseId: string,
+      ): Promise<boolean> => this.moveBookToCase(bookId, bookcaseId);
       globals['__shelfSpineRect'] = (bookId: string): RectLike | null =>
         this.spineRectOf(bookId);
       // Take a book off the shelf the way a click does, for probes that need
@@ -898,6 +913,60 @@ export class ShelfWorld {
    */
   async openBookcase(id: string): Promise<void> {
     await switchBookcase(id);
+  }
+
+  /**
+   * Send a book to ANOTHER bookcase, and let it keep the face it has here.
+   *
+   * Two things the data layer cannot do for itself, which is why this sits in
+   * the world rather than in `moveBookToBookcase`:
+   *
+   *  1. **The appearance.** A book draws whatever it does not pin for itself
+   *     from the ROOM's ramp (`themeSpineDefaults`) — and for almost every
+   *     book that is the pigment, because `freshBookStyleOverrides` pins
+   *     everything EXCEPT the colour. The same seed therefore comes out a
+   *     different colour in a different case, and recognising a spine is how a
+   *     reader finds a book. `keepAppearance` is that guard, and the style it
+   *     wants is the one THIS room resolved: `factory.getStyle` is the very
+   *     object the spine on screen was baked from, so what gets pinned is what
+   *     the reader is looking at, not a second guess at it. It is offered for
+   *     every book and merged UNDER the book's own entries by the data layer,
+   *     so a reader's explicit choice is never overwritten.
+   *  2. **The landing floor.** A book on floor 9 sent to an eight-floor case
+   *     would stand on a floor that case does not draw: present in the table,
+   *     invisible on the shelf. Clamped here because `data/books.ts` must not
+   *     import `data/bookcases.ts` (that import already runs the other way, to
+   *     cascade-delete a case's books).
+   *
+   * Returns false when there was nothing to move.
+   */
+  async moveBookToCase(bookId: string, bookcaseId: string): Promise<boolean> {
+    if (this.destroyed || bookcaseId === this.caseId) return false;
+    const book = this.store.findBook(bookId);
+    if (book === null) return false;
+    const target = snapshotBookcases().list.find((c) => c.id === bookcaseId);
+    if (target === undefined) return false;
+
+    const keepAppearance = { ...this.factory.getStyle(book).style } as unknown as
+      Record<string, unknown>;
+    const floor = clamp(book.floor, 0, clampFloorCount(target.floors) - 1);
+
+    // A ghost following the pointer is about to lose the book underneath it.
+    this.cancelMove();
+    this.clearKbSelection();
+    this.clearHover();
+    void play('drop-thump');
+    try {
+      await moveBookToBookcase(bookId, bookcaseId, floor, keepAppearance);
+    } catch {
+      // DB failure: the refresh below re-syncs whatever state persisted.
+    }
+    if (this.destroyed) return false;
+    // Its style is pinned now, so the baked spine has to be re-derived from
+    // the override blob rather than from the room it just left.
+    this.factory.invalidate(bookId);
+    await this.refreshData();
+    return true;
   }
 
   /* ---------------------------- case geometry ----------------------------- */

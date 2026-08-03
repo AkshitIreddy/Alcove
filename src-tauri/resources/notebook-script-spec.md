@@ -286,6 +286,11 @@ The container names:
 | `stamp` | perforated postage stamp with a postmark |
 | `tag` | luggage tag on a string (a short label for what follows) |
 | `marginalia` | small side note in a ruled margin — an afterthought, in a smaller hand |
+| `pressed-flower` | a botanical specimen taped to a mount card — `title` is the label — species, place, date |
+| `ticket-stub` | a torn ticket with a perforated stub — concerts, trains, cinemas; `title` is the stub legend |
+| `postcard` | a divided-back postcard — message left, address lines right — `title` is the postmark |
+| `ledger` | a ruled accounts strip with a figures column — money, tallies, scores; `title` names the account |
+| `photo-corner` | a print held to the page by four paper corners — `title` is the pencil caption underneath |
 
 Unknown names are **not errors** — they render as a plain decorated box. Name
 matching is generous too: case, spaces, `-` and `_` are all ignored, so
@@ -304,9 +309,14 @@ matching is generous too: case, spaces, `-` and `_` are all ignored, so
 | `::: details`, `::: hidden` | `::: spoiler` |
 | `::: recipe`, `::: filecard`, `::: flashcard` | `::: index-card` |
 | `::: letter` | `::: envelope` |
-| `::: postcard`, `::: postage` | `::: stamp` |
+| `::: postage` | `::: stamp` |
 | `::: luggagetag`, `::: label` | `::: tag` |
 | `::: sidenote`, `::: margin`, `::: aside` | `::: marginalia` |
+| `::: specimen`, `::: herbarium`, `::: botanical`, `::: pressed` | `::: pressed-flower` |
+| `::: ticket`, `::: stub`, `::: admitone` | `::: ticket-stub` |
+| `::: postalcard` | `::: postcard` |
+| `::: accounts`, `::: tally`, `::: expenses` | `::: ledger` |
+| `::: photocorners`, `::: photomount`, `::: snapshot` | `::: photo-corner` |
 | `::: info` | `::: callout {variant=info}` |
 | `::: tip`, `::: hint` | `::: callout {variant=tip}` |
 | `::: warn`, `::: warning`, `::: caution` | `::: callout {variant=warn}` |
@@ -664,13 +674,14 @@ BLOCKS                              INLINE
 | a | b |       table               [t](url)     link
 ![alt](src)     image               \*           literal star
 
-CONTAINERS (::: name ... :::)           DIAGRAM FENCES
-sticky-note  polaroid     washi-box     ```tree      indent = nesting
-callout      columns      col           ```mindmap   same, radial
-image-row    card         quote-card    ```graph     A -> B: label
-spoiler      banner       index-card    ```flowchart same as graph
-envelope     stamp        tag           ```timeline  label: text | attrs
-marginalia
+CONTAINERS (::: name ... :::)                   DIAGRAM FENCES
+sticky-note     polaroid        washi-box       ```tree      indent = nesting
+callout         columns         col             ```mindmap   same, radial
+image-row       card            quote-card      ```graph     A -> B: label
+spoiler         banner          index-card      ```flowchart same as graph
+envelope        stamp           tag             ```timeline  label: text | attrs
+marginalia      pressed-flower  ticket-stub
+postcard        ledger          photo-corner
 ATTRS  {key=value, key2=value2}
 colors: amber terracotta moss lemon sky blush graphite
 color= sticker= tape= washi= rotate= paper= shadow= underline= frame= font= ink= size= align=

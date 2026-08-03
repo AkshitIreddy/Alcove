@@ -1078,6 +1078,75 @@ function leaf(ctx: FlatCtx, len: number, wide: number, angle: number): void {
   ctx.restore();
 }
 
+/**
+ * A leaf with LOBES down its outer edge and a tip that turns aside — the
+ * acanthus every real damask, arabesque and plaster medallion is built out of.
+ *
+ * {@link leaf} is an almond: two arcs meeting at a point. Five almonds fanned
+ * out of a waist read as ONE DARK BLOB at wall size, which is exactly what the
+ * damask's palmette was, and shrinking it only made a smaller blob. The fix is
+ * entirely in the SILHOUETTE — three scallops stepping down the outer edge and
+ * a tip pulled to one side give the eye something to resolve at twenty pixels.
+ * No lighting is involved and none would help: a blob with a highlight on it is
+ * a shiny blob.
+ *
+ * Same call convention as {@link leaf} — grows along +y from the origin, `len`
+ * negative to grow up, `wide` negative to mirror — so the two are
+ * interchangeable at a call site and a motif can be enriched one leaf at a time.
+ */
+function acanthus(ctx: FlatCtx, len: number, wide: number, angle: number, curl = 0.5): void {
+  ctx.save();
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  // Up the lobed edge: three scallops, each shorter than the one below it.
+  ctx.quadraticCurveTo(wide * 1.22, len * 0.17, wide * 0.76, len * 0.35);
+  ctx.quadraticCurveTo(wide * 1.14, len * 0.47, wide * 0.58, len * 0.63);
+  ctx.quadraticCurveTo(wide * 0.92, len * 0.75, wide * 0.34, len * 0.86);
+  // The tip, turned off the axis. This is the whole point of the shape.
+  ctx.quadraticCurveTo(wide * 0.66, len * 0.99, wide * curl, len);
+  // And back down the smooth inner edge.
+  ctx.bezierCurveTo(-wide * 0.44, len * 0.72, -wide * 0.52, len * 0.3, 0, 0);
+  ctx.closePath();
+  ctx.restore();
+}
+
+/**
+ * The vein up the middle of a leaf, with a few ribs off it.
+ *
+ * Drawn in the motif's own outline colour at a fraction of the weight, so it
+ * reads as the same pen that drew the leaf coming back over it. A leaf with a
+ * midrib is a leaf; a leaf without one is a shape, and a field of shapes is
+ * what "cheap" looks like at wall size.
+ */
+function midrib(
+  ctx: FlatCtx,
+  c: Paint,
+  len: number,
+  wide: number,
+  angle: number,
+  width: number,
+  ribs = 3,
+): void {
+  ctx.save();
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, len * 0.08);
+  ctx.quadraticCurveTo(wide * 0.14, len * 0.5, 0, len * 0.9);
+  for (let i = 0; i < ribs; i++) {
+    const t = 0.26 + (i * 0.46) / Math.max(1, ribs - 1);
+    for (const side of [1, -1] as const) {
+      ctx.moveTo(0, len * t);
+      ctx.quadraticCurveTo(wide * side * 0.34, len * (t + 0.06), wide * side * 0.46, len * (t + 0.16));
+    }
+  }
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, width);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** A five-pointed star, point up. */
 function starPath(ctx: FlatCtx, r: number, points = 5, inner = 0.42): void {
   ctx.beginPath();
@@ -1555,6 +1624,19 @@ const star: MotifFn = (ctx, r, seed, c, at) => {
   ctx.rotate(jitter(seed) * 0.16 * c.edge.wobble);
   starPath(ctx, r * 0.52);
   ink(ctx, c, w);
+  // Rays scored out to each point, so the star is FACETED rather than flat —
+  // the way a stamped gilt star on a real paper is cut. Five drawn lines, no
+  // second value anywhere: this is a carved edge, not a lit one.
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * r * 0.44, Math.sin(a) * r * 0.44);
+  }
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.4);
+  ctx.lineCap = 'round';
+  ctx.stroke();
   ctx.restore();
   pip(ctx, 0, 0, r * 0.12, c.accent, c, w * 0.6);
 };
@@ -1613,6 +1695,10 @@ const sprig: MotifFn = (ctx, r, seed, c) => {
     ctx.translate(0, h * t);
     leaf(ctx, r * len * side, r * len * 0.42 * side, side > 0 ? -1.15 : 1.15);
     ink(ctx, c, w * 0.85);
+    // A vein up each leaf. At the petite scale this sprig is often drawn at,
+    // the leaves are eight pixels long and the midrib is the only thing that
+    // says they are leaves rather than ticks.
+    midrib(ctx, c, r * len * side, r * len * 0.42 * side, side > 0 ? -1.15 : 1.15, w * 0.32, 2);
     ctx.restore();
   }
   // The head. A single blob here was the whole reason the first field read as
@@ -1628,6 +1714,20 @@ const sprig: MotifFn = (ctx, r, seed, c) => {
     leaf(ctx, petal * 1.5, petal * 0.62, 0);
     ink(ctx, c, w * 0.7, c.accent);
     ctx.restore();
+  }
+  // A ring of stamens round the eye, so the head has an inside as well as an
+  // outline — five specks is the whole difference between a flower and a badge.
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.62;
+    pip(
+      ctx,
+      Math.cos(a) * petal * 0.62,
+      Math.sin(a) * petal * 0.62,
+      Math.max(0.6, r * 0.038),
+      c.bloom,
+      c,
+      0,
+    );
   }
   pip(ctx, 0, 0, r * 0.1, c.bloom, c, w * 0.65);
   ctx.restore();
@@ -1687,9 +1787,20 @@ const laurel: MotifFn = (ctx, r, seed, c, at) => {
       // `leaf` grows along +y, so -90° aims it down the rotation just applied.
       leaf(ctx, r * 0.52, r * 0.19, -Math.PI / 2);
       ink(ctx, c, w * 0.75);
+      midrib(ctx, c, r * 0.52, r * 0.19, -Math.PI / 2, w * 0.3, 2);
       ctx.restore();
     }
   }
+  // The tie at the butt of the branch — a laurel is CUT and bound, and the two
+  // crossed bands are what say so. Without them the spray floats.
+  ctx.save();
+  ctx.translate(p0[0] + r * 0.06, p0[1] - r * 0.04);
+  ctx.rotate(-0.5);
+  for (const dy of [-r * 0.05, r * 0.05] as const) {
+    roundedRect(ctx, -r * 0.09, dy - r * 0.022, r * 0.18, r * 0.044, r * 0.02 * c.edge.round);
+    ink(ctx, c, w * 0.5, c.accent);
+  }
+  ctx.restore();
   // A berry at the tip and two smaller ones tucked behind it — one berry on a
   // branch reads as a full stop, three read as fruit.
   pip(ctx, p2[0], p2[1], r * 0.13, c.accent, c, w * 0.7);
@@ -1735,59 +1846,118 @@ const damask: MotifFn = (ctx, r, seed, c) => {
   // lightbulb instead. The first control sits close to the axis (the curve
   // leaves the tip almost vertically), the second swings wide (the flare), and
   // the widest place is a little above centre.
-  ctx.beginPath();
-  ctx.moveTo(0, -H);
-  ctx.bezierCurveTo(W * 0.12, -H * 0.84, W * 0.66, -H * 0.62, W * 0.94, -H * 0.08);
-  ctx.bezierCurveTo(W * 1.0, H * 0.16, W * 0.5, H * 0.3, W * 0.3, H * 0.58);
-  ctx.bezierCurveTo(W * 0.2, H * 0.8, W * 0.09, H * 0.88, 0, H);
-  ctx.bezierCurveTo(-W * 0.09, H * 0.88, -W * 0.2, H * 0.8, -W * 0.3, H * 0.58);
-  ctx.bezierCurveTo(-W * 0.5, H * 0.3, -W * 1.0, H * 0.16, -W * 0.94, -H * 0.08);
-  ctx.bezierCurveTo(-W * 0.66, -H * 0.62, -W * 0.12, -H * 0.84, 0, -H);
-  ctx.closePath();
+  //
+  // Traced through a function taking a scale, so the FILLET below is the same
+  // curve rather than an approximation of it. Two ogees that nearly agree read
+  // as a printing fault; one inside the other reads as a moulding.
+  // The widest place sits a THIRD of the way down rather than at the middle,
+  // and there is a second small flare in the tail below the waist. With the
+  // bulge at the centre the two halves are the same length and the silhouette
+  // is a rhombus — which is what the first repair still drew, kite and all. An
+  // onion is asymmetric top to bottom: broad shoulders high up, a waist, then a
+  // long drawn-out point.
+  const ogeeOutline = (k: number): void => {
+    const kw = W * k;
+    const kh = H * k;
+    ctx.beginPath();
+    ctx.moveTo(0, -kh);
+    ctx.bezierCurveTo(kw * 0.1, -kh * 0.88, kw * 0.66, -kh * 0.8, kw * 0.96, -kh * 0.34);
+    ctx.bezierCurveTo(kw * 1.08, -kh * 0.02, kw * 0.72, kh * 0.14, kw * 0.4, kh * 0.34);
+    ctx.bezierCurveTo(kw * 0.3, kh * 0.46, kw * 0.34, kh * 0.66, kw * 0.2, kh * 0.84);
+    ctx.bezierCurveTo(kw * 0.12, kh * 0.94, kw * 0.06, kh * 0.97, 0, kh);
+    ctx.bezierCurveTo(-kw * 0.06, kh * 0.97, -kw * 0.12, kh * 0.94, -kw * 0.2, kh * 0.84);
+    ctx.bezierCurveTo(-kw * 0.34, kh * 0.66, -kw * 0.3, kh * 0.46, -kw * 0.4, kh * 0.34);
+    ctx.bezierCurveTo(-kw * 0.72, kh * 0.14, -kw * 1.08, -kh * 0.02, -kw * 0.96, -kh * 0.34);
+    ctx.bezierCurveTo(-kw * 0.66, -kh * 0.8, -kw * 0.1, -kh * 0.88, 0, -kh);
+    ctx.closePath();
+  };
+  ogeeOutline(1);
   ink(ctx, c, w);
+  // The fillet: a second band run a hair inside the frame. Every damask ever
+  // printed has one, and it is the cheapest honest way to stop a big flat
+  // device reading as a sticker — one more drawn edge, not a lighter or a
+  // darker anything.
+  ogeeOutline(0.8);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.42);
+  ctx.lineJoin = 'round';
+  ctx.stroke();
 
-  // The palmette inside: five leaves fanning up out of the waist, longest in
-  // the middle. Solid bloom rather than ink at half alpha — the old inner fan
-  // was three grey smudges, which is what a flat fill turns into the moment it
-  // is drawn transparent.
-  for (const [tilt, len, wide] of [
-    [0, 0.74, 0.3],
-    [-0.52, 0.58, 0.26],
-    [0.52, 0.58, 0.26],
-    [-1.0, 0.4, 0.2],
-    [1.0, 0.4, 0.2],
+  // The palmette inside: five ACANTHUS leaves fanning up out of the waist,
+  // longest in the middle, each with a tip that turns and a midrib drawn back
+  // over it. Five almonds here is what made the device read as a kite with a
+  // green blob on it — the lobes and the turn are the whole repair, and the
+  // fills alternate so the fan resolves into separate leaves rather than one
+  // mass.
+  for (const [tilt, len, side, fill] of [
+    [0, 0.74, 1, true],
+    [-0.5, 0.6, -1, false],
+    [0.5, 0.6, 1, false],
+    [-0.98, 0.42, -1, true],
+    [0.98, 0.42, 1, true],
   ] as const) {
     ctx.save();
-    ctx.translate(0, H * 0.46);
-    leaf(ctx, -H * len, W * wide, tilt);
-    ink(ctx, c, w * 0.6, c.bloom);
+    ctx.translate(0, H * 0.32);
+    acanthus(ctx, -H * len, W * 0.3 * side, tilt, 0.46);
+    ink(ctx, c, w * 0.62, fill ? true : c.bloom);
+    midrib(ctx, c, -H * len, W * 0.3 * side, tilt, w * 0.34, 2);
+    ctx.restore();
+  }
+  // A pair of tight curls at the waist the fan springs from, so the palmette
+  // grows out of something instead of being planted in the frame.
+  for (const side of [1, -1] as const) {
+    ctx.save();
+    ctx.translate(side * W * 0.18, H * 0.34);
+    volute(ctx, r * 0.15, 0.72, side > 0 ? 1 : -1, side > 0 ? Math.PI * 0.1 : Math.PI * 0.9);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = Math.max(0.7, w * 0.5);
+    ctx.lineCap = 'round';
+    ctx.stroke();
     ctx.restore();
   }
 
-  // A trefoil under the top point, in the detail colour: the crown.
-  for (const [dx, dy, rr] of [
-    [0, -0.62, 0.085],
-    [-0.26, -0.46, 0.06],
-    [0.26, -0.46, 0.06],
-  ] as const) {
-    pip(ctx, W * dx, H * dy, r * rr, c.accent, c, w * 0.55);
+  // The crown under the top point: a stamped trefoil fleuron rather than three
+  // loose dots, with a bead in its heart and a pip either side of its foot.
+  ctx.save();
+  ctx.translate(0, -H * 0.52);
+  foilPath(ctx, r * 0.085, r * 0.125, 3, -Math.PI / 2);
+  ink(ctx, c, w * 0.6, c.accent);
+  ctx.restore();
+  pip(ctx, 0, -H * 0.52, r * 0.045, c.bloom, c, w * 0.4);
+  for (const side of [1, -1] as const) {
+    pip(ctx, side * W * 0.28, -H * 0.4, r * 0.05, c.accent, c, w * 0.5);
   }
+  // A pendant in the tail, so the long point below the waist is drawn rather
+  // than merely empty.
+  ctx.save();
+  ctx.translate(0, H * 0.62);
+  leaf(ctx, H * 0.2, W * 0.12, 0);
+  ink(ctx, c, w * 0.5, c.accent);
+  ctx.restore();
 
   // Two scrolls curling off the shoulders. Without them an ogee is an egg —
   // and they are what makes the neighbouring devices read as one net.
   for (const side of [1, -1] as const) {
     ctx.save();
-    ctx.translate(side * W * 0.9, -H * 0.16);
-    ctx.rotate(side * 0.55 + jitter(seed) * 0.06 * c.edge.wobble);
-    leaf(ctx, r * 0.4, r * 0.14, side > 0 ? -1.9 : 1.9);
+    ctx.translate(side * W * 0.86, -H * 0.42);
+    // Angled DOWN along the shoulder rather than straight out from it. Standing
+    // proud they read as two horizontal ears on a lozenge, which is a winged
+    // arrowhead and not a damask; laid back along the frame they read as the
+    // foliage the ogee is bound with.
+    ctx.rotate(side * 0.95 + jitter(seed) * 0.06 * c.edge.wobble);
+    acanthus(ctx, r * 0.36, r * 0.13 * side, side > 0 ? -1.9 : 1.9, 0.55);
     ink(ctx, c, w * 0.7);
     ctx.restore();
-    // A curl of the same scroll, tucked under, so it turns rather than points.
+    // …and the TURN itself, as a volute rather than as a second small leaf. A
+    // leaf pointing back the way it came is a leaf pointing the wrong way; a
+    // spiral is the one mark that says the scroll rolled up.
     ctx.save();
-    ctx.translate(side * W * 0.72, H * 0.06);
-    ctx.rotate(side * 1.5);
-    leaf(ctx, r * 0.22, r * 0.09, side > 0 ? -1.9 : 1.9);
-    ink(ctx, c, w * 0.6, c.bloom);
+    ctx.translate(side * W * 0.78, -H * 0.12);
+    volute(ctx, r * 0.19, 0.86, side > 0 ? -1 : 1, side > 0 ? -0.2 : Math.PI + 0.2);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = w * 0.62;
+    ctx.lineCap = 'round';
+    ctx.stroke();
     ctx.restore();
   }
 };
@@ -1830,6 +2000,35 @@ const bird: MotifFn = (ctx, r, seed, c, at) => {
   ctx.closePath();
   ink(ctx, c, w);
 
+  // Tail: three separate feathers rather than the one the body's outline
+  // already gives. A bird whose tail is a single taper is a fish shape with a
+  // beak on it; three splayed quills is the mark that says feathers, and it
+  // costs three strokes.
+  for (const [tilt, len] of [
+    [0.1, 0.5],
+    [0.32, 0.44],
+    [-0.1, 0.4],
+  ] as const) {
+    ctx.save();
+    ctx.translate(-r * 0.44, r * 0.14);
+    leaf(ctx, -r * len, r * 0.075, Math.PI / 2 + tilt);
+    ink(ctx, c, w * 0.55, c.bloom);
+    ctx.restore();
+  }
+
+  // A leg and a foot on the twig, so the bird is perched rather than hovering.
+  ctx.beginPath();
+  ctx.moveTo(r * 0.06, r * 0.4);
+  ctx.lineTo(r * 0.02, r * 0.56);
+  ctx.moveTo(r * 0.02, r * 0.56);
+  ctx.lineTo(-r * 0.08, r * 0.6);
+  ctx.moveTo(r * 0.02, r * 0.56);
+  ctx.lineTo(r * 0.12, r * 0.6);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.7, w * 0.45);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
   // Wing: two folded leaves on the flank, the longer one behind. A solid
   // second face, not the ink at 42% — the transparent version came out the
   // same grey on every paper in the book, so the bird had no plumage.
@@ -1843,7 +2042,34 @@ const bird: MotifFn = (ctx, r, seed, c, at) => {
     ink(ctx, c, w * 0.65, fill);
     ctx.restore();
   }
+  // Three coverts scored across the wing — the drawn detail that turns two
+  // stacked leaves into a folded wing.
+  ctx.save();
+  ctx.translate(-r * 0.02, r * 0.02);
+  ctx.rotate(-2.42);
+  ctx.beginPath();
+  for (const t of [0.36, 0.54, 0.72] as const) {
+    ctx.moveTo(-r * 0.11, r * 0.58 * t);
+    ctx.lineTo(r * 0.11, r * 0.58 * t);
+  }
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.3);
+  ctx.stroke();
+  ctx.restore();
 
+  // A crest of three quills off the crown, drawn before the head so the head
+  // laps their feet.
+  for (const [tilt, len] of [
+    [-0.5, 0.26],
+    [-0.15, 0.3],
+    [0.2, 0.24],
+  ] as const) {
+    ctx.save();
+    ctx.translate(r * 0.4, -r * 0.56);
+    leaf(ctx, -r * len, r * 0.05, tilt);
+    ink(ctx, c, w * 0.5, c.bloom);
+    ctx.restore();
+  }
   // Head, beak, eye.
   ctx.beginPath();
   ctx.arc(r * 0.44, -r * 0.44, r * 0.2, 0, Math.PI * 2);
@@ -2109,6 +2335,43 @@ const arcade: MotifFn = (ctx, r, seed, c, at) => {
     ctx.rect(side * (W / 2) - (side > 0 ? pier * 1.2 : 0), spring, pier * 1.2, Math.max(2, H * 0.035));
     ink(ctx, c, w * 0.55, c.accent);
   }
+  // The archivolt: a second band run inside the arch's soffit. Every arcade
+  // ever cut in stone has one, and one drawn line is the difference between an
+  // arch with a moulding and a hole with a rim.
+  const inset = Math.max(1.5, pier * 0.34);
+  ctx.beginPath();
+  ctx.moveTo(-inner - inset, foot - ledge);
+  ctx.lineTo(-inner - inset, spring);
+  ctx.quadraticCurveTo(-inner - inset, crown - inset * 1.2, 0, crown - inset * 1.2);
+  ctx.quadraticCurveTo(inner + inset, crown - inset * 1.2, inner + inset, spring);
+  ctx.lineTo(inner + inset, foot - ledge);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.42);
+  ctx.lineCap = 'butt';
+  ctx.stroke();
+  ctx.lineCap = 'round';
+  // A base moulding at the foot of each pier, and a fillet scored down it.
+  // A pier that meets the ledge with nothing between them is a post; a pier
+  // with a base is architecture, and this arcade was reading as headstones.
+  for (const side of [-1, 1] as const) {
+    const x0 = side * (W / 2) - (side > 0 ? pier : 0);
+    ctx.beginPath();
+    ctx.rect(x0, foot - ledge - Math.max(1.6, H * 0.04), pier, Math.max(1.6, H * 0.04));
+    ink(ctx, c, w * 0.5, c.accent);
+    ctx.beginPath();
+    ctx.moveTo(x0 + pier / 2, spring + H * 0.05);
+    ctx.lineTo(x0 + pier / 2, foot - ledge - H * 0.05);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = Math.max(0.6, w * 0.32);
+    ctx.stroke();
+  }
+  // A patera in the frieze over the crown, where the bay stops and the plain
+  // band begins — the ornament a real arcade carries in its entablature.
+  ctx.save();
+  ctx.translate(0, outerTop - Math.max(2.5, H * 0.06));
+  foilPath(ctx, Math.max(1.2, H * 0.022), Math.max(1.8, H * 0.034), 6);
+  ink(ctx, c, w * 0.5, c.accent);
+  ctx.restore();
   void seed;
 };
 
@@ -2143,6 +2406,23 @@ const scallop: MotifFn = (ctx, r, seed, c) => {
   ctx.strokeStyle = c.accent;
   ctx.lineWidth = w * 0.62;
   ctx.stroke();
+  // The ribs. Three short strokes dropping from the rim toward the nadir turn
+  // three concentric arcs into a SHELL — without them the field is a stack of
+  // rainbows, which is exactly how a bare seigaiha reads once it is a foot
+  // across. They stop short of the inner arc so the scale keeps a clear middle.
+  ctx.beginPath();
+  for (const t of [-0.56, 0, 0.56] as const) {
+    ctx.moveTo(r * t * 0.82, r * (0.28 + (1 - Math.abs(t)) * 0.36));
+    ctx.lineTo(r * t * 1.02, r * (0.02 + Math.abs(t) * 0.06));
+  }
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.45);
+  ctx.stroke();
+  // A bead at each cusp, where four scales meet. It covers the one place in
+  // this field where three arcs come to a point and none of them close.
+  for (const side of [-1, 1] as const) {
+    pip(ctx, side * r, 0, Math.max(0.8, r * 0.085), c.accent, c, w * 0.5);
+  }
   void seed;
   void c.face;
 };
@@ -2207,33 +2487,54 @@ const trellisCell: MotifFn = (ctx, r, seed, c) => {
   ctx.strokeStyle = c.face;
   ctx.lineWidth = w * 0.62;
   ctx.stroke();
-  // Leaves hung inside the lozenge, off the two side corners.
+  // Leaves hung inside the lozenge, off the two side corners, each with a vein
+  // drawn back over it.
   for (const side of [1, -1] as const) {
     ctx.save();
     ctx.translate(side * r * 0.6, 0);
     ctx.rotate(side * -0.5);
     leaf(ctx, r * 0.42 * side, r * 0.15 * side, side > 0 ? -1.57 : 1.57);
     ink(ctx, c, w * 0.7, c.bloom);
+    midrib(ctx, c, r * 0.42 * side, r * 0.15 * side, side > 0 ? -1.57 : 1.57, w * 0.3, 2);
     ctx.restore();
   }
+  // The junction, drawn at the north and west corners only, which covers every
+  // one in the lattice exactly once.
+  //
+  // A boss on its own says "something happens here". It does not say WHAT, and
+  // the reader's note about the trellis was that the crossings looked like a
+  // chain-link fence — which is what four laths meeting with nothing between
+  // them is. So the joint is now carpentry: a short length of the NE–SW lath
+  // laid ACROSS the junction with its own outline, which puts one batten over
+  // the other, and a peg driven through the lap with a nail head on it.
   for (const [kx, ky] of [
     [0, -r],
     [-r, 0],
   ] as const) {
     ctx.save();
     ctx.translate(kx, ky);
+    // The lapping batten: a stub of the other diagonal, ends left square so it
+    // reads as a board passing over rather than as a lozenge sitting on top.
+    ctx.rotate(-Math.PI / 4);
+    const lap = r * 0.4;
+    const thick = Math.max(2, w * 2.1);
+    roundedRect(ctx, -lap / 2, -thick / 2, lap, thick, thick * 0.3 * joinRound(c));
+    ink(ctx, c, w * 0.75);
     ctx.rotate(Math.PI / 4);
+    // The peg: a square head set on the diagonal, with a nail struck through
+    // the middle of it.
     roundedPoly(
       ctx,
       [
-        [0, -r * 0.17],
-        [r * 0.17, 0],
-        [0, r * 0.17],
-        [-r * 0.17, 0],
+        [0, -r * 0.15],
+        [r * 0.15, 0],
+        [0, r * 0.15],
+        [-r * 0.15, 0],
       ],
-      r * 0.06 * joinRound(c),
+      r * 0.05 * joinRound(c),
     );
     ink(ctx, c, w * 0.8, c.accent);
+    pip(ctx, 0, 0, Math.max(0.7, r * 0.045), c.bloom, c, 0);
     ctx.restore();
   }
   void seed;
@@ -2266,6 +2567,24 @@ const harlequin: MotifFn = (ctx, r, seed, c, at) => {
   // A slim inner lozenge, offset toward nothing in particular — it is a second
   // flat face, not a shadow. On the pale diamonds it takes the detail colour,
   // on the dark ones the face, so the two populations swap roles.
+  // A fillet band a hair inside the lozenge's edge, drawn as a line only. A
+  // harlequin diamond is a painted panel and a panel has a border; without one
+  // the field is a chessboard on the diagonal, which is what "flat and cheap"
+  // looks like when the shape itself is right.
+  roundedPoly(
+    ctx,
+    [
+      [0, -hh * 0.82],
+      [hw * 0.82, 0],
+      [0, hh * 0.82],
+      [-hw * 0.82, 0],
+    ],
+    Math.min(hw, hh) * 0.05 * joinRound(c),
+  );
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.42);
+  ctx.lineJoin = 'round';
+  ctx.stroke();
   roundedPoly(
     ctx,
     [
@@ -2277,6 +2596,15 @@ const harlequin: MotifFn = (ctx, r, seed, c, at) => {
     Math.min(hw, hh) * 0.05 * joinRound(c),
   );
   ink(ctx, c, w * 0.7, dark ? c.face : c.accent);
+  // A stud at the north and west points, which covers every junction in the
+  // lattice exactly once — four lozenge corners meet there and the point is
+  // where they all stop.
+  for (const [px, py] of [
+    [0, -hh],
+    [-hw, 0],
+  ] as const) {
+    pip(ctx, px, py, Math.max(0.8, Math.min(hw, hh) * 0.11), c.accent, c, w * 0.5);
+  }
   void seed;
 };
 
@@ -2450,20 +2778,46 @@ const urn: MotifFn = (ctx, r, seed, c) => {
   ctx.rect(-W, H * 0.16, W * 2, H * 0.14);
   ctx.fillStyle = c.accent;
   ctx.fill();
-  ctx.restore();
-  // Two handles, curling out of the shoulder.
-  for (const side of [1, -1] as const) {
-    ctx.beginPath();
-    ctx.moveTo(side * W * 0.66, H * 0.04);
-    ctx.quadraticCurveTo(side * W * 1.14, -H * 0.02, side * W * 0.92, H * 0.26);
-    ctx.strokeStyle = c.ink;
-    ctx.lineWidth = w * 0.9;
-    ctx.lineCap = 'round';
-    ctx.stroke();
+  // Flutes down the bowl, inside the same clip. A classical urn is turned and
+  // fluted, and five scored lines are what say "carved stone" — a plain oval
+  // says "egg". Drawn as strokes of the outline pen, so nothing here implies a
+  // light source: they are grooves, not highlights.
+  ctx.beginPath();
+  for (const fx of [-0.62, -0.32, 0, 0.32, 0.62] as const) {
+    ctx.moveTo(W * fx * 0.86, H * 0.34);
+    ctx.quadraticCurveTo(W * fx, H * 0.2, W * fx, H * 0.02);
   }
-  // The lip, wider than the bowl, which is what makes it an urn.
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.36);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+  // Two handles, curling out of the shoulder — drawn as ribbons rather than as
+  // wires, so a handle has a thickness the way the rest of the drawing does.
+  for (const side of [1, -1] as const) {
+    ribbon(ctx, c, w * 1.7, () => {
+      ctx.beginPath();
+      ctx.moveTo(side * W * 0.64, H * 0.02);
+      ctx.bezierCurveTo(
+        side * W * 1.22,
+        -H * 0.08,
+        side * W * 1.16,
+        H * 0.22,
+        side * W * 0.9,
+        H * 0.3,
+      );
+    });
+  }
+  // The lip, wider than the bowl, which is what makes it an urn, with a
+  // cavetto under it so the rim is a moulding and not a plank.
+  roundedRect(ctx, -W * 0.7, -H * 0.02, W * 1.4, H * 0.09, r * 0.04 * c.edge.round);
+  ink(ctx, c, w * 0.7, c.bloom);
   roundedRect(ctx, -W * 0.86, -H * 0.14, W * 1.72, H * 0.18, r * 0.06 * c.edge.round);
   ink(ctx, c, w * 0.85);
+  // A bead run along the lip: the stamped ornament every mantelpiece urn has.
+  for (let i = -3; i <= 3; i++) {
+    pip(ctx, W * 0.23 * i, -H * 0.05, Math.max(0.6, r * 0.035), c.accent, c, 0);
+  }
   void seed;
 };
 
@@ -2526,6 +2880,17 @@ const beading: MotifFn = (ctx, r, seed, c, at) => {
   const rod = Math.max(2.2, W * 0.22);
   roundedRect(ctx, -rod / 2, -H / 2 - BLEED, rod, H + BLEED * 2, rod * 0.4 * c.edge.round);
   ink(ctx, c, w * 0.7);
+  // A fillet scored down the rod. A moulding is turned on a lathe and the
+  // score is what the lathe leaves; without it the rod is a painted stripe with
+  // beads glued to it.
+  ctx.beginPath();
+  ctx.moveTo(0, -H / 2 - BLEED);
+  ctx.lineTo(0, H / 2 + BLEED);
+  ctx.strokeStyle = thread(c);
+  ctx.lineWidth = Math.max(0.6, w * 0.3);
+  ctx.lineCap = 'butt';
+  ctx.stroke();
+  ctx.lineCap = 'round';
   // Reel, bead, reel. The reels are flat discs and the bead is round, which is
   // the whole joke of the moulding and the reason it is not just a dotted line.
   for (const s of [-1, 1] as const) {
@@ -2538,10 +2903,24 @@ const beading: MotifFn = (ctx, r, seed, c, at) => {
       W * 0.03 * c.edge.round,
     );
     ink(ctx, c, w * 0.55, c.bloom);
+    // A half-bead between reel and bead, so the run is bead–reel–BEAD–reel–bead
+    // rather than one big one with a disc either side. The three-element rhythm
+    // is what a real bead-and-reel has and what stops a column of them reading
+    // as a row of buttons on a strap.
+    ctx.beginPath();
+    ctx.ellipse(0, s * H * 0.15, W * 0.105, H * 0.075, 0, 0, Math.PI * 2);
+    ink(ctx, c, w * 0.6, true);
   }
   ctx.beginPath();
   ctx.ellipse(0, 0, W * 0.17, H * 0.13, 0, 0, Math.PI * 2);
   ink(ctx, c, w * 0.8, c.accent);
+  // A collar line round the waist of the big bead — one more turned edge.
+  ctx.beginPath();
+  ctx.moveTo(-W * 0.17, 0);
+  ctx.lineTo(W * 0.17, 0);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.32);
+  ctx.stroke();
   void seed;
 };
 
@@ -2846,22 +3225,25 @@ const ogee: MotifFn = (ctx, r, seed, c, at) => {
   ink(ctx, c, w * 0.7, c.bloom);
   ctx.restore();
   pip(ctx, 0, hh * 0.06, Math.min(hw, hh) * 0.075, c.accent, c, w * 0.5);
+  const m = Math.min(hw, hh);
   for (const [bx, by] of [
     [0, -hh],
     [-hw, 0],
   ] as const) {
     ctx.save();
     ctx.translate(bx, by);
+    // A pair of leaves lying along the joint, under the boss — four ogee bands
+    // arrive here and a bare square over them says nothing about what they are.
+    // Leaves say the net is foliage, which is what an ogee net always was.
+    for (const side of [1, -1] as const) {
+      leaf(ctx, m * 0.34 * side, m * 0.11 * side, side > 0 ? -0.9 : Math.PI - 0.9);
+      ink(ctx, c, w * 0.5, c.bloom);
+    }
     ctx.rotate(Math.PI / 4);
-    roundedRect(
-      ctx,
-      -Math.min(hw, hh) * 0.1,
-      -Math.min(hw, hh) * 0.1,
-      Math.min(hw, hh) * 0.2,
-      Math.min(hw, hh) * 0.2,
-      Math.min(hw, hh) * 0.05 * joinRound(c),
-    );
+    roundedRect(ctx, -m * 0.1, -m * 0.1, m * 0.2, m * 0.2, m * 0.05 * joinRound(c));
     ink(ctx, c, w * 0.7, c.accent);
+    ctx.rotate(-Math.PI / 4);
+    pip(ctx, 0, 0, Math.max(0.6, m * 0.045), c.bloom, c, 0);
     ctx.restore();
   }
   void seed;
@@ -2996,30 +3378,59 @@ const constellation: MotifFn = (ctx, r, seed, c, at) => {
   const H = at.h > 0 ? at.h : r * 2;
   const w = motifInk(r * 0.5, c);
   const along = (at.col + at.row) % 2 === 0;
+  // The link, in the motif's own outline rather than in the damped detail
+  // colour. `thread` is the accent mixed nearly half into the wall, which is
+  // right for a rule running the length of a wall and wrong for a chart line
+  // two centimetres long: the first version's links were invisible, so the
+  // paper was a sparse grid of stars with a name that promised joined ones.
   ctx.beginPath();
   ctx.moveTo(0, 0);
   if (along) ctx.lineTo(W, 0);
   else ctx.lineTo(0, H);
-  ctx.strokeStyle = thread(c);
-  ctx.lineWidth = Math.max(0.7, w * 0.5);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.7, w * 0.42);
   ctx.lineCap = 'round';
   ctx.stroke();
-  ctx.save();
-  ctx.rotate(jitter(seed) * 0.4 * c.edge.wobble);
-  starPath(ctx, r * 0.44, 5, 0.4);
-  ink(ctx, c, w);
-  ctx.restore();
-  pip(ctx, 0, 0, r * 0.1, c.accent, c, w * 0.5);
-  // A speck off the lattice, so the sky is not a grid of equal stars.
+  // A bead a third of the way along it — the small star of the asterism, and
+  // the mark that makes the link read as drawn rather than as a scratch.
   pip(
     ctx,
-    W * (along ? 0.42 : -0.3),
-    H * 0.34,
-    Math.max(0.9, r * 0.09),
+    along ? W * 0.36 : 0,
+    along ? 0 : H * 0.36,
+    Math.max(0.8, r * 0.07),
     c.accent,
     c,
     w * 0.4,
   );
+  ctx.save();
+  ctx.rotate(jitter(seed) * 0.4 * c.edge.wobble);
+  starPath(ctx, r * 0.44, 5, 0.4);
+  ink(ctx, c, w);
+  // Rays scored from the heart out to each point: an engraved star rather than
+  // a flat one, and the detail that survives being twenty pixels across.
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * r * 0.36, Math.sin(a) * r * 0.36);
+  }
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.34);
+  ctx.stroke();
+  ctx.restore();
+  pip(ctx, 0, 0, r * 0.1, c.accent, c, w * 0.5);
+  // A companion pair off the lattice, joined to each other, so the sky is not a
+  // grid of equal stars.
+  const sx = W * (along ? 0.42 : -0.3);
+  const sy = H * 0.34;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx + W * 0.13, sy + H * 0.12);
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.3);
+  ctx.stroke();
+  pip(ctx, sx, sy, Math.max(0.9, r * 0.09), c.accent, c, w * 0.4);
+  pip(ctx, sx + W * 0.13, sy + H * 0.12, Math.max(0.7, r * 0.055), c.bloom, c, w * 0.35);
 };
 
 /* ---------------------------- things that grew --------------------------- */
@@ -3121,17 +3532,28 @@ const vine: MotifFn = (ctx, r, seed, c, at) => {
     ctx.rotate(tilt + side * 1.15);
     leaf(ctx, r * len, r * len * 0.44, -Math.PI / 2);
     ink(ctx, c, w * 0.65, side > 0 ? true : c.bloom);
+    midrib(ctx, c, r * len, r * len * 0.44, -Math.PI / 2, w * 0.28, 2);
     ctx.restore();
   }
-  // A tendril and a small bunch, hung off the middle of the run.
+  // Tendrils, plural. A vine climbs by them and one in the middle of the run
+  // reads as an accident; three, hung off the quarter points and curling the
+  // opposite way to the stem, read as the plant holding on.
+  for (const [t, dir, rr] of [
+    [0.24, 1, 0.13],
+    [0.5, -1, 0.16],
+    [0.76, 1, 0.12],
+  ] as const) {
+    const [tx, ty] = on(t);
+    ctx.save();
+    ctx.translate(tx, ty + r * 0.08);
+    volute(ctx, r * rr, 0.78, dir === 1 ? 1 : -1, -Math.PI / 2);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = Math.max(0.7, w * 0.5);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.restore();
+  }
   const [mx, my] = on(0.5);
-  ctx.save();
-  ctx.translate(mx, my + r * 0.08);
-  volute(ctx, r * 0.16, 0.78, -1, -Math.PI / 2);
-  ctx.strokeStyle = c.ink;
-  ctx.lineWidth = Math.max(0.7, w * 0.5);
-  ctx.stroke();
-  ctx.restore();
   for (const [bx, by, rr] of [
     [0.24, 0.2, 0.09],
     [0.34, 0.3, 0.075],
@@ -3155,7 +3577,8 @@ const thistle: MotifFn = (ctx, r, seed, c) => {
   ctx.lineWidth = w * 0.85;
   ctx.lineCap = 'round';
   ctx.stroke();
-  // Two cut leaves down the stem — jagged, which is what a thistle's are.
+  // Two cut leaves down the stem — deeply jagged, five teeth a side, which is
+  // what a thistle's are. The three-notch version read as a boot.
   for (const [side, ty] of [
     [1, 0.52],
     [-1, 0.76],
@@ -3165,54 +3588,84 @@ const thistle: MotifFn = (ctx, r, seed, c) => {
     ctx.scale(side, 1);
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(r * 0.2, -r * 0.12);
-    ctx.lineTo(r * 0.28, r * 0.02);
-    ctx.lineTo(r * 0.48, -r * 0.04);
-    ctx.lineTo(r * 0.5, r * 0.12);
-    ctx.lineTo(r * 0.24, r * 0.16);
+    for (const [tx, tyy] of [
+      [0.16, -0.14],
+      [0.22, 0.0],
+      [0.34, -0.15],
+      [0.4, -0.01],
+      [0.54, -0.13],
+      [0.58, 0.03],
+      [0.7, -0.06],
+      [0.66, 0.12],
+      [0.46, 0.13],
+      [0.44, 0.2],
+      [0.26, 0.15],
+      [0.22, 0.21],
+    ] as const) {
+      ctx.lineTo(r * tx, r * tyy);
+    }
     ctx.closePath();
-    ink(ctx, c, w * 0.6, c.bloom);
+    ink(ctx, c, w * 0.55, c.bloom);
     ctx.restore();
   }
-  // The head: eight spines fanning out of the cup.
-  for (const [tilt, len] of [
-    [-0.88, 0.46],
-    [-0.62, 0.6],
-    [-0.36, 0.72],
-    [-0.12, 0.8],
-    [0.12, 0.8],
-    [0.36, 0.72],
-    [0.62, 0.6],
-    [0.88, 0.46],
-  ] as const) {
-    ctx.save();
-    ctx.translate(0, -r * 0.1);
-    leaf(ctx, -r * len, r * 0.075, tilt);
-    ink(ctx, c, w * 0.5, c.accent);
-    ctx.restore();
-  }
-  // The cup, laid over the spines' feet.
+  // The floret: a thistle's head is HAIR, not petals. Fifteen fine strokes
+  // splaying out of the calyx, with a handful of short ones between them, read
+  // as a tuft; eight fat leaves read as a pineapple top, which is what the
+  // first version was.
   ctx.beginPath();
-  ctx.moveTo(-r * 0.3, -r * 0.14);
-  ctx.bezierCurveTo(-r * 0.38, r * 0.34, r * 0.38, r * 0.34, r * 0.3, -r * 0.14);
+  for (let i = 0; i < 15; i++) {
+    const tilt = -0.95 + (i / 14) * 1.9 + jitter(seed + i) * 0.05 * c.edge.wobble;
+    const len = r * (0.5 + Math.cos(tilt) * 0.38);
+    ctx.moveTo(Math.sin(tilt) * r * 0.1, -r * 0.14);
+    ctx.quadraticCurveTo(
+      Math.sin(tilt * 0.8) * len * 0.55,
+      -r * 0.14 - len * 0.62,
+      Math.sin(tilt) * len * 0.92,
+      -r * 0.14 - Math.cos(tilt) * len,
+    );
+  }
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = Math.max(0.75, w * 0.42);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  // The calyx, laid over the florets' feet: a bulb rather than a cup, because a
+  // thistle's is a swollen ball and a cup is a tulip.
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.3, -r * 0.16);
+  ctx.bezierCurveTo(-r * 0.44, r * 0.06, -r * 0.36, r * 0.36, 0, r * 0.36);
+  ctx.bezierCurveTo(r * 0.36, r * 0.36, r * 0.44, r * 0.06, r * 0.3, -r * 0.16);
   ctx.closePath();
   ink(ctx, c, w);
-  for (const [dx, dy] of [
-    [-0.13, -0.02],
-    [0.13, -0.02],
-    [0, 0.12],
+  // Imbricated bracts: two courses of diamond scales, the lower one offset, so
+  // the bulb is built out of overlapping plates the way the real one is.
+  for (const [dx, dy, s] of [
+    [-0.17, -0.05, 1],
+    [0, -0.08, 1.1],
+    [0.17, -0.05, 1],
+    [-0.09, 0.11, 0.95],
+    [0.09, 0.11, 0.95],
+    [0, 0.26, 0.8],
   ] as const) {
     ctx.save();
     ctx.translate(r * dx, r * dy);
     ctx.rotate(Math.PI / 4);
-    roundedRect(ctx, -r * 0.06, -r * 0.06, r * 0.12, r * 0.12, r * 0.03 * c.edge.round);
+    roundedRect(ctx, -r * 0.06 * s, -r * 0.06 * s, r * 0.12 * s, r * 0.12 * s, r * 0.03 * c.edge.round);
     ink(ctx, c, w * 0.45, c.bloom);
     ctx.restore();
   }
   ctx.restore();
 };
 
-/** A full-face rose: five outer petals around a spiralled heart, and two leaves. */
+/**
+ * A full-face rose: five notched outer petals, an inner whorl set between them,
+ * a spiralled heart, and two serrated leaves.
+ *
+ * The NOTCH is the repair. Five smooth-topped petals round a disc is a
+ * buttercup, and a field of them at wall size is the flat blob-with-a-swirl the
+ * customisation was called cheap for. A rose petal dips in the middle of its
+ * outer edge and curls back at the corners, and once the silhouette has that
+ * dip the flower is recognisable at twenty pixels with no other change at all.
+ */
 const rose: MotifFn = (ctx, r, seed, c) => {
   const w = motifInk(r * 0.7, c);
   ctx.save();
@@ -3223,22 +3676,67 @@ const rose: MotifFn = (ctx, r, seed, c) => {
     ctx.rotate(side * 0.6);
     leaf(ctx, r * 0.52 * side, r * 0.2 * side, side > 0 ? -1.3 : 1.3);
     ink(ctx, c, w * 0.65, c.bloom);
+    midrib(ctx, c, r * 0.52 * side, r * 0.2 * side, side > 0 ? -1.3 : 1.3, w * 0.3, 3);
     ctx.restore();
   }
+  // Two sepals, low and to the sides only. Five of them showing between all
+  // five petals was tried and made a ten-lobed star: at wall pitch every extra
+  // point on the outline is one more thing the eye has to average, and past
+  // about six the flower stops being a flower and becomes fluff. Detail has to
+  // go INSIDE the silhouette here, not onto it.
+  for (const side of [1, -1] as const) {
+    ctx.save();
+    ctx.rotate(side * 2.2);
+    leaf(ctx, -r * 0.98, r * 0.12, 0);
+    ink(ctx, c, w * 0.5, c.bloom);
+    ctx.restore();
+  }
+  // Five outer petals with a CLEAN outer arc. The notch that a real petal has
+  // was tried on the silhouette and made a ten-lobed pom-pom: at the thirty
+  // pixels this flower occupies, every extra point on the outline is one more
+  // thing the eye has to average, and past about six the flower turns to fluff.
+  // So the notch and the roll are drawn INSIDE the shape instead, as the folds
+  // they are — which is the same information with none of the fuzz.
   for (let i = 0; i < 5; i++) {
     ctx.save();
     ctx.rotate((i / 5) * Math.PI * 2 + 0.32);
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.bezierCurveTo(-r * 0.52, -r * 0.42, -r * 0.34, -r * 0.98, 0, -r * 0.84);
-    ctx.bezierCurveTo(r * 0.34, -r * 0.98, r * 0.52, -r * 0.42, 0, 0);
+    ctx.bezierCurveTo(-r * 0.52, -r * 0.42, -r * 0.36, -r * 0.98, 0, -r * 0.86);
+    ctx.bezierCurveTo(r * 0.36, -r * 0.98, r * 0.52, -r * 0.42, 0, 0);
     ctx.closePath();
     ink(ctx, c, w * 0.8);
+    // The notch, as a drawn dip in the petal's face, and a fold running out to
+    // each rolled corner.
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.19, -r * 0.83);
+    ctx.quadraticCurveTo(0, -r * 0.6, r * 0.19, -r * 0.83);
+    ctx.moveTo(-r * 0.03, -r * 0.1);
+    ctx.quadraticCurveTo(-r * 0.28, -r * 0.44, -r * 0.22, -r * 0.79);
+    ctx.moveTo(r * 0.03, -r * 0.1);
+    ctx.quadraticCurveTo(r * 0.28, -r * 0.44, r * 0.22, -r * 0.79);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = Math.max(0.6, w * 0.32);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.restore();
+  }
+  // The inner whorl, set half a step round and kept well inside the outer
+  // petals: a rose is petals INSIDE petals, and one ring of them is a daisy.
+  for (let i = 0; i < 5; i++) {
+    ctx.save();
+    ctx.rotate((i / 5) * Math.PI * 2 + 0.32 + Math.PI / 5);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-r * 0.3, -r * 0.22, -r * 0.26, -r * 0.56, 0, -r * 0.48);
+    ctx.bezierCurveTo(r * 0.26, -r * 0.56, r * 0.3, -r * 0.22, 0, 0);
+    ctx.closePath();
+    ink(ctx, c, w * 0.6, c.bloom);
     ctx.restore();
   }
   ctx.beginPath();
-  ctx.arc(0, 0, r * 0.37, 0, Math.PI * 2);
-  ink(ctx, c, w * 0.85, c.bloom);
+  ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+  ink(ctx, c, w * 0.75, c.bloom);
   // The heart, as one spiral. A rose is a spiral; petals drawn round a disc
   // are a daisy, which is what the first draft of this came out as.
   ctx.beginPath();
@@ -3319,7 +3817,21 @@ const arabesque: MotifFn = (ctx, r, seed, c) => {
   ctx.restore();
 };
 
-/** A pagoda: three upswept roofs on a slender body, with a finial and bells. */
+/**
+ * A pagoda: three upswept roofs on a slender body, with a finial and bells.
+ *
+ * The eaves are the whole motif and they were the thing missing. A roof drawn
+ * as a flat-ended lens is a BAR, three bars over one another are a cake stand,
+ * and the tier note already lists "a stack of Christmas trees" as a way a
+ * wallpaper motif fails at wall size. A Chinese eave sweeps DOWN from the ridge
+ * and then flicks back UP at the tip, and that flick is the only line in the
+ * drawing that cannot be mistaken for anything else — so the ridge is now high,
+ * the eave sags, and the corners lift above the ridge line's springing.
+ *
+ * Each storey also got a wall it can be a storey OF: a railing with balusters
+ * under every roof, which is what turns the gap between two roofs from empty
+ * paper into a balcony.
+ */
 const pagoda: MotifFn = (ctx, r, seed, c) => {
   const w = motifInk(r * 0.75, c);
   const H = r * 0.92;
@@ -3329,38 +3841,84 @@ const pagoda: MotifFn = (ctx, r, seed, c) => {
     [H * 0.34, r * 0.84, H * 0.23],
   ] as const;
 
-  // The finial, then the body, then the roofs from the bottom up, so each roof
-  // laps the storey it covers.
+  // The finial: a mast with three rings threaded on it and a jewel at the top.
   ctx.beginPath();
   ctx.moveTo(0, -H * 0.5);
-  ctx.lineTo(0, -H * 0.86);
+  ctx.lineTo(0, -H * 0.9);
   ctx.strokeStyle = c.ink;
   ctx.lineWidth = w * 0.7;
   ctx.lineCap = 'round';
   ctx.stroke();
-  pip(ctx, 0, -H * 0.86, r * 0.1, c.accent, c, w * 0.6);
-  pip(ctx, 0, -H * 0.72, r * 0.055, c.bloom, c, w * 0.45);
+  for (const [ry, rw] of [
+    [-0.6, 0.1],
+    [-0.68, 0.082],
+    [-0.76, 0.064],
+  ] as const) {
+    roundedRect(ctx, -r * rw, H * ry, r * rw * 2, H * 0.045, r * 0.02 * c.edge.round);
+    ink(ctx, c, w * 0.5, c.bloom);
+  }
+  pip(ctx, 0, -H * 0.9, r * 0.085, c.accent, c, w * 0.55);
 
+  // Storeys, with a railed balcony on each. The wall is the second flat face;
+  // the railing is drawn on top of it in the detail colour.
   for (const [y, hw] of tiers) {
     roundedRect(ctx, -hw * 0.38, y - H * 0.34, hw * 0.76, H * 0.34, r * 0.05 * c.edge.round);
     ink(ctx, c, w * 0.75, c.bloom);
+    const rail = y - H * 0.06;
+    ctx.beginPath();
+    ctx.moveTo(-hw * 0.66, rail);
+    ctx.lineTo(hw * 0.66, rail);
+    for (const bx of [-0.44, -0.15, 0.15, 0.44] as const) {
+      ctx.moveTo(hw * bx, rail);
+      ctx.lineTo(hw * bx, rail + H * 0.07);
+    }
+    ctx.moveTo(-hw * 0.66, rail + H * 0.07);
+    ctx.lineTo(hw * 0.66, rail + H * 0.07);
+    ctx.strokeStyle = c.accent;
+    ctx.lineWidth = Math.max(0.7, w * 0.42);
+    ctx.lineCap = 'round';
+    ctx.stroke();
   }
-  // The plinth the whole thing stands on.
+  // The plinth the whole thing stands on, with a step under it.
   roundedRect(ctx, -r * 0.66, H * 0.62, r * 1.32, H * 0.14, r * 0.05 * c.edge.round);
   ink(ctx, c, w * 0.8);
+  roundedRect(ctx, -r * 0.84, H * 0.76, r * 1.68, H * 0.1, r * 0.04 * c.edge.round);
+  ink(ctx, c, w * 0.7, c.bloom);
 
   for (let i = tiers.length - 1; i >= 0; i--) {
     const [y, hw, rh] = tiers[i]!;
+    // Ridge high in the middle, eave sagging, tips lifted back ABOVE the sag —
+    // the flick. The underside runs back the other way with the same lift, so
+    // the roof has a thickness the corner can turn through.
+    const ridge = y - rh * 1.06;
+    const sag = y - rh * 0.16;
+    const tipY = y - rh * 0.66;
     ctx.beginPath();
-    ctx.moveTo(-hw, y - rh * 0.34);
-    ctx.bezierCurveTo(-hw * 0.44, y - rh * 1.02, hw * 0.44, y - rh * 1.02, hw, y - rh * 0.34);
-    ctx.bezierCurveTo(hw * 0.52, y + rh * 0.24, -hw * 0.52, y + rh * 0.24, -hw, y - rh * 0.34);
+    ctx.moveTo(-hw, tipY);
+    ctx.bezierCurveTo(-hw * 0.92, sag, -hw * 0.52, sag - rh * 0.1, -hw * 0.2, ridge);
+    ctx.quadraticCurveTo(0, ridge - rh * 0.1, hw * 0.2, ridge);
+    ctx.bezierCurveTo(hw * 0.52, sag - rh * 0.1, hw * 0.92, sag, hw, tipY);
+    ctx.bezierCurveTo(hw * 0.86, sag + rh * 0.26, hw * 0.5, sag + rh * 0.34, 0, sag + rh * 0.36);
+    ctx.bezierCurveTo(-hw * 0.5, sag + rh * 0.34, -hw * 0.86, sag + rh * 0.26, -hw, tipY);
     ctx.closePath();
     ink(ctx, c, w, i === 1 ? c.accent : true);
-    // A bell at each eave, which is the detail that makes it a pagoda rather
-    // than a stack of hats.
+    // A ridge line inside the roof, following the sweep — the tiles' course.
+    ctx.beginPath();
+    ctx.moveTo(-hw * 0.84, tipY + rh * 0.24);
+    ctx.bezierCurveTo(-hw * 0.5, sag + rh * 0.08, hw * 0.5, sag + rh * 0.08, hw * 0.84, tipY + rh * 0.24);
+    ctx.strokeStyle = c.ink;
+    ctx.lineWidth = Math.max(0.6, w * 0.36);
+    ctx.stroke();
+    // A bell hung under each lifted corner, which is the detail that makes it a
+    // pagoda rather than a stack of hats.
     for (const side of [-1, 1] as const) {
-      pip(ctx, side * hw * 0.94, y - rh * 0.16, r * 0.055, c.accent, c, w * 0.45);
+      ctx.beginPath();
+      ctx.moveTo(side * hw * 0.93, tipY + rh * 0.1);
+      ctx.lineTo(side * hw * 0.93, tipY + rh * 0.3);
+      ctx.strokeStyle = c.ink;
+      ctx.lineWidth = Math.max(0.6, w * 0.34);
+      ctx.stroke();
+      pip(ctx, side * hw * 0.93, tipY + rh * 0.42, r * 0.055, c.accent, c, w * 0.45);
     }
   }
   // The door.
@@ -3374,41 +3932,93 @@ const pagoda: MotifFn = (ctx, r, seed, c) => {
   void seed;
 };
 
-/** A neoclassical patera: an oval medallion, a ribbon over it, husks below. */
+/**
+ * A neoclassical patera: an oval medallion with husk swags either side, a bow
+ * over it and a drop below.
+ *
+ * The first version was a ring, two small loops on top and a short tail, and at
+ * wall size that is a PADLOCK — a silhouette failure of exactly the kind the
+ * tier note warns about, and no amount of colour fixes it because the outline
+ * is what the eye reads first. The repair is the ornament's real furniture: two
+ * husk swags drooping off the shoulders (the Adam signature, and the thing that
+ * makes the silhouette wide rather than tall), a bow with tails that fork, and
+ * a fluted centre. The wide swags are also what stops the drop reading as a
+ * shackle, since a padlock has nothing sticking out sideways.
+ */
 const medallion: MotifFn = (ctx, r, seed, c) => {
   const w = motifInk(r * 0.8, c);
   const RX = r * 0.56;
   const RY = r * 0.44;
-  // Husk drops, first, so the medallion laps their top.
+
+  // A laurel WREATH round the patera, drawn first so the ring laps the leaves'
+  // feet — eighteen leaves lying tangentially, alternating fill, with a berry
+  // where the two branches meet at the foot.
+  //
+  // Two swags were tried here first and were worse than what they replaced: at
+  // the thirty-odd pixels this motif actually occupies, a cord with five husks
+  // on it resolves into a bare ARM, and a round thing with two arms and a bow
+  // on top reads as a beetle. A wreath fixes the padlock the other way — it is
+  // radially symmetric, so there is no orientation for the eye to read a
+  // creature into, and it thickens the silhouette into an ornament with one
+  // shape rather than three.
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2 - Math.PI / 2;
+    const lx = Math.cos(a) * RX * 1.12;
+    const ly = Math.sin(a) * RY * 1.12;
+    ctx.save();
+    ctx.translate(lx, ly);
+    // Each leaf lies along the rim, leaning the way the branch runs, so the
+    // wreath reads as bound rather than as a sunburst of spikes.
+    ctx.rotate(a + Math.PI / 2 + (Math.sin(a) >= 0 ? 0.75 : -0.75));
+    leaf(ctx, r * 0.24, r * 0.075, 0);
+    ink(ctx, c, w * 0.45, i % 2 === 0 ? c.bloom : true);
+    ctx.restore();
+  }
+  // The binding at the foot of the wreath: two ties and a berry.
+  for (const side of [-1, 1] as const) {
+    pip(ctx, side * RX * 0.2, RY * 1.16, Math.max(0.7, r * 0.04), c.accent, c, w * 0.4);
+  }
+
+  // A husk drop below, ending in a tassel bead. Kept SHORT and broad: a long
+  // thin stem under a ring is a lollipop at wall size however well the ring
+  // itself is drawn.
   for (const [dy, len] of [
-    [0.44, 0.2],
-    [0.66, 0.16],
-    [0.84, 0.12],
+    [0.4, 0.22],
+    [0.58, 0.17],
+    [0.72, 0.12],
   ] as const) {
     ctx.save();
     ctx.translate(0, r * dy);
-    leaf(ctx, r * len, r * len * 0.55, 0);
+    leaf(ctx, r * len, r * len * 0.62, 0);
     ink(ctx, c, w * 0.55, c.bloom);
     ctx.restore();
   }
-  // The ribbon: two loops and two tails, over the crown.
+  pip(ctx, 0, r * 0.86, Math.max(0.8, r * 0.055), c.accent, c, w * 0.45);
+
+  // The bow: a loop, a knot and a tail that forks, per side. The old loop was a
+  // closed bezier the size of a fingernail, which is where the shackle came
+  // from.
   for (const side of [-1, 1] as const) {
     ctx.save();
     ctx.scale(side, 1);
     ctx.beginPath();
-    ctx.moveTo(0, -r * 0.58);
-    ctx.bezierCurveTo(r * 0.3, -r * 0.94, r * 0.5, -r * 0.6, r * 0.16, -r * 0.5);
+    ctx.moveTo(0, -r * 0.56);
+    ctx.bezierCurveTo(r * 0.34, -r * 1.0, r * 0.58, -r * 0.62, r * 0.14, -r * 0.48);
     ctx.closePath();
     ink(ctx, c, w * 0.65, c.accent);
+    // The tail: out, down, and forked at the end.
     ctx.beginPath();
-    ctx.moveTo(r * 0.06, -r * 0.5);
-    ctx.quadraticCurveTo(r * 0.3, -r * 0.34, r * 0.24, -r * 0.16);
-    ctx.strokeStyle = c.ink;
-    ctx.lineWidth = w * 0.55;
-    ctx.lineCap = 'round';
-    ctx.stroke();
+    ctx.moveTo(r * 0.08, -r * 0.5);
+    ctx.bezierCurveTo(r * 0.36, -r * 0.4, r * 0.44, -r * 0.16, r * 0.3, r * 0.02);
+    ctx.lineTo(r * 0.4, r * 0.06);
+    ctx.bezierCurveTo(r * 0.52, -r * 0.16, r * 0.46, -r * 0.46, r * 0.14, -r * 0.58);
+    ctx.closePath();
+    ink(ctx, c, w * 0.5, c.bloom);
     ctx.restore();
   }
+  // The knot, over both loops.
+  pip(ctx, 0, -r * 0.52, r * 0.075, c.accent, c, w * 0.5);
+
   // The medallion itself, as a window rather than a plate.
   ctx.beginPath();
   ctx.ellipse(0, 0, RX, RY, 0, 0, Math.PI * 2);
@@ -3430,6 +4040,18 @@ const medallion: MotifFn = (ctx, r, seed, c) => {
   ctx.beginPath();
   ctx.ellipse(0, 0, RX * 0.68, RY * 0.68, 0, 0, Math.PI * 2);
   ink(ctx, c, w * 0.6, c.bloom);
+  // Flutes radiating out of the boss. A patera is CARVED, and the flutes are
+  // what say so — drawn as spokes of the same pen, never as shading.
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+    ctx.moveTo(Math.cos(a) * RX * 0.26, Math.sin(a) * RY * 0.26);
+    ctx.lineTo(Math.cos(a) * RX * 0.62, Math.sin(a) * RY * 0.62);
+  }
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = Math.max(0.6, w * 0.34);
+  ctx.lineCap = 'round';
+  ctx.stroke();
   foilPath(ctx, r * 0.09, r * 0.14, 6, jitter(seed) * 0.2);
   ink(ctx, c, w * 0.6, c.accent);
 };

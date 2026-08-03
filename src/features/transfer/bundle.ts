@@ -16,6 +16,7 @@ import {
   type BundleManifest,
   type ManifestAsset,
   type ManifestBook,
+  type ManifestBookcase,
   type ManifestPage,
 } from './format';
 import type { ExportOptions, ExportPlan, LibrarySnapshot } from './scope';
@@ -181,6 +182,27 @@ export function buildBundleFiles(input: BuildBundleInput): BuiltBundle {
   const theme =
     options.includeLibraryTheme && snapshot.theme !== null ? snapshot.theme : null;
 
+  /*
+   * The furniture travels unconditionally — it is not part of "include the
+   * library look".
+   *
+   * That toggle covers the app-wide settings blob (ink, paper, handwriting),
+   * which is a preference someone importing your notes probably does not want
+   * imposed on them. A bookcase is the opposite: it is structure, it only ever
+   * gets BUILT on the importing side (never applied to a case already there),
+   * and without it a two-case library arrives as one shelf. Making the shape of
+   * someone's library optional would be offering to lose it.
+   */
+  const manifestBookcases: ManifestBookcase[] = plan.bookcases.map((bookcase) => ({
+    id: bookcase.id,
+    name: bookcase.name,
+    ord: bookcase.ord,
+    room: bookcase.room,
+    floors: bookcase.floors,
+    createdAt: bookcase.createdAt,
+    updatedAt: bookcase.updatedAt,
+  }));
+
   const manifest = buildManifest({
     createdAt: input.createdAt,
     appVersion: input.appVersion,
@@ -188,6 +210,7 @@ export function buildBundleFiles(input: BuildBundleInput): BuiltBundle {
     variant: options.variant,
     layout: options.layout,
     label: input.label,
+    bookcases: manifestBookcases,
     books: manifestBooks,
     assets: manifestAssets,
     theme,

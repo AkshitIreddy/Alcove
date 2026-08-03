@@ -22,10 +22,32 @@
 export interface BookRowSnapshot {
   id: string;
   title: string;
+  /**
+   * The case the book stood in.
+   *
+   * Optional because points written before bundles knew about bookcases have
+   * no such column, and those points must stay revertable. Absent restores as
+   * the default case rather than as NULL — a row put back with no case is an
+   * orphan, and the start-up sweep would adopt it into whichever case happens
+   * to sort first, silently moving a book the revert promised to put back
+   * exactly as it was.
+   */
+  bookcase_id?: string | null;
   floor: number;
   slot: number;
   spine_seed: number;
   cover_meta: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Verbatim `bookcases` row — restoring a case is a plain upsert too. */
+export interface BookcaseRowSnapshot {
+  id: string;
+  name: string;
+  ord: number;
+  room: string | null;
+  floors: number;
   created_at: string;
   updated_at: string;
 }
@@ -63,9 +85,16 @@ export interface RestorePoint {
   /** Rows the operation created — revert deletes these. */
   createdBooks: string[];
   createdPages: CreatedPageRef[];
+  /**
+   * Bookcases the operation built. Revert takes them down again, but only
+   * once they are empty: a case the reader has since put their own books into
+   * is furniture they now own, whatever brought it here.
+   */
+  createdBookcases: string[];
   /** Verbatim rows as they were BEFORE the operation — revert re-inserts. */
   priorBooks: BookRowSnapshot[];
   priorPages: PageRowSnapshot[];
+  priorBookcases: BookcaseRowSnapshot[];
   /** For `kind: 'revert'`, the point this one undid. */
   revertOf: string | null;
   /** Set once this point has been reverted. */
@@ -194,6 +223,15 @@ export function pruneForSize(
 export interface LibraryRowIds {
   bookIds: ReadonlySet<string>;
   pageIds: ReadonlySet<string>;
+  bookcaseIds: ReadonlySet<string>;
+  /**
+   * How many books stand in each case right now, INCLUDING the ones this
+   * revert is about to remove. `planRevert` subtracts its own deletions, so a
+   * case is only taken down when nothing of the reader's is left in it.
+   */
+  bookCountByBookcase: ReadonlyMap<string, number>;
+  /** The case each book stands in — used to work the counts back down. */
+  bookcaseOfBook: ReadonlyMap<string, string>;
 }
 
 export interface RevertPlan {
@@ -201,9 +239,17 @@ export interface RevertPlan {
   deleteBookIds: string[];
   /** Pages this import appended that still exist (in books we keep). */
   deletePageIds: string[];
+  /** Cases this import built that are still here and will be left empty. */
+  deleteBookcaseIds: string[];
+  /**
+   * Cases this import built that are staying, because the reader has since
+   * shelved their own books in them. Reported so the confirm step can say so.
+   */
+  keptBookcaseIds: string[];
   /** Rows to put back exactly as they were. */
   restoreBooks: BookRowSnapshot[];
   restorePages: PageRowSnapshot[];
+  restoreBookcases: BookcaseRowSnapshot[];
   /** Rows that were already deleted by hand — reported, never an error. */
   missing: { books: number; pages: number };
   summary: string[];
@@ -216,6 +262,7 @@ export interface RevertPlan {
  * Safety: only rows this point recorded as created are deleted, and only if
  * they still exist. Pages inside a book that is itself being deleted are not
  * listed separately (the book delete cascades) — but they are still counted.
+ * A bookcase the import built comes down only when the revert empties it.
  */
 export function planRevert(
   point: RestorePoint,
@@ -230,8 +277,28 @@ export function planRevert(
     .filter((ref) => !doomed.has(ref.bookId))
     .map((ref) => ref.id);
 
+  /*
+   * Cases the import built. Each starts at its current occupancy; every book
+   * this revert deletes takes one off. What is left is the reader's, and a
+   * case holding any of it stays — with its books, its name and whatever room
+   * they have since given it.
+   */
+  const remaining = new Map(current.bookCountByBookcase);
+  for (const id of deleteBookIds) {
+    const home = current.bookcaseOfBook.get(id);
+    if (home === undefined) continue;
+    remaining.set(home, (remaining.get(home) ?? 1) - 1);
+  }
+  const deleteBookcaseIds: string[] = [];
+  const keptBookcaseIds: string[] = [];
+  for (const id of point.createdBookcases) {
+    if (!current.bookcaseIds.has(id)) continue;
+    ((remaining.get(id) ?? 0) > 0 ? keptBookcaseIds : deleteBookcaseIds).push(id);
+  }
+
   const restoreBooks = point.priorBooks;
   const restorePages = point.priorPages;
+  const restoreBookcases = point.priorBookcases;
   const missing = {
     books: point.createdBooks.length - deleteBookIds.length,
     pages: point.createdPages.length - survivingPages.length,
@@ -248,9 +315,21 @@ export function planRevert(
       `Remove ${deletePageIds.length} imported page${deletePageIds.length === 1 ? '' : 's'}`,
     );
   }
-  if (restoreBooks.length > 0 || restorePages.length > 0) {
+  if (deleteBookcaseIds.length > 0) {
     summary.push(
-      `Put back ${restoreBooks.length + restorePages.length} row${restoreBooks.length + restorePages.length === 1 ? '' : 's'} exactly as they were`,
+      `Take down ${deleteBookcaseIds.length} bookcase${deleteBookcaseIds.length === 1 ? '' : 's'} the import built`,
+    );
+  }
+  if (keptBookcaseIds.length > 0) {
+    summary.push(
+      `Keep ${keptBookcaseIds.length} imported bookcase${keptBookcaseIds.length === 1 ? '' : 's'} — you have shelved your own books there`,
+    );
+  }
+  const restoredRows =
+    restoreBooks.length + restorePages.length + restoreBookcases.length;
+  if (restoredRows > 0) {
+    summary.push(
+      `Put back ${restoredRows} row${restoredRows === 1 ? '' : 's'} exactly as they were`,
     );
   }
   if (missing.books > 0 || missing.pages > 0) {
@@ -261,15 +340,18 @@ export function planRevert(
   const empty =
     deleteBookIds.length === 0 &&
     deletePageIds.length === 0 &&
-    restoreBooks.length === 0 &&
-    restorePages.length === 0;
+    deleteBookcaseIds.length === 0 &&
+    restoredRows === 0;
   if (empty) summary.push('Nothing left to undo — this import is already gone');
 
   return {
     deleteBookIds,
     deletePageIds,
+    deleteBookcaseIds,
+    keptBookcaseIds,
     restoreBooks,
     restorePages,
+    restoreBookcases,
     missing,
     summary,
     empty,

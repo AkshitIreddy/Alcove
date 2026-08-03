@@ -9,6 +9,10 @@
  *   assets/<relPath>                    referenced media (optional)
  *   theme.json                          library theme snapshot (optional)
  *
+ * The manifest also lists the BOOKCASES the exported books stood in — their
+ * names, heights and rooms — so importing a library rebuilds the furniture it
+ * came from rather than tipping every book onto one shelf.
+ *
  * Everything in this module is pure and DOM-free: manifest building, manifest
  * parsing (total — never throws, returns diagnostics), and the checksum. The
  * archive plumbing lives in ./zip, the data-layer plumbing in ./library.
@@ -23,20 +27,29 @@
 export const BUNDLE_FORMAT = 'notebook-bundle';
 
 /**
- * 2 — books carry the bookcase they stood in.
+ * Schema history — the field list, not the file format (`BUNDLE_FORMAT` above
+ * never changes):
+ *
+ *   1  books, pages, assets, theme.
+ *   2  each book records the id of the bookcase it stood in.
+ *   3  the bookcases themselves — name, ord, height and room — so an import
+ *      can rebuild furniture that does not exist on this machine. v2 recorded
+ *      an id and nothing else, which is only useful when the importing library
+ *      happens to be the exporting one.
  *
  * Bumped rather than added silently because the change is legible in the file:
  * a reader (or a future importer) can tell a bundle that omits `bookcaseId`
  * because it predates cases from one that omits it because the book had none.
  */
-export const BUNDLE_SCHEMA_VERSION = 2;
+export const BUNDLE_SCHEMA_VERSION = 3;
 
 /**
  * Oldest schema this build can still read.
  *
- * Stays at 1. A v1 bundle is missing exactly one field, and the importer has a
- * good answer for it (the active case), so refusing to open one would be
- * throwing away someone's library for no reason.
+ * Stays at 1. Every field added since is one the importer has a good answer
+ * for without it — the active case for a missing `bookcaseId`, and no
+ * furniture at all for a missing `bookcases` list — so refusing to open an old
+ * bundle would be throwing away someone's library for no reason.
  */
 export const BUNDLE_MIN_READABLE_VERSION = 1;
 export const BUNDLE_EXTENSION = 'nbk';
@@ -67,6 +80,34 @@ export interface ManifestPage {
   checksum: string;
 }
 
+/**
+ * A bookcase the exported books stood in — the piece of furniture, not the
+ * books on it.
+ *
+ * This is what makes a bundle a picture of a LIBRARY rather than a pile of
+ * books: without it an importing machine knows a book belonged to case
+ * `case-7xKq` and has no way to build `case-7xKq`, so every book from every
+ * case lands in whichever one happens to be open.
+ */
+export interface ManifestBookcase {
+  /** The case's id in the library that exported it. */
+  id: string;
+  name: string;
+  /** Position in the exporting library's picker (ascending). */
+  ord: number;
+  /**
+   * The case's own room: a `LibraryPrefs` JSON blob, or null to follow the app
+   * default. Opaque here exactly as it is in `data/bookcases` — the validator
+   * lives in `features/bookshelf/libraryPrefs`, and a bundle must not need a
+   * second opinion about what a room is.
+   */
+  room: string | null;
+  /** How many floors the case showed (>= 1). */
+  floors: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ManifestBook {
   id: string;
   title: string;
@@ -74,14 +115,16 @@ export interface ManifestBook {
    * Which bookcase the book stood in, or null.
    *
    * Null means one of two different things and the importer treats them the
-   * same way: a bundle written before bookcases existed (schema < 3), or a
+   * same way: a bundle written before bookcases existed (schema 1), or a
    * book exported from a library that only ever had one case. Either way the
    * importer puts it in the active case, because "the case I am looking at" is
    * the only answer that is never surprising.
    *
-   * A non-null id is only honoured when a case with that id actually exists
-   * here. Bundles move between machines, and an id from someone else's library
-   * would otherwise send books to a case that is not there.
+   * A non-null id is honoured when a case with that id exists here, when
+   * `manifest.bookcases` describes it well enough to rebuild (schema 3+), or
+   * when a case here already carries the same name. Bundles move between
+   * machines, and an id from someone else's library must never send books to a
+   * case that is not there.
    */
   bookcaseId: string | null;
   floor: number;
@@ -114,6 +157,12 @@ export interface BundleManifest {
   /** Human label shown in the import tree header ("Study notes — 3 books"). */
   label: string;
   counts: { books: number; pages: number; assets: number };
+  /**
+   * The cases the listed books stood in. Empty for a bundle written before
+   * schema 3 — and empty is a fine answer, not a broken one: the importer then
+   * falls back to matching by id and finally to the active case.
+   */
+  bookcases: ManifestBookcase[];
   books: ManifestBook[];
   assets: ManifestAsset[];
   /** Library theme snapshot, or null when not included. */
@@ -204,6 +253,8 @@ export interface BuildManifestInput {
   variant: BundleVariant;
   layout: BundleLayout;
   label: string;
+  /** Cases the books stood in; omit for a bundle that carries none. */
+  bookcases?: ManifestBookcase[];
   books: ManifestBook[];
   assets: ManifestAsset[];
   theme: Record<string, unknown> | null;
@@ -234,6 +285,7 @@ export function buildManifest(input: BuildManifestInput): BundleManifest {
       pages: pageCount,
       assets: input.assets.length,
     },
+    bookcases: input.bookcases ?? [],
     books: input.books,
     assets: input.assets,
     theme: input.theme,
@@ -302,6 +354,47 @@ function parsePage(
   };
 }
 
+/**
+ * Sanity bounds for a hand-edited bundle. Not the app's real limits — the
+ * bookcase store clamps floors again on the way in (`clampFloorCount`) and is
+ * the authority; this only stops a manifest from carrying nonsense.
+ */
+const MAX_MANIFEST_FLOORS = 999;
+const MAX_ROOM_BLOB = 20_000;
+
+function parseBookcase(
+  raw: unknown,
+  index: number,
+  warnings: string[],
+): ManifestBookcase | null {
+  const record = asRecord(raw);
+  if (record === null) {
+    warnings.push(`bookcase ${index + 1} is malformed — skipped`);
+    return null;
+  }
+  // An unidentifiable case is worse than no case: books reference it by id, so
+  // one without an id can never receive them. Drop it and let those books fall
+  // back to the active case.
+  const id = asString(record.id);
+  if (id === '') {
+    warnings.push(`bookcase ${index + 1} has no id — skipped`);
+    return null;
+  }
+  const room = asString(record.room, '');
+  return {
+    id,
+    name: asString(record.name, `Bookcase ${index + 1}`).slice(0, 60),
+    ord: asInt(record.ord, index),
+    // An oversized blob is dropped rather than truncated: half a JSON room is
+    // not a room, and `roomToPrefs` would only degrade it to the default
+    // anyway — with the truncation blamed on the reader's colours.
+    room: room !== '' && room.length <= MAX_ROOM_BLOB ? room : null,
+    floors: Math.min(MAX_MANIFEST_FLOORS, Math.max(1, asInt(record.floors, 10))),
+    createdAt: asString(record.createdAt),
+    updatedAt: asString(record.updatedAt),
+  };
+}
+
 function parseBook(
   raw: unknown,
   index: number,
@@ -324,7 +417,7 @@ function parseBook(
   return {
     id: asString(record.id, `book-${index}`),
     title,
-    // Absent in every bundle written before schema 3. Null rather than a
+    // Absent in every bundle written before schema 2. Null rather than a
     // guessed id, so the importer can tell "no case recorded" from "this case".
     bookcaseId,
     floor: Math.max(0, asInt(record.floor, 0)),
@@ -400,6 +493,22 @@ export function parseManifest(source: string | unknown): ManifestParseResult {
     ? (scopeRaw as BundleScopeKind)
     : 'selection';
 
+  const bookcases: ManifestBookcase[] = [];
+  const seenBookcaseIds = new Set<string>();
+  asArray(record.bookcases).forEach((bookcase, i) => {
+    const parsed = parseBookcase(bookcase, i, warnings);
+    if (parsed === null) return;
+    // Two entries for one id would make "which case is this" ambiguous at the
+    // exact moment the importer has to pick one. First listing wins.
+    if (seenBookcaseIds.has(parsed.id)) {
+      warnings.push(`bookcase “${parsed.name}” is listed twice — the second was ignored`);
+      return;
+    }
+    seenBookcaseIds.add(parsed.id);
+    bookcases.push(parsed);
+  });
+  bookcases.sort((a, b) => a.ord - b.ord);
+
   const books: ManifestBook[] = [];
   asArray(record.books).forEach((book, i) => {
     const parsed = parseBook(book, i, warnings);
@@ -444,6 +553,7 @@ export function parseManifest(source: string | unknown): ManifestParseResult {
       layout,
       label: asString(record.label, 'Notebook bundle'),
       counts: { books: books.length, pages: pageCount, assets: assets.length },
+      bookcases,
       books,
       assets,
       theme: asRecord(record.theme),
@@ -487,16 +597,24 @@ export function formatBytes(bytes: number): string {
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }
 
-/** "3 books · 41 pages" — the count line under every tree header. */
+/** "2 bookcases · 3 books · 41 pages" — the count line under every tree header. */
 export function describeCounts(counts: {
   books: number;
   pages: number;
   assets?: number;
+  bookcases?: number;
 }): string {
-  const parts = [
+  const parts: string[] = [];
+  // Furniture first, because it is what the books stand in. Only when there is
+  // more than one: "1 bookcase" in front of every count is noise, since a
+  // library that has never been split has exactly one and always did.
+  if (counts.bookcases !== undefined && counts.bookcases > 1) {
+    parts.push(`${counts.bookcases} bookcases`);
+  }
+  parts.push(
     `${counts.books} book${counts.books === 1 ? '' : 's'}`,
     `${counts.pages} page${counts.pages === 1 ? '' : 's'}`,
-  ];
+  );
   if (counts.assets !== undefined && counts.assets > 0) {
     parts.push(`${counts.assets} asset${counts.assets === 1 ? '' : 's'}`);
   }

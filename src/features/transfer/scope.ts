@@ -62,11 +62,42 @@ export interface AssetSnapshot {
   bytes: number;
 }
 
+/**
+ * A bookcase as the exporter sees it — a plain mirror of the `bookcases` row.
+ *
+ * `room` stays an opaque string here for the same reason it is opaque in
+ * `data/bookcases`: `features/bookshelf/libraryPrefs` owns what a room is, and
+ * the transfer feature must not become a second opinion about it.
+ */
+export interface BookcaseSnapshot {
+  id: string;
+  name: string;
+  ord: number;
+  room: string | null;
+  floors: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LibrarySnapshot {
+  /**
+   * Every bookcase in the library, in picker order.
+   *
+   * Required, not optional. The whole feature once modelled a library as a
+   * flat list of books, and the resulting bundle could not say which case a
+   * book came from — a required field is what makes a snapshot that forgot the
+   * furniture a compile error instead of a silently flattened library.
+   */
+  bookcases: BookcaseSnapshot[];
   books: BookSnapshot[];
   assets: AssetSnapshot[];
   /** Library theme settings blob (theme name, wood stain, wallpaper…). */
   theme: Record<string, unknown> | null;
+}
+
+/** An empty library — the shape every "nothing loaded yet" fallback wants. */
+export function emptyLibrarySnapshot(): LibrarySnapshot {
+  return { bookcases: [], books: [], assets: [], theme: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +180,8 @@ export interface ExportPlanPage {
 export interface ExportPlanBook {
   id: string;
   title: string;
+  /** The case it stands in, or null when the library never recorded one. */
+  bookcaseId: string | null;
   floor: number;
   slot: number;
   /** Only the *selected* pages. */
@@ -160,6 +193,12 @@ export interface ExportPlanBook {
 
 export interface ExportPlan {
   books: ExportPlanBook[];
+  /**
+   * The cases the chosen books actually stand in — never the whole library's
+   * furniture. Exporting one book from one case must not ship a description of
+   * the other four rooms.
+   */
+  bookcases: BookcaseSnapshot[];
   assets: AssetSnapshot[];
   counts: { books: number; pages: number; assets: number };
   /** Estimated size of the produced file, in bytes. */
@@ -235,6 +274,7 @@ export function buildExportPlan(
     books.push({
       id: book.id,
       title: book.title,
+      bookcaseId: book.bookcaseId,
       floor: book.floor,
       slot: book.slot,
       pages,
@@ -242,6 +282,14 @@ export function buildExportPlan(
       bytes: bookBytes,
     });
   }
+
+  // Only the furniture the chosen books stand on, in picker order.
+  const travelling = new Set(
+    books.map((book) => book.bookcaseId).filter((id): id is string => id !== null),
+  );
+  const bookcases = snapshot.bookcases
+    .filter((bookcase) => travelling.has(bookcase.id))
+    .sort((a, b) => a.ord - b.ord);
 
   const assets = options.includeAssets && books.length > 0 ? snapshot.assets : [];
   for (const asset of assets) {
@@ -252,7 +300,8 @@ export function buildExportPlan(
       byteLength(JSON.stringify(snapshot.theme)) + entryOverhead(THEME_PATH);
   }
 
-  // Manifest: ~220 bytes of envelope, ~150 per book, ~190 per page entry.
+  // Manifest: ~220 bytes of envelope, ~150 per book, ~190 per page entry, and
+  // per case its own row plus however long its room blob really is.
   const manifestBytes =
     books.length === 0
       ? 0
@@ -260,10 +309,15 @@ export function buildExportPlan(
         books.length * (150 + (options.includeCoverStyling ? 120 : 0)) +
         pageCount * 190 +
         assets.length * 120 +
+        bookcases.reduce(
+          (sum, bookcase) => sum + 150 + (bookcase.room?.length ?? 0),
+          0,
+        ) +
         entryOverhead(MANIFEST_PATH);
 
   return {
     books,
+    bookcases,
     assets,
     counts: { books: books.length, pages: pageCount, assets: assets.length },
     estimatedBytes: totalBytes + manifestBytes,

@@ -38,11 +38,13 @@ import {
 import {
   DEFAULT_EXPORT_OPTIONS,
   buildExportPlan,
+  emptyLibrarySnapshot,
   occupiedFloors,
   planLabel,
   resolveScopeSelection,
   suggestedFileName,
   type BookSnapshot,
+  type BookcaseSnapshot,
   type ExportOptions,
   type LibrarySnapshot,
 } from '../src/features/transfer/scope';
@@ -58,6 +60,8 @@ import {
   defaultResolution,
   detectBookConflict,
   detectPageConflict,
+  neededBookcaseIds,
+  planBookcases,
   selectAllPages,
   uniqueTitle,
   type BookResolution,
@@ -71,6 +75,7 @@ import {
   normalizeRetention,
   planRevert,
   pruneForSize,
+  type LibraryRowIds,
   type RestorePoint,
 } from '../src/features/transfer/restore';
 import { parseHistory } from '../src/features/transfer/store';
@@ -119,8 +124,42 @@ function book(
   };
 }
 
+function bookcase(
+  id: string,
+  name: string,
+  ord = 0,
+  floors = 10,
+  room: string | null = null,
+): BookcaseSnapshot {
+  return {
+    id,
+    name,
+    ord,
+    room,
+    floors,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-02T00:00:00.000Z',
+  };
+}
+
+/** A snapshot with the furniture filled in from whichever cases books cite. */
+function snapshotOf(
+  books: BookSnapshot[],
+  bookcases?: BookcaseSnapshot[],
+): LibrarySnapshot {
+  const cited = [...new Set(books.map((b) => b.bookcaseId))].filter(
+    (id): id is string => id !== null,
+  );
+  return {
+    ...emptyLibrarySnapshot(),
+    bookcases: bookcases ?? cited.map((id, i) => bookcase(id, `Case ${i + 1}`, i)),
+    books,
+  };
+}
+
 function library(): LibrarySnapshot {
   return {
+    bookcases: [bookcase('case-1', 'My Library', 0, 10, '{"theme":"parchment"}')],
     books: [
       book('b1', 'Study notes', ['Cell biology', 'Mitosis', 'Meiosis'], 0),
       book('b2', 'Recipes', ['Sourdough', 'Focaccia'], 1),
@@ -130,6 +169,17 @@ function library(): LibrarySnapshot {
     ],
     theme: { theme: 'parchment', shelfWoodStain: 'oak' },
   };
+}
+
+/** The same library split across two pieces of furniture. */
+function twoCaseLibrary(): LibrarySnapshot {
+  const snapshot = library();
+  snapshot.bookcases = [
+    bookcase('case-1', 'Study', 0, 12, '{"theme":"parchment"}'),
+    bookcase('case-2', 'Kitchen', 1, 8, '{"theme":"reef"}'),
+  ];
+  snapshot.books[1].bookcaseId = 'case-2';
+  return snapshot;
 }
 
 const OPTIONS: ExportOptions = { ...DEFAULT_EXPORT_OPTIONS };
@@ -148,8 +198,10 @@ function restorePoint(patch: Partial<RestorePoint> = {}): RestorePoint {
     counts: { books: 1, pages: 3 },
     createdBooks: [],
     createdPages: [],
+    createdBookcases: [],
     priorBooks: [],
     priorPages: [],
+    priorBookcases: [],
     revertOf: null,
     revertedAt: null,
     revertedBy: null,
@@ -257,6 +309,124 @@ describe('bundle format', () => {
       };
       raw.books[0]!.bookcaseId = '';
       expect(parseManifest(raw as unknown).manifest?.books[0]?.bookcaseId).toBeNull();
+    });
+
+    /*
+     * An id alone (schema 2) is only useful when the importing library IS the
+     * exporting one. Everything below is schema 3: the furniture itself, so a
+     * machine that has never seen this library can build it.
+     */
+    const twoCaseManifest = () => {
+      const snapshot = twoCaseLibrary();
+      return buildBundleFiles({
+        snapshot,
+        plan: buildExportPlan(snapshot, allPages(snapshot), OPTIONS),
+        options: OPTIONS,
+        label: 'The whole library',
+        createdAt: '2026-07-30T09:00:00.000Z',
+        appVersion: '0.1.0',
+      }).manifest;
+    };
+
+    it('carries each case: name, height, order and room', () => {
+      const manifest = twoCaseManifest();
+      expect(manifest.bookcases.map((c) => c.id)).toEqual(['case-1', 'case-2']);
+      expect(manifest.bookcases[0]).toMatchObject({
+        name: 'Study',
+        ord: 0,
+        floors: 12,
+        room: '{"theme":"parchment"}',
+      });
+      expect(manifest.bookcases[1]).toMatchObject({ name: 'Kitchen', floors: 8 });
+    });
+
+    it('ships only the cases the chosen books actually stand in', () => {
+      const snapshot = twoCaseLibrary();
+      // Just the one book from "Study" — the Kitchen must not travel with it.
+      const plan = buildExportPlan(snapshot, new Set(['b1-p0']), OPTIONS);
+      expect(plan.bookcases.map((c) => c.name)).toEqual(['Study']);
+      const manifest = buildBundleFiles({
+        snapshot,
+        plan,
+        options: OPTIONS,
+        label: 'One book',
+        createdAt: '2026-07-30T09:00:00.000Z',
+        appVersion: '0.1.0',
+      }).manifest;
+      expect(manifest.bookcases.map((c) => c.id)).toEqual(['case-1']);
+    });
+
+    /*
+     * The furniture is deliberately NOT behind "include the library look".
+     * That toggle is about the app-wide ink/paper preferences; the shape of a
+     * library is structure, and making it optional would be offering to lose it.
+     */
+    it('carries the cases even with the library look left out', () => {
+      const snapshot = twoCaseLibrary();
+      const options: ExportOptions = { ...OPTIONS, includeLibraryTheme: false };
+      const manifest = buildBundleFiles({
+        snapshot,
+        plan: buildExportPlan(snapshot, allPages(snapshot), options),
+        options,
+        label: 'x',
+        createdAt: '2026-07-30T09:00:00.000Z',
+        appVersion: '0.1.0',
+      }).manifest;
+      expect(manifest.theme).toBeNull();
+      expect(manifest.bookcases).toHaveLength(2);
+      expect(manifest.bookcases[0].room).toBe('{"theme":"parchment"}');
+    });
+
+    it('parses the cases back out, in picker order', () => {
+      const round = parseManifest(
+        JSON.parse(JSON.stringify(twoCaseManifest())) as unknown,
+      );
+      expect(round.errors).toEqual([]);
+      expect(round.manifest?.bookcases.map((c) => c.name)).toEqual([
+        'Study',
+        'Kitchen',
+      ]);
+      expect(round.manifest?.bookcases[1].floors).toBe(8);
+    });
+
+    it('a bundle that predates the case list reads as no furniture, not a broken one', () => {
+      const raw = JSON.parse(JSON.stringify(twoCaseManifest())) as Record<
+        string,
+        unknown
+      >;
+      delete raw.bookcases;
+      raw.schemaVersion = 2;
+      const round = parseManifest(raw as unknown);
+      expect(round.manifest).not.toBeNull();
+      expect(round.manifest?.bookcases).toEqual([]);
+      // The ids are still there — a same-library import still lands correctly.
+      expect(round.manifest?.books[1].bookcaseId).toBe('case-2');
+    });
+
+    it('drops case entries a hand-edited bundle broke, and keeps the rest', () => {
+      const raw = JSON.parse(JSON.stringify(twoCaseManifest())) as {
+        bookcases: unknown[];
+      };
+      raw.bookcases.push(null);
+      raw.bookcases.push({ name: 'No id here' });
+      raw.bookcases.push({ id: 'case-1', name: 'Study again' });
+      const round = parseManifest(raw as unknown);
+      expect(round.manifest?.bookcases.map((c) => c.name)).toEqual([
+        'Study',
+        'Kitchen',
+      ]);
+      expect(round.warnings.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('refuses an unusable floor count and an oversized room blob', () => {
+      const round = parseManifest({
+        ...(JSON.parse(JSON.stringify(twoCaseManifest())) as Record<string, unknown>),
+        bookcases: [
+          { id: 'c', name: 'Odd', floors: -4, room: 'x'.repeat(40_000) },
+        ],
+      });
+      expect(round.manifest?.bookcases[0].floors).toBe(1);
+      expect(round.manifest?.bookcases[0].room).toBeNull();
     });
   });
 
@@ -512,11 +682,7 @@ describe('export scope', () => {
   });
 
   it('disambiguates two books with the same title', () => {
-    const snapshot: LibrarySnapshot = {
-      books: [book('b1', 'Notes', ['a']), book('b2', 'Notes', ['b'])],
-      assets: [],
-      theme: null,
-    };
+    const snapshot: LibrarySnapshot = snapshotOf([book('b1', 'Notes', ['a']), book('b2', 'Notes', ['b'])]);
     const plan = buildExportPlan(snapshot, allPages(snapshot), OPTIONS);
     expect(plan.books[0].pages[0].file).toMatch(/^pages\/notes\//);
     expect(plan.books[1].pages[0].file).toMatch(/^pages\/notes-2\//);
@@ -722,11 +888,7 @@ describe('import conflict matrix', () => {
   });
 
   it('plans a clean import as plain creates', () => {
-    const incoming: LibrarySnapshot = {
-      books: [book('n1', 'Physics', ['Optics', 'Waves'])],
-      assets: [],
-      theme: null,
-    };
+    const incoming: LibrarySnapshot = snapshotOf([book('n1', 'Physics', ['Optics', 'Waves'])]);
     const manifest = bundleOf(incoming);
     const plan = buildImportPlan(manifest, buildLibraryIndex(library()), {
       pages: selectAllPages(manifest),
@@ -739,11 +901,7 @@ describe('import conflict matrix', () => {
   });
 
   it('renames on a title clash and appends on merge', () => {
-    const incoming: LibrarySnapshot = {
-      books: [book('n1', 'Recipes', ['Bagels'])],
-      assets: [],
-      theme: null,
-    };
+    const incoming: LibrarySnapshot = snapshotOf([book('n1', 'Recipes', ['Bagels'])]);
     const manifest = bundleOf(incoming);
     const index = buildLibraryIndex(library());
     const selection = { pages: selectAllPages(manifest), resolutions: new Map() };
@@ -762,11 +920,7 @@ describe('import conflict matrix', () => {
   });
 
   it('merge without an existing match degrades to a create', () => {
-    const incoming: LibrarySnapshot = {
-      books: [book('n1', 'Astronomy', ['Stars'])],
-      assets: [],
-      theme: null,
-    };
+    const incoming: LibrarySnapshot = snapshotOf([book('n1', 'Astronomy', ['Stars'])]);
     const manifest = bundleOf(incoming);
     const plan = buildImportPlan(manifest, buildLibraryIndex(library()), {
       pages: selectAllPages(manifest),
@@ -777,11 +931,7 @@ describe('import conflict matrix', () => {
   });
 
   it('skips explicitly and when every page is unticked', () => {
-    const incoming: LibrarySnapshot = {
-      books: [book('n1', 'Skipped', ['One']), book('n2', 'Empty pick', ['Two'])],
-      assets: [],
-      theme: null,
-    };
+    const incoming: LibrarySnapshot = snapshotOf([book('n1', 'Skipped', ['One']), book('n2', 'Empty pick', ['Two'])]);
     const manifest = bundleOf(incoming);
     const plan = buildImportPlan(manifest, buildLibraryIndex(library()), {
       pages: new Set(['n1-p0']),
@@ -793,11 +943,7 @@ describe('import conflict matrix', () => {
   });
 
   it('counts partially ticked books and reports the omissions', () => {
-    const incoming: LibrarySnapshot = {
-      books: [book('n1', 'Half', ['a', 'b', 'c'])],
-      assets: [],
-      theme: null,
-    };
+    const incoming: LibrarySnapshot = snapshotOf([book('n1', 'Half', ['a', 'b', 'c'])]);
     const manifest = bundleOf(incoming);
     const plan = buildImportPlan(manifest, buildLibraryIndex(library()), {
       pages: new Set(['n1-p0']),
@@ -809,11 +955,7 @@ describe('import conflict matrix', () => {
   });
 
   it('two renamed books in one bundle never collide', () => {
-    const incoming: LibrarySnapshot = {
-      books: [book('n1', 'Recipes', ['a']), book('n2', 'Recipes', ['b'])],
-      assets: [],
-      theme: null,
-    };
+    const incoming: LibrarySnapshot = snapshotOf([book('n1', 'Recipes', ['a']), book('n2', 'Recipes', ['b'])]);
     const manifest = bundleOf(incoming);
     const plan = buildImportPlan(manifest, buildLibraryIndex(library()), {
       pages: selectAllPages(manifest),
@@ -834,6 +976,182 @@ describe('import conflict matrix', () => {
       resolutions: new Map(),
     });
     expect(plan.books[0].pages.every((p) => p.conflict === 'same-id')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bookcase resolution — which furniture an import needs, and where from
+// ---------------------------------------------------------------------------
+
+describe('import bookcase matching', () => {
+  const bundleOf = (snapshot: LibrarySnapshot) =>
+    buildBundleFiles({
+      snapshot,
+      plan: buildExportPlan(snapshot, allPages(snapshot), OPTIONS),
+      options: OPTIONS,
+      label: 'Shared notes',
+      createdAt: '2026-07-30T09:00:00.000Z',
+      appVersion: '0.1.0',
+    }).manifest;
+
+  /** Bundle a two-case library and plan importing all of it. */
+  const incoming = (
+    here: LibrarySnapshot,
+    resolutions = new Map<string, BookResolution>(),
+  ) => {
+    const manifest = bundleOf(twoCaseLibrary());
+    const plan = buildImportPlan(manifest, buildLibraryIndex(here), {
+      pages: selectAllPages(manifest),
+      resolutions,
+    });
+    return {
+      manifest,
+      plan,
+      cases: planBookcases(
+        manifest,
+        plan,
+        here.bookcases.map((c) => ({ id: c.id, name: c.name })),
+      ),
+    };
+  };
+
+  it('builds every case a foreign library brought with it', () => {
+    // A library that shares no ids and no names with the bundle.
+    const here = snapshotOf([], [bookcase('case-mine', 'My Library')]);
+    const { cases } = incoming(here);
+    expect(cases.create.map((c) => c.name)).toEqual(['Study', 'Kitchen']);
+    expect(cases.adopted.size).toBe(0);
+    expect(cases.summary).toEqual([
+      'Build the bookcase “Study” (12 floors)',
+      'Build the bookcase “Kitchen” (8 floors)',
+    ]);
+    expect(cases.notable).toBe(true);
+  });
+
+  /*
+   * The everyday import: one library, one bookcase, a bundle that lands in it.
+   * There is nothing to say — and saying “books from My Library go into your
+   * My Library” above every import makes the lines that matter harder to read.
+   */
+  it('says nothing when every book lands in the one case already open', () => {
+    const single = library();
+    const manifest = bundleOf(single);
+    const plan = buildImportPlan(manifest, buildLibraryIndex(single), {
+      pages: selectAllPages(manifest),
+      resolutions: new Map(),
+    });
+    const cases = planBookcases(manifest, plan, [
+      { id: 'case-1', name: 'My Library' },
+    ]);
+    expect(cases.create).toEqual([]);
+    expect(cases.bookcases).toHaveLength(1);
+    expect(cases.notable).toBe(false);
+  });
+
+  it('speaks up as soon as the books are split across two cases', () => {
+    const here = snapshotOf([], [bookcase('case-1', 'Study'), bookcase('case-2', 'Kitchen', 1)]);
+    const { cases } = incoming(here);
+    expect(cases.create).toEqual([]);
+    expect(cases.notable).toBe(true);
+  });
+
+  it('adopts a case whose id is already here — the same library, restored', () => {
+    const here = snapshotOf([], [bookcase('case-1', 'Renamed since'), bookcase('case-2', 'Kitchen', 1)]);
+    const { cases } = incoming(here);
+    expect(cases.create).toEqual([]);
+    expect(cases.adopted.get('case-1')).toBe('case-1');
+    expect(cases.bookcases[0].matchedBy).toBe('id');
+    // The name here wins: it is the one the reader chose.
+    expect(cases.summary[0]).toBe('Books from “Study” go back into your “Renamed since”');
+  });
+
+  /*
+   * The second import of the same bundle. Ids are private to a library, so a
+   * rebuilt case has a fresh one — without a name match the third import would
+   * leave the reader with "Study", "Study" and "Study".
+   */
+  it('adopts a case that only matches by name', () => {
+    const here = snapshotOf([], [bookcase('case-xyz', '  study  ')]);
+    const { cases } = incoming(here);
+    expect(cases.adopted.get('case-1')).toBe('case-xyz');
+    expect(cases.bookcases[0].matchedBy).toBe('name');
+    expect(cases.create.map((c) => c.name)).toEqual(['Kitchen']);
+  });
+
+  it('needs no furniture at all when every book is skipped', () => {
+    const here = snapshotOf([], [bookcase('case-mine', 'My Library')]);
+    const { cases } = incoming(
+      here,
+      new Map<string, BookResolution>([
+        ['b1', 'skip'],
+        ['b2', 'skip'],
+      ]),
+    );
+    expect(cases.bookcases).toEqual([]);
+    expect(cases.create).toEqual([]);
+  });
+
+  /*
+   * Appending to a book that is already on the shelf must not drag its case in
+   * — the book stays where the reader put it, and moving it would be the one
+   * destructive thing this feature promises never to do.
+   */
+  it('a book being appended to brings no case with it', () => {
+    const here = library();
+    const manifest = bundleOf(twoCaseLibrary());
+    const plan = buildImportPlan(manifest, buildLibraryIndex(here), {
+      pages: selectAllPages(manifest),
+      resolutions: new Map<string, BookResolution>([
+        ['b1', 'merge'],
+        ['b2', 'skip'],
+      ]),
+    });
+    expect(neededBookcaseIds(manifest, plan).size).toBe(0);
+  });
+
+  /*
+   * A schema-2 bundle names a case and cannot describe it. If the id is not
+   * here there is no recipe to build one from, and inventing an empty case
+   * called `case-2` would be furniture with someone else's serial number on
+   * it. The books fall back to the active case, exactly as they did before.
+   */
+  it('leaves a named-but-undescribed case out rather than inventing one', () => {
+    const manifest = bundleOf(twoCaseLibrary());
+    const stripped = parseManifest({
+      ...(JSON.parse(JSON.stringify(manifest)) as Record<string, unknown>),
+      bookcases: [],
+    }).manifest;
+    expect(stripped).not.toBeNull();
+    const here = snapshotOf([], [bookcase('case-mine', 'My Library')]);
+    const plan = buildImportPlan(stripped!, buildLibraryIndex(here), {
+      pages: selectAllPages(stripped!),
+      resolutions: new Map(),
+    });
+    const cases = planBookcases(stripped!, plan, [
+      { id: 'case-mine', name: 'My Library' },
+    ]);
+    expect(cases.bookcases).toEqual([]);
+    expect(cases.create).toEqual([]);
+    // …but the ids were still needed, which is what the fallback answers for.
+    expect([...neededBookcaseIds(stripped!, plan)].sort()).toEqual([
+      'case-1',
+      'case-2',
+    ]);
+  });
+
+  it('two source cases sharing one name here both land in it', () => {
+    const snapshot = twoCaseLibrary();
+    snapshot.bookcases[1].name = 'Study';
+    const manifest = bundleOf(snapshot);
+    const here = snapshotOf([], [bookcase('case-only', 'Study')]);
+    const plan = buildImportPlan(manifest, buildLibraryIndex(here), {
+      pages: selectAllPages(manifest),
+      resolutions: new Map(),
+    });
+    const cases = planBookcases(manifest, plan, [{ id: 'case-only', name: 'Study' }]);
+    expect(cases.create).toEqual([]);
+    expect(cases.adopted.get('case-1')).toBe('case-only');
+    expect(cases.adopted.get('case-2')).toBe('case-only');
   });
 });
 
@@ -922,6 +1240,7 @@ describe('revert planning', () => {
   const bookRow = (id: string) => ({
     id,
     title: 'Recipes',
+    bookcase_id: 'case-1',
     floor: 1,
     slot: 0,
     spine_seed: 4,
@@ -929,6 +1248,25 @@ describe('revert planning', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   });
+
+  /** The library as it stands now: which books live in which case. */
+  const rowIds = (
+    homes: Record<string, string>,
+    pageIds: string[] = [],
+    bookcaseIds: string[] = [],
+  ): LibraryRowIds => {
+    const counts = new Map<string, number>();
+    for (const home of Object.values(homes)) {
+      counts.set(home, (counts.get(home) ?? 0) + 1);
+    }
+    return {
+      bookIds: new Set(Object.keys(homes)),
+      pageIds: new Set(pageIds),
+      bookcaseIds: new Set(bookcaseIds),
+      bookCountByBookcase: counts,
+      bookcaseOfBook: new Map(Object.entries(homes)),
+    };
+  };
 
   it('deletes only rows the import created that still exist', () => {
     const point = restorePoint({
@@ -939,10 +1277,10 @@ describe('revert planning', () => {
         { id: 'pgGone', bookId: 'b2' },
       ],
     });
-    const plan = planRevert(point, {
-      bookIds: new Set(['new1', 'b2']),
-      pageIds: new Set(['pg1', 'pg2']),
-    });
+    const plan = planRevert(
+      point,
+      rowIds({ new1: 'case-1', b2: 'case-1' }, ['pg1', 'pg2']),
+    );
     expect(plan.deleteBookIds).toEqual(['new1']);
     // pg1 lives inside a book being deleted → covered by the cascade.
     expect(plan.deletePageIds).toEqual(['pg2']);
@@ -953,16 +1291,76 @@ describe('revert planning', () => {
 
   it('restores modified rows verbatim', () => {
     const point = restorePoint({ priorBooks: [bookRow('b2')] });
-    const plan = planRevert(point, { bookIds: new Set(['b2']), pageIds: new Set() });
+    const plan = planRevert(point, rowIds({ b2: 'case-1' }));
     expect(plan.restoreBooks[0]).toEqual(bookRow('b2'));
     expect(plan.summary[0]).toMatch(/Put back 1 row/);
   });
 
   it('is a no-op once everything is already gone', () => {
     const point = restorePoint({ createdBooks: ['x'], createdPages: [{ id: 'y', bookId: 'x' }] });
-    const plan = planRevert(point, { bookIds: new Set(), pageIds: new Set() });
+    const plan = planRevert(point, rowIds({}));
     expect(plan.empty).toBe(true);
     expect(plan.summary[plan.summary.length - 1]).toMatch(/Nothing left to undo/);
+  });
+
+  /*
+   * Furniture the import built. The rule is not "delete what I made" but
+   * "delete what I made that nobody has used since" — a case the reader has
+   * shelved their own books in is theirs, whatever put it there.
+   */
+  it('takes down a bookcase the import built once the revert empties it', () => {
+    const point = restorePoint({
+      createdBooks: ['new1'],
+      createdBookcases: ['case-new'],
+    });
+    const plan = planRevert(point, rowIds({ new1: 'case-new' }, [], ['case-1', 'case-new']));
+    expect(plan.deleteBookcaseIds).toEqual(['case-new']);
+    expect(plan.keptBookcaseIds).toEqual([]);
+    expect(plan.summary.join(' ')).toMatch(/Take down 1 bookcase/);
+  });
+
+  it('keeps a built bookcase the reader has since shelved their own books in', () => {
+    const point = restorePoint({
+      createdBooks: ['new1'],
+      createdBookcases: ['case-new'],
+    });
+    const plan = planRevert(
+      point,
+      rowIds({ new1: 'case-new', mine: 'case-new' }, [], ['case-1', 'case-new']),
+    );
+    expect(plan.deleteBookcaseIds).toEqual([]);
+    expect(plan.keptBookcaseIds).toEqual(['case-new']);
+    expect(plan.summary.join(' ')).toMatch(/shelved your own books there/);
+  });
+
+  it('leaves alone a built bookcase the reader has already deleted', () => {
+    const point = restorePoint({ createdBookcases: ['case-gone'] });
+    const plan = planRevert(point, rowIds({}, [], ['case-1']));
+    expect(plan.deleteBookcaseIds).toEqual([]);
+    expect(plan.empty).toBe(true);
+  });
+
+  it('a case is enough to make a revert non-empty', () => {
+    const point = restorePoint({ createdBookcases: ['case-new'] });
+    const plan = planRevert(point, rowIds({}, [], ['case-new']));
+    expect(plan.empty).toBe(false);
+    expect(plan.deleteBookcaseIds).toEqual(['case-new']);
+  });
+
+  it('puts a bookcase row back verbatim', () => {
+    const row = {
+      id: 'case-2',
+      name: 'Kitchen',
+      ord: 1,
+      room: '{"theme":"reef"}',
+      floors: 8,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    };
+    const plan = planRevert(restorePoint({ priorBookcases: [row] }), rowIds({}));
+    expect(plan.restoreBookcases[0]).toEqual(row);
+    expect(plan.empty).toBe(false);
+    expect(plan.summary[0]).toMatch(/Put back 1 row/);
   });
 });
 

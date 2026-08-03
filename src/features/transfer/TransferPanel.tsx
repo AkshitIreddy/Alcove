@@ -41,6 +41,7 @@ import {
   defaultResolution,
   detectBookConflict,
   detectPageConflict,
+  planBookcases,
   selectAllPages,
   type BookResolution,
   type ImportPlan,
@@ -72,6 +73,7 @@ import {
 import {
   DEFAULT_EXPORT_OPTIONS,
   buildExportPlan,
+  emptyLibrarySnapshot,
   occupiedFloors,
   planLabel,
   resolveScopeSelection,
@@ -175,8 +177,7 @@ function ExportRoom(props: {
   });
   const [busy, setBusy] = createSignal(false);
 
-  const snapshot = (): LibrarySnapshot =>
-    props.snapshot ?? { books: [], assets: [], theme: null };
+  const snapshot = (): LibrarySnapshot => props.snapshot ?? emptyLibrarySnapshot();
 
   // The scope chips seed the selection once (see `pickScope`); after that the
   // ticks own it. Re-seeding on every scope change would undo a hand-picked
@@ -438,8 +439,11 @@ function ExportRoom(props: {
         <div class="nb-tr-parcel">
           <h4 class="nb-tr-h4">In the parcel</h4>
           <p class="nb-tr-parcel-counts font-ui">
-            {describeCounts(plan().counts)} · about{' '}
-            {formatBytes(plan().estimatedBytes)}
+            {describeCounts({
+              ...plan().counts,
+              bookcases: plan().bookcases.length,
+            })}{' '}
+            · about {formatBytes(plan().estimatedBytes)}
           </p>
           <ul class="nb-tr-parcel-list">
             <For each={plan().books.slice(0, 7)}>
@@ -508,7 +512,7 @@ function ImportRoom(props: {
   const [done, setDone] = createSignal<string | null>(null);
 
   const index = createMemo(() =>
-    buildLibraryIndex(props.snapshot ?? { books: [], assets: [], theme: null }),
+    buildLibraryIndex(props.snapshot ?? emptyLibrarySnapshot()),
   );
 
   const plan = createMemo(() => {
@@ -518,6 +522,21 @@ function ImportRoom(props: {
       pages: selectedPages(),
       resolutions: resolutions(),
     });
+  });
+
+  /*
+   * The same pure resolution `applyImportPlan` runs, so the furniture lines in
+   * "what will happen" are the decision and not a description of one.
+   */
+  const casePlan = createMemo(() => {
+    const current = bundle()?.contents;
+    const books = plan();
+    if (current === undefined || current === null || books === null) return null;
+    return planBookcases(
+      current.manifest,
+      books,
+      (props.snapshot?.bookcases ?? []).map((c) => ({ id: c.id, name: c.name })),
+    );
   });
 
   const choose = async (): Promise<void> => {
@@ -645,8 +664,11 @@ function ImportRoom(props: {
             <div class="nb-tr-col nb-tr-col-tree">
               <h3 class="nb-tr-h3">{contents().manifest.label}</h3>
               <p class="nb-tr-lede font-ui">
-                {describeCounts(contents().manifest.counts)} · from{' '}
-                {bundle()?.fileName} · tick what you want
+                {describeCounts({
+                  ...contents().manifest.counts,
+                  bookcases: contents().manifest.bookcases.length,
+                })}{' '}
+                · from {bundle()?.fileName} · tick what you want
               </p>
               <div class="nb-tr-tree" role="tree" aria-label="Bundle contents">
                 <For each={contents().manifest.books}>
@@ -747,6 +769,22 @@ function ImportRoom(props: {
             <div class="nb-tr-col nb-tr-col-side">
               <h3 class="nb-tr-h3">What will happen</h3>
               <ul class="nb-tr-plan">
+                <For each={casePlan()?.notable === true ? casePlan()!.bookcases : []}>
+                  {(bookcase) => (
+                    /*
+                     * Furniture borrows the books' visual vocabulary rather
+                     * than inventing a third: adopting a case that is already
+                     * here is the same kind of act as adding pages to a book
+                     * that is already here, and reads in the same colour.
+                     */
+                    <li
+                      class="nb-tr-plan-item"
+                      data-action={bookcase.action === 'adopt' ? 'append' : 'create'}
+                    >
+                      {bookcase.summary}
+                    </li>
+                  )}
+                </For>
                 <For each={plan()?.books ?? []}>
                   {(book) => (
                     <li class="nb-tr-plan-item" data-action={book.action}>
@@ -832,8 +870,12 @@ function HistoryRoom(props: { revision: number; onChanged(): void }): JSX.Elemen
         notify('nothing left to undo for that import');
       } else {
         void play('pop-soft');
+        const furniture =
+          outcome.removedBookcases === 0
+            ? ''
+            : ` and ${outcome.removedBookcases} bookcase${outcome.removedBookcases === 1 ? '' : 's'}`;
         notify(
-          `undone — ${outcome.removedBooks} book${outcome.removedBooks === 1 ? '' : 's'} and ${outcome.removedPages} page${outcome.removedPages === 1 ? '' : 's'} removed`,
+          `undone — ${outcome.removedBooks} book${outcome.removedBooks === 1 ? '' : 's'} and ${outcome.removedPages} page${outcome.removedPages === 1 ? '' : 's'}${furniture} removed`,
         );
       }
       props.onChanged();

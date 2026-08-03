@@ -95,7 +95,14 @@ async function buildMixedBundle(page: Page): Promise<string> {
       if (index === 2) return { ...book, id: `y-${book.id}`, title: 'Botany field notes' };
       return book;
     });
-    const shared = { books, assets: [], theme: null };
+    // The furniture travels with the books: a snapshot without it is not a
+    // library, and `buildExportPlan` reads it to decide which cases ship.
+    const shared = {
+      bookcases: snapshot.bookcases,
+      books,
+      assets: [],
+      theme: null,
+    };
     const plan = scope.buildExportPlan(
       shared,
       scope.resolveScopeSelection(shared, { kind: 'library' }),

@@ -26,13 +26,16 @@ export {
   formatBytes,
   parseManifest,
   type BundleManifest,
+  type ManifestBookcase,
 } from './format';
 
 export {
   DEFAULT_EXPORT_OPTIONS,
   buildExportPlan,
+  emptyLibrarySnapshot,
   resolveScopeSelection,
   suggestedFileName,
+  type BookcaseSnapshot,
   type ExportOptions,
   type ExportPlan,
   type ExportScope,
@@ -43,7 +46,9 @@ export {
   buildImportPlan,
   buildLibraryIndex,
   defaultResolution,
+  planBookcases,
   type BookResolution,
+  type BookcasePlan,
   type ImportPlan,
 } from './conflicts';
 

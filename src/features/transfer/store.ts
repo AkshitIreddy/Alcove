@@ -82,11 +82,20 @@ function parsePoint(raw: unknown): RestorePoint | null {
     },
     createdBooks: asStringArray(record.createdBooks),
     createdPages,
+    // Absent in every point written before bundles carried furniture. Empty is
+    // the right reading: that import built no cases, so its revert takes none
+    // down and puts none back.
+    createdBookcases: asStringArray(record.createdBookcases),
     priorBooks: Array.isArray(record.priorBooks)
       ? (record.priorBooks.filter((row) => asRecord(row) !== null) as RestorePoint['priorBooks'])
       : [],
     priorPages: Array.isArray(record.priorPages)
       ? (record.priorPages.filter((row) => asRecord(row) !== null) as RestorePoint['priorPages'])
+      : [],
+    priorBookcases: Array.isArray(record.priorBookcases)
+      ? (record.priorBookcases.filter(
+          (row) => asRecord(row) !== null,
+        ) as RestorePoint['priorBookcases'])
       : [],
     revertOf: typeof record.revertOf === 'string' ? record.revertOf : null,
     revertedAt: typeof record.revertedAt === 'string' ? record.revertedAt : null,

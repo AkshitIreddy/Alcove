@@ -315,6 +315,39 @@
    Progress — tiny inked circles.
    -------------------------------------------------------------------------- */
 
+/*
+ * The dots and the actions STAY PUT while the card scrolls.
+ *
+ * The card is its own scroller (`overflow-y: auto` above) and its comment
+ * already says the actions and the dots "must never be unreachable" — but a
+ * scroller does not honour that on its own: on a long step, both sat below the
+ * fold, which is the reader's reported scroll bug arriving from the other
+ * direction ("scroll down and the back button is not visible until you scroll
+ * fully up").
+ *
+ * Sticky rather than a flex footer, because that needs no markup change and no
+ * fixed height: the card keeps growing to fit short steps and only pins the
+ * footer once there is more than a screenful.
+ *
+ * The background is not decoration — a transparent sticky strip would let the
+ * body text scroll THROUGH the dots.
+ */
+.nbt-dots,
+.nbt-actions {
+  position: sticky;
+  z-index: 1;
+  background: var(--paper-aged);
+}
+
+.nbt-dots {
+  bottom: 44px; /* clears the actions row pinned beneath it */
+}
+
+.nbt-actions {
+  bottom: 0;
+  padding-bottom: var(--space-4);
+}
+
 .nbt-dots {
   display: flex;
   align-items: center;

@@ -321,7 +321,24 @@
   position: fixed;
   left: var(--space-16);
   bottom: var(--space-16);
-  z-index: var(--z-menus);
+  /*
+   * BELOW the pulled-book scrim, not above it.
+   *
+   * This sat at --z-menus (300) against a scrim at --z-overlay - 1 (99), so
+   * when a book came off the shelf the whole room dimmed behind the scrim and
+   * the seal stayed lit, floating over it — the one bright thing in a room that
+   * had just been turned down.
+   *
+   * --z-menus is for popovers and context menus, which DO have to clear
+   * everything. This is a resting control on the desk: it belongs with the desk.
+   * 2 below the scrim leaves it above the shelf world and under both the scrim
+   * and the focused-book overlay, which is also right — the gear has no business
+   * floating over an open book.
+   *
+   * The settings SHEET is a separate layer (.nbs-layer, near --z-toasts) and is
+   * unaffected; this is only the button that opens it.
+   */
+  z-index: calc(var(--z-overlay) - 2);
   width: 46px;
   height: 46px;
   display: grid;

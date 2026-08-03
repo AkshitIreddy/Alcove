@@ -2,25 +2,28 @@
 
 ## ⏭️ NEXT UP (2026-08-01, end of session)
 
-Six of the nine items from the "fifty of everything + fix all" pass are done and
-pushed. These three are what is left, in the order worth doing them.
+Eight of the nine items from the "fifty of everything + fix all" pass are done
+and pushed.
 
-- [ ] **Ship readiness — NOT STARTED.** Rebuild and verify the NSIS installer
-      carries the Bellanote name, icon and `com.bellanote.app` identity. Sweep
-      for stale "Notebook" — but keep TWO deliberate exceptions: the script
-      language is called *Notebook Script* (a product name) and
-      `seed.LEGACY_WELCOME_BOOK_TITLE` must keep its old value (a migration
-      constant). Also: `playwright.config.ts` has `retries: 0` against a shared
-      dev server; `npm run sounds` should fail clearly when ffmpeg is missing
-      rather than confusingly; settings still says shortcut rebinding "is on its
-      way" — implement it or make the copy honest.
-- [ ] **The cover collapses fifty coverings to a binary.** `covers.ts:1074`
-      picks pale parchment or dyed cloth and nothing else, on the reasoning that
-      flat art has no grain. That held when materials were seven look-alikes;
-      `bookDesign` now has fifty MATERIALS with real painters (twill, laid
-      lines, ribbed, chequer, half-bound), so the board a reader actually holds
-      is markedly less expressive than the spine it belongs to. Reuse
-      `bookDesign`'s material painters at cover scale.
+- [x] ~~**Ship readiness**~~ — and it was worse than the list said: `main.rs`
+      still called `notebook_lib::run()` after the crate became `bellanote`, so
+      **the Rust binary did not compile at all**. tsc and vitest were green
+      through the entire rename and neither could see it. Both installers now
+      build and carry the right identity, verified off the binary itself
+      (`ProductName: Bellanote`, `com.bellanote.app`):
+      `Bellanote_0.1.0_x64-setup.exe` (14.5 MB) and
+      `Bellanote_0.1.0_x64_en-US.msi` (16.5 MB). Stale `Notebook_*` artifacts
+      deleted from `target/` so nobody ships one by mistake.
+- [x] ~~The cover collapses coverings to a binary~~ — PARTLY. It reads each
+      covering's `body` tone from the same table the spine uses instead of a
+      two-item set, so `paper` is now a washed wrapper distinct from `vellum`'s
+      cream half-bound board: three board treatments where there were two.
+      **Still open below** — five of the seven remain identical.
+- [ ] **Five coverings still share one board.** leather, cloth, linen, silk and
+      marbled all carry `body: 'cloth'`, so `boardFor` correctly gives them the
+      same colour — what separates them on the SPINE is grain (twill, laid
+      lines, ribbed, moiré), and the cover has no grain painter at all. Giving
+      it one is the remaining half of this item.
 - [ ] **Split `DEFAULT_WALLPAPER_ID` before repointing it.** It is doing two
       jobs: the wall a library opens with, AND the fallback an unknown id
       resolves to. Pointing it at a patterned paper to show the fifty off also

@@ -39,6 +39,8 @@
  */
 
 import type { CharmKind } from './charms';
+import { MATERIALS, materialLookFor } from './bookDesign';
+import { mixHex } from './shelfDesign';
 import {
   CLOTHS,
   FLAT,
@@ -247,8 +249,50 @@ export function deriveCoverParams(
 
 /* --------------------------------- colors -------------------------------- */
 
-/** Bindings that are pale board rather than dyed cloth. */
-const PALE_BINDINGS: ReadonlySet<BindingMaterial> = new Set<BindingMaterial>(['vellum', 'paper']);
+/**
+ * The board a covering makes of the book's own colour.
+ *
+ * This used to be a two-way switch — `PALE_BINDINGS` held vellum and paper, and
+ * everything else got the plain dyed cloth. The reasoning was that flat art has
+ * no grain, so a material can only say one thing. That was true when materials
+ * were seven near-identical entries; `bookDesign` now carries fifty coverings,
+ * each with a `body` tone saying how it RELATES to the book's hue — a buckram
+ * is the same book in its own darker value, a wrapper is washed most of the way
+ * to paper, vellum throws the pigment away and keeps it only on the label.
+ *
+ * So the cover asks the same table the spine reads rather than keeping its own
+ * two-item opinion. Six relationships instead of two, and — the point — a board
+ * that agrees with the spine it is bound to.
+ *
+ * `BindingMaterial` (the studio's seven chips) is mapped through
+ * `materialLookFor` to the fifty, which is the same hop `drawBookSpine` makes.
+ */
+function boardFor(
+  material: BindingMaterial,
+  cloth: readonly [string, string],
+): readonly [string, string] {
+  const [face, dark] = cloth;
+  switch (MATERIALS[materialLookFor(material)].body) {
+    case 'pale':
+      // Washed toward paper but still the book's own colour — a wrapper, not a
+      // blank card.
+      return [mixHex(face, FLAT.cream, 0.52), dark];
+    case 'cream':
+    case 'parchment':
+      // The pigment is thrown away and lives on the label. Half-bound with a
+      // timber spine, because cream-on-cream lost the hinge line and the label
+      // had nothing to sit against — and a vellum board with a calf spine is
+      // how these were actually made.
+      return PALE_BOARD;
+    case 'deep':
+      return [dark, mixHex(dark, FLAT.ink, 0.35)];
+    case 'accent':
+      return [face, mixHex(dark, FLAT.ink, 0.25)];
+    case 'cloth':
+    default:
+      return cloth;
+  }
+}
 
 /**
  * The parchment board, standing in for every pale binding — and half-bound,
@@ -1319,8 +1363,9 @@ export function renderCoverInto(
   // boards are dyed cloth or pale parchment. That is also the only difference
   // you can actually see across a room, which is the test the whole restyle
   // is built around.
-  const pale = PALE_BINDINGS.has(material);
-  const [face, dark] = pale ? PALE_BOARD : clothFor(params.palette);
+  const board = boardFor(material, clothFor(params.palette));
+  const pale = board === PALE_BOARD;
+  const [face, dark] = board;
   const gilded = params.gilt;
 
   /* ---- layout ---- */

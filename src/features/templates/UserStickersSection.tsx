@@ -11,7 +11,8 @@
  * Shows the imported sticker grid (click inserts at the caret, exactly like
  * the built-ins) plus a dashed "+ import" tile driving the PNG/SVG picker.
  */
-import { For, createSignal, onCleanup, type JSX } from 'solid-js';
+import { Capped } from '../../views/rail/DesignStrip';
+import { createSignal, onCleanup, type JSX } from 'solid-js';
 import { activeEditor } from '../../editor/insert/activeEditor';
 import {
   listUserStickers,
@@ -40,24 +41,32 @@ export default function UserStickersSection(): JSX.Element {
     >
       <h3 class="nb-panel-section-title">your stickers</h3>
       <div class="nb-sticker-grid" role="group" aria-label="Your stickers">
-        <For each={stickers()}>
+        {/*
+          Capped like every other long list in the app — the reader asked for
+          it "in the whole app", and this one is the only grid whose length is
+          decided by THEM: a reader who imports two hundred stickers would build
+          two hundred <img> in a panel that opens on every book.
+          No `isActive`: nothing in this grid is a current choice, it is a
+          drawer of things to insert.
+        */}
+        <Capped each={stickers()} label="your stickers" moreClass="nb-sticker-button">
           {(sticker) => (
             <button
               type="button"
               class="nb-sticker-button nb-user-sticker-button"
-              aria-label={`${sticker.name} sticker`}
-              data-tooltip={sticker.name}
-              onClick={() => insert(sticker)}
+              aria-label={`${sticker().name} sticker`}
+              data-tooltip={sticker().name}
+              onClick={() => insert(sticker())}
             >
               <img
                 class="nb-sticker-art nb-sticker-art-user"
-                src={sticker.src}
+                src={sticker().src}
                 alt=""
                 draggable={false}
               />
             </button>
           )}
-        </For>
+        </Capped>
         <button
           type="button"
           class="nb-sticker-button nb-user-sticker-import"

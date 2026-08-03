@@ -52,7 +52,30 @@ export default function CheatSheet(props: CheatSheetProps): JSX.Element {
       data-testid="cheat-sheet"
       onClick={() => props.onClose()}
     >
-      <div class="nb-cheat-card" role="dialog" aria-label="Keyboard shortcuts">
+      <div
+        class="nb-cheat-card"
+        role="dialog"
+        aria-label="Keyboard shortcuts"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/*
+          A way out you can SEE.
+          The card was dismissed by clicking the veil or pressing Escape, with a
+          footnote saying so — which works and is invisible to anyone who did not
+          read the footnote. Top-left, like every other exit in the app (see the
+          note on .nb-rail-panel-header in rail.css; tests/top-left-exits.test.ts
+          is the gate).
+          The card also stops its own clicks now: it sat inside the veil's
+          onClick, so clicking a shortcut row to read it closed the sheet.
+        */}
+        <button
+          type="button"
+          class="nb-cheat-close"
+          aria-label="Close keyboard shortcuts"
+          onClick={() => props.onClose()}
+        >
+          ×
+        </button>
         <h2 class="nb-cheat-title">keyboard spells</h2>
         <div class="nb-cheat-columns">
           <For each={COLUMNS}>

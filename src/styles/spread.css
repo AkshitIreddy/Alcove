@@ -662,6 +662,7 @@
 /* Aged paper (not cream) so the card separates from the cream page behind
    it, plus a drawn double rule that reads as a pressed card edge. */
 .nb-cheat-card {
+  position: relative; /* anchors .nb-cheat-close */
   width: min(640px, 92vw);
   padding: var(--space-20) var(--space-24) var(--space-16);
   background: var(--paper-aged);
@@ -673,6 +674,32 @@
   transform: rotate(-0.5deg);
   animation: nb-cheat-card-in calc(var(--dur-md) * var(--motion-scale, 1))
     var(--ease-spring);
+}
+
+/* Top-LEFT, like every exit in this app. See .nb-rail-panel-header in rail.css;
+   tests/top-left-exits.test.ts fails any exit-ish selector anchored `right:`. */
+.nb-cheat-close {
+  position: absolute;
+  top: var(--space-8);
+  left: var(--space-8);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink-sepia-soft);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color var(--dur-xs) var(--ease-out), background var(--dur-xs) var(--ease-out);
+}
+
+.nb-cheat-close:hover,
+.nb-cheat-close:focus-visible {
+  color: var(--ink-sepia);
+  background: color-mix(in srgb, var(--ink-sepia) 10%, transparent);
 }
 
 @keyframes nb-cheat-card-in {

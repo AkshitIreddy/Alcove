@@ -236,6 +236,193 @@ lands a tick just under a page turn instead of under the room. The same
 arithmetic set `click-soft` at −19: 5 dB beneath `pop-soft`, so pressing a
 button stays smaller than opening a panel.
 
+## Sets: the two levers that were written off
+
+`TODO.md` carried one line about the sound sets for a long time:
+
+> No "add your own set" for sound, and no runtime filtering in a set's levers
+> (Howler exposes rate and volume per play, not a filter node).
+
+Both halves have now been taken seriously and they did not come out the same
+way. **One was wrong and is now built. The other is half right, and the half
+that is right is a real, permanent limit** — written down below in the exact
+shape it takes, because the interesting thing about a "no" is where it stops.
+
+### A set's filter is real, and it is a master bus
+
+The parenthetical is true about `Howl`: it has `rate()` and `volume()` per
+play and no tone control of any kind. It is not true about **`Howler`**, the
+namespace beside it. Two of its fields are public, documented in
+`@types/howler`, and described by howler's own source as being there for
+"plugins or advanced usage":
+
+- `Howler.ctx` — the `AudioContext`
+- `Howler.masterGain` — the `GainNode` every playing sound connects to
+
+Every sound in the app is already mixed into `masterGain`, and `masterGain`
+connects to `ctx.destination`. That last hop is a seam, and `src/sound/filter.ts`
+cuts it:
+
+```
+masterGain ──▶ destination                            howler's own wiring
+masterGain ──▶ biquad ──▶ [biquad] ──▶ destination    ours
+```
+
+So a set's `filter` is a chain of **real `BiquadFilterNode`s in the browser's
+own Web Audio graph**. It is not an EQ baked into a file, and it is not a gain
+trim dressed up as a filter. `scripts/probe-sound-bus.mjs` proves that by
+measurement rather than by assertion: it feeds a tone into `Howler.masterGain`
+in the running app, reads an `AnalyserNode` either side of the installed chain,
+and compares the difference against what the wired node's own
+`getFrequencyResponse()` predicts. Measured, on the dev server:
+
+| Set | Chain | Tone | Measured | The node's own maths |
+| --- | --- | --- | --- | --- |
+| `house` | *none* | 300 Hz / 8 kHz | 0.0 dB | 0.0 dB |
+| `far-room` | lowpass 1500 Hz | 300 Hz | +0.2 dB | +0.2 dB |
+| `far-room` | lowpass 1500 Hz | 8 kHz | **−30.6 dB** | −30.6 dB |
+| `music-box` | highpass 520 + peak 3.2 k | 120 Hz | **−25.2 dB** | −25.2 dB |
+| `music-box` | highpass 520 + peak 3.2 k | 3.2 kHz | **+3.1 dB** | +3.1 dB |
+| `drafting-table` | *inherited from its group* | 60 Hz | **−20.5 dB** | −20.5 dB |
+
+Two things about that table are worth stating rather than leaving to be
+rediscovered:
+
+**The `house` row is 0.0 dB by construction, not by measurement.** With no
+chain installed there is no tail to tap, so both analysers sit on the same
+`masterGain` and the difference can only be zero. What that row actually
+proves is the thing next to it — `installed: false` and an empty node list,
+i.e. howler's own `masterGain → destination` hop is still what the audio
+passes through. The probe asserts it in those terms.
+
+**The probe waits on the audio clock, never on the wall clock.** A freshly
+built `AudioContext` reports `state === 'running'` before its render thread has
+produced a single quantum — measured here, `ctx.currentTime` advanced 0.011 s
+across a 500 ms `setTimeout` — and an `AnalyserNode` that has never been fed
+returns `-Infinity` in every bin, which subtracts to `NaN`. Sleeping on
+`setTimeout` therefore made the probe fail the very claim it exists to confirm,
+on exactly the runs where the context was newest. It now polls
+`ctx.currentTime` (which only moves when audio has really been rendered) and
+reports a silent analyser as a **rig failure** rather than as a filter result.
+If a future edit reintroduces a wall-clock sleep, the first two or three sets
+measured will start failing intermittently and the filter will look broken when
+it is not.
+
+#### What it genuinely cannot do, and why
+
+1. **It is per-SET, never per-ROLE.** The seam is the master bus, and
+   everything arrives there already mixed — including the ambient bed. A
+   per-role filter would mean reaching into one playing sound's own gain node,
+   which lives at `howl._sounds[i]._node`: private, undocumented, and
+   re-created on every play. A voicing lever built on that would break on a
+   howler patch release and break *silently*, which is worse than not having
+   it. A set's filter is therefore a property of the room the app is heard in
+   — which is the only thing any of the sets wanted to say anyway.
+2. **It needs the Web Audio backend.** With `Howler.usingWebAudio === false`
+   (no `AudioContext`, or a `Howl` opted into HTML5 streaming) there is no
+   master gain to cut into, no filter is installed, and `busFilterStatus()`
+   says exactly that rather than pretending. `getEngineState().filter` carries
+   `installed`, `supported` and a `reason`, and QA is expected to read them.
+3. **The context can be replaced under us.** `Howler.unload()` closes the
+   `AudioContext` and builds a fresh `masterGain` wired straight to the new
+   destination, throwing our chain away. `applyBusFilter` is therefore cheap
+   and idempotent — it compares the context identity and the requested chain
+   and returns immediately when neither moved — so the engine can simply call
+   it on the play path instead of trying to predict howler's lifecycle.
+4. **Failure is never allowed to be silence.** Every rewire runs inside a
+   `try`/`catch` whose recovery is `masterGain.connect(destination)`, the exact
+   wiring howler shipped. The worst case is an unfiltered app, not a
+   disconnected one. `tests/sound-own.test.ts` drives a context whose
+   `createBiquadFilter` throws and asserts the master gain comes back.
+
+Only a minority of the twenty-eight sets carry a filter, and that is a
+judgement rather than a limit. The cues are already conditioned once against
+measured centroid and high-share ceilings, so a filter on top is worth its risk
+only where the set's blurb promises a tone that rate and gain cannot deliver —
+*"as if it were all happening in the next room"* is a lowpass and nothing else,
+and quieter-and-slower had been failing to say it for the whole life of that
+set. A set's own chain **replaces** its group's rather than compounding with
+it: two lowpasses in series is not "a bit more lowpass", it is a 24 dB/oct
+slope at a corner neither table chose.
+
+### The reader's own set
+
+`src/sound/userSoundSets.ts` (the pure registry) and `userSoundSetStore.ts`
+(the dialog, the bytes, the row in `settings`). It follows
+`features/templates/userStickers.ts` exactly: a `user:`-prefixed id, bytes
+through the existing asset store, and a registry the rest of the app reads
+without knowing where the bytes came from.
+
+**A reader's set is a base plus overrides**, not a whole set:
+
+```
+{ base: 'far-room', cues: { 'click-soft': <their file>, … } }
+```
+
+Every role they did not fill is voiced by the base exactly as before, and the
+base's rate, gain, layering, pool, jitter and bus filter still apply to the
+ones they did. That is the difference between a feature someone can finish and
+one they abandon: a reader with a single typewriter sample gets a working set
+out of *one* file rather than thirteen, and everything they did not record
+still keeps the mastered loudness hierarchy above.
+
+Four decisions worth keeping:
+
+- **Their file beats the base's substitution.** `loose-leaf` voices the button
+  role with a typing tick; a reader who imports a click and hears a page turn
+  has no way to explain it. It is also heard where the base *silences* the role
+  (`almost-nothing` voices no buttons at all) — importing a click and getting
+  silence with nothing on screen to say why would be indefensible. The reader's
+  three own preferences are still absolute over it (mute, reduced sound,
+  minimal character), because those are answers to questions they asked more
+  recently.
+- **The swap follows a layer too.** `reading-room` puts a `drop-thump` 140 ms
+  under a book coming off the shelf. A reader who recorded one thump should not
+  have to discover there were two places it went.
+- **An unrecognisable file name is reported, not guessed at.** The bulk import
+  matches on the file name — the family name, a shipped take name, or one of a
+  small alias list, longest match first so `book-return.wav` cannot be captured
+  by `book-pull`'s shorter alias. Anything else is listed back as unmatched.
+  Handing leftovers to whichever roles happened to be free would make the same
+  folder import differently depending on what was already in the set, and there
+  would be no way to predict or undo it. The per-role buttons in the settings
+  panel are the exact, unambiguous alternative.
+- **A `user:` choice is honoured only while the set is registered.** "The
+  reader deleted their set" and "the settings row came back from a restore the
+  assets did not" then become the same survivable case, and it resolves to the
+  house set the way any unknown id does.
+
+#### What is NOT done to their files, and where the bytes live
+
+**Nothing conditions them.** `condition()` above — the warmth fit, the lowpass
+lid, the levelling that makes the loudness hierarchy exact — is a build step in
+`gen-sounds.mjs` over ffmpeg-decoded 32-bit float. It is not something the app
+can do to bytes at import time. A cue mastered 12 dB hotter than `pop-soft`
+will be 12 dB hotter than `pop-soft`. The settings panel says so on the row
+with the buttons, which is the only place anyone will read it.
+
+The bytes go straight through the existing asset store — `storeImageBytes` →
+`save_image_asset` → `app_data_dir/assets/images/<contenthash>.<ext>`. Three
+things make that the right pipe rather than a lazy one: the Rust command is a
+byte sink that sniffs magic bytes, finds nothing it recognises in a WAV or an
+Ogg and falls back to the extension it was handed; `$APPDATA/assets/**` is the
+only path in `tauri.conf.json`'s asset-protocol scope, so it is the only place
+on disk a Web Audio fetch inside the app can reach at all; and content hashing
+de-duplicates the same thump assigned to three roles down to one file. The
+honest wart is that the row lands with `kind = 'image'` — `recordAssetRow`
+hard-codes it. The rows are told apart by `meta.soundCue`, and
+`loadUserStickers()`, which scans exactly these rows, keys off
+`meta.customSticker` and skips them.
+
+**One environment limit:** in the plain-`vite` browser shell there is no
+filesystem, so an imported cue is an object URL and `devObjectUrls` is a
+module-scope map a reload empties. `hydrate` therefore *drops* a cue whose file
+no longer resolves rather than registering a dead `src` — a dropped cue falls
+through to the base and the reader hears the app, where a registered-but-broken
+one would be one role silent forever with nothing on screen to say why.
+`scripts/probe-own-sounds.mjs` asserts that fallback rather than pretending the
+dev shell can do what the packaged app does.
+
 ## Rebuilding
 
 ```
@@ -262,6 +449,16 @@ chips, the `Settings['soundscape']` validator, `ALL_SOUND_NAMES` and the test
 suite all derive from it, so adding a bed to `gen-sounds.mjs` and to that map
 is the whole change.
 
+The engine no longer plays a `SoundName`, it plays a `Cue`: a URL, a category,
+a loop flag and a cache key. `/sounds/<name>.wav` is simply the shipped way of
+naming one, and `shippedCue()` is the adaptor for everything that still names a
+file. That indirection is what lets one of the reader's own files be played by
+the same path with the same volume slider, the same jitter and the same set
+gain — a reader's key carries a `|` and so cannot collide with a `SoundName` in
+the Howl cache. Its category comes from the **role**, derived from that role's
+own first take, so a page turn they recorded still moves with the pages slider
+and no new mapping has to be maintained.
+
 ### Buttons: one delegated listener, not fifty call sites
 
 `src/sound/uiClicks.ts` installs a single `click` listener on `document` and
@@ -286,6 +483,24 @@ recorded set: format and duration bounds, warmth ceilings, the click metrics
 (max adjacent-sample step ≤ 25% of peak, first 0.5 ms ≤ 4% of peak, edges at
 zero), the loudness hierarchy, per-family variety, loop seam continuity, the
 button-click delegation rules, and the licence manifest itself.
+
+`tests/sound-sets.test.ts` covers the named voicings; `tests/sound-own.test.ts`
+covers the two levers above. The split of what each kind of check can settle is
+deliberate and is stated in that file's header:
+
+- A **stub graph** answers what is connected to what — a chain built and never
+  connected, a master gain left disconnected after a throw, a re-wire running
+  on every play. It cannot answer whether a filter filters, because nothing in
+  it processes a sample.
+- **`scripts/probe-sound-bus.mjs`** answers that, in a real `AudioContext`, by
+  measurement (the table above).
+- **`scripts/probe-own-sounds.mjs`** answers the other seam — whether a
+  reader's file is actually *played* — from the network, because howler fetches
+  the URL it was handed. The seeded cue is a shipped WAV under a query string
+  no other code path in the app would ever request, so a request for it is
+  unambiguous. A panel, a registry and a store can all agree that a file is
+  assigned to a role while the app still plays the shipped cue, since the
+  decision is made inside `playRole`, below all three.
 
 Two findings worth keeping:
 

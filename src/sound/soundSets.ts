@@ -35,6 +35,19 @@
  *                 its takes from.
  *   JITTER        a scale on the per-play pitch/level wobble. 0.2 is a
  *                 machine; 2.4 is a wind-up toy.
+ *   FILTER        a real BiquadFilterNode chain on howler's master bus. See
+ *                 `sound/filter.ts` for what Howler does and does not expose;
+ *                 the short version is that this lever is genuinely a filter
+ *                 and is genuinely per-SET rather than per-role, because the
+ *                 only public seam is `Howler.masterGain → ctx.destination`
+ *                 and everything reaches that already mixed.
+ *
+ * Only seven sets carry one, and that is a judgement rather than a limit: the
+ * cues are conditioned once by `gen-sounds.mjs` against measured centroid and
+ * high-share ceilings, so a filter on top is only worth its risk where the
+ * set's own blurb already promises a tone that rate and gain cannot deliver —
+ * "as if it were all happening in the next room" is a lowpass and nothing
+ * else. The rest of the table leaves the mastered voicing alone.
  *
  * Because nothing here writes a file, the credits stay exactly as
  * `gen-sounds.mjs` left them: a derived cue carries the provenance of the
@@ -57,6 +70,7 @@
  * can import this table without a cycle.
  */
 
+import { NO_BUS_FILTER, type BusFilter } from './filter';
 import type { FamilyName, VariantWeight } from './engine';
 
 /* ─────────────────────────────── the shapes ─────────────────────────────── */
@@ -97,6 +111,8 @@ export interface SoundSetGroup {
   readonly jitterScale?: number;
   readonly pool?: VariantWeight | 'all';
   readonly voices?: VoiceTable;
+  /** A master-bus biquad chain. See `sound/filter.ts`. */
+  readonly filter?: BusFilter;
 }
 
 export interface SoundSetSpec {
@@ -109,6 +125,14 @@ export interface SoundSetSpec {
   readonly jitterScale?: number;
   readonly pool?: VariantWeight | 'all';
   readonly voices?: VoiceTable;
+  /**
+   * A master-bus biquad chain, REPLACING the group's rather than compounding
+   * with it — unlike `rate` and `gain`, which are scalars and multiply.
+   * Two lowpasses in series is not "a bit more lowpass", it is a 24 dB/oct
+   * slope at a corner neither table chose, so a set that wants a different
+   * tone from its family states the whole chain.
+   */
+  readonly filter?: BusFilter;
 }
 
 /** A fully resolved voice — what the engine actually plays. */
@@ -213,6 +237,12 @@ export const SOUND_SET_GROUPS: Record<SoundSetGroupId, SoundSetGroup> = {
     rate: 1.1,
     jitterScale: 0.5,
     pool: 'plain',
+    // The one thing rate could not do for this family. Playing a cue 10%
+    // faster shifts its whole spectrum up, body included; a 200 Hz highpass
+    // takes the body away and leaves the rest where it was mastered, which is
+    // what "small" actually means. Q at the Butterworth default: a resonant
+    // corner would put a bump exactly where a book thump lives.
+    filter: [{ type: 'highpass', frequency: 200, q: 0.707 }],
     voices: {
       'click-soft': { cue: 'pop-soft', rate: 1.06, gain: 0.7 },
       'tick-hover': { cue: 'pop-soft', rate: 1.34, gain: 0.22 },
@@ -251,6 +281,11 @@ export const SOUND_SET_GROUPS: Record<SoundSetGroupId, SoundSetGroup> = {
     gain: 0.55,
     jitterScale: 0.5,
     pool: 'plain',
+    // Quiet and dull are different things and this family wants both. The
+    // group's 0.55 gain is the quiet; a 4 kHz lid is the dull. It sits well
+    // above the 3% high-share ceiling `gen-sounds.mjs` already holds the cues
+    // to, so this takes off air rather than substance.
+    filter: [{ type: 'lowpass', frequency: 4000, q: 0.707 }],
     voices: {
       'tick-hover': null,
       'shelf-whoosh': null,
@@ -372,6 +407,10 @@ const SET_LIST = [
     gain: 0.72,
     jitterScale: 0.6,
     pool: 'plain',
+    // "Pressed flat" is a tone, not a speed. 2.6 kHz is under every cue's
+    // mastered centroid, so this is the one set in the paper family whose
+    // pencil taps genuinely lose their edge rather than just slowing down.
+    filter: [{ type: 'lowpass', frequency: 2600, q: 0.707 }],
     voices: { 'crumple-delete': { rate: 0.94 } },
   },
 
@@ -388,6 +427,13 @@ const SET_LIST = [
     group: 'library',
     blurb: 'deeper timber; the shelves are full and the drop is dull',
     rate: 0.94,
+    // Timber is a shape: a lid on the air plus weight underneath it. The
+    // low shelf is +3 dB and not more because the bus sits after the reader's
+    // master fader — a boost here can only spend headroom the mix left.
+    filter: [
+      { type: 'lowpass', frequency: 4400, q: 0.707 },
+      { type: 'lowshelf', frequency: 180, gain: 3 },
+    ],
     voices: {
       'drop-thump': { rate: 0.92 },
       'book-pull': { layer: { cue: 'drop-thump', rate: 0.88, gain: 0.45, delayMs: 140 } },
@@ -428,6 +474,14 @@ const SET_LIST = [
     name: 'Cloister',
     group: 'chamber',
     blurb: 'the same bells lower and longer, ringing into stone',
+    // Stone is a low-mid room. The peak at 900 Hz is the only thing in this
+    // table that adds a resonance rather than removing one, and it is the
+    // difference between "the same bells slower" (which `rate` already did)
+    // and bells in a hard room.
+    filter: [
+      { type: 'lowpass', frequency: 5000, q: 0.707 },
+      { type: 'peaking', frequency: 900, q: 1.1, gain: 3 },
+    ],
     voices: {
       'check-done': { rate: 0.86 },
       confetti: { rate: 0.88 },
@@ -445,6 +499,13 @@ const SET_LIST = [
     name: 'Music Box',
     group: 'chamber',
     blurb: 'tiny high bells — a music box somewhere under the desk',
+    // Tiny is the absence of a body. Rate alone made the bells higher AND
+    // kept every gram of their low end, which is why this set used to read as
+    // "the same bells, sped up" rather than as something small.
+    filter: [
+      { type: 'highpass', frequency: 520, q: 0.707 },
+      { type: 'peaking', frequency: 3200, q: 1.2, gain: 3 },
+    ],
     voices: {
       'check-done': { rate: 1.3, gain: 0.85 },
       confetti: { rate: 1.34, gain: 0.8 },
@@ -487,6 +548,13 @@ const SET_LIST = [
     group: 'studio',
     blurb: 'a few semitones up again — small, bright and glassy',
     rate: 1.08,
+    // Replaces the studio group's plain 200 Hz highpass: glass is higher and
+    // brighter than the family default, so the corner moves up and a shelf
+    // comes in above 4 kHz.
+    filter: [
+      { type: 'highpass', frequency: 260, q: 0.707 },
+      { type: 'highshelf', frequency: 4200, gain: 3 },
+    ],
     voices: {
       'click-soft': { cue: 'pop-soft', rate: 1.12, gain: 0.6 },
       'check-done': {
@@ -527,6 +595,13 @@ const SET_LIST = [
     blurb: 'as if it were all happening in the next room',
     rate: 0.94,
     gain: 0.7,
+    // The set this whole module was worth building for. A wall between you
+    // and a sound is a lowpass and nothing else: quieter and slower is a
+    // smaller, later sound in THIS room, which is what 0.7 gain and 0.94 rate
+    // were achieving on their own, and it never once read as distance.
+    // 1.5 kHz is deep — the deepest in the table — because that is where a
+    // door actually sits.
+    filter: [{ type: 'lowpass', frequency: 1500, q: 0.8 }],
   },
   {
     id: 'paper-only',
@@ -727,6 +802,15 @@ export function resolveVoice(setId: SoundSetId, role: FamilyName): SoundVoice | 
 export function soundSetPool(setId: SoundSetId): VariantWeight | 'all' {
   const set = SOUND_SETS[resolveSoundSetId(setId)];
   return set.pool ?? SOUND_SET_GROUPS[set.group].pool ?? 'all';
+}
+
+/**
+ * The master-bus chain this set asks for — the set's own, else its group's,
+ * else nothing. REPLACING, not compounding: see `SoundSetSpec.filter`.
+ */
+export function soundSetFilter(setId: SoundSetId): BusFilter {
+  const set = SOUND_SETS[resolveSoundSetId(setId)];
+  return set.filter ?? SOUND_SET_GROUPS[set.group].filter ?? NO_BUS_FILTER;
 }
 
 /** Multiplier on the character's per-play pitch/level wobble. */

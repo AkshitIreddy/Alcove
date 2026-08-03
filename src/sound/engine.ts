@@ -39,25 +39,58 @@
  * "the book-off-the-shelf role", and what the reader hears depends on their
  * set; `play('book-pull-2')` still means exactly that file.
  *
- * Sets add no new recordings — they condition the shipped, licensed cues at
- * play time. See the header of soundSets.ts for why, and for the credits
- * consequence (there is none: a set plays a cue, so it plays that cue's
- * provenance).
+ * Shipped sets add no new recordings — they condition the shipped, licensed
+ * cues at play time. See the header of soundSets.ts for why, and for the
+ * credits consequence (there is none: a set plays a cue, so it plays that
+ * cue's provenance).
+ *
+ * A set may also carry a master-bus FILTER, which is a real BiquadFilterNode
+ * in howler's own Web Audio graph rather than anything faked with gain. Its
+ * limits are precise and are written down in `sound/filter.ts`; the engine's
+ * whole part in it is `syncBusFilter()`, called wherever howler might just
+ * have built or replaced its context.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE READER'S OWN SETS
+ * ─────────────────────────────────────────────────────────────────────────
+ * A selection may also be a `user:` id (`sound/userSoundSets.ts`): a shipped
+ * BASE set plus the reader's own files for some of the roles. Everything the
+ * base decides still applies — rate, gain, layering, pool, jitter, filter,
+ * every skip list — the only difference is which bytes a role reaches for.
+ * That is why `Cue` below exists: the engine plays a URL with a category, and
+ * `/sounds/<name>.wav` is simply the shipped way of naming one.
  *
  * For tests, the Howler dependency is injectable via setHowlerLoader() and
  * the jitter RNG via setPlayRngForTests().
  */
 
 import {
+  applyBusFilter,
+  busFilterNodes,
+  busFilterStatus,
+  describeBusFilter,
+  resetBusFilterForTests,
+  type BusFilterStatus,
+  type HowlerAudioGlobal,
+} from './filter';
+import {
   DEFAULT_SOUND_SET_ID,
   resolveSoundSetId,
   resolveVoice,
+  soundSetFilter,
   soundSetJitterScale,
   soundSetPool,
   type SoundLayer,
   type SoundSetId,
   type SoundVoice,
 } from './soundSets';
+import {
+  baseSetIdOf,
+  isUserSoundSetId,
+  userCueFor,
+  userSoundSet,
+  type AnySoundSetId,
+} from './userSoundSets';
 
 /* ------------------------------- sound names ------------------------------ */
 
@@ -475,21 +508,42 @@ export interface HowlOptions {
   src: string[];
   loop: boolean;
   preload: boolean;
+  /**
+   * Howler infers the codec from the src's extension. An asset-protocol URL
+   * for one of the reader's own files is percent-encoded and can carry a
+   * query, so the extension is stated outright rather than left to a regex
+   * over a path we did not build.
+   */
+  format?: string[];
 }
 
 export type HowlConstructor = new (options: HowlOptions) => HowlLike;
-export type HowlerLoader = () => Promise<{ Howl: HowlConstructor }>;
+
+/**
+ * `Howler` is optional so a test stub can keep providing `{ Howl }` alone —
+ * and so that "no namespace" is a first-class state rather than a crash. The
+ * only thing it costs is the bus filter, which reports itself unavailable.
+ */
+export interface HowlerModule {
+  Howl: HowlConstructor;
+  Howler?: HowlerAudioGlobal;
+}
+
+export type HowlerLoader = () => Promise<HowlerModule>;
 
 const defaultLoader: HowlerLoader = async () =>
-  (await import('howler')) as unknown as { Howl: HowlConstructor };
+  (await import('howler')) as unknown as HowlerModule;
 
 let loadHowler: HowlerLoader = defaultLoader;
-let howlerModule: Promise<{ Howl: HowlConstructor }> | undefined;
+let howlerModule: Promise<HowlerModule> | undefined;
+/** The namespace once it has loaded — the bus filter's only way in. */
+let howlerGlobal: HowlerAudioGlobal | undefined;
 
 /** Test seam: swap the howler module (and drop any cached instances). */
 export function setHowlerLoader(loader: HowlerLoader): void {
   loadHowler = loader;
   howlerModule = undefined;
+  howlerGlobal = undefined;
   howls.clear();
   ambient = undefined;
 }
@@ -513,10 +567,48 @@ let volumes: Volumes = defaultVolumes();
 let muted = false;
 let reducedSound = false;
 let character: SoundCharacter = 'calm';
-/** The reader's chosen voicing (see sound/soundSets.ts). */
-let soundSet: SoundSetId = DEFAULT_SOUND_SET_ID;
+/**
+ * The reader's chosen voicing — a shipped id (`sound/soundSets.ts`) or one of
+ * their own (`sound/userSoundSets.ts`).
+ */
+let soundSet: AnySoundSetId = DEFAULT_SOUND_SET_ID;
 
-const howls = new Map<SoundName, Promise<HowlLike>>();
+/**
+ * ONE CONCRETE THING TO PLAY.
+ *
+ * The engine used to be able to say `SoundName` everywhere and derive the
+ * rest, because every playable byte lived under `/sounds/`. A reader's own
+ * file has no `SoundName` and never will, so the four facts a play needs —
+ * where the bytes are, which slider owns them, whether they loop, and what to
+ * cache them under — are carried explicitly. `shippedCue()` is the adaptor
+ * for everything that still names a file.
+ */
+interface Cue {
+  /** Cache key. A `SoundName` for shipped cues; `user:set|role` for the rest. */
+  readonly key: string;
+  readonly url: string;
+  readonly category: SoundCategory;
+  readonly loop: boolean;
+  /** Codec hint when the URL's extension cannot be trusted. */
+  readonly format?: string[];
+}
+
+const shippedCue = (name: SoundName): Cue => ({
+  key: name,
+  url: soundUrl(name),
+  category: SOUND_MANIFEST[name].category,
+  loop: SOUND_MANIFEST[name].loop,
+});
+
+/**
+ * Which volume slider a ROLE sits under — derived from the role's own first
+ * take, so a reader's page-turn file rides the page slider exactly as the
+ * shipped one does and no new mapping has to be maintained.
+ */
+const categoryOfRole = (role: FamilyName): SoundCategory =>
+  SOUND_MANIFEST[(SOUND_FAMILIES[role] as readonly SoundName[])[0] as SoundName].category;
+
+const howls = new Map<string, Promise<HowlLike>>();
 
 interface AmbientState {
   howl: HowlLike;
@@ -627,7 +719,7 @@ export function createVariantPicker<T>(variants: readonly T[], rng: () => number
  */
 export function poolFor(family: FamilyName, forCharacter: SoundCharacter = character): readonly SoundName[] {
   const all = SOUND_FAMILIES[family] as readonly SoundName[];
-  const fromSet = soundSetPool(soundSet);
+  const fromSet = soundSetPool(baseSet());
   const pool = fromSet === 'all' ? CHARACTER_PROFILES[forCharacter].pool : fromSet;
   if (pool === 'all') return all;
   const slice = all.filter((n) => VARIANT_WEIGHTS[n] === pool);
@@ -662,18 +754,49 @@ const isFamily = (name: PlayableName): name is FamilyName =>
 
 /* -------------------------------- internals -------------------------------- */
 
-function ensureHowl(name: SoundName): Promise<HowlLike> {
-  let entry = howls.get(name);
+/**
+ * The shipped set behind the current selection: itself, or the base of the
+ * reader's own set. Everything except *which bytes play* is decided here —
+ * rate, gain, layering, pool, jitter, the skip lists and the bus filter.
+ */
+function baseSet(): SoundSetId {
+  return baseSetIdOf(soundSet, DEFAULT_SOUND_SET_ID);
+}
+
+/**
+ * Install (or re-install) the active set's master-bus filter.
+ *
+ * Cheap and idempotent by design — `applyBusFilter` compares the AudioContext
+ * identity and the requested chain and returns immediately when neither moved
+ * — which is what lets this be called on the play path instead of trying to
+ * predict when howler built its context or replaced it under us.
+ */
+function syncBusFilter(): void {
+  applyBusFilter(howlerGlobal, soundSetFilter(baseSet()));
+}
+
+function loadHowlerOnce(): Promise<HowlerModule> {
+  howlerModule ??= loadHowler().then((mod) => {
+    howlerGlobal = mod.Howler;
+    syncBusFilter();
+    return mod;
+  });
+  return howlerModule;
+}
+
+function ensureHowl(cue: Cue): Promise<HowlLike> {
+  let entry = howls.get(cue.key);
   if (!entry) {
-    entry = (howlerModule ??= loadHowler()).then(
+    entry = loadHowlerOnce().then(
       ({ Howl }) =>
         new Howl({
-          src: [soundUrl(name)],
-          loop: SOUND_MANIFEST[name].loop,
+          src: [cue.url],
+          loop: cue.loop,
           preload: true,
+          ...(cue.format === undefined ? {} : { format: cue.format }),
         }),
     );
-    howls.set(name, entry);
+    howls.set(cue.key, entry);
   }
   return entry;
 }
@@ -686,8 +809,7 @@ function ensureHowl(name: SoundName): Promise<HowlLike> {
  * headroom the reader's own sliders left; the single clamp at the end is what
  * keeps that honest.
  */
-function effectiveVolume(name: SoundName, requested: number | undefined, setGain = 1): number {
-  const category = SOUND_MANIFEST[name].category;
+function effectiveVolume(category: SoundCategory, requested: number | undefined, setGain = 1): number {
   const trim = CHARACTER_PROFILES[character].gain[category];
   return clamp01(clamp01(requested ?? 1) * volumes[category] * volumes.master * trim * setGain);
 }
@@ -711,7 +833,7 @@ export interface PlayOptions {
  * this after first paint hides any first-play latency.
  */
 export async function init(): Promise<void> {
-  await Promise.all(SOUND_NAMES.map((name) => ensureHowl(name)));
+  await Promise.all(SOUND_NAMES.map((name) => ensureHowl(shippedCue(name))));
 }
 
 /**
@@ -729,7 +851,7 @@ export async function init(): Promise<void> {
  */
 export async function play(name: PlayableName, options: PlayOptions = {}): Promise<number | undefined> {
   if (isFamily(name)) return playRole(name, options);
-  return playFile(name, options, {
+  return playFile(shippedCue(name), options, {
     gain: 1,
     rate: undefined,
     stamp: !CLICK_NAMES.has(name),
@@ -767,18 +889,63 @@ function roleSilent(role: FamilyName): boolean {
   if (muted) return true;
   if (reducedSound && REDUCED_SKIP_ROLES.has(role)) return true;
   if (CHARACTER_SKIP_ROLES[character].has(role)) return true;
-  return resolveVoice(soundSet, role) === null;
+  // A file the reader put here is heard even when the base set silences the
+  // role. Anything else would mean importing a click into a set based on
+  // `almost-nothing` and getting silence with no way to see why — and the
+  // three preferences above are still absolute, because those are answers to
+  // questions the reader asked more recently than "here is my click".
+  if (userCueFor(soundSet, role) !== null) return false;
+  return resolveVoice(baseSet(), role) === null;
 }
+
+/** Codec hint from a file name; undefined when there is nothing to go on. */
+function formatOf(fileName: string): string[] | undefined {
+  const ext = /\.([a-z0-9]{1,5})$/i.exec(fileName.trim())?.[1]?.toLowerCase();
+  return ext === undefined ? undefined : [ext];
+}
+
+/**
+ * The bytes a role reaches for: the reader's own file when their set names
+ * one, otherwise the next take in the rotation.
+ *
+ * Called with a ROLE at the top of a play and with a LAYER'S cue underneath
+ * it, which is deliberate — replacing `drop-thump` also replaces the thump
+ * the library sets put under a book coming off the shelf, and a reader who
+ * recorded one thump should not have to notice there were two places it went.
+ */
+function cueForFamily(family: FamilyName): Cue {
+  const own = userCueFor(soundSet, family);
+  if (own === null) return shippedCue(pickVariant(family));
+  return {
+    key: `${soundSet}|${family}`,
+    url: own.src,
+    category: categoryOfRole(family),
+    loop: false,
+    format: formatOf(own.fileName),
+  };
+}
+
+/** The voice a role gets when only the reader's own file is speaking for it. */
+const identityVoice = (role: FamilyName): SoundVoice => ({
+  cue: role,
+  rate: 1,
+  gain: 1,
+  layer: null,
+});
 
 /** Play one interaction role through the reader's sound set. */
 async function playRole(role: FamilyName, options: PlayOptions): Promise<number | undefined> {
   if (roleSilent(role)) return undefined;
-  const voice = resolveVoice(soundSet, role);
-  if (voice === null) return undefined;
+  const voice = resolveVoice(baseSet(), role) ?? identityVoice(role);
   // Reduced sound means one sound per action, so a set's body layer is the
   // first thing to go — it is exactly the "extra" that preference asks about.
   if (voice.layer !== null && !reducedSound) scheduleLayer(voice.layer);
-  return playFile(pickVariant(voice.cue), options, {
+  // The reader's file is attached to the ROLE, so it wins over the base set's
+  // substitution: importing a click and then hearing a page turn because the
+  // base voices buttons with paper would be indefensible. Only when they have
+  // no file for the role does the base's choice of family get to decide.
+  const cue = userCueFor(soundSet, role) !== null ? cueForFamily(role) : cueForFamily(voice.cue);
+  return playFile(cue, options, {
     gain: voice.gain,
     rate: voice.rate,
     stamp: role !== CLICK_ROLE,
@@ -793,7 +960,7 @@ async function playRole(role: FamilyName, options: PlayOptions): Promise<number 
  */
 function scheduleLayer(layer: SoundLayer): void {
   const fire = (): void => {
-    void playFile(pickVariant(layer.cue), {}, {
+    void playFile(cueForFamily(layer.cue), {}, {
       gain: layer.gain,
       rate: layer.rate,
       stamp: false,
@@ -804,12 +971,15 @@ function scheduleLayer(layer: SoundLayer): void {
   else fire();
 }
 
-/** Play one concrete file, under a plan the caller (or the set) decided. */
+/** Play one concrete cue, under a plan the caller (or the set) decided. */
 async function playFile(
-  name: SoundName,
+  cue: Cue,
   options: PlayOptions,
   plan: FilePlan,
 ): Promise<number | undefined> {
+  // Only a shipped cue can be an ambient bed, and its key IS its SoundName —
+  // a reader's key carries a `|` and can never collide with one.
+  const name = cue.key as SoundName;
   if (AMBIENT_LOOP_NAMES.has(name)) {
     // Playing an ambient loop directly means "switch the bed to it".
     const entry = (Object.entries(SOUNDSCAPE_LOOPS) as Array<[SoundscapeName, SoundName]>).find(
@@ -831,7 +1001,7 @@ async function playFile(
   if (plan.stamp) lastVoicedPlayMs = Date.now();
 
   const jitterOn = options.noJitter !== true;
-  const wobble = soundSetJitterScale(soundSet);
+  const wobble = soundSetJitterScale(baseSet());
   const level = jitterOn ? jitter(profile.levelJitter * wobble) : 1;
   const nudge =
     jitterOn && profile.pitchJitter * wobble > 0 ? jitter(profile.pitchJitter * wobble) : undefined;
@@ -844,9 +1014,13 @@ async function playFile(
     else rate = nudge;
   }
 
-  const howl = await ensureHowl(name);
+  const howl = await ensureHowl(cue);
+  // Howler builds its AudioContext lazily and rebuilds it on `unload()`, so
+  // the bus filter is re-checked where a graph is most likely to have just
+  // appeared. The call costs an identity compare when nothing moved.
+  syncBusFilter();
   const id = howl.play();
-  howl.volume(effectiveVolume(name, (options.volume ?? 1) * level, plan.gain), id);
+  howl.volume(effectiveVolume(cue.category, (options.volume ?? 1) * level, plan.gain), id);
   if (rate !== undefined) howl.rate(rate, id);
   return id;
 }
@@ -860,7 +1034,8 @@ export async function startAmbient(): Promise<void> {
   ambientWanted = true;
   if (muted || soundscape === 'none') return;
   const name = SOUNDSCAPE_LOOPS[soundscape];
-  const howl = await ensureHowl(name);
+  const howl = await ensureHowl(shippedCue(name));
+  syncBusFilter();
   // State may have changed while the module/file loaded (soundscape is
   // mutable across the await — re-read it through the accessor so control-flow
   // narrowing from the guard above cannot leak into this check).
@@ -872,7 +1047,7 @@ export async function startAmbient(): Promise<void> {
   const id = howl.play();
   ambient = { howl, id, name };
   howl.volume(0, id);
-  howl.fade(0, effectiveVolume(name, undefined), AMBIENT_FADE_MS, id);
+  howl.fade(0, effectiveVolume(SOUND_MANIFEST[name].category, undefined), AMBIENT_FADE_MS, id);
 }
 
 /** Stop the ambient loop with a 600 ms fade-out. */
@@ -905,7 +1080,7 @@ function fadeOutAmbient(fadeMs: number): void {
   if (!current) return;
   ambient = undefined;
   const { howl, id, name } = current;
-  howl.fade(effectiveVolume(name, undefined), 0, fadeMs, id);
+  howl.fade(effectiveVolume(SOUND_MANIFEST[name].category, undefined), 0, fadeMs, id);
   howl.once('fade', () => howl.stop(id), id);
 }
 
@@ -919,7 +1094,7 @@ export function setVolumes(partial: Partial<Volumes>): void {
     if (v !== undefined) volumes[key] = clamp01(v);
   }
   // Live-apply to the running ambient bed.
-  if (ambient) ambient.howl.volume(effectiveVolume(ambient.name, undefined), ambient.id);
+  if (ambient) ambient.howl.volume(effectiveVolume(SOUND_MANIFEST[ambient.name].category, undefined), ambient.id);
 }
 
 export function getVolumes(): Readonly<Volumes> {
@@ -933,7 +1108,7 @@ export function getVolumes(): Readonly<Volumes> {
 export function setSoundCharacter(next: SoundCharacter): void {
   if (character === next) return;
   character = next;
-  if (ambient) ambient.howl.volume(effectiveVolume(ambient.name, undefined), ambient.id);
+  if (ambient) ambient.howl.volume(effectiveVolume(SOUND_MANIFEST[ambient.name].category, undefined), ambient.id);
 }
 
 export function getSoundCharacter(): SoundCharacter {
@@ -941,20 +1116,46 @@ export function getSoundCharacter(): SoundCharacter {
 }
 
 /**
- * The reader's chosen sound set (see sound/soundSets.ts). Total: an unknown
- * id resolves to the house set rather than leaving the engine unvoiced.
+ * The reader's chosen sound set — a shipped id (`sound/soundSets.ts`) or one
+ * of their own (`sound/userSoundSets.ts`).
+ *
+ * Total, and total in a specific way: a `user:` id is accepted only while it
+ * is REGISTERED. That is the whole guard against a stored choice outliving
+ * the files behind it — the reader deleted their set, or the row survived a
+ * restore the assets did not — and it resolves to the house set the same way
+ * an unknown shipped id does.
  *
  * `sound/soundSetPrefs.ts` owns the persisted value and calls this; the
  * engine itself still never imports src/data.
  */
-export function setSoundSet(next: SoundSetId | string): void {
-  const resolved = resolveSoundSetId(next);
-  if (soundSet === resolved) return;
+export function setSoundSet(next: AnySoundSetId | string): void {
+  const resolved: AnySoundSetId =
+    isUserSoundSetId(next) && userSoundSet(next) !== null ? next : resolveSoundSetId(next);
   soundSet = resolved;
+  // Not guarded by "did it change": the base of a reader's set can move under
+  // a stable id (they re-based it, or an import landed), and the bus filter
+  // follows the base.
+  syncBusFilter();
 }
 
-export function getSoundSet(): SoundSetId {
+export function getSoundSet(): AnySoundSetId {
   return soundSet;
+}
+
+/** The shipped set the current choice resolves to for everything but bytes. */
+export function getBaseSoundSet(): SoundSetId {
+  return baseSet();
+}
+
+/**
+ * What the master-bus filter is actually doing right now.
+ *
+ * The honest surface for a feature whose availability depends on the browser:
+ * `installed` is false with a `reason` whenever Web Audio is not there, and
+ * QA asserts this rather than assuming the node exists.
+ */
+export function getBusFilter(): BusFilterStatus {
+  return busFilterStatus();
 }
 
 /** Hard mute for every sound; restores the ambient bed on unmute. */
@@ -1119,7 +1320,23 @@ export interface SoundEngineState {
   reducedSound: boolean;
   character: SoundCharacter;
   /** The reader's chosen voicing — what QA asserts a picker actually applied. */
-  set: SoundSetId;
+  set: AnySoundSetId;
+  /** The shipped set behind it — the same id unless `set` is one of theirs. */
+  baseSet: SoundSetId;
+  /** How many roles the chosen set voices with the reader's own files. */
+  ownCues: number;
+  /**
+   * The master-bus filter, as it actually is: `installed` false with a
+   * `reason` is a real answer and QA is expected to read it rather than
+   * assume a BiquadFilterNode exists in every environment.
+   */
+  filter: {
+    wanted: string;
+    installed: boolean;
+    supported: boolean;
+    tag: string;
+    reason: string | null;
+  };
   typingSounds: boolean;
   /** Ticks actually played this session — E2E asserts the rate limiter with it. */
   typingTicksPlayed: number;
@@ -1130,6 +1347,7 @@ export interface SoundEngineState {
 }
 
 export function getEngineState(): SoundEngineState {
+  const bus = busFilterStatus();
   return {
     soundscape,
     ambientWanted,
@@ -1138,6 +1356,15 @@ export function getEngineState(): SoundEngineState {
     reducedSound,
     character,
     set: soundSet,
+    baseSet: baseSet(),
+    ownCues: Object.keys(userSoundSet(soundSet)?.cues ?? {}).length,
+    filter: {
+      wanted: describeBusFilter(soundSetFilter(baseSet())),
+      installed: bus.installed,
+      supported: bus.supported,
+      tag: bus.tag,
+      reason: bus.reason,
+    },
     typingSounds: typingSoundsEnabled,
     typingTicksPlayed,
     hourlyChime: hourlyChimeEnabled,
@@ -1175,6 +1402,14 @@ declare global {
       resolveVoice: (role: FamilyName) => SoundVoice | null;
       poolFor: typeof poolFor;
       play: typeof play;
+      /**
+       * The live BiquadFilterNodes, so a probe can tap the REAL chain with an
+       * AnalyserNode and measure what the filter does to the app's own output
+       * — rather than asserting that we called `createBiquadFilter`.
+       */
+      busFilterNodes: () => readonly BiquadFilterNode[];
+      /** The howler namespace, for the same reason (ctx, masterGain). */
+      howlerGlobal: () => HowlerAudioGlobal | undefined;
     };
   }
 }
@@ -1192,9 +1427,11 @@ if (typeof window !== 'undefined') {
     setSoundCharacter,
     setSoundSet,
     getSoundSet,
-    resolveVoice: (role: FamilyName) => resolveVoice(soundSet, role),
+    resolveVoice: (role: FamilyName) => resolveVoice(baseSet(), role),
     poolFor,
     play,
+    busFilterNodes,
+    howlerGlobal: () => howlerGlobal,
   };
 }
 
@@ -1229,7 +1466,9 @@ export function resetEngineForTests(): void {
   soundscape = 'rain';
   howls.clear();
   howlerModule = undefined;
+  howlerGlobal = undefined;
   loadHowler = defaultLoader;
+  resetBusFilterForTests();
   pickers.clear();
   playRng = Math.random;
   lastVoicedPlayMs = Number.NEGATIVE_INFINITY;

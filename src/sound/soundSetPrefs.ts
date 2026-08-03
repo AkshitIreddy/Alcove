@@ -18,25 +18,38 @@
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
 import { getDb } from '../data/db';
 import { setSoundSet } from './engine';
+import { DEFAULT_SOUND_SET_ID, resolveSoundSetId } from './soundSets';
 import {
-  DEFAULT_SOUND_SET_ID,
-  resolveSoundSetId,
-  type SoundSetId,
-} from './soundSets';
+  isUserSoundSetId,
+  userSoundSet,
+  type AnySoundSetId,
+} from './userSoundSets';
+import { loadUserSoundSets } from './userSoundSetStore';
 
 const SETTINGS_KEY = 'soundSet';
 
-const [current, setCurrent] = createSignal<SoundSetId>(DEFAULT_SOUND_SET_ID);
+const [current, setCurrent] = createSignal<AnySoundSetId>(DEFAULT_SOUND_SET_ID);
 
-let loadPromise: Promise<SoundSetId> | null = null;
+let loadPromise: Promise<AnySoundSetId> | null = null;
+
+/**
+ * Total for either kind of id. A `user:` choice is honoured only while the
+ * set behind it is REGISTERED, which is what makes "the reader deleted their
+ * set" and "the assets did not come back with the database" the same,
+ * survivable case: the house set, not an unvoiced app.
+ */
+function resolveAnySetId(value: unknown): AnySoundSetId {
+  if (isUserSoundSetId(value) && userSoundSet(value) !== null) return value;
+  return resolveSoundSetId(value);
+}
 
 /** Reactive read — tracks inside a Solid computation. */
-export function activeSoundSetId(): SoundSetId {
+export function activeSoundSetId(): AnySoundSetId {
   return current();
 }
 
 /** Detached read, for non-Solid callers (QA bridges, the preview helper). */
-export function snapshotSoundSetId(): SoundSetId {
+export function snapshotSoundSetId(): AnySoundSetId {
   return current();
 }
 
@@ -48,8 +61,12 @@ export function snapshotSoundSetId(): SoundSetId {
  * and again from the settings sheet, because a reader who never opens
  * settings must still hear the set they chose last week.
  */
-export function loadSoundSet(): Promise<SoundSetId> {
+export function loadSoundSet(): Promise<AnySoundSetId> {
   loadPromise ??= (async () => {
+    // The reader's own sets have to be in the registry BEFORE the stored id
+    // is resolved, or a `user:` choice would fail its registration check on
+    // every boot and silently fall back to the house set.
+    await loadUserSoundSets();
     let stored: unknown = null;
     try {
       const db = await getDb();
@@ -61,7 +78,7 @@ export function loadSoundSet(): Promise<SoundSetId> {
     } catch {
       // No row, no table, no database: the house set is a fine answer.
     }
-    const id = resolveSoundSetId(parseStored(stored));
+    const id = resolveAnySetId(parseStored(stored));
     setCurrent(id);
     setSoundSet(id);
     return id;
@@ -96,8 +113,8 @@ function parseStored(raw: unknown): unknown {
  * `saveRoomDesign` makes, for the same reason (a set that forgets itself
  * beats a click that waits on SQLite).
  */
-export async function saveSoundSet(id: SoundSetId | string): Promise<SoundSetId> {
-  const resolved = resolveSoundSetId(id);
+export async function saveSoundSet(id: AnySoundSetId | string): Promise<AnySoundSetId> {
+  const resolved = resolveAnySetId(id);
   await loadSoundSet();
   setCurrent(resolved);
   setSoundSet(resolved);
@@ -114,7 +131,7 @@ export async function saveSoundSet(id: SoundSetId | string): Promise<SoundSetId>
 }
 
 /** Subscribe from non-Solid code. Fires immediately, then on every change. */
-export function subscribeSoundSet(listener: (id: SoundSetId) => void): () => void {
+export function subscribeSoundSet(listener: (id: AnySoundSetId) => void): () => void {
   return createRoot((dispose) => {
     createEffect(on(current, (id) => listener(id)));
     return dispose;
@@ -138,9 +155,9 @@ export function resetSoundSetPrefsForTests(): void {
 declare global {
   interface Window {
     __nbSoundSets?: {
-      get: () => SoundSetId;
-      save: (id: string) => Promise<SoundSetId>;
-      load: () => Promise<SoundSetId>;
+      get: () => AnySoundSetId;
+      save: (id: string) => Promise<AnySoundSetId>;
+      load: () => Promise<AnySoundSetId>;
     };
   }
 }

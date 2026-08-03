@@ -133,6 +133,18 @@ export interface HowlerAudioGlobal {
   readonly usingWebAudio?: boolean;
   readonly ctx?: AudioContext | null;
   readonly masterGain?: GainNode | null;
+  /**
+   * howler's power saver, and NOT readonly on purpose — the engine turns it
+   * off. It suspends the AudioContext after 30 s with nothing playing, and
+   * the resume path is where a play goes wrong: `Howl.play()` sees
+   * `Howler.state !== 'running'`, sets `_playLock`, and defers the sound into
+   * a `once('resume')` callback, which makes every following `volume()` and
+   * `rate()` queue behind it and drain from a `setTimeout(0)`. The cue then
+   * runs a whole task at the Howl's GROUP level instead of its own. Thirty
+   * seconds of quiet before a click is the ordinary rhythm of a notes app,
+   * so this fired constantly. See `engine.ts`'s `loadHowlerOnce`.
+   */
+  autoSuspend?: boolean;
 }
 
 export interface BusFilterStatus {

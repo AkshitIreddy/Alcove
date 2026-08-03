@@ -778,6 +778,14 @@ function syncBusFilter(): void {
 function loadHowlerOnce(): Promise<HowlerModule> {
   howlerModule ??= loadHowler().then((mod) => {
     howlerGlobal = mod.Howler;
+    // Howler puts the AudioContext to sleep after 30 s with nothing playing.
+    // A desktop notes app is quiet for thirty seconds constantly, and the
+    // wake-up is not free: the play that wakes it is deferred into a resume
+    // callback with `_playLock` set, which pushes its own `volume()` and
+    // `rate()` into howler's load queue behind it. Those drain from a
+    // `setTimeout(0)`, so the cue sounds for at least one whole task at the
+    // Howl's group level rather than its own. See the field's docblock.
+    if (howlerGlobal !== undefined) howlerGlobal.autoSuspend = false;
     syncBusFilter();
     return mod;
   });
@@ -967,9 +975,24 @@ function scheduleLayer(layer: SoundLayer): void {
       gateByName: false,
     });
   };
-  if (layer.delayMs > 0) setTimeout(fire, layer.delayMs);
-  else fire();
+  if (layer.delayMs <= 0) {
+    fire();
+    return;
+  }
+  // Kept so the engine can be torn down with a layer still in the air. Left
+  // untracked, a delayed layer fires into whatever comes next — in the unit
+  // suite that meant one test's thump landing inside another's play log, and
+  // in the app it means a cue arriving after the thing that asked for it is
+  // gone. See `resetEngineForTests`.
+  const timer = setTimeout(() => {
+    layerTimers.delete(timer);
+    fire();
+  }, layer.delayMs);
+  layerTimers.add(timer);
 }
+
+/** Layer plays that have been scheduled but have not sounded yet. */
+const layerTimers = new Set<ReturnType<typeof setTimeout>>();
 
 /** Play one concrete cue, under a plan the caller (or the set) decided. */
 async function playFile(
@@ -1019,11 +1042,120 @@ async function playFile(
   // the bus filter is re-checked where a graph is most likely to have just
   // appeared. The call costs an identity compare when nothing moved.
   syncBusFilter();
+
+  const vol = effectiveVolume(cue.category, (options.volume ?? 1) * level, plan.gain);
+  presetLevel(howl, cue.key, vol, rate);
   const id = howl.play();
-  howl.volume(effectiveVolume(cue.category, (options.volume ?? 1) * level, plan.gain), id);
+  // Still stated per id: the group value above is what the voice STARTS at,
+  // and this is what it is, for anything that later reads or fades it.
+  howl.volume(vol, id);
   if (rate !== undefined) howl.rate(rate, id);
+  rememberVoice(howl, cue.key, id, vol, rate ?? 1);
   return id;
 }
+
+/* --------------------------- how a play is levelled ------------------------ */
+
+/**
+ * SET THE LEVEL AND THE RATE BEFORE THE FIRST SAMPLE, NOT AFTER IT.
+ *
+ * This is the fix for "a lot of time i said bad but actually there is a sound
+ * bug that turns that sound effects into jitterry sand paper … when i click
+ * again to close it becomes jittery sand paper".
+ *
+ * Howler builds a fresh voice for every `play()`, and `Sound.reset()` copies
+ * the HOWL'S GROUP volume and rate onto it. `playWebAudio` then writes that
+ * group volume straight into the voice's gain node — one statement before
+ * `bufferSource.start()`. So a `howl.volume(v, id)` issued AFTER `play()`
+ * always starts the sound at the group value and corrects it a moment later.
+ * The group value is 1.0, and this engine asks for 0.28–0.56.
+ *
+ * `shots-now/sound-grit.mjs` records the app's own Web Audio output through an
+ * AudioWorklet spliced into howler's master bus. Across five phases and 137
+ * recorded plays, EVERY SINGLE ONE started at gain 1.000 and was pulled down
+ * afterwards. Whether that is audible is a race: two `setValueAtTime` calls at
+ * the same AudioContext time replace one another and nothing is heard, but one
+ * render quantum apart and the cue opens 2–4× too loud and then steps
+ * discontinuously mid-transient. The same tape caught a 40 ms window of it on
+ * the ambient bed, so the race is not theoretical. A step in the middle of a
+ * click's attack is a click on top of a click — the same control, one press
+ * clean and the next gritty.
+ *
+ * Two smaller things fall out of setting the rate up front. Howler computes a
+ * voice's end timer inside `play()` from `sound._rate`; a rate applied
+ * afterwards makes `rate()` re-derive that timer from
+ * `ctx.currentTime - sound._playStart`, and `_playStart` is a MAIN-THREAD
+ * timestamp for a buffer the render thread starts slightly later. When the
+ * timer lands early, `_ended` calls `stop()`, which is `bufferSource.stop(0)`
+ * — a hard cut with no fade, i.e. a truncated tail. Pre-setting means the
+ * timer is computed once, from the real duration.
+ *
+ * ── AND THE VOICES THAT ARE STILL RINGING ────────────────────────────────
+ *
+ * The group setters walk every live id, so moving the group would also yank
+ * any copy of this same cue still sounding — worse than the bug, because that
+ * sound is already in the reader's ear. They are put back in the SAME tick:
+ * two `setValueAtTime` events at one AudioContext time replace one another, so
+ * a restored voice hears nothing at all, while the new voice still starts at
+ * its own level. Written the other way — a `howl.playing()` guard that simply
+ * skipped the pre-set during an overlap — the recorded tape still showed a
+ * 7 % correction on every play of a cue fired inside its own length.
+ */
+function presetLevel(howl: HowlLike, key: string, vol: number, rate: number | undefined): void {
+  const ringing = soundingVoices(howl, key);
+  howl.volume(vol);
+  // Always stated, including the plain 1: the group rate persists on the Howl,
+  // so a jittered play would otherwise bequeath its pitch to the next press.
+  howl.rate(rate ?? 1);
+  for (const voice of ringing) {
+    if (voice.vol !== vol) howl.volume(voice.vol, voice.id);
+    if (voice.rate !== (rate ?? 1)) howl.rate(voice.rate, voice.id);
+  }
+}
+
+/**
+ * The copies of one cue still sounding, with the level and rate each is at.
+ *
+ * Howler will not tell us what a voice's volume is without a getter call per
+ * id, and the engine is the only thing that ever sets one, so it keeps its own
+ * note. Ended voices are dropped on every read — `playing(id)` is the truth,
+ * and this list is only ever as long as the overlap really is.
+ */
+const voices = new Map<string, { id: number; vol: number; rate: number }[]>();
+
+function soundingVoices(howl: HowlLike, key: string): { id: number; vol: number; rate: number }[] {
+  const list = voices.get(key);
+  if (list === undefined || list.length === 0) return [];
+  const still = list.filter((v) => howl.playing(v.id));
+  voices.set(key, still);
+  return still;
+}
+
+function rememberVoice(howl: HowlLike, key: string, id: number, vol: number, rate: number): void {
+  const still = soundingVoices(howl, key);
+  still.push({ id, vol, rate });
+  voices.set(key, still);
+}
+
+/*
+ * ── WHAT WAS MEASURED AND RULED OUT, so it is not re-suspected ────────────
+ *
+ * The same recording tap answered the other three theories about the grit, and
+ * none of them is the cause:
+ *
+ *  - CLIPPING IS NOT REACHABLE. The loudest thing this app can emit is one
+ *    shelf cue at −10 dBFS in the file times a volume that clamps at 1. Nine
+ *    simultaneous voices would be needed to hit the rail; the tape's worst
+ *    case, one cue every 40 ms for a second, peaked at 0.076.
+ *  - OVERLAPPING VOICES DO STACK, but gently: 24 plays at 40 ms summed to
+ *    1.2× one play, not to a clipped edge. A voice cap was written and then
+ *    taken out again — it fixed nothing measurable and its retiring fade was
+ *    a new discontinuity where there had been none.
+ *  - THE BUS FILTER IS NOT RE-INSERTED PER PLAY. `applyBusFilter` compares
+ *    the context, the master gain and the chain's tag and returns without
+ *    touching the graph, which the tape confirms: no gain event on the
+ *    master, ever, between plays.
+ */
 
 /**
  * Start the ambient bed for the current soundscape, fading in over 600 ms.
@@ -1044,6 +1176,10 @@ export async function startAmbient(): Promise<void> {
   if (scapeNow === 'none' || SOUNDSCAPE_LOOPS[scapeNow] !== name) return;
   if (ambient?.name === name && howl.playing(ambient.id)) return;
   if (ambient && ambient.name !== name) fadeOutAmbient(AMBIENT_FADE_MS); // crossfade out the old bed
+  // Silent BEFORE the first sample, for the reason in `presetLevel`: the bed
+  // used to start at the Howl's group level and be set to 0 afterwards, which
+  // put a burst of full-level fireplace in front of every fade-in.
+  howl.volume(0);
   const id = howl.play();
   ambient = { howl, id, name };
   howl.volume(0, id);
@@ -1465,6 +1601,9 @@ export function resetEngineForTests(): void {
   ambientWanted = false;
   soundscape = 'rain';
   howls.clear();
+  voices.clear();
+  for (const timer of layerTimers) clearTimeout(timer);
+  layerTimers.clear();
   howlerModule = undefined;
   howlerGlobal = undefined;
   loadHowler = defaultLoader;

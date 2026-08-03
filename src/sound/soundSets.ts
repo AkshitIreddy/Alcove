@@ -169,6 +169,44 @@ export const SOUND_SET_GROUPS: Record<SoundSetGroupId, SoundSetGroup> = {
   house: {
     name: 'House',
     blurb: 'the voicing every cue was mastered as, and three steps either side',
+    voices: {
+      /*
+       * FINISHING SOMETHING IS WOOD, NOT METAL.
+       *
+       * The reader, on the tour: "the sound effects for onboarding when
+       * completing a task is very weird, its like a metal tong". That is not
+       * a figure of speech — `check-done`'s four takes are literally a struck
+       * metal bell (`gen-sounds.mjs`: `src: ['bell', n]`, credited to
+       * opengameart's "Bell dings/chimes"), and the tour rings it at
+       * `TutorialOverlay.markDone` the moment the reader does the thing.
+       *
+       * Metal is the one material this app does not otherwise own. The room
+       * is parchment, board and cloth; the shipped cues are a wooden desk
+       * drawer, Russian dolls, cracking peanuts, paper, a book landing. A
+       * bell in the middle of that reads as a notification from another
+       * application — and the bell already HAS a job here, the hour, which is
+       * exactly what it should stay the sound of.
+       *
+       * So the house voicing answers "done" the way this room would: a
+       * wooden tap a little lower and slower than the one that OPENS a panel,
+       * with a soft thump under it 80 ms later. The tap says an event
+       * happened; the thump says it settled and is staying. That pairing is
+       * the same lever the `library` family uses to give the shelf weight.
+       *
+       * This is a departure on the HOUSE GROUP, which `resolveVoice` reads
+       * only for sets in that group — so it re-voices the four house sets
+       * (including the default, which is what a reader who has never opened
+       * the picker hears) and touches nothing else. The bell FILES are
+       * untouched: `chamber` still rings, and its `drop-thump` layer still
+       * reaches for `check-done`'s takes by name.
+       */
+      'check-done': {
+        cue: 'pop-soft',
+        rate: 0.96,
+        gain: 1,
+        layer: { cue: 'drop-thump', rate: 0.9, gain: 0.3, delayMs: 80 },
+      },
+    },
   },
 
   /* Graphite, leaf and desk. The distinguishing rule: nothing in this family

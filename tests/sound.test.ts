@@ -66,6 +66,7 @@ import {
   msSinceVoicedPlay,
   type SoundName,
 } from '../src/sound/engine';
+import { resolveVoice } from '../src/sound/soundSets';
 import {
   SILENT_ATTR,
   isSoundedButton,
@@ -758,14 +759,22 @@ describe('sound engine (stub Howler)', () => {
     const stub = findStub('confetti-2') as StubHowl;
     expect(stub.volumes.get(a as number)).toBe(1);
     expect(stub.volumes.get(b as number)).toBe(1);
-    expect(stub.rates.size).toBe(0);
+    // Neither voice was given a rate of its own. The group rate is stated as
+    // the neutral 1 by `presetLevel` — see the note in sound-sets.test.ts.
+    expect(stub.rates.has(a as number)).toBe(false);
+    expect(stub.rates.has(b as number)).toBe(false);
+    expect(stub.rates.get(-1)).toBe(1);
   });
 
   it.each(Object.keys(SOUND_FAMILIES).map((f) => [f] as const))(
     "play('%s') rotates that family with no immediate repeats",
     async (family) => {
       setPlayRngForTests(lcg());
-      const variants = SOUND_FAMILIES[family as FamilyName] as readonly SoundName[];
+      // A ROLE rotates the family the current set VOICES it with, which is its
+      // own for every role but one — the house set answers `check-done` in
+      // wood rather than with its bell (see tests/sound-sets.test.ts).
+      const voiced = resolveVoice('house', family as FamilyName)?.cue ?? (family as FamilyName);
+      const variants = SOUND_FAMILIES[voiced] as readonly SoundName[];
       await init(); // warm the cache so play order == call order
       StubHowl.playLog = [];
       for (let i = 0; i < 60; i++) await play(family as FamilyName);
@@ -934,7 +943,10 @@ describe('sound-character presets (stub Howler)', () => {
     expect(StubHowl.playLog).toHaveLength(1);
     const playedSrc = StubHowl.playLog[0] as string;
     const playedName = playedSrc.replace('/sounds/', '').replace('.wav', '') as SoundName;
-    expect(SOUND_FAMILIES['check-done'] as readonly SoundName[]).toContain(playedName);
+    // The house set answers `check-done` in wood, so the take that sounds is
+    // from the family it VOICES the role with — see tests/sound-sets.test.ts.
+    const voiced = resolveVoice('house', 'check-done')?.cue ?? 'check-done';
+    expect(SOUND_FAMILIES[voiced] as readonly SoundName[]).toContain(playedName);
     expect(VARIANT_WEIGHTS[playedName]).toBe('plain');
     const stub = StubHowl.instances.find((h) => h.src === playedSrc);
     expect(stub?.volumes.get(id as number)).toBeCloseTo(

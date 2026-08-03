@@ -138,9 +138,25 @@ describe('the sound-set table', () => {
     expect(SOUND_SET_SHORTLIST).toContain(DEFAULT_SOUND_SET_ID);
   });
 
+  /**
+   * The house set restates ONE role, on purpose.
+   *
+   * `check-done`'s takes are a struck metal bell, and the reader met it at the
+   * end of a tour step: "the sound effects for onboarding when completing a
+   * task is very weird, its like a metal tong". Metal is the one material this
+   * room does not own, and the bell already has a job here — the hour. So the
+   * house voicing answers "done" in wood, with a soft settle under it.
+   *
+   * Naming the exception rather than deleting the gate: everything else must
+   * still be the cue exactly as mastered, and a second restated role has to be
+   * argued for here before it can ship.
+   */
+  const HOUSE_DEPARTURES: ReadonlySet<string> = new Set(['check-done']);
+
   it('the default set is the identity voicing — the cues exactly as mastered', () => {
     expect(isSoundSetId(DEFAULT_SOUND_SET_ID)).toBe(true);
     for (const family of FAMILIES) {
+      if (HOUSE_DEPARTURES.has(family)) continue;
       expect(resolveVoice(DEFAULT_SOUND_SET_ID, family), family).toEqual({
         cue: family,
         rate: 1,
@@ -150,6 +166,26 @@ describe('the sound-set table', () => {
     }
     expect(soundSetPool(DEFAULT_SOUND_SET_ID)).toBe('all');
     expect(soundSetJitterScale(DEFAULT_SOUND_SET_ID)).toBe(1);
+  });
+
+  it('the one house departure is the tour\'s "done", and it does not ring', () => {
+    const done = resolveVoice(DEFAULT_SOUND_SET_ID, 'check-done');
+    expect(done).not.toBeNull();
+    // Wood, not metal: `pop-soft` is a desk drawer, Russian dolls and cracking
+    // peanuts; `check-done`'s own takes are opengameart's "Bell dings/chimes".
+    expect(done?.cue).toBe('pop-soft');
+    expect(done?.cue).not.toBe('check-done');
+    // Lower and slower than the tap that OPENS a panel, so finishing something
+    // does not sound like starting something.
+    expect(done?.rate).toBeLessThan(1);
+    // And it settles: a thump under it says the thing landed and is staying.
+    expect(done?.layer?.cue).toBe('drop-thump');
+    expect(done?.layer?.delayMs).toBeGreaterThan(0);
+    expect(done?.layer?.gain).toBeLessThan(0.5);
+
+    // The bell FILES are untouched, and the family that rings still rings:
+    // `chamber` reaches for them by name under a book landing.
+    expect(resolveVoice('cloister', 'drop-thump')?.layer?.cue).toBe('check-done');
   });
 
   it('no set is another set with a new name', () => {
@@ -505,12 +541,18 @@ describe('the engine plays roles through the chosen set', () => {
     expect(stub2.rates.get(id2 as number)).toBeCloseTo(1.08, 10);
   });
 
-  it('the house set touches neither: no rate call, volume straight through', async () => {
+  it('the house set touches neither: no rate forced on the play, volume straight through', async () => {
     setVolumes({ master: 1, ui: 1 });
     const id = await play('pop-soft', { noJitter: true });
     const stub = StubHowl.instances.find((h) => h.src === StubHowl.playLog[0]) as StubHowl;
     expect(stub.volumes.get(id as number)).toBeCloseTo(1, 10);
-    expect(stub.rates.size).toBe(0);
+    // No rate is forced ON THE VOICE. The group rate IS stated, and has to be:
+    // `presetLevel` sets the Howl's group values before `play()` so the sound
+    // starts at its own level instead of the group's, and the group rate
+    // persists between plays — leaving it unset would let a jittered play
+    // bequeath its pitch to the next press. A neutral 1 is the house voicing.
+    expect(stub.rates.has(id as number)).toBe(false);
+    expect(stub.rates.get(-1)).toBe(1);
   });
 
   it('plays a layer under the roles that have one, after its delay', async () => {

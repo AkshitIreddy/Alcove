@@ -280,12 +280,17 @@ and pushed.
       same colour — what separates them on the SPINE is grain (twill, laid
       lines, ribbed, moiré), and the cover has no grain painter at all. Giving
       it one is the remaining half of this item.
-- [ ] **Split `DEFAULT_WALLPAPER_ID` before repointing it.** It is doing two
+- [x] **Split `DEFAULT_WALLPAPER_ID` before repointing it.** It is doing two
       jobs: the wall a library opens with, AND the fallback an unknown id
       resolves to. Pointing it at a patterned paper to show the fifty off also
       makes a corrupt setting silently paint stripes — four tests pin "junk
       gives you the plain wall", and they are right to. Split the constants,
       then give a new library a wall that shows the feature exists.
+      Done: `FALLBACK_WALLPAPER_ID = 'plain-parchment'` (what junk resolves to)
+      and `DEFAULT_WALLPAPER_ID = 'pin-quiet'` (what a new library opens on),
+      with `getWallpaper` pointed at the fallback. The same split was later
+      made for the carpentry — see `DEFAULT_SHELF_DESIGN` /
+      `FALLBACK_SHELF_DESIGN` above.
 
 Also open, from the same pass:
 

@@ -170,8 +170,15 @@ agents reported honestly, plus the seams between them that I closed by hand.
 - [ ] **Colour choosers are still ~8 wide.** Everywhere colour is an option it
       offers about eight. At least 20, plus a way for the reader to enter their
       own.
-- [ ] **Books read as low resolution on the shelf.** Look at the spine atlas /
-      LOD scale, not just the drawing.
+- [x] **Books read as low resolution on the shelf.** Look at the spine atlas /
+      LOD scale, not just the drawing. The cause was the unit: bake scales were
+      world-px constants while a sprite is drawn at `world px × zoom ×
+      renderer.resolution`, so any display above resolution 1 asked for twice
+      the texels the bake had. `spineScale.ts` sizes in DEVICE px now and
+      `tests/spine-resolution.test.ts` pins the arithmetic.
+      Max zoom (2.5) sits at 0.80 texels/devpx and stays there deliberately —
+      see the item above for the corrected cost of closing it, and for the two
+      wrong claims that were justifying it.
 - [ ] **The back button scrolls away.** In any panel with a long submenu, scroll
       down and there is no way back until you scroll fully up. Header must stay.
 - [ ] **"Rooms" do not change the bookcase or the wall**, which is what a room
@@ -186,15 +193,32 @@ agents reported honestly, plus the seams between them that I closed by hand.
       just opens. Put a tasteful back control top-left that fades once used.
 - [ ] **Page-turn artefact:** mid-turn, the bottom half of the ruled page shows
       a shadowy band. Reproduce it and look.
-- [ ] **Cap every long option list at ~20 + "N more".** The catalogue's tape and
+- [x] **Cap every long option list at ~20 + "N more".** The catalogue's tape and
       trim shelves show a hundred at once. Applies app-wide, and it is a
-      performance fix as much as a layout one.
+      performance fix as much as a layout one. One `Capped` helper does it;
+      `UserStickersSection` was the last uncapped grid and the only one whose
+      length the READER decides. `8cba847`
 - [ ] **Bookmarks want customising** — a wide variety, like the other axes.
-- [ ] **"Leave focus mode" sits top-right; it belongs top-left.** Audit EVERY
+- [x] **"Leave focus mode" sits top-right; it belongs top-left.** Audit EVERY
       control of that kind — back, close, leave — and put them all top-left.
+      `tests/top-left-exits.test.ts` is the mechanical sweep (it fails any
+      exit-ish selector anchored `right:` or `bottom:`), and the four dialogs
+      it could not see — cheat-sheet, quick switcher, templates gallery, PDF
+      export, script insert — got visible top-left closes with one shared
+      drawn-ring look. `shots-now/dialog-exits.mjs` opens each through its real
+      trigger and measures the close is inside the card, left half, top half.
 - [ ] **Sound presets:** the reader picks a set (clicks and the rest), the same
       way they pick a binding or a room.
-- [ ] **Tooltips are the browser's grey bubble.** They need the app's own UI.
+- [x] **Tooltips are the browser's grey bubble.** They need the app's own UI.
+      `src/views/Tooltip.tsx` is the app's own, and 22 controls were still
+      handing the job back to the OS with a native `title=` — thumbnails,
+      ribbon markers, every design-picker card and strip tile, the callout
+      swatches, image/link tools, spoiler, diagram editor, two settings rows,
+      the cloth chips and reroll buttons, theme swatches, a bookcase name, the
+      clone chip, the sound credits, the tour dots. All converted.
+      `tests/tooltips.test.ts` gates it — `title=` on a lowercase tag only, so
+      `<RailPanel title=…>` (a prop, not a label) stays untouched, and it
+      proves its own matcher fires before trusting an empty result. `ea5198c`
 - [ ] **Onboarding should say how open the customisation is.**
 - [ ] Throughout: fast and smooth, without giving up fidelity. Be clever rather
       than cheap.

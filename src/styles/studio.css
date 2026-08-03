@@ -135,6 +135,64 @@
 }
 
 /* ----------------------------------------------------------------------------
+   The part-colour rows — eight colours, and the rest behind the picker
+
+   The two rows that borrow ONE part's colour from another room (the shelves'
+   timber, the wall's ground) are dots rather than tiles: the row is choosing a
+   COLOUR, and a dot says it faster than a name or a card. So they are not
+   `.nb-strip`s — but they are the same bargain, and this is what makes them
+   look like it. They used to unfold in place, which put sixty 28px dots twice
+   over into a 376px panel; the way-through now leads to the sheet, where the
+   sixty have names, a search box, and a card apiece.
+
+   Base layout is still `.nb-chip-row` (rail.css) — a wrapping flex row, since
+   the panel narrows below a 448px window. This adds the two things that say
+   "way through" rather than "sixty-first colour": the dots and the control
+   share one baseline, and the control wears the dashed way-through's own hover
+   instead of the amber a chip gets for being pressable.
+   -------------------------------------------------------------------------- */
+.nb-colour-row {
+  align-items: center;
+  row-gap: var(--space-4);
+}
+
+/* The count reads first, exactly as it does on `.nb-more` and on the strip's
+   ninth cell — but in the UI face at the chip's own size, because a 20px Caveat
+   numeral (the floor for handwriting) does not fit a 26px chip without
+   throwing the row's rhythm out. */
+.nb-colour-more-count {
+  font-weight: 700;
+  color: var(--ink-sepia);
+}
+
+/* More air than there is between two dots, and more inside the dashes than a
+   swatch has around its colour. At the swatches' own spacing and padding this
+   control reads as a ninth colour that has lost its dot — which is the one
+   thing it must not read as.
+
+   Measured in the running panel rather than guessed at, because the whole
+   bargain is off the moment the control wraps to a line of its own: eight 28px
+   dots on a 32px pitch end at 252, this margin opens the control at 260, and it
+   closes at 327 of the row's 342px. Fourteen spare, and that is the whole
+   budget: the panel is `min(376px, 84vw)`, so the row holds this width at every
+   window down to about 448px and only then starts giving it back — where the
+   flex row wraps, which is what it is a flex row for.
+   `shots-now/colour-rows.mjs` measures the row's own height and fails if the
+   fourteen ever goes. */
+.nb-library-studio .nb-colour-row .nb-chip-more {
+  margin-left: var(--space-4);
+  padding-inline: 7px;
+}
+
+/* Lemon, not amber: every "there is more behind this" in the app lights this
+   colour, and the swatches beside it are ordinary chips that light amber. */
+.nb-library-studio .nb-chip-more:hover {
+  background: var(--wash-lemon-light);
+  border-color: var(--ink-line);
+  color: var(--ink-sepia);
+}
+
+/* ----------------------------------------------------------------------------
    The sheet — one axis, browsable
    -------------------------------------------------------------------------- */
 .nb-pick {
@@ -454,6 +512,20 @@
   box-shadow: 0 0 0 2px var(--gilt-face), var(--shadow-sm);
 }
 
+/*
+ * The card a right-click menu is currently answering for.
+ *
+ * A flat ink rim, not a tint and not a lift: the menu lands ON the grid and
+ * covers part of it, and without this the reader has no way to tell which of
+ * four near-identical cases the card is about. It has to out-rank `.is-open`
+ * (declared after it, same specificity) because the case you are standing in
+ * is exactly the one you are most likely to aim at.
+ */
+.nb-case.is-aimed {
+  border-color: var(--ink-sepia);
+  box-shadow: 0 0 0 2px var(--ink-line);
+}
+
 .nb-case-open {
   display: block;
   padding: 0;
@@ -522,6 +594,12 @@
   margin-top: var(--space-12);
 }
 
+/* Tells the grid it answers a right-click, so it sits directly under the grid
+   rather than after the status note that may or may not be there. */
+.nb-case-hint {
+  margin-top: var(--space-8);
+}
+
 /*
  * The two collection-level buttons ("add bookcase", "add a floor") were sitting
  * a hair under the last card's own rename/clone/delete row, so four buttons in
@@ -557,4 +635,103 @@
 .nb-chip:disabled:hover {
   transform: none;
   background: var(--paper-aged);
+}
+
+/* ----------------------------------------------------------------------------
+   A colour of your own
+
+   The studios' grids are vocabularies — fifty book cloths, sixty room schemes —
+   and no vocabulary contains the colour a particular reader already has in
+   mind. This is the door out of the table: the remembered shelf from
+   art/customColour.ts, a native colour well, and the hex spelled out so a
+   colour can be read off one picker and typed into another.
+
+   It sits UNDER the grid it belongs to and is deliberately quiet — a dashed
+   hairline rather than a heading, the same rule every other soft break in the
+   studio uses. It is the second answer to a question the grid has already
+   answered once, not a competing one.
+   -------------------------------------------------------------------------- */
+.nb-own-colour {
+  margin-top: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--ink-line-soft);
+}
+
+/* Wider cells than the six-across cloth grid: these are a shelf of colours the
+   reader has actually used, and at six across a dozen of them became two rows
+   of confetti. Twelve is the row cap in OwnColour.tsx, so the grid never wraps
+   past two ranks. */
+.nb-swatch-grid-own {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-bottom: var(--space-8);
+}
+
+.nb-own-colour-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+/*
+ * The native well.
+ *
+ * Chrome paints `input[type=color]` as a bevelled button with an inset swatch,
+ * and a bevel is a light model — the one thing the flat language does not
+ * allow. So the chrome is stripped to nothing and the swatch is pushed out to
+ * the full box, leaving a flat rectangle with the app's own ink edge and the
+ * app's own four-corner wobble. What is NOT stripped is the behaviour: the
+ * click still opens the operating system's wheel and eyedropper, which is the
+ * entire reason a native input is here instead of a drawn one.
+ */
+.nb-own-colour-well {
+  width: 34px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: none;
+  border: var(--stroke-ink-thin);
+  border-radius: 9px 12px 10px 13px / 11px 9px 12px 10px;
+  cursor: pointer;
+}
+
+.nb-own-colour-well::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.nb-own-colour-well::-webkit-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+.nb-own-colour-hex {
+  flex: 1 1 84px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 var(--space-8);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 10px 13px 9px 12px / 12px 10px 13px 9px;
+}
+
+.nb-own-colour-hex::placeholder {
+  color: var(--ink-sepia-soft);
+  opacity: 0.7;
+}
+
+/* Not an error state and not styled as one: half of "#7d9" is on the way to
+   being a colour. The rim just stops promising the button will work. */
+.nb-own-colour-hex.is-bad {
+  border-color: var(--accent-deep);
+}
+
+/* The caption sits directly under the hairline, so it does not need the top
+   air `.nb-strip-label` gives a heading that follows a grid. */
+.nb-own-colour-title {
+  margin-top: 0;
+  margin-bottom: var(--space-4);
 }

@@ -31,6 +31,7 @@ import {
   CHARM_COLORS,
   CHARM_COLOR_LABELS,
   CHARM_LABELS,
+  charmColorCss,
   EDGE_LABELS,
   EDGE_TREATMENTS,
   MATERIAL_LABELS,
@@ -42,6 +43,7 @@ import {
   SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
   TITLE_FONTS,
+  PIGMENT_LABELS,
   TITLE_PLATES,
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
@@ -76,10 +78,13 @@ import { COVER_ASPECT, renderCoverInto } from '../../art/covers';
 import { flatSpineFor } from '../../art/flatShelf';
 import type { FlatScheme } from '../../art/flat';
 import {
-  coverOverridesFromStyle,
+  coverOverridesFromStyle as resolvedCoverOverrides,
   themeSpineDefaults,
 } from '../../features/bookshelf/bookIdentity';
-import { clothForPalette, renderSpine, type Ctx2D } from '../../art/spines';
+import type { CoverOverrides } from '../../art/covers';
+import { PIGMENT_CLOTH_NAMES, clothForPalette, renderSpine, type Ctx2D } from '../../art/spines';
+import { PALETTE_PAGE } from '../../art/customColour';
+import OwnColour from './OwnColour';
 import { getTheme } from '../../art/themes';
 import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
 import DesignPicker, { type PickerOption } from './DesignPicker';
@@ -112,8 +117,63 @@ const STAGE_SCALE = (PREVIEW_H - STAGE_PAD_TOP - STAGE_PAD_BOTTOM) / SPINE_HEIGH
  */
 const BINDING_W = 106;
 const BINDING_H = 190;
+/**
+ * How many cloth swatches show before "N more".
+ *
+ * Borrowed from `art/customColour.PALETTE_PAGE` rather than restated, so the
+ * studio and the callout picker fold their palettes at the same place. That
+ * module's own note explains why the number is twenty and why it is a
+ * rendering budget as much as a layout one.
+ */
+const CLOTH_PAGE = PALETTE_PAGE;
 
-export { coverOverridesFromStyle };
+/**
+ * The cover-facing projection of what the reader has actually PINNED.
+ *
+ * `bookIdentity.coverOverridesFromStyle` takes a fully RESOLVED `BookStyle` —
+ * every field a value, seed rolls and room bias already merged in. The panel
+ * above this one (CustomizePanel) has no such object: it holds the OVERRIDE
+ * blob, where a knob nobody has touched is simply absent. It handed that over
+ * behind a cast, and the result was an object carrying every cover key with
+ * most of them `undefined`.
+ *
+ * That is not harmless, because `covers.deriveCoverParams` merges with a
+ * spread — and a spread copies keys whose value is `undefined`. So
+ * `{ ...derived, ...overrides }` overwrote the seed's own `frame` with nothing,
+ * `paintFrame` indexed `FRAMES[NaN]`, and the throw came back up through
+ * `onStyleChange` and killed the `persistBookStyle` call that was supposed to
+ * run on the next line. The visible symptom was that **the first edit a reader
+ * made in a session was silently discarded** — the second onward stuck, because
+ * Solid does not re-run a computation that has already thrown.
+ *
+ * Typing a colour of your own was the reliable way to meet it, colour being the
+ * first thing most people reach for. The tell was that the hex field did not
+ * clear on commit while the model had plainly taken the colour: the throw came
+ * back through `onPick` and skipped the line after it, in both callers at once.
+ * `shots-now/own-colour-book.mjs` keeps that honest — it types a colour as the
+ * very first thing it does, and asserts on the row rather than on the panel.
+ *
+ * So the projection stays PARTIAL. A key the reader has not pinned is ABSENT,
+ * not `undefined`, and the seed keeps its say — which is what the whole
+ * `seed → theme → overrides` model promises anyway.
+ */
+export function coverOverridesFromStyle(over: BookStyleOverrides): CoverOverrides {
+  // Projected through `bookIdentity`'s mapping rather than a second copy of it:
+  // the studio must not grow its own opinion about which cover field a spine
+  // field feeds. Only the FILTER belongs here.
+  const full = resolvedCoverOverrides(over as BookStyle) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(full)) {
+    // `null` survives on purpose — on `clothHex` it is a value ("I cleared my
+    // own colour"), and dropping it would make the clear a no-op.
+    if (full[key] !== undefined) out[key] = full[key];
+  }
+  // `texture` is DERIVED from `material` rather than copied across, so it comes
+  // out of that mapping with a real number even when the reader has pinned no
+  // covering at all. It is the one key the filter cannot see is unset.
+  if (over.material === undefined) delete out.texture;
+  return out as CoverOverrides;
+}
 
 export interface BookStudioProps {
   spineSeed: number;
@@ -165,6 +225,20 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   const seedBinding = (): BookPresetId => presetForSeed(props.spineSeed).id;
 
   /**
+   * The cloth every card in this panel is painted in — the reader's own colour
+   * when they entered one, the fold of their pigment otherwise.
+   *
+   * Exactly what `renderSpine` does with the same two fields, spelled once
+   * here and read by all three consumers (the big binding preview, the preset
+   * strip, the three axis strips). Spelled per consumer it drifted: the
+   * bindings and the axes each did their own `clothForPalette` and a custom
+   * colour reached the preview at the top of the sheet and none of the tiles
+   * under it, so the studio disagreed with itself in one glance.
+   */
+  const cardCloth = (): number | string =>
+    resolved().spine.clothHex ?? clothForPalette(resolved().spine.palette);
+
+  /**
    * The design the shelf will draw. Built from the book's OWN cloth and gilt
    * rather than from the room, because a book keeps its colours wherever it
    * stands; only the ground behind the preview follows the room.
@@ -172,7 +246,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   const design = createMemo<BookDesign>(() =>
     resolveBookDesign({
       seed: props.spineSeed,
-      cloth: clothForPalette(resolved().spine.palette),
+      cloth: cardCloth(),
       gilt: style().gilt,
       labelAt: flatSpineFor(props.spineSeed).labelAt,
       preset: pinned(),
@@ -192,7 +266,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   const bindings = createMemo(() =>
     bindingOptions({
       seed: props.spineSeed,
-      cloth: clothForPalette(resolved().spine.palette),
+      cloth: cardCloth(),
       gilt: style().gilt,
       labelAt: flatSpineFor(props.spineSeed).labelAt,
     }),
@@ -226,7 +300,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     ownAxisOptions(
       {
         seed: props.spineSeed,
-        cloth: clothForPalette(resolved().spine.palette),
+        cloth: cardCloth(),
         gilt: style().gilt,
         labelAt: flatSpineFor(props.spineSeed).labelAt,
       },
@@ -337,25 +411,90 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   );
 
   /**
-   * The six book cloths, painted in the colours the book will ACTUALLY be.
+   * Every pigment, painted in the colour the book will ACTUALLY be.
    *
-   * There used to be twenty swatches here, each a two-stop gradient out of the
-   * painterly pigment table. Both halves were a lie after the flat restyle:
-   * the drawing has no gradients, and `clothForPalette` folds those twenty
-   * pigments onto six cloths — so fourteen of the twenty swatches repainted
-   * the book in a colour it already was, which is most of why the studio felt
-   * like it was ignoring the reader.
+   * This was six entries, hand-listed, and the note above them explained why:
+   * `clothForPalette` used to fold twenty pigments onto SIX cloths, so fourteen
+   * of the twenty swatches repainted the book in a colour it already was, and
+   * cutting the row to six was the honest thing to do about it.
+   *
+   * The fold is one-to-one now — fifty pigments, fifty cloths — so the reason
+   * has expired and the list is derived rather than written: a pigment added to
+   * `art/spines.ts` appears here, and a swatch can no longer name a colour the
+   * spine does not paint. The label is the CLOTH's name (`PIGMENT_CLOTH_NAMES`)
+   * and not the pigment's, because twenty-four of the fifty still land on a
+   * cloth of another name and the tooltip has to answer "what colour is the
+   * book", not "which row of a table did this come from".
    */
-  const CLOTH_SWATCHES: readonly { pigment: number; label: string }[] = [
-    { pigment: 1, label: 'Terracotta' },
-    { pigment: 10, label: 'Slate' },
-    { pigment: 4, label: 'Plum' },
-    { pigment: 5, label: 'Ochre' },
-    { pigment: 6, label: 'Sage' },
-    { pigment: 2, label: 'Moss' },
-  ];
+  const CLOTH_SWATCHES: readonly { pigment: number; label: string }[] = PIGMENT_LABELS.map(
+    (name, pigment) => ({
+      pigment,
+      label: PIGMENT_CLOTH_NAMES[pigment] === '' ? name : (PIGMENT_CLOTH_NAMES[pigment] as string),
+    }),
+  );
+  /**
+   * Twenty, then the rest behind a count — the house rule for a long list, and
+   * the same fold `art/customColour.ts` states for every picker in the app.
+   * The current pigment is always among the shown ones, or collapsing the grid
+   * after picking from its tail would leave no swatch pressed and read as
+   * though the choice had been forgotten.
+   */
+  const [allCloths, setAllCloths] = createSignal(false);
+  const shownCloths = createMemo<readonly { pigment: number; label: string }[]>(() => {
+    if (allCloths()) return CLOTH_SWATCHES;
+    const head = CLOTH_SWATCHES.slice(0, CLOTH_PAGE);
+    const at = style().pigment;
+    if (at < CLOTH_PAGE) return head;
+    // Into the LAST slot: the head is ordered, and pushing the run along to
+    // make room at the front would move every swatch under the cursor.
+    return [...head.slice(0, head.length - 1), CLOTH_SWATCHES[at] as { pigment: number; label: string }];
+  });
+  /* ------------------------------ charm colour ---------------------------- */
+
+  /**
+   * The charm's twenty-four colourways, carrying their own index.
+   *
+   * Paired with the index rather than read back out of a `For`'s position,
+   * because the row folds at twenty like every other long list in the app and
+   * a folded row's third tile is not colourway three.
+   */
+  const CHARM_SWATCHES: readonly { index: number; hex: string; label: string }[] =
+    CHARM_COLORS.map((hex, index) => ({
+      index,
+      hex,
+      label: CHARM_COLOR_LABELS[index] ?? `colour ${index + 1}`,
+    }));
+  const [allCharms, setAllCharms] = createSignal(false);
+  /** Twenty, then the rest behind a count — and never without the current one. */
+  const shownCharms = createMemo<readonly { index: number; hex: string; label: string }[]>(() => {
+    if (allCharms()) return CHARM_SWATCHES;
+    const head = CHARM_SWATCHES.slice(0, PALETTE_PAGE);
+    const at = style().charmColor;
+    // A hex is not in the table at all, so there is nothing to swap forward:
+    // no named swatch is lit and the head is the honest thing to show.
+    if (typeof at !== 'number' || at < PALETTE_PAGE) return head;
+    // Into the LAST slot, same as the cloths: pushing the run along to make
+    // room at the front would move every swatch out from under the cursor.
+    return [
+      ...head.slice(0, head.length - 1),
+      CHARM_SWATCHES[at] as { index: number; hex: string; label: string },
+    ];
+  });
+  /** The reader's own charm colour, when they typed one. */
+  const ownCharm = (): string | null =>
+    typeof style().charmColor === 'string' ? (style().charmColor as string) : null;
+  /**
+   * The colour the charm's well opens on — theirs, else the ribbon's actual
+   * colour, resolved by the same fold the spine and the cover use.
+   */
+  const charmNow = (): string => charmColorCss(style().charmColor);
+
   /** Which swatch the current pigment folds onto. */
   const activeCloth = (): number => clothForPalette(style().pigment);
+  /** The reader's own colour, when they entered one. */
+  const ownCloth = (): string | null => style().clothHex;
+  /** The colour the well opens on: theirs, else the cloth they are wearing. */
+  const clothNow = (): string => (CLOTHS[activeCloth()] ?? CLOTHS[0]!)[0];
 
   /**
    * The whole vocabulary, not one field.
@@ -413,9 +552,12 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     /* "binding" now names the whole bound book (shape + material + tooling),
        so this narrower knob goes back to what it actually is: the cloth. */
     material: ['material'],
-    /* `hueJitter` is deliberately absent — the flat palette has six cloths and
-       no hue rotation, so rolling it wrote a field nothing draws. */
-    pigment: ['pigment'],
+    /* `hueJitter` is deliberately absent — the flat palette has no hue
+       rotation, so rolling it wrote a field nothing draws. `clothHex` is
+       present for the opposite reason: it DOES draw, and it outranks the
+       pigment, so a dice that left it in place would roll a colour nobody
+       could see. */
+    pigment: ['pigment', 'clothHex'],
     'bands & endbands': ['raisedBands', 'bandGilt', 'headTail', 'headTailStyle'],
     'ornament stamp': ['ornament'],
     'title plate': ['titlePlate', 'titleFont', 'gilt'],
@@ -724,15 +866,20 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         <h3 class="nb-panel-section-title">
           pigment
           <em class="nb-panel-row-hint">
-            {CLOTH_SWATCHES.find((c) => clothForPalette(c.pigment) === activeCloth())?.label ?? ''}
+            {ownCloth() ?? CLOTH_SWATCHES[style().pigment]?.label ?? ''}
           </em>
           <RerollDice section="pigment" onClick={() => reroll(REROLL_GROUPS.pigment)} />
         </h3>
         <div class="nb-swatch-grid" role="group" aria-label="Spine pigment">
-          <For each={CLOTH_SWATCHES}>
+          <For each={shownCloths()}>
             {(swatch) => {
               const cloth = clothForPalette(swatch.pigment);
               const pair = CLOTHS[cloth] ?? CLOTHS[0]!;
+              /* Pressed only while the book is actually wearing it. A colour
+                 of the reader's own outranks every pigment, so leaving one of
+                 these lit under it would have the row claiming credit for a
+                 colour it did not paint. */
+              const on = (): boolean => ownCloth() === null && style().pigment === swatch.pigment;
               return (
                 <button
                   type="button"
@@ -742,16 +889,47 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
                   style={{ background: `linear-gradient(105deg, ${pair[0]} 62%, ${pair[1]} 62%)` }}
                   aria-label={swatch.label}
                   data-tooltip={swatch.label.toLowerCase()}
-                  aria-pressed={activeCloth() === cloth}
-                  classList={{ 'is-active': activeCloth() === cloth }}
-                  onClick={() => patch({ pigment: swatch.pigment })}
+                  aria-pressed={on()}
+                  classList={{ 'is-active': on() }}
+                  /* A named pigment clears the reader's own colour in the same
+                     write. Two fields, one intent: without it, pressing a
+                     swatch would move a value nothing draws and the row would
+                     look broken in exactly the way it used to. */
+                  onClick={() => patch({ pigment: swatch.pigment, clothHex: null })}
                 />
               );
             }}
           </For>
         </div>
+        <Show when={CLOTH_SWATCHES.length > CLOTH_PAGE}>
+          <div class="nb-chip-row">
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost font-ui"
+              aria-expanded={allCloths()}
+              onClick={() => setAllCloths(!allCloths())}
+            >
+              {allCloths() ? 'fewer' : `${CLOTH_SWATCHES.length - CLOTH_PAGE} more`}
+            </button>
+          </div>
+        </Show>
+        {/*
+          The door out of the table. The fifty above are a vocabulary and a
+          vocabulary cannot contain the colour a particular reader already has
+          in mind — so this takes any hex, folds it into two faces the way the
+          fifty were folded (`palette.clothPair`), and binds the book in it.
+        */}
+        <OwnColour
+          label="Spine cloth"
+          value={ownCloth()}
+          fallback={ownCloth() ?? clothNow()}
+          onPick={(hex) => patch({ clothHex: hex })}
+          onClear={() => patch({ clothHex: null })}
+          clearLabel="back to the pigment"
+        />
         <p class="nb-panel-footnote">
-          six cloths, and a book keeps its own in every room
+          {CLOTH_SWATCHES.length} cloths and any colour you like — and a book
+          keeps its own in every room
         </p>
       </section>
 
@@ -981,20 +1159,58 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         </div>
         <Show when={style().charm !== 'none'}>
           <div class="nb-swatch-grid nb-swatch-grid-charm" role="group" aria-label="Charm colour">
-            <For each={CHARM_COLORS}>
-              {(hex, i) => (
+            <For each={shownCharms()}>
+              {(swatch) => (
                 <button
                   type="button"
                   class="nb-swatch"
-                  style={{ background: hex }}
-                  aria-label={CHARM_COLOR_LABELS[i()] ?? `colour ${i() + 1}`}
-                  aria-pressed={style().charmColor === i()}
-                  classList={{ 'is-active': style().charmColor === i() }}
-                  onClick={() => patch({ charmColor: i() })}
+                  style={{ background: swatch.hex }}
+                  aria-label={swatch.label}
+                  data-tooltip={swatch.label.toLowerCase()}
+                  /* A colour of the reader's own outranks every colourway, so
+                     none of these is lit under one — the same rule the cloth
+                     row follows, and for the same reason: a swatch left lit
+                     would be claiming credit for a colour it did not paint. */
+                  aria-pressed={style().charmColor === swatch.index}
+                  classList={{ 'is-active': style().charmColor === swatch.index }}
+                  onClick={() => patch({ charmColor: swatch.index })}
                 />
               )}
             </For>
           </div>
+          <Show when={CHARM_SWATCHES.length > PALETTE_PAGE}>
+            <div class="nb-chip-row">
+              <button
+                type="button"
+                class="nb-chip nb-chip-ghost font-ui"
+                aria-expanded={allCharms()}
+                onClick={() => setAllCharms(!allCharms())}
+              >
+                {allCharms() ? 'fewer' : `${CHARM_SWATCHES.length - PALETTE_PAGE} more`}
+              </button>
+            </div>
+          </Show>
+          {/*
+            The door out of the charm's own table. A ribbon is the one thing on
+            a book a reader is likeliest to want to MATCH — to a cover, to a
+            room, to another book — and twenty-four names cannot contain that.
+            The hex goes straight into `charmColor`; `charms.charmColorCss`
+            lifts it onto CHARM_FLOOR so the one ink outline still has an edge
+            to be, and the cover's bake key carries it verbatim.
+          */}
+          <OwnColour
+            label="Charm colour"
+            value={ownCharm()}
+            fallback={ownCharm() ?? charmNow()}
+            onPick={(hex) => patch({ charmColor: hex })}
+            /* Drops the PIN, not just the hex — the charm goes back to the
+               colour the seed and the room chose for it. There is no named
+               colourway to fall back to the way `clothHex` falls back to a
+               pigment: this field holds one value, and an index the reader
+               pressed earlier is not a second opinion the model kept. */
+            onClear={() => unpatch('charmColor')}
+            clearLabel="back to the rolled colour"
+          />
         </Show>
       </section>
 

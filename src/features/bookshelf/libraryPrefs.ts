@@ -35,6 +35,8 @@ import {
   subscribeBookcases,
   type BookcaseState,
 } from '../../data/bookcases';
+import { normaliseHex } from '../../art/customColour';
+import { caseFaces, paleAbove } from '../../art/palette';
 import { libraryKey } from './libraryKey';
 
 /**
@@ -64,12 +66,33 @@ export interface LibraryPrefs {
    */
   shelf: ThemeId | null;
   wall: ThemeId | null;
+  /**
+   * Colours the READER typed, `#rrggbb`, overruling the room those two parts
+   * would otherwise borrow. `null` — the normal case — means "whatever the
+   * scheme says".
+   *
+   * Two fields and not five: a reader picks the TIMBER and the WALL, and the
+   * turned face and the dark of the recess are derived from the timber by
+   * `palette.caseFaces` rather than offered. That is not a shortcut. The fold
+   * between a board's three faces is what makes the case read as one object,
+   * and three independent hexes is three ways to break it — the sixty rooms
+   * themselves are authored the same way, from one timber each.
+   *
+   * They are hexes and never theme ids because they are by definition not in
+   * the table of sixty; `art/customColour.ts` states that rule for the whole
+   * app and `normaliseHex` here is its normaliser, so a colour typed into a
+   * callout can be pasted onto a bookcase.
+   */
+  timberHex: string | null;
+  wallHex: string | null;
 }
 
 export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
   theme: DEFAULT_THEME_ID,
   shelf: null,
   wall: null,
+  timberHex: null,
+  wallHex: null,
 };
 
 /**
@@ -98,6 +121,12 @@ export function mergeLibraryPrefs(raw: unknown): LibraryPrefs {
     theme: isThemeId(s.theme) ? s.theme : d.theme,
     shelf: part(s.shelf),
     wall: part(s.wall),
+    // `normaliseHex` returns null for anything it cannot re-serialise as a
+    // hex, which is exactly the value that means "follow the room" — so an
+    // unreadable colour and an absent one land in the same place without a
+    // second branch.
+    timberHex: normaliseHex(s.timberHex),
+    wallHex: normaliseHex(s.wallHex),
   };
 }
 
@@ -221,11 +250,36 @@ export function resolveLibrary(prefs: LibraryPrefs): ResolvedLibrary {
   const theme = getTheme(prefs.theme);
   const shelf = getTheme(partTheme(prefs, 'shelf')).scheme;
   const wall = getTheme(partTheme(prefs, 'wall')).scheme;
+
+  /*
+   * A colour of the reader's own displaces the borrowed room's, one part at a
+   * time — and it is FOLDED, not pasted:
+   *
+   *  - `caseFaces` derives the turned face and the recess from the lit one,
+   *    with the same measured OKLCh steps the sixty authored rooms use, and
+   *    lifts the whole board if the reader's colour is so dark the recess
+   *    would go under `FLAT.ink`. A flat hex in all three slots is a bookcase
+   *    with no fold in it, which stops reading as a box.
+   *  - `paleAbove` keeps the wall clear of the timber. That is not taste: the
+   *    wall being the lightest thing on screen is what makes the case read as
+   *    furniture standing in a room rather than as a hole cut in the backdrop,
+   *    and it only bites when the reader's wall would have gone under their
+   *    own case — a pale colour passes through untouched.
+   *
+   * Clamping rather than refusing, throughout. Refusing a colour a reader has
+   * already chosen is the rudest thing a picker can do (see
+   * `art/customColour.ts`), and every clamp here still lands on the colour
+   * they asked for, only far enough into the band that the drawing survives.
+   */
+  const ownTimber = normaliseHex(prefs.timberHex);
+  const board = ownTimber === null ? shelf : caseFaces(ownTimber);
+  const ownWall = normaliseHex(prefs.wallHex);
+
   const scheme: ColourScheme = {
-    timber: shelf.timber,
-    timberDark: shelf.timberDark,
-    recess: shelf.recess,
-    wall: wall.wall,
+    timber: board.timber,
+    timberDark: board.timberDark,
+    recess: board.recess,
+    wall: ownWall === null ? wall.wall : paleAbove(ownWall, board.timber),
     cloths: shelf.cloths,
   };
   return {
@@ -234,7 +288,12 @@ export function resolveLibrary(prefs: LibraryPrefs): ResolvedLibrary {
     scheme,
     // Both parts are in the key: the disk cache validates nothing about a hit,
     // so a case baked with reef timber would otherwise be served to a room
-    // that only borrowed reef's wall.
-    key: `${libraryKey(theme)}|s=${partTheme(prefs, 'shelf')}|w=${partTheme(prefs, 'wall')}`,
+    // that only borrowed reef's wall. The reader's own hexes are in it for the
+    // same reason and are load-bearing in a way the part ids are not — a
+    // custom colour does not change the room's NAME, so without them every
+    // colour a reader mixed would share one key with the room it started from.
+    key:
+      `${libraryKey(theme)}|s=${partTheme(prefs, 'shelf')}|w=${partTheme(prefs, 'wall')}` +
+      `|t#=${prefs.timberHex ?? '-'}|w#=${prefs.wallHex ?? '-'}`,
   };
 }

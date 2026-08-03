@@ -24,6 +24,7 @@ import {
   CHARM_COLORS,
   CHARM_COLOR_LABELS,
   CHARM_LABELS,
+  charmColorCss,
   isCharmKind,
   type CharmKind,
 } from './charms';
@@ -34,6 +35,7 @@ import {
   type CoverOverrides,
   type CoverParams,
 } from './covers';
+import { normaliseHex } from './customColour';
 import { clamp, mulberry32, type RandomFn } from './noise';
 import {
   BINDING_MATERIALS,
@@ -114,6 +116,13 @@ export {
   TITLE_PLATES,
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
+  // The ONE folding of a charm colourway — index or the reader's own hex — so
+  // the studio's swatches and wells resolve it exactly the way the spine and
+  // the cover do. Re-exported rather than reached for directly because that is
+  // this module's job: "the rail UI never has to reach into
+  // `spines.ts`/`charms.ts`", and three modules folding one colour three ways
+  // is what made a reader's Crimson come out green (see charms.charmCloth).
+  charmColorCss,
   composeShelfRow,
   formatForHeight,
   heightForFormat,
@@ -135,6 +144,24 @@ export interface BookStyle {
   material: BindingMaterial;
   /** Pigment index, 0–11. */
   pigment: number;
+  /**
+   * A cloth colour the READER typed, `#rrggbb`, or null to follow `pigment`.
+   *
+   * The fifty pigments are a vocabulary; this is the door out of it. Both are
+   * kept rather than one replacing the other, and that is deliberate: clearing
+   * a custom colour has to put the book back on the pigment it was wearing,
+   * not on whatever the seed would roll today.
+   *
+   * It is a hex and never an index because it is by definition not in the
+   * table — `art/customColour.ts` is the app's one statement of that rule, and
+   * `normaliseHex` here is the same normaliser the callout tints use, so a
+   * colour typed in one picker can be pasted into the other.
+   *
+   * It reaches the drawing through `SpineParams.clothHex` and
+   * `CoverParams.clothHex`, both of which are already in the caches that hold
+   * those pixels (`bookDesign.bookDesignTag`, `covers`' own key).
+   */
+  clothHex: string | null;
   /** Extra hue rotation in degrees, ±12. */
   hueJitter: number;
   /** Raised cords, 0–5. */
@@ -166,8 +193,26 @@ export interface BookStyle {
   /** Gilt tooling on bands, ornament and title. */
   gilt: boolean;
   charm: CharmKind;
-  /** Index into CHARM_COLORS. */
-  charmColor: number;
+  /**
+   * The charm's colourway: an index into `CHARM_COLORS`, or a `#rrggbb` the
+   * READER typed.
+   *
+   * One field carrying two representations rather than the `pigment` /
+   * `clothHex` pair beside it, and the asymmetry is deliberate. A cloth needs
+   * both because `pigment` goes on meaning something while a custom colour is
+   * in force — it is what "back to the pigment" returns to. A charm's index
+   * means nothing except the colour it names, so a second field would only be
+   * a place for the two to disagree; clearing a charm colour drops the pin
+   * instead, and the seed's own roll comes back.
+   *
+   * Nothing downstream had to change to accept this. `charms.charmColorCss`
+   * has always read either — clamping a reader's hex up onto `CHARM_FLOOR` so
+   * `FLAT.ink` still has an edge to be — and `CoverParams.charmColor` was
+   * already typed `number | string` with the cover cache key interpolating it
+   * raw, so two readers' greens are two keys. `SpineParams.charmColor` was the
+   * one type left, and its own comment said so: it was waiting on this field.
+   */
+  charmColor: number | string;
   /* cover */
   coverFrame: number;
   coverMedallion: number;
@@ -411,6 +456,15 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
   const pigment = intIn(raw.pigment, 0, PIGMENT_COUNT - 1);
   if (pigment !== undefined) o.pigment = pigment;
 
+  // `null` is a VALUE here, not an absence: "I had a colour of my own and I
+  // cleared it". Dropping it the way an invalid field is dropped would make
+  // the clear a no-op the moment the blob round-tripped through SQLite.
+  if (raw.clothHex === null) o.clothHex = null;
+  else {
+    const clothHex = normaliseHex(raw.clothHex);
+    if (clothHex !== null) o.clothHex = clothHex;
+  }
+
   const hue = num(raw.hueJitter);
   if (hue !== undefined) o.hueJitter = clamp(hue, -12, 12);
 
@@ -450,8 +504,15 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
   if (typeof raw.gilt === 'boolean') o.gilt = raw.gilt;
 
   if (isCharmKind(raw.charm)) o.charm = raw.charm;
-  const charmColor = intIn(raw.charmColor, 0, CHARM_COLORS.length - 1);
-  if (charmColor !== undefined) o.charmColor = charmColor;
+  // A hex first, because a reader's own colour is the one value here that
+  // cannot be re-derived from anything else — an index that failed to read
+  // still lands on a colourway, a hex that gets dropped is simply gone.
+  const charmHex = normaliseHex(raw.charmColor);
+  if (charmHex !== null) o.charmColor = charmHex;
+  else {
+    const charmColor = intIn(raw.charmColor, 0, CHARM_COLORS.length - 1);
+    if (charmColor !== undefined) o.charmColor = charmColor;
+  }
 
   const frame = intIn(raw.coverFrame, 0, COVER_FRAME_COUNT - 1);
   if (frame !== undefined) o.coverFrame = frame;
@@ -663,14 +724,28 @@ export function resolveBookStyle(
     charm = base.charm ?? 'none';
   }
 
-  const charmColor = clamp(
-    Math.round(
-      over.charmColor ??
-        (theme.charmColors ? pick(theme.charmColors, rCharmColor) : (base.charmColor ?? 0)),
-    ),
-    0,
-    CHARM_COLORS.length - 1,
-  );
+  /**
+   * The charm's colourway.
+   *
+   * A colour of the reader's own passes through UNTOUCHED; only an index is
+   * rounded and clamped. That split is the whole change: this was one
+   * `clamp(Math.round(…))` over the whole expression, and `Math.round('#00b3a4')`
+   * is NaN, which `clamp` then pins to 0 — so a reader's colour would have come
+   * back as the first crimson on the shelf. Silent degradation of a colour
+   * somebody chose is exactly what `art/customColour.ts` forbids.
+   *
+   * A theme may BIAS the colourway (`theme.charmColors` is a pool of indices)
+   * but may not invent a hex, for the same reason the cloth's does not: a room
+   * does not get to hand out "your own" colours.
+   */
+  const ownCharm = normaliseHex(over.charmColor);
+  const asIndex = (value: unknown): number =>
+    clamp(Math.round(typeof value === 'number' ? value : 0), 0, CHARM_COLORS.length - 1);
+  let charmColor: number | string;
+  if (ownCharm !== null) charmColor = ownCharm;
+  else if (typeof over.charmColor === 'number') charmColor = asIndex(over.charmColor);
+  else if (theme.charmColors) charmColor = asIndex(pick(theme.charmColors, rCharmColor));
+  else charmColor = normaliseHex(base.charmColor) ?? asIndex(base.charmColor);
 
   // Cover-only knobs: the seed's own rolls unless the studio pins them.
   const coverBase = deriveCoverParams(s);
@@ -701,6 +776,10 @@ export function resolveBookStyle(
   const style: BookStyle = {
     material,
     pigment: clamp(Math.round(pigment), 0, PIGMENT_COUNT - 1),
+    // No seed roll and no theme bias behind it on purpose. A room may BIAS the
+    // pigment a book is bound in; it may not invent a colour the reader typed,
+    // and a dice that rolled one would be handing out "your own" colours.
+    clothHex: over.clothHex ?? null,
     hueJitter: clamp(hueJitter, -12, 12),
     raisedBands,
     bandGilt,
@@ -743,6 +822,7 @@ export function spineParamsFor(
     ...base,
     materialPinned: pinned.has('material'),
     palette: style.pigment,
+    clothHex: style.clothHex,
     hueJitter: style.hueJitter,
     // The legacy 0|1|2 texture bucket is kept in sync so any consumer that
     // still branches on it (older cover code, tests) agrees with the material.
@@ -773,6 +853,7 @@ export function spineParamsFor(
 export function coverParamsFor(seed: number, style: BookStyle): CoverParams {
   const overrides: CoverOverrides = {
     palette: style.pigment,
+    clothHex: style.clothHex,
     texture: textureFromMaterial(style.material),
     frame: style.coverFrame,
     medallion: style.coverMedallion,
@@ -830,6 +911,11 @@ export function randomBookStyleOverrides(seed: number): BookStyleOverrides {
   return {
     material: pick(BINDING_MATERIALS, rnd()),
     pigment: Math.floor(rnd() * PIGMENT_COUNT),
+    // Always cleared, never rolled. The dice has fifty pigments to land on and
+    // a custom colour outranks all of them, so leaving one in place would make
+    // every press of "randomise" repaint everything about the book EXCEPT the
+    // thing the reader is looking at.
+    clothHex: null,
     hueJitter: (rnd() * 2 - 1) * 8,
     raisedBands: Math.floor(rnd() * (MAX_RAISED_BANDS + 1)),
     bandGilt: rnd() < 0.5,

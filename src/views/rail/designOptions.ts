@@ -873,8 +873,13 @@ export function drawBindingCard(
 }
 
 export interface BindingCardOptions {
-  /** The book's own cloth index, so the card previews THIS book rebound. */
-  cloth?: number;
+  /**
+   * The book's own cloth, so the card previews THIS book rebound: an index
+   * into `flat.CLOTHS`, or the `#rrggbb` the reader typed in the studio. The
+   * hex reaches `artKey` for free — it is interpolated between `|` separators
+   * like the index was, so two readers' greens are two cards.
+   */
+  cloth?: number | string;
   accent?: number;
   gilt?: boolean;
   labelAt?: number;

@@ -113,6 +113,11 @@ export function bookStyleOverridesFor(
 export function coverOverridesFromStyle(style: BookStyle): CoverOverrides {
   return {
     palette: style.pigment,
+    // The reader's own cloth colour, so the OPEN book's boards are the same
+    // colour as the spine on the shelf. `cover_meta.cover` is a separate blob
+    // from `cover_meta.style`, and a field that reaches one and not the other
+    // is a book that changes colour when you pick it up.
+    clothHex: style.clothHex,
     texture: textureFromMaterial(style.material),
     frame: style.coverFrame,
     medallion: style.coverMedallion,

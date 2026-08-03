@@ -922,6 +922,34 @@ recordings.
       `public/sounds/CREDITS.json`, one entry per cue. **Verified split: 34
       public domain, 21 CC0, 1 CC BY 4.0** (counted from the manifest, not from
       the report)
+- [ ] **The set is 66 cues cut from 15 recordings, and 56 of them from six.**
+      Surveyed properly for the first time. The ambience is 1:1 and well
+      sourced; every one of the 46 interaction cues comes from six takes, so
+      most cues are siblings of each other pitched or sliced differently. That
+      is the sourcing problem underneath "it still sounds cheap", and no amount
+      of conditioning or listening fixes it.
+      DONE: `pop-soft` ×5 were Kenney's SYNTHESISED interface blips — the only
+      non-recorded material, contradicting both the doc and this file's header,
+      and the exact thing rejected twice. Replaced with five public-domain
+      recordings of real objects. `3abc28c`
+      STILL OPEN, in order of how much they matter:
+      - [ ] `click-soft` ×4 — the most-fired cue in the app — are sub-slices of
+            a page RIFFLE (`Old_book.ogg`, overlapping the book-pull slices),
+            measuring 3.3% and 11.6% max adjacent-sample step, i.e. almost no
+            attack. A button press is a contact event; a riffle is friction.
+            No conditioning turns one into the other.
+      - [ ] `tick-hover` ×5 and `typing-tick` ×6 are the same 60-second pencil
+            take interleaved, statistically indistinguishable (1546–1586 Hz vs
+            1477–1601 Hz). The only thing telling a hover from a keystroke is
+            9 dB of level. `tests/sound.test.ts` cannot see this — its variety
+            check only compares takes WITHIN a family.
+      - [ ] `page-flip-5` measures 1075 Hz against 1843–1860 for its five
+            siblings: the thud among five sheets of paper. This is the exact
+            defect that already got `page-flip-1` replaced.
+      141 vetted CC0/PD candidates were found across freesound, Kenney's
+      recorded UI set, OpenGameArt and Wikimedia; the agent integrating them
+      died in an API outage before landing more than `pop-soft`.
+
 - [ ] **Nobody has listened to any of it.** Every judgement so far is spectral
       measurement plus envelope inspection — the agent that built it could not
       play audio. A human listening pass is the remaining acceptance gate, and

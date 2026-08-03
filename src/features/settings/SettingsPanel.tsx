@@ -14,6 +14,7 @@ import {
   For,
   Show,
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   onCleanup,
@@ -21,7 +22,18 @@ import {
   type JSX,
 } from 'solid-js';
 import { gsap } from 'gsap';
-import { save, settings } from '../../data/settings';
+import {
+  bindingActionLabel,
+  bindingFromEvent,
+  bindingRefusal,
+  canonicalBinding,
+  fixedBindingReason,
+  listedBindingActions,
+  rebind,
+  resetBinding,
+  save,
+  settings,
+} from '../../data/settings';
 import { DEFAULT_KEYBINDINGS } from '../../data/defaults';
 import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
@@ -33,7 +45,13 @@ import {
   runBackupNow,
 } from '../system/backup';
 import { exportDiagnostics } from '../system/diagnostics';
-import { SOUNDSCAPE_BLURBS, SOUNDSCAPE_NAMES } from '../../sound/engine';
+import {
+  FAMILY_NAMES,
+  SOUNDSCAPE_BLURBS,
+  SOUNDSCAPE_NAMES,
+  play,
+  type FamilyName,
+} from '../../sound/engine';
 import SoundCredits from '../../sound/SoundCredits';
 import {
   SOUND_SETS,
@@ -46,6 +64,27 @@ import {
   type SoundSetGroupId,
   type SoundSetId,
 } from '../../sound/soundSets';
+import {
+  MAX_USER_SOUND_SETS,
+  isUserSoundSetId,
+  userCueCount,
+  userSoundSet,
+  userSoundSets,
+  type UserSoundSet,
+} from '../../sound/userSoundSets';
+import {
+  ROLE_LABELS,
+  addUserSoundSet,
+  assignUserCue,
+  clearUserCue,
+  forgetUserSoundSet,
+  importIntoUserSoundSet,
+  loadUserSoundSets,
+  roleVocabulary,
+  setUserSoundSetBase,
+  type ImportReport,
+} from '../../sound/userSoundSetStore';
+import { notify } from '../../editor/script/exporters/toast';
 import {
   activeSoundSetId,
   loadSoundSet,
@@ -160,6 +199,40 @@ const SOUND_SET_GROUP_OPTIONS = Object.fromEntries(
   SOUND_SET_GROUP_IDS.map((group) => [group, soundSetsInGroup(group).map(soundSetOption)]),
 ) as unknown as Record<SoundSetGroupId, readonly SegOption[]>;
 
+/* --------------------------- the reader's own sets -------------------------- */
+
+/**
+ * The naming rule the bulk import follows, written out where the button is.
+ *
+ * It is generated from `roleVocabulary` rather than typed out, because a
+ * naming rule the panel teaches and the matcher does not enforce is worse
+ * than no rule at all — and the two would drift the first time a word was
+ * added on one side.
+ */
+const CUE_NAMING_HINT = FAMILY_NAMES.map((role) => `${role} — ${ROLE_LABELS[role]}`).join('\n');
+
+/** Every alias a file name may use for a role, for that role's own row. */
+const roleWords = (role: FamilyName): string => roleVocabulary(role).join(', ');
+
+/** One line summarising what an import actually did. */
+function describeImport(report: ImportReport): string {
+  const parts: string[] = [];
+  if (report.assigned.length > 0) {
+    const n = report.assigned.length;
+    parts.push(n === 1 ? '1 cue is yours now' : `${n} cues are yours now`);
+  }
+  if (report.unmatched.length > 0) {
+    const shown = report.unmatched.slice(0, 3).join(', ');
+    parts.push(
+      `could not tell what ${shown}${report.unmatched.length > 3 ? '…' : ''} should be — place them below`,
+    );
+  }
+  if (report.rejected.length > 0) {
+    parts.push(`${report.rejected.length} could not be read`);
+  }
+  return parts.length === 0 ? 'nothing to import' : parts.join('; ');
+}
+
 const AUTOSAVE_OPTIONS = [
   { value: 500, label: '0.5s' },
   { value: 1000, label: '1s' },
@@ -201,10 +274,26 @@ function Row(props: {
   hint?: string;
   keys?: string;
   wide?: boolean;
+  /**
+   * Stop the control column giving up its width to the text.
+   *
+   * `.nbs-row-control` shrinks by default, and a `white-space: nowrap` chip
+   * inside a shrunk control does NOT shrink with it — it spills past the
+   * sheet's padding and gets clipped. Every action row in this panel escaped
+   * that only by having a short enough button; set this on any row whose
+   * button is long and let the hint (which wraps) give up the space instead.
+   */
+  holdControl?: boolean;
   children: JSX.Element;
 }): JSX.Element {
   return (
-    <div class="nbs-row" classList={{ 'nbs-row--wide': props.wide }}>
+    <div
+      class="nbs-row"
+      classList={{
+        'nbs-row--wide': props.wide,
+        'nbs-row--hold': props.holdControl,
+      }}
+    >
       <div class="nbs-row-text">
         <span class="nbs-row-head">
           <span class="nbs-row-label">{props.label}</span>
@@ -386,6 +475,32 @@ function CloseIcon(): JSX.Element {
   );
 }
 
+/**
+ * Hand-drawn "put it back": a pencil loop that doesn't quite close, with the
+ * arrowhead struck on separately the way a hand would. One stroke weight, one
+ * ink, no fill — the same vocabulary as the close cross above.
+ */
+function ResetIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" class="nbs-keys-reset-icon">
+      <path
+        d="M 4.6 8.2 C 6.4 4.1 11.9 2.9 15.0 6.1 C 18.0 9.1 16.9 14.5 12.9 16.0 C 9.4 17.3 5.6 15.3 4.6 11.7"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      />
+      <path
+        d="M 1.9 6.4 C 3.0 7.3 3.9 8.0 4.9 8.6 M 8.0 5.4 C 6.6 6.4 5.6 7.4 4.7 8.7"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      />
+    </svg>
+  );
+}
+
 /* ----------------------------- autostart bits ------------------------------ */
 
 interface AutostartPlugin {
@@ -460,18 +575,73 @@ export default function SettingsPanel(props: {
 
   // Sound sets: the shortlist at rest, every character on request.
   const [allSetsOpen, setAllSetsOpen] = createSignal(false);
+  // The reader's own sets: the cue-by-cue editor, and a latch so two file
+  // dialogs can never be open at once.
+  const [ownCuesOpen, setOwnCuesOpen] = createSignal(false);
+  // The base picker has the same cap as the shipped row, so it needs the same
+  // disclosure — see `baseOptions()`.
+  const [allBasesOpen, setAllBasesOpen] = createSignal(false);
+  const [importBusy, setImportBusy] = createSignal(false);
   void loadSoundSet();
+  void loadUserSoundSets();
 
   /**
    * The chips shown while the picker is collapsed: one set per character,
-   * plus the reader's own if it is not among them — collapsing the list must
-   * never hide the thing that is currently selected.
+   * plus the reader's own SHIPPED choice if it is not among them — collapsing
+   * the list must never hide the thing that is currently selected.
+   *
+   * A `user:` selection is deliberately not appended here: it has a row of
+   * its own below, and putting it in the shipped row too would be the same
+   * duplicate-Tab-stop mistake the "show all" disclosure exists to avoid.
    */
   const shortlist = (): readonly SoundSetId[] => {
     const active = activeSoundSetId();
-    return SOUND_SET_SHORTLIST.includes(active)
-      ? SOUND_SET_SHORTLIST
-      : [...SOUND_SET_SHORTLIST, active];
+    if (isUserSoundSetId(active) || SOUND_SET_SHORTLIST.includes(active)) {
+      return SOUND_SET_SHORTLIST;
+    }
+    return [...SOUND_SET_SHORTLIST, active];
+  };
+
+  /** The reader's own set, when that is what is selected. */
+  const activeOwnSet = (): UserSoundSet | null => userSoundSet(activeSoundSetId());
+
+  /** The shipped set behind the selection — its own id, or a user set's base. */
+  const activeBaseId = (): SoundSetId => activeOwnSet()?.base ?? (activeSoundSetId() as SoundSetId);
+
+  /**
+   * The "sound set" row's hint, for either kind of set. A reader's own set
+   * has no blurb anybody wrote, so it describes itself by what it IS: how
+   * much of it is theirs and whose room the rest of it is.
+   */
+  const activeSetHint = (): string => {
+    const own = activeOwnSet();
+    if (own === null) {
+      const spec = soundSetSpec(activeSoundSetId() as SoundSetId);
+      return `${spec.name} — ${spec.blurb}`;
+    }
+    const n = userCueCount(own);
+    const mine =
+      n === 0 ? 'nothing of yours in it yet' : n === 1 ? '1 cue of yours' : `${n} cues of yours`;
+    return `${own.name} — ${mine}; the rest is ${soundSetSpec(own.base).name}`;
+  };
+
+  /** Chips for the reader's own sets, rebuilt when the registry changes. */
+  const ownSetOptions = (): readonly SegOption[] =>
+    userSoundSets().map((set) => ({
+      value: set.id,
+      label: set.name,
+      ariaLabel: `${set.name} sound set (yours)`,
+      title: `${userCueCount(set)} of your own cues over ${soundSetSpec(set.base).name}`,
+    }));
+
+  /** The shipped sets offered as a base, with the current one always present. */
+  const baseOptions = (): readonly SegOption[] => {
+    const base = activeOwnSet()?.base;
+    const ids: readonly SoundSetId[] =
+      base === undefined || SOUND_SET_SHORTLIST.includes(base)
+        ? SOUND_SET_SHORTLIST
+        : [...SOUND_SET_SHORTLIST, base];
+    return ids.map(soundSetOption);
   };
 
   /**
@@ -482,6 +652,70 @@ export default function SettingsPanel(props: {
    */
   const chooseSoundSet = (id: string): void => {
     void saveSoundSet(id).then(previewSoundSet);
+  };
+
+  /**
+   * "Add your own set": one file dialog, then a set named after the folder
+   * the files came from, selected and auditioned. New sets are based on
+   * whatever is playing now, so a reader who has just settled on *Reading
+   * Room* and wants their own click keeps the room they chose.
+   */
+  const addOwnSet = async (): Promise<void> => {
+    if (importBusy()) return;
+    setImportBusy(true);
+    try {
+      const report = await addUserSoundSet(activeBaseId());
+      if (report.set === null) return;
+      await saveSoundSet(report.set.id);
+      setOwnCuesOpen(true);
+      notify(`“${report.set.name}” — ${describeImport(report)}`);
+      previewSoundSet();
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  /** Fold more files into the set that is already selected. */
+  const importMore = async (): Promise<void> => {
+    const own = activeOwnSet();
+    if (own === null || importBusy()) return;
+    setImportBusy(true);
+    try {
+      notify(describeImport(await importIntoUserSoundSet(own.id)));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  /** One file, one role — auditioned immediately so the choice is heard. */
+  const chooseCue = async (role: FamilyName): Promise<void> => {
+    const own = activeOwnSet();
+    if (own === null || importBusy()) return;
+    setImportBusy(true);
+    try {
+      if ((await assignUserCue(own.id, role)) !== null) void play(role);
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  /** Hand a role back to the base set, and play what that sounds like. */
+  const dropCue = async (role: FamilyName): Promise<void> => {
+    const own = activeOwnSet();
+    if (own === null) return;
+    await clearUserCue(own.id, role);
+    void play(role);
+  };
+
+  const forgetOwnSet = async (): Promise<void> => {
+    const own = activeOwnSet();
+    if (own === null) return;
+    await forgetUserSoundSet(own.id);
+    // Land on the room it was built over rather than on the house set: that
+    // is the nearest thing to what they had, minus their files.
+    await saveSoundSet(own.base);
+    setOwnCuesOpen(false);
+    notify(`“${own.name}” forgotten — your files are still on disk`);
   };
 
   onCleanup(cancelSoundSetPreview);
@@ -553,6 +787,136 @@ export default function SettingsPanel(props: {
     }
   };
 
+  /* ------------------------------- shortcuts -------------------------------
+     The list was a reference for a year: it rendered the map the handlers
+     match on and said "these are fixed". It is a picker now — click a row and
+     the next combination you press becomes that action's, unless it would
+     cost you something a page cannot do without, in which case the row says
+     which and stays listening. */
+
+  /** The action whose row is listening, or null when nothing is. */
+  const [capturing, setCapturing] = createSignal<string | null>(null);
+  /** The last refusal, pinned to the row that earned it. */
+  const [refusal, setRefusal] = createSignal<{ action: string; why: string } | null>(null);
+  let keysRef: HTMLDivElement | undefined;
+
+  /**
+   * The action ids this sheet offers — NOT every key in the map, and NOT
+   * `Object.entries`, which would hand `<For>` a fresh pair array per settings
+   * write and rebuild every row (taking the focus ring off the button that was
+   * just pressed with them). `listedBindingActions` returns sorted strings,
+   * which compare by value, so the rows survive a rebind, a volume drag and
+   * every other save — and it drops the ids no handler in the app performs,
+   * because a row that captures a key and then does nothing with it is a
+   * worse lie than a row that was never offered.
+   */
+  const shortcutActions = createMemo(() => listedBindingActions(settings.keybindings));
+
+  const listening = (action: string): boolean => capturing() === action;
+
+  /** Why this row cannot move, or null when it can. */
+  const fixed = (action: string): string | null => fixedBindingReason(action);
+
+  const refusalFor = (action: string): string | null => {
+    const last = refusal();
+    return last !== null && last.action === action ? last.why : null;
+  };
+
+  /** Is this row on something other than what the app ships? */
+  const isRebound = (action: string): boolean => {
+    const shipped = DEFAULT_KEYBINDINGS[action];
+    return shipped !== undefined && canonicalBinding(binding(action)) !== canonicalBinding(shipped);
+  };
+
+  const startCapture = (action: string): void => {
+    // A row that cannot move still answers when pressed — with the reason, in
+    // the same place every other refusal appears. Pressing a control and
+    // getting nothing back is the one outcome this whole surface exists to
+    // avoid, so "it is fixed" gets said out loud rather than by a dead button.
+    const why = fixed(action);
+    if (why !== null) {
+      setCapturing(null);
+      setRefusal({ action, why });
+      return;
+    }
+    setRefusal(null);
+    setCapturing((now) => (now === action ? null : action));
+  };
+
+  const resetShortcut = (action: string): void => {
+    setCapturing(null);
+    setRefusal(null);
+    void resetBinding(action).then((why) => {
+      if (why !== null) setRefusal({ action, why });
+    });
+  };
+
+  // A capture must not outlive the sheet: a listener still swallowing keys
+  // over a closed panel is invisible and unexplainable.
+  createEffect(() => {
+    if (props.open) return;
+    setCapturing(null);
+    setRefusal(null);
+  });
+
+  // While a row listens, it takes the keyboard.
+  createEffect(() => {
+    const action = capturing();
+    if (action === null) return;
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      const combo = bindingFromEvent(event);
+      if (combo === null) return; // still reaching for the rest of the combo
+      if (combo === 'escape') {
+        // The documented way out. Escape cannot BE a binding either (see
+        // bindingRefusal), so there is no ambiguity about which it meant.
+        setCapturing(null);
+        setRefusal(null);
+        return;
+      }
+      const why = bindingRefusal(action, combo, settings.keybindings);
+      if (why !== null) {
+        // Keep listening: the reader's next press is almost certainly another
+        // try at the same row, and dropping them out of capture to say no
+        // would make them click the row again to say it twice.
+        setRefusal({ action, why });
+        return;
+      }
+      setCapturing(null);
+      setRefusal(null);
+      void rebind(action, combo);
+    };
+
+    // Capture phase on `window`, and the event stops there: this sheet closes
+    // on Escape, App.tsx exports on Ctrl+Shift+E, BookView inserts script on
+    // Ctrl+Alt+I, and the editor takes nearly every letter. While a row is
+    // listening, NONE of that may happen — the press is a value being typed
+    // in, not a command.
+    //
+    // One listener does get there first and cannot be stopped from here:
+    // QuickSwitcher registers its own window-capture handler at mount, so the
+    // command-palette combo still opens the palette. It is harmless (that
+    // combo is by definition already taken, so this refuses it anyway) but it
+    // is untidy; the fix is a guard in QuickSwitcher, not a hack here.
+    window.addEventListener('keydown', onKeyDown, true);
+
+    // Clicking anywhere outside the shortcut list means the reader moved on.
+    // Not preventDefault: the click they meant still lands.
+    const onPointerDown = (event: Event): void => {
+      const target = event.target;
+      if (target instanceof Node && keysRef?.contains(target) === true) return;
+      setCapturing(null);
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+
+    onCleanup(() => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+    });
+  });
+
   onMount(() => {
     if (sheetRef) gsap.set(sheetRef, { xPercent: 105, visibility: 'hidden' });
     if (scrimRef) gsap.set(scrimRef, { autoAlpha: 0 });
@@ -594,6 +958,11 @@ export default function SettingsPanel(props: {
   createEffect(() => {
     if (!props.open) return;
     const onKeyDown = (e: KeyboardEvent): void => {
+      // A listening shortcut row owns the keyboard, and its own handler stops
+      // the event before this one ever sees it. This is the second lock on the
+      // same door: Escape must cancel the capture, never shut the sheet the
+      // reader is in the middle of editing.
+      if (capturing() !== null) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         props.onClose();
@@ -834,7 +1203,7 @@ export default function SettingsPanel(props: {
             fallback={
               <Row
                 label="sound set"
-                hint={`${soundSetSpec(activeSoundSetId()).name} — ${soundSetSpec(activeSoundSetId()).blurb}`}
+                hint={activeSetHint()}
               >
                 <button
                   type="button"
@@ -848,11 +1217,7 @@ export default function SettingsPanel(props: {
               </Row>
             }
           >
-            <Row
-              label="sound set"
-              hint={`${soundSetSpec(activeSoundSetId()).name} — ${soundSetSpec(activeSoundSetId()).blurb}`}
-              wide
-            >
+            <Row label="sound set" hint={activeSetHint()} wide>
               <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                 <Seg
                   label="sound set"
@@ -899,6 +1264,195 @@ export default function SettingsPanel(props: {
               </For>
             </div>
           </Show>
+
+          {/* ------------------------ the reader's own sets -------------------
+              A set of theirs is a shipped BASE plus their files for some of
+              the roles, so it belongs in the same picker and gets its own row
+              rather than being mixed into the shipped chips — the two are
+              different KINDS of thing, and one of them can be deleted. */}
+          <Show when={userSoundSets().length > 0}>
+            <Row
+              label="your sets"
+              hint={`${userSoundSets().length} of ${MAX_USER_SOUND_SETS} — your own files over a shipped room`}
+              wide
+            >
+              <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
+                <Seg
+                  label="your own sound sets"
+                  options={ownSetOptions()}
+                  value={activeSoundSetId()}
+                  onSelect={(v) => chooseSoundSet(String(v))}
+                />
+              </div>
+            </Row>
+          </Show>
+          <Row
+            label="add your own set"
+            hint="your sound files — name each one after the cue it replaces, or place them by hand below"
+            holdControl
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              data-tooltip={`the cues, and what each one is:\n${CUE_NAMING_HINT}`}
+              disabled={importBusy()}
+              onClick={() => void addOwnSet()}
+            >
+              choose files…
+            </button>
+          </Row>
+
+          <Show when={activeOwnSet()}>
+            {(own) => (
+              <>
+                {/* Their files are played exactly as recorded — the app's own
+                    conditioning pass is a build step over ffmpeg-decoded float,
+                    not something it can do to bytes at import time. Saying so
+                    where the buttons are is the only warning anyone will read. */}
+                <Row
+                  label="the rest of this set"
+                  hint={`everything you have not filled in is voiced by ${soundSetSpec(own().base).name}`}
+                  wide
+                >
+                  <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
+                    <Seg
+                      label="base sound set"
+                      options={baseOptions()}
+                      value={own().base}
+                      onSelect={(v) => {
+                        void setUserSoundSetBase(own().id, String(v)).then(previewSoundSet);
+                      }}
+                    />
+                  </div>
+                </Row>
+                {/* The base row is capped at the same shortlist the shipped
+                    row is, and it needs the same way out of the cap. Without
+                    one, twenty-one of the twenty-eight rooms are reachable
+                    only by selecting them as the app's set FIRST and then
+                    adding a new set on top — a path nobody would find. */}
+                <Show when={!allBasesOpen()}>
+                  <Row
+                    label="other rooms to build on"
+                    hint={`${SOUND_SET_IDS.length - baseOptions().length} more, in ${SOUND_SET_GROUP_IDS.length} characters`}
+                    holdControl
+                  >
+                    <button
+                      type="button"
+                      class="nbs-action-btn"
+                      aria-expanded={false}
+                      aria-controls="nbs-own-bases"
+                      onClick={() => setAllBasesOpen(true)}
+                    >
+                      show all {SOUND_SET_IDS.length}
+                    </button>
+                  </Row>
+                </Show>
+                <Show when={allBasesOpen()}>
+                  <div id="nbs-own-bases">
+                    <For each={SOUND_SET_GROUP_IDS}>
+                      {(group: SoundSetGroupId) => (
+                        <Row
+                          label={SOUND_SET_GROUPS[group].name.toLowerCase()}
+                          hint={SOUND_SET_GROUPS[group].blurb}
+                          wide
+                        >
+                          <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
+                            <Seg
+                              label={`${SOUND_SET_GROUPS[group].name} sets to build on`}
+                              options={SOUND_SET_GROUP_OPTIONS[group]}
+                              value={own().base}
+                              onSelect={(v) => {
+                                void setUserSoundSetBase(own().id, String(v)).then(
+                                  previewSoundSet,
+                                );
+                              }}
+                            />
+                          </div>
+                        </Row>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Row
+                  label="your cues"
+                  hint={`${userCueCount(own())} of ${FAMILY_NAMES.length} — played as you recorded them, nothing is re-levelled`}
+                  holdControl
+                >
+                  <button
+                    type="button"
+                    class="nbs-action-btn"
+                    aria-expanded={ownCuesOpen()}
+                    aria-controls="nbs-own-cues"
+                    onClick={() => setOwnCuesOpen(!ownCuesOpen())}
+                  >
+                    {ownCuesOpen() ? 'hide the cues' : `place ${FAMILY_NAMES.length} cues`}
+                  </button>
+                </Row>
+                <Show when={ownCuesOpen()}>
+                  <div id="nbs-own-cues">
+                    <For each={FAMILY_NAMES}>
+                      {(role: FamilyName) => (
+                        <Row
+                          label={ROLE_LABELS[role]}
+                          hint={
+                            own().cues[role]?.fileName ??
+                            `${soundSetSpec(own().base).name} — name a file ${roleWords(role)}`
+                          }
+                          holdControl
+                        >
+                          <div class="nbs-cue-actions">
+                            <button
+                              type="button"
+                              class="nbs-action-btn"
+                              data-tooltip={`pick a sound for ${ROLE_LABELS[role]}`}
+                              disabled={importBusy()}
+                              onClick={() => void chooseCue(role)}
+                            >
+                              {own().cues[role] === undefined ? 'choose…' : 'replace…'}
+                            </button>
+                            <Show when={own().cues[role] !== undefined}>
+                              <button
+                                type="button"
+                                class="nbs-action-btn"
+                                data-tooltip={`hand this back to ${soundSetSpec(own().base).name}`}
+                                onClick={() => void dropCue(role)}
+                              >
+                                clear
+                              </button>
+                            </Show>
+                          </div>
+                        </Row>
+                      )}
+                    </For>
+                    <Row label="more files at once" hint="fold a whole folder in by file name">
+                      <button
+                        type="button"
+                        class="nbs-action-btn"
+                        disabled={importBusy()}
+                        onClick={() => void importMore()}
+                      >
+                        add files…
+                      </button>
+                    </Row>
+                  </div>
+                </Show>
+                <Row
+                  label="forget this set"
+                  hint="removes the set — the sound files themselves stay where they are"
+                  holdControl
+                >
+                  <button
+                    type="button"
+                    class="nbs-action-btn"
+                    onClick={() => void forgetOwnSet()}
+                  >
+                    forget “{own().name}”
+                  </button>
+                </Row>
+              </>
+            )}
+          </Show>
+
           <For each={VOLUME_KEYS}>
             {(key) => (
               <Row label={VOLUME_LABELS[key]}>
@@ -1139,33 +1693,88 @@ export default function SettingsPanel(props: {
               onChange={(v) => put({ perfHud: v })}
             />
           </Row>
-          <div class="nbs-keys">
+          <div class="nbs-keys" ref={keysRef}>
             <span class="nbs-row-label">shortcuts</span>
-            {/* Says what it is, not what it might become. "Rebinding is on its
-                way" was a promise with nothing behind it, and copy that
-                promises is worse than copy that just tells you where you
-                stand — the reader waits for something instead of learning the
-                keys. */}
+            {/* Says what you can do with them, because now there is something
+                to do. This line said "these are fixed — a reference, not a
+                picker", and before that "rebinding is on its way", which was a
+                promise with nothing behind it. */}
             <span class="nbs-row-hint font-ui">
-              these are fixed — a reference, not a picker
+              press a combination to change it · Escape leaves it as it was
             </span>
             <ul class="nbs-keys-list">
-              <For
-                each={Object.entries(settings.keybindings).sort(([a], [b]) =>
-                  a.localeCompare(b),
-                )}
-              >
-                {([action, combo]) => (
-                  <li class="nbs-keys-item">
-                    <span class="nbs-keys-action">
-                      {action.replace(/-/g, ' ')}
+              <For each={shortcutActions()}>
+                {(action) => (
+                  <li class="nbs-keys-item" classList={{ 'is-listening': listening(action) }}>
+                    <span class="nbs-keys-text">
+                      <span class="nbs-keys-action">{bindingActionLabel(action)}</span>
+                      {/* Why a press was turned down, beside the row that
+                          turned it down — never a silent nothing-happened.
+                          role=alert because the reader is looking at the
+                          keyboard, not at this line, when it appears. */}
+                      <Show when={refusalFor(action)}>
+                        {(why) => (
+                          <span class="nbs-keys-why font-ui" role="alert">
+                            {why()}
+                          </span>
+                        )}
+                      </Show>
                     </span>
-                    {/* formatBinding, not the raw combo: 'mod' is a storage
-                        token, and a chip reading "mod" is a key nobody has. */}
-                    <span class="nbs-keys-combo">
-                      <For each={formatBinding(combo).split('+')}>
-                        {(part) => <kbd class="nbs-kbd">{part}</kbd>}
-                      </For>
+                    <span class="nbs-keys-controls">
+                      <button
+                        type="button"
+                        class="nbs-keys-combo"
+                        data-listening={listening(action) ? 'true' : undefined}
+                        data-fixed={fixed(action) !== null ? 'true' : undefined}
+                        aria-label={
+                          listening(action)
+                            ? `press the new combination for ${bindingActionLabel(action)}, or Escape to leave it`
+                            : fixed(action) !== null
+                              ? `${bindingActionLabel(action)}, ${formatBinding(binding(action))} — this one cannot be changed`
+                              : `${bindingActionLabel(action)}, ${formatBinding(binding(action))} — press to change it`
+                        }
+                        aria-keyshortcuts={ariaKeyshortcuts(binding(action))}
+                        /* NO data-tooltip, deliberately. This button carries a
+                           visible label (the action name beside it) and the
+                           line above the list already says "press a
+                           combination to change it" — Tooltip.tsx's own rule is
+                           that a bubble repeating text sitting in full
+                           underneath it is noise. It was also actively harmful
+                           here: the sheet is against the right edge, so the
+                           bubble flips left and lands on the row's own words,
+                           including the sentence saying why a key was just
+                           turned down. And it would not stay away — pressing
+                           the row re-renders it, and the fresh node fires
+                           `pointerover` under a pointer that never moved. The
+                           icon-only reset button below still has one; it has no
+                           label to read. */
+                        onClick={() => startCapture(action)}
+                      >
+                        {/* formatBinding, not the raw combo: 'mod' is a storage
+                            token, and a chip reading "mod" is a key nobody has. */}
+                        <Show
+                          when={!listening(action)}
+                          fallback={<span class="nbs-keys-listen">press the keys…</span>}
+                        >
+                          <For each={formatBinding(binding(action)).split('+')}>
+                            {(part) => <kbd class="nbs-kbd">{part}</kbd>}
+                          </For>
+                        </Show>
+                      </button>
+                      {/* Only on a row that has actually moved: a column of
+                          eight identical undo arrows, seven of which do
+                          nothing, teaches the reader to stop reading them. */}
+                      <Show when={isRebound(action)}>
+                        <button
+                          type="button"
+                          class="nbs-keys-reset"
+                          aria-label={`put ${bindingActionLabel(action)} back to ${formatBinding(DEFAULT_KEYBINDINGS[action] ?? '')}`}
+                          data-tooltip={`back to ${formatBinding(DEFAULT_KEYBINDINGS[action] ?? '')}`}
+                          onClick={() => resetShortcut(action)}
+                        >
+                          <ResetIcon />
+                        </button>
+                      </Show>
                     </span>
                   </li>
                 )}

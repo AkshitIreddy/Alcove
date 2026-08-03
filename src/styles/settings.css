@@ -740,6 +740,18 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   flex: 1 1 auto;
 }
 
+/* A row whose control is a long, non-wrapping chip.
+   `.nbs-row-control` shrinks (`flex: 0 1 auto` + `min-width: 0`), but a
+   `white-space: nowrap` button inside a shrunk control does not shrink with
+   it — it overflows the control and the sheet clips it at its right edge.
+   Every other action row in the panel escapes that only by having a short
+   enough button; measured, `forget "typewriter"` overhung by 33px and
+   `choose files…` by 36. Here the control keeps its width and the hint,
+   which wraps, is what gives the space up. */
+.nbs-row--hold > .nbs-row-control {
+  flex: 0 0 auto;
+}
+
 /* ----------------------------------------------------------------------------
    Toggle — a drawn switch: inked track, graphite pebble thumb
    -------------------------------------------------------------------------- */
@@ -1036,7 +1048,13 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-swatch[data-palette='slate'] { --sw-light: var(--wash-slate-light); --sw: var(--wash-slate); --sw-deep: var(--wash-slate-deep); }
 
 /* ----------------------------------------------------------------------------
-   Keybindings list (read-only)
+   Keybindings — a picker, not a legend
+
+   Each row is an action, its combination, and (once it has moved off the
+   shipped one) a way to put it back. The combination is a BUTTON: press it and
+   the row listens for the next key press. That is why the chips sit inside a
+   drawn boundary now rather than floating at the right margin — a thing you
+   can press has to look pressable before you press it.
    -------------------------------------------------------------------------- */
 .nbs-keys {
   display: flex;
@@ -1061,7 +1079,17 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: var(--space-12);
-  min-height: 22px;
+  min-height: 26px;
+}
+
+/* The action name, plus the refusal line when a press was turned down. A
+   column so the reason sits UNDER the name it belongs to and wraps freely,
+   instead of pushing the combination off the right edge of the sheet. */
+.nbs-keys-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .nbs-keys-action {
@@ -1070,10 +1098,133 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   color: var(--ink-sepia-soft);
 }
 
+.nbs-keys-item.is-listening .nbs-keys-action {
+  color: var(--ink-sepia);
+  font-weight: 700;
+}
+
+/* Why the app said no. --text-ui (Nunito Sans) because this wraps to two or
+   three lines and handwriting at that length is work to read. */
+.nbs-keys-why {
+  color: var(--accent-deep);
+  font-size: var(--text-ui);
+  line-height: 1.35;
+}
+
+.nbs-keys-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The pressable combination. At rest it is a dashed pencil boundary around
+   the chips — present enough to read as a control, quiet enough that eight of
+   them down a column do not shout. */
 .nbs-keys-combo {
   display: inline-flex;
   justify-content: flex-end;
+  align-items: center;
   gap: var(--space-4);
+  padding: 2px var(--space-8);
+  background: transparent;
+  border: 1.4px dashed transparent;
+  border-radius: 11px 14px 10px 15px / 14px 11px 15px 10px;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    border-color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-keys-combo:hover {
+  background: var(--sec-light);
+  border-color: var(--ink-line-soft);
+  transform: rotate(-0.7deg);
+}
+
+.nbs-keys-combo:focus-visible {
+  outline-offset: 3px;
+  border-color: var(--ink-line-soft);
+}
+
+.nbs-keys-combo:active {
+  transform: scale(0.97);
+}
+
+/* A row whose key is nailed down in the handler (Escape). It still answers —
+   pressing it prints the reason on the row — so it keeps the hover wash that
+   says "this responds", and loses only the tilt, which on every other row is
+   the promise that the next key you press lands here. */
+.nbs-keys-combo[data-fixed='true']:hover,
+.nbs-keys-combo[data-fixed='true']:active {
+  transform: none;
+}
+
+.nbs-keys-combo[data-fixed='true'] .nbs-kbd {
+  color: var(--ink-sepia-soft);
+  border-style: dashed;
+  border-bottom-width: 1.5px;
+}
+
+/* Listening. The boundary goes solid and takes the section's own pigment, so
+   the row that has the keyboard is unmistakable from across the sheet — and
+   the tilt says it is mid-gesture rather than settled. */
+.nbs-keys-combo[data-listening='true'],
+.nbs-keys-combo[data-listening='true']:hover {
+  background: var(--sec-light);
+  border-style: solid;
+  border-color: var(--accent-deep);
+  transform: rotate(-1.4deg);
+}
+
+/* "press the keys…" — 13px, the handwriting floor, so it can be Kalam like
+   every other bit of instruction in this sheet. */
+.nbs-keys-listen {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip);
+  line-height: 1.5;
+  color: var(--ink-sepia);
+  white-space: nowrap;
+}
+
+/* Put it back. Only drawn on a row that has moved, so it is an answer to a
+   question the reader already has. */
+.nbs-keys-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1.4px dashed transparent;
+  border-radius: 50% 46% 53% 47% / 47% 53% 46% 54%;
+  transition:
+    color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    border-color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-keys-reset:hover {
+  color: var(--ink-sepia);
+  background: var(--sec-light);
+  border-color: var(--ink-line-soft);
+  transform: rotate(-22deg);
+}
+
+.nbs-keys-reset:focus-visible {
+  outline-offset: 2px;
+  border-color: var(--ink-line-soft);
+}
+
+.nbs-keys-reset:active {
+  transform: rotate(-40deg) scale(0.94);
+}
+
+.nbs-keys-reset-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .nbs-kbd {
@@ -1146,6 +1297,18 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   border-color: var(--ink-line-soft);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+/* A cue row in "your sets" carries two chips — choose/replace, and clear —
+   and only ever two, so this is a plain pair rather than the wrapping .nbs-seg
+   the pickers use. `flex-end` keeps them on the control side of the row with
+   every other single-chip row, so a column of thirteen reads as one edge. */
+.nbs-cue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-6);
 }
 
 /* ----------------------------------------------------------------------------

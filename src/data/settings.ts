@@ -12,7 +12,8 @@ import { createEffect, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
 import { getDb } from './db';
 import { SOUNDSCAPE_NAMES } from '../sound/engine';
-import { DEFAULT_SETTINGS } from './defaults';
+import { DEFAULT_KEYBINDINGS, DEFAULT_SETTINGS } from './defaults';
+import { formatBinding } from './keybindings';
 import type {
   AnimationLevel,
   PageStyle,
@@ -76,7 +77,10 @@ function takeKeybindings(
   const merged = { ...fallback };
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
     for (const [action, binding] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof binding === 'string') merged[action] = binding;
+      // An empty combo is not "unbound", it is a row of blank kbd chips in the
+      // settings sheet and a `matchesBinding` that can never be true. A blob
+      // holding one falls back to whatever the app ships for that action.
+      if (typeof binding === 'string' && binding.trim() !== '') merged[action] = binding;
     }
   }
   return merged;
@@ -231,4 +235,286 @@ export function subscribe(listener: (current: Settings) => void): () => void {
     createEffect(on(revision, () => listener(cloneSettings(unwrap(store)))));
     return dispose;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Rebinding
+//
+// The settings sheet lets the reader press a new combination onto a row. Three
+// jobs live here rather than in the panel, because a combination that reaches
+// storage is a promise every handler in the app then has to keep:
+//
+//   1. READING an event back into the storage grammar (`bindingFromEvent`).
+//      This is the exact inverse of `matchesBinding` in ./keybindings.ts — the
+//      key part is `event.key.toLowerCase()` and nothing prettier, because
+//      that is the string the matcher compares against. A nicer spelling here
+//      ("Space", "Plus") would store a combination that can never fire again.
+//   2. REFUSING one that would cost the reader something they cannot get back
+//      from inside a page (`bindingRefusal`) — a plain letter, Escape, the
+//      clipboard — with the reason in words, never a silent no-op.
+//   3. WRITING only what survived (1) and (2) (`rebind` / `resetBinding`), so
+//      no other call site can put an unvalidated combo in the blob.
+// ---------------------------------------------------------------------------
+
+/**
+ * Keys that are only ever HELD. A capture that accepted one would store
+ * "mod+control", a combination no keyboard can produce a second time — so
+ * seeing one means the reader is still reaching for the rest of the combo.
+ */
+const HELD_KEYS: ReadonlySet<string> = new Set([
+  'control',
+  'shift',
+  'alt',
+  'meta',
+  'os',
+  'altgraph',
+  'capslock',
+  'numlock',
+  'scrolllock',
+  'fn',
+  'fnlock',
+  'dead',
+  'process',
+  'unidentified',
+]);
+
+/** F1–F12 are the only keys that carry a shortcut with no modifier at all. */
+const FUNCTION_KEY = /^f([1-9]|1[0-2])$/;
+
+/** The order every stored combination is written in, so two can be compared. */
+const MODIFIER_ORDER = ['mod', 'shift', 'alt'] as const;
+
+/**
+ * What the app would lose along with each of these. Not a taste list: every
+ * one of them is something a reader does inside a page and has no other way
+ * to do, so handing it to a shortcut takes it away for good.
+ */
+const RESERVED_COMBOS: Readonly<Record<string, string>> = {
+  'mod+c': 'copies what you have selected',
+  'mod+x': 'cuts what you have selected',
+  'mod+v': 'pastes',
+  'mod+a': 'selects the whole page',
+  'mod+z': 'undoes the last thing you typed',
+  'mod+y': 'redoes',
+  'mod+shift+z': 'redoes',
+};
+
+/**
+ * The combination a KeyboardEvent describes, in the stored grammar, or `null`
+ * while nothing but modifiers is down.
+ */
+export function bindingFromEvent(event: KeyboardEvent): string | null {
+  const key = (event.key ?? '').toLowerCase();
+  if (key === '' || HELD_KEYS.has(key)) return null;
+  const parts: string[] = [];
+  if (event.ctrlKey || event.metaKey) parts.push('mod');
+  if (event.shiftKey) parts.push('shift');
+  if (event.altKey) parts.push('alt');
+  parts.push(key);
+  return parts.join('+');
+}
+
+/**
+ * The same combination, always spelled the same way.
+ *
+ * `matchesBinding` takes modifiers in any order, which is right for reading a
+ * hand-edited blob and wrong for deciding whether two rows collide: without
+ * this, "mod+shift+e" and "shift+mod+e" are two different strings claiming one
+ * key press, and the conflict check would wave them both through.
+ */
+export function canonicalBinding(binding: string): string {
+  const parts = binding.toLowerCase().split('+');
+  const key = parts[parts.length - 1] ?? '';
+  const held = new Set(parts.slice(0, -1));
+  return [...MODIFIER_ORDER.filter((mod) => held.has(mod)), key].join('+');
+}
+
+/** An action id as the settings sheet says it out loud. */
+export function bindingActionLabel(action: string): string {
+  return action.replace(/-/g, ' ');
+}
+
+// ---------------------------------------------------------------------------
+// What the sheet is allowed to offer
+//
+// A row in the shortcut list is a promise that the combination printed on it
+// is the combination that fires. While the list was a legend, an entry nothing
+// honoured was merely wrong. Now that the same row CAPTURES a key, validates
+// it, and saves it, an entry nothing honoured is worse than wrong: the reader
+// watches the app accept their key and then does not get it. So each id in
+// `DEFAULT_KEYBINDINGS` is one of three things, and only the first is a picker.
+// ---------------------------------------------------------------------------
+
+/**
+ * Actions the map names that NO handler in the app performs.
+ *
+ * Both were written down when the map was a wish list. Nothing has ever called
+ * `matchesBinding` for either, and `handwritingEnabled` — the flag the second
+ * would flip — is read by no code at all outside this file's own merge.
+ *
+ * They stay in the stored map (churning a reader's blob to delete two dead
+ * keys buys nothing) and out of the sheet, and they reserve no combination:
+ * a key nothing listens for is a free key, so `mod+n` is available to any row
+ * that wants it. Wiring one back is a two-part job and both parts are here —
+ * match on it through `matchesBinding`, delete the id from this set — after
+ * which the conflict check covers it again and the wiring change is the one
+ * that has to find it a combo nobody else is on.
+ */
+const UNHANDLED_ACTIONS: ReadonlySet<string> = new Set([
+  'new-page',
+  'toggle-handwriting',
+]);
+
+/**
+ * Actions that DO happen, on a key the handler spells out itself rather than
+ * reading from this map — with the reason moving it is not on offer.
+ *
+ * `zoom-to-shelf` is BookView's literal `event.key === 'Escape'`. That is not
+ * an oversight waiting on a rebind: Escape is also how every panel, dialog and
+ * capture in the app gets out, which is why `bindingRefusal` will not hand it
+ * to anything else either. The row is LISTED — the reader wants to know the
+ * key — and it answers in words when pressed.
+ */
+const FIXED_BINDINGS: Readonly<Record<string, string>> = {
+  'zoom-to-shelf':
+    'Escape is how you step back out of a book, and how every panel and dialog here closes. One key doing one thing everywhere is worth more than this row being adjustable, so it stays.',
+};
+
+/** Why `action` cannot be moved off the combination it ships with, or `null`. */
+export function fixedBindingReason(action: string): string | null {
+  return FIXED_BINDINGS[action] ?? null;
+}
+
+/**
+ * The action ids the shortcut list shows, in the order it shows them.
+ *
+ * Sorted here rather than in the panel so the row order is a property of the
+ * data, and so `<For>` is handed plain strings that compare by value — a fresh
+ * array of pairs per settings write rebuilds every row and takes the focus
+ * ring off the button that was just pressed.
+ */
+export function listedBindingActions(
+  map: Readonly<Record<string, string>>,
+): string[] {
+  return Object.keys(map)
+    .filter((action) => !UNHANDLED_ACTIONS.has(action))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The action already holding `combo`, if it is not `action` itself.
+ *
+ * Unhandled ids are skipped: they are not rows the reader can see, so naming
+ * one in a refusal would send them looking for a row that is not there, to
+ * free a key that was never taken.
+ */
+function conflictingAction(
+  action: string,
+  combo: string,
+  current: Readonly<Record<string, string>>,
+): string | null {
+  for (const [other, held] of Object.entries(current)) {
+    if (other === action || UNHANDLED_ACTIONS.has(other)) continue;
+    if (canonicalBinding(held) === combo) return other;
+  }
+  return null;
+}
+
+/**
+ * Why `binding` cannot be given to `action`, in words for the reader — or
+ * `null` when it can.
+ *
+ * Pure: `current` is the map to check against, so the panel can ask before it
+ * writes and `rebind` can ask again against what is actually stored.
+ */
+export function bindingRefusal(
+  action: string,
+  binding: string,
+  current: Readonly<Record<string, string>>,
+): string | null {
+  // Read this off the RAW string, before the parts are split apart: a combo
+  // whose key is '+' arrives as "mod++", and splitting it leaves an empty key
+  // that would be reported as "not a key" — true, but not the truth the reader
+  // needs, which is that this one character is spoken for by the notation.
+  if (binding.endsWith('+')) {
+    return 'a “+” is what holds a combination together, so it cannot also be one of the keys in it.';
+  }
+
+  const combo = canonicalBinding(binding);
+  const parts = combo.split('+');
+  const key = parts[parts.length - 1] ?? '';
+  const held = parts.slice(0, -1);
+  const mod = formatBinding('mod');
+
+  if (key === '') return 'that is not a key this app can write down.';
+  if (key === 'escape') {
+    return 'Escape is the way out of every panel and every dialog here. It stays where it is.';
+  }
+  if (key === ' ' || key === 'spacebar') {
+    return 'Space belongs to the page — it is how you put a gap between two words.';
+  }
+  if (key === 'tab') {
+    return 'Tab walks between the controls on screen. A panel that ate it would shut you inside itself.';
+  }
+  if (!held.includes('mod') && !held.includes('alt') && !FUNCTION_KEY.test(key)) {
+    return `“${formatBinding(combo)}” would just type into the page. Hold ${mod} or Alt down as well — or use an F key.`;
+  }
+
+  const reserved = RESERVED_COMBOS[combo];
+  if (reserved !== undefined) {
+    return `${formatBinding(combo)} already ${reserved}. Take it and a page has no other way to.`;
+  }
+
+  const clash = conflictingAction(action, combo, current);
+  if (clash !== null) {
+    return `${formatBinding(combo)} is already “${bindingActionLabel(clash)}”. Move that one first and this key is free.`;
+  }
+  return null;
+}
+
+/**
+ * Give `action` a new combination.
+ *
+ * Returns the refusal when there is one, having written nothing — the panel
+ * says why out loud. Re-pressing the combination a row already has is a quiet
+ * no-op rather than a conflict with itself.
+ */
+export async function rebind(action: string, binding: string): Promise<string | null> {
+  // Asked here as well as in the panel, not instead of it: this is the only
+  // door to the blob, so a row that cannot move must be unable to move through
+  // any call site, not just through the one that draws a button.
+  const fixed = fixedBindingReason(action);
+  if (fixed !== null) return fixed;
+  await load();
+  const current = unwrap(store).keybindings;
+  const combo = canonicalBinding(binding);
+  if (canonicalBinding(current[action] ?? '') === combo) return null;
+  const refusal = bindingRefusal(action, combo, current);
+  if (refusal !== null) return refusal;
+  await save({ keybindings: { [action]: combo } });
+  return null;
+}
+
+/**
+ * Put `action` back on the combination the app ships with.
+ *
+ * The shipped combo is allowed by definition — `zoom-to-shelf` IS Escape — so
+ * this skips the "would shadow something essential" refusals and checks only
+ * that no other row has since been given that key. If one has, say so: a
+ * "reset" that silently leaves two rows claiming one press is worse than one
+ * that explains itself.
+ */
+export async function resetBinding(action: string): Promise<string | null> {
+  const shipped = DEFAULT_KEYBINDINGS[action];
+  if (shipped === undefined) return null;
+  await load();
+  const current = unwrap(store).keybindings;
+  const combo = canonicalBinding(shipped);
+  if (canonicalBinding(current[action] ?? '') === combo) return null;
+  const clash = conflictingAction(action, combo, current);
+  if (clash !== null) {
+    return `${formatBinding(combo)} is “${bindingActionLabel(clash)}” now. Move that one first and this row can have it back.`;
+  }
+  await save({ keybindings: { [action]: shipped } });
+  return null;
 }

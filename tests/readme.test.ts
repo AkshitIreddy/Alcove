@@ -44,7 +44,30 @@ import {
 import { THEME_IDS } from '../src/art/themes';
 import { CLOTHS } from '../src/art/flat';
 import { SOUND_SET_IDS } from '../src/sound/soundSets';
-import { SOUND_NAMES } from '../src/sound/engine';
+import { SOUND_NAMES, SOUNDSCAPE_LOOPS } from '../src/sound/engine';
+import { ROOM_PRESETS } from '../src/views/rail/designOptions';
+import { RIBBON_PRESETS } from '../src/views/bookmarks';
+import {
+  COVER_FRAME_COUNT,
+  COVER_MEDALLION_COUNT,
+  COVER_PALETTE_COUNT,
+} from '../src/art/covers';
+import { SLASH_COMMANDS } from '../src/editor/slash/registry';
+import { STICKER_IDS } from '../src/editor/nodes/stickers';
+import { EFFECT_AXES } from '../src/editor/effects/vocabulary';
+import { BLOCK_EFFECT_TYPES } from '../src/editor/effects/blockEffects';
+import {
+  CONTAINER_ALIASES,
+  CONTAINER_NAMES,
+  DIAGRAM_LANGS,
+  KNOWN_ATTR_KEYS,
+} from '../src/script/vocab';
+import { DEFAULT_SETTINGS } from '../src/data/defaults';
+import { SHORTCUT_ACTIONS, LISTED_ACTION_IDS } from '../src/data/keybindings';
+import { NOTEBOOK_TEMPLATES } from '../src/features/templates/templates';
+import { DEFAULT_FLOOR_COUNT, MAX_FLOOR_COUNT } from '../src/data/bookcases';
+import { PACK_CATEGORIES, UNSUPPORTED_CATEGORIES } from '../src/features/packs/categories';
+import { tourSteps } from '../src/features/tutorial/steps';
 
 /** The counts `scripts/check-readme.mjs` defers to this file. */
 function vocabularyFacts(): Record<string, number> {
@@ -62,6 +85,36 @@ function vocabularyFacts(): Record<string, number> {
     bookCloths: CLOTHS.length,
     soundSets: SOUND_SET_IDS.length,
     soundCues: SOUND_NAMES.length,
+    // Beds, not rows: SOUNDSCAPE_NAMES ends in 'none', which is silence.
+    ambienceBeds: Object.keys(SOUNDSCAPE_LOOPS).length,
+    roomPresets: ROOM_PRESETS.length,
+    ribbonPresets: RIBBON_PRESETS.length,
+    coverPigments: COVER_PALETTE_COUNT,
+    coverFrames: COVER_FRAME_COUNT,
+    coverMedallions: COVER_MEDALLION_COUNT,
+    slashCommands: SLASH_COMMANDS.length,
+    stickers: STICKER_IDS.length,
+    effectAxes: EFFECT_AXES.length,
+    effectValues: EFFECT_AXES.reduce((sum, axis) => sum + axis.values.length, 0),
+    // Node types the BlockEffects global-attribute extension attaches to —
+    // i.e. how many kinds of block a reader can decorate.
+    blockEffectTypes: BLOCK_EFFECT_TYPES.length,
+    scriptContainers: CONTAINER_NAMES.length,
+    scriptContainerAliases: Object.keys(CONTAINER_ALIASES).length,
+    scriptAttrKeys: KNOWN_ATTR_KEYS.length,
+    scriptDiagrams: DIAGRAM_LANGS.length,
+    settingsOptions: Object.keys(DEFAULT_SETTINGS).length,
+    // What the settings sheet lets you actually move: listed rows, minus the
+    // ones that say out loud that they are fixed.
+    rebindableKeys: SHORTCUT_ACTIONS.filter(
+      (action) => action.kind === 'binding' && LISTED_ACTION_IDS.includes(action.id),
+    ).length,
+    templates: NOTEBOOK_TEMPLATES.length,
+    defaultFloors: DEFAULT_FLOOR_COUNT,
+    maxFloors: MAX_FLOOR_COUNT,
+    packCategories: PACK_CATEGORIES.length,
+    packRefusals: UNSUPPORTED_CATEGORIES.length,
+    tourSteps: tourSteps('full').length,
   };
 }
 

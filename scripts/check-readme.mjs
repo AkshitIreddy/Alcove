@@ -17,10 +17,14 @@
  * shape as `npm run spec:check`, and for the same reason: a generator nobody
  * runs is worth nothing, a check that fails a test run is worth everything.
  *
- * It also resolves every relative link. **Links are resolved against the repo
- * root, including from the fragments in `docs/readme/`** — those files are
- * assembled into `README.md` at the root, so a link that is correct where the
- * fragment lives would be broken where it ships.
+ * It also resolves every relative link, **against the directory the file it is
+ * written in actually lives in** — which is what a browser does. `README.md` is
+ * the front door and its links are therefore root-relative; the two halves live
+ * in `docs/readme/` and reach the tree with `../../`. An earlier version of this
+ * file resolved everything from the root on the grounds that the halves were
+ * fragments assembled into `README.md`. They are not — they are pages a reader
+ * opens — so root-relative resolution was passing every link in `docs/readme/`
+ * while every one of them 404'd for that reader, including the screenshots.
  *
  * Usage:
  *   node scripts/check-readme.mjs            check, exit 1 on any drift
@@ -103,10 +107,41 @@ export function computeFacts() {
     if (/superseded/i.test(head)) superseded += 1;
   }
 
+  // The AI-facing spec is a generated file the user half quotes the size of.
+  // Counted the way a reader would count it: lines in the file they paste.
+  const specPath = join(ROOT, 'src-tauri', 'resources', 'notebook-script-spec.md');
+  let specLines = 0;
+  try {
+    specLines = readFileSync(specPath, 'utf8').replace(/\n$/, '').split('\n').length;
+  } catch {
+    specLines = 0;
+  }
+
+  // The Rust half is small enough that its size is part of the architecture
+  // claim ("almost everything interesting happens in the frontend"), so it is
+  // measured rather than estimated.
+  const lineCount = (file) => {
+    const text = readFileSync(file, 'utf8');
+    return text.length === 0 ? 0 : text.replace(/\n$/, '').split('\n').length;
+  };
+  const rustSources = walk(join(ROOT, 'src-tauri', 'src'), (n) => n.endsWith('.rs'));
+  const libRs = readFileSync(join(ROOT, 'src-tauri', 'src', 'lib.rs'), 'utf8');
+
   return {
     srcFiles: sources.length,
     srcDocstrings: docstrings,
     docstringLines,
+    specLines,
+    rustFiles: rustSources.length,
+    rustLines: rustSources.reduce((sum, f) => sum + lineCount(f), 0),
+    // Every migration registered with the sqlx migrator. Counted off the
+    // `version:` field so a migration added without one cannot hide.
+    dbMigrations: (libRs.match(/^\s*version:\s*\d+\s*,/gm) ?? []).length,
+    // Code generators: the ones whose output is checked in and gated.
+    generatorScripts: readdirSync(join(ROOT, 'scripts')).filter((n) =>
+      /^gen-.*\.(mjs|py)$/.test(n),
+    ).length,
+    readmeShots: walk(join(ROOT, 'docs', 'readme', 'img'), (n) => n.endsWith('.png')).length,
     unitTests: walk(join(ROOT, 'tests'), (n) => n.endsWith('.test.ts')).length,
     e2eSpecs: walk(join(ROOT, 'tests', 'e2e'), (n) => n.endsWith('.spec.ts')).length,
     probeScripts: readdirSync(join(ROOT, 'scripts')).filter((n) =>
@@ -161,6 +196,29 @@ export const DEFERRED_FACTS = [
   'bookCloths',
   'soundSets',
   'soundCues',
+  'ambienceBeds',
+  'roomPresets',
+  'ribbonPresets',
+  'coverPigments',
+  'coverFrames',
+  'coverMedallions',
+  'slashCommands',
+  'stickers',
+  'effectAxes',
+  'effectValues',
+  'blockEffectTypes',
+  'scriptContainers',
+  'scriptContainerAliases',
+  'scriptAttrKeys',
+  'scriptDiagrams',
+  'settingsOptions',
+  'rebindableKeys',
+  'templates',
+  'defaultFloors',
+  'maxFloors',
+  'packCategories',
+  'packRefusals',
+  'tourSteps',
 ];
 
 /**
@@ -200,11 +258,12 @@ const LINK_RE = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)|<img[^>]+src="([^"]+)"/g
 const EXTERNAL = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
 
 /**
- * Resolve every relative link in the README and its fragments.
+ * Resolve every relative link in the README and the two halves.
  *
- * Deliberately root-relative even for `docs/readme/*.md`: those are README
- * fragments, and the only path that matters is the one the assembled file
- * ships with.
+ * Resolved from the directory of the file the link is written in, because that
+ * is what a reader's browser does and these are three pages, not one assembled
+ * one. `README.md` therefore writes `docs/design/x.md` and the halves write
+ * `../design/x.md` for the same file; both are checked the same way.
  */
 export function checkLinks(docs = readmeDocs()) {
   const problems = [];
@@ -212,6 +271,7 @@ export function checkLinks(docs = readmeDocs()) {
   for (const rel of docs) {
     // Code is illustration, not navigation.
     const prose = stripCode(readFileSync(join(ROOT, rel), 'utf8'));
+    const here = dirname(join(ROOT, rel));
     for (const m of prose.matchAll(LINK_RE)) {
       const target = m[1] ?? m[2];
       if (!target || EXTERNAL.test(target)) continue;
@@ -220,7 +280,7 @@ export function checkLinks(docs = readmeDocs()) {
       if (!path) continue;
       const line = prose.slice(0, m.index).split('\n').length;
       try {
-        statSync(join(ROOT, path));
+        statSync(join(here, path));
       } catch {
         problems.push(`${rel}:${line} link target does not exist: ${target}`);
       }

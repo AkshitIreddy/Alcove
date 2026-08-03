@@ -610,21 +610,32 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * chain along every board edge and down the posts, and its round beads agree
  * with both the round arches and the gilt cornice studs.
  *
- * ## This constant also answers "what does junk resolve to"
- *
- * `resolveShelfDesign` and `getBuild` fall back to it, so a corrupted row now
- * opens on the scriptorium rather than on the bare plank. That is the same
- * double duty `DEFAULT_WALLPAPER_ID` was split out of (see the note beside
- * `FALLBACK_WALLPAPER_ID`), and it wants the same split here — one constant
- * for the opening carpentry, one for the unknown-id fallback. It is left
- * merged only because the split moves assertions in
- * `tests/design-cache-keys.test.ts`, and unlike the wallpaper case nothing
- * misleads a reader in the meantime: both values are total, both are drawable,
- * and the cache key carries `shelfDesignTag` either way.
+ * Paired with {@link FALLBACK_SHELF_DESIGN}, which answers a different
+ * question — see the note there.
  */
 export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
   build: 'scriptorium',
   pattern: 'guilloche',
+};
+
+/**
+ * What an unknown build or pattern resolves to. Always the plain plank case.
+ *
+ * A DIFFERENT question from the one above, and it was answered by the same
+ * constant until now — the same double duty `DEFAULT_WALLPAPER_ID` was split
+ * out of. The two pull in opposite directions the moment the opening case stops
+ * being the plain one: a new library should open on something worth looking at,
+ * and a corrupted row should open on something obviously plain that a reader
+ * can see is a fallback rather than a choice they made. Merged, choosing a
+ * handsome default silently made junk paint the scriptorium too.
+ *
+ * The house plank is the right answer here for the same reason Plain Parchment
+ * is on the wall: it is the least surprising thing that is still drawable, and
+ * a reader who lands on it can tell something went wrong.
+ */
+export const FALLBACK_SHELF_DESIGN: ShelfDesign = {
+  build: 'plank',
+  pattern: 'none',
 };
 
 export function isBuildId(value: unknown): value is BuildId {
@@ -635,12 +646,22 @@ export function isPatternId(value: unknown): value is PatternId {
   return typeof value === 'string' && (PATTERN_IDS as readonly string[]).includes(value);
 }
 
-/** Total: unknown ids fall back to the house case, field by field. */
+/**
+ * Total: unknown ids fall back to the house plank case, field by field.
+ *
+ * To `FALLBACK_SHELF_DESIGN`, not the opening one. A reader whose saved case
+ * cannot be resolved should get the plain plank — visibly a fallback — rather
+ * than whichever case a new library happens to start on, which they could not
+ * tell apart from a choice they had made.
+ *
+ * Field by field on purpose: a row with a good build and a junk pattern keeps
+ * the build.
+ */
 export function resolveShelfDesign(input: ShelfDesignInput): ShelfDesign {
-  if (input === null || input === undefined) return DEFAULT_SHELF_DESIGN;
+  if (input === null || input === undefined) return FALLBACK_SHELF_DESIGN;
   return {
-    build: isBuildId(input.build) ? input.build : DEFAULT_SHELF_DESIGN.build,
-    pattern: isPatternId(input.pattern) ? input.pattern : DEFAULT_SHELF_DESIGN.pattern,
+    build: isBuildId(input.build) ? input.build : FALLBACK_SHELF_DESIGN.build,
+    pattern: isPatternId(input.pattern) ? input.pattern : FALLBACK_SHELF_DESIGN.pattern,
   };
 }
 
@@ -1131,9 +1152,9 @@ export function allBuilds(): readonly BuildSpec[] {
   return BUILD_IDS.map((id) => BUILDS[id]);
 }
 
-/** Look up a carpentry; unknown ids give the house one. */
+/** Look up a carpentry; unknown ids give the house plank — see resolveShelfDesign. */
 export function getBuild(id: unknown): BuildSpec {
-  return BUILDS[isBuildId(id) ? id : DEFAULT_SHELF_DESIGN.build];
+  return BUILDS[isBuildId(id) ? id : FALLBACK_SHELF_DESIGN.build];
 }
 
 /* ----------------------------------------------------------------------------

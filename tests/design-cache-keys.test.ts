@@ -27,6 +27,7 @@ import {
   resolveShelfDesign,
   shelfDesignTag,
   DEFAULT_SHELF_DESIGN,
+  FALLBACK_SHELF_DESIGN,
 } from '../src/art/shelfDesign';
 import {
   WALLPAPER_DEPTHS,
@@ -80,11 +81,18 @@ describe('the case bake key carries the carpentry', () => {
     expect(themeKeyOf(req)).toBe(themeKeyOf(req));
   });
 
-  it('treats an absent design as the house case rather than as its own axis', () => {
+  it('treats an absent design as whatever it resolves to, not as its own axis', () => {
     // Otherwise a caller that omits `design` gets a THIRD key for art that is
-    // byte-identical to the default's, and bakes it twice.
+    // byte-identical to something already baked, and bakes it twice.
+    //
+    // Stated against `resolveShelfDesign` rather than against a named constant:
+    // the point is that the KEY and the DRAWING agree about what an absent
+    // design means, and that stays true whichever constant the resolver
+    // happens to fall back to. Naming one here made this test fail when the
+    // fallback was split off from the opening default, for no reason a reader
+    // would recognise as a bug.
     expect(themeKeyOf({ themeId: THEME_IDS[0], scheme })).toBe(
-      themeKeyOf({ themeId: THEME_IDS[0], scheme, design: DEFAULT_SHELF_DESIGN }),
+      themeKeyOf({ themeId: THEME_IDS[0], scheme, design: resolveShelfDesign(undefined) }),
     );
   });
 
@@ -94,10 +102,15 @@ describe('the case bake key carries the carpentry', () => {
         themeKeyOf({ themeId: THEME_IDS[0], scheme, design: junk as never }),
       ).not.toThrow();
     }
+    // To the FALLBACK case, not the opening one. They were the same constant
+    // until the opening carpentry became something worth looking at; keeping
+    // them merged meant a corrupted row silently painted the handsome case, so
+    // a reader could not tell a fallback from a choice they had made.
     expect(shelfDesignTag({ build: 'nope' } as never)).toBe(
-      shelfDesignTag(DEFAULT_SHELF_DESIGN),
+      shelfDesignTag(FALLBACK_SHELF_DESIGN),
     );
-    expect(resolveShelfDesign(null)).toEqual(DEFAULT_SHELF_DESIGN);
+    expect(resolveShelfDesign(null)).toEqual(FALLBACK_SHELF_DESIGN);
+    expect(FALLBACK_SHELF_DESIGN).not.toEqual(DEFAULT_SHELF_DESIGN);
   });
 });
 

@@ -1,6 +1,6 @@
 ﻿## How it's built
 
-Bellanote is a [Tauri 2](https://tauri.app/) app: a Rust host process, a WebView2
+Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a WebView2
 window, and a [SolidJS](https://www.solidjs.com/) frontend built by Vite. Almost
 everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->13<!--/f--> commands â€” image assets, link previews, backups,
@@ -104,8 +104,8 @@ defending â€” why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->222<!--/f--> of <!--f:srcFiles-->230<!--/f--> source files
-open with a module docstring â€” <!--f:docstringLines-->3867<!--/f--> lines in total,
+<!--f:srcDocstrings-->227<!--/f--> of <!--f:srcFiles-->235<!--/f--> source files
+open with a module docstring â€” <!--f:docstringLines-->4203<!--/f--> lines in total,
 about one line of file-level prose for every twenty-three lines of code. That
 number is not asserted here; `npm run readme:check` recomputes it from the tree and
 `tests/readme.test.ts` fails if this sentence has drifted.
@@ -385,7 +385,7 @@ Read the relevant one **before** working in its area.
 | [`page-flip.md`](docs/design/page-flip.md) | **Current** | Live DOM at rest, GPU curl during the gesture, CSS 3D rigid fold as the no-WebGL fallback only. |
 | [`block-editor.md`](docs/design/block-editor.md) | **Current** | TipTap v3 with vendored Solid bindings. Document JSON *is* the storage format. |
 | [`script-language.md`](docs/design/script-language.md) | **Current** | Notebook Script: Markdown subset + `:::` directives + fenced mini-languages, with a handwritten tolerant parser. |
-| [`library-themes.md`](docs/design/library-themes.md) | **Current** (rewritten) | A theme is a colour scheme and nothing else. Opens with an account of what the doc *used to* say and why data describing art nobody renders is worse than no data. |
+| [`library-themes.md`](docs/design/library-themes.md) | **Current** (rewritten) | Colour, carpentry, paper and binding are four orthogonal vocabularies; a "theme" is only the colour one. Opens with an account of the two things the doc used to say — eight simulated worlds, then four rooms — and why each was wrong. |
 | [`sound.md`](docs/design/sound.md) | **Current** | Every cue is a real recording under CC0/PD; the one CC BY source is credited in-app from a generated manifest. |
 | [`ui-audit.md`](docs/design/ui-audit.md) | **Current** | A screenshot-driven review with measured WCAG contrast against the exact token pairs the app paints. |
 | [`art-pipeline.md`](docs/design/art-pipeline.md) | âš ï¸ Partly superseded | Bake-once, seeded procedural spines and pre-distorted vector chrome still run. Every SVG filter recipe in it is deleted; nothing consumes them. |
@@ -417,9 +417,9 @@ path: it is what the entire Playwright harness runs against.
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` â€” `tests/` is not in the `tsconfig` include. |
-| `npx vitest run` | <!--f:unitTests-->51<!--/f--> unit-test files, node environment (jsdom is deliberately not installed). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->57<!--/f--> unit-test files, node environment (jsdom is deliberately not installed). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
-| `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. |
+| `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](docs/e2e.md). |
 
 Two generated artefacts have their own verify mode, and both are wired into the
 test suite so a forgotten regeneration is a red test rather than a silent
@@ -436,6 +436,13 @@ from [`src/script/vocab.ts`](src/script/vocab.ts) plus a template) and
 > [`features/bookshelf/env.ts`](src/features/bookshelf/env.ts) and is not to be
 > removed; all visual QA depends on it.
 
+The suite shares that dev server with everything else working in the repo, so a
+red run is not automatically a product failure: a save in another window
+full-reloads the page mid-test. The config allows one retry for exactly that and
+keeps the trace of the attempt that failed, which is how you tell the two apart.
+[`docs/e2e.md`](docs/e2e.md) is the whole story, including the honest
+determinism check to run when the repo is quiet.
+
 ### Looking at the art
 
 Visual work is not done until you have captured a screenshot and *actually looked
@@ -446,7 +453,7 @@ writes binding boards.
 
 ### Driving the running app
 
-<!--f:probeScripts-->22<!--/f--> scripts under [`scripts/`](scripts/) named
+<!--f:probeScripts-->26<!--/f--> scripts under [`scripts/`](scripts/) named
 `probe-*.mjs` drive the running app with Playwright and assert on **applied** state
 through the `?fx=force` bridges. The important three:
 
@@ -549,7 +556,7 @@ every build, so a credit cannot drift from what actually shipped. Provenance for
 all of it is in [`docs/design/sound.md`](docs/design/sound.md).
 
 **Art.** [`assets/brand/icon.svg`](assets/brand/icon.svg) is the drawing reference
-the whole app follows. [`assets/brand/bellanote-art.png`](assets/brand/bellanote-art.png)
+the whole app follows. [`assets/brand/alcove-art.png`](assets/brand/alcove-art.png)
 is the shipped app and installer icon, supplied by the owner, and is deliberately a
 different register from the app's interior â€” it is the source for
 [`scripts/gen-icons.py`](scripts/gen-icons.py) and nothing else. Do not flatten the

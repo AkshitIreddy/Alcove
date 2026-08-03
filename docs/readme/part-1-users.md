@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/img/hero.png" alt="Bellanote — a notebook that lives on a bookshelf. A cream card taped to a papered wall, with the app's book icon, the wordmark in a handwriting face, and six coloured book spines standing on a timber plank below." width="880">
+  <img src="docs/readme/img/hero.png" alt="Alcove — a notebook that lives on a bookshelf. A cream card taped to a papered wall, with the app's book icon, the wordmark in a handwriting face, and six coloured book spines standing on a timber plank below." width="880">
 </p>
 
 <!--
@@ -8,8 +8,8 @@
   been pushed, so a release badge would render "inaccessible" rather than a fact.
   When the repo goes public and `v0.2.0` is tagged, replace the first two with:
 
-  [![release](https://img.shields.io/github/v/release/AkshitIreddy/bellanote?style=flat-square&labelColor=4f3120&color=c96f4a)](https://github.com/AkshitIreddy/bellanote/releases/latest)
-  [![build](https://img.shields.io/github/actions/workflow/status/AkshitIreddy/bellanote/release.yml?style=flat-square&labelColor=4f3120&color=7d915c)](.github/workflows/release.yml)
+  [![release](https://img.shields.io/github/v/release/AkshitIreddy/alcove?style=flat-square&labelColor=4f3120&color=c96f4a)](https://github.com/AkshitIreddy/alcove/releases/latest)
+  [![build](https://img.shields.io/github/actions/workflow/status/AkshitIreddy/alcove/release.yml?style=flat-square&labelColor=4f3120&color=7d915c)](.github/workflows/release.yml)
 -->
 
 <p align="center">
@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/storage-local%20SQLite%20%C2%B7%20no%20account-5f7d8c?style=flat-square&labelColor=4f3120" alt="Storage: local SQLite, no account">
 </p>
 
-# Bellanote
+# Alcove
 
 **A Windows notes app that puts your notes on a bookshelf you can walk around in.**
 
@@ -79,22 +79,22 @@ you can tell whether it is the kind of thing you want.
 When a maintainer pushes a version tag, [the release
 workflow](.github/workflows/release.yml) typechecks, runs the unit tests, builds
 on `windows-latest`, and publishes to
-[Releases](https://github.com/AkshitIreddy/bellanote/releases):
+[Releases](https://github.com/AkshitIreddy/alcove/releases):
 
 | File | What it is |
 | --- | --- |
-| `Bellanote_<version>_x64-setup.exe` | NSIS installer. Installs for the **current user**, so Windows will not ask for an administrator. This is the one to take. |
-| `Bellanote_<version>_x64_en-US.msi` | MSI, for anyone who deploys software with a policy rather than a double-click. |
+| `Alcove_<version>_x64-setup.exe` | NSIS installer. Installs for the **current user**, so Windows will not ask for an administrator. This is the one to take. |
+| `Alcove_<version>_x64_en-US.msi` | MSI, for anyone who deploys software with a policy rather than a double-click. |
 
 The one requirement is the Microsoft Edge **WebView2** runtime — already present
 on Windows 11 and on any up-to-date Windows 10, and fetched by the installer if
-it is missing. Bellanote is a [Tauri](https://tauri.app/) app, so it uses that
+it is missing. Alcove is a [Tauri](https://tauri.app/) app, so it uses that
 system webview instead of shipping a browser of its own: the download is small,
 and nothing runs in the background when the window is closed unless you turn on
 tray quick capture.
 
 Your library is created on first launch at
-`%APPDATA%\com.bellanote.app\notebook.db`. To move to another machine, copy that
+`%APPDATA%\com.alcove.app\notebook.db`. To move to another machine, copy that
 file, or use *Settings → Library files → Export* to make a `.nbk` bundle the
 other copy can import.
 
@@ -114,7 +114,7 @@ shift+wheel pans (swap the two in *Settings → Library & shelf* if you would
 rather scroll); `Escape` from anywhere throws the camera back to the shelf. The
 left dock makes a new book, opens the studio, adds a floor, or shows the trash.
 
-![The Bellanote shelf: a green bookcase with a fluted cornice against pale striped wallpaper. Two floors carry about eighteen books with individually drawn spines — cream label plates, gilt bands, raised cords — and a dashed outline marks the next free slot. A cream dock on the left offers new book, studio, add floor and trash; a zoom control reading 80% sits at the bottom.](docs/readme/img/shelf.png)
+![The Alcove shelf: a green bookcase with a fluted cornice against pale striped wallpaper. Two floors carry about eighteen books with individually drawn spines — cream label plates, gilt bands, raised cords — and a dashed outline marks the next free slot. A cream dock on the left offers new book, studio, add floor and trash; a zoom control reading 80% sits at the bottom.](docs/readme/img/shelf.png)
 
 Nothing here is a rectangle with a gradient on it: every spine is drawn from the
 book's own seed through [`src/art/bookDesign.ts`](src/art/bookDesign.ts), baked
@@ -312,4 +312,4 @@ as script and re-run, or exported back out with **Export script**.
 Diagrams are first-class outside script too — this is a page of the Welcome book,
 showing a `tree` and a `timeline` as the app draws them:
 
-![The Welcome book's third spread. The left page, 'Make it yours', lists decorated example blocks — a taped card, a quote, a banner, a click-to-reveal spoiler, and seven named highlight washes. The right page, 'Diagrams', shows a hand-drawn tree with Bellanote branching to Shelf and Pages and on to Floors, Books, Blocks and Diagrams, and below it a three-step timeline.](docs/readme/img/diagrams.png)
+![The Welcome book's third spread. The left page, 'Make it yours', lists decorated example blocks — a taped card, a quote, a banner, a click-to-reveal spoiler, and seven named highlight washes. The right page, 'Diagrams', shows a hand-drawn tree with Alcove branching to Shelf and Pages and on to Floors, Books, Blocks and Diagrams, and below it a three-step timeline.](docs/readme/img/diagrams.png)

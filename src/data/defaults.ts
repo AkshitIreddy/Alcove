@@ -60,7 +60,12 @@ export const DEFAULT_SETTINGS: Settings = {
   shelfSort: 'manual',
 
   // Wave 2 — ambience & input feel
-  soundscape: 'rain',
+  // Fireplace, by request — the refined end of the shelf rather than the
+  // obvious one. This is the constant a NEW install actually hears:
+  // features/settings/apply.ts calls setSoundscape(settings.soundscape) on
+  // boot, so the engine's own internal placeholder never reaches a reader and
+  // changing that one instead would have moved nothing.
+  soundscape: 'fireplace',
   typingSounds: false,
   hourlyChime: false,
   cursorStyle: 'standard',

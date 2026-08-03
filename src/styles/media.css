@@ -230,10 +230,11 @@
 .nb-image-handle.is-se { right: -7px; cursor: nwse-resize; }
 
 /* floating controls (align / frame) */
+/* Top-LEFT — same rule as .nb-diagram-chrome and every panel header. */
 .nb-image-controls {
   position: absolute;
   top: 6px;
-  right: 6px;
+  left: 6px;
   display: flex;
   gap: 4px;
   z-index: 2;

@@ -46,7 +46,7 @@ export default function UserStickersSection(): JSX.Element {
               type="button"
               class="nb-sticker-button nb-user-sticker-button"
               aria-label={`${sticker.name} sticker`}
-              data-tip={sticker.name}
+              data-tooltip={sticker.name}
               onClick={() => insert(sticker)}
             >
               <img
@@ -62,7 +62,7 @@ export default function UserStickersSection(): JSX.Element {
           type="button"
           class="nb-sticker-button nb-user-sticker-import"
           aria-label="Import sticker image"
-          data-tip="import png / svg"
+          data-tooltip="import png / svg"
           onClick={() => void importUserStickers()}
         >
           <svg viewBox="0 0 32 32" aria-hidden="true">

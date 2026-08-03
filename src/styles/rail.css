@@ -70,42 +70,19 @@
   transform: rotate(-1.2deg);
 }
 
-/* Tooltip — a little paper chip that pops out to the right. */
-.nb-rail-button[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  white-space: nowrap;
-  font-family: var(--font-ui);
-  font-size: var(--text-ui);
-  letter-spacing: var(--tracking-ui);
-  color: var(--ink-sepia);
-  background: var(--paper-cream);
-  border: var(--stroke-ink-thin);
-  border-radius: 8px 11px 9px 12px / 11px 8px 12px 9px;
-  padding: 3px var(--space-8);
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity var(--dur-xs) var(--ease-out),
-    transform var(--dur-xs) var(--ease-out);
-}
-
-.nb-rail-button[data-tip]:hover::after,
-.nb-rail-button[data-tip]:focus-visible::after {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
-}
-
-/* The chip lands exactly where the open sheet starts, and the rail paints
-   above the sheet — so a pressed icon would label the panel it just opened,
-   over the panel's own title. The panel IS the label at that point. */
-.nb-rail-button.is-active[data-tip]::after {
-  content: none;
-}
+/*
+ * The rail's tooltip used to live here as a `::after` chip on
+ * `.nb-rail-button[data-tip]`. It is gone: tooltips are now one component
+ * (`src/views/Tooltip.tsx`, keyed off `data-tooltip`) so every one in the app
+ * looks the same, flips when it would run off screen, and appears on FOCUS as
+ * well as hover — a `::after` on hover is invisible to anyone tabbing.
+ *
+ * The rule it enforced is worth keeping written down, because the new component
+ * has to honour it too: an ACTIVE rail icon shows no tooltip. The chip lands
+ * exactly where the open sheet starts and the rail paints above the sheet, so a
+ * pressed icon would label the panel it just opened, over that panel's own
+ * title. At that point the panel IS the label.
+ */
 
 /* ============================ the panel push ================================
    A side panel used to be laid ON TOP of the thing it dressed: the studio

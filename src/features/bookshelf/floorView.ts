@@ -24,7 +24,8 @@ import {
   type NineSliceSprite,
   type RenderTexture,
 } from 'pixi.js';
-import { SPINE_THICKNESS_RANGE, type SpineParams } from '../../art/spines';
+import { type SpineParams } from '../../art/spines';
+import { spineArtWidth } from './spineFactory';
 import { readShelfMeta } from '../../data/books';
 import type { Book } from '../../data/types';
 import {
@@ -270,12 +271,12 @@ export class FloorView {
       // + any studio override); the factory has already folded it into
       // params.w. Clamp only to the legal spine range — the old [22, 64] band
       // here is exactly what flattened every row into a picket fence.
-      const widths = paramsList.map((params) =>
-        Math.min(
-          SPINE_THICKNESS_RANGE.max,
-          Math.max(SPINE_THICKNESS_RANGE.min, Math.round((params as SpineParams).w)),
-        ),
-      );
+      // Through the factory's own helper, not a second copy of the same
+      // arithmetic: the row's layout width and the bake width have to be the
+      // SAME number, or every sprite is resampled by a fraction of a pixel on
+      // every frame — which is precisely the softness this pipeline was just
+      // measured and fixed for.
+      const widths = paramsList.map((params) => spineArtWidth((params as SpineParams).w));
       const placed = layoutFloor(
         widths.map((w, i) => ({ slot: (books[i] as Book).slot, w })),
         this.index,

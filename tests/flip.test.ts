@@ -654,3 +654,55 @@ describe('clamp helpers', () => {
     expect(mix(2, 4, 1)).toBe(4);
   });
 });
+
+/* ==========================================================================
+ * The shader carries no light model
+ * ========================================================================== */
+
+/**
+ * The reader reported *"when i turn pages sometimes, mid way, the bottom half
+ * of page with lines has some weird shadowey effect"*, and the cause was the
+ * curl shader's shading terms landing on ruled paper: a crest highlight, a
+ * pre-fold darkening band and a self-shadow, each a light model on a drawing
+ * that has none. They are gone.
+ *
+ * This is a TEXT test over the shader source rather than a rendering one on
+ * purpose. There is no GL context in node, the artefact only appeared part-way
+ * through a real turn, and the thing worth defending is not a pixel value — it
+ * is the house rule from CLAUDE.md: no lighting, no glow, no blurred shadow.
+ * A term that reintroduces one is visible in the source, so the source is where
+ * to catch it.
+ *
+ * The agent that removed them asked for this gate and could not add it — tests/
+ * was outside its file set.
+ */
+describe('the curl shader has no light model', () => {
+  /**
+   * Comments stripped first. The shader's own header says "no crest highlight,
+   * no curvature band, no self-shadow" — which is exactly the right thing for
+   * it to say and exactly what a naive text search trips over. Checking the
+   * prose instead of the code would fail on a file that documents itself well.
+   */
+  const code = CURL_FRAG_SRC.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  it('carries no shading terms', () => {
+    // `pow()` was how every one of them was shaped — a crest raised to a power,
+    // a band falling off to one. Nothing else in this shader needs it.
+    expect(code).not.toMatch(/\bpow\s*\(/);
+  });
+
+  it('names no highlight, shadow or shading uniform', () => {
+    for (const banned of ['uShade', 'uHighlight', 'uShadow', 'crest', 'specular']) {
+      expect(
+        code.toLowerCase(),
+        `${banned} is a light model — see CLAUDE.md`,
+      ).not.toContain(banned.toLowerCase());
+    }
+  });
+
+  it('still samples the page it is bending', () => {
+    // The cheapest way to pass the two checks above would be to delete the
+    // shader. It has to still do its job.
+    expect(code).toMatch(/texture\s*\(/);
+  });
+});

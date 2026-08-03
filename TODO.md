@@ -34,6 +34,49 @@ last one did, which `scripts/gen-icons.py` flood-fills to alpha already.
 4. **`cargo check --manifest-path src-tauri/Cargo.toml`** — the toolchain the
    last rename broke and the only one that would have noticed.
 
+## ⏭️ Left over after the 2026-08-03 workflows
+
+Both waves landed and are green (tsc 0, 1660 tests). These are the gaps the
+agents reported honestly, plus the seams between them that I closed by hand.
+
+**Still open:**
+
+- [ ] `DEFAULT_SHELF_DESIGN` does two jobs — the opening carpentry AND the
+      unknown-id fallback for `resolveShelfDesign`/`getBuild`. Exactly the merge
+      `DEFAULT_WALLPAPER_ID` was just split out of, and it needs the same split
+      before the opening case can be chosen freely.
+- [ ] Applying a room preset is two independent store writes (colour to the
+      bookcase's room blob, design to the studio's settings key), so the world
+      reacts twice and re-bakes twice on one click. Coalesce them.
+- [ ] `ROLLABLE_SHAPES` / `ROLLABLE_MATERIALS` / `ROLLABLE_DECORATIONS` are
+      exported and gated but have no consumer — the studio has no per-axis
+      shape/covering/ornament grid yet, only whole presets.
+- [ ] No "add your own set" for sound, and no runtime filtering in a set's
+      levers (Howler exposes rate and volume per play, not a filter node).
+- [ ] `docs/design/page-flip.md` still specifies the shadow/lighting model that
+      was removed — the warm crest highlight, the pre-fold darkening, the
+      self-shadow. `tests/flip.test.ts` now gates their absence; the doc still
+      promises them.
+- [ ] `CLAUDE.md` says "a library theme is a colour scheme" with no mention that
+      presets bundle colour + carpentry + paper, and still cites the house plank
+      case as the default. `docs/ROADMAP-wave2.md` unreviewed.
+- [ ] `UserStickersSection`'s imported-sticker grid is still uncapped.
+- [ ] `tutorial.css`'s `.nbt-card` is its own scroller with the actions and
+      progress dots at the bottom — same family as the reported scroll bug,
+      inverted.
+- [ ] CheatSheet, QuickSwitcher, TemplatesGallery and ExportPdfDialog have NO
+      visible way out at all — Escape or the scrim only. Different gap, same
+      rule as the top-left sweep.
+- [ ] The settings seal (bottom-left) renders ABOVE the pulled-book scrim, so it
+      stays lit while the room behind it dims. Pre-existing.
+- [ ] Max zoom on a 2× display is the one soft spot left: 0.80 texels per device
+      pixel at zoom 2.5. Twice what it was, still under 1.
+- [ ] Spines are not disk-cached, so every launch shows the lo bake until the hi
+      one lands. Now 1.24 texels/devpx (was 0.62), but the transient remains.
+- [ ] In the lettering shelf every `hand` specimen renders a visually identical
+      "Aa" — may be that 17px at 0.6 scale cannot tell fifty hands apart, or may
+      be a real wiring bug. Unverified.
+
 ## 🔴 Reported 2026-08-03 (second pass)
 
 - [ ] **Some book shapes are bizarre** — "some of them are literally pencil

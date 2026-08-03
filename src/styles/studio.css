@@ -239,7 +239,10 @@
   gap: var(--space-8);
 }
 
+/* Clears the pinned .nb-pick-head when arrow-key browsing scrolls a card
+   into view — without this a focused card lands partly under the header. */
 .nb-pick-card {
+  scroll-margin-top: 44px;
   position: relative;
   display: flex;
   flex-direction: column;

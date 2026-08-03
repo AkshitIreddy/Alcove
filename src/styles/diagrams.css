@@ -189,10 +189,15 @@
 
 /* ------------------------------- chrome ----------------------------------- */
 
+/* Top-LEFT, like every other set of options — see .nb-rail-panel-header in
+   rail.css. The reader's rule was not only about exits: *"similar for all other
+   types of options, it should ALWAYS be on top left"*. A block's own controls
+   are options, and having them in the opposite corner from every panel's meant
+   your eye had to learn two places. */
 .nb-diagram-chrome {
   position: absolute;
   top: var(--space-4);
-  right: var(--space-4);
+  left: var(--space-4);
   display: flex;
   align-items: center;
   gap: var(--space-8);

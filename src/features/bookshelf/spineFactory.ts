@@ -183,6 +183,23 @@ function get2d(canvas: AtlasPage['canvas']): Ctx2D {
  * SpineParams cache. Emits `onTexturesChanged(bookIds)` whenever textures for
  * those books became available OR were evicted (listeners re-pick + re-request).
  */
+/**
+ * The world-px width a spine occupies: its thickness, rounded to a whole pixel
+ * and clamped to the legal range.
+ *
+ * ONE function, because two callers need the identical answer and getting it
+ * from two copies of the same arithmetic is a resolution bug waiting to happen.
+ * `floorView` lays the row out with it and the factory bakes to it; if they
+ * ever disagree by a pixel the sprite is resampled on every frame, which is
+ * exactly the softness this pipeline was just measured and fixed for.
+ */
+export function spineArtWidth(w: number): number {
+  return Math.min(
+    SPINE_THICKNESS_RANGE.max,
+    Math.max(SPINE_THICKNESS_RANGE.min, Math.round(w)),
+  );
+}
+
 export class SpineFactory {
   private readonly loAtlas: AtlasManager;
   private readonly hiAtlas: AtlasManager;
@@ -443,11 +460,7 @@ export class SpineFactory {
    * by a hair on every frame for nothing.
    */
   artWidth(book: Book): number {
-    const w = this.getParams(book).w;
-    return Math.min(
-      SPINE_THICKNESS_RANGE.max,
-      Math.max(SPINE_THICKNESS_RANGE.min, Math.round(w)),
-    );
+    return spineArtWidth(this.getParams(book).w);
   }
 
   /**

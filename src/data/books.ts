@@ -175,10 +175,17 @@ export async function countBooksInBookcase(bookcaseId: string): Promise<number> 
  * in its new case, and recognising a spine is how a reader finds a book — so
  * the object they were looking for stops being the object they remember.
  *
- * `keepAppearance` is the resolved style to pin before moving, so the book
- * keeps the look it had. The caller supplies it because resolving a style needs
- * `src/art`, and the data layer does not import art. Pass `null` (the default)
- * when the reader has asked for the book to take on its new room.
+ * `keepAppearance` is the face to pin before moving, so the book keeps the look
+ * it had. The caller supplies it because resolving a style needs `src/art`, and
+ * the data layer does not import art. Pass `null` (the default) when the reader
+ * has asked for the book to take on its new room.
+ *
+ * WHAT is in that blob is the caller's judgement, not this function's: the
+ * shelf's `ShelfWorld.faceToPin` sends only the fields the target room would
+ * have resolved differently (today, `{ pigment }`), because a blob that pins
+ * more than that changes how the book DRAWS — `spineParamsFor` reads
+ * `pinned.has('material')` as "the reader chose this covering". This function
+ * takes whatever it is given and treats every key the same way.
  *
  * ## It is a FLOOR under the book's own style, not a replacement for it
  *

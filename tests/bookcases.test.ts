@@ -529,6 +529,223 @@ describe('“move to another case” keeps the book recognisable', () => {
   });
 });
 
+/* ==================== what the caller may pin, and why ==================== */
+/*
+ * `keepAppearance` is chosen by `ShelfWorld.faceToPin` (world.ts), because
+ * resolving a style needs `src/art` and the data layer does not import art.
+ * These pin the arithmetic that function performs — the world itself cannot be
+ * loaded here (Pixi, GSAP, a canvas), and the arithmetic is the whole of the
+ * decision.
+ *
+ * The trap it exists to avoid is worth stating plainly, because nothing about
+ * it shows up in a diff of VALUES: `spineParamsFor` derives
+ * `materialPinned: pinned.has('material')` from the SHAPE of the override blob.
+ * That flag is how the studio says "the reader touched the covering chip, so it
+ * overrules the binding's own covering". Freeze all twenty-odd fields onto a
+ * book whose reader never touched anything and the flag comes on by itself: the
+ * binding stops choosing its own surface and the spine that left in a grained
+ * calf arrives in smooth leather. The move repaints exactly what the move
+ * exists not to repaint, and every field of the blob says it did not.
+ */
+
+describe('the face pinned onto a book before it changes rooms', () => {
+  /** The room bias a theme id stands for, in the vocabulary resolve reads. */
+  async function biasOf(themeId: string): Promise<Record<string, unknown>> {
+    const [{ themeSpineDefaults }, { getTheme }] = await Promise.all([
+      import('../src/features/bookshelf/bookIdentity'),
+      import('../src/art/themes'),
+    ]);
+    return themeSpineDefaults(getTheme(themeId)) as unknown as Record<string, unknown>;
+  }
+
+  async function resolveIn(
+    seed: number,
+    bias: Record<string, unknown>,
+    over: Record<string, unknown> | null,
+  ) {
+    const { resolveBookStyle } = await import('../src/art/bookStyle');
+    return resolveBookStyle(seed, bias, over);
+  }
+
+  /** `ShelfWorld.faceToPin`, with the two rooms handed in rather than read. */
+  async function faceToPin(
+    seed: number,
+    here: Record<string, unknown>,
+    there: Record<string, unknown>,
+    own: Record<string, unknown> | null = null,
+  ) {
+    const from = (await resolveIn(seed, here, own)).style as unknown as Record<
+      string,
+      unknown
+    >;
+    const to = (await resolveIn(seed, there, own)).style as unknown as Record<
+      string,
+      unknown
+    >;
+    const pin: Record<string, unknown> = {};
+    for (const key of Object.keys(from)) {
+      if (key === 'material') continue;
+      if (!Object.is(from[key], to[key])) pin[key] = from[key];
+    }
+    return Object.keys(pin).length > 0 ? pin : null;
+  }
+
+  /**
+   * Everything `renderSpine` actually draws from.
+   *
+   * `material` and `texture` are dropped: the flat renderer reads `material`
+   * only through `params.materialPinned === true`, and reads `texture` nowhere
+   * at all (it survives for older consumers). Comparing them would report a
+   * difference the reader cannot see and hide the one they can.
+   */
+  const drawn = (spine: Record<string, unknown>): Record<string, unknown> => {
+    const { material: _m, texture: _t, ...rest } = spine;
+    return rest;
+  };
+
+  const SEED = 918273;
+  const DARK = 'ebonised';
+  const BRIGHT = 'marigold';
+
+  it('pins the colour the old room gave it — that is the whole point', async () => {
+    const dark = await biasOf(DARK);
+    const bright = await biasOf(BRIGHT);
+    const pin = await faceToPin(SEED, dark, bright);
+    const here = await resolveIn(SEED, dark, null);
+    expect(pin).not.toBeNull();
+    expect(pin?.pigment).toBe(here.style.pigment);
+    // …and the two rooms really do disagree, or this proves nothing.
+    const native = await resolveIn(SEED, bright, null);
+    expect(native.style.pigment).not.toBe(here.style.pigment);
+  });
+
+  it('the moved book draws exactly as it did, field for field', async () => {
+    const dark = await biasOf(DARK);
+    const bright = await biasOf(BRIGHT);
+    const pin = await faceToPin(SEED, dark, bright);
+    const here = await resolveIn(SEED, dark, null);
+    const there = await resolveIn(SEED, bright, pin);
+    expect(drawn(there.spine as unknown as Record<string, unknown>)).toEqual(
+      drawn(here.spine as unknown as Record<string, unknown>),
+    );
+  });
+
+  it('never claims the reader chose a covering they never touched', async () => {
+    const dark = await biasOf(DARK);
+    const bright = await biasOf(BRIGHT);
+    const pin = await faceToPin(SEED, dark, bright);
+    const here = await resolveIn(SEED, dark, null);
+    const there = await resolveIn(SEED, bright, pin);
+    expect(here.spine.materialPinned).toBe(false);
+    expect(there.spine.materialPinned).toBe(false);
+
+    // The version this replaced, kept as the counter-example: freeze the whole
+    // face and the flag comes on, which is a different book on the shelf.
+    const whole = { ...here.style } as unknown as Record<string, unknown>;
+    const frozen = await resolveIn(SEED, bright, whole);
+    expect(frozen.spine.materialPinned).toBe(true);
+    expect(drawn(frozen.spine as unknown as Record<string, unknown>)).not.toEqual(
+      drawn(here.spine as unknown as Record<string, unknown>),
+    );
+  });
+
+  it('a reader’s own choices are already theirs, so nothing is pinned twice', async () => {
+    const own = { pigment: 3, material: 'vellum', wear: 0.4 };
+    const pin = await faceToPin(SEED, await biasOf(DARK), await biasOf(BRIGHT), own);
+    // Every field the reader pinned resolves the same in both rooms, so the
+    // diff cannot contain them — and the covering they DID choose keeps its
+    // flag, because it rides in the book's own blob, not in this one.
+    expect(pin?.pigment).toBeUndefined();
+    expect(pin?.wear).toBeUndefined();
+    const there = await resolveIn(SEED, await biasOf(BRIGHT), {
+      ...(pin ?? {}),
+      ...own,
+    });
+    expect(there.spine.materialPinned).toBe(true);
+    expect(there.style.pigment).toBe(3);
+  });
+
+  it('two rooms that dress a book the same way pin nothing at all', async () => {
+    const dark = await biasOf(DARK);
+    expect(await faceToPin(SEED, dark, dark)).toBeNull();
+  });
+
+  /**
+   * What the sixty rooms actually disagree about today: the colour, and only
+   * the colour. Every one of them shares `SPINE_DRESSING` for its coverings,
+   * its gilt chance, its cords and its wear, and varies only `pigments` — so a
+   * real move pins `{ pigment }` and nothing else.
+   *
+   * Worth a test rather than a comment, because it is what makes the pin so
+   * small, and the day a room starts biasing its coverings this fails and sends
+   * the reader to the case below.
+   */
+  it('today the rooms differ in pigment alone', async () => {
+    const { THEME_IDS } = await import('../src/art/themes');
+    const dark = await biasOf(DARK);
+    const keys = new Set<string>();
+    for (const other of THEME_IDS) {
+      const pin = await faceToPin(917 * 31, dark, await biasOf(other));
+      for (const key of Object.keys(pin ?? {})) keys.add(key);
+    }
+    expect([...keys]).toEqual(['pigment']);
+  });
+
+  /**
+   * And the case that is not reachable through the authored table: a room that
+   * WOULD bind the book in something else. The covering is still held back, so
+   * the flag stays off and the spine still draws what it always drew — the
+   * book's cover is the only thing that follows the new room.
+   */
+  it('holds the covering back even from a room that would change it', async () => {
+    const dark = await biasOf(DARK);
+    const odd = { ...(await biasOf(BRIGHT)), materials: ['vellum'] };
+    const here = await resolveIn(SEED, dark, null);
+    const native = await resolveIn(SEED, odd, null);
+    expect(native.style.material).toBe('vellum');
+    expect(here.style.material).not.toBe('vellum');
+
+    const pin = await faceToPin(SEED, dark, odd);
+    expect(pin?.material).toBeUndefined();
+    const there = await resolveIn(SEED, odd, pin);
+    expect(there.spine.materialPinned).toBe(false);
+    expect(drawn(there.spine as unknown as Record<string, unknown>)).toEqual(
+      drawn(here.spine as unknown as Record<string, unknown>),
+    );
+  });
+
+  /**
+   * The same claim over the whole table rather than one pair: for any seed and
+   * any two of the sixty rooms, the book that arrives draws like the book that
+   * left. `resolveBookStyle` draws its theme rolls unconditionally and in a
+   * fixed order, which is what makes a PARTIAL pin safe — a pin that skipped a
+   * roll would reshuffle every field after it.
+   */
+  it('holds for any seed and any pair of rooms', async () => {
+    const fc = (await import('fast-check')).default;
+    const { THEME_IDS } = await import('../src/art/themes');
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: 2 ** 31 - 1 }),
+        fc.constantFrom(...THEME_IDS),
+        fc.constantFrom(...THEME_IDS),
+        async (seed, fromId, toId) => {
+          const from = await biasOf(fromId);
+          const to = await biasOf(toId);
+          const pin = await faceToPin(seed, from, to);
+          const here = await resolveIn(seed, from, null);
+          const there = await resolveIn(seed, to, pin);
+          expect(there.spine.materialPinned).toBe(false);
+          expect(drawn(there.spine as unknown as Record<string, unknown>)).toEqual(
+            drawn(here.spine as unknown as Record<string, unknown>),
+          );
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+});
+
 /* ============================== floor defaults =========================== */
 
 describe('floors: ten per bookcase, growing only on request', () => {

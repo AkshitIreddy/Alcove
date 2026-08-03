@@ -25,7 +25,7 @@ import {
 } from 'pixi.js';
 import { clamp } from '../../art/noise';
 import { SPINE_BASE_HEIGHT } from '../../art/spines';
-import type { BookStyle } from '../../art/bookStyle';
+import { resolveBookStyle, type BookStyle } from '../../art/bookStyle';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
 import {
@@ -35,6 +35,7 @@ import {
   moveBook,
   moveBookToBookcase,
   nextFreeSlot,
+  readShelfMeta,
   touchBookOpened,
 } from '../../data/books';
 import {
@@ -104,10 +105,15 @@ import {
   prefersReducedMotion,
   watchReducedMotion,
 } from './env';
-import { persistBookStyle } from './bookIdentity';
+import {
+  bookStyleOverridesFor,
+  persistBookStyle,
+  themeSpineDefaults,
+} from './bookIdentity';
 import { FloorStampCache } from './floorStamps';
 import {
   loadLibraryPrefs,
+  prefsForBookcase,
   resolveLibrary,
   saveLibraryPrefs as saveLibraryPrefsFn,
   snapshotLibraryPrefs,
@@ -926,12 +932,8 @@ export class ShelfWorld {
    *     book that is the pigment, because `freshBookStyleOverrides` pins
    *     everything EXCEPT the colour. The same seed therefore comes out a
    *     different colour in a different case, and recognising a spine is how a
-   *     reader finds a book. `keepAppearance` is that guard, and the style it
-   *     wants is the one THIS room resolved: `factory.getStyle` is the very
-   *     object the spine on screen was baked from, so what gets pinned is what
-   *     the reader is looking at, not a second guess at it. It is offered for
-   *     every book and merged UNDER the book's own entries by the data layer,
-   *     so a reader's explicit choice is never overwritten.
+   *     reader finds a book. `keepAppearance` is that guard — see `faceToPin`
+   *     for what goes into it and why it is not simply the whole face.
    *  2. **The landing floor.** A book on floor 9 sent to an eight-floor case
    *     would stand on a floor that case does not draw: present in the table,
    *     invisible on the shelf. Clamped here because `data/books.ts` must not
@@ -947,8 +949,7 @@ export class ShelfWorld {
     const target = snapshotBookcases().list.find((c) => c.id === bookcaseId);
     if (target === undefined) return false;
 
-    const keepAppearance = { ...this.factory.getStyle(book).style } as unknown as
-      Record<string, unknown>;
+    const keepAppearance = this.faceToPin(book, bookcaseId);
     const floor = clamp(book.floor, 0, clampFloorCount(target.floors) - 1);
 
     // A ghost following the pointer is about to lose the book underneath it.
@@ -967,6 +968,60 @@ export class ShelfWorld {
     this.factory.invalidate(bookId);
     await this.refreshData();
     return true;
+  }
+
+  /**
+   * The face to freeze onto a book before it changes rooms: the fields the
+   * TARGET room would resolve DIFFERENTLY, and nothing else.
+   *
+   * The obvious version of this — pin the whole resolved face, which is what it
+   * did first — keeps the colour and still changes the book. `spineParamsFor`
+   * derives one flag from the SHAPE of the override blob rather than from its
+   * values: `materialPinned: pinned.has('material')`, which is how the studio
+   * says "the reader touched the covering chip, so it overrules the binding's
+   * own covering". Pinning all 24 fields sets that flag for a book whose reader
+   * never touched anything, the binding stops choosing its own surface, and the
+   * spine that left with a grained calf arrives in smooth leather. The move
+   * repaints exactly the thing the move exists not to repaint — visible, and
+   * silent in every field of the blob, because no VALUE changed.
+   *
+   * So: resolve the book in the room it is going to (the rolls in
+   * `resolveBookStyle` are drawn unconditionally and in a fixed order, so a
+   * partial pin cannot reshuffle the fields it leaves alone), diff that against
+   * the face on screen, and pin the difference. Usually that is `{ pigment }`
+   * and the book crosses the room byte-identical. Null when the two rooms
+   * resolve it the same way — there is nothing to freeze, and an undressed book
+   * is better left undressed.
+   *
+   * `material` is held out of that diff even when the two rooms disagree about
+   * it, because pinning it is the flag above and the flag is what the SHELF
+   * reads. Left out, the spine draws the covering it has always drawn; the
+   * cost is that the cover of a book whose rooms disagree may come out in the
+   * new room's material. That is the right side to lose on — the spine is what
+   * the reader is scanning for, and `renderSpine` never reads `material` at all
+   * unless the flag says a reader chose it.
+   */
+  private faceToPin(
+    book: Book,
+    bookcaseId: string,
+  ): Record<string, unknown> | null {
+    const here = { ...this.factory.getStyle(book).style } as unknown as Record<
+      string,
+      unknown
+    >;
+    const there = resolveBookStyle(
+      book.spineSeed,
+      themeSpineDefaults(resolveLibrary(prefsForBookcase(bookcaseId)).theme),
+      bookStyleOverridesFor(book),
+      { pageCount: readShelfMeta(book)?.pageCount },
+    ).style as unknown as Record<string, unknown>;
+
+    const pin: Record<string, unknown> = {};
+    for (const key of Object.keys(here)) {
+      if (key === 'material') continue;
+      if (!Object.is(here[key], there[key])) pin[key] = here[key];
+    }
+    return Object.keys(pin).length > 0 ? pin : null;
   }
 
   /* ---------------------------- case geometry ----------------------------- */

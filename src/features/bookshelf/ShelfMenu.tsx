@@ -180,6 +180,10 @@ function MenuList<A extends string>(props: {
   onRun(action: A): void;
 }): JSX.Element {
   const [selected, setSelected] = createSignal(0);
+  /* The rows themselves, so a selection the keyboard walks out of the visible
+     part of a SCROLLING list (the case list, in a library of two dozen) brings
+     itself back into view instead of moving invisibly. */
+  const rows: HTMLButtonElement[] = [];
 
   onMount(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -188,7 +192,11 @@ function MenuList<A extends string>(props: {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();
-        setSelected((s) => (s + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+        setSelected((s) => {
+          const next = (s + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+          rows[next]?.scrollIntoView({ block: 'nearest' });
+          return next;
+        });
       } else if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
@@ -214,7 +222,10 @@ function MenuList<A extends string>(props: {
           /* Set imperatively because the attribute's NAME varies per menu, and
              a JSX spread of `Record<string, string>` is not assignable to the
              button's props. One assignment, on a node that never changes row. */
-          ref={(node) => node.setAttribute(props.attr, item.action)}
+          ref={(node) => {
+            node.setAttribute(props.attr, item.action);
+            rows[index()] = node;
+          }}
           onMouseEnter={() => setSelected(index())}
           onMouseDown={(e) => {
             e.preventDefault();
@@ -378,13 +389,33 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
   };
 
   /**
+   * How tall the case list's own body may get before it scrolls.
+   *
+   * The ~20 cap is what stops the list being unbounded, and it is not by itself
+   * enough: twenty rows plus the way back is still 750-odd px, and "N more"
+   * asks for every case there is. So the BODY scrolls and the card's heading,
+   * its promise and the way out stay where they are — the same shape the rail's
+   * panels settled on. Measured against the window, because a 1080p screen
+   * should show the whole list and a laptop should still show a card.
+   */
+  const listMax = (): number =>
+    Math.max(136, Math.min(460, window.innerHeight - 260));
+
+  /**
    * How tall the card is allowed to get, for `MenuCard`'s bottom clamp. Fixed
    * at the base card's height everywhere except the case list, which is as
    * long as the reader's library — a clamp that assumed eight rows would let a
    * twelve-case list run off the bottom of the window.
+   *
+   * It has to be the card's REAL height, not a comfortable-looking constant: it
+   * is subtracted from the window height to place the top edge, so a card told
+   * it is 620px tall while painting 844 hangs the last six cases off the bottom
+   * of the screen where nothing can reach them.
    */
   const reach = (): number =>
-    mode() === 'move-to' ? Math.min(620, 96 + caseItems().length * 34) : 300;
+    mode() === 'move-to'
+      ? Math.min(window.innerHeight - 16, 108 + Math.min(listMax(), caseItems().length * 34))
+      : 300;
 
   function run(action: ShelfMenuAction): void {
     if (action === 'rename') {
@@ -449,7 +480,20 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
         <p class="shelf-menu__hint shelf-menu__hint-tight">
           It keeps the colours it has here.
         </p>
-        <MenuList items={caseItems()} attr="data-shelf-case" onRun={runCase} />
+        {/* Inline rather than a class: the height is a fact about the WINDOW,
+            and shelf.css has no way to say "as many rows as fit tonight". */}
+        <div
+          class="shelf-menu__scroll"
+          style={{
+            'max-height': `${listMax()}px`,
+            'overflow-y': 'auto',
+            /* The app's own thin bar, as every other scrolling surface asks
+               for; the colours come from global.css. */
+            'scrollbar-width': 'thin',
+          }}
+        >
+          <MenuList items={caseItems()} attr="data-shelf-case" onRun={runCase} />
+        </div>
       </Show>
 
       <Show when={mode() === 'rename'}>

@@ -12,6 +12,7 @@ import {
   highlightAttrs,
   type HighlightStyle,
 } from '../highlightStyles';
+import { COLUMN_GAPS, type ColumnGap } from '../nodes/columns';
 import {
   applyEffectAt,
   blockToScript,
@@ -248,6 +249,99 @@ const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Columns — count, widths, gap, unwrap
+//
+// One submenu that reads sensibly on ANY block, because the registry is built
+// without knowing what was right-clicked (buildBlockContextMenu takes no
+// context, and the controller that would supply one is not this file's to
+// change). On a columns block "Three columns" recounts it; on a paragraph the
+// same row wraps that paragraph into three. The rows that only make sense on
+// an existing layout (widths, gap, unwrap) do nothing anywhere else, which is
+// what a disabled row would have done anyway.
+// ---------------------------------------------------------------------------
+
+const COLUMN_GAP_LABELS: Record<ColumnGap, string> = {
+  sm: 'Narrow gap',
+  md: 'Medium gap',
+  lg: 'Wide gap',
+};
+
+/** True when the top-level block at `pos` is a columns layout. */
+function columnsBlockAt(editor: Editor, pos: number): boolean {
+  return editor.state.doc.nodeAt(pos)?.type.name === 'columns';
+}
+
+/**
+ * Run `command` with the columns block at `pos` node-selected.
+ *
+ * The columns commands find their node from the selection, and the menu's own
+ * `withBlockSelection` drops a CARET inside the block — which for a nested
+ * layout would find the inner columns rather than the one that was clicked.
+ */
+function withColumnsAt(
+  editor: Editor,
+  pos: number,
+  command: (editor: Editor) => boolean,
+): boolean {
+  if (!columnsBlockAt(editor, pos)) return false;
+  if (!editor.chain().focus().setNodeSelection(pos).run()) return false;
+  return command(editor);
+}
+
+function columnCountItem(count: number, title: string): ContextMenuItem {
+  return {
+    kind: 'item',
+    id: `columns-${count}`,
+    title,
+    glyph: '▥',
+    run: ({ editor, pos }) => {
+      if (columnsBlockAt(editor, pos)) {
+        withColumnsAt(editor, pos, (e) => e.chain().setColumnCount(count).run());
+      } else {
+        withBlockSelection(editor, pos, (e) =>
+          e.chain().setColumns(count).run(),
+        );
+      }
+    },
+  };
+}
+
+const COLUMN_ITEMS: readonly ContextMenuItem[] = [
+  columnCountItem(2, 'Two columns'),
+  columnCountItem(3, 'Three columns'),
+  columnCountItem(4, 'Four columns'),
+  {
+    kind: 'item',
+    id: 'columns-even',
+    title: 'Even widths',
+    glyph: '≡',
+    run: ({ editor, pos }) => {
+      withColumnsAt(editor, pos, (e) => e.chain().evenColumns().run());
+    },
+  },
+  ...COLUMN_GAPS.map(
+    (gap): ContextMenuItem => ({
+      kind: 'item',
+      id: `columns-gap-${gap}`,
+      title: COLUMN_GAP_LABELS[gap],
+      glyph: '⇔',
+      run: ({ editor, pos }) => {
+        withColumnsAt(editor, pos, (e) => e.chain().setColumnGap(gap).run());
+      },
+    }),
+  ),
+  {
+    kind: 'item',
+    id: 'columns-unwrap',
+    title: 'Back to one column',
+    glyph: '↺',
+    run: ({ editor, pos }) => {
+      withColumnsAt(editor, pos, (e) => e.chain().unsetColumns().run());
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Effects — quick-apply toggles (BlockEffects attrs)
 // ---------------------------------------------------------------------------
 
@@ -306,6 +400,7 @@ export function buildBlockContextMenu(): ContextMenuEntry[] {
     { kind: 'submenu', id: 'turn-into', title: 'Turn into', glyph: '⇄', items: TURN_INTO_ITEMS },
     { kind: 'submenu', id: 'color', title: 'Color', glyph: 'A', items: COLOR_ITEMS },
     { kind: 'submenu', id: 'highlight', title: 'Highlight', glyph: '▰', items: HIGHLIGHT_ITEMS },
+    { kind: 'submenu', id: 'columns', title: 'Columns', glyph: '▥', items: COLUMN_ITEMS },
     { kind: 'submenu', id: 'effects', title: 'Effects', glyph: '✎', items: EFFECT_ITEMS },
     { kind: 'divider' },
     {

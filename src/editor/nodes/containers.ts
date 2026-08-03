@@ -550,91 +550,73 @@ export const PhotoCorner = Node.create({
 });
 
 // ---------------------------------------------------------------------------
-// columns / col — 2-4 side-by-side columns, equal or weighted widths
+// Two fastenings — the drawer's odd pair
+//
+// Everything above is a SURFACE: a thing with an inside, which the reader
+// writes on or keeps a keepsake in. These two are not. A wax seal closes
+// something and a map pin holds a place down; both arrive ON TOP of writing
+// that already exists. That is the whole reason they earn their own names
+// rather than being another `frame=` value — the content sits BESIDE the
+// object rather than inside it, and the CSS lays them out that way.
 // ---------------------------------------------------------------------------
 
-export const COLUMN_GAPS = ['sm', 'md', 'lg'] as const;
-export type ColumnGap = (typeof COLUMN_GAPS)[number];
-
-export const Columns = Node.create({
-  name: 'columns',
-
+/** A blob of sealing wax over a ribbon, pressed with a monogram. */
+export const WaxSeal = Node.create({
+  name: 'wax-seal',
   group: 'block',
-
-  content: 'col{2,4}',
-
+  content: 'block+',
   defining: true,
-
-  isolating: true,
-
   draggable: true,
 
   addAttributes() {
-    return {
-      gap: {
-        default: null as ColumnGap | null,
-        parseHTML: (element: HTMLElement) => {
-          const raw = element.getAttribute('data-gap');
-          return raw !== null && (COLUMN_GAPS as readonly string[]).includes(raw)
-            ? (raw as ColumnGap)
-            : null;
-        },
-        renderHTML: (attributes: Record<string, unknown>) =>
-          typeof attributes.gap === 'string' &&
-          (COLUMN_GAPS as readonly string[]).includes(attributes.gap)
-            ? { 'data-gap': attributes.gap }
-            : {},
-      },
-    };
+    return keepsakeAttributes('terracotta');
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-type="columns"]' }];
+    return [{ tag: 'div[data-type="wax-seal"]' }];
   },
 
-  renderHTML({ HTMLAttributes }) {
-    return [
-      'div',
-      mergeAttributes(HTMLAttributes, { 'data-type': 'columns' }),
-      0,
-    ];
+  renderHTML({ node, HTMLAttributes }) {
+    const attrs: Record<string, unknown> = { 'data-type': 'wax-seal' };
+    if (!hasExplicitRotate(node)) {
+      // A wider swing than the papers get: a card is placed, a seal is
+      // STRUCK, and a die pressed by hand never lands square.
+      const seed = `${String(node.attrs.id ?? '')}|wax|${String(node.attrs.title ?? '')}`;
+      attrs.style = `--nb-rotate: ${seededTilt(seed, 3)}deg`;
+    }
+    return ['div', mergeAttributes(HTMLAttributes, attrs), 0];
   },
 });
 
-export const Column = Node.create({
-  name: 'col',
-
-  // No group on purpose: a col may only live inside a columns node.
+/** A pin dropped on a place, with the walk in behind it. */
+export const MapPin = Node.create({
+  name: 'map-pin',
+  group: 'block',
   content: 'block+',
-
   defining: true,
-
-  isolating: true,
+  draggable: true,
 
   addAttributes() {
-    return {
-      width: {
-        default: null as number | null,
-        parseHTML: (element: HTMLElement) => {
-          const parsed = Number(element.getAttribute('data-width'));
-          return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-        },
-        renderHTML: (attributes: Record<string, unknown>) => {
-          const value = attributes.width;
-          if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-            return {};
-          }
-          return { 'data-width': String(value), style: `flex-grow: ${value}` };
-        },
-      },
-    };
+    return keepsakeAttributes('terracotta');
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-type="col"]' }];
+    return [{ tag: 'div[data-type="map-pin"]' }];
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'col' }), 0];
+    // Never tilted. A pin that is not upright does not read as pushed in,
+    // it reads as fallen out.
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'map-pin' }), 0];
   },
 });
+
+// ---------------------------------------------------------------------------
+// columns / col live in ./columns.ts
+//
+// They were declared here, beside the stationery, as a schema and nothing
+// else — no flex rule, no way to add or remove a column, no way to move a
+// divider. The finish (commands + a resize plugin + the layout CSS) needed a
+// file of its own, and two live copies of one node name is exactly the kind
+// of thing that keeps working until somebody edits the wrong one.
+// ---------------------------------------------------------------------------

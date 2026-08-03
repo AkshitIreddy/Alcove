@@ -14,11 +14,10 @@ import { LinkCard } from '../media';
 import {
   Banner,
   Card,
-  Column,
-  Columns,
   Envelope,
   IndexCard,
   Ledger,
+  MapPin,
   Marginalia,
   PhotoCorner,
   Polaroid,
@@ -30,7 +29,11 @@ import {
   Tag,
   TicketStub,
   WashiBox,
+  WaxSeal,
 } from './containers';
+import { Column, Columns } from './columns';
+import { Footnote } from './footnote';
+import { MathBlock, MathInline } from './math';
 import { Spoiler } from './spoiler';
 import { BlockEffects } from '../effects/blockEffects';
 
@@ -56,6 +59,9 @@ const registry: CustomNodeRegistration[] = [
   { name: Spoiler.name, extension: Spoiler },
   { name: Columns.name, extension: Columns },
   { name: Column.name, extension: Column },
+  { name: Footnote.name, extension: Footnote },
+  { name: MathBlock.name, extension: MathBlock },
+  { name: MathInline.name, extension: MathInline },
   { name: IndexCard.name, extension: IndexCard },
   { name: Envelope.name, extension: Envelope },
   { name: Stamp.name, extension: Stamp },
@@ -67,6 +73,9 @@ const registry: CustomNodeRegistration[] = [
   { name: Postcard.name, extension: Postcard },
   { name: Ledger.name, extension: Ledger },
   { name: PhotoCorner.name, extension: PhotoCorner },
+  // The two fastenings.
+  { name: WaxSeal.name, extension: WaxSeal },
+  { name: MapPin.name, extension: MapPin },
   // Universal decorative attrs (rotate/tape/washi/shadow/frame/paper/underline).
   { name: BlockEffects.name, extension: BlockEffects },
 ];
@@ -101,11 +110,10 @@ export {
 export {
   Banner,
   Card,
-  Column,
-  Columns,
   Envelope,
   IndexCard,
   Ledger,
+  MapPin,
   Marginalia,
   PhotoCorner,
   Polaroid,
@@ -117,11 +125,39 @@ export {
   Tag,
   TicketStub,
   WashiBox,
-  COLUMN_GAPS,
+  WaxSeal,
   isWashColor,
   seededTilt,
-  type ColumnGap,
 } from './containers';
+export {
+  Column,
+  Columns,
+  COLUMN_GAPS,
+  MAX_COLUMNS,
+  MIN_COLUMNS,
+  MIN_COLUMN_SHARE,
+  columnIndexAt,
+  columnsAround,
+  evenColumnWeights,
+  recountColumns,
+  resizeColumnWeights,
+  type ColumnGap,
+} from './columns';
+export {
+  Footnote,
+  EMPTY_FOOTNOTE_HINT,
+  collectFootnotes,
+  type FootnoteRef,
+} from './footnote';
+export { MathBlock, MathInline } from './math';
+export {
+  KNOWN_MACROS,
+  atomHeight,
+  mathToHtml,
+  parseMath,
+  type Atom,
+  type MathRenderOptions,
+} from './mathTex';
 export { Spoiler } from './spoiler';
 export {
   BlockEffects,

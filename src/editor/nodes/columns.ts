@@ -29,9 +29,24 @@
  *    transaction lands on mouseup. Nothing is written per frame, so the drag
  *    costs no re-render, no autosave and no pagination measurement, and undo
  *    takes the whole resize back in one press.
+ * 4. NESTING falls out of the schema (`col` holds `block+`, `columns` IS a
+ *    block) but the INSERT command has to know which one the reader meant.
+ *    `/columns` with the caret inside a column nests a new layout there;
+ *    `setColumns` reaching a columns node it has SELECTED (the right-click
+ *    menu NodeSelects the block) recounts that node instead. Past
+ *    `MAX_COLUMN_DEPTH` nesting recounts too, rather than doing nothing:
+ *    a command that silently no-ops reads as a broken menu item.
+ * 5. GETTING OUT. `col` is `isolating`, which is what stops a backspace at the
+ *    top of column two from eating column one. The arrow keys cross the
+ *    divider by themselves — measured, not assumed: this file briefly carried
+ *    a ←/→ keymap to "fix" that, and the fix never once ran because the
+ *    browser had already moved the caret. What genuinely does not work is
+ *    BACKSPACE in a layout with nothing in it: there is nothing to delete, so
+ *    the key is inert and a reader who made a columns block by accident cannot
+ *    unmake it from the keyboard. That one case is handled below.
  *
- * The weight maths (`resizeColumnWeights`, `evenColumnWeights`) is pure and
- * DOM-free so it unit-tests in Node.
+ * The weight maths (`resizeColumnWeights`, `evenColumnWeights`) and the count
+ * change (`recountColumns`) are pure and DOM-free so they unit-test in Node.
  */
 import { Node, mergeAttributes } from '@tiptap/core';
 import type { JSONContent } from '@tiptap/core';
@@ -51,6 +66,17 @@ export type ColumnGap = (typeof COLUMN_GAPS)[number];
 /** The schema says `col{2,4}`; these two constants ARE that range. */
 export const MIN_COLUMNS = 2;
 export const MAX_COLUMNS = 4;
+
+/**
+ * How many columns blocks may sit inside one another.
+ *
+ * The schema places no limit (a `col` takes `block+`, and a `columns` IS a
+ * block), and a page leaf is about 460px of writable width. Two levels is
+ * already four-into-four in the worst case — sixteen slivers under 30px, which
+ * is a column that can hold no word. Three would be a page of confetti, so the
+ * insert command stops nesting here and recounts instead.
+ */
+export const MAX_COLUMN_DEPTH = 2;
 
 /**
  * The narrowest a column may be dragged, as a share of the pair it is being
@@ -146,6 +172,16 @@ export function columnIndexAt(state: EditorState): number | null {
   return null;
 }
 
+/** How many columns blocks the selection sits inside (0 when it is in none). */
+export function columnsDepthAt(state: EditorState): number {
+  const $from = state.selection.$from;
+  let depth = 0;
+  for (let d = $from.depth; d > 0; d -= 1) {
+    if ($from.node(d).type.name === 'columns') depth += 1;
+  }
+  return depth;
+}
+
 // ---------------------------------------------------------------------------
 // The nodes
 // ---------------------------------------------------------------------------
@@ -177,6 +213,59 @@ function flattenColumns(node: ProseMirrorNode): ProseMirrorNode[] {
     col.forEach((block) => blocks.push(block));
   });
   return blocks;
+}
+
+/**
+ * `columns` with exactly `wanted` columns — the whole count change, pure.
+ *
+ * Content-preserving in both directions, which is the property the menu leans
+ * on to offer "2 / 3 / 4 columns" as plain choices rather than a destructive
+ * "remove column": growing appends empty columns, shrinking MERGES the surplus
+ * columns' blocks onto the end of the last survivor. Nothing a reader typed
+ * can be lost to a layout click.
+ *
+ * Widths reset on every count change. Keeping two hand-set weights and adding
+ * a third would silently make the new column the odd one out, and the reader
+ * asked for a column, not for a proportion.
+ *
+ * @returns the replacement node, or null when the count is already right or
+ *          the request falls outside `col{2,4}`.
+ */
+export function recountColumns(
+  node: ProseMirrorNode,
+  wanted: number,
+): ProseMirrorNode | null {
+  if (!Number.isFinite(wanted)) return null;
+  const target = clamp(Math.round(wanted), MIN_COLUMNS, MAX_COLUMNS);
+  const current = node.childCount;
+  if (target === current) return null;
+  const colType = node.type.schema.nodes.col;
+  if (colType === undefined) return null;
+
+  const kept: ProseMirrorNode[] = [];
+  for (let i = 0; i < Math.min(target, current); i += 1) {
+    kept.push(colType.create(null, node.child(i).content));
+  }
+  if (target < current) {
+    const spare: ProseMirrorNode[] = [];
+    for (let i = target; i < current; i += 1) {
+      node.child(i).forEach((block) => spare.push(block));
+    }
+    if (spare.length > 0 && kept.length > 0) {
+      const last = kept[kept.length - 1]!;
+      kept[kept.length - 1] = colType.create(
+        null,
+        last.content.append(Fragment.fromArray(spare)),
+      );
+    }
+  } else {
+    for (let i = current; i < target; i += 1) {
+      const empty = colType.createAndFill();
+      if (empty !== null) kept.push(empty);
+    }
+  }
+  if (kept.length !== target) return null;
+  return node.type.create(node.attrs, kept);
 }
 
 export const Columns = Node.create({
@@ -229,8 +318,16 @@ export const Columns = Node.create({
         (count = MIN_COLUMNS) =>
         ({ state, chain }) => {
           const wanted = clamp(Math.round(count), MIN_COLUMNS, MAX_COLUMNS);
-          const existing = columnsAround(state);
-          if (existing !== null) {
+          const selected = (state.selection as { node?: ProseMirrorNode }).node;
+          // The right-click menu NodeSelects the block before it opens, so a
+          // SELECTED columns node means "make this one N wide". A caret inside
+          // a column means the reader is writing there and wants a nested
+          // layout — until the nesting cap, past which recounting is the only
+          // sane thing left to do.
+          const recount =
+            (selected !== undefined && selected.type.name === 'columns') ||
+            columnsDepthAt(state) >= MAX_COLUMN_DEPTH;
+          if (recount && columnsAround(state) !== null) {
             return chain().setColumnCount(wanted).run();
           }
           const { $from, $to } = state.selection;
@@ -263,48 +360,14 @@ export const Columns = Node.create({
         ({ state, tr, dispatch }) => {
           const ref = columnsAround(state);
           if (ref === null) return false;
-          const wanted = clamp(Math.round(count), MIN_COLUMNS, MAX_COLUMNS);
-          const current = ref.node.childCount;
-          if (wanted === current) return false;
+          const replacement = recountColumns(ref.node, count);
+          if (replacement === null) return false;
           if (!dispatch) return true;
-
-          const colType = state.schema.nodes.col;
-          const paragraph = state.schema.nodes.paragraph;
-          if (colType === undefined || paragraph === undefined) return false;
-
-          const kept: ProseMirrorNode[] = [];
-          for (let i = 0; i < Math.min(wanted, current); i += 1) {
-            // Widths reset on a count change: keeping two hand-set weights
-            // and adding a third would silently make the new column the odd
-            // one out, and the reader never asked for that.
-            kept.push(colType.create(null, ref.node.child(i).content));
-          }
-          if (wanted < current) {
-            // Merge the surplus columns' blocks into the last survivor rather
-            // than dropping them — a layout choice must never eat prose.
-            const spare: ProseMirrorNode[] = [];
-            for (let i = wanted; i < current; i += 1) {
-              ref.node.child(i).forEach((block) => spare.push(block));
-            }
-            if (spare.length > 0) {
-              const last = kept[kept.length - 1]!;
-              kept[kept.length - 1] = colType.create(
-                null,
-                last.content.append(Fragment.fromArray(spare)),
-              );
-            }
-          } else {
-            for (let i = current; i < wanted; i += 1) {
-              const empty = colType.createAndFill();
-              if (empty !== null) kept.push(empty);
-            }
-          }
-          if (kept.length < MIN_COLUMNS) return false;
-
-          const replacement = ref.node.type.create(ref.node.attrs, kept);
           tr.replaceWith(ref.pos, ref.pos + ref.node.nodeSize, replacement);
           tr.setSelection(
-            TextSelection.near(tr.doc.resolve(Math.min(ref.pos + 2, tr.doc.content.size))),
+            TextSelection.near(
+              tr.doc.resolve(Math.min(ref.pos + 2, tr.doc.content.size)),
+            ),
           );
           return true;
         },
@@ -350,10 +413,102 @@ export const Columns = Node.create({
     };
   },
 
+  addKeyboardShortcuts() {
+    return {
+      // Escaping an empty layout: with nothing inside it to delete, a
+      // backspace at the very start of column one is otherwise inert, and a
+      // reader who made a columns block by accident is stuck with it.
+      Backspace: ({ editor }) => dropEmptyColumns(editor.state, editor.view),
+    };
+  },
+
   addProseMirrorPlugins() {
     return [columnResizePlugin()];
   },
 });
+
+// ---------------------------------------------------------------------------
+// Getting out of an empty layout (the keymap above)
+// ---------------------------------------------------------------------------
+
+/** The `col` the selection is in, with its depth, or null. */
+function colAround(
+  state: EditorState,
+): { depth: number; node: ProseMirrorNode } | null {
+  const $from = state.selection.$from;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth);
+    if (node.type.name === 'col') return { depth, node };
+  }
+  return null;
+}
+
+/**
+ * True when the caret sits at the very first writable position of the column
+ * at `colDepth`.
+ *
+ * NOT `pos === $from.start(colDepth)`: that is the position between the column
+ * and its first block, and a text caret is never there — it is one further in,
+ * inside the paragraph. Getting this wrong is silent (the shortcut simply
+ * never fires) which is exactly how the arrow-key version of it survived long
+ * enough to be measured and deleted.
+ */
+export function atColumnStart(state: EditorState, colDepth: number): boolean {
+  const $from = state.selection.$from;
+  if ($from.parentOffset !== 0) return false;
+  for (let depth = $from.depth; depth > colDepth; depth -= 1) {
+    if ($from.index(depth - 1) !== 0) return false;
+  }
+  return true;
+}
+
+/** True when nothing in `node` would be lost by deleting it. */
+export function isEmptyLayout(node: ProseMirrorNode): boolean {
+  if (node.textContent.trim().length > 0) return false;
+  // An image, a diagram or a formula carries no text of its own.
+  let heavy = false;
+  node.descendants((child) => {
+    if (child.isLeaf && child.type.name !== 'text') heavy = true;
+    return !heavy;
+  });
+  return !heavy;
+}
+
+/**
+ * Backspace at the start of the first column of an EMPTY layout removes the
+ * layout. Empty is the whole test: a columns block with a word anywhere in it
+ * is left alone, so this can never swallow prose.
+ */
+function dropEmptyColumns(
+  state: EditorState,
+  view: EditorView | undefined,
+): boolean {
+  const selection = state.selection;
+  if (!selection.empty) return false;
+  const found = colAround(state);
+  if (found === null) return false;
+  const $from = selection.$from;
+  if (!atColumnStart(state, found.depth)) return false;
+  const columnsDepth = found.depth - 1;
+  if ($from.index(columnsDepth) !== 0) return false;
+  const parent = $from.node(columnsDepth);
+  if (parent.type.name !== 'columns') return false;
+  if (!isEmptyLayout(parent)) return false;
+
+  if (view !== undefined) {
+    const pos = $from.before(columnsDepth);
+    const paragraph = state.schema.nodes.paragraph;
+    const tr = state.tr;
+    if (paragraph === undefined) {
+      tr.delete(pos, pos + parent.nodeSize);
+    } else {
+      tr.replaceWith(pos, pos + parent.nodeSize, paragraph.create());
+      tr.setSelection(TextSelection.near(tr.doc.resolve(pos)));
+    }
+    view.dispatch(tr.scrollIntoView());
+  }
+  return true;
+}
 
 export const Column = Node.create({
   name: 'col',
@@ -453,9 +608,63 @@ function createGhost(): HTMLElement {
   return ghost;
 }
 
+/** Root attribute set while the pointer is inside a column gap. */
+const DIVIDER_HOVER_ATTR = 'data-nb-col-divider';
+
+/**
+ * Say "the pointer is on a divider" — on the ROOT element, not on the columns
+ * block.
+ *
+ * Two constraints meet here and only this satisfies both. The cursor cannot be
+ * a plain `[data-type='columns'] { cursor: col-resize }` rule, because the
+ * custom writing cursors (editor.css, settings.cursorStyle) are set on
+ * `.nb-prose` and inherit down — a rule on the container would hand the resize
+ * cursor to every word in the columns too. And a class on the columns element
+ * does not survive: ProseMirror owns that DOM, and it was measurably gone
+ * again by the next frame while the pointer had not moved.
+ *
+ * So the state goes on <html>, and editor.css intersects it with `:hover` to
+ * get back to the one block the pointer is actually over.
+ */
+function markDividerHover(on: boolean): void {
+  const root = document.documentElement;
+  if (on) root.setAttribute(DIVIDER_HOVER_ATTR, 'true');
+  else root.removeAttribute(DIVIDER_HOVER_ATTR);
+}
+
 function columnResizePlugin(): Plugin {
   return new Plugin({
     key: columnResizeKey,
+    // A REAL listener on the editor's own element, not a `handleDOMEvents`
+    // entry: ProseMirror only wires the DOM events it knows about plus the
+    // ones present when it last ensured its listeners, and mousemove is not
+    // in that set — the hover cursor silently never appeared.
+    view: (view: EditorView) => {
+      const onMove = (event: MouseEvent): void => {
+        if (!view.editable) return;
+        const target = event.target;
+        if (
+          !(target instanceof HTMLElement) ||
+          target.dataset.type !== 'columns'
+        ) {
+          markDividerHover(false);
+          return;
+        }
+        markDividerHover(
+          dividerIndexAt(columnElements(target), event.clientX) !== null,
+        );
+      };
+      const onLeave = (): void => markDividerHover(false);
+      view.dom.addEventListener('mousemove', onMove);
+      view.dom.addEventListener('mouseleave', onLeave);
+      return {
+        destroy: () => {
+          view.dom.removeEventListener('mousemove', onMove);
+          view.dom.removeEventListener('mouseleave', onLeave);
+          markDividerHover(false);
+        },
+      };
+    },
     props: {
       handleDOMEvents: {
         mousedown: (view: EditorView, event: Event): boolean => {

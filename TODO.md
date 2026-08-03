@@ -86,8 +86,24 @@ agents reported honestly, plus the seams between them that I closed by hand.
       at its own coordinates on a resting shelf. `cab49e7`
 - [ ] Max zoom on a 2× display is the one soft spot left: 0.80 texels per device
       pixel at zoom 2.5. Twice what it was, still under 1.
-- [ ] Spines are not disk-cached, so every launch shows the lo bake until the hi
-      one lands. Now 1.24 texels/devpx (was 0.62), but the transient remains.
+- [x] Spines are not disk-cached, so every launch shows the lo bake until the hi
+      one lands. **Measured, and not worth doing.** `shots-now/spine-transient.mjs`
+      polls the factory's two buckets against the visible books: every visible
+      spine is at the hi tier **846ms after the shelf appears**, on SwiftShader
+      — the slowest renderer this app ever runs on. It is also not the lo bake:
+      at the one sample where anything was unsettled, 5 of 6 spines were on the
+      placeholder tint and 1 on lo, so the moment is placeholder → hi.
+      A disk cache would buy less than a second there, and `art/bake.ts` has a
+      measured header explaining why the disk cache was REMOVED: the PNG encode
+      costs more than redrawing flat art, the encode was awaited on the
+      critical path, and the read was awaited ahead of every producer on a
+      miss. Re-adding one for spines would repeat that with more objects.
+      Closing this rather than leaving it to be picked up as if it were free.
+      (While checking: `CLAUDE.md` still claimed bakes are "persisted to
+      appCacheDir as PNG" and warned that "the disk cache validates nothing
+      about a hit" — both stale since the removal, and both would have sent the
+      next reader the wrong way. Corrected, including a note that re-adding it
+      has already been tried and reverted.)
 - [x] In the lettering shelf every `hand` specimen renders a visually identical
       "Aa". It was a real bug, and far bigger than the specimen: the WHOLE
       lettering shelf had no CSS. `BlockEffects` wrote `data-font`, `data-ink`,

@@ -66,8 +66,42 @@ agents reported honestly, plus the seams between them that I closed by hand.
       so it is a choice, not a derivation.
       `shots-now/own-binding.mjs` drives the real strips and checks the trap
       that matters — picking one axis KEEPS the other three — then reloads.
-- [ ] No "add your own set" for sound, and no runtime filtering in a set's
-      levers (Howler exposes rate and volume per play, not a filter node).
+- [x] ~~No "add your own set" for sound, and no runtime filtering in a set's
+      levers (Howler exposes rate and volume per play, not a filter node).~~ —
+      **one half was wrong, the other half is half right.** Both delivered
+      honestly; `docs/design/sound.md` § *Sets: the two levers that were
+      written off* is the long version.
+      **Add your own set: built.** `sound/userSoundSets.ts` (pure registry, the
+      engine reads it on the play path) + `userSoundSetStore.ts` (dialog,
+      bytes, one `settings` row), following `templates/userStickers.ts`
+      exactly — `user:` id, bytes through `storeImageBytes` into
+      `$APPDATA/assets/images/`, which is the only asset-protocol scope a Web
+      Audio fetch inside the app can reach. A reader's set is a shipped BASE
+      plus overrides, so one typewriter sample makes a working set instead of
+      needing thirteen, and everything unfilled keeps the mastered loudness
+      hierarchy. Their file beats the base's substitution AND its silences; the
+      swap follows a layer; an unrecognisable file name is reported back rather
+      than assigned to whichever role was free.
+      **Runtime filtering: real, and per-SET not per-role.** `Howl` has no tone
+      control — that part was right. But `Howler.ctx` and `Howler.masterGain`
+      are public (both in `@types/howler`), so `sound/filter.ts` cuts the
+      `masterGain → destination` hop and splices real `BiquadFilterNode`s into
+      howler's own graph. `scripts/probe-sound-bus.mjs` MEASURES it in the
+      running app rather than asserting we called `createBiquadFilter`: a tone
+      into `masterGain`, an `AnalyserNode` either side, `far-room` −30.6 dB at
+      8 kHz and `music-box` −25.2 dB at 120 Hz / +3.1 dB at 3.2 kHz, each
+      agreeing with the wired node's own `getFrequencyResponse()` to 0.1 dB.
+      **What is still genuinely impossible, and why:** a PER-ROLE filter.
+      Everything reaches `masterGain` already mixed, and the only per-sound
+      node is `howl._sounds[i]._node` — private, undocumented, re-created per
+      play; a lever built on it would break on a howler patch release and break
+      silently. Also unavailable with `usingWebAudio === false` (HTML5 mode),
+      where `getEngineState().filter` reports `installed: false` with the
+      reason instead of pretending. And nothing conditions the reader's own
+      files: the warmth fit / lowpass lid / levelling are a `gen-sounds.mjs`
+      build step over ffmpeg-decoded float, not a runtime pass — the settings
+      panel says so where the buttons are.
+      `tests/sound-own.test.ts` (37) + `scripts/probe-own-sounds.mjs`.
 - [x] `docs/design/page-flip.md` specified the shadow/lighting model that was
       removed — warm crest highlight, pre-fold darkening, self-shadow. Doc
       corrected; `tests/flip.test.ts` gates their absence. `2cf330e`
@@ -695,18 +729,29 @@ out **30 failed / 62 passed**. Almost none of it was the app.
 - [x] ~~**A bookcase card reads "0 books" while books are visibly on its
       shelves.**~~ — `countBooksInBookcase`. Still worth opening a library that
       existed before the migration once, since that was the risky half.
-- [ ] Wallpaper defaults to `plain-parchment`, so none of the 50 papers show
+- [x] Wallpaper defaults to `plain-parchment`, so none of the 50 papers show
       until one is picked. Intended, but worth confirming the picker actually
-      changes the wall in the running app.
+      changes the wall in the running app. Both halves settled: the opening
+      paper is `pin-quiet` now (`plain-parchment` stayed behind as
+      `FALLBACK_WALLPAPER_ID`, the wall junk resolves to), and
+      `scripts/probe-vocabularies.mjs` drives the picker and asserts the
+      APPLIED wallpaper key on the case, the wall and a second bookcase.
 - [ ] The room axis now has 60 entries and `LibraryStudio`'s two `ColourRow`s
       still render `<For each={THEME_IDS}>` — 60 swatch dots each, twice, in a
       376px panel. Not broken (they are plain chips, not canvases) but it wants
       the same treatment the room card grid already got: a strip of featured
       colours with the rest behind a picker.
-- [ ] `data/bookcases.ts defaultThemeForOrd` indexes `THEME_IDS` by ordinal and
+- [x] `data/bookcases.ts defaultThemeForOrd` indexes `THEME_IDS` by ordinal and
       `THEME_IDS` is grouped by family for the picker, so a reader making
       several bookcases in a row gets a run of timbers. Documented as a
       deliberate trade at the declaration; stride or hash if it matters.
+      It strides now (23, coprime with 60, so all sixty are still visited
+      before one repeats). The correctness of that is a number-theory claim
+      living in a comment, and a comment cannot notice the table growing to 61
+      — so `tests/bookcase-rooms.test.ts` checks the properties instead: every
+      room is visited before any repeats, consecutive ordinals never land
+      within four of each other in a family-grouped table, and junk ordinals
+      (negative, fractional, MAX_SAFE_INTEGER) still return a real theme.
 - [ ] `docs/design/library-themes.md` still describes four rooms.
 - [x] ~~The tour told readers the **wood stain and the wallpaper** are behind
       the gear~~ — they moved to the library studio when they grew into real
@@ -724,10 +769,23 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       bare paper", and not a regression, but a reader who clicks it gets no
       answer at all. Either create the row on click, or draw that leaf as
       obviously not-a-page.
-- [ ] The app is being renamed **Notebook → Bellanote** and the rename is
+- [x] The app is being renamed **Notebook → Bellanote** and the rename is
       half-landed: `WELCOME_BOOK_TITLE` and the tour say Bellanote,
       `WELCOME_PAGE_SOURCES` page 1's own H1 still says Notebook, and so do
       `CLAUDE.md`, `README.md` and this file's heading.
+      Landed, and then landed again — the app is **Alcove** now, so this ran
+      twice. What made the second one cheap is `brand.json` (one source of
+      truth), `scripts/rename-app.mjs` (one command plus four printed manual
+      steps) and `tests/brand-consistency.test.ts` (14 checks, including that
+      `main.rs` calls the lib the Cargo manifest actually declares — the line
+      the first rename missed, which left Rust not compiling for several
+      commits while tsc and 1,480 tests stayed green).
+      The remaining "Notebook" strings are all deliberate and protected by
+      `brand.json`'s `doNotRename`: **Notebook Script** is the writing
+      language's own name, `notebook-bundle` is stamped into every `.nbk` ever
+      exported, and `LEGACY_WELCOME_BOOK_TITLES` is a list that only grows so
+      an old welcome book is still recognised and retitled rather than
+      duplicated.
 
 ## 🔴 Reported 2026-08-01
 

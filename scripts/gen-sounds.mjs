@@ -267,8 +267,26 @@ const safeName = (s) => s.replace(/[^a-z0-9.]+/gi, '_');
  */
 function decode(src, dest) {
   if (existsSync(dest)) return dest;
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', src, '-ac', '1', '-ar', String(SR),
-    '-c:a', 'pcm_f32le', dest], { stdio: 'pipe' });
+  try {
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', src, '-ac', '1', '-ar', String(SR),
+      '-c:a', 'pcm_f32le', dest], { stdio: 'pipe' });
+  } catch (err) {
+    // ENOENT here means ffmpeg is not on PATH, and the raw failure is a spawn
+    // error naming a file in a temp cache — which reads as "the download is
+    // corrupt" and sends you looking in the wrong place entirely. Anything else
+    // is a real decode failure and is rethrown untouched.
+    if (err?.code === 'ENOENT') {
+      throw new Error(
+        'ffmpeg is not on PATH.\n\n' +
+        '  `npm run sounds` rebuilds every cue from source recordings and uses\n' +
+        '  ffmpeg to decode them. It is a BUILD-TIME dependency only — the app\n' +
+        '  ships the finished .wav files in public/sounds and does not need it.\n\n' +
+        '  Install it (winget install Gyan.FFmpeg), or skip this script: the\n' +
+        '  cues in public/sounds are committed and already current.',
+      );
+    }
+    throw err;
+  }
   return dest;
 }
 

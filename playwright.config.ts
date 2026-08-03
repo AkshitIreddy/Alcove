@@ -17,7 +17,23 @@ export default defineConfig({
   // One worker: every test boots the same in-memory-DB app; SwiftShader is
   // CPU-rendered and parallel WebGL contexts starve each other headless.
   workers: 1,
-  retries: 0,
+  /*
+   * One retry, and only because of how this suite is run.
+   *
+   * Zero is the honest default when a suite is deterministic, and most of the
+   * assertions here are — they poll for state rather than fixed-waiting,
+   * precisely so they do not depend on timing. What is NOT deterministic is the
+   * environment: `reuseExistingServer` is true, so these run against whatever
+   * dev server is already up, sharing a CPU with SwiftShader's software WebGL
+   * and with a Vite process that may be mid-HMR from another window. A first
+   * attempt can lose to a 45s boot timeout for reasons that have nothing to do
+   * with the code under test.
+   *
+   * One retry, not two: it should absorb a starved boot, not paper over a race.
+   * A test that only passes on the second attempt is still a failing test, and
+   * the list reporter says which ones retried.
+   */
+  retries: 1,
   reporter: [['list']],
   use: {
     baseURL: 'http://localhost:1420',

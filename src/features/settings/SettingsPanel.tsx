@@ -851,7 +851,7 @@ export default function SettingsPanel(props: {
             label="start with Windows"
             hint={
               inTauri
-                ? 'open Notebook when you log in'
+                ? 'open Bellanote when you log in'
                 : 'available in the desktop app'
             }
           >
@@ -964,8 +964,13 @@ export default function SettingsPanel(props: {
           </Row>
           <div class="nbs-keys">
             <span class="nbs-row-label">shortcuts</span>
+            {/* Says what it is, not what it might become. "Rebinding is on its
+                way" was a promise with nothing behind it, and copy that
+                promises is worse than copy that just tells you where you
+                stand — the reader waits for something instead of learning the
+                keys. */}
             <span class="nbs-row-hint font-ui">
-              defaults for now — rebinding is on its way
+              these are fixed — a reference, not a picker
             </span>
             <ul class="nbs-keys-list">
               <For

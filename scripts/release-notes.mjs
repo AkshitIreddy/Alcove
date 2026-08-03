@@ -56,7 +56,7 @@ const tidy = (text) =>
     .replace(/^([a-z])/, (m) => m.toUpperCase());
 
 const lines = [];
-lines.push(`## Notebook ${tag}`);
+lines.push(`## Bellanote ${tag}`);
 lines.push('');
 
 const total = parsed.length;

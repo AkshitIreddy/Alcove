@@ -224,7 +224,7 @@ export function buildManifest(input: BuildManifestInput): BundleManifest {
     format: BUNDLE_FORMAT,
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     createdAt: input.createdAt,
-    app: { name: 'Notebook', version: input.appVersion },
+    app: { name: 'Bellanote', version: input.appVersion },
     scope: input.scope,
     variant: input.variant,
     layout: input.layout,
@@ -433,6 +433,9 @@ export function parseManifest(source: string | unknown): ManifestParseResult {
       schemaVersion,
       createdAt: asString(record.createdAt),
       app: {
+        // Defaults to the OLD name on purpose: a bundle without an app name is
+        // one written before the rename, and saying "Bellanote" about it would
+        // be inventing provenance.
         name: asString(asRecord(record.app)?.name, 'Notebook'),
         version: asString(asRecord(record.app)?.version, '?'),
       },

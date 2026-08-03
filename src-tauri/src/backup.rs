@@ -322,7 +322,7 @@ fn extract_archive(
         restored += 1;
     }
     if restored == 0 {
-        return Err("archive contains no Notebook backup entries".to_string());
+        return Err("archive contains no Bellanote backup entries".to_string());
     }
     Ok(restored)
 }

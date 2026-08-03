@@ -1,5 +1,39 @@
 # Bellanote — running TODO
 
+## 🔴 Reported 2026-08-03 — WORK THIS LIST
+
+- [ ] **Colour choosers are still ~8 wide.** Everywhere colour is an option it
+      offers about eight. At least 20, plus a way for the reader to enter their
+      own.
+- [ ] **Books read as low resolution on the shelf.** Look at the spine atlas /
+      LOD scale, not just the drawing.
+- [ ] **The back button scrolls away.** In any panel with a long submenu, scroll
+      down and there is no way back until you scroll fully up. Header must stay.
+- [ ] **"Rooms" do not change the bookcase or the wall**, which is what a room
+      is for. Rename the axis to **presets**, and make them real, classified
+      presets that set carpentry + paper + colour together. Use the mood tags
+      (formal, refined, fancy, goofy…) to generate candidates, then FINE-TUNE BY
+      LOOKING.
+- [ ] **Default shelf, wallpaper and welcome book look bland / cheap.** Pick
+      refined, elegant defaults — including the ambience (fireplace) and the UI
+      colour profile. The reader must still be able to change all of it.
+- [ ] **Drop the "read it / put it back" card.** A book that comes off the shelf
+      just opens. Put a tasteful back control top-left that fades once used.
+- [ ] **Page-turn artefact:** mid-turn, the bottom half of the ruled page shows
+      a shadowy band. Reproduce it and look.
+- [ ] **Cap every long option list at ~20 + "N more".** The catalogue's tape and
+      trim shelves show a hundred at once. Applies app-wide, and it is a
+      performance fix as much as a layout one.
+- [ ] **Bookmarks want customising** — a wide variety, like the other axes.
+- [ ] **"Leave focus mode" sits top-right; it belongs top-left.** Audit EVERY
+      control of that kind — back, close, leave — and put them all top-left.
+- [ ] **Sound presets:** the reader picks a set (clicks and the rest), the same
+      way they pick a binding or a room.
+- [ ] **Tooltips are the browser's grey bubble.** They need the app's own UI.
+- [ ] **Onboarding should say how open the customisation is.**
+- [ ] Throughout: fast and smooth, without giving up fidelity. Be clever rather
+      than cheap.
+
 ## ⏭️ NEXT UP (2026-08-01, end of session)
 
 Eight of the nine items from the "fifty of everything + fix all" pass are done

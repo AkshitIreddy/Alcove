@@ -51,12 +51,26 @@ export interface TileSpec {
 }
 
 /**
- * Roughly one screenful of the largest tiles plus the strips behind it. Past
- * this the oldest goes: a 110x76 tile at dpr 2 is ~270kB of backing store, so
- * an unbounded memo over three vocabularies is tens of megabytes of art
+ * Big enough for the LARGEST single picker, plus the strips behind it.
+ *
+ * This was 150, sized against "sixty shelf presets, fifty-five papers and
+ * sixty-two bindings". Those are now 113, 126 and 189, so the biggest sheet on
+ * its own overflowed the cache: scrolling a binding picker evicted tiles that
+ * were still on screen and redrew them on the way back, which is the worst case
+ * for a FIFO — every eviction is a guaranteed future miss.
+ *
+ * 240 covers the 189 and leaves room for the strips and a second axis opened
+ * behind the sheet. A 110x76 tile at dpr 2 is ~270kB of backing store, so the
+ * ceiling is about 65MB and the reason for having one at all is unchanged: an
+ * unbounded memo over vocabularies this size is hundreds of megabytes of art
  * nobody is looking at.
+ *
+ * Sized from the tables rather than derived from them on purpose — importing
+ * three vocabularies here to add up their lengths would give this module a
+ * dependency on all of them to compute a number that only needs to be roughly
+ * right.
  */
-const MAX_TILES = 150;
+export const MAX_TILES = 240;
 
 type Tile = OffscreenCanvas | HTMLCanvasElement;
 

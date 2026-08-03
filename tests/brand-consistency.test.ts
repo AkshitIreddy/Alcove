@@ -141,6 +141,21 @@ describe('the strings a rename must NOT touch', () => {
       expect(seed, `seed.ts must still recognise the old title ${old}`).toContain(old);
     }
   });
+
+  /**
+   * The list only ever grows, and both copies of it agree.
+   *
+   * A library that skipped a rename is sitting on an OLDER title than the most
+   * recent one, so migrating only the newest leaves it unrecognised — which is
+   * exactly the case that seeds a duplicate book beside the one someone has
+   * been writing in. Two renames in, that is no longer hypothetical.
+   */
+  it('keeps brand.json and seed.ts telling the same story about old titles', async () => {
+    const seed = await import('../src/data/seed');
+    expect([...seed.LEGACY_WELCOME_BOOK_TITLES]).toEqual(brand.legacyWelcomeTitles);
+    expect(seed.WELCOME_BOOK_TITLE).toBe(brand.welcomeBookTitle);
+    expect(seed.LEGACY_WELCOME_BOOK_TITLES).not.toContain(seed.WELCOME_BOOK_TITLE);
+  });
 });
 
 describe('the art', () => {

@@ -1,7 +1,7 @@
 /**
  * First-run seeding + seed migrations.
  *
- * Seeds ONE "Welcome to Bellanote ✎" book whose pages are authored in Notebook
+ * Seeds ONE "Welcome to Alcove ✎" book whose pages are authored in Notebook
  * Script (parsed + mapped to editor JSON at seed time, with the verbatim
  * source stored per page so "Export Script" shows it).
  *
@@ -12,8 +12,12 @@
  *   v1 → v2  installs that ran the old 24-demo-book seed. Any book whose title
  *            is in the old demo list AND whose pages are all empty is deleted;
  *            a demo book the user actually wrote in is never touched.
- *   v2 → v3  the app was renamed, so the welcome book is RETITLED in place
- *            rather than reseeded. See renameLegacyWelcomeBook.
+ *   v2 → v3  Notebook → Bellanote. The welcome book is RETITLED in place rather
+ *            than reseeded. See renameLegacyWelcomeBook.
+ *   v3 → v4  Bellanote → Alcove, the same way — and the reason the old title is
+ *            now a LIST. A library that skipped v3 is still sitting on
+ *            "Welcome to Notebook ✎", so the migration has to sweep every past
+ *            name, not just the most recent one.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -26,22 +30,40 @@ import { createPage, listPages } from './pages';
 import type { PageDoc } from './types';
 
 /** Bump when the seed contents change in a way that needs a migration. */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
 
-export const WELCOME_BOOK_TITLE = 'Welcome to Bellanote ✎';
+export const WELCOME_BOOK_TITLE = 'Welcome to Alcove ✎';
 
 /**
- * What the welcome book was called before the app was renamed (v2 → v3).
+ * Every title the welcome book has ever had, oldest first.
  *
- * This is not just history: the title is also the identity check that stops a
- * second welcome book being seeded. Renaming the constant without knowing the
- * old value would make every existing library fail its own existence test and
- * grow a duplicate, so v3 RENAMES the book in place instead.
+ * This is not history for its own sake: the title is ALSO the identity check
+ * that stops a second welcome book being seeded. A library still holding an old
+ * title has to be recognised, or it fails its own existence test and grows a
+ * duplicate beside the book its owner has been writing in.
+ *
+ * A LIST, because it was a single constant for one rename and that shape does
+ * not survive the second: Notebook → Bellanote → Alcove means two old titles,
+ * and a library that skipped a version holds the older of them. Append here,
+ * never replace, and `brand.json` carries the same list so
+ * `tests/brand-consistency.test.ts` can check the two agree.
  */
-export const LEGACY_WELCOME_BOOK_TITLE = 'Welcome to Notebook ✎';
+export const LEGACY_WELCOME_BOOK_TITLES: readonly string[] = [
+  'Welcome to Notebook ✎',
+  'Welcome to Bellanote ✎',
+];
+
+/**
+ * The most recent old title.
+ *
+ * Kept because callers and tests read it by name; everything that has to be
+ * CORRECT across more than one rename uses the list above.
+ */
+export const LEGACY_WELCOME_BOOK_TITLE =
+  LEGACY_WELCOME_BOOK_TITLES[LEGACY_WELCOME_BOOK_TITLES.length - 1]!;
 
 /**
  * FNV-1a 32-bit hash (inlined on purpose — the data layer must not depend on
@@ -182,13 +204,13 @@ export const OLD_DEMO_TITLES: readonly string[] = [
  * source is stored on each page so Export Script works out of the box.
  */
 export const WELCOME_PAGE_SOURCES: readonly string[] = [
-  // Page 1 — what Bellanote is + how to get around
+  // Page 1 — what Alcove is + how to get around
   `---
 paper: cream
 wash: amber
 ---
 
-# Welcome to Bellanote ✎ {sticker=star}
+# Welcome to Alcove ✎ {sticker=star}
 
 This is your **library**. Every book on the shelf opens into pages like this one — ==real, editable pages=={color=amber}, not a demo.
 
@@ -256,7 +278,7 @@ Highlights come in seven washes: ==amber=={color=amber}, ==moss=={color=moss}, =
 Fenced mini-languages render as hand-drawn diagrams. A \`tree\`:
 
 \`\`\`tree {style=watercolor}
-Bellanote
+Alcove
   Shelf
     Floors | endless
     Books
@@ -361,7 +383,8 @@ export function isDeletableDemoBook(
   title: string,
   pageDocs: readonly PageDoc[],
 ): boolean {
-  if (title === WELCOME_BOOK_TITLE || title === LEGACY_WELCOME_BOOK_TITLE) return false;
+  // Under ANY name it has ever had — a welcome book is never a stale demo.
+  if (ALL_WELCOME_TITLES.includes(title)) return false;
   if (!OLD_DEMO_TITLES.includes(title)) return false;
   return pageDocs.every(isEmptyPageDoc);
 }
@@ -404,33 +427,48 @@ async function cleanupOldDemoBooks(db: Db): Promise<void> {
   }
 }
 
+/** Every title the book may currently be under: the live one and all the old. */
+const ALL_WELCOME_TITLES: readonly string[] = [
+  WELCOME_BOOK_TITLE,
+  ...LEGACY_WELCOME_BOOK_TITLES,
+];
+
 /**
- * Both titles count. A library seeded before the rename holds the legacy one,
- * and asking only about the current title would tell us the welcome book is
- * missing and seed a second copy beside it.
+ * EVERY title counts, not just the current one.
+ *
+ * A library seeded before a rename still holds an old title, and asking only
+ * about the live one would report the welcome book missing and seed a second
+ * copy beside it. Built from the list so a third rename needs no edit here.
  */
 async function welcomeBookExists(db: Db): Promise<boolean> {
+  const placeholders = ALL_WELCOME_TITLES.map((_, i) => `$${i + 1}`).join(', ');
   const rows = await db.select<Array<{ id: string }>>(
-    'SELECT id FROM books WHERE title IN ($1, $2) LIMIT 1',
-    [WELCOME_BOOK_TITLE, LEGACY_WELCOME_BOOK_TITLE],
+    `SELECT id FROM books WHERE title IN (${placeholders}) LIMIT 1`,
+    [...ALL_WELCOME_TITLES],
   );
   return rows.length > 0;
 }
 
 /**
- * v2 → v3: the app was renamed, so the book that welcomes you to it is
- * renamed in place. Retitling rather than reseeding is the whole point — the
- * reader may have written in it, and it is still their book.
+ * The app was renamed, so the book that welcomes you to it is renamed in place.
+ * Retitling rather than reseeding is the whole point — the reader may have
+ * written in it, and it is still their book.
+ *
+ * Sweeps ALL the old titles, not the most recent one: a library that skipped a
+ * version is sitting on an older name, and migrating only the newest would
+ * leave it unrecognised — which is precisely the case that seeds a duplicate.
  *
  * The spine is deliberately left alone. Its seed is derived from the title, so
  * regenerating it would change the object on the shelf under someone who had
  * come to recognise it, to no benefit.
  */
 async function renameLegacyWelcomeBook(db: Db): Promise<void> {
-  await db.execute('UPDATE books SET title = $1 WHERE title = $2', [
-    WELCOME_BOOK_TITLE,
-    LEGACY_WELCOME_BOOK_TITLE,
-  ]);
+  for (const old of LEGACY_WELCOME_BOOK_TITLES) {
+    await db.execute('UPDATE books SET title = $1 WHERE title = $2', [
+      WELCOME_BOOK_TITLE,
+      old,
+    ]);
+  }
 }
 
 async function createWelcomeBook(): Promise<void> {

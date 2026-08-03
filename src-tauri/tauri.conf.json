@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Bellanote",
+  "productName": "Alcove",
   "version": "0.1.0",
-  "identifier": "com.bellanote.app",
+  "identifier": "com.alcove.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Bellanote",
+        "title": "Alcove",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

@@ -1,4 +1,4 @@
-# Bellanote
+# Alcove
 
 A Windows desktop notes app: a hand-drawn bookshelf world (warm parchment aesthetic) where books open into Notion-grade block-edited pages. Built with Tauri 2 (Rust) + SolidJS + TypeScript + Vite.
 
@@ -15,7 +15,7 @@ This replaced a runtime painting stack — brush engine, procedural wood and flo
 There are two brand images and confusing them will send you the wrong way:
 
 - `assets/brand/icon.svg` — flat, the reference above. Cited by `tokens.css`, `art/flat.ts`, `art/palette.ts`, `art/covers.ts` and `tests/styles.test.ts`. **This is the one in-app art follows.**
-- `assets/brand/bellanote-art.png` — the shipped app/installer icon, a rendered illustration supplied by the owner. Deliberately a different register from the app's interior. It is the source for `scripts/gen-icons.py` and nothing else.
+- `assets/brand/alcove-art.png` — the shipped app/installer icon, a rendered illustration supplied by the owner. Deliberately a different register from the app's interior. It is the source for `scripts/gen-icons.py` and nothing else.
 
 Do not flatten the mark to match the app, and do not add rendering to the app to match the mark.
 

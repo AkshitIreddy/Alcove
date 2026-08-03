@@ -2,7 +2,7 @@
 //! scope).
 //!
 //! The tray is intentionally small: an icon with two menu entries.
-//! - "Open Bellanote"  -> shows / unminimizes / focuses the main window.
+//! - "Open Alcove"  -> shows / unminimizes / focuses the main window.
 //! - "Quick note"     -> same focus, then emits `nb://tray-quick-note` to
 //!   the main webview; the frontend (src/features/system/tray.ts) opens an
 //!   "Inbox" book, creating it on demand.
@@ -67,7 +67,7 @@ fn build_tray(app: &AppHandle) -> Result<(), String> {
     if app.tray_by_id(TRAY_ID).is_some() {
         return Ok(());
     }
-    let open = MenuItemBuilder::with_id(MENU_OPEN, "Open Bellanote")
+    let open = MenuItemBuilder::with_id(MENU_OPEN, "Open Alcove")
         .build(app)
         .map_err(|e| e.to_string())?;
     let quick = MenuItemBuilder::with_id(MENU_QUICK, "Quick note")
@@ -81,14 +81,14 @@ fn build_tray(app: &AppHandle) -> Result<(), String> {
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("Bellanote")
+        .tooltip("Alcove")
         .on_menu_event(|app, event| {
             if let Some(action) = menu_action(event.id().as_ref()) {
                 run_action(app, action);
             }
         })
         .on_tray_icon_event(|tray, event| {
-            // Left-click on the icon = "Open Bellanote".
+            // Left-click on the icon = "Open Alcove".
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,

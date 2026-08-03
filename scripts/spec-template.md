@@ -5,7 +5,7 @@
 # Notebook Script — the complete guide
 
 You are (probably) an AI assistant that has been handed this file. A person
-uses **Bellanote**, a cozy Windows desktop notes app: a hand-drawn bookshelf
+uses **Alcove**, a cozy Windows desktop notes app: a hand-drawn bookshelf
 where books open into pages with warm parchment paper, watercolor washes,
 sticky notes, polaroids and washi tape. They want you to **write a note for
 them in Notebook Script** — the app's plain-text format.

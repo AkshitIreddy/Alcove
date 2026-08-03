@@ -24,7 +24,7 @@ const FAVICON_CAP: usize = 64 * 1024;
 /// Cap for each Openverse image download.
 const FETCHED_IMAGE_CAP: usize = 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
-const USER_AGENT: &str = "Bellanote/0.1 (+https://github.com/AkshitIreddy/bellanote)";
+const USER_AGENT: &str = "Alcove/0.1 (+https://github.com/AkshitIreddy/alcove)";
 
 // ---------------------------------------------------------------------------
 // Result types (camelCase over IPC)

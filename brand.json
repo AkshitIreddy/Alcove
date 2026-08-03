@@ -18,21 +18,20 @@
     "seeded, so every past title has to stay listed or a rename hands existing",
     "readers a duplicate book beside the one they have been writing in."
   ],
-
-  "name": "Bellanote",
-  "slug": "bellanote",
-  "identifier": "com.bellanote.app",
-  "repo": "AkshitIreddy/bellanote",
+  "name": "Alcove",
+  "slug": "alcove",
+  "identifier": "com.alcove.app",
+  "repo": "AkshitIreddy/alcove",
   "tagline": "a hand-drawn bookshelf for beautiful study notes",
-
   "art": {
-    "master": "assets/brand/bellanote-art.png",
+    "master": "assets/brand/alcove-art.png",
     "$comment": "The illustration every shipped icon is rendered from. scripts/gen-icons.py cuts its baked frame to alpha and close-crops the small sizes."
   },
-
-  "welcomeBookTitle": "Welcome to Bellanote ✎",
-  "legacyWelcomeTitles": ["Welcome to Notebook ✎"],
-
+  "welcomeBookTitle": "Welcome to Alcove ✎",
+  "legacyWelcomeTitles": [
+    "Welcome to Notebook ✎",
+    "Welcome to Bellanote ✎"
+  ],
   "doNotRename": {
     "$comment": [
       "Strings that contain a past app name and must survive every rename.",

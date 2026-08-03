@@ -75,7 +75,7 @@ export interface TutorialStep {
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to Bellanote',
+    title: 'Welcome to Alcove',
     body: 'Your books stand on a shelf. Open one and you get pages you can write on, and everything you write is saved as you go. Each step below asks you to try one thing — the card turns green once you have.',
     hint: 'Enter to go on · Esc to leave',
     scene: 'any',

@@ -1,6 +1,6 @@
 """scripts/gen-icons.py — render every shipped icon from the one master.
 
-`assets/brand/bellanote-art.png` is the source of truth for the mark. Tauri
+`assets/brand/alcove-art.png` is the source of truth for the mark. Tauri
 wants a dozen sizes plus an .ico and an .icns, and hand-maintaining those is how
 a brand ends up with three slightly different icons in one installer.
 
@@ -35,7 +35,7 @@ encoder is a real one; this is not a PNG renamed.
 clobber the close-crops. Run it FIRST, for icon.icns and the installer bitmaps,
 then this script:
 
-    npx @tauri-apps/cli icon assets/brand/bellanote-1024.png
+    npx @tauri-apps/cli icon assets/brand/alcove-1024.png
     python scripts/gen-icons.py
 
 Usage: python scripts/gen-icons.py
@@ -52,9 +52,9 @@ except ImportError as exc:  # pragma: no cover
     sys.exit(f"needs pillow — pip install pillow ({exc})")
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "assets/brand/bellanote-art.png"
+SRC = ROOT / "assets/brand/alcove-art.png"
 ICONS = ROOT / "src-tauri/icons"
-MASTER = ROOT / "assets/brand/bellanote-1024.png"
+MASTER = ROOT / "assets/brand/alcove-1024.png"
 
 SURROUND = 6      # max channel still counted as the black outside the frame
 SMALL_AT = 64     # this size and below get the close-crop treatment

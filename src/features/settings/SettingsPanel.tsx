@@ -1028,7 +1028,7 @@ export default function SettingsPanel(props: {
             label="start with Windows"
             hint={
               inTauri
-                ? 'open Bellanote when you log in'
+                ? 'open Alcove when you log in'
                 : 'available in the desktop app'
             }
           >

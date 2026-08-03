@@ -140,7 +140,7 @@ test('opens on step one with all thirteen beats and a visible card', async ({ pa
 
   const card = page.locator('.nbt-card');
   await expect(card).toBeVisible();
-  await expect(card.locator('.nbt-title')).toHaveText('Welcome to Bellanote');
+  await expect(card.locator('.nbt-title')).toHaveText('Welcome to Alcove');
   // Thirteen inked progress dots, exactly one current.
   await expect(page.locator('.nbt-dot')).toHaveCount(13);
   await expect(page.locator('.nbt-dot.is-current')).toHaveCount(1);

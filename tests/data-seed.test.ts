@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   LEGACY_WELCOME_BOOK_TITLE,
+  LEGACY_WELCOME_BOOK_TITLES,
   OLD_DEMO_TITLES,
   SEED_VERSION,
   SEED_VERSION_KEY,
@@ -236,6 +237,16 @@ describe('the rename migration', () => {
 /* ------------------------- end-to-end migration ---------------------------- */
 
 /**
+ * Every title the welcome book has ever had, for the table-driven migration
+ * case below. Read from the module rather than listed here so appending a
+ * rename to `LEGACY_WELCOME_BOOK_TITLES` extends the test for free — a second
+ * copy of the list is a second place to forget one.
+ */
+function seedTitlesForTest(): readonly string[] {
+  return LEGACY_WELCOME_BOOK_TITLES;
+}
+
+/**
  * Fresh module registry per scenario so the MemoryDb singleton in
  * src/data/db.ts starts empty each time (node env => isTauri() is false).
  */
@@ -386,10 +397,45 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
     const kept = (await pages.listPages(legacy.id))[0];
     expect(seed.isEmptyPageDoc(kept.doc)).toBe(false);
   });
+
+  /**
+   * The case a single legacy constant could not express, and the reason it is a
+   * list now.
+   *
+   * Two renames in (Notebook → Bellanote → Alcove), a library that skipped the
+   * middle one is sitting on the OLDEST title. Migrating only the most recent
+   * old name leaves that book unrecognised — and unrecognised is precisely the
+   * state that seeds a duplicate next to it.
+   *
+   * Runs over EVERY past title rather than naming one, so a third rename is
+   * covered by appending to the list and nothing else.
+   */
+  it.each([...seedTitlesForTest()])(
+    'a library still on %s is retitled, not duplicated',
+    async (oldTitle: string) => {
+      const { seed, books, pages } = await freshDataLayer();
+
+      const legacy = await books.createBook({ title: oldTitle, floor: 0, slot: 3 });
+      await pages.createPage({ bookId: legacy.id, ord: 0 });
+      const page = (await pages.listPages(legacy.id))[0];
+      await pages.savePageDoc(page.id, {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'years of notes' }] }],
+      });
+
+      await expect(seed.seedIfEmpty()).resolves.toBe(false);
+
+      const shelved = await books.listBooksByFloorRange(0, 999);
+      expect(shelved, `a second welcome book appeared beside the ${oldTitle} one`).toHaveLength(1);
+      expect(shelved[0].id).toBe(legacy.id);
+      expect(shelved[0].title).toBe(seed.WELCOME_BOOK_TITLE);
+      expect(seed.isEmptyPageDoc((await pages.listPages(legacy.id))[0].doc)).toBe(false);
+    },
+  );
 });
 
 // Re-exported constants stay wired (guards against accidental renames).
 it('exports the current seed version constants', () => {
-  expect(SEED_VERSION).toBe(3);
+  expect(SEED_VERSION).toBe(4);
   expect(SEED_VERSION_KEY).toBe('seedVersion');
 });

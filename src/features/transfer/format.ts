@@ -17,7 +17,7 @@
 /*
  * The archive's own name, NOT the app's. It is written into every bundle ever
  * exported, so renaming it would make files this build wrote unreadable by the
- * builds that wrote them. The app is called Bellanote; its bundles are still
+ * builds that wrote them. The app is called Alcove; its bundles are still
  * `notebook-bundle`.
  */
 export const BUNDLE_FORMAT = 'notebook-bundle';
@@ -224,7 +224,7 @@ export function buildManifest(input: BuildManifestInput): BundleManifest {
     format: BUNDLE_FORMAT,
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     createdAt: input.createdAt,
-    app: { name: 'Bellanote', version: input.appVersion },
+    app: { name: 'Alcove', version: input.appVersion },
     scope: input.scope,
     variant: input.variant,
     layout: input.layout,
@@ -434,7 +434,7 @@ export function parseManifest(source: string | unknown): ManifestParseResult {
       createdAt: asString(record.createdAt),
       app: {
         // Defaults to the OLD name on purpose: a bundle without an app name is
-        // one written before the rename, and saying "Bellanote" about it would
+        // one written before the rename, and saying "Alcove" about it would
         // be inventing provenance.
         name: asString(asRecord(record.app)?.name, 'Notebook'),
         version: asString(asRecord(record.app)?.version, '?'),

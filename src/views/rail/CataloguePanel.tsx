@@ -137,6 +137,14 @@ const SLASH_SHELF: Readonly<Record<string, ShelfId>> = {
   banner: 'paper',
   spoiler: 'paper',
   columns: 'paper',
+  /* the keepsake drawer, and the two fastenings after it */
+  'pressed-flower': 'paper',
+  'ticket-stub': 'paper',
+  postcard: 'paper',
+  ledger: 'paper',
+  'photo-corner': 'paper',
+  'wax-seal': 'paper',
+  'map-pin': 'paper',
   /* text blocks */
   paragraph: 'blocks',
   'heading-1': 'blocks',

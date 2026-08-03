@@ -1,10 +1,11 @@
 /* ============================================================================
    Notebook — delight effects
    The eleven page vocabularies (tape, washi, lift, frame, paper, underline,
-   hand, ink, size, ranging, tint) + the script-vocabulary container blocks
-   (sticky-note, polaroid, washi-box, card, quote-card, banner, spoiler,
-   columns, index-card, envelope, stamp, tag, marginalia) + margin doodles +
-   confetti overlay.
+   hand, ink, size, ranging, tint) + the script-vocabulary container blocks —
+   the stationery drawer (sticky-note, polaroid, washi-box, card, quote-card,
+   banner, spoiler, columns, index-card, envelope, stamp, tag, marginalia) and
+   the keepsake drawer (pressed-flower, ticket-stub, postcard, ledger,
+   photo-corner, wax-seal, map-pin) — + margin doodles + confetti overlay.
 
    Pure CSS everywhere: gradient tape, static pre-jittered clip-paths,
    radial-gradient scallop masks. No live SVG filters (CLAUDE.md).
@@ -2792,6 +2793,1147 @@
     29% calc(100% - 2px), 21% calc(100% - 10px), 13% calc(100% - 3px),
     5% calc(100% - 8px), 0% calc(100% - 3px)
   );
+}
+
+/* ============================================================================
+   6. THE STATIONERY DRAWER — the container blocks themselves
+   ==========================================================================
+
+   Everything above this point decorates a block a reader already had. This
+   section is the blocks: the twenty-three things `/` can drop onto a page and
+   `::: name` can write into one. Node names are the script's canonical
+   container names verbatim (src/script/vocab.ts), which is why every selector
+   here is `[data-type='<name>']` — TipTap writes that attribute from
+   `renderHTML`, there is no class in between, and adding a container is
+   therefore a node plus a rule and nothing else.
+
+   THIS SECTION WAS ONCE DELETED WHOLESALE and nobody noticed for four
+   commits: a page-vocabulary rewrite replaced the file's first thousand lines
+   and took the containers with it, so every sticky note, polaroid, envelope
+   and index card in the app rendered as a bare unstyled div. Nothing failed —
+   the nodes existed, the script round-tripped, the slash menu inserted them,
+   and the tests all passed, because no test had ever asserted that a
+   container is DRAWN. `tests/stationery-drawn.test.ts` is that assertion now:
+   every name in CONTAINER_NAMES must be painted somewhere in src/styles.
+
+   House rules, same as the rest of the file:
+     - flat colour, ONE outline (--ink-line), rounded and slightly wobbled
+       corners; depth is an offset plate (--shadow-*), never a blur;
+     - a pigment arrives as --fx-light / --fx-base / --fx-deep. A container
+       base may set those as its own default; the generated `[data-color=…]`
+       tints below this section have the same specificity and come later, so
+       an explicit colour always wins;
+     - handwriting never below 13px, Caveat never below 20px;
+     - overhanging pseudo-elements (an envelope flap, a washi strip) stay
+       inside the block's own margin, because the pagination contract measures
+       border boxes and a decoration that escapes one is a decoration that
+       lands on the next page's first line.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   6.1 sticky-note — a post-it with one corner curled up
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='sticky-note'] {
+  --fx-light: var(--wash-lemon-light);
+  --fx-base: var(--wash-lemon);
+  --fx-deep: var(--wash-lemon-deep);
+  position: relative;
+  max-width: 520px;
+  margin: var(--space-16) 0;
+  padding: var(--space-16) var(--space-20) var(--space-24);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--fx-light) 88%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--fx-base) 42%, var(--paper-cream)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--fx-deep) 30%, transparent);
+  /* Not a rectangle: the four radii differ, which is the icon's "edges bow
+     slightly" rule at the smallest scale it shows up. */
+  border-radius: 2px 5px 3px 6px;
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-accent);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+/* The curled bottom-right corner. Two flat faces meeting on a diagonal —
+   cream where the page shows through, the note's own deep pigment on the
+   fold — plus a hard offset plate for the lift. No blur; this was the last
+   soft box-shadow in src/ and it is not coming back. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='sticky-note']::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(
+    315deg,
+    var(--paper-cream) 0 47%,
+    color-mix(in srgb, var(--fx-deep) 32%, var(--fx-light)) 50%,
+    color-mix(in srgb, var(--fx-base) 72%, var(--paper-cream)) 100%
+  );
+  border-top-left-radius: 6px;
+  box-shadow: -2px -2px 0 var(--lift-ink);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.2 polaroid — white frame, wide margin under the picture, Kalam caption
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] {
+  max-width: 440px;
+  margin: var(--space-20) auto;
+  padding: var(--space-12) var(--space-12) var(--space-4);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 2px;
+  box-shadow: var(--shadow-md);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] img {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 1px;
+  box-shadow: var(--shadow-inset-paper);
+}
+
+/* An empty polaroid still has to read as a polaroid, and the schema allows
+   one with no picture in it at all (`image? paragraph+`). The well is a flat
+   darker face — which is how this language does depth — drawn only when
+   there is nothing in the frame, so it never sits behind a real photo. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] img:not([src]),
+:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid']:not(:has(img))::before {
+  content: '';
+  display: block;
+  min-height: 168px;
+  background: var(--paper-deep);
+  box-shadow: var(--shadow-inset-paper);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'] p {
+  font-family: var(--font-accent);
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--ink-sepia-soft);
+  padding: var(--space-8) var(--space-4);
+}
+
+/* ----------------------------------------------------------------------------
+   6.3 washi-box — a wash panel taped down at two opposite corners
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box'] {
+  --fx-light: var(--wash-sky-light);
+  --fx-base: var(--wash-sky);
+  --fx-deep: var(--wash-sky-deep);
+  position: relative;
+  margin: var(--space-24) 0 var(--space-20);
+  padding: var(--space-16) var(--space-20);
+  background:
+    radial-gradient(
+      color-mix(in srgb, var(--fx-base) 28%, transparent) 1px,
+      transparent 1.4px
+    ) 0 0 / 14px 14px,
+    color-mix(in srgb, var(--fx-light) 58%, var(--paper-cream));
+  border: 1.5px solid color-mix(in srgb, var(--fx-deep) 38%, transparent);
+  border-radius: var(--radius-md);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::before,
+:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::after {
+  content: '';
+  position: absolute;
+  width: 86px;
+  height: 20px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--paper-cream) 50%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--fx-base) 62%, transparent);
+  /* Torn, not guillotined — the four corners of the strip disagree. */
+  clip-path: polygon(3% 0%, 97% 4%, 100% 96%, 0% 100%);
+  box-shadow: var(--shadow-xs);
+  pointer-events: none;
+  z-index: 2;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::before {
+  top: -10px;
+  left: 12%;
+  transform: rotate(-3deg);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::after {
+  bottom: -10px;
+  right: 12%;
+  transform: rotate(2.5deg);
+}
+
+/* ----------------------------------------------------------------------------
+   6.4 card — aged stock, a pencil title written across the top
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='card'] {
+  margin: var(--space-16) 0;
+  padding: var(--space-16) var(--space-20);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--paper-edge);
+  border-radius: var(--radius-hand);
+  box-shadow: var(--shadow-xs);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='card'][data-title]::before {
+  content: attr(data-title);
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--ink-sepia);
+  margin-bottom: var(--space-4);
+  transform: rotate(-0.5deg);
+}
+
+/* ----------------------------------------------------------------------------
+   6.5 quote-card — a pull-quote between two big pigment quote marks
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card'] {
+  --fx-light: var(--wash-blush-light);
+  --fx-base: var(--wash-blush);
+  --fx-deep: var(--wash-blush-deep);
+  position: relative;
+  margin: var(--space-20) 0;
+  padding: var(--space-20) var(--space-48);
+  background: radial-gradient(
+    130% 120% at 30% 12%,
+    color-mix(in srgb, var(--fx-light) 74%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--fx-base) 30%, var(--paper-cream)) 100%
+  );
+  border-radius: var(--radius-hand);
+  font-family: var(--font-heading);
+  font-size: 25px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--ink-sepia);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::before,
+:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::after {
+  position: absolute;
+  font-family: var(--font-heading);
+  font-size: 62px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--fx-deep) 55%, transparent);
+  pointer-events: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::before {
+  content: '\201C';
+  top: 4px;
+  left: 12px;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='quote-card']::after {
+  content: '\201D';
+  bottom: -16px;
+  right: 14px;
+}
+
+/* ----------------------------------------------------------------------------
+   6.6 banner — a ribbon with both ends notched
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='banner'] {
+  --fx-light: var(--wash-amber-light);
+  --fx-base: var(--wash-amber);
+  --fx-deep: var(--wash-amber-deep);
+  margin: var(--space-20) calc(-1 * var(--space-8));
+  padding: var(--space-8) var(--space-48);
+  background: linear-gradient(
+    178deg,
+    color-mix(in srgb, var(--fx-base) 62%, var(--paper-cream)) 0%,
+    color-mix(in srgb, var(--fx-base) 86%, var(--fx-deep)) 100%
+  );
+  clip-path: polygon(
+    0% 0%, 100% 0%, calc(100% - 24px) 50%, 100% 100%, 0% 100%, 24px 50%
+  );
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink-sepia);
+}
+
+/* ----------------------------------------------------------------------------
+   6.7 spoiler — hidden behind a strip of tape, not behind a blur
+   -------------------------------------------------------------------------- */
+.nb-spoiler {
+  position: relative;
+  margin: var(--space-16) 0;
+  padding: var(--space-8) var(--space-16) var(--space-12);
+  background: color-mix(in srgb, var(--paper-aged) 60%, transparent);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-md);
+}
+
+.nb-spoiler.is-selected {
+  outline: 2px dashed var(--wash-amber-deep);
+  outline-offset: 3px;
+}
+
+.nb-spoiler-toggle {
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  color: var(--ink-graphite-soft);
+  padding: 1px var(--space-8);
+  border-radius: var(--radius-pill);
+  transform: rotate(-0.8deg);
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    color var(--dur-xs) var(--ease-out);
+}
+
+.nb-spoiler-toggle:hover {
+  background: var(--wash-amber-light);
+  color: var(--ink-graphite);
+}
+
+/* blur() is a live filter in an interactive path (art-pipeline.md rules it
+   out) and it was transitioned, so it re-ran every frame of the reveal. The
+   body keeps its box while hidden, so revealing costs no reflow. */
+.nb-spoiler:not(.is-revealed) .nb-spoiler-body {
+  position: relative;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* --paper-edge rather than an ink token: at full ink the band reads as a hole
+   punched in the page and shouts louder than anything else on it. */
+.nb-spoiler:not(.is-revealed) .nb-spoiler-body::after {
+  content: '';
+  visibility: visible;
+  position: absolute;
+  inset: -2px -4px;
+  background: var(--paper-edge);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: var(--radius-sm);
+}
+
+/* 6.8 columns / col live in editor.css, beside the divider-drag rules that
+   read the gap's geometry back out of the DOM. Do not add a second copy
+   here: the two files' selectors would tie on specificity. */
+
+/* ----------------------------------------------------------------------------
+   6.9 index-card — ruled stock, a red rule under the head, one squared corner
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='index-card'] {
+  position: relative;
+  min-height: 132px;
+  margin: var(--space-24) 0;
+  /* The head is a band of its own above the ruling: the red rule sits under
+     it, the way a filed card is printed, and the title is written in it. The
+     first line of writing starts BELOW the rule — the earlier version put the
+     rule at 16px against a 20px padding, so it struck through the first line. */
+  padding: 42px var(--space-20) var(--space-20);
+  background-color: var(--paper-cream);
+  /* Ruled from the red rule down, not from the top of the card. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 27px,
+    color-mix(in srgb, var(--wash-sky) 30%, transparent) 27px 28px
+  );
+  background-position: 0 38px;
+  border: 1.5px solid var(--ink-line);
+  /* Three rounded corners and one cut square: a filed card, not a coaster. */
+  border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 0;
+  box-shadow: var(--shadow-sm);
+  transform: rotate(var(--nb-rotate, 0deg));
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='index-card']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34px;
+  height: 2px;
+  background: color-mix(in srgb, var(--wash-coral) 78%, transparent);
+  pointer-events: none;
+}
+
+/* The card's own head, written in the band above the red rule. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='index-card'][data-title]::after {
+  content: attr(data-title);
+  position: absolute;
+  left: var(--space-20);
+  right: var(--space-20);
+  top: 11px;
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-line-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.10 envelope — the flap stands open above the pocket
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='envelope'] {
+  position: relative;
+  margin: var(--space-40) 0 var(--space-24);
+  padding: var(--space-16) var(--space-20);
+  background: var(--fx-light, var(--paper-aged));
+  border: 1.5px solid var(--ink-line);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Two stacked triangles, dark under light: a clip-path cuts a border off with
+   everything else, so the darker triangle behind IS the outline. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::before,
+:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::after {
+  content: '';
+  position: absolute;
+  clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+  pointer-events: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::before {
+  left: -1.5px;
+  right: -1.5px;
+  top: -24px;
+  height: 26px;
+  background: var(--ink-line);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='envelope']::after {
+  left: 2px;
+  right: 2px;
+  top: -20px;
+  height: 22px;
+  background: color-mix(
+    in srgb,
+    var(--fx-base, var(--wash-amber)) 62%,
+    var(--paper-cream)
+  );
+}
+
+/* ----------------------------------------------------------------------------
+   6.11 stamp — perforated all round, with a printed rule inside the teeth
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='stamp'] {
+  position: relative;
+  /* Its own stacking context, so the perforated sheet behind the writing
+     cannot fall through to the page. */
+  isolation: isolate;
+  width: fit-content;
+  min-width: 190px;
+  max-width: 100%;
+  margin: var(--space-24) auto;
+  padding: var(--space-20) var(--space-24);
+  transform: rotate(var(--nb-rotate, 0deg));
+  --nb-perf: 5px;
+}
+
+/* The sheet is masked, not the element: a mask on the block itself would take
+   a bite out of the first and last letter of every line. Two layers unioned —
+   a tiled ring of discs plus a solid inset rectangle — so the teeth appear
+   round the outside and the middle stays whole. A stamp's edge really is
+   convex: the paper left between the punched holes is a row of bumps. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='stamp']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--paper-aged);
+  -webkit-mask:
+    radial-gradient(var(--nb-perf), #000 97%, transparent) round
+      calc(-1.5 * var(--nb-perf)) calc(-1.5 * var(--nb-perf)) /
+      calc(3 * var(--nb-perf)) calc(3 * var(--nb-perf)),
+    linear-gradient(#000 0 0) 50% 50% /
+      calc(100% - 2 * var(--nb-perf)) calc(100% - 2 * var(--nb-perf)) no-repeat;
+  mask:
+    radial-gradient(var(--nb-perf), #000 97%, transparent) round
+      calc(-1.5 * var(--nb-perf)) calc(-1.5 * var(--nb-perf)) /
+      calc(3 * var(--nb-perf)) calc(3 * var(--nb-perf)),
+    linear-gradient(#000 0 0) 50% 50% /
+      calc(100% - 2 * var(--nb-perf)) calc(100% - 2 * var(--nb-perf)) no-repeat;
+  pointer-events: none;
+}
+
+/* The printed rule — what makes it read as printed rather than as a scrap. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='stamp']::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--nb-perf) + 3px);
+  z-index: -1;
+  border: 2px solid var(--fx-base, var(--wash-terracotta));
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.12 tag — a luggage label, eyelet punched, cut to a point
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='tag'] {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 150px;
+  margin: var(--space-24) 0;
+  padding: var(--space-12) var(--space-20) var(--space-12) var(--space-32);
+  background: var(--fx-light, var(--paper-aged));
+  border: 1.5px solid var(--ink-line);
+  clip-path: polygon(0% 50%, 22px 0%, 100% 0%, 100% 100%, 22px 100%);
+  border-radius: var(--radius-sm);
+  transform: rotate(var(--nb-rotate, 0deg));
+  font-family: var(--font-label);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='tag']::before {
+  content: '';
+  position: absolute;
+  /* In the wedge, where a real tag's eyelet is — not out in the writing,
+     where an 8px circle reads as a stray letter o. */
+  left: 9px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 50%;
+  background: var(--paper-cream);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.13 marginalia — an afterthought, indented behind its own rule
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='marginalia'] {
+  margin: var(--space-12) 0 var(--space-12) var(--space-32);
+  padding: var(--space-4) 0 var(--space-4) var(--space-16);
+  border-left: 2px solid var(--paper-edge);
+  color: var(--ink-line-soft);
+  font-family: var(--font-accent);
+  font-size: max(13px, 0.9em);
+}
+
+/* ============================================================================
+   THE KEEPSAKE DRAWER — the five things a notebook has stuck INTO it
+   ==========================================================================
+
+   Everything above is something a reader WRITES ON. These are things they
+   KEPT: a flower off a walk, the stub of an evening out, a card someone
+   posted, the week's money, a photograph. Each carries `title` as well as
+   `color`, because in every case the hand-written label — a species, a stub
+   legend, a postmark, an account name, a pencil caption — is the half that
+   makes the object a keepsake rather than a box with a tint.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   6.14 pressed-flower — a specimen taped to a mount card, with its label
+
+   The sprig is a MASK, not a picture: one inline SVG silhouette painted with
+   the block's own pigment, so it follows `color` like everything else and
+   carries no colours of its own that tokens.css does not own. A pressed
+   specimen really does go flat and near-monotone, so the silhouette is not a
+   compromise — it is what the thing looks like. `--nb-sprig` is written
+   inline by the node from the block's id, so no two specimens on a page were
+   pressed the same way up.
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='pressed-flower'] {
+  --fx-light: var(--wash-blush-light);
+  --fx-base: var(--wash-blush);
+  --fx-deep: var(--wash-blush-deep);
+  position: relative;
+  margin: var(--space-24) 0;
+  /* The mount is deep enough for the specimen and the ruled label under it. */
+  min-height: 168px;
+  padding: var(--space-20) var(--space-20) var(--space-32) 104px;
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-wobble-sm);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(var(--nb-rotate, 0deg));
+  font-family: var(--font-accent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='pressed-flower']::before {
+  content: '';
+  position: absolute;
+  left: var(--space-16);
+  top: var(--space-20);
+  width: 66px;
+  height: 106px;
+  background: color-mix(in srgb, var(--fx-deep) 78%, var(--wash-moss-deep));
+  transform: rotate(var(--nb-sprig, 0deg));
+  transform-origin: 50% 88%;
+  -webkit-mask: var(--nb-sprig-art) center / contain no-repeat;
+  mask: var(--nb-sprig-art) center / contain no-repeat;
+  pointer-events: none;
+  /* A sprig with a stem, three leaves and a five-petal bloom. Static image,
+     not a filter — the same trick as the squiggle underline's mask. */
+  --nb-sprig-art: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 96'%3E%3Cg fill='%23000'%3E%3Cpath d='M31 95c-4-16 3-31-1-47' stroke='%23000' stroke-width='3.2' stroke-linecap='round' fill='none'/%3E%3Cpath d='M30 78c-11 2-19-4-22-13 10-4 21 2 22 13z'/%3E%3Cpath d='M31 64c10 2 17-5 19-13-9-3-18 3-19 13z'/%3E%3Cpath d='M29 88c-8 1-13-4-15-10 7-2 14 2 15 10z'/%3E%3Cg%3E%3Cellipse cx='30' cy='21' rx='7' ry='12.5'/%3E%3Cellipse cx='30' cy='21' rx='7' ry='12.5' transform='rotate(72 30 33)'/%3E%3Cellipse cx='30' cy='21' rx='7' ry='12.5' transform='rotate(144 30 33)'/%3E%3Cellipse cx='30' cy='21' rx='7' ry='12.5' transform='rotate(216 30 33)'/%3E%3Cellipse cx='30' cy='21' rx='7' ry='12.5' transform='rotate(288 30 33)'/%3E%3C/g%3E%3Ccircle cx='30' cy='33' r='6'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* No label, no room reserved for one. `title` is genuinely absent when it is
+   empty (containers.ts drops it), so this is a real distinction and not a
+   guess — and a mount with a blank ruled strip along the bottom reads as a
+   specimen whose label fell off. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='pressed-flower']:not([data-title]) {
+  min-height: 146px;
+  padding-bottom: var(--space-20);
+}
+
+/* The herbarium label: ruled off along the foot of the mount, in the small
+   printed hand a collector uses for a species and a date. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='pressed-flower'][data-title]::after {
+  content: attr(data-title);
+  position: absolute;
+  left: 104px;
+  right: var(--space-20);
+  bottom: var(--space-12);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--paper-edge);
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  letter-spacing: 0.04em;
+  color: var(--ink-line-soft);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.15 ticket-stub — torn along a perforation, the legend down the stub
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='ticket-stub'] {
+  --fx-light: var(--wash-terracotta-light);
+  --fx-base: var(--wash-terracotta);
+  --fx-deep: var(--wash-terracotta-deep);
+  position: relative;
+  isolation: isolate;
+  min-height: 88px;
+  margin: var(--space-24) 0;
+  /* Room on the right for the stub the perforation cuts off. */
+  padding: var(--space-16) 78px var(--space-16) var(--space-20);
+  transform: rotate(var(--nb-rotate, 0deg));
+  font-family: var(--font-label);
+}
+
+/* The card itself, behind the writing: a notch bitten out of each side at the
+   perforation, the perforation dashes, and the ticket's printed border. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='ticket-stub']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    /* the perforation */
+    repeating-linear-gradient(
+        to bottom,
+        var(--ink-line) 0 5px,
+        transparent 5px 11px
+      )
+      right 70px top 0 / 1.5px 100% no-repeat,
+    /* the printed rule inside the edge */
+      linear-gradient(var(--ink-line) 0 0) left 6px top 6px /
+      calc(100% - 12px) 1.5px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) left 6px bottom 6px /
+      calc(100% - 12px) 1.5px no-repeat,
+    /* the stub's own pigment panel */
+      linear-gradient(
+        color-mix(in srgb, var(--fx-light) 70%, var(--paper-cream)) 0 0
+      )
+      right 0 top 0 / 70px 100% no-repeat,
+    color-mix(in srgb, var(--fx-light) 30%, var(--paper-cream));
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  /* The two half-round bites at the tear. */
+  -webkit-mask:
+    radial-gradient(7px at right 70px top 0, transparent 97%, #000) ,
+    radial-gradient(7px at right 70px bottom 0, transparent 97%, #000);
+  -webkit-mask-composite: source-in;
+  mask:
+    radial-gradient(7px at right 70px top 0, transparent 97%, #000),
+    radial-gradient(7px at right 70px bottom 0, transparent 97%, #000);
+  mask-composite: intersect;
+  pointer-events: none;
+}
+
+/* The legend, printed up the stub the way a real one is. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='ticket-stub'][data-title]::after {
+  content: attr(data-title);
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fx-deep);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.16 postcard — divided back: message on the left, address on the right
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='postcard'] {
+  --fx-light: var(--wash-sky-light);
+  --fx-base: var(--wash-sky);
+  --fx-deep: var(--wash-sky-deep);
+  position: relative;
+  min-height: 176px;
+  margin: var(--space-24) 0;
+  /* The right 44% belongs to the address side; the message never crosses. */
+  padding: var(--space-20) 46% var(--space-20) var(--space-20);
+  background: color-mix(in srgb, var(--paper-cream) 88%, var(--fx-light));
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(var(--nb-rotate, 0deg));
+  font-family: var(--font-accent);
+}
+
+/* The divider, the four address rules and the stamp box, all as background
+   layers on one pseudo-element: a postcard back is a printed grid and this is
+   the cheapest honest way to print it. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='postcard']::before {
+  content: '';
+  position: absolute;
+  /* Starts AT the divider, because a background cannot paint outside its own
+     box: positioning the rule at a negative offset simply clipped it away and
+     the card lost the one line that makes a back "divided". */
+  inset: var(--space-16) var(--space-16) var(--space-16) 50%;
+  background:
+    /* the dividing rule */
+    linear-gradient(var(--ink-line-soft) 0 0) left 0 top 0 / 1.5px 100%
+      no-repeat,
+    /* the stamp box, top right, boxed with a printed hairline */
+      linear-gradient(
+          to right,
+          var(--ink-line-soft) 0 1.5px,
+          transparent 1.5px calc(100% - 1.5px),
+          var(--ink-line-soft) calc(100% - 1.5px)
+        )
+        right 0 top 0 / 48px 56px no-repeat,
+    linear-gradient(
+          to bottom,
+          var(--ink-line-soft) 0 1.5px,
+          transparent 1.5px calc(100% - 1.5px),
+          var(--ink-line-soft) calc(100% - 1.5px)
+        )
+        right 0 top 0 / 48px 56px no-repeat,
+    linear-gradient(
+        color-mix(in srgb, var(--fx-light) 55%, var(--paper-cream)) 0 0
+      )
+      right 0 top 0 / 48px 56px no-repeat,
+    /* four address rules under it */
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0 25px,
+        color-mix(in srgb, var(--ink-line-soft) 45%, transparent) 25px 26px
+      )
+      left var(--space-20) bottom 6px / calc(100% - var(--space-20)) 104px
+      no-repeat;
+  pointer-events: none;
+}
+
+/* The postmark: a ring stamped across the corner of the stamp box, carrying
+   whatever the writer put in `title`. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='postcard'][data-title]::after {
+  content: attr(data-title);
+  position: absolute;
+  right: var(--space-24);
+  top: var(--space-24);
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 2px solid color-mix(in srgb, var(--fx-deep) 70%, transparent);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px transparent,
+    inset 0 0 0 4px color-mix(in srgb, var(--fx-deep) 40%, transparent);
+  transform: rotate(-11deg);
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  line-height: 1.05;
+  text-align: center;
+  color: color-mix(in srgb, var(--fx-deep) 85%, transparent);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.17 ledger — a strip of ruled account paper, figures column down the right
+
+   Deliberately untilted (see containers.ts): ruled account paper is bound in,
+   not stuck on. Tabular figures so a column of numbers lines up even though
+   the reader is typing prose lines, not table cells.
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='ledger'] {
+  --fx-light: var(--wash-moss-light);
+  --fx-base: var(--wash-moss);
+  --fx-deep: var(--wash-moss-deep);
+  position: relative;
+  margin: var(--space-24) 0;
+  padding: var(--space-32) var(--space-16) var(--space-16);
+  background-color: color-mix(in srgb, var(--paper-cream) 84%, var(--fx-light));
+  background-image:
+    /* ONE vertical rule, and the money column tinted beside it. Two rules
+       boxed a second, narrower column that nothing was ever going to be
+       written in, and an empty ruled column reads as a mistake. */
+    linear-gradient(var(--ink-line-soft) 0 0),
+    linear-gradient(color-mix(in srgb, var(--fx-deep) 12%, transparent) 0 0),
+    /* the double rule under the head */ linear-gradient(var(--ink-line) 0 0),
+    linear-gradient(var(--ink-line) 0 0),
+    /* the horizontal ruling */
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0 25px,
+        color-mix(in srgb, var(--fx-deep) 26%, transparent) 25px 26px
+      );
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  background-position:
+    right 92px top 0,
+    right 0 top 0,
+    left 0 top 24px,
+    left 0 top 28px,
+    left 0 top 30px;
+  background-size:
+    1.5px 100%,
+    92px 100%,
+    100% 1.5px,
+    100% 1px,
+    100% 26px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 2px;
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* No account name, no head: an empty ruled band above the double rule reads
+   as a row somebody forgot to fill in. The strip starts at the ruling. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='ledger']:not([data-title]) {
+  padding-top: var(--space-12);
+  background-position:
+    right 92px top 0,
+    right 0 top 0,
+    left 0 top -4px,
+    left 0 top -4px,
+    left 0 top 6px;
+}
+
+/* The account name, written across the head above the double rule. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='ledger'][data-title]::before {
+  content: attr(data-title);
+  position: absolute;
+  left: var(--space-16);
+  right: var(--space-16);
+  top: 3px;
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fx-deep);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.18 photo-corner — a print held down by four gummed corners
+   -------------------------------------------------------------------------- */
+/* The block is the ALBUM PAGE, not the print: the print is drawn behind the
+   writing and stops short of the foot, so the pencil caption is written on
+   the page underneath it, which is where a caption goes. The first version
+   made the block the print and put the caption inside it, and a caption
+   printed on the photograph is a watermark, not a memory. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='photo-corner'] {
+  position: relative;
+  isolation: isolate;
+  min-height: 208px;
+  max-width: 460px;
+  margin: var(--space-24) auto;
+  padding: var(--space-24) var(--space-24) 46px;
+  transform: rotate(var(--nb-rotate, 0deg));
+  font-family: var(--font-accent);
+  color: var(--ink-sepia);
+}
+
+/* The print, and the four corners holding it — all on one pseudo-element.
+   Each corner is a cream triangle from a linear-gradient with a hard stop,
+   and the ink stop on the hypotenuse is the fold; the print's own face is the
+   last layer, so the corners paint over it exactly as they lie over a real
+   photograph. Turning a corner round is a matter of the gradient's angle. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='photo-corner']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 38px;
+  z-index: -1;
+  background:
+    linear-gradient(
+        135deg,
+        var(--paper-cream) 0 64%,
+        var(--ink-line) 64% 67%,
+        transparent 67%
+      )
+      left 3px top 3px / 32px 32px no-repeat,
+    linear-gradient(
+        225deg,
+        var(--paper-cream) 0 64%,
+        var(--ink-line) 64% 67%,
+        transparent 67%
+      )
+      right 3px top 3px / 32px 32px no-repeat,
+    linear-gradient(
+        45deg,
+        var(--paper-cream) 0 64%,
+        var(--ink-line) 64% 67%,
+        transparent 67%
+      )
+      left 3px bottom 3px / 32px 32px no-repeat,
+    linear-gradient(
+        315deg,
+        var(--paper-cream) 0 64%,
+        var(--ink-line) 64% 67%,
+        transparent 67%
+      )
+      right 3px bottom 3px / 32px 32px no-repeat,
+    color-mix(in srgb, var(--paper-deep) 72%, var(--fx-light, var(--paper-aged)));
+  border: 1.5px solid var(--ink-line);
+  border-radius: 1px;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+/* The pencil caption, written on the album page under the print. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='photo-corner'][data-title]::after {
+  content: attr(data-title);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  text-align: center;
+  font-family: var(--font-accent);
+  font-size: 15px;
+  color: var(--ink-graphite-soft);
+  transform: rotate(-0.6deg);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.19 wax-seal — a blob of sealing wax pressed over a ribbon
+
+   The blob is four disagreeing radii rather than a circle, which is the whole
+   of this language's "edges bow slightly" applied to something that really
+   was poured. The monogram is `title`, pressed into the wax as the deep face
+   of the same pigment; the ribbon is two slanted bands with hard stops.
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='wax-seal'] {
+  --fx-light: var(--wash-terracotta-light);
+  --fx-base: var(--wash-terracotta);
+  --fx-deep: var(--wash-terracotta-deep);
+  position: relative;
+  min-height: 128px;
+  margin: var(--space-24) 0;
+  padding: var(--space-12) 0 var(--space-16) 120px;
+  /* The two ribbon ends the seal is holding down. Each is one slanted band
+     with hard stops — a narrow fold picked out as a darker flat face beside a
+     lighter one, which is how this language does depth — running out from
+     under the wax and down past it. */
+  background:
+    linear-gradient(
+        66deg,
+        transparent 0 33%,
+        color-mix(in srgb, var(--fx-deep) 42%, var(--fx-base)) 33% 37%,
+        color-mix(in srgb, var(--fx-base) 58%, var(--paper-cream)) 37% 52%,
+        transparent 52%
+      )
+      left 0 top 46px / 52px 78px no-repeat,
+    linear-gradient(
+        114deg,
+        transparent 0 48%,
+        color-mix(in srgb, var(--fx-base) 58%, var(--paper-cream)) 48% 63%,
+        color-mix(in srgb, var(--fx-deep) 42%, var(--fx-base)) 63% 67%,
+        transparent 67%
+      )
+      left 52px top 46px / 52px 78px no-repeat;
+  font-family: var(--font-accent);
+}
+
+:is(.nb-prose, .nb-fx-specimen) [data-type='wax-seal']::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 8px;
+  width: 76px;
+  height: 76px;
+  background: var(--fx-base);
+  border: 2px solid var(--fx-deep);
+  /* Poured, not stamped out with a cutter. */
+  border-radius: 47% 53% 44% 56% / 52% 46% 55% 48%;
+  pointer-events: none;
+}
+
+/* The monogram, pressed. Caveat, and never below its 20px floor. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='wax-seal']::after {
+  content: attr(data-title);
+  position: absolute;
+  left: 14px;
+  top: 8px;
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The die's rim, inset from the wax edge. A ring with no blur radius. */
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--fx-deep) 55%, transparent);
+  border-radius: 47% 53% 44% 56% / 52% 46% 55% 48%;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  color: color-mix(in srgb, var(--fx-deep) 88%, var(--ink-line));
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.20 map-pin — a place, pinned, with the walk in from the margin
+   -------------------------------------------------------------------------- */
+:is(.nb-prose, .nb-fx-specimen) [data-type='map-pin'] {
+  --fx-light: var(--wash-coral-light);
+  --fx-base: var(--wash-coral);
+  --fx-deep: var(--wash-coral-deep);
+  position: relative;
+  min-height: 74px;
+  margin: var(--space-24) 0 var(--space-20) var(--space-8);
+  padding: var(--space-24) 0 var(--space-12) 46px;
+  /* The route in: a dashed trail down the margin, drawn rather than bordered
+     so it can stop short of the pin's own point. */
+  background: repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--fx-deep) 50%, transparent) 0 6px,
+      transparent 6px 13px
+    )
+    left 12px top 40px / 2.5px calc(100% - 48px) no-repeat;
+  font-family: var(--font-body);
+}
+
+/* With no place name there is no line above the writing, so the note sits
+   BESIDE the pin instead of below where the name would have been. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='map-pin']:not([data-title]) {
+  min-height: 44px;
+  padding-top: 1px;
+  background-position: left 12px top 34px;
+  background-size: 2.5px calc(100% - 40px);
+}
+
+/* The pin: the classic teardrop is a square with three round corners turned
+   45°, which keeps it in the rounded-corner vocabulary instead of asking for
+   a path. Its eye is a flat hole, not a highlight. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='map-pin']::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  background: radial-gradient(
+      circle at 50% 50%,
+      var(--paper-cream) 0 6px,
+      transparent 6.5px
+    ),
+    var(--fx-base);
+  border: 2px solid var(--fx-deep);
+  border-radius: 50% 50% 50% 2px;
+  transform: rotate(-45deg);
+  pointer-events: none;
+}
+
+/* The place name, on the line the pin was dropped on. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='map-pin'][data-title]::after {
+  content: attr(data-title);
+  position: absolute;
+  left: 46px;
+  top: 2px;
+  padding: 0 var(--space-8) 1px 0;
+  border-bottom: 1.5px solid color-mix(in srgb, var(--fx-deep) 50%, transparent);
+  font-family: var(--font-label);
+  font-size: var(--text-chip);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fx-deep);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+   6.21 Margin doodles and the confetti overlay
+   -------------------------------------------------------------------------- */
+.nb-margin-doodle {
+  position: absolute;
+  z-index: 1;
+  opacity: 0.35;
+  color: var(--ink-graphite-soft);
+  pointer-events: none;
+  user-select: none;
+}
+
+.nb-margin-doodle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Geometry is written inline by src/editor/effects/confetti.ts: the canvas is
+   sized to the bursts' own footprint, not the viewport, so the per-frame clear
+   costs a few hundred thousand pixels instead of millions and the compositing
+   layer it creates is small and short-lived. Do NOT put inset/100vw back. */
+.nb-confetti-canvas {
+  position: fixed;
+  pointer-events: none;
+  z-index: var(--z-toasts);
+}
+
+/* ----------------------------------------------------------------------------
+   6.22 Minimalist mode — the stationery keeps its shape and drops its tilt
+
+   The bargain is deliberate: a reader who turns decoration down wants a
+   quieter page, not a different set of blocks. Shapes and rules stay; the
+   things that were only there to look hand-placed — the tilts, the loose
+   washi strips — stand down.
+   -------------------------------------------------------------------------- */
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::before,
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='washi-box']::after {
+  display: none;
+}
+
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='sticky-note'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='polaroid'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='index-card'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='stamp'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='tag'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='pressed-flower'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='ticket-stub'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='postcard'],
+:root.nb-minimalist :is(.nb-prose, .nb-fx-specimen) [data-type='photo-corner'] {
+  transform: none;
 }
 
 /* === BEGIN generated tints (scripts/gen-tints.mjs) === */

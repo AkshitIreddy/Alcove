@@ -373,6 +373,7 @@ describe('block context menu registry', () => {
       'turn-into',
       'color',
       'highlight',
+      'columns',
       'effects',
     ]);
     const rootIds = entries

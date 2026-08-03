@@ -305,6 +305,13 @@ export const CONTAINER_NAMES = [
   "postcard",
   "ledger",
   "photo-corner",
+  // Two more keepsakes, and both are FASTENINGS rather than papers: a wax
+  // seal closes something, a map pin holds a place down. That is why they
+  // earn names next to the cards above instead of being another `frame=`
+  // value — neither one is a box you write inside, they are objects that
+  // arrive on top of writing.
+  "wax-seal",
+  "map-pin",
 ] as const;
 
 /**
@@ -340,6 +347,8 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   postcard: { name: "postcard" },
   ledger: { name: "ledger" },
   photocorner: { name: "photo-corner" },
+  waxseal: { name: "wax-seal" },
+  mappin: { name: "map-pin" },
   // friendly aliases
   note: { name: "sticky-note" },
   sticky: { name: "sticky-note" },
@@ -386,6 +395,14 @@ export const CONTAINER_ALIASES: Record<string, ContainerAlias> = {
   photocorners: { name: "photo-corner" },
   photomount: { name: "photo-corner" },
   snapshot: { name: "photo-corner" },
+  seal: { name: "wax-seal" },
+  wax: { name: "wax-seal" },
+  sealingwax: { name: "wax-seal" },
+  sealed: { name: "wax-seal" },
+  pin: { name: "map-pin" },
+  place: { name: "map-pin" },
+  location: { name: "map-pin" },
+  waypoint: { name: "map-pin" },
   // callout variants as their own directive names
   info: { name: "callout", attrs: { variant: "info" } },
   tip: { name: "callout", attrs: { variant: "tip" } },
@@ -676,6 +693,14 @@ export const CONTAINER_DOCS: Record<ContainerDirectiveName, ContainerDoc> = {
   "photo-corner": {
     renders: "a print held to the page by four paper corners",
     note: "`title` is the pencil caption underneath",
+  },
+  "wax-seal": {
+    renders: "a blob of sealing wax over a ribbon, pressed with a monogram",
+    note: "`title` is the monogram — one or two letters",
+  },
+  "map-pin": {
+    renders: "a pin dropped in the margin with the walk in behind it",
+    note: "places, travel notes; `title` is the place name",
   },
 };
 

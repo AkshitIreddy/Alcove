@@ -150,6 +150,8 @@ export const CONTAINER_NODE_NAMES: Record<
   postcard: 'postcard',
   ledger: 'ledger',
   'photo-corner': 'photo-corner',
+  'wax-seal': 'wax-seal',
+  'map-pin': 'map-pin',
 };
 
 const WASH_NAMES: readonly string[] = WASH_COLORS;
@@ -177,6 +179,8 @@ const CONTAINER_FALLBACK_ICON: Record<string, StickerId> = {
   postcard: 'sun',
   ledger: 'leaf',
   'photo-corner': 'sun',
+  'wax-seal': 'heart',
+  'map-pin': 'pin',
   generic: 'sparkle',
 };
 
@@ -534,6 +538,8 @@ const COLOR_CONTAINERS: readonly string[] = [
   'postcard',
   'ledger',
   'photo-corner',
+  'wax-seal',
+  'map-pin',
 ];
 
 const TITLE_CONTAINERS: readonly string[] = [
@@ -544,6 +550,8 @@ const TITLE_CONTAINERS: readonly string[] = [
   'postcard',
   'ledger',
   'photo-corner',
+  'wax-seal',
+  'map-pin',
 ];
 
 /**
@@ -663,6 +671,8 @@ function mapContainer(
     case 'postcard':
     case 'ledger':
     case 'photo-corner':
+    case 'wax-seal':
+    case 'map-pin':
       return plainContainer(block, options);
 
     case 'spoiler': {

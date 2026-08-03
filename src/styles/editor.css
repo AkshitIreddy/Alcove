@@ -818,6 +818,466 @@
 }
 
 /* ----------------------------------------------------------------------------
+   Columns — the side-by-side layout (src/editor/nodes/columns.ts)
+
+   The whole node pair shipped without these rules once, which meant `/columns`
+   produced two stacked paragraphs and nothing said why. The flex row IS the
+   feature; keep it here rather than inline on the node, because the divider
+   drag reads the gap's geometry back out of the DOM.
+
+   The gap is the container's own box and nothing else's — the dividing rule is
+   a pseudo-element with `pointer-events: none` — so a mousedown whose target
+   is `[data-type='columns']` is unambiguously a grab of a divider. columns.ts
+   depends on that; do not put a padding or a child on the container.
+   -------------------------------------------------------------------------- */
+.nb-prose [data-type='columns'] {
+  --nb-col-gap: var(--space-24);
+  display: flex;
+  align-items: stretch;
+  gap: var(--nb-col-gap);
+  margin: 0;
+}
+
+.nb-prose [data-type='columns'][data-gap='sm'] {
+  --nb-col-gap: var(--space-12);
+}
+
+.nb-prose [data-type='columns'][data-gap='lg'] {
+  --nb-col-gap: var(--space-40);
+}
+
+/* `flex: 1 1 0` is the even default; the `width` attr overrides flex-grow
+   inline (columns.ts), so a hand-dragged weight beats it without !important.
+   `min-width: 0` is what stops a long unbroken word widening its column. */
+.nb-prose [data-type='col'] {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.nb-prose [data-type='col'] > :first-child {
+  margin-top: 0;
+}
+
+/* The dividing rule: a dashed pencil hairline halfway across the gap. */
+.nb-prose [data-type='col'] + [data-type='col']::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--nb-col-gap) / -2);
+  top: 1px;
+  bottom: 1px;
+  border-left: 1.5px dashed var(--paper-edge);
+  pointer-events: none;
+}
+
+/* The grab cursor, only while the pointer is in a gap.
+
+   The state is an attribute on <html> (columns.ts explains why it cannot be a
+   class on the block), so `:hover` is what narrows it back down to the one
+   layout the pointer is over. A rule without the attribute would inherit the
+   resize cursor onto every word in the columns. */
+html[data-nb-col-divider='true'] .nb-prose [data-type='columns']:hover {
+  cursor: col-resize;
+}
+
+html[data-nb-col-divider='true']
+  .nb-prose
+  [data-type='columns']:hover
+  > [data-type='col']
+  + [data-type='col']::before {
+  border-left-color: var(--accent-deep);
+}
+
+/* The drag ghost lives on <body> (columns.ts) so the page cannot clip it. */
+.nb-col-resize-ghost {
+  position: fixed;
+  z-index: 60;
+  width: 0;
+  border-left: 2px solid var(--accent-deep);
+  pointer-events: none;
+}
+
+html[data-nb-col-resizing='true'] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Footnotes — a small number in the line, the note at the foot of the page
+   (src/editor/nodes/footnote.ts owns the numbering and the rail's DOM)
+
+   The rail is a sibling of the prose inside .nb-page-editor, and it takes its
+   room out of the page through the prose's own padding-bottom — the ONE
+   quantity the overflow drain re-reads on every pass. That is what makes a
+   note push its page's tail onward instead of printing over it.
+
+   Two things about this one rule:
+
+   SPECIFICITY — spread.css sets this padding at
+   `.nb-spread .nb-page-editor .ProseMirror` (three classes), so naming the
+   prose root by BOTH of its class names is what lets this win no matter which
+   stylesheet the bundler puts last.
+
+   SCOPE — the spread only, deliberately. Outside it the prose carries a 30vh
+   bottom padding (the click-below-to-type lane) and nothing paginates, so
+   restating the padding there would change a layout this feature has no
+   business changing, to fix a problem it does not have.
+   -------------------------------------------------------------------------- */
+.nb-spread .nb-page-editor .ProseMirror.nb-prose {
+  padding-bottom: calc(var(--space-32) + var(--nb-footnote-rail, 0px));
+}
+
+/* The marker: a small raised number, printed from the decoration the plugin
+   puts on it (a CSS counter cannot count a note inside a closed toggle). */
+.nb-prose .nb-footnote-ref {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 0;
+  vertical-align: super;
+  color: var(--accent-ink);
+  cursor: pointer;
+  padding: 0 1px;
+  border-radius: var(--radius-sm);
+}
+
+.nb-prose .nb-footnote-ref::after {
+  content: attr(data-note);
+}
+
+/* Before the plugin has numbered it (one frame, or a doc opened read-only). */
+.nb-prose .nb-footnote-ref:not([data-note])::after {
+  content: '*';
+}
+
+.nb-prose .nb-footnote-ref:hover,
+.nb-prose .nb-footnote-ref.ProseMirror-selectednode {
+  background: var(--wash-amber-light);
+}
+
+.nb-footnote-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--space-32);
+  margin: 0;
+  padding: var(--space-8) 0 0;
+  list-style: none;
+}
+
+/* The foot-rule is SHORT — it marks the foot of the page, it does not divide
+   it — so it is drawn as a pseudo-element rather than a border, which would
+   have to run the full width of the notes. */
+.nb-footnote-rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 120px;
+  border-top: 1.5px solid var(--paper-edge);
+}
+
+.nb-footnote-rail[hidden] {
+  display: none;
+}
+
+.nb-footnote-entry {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  font-family: var(--font-body);
+  /* 15px: the smallest a handwriting face may be set is 13px, and a note is
+     meant to read as an aside, not as fine print. */
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-footnote-index {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  flex: 0 0 auto;
+  min-width: 12px;
+  text-align: right;
+}
+
+.nb-footnote-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  outline: none;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-4);
+}
+
+.nb-footnote-note:empty::before {
+  content: attr(data-hint);
+  color: var(--ink-sepia-soft);
+  opacity: 0.55;
+}
+
+.nb-footnote-note:focus {
+  background: var(--wash-amber-light);
+}
+
+/* ----------------------------------------------------------------------------
+   Maths — an equation on its own line, and maths inside a sentence.
+
+   The markup comes from src/editor/nodes/mathTex.ts, which emits `nb-m-*`
+   spans and nothing else; every layout decision that is not a string of HTML
+   is here. The face is the bundled serif (Crimson Pro) rather than a maths
+   webfont: the page is warm paper, and Computer Modern on it reads as a
+   screenshot of a different program.
+   -------------------------------------------------------------------------- */
+.nb-math {
+  /* Crimson Pro is bundled and loaded in index.tsx (the 'book' lettering). */
+  font-family: 'Crimson Pro', Georgia, serif;
+  color: var(--ink-sepia);
+}
+
+.nb-math-inline {
+  display: inline-block;
+  vertical-align: baseline;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+
+.nb-math-block {
+  display: block;
+  margin: 0;
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
+.nb-math:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-math.is-selected {
+  outline: 2px dashed var(--accent-deep);
+  outline-offset: 2px;
+}
+
+.nb-math-render {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05em;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.nb-math-render.is-display {
+  font-size: 1.25em;
+}
+
+/* The source field, while the formula is being written. */
+.nb-math-source {
+  display: inline-block;
+  min-width: 3ch;
+  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas,
+    monospace;
+  font-size: 15px;
+  color: var(--ink-blue);
+  background: var(--paper-aged);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-4);
+  outline: none;
+  white-space: pre-wrap;
+}
+
+.nb-math-source:empty::before {
+  content: attr(data-hint);
+  opacity: 0.45;
+}
+
+/* --- the atoms ----------------------------------------------------------- */
+.nb-m-row,
+.nb-m-scripts {
+  display: inline-flex;
+  align-items: center;
+}
+
+.nb-m-var {
+  font-style: italic;
+}
+
+.nb-m-bin,
+.nb-m-rel {
+  margin: 0 0.24em;
+}
+
+/* A sign, not an operation: `-b` reads as negative b only if the minus is
+   tight against it (mathTex.ts decides which is which). */
+.nb-m-bin.is-unary {
+  margin-left: 0;
+  margin-right: 0.04em;
+}
+
+.nb-m-punct {
+  margin-right: 0.16em;
+}
+
+.nb-m-fn {
+  font-size: 1.35em;
+  margin: 0 0.1em;
+}
+
+.nb-m-text {
+  font-family: var(--font-body);
+  font-size: 0.86em;
+  margin: 0 0.14em;
+}
+
+.nb-m-text.is-italic {
+  font-style: italic;
+}
+
+.nb-m-text.is-bold {
+  font-weight: 700;
+}
+
+.nb-m-space {
+  display: inline-block;
+  width: 0.3em;
+}
+
+.nb-m-space.is-wide {
+  width: 1em;
+}
+
+/* An unknown macro says so instead of vanishing — same bargain the script
+   parser makes: render the intent, flag the doubt. */
+.nb-m-unknown {
+  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas,
+    monospace;
+  font-size: 0.82em;
+  color: var(--accent-ink);
+  border-bottom: 1.5px dotted var(--accent-deep);
+}
+
+.nb-m-placeholder {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink-sepia-soft);
+  opacity: 0.55;
+}
+
+/* --- fractions ----------------------------------------------------------- */
+.nb-m-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.14em;
+  font-size: 1em;
+}
+
+.nb-m-frac.is-small {
+  font-size: 0.82em;
+}
+
+.nb-m-frac-num {
+  display: block;
+  padding: 0 0.24em 0.06em;
+  border-bottom: 1.5px solid currentColor;
+}
+
+.nb-m-frac-den {
+  display: block;
+  padding: 0.06em 0.24em 0;
+}
+
+/* --- radicals ------------------------------------------------------------ */
+.nb-m-root {
+  display: inline-flex;
+  align-items: stretch;
+  margin: 0 0.1em;
+}
+
+.nb-m-root-sign {
+  display: inline-block;
+  transform: scaleX(0.8);
+  transform-origin: right center;
+}
+
+.nb-m-root-index {
+  font-size: 0.62em;
+  align-self: flex-start;
+  margin-right: -0.4em;
+  position: relative;
+  top: -0.1em;
+}
+
+.nb-m-root-body {
+  display: inline-block;
+  border-top: 1.5px solid currentColor;
+  padding: 0.08em 0.16em 0 0.1em;
+}
+
+/* --- scripts ------------------------------------------------------------- */
+.nb-m-scripts {
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 0.7em;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.nb-m-sup {
+  display: block;
+  position: relative;
+  top: -0.42em;
+}
+
+.nb-m-sub {
+  display: block;
+  position: relative;
+  top: 0.32em;
+}
+
+/* Both present: they stack, so the offsets that keep a lone one on the
+   baseline would pull them apart. */
+.nb-m-scripts > .nb-m-sup + .nb-m-sub {
+  top: 0;
+}
+
+.nb-m-scripts > .nb-m-sup:only-child {
+  top: -0.42em;
+}
+
+/* --- big operators with stacked limits ----------------------------------- */
+.nb-m-limits {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.12em;
+}
+
+.nb-m-limits > .nb-m-limit {
+  font-size: 0.62em;
+  line-height: 1.1;
+}
+
+.nb-m-big {
+  display: block;
+  line-height: 1;
+}
+
+/* --- delimiters ---------------------------------------------------------- */
+.nb-m-fence {
+  display: inline-flex;
+  align-items: center;
+}
+
+.nb-m-fence-glyph {
+  display: inline-block;
+  transform-origin: center;
+}
+
+/* ----------------------------------------------------------------------------
    Callout — watercolor wash card with a sticker icon
    -------------------------------------------------------------------------- */
 .nb-callout {

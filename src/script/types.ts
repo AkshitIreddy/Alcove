@@ -205,6 +205,8 @@ export type ContainerName =
   | "postcard"
   | "ledger"
   | "photo-corner"
+  | "wax-seal"
+  | "map-pin"
   | "generic";
 
 export interface ContainerBlock extends BlockBase {

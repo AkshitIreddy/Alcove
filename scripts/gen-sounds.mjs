@@ -184,6 +184,88 @@ const SOURCES = {
     url: 'https://upload.wikimedia.org/wikipedia/commons/8/88/Cracking_peanuts.ogg',
     origin: 'http://www.pdsounds.org/sounds/cracking_peanuts',
   },
+  /*
+   * THE THREE RECORDINGS BEHIND `click-soft`, `typing-tick` AND `page-flip-5`.
+   *
+   * Same survey that caught `pop-soft`, three defects further down the list.
+   * All three were sub-slices of material recorded for something else, and the
+   * measurements say so:
+   *
+   *   `click-soft` x4 â€” the most-fired cue in the app â€” were cut from the Old
+   *   book RIFFLE, overlapping the `book-pull` slices, and measured 3.3% and
+   *   11.6% max adjacent-sample step. A button press is a CONTACT event and a
+   *   riffle is FRICTION; friction has no attack to find, so no conditioning
+   *   turns one into the other. They are a tapped box and a struck wooden pole
+   *   now, and the same measurement reads 14.8-19.6% across all four.
+   *
+   *   `tick-hover` x5 and `typing-tick` x6 were the same 60-second pencil take
+   *   interleaved, and were statistically indistinguishable (1546-1586 Hz
+   *   against 1477-1601 Hz). Only 9 dB of level told a hover from a keystroke.
+   *   The hover keeps the pencil â€” graphite on paper is the right idea for a
+   *   near-subliminal acknowledgement â€” and the keystrokes moved to real
+   *   keyboards, because a key being struck is a different physical event.
+   *   After: 850-1285 Hz at 13-22% step, against the hover's unchanged
+   *   1491-1586 Hz at 9-12%. Two ranges that no longer touch.
+   *
+   *   `page-flip-5` measured 1075 Hz against 1843-1860 for its five siblings:
+   *   the thud among five sheets of paper, the exact defect that had already
+   *   got `page-flip-1` replaced. It is a recording of one page being turned.
+   */
+  tacktack: {
+    title: 'Tack tack tack (tapping a small box)',
+    author: 'stephan (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Tack_tack_tack.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Tack_tack_tack.ogg',
+    origin: 'http://www.pdsounds.org/sounds/tack_tack_tack',
+  },
+  pole: {
+    title: 'Hitting a wooden pole',
+    author: 'stephan (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Hitting_wooden_pole.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/d/d2/Hitting_wooden_pole.ogg',
+    origin: 'http://www.pdsounds.org/sounds/hitting_wooden_pole',
+  },
+  cutboard: {
+    title: 'Wooden cutting board set down on a wooden table',
+    author: 'thore (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Wood_and_cutlery.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/e/e3/Wood_and_cutlery.ogg',
+    origin: 'http://www.pdsounds.org/sounds/wood_and_cutlery',
+  },
+  huntpeck: {
+    title: 'Typing, hunt and peck',
+    author: 'teto_yasha (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Typing_hunt_and_peck.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/c/c5/Typing_hunt_and_peck.ogg',
+    origin: 'http://www.pdsounds.org/sounds/typing_hunt_and_peck',
+  },
+  pckeys: {
+    title: 'Computer keyboard',
+    author: 'russiandoll (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Computer_keyboard.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/a/a4/Computer_keyboard.ogg',
+    origin: 'http://www.pdsounds.org/sounds/computer_keyboard',
+  },
+  pageturn: {
+    title: 'Turning a page',
+    author: 'planish (via pdsounds.org)',
+    licence: 'Public domain',
+    licenceUrl: 'https://commons.wikimedia.org/wiki/Template:PD-author',
+    page: 'https://commons.wikimedia.org/wiki/File:Turning_a_page.ogg',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/6/6b/Turning_a_page.ogg',
+    origin: 'http://www.pdsounds.org/sounds/turning_a_page',
+  },
+
   bell: {
     title: 'Bell dings/chimes',
     author: 'PWL',
@@ -892,7 +974,12 @@ const CUES = [
   { name: 'page-flip-2', src: ['flips', 5], at: 0.02, dur: 0.42, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
   { name: 'page-flip-3', src: ['bookPaper'], at: 0.20, dur: 0.30, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
   { name: 'page-flip-4', src: ['flips', 10], at: 0.02, dur: 0.40, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
-  { name: 'page-flip-5', src: ['bookPaper'], at: 13.03, dur: 0.31, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
+  // planish's single page turn, not the Book/Paper slice that used to be here:
+  // that one measured 1075 Hz against 1843-1860 for the other five, i.e. the
+  // same defect as the old page-flip-1 in the same family. This is the only
+  // recording in the set that is nothing but one page going over, which is why
+  // it can be sliced whole rather than hunted for inside a longer take.
+  { name: 'page-flip-5', src: ['pageturn'], at: 1.55, dur: 0.31, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
   { name: 'page-flip-6', src: ['flips', 4], at: 0.02, dur: 0.43, centroidMax: 1850, centroidMin: 950, peakDb: -12 },
 
   /* â”€â”€ pulling a book out: pages riffling past each other â”€â”€ */
@@ -925,19 +1012,44 @@ const CUES = [
   { name: 'pop-soft-4', src: ['dollsClose'], at: 0.90, dur: 0.32, centroidMax: 1600, peakDb: -14, snap: true },
   { name: 'pop-soft-5', src: ['peanuts'], at: 0.35, dur: 0.30, centroidMax: 1600, peakDb: -14, snap: true },
 
-  /* â”€â”€ buttons: a fingertip landing on a board cover â”€â”€
+  /* â”€â”€ buttons: two small things being struck â”€â”€
    * Every button in the app fires this, so it has to be the least eventful
    * thing in the set that is still unmistakably a response: ~140 ms, no ring,
    * and 5 dB under `pop-soft` so opening a panel still reads as the bigger
-   * gesture. These four are real taps from the Old-book recording â€” the same
-   * physical object the shelf cues come from â€” rather than a synthesized blip,
-   * which is why they can sit this quiet and still register. */
-  { name: 'click-soft', src: ['oldBook'], at: 5.679, dur: 0.14, centroidMax: 1300, peakDb: -19, fadeOutMs: 70 },
-  { name: 'click-soft-2', src: ['oldBook'], at: 6.789, dur: 0.17, centroidMax: 1300, peakDb: -19, fadeOutMs: 80 },
-  { name: 'click-soft-3', src: ['oldBook'], at: 7.512, dur: 0.13, centroidMax: 1300, peakDb: -19, fadeOutMs: 70 },
-  { name: 'click-soft-4', src: ['oldBook'], at: 11.306, dur: 0.16, centroidMax: 1300, peakDb: -19, fadeOutMs: 80 },
+   * gesture.
+   *
+   * They used to be sub-slices of the Old-book RIFFLE, overlapping the
+   * `book-pull` windows, and the report said what was wrong before anyone
+   * listened: 3.3% and 11.6% max adjacent-sample step against 14-19% for the
+   * panel pops beside them. A riffle is friction and has no attack; a button
+   * press is a contact event and is almost nothing else. So the fix had to be
+   * a different physical event, not a different lid.
+   *
+   * THREE recordings for four takes, which is the point: a small box tapped,
+   * a two-metre wooden pole struck (its recordist noted each hit "can be used
+   * as single", which is exactly the shape a cue wants) and a wooden board set
+   * down on a table. All three condition to 1278-1307 Hz, so the family is
+   * tighter than the one it replaces (909-1369) while being made of more
+   * things rather than fewer.
+   *
+   * Two candidates were measured and rejected, and both are worth recording:
+   *   - A retractable pen, the obvious button sound. Nine clean clicks, every
+   *     one conditioning to 493-1198 Hz at 3-11% step â€” duller and LESS of a
+   *     contact event than the riffle it would have replaced.
+   *   - Two taps from the same box take. They passed every measurement and
+   *     failed the family's variety gate at 0.28 against a 0.5 floor: three
+   *     taps on one object in one second are near-copies of each other, which
+   *     is the same defect as four slices of one riffle wearing a better hat. */
+  { name: 'click-soft', src: ['tacktack'], at: 0.311, dur: 0.14, centroidMax: 1300, peakDb: -19, fadeOutMs: 70 },
+  { name: 'click-soft-2', src: ['pole'], at: 1.896, dur: 0.17, centroidMax: 1300, peakDb: -19, fadeOutMs: 80 },
+  { name: 'click-soft-3', src: ['cutboard'], at: 0.954, dur: 0.13, centroidMax: 1300, peakDb: -19, fadeOutMs: 70 },
+  { name: 'click-soft-4', src: ['pole'], at: 0.107, dur: 0.16, centroidMax: 1300, peakDb: -19, fadeOutMs: 80 },
 
-  /* â”€â”€ hover: graphite on paper, by far the quietest thing here â”€â”€ */
+  /* â”€â”€ hover: graphite on paper, by far the quietest thing here â”€â”€
+   * The pencil stays HERE and left `typing-tick`, which is the half of that
+   * pair worth keeping: a hover is a near-subliminal acknowledgement that
+   * something took notice, and graphite ticking on paper is exactly that. What
+   * it is not is a key being struck â€” see TYPING below. */
   { name: 'tick-hover', src: ['pencil'], at: 6.10, dur: 0.14, centroidMax: 1500, peakDb: -27, snap: false },
   { name: 'tick-hover-2', src: ['pencil'], at: 12.40, dur: 0.17, centroidMax: 1500, peakDb: -27, snap: false },
   { name: 'tick-hover-3', src: ['pencil'], at: 20.70, dur: 0.13, centroidMax: 1500, peakDb: -27, snap: false },
@@ -968,14 +1080,52 @@ const CUES = [
   { name: 'confetti-3', src: ['bell', 2], at: 0.0, dur: 0.92, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.11, 0.21] },
 ];
 
-/** Keystrokes, all off the one pencil recording. */
+/**
+ * Keystrokes: six isolated key presses off TWO different keyboards.
+ *
+ * These were six more moments of the same 60-second pencil take that voices
+ * `tick-hover`, and the two families measured 1477-1601 Hz against 1546-1586 Hz
+ * â€” statistically indistinguishable, with 9 dB of level the only thing telling
+ * a keystroke from a hover. Two cues that fire in the same second of the same
+ * gesture cannot be the same recording at two volumes.
+ *
+ * A key being struck is a contact event with a body under it, which is not
+ * what graphite dragging across paper is, and no ceiling or lid was going to
+ * make one into the other.
+ *
+ * THREE THINGS DECIDED THESE SIX `at` VALUES, and none of them is taste:
+ *
+ * 1. The window must hold ONE stroke. A cue that fires per keypress cannot
+ *    contain two, so every candidate needs clear air after it.
+ * 2. The attack must be near the FRONT of the window. `slice(snap: true)`
+ *    walks to the nearest energy rise, and on a keyboard take that is not
+ *    free: `snapOnset` searches +/-90 ms, so where the previous stroke is
+ *    still decaying inside that search it locks onto the TAIL of the wrong
+ *    stroke and the real one lands 90+ ms in. Two otherwise-good candidates
+ *    were caught that way, measuring their peak at 93 ms with a second event
+ *    at 61% of it â€” audibly a double tap. Every shipped take here peaks in
+ *    the first 8-17 ms with a 4-12 ms rise, against the hover's 86 ms peak and
+ *    81 ms rise. That contrast is the whole point of the change.
+ * 3. The six have to land in a band the hover does not occupy. They come in at
+ *    850-1285 Hz, under the hover's 1491-1586 and under the buttons' 1278-1307
+ *    â€” three of the quietest cues in the app fire inside the same second of
+ *    the same gesture, so different objects is not enough, they have to sit in
+ *    different places. The BRIGHTEST keystrokes in both takes were the
+ *    cleanest contact events measured and were dropped anyway, because they
+ *    condition to 1500-1700 Hz, straight back on top of the hover.
+ *
+ * Five come from the hunt-and-peck take and one from the PC keyboard, which is
+ * not the even split it looks like it should be: the PC take is fast copy
+ * typing, so of 900+ strokes exactly one satisfies all three rules at once.
+ * The laptop keyboard, checked as a third source, has none and is not used.
+ */
 const TYPING = [
-  { name: 'typing-tick-1', at: 8.30, dur: 0.14 },
-  { name: 'typing-tick-2', at: 15.60, dur: 0.13 },
-  { name: 'typing-tick-3', at: 24.10, dur: 0.18 },
-  { name: 'typing-tick-4', at: 36.80, dur: 0.14 },
-  { name: 'typing-tick-5', at: 51.40, dur: 0.17 },
-  { name: 'typing-tick-6', at: 63.90, dur: 0.13 },
+  { name: 'typing-tick-1', src: ['huntpeck'], at: 12.997, dur: 0.13 },
+  { name: 'typing-tick-2', src: ['huntpeck'], at: 33.202, dur: 0.13 },
+  { name: 'typing-tick-3', src: ['huntpeck'], at: 6.027, dur: 0.18 },
+  { name: 'typing-tick-4', src: ['pckeys'], at: 35.242, dur: 0.14 },
+  { name: 'typing-tick-5', src: ['huntpeck'], at: 26.655, dur: 0.18 },
+  { name: 'typing-tick-6', src: ['huntpeck'], at: 44.310, dur: 0.13 },
 ];
 
 /**
@@ -1115,7 +1265,8 @@ async function build() {
 
   /* keystrokes */
   for (const t of TYPING) {
-    const raw = await load('pencil');
+    const [key, arg] = t.src;
+    const raw = await load(key, arg);
     // âˆ’18 dB, not the âˆ’21 these shipped at, and the engine's velocity floor
     // came up from 0.45 to 0.6 alongside â€” review reported the ticks as
     // inaudible. Peak was the wrong dial to read them by: at âˆ’21 a 140 ms tick
@@ -1123,9 +1274,12 @@ async function build() {
     // scaling put the quiet strokes another 7 dB down from there. The two
     // changes together are +3.9 dB at mean velocity, which lands the tick just
     // under a page turn â€” audible as a keystroke, not as a typewriter.
-    emit(t.name, condition(slice(raw, t.at, t.dur, false), {
+    // Snapped, unlike the pencil slices these replaced: a keystroke HAS an
+    // attack to find, and landing a 130 ms window a few tens of milliseconds
+    // late would cut it off and leave only the key bottoming out.
+    emit(t.name, condition(slice(raw, t.at, t.dur, true), {
       name: t.name, centroidMax: 1600, peakDb: -18, fadeInMs: 8, fadeOutMs: 55,
-    }), ['pencil']);
+    }), [key]);
   }
 
   /* seamless loops */

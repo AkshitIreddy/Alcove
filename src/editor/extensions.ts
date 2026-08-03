@@ -53,6 +53,26 @@ export const BLOCK_ID_TYPES = [
   'spoiler',
   'columns',
   'col',
+  // The rest of the stationery drawer and all of the keepsake drawer.
+  //
+  // These were missing, and the symptom was invisible rather than broken:
+  // several of these nodes seed their tilt from `node.attrs.id`
+  // (containers.ts `seededTilt`), so with no UniqueID every pressed flower on
+  // a page hashed the same string and lay at the same angle — a column of
+  // identical sprigs, which is the exact "clip art" reading the seeding
+  // exists to avoid.
+  'index-card',
+  'envelope',
+  'stamp',
+  'tag',
+  'marginalia',
+  'pressed-flower',
+  'ticket-stub',
+  'postcard',
+  'ledger',
+  'photo-corner',
+  'wax-seal',
+  'map-pin',
 ] as const;
 
 export interface EditorExtensionsOptions {

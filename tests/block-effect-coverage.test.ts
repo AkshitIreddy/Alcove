@@ -44,6 +44,13 @@ const NOT_A_DRESSABLE_BLOCK: Readonly<Record<string, string>> = {
   // No `group` on purpose: a col may only live inside a columns node, and the
   // columns node itself is dressable. Dressing both would double every frame.
   col: 'may only live inside `columns`, which is itself dressable',
+  // `inline: true` — the marker is one raised number inside a line of prose,
+  // and its note is drawn by the page's footnote rail rather than by the node.
+  // There is no box on either end to tape, frame or stand on paper.
+  footnote: 'inline marker, not a block',
+  // `inline: true` — maths inside a sentence, drawn in the run of the text.
+  // The equation BLOCK (`math`) is dressable and is in the list.
+  mathInline: 'inline maths, not a block',
 };
 
 /** Every node name registered under src/editor/nodes. */

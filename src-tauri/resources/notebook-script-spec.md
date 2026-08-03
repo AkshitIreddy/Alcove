@@ -291,6 +291,8 @@ The container names:
 | `postcard` | a divided-back postcard — message left, address lines right — `title` is the postmark |
 | `ledger` | a ruled accounts strip with a figures column — money, tallies, scores; `title` names the account |
 | `photo-corner` | a print held to the page by four paper corners — `title` is the pencil caption underneath |
+| `wax-seal` | a blob of sealing wax over a ribbon, pressed with a monogram — `title` is the monogram — one or two letters |
+| `map-pin` | a pin dropped in the margin with the walk in behind it — places, travel notes; `title` is the place name |
 
 Unknown names are **not errors** — they render as a plain decorated box. Name
 matching is generous too: case, spaces, `-` and `_` are all ignored, so
@@ -317,6 +319,8 @@ matching is generous too: case, spaces, `-` and `_` are all ignored, so
 | `::: postalcard` | `::: postcard` |
 | `::: accounts`, `::: tally`, `::: expenses` | `::: ledger` |
 | `::: photocorners`, `::: photomount`, `::: snapshot` | `::: photo-corner` |
+| `::: seal`, `::: wax`, `::: sealingwax`, `::: sealed` | `::: wax-seal` |
+| `::: pin`, `::: place`, `::: location`, `::: waypoint` | `::: map-pin` |
 | `::: info` | `::: callout {variant=info}` |
 | `::: tip`, `::: hint` | `::: callout {variant=tip}` |
 | `::: warn`, `::: warning`, `::: caution` | `::: callout {variant=warn}` |
@@ -682,6 +686,7 @@ spoiler         banner          index-card      ```flowchart same as graph
 envelope        stamp           tag             ```timeline  label: text | attrs
 marginalia      pressed-flower  ticket-stub
 postcard        ledger          photo-corner
+wax-seal        map-pin
 ATTRS  {key=value, key2=value2}
 colors: amber terracotta moss lemon sky blush graphite
 color= sticker= tape= washi= rotate= paper= shadow= underline= frame= font= ink= size= align=

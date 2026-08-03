@@ -472,7 +472,9 @@ function blockFromNode(node: TiptapNode): Block[] {
       case 'ticket-stub':
       case 'postcard':
       case 'ledger':
-      case 'photo-corner': {
+      case 'photo-corner':
+      case 'wax-seal':
+      case 'map-pin': {
         const raw = nodeAttrs(node);
         // `title` is excluded and then put back only when it carries text.
         // It used to come back for `card` alone, which quietly dropped the

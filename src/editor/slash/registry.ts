@@ -413,6 +413,48 @@ const blockCommands: SlashCommand[] = [
     run: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).wrapIn('photo-corner').run(),
   },
+  /* --- the two fastenings (they arrive ON TOP of writing, not around it) -- */
+  {
+    id: 'wax-seal',
+    title: 'Wax seal',
+    subtitle: 'A blob of sealing wax pressed over a ribbon',
+    icon: glyph('◉'),
+    keywords: [
+      'wax',
+      'seal',
+      'sealed',
+      'sealing',
+      'monogram',
+      'letter',
+      'promise',
+      'oath',
+      'signed',
+      'ribbon',
+    ],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('wax-seal').run(),
+  },
+  {
+    id: 'map-pin',
+    title: 'Map pin',
+    subtitle: 'A place, pinned, with the walk in behind it',
+    icon: { kind: 'sticker', stickerId: 'pin' },
+    keywords: [
+      'map',
+      'pin',
+      'place',
+      'location',
+      'travel',
+      'trip',
+      'where',
+      'waypoint',
+      'visited',
+    ],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).wrapIn('map-pin').run(),
+  },
   {
     id: 'today',
     title: 'Today',
@@ -427,6 +469,10 @@ const blockCommands: SlashCommand[] = [
       void openToday();
     },
   },
+  // Columns go through `setColumns`, not a literal insertContent: the command
+  // carries the block the caret was on into the first column, nests when the
+  // caret is already inside one, and is the same path the right-click menu
+  // takes — three columns from the menu and three from here cannot drift.
   {
     id: 'columns',
     title: 'Columns',
@@ -435,18 +481,79 @@ const blockCommands: SlashCommand[] = [
     keywords: ['columns', 'col', 'layout', 'side', 'split', 'two'],
     section: 'blocks',
     run: ({ editor, range }) =>
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .insertContent({
-          type: 'columns',
-          content: [
-            { type: 'col', content: [{ type: 'paragraph' }] },
-            { type: 'col', content: [{ type: 'paragraph' }] },
-          ],
-        })
-        .run(),
+      editor.chain().focus().deleteRange(range).setColumns(2).run(),
+  },
+  {
+    id: 'columns-three',
+    title: 'Three columns',
+    subtitle: 'A third of the page each',
+    icon: glyph('▥'),
+    keywords: ['columns', 'three', 'col', 'layout', 'split', 'thirds'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).setColumns(3).run(),
+  },
+  {
+    id: 'equation',
+    title: 'Equation',
+    subtitle: 'Maths on its own line — \\frac, \\sqrt, \\sum',
+    icon: glyph('∑'),
+    keywords: [
+      'equation',
+      'math',
+      'maths',
+      'formula',
+      'latex',
+      'tex',
+      'algebra',
+      'fraction',
+      'display',
+    ],
+    section: 'blocks',
+    // The node view opens its own source field when it arrives empty, so
+    // there is nothing to chase here.
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).insertEquation().run(),
+  },
+  {
+    id: 'math-inline',
+    title: 'Inline maths',
+    subtitle: 'A formula inside the sentence — or just type $x^2$',
+    icon: glyph('√'),
+    keywords: ['math', 'maths', 'inline', 'formula', 'latex', 'tex', 'symbol'],
+    section: 'blocks',
+    run: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).insertInlineMath().run(),
+  },
+  {
+    id: 'footnote',
+    title: 'Footnote',
+    subtitle: 'A small number here, the note at the foot of the page',
+    icon: glyph('¹'),
+    keywords: [
+      'footnote',
+      'note',
+      'aside',
+      'reference',
+      'citation',
+      'source',
+      'annotation',
+      'asterisk',
+    ],
+    section: 'blocks',
+    run: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertFootnote().run();
+      // The note is written at the foot of the page, so that is where the
+      // caret belongs — the marker itself is an atom with nothing to type in.
+      // The rail is rebuilt by the transaction above; focus it on the next
+      // frame, once its entry exists.
+      requestAnimationFrame(() => {
+        const page = editor.view.dom.parentElement;
+        const notes = page?.querySelectorAll('.nb-footnote-note');
+        const last = notes?.[notes.length - 1];
+        if (last instanceof HTMLElement) last.focus();
+      });
+    },
   },
 ];
 

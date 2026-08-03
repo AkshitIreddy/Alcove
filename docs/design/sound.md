@@ -22,6 +22,12 @@ dedication or CC0, sliced to a single event and conditioned by
 >
 > The lesson for the next pass: the set's own report is the cheapest reviewer
 > it has, and a claim in prose is not a property until something checks it.
+>
+> The next pass took the lesson. Reading the same report row by row found
+> **three more defects nobody had heard either** — the button click, the
+> keystroke and one page turn — and all three are fixed below under *Three
+> more the report found*. The set is **25 recordings** now, up from the 15 the
+> survey counted.
 
 One source (the rain bed) is CC BY 4.0. **The obligation is discharged in the
 UI, not by dropping the source**: Settings → Sound → *sound credits* opens a
@@ -106,7 +112,8 @@ were applied, and both rejected otherwise-excellent candidates:
 
 | Source | Why not |
 | --- | --- |
-| **freesound.org** | The best CC0 catalogue for this brief by a wide margin. Its `robots.txt` disallows `ClaudeBot` site-wide and `/search/` for every agent. Not used. |
+| **freesound.org** | The best CC0 catalogue for this brief by a wide margin. Its `robots.txt` disallows `ClaudeBot` site-wide and `/search/` for every agent — re-read at the time of the `click-soft` / `typing-tick` pass and unchanged. Not used. Commons' mirrors of individual freesound CC0 uploads are a different thing and *are* used — see *Sources used* below, after the provenance note. |
+| **Kenney, *UI Audio*** | CC0, 50 files, and genuinely a different pack from the synthesised *Interface Sounds* that had to be torn out of `pop-soft`: its `switch*` members measure 250–430 ms at 4400–6300 Hz with **13–73% of their energy above 4 kHz**, which is broadband the way a recording is and a filtered tone never is. Downloaded and measured rather than assumed, because assuming is how the last Kenney pack got in. Not used for a different reason: at 2–3× the length `click-soft`'s 110–210 ms window allows and 3–4× the ~1300 Hz the family sits at, warming one into the house voice takes away the thing that makes it a switch throw. A good pack for a louder app. |
 | **archive.org** | Carries commercial SFX libraries (Red Library, SSE, GOLD TAPE, Valentino, Designer's Choice) and outright console-game rips re-uploaded with CC0/PD-Mark tags by people who plainly do not own them. A CC0 tag on a Nintendo sound rip is proof the tags are not trustworthy, so none of the collection was used — including the items that may well be legitimate. |
 | **pixabay.com** | Behind a Cloudflare bot challenge. Not bypassed. |
 | **zapsplat** | Requires an account to download. |
@@ -118,13 +125,30 @@ All verified by reading each submission's own licence field (not badge
 images, which also appear in OpenGameArt sidebars for unrelated work — that
 distinction caught the rain bed, filtered as CC0 but actually CC BY 4.0).
 
+Twenty-five recordings. The table is generated-adjacent rather than
+hand-maintained prose: `CREDITS.json` is rewritten from the same `SOURCES`
+object on every build, so if a row here disappears from that object the
+manifest says so. **Kenney's Interface Sounds is no longer in it** — that is
+the `pop-soft` replacement above, and this table said otherwise for one
+commit longer than it should have.
+
 | Source | Author | Licence | Page |
 | --- | --- | --- | --- |
 | Old book (leafing, flicking, shutting) | cori | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Old_book.ogg) |
 | Book, Paper, Pages, assorted | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Book_paper_pages_assorted.ogg) |
 | Pencil Scratchings | gypsygirl | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Pencil_scratchings.ogg) |
 | 10 Book Page Flips | StarNinjas | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/10-book-page-flips) |
-| Interface Sounds (1.0) | Kenney | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/interface-sounds) |
+| Turning a page (in a hard-cover book) | planish | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Turning_a_page.ogg) |
+| Tack tack tack (tapping a small box) | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Tack_tack_tack.ogg) |
+| Hitting a wooden pole | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Hitting_wooden_pole.ogg) |
+| Wooden cutting board set down on a table | thore | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Wood_and_cutlery.ogg) |
+| Typing, hunt and peck | teto_yasha | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Typing_hunt_and_peck.ogg) |
+| Computer keyboard (chunky-keyed, London 2008) | russiandoll | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Computer_keyboard.ogg) |
+| Wooden desk drawer | hugh | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Wooden_desk_drawer.ogg) |
+| Russian dolls opening | ezwa | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Russian_dolls_opening.ogg) |
+| Russian dolls closing | ezwa | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Russian_dolls_closing.ogg) |
+| Metal box springs open | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Metal_box_springs_open.ogg) |
+| Cracking peanuts | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Cracking_peanuts.ogg) |
 | Bell dings/chimes | PWL | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/bell-dingschimes) |
 | Fireplace Sound loop | PagDev | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/fireplace-sound-loop) |
 | Crickets Ambient Noise | Wolfgang_ (Ted Kerr) | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/crickets-ambient-noise-loopable) |
@@ -183,26 +207,104 @@ the credit fails there rather than in a licence complaint.
 ## Which recording became which cue
 
 One recorded world, the way the art is one drawn world — the interface is
-made of paper, graphite, books and a small brass bell, not of synthesised
-blips.
+made of paper, graphite, books, small struck objects and a brass bell, not of
+synthesised blips.
 
 | Family | Comes from |
 | --- | --- |
-| `page-flip` ×6 | StarNinjas' flips ×4 and Book/Paper/Pages ×2 — separate physical takes, so the rotation has real variety |
-| `click-soft` ×4 | real taps off the Old-book recording: what every button in the app now says |
+| `page-flip` ×6 | StarNinjas' flips ×4, Book/Paper/Pages ×1 and planish's single page turn ×1 — separate physical takes, so the rotation has real variety |
+| `click-soft` ×4 | three objects struck: a small box tapped ×1, a wooden pole ×2, a cutting board set down ×1 |
 | `book-pull` ×4 | pages riffling past each other |
 | `book-return` ×4 | the same, ending on the book meeting the shelf |
 | `shelf-whoosh` ×3 | a long riffle, warmed hard and kept 11 dB under everything else |
-| `pop-soft` ×5 | Kenney interface cues |
+| `pop-soft` ×5 | a drawer's stop, nested dolls apart and together, a sprung metal lid, a peanut shell |
 | `tick-hover` ×5 | graphite ticking on paper — the quietest thing in the app |
 | `check-done` ×4 | a small bell allowed to ring out |
 | `crumple-delete` ×4 | paper actually being crushed |
 | `drop-thump` ×4 | a book shutting / meeting a surface |
 | `confetti` ×3 | one bell strike sounded three or four times — a shimmer, not a jingle |
 | `pencil-scratch` | a 210 ms seamless loop of the pencil recording |
-| `typing-tick` ×6 | six different moments of the same pencil |
+| `typing-tick` ×6 | isolated keystrokes off two keyboards — hunt-and-peck ×5, a chunky-keyed PC board ×1 |
 | `chime-hour` ×3 | three or four real strikes in sequence, because an hour bell *is* a sequence |
 | `ambient-*` ×10 | one field recording each — see *The soundscapes* above |
+
+### Three more the report found
+
+The `pop-soft` discovery was made by reading `report.txt`, not by listening.
+Read the rest of it the same way and three more cues fail on their own numbers.
+None of the three is a conditioning problem, and that is the finding worth
+keeping: **each one is a cue whose SOURCE is the wrong physical event**, and no
+ceiling, lid or level moves a recording from one kind of event to another.
+
+**`click-soft` ×4 — the most-fired cue in the app.** They were sub-slices of
+the Old-book *riffle*, overlapping the `book-pull` windows, and two of the four
+measured a max adjacent-sample step of 3.3% and 11.6% — i.e. a cue that is
+supposed to be a tap, arriving with less slew than the ambience beds (11–22%).
+A riffle is **friction**; a button press is a **contact event**, which is
+almost entirely attack, and the step metric is the one number in the report
+that can tell them apart. Three recordings now, four takes, alternating so the
+rotation crosses materials:
+
+| | centroid | >4 kHz | max step |
+| --- | --- | --- | --- |
+| before (Old-book riffle ×4) | 909–1369 Hz | 0.03–0.18% | **3.3–18.5%** |
+| after (box / pole / board) | **1278–1307 Hz** | 0.04–0.20% | **14.8–19.6%** |
+
+The family got *tighter* in tone (a 29 Hz spread, from 460) while being made of
+more things rather than fewer. Two candidates were measured and rejected, and
+both are worth writing down. A **retractable pen** was the obvious button
+sound: nine clean clicks in the take, and every one of them conditioned to
+493–1198 Hz at 3–11% step — duller, and less of a contact event, than the
+riffle it was meant to replace. The obvious sound and the right sound were not
+the same sound. And **two taps from the same box take** passed every spectral check
+and failed the family's own variety gate at 0.28 against a 0.5 floor: three
+taps on one object inside one second are near-copies, which is the original
+defect wearing a better hat.
+
+**`tick-hover` ×5 and `typing-tick` ×6 were the same 60-second pencil take,
+interleaved.** Measured, they were indistinguishable — 1546–1586 Hz against
+1477–1601 Hz, one range inside the other — and the only thing telling a
+keystroke from a hover was 9 dB of level. `tests/sound.test.ts` cannot catch
+this and is not wrong to miss it: its variety check compares takes *within* a
+family, and each family was internally various. The defect only exists
+*between* two families.
+
+The hover keeps the pencil, which is the half worth keeping: a hover is a
+near-subliminal acknowledgement and graphite on paper is exactly that. The
+keystrokes moved to two real keyboards, because a key being struck is a
+different physical event with a body under it.
+
+| | centroid | max step | envelope peaks at |
+| --- | --- | --- | --- |
+| `tick-hover` (unchanged) | 1491–1586 Hz | 8.7–12.0% | 16–138 ms, 8–81 ms rise |
+| `typing-tick` before (same pencil) | 1477–1601 Hz | 8.1–13.8% | — |
+| `typing-tick` after (two keyboards) | **850–1285 Hz** | **13.1–21.5%** | **8–17 ms, 4–12 ms rise** |
+
+They are disjoint now, ~200 Hz apart, and that is deliberate rather than lucky:
+the *brightest* keystrokes measured were among the cleanest contact events in
+either take and were dropped anyway, because they conditioned to 1500–1700 Hz —
+straight back on top of the hover. Three of the quietest cues in the app fire
+within the same second of the same gesture, so it is not enough that they come
+from different objects; they have to sit in different places.
+
+**Where the envelope peaks is the check worth adding to the next pass.** It is
+not in `tests/sound.test.ts` and it should be read off the files by hand until
+it is: a hover is friction, so its energy is spread over the whole window and
+its loudest moment is wherever the graphite happened to catch. A keystroke and
+a button press are contact events, so they are loudest in the first 8–17 ms and
+decay from there. That one number separates the three quiet cues more sharply
+than centroid does, and it is what the waveform pictures show at a glance —
+before, the typing ticks and the hover were the same picture.
+
+**`page-flip-5` measured 1075 Hz against 1843–1860 for its five siblings** —
+the thud among five sheets of paper, and the exact defect that had already got
+`page-flip-1` replaced one pass earlier. It is planish's *Turning a page* now,
+a recording that is nothing but one page going over in a hard-cover book, which
+is why it can be sliced whole instead of hunted for inside a longer take: 1855
+Hz, dead in the middle of its family. (Its recordist notes they dropped the
+pitch two semitones and applied a lowpass before uploading. That is a processed
+recording, not a synthesized one, and it is still a real page — but it is
+recorded here because the set's one rule is that we know what everything is.)
 
 ## Processing: warm only as much as is needed
 

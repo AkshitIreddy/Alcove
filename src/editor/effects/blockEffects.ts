@@ -113,6 +113,7 @@ export const BLOCK_EFFECT_TYPES = [
   'banner',
   'spoiler',
   'columns',
+  'math',
   'index-card',
   'envelope',
   'stamp',
@@ -123,6 +124,8 @@ export const BLOCK_EFFECT_TYPES = [
   'postcard',
   'ledger',
   'photo-corner',
+  'wax-seal',
+  'map-pin',
 ] as const;
 
 /**

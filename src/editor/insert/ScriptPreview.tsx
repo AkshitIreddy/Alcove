@@ -71,7 +71,7 @@ function InlineNodes(props: { nodes: Inline[] }): JSX.Element {
             return (
               <a
                 href={n.href}
-                title={n.href}
+                data-tooltip={n.href}
                 onClick={(event) => event.preventDefault()}
               >
                 <InlineNodes nodes={n.children} />

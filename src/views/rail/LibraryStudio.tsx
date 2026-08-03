@@ -223,7 +223,7 @@ function ColourRow(props: {
               class="nb-chip nb-chip-swatch"
               aria-pressed={active() === id}
               aria-label={`${props.label}: ${getTheme(id).name}`}
-              title={getTheme(id).name}
+              data-tooltip={getTheme(id).name}
               style={{ '--nb-swatch': props.colour(getTheme(id)) }}
               onClick={() => props.onPick(id)}
             >

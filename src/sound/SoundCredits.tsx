@@ -95,7 +95,7 @@ export default function SoundCredits(): JSX.Element {
               <span class="nbs-credit-by font-ui">by {group.credit.author}</span>
               <span
                 class="nbs-credit-licence font-ui"
-                title={group.credit.licence}
+                data-tooltip={group.credit.licence}
                 data-required={group.credit.attributionRequired ? 'true' : undefined}
               >
                 {shortLicence(group.credit.licence)}

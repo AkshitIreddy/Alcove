@@ -752,7 +752,8 @@ export default function TutorialOverlay(): JSX.Element {
                     aria-label={
                       `Step ${i() + 1}: ${s.title}` + (isDone(s.id) ? ' (done)' : '')
                     }
-                    title={s.title + (isDone(s.id) ? ' — done' : '')}
+                    data-tooltip={s.title + (isDone(s.id) ? ' — done' : '')}
+                    data-tooltip-side="top"
                     onClick={() => jumpTo(i())}
                   >
                     <svg viewBox="0 0 14 14" aria-hidden="true">

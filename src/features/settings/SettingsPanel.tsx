@@ -330,7 +330,7 @@ function Seg(props: {
             type="button"
             class="nbs-seg-chip"
             aria-label={opt.ariaLabel}
-            title={opt.title}
+            data-tooltip={opt.title}
             aria-pressed={props.value === opt.value}
             onClick={() => props.onSelect(opt.value)}
           >
@@ -1069,7 +1069,7 @@ export default function SettingsPanel(props: {
                 type="button"
                 class="nbs-action-btn"
                 disabled={!inTauri}
-                title={
+                data-tooltip={
                   inTauri
                     ? settings.backupFolder ?? 'app data folder'
                     : 'available in the desktop app'

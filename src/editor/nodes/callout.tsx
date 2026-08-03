@@ -247,7 +247,7 @@ function TintPicker(props: PickerProps): JSX.Element {
           {(swatch) => (
             <button
               type="button"
-              title={swatch.label}
+              data-tooltip={swatch.label}
               aria-label={swatch.label}
               aria-pressed={props.current.id === swatch.id}
               style={{
@@ -280,7 +280,7 @@ function TintPicker(props: PickerProps): JSX.Element {
             {(hex) => (
               <button
                 type="button"
-                title={hex.toUpperCase()}
+                data-tooltip={hex.toUpperCase()}
                 aria-label={`Custom colour ${hex.toUpperCase()}`}
                 aria-pressed={props.current.hex === hex}
                 style={{
@@ -409,7 +409,7 @@ function CalloutView(props: SolidNodeViewProps): JSX.Element {
         type="button"
         class="nb-callout-icon"
         contentEditable={false}
-        title="Change icon"
+        data-tooltip="Change icon"
         aria-label={`Callout icon: ${icon()} — click to change`}
         innerHTML={stickerSvg(icon())}
         onClick={() => props.updateAttributes({ icon: next(STICKER_IDS, icon()) })}
@@ -418,7 +418,7 @@ function CalloutView(props: SolidNodeViewProps): JSX.Element {
         type="button"
         class="nb-callout-tint"
         contentEditable={false}
-        title="Change wash colour"
+        data-tooltip="Change wash colour"
         aria-haspopup="true"
         aria-expanded={open()}
         aria-label={`Callout wash: ${wash().label} — click to change`}

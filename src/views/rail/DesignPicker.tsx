@@ -287,7 +287,7 @@ export default function DesignPicker(props: DesignPickerProps): JSX.Element {
                       class="nb-pick-card"
                       classList={{ 'is-active': option().id === props.activeId }}
                       aria-pressed={option().id === props.activeId}
-                      title={option().blurb}
+                      data-tooltip={option().blurb}
                       onClick={() => props.onPick(option().id)}
                     >
                       <DesignCanvas

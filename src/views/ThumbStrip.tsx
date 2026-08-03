@@ -78,7 +78,8 @@ export default function ThumbStrip(props: ThumbStripProps): JSX.Element {
             classList={{
               'is-current': Math.floor(slot() / 2) === props.currentSpread,
             }}
-            title={label(page, slot())}
+            data-tooltip={label(page, slot())}
+            data-tooltip-side="top"
             aria-label={`Jump to ${label(page, slot())}`}
             onClick={() => props.onJump(slot())}
           >

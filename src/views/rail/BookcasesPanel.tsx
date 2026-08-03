@@ -272,10 +272,16 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
                   />
                 </button>
 
+                {/* The name's tooltip is `-clipped`: the text is right there,
+                    so it only speaks up when it is actually cut off. */}
                 <Show
                   when={renaming() === bookcase.id}
                   fallback={
-                    <span class="nb-case-name" title={bookcase.name}>
+                    <span
+                      class="nb-case-name"
+                      data-tooltip={bookcase.name}
+                      data-tooltip-clipped
+                    >
                       {bookcase.name}
                     </span>
                   }
@@ -342,7 +348,7 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
                     type="button"
                     class="nb-chip nb-chip-ghost"
                     aria-label={`Clone ${bookcase.name} without its books`}
-                    title="a second bookcase built the same way — the shelf only, no books"
+                    data-tooltip="a second bookcase built the same way — the shelf only, no books"
                     onClick={() => cloneCase(bookcase)}
                   >
                     clone

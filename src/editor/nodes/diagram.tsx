@@ -152,7 +152,7 @@ function DiagramView(props: SolidNodeViewProps): JSX.Element {
           <button
             type="button"
             class="nb-diagram-edit"
-            title="Edit diagram source"
+            data-tooltip="Edit diagram source"
             aria-label="Edit diagram source"
             onClick={() => (editing() ? setEditing(false) : openEditor())}
           >

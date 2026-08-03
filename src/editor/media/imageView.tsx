@@ -130,7 +130,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
             <button
               type="button"
               class="nb-image-tool"
-              title={`Align: ${align()} — click to cycle`}
+              data-tooltip={`Align: ${align()} — click to cycle`}
               aria-label={`Alignment ${align()}, click to cycle`}
               onClick={cycleAlign}
             >
@@ -139,7 +139,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
             <button
               type="button"
               class="nb-image-tool"
-              title={frame() === 'polaroid' ? 'Plain frame' : 'Polaroid frame'}
+              data-tooltip={frame() === 'polaroid' ? 'Plain frame' : 'Polaroid frame'}
               aria-label="Toggle polaroid frame"
               onClick={toggleFrame}
             >

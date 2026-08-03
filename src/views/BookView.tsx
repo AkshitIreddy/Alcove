@@ -1120,7 +1120,8 @@ export default function BookView(): JSX.Element {
                                 84
                             }%`,
                           }}
-                          title={`ribbon — page ${mark.slot + 1}`}
+                          data-tooltip={`ribbon — page ${mark.slot + 1}`}
+                          data-tooltip-side="left"
                           aria-label={`Jump to bookmarked page ${mark.slot + 1}`}
                           onClick={() => jumpToSlot(mark.slot)}
                         />

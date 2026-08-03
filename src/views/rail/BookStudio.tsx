@@ -741,7 +741,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
                      which is exactly what the spine will show. */
                   style={{ background: `linear-gradient(105deg, ${pair[0]} 62%, ${pair[1]} 62%)` }}
                   aria-label={swatch.label}
-                  title={swatch.label.toLowerCase()}
+                  data-tooltip={swatch.label.toLowerCase()}
                   aria-pressed={activeCloth() === cloth}
                   classList={{ 'is-active': activeCloth() === cloth }}
                   onClick={() => patch({ pigment: swatch.pigment })}
@@ -1107,7 +1107,7 @@ function RerollDice(props: { section: string; onClick(): void }): JSX.Element {
       type="button"
       class="nb-reroll"
       aria-label={`Reroll ${props.section}`}
-      title={`Reroll ${props.section}`}
+      data-tooltip={`Reroll ${props.section}`}
       onClick={props.onClick}
     >
       <svg viewBox="0 0 28 28" aria-hidden="true">

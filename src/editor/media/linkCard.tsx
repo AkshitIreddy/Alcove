@@ -109,7 +109,7 @@ function LinkCardView(props: SolidNodeViewProps): JSX.Element {
         type="button"
         class="nb-media-remove"
         contenteditable={false}
-        title="Remove link card"
+        data-tooltip="Remove link card"
         aria-label="Remove link card"
         onClick={(event) => {
           event.stopPropagation();

@@ -29,7 +29,7 @@ function SpoilerView(props: SolidNodeViewProps): JSX.Element {
         class="nb-spoiler-toggle"
         contenteditable={false}
         aria-expanded={revealed()}
-        title={revealed() ? 'Hide again' : 'Reveal'}
+        data-tooltip={revealed() ? 'Hide again' : 'Reveal'}
         onClick={() => setRevealed(!revealed())}
       >
         {revealed() ? 'shh — hide again' : 'psst… click to reveal'}

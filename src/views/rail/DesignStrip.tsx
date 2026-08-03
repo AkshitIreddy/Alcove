@@ -215,7 +215,7 @@ export default function DesignStrip(props: DesignStripProps): JSX.Element {
             classList={{ 'is-active': option().id === props.activeId }}
             aria-pressed={option().id === props.activeId}
             aria-label={`${option().name} — ${option().blurb}`}
-            title={`${option().name} — ${option().blurb}`}
+            data-tooltip={`${option().name} — ${option().blurb}`}
             onClick={() => props.onPick(option().id)}
           >
             <DesignCanvas

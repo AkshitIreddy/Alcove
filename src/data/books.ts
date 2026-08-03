@@ -690,7 +690,16 @@ function byDeletedAtDesc(a: Book, b: Book): number {
 /**
  * Every trashed book in the library, most recently deleted first.
  *
- * Deliberately parameterless: the trash panel passes this straight to
+ * **The trash is ONE drawer for the whole library, and that is the decision,
+ * not an accident of this signature.** A reader opens the trash because
+ * something they wrote is gone, and the one thing they reliably do not
+ * remember is which bookcase it was standing in; a per-case drawer would
+ * answer "it is not here" about a book two clicks away. What the panel owes
+ * them in exchange is a LABEL — `features/bookshelf/TrashPanel.tsx` names the
+ * case on every row, because `restoreBook` puts a book back in its own case
+ * and that can be a shelf the reader is not looking at.
+ *
+ * Deliberately parameterless as well: the panel passes this straight to
  * `createResource`, and an optional argument there would be bound to the
  * resource's source value rather than to a bookcase. Use
  * `listTrashedBooksIn()` for one case.
@@ -702,12 +711,25 @@ export async function listTrashedBooks(): Promise<Book[]> {
 /**
  * One bookcase's trash drawer. A trashed book never leaves the case it came
  * from — that is what lets restore put it back where it stood.
+ *
+ * Scoped in SQL, so a row whose `bookcase_id` never got written is in NOBODY's
+ * drawer here, while `bookcaseOf` folds it into the default case. The panel's
+ * "this bookcase" filter therefore narrows the library-wide list with
+ * `bookcaseOf` rather than calling this, so the filter and the case chip can
+ * never disagree; this stays for callers that want the indexed query and can
+ * assume the orphan sweep in `ensureBookcases()` has run.
  */
 export async function listTrashedBooksIn(bookcaseId: string): Promise<Book[]> {
   return (await listFloor(TRASH_FLOOR, bookcaseId)).sort(byDeletedAtDesc);
 }
 
-/** Permanently delete every book in the trash. Returns count. */
+/**
+ * Permanently delete every book in the trash. Returns count.
+ *
+ * Scope it to the rows the reader is actually looking at: unscoped means the
+ * WHOLE library's drawer, and a confirm shown over one bookcase's list that
+ * then shreds another case's books is the reason the panel names its scope.
+ */
 export async function emptyTrash(bookcaseId?: string): Promise<number> {
   const books = await listFloor(TRASH_FLOOR, bookcaseId);
   for (const book of books) await deleteBook(book.id);

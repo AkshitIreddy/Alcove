@@ -1,5 +1,26 @@
 # Bellanote — running TODO
 
+## 🔴 Reported 2026-08-03 (second pass)
+
+- [ ] **Some book shapes are bizarre** — "some of them are literally pencil
+      shape or other just bizarre shapes". Same for any shelf or paper that
+      looks weird, bad or cheap. **Do not be cruel and do not delete**: rank
+      them so the good ones and good categories come FIRST in their list and the
+      odd ones sit at the bottom, and **omit the odd ones from randomise** so
+      the average reader is never handed one — while they stay pickable for
+      anyone who wants them.
+- [ ] **Go through every design and refine it by looking.** Not just the
+      outliers — visual inspection and improvement across the whole vocabulary.
+      Then the same for everything else in the app.
+- [ ] **The README, properly.** Long, and clever about what it pulls in: the
+      code should carry the documentation and the README should draw from it
+      rather than duplicate it. Check current best practice. Two halves:
+      - **For readers** — what it is, how to use it, releases/version badges,
+        download links, screenshots, in a custom UI that matches the app.
+      - **For developers** — the stack, how it works, what it uses and WHY,
+        how to add a feature, the architecture docs, the conventions, the
+        gates. Add whatever further sections earn their place.
+
 ## 🔴 Reported 2026-08-03 — WORK THIS LIST
 
 - [ ] **Colour choosers are still ~8 wide.** Everywhere colour is an option it

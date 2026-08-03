@@ -1,10 +1,10 @@
-﻿# Design: page-flip
+# Design: page-flip
 
 ## Recommendation
 Hybrid "live DOM at rest, GPU curl during gesture": keep pages as real interactive DOM in the spread; pre-rasterize pages to ImageBitmaps during idle time (html-to-image), and during a flip swap in a WebGL overlay that renders a cylindrical page-curl shader from those cached textures, driven by pointer drag + GSAP, then swap back to live DOM when the page lands flat.
 
 ## Rationale
-Every alternative fails a hard requirement. (1) StPageFlip/page-flip.js only forwards click events to a/button tags inside pages (per its clickEventForward option) â€” a Notion-grade contenteditable editor with selection, caret, drag handles cannot live inside it; the lib is also minimally maintained. turn.js is legacy jQuery with license restrictions. (2) A pure CSS 3D rigid fold (rotateY on a two-faced leaf) keeps DOM live and is compositor-only, but a flat plane rotating reads as a card flip, not a paper curl; achieving a bend in CSS requires slicing the leaf into strips, which requires duplicating the editor DOM per strip â€” unacceptable for contenteditable state. It survives only as our no-WebGL fallback. (3) Always-canvas/WebGL rendering of pages (turning the whole book into textures) kills live editing entirely. The hybrid takes the best of both: at rest the user edits real DOM with zero overhead; only during the ~400ms of an actual flip do we show a raster â€” and users cannot edit mid-flip anyway, so nothing is lost. The classic objection to snapshot-hybrids â€” snapshot latency at gesture start breaking drag responsiveness â€” is eliminated by pre-caching: html-to-image rasterization runs debounced in requestIdleCallback after edits, so at pointerdown the ImageBitmap already exists and the GL overlay appears the same frame. html-to-image's SVG-foreignObject approach is faster and more faithful than html2canvas in Chromium (WebView2 is Chromium), and all assets/fonts are local in a Tauri app so foreignObject's asset-inlining constraints are trivial. A cylinder-deformation vertex shader gives the genuinely top-notch curl (fold highlight, curvature shading, soft cast shadow) that no CSS technique matches, at a trivial GPU cost (one ~40x8 mesh, two textures) â€” comfortably 60fps+ in WebView2. Since GSAP v3.13 (2025) all plugins including InertiaPlugin are free, so release-velocity physics costs nothing. Sources: [StPageFlip GitHub](https://github.com/Nodlik/StPageFlip), [StPageFlip docs](https://nodlik.github.io/StPageFlip/), [Best HTML-to-Canvas solutions 2025](https://portalzine.de/best-html-to-canvas-solutions-in-2025/), [npm-compare html-to-image vs html2canvas](https://npm-compare.com/dom-to-image-more,html-to-image,html2canvas), [Capturing DOM as image at monday.com](https://engineering.monday.com/capturing-dom-as-image-is-harder-than-you-think-how-we-solved-it-at-monday-com/), [page curl with skewed shadow](https://codepen.io/jmmcduffie/pen/nOVzNL), [open-source page-flip solutions 2026](https://portalzine.de/open-source-page-flip-and-pdf-viewer-solutions-in-javascript-2026/).
+Every alternative fails a hard requirement. (1) StPageFlip/page-flip.js only forwards click events to a/button tags inside pages (per its clickEventForward option) â€” a Notion-grade contenteditable editor with selection, caret, drag handles cannot live inside it; the lib is also minimally maintained. turn.js is legacy jQuery with license restrictions. (2) A pure CSS 3D rigid fold (rotateY on a two-faced leaf) keeps DOM live and is compositor-only, but a flat plane rotating reads as a card flip, not a paper curl; achieving a bend in CSS requires slicing the leaf into strips, which requires duplicating the editor DOM per strip â€” unacceptable for contenteditable state. It survives only as our no-WebGL fallback. (3) Always-canvas/WebGL rendering of pages (turning the whole book into textures) kills live editing entirely. The hybrid takes the best of both: at rest the user edits real DOM with zero overhead; only during the ~400ms of an actual flip do we show a raster â€” and users cannot edit mid-flip anyway, so nothing is lost. The classic objection to snapshot-hybrids â€” snapshot latency at gesture start breaking drag responsiveness â€” is eliminated by pre-caching: html-to-image rasterization runs debounced in requestIdleCallback after edits, so at pointerdown the ImageBitmap already exists and the GL overlay appears the same frame. html-to-image's SVG-foreignObject approach is faster and more faithful than html2canvas in Chromium (WebView2 is Chromium), and all assets/fonts are local in a Tauri app so foreignObject's asset-inlining constraints are trivial. A cylinder-deformation vertex shader gives a genuine curl that no CSS technique matches (the ORIGINAL text sold it on `fold highlight, curvature shading, soft cast shadow` - all three have since been removed as light-model violations; see the struck-through section below), at a trivial GPU cost (one ~40x8 mesh, two textures) â€” comfortably 60fps+ in WebView2. Since GSAP v3.13 (2025) all plugins including InertiaPlugin are free, so release-velocity physics costs nothing. Sources: [StPageFlip GitHub](https://github.com/Nodlik/StPageFlip), [StPageFlip docs](https://nodlik.github.io/StPageFlip/), [Best HTML-to-Canvas solutions 2025](https://portalzine.de/best-html-to-canvas-solutions-in-2025/), [npm-compare html-to-image vs html2canvas](https://npm-compare.com/dom-to-image-more,html-to-image,html2canvas), [Capturing DOM as image at monday.com](https://engineering.monday.com/capturing-dom-as-image-is-harder-than-you-think-how-we-solved-it-at-monday-com/), [page curl with skewed shadow](https://codepen.io/jmmcduffie/pen/nOVzNL), [open-source page-flip solutions 2026](https://portalzine.de/open-source-page-flip-and-pdf-viewer-solutions-in-javascript-2026/).
 
 ## Implementation plan
 ARCHITECTURE â€” three layers inside the open-book view (SolidJS):
@@ -26,11 +26,32 @@ GESTURE â†’ CURL MAPPING:
 - Curl geometry (vertex shader): classic cylinder deformation. Mesh: 40x8 grid quad covering the leaf. For each vertex, compute signed distance d from the fold line (position derived from p: fold line sweeps from x=W to x=-W). If d>0 (past the fold), wrap the vertex around a cylinder of radius r: `angle = d / r; pos.x = foldX + sin(angle)*r (mirrored); pos.z = (1 - cos(angle)) * r`. Radius r eases from ~W*0.15 at pâ‰ˆ0.5 down to ~W*0.4 near the ends so the page flattens as it lands (uniform `uRadius` driven from JS: `r = mix(0.4W, 0.15W, sin(p*PI))`). Apply a fixed perspective projection (fov ~20Â°, camera on +z) so the curl foreshortens naturally. Back face: same mesh, `gl_FrontFacing == false` â†’ sample the NEXT page's texture mirrored in x, tinted 4% lighter/desaturated (paper backside).
 - Textures: `uTexFront` = current page bitmap, `uTexBack` = next (or previous) page bitmap, uploaded via `texImage2D(bitmap)` at flip start (~1ms). Also `uPaperTex` = the same tiled paper texture used in CSS, multiplied in the fragment shader so raster pages match resting pages exactly.
 
-SHADOW / LIGHTING MODEL (fragment shader + one DOM element):
-- Curvature shading on the moving page: `shade = 1.0 - k * max(0, dot(normalApprox, lightDir))` â€” approximate with `smoothstep` bands around the fold: darken 8â€“12% just before the fold crest, add a 3â€“5% warm highlight ON the crest (light from upper-left to match the hand-drawn art direction). Keep it subtle; parchment, not glossy magazine.
-- Self-shadow: the lifted portion darkens the still-flat portion near the fold â€” a `smoothstep(0.0, 0.25*W, -d)` gradient, opacity âˆ sin(p*Ï€), max ~0.22.
-- Cast shadow on the revealed page beneath: rendered in the same GL pass as a ground quad gradient (preferred, guarantees sync), width âˆ curl height, softness grows with distance from fold. Alternatively a DOM div with a CSS gradient moved via `transform`/`opacity` only â€” use this in the CSS fallback path.
-- Gutter: static CSS gradient overlay, never animated.
+~~SHADOW / LIGHTING MODEL~~ — **REMOVED. There is no light model.**
+
+> The original section specified curvature shading, a 3–5% warm crest highlight
+> "light from upper-left", a self-shadow and a cast shadow. All four were built,
+> all four are gone. It is worth recording why, because it is the most
+> plausible-sounding way to get this wrong: it was written before the flat
+> restyle (`RESET-render-architecture.md`) made a light model a house-rule
+> violation, and every word of it sounds like craft.
+>
+> **What it actually looked like.** A reader reported *"when i turn pages
+> sometimes, mid way, the bottom half of page with lines has some weird shadowey
+> effect"*. That was these terms landing on ruled paper: the bands are computed
+> from the fold distance, the rules are a repeating background, and part-way
+> through a turn the two beat against each other into a smear across the lower
+> half of the leaf. Subtle shading over a flat drawing does not read as depth —
+> it reads as dirt.
+>
+> `tests/flip.test.ts` gates their absence (no `pow()`, no shading uniform),
+> because "we removed the light model" is exactly the kind of thing someone
+> re-adds while trying to make the curl look more real.
+
+What the shader does instead: it samples the page texture and bends it. Depth
+comes from the GEOMETRY — the sheet genuinely lifts off the plane and folds
+back — plus the one flat gutter overlay, which is static CSS and never animated.
+Same answer the rest of the app gives: a darker flat face beside a lighter one,
+never a gradient standing in for a lamp.
 
 GSAP INTEGRATION:
 - One proxy object `flip = {p, cx, cy}`; during drag, write directly (no tween). On `pointerup`: decide target (p>0.5 or release velocity |v|>0.5 leaf-widths/s â†’ complete, else cancel), then `gsap.to(flip, {p: target, duration: clamp(0.25, 0.55 - |v|*0.1, 0.55), ease: 'power3.out', onUpdate: renderGL, onComplete: land})`. Optionally InertiaPlugin (`inertia: {p: {velocity: v, end: [0,1]}}`) for true throw physics â€” free since GSAP 3.13.

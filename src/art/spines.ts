@@ -1199,6 +1199,22 @@ export interface SpineParams {
   silhouette: number;
   /** Index into the 12 curated warm pigment duos. */
   palette: number;
+  /**
+   * A cloth colour the READER typed, `#rrggbb`, overruling `palette`.
+   *
+   * Absent/null is the normal case and means "whatever `clothForPalette`
+   * folds `palette` onto" — the fifty house cloths. It is a hex and not an
+   * index because it is by definition not in the table: see
+   * `bookDesign.BookDesign.cloth`, which does the folding, and
+   * `art/customColour.ts`, which is the app's one answer to "the reader wants
+   * a colour we do not own".
+   *
+   * It reaches every cache that holds spine pixels for free: `bookDesignTag`
+   * already spells `design.cloth` into the binding key, and the studio's edit
+   * goes through `cover_meta.style`, which `spineFactory.invalidateStyle`
+   * already drops.
+   */
+  clothHex?: string | null;
   /** Extra per-book hue rotation, ±6°. */
   hueJitter: number;
   /** 0–3 horizontal bands. */
@@ -1264,16 +1280,21 @@ export interface SpineParams {
   /** Charm carried on the shelf AND into the pull-out / open book. */
   charm?: CharmKind;
   /**
-   * The ribbon/twine/wax colourway: an index into `charms.CHARM_COLORS`.
+   * The ribbon/twine/wax colourway: an index into `charms.CHARM_COLORS`, or a
+   * `#rrggbb` the reader typed in the Book Studio.
    *
-   * Read through `charms.charmColorCss`, which also accepts a HEX — so the day
-   * `art/bookStyle.ts` lets a reader pin a colour of their own, the drawing
-   * side already honours it and only the persisted type has to widen. Widening
-   * it here first does not work: `bookStyle.resolveBookStyle` rounds and clamps
-   * this value, so a union arriving early is a type error in a module that has
-   * no way to use it yet.
+   * Read through `charms.charmColorCss`, which has always accepted either —
+   * clamping a reader's hex up onto `CHARM_FLOOR` so `FLAT.ink` still has an
+   * edge to be. This type was the last one holding out, and it was deliberately
+   * left narrow until `art/bookStyle.ts` had somewhere to put such a colour:
+   * `resolveBookStyle` used to round and clamp this value unconditionally, so a
+   * union arriving early would only have been a type error in a module with no
+   * way to use it. That module now keeps the hex whole (`BookStyle.charmColor`
+   * carries both representations), so the union is real.
+   *
+   * Seeded params still roll an INDEX — a hex only ever arrives from the studio.
    */
-  charmColor?: number;
+  charmColor?: number | string;
   /**
    * A binding pinned in the Book Studio (`art/bookDesign.ts`), overriding the
    * one the seed would have picked.
@@ -3503,7 +3524,11 @@ export function renderSpine(
   const seeded = flatSpineFor(params.seed);
   const design = resolveBookDesign({
     seed: params.seed,
-    cloth: clothForPalette(params.palette),
+    // The reader's own colour when they entered one; the fold of their pigment
+    // otherwise. Checked here rather than inside `clothForPalette` because that
+    // function answers "which of the fifty", and a custom colour is none of
+    // them — folding it onto the nearest is the exact lie this replaces.
+    cloth: params.clothHex ?? clothForPalette(params.palette),
     gilt: params.gilt,
     labelAt: seeded.labelAt,
     preset: params.binding ?? null,

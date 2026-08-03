@@ -717,6 +717,32 @@
   color: var(--ink-sepia-soft);
 }
 
+/* A caption under the card's own title rather than a paragraph before a
+   question — it sits between two rules and only needs to clear the rows. */
+.shelf-menu__hint-tight {
+  margin-bottom: var(--space-4);
+}
+
+/*
+ * The library tab's copy of the card (BookcaseMenu in ShelfMenu.tsx).
+ *
+ * It is opened from a sheet GSAP slides on `xPercent`, so it portals out to
+ * <body> — which means it has to win against BOTH the sheet (`--z-menus`) and
+ * the icon rail beside it (`--z-menus` + 10), and the card can be dragged
+ * across the rail by the viewport clamp on a narrow window.
+ *
+ * Wider than the shelf's, because these rows carry a whole clause ("clone the
+ * shelf, no books") where a spine's carry a verb. The width is the ONLY thing
+ * that may differ: `MENU_W` in ShelfMenu.tsx clamps the card into the window
+ * against 216, so anything wider here has to keep its own right margin — which
+ * `max-width` does, by never asking for more than the window has.
+ */
+.shelf-menu--case {
+  z-index: calc(var(--z-menus) + 20);
+  width: 244px;
+  max-width: calc(100vw - 16px);
+}
+
 .shelf-menu__input {
   width: 100%;
   margin: var(--space-4) 0 var(--space-8);
@@ -819,7 +845,10 @@
   bottom: 84px;
   transform: translateX(-50%) rotate(-0.3deg);
   z-index: var(--z-menus);
-  width: min(430px, calc(100vw - 48px));
+  /* Wider than it was: a row now carries the bookcase a book came from as
+     well as its name, and the reader must not have to choose between reading
+     the title and reading where it will go back to. */
+  width: min(486px, calc(100vw - 48px));
   max-height: 50vh;
   display: flex;
   flex-direction: column;
@@ -872,6 +901,108 @@
   color: var(--ink-sepia);
 }
 
+/*
+ * The scope line: what this drawer is showing, and the two words that change
+ * it. Only rendered when the library has more than one bookcase — with one
+ * case there is nothing to disclose and nothing to narrow to.
+ */
+.shelf-trash__scope {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-8);
+}
+
+.shelf-trash__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 2px;
+  background: var(--paper-deep);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 15px 13px 16px / 14px 12px 16px 13px;
+}
+
+.shelf-trash__tab {
+  appearance: none;
+  padding: 2px var(--space-8);
+  font-family: var(--font-accent);
+  font-size: 13px;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: none;
+  border-radius: 10px 13px 11px 14px / 12px 10px 14px 11px;
+  cursor: pointer;
+  transition: background var(--dur-xs) var(--ease-out), color var(--dur-xs) var(--ease-out);
+}
+
+.shelf-trash__tab:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+}
+
+/* The one you are on is a lighter flat face on a darker track — the house's
+   only way of saying "raised". No inner shadow, no glow. */
+.shelf-trash__tab.is-on {
+  color: var(--ink-sepia);
+  font-weight: 700;
+  background: var(--paper-cream);
+  box-shadow: 0 1px 0 var(--ink-line-soft);
+}
+
+/* Everything the card says in its own voice: the scope line, "3 books in other
+   bookcases", and where a restored book landed. */
+.shelf-trash__said {
+  margin: 0;
+  font-family: var(--font-accent);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-graphite-soft);
+}
+
+/*
+ * Only the scope line is a flex ITEM sharing a row with the tabs. Applying
+ * this to every `__said` also gave the ones that are direct children of the
+ * card — a column flex container — a 190px flex-basis, and the "went back to
+ * The Attic" note grew the card to half the window with nothing in it.
+ */
+.shelf-trash__scope .shelf-trash__said {
+  flex: 1 1 190px;
+}
+
+/* "1 book in other bookcases" sits directly under the dust line and belongs to
+   it, so it is centred with it rather than hanging off the left margin. */
+.shelf-trash__empty + .shelf-trash__said {
+  text-align: center;
+  margin-bottom: var(--space-4);
+}
+
+.shelf-trash__said--landed {
+  margin-top: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--ink-line-soft);
+  color: var(--ink-sepia);
+}
+
+/* A verb inside a sentence, drawn as the sentence rather than as a button. */
+.shelf-trash__link {
+  appearance: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-accent);
+  background: none;
+  border: none;
+  border-bottom: 1.5px solid var(--ink-accent);
+  cursor: pointer;
+}
+
+.shelf-trash__link:hover {
+  color: var(--wash-terracotta-deep);
+  border-bottom-color: var(--wash-terracotta-deep);
+}
+
 .shelf-trash__empty {
   margin: var(--space-8) 0 var(--space-4);
   text-align: center;
@@ -900,12 +1031,45 @@
   border-bottom: none;
 }
 
-.shelf-trash__name {
+/* Title over its own small print, so a long name and a long bookcase name
+   stop competing for one line. */
+.shelf-trash__what {
+  display: flex;
   flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shelf-trash__name {
   min-width: 0;
   font-family: var(--font-body);
   font-size: 15px;
   color: var(--ink-sepia);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shelf-trash__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+/* Which bookcase this book came from — and, because restore reads the same
+   field, which bookcase it is going back to. */
+.shelf-trash__case {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 7px;
+  font-family: var(--font-ui, 'Nunito Sans');
+  font-size: 11.5px;
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -922,5 +1086,6 @@
   display: flex;
   gap: var(--space-8);
   justify-content: flex-end;
+  align-items: center;
   padding-top: var(--space-8);
 }

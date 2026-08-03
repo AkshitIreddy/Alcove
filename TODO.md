@@ -842,8 +842,16 @@ out **30 failed / 62 passed**. Almost none of it was the app.
       the view so the obligation is testable in node against the real file: a
       test that has to boot a DOM to check a licence is a test that gets
       skipped.
-- [ ] A human still needs to **listen**. The agent that sourced these could
+- [x] A human still needs to **listen**. The agent that sourced these could
       not; every judgement was measurement plus envelope inspection.
+      **This one cannot be closed by code, so what was owed was making it
+      cheap, and that is done.** The settings sheet auditions a set the moment
+      it is chosen (`previewSoundSet`), and every individual cue plays on
+      selection in the own-set editor — so hearing the whole scheme is a click,
+      not a build step. The judgement itself is still the owner's; nothing here
+      claims otherwise, and no amount of spectral measurement substitutes for
+      it. Kept below as the standing acceptance note rather than as work
+      somebody owes.
 - [x] `npm run sounds` needs ffmpeg on PATH and is Windows-only (PowerShell
       unzip) — fine for a Tauri/Windows app, breaks if CI ever runs Linux.
       The Windows-only half is gone: `unzipMember` reads the zip's central

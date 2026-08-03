@@ -19,6 +19,16 @@
  * of these to sort into" is the whole reason anyone asks for a second bookcase
  * that looks like the first, and a copy that arrived pre-filled with duplicates
  * of every book would be the opposite of that.
+ *
+ * RIGHT-CLICK A CARD and the same verbs arrive as the card the shelf answers a
+ * right-click with — `BookcaseMenu`, out of features/bookshelf/ShelfMenu.tsx,
+ * not a second implementation. The reader's report was that a bookcase in this
+ * tab offered nothing on right-click while every spine out on the shelf did,
+ * and the menu earns its place twice over: the chips under a card cannot show a
+ * confirm that names what is at stake without reflowing the whole grid, and the
+ * two collection-level buttons at the foot of the sheet ("add bookcase", "add a
+ * floor") act on the case you are STANDING in, whatever card you were looking
+ * at. From the menu, "add a floor to it" means the one you aimed at.
  */
 import {
   For,
@@ -45,6 +55,10 @@ import {
 } from '../../data/bookcases';
 import { countBooksInBookcase } from '../../data/books';
 import { prefsForBookcase, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
+import {
+  BookcaseMenu,
+  type BookcaseMenuAction,
+} from '../../features/bookshelf/ShelfMenu';
 import { DesignCanvas } from './designArt';
 import {
   loadDesignPrefs,
@@ -85,6 +99,8 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
   const [note, setNote] = createSignal<string | null>(null);
   /** Bumped to re-ask the database how many books each case holds. */
   const [stamp, setStamp] = createSignal(0);
+  /** The card a right-click landed on, anchored in VIEWPORT coordinates. */
+  const [menu, setMenu] = createSignal<{ id: string; x: number; y: number } | null>(null);
   let rootEl: HTMLDivElement | undefined;
 
   const recount = (): void => {
@@ -234,6 +250,44 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
 
   const floors = (): number => bookcases.list.find((c) => c.id === bookcases.activeId)?.floors ?? 0;
 
+  /**
+   * One verb off the right-click card.
+   *
+   * Every branch lands in a function the chips already call, so the menu is a
+   * second WAY IN and never a second implementation — `rename` never reaches
+   * here at all, because the card holds its own inline field the way the
+   * spine's menu does.
+   *
+   * Delete asks the data layer to take the books too whenever this panel
+   * believes there are any. The belief can be stale (the count is a query, and
+   * a book can arrive between the two), and the staleness is safe in exactly
+   * one direction: too LOW and `deleteBookcase` refuses with `not-empty` and
+   * the card falls back to its own "delete N too" chip. It is never too high
+   * in a way that deletes something — a case with no books ignores the flag.
+   */
+  const runMenuAction = (bookcase: Bookcase, action: BookcaseMenuAction): void => {
+    switch (action) {
+      case 'open':
+        open(bookcase.id);
+        break;
+      case 'clone':
+        cloneCase(bookcase);
+        break;
+      case 'add-floor':
+        setNote(null);
+        // The id, explicitly: the sheet's own "add a floor" button grows the
+        // case you are STANDING in, and the whole point of aiming at a card is
+        // to mean that one.
+        void run(() => addBookcaseFloor(bookcase.id));
+        break;
+      case 'delete':
+        remove(bookcase.id, (counts()?.[bookcase.id] ?? 0) > 0);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div
       class="nb-cases"
@@ -252,7 +306,22 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
             /** The blur that follows Enter or Escape has already been handled. */
             let cancelled = false;
             return (
-              <div class="nb-case" classList={{ 'is-open': isOpen() }}>
+              <div
+                class="nb-case"
+                classList={{ 'is-open': isOpen(), 'is-aimed': menu()?.id === bookcase.id }}
+                /* The WHOLE card, not just its picture: the name, the count
+                   and the chip row are all "this bookcase" as far as the
+                   reader is concerned, and a right-click that works on two
+                   thirds of a card reads as broken.
+
+                   Viewport coordinates, because the menu portals out of this
+                   sheet — see the docblock in ShelfMenu.tsx. */
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setRenaming(null);
+                  setMenu({ id: bookcase.id, x: e.clientX, y: e.clientY });
+                }}
+              >
                 <button
                   type="button"
                   class="nb-case-open"
@@ -395,6 +464,43 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
           }}
         </For>
       </div>
+
+      {/* Said once, under the grid: a right-click menu nobody knows about is a
+          right-click menu nobody uses, and this one holds the only way to grow
+          a case that is not the one you are standing in. */}
+      <p class="nb-panel-footnote nb-case-hint">
+        right-click a bookcase for all of this in one card — and for a floor on
+        that one rather than on the case you are standing in.
+      </p>
+
+      {/*
+        Anchored where the cursor was. The nested Show re-reads the case out of
+        the store every render rather than closing over the row that was
+        right-clicked: renaming, cloning and growing all replace the objects in
+        `bookcases.list`, and a card holding the old one would keep showing the
+        old name behind its own rename field. When the case goes (delete), the
+        lookup fails and the card leaves with it.
+      */}
+      <Show when={menu()}>
+        {(anchor) => (
+          <Show when={bookcases.list.find((c) => c.id === anchor().id)}>
+            {(bookcase) => (
+              <BookcaseMenu
+                name={bookcase().name}
+                x={anchor().x}
+                y={anchor().y}
+                isOpen={bookcase().id === bookcases.activeId}
+                bookCount={counts()?.[bookcase().id]}
+                canAddFloor={bookcase().floors < MAX_FLOOR_COUNT}
+                canDelete={bookcases.list.length > 1}
+                onAction={(action) => runMenuAction(bookcase(), action)}
+                onRename={(name) => commitRename(bookcase().id, name)}
+                onClose={() => setMenu(null)}
+              />
+            )}
+          </Show>
+        )}
+      </Show>
 
       <Show when={note() !== null}>
         <p class="nb-panel-footnote nb-case-note" role="status">

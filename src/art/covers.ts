@@ -29,17 +29,43 @@
  * The whole parameter surface. `CoverParams` is unchanged — a book's cover
  * still derives from the same 32-bit seed as its shelf spine, users can still
  * override any knob through `cover_meta`, and the Book Studio still drives all
- * of it. Some knobs simply express themselves differently now: `material`
- * chooses between a coloured cloth and a pale parchment board rather than a
- * grain tile, and `wear` rounds the boards' corners rather than grinding dirt
- * into them.
+ * of it. Some knobs simply express themselves differently now: `wear` rounds
+ * the boards' corners rather than grinding dirt into them.
+ *
+ * ## The five vocabularies a board wears
+ *
+ * Every one of them is fifty wide, and not one of them is a table of its own:
+ *
+ *   palette    50 pigments, DERIVED from `spines.PIGMENT_COUNT`
+ *   covering   50 bindings, DERIVED from `bookDesign.MATERIAL_LOOKS`
+ *   frame      50 tooled borders, COMPOSED from five orthogonal traits
+ *   medallion  50 stamps, DERIVED from `spines.ORNAMENT_COUNT`
+ *   titleFont  50 hands, COMPOSED from the five bundled faces
+ *
+ * Derived where the spine already has the vocabulary — a board and a spine are
+ * two faces of ONE object, and a second table kept in step by hand is the
+ * promise this file has already broken twice (see `COVER_PALETTE_COUNT`).
+ * Composed where the cover is the only surface that has the room for it: a
+ * frame and a hand are things a spine 25px wide cannot say at all.
+ *
+ * Every count is read off its own table. Not one of them is a literal.
  *
  * Bake-once: `coverDataUrl` memoizes the rendered PNG per
  * (seed+overrides+size+title) key so overlays and backdrops never re-paint.
  */
 
 import { CHARM_COLORS, charmCloth, type CharmKind } from './charms';
-import { MATERIALS, materialLookFor } from './bookDesign';
+import {
+  MATERIALS,
+  MATERIAL_LOOKS,
+  bindingMaterialFor,
+  materialLookFor,
+  presetForSeed,
+  type MaterialLook,
+  type MaterialSpec,
+} from './bookDesign';
+import { normaliseHex } from './customColour';
+import { clothPair as foldCloth } from './palette';
 import { mixHex } from './shelfDesign';
 import {
   CLOTHS,
@@ -108,30 +134,83 @@ export const COVER_PALETTE_COUNT = PIGMENT_COUNT;
  * at 20 while the pigment table it described grew to 50.
  */
 export const COVER_MEDALLION_COUNT = ORNAMENT_COUNT;
-/** Labels for the legacy `texture` bucket (see CoverParams.texture). */
-export const COVER_TEXTURES = ['cloth', 'leather', 'paper'] as const;
-export const COVER_FONTS = ['Caveat', 'Kalam', 'Patrick Hand'] as const;
+
+/**
+ * The fifty coverings a board can be bound in.
+ *
+ * DERIVED from the spine's own table (`bookDesign.MATERIAL_LOOKS`), not a
+ * cover-specific fifty — and that was the choice, deliberately. A board and a
+ * spine are two faces of ONE object: if the shelf shows a book grained like
+ * goatskin and the pull-out shows a smooth cloth, the reader is looking at two
+ * books. A second table of fifty would have had to be kept in step with the
+ * first by hand, which is the same promise `COVER_PALETTE_COUNT` and
+ * `COVER_MEDALLION_COUNT` both failed to keep before they were derived.
+ *
+ * This used to be three strings — labels for the legacy `texture` bucket — and
+ * nothing read them. Those three now live on as `COVER_TEXTURE_BUCKETS`, which
+ * is what `CoverParams.texture` still means.
+ */
+export const COVER_TEXTURES: readonly MaterialLook[] = MATERIAL_LOOKS;
+/** How many coverings a board can wear. Derived, never restated. */
+export const COVER_TEXTURE_COUNT = COVER_TEXTURES.length;
+/** Display names for the studio's covering picker. */
+export const COVER_TEXTURE_LABELS: readonly string[] = COVER_TEXTURES.map(
+  (id) => MATERIALS[id].name,
+);
+/** Labels for the legacy three-way `texture` bucket (see CoverParams.texture). */
+export const COVER_TEXTURE_BUCKETS = ['cloth', 'leather', 'paper'] as const;
+/* COVER_FONTS / COVER_FONT_COUNT / COVER_FONT_KIN are exported beside the HANDS
+ * table they describe, further down — a table and its count have to be able to
+ * disagree only by someone deleting a line, never by someone forgetting one. */
 
 export interface CoverParams {
   /** Seed the params were derived from (drives render-time jitter too). */
   seed: number;
   /**
-   * Which cloth the boards are bound in. Twenty slots, inherited from the
-   * spine's own palette roll, folded onto the six cloths in `FLAT`.
+   * Which cloth the boards are bound in — a pigment slot, inherited from the
+   * spine's own palette roll and folded onto the house cloths by
+   * `spines.clothForPalette`. `COVER_PALETTE_COUNT` wide, whatever that is
+   * today.
    */
   palette: number;
   /**
+   * A cloth colour the READER typed, `#rrggbb`, overruling `palette`.
+   *
+   * It is here and not only on the spine because the shelf and the pull-out
+   * are two views of ONE book: an override that reached the spine alone is
+   * exactly the split `tests/covers.test.ts` exists to catch — a book that
+   * changes colour when you pick it up.
+   */
+  clothHex?: string | null;
+  /**
    * Legacy covering bucket: 0 = cloth, 1 = leather, 2 = paper. Kept because
-   * `cover_meta` blobs in the wild carry it and `material` is derived from it,
-   * but flat art has no grain, so it no longer changes a pixel by itself.
+   * `cover_meta` blobs in the wild carry it and `material` is derived from it.
+   * `covering` is what actually grains a board now; this stays the three-way
+   * bucket the older blobs and `spines.textureFromMaterial` speak in.
    */
   texture: 0 | 1 | 2;
-  /** Frame style 0–3: rule / rule + corner dots / double rule / rule + lozenges. */
+  /**
+   * Which of the fifty coverings the boards are bound in — an index into
+   * `COVER_TEXTURES`, which IS the spine's table.
+   *
+   * Optional so that pre-covering `CoverParams` literals still render; absent,
+   * `coveringSpecFor` falls back through the seven studio chips exactly as this
+   * file did before the axis existed.
+   */
+  covering?: number;
+  /** Tooled frame — an index into the fifty composed in `FRAMES`. */
   frame: number;
-  /** Center medallion variant 0–7 (spine ornament vocabulary). */
+  /** Centre medallion — an index into the spine's fifty ornament stamps. */
   medallion: number;
-  /** Title face: 0 = Caveat, 1 = Kalam, 2 = Patrick Hand. */
-  titleFont: 0 | 1 | 2;
+  /**
+   * Title hand — an index into `COVER_FONTS`, fifty of them.
+   *
+   * 0, 1 and 2 are still plain Caveat / Kalam / Patrick Hand, because the field
+   * is index-addressed by saved `cover_meta` blobs; the other forty-seven are
+   * those five bundled faces set as a binder letters a board (weight, tracking,
+   * case, slope, size). It was typed `0 | 1 | 2` and is a plain number now.
+   */
+  titleFont: number;
   /** Gilt (gold) frame accents, medallion and title plate trim. */
   gilt: boolean;
 
@@ -189,14 +268,24 @@ export function normalizeCoverOverrides(raw: unknown): CoverOverrides | null {
 
   const palette = int(source.palette, COVER_PALETTE_COUNT);
   if (palette !== undefined) out.palette = palette;
+  // A colour the reader typed. `null` is meaningful here and is NOT the same
+  // as absent: it is "go back to the pigment", which a blob written by a
+  // reader who cleared their own colour has to be able to say.
+  if (source.clothHex === null) out.clothHex = null;
+  else {
+    const clothHex = normaliseHex(source.clothHex);
+    if (clothHex !== null) out.clothHex = clothHex;
+  }
   const texture = int(source.texture, 3);
   if (texture !== undefined) out.texture = texture as 0 | 1 | 2;
+  const covering = int(source.covering, COVER_TEXTURE_COUNT);
+  if (covering !== undefined) out.covering = covering;
   const frame = int(source.frame, COVER_FRAME_COUNT);
   if (frame !== undefined) out.frame = frame;
   const medallion = int(source.medallion, COVER_MEDALLION_COUNT);
   if (medallion !== undefined) out.medallion = medallion;
-  const titleFont = int(source.titleFont, 3);
-  if (titleFont !== undefined) out.titleFont = titleFont as 0 | 1 | 2;
+  const titleFont = int(source.titleFont, COVER_FONT_COUNT);
+  if (titleFont !== undefined) out.titleFont = titleFont;
   if (typeof source.gilt === 'boolean') out.gilt = source.gilt;
 
   return Object.keys(out).length > 0 ? out : null;
@@ -214,15 +303,22 @@ export function deriveCoverParams(
 ): CoverParams {
   const spine = deriveSpineParams(seed >>> 0);
   const rnd = mulberry32((seed ^ 0x0c0feba1) >>> 0);
+  // The covering the book's BINDING wears — the same call `renderSpine` makes
+  // when the reader has not pinned one, so an untouched book is grained the
+  // same way on both of its faces.
+  const bound = presetForSeed(seed >>> 0).material;
   const derived: CoverParams = {
     seed: seed >>> 0,
     palette: spine.palette,
+    clothHex: spine.clothHex ?? null,
     texture: spine.texture,
+    covering: coveringIndex(bound),
     frame: Math.floor(rnd() * COVER_FRAME_COUNT),
-    // The spine ornament vocabulary can outgrow the cover's 8 medallions
-    // (it is 12 stamps wide today) — fold it back into range.
+    // The medallion IS the spine's stamp, and the two tables are the same table
+    // now — the fold is kept because `ornament` is an index off a stream that
+    // has no idea how wide the stamp table is.
     medallion: spine.ornament % COVER_MEDALLION_COUNT,
-    titleFont: spine.font,
+    titleFont: handForFace(spine.font, seed >>> 0),
     gilt: spine.gilt || rnd() < 0.18,
     // Studio fields: inherited from the spine wherever the book already has
     // an opinion, plus two cover-only rolls.
@@ -244,7 +340,46 @@ export function deriveCoverParams(
   if (overrides?.material !== undefined && overrides.texture === undefined) {
     merged.texture = textureFromMaterial(overrides.material);
   }
+  // …and the covering with it, but ONLY when the chip disagrees with what the
+  // binding already wears.
+  //
+  // The studio hands `material` down on every save, pinned or not (it is how a
+  // chip reports what the reader is looking at — see `bindingMaterialFor`), so
+  // dragging unconditionally would collapse all fifty coverings onto the seven
+  // chips the moment anybody opened the panel, while the spine kept its fifty.
+  // That is the exact split this file exists to catch, arriving through the one
+  // door left open. A chip that no longer matches the binding is the reader
+  // having MOVED it, and that does say "make the whole book this".
+  if (
+    overrides?.material !== undefined &&
+    overrides.covering === undefined &&
+    overrides.material !== bindingMaterialFor(bound)
+  ) {
+    merged.covering = coveringIndex(materialLookFor(overrides.material));
+  }
   return merged;
+}
+
+/** Where a covering sits in `COVER_TEXTURES`; unknown ones land on the first. */
+function coveringIndex(look: MaterialLook): number {
+  const i = COVER_TEXTURES.indexOf(look);
+  return i < 0 ? 0 : i;
+}
+
+/**
+ * The covering a set of params is bound in.
+ *
+ * Three answers, narrowest first: the `covering` index when there is one, the
+ * seven studio chips when there is not (a pre-covering blob, or a caller that
+ * only knows `material`), and the legacy three-way bucket under that. Total,
+ * because a board with no covering at all is a board that cannot be drawn.
+ */
+export function coveringSpecFor(params: CoverParams): MaterialSpec {
+  const i = params.covering;
+  if (typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < COVER_TEXTURES.length) {
+    return MATERIALS[COVER_TEXTURES[i] as MaterialLook];
+  }
+  return MATERIALS[materialLookFor(params.material ?? materialFromTexture(params.texture))];
 }
 
 /* --------------------------------- colors -------------------------------- */
@@ -264,15 +399,18 @@ export function deriveCoverParams(
  * two-item opinion. Six relationships instead of two, and — the point — a board
  * that agrees with the spine it is bound to.
  *
- * `BindingMaterial` (the studio's seven chips) is mapped through
- * `materialLookFor` to the fifty, which is the same hop `drawBookSpine` makes.
+ * It takes the resolved `MaterialSpec` rather than the studio's seven chips,
+ * because the chips are a lossy REPORT of the fifty (`bindingMaterialFor`) and
+ * folding through them threw away the forty-three the binding can actually
+ * wear — a Library Buckram board came back as plain cloth while its own spine
+ * stood there in the deep tone.
  */
 function boardFor(
-  material: BindingMaterial,
+  spec: MaterialSpec,
   cloth: readonly [string, string],
 ): readonly [string, string] {
   const [face, dark] = cloth;
-  switch (MATERIALS[materialLookFor(material)].body) {
+  switch (spec.body) {
     case 'pale':
       // Washed toward paper but still the book's own colour — a wrapper, not a
       // blank card.
@@ -331,9 +469,39 @@ const PALE_BOARD: readonly [string, string] = [FLAT.cream, FLAT.timber];
  * exact split `tests/covers.test.ts` exists to catch — a book that changes
  * colour when you pick it up.
  */
-function clothFor(palette: number): readonly [string, string] {
+function clothFor(palette: number, clothHex?: string | null): readonly [string, string] {
+  // A colour the reader typed is not in the table, so it is folded rather than
+  // looked up — by `palette.clothPair`, the same routine `art/bookDesign.ts`
+  // folds the spine's custom cloth with, so the two faces of one book are
+  // arrived at by one piece of arithmetic and cannot disagree.
+  const own = normaliseHex(clothHex);
+  if (own !== null) return foldCloth(own);
   const slot = clothForPalette(palette);
   return (CLOTHS[slot] ?? CLOTHS[0]!) as readonly [string, string];
+}
+
+/**
+ * The book's SECOND cloth — what a figured silk is figured in, what a flecked
+ * cloth is flecked with.
+ *
+ * The arithmetic is `bookDesign.resolveBookDesign`'s, character for character,
+ * including its "the accent must never equal the cloth" guard. That is the
+ * point of copying it rather than rolling a fresh one here: the spine already
+ * has an accent for this book, and a board figured in a different second
+ * colour from its own spine is the split this file exists to catch, arriving
+ * one shade at a time instead of all at once.
+ *
+ * It is a house `CLOTHS` slot even when the reader has typed their own cloth,
+ * exactly as it is on the spine — a custom colour leaves the second colour
+ * where the seed put it rather than dragging the figuring along with it.
+ */
+function accentFor(palette: number, seed: number): string {
+  const len = CLOTHS.length;
+  const wrap = (n: number): number => ((Math.trunc(n) % len) + len) % len;
+  const slot = clothForPalette(palette);
+  const accent = wrap(slot + 1 + (((seed >>> 5) % (len - 1)) | 0));
+  const pair = CLOTHS[accent === slot ? wrap(slot + 1) : accent] ?? CLOTHS[0]!;
+  return pair[0] as string;
 }
 
 /**
@@ -370,11 +538,243 @@ export function coverPaletteCss(palette: number): { top: string; bottom: string 
 }
 
 
-const FONT_STACKS: readonly string[] = [
-  '"Caveat Variable", "Caveat", cursive',
-  '"Kalam", cursive',
-  '"Patrick Hand", cursive',
+/* ------------------------------- the hands -------------------------------- */
+
+/**
+ * Fifty hands out of five faces.
+ *
+ * ## Why not fifty fonts
+ *
+ * The app bundles five (`tokens.css`), and it is going to keep bundling five —
+ * every extra face is another webfont on the critical path for a mark that is
+ * two words long. So a "hand" here is what it is in `scripts/gen-lettering.mjs`,
+ * which solved this same problem for the page: a face plus a stationer's
+ * treatment — weight, tracking, case, slope and set size. That is what the
+ * names in a binder's specimen book describe anyway. "Widely spaced", "small
+ * caps" and "shouting" are treatments, not typefaces.
+ *
+ * ## The two typographic floors are ENFORCED here, not trusted
+ *
+ * A hand carries a `scale`, and the label already shrinks type to fit its
+ * plate, so the two multiply — which is exactly how `gen-lettering.mjs`
+ * described putting "footnote hand" at "caption" size under 13px without
+ * anybody writing a number below 13 anywhere. `paintLabel` therefore:
+ *
+ *   - floors the FINAL size (after scale, after the fit loop) rather than the
+ *     starting one, so no combination can go under the handwriting floor; and
+ *   - drops a Caveat hand to the body face when the fitted size lands under
+ *     `--font-heading`'s documented 20px, which is the same fallback the
+ *     generator emits as a block of two-attribute rules.
+ *
+ * ## Kin
+ *
+ * The spine letters its title in one of THREE faces (`spines.FONTS`), and the
+ * board must be lettered with the same tool — that is what makes the two faces
+ * one book rather than two objects. So every hand declares which spine face it
+ * is a setting OF (`COVER_FONT_KIN`), `deriveCoverParams` rolls only among the
+ * kin of the spine's own face, and the two faces the spine has no index for are
+ * kin `-1`: offered to a reader who picks one, never handed out by the seed.
+ */
+
+/** The five bundled faces. 0–2 are the three the spine can also letter in. */
+const FACE_STACKS: readonly string[] = [
+  '"Caveat Variable", "Caveat", "Segoe Script", cursive',
+  '"Kalam", "Segoe Print", cursive',
+  '"Patrick Hand", "Segoe Print", cursive',
+  '"Architects Daughter", "Segoe Print", cursive',
+  '"Nunito Sans", "Segoe UI", system-ui, sans-serif',
 ];
+
+/** Caveat's slot, which carries the >= 20px floor all of its own. */
+const HEADING_FACE = 0;
+/** Where a Caveat hand lands when the plate is too small for Caveat. */
+const BODY_FACE = 2;
+/** No handwriting below this, in the same unit the label's own floor uses. */
+const HAND_FLOOR_PX = 14;
+/** `--font-heading` is documented ">= 20px only". */
+const HEADING_MIN_PX = 20;
+
+interface HandSpec {
+  id: string;
+  name: string;
+  /** Index into `FACE_STACKS`. */
+  face: number;
+  /** Set weight. Patrick Hand and Architects Daughter ship one; the browser
+   * synthesises the rest, which is what the label has always done at 700. */
+  weight: number;
+  /** Oblique. Only Caveat and Kalam have a real italic; the rest are slanted. */
+  slant: boolean;
+  /** `upper` shouts; `small` is uppercase set down a size, which is as close to
+   * small caps as a face without an sc axis gets. */
+  caps: 'none' | 'upper' | 'small';
+  /** Tracking, in ems of the set size. */
+  track: number;
+  /** Set size relative to what the plate would otherwise give the title. */
+  scale: number;
+}
+
+const HAND_DEFAULTS: Omit<HandSpec, 'id' | 'name' | 'face'> = {
+  weight: 700,
+  slant: false,
+  caps: 'none',
+  track: 0,
+  scale: 1,
+};
+
+function hand(
+  id: string,
+  name: string,
+  face: number,
+  spec: Partial<Omit<HandSpec, 'id' | 'name' | 'face'>> = {},
+): HandSpec {
+  return { ...HAND_DEFAULTS, ...spec, id, name, face };
+}
+
+/**
+ * The fifty. **0, 1 and 2 are the originals and must stay where they are** —
+ * `titleFont` is index-addressed by every `cover_meta` blob ever saved, and by
+ * `bookStyle.TITLE_FONTS`, so reordering the head of this table re-letters
+ * books people have already customised.
+ */
+const HANDS: readonly HandSpec[] = [
+  /* --- the three the field has always meant, set exactly as they were --- */
+  hand('caveat', 'Caveat', 0),
+  hand('kalam', 'Kalam', 1),
+  hand('patrick', 'Patrick Hand', 2),
+
+  /* --- Caveat, set as a binder letters a presentation copy (kin 0) --- */
+  hand('gilt-script', 'Gilt Script', 0, { scale: 1.1 }),
+  hand('flourished', 'Flourished', 0, { slant: true }),
+  hand('presentation', 'Presentation', 0, { slant: true, scale: 1.12 }),
+  hand('titling', 'Titling', 0, { scale: 1.16, track: 0.02 }),
+  hand('dedication', 'Dedication', 0, { weight: 400 }),
+  hand('fine-script', 'Fine Script', 0, { weight: 400, slant: true, scale: 1.06 }),
+  hand('rubric', 'Rubric', 0, { caps: 'upper', track: 0.07, scale: 0.94 }),
+  hand('grand-manner', 'Grand Manner', 0, { scale: 1.28, track: 0.01 }),
+  hand('spencerian', 'Spencerian', 0, { slant: true, track: 0.03, scale: 1.08 }),
+  hand('vellum-hand', 'Vellum Hand', 0, { weight: 400, scale: 1.2 }),
+  hand('scribed-caps', 'Scribed Caps', 0, { caps: 'small', track: 0.08 }),
+
+  /* --- Kalam: the loud face, so the treatments are the loud ones (kin 1) --- */
+  hand('light-kalam', 'Light Kalam', 1, { weight: 300 }),
+  hand('wide-kalam', 'Wide Kalam', 1, { track: 0.12 }),
+  hand('tight-kalam', 'Tight Kalam', 1, { track: -0.02 }),
+  hand('marker', 'Marker', 1, { scale: 1.1 }),
+  hand('shouted', 'Shouted', 1, { caps: 'upper', track: 0.06 }),
+  hand('scrawl', 'Scrawl', 1, { slant: true, track: -0.01 }),
+  hand('headline', 'Headline', 1, { scale: 1.24 }),
+  hand('sharpie', 'Sharpie', 1, { scale: 1.14, track: 0.01 }),
+  hand('crayon', 'Crayon', 1, { scale: 1.08, track: 0.04 }),
+  hand('whisper', 'Whisper', 1, { weight: 300, scale: 0.92, track: 0.03 }),
+  hand('kalam-caps', 'Kalam Caps', 1, { weight: 300, caps: 'small', track: 0.09 }),
+
+  /* --- Patrick Hand: the quiet face, so the treatments are settings (kin 2) --- */
+  hand('plain-set', 'Plain Set', 2, { weight: 400 }),
+  hand('wide-set', 'Widely Set', 2, { track: 0.14 }),
+  hand('close-set', 'Closely Set', 2, { track: -0.025 }),
+  hand('quiet', 'Quiet', 2, { weight: 400, scale: 0.9 }),
+  hand('bold-board', 'Bold Board', 2, { scale: 1.12 }),
+  hand('slanted', 'Slanted', 2, { slant: true }),
+  hand('small-caps', 'Small Caps', 2, { caps: 'small', track: 0.1 }),
+  hand('shelf-label', 'Shelf Label', 2, { caps: 'upper', track: 0.08, scale: 0.92 }),
+  hand('primer', 'Primer', 2, { scale: 1.06, track: 0.03 }),
+  hand('pocket', 'Pocket', 2, { weight: 400, scale: 0.86, track: 0.02 }),
+  hand('long-title', 'Long Title', 2, { slant: true, scale: 0.96, track: -0.01 }),
+
+  /* --- Architects Daughter: drawn, upright, and NOT on the spine (kin -1) --- */
+  hand('drawn', 'Drawn', 3),
+  hand('drawn-wide', 'Drawn Wide', 3, { track: 0.12 }),
+  hand('drafting', 'Drafting', 3, { caps: 'upper', track: 0.1, scale: 0.92 }),
+  hand('copybook', 'Copybook', 3, { weight: 400, track: 0.04 }),
+  hand('chalked', 'Chalked', 3, { scale: 1.08, track: 0.02 }),
+  hand('field-note', 'Field Note', 3, { weight: 400, slant: true, scale: 0.94 }),
+  hand('ticket', 'Ticket', 3, { caps: 'small', track: 0.09, scale: 0.9 }),
+
+  /* --- Nunito Sans: the stamped trade board, the one printed voice (kin -1) --- */
+  hand('printed', 'Printed', 4, { scale: 0.94 }),
+  hand('engraved', 'Engraved', 4, { weight: 600, caps: 'upper', track: 0.16, scale: 0.86 }),
+  hand('stencil', 'Stencil', 4, { weight: 800, caps: 'upper', track: 0.1, scale: 0.9 }),
+  hand('imprint', 'Imprint', 4, { weight: 600, scale: 0.92, track: 0.01 }),
+  hand('colophon', 'Colophon', 4, { weight: 600, caps: 'small', track: 0.14, scale: 0.86 }),
+  hand('modern', 'Modern', 4, { weight: 400, scale: 0.96 }),
+  hand('archive', 'Archive', 4, { weight: 600, caps: 'upper', track: 0.14, scale: 0.84 }),
+];
+
+/** Display names for the studio's title-hand picker. */
+export const COVER_FONTS: readonly string[] = HANDS.map((f) => f.name);
+
+/**
+ * How many hands a title can be lettered in. DERIVED, never restated — the
+ * mistake `COVER_PALETTE_COUNT`'s note describes, made once already in this
+ * file, is a count that sat at 20 while its table grew to 50.
+ */
+export const COVER_FONT_COUNT = COVER_FONTS.length;
+
+/**
+ * Which of the spine's three faces each hand is a setting of, or `-1` for the
+ * two faces the spine has no index for.
+ *
+ * Index-aligned with `COVER_FONTS`. It exists so a book's board and its spine
+ * are lettered with the same tool: `deriveCoverParams` rolls only inside the
+ * kin of `SpineParams.font`.
+ */
+export const COVER_FONT_KIN: readonly number[] = HANDS.map((f) =>
+  f.face <= BODY_FACE ? f.face : -1,
+);
+
+/** Hands grouped by kin, built once — `deriveCoverParams` runs per book. */
+const KIN_HANDS: readonly (readonly number[])[] = [0, 1, 2].map((face) =>
+  HANDS.map((_, i) => i).filter((i) => COVER_FONT_KIN[i] === face),
+);
+
+/**
+ * One hand for a spine face, rolled from the book's own seed.
+ *
+ * The spine's `font` is 0–2 and always will be; this is the widening. The roll
+ * is on its own stream so that adding a hand re-letters some boards and moves
+ * nothing else about a book, and an unknown face falls back to the plain
+ * setting of face 0 rather than throwing — `deriveCoverParams` is total.
+ */
+export function handForFace(face: number, seed: number): number {
+  const kin = KIN_HANDS[Math.trunc(face)] ?? KIN_HANDS[0]!;
+  if (kin.length === 0) return 0;
+  const roll = mulberry32((seed ^ 0x1e77e2ed) >>> 0)();
+  return kin[Math.min(kin.length - 1, Math.floor(roll * kin.length))]!;
+}
+
+/** The hand a `titleFont` index means. Total: junk lands on plain Caveat. */
+function handFor(index: number): HandSpec {
+  const i = Math.trunc(index);
+  return HANDS[i >= 0 && i < HANDS.length ? i : 0]!;
+}
+
+/**
+ * Has the face this hand is set in actually arrived yet?
+ *
+ * Canvas does not trigger a webfont load — `ctx.font` with a face the document
+ * has never used silently falls back and draws in the generic. That has always
+ * been true here, and it stopped being harmless the day a hand could ask for a
+ * face nothing else on screen is using: `coverDataUrl` MEMOIZES the PNG, so one
+ * bake that lost the race gets served for the rest of the session. The bake
+ * itself is fine to do — a fallback title is better than no cover — so the
+ * answer is to refuse to CACHE it and let the next call re-bake.
+ *
+ * Fail-safe in the direction of caching: anything unexpected (no `document`, a
+ * throw out of `check`) is treated as ready, because the cost of being wrong
+ * that way is a stale face for one session and the cost of being wrong the
+ * other way is never caching a cover again.
+ */
+function handLoaded(index: number, px: number): boolean {
+  const fonts = typeof document === 'undefined' ? undefined : document.fonts;
+  if (fonts === undefined || typeof fonts.check !== 'function') return true;
+  const h = handFor(index);
+  try {
+    const slope = h.slant ? 'italic ' : '';
+    return fonts.check(`${slope}${h.weight} ${Math.max(10, Math.round(px))}px ${FACE_STACKS[h.face]}`);
+  } catch {
+    return true;
+  }
+}
 
 /* ------------------------------- geometry --------------------------------- */
 
@@ -436,6 +836,561 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
   c.width = w;
   c.height = h;
   return c;
+}
+
+/* ------------------------------ the covering ------------------------------ */
+
+/**
+ * The fifty coverings, struck on a BOARD instead of a strip.
+ *
+ * `COVER_TEXTURES` is `bookDesign.MATERIAL_LOOKS` — the same fifty the spine
+ * wears — and until this existed that derivation only reached the board's
+ * COLOUR, through `MaterialSpec.body`. Fifty names folding onto six tones is a
+ * count, not a vocabulary, and a shelf-full of books whose spines were pebbled,
+ * ribbed, watered and laid all pulled out into the same plain rectangle.
+ *
+ * So the board reads the rest of the spec: `split` (where a second covering
+ * sits), `grain` (the one mark the covering carries) and `joints`. The
+ * arrangement is the spine's, re-proportioned — NOT the spine's code reused.
+ * A spine is a 25px strip where a grain has room for six marks before it turns
+ * grey, and `bookDesign` sizes every mark for that; a board is the widest thing
+ * in the app and the same numbers there would draw six lines across a hand's
+ * width of cloth. Same vocabulary, same tones, same names, own scale.
+ *
+ * Everything here is flat: filled marks and single-weight strokes in colours
+ * mixed from the board's own two, drawn under the frame and the label. There is
+ * no light in it — a nap is a darker flat band along the fore edge, not a
+ * sheen, which is the same trick the spine's `nap` plays and the same one the
+ * icon plays with its spine strip.
+ */
+
+/** The colour a covering's grain is struck in — the spine's own switch. */
+function grainInk(
+  spec: MaterialSpec,
+  face: string,
+  dark: string,
+  accent: string,
+  gilded: boolean,
+  pale: boolean,
+): string {
+  // A pale board is cream, so every pale tone on it is invisible: `pale` and
+  // `cream` marks are folded to the timber the half binding already uses. The
+  // frame does the same thing one screen down (`frameInk`), for the same
+  // reason — a mark nobody can see is worse than no mark, because the reader
+  // is told the covering changed and sees nothing.
+  const paled = pale ? mixHex(FLAT.cream, FLAT.timber, 0.55) : mixHex(face, FLAT.cream, 0.42);
+  switch (spec.grainTone) {
+    case 'deeper':
+      return mixHex(dark, FLAT.ink, 0.32);
+    case 'pale':
+      return paled;
+    case 'cream':
+      return pale ? mixHex(FLAT.cream, FLAT.timber, 0.4) : FLAT.cream;
+    case 'ink':
+      return FLAT.inkSoft;
+    case 'accent':
+      return accent;
+    case 'foil':
+      // Without leaf a gilt grain is not gold, it is blind tooling: the board's
+      // own darker value. Never a highlight.
+      return gilded ? FLAT.gilt : mixHex(dark, FLAT.ink, 0.16);
+    default:
+      return mixHex(dark, FLAT.ink, 0.16);
+  }
+}
+
+/**
+ * The second covering, where a binding has two.
+ *
+ * On a spine a split is a band across the strip. On a board it is the shape a
+ * reader actually recognises a half binding by — leather down the hinge and
+ * out over the corners, boards in between — so each name is drawn as the
+ * region it names, in the board's darker value with one ink line where the two
+ * coverings meet. That line is the whole point: without it the darker region
+ * reads as a shadow, and a shadow is the one thing this app does not draw.
+ */
+function paintSplit(
+  ctx: FlatCtx,
+  spec: MaterialSpec,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  spineW: number,
+  dark: string,
+  ink: number,
+  seed: number,
+): void {
+  if (spec.split === 'none') return;
+  const faceX = bx + spineW;
+  const faceW = bw - spineW;
+  const line = Math.max(0.9, ink * 0.55);
+
+  /** A band of the second covering butted against the hinge. */
+  const hinge = (frac: number): void => {
+    const bandW = faceW * frac;
+    ctx.fillStyle = dark;
+    ctx.fillRect(faceX, by, bandW, bh);
+    stroke(ctx, faceX + bandW, by, faceX + bandW, by + bh, FLAT.ink, line, seed + 1);
+  };
+
+  switch (spec.split) {
+    case 'quarter':
+      hinge(0.1);
+      return;
+    case 'half':
+      hinge(0.26);
+      return;
+    case 'threeQuarter':
+      hinge(0.52);
+      return;
+    case 'headBand': {
+      // A cap over the head of the board — the one split that runs the other
+      // way, and the reason `split` is not just a width.
+      const capH = bh * 0.16;
+      ctx.fillStyle = dark;
+      ctx.fillRect(faceX, by, faceW, capH);
+      stroke(ctx, faceX, by + capH, bx + bw, by + capH, FLAT.ink, line, seed + 2);
+      return;
+    }
+    default: {
+      // tips: leather corners only, cut on the diagonal, which is exactly what
+      // a tipped binding looks like from across a room.
+      const t = Math.min(faceW, bh) * 0.34;
+      for (const [cx, cy, sx, sy] of [
+        [faceX, by, 1, 1],
+        [bx + bw, by, -1, 1],
+        [bx + bw, by + bh, -1, -1],
+        [faceX, by + bh, 1, -1],
+      ] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + sy * t);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx + sx * t, cy);
+        ctx.closePath();
+        ctx.fillStyle = dark;
+        ctx.fill();
+        stroke(ctx, cx, cy + sy * t, cx + sx * t, cy, FLAT.ink, line, seed + 3);
+      }
+    }
+  }
+}
+
+/**
+ * The one grain the covering carries, laid over the board's face.
+ *
+ * Clipped to the face so a mark cannot cross the hinge or leak past the
+ * outline — a grain struck over the joint reads as a printing fault, which is
+ * the note `bookDesign` leaves about the same problem on the strip.
+ */
+function paintGrain(
+  ctx: FlatCtx,
+  spec: MaterialSpec,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colour: string,
+  seed: number,
+): void {
+  if (spec.grain === 'none') return;
+  const rnd = mulberry32((seed ^ 0x9e37) >>> 0);
+  // The spine's count is read for a strip six marks wide. A board is roughly
+  // five times the width and one and a half times the height of one, so the
+  // count is stretched rather than reused: a "sprinkle" of 26 that covered a
+  // spine leaves a board almost bare.
+  const n = Math.max(2, Math.round(spec.grainCount));
+  const unit = Math.min(w, h);
+  const fine = Math.max(0.9, unit * 0.006);
+  const bold = Math.max(1.1, unit * 0.011);
+
+  const hLine = (t: number, a: number, b: number, weight: number, k: number): void =>
+    stroke(ctx, x + w * a, y + h * t, x + w * b, y + h * t, colour, weight, seed + 200 + k);
+  const vLine = (a: number, t0: number, t1: number, weight: number, k: number): void =>
+    stroke(ctx, x + w * a, y + h * t0, x + w * a, y + h * t1, colour, weight, seed + 260 + k);
+  const mark = (cx: number, cy: number, r: number): void => dot(ctx, cx, cy, r, colour);
+
+  /** A stratified field: one mark per cell of a rows × cols lattice. */
+  const field = (
+    rows: number,
+    cols: number,
+    draw: (cx: number, cy: number, i: number) => void,
+  ): void => {
+    let i = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++, i++) {
+        // Half-drop, the way a binder's roll actually repeats, plus a jitter
+        // inside the cell so the lattice never reads as graph paper.
+        const off = r % 2 === 0 ? 0 : 0.5;
+        const cx = x + w * (((c + off + 0.5) % cols) / cols + (rnd() - 0.5) * 0.03);
+        const cy = y + h * ((r + 0.5) / rows + (rnd() - 0.5) * 0.02);
+        draw(cx, cy, i);
+      }
+    }
+  };
+
+  /** A column of wave, drawn as one path — the moiré / comb family. */
+  const wave = (cx: number, amp: number, cycles: number, k: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(cx, y);
+    const steps = Math.max(4, Math.round(cycles * 2));
+    for (let i = 0; i < steps; i++) {
+      const y0 = y + (h * i) / steps;
+      const y1 = y + (h * (i + 1)) / steps;
+      const dir = i % 2 === 0 ? 1 : -1;
+      ctx.quadraticCurveTo(cx + amp * dir, (y0 + y1) / 2, cx, y1);
+    }
+    pen(ctx, colour, fine);
+    ctx.stroke();
+    void k;
+  };
+
+  /** A small filled lozenge — the tooling motif half the paper family uses. */
+  const lozenge = (cx: number, cy: number, r: number): void => {
+    tracePoly(ctx, [
+      { x: cx, y: cy - r },
+      { x: cx + r * 0.62, y: cy },
+      { x: cx, y: cy + r },
+      { x: cx - r * 0.62, y: cy },
+    ]);
+    ctx.fillStyle = colour;
+    ctx.fill();
+  };
+
+  switch (spec.grain) {
+    /* ---- woven cloth: rules across, sometimes rules down ---- */
+    case 'ribs':
+      for (let i = 1; i < n * 2; i++) hLine(i / (n * 2), 0, 1, fine, i);
+      break;
+    case 'weave':
+      for (let i = 1; i < n * 2; i++) hLine(i / (n * 2), 0, 1, fine * 0.8, i);
+      for (let i = 1; i < n; i++) vLine(i / n, 0, 1, fine * 0.8, i);
+      break;
+    case 'twill':
+      for (let i = 0; i < n * 2; i++) {
+        const t = -0.3 + (i * 1.6) / (n * 2);
+        stroke(ctx, x, y + h * t, x + w, y + h * (t + 0.34), colour, fine, seed + 300 + i);
+      }
+      break;
+    case 'coarse':
+      for (let i = 0; i < n * 2; i++) {
+        hLine(0.03 + (i * 0.94) / (n * 2), rnd() * 0.08, 1 - rnd() * 0.1, bold, i);
+      }
+      break;
+    case 'stitchRun':
+      // Running stitch: a dashed rule, which is a row of marks and not a line.
+      for (let i = 0; i < n; i++) {
+        const t = 0.04 + (i * 0.92) / n;
+        for (let d = 0; d < 9; d++) {
+          hLine(t, d / 9 + 0.01, d / 9 + 0.07, fine, i * 10 + d);
+        }
+      }
+      break;
+    case 'fleck':
+      field(Math.ceil(n / 3) + 2, 4, (cx, cy, i) => {
+        hLine((cy - y) / h, (cx - x) / w, (cx - x) / w + 0.07, fine, i);
+      });
+      break;
+    case 'nap':
+      // Pile: a broad darker band along the fore edge. Depth as a second flat
+      // face, never as a sheen.
+      ctx.fillStyle = colour;
+      ctx.fillRect(x + w * 0.78, y, w * 0.22, h);
+      for (let i = 1; i <= n * 3; i++) vLine((i / (n * 3 + 1)) * 0.76, 0.03, 0.97, fine * 0.7, i);
+      break;
+
+    /* ---- silk: waves and figures ---- */
+    case 'watered':
+      for (let i = 0; i < n * 2; i++) wave(x + (w * (i + 0.5)) / (n * 2), w * 0.02, 7, i);
+      break;
+    case 'figured':
+      field(n, 4, (cx, cy) => {
+        pen(ctx, colour, fine);
+        ctx.beginPath();
+        ctx.arc(cx, cy, unit * 0.035, 0.6, Math.PI * 1.5);
+        ctx.stroke();
+        mark(cx, cy, fine * 0.9);
+      });
+      break;
+    case 'damask':
+      field(n, 3, (cx, cy) => {
+        for (const a of [0, 1, 2, 3]) {
+          const ang = (a / 4) * Math.PI * 2 + Math.PI / 4;
+          lozenge(cx + Math.cos(ang) * unit * 0.03, cy + Math.sin(ang) * unit * 0.03, unit * 0.018);
+        }
+      });
+      break;
+
+    /* ---- leather and skin: dot fields, veins, plates ---- */
+    case 'pebble':
+      field(Math.ceil(n / 2) + 3, 7, (cx, cy) => mark(cx, cy, unit * 0.011));
+      break;
+    case 'pinDot':
+      field(Math.ceil(n / 2) + 2, 6, (cx, cy) => mark(cx, cy, unit * 0.006));
+      break;
+    case 'sprinkle':
+      field(Math.ceil(n / 3) + 4, 8, (cx, cy) => mark(cx, cy, unit * 0.008 * (0.5 + rnd())));
+      break;
+    case 'mottle':
+      field(n, 3, (cx, cy, i) => {
+        const r = unit * (0.03 + rnd() * 0.025);
+        tracePoly(
+          ctx,
+          polyPts(cx, cy, r, 9, i).map((p, k) => ({
+            x: p.x + Math.cos(k * 2.4) * r * 0.22,
+            y: p.y + Math.sin(k * 1.7) * r * 0.22,
+          })),
+        );
+        ctx.fillStyle = colour;
+        ctx.fill();
+      });
+      break;
+    case 'panelled':
+      // Blind panels ruled inside one another — the calf binder's whole idea of
+      // ornament, and the reason this material's count is 1.
+      for (let i = 0; i < n + 1; i++) {
+        const g = 0.06 + i * 0.07;
+        if (g > 0.4) break;
+        pen(ctx, colour, fine);
+        wobbleRect(ctx, x + w * g, y + h * g * 0.62, w * (1 - g * 2), h * (1 - g * 1.24), unit * 0.02, seed + i);
+        ctx.stroke();
+      }
+      break;
+    case 'flame':
+      for (let i = 0; i < n * 2; i++) wave(x + (w * (i + 0.5)) / (n * 2), w * 0.045, 3, i);
+      break;
+    case 'scales':
+      field(n + 2, 6, (cx, cy) => {
+        pen(ctx, colour, fine);
+        ctx.beginPath();
+        ctx.arc(cx, cy, unit * 0.028, Math.PI * 0.05, Math.PI * 0.95);
+        ctx.stroke();
+      });
+      break;
+    case 'shagreen':
+      field(n + 3, 8, (cx, cy) => {
+        pen(ctx, colour, fine * 0.8);
+        ctx.beginPath();
+        ctx.arc(cx, cy, unit * 0.014, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      break;
+    case 'plates':
+      for (let i = 1; i < n; i++) hLine(i / n, 0, 1, fine * 0.8, i);
+      for (let i = 1; i < 5; i++) vLine(i / 5, 0, 1, fine * 0.8, i + 50);
+      field(n, 5, (cx, cy) => mark(cx, cy, unit * 0.007));
+      break;
+    case 'creases':
+      for (let i = 0; i < n * 2; i++) {
+        const t = 0.1 + (i * 0.8) / (n * 2);
+        stroke(ctx, x + w * 0.05, y + h * t, x + w * (0.5 + rnd() * 0.45), y + h * (t + 0.03), colour, bold, seed + 320 + i);
+      }
+      break;
+    case 'scuffs':
+      for (let i = 0; i < n * 2; i++) {
+        const cx = x + w * (0.08 + rnd() * 0.84);
+        const cy = y + h * (0.06 + rnd() * 0.88);
+        const len = unit * (0.05 + rnd() * 0.06);
+        stroke(ctx, cx, cy, cx + len, cy - len * 0.4, colour, fine, seed + 340 + i);
+      }
+      break;
+
+    /* ---- marbled and decorated papers ---- */
+    case 'combedVeins':
+      for (let i = 0; i < n * 2; i++) wave(x + (w * (i + 0.5)) / (n * 2), w * 0.055, 5, i);
+      break;
+    case 'spanishWave':
+      for (let i = 0; i < n * 2; i++) {
+        const t = (i + 0.5) / (n * 2);
+        ctx.beginPath();
+        ctx.moveTo(x, y + h * t);
+        for (let k = 0; k < 8; k++) {
+          const x0 = x + (w * k) / 8;
+          const x1 = x + (w * (k + 1)) / 8;
+          ctx.quadraticCurveTo((x0 + x1) / 2, y + h * (t + (k % 2 === 0 ? 0.02 : -0.02)), x1, y + h * t);
+        }
+        pen(ctx, colour, fine);
+        ctx.stroke();
+      }
+      break;
+    case 'stoneVein':
+      for (let i = 0; i < n; i++) {
+        ctx.beginPath();
+        let px = x + w * rnd();
+        let py = y;
+        ctx.moveTo(px, py);
+        for (let k = 0; k < 6; k++) {
+          const nx = px + (rnd() - 0.5) * w * 0.3;
+          const ny = py + h / 6;
+          ctx.quadraticCurveTo(px, (py + ny) / 2, nx, ny);
+          px = nx;
+          py = ny;
+        }
+        pen(ctx, colour, fine);
+        ctx.stroke();
+      }
+      break;
+    case 'shellSpots':
+      field(n, 4, (cx, cy) => {
+        pen(ctx, colour, fine * 0.9);
+        ctx.beginPath();
+        ctx.arc(cx, cy, unit * 0.03, 0, Math.PI * 2);
+        ctx.stroke();
+        mark(cx, cy, unit * 0.008);
+      });
+      break;
+    case 'pasteComb':
+      for (let i = 0; i < n * 2; i++) {
+        const t = (i + 0.5) / (n * 2);
+        ctx.beginPath();
+        ctx.moveTo(x, y + h * t);
+        for (let k = 0; k < 6; k++) {
+          const x0 = x + (w * k) / 6;
+          const x1 = x + (w * (k + 1)) / 6;
+          ctx.quadraticCurveTo((x0 + x1) / 2, y + h * (t + 0.05), x1, y + h * t);
+        }
+        pen(ctx, colour, bold);
+        ctx.stroke();
+      }
+      break;
+    case 'lozenges':
+      field(n, 4, (cx, cy) => lozenge(cx, cy, unit * 0.026));
+      break;
+    case 'floret':
+      field(n, 4, (cx, cy) => {
+        for (let p = 0; p < 5; p++) {
+          const a = -Math.PI / 2 + (p / 5) * Math.PI * 2;
+          mark(cx + Math.cos(a) * unit * 0.018, cy + Math.sin(a) * unit * 0.018, unit * 0.007);
+        }
+        mark(cx, cy, unit * 0.006);
+      });
+      break;
+    case 'fibres':
+      for (let i = 0; i < n * 2; i++) {
+        const cx = x + w * (0.04 + rnd() * 0.92);
+        const cy = y + h * (0.04 + rnd() * 0.92);
+        const len = unit * (0.03 + rnd() * 0.04);
+        const a = rnd() * Math.PI;
+        stroke(ctx, cx, cy, cx + Math.cos(a) * len, cy + Math.sin(a) * len, colour, fine * 0.8, seed + 360 + i);
+      }
+      break;
+    case 'laidLines':
+      // Laid paper: fine chain lines one way, a few heavier ones the other.
+      for (let i = 1; i < n * 6; i++) vLine(i / (n * 6), 0, 1, fine * 0.7, i);
+      for (let i = 1; i < 5; i++) hLine(i / 5, 0, 1, bold * 0.8, i + 60);
+      break;
+    case 'giltDots':
+      field(n, 5, (cx, cy) => mark(cx, cy, unit * 0.012));
+      break;
+    case 'stripes':
+      for (let i = 0; i < n * 3; i++) {
+        const t = (i + 0.5) / (n * 3);
+        ctx.fillStyle = colour;
+        ctx.fillRect(x + w * (t - 0.02), y, w * 0.04, h);
+      }
+      break;
+    case 'chequer': {
+      const cells = Math.max(3, Math.round(n / 2));
+      const cw = w / cells;
+      const ch = h / Math.round(cells * 1.4);
+      ctx.fillStyle = colour;
+      for (let r = 0; r * ch < h; r++) {
+        for (let c = 0; c < cells; c++) {
+          if ((r + c) % 2 === 0) continue;
+          ctx.fillRect(x + c * cw, y + r * ch, cw, Math.min(ch, y + h - (y + r * ch)));
+        }
+      }
+      break;
+    }
+    case 'wrapperRules':
+      // A printed wrapper: two heavy rules boxing the board, nothing else.
+      for (let i = 0; i < Math.max(2, n); i++) {
+        const g = 0.05 + i * 0.035;
+        pen(ctx, colour, bold);
+        wobbleRect(ctx, x + w * g, y + h * g * 0.7, w * (1 - g * 2), h * (1 - g * 1.4), unit * 0.01, seed + i);
+        ctx.stroke();
+      }
+      break;
+    case 'newsRules':
+      for (let i = 1; i < n * 2; i++) hLine(i / (n * 2), 0.04, 0.96, fine * 0.7, i);
+      vLine(0.5, 0.04, 0.96, fine * 0.7, 99);
+      break;
+  }
+}
+
+/**
+ * Everything a covering says about a board, in one call.
+ *
+ * Clipped to the board and confined to the FACE — the spine strip is the
+ * board turning away from us and carries the icon's gilt bands, so a grain run
+ * over it would be a mark on a surface the reader is meant to read as an edge.
+ */
+function paintCovering(
+  ctx: FlatCtx,
+  spec: MaterialSpec,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  spineW: number,
+  radius: number,
+  face: string,
+  dark: string,
+  accent: string,
+  ink: number,
+  gilded: boolean,
+  pale: boolean,
+  wear: number,
+  seed: number,
+): void {
+  // The spine drops a covering's fine work below `floor` px of strip, because
+  // under that the marks land on less than a pixel and read as dirt. The board
+  // has the same rule against its own width: `floor` is written for a strip of
+  // 8–20px, and a board is about four of those across. A thoroughly worn book
+  // loses the grain for the reason it loses its gilt — it has been rubbed off.
+  if (bw < spec.floor * 4 || wear >= 0.78) return;
+
+  ctx.save();
+  wobbleRect(ctx, bx, by, bw, bh, radius, seed);
+  ctx.clip();
+
+  paintSplit(ctx, spec, bx, by, bw, bh, spineW, dark, ink, seed + 3);
+
+  const faceX = bx + spineW;
+  const faceW = bw - spineW;
+  // Inset a hair from the hinge and the fore edge so a round cap cannot land
+  // on either outline.
+  const gx = faceX + faceW * 0.03;
+  const gw = faceW * 0.94;
+  const gy = by + bh * 0.02;
+  const gh = bh * 0.96;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(gx, gy, gw, gh);
+  ctx.clip();
+  paintGrain(
+    ctx,
+    spec,
+    gx,
+    gy,
+    gw,
+    gh,
+    grainInk(spec, face, dark, accent, gilded, pale),
+    seed + 71,
+  );
+  ctx.restore();
+
+  // The joints: fine ink lines down the hinge, and on a two-joint binding down
+  // the fore edge as well, which is what makes a back read as rounded.
+  if (spec.joints > 0) {
+    const line = Math.max(0.8, ink * 0.4);
+    stroke(ctx, faceX + faceW * 0.035, by + bh * 0.03, faceX + faceW * 0.035, by + bh * 0.97, FLAT.ink, line, seed + 81);
+    if (spec.joints > 1) {
+      stroke(ctx, bx + bw * 0.965, by + bh * 0.03, bx + bw * 0.965, by + bh * 0.97, FLAT.ink, line, seed + 82);
+    }
+  }
+
+  ctx.restore();
 }
 
 /* ------------------------------ render pieces ----------------------------- */
@@ -993,10 +1948,34 @@ interface LabelSpec {
   dark: string;
   /** Pale bindings need a label that is not the same cream as the board. */
   paleBoard: boolean;
-  font: string;
+  /** Which of the fifty hands the title is lettered in. */
+  hand: HandSpec;
   seed: number;
   /** Detail scale, only used to keep handwriting above its legibility floor. */
   s: number;
+}
+
+/**
+ * Set the pen for one hand at one size, and hand back the string to draw.
+ *
+ * Tracking goes through `ctx.letterSpacing`, which `measureText` honours, so
+ * the fit loop below stays correct for a widely-set hand. It is guarded rather
+ * than assumed: the property is a recent addition to the 2D context, and a
+ * hand that silently sets nothing is better than a throw that takes the whole
+ * cover with it.
+ */
+function setHand(ctx: FlatCtx, hand: HandSpec, stack: string, px: number, text: string): string {
+  const slope = hand.slant ? 'italic ' : '';
+  // Small caps are uppercase set down a size: none of the five faces carries an
+  // sc axis, and faking one by drawing two runs at two sizes would put a seam
+  // in the middle of a two-word title.
+  const size = hand.caps === 'small' ? px * 0.86 : px;
+  ctx.font = `${slope}${hand.weight} ${size.toFixed(1)}px ${stack}`;
+  const tracking = hand.track * size;
+  if ('letterSpacing' in ctx) {
+    (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking.toFixed(2)}px`;
+  }
+  return hand.caps === 'none' ? text : text.toUpperCase();
 }
 
 /**
@@ -1074,17 +2053,44 @@ function paintLabel(
 
   // Fit the title. The floor is the handwriting legibility floor from
   // CLAUDE.md (13 CSS px), expressed in the canvas's own pixels.
+  //
+  // Both floors are applied to the size the title is ACTUALLY set at, after
+  // the hand's own scale and after the fit loop — which is the whole reason
+  // they are enforced here rather than declared in the table. `gen-lettering`
+  // learned the same thing on the page: a hand's scale and a size's scale
+  // multiply, so "small hand" at "small plate" goes under a floor nobody wrote
+  // a number below.
   const maxWidth = w * 0.84;
-  const floorPx = 14 * spec.s;
-  let fontPx = Math.min(h * 0.46, 30 * spec.s);
-  let fitted = text;
+  const floorPx = HAND_FLOOR_PX * spec.s;
+  const hand = spec.hand;
+  // The plate's vertical cap holds whatever the hand asks for: a hand set at
+  // 1.28 that overflowed its own label would be a hand nobody would pick.
+  const startPx = Math.min(h * 0.52, Math.min(h * 0.46, 30 * spec.s) * hand.scale);
+  ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (;;) {
-    ctx.font = `700 ${fontPx.toFixed(1)}px ${spec.font}`;
-    if (ctx.measureText(fitted).width <= maxWidth || fontPx <= floorPx) break;
-    fontPx *= 0.92;
+
+  let stack = FACE_STACKS[hand.face] ?? FACE_STACKS[0]!;
+  let fontPx = startPx;
+  let cased = text;
+  // Two passes at most: fit, and if a Caveat hand fitted under Caveat's own
+  // documented floor, drop to the body face and fit again. That is the same
+  // fallback `gen-lettering.mjs` emits as its block of two-attribute rules —
+  // the block keeps its size and gives up only the face.
+  for (let pass = 0; pass < 2; pass++) {
+    fontPx = startPx;
+    for (;;) {
+      cased = setHand(ctx, hand, stack, fontPx, text);
+      if (ctx.measureText(cased).width <= maxWidth || fontPx * 0.92 < floorPx) break;
+      fontPx *= 0.92;
+    }
+    fontPx = Math.max(fontPx, floorPx);
+    cased = setHand(ctx, hand, stack, fontPx, text);
+    if (pass === 1 || hand.face !== HEADING_FACE || fontPx >= HEADING_MIN_PX * spec.s) break;
+    stack = FACE_STACKS[BODY_FACE]!;
   }
+
+  let fitted = cased;
   if (ctx.measureText(fitted).width > maxWidth) {
     while (fitted.length > 1 && ctx.measureText(`${fitted}…`).width > maxWidth) {
       fitted = fitted.slice(0, -1);
@@ -1093,6 +2099,9 @@ function paintLabel(
   }
   ctx.fillStyle = ink;
   ctx.fillText(fitted, x + w / 2, y + h * 0.44);
+  // Tracking is part of the drawing state, so it would leak into the ruled
+  // flourish below and out into whatever the caller draws next.
+  ctx.restore();
 
   // The icon's shortest rule, kept as the flourish under the title.
   stroke(
@@ -1357,14 +2366,14 @@ export function renderCoverInto(
   const seed = params.seed >>> 0;
   const s = Math.max(0.5, Math.min(w / 380, h / 520));
   const wear = clamp(params.wear ?? 0, 0, 1);
-  const material = params.material ?? materialFromTexture(params.texture);
-  // Flat art has no grain, so a material can only say one thing — whether the
-  // boards are dyed cloth or pale parchment. That is also the only difference
-  // you can actually see across a room, which is the test the whole restyle
-  // is built around.
-  const board = boardFor(material, clothFor(params.palette));
+  // The covering — one of the fifty the SPINE wears, resolved through the same
+  // table. It decides three things about a board: its tone (`boardFor`), where
+  // a second covering sits, and the one grain it carries.
+  const covering = coveringSpecFor(params);
+  const board = boardFor(covering, clothFor(params.palette, params.clothHex));
   const pale = board === PALE_BOARD;
   const [face, dark] = board;
+  const accent = accentFor(params.palette, seed);
   const gilded = params.gilt;
 
   /* ---- layout ---- */
@@ -1397,6 +2406,28 @@ export function renderCoverInto(
     seed + 21,
   );
   panel(ctx, bx, by, bw, bh, face, { radius, seed, width: ink });
+  // The covering goes on before the strip, because a half binding's leather
+  // runs UNDER the spine — the strip and the split band are one piece of skin,
+  // and drawing the band on top of the strip put a seam through the middle of
+  // it.
+  paintCovering(
+    ctx,
+    covering,
+    bx,
+    by,
+    bw,
+    bh,
+    spineW,
+    radius,
+    face,
+    dark,
+    accent,
+    ink,
+    gilded,
+    pale,
+    wear,
+    seed + 61,
+  );
   paintSpineStrip(ctx, bx, by, bw, bh, spineW, radius, face, dark, ink, gilded, seed);
 
   /* ---- ornament ---- */
@@ -1425,7 +2456,7 @@ export function renderCoverInto(
       gilded,
       dark,
       paleBoard: pale,
-      font: FONT_STACKS[params.titleFont] ?? FONT_STACKS[0]!,
+      hand: handFor(params.titleFont),
       seed: seed + 41,
       s,
     });
@@ -1457,6 +2488,36 @@ export function renderCoverInto(
 const urlCache = new Map<string, string>();
 
 /**
+ * The identity of one baked cover.
+ *
+ * Exported so a node test can hold it up against `CoverParams` field by field
+ * — `tests/covers.test.ts` turns every knob in turn and fails on any that does
+ * not move the key. That gate is worth a named function, because getting this
+ * wrong is INVISIBLE: a cache validates nothing about a hit, so a key missing
+ * an axis serves the wrong board to everyone who already has the right one
+ * under that key, and keeps serving it until the app is reloaded. This file
+ * has met that failure twice already, both times through a count that had
+ * stopped describing its own table.
+ *
+ * The room leads it: a cover's cloth comes from the live scheme, so the same
+ * params in two rooms are two different PNGs.
+ *
+ * `covering` is folded through `coveringSpecFor` rather than written raw,
+ * because that is the function the drawing reads — a book with no `covering`
+ * and a book pinned to the covering its material resolves to are the same
+ * picture, and they should be the same PNG.
+ */
+export function coverCacheKey(
+  w: number,
+  h: number,
+  params: CoverParams,
+  title = '',
+  opts: RenderCoverOptions = {},
+): string {
+  return `${flatSchemeTag()}|${params.seed}|${params.palette}|${params.clothHex ?? '-'}|${params.texture}|${coveringSpecFor(params).id}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
+}
+
+/**
  * Bake-once data-URL for a cover. Keyed by seed, overrides, size and title —
  * repeated calls (overlay opens, backdrop re-renders) hit the cache.
  *
@@ -1470,12 +2531,14 @@ export function coverDataUrl(
   title = '',
   opts: RenderCoverOptions = {},
 ): string {
-  // The room leads the key: a cover's cloth comes from the live scheme, so the
-  // same params in two rooms are two different PNGs.
-  const key = `${flatSchemeTag()}|${params.seed}|${params.palette}|${params.texture}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
+  const key = coverCacheKey(w, h, params, title, opts);
   const cached = urlCache.get(key);
   if (cached !== undefined) return cached;
   const url = renderCover(w, h, params, title, opts).toDataURL('image/png');
+  // A cover baked before its title face arrived is a cover lettered in the
+  // generic. Draw it — a titled cover in the wrong hand beats a blank wait —
+  // but do not let it become the answer for the rest of the session.
+  if (title.trim() !== '' && !handLoaded(params.titleFont, h * 0.08)) return url;
   // Guard the cache: keep it bounded (covers are ~100-300KB each).
   if (urlCache.size > 24) {
     const first = urlCache.keys().next().value;

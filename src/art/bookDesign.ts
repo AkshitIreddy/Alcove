@@ -93,6 +93,8 @@ import {
   wobbleRect,
   type FlatCtx,
 } from './flat';
+import { normaliseHex } from './customColour';
+import { clothPair as foldCloth } from './palette';
 import { clamp, fnv1a, mulberry32 } from './noise';
 
 /* ========================================================================== *
@@ -1993,10 +1995,19 @@ export interface BookDesign {
   /** One or two marks; never empty (a plain book carries `['plain']`). */
   decorations: readonly Decoration[];
   /**
-   * Index into `CLOTHS` — the book's OWN cloth. Deliberately not read from
-   * `flatScheme()`: redecorating a room must not repaint the books in it.
+   * The book's OWN cloth. Deliberately not read from `flatScheme()`:
+   * redecorating a room must not repaint the books in it.
+   *
+   * An index into `CLOTHS` for the fifty house cloths, or a `#rrggbb` the
+   * READER typed. A hex is not folded onto the nearest of the fifty on the way
+   * in: a picker that answers "magenta" with "the mulberry we happen to own" is
+   * the same silent degradation `art/customColour.ts` exists to refuse. It is
+   * clamped instead, by `palette.clothPair`, which lifts it off the ink floor
+   * and derives the turned face — so an arbitrary colour still arrives as two
+   * flat faces with a legible fold, which is the only way this style can accept
+   * one at all.
    */
-  cloth: number;
+  cloth: number | string;
   /** Second cloth, for half/quarter bindings, marbled veins and ribbons. */
   accent: number;
   /** Foil on the tooling. False means the same marks struck in soft ink. */
@@ -2499,8 +2510,11 @@ export function presetForSeed(seed: number): BookPreset {
 export interface ResolveBookDesignOptions {
   /** The book's 32-bit art seed. */
   seed: number;
-  /** Cloth index. Callers pass `clothForPalette(params.palette)`. */
-  cloth?: number;
+  /**
+   * The book's cloth: an index (callers pass `clothForPalette(params.palette)`)
+   * or the reader's own `#rrggbb`. See `BookDesign.cloth`.
+   */
+  cloth?: number | string;
   /** Second cloth. Defaults to one the seed picks, never equal to `cloth`. */
   accent?: number;
   /** Pin the binding (the studio's picker). Omit to let the seed choose. */
@@ -2537,11 +2551,21 @@ export interface ResolveBookDesignOptions {
 export function resolveBookDesign(opts: ResolveBookDesignOptions): BookDesign {
   const seed = opts.seed >>> 0;
   const chosen = opts.preset ? bookPreset(opts.preset) : presetForSeed(seed);
-  const cloth = normIndex(opts.cloth ?? seed % CLOTHS.length, CLOTHS.length);
+  // A reader's own hex is kept AS a hex; only a house cloth has a slot. The
+  // slot is still computed either way, because the accent and the "not the
+  // same colour twice" guard below are index arithmetic — a custom cloth
+  // leaves the second colour where the seed put it rather than dragging the
+  // half-binding leather along with it.
+  const ownCloth = normaliseHex(opts.cloth);
+  const slot = normIndex(
+    typeof opts.cloth === 'number' ? opts.cloth : seed % CLOTHS.length,
+    CLOTHS.length,
+  );
+  const cloth: number | string = ownCloth ?? slot;
   // The accent must never equal the cloth: a half binding whose leather is the
   // same colour as its boards is just a plain book with a stray line on it.
   const accent = normIndex(
-    opts.accent ?? cloth + 1 + (((seed >>> 5) % (CLOTHS.length - 1)) | 0),
+    opts.accent ?? slot + 1 + (((seed >>> 5) % (CLOTHS.length - 1)) | 0),
     CLOTHS.length,
   );
   const gilt = opts.gilt ?? chosen.gilt;
@@ -2551,7 +2575,7 @@ export function resolveBookDesign(opts: ResolveBookDesignOptions): BookDesign {
     material: opts.material ?? chosen.material,
     decorations: chosen.decorations,
     cloth,
-    accent: accent === cloth ? normIndex(cloth + 1, CLOTHS.length) : accent,
+    accent: accent === slot ? normIndex(slot + 1, CLOTHS.length) : accent,
     gilt,
     labelAt: clamp(opts.labelAt ?? 0.24, 0.16, 0.48),
     seed,
@@ -2737,7 +2761,23 @@ function channels(hex: string): [number, number, number] {
   return [128, 128, 128];
 }
 
-function clothPair(index: number): readonly [string, string] {
+/**
+ * A cloth's two faces, from a house slot OR from a colour the reader typed.
+ *
+ * The hex branch does not look anything up: `palette.clothPair` folds an
+ * arbitrary colour the same way the fifty in `flat.ts` were folded (one
+ * measured OKLCh step down, a little chroma into the dark, a couple of degrees
+ * warmer, and a floor that keeps the turned face above `FLAT.ink`). So a
+ * reader's colour arrives as a cloth rather than as a flat rectangle, and the
+ * one thing this style cannot do without — an ink outline you can still see —
+ * survives every hex anybody can type.
+ */
+function clothPair(value: number | string): readonly [string, string] {
+  if (typeof value === 'string') {
+    const hex = normaliseHex(value);
+    if (hex !== null) return foldCloth(hex);
+  }
+  const index = typeof value === 'number' ? value : 0;
   return CLOTHS[normIndex(index, CLOTHS.length)] ?? (CLOTHS[0] as readonly [string, string]);
 }
 

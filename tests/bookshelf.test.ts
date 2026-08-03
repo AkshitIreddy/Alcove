@@ -926,7 +926,26 @@ describe('library prefs: validated merge', () => {
       floraDensity: 2,
       lightWarmth: 0.9,
     });
-    expect(prefs).toEqual({ theme: 'reef', shelf: null, wall: null });
+    expect(prefs).toEqual({
+      theme: 'reef',
+      shelf: null,
+      wall: null,
+      timberHex: null,
+      wallHex: null,
+    });
+  });
+
+  it("keeps a colour of the reader's own, and refuses anything it cannot re-serialise", () => {
+    // The two hexes are the door out of the sixty rooms (see LibraryPrefs).
+    // Generous on the way in — any spelling of a hex — and null for anything
+    // else, because null is already the value that means "follow the room".
+    const own = mergeLibraryPrefs({ theme: 'reef', timberHex: '#A1B2C3', wallHex: 'fed' });
+    expect(own.timberHex).toBe('#a1b2c3');
+    expect(own.wallHex).toBe('#ffeedd');
+
+    const junk = mergeLibraryPrefs({ theme: 'reef', timberHex: 'rebeccapurple', wallHex: 12 });
+    expect(junk.timberHex).toBeNull();
+    expect(junk.wallHex).toBeNull();
   });
 
   it('keeps a per-part pick, and drops one naming a retired room', () => {

@@ -687,6 +687,25 @@ export class SpineFactory {
     }
     if (epoch !== this.bakeEpoch) {
       // The room changed while this was painting — the pixels are stale.
+      //
+      // PUT IT BACK. Dropping it here loses the bake permanently: the item is
+      // already out of `queue` (dispatchToWorkers deleted it) and out of
+      // `inFlight` (deleted just above), so nothing remembers this book wanted
+      // a spine. The re-queue is the same one the `paint === null` branch
+      // below already does, and for the same reason.
+      //
+      // On a stocked shelf this healed itself and hid for a long time — any
+      // pan or floor load re-requests every visible book. On a NEW library it
+      // was the whole first impression: the room is dressed once at startup,
+      // which bumps the epoch, and if that lands while the single Welcome
+      // book is in flight then nothing ever asks again. It sat as a flat
+      // placeholder rectangle for the life of the session, and adding a second
+      // book was what appeared to "fix" it.
+      // shots-now/welcome-bake.mjs is the regression test, and it deliberately
+      // checks the one-book case.
+      if (!(variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id)) {
+        this.queue.set(key, item);
+      }
       paint?.bitmap.close();
       this.pump();
       return;

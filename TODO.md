@@ -193,6 +193,27 @@ agents reported honestly, plus the seams between them that I closed by hand.
 - [ ] **Default shelf, wallpaper and welcome book look bland / cheap.** Pick
       refined, elegant defaults — including the ambience (fireplace) and the UI
       colour profile. The reader must still be able to change all of it.
+      Case and paper are chosen (`scriptorium.guilloche`, `pin-quiet`) and read
+      well in `shots-now/out/first-run.png`. **But the welcome book was not
+      bland — it was UNBAKED.** On a fresh library the one book on the shelf
+      rendered as a flat placeholder rectangle indefinitely: measured
+      `hi:false, lo:false, queued:0` after 30s, and a manual
+      `factory.request()` baked it instantly, so nothing was ever asking.
+      Adding a second book was what finally baked the first.
+      Cause (found by tracing the real startup, after two wrong guesses):
+      `SpineFactory.paintOffThread` DROPPED a bake whose room changed while it
+      was in flight. The item is already out of `queue` and out of `inFlight`
+      by then, so nothing remembered the book wanted a spine — unlike the
+      adjacent `paint === null` branch, which puts it back. The room is dressed
+      once at startup, which bumps the epoch, and on a one-book library nothing
+      ever re-requests. On a stocked shelf any pan healed it, which is why it
+      hid for so long. Fixed by re-queueing on epoch mismatch;
+      `shots-now/welcome-bake.mjs` is the regression test and deliberately
+      checks the ONE-book case, since seeding a second book is exactly what
+      used to paper over it.
+      STILL OPEN: the shelf is nine-tenths empty on first run — one book in
+      ten bays — which is the other half of "bland", and a separate decision
+      about what a new library should ship with.
 - [x] **Drop the "read it / put it back" card.** A book that comes off the shelf
       just opens. Put a tasteful back control top-left that fades once used.
       `PulledBookOverlay.tsx` documents the removal: the flight runs straight

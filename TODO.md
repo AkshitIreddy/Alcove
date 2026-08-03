@@ -389,11 +389,15 @@ and pushed.
       two-item set, so `paper` is now a washed wrapper distinct from `vellum`'s
       cream half-bound board: three board treatments where there were two.
       **Still open below** — five of the seven remain identical.
-- [ ] **Five coverings still share one board.** leather, cloth, linen, silk and
+- [x] **Five coverings still share one board.** leather, cloth, linen, silk and
       marbled all carry `body: 'cloth'`, so `boardFor` correctly gives them the
       same colour — what separates them on the SPINE is grain (twill, laid
       lines, ribbed, moiré), and the cover has no grain painter at all. Giving
       it one is the remaining half of this item.
+      The cover has a grain painter now. leather, cloth, linen, silk and
+      marbled all resolved to one colour correctly - what separates them
+      is grain, and the board a reader actually holds had none while the
+      spine did.  `770a1d7`
 - [x] **Split `DEFAULT_WALLPAPER_ID` before repointing it.** It is doing two
       jobs: the wall a library opens with, AND the fallback an unknown id
       resolves to. Pointing it at a patterned paper to show the fifty off also
@@ -466,10 +470,14 @@ shelf presets (113), colour schemes (60).
       box to dress) and `col` (may only live inside `columns`, which is itself
       dressable), and the test refuses an exclusion for a node that no longer
       exists.
-- [ ] The COVER's own vocabularies were never expanded: `COVER_TEXTURES` 3,
+- [x] The COVER's own vocabularies were never expanded: `COVER_TEXTURES` 3,
       `COVER_FONTS` 3, `COVER_FRAME_COUNT` 4, `COVER_MEDALLION_COUNT` 8. The
       spine got fifty of everything and the board a reader actually holds did
       not
+      COVER_TEXTURES is the spine's fifty MATERIAL_LOOKS now, derived
+      rather than restated, so a book's board and its spine agree about
+      what it is made of. COVER_FONTS took the same treatment as the
+      lettering shelf.  `770a1d7`
 - [x] Deliberately NOT fifty, and worth defending rather than growing:
       `SPINE_FORMATS` (5 — these are bibliographic sizes, folio to pocket, not
       a catalogue), `WALLPAPER_SCALES` (5), `WALLPAPER_EDGES` (4),
@@ -922,7 +930,7 @@ recordings.
       `public/sounds/CREDITS.json`, one entry per cue. **Verified split: 34
       public domain, 21 CC0, 1 CC BY 4.0** (counted from the manifest, not from
       the report)
-- [ ] **The set is 66 cues cut from 15 recordings, and 56 of them from six.**
+- [x] **The set is 66 cues cut from 15 recordings, and 56 of them from six.**
       Surveyed properly for the first time. The ambience is 1:1 and well
       sourced; every one of the 46 interaction cues comes from six takes, so
       most cues are siblings of each other pitched or sliced differently. That
@@ -933,22 +941,34 @@ recordings.
       and the exact thing rejected twice. Replaced with five public-domain
       recordings of real objects. `3abc28c`
       STILL OPEN, in order of how much they matter:
-      - [ ] `click-soft` ×4 — the most-fired cue in the app — are sub-slices of
+      - [x] `click-soft` ×4 — the most-fired cue in the app — are sub-slices of
             a page RIFFLE (`Old_book.ogg`, overlapping the book-pull slices),
             measuring 3.3% and 11.6% max adjacent-sample step, i.e. almost no
             attack. A button press is a contact event; a riffle is friction.
             No conditioning turns one into the other.
-      - [ ] `tick-hover` ×5 and `typing-tick` ×6 are the same 60-second pencil
+            Replaced with a real contact event. Found by reading the build
+            report row by row, not by listening.  `3f1353c`
+      - [x] `tick-hover` ×5 and `typing-tick` ×6 are the same 60-second pencil
             take interleaved, statistically indistinguishable (1546–1586 Hz vs
             1477–1601 Hz). The only thing telling a hover from a keystroke is
             9 dB of level. `tests/sound.test.ts` cannot see this — its variety
             check only compares takes WITHIN a family.
-      - [ ] `page-flip-5` measures 1075 Hz against 1843–1860 for its five
+            They come from different recordings now, so a hover and a
+            keystroke are different events rather than the same take 9 dB
+            apart.  `3f1353c`
+      - [x] `page-flip-5` measures 1075 Hz against 1843–1860 for its five
             siblings: the thud among five sheets of paper. This is the exact
             defect that already got `page-flip-1` replaced.
+            Re-sourced back into its family band.  `3f1353c`
       141 vetted CC0/PD candidates were found across freesound, Kenney's
       recorded UI set, OpenGameArt and Wikimedia; the agent integrating them
       died in an API outage before landing more than `pop-soft`.
+      Twenty-five recordings now. The remaining reuse is recorded
+      honestly in docs/design/sound.md, along with the packs REJECTED
+      and why — freesound's robots.txt, archive.org's untrustworthy CC0
+      tags, pixabay's bot challenge, and Kenney's UI Audio which was
+      downloaded and MEASURED rather than assumed, then rejected for
+      being 2-3x longer and 3-4x brighter than the house voice.  `3f1353c`
 
 - [ ] **Nobody has listened to any of it.** Every judgement so far is spectral
       measurement plus envelope inspection — the agent that built it could not
@@ -957,10 +977,13 @@ recordings.
 - [x] ~~**The one CC BY 4.0 credit is recorded but never shown, so as shipped
       we are out of compliance.**~~ — done, read from the manifest rather than
       hard-coded. Duplicate of the licence-obligation item above.
-- [ ] `pop-soft` (5 variants) is the one family sourced from an interface pack
+- [x] `pop-soft` (5 variants) is the one family sourced from an interface pack
       rather than foley, so it is the least papery thing in the set. Kept
       because the alternatives in that duration window were worse; the obvious
       candidate for a second pass
+      The only synthesised material in the set, and the exact thing
+      rejected twice. Five public-domain recordings of real objects now;
+      the >4 kHz share went from exactly 0.00% to 6.8-19.9%.  `3abc28c`
 
 Sources that were **rejected, and why** — worth keeping so the next pass does
 not re-tread them: freesound.org is the best CC0 catalogue for this brief but
@@ -1040,7 +1063,11 @@ stricter reading and ship the credit, which satisfies either.
       can be dropped into a page. "Stickers" was naming the whole drawer after
       a fraction of what was in it.
 - [x] ~~Add a **fonts** category alongside it~~
-- [ ] Many more effects, and more custom element types worth inserting
+- [x] Many more effects, and more custom element types worth inserting — new
+      stationery drawn in the flat language, each reachable from the slash
+      menu, carrying the block effects, and round-tripping through Notebook
+      Script with its own directive AND its printer, so a page survives the
+      trip out to text and back. `3f1353c`
 
 ### Spec automation
 
@@ -1241,8 +1268,22 @@ actually reaches the screen.
       with its own id, name, room and books, ten floors unless the reader grows
       it. Rust migration v2 + `ensureBookcases()`, three overlapping guards so
       no library can be lost, and the case now ends with a visible plinth
-- [ ] Notion-depth writing: nested toggles, columns, math, footnotes,
-      backlinks, sortable tables, selection toolbar
+- [x] Notion-depth writing: nested toggles, columns, math, footnotes,
+      backlinks, sortable tables, selection toolbar. The four named in the
+      later, narrower entry are done: nesting already worked and is pinned
+      now, columns were written but never wired, footnotes keep the pagination
+      promise by DESIGN (the note is an attribute of the inline marker, so it
+      travels inside the paragraph's own JSON and arrives already attached),
+      and maths is a hand-rolled total TeX-subset renderer because TipTap's
+      Mathematics extension is not installed. `8eec15f`
+      Backlinks, sortable tables and a selection toolbar were never part of
+      the narrower brief and are not built — split out below rather than left
+      hiding inside a ticked line.
+- [ ] **Backlinks, sortable tables, and a selection toolbar** — the three
+      items from the original "Notion-depth" list that the later pass did not
+      cover. Sortable tables and a selection toolbar are contained editor
+      work; backlinks need a link index across books and are the largest of
+      the three.
 - [ ] Rebuild and verify the NSIS installer
 
 ### Bookcases — the edges nobody owns yet
@@ -1293,12 +1334,18 @@ the app quietly assumes one bookcase.
       There is no way in the app to move a book between bookcases at all, so
       the repaint cannot happen yet. That is the real gap, and it is the next
       item rather than this one.
-- [ ] **There is no way to move a book between bookcases.** `moveBookToBookcase`
+- [x] **There is no way to move a book between bookcases.** `moveBookToBookcase`
       exists, is tested, and carries the `keepAppearance` guard above, but
       nothing in the UI calls it — a reader with two cases cannot reshelve
       anything from one into the other. Wants an action on the book's own
       right-click menu that offers the other cases, passing the resolved style
       as `keepAppearance` so the book keeps its face on arrival.
+      On the book's right-click menu, stating the guarantee to the
+      reader ("It keeps the colours it has here"). Building the
+      verification found two real defects: the moved book changed its
+      GRAIN because pinning all 24 fields told the renderer the reader
+      had chosen a covering, and the case list ran off the bottom of the
+      window at 25 bookcases.  `c3473e8`
 
 ## 🔩 Found while making the tree green
 

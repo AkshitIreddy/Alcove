@@ -26,7 +26,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { appState } from '../../state/app';
+import { openBookAnywhere } from '../bookshelf/openAnywhere';
 import { listBooksByFloorRange } from '../../data/books';
 import {
   ensureIndexFresh,
@@ -285,7 +285,10 @@ export default function QuickSwitcher(): JSX.Element {
   const activate = (row: Row): void => {
     if (row.kind === 'book') {
       recordBookOpened(row.book.id);
-      appState.openBook(row.book.id);
+      // The switcher lists the WHOLE library, so the pick may live in another
+      // case — go and stand in it first, or shutting the book drops the reader
+      // onto a shelf that does not contain it.
+      void openBookAnywhere(row.book.id);
     } else if (row.kind === 'heading') {
       requestSearchJump(row.page.bookId, row.page.pageId, [
         row.headingText,

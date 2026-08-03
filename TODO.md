@@ -1151,11 +1151,20 @@ the app quietly assumes one bookcase.
       re-inserts historical rows without `bookcase_id`. The start-up orphan
       sweep adopts them into the first case — there is a test — so an imported
       library lands entirely in the default case rather than being lost
-- [ ] **Quick switch and full-text search are library-wide**, deliberately, so
+- [x] **Quick switch and full-text search are library-wide**, deliberately, so
       books never vanish from search. But opening a hit that lives in another
       bookcase does not switch to it, so the reader lands on a shelf that does
       not contain the book they just picked. Wants `switchBookcase` before
-      `appState.openBook`
+      `appState.openBook`.
+      `features/bookshelf/openAnywhere.ts` does exactly that, and both callers
+      (the search jump and the quick switcher) go through it. Library-wide
+      search is untouched — that part was right.
+      The order is the point and is pinned: `switchBookcase` reloads the
+      shelf's store, so opening first would have the world resolving the book
+      against the old case's floors. `tests/open-anywhere.test.ts` also pins
+      the three cases where it must NOT travel (already-open case, a book with
+      no case — the start-up orphan sweep owns those — and a failed lookup) and
+      that a failed switch still opens the book rather than swallowing it.
 - [ ] **The trash is one drawer for the whole library.** `listTrashedBooksIn`
       exists if it should be per-case; the panel passes the parameterless
       version straight to `createResource`

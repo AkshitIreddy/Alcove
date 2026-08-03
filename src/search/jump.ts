@@ -12,7 +12,7 @@
  */
 
 import { createEffect, createSignal, type Accessor } from 'solid-js';
-import { appState } from '../state/app';
+import { openBookAnywhere } from '../features/bookshelf/openAnywhere';
 import { spreadOfSlot } from '../views/spread';
 import { recordBookOpened } from './recents';
 
@@ -42,7 +42,9 @@ export function requestSearchJump(
     terms: terms.map((t) => t.trim()).filter((t) => t !== ''),
     stamp: Date.now(),
   });
-  appState.openBook(bookId);
+  // Search is library-wide, so a hit can live in a case the reader is not
+  // standing in — open it there. See features/bookshelf/openAnywhere.ts.
+  void openBookAnywhere(bookId);
 }
 
 // ---------------------------------------------------------------------------

@@ -115,8 +115,30 @@ await page.evaluate(() => {
       effects: document.querySelectorAll(
         '[data-tape],[data-washi],[data-frame],[data-paper],[data-shadow],[data-underline],[data-color],[data-ink]',
       ).length,
-      snapshotting: document.querySelectorAll('.snapshotting').length,
+      /*
+       * Split by WHERE it is, or the number means nothing. The offscreen
+       * staging area is also in the DOM (parked at left:-12000px), so a bare
+       * count of `.snapshotting` cannot tell the page the reader is looking at
+       * from the hidden copy — which is exactly the distinction the fix turns
+       * on. Only the first of these is a defect.
+       */
+      snapOnVisible: [...document.querySelectorAll('.snapshotting')].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.right > 0 && r.left < window.innerWidth && r.width > 0;
+      }).length,
+      snapOffscreen: [...document.querySelectorAll('.snapshotting')].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return !(r.right > 0 && r.left < window.innerWidth && r.width > 0);
+      }).length,
       blocks: prose === null ? 0 : prose.children.length,
+      // WHICH element is carrying the class, so a miscount cannot be mistaken
+      // for a diagnosis. Class list, size and position, first one only.
+      snapWho: (() => {
+        const el = document.querySelector('.snapshotting');
+        if (el === null) return '';
+        const r = el.getBoundingClientRect();
+        return `${String(el.className).trim().split(/\s+/).slice(0, 3).join('.')} @${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+      })(),
     };
   };
   /*
@@ -143,7 +165,7 @@ const trace = await page.evaluate(() => globalThis.__trace);
 console.log('\n3. what changed, and when');
 const first = trace[0];
 const last = trace[trace.length - 1];
-const keys = ['flipping', 'canvasUp', 'leafHidden', 'gutter', 'curl', 'effects', 'snapshotting', 'blocks'];
+const keys = ['flipping', 'canvasUp', 'leafHidden', 'gutter', 'curl', 'effects', 'snapOnVisible', 'snapOffscreen', 'blocks'];
 let lastChange = 0;
 for (const k of keys) {
   const changes = [];
@@ -159,6 +181,9 @@ for (const k of keys) {
       (changes.length === 0 ? '  (never changed)' : `  ${changes.slice(0, 4).join(' · ')}`),
   );
 }
+const who = [...new Set(trace.map((f) => f.snapWho).filter((w) => w !== ''))];
+console.log('\n   elements seen carrying .snapshotting:');
+for (const w of who) console.log(`     ${w}`);
 console.log(`\n   ${trace.length} frames; the page stopped changing ${lastChange}ms after the turn.`);
 
 console.log('\nerrors:', errors.length ? errors.slice(0, 3) : 'none');

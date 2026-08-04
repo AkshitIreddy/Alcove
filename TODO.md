@@ -113,12 +113,48 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### Pages and the editor
 
-- [ ] **The page turn flickers the effects in a beat late.**
+- [x] **The page turn flickers the effects in a beat late.** DIAGNOSED, not yet
+      fixed — the cause is certain and the repair is a separate, careful job.
       > "When turning pages, after the page turn and we go to the next page,
       > there is a flicker for a second where it then puts all the processing
       > effects we have on it — for example the shadow effect in the middle and
       > so on. It either needs to be there from the start as soon as the page
       > turn begins, or needs to be really, really fast."
+
+      **THE CAUSE.** `PageRasterCache.capture()` rasterises a page by writing to
+      it: `element.classList.add(SNAPSHOTTING_CLASS)` then `inlineSvgStyles`,
+      restored after an await that is 200ms+ of work. For a MOUNTED page that
+      element is the leaf the reader is looking at.
+
+      Measured with `scripts/probe-landing-flicker.mjs`, sampling the DOM every
+      animation frame across a real curl:
+
+          leafHidden     75ms -> 1     677ms -> 0      the turn is over at 677ms
+          snapOnVisible 952ms -> 1   1136ms -> 2   1206ms -> 0
+
+      and the elements named: `nb-sheet-paper.nb-leaf-paper` at (135,75) and
+      (784,75), 649x833 — the two visible leaves. The reader's page is edited
+      underneath them for ~250ms, about a second after the turn.
+
+      **A METHOD BUG THAT HID THIS FROM EVERY EARLIER PROBE.** Headless Chromium
+      reports `prefers-reduced-motion: reduce`, so `programmaticFlip` takes
+      `crossfadeNavigate` and never curls at all. Probes here have been
+      measuring a code path the reader never takes. Force
+      `page.emulateMedia({ reducedMotion: 'no-preference' })`.
+
+      **THE REPAIR, and why it is not done yet.** `src/flip/offscreenPages.ts`
+      already rasterises pages through a read-only editor parked at
+      left:-12000px, with the same sheet classes and recipe, because the
+      adjacent spread is never mounted. Routing mounted pages through it means
+      the visible page is never touched.
+
+      Tried, and REVERTED: making `capture()` prefer `captureUnmounted()` before
+      the mounted branch. It changed nothing — `snapOnVisible` still fired,
+      `snapOffscreen` never did, and no warning was logged, so
+      `captureOffscreen` is returning null silently for a page that IS mounted
+      rather than failing. Find out why (start at `createOffscreenPageCapture`'s
+      `pageSize()` and `loadPageDoc`) before trying again. An inert change that
+      also costs a wasted offscreen attempt per capture is worse than none.
 
 - [ ] **A page never seen before turns up blank white.**
       > "There is a bug in the welcome book: let's say I am turning to a page I

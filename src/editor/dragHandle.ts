@@ -22,6 +22,23 @@
  * that wrapper, so pinning the wrapper to the viewport origin as a 0×0 fixed
  * box leaves every number it writes unchanged.
  *
+ * IF DRAGGING IS REPORTED DEAD, READ THIS BEFORE CHANGING ANYTHING HERE.
+ * Nothing in this file was the cause last time, and two speculative fixes were
+ * made and reverted before that was established. The whole gesture rides on
+ * NATIVE HTML5 drag events — the extension listens for dragstart/dragover/drop,
+ * and `pastePlugin.handleDrop` takes the same road for image files. Anything
+ * that stops the document receiving `dragover`/`drop` leaves this code looking
+ * perfect: the handle still appears, still highlights, `dragstart` still fires,
+ * and the block simply never moves.
+ *
+ * On Windows that is exactly what Tauri does by default. `dragDropEnabled`
+ * defaults to true, and wry then revokes WebView2's own OLE drop target on
+ * every child HWND and installs one that ignores everything but a file list.
+ * `src-tauri/tauri.conf.json` therefore sets `"dragDropEnabled": false`, and
+ * `tests/packaging.test.ts` pins it — no browser probe can see this, because a
+ * browser has no wry in it. `scripts/probe-drag-matrix.mjs` reproduces the
+ * symptom by swallowing those three events.
+ *
  * The second half of the file is the drag itself. The extension caches the
  * hovered node and only re-anchors when the node CHANGES, and it never clears
  * that cache when a drag is abandoned — so after a failed move the handle kept

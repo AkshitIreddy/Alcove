@@ -35,11 +35,14 @@ import { play } from '../../sound/engine';
 import SelectionToolbar from './SelectionToolbar';
 import {
   NO_ACTIVE_MARKS,
+  applySelectionFace,
   applySelectionHighlight,
   applySelectionLink,
+  clearSelectionFace,
   clearSelectionHighlight,
   clearSelectionLink,
   readActiveMarks,
+  selectionFace,
   selectionHighlightStyle,
   selectionHref,
   selectionWash,
@@ -58,6 +61,10 @@ interface ToolbarState {
   tray: SelectionTray | null;
   wash: HighlightWash;
   hlStyle: HighlightStyle;
+  /** Hand id under the selection, or null for the page's own. */
+  face: string | null;
+  /** Whether the faces tray is showing the shortlist or all of them. */
+  facesAll: boolean;
   href: string;
   hasLink: boolean;
   linkError: boolean;
@@ -123,6 +130,8 @@ class SelectionToolbarView {
       tray: null,
       wash: 'amber',
       hlStyle: 'marker',
+      face: null,
+      facesAll: false,
       href: '',
       hasLink: false,
       linkError: false,
@@ -150,6 +159,12 @@ class SelectionToolbarView {
           get hlStyle() {
             return state.hlStyle;
           },
+          get face() {
+            return state.face;
+          },
+          get facesAll() {
+            return state.facesAll;
+          },
           get href() {
             return state.href;
           },
@@ -160,6 +175,9 @@ class SelectionToolbarView {
             return state.linkError;
           },
           onPress: this.onPress,
+          onFace: this.onFace,
+          onClearFace: this.onClearFace,
+          onShowAllFaces: this.onShowAllFaces,
           onWash: this.onWash,
           onHighlightStyle: this.onHighlightStyle,
           onClearHighlight: this.onClearHighlight,
@@ -238,6 +256,29 @@ class SelectionToolbarView {
     }
     toggleSelectionMark(this.editor, action.id);
     void play('pop-soft');
+  };
+
+  private readonly onFace = (hand: string): void => {
+    applySelectionFace(this.editor, hand);
+    // Read back rather than trusting the press: `setMark` can be refused
+    // (a selection wholly inside a code block, an atom node), and a chip lit
+    // for a face the document did not take is the lie this readout exists to
+    // prevent.
+    this.setState('face', selectionFace(this.editor));
+    void play('pop-soft');
+  };
+
+  private readonly onClearFace = (): void => {
+    clearSelectionFace(this.editor);
+    this.setState('face', selectionFace(this.editor));
+  };
+
+  private readonly onShowAllFaces = (): void => {
+    this.setState('facesAll', true);
+    // The tray just got much taller; re-anchor so it does not grow off-screen.
+    requestAnimationFrame(() => {
+      if (!this.destroyed && this.up) this.place();
+    });
   };
 
   private readonly onWash = (wash: HighlightWash): void => {
@@ -331,6 +372,7 @@ class SelectionToolbarView {
       active: readActiveMarks(this.editor),
       wash: selectionWash(this.editor),
       hlStyle: selectionHighlightStyle(this.editor),
+      face: selectionFace(this.editor),
       hasLink: this.editor.isActive('link'),
     });
     this.show();
@@ -350,6 +392,10 @@ class SelectionToolbarView {
     this.anchor = '';
     this.host.classList.remove('is-up');
     this.host.setAttribute('aria-hidden', 'true');
+    // "Show all" is a statement about the tray that is open, not a preference:
+    // it survives while the card is up (so picking three hands in a row does
+    // not collapse the list under the hand) and goes away with the card.
+    if (this.state.facesAll) this.setState('facesAll', false);
     if (this.state.tray !== null) this.setState({ tray: null, linkError: false });
   }
 

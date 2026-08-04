@@ -15,10 +15,6 @@ import {
   HIGHLIGHT_STYLE_LABELS,
   HIGHLIGHT_WASHES,
   SELECTION_ACTIONS,
-  faceGroups,
-  faceShortlist,
-  type FaceGroup,
-  type HandSpec,
   type HighlightStyle,
   type HighlightWash,
   type SelectionAction,
@@ -26,7 +22,14 @@ import {
   type SelectionActiveMap,
   type SelectionTray,
 } from './actions';
-import { faceFloorPx } from '../marks/face';
+import {
+  faceFloorPx,
+  faceGroups,
+  faceShortlist,
+  faceStack,
+  type FaceGroup,
+} from '../marks/face';
+import type { HandSpec } from '../../features/settings/appearance';
 
 // The tray's row names come from the same table the right-click menu reads
 // (`editor/highlightStyles.ts`); a second copy here is how one surface ended
@@ -205,12 +208,39 @@ export default function SelectionToolbar(props: SelectionToolbarProps): JSX.Elem
     if (id === 'highlight') return <HighlightIcon />;
     if (id === 'link') return <LinkIcon />;
     const action = SELECTION_ACTIONS.find((entry) => entry.id === id);
+    // The face chip is the one glyph that is not a fixed letterform: it draws
+    // "Aa" in whatever the selection is already wearing, so the button says
+    // what the words look like as well as what pressing it is for.
+    const style =
+      id === 'face' && props.face !== null
+        ? { 'font-family': faceStack(props.face) ?? '', 'font-size': '13px' }
+        : undefined;
     return (
-      <span class="nb-seltool-letter" data-mark={id} aria-hidden="true">
+      <span
+        class="nb-seltool-letter"
+        data-mark={id}
+        style={style}
+        aria-hidden="true"
+      >
         {action?.glyph ?? ''}
       </span>
     );
   };
+
+  /*
+   * The shortlist is recomputed from the selection's own face, so a reader who
+   * set a run in a niche hand finds that hand in the first row when they come
+   * back to it (the settings sheet's `withCurrent`, same argument).
+   */
+  const shortlist = createMemo<readonly HandSpec[]>(() => faceShortlist(props.face));
+  const groups = createMemo<readonly FaceGroup[]>(() =>
+    props.facesAll ? faceGroups() : [],
+  );
+  const moreCount = createMemo(() => {
+    const shown = shortlist().length;
+    const all = faceGroups().reduce((n, group) => n + group.faces.length, 0);
+    return Math.max(0, all - shown);
+  });
 
   return (
     <div class="nb-seltool" role="toolbar" aria-label="Text formatting">
@@ -249,6 +279,81 @@ export default function SelectionToolbar(props: SelectionToolbarProps): JSX.Elem
           )}
         </For>
       </div>
+
+      <Show when={props.tray === 'faces'}>
+        <div class="nb-seltool-tray">
+          <div class="nb-seltool-faces" role="group" aria-label="Handwriting">
+            {/* The way back always comes first: a reader who has just tried
+                three hands wants "leave it alone" without hunting. */}
+            <button
+              type="button"
+              class="nb-seltool-face is-clear"
+              classList={{ 'is-on': props.face === null }}
+              aria-label="The page's own hand"
+              aria-pressed={props.face === null}
+              data-hand="none"
+              data-tooltip="The page’s own hand"
+              data-tooltip-side="top"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                props.onClearFace();
+              }}
+            >
+              the page’s hand
+            </button>
+            <For each={shortlist()}>
+              {(spec) => (
+                <FaceChip
+                  spec={spec}
+                  on={props.face === spec.id}
+                  onPick={props.onFace}
+                />
+              )}
+            </For>
+          </div>
+
+          <Show when={props.facesAll}>
+            <div class="nb-seltool-faceall">
+              <For each={groups()}>
+                {(group) => (
+                  <>
+                    <p class="nb-seltool-faceshelf font-ui">{group.title}</p>
+                    <div
+                      class="nb-seltool-faces"
+                      role="group"
+                      aria-label={group.title}
+                    >
+                      <For each={group.faces}>
+                        {(spec) => (
+                          <FaceChip
+                            spec={spec}
+                            on={props.face === spec.id}
+                            onPick={props.onFace}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </>
+                )}
+              </For>
+            </div>
+          </Show>
+
+          <Show when={!props.facesAll && moreCount() > 0}>
+            <button
+              type="button"
+              class="nb-seltool-more font-ui"
+              aria-label={`Show all ${moreCount() + shortlist().length} hands`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                props.onShowAllFaces();
+              }}
+            >
+              {moreCount()} more…
+            </button>
+          </Show>
+        </div>
+      </Show>
 
       <Show when={props.tray === 'washes'}>
         <div class="nb-seltool-tray">

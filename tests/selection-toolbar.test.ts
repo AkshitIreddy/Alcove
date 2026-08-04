@@ -22,16 +22,26 @@
 import { describe, expect, it } from 'vitest';
 import { getSchema } from '@tiptap/core';
 
+import type { Editor } from '@tiptap/core';
 import {
   HIGHLIGHT_STYLES,
   HIGHLIGHT_WASHES,
   NO_ACTIVE_MARKS,
   SELECTION_ACTIONS,
   normalizeLinkHref,
+  toggleSelectionMark,
   type SelectionActionId,
 } from '../src/editor/toolbar/actions';
 import { HIGHLIGHT_WASHES as MENU_WASHES } from '../src/editor/menu/registry';
 import { HIGHLIGHT_STYLES as MARK_STYLES } from '../src/editor/highlightStyles';
+import {
+  faceFloorPx,
+  faceGroups,
+  faceShortlist,
+  faceStyleAttr,
+  isFaceId,
+} from '../src/editor/marks/face';
+import { HANDS } from '../src/features/settings/appearance';
 
 /** Same DOM shim as tests/editor-depth.test.ts — node views register roots. */
 const globals = globalThis as Record<string, unknown>;
@@ -46,16 +56,34 @@ if (typeof globals.window === 'undefined') {
 const { createEditorExtensions } = await import('../src/editor/extensions');
 const schema = getSchema(createEditorExtensions());
 
+/**
+ * Enough of an editor for `toggleSelectionMark` to get as far as its switch.
+ *
+ * The three tray ids must fall through to `return false` BEFORE any command is
+ * reached, so a stub whose chain answers nothing is exactly the right shape:
+ * if one of them ever started toggling something, this would throw rather than
+ * quietly pass.
+ */
+const NO_EDITOR = { chain: () => ({ focus: () => ({}) }) } as unknown as Editor;
+
 // ---------------------------------------------------------------------------
 // The row of buttons
 // ---------------------------------------------------------------------------
 
-describe('the six inline marks', () => {
-  it('is six buttons, each named once', () => {
-    expect(SELECTION_ACTIONS).toHaveLength(6);
+describe('the seven inline marks', () => {
+  it('is seven buttons, each named once', () => {
+    expect(SELECTION_ACTIONS).toHaveLength(7);
     const ids = SELECTION_ACTIONS.map((action) => action.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(['bold', 'italic', 'strike', 'code', 'highlight', 'link']);
+    expect(ids).toEqual([
+      'bold',
+      'italic',
+      'strike',
+      'code',
+      'face',
+      'highlight',
+      'link',
+    ]);
   });
 
   it('names only marks the schema really has', () => {
@@ -75,10 +103,45 @@ describe('the six inline marks', () => {
     }
   });
 
-  it('opens a tray from exactly the two buttons that are not toggles', () => {
+  it('names a real hand for every face the toolbar offers', () => {
+    // The chips are drawn from `appearance.ts`, not typed out beside it, and
+    // `setFace` refuses an id the table does not have — so an offered chip
+    // whose id had drifted would be a button that does nothing forever.
+    for (const spec of faceShortlist(null)) expect(isFaceId(spec.id)).toBe(true);
+    for (const group of faceGroups()) {
+      for (const spec of group.faces) expect(isFaceId(spec.id)).toBe(true);
+    }
+  });
+
+  it('never offers a face at a size CLAUDE.md forbids', () => {
+    // 13px for any handwriting face; Caveat's own floor is 20. The chip and
+    // the rendered run both size themselves from this one number.
+    for (const spec of HANDS) {
+      expect(faceFloorPx(spec.id)).toBeGreaterThanOrEqual(13);
+      if (spec.floorPx !== undefined) {
+        expect(faceFloorPx(spec.id)).toBeGreaterThanOrEqual(spec.floorPx);
+      }
+    }
+    expect(faceFloorPx('Caveat')).toBe(20);
+    // An id the table does not have paints nothing at all, rather than
+    // resolving to the house hand and lying about which face it is.
+    expect(faceStyleAttr('Not A Hand')).toBeNull();
+    expect(isFaceId('Not A Hand')).toBe(false);
+    // …and the floor still answers, because a total function is what keeps a
+    // stylesheet from having to ask.
+    expect(faceFloorPx('Not A Hand')).toBe(13);
+  });
+
+  it('opens a tray from exactly the three buttons that are not toggles', () => {
     const trays = SELECTION_ACTIONS.filter((action) => action.tray !== null);
-    expect(trays.map((action) => action.id)).toEqual(['highlight', 'link']);
-    expect(trays.map((action) => action.tray)).toEqual(['washes', 'link']);
+    expect(trays.map((action) => action.id)).toEqual(['face', 'highlight', 'link']);
+    expect(trays.map((action) => action.tray)).toEqual(['faces', 'washes', 'link']);
+    // `toggleSelectionMark` refuses all three — a press on them opens a row of
+    // choices, and silently toggling "some hand" would make the button mean
+    // two different things depending on which row was open.
+    for (const action of trays) {
+      expect(toggleSelectionMark(NO_EDITOR, action.id)).toBe(false);
+    }
   });
 
   it('keeps the tray buttons together at the end of the row', () => {

@@ -483,6 +483,41 @@
 }
 
 /* ----------------------------------------------------------------------------
+   Text faces — the hand a RUN of words is written in (src/editor/marks/face.ts)
+
+   The page is already handwritten: `.nb-prose` above is `var(--font-body)`,
+   which `features/settings/apply.ts` sets from the reader's chosen hand and
+   `tokens.css` defaults to Patrick Hand. This is the per-SELECTION override on
+   top of it, and there is exactly one rule for it because the mark hands over
+   two custom properties rather than a literal `font-family`:
+
+     --nb-face        the CSS stack, resolved from a hand id at render time
+     --nb-face-floor  the smallest size that face may be drawn at
+
+   WHY THE SIZE IS TOUCHED AT ALL. CLAUDE.md: a handwriting face is never set
+   below 13px, and some faces need more than 13 (Caveat is 20, the light hands
+   16). A face is applied to a SELECTION, and a selection can be sitting in a
+   footnote entry at 15px or a marginalia below that — so `max(floor, 1em)`.
+   `1em` is the size of whatever the run was dropped into, which means the face
+   never SHRINKS anything and never draws below its own floor.
+   -------------------------------------------------------------------------- */
+.nb-prose .nb-face {
+  font-family: var(--nb-face, inherit);
+  font-size: max(var(--nb-face-floor, 0px), 1em);
+}
+
+/* Code keeps its monospace either way round.
+   A face and an inline `code` are two marks, so ProseMirror renders them as
+   two nested spans and which one is on the outside depends on the order they
+   were applied — both nestings are named here so neither order can take the
+   column alignment away from a snippet. Same argument as the 13px floor, in
+   shape rather than size (tokens.css, `--font-code`). */
+.nb-prose .nb-face code,
+.nb-prose code .nb-face {
+  font-family: var(--font-code);
+}
+
+/* ----------------------------------------------------------------------------
    Blockquote — held on the page by a strip of washi tape
    -------------------------------------------------------------------------- */
 .nb-prose blockquote {
@@ -2475,6 +2510,104 @@ html[data-nb-col-resizing='true'] {
   display: flex;
   align-items: center;
   gap: 3px;
+}
+
+/* --- the faces tray ------------------------------------------------------ *
+   Every chip is drawn IN the face it names, which is the only honest way to
+   offer twenty-seven hands: a row of identical rectangles saying "brush hand"
+   and "marker" is a menu of adjectives. The size on each chip is written by
+   `SelectionToolbar.tsx` from `faceFloorPx`, so Caveat's chip is 20px and the
+   row grows to fit it rather than drawing Caveat at 13 — which is the rule
+   (CLAUDE.md) and also the reason a picker exists.
+
+   `align-items: baseline` because of that: chips of five different sizes sit
+   on one writing line rather than floating at five different heights.         */
+.nb-seltool-faces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px;
+  max-width: 268px;
+}
+
+.nb-seltool-face {
+  flex: 0 0 auto;
+  padding: 1px var(--space-8) 2px;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 7px 10px 8px 11px;
+  line-height: 1.35;
+  color: var(--ink-sepia);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+.nb-seltool-face:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-seltool-face.is-on {
+  background: var(--wash-amber);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
+}
+
+/* The way back. `--font-ui` and 12px on purpose: it is the only chip that is
+   NOT a specimen, so drawing it in a hand would make it look like a
+   twenty-eighth face. */
+.nb-seltool-face.is-clear {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  border-style: dashed;
+}
+
+.nb-seltool-face.is-clear.is-on {
+  color: var(--on-gilt);
+  border-style: solid;
+}
+
+/* The rest of the hands, under their family headings. It scrolls: this is
+   chrome on <body>, not a page — the no-scrollbars rule is about the fixed
+   height of a PAGE and the pagination contract that replaces it. */
+.nb-seltool-faceall {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 232px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  border-top: 1.5px dashed var(--paper-edge);
+  padding-top: var(--space-4);
+}
+
+.nb-seltool-faceshelf {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-seltool-more {
+  align-self: flex-start;
+  padding: 2px var(--space-8);
+  background: none;
+  border: none;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-accent);
+  text-decoration: underline 1.5px dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.nb-seltool-more:hover {
+  color: var(--accent-deep);
 }
 
 .nb-seltool-wash {

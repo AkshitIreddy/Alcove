@@ -21,16 +21,8 @@ import {
   highlightAttrs,
   type HighlightStyle,
 } from '../highlightStyles';
-import {
-  availableFaces,
-  faceGroups,
-  faceShortlist,
-  faceStack,
-  isFaceId,
-  type FaceGroup,
-} from '../marks/face';
+import { isFaceId } from '../marks/face';
 import { HIGHLIGHT_WASHES, type HighlightWash } from '../menu/registry';
-import type { HandSpec } from '../../features/settings/appearance';
 
 export type SelectionActionId =
   | 'bold'
@@ -205,20 +197,6 @@ export function selectionFace(editor: Editor): string | null {
   const hand: unknown = editor.getAttributes('face').hand;
   return isFaceId(hand) ? hand : null;
 }
-
-/**
- * The stack the toolbar's own "Aa" chip is drawn in.
- *
- * `null` means "leave it to the card", which inherits `--font-accent` like the
- * other letter chips — so the button reads as the page's own hand exactly when
- * the selection has no face of its own.
- */
-export function selectionFaceStack(editor: Editor): string | null {
-  return faceStack(selectionFace(editor));
-}
-
-export { availableFaces, faceGroups, faceShortlist, faceStack, isFaceId };
-export type { FaceGroup, HandSpec };
 
 /** Paint the selection with a wash, in the currently chosen hand style. */
 export function applySelectionHighlight(

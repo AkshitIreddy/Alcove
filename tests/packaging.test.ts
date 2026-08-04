@@ -230,6 +230,47 @@ describe('the installer art', () => {
   });
 });
 
+/**
+ * The one webview flag that is invisible in dev and fatal once installed —
+ * which is this file's whole subject, so it lives here rather than with the
+ * editor tests that can never observe it.
+ *
+ * Tauri's window config defaults `dragDropEnabled` to TRUE (tauri-utils
+ * `config.rs`, `#[serde(default = "default_true")]`). When it is on,
+ * tauri-runtime-wry hands wry a drag-drop handler, and wry's Windows
+ * implementation walks the WebView2 child HWNDs — its own comment reads
+ * "Enumerate child windows to find the WebView2 window and override!" —
+ * calling `RevokeDragDrop` on each and registering an `IDropTarget` that
+ * accepts nothing but `CF_HDROP`. WebView2's own drop target is gone, so the
+ * DOCUMENT never receives `dragenter`/`dragover`/`drop`. It also calls
+ * `SetAllowExternalDrop(false)`.
+ *
+ * The result: `dragstart` still fires (that is source-side, so the handle
+ * lights up and the tour's step-10 fact still ticks) but the block never
+ * moves, and dropping an image file onto a page does nothing either. Tauri's
+ * own doc comment on the field says it outright: "Disabling it is required to
+ * use HTML5 drag and drop on the frontend on Windows."
+ *
+ * Every browser probe passes, because a browser has no wry in it. This is the
+ * only place the fact can be pinned.
+ */
+describe('the webview lets the frontend drag', () => {
+  it('turns Tauri’s OS drag-drop handler OFF, or block dragging is dead once installed', () => {
+    expect(
+      CONF.app.windows[0]?.dragDropEnabled,
+      'dragDropEnabled defaults to true, which revokes WebView2’s drop target and kills ' +
+        'the block drag handle and image file drop in the installed build',
+    ).toBe(false);
+  });
+
+  it('and nothing has started depending on Tauri’s drag-drop event instead', () => {
+    // If a future reader wires `onDragDropEvent`, turning the handler off
+    // silently stops it — so the two facts are pinned together.
+    const src = read('src', 'editor', 'media', 'pastePlugin.ts');
+    expect(src, 'file drop must stay on the web-standard path').toContain('handleDrop');
+  });
+});
+
 describe('the release workflow', () => {
   const WF = read('.github', 'workflows', 'release.yml');
 

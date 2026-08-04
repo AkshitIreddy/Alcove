@@ -21,7 +21,7 @@
  * <button> both fire it, with `detail === 0`.
  */
 
-import { msSinceVoicedPlay, play } from './engine';
+import { msSinceClickPlay, msSinceVoicedPlay, play } from './engine';
 
 /**
  * What counts as a button. Deliberately not `a[href]` — links inside a page's
@@ -81,8 +81,27 @@ export function isSoundedButton(target: EventTarget | null): boolean {
  * event loop: `nowMs` is the click's timestamp, `sinceVoiced` how long ago
  * another sound started, `lastClickAtMs` when this module last voiced one.
  */
-export function shouldClick(nowMs: number, sinceVoiced: number, lastClickAtMs: number): boolean {
+export function shouldClick(
+  nowMs: number,
+  sinceVoiced: number,
+  lastClickAtMs: number,
+  sinceAnyClick: number = Number.POSITIVE_INFINITY,
+): boolean {
   if (sinceVoiced < VOICED_WINDOW_MS) return false;
+  /*
+   * A click voiced by SOMEBODY ELSE counts too.
+   *
+   * `lastClickAtMs` is this module's own last click, and `sinceVoiced`
+   * deliberately ignores the click role — so a click played by anything other
+   * than this handler was invisible to it and got a second one stacked
+   * underneath. Measured on the onboarding sound-set picker: seven same-family
+   * pairs within 20ms across 38 plays, one per chip press, because
+   * `previewSoundSet()` opens with a click and this handler could not tell.
+   *
+   * Defaulted rather than required so the existing three-argument calls in the
+   * tests keep meaning what they meant.
+   */
+  if (sinceAnyClick < MIN_INTERVAL_MS) return false;
   return nowMs - lastClickAtMs >= MIN_INTERVAL_MS;
 }
 
@@ -106,7 +125,7 @@ export function installUiClickSounds(root: Document = document): () => void {
   const onClick = (event: Event): void => {
     if (!isSoundedButton(event.target)) return;
     const now = Date.now();
-    if (!shouldClick(now, msSinceVoicedPlay(now), lastClickMs)) return;
+    if (!shouldClick(now, msSinceVoicedPlay(now), lastClickMs, msSinceClickPlay(now))) return;
     lastClickMs = now;
     void play('click-soft');
   };

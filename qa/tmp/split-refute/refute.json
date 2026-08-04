@@ -1,0 +1,831 @@
+{
+  "made": {
+    "battery": {
+      "title": "R00",
+      "pages": 13
+    },
+    "fill": {
+      "title": "A keepsake import with one heading in it",
+      "pages": 14
+    }
+  },
+  "rows": [
+    {
+      "name": "page-long",
+      "applied": 4,
+      "estimate": 4
+    },
+    {
+      "name": "card-long",
+      "applied": 7.6875,
+      "estimate": 7.7
+    },
+    {
+      "name": "banner-long",
+      "applied": 7.125,
+      "estimate": 7.1
+    },
+    {
+      "name": "postcard-long",
+      "applied": 13.0625,
+      "estimate": 13.1
+    },
+    {
+      "name": "quote-card-long",
+      "applied": 8.21875,
+      "estimate": 8.26
+    },
+    {
+      "name": "pressed-flower-long",
+      "applied": 9.4375,
+      "estimate": 9.4
+    },
+    {
+      "name": "index-card-short",
+      "applied": 4.875,
+      "estimate": 4.9
+    },
+    {
+      "name": "pressed-flower-short",
+      "applied": 6,
+      "estimate": 6
+    },
+    {
+      "name": "postcard-short",
+      "applied": 6.25,
+      "estimate": 6.3
+    },
+    {
+      "name": "wax-seal-short",
+      "applied": 4.75,
+      "estimate": 4.8
+    },
+    {
+      "name": "ticket-stub-short",
+      "applied": 3.5,
+      "estimate": 3.5
+    },
+    {
+      "name": "callout-short",
+      "applied": 2.1875,
+      "estimate": 2.2
+    },
+    {
+      "name": "marginalia-short",
+      "applied": 1.625,
+      "estimate": 1.6
+    }
+  ],
+  "fillLeaves": [
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 762,
+      "fill": 0.928136419001218,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "h1",
+          "text": "A keepsake import with one hea",
+          "flow": 128
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 152
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 745,
+      "fill": 0.9074299634591961,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 148
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 229
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 666,
+      "fill": 0.8112058465286236,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "ul",
+          "text": "The estimator has to decide th",
+          "flow": 160
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 688,
+      "fill": 0.8380024360535931,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "div",
+          "text": "One line.",
+          "flow": 192
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 735,
+      "fill": 0.8952496954933008,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 229
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 656,
+      "fill": 0.7990255785627284,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        },
+        {
+          "tag": "ul",
+          "text": "The estimator has to decide th",
+          "flow": 160
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 722,
+      "fill": 0.879415347137637,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 152
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 701,
+      "fill": 0.853836784409257,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 233
+        },
+        {
+          "tag": "div",
+          "text": "One line.",
+          "flow": 192
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 722,
+      "fill": 0.879415347137637,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 152
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 665,
+      "fill": 0.8099878197320342,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "ul",
+          "text": "The estimator has to decide th",
+          "flow": 160
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 148
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 229
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 722,
+      "fill": 0.879415347137637,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 152
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 472,
+      "fill": 0.5749086479902558,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "One line.",
+          "flow": 192
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        },
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 128
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 767,
+      "fill": 0.9342265529841657,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 354
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 229
+        },
+        {
+          "tag": "ul",
+          "text": "The estimator has to decide th",
+          "flow": 160
+        },
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 344,
+      "fill": 0.4190012180267966,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "The estimator has to decide th",
+          "flow": 152
+        },
+        {
+          "tag": "div",
+          "text": "The estimator has to decide th",
+          "flow": 216
+        },
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    },
+    {
+      "line": 32,
+      "capacity": 821,
+      "used": 0,
+      "fill": 0,
+      "overflowing": false,
+      "blocks": [
+        {
+          "tag": "p",
+          "text": "",
+          "flow": 32
+        }
+      ]
+    }
+  ]
+}

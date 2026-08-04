@@ -145,7 +145,7 @@ export function faceStyleAttr(id: unknown): string | null {
  * question the same way. That file is not this change's to edit; the two want
  * merging into `appearance.ts` when somebody owns both.
  */
-export function faceAvailable(spec: HandSpec): boolean {
+function faceAvailable(spec: HandSpec): boolean {
   if (spec.probe === undefined) return true;
   const fonts = typeof document === 'undefined' ? undefined : document.fonts;
   if (fonts === undefined || typeof fonts.check !== 'function') return false;
@@ -157,7 +157,7 @@ export function faceAvailable(spec: HandSpec): boolean {
 }
 
 /** Every face this machine can really draw, in `appearance.ts` order. */
-export function availableFaces(): readonly HandSpec[] {
+function availableFaces(): readonly HandSpec[] {
   return HANDS.filter(faceAvailable);
 }
 

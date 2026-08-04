@@ -13,6 +13,7 @@ import {
   highlightAttrs,
   type HighlightStyle,
 } from '../highlightStyles';
+import { HAND_SHORTLIST } from '../../features/settings/appearance';
 import { COLUMN_GAPS, type ColumnGap } from '../nodes/columns';
 import {
   applyEffectAt,
@@ -162,6 +163,17 @@ function applyInk(editor: Editor, pos: number, ink: InkColor | null): void {
   chain.focus().run();
 }
 
+/** Write the whole block in `hand`, or give it back to the page's own. */
+function applyFace(editor: Editor, pos: number, hand: string | null): void {
+  const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
+  if (!block) return;
+  const range = blockTextRange(block);
+  const chain = editor.chain().setTextSelection(range);
+  if (hand === null) chain.unsetFace();
+  else chain.setFace(hand);
+  chain.focus().run();
+}
+
 function applyHighlight(
   editor: Editor,
   pos: number,
@@ -244,6 +256,41 @@ const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
     title: 'No highlight',
     glyph: '↺',
     run: ({ editor, pos }) => applyHighlight(editor, pos, null),
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Lettering — the hand a whole block is written in (marks/face.ts)
+//
+// The same shape as Color above, and for the same reason: the selection
+// toolbar sets a face on a RUN, and a reader who wants a whole paragraph in
+// another hand should not have to select it first. Both read the hand table in
+// `features/settings/appearance.ts`, so neither can offer a face the other has
+// never heard of — the mistake the ink comment one screen up already warns
+// about.
+//
+// Only the signature hands, and only the ones the app itself BUNDLES. This
+// registry is pure and unit-tested in Node (`tests/editor.test.ts`), where
+// there is no `document.fonts` to ask whether Windows has Gabriola; the
+// toolbar's tray is the surface that can ask, and it offers all twenty-seven.
+// ---------------------------------------------------------------------------
+
+const LETTERING_ITEMS: readonly ContextMenuItem[] = [
+  ...HAND_SHORTLIST.filter((spec) => spec.probe === undefined).map(
+    (spec): ContextMenuItem => ({
+      kind: 'item',
+      id: `face-${spec.id}`,
+      title: spec.label,
+      glyph: 'Aa',
+      run: ({ editor, pos }) => applyFace(editor, pos, spec.id),
+    }),
+  ),
+  {
+    kind: 'item',
+    id: 'face-default',
+    title: 'The page’s own hand',
+    glyph: '↺',
+    run: ({ editor, pos }) => applyFace(editor, pos, null),
   },
 ];
 
@@ -398,6 +445,7 @@ export function buildBlockContextMenu(): ContextMenuEntry[] {
   return [
     { kind: 'submenu', id: 'turn-into', title: 'Turn into', glyph: '⇄', items: TURN_INTO_ITEMS },
     { kind: 'submenu', id: 'color', title: 'Color', glyph: 'A', items: COLOR_ITEMS },
+    { kind: 'submenu', id: 'lettering', title: 'Handwriting', glyph: 'Aa', items: LETTERING_ITEMS },
     { kind: 'submenu', id: 'highlight', title: 'Highlight', glyph: '▰', items: HIGHLIGHT_ITEMS },
     { kind: 'submenu', id: 'columns', title: 'Columns', glyph: '▥', items: COLUMN_ITEMS },
     { kind: 'submenu', id: 'effects', title: 'Effects', glyph: '✎', items: EFFECT_ITEMS },

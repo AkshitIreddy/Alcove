@@ -385,6 +385,9 @@ describe('block context menu registry', () => {
     expect(submenus.map((submenu) => submenu.id)).toEqual([
       'turn-into',
       'color',
+      // The hand a whole block is written in — the block-level twin of the
+      // selection toolbar's faces tray (src/editor/marks/face.ts).
+      'lettering',
       'highlight',
       'columns',
       'effects',

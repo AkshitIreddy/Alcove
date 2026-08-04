@@ -677,6 +677,31 @@ const CLICK_ROLE: FamilyName = 'click-soft';
  */
 let lastVoicedPlayMs = Number.NEGATIVE_INFINITY;
 
+/**
+ * When the CLICK role last started, whoever asked for it.
+ *
+ * `lastVoicedPlayMs` deliberately ignores clicks — a control that voices itself
+ * with a click must still let the delegated handler know that was only a click.
+ * But that leaves a hole: a click played by anything OTHER than `uiClicks.ts`
+ * is invisible to it, so it stacks a second one underneath.
+ *
+ * Measured, not theorised: a tape of the onboarding sound-set picker recorded
+ * exactly seven same-family pairs within 20ms across 38 plays — one per chip
+ * press. `previewSoundSet()`'s first beat is a click, the delegated handler
+ * does not see it, and both land in the same task. Two takes of the same
+ * broadband recording at ~0.55 each, roughly 0ms apart.
+ *
+ * It does not clip (worst burst peak 0.18) and there is no evidence it is the
+ * static the reader reported — that was chased separately and is demonstrably
+ * not in the graph at all. It is simply a doubled transient nobody asked for.
+ */
+let lastClickPlayMs = Number.NEGATIVE_INFINITY;
+
+/** How long since a click was voiced by ANY caller. See `lastClickPlayMs`. */
+export function msSinceClickPlay(nowMs: number = Date.now()): number {
+  return nowMs - lastClickPlayMs;
+}
+
 /** Milliseconds since the last non-click sound started. Infinity if none. */
 export function msSinceVoicedPlay(nowMs: number = Date.now()): number {
   return nowMs - lastVoicedPlayMs;
@@ -1022,6 +1047,15 @@ async function playFile(
   // click in `sound/uiClicks.ts` can tell whether the control it just saw
   // pressed already made a sound of its own.
   if (plan.stamp) lastVoicedPlayMs = Date.now();
+  // Stamped whether or not `stamp` is set: the click role deliberately does not
+  // count as a "voiced play", and this is the separate note that stops it being
+  // doubled. `CLICK_NAMES` is the click family's own file list, which is what a
+  // cue key carries for a shipped sound; a user set voices the role through
+  // `user:<set>|click-soft`, so both spellings are checked rather than only the
+  // one the house set happens to use.
+  if (CLICK_NAMES.has(cue.key as SoundName) || cue.key.endsWith(`|${CLICK_ROLE}`)) {
+    lastClickPlayMs = Date.now();
+  }
 
   const jitterOn = options.noJitter !== true;
   const wobble = soundSetJitterScale(baseSet());
@@ -1595,6 +1629,7 @@ export function resetEngineForTests(): void {
   pickers.clear();
   playRng = Math.random;
   lastVoicedPlayMs = Number.NEGATIVE_INFINITY;
+  lastClickPlayMs = Number.NEGATIVE_INFINITY;
   typingSoundsEnabled = false;
   lastTypingTickMs = Number.NEGATIVE_INFINITY;
   typingTicksPlayed = 0;

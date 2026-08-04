@@ -82,54 +82,208 @@ const PLAIN_CONTAINERS = [
 
 const KITTEN = '/kittens/ginger.svg';
 
-function containerSpecimens() {
-  const out = [];
-  for (const [name, attrs] of PLAIN_CONTAINERS) {
-    out.push(`::: ${name} ${attrs}\n${SHORT}\n:::`);
-    out.push(`::: ${name} ${attrs}\n${LONG}\n:::`);
-  }
-  // Picture containers need a real picture in them.
-  out.push(`::: polaroid\n![A kitten](${KITTEN})\n${SHORT}\n:::`);
-  out.push(`::: photo-corner {title="A title"}\n![A kitten](${KITTEN})\n:::`);
-  out.push(
-    `::: image-row {style=polaroid, cols=3}\n` +
-      `![A kitten](${KITTEN}){caption="One"}\n` +
-      `![A kitten](${KITTEN}){caption="Two"}\n` +
-      `![A kitten](${KITTEN}){caption="Three"}\n:::`,
-  );
-  // Columns: two colums, the taller one three lines deep.
-  out.push(
-    `::: columns {gap=lg}\n::: col\n${SHORT}\n:::\n::: col\n${LONG}\n:::\n:::`,
-  );
+/**
+ * A ladder of paragraphs of graded length, so the leaf's real chars-per-line
+ * comes out of where the height STEPS rather than out of one 287-character
+ * reading — a single paragraph only says the wrap width is somewhere in a band
+ * a third as wide as the answer.
+ */
+const WORDS =
+  'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima ' +
+  'mike november oscar papa quebec romeo sierra tango uniform victor whisky ' +
+  'xray yankee zulu amber cedar hollow meadow lantern harbour thistle willow';
+function words(minChars) {
+  const list = WORDS.split(' ');
+  let out = 'Lx';
+  for (let i = 0; out.length < minChars; i += 1) out += ` ${list[i % list.length]}`;
   return out;
 }
+const LADDER = [24, 40, 56, 72, 88, 104, 120, 150, 180, 220, 260, 300];
 
-/** Leaf blocks, each measured on its own. */
-const LEAF_SPECIMENS = [
-  `# ${SHORT} heading one`,
-  `## ${SHORT} heading two`,
-  `### ${SHORT} heading three`,
-  SHORT,
-  LONG,
-  `> ${SHORT}`,
-  `> ${LONG}`,
-  `- ${SHORT}\n- ${SHORT}\n- ${SHORT}`,
-  `- [ ] ${SHORT}\n- [x] ${SHORT}\n- [ ] ${SHORT}`,
-  `| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n| five | six |`,
-  '---',
-  '```js\nconst a = 1;\nconst b = 2;\nconst c = a + b;\nconsole.log(c);\n```',
-  '$$\nE = mc^2\n$$',
-  '```tree\nRoot\n  One\n  Two\n    Three\n```',
-  '```timeline\n1890 | One thing\n1901 | Another thing\n1920 | A third\n```',
-  `![A kitten](${KITTEN})`,
+/** Every specimen: a name, which payload it holds, and its script. */
+const SPECIMENS = [];
+const spec = (name, payload, body) => SPECIMENS.push({ name, payload, body });
+
+for (const n of LADDER) {
+  const text = words(n);
+  spec(`ruler-${String(text.length).padStart(3, '0')}`, 'long', text);
+}
+
+spec('heading2', 'short', `## ${SHORT} heading two`);
+spec('heading3', 'short', `### ${SHORT} heading three`);
+spec('paragraph', 'short', SHORT);
+spec('paragraph', 'long', LONG);
+spec('quote', 'short', `> ${SHORT}`);
+spec('quote', 'long', `> ${LONG}`);
+spec('list-3', 'short', `- ${SHORT}\n- ${SHORT}\n- ${SHORT}`);
+spec('list-1-long', 'long', `- ${LONG}`);
+spec('taskList-3', 'short', `- [ ] ${SHORT}\n- [x] ${SHORT}\n- [ ] ${SHORT}`);
+const row = (n) => `| cell ${n} | cell ${n} |`;
+for (const rows of [1, 3, 6]) {
+  spec(
+    `table-${rows}`,
+    'short',
+    `| A | B |\n| --- | --- |\n${Array.from({ length: rows }, (_, i) => row(i)).join('\n')}`,
+  );
+}
+spec('divider', 'short', '---');
+for (const lines of [1, 4, 10]) {
+  spec(
+    `code-${String(lines).padStart(2, '0')}`,
+    'short',
+    `\`\`\`js\n${Array.from({ length: lines }, (_, i) => `const v${i} = ${i};`).join('\n')}\n\`\`\``,
+  );
+}
+spec('mathBlock-1', 'short', '$$\nE = mc^2\n$$');
+spec('mathBlock-frac', 'short', '$$\n\\frac{a + b}{c + d} = \\sqrt{x^2 + y^2}\n$$');
+for (const n of [2, 4, 8]) {
+  const kids = Array.from({ length: n }, (_, i) => `  Node ${i}`).join('\n');
+  spec(`diagram-tree-${n}`, 'short', `\`\`\`tree\nRoot\n${kids}\n\`\`\``);
+}
+for (const n of [2, 4, 8]) {
+  const entries = Array.from(
+    { length: n },
+    (_, i) => `19${String(i).padStart(2, '0')} | Entry ${i}`,
+  ).join('\n');
+  spec(`diagram-timeline-${n}`, 'short', `\`\`\`timeline\n${entries}\n\`\`\``);
+}
+for (const n of [2, 5]) {
+  const edges = Array.from({ length: n }, (_, i) => `N${i} -> N${i + 1}`).join('\n');
+  spec(`diagram-graph-${n}`, 'short', `\`\`\`graph\n${edges}\n\`\`\``);
+}
+spec('image', 'short', `![A kitten](${KITTEN})`);
+spec('image-w320', 'short', `![A kitten](${KITTEN}){width=320}`);
+
+const PART = process.env.PART ?? 'all';
+const LEAF_COUNT = SPECIMENS.length;
+for (const [name, attrs] of PLAIN_CONTAINERS) {
+  spec(name, 'short', `::: ${name} ${attrs}\n${SHORT}\n:::`);
+  spec(name, 'long', `::: ${name} ${attrs}\n${LONG}\n:::`);
+}
+const CONTAINER_COUNT = SPECIMENS.length - LEAF_COUNT;
+spec('polaroid', 'short', `::: polaroid\n![A kitten](${KITTEN})\n${SHORT}\n:::`);
+spec(
+  'photo-corner',
+  'short',
+  `::: photo-corner {title="A title"}\n![A kitten](${KITTEN})\n${SHORT}\n:::`,
+);
+spec(
+  'image-row-3',
+  'short',
+  `::: image-row {style=polaroid, cols=3}\n` +
+    `![A kitten](${KITTEN}){caption="One"}\n` +
+    `![A kitten](${KITTEN}){caption="Two"}\n` +
+    `![A kitten](${KITTEN}){caption="Three"}\n:::`,
+);
+spec(
+  'columns-2',
+  'long',
+  `::: columns {gap=lg}\n::: col\n${SHORT}\n:::\n::: col\n${LONG}\n:::\n:::`,
+);
+
+/*
+ * The third group: everything the FIRST two runs proved the estimator was
+ * blind to. Costing the welcome book against the fills measured in the running
+ * app agreed to within three points on twenty-five of its thirty-two leaves
+ * and was out by twenty-four, thirty-three and twelve on three of them — the
+ * page of decorated paragraphs, the mindmap page and the maths page. A block
+ * effect, a radial layout and a real equation are all height the first battery
+ * never asked about.
+ */
+const EFFECTS = [
+  ['underline-squiggle', '{underline=squiggle}'],
+  ['underline-circled', '{underline=circled}'],
+  ['rotate', '{rotate=-2}'],
+  ['tape', '{tape=top}'],
+  ['washi', '{washi=top}'],
+  ['frame-scallop', '{frame=scallop}'],
+  ['paper-torn', '{paper=torn}'],
+  ['shadow-lifted', '{shadow=lifted}'],
+  ['tape-and-rotate', '{rotate=-2, tape=top}'],
+  ['torn-and-framed', '{paper=torn, frame=scallop}'],
 ];
+const EFFECT_TEXT = 'Lx a decorated line of ordinary length on the page';
+spec('effect-none', 'long', EFFECT_TEXT);
+for (const [name, attrs] of EFFECTS) {
+  spec(`effect-${name}`, 'long', `${EFFECT_TEXT} ${attrs}`);
+}
+for (const depth of [2, 3, 4]) {
+  let body = 'Bookbinding';
+  const branches = ['Sewing', 'Covering', 'Tools'];
+  for (const branch of branches) {
+    body += `\n  ${branch}`;
+    if (depth >= 3) body += `\n    ${branch} one\n    ${branch} two`;
+    if (depth >= 4) body += `\n      ${branch} deeper`;
+  }
+  spec(`mindmap-d${depth}`, 'short', `\`\`\`mindmap\n${body}\n\`\`\``);
+}
+spec('math-euler', 'short', '$$\ne^{i\\pi} + 1 = 0\n$$');
+spec('math-sum', 'short', '$$\n\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}\n$$');
+spec('math-int', 'short', '$$\n\\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n$$');
+spec(
+  'table-code-4',
+  'short',
+  '| Write this | Or just this |\n| --- | --- |\n' +
+    '| `:::callout {variant=info}` | `:::info` |\n' +
+    '| `:::callout {variant=tip}` | `:::tip` or `:::hint` |\n' +
+    '| `:::callout {variant=warn}` | `:::warn` or `:::caution` |\n' +
+    '| `:::callout {variant=star}` | `:::star` or `:::important` |',
+);
+spec(
+  'callout-56',
+  'short',
+  '::: callout {variant=info}\n**Lx** — the plain one, for what a reader needs\n:::',
+);
+spec(
+  'graph-shaped',
+  'short',
+  '```graph\nIdea {shape=cloud, color=amber}\nIdea -> Draft, Notes\n' +
+    'Draft -> Page: eventually\nNotes -> Page\n```',
+);
+// Every leaf of the welcome book opens with `# Title {sticker=…}`, and a
+// sticker is an inline picture — so whether a heading that carries one is
+// taller than a heading that does not is worth exactly one line on every page
+// in the book. Measured on an H2, which shares the H1's two-band line box.
+spec('heading2-plain', 'short', `## ${SHORT} a heading`);
+spec('heading2-sticker', 'short', `## ${SHORT} a heading {sticker=star}`);
+spec('heading2-long', 'short', `## ${SHORT} a heading long enough to have to wrap somewhere`);
+spec('heading3-long', 'short', `### ${SHORT} a heading long enough to have to wrap somewhere`);
+// Inline code is set in a monospace face that is wider than the body hand, so
+// a line of it does not hold as many characters. The welcome book is full of
+// it, and every page of it came out under-predicted.
+spec('para-code', 'long', LONG.split(' ').map((w) => `\`${w}\``).join(' '));
+spec('para-bold', 'long', `**${LONG}**`);
+spec(
+  'table-plain-4',
+  'short',
+  '| Write this | Or just this |\n| --- | --- |\n' +
+    '| callout variant info | info |\n| callout variant tip | tip or hint |\n' +
+    '| callout variant warn | warn or caution |\n| callout variant star | star or important |',
+);
+spec(
+  'timeline-long',
+  'short',
+  '```timeline\n1665: Hooke looks down a microscope and names the cell\n' +
+    '1839: Schwann — animal cells\n1855: Virchow — cells come from cells | color=amber\n' +
+    '1931: The electron microscope\n```',
+);
 
-// One H1 per specimen would start a new page for every one of them, which is
-// exactly what is wanted: each specimen is measured on a leaf of its own, so
-// nothing it is stacked with can collapse a margin into it.
-const BATTERY = [...LEAF_SPECIMENS, ...containerSpecimens()]
-  .map((body, i) => `# S${String(i).padStart(2, '0')}\n\n${body}\n`)
-  .join('\n');
+// `PART=leaf` / `PART=containers` / `PART=extras` narrow the run to one group —
+// the whole battery is ninety-odd leaves to walk, and a second pass usually
+// only wants one group of it back.
+if (PART === 'leaf') SPECIMENS.length = LEAF_COUNT;
+else if (PART === 'containers') {
+  SPECIMENS.splice(LEAF_COUNT + CONTAINER_COUNT);
+  SPECIMENS.splice(0, LEAF_COUNT);
+} else if (PART === 'extras') SPECIMENS.splice(0, LEAF_COUNT + CONTAINER_COUNT);
+
+// One H1 per specimen, and an H1 starts a new page — so every specimen is
+// measured on a leaf of its own, where nothing it is stacked with can collapse
+// a margin into it, and the marker names the row it belongs to.
+const markerOf = (i) => `S${String(i).padStart(2, '0')}`;
+const BATTERY = SPECIMENS.map(
+  (s, i) => `# ${markerOf(i)}\n\n${s.body}\n`,
+).join('\n');
 
 // ---------------------------------------------------------------------------
 
@@ -283,6 +437,34 @@ const readSpread = async () =>
             (Number.parseFloat(cs.marginTop) || 0) +
             (Number.parseFloat(cs.marginBottom) || 0);
         }
+        /*
+         * How wide a line inside this block is, and in what type.
+         *
+         * A container narrows the text it holds, and several of them change
+         * its size as well — so "a container costs its chrome plus its
+         * children" is only true if the children are costed at the width the
+         * container gives them. `measureText` in the payload's own font turns
+         * the two into one number the estimator can use: characters per line.
+         */
+        const host =
+          deepest[0] ??
+          (/^(P|H1|H2|H3|H4|LI|BLOCKQUOTE)$/.test(b.el.tagName) ? b.el : null);
+        let wrap = null;
+        if (host !== null) {
+          const cs = getComputedStyle(host);
+          const ctx = document.createElement('canvas').getContext('2d');
+          ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight} ${cs.fontFamily}`;
+          const sample =
+            'the quick brown fox jumps over a lazy dog and then walks home again';
+          const per = ctx.measureText(sample).width / sample.length;
+          wrap = {
+            width: host.clientWidth,
+            fontPx: Number.parseFloat(cs.fontSize) || 0,
+            linePx: Number.parseFloat(cs.lineHeight) || 0,
+            charPx: per,
+            charsPerLine: per > 0 ? host.clientWidth / per : 0,
+          };
+        }
         return {
           tag: b.tag,
           type: b.type,
@@ -291,6 +473,7 @@ const readSpread = async () =>
           own: b.own,
           flow: b.flow,
           inner,
+          wrap,
         };
       });
       leaves.push({
@@ -335,9 +518,14 @@ for (let spread = 0; spread < SPREADS; spread++) {
     geometry ??= { line: leaf.line, capacity: leaf.capacity, paper: leaf.paper };
     seen.push(leaf);
   }
-  if (spread === 0) {
-    await p.screenshot({ path: `${outDir}/spread-01.png` });
-  }
+  await p
+    .locator('.nb-book-view')
+    .screenshot({
+      path: `${outDir}/spread-${String(spread + 1).padStart(2, '0')}.png`,
+      animations: 'disabled',
+      timeout: 15_000,
+    })
+    .catch(() => {});
   await p.keyboard.press('ArrowRight');
 }
 
@@ -359,45 +547,96 @@ console.log('');
 // Fold the walk into one row per specimen.
 // ---------------------------------------------------------------------------
 
+/*
+ * Fold the walk into one row per specimen, keyed by the marker heading its
+ * leaf opens with. Not by node type: three of these draw as a bare `div` with
+ * no `data-type` on it (a callout's fallback, a diagram, an image row), and
+ * keying on the tag silently merged them into one row that reported whichever
+ * arrived first. The marker is authored, so it cannot collide.
+ */
 const rows = new Map();
+const h1Flows = [];
 for (const leaf of seen) {
+  let marker = null;
   for (const block of leaf.blocks) {
-    const kind =
-      block.type !== null
-        ? block.type
-        : block.tag === 'div' && /nb-diagram|diagram/.test(block.cls)
-          ? 'diagram'
-          : block.tag;
-    const payload = block.text.includes('Lx') ? 'long' : 'short';
-    const key = `${kind}|${payload}`;
-    if (block.text.startsWith('S') && block.tag === 'h1') continue; // the marker heading
-    if (rows.has(key)) continue;
-    rows.set(key, {
-      kind,
-      payload,
+    const asMarker = /^S\d\d$/.exec(block.text);
+    if (block.tag === 'h1' && asMarker !== null) {
+      marker = asMarker[0];
+      // Every leaf opens with one, so the markers ARE the H1 measurement —
+      // an H1 specimen of its own would have started a page of its own and
+      // left nothing to be the marker of.
+      h1Flows.push(block.flow / L);
+      continue;
+    }
+    if (marker === null) continue; // a tail carried in from the leaf before
+    if (rows.has(marker)) continue; // only the first block after the marker
+    const index = Number(marker.slice(1));
+    const specimen = SPECIMENS[index];
+    if (specimen === undefined) continue;
+    rows.set(marker, {
+      marker,
+      kind: specimen.name,
+      payload: specimen.payload,
+      node: block.type ?? block.tag,
+      chars: specimen.body.length,
       flow: block.flow / L,
       own: block.own / L,
       inner: block.inner === null ? null : block.inner / L,
       chrome: block.inner === null ? null : (block.flow - block.inner) / L,
-      text: block.text,
+      wrap: block.wrap,
     });
   }
 }
 
-const table = [...rows.values()].sort(
-  (a, b) => a.kind.localeCompare(b.kind) || a.payload.localeCompare(b.payload),
-);
+const table = [...rows.values()].sort((a, b) => a.marker.localeCompare(b.marker));
 const pad = (s, n) => String(s).padEnd(n);
+
+// The ladder first: where the height steps is what the wrap width really is.
+console.log('  --- wrap ladder (top-level paragraphs) ---');
+console.log(`  ${pad('chars', 8)}${pad('lines', 8)}${pad('chars/line', 12)}measured chars/line`);
+for (const r of table.filter((x) => x.kind.startsWith('ruler-'))) {
+  const chars = Number(r.kind.slice(6));
+  console.log(
+    `  ${pad(chars, 8)}${pad(r.flow.toFixed(2), 8)}` +
+      `${pad((chars / r.flow).toFixed(1), 12)}` +
+      (r.wrap === null ? '—' : r.wrap.charsPerLine.toFixed(1)),
+  );
+}
+console.log('');
+console.log('  --- blocks ---');
 console.log(
-  `  ${pad('block', 18)}${pad('payload', 8)}${pad('flow', 8)}${pad('own', 8)}${pad('inner', 8)}chrome`,
+  `  ${pad('block', 18)}${pad('payload', 8)}${pad('flow', 8)}${pad('own', 8)}` +
+    `${pad('inner', 8)}${pad('chrome', 8)}${pad('c/line', 8)}${pad('linePx', 8)}node`,
 );
 for (const r of table) {
+  if (r.kind.startsWith('ruler-')) continue;
   console.log(
     `  ${pad(r.kind, 18)}${pad(r.payload, 8)}${pad(r.flow.toFixed(2), 8)}` +
       `${pad(r.own.toFixed(2), 8)}${pad(r.inner === null ? '—' : r.inner.toFixed(2), 8)}` +
-      (r.chrome === null ? '—' : r.chrome.toFixed(2)),
+      `${pad(r.chrome === null ? '—' : r.chrome.toFixed(2), 8)}` +
+      `${pad(r.wrap === null ? '—' : r.wrap.charsPerLine.toFixed(1), 8)}` +
+      `${pad(r.wrap === null ? '—' : r.wrap.linePx.toFixed(1), 8)}${r.node}`,
   );
 }
+const missing = SPECIMENS.map((s, i) => markerOf(i)).filter((m) => !rows.has(m));
+if (missing.length > 0) {
+  console.log(
+    `  NOT MEASURED: ${missing
+      .map((m) => `${m} ${SPECIMENS[Number(m.slice(1))].name}`)
+      .join(', ')}`,
+  );
+}
+console.log('');
+if (h1Flows.length > 0) {
+  const sorted = h1Flows.slice().sort((a, b) => a - b);
+  console.log(
+    `  heading1 (the ${h1Flows.length} markers): min ${sorted[0].toFixed(2)} ` +
+      `median ${sorted[sorted.length >> 1].toFixed(2)} max ${sorted[sorted.length - 1].toFixed(2)}`,
+  );
+}
+console.log(
+  `  payload widths: SHORT ${SHORT.length} chars, LONG ${LONG.length} chars`,
+);
 
 const jsonPath = process.env.JSON ?? `${outDir}/measured.json`;
 writeFileSync(

@@ -225,16 +225,25 @@ describe('welcome book content', () => {
    * that is too long, so a page at a third of its capacity passed every gate
    * there was. Six of the sixteen v5 pages did.
    *
-   * The floor is deliberately well under the budget rather than just under it,
-   * because `blockLineCost` is a proxy and a loose one — it charges a container
-   * `2 + children` while a one-line callout draws about 2.2 lines and an index
-   * card draws six, so the same cost buys anywhere between two thirds and all
-   * of a leaf. 18 is what the thinnest page that still *looked* full came out
-   * at when the whole book was walked and measured in the running app
-   * (`scripts/probe-welcome.mjs`); it catches a page written at half length and
-   * does not pretend to a precision the estimator has not got. The probe is
-   * what actually judges the fill — this is the tripwire that says go and run it.
+   * The floor is a FRACTION OF THE BUDGET, not a number.
+   *
+   * It was 18 when `PAGE_LINE_BUDGET` was 26 — "about two thirds of a leaf",
+   * written down as an absolute because the estimator was then a loose proxy
+   * (it charged every container `2 + children`, while a one-line callout draws
+   * about 2.2 lines and an index card six). `split.ts` has since been
+   * recalibrated against containers measured in the running app, and the budget
+   * moved to 23.5 to match a real leaf. The absolute number drifted with it and
+   * the intent did not, which is exactly the shape of a threshold that gets
+   * fudged when it fails.
+   *
+   * So the intent is written down instead: a page should carry at least two
+   * thirds of what its leaf can hold. The probe is still what actually judges
+   * the fill (`scripts/probe-welcome.mjs` walks the book in the running app and
+   * measures drawn pixels); this is the tripwire that says go and run it.
    */
+  /** Two thirds of a leaf — see the docblock above for why it is a ratio. */
+  const FILL_FLOOR = 2 / 3;
+
   it('every page fills one, too', () => {
     const titles = welcomePageTitles();
     WELCOME_PAGE_SOURCES.forEach((source, i) => {
@@ -244,8 +253,9 @@ describe('welcome book content', () => {
       );
       expect(
         cost,
-        `page ${i + 1} "${titles[i]}" leaves most of its leaf blank`,
-      ).toBeGreaterThanOrEqual(18);
+        `page ${i + 1} "${titles[i]}" leaves most of its leaf blank ` +
+          `(${cost.toFixed(1)} of ${PAGE_LINE_BUDGET} lines)`,
+      ).toBeGreaterThanOrEqual(PAGE_LINE_BUDGET * FILL_FLOOR);
     });
   });
 

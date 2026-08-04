@@ -1917,7 +1917,21 @@ actually reaches the screen.
       view positioned from the selection rect, never a node view, so
       it does not fight ProseMirror for the DOM; sorting goes through
       a transaction so undo works.  `6a4c1b6`
-- [ ] Rebuild and verify the NSIS installer
+- [x] Rebuild and verify the NSIS installer
+      Built at 0.2.0: `Alcove_0.2.0_x64-setup.exe` 16,993,298 bytes (16.2 MiB —
+      what Explorer prints as "16.2 MB", so the README's "about 16 MB" is right
+      for this build; the previous one was 14.7 MiB and would have made it
+      wrong). Installed with `/S`, so no window went near the owner's screen:
+      exit 0, `%LOCALAPPDATA%\Alcove` holds the exe and the uninstaller, the
+      `HKCU` uninstall key reads 0.2.0, and the Start-menu shortcut targets the
+      real path. The two paths that appear to hold it are ONE file seen through
+      the Claude container's MSIX redirection, not two installs — identical size
+      and mtime, and one uninstall clears both.
+      The icon was read back OUT of the installed exe rather than off the
+      master, because the report was about the installed build: ten RT_ICON
+      frames, 16 through 256, and the red notebook is legible at 16px. So the
+      reported "no icon in the start menu" was a stale shell icon cache on a
+      path that has since been removed and recreated.
 
 ### Bookcases — the edges nobody owns yet
 

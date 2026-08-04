@@ -455,9 +455,27 @@ async function main(argv) {
   }
 
   const problems = [];
+  /*
+   * Read with line endings NORMALISED, because this comparison has to mean the
+   * same thing on every machine and it did not.
+   *
+   * The generator emits `\n`. What is on disk depends on the platform and on
+   * git's autocrlf, so the same commit produced "up to date" on Linux and
+   * "stale" on Windows — and the difference was invisible in the failure
+   * output, which prints `want:` and `have:` lines that read identically
+   * because a `\r` does not show. It failed the 0.2.0 release inside
+   * `npm run build`, one job after the gates had passed the same check.
+   *
+   * The question worth asking is "does the checked-in spec say what the
+   * generator would say", and a carriage return is not part of the answer. The
+   * repo now also declares `eol=lf` in `.gitattributes` so checkouts stop
+   * disagreeing in the first place; this is the half that does not depend on
+   * everyone having a fresh clone.
+   */
+  const lf = (text) => text.replace(/\r\n/g, '\n');
   const onDisk = (path) => {
     try {
-      return readFileSync(path, 'utf8');
+      return lf(readFileSync(path, 'utf8'));
     } catch {
       return '';
     }

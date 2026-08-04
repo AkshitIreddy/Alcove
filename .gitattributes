@@ -1,0 +1,47 @@
+# Line endings, declared once, because not declaring them cost a release.
+#
+# Three separate bugs in one day traced to the same thing: this repo stored a
+# mixture of LF and CRLF, and `core.autocrlf=true` on Windows meant a working
+# copy never matched the blob. Each one looked like a different bug, and all
+# three were invisible in their own error output, because a carriage return
+# does not show up in a diff you read on a terminal:
+#
+#   1. `gen-readme.mjs` anchored its region regex on `-->\n` and reported all
+#      fourteen generated regions as "never placed" on this machine.
+#   2. `check-readme.mjs` digested shot sources as raw bytes, so the banner's
+#      digest recorded on Windows could never equal the one computed on Linux —
+#      an UNCLEARABLE staleness alarm, since recapturing re-recorded the same
+#      wrong digest.
+#   3. `gen-spec.mjs --check` compared generated LF against whatever was on
+#      disk, so the same commit was "up to date" on the Linux gates job and
+#      "stale" on the Windows build one job later.
+#
+# All three now normalise on read, which is the defence that works on a
+# checkout somebody already has. This file is the other half: it stops the
+# working copies disagreeing at all.
+#
+# `eol=lf` rather than `text=auto` alone: this project is developed on Windows
+# but every gate runs on Linux, and generated artefacts are compared BYTE FOR
+# BYTE against what a generator emits. A generator emits `\n`; anything that
+# checks out `\r\n` is a file the check cannot agree with.
+* text=auto eol=lf
+
+# Binary, so git never touches a byte. Getting this wrong is worse than the
+# problem above: "normalising" a PNG rewrites bytes inside the image.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.bmp binary
+*.wav binary
+*.mp3 binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+*.db binary
+*.exe binary
+*.dll binary

@@ -376,13 +376,48 @@ jobs:
           echo "--- notes ---"
           cat RELEASE_NOTES.md
 
+      # `upload-artifact` roots each artefact at the LEAST COMMON ANCESTOR of
+      # the paths it was given, so the shape of the download depends on how many
+      # directories a platform's bundles came from:
+      #
+      #   macOS  — one file from bundle/dmg/            -> arrives FLAT
+      #   Windows — bundle/nsis/*.exe + bundle/msi/*.msi -> arrives as nsis/, msi/
+      #   Linux  — deb/, rpm/, appimage/                 -> arrives as three dirs
+      #
+      # That published v0.2.0 with ONE asset. `sha256sum *` hashed the lone flat
+      # file and errored on the directories, and `files: artefacts/*` could only
+      # upload a file — so the .dmg went out and the Windows and Linux bundles,
+      # both uploaded successfully by their jobs, silently did not.
+      # `fail_on_unmatched_files: true` did not catch it: the glob matched
+      # something, just not everything.
+      - name: Flatten, and prove every platform is present
+        working-directory: artefacts
+        run: |
+          find . -mindepth 2 -type f -exec mv -n -t . {} +
+          find . -mindepth 1 -type d -empty -delete
+          echo "--- what will be published ---"
+          ls -lh
+
+          # The check that would have caught the one-asset release. Each pattern
+          # is a platform a reader was promised on the download table, so a
+          # missing one is a broken promise rather than a smaller release.
+          missing=''
+          for pattern in '*-setup.exe' '*.msi' '*.dmg' '*.deb' '*.rpm' '*.AppImage'; do
+            # shellcheck disable=SC2086
+            set -- $pattern
+            [ -e "$1" ] || missing="$missing $pattern"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::no artefact matched:$missing — the release would have shipped incomplete"
+            exit 1
+          fi
+
       # Neither the .dmg nor the AppImage is code-signed, so a reader has no
       # way to tell a good download from a truncated one. Ship the sums.
       - name: Checksums
         working-directory: artefacts
         run: |
-          ls -lh
-          sha256sum * | tee SHA256SUMS.txt
+          sha256sum ./* | sed 's| \./| |' | tee SHA256SUMS.txt
 
       - name: Publish
         uses: softprops/action-gh-release@v3

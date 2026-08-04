@@ -135,13 +135,68 @@ export interface SettingsSoundAdapter {
   setHourlyChime(enabled: boolean): void;
 }
 
+/** An idle start is booked and has not run yet. */
+let ambientScheduled = false;
+/** The idle start has run; from here on, asks go straight through. */
+let ambientLive = false;
+
+/**
+ * Ambient starts asked for during BOOT collapse into one, on the first idle.
+ * Anything asked afterwards goes straight through.
+ *
+ * `applySettings` runs inside `render()` — the subscription fires immediately
+ * with the current snapshot — so `startAmbient()` was called before the shelf
+ * had drawn a single pixel. It is `void`ed, so nothing awaits it, but the
+ * synchronous half is not free: it reaches `ensureHowl` → `import('howler')`,
+ * and howler's module scope builds an AudioContext and codec-tests a list of
+ * formats against a fresh `Audio()` element. Measured on the boot profile
+ * (`shots-now/_bootprof.mjs`): 85 kB fetched and `setupAudioContext` alone
+ * holding the main thread for ~120ms, in front of the first frame. The
+ * engine's own docblock says "cold start pays nothing until the first play()",
+ * and this was the one call that made that untrue.
+ *
+ * COALESCED rather than "defer the first one": settings are applied at least
+ * twice during boot — once with the defaults, inside `render()`, and again
+ * when `load()` resolves the persisted row. Deferring only the first left the
+ * second to go through synchronously, which put howler back in front of the
+ * first frame with the stack one frame different. Every ask before the idle
+ * has to fold into the same booked start.
+ *
+ * Nothing audible moves. A webview will not let an AudioContext make a sound
+ * before the reader has interacted with the page, so a bed started at boot is
+ * a bed waiting for a gesture either way — it just used to wait having already
+ * charged the shelf for the privilege. The `timeout` is a ceiling for the case
+ * where the shelf's own bake keeps the main thread busy past the point anyone
+ * would call the app idle.
+ *
+ * The callback re-reads `lastApplied` rather than closing over the decision:
+ * the reader can turn the bed off inside that window, and a deferred start
+ * that ignored them would switch it back on.
+ */
+function startAmbientDeferred(): void {
+  if (ambientLive) {
+    void engineStartAmbient();
+    return;
+  }
+  if (ambientScheduled) return;
+  ambientScheduled = true;
+  const run = (): void => {
+    ambientLive = true;
+    if (lastApplied !== null && !lastApplied.ambientLoop) return;
+    void engineStartAmbient();
+  };
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 2000 });
+  } else {
+    setTimeout(run, 400);
+  }
+}
+
 const engineAdapter: SettingsSoundAdapter = {
   setVolumes: engineSetVolumes,
   muteAll: engineMuteAll,
   setReducedSound: engineSetReducedSound,
-  startAmbient: () => {
-    void engineStartAmbient();
-  },
+  startAmbient: startAmbientDeferred,
   stopAmbient: engineStopAmbient,
   setSoundscape: engineSetSoundscape,
   setTypingSounds: engineSetTypingSounds,

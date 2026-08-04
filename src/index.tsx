@@ -27,17 +27,6 @@ import "./styles/global.css";
 import { render } from "solid-js/web";
 import App from "./App";
 
-/* Group D (import/export & templates): the one thing it does AT BOOT is
-   hydrate the custom-sticker registry, so that is the only thing imported
-   here. The `groupD` barrel itself re-exports the templates gallery, the PDF
-   dialog and the Markdown importer, each of which reaches `editor/extensions`
-   — importing the barrel for one side effect put TipTap, ProseMirror,
-   highlight.js and yjs in front of the shelf's first frame. Rail buttons
-   still import their handlers from the barrel; they live inside the book,
-   which is a chunk of its own. The dev-only E2E bridge it also installs is
-   pulled in below, after the app is on screen. */
-import { loadUserStickers } from "./features/templates/userStickers";
-
 const root = document.getElementById("root");
 if (!root) {
   throw new Error("Notebook: #root element is missing from index.html");
@@ -45,10 +34,28 @@ if (!root) {
 
 render(() => <App />, root);
 
-/* Persisted custom stickers, hydrated once per boot (roadmap 27). After
-   render() rather than before it: it is a database read, and nothing on the
-   first screen shows a sticker. */
-void loadUserStickers();
+/* Persisted custom stickers, hydrated once per boot (roadmap 27).
+ *
+ * Group D (import/export & templates) is reached for this ONE side effect, so
+ * this is the only thing pulled from it. Not the `groupD` barrel: that
+ * re-exports the templates gallery, the PDF dialog and the Markdown importer,
+ * each of which reaches `editor/extensions` — importing the barrel for one
+ * side effect put TipTap, ProseMirror, highlight.js and yjs in front of the
+ * shelf's first frame. Rail buttons still import their handlers from the
+ * barrel; they live inside the book, which is a chunk of its own.
+ *
+ * And `import()` rather than a static import at the top of this file, for the
+ * same reason one step further down: the registry lives in
+ * `editor/nodes/stickers.ts`, which is 25.5 kB of the boot chunk minified
+ * (measured, `shots-now/_weigh.mjs`) — every sticker in the app, as inline
+ * SVG. This runs after render() and nothing was ever awaiting it: it is a
+ * database read whose result first matters when a PAGE is on screen, and the
+ * page is itself a chunk that arrives later. The comment that used to sit on
+ * the static import said as much — "nothing on the first screen shows a
+ * sticker" — while the import it was attached to loaded them all anyway. */
+void import("./features/templates/userStickers").then((m) =>
+  m.loadUserStickers(),
+);
 
 /* The `__nbGroupD` bridge the Playwright suite drives. DEV only, and the
    `import()` is dead code in a production build — `import.meta.env.DEV` folds

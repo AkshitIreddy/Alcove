@@ -49,6 +49,7 @@
  * day someone re-orders an import.
  */
 import { createSignal } from 'solid-js';
+import { FLAT } from '../art/flat';
 import { getBook, updateBook } from '../data/books';
 import type { Book } from '../data/types';
 
@@ -808,9 +809,17 @@ export function mixHex(a: string, b: string, t: number): string {
   ]);
 }
 
-const INK = '#4f3120';
-const GILT = '#e8b64c';
-const CREAM = '#f7f1e3';
+/*
+ * The ribbon is drawn in the house palette, not in a palette of its own.
+ * These three were typed out as literals — `#4f3120`, `#e8b64c`, `#f7f1e3` —
+ * a copy of the ONE outline colour every other drawn thing in this app reads
+ * from `art/flat.ts`, plus its gilt and its cream. A ribbon is furniture in
+ * the same room as the spines and the case; a literal here is how the
+ * bookmarks stay behind the day the house ink moves.
+ */
+const INK = FLAT.ink;
+const GILT = FLAT.gilt;
+const CREAM = FLAT.cream;
 
 /**
  * How far each of the six slots is pushed toward the fold.

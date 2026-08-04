@@ -265,7 +265,21 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'shelf-dock',
     title: 'The shelf has a rail too',
-    body: 'Four tools stand on the wall to the left of the case, and they act on the library rather than on one book. New book puts one on the floor you are looking at. Studio dresses the room. Add floor grows the case downward. Trash keeps every book you crumple, so nothing you throw away is really gone until you say so.',
+    /*
+     * FIVE, and the count is the fragile part of this sentence.
+     *
+     * It said "Four tools" and named new book / studio / add floor / trash. The
+     * dock grew a fifth — `template` — in a later commit than the one that
+     * wrote this copy, and nothing brought the two back together, so the
+     * spotlight lit five buttons while the card beside it said there were four.
+     * That is the reader's own report still true: *"did not show the option in
+     * sidebar when bookshelf is open"*.
+     *
+     * `tests/tutorial.test.ts` now pins every `data-shelf-dock` id against this
+     * body, so the next tool added to the dock fails a test instead of quietly
+     * making this paragraph wrong again.
+     */
+    body: 'Five tools stand on the wall to the left of the case, and they act on the library rather than on one book. New book puts one on the floor you are looking at. Template starts one that already has its pages laid out. Studio dresses the room. Add floor grows the case downward. Trash keeps every book you crumple, so nothing you throw away is really gone until you say so.',
     hint: 'point at one for its name',
     task: {
       ask: 'Point at any tool on the shelf rail.',
@@ -462,12 +476,26 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'finding-in-book',
     title: 'Contents, history and ribbons',
-    body: 'The next four icons are about getting back to something. Table of contents lists every heading in the book and jumps to it. Page history keeps earlier versions of the page you are on, so a paragraph you deleted this morning is still there. The ribbon marks this page, and the one under it chooses how your ribbons are cut and what charm hangs off them.',
+    /*
+     * "the one under it" used to be a real rail tool — a separate `ribbon-style`
+     * button sitting directly under `bookmark`. `4567633` merged the two into
+     * ONE control (the press marks the page AND opens the plate the ribbons live
+     * on), and this sentence was left pointing at an icon that no longer exists;
+     * the icon now under the ribbon is Focus mode. A reader following the tour
+     * hunted the rail for a control that had been gone for two commits.
+     *
+     * The count went too. It said "four", but the four the spotlight covers are
+     * toc, history, In-and-out and the ribbon — and In-and-out is a different
+     * subject taught three steps later, so naming a number here means either
+     * describing something twice or miscounting. Naming the three is honest and
+     * cannot drift when the rail grows another tool between them.
+     */
+    body: 'Three icons here are about getting back to something. Table of contents lists every heading in the book and jumps to it. Page history keeps earlier versions of the page you are on, so a paragraph you deleted this morning is still there. The ribbon marks this page, and opens the plate where you choose how your ribbons are cut and what charm hangs off them.',
     hint: 'rail → the contents list',
     task: {
       ask: 'Open the table of contents.',
       fact: 'toc-open',
-      done: 'Contents, history and ribbons — all four live here.',
+      done: 'Contents, history and ribbons — all three live here.',
       dwell: PANEL_DWELL_MS,
     },
     targets: [

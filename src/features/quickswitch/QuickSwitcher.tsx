@@ -37,6 +37,7 @@ import {
 } from '../../data/search';
 import { settings } from '../../data/settings';
 import { matchesBinding, registerCommands } from '../../data/keybindings';
+import { usePanelKeys } from '../../state/panelKeys';
 import type { Book } from '../../data/types';
 import { fuzzyMatch } from '../../search/fuzzy';
 import { tokenize } from '../../search/rank';
@@ -157,6 +158,17 @@ export default function QuickSwitcher(): JSX.Element {
   const [contentHits, setContentHits] = createSignal<ContentHit[]>([]);
   const [recents, setRecents] = createSignal<string[]>([]);
   let inputEl: HTMLInputElement | undefined;
+
+  /*
+   * The bar is mounted for the life of the app and only rendered when open, so
+   * the claim has to follow the same condition its own <Show> does.
+   *
+   * It held its arrows before this only by accident: the field takes focus on
+   * open, and the shelf's key handler skips anything typed into an input. That
+   * is one blur away from being false, and it was never the reason the bar was
+   * safe — the flag is.
+   */
+  usePanelKeys(() => isPrimary() && open());
 
   const mode = (): 'nav' | 'content' =>
     raw().startsWith('>') ? 'content' : 'nav';

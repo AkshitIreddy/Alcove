@@ -384,8 +384,11 @@
 }
 
 /* The zero-width anchor left behind in the text flow. It has to render (it is
-   the node ProseMirror is drawing) and it has to cost the line nothing. */
-.nb-sticker.is-free-anchor {
+   the node ProseMirror is drawing) and it has to cost the line nothing. Both
+   free marks leave one: a sticker that has been pinned to the leaf, and a trim
+   mark, which has no other form. */
+.nb-sticker.is-free-anchor,
+.nb-page-mark.is-free-anchor {
   display: inline;
   width: 0;
   overflow: hidden;
@@ -493,10 +496,178 @@
   height: 14px;
 }
 
+/* ==========================================================================
+   2b. TRIM PLACED ANYWHERE — tape, washi, a frame, a scrap, a doodle
+
+   The reader asked for the effects too: *"give user the option to drag and
+   place stickers or any effects … put it anywhere on the page, not caring
+   about where lines are"*. Which effects can travel this way is decided in
+   `src/editor/effects/placeableEffects.ts`; this is only how they sit.
+
+   A mark is a BOX with the axis's own `data-<key>` on it, painted by
+   effects.css under `.nb-fx-specimen` — there is no second, free-placement
+   copy of any of the 205 values, and there must never be one.
+   ========================================================================== */
+
+.nb-free-mark {
+  position: absolute;
+  /* One mark, one box, the pointer in the middle of it — see PlaceableAxis. */
+  transform: translate(-50%, -50%) rotate(var(--nb-free-tilt, 0deg));
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.nb-free-mark.is-dragging {
+  cursor: grabbing;
+}
+
+.nb-free-mark-skin,
+.nb-free-mark-ink {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The trim axes carry their own padding (`--fr-pad`, `--pa-pad`). Without
+     this the box the reader dragged is not the box that gets painted. */
+  box-sizing: border-box;
+}
+
+/*
+ * RE-BASING WASHI ONTO THE MARK'S OWN BOX.
+ *
+ * On a block a washi strip hangs at `--ws-top: -10px`, straddling the block's
+ * top edge, 56% of its width and 22% in from the left — because that is what
+ * tape does to a photograph. A free mark has no block to straddle, and taking
+ * that geometry literally put the strip half a box above the click.
+ *
+ * These sit on the SKIN — the PARENT of the box carrying `data-washi` — and
+ * that is the whole trick: a custom property INHERITED from an ancestor loses
+ * to one declared on the element itself, whatever the specificity. So the
+ * forty-six prints that only set a pattern now fill the mark, while the four
+ * that declare their own `--ws-w` / `--ws-top` keep the shape they were drawn
+ * with. Written as a `.nb-free-layer [data-washi]` override instead, this would
+ * have out-specified all fifty and flattened every one of them.
+ */
+.nb-free-mark-skin {
+  position: relative;
+  --ws-w: 100%;
+  --ws-h: 100%;
+  --ws-top: 0;
+  --ws-left: 0;
+}
+
+/*
+ * A STAMP: ink at its natural size, scaled by how far the mark was stretched.
+ *
+ * Forty of the fifty tapes declare their geometry in pixels with a clip-path
+ * cut to those exact numbers, so there is nothing here to re-base — the box
+ * cannot size the strip without destroying it. Instead the ink box collapses to
+ * a zero-height line across the MIDDLE of the mark, which is where `top: -11px`
+ * then puts the strip, and the whole thing is scaled by `--nb-mark-sx/sy` (the
+ * node view computes both from attributes; no measurement, no observer).
+ *
+ * The strip carries `pointer-events: none` in effects.css, so scaling it never
+ * changes what the reader can grab: the hit area stays the mark's own box, at
+ * exactly the size they dragged it to.
+ */
+.nb-free-mark[data-fit='stamp'] .nb-free-mark-ink {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 0;
+  transform: scale(var(--nb-mark-sx, 1), var(--nb-mark-sy, 1));
+}
+
+/*
+ * The block-flow air these four axes take on a ruled page.
+ *
+ * `[data-tape]` spends a whole `--page-line-height` above itself and
+ * `[data-frame]` / `[data-paper]` one on each side, both for the same good
+ * reason: the page is ruled, and a block offset by anything but a full band
+ * knocks every line after it off the printed rules. A free mark is not on the
+ * grid — it is on the paper — so that margin would only ever move the mark away
+ * from the pointer that placed it.
+ *
+ * Three classes deep so it beats effects.css's own `:is(.nb-prose,
+ * .nb-fx-specimen) [data-tape]` on specificity rather than on file order, which
+ * is not a thing this stylesheet gets to rely on.
+ */
+.nb-free-layer .nb-fx-specimen [data-tape],
+.nb-free-layer .nb-fx-specimen [data-washi],
+.nb-free-layer .nb-fx-specimen [data-frame],
+.nb-free-layer .nb-fx-specimen [data-paper] {
+  margin: 0;
+}
+
+.nb-free-mark-doodle {
+  color: var(--ink-graphite-soft);
+}
+
+.nb-free-mark-doodle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * A strip of tape is mostly transparent, so a mark you have not put your
+ * pointer on has to be findable some other way. A hairline on hover, and the
+ * same dashed ring the sticker wears once it is picked up — flat and
+ * hard-edged, a ring and never a halo.
+ */
+.nb-free-mark:hover > .nb-free-mark-skin {
+  outline: 1px dashed var(--ink-line-soft);
+  outline-offset: 2px;
+}
+
+.nb-free-mark.is-held {
+  z-index: 2;
+}
+
+.nb-free-mark.is-held > .nb-free-mark-skin {
+  outline: 1.5px dashed var(--ink-line);
+  outline-offset: 3px;
+}
+
+.nb-free-mark:focus-visible {
+  outline: 2px solid var(--gilt-face);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* Set the box yourself. Bottom-right, outside the mark, and counter-rotated
+   off its tilt for the same reason the puck is. */
+.nb-free-mark-grip {
+  position: absolute;
+  right: -9px;
+  bottom: -9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
+  transform: rotate(calc(-1 * var(--nb-free-tilt, 0deg)));
+  cursor: nwse-resize;
+}
+
+.nb-free-mark-grip:hover {
+  background: var(--wash-amber-light);
+}
+
+.nb-free-mark-grip .nb-free-puck-glyph {
+  width: 12px;
+  height: 12px;
+}
+
 /* --------------------------------------------------------------------------
-   Arming — a sticker picked out of the catalogue, waiting for somewhere to
-   land. The leaves take a crosshair so it is obvious the next click is a
-   placement and not a caret.
+   Arming — a sticker or a piece of trim picked out of the catalogue, waiting
+   for somewhere to land. The leaves take a crosshair so it is obvious the next
+   click is a placement and not a caret.
    -------------------------------------------------------------------------- */
 .nb-book-view.is-placing .nb-leaf-paper,
 .nb-book-view.is-placing .nb-leaf-paper .nb-prose {

@@ -9,6 +9,7 @@ import type { AnyExtension } from '@tiptap/core';
 import { Callout } from './callout';
 import { ImageRow } from './imageRow';
 import { Sticker } from './sticker';
+import { PageMark } from './pageMark';
 import { Diagram } from './diagram';
 import { LinkCard } from '../media';
 import {
@@ -48,6 +49,10 @@ const registry: CustomNodeRegistration[] = [
   { name: Callout.name, extension: Callout },
   { name: ImageRow.name, extension: ImageRow },
   { name: Sticker.name, extension: Sticker },
+  // Tape, washi, a frame, a scrap of paper or a doodle, put wherever the reader
+  // pointed. Inline and atomic like the sticker, and for the same reason: a
+  // block-level mark would be measured by the pagination drain.
+  { name: PageMark.name, extension: PageMark },
   { name: Diagram.name, extension: Diagram },
   { name: LinkCard.name, extension: LinkCard },
   // Script-vocabulary containers (names match vocab.ts canonical names).
@@ -105,6 +110,7 @@ export function customNodeExtensions(): AnyExtension[] {
 export { Callout, CALLOUT_TINTS, type CalloutTint } from './callout';
 export { ImageRow } from './imageRow';
 export { Sticker } from './sticker';
+export { PageMark } from './pageMark';
 export {
   STICKER_IDS,
   isStickerId,

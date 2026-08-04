@@ -50,6 +50,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { render } from 'solid-js/web';
+import { usePanelKeys } from '../../state/panelKeys';
 import { PACK_CATEGORIES, UNSUPPORTED_CATEGORIES, packCategory } from './categories';
 import { promptForCategory } from './prompt';
 import type { PackCategory, PackCategoryId, PackProblem } from './schema';
@@ -126,6 +127,10 @@ export function PackDialog(props: PackDialogProps): JSX.Element {
   );
   const prompt = createMemo(() => promptForCategory(category()));
   const busy = (): boolean => outcome().kind === 'busy';
+
+  // `openPackDialog` tears the host down on close, so being mounted IS being
+  // open. The shelf is live behind this popup and binds arrows on `document`.
+  usePanelKeys();
 
   /*
    * CAPTURE-phase on `document`, and it stops the event dead.

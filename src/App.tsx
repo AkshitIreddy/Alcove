@@ -16,9 +16,8 @@ import {
 } from "./data/settings";
 import { installShortcuts, registerCommands } from "./data/keybindings";
 import { applySettings } from "./features/settings/apply";
-import SettingsPanel from "./features/settings/SettingsPanel";
 import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
-import { initSystemFeatures } from "./features/system";
+import { PerfHud, initSystemFeatures } from "./features/system";
 import { installUiClickSounds } from "./sound/uiClicks";
 import TutorialOverlay, { maybeAutoStartTutorial } from "./features/tutorial";
 import TasteQuestionnaire from "./features/tutorial/tasteQuestionnaire";
@@ -41,6 +40,27 @@ import "./styles/settings.css";
  * needs it would just move the stall somewhere more visible.
  */
 const BookView = lazy(() => import("./views/BookView"));
+
+/**
+ * The settings sheet, fetched at the moment it is first opened.
+ *
+ * The sheet was mounted at boot inside a Portal and parked off screen at
+ * `xPercent: 105` — the whole keybinding editor, the sound-set catalogue, the
+ * backup rows, the diagnostics export, for a reader who has not touched the
+ * gear. Measured with `shots-now/_weigh.mjs`: 29.5 kB of the boot chunk,
+ * minified.
+ *
+ * `lazy()` plus the `settingsWanted` latch below, which is the same bargain
+ * `RailPanel` strikes on the other side of the window: the sheet arrives on
+ * the first ask and then STAYS, so a half-typed rebinding or a scroll position
+ * survives closing it. `onMount` inside the sheet parks it before the open
+ * effect tweens it in, so the first open still slides.
+ *
+ * `applySettings` is deliberately NOT behind this — it is imported straight
+ * from `features/settings/apply` above, because the theme has to be on the
+ * document before the first frame, not after a chunk lands.
+ */
+const SettingsPanel = lazy(() => import("./features/settings/SettingsPanel"));
 
 /**
  * The parcel desk, opened on demand.
@@ -147,6 +167,12 @@ function GearIcon(): JSX.Element {
 
 export default function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  /** Latch — see the SettingsPanel docblock. Never goes back to false. */
+  const [settingsWanted, setSettingsWanted] = createSignal(false);
+  const openSettings = (): void => {
+    setSettingsWanted(true);
+    setSettingsOpen((open) => !open);
+  };
   const showDevChrome = devChromeEnabled();
 
   onMount(() => {
@@ -194,7 +220,7 @@ export default function App(): JSX.Element {
           void import("./features/templates/importMarkdown").then((m) =>
             m.importMarkdownBooks(),
           ),
-        "open-settings": () => setSettingsOpen((open) => !open),
+        "open-settings": () => openSettings(),
       }),
     );
 
@@ -237,22 +263,33 @@ export default function App(): JSX.Element {
           ever sees was the one screen that could not tell them the keys. */}
       <CheatSheetHost />
 
+      {/* The perf HUD (gated by `settings.perfHud`, `position: fixed`, so it
+          needs no layer around it). It used to be mounted inside
+          SettingsPanel's always-present layer; the sheet is a `lazy()` now, so
+          a reader who left the HUD on would have had to open settings once
+          per launch to see it again. Its module is in the boot chunk either
+          way — `features/system/diagnostics.ts` reads `collectPixiStats` from
+          it — so the move costs nothing. */}
+      <PerfHud />
+
       <button
         type="button"
         class="nbs-gear-button"
         aria-label="Settings"
         aria-haspopup="dialog"
         aria-expanded={settingsOpen()}
-        onClick={() => setSettingsOpen((open) => !open)}
+        onClick={openSettings}
       >
         <GearIcon />
       </button>
 
       <Portal>
-        <SettingsPanel
-          open={settingsOpen()}
-          onClose={() => setSettingsOpen(false)}
-        />
+        <Show when={settingsWanted()}>
+          <SettingsPanel
+            open={settingsOpen()}
+            onClose={() => setSettingsOpen(false)}
+          />
+        </Show>
       </Portal>
     </>
   );

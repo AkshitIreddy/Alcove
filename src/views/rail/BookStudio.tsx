@@ -48,13 +48,13 @@ import {
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
   bookStyleToOverrides,
+  formatForHeight,
   heightForFormat,
   normalizeBookStyleOverrides,
   randomBookStyleOverrides,
   resolveBookStyle,
   type BookStyle,
   type BookStyleOverrides,
-  type SpineFormat,
 } from '../../art/bookStyle';
 import { CLOTHS } from '../../art/flat';
 import {
@@ -88,7 +88,13 @@ import OwnColour from './OwnColour';
 import { getTheme } from '../../art/themes';
 import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
 import DesignPicker, { type PickerOption } from './DesignPicker';
-import DesignStrip, { StarMark, cappedTo, createCuration, starWords } from './DesignStrip';
+import DesignStrip, {
+  CuratedChips,
+  StarMark,
+  cappedTo,
+  createCuration,
+  starWords,
+} from './DesignStrip';
 import { DesignCanvas } from './designArt';
 import { bindingOptions, drawBindingCard, ownAxisOptions } from './designOptions';
 import {
@@ -99,7 +105,7 @@ import {
   shelfDesignOf,
 } from '../../data/designPrefs';
 import { shelfHeadroom, type ShelfHeadroom } from '../../features/bookshelf/bookFit';
-import type { CurationAxis } from '../../data/shelfOfMine';
+import { isHidden, rollPool, type CurationAxis } from '../../data/shelfOfMine';
 import { stopShelfKeys } from './shelfKeys';
 import '../../styles/studio.css';
 
@@ -172,6 +178,262 @@ const OWN_AXIS_CURATION: Record<'shape' | 'material' | 'decoration', CurationAxi
   material: 'covering',
   decoration: 'marks',
 };
+
+/**
+ * Every pigment, painted in the colour the book will ACTUALLY be.
+ *
+ * This was six entries, hand-listed, and the note above them explained why:
+ * `clothForPalette` used to fold twenty pigments onto SIX cloths, so fourteen
+ * of the twenty swatches repainted the book in a colour it already was, and
+ * cutting the row to six was the honest thing to do about it.
+ *
+ * The fold is one-to-one now — fifty pigments, fifty cloths — so the reason
+ * has expired and the list is derived rather than written: a pigment added to
+ * `art/spines.ts` appears here, and a swatch can no longer name a colour the
+ * spine does not paint. The label is the CLOTH's name (`PIGMENT_CLOTH_NAMES`)
+ * and not the pigment's, because twenty-four of the fifty still land on a
+ * cloth of another name and the tooltip has to answer "what colour is the
+ * book", not "which row of a table did this come from".
+ */
+const CLOTH_SWATCHES: readonly ClothSwatch[] = PIGMENT_LABELS.map((name, pigment) => ({
+  // The curation is keyed by (axis, entry id) and the id goes into the
+  // reader's SQLite row, so it is the pigment's INDEX as a string rather than
+  // its label: a cloth renamed under a removal must come back as the same
+  // removal, and the fifty labels are exactly the thing most likely to be
+  // reworded.
+  id: String(pigment),
+  pigment,
+  name: PIGMENT_CLOTH_NAMES[pigment] === '' ? name : (PIGMENT_CLOTH_NAMES[pigment] as string),
+}));
+
+/**
+ * The charm's colourways, carrying their own index.
+ *
+ * Paired with the index rather than read back out of a `For`'s position,
+ * because the row folds at twenty like every other long list in the app and
+ * a folded row's third tile is not colourway three.
+ */
+const CHARM_SWATCHES: readonly CharmSwatch[] = CHARM_COLORS.map((hex, index) => ({
+  id: String(index),
+  index,
+  hex,
+  name: CHARM_COLOR_LABELS[index] ?? `colour ${index + 1}`,
+}));
+
+/**
+ * The cover's frame and medallion, in the words the chips have always used.
+ *
+ * Lifted out of the JSX so a chip, a removal and a dice roll can all name the
+ * same entry. Both vocabularies are much larger than these two lists
+ * (`COVER_FRAME_COUNT`, `COVER_MEDALLION_COUNT`), which is a gap of its own and
+ * not this one's to close — what the ids have to be is STABLE, and an index
+ * into a list the panel writes down is exactly that.
+ */
+const COVER_FRAME_NAMES: readonly string[] = ['rules', 'corners', 'scallop', 'stitch'];
+const COVER_MEDALLION_NAMES: readonly string[] = [
+  'diamond',
+  'laurel',
+  'star',
+  'flower',
+  'chevron',
+  'sun',
+  'moon',
+  'keyhole',
+];
+
+/* -------------------------- the curated chip rows ------------------------- */
+
+/** One chip, and what pressing it writes into the style. */
+interface StyleChip {
+  readonly id: string;
+  readonly name: string;
+  readonly chipClass?: string;
+  readonly sets: Partial<BookStyleOverrides>;
+}
+
+/** The lists in this panel the reader can prune, star and get back. */
+type StyleRowAxis = Extract<
+  CurationAxis,
+  | 'binding-material'
+  | 'ornament'
+  | 'title-plate'
+  | 'lettering'
+  | 'edge'
+  | 'format'
+  | 'charm'
+  | 'cover-frame'
+  | 'cover-medallion'
+  | 'spine-cloth'
+  | 'charm-colour'
+>;
+
+/**
+ * One curated list: the word the store keys it by, its entries, and the way
+ * back from a style to the entry it is wearing.
+ *
+ * That last one is what makes the DICE honour a removal, and it is the half
+ * that is easy to miss. `randomBookStyleOverrides` draws every knob at once
+ * out of the full legal domain and knows nothing about the reader; `idOf`
+ * turns a draw back into an entry id, so `respectingCuration` can ask the
+ * store whether that entry is still on the list and re-draw from the pool when
+ * it is not. Without it a removal means "gone from the row" and nothing more —
+ * you throw a stamp away, press randomise, and the app puts it back on the
+ * book, which reads as the app ignoring you rather than as two features that
+ * were never introduced.
+ */
+interface CuratedRow {
+  readonly axis: StyleRowAxis;
+  readonly chips: readonly StyleChip[];
+  /** '' when the style landed outside this row — see the cover note above. */
+  idOf(style: BookStyleOverrides): string;
+}
+
+const CURATED_ROWS: Readonly<Record<StyleRowAxis, CuratedRow>> = {
+  'binding-material': {
+    axis: 'binding-material',
+    chips: BINDING_MATERIALS.map((m) => ({
+      id: m,
+      name: MATERIAL_LABELS[m].toLowerCase(),
+      sets: { material: m },
+    })),
+    idOf: (s) => (typeof s.material === 'string' ? s.material : ''),
+  },
+  ornament: {
+    axis: 'ornament',
+    chips: [
+      { id: String(ORNAMENT_NONE), name: 'none', chipClass: 'nb-chip-ghost', sets: { ornament: ORNAMENT_NONE } },
+      ...ORNAMENT_LABELS.map((label, index) => ({
+        id: String(index),
+        name: label.toLowerCase(),
+        sets: { ornament: index },
+      })),
+    ],
+    idOf: (s) => (typeof s.ornament === 'number' ? String(s.ornament) : ''),
+  },
+  'title-plate': {
+    axis: 'title-plate',
+    chips: TITLE_PLATES.map((p) => ({
+      id: p,
+      name: TITLE_PLATE_LABELS[p].toLowerCase(),
+      sets: { titlePlate: p },
+    })),
+    idOf: (s) => (typeof s.titlePlate === 'string' ? s.titlePlate : ''),
+  },
+  lettering: {
+    axis: 'lettering',
+    chips: TITLE_FONTS.map((name, index) => ({
+      id: String(index),
+      name,
+      sets: { titleFont: index as 0 | 1 | 2 },
+    })),
+    idOf: (s) => (typeof s.titleFont === 'number' ? String(s.titleFont) : ''),
+  },
+  edge: {
+    axis: 'edge',
+    chips: EDGE_TREATMENTS.map((e) => ({
+      id: e,
+      name: EDGE_LABELS[e].toLowerCase(),
+      sets: { edge: e },
+    })),
+    idOf: (s) => (typeof s.edge === 'string' ? s.edge : ''),
+  },
+  format: {
+    axis: 'format',
+    // A format IS a height — `resolveBookStyle` derives one from the other —
+    // so the chip writes both and the dice, which only ever draws a height,
+    // is read back through `formatForHeight`.
+    chips: SPINE_FORMAT_IDS.map((f) => ({
+      id: f,
+      name: String(SPINE_FORMATS[f]?.label ?? f).toLowerCase(),
+      sets: { format: f, height: heightForFormat(f) },
+    })),
+    idOf: (s) => (typeof s.height === 'number' ? formatForHeight(s.height) : ''),
+  },
+  charm: {
+    axis: 'charm',
+    chips: CHARMS.map((c) => ({
+      id: c,
+      name: CHARM_LABELS[c].toLowerCase(),
+      ...(c === 'none' ? { chipClass: 'nb-chip-ghost' } : {}),
+      sets: { charm: c },
+    })),
+    idOf: (s) => (typeof s.charm === 'string' ? s.charm : ''),
+  },
+  'cover-frame': {
+    axis: 'cover-frame',
+    chips: COVER_FRAME_NAMES.map((name, index) => ({
+      id: String(index),
+      name,
+      sets: { coverFrame: index },
+    })),
+    idOf: (s) => (typeof s.coverFrame === 'number' ? String(s.coverFrame) : ''),
+  },
+  'cover-medallion': {
+    axis: 'cover-medallion',
+    chips: COVER_MEDALLION_NAMES.map((name, index) => ({
+      id: String(index),
+      name,
+      sets: { coverMedallion: index },
+    })),
+    idOf: (s) => (typeof s.coverMedallion === 'number' ? String(s.coverMedallion) : ''),
+  },
+  /*
+   * The two colour grids are not chip rows — they draw their own swatches and
+   * drive `createCuration` directly — so they are here for the DICE alone. The
+   * ids are `String(index)` on both sides because both are built off the same
+   * two swatch tables above; that coupling is the reason those tables moved out
+   * to module scope rather than being rebuilt per panel.
+   */
+  'spine-cloth': {
+    axis: 'spine-cloth',
+    chips: CLOTH_SWATCHES.map((swatch) => ({
+      id: swatch.id,
+      name: swatch.name,
+      // A named pigment clears the reader's own colour in the same write, the
+      // same as pressing the swatch does — a re-roll that left `clothHex` in
+      // place would move a value nothing draws.
+      sets: { pigment: swatch.pigment, clothHex: null },
+    })),
+    idOf: (s) => (typeof s.pigment === 'number' ? String(s.pigment) : ''),
+  },
+  'charm-colour': {
+    axis: 'charm-colour',
+    chips: CHARM_SWATCHES.map((swatch) => ({
+      id: swatch.id,
+      name: swatch.name,
+      sets: { charmColor: swatch.index },
+    })),
+    // A colour of the reader's own is a hex, not an index, and is not on this
+    // list at all — so it can never be the entry a removal is about.
+    idOf: (s) => (typeof s.charmColor === 'number' ? String(s.charmColor) : ''),
+  },
+};
+
+const CURATED_ROW_LIST: readonly CuratedRow[] = Object.values(CURATED_ROWS);
+
+/**
+ * A rolled style, with the reader's removals applied.
+ *
+ * `rollPool` is the store's own word for "what the dice may land on", and it
+ * falls back to the whole vocabulary when a reader has removed all of it —
+ * which is why this can re-draw without ever handing back nothing.
+ *
+ * Stars are deliberately not weighted in, for the reason `rollPool` states: a
+ * reader who asked to be surprised did not ask to be surprised by the six
+ * things they already told the app they like.
+ */
+function respectingCuration(draw: BookStyleOverrides): BookStyleOverrides {
+  let out = draw;
+  for (const row of CURATED_ROW_LIST) {
+    const landed = row.idOf(out);
+    if (landed === '' || !isHidden(row.axis, landed)) continue;
+    const pool = rollPool(row.axis, row.chips, (chip) => chip.id);
+    const chip = pool[Math.floor(Math.random() * pool.length)];
+    if (chip === undefined || chip.id === landed) continue;
+    out = { ...out, ...chip.sets };
+  }
+  return out;
+}
 
 /**
  * The cover-facing projection of what the reader has actually PINNED.
@@ -490,33 +752,6 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   );
 
   /**
-   * Every pigment, painted in the colour the book will ACTUALLY be.
-   *
-   * This was six entries, hand-listed, and the note above them explained why:
-   * `clothForPalette` used to fold twenty pigments onto SIX cloths, so fourteen
-   * of the twenty swatches repainted the book in a colour it already was, and
-   * cutting the row to six was the honest thing to do about it.
-   *
-   * The fold is one-to-one now — fifty pigments, fifty cloths — so the reason
-   * has expired and the list is derived rather than written: a pigment added to
-   * `art/spines.ts` appears here, and a swatch can no longer name a colour the
-   * spine does not paint. The label is the CLOTH's name (`PIGMENT_CLOTH_NAMES`)
-   * and not the pigment's, because twenty-four of the fifty still land on a
-   * cloth of another name and the tooltip has to answer "what colour is the
-   * book", not "which row of a table did this come from".
-   */
-  const CLOTH_SWATCHES: readonly ClothSwatch[] = PIGMENT_LABELS.map((name, pigment) => ({
-    // The curation is keyed by (axis, entry id) and the id goes into the
-    // reader's SQLite row, so it is the pigment's INDEX as a string rather than
-    // its label: a cloth renamed under a removal must come back as the same
-    // removal, and the fifty labels are exactly the thing most likely to be
-    // reworded.
-    id: String(pigment),
-    pigment,
-    name: PIGMENT_CLOTH_NAMES[pigment] === '' ? name : (PIGMENT_CLOTH_NAMES[pigment] as string),
-  }));
-
-  /**
    * The pigment row is a list like any other, so the reader gets the same hand
    * on it: right-click to remove one they will never use, star one they always
    * do, and the drawer to take a removal back. It is a swatch grid rather than
@@ -552,20 +787,6 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   /** What the "more" chip is offering. The REMAINING count, never the total. */
   const clothsBehind = (): number => clothList().length - shownCloths().length;
   /* ------------------------------ charm colour ---------------------------- */
-
-  /**
-   * The charm's twenty-four colourways, carrying their own index.
-   *
-   * Paired with the index rather than read back out of a `For`'s position,
-   * because the row folds at twenty like every other long list in the app and
-   * a folded row's third tile is not colourway three.
-   */
-  const CHARM_SWATCHES: readonly CharmSwatch[] = CHARM_COLORS.map((hex, index) => ({
-    id: String(index),
-    index,
-    hex,
-    name: CHARM_COLOR_LABELS[index] ?? `colour ${index + 1}`,
-  }));
 
   /** The ribbon's colourways, curated exactly like the pigments above. */
   const charmCuration = createCuration<CharmSwatch>(() => ({
@@ -622,7 +843,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     // `material` is left out on purpose: the dice rolls a BINDING two lines
     // down, and a covering rolled beside it would overrule the very thing it
     // just chose — a "Limp Vellum" in morocco grain.
-    const { material: _material, hueJitter: _hue, ...draw } = randomBookStyleOverrides(seed);
+    const {
+      material: _material,
+      hueJitter: _hue,
+      ...draw
+      // Through the reader's removals on the way out. A dice that hands back
+      // the stamp they threw away is the app plainly not listening, and it is
+      // the half of a removal nothing on screen would ever show them.
+    } = respectingCuration(randomBookStyleOverrides(seed));
     patch({
       ...draw,
       thickness:
@@ -645,7 +873,11 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     const fresh = resolveBookStyle(seed, themeSpineDefaults(getTheme(libraryPrefs.theme)), null, {
       pageCount: props.pageCount,
     });
-    const { material: _material, ...frozen } = bookStyleToOverrides(fresh.style);
+    // The room's bias is allowed back in; the reader's removals are not
+    // undone by it. "A whole new book" means a new roll, not a new reader.
+    const { material: _material, ...frozen } = respectingCuration(
+      bookStyleToOverrides(fresh.style),
+    );
     props.onStyleChange(frozen);
     // Unpin the binding too: "a whole new book" means the seed gets its say
     // back on every axis, not on all but one.
@@ -679,11 +911,15 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
   const reroll = (keys: readonly (keyof BookStyle)[]): void => {
     // A press should visibly move: redraw a few times when the draw matches
-    // the current value on every knob in the group.
-    let draw = randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0);
+    // the current value on every knob in the group. The removals are applied
+    // BEFORE that comparison, so a section whose whole pool is one entry stops
+    // re-drawing instead of spending three throws to arrive back where it was.
+    const throwOnce = (): BookStyleOverrides =>
+      respectingCuration(randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0));
+    let draw = throwOnce();
     for (let tries = 0; tries < 3; tries += 1) {
       if (keys.some((key) => !Object.is(draw[key], style()[key]))) break;
-      draw = randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0);
+      draw = throwOnce();
     }
     const partial: Record<string, unknown> = {};
     for (const key of keys) {
@@ -955,19 +1191,16 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           covering
           <RerollDice section="covering" onClick={() => reroll(REROLL_GROUPS.material)} />
         </h3>
-        <div class="nb-chip-row" role="group" aria-label="Binding material">
-          <For each={BINDING_MATERIALS}>
-            {(m) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={covering() === m}
-                onClick={() => patch({ material: m })}
-              >
-                {MATERIAL_LABELS[m].toLowerCase()}
-              </button>
-            )}
-          </For>
+        <CuratedChips
+          axis="binding-material"
+          label="Binding material"
+          options={CURATED_ROWS['binding-material'].chips}
+          activeId={covering()}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        >
+          {/* Not one of the coverings and deliberately outside the curated
+              list: "as bound" is the way back to what the binding chose, so a
+              reader who removed it would have removed their own escape. */}
           <Show when={resolved().pinned.has('material')}>
             <button
               type="button"
@@ -977,7 +1210,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
               as bound
             </button>
           </Show>
-        </div>
+        </CuratedChips>
       </section>
 
       <section class="nb-panel-section">
@@ -1133,28 +1366,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           ornament stamp
           <RerollDice section="ornament stamp" onClick={() => reroll(REROLL_GROUPS['ornament stamp'])} />
         </h3>
-        <div class="nb-chip-grid" role="group" aria-label="Ornament stamp">
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            aria-pressed={style().ornament === ORNAMENT_NONE}
-            onClick={() => patch({ ornament: ORNAMENT_NONE })}
-          >
-            none
-          </button>
-          <For each={ORNAMENT_LABELS}>
-            {(label, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().ornament === i()}
-                onClick={() => patch({ ornament: i() })}
-              >
-                {label.toLowerCase()}
-              </button>
-            )}
-          </For>
-        </div>
+        <CuratedChips
+          grid
+          axis="ornament"
+          label="Ornament stamp"
+          options={CURATED_ROWS.ornament.chips}
+          activeId={String(style().ornament)}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        />
       </section>
 
       {/* --------------------------- title & plate ------------------------- */}
@@ -1163,33 +1382,22 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           title plate
           <RerollDice section="title plate" onClick={() => reroll(REROLL_GROUPS['title plate'])} />
         </h3>
-        <div class="nb-chip-row" role="group" aria-label="Title plate">
-          <For each={TITLE_PLATES}>
-            {(p) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().titlePlate === p}
-                onClick={() => patch({ titlePlate: p })}
-              >
-                {TITLE_PLATE_LABELS[p].toLowerCase()}
-              </button>
-            )}
-          </For>
-        </div>
-        <div class="nb-chip-row" role="group" aria-label="Title lettering">
-          <For each={TITLE_FONTS}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().titleFont === i()}
-                onClick={() => patch({ titleFont: i() as 0 | 1 | 2 })}
-              >
-                {name}
-              </button>
-            )}
-          </For>
+        <CuratedChips
+          axis="title-plate"
+          label="Title plate"
+          options={CURATED_ROWS['title-plate'].chips}
+          activeId={style().titlePlate}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        />
+        <CuratedChips
+          axis="lettering"
+          label="Title lettering"
+          options={CURATED_ROWS.lettering.chips}
+          activeId={String(style().titleFont)}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        >
+          {/* A switch, not a fourth hand: gilt is struck ON whichever face is
+              chosen, so it is outside the list the reader curates. */}
           <button
             type="button"
             class="nb-chip nb-chip-gilt"
@@ -1199,7 +1407,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           >
             gold tooling
           </button>
-        </div>
+        </CuratedChips>
       </section>
 
       {/* ------------------------- wear & text block ----------------------- */}
@@ -1219,20 +1427,13 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           onInput={(e) => patch({ wear: Number(e.currentTarget.value) })}
         />
         <h3 class="nb-panel-section-title nb-panel-section-title-sub">edges</h3>
-        <div class="nb-chip-row" role="group" aria-label="Edge treatment">
-          <For each={EDGE_TREATMENTS}>
-            {(e) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().edge === e}
-                onClick={() => patch({ edge: e })}
-              >
-                {EDGE_LABELS[e].toLowerCase()}
-              </button>
-            )}
-          </For>
-        </div>
+        <CuratedChips
+          axis="edge"
+          label="Edge treatment"
+          options={CURATED_ROWS.edge.chips}
+          activeId={style().edge}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        />
       </section>
 
       {/* --------------------------- size & format ------------------------- */}
@@ -1241,20 +1442,13 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           format <em class="nb-panel-row-hint">{Math.round(style().height)}px tall</em>
           <RerollDice section="format" onClick={() => reroll(REROLL_GROUPS.format)} />
         </h3>
-        <div class="nb-chip-row" role="group" aria-label="Book format">
-          <For each={SPINE_FORMAT_IDS}>
-            {(f: SpineFormat) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().format === f}
-                onClick={() => patch({ format: f, height: heightForFormat(f) })}
-              >
-                {String(SPINE_FORMATS[f]?.label ?? f).toLowerCase()}
-              </button>
-            )}
-          </For>
-        </div>
+        <CuratedChips
+          axis="format"
+          label="Book format"
+          options={CURATED_ROWS.format.chips}
+          activeId={style().format}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        />
         {/*
           The case's answer, printed where the height was asked for.
 
@@ -1310,21 +1504,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           charm
           <RerollDice section="charm" onClick={() => reroll(REROLL_GROUPS.charm)} />
         </h3>
-        <div class="nb-chip-grid" role="group" aria-label="Charm">
-          <For each={CHARMS}>
-            {(c) => (
-              <button
-                type="button"
-                class="nb-chip"
-                classList={{ 'nb-chip-ghost': c === 'none' }}
-                aria-pressed={style().charm === c}
-                onClick={() => patch({ charm: c })}
-              >
-                {CHARM_LABELS[c].toLowerCase()}
-              </button>
-            )}
-          </For>
-        </div>
+        <CuratedChips
+          grid
+          axis="charm"
+          label="Charm"
+          options={CURATED_ROWS.charm.chips}
+          activeId={style().charm}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        />
         <Show when={style().charm !== 'none'}>
           <div
             class="nb-swatch-grid nb-swatch-grid-charm"
@@ -1402,40 +1589,29 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           cover
           <RerollDice section="cover" onClick={() => reroll(REROLL_GROUPS.cover)} />
         </h3>
-        <div class="nb-chip-row" role="group" aria-label="Cover frame">
-          <For each={['rules', 'corners', 'scallop', 'stitch']}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().coverFrame === i()}
-                onClick={() => {
-                  setFace('cover');
-                  patch({ coverFrame: i() });
-                }}
-              >
-                {name}
-              </button>
-            )}
-          </For>
-        </div>
-        <div class="nb-chip-grid" role="group" aria-label="Cover medallion">
-          <For each={['diamond', 'laurel', 'star', 'flower', 'chevron', 'sun', 'moon', 'keyhole']}>
-            {(name, i) => (
-              <button
-                type="button"
-                class="nb-chip"
-                aria-pressed={style().coverMedallion === i()}
-                onClick={() => {
-                  setFace('cover');
-                  patch({ coverMedallion: i() });
-                }}
-              >
-                {name}
-              </button>
-            )}
-          </For>
-        </div>
+        <CuratedChips
+          axis="cover-frame"
+          label="Cover frame"
+          options={CURATED_ROWS['cover-frame'].chips}
+          activeId={String(style().coverFrame)}
+          onPick={(chip) => {
+            // Turn the preview over first: a cover knob that moves nothing the
+            // reader can see reads as a dead chip.
+            setFace('cover');
+            patch(chip.sets as Partial<BookStyle>);
+          }}
+        />
+        <CuratedChips
+          grid
+          axis="cover-medallion"
+          label="Cover medallion"
+          options={CURATED_ROWS['cover-medallion'].chips}
+          activeId={String(style().coverMedallion)}
+          onPick={(chip) => {
+            setFace('cover');
+            patch(chip.sets as Partial<BookStyle>);
+          }}
+        />
         <div class="nb-chip-row">
           <button
             type="button"

@@ -168,6 +168,10 @@
 }
 
 .nb-cat-item {
+  /* The star plate a curated shelf hangs on this tile is `position: fixed`'s
+     opposite number — absolute, in curation.css — and without a positioned
+     ancestor here it would flee to the panel's own corner. */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -228,6 +232,13 @@
   width: 28px;
   height: 24px;
   border-radius: var(--radius-sm);
+}
+
+/* A doodle tile is pencil linework rather than a sticker's flat shapes, so it
+   is drawn in the same graphite the margins use — `stroke: currentColor` in
+   doodles.ts, coloured here. */
+.nb-cat-doodle {
+  color: var(--ink-graphite-soft);
 }
 
 .nb-cat-glyph[data-tint='amber'] { background: var(--wash-amber-light); }

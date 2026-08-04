@@ -21,6 +21,10 @@
  * Its relationship with the pagination contract — where it is anchored in the
  * document and why the carry cannot take it — is written down once, in
  * `src/editor/effects/freePlacement.ts`. Read that before moving anything here.
+ *
+ * A sticker is no longer the only thing in the free layer: `./pageMark.tsx` put
+ * tape, washi, frames, paper and doodles there too. What the two share — finding
+ * the layer, the drag maths, the puck's glyphs — lives in `./freeMark.tsx`.
  */
 import { Node, mergeAttributes } from '@tiptap/core';
 import { For, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
@@ -35,6 +39,18 @@ import {
   isStickerPlacement,
   type StickerPlacement,
 } from '../effects/freePlacement';
+import {
+  GLYPH_AWAY,
+  GLYPH_BIGGER,
+  GLYPH_SMALLER,
+  GLYPH_TILT_LEFT,
+  GLYPH_TILT_RIGHT,
+  GLYPH_UNPIN,
+  PuckGlyph,
+  useFreeLayer,
+  useMarkDrag,
+  type PuckButton,
+} from './freeMark';
 import { isStickerId, stickerSvg, type StickerId } from './stickers';
 
 export interface StickerAttributes {
@@ -85,46 +101,7 @@ function clampRotate(value: unknown): number {
  *                              the little puck                               *
  * ========================================================================== */
 
-/**
- * The controls a free sticker offers once you have picked it up: two sizes,
- * two tilts, "back into the text", and away.
- *
- * Drawn here rather than borrowed from `rail/icons.tsx` because that file is
- * the RAIL's vocabulary at 24px and these are 14px marks on a 22px button —
- * same idiom (one ink, round caps, a slightly drunken line), own scale.
- */
-const PUCK_STROKE = {
-  fill: 'none',
-  stroke: 'currentColor',
-  'stroke-width': 1.9,
-  'stroke-linecap': 'round',
-  'stroke-linejoin': 'round',
-} as const;
-
-function PuckGlyph(props: { d: string }): JSX.Element {
-  return (
-    <svg viewBox="0 0 16 16" class="nb-free-puck-glyph" aria-hidden="true">
-      <path d={props.d} {...PUCK_STROKE} />
-    </svg>
-  );
-}
-
-const GLYPH_BIGGER = 'M 8.1 3.2 C 8 6.4 8 9.6 7.9 12.8 M 3.2 8 C 6.4 7.9 9.6 7.9 12.8 8';
-const GLYPH_SMALLER = 'M 3.2 8.1 C 6.4 7.9 9.6 7.9 12.8 8';
-const GLYPH_TILT_LEFT =
-  'M 11.6 4.2 C 8.4 4 5.6 5.4 4.2 8.1 M 4.1 8.2 C 4.9 7.4 5.9 6.9 7 6.6 M 4.2 8.2 C 4.6 9.3 5 10.4 5.6 11.4';
-const GLYPH_TILT_RIGHT =
-  'M 4.4 4.2 C 7.6 4 10.4 5.4 11.8 8.1 M 11.9 8.2 C 11.1 7.4 10.1 6.9 9 6.6 M 11.8 8.2 C 11.4 9.3 11 10.4 10.4 11.4';
-const GLYPH_UNPIN =
-  'M 3.1 12.9 C 5.3 10.7 7.4 8.5 9.6 6.4 M 7.2 3.4 C 9 3.1 10.8 3.1 12.6 3.4 C 12.9 5.2 12.9 7 12.6 8.8';
-const GLYPH_AWAY = 'M 4.2 4.4 C 6.5 6.8 9.2 9.4 11.7 11.8 M 11.8 4.3 C 9.3 6.8 6.7 9.4 4.3 11.8';
-
-interface PuckButton {
-  readonly id: string;
-  readonly label: string;
-  readonly glyph: string;
-}
-
+/** Two sizes, two tilts, "back into the text", and away. */
 const PUCK_BUTTONS: readonly PuckButton[] = [
   { id: 'smaller', label: 'Smaller', glyph: GLYPH_SMALLER },
   { id: 'bigger', label: 'Bigger', glyph: GLYPH_BIGGER },
@@ -154,46 +131,14 @@ function StickerView(props: SolidNodeViewProps): JSX.Element {
 
   /* ------------------------------ the leaf ------------------------------- */
 
-  /**
-   * The layer this sticker paints into: `.nb-free-layer`, a child of the leaf
-   * `BookView` renders. Resolved off the EDITOR's dom rather than our own,
-   * because ProseMirror has not inserted this node's element yet at the moment
-   * the view is built — and retried across a few frames, because on the very
-   * first mount of a leaf the editor element itself is a frame behind.
-   *
-   * A null layer is not a failure: an editor mounted somewhere with no leaf
-   * around it (a template preview) simply keeps the sticker inline, which is
-   * a sticker in the wrong place rather than a sticker that vanished.
-   */
-  const [layer, setLayer] = createSignal<HTMLElement | null>(null);
-  onMount(() => {
-    let frame = 0;
-    const look = (tries: number): void => {
-      const dom: unknown = props.editor.view.dom;
-      const leaf =
-        dom instanceof HTMLElement ? dom.closest('.nb-sheet-paper') : null;
-      const found = leaf?.querySelector<HTMLElement>(':scope > .nb-free-layer');
-      if (found) {
-        setLayer(found);
-        return;
-      }
-      if (tries > 0) frame = requestAnimationFrame(() => look(tries - 1));
-    };
-    look(24);
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  const layer = useFreeLayer(props);
 
   const free = (): boolean => placement() === 'free' && layer() !== null;
 
   /* ------------------------------ picking up ------------------------------ */
 
-  /** Live position while the pointer has hold of it (attrs commit on release). */
-  const [dragAt, setDragAt] = createSignal<{ x: number; y: number } | null>(null);
   /** Picked up: the puck is out and the sticker sits above its neighbours. */
   const [held, setHeld] = createSignal(false);
-
-  const x = (): number => dragAt()?.x ?? attrX();
-  const y = (): number => dragAt()?.y ?? attrY();
 
   let markEl: HTMLDivElement | undefined;
 
@@ -209,41 +154,17 @@ function StickerView(props: SolidNodeViewProps): JSX.Element {
   const layerBox = (): DOMRect | null =>
     markEl?.closest('.nb-free-layer')?.getBoundingClientRect() ?? null;
 
-  const beginDrag = (event: PointerEvent): void => {
-    if (event.button !== 0) return;
-    const rect = layerBox();
-    if (!rect || rect.width === 0 || rect.height === 0) return;
-    // The leaf is the editor's; a pointer press on a sticker must not put the
-    // caret under it, or every pick-up would also scroll the page to a caret.
-    event.preventDefault();
-    event.stopPropagation();
-    setHeld(true);
+  const drag = useMarkDrag({
+    box: layerBox,
+    from: () => ({ x: x(), y: y() }),
+    clamp: clampPlacePct,
+    onHold: () => setHeld(true),
+    commit: (at) => props.updateAttributes({ x: at.x, y: at.y }),
+  });
+  const beginDrag = drag.begin;
 
-    const from = { px: event.clientX, py: event.clientY, x: x(), y: y() };
-    let moved = false;
-
-    const onMove = (move: PointerEvent): void => {
-      const dx = move.clientX - from.px;
-      const dy = move.clientY - from.py;
-      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      if (!moved) return;
-      setDragAt({
-        x: clampPlacePct(from.x + (dx / rect.width) * 100),
-        y: clampPlacePct(from.y + (dy / rect.height) * 100),
-      });
-    };
-    const onUp = (): void => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      const landed = dragAt();
-      setDragAt(null);
-      if (landed && moved) props.updateAttributes({ x: landed.x, y: landed.y });
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-  };
+  const x = (): number => drag.at()?.x ?? attrX();
+  const y = (): number => drag.at()?.y ?? attrY();
 
   /** Is this press inside the mark's own box (the puck hangs outside it)? */
   const pointInMark = (event: PointerEvent): boolean => {
@@ -368,7 +289,7 @@ function StickerView(props: SolidNodeViewProps): JSX.Element {
         <Portal mount={layer() ?? undefined}>
           <div
             class="nb-free-sticker"
-            classList={{ 'is-held': held(), 'is-dragging': dragAt() !== null }}
+            classList={{ 'is-held': held(), 'is-dragging': drag.at() !== null }}
             data-sticker={stickerId()}
             ref={(el) => (markEl = el)}
             style={{

@@ -2,11 +2,14 @@
  * Pagination mechanics — pure overflow math for the paginated PageEditor.
  *
  * Contract (shared with BookView): when `paginated`, PageEditor measures the
- * prose root after each transaction; while its scrollHeight exceeds
+ * prose root after each transaction; while its content exceeds
  * `pageCapacityPx` AND more than one top-level block exists, trailing blocks
  * are removed (one transaction, addToHistory: false) and handed to
  * `onOverflow(removedBlocksJson, cursorCarried)` so BookView can prepend them
- * to the next page. The math here is DOM-free so it unit-tests in Node.
+ * to the next page. When there are NOT two blocks to work with, the one that
+ * is left is cut at its last line above the fold instead (`contentOverflows`
+ * below, `PageEditor.splitOverflowingBlock`) and the drain carries the tail on
+ * its next pass. The math here is DOM-free so it unit-tests in Node.
  */
 
 /**
@@ -41,6 +44,42 @@ export function trailingOverflowCount(
     keep -= 1;
   }
   return count - keep;
+}
+
+/**
+ * Does the page's content still stand taller than the capacity?
+ *
+ * The drain asks this in exactly one place: straight after
+ * `trailingOverflowCount` has returned 0. Those two answers together mean one
+ * thing and only one thing — the single block left standing is, on its own,
+ * taller than the paper. (With two or more blocks a count of 0 has already
+ * said the last bottom fits, and this is the same comparison, so it cannot
+ * then be true. With one block the count is 0 by rule rather than by fit.)
+ *
+ * That case had no move at all, and it was not a corner: the prose root is
+ * `overflow: hidden` under the no-scrollbars rule, so ONE paragraph longer
+ * than a page — about a hundred and ten words at the default line height —
+ * ran off the bottom of the paper and stayed there. The reader carried on
+ * typing text they could not see, with their own caret off the page and no
+ * scrollbar, no hint and no way back to it. `PageEditor`'s
+ * `splitOverflowingBlock` is the answer this predicate turns on.
+ *
+ * Same argument shape as `trailingOverflowCount`: the kept content's bottom
+ * plus the padding that survives it, against the capacity.
+ */
+export function contentOverflows(
+  blockBottoms: readonly number[],
+  capacityPx: number,
+  paddingBottomPx: number,
+): boolean {
+  const last = blockBottoms[blockBottoms.length - 1];
+  if (last === undefined || !Number.isFinite(last)) return false;
+  if (!Number.isFinite(capacityPx) || capacityPx <= 0) return false;
+  const padding =
+    Number.isFinite(paddingBottomPx) && paddingBottomPx > 0
+      ? paddingBottomPx
+      : 0;
+  return last + padding > capacityPx;
 }
 
 /**

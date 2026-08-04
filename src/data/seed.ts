@@ -595,31 +595,31 @@ Now go and write something of your own.
  * old tour) but it is still wrong.
  */
 export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
-  // Page 1 â€” what Alcove is + how to get around
+  // Page 1 — what Alcove is + how to get around
   `---
 paper: cream
 wash: amber
 ---
 
-# Welcome to Alcove âœŽ {sticker=star}
+# Welcome to Alcove ✎ {sticker=star}
 
-This is your **library**. Every book on the shelf opens into pages like this one â€” ==real, editable pages=={color=amber}, not a demo.
+This is your **library**. Every book on the shelf opens into pages like this one — ==real, editable pages=={color=amber}, not a demo.
 
 ::: callout {variant=tip}
 Click anywhere below the ink and just start typing. Everything autosaves as you write.
 :::
 
-- The **shelf** goes on forever â€” drag to pan, scroll to zoom
+- The **shelf** goes on forever — drag to pan, scroll to zoom
 - **Click a spine** and the book comes off the shelf and opens. Wrong one? Press \`Esc\` and it goes back
 - Use the **arrow keys** to flip through a book's pages
 
-> Flip to the next page to meet the editor â†’ {washi=top}
+> Flip to the next page to meet the editor → {washi=top}
 `,
 
-  // Page 2 â€” writing + slash commands
+  // Page 2 — writing + slash commands
   `# Writing {sticker=book}
 
-Write like in any notes app â€” then press \`/\` on an empty line to open the **slash menu**: headings, lists, tables, callouts, stickers, diagramsâ€¦
+Write like in any notes app — then press \`/\` on an empty line to open the **slash menu**: headings, lists, tables, callouts, stickers, diagrams…
 
 ## Try it
 
@@ -630,14 +630,14 @@ Write like in any notes app â€” then press \`/\` on an empty line to open t
 Inline styles: **bold**, *italic*, \`code\`, ~~strikethrough~~, ==highlight=={color=lemon}, and ==colored washes=={color=sky}.
 
 ::: sticky-note {color=lemon, rotate=-2}
-Sticky notes are blocks too â€” pick me up and move me anywhere!
+Sticky notes are blocks too — pick me up and move me anywhere!
 :::
 `,
 
-  // Page 3 â€” stickers & effects showcase
+  // Page 3 — stickers & effects showcase
   `# Make it yours {sticker=flower}
 
-Blocks can wear decorations â€” stickers, tape, washi strips, a little tiltâ€¦
+Blocks can wear decorations — stickers, tape, washi strips, a little tilt…
 
 ::: columns {gap=lg}
 ::: col
@@ -657,13 +657,13 @@ Banners announce things loudly.
 :::
 
 ::: spoiler
-Hidden until you peek â€” great for quiz answers.
+Hidden until you peek — great for quiz answers.
 :::
 
 Highlights come in seven washes: ==amber=={color=amber}, ==moss=={color=moss}, ==sky=={color=sky}, ==blush=={color=blush}, ==terracotta=={color=terracotta}.
 `,
 
-  // Page 4 â€” diagram example
+  // Page 4 — diagram example
   `# Diagrams {sticker=microscope}
 
 Fenced mini-languages render as hand-drawn diagrams. A \`tree\`:
@@ -687,21 +687,21 @@ And a \`timeline\`:
 \`\`\`
 `,
 
-  // Page 5 â€” the AI-script workflow + closing hint
+  // Page 5 — the AI-script workflow + closing hint
   `# Your AI can write pages {sticker=sparkle}
 
-Every page in this book was written in **Notebook Script** â€” a forgiving Markdown dialect any AI assistant can produce.
+Every page in this book was written in **Notebook Script** — a forgiving Markdown dialect any AI assistant can produce.
 
 1. Open any page and click **Insert script** in the toolbar
 2. Click **Copy AI spec** and paste the spec into your AI chat
-3. Ask it to write a page â€” paste its reply into the dialog and insert
+3. Ask it to write a page — paste its reply into the dialog and insert
 
 ::: callout {variant=info}
 The parser is tolerant: small syntax slips still render, with gentle warnings instead of errors.
 :::
 
 ::: callout {variant=star}
-This very page has script source attached â€” try **Export script** to read it.
+This very page has script source attached — try **Export script** to read it.
 :::
 
 Happy writing! {sticker=heart}

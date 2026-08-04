@@ -904,9 +904,13 @@ agents reported honestly, plus the seams between them that I closed by hand.
       length the READER decides. `8cba847`
 - [x] **Bookmarks want customising** — a wide variety, like the other axes.
       It is a real vocabulary now, in `src/views/bookmarks.ts`: ribbon
-      materials, cloths, weights, tails and charms composed into 400 presets
-      across named families, offered through the rail's Ribbons panel with the
-      same strip-plus-"N more" pattern every other axis uses.
+      materials, cloths, weights, tails and charms composed into **40** presets
+      across 8 named families (5 each), offered through the rail's Ribbons panel
+      with the same strip-plus-"N more" pattern every other axis uses.
+      *(This said 400 for a long time — off by a factor of ten. `RIBBON_PRESETS`
+      holds 40 `preset(...)` rows and `RIBBON_FAMILIES` holds 8, which is what
+      the drawer renders. 40 is still in the range the other axes sit in, so the
+      vocabulary is fine and only the number written here was wrong.)*
 - [x] **"Leave focus mode" sits top-right; it belongs top-left.** Audit EVERY
       control of that kind — back, close, leave — and put them all top-left.
       `tests/top-left-exits.test.ts` is the mechanical sweep (it fails any

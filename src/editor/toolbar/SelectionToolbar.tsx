@@ -12,6 +12,7 @@
 import { For, Show, onMount, type JSX } from 'solid-js';
 import {
   HIGHLIGHT_STYLES,
+  HIGHLIGHT_STYLE_LABELS,
   HIGHLIGHT_WASHES,
   SELECTION_ACTIONS,
   type HighlightStyle,
@@ -22,11 +23,9 @@ import {
   type SelectionTray,
 } from './actions';
 
-const HIGHLIGHT_STYLE_LABELS: Record<HighlightStyle, { title: string; glyph: string }> = {
-  marker: { title: 'Marker sweep', glyph: '▰' },
-  squiggle: { title: 'Squiggle underline', glyph: '﹏' },
-  circle: { title: 'Circle scribble', glyph: '◯' },
-};
+// The tray's row names come from the same table the right-click menu reads
+// (`editor/highlightStyles.ts`); a second copy here is how one surface ended
+// up able to rename a style without the other noticing.
 
 /** A tilted chisel marker over its own swipe. */
 function HighlightIcon(): JSX.Element {

@@ -94,11 +94,13 @@ import {
   type FocusLevel,
 } from './rail/focusLevels';
 import {
-  armedSticker,
-  disarmSticker,
+  armedMark,
+  armedMarkLabel,
+  disarmMark,
   freeStickerNode,
+  pageMarkNode,
   pointToPagePct,
-  splitFreeStickers,
+  splitFreeMarks,
 } from '../editor/effects/freePlacement';
 import ThumbStrip from './ThumbStrip';
 import {
@@ -663,13 +665,14 @@ export default function BookView(): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
-  // Free-placed stickers (see src/editor/effects/freePlacement.ts for the
-  // contract this upholds — in one line: a free sticker belongs to the PAGE,
-  // and the pagination carry may never take it anywhere).
+  // Free-placed marks — stickers, and the trim the reader put on the page
+  // itself (see src/editor/effects/freePlacement.ts for the contract this
+  // upholds — in one line: a free mark belongs to the PAGE, and the pagination
+  // carry may never take it anywhere).
   // -------------------------------------------------------------------------
 
   /**
-   * Where a free sticker is anchored: just inside the page's first block.
+   * Where a free mark is anchored: just inside the page's first block.
    *
    * That is the one position on a page the overflow drain provably cannot
    * reach — `trailingOverflowCount` removes trailing blocks and always leaves
@@ -687,14 +690,14 @@ export default function BookView(): JSX.Element {
   };
 
   /**
-   * Put free-placed stickers back on the page they were placed on.
+   * Put free-placed marks back on the page they were placed on.
    *
-   * Called on every carry with whatever `splitFreeStickers` found in the
-   * blocks on their way out. Dispatched with `addToHistory: false` for the
-   * same reason the drain itself is: a page break is not an edit the reader
-   * made, and one Ctrl+Z should never half-undo one.
+   * Called on every carry with whatever `splitFreeMarks` found in the blocks on
+   * their way out. Dispatched with `addToHistory: false` for the same reason
+   * the drain itself is: a page break is not an edit the reader made, and one
+   * Ctrl+Z should never half-undo one.
    */
-  const anchorFreeStickers = (
+  const anchorFreeMarks = (
     pageId: string,
     nodes: readonly Record<string, unknown>[],
   ): void => {
@@ -709,8 +712,8 @@ export default function BookView(): JSX.Element {
           tr.insert(at, editor.schema.nodeFromJSON(json));
           inserted = true;
         } catch {
-          // A sticker id the schema no longer knows: dropping it quietly is
-          // better than throwing inside a page break.
+          // A sticker id or a trim value the schema no longer knows: dropping
+          // it quietly is better than throwing inside a page break.
         }
       }
       if (inserted) editor.view.dispatch(tr.setMeta('addToHistory', false));
@@ -726,14 +729,14 @@ export default function BookView(): JSX.Element {
     const slot = pages().findIndex((page) => page.id === pageId);
     if (slot < 0) return;
 
-    // A free-placed sticker belongs to the PAGE, not to the paragraph it was
-    // anchored in — so the blocks travel and the stickers stay. This is the
+    // A free-placed mark belongs to the PAGE, not to the paragraph it was
+    // anchored in — so the blocks travel and the marks stay. This is the
     // second half of the contract in effects/freePlacement.ts (the first is
     // the anchor position, which the drain provably cannot reach; this catches
     // the case where an earlier carry PREPENDED enough to push that anchor
     // into the tail).
-    const { kept, freed } = splitFreeStickers(blocks);
-    anchorFreeStickers(pageId, freed);
+    const { kept, freed } = splitFreeMarks(blocks);
+    anchorFreeMarks(pageId, freed);
 
     let next: Page | null = pages()[slot + 1] ?? null;
     if (!next) {
@@ -1012,12 +1015,12 @@ export default function BookView(): JSX.Element {
     // Deliberately before the defaultPrevented guard: ProseMirror eats Escape
     // while the caret is in a page, which is exactly when you want the door.
     if (event.key === 'Escape' && !focusMode()) showBack(BACK_LINGER_MS);
-    // Escape also disarms a sticker waiting for somewhere to land — before the
+    // Escape also disarms a mark waiting for somewhere to land — before the
     // defaultPrevented guard for the same reason as everything else here: the
     // caret is usually in a page, and ProseMirror eats its own Escape.
-    if (event.key === 'Escape' && armedSticker() !== null) {
+    if (event.key === 'Escape' && armedMark() !== null) {
       event.preventDefault();
-      disarmSticker();
+      disarmMark();
       return;
     }
     if (event.defaultPrevented || insertOpen()) return;
@@ -1505,47 +1508,51 @@ export default function BookView(): JSX.Element {
   };
 
   /**
-   * Drop the armed sticker where the reader clicked.
+   * Drop the armed mark where the reader clicked.
    *
    * The catalogue arms one (`effects/freePlacement.ts`); this is the other
    * half — *"click on it and put it anywhere on the page, not caring about
    * where lines are"*. The x/y are a percentage of the LEAF's own box, so the
-   * sticker keeps its place when the window resizes or the reader zooms.
+   * mark keeps its place when the window resizes or the reader zooms; a trim
+   * mark's w/h are percentages for the same reason.
+   *
+   * One function for both kinds because both answer the same click and both
+   * land in the same place in the document — the only thing that differs is
+   * which node JSON gets built.
    *
    * Bare paper answers too, by becoming a page first: a leaf you can stick a
    * sticker on but not write on would be a strange thing to hand anyone.
    */
-  const placeArmedSticker = async (
+  const placeArmedMark = async (
     side: LeafSide,
     at: { x: number; y: number },
   ): Promise<void> => {
-    const stickerId = armedSticker();
-    if (stickerId === null) return;
-    disarmSticker();
+    const mark = armedMark();
+    if (mark === null) return;
+    disarmMark();
     const slot = leftSlot(spreadIndex()) + (side === 'right' ? 1 : 0);
     while (pages().length <= slot) {
       if (!(await appendPage())) return;
     }
     const target = pageAt(slot);
     if (!target) return;
+    const json =
+      mark.kind === 'sticker'
+        ? freeStickerNode({ stickerId: mark.stickerId, x: at.x, y: at.y })
+        : pageMarkNode({ fx: mark.fx, value: mark.value, x: at.x, y: at.y });
     withPageEditor(target.id, (editor) => {
       const pos = freeAnchorPos(editor.state.doc);
       if (pos === null) return;
       editor.view.dispatch(
-        editor.state.tr.insert(
-          pos,
-          editor.schema.nodeFromJSON(
-            freeStickerNode({ stickerId, x: at.x, y: at.y }),
-          ),
-        ),
+        editor.state.tr.insert(pos, editor.schema.nodeFromJSON(json)),
       );
     });
     void play('pop-soft');
-    notify(`${stickerId} stuck to this page — drag it wherever you like`);
+    notify(`${armedMarkLabel(mark)} stuck to this page — drag it wherever you like`);
   };
 
   /**
-   * The armed sticker's click is taken in the CAPTURE phase on the leaf.
+   * The armed mark's click is taken in the CAPTURE phase on the leaf.
    *
    * A bubble-phase handler would fire after ProseMirror had already moved the
    * caret to wherever the reader pressed, which is exactly the "where the
@@ -1553,15 +1560,15 @@ export default function BookView(): JSX.Element {
    */
   const armLeafCapture = (el: HTMLElement, side: LeafSide): void => {
     const onDown = (event: PointerEvent): void => {
-      if (armedSticker() === null) return;
+      if (armedMark() === null) return;
       event.preventDefault();
       event.stopPropagation();
       // Measured off the LAYER, not off the paper: that is the box the mark's
       // own `left`/`top` percentages resolve against and the box its drag math
-      // reads, so the sticker lands exactly under the pointer even if the two
+      // reads, so the mark lands exactly under the pointer even if the two
       // boxes ever stop coinciding.
       const layer = el.querySelector('.nb-free-layer') ?? el;
-      void placeArmedSticker(
+      void placeArmedMark(
         side,
         pointToPagePct(layer.getBoundingClientRect(), event.clientX, event.clientY),
       );
@@ -1583,15 +1590,16 @@ export default function BookView(): JSX.Element {
       onFocusIn={() => setFocusedSide(side)}
     >
       {/*
-        The layer free-placed stickers paint into — a child of the leaf, so it
+        The layer free-placed marks paint into — a child of the leaf, so it
         travels with the page into the flip snapshots and clips at the paper's
-        own edge. The sticker node views portal into it (see
-        editor/nodes/sticker.tsx); nothing else may render here.
+        own edge. Two node views portal into it, the sticker
+        (editor/nodes/sticker.tsx) and the trim mark (editor/nodes/pageMark.tsx);
+        nothing else may render here.
       */}
       <div
         class="nb-free-layer"
         role="group"
-        aria-label="Stickers placed on this page"
+        aria-label="Stickers and trim placed on this page"
       />
       <Show
         when={leafKey(page())}
@@ -1638,7 +1646,7 @@ export default function BookView(): JSX.Element {
       classList={{
         'is-focus-mode': focusMode(),
         'is-zoomed': focusMode() && focusZoom() !== ZOOM_REST,
-        'is-placing': armedSticker() !== null,
+        'is-placing': armedMark() !== null,
       }}
       data-focus-mode={focusMode() ? 'true' : 'false'}
       /* The rung, for CSS and for anything measuring the mode from outside.
@@ -1952,18 +1960,19 @@ export default function BookView(): JSX.Element {
           '?' a book-only key. It is mounted at the app root now (App.tsx →
           CheatSheetHost) so the shelf can answer it too. */}
 
-      {/* A sticker is waiting for somewhere to land. It says so, and it says
-          how to change its mind — an armed cursor with no way out is a trap. */}
-      <Show when={armedSticker()} keyed>
-        {(stickerId) => (
+      {/* A sticker or a piece of trim is waiting for somewhere to land. It says
+          so, and it says how to change its mind — an armed cursor with no way
+          out is a trap. */}
+      <Show when={armedMark()} keyed>
+        {(mark) => (
           <div class="nb-place-hint" role="status" aria-live="polite">
             <span class="nb-place-hint-text font-ui">
-              click anywhere on a page to stick the {stickerId} there
+              click anywhere on a page to stick the {armedMarkLabel(mark)} there
             </span>
             <button
               type="button"
               class="nb-place-hint-stop font-ui"
-              onClick={() => disarmSticker()}
+              onClick={() => disarmMark()}
             >
               never mind <kbd>Esc</kbd>
             </button>

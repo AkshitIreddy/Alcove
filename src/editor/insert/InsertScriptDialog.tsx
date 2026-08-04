@@ -23,6 +23,7 @@ import {
 import { For } from 'solid-js';
 import { parse, type Diag, type ScriptDoc } from '../../script';
 import { getPage, savePageDoc, setPageScript } from '../../data/pages';
+import { usePanelKeys } from '../../state/panelKeys';
 import { scriptDocToTiptap } from '../script/toTiptap';
 import { NOTEBOOK_SCRIPT_SPEC } from '../script/spec';
 import { activeEditor } from './activeEditor';
@@ -55,6 +56,11 @@ export default function InsertScriptDialog(
 
   let textareaElement: HTMLTextAreaElement | undefined;
   let parseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Mounted only while it is up (BookView's <Show>). The shelf is not behind
+  // this one, but the rule is the rule: every dialog says the keys are its own,
+  // so nobody has to work out which scene a dialog can be reached from.
+  usePanelKeys();
 
   const scheduleParse = (value: string): void => {
     if (parseTimer !== undefined) clearTimeout(parseTimer);

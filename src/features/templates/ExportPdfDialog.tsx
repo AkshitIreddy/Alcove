@@ -13,6 +13,7 @@ import {
   exportActivePagePdf,
   exportOpenBookPdf,
 } from '../../editor/script/exporters/exportPage';
+import { usePanelKeys } from '../../state/panelKeys';
 import '../../styles/insert.css';
 import '../../styles/templates.css';
 
@@ -22,6 +23,11 @@ interface ExportPdfDialogProps {
 
 export function ExportPdfDialog(props: ExportPdfDialogProps): JSX.Element {
   const [busy, setBusy] = createSignal<'page' | 'book' | null>(null);
+
+  // Mounted only while up (`openExportPdfDialog` disposes the host). Every
+  // dialog claims the keyboard, so no reader of this file has to work out which
+  // scene it can appear over — see state/panelKeys.ts.
+  usePanelKeys();
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && busy() === null) props.onClose();

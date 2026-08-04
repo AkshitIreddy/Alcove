@@ -205,12 +205,12 @@ export function Capped<T>(props: CappedProps<T>): JSX.Element {
  * ========================================================================== */
 
 /** The gilt plate a starred entry wears. A span, so it can sit in a button. */
-export function StarMark(props: { stars: Stars }): JSX.Element {
+export function StarMark(props: { stars: Stars; inline?: boolean }): JSX.Element {
   return (
     <Show when={props.stars > 0}>
       <span
         class="nb-mark"
-        classList={{ 'is-double': props.stars === 2 }}
+        classList={{ 'is-double': props.stars === 2, 'is-inline': props.inline === true }}
         aria-hidden="true"
       >
         {props.stars === 2 ? '★★' : '★'}
@@ -734,6 +734,118 @@ export function createCuration<T extends CurationRow = PickerOption>(
     onListContext: (event) => openMenu(event, null),
     Overlay,
   };
+}
+
+/* ========================================================================== *
+ *                      the same hand, on a row of paper chips                *
+ * ========================================================================== */
+
+/** A chip: something to key the curation by, and the word printed on it. */
+export interface ChipOption extends CurationRow {
+  /** Extra class on this one chip — the ghost a "none" wears. */
+  readonly chipClass?: string;
+}
+
+export interface CuratedChipsProps<T extends ChipOption> {
+  /**
+   * Which list this is, in the store's words. REQUIRED, unlike on the strip:
+   * a strip predates the mechanism and may legitimately opt out, whereas a row
+   * that reached for this component is asking for the mechanism, and a silent
+   * opt-out is the whole defect.
+   */
+  axis: CurationAxis;
+  /** The group's accessible name, and the word the restore drawer prints. */
+  label: string;
+  options: readonly T[];
+  /** The entry the reader is wearing, or '' when none of them is. */
+  activeId: string;
+  onPick(option: T): void;
+  /** Wrap into a grid rather than a single row. */
+  grid?: boolean;
+  /** Chips before the reveal control. Omit for a vocabulary that fits whole. */
+  limit?: number;
+  /** Anything in the group that is NOT one of the entries — an "as bound". */
+  children?: JSX.Element;
+}
+
+/**
+ * A row (or grid) of paper chips, with the reader's hand on it.
+ *
+ * The strip and the picker sheet were the only two lists a reader could
+ * curate, and most of the studio is not either of those — the coverings, the
+ * stamps, the plates, the formats, the charms and the cover fittings are all
+ * rows of little chips. Those are lists somebody wants to prune exactly as
+ * much as they want to prune the carpentry, and nine rows each growing their
+ * own right-click handler is nine copies of the thing `createCuration` exists
+ * to have one of.
+ *
+ * The markup is deliberately what those rows already had — `nb-chip-row` /
+ * `nb-chip-grid`, `role="group"`, `nb-chip` buttons whose text is the option's
+ * name — because e2e specs and probes address these rows by their group name
+ * and their chip class, and a component that "tidied" either would break them
+ * for no reader-visible gain.
+ */
+export function CuratedChips<T extends ChipOption>(props: CuratedChipsProps<T>): JSX.Element {
+  const curation = createCuration<T>(() => ({
+    axis: props.axis,
+    label: props.label,
+    options: props.options,
+    activeId: props.activeId,
+  }));
+
+  return (
+    <>
+      <div
+        class={props.grid === true ? 'nb-chip-grid' : 'nb-chip-row'}
+        role="group"
+        aria-label={props.label}
+        on:contextmenu={(event) => curation.onListContext(event)}
+      >
+        <Capped
+          each={curation.list()}
+          /* No cap unless the caller asks for one. These rows ship uncapped
+             and several probes count the chips in them; `Capped`'s own default
+             of twenty would silently shorten lists nobody asked to shorten. */
+          limit={props.limit ?? Number.MAX_SAFE_INTEGER}
+          label={props.label}
+          isActive={(option) => option.id === props.activeId}
+          moreClass="nb-chip nb-chip-ghost font-ui"
+          resetKey={props.axis}
+        >
+          {(option) => (
+            <button
+              type="button"
+              class={
+                option().chipClass === undefined
+                  ? 'nb-chip'
+                  : `nb-chip ${option().chipClass as string}`
+              }
+              aria-pressed={option().id === props.activeId}
+              /* Silent when nothing is starred, so an unstarred chip still
+                 announces exactly the word printed on it — which is what the
+                 e2e specs and the shelf's own tooltips address it by. */
+              aria-label={
+                curation.starsFor(option().id) === 0
+                  ? undefined
+                  : `${option().name}${starWords(curation.starsFor(option().id))}`
+              }
+              classList={{ 'nb-cur-gone': curation.removed(option().id) }}
+              onClick={() => props.onPick(option())}
+              on:contextmenu={(event) => curation.onEntryContext(event, option().id)}
+            >
+              {/* Inline, not over the art: a chip is a word on paper and a
+                  badge pinned to its corner would sit on the first letters of
+                  the very name it is promoting. */}
+              <StarMark inline stars={curation.starsFor(option().id)} />
+              {option().name}
+            </button>
+          )}
+        </Capped>
+        {props.children}
+      </div>
+      <curation.Overlay />
+    </>
+  );
 }
 
 /* ========================================================================== *

@@ -28,6 +28,7 @@ import { SPINE_BASE_HEIGHT } from '../../art/spines';
 import { resolveBookStyle, type BookStyle } from '../../art/bookStyle';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
+import { panelOwnsKeyboard } from '../../state/panelKeys';
 import {
   createBook,
   deleteBook,
@@ -558,10 +559,11 @@ export class ShelfWorld {
       // check every panel's keyboard also drove the shelf behind it — arrowing
       // a picker dragged the selection halo around, and Enter pulled a book
       // out and opened it on top of the open sheet. The studio roots stop the
-      // event themselves (`views/rail/shelfKeys.ts`); this covers the trash,
-      // the TOC, the sticker tray and everything added later, which is why it
-      // reads the state flag rather than a list of selectors.
-      const panelOpen = document.documentElement.dataset['nbPanel'] === 'open';
+      // event themselves (`views/rail/shelfKeys.ts`); this is what covers
+      // everything else, which is why it reads one state flag rather than a
+      // list of selectors. Every panel claims it — `state/panelKeys.ts`, and
+      // `tests/panel-keys.test.ts` fails on a new dialog that forgets to.
+      const panelOpen = panelOwnsKeyboard();
       // Wave-2 shelf nav (arrows/Enter/Home) + move-mode Escape.
       if (!editing && !panelOpen && this.handleNavKey(e.key)) {
         e.preventDefault();

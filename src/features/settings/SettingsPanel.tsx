@@ -37,6 +37,7 @@ import {
 import { DEFAULT_KEYBINDINGS } from '../../data/defaults';
 import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
+import { usePanelKeys } from '../../state/panelKeys';
 import { tween } from '../../styles/motion';
 import type { Settings } from '../../data/types';
 import {
@@ -85,6 +86,11 @@ import {
   type ImportReport,
 } from '../../sound/userSoundSetStore';
 import CursorSetPicker from './CursorSetPicker';
+// The reader's own hand on a list is ONE controller (`data/shelfOfMine.ts`),
+// and this dialog is a customer of it rather than a second implementation.
+import { StarMark, createCuration } from '../../views/rail/DesignStrip';
+import type { CurationRow } from '../../views/rail/DesignStrip';
+import type { CurationAxis } from '../../data/shelfOfMine';
 import { notify } from '../../editor/script/exporters/toast';
 import {
   activeSoundSetId,
@@ -157,7 +163,6 @@ import { codeLook, loadCodeLook, saveCodeLook } from './codeAppearancePrefs';
 import { replayTutorial } from '../tutorial';
 import { ensureTasteMounted } from '../tutorial/tasteMount';
 import { replayTaste } from '../tutorial/tasteStore';
-import PerfHud from '../system/PerfHud';
 
 /* ------------------------------- helpers ---------------------------------- */
 
@@ -822,9 +827,27 @@ function Slider(props: {
   );
 }
 
-/** Segmented pick rendered as little paper chips. */
+/**
+ * Segmented pick rendered as little paper chips.
+ *
+ * Name an `axis` and the reader's own hand arrives with it: their removals are
+ * taken out, their stars order what is left, right-clicking a chip offers both
+ * and right-clicking the row opens what they removed. Omit it and this is
+ * exactly the component it was — which is the same opt-in `DesignStrip` takes,
+ * and for the same reason: most rows here are three or four values (a theme, a
+ * hand) where "remove one" is not a thing anybody wants.
+ *
+ * The sound sets are the row that does want it. Twenty-eight rooms in seven
+ * characters is a list somebody scrolls, and it is offered from FOUR separate
+ * `Seg`s — the shortlist, the per-character rows, the reader's own sets, and
+ * the base a set of theirs is built on. All four pass the same word, so a set
+ * removed anywhere is removed everywhere, which is what an axis keyed by
+ * (list, entry id) buys over four hand-rolled filters.
+ */
 function Seg(props: {
   label: string;
+  /** Which list this is, in `shelfOfMine`'s words. Omit to opt out entirely. */
+  axis?: CurationAxis;
   /**
    * `ariaLabel` disambiguates a chip whose visible word is used by another
    * group in the same dialog — `night` is both a theme and a soundscape, and
@@ -844,9 +867,40 @@ function Seg(props: {
   value: string | number;
   onSelect: (value: string | number) => void;
 }): JSX.Element {
+  /*
+   * The rows this controller keys on. A `SegOption` calls its word `label` and
+   * its id `value`; `CurationRow` calls them `name` and `id`, and the id has to
+   * be a string because it is written into the reader's SQLite row. Translated
+   * here rather than by widening `CurationRow`, so the store keeps one shape.
+   */
+  const rows = (): readonly CurationRow[] =>
+    props.options.map((opt) => ({ id: String(opt.value), name: opt.label }));
+
+  const curation = createCuration<CurationRow>(() => ({
+    axis: props.axis,
+    label: props.label.toLowerCase(),
+    options: rows(),
+    activeId: String(props.value),
+  }));
+
+  /** Kept, in the reader's order — identity when no axis was named. */
+  const shown = (): readonly typeof props.options[number][] => {
+    if (props.axis === undefined) return props.options;
+    const at = new Map(curation.list().map((row, index) => [row.id, index]));
+    return props.options
+      .filter((opt) => at.has(String(opt.value)))
+      .sort((a, b) => (at.get(String(a.value)) ?? 0) - (at.get(String(b.value)) ?? 0));
+  };
+
   return (
-    <div class="nbs-seg" role="group" aria-label={props.label}>
-      <For each={props.options}>
+    <>
+    <div
+      class="nbs-seg"
+      role="group"
+      aria-label={props.label}
+      on:contextmenu={(event) => curation.onListContext(event)}
+    >
+      <For each={shown()}>
         {(opt) => (
           <button
             type="button"
@@ -854,6 +908,8 @@ function Seg(props: {
             aria-label={opt.ariaLabel}
             data-tooltip={opt.title}
             aria-pressed={props.value === opt.value}
+            classList={{ 'nb-cur-gone': curation.removed(String(opt.value)) }}
+            on:contextmenu={(event) => curation.onEntryContext(event, String(opt.value))}
             /* The face is set on the BUTTON rather than on a span inside it,
                so the chip's own padding grows with the letters — a wide face
                in a chip sized for Patrick Hand crops its own descenders.
@@ -896,11 +952,17 @@ function Seg(props: {
                 />
               )}
             </Show>
+            {/* Before the word, not over it: a chip here is one line of type
+                on a 22px scrap, and a corner plate would sit on the very name
+                it is promoting. Same call the studio's chip rows make. */}
+            <StarMark inline stars={curation.starsFor(String(opt.value))} />
             {opt.label}
           </button>
         )}
       </For>
     </div>
+    <curation.Overlay />
+    </>
   );
 }
 
@@ -1107,6 +1169,16 @@ export default function SettingsPanel(props: {
   let scrimRef: HTMLDivElement | undefined;
   let closeRef: HTMLButtonElement | undefined;
   let lastFocused: HTMLElement | null = null;
+
+  /*
+   * The sheet owns the keyboard while it is open — and only while it is open.
+   *
+   * `props.open`, not a bare claim, because this sheet LATCHES: once opened it
+   * stays mounted and parked off screen so a half-typed rebinding survives a
+   * close (see App.tsx). A claim that ignored `open` would have silenced the
+   * shelf's arrow keys for the rest of the session after one visit to the gear.
+   */
+  usePanelKeys(() => props.open);
 
   const inTauri = isTauri();
 
@@ -1767,9 +1839,12 @@ export default function SettingsPanel(props: {
 
   return (
     <div class="nbs-layer">
-      {/* Perf HUD lives in this always-mounted layer (gated by its setting),
-          so it needs no extra App.tsx wiring. */}
-      <PerfHud />
+      {/* The perf HUD used to live in this layer, on the argument that the
+          layer was always mounted so the HUD needed no App.tsx wiring. That
+          argument stopped being true when this sheet became a `lazy()` behind
+          the gear: a reader who turns the HUD on and relaunches would not see
+          it again until they opened settings. It is mounted from App.tsx now
+          — see the `<PerfHud />` line there. */}
       <div
         class="nbs-scrim"
         ref={scrimRef}
@@ -2050,6 +2125,7 @@ export default function SettingsPanel(props: {
             <Row label="sound set" hint={activeSetHint()} wide>
               <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                 <Seg
+                  axis="sound-set"
                   label="sound set"
                   options={shortlist().map(soundSetOption)}
                   value={activeSoundSetId()}
@@ -2083,6 +2159,7 @@ export default function SettingsPanel(props: {
                   >
                     <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                       <Seg
+                        axis="sound-set"
                         label={`${SOUND_SET_GROUPS[group].name} sound sets`}
                         options={SOUND_SET_GROUP_OPTIONS[group]}
                         value={activeSoundSetId()}
@@ -2108,6 +2185,7 @@ export default function SettingsPanel(props: {
             >
               <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                 <Seg
+                  axis="sound-set"
                   label="your own sound sets"
                   options={ownSetOptions()}
                   value={activeSoundSetId()}
@@ -2146,6 +2224,7 @@ export default function SettingsPanel(props: {
                 >
                   <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                     <Seg
+                      axis="sound-set"
                       label="base sound set"
                       options={baseOptions()}
                       value={own().base}
@@ -2188,6 +2267,7 @@ export default function SettingsPanel(props: {
                         >
                           <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                             <Seg
+                              axis="sound-set"
                               label={`${SOUND_SET_GROUPS[group].name} sets to build on`}
                               options={SOUND_SET_GROUP_OPTIONS[group]}
                               value={own().base}

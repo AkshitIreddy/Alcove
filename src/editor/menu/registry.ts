@@ -9,6 +9,7 @@
 import type { Editor } from '@tiptap/core';
 import {
   HIGHLIGHT_STYLES,
+  HIGHLIGHT_STYLE_LABELS,
   highlightAttrs,
   type HighlightStyle,
 } from '../highlightStyles';
@@ -210,13 +211,11 @@ const COLOR_ITEMS: readonly ContextMenuItem[] = [
   },
 ];
 
-/** Highlighter styles (roadmap #15) — labels for the style rows. */
-const HIGHLIGHT_STYLE_LABELS: Record<HighlightStyle, { title: string; glyph: string }> = {
-  marker: { title: 'Marker sweep', glyph: '▰' },
-  squiggle: { title: 'Squiggle underline', glyph: '﹏' },
-  circle: { title: 'Circle scribble', glyph: '◯' },
-};
-
+/*
+ * Highlighter styles (roadmap #15). The row names and glyphs come from
+ * `highlightStyles.ts` — the same module the list of styles comes from — so
+ * this menu and the selection toolbar cannot call the same style two things.
+ */
 const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
   ...HIGHLIGHT_WASHES.map(
     (wash): ContextMenuItem => ({

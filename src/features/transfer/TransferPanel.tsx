@@ -29,6 +29,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { appState } from '../../state/app';
+import { usePanelKeys } from '../../state/panelKeys';
 import { editorState } from '../../editor/state';
 import { notify } from '../../editor/script/exporters/toast';
 import { play } from '../../sound/engine';
@@ -1006,6 +1007,11 @@ export function TransferPanel(props: TransferPanelProps): JSX.Element {
     () => revision(),
     () => loadLibrarySnapshot(),
   );
+
+  // The parcel desk opens over whichever scene the reader was in, and on the
+  // shelf that scene answers arrows and Enter on `document`. Mounted only while
+  // open (`openTransferPanel` disposes the host), so no `open` accessor.
+  usePanelKeys();
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') props.onClose();

@@ -6,13 +6,40 @@
  * storage format, no parallel model.
  */
 import Document from '@tiptap/extension-document';
-import type { PageDoc } from '../data/types';
+import { PAGE_STYLES } from '../data/types';
+import type { PageDoc, PageStyle } from '../data/types';
 
-export const PAGE_STYLES = ['ruled', 'grid', 'blank', 'dotted'] as const;
-export type EditorPageStyle = (typeof PAGE_STYLES)[number];
+/*
+ * The rulings themselves live in `data/types.ts`, beside the `PageStyle` union
+ * the settings blob is validated against. A page's style is persisted in TWO
+ * shapes — a document attribute inside the doc JSON, and `pageStyleDefault` in
+ * the settings row — and a list of four ids typed out on each side is how one
+ * of them ends up accepting a ruling the other has never heard of.
+ */
+export { PAGE_STYLES };
+export type EditorPageStyle = PageStyle;
 
 export const DEFAULT_PAGE_STYLE: EditorPageStyle = 'ruled';
 export const DEFAULT_LINE_HEIGHT_PX = 32;
+
+/**
+ * The line heights a reader may CHOOSE, in px — the bounds of both sliders
+ * that offer them (the book studio's page-defaults row and the rail's page
+ * style panel). Each panel used to carry its own pair, so widening the range
+ * moved one slider and left the other short.
+ *
+ * Deliberately NARROWER than what `clampLineHeight` will accept below, and
+ * that gap is not drift: the clamp is what a stored or imported document is
+ * allowed to say, and it stays generous so a page written before these bounds
+ * — or by hand — loads at the height it was authored at instead of being
+ * quietly re-ruled. Offered range and accepted range are two facts.
+ */
+export const LINE_HEIGHT_MIN_PX = 26;
+export const LINE_HEIGHT_MAX_PX = 40;
+
+/** The widest a stored `lineHeightPx` may be before it is pulled back. */
+const STORED_LINE_HEIGHT_MIN_PX = 24;
+const STORED_LINE_HEIGHT_MAX_PX = 64;
 
 export function isPageStyle(value: unknown): value is EditorPageStyle {
   return (
@@ -23,7 +50,10 @@ export function isPageStyle(value: unknown): value is EditorPageStyle {
 function clampLineHeight(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_LINE_HEIGHT_PX;
-  return Math.min(64, Math.max(24, Math.round(parsed)));
+  return Math.min(
+    STORED_LINE_HEIGHT_MAX_PX,
+    Math.max(STORED_LINE_HEIGHT_MIN_PX, Math.round(parsed)),
+  );
 }
 
 export const NotebookDocument = Document.extend({

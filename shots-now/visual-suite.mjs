@@ -4,6 +4,12 @@
  *     npm run visual              compare against qa/baseline/**
  *     npm run visual -- --update  re-baseline
  *
+ * Those are the only two modes, and the split is the point: a comparison run
+ * NEVER writes a baseline. A case with no committed picture fails and drops its
+ * screenshot in the report folder to be looked at; `--update` is how a human
+ * says yes to it. A suite allowed to accept its own output agrees with the app
+ * by construction and is worth nothing.
+ *
  * ## Why this exists
  *
  * Every visual defect found in this tree was found by a human looking at a
@@ -95,12 +101,15 @@
  *                                   [--only=<substring>] [--list] [--keep-passes]
  *
  * `--only` matches the case name (`<size>-<room>-<surface>`) and selects what is
- * COMPARED, not what is walked: the scene still runs in order, because half
- * these surfaces are only reachable through the ones before them.
+ * COMPARED, not what is walked: the scene still runs in order up TO the last
+ * case you asked for, because half these surfaces are only reachable through
+ * the ones before them. It stops there rather than walking out the rest of the
+ * scene for nobody.
  *
  * The full matrix takes 45–60 minutes on this machine — SwiftShader, four boots,
  * and a settle loop that waits for the screen rather than guessing. `--only=desk`
- * halves it and `--only=<one case>` is a couple of minutes.
+ * halves it, and a single early case (`--only=desk-day-shelf`) is under a minute
+ * because the walk ends with it.
  *
  * Needs a dev server (`npm run dev`); it does not start one, because the tree's
  * other probes all share the one on :1420 and starting a second is how you end
@@ -423,10 +432,35 @@ const SURFACES = [
       await frames(page, 2);
       await page.mouse.move(targetX, y, { steps: 12 });
       await frames(page, 3);
-      const curling = await page.evaluate(
-        () => document.querySelector('.nb-flip-surface')?.dataset.flipPhase ?? null,
-      );
-      ctx.note = curling === null ? 'no flip phase attribute' : `phase=${curling}`;
+
+      /**
+       * Did the paper actually lift? Ask, and refuse the picture if it did not.
+       *
+       * This is the one surface in the suite whose subject is a thing that is
+       * only there WHILE the pointer is down, so it is also the one that can
+       * photograph a perfectly plausible substitute — a spread at rest — and
+       * be believed. It did, for a while: the check here read
+       * `.nb-flip-surface`'s `data-flip-phase`, an attribute no line of this
+       * app has ever set (`grep -rn data-flip-phase src/` is empty), and put
+       * the answer in a variable nothing read. So the reported "phase" was
+       * always "no flip phase attribute" and nothing looked at it — a surface
+       * that could not fail, which is the same as a surface that is not tested.
+       *
+       * `is-flip-gesture` is the honest signal: `PageFlipController.begin()`
+       * puts it on the root on BOTH paths (WebGL curl and the rigid CSS fold
+       * fallback), and `end()` takes it off. `is-flipping` on the canvas is the
+       * WebGL half only — worth reporting, because a run that quietly fell back
+       * to the fold is photographing a different thing, but not worth failing
+       * on, since the fold is a legitimate rendering of this surface.
+       */
+      const curl = await page.evaluate(() => ({
+        gesture: document.querySelector('.nb-flip-surface')?.classList.contains('is-flip-gesture') ?? false,
+        webgl: document.querySelector('.nb-flip-canvas')?.classList.contains('is-flipping') ?? false,
+      }));
+      if (!curl.gesture) {
+        throw new Error('the drag never started a flip — this would photograph a spread at rest');
+      }
+      ctx.note = curl.webgl ? 'webgl curl' : 'rigid CSS fold (no WebGL curl)';
     },
     async leave(page) {
       await page.mouse.up();
@@ -1307,14 +1341,39 @@ async function walkScene(group, taken) {
     if (frame === page.mainFrame()) reloads += 1;
   });
 
+  /**
+   * Stop once the last surface anyone asked about has been photographed.
+   *
+   * `--only` cannot filter the walk — half these surfaces are only reachable
+   * through the ones before them — but it can end it. Everything after the
+   * last wanted case is pure cost: `enter()` still opens a book, still runs
+   * the tour, still empties the library. The header promised that
+   * `--only=<one case>` was "a couple of minutes" and it was not, because the
+   * walk always ran to `first-run-greeting`; chasing one diff on the shelf
+   * meant sitting through fifteen surfaces nobody was looking at.
+   *
+   * Note this is the LAST wanted index, not a filter: every surface before it
+   * is still walked in order, so the sequence that makes the wanted one
+   * reachable is untouched.
+   */
+  const lastWanted = group.reduce(
+    (last, c, i) => (wantedNames.has(caseName(c)) ? i : last),
+    -1,
+  );
+
   const ctx = { size, room };
-  for (const c of group) {
+  for (const [index, c] of group.entries()) {
     const { surface } = c;
+    if (index > lastWanted) break;
     // Bail the moment the page reloads rather than grinding through eleven
     // more surfaces that will each spend forty-five seconds discovering the
     // app is back on the shelf. The caller starts the scene over.
     if (reloads > 0) break;
     try {
+      // A surface may leave a word about what it found on its way in (the curl
+      // says which renderer painted it). Cleared first, so last surface's
+      // remark cannot be printed against this one.
+      ctx.note = null;
       await surface.enter(page, ctx);
       if (wantedNames.has(caseName(c))) {
         const { buffer, settled, shots: took, distinct } = await settle(page, cmp);
@@ -1325,7 +1384,8 @@ async function walkScene(group, taken) {
           ? null
           : `still moving after ${took} frames (${distinct} distinct)`;
         taken.set(caseName(c), { buffer, warning });
-        console.log(`    · ${surface.id}${warning === null ? '' : ` — ${warning}`}`);
+        const said = [ctx.note, warning].filter((s) => s !== null && s !== undefined);
+        console.log(`    · ${surface.id}${said.length === 0 ? '' : ` — ${said.join('; ')}`}`);
       } else {
         console.log(`    (${surface.id} — walked past)`);
       }
@@ -1455,8 +1515,28 @@ if (UPDATE) {
   for (const { c, buffer, warning, verdict } of verdicts) {
     const name = caseName(c);
     if (verdict === null) {
-      write(baselinePath(c), buffer);
-      record(c, 'add', { why: warning ?? 'no baseline yet' });
+      /**
+       * A missing baseline FAILS. It is never written by a comparison run.
+       *
+       * This used to write the picture and carry on green, which reads as
+       * friendly and is the single worst thing this file could do: `--update`
+       * is the deliberate act, and a comparison run that quietly enshrines
+       * whatever the app looked like at that moment is a suite that agrees
+       * with the app by construction. It costs nothing when everything is
+       * fine and everything when it is not — delete a baseline, or add a
+       * seventeenth surface, or rename a size, and the very first run adopts
+       * the current pixels as the truth, regression and all, and says PASS.
+       *
+       * The picture is still written, into the report folder, so the operator
+       * can look at it before deciding. That is the whole difference: looked
+       * at, then accepted with a flag, rather than accepted and never seen.
+       */
+      write(join(REPORT_DIR, `${name}.actual.png`), buffer);
+      record(c, 'fail', {
+        why:
+          'no baseline for this case — look at ' +
+          `${name}.actual.png, then accept it with --update`,
+      });
       continue;
     }
     if (verdict.sizeMismatch) {
@@ -1536,9 +1616,14 @@ function writeReportPage(rows) {
   const shown = rows.filter((r) => r.status !== 'pass' || KEEP_PASSES);
   const esc = (s) => String(s).replace(/[<&>]/g, (ch) => `&#${ch.charCodeAt(0)};`);
   const card = (r) => {
+    // Three states, and the middle one is the point: a case with no baseline
+    // has no triptych to show but DOES have a picture, and the whole reason it
+    // failed is so somebody looks at that picture before accepting it.
     const img = existsSync(join(REPORT_DIR, `${r.name}.diff.png`))
       ? `<img src="${r.name}.diff.png" alt="${esc(r.name)}">`
-      : `<p class="none">no image — ${esc(r.why ?? 'the case never got as far as a screenshot')}</p>`;
+      : existsSync(join(REPORT_DIR, `${r.name}.actual.png`))
+        ? `<img src="${r.name}.actual.png" alt="${esc(r.name)}">`
+        : `<p class="none">no image — ${esc(r.why ?? 'the case never got as far as a screenshot')}</p>`;
     const stats =
       r.changed === undefined
         ? ''

@@ -20,6 +20,7 @@
 import { For, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { settings } from '../data/settings';
+import { usePanelKeys } from '../state/panelKeys';
 import {
   SHORTCUT_GROUPS,
   actionsInGroup,
@@ -75,6 +76,11 @@ export interface CheatSheetProps {
 }
 
 export default function CheatSheet(props: CheatSheetProps): JSX.Element {
+  // Mounted only while the card is up (CheatSheetHost's <Show>), so the claim
+  // needs no `open` accessor. Without it the shelf answered arrows through the
+  // veil — the card that lists the keys was itself losing them.
+  usePanelKeys();
+
   // Read the live map: a reader who moved "the catalogue" onto another key
   // must be shown the key they chose, not the one the app shipped.
   const stored = (): Readonly<Record<string, string>> => settings.keybindings;

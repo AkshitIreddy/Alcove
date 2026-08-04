@@ -89,6 +89,26 @@ import { mergeWallpaperSpec } from './designPrefs';
  *
  * They are named for what the READER is choosing, not for the module that
  * implements it: 'covering' rather than 'materialLook'.
+ *
+ * A WORD HERE IS A PROMISE THAT SOME PICKER KEEPS. Three were removed rather
+ * than wired, because there is nothing on screen for them to be the curation
+ * OF, and a name with no list behind it is indistinguishable from a list
+ * nobody got round to — which is the exact confusion this wave was sent to
+ * clear:
+ *
+ *  - 'tooling' — the studio's tooling control is ONE toggle (gilt or blind).
+ *    A list you can remove an entry from needs at least a list; a switch with
+ *    two positions and no third has nothing to prune, and the vocabulary the
+ *    word suggests (the fifty decorations) is already curated as 'marks'.
+ *  - 'wear' — a continuous slider from pristine to well-loved. `WEAR_STOPS`
+ *    names five points on it for the readout, but the reader is not choosing
+ *    from five things and cannot remove a number from a range.
+ *  - 'icon-colour' — no picker anywhere in the app, and nothing that reads
+ *    like one under another name.
+ *
+ * Removing a word is safe in the one direction that matters: `parseShelfOfMine`
+ * drops an axis it does not know, so a reader who somehow has a row under one
+ * of these loses the row and nothing else.
  */
 export const CURATION_AXES = [
   // the room
@@ -109,12 +129,10 @@ export const CURATION_AXES = [
   'covering',
   'marks',
   'spine-cloth',
-  'tooling',
   'binding-material',
   'ornament',
   'title-plate',
   'lettering',
-  'wear',
   'edge',
   'format',
   'charm',
@@ -126,7 +144,6 @@ export const CURATION_AXES = [
   'stationery',
   'sticker',
   'page-style',
-  'icon-colour',
 ] as const;
 
 export type CurationAxis = (typeof CURATION_AXES)[number];

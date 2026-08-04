@@ -25,38 +25,28 @@ import {
 } from '../../document';
 import { mountMarginDoodles } from '../../effects/doodles';
 import { createEditorExtensions } from '../../extensions';
+import {
+  SNAPSHOTTING_CLASS,
+  TRANSPARENT_PX,
+  snapshotFilter,
+} from '../../../flip/rasterCache';
 
 /** Export pixel ratio (roadmap: "reuse snapshot pipeline at 2x"). */
 export const EXPORT_PIXEL_RATIO = 2;
 
-/** tokens.css --paper-cream — captures must match the resting page color. */
-const PAPER_CREAM = '#f7f1e3';
-
-/** Interactive chrome that must never appear in an export. */
-const EXPORT_EXCLUDE_SELECTOR =
-  '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
-
-/** 1×1 transparent PNG — stand-in for images that fail to inline. */
-const TRANSPARENT_PX =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU5ErkJggg==';
-
 /**
- * Skip chrome and un-embeddable images. An `<img>` with an empty src (e.g.
- * a media node still resolving its asset) makes html-to-image's inline step
- * reject with a bare error Event — filtering it keeps exports total.
+ * tokens.css --paper-cream — captures must match the resting page color.
+ *
+ * Deliberately NOT `paperTone.ts`'s live token, which is what the flip reads:
+ * a flip has to match whatever paper is on screen this second, while an export
+ * is a picture of a page ON PARCHMENT regardless of the room the reader
+ * happens to be sitting in. That much an exporter is allowed to decide for
+ * itself. What it is NOT allowed to decide for itself is what counts as
+ * chrome and what stands in for an image that will not inline — those are
+ * imported above, because an exported PNG and a mid-flip texture of the same
+ * page are supposed to be the same picture.
  */
-function exportFilter(node: HTMLElement): boolean {
-  if (
-    node instanceof HTMLImageElement &&
-    (node.getAttribute('src') ?? '') === ''
-  ) {
-    return false;
-  }
-  return (
-    typeof node.matches !== 'function' ||
-    !node.matches(EXPORT_EXCLUDE_SELECTOR)
-  );
-}
+const PAPER_CREAM = '#f7f1e3';
 
 export interface CapturedImage {
   bytes: Uint8Array;
@@ -90,17 +80,17 @@ async function captureCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
   }
   fontCssPromise ??= getFontEmbedCSS(element).catch(() => '');
   const fontEmbedCSS = await fontCssPromise;
-  element.classList.add('snapshotting');
+  element.classList.add(SNAPSHOTTING_CLASS);
   try {
     return await toCanvas(element, {
       pixelRatio: EXPORT_PIXEL_RATIO,
       backgroundColor: PAPER_CREAM,
       fontEmbedCSS,
       imagePlaceholder: TRANSPARENT_PX,
-      filter: exportFilter,
+      filter: snapshotFilter,
     });
   } finally {
-    element.classList.remove('snapshotting');
+    element.classList.remove(SNAPSHOTTING_CLASS);
   }
 }
 

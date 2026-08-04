@@ -38,34 +38,64 @@ import { inlineSvgStyles } from './svgSnapshot';
 /** Debounce window between an edit and its idle re-rasterization. */
 export const RASTER_DEBOUNCE_MS = 300;
 
+/* -------------------------------------------------------------------------
+   The snapshot recipe — what a captured page is allowed to contain
+   -------------------------------------------------------------------------
+
+   THE DRIFT THIS SECTION IS EXPORTED FOR. Three modules rasterize a page
+   sheet through html-to-image: this cache (mounted leaves), `offscreenPages`
+   (the adjacent spread, which is never in the DOM) and the exporter
+   (`editor/script/exporters/capture.ts`). All three had typed out the same
+   three facts by hand — the marker class, the chrome exclusion, the image
+   placeholder — plus a byte-identical copy of the filter built from them.
+   Nothing held them together, and they had already come apart:
+
+     - the 1×1 PNG here carried `IEMD` where the other two carry `IEND`, with
+       `IEND`'s checksum still attached — a stream no decoder is obliged to
+       accept, in the one copy that sits on the flip's own path;
+     - the exporter wrote the marker class as a bare `'snapshotting'` string,
+       so a rename in `flip.css` would have missed it in silence while both
+       named constants moved.
+
+   These are not three policies that happen to agree. They are one policy — a
+   snapshot shows paper, never chrome — and it has to hold, because an
+   exported PNG and a mid-flip texture of the same page are meant to be the
+   same picture. The recipe lives here because this is where it was invented
+   and both other modules say so in their own headers.
+
+   What is deliberately NOT shared: the pixel ratio (capped to device memory
+   here, fixed at 2× for print there) and the background colour (the live
+   theme's paper here, parchment there). Those two genuinely differ per
+   caller, and merging them would be the opposite mistake. */
+
 /** Marker class while capturing; flip.css hides caret/selection under it. */
-const SNAPSHOTTING_CLASS = 'snapshotting';
+export const SNAPSHOTTING_CLASS = 'snapshotting';
 
 /** Elements never included in snapshots (interactive chrome, not paper). */
-const SNAPSHOT_EXCLUDE_SELECTOR =
+export const SNAPSHOT_EXCLUDE_SELECTOR =
   '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
 
 /**
  * 1×1 transparent PNG — stand-in for images that fail to inline.
  *
- * `backgroundColor` fills the canvas with cream before the clone is drawn,
- * so a placeholder normally lands on paper. It is still the one deliberate
- * source of alpha in a snapshot, and the curl shader treats any transparent
- * texel as cream (see samplePage in flip/curl.ts) — never as black, which is
- * what sampling premultiplied .rgb alone used to give.
+ * `backgroundColor` fills the canvas with the paper tone before the clone is
+ * drawn, so a placeholder normally lands on paper. It is still the one
+ * deliberate source of alpha in a snapshot, and the curl shader treats any
+ * transparent texel as cream (see samplePage in flip/curl.ts) — never as
+ * black, which is what sampling premultiplied .rgb alone used to give.
  */
-const TRANSPARENT_PX =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU1ErkJggg==';
+export const TRANSPARENT_PX =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU5ErkJggg==';
 
 /**
  * Skip chrome and un-embeddable images. An `<img>` with an empty src (a
  * media node still resolving its asset) makes html-to-image's inline step
- * reject with a bare error Event; a rejected capture leaves NO cache entry,
- * so beginFlip's synchronous get() finds nothing and that face of the flip
- * renders blank cream for the whole gesture. Same recipe as the exporter
- * (script/exporters/capture.ts) and the offscreen staging (offscreenPages.ts).
+ * reject with a bare error Event. On the export path that loses the page; on
+ * the flip path a rejected capture leaves NO cache entry, so beginFlip's
+ * synchronous get() finds nothing and that face renders blank cream for the
+ * whole gesture. Filtering it keeps every capture total.
  */
-function snapshotFilter(node: HTMLElement): boolean {
+export function snapshotFilter(node: HTMLElement): boolean {
   if (
     node instanceof HTMLImageElement &&
     (node.getAttribute('src') ?? '') === ''

@@ -125,6 +125,41 @@ check('ink offers >= 20', open.ink >= 20, open.ink);
 check('paper offers >= 20', open.paper >= 20, open.paper);
 await shot('appearance-02-expanded');
 
+/*
+ * Fold them all back up before going on, and this is not tidiness.
+ *
+ * Counting leaves four pickers standing open, which is a state no reader ever
+ * leaves the sheet in — and the expanded view is deliberately NOT the shortlist
+ * plus more, it REPLACES the shortlist (see `Picker` in SettingsPanel.tsx: a
+ * duplicate chip is a duplicate Tab stop in a focus-trapped dialog). The chips
+ * that live only in the shortlist therefore vanish while open, and one of them
+ * is "as the room" — the way to say *no* paper stock, which is not a stock and
+ * so is not in `PAPERS`.
+ *
+ * Step 5 clicks exactly that chip, and with the picker still open it waited the
+ * full thirty seconds and killed the run. Everything after it — clearing the
+ * stock, the handwriting pass, the body-size floor — has not been checked since,
+ * which is worse than the missing assertion: a probe that dies half way still
+ * prints OK for every line it reached, so this read as a passing seam.
+ */
+console.log('   …folding the pickers back up');
+for (const label of ['theme', 'hand', 'ink', 'paper']) {
+  const row = page.locator('.nbs-row', { hasText: new RegExp(`^${label}`) });
+  const fewer = row.locator('button', { hasText: 'show fewer' });
+  if (await fewer.count()) {
+    await fewer.first().click();
+    await page.waitForTimeout(200);
+  }
+}
+await page.waitForTimeout(400);
+const closed = await counts();
+console.log('  collapsed again:', closed);
+check(
+  'the pickers fold back to their shortlists',
+  closed.paper < open.paper && closed.theme < open.theme,
+  `paper ${open.paper} -> ${closed.paper}, theme ${open.theme} -> ${closed.theme}`,
+);
+
 /* 3 — a theme reaches the page ------------------------------------------- */
 
 console.log('\n3. pick a dark theme');

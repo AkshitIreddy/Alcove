@@ -127,6 +127,7 @@ pub fn run() {
             transfer::bundle_write,
             transfer::bundle_read,
             transfer::bundle_probe,
+            transfer::bundle_write_asset,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(

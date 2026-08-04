@@ -51,6 +51,17 @@
   pointer-events: none;
 }
 
+/* On a chip there is nothing to sit OVER. A tile is 104px of drawing and the
+   plate lands in a corner of it; a chip is one word on a 22px-tall scrap of
+   paper, and a badge pinned to that corner covers the first letters of the
+   very name it was put there to promote. So on a chip it becomes a prefix. */
+.nb-mark.is-inline {
+  position: static;
+  display: inline-flex;
+  margin-right: 5px;
+  vertical-align: -2px;
+}
+
 /* Two stars is the louder notation, so it gets the louder plate: the same gilt
    with the ink rim doubled, which is the app's whole vocabulary for "more". */
 .nb-mark.is-double {

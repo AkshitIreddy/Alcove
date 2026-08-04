@@ -7,14 +7,19 @@ import { createMemo, For, Show, type JSX } from 'solid-js';
 import { fnv1a } from '../../art/noise';
 import { wobbleRect } from '../../art/wobble';
 import type { TimelineEntry } from '../../script/types';
-import { layoutTimeline } from '../layout/timeline';
+import {
+  BODY_LINE_H,
+  LABEL_LINE_H,
+  PAD,
+  layoutTimeline,
+} from '../layout/timeline';
 import type { LaidTimelineCard } from '../types';
 import { washOf } from './NodeShape';
 import { dotPath, edgeStrokes, nodeSeed, spineStrokes } from './svgParts';
 
-const LABEL_LINE_H = 22;
-const BODY_LINE_H = 20;
-const PAD = 12;
+// The card's interior geometry belongs to the layout — it is what sized the
+// box these lines are being placed in. Re-declaring it here is how the text
+// and the box it lives in drift apart (see the note beside the definitions).
 
 function TimelineCard(props: {
   card: LaidTimelineCard;

@@ -35,9 +35,17 @@
  * so the sheet and the world it displaces read as one gesture. Everything the
  * property feeds is a transform: nothing here may reach a layout property,
  * because the pagination pass measures leaf geometry on the same frames.
+ *
+ * This module used to write `data-nb-panel="open"` on <html> as well — the
+ * flag the shelf's keyboard reads. It does not any more, and that is the point:
+ * a flag written from HERE could only ever be set by a panel that displaces the
+ * world, which is exactly the RailPanels, so the guard was inert for every
+ * panel mounted outside the pushed stage. It lives in `state/panelKeys.ts`, and
+ * this module claims it like any other caller.
  */
 import { gsap } from 'gsap';
 import { tween } from '../../styles/motion';
+import { claimPanelKeys, releasePanelKeys } from '../../state/panelKeys';
 
 /**
  * One live claim: how wide the sheet is, where its right edge lands, and how
@@ -77,14 +85,8 @@ function largestClaim(): Claim {
 
 function retarget(): void {
   if (typeof document === 'undefined') return;
-  const root = document.documentElement;
   const target = largestClaim();
   const opening = target.width > carrier.push;
-
-  // The flag flips the instant a panel is claimed rather than when the slide
-  // finishes, so the settings seal starts leaving with the sheet instead of
-  // after it. It is only cleared once the world is fully back.
-  if (target.width > 0) root.dataset.nbPanel = 'open';
 
   gsap.killTweensOf(carrier);
   gsap.to(carrier, {
@@ -95,10 +97,7 @@ function retarget(): void {
     // leaving is a step quicker, matching RailPanel's own two tempos.
     ...tween(opening ? 'slow' : 'normal', opening ? 'enter' : 'exit'),
     onUpdate: publish,
-    onComplete: () => {
-      publish();
-      if (largestClaim().width === 0) delete root.dataset.nbPanel;
-    },
+    onComplete: publish,
   });
 }
 
@@ -120,11 +119,17 @@ export function claimPanelPush(key: string, width: number, edge: number): void {
     edge: safeEdge,
     gutter: safeEdge - safeWidth <= 1 ? safeEdge : 0,
   });
+  // A sheet that displaces the world also owns the keyboard while it is out —
+  // but the reverse is not true, so the flag the shelf reads is state/panelKeys
+  // rather than a line in here. It used to be written from this function, which
+  // is what made the guard inert for every panel that pushes nothing.
+  claimPanelKeys(key);
   retarget();
 }
 
 /** This panel is closing (or unmounting) — give the room back. */
 export function releasePanelPush(key: string): void {
+  releasePanelKeys(key);
   if (!claims.delete(key)) return;
   retarget();
 }

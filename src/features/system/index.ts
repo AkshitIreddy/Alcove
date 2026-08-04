@@ -11,8 +11,8 @@
  *   // inside onMount():
  *   onCleanup(initSystemFeatures());
  *
- * The PerfHud overlay is self-mounted from SettingsPanel's always-present
- * layer, so it needs no App.tsx line.
+ * The PerfHud overlay is a component rather than part of that hook — App.tsx
+ * renders `<PerfHud />` itself. See the note on its export below.
  */
 
 import { startBackupScheduler } from './backup';
@@ -20,6 +20,16 @@ import { startErrorLog } from './errorLog';
 import { launchIntoLastBook, startOpenBookPersistence } from './launch';
 import { startTraySync } from './tray';
 
+/*
+ * The HUD used to mount itself, from inside SettingsPanel's always-present
+ * `.nbs-layer` — which needed no App.tsx line, and worked exactly as long as
+ * that sheet was mounted at boot. It is a `lazy()` behind the gear now, so a
+ * reader who switched the HUD on and relaunched would not have seen it again
+ * until they opened settings, which is not a HUD. App.tsx renders it beside
+ * the rest of the shell instead. Nothing moved in the bundle: `./diagnostics`
+ * reads `collectPixiStats` out of the same module, so it was already in the
+ * boot chunk.
+ */
 export { default as PerfHud } from './PerfHud';
 export {
   formatRelativeTime,

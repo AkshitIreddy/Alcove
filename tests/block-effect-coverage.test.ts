@@ -41,6 +41,13 @@ const NOT_A_DRESSABLE_BLOCK: Readonly<Record<string, string>> = {
   // `inline: true` — it flows inside a paragraph's text, so it has no box of
   // its own to tape, frame or stand on paper.
   sticker: 'inline node, not a block',
+  // `inline: true`, and it IS the effect. A page mark carries one value of one
+  // placeable axis (`effects/placeableEffects.ts`) and draws it in the leaf's
+  // free layer; installing the block attributes on it would let a reader put
+  // tape on a strip of tape. Its own anchor in the text is zero-width on
+  // purpose — a block-level mark would be measured by the pagination drain and
+  // a page full of trim would push its own words onto the next leaf.
+  'page-mark': 'inline anchor for a mark in the free layer — it is an effect already',
   // No `group` on purpose: a col may only live inside a columns node, and the
   // columns node itself is dressable. Dressing both would double every frame.
   col: 'may only live inside `columns`, which is itself dressable',

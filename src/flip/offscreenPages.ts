@@ -26,40 +26,20 @@ import {
 } from '../editor/script/exporters/capture';
 import { snapshotPixelRatio } from './math';
 import { snapshotBackground } from './paperTone';
+import {
+  SNAPSHOTTING_CLASS,
+  TRANSPARENT_PX,
+  snapshotFilter,
+} from './rasterCache';
 import { inlineSvgStyles } from './svgSnapshot';
 
-/** Marker class while capturing; flip.css hides caret/selection under it. */
-const SNAPSHOTTING_CLASS = 'snapshotting';
-
-/** Same chrome exclusion as the mounted path, plus the page-full hint. */
-const SNAPSHOT_EXCLUDE_SELECTOR =
-  '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
-
-/**
- * 1×1 transparent PNG — stand-in for images that fail to inline. As on the
- * mounted path, any alpha it leaves behind resolves to cream in the shader
- * (flip/curl.ts samplePage), never to black.
+/*
+ * The marker class, the chrome exclusion and the transparent placeholder are
+ * the mounted path's — literally, now. This module's whole promise is that a
+ * staged sheet rasterizes to the same picture a live one does, and it used to
+ * keep that promise by typing the same three values out again (see the note
+ * beside them in rasterCache.ts, where one of the copies had already rotted).
  */
-const TRANSPARENT_PX =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABijPjAAAAAABJRU5ErkJggg==';
-
-/**
- * Skip chrome and un-embeddable images. An `<img>` with an empty src (a
- * media node still resolving its asset) makes html-to-image's inline step
- * reject with a bare error Event — filtering it keeps captures total.
- */
-function snapshotFilter(node: HTMLElement): boolean {
-  if (
-    node instanceof HTMLImageElement &&
-    (node.getAttribute('src') ?? '') === ''
-  ) {
-    return false;
-  }
-  return (
-    typeof node.matches !== 'function' ||
-    !node.matches(SNAPSHOT_EXCLUDE_SELECTOR)
-  );
-}
 
 export interface OffscreenPageCaptureOptions {
   /** Fetch a page's document from storage; null = page gone/unreadable. */

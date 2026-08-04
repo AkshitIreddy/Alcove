@@ -71,6 +71,7 @@ import {
   switchBookcase,
 } from '../../data/bookcases';
 import type { Book } from '../../data/types';
+import { usePanelKeys } from '../../state/panelKeys';
 import { play } from '../../sound/engine';
 
 /** Which drawer the card is showing. Only ever `case` in a multi-case library. */
@@ -110,6 +111,18 @@ export default function TrashPanel(props: TrashPanelProps): JSX.Element {
     null,
   );
   let rootElement: HTMLDivElement | undefined;
+
+  /*
+   * The shelf's arrows, Home and Enter are this card's while it is up.
+   *
+   * This drawer is not a `RailPanel` — it is mounted standalone outside the
+   * pushed stage and displaces nothing — and the guard used to be written as a
+   * side effect of claiming push room, so it never covered the one panel its
+   * own comment named first. ArrowDown here walked the shelf's selection halo
+   * down the case behind the card, and Enter pulled a book out and opened it
+   * on top of it.
+   */
+  usePanelKeys();
 
   onMount(() => {
     // The names on the chips come from here. The shelf has almost always

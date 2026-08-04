@@ -97,6 +97,7 @@ import { cancelSoundSetPreview, previewSoundSet } from '../../sound/preview';
 import { snapshotSoundSetId } from '../../sound/soundSetPrefs';
 import { SOUND_SET_GROUPS, type SoundSetGroupId } from '../../sound/soundSets';
 import { motionScale } from '../../styles/motion';
+import { usePanelKeys } from '../../state/panelKeys';
 import { DesignCanvas, drawInScheme } from '../../views/rail/designArt';
 import { drawBindingCard, drawRoomCard } from '../../views/rail/designOptions';
 // The app's one "there is more behind this" control. Borrowed rather than
@@ -308,6 +309,14 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
 
   let sheetEl: HTMLDivElement | undefined;
   let advanceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /*
+   * Modal over whichever scene is behind it — usually the shelf, on first run.
+   * The component is mounted for the life of the app and only RENDERS while
+   * `tasteOpen()`, so the claim has to follow the same condition its <Show>
+   * does or the shelf would never get its arrows back.
+   */
+  usePanelKeys(tasteOpen);
   /** The set that was persisted when the panel opened, restored on the way out. */
   let setOnOpen: string | null = null;
 

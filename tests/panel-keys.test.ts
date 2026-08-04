@@ -1,0 +1,250 @@
+// @vitest-environment node
+/**
+ * tests/panel-keys.test.ts — a guard with one caller is not a guard.
+ *
+ * `ShelfWorld` binds arrows / Home / Enter on `document` and stands down while
+ * a panel is out, by reading `data-nb-panel="open"` off <html>. That flag used
+ * to be written in exactly one place — `claimPanelPush`, the call that reserves
+ * LAYOUT room — and `claimPanelPush` had exactly one caller, `RailPanel`. So
+ * the guard covered the sheets that slide the world sideways and nothing else,
+ * while the comment above it claimed it covered "the trash, the TOC and
+ * everything added later".
+ *
+ * It did not. `scripts/probe-panel-keys.mjs` opened seven surfaces against the
+ * running app, pressed ArrowDown at each and read the shelf's own selection
+ * back off the live world: the trash drawer, the templates gallery, the
+ * settings sheet and the cheat sheet all walked the selection halo down the
+ * case behind them.
+ *
+ * So this file gates the rule instead of the instance:
+ *
+ *   **every `role="dialog"` root in `src/` claims the panel keyboard.**
+ *
+ * The one exemption is written into the markup rather than into a list here:
+ * `aria-modal="false"` is a dialog SAYING it does not own the app while it is
+ * up, and the tour card means it — it points at live UI and the reader is
+ * supposed to keep using the app underneath. A dialog that wants out of this
+ * rule has to make that claim to screen readers too.
+ *
+ * WHAT IT CAN AND CANNOT SEE. It reads JSX source line by line and pairs a
+ * `role="dialog"` with the tag it sits in by walking back to the `<` and
+ * forward to the `>`. It cannot see a role applied through a spread or by
+ * `setAttribute`; neither appears in this tree, and if one does the fix is to
+ * widen this file, not to work around it. `role="menu"` is deliberately not
+ * covered: the menus in this app are transient popovers that stop their own
+ * keys in the capture phase (`ShelfMenu`), and most of them are nested inside a
+ * panel that has already claimed.
+ */
+import { readFileSync, readdirSync } from 'node:fs';
+import { extname, join, relative } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createRoot } from 'solid-js';
+
+const ROOT = join(import.meta.dirname, '..');
+const SRC = join(ROOT, 'src');
+
+function tsxFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...tsxFiles(full));
+    else if (extname(entry.name) === '.tsx') out.push(full);
+  }
+  return out;
+}
+
+/**
+ * Every opening tag in `source` that carries `role="dialog"`, as source text.
+ *
+ * The whole tag, not the matching line: an `aria-modal="false"` two elements
+ * further down must never be read as this element's own disclaimer.
+ */
+function dialogTags(source: string): string[] {
+  const lines = source.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/\brole="dialog"/.test(lines[i] as string)) continue;
+    let start = i;
+    while (start > 0 && !/<[A-Za-z]/.test(lines[start] as string)) start -= 1;
+    let end = i;
+    while (end < lines.length - 1 && !/>\s*$/.test(lines[end] as string)) end += 1;
+    out.push(lines.slice(start, end + 1).join('\n'));
+  }
+  return out;
+}
+
+/** A panel says the keys are its own with the hook, or via RailPanel's push. */
+function claimsTheKeyboard(source: string): boolean {
+  return /\busePanelKeys\s*\(/.test(source) || /\bclaimPanelPush\s*\(/.test(source);
+}
+
+describe('every dialog claims the keyboard', () => {
+  const files = tsxFiles(SRC);
+
+  it('finds the dialogs at all (the scan is not silently matching nothing)', () => {
+    const withDialogs = files.filter((f) => dialogTags(readFileSync(f, 'utf8')).length > 0);
+    // Twelve on the day this was written. The floor is what matters: a regex
+    // that stopped matching would otherwise pass this whole file green.
+    expect(withDialogs.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('no dialog drives the shelf behind it', () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      const tags = dialogTags(source);
+      if (tags.length === 0) continue;
+      // A dialog that tells screen readers it is not modal is telling the
+      // keyboard the same thing — the tour card is pinned over live UI.
+      const owning = tags.filter((tag) => !/aria-modal="false"/.test(tag));
+      if (owning.length === 0) continue;
+      if (claimsTheKeyboard(source)) continue;
+      offenders.push(relative(ROOT, file).replaceAll('\\', '/'));
+    }
+    expect(
+      offenders,
+      'these render role="dialog" but never claim the panel keyboard — ' +
+        'add usePanelKeys() from src/state/panelKeys.ts, or mark the dialog ' +
+        'aria-modal="false" if it really means to leave the app driveable',
+    ).toEqual([]);
+  });
+
+  it('the tour card is the exemption, and it is the only one', () => {
+    const exempt = files
+      .filter((file) => {
+        const tags = dialogTags(readFileSync(file, 'utf8'));
+        return tags.length > 0 && tags.every((tag) => /aria-modal="false"/.test(tag));
+      })
+      .map((file) => relative(ROOT, file).replaceAll('\\', '/'));
+    expect(exempt).toEqual(['src/features/tutorial/TutorialOverlay.tsx']);
+  });
+});
+
+describe('the wiring the rule rests on', () => {
+  it('the shelf asks panelKeys rather than reading the attribute itself', () => {
+    const world = readFileSync(join(SRC, 'features/bookshelf/world.ts'), 'utf8');
+    expect(world).toMatch(/panelOwnsKeyboard\(\)/);
+    // The raw read is what made the flag look like panelPush's private
+    // business. One reader, so there is one place to widen.
+    expect(world).not.toMatch(/dataset\[?'?nbPanel/);
+  });
+
+  it('claiming push also claims the keyboard, so RailPanel needs no second call', () => {
+    const push = readFileSync(join(SRC, 'views/rail/panelPush.ts'), 'utf8');
+    expect(push).toMatch(/claimPanelKeys\(key\)/);
+    expect(push).toMatch(/releasePanelKeys\(key\)/);
+    // Displacing the world and owning the keyboard are different questions;
+    // the flag must not go back to being a side effect of the layout tween.
+    expect(push).not.toMatch(/dataset\.nbPanel/);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The store itself. `document` is stubbed rather than jsdom'd — the module    */
+/* touches exactly one thing, `documentElement.dataset`, and jsdom is not      */
+/* installed (see vitest.config.ts).                                          */
+/* -------------------------------------------------------------------------- */
+
+interface FakeDoc {
+  documentElement: { dataset: Record<string, string> };
+}
+
+function withFakeDocument<T>(run: (doc: FakeDoc) => T): T {
+  const globals = globalThis as { document?: unknown };
+  const had = 'document' in globals;
+  const previous = globals.document;
+  const doc: FakeDoc = { documentElement: { dataset: {} } };
+  globals.document = doc;
+  try {
+    return run(doc);
+  } finally {
+    if (had) globals.document = previous;
+    else delete globals.document;
+  }
+}
+
+describe('state/panelKeys', () => {
+  afterEach(async () => {
+    const mod = await import('../src/state/panelKeys');
+    withFakeDocument(() => mod.__resetPanelKeys());
+  });
+
+  it('flags <html> while a panel is out and clears it after the last one', async () => {
+    const { claimPanelKeys, releasePanelKeys, panelOwnsKeyboard } = await import(
+      '../src/state/panelKeys'
+    );
+    withFakeDocument((doc) => {
+      expect(panelOwnsKeyboard()).toBe(false);
+      claimPanelKeys('trash');
+      expect(doc.documentElement.dataset['nbPanel']).toBe('open');
+      expect(panelOwnsKeyboard()).toBe(true);
+      releasePanelKeys('trash');
+      expect(doc.documentElement.dataset['nbPanel']).toBeUndefined();
+      expect(panelOwnsKeyboard()).toBe(false);
+    });
+  });
+
+  it('survives an overlap — swapping sheets claims before it releases', async () => {
+    const { claimPanelKeys, releasePanelKeys, panelOwnsKeyboard } = await import(
+      '../src/state/panelKeys'
+    );
+    withFakeDocument(() => {
+      claimPanelKeys('studio');
+      // The incoming sheet claims while the outgoing one is still sliding.
+      claimPanelKeys('trash');
+      releasePanelKeys('studio');
+      // A boolean would have gone false here and handed the shelf a frame of
+      // arrows it had no business answering.
+      expect(panelOwnsKeyboard()).toBe(true);
+      releasePanelKeys('trash');
+      expect(panelOwnsKeyboard()).toBe(false);
+    });
+  });
+
+  it('ignores a release for a key that never claimed', async () => {
+    const { claimPanelKeys, releasePanelKeys, panelOwnsKeyboard } = await import(
+      '../src/state/panelKeys'
+    );
+    withFakeDocument(() => {
+      claimPanelKeys('trash');
+      releasePanelKeys('never-opened');
+      expect(panelOwnsKeyboard()).toBe(true);
+    });
+  });
+
+  it('usePanelKeys holds from mount to unmount', async () => {
+    const { usePanelKeys, panelOwnsKeyboard } = await import('../src/state/panelKeys');
+    withFakeDocument(() => {
+      const dispose = createRoot((d) => {
+        usePanelKeys();
+        return d;
+      });
+      expect(panelOwnsKeyboard()).toBe(true);
+      // Leaving a scene unmounts a panel without ever closing it — the trash
+      // drawer goes with the shelf the moment a book opens.
+      dispose();
+      expect(panelOwnsKeyboard()).toBe(false);
+    });
+  });
+
+  it('usePanelKeys(open) follows a sheet that stays mounted while closed', async () => {
+    const { usePanelKeys, panelOwnsKeyboard } = await import('../src/state/panelKeys');
+    const { createSignal } = await import('solid-js');
+    withFakeDocument(() => {
+      const [open, setOpen] = createSignal(false);
+      const dispose = createRoot((d) => {
+        usePanelKeys(open);
+        return d;
+      });
+      // The settings sheet latches: mounted from the first visit to the gear
+      // and parked off screen after that. A bare claim would have silenced the
+      // shelf's arrows for the rest of the session.
+      expect(panelOwnsKeyboard()).toBe(false);
+      setOpen(true);
+      expect(panelOwnsKeyboard()).toBe(true);
+      setOpen(false);
+      expect(panelOwnsKeyboard()).toBe(false);
+      dispose();
+    });
+  });
+});

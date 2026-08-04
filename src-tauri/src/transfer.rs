@@ -22,6 +22,15 @@
 //! `transfer::bundle_write`, `transfer::bundle_read`, `transfer::bundle_probe`,
 //! `transfer::bundle_write_asset` to the `tauri::generate_handler![]` list.
 //! No new crates required — `zip` is already a dependency.
+//!
+//! ALL FOUR. `bundle_write_asset` was left off that list and shipped that way:
+//! `importAssets` in features/transfer/library.ts catches a failed invoke and
+//! turns it into a per-file "could not save the asset" warning — correct
+//! behaviour for a bad file, indistinguishable from a missing command — so a
+//! bundle imported with pictures in it silently lost every one of them. The
+//! only thing that knew was `cargo check`, because `generate_handler!` is the
+//! only caller a command has. `tests/ipc-surface.test.ts` now holds both
+//! directions of this so the next one fails a test instead of a reader.
 
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};

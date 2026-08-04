@@ -21,6 +21,7 @@ import { render } from 'solid-js/web';
 import { parse } from '../../script';
 import ScriptPreview from '../../editor/insert/ScriptPreview';
 import { appState } from '../../state/app';
+import { usePanelKeys } from '../../state/panelKeys';
 import { editorState } from '../../editor/state';
 import { notify } from '../../editor/script/exporters/toast';
 import { play } from '../../sound/engine';
@@ -91,6 +92,11 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
 
   const canInsertHere = (): boolean =>
     appState.viewState() === 'book' && editorState.openBookId() !== null;
+
+  // The gallery opens from the shelf's dock, over a live bookcase whose arrows
+  // and Enter are bound on `document`. Without this the card's own keyboard was
+  // shared with the shelf underneath it — see state/panelKeys.ts.
+  usePanelKeys();
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') props.onClose();

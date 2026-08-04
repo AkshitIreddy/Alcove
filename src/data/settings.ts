@@ -25,9 +25,9 @@ import {
   shortcutAction,
   type ShortcutGroupId,
 } from './keybindings';
+import { PAGE_STYLES } from './types';
 import type {
   AnimationLevel,
-  PageStyle,
   Settings,
   ThemeName,
 } from './types';
@@ -74,7 +74,8 @@ export const settings: Settings = store;
  * the coupling the three art vocabularies were built to remove.
  */
 const THEMES = APP_THEME_IDS as readonly ThemeName[];
-const PAGE_STYLES: readonly PageStyle[] = ['ruled', 'grid', 'blank', 'dotted'];
+// `PAGE_STYLES` is imported, not restated — same reason as THEMES above, and
+// it is the list the two page-style pickers iterate (see data/types.ts).
 const ANIMATION_LEVELS: readonly AnimationLevel[] = ['full', 'reduced', 'off'];
 function takeBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;

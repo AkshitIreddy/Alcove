@@ -11,7 +11,11 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+/** The repo root, from this file's own location — no cwd assumption. */
+const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 import {
   CELEBRATE_MS,
@@ -490,6 +494,43 @@ describe('tour script', () => {
     }
     expect(selectors).toContain('.shelf-dock');
     expect(selectors).toContain('data-shelf-dock="studio"');
+
+    /*
+     * And every shelf tool BY NAME, read out of the component rather than
+     * listed here.
+     *
+     * The two assertions above are what this test used to have for the shelf,
+     * and they could not fail: `.shelf-dock` is one selector covering the whole
+     * dock, so a tool added to it is automatically "pointed at". The dock grew a
+     * fifth button — `templates` — and the step's body went on saying "Four
+     * tools" and naming four, which is the reader's own complaint still true.
+     * The test written for that report could not see it.
+     *
+     * Reading the ids out of BookshelfWorld.tsx is the point: a hard-coded list
+     * here would need editing by the same person who forgot to edit the step,
+     * so it would drift in exactly the same way.
+     */
+    const world = readFileSync(
+      join(ROOT, 'src/features/bookshelf/BookshelfWorld.tsx'),
+      'utf8',
+    );
+    const dockTools = [...world.matchAll(/data-shelf-dock="([a-z-]+)"/g)].map((m) => m[1]);
+    expect(dockTools.length, 'no shelf dock buttons found — has the markup changed?')
+      .toBeGreaterThanOrEqual(5);
+
+    const dockStep = TUTORIAL_STEPS.find((s) => s.id === 'shelf-dock');
+    expect(dockStep, 'the shelf-dock step is gone').toBeDefined();
+    const body = (dockStep?.body ?? '').toLowerCase();
+    // The tool's own word, not its id: the reader sees "template", not
+    // "templates". Singularising is enough to match either.
+    const unnamed = dockTools.filter((id) => !body.includes(id.replace(/-/g, ' ').replace(/s$/, '')));
+    expect(unnamed, `the shelf-dock step never names: ${unnamed.join(', ')}`).toEqual([]);
+
+    // And the count it opens with has to be the number of tools there are.
+    const NUMBERS: Record<number, string> = { 4: 'four', 5: 'five', 6: 'six', 7: 'seven' };
+    expect(body, `the step should say "${NUMBERS[dockTools.length]} tools"`).toContain(
+      `${NUMBERS[dockTools.length]} tools`,
+    );
     // The panels themselves, matched only while open.
     for (const label of ['Page style', 'Catalogue', 'Table of contents', 'Customize this book']) {
       expect(selectors).toContain(`aria-label="${label}"`);

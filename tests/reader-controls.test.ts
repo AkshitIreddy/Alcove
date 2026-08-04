@@ -34,16 +34,33 @@ import {
 } from '../src/views/rail/focusLevels';
 import {
   FREE_EDGE_MARGIN_PCT,
+  armEffect,
   armSticker,
-  armedSticker,
+  armedMark,
+  armedStickerId,
   clampPlacePct,
-  disarmSticker,
+  disarmMark,
   freeStickerNode,
+  isArmedEffect,
+  isFreeMarkJson,
   isFreeStickerJson,
   isStickerPlacement,
+  pageMarkNode,
   pointToPagePct,
-  splitFreeStickers,
+  splitFreeMarks,
 } from '../src/editor/effects/freePlacement';
+import {
+  BLOCK_ONLY_REASONS,
+  MARK_MAX_PCT,
+  MARK_MIN_PCT,
+  PLACEABLE_AXES,
+  PLACEABLE_KEYS,
+  clampMarkSize,
+  isPlaceableKey,
+  placeableAxis,
+  resolveMark,
+} from '../src/editor/effects/placeableEffects';
+import { EFFECT_AXES } from '../src/editor/effects/vocabulary';
 
 const SRC = join(import.meta.dirname, '..', 'src');
 const read = (...parts: string[]): string =>
@@ -243,14 +260,14 @@ describe('the pagination contract: the blocks travel, the stickers stay', () => 
   ];
 
   it('lifts every free sticker out, at any depth, in document order', () => {
-    const { freed } = splitFreeStickers(blocks);
+    const { freed } = splitFreeMarks(blocks);
     expect(freed.map((node) => (node.attrs as { stickerId: string }).stickerId)).toEqual(
       ['cat', 'moon'],
     );
   });
 
   it('leaves the inline ones exactly where they are', () => {
-    const { kept } = splitFreeStickers(blocks);
+    const { kept } = splitFreeMarks(blocks);
     const first = kept[0] as { content: { type: string; attrs?: { stickerId?: string } }[] };
     expect(first.content.map((n) => n.type)).toEqual(['text', 'sticker']);
     expect(first.content[1]?.attrs?.stickerId).toBe('bee');
@@ -259,34 +276,46 @@ describe('the pagination contract: the blocks travel, the stickers stay', () => 
   it('keeps a block that held nothing but a free sticker', () => {
     // Silently deleting a block the reader typed, during a page break, is
     // exactly the kind of thing nobody would ever find.
-    const { kept } = splitFreeStickers(blocks);
+    const { kept } = splitFreeMarks(blocks);
     expect(kept).toHaveLength(2);
     expect((kept[1] as { type: string }).type).toBe('bulletList');
   });
 
   it('does not touch the callers JSON', () => {
     const snapshot = JSON.stringify(blocks);
-    splitFreeStickers(blocks);
+    splitFreeMarks(blocks);
     expect(JSON.stringify(blocks)).toBe(snapshot);
   });
 
   it('is a no-op on blocks with nothing free in them', () => {
     const plain = [{ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] }];
-    const { kept, freed } = splitFreeStickers(plain);
+    const { kept, freed } = splitFreeMarks(plain);
     expect(freed).toEqual([]);
     expect(kept).toEqual(plain);
   });
 });
 
-describe('the armed sticker', () => {
+describe('the armed mark', () => {
   it('holds one at a time and lets go', () => {
-    expect(armedSticker()).toBeNull();
+    expect(armedMark()).toBeNull();
     armSticker('star');
-    expect(armedSticker()).toBe('star');
+    expect(armedStickerId()).toBe('star');
     armSticker('bee');
-    expect(armedSticker()).toBe('bee');
-    disarmSticker();
-    expect(armedSticker()).toBeNull();
+    expect(armedStickerId()).toBe('bee');
+    disarmMark();
+    expect(armedMark()).toBeNull();
+  });
+
+  it('is ONE slot, so arming trim puts a half-armed sticker down', () => {
+    armSticker('star');
+    armEffect('tape', 'gaffer');
+    // Two signals here would mean two things landing on one click.
+    expect(armedStickerId()).toBeNull();
+    expect(isArmedEffect('tape', 'gaffer')).toBe(true);
+    expect(isArmedEffect('tape', 'masking')).toBe(false);
+    armSticker('bee');
+    expect(isArmedEffect('tape', 'gaffer')).toBe(false);
+    disarmMark();
   });
 });
 
@@ -299,8 +328,8 @@ describe('free placement is wired from the catalogue to the leaf', () => {
     expect(bookView).toContain('node.isTextblock');
     // …and on the carry rescuing any that an earlier prepend pushed into the
     // tail. Both halves, or the rule is only true on a quiet page.
-    expect(bookView).toContain('splitFreeStickers(blocks)');
-    expect(bookView).toContain('anchorFreeStickers(pageId, freed)');
+    expect(bookView).toContain('splitFreeMarks(blocks)');
+    expect(bookView).toContain('anchorFreeMarks(pageId, freed)');
     expect(bookView).toContain("tr.setMeta('addToHistory', false)");
   });
 
@@ -314,7 +343,122 @@ describe('free placement is wired from the catalogue to the leaf', () => {
     const panel = read('views', 'rail', 'CataloguePanel.tsx');
     expect(panel).toContain('anywhere on the page');
     expect(panel).toContain('at the cursor');
-    expect(panel).toContain('onCleanup(() => disarmSticker())');
+    expect(panel).toContain('onCleanup(() => disarmMark())');
+  });
+
+  /**
+   * The gap this half closes: the mode chips lived on the sticker shelf alone,
+   * so tape, washi, frames and paper could only ever be an attribute on
+   * whichever block the caret happened to be in.
+   */
+  it('offers the same choice on the trim shelf', () => {
+    const panel = read('views', 'rail', 'CataloguePanel.tsx');
+    expect(panel).toContain('hasPlacementModes');
+    expect(panel).toContain("shelfId === 'stickers' || shelfId === 'trim'");
+    // …and a trim tile has to ROUTE through the mode rather than going straight
+    // to the block. `run: () => toggleEffect(spec)` is the old behaviour.
+    expect(panel).toContain('run: () => runEffect(spec)');
+    expect(panel).toContain('armEffect(spec.key, String(spec.value))');
+  });
+
+  it('places a trim mark from the same click the sticker uses', () => {
+    const bookView = read('views', 'BookView.tsx');
+    expect(bookView).toContain('placeArmedMark');
+    expect(bookView).toContain('pageMarkNode({ fx: mark.fx, value: mark.value');
+  });
+});
+
+/* ==========================================================================
+   B2. Any effects, not just stickers
+   ========================================================================== */
+
+describe('which effects are marks, and which are things you do to a block', () => {
+  it('classifies every axis exactly once, so a twelfth cannot slip through', () => {
+    for (const axis of EFFECT_AXES) {
+      const placeable = isPlaceableKey(axis.key);
+      const blockOnly = BLOCK_ONLY_REASONS[axis.key] !== undefined;
+      expect(
+        placeable !== blockOnly,
+        `axis ${axis.key} is in ${placeable && blockOnly ? 'both lists' : 'neither list'} — ` +
+          'decide whether it has an extent of its own on bare paper',
+      ).toBe(true);
+    }
+  });
+
+  it('keeps the tint a property, because it paints nothing on its own', () => {
+    // [data-color] sets --fx-light/--fx-base/--fx-deep and no pixels of its
+    // own. Free-placing it would put an invisible box on the page.
+    expect(isPlaceableKey('color')).toBe(false);
+    expect(BLOCK_ONLY_REASONS.color).toContain('--fx-light');
+    // The other three that describe something already there.
+    expect(isPlaceableKey('shadow')).toBe(false);
+    expect(isPlaceableKey('underline')).toBe(false);
+    expect(isPlaceableKey('align')).toBe(false);
+  });
+
+  it('takes the four trim axes whole, rather than restating their values', () => {
+    const byKey = new Map(EFFECT_AXES.map((axis) => [axis.key, axis]));
+    for (const axis of PLACEABLE_AXES) {
+      const source = byKey.get(axis.key);
+      if (source === undefined) continue; // doodles, which have no block form
+      expect(axis.label).toBe(source.label);
+      expect(axis.values).toEqual(source.values.map((entry) => entry.value));
+    }
+    // …and the doodles, which exist ONLY as marks.
+    expect([...PLACEABLE_KEYS]).toContain('doodle');
+    expect(byKey.has('doodle')).toBe(false);
+  });
+
+  it('is total on the way in from SQLite', () => {
+    expect(resolveMark('nonsense', 'nonsense').fx).toBe(PLACEABLE_AXES[0].key);
+    expect(resolveMark('tape', 'nonsense').value).toBe(placeableAxis('tape')?.values[0]);
+    expect(resolveMark('tape', 'gaffer')).toEqual({ fx: 'tape', value: 'gaffer' });
+  });
+
+  it('never sizes a mark to nothing or to more than the leaf', () => {
+    expect(clampMarkSize(-40, 10)).toBe(MARK_MIN_PCT);
+    expect(clampMarkSize(4000, 10)).toBe(MARK_MAX_PCT);
+    expect(clampMarkSize('nope', 12)).toBe(12);
+    expect(clampMarkSize(33.333333, 10)).toBe(33.3);
+  });
+
+  it('builds a mark node the schema will take, sized off its own axis', () => {
+    const node = pageMarkNode({ fx: 'tape', value: 'gaffer', x: 61.27, y: -3 });
+    expect(node.type).toBe('page-mark');
+    const attrs = node.attrs as Record<string, number | string>;
+    expect(attrs.fx).toBe('tape');
+    expect(attrs.value).toBe('gaffer');
+    expect(attrs.x).toBe(61.3);
+    expect(attrs.y).toBe(FREE_EDGE_MARGIN_PCT);
+    // A strip and a scrap are not the same size; handing both one number would
+    // make one of them wrong on the very click that places it.
+    expect(attrs.w).toBe(placeableAxis('tape')?.w);
+    expect(attrs.h).toBe(placeableAxis('tape')?.h);
+    expect(attrs.w).not.toBe(placeableAxis('paper')?.w);
+    // The doodle's wobble is fixed HERE so a drag cannot re-roll the drawing.
+    expect(typeof attrs.seed).toBe('number');
+  });
+
+  it('is carried off a reflowing page exactly like a sticker', () => {
+    const mark = pageMarkNode({ fx: 'washi', value: 'top', x: 30, y: 40 });
+    const blocks = [
+      { type: 'paragraph', content: [{ type: 'text', text: 'one' }, mark] },
+    ];
+    expect(isFreeMarkJson(mark)).toBe(true);
+    const { kept, freed } = splitFreeMarks(blocks);
+    expect(freed).toHaveLength(1);
+    expect((freed[0] as { type: string }).type).toBe('page-mark');
+    const first = kept[0] as { content: { type: string }[] };
+    expect(first.content.map((n) => n.type)).toEqual(['text']);
+  });
+
+  it('needs no `placement: free`, because there is no inline page mark', () => {
+    // A sticker has to say so — the same node is also the inline one. A page
+    // mark is free by construction, and demanding the flag would have made
+    // every stored mark invisible to the carry.
+    expect(isFreeMarkJson({ type: 'page-mark', attrs: { fx: 'tape' } })).toBe(true);
+    expect(isFreeStickerJson({ type: 'page-mark', attrs: { fx: 'tape' } })).toBe(false);
+    expect(isFreeMarkJson({ type: 'paragraph' })).toBe(false);
   });
 });
 

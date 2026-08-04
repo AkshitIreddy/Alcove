@@ -15,7 +15,12 @@
  * warns about, one layer up.
  */
 import type { Editor } from '@tiptap/core';
-import { HIGHLIGHT_STYLES, highlightAttrs, type HighlightStyle } from '../highlightStyles';
+import {
+  HIGHLIGHT_STYLES,
+  HIGHLIGHT_STYLE_LABELS,
+  highlightAttrs,
+  type HighlightStyle,
+} from '../highlightStyles';
 import { HIGHLIGHT_WASHES, type HighlightWash } from '../menu/registry';
 
 export type SelectionActionId =
@@ -254,5 +259,5 @@ export function clearSelectionLink(editor: Editor): boolean {
   return editor.chain().focus().extendMarkRange('link').unsetLink().run();
 }
 
-export { HIGHLIGHT_WASHES, HIGHLIGHT_STYLES };
+export { HIGHLIGHT_WASHES, HIGHLIGHT_STYLES, HIGHLIGHT_STYLE_LABELS };
 export type { HighlightWash, HighlightStyle };

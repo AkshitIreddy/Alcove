@@ -34,21 +34,31 @@ import { readBookStyleOverrides } from '../../data/books';
 import type { BookPageDefaults } from '../../data/books';
 import { getBook } from '../../data/books';
 import { persistBookStyle } from '../../features/bookshelf/bookIdentity';
-import type { PageStyle } from '../../data/types';
+import { PAGE_STYLES } from '../../data/types';
+import {
+  DEFAULT_LINE_HEIGHT_PX,
+  LINE_HEIGHT_MAX_PX,
+  LINE_HEIGHT_MIN_PX,
+} from '../../editor/document';
 import BookStudio, { coverOverridesFromStyle } from './BookStudio';
 import LibraryStudio from './LibraryStudio';
 import PacksPanel from '../../features/packs/PacksPanel';
 
-const PAGE_STYLES: readonly PageStyle[] = ['ruled', 'grid', 'blank', 'dotted'];
 const INKS = [
   { value: 'sepia', label: 'sepia' },
   { value: 'graphite', label: 'graphite' },
   { value: 'ink-blue', label: 'ink blue' },
 ] as const;
 
-export const LINE_SPACING_MIN = 26;
-export const LINE_SPACING_MAX = 40;
-const DEFAULT_LINE_SPACING = 32;
+/*
+ * The slider's bounds and its resting value are the editor's, not this
+ * panel's: the rail's page-style panel offers the same control over the same
+ * document attribute, and both had their own copies of all three numbers.
+ * Kept exported under the old names, which were this module's surface before
+ * they were single-sourced.
+ */
+export const LINE_SPACING_MIN = LINE_HEIGHT_MIN_PX;
+export const LINE_SPACING_MAX = LINE_HEIGHT_MAX_PX;
 
 type StudioTab = 'book' | 'library' | 'own';
 
@@ -121,7 +131,7 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
   };
 
   const lineSpacing = (): number =>
-    props.pageDefaults?.lineHeightPx ?? DEFAULT_LINE_SPACING;
+    props.pageDefaults?.lineHeightPx ?? DEFAULT_LINE_HEIGHT_PX;
 
   return (
     <div class="nb-customize nb-studio">

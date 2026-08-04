@@ -694,6 +694,20 @@ describe('every studio list names its axis', () => {
       'marks',
       'spine-cloth',
       'charm-colour',
+      // The nine chip rows. They were DECLARED in `CURATION_AXES` and bound to
+      // nothing for a whole wave — the store would happily have recorded a
+      // removal against 'ornament' that no picker ever consulted — which is
+      // precisely the failure the file above describes and the reason this
+      // list is spelled out rather than counted.
+      'binding-material',
+      'ornament',
+      'title-plate',
+      'lettering',
+      'edge',
+      'format',
+      'charm',
+      'cover-frame',
+      'cover-medallion',
     ],
   };
 
@@ -738,5 +752,134 @@ describe('every studio list names its axis', () => {
     expect(yours, 'the pack category is called `axis` again').not.toMatch(
       /readonly axis:|props\.axis/,
     );
+  });
+});
+
+/* ========================================================================== *
+ *              a word in the vocabulary is a promise some list keeps         *
+ * ========================================================================== */
+
+/**
+ * The gate for the defect this repo has now shipped nine times: something
+ * authored, ticked as done, and reachable by nobody.
+ *
+ * `CURATION_AXES` is a closed union, which is exactly what makes a stray word
+ * in it invisible. TypeScript checks that every `axis` prop names one of these;
+ * NOTHING checked the other direction, so sixteen of the thirty-three were
+ * declared, validated, persisted and consulted by no picker at all — and no
+ * test could tell that apart from a list that had opted out. Three of the
+ * sixteen ('tooling', 'wear', 'icon-colour') had no picker to wire at all and
+ * were dropped from the vocabulary; the rest are bound below.
+ *
+ * The check is deliberately a text search rather than a type: the failure is
+ * that a word exists and nothing consumes it, and only the source can say.
+ */
+describe('every axis in the vocabulary has a picker that names it', () => {
+  /** Any file in src/, by path segments. */
+  const src = (...parts: readonly string[]): string =>
+    readFileSync(join(import.meta.dirname, '..', 'src', ...parts), 'utf8');
+
+  /**
+   * Where each list actually lives — named, not searched for, because "some
+   * file somewhere mentions the string" is the assertion that would have
+   * passed all through the wave this exists to end.
+   */
+  const HOME: Readonly<Record<CurationAxis, readonly string[]>> = {
+    'room-preset': ['views/rail/LibraryStudio.tsx'],
+    colour: ['views/rail/LibraryStudio.tsx'],
+    'shelf-colour': ['views/rail/LibraryStudio.tsx'],
+    'wall-colour': ['views/rail/LibraryStudio.tsx'],
+    build: ['views/rail/LibraryStudio.tsx'],
+    pattern: ['views/rail/LibraryStudio.tsx'],
+    'named-case': ['views/rail/LibraryStudio.tsx'],
+    wallpaper: ['views/rail/LibraryStudio.tsx'],
+    'wallpaper-scale': ['views/rail/LibraryStudio.tsx'],
+    'wallpaper-relief': ['views/rail/LibraryStudio.tsx'],
+    'wallpaper-ink': ['views/rail/LibraryStudio.tsx'],
+    binding: ['views/rail/BookStudio.tsx'],
+    'spine-shape': ['views/rail/BookStudio.tsx'],
+    covering: ['views/rail/BookStudio.tsx'],
+    marks: ['views/rail/BookStudio.tsx'],
+    'spine-cloth': ['views/rail/BookStudio.tsx'],
+    'binding-material': ['views/rail/BookStudio.tsx'],
+    ornament: ['views/rail/BookStudio.tsx'],
+    'title-plate': ['views/rail/BookStudio.tsx'],
+    lettering: ['views/rail/BookStudio.tsx'],
+    edge: ['views/rail/BookStudio.tsx'],
+    format: ['views/rail/BookStudio.tsx'],
+    charm: ['views/rail/BookStudio.tsx'],
+    'charm-colour': ['views/rail/BookStudio.tsx'],
+    'cover-frame': ['views/rail/BookStudio.tsx'],
+    'cover-medallion': ['views/rail/BookStudio.tsx'],
+    'sound-set': ['features/settings/SettingsPanel.tsx'],
+    stationery: ['views/rail/CataloguePanel.tsx'],
+    sticker: ['views/rail/CataloguePanel.tsx'],
+    'page-style': ['views/rail/PageStylePanel.tsx'],
+  };
+
+  it('names a home for every axis, and no axis this build does not know', () => {
+    // Both directions. A word added to `CURATION_AXES` with no entry here is
+    // the exact state the sixteen were in; an entry here for a word that has
+    // been retired is a table nobody pruned.
+    expect(Object.keys(HOME).sort()).toEqual([...CURATION_AXES].sort());
+  });
+
+  it('finds the word written in the picker that owns the list', () => {
+    for (const [axis, files] of Object.entries(HOME) as [CurationAxis, readonly string[]][]) {
+      const found = files.some((file) =>
+        new RegExp(`['"]${axis}['"]`).test(strip(src(...file.split('/')))),
+      );
+      expect(found, `no picker names '${axis}' — the store would record a removal nothing reads`).toBe(true);
+    }
+  });
+
+  it('leaves the three axes with no picker out of the vocabulary', () => {
+    // Named, so that re-adding one is a deliberate act with a list behind it.
+    // 'tooling' is a two-position switch, 'wear' is a continuous slider, and
+    // 'icon-colour' had no control anywhere in the app.
+    for (const gone of ['tooling', 'wear', 'icon-colour']) {
+      expect(isCurationAxis(gone), `'${gone}' is back without a picker`).toBe(false);
+    }
+  });
+
+  it('routes every one of them through the shared controller', () => {
+    // Not through a hand-rolled copy of it. The panels below are the ones this
+    // wave wired; each has to reach `createCuration` (directly or through
+    // `CuratedChips`, which is itself one call to it) and must not have grown
+    // its own removal filter beside it.
+    const PANELS = [
+      'views/rail/BookStudio.tsx',
+      'views/rail/CataloguePanel.tsx',
+      'views/rail/PageStylePanel.tsx',
+      'features/settings/SettingsPanel.tsx',
+    ];
+    for (const panel of PANELS) {
+      const source = strip(src(...panel.split('/')));
+      expect(source, `${panel} does not use the shared controller`).toMatch(
+        /createCuration|CuratedChips/,
+      );
+      expect(source, `${panel} re-implements the removal filter`).not.toMatch(
+        /\.filter\([^)]*isHidden/,
+      );
+    }
+  });
+
+  it('makes the book studio’s dice honour a removal, not just its rows', () => {
+    // The half of a removal that is invisible from the DOM, and the one a
+    // reader minds more: they take a stamp off the list, press randomise, and
+    // the app puts it straight back on the book. Every draw in that panel goes
+    // through `respectingCuration`, which is `rollPool` and nothing else.
+    const studio = strip(src('views', 'rail', 'BookStudio.tsx'));
+    expect(studio, 'the studio never consults the roll pool').toContain('rollPool');
+    for (const draw of studio.matchAll(/randomBookStyleOverrides\(/g)) {
+      const before = studio.slice(Math.max(0, draw.index - 60), draw.index);
+      expect(
+        before.includes('respectingCuration('),
+        'a draw that skips the reader’s removals',
+      ).toBe(true);
+    }
+    // …and `surprise me`, which does not draw overrides at all: it resolves a
+    // fresh style off a seed, so it needs the same pass on the way out.
+    expect(studio).toMatch(/respectingCuration\(\s*bookStyleToOverrides\(/);
   });
 });

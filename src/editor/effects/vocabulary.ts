@@ -29,8 +29,8 @@
  *
  * This file is the *editor's* domain: what a reader can actually apply from a
  * menu, and what `BlockEffects` will therefore accept as an attribute value.
- * It starts from the script domains (imported, never re-typed — one list, not
- * two) and extends them. Everything the script offers, the editor offers.
+ * It READS the script's whole key→domain table rather than restating any part
+ * of it, and extends it. Everything the script offers, the editor offers.
  *
  * The one rule that keeps the two safe together: **a new value must be more
  * than two edits away from every value in the script's own list for that key.**
@@ -48,19 +48,10 @@
  * below is a background, a border, a clip-path, a pseudo-element or a font
  * property; none is a filter, an animation or a blur.
  */
-import {
-  ALIGN_VALUES,
-  BLOCK_INK_VALUES,
-  BLOCK_PAPER_VALUES,
-  FONT_VALUES,
-  FRAME_VALUES,
-  SHADOW_VALUES,
-  SIZE_VALUES,
-  TAPE_VALUES,
-  UNDERLINE_VALUES,
-  WASH_COLORS,
-  WASHI_VALUES,
-} from '../../script/vocab';
+// The parser's key→domain table, whole. The eleven lists used to be imported
+// one by one and re-assembled into a mapping down at SCRIPT_DOMAINS, which is
+// the same table typed a second time — see the note there.
+import { ATTR_ENUM_DOMAINS } from '../../script/vocab';
 
 export type EffectShelf = 'trim' | 'lettering' | 'colour';
 
@@ -789,20 +780,31 @@ export const TINT_ALL = effectValues('color');
  *                        the guard on the two vocabularies                   *
  * ========================================================================== */
 
-/** The writing language's own list per key — what a script value is matched on. */
-export const SCRIPT_DOMAINS: Readonly<Record<string, readonly string[]>> = {
-  tape: TAPE_VALUES,
-  washi: WASHI_VALUES,
-  shadow: SHADOW_VALUES,
-  frame: FRAME_VALUES,
-  paper: BLOCK_PAPER_VALUES,
-  underline: UNDERLINE_VALUES,
-  font: FONT_VALUES,
-  ink: BLOCK_INK_VALUES,
-  size: SIZE_VALUES,
-  align: ALIGN_VALUES,
-  color: WASH_COLORS,
-};
+/**
+ * The writing language's own list per key — what a script value is matched on.
+ *
+ * READ OUT OF THE PARSER, not restated. This table used to name all eleven
+ * key→list pairs by hand, which made it a second copy of `ATTR_ENUM_DOMAINS`
+ * in `script/vocab.ts` — and a second copy inside the very guard whose job is
+ * to notice when the two vocabularies come apart. The value lists were always
+ * imported (the header says so); the MAPPING was not, and the mapping is the
+ * half that moves: re-point `paper` at a different domain in the parser and
+ * the clearance check below would have gone on measuring against the old one,
+ * passing, and letting a fuzzy rewrite through.
+ *
+ * Narrowed to the eleven axes on purpose. `ATTR_ENUM_DOMAINS` also carries
+ * `sticker`, `variant`, `gap` and `style`, which are not effect axes and have
+ * no editor-side vocabulary to keep clear of — `sticker` is a LIVE domain that
+ * grows with the reader's own packs, and folding it in would have this guard
+ * measure editor names against a set that changes at runtime.
+ */
+export const SCRIPT_DOMAINS: Readonly<Record<string, readonly string[]>> =
+  Object.fromEntries(
+    EFFECT_AXES.flatMap((axis) => {
+      const domain = ATTR_ENUM_DOMAINS[axis.key];
+      return domain === undefined ? [] : [[axis.key, domain] as const];
+    }),
+  );
 
 function editDistance(a: string, b: string): number {
   let previous = Array.from({ length: b.length + 1 }, (_, index) => index);

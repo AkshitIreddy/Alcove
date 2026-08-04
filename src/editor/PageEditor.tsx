@@ -17,7 +17,14 @@
  *   native menu is suppressed inside the editor only.
  * - Pagination contract (see src/editor/pagination.ts): when `paginated`,
  *   overflowing trailing blocks leave the page after each transaction via
- *   `onOverflow(removedBlocksJson, cursorCarried)`.
+ *   `onOverflow(removedBlocksJson, cursorCarried)`. Two things the drain must
+ *   handle itself, both of them found by driving the app rather than by
+ *   reading it (tests/e2e/pagination-probe.mjs): a LONE block taller than the
+ *   paper, which no amount of peeling can move and which therefore simply
+ *   vanished under `overflow: hidden` — `splitOverflowingBlock` cuts it; and
+ *   the empty line StarterKit's TrailingNode keeps below a code block or a
+ *   table, which is put back the instant it is peeled — the drain reasons
+ *   about the page without it.
  *
  * Props are read once at mount (an editor instance is not hot-swappable);
  * remount with a keyed <Show>/<For> when the page changes.
@@ -49,9 +56,15 @@ import { handleEditorContextMenu } from './menu/contextMenuController';
 import { createMediaPastePlugin } from './media';
 import {
   accumulateCarriedCaret,
+  contentOverflows,
   pageIsFull,
   trailingOverflowCount,
 } from './pagination';
+// The spread's own answer to "how much is this being DRAWN at". Imported
+// rather than restated: a second copy of that division is a second chance to
+// get the direction of it wrong, and the two callers are measuring the same
+// page from opposite ends (BookView the leaf, this file the blocks inside it).
+import { visualScale } from '../views/spread';
 import { notifySaved } from './saveIndicator';
 import { createEditorTransaction, createTiptapEditor } from './solid';
 import { play } from '../sound/engine';
@@ -123,6 +136,113 @@ export interface PageEditorProps {
 const SAVE_DEBOUNCE_MS = 400;
 /** Safety bound on the overflow loop (a transaction per iteration). */
 const MAX_OVERFLOW_PASSES = 64;
+
+/**
+ * Cut the page's last block so the part of it that does not fit can be carried.
+ *
+ * `trailingOverflowCount` may never take the last block standing — a page with
+ * nothing on it is not a page — so a single block taller than the paper had no
+ * move at all. That is not a corner case: the prose root is `overflow: hidden`
+ * (pages never scroll), so ONE long paragraph ran off the bottom of the page
+ * and stayed there. Past about a hundred and ten words the reader was typing
+ * text they could not see, with their own caret below the paper, no scrollbar
+ * and nothing to say where it had gone. Proved by driving the app:
+ * `tests/e2e/pagination-probe.mjs`, which found 2688px of prose inside a 721px
+ * page and the following page still blank.
+ *
+ * So the block is split at the last SOFT-WRAP boundary above the fold, and the
+ * ordinary block drain carries the tail away on its next pass. Cutting where
+ * the line already broke is what keeps a word whole: a browser only wraps
+ * between words, so the last position whose caret box sits above the fold sits
+ * in the gap between two of them.
+ *
+ * `coordsAtPos` is monotonic in y inside one text block, so a binary search
+ * lands on that position in a handful of probes instead of walking the text.
+ *
+ * A code block is cut at a NEWLINE instead, never at a wrap: a soft wrap
+ * inside code is the browser's doing and promoting one to a real line break
+ * would change what the code says. A single code line too tall for a page
+ * keeps today's behaviour rather than being corrupted into fitting.
+ *
+ * @param limitY Client y of the fold — the prose root's top plus whatever
+ *               capacity is left once its own padding-bottom is paid for.
+ * @param realCount How many of the doc's children the drain counts as the
+ *               page's own content: the TrailingNode phantom the caller
+ *               ignores is NOT one, and cutting it (it is empty) instead of
+ *               the block above it would do nothing forever.
+ * @returns true when a split was dispatched, so the caller should measure
+ *          again; false when there is nothing safe to cut.
+ */
+function splitOverflowingBlock(
+  view: EditorView,
+  limitY: number,
+  realCount: number,
+): boolean {
+  const state = view.state;
+  const doc = state.doc;
+  if (realCount < 1 || realCount > doc.childCount) return false;
+  const block = doc.child(realCount - 1);
+  // Two tokens is the least that can become two non-empty halves.
+  if (!block.isTextblock || block.content.size < 2) return false;
+  // Where that block ends: everything before it, plus the block itself.
+  let end = 0;
+  for (let i = 0; i < realCount; i += 1) end += doc.child(i).nodeSize;
+  end -= 1; // just inside its closing token
+  const start = end - block.content.size;
+
+  let lo = start + 1;
+  let hi = end - 1;
+  let at = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    let bottom: number;
+    try {
+      bottom = view.coordsAtPos(mid).bottom;
+    } catch {
+      // A position the view cannot place (a node view mid-teardown). Leaving
+      // the block whole is the safe answer; the next transaction tries again.
+      return false;
+    }
+    if (bottom <= limitY) {
+      at = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (at < 0) return false;
+
+  if (block.type.spec.code === true) {
+    // One token per character inside a code block, so a document position maps
+    // straight onto an offset in its text.
+    const newline = block.textContent.lastIndexOf('\n', at - start - 1);
+    if (newline < 0) return false; // one line, longer than a page: leave it
+    at = start + newline + 1;
+  } else {
+    // Do not open the carried block with the space the wrap swallowed.
+    while (at < end && doc.textBetween(at, at + 1) === ' ') at += 1;
+  }
+  if (at <= start || at >= end) return false;
+
+  // Deliberately NOT gated on `canSplit`. That helper refuses an ISOLATING
+  // parent by rule, and a code block is isolating so that Enter inside it
+  // types a newline rather than ending the block — a rule about editing
+  // commands crossing the boundary, which a page break is not. Gating on it
+  // made this whole branch unreachable for exactly the blocks that most need
+  // it (checked: `canSplit` false, the step itself fine, two valid code blocks
+  // out). What has to hold is that the STEP can make a legal document, and
+  // ProseMirror answers that by refusing to apply — so ask it, and treat the
+  // refusal as "leave the block whole".
+  //
+  // addToHistory false for the same reason the removal below is: a page break
+  // is not an edit the reader made, and one Ctrl+Z must not half-undo one.
+  try {
+    view.dispatch(state.tr.split(at).setMeta('addToHistory', false));
+  } catch {
+    return false;
+  }
+  return true;
+}
 
 function topLevelBlocks(view: EditorView): HTMLElement[] {
   const blocks: HTMLElement[] = [];
@@ -274,24 +394,82 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       // Content-based measurement (block bottoms + surviving padding): the
       // spread stretches the prose root to fill the leaf, so its scrollHeight
       // equals the page height even when half empty and cannot be trusted.
-      while (view.state.doc.childCount > 1 && passes < MAX_OVERFLOW_PASSES) {
+      //
+      // The loop no longer gates on `childCount > 1`: a lone block that will
+      // not fit is exactly the case `splitOverflowingBlock` exists for, and
+      // gating it out is what made that block invisible instead.
+      while (passes < MAX_OVERFLOW_PASSES) {
         passes += 1;
-        const rootTop = root.getBoundingClientRect().top;
+        const rootRect = root.getBoundingClientRect();
+        const rootTop = rootRect.top;
         const bottoms = Array.from(root.children).map(
           (child) => child.getBoundingClientRect().bottom - rootTop,
         );
+        // Both sides of the comparison have to be in the SAME pixels. Block
+        // bottoms come off getBoundingClientRect — DRAWN px, so a scaled
+        // spread scales them — and the capacity is quoted in drawn px for that
+        // reason (BookView's measureCapacity says why). A computed padding is
+        // a LAYOUT number and a transform does not touch it, so it has to be
+        // scaled to join them. Left unscaled, a book drawn at 62% beside an
+        // open rail sheet charged itself a 32px foot it was only paying 20px
+        // for and peeled a line the page still had room for — and nothing
+        // pulls a carried block BACK, so closing the sheet did not undo it.
         const padBottom =
-          Number.parseFloat(getComputedStyle(root).paddingBottom) || 0;
+          (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0) *
+          visualScale(rootRect.height, root.clientHeight);
         const doc = view.state.doc;
-        const removeCount = Math.min(
-          trailingOverflowCount(bottoms, capacity, padBottom),
-          doc.childCount - 1,
-        );
-        if (removeCount <= 0) break;
 
-        let from = doc.content.size;
+        // The empty line StarterKit's TrailingNode keeps at the foot of any
+        // page that ends in something other than a paragraph — so a reader can
+        // always type past a code block, a table or an image. It is
+        // bookkeeping, not ink, and it is PUT BACK the instant it is taken.
+        // Peeling it therefore never made progress: the drain spent all
+        // sixty-four of its passes shuttling the same empty line off the page
+        // and handed BookView sixty-four empty paragraphs to prepend to the
+        // next one (which then peeled forty-three of them onto the one after
+        // that), while the block that was actually hanging off the paper never
+        // moved at all. Measured on a 70-line code block: `remove 1, kids 2`,
+        // identical, sixty-four times.
+        //
+        // So the drain reasons about the page WITHOUT it — unless the caret is
+        // standing in it, which is the reader pressing Enter at the foot of a
+        // full page and expecting to arrive on the next one.
+        const tail = doc.lastChild;
+        const phantom =
+          doc.childCount > 1 &&
+          tail !== null &&
+          tail.type.name === 'paragraph' &&
+          tail.content.size === 0 &&
+          view.state.selection.head <= doc.content.size - tail.nodeSize;
+        // Where the page's real content ends, and how many blocks it is.
+        const cut = doc.content.size - (phantom ? (tail?.nodeSize ?? 0) : 0);
+        const realBottoms = phantom ? bottoms.slice(0, -1) : bottoms;
+        const realCount = doc.childCount - (phantom ? 1 : 0);
+
+        const removeCount = Math.min(
+          trailingOverflowCount(realBottoms, capacity, padBottom),
+          realCount - 1,
+        );
+        if (removeCount <= 0) {
+          // Nothing left that may be peeled. If the page still overflows, the
+          // block standing on it is taller than the paper — cut it and let the
+          // next pass carry the tail (see splitOverflowingBlock).
+          if (!contentOverflows(realBottoms, capacity, padBottom)) break;
+          if (
+            !splitOverflowingBlock(
+              view,
+              rootTop + capacity - padBottom,
+              realCount,
+            )
+          ) {
+            break;
+          }
+          continue;
+        }
+
+        let from = cut;
         for (let i = 0; i < removeCount; i += 1) {
-          const child = doc.child(doc.childCount - 1 - i);
+          const child = doc.child(realCount - 1 - i);
           from -= child.nodeSize;
           removed.unshift(child.toJSON());
         }
@@ -302,12 +480,12 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
           caretOffset,
           view.state.selection.head,
           from,
-          doc.content.size - from,
+          cut - from,
         );
 
         // One transaction for the removal; addToHistory false so undo does
         // not resurrect the overflow (and re-trigger the loop).
-        const tr = view.state.tr.delete(from, doc.content.size);
+        const tr = view.state.tr.delete(from, cut);
         tr.setMeta('addToHistory', false);
         view.dispatch(tr);
       }
@@ -357,11 +535,14 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
 
     if (isPaginated()) {
       // Content height = last block bottom + surviving padding (see
-      // extractOverflow for why scrollHeight is unusable here).
+      // extractOverflow for why scrollHeight is unusable here — and for why
+      // the padding is scaled into drawn px before it joins a rect distance).
+      const rootRect = root.getBoundingClientRect();
       const contentHeight =
         lastRect.bottom -
-        root.getBoundingClientRect().top +
-        (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0);
+        rootRect.top +
+        (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0) *
+          visualScale(rootRect.height, root.clientHeight);
       if (pageIsFull(contentHeight, lineHeightPx(), capacityPx())) {
         pulsePageFullHint();
         return true;

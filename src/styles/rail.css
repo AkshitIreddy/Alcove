@@ -692,6 +692,14 @@
 
 /* Miniature page thumbnails per style. */
 .nb-pagestyle-thumb {
+  /* Says so out loud rather than relying on the card blockifying it.
+     This is a `<span>`, and width and height do NOTHING to an inline box —
+     it only ever had a size because it was a direct flex child. The moment a
+     wrapper came between them (the star plate needs a positioning context) all
+     four thumbs collapsed to 2x27: a bare vertical hairline where a ruled page
+     should be, on a panel whose entire job is showing what the paper looks
+     like. Nothing warned; the rule was still there and still ignored. */
+  display: block;
   width: 64px;
   height: 46px;
   background-color: var(--paper-cream);

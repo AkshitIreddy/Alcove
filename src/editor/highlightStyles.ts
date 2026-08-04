@@ -13,6 +13,28 @@ import Highlight from '@tiptap/extension-highlight';
 export const HIGHLIGHT_STYLES = ['marker', 'squiggle', 'circle'] as const;
 export type HighlightStyle = (typeof HIGHLIGHT_STYLES)[number];
 
+/**
+ * What each style is CALLED, and the glyph that stands for it.
+ *
+ * Two surfaces offer these three rows — the right-click block menu
+ * (`menu/registry.ts`) and the selection toolbar's highlight tray
+ * (`toolbar/SelectionToolbar.tsx`) — and both used to spell the table out
+ * themselves, character for character. The list of styles was already single-
+ * sourced here for exactly the reason `toolbar/actions.ts` writes down; the
+ * NAMES for those styles are the same kind of fact and were the half left
+ * behind, so renaming "Squiggle underline" moved one menu and not the other.
+ *
+ * `Record<HighlightStyle, …>` is the point: adding a style to the list above
+ * is a compile error here until it has a name and a glyph.
+ */
+export const HIGHLIGHT_STYLE_LABELS: Readonly<
+  Record<HighlightStyle, { readonly title: string; readonly glyph: string }>
+> = {
+  marker: { title: 'Marker sweep', glyph: '▰' },
+  squiggle: { title: 'Squiggle underline', glyph: '﹏' },
+  circle: { title: 'Circle scribble', glyph: '◯' },
+};
+
 export function isHighlightStyle(value: unknown): value is HighlightStyle {
   return (
     typeof value === 'string' &&

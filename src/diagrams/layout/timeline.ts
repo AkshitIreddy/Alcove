@@ -25,9 +25,24 @@ export interface TimelineLayoutOptions {
 }
 
 const BODY_FONT = '15px "Patrick Hand", cursive';
-const LABEL_LINE_H = 22;
-const BODY_LINE_H = 20;
-const PAD = 12;
+
+/*
+ * Card interior geometry. Exported because `render/TimelineDiagram.tsx` places
+ * the label and every body line INSIDE the height computed below, and it had
+ * its own copy of these three numbers: the measurer decided a card was
+ * `PAD * 2 + LABEL_LINE_H + lines * BODY_LINE_H` tall while the painter
+ * independently decided where line `i` sits. Two numbers, one box — change
+ * either side alone and the text walks out through the bottom of a card that
+ * is still the old size. Same shape as `layout/size.ts`, which already
+ * publishes `LABEL_LINE_H` for the tree/graph node boxes.
+ */
+
+/** Height of a card's label row (px). */
+export const LABEL_LINE_H = 22;
+/** Height of one wrapped body line (px). */
+export const BODY_LINE_H = 20;
+/** Inner padding on every side of a card (px). */
+export const PAD = 12;
 
 export function layoutTimeline(
   entries: TimelineEntry[],

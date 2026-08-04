@@ -994,6 +994,14 @@ export function swatchFor(
  * `INK_ALL` and `PAPER_ALL` are two of the eleven per-axis lists that
  * `effects/vocabulary.ts` exports and that nothing in `src/` read until this
  * module did — the sixth thing the alarm found, and it found it on itself.
+ *
+ * This costs the boot chunk 25.7 kB (measured, `shots-now/_weigh.mjs`):
+ * `data/settings.ts` reaches this module on the way to `applySettings`, so the
+ * whole block-effects vocabulary is parsed before the shelf draws. Moving the
+ * two lists' import into the test instead was tried and reverted — it buys
+ * 1.4% of the boot and costs `INK_ALL` and `PAPER_ALL` their only readers in
+ * `src/`, which is two more entries on the KNOWN_UNPLUGGED ratchet that is
+ * only allowed to get shorter. Cheaper places to find 25 kB are listed above.
  */
 export const BLOCK_INK_IDS: readonly string[] = INK_ALL;
 export const BLOCK_PAPER_IDS: readonly string[] = PAPER_ALL;

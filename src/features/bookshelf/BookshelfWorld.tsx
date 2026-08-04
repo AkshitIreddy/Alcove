@@ -29,7 +29,7 @@
  * room is stepped aside.
  */
 
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createSignal, For, lazy, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { appState } from '../../state/app';
 import {
   duplicateBook,
@@ -53,7 +53,6 @@ import { settings } from '../../data/settings';
 // `openTemplates()` below for the call.
 import { play } from '../../sound/engine';
 import Tooltips from '../../views/Tooltip';
-import ShelfStudio from '../../views/rail/ShelfStudio';
 import { floorNameSync, saveFloorName } from './floorNames';
 import { namePlateBox, type NamePlateBox } from './namePlate';
 import PulledBookOverlay from './PulledBookOverlay';
@@ -70,6 +69,52 @@ import {
   type RectLike,
   type VisibleBook,
 } from './world';
+
+/**
+ * The studio sheet, fetched at the moment it is first WANTED, not at boot.
+ *
+ * `RailPanel` already latches the sheet's CONTENTS behind the first open — the
+ * 51 preview canvases stopped being painted in front of the reader's first
+ * frame, and that is where the ~530ms in its docblock came from. But a latch
+ * on rendering is not a latch on LOADING: the sheet was still a static import
+ * here, so `ShelfStudio -> CustomizePanel -> BookStudio` and
+ * `ShelfStudio -> PacksPanel -> PackDialog` were parsed and evaluated on every
+ * launch for a sheet parked off screen at `xPercent: -130`. Measured with
+ * `shots-now/_weigh.mjs`: 128.6 kB of the boot, minified — the single largest
+ * piece of it that is not Pixi, GSAP or the art vocabularies.
+ *
+ * `lazy()` and not a bare `import()` because the sheet is a component: Solid
+ * renders nothing until the chunk lands and then mounts it, which is exactly
+ * the sequence `RailPanel` wants — `onMount` parks the sheet off screen before
+ * the open effect tweens it in, so the first open still slides rather than
+ * appearing.
+ *
+ * It is PREFETCHED on the first idle (see `preloadStudio`), the same bargain
+ * App.tsx strikes for BookView: the boot must not wait for it, and the click
+ * must not either.
+ */
+const ShelfStudio = lazy(() => import('../../views/rail/ShelfStudio'));
+
+/**
+ * Warm the studio chunk once the shelf has had its turn on the main thread.
+ *
+ * Mirrors `preloadBookView()` in App.tsx, including the setTimeout fallback
+ * for webviews without requestIdleCallback — deferring the fetch onto the
+ * click that needs it would only move the stall somewhere the reader is
+ * watching.
+ */
+function preloadStudio(): () => void {
+  const idle =
+    typeof window.requestIdleCallback === 'function'
+      ? window.requestIdleCallback
+      : (cb: () => void): number => window.setTimeout(cb, 1200);
+  const cancel =
+    typeof window.cancelIdleCallback === 'function'
+      ? window.cancelIdleCallback
+      : window.clearTimeout;
+  const handle = idle(() => void import('../../views/rail/ShelfStudio'));
+  return () => cancel(handle as number);
+}
 
 interface OverlayState {
   book: Book;
@@ -255,6 +300,14 @@ export default function BookshelfWorld(): JSX.Element {
    */
   const [dockPanel, setDockPanel] = createSignal<DockPanel | null>(null);
   const [studioBookId, setStudioBookId] = createSignal<string | null>(null);
+  /**
+   * Has the studio ever been asked for? A LATCH, matching the one inside
+   * RailPanel: once the sheet exists it stays, so its tab, its scroll position
+   * and any half-picked colour survive being closed. Until the first ask, the
+   * `lazy()` above is never rendered and its chunk is never requested by the
+   * render path (the idle prefetch fetches it separately, with no one waiting).
+   */
+  const [studioWanted, setStudioWanted] = createSignal(false);
   let world: ShelfWorld | null = null;
   let disposed = false;
   let creating = false;
@@ -272,6 +325,9 @@ export default function BookshelfWorld(): JSX.Element {
   let panelAtPress: DockPanel | null = null;
 
   onMount(() => {
+    // The studio sheet, warmed once the shelf has been drawn (see above).
+    onCleanup(preloadStudio());
+
     const snapshot = (): void => {
       panelAtPress = dockPanel();
     };
@@ -406,6 +462,9 @@ export default function BookshelfWorld(): JSX.Element {
   function openStudio(bookId: string | null): void {
     void play('pop-soft');
     setStudioBookId(bookId);
+    // Before the panel state, so the sheet is in the tree on the same frame
+    // the `open` prop turns true and RailPanel's tween has something to move.
+    setStudioWanted(true);
     setDockPanel('studio');
   }
 
@@ -1085,18 +1144,20 @@ export default function BookshelfWorld(): JSX.Element {
         />
       </Show>
 
-      <ShelfStudio
-        open={dockPanel() === 'studio'}
-        bookId={studioBookId()}
-        onClose={() => setDockPanel(null)}
-        onBookChanged={() => {
-          const w = world;
-          const id = studioBookId();
-          if (w === null || id === null) return;
-          w.invalidateSpine(id);
-          void w.refreshData();
-        }}
-      />
+      <Show when={studioWanted()}>
+        <ShelfStudio
+          open={dockPanel() === 'studio'}
+          bookId={studioBookId()}
+          onClose={() => setDockPanel(null)}
+          onBookChanged={() => {
+            const w = world;
+            const id = studioBookId();
+            if (w === null || id === null) return;
+            w.invalidateSpine(id);
+            void w.refreshData();
+          }}
+        />
+      </Show>
     </div>
   );
 }

@@ -1003,12 +1003,35 @@ export function resolveInterface(answers: TasteAnswers): {
   const pitch = isThemeId(answers.palette)
     ? pitchOfTheme(answers.palette)
     : answers.pitch;
+  /*
+   * ONBOARDING NEVER DARKENS THE INTERFACE.
+   *
+   * This used to answer `pitch === 'deep'` with `uiTheme = 'night'`, on the
+   * reasoning that a cream interface around a claret room is the app not
+   * listening. The reader disagreed, and gave the better argument:
+   *
+   *   "For some reason the app chose dark theme for UI without letting me
+   *    choose. It should default to normal theme … I don't want a situation
+   *    where the user has chosen their themes and it's pretty light, or light
+   *    with some dark, and then all of a sudden the UI colour themes become
+   *    dark. Personally I would say night theme should not even be an option
+   *    during onboarding, but available in settings."
+   *
+   * The two are different questions and were being answered as one. "Deep" is
+   * about the ROOM — the timber, the cloth, the wall a reader is looking at —
+   * and wanting a claret library says nothing about wanting the chrome around
+   * it inverted. Worse, it is the one taste answer whose consequence a reader
+   * cannot see while making it: the room is on screen behind the card, the
+   * interface only changes once the tour ends.
+   *
+   * So `deep` still picks a deep ROOM (see `resolveRoom`, untouched) and the
+   * interface stays on the light base. Night is not removed from the app, only
+   * from what onboarding may decide on somebody's behalf — all six night themes
+   * remain in Settings, which is where a reader choosing dark is choosing it
+   * with their eyes open. `tests/taste-onboarding.test.ts` gates this.
+   */
   let uiTheme = base;
-  if (pitch === 'deep') {
-    // They asked for dark. A cream interface around a claret room is the app
-    // not listening — and night is the only theme that answers it.
-    uiTheme = 'night';
-  } else if (pitch === 'bright' && base === 'parchment') {
+  if (pitch === 'bright' && base === 'parchment') {
     uiTheme = 'pastel';
   }
 

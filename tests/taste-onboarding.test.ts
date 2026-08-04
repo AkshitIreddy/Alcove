@@ -61,6 +61,7 @@ import {
 } from '../src/features/tutorial/tasteProfile';
 import { applyTasteWith, type TasteSink } from '../src/features/tutorial/tasteApply';
 import { mergeSettings } from '../src/data/settings';
+import { APP_THEMES } from '../src/features/settings/appearance';
 import { ROOM_PRESETS } from '../src/views/rail/designOptions';
 import { BOOK_PRESET_IDS, ROLLABLE_PRESETS } from '../src/art/bookDesign';
 import { isBuildId, isPatternId } from '../src/art/shelfDesign';
@@ -731,11 +732,24 @@ describe('the palette a reader points at', () => {
    ---------------------------------------------------------------------- */
 
 describe('the interface colours', () => {
-  it('answers "deep" with the after-dark room', () => {
+  /*
+   * This asserted the opposite — that "deep" answered with `night` — and that
+   * was the behaviour the reader objected to. Kept as a test rather than
+   * deleted, pointing the other way, because the pairing it describes is
+   * exactly the one that will look tempting again: a claret room does read
+   * oddly inside a cream interface, and the answer is still no. "Deep" is a
+   * statement about the ROOM, and the interface is not a reader's to lose
+   * without being asked.
+   */
+  it('answers "deep" with a deep room and leaves the interface alone', () => {
     for (const room of optionIds('room')) {
       const out = resolveInterface({ room, pitch: 'deep' } as TasteAnswers);
-      expect(out.uiTheme, room).toBe('night');
+      expect(out.uiTheme, room).not.toBe('night');
     }
+    // …and it really is still choosing a dark ROOM, or the answer means nothing.
+    const deep = resolveRoom({ room: 'reading-room', pitch: 'deep' } as TasteAnswers);
+    const bright = resolveRoom({ room: 'reading-room', pitch: 'bright' } as TasteAnswers);
+    expect(deep.theme).not.toBe(bright.theme);
   });
 
   it('never writes sepia into a cool room', () => {
@@ -757,10 +771,22 @@ describe('the interface colours', () => {
    * app in its after-dark interface around a room made of chalk — the app
    * listening to what the reader SAID and ignoring what they then pointed at.
    */
-  it('takes its temperature from the palette that was pressed, not the pitch', () => {
-    const dark = resolveInterface({ room: 'bare-desk', pitch: 'bright', palette: 'ebonised' } as TasteAnswers);
-    expect(dark.uiTheme).toBe('night');
-    const pale = resolveInterface({ room: 'bare-desk', pitch: 'deep', palette: 'snowline' } as TasteAnswers);
+  it('a pressed palette still speaks for the pitch, without darkening the chrome', () => {
+    // The palette overriding the pitch is still the rule — it is only the
+    // consequence that changed. Pressing a black-stained room no longer
+    // inverts the interface; it still stops `bright` from lightening it.
+    const dark = resolveInterface({
+      room: 'bare-desk',
+      pitch: 'bright',
+      palette: 'ebonised',
+    } as TasteAnswers);
+    expect(dark.uiTheme).not.toBe('night');
+    expect(dark.uiTheme).not.toBe('pastel'); // `bright` was overruled
+    const pale = resolveInterface({
+      room: 'bare-desk',
+      pitch: 'deep',
+      palette: 'snowline',
+    } as TasteAnswers);
     expect(pale.uiTheme).not.toBe('night');
   });
 
@@ -1008,5 +1034,67 @@ describe('taste.css follows the flat rule', () => {
     // The exits row is a flex header, so the mechanical check is that nothing
     // in this file pins an exit to the right-hand edge.
     expect(css).not.toMatch(/\.nbq-exit[^{]*\{[^}]*\bright\s*:/);
+  });
+});
+
+/*
+ * ── ONBOARDING MAY NOT DARKEN THE INTERFACE ──────────────────────────────
+ *
+ * The reader, after a first run: *"For some reason the app chose dark theme for
+ * UI without letting me choose … I don't want a situation where the user has
+ * chosen their themes and it's pretty light … and then all of a sudden the UI
+ * colour themes become dark. Personally I would say night theme should not even
+ * be an option during onboarding, but available in settings."*
+ *
+ * `resolveInterface` used to answer a "deep" pitch with `uiTheme = 'night'`.
+ * Two different questions were being answered as one: "deep" is about the ROOM,
+ * and it is the only taste answer whose consequence a reader cannot see while
+ * making it — the room is on screen behind the card, the interface only changes
+ * once the tour ends.
+ *
+ * Swept over the WHOLE answer space rather than the one path that was changed,
+ * because the next way in would be a new room mapping to a dark base rather
+ * than the pitch rule that was removed.
+ */
+describe('onboarding never hands back a dark interface', () => {
+  const DARK = new Set(APP_THEMES.filter((t) => t.dark).map((t) => t.id));
+
+  it('there are dark themes to be worried about', () => {
+    // Or the sweep below passes because nothing is dark, which proves nothing.
+    expect(DARK.size).toBeGreaterThan(0);
+  });
+
+  it('no combination of answers resolves to one', () => {
+    const axes = TASTE_QUESTIONS.map((q) => ({
+      axis: q.axis,
+      // `undefined` is a real answer: every question is skippable.
+      values: [undefined, ...q.options.map((o) => o.id)],
+    }));
+
+    const bad: string[] = [];
+    let combinations = 0;
+    const walk = (i: number, answers: Record<string, string | undefined>): void => {
+      if (i === axes.length) {
+        combinations += 1;
+        const { uiTheme } = resolveInterface(answers as never);
+        if (DARK.has(uiTheme)) {
+          bad.push(`${JSON.stringify(answers)} -> ${uiTheme}`);
+        }
+        return;
+      }
+      const axis = axes[i]!;
+      for (const value of axis.values) {
+        walk(i + 1, { ...answers, [axis.axis]: value });
+      }
+    };
+    walk(0, {});
+
+    expect(combinations).toBeGreaterThan(100);
+    expect(bad.slice(0, 5), `${bad.length} of ${combinations} combinations went dark`).toEqual([]);
+  });
+
+  it('but night is still offered in Settings', () => {
+    // The fix is that onboarding does not DECIDE it, not that it is gone.
+    expect(APP_THEMES.filter((t) => t.dark).length).toBeGreaterThanOrEqual(5);
   });
 });

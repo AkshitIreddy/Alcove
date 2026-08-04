@@ -330,117 +330,86 @@
   {
     "key": "ornaments",
     "count": 50,
-    "distinct": 45,
+    "distinct": 50,
     "cellPx": "27x186",
-    "identical": [
-      {
-        "a": "30 Pomegranate",
-        "b": "44 Bell",
-        "d": 1.35
-      },
-      {
-        "a": "13 Acorn",
-        "b": "14 Thistle",
-        "d": 1.71
-      },
-      {
-        "a": "0 Diamond",
-        "b": "13 Acorn",
-        "d": 1.78
-      },
-      {
-        "a": "17 Compass rose",
-        "b": "26 Fleur-de-lis",
-        "d": 1.83
-      },
-      {
-        "a": "0 Diamond",
-        "b": "14 Thistle",
-        "d": 1.86
-      },
-      {
-        "a": "34 Lantern",
-        "b": "38 Pine cone",
-        "d": 1.97
-      }
-    ],
+    "identical": [],
     "near": [
       {
-        "a": "0 Diamond",
-        "b": "34 Lantern",
-        "d": 2.09
-      },
-      {
-        "a": "10 Tree",
-        "b": "17 Compass rose",
-        "d": 2.11
-      },
-      {
-        "a": "18 Bee",
-        "b": "31 Tulip",
-        "d": 2.24
-      },
-      {
-        "a": "37 Spectacles",
-        "b": "42 Fish",
-        "d": 2.24
-      },
-      {
-        "a": "18 Bee",
-        "b": "26 Fleur-de-lis",
-        "d": 2.32
-      },
-      {
-        "a": "19 Scallop shell",
-        "b": "48 Snowflake",
-        "d": 2.32
+        "a": "44 Bell",
+        "b": "45 Little ship",
+        "d": 3.43
       },
       {
         "a": "17 Compass rose",
         "b": "23 Rosette",
-        "d": 2.35
-      },
-      {
-        "a": "5 Sun",
-        "b": "47 Wave",
-        "d": 2.36
-      },
-      {
-        "a": "5 Sun",
-        "b": "8 Laurel wreath",
-        "d": 2.39
+        "d": 3.59
       },
       {
         "a": "28 Oak leaf",
-        "b": "34 Lantern",
-        "d": 2.43
+        "b": "30 Pomegranate",
+        "d": 3.62
+      },
+      {
+        "a": "0 Diamond",
+        "b": "13 Acorn",
+        "d": 3.8
+      },
+      {
+        "a": "34 Lantern",
+        "b": "44 Bell",
+        "d": 3.86
+      },
+      {
+        "a": "30 Pomegranate",
+        "b": "44 Bell",
+        "d": 3.98
+      },
+      {
+        "a": "0 Diamond",
+        "b": "18 Bee",
+        "d": 4.03
+      },
+      {
+        "a": "9 Quill",
+        "b": "33 Comet",
+        "d": 4.07
+      },
+      {
+        "a": "41 Swallow",
+        "b": "42 Fish",
+        "d": 4.34
       },
       {
         "a": "17 Compass rose",
         "b": "18 Bee",
-        "d": 2.46
+        "d": 4.36
       },
       {
-        "a": "37 Spectacles",
-        "b": "47 Wave",
-        "d": 2.46
+        "a": "39 Beehive",
+        "b": "46 Mountain",
+        "d": 4.36
       },
       {
-        "a": "23 Rosette",
-        "b": "26 Fleur-de-lis",
-        "d": 2.48
+        "a": "0 Diamond",
+        "b": "34 Lantern",
+        "d": 4.44
       },
       {
-        "a": "44 Bell",
-        "b": "45 Little ship",
-        "d": 2.48
+        "a": "2 Star",
+        "b": "5 Sun",
+        "d": 4.47
+      },
+      {
+        "a": "30 Pomegranate",
+        "b": "34 Lantern",
+        "d": 4.47
       }
     ]
   },
   {
     "key": "plates",
     "count": 50,
-    "distinct": 39,
+    "distinct": 41,
     "cellPx": "27x186",
     "identical": [
       {
@@ -451,154 +420,129 @@
       {
         "a": "starred-ends",
         "b": "lozenge-ends",
-        "d": 0.42
-      },
-      {
-        "a": "none",
-        "b": "twin-rules",
-        "d": 0.46
-      },
-      {
-        "a": "twin-rules",
-        "b": "gilt-direct",
-        "d": 0.46
-      },
-      {
-        "a": "starred-ends",
-        "b": "fleuron-ends",
-        "d": 0.59
-      },
-      {
-        "a": "roundel",
-        "b": "chamfered-plate",
-        "d": 0.81
-      },
-      {
-        "a": "fleuron-ends",
-        "b": "lozenge-ends",
-        "d": 0.88
+        "d": 0.45
       },
       {
         "a": "none",
         "b": "corner-brackets",
-        "d": 0.9
+        "d": 1.07
       },
       {
         "a": "corner-brackets",
         "b": "gilt-direct",
-        "d": 0.9
+        "d": 1.07
+      },
+      {
+        "a": "none",
+        "b": "twin-rules",
+        "d": 1.21
+      },
+      {
+        "a": "twin-rules",
+        "b": "gilt-direct",
+        "d": 1.21
+      },
+      {
+        "a": "roundel",
+        "b": "chamfered-plate",
+        "d": 1.24
+      },
+      {
+        "a": "starred-ends",
+        "b": "fleuron-ends",
+        "d": 1.28
       },
       {
         "a": "corner-brackets",
         "b": "twin-rules",
-        "d": 0.96
+        "d": 1.6
       },
       {
-        "a": "twin-rules",
+        "a": "fleuron-ends",
         "b": "lozenge-ends",
-        "d": 1.18
+        "d": 1.64
       },
       {
         "a": "none",
         "b": "lozenge-ends",
-        "d": 1.25
+        "d": 1.78
       },
       {
         "a": "gilt-direct",
         "b": "lozenge-ends",
-        "d": 1.25
+        "d": 1.78
+      },
+      {
+        "a": "twin-rules",
+        "b": "lozenge-ends",
+        "d": 1.81
       },
       {
         "a": "twin-rules",
         "b": "starred-ends",
-        "d": 1.27
+        "d": 1.84
       },
       {
         "a": "debossed",
         "b": "blind-panel",
-        "d": 1.34
-      },
-      {
-        "a": "none",
-        "b": "starred-ends",
-        "d": 1.4
-      },
-      {
-        "a": "gilt-direct",
-        "b": "starred-ends",
-        "d": 1.4
-      },
-      {
-        "a": "corner-brackets",
-        "b": "lozenge-ends",
-        "d": 1.54
-      },
-      {
-        "a": "twin-rules",
-        "b": "fleuron-ends",
-        "d": 1.57
-      },
-      {
-        "a": "notched-corners",
-        "b": "chamfered-plate",
-        "d": 1.64
-      },
-      {
-        "a": "corner-brackets",
-        "b": "starred-ends",
-        "d": 1.67
-      },
-      {
-        "a": "shield-plate",
-        "b": "leather-onlay",
-        "d": 1.71
-      },
-      {
-        "a": "none",
-        "b": "fleuron-ends",
-        "d": 1.81
-      },
-      {
-        "a": "gilt-direct",
-        "b": "fleuron-ends",
-        "d": 1.81
-      },
-      {
-        "a": "rope-frame",
-        "b": "leather-onlay",
-        "d": 1.9
-      },
-      {
-        "a": "roundel",
-        "b": "notched-corners",
-        "d": 1.93
-      }
-    ],
-    "near": [
-      {
-        "a": "corner-brackets",
-        "b": "fleuron-ends",
-        "d": 2.02
+        "d": 1.89
       },
       {
         "a": "debossed",
         "b": "blind-lettered",
-        "d": 2.11
+        "d": 1.96
       },
       {
-        "a": "triple-fillet",
-        "b": "dotted-rule",
-        "d": 2.19
+        "a": "none",
+        "b": "starred-ends",
+        "d": 1.97
+      },
+      {
+        "a": "gilt-direct",
+        "b": "starred-ends",
+        "d": 1.97
+      }
+    ],
+    "near": [
+      {
+        "a": "notched-corners",
+        "b": "chamfered-plate",
+        "d": 2.02
+      },
+      {
+        "a": "corner-brackets",
+        "b": "lozenge-ends",
+        "d": 2.08
       },
       {
         "a": "rope-frame",
-        "b": "ribbon-band",
-        "d": 2.27
+        "b": "leather-onlay",
+        "d": 2.2
+      },
+      {
+        "a": "corner-brackets",
+        "b": "starred-ends",
+        "d": 2.24
+      },
+      {
+        "a": "roundel",
+        "b": "notched-corners",
+        "d": 2.44
+      },
+      {
+        "a": "twin-rules",
+        "b": "fleuron-ends",
+        "d": 2.45
       },
       {
         "a": "shield-plate",
-        "b": "rope-frame",
-        "d": 2.44
+        "b": "leather-onlay",
+        "d": 2.47
+      },
+      {
+        "a": "double-fillet",
+        "b": "triple-fillet",
+        "d": 2.48
       },
       {
         "a": "blind-panel",
@@ -606,44 +550,29 @@
         "d": 2.53
       },
       {
-        "a": "roundel",
-        "b": "scallop-edge",
-        "d": 2.57
+        "a": "double-fillet",
+        "b": "corner-brackets",
+        "d": 2.84
       },
       {
-        "a": "label",
-        "b": "roundel",
-        "d": 2.64
-      },
-      {
-        "a": "shield-plate",
-        "b": "ribbon-band",
-        "d": 2.73
-      },
-      {
-        "a": "leather-onlay",
-        "b": "ribbon-band",
-        "d": 2.76
-      },
-      {
-        "a": "scallop-edge",
-        "b": "chamfered-plate",
-        "d": 2.79
-      },
-      {
-        "a": "notched-corners",
-        "b": "scallop-edge",
+        "a": "none",
+        "b": "fleuron-ends",
         "d": 3
       },
       {
-        "a": "double-fillet",
-        "b": "corner-brackets",
-        "d": 3.01
+        "a": "gilt-direct",
+        "b": "fleuron-ends",
+        "d": 3
       },
       {
-        "a": "label",
-        "b": "chamfered-plate",
-        "d": 3.08
+        "a": "triple-fillet",
+        "b": "dotted-rule",
+        "d": 3.07
+      },
+      {
+        "a": "none",
+        "b": "double-fillet",
+        "d": 3.16
       }
     ]
   },
@@ -7032,529 +6961,414 @@
       {
         "a": "windmill",
         "b": "treehouse",
-        "d": 1.29
+        "d": 1.5
       }
     ],
     "near": [
       {
         "a": "apothecary",
         "b": "mercantile",
-        "d": 2.13
+        "d": 2.2
       },
       {
         "a": "gingerbread",
         "b": "carnival",
-        "d": 2.26
-      },
-      {
-        "a": "workbench",
-        "b": "cabin",
-        "d": 2.49
+        "d": 2.43
       },
       {
         "a": "plank",
         "b": "slab",
-        "d": 2.52
+        "d": 2.69
       },
       {
-        "a": "atelier",
-        "b": "ladder",
-        "d": 2.75
-      },
-      {
-        "a": "pigeonhole",
-        "b": "rookery",
-        "d": 2.81
-      },
-      {
-        "a": "dovecote",
-        "b": "beehive",
-        "d": 2.85
+        "a": "workbench",
+        "b": "cabin",
+        "d": 2.91
       },
       {
         "a": "workbench",
         "b": "stable",
-        "d": 2.87
+        "d": 3.11
       },
       {
-        "a": "plank",
-        "b": "schoolroom",
-        "d": 2.96
+        "a": "atelier",
+        "b": "ladder",
+        "d": 3.14
+      },
+      {
+        "a": "pigeonhole",
+        "b": "rookery",
+        "d": 3.22
+      },
+      {
+        "a": "dovecote",
+        "b": "beehive",
+        "d": 3.25
       },
       {
         "a": "crate",
         "b": "steamer",
-        "d": 3.02
+        "d": 3.34
+      },
+      {
+        "a": "plank",
+        "b": "schoolroom",
+        "d": 3.41
       },
       {
         "a": "cloister",
         "b": "observatory",
-        "d": 3.22
+        "d": 3.55
       },
       {
         "a": "slab",
         "b": "stable",
-        "d": 3.27
+        "d": 3.68
       },
       {
         "a": "valance",
         "b": "gingerbread",
-        "d": 3.28
+        "d": 3.77
       },
       {
-        "a": "carnival",
-        "b": "sawmill",
-        "d": 3.49
+        "a": "ladder",
+        "b": "hayloft",
+        "d": 3.83
       }
     ]
   },
   {
     "key": "patterns",
     "count": 50,
-    "distinct": 24,
+    "distinct": 25,
     "cellPx": "240x259",
     "identical": [
       {
         "a": "lunette",
         "b": "sunburst",
-        "d": 0.41
-      },
-      {
-        "a": "gadroon",
-        "b": "barleyTwist",
-        "d": 0.65
+        "d": 0.48
       },
       {
         "a": "waterLeaf",
         "b": "dogtooth",
-        "d": 0.66
-      },
-      {
-        "a": "rope",
-        "b": "gadroon",
         "d": 0.75
       },
       {
         "a": "gadroon",
+        "b": "barleyTwist",
+        "d": 0.78
+      },
+      {
+        "a": "rope",
+        "b": "gadroon",
+        "d": 0.89
+      },
+      {
+        "a": "gadroon",
         "b": "bobbin",
-        "d": 0.77
+        "d": 0.9
       },
       {
         "a": "greekKey",
         "b": "lattice",
-        "d": 0.77
+        "d": 0.93
       },
       {
         "a": "rope",
         "b": "barleyTwist",
-        "d": 0.79
+        "d": 0.97
       },
       {
         "a": "beadReel",
         "b": "lozenge",
-        "d": 0.9
-      },
-      {
-        "a": "vitruvian",
-        "b": "lozenge",
-        "d": 0.94
+        "d": 0.99
       },
       {
         "a": "dogtooth",
         "b": "chineseFret",
-        "d": 0.94
+        "d": 1.12
+      },
+      {
+        "a": "bobbin",
+        "b": "barleyTwist",
+        "d": 1.16
       },
       {
         "a": "waterLeaf",
         "b": "chineseFret",
-        "d": 0.96
+        "d": 1.17
       },
       {
-        "a": "bobbin",
-        "b": "barleyTwist",
-        "d": 0.99
+        "a": "vitruvian",
+        "b": "lozenge",
+        "d": 1.17
       },
       {
         "a": "bobbin",
         "b": "greekKey",
-        "d": 1
-      },
-      {
-        "a": "trefoil",
-        "b": "lattice",
-        "d": 1.02
+        "d": 1.18
       },
       {
         "a": "rope",
         "b": "bobbin",
-        "d": 1.05
+        "d": 1.2
       },
       {
-        "a": "eggDart",
-        "b": "chineseFret",
-        "d": 1.06
+        "a": "trefoil",
+        "b": "lattice",
+        "d": 1.2
+      },
+      {
+        "a": "beaded",
+        "b": "sunburst",
+        "d": 1.22
       },
       {
         "a": "beadReel",
         "b": "strapwork",
-        "d": 1.07
+        "d": 1.23
       },
       {
         "a": "gadroon",
         "b": "greekKey",
-        "d": 1.08
-      },
-      {
-        "a": "billet",
-        "b": "chineseFret",
-        "d": 1.09
-      },
-      {
-        "a": "chevron",
-        "b": "lunette",
-        "d": 1.1
+        "d": 1.24
       },
       {
         "a": "barleyTwist",
         "b": "greekKey",
-        "d": 1.12
-      },
-      {
-        "a": "dogtooth",
-        "b": "billet",
-        "d": 1.12
-      },
-      {
-        "a": "beaded",
-        "b": "sunburst",
-        "d": 1.14
-      },
-      {
-        "a": "quatrefoil",
-        "b": "billet",
-        "d": 1.19
-      },
-      {
-        "a": "bobbin",
-        "b": "lattice",
-        "d": 1.21
-      },
-      {
-        "a": "eggDart",
-        "b": "dogtooth",
-        "d": 1.21
+        "d": 1.25
       },
       {
         "a": "dogtooth",
         "b": "dotPunch",
-        "d": 1.22
+        "d": 1.26
       },
       {
-        "a": "strapwork",
-        "b": "lozenge",
+        "a": "eggDart",
+        "b": "chineseFret",
         "d": 1.27
       },
       {
         "a": "chevron",
-        "b": "sunburst",
-        "d": 1.28
-      },
-      {
-        "a": "beaded",
         "b": "lunette",
         "d": 1.3
       },
       {
         "a": "billet",
-        "b": "dotPunch",
-        "d": 1.31
-      },
-      {
-        "a": "greekKey",
-        "b": "trefoil",
-        "d": 1.33
-      },
-      {
-        "a": "none",
-        "b": "wormy",
-        "d": 1.35
-      },
-      {
-        "a": "gadroon",
-        "b": "beadReel",
-        "d": 1.35
-      },
-      {
-        "a": "waterLeaf",
-        "b": "billet",
-        "d": 1.35
-      },
-      {
-        "a": "vitruvian",
-        "b": "strapwork",
-        "d": 1.35
-      },
-      {
-        "a": "quatrefoil",
         "b": "chineseFret",
-        "d": 1.35
+        "d": 1.32
       },
       {
-        "a": "greekKey",
-        "b": "beadReel",
+        "a": "billet",
+        "b": "dotPunch",
         "d": 1.36
       },
       {
-        "a": "eggDart",
-        "b": "waterLeaf",
-        "d": 1.39
-      },
-      {
-        "a": "modillion",
-        "b": "blindArcade",
-        "d": 1.41
-      },
-      {
-        "a": "chipCarve",
-        "b": "sawn",
-        "d": 1.44
-      },
-      {
-        "a": "dentil",
-        "b": "lattice",
-        "d": 1.45
-      },
-      {
-        "a": "eggDart",
-        "b": "quatrefoil",
-        "d": 1.46
-      },
-      {
-        "a": "gadroon",
-        "b": "lattice",
-        "d": 1.47
-      },
-      {
-        "a": "beadReel",
-        "b": "vitruvian",
-        "d": 1.47
-      },
-      {
-        "a": "eggDart",
-        "b": "dotPunch",
-        "d": 1.48
-      },
-      {
-        "a": "barleyTwist",
-        "b": "beadReel",
-        "d": 1.49
-      },
-      {
-        "a": "quatrefoil",
-        "b": "dogtooth",
-        "d": 1.49
-      },
-      {
-        "a": "eggDart",
+        "a": "dogtooth",
         "b": "billet",
-        "d": 1.5
-      },
-      {
-        "a": "rope",
-        "b": "greekKey",
-        "d": 1.53
-      },
-      {
-        "a": "dentil",
-        "b": "trefoil",
-        "d": 1.53
+        "d": 1.38
       },
       {
         "a": "bobbin",
-        "b": "beadReel",
-        "d": 1.58
-      },
-      {
-        "a": "barleyTwist",
         "b": "lattice",
-        "d": 1.59
+        "d": 1.41
       },
       {
-        "a": "rope",
-        "b": "chevron",
-        "d": 1.6
+        "a": "strapwork",
+        "b": "lozenge",
+        "d": 1.41
       },
       {
-        "a": "barleyTwist",
-        "b": "strapwork",
-        "d": 1.62
+        "a": "beaded",
+        "b": "lunette",
+        "d": 1.42
       },
       {
-        "a": "chineseFret",
-        "b": "dotPunch",
-        "d": 1.62
-      },
-      {
-        "a": "waterLeaf",
-        "b": "quatrefoil",
-        "d": 1.63
-      },
-      {
-        "a": "greekKey",
-        "b": "strapwork",
-        "d": 1.65
-      },
-      {
-        "a": "dentil",
-        "b": "chevron",
-        "d": 1.66
-      },
-      {
-        "a": "waterLeaf",
-        "b": "dotPunch",
-        "d": 1.67
+        "a": "quatrefoil",
+        "b": "billet",
+        "d": 1.42
       },
       {
         "a": "none",
         "b": "stringing",
-        "d": 1.68
+        "d": 1.48
       },
       {
-        "a": "beadReel",
-        "b": "lattice",
-        "d": 1.68
-      },
-      {
-        "a": "bobbin",
-        "b": "chevron",
-        "d": 1.7
-      },
-      {
-        "a": "gadroon",
-        "b": "strapwork",
-        "d": 1.75
-      },
-      {
-        "a": "bobbin",
-        "b": "trefoil",
-        "d": 1.77
+        "a": "eggDart",
+        "b": "dogtooth",
+        "d": 1.48
       },
       {
         "a": "chevron",
-        "b": "lattice",
-        "d": 1.77
+        "b": "sunburst",
+        "d": 1.5
       },
       {
-        "a": "rope",
-        "b": "lattice",
-        "d": 1.82
-      },
-      {
-        "a": "gadroon",
-        "b": "lozenge",
-        "d": 1.83
+        "a": "none",
+        "b": "wormy",
+        "d": 1.56
       },
       {
         "a": "greekKey",
+        "b": "trefoil",
+        "d": 1.57
+      },
+      {
+        "a": "vitruvian",
+        "b": "strapwork",
+        "d": 1.59
+      },
+      {
+        "a": "modillion",
+        "b": "blindArcade",
+        "d": 1.61
+      },
+      {
+        "a": "quatrefoil",
+        "b": "chineseFret",
+        "d": 1.63
+      },
+      {
+        "a": "greekKey",
+        "b": "beadReel",
+        "d": 1.65
+      },
+      {
+        "a": "eggDart",
+        "b": "waterLeaf",
+        "d": 1.65
+      },
+      {
+        "a": "waterLeaf",
+        "b": "billet",
+        "d": 1.66
+      },
+      {
+        "a": "eggDart",
+        "b": "dotPunch",
+        "d": 1.67
+      },
+      {
+        "a": "chineseFret",
+        "b": "dotPunch",
+        "d": 1.67
+      },
+      {
+        "a": "gadroon",
+        "b": "lattice",
+        "d": 1.7
+      },
+      {
+        "a": "rope",
+        "b": "greekKey",
+        "d": 1.74
+      },
+      {
+        "a": "eggDart",
+        "b": "quatrefoil",
+        "d": 1.74
+      },
+      {
+        "a": "waterLeaf",
+        "b": "dotPunch",
+        "d": 1.74
+      },
+      {
+        "a": "dentil",
+        "b": "lattice",
+        "d": 1.75
+      },
+      {
+        "a": "chipCarve",
+        "b": "sawn",
+        "d": 1.75
+      },
+      {
+        "a": "gadroon",
+        "b": "beadReel",
+        "d": 1.76
+      },
+      {
+        "a": "beadReel",
+        "b": "vitruvian",
+        "d": 1.76
+      },
+      {
+        "a": "quatrefoil",
+        "b": "dogtooth",
+        "d": 1.78
+      },
+      {
+        "a": "rope",
         "b": "chevron",
+        "d": 1.82
+      },
+      {
+        "a": "barleyTwist",
+        "b": "lattice",
         "d": 1.83
+      },
+      {
+        "a": "dentil",
+        "b": "trefoil",
+        "d": 1.83
+      },
+      {
+        "a": "eggDart",
+        "b": "billet",
+        "d": 1.87
+      },
+      {
+        "a": "barleyTwist",
+        "b": "beadReel",
+        "d": 1.92
       },
       {
         "a": "quatrefoil",
         "b": "dotPunch",
-        "d": 1.83
-      },
-      {
-        "a": "gadroon",
-        "b": "chevron",
-        "d": 1.86
-      },
-      {
-        "a": "beadReel",
-        "b": "trefoil",
-        "d": 1.88
-      },
-      {
-        "a": "dentil",
-        "b": "greekKey",
-        "d": 1.89
-      },
-      {
-        "a": "barleyTwist",
-        "b": "lozenge",
-        "d": 1.9
-      },
-      {
-        "a": "barleyTwist",
-        "b": "chevron",
         "d": 1.93
       },
       {
-        "a": "gadroon",
-        "b": "trefoil",
-        "d": 1.94
-      },
-      {
-        "a": "blindArcade",
-        "b": "lozenge",
-        "d": 1.94
-      },
-      {
-        "a": "rope",
-        "b": "beadReel",
-        "d": 1.95
-      },
-      {
-        "a": "bobbin",
+        "a": "greekKey",
         "b": "strapwork",
-        "d": 1.97
+        "d": 1.94
+      },
+      {
+        "a": "waterLeaf",
+        "b": "quatrefoil",
+        "d": 1.96
       }
     ],
     "near": [
       {
-        "a": "barleyTwist",
-        "b": "trefoil",
-        "d": 2.02
-      },
-      {
-        "a": "beaded",
+        "a": "dentil",
         "b": "chevron",
-        "d": 2.04
-      },
-      {
-        "a": "greekKey",
-        "b": "lozenge",
-        "d": 2.05
-      },
-      {
-        "a": "waterLeaf",
-        "b": "vitruvian",
-        "d": 2.05
+        "d": 2
       },
       {
         "a": "bobbin",
-        "b": "lozenge",
-        "d": 2.07
+        "b": "beadReel",
+        "d": 2.01
       },
       {
-        "a": "vitruvian",
-        "b": "blindArcade",
-        "d": 2.1
-      },
-      {
-        "a": "lattice",
+        "a": "barleyTwist",
         "b": "strapwork",
-        "d": 2.12
+        "d": 2.02
       },
       {
-        "a": "eggDart",
-        "b": "blindArcade",
-        "d": 2.13
+        "a": "beadReel",
+        "b": "lattice",
+        "d": 2.03
       },
       {
-        "a": "blindArcade",
-        "b": "quatrefoil",
-        "d": 2.13
+        "a": "rope",
+        "b": "lattice",
+        "d": 2.06
+      },
+      {
+        "a": "bobbin",
+        "b": "chevron",
+        "d": 2.09
       },
       {
         "a": "stringing",
@@ -7562,24 +7376,39 @@
         "d": 2.14
       },
       {
-        "a": "beadReel",
-        "b": "blindArcade",
-        "d": 2.19
+        "a": "bobbin",
+        "b": "trefoil",
+        "d": 2.14
+      },
+      {
+        "a": "gadroon",
+        "b": "strapwork",
+        "d": 2.16
       },
       {
         "a": "chevron",
-        "b": "trefoil",
-        "d": 2.19
+        "b": "lattice",
+        "d": 2.22
+      },
+      {
+        "a": "gadroon",
+        "b": "chevron",
+        "d": 2.26
+      },
+      {
+        "a": "beaded",
+        "b": "chevron",
+        "d": 2.27
       },
       {
         "a": "dentil",
-        "b": "lunette",
-        "d": 2.2
+        "b": "greekKey",
+        "d": 2.29
       },
       {
-        "a": "blindArcade",
-        "b": "chineseFret",
-        "d": 2.2
+        "a": "beadReel",
+        "b": "trefoil",
+        "d": 2.29
       }
     ]
   },
@@ -7593,7 +7422,7 @@
       {
         "a": "pin-quiet",
         "b": "pin-study",
-        "d": 3.32
+        "d": 2.91
       }
     ]
   },
@@ -7616,2405 +7445,130 @@
   {
     "key": "cover-frames",
     "count": 50,
-    "distinct": 3,
+    "distinct": 41,
     "cellPx": "236x328",
     "identical": [
       {
         "a": "1 Corner Dots",
         "b": "8 Lozenge Corners",
-        "d": 0.33
+        "d": 1.28
       },
       {
         "a": "10 Side Ticks",
         "b": "11 Side Dots",
-        "d": 0.35
+        "d": 1.43
       },
       {
         "a": "11 Side Dots",
         "b": "14 Centred Lozenge",
-        "d": 0.37
+        "d": 1.6
       },
       {
         "a": "15 Double with Dots",
         "b": "16 Double with Rings",
-        "d": 0.41
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "18 Double with Ticks",
-        "d": 0.43
+        "d": 1.69
       },
       {
         "a": "37 Banded & Dots",
         "b": "38 Banded & Rings",
-        "d": 0.44
+        "d": 1.7
       },
       {
-        "a": "11 Side Dots",
-        "b": "13 Paired Sides",
-        "d": 0.46
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "10 Side Ticks",
-        "d": 0.47
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "11 Side Dots",
-        "d": 0.49
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "14 Centred Lozenge",
-        "d": 0.54
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "9 Round Rule",
-        "d": 0.55
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "25 Fillet & Dots",
-        "d": 0.55
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "26 Fillet & Fleurons",
-        "d": 0.55
+        "a": "4 Ringed Corners",
+        "b": "8 Lozenge Corners",
+        "d": 1.78
       },
       {
         "a": "2 Double Rule",
-        "b": "24 Fillet",
-        "d": 0.56
+        "b": "18 Double with Ticks",
+        "d": 1.84
       },
       {
         "a": "1 Corner Dots",
         "b": "4 Ringed Corners",
-        "d": 0.58
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "14 Centred Lozenge",
-        "d": 0.59
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "13 Paired Sides",
-        "d": 0.61
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "13 Paired Sides",
-        "d": 0.61
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "5 Bracketed",
-        "d": 0.64
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "20 Double Ogee",
-        "d": 0.65
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "30 Triple Rule",
-        "d": 0.65
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "8 Lozenge Corners",
-        "d": 0.65
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "24 Fillet",
-        "d": 0.69
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "22 Double Round",
-        "d": 0.69
-      },
-      {
-        "a": "42 Banded Triple",
-        "b": "48 Court Binding",
-        "d": 0.69
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "10 Side Ticks",
-        "d": 0.72
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "25 Fillet & Dots",
-        "d": 0.73
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "11 Side Dots",
-        "d": 0.74
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "24 Fillet",
-        "d": 0.74
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "30 Triple Rule",
-        "d": 0.74
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "20 Double Ogee",
-        "d": 0.77
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "3 Tooled Lozenge",
-        "d": 0.78
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "24 Fillet",
-        "d": 0.78
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "14 Centred Lozenge",
-        "d": 0.8
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "12 Side Arcs",
-        "d": 0.8
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "24 Fillet",
-        "d": 0.81
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "13 Paired Sides",
-        "d": 0.82
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "24 Fillet",
-        "d": 0.82
-      },
-      {
-        "a": "31 Triple with Dots",
-        "b": "33 Triple Square",
-        "d": 0.82
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "8 Lozenge Corners",
-        "d": 0.85
-      },
-      {
-        "a": "31 Triple with Dots",
-        "b": "35 Triple Bracketed",
-        "d": 0.85
-      },
-      {
-        "a": "24 Fillet",
-        "b": "30 Triple Rule",
-        "d": 0.86
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "12 Side Arcs",
-        "d": 0.87
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "24 Fillet",
-        "d": 0.87
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "24 Fillet",
-        "d": 0.87
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "30 Triple Rule",
-        "d": 0.87
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "12 Side Arcs",
-        "d": 0.88
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "17 Double Bracketed",
-        "d": 0.88
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "22 Double Round",
-        "d": 0.88
-      },
-      {
-        "a": "22 Double Round",
-        "b": "27 Fillet Ogee",
-        "d": 0.88
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "27 Fillet Ogee",
-        "d": 0.93
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "34 Triple Ogee",
-        "d": 0.93
-      },
-      {
-        "a": "31 Triple with Dots",
-        "b": "32 Triple Lozenge",
-        "d": 0.93
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "22 Double Round",
-        "d": 0.94
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "29 Fine Fillet & Ring",
-        "d": 0.95
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "27 Fillet Ogee",
-        "d": 0.95
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "25 Fillet & Dots",
-        "d": 0.96
-      },
-      {
-        "a": "7 Studded",
-        "b": "8 Lozenge Corners",
-        "d": 0.96
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "28 Fine Fillet",
-        "d": 0.96
-      },
-      {
-        "a": "22 Double Round",
-        "b": "34 Triple Ogee",
-        "d": 0.96
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "31 Triple with Dots",
-        "d": 0.96
-      },
-      {
-        "a": "32 Triple Lozenge",
-        "b": "35 Triple Bracketed",
-        "d": 0.96
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "12 Side Arcs",
-        "d": 0.97
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "28 Fine Fillet",
-        "d": 0.97
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "4 Ringed Corners",
-        "d": 0.97
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "17 Double Bracketed",
-        "d": 0.97
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "24 Fillet",
-        "d": 0.98
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "19 Double Lozenge",
-        "d": 0.98
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "21 Double Fleuron",
-        "d": 0.98
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "7 Studded",
-        "d": 0.99
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "25 Fillet & Dots",
-        "d": 0.99
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "23 Double Studded",
-        "d": 0.99
-      },
-      {
-        "a": "22 Double Round",
-        "b": "30 Triple Rule",
-        "d": 0.99
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "30 Triple Rule",
-        "d": 0.99
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "5 Bracketed",
-        "d": 1
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "19 Double Lozenge",
-        "d": 1
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "13 Paired Sides",
-        "d": 1.01
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "15 Double with Dots",
-        "d": 1.02
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "7 Studded",
-        "d": 1.02
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "30 Triple Rule",
-        "d": 1.02
-      },
-      {
-        "a": "36 Banded",
-        "b": "37 Banded & Dots",
-        "d": 1.02
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "14 Centred Lozenge",
-        "d": 1.03
-      },
-      {
-        "a": "24 Fillet",
-        "b": "25 Fillet & Dots",
-        "d": 1.03
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "24 Fillet",
-        "d": 1.04
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "8 Lozenge Corners",
-        "d": 1.05
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "24 Fillet",
-        "d": 1.05
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.05
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "34 Triple Ogee",
-        "d": 1.05
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "28 Fine Fillet",
-        "d": 1.07
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "25 Fillet & Dots",
-        "d": 1.07
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "27 Fillet Ogee",
-        "d": 1.08
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "20 Double Ogee",
-        "d": 1.09
-      },
-      {
-        "a": "22 Double Round",
-        "b": "28 Fine Fillet",
-        "d": 1.09
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "24 Fillet",
-        "d": 1.11
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "14 Centred Lozenge",
-        "d": 1.11
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "18 Double with Ticks",
-        "d": 1.11
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "25 Fillet & Dots",
-        "d": 1.11
-      },
-      {
-        "a": "32 Triple Lozenge",
-        "b": "33 Triple Square",
-        "d": 1.11
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "27 Fillet Ogee",
-        "d": 1.12
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "30 Triple Rule",
-        "d": 1.12
-      },
-      {
-        "a": "35 Triple Bracketed",
-        "b": "44 Panelled",
-        "d": 1.13
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "25 Fillet & Dots",
-        "d": 1.14
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.15
-      },
-      {
-        "a": "28 Fine Fillet",
-        "b": "30 Triple Rule",
-        "d": 1.15
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "17 Double Bracketed",
-        "d": 1.16
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "4 Ringed Corners",
-        "d": 1.17
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "5 Bracketed",
-        "d": 1.17
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "7 Studded",
-        "d": 1.17
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "33 Triple Square",
-        "d": 1.17
-      },
-      {
-        "a": "22 Double Round",
-        "b": "24 Fillet",
-        "d": 1.18
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "23 Double Studded",
-        "d": 1.19
-      },
-      {
-        "a": "33 Triple Square",
-        "b": "35 Triple Bracketed",
-        "d": 1.21
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "34 Triple Ogee",
-        "d": 1.22
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "25 Fillet & Dots",
-        "d": 1.23
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "34 Triple Ogee",
-        "d": 1.23
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "18 Double with Ticks",
-        "d": 1.24
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "35 Triple Bracketed",
-        "d": 1.24
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "2 Double Rule",
-        "d": 1.25
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "9 Round Rule",
-        "d": 1.25
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "30 Triple Rule",
-        "d": 1.25
-      },
-      {
-        "a": "24 Fillet",
-        "b": "27 Fillet Ogee",
-        "d": 1.25
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "33 Triple Square",
-        "d": 1.25
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "5 Bracketed",
-        "d": 1.26
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "7 Studded",
-        "d": 1.26
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "6 Fleuron Corners",
-        "d": 1.26
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "10 Side Ticks",
-        "d": 1.26
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "11 Side Dots",
-        "d": 1.26
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "10 Side Ticks",
-        "d": 1.26
-      },
-      {
-        "a": "6 Fleuron Corners",
-        "b": "8 Lozenge Corners",
-        "d": 1.26
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "28 Fine Fillet",
-        "d": 1.26
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "10 Side Ticks",
-        "d": 1.27
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "5 Bracketed",
-        "d": 1.27
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "9 Round Rule",
-        "d": 1.27
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "11 Side Dots",
-        "d": 1.27
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "20 Double Ogee",
-        "d": 1.27
-      },
-      {
-        "a": "24 Fillet",
-        "b": "34 Triple Ogee",
-        "d": 1.27
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "30 Triple Rule",
-        "d": 1.27
-      },
-      {
-        "a": "28 Fine Fillet",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.27
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "9 Round Rule",
-        "d": 1.28
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "20 Double Ogee",
-        "d": 1.28
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "18 Double with Ticks",
-        "d": 1.28
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "23 Double Studded",
-        "d": 1.28
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.28
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "12 Side Arcs",
-        "d": 1.29
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "18 Double with Ticks",
-        "d": 1.29
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "20 Double Ogee",
-        "d": 1.29
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "31 Triple with Dots",
-        "d": 1.29
-      },
-      {
-        "a": "35 Triple Bracketed",
-        "b": "47 Rosace",
-        "d": 1.29
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "11 Side Dots",
-        "d": 1.3
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "21 Double Fleuron",
-        "d": 1.3
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.3
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "31 Triple with Dots",
-        "d": 1.3
-      },
-      {
-        "a": "31 Triple with Dots",
-        "b": "47 Rosace",
-        "d": 1.3
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "22 Double Round",
-        "d": 1.31
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "31 Triple with Dots",
-        "d": 1.31
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "31 Triple with Dots",
-        "d": 1.31
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "1 Corner Dots",
-        "d": 1.32
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "13 Paired Sides",
-        "d": 1.32
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "14 Centred Lozenge",
-        "d": 1.32
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "13 Paired Sides",
-        "d": 1.32
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "13 Paired Sides",
-        "d": 1.32
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "18 Double with Ticks",
-        "d": 1.32
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "24 Fillet",
-        "d": 1.32
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "23 Double Studded",
-        "d": 1.32
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.32
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "25 Fillet & Dots",
-        "d": 1.32
-      },
-      {
-        "a": "24 Fillet",
-        "b": "28 Fine Fillet",
-        "d": 1.32
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "31 Triple with Dots",
-        "d": 1.32
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "24 Fillet",
-        "d": 1.33
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "16 Double with Rings",
-        "d": 1.33
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "28 Fine Fillet",
-        "d": 1.33
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "15 Double with Dots",
-        "d": 1.34
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "30 Triple Rule",
-        "d": 1.34
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "31 Triple with Dots",
-        "d": 1.34
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "4 Ringed Corners",
-        "d": 1.35
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "18 Double with Ticks",
-        "d": 1.35
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "20 Double Ogee",
-        "d": 1.35
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "19 Double Lozenge",
-        "d": 1.35
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.35
-      },
-      {
-        "a": "46 Coffered",
-        "b": "48 Court Binding",
-        "d": 1.35
-      },
-      {
-        "a": "22 Double Round",
-        "b": "25 Fillet & Dots",
-        "d": 1.36
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "18 Double with Ticks",
-        "d": 1.37
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "11 Side Dots",
-        "d": 1.37
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "34 Triple Ogee",
-        "d": 1.37
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "6 Fleuron Corners",
-        "d": 1.38
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "6 Fleuron Corners",
-        "d": 1.38
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "18 Double with Ticks",
-        "d": 1.38
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "22 Double Round",
-        "d": 1.38
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "33 Triple Square",
-        "d": 1.38
-      },
-      {
-        "a": "31 Triple with Dots",
-        "b": "34 Triple Ogee",
-        "d": 1.38
-      },
-      {
-        "a": "36 Banded",
-        "b": "38 Banded & Rings",
-        "d": 1.38
-      },
-      {
-        "a": "44 Panelled",
-        "b": "45 Cathedral",
-        "d": 1.38
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "9 Round Rule",
-        "d": 1.39
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "14 Centred Lozenge",
-        "d": 1.39
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.39
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "28 Fine Fillet",
-        "d": 1.39
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "10 Side Ticks",
-        "d": 1.4
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "31 Triple with Dots",
-        "d": 1.4
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "18 Double with Ticks",
-        "d": 1.4
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "18 Double with Ticks",
-        "d": 1.4
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "18 Double with Ticks",
-        "d": 1.4
-      },
-      {
-        "a": "34 Triple Ogee",
-        "b": "44 Panelled",
-        "d": 1.4
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "25 Fillet & Dots",
-        "d": 1.41
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "30 Triple Rule",
-        "d": 1.41
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "11 Side Dots",
-        "d": 1.41
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "14 Centred Lozenge",
-        "d": 1.41
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.41
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "34 Triple Ogee",
-        "d": 1.41
-      },
-      {
-        "a": "37 Banded & Dots",
-        "b": "39 Banded Lozenge",
-        "d": 1.41
-      },
-      {
-        "a": "38 Banded & Rings",
-        "b": "39 Banded Lozenge",
-        "d": 1.41
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "20 Double Ogee",
-        "d": 1.42
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "13 Paired Sides",
-        "d": 1.42
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "25 Fillet & Dots",
-        "d": 1.42
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "25 Fillet & Dots",
-        "d": 1.42
-      },
-      {
-        "a": "32 Triple Lozenge",
-        "b": "47 Rosace",
-        "d": 1.42
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "30 Triple Rule",
-        "d": 1.43
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "28 Fine Fillet",
-        "d": 1.43
-      },
-      {
-        "a": "32 Triple Lozenge",
-        "b": "44 Panelled",
-        "d": 1.43
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "10 Side Ticks",
-        "d": 1.44
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "30 Triple Rule",
-        "d": 1.44
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "20 Double Ogee",
-        "d": 1.44
-      },
-      {
-        "a": "37 Banded & Dots",
-        "b": "42 Banded Triple",
-        "d": 1.44
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "14 Centred Lozenge",
-        "d": 1.45
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "30 Triple Rule",
-        "d": 1.45
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "20 Double Ogee",
-        "d": 1.45
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "31 Triple with Dots",
-        "d": 1.45
-      },
-      {
-        "a": "41 Banded Ogee",
-        "b": "49 Gothic Panel",
-        "d": 1.45
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "13 Paired Sides",
-        "d": 1.46
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "18 Double with Ticks",
-        "d": 1.46
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "25 Fillet & Dots",
-        "d": 1.46
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "20 Double Ogee",
-        "d": 1.46
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "30 Triple Rule",
-        "d": 1.46
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "22 Double Round",
-        "d": 1.46
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "30 Triple Rule",
-        "d": 1.47
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "19 Double Lozenge",
-        "d": 1.47
-      },
-      {
-        "a": "28 Fine Fillet",
-        "b": "34 Triple Ogee",
-        "d": 1.47
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "12 Side Arcs",
-        "d": 1.48
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "25 Fillet & Dots",
-        "d": 1.48
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "21 Double Fleuron",
-        "d": 1.48
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "33 Triple Square",
-        "d": 1.48
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "30 Triple Rule",
-        "d": 1.49
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "16 Double with Rings",
-        "d": 1.49
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "27 Fillet Ogee",
-        "d": 1.49
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "34 Triple Ogee",
-        "d": 1.49
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "31 Triple with Dots",
-        "d": 1.49
-      },
-      {
-        "a": "38 Banded & Rings",
-        "b": "42 Banded Triple",
-        "d": 1.49
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "12 Side Arcs",
-        "d": 1.5
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "34 Triple Ogee",
-        "d": 1.5
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "24 Fillet",
-        "d": 1.5
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "21 Double Fleuron",
-        "d": 1.5
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "25 Fillet & Dots",
-        "d": 1.51
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "28 Fine Fillet",
-        "d": 1.51
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "27 Fillet Ogee",
-        "d": 1.51
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "32 Triple Lozenge",
-        "d": 1.51
-      },
-      {
-        "a": "31 Triple with Dots",
-        "b": "44 Panelled",
-        "d": 1.51
-      },
-      {
-        "a": "36 Banded",
-        "b": "42 Banded Triple",
-        "d": 1.51
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "24 Fillet",
-        "d": 1.52
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "24 Fillet",
-        "d": 1.52
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "25 Fillet & Dots",
-        "d": 1.52
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "34 Triple Ogee",
-        "d": 1.52
-      },
-      {
-        "a": "24 Fillet",
-        "b": "31 Triple with Dots",
-        "d": 1.52
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "44 Panelled",
-        "d": 1.52
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "27 Fillet Ogee",
-        "d": 1.53
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "27 Fillet Ogee",
-        "d": 1.53
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "22 Double Round",
-        "d": 1.53
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "30 Triple Rule",
-        "d": 1.53
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "27 Fillet Ogee",
-        "d": 1.53
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "3 Tooled Lozenge",
-        "d": 1.54
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "14 Centred Lozenge",
-        "d": 1.54
-      },
-      {
-        "a": "6 Fleuron Corners",
-        "b": "25 Fillet & Dots",
-        "d": 1.55
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "27 Fillet Ogee",
-        "d": 1.55
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "35 Triple Bracketed",
-        "d": 1.55
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "22 Double Round",
-        "d": 1.55
-      },
-      {
-        "a": "34 Triple Ogee",
-        "b": "35 Triple Bracketed",
-        "d": 1.55
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "20 Double Ogee",
-        "d": 1.56
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "33 Triple Square",
-        "d": 1.56
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "8 Lozenge Corners",
-        "d": 1.57
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "2 Double Rule",
-        "d": 1.57
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "15 Double with Dots",
-        "d": 1.57
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "27 Fillet Ogee",
-        "d": 1.57
-      },
-      {
-        "a": "22 Double Round",
-        "b": "31 Triple with Dots",
-        "d": 1.57
-      },
-      {
-        "a": "23 Double Studded",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.57
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "33 Triple Square",
-        "d": 1.57
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "25 Fillet & Dots",
-        "d": 1.58
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "22 Double Round",
-        "d": 1.58
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "20 Double Ogee",
-        "d": 1.58
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "6 Fleuron Corners",
-        "d": 1.59
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "9 Round Rule",
-        "d": 1.59
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "30 Triple Rule",
-        "d": 1.59
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "24 Fillet",
-        "d": 1.59
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "35 Triple Bracketed",
-        "d": 1.59
-      },
-      {
-        "a": "23 Double Studded",
-        "b": "25 Fillet & Dots",
-        "d": 1.59
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "12 Side Arcs",
-        "d": 1.6
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "19 Double Lozenge",
-        "d": 1.6
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.6
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "34 Triple Ogee",
-        "d": 1.61
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "17 Double Bracketed",
-        "d": 1.61
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "25 Fillet & Dots",
-        "d": 1.61
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "34 Triple Ogee",
-        "d": 1.62
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.62
-      },
-      {
-        "a": "42 Banded Triple",
-        "b": "46 Coffered",
-        "d": 1.62
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "9 Round Rule",
-        "d": 1.63
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "20 Double Ogee",
-        "d": 1.63
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "27 Fillet Ogee",
-        "d": 1.63
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "33 Triple Square",
-        "d": 1.63
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "27 Fillet Ogee",
-        "d": 1.64
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "12 Side Arcs",
-        "d": 1.64
-      },
-      {
-        "a": "7 Studded",
-        "b": "24 Fillet",
-        "d": 1.64
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "10 Side Ticks",
-        "d": 1.64
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "11 Side Dots",
-        "d": 1.64
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "34 Triple Ogee",
-        "d": 1.64
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.64
-      },
-      {
-        "a": "29 Fine Fillet & Ring",
-        "b": "30 Triple Rule",
-        "d": 1.64
-      },
-      {
-        "a": "33 Triple Square",
-        "b": "47 Rosace",
-        "d": 1.64
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "35 Triple Bracketed",
-        "d": 1.65
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "25 Fillet & Dots",
-        "d": 1.65
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "34 Triple Ogee",
-        "d": 1.65
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "34 Triple Ogee",
-        "d": 1.65
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "7 Studded",
-        "d": 1.66
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "22 Double Round",
-        "d": 1.66
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "28 Fine Fillet",
-        "d": 1.66
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "31 Triple with Dots",
-        "d": 1.66
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "18 Double with Ticks",
-        "d": 1.67
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "20 Double Ogee",
-        "d": 1.67
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "34 Triple Ogee",
-        "d": 1.67
-      },
-      {
-        "a": "32 Triple Lozenge",
-        "b": "34 Triple Ogee",
-        "d": 1.67
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "22 Double Round",
-        "d": 1.68
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "13 Paired Sides",
-        "d": 1.68
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "18 Double with Ticks",
-        "d": 1.69
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "22 Double Round",
-        "d": 1.69
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "35 Triple Bracketed",
-        "d": 1.69
-      },
-      {
-        "a": "28 Fine Fillet",
-        "b": "31 Triple with Dots",
-        "d": 1.69
-      },
-      {
-        "a": "29 Fine Fillet & Ring",
-        "b": "31 Triple with Dots",
-        "d": 1.69
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "30 Triple Rule",
-        "d": 1.7
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "8 Lozenge Corners",
-        "d": 1.7
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "31 Triple with Dots",
-        "d": 1.7
-      },
-      {
-        "a": "6 Fleuron Corners",
-        "b": "15 Double with Dots",
-        "d": 1.7
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "22 Double Round",
-        "d": 1.7
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "32 Triple Lozenge",
-        "d": 1.7
-      },
-      {
-        "a": "22 Double Round",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.7
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "35 Triple Bracketed",
-        "d": 1.7
-      },
-      {
-        "a": "29 Fine Fillet & Ring",
-        "b": "33 Triple Square",
-        "d": 1.71
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.72
-      },
-      {
-        "a": "7 Studded",
-        "b": "10 Side Ticks",
-        "d": 1.72
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "3 Tooled Lozenge",
-        "d": 1.73
-      },
-      {
-        "a": "7 Studded",
-        "b": "11 Side Dots",
-        "d": 1.73
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "32 Triple Lozenge",
-        "d": 1.73
-      },
-      {
-        "a": "22 Double Round",
-        "b": "35 Triple Bracketed",
-        "d": 1.73
-      },
-      {
-        "a": "38 Banded & Rings",
-        "b": "40 Banded Square",
-        "d": 1.73
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "35 Triple Bracketed",
-        "d": 1.74
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "23 Double Studded",
-        "d": 1.74
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.74
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "25 Fillet & Dots",
-        "d": 1.75
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "34 Triple Ogee",
-        "d": 1.75
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "14 Centred Lozenge",
-        "d": 1.75
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "32 Triple Lozenge",
-        "d": 1.75
-      },
-      {
-        "a": "7 Studded",
-        "b": "14 Centred Lozenge",
-        "d": 1.76
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "27 Fillet Ogee",
-        "d": 1.76
-      },
-      {
-        "a": "7 Studded",
-        "b": "13 Paired Sides",
-        "d": 1.77
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "32 Triple Lozenge",
-        "d": 1.77
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "33 Triple Square",
-        "d": 1.77
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "35 Triple Bracketed",
-        "d": 1.77
-      },
-      {
-        "a": "24 Fillet",
-        "b": "35 Triple Bracketed",
-        "d": 1.77
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "31 Triple with Dots",
-        "d": 1.77
-      },
-      {
-        "a": "35 Triple Bracketed",
-        "b": "45 Cathedral",
-        "d": 1.77
-      },
-      {
-        "a": "6 Fleuron Corners",
-        "b": "7 Studded",
-        "d": 1.78
-      },
-      {
-        "a": "16 Double with Rings",
-        "b": "27 Fillet Ogee",
-        "d": 1.78
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "29 Fine Fillet & Ring",
-        "d": 1.78
-      },
-      {
-        "a": "37 Banded & Dots",
-        "b": "40 Banded Square",
-        "d": 1.78
-      },
-      {
-        "a": "39 Banded Lozenge",
-        "b": "42 Banded Triple",
-        "d": 1.78
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "23 Double Studded",
-        "d": 1.79
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "18 Double with Ticks",
-        "d": 1.79
-      },
-      {
-        "a": "23 Double Studded",
-        "b": "30 Triple Rule",
-        "d": 1.79
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "30 Triple Rule",
-        "d": 1.79
-      },
-      {
-        "a": "30 Triple Rule",
-        "b": "47 Rosace",
-        "d": 1.79
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "22 Double Round",
-        "d": 1.8
-      },
-      {
-        "a": "22 Double Round",
-        "b": "32 Triple Lozenge",
-        "d": 1.8
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "12 Side Arcs",
-        "d": 1.81
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "30 Triple Rule",
-        "d": 1.81
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "28 Fine Fillet",
-        "d": 1.81
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "34 Triple Ogee",
-        "d": 1.81
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "30 Triple Rule",
-        "d": 1.81
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "16 Double with Rings",
-        "d": 1.82
-      },
-      {
-        "a": "6 Fleuron Corners",
-        "b": "23 Double Studded",
-        "d": 1.82
-      },
-      {
-        "a": "15 Double with Dots",
-        "b": "32 Triple Lozenge",
-        "d": 1.82
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "32 Triple Lozenge",
-        "d": 1.82
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "35 Triple Bracketed",
-        "d": 1.82
-      },
-      {
-        "a": "22 Double Round",
-        "b": "44 Panelled",
-        "d": 1.82
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "35 Triple Bracketed",
-        "d": 1.82
-      },
-      {
-        "a": "6 Fleuron Corners",
-        "b": "16 Double with Rings",
-        "d": 1.83
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "15 Double with Dots",
-        "d": 1.83
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "28 Fine Fillet",
-        "d": 1.83
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "32 Triple Lozenge",
-        "d": 1.83
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "7 Studded",
-        "d": 1.84
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.84
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "15 Double with Dots",
-        "d": 1.84
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "47 Rosace",
-        "d": 1.84
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "15 Double with Dots",
         "d": 1.85
       },
       {
-        "a": "3 Tooled Lozenge",
-        "b": "30 Triple Rule",
-        "d": 1.85
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "22 Double Round",
-        "d": 1.85
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "47 Rosace",
-        "d": 1.85
-      },
-      {
-        "a": "23 Double Studded",
-        "b": "28 Fine Fillet",
-        "d": 1.85
-      },
-      {
-        "a": "43 Banded Fleuron",
-        "b": "49 Gothic Panel",
-        "d": 1.85
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "17 Double Bracketed",
-        "d": 1.86
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "34 Triple Ogee",
-        "d": 1.86
-      },
-      {
-        "a": "7 Studded",
-        "b": "25 Fillet & Dots",
-        "d": 1.86
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "27 Fillet Ogee",
-        "d": 1.87
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "15 Double with Dots",
-        "d": 1.87
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "44 Panelled",
-        "d": 1.87
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "35 Triple Bracketed",
-        "d": 1.87
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "32 Triple Lozenge",
-        "d": 1.87
-      },
-      {
-        "a": "37 Banded & Dots",
-        "b": "48 Court Binding",
+        "a": "11 Side Dots",
+        "b": "13 Paired Sides",
         "d": 1.87
       },
       {
         "a": "0 Plain Rule",
-        "b": "31 Triple with Dots",
-        "d": 1.88
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "22 Double Round",
-        "d": 1.88
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "35 Triple Bracketed",
-        "d": 1.88
-      },
-      {
-        "a": "34 Triple Ogee",
-        "b": "45 Cathedral",
-        "d": 1.88
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "15 Double with Dots",
-        "d": 1.89
-      },
-      {
-        "a": "1 Corner Dots",
-        "b": "20 Double Ogee",
-        "d": 1.89
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "15 Double with Dots",
-        "d": 1.89
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "47 Rosace",
-        "d": 1.89
-      },
-      {
-        "a": "34 Triple Ogee",
-        "b": "47 Rosace",
-        "d": 1.89
-      },
-      {
-        "a": "45 Cathedral",
-        "b": "47 Rosace",
-        "d": 1.89
-      },
-      {
-        "a": "0 Plain Rule",
-        "b": "28 Fine Fillet",
-        "d": 1.9
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "31 Triple with Dots",
-        "d": 1.9
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "15 Double with Dots",
-        "d": 1.9
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "34 Triple Ogee",
-        "d": 1.9
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "23 Double Studded",
-        "d": 1.9
-      },
-      {
-        "a": "33 Triple Square",
-        "b": "44 Panelled",
-        "d": 1.9
-      },
-      {
-        "a": "38 Banded & Rings",
-        "b": "48 Court Binding",
-        "d": 1.9
-      },
-      {
-        "a": "8 Lozenge Corners",
-        "b": "15 Double with Dots",
-        "d": 1.91
-      },
-      {
-        "a": "9 Round Rule",
-        "b": "31 Triple with Dots",
-        "d": 1.91
-      },
-      {
-        "a": "12 Side Arcs",
-        "b": "31 Triple with Dots",
-        "d": 1.91
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "23 Double Studded",
-        "d": 1.91
-      },
-      {
-        "a": "22 Double Round",
-        "b": "23 Double Studded",
-        "d": 1.91
-      },
-      {
-        "a": "22 Double Round",
-        "b": "47 Rosace",
-        "d": 1.91
-      },
-      {
-        "a": "33 Triple Square",
-        "b": "34 Triple Ogee",
-        "d": 1.91
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "27 Fillet Ogee",
-        "d": 1.92
-      },
-      {
-        "a": "7 Studded",
-        "b": "18 Double with Ticks",
-        "d": 1.92
-      },
-      {
-        "a": "10 Side Ticks",
-        "b": "28 Fine Fillet",
-        "d": 1.92
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "31 Triple with Dots",
-        "d": 1.92
-      },
-      {
-        "a": "18 Double with Ticks",
-        "b": "47 Rosace",
-        "d": 1.92
-      },
-      {
-        "a": "28 Fine Fillet",
-        "b": "35 Triple Bracketed",
-        "d": 1.92
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "44 Panelled",
-        "d": 1.93
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "31 Triple with Dots",
-        "d": 1.93
-      },
-      {
-        "a": "13 Paired Sides",
-        "b": "31 Triple with Dots",
-        "d": 1.93
-      },
-      {
-        "a": "19 Double Lozenge",
-        "b": "24 Fillet",
-        "d": 1.93
-      },
-      {
-        "a": "29 Fine Fillet & Ring",
-        "b": "34 Triple Ogee",
-        "d": 1.93
-      },
-      {
-        "a": "36 Banded",
-        "b": "39 Banded Lozenge",
-        "d": 1.93
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "32 Triple Lozenge",
-        "d": 1.94
-      },
-      {
-        "a": "36 Banded",
-        "b": "48 Court Binding",
-        "d": 1.94
-      },
-      {
-        "a": "44 Panelled",
-        "b": "47 Rosace",
-        "d": 1.94
-      },
-      {
-        "a": "2 Double Rule",
-        "b": "47 Rosace",
-        "d": 1.95
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "28 Fine Fillet",
-        "d": 1.95
-      },
-      {
-        "a": "7 Studded",
-        "b": "9 Round Rule",
-        "d": 1.95
-      },
-      {
-        "a": "7 Studded",
-        "b": "30 Triple Rule",
-        "d": 1.95
-      },
-      {
-        "a": "17 Double Bracketed",
-        "b": "44 Panelled",
-        "d": 1.95
-      },
-      {
-        "a": "26 Fillet & Fleurons",
-        "b": "47 Rosace",
-        "d": 1.95
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "35 Triple Bracketed",
-        "d": 1.96
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "19 Double Lozenge",
-        "d": 1.98
-      },
-      {
-        "a": "11 Side Dots",
-        "b": "28 Fine Fillet",
-        "d": 1.98
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "26 Fillet & Fleurons",
-        "d": 1.98
-      },
-      {
-        "a": "5 Bracketed",
-        "b": "23 Double Studded",
-        "d": 1.99
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "21 Double Fleuron",
-        "d": 1.99
-      },
-      {
-        "a": "21 Double Fleuron",
-        "b": "47 Rosace",
-        "d": 1.99
-      },
-      {
-        "a": "25 Fillet & Dots",
-        "b": "47 Rosace",
+        "b": "10 Side Ticks",
         "d": 1.99
       }
     ],
     "near": [
       {
-        "a": "2 Double Rule",
+        "a": "0 Plain Rule",
+        "b": "11 Side Dots",
+        "d": 2.1
+      },
+      {
+        "a": "15 Double with Dots",
+        "b": "25 Fillet & Dots",
+        "d": 2.1
+      },
+      {
+        "a": "21 Double Fleuron",
         "b": "26 Fillet & Fleurons",
-        "d": 2
+        "d": 2.11
       },
       {
         "a": "2 Double Rule",
-        "b": "33 Triple Square",
-        "d": 2
-      },
-      {
-        "a": "14 Centred Lozenge",
-        "b": "15 Double with Dots",
-        "d": 2
-      },
-      {
-        "a": "20 Double Ogee",
-        "b": "32 Triple Lozenge",
-        "d": 2
-      },
-      {
-        "a": "27 Fillet Ogee",
-        "b": "29 Fine Fillet & Ring",
-        "d": 2
-      },
-      {
-        "a": "41 Banded Ogee",
-        "b": "43 Banded Fleuron",
-        "d": 2
-      },
-      {
-        "a": "3 Tooled Lozenge",
-        "b": "20 Double Ogee",
-        "d": 2.01
-      },
-      {
-        "a": "4 Ringed Corners",
-        "b": "28 Fine Fillet",
-        "d": 2.01
+        "b": "24 Fillet",
+        "d": 2.12
       },
       {
         "a": "13 Paired Sides",
-        "b": "28 Fine Fillet",
-        "d": 2.01
+        "b": "14 Centred Lozenge",
+        "d": 2.24
       },
       {
-        "a": "20 Double Ogee",
-        "b": "44 Panelled",
-        "d": 2.01
+        "a": "0 Plain Rule",
+        "b": "9 Round Rule",
+        "d": 2.28
       },
       {
-        "a": "23 Double Studded",
-        "b": "27 Fillet Ogee",
-        "d": 2.01
+        "a": "10 Side Ticks",
+        "b": "14 Centred Lozenge",
+        "d": 2.5
       },
       {
-        "a": "24 Fillet",
-        "b": "47 Rosace",
-        "d": 2.01
+        "a": "10 Side Ticks",
+        "b": "13 Paired Sides",
+        "d": 2.52
       },
       {
-        "a": "27 Fillet Ogee",
-        "b": "32 Triple Lozenge",
-        "d": 2.01
+        "a": "4 Ringed Corners",
+        "b": "5 Bracketed",
+        "d": 2.56
       },
       {
         "a": "2 Double Rule",
-        "b": "21 Double Fleuron",
-        "d": 2.02
+        "b": "20 Double Ogee",
+        "d": 2.62
+      },
+      {
+        "a": "0 Plain Rule",
+        "b": "13 Paired Sides",
+        "d": 2.64
+      },
+      {
+        "a": "2 Double Rule",
+        "b": "30 Triple Rule",
+        "d": 2.66
+      },
+      {
+        "a": "0 Plain Rule",
+        "b": "24 Fillet",
+        "d": 2.8
+      },
+      {
+        "a": "42 Banded Triple",
+        "b": "48 Court Binding",
+        "d": 2.84
       }
     ]
   },
@@ -10027,79 +7581,79 @@
       {
         "a": "34 Lantern",
         "b": "44 Bell",
-        "d": 1.63
+        "d": 1.94
       }
     ],
     "near": [
       {
-        "a": "18 Bee",
-        "b": "23 Rosette",
-        "d": 2.01
-      },
-      {
         "a": "44 Bell",
         "b": "45 Little ship",
-        "d": 2.13
-      },
-      {
-        "a": "14 Thistle",
-        "b": "34 Lantern",
-        "d": 2.15
-      },
-      {
-        "a": "30 Pomegranate",
-        "b": "44 Bell",
-        "d": 2.24
+        "d": 2.21
       },
       {
         "a": "0 Diamond",
         "b": "13 Acorn",
-        "d": 2.28
-      },
-      {
-        "a": "10 Tree",
-        "b": "45 Little ship",
-        "d": 2.29
-      },
-      {
-        "a": "35 Inkpot",
-        "b": "45 Little ship",
-        "d": 2.39
-      },
-      {
-        "a": "34 Lantern",
-        "b": "45 Little ship",
-        "d": 2.42
+        "d": 2.34
       },
       {
         "a": "30 Pomegranate",
-        "b": "45 Little ship",
-        "d": 2.44
+        "b": "44 Bell",
+        "d": 2.36
+      },
+      {
+        "a": "18 Bee",
+        "b": "23 Rosette",
+        "d": 2.4
       },
       {
         "a": "0 Diamond",
         "b": "23 Rosette",
-        "d": 2.45
+        "d": 2.57
       },
       {
-        "a": "0 Diamond",
+        "a": "14 Thistle",
         "b": "34 Lantern",
-        "d": 2.46
-      },
-      {
-        "a": "15 Anchor",
-        "b": "16 Key",
-        "d": 2.5
+        "d": 2.57
       },
       {
         "a": "23 Rosette",
         "b": "26 Fleur-de-lis",
-        "d": 2.5
+        "d": 2.57
+      },
+      {
+        "a": "34 Lantern",
+        "b": "45 Little ship",
+        "d": 2.59
       },
       {
         "a": "13 Acorn",
-        "b": "38 Pine cone",
-        "d": 2.53
+        "b": "34 Lantern",
+        "d": 2.64
+      },
+      {
+        "a": "0 Diamond",
+        "b": "34 Lantern",
+        "d": 2.65
+      },
+      {
+        "a": "10 Tree",
+        "b": "45 Little ship",
+        "d": 2.73
+      },
+      {
+        "a": "15 Anchor",
+        "b": "16 Key",
+        "d": 2.78
+      },
+      {
+        "a": "30 Pomegranate",
+        "b": "34 Lantern",
+        "d": 2.79
+      },
+      {
+        "a": "0 Diamond",
+        "b": "18 Bee",
+        "d": 2.87
       }
     ]
   },
@@ -10278,7 +7832,7 @@
       {
         "a": "pressed-flower",
         "b": "wax-seal",
-        "d": 2.33
+        "d": 2.14
       }
     ]
   },

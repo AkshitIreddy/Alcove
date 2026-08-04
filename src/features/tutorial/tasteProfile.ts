@@ -173,7 +173,24 @@ const ROOM_THEME_TAGS: Readonly<Record<TasteRoomId, readonly ThemeTag[]>> = {
 const PITCH_THEME_TAGS: Readonly<Record<TastePitchId, readonly ThemeTag[]>> = {
   hushed: ['pale', 'muted'],
   warm: ['warm', 'cosy', 'autumn'],
-  deep: ['dark'],
+  /*
+   * `deep` needs TWO words, and the second one is the whole point.
+   *
+   * On `['dark']` alone all ten dark palettes scored identically, the tie broke
+   * on table order, and every room answer resolved to the same grey-brown
+   * Ebonised — so the four "how much colour" cards showed one dark room four
+   * times. Measured with shots-now/taste-matrix.mjs, which renders the room
+   * answer against the colour answer as a grid; the `deep` column was uniform
+   * across every row.
+   *
+   * The question promises "Ink, forest, claret. Dark, and SATURATED all the
+   * way down", and the palette has exactly those — Indigo Room, Forest,
+   * Lacquer Red, Aubergine. What separates them from Ebonised and Fumed is
+   * that the rich ones carry `grand` while the grey ones carry `quiet` and
+   * `muted`. `muted` is already penalised (it is what `hushed` wants), so
+   * rewarding `grand` is the half that was missing.
+   */
+  deep: ['dark', 'grand'],
   bright: ['vivid', 'playful'],
 };
 

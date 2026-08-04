@@ -151,10 +151,6 @@ export const CLOTH_TAGS: readonly ClothTag[] = [
   'winter',
 ];
 
-export function isClothTag(value: unknown): value is ClothTag {
-  return typeof value === 'string' && (CLOTH_TAGS as readonly string[]).includes(value);
-}
-
 /** One bound cloth: what it is called, what it is, and what it feels like. */
 export interface ClothSpec {
   /** Display name, for the studio's swatch caption. */
@@ -304,15 +300,6 @@ export const CLOTHS: readonly (readonly [string, string])[] = CLOTH_SPECS.map(
 
 /** Display names for the fifty cloths, index-aligned with `CLOTHS`. */
 export const CLOTH_LABELS: readonly string[] = CLOTH_SPECS.map((c) => c.label);
-
-/** Every cloth carrying `tag`, as indices into `CLOTHS`. For steered dice. */
-export function clothsTagged(tag: ClothTag): readonly number[] {
-  const out: number[] = [];
-  for (let i = 0; i < CLOTH_SPECS.length; i++) {
-    if ((CLOTH_SPECS[i] as ClothSpec).tags.includes(tag)) out.push(i);
-  }
-  return out;
-}
 
 /**
  * The six a ROOM is dressed in — the icon's own, and the default `FlatScheme`.

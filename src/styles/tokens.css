@@ -69,8 +69,11 @@
   --ink-blue-soft: #456170; /* FLAT.slateDark — 5.11:1 aged */
 
   /* Accent INK (readable text), distinct from the wash PIGMENTS below: the
-     pigments are tuned for paint, this for type. 5.33:1 aged / 6.08 cream. */
-  --ink-accent: #92441f;
+     pigments are tuned for paint, this for type. The twin of --accent-ink
+     below; both are declared because both are used, and deriving one of them
+     is how a rail button ends up on a colour the theme abandoned.
+     6.36:1 aged / 7.26 cream / 5.32 on --paper-deep. */
+  --ink-accent: #455433;
 
   /* ------------------------------------------------------------------------
      Pigments — light face / base face / deep face
@@ -136,16 +139,37 @@
   /* ------------------------------------------------------------------------
      UI accent — the colour the interface uses to say "this one".
 
-     It is the icon's terracotta, because the app already has a signature
-     colour and inventing a second one for the chrome is exactly the drift
-     this file exists to prevent. It stays clear of the amber/lemon faces that
-     content uses for highlights, so a selected control never reads as a
-     highlighted word.
+     It is the icon's MOSS: the leaf on `assets/brand/icon.svg` (fill #7d915c,
+     outlined #4f6138). Still the icon's palette, which is the rule this block
+     has always kept — the app has a signature palette and inventing a second
+     one for the chrome is exactly the drift this file exists to prevent. It
+     stays clear of the amber/lemon faces that content uses for highlights, so
+     a selected control never reads as a highlighted word.
+
+     It was the icon's TERRACOTTA (#c96f4a / #a8552f) until the opening room
+     went dark brown. An accent is not judged on a swatch strip, it is judged
+     lying on the room it has to be a control IN, and on the walnut-and-gilt
+     room terracotta stops being an accent: the seal at the bottom of the shelf
+     is then a rust disc against a warm cream wall two feet from a rust-brown
+     bookcase, and it reads as another piece of the furniture. Twelve accents
+     were photographed on the real first-run screen with only this ramp swapped
+     (`shots-now/hero/accent-board.mjs` → `crop-accent.png`); the greens and
+     teals were the only ones that stayed controls, `honey` disappeared into the
+     wall's gilt exactly as the "clear of amber" rule predicts, and moss is the
+     one of them that was already in the mark.
+
+     The three faces below ARE `--wash-moss-*`, to the hex, and they are spelled
+     out rather than aliased for the reason every other token in this file is:
+     `.nbs-section[data-accent='moss']` rebinds the section pigment to the wash
+     family, and a `var()` chain from the accent into it would make "the accent"
+     and "the moss section" the same declaration rather than two that happen to
+     agree today. The fourth rung is the accent's own — the wash families carry
+     no ink, because a wash is paint and this is type.
      ---------------------------------------------------------------------- */
-  --accent-light: #f4dccd;
-  --accent: #c96f4a; /* FLAT.terracotta */
-  --accent-deep: #a8552f; /* FLAT.terracottaDark — rims, focus ring */
-  --accent-ink: #92441f; /* accent as TYPE: 5.33:1 aged / 6.08 cream */
+  --accent-light: #dfe7cd;
+  --accent: #7d915c; /* FLAT.moss — the icon's leaf */
+  --accent-deep: #4f6138; /* FLAT.mossDark — rims, focus ring, filled seal */
+  --accent-ink: #455433; /* accent as TYPE: 6.36:1 aged / 7.26 cream */
   /* The label a FILLED accent control wears. Every other accent rung is a
      paper tint, so this is the one token that has to flip with the theme:
      on the three light themes it is warm paper-white sitting on a deep

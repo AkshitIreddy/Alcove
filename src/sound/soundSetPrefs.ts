@@ -15,7 +15,7 @@
  * and never an unvoiced engine.
  */
 
-import { createEffect, createRoot, createSignal, on } from 'solid-js';
+import { createSignal } from 'solid-js';
 import { getDb } from '../data/db';
 import { setSoundSet } from './engine';
 import { DEFAULT_SOUND_SET_ID, resolveSoundSetId } from './soundSets';
@@ -128,14 +128,6 @@ export async function saveSoundSet(id: AnySoundSetId | string): Promise<AnySound
     // Best effort, like every other keyed preference in this app.
   }
   return resolved;
-}
-
-/** Subscribe from non-Solid code. Fires immediately, then on every change. */
-export function subscribeSoundSet(listener: (id: AnySoundSetId) => void): () => void {
-  return createRoot((dispose) => {
-    createEffect(on(current, (id) => listener(id)));
-    return dispose;
-  });
 }
 
 /** Test seam: forget the load so a fresh database is read again. */

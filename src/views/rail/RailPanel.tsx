@@ -31,7 +31,7 @@
  * a keyboard press", and a keyboard user needs to land inside the sheet or the
  * panel is unreachable. Either way the opener gets focus back on close.
  */
-import { createEffect, onCleanup, onMount, type JSX } from 'solid-js';
+import { Show, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { gsap } from 'gsap';
 import { tween } from '../../styles/motion';
 import { claimPanelPush, releasePanelPush } from './panelPush';
@@ -52,6 +52,18 @@ export interface RailPanelProps {
 /** Every mounted sheet needs its own push claim; five are alive in a book. */
 let instances = 0;
 
+/**
+ * `?railpanels=eager` puts the sheets back to filling themselves at mount.
+ *
+ * The same trick as `?artworker=0` in features/bookshelf/artOffload.ts, and
+ * for the same reason: the before and the after of a boot optimisation have to
+ * be measurable from ONE build, or the comparison silently includes whatever
+ * else changed in the tree between the two builds.
+ * `shots-now/perf-boot.mjs` quotes both.
+ */
+const EAGER_PANELS =
+  typeof location !== 'undefined' && /[?&]railpanels=eager\b/.test(location.search);
+
 export default function RailPanel(props: RailPanelProps): JSX.Element {
   let sheetRef: HTMLElement | undefined;
   const pushKey = `rail-panel-${(instances += 1)}`;
@@ -63,6 +75,32 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
   });
 
   onCleanup(() => releasePanelPush(pushKey));
+
+  /**
+   * The sheet is always in the DOM; its CONTENTS arrive with the first open.
+   *
+   * Measured, on the shelf: the studio sheet's children are the design
+   * pickers, and they paint 51 preview canvases. Every one of them was drawn
+   * during boot, in front of the reader's first frame, for a sheet parked off
+   * screen at `xPercent: -130` that most readers never open. Deferring them
+   * took ~530ms off the time to a drawn shelf (2257ms → 1723ms, median of 7
+   * on a real GPU; see shots-now/perf-boot.mjs).
+   *
+   * A LATCH, not `props.open`: once a sheet has been opened its contents stay
+   * mounted, so scroll position, tab choice and any in-flight edit survive
+   * closing it — which is what the sheet always did, and is not worth
+   * trading for bytes it has already paid.
+   *
+   * Declared before the animation effect so that on the opening frame the
+   * children exist before the tween starts. The push claim measures
+   * `offsetWidth`, and the sheet's width is CSS (`min(340px, 78vw)`), not
+   * content — but a sheet that visibly filled in mid-slide would be a
+   * regression even if the number was right.
+   */
+  const [everOpened, setEverOpened] = createSignal(EAGER_PANELS || props.open);
+  createEffect(() => {
+    if (props.open) setEverOpened(true);
+  });
 
   createEffect<boolean | undefined>((wasOpen) => {
     const open = props.open;
@@ -144,7 +182,9 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
           <CloseIcon />
         </button>
       </header>
-      <div class="nb-rail-panel-body">{props.children}</div>
+      <div class="nb-rail-panel-body">
+        <Show when={everOpened()}>{props.children}</Show>
+      </div>
     </aside>
   );
 }

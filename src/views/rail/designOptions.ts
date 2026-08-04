@@ -420,10 +420,10 @@ export function drawRoomCard(ctx: FlatCtx, w: number, h: number, look: RoomLook)
  * one-paper-each rule: its carpentry is not chosen here, it is whatever
  * `DEFAULT_SHELF_DESIGN` currently is, and a default that lands on a pair the
  * table already names is mildly untidy rather than a reason to fail a build in
- * a file that did not choose it. (It does today: the opening room and The
- * Chantry are both a chapel worked in quatrefoil, in different colours, in
- * different families, thirty cards apart. The Chantry is what keeps that
- * carpentry reachable if the default ever moves off it again.)
+ * a file that did not choose it. (It does not today — the default is a
+ * refectory worked in guilloche and no card is — but it did while the default
+ * was a chapel in quatrefoil, which The Chantry also is. The Chantry is what
+ * keeps that carpentry reachable now the default has moved off it.)
  *
  * ## The house room
  *

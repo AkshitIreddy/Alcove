@@ -91,7 +91,14 @@ import DesignPicker, { type PickerOption } from './DesignPicker';
 import DesignStrip, { StarMark, cappedTo, createCuration, starWords } from './DesignStrip';
 import { DesignCanvas } from './designArt';
 import { bindingOptions, drawBindingCard, ownAxisOptions } from './designOptions';
-import { bookBinding, loadDesignPrefs, saveBookBinding } from '../../data/designPrefs';
+import {
+  activeRoomDesign,
+  bookBinding,
+  loadDesignPrefs,
+  saveBookBinding,
+  shelfDesignOf,
+} from '../../data/designPrefs';
+import { shelfHeadroom, type ShelfHeadroom } from '../../features/bookshelf/bookFit';
 import type { CurationAxis } from '../../data/shelfOfMine';
 import { stopShelfKeys } from './shelfKeys';
 import '../../styles/studio.css';
@@ -394,6 +401,39 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     for (const key of keys) delete current[key];
     props.onStyleChange(Object.keys(current).length > 0 ? current : null);
   };
+
+  /* ------------------------- does it fit the case? ----------------------- */
+
+  /**
+   * What the open bookcase's carpentry leaves for a book to stand in.
+   *
+   * A height is a request the case can refuse: an arcade, a gable, a plate
+   * rail or a run of spindles hangs into the top of every bay, and the shelf
+   * trims a book that will not clear it (`features/bookshelf/bookFit.ts`).
+   * That has to be SAID, next to the control that caused it — a book quietly
+   * drawn shorter than the number printed above the chips is the panel lying.
+   *
+   * `min` and not the height at some particular x: the shelf lays its own rows
+   * out and no book owns a position, so the only promise that survives a
+   * re-layout is the one that holds everywhere in the bay. Under an arcade the
+   * book may well come out taller than this, which is why the copy says "at
+   * least" — a pleasant surprise is allowed, a broken promise is not.
+   */
+  const headroom = (): ShelfHeadroom => shelfHeadroom(shelfDesignOf(activeRoomDesign()));
+
+  /**
+   * True when the height printed at the top of this section is one the case
+   * cannot give.
+   *
+   * Deliberately not gated on the reader having TYPED it. The heading says
+   * "290px tall" whatever put the number there — `createBook` dresses every
+   * new book out of the format bands — and a panel that prints 290 next to a
+   * shelf drawing 144 is a panel telling a lie it could have caught.
+   */
+  const overTall = (): boolean => style().height > headroom().min + 0.5;
+
+  /** Their answer to that: keep the height and stand through the carpentry. */
+  const overlapping = (): boolean => style().overlap === true;
 
   /* --------------------------- live preview art -------------------------- */
 
@@ -1215,6 +1255,38 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             )}
           </For>
         </div>
+        {/*
+          The case's answer, printed where the height was asked for.
+
+          Shown only when it bites — a panel that warns about a fit nobody has
+          run into is a panel people stop reading. When it does bite the reader
+          gets the number, the name of the carpentry that set it, and the way
+          out; nothing is decided quietly on their behalf.
+        */}
+        <Show when={overTall()}>
+          <div class="nb-fit-note" role="status">
+            <p class="nb-panel-footnote nb-panel-footnote-tight">
+              your {headroom().name.toLowerCase()} case leaves{' '}
+              {headroom().varies ? 'at least ' : ''}
+              {Math.round(headroom().min)}px of standing room
+              {headroom().varies ? ' under its arches' : ''}.{' '}
+              <Show
+                when={overlapping()}
+                fallback={<>this book is trimmed to fit.</>}
+              >
+                <>this book stands through the carpentry.</>
+              </Show>
+            </p>
+            <button
+              type="button"
+              class="nb-chip"
+              aria-pressed={overlapping()}
+              onClick={() => patch({ overlap: !overlapping() })}
+            >
+              keep my height
+            </button>
+          </div>
+        </Show>
         <label class="nb-panel-row">
           <span class="nb-panel-row-label">
             thickness <em class="nb-panel-row-hint">{Math.round(style().thickness)}px</em>

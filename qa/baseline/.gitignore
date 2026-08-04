@@ -1,0 +1,5 @@
+# Everything the visual suite writes when a case fails: the triptychs, the raw
+# actuals and the report page. Regenerated on every run (`npm run visual`), so
+# committing one would only ever be a stale picture of a bug somebody already
+# fixed. The BASELINES beside this file are committed — they are the test.
+__report/

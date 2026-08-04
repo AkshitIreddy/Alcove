@@ -25,7 +25,6 @@ export const DOODLE_KINDS = [
 export type DoodleKind = (typeof DOODLE_KINDS)[number];
 
 export const MAX_DOODLES_PER_PAGE = 4;
-export const DOODLE_OPACITY = 0.35;
 
 export interface DoodlePlan {
   kind: DoodleKind;

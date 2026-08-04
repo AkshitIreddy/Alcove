@@ -165,5 +165,3 @@ export function mapPigmentRamp(hexes: readonly string[]): number[] {
   return out;
 }
 
-/** Number of curated pigments (mirrors art/spines.PIGMENT_COUNT). */
-export const SPINE_PIGMENT_COUNT = PALETTE_DUOS.length;

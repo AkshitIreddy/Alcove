@@ -167,14 +167,15 @@ grouped by family so the picker reads as a palette; `FEATURED_THEME_IDS` is the
 | id | name | the idea |
 |---|---|---|
 | `athenaeum` | **Old Athenaeum** | Warm oak, parchment plaster, terracotta cloth — the house style, and exactly the palette `art/flat.ts` hard-codes. A test pins the two together hex-for-hex, so it cannot drift away from the vocabulary. First in the picker |
-| `lapis` | **Lapis Cabinet** | `DEFAULT_THEME_ID`: deep blue paint with gilt, in amber, coral and mulberry cloth. It took the slot from `verdigris` when the opening room was judged as a whole first-run screen rather than as a picker card — see the note on the constant |
-| `verdigris` | **Verdigris Library** | The previous default: a blue-green painted case on warm plaster, in copper, saffron and ink |
+| `walnut` | **English Walnut** | `DEFAULT_THEME_ID`: dark figured walnut on warm cream, in oxblood, ink-blue and bottle cloth. It took the slot from `lapis` when the reader asked the opening room to be "a dark brown shelf" — see the note on the constant for the five other browns that were shot and dropped |
+| `lapis` | **Lapis Cabinet** | The previous default: deep blue paint with gilt, in amber, coral and mulberry cloth |
+| `verdigris` | **Verdigris Library** | The default before that: a blue-green painted case on warm plaster, in copper, saffron and ink |
 
 The other fifty-seven are in `art/themes.ts`; listing them here would be a second
 copy to go stale, which is exactly what happened to this table.
 
 `getTheme` falls back to `DEFAULT_THEME_ID` for any id it does not know — a
-library saved in the retired Sakura Pavilion opens in the Lapis Cabinet
+library saved in the retired Sakura Pavilion opens in English Walnut
 rather than failing.
 
 ### Two constants per axis, never one
@@ -184,9 +185,9 @@ already been made here twice:
 
 | axis | what a NEW library opens on | what an unknown id resolves to |
 |---|---|---|
-| colour | `DEFAULT_THEME_ID` = `lapis` | `DEFAULT_THEME_ID` — the room blob is validated field by field, so there is nothing else to fall to |
-| carpentry | `DEFAULT_SHELF_DESIGN` = chapel / quatrefoil | `FALLBACK_SHELF_DESIGN` = plank / none |
-| paper | `DEFAULT_WALLPAPER_ID` = `fleur-royal` | `FALLBACK_WALLPAPER_ID` = `plain-parchment` |
+| colour | `DEFAULT_THEME_ID` = `walnut` | `DEFAULT_THEME_ID` — the room blob is validated field by field, so there is nothing else to fall to |
+| carpentry | `DEFAULT_SHELF_DESIGN` = refectory / guilloche | `FALLBACK_SHELF_DESIGN` = plank / none |
+| paper | `DEFAULT_WALLPAPER_ID` = `trellis-gilt` | `FALLBACK_WALLPAPER_ID` = `plain-parchment` |
 
 The opening value has to show *something* of the vocabulary, or a reader never
 learns the axis is theirs to choose. The fallback has to be a visible nothing you

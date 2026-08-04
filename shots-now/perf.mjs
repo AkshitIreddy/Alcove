@@ -1,4 +1,16 @@
-﻿import { chromium } from 'playwright';
+﻿/**
+ * perf.mjs — is the app alive? first paint, main-thread lag, idle fps, heap.
+ *
+ * Runs against the DEV server and samples every 500ms, so the smallest change
+ * it can see is half a second. That is the right tool for "did the shelf ever
+ * appear and does it stay responsive", and the wrong one for optimisation —
+ * a 150ms saving reads as zero here.
+ *
+ * For boot timing use `perf-boot.mjs` next door: it probes before any app
+ * script runs, samples on rAF, runs against a PRODUCTION build, and takes two
+ * URLs so a change can be A/B'd from one build.
+ */
+import { chromium } from 'playwright';
 const b = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader'] });
 const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
 const t0 = Date.now();

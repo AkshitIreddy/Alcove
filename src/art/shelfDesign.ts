@@ -95,7 +95,6 @@ import {
   FLAT,
   flatScheme,
   inkWidth,
-  wobbleRect,
   type FlatCtx,
 } from './flat';
 
@@ -712,31 +711,51 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * repeated five times across 1200px at 80% zoom it reads as bumps along the top
  * of a slab rather than as architecture (`shots-now/room-rank/board-before-7.png`,
  * the house room beside `coastal.stern-gallery`, which is the same arcade with
- * a lighter timber and reads far better).
+ * a lighter timber and reads far better). `chapel` took the slot on that pass,
+ * for its trefoil heads and its battlemented crest.
  *
- * `chapel` is the answer, and it was picked out of twelve builds shot in one
- * colour so only the carpentry varied (`board-builds.png`):
+ * ## And again, to `refectory` + `guilloche`, when the room went dark brown
  *
- *  - TREFOIL heads in every bay. A three-lobed opening keeps its shape at
- *    shelf zoom where a shallow round one does not, and it is the silhouette
- *    the reader's own chapter house and minster are built on.
- *  - a BATTLEMENTED crest. The crest is the one edge in the case a build can
- *    genuinely change, and `world.ts` stands the plinth out of the same bitmap
- *    mirrored — so the case gains a crenellated top AND a moulded foot from one
- *    drawing.
- *  - PILASTERS on the uprights, which the fine edge patterns can work on.
+ * The reader asked for the opening room to be "a dark brown shelf" with a
+ * patterned wall. `chapel` was chosen against a mid-light BLUE PAINTED cabinet,
+ * and two of the three reasons it won stop holding when the timber goes to
+ * English Walnut and the wall stops being plain:
  *
- * Its mood words are `ornate, severe, formal`, so the derived card for the
- * house room (`views/rail/designOptions.ts`) files under Grand — which is what
- * the picture actually is. That check matters: `lychgate` shot slightly better
- * still, and was dropped because its tags are `rustic, antique, heavy` and a
- * blue battlemented cabinet filed under Rustic reads as a bug.
+ *  - `quatrefoil` was chosen for reading "at nine pixels", and it does — in a
+ *    scheme where the pattern colour folds away from the timber. On walnut the
+ *    fold is small and the pierced rosettes go brown-on-brown: at 1:1 they are
+ *    a run of dark blobs along every board, not tracery
+ *    (`shots-now/hero/crop-case3.png`, top left, beside the same case in
+ *    `guilloche`). `guilloche`'s plaited rings carry a boss in every eye that
+ *    lands on the PALE face, so on a dark case it reads as a gilt chain — which
+ *    is the one thing a dark case needs and a light one does not.
+ *  - the trefoil arcade is six small openings per bay-run. Against the plain
+ *    wall it was the only pattern on screen; against `trellis-gilt` there are
+ *    now two, and at the 38% a reader reaches within a minute the trefoils
+ *    collapse into a row of bumps while the wall's net stays legible
+ *    (`shots-now/hero/fit/`). A dark case in a papered room wants FEWER, larger
+ *    openings, not more small ones.
  *
- * `quatrefoil` is the pattern, and it is the one gothic motif in the book that
- * still reads at nine pixels (see its drawer). It puts a pierced four-lobe
- * rosette along every board edge and down the posts, agreeing with the trefoil
- * bays above it; `guilloche`'s bead chain was the previous default and is
- * quieter than this case can carry.
+ * `refectory` is the answer, picked from eight builds shot on the settled
+ * colour and the settled wall so only the carpentry varied
+ * (`shots-now/hero/board-case3.png`):
+ *
+ *  - OGEE heads, the largest single curve in the book. They hold their shape
+ *    from 80% down to 38% where trefoil, arch and dentil all stop reading.
+ *  - HEAVY PEGGED boards on slab uprights. `gothic` and `minster` keep their
+ *    silhouette at that size too and were dropped for the opposite reason:
+ *    sharpened to a point and repeated six times they read as a row of tents.
+ *  - its mood words are `heavy, antique, severe`, so the derived card for the
+ *    house room (`views/rail/designOptions.ts`) files under Antique. That check
+ *    is why `lychgate` was dropped last time — a blue battlemented cabinet
+ *    filed under Rustic reads as a bug — and it is why this one passes: dark
+ *    figured walnut IS the antique family, in a way lapis never was.
+ *
+ * What it gives up is the battlement. `world.ts` mirrors the crest bitmap into
+ * the plinth, so a flat crest is also a flat foot; the case gains a plain slab
+ * cornice top and bottom instead of a crenellated one. On a dark timber that is
+ * a gain rather than a loss — the guilloche runs the length of both boards, so
+ * the case is finished with a gold rule at each end instead of a sawtooth.
  *
  * Paired with {@link FALLBACK_SHELF_DESIGN}, which answers a different
  * question — see the note there.
@@ -747,8 +766,8 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * MORE often, not less: it was chosen by looking at twelve builds side by side.
  */
 export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
-  build: 'chapel',
-  pattern: 'quatrefoil',
+  build: 'refectory',
+  pattern: 'guilloche',
 };
 
 /**
@@ -953,10 +972,6 @@ export const BUILD_TAGS: readonly BuildTag[] = [
   'utilitarian',
 ];
 
-export function isBuildTag(value: unknown): value is BuildTag {
-  return typeof value === 'string' && (BUILD_TAGS as readonly string[]).includes(value);
-}
-
 /**
  * One carpentry, as numbers the four part-drawers read.
  *
@@ -999,6 +1014,35 @@ export interface BuildSpec {
   postShaft: number;
   postTrim: PostTrim;
   opening: OpeningKind;
+  /**
+   * How much of the opening is left for a BOOK to stand in, as a fraction of
+   * its height, measured where the carpentry hangs LOWEST.
+   *
+   * Required — the same reason `tier` is. A build is not finished until
+   * somebody has said how tall a book may stand in it, and the fifty-two that
+   * were here before this field said nothing: every book on the shelf was
+   * sized against the flat plank-to-plank gap, so an arcade, a gable, an ogee
+   * or a scalloped valance was simply drawn THROUGH by the tall books, and
+   * "The Long Walk" ran up past the arch heads into the board above. A build
+   * that cannot answer this question has no business being offered.
+   *
+   * It is the CAUSE, not a description: `openingHead` turns it into the depth
+   * of the head carpentry and every opening painter below sizes its top member
+   * from that depth, so the declaration and the drawing cannot drift apart.
+   * Lower it and the arcade gets deeper; raise it and the arch flattens. The
+   * numbers in the table are the ones that reproduce, to the pixel, the
+   * carpentry that was already drawn at the shelf's true 1132 × 280 opening.
+   *
+   * 1 means nothing hangs into the bay at all. It is not the same as "no
+   * ornament": `panelled` fills the whole opening and still declares 1,
+   * because fielded panels are the BACK of the case and a book stands in front
+   * of them, exactly as it stands in front of a `grid`'s uprights.
+   *
+   * Where the head is an arcade this is the height at the PIERS, which is the
+   * shortest point of the bay; a book standing under the crown of the arch
+   * gets the extra, and {@link clearHeightAt} is what hands it out.
+   */
+  headroom: number;
   crown: CorniceKind;
   crest: CrestKind;
   /** Gilt studs along the cornice frieze. Off for builds that carry their own crest. */
@@ -1033,7 +1077,8 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   plank: build('plank', 'Plain Plank', 'A board, two uprights, nothing in the way of the books.',
     ['plain', 'natural', 'utilitarian'],
     { plankEdge: 0.28, plankRadius: 0.22, plankTrim: 'none', postShaft: 1, postTrim: 'none',
-      opening: 'plain', crown: 'board', crest: 'flat', crownStuds: true }, 'quiet', 'showpiece'),
+      opening: 'plain', headroom: 1,
+      crown: 'board', crest: 'flat', crownStuds: true }, 'quiet', 'showpiece'),
 
   // OFFCUT, and the only build in the table that repeats the FALLBACK case's
   // whole silhouette: `plain` opening, `board` cornice, `flat` crest, full-width
@@ -1048,44 +1093,52 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   shaker: build('shaker', 'Shaker', 'Every arris taken off with two strokes of a plane, and nothing else.',
     ['plain', 'refined', 'natural'],
     { plankEdge: 0.24, plankRadius: 0.1, plankTrim: 'chamfer', postShaft: 1, postTrim: 'chamfer',
-      opening: 'plain', crown: 'board', crest: 'flat', crownStuds: false }, 'quiet', 'offcut'),
+      opening: 'plain', headroom: 1,
+      crown: 'board', crest: 'flat', crownStuds: false }, 'quiet', 'offcut'),
 
   schoolroom: build('schoolroom', 'Schoolroom', 'A ledge along every shelf, worn smooth by a century of satchels.',
     ['plain', 'utilitarian', 'antique'],
     { plankEdge: 0.3, plankRadius: 0.12, plankTrim: 'lip', postShaft: 1, postTrim: 'stile',
-      opening: 'ledge', crown: 'bedMould', crest: 'flat', crownStuds: true }, 'quiet', 'catalogue'),
+      opening: 'ledge', headroom: 0.9,
+      crown: 'bedMould', crest: 'flat', crownStuds: true }, 'quiet', 'catalogue'),
 
   atelier: build('atelier', 'Atelier', 'Thin uprights, thin boards, and as much air as the books allow.',
     ['modern', 'plain', 'airy'],
     { plankEdge: 0.2, plankRadius: 0.06, plankTrim: 'none', postShaft: 0.72, postTrim: 'none',
-      opening: 'plain', crown: 'rail', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
+      opening: 'plain', headroom: 1,
+      crown: 'rail', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
 
   ladder: build('ladder', 'Ladder Shelf', 'Slim rails with rungs; the boards are simply laid across them.',
     ['plain', 'airy', 'modern'],
     { plankEdge: 0.22, plankRadius: 0.3, plankTrim: 'rail', postShaft: 0.56, postTrim: 'ladder',
-      opening: 'plain', crown: 'rail', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
+      opening: 'plain', headroom: 1,
+      crown: 'rail', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
 
   workbench: build('workbench', 'Workbench', 'Strapped and braced, built to be stood on rather than admired.',
     ['utilitarian', 'heavy', 'rustic'],
     { plankEdge: 0.36, plankRadius: 0.08, plankTrim: 'strap', postShaft: 1, postTrim: 'strap',
-      opening: 'xbrace', crown: 'slab', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
+      opening: 'xbrace', headroom: 0.95,
+      crown: 'slab', crest: 'flat', crownStuds: false }, 'quiet', 'catalogue'),
 
   /* ---- cabinet work ---- */
 
   faceFrame: build('faceFrame', 'Face Frame', 'Cabinet work: a proud rail on every board and a framed opening.',
     ['formal', 'refined', 'plain'],
     { plankEdge: 0.3, plankRadius: 0.14, plankTrim: 'lip', postShaft: 1, postTrim: 'stile',
-      opening: 'frame', crown: 'stepped', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
+      opening: 'frame', headroom: 0.925,
+      crown: 'stepped', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
 
   barrister: build('barrister', 'Barrister', 'Glazed fronts hinted at by their sashes, with a pull on every board.',
     ['formal', 'refined', 'antique'],
     { plankEdge: 0.26, plankRadius: 0.16, plankTrim: 'knob', postShaft: 1, postTrim: 'stile',
-      opening: 'glass', crown: 'stepped', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
+      opening: 'glass', headroom: 0.8,
+      crown: 'stepped', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
 
   bookbinder: build('bookbinder', 'Bookbinder', 'Beaded boards between fielded pilasters, under a course of teeth.',
     ['refined', 'formal', 'antique'],
     { plankEdge: 0.28, plankRadius: 0.18, plankTrim: 'bead', postShaft: 1, postTrim: 'pilaster',
-      opening: 'frame', crown: 'bedMould', crest: 'dentil', crownStuds: true }, 'cabinet', 'showpiece'),
+      opening: 'frame', headroom: 0.925,
+      crown: 'bedMould', crest: 'dentil', crownStuds: true }, 'cabinet', 'showpiece'),
 
   // OFFCUT. Its two distinctives are `glass`, which `barrister` draws better
   // (same sashes, plus a pull on every board), and the `finial` crest — which
@@ -1095,39 +1148,46 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   conservatory: build('conservatory', 'Conservatory', 'Slender glazing bars and a finial at each end of the cornice.',
     ['airy', 'refined', 'formal'],
     { plankEdge: 0.22, plankRadius: 0.2, plankTrim: 'lip', postShaft: 0.9, postTrim: 'stile',
-      opening: 'glass', crown: 'board', crest: 'finial', crownStuds: true }, 'cabinet', 'offcut'),
+      opening: 'glass', headroom: 0.8,
+      crown: 'board', crest: 'finial', crownStuds: true }, 'cabinet', 'offcut'),
 
   orangery: build('orangery', 'Orangery', 'Round-headed bays under a scalloped cresting, all light and lime.',
     ['airy', 'refined', 'ornate'],
     { plankEdge: 0.24, plankRadius: 0.24, plankTrim: 'bead', postShaft: 0.9, postTrim: 'pilaster',
-      opening: 'arch', crown: 'bedMould', crest: 'scallop', crownStuds: true }, 'cabinet', 'showpiece'),
+      opening: 'arch', headroom: 0.62,
+      crown: 'bedMould', crest: 'scallop', crownStuds: true }, 'cabinet', 'showpiece'),
 
   campaign: build('campaign', 'Campaign Chest', 'Brass straps and corner brackets: a bookcase that has been shipped.',
     ['utilitarian', 'formal', 'antique'],
     { plankEdge: 0.32, plankRadius: 0.08, plankTrim: 'strap', postShaft: 1, postTrim: 'bracket',
-      opening: 'panelled', crown: 'slab', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
+      opening: 'panelled', headroom: 1,
+      crown: 'slab', crest: 'flat', crownStuds: true }, 'cabinet', 'catalogue'),
 
   vestry: build('vestry', 'Vestry', 'Deep panels and a plain frieze. Sober, and rather good at it.',
     ['formal', 'severe', 'antique'],
     { plankEdge: 0.3, plankRadius: 0.1, plankTrim: 'lip', postShaft: 1, postTrim: 'pilaster',
-      opening: 'panelled', crown: 'frieze', crest: 'flat', crownStuds: false }, 'cabinet', 'catalogue'),
+      opening: 'panelled', headroom: 1,
+      crown: 'frieze', crest: 'flat', crownStuds: false }, 'cabinet', 'catalogue'),
 
   /* ---- compartments and grids ---- */
 
   apothecary: build('apothecary', 'Apothecary', 'Many small compartments behind the books, and a dentil course above.',
     ['refined', 'utilitarian', 'antique'],
     { plankEdge: 0.32, plankRadius: 0.12, plankTrim: 'cleat', postShaft: 0.9, postTrim: 'batten',
-      opening: 'divided', crown: 'bedMould', crest: 'dentil', crownStuds: false }, 'compartment', 'showpiece'),
+      opening: 'divided', headroom: 0.695,
+      crown: 'bedMould', crest: 'dentil', crownStuds: false }, 'compartment', 'showpiece'),
 
   pigeonhole: build('pigeonhole', 'Pigeonhole', 'A fine grid of cubbies — a sorting office that took up reading.',
     ['utilitarian', 'plain', 'antique'],
     { plankEdge: 0.24, plankRadius: 0.12, plankTrim: 'none', postShaft: 0.85, postTrim: 'stile',
-      opening: 'grid', crown: 'board', crest: 'flat', crownStuds: false }, 'compartment', 'catalogue'),
+      opening: 'grid', headroom: 0.53,
+      crown: 'board', crest: 'flat', crownStuds: false }, 'compartment', 'catalogue'),
 
   mercantile: build('mercantile', 'Mercantile', 'Counter-shop carpentry: toothed boards over deep pigeon runs.',
     ['utilitarian', 'antique', 'formal'],
     { plankEdge: 0.3, plankRadius: 0.1, plankTrim: 'dentil', postShaft: 0.9, postTrim: 'batten',
-      opening: 'divided', crown: 'stepped', crest: 'dentil', crownStuds: false }, 'compartment', 'catalogue'),
+      opening: 'divided', headroom: 0.695,
+      crown: 'stepped', crest: 'dentil', crownStuds: false }, 'compartment', 'catalogue'),
 
   // OFFCUT. The same regular `grid` opening as `pigeonhole` — at 1:1 the two
   // foot crops are the same picture — and the irregularity the name sells
@@ -1136,133 +1196,158 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   rookery: build('rookery', 'Rookery', 'Too many small holes, arranged with more enthusiasm than plan.',
     ['whimsical', 'plain', 'cosy'],
     { plankEdge: 0.22, plankRadius: 0.16, plankTrim: 'none', postShaft: 0.8, postTrim: 'batten',
-      opening: 'grid', crown: 'board', crest: 'scallop', crownStuds: false }, 'compartment', 'offcut'),
+      opening: 'grid', headroom: 0.53,
+      crown: 'board', crest: 'scallop', crownStuds: false }, 'compartment', 'offcut'),
 
   dovecote: build('dovecote', 'Dovecote', 'Little arched holes behind the books, as if something might nest.',
     ['whimsical', 'cosy', 'natural'],
     { plankEdge: 0.24, plankRadius: 0.2, plankTrim: 'bead', postShaft: 0.82, postTrim: 'batten',
-      opening: 'dovecote', crown: 'board', crest: 'flat', crownStuds: false }, 'compartment', 'showpiece'),
+      opening: 'dovecote', headroom: 0.487,
+      crown: 'board', crest: 'flat', crownStuds: false }, 'compartment', 'showpiece'),
 
   curiosity: build('curiosity', 'Curiosity Cabinet', 'Compartments, pulls and finials: everything is worth showing.',
     ['ornate', 'fancy', 'whimsical'],
     { plankEdge: 0.28, plankRadius: 0.14, plankTrim: 'knob', postShaft: 0.88, postTrim: 'pilaster',
-      opening: 'divided', crown: 'bedMould', crest: 'finial', crownStuds: true }, 'compartment', 'catalogue'),
+      opening: 'divided', headroom: 0.695,
+      crown: 'bedMould', crest: 'finial', crownStuds: true }, 'compartment', 'catalogue'),
 
   /* ---- the classical orders ---- */
 
   arch: build('arch', 'Arch Opening', 'Round-headed bays, the way a reading room carries its ceiling.',
     ['formal', 'refined', 'airy'],
     { plankEdge: 0.26, plankRadius: 0.24, plankTrim: 'bead', postShaft: 1, postTrim: 'none',
-      opening: 'arch', crown: 'board', crest: 'flat', crownStuds: true }, 'classical', 'showpiece'),
+      opening: 'arch', headroom: 0.62,
+      crown: 'board', crest: 'flat', crownStuds: true }, 'classical', 'showpiece'),
 
   cloister: build('cloister', 'Cloister', 'An arcade on plain columns under a deep, undecorated frieze.',
     ['formal', 'severe', 'antique'],
     { plankEdge: 0.26, plankRadius: 0.18, plankTrim: 'bead', postShaft: 0.94, postTrim: 'column',
-      opening: 'arch', crown: 'frieze', crest: 'flat', crownStuds: false }, 'classical', 'catalogue'),
+      opening: 'arch', headroom: 0.62,
+      crown: 'frieze', crest: 'flat', crownStuds: false }, 'classical', 'catalogue'),
 
   colonnade: build('colonnade', 'Cornice & Column', 'Columns with capitals, carrying a pedimented entablature.',
     ['formal', 'ornate', 'antique'],
     { plankEdge: 0.26, plankRadius: 0.18, plankTrim: 'bead', postShaft: 0.86, postTrim: 'column',
-      opening: 'frame', crown: 'frieze', crest: 'pediment', crownStuds: true }, 'classical', 'catalogue'),
+      opening: 'frame', headroom: 0.925,
+      crown: 'frieze', crest: 'pediment', crownStuds: true }, 'classical', 'catalogue'),
 
   scriptorium: build('scriptorium', 'Scriptorium', 'A stepped cornice with teeth, over an arcade you could work under.',
     ['formal', 'antique', 'refined'],
     { plankEdge: 0.28, plankRadius: 0.16, plankTrim: 'lip', postShaft: 0.92, postTrim: 'column',
-      opening: 'arch', crown: 'stepped', crest: 'dentil', crownStuds: true }, 'classical', 'showpiece'),
+      opening: 'arch', headroom: 0.62,
+      crown: 'stepped', crest: 'dentil', crownStuds: true }, 'classical', 'showpiece'),
 
   observatory: build('observatory', 'Observatory', 'Turned uprights and finials, for instruments as much as books.',
     ['formal', 'ornate', 'fancy'],
     { plankEdge: 0.26, plankRadius: 0.2, plankTrim: 'bead', postShaft: 0.9, postTrim: 'turned',
-      opening: 'arch', crown: 'bedMould', crest: 'finial', crownStuds: true }, 'classical', 'catalogue'),
+      opening: 'arch', headroom: 0.62,
+      crown: 'bedMould', crest: 'finial', crownStuds: true }, 'classical', 'catalogue'),
 
   parlour: build('parlour', 'Parlour', 'Nulled boards and a reeded cornice: the good room, kept for company.',
     ['cosy', 'refined', 'fancy'],
     { plankEdge: 0.26, plankRadius: 0.22, plankTrim: 'nulling', postShaft: 0.95, postTrim: 'pilaster',
-      opening: 'frame', crown: 'reeded', crest: 'scallop', crownStuds: true }, 'classical', 'catalogue'),
+      opening: 'frame', headroom: 0.925,
+      crown: 'reeded', crest: 'scallop', crownStuds: true }, 'classical', 'catalogue'),
 
   /* ---- gothic ---- */
 
   gothic: build('gothic', 'Gothic Arch', 'Pointed bays under a battlemented cornice.',
     ['ornate', 'severe', 'antique'],
     { plankEdge: 0.24, plankRadius: 0.12, plankTrim: 'bead', postShaft: 0.92, postTrim: 'column',
-      opening: 'gothic', crown: 'bedMould', crest: 'battlement', crownStuds: false }, 'gothic', 'showpiece'),
+      opening: 'gothic', headroom: 0.495,
+      crown: 'bedMould', crest: 'battlement', crownStuds: false }, 'gothic', 'showpiece'),
 
   chapel: build('chapel', 'Chapel', 'Trefoil heads in every bay, and battlements to finish the wall.',
     ['ornate', 'severe', 'formal'],
     { plankEdge: 0.26, plankRadius: 0.1, plankTrim: 'dentil', postShaft: 0.9, postTrim: 'pilaster',
-      opening: 'trefoil', crown: 'frieze', crest: 'battlement', crownStuds: false }, 'gothic', 'catalogue'),
+      opening: 'trefoil', headroom: 0.498,
+      crown: 'frieze', crest: 'battlement', crownStuds: false }, 'gothic', 'catalogue'),
 
   minster: build('minster', 'Minster', 'Pointed bays under a gabled run — the whole nave, at shelf scale.',
     ['ornate', 'antique', 'severe'],
     { plankEdge: 0.28, plankRadius: 0.1, plankTrim: 'lip', postShaft: 0.9, postTrim: 'column',
-      opening: 'gothic', crown: 'stepped', crest: 'sawtooth', crownStuds: false }, 'gothic', 'catalogue'),
+      opening: 'gothic', headroom: 0.495,
+      crown: 'stepped', crest: 'sawtooth', crownStuds: false }, 'gothic', 'catalogue'),
 
   refectory: build('refectory', 'Refectory', 'Ogee heads on heavy pegged timber. Built to outlast the order.',
     ['heavy', 'antique', 'severe'],
     { plankEdge: 0.34, plankRadius: 0.1, plankTrim: 'peg', postShaft: 1, postTrim: 'slab',
-      opening: 'ogee', crown: 'slab', crest: 'flat', crownStuds: false }, 'gothic', 'catalogue'),
+      opening: 'ogee', headroom: 0.482,
+      crown: 'slab', crest: 'flat', crownStuds: false }, 'gothic', 'catalogue'),
 
   lychgate: build('lychgate', 'Lychgate', 'Strapped oak and an ogee opening, as if it stood out in the weather.',
     ['rustic', 'antique', 'heavy'],
     { plankEdge: 0.32, plankRadius: 0.14, plankTrim: 'strap', postShaft: 0.95, postTrim: 'strap',
-      opening: 'ogee', crown: 'board', crest: 'sawtooth', crownStuds: false }, 'gothic', 'catalogue'),
+      opening: 'ogee', headroom: 0.482,
+      crown: 'board', crest: 'sawtooth', crownStuds: false }, 'gothic', 'catalogue'),
 
   /* ---- cottage, fret and fancy ---- */
 
   valance: build('valance', 'Scalloped Valance', 'A fretted pelmet hangs over every shelf; the cornice waves back.',
     ['cosy', 'whimsical', 'fancy'],
     { plankEdge: 0.28, plankRadius: 0.28, plankTrim: 'scallop', postShaft: 1, postTrim: 'none',
-      opening: 'valance', crown: 'board', crest: 'scallop', crownStuds: true }, 'cottage', 'showpiece'),
+      opening: 'valance', headroom: 0.847,
+      crown: 'board', crest: 'scallop', crownStuds: true }, 'cottage', 'showpiece'),
 
   cottage: build('cottage', 'Cottage', 'Chamfered posts, a pelmet, and a cornice that will not lie straight.',
     ['cosy', 'natural', 'whimsical'],
     { plankEdge: 0.26, plankRadius: 0.26, plankTrim: 'bead', postShaft: 1, postTrim: 'chamfer',
-      opening: 'valance', crown: 'board', crest: 'wave', crownStuds: false }, 'cottage', 'catalogue'),
+      opening: 'valance', headroom: 0.847,
+      crown: 'board', crest: 'wave', crownStuds: false }, 'cottage', 'catalogue'),
 
   tearoom: build('tearoom', 'Tea Room', 'Turned spindles across the top of every bay, and nulled boards under.',
     ['cosy', 'refined', 'fancy'],
     { plankEdge: 0.24, plankRadius: 0.24, plankTrim: 'nulling', postShaft: 0.92, postTrim: 'turned',
-      opening: 'spindle', crown: 'reeded', crest: 'scallop', crownStuds: true }, 'cottage', 'showpiece'),
+      opening: 'spindle', headroom: 0.752,
+      crown: 'reeded', crest: 'scallop', crownStuds: true }, 'cottage', 'showpiece'),
 
   gingerbread: build('gingerbread', 'Gingerbread', 'Scallops on the boards, scallops in the bays, a wave on top.',
     ['goofy', 'fancy', 'whimsical'],
     { plankEdge: 0.26, plankRadius: 0.3, plankTrim: 'scallop', postShaft: 0.88, postTrim: 'turned',
-      opening: 'valance', crown: 'reeded', crest: 'wave', crownStuds: true }, 'cottage', 'catalogue'),
+      opening: 'valance', headroom: 0.847,
+      crown: 'reeded', crest: 'wave', crownStuds: true }, 'cottage', 'catalogue'),
 
   chinoiserie: build('chinoiserie', 'Fretwork', 'A geometric fret across every opening, stepped at the cornice.',
     ['ornate', 'fancy', 'refined'],
     { plankEdge: 0.24, plankRadius: 0.16, plankTrim: 'lip', postShaft: 0.9, postTrim: 'pilaster',
-      opening: 'fret', crown: 'stepped', crest: 'steps', crownStuds: true }, 'cottage', 'showpiece'),
+      opening: 'fret', headroom: 0.765,
+      crown: 'stepped', crest: 'steps', crownStuds: true }, 'cottage', 'showpiece'),
 
   pagoda: build('pagoda', 'Pagoda', 'Stepped eaves and a run of spindles: a tea house that reads.',
     ['whimsical', 'ornate', 'fancy'],
     { plankEdge: 0.26, plankRadius: 0.2, plankTrim: 'tray', postShaft: 0.86, postTrim: 'turned',
-      opening: 'spindle', crown: 'board', crest: 'steps', crownStuds: true }, 'cottage', 'catalogue'),
+      opening: 'spindle', headroom: 0.752,
+      crown: 'board', crest: 'steps', crownStuds: true }, 'cottage', 'catalogue'),
 
   seaside: build('seaside', 'Seaside', 'Beadboard, spindles and a rolling cornice. Salt not included.',
     ['cosy', 'airy', 'whimsical'],
     { plankEdge: 0.22, plankRadius: 0.28, plankTrim: 'bead', postShaft: 0.9, postTrim: 'chamfer',
-      opening: 'spindle', crown: 'board', crest: 'wave', crownStuds: false }, 'cottage', 'catalogue'),
+      opening: 'spindle', headroom: 0.752,
+      crown: 'board', crest: 'wave', crownStuds: false }, 'cottage', 'catalogue'),
 
   galleon: build('galleon', 'Galleon', 'A carved wave along the top and an arcade like a stern gallery.',
     ['fancy', 'ornate', 'whimsical'],
     { plankEdge: 0.3, plankRadius: 0.26, plankTrim: 'nulling', postShaft: 0.94, postTrim: 'turned',
-      opening: 'arch', crown: 'reeded', crest: 'wave', crownStuds: true }, 'cottage', 'catalogue'),
+      opening: 'arch', headroom: 0.62,
+      crown: 'reeded', crest: 'wave', crownStuds: true }, 'cottage', 'catalogue'),
 
   carnival: build('carnival', 'Carnival', 'Pulls like brass buttons and a sawtooth awning. Loud, on purpose.',
     ['goofy', 'fancy', 'whimsical'],
     { plankEdge: 0.28, plankRadius: 0.32, plankTrim: 'knob', postShaft: 0.86, postTrim: 'turned',
-      opening: 'valance', crown: 'board', crest: 'sawtooth', crownStuds: true }, 'cottage', 'catalogue'),
+      opening: 'valance', headroom: 0.847,
+      crown: 'board', crest: 'sawtooth', crownStuds: true }, 'cottage', 'catalogue'),
 
   toybox: build('toybox', 'Toy Box', 'Fat rounded boards, corner blocks and a big brass knob.',
     ['goofy', 'cosy', 'whimsical'],
     { plankEdge: 0.34, plankRadius: 0.34, plankTrim: 'knob', postShaft: 0.9, postTrim: 'bracket',
-      opening: 'crate', crown: 'slab', crest: 'scallop', crownStuds: true }, 'cottage', 'catalogue'),
+      opening: 'crate', headroom: 0.915,
+      crown: 'slab', crest: 'scallop', crownStuds: true }, 'cottage', 'catalogue'),
 
   beehive: build('beehive', 'Beehive', 'Rounded cells stacked in courses, and a reeded skep of a cornice.',
     ['whimsical', 'cosy', 'natural'],
     { plankEdge: 0.26, plankRadius: 0.3, plankTrim: 'bead', postShaft: 0.85, postTrim: 'turned',
-      opening: 'dovecote', crown: 'reeded', crest: 'scallop', crownStuds: false }, 'cottage', 'catalogue'),
+      opening: 'dovecote', headroom: 0.487,
+      crown: 'reeded', crest: 'scallop', crownStuds: false }, 'cottage', 'catalogue'),
 
   // OFFCUT. The same braced bay as `workbench` on the same strapped post, with
   // a sawtooth on top — at 1:1 the two head crops differ by the crest and
@@ -1271,29 +1356,34 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   windmill: build('windmill', 'Windmill', 'Braced bays and a sawtooth crest, like a sail caught mid-turn.',
     ['whimsical', 'rustic', 'goofy'],
     { plankEdge: 0.3, plankRadius: 0.18, plankTrim: 'strap', postShaft: 0.9, postTrim: 'strap',
-      opening: 'xbrace', crown: 'board', crest: 'sawtooth', crownStuds: false }, 'cottage', 'offcut'),
+      opening: 'xbrace', headroom: 0.95,
+      crown: 'board', crest: 'sawtooth', crownStuds: false }, 'cottage', 'offcut'),
 
   /* ---- rustic ---- */
 
   crate: build('crate', 'Crate Stack', 'Stacked packing crates: corner blocks, batten ends, no ceremony.',
     ['rustic', 'plain', 'utilitarian'],
     { plankEdge: 0.34, plankRadius: 0.1, plankTrim: 'cleat', postShaft: 0.95, postTrim: 'batten',
-      opening: 'crate', crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
+      opening: 'crate', headroom: 0.915,
+      crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   steamer: build('steamer', 'Steamer Trunk', 'Banded and bossed, as though it had been round the world twice.',
     ['antique', 'utilitarian', 'heavy'],
     { plankEdge: 0.32, plankRadius: 0.12, plankTrim: 'strap', postShaft: 0.95, postTrim: 'strap',
-      opening: 'crate', crown: 'slab', crest: 'flat', crownStuds: true }, 'rustic', 'catalogue'),
+      opening: 'crate', headroom: 0.915,
+      crown: 'slab', crest: 'flat', crownStuds: true }, 'rustic', 'catalogue'),
 
   slab: build('slab', 'Rustic Slab', 'Thick pegged boards on rough uprights, planed once and left alone.',
     ['rustic', 'heavy', 'natural'],
     { plankEdge: 0.38, plankRadius: 0.3, plankTrim: 'peg', postShaft: 1, postTrim: 'slab',
-      opening: 'plain', crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
+      opening: 'plain', headroom: 1,
+      crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   cabin: build('cabin', 'Log Cabin', 'Round uprights, braced bays, and boards pegged straight through.',
     ['rustic', 'heavy', 'natural'],
     { plankEdge: 0.36, plankRadius: 0.34, plankTrim: 'peg', postShaft: 1, postTrim: 'turned',
-      opening: 'xbrace', crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
+      opening: 'xbrace', headroom: 0.95,
+      crown: 'slab', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   // OFFCUT, and the clearest case on the board. Its opening is `plain` and its
   // trims are chamfers, so the `wave` crest IS the build — and at 3x the wave
@@ -1305,32 +1395,38 @@ export const BUILDS: Readonly<Record<BuildId, BuildSpec>> = {
   driftwood: build('driftwood', 'Driftwood', 'Every edge worn round and every line slightly out of true.',
     ['rustic', 'natural', 'plain'],
     { plankEdge: 0.3, plankRadius: 0.3, plankTrim: 'chamfer', postShaft: 0.92, postTrim: 'chamfer',
-      opening: 'plain', crown: 'board', crest: 'wave', crownStuds: false }, 'rustic', 'offcut'),
+      opening: 'plain', headroom: 1,
+      crown: 'board', crest: 'wave', crownStuds: false }, 'rustic', 'offcut'),
 
   hayloft: build('hayloft', 'Hayloft', 'Ladder rails and a braced back, with as much daylight as timber.',
     ['rustic', 'airy', 'natural'],
     { plankEdge: 0.26, plankRadius: 0.16, plankTrim: 'rail', postShaft: 0.6, postTrim: 'ladder',
-      opening: 'xbrace', crown: 'rail', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
+      opening: 'xbrace', headroom: 0.95,
+      crown: 'rail', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   sawmill: build('sawmill', 'Sawmill', 'Toothed boards and a sawtooth crest. The blade left its opinion.',
     ['rustic', 'utilitarian', 'heavy'],
     { plankEdge: 0.34, plankRadius: 0.06, plankTrim: 'dentil', postShaft: 0.96, postTrim: 'batten',
-      opening: 'ledge', crown: 'slab', crest: 'sawtooth', crownStuds: false }, 'rustic', 'showpiece'),
+      opening: 'ledge', headroom: 0.9,
+      crown: 'slab', crest: 'sawtooth', crownStuds: false }, 'rustic', 'showpiece'),
 
   stable: build('stable', 'Stable', 'Strapped uprights and a plate rail, built for tack and taking books.',
     ['rustic', 'heavy', 'natural'],
     { plankEdge: 0.34, plankRadius: 0.12, plankTrim: 'strap', postShaft: 1, postTrim: 'strap',
-      opening: 'ledge', crown: 'board', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
+      opening: 'ledge', headroom: 0.9,
+      crown: 'board', crest: 'flat', crownStuds: false }, 'rustic', 'catalogue'),
 
   tavern: build('tavern', 'Tavern', 'Turned posts, pegged boards and spindles over every bay.',
     ['rustic', 'cosy', 'antique'],
     { plankEdge: 0.32, plankRadius: 0.22, plankTrim: 'peg', postShaft: 0.95, postTrim: 'turned',
-      opening: 'spindle', crown: 'board', crest: 'scallop', crownStuds: false }, 'rustic', 'showpiece'),
+      opening: 'spindle', headroom: 0.752,
+      crown: 'board', crest: 'scallop', crownStuds: false }, 'rustic', 'showpiece'),
 
   treehouse: build('treehouse', 'Treehouse', 'Rungs, braces and pegs, nailed up by somebody in a hurry.',
     ['goofy', 'rustic', 'whimsical'],
     { plankEdge: 0.3, plankRadius: 0.34, plankTrim: 'peg', postShaft: 0.86, postTrim: 'ladder',
-      opening: 'xbrace', crown: 'board', crest: 'sawtooth', crownStuds: false }, 'rustic', 'catalogue'),
+      opening: 'xbrace', headroom: 0.95,
+      crown: 'board', crest: 'sawtooth', crownStuds: false }, 'rustic', 'catalogue'),
 };
 
 /**
@@ -1390,26 +1486,6 @@ export function isRollableBuild(spec: BuildSpec): boolean {
 export const ROLLABLE_BUILDS: readonly BuildSpec[] = BUILD_IDS.map((id) => BUILDS[id]).filter(
   isRollableBuild,
 );
-
-/** Every build carrying `tag`, in picker order. For steered randomisation. */
-export function buildsTagged(tag: BuildTag): readonly BuildSpec[] {
-  return BUILD_IDS.map((id) => BUILDS[id]).filter((b) => b.tags.includes(tag));
-}
-
-/** What a build feels like. Empty for an unknown id, never a throw. */
-export function tagsOf(id: unknown): readonly BuildTag[] {
-  return isBuildId(id) ? BUILDS[id].tags : [];
-}
-
-/** All builds in picker order. */
-export function allBuilds(): readonly BuildSpec[] {
-  return BUILD_IDS.map((id) => BUILDS[id]);
-}
-
-/** Look up a carpentry; unknown ids give the house plank — see resolveShelfDesign. */
-export function getBuild(id: unknown): BuildSpec {
-  return BUILDS[isBuildId(id) ? id : FALLBACK_SHELF_DESIGN.build];
-}
 
 /* ----------------------------------------------------------------------------
    The patterns
@@ -1575,11 +1651,6 @@ export function isRollablePattern(spec: PatternSpec): boolean {
 export const ROLLABLE_PATTERNS: readonly PatternSpec[] = PATTERN_IDS.map(
   (id) => PATTERNS[id],
 ).filter(isRollablePattern);
-
-/** All patterns in picker order. */
-export function allPatterns(): readonly PatternSpec[] {
-  return PATTERN_IDS.map((id) => PATTERNS[id]);
-}
 
 /* ----------------------------------------------------------------------------
    Named presets
@@ -3859,6 +3930,152 @@ export function paintPostTrim(
 /** The head shape an arcade band springs into. */
 type ArchHead = 'round' | 'pointed' | 'ogee' | 'trefoil' | 'segmental';
 
+/* ----------------------------------------------------------------------------
+   The bay underside — ONE drawing, read twice
+   -------------------------------------------------------------------------- */
+
+/*
+ * An arcade is the one piece of carpentry in this file whose silhouette the
+ * BOOKS have to know about: a book standing at a pier has a foot less room than
+ * one under the crown of the arch. So the underside of a bay is written down
+ * once, in units of the arch radius, and read by two consumers that must never
+ * disagree — the canvas tracer below, and {@link clearHeightAt}, which is what
+ * tells the shelf how tall a book may stand at a given x.
+ *
+ * They were not one drawing to begin with. The tracer was the only description
+ * of an arch that existed, the layout sized every book against the flat
+ * plank-to-plank gap instead, and the result is the screenshot this work
+ * started from: tall spines running straight up through the arch heads and into
+ * the board above.
+ *
+ * Coordinates: x runs +1 → -1 across the springing points, measured from the
+ * bay's centre; y is UP from the springing line. Both scale by r.
+ */
+
+/** One quadratic of a bay underside: control point, then end point. */
+type BaySeg = readonly [cx: number, cy: number, x: number, y: number];
+
+/**
+ * A semicircle as quadratics.
+ *
+ * `ctx.arc` was here, and it is a better circle — but it is a circle only the
+ * canvas can evaluate, and the clearance profile needs the same curve in
+ * arithmetic. Ten segments put the radial error at 90px (the shelf's own arch)
+ * under a hundredth of a pixel, which is a price worth paying for one drawing
+ * instead of two.
+ */
+function semicircleSegs(steps: number): BaySeg[] {
+  const out: BaySeg[] = [];
+  const d = Math.PI / steps;
+  // The tangents of a sub-arc meet on its bisector, at 1/cos(half the sweep).
+  const k = 1 / Math.cos(d / 2);
+  for (let i = 0; i < steps; i++) {
+    const a = i * d;
+    const b = a + d;
+    const m = (a + b) / 2;
+    out.push([Math.cos(m) * k, Math.sin(m) * k, Math.cos(b), Math.sin(b)]);
+  }
+  return out;
+}
+
+/**
+ * Every head, right → left from (1, 0) to (-1, 0).
+ *
+ * The trefoil's two cusps are straight runs, written as quadratics with the
+ * control point at the midpoint — the identical curve, and it keeps the whole
+ * vocabulary to one primitive so the sampler has one case to walk.
+ */
+const BAY_HEADS: Readonly<Record<ArchHead, readonly BaySeg[]>> = {
+  round: semicircleSegs(10),
+  // A shallow arc: a bay wider than it is tall.
+  segmental: [[0, 0.9, -1, 0]],
+  pointed: [
+    [0.52, 1.2, 0, 1.7],
+    [-0.52, 1.2, -1, 0],
+  ],
+  // S-curved: concave off the springing, convex into the point.
+  ogee: [
+    [1.05, 0.72, 0.34, 1.22],
+    [0, 1.5, 0, 1.9],
+    [0, 1.5, -0.34, 1.22],
+    [-1.05, 0.72, -1, 0],
+  ],
+  // Three lobes with a cusp between each — the tracery a chapel window has.
+  // Quadratics rather than arcs: three `ctx.arc` calls with mixed sweep
+  // directions join through whatever straight line the path needs to reach the
+  // next arc's start, and what came out was a row of small birds.
+  trefoil: [
+    [1.12, 0.78, 0.46, 1.02],
+    [0.4, 0.84, 0.34, 0.66],
+    [0.46, 1.3, 0, 1.38],
+    [-0.46, 1.3, -0.34, 0.66],
+    [-0.4, 0.84, -0.46, 1.02],
+    [-1.12, 0.78, -1, 0],
+  ],
+};
+
+/** Samples across a bay half when the clearance envelope is built. */
+const LIFT_BINS = 128;
+
+/**
+ * How far the head of a bay lifts above its springing line, in units of r,
+ * sampled at `LIFT_BINS` positions from the bay centre out to the springing.
+ *
+ * The MINIMUM at each position, not the mean and not the last sample: a
+ * trefoil's cusps put three different heights over one x, and the only one a
+ * book may be measured against is the lowest piece of timber above it. Memoised
+ * per head — five arrays for the life of the process.
+ */
+const liftCache = new Map<ArchHead, readonly number[]>();
+
+function bayLift(head: ArchHead): readonly number[] {
+  const hit = liftCache.get(head);
+  if (hit !== undefined) return hit;
+  const bins = new Array<number>(LIFT_BINS).fill(Number.POSITIVE_INFINITY);
+  const put = (x: number, y: number): void => {
+    const i = Math.min(LIFT_BINS - 1, Math.max(0, Math.round(Math.abs(x) * (LIFT_BINS - 1))));
+    if (y < (bins[i] as number)) bins[i] = y;
+  };
+  let px = 1;
+  let py = 0;
+  put(px, py);
+  for (const [cx, cy, ex, ey] of BAY_HEADS[head]) {
+    // 48 steps per segment: a trefoil lobe is ~0.5r across, so this lands a
+    // sample in every bin it passes through even at the tightest curvature.
+    for (let s = 1; s <= 48; s++) {
+      const t = s / 48;
+      const u = 1 - t;
+      put(u * u * px + 2 * u * t * cx + t * t * ex, u * u * py + 2 * u * t * cy + t * t * ey);
+    }
+    px = ex;
+    py = ey;
+  }
+  // Bins the walk skipped (the ogee's near-vertical finish crosses very few)
+  // inherit the lower of their filled neighbours, which keeps the envelope
+  // conservative in both directions.
+  for (let i = 1; i < LIFT_BINS; i++) {
+    if (!Number.isFinite(bins[i] as number)) bins[i] = bins[i - 1] as number;
+  }
+  for (let i = LIFT_BINS - 2; i >= 0; i--) {
+    if (!Number.isFinite(bins[i] as number)) bins[i] = bins[i + 1] as number;
+  }
+  for (let i = 0; i < LIFT_BINS; i++) {
+    if (!Number.isFinite(bins[i] as number)) bins[i] = 0;
+  }
+  const out: readonly number[] = bins;
+  liftCache.set(head, out);
+  return out;
+}
+
+/** The lift at a distance `dx` from the bay's centre, in world px. */
+function liftAt(head: ArchHead, r: number, dx: number): number {
+  if (r <= 0) return 0;
+  const u = Math.abs(dx) / r;
+  if (u >= 1) return 0;
+  const bins = bayLift(head);
+  return Math.max(0, (bins[Math.round(u * (LIFT_BINS - 1))] as number) * r);
+}
+
 /**
  * Trace a band across the top of an opening whose underside is a run of arches.
  *
@@ -3880,54 +4097,21 @@ function traceArcadeBand(
   const bayW = f.w / bays;
   const x0 = f.x - bleed;
   const x1 = f.x + f.w + bleed;
+  const yr = f.y + rise;
   ctx.beginPath();
   ctx.moveTo(x0, f.y - bleed);
   ctx.lineTo(x1, f.y - bleed);
-  ctx.lineTo(x1, f.y + rise);
+  ctx.lineTo(x1, yr);
   // Walk the underside right → left so the enclosed region is the timber
   // ABOVE the arch line.
   for (let i = bays - 1; i >= 0; i--) {
     const bx = f.x + i * bayW;
     const cx = bx + bayW / 2;
-    ctx.lineTo(cx + r, f.y + rise);
-    switch (head) {
-      case 'pointed':
-        ctx.quadraticCurveTo(cx + r * 0.52, f.y + rise - r * 1.2, cx, f.y + rise - r * 1.7);
-        ctx.quadraticCurveTo(cx - r * 0.52, f.y + rise - r * 1.2, cx - r, f.y + rise);
-        break;
-      case 'ogee':
-        // S-curved: concave off the springing, convex into the point.
-        ctx.quadraticCurveTo(cx + r * 1.05, f.y + rise - r * 0.72, cx + r * 0.34, f.y + rise - r * 1.22);
-        ctx.quadraticCurveTo(cx, f.y + rise - r * 1.5, cx, f.y + rise - r * 1.9);
-        ctx.quadraticCurveTo(cx, f.y + rise - r * 1.5, cx - r * 0.34, f.y + rise - r * 1.22);
-        ctx.quadraticCurveTo(cx - r * 1.05, f.y + rise - r * 0.72, cx - r, f.y + rise);
-        break;
-      case 'trefoil': {
-        // Three lobes with a cusp between each — the tracery a chapel window
-        // has. Written as quadratics rather than as arcs: three `ctx.arc`
-        // calls with mixed sweep directions join through whatever straight
-        // line the path needs to reach the next arc's start, and what came out
-        // was a row of small birds rather than tracery.
-        const yr = f.y + rise;
-        ctx.quadraticCurveTo(cx + r * 1.12, yr - r * 0.78, cx + r * 0.46, yr - r * 1.02);
-        ctx.lineTo(cx + r * 0.34, yr - r * 0.66);
-        ctx.quadraticCurveTo(cx + r * 0.46, yr - r * 1.3, cx, yr - r * 1.38);
-        ctx.quadraticCurveTo(cx - r * 0.46, yr - r * 1.3, cx - r * 0.34, yr - r * 0.66);
-        ctx.lineTo(cx - r * 0.46, yr - r * 1.02);
-        ctx.quadraticCurveTo(cx - r * 1.12, yr - r * 0.78, cx - r, yr);
-        break;
-      }
-      case 'segmental':
-        // A shallow arc: a bay wider than it is tall.
-        ctx.quadraticCurveTo(cx, f.y + rise - r * 0.9, cx - r, f.y + rise);
-        break;
-      default:
-        // Angle 0 → PI counter-clockwise passes -PI/2, which is UP in canvas
-        // coordinates: the arc goes over the opening, not under it.
-        ctx.arc(cx, f.y + rise, r, 0, Math.PI, true);
-        break;
+    ctx.lineTo(cx + r, yr);
+    for (const [qx, qy, ex, ey] of BAY_HEADS[head]) {
+      ctx.quadraticCurveTo(cx + qx * r, yr - qy * r, cx + ex * r, yr - ey * r);
     }
-    ctx.lineTo(bx, f.y + rise);
+    ctx.lineTo(bx, yr);
   }
   ctx.lineTo(x0, f.y - bleed);
   ctx.closePath();
@@ -3996,6 +4180,174 @@ function stileAt(ctx: FlatCtx, x: number, f: Box, w: number, seed: number, fill?
   member(ctx, { x, y: f.y, w, h: f.h }, seed, { top: true, bottom: true }, fill);
 }
 
+/* ----------------------------------------------------------------------------
+   The head of an opening — how far the carpentry hangs into the bay
+   -------------------------------------------------------------------------- */
+
+/**
+ * What a build hangs into the top of its opening, in world px.
+ *
+ * Derived from ONE number the build declares — {@link BuildSpec.headroom} — so
+ * the drawing below and the clearance the shelf lays books out against cannot
+ * come apart. Every opening painter sizes its top member from `depth`; nothing
+ * in `paintOpening` is allowed to reach further down than that.
+ */
+export interface OpeningHead {
+  /** How far the head reaches below the top of the opening at its LOWEST. */
+  depth: number;
+  /**
+   * The arch run along that lowest edge, or `null` when it is a straight band.
+   *
+   * `bays` arches of radius `r` spring FROM the line at `depth`, so a book
+   * standing under a crown gets up to the head's own lift back again.
+   */
+  arch: { bays: number; r: number; head: ArchHead } | null;
+}
+
+/** A flat head of the given depth — the answer for every straight band. */
+function flatHead(depth: number): OpeningHead {
+  return { depth, arch: null };
+}
+
+/** A dovecote course, as a fraction of the whole head. */
+const DOVECOTE_ROW = 0.667;
+
+function clampUnit(n: number): number {
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+}
+
+/**
+ * Bays across an opening, at a target aspect. At least `least`, always whole:
+ * a half bay at one end is a bay somebody sawed through.
+ */
+function bayCount(f: Box, aspect: number, least: number): number {
+  return Math.max(least, Math.round(f.w / (f.h * aspect)));
+}
+
+/**
+ * An arcade sized so its springing line lands exactly on `depth`.
+ *
+ * `r` is inverted out of the depth rather than the other way round, which is
+ * the whole reason the declaration is causal: the head's rise used to be
+ * `r + a bit`, so the radius chose the depth and nothing could state the depth
+ * up front. `lean` is how much of the rise the head consumes above the
+ * springing (1 for a round arch, 1.75 for a point, 1.95 for an ogee…), and the
+ * bay's own width still caps the radius, so a narrow bay draws a smaller arch
+ * under a deeper band rather than an arch that spills into its neighbour.
+ */
+function arcadeHead(
+  f: Box,
+  depth: number,
+  aspect: number,
+  least: number,
+  wide: number,
+  lean: number,
+  slack: number,
+  head: ArchHead,
+): OpeningHead {
+  const bays = bayCount(f, aspect, least);
+  const r = Math.max(2, Math.min((f.w / bays) * wide, (depth - f.h * slack) / lean));
+  return { depth, arch: { bays, r, head } };
+}
+
+/**
+ * The head carpentry of a build's opening at a given frame.
+ *
+ * Pure, cheap and total — a frame with no room in it comes back as no head at
+ * all rather than as arches with a negative radius.
+ */
+export function openingHead(spec: BuildSpec, f: Box): OpeningHead {
+  const depth = Math.max(0, Math.min(f.h * 0.92, f.h * (1 - clampUnit(spec.headroom))));
+  if (depth < 1) return flatHead(0);
+  switch (spec.opening) {
+    // Nothing hangs into the bay. `panelled` is here on purpose: fielded
+    // panels are the BACK of the case, and a book stands in front of them the
+    // way it stands in front of a `grid`'s uprights.
+    case 'plain':
+    case 'panelled':
+      return flatHead(0);
+
+    case 'arch':
+      return arcadeHead(f, depth, 1.05, 1, 0.42, 1, 0.06, 'round');
+    case 'gothic':
+      return arcadeHead(f, depth, 0.72, 2, 0.44, 1.75, 0.05, 'pointed');
+    case 'ogee':
+      return arcadeHead(f, depth, 0.78, 2, 0.42, 1.95, 0.05, 'ogee');
+    case 'trefoil':
+      return arcadeHead(f, depth, 0.66, 2, 0.44, 1.7, 0.06, 'trefoil');
+    case 'valance':
+      return arcadeHead(f, depth, 0.22, 4, 0.46, 1, 0.05, 'round');
+
+    case 'dovecote': {
+      // Two courses of holes, and it is the SECOND one a book has to clear.
+      const rowH = depth * DOVECOTE_ROW;
+      const bays = Math.max(4, Math.round(f.w / (rowH * 0.92)));
+      const r = Math.max(2, Math.min((f.w / bays) * 0.36, rowH * 0.42));
+      return { depth, arch: { bays, r, head: 'round' } };
+    }
+
+    default:
+      return flatHead(depth);
+  }
+}
+
+/**
+ * How tall a book may stand at `x`, in world px, without touching the
+ * carpentry — where `x` is in the same coordinates as `frame`.
+ *
+ * `halfWidth` is the book's own half-thickness (plus whatever a lean throws
+ * sideways): the answer is the WORST clearance anywhere under the book's
+ * footprint, because a spine that straddles a pier is stopped by the pier, not
+ * by the arch beside it. Sampled at whole-pixel resolution across the
+ * footprint, which for a 46px spine under a 188px bay is 46 lookups into a
+ * memoised array.
+ */
+export function clearHeightAt(
+  spec: BuildSpec,
+  frame: Box,
+  x: number,
+  halfWidth = 0,
+): number {
+  const head = openingHead(spec, frame);
+  const floorH = Math.max(0, frame.h - head.depth);
+  if (head.arch === null) return floorH;
+  const { bays, r, head: kind } = head.arch;
+  const bayW = frame.w / bays;
+  const half = Math.max(0, halfWidth);
+  const steps = Math.max(1, Math.ceil(half * 2));
+  let lift = Number.POSITIVE_INFINITY;
+  for (let i = 0; i <= steps; i++) {
+    const sx = x - half + (half * 2 * i) / steps;
+    // Distance to the centre of whichever bay this sample falls in. Clamped
+    // rather than wrapped: a sample past either end of the opening belongs to
+    // the end bay, not to a bay that is not there.
+    const bay = Math.min(bays - 1, Math.max(0, Math.floor((sx - frame.x) / bayW)));
+    const cx = frame.x + (bay + 0.5) * bayW;
+    lift = Math.min(lift, liftAt(kind, r, sx - cx));
+    if (lift <= 0) break;
+  }
+  return floorH + (Number.isFinite(lift) ? lift : 0);
+}
+
+/**
+ * The shortest and tallest a book may be in this build's opening.
+ *
+ * `min` is what a book gets wherever it happens to stand, which is the honest
+ * number to show a reader who has typed a height in the studio — the shelf
+ * lays rows out on its own and no book owns a position. `max` is the crown of
+ * the arch, and the gap between the two is what makes an arcaded row read as
+ * an arcade rather than as a fence.
+ */
+export function clearHeightRange(spec: BuildSpec, frame: Box): { min: number; max: number } {
+  const head = openingHead(spec, frame);
+  const min = Math.max(0, frame.h - head.depth);
+  if (head.arch === null) return { min, max: min };
+  const bins = bayLift(head.arch.head);
+  let top = 0;
+  for (const v of bins) top = Math.max(top, v);
+  return { min, max: min + top * head.arch.r };
+}
+
 /** A horizontal member: left and right always run into the uprights. */
 function railAt(ctx: FlatCtx, y: number, f: Box, h: number, seed: number, fill?: string): void {
   member(ctx, { x: f.x, y, w: f.w, h }, seed, { left: true, right: true }, fill);
@@ -4018,13 +4370,20 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
   const f = frame;
   if (f.w <= 8 || f.h <= 8) return;
   const T = caseTimber();
+  // Every member that hangs into the bay is sized from this and reaches no
+  // lower, which is what makes `BuildSpec.headroom` a cause rather than a
+  // caption. Members that run down the BACK of the case — panels, the
+  // uprights of a grid, a crate's bottom rail — are not head carpentry and are
+  // still drawn full height; a book stands in front of them.
+  const head = openingHead(spec, f);
+  const depth = head.depth;
 
   switch (spec.opening) {
     case 'plain':
       break;
 
     case 'frame': {
-      const t = Math.max(3, Math.min(f.h * 0.075, f.w * 0.03));
+      const t = Math.max(3, depth);
       railAt(ctx, f.y, f, t, seed + 1);
       stileAt(ctx, f.x, f, t, seed + 2);
       stileAt(ctx, f.x + f.w - t, f, t, seed + 3);
@@ -4049,67 +4408,54 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
       break;
     }
 
-    case 'arch': {
-      const bays = Math.max(1, Math.round(f.w / (f.h * 1.05)));
-      const r = Math.min((f.w / bays) * 0.42, f.h * 0.32);
-      paintArcade(ctx, f, bays, r, r + f.h * 0.06, 'round');
+    // Five arcades, and not one of them decides its own depth any more: the
+    // springing line IS `depth`, the radius was inverted out of it in
+    // `openingHead`, and the lift back up under each crown is the extra a book
+    // standing there is allowed.
+    case 'arch':
+    case 'ogee':
+    case 'trefoil':
+    case 'valance': {
+      const a = head.arch;
+      if (a === null) break;
+      paintArcade(ctx, f, a.bays, a.r, depth, a.head);
       break;
     }
 
     case 'gothic': {
-      const bays = Math.max(2, Math.round(f.w / (f.h * 0.72)));
-      const r = Math.min((f.w / bays) * 0.44, f.h * 0.26);
-      const rise = r * 1.75 + f.h * 0.05;
-      paintArcade(ctx, f, bays, r, rise, 'pointed');
+      const a = head.arch;
+      if (a === null) break;
+      paintArcade(ctx, f, a.bays, a.r, depth, a.head);
       // A gilt boss where each pair of arcs meets.
-      const bayW = f.w / bays;
-      for (let i = 0; i < bays; i++) {
+      const bayW = f.w / a.bays;
+      for (let i = 0; i < a.bays; i++) {
         ctx.beginPath();
-        ctx.arc(f.x + bayW * (i + 0.5), f.y + rise - r * 1.7, Math.max(1.6, r * 0.1), 0, Math.PI * 2);
+        ctx.arc(f.x + bayW * (i + 0.5), f.y + depth - a.r * 1.7, Math.max(1.6, a.r * 0.1), 0, Math.PI * 2);
         ctx.fillStyle = FLAT.gilt;
         ctx.fill();
       }
       break;
     }
 
-    case 'ogee': {
-      const bays = Math.max(2, Math.round(f.w / (f.h * 0.78)));
-      const r = Math.min((f.w / bays) * 0.42, f.h * 0.24);
-      paintArcade(ctx, f, bays, r, r * 1.95 + f.h * 0.05, 'ogee');
-      break;
-    }
-
-    case 'trefoil': {
-      const bays = Math.max(2, Math.round(f.w / (f.h * 0.66)));
-      const r = Math.min((f.w / bays) * 0.44, f.h * 0.26);
-      paintArcade(ctx, f, bays, r, r * 1.7 + f.h * 0.06, 'trefoil');
-      break;
-    }
-
     case 'dovecote': {
       // Small round-headed holes in courses. The band between the courses is
-      // one piece of timber, so the arcade tracer draws it whole.
-      const rows = 2;
-      const rowH = f.h * 0.34;
-      for (let row = 0; row < rows; row++) {
+      // one piece of timber, so the arcade tracer draws it whole. Both courses
+      // live inside the head, and it is the LOWER one a book has to clear —
+      // which is why `openingHead` reports that one's arches and not these.
+      const a = head.arch;
+      if (a === null) break;
+      const rowH = depth * DOVECOTE_ROW;
+      const rise = Math.max(a.r * 0.5, depth - rowH * 1.02);
+      for (let row = 0; row < 2; row++) {
         const band: Box = { x: f.x, y: f.y + row * rowH * 1.02, w: f.w, h: rowH };
-        const bays = Math.max(4, Math.round(f.w / (rowH * 0.92)));
-        const r = Math.min((f.w / bays) * 0.36, rowH * 0.42);
-        paintArcade(ctx, band, bays, r, r + rowH * 0.16, 'round');
+        paintArcade(ctx, band, a.bays, a.r, rise, 'round');
       }
-      break;
-    }
-
-    case 'valance': {
-      const cells = Math.max(4, Math.round(f.w / (f.h * 0.22)));
-      const r = (f.w / cells) * 0.46;
-      paintArcade(ctx, f, cells, r, r + f.h * 0.05, 'round');
       break;
     }
 
     case 'ledge': {
       // A plate rail: one deep board across the top of the bay with a lip.
-      const h = Math.max(5, f.h * 0.1);
+      const h = Math.max(5, depth);
       railAt(ctx, f.y, f, h, seed + 1);
       edgeLine(ctx, f.x, f.y + h * 0.68, f.x + f.w, f.y + h * 0.68, T.deep, Math.max(1, inkWidth(h) * 0.5), seed, 0.6);
       break;
@@ -4121,7 +4467,8 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
       for (let i = 1; i < cells; i++) {
         stileAt(ctx, f.x + (f.w * i) / cells - dw / 2, f, dw, seed + i * 7);
       }
-      railAt(ctx, f.y + f.h * 0.26, f, Math.max(4, f.h * 0.045), seed + 71);
+      const rh = Math.max(4, f.h * 0.045);
+      railAt(ctx, f.y + depth - rh, f, rh, seed + 71);
       break;
     }
 
@@ -4131,15 +4478,16 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
       for (let i = 1; i < cells; i++) {
         stileAt(ctx, f.x + (f.w * i) / cells - dw / 2, f, dw, seed + i * 5);
       }
+      // Two courses of cubbies, the lower one's underside ON the head line.
       const rh = Math.max(3, f.h * 0.03);
-      for (const t of [0.2, 0.44]) {
-        railAt(ctx, f.y + f.h * t, f, rh, seed + t * 100);
+      for (const t of [0.49, 1]) {
+        railAt(ctx, f.y + depth * t - rh, f, rh, seed + t * 100);
       }
       break;
     }
 
     case 'crate': {
-      const t = Math.max(4, f.h * 0.085);
+      const t = Math.max(4, depth);
       railAt(ctx, f.y, f, t, seed + 1);
       railAt(ctx, f.y + f.h - t, f, t, seed + 2);
       stileAt(ctx, f.x, f, t, seed + 3);
@@ -4164,7 +4512,7 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
       // A pair of diagonal braces across the back of the bay. Drawn as filled
       // parallelograms rather than thick strokes so their ends are cut square
       // against the frame, the way a housed brace is.
-      const t = Math.max(4, f.h * 0.05);
+      const t = Math.max(4, depth);
       railAt(ctx, f.y, f, t, seed + 1);
       railAt(ctx, f.y + f.h - t, f, t, seed + 2);
       const bw = Math.max(4, f.h * 0.05);
@@ -4191,10 +4539,12 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
 
     case 'spindle': {
       // Turned spindles under the top rail. Each is a join at both ends, so
-      // they read as tenoned into the rails rather than dropped in.
-      const rh = Math.max(4, f.h * 0.06);
+      // they read as tenoned into the rails rather than dropped in. The lower
+      // rail's underside is the head line, so the gallery is `depth` deep and
+      // no spindle foot hangs past it.
+      const rh = Math.max(4, depth * 0.24);
       railAt(ctx, f.y, f, rh, seed + 1);
-      const band = f.h * 0.2;
+      const band = Math.max(rh * 1.4, depth - rh * 0.8);
       railAt(ctx, f.y + band, f, rh * 0.8, seed + 2);
       const step = Math.max(10, f.h * 0.12);
       const sw = Math.max(3, step * 0.3);
@@ -4214,8 +4564,8 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
     case 'fret': {
       // A geometric fret across the head of the bay: a band of squared
       // meanders, all of it one continuous member run.
-      const bandH = f.h * 0.2;
-      const rh = Math.max(3.5, f.h * 0.035);
+      const rh = Math.max(3.5, depth * 0.15);
+      const bandH = Math.max(rh * 2, depth - rh);
       railAt(ctx, f.y, f, rh, seed + 1);
       railAt(ctx, f.y + bandH, f, rh, seed + 2);
       const step = Math.max(14, bandH * 1.15);
@@ -4229,14 +4579,16 @@ export function paintOpening(ctx: FlatCtx, spec: BuildSpec, frame: Box, seed: nu
     }
 
     case 'glass': {
-      const t = Math.max(3, f.h * 0.05);
+      const t = Math.max(3, depth * 0.25);
       railAt(ctx, f.y, f, t, seed + 1);
       stileAt(ctx, f.x, f, t, seed + 2);
       stileAt(ctx, f.x + f.w - t, f, t, seed + 3);
       // The sash: a top rail with muntins under it. Books stand in front of
       // the glazing, which is the one compromise in this build — there is no
-      // layer between the reader and the shelf to hang a door on.
-      railAt(ctx, f.y + f.h * 0.16, f, Math.max(3, f.h * 0.042), seed + 4);
+      // layer between the reader and the shelf to hang a door on. The sash
+      // rail is not a compromise though: it is the head, and it stops there.
+      const sash = Math.max(3, depth * 0.21);
+      railAt(ctx, f.y + depth - sash, f, sash, seed + 4);
       const mw = Math.max(3, f.h * 0.026);
       for (const t2 of [1 / 3, 2 / 3]) {
         stileAt(ctx, f.x + f.w * t2 - mw / 2, f, mw, seed + t2 * 200);
@@ -4717,27 +5069,3 @@ export function paintCrownTrim(ctx: FlatCtx, spec: BuildSpec, b: Box, face: Box,
    Small shared helper for the part drawers
    -------------------------------------------------------------------------- */
 
-/**
- * Run `paint` clipped to a face, with the face's own wobble.
- *
- * Kept beside `withinPart` because a pattern is worked into a FACE — the band
- * of a part that is turned toward the reader — which is not the same rectangle
- * as the part. The clip has to be the same shape the face was filled with, or
- * a pattern spills past a bowed edge and the case grows a fringe.
- */
-export function withinFace(
-  ctx: FlatCtx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  radius: number,
-  seed: number,
-  paint: () => void,
-): void {
-  ctx.save();
-  wobbleRect(ctx, x, y, w, h, radius, seed);
-  ctx.clip();
-  paint();
-  ctx.restore();
-}

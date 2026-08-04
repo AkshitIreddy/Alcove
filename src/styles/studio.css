@@ -750,3 +750,36 @@
   margin-top: 0;
   margin-bottom: var(--space-4);
 }
+
+/* ------------------------------------------------------------------------- *
+   The case said no
+
+   A book whose height the carpentry cannot give gets told so, right under the
+   format chips. Deliberately NOT an error colour: nothing has gone wrong, a
+   bookcase simply has the height it has. It reads as a margin note against the
+   amber the panel already uses for "this is the value in force", with the way
+   out sitting inside the same block so the sentence and its answer are one
+   thing rather than a warning followed by an unrelated chip.
+ * ------------------------------------------------------------------------- */
+.nb-fit-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  margin-top: var(--space-8);
+  padding: var(--space-8);
+  background: var(--wash-amber-light);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 9px 13px 10px / 10px 13px 9px 12px;
+}
+
+.nb-fit-note .nb-panel-footnote {
+  flex: 1 1 130px;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-sepia);
+}
+
+.nb-fit-note .nb-chip {
+  flex: 0 0 auto;
+}

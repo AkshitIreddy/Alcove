@@ -43,11 +43,14 @@ import {
 import type { Book } from '../../data/types';
 import { bindingFor, formatBinding, registerCommands } from '../../data/keybindings';
 import { settings } from '../../data/settings';
-// Imported from the module that DEFINES the gallery rather than from
-// `features/templates/groupD`: that barrel hydrates the custom-sticker
-// registry on import, and the shelf has no business paying for the editor's
-// asset table before a book has been opened.
-import { openTemplatesGallery } from '../templates/TemplatesGallery';
+// The gallery is reached by `import()` at the moment it is opened, NOT by a
+// static import — of the module that defines it OR of `features/templates/
+// groupD`. Both were tried and both cost the same thing: the gallery builds
+// its previews with `createFromScript`, which pulls `editor/extensions`, which
+// is TipTap, ProseMirror, highlight.js and yjs entire. A static import here
+// put ~1MB of editor in the chunk the SHELF boots from, and the shelf has no
+// business paying for the editor before a book has been opened. See
+// `openTemplates()` below for the call.
 import { play } from '../../sound/engine';
 import Tooltips from '../../views/Tooltip';
 import ShelfStudio from '../../views/rail/ShelfStudio';
@@ -460,12 +463,21 @@ export default function BookshelfWorld(): JSX.Element {
   const templatesKey = (): string =>
     formatBinding(bindingFor('templates', settings.keybindings));
 
-  /** The gallery, from the dock, the right-click card or the keyboard. */
+  /**
+   * The gallery, from the dock, the right-click card or the keyboard.
+   *
+   * The `import()` is the point (see the note by the imports): it is what
+   * keeps the editor stack out of the shelf's boot chunk. The gallery mounts
+   * itself, so there is nothing to await here — the click is answered by the
+   * sound and the sheet closing, and the sheet arrives a frame or two later.
+   */
   function openTemplates(): void {
     void play('pop-soft');
     // A sheet claiming the left of the window would sit under the overlay.
     setDockPanel(null);
-    openTemplatesGallery();
+    void import('../templates/TemplatesGallery').then((m) =>
+      m.openTemplatesGallery(),
+    );
   }
 
   /**

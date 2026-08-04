@@ -387,6 +387,9 @@ const TIMBERS: readonly LibraryTheme[] = [
       wall: '#f2ece0',
       cloths: ['denim', 'sage', 'blush', 'ochre', 'moss', 'brick'],
     }),
+  /* The default room. See DEFAULT_THEME_ID for why the opening case is a dark
+   * timber rather than a painted one, and why this brown and not the other
+   * five. */
   room('walnut', 'English Walnut', 'Dark figured walnut and a study full of oxblood.', 'timber',
     ['warm', 'dark', 'formal', 'quiet'], {
       timber: '#8b6743',
@@ -583,7 +586,8 @@ const PAINTED: readonly LibraryTheme[] = [
 
 const JEWELS: readonly LibraryTheme[] = [
   /* Held DEFAULT_THEME_ID until the opening room was judged as a whole screen
-   * rather than as a card; see the note there for what it lost on. */
+   * rather than as a card; see the note there for what it lost on. `lapis`
+   * below held it after that, and lost it to the reader asking for brown. */
   room(
     'verdigris',
     'Verdigris Library',
@@ -602,7 +606,7 @@ const JEWELS: readonly LibraryTheme[] = [
       wall: '#f0eeda',
       cloths: ['saffron', 'oxblood', 'sand', 'inkblue', 'shell', 'mulberry'],
     }),
-  /* The default room. See DEFAULT_THEME_ID for why it is not the oak. */
+  /* Held DEFAULT_THEME_ID between verdigris and walnut. See DEFAULT_THEME_ID. */
   room('lapis', 'Lapis Cabinet', 'Deep blue paint with gilt — a cabinet of small precious things.', 'jewel',
     ['vivid', 'cool', 'formal', 'grand'], {
       timber: '#4a6fa5',
@@ -933,32 +937,50 @@ export type ThemeId = (typeof THEME_IDS)[number];
  * disappears. The reader's words were "the default bookshelf colour, wallpaper
  * colour and design looks weird", and colour was a third of it.
  *
- * ## Why `lapis`
+ * ## `lapis` held it next, and the reader asked for the opposite
  *
- * Six colours were shot on the new opening carpentry, one board, only the
- * palette varying (`shots-now/room-rank/board-z.png`), and lapis won on the
- * three counts that only show up in a photograph:
+ * Six colours were shot on the then-new carpentry, one board, only the palette
+ * varying (`shots-now/room-rank/board-z.png`), and lapis won it: a deep blue
+ * case is the strongest hue contrast in the file against the app's own cream,
+ * its timber is light enough that the fold to `recess` still reads, and its
+ * warm cloths sit forgivingly on blue. All three are still true. What settled
+ * it was not an argument but a request — *"for hero design i want the wallpaper
+ * have some good pattern, and a dark brown shelf"* — and a blue chapel is the
+ * one thing that cannot be talked into being a dark brown shelf.
  *
- *  - its timber is light enough that the fold to `recess` lands somewhere the
- *    eye can find, so the trefoil bays behind the books read as bays. That is
- *    the difference between carpentry and mud, and it is the whole of what went
- *    wrong with verdigris here;
- *  - it is the strongest HUE CONTRAST in the file against the app's own cream:
- *    the wall, the book plates, the page overlay and the rail are all warm
- *    parchment, and a deep blue is the one case colour that makes all four read
- *    as light rather than as beige-on-beige. Its own wall (`#eeeee2`) stays
- *    warm-neutral, so the room does not go grey the way `cardroom`, `slateroof`
- *    and `harbour` do;
- *  - its six cloths (amber, coral, sand, bottle, shell, mulberry) are what
- *    every new book is dressed from, and warm cloth on blue is the most
- *    forgiving combination in the file. `peacock` beats it on the case alone
- *    and loses badly here — tangerine, magenta and lemon make a circus of the
- *    shelf a week later.
+ * ## Why `walnut`
  *
- * `Old Athenaeum` is first in the picker and `Verdigris Library` is one click
- * away, so nothing is lost.
+ * Six brown-ish schemes were shot on one board with the carpentry held fixed
+ * (`shots-now/hero/board-case2.png`, cells 8–12), and only one of them is
+ * actually a dark brown timber:
+ *
+ *  - `mahogany` (#96473f) photographs RED. Handsome, and a red case is not a
+ *    brown one.
+ *  - `ebonised` (#6a615c) photographs GREY, and takes its cool `#e5e3e0` wall
+ *    with it, so the whole screen goes cold — the opposite end of the same
+ *    mistake lapis was making.
+ *  - `orchard` (#937434) goes olive-gold and `cherry` (#bd6a45) goes orange:
+ *    neither is dark.
+ *  - `fumed` (#91806a) is the near miss. It IS a brown, greyed and quiet, and
+ *    at 80% it reads as mud — its fold to `recess` is the smallest in the
+ *    group, which is the fault verdigris was dropped for.
+ *
+ * `walnut` is the one that reads as dark figured timber and keeps a fold the
+ * eye can find, and its own wall (`#e9e0cc`) is a warm cream rather than a
+ * neutral, which is what lets a papered wall sit warm behind it. Its tags —
+ * `warm, dark, formal, quiet` — are also what makes the derived house-room card
+ * agree with its carpentry for once: `refectory` files under Antique, and dark
+ * English walnut is exactly that.
+ *
+ * Its six cloths (oxblood, inkblue, bottle, honey, plum, sand) are what every
+ * new book is dressed from, and they are the reason it beats `apothecary`,
+ * which is a warmer, more vivid brown on the case and dresses its books in
+ * amber and oxblood — two reds against a red-brown case.
+ *
+ * `Old Athenaeum` is first in the picker and `Lapis Cabinet` is one click away,
+ * so nothing is lost.
  */
-export const DEFAULT_THEME_ID: ThemeId = 'lapis';
+export const DEFAULT_THEME_ID: ThemeId = 'walnut';
 
 /**
  * The eight rooms a panel should show before it offers the other fifty-two.
@@ -972,9 +994,9 @@ export const DEFAULT_THEME_ID: ThemeId = 'lapis';
  * sells the individuals.
  */
 export const FEATURED_THEME_IDS: readonly ThemeId[] = [
-  'lapis',
-  'athenaeum',
   'walnut',
+  'athenaeum',
+  'lapis',
   'limed',
   'cardroom',
   'plaster',

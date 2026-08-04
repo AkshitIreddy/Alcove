@@ -132,8 +132,8 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * verified, not assumed. Five deep candidates were photographed against the
  * default room, and claret won for reasons the names would not have given:
  *
- *  - the room is Verdigris Library, a blue-green case, so a red is the
- *    complement and the book separates from the case at any zoom. `forest`
+ *  - the room was Verdigris Library then, a blue-green case, so a red was the
+ *    complement and the book separated from the case at any zoom. `forest`
  *    disappeared into the timber, `navy` went quiet against it;
  *  - **oxblood now folds correctly, and that is exactly why it is wrong here**
  *    — `#ae4e40` is one hop from the `oxblood` cloth in Verdigris's own six,
@@ -142,6 +142,26 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  *  - `plum` (what this shipped previously) survives the fold as itself but is
  *    a muted mauve: beside gilt bands and a gilt plate it reads dusty rather
  *    than bound. Claret is the same family with the value a fine binding has.
+ *
+ * ## Re-checked when the opening room went to English Walnut, and kept
+ *
+ * The complement argument above died with verdigris: against a dark warm brown
+ * a red is no longer the opposite colour, it is a near neighbour, and the room's
+ * own six cloths open with `oxblood` — so on the face of it claret walked into
+ * the trap the second bullet describes. Re-photographed rather than reasoned
+ * about (`shots-now/welcome-binding.mjs --tag=hero`, and the calling card beside
+ * seven newly made books in `shots-now/hero/crop-shelf-books.png`), it holds,
+ * for a reason the verdigris pass never had to lean on: what separates this book
+ * on a shelf of new ones is not its hue but its DRESSING — four raised cords
+ * with gilt rules, wrapped endbands, a gilt plate and gilt edges, at quarto and
+ * stout. Against walnut it stops being a red object on a blue case and becomes
+ * the obvious thing it always should have been, a wine-coloured leather binding
+ * on dark oak, which no new book is dressed to imitate.
+ *
+ * So: unchanged, and now deliberately unchanged. `forest`, `navy`, `aubergine`
+ * and `chestnut` were re-shot in the new room and all four cost more than they
+ * bought — each is a cool object in a room with nothing else cool in it, which
+ * makes the calling card look like it was dropped in from another library.
  *
  * `thickness` is pinned, which the seed did not do before. It defaults from
  * page count, and five pages gave a sliver whose raised bands and title plate

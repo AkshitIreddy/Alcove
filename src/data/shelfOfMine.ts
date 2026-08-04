@@ -61,7 +61,7 @@
  * it to a renamed timber pattern would be the cruelty the rule forbids.
  */
 
-import { createEffect, createRoot, createSignal, on } from 'solid-js';
+import { createSignal } from 'solid-js';
 import {
   DEFAULT_SHELF_DESIGN,
   isBuildId,
@@ -422,13 +422,6 @@ export function hiddenCount(axis: CurationAxis): number {
   return hiddenIds(axis).length;
 }
 
-/** Every entry the reader starred on one axis, with its level. */
-export function starredIds(axis: CurationAxis): readonly { id: string; stars: Stars }[] {
-  track();
-  const entries = book.stars[axis] ?? {};
-  return Object.entries(entries).map(([id, stars]) => ({ id, stars }));
-}
-
 /** The reader's own rooms, newest first — which is the order they want them. */
 export function savedRooms(): readonly SavedRoom[] {
   track();
@@ -727,20 +720,3 @@ export async function forgetSavedRoom(id: string): Promise<boolean> {
   return true;
 }
 
-/* ========================================================================== *
- *                                 subscribe                                  *
- * ========================================================================== */
-
-/**
- * Subscribe from non-Solid code. Fires immediately, then after every change.
- *
- * The Pixi world does not read this — curation changes no pixel — but the roll
- * pools do, and anything that caches a list of options (a probe, a QA bridge)
- * needs telling when the reader's arrangement moves under it.
- */
-export function subscribeShelfOfMine(listener: () => void): () => void {
-  return createRoot((dispose) => {
-    createEffect(on(revision, () => listener()));
-    return dispose;
-  });
-}

@@ -188,6 +188,23 @@ export interface BookStyle {
   format: SpineFormat;
   /** Spine height in world px. */
   height: number;
+  /**
+   * Stand at the chosen height even where the case's carpentry is lower.
+   *
+   * A height is a request, and a bookcase can refuse it: an arcade, a gable or
+   * a plate rail leaves less clear height than the flat plank-to-plank gap, so
+   * by default `features/bookshelf/bookFit.ts` trims a book down to what its
+   * bay actually has. That is the honest default — a book sliced off by an
+   * arch reads as a rendering fault, a shorter book reads as a book — but it
+   * is not always what the reader meant, and a book that quietly disobeyed a
+   * number they typed is worse than one that overlaps.
+   *
+   * So this is the door out, offered next to the height in the book studio.
+   * It is the ONE field here that changes no pixel of the spine: the drawing
+   * never reads it, `spineParamsFor` never carries it, and the shelf's layout
+   * is its only consumer.
+   */
+  overlap: boolean;
   /** Spine thickness in world px (defaults from page count). */
   thickness: number;
   /** Gilt tooling on bands, ornament and title. */
@@ -501,6 +518,8 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
     o.thickness = clamp(thickness, SPINE_THICKNESS_RANGE.min, SPINE_THICKNESS_RANGE.max);
   }
 
+  if (typeof raw.overlap === 'boolean') o.overlap = raw.overlap;
+
   if (typeof raw.gilt === 'boolean') o.gilt = raw.gilt;
 
   if (isCharmKind(raw.charm)) o.charm = raw.charm;
@@ -792,6 +811,10 @@ export function resolveBookStyle(
     edge,
     format,
     height,
+    // Never rolled and never biased by a room: standing a book through the
+    // carpentry is a decision, and a dice that made it would be overruling the
+    // case on the reader's behalf.
+    overlap: over.overlap ?? false,
     thickness,
     gilt,
     charm,

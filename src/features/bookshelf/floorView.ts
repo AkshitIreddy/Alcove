@@ -290,6 +290,14 @@ export class FloorView {
         sprite.anchor.set(0.5, 1);
         const centerX = place !== undefined ? place.centerX : SHELF_WIDTH / 2;
         const leanDeg = params.lean + (place !== undefined ? place.leanDeg : 0);
+        // WHERE it stands before HOW TALL it is, and in that order: under an
+        // arcaded, gabled or ogee build the clear height is a function of x —
+        // tall under a crown, a foot shorter at the pier beside it — so a
+        // height asked for before the position is known is a height measured
+        // against the wrong bay. (It was measured against no bay at all until
+        // this landed: every book took the flat plank-to-plank gap and the
+        // tall ones ran up through the arch heads.)
+        factory.noteStand(book, centerX, w, leanDeg * DEG_TO_RAD);
         // Not spineArtHeight(params) directly: with authored art the sprite's
         // own proportions set the height, so the row keeps the generated
         // spread and the tall books nearly fill the opening.

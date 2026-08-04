@@ -1,0 +1,82 @@
+[
+  {
+    "name": "shots-now/defaults/hero-01-plum-current.png",
+    "label": "plum-current",
+    "rect": {
+      "x": 715.9476549145243,
+      "y": -197.8960085631463,
+      "width": 68.10469017095151,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-02-oxblood.png",
+    "label": "oxblood",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-03-burgundy.png",
+    "label": "burgundy",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-04-navy.png",
+    "label": "navy",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-05-forest.png",
+    "label": "forest",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-06-aubergine.png",
+    "label": "aubergine",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-07-chestnut.png",
+    "label": "chestnut",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  },
+  {
+    "name": "shots-now/defaults/hero-08-teal.png",
+    "label": "teal",
+    "rect": {
+      "x": 705.1128178418728,
+      "y": -197.8960085631463,
+      "width": 89.77436431625428,
+      "height": 311.08984202996635
+    }
+  }
+]

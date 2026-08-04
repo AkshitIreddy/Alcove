@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/img/hero.png" alt="Alcove — a notebook that lives on a bookshelf. A cream card taped to a papered wall, with the app's book icon, the wordmark in a handwriting face, and six coloured book spines standing on a timber plank below." width="880">
+  <img src="docs/readme/img/hero.png" alt="Alcove — a notebook that lives on a bookshelf. A cream card held to a papered wall by a strip of washi tape, carrying the app's red spiral-notebook icon, the wordmark in a handwriting face, the lines 'A notebook that lives on a bookshelf' and 'Windows desktop · everything stays on your machine', and four pill labels: endless shelf, block editor, pages that flow, no account. Six coloured book spines stand on a timber plank below." width="880">
 </p>
 
 <!--
@@ -59,8 +59,8 @@ nothing runs in the background once you close the window unless you switch on
 tray quick capture.
 
 <p align="center">
-  <img src="docs/readme/img/shelf.png" alt="The Alcove shelf: a green bookcase with a fluted cornice against pale striped wallpaper, two floors of individually drawn book spines, and a cream tool dock on the left." width="47%">
-  <img src="docs/readme/img/spread.png" alt="A book open on its first spread: two ruled pages carrying a handwritten title, a green callout, checkboxes, highlights and a strip of pink washi tape, with a vertical rail of hand-drawn tool icons down the left edge." width="47%">
+  <img src="docs/readme/img/shelf.png" alt="The Alcove shelf: a lapis-blue bookcase with a crenellated cornice and arched recesses, standing against cream wallpaper strewn with gold fleur-de-lys, three floors of individually drawn book spines, and a cream tool dock on the left." width="47%">
+  <img src="docs/readme/img/spread.png" alt="A book open on its first spread: two ruled pages carrying a handwritten title, a green callout, a green banner, checkboxes, highlights, a yellow sticky note and a strip of pink washi tape, with a vertical rail of hand-drawn tool icons down the left edge." width="47%">
 </p>
 
 **This page is the whole manual.** Everything a reader needs is written out
@@ -287,8 +287,9 @@ with a restore point, Markdown in and out, tray quick capture, and
    thumbnails, insert script, export script, copy the AI spec, add a page.
    There is no top bar anywhere in the app — the space goes to the pages.
 7. **Make a second book.** Back on the shelf (`Escape`), the left dock has *new
-   book*, *studio*, *add floor* and *trash*. Right-clicking bare plank does the
-   same three things where you clicked.
+   book*, *template*, *studio*, *add floor* and *trash*. Right-clicking bare
+   plank offers four of those — a new book, one from a template, a floor and
+   the studio — at the spot you clicked.
 
 If you would rather be shown, the guided tour does exactly this walk inside the
 app: <!--f:tourSteps-->21<!--/f--> steps, each asking for one concrete action and
@@ -312,7 +313,7 @@ along, a slot is where a book stands, and the dashed outline at the end of a row
 is the next free one. Camera and dock are as described in [the first ten
 minutes](#the-first-ten-minutes) above.
 
-![The Alcove shelf: a green bookcase with a fluted cornice against pale striped wallpaper. Two floors carry about eighteen books with individually drawn spines — cream label plates, gilt bands, raised cords — and a dashed outline marks the next free slot. A cream dock on the left offers new book, studio, add floor and trash; a zoom control reading 80% sits at the bottom.](docs/readme/img/shelf.png)
+![The Alcove shelf at 80% zoom: a dark walnut bookcase with a plain slab cornice, a chain of gilt rings running the length of every board and upright, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis. Three floors carry thirty-three books and no two spines are alike — cream label plates, gilt bands, raised cords, a green plate reading Field Notes, a leather one reading Sourdough, one book leaning against its neighbour — and a dashed outline with a plus in it marks the next free slot at the end of Floor 1. A fourth floor starts below them, empty. A cream dock on the left offers new book, template, studio, add floor and trash, its top button washed pale green; a zoom control reading 80% sits at the foot, and a moss-green settings seal in the bottom corner.](docs/readme/img/shelf.png)
 
 Nothing here is a rectangle with a gradient on it: every spine is drawn from the
 book's own seed through [`src/art/bookDesign.ts`](src/art/bookDesign.ts), baked
@@ -330,7 +331,7 @@ Pull back and the whole case is one object — <!--f:defaultFloors-->10<!--/f-->
 floors as standard, up to <!--f:maxFloors-->60<!--/f--> when you keep pressing
 *add floor*, and as many separate bookcases as you want to build.
 
-![The same bookcase seen at 38% zoom: the full ten-floor case, top to plinth, standing on the papered wall. The top three floors hold books; the rest are empty arched openings waiting to be filled.](docs/readme/img/shelf-zoomout.png)
+![The same bookcase at 38% zoom, the whole width of it in frame now: the slab cornice, then seven complete floors and the top of an eighth running off the bottom of the window. Only the top three hold books; the rest are rows of empty ogee-arched recesses waiting to be filled, and the gold trellis wall runs away on both sides of the case, gone to a fine net at this size.](docs/readme/img/shelf-zoomout.png)
 
 ### A book opens as a spread, and turns like a book
 
@@ -339,11 +340,11 @@ count at its foot. Arrow keys turn pages; so does dragging the outer edge or a
 corner of a leaf, which lets you take the turn at your own speed and change your
 mind halfway.
 
-![The Welcome book open on its first spread. The left page carries the title in a large handwriting face, a green callout, a bulleted list and a strip of pink washi tape; the right page shows the Writing section with checkboxes, inline bold, italic, code, strikethrough, a yellow highlight and a blue colour wash. A vertical rail of hand-drawn tool icons runs down the left edge.](docs/readme/img/spread.png)
+![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove" in a large handwriting face with a gold star beside it, a paragraph with an amber-highlighted phrase, a green callout, a four-item bulleted list, and a green banner reading "The rest of this book is a tour of what the paper can do." The right page is headed Writing and shows bold, italic, code, struck-out text, a yellow highlight and a blue-grey colour wash; three checkboxes, the last ticked and crossed through; a yellow sticky note with a curled corner; and a strip of pink striped washi tape. A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](docs/readme/img/spread.png)
 
 Mid-turn, the leaf lifts off the spread and you can see the next page under it:
 
-![The same spread mid page-turn. The right leaf has lifted and swung partway across, revealing the following page underneath with its own headings and a sticky note, while the left page stays put.](docs/readme/img/page-turn.png)
+![The same spread mid page-turn. The right leaf has peeled up along a diagonal and is curling back across itself, taking the Writing page and its yellow sticky note with it; through the gap the next page shows a ruled index card, a pink quote card with its closing quotation mark, and an amber envelope with the flap still open. The left page stays put.](docs/readme/img/page-turn.png)
 
 At rest the pages are live DOM, so text stays selectable and crisp. The moment
 you start a turn, the app swaps to a WebGL cylinder-curl shader fed by
@@ -362,14 +363,14 @@ the current line already is. It is defined in
 filter ranks a title prefix above a word-start above a substring, so short
 queries land where you expect.
 
-![The slash menu open on the right-hand page of the Welcome book: a cream panel headed BLOCKS listing Text, Heading 1, Heading 2, Heading 3, Bullet list and Numbered list, each with a hand-lettered icon and a one-line description, with Text highlighted.](docs/readme/img/slash.png)
+![The slash menu open on the right-hand page of the Welcome book: a cream panel headed BLOCKS listing Text — plain handwritten paragraph, Heading 1 — big chapter title, Heading 2 — section heading, Heading 3 — small heading, Bullet list — simple dotted list, and Numbered list — 1, 2, 3…, each with a hand-lettered icon, Text highlighted at the top. The slash that opened it is still sitting on the ruled line below the panel.](docs/readme/img/slash.png)
 
 If you would rather browse than type, the rail's **Catalogue** shows everything
 the pages can hold, shelved by kind — paper and cards, text blocks, callouts,
 diagrams, tape and trim, lettering, stickers — with a search box across the top
 for when you already know the word.
 
-![The Catalogue panel open beside the spread. A search box and filter chips run across the top; below them, a grid of labelled tiles under 'paper & cards' — Sticky note, Polaroid, Washi box, Card, Quote card, Banner, Spoiler, Index card, Envelope, Stamp, Tag, Margin note, Columns — and a second grid under 'text blocks' with Text, Heading 1–3, lists, To-do list, Toggle, Quote, Code block, Table and Divider.](docs/readme/img/catalogue.png)
+![The Catalogue panel open down the left edge, pushing the spread to the right rather than covering it. A box reading "search the catalogue…" sits at the top, then eight filter chips — everything (selected), paper & cards, text blocks, callouts, diagrams, tape & trim, lettering, stickers. Below them, a three-column grid under "paper & cards — things stuck to the page" holds twenty labelled tiles: Sticky note, Polaroid, Washi box, Card, Quote card, Banner, Spoiler, Index card, Envelope, Stamp, Tag, Margin note, Pressed flower, Ticket stub, Postcard, Ledger, Photo corners, Wax seal, Map pin and Columns. A second grid, "text blocks — the ordinary furniture", gets as far as Text, Heading 1, Heading 2, Heading 3, Bullet list and Numbered list before running off the bottom of the panel.](docs/readme/img/catalogue.png)
 
 The catalogue and the slash menu read the *same* registry, so a block that
 exists in one is in the other. That was not always true, and the day it stopped
@@ -383,13 +384,13 @@ The **library studio** dresses the room. A room preset sets the colours, the
 carpentry and the paper together, and every one of those stays yours to change
 afterwards.
 
-![The library studio open down the left edge, pushing the shelf to the right rather than covering it. The panel has 'this library' and 'your own' tabs; under 'bookcases' a card shows a little drawing of the current case, 'My Library', '19 books · 10 floors' and rename, clone and delete buttons, then 'add bookcase' and 'add a floor'. Under 'presets — the house room' is a grid of room thumbnails, each a tiny painting of that whole room, labelled Chapter House, The House Room (selected), Card Room and Carnival, ending in a 'more…' tile counting the rest. To the right the shelf itself is a blue arcaded bookcase against gold fleur-de-lys wallpaper, with the new book / studio / add floor / trash dock between them and a zoom control reading 80% at the foot.](docs/readme/img/studio.png)
+![The library studio open down the left edge, pushing the shelf to the right rather than covering it. The panel is headed "Library studio" and has "this library" and "your own" tabs; under "bookcases" a card shows a little drawing of the current case, "My Library", "33 books · 10 floors" and rename, clone and delete buttons, then "add bookcase" and "add a floor" and a line reading "this bookcase has 10 floors. everything below is dressed here." Under "presets — the house room" is a grid of room thumbnails, each a tiny painting of that whole room — The House Room (selected, ringed amber), Gilt Salon, Card Room, Carnival and a teal one running off the bottom edge — beside a dashed tile reading "64 more…". To the right stands the dark walnut bookcase against its gold trellis wallpaper, with the new book / template / studio / add floor / trash dock between them, studio lit, and a zoom control reading 80% at the foot.](docs/readme/img/studio.png)
 
 The **book studio** dresses one book, and only that book: a binding follows its
 book into every room, which is what lets you recognise it after you have
 repainted the walls.
 
-![The 'Customize this book' panel open beside the spread, with tabs for 'this book' and 'this library'. A large preview shows the Welcome book's plum leather spine with raised cords and a gilt label plate, with spine and cover toggles beneath it, the binding named 'read to death', and a grid of alternative bindings ending in a 'more…' tile counting the rest.](docs/readme/img/book-studio.png)
+![The "Customize this book" panel open down the left edge beside the spread, with three tabs — "this book" (selected), "this library" and "your own". A large preview shows the Welcome book's plum spine, divided into panels by raised cords, with gilt rules, striped headbands at head and tail, and a gold label plate carrying the title. Spine and cover toggles sit beneath it, then "binding — read to death", the current binding drawn standing on a walnut shelf tile, and a grid of seven alternative bindings ending in a dashed "182 more…" tile.](docs/readme/img/book-studio.png)
 
 Both are covered properly under [Making it yours](#making-it-yours).
 
@@ -401,7 +402,7 @@ at the top) flips it into full-text search across every page in every bookcase.
 Activating a search result opens the book, turns to the page and pulses the
 match so you can see where it was.
 
-![The quick switcher open over a dimmed spread: a cream sheet with 'go to' and 'search text' tabs, the prompt 'jump to a book or heading… (> to search text)', and a list of matching books — Tax 2026, Piano Scales, Icelandic, Weekly Review, Short Stories, Astronomy, Bird Counts, Sourdough, Letters Home, Chess Openings — with a footer reading '↑↓ move · enter open · tab mode · esc close'.](docs/readme/img/quickswitch.png)
+![The quick switcher open over a greyed-out spread: a cream sheet with "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (> to search text)", and a list of books each tagged "book" down the right — Sea Glass lit at the top, then Recipes II, Old Letters, Mushrooms, House Plants, Film Diary, Knots, Latin, Reading Log, Wine Notes and Trail Notes running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](docs/readme/img/quickswitch.png)
 
 Search deliberately ignores which bookcase you are standing in front of. You
 open it because something you wrote is somewhere, and the one thing you reliably
@@ -491,7 +492,7 @@ slash menu with a small worked example already in it, and each is edited as a
 few lines of text — the layout algorithms and the hand-drawn SVG renderers are
 in [`src/diagrams/`](src/diagrams/).
 
-![The Welcome book's third spread. The left page, 'Make it yours', lists decorated example blocks — a taped card, a quote, a banner, a click-to-reveal spoiler, and seven named highlight washes. The right page, 'Diagrams', shows a hand-drawn tree with Alcove branching to Shelf and Pages and on to Floors, Books, Blocks and Diagrams, and below it a three-step timeline.](docs/readme/img/diagrams.png)
+![A later spread of the Welcome book. The left page runs from a note about resizing a picture into "Two up, and things that fold" — two columns of text side by side, a closed fold reading "A fold. Click it.", and a spoiler reading "psst… click to reveal" with its answer still hidden under a solid tan bar — and ends on the heading "Diagrams, drawn by hand". The right page carries a hand-drawn tree: Alcove branching to A library and A book, A library on to Bookcases and Floors, A book on to a wider Pages box captioned "this thing you are reading". Below it the heading "Arrows" and a three-step flowchart running downward — Write, edge labelled "wherever", Decorate, edge labelled "eventually", Turn.](docs/readme/img/diagrams.png)
 
 ### Pictures and links
 
@@ -605,12 +606,12 @@ Glucose {color=amber}
 sticky note, a graph of four edges, a timeline of three entries — so you can see
 the shape of the result before you commit it:
 
-![The Insert script dialog: the pasted script on the left in a monospace box, and on the right a live preview headed FIELD NOTES — WEEK 3 showing the Photosynthesis heading, the paragraph with its amber highlight, a yellow sticky-note block, and two placeholder cards labelled 'graph — 4 edges' and 'timeline — 3 entries'.](docs/readme/img/script-dialog.png)
+![The Insert script dialog over a dimmed book called Field Notes, subtitled "paste Notebook Script — from your AI, or your own pen". On the left the pasted script in a monospace box, scrolled to the sticky-note directive and the graph and timeline fences. On the right a live preview headed FIELD NOTES — WEEK 3: the Photosynthesis heading, the paragraph with its amber highlight, a yellow sticky-note block tagged "sticky-note", and two hatched placeholder cards tagged "graph" and "timeline" reading "4 edges" and "3 entries". "Copy spec for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/script-dialog.png)
 
 Insert, and it lands on the page as real editable blocks — the diagrams drawn,
 not embedded as images:
 
-![The right-hand page after inserting: 'Photosynthesis' in large handwriting on grid paper, the paragraph with its amber highlight, then a hand-drawn node graph with Sun and Water flowing into Leaf and out to Glucose and Oxygen, then a timeline with three dated cards along a vertical spine.](docs/readme/img/script-page.png)
+![The left-hand page after inserting, on grid paper: "Photosynthesis" in large handwriting with a leaf sticker, the paragraph with "light-dependent" in an amber highlight, a tilted yellow sticky note with a curled corner reading "Exam Friday — learn both stages.", then a hand-drawn node graph — Sun by an edge labelled "light" and Water both flowing into Leaf, Leaf out to an amber-filled Glucose and to Oxygen — and below it a timeline of three cards stepping down a vertical spine: 1771 Priestley, 1779 Ingenhousz, 1845 Mayer. The right-hand page is still blank.](docs/readme/img/script-page.png)
 
 ### What the language has
 
@@ -1145,7 +1146,7 @@ Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->75<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->76<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](docs/e2e.md). |
 
@@ -1197,8 +1198,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->273<!--/f--> of <!--f:srcFiles-->281<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6048<!--/f--> lines of it.
+<!--f:srcDocstrings-->274<!--/f--> of <!--f:srcFiles-->282<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6092<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1370,9 +1371,9 @@ Each of these is a marker recomputed from the tree.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->281<!--/f--> TypeScript files, <!--f:srcDocstrings-->273<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6048<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->282<!--/f--> TypeScript files, <!--f:srcDocstrings-->274<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6092<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2292<!--/f--> lines, <!--f:rustCommands-->13<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
-| Tests | <!--f:unitTests-->75<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
+| Tests | <!--f:unitTests-->76<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
 | QA against the running app | <!--f:probeScripts-->35<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
 | Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |

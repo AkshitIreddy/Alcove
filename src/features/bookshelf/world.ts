@@ -149,6 +149,7 @@ import { paletteCss } from './spinePalette';
 import { EnvTextures, PLACEHOLDER_TINTS, PLAQUE_H, PLAQUE_W } from './textures';
 import { computeRange, diffWindow, Pool, type FloorRange } from './virtualizer';
 import { shelfDesignTag } from '../../art/shelfDesign';
+import { bookClearHeight, buildOf } from './bookFit';
 import {
   renderWallpaperTile,
   wallpaperAxisKey,
@@ -820,6 +821,58 @@ export class ShelfWorld {
       };
       globals['__shelfBookMeta'] = (bookId: string): unknown =>
         this.store.findBook(bookId)?.coverMeta ?? null;
+      /*
+       * Where every mounted book's TOP edge is, in floor-local world px, next
+       * to the clear height its bay actually has.
+       *
+       * The applied side, not the requested one — the same rule the rest of
+       * this list follows. "Does a book cross the carpentry" is invisible to
+       * `__shelfBookStyle` (a height is a request), invisible to the DOM (the
+       * shelf is one WebGL canvas), and only barely visible in a screenshot at
+       * the zoom the app opens on. `shots-now/bookfit.mjs` asserts on this and
+       * photographs the same rows, so a regression is caught by arithmetic and
+       * confirmed by eye.
+       */
+      globals['__shelfBookFit'] = (): readonly {
+        id: string;
+        title: string;
+        floor: number;
+        centerX: number;
+        height: number;
+        clear: number;
+        trimmed: boolean;
+        crosses: boolean;
+      }[] => {
+        const out: {
+          id: string;
+          title: string;
+          floor: number;
+          centerX: number;
+          height: number;
+          clear: number;
+          trimmed: boolean;
+          crosses: boolean;
+        }[] = [];
+        for (const [index, fv] of this.floors) {
+          for (const visual of fv.visuals) {
+            const fit = this.factory.fitFor(visual.book);
+            out.push({
+              id: visual.book.id,
+              title: visual.book.title,
+              floor: index,
+              centerX: visual.centerX,
+              height: visual.height,
+              clear: fit.clear,
+              trimmed: fit.trimmed,
+              // Half a pixel of slack: the height is a float and the arch it is
+              // measured against is sampled, so exact equality would report a
+              // book that lands precisely on the arch line as crossing it.
+              crosses: visual.height > fit.clear + 0.5,
+            });
+          }
+        }
+        return out;
+      };
       // The book's APPLIED face — the merged style the spine on screen was
       // baked from, room bias and all. `__shelfBookMeta` shows what is stored,
       // which for an undressed book is nothing at all; only this can answer
@@ -1483,12 +1536,22 @@ export class ShelfWorld {
     let x: number | null = null;
     let fallbackFloor = -1;
     let fallbackX: number | null = null;
+    /**
+     * How tall the ghost stands HERE.
+     *
+     * The invitation is a picture of the book that is about to exist, so it
+     * has to obey the same carpentry that book will: a full-height dashed
+     * outline in a pigeonhole case stands straight through two cubby rails and
+     * promises a book the shelf would never draw.
+     */
+    const ghostH = (centerX: number): number =>
+      Math.min(GHOST_H, bookClearHeight(buildOf(shelfDesignOf(this.roomDesign)), centerX, GHOST_W / 2));
     for (let index = firstFloor; index <= lastFloor; index++) {
       const fv = this.floors.get(index);
       if (fv === undefined || !fv.loaded) continue;
       const candidate = nextSpotX(fv.visuals, index);
       if (candidate === null) continue; // full floor: try the next one down
-      const top = index * FLOOR_H + BOOK_BASELINE - GHOST_H;
+      const top = index * FLOOR_H + BOOK_BASELINE - ghostH(candidate);
       const bottom = index * FLOOR_H + BOOK_BASELINE;
       if (top >= cam.y && bottom <= viewBottom) {
         floor = index;
@@ -1506,12 +1569,13 @@ export class ShelfWorld {
     }
     if (x === null || floor < 0) return null;
 
+    const drawnH = ghostH(x);
     const topLeft = worldToScreen(cam, {
       x: x - GHOST_W / 2,
-      y: floor * FLOOR_H + BOOK_BASELINE - GHOST_H,
+      y: floor * FLOOR_H + BOOK_BASELINE - drawnH,
     });
     const width = GHOST_W * cam.zoom;
-    const height = GHOST_H * cam.zoom;
+    const height = drawnH * cam.zoom;
     if (
       topLeft.x + width < 0 ||
       topLeft.x > this.vp.width ||
@@ -1841,6 +1905,11 @@ export class ShelfWorld {
     setFlatScheme(next.scheme);
     // Spine bias reacts instantly; it costs nothing to redo.
     this.factory.setTheme(next.theme, next.scheme.cloths.flat().join('|'));
+    // The carpentry is the other half of how tall a book may stand, and it
+    // moves independently of the colours: rebuilding the case as a gothic
+    // arcade changes every book's clear height without touching a single hex,
+    // so this cannot ride on `setTheme`'s comparison.
+    this.factory.setBuild(buildOf(shelf));
 
     if (!roomChanged) {
       this.dirty = true;
@@ -1863,11 +1932,21 @@ export class ShelfWorld {
     // The old room's case textures are gone; nothing pooled may still hold one.
     this.dropPooledFloors();
 
-    // Re-plate every mounted floor in the new room's plate material.
+    // Re-plate every mounted floor in the new room's plate material, and lay
+    // its books out again: a new carpentry is a new clear height under every
+    // bay, and a mounted floor is holding sprites sized against the old one.
+    // Re-plating alone left an arcaded case wearing the plank case's skyline
+    // until the virtualizer happened to remount the floor.
+    const recentId = this.store.recentBookId();
     for (const [index, fv] of this.floors) {
+      fv.setBooks(this.store.get(index), this.factory, this.dpr, this.envTex, recentId);
       fv.setPlaque(this.envTex, this.dpr, floorLabel(index));
+      fv.refreshTextures(this.factory);
       this.rebakeStamp(index, fv);
+      this.requestSpines(fv);
     }
+    this.kbVisual = null;
+    this.applyKbHalo();
     this.endThemeFade();
     this.dirty = true;
     this.appliedLibraryKey = key;

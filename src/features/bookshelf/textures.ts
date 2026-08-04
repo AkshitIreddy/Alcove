@@ -94,15 +94,6 @@ export type EnvKind =
   | 'wallpaper'
   | 'backdrop';
 
-/**
- * Legacy wall-strip geometry, kept because the constants are exported API.
- *
- * The wall no longer has art of its own — `world.ts` fills it with one flat
- * colour — so nothing is baked at this size any more.
- */
-export const BACKDROP_STRIP_W = 640;
-export const BACKDROP_STRIP_FLOORS = 3;
-
 /** World-px height of the under-plank detail strip (no longer drawn). */
 export const SHELF_DETAIL_H = 34;
 
@@ -135,10 +126,6 @@ export const PLACEHOLDER_TINTS = {
 
 /** Number of distinct empty-floor doodle variants (none are drawn now). */
 export const EMPTY_DOODLE_VARIANTS = 3;
-
-/** World-px design size of the doodle textures. */
-export const EMPTY_DOODLE_W = 200;
-export const EMPTY_DOODLE_H = 130;
 
 /** Deterministic doodle variant for a floor. */
 export function doodleVariantFor(floorIndex: number): number {

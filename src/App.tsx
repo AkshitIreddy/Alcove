@@ -2,6 +2,7 @@ import {
   For,
   Show,
   createSignal,
+  lazy,
   onCleanup,
   onMount,
   type JSX,
@@ -21,12 +22,53 @@ import { initSystemFeatures } from "./features/system";
 import { installUiClickSounds } from "./sound/uiClicks";
 import TutorialOverlay, { maybeAutoStartTutorial } from "./features/tutorial";
 import TasteQuestionnaire from "./features/tutorial/tasteQuestionnaire";
-import { openTransferPanel } from "./features/transfer";
-import { importMarkdownBooks } from "./features/templates/importMarkdown";
 import ShelfView from "./views/ShelfView";
-import BookView from "./views/BookView";
 import { CheatSheetHost } from "./views/CheatSheet";
 import "./styles/settings.css";
+
+/**
+ * The book is the app's other half, and the reader does not start in it.
+ *
+ * `lazy()` rather than a static import because BookView is the root of the
+ * editor stack — TipTap, ProseMirror, highlight.js's 37 languages, the yjs
+ * that @tiptap/extension-drag-handle drags behind it — about 1MB minified.
+ * Statically imported, every one of those bytes was parsed before the shelf
+ * could draw, for a reader who had not opened anything.
+ *
+ * It is not merely deferred, it is PREFETCHED: `preloadBookView()` below runs
+ * on the first idle after boot, so the chunk is parsed and waiting long
+ * before a book is pulled off a shelf. Deferring a cost onto the click that
+ * needs it would just move the stall somewhere more visible.
+ */
+const BookView = lazy(() => import("./views/BookView"));
+
+/**
+ * The parcel desk, opened on demand.
+ *
+ * `import()` for the same reason BookView is lazy: the panel reads and writes
+ * whole books, so it reaches `editor/script/fromTiptap` and from there the
+ * editor. A static import of the barrel put TipTap and ProseMirror — 300kB —
+ * back in front of the shelf's first frame, silently, from two keyboard
+ * commands that a reader may never press. It self-mounts, so there is nothing
+ * to await.
+ */
+function openTransferPanel(tab: "export" | "import" | "history"): void {
+  void import("./features/transfer").then((m) => m.openTransferPanel(tab));
+}
+
+/** Warm the book chunk once the shelf has had its turn on the main thread. */
+function preloadBookView(): () => void {
+  const idle =
+    typeof window.requestIdleCallback === "function"
+      ? window.requestIdleCallback
+      : (cb: () => void): number => window.setTimeout(cb, 1200);
+  const cancel =
+    typeof window.cancelIdleCallback === "function"
+      ? window.cancelIdleCallback
+      : window.clearTimeout;
+  const handle = idle(() => void import("./views/BookView"));
+  return () => cancel(handle as number);
+}
 
 const VIEWS: readonly ViewState[] = ["shelf", "book"];
 
@@ -121,6 +163,9 @@ export default function App(): JSX.Element {
     // First run opens the guided tour; it no-ops once completed.
     void maybeAutoStartTutorial();
 
+    // The book half, fetched on the first idle rather than at boot.
+    onCleanup(preloadBookView());
+
     // THE keyboard listener, for the whole app. Every rebindable shortcut runs
     // through it; a view says what its commands DO by registering them (see
     // data/keybindings), never which key runs them. Installed here rather than
@@ -140,7 +185,15 @@ export default function App(): JSX.Element {
         // it at least as much as one already inside a book. Its buttons are
         // the settings sheet's "Library files" section and the book rail's
         // "Take it out" sheet.
-        "import-markdown": () => void importMarkdownBooks(),
+        //
+        // Reached by `import()`: the importer turns Markdown into TipTap
+        // documents, so a static import would put the whole editor back into
+        // the boot chunk that BookView was just lifted out of. The command
+        // opens a file dialog first, so nobody can perceive the load.
+        "import-markdown": () =>
+          void import("./features/templates/importMarkdown").then((m) =>
+            m.importMarkdownBooks(),
+          ),
         "open-settings": () => setSettingsOpen((open) => !open),
       }),
     );

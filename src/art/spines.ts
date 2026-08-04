@@ -152,10 +152,6 @@ export const SPINE_TAGS: readonly SpineTag[] = [
   'romantic',
 ];
 
-export function isSpineTag(value: unknown): value is SpineTag {
-  return typeof value === 'string' && (SPINE_TAGS as readonly string[]).includes(value);
-}
-
 /**
  * Title panel treatments on the spine (and, mirrored, on the cover).
  *
@@ -3322,23 +3318,6 @@ const CLOTH_FOR_PIGMENT: readonly number[] = [
 export const PIGMENT_CLOTH_NAMES: readonly string[] = CLOTH_FOR_PIGMENT.map(
   (slot) => CLOTH_LABELS[slot % CLOTH_LABELS.length] ?? '',
 );
-
-/**
- * The pigments whose name is exactly the name of the cloth they paint.
- *
- * Twenty-six of fifty today. This is the number the vocabulary is judged by, so
- * it is worth being able to read it: it can only go up by `art/flat.ts` gaining
- * a cloth that a pigment is named for (a dark brown for Chocolate, a near-black
- * for Ink), never by editing this file.
- */
-export function pigmentsMatchingTheirCloth(): readonly number[] {
-  const out: number[] = [];
-  for (let i = 0; i < PIGMENT_LABELS.length; i++) {
-    const pigment = (PIGMENT_LABELS[i] ?? '').toLowerCase();
-    if (pigment === (PIGMENT_CLOTH_NAMES[i] ?? '').toLowerCase()) out.push(i);
-  }
-  return out;
-}
 
 /**
  * THE palette → cloth rule, for the spine and the cover alike.

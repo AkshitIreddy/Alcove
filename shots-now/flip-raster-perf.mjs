@@ -107,15 +107,29 @@ async function openBook() {
     await page.waitForTimeout(600);
   }
 
+  // TWO presses, on the markup that exists.
+  //
+  // This loop used to wait for `[data-testid="pulled-book-hand"]` and then
+  // click a button called "read it". Neither is in the tree any more — the
+  // book at rest IS its own button now (`.pulled-book.is-held`, see
+  // PulledBookOverlay) — so all four open attempts timed out and the probe
+  // died on "could not open the seeded book" before measuring anything. The
+  // raster cost this file exists to watch has therefore been unmeasured for as
+  // long as that markup has been current. `features/tutorial/probe.ts` names
+  // the same class, which is the one place the selector was kept true.
+  //
+  // Enter rather than a click: the overlay listens on real pointer events, so
+  // a dispatched MouseEvent lands on nothing. Enter is the keyboard reader's
+  // way in and it goes through the same handler.
   for (let attempt = 0; attempt < 3; attempt++) {
     if ((await page.locator('.nb-flip-surface').count()) > 0) break;
     await page.locator('.shelf-a11y button').first().dispatchEvent('click').catch(() => {});
     await page
-      .locator('[data-testid="pulled-book-hand"]')
+      .locator('.pulled-book.is-held')
       .waitFor({ state: 'visible', timeout: 25_000 })
       .catch(() => {});
-    const read = page.getByRole('button', { name: 'read it' });
-    if ((await read.count()) > 0) await read.click().catch(() => {});
+    await page.locator('.pulled-book.is-held').focus().catch(() => {});
+    await page.keyboard.press('Enter').catch(() => {});
     await page
       .locator('.nb-flip-surface')
       .waitFor({ state: 'visible', timeout: 25_000 })

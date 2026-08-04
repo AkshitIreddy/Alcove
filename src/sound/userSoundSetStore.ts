@@ -334,14 +334,6 @@ export async function createUserSoundSet(
   return set;
 }
 
-export async function renameUserSoundSet(id: UserSoundSetId, name: string): Promise<void> {
-  const set = userSoundSet(id);
-  if (set === null) return;
-  const trimmed = name.trim();
-  if (trimmed === '' || trimmed === set.name) return;
-  await commit({ ...set, name: trimmed.slice(0, 40) });
-}
-
 /** Re-base a set: every role the reader did not fill changes character. */
 export async function setUserSoundSetBase(id: UserSoundSetId, base: string): Promise<void> {
   const set = userSoundSet(id);
@@ -580,12 +572,6 @@ function setNameFor(files: readonly PickedFile[]): string {
   const raw = folder !== '' ? folder : (parts[parts.length - 1] ?? '').replace(/\.[a-z0-9]+$/i, '');
   const cleaned = raw.replace(/[-_]+/g, ' ').trim();
   return cleaned === '' ? 'My Set' : cleaned.slice(0, 40);
-}
-
-/** Test seam: forget the load so a fresh database is read again. */
-export function resetUserSoundSetsForTests(): void {
-  loadPromise = null;
-  clearUserSoundSets();
 }
 
 /* --------------------------------- QA bridge ------------------------------- */

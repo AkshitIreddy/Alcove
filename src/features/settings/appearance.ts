@@ -150,8 +150,14 @@ function t(
 
 const THEME_TABLE: readonly AppThemeSpec[] = [
   /* ------------------------------ warm papers ---------------------------- */
-  t('parchment', 'parchment', 'parchment', 'parchment', '#f7f1e3', '#c96f4a', 'signature',
-    'the house room — flat cream and the icon’s own terracotta'),
+  // The accent is the MOSS `styles/tokens.css` actually paints the house room
+  // with, not the terracotta this row used to claim — the same correction the
+  // blossom row below needed, and for the same reason. A shipped room writes no
+  // accent tokens (`onBaseRoom`), so nothing on screen contradicted it except
+  // the picker chip, which paints itself from `swatchFor` and would otherwise
+  // advertise the colour the chrome wore before the opening room went brown.
+  t('parchment', 'parchment', 'parchment', 'parchment', '#f7f1e3', '#7d915c', 'signature',
+    'the house room — flat cream and the icon’s own leaf green'),
   t('honeycomb', 'honeycomb', 'parchment', 'parchment', '#f9edcf', '#b8791c', 'signature',
     'warm wax paper and a deep honey accent; the loudest of the warm rooms'),
   t('apricot', 'apricot', 'parchment', 'parchment', '#fae7d8', '#c4482a', 'signature',

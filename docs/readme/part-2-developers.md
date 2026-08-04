@@ -200,7 +200,7 @@ Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->75<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->76<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](../e2e.md). |
 
@@ -253,8 +253,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->273<!--/f--> of <!--f:srcFiles-->281<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6048<!--/f--> lines of it.
+<!--f:srcDocstrings-->274<!--/f--> of <!--f:srcFiles-->282<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6092<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -981,7 +981,7 @@ same rule — see *How this document stays true*.
 ## The gates
 <!--nav: Every unit-test file and the specific class of bug it exists to stop-->
 
-<!--f:unitTests-->75<!--/f--> unit-test files, and almost none of them are there
+<!--f:unitTests-->76<!--/f--> unit-test files, and almost none of them are there
 for coverage. Each exists to stop a specific class of bug, and most of the
 docstrings name the day the bug shipped. This is the fastest way to learn what
 this codebase is afraid of.

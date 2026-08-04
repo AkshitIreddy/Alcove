@@ -166,11 +166,6 @@ export function tileFor(spec: TileSpec): Tile | null {
   return tile;
 }
 
-/** Drop every cached tile. Called when a vocabulary's inputs change wholesale. */
-export function clearTileCache(): void {
-  tiles.clear();
-}
-
 /* ------------------------------ the component ---------------------------- */
 
 export interface DesignCanvasProps {

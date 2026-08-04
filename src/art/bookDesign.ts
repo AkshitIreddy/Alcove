@@ -133,7 +133,7 @@ import {
 } from './flat';
 import { normaliseHex } from './customColour';
 import { clothPair as foldCloth } from './palette';
-import { clamp, fnv1a, mulberry32 } from './noise';
+import { clamp, mulberry32 } from './noise';
 
 /* ========================================================================== *
  *                                   moods                                    *
@@ -202,10 +202,6 @@ export const BOOK_TAGS: readonly BookTag[] = [
   'pocket',
   'utilitarian',
 ];
-
-export function isBookTag(value: unknown): value is BookTag {
-  return typeof value === 'string' && (BOOK_TAGS as readonly string[]).includes(value);
-}
 
 /* ========================================================================== *
  *                              rank and the dice                             *
@@ -1406,16 +1402,6 @@ export const SHAPE_LABELS: Readonly<Record<SpineShape, string>> = Object.freeze(
   Object.fromEntries(SPINE_SHAPES.map((id) => [id, SHAPES[id].name])) as Record<SpineShape, string>,
 );
 
-/** Every silhouette carrying `tag`, in picker order. For steered dice. */
-export function shapesTagged(tag: BookTag): readonly ShapeSpec[] {
-  return SPINE_SHAPES.map((id) => SHAPES[id]).filter((s) => s.tags.includes(tag));
-}
-
-/** All silhouettes in picker order. */
-export function allShapes(): readonly ShapeSpec[] {
-  return SPINE_SHAPES.map((id) => SHAPES[id]);
-}
-
 /* ========================================================================== *
  *                        the materials, as a table                           *
  * ========================================================================== */
@@ -1738,16 +1724,6 @@ export const MATERIAL_LOOK_LABELS: Readonly<Record<MaterialLook, string>> = Obje
     string
   >,
 );
-
-/** Every covering carrying `tag`, in picker order. */
-export function materialsTagged(tag: BookTag): readonly MaterialSpec[] {
-  return MATERIAL_LOOKS.map((id) => MATERIALS[id]).filter((m) => m.tags.includes(tag));
-}
-
-/** All coverings in picker order. */
-export function allMaterials(): readonly MaterialSpec[] {
-  return MATERIAL_LOOKS.map((id) => MATERIALS[id]);
-}
 
 /* ========================================================================== *
  *                       the decorations, as a table                          *
@@ -2190,16 +2166,6 @@ export function decorSpec(id: unknown): DecorSpec {
 export const DECORATION_LABELS: Readonly<Record<Decoration, string>> = Object.freeze(
   Object.fromEntries(DECORATIONS.map((id) => [id, DECORS[id].name])) as Record<Decoration, string>,
 );
-
-/** Every ornament carrying `tag`, in picker order. */
-export function decorationsTagged(tag: BookTag): readonly DecorSpec[] {
-  return DECORATIONS.map((id) => DECORS[id]).filter((d) => d.tags.includes(tag));
-}
-
-/** All ornaments in picker order. */
-export function allDecorations(): readonly DecorSpec[] {
-  return DECORATIONS.map((id) => DECORS[id]);
-}
 
 /* ========================================================================== *
  *                                 the design                                 *
@@ -2682,11 +2648,6 @@ export function isBookPresetId(v: unknown): v is BookPresetId {
   return PRESET_BY_ID.has(v) || parseOwnBinding(v) !== null;
 }
 
-/** Every preset carrying `tag`, in list order. For a studio steer. */
-export function presetsTagged(tag: BookTag): readonly BookPreset[] {
-  return BOOK_PRESETS.filter((p) => p.tags.includes(tag));
-}
-
 /**
  * A binding is only ever as good as its worst part.
  *
@@ -2908,14 +2869,6 @@ export function bindingMaterialFor(look: MaterialLook): string {
   }
 }
 
-/** The binding a stable string id resolves to (book row ids, test fixtures). */
-export function bookDesignFromId(
-  id: string,
-  opts: Omit<ResolveBookDesignOptions, 'seed'> = {},
-): BookDesign {
-  return resolveBookDesign({ ...opts, seed: fnv1a(id) });
-}
-
 /**
  * A short stable tag for one design.
  *
@@ -2957,15 +2910,6 @@ export function bookDesignTag(design: BookDesign): string {
 /** Does this design carry the given mark? */
 export function hasDecoration(design: BookDesign, mark: Decoration): boolean {
   return design.decorations.includes(mark);
-}
-
-/** Every mood word this design's three vocabularies carry, deduplicated. */
-export function bookDesignTags(design: BookDesign): readonly BookTag[] {
-  const out = new Set<BookTag>();
-  for (const tag of shapeSpec(design.shape).tags) out.add(tag);
-  for (const tag of materialSpec(design.material).tags) out.add(tag);
-  for (const mark of design.decorations) for (const tag of decorSpec(mark).tags) out.add(tag);
-  return [...out];
 }
 
 function normIndex(v: number, len: number): number {

@@ -27,8 +27,9 @@
  *  - the shelf carries thirty-two books over three floors (thirty-three with
  *    the Welcome book, which is the count the studio card prints), because ten
  *    on one floor photographed as a showroom;
- *  - the room is left at the app's own DEFAULT — `lapis` over
- *    `chapel`/`quatrefoil` under `fleur-royal`. A first screenshot that is not
+ *  - the room is left at the app's own DEFAULT — today `walnut` over
+ *    `refectory`/`guilloche` under `trellis-gilt`, and whatever those four
+ *    constants say tomorrow. A first screenshot that is not
  *    the first screen is exactly the failure being fixed here: the old shelf
  *    shots were taken back when the opening room was verdigris, and stayed
  *    green for months after it stopped being;

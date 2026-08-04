@@ -28,7 +28,6 @@ import { createSignal, type Accessor } from 'solid-js';
 import { getDb } from '../../data/db';
 import {
   mergeTasteAnswers,
-  isTasteComplete,
   type TasteAnswers,
   type TasteAxis,
 } from './tasteProfile';
@@ -68,22 +67,15 @@ const [answers, setAnswers] = createSignal<TasteAnswers>({});
 const [done, setDone] = createSignal(false);
 const [open, setOpen] = createSignal(false);
 const [openToken, setOpenToken] = createSignal(0);
-const [loaded, setLoaded] = createSignal(false);
 
 /** What has been answered so far. Reactive. */
 export const tasteAnswers: Accessor<TasteAnswers> = answers;
-
-/** True once the questionnaire has been finished at least once. Reactive. */
-export const tasteChosen: Accessor<boolean> = done;
 
 /** True while the questionnaire is on screen. Reactive. */
 export const tasteOpen: Accessor<boolean> = open;
 
 /** Bumped on every `openTaste()`, so reopening restarts a panel already up. */
 export const tasteOpenToken: Accessor<number> = openToken;
-
-/** Has the stored record been read yet? Reactive; false until `loadTaste()`. */
-export const tasteLoaded: Accessor<boolean> = loaded;
 
 /* --------------------------------- reads --------------------------------- */
 
@@ -102,13 +94,12 @@ export function loadTaste(): Promise<StoredTaste> {
       stored = parseStored(rows[0]?.value);
     } catch {
       // No row, no table, no database. An unanswered questionnaire is a fine
-      // answer — and `maybeOpenTaste` below will not nag, because a library it
-      // cannot read is a library it cannot dress either.
+      // answer — and the panel's own first-run check will not nag, because a
+      // library it cannot read is a library it cannot dress either.
       stored = { ...EMPTY, done: true };
     }
     setAnswers(stored.answers);
     setDone(stored.done);
-    setLoaded(true);
     return stored;
   })();
   return loadPromise;
@@ -154,12 +145,6 @@ export function setTasteAnswer(axis: TasteAxis, value: string): TasteAnswers {
   setAnswers(next);
   void persist({ answers: next, done: done() });
   return next;
-}
-
-/** Forget every answer, without forgetting that the panel has been seen. */
-export function clearTasteAnswers(): void {
-  setAnswers({});
-  void persist({ answers: {}, done: done() });
 }
 
 /**
@@ -209,27 +194,10 @@ export async function replayTaste(): Promise<void> {
   openTaste();
 }
 
-/**
- * First-run entry point: open the questionnaire only if it has never been
- * finished. Returns whether it opened. Never throws.
- */
-export async function maybeOpenTaste(): Promise<boolean> {
-  const stored = await loadTaste();
-  if (stored.done) return false;
-  openTaste();
-  return true;
-}
-
-/** True when there is enough answered to dress a library. */
-export function tasteReady(): boolean {
-  return isTasteComplete(answers());
-}
-
 /** Test seam: forget the load so a fresh database is read again. */
 export function resetTasteStoreForTests(): void {
   loadPromise = null;
   setAnswers({});
   setDone(false);
   setOpen(false);
-  setLoaded(false);
 }

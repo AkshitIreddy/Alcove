@@ -40,7 +40,7 @@ import { settings } from '../../data/settings';
 import type { PageDoc } from '../../data/types';
 import { docToScript } from '../../editor/script/fromTiptap';
 import type { BundleManifest, ManifestBook } from './format';
-import { planBookcases, type BookcasePlan, type ImportPlan, type PlannedBook } from './conflicts';
+import { planBookcases, type BookcasePlan, type ImportPlan } from './conflicts';
 import type {
   AssetSnapshot,
   BookSnapshot,
@@ -686,13 +686,6 @@ export interface RevertOutcome {
   restoredRows: number;
 }
 
-/** Preview a revert without touching anything (drives the confirm copy). */
-export async function previewRevert(pointId: string): Promise<RevertPlan | null> {
-  const point = await getRestorePoint(pointId);
-  if (point === null) return null;
-  return planRevert(point, await currentRowIds());
-}
-
 /**
  * Undo an import. Snapshots every row it is about to remove or overwrite into
  * a fresh `kind: 'revert'` restore point first, so reverting is undoable.
@@ -921,7 +914,3 @@ async function upsertPageRow(row: PageRowSnapshot): Promise<void> {
   );
 }
 
-/** Convenience for the panel: what a planned book will do, in words. */
-export function describePlannedBook(book: PlannedBook): string {
-  return book.summary;
-}

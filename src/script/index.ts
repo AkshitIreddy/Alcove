@@ -12,9 +12,6 @@ import { parseDoc } from "./blockParser";
 import { printDoc } from "./printer";
 import { diag } from "./diagnostics";
 
-/** v2: `::let` variables, `::style` presets, coded/located diagnostics. */
-export const NOTEBOOK_SCRIPT_VERSION = "2.0.0";
-
 /**
  * Parse Notebook Script source. Total by construction — and belt-and-braces
  * wrapped so that even an internal parser bug degrades to a plain-text doc

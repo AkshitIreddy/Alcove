@@ -96,23 +96,27 @@ describe('theme registry', () => {
   });
 
   it('opens a brand-new library in a room with a decision in it', () => {
-    // Deliberately NOT the icon's oak. The oak is still what `art/flat.ts`
-    // falls back to and still one click away in the picker (below), but a
-    // brown case on a beige wall is what every stock bookshelf illustration
-    // looks like, and it is the first thing every reader sees.
+    // Still deliberately NOT the icon's oak — that is the house FALLBACK, the
+    // beige-on-beige case every stock bookshelf illustration is — but the
+    // opening room is now a timber rather than a painted one, because the
+    // reader asked for "a dark brown shelf" and no amount of paint is that.
     //
     // The id is pinned rather than described because "has a decision in it" is
     // not a property a test can read off a hex — it was decided by
-    // photographing six colours on the opening carpentry
-    // (`shots-now/room-rank/board-z.png`). Moving it is a deliberate act and
+    // photographing six browns on the opening carpentry
+    // (`shots-now/hero/board-case2.png`). Moving it is a deliberate act and
     // should have to come and say so here.
-    expect(DEFAULT_THEME_ID).toBe('lapis');
-    expect(THEMES[DEFAULT_THEME_ID].name).toBe('Lapis Cabinet');
-    // It is a jewel, not a timber: the opening room is a painted case.
-    expect(THEMES[DEFAULT_THEME_ID].family).toBe('jewel');
-    // Nothing is lost: both former defaults are rooms like any other.
+    expect(DEFAULT_THEME_ID).toBe('walnut');
+    expect(THEMES[DEFAULT_THEME_ID].name).toBe('English Walnut');
+    // A timber, and a DARK one: the tags are what the derived house-room card
+    // is filed by, and a light timber here would file the refectory case under
+    // the wrong family (see DEFAULT_SHELF_DESIGN).
+    expect(THEMES[DEFAULT_THEME_ID].family).toBe('timber');
+    expect(THEMES[DEFAULT_THEME_ID].tags).toContain('dark');
+    // Nothing is lost: all three former defaults are rooms like any other.
     expect(THEMES.athenaeum.name).toBe('Old Athenaeum');
     expect(THEMES.verdigris.name).toBe('Verdigris Library');
+    expect(THEMES.lapis.name).toBe('Lapis Cabinet');
   });
 
   it('offers a spread as the featured few, default and house oak included', () => {

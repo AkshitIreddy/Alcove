@@ -132,20 +132,3 @@ export async function setPageScript(
   return { ...existing, scriptSource: source, sourceDirty: false, updatedAt };
 }
 
-/**
- * Rewrite `ord` for a book's pages to match `orderedIds` (index = new ord).
- * Ids not belonging to `bookId` are ignored by the WHERE guard.
- */
-export async function reorderPages(
-  bookId: string,
-  orderedIds: readonly string[],
-): Promise<void> {
-  const db = await getDb();
-  const updatedAt = new Date().toISOString();
-  for (let i = 0; i < orderedIds.length; i += 1) {
-    await db.execute(
-      'UPDATE pages SET ord = $1, updated_at = $2 WHERE id = $3 AND book_id = $4',
-      [i, updatedAt, orderedIds[i], bookId],
-    );
-  }
-}

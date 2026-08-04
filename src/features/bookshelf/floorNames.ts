@@ -90,9 +90,3 @@ export function onFloorNameChange(cb: Listener): () => void {
   return () => listeners.delete(cb);
 }
 
-/** Test hook: drop module-level caches. */
-export function resetFloorNamesForTest(): void {
-  cache = null;
-  loadPromise = null;
-  listeners.clear();
-}

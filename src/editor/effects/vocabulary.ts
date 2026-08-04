@@ -766,34 +766,6 @@ export function effectValues(key: string): readonly string[] {
   return AXIS_BY_KEY.get(key)?.values.map((entry) => entry.value) ?? [];
 }
 
-/** The axis table for a key, or undefined. */
-export function effectAxis(key: string): EffectAxis | undefined {
-  return AXIS_BY_KEY.get(key);
-}
-
-/** Human words for one value — `tape=quad` → "all four corners". */
-export function effectLabel(key: string, value: string): string {
-  const found = AXIS_BY_KEY.get(key)?.values.find((entry) => entry.value === value);
-  return found?.label ?? `${key} ${value}`;
-}
-
-/** Search words for one value: the key, the value, the label and its tags. */
-export function effectKeywords(key: string, value: string): readonly string[] {
-  const found = AXIS_BY_KEY.get(key)?.values.find((entry) => entry.value === value);
-  return found === undefined
-    ? [key, value]
-    : [key, value, ...found.label.split(/[\s,]+/), ...found.tags];
-}
-
-/** Every mood word any value on any axis carries, deduplicated and sorted. */
-export function effectMoods(): readonly string[] {
-  const out = new Set<string>();
-  for (const axis of EFFECT_AXES) {
-    for (const entry of axis.values) for (const tag of entry.tags) out.add(tag);
-  }
-  return [...out].sort();
-}
-
 /** Every key the "start this block again" button clears. */
 export const EFFECT_KEYS: readonly string[] = [
   'rotate',

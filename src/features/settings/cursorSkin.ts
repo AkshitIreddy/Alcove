@@ -61,7 +61,6 @@
 import '../../styles/cursors.css';
 
 import {
-  CURSOR_SETS,
   cursorVarName,
   isCursorSetId,
   roleForKeyword,
@@ -109,11 +108,6 @@ export function osForcedColours(): boolean {
 /** A stored value read back as a set id, falling back to the house arrow. */
 export function resolveCursorSet(value: unknown): CursorSetId {
   return isCursorSetId(value) ? value : 'paper';
-}
-
-/** The set's own label, for a settings chip or a tooltip. */
-export function cursorSetName(id: CursorSetId): string {
-  return CURSOR_SETS[id].name;
 }
 
 /* ----------------------------------------------------------------------------
@@ -377,7 +371,3 @@ export function watchStyleSheets(doc: Document = document): () => void {
   };
 }
 
-/** Drop the memo of the last sweep — for tests, and for a forced re-read. */
-export function resetCursorOverrideCache(): void {
-  lastSignature = '';
-}

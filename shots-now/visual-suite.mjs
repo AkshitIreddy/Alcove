@@ -1,0 +1,1574 @@
+/**
+ * shots-now/visual-suite.mjs — the visual regression suite.
+ *
+ *     npm run visual              compare against qa/baseline/**
+ *     npm run visual -- --update  re-baseline
+ *
+ * ## Why this exists
+ *
+ * Every visual defect found in this tree was found by a human looking at a
+ * screenshot. The 2449 unit tests did not catch 1.05:1 text on the first screen
+ * a new reader sees, four tour steps that could not be satisfied, or the right
+ * leaf of a spread hanging off the window. None of those are expressible as an
+ * assertion about a function; all three are obvious in a picture.
+ *
+ * So: sixteen surfaces, each photographed at two window sizes in a light room
+ * and a dark one, compared pixel by pixel against committed baselines —
+ * sixty-four images. When one moves, a triptych is written showing baseline,
+ * actual and the pixels that changed, and the run fails.
+ *
+ * ## What makes it worth trusting
+ *
+ * A flaky visual suite is ignored inside a week and is worse than none, so
+ * every source of run-to-run variance is closed deliberately rather than
+ * absorbed by a loose threshold:
+ *
+ *  - **The library is a fixture, not a seeding.** A real `createBook()` gives
+ *    the book a `nanoid()` id and a `Math.random()` spine seed, and BOTH reach
+ *    the art — `spineFactory.heightFraction` hashes `id|spineSeed`, so a
+ *    freshly seeded shelf has a different skyline every run. This suite writes
+ *    the browser-dev SQLite stub's blob (`notebook.stubdb.v1`) into
+ *    localStorage before a line of app code runs, with fixed ids, fixed seeds,
+ *    fixed cover metadata and fixed timestamps.
+ *  - **The fixture is still built from the app's own code.** The welcome
+ *    book's pages come from `buildWelcomePageDocs()` and each book's dressing
+ *    from `freshBookStyleOverrides(seed)`, both called in-page on a throwaway
+ *    boot. A change to the welcome content or to how a fresh book is dressed
+ *    therefore shows up as a diff instead of being frozen out of the suite.
+ *  - **`Math.random` is seeded** from an init script, for the handful of places
+ *    the app still rolls (the studio dice, `randomSpineSeed`).
+ *  - **Animation is off at the source**: the fixture sets `animationLevel:
+ *    'off'`, which writes `--motion-scale: 0`, and every GSAP duration in this
+ *    app is multiplied by it (`styles/motion.ts`). Playwright's
+ *    `animations: 'disabled'` finishes CSS animations and transitions on top of
+ *    that, and the caret is made transparent by an injected rule.
+ *  - **Nothing is photographed until the screen stops moving.** `settle()`
+ *    shoots until two consecutive frames have identical PIXELS, which means the
+ *    compositor, the Pixi bake queue and every tween have finished. A far better
+ *    guard than any fixed wait, because SwiftShader's frame budget varies with
+ *    what else the machine is doing.
+ *  - **Fonts are awaited**, both `document.fonts.ready` and an explicit
+ *    `check()` for the five families the app renders in.
+ *  - **Nothing is written to disk until every picture is taken.** The dev
+ *    server watches the whole repo — `vite.config.ts` ignores only
+ *    `src-tauri` — so a baseline PNG landing in `qa/baseline/` full-reloads
+ *    the page being photographed. That is not a theory: the first version of
+ *    this file wrote as it went, and the symptoms were a tour that vanished
+ *    between two surfaces, a book that closed itself, and a screenshot that
+ *    hung for forty-five seconds. And because other agents share the one dev
+ *    server, a scene that sees ANY navigation after boot is thrown away and
+ *    walked again rather than baselined.
+ *
+ * ### One thing deliberately NOT done
+ *
+ * `prefers-reduced-motion: reduce` is NOT emulated, even though it would be the
+ * obvious way to still the app. `flip/PageFlipController.ts` reads that media
+ * query directly and **skips the curl entirely** under it, crossfading instead
+ * — so emulating it would silently replace the mid-curl surface with a picture
+ * of a page at rest that still passed. The app-level `animationLevel: 'off'`
+ * does the same job everywhere else without touching the flip.
+ *
+ * ## The comparison
+ *
+ * No image dependency is added: the repo has neither pixelmatch nor pngjs, and
+ * a Chromium is already running. Both PNGs are decoded in an about:blank page
+ * with `createImageBitmap` and compared in a canvas.
+ *
+ * A pixel counts as changed when its largest channel delta exceeds
+ * `CHANNEL_TOL` **and** the colour cannot be found within one pixel in the
+ * other image (and vice versa). That second clause is what makes the suite
+ * ignore antialiasing and subpixel text rendering while still catching a moved
+ * element: an edge that renders a shade differently has a neighbour that
+ * matches, a label that moved four pixels does not.
+ *
+ * Two thresholds decide a failure, and both matter:
+ *
+ *  - `MAX_DIFF_RATIO` over the whole frame catches a wholesale repaint;
+ *  - `CELL_FAIL` over a 16×16 grid catches a SMALL thing vanishing. A missing
+ *    16px glyph is 0.02% of a 1280×800 frame and would slip under any global
+ *    ratio worth having; it is ~30 changed pixels inside one cell, which is
+ *    loud.
+ *
+ * ## Usage
+ *
+ *   node shots-now/visual-suite.mjs [--update] [--url=http://localhost:1420]
+ *                                   [--only=<substring>] [--list] [--keep-passes]
+ *
+ * `--only` matches the case name (`<size>-<room>-<surface>`) and selects what is
+ * COMPARED, not what is walked: the scene still runs in order, because half
+ * these surfaces are only reachable through the ones before them.
+ *
+ * The full matrix takes 45–60 minutes on this machine — SwiftShader, four boots,
+ * and a settle loop that waits for the screen rather than guessing. `--only=desk`
+ * halves it and `--only=<one case>` is a couple of minutes.
+ *
+ * Needs a dev server (`npm run dev`); it does not start one, because the tree's
+ * other probes all share the one on :1420 and starting a second is how you end
+ * up comparing against a build nobody else is looking at.
+ */
+
+import { chromium } from 'playwright';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+/* ============================== the knobs ================================= */
+
+/** Largest per-channel difference still counted as the same pixel. */
+const CHANNEL_TOL = 20;
+
+/** Fraction of the frame that may change before the case fails. */
+const MAX_DIFF_RATIO = 0.0008;
+
+/** Grid cell edge, px. Small enough that one glyph lands in one or two cells. */
+const CELL = 16;
+
+/**
+ * Changed pixels inside a single cell that fail the case on their own.
+ *
+ * Measured, not guessed: with the whole matrix compared against baselines taken
+ * by an earlier, separate run of the suite, the worst case was the shelf at 19
+ * changed pixels with 8 in its busiest cell — everything else was exactly zero.
+ * Twenty leaves that 2.5× of headroom and still fires on a missing 16px glyph,
+ * which is about thirty pixels in one or two cells. If the summary's "noisiest
+ * passing case" line starts creeping towards this number, come back here before
+ * somebody starts ignoring the suite.
+ */
+const CELL_FAIL = 20;
+
+/** How long a surface may take to stop moving before we shoot it anyway. */
+const SETTLE_BUDGET_MS = 30_000;
+
+const BASELINE_DIR = 'qa/baseline';
+const REPORT_DIR = join(BASELINE_DIR, '__report');
+
+/* =============================== the matrix =============================== */
+
+/**
+ * Two windows, both real.
+ *
+ * `desk` is exactly what `src-tauri/tauri.conf.json` opens on, so it is the
+ * shape almost every reader sees. `snug` is a hair above the configured
+ * minimum (960×620) — the size at which a two-page spread stops fitting, which
+ * is precisely the class of defect ("the right-hand page hangs off the
+ * window") that shipped.
+ */
+const SIZES = [
+  { id: 'desk', width: 1280, height: 800 },
+  { id: 'snug', width: 1024, height: 660 },
+];
+
+/**
+ * A light room and a dark one, and each is BOTH halves of the app's colour.
+ *
+ * The app has two independent palettes and photographing only one would miss
+ * half the surfaces: `settings.theme` dresses the DOM (pages, rails, sheets,
+ * dialogs — `data-theme` on <html>), while the library theme dresses the Pixi
+ * world (timber, recess, wall). `night` + `ebonised` is the darkest honest
+ * pairing in the app; `parchment` + `lapis` is what a new install opens on.
+ */
+const ROOMS = [
+  { id: 'day', appTheme: 'parchment', libraryTheme: 'lapis' },
+  { id: 'night', appTheme: 'night', libraryTheme: 'ebonised' },
+];
+
+/* ============================== the fixture =============================== */
+
+/** Fixed ids. Nothing in the fixture may come from `nanoid()` or `Math.random`. */
+const WELCOME_BOOK_ID = 'vs-book-welcome';
+const CASE_ID = 'case-default';
+const FIXED_TIME = '2026-01-02T09:15:00.000Z';
+
+/**
+ * The shelf, written out.
+ *
+ * Eleven books over three floors: enough that the case reads as a library
+ * rather than a demo, few enough that every spine is legible at `snug`. The
+ * titles span short and long because the label plate's text fitting is one of
+ * the things a picture is good at catching. Seeds are arbitrary but FIXED —
+ * they choose the binding, the cloth and the height, so changing one is
+ * changing the picture.
+ */
+const SHELF_BOOKS = [
+  { title: 'Cell Biology', floor: 0, slot: 0, seed: 0x1a2b3c4d },
+  { title: 'Kanji Practice', floor: 0, slot: 1, seed: 0x2b3c4d5e },
+  { title: 'Watercolour Basics', floor: 0, slot: 2, seed: 0x3c4d5e6f },
+  { title: 'Tea Tasting Journal', floor: 0, slot: 4, seed: 0x4d5e6f70 },
+  { title: 'Linear Algebra', floor: 1, slot: 0, seed: 0x5e6f7081 },
+  { title: 'SQL Spellbook', floor: 1, slot: 1, seed: 0x6f708192 },
+  { title: 'A Very Long Title About Bees', floor: 1, slot: 2, seed: 0x708192a3 },
+  { title: 'Rope', floor: 1, slot: 3, seed: 0x8192a3b4 },
+  { title: 'Sourdough', floor: 2, slot: 0, seed: 0x92a3b4c5 },
+  { title: 'Field Notes', floor: 2, slot: 1, seed: 0xa3b4c5d6 },
+  { title: 'Harbour Sketches', floor: 2, slot: 2, seed: 0xb4c5d6e7 },
+];
+
+/* ================================= CLI =================================== */
+
+const argv = process.argv.slice(2);
+const flag = (name) => argv.includes(`--${name}`);
+const opt = (name, fallback) => {
+  const hit = argv.find((a) => a.startsWith(`--${name}=`));
+  return hit === undefined ? fallback : hit.slice(name.length + 3);
+};
+
+const URL_BASE = opt('url', 'http://localhost:1420');
+const UPDATE = flag('update');
+const ONLY = opt('only', null);
+const LIST = flag('list');
+const KEEP_PASSES = flag('keep-passes');
+
+/* ============================ tiny utilities ============================== */
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function write(path, buffer) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, buffer);
+}
+
+/** ANSI-free status glyphs — this output gets pasted into issues. */
+const MARK = { pass: 'ok  ', fail: 'FAIL', add: 'new ', upd: 'upd ', err: 'ERR ' };
+
+/* ========================== the surfaces to shoot ========================= */
+
+/**
+ * A surface is a name, the scene it lives in, and how to get there.
+ *
+ * `enter` leaves the app showing the thing; `leave` puts the app back somewhere
+ * the next surface can start from. Both are given the page and a small context
+ * (`ctx.size`, `ctx.room`, `ctx.geom`). A surface that throws is recorded as an
+ * error for that one case and the walk carries on — one broken panel must not
+ * cost the other sixteen pictures.
+ */
+
+/**
+ * Order matters and is not alphabetical.
+ *
+ * One boot per (size, room) — a scene walk, not seventeen page loads — because
+ * booting this app under SwiftShader costs about eight seconds and doing it
+ * sixty-four times would put the suite past the point anyone runs it. The two
+ * first-run surfaces come LAST because reaching them means emptying the case,
+ * which cannot be undone within the session.
+ */
+const SURFACES = [
+  {
+    id: 'shelf',
+    /** Eleven books, three floors, the dock, the zoom pill, the gear. */
+    async enter(page) {
+      await page.waitForFunction(
+        () => (globalThis.__shelfVisibleBooks?.() ?? []).length >= 8,
+        null,
+        { timeout: 45_000 },
+      );
+    },
+  },
+  {
+    id: 'tour-shelf-dock',
+    async enter(page) {
+      await startTour(page);
+      await jumpTour(page, 'shelf-dock');
+    },
+  },
+  {
+    id: 'tour-shelf-studio',
+    async enter(page) {
+      await jumpTour(page, 'shelf-studio');
+    },
+    async leave(page) {
+      await stopTour(page);
+    },
+  },
+  {
+    id: 'studio-library',
+    /** The shelf studio: presets, carpentry, wallpaper, the reader's own rows. */
+    async enter(page) {
+      await tap(page, '.shelf-dock__btn[data-shelf-dock="studio"]');
+      await page.waitForSelector('.nb-library-studio', { timeout: 30_000 });
+      // The sheet lands scrolled to the top; make sure of it, because a panel
+      // remembering a scroll offset from a previous surface would be the one
+      // difference between two otherwise identical runs.
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll('.nb-rail-panel, .nb-library-studio')) {
+          el.scrollTop = 0;
+          for (const inner of el.querySelectorAll('*')) inner.scrollTop = 0;
+        }
+      });
+    },
+  },
+  {
+    id: 'packs-dialog',
+    /**
+     * "Add your own" — the whole import story in one card: the file button, the
+     * paste box, the copyable prompt and the honest list of what a pack cannot
+     * carry yet.
+     */
+    async enter(page) {
+      const yours = page.locator('[data-your-designs="wallpaper"]');
+      await yours.waitFor({ timeout: 30_000 });
+      await yours.scrollIntoViewIfNeeded();
+      await yours.getByRole('button', { name: /add your own/i }).click();
+      await page.waitForSelector('[data-nb-pack-dialog] [role="dialog"]', {
+        timeout: 30_000,
+      });
+    },
+    async leave(page) {
+      await tidy(page);
+    },
+  },
+  {
+    id: 'book-spread',
+    /** A book open on its first spread, both leaves, the rail down the left. */
+    async enter(page, ctx) {
+      await openBook(page);
+      ctx.geom = await spreadGeometry(page);
+    },
+  },
+  {
+    id: 'studio-book',
+    /** Customize this book — the binding pickers, previewing live. */
+    async enter(page) {
+      await tap(page, '.nb-rail-button[data-tool="customize"]');
+      await page.waitForSelector('.nb-rail-panel[aria-hidden="false"]', { timeout: 30_000 });
+    },
+    async leave(page) {
+      await tidy(page);
+    },
+  },
+  {
+    id: 'catalogue',
+    /** The catalogue panel — stickers, papers, everything droppable. */
+    async enter(page) {
+      await tap(page, '.nb-rail-button[data-tool="catalogue"]');
+      await page.waitForSelector('.nb-rail-panel[aria-hidden="false"]', { timeout: 30_000 });
+    },
+    async leave(page) {
+      await tidy(page);
+    },
+  },
+  {
+    id: 'tour-blocks',
+    /**
+     * The step whose spotlight has to be the whole editable column — it was
+     * once a hole barely bigger than one block, which gave the reader a
+     * not-allowed cursor while following the tour. A picture shows that.
+     */
+    async enter(page) {
+      await startTour(page);
+      await jumpTour(page, 'blocks');
+    },
+  },
+  {
+    id: 'tour-settings',
+    async enter(page) {
+      await jumpTour(page, 'settings');
+    },
+    async leave(page) {
+      await stopTour(page);
+      await tidy(page);
+    },
+  },
+  {
+    id: 'focus-spread',
+    /** Focus mode, top rung: the book, and the dial that walks the ladder. */
+    async enter(page) {
+      await tap(page, '.nb-rail-button[data-tool="focus"]');
+      await page.waitForSelector('.nb-focus-dial', { timeout: 30_000 });
+      await page.waitForFunction(
+        () => document.querySelector('.nb-book-view')?.dataset.focusLevel === 'spread',
+        null,
+        { timeout: 30_000 },
+      );
+    },
+  },
+  {
+    id: 'focus-page',
+    /** Second rung: the boards come off. */
+    async enter(page) {
+      await focusRung(page, 'page');
+    },
+  },
+  {
+    id: 'focus-leaf',
+    /** Third rung: one leaf, alone. */
+    async enter(page) {
+      await focusRung(page, 'leaf');
+    },
+    async leave(page) {
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(
+        () => document.querySelector('.nb-book-view')?.dataset.focusLevel === 'off',
+        null,
+        { timeout: 20_000 },
+      );
+    },
+  },
+  {
+    id: 'page-curl',
+    /**
+     * The turn, frozen a third of the way over.
+     *
+     * Not a tween caught mid-flight — a pointer drag IS the flip's `p`
+     * (`flip/math.ts::dragToP`), so pressing the edge hotspot and holding the
+     * pointer at a computed x parks the curl at an exact p with nothing
+     * running. That is what makes a moving thing photographable at all.
+     */
+    async enter(page, ctx) {
+      const geom = ctx.geom ?? (await spreadGeometry(page));
+      const leaf = geom.right;
+      const y = leaf.y + leaf.h * 0.5;
+      const startX = leaf.x + leaf.w - 12;
+      const targetX = leaf.x + leaf.w * (1 - 2 * 0.35);
+      await page.mouse.move(startX, y);
+      await page.mouse.down();
+      await frames(page, 2);
+      await page.mouse.move(targetX, y, { steps: 12 });
+      await frames(page, 3);
+      const curling = await page.evaluate(
+        () => document.querySelector('.nb-flip-surface')?.dataset.flipPhase ?? null,
+      );
+      ctx.note = curling === null ? 'no flip phase attribute' : `phase=${curling}`;
+    },
+    async leave(page) {
+      await page.mouse.up();
+      await sleep(600);
+      await backToShelf(page);
+    },
+  },
+
+  /* --------------------------- and then, nothing -------------------------- */
+
+  {
+    id: 'first-run-invite',
+    /**
+     * THE screen a new reader lands on with nothing in the library: a bare case
+     * and one card asking for the first book. This is the frame that carried
+     * 1.05:1 text, and no unit test in the tree could have said so.
+     *
+     * It has to be reached by EMPTYING a stocked case rather than by booting an
+     * empty one, and that is not a shortcut. `features/bookshelf/data.ts` fills
+     * an empty default case with a 37-book demo library whenever the SQLite
+     * layer is the browser stub — which is every run of this suite — so a
+     * fixture with no books photographs the demo shelf, not the invitation.
+     * `demoFallbackFor` is deliberately sticky: a re-read never INVENTS the
+     * demo books, so deleting the fixture's own books lands on the real screen.
+     */
+    async enter(page) {
+      // Idempotent, and here rather than only in the previous surface's
+      // `leave` so that a book-side surface falling over cannot cost this one
+      // its picture too.
+      await backToShelf(page);
+      await page.evaluate(() => globalThis.__shelfEmptyLibrary());
+      await page.waitForSelector('[data-testid="shelf-firstrun"]', { timeout: 45_000 });
+    },
+  },
+  {
+    id: 'first-run-greeting',
+    /**
+     * The same screen a beat later: the tour's greeting over the empty case.
+     *
+     * The length is deliberately NOT chosen here — this is the question as a
+     * reader meets it, with neither card picked and nothing ticked.
+     */
+    async enter(page) {
+      await startTour(page, null);
+      await jumpTour(page, 'welcome');
+    },
+    async leave(page) {
+      await stopTour(page);
+    },
+  },
+];
+
+/* ============================ app driving bits ============================ */
+
+/** Click the middle of an element by measuring it, not by Playwright's retry.
+ *
+ * Several of these controls re-render the moment they are pressed (a rail
+ * toggle, the first-run invite), and actionability retries then restart against
+ * a node that no longer matches — a 30s timeout on a click that worked. */
+async function tap(page, selector) {
+  await page.waitForSelector(selector, { state: 'visible', timeout: 30_000 });
+  const box = await page.locator(selector).first().boundingBox();
+  if (box === null) throw new Error(`no box for ${selector}`);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await sleep(250);
+}
+
+async function frames(page, n = 2) {
+  await page.evaluate(
+    (count) =>
+      new Promise((resolve) => {
+        let left = count;
+        const step = () => (left-- > 0 ? requestAnimationFrame(step) : resolve(true));
+        step();
+      }),
+    n,
+  );
+}
+
+/**
+ * Put the tour on screen.
+ *
+ * `length` of `null` leaves the greeting's question unanswered, which is how a
+ * reader first meets it; 'full' answers it, which is the only way to reach the
+ * later steps by index.
+ */
+async function startTour(page, length = 'full') {
+  await page.waitForFunction(() => typeof window.__nbTutorial?.start === 'function', null, {
+    timeout: 45_000,
+  });
+  await page.evaluate((len) => {
+    window.__nbTutorial.start();
+    if (len !== null) window.__nbTutorial.chooseLength(len);
+  }, length);
+  await sleep(400);
+}
+
+async function stopTour(page) {
+  await page.evaluate(() => window.__nbTutorial?.stop());
+  await sleep(400);
+}
+
+/**
+ * Land the tour on a named step and freeze it there.
+ *
+ * `hold()` cancels the auto-advance so the card cannot walk on while the
+ * screen is settling, and the anchor is awaited rather than assumed: a step
+ * that cannot find its target draws no spotlight, which is a real finding and
+ * should fail loudly rather than quietly photograph a bare card.
+ */
+async function jumpTour(page, stepId) {
+  const index = await page.evaluate((id) => {
+    const s = window.__nbTutorial.getState();
+    return s.stepIds.indexOf(id);
+  }, stepId);
+  if (index < 0) throw new Error(`the tour has no step "${stepId}"`);
+  await page.evaluate((i) => {
+    window.__nbTutorial.jumpTo(i);
+    window.__nbTutorial.hold();
+  }, index);
+  await page.waitForFunction(
+    (id) => window.__nbTutorial.getState().stepId === id,
+    stepId,
+    { timeout: 20_000 },
+  );
+  // The greeting is the one step with nothing to point at.
+  if (stepId !== 'welcome') {
+    await page.waitForFunction(() => window.__nbTutorial.getState().anchored === true, null, {
+      timeout: 20_000,
+    });
+  }
+  await page.evaluate(() => window.__nbTutorial.hold());
+}
+
+/** Close every panel, sheet and menu, whatever is up. */
+async function tidy(page) {
+  await page.evaluate(() => {
+    for (const sel of [
+      '.nb-pack-card .nb-ins-close',
+      '.nb-rail-panel[aria-hidden="false"] .nb-rail-panel-close',
+      '.nbs-sheet .nbs-close',
+    ]) {
+      for (const el of document.querySelectorAll(sel)) el.click();
+    }
+  });
+  await sleep(300);
+  await page.keyboard.press('Escape');
+  await sleep(400);
+}
+
+/** Take the welcome book off the shelf and open it, the way a reader does. */
+async function openBook(page) {
+  await page.evaluate((id) => globalThis.__shelfPullOut(id), WELCOME_BOOK_ID);
+  await page.waitForSelector('.pulled-book', { state: 'visible', timeout: 30_000 });
+  await sleep(500);
+  await tap(page, '.pulled-book');
+  await page.waitForSelector('.nb-flip-surface', { timeout: 45_000 });
+  await page.waitForSelector('.nb-prose', { timeout: 45_000 });
+  await sleep(800);
+}
+
+/**
+ * Close the book.
+ *
+ * The chip is clicked through the DOM rather than with the mouse because it
+ * lives in the corner behind `is-away` — it fades out when the reader has not
+ * asked for it, and a real click would first have to wake it with a keystroke
+ * whose reveal animation is one more thing to wait on.
+ */
+async function backToShelf(page) {
+  const inBook = await page.evaluate(
+    () => document.querySelector('.nb-back-button') !== null,
+  );
+  if (!inBook) return;
+  await page.evaluate(() => document.querySelector('.nb-back-button').click());
+  await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, {
+    timeout: 45_000,
+  });
+  await page.waitForSelector('.shelf-dock__btn', { timeout: 45_000 });
+  await sleep(900);
+}
+
+async function spreadGeometry(page) {
+  return page.evaluate(() => {
+    const box = (sel) => {
+      const el = document.querySelector(sel);
+      if (el === null) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    };
+    return { surface: box('.nb-flip-surface'), right: box('.nb-flip-leaf-right') };
+  });
+}
+
+/** Walk the focus ladder with the same key the plate advertises. */
+async function focusRung(page, level) {
+  for (let i = 0; i < 4; i += 1) {
+    const at = await page.evaluate(
+      () => document.querySelector('.nb-book-view')?.dataset.focusLevel ?? null,
+    );
+    if (at === level) return;
+    await page.keyboard.press(']');
+    await sleep(400);
+  }
+  throw new Error(`focus mode would not reach the "${level}" rung`);
+}
+
+/* ============================ the fixture kit ============================= */
+
+/**
+ * One throwaway boot, to borrow two pure functions from the app.
+ *
+ * Hand-writing the welcome pages here would freeze them: the suite would keep
+ * passing while the content it is supposed to be watching changed underneath.
+ * Both of these are pure (`buildWelcomePageDocs` parses Notebook Script;
+ * `freshBookStyleOverrides` is a seeded roll), so the usual "a probe's own
+ * import can land on a second copy of the module" trap does not apply — there
+ * is no store to write to.
+ */
+async function buildFixtureKit(browser) {
+  // Three goes, because this boot is the one most likely to be interrupted:
+  // it happens seconds after the suite has finished tidying its report folder,
+  // and the dev server treats that as a reason to reload every open page.
+  let last = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await buildFixtureKitOnce(browser);
+    } catch (error) {
+      last = error;
+      if (!/Execution context was destroyed|Target closed|navigation/i.test(String(error))) {
+        throw error;
+      }
+      console.log('  (the page navigated under the fixture build — trying again)');
+      await sleep(1500);
+    }
+  }
+  throw last;
+}
+
+async function buildFixtureKitOnce(browser) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  try {
+    await page.goto(`${URL_BASE}/?fx=force&dev=0`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 120_000,
+    });
+    const seeds = SHELF_BOOKS.map((b) => b.seed);
+    return await page.evaluate(async (bookSeeds) => {
+      const seed = await import('/src/data/seed.ts');
+      const style = await import('/src/art/bookStyle.ts');
+      const count = seed.WELCOME_PAGE_SOURCES.length;
+      const pageIds = Array.from(
+        { length: count },
+        (_, i) => `vs-page-welcome-${String(i + 1).padStart(2, '0')}`,
+      );
+      const built = seed.buildWelcomePageDocs({ bookId: 'vs-book-welcome', pageIds });
+      return {
+        seedVersion: seed.SEED_VERSION,
+        seedVersionKey: seed.SEED_VERSION_KEY,
+        welcomeTitle: seed.WELCOME_BOOK_TITLE,
+        welcomeSpineSeed: seed.WELCOME_SPINE_SEED,
+        welcomeBinding: seed.WELCOME_BINDING,
+        welcomePageIds: pageIds,
+        welcomePages: built.map((b) => ({ doc: b.doc, source: b.source })),
+        dressings: bookSeeds.map((s) => style.freshBookStyleOverrides(s)),
+      };
+    }, seeds);
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * The whole library, as the browser-dev SQLite stub stores it.
+ *
+ * Everything a screen can vary on is pinned here: ids, spine seeds, cover
+ * metadata, timestamps, which room the case is dressed in, which app theme is
+ * on, and the two markers that stop the tour and the taste questions putting
+ * themselves on screen uninvited.
+ */
+function buildStubBlob(kit, room) {
+  const libraryPrefs = {
+    theme: room.libraryTheme,
+    shelf: null,
+    wall: null,
+    timberHex: null,
+    wallHex: null,
+  };
+
+  const books = [];
+  const pages = [];
+
+  {
+    books.push({
+      id: WELCOME_BOOK_ID,
+      bookcase_id: CASE_ID,
+      title: kit.welcomeTitle,
+      floor: 0,
+      slot: 3,
+      spine_seed: kit.welcomeSpineSeed,
+      cover_meta: JSON.stringify({ style: { ...kit.welcomeBinding } }),
+      created_at: FIXED_TIME,
+      updated_at: FIXED_TIME,
+    });
+    kit.welcomePages.forEach((p, i) => {
+      pages.push({
+        id: kit.welcomePageIds[i],
+        book_id: WELCOME_BOOK_ID,
+        ord: i,
+        doc_json: JSON.stringify(p.doc),
+        script_source: p.source,
+        source_dirty: 0,
+        updated_at: FIXED_TIME,
+      });
+    });
+    SHELF_BOOKS.forEach((b, i) => {
+      books.push({
+        id: `vs-book-${String(i + 1).padStart(2, '0')}`,
+        bookcase_id: CASE_ID,
+        title: b.title,
+        floor: b.floor,
+        slot: b.slot,
+        spine_seed: b.seed,
+        cover_meta: JSON.stringify({ style: kit.dressings[i] }),
+        created_at: FIXED_TIME,
+        updated_at: FIXED_TIME,
+      });
+      // One page each, so a book opened by accident is not blank and the
+      // quick switcher has something to index.
+      pages.push({
+        id: `vs-page-${String(i + 1).padStart(2, '0')}`,
+        book_id: `vs-book-${String(i + 1).padStart(2, '0')}`,
+        ord: 0,
+        doc_json: JSON.stringify({
+          type: 'doc',
+          content: [
+            { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: b.title }] },
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'A page, so the book is not empty.' }],
+            },
+          ],
+        }),
+        script_source: null,
+        source_dirty: 0,
+        updated_at: FIXED_TIME,
+      });
+    });
+  }
+
+  const settings = {
+    // Animation off at the source: this is what writes `--motion-scale: 0`,
+    // and every GSAP duration in the app is multiplied by it.
+    animationLevel: 'off',
+    theme: room.appTheme,
+    // Silence, and no ambient bed trying to start on the first click.
+    muteAll: true,
+    ambientLoop: false,
+    typingSounds: false,
+    hourlyChime: false,
+    // Off because it is a floating strip whose contents depend on how many
+    // pages have been rasterised yet — a race, photographed.
+    thumbnailsStrip: false,
+    perfHud: false,
+    confettiOnComplete: false,
+    backupEnabled: false,
+  };
+
+  return {
+    bookcases: [
+      {
+        id: CASE_ID,
+        name: 'My Library',
+        ord: 0,
+        room: JSON.stringify(libraryPrefs),
+        floors: 10,
+        created_at: FIXED_TIME,
+        updated_at: FIXED_TIME,
+      },
+    ],
+    books,
+    pages,
+    settings: [
+      { key: 'app', value: JSON.stringify(settings) },
+      { key: 'activeBookcase', value: CASE_ID },
+      // Stop `seedIfEmpty` inventing a welcome book with a random id.
+      { key: kit.seedVersionKey, value: String(kit.seedVersion) },
+      // The tour and the taste questionnaire both put THEMSELVES on screen on
+      // a fresh install. Marked seen, so a surface that wants them says so.
+      { key: 'appState:tutorialCompleted', value: '1' },
+      { key: 'appState:taste', value: JSON.stringify({ answers: {}, done: true }) },
+    ],
+  };
+}
+
+/* ============================== the capture =============================== */
+
+/**
+ * Everything that has to be true before app code runs.
+ *
+ * Order matters: the stub DB is read by `MemoryDb`'s constructor, which the
+ * first `getDb()` triggers during boot, so the blob has to be in localStorage
+ * before the module graph evaluates — an init script is the only place that is
+ * guaranteed.
+ */
+async function installFixture(page, blob) {
+  await page.addInitScript(
+    ({ stub }) => {
+      try {
+        localStorage.clear();
+        localStorage.setItem('notebook.stubdb.v1', JSON.stringify(stub));
+      } catch {
+        /* denied storage: the run will fail loudly at the first surface */
+      }
+
+      // A seeded PRNG for the few places the app still rolls: `randomSpineSeed`
+      // and the studio dice. Fixed stream, so a run is a run.
+      let s = 0x9e3779b9;
+      Math.random = () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    },
+    { stub: blob },
+  );
+}
+
+/** The stylesheet the suite adds, and the only one. */
+const STILL_CSS = `
+  /* A blinking caret is the one thing on the page that is never the same
+     twice. Playwright's animations:'disabled' does not touch it. */
+  * { caret-color: transparent !important; }
+  /* Overlay scrollbars render on a timer after a scroll and fade out again. */
+  ::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+`;
+
+async function bootScene(context, blob, size) {
+  const page = await context.newPage();
+  await installFixture(page, blob);
+  page.setDefaultTimeout(45_000);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message.split('\n')[0]));
+  await page.goto(`${URL_BASE}/?fx=force&dev=0`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120_000,
+  });
+  await page.addStyleTag({ content: STILL_CSS });
+  await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, {
+    timeout: 120_000,
+  });
+  await page.evaluate(() => {
+    globalThis.__vsReady = false;
+    void globalThis.__shelfWorld.ready.then(() => {
+      globalThis.__vsReady = true;
+    });
+  });
+  await page.waitForFunction(() => globalThis.__vsReady === true, null, { timeout: 120_000 });
+  await awaitFonts(page);
+  // Park the pointer somewhere with nothing under it, so no surface is
+  // photographed wearing a hover state it did not ask for.
+  await page.mouse.move(size.width - 2, 2);
+  return { page, errors };
+}
+
+/**
+ * Fonts, properly.
+ *
+ * `document.fonts.ready` alone resolves before a face that nothing has asked
+ * for yet has loaded — and this app swaps fonts per surface (Caveat for
+ * headings, Architects Daughter only inside a diagram). Asking `check()` for
+ * each family forces the load and then waits for it.
+ */
+async function awaitFonts(page) {
+  await page.evaluate(async () => {
+    const families = [
+      'Caveat Variable',
+      'Patrick Hand',
+      'Kalam',
+      'Architects Daughter',
+      'Nunito Sans',
+    ];
+    for (const f of families) {
+      try {
+        await document.fonts.load(`16px "${f}"`);
+      } catch {
+        /* a family the build no longer bundles is not this suite's business */
+      }
+    }
+    await document.fonts.ready;
+  });
+}
+
+/**
+ * Shoot when — and only when — the screen has stopped moving.
+ *
+ * Two screenshots with a gap between them; the same PIXELS twice running mean
+ * nothing is tweening, no bake is outstanding and the compositor has caught up.
+ * A fixed wait would not do: this runs on SwiftShader, where the frame budget
+ * depends on what else the machine is doing.
+ *
+ * PIXELS, and not bytes — that distinction cost an afternoon. Chromium's PNG
+ * encoder is NOT byte-stable: three screenshots of a provably identical screen
+ * came back 184661, 184633 and 184613 bytes long (the filter/deflate choices
+ * vary), so `Buffer.equals` reported the book studio as animating forever while
+ * a pixel diff of the same pair reported zero differing pixels. The signature
+ * below is taken over the decoded image, in the comparator page.
+ */
+async function settle(page, cmp) {
+  const shoot = () =>
+    page.screenshot({
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      timeout: 60_000,
+    });
+  let buffer = await shoot();
+  let previous = await pixelSignature(cmp, buffer);
+  const seen = new Set([previous]);
+  const deadline = Date.now() + SETTLE_BUDGET_MS;
+  let stillFor = 0;
+  let shots = 1;
+  for (;;) {
+    await sleep(320);
+    buffer = await shoot();
+    shots += 1;
+    const next = await pixelSignature(cmp, buffer);
+    seen.add(next);
+    if (next === previous) {
+      stillFor += 1;
+      // Twice in a row: one match can be two frames inside the same stall.
+      if (stillFor >= 2) return { buffer, settled: true, shots, distinct: seen.size };
+    } else {
+      stillFor = 0;
+    }
+    previous = next;
+    if (Date.now() > deadline) return { buffer, settled: false, shots, distinct: seen.size };
+  }
+}
+
+/** FNV-1a over the decoded RGBA, plus the dimensions. Cheap and exact. */
+async function pixelSignature(cmp, buffer) {
+  return cmp.evaluate(async (b64) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), {
+      colorSpaceConversion: 'none',
+    });
+    const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0);
+    const data = ctx.getImageData(0, 0, bmp.width, bmp.height).data;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < data.length; i += 4) {
+      h = Math.imul(h ^ data[i], 0x01000193);
+      h = Math.imul(h ^ data[i + 1], 0x01000193);
+      h = Math.imul(h ^ data[i + 2], 0x01000193);
+    }
+    return `${bmp.width}x${bmp.height}:${(h >>> 0).toString(16)}`;
+  }, buffer.toString('base64'));
+}
+
+/* ============================= the comparison ============================= */
+
+/**
+ * Decode, diff and draw — in the browser, because the repo has no image
+ * library and a Chromium is already running.
+ *
+ * Returns the numbers plus a triptych PNG (baseline · actual · what changed).
+ */
+const COMPARE_IN_PAGE = async ([aB64, bB64, cfg]) => {
+  const decode = async (b64) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), {
+      colorSpaceConversion: 'none',
+    });
+    const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0);
+    return {
+      w: bmp.width,
+      h: bmp.height,
+      data: ctx.getImageData(0, 0, bmp.width, bmp.height).data,
+    };
+  };
+
+  const A = await decode(aB64);
+  const B = await decode(bB64);
+  if (A.w !== B.w || A.h !== B.h) {
+    return { sizeMismatch: { baseline: [A.w, A.h], actual: [B.w, B.h] } };
+  }
+
+  const { w, h, data: a } = A;
+  const b = B.data;
+  const tol = cfg.tol;
+
+  const delta = (i, j) =>
+    Math.max(
+      Math.abs(a[i] - b[j]),
+      Math.abs(a[i + 1] - b[j + 1]),
+      Math.abs(a[i + 2] - b[j + 2]),
+      Math.abs(a[i + 3] - b[j + 3]),
+    );
+
+  /**
+   * Does `src`'s pixel at (x,y) have a near-enough twin within one pixel of
+   * (x,y) in `dst`? This is the whole antialiasing tolerance: a rendered edge
+   * that shifted a fraction of a pixel has a matching neighbour; a label that
+   * moved four pixels does not.
+   */
+  const nearby = (srcData, dstData, x, y) => {
+    const i = (y * w + x) * 4;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= h) continue;
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const xx = x + dx;
+        if (xx < 0 || xx >= w) continue;
+        const j = (yy * w + xx) * 4;
+        const d = Math.max(
+          Math.abs(srcData[i] - dstData[j]),
+          Math.abs(srcData[i + 1] - dstData[j + 1]),
+          Math.abs(srcData[i + 2] - dstData[j + 2]),
+          Math.abs(srcData[i + 3] - dstData[j + 3]),
+        );
+        if (d <= tol) return true;
+      }
+    }
+    return false;
+  };
+
+  const cols = Math.ceil(w / cfg.cell);
+  const rows = Math.ceil(h / cfg.cell);
+  const cells = new Int32Array(cols * rows);
+  const mask = new Uint8Array(w * h);
+  let changed = 0;
+  let softened = 0;
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4;
+      if (delta(i, i) <= tol) continue;
+      if (nearby(a, b, x, y) && nearby(b, a, x, y)) {
+        softened += 1;
+        continue;
+      }
+      mask[y * w + x] = 1;
+      changed += 1;
+      cells[Math.floor(y / cfg.cell) * cols + Math.floor(x / cfg.cell)] += 1;
+    }
+  }
+
+  let worstCell = 0;
+  let worstAt = null;
+  let hotCells = 0;
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const n = cells[r * cols + c];
+      if (n === 0) continue;
+      if (n >= cfg.cellHot) hotCells += 1;
+      if (n > worstCell) {
+        worstCell = n;
+        worstAt = [c * cfg.cell, r * cfg.cell];
+      }
+    }
+  }
+
+  /* ------------------------------- the picture --------------------------- */
+
+  const GUT = 10;
+  const LABEL = 26;
+  const out = new OffscreenCanvas(w * 3 + GUT * 4, h + LABEL + GUT * 2);
+  const g = out.getContext('2d');
+  g.fillStyle = '#1a1614';
+  g.fillRect(0, 0, out.width, out.height);
+  g.font = '13px system-ui, sans-serif';
+  g.textBaseline = 'middle';
+
+  const panel = new OffscreenCanvas(w, h);
+  const pctx = panel.getContext('2d');
+  const put = (arr) => {
+    pctx.putImageData(new ImageData(new Uint8ClampedArray(arr), w, h), 0, 0);
+    return panel.transferToImageBitmap();
+  };
+
+  const titles = ['baseline', 'actual', `changed · ${changed}px`];
+  const images = [put(a), put(b)];
+
+  // The third panel: the actual, drained of colour, with every changed pixel
+  // painted magenta. Draining rather than blanking keeps the context — you can
+  // see WHERE on the page the thing moved without flicking between two tabs.
+  const marked = new Uint8ClampedArray(b.length);
+  for (let p = 0; p < w * h; p += 1) {
+    const i = p * 4;
+    if (mask[p] === 1) {
+      marked[i] = 0xff;
+      marked[i + 1] = 0x1f;
+      marked[i + 2] = 0x9c;
+      marked[i + 3] = 0xff;
+    } else {
+      const grey = (b[i] * 0.299 + b[i + 1] * 0.587 + b[i + 2] * 0.114) * 0.35 + 140;
+      marked[i] = grey;
+      marked[i + 1] = grey;
+      marked[i + 2] = grey;
+      marked[i + 3] = 0xff;
+    }
+  }
+  images.push(put(marked));
+
+  images.forEach((img, n) => {
+    const x = GUT + n * (w + GUT);
+    g.fillStyle = '#e9e1d3';
+    g.fillText(titles[n], x, LABEL / 2 + 2);
+    g.drawImage(img, x, LABEL + GUT);
+  });
+
+  const blob = await out.convertToBlob({ type: 'image/png' });
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < buf.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  }
+
+  return {
+    width: w,
+    height: h,
+    pixels: w * h,
+    changed,
+    softened,
+    ratio: changed / (w * h),
+    hotCells,
+    worstCell,
+    worstAt,
+    diffPng: btoa(s),
+  };
+};
+
+async function compare(cmp, baselineBuf, actualBuf) {
+  return cmp.evaluate(COMPARE_IN_PAGE, [
+    baselineBuf.toString('base64'),
+    actualBuf.toString('base64'),
+    { tol: CHANNEL_TOL, cell: CELL, cellHot: Math.ceil(CELL_FAIL / 2) },
+  ]);
+}
+
+/* ================================= run =================================== */
+
+const CASES = [];
+for (const size of SIZES) {
+  for (const room of ROOMS) {
+    for (const s of SURFACES) CASES.push({ surface: s, size, room });
+  }
+}
+const caseName = (c) => `${c.size.id}-${c.room.id}-${c.surface.id}`;
+const baselinePath = (c) => join(BASELINE_DIR, c.size.id, c.room.id, `${c.surface.id}.png`);
+
+if (LIST) {
+  for (const c of CASES) console.log(caseName(c));
+  console.log(`\n${CASES.length} cases`);
+  process.exit(0);
+}
+
+const wanted = CASES.filter((c) => ONLY === null || caseName(c).includes(ONLY));
+if (wanted.length === 0) {
+  console.error(`--only=${ONLY} matched nothing. Try --list.`);
+  process.exit(2);
+}
+
+console.log(
+  `visual suite — ${wanted.length} case${wanted.length === 1 ? '' : 's'}` +
+    `${UPDATE ? ' (re-baselining)' : ''} against ${URL_BASE}`,
+);
+
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
+});
+const cmp = await browser.newPage();
+await cmp.goto('about:blank');
+
+/**
+ * Every picture taken, held in memory until the last one is.
+ *
+ * NOTHING may be written into the working tree while the browser is walking a
+ * scene, and this is not tidiness. The dev server watches the whole repo
+ * (`vite.config.ts` ignores only `src-tauri`), so a PNG landing in
+ * `qa/baseline/` triggers a full page reload — mid-walk, under the very page
+ * being photographed. The first version of this file wrote as it went and the
+ * symptom was baffling: a tour that vanished between two surfaces, a book that
+ * closed itself, and one screenshot that hung for 45 seconds. Sixty-four
+ * buffers is about 16MB, which is a cheap price for a suite that means what it
+ * says.
+ */
+const shots = [];
+const results = [];
+const record = (c, status, extra = {}) => {
+  const row = { name: caseName(c), status, ...extra };
+  results.push(row);
+  const num =
+    extra.changed === undefined
+      ? ''
+      : `  ${extra.changed}px changed, worst cell ${extra.worstCell}`;
+  console.log(`  ${MARK[status]} ${row.name}${num}${extra.why ? `  — ${extra.why}` : ''}`);
+};
+
+let kit;
+try {
+  console.log('\nbuilding the fixture from the app’s own code…');
+  kit = await buildFixtureKit(browser);
+  console.log(
+    `  welcome book: ${kit.welcomePages.length} pages, seed ${kit.welcomeSpineSeed}; ` +
+      `${kit.dressings.length} dressed spines`,
+  );
+} catch (error) {
+  console.error(`could not build the fixture: ${String(error).split('\n')[0]}`);
+  console.error('is the dev server up?  npm run dev');
+  await browser.close();
+  process.exit(2);
+}
+
+/* --------------------------------- walk ---------------------------------- */
+
+/**
+ * Group into scenes, and keep the WHOLE scene even when `--only` wants one
+ * surface of it.
+ *
+ * A scene is a sequence, not a bag: `studio-book` is reached by opening a book
+ * in `book-spread`, and `first-run-invite` by emptying the case the fourteen
+ * surfaces before it were photographed in. Filtering the walk itself would make
+ * `--only=desk-day-focus-leaf` fail on the shelf, which is a trap for whoever
+ * reaches for it while chasing one diff. So `--only` selects what is COMPARED;
+ * every surface is still walked, and the ones nobody asked for skip the
+ * screenshot (which is most of the cost).
+ */
+const wantedNames = new Set(wanted.map(caseName));
+const byScene = new Map();
+for (const c of CASES) {
+  const key = `${c.size.id}|${c.room.id}`;
+  if (!wanted.some((w) => w.size.id === c.size.id && w.room.id === c.room.id)) continue;
+  if (!byScene.has(key)) byScene.set(key, []);
+  byScene.get(key).push(c);
+}
+
+/**
+ * Walk one (size, room) once, filling `taken`.
+ *
+ * Returns the number of page navigations that happened after boot. Anything
+ * above zero means the dev server reloaded underneath the walk — someone saved
+ * a file in `src/` — and every picture after it is of a half-built app. The
+ * caller throws the whole attempt away rather than baselining that.
+ */
+async function walkScene(group, taken) {
+  const { size, room } = group[0];
+  const context = await browser.newContext({
+    viewport: { width: size.width, height: size.height },
+    deviceScaleFactor: 1,
+    // Fixed, because a locale reaches the page through date and number
+    // formatting and a timezone reaches it through anything that prints a day.
+    locale: 'en-GB',
+    timezoneId: 'UTC',
+  });
+  const failures = [];
+  let reloads = 0;
+  let page = null;
+  let errors = [];
+  try {
+    ({ page, errors } = await bootScene(context, buildStubBlob(kit, room), size));
+  } catch (error) {
+    await context.close();
+    return { reloads: 0, fatal: `boot: ${String(error).split('\n')[0]}`, failures };
+  }
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) reloads += 1;
+  });
+
+  const ctx = { size, room };
+  for (const c of group) {
+    const { surface } = c;
+    // Bail the moment the page reloads rather than grinding through eleven
+    // more surfaces that will each spend forty-five seconds discovering the
+    // app is back on the shelf. The caller starts the scene over.
+    if (reloads > 0) break;
+    try {
+      await surface.enter(page, ctx);
+      if (wantedNames.has(caseName(c))) {
+        const { buffer, settled, shots: took, distinct } = await settle(page, cmp);
+        // The count is the useful half. "Still moving" with 2 distinct frames
+        // out of 40 is a slow machine; with 40 out of 40 something is genuinely
+        // animating and the comparison below will say so in pixels.
+        const warning = settled
+          ? null
+          : `still moving after ${took} frames (${distinct} distinct)`;
+        taken.set(caseName(c), { buffer, warning });
+        console.log(`    · ${surface.id}${warning === null ? '' : ` — ${warning}`}`);
+      } else {
+        console.log(`    (${surface.id} — walked past)`);
+      }
+      if (surface.leave) await surface.leave(page, ctx);
+      await page.mouse.move(size.width - 2, 2);
+    } catch (error) {
+      console.log(`    ! ${surface.id} — ${String(error).split('\n')[0]}`);
+      failures.push({ c, why: String(error).split('\n')[0] });
+      // Put the app back somewhere the next surface can start from.
+      try {
+        await page.mouse.up();
+      } catch {
+        /* no button was down */
+      }
+      try {
+        await stopTour(page);
+        await tidy(page);
+      } catch {
+        /* the page may be past saving; the next surface will say so */
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    const unique = [...new Set(errors)];
+    console.log(`  (${unique.length} page error${unique.length === 1 ? '' : 's'} in this scene)`);
+    for (const e of unique.slice(0, 5)) console.log(`     · ${e}`);
+  }
+  await context.close();
+  return { reloads, fatal: null, failures };
+}
+
+for (const [, group] of byScene) {
+  const { size, room } = group[0];
+  console.log(`\n${size.id} · ${room.id}`);
+  let outcome = null;
+  let taken = new Map();
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    taken = new Map();
+    outcome = await walkScene(group, taken);
+    if (outcome.fatal !== null || outcome.reloads === 0) break;
+    console.log(
+      `  (the dev server reloaded the page ${outcome.reloads}× mid-walk — starting the scene again)`,
+    );
+  }
+  if (outcome.fatal !== null) {
+    for (const c of group) record(c, 'err', { why: outcome.fatal });
+    continue;
+  }
+  if (outcome.reloads > 0) {
+    console.log('  (still reloading — these pictures are of a moving target)');
+  }
+  const excused = new Set(outcome.failures.map(({ c }) => caseName(c)));
+  for (const { c, why } of outcome.failures) {
+    if (wantedNames.has(caseName(c))) record(c, 'err', { why });
+  }
+  for (const c of group) {
+    if (!wantedNames.has(caseName(c))) continue;
+    const hit = taken.get(caseName(c));
+    if (hit !== undefined) {
+      shots.push({ c, ...hit });
+    } else if (!excused.has(caseName(c))) {
+      // Neither photographed nor blamed: the walk was cut short (a reload on the
+      // last allowed attempt). Say so rather than letting the case drop out of
+      // the tally, which is how a suite quietly stops covering something.
+      record(c, 'err', { why: 'the scene ended before this surface was reached' });
+    }
+  }
+}
+
+/* ------------------------------- compare --------------------------------- */
+
+/**
+ * Nothing above this line touched the disk; nothing below it touches the
+ * browser except the comparator, which only decodes and draws.
+ *
+ * This runs under `--update` too, and it has to: a baseline whose PIXELS are
+ * unchanged must not be rewritten, or every re-baseline would churn sixty-four
+ * binary files in git for nothing (Chromium's PNG bytes are not stable — see
+ * `settle`). Only genuinely different pictures get written.
+ */
+const verdicts = [];
+for (const { c, buffer, warning } of shots) {
+  const path = baselinePath(c);
+  if (!existsSync(path)) {
+    verdicts.push({ c, buffer, warning, verdict: null });
+    continue;
+  }
+  verdicts.push({
+    c,
+    buffer,
+    warning,
+    verdict: await compare(cmp, readFileSync(path), buffer),
+  });
+}
+
+await browser.close();
+
+/* -------------------------------- write ---------------------------------- */
+
+// The report folder is rebuilt every run: a stale diff from three runs ago
+// sitting next to a fresh one is how you end up chasing a fixed bug.
+rmSync(REPORT_DIR, { recursive: true, force: true });
+mkdirSync(REPORT_DIR, { recursive: true });
+
+if (UPDATE) {
+  for (const { c, buffer, warning, verdict } of verdicts) {
+    if (verdict === null) {
+      write(baselinePath(c), buffer);
+      record(c, 'add', { why: warning ?? undefined });
+      continue;
+    }
+    // Identical pixels: leave the committed file exactly as it is.
+    const same = !verdict.sizeMismatch && verdict.changed === 0 && verdict.softened === 0;
+    if (same) {
+      record(c, 'pass', { changed: 0, worstCell: 0, why: warning ?? undefined });
+      continue;
+    }
+    write(baselinePath(c), buffer);
+    record(c, 'upd', {
+      changed: verdict.changed,
+      worstCell: verdict.worstCell,
+      why: warning ?? undefined,
+    });
+  }
+} else {
+  for (const { c, buffer, warning, verdict } of verdicts) {
+    const name = caseName(c);
+    if (verdict === null) {
+      write(baselinePath(c), buffer);
+      record(c, 'add', { why: warning ?? 'no baseline yet' });
+      continue;
+    }
+    if (verdict.sizeMismatch) {
+      write(join(REPORT_DIR, `${name}.actual.png`), buffer);
+      record(c, 'fail', {
+        why:
+          `size changed: baseline ${verdict.sizeMismatch.baseline.join('×')} ` +
+          `vs actual ${verdict.sizeMismatch.actual.join('×')}`,
+      });
+      continue;
+    }
+    // A surface that would not stop moving is reported, not failed on its own:
+    // if it is genuinely unstable the pixels will say so, and if it was only
+    // slow then failing on it would be failing on the machine's mood — which is
+    // exactly how a suite earns its reputation for crying wolf.
+    const failed = verdict.ratio > MAX_DIFF_RATIO || verdict.worstCell >= CELL_FAIL;
+    if (failed || KEEP_PASSES) {
+      write(join(REPORT_DIR, `${name}.diff.png`), Buffer.from(verdict.diffPng, 'base64'));
+      write(join(REPORT_DIR, `${name}.actual.png`), buffer);
+    }
+    record(c, failed ? 'fail' : 'pass', {
+      changed: verdict.changed,
+      worstCell: verdict.worstCell,
+      softened: verdict.softened,
+      ratio: verdict.ratio,
+      worstAt: verdict.worstAt,
+      why: warning ?? undefined,
+    });
+  }
+}
+
+/* -------------------------------- report ---------------------------------- */
+
+
+const failures = results.filter((r) => r.status === 'fail' || r.status === 'err');
+const passes = results.filter((r) => r.status === 'pass');
+const added = results.filter((r) => r.status === 'add');
+const updated = results.filter((r) => r.status === 'upd');
+
+if (failures.length > 0 || KEEP_PASSES) writeReportPage(results);
+
+console.log('\n────────────────────────────────────────────────');
+console.log(
+  `  ${passes.length} unchanged · ${updated.length} re-baselined · ` +
+    `${added.length} new · ${failures.length} failed`,
+);
+
+// The noise floor, printed on every run whether or not anything failed. If the
+// biggest "unchanged" case starts creeping towards CELL_FAIL, the thresholds
+// need looking at before somebody starts ignoring the suite.
+const noisiest = passes
+  .filter((p) => p.changed !== undefined)
+  .sort((x, y) => y.worstCell - x.worstCell)[0];
+if (noisiest !== undefined) {
+  console.log(
+    `  noisiest passing case: ${noisiest.name} — ${noisiest.changed}px, ` +
+      `worst cell ${noisiest.worstCell}/${CELL_FAIL}`,
+  );
+}
+
+if (failures.length > 0) {
+  console.log('\n  failed:');
+  for (const f of failures) console.log(`   · ${f.name}${f.why ? ` — ${f.why}` : ''}`);
+  console.log(`\n  look at them:  ${join(REPORT_DIR, 'index.html')}`);
+  process.exit(1);
+}
+console.log('  PASS');
+
+/**
+ * One page listing every failure, baseline beside actual beside the mask.
+ *
+ * The brief for this suite was "writes a diff image for every failure so the
+ * change can be SEEN" — a folder of PNGs technically satisfies that and nobody
+ * opens seventeen of them. This is one file to open.
+ */
+function writeReportPage(rows) {
+  const shown = rows.filter((r) => r.status !== 'pass' || KEEP_PASSES);
+  const esc = (s) => String(s).replace(/[<&>]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const card = (r) => {
+    const img = existsSync(join(REPORT_DIR, `${r.name}.diff.png`))
+      ? `<img src="${r.name}.diff.png" alt="${esc(r.name)}">`
+      : `<p class="none">no image — ${esc(r.why ?? 'the case never got as far as a screenshot')}</p>`;
+    const stats =
+      r.changed === undefined
+        ? ''
+        : `<span>${r.changed} px changed (${(r.ratio * 100).toFixed(4)}%)</span>` +
+          `<span>worst 16px cell: ${r.worstCell} / ${CELL_FAIL}</span>` +
+          `<span>${r.softened} px forgiven as antialiasing</span>` +
+          (r.worstAt ? `<span>worst at ${r.worstAt.join(', ')}</span>` : '');
+    return `<section>
+      <h2>${esc(r.name)} <em>${r.status}</em></h2>
+      <div class="stats">${stats}${r.why ? `<span>${esc(r.why)}</span>` : ''}</div>
+      ${img}
+    </section>`;
+  };
+  const html = `<!doctype html><meta charset="utf-8">
+<title>visual suite — ${shown.length} to look at</title>
+<style>
+  body { background:#171310; color:#e9e1d3; font:14px/1.5 system-ui,sans-serif; margin:0; padding:24px 20px 60px; }
+  h1 { font-size:18px; font-weight:600; margin:0 0 4px; }
+  .sub { color:#a2968a; margin:0 0 28px; }
+  section { margin:0 0 34px; }
+  h2 { font-size:15px; font-weight:600; margin:0 0 6px; }
+  h2 em { font-style:normal; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+          background:#7c2033; color:#ffd9df; padding:2px 7px; border-radius:9px; margin-left:8px; }
+  .stats { display:flex; flex-wrap:wrap; gap:14px; color:#a2968a; font-size:12px; margin:0 0 10px; }
+  img { max-width:100%; display:block; border:1px solid #2e2721; border-radius:4px; }
+  .none { color:#c08a72; }
+</style>
+<h1>visual suite</h1>
+<p class="sub">${esc(new Date().toISOString())} · ${shown.length} of ${rows.length} cases shown ·
+each strip is baseline, then actual, then the pixels that changed in magenta</p>
+${shown.map(card).join('\n')}`;
+  write(join(REPORT_DIR, 'index.html'), html);
+}

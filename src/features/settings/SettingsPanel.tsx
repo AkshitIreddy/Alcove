@@ -124,8 +124,15 @@ import {
   type PaperSpec,
 } from './appearance';
 import { loadPaperStock, paperStock, savePaperStock } from './appearancePrefs';
-import { exportEntireLibrary, openTransferPanel } from '../transfer';
-import { importMarkdownBooks } from '../templates/importMarkdown';
+/* The parcel desk is reached by `import()` in the two handlers below, not from
+   here. It reads and writes whole books, so it reaches
+   `editor/script/fromTiptap` and from there TipTap and ProseMirror — 300kB
+   this sheet, mounted at boot by App, was putting in front of the shelf's
+   first frame on behalf of two buttons nobody had pressed. */
+/* `importMarkdown` is reached by `import()` in the handler below, not from
+   here: it turns Markdown into TipTap documents, and this sheet is mounted by
+   App at boot, so a static import put the whole editor stack into the chunk
+   the shelf boots from. */
 import { replayTutorial } from '../tutorial';
 import { ensureTasteMounted } from '../tutorial/tasteMount';
 import { replayTaste } from '../tutorial/tasteStore';
@@ -1257,7 +1264,10 @@ export default function SettingsPanel(props: {
    */
   const openTransfer = (tab: 'export' | 'import'): void => {
     props.onClose();
-    queueMicrotask(() => openTransferPanel(tab));
+    queueMicrotask(
+      () =>
+        void import('../transfer').then((m) => m.openTransferPanel(tab)),
+    );
   };
 
   /**
@@ -1269,7 +1279,12 @@ export default function SettingsPanel(props: {
    */
   const importMarkdown = (): void => {
     props.onClose();
-    queueMicrotask(() => void importMarkdownBooks());
+    queueMicrotask(
+      () =>
+        void import('../templates/importMarkdown').then((m) =>
+          m.importMarkdownBooks(),
+        ),
+    );
   };
 
   /**
@@ -1283,6 +1298,7 @@ export default function SettingsPanel(props: {
     if (packBusy()) return;
     setPackBusy(true);
     try {
+      const { exportEntireLibrary } = await import('../transfer');
       await exportEntireLibrary();
     } finally {
       setPackBusy(false);

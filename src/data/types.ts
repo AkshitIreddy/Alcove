@@ -133,20 +133,6 @@ export interface PageRow {
 // Assets
 // ---------------------------------------------------------------------------
 
-export type AssetKind = 'image' | 'audio' | 'other';
-
-/** A file cached under the app-data assets directory (fetched images etc.). */
-export interface AssetRef {
-  id: string;
-  /** Path relative to the app-data assets root. */
-  relPath: string;
-  kind: AssetKind;
-  /** Free-form metadata (source URL, license, dimensions...), or null. */
-  meta: Record<string, unknown> | null;
-  /** ISO-8601 timestamp. */
-  createdAt: string;
-}
-
 /** Raw `assets` table row. */
 export interface AssetRow {
   id: string;
@@ -163,19 +149,6 @@ export interface AssetRow {
 export type ThemeName = 'parchment' | 'pastel' | 'botanical' | 'night';
 export type PageStyle = 'ruled' | 'grid' | 'blank' | 'dotted';
 export type AnimationLevel = 'full' | 'reduced' | 'off';
-export type BookPalette =
-  | 'amber'
-  | 'terracotta'
-  | 'moss'
-  | 'lemon'
-  | 'sky'
-  | 'blush'
-  | 'plum'
-  | 'peach'
-  | 'sage'
-  | 'lavender'
-  | 'sand'
-  | 'slate';
 
 /**
  * All user-facing options. Persisted as a single JSON blob in the

@@ -44,12 +44,11 @@ import {
 } from './bookIdentity';
 import { paletteCss, placeholderTint } from './spinePalette';
 import { fnv1a } from '../../art/noise';
-import { FLOOR_H, PLANK_H } from './constants';
+import { FULL_BOOK_HEIGHT, bookClearHeight, fitBookHeight, type BookFit } from './bookFit';
+import { BUILDS, DEFAULT_SHELF_DESIGN, type BuildSpec } from '../../art/shelfDesign';
 import {
   bakeDpr,
   hiAtlasPages,
-  HI_SCALE_BASE,
-  LO_SCALE_BASE,
   spineBakeScale,
   spineGutter,
   type SpineVariant,
@@ -59,15 +58,23 @@ export { paletteCss, placeholderTint, spineArtHeight };
 
 export type { SpineVariant };
 
-/** Clear height inside one floor cell — FLOOR_H 320 less the 40px plank. */
-const BOOK_ZONE_H = FLOOR_H - PLANK_H;
-
 /**
- * How much of that a full-height book takes. Not 1.0: real books clear the
- * shelf above them, and a book flush to the plank overhead reads as jammed
- * rather than shelved. 0.97 leaves the hairline of air the reference has.
+ * Where a book STANDS, and how tall it may therefore be.
+ *
+ * The clear height inside a bay is not one number: it belongs to the case's
+ * carpentry (`art/shelfDesign.BuildSpec.headroom`) and, under an arcade, to
+ * the x the book stands at — tall under the crown of an arch, a foot shorter
+ * at the pier beside it. `floorView` lays the row out and notes each book here
+ * BEFORE asking how tall it is, and the cap is remembered so a book that later
+ * moves — or a case that is rebuilt under it — drops the spine it baked at the
+ * old height instead of stretching it.
  */
-const BOOK_ZONE_FILL = 0.97;
+interface Stand {
+  centerX: number;
+  halfWidth: number;
+  /** Clear height at that footprint, world px, air included. */
+  cap: number;
+}
 
 /**
  * Where a book sits in its shelf row, captured at request time and folded
@@ -101,12 +108,6 @@ export {
   spineBakeScale,
   spineSampling,
 } from './spineScale';
-
-/** Lo-res bake scale at dpr 1: 232 world px → ~144 texture px. */
-export const LO_SCALE = LO_SCALE_BASE;
-
-/** Hi-res bake scale at dpr 1: covers max zoom 2.5 without blur. */
-export const HI_SCALE = HI_SCALE_BASE;
 
 /**
  * Time budget for one idle slice, in ms.
@@ -218,6 +219,13 @@ export class SpineFactory {
   private theme: LibraryTheme = getTheme(null);
   /** Identity of the cloths currently baked in — see `setTheme`. */
   private clothKey: string = getTheme(null).id;
+  /**
+   * The carpentry the case is built in — the second half of how tall a book
+   * is, and for a long time a half nothing here knew about.
+   */
+  private build: BuildSpec = BUILDS[DEFAULT_SHELF_DESIGN.build];
+  /** Where each book stands, and the clear height it found there. */
+  private readonly stands = new Map<string, Stand>();
   /** Cache-busting salt so a theme change re-derives every book's params. */
   private styleEpoch = 0;
   /** Bumped whenever every baked spine is dropped; stale worker results die. */
@@ -437,7 +445,19 @@ export class SpineFactory {
   }
 
   /**
-   * World-px height to draw this book at.
+   * How snugly a trimmed book fills the room it has, 0–1 from its own seed.
+   *
+   * Only ever consulted for a book the case had to shorten. Trimming every
+   * tall book in an arcaded bay to exactly the clear height would give the row
+   * a dead flat top — the picket fence {@link heightFraction} exists to avoid
+   * — so the trim lands somewhere in the top tenth instead.
+   */
+  private snug(book: Book): number {
+    return ((fnv1a(`${book.id}|${book.spineSeed}|snug`) >>> 0) % 1000) / 1000;
+  }
+
+  /**
+   * World-px height this book WANTS, before the case gets a say.
    *
    * Reported: *"books far too small relative to shelf height"* — in the
    * reference the volumes very nearly fill the opening. The old numbers made
@@ -452,13 +472,108 @@ export class SpineFactory {
    * a deliberate choice and the seeded proportions never get a look in. The
    * override record is the only place a real user decision lives.
    */
+  nominalHeight(book: Book): number {
+    return this.chosenHeight(book) ?? FULL_BOOK_HEIGHT * this.heightFraction(book);
+  }
+
+  /** The height the READER typed, or null when the seed is still choosing. */
+  private chosenHeight(book: Book): number | null {
+    const chosen = bookStyleOverridesFor(book)?.['height'];
+    if (typeof chosen !== 'number' || !Number.isFinite(chosen)) return null;
+    return spineArtHeight(this.getParams(book));
+  }
+
+  /**
+   * World-px height to draw this book at — what it wants, trimmed to what the
+   * case's carpentry actually leaves where it stands.
+   *
+   * This is the fix for *"the books are cutting into the bookshelf design"*.
+   * Every height here used to be measured against the flat plank-to-plank gap,
+   * which is the right number for a plain plank case and wrong for the
+   * fifty-one builds whose opening has a shape; the tall spines simply ran up
+   * through the arch heads. `bookFit` owns the arithmetic and
+   * `art/shelfDesign` owns the clearance, so this is only the join.
+   */
   artHeight(book: Book): number {
-    const overrides = bookStyleOverridesFor(book);
-    const chosen = overrides?.['height'];
-    if (typeof chosen === 'number' && Number.isFinite(chosen)) {
-      return spineArtHeight(this.getParams(book));
+    return this.fitFor(book).applied;
+  }
+
+  /**
+   * The whole story of one book's height: what it asked for, what the bay
+   * gives, what it got. The studio prints it and the QA probes assert on it.
+   */
+  fitFor(book: Book): BookFit {
+    const nominal = this.nominalHeight(book);
+    const chosen = this.chosenHeight(book);
+    const clear = this.stands.get(book.id)?.cap ?? FULL_BOOK_HEIGHT;
+    // The reader's own way out: keep the height, accept the overlap. Reported
+    // as untrimmed with the real clearance beside it, because the studio still
+    // has to be able to say what is being overlapped.
+    if (chosen !== null && bookStyleOverridesFor(book)?.['overlap'] === true) {
+      return { nominal, clear, applied: nominal, trimmed: false };
     }
-    return BOOK_ZONE_H * BOOK_ZONE_FILL * this.heightFraction(book);
+    const applied = fitBookHeight({ nominal, clear, snug: this.snug(book) });
+    return { nominal, clear, applied, trimmed: applied < nominal - 0.001 };
+  }
+
+  /**
+   * The carpentry the case is built in. Every book's cap moves with it, so
+   * anything baked at the old one is dropped.
+   */
+  setBuild(build: BuildSpec): void {
+    if (this.destroyed || build.id === this.build.id) return;
+    this.build = build;
+    const moved: string[] = [];
+    for (const [bookId, stand] of this.stands) {
+      const cap = bookClearHeight(build, stand.centerX, stand.halfWidth);
+      if (Math.abs(cap - stand.cap) < 0.5) continue;
+      this.stands.set(bookId, { ...stand, cap });
+      moved.push(bookId);
+    }
+    for (const bookId of moved) this.dropBakes(bookId);
+  }
+
+  /**
+   * Note where a book stands, before anyone asks how tall it is.
+   *
+   * `leanRad` matters: a book tipped seven degrees throws its top corner a
+   * sixth of its own height sideways, which under an arcade can be the
+   * difference between a crown and a pier. The footprint is widened by that
+   * much rather than measured after the fact, because the height it would be
+   * measured from is the answer we are computing.
+   *
+   * Announcing a changed cap is DEFERRED (`scheduleFlush`) rather than emitted
+   * here: `floorView.setBooks` calls this in a loop while it is midway through
+   * rebuilding its own sprites, and a synchronous `onTexturesChanged` would
+   * re-enter that floor's refresh from inside it.
+   */
+  noteStand(book: Book, centerX: number, w: number, leanRad: number): void {
+    if (this.destroyed) return;
+    const halfWidth = w / 2 + Math.abs(Math.sin(leanRad)) * this.nominalHeight(book);
+    const cap = bookClearHeight(this.build, centerX, halfWidth);
+    const prev = this.stands.get(book.id);
+    this.stands.set(book.id, { centerX, halfWidth, cap });
+    if (prev !== undefined && Math.abs(prev.cap - cap) >= 0.5) this.dropBakes(book.id);
+  }
+
+  /**
+   * Drop a book's baked spines because its SIZE changed, and tell the shelf on
+   * the next frame. `invalidate` is the same thing with a synchronous
+   * announcement, which is exactly what a caller mid-layout cannot take.
+   */
+  private dropBakes(bookId: string): void {
+    for (const variant of ['lo', 'hi'] as const) {
+      const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
+      const tex = bucket.get(bookId);
+      if (tex !== undefined) {
+        bucket.delete(bookId);
+        tex.destroy(false);
+      }
+      (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
+      this.queue.delete(`${variant}|${bookId}`);
+    }
+    this.landed.add(bookId);
+    this.scheduleFlush();
   }
 
   /**
@@ -580,6 +695,7 @@ export class SpineFactory {
     this.loTextures.clear();
     this.hiTextures.clear();
     this.paramsCache.clear();
+    this.stands.clear();
   }
 
   /* ------------------------------ internals ------------------------------ */

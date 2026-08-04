@@ -289,12 +289,30 @@ function readers(file: string, name: string, includeOwn = false): string[] {
   }
   for (const [other, live] of LIVE) {
     if (other === file) continue;
-    const imported = from.some((spec) =>
-      new RegExp(`from\\s+['"][^'"]*/${spec}['"]`).test(SOURCE.get(other) ?? ''),
-    );
+    const imported = from.some((spec) => importsFrom(SOURCE.get(other) ?? '', spec));
     if (imported && word.test(live)) out.push(rel(other));
   }
   return out;
+}
+
+/**
+ * Does `text` import module `spec` — by either spelling?
+ *
+ * BOTH spellings, and the second one is the point. This used to look only for
+ * a static `from '…/spec'`, and that made the alarm punish the fix for a
+ * different problem: the shelf's "+ from template" button reaches the gallery
+ * with `import('../templates/TemplatesGallery')`, because a static import of
+ * it puts TipTap, ProseMirror, highlight.js and yjs — about a megabyte — in
+ * the chunk the shelf boots from. A guard that cannot see a dynamic import
+ * calls that button unwired, and the only way to quiet it is to put the
+ * megabyte back. So it reads `import(…)` too. A lazily reached feature is
+ * reached; the reader waits a frame, not forever.
+ */
+function importsFrom(text: string, spec: string): boolean {
+  return (
+    new RegExp(`from\\s+['"][^'"]*/${spec}['"]`).test(text) ||
+    new RegExp(`import\\s*\\(\\s*['"][^'"]*/${spec}['"]\\s*\\)`).test(text)
+  );
 }
 
 /** Part one's question: is this vocabulary read by anybody but its author? */
@@ -654,10 +672,7 @@ function entryPoints(): Array<{ file: string; name: string }> {
  * every line says why, and a line naming something that no longer exists fails
  * the suite.
  */
-const EXEMPT_FLOWS: Readonly<Record<string, string>> = {
-  'views/CheatSheet.tsx#openCheatSheet':
-    'the one-way half of the card’s API. CheatSheetHost registers toggleCheatSheet for the keyboard, which is the reachable one; this stays for anything that wants to open the card without first asking whether it is already up.',
-};
+const EXEMPT_FLOWS: Readonly<Record<string, string>> = {};
 
 const FLOWS = entryPoints();
 const FLOW_FINDINGS = FLOWS.filter(

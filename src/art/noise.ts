@@ -67,23 +67,3 @@ export function lerp(a: number, b: number, t: number): number {
 export function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
-
-/** Quadratic ease-in (t in [0,1]). */
-export function easeIn(t: number): number {
-  return t * t;
-}
-
-/** Quadratic ease-out (t in [0,1]). */
-export function easeOut(t: number): number {
-  return 1 - (1 - t) * (1 - t);
-}
-
-/** Smooth quadratic ease-in-out (t in [0,1]). */
-export function easeInOut(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
-}
-
-/** Fractional part (always in [0,1), also for negatives). */
-export function fract(v: number): number {
-  return v - Math.floor(v);
-}

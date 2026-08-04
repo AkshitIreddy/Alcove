@@ -5457,8 +5457,8 @@ export const FALLBACK_WALLPAPER_ID = 'plain-parchment';
  * the cream ground reads as fine vertical noise — a scanning artefact, not
  * paper — and the reader duly reported the opening wallpaper as "weird".
  *
- * `fleur-royal` is the lys at `large` scale on a `gilt`-warmed ground, and it
- * was picked out of six papers hung on the same case
+ * `fleur-royal` — the lys at `large` scale on a `gilt`-warmed ground — took the
+ * slot on that pass, chosen out of six papers hung on the same case
  * (`shots-now/room-rank/board-paper.png`) on the two things that decide a wall
  * at this size:
  *
@@ -5467,15 +5467,51 @@ export const FALLBACK_WALLPAPER_ID = 'plain-parchment';
  *    damask turns into a picture hung behind the bookcase.
  *  - it has to carry a SECOND colour. Every wall the reader singled out — the
  *    illuminated diaper behind the counting house, the stone courses behind the
- *    card room — puts an ink on the ground rather than tinting it. This one's
- *    ink slot is `cloth`, so the lys is drawn in the room's own first book
- *    cloth: it is amber in the opening room, and it re-tunes itself rather than
- *    fighting whichever colours the reader repaints with afterwards.
+ *    card room — puts an ink on the ground rather than tinting it.
+ *
+ * ## Moved to `trellis-gilt`, when the case went dark brown
+ *
+ * Both rules above survive; the paper chosen by them did not. `fleur-royal`
+ * takes its ink from the `cloth` slot, which is the room's FIRST book cloth —
+ * amber against lapis, and against `walnut` it is oxblood, so the wall came out
+ * a dusty rose. Pink lys on cream, behind a dark brown case, is the one thing on
+ * that screen fighting for attention. Its `large` scale is the other half: a
+ * spot repeat with air around it reads across a room, and reads as SPOTS when
+ * the object in front of it has stopped being a bright silhouette.
+ *
+ * Eighteen papers were then hung behind the settled case and photographed as a
+ * band beside it (`shots-now/hero/wall-board.mjs` → `board-wallband.png` — a
+ * probe rather than a sweep, because `room-firstrun-sweep`'s `wear()` polls the
+ * shelf and the theme and says nothing about the wall, so a paper arriving one
+ * bake late is photographed under the previous paper's name). What the board
+ * says, at this size and against a dark case:
+ *
+ *  - a NET beats a PARADE. `trellis`, `diaper` and `ogee` are all-over lattices
+ *    with no object in them, so nothing on the wall competes with the arcade in
+ *    front of it. `arch-gilt` is the proof by contradiction — arcades on the
+ *    wall behind a case whose whole idea is arcades — and `medallion-gilt`,
+ *    `bee-empire`, `urn-mantel` and `laurel-gilt` all read as small objects
+ *    scattered on cream, which is what the reader was calling loud.
+ *  - the second colour must not be the case's own. `diaper-scriptorium` and
+ *    `ogee-onion` draw in `timber` and `paper` respectively and come out brown
+ *    on cream: handsome, and one brown too many. `trellis-gilt`'s ink slot is
+ *    `gilt`, which is derived from the room rather than from a cloth, so it
+ *    re-tunes with a repaint the way `cloth` does but cannot land on whichever
+ *    red the reader's first book happens to wear.
+ *  - it has to survive the zoom out. At the 38% a reader reaches within a
+ *    minute (`shots-now/hero/fit/`) the trellis becomes a fine gold net and
+ *    stays a surface; `diaper-illumination`, the densest of the golds, goes to
+ *    a flicker of yellow squares.
+ *
+ * It also finishes the room: the case's `guilloche` is a gilt chain on dark
+ * timber, and the wall is a gilt net on cream, so the gold is the one thing
+ * crossing from the furniture to the wall.
  *
  * Plain Parchment is still first in the picker for anyone who wants the bare
- * wall back, and `pin-quiet` is still in the book one search away.
+ * wall back, and `pin-quiet` and `fleur-royal` are both in the book one search
+ * away.
  */
-export const DEFAULT_WALLPAPER_ID = 'fleur-royal';
+export const DEFAULT_WALLPAPER_ID = 'trellis-gilt';
 
 const BY_ID = new Map(WALLPAPER_PRESETS.map((p) => [p.id, p]));
 

@@ -157,8 +157,6 @@ export const COVER_TEXTURE_COUNT = COVER_TEXTURES.length;
 export const COVER_TEXTURE_LABELS: readonly string[] = COVER_TEXTURES.map(
   (id) => MATERIALS[id].name,
 );
-/** Labels for the legacy three-way `texture` bucket (see CoverParams.texture). */
-export const COVER_TEXTURE_BUCKETS = ['cloth', 'leather', 'paper'] as const;
 /* COVER_FONTS / COVER_FONT_COUNT / COVER_FONT_KIN are exported beside the HANDS
  * table they describe, further down — a table and its count have to be able to
  * disagree only by someone deleting a line, never by someone forgetting one. */

@@ -67,7 +67,6 @@ export const CONFETTI_PALETTE: ReadonlyArray<readonly [string, string]> = [
 
 /** Scrap silhouettes. Index into this from `ConfettiParticle.shape`. */
 export const CONFETTI_SHAPES = ['scrap', 'ribbon', 'dot', 'shard'] as const;
-export type ConfettiShape = (typeof CONFETTI_SHAPES)[number];
 
 export interface ConfettiParticle {
   /** Horizontal velocity, px/ms. */

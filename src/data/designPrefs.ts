@@ -371,9 +371,3 @@ export function subscribeBookBindings(
   });
 }
 
-/** Test seam: forget the load so a fresh database is read again. */
-export function resetDesignPrefsForTests(): void {
-  loadPromise = null;
-  setStore(reconcile({ rooms: {}, books: {} }));
-  bump();
-}

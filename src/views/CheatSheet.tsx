@@ -11,7 +11,7 @@
  * list this replaced had twelve rows on the day the app had eight shortcuts,
  * two of which were wrong.
  *
- * The card is a module-level surface (`openCheatSheet`, `CheatSheetHost`)
+ * The card is a module-level surface (`toggleCheatSheet`, `CheatSheetHost`)
  * rather than a component someone has to hold open. It used to belong to
  * BookView, which meant the one screen where a reader is most likely to want
  * "what are the keys?" — the shelf they have just opened the app onto — was
@@ -32,17 +32,6 @@ import {
 /* ----------------------------- the open state ------------------------------ */
 
 const [open, setOpen] = createSignal(false);
-
-/** Is the cheat-sheet up? */
-export const cheatSheetOpen = open;
-
-export function openCheatSheet(): void {
-  setOpen(true);
-}
-
-export function closeCheatSheet(): void {
-  setOpen(false);
-}
 
 export function toggleCheatSheet(): void {
   setOpen((up) => !up);

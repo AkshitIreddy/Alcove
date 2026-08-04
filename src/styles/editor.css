@@ -56,10 +56,6 @@
    The paper sheet — soft warm shadow outside, deckled top edge on the paper
    itself (clip-path on the inner layer so the shadow is not clipped away)
    -------------------------------------------------------------------------- */
-.nb-sheet-stage {
-  width: min(880px, 100%);
-}
-
 .nb-sheet {
   border-radius: 3px 3px var(--radius-md) var(--radius-md);
   box-shadow: var(--shadow-lg);
@@ -82,10 +78,6 @@
   );
 }
 
-.nb-sheet-header {
-  padding: var(--space-8) var(--space-40) 0;
-}
-
 .nb-book-title {
   font-size: 40px;
   color: var(--ink-sepia);
@@ -98,8 +90,7 @@
 /* ----------------------------------------------------------------------------
    Page container
    (The in-page floating style switcher is gone — the BookView rail drives
-   page style through the activeEditor imperative surface. The .nb-style-dot
-   swatches below are kept for the rail to reuse.)
+   page style through the activeEditor imperative surface.)
    -------------------------------------------------------------------------- */
 .nb-page {
   --page-line-height: 32px;
@@ -152,51 +143,6 @@
   100% {
     transform: translateX(-50%) translateY(0) scale(1);
   }
-}
-
-.nb-style-dot {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-pill);
-  border: var(--stroke-ink-thin);
-  background-color: var(--paper-cream);
-}
-
-.nb-style-dot[data-style='ruled'] {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 4px,
-    var(--paper-edge) 4px,
-    var(--paper-edge) 5px
-  );
-}
-
-.nb-style-dot[data-style='grid'] {
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 5px,
-      var(--paper-edge) 5px,
-      var(--paper-edge) 6px
-    ),
-    repeating-linear-gradient(
-      to right,
-      transparent 0,
-      transparent 5px,
-      var(--paper-edge) 5px,
-      var(--paper-edge) 6px
-    );
-}
-
-.nb-style-dot[data-style='dotted'] {
-  background-image: radial-gradient(
-    var(--paper-edge) 1px,
-    transparent 1.2px
-  );
-  background-size: 5px 5px;
 }
 
 /* ----------------------------------------------------------------------------

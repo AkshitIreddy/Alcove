@@ -292,8 +292,3 @@ export function artOffload(): ArtOffload {
   return shared;
 }
 
-/** Tear the shared pool down (tests / teardown). */
-export function destroyArtOffload(): void {
-  shared?.destroy();
-  shared = null;
-}

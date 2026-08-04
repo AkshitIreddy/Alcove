@@ -5,7 +5,6 @@ import type {
   Book,
   BookRow,
   CreateBookInput,
-  PageDoc,
   PageStyle,
   UpdateBookPatch,
 } from './types';
@@ -508,22 +507,6 @@ export async function savePageDefaults(
   });
 }
 
-/** Persist shelf metadata (merging other cover_meta sections through). */
-export async function saveShelfMeta(
-  id: string,
-  meta: ShelfMeta | null,
-): Promise<Book | null> {
-  const book = await getBook(id);
-  if (book === null) return null;
-  return updateBook(id, {
-    coverMeta: mergeCoverMetaSection(
-      book.coverMeta,
-      'shelf',
-      meta as Record<string, unknown> | null,
-    ),
-  });
-}
-
 /** Patch shelf metadata fields (read-merge-write). */
 async function patchShelfMeta(
   id: string,
@@ -778,18 +761,3 @@ export async function maxOccupiedFloor(bookcaseId?: string): Promise<number> {
   return rows.length > 0 ? rows[0].floor : 0;
 }
 
-/**
- * True when a page document holds any real content (used by delete flows to
- * decide whether a confirm is even needed — kept here for reuse).
- */
-export function pageDocHasContent(doc: PageDoc): boolean {
-  const content = doc.content;
-  if (content === undefined || content.length === 0) return false;
-  return !content.every((node) => {
-    if (node === null || typeof node !== 'object') return false;
-    const block = node as { type?: unknown; content?: unknown };
-    if (block.type !== 'paragraph') return false;
-    const inner = block.content;
-    return inner === undefined || (Array.isArray(inner) && inner.length === 0);
-  });
-}

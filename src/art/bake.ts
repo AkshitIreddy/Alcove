@@ -33,47 +33,6 @@
  * plugin in the app, everything else loads it on demand.
  */
 
-/**
- * Rasterize a self-contained SVG string into an OffscreenCanvas at `scale`.
- * Internal building block for bakeSvg and for producers that post-process
- * the raster (tinting, compositing) before it is cached/transferred.
- */
-export async function rasterizeSvg(
-  svg: string,
-  w: number,
-  h: number,
-  scale: number,
-): Promise<OffscreenCanvas> {
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    const c = new OffscreenCanvas(Math.ceil(w * scale), Math.ceil(h * scale));
-    const ctx = c.getContext('2d');
-    if (!ctx) throw new Error('bake: OffscreenCanvas 2d context unavailable');
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0, w, h);
-    return c;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-/**
- * Bake an SVG string to an ImageBitmap.
- * Uncached; prefer bakeCached for anything keyed and reusable.
- */
-export async function bakeSvg(
-  svg: string,
-  w: number,
-  h: number,
-  scale: number,
-): Promise<ImageBitmap> {
-  const c = await rasterizeSvg(svg, w, h, scale);
-  return c.transferToImageBitmap();
-}
-
 /* ----------------------------- memory cache ------------------------------ */
 
 /**
@@ -120,17 +79,8 @@ export function recordBakeSample(sample: BakeSample): void {
   if (bakeSamples.length > PROFILE_CAP) bakeSamples.splice(0, bakeSamples.length - PROFILE_CAP);
 }
 
-export function bakeProfile(): readonly BakeSample[] {
-  return bakeSamples;
-}
-
 if (typeof location !== 'undefined' && /[?&](fx|bakeprof)=/.test(location.search)) {
   (globalThis as Record<string, unknown>)['__bakeProfile'] = bakeSamples;
-}
-
-/** Drop every in-memory entry (debug/tests). */
-export function clearMemoryCache(): void {
-  memoryCache.clear();
 }
 
 /* --------------------------- cooperative pump ----------------------------- */
@@ -253,11 +203,6 @@ export function awaitBakeTurn(): Promise<void> {
   });
 }
 
-/** How many producers are still waiting for a turn (perf HUD / QA probes). */
-export function pendingBakeTurns(): number {
-  return pumpQueue.length;
-}
-
 /** A producer bakes the raster for a cache miss and hands back its canvas. */
 export type CanvasProducer = () => Promise<OffscreenCanvas>;
 
@@ -305,18 +250,4 @@ export function bakeCached(
   });
   memoryCache.set(key, wrapped);
   return wrapped;
-}
-
-/**
- * Convenience: cached bake of an SVG document.
- * `params` must uniquely describe the SVG content and target size.
- */
-export function bakeSvgCached(
-  params: string,
-  dpr: number,
-  svg: string,
-  w: number,
-  h: number,
-): Promise<ImageBitmap> {
-  return bakeCached(params, dpr, () => rasterizeSvg(svg, w, h, dpr));
 }

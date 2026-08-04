@@ -5,39 +5,6 @@
    ========================================================================== */
 
 /* ----------------------------------------------------------------------------
-   Script toolbar (BookView, top-right of the sheet)
-   -------------------------------------------------------------------------- */
-.nb-script-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-8);
-  padding: 0 var(--space-4) var(--space-8);
-}
-
-.nb-script-tool {
-  padding: 3px var(--space-12) 4px;
-  font-size: var(--text-ui);
-  letter-spacing: var(--tracking-ui);
-  color: var(--ink-sepia-soft);
-  background: transparent;
-  border: 1.5px dashed transparent;
-  border-radius: var(--radius-hand);
-  cursor: pointer;
-  transition:
-    color var(--dur-xs) var(--ease-out),
-    background var(--dur-xs) var(--ease-out),
-    border-color var(--dur-xs) var(--ease-out),
-    transform var(--dur-xs) var(--ease-out);
-}
-
-.nb-script-tool:hover {
-  color: var(--ink-sepia);
-  background: var(--wash-amber-light);
-  border-color: var(--paper-edge);
-  transform: rotate(-0.8deg);
-}
-
-/* ----------------------------------------------------------------------------
    Toast
    -------------------------------------------------------------------------- */
 /* Sat at bottom:32px, which in book view lands INSIDE the cover — the

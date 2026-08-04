@@ -333,8 +333,6 @@ export type DiagramBlock =
   | GraphDiagramBlock
   | TimelineDiagramBlock;
 
-export type DiagramLang = DiagramBlock["lang"];
-
 /**
  * Image fetch directive: `fetch: <query> | key=val…` inside an image-row,
  * or the standalone leaf `::fetch{query="kitten", count=3}`.

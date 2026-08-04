@@ -1305,17 +1305,9 @@ export function muteAll(mute: boolean): void {
   }
 }
 
-export function isMuted(): boolean {
-  return muted;
-}
-
 /** Reduced-sound preference: skips tick-hover, pencil-scratch, typing ticks. */
 export function setReducedSound(reduced: boolean): void {
   reducedSound = reduced;
-}
-
-export function isReducedSound(): boolean {
-  return reducedSound;
 }
 
 /* ------------------------------ typing sounds ------------------------------ */
@@ -1345,10 +1337,6 @@ let typingRng: () => number = Math.random;
 /** settings.typingSounds -> here (via the settings apply step). */
 export function setTypingSounds(enabled: boolean): void {
   typingSoundsEnabled = enabled;
-}
-
-export function isTypingSounds(): boolean {
-  return typingSoundsEnabled;
 }
 
 /**
@@ -1420,10 +1408,6 @@ export function setHourlyChime(enabled: boolean): void {
     clearInterval(chimeTimer);
     chimeTimer = undefined;
   }
-}
-
-export function isHourlyChime(): boolean {
-  return hourlyChimeEnabled;
 }
 
 /**

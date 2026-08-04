@@ -11,7 +11,7 @@
  * src/styles/search.css), removed automatically after the animation.
  */
 
-import { createEffect, createSignal, type Accessor } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 import { openBookAnywhere } from '../features/bookshelf/openAnywhere';
 import { spreadOfSlot } from '../views/spread';
 import { recordBookOpened } from './recents';
@@ -25,9 +25,6 @@ export interface SearchJump {
 }
 
 const [pendingJump, setPendingJump] = createSignal<SearchJump | null>(null);
-
-/** The not-yet-consumed jump, if any (exported for tests/devtools). */
-export const peekSearchJump: Accessor<SearchJump | null> = pendingJump;
 
 /** Open `bookId` via appState and queue a flip-to-page + pulse-highlight. */
 export function requestSearchJump(

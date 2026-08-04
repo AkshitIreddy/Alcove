@@ -1,5 +1,109 @@
 # Alcove — running TODO
 
+## 🔴 Reported 2026-08-04 (third pass) — toward the 0.2 release
+
+### Packaging and release
+
+- [ ] **Ship 0.2, and let CI build every platform from now on.**
+      > "you can start making the github workflows bild exes for different
+      > platforms from now on, we can call the version 0.2 or something"
+
+- [ ] **WebView2: measure it, and consider bundling.**
+      > "i noticed that the pc needs to have microsoft edge web view2 runtime,
+      > like check the size with it included and maybe add it if not that big
+      > or add another version with it included"
+
+      Tauri offers several `webviewInstallMode`s. Measure the installer with
+      each and decide on the numbers — and if the bundled one is heavy, ship
+      both and say which is which.
+
+- [ ] **The uninstaller should offer to remove the library, and say where it is.**
+      > "make the uninstall exe has an option to also to delete the all app
+      > data and show the user where that app data is in case they want to
+      > transfer for it as where"
+
+      Default to KEEPING it — a notes app that eats your notes on uninstall is
+      unforgivable. Show the path either way so it can be backed up or moved.
+
+- [ ] **The installer should look like the app.**
+      > "most install and unistall exe look boring make sure ours looks
+      > interesting, pretty like our app"
+
+### The README, as a document
+
+- [ ] **Make it pretty, and restructure the wording.**
+      > "the on this page section could perhaps be better with a bullet list or
+      > something, so i would like if you also spruced up the way the readme is
+      > presented to make it look pretty"
+      > "make restrucue the wording to make it more understable, maybe bullet
+      > points or some emoji(used sparingly or not at all, dont want to make it
+      > look like a cookie cutter project)"
+
+- [ ] **Developer and technical detail belongs at the BOTTOM, not the top.**
+      > "i noticed in general too many warnings and technical info at the
+      > start, so i want that kind of info at the bottom for developers, for
+      > normal users you can you know keep it only realted to the product, how
+      > to get it, how to use it and so on… my criticism is only for stuff like
+      > say the two things touch the network, or the libary is one local sqlite
+      > file, like that i mean"
+
+      Anything about USING the product stays up top. Implementation facts move
+      down.
+
+- [ ] **Say clearly that there are two halves — one for readers, one for
+      developers or an AI helping them.**
+      > "make more of a emphasis that the readme has two sections one for users
+      > and one developers or other AI to read to help them contribute"
+
+- [ ] **The platform line says Windows 10 and 11 only.** Change it once CI
+      builds mac and Linux.
+      > "i noticed at top platofrms says window 10 and 11 only, change it as well"
+
+- [ ] **Release notes should not open the document — link to them.**
+      > "the release notes should not be at the start maybe you can link to it
+      > instead"
+
+- [ ] **Drop "the first ten minutes".**
+      > "probably not need since it is a big blob of text when below there is a
+      > nicer picture based explanation, we can probably push to that instead"
+
+- [ ] **The top should say more about the AI side.**
+      > "i noticed the above of readme doesnt mention the ai part that much but
+      > i think it should"
+
+- [ ] **The README check should REPORT gaps, not gate them.**
+      > "i know how the readme like to change to change as code changes but i
+      > would like if it instead basically after running that check basically
+      > tells the if sopmething is missing, if it is then it is later added by
+      > dev or you the ai, basically the check exists to say that hey something
+      > is missing from readme, but final editing of readme is left in the hands
+      > of the dev/ai, i dont know if it works like that already"
+
+      Find out whether it already behaves this way. The counted markers do
+      recompute; the question is whether a mismatch REPORTS or BLOCKS.
+
+- [ ] **Remove the "no button" warning once import/export have buttons.**
+      > "add option for user to import markdown, explort pdf or png so you can
+      > remove the warning"
+
+      These were plugged in already — verify, then delete the caveat.
+
+### The app
+
+- [ ] **One sidebar panel for insert / AI spec / export.**
+      > "maybe condense insert, copy AI spec, export things into a single
+      > setting in side bar, with the above options as well in its panel below"
+
+- [ ] **Code blocks that are actually for code.**
+      > "our notebook should also support being able to hold code of different
+      > langauges with inbuilt indenting, colours for the code and what not
+      > needed for displaying programming code, and customising how it looks in
+      > settings"
+
+      Syntax highlighting across languages, sane indenting, and a look the
+      reader can change — in the app's own flat language, not a stock IDE theme.
+
+
 ## 🔴 Reported 2026-08-04 (second pass, from the installed build)
 
 - [ ] **Let the reader pick their colour directly in onboarding.**

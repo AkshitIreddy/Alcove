@@ -231,6 +231,7 @@ export const DEFERRED_FACTS = [
   'stickers',
   'effectAxes',
   'effectValues',
+  'placeableValues',
   'blockEffectTypes',
   'scriptContainers',
   'scriptContainerAliases',

@@ -61,6 +61,29 @@ vary the room now — one answer had been collapsing every room to the same grey
 and the guided tour's *next* button, which was measuring 1.05:1 against its own
 background, was fixed along with the whole class of control it belonged to.
 
+**Hiding and starring reaches everything now.** Right-click any entry in any
+picker to remove it, star it, or star it twice; removed entries stop being
+offered *and* stop being rolled by the dice. It used to reach about half the
+lists — the mechanism named thirty-three of them and only seventeen were
+actually wired to it. Three of the thirty-three named no picker at all and were
+dropped rather than given an invented one.
+
+**Tape, washi, frames, scraps and doodles go anywhere on the page.** Free
+placement had only ever worked for stickers; the other <!--f:placeableValues-->205<!--/f-->
+pieces of trim were stuck to whichever block your caret happened to be in. Drag
+them where you like, stretch, tilt, and they stay put when the text around them
+reflows — they belong to the page, not to the paragraph.
+
+**And a handful of things that were quietly drawing nothing.** One of the fifty
+frames had never painted a pixel in its life; three of the fifty tapes painted
+nothing when placed freely; and the dashed outline that marks an entry you have
+removed but are still wearing was being overwritten before it reached the
+screen. Importing a transfer bundle that carried pictures kept none of them —
+the command that writes them had never been registered, and the failure looked
+exactly like a corrupt file. A single paragraph longer than the page could
+overflow it rather than flowing onto the next, which is the one thing the
+pagination contract does not allow.
+
 ### Known edges in this release
 
 - **Nothing is signed on any platform.** Windows shows a SmartScreen warning the

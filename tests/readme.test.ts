@@ -99,6 +99,7 @@ import {
 import { SLASH_COMMANDS } from '../src/editor/slash/registry';
 import { STICKER_IDS } from '../src/editor/nodes/stickers';
 import { EFFECT_AXES } from '../src/editor/effects/vocabulary';
+import { PLACEABLE_AXES } from '../src/editor/effects/placeableEffects';
 import { BLOCK_EFFECT_TYPES } from '../src/editor/effects/blockEffects';
 import {
   CONTAINER_ALIASES,
@@ -140,6 +141,16 @@ function vocabularyFacts(): Record<string, number> {
     stickers: STICKER_IDS.length,
     effectAxes: EFFECT_AXES.length,
     effectValues: EFFECT_AXES.reduce((sum, axis) => sum + axis.values.length, 0),
+    // The trim a reader can put ANYWHERE on the page, as opposed to the axes
+    // that stay properties of a block.
+    //
+    // Summed from PLACEABLE_AXES rather than by filtering EFFECT_AXES with
+    // PLACEABLE_KEYS, which is what this first did and which was quietly five
+    // short: `doodle` is placeable but is NOT an effect axis — it has no block
+    // form at all, so it lives in its own vocabulary and the filter could never
+    // see it. PLACEABLE_AXES is the list the panel itself renders, so this
+    // counts what the reader is actually offered.
+    placeableValues: PLACEABLE_AXES.reduce((sum, axis) => sum + axis.values.length, 0),
     // Node types the BlockEffects global-attribute extension attaches to —
     // i.e. how many kinds of block a reader can decorate.
     blockEffectTypes: BLOCK_EFFECT_TYPES.length,

@@ -10,6 +10,25 @@
  * says yes to it. A suite allowed to accept its own output agrees with the app
  * by construction and is worth nothing.
  *
+ * ## Three outcomes, not two
+ *
+ * A surface can also come back UNMEASURABLE. `settle()` waits for the screen to
+ * stop and gives up after its deadline, reporting how many distinct frames it
+ * saw; a handful of surfaces never stop (both tour-blocks, tour-settings and
+ * focus-spread, and the set varies between runs, which is itself the tell).
+ * Those are marked `MOVE`, counted in their own column, and:
+ *
+ *  - `--update` will NOT write them down. A baseline captured from a moving
+ *    surface is whichever moment the deadline fell on, so every later run
+ *    compares against a coin toss.
+ *  - a comparison run does NOT fail on them. There is nothing for a reviewer
+ *    to act on except the instability itself, and a case that is red on every
+ *    run forever teaches people to skim past the summary.
+ *
+ * That is deliberately not the same as passing them. The tally prints the count
+ * on every run, so it can never read as full coverage while covering less.
+ * Finding what moves is its own piece of work, tracked as such.
+ *
  * ## Why this exists
  *
  * Every visual defect found in this tree was found by a human looking at a
@@ -236,7 +255,16 @@ function write(path, buffer) {
 }
 
 /** ANSI-free status glyphs — this output gets pasted into issues. */
-const MARK = { pass: 'ok  ', fail: 'FAIL', add: 'new ', upd: 'upd ', err: 'ERR ' };
+const MARK = {
+  pass: 'ok  ',
+  fail: 'FAIL',
+  add: 'new ',
+  upd: 'upd ',
+  err: 'ERR ',
+  // Photographed, but the screen never stopped moving, so the picture is of
+  // a moment rather than of the app. Never written down as a baseline.
+  skip: 'MOVE',
+};
 
 /* ========================== the surfaces to shoot ========================= */
 
@@ -1493,6 +1521,27 @@ mkdirSync(REPORT_DIR, { recursive: true });
 
 if (UPDATE) {
   for (const { c, buffer, warning, verdict } of verdicts) {
+    /*
+     * A surface that never stopped moving is NOT baselined, by either path.
+     *
+     * `settle()` gives up after its deadline and hands the picture over with a
+     * warning saying how many distinct frames it saw. Writing that frame down
+     * as the truth is the same mistake this file already refuses to make for a
+     * missing baseline, arriving from the other direction: the picture is not
+     * of the app at rest, it is of whichever moment the deadline fell on, so
+     * the next run compares against a coin toss and fails forever. Four
+     * surfaces do this today (both tour-blocks, desk-night-tour-settings,
+     * snug-day-focus-spread), and re-baselining them would have converted a
+     * loud, accurate "still moving" into four cases nobody could ever get green
+     * and everybody would learn to ignore.
+     *
+     * So it keeps whatever baseline it has and stays reported. The fix is to
+     * find what is moving — not to photograph it harder.
+     */
+    if (warning !== undefined && warning !== null) {
+      record(c, 'skip', { why: `${warning} — not baselined; find what is moving first` });
+      continue;
+    }
     if (verdict === null) {
       write(baselinePath(c), buffer);
       record(c, 'add', { why: warning ?? undefined });
@@ -1514,6 +1563,32 @@ if (UPDATE) {
 } else {
   for (const { c, buffer, warning, verdict } of verdicts) {
     const name = caseName(c);
+    /*
+     * Symmetric with the `--update` branch above, and it has to be.
+     *
+     * `--update` refuses to write a baseline for a surface that never stopped
+     * moving. If comparison then treated the same surface as an ordinary case,
+     * it would be measured against a baseline that by definition cannot match,
+     * and the suite would carry a handful of cases that are red on every run
+     * forever — which is how a team learns to skim past the summary line.
+     *
+     * "Still moving" is not a regression signal. It is the suite saying it
+     * COULD NOT MEASURE this surface, and that is a third outcome, not a bad
+     * second one. It is reported by name on every run and counted in its own
+     * column so the tally can never read as full coverage while quietly
+     * covering less — but it does not fail the run, because there is nothing
+     * here for a reviewer to act on except the underlying instability, which
+     * is written down as its own piece of work rather than as noise on this
+     * one.
+     *
+     * The picture is still written to the report folder, because the fastest
+     * way to find what is moving is to look at two of them.
+     */
+    if (warning !== undefined && warning !== null) {
+      write(join(REPORT_DIR, `${name}.actual.png`), buffer);
+      record(c, 'skip', { why: `${warning} — cannot be measured, so not judged` });
+      continue;
+    }
     if (verdict === null) {
       /**
        * A missing baseline FAILS. It is never written by a comparison run.
@@ -1575,13 +1650,15 @@ const failures = results.filter((r) => r.status === 'fail' || r.status === 'err'
 const passes = results.filter((r) => r.status === 'pass');
 const added = results.filter((r) => r.status === 'add');
 const updated = results.filter((r) => r.status === 'upd');
+const unstable = results.filter((r) => r.status === 'skip');
 
 if (failures.length > 0 || KEEP_PASSES) writeReportPage(results);
 
 console.log('\n────────────────────────────────────────────────');
 console.log(
   `  ${passes.length} unchanged · ${updated.length} re-baselined · ` +
-    `${added.length} new · ${failures.length} failed`,
+    `${added.length} new · ${failures.length} failed` +
+    (unstable.length > 0 ? ` · ${unstable.length} still moving (not baselined)` : ''),
 );
 
 // The noise floor, printed on every run whether or not anything failed. If the

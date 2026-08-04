@@ -72,8 +72,24 @@
 
 /* A tile the reader has removed but is still WEARING. It stays on the list
    because a strip with nothing pressed reads as a panel that forgot, and it is
-   dashed so it does not read as an ordinary member of the list either. */
-.nb-cur-gone {
+   dashed so it does not read as an ordinary member of the list either.
+
+   The class is DOUBLED, and that is the whole point of it. This rule has to
+   beat `.nb-chip { border: var(--stroke-ink-thin) }` in rail.css and
+   `.nb-strip-tile { border: … }` in studio.css, and both of those use the
+   border SHORTHAND — which rewrites `border-style` to solid on its way past.
+   Every one of the three is a single class, so specificity ties and the winner
+   is whichever stylesheet the bundler emitted last. It emitted this one FIRST
+   (measured: `shots-now/_refute-gone-dashed.mjs` prints the order and read
+   `border-style: solid` back off a chip carrying the class), so the only
+   visible mark of a removed-but-worn entry was silently doing nothing in every
+   panel that uses chips or strip tiles.
+
+   `.nb-cur-gone.nb-cur-gone` is 0-2-0 and beats any single-class rule wherever
+   it lands in the cascade, without this file having to name every host element
+   it might be stamped onto — which is the version that breaks again the next
+   time a panel grows a new tile shape. */
+.nb-cur-gone.nb-cur-gone {
   border-style: dashed;
 }
 

@@ -145,6 +145,7 @@ function PageMarkView(props: SolidNodeViewProps): JSX.Element {
     box: layerBox,
     from: () => ({ x: attrW(), y: attrH() }),
     clamp: (value) => clampMarkSize(value, MARK_MIN_PCT),
+    gain: 2,
     onHold: () => setHeld(true),
     commit: (at) => props.updateAttributes({ w: at.x, h: at.y }),
   });

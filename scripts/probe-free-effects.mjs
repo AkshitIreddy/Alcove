@@ -24,8 +24,11 @@
  *      point is chosen BELOW every block on the page and off the rule grid, and
  *      the mark's own box is measured against it;
  *   4. no block in the document gained the attribute (the old behaviour);
- *   5. it drags, and the new position sticks;
- *   6. after a full reload it is at the same x/y/w/h on the same page;
+ *   5. it drags, it stretches, and the drawing stretches with it rather than
+ *      sitting in the middle of a bigger hit area;
+ *   6. the pagination contract holds: flood the page until the writing carries
+ *      onto another leaf and the marks are still on the page they were put on,
+ *      at the same x/y/w/h, after a full browser reload;
  *   7. a lift is NOT placeable and still dresses the block, which is the other
  *      half of the classification in effects/placeableEffects.ts.
  *
@@ -306,6 +309,21 @@ console.log(
 );
 await shot('freefx-02-mode-on');
 
+// The doodles: five pencil sketches that until now only `planDoodles` could
+// place, seeded off the page id. They are their own captioned run because they
+// are the one axis here with no block-attribute form at all.
+await page.locator('.nb-cat-item[data-entry="fx-doodle-star"]').scrollIntoViewIfNeeded();
+await wait(500);
+check(
+  'the five doodles are on the shelf',
+  (await page.locator(`${trimShelf} .nb-cat-item[data-entry^="fx-doodle-"]`).count()) === 5,
+);
+await page.locator('.nb-catalogue').screenshot({
+  path: 'qa/ui/freefx-02b-doodles.png',
+  animations: 'disabled',
+});
+console.log('  shot qa/ui/freefx-02b-doodles.png');
+
 console.log('\n3. arm a strip of gaffer tape and close the sheet');
 check('found the gaffer tape tile', await armTile('fx-tape-gaffer', 'gaffer'));
 check(
@@ -388,6 +406,25 @@ await page
   .first()
   .screenshot({ path: 'qa/ui/freefx-04b-leaf.png', animations: 'disabled', caret: 'hide' });
 console.log('  shot qa/ui/freefx-04b-leaf.png');
+
+console.log('\n5b. and the same click works on the OTHER leaf');
+check('found a second tape tile', await armTile('fx-tape-wax', 'a wax seal'));
+await closeCatalogue();
+const right = await page.evaluate(() => {
+  const box = document
+    .querySelector('.nb-leaf-paper[data-side="right"] .nb-free-layer')
+    .getBoundingClientRect();
+  return { x: box.left + box.width * 0.55, y: box.top + box.height * 0.72 };
+});
+await page.mouse.click(right.x, right.y);
+await wait(1000);
+const onRight = await page.evaluate(
+  () =>
+    document.querySelectorAll(
+      '.nb-leaf-paper[data-side="right"] .nb-free-layer .nb-free-mark[data-fx="tape"]',
+    ).length,
+);
+check('it landed on the right leaf, in that leaf’s own layer', onRight === 1);
 
 console.log('\n6. a lift is NOT placeable — it still dresses the block');
 // Put the caret somewhere first: a trim tile in "on this block" mode acts on
@@ -534,4 +571,6 @@ console.log('\n=== page errors ===');
 if (errors.size === 0) console.log('none');
 else for (const [k, n] of errors) console.log(`  x${n}  ${k}`);
 
-console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) F
+console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===`);
+await browser.close();
+process.exit(failures === 0 ? 0 : 1);

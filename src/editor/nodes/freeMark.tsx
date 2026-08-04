@@ -123,6 +123,15 @@ export function useMarkDrag(options: {
   box: () => DOMRect | null;
   from: () => { x: number; y: number };
   clamp: (value: number) => number;
+  /**
+   * How much of the pointer's travel each number takes. 1 for a POSITION.
+   *
+   * 2 for a SIZE, and this is not a fudge factor: a mark is centred on its x/y
+   * (`translate(-50%, -50%)`), so widening it by one percent moves each edge by
+   * half a percent. A corner grip dragged at gain 1 falls behind the pointer at
+   * exactly half speed, which reads as the app not keeping up.
+   */
+  gain?: number;
   onHold: () => void;
   commit: (at: { x: number; y: number }) => void;
 }): DragHandles {
@@ -147,9 +156,10 @@ export function useMarkDrag(options: {
       const dy = move.clientY - origin.py;
       if (!moved && Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       if (!moved) return;
+      const gain = options.gain ?? 1;
       setAt({
-        x: options.clamp(origin.x + (dx / rect.width) * 100),
-        y: options.clamp(origin.y + (dy / rect.height) * 100),
+        x: options.clamp(origin.x + (dx / rect.width) * 100 * gain),
+        y: options.clamp(origin.y + (dy / rect.height) * 100 * gain),
       });
     };
     const onUp = (): void => {

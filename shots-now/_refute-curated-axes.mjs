@@ -82,12 +82,30 @@ const chipWords = (label) =>
 const hiddenIds = (axis) =>
   page.evaluate((a) => [...globalThis.__shelfCuration.hidden(a)], axis);
 
+/**
+ * Right-click one entry and wait for ITS menu — retried, not waited-longer.
+ *
+ * The menu closes on any scroll (a capture-phase window listener in
+ * `createCuration`), and a right-click inside a rail panel that had to scroll
+ * to reach its chip closes the menu on the frame after it opened. Waiting
+ * longer cannot fix that; only clicking again from a settled scroll position
+ * can. `_refute-starred-menu.mjs` is the check that this is a probe-level race
+ * and not a chip that stopped answering — it opens the same menu on the same
+ * chip three times in a row, starred and unstarred, in a row short enough that
+ * nothing scrolls.
+ */
 const openMenu = async (locator) => {
-  await locator.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(400);
-  await locator.click({ button: 'right' });
-  await page.waitForSelector('.nb-cur-menu', { timeout: 8000 });
-  return ((await page.locator('.nb-cur-menu-name').textContent()) ?? '').trim();
+  for (let attempt = 0; ; attempt += 1) {
+    await locator.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    await locator.click({ button: 'right' });
+    const named = await page
+      .waitForSelector('.nb-cur-menu .nb-cur-menu-name', { timeout: 4000 })
+      .then((el) => el.textContent())
+      .catch(() => null);
+    if (named !== null) return named.trim();
+    if (attempt >= 4) throw new Error('the entry menu never opened');
+  }
 };
 
 /** Right-click the ROW, not a chip in it: a chip's menu offers the same drawer. */
@@ -275,10 +293,16 @@ check(
   (await page.$$eval('[aria-label="Edge treatment"] .nb-mark', (m) => m.length)) > 0,
   'the gilt plate is drawn on the chip',
 );
-// Put it back so the reload check below is not reading a starred row.
-await openMenu(page.locator('[aria-label="Edge treatment"] .nb-chip').first());
-await menuItem('no star').click();
-await page.waitForTimeout(500);
+/*
+ * The star STAYS on for the rest of the run, deliberately.
+ *
+ * Taking it off means opening one more menu, and the menu closes on any scroll
+ * (a capture-phase window listener in `createCuration`) — so a right-click that
+ * had to scroll the panel to reach its chip closes the menu it just opened.
+ * That flake is in the menu, not in the wiring under test, and section 2 has
+ * already opened eight entry menus successfully. A star changes ORDER only;
+ * neither the dice below nor the reload after it reads one.
+ */
 
 /* ================================================================ *
  * 4 — the dice on a row the other probe never rolled                *
@@ -292,8 +316,19 @@ const idleEdge = await page.evaluate(() =>
 );
 const edgeChip = page.locator('[aria-label="Edge treatment"] .nb-chip').nth(idleEdge);
 const goneEdge = ((await edgeChip.textContent()) ?? '').replace(/★/g, '').trim();
-await openMenu(edgeChip);
-await menuItem('remove from the list').click();
+// Open AND choose in one retried attempt: a menu that opened can still be shut
+// by a late scroll before the item is clicked, so the two have to be retried
+// together or the retry just races the same listener one step further along.
+for (let attempt = 0; ; attempt += 1) {
+  await openMenu(edgeChip);
+  const clicked = await menuItem('remove from the list')
+    .first()
+    .click({ timeout: 4000 })
+    .then(() => true)
+    .catch(() => false);
+  if (clicked) break;
+  if (attempt >= 4) throw new Error('“remove from the list” never became clickable');
+}
 await page.waitForTimeout(500);
 console.log(`  removed “${goneEdge}” of ${edgesBefore.length}`);
 
@@ -312,6 +347,53 @@ for (let i = 0; i < 30; i += 1) {
 console.log(`  thirty rolls landed on: ${[...landed].join(', ')}`);
 check(landed.size > 1, 'the edge dice actually moved', `${landed.size} distinct edges`);
 check(!landed.has(goneEdge), 'thirty rolls, and never the removed edge', goneEdge);
+
+/*
+ * And the covering dice, which is the one place the two halves could disagree.
+ *
+ * `randomise` deliberately drops `material` from its draw — the binding it
+ * rolls two lines later would overrule it — so a reader could reasonably expect
+ * the covering row's own dice to have been dropped along with it. It was not;
+ * `reroll(['material'])` keeps the key, which means the removal has to be
+ * honoured on a path the big randomise never walks.
+ */
+console.log('\n4b. remove a covering, then roll “covering” twenty-five times');
+const idleMat = await page.evaluate(() =>
+  [...document.querySelectorAll('[aria-label="Binding material"] .nb-chip')].findIndex(
+    (c) => c.getAttribute('aria-pressed') !== 'true' && c.textContent?.trim() !== 'as bound',
+  ),
+);
+const matChip = page.locator('[aria-label="Binding material"] .nb-chip').nth(idleMat);
+const goneMat = ((await matChip.textContent()) ?? '').replace(/★/g, '').trim();
+for (let attempt = 0; ; attempt += 1) {
+  await openMenu(matChip);
+  const clicked = await menuItem('remove from the list')
+    .first()
+    .click({ timeout: 4000 })
+    .then(() => true)
+    .catch(() => false);
+  if (clicked) break;
+  if (attempt >= 4) throw new Error('“remove from the list” never became clickable');
+}
+await page.waitForTimeout(500);
+const mats = new Set();
+for (let i = 0; i < 25; i += 1) {
+  await page.getByRole('button', { name: 'Reroll covering' }).click();
+  await page.waitForTimeout(120);
+  const on = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('[aria-label="Binding material"] .nb-chip')]
+        .filter((c) => c.getAttribute('aria-pressed') === 'true')
+        .map((c) => (c.textContent ?? '').replace(/★/g, '').trim())[0] ?? '',
+  );
+  if (on !== '') mats.add(on);
+}
+console.log(`  removed “${goneMat}”; twenty-five rolls landed on: ${[...mats].join(', ')}`);
+check(mats.size > 1, 'the covering dice actually moved', `${mats.size} distinct coverings`);
+check(!mats.has(goneMat), 'twenty-five rolls, and never the removed covering', goneMat);
+await openDrawer('[aria-label="Binding material"]');
+await page.locator('.nb-cur-drawer button.nb-cur-btn', { hasText: 'all of them' }).first().click();
+await page.waitForTimeout(700);
 
 /* ================================================================ *
  * 5 — and does any of it survive a reload?                          *
@@ -336,16 +418,19 @@ check(
 );
 await shot('refute-02-after-reload');
 
-// Put the shelf back the way it was found.
+// Put the shelf back the way it was found. "all of them back" empties the
+// drawer, and an empty drawer CLOSES — so there is no primary button to press
+// afterwards, and pressing one is what a tidy-up written by habit would do.
+console.log('\n6. tidy up: everything back on the edge row');
 await openDrawer('[aria-label="Edge treatment"]');
-await page.locator('.nb-cur-drawer button.nb-cur-btn', { hasText: 'all of them' }).first().click().catch(async () => {
-  const boxes = page.locator('.nb-cur-drawer input[type="checkbox"]');
-  for (let i = 0; i < (await boxes.count()); i += 1) await boxes.nth(i).check();
-});
-await page.waitForTimeout(300);
-await page.locator('.nb-cur-drawer button.nb-cur-btn.is-primary').click();
-await page.waitForTimeout(600);
-check((await hiddenIds('edge')).length === 0, 'tidied up: nothing left removed on edge');
+await page.locator('.nb-cur-drawer button.nb-cur-btn', { hasText: 'all of them' }).first().click();
+await page.waitForTimeout(800);
+check((await hiddenIds('edge')).length === 0, 'nothing left removed on edge');
+check(
+  (await chipWords('Edge treatment')).includes(goneEdge),
+  'and the row offers it again',
+  goneEdge,
+);
 
 console.log('\n=== page errors ===');
 if (errors.size === 0) console.log('none');

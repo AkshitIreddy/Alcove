@@ -2241,11 +2241,34 @@
   );
 }
 
+/*
+ * Bracket lays its own eight bars instead of feeding `--fr-corner`, and that is
+ * the difference between drawing and drawing nothing.
+ *
+ * The shared rule above builds `--fr-mark-bg` by substituting `var(--fr-corner)`
+ * into ONE background layer, four times over — `var(--fr-corner) top left / …
+ * no-repeat, …`. Every other frame's corner is a single gradient, so that works.
+ * A bracket is an L: it needs two bars, and this used to declare `--fr-corner`
+ * as two comma-separated gradients. Substituting a two-layer value into a
+ * one-layer slot produces a malformed `background`, the declaration is dropped
+ * whole at computed-value time, and the frame painted NOTHING — on a paragraph
+ * as well as free-placed. Fifty frames in the picker, forty-nine of which drew.
+ *
+ * Found by `shots-now/_refute-free-effects.mjs`, which compares a placed mark
+ * against the same patch of paper with the ink hidden; nothing else had ever
+ * asked whether a value produced pixels.
+ */
 :is(.nb-prose, .nb-fx-specimen) [data-frame='bracket'] {
   --fr-corner-size: 18px;
-  --fr-corner:
-    linear-gradient(var(--ink-line) 0 0) 0 0 / 18px 2px no-repeat,
-    linear-gradient(var(--ink-line) 0 0) 0 0 / 2px 18px no-repeat;
+  --fr-mark-bg:
+    linear-gradient(var(--ink-line) 0 0) top left / 18px 2px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) top left / 2px 18px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) top right / 18px 2px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) top right / 2px 18px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) bottom left / 18px 2px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) bottom left / 2px 18px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) bottom right / 18px 2px no-repeat,
+    linear-gradient(var(--ink-line) 0 0) bottom right / 2px 18px no-repeat;
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-frame='rivets'] {

@@ -1003,10 +1003,15 @@ export default function CataloguePanel(): JSX.Element {
             start this block again
           </button>
         </div>
+        {/* "start this block again" clears the block ATTRIBUTES, and always
+            did. It has nothing to say about a mark on the page — that comes off
+            with the × on its own puck — so the footnote now says which of the
+            two it is talking about rather than implying it undoes everything. */}
         <p class="nb-panel-footnote">
           paper, cards and diagrams drop in at your cursor; tape, trim and
           lettering dress the block the cursor is already on — click an applied
-          one again to take it off
+          one again to take it off. anything you stuck ON the page comes off with
+          the × on its own little bar
         </p>
       </section>
     </div>

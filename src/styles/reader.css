@@ -580,6 +580,35 @@
 }
 
 /*
+ * …except three, which take their height from whatever they are drawn on.
+ *
+ * `fit` is declared per AXIS, so all fifty tapes get `stamp` — and stamp
+ * collapses the ink box to `height: 0`, which is exactly right for the forty
+ * that state their geometry in pixels and cut it with a clip-path. `bookcloth`,
+ * `ladder` and `seam` do not: their `::before`/`::after` run the full height of
+ * the element, so on a paragraph they draw a strip two lines tall and inside a
+ * zero-height box they draw NOTHING. Measured, not reasoned about — the same
+ * three come back invisible from `shots-now/_refute-free-effects.mjs`, which
+ * compares each placed mark against the same patch of paper with the ink
+ * hidden, and the same three draw `::before 20x64` on a paragraph.
+ *
+ * That is the silent nothing `placeableEffects.ts` exists to prevent: a mark
+ * the reader placed, that persists, that reloads, and that paints no pixels.
+ * So these three get the box's height and drop the stamp scale — which is the
+ * `box` fit in all but name, and is what a strip whose length you dragged
+ * should do anyway.
+ */
+.nb-free-mark[data-fit='stamp'] .nb-free-mark-ink:is(
+    [data-tape='bookcloth'],
+    [data-tape='ladder'],
+    [data-tape='seam']
+  ) {
+  top: 0;
+  height: 100%;
+  transform: none;
+}
+
+/*
  * The block-flow air these four axes take on a ruled page.
  *
  * `[data-tape]` spends a whole `--page-line-height` above itself and

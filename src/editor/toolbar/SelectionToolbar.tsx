@@ -9,12 +9,16 @@
  * marker glyph are both font-coverage lotteries on Windows, and a missing
  * glyph box in the middle of a row of six is worse than either.
  */
-import { For, Show, onMount, type JSX } from 'solid-js';
+import { For, Show, createMemo, onMount, type JSX } from 'solid-js';
 import {
   HIGHLIGHT_STYLES,
   HIGHLIGHT_STYLE_LABELS,
   HIGHLIGHT_WASHES,
   SELECTION_ACTIONS,
+  faceGroups,
+  faceShortlist,
+  type FaceGroup,
+  type HandSpec,
   type HighlightStyle,
   type HighlightWash,
   type SelectionAction,
@@ -22,6 +26,7 @@ import {
   type SelectionActiveMap,
   type SelectionTray,
 } from './actions';
+import { faceFloorPx } from '../marks/face';
 
 // The tray's row names come from the same table the right-click menu reads
 // (`editor/highlightStyles.ts`); a second copy here is how one surface ended
@@ -78,12 +83,54 @@ function LinkIcon(): JSX.Element {
   );
 }
 
+/**
+ * One face, drawn in itself.
+ *
+ * The label is set in the face it names — a chip that says "quick note" in
+ * Nunito Sans is a menu of identical rectangles, and choosing a hand you cannot
+ * see is choosing by trusting the adjective. `faceFloorPx` is what keeps that
+ * honest without breaking the house rule: a 13px chip drawn in Caveat is
+ * illegible, so Caveat's chip is 20px and the row grows to fit it.
+ */
+function FaceChip(props: {
+  readonly spec: HandSpec;
+  readonly on: boolean;
+  onPick(id: string): void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      class="nb-seltool-face"
+      classList={{ 'is-on': props.on }}
+      style={{
+        'font-family': props.spec.stack,
+        'font-size': `${faceFloorPx(props.spec.id)}px`,
+      }}
+      aria-label={`${props.spec.label} — ${props.spec.id}`}
+      aria-pressed={props.on}
+      data-hand={props.spec.id}
+      data-tooltip={`${props.spec.id} — ${props.spec.blurb}`}
+      data-tooltip-side="top"
+      onMouseDown={(event) => {
+        event.preventDefault();
+        props.onPick(props.spec.id);
+      }}
+    >
+      {props.spec.label}
+    </button>
+  );
+}
+
 export interface SelectionToolbarProps {
   readonly active: SelectionActiveMap;
   readonly tray: SelectionTray | null;
   /** Wash + hand style the open tray should show as chosen. */
   readonly wash: HighlightWash;
   readonly hlStyle: HighlightStyle;
+  /** The hand under the selection, or null for the page's own. */
+  readonly face: string | null;
+  /** True once the reader has asked for every face rather than the shortlist. */
+  readonly facesAll: boolean;
   /** Current value of the link field (the plugin owns the string). */
   readonly href: string;
   /** True when the selection already carries a link (offers "remove"). */
@@ -91,6 +138,9 @@ export interface SelectionToolbarProps {
   /** Set while the typed link cannot be turned into an href. */
   readonly linkError: boolean;
   onPress(action: SelectionAction): void;
+  onFace(hand: string): void;
+  onClearFace(): void;
+  onShowAllFaces(): void;
   onWash(wash: HighlightWash): void;
   onHighlightStyle(style: HighlightStyle): void;
   onClearHighlight(): void;

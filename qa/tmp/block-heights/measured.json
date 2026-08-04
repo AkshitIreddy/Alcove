@@ -1,0 +1,451 @@
+{
+  "geometry": {
+    "line": 32,
+    "capacity": 821,
+    "paper": 893
+  },
+  "lineHeight": 32,
+  "rows": [
+    {
+      "kind": "banner",
+      "payload": "long",
+      "flow": 7.125,
+      "own": 7.75,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "banner",
+      "payload": "short",
+      "flow": 2.125,
+      "own": 2.75,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "blockquote",
+      "payload": "long",
+      "flow": 5,
+      "own": 5,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "blockquote",
+      "payload": "short",
+      "flow": 1,
+      "own": 1,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "card",
+      "payload": "long",
+      "flow": 7.6875,
+      "own": 8.1875,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "card",
+      "payload": "short",
+      "flow": 3.6875,
+      "own": 4.1875,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "columns",
+      "payload": "long",
+      "flow": 10,
+      "own": 10,
+      "inner": null,
+      "chrome": null,
+      "text": "SxLx and then a good deal more of "
+    },
+    {
+      "kind": "details",
+      "payload": "long",
+      "flow": 6,
+      "own": 6,
+      "inner": null,
+      "chrome": null,
+      "text": "A foldLx and then a good deal more"
+    },
+    {
+      "kind": "details",
+      "payload": "short",
+      "flow": 2,
+      "own": 2,
+      "inner": null,
+      "chrome": null,
+      "text": "A foldSx"
+    },
+    {
+      "kind": "div",
+      "payload": "long",
+      "flow": 6.0625,
+      "own": 5.8125,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "div",
+      "payload": "short",
+      "flow": 5.40625,
+      "own": 5.65625,
+      "inner": null,
+      "chrome": null,
+      "text": "ABonetwothreefourfivesix"
+    },
+    {
+      "kind": "envelope",
+      "payload": "long",
+      "flow": 6.8125,
+      "own": 8.0625,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "envelope",
+      "payload": "short",
+      "flow": 2.8125,
+      "own": 4.0625,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "h2",
+      "payload": "short",
+      "flow": 2,
+      "own": 2.00290625,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx heading two"
+    },
+    {
+      "kind": "h3",
+      "payload": "short",
+      "flow": 1,
+      "own": 0.9951875,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx heading three"
+    },
+    {
+      "kind": "hr",
+      "payload": "short",
+      "flow": 1,
+      "own": 1,
+      "inner": null,
+      "chrome": null,
+      "text": ""
+    },
+    {
+      "kind": "index-card",
+      "payload": "long",
+      "flow": 7.75,
+      "own": 8.5,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "index-card",
+      "payload": "short",
+      "flow": 4.875,
+      "own": 5.625,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "ledger",
+      "payload": "long",
+      "flow": 7.3125,
+      "own": 8.0625,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "ledger",
+      "payload": "short",
+      "flow": 3.3125,
+      "own": 4.0625,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "map-pin",
+      "payload": "long",
+      "flow": 6.75,
+      "own": 7.5,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "map-pin",
+      "payload": "short",
+      "flow": 2.9375,
+      "own": 3.6875,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "marginalia",
+      "payload": "long",
+      "flow": 5.625,
+      "own": 6,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "marginalia",
+      "payload": "short",
+      "flow": 1.625,
+      "own": 2,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "math",
+      "payload": "short",
+      "flow": 1.25,
+      "own": 1.25,
+      "inner": null,
+      "chrome": null,
+      "text": "E=mc2"
+    },
+    {
+      "kind": "p",
+      "payload": "long",
+      "flow": 4,
+      "own": 4,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "p",
+      "payload": "short",
+      "flow": 1,
+      "own": 1,
+      "inner": null,
+      "chrome": null,
+      "text": ""
+    },
+    {
+      "kind": "photo-corner",
+      "payload": "short",
+      "flow": 15.625,
+      "own": 16.375,
+      "inner": null,
+      "chrome": null,
+      "text": ""
+    },
+    {
+      "kind": "polaroid",
+      "payload": "short",
+      "flow": 15.125,
+      "own": 15.75,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "postcard",
+      "payload": "long",
+      "flow": 13.0625,
+      "own": 13.8125,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "postcard",
+      "payload": "short",
+      "flow": 6.25,
+      "own": 7,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "pressed-flower",
+      "payload": "long",
+      "flow": 9.4375,
+      "own": 10.1875,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "pressed-flower",
+      "payload": "short",
+      "flow": 6,
+      "own": 6.75,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "quote-card",
+      "payload": "long",
+      "flow": 8.21875,
+      "own": 8.84375,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "quote-card",
+      "payload": "short",
+      "flow": 2.9375,
+      "own": 3.5625,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "stamp",
+      "payload": "long",
+      "flow": 7,
+      "own": 7.75,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "stamp",
+      "payload": "short",
+      "flow": 3,
+      "own": 3.75,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "sticky-note",
+      "payload": "long",
+      "flow": 5.9375,
+      "own": 6.4375,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "sticky-note",
+      "payload": "short",
+      "flow": 2.625,
+      "own": 3.125,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "tag",
+      "payload": "long",
+      "flow": 7.5625,
+      "own": 8.3125,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "tag",
+      "payload": "short",
+      "flow": 2.5625,
+      "own": 3.3125,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "taskList",
+      "payload": "short",
+      "flow": 3,
+      "own": 3,
+      "inner": null,
+      "chrome": null,
+      "text": "SxSxSx"
+    },
+    {
+      "kind": "ticket-stub",
+      "payload": "long",
+      "flow": 8.75,
+      "own": 9.5,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "ticket-stub",
+      "payload": "short",
+      "flow": 3.5,
+      "own": 4.25,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "ul",
+      "payload": "short",
+      "flow": 3,
+      "own": 3,
+      "inner": null,
+      "chrome": null,
+      "text": "SxSxSx"
+    },
+    {
+      "kind": "washi-box",
+      "payload": "long",
+      "flow": 6.6875,
+      "own": 7.4375,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "washi-box",
+      "payload": "short",
+      "flow": 2.6875,
+      "own": 3.4375,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    },
+    {
+      "kind": "wax-seal",
+      "payload": "long",
+      "flow": 8.625,
+      "own": 9.375,
+      "inner": null,
+      "chrome": null,
+      "text": "Lx and then a good deal more of it"
+    },
+    {
+      "kind": "wax-seal",
+      "payload": "short",
+      "flow": 4.75,
+      "own": 5.5,
+      "inner": null,
+      "chrome": null,
+      "text": "Sx"
+    }
+  ]
+}

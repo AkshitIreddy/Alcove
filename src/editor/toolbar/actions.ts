@@ -21,18 +21,28 @@ import {
   highlightAttrs,
   type HighlightStyle,
 } from '../highlightStyles';
+import {
+  availableFaces,
+  faceGroups,
+  faceShortlist,
+  faceStack,
+  isFaceId,
+  type FaceGroup,
+} from '../marks/face';
 import { HIGHLIGHT_WASHES, type HighlightWash } from '../menu/registry';
+import type { HandSpec } from '../../features/settings/appearance';
 
 export type SelectionActionId =
   | 'bold'
   | 'italic'
   | 'strike'
   | 'code'
+  | 'face'
   | 'highlight'
   | 'link';
 
 /** A tray is a second row the button opens instead of toggling straight away. */
-export type SelectionTray = 'washes' | 'link';
+export type SelectionTray = 'faces' | 'washes' | 'link';
 
 export interface SelectionAction {
   readonly id: SelectionActionId;
@@ -48,11 +58,18 @@ export interface SelectionAction {
 }
 
 /**
- * Six inline marks, in the order a hand reaches for them.
+ * Seven inline marks, in the order a hand reaches for them.
  *
- * `code` sits after `strike` rather than beside the two tray buttons because
+ * `code` sits after `strike` rather than beside the three tray buttons because
  * it is a MARK — it toggles like the three before it, and grouping by what a
  * press does beats grouping by how ornamental the result is.
+ *
+ * `face` opens the tray group rather than closing it: it is the newest thing
+ * on the card and the one the reader went looking for and could not find
+ * ("i don't see an option … to change the text font style"), so it gets the
+ * first press after the ruled gap. Its chip is the only one that redraws
+ * itself — it shows "Aa" in whatever hand the selection is already wearing,
+ * which is a label and a state readout in the same 30px.
  */
 export const SELECTION_ACTIONS: readonly SelectionAction[] = [
   {
@@ -88,6 +105,14 @@ export const SELECTION_ACTIONS: readonly SelectionAction[] = [
     tray: null,
   },
   {
+    id: 'face',
+    mark: 'face',
+    title: 'Handwriting',
+    glyph: 'Aa',
+    shortcut: null,
+    tray: 'faces',
+  },
+  {
     id: 'highlight',
     mark: 'highlight',
     title: 'Highlight',
@@ -113,6 +138,7 @@ export const NO_ACTIVE_MARKS: SelectionActiveMap = {
   italic: false,
   strike: false,
   code: false,
+  face: false,
   highlight: false,
   link: false,
 };
@@ -131,10 +157,10 @@ export function readActiveMarks(editor: Editor): SelectionActiveMap {
 // ---------------------------------------------------------------------------
 
 /**
- * Toggle one of the four plain marks. The two tray buttons (highlight, link)
- * are not toggles and are refused here on purpose — a press on them opens a
- * row of choices, and silently toggling "some highlight" instead would make
- * the button mean two different things depending on which row was open.
+ * Toggle one of the four plain marks. The three tray buttons (face, highlight,
+ * link) are not toggles and are refused here on purpose — a press on them opens
+ * a row of choices, and silently toggling "some hand" instead would make the
+ * button mean two different things depending on which row was open.
  */
 export function toggleSelectionMark(editor: Editor, id: SelectionActionId): boolean {
   const chain = editor.chain().focus();
@@ -151,6 +177,48 @@ export function toggleSelectionMark(editor: Editor, id: SelectionActionId): bool
       return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Faces — the hand a run is written in (marks/face.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Write the selection in `hand`.
+ *
+ * `extendMarkRange` deliberately NOT used, unlike the link: a link is one
+ * indivisible thing whose whole run you are editing, but a face is a property
+ * of the words you actually highlighted. Extending would silently repaint the
+ * rest of a run somebody set earlier.
+ */
+export function applySelectionFace(editor: Editor, hand: string): boolean {
+  if (!isFaceId(hand)) return false;
+  return editor.chain().focus().setFace(hand).run();
+}
+
+/** Give the selection back to the page's own hand. */
+export function clearSelectionFace(editor: Editor): boolean {
+  return editor.chain().focus().unsetFace().run();
+}
+
+/** The hand under the selection, or `null` when it is the page's own. */
+export function selectionFace(editor: Editor): string | null {
+  const hand: unknown = editor.getAttributes('face').hand;
+  return isFaceId(hand) ? hand : null;
+}
+
+/**
+ * The stack the toolbar's own "Aa" chip is drawn in.
+ *
+ * `null` means "leave it to the card", which inherits `--font-accent` like the
+ * other letter chips — so the button reads as the page's own hand exactly when
+ * the selection has no face of its own.
+ */
+export function selectionFaceStack(editor: Editor): string | null {
+  return faceStack(selectionFace(editor));
+}
+
+export { availableFaces, faceGroups, faceShortlist, faceStack, isFaceId };
+export type { FaceGroup, HandSpec };
 
 /** Paint the selection with a wash, in the currently chosen hand style. */
 export function applySelectionHighlight(

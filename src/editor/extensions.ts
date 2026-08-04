@@ -23,6 +23,7 @@ import { nanoid } from 'nanoid';
 import { NotebookDocument } from './document';
 import { NotebookCodeBlock } from './nodes/codeBlock';
 import { NotebookHighlight } from './highlightStyles';
+import { NotebookFace } from './marks/face';
 import { MediaImage } from './media';
 import { customNodeExtensions } from './nodes';
 import { PageLinkSuggestions } from './links/extension';
@@ -147,9 +148,24 @@ export function createEditorExtensions(
     TaskItem.configure({ nested: true }),
 
     // TextStyleKit bundles TextStyle + Color/FontFamily/FontSize/LineHeight…
-    TextStyleKit,
+    //
+    // …except FontFamily, which is switched off so `marks/face.ts` is the ONE
+    // way a run gets a face. FontFamily stores a raw CSS stack in an inline
+    // `style`, from anywhere, at any size: it is a second copy of the hand
+    // table frozen at the moment of the click, it beats every stylesheet rule
+    // in the app, and it is how a paste out of a word processor lands a face
+    // nobody offered on a page at a size nothing can read. The `face` mark
+    // stores a hand ID instead and enforces that face's legibility floor.
+    // Nothing in `src/` ever called `setFontFamily`, so no stored page loses
+    // anything by this being off — `setColor` (the ink rows) is untouched.
+    TextStyleKit.configure({ fontFamily: false }),
     // Highlight + hand-drawn style attr (marker / squiggle / circle).
     NotebookHighlight.configure({ multicolor: true }),
+    // The hand a RUN of words is written in — a mark, so two runs in one
+    // paragraph can disagree. Schema-level, not interactive-only: it is part
+    // of the stored document, so a schema-only reader (script round-tripping,
+    // the export capture) has to parse it back the same way.
+    NotebookFace,
 
     MediaImage.configure({ allowBase64: true }),
 

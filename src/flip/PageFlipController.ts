@@ -414,7 +414,51 @@ export class PageFlipController {
     // No text sweeping while the paper is being dragged (see flip.css).
     this.options.root.classList.add('is-flip-gesture');
 
-    if (this.usesWebGL && this.ctx && this.renderer) {
+    /*
+     * A PAGE NOBODY HAS RASTERISED YET MUST NOT BE TURNED AS BLANK PAPER.
+     *
+     * The WebGL curl is fed entirely from the raster cache — `bitmapOf` returns
+     * `cache.get(id)?.bitmap ?? null` — and a null texture draws as bare paper.
+     * For a page the reader has never visited there is nothing cached, so the
+     * sheet curls over showing nothing at all. Turn back and forward again and
+     * it is perfect, because by then it has been captured. That is exactly what
+     * was reported:
+     *
+     *   "let's say I am turning to a page I haven't seen before, then it shows
+     *    as a blank white page. But after turning it, and then going back and
+     *    turning to that page again, the content is there as usual during the
+     *    page turn"
+     *
+     * The warm path is not broken — `ensureAdjacent` queues the neighbours and
+     * `whenIdle` carries a 1000ms timeout — it is just not INSTANT, and a
+     * reader who turns straight after opening a book beats it. Waiting for the
+     * capture here is not an option either: one is 200ms+ of synchronous main
+     * thread, which is a stall in the middle of the gesture.
+     *
+     * So when a texture is missing, this turn takes the rigid CSS fold instead,
+     * which needs no snapshot at all — its front face IS the live leaf, with
+     * the real words on it. A slightly plainer fold beats a blank page every
+     * time, and the reader never learns there were two paths. The missing page
+     * is also requested outright rather than left to idle, so the NEXT turn has
+     * its bitmap and gets the curl.
+     */
+    const cachedFor = (id: string | null): ImageBitmap | null =>
+      id === null ? null : (this.options.cache.get(id)?.bitmap ?? null);
+    const wanted = [pages.front, pages.back, pages.revealed].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+    const missing = wanted.filter((id) => cachedFor(id) === null);
+    if (missing.length > 0) {
+      // Not awaited: this turn is already committed to the fold, and the point
+      // is to have it ready for the next one.
+      for (const id of missing) void this.options.cache.ensure(id);
+    }
+    // `front` is the face the reader is looking at as it lifts. Without it the
+    // curl is a blank sheet; the other two only matter once it is part-way over,
+    // by which time an idle capture has usually landed.
+    const canCurl = pages.front === null || cachedFor(pages.front) !== null;
+
+    if (this.usesWebGL && this.ctx && this.renderer && canCurl) {
       // What colour is blank paper today? The reader may have changed theme
       // since the last turn, and `--paper-cream` is a theme token — the shader
       // bakes it in, so this has to happen BEFORE anything is drawn or the

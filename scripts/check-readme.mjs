@@ -495,9 +495,35 @@ export const DEPICTED_KEYS = [
   'defaultWallpaper',
 ];
 
-/** First 16 hex of the sha256 of a repo-relative file. Short enough to read. */
+/**
+ * First 16 hex of the sha256 of a repo-relative file. Short enough to read.
+ *
+ * TEXT is normalised to LF before hashing; binary is hashed as it lies. That is
+ * not tidiness — without it this function answers differently on two machines
+ * looking at the same commit, and it did:
+ *
+ * This checkout has `core.autocrlf=true`, so git stores LF and checks out CRLF.
+ * The digest of `shots-now/readme-hero.html` recorded on Windows therefore never
+ * matched the one computed on the Linux runner, and `checkShots()` reported the
+ * banner as "changed since the shot that draws it was taken" on every CI run —
+ * a staleness alarm that could not be switched off by recapturing, because
+ * recapturing on Windows re-recorded the same CRLF digest. It failed the 0.2.0
+ * release at the gates.
+ *
+ * A digest that means "these are the same bytes on this machine" is no use to a
+ * check that runs on two. What is wanted is "this is the same FILE as the one
+ * git has", which is the LF form. Images are left alone: a PNG has no line
+ * endings, and rewriting bytes inside one would corrupt it.
+ */
+const TEXT_SUFFIXES = ['.html', '.md', '.css', '.mjs', '.js', '.ts', '.tsx', '.json', '.svg'];
+
 export function digestOf(rel) {
-  return createHash('sha256').update(readFileSync(join(ROOT, rel))).digest('hex').slice(0, 16);
+  const bytes = readFileSync(join(ROOT, rel));
+  const isText = TEXT_SUFFIXES.some((suffix) => rel.toLowerCase().endsWith(suffix));
+  const payload = isText
+    ? Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'), 'utf8')
+    : bytes;
+  return createHash('sha256').update(payload).digest('hex').slice(0, 16);
 }
 
 /** Every path any shot declares a source, digested — the recorded shape. */

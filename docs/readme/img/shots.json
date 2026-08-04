@@ -1,14 +1,14 @@
 {
   "$schema": "see scripts/check-readme.mjs — checkShots()",
   "capturedBy": "shots-now/readme-shots.mjs",
-  "lastRunAt": "2026-08-04T09:38:31.518Z",
+  "lastRunAt": "2026-08-04T15:15:24.593Z",
   "app": {
     "product": "Alcove",
     "version": "0.2.0"
   },
   "commit": {
-    "sha": "699d192777dfdf1e0fdfef6a1b6c08089af84bd1",
-    "short": "699d192",
+    "sha": "0abd4fd51a9a8f698c1ba3bc4a532a742ad460af",
+    "short": "0abd4fd",
     "dirty": true
   },
   "viewport": {
@@ -26,7 +26,7 @@
   "sources": {
     "assets/brand/alcove-1024.png": "f6839dbacca258c2",
     "assets/brand/alcove-art.png": "9c4aaefc8057b1d0",
-    "shots-now/readme-hero.html": "9abd34c1cf1e6614"
+    "shots-now/readme-hero.html": "242c22ed6df18acb"
   },
   "shots": [
     {
@@ -62,8 +62,8 @@
       "sha256": "0f97a5563764acf7",
       "width": 2080,
       "height": 840,
-      "at": "2026-08-04T09:38:31.518Z",
-      "commit": "699d192+dirty"
+      "at": "2026-08-04T15:15:24.593Z",
+      "commit": "0abd4fd+dirty"
     },
     {
       "file": "page-turn.png",

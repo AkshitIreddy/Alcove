@@ -122,8 +122,18 @@ export function createOffscreenPageCapture(
           sheet.classList.remove(SNAPSHOTTING_CLASS);
         }
       }, context);
-    } catch {
-      return null; // staging/rasterization failure → caller's cream fallback
+    } catch (err) {
+      /*
+       * SAY WHY. A bare `catch { return null }` here hid a total failure of
+       * this path for as long as it has existed: the back of every turning
+       * sheet and every page revealed under a curl were drawn as bare cream,
+       * and the only symptom was the reader saying a page they had not visited
+       * "shows as a blank white page". Nothing was logged, so a path that threw
+       * on every call and a path that was never called looked identical from
+       * outside — including to the probes written to find this.
+       */
+      console.warn('[offscreenPages] staging failed for ' + pageId + ' :: ' + (err instanceof Error ? (err.stack ?? err.message) : String(err)));
+      return null; // caller's cream fallback
     }
   };
 }

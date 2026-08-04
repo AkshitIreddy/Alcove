@@ -38,8 +38,36 @@ export function useFreeLayer(
   const [layer, setLayer] = createSignal<HTMLElement | null>(null);
   onMount(() => {
     let frame = 0;
+    /*
+     * `editor.view` may not exist yet, and reading it THROWS rather than
+     * returning undefined — TipTap guards the property and raises "The editor
+     * view is not available. Cannot access view['dom']".
+     *
+     * That is not a hypothetical. Node views are constructed DURING the
+     * EditorView constructor, so `editor.view` is not assigned at the moment
+     * this runs; on a live leaf Solid's onMount happens late enough that it has
+     * been, and on an OFFSCREEN staged editor it has not. The throw escaped
+     * this effect, took down `withOffscreenPage`, and was swallowed whole by a
+     * bare `catch { return null }` in offscreenPages.ts.
+     *
+     * The cost was the reader's blank page. Every offscreen capture failed, so
+     * the back of every turning sheet and every page revealed under a curl had
+     * no texture and drew as bare cream — measured through the `__flipCache`
+     * bridge as `hasBack: false, hasRevealed: false` on every single turn.
+     *
+     * The retry loop below was already the right shape for "not ready yet"; it
+     * simply never got the chance to run. Catching here hands a missing view
+     * back as null, which is a retry, and after 24 frames a genuinely
+     * leafless editor (a template preview) keeps its mark inline exactly as
+     * this function's docblock promises.
+     */
     const look = (tries: number): void => {
-      const dom: unknown = props.editor.view.dom;
+      let dom: unknown = null;
+      try {
+        dom = props.editor.view.dom;
+      } catch {
+        dom = null;
+      }
       const leaf =
         dom instanceof HTMLElement ? dom.closest('.nb-sheet-paper') : null;
       const found = leaf?.querySelector<HTMLElement>(':scope > .nb-free-layer');

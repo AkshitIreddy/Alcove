@@ -32,6 +32,16 @@ const browser = await chromium.launch({
   args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
 });
 const page = await browser.newPage({ viewport: { width: 1500, height: 940 } });
+/*
+ * FULL MOTION, or this measures a page turn that never happens.
+ *
+ * Headless Chromium reports `prefers-reduced-motion: reduce`, and
+ * `programmaticFlip` answers that by calling `crossfadeNavigate` — no curl, no
+ * raster textures, no cache lookup. The first version of this probe ran twelve
+ * turns that way and reported ZERO blank frames, which was read as "the bug
+ * does not reproduce". It was measuring a code path the reader never takes.
+ */
+await page.emulateMedia({ reducedMotion: 'no-preference' });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message.split('\n')[0]));
 

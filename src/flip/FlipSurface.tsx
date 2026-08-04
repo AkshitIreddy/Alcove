@@ -196,6 +196,51 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
       : {}),
   });
 
+  /*
+   * QA BRIDGE — what the curl will actually have to draw with.
+   *
+   * The blank-page report ("a page I haven't seen before shows as a blank white
+   * page during the turn") is invisible to every probe written so far, and the
+   * reason is structural: during a curl the leaf is `visibility: hidden` and
+   * what the reader sees is the CANVAS TEXTURE. A probe sampling the live DOM
+   * sees inked leaves and reports nothing wrong, however blank the sheet on
+   * screen is. Reading the WebGL canvas back is not an option either — the
+   * context is created without `preserveDrawingBuffer`, so a read after the
+   * frame returns empty and would manufacture the very bug being hunted.
+   *
+   * So the cache answers directly: for the faces a flip in `dir` needs, is
+   * there a bitmap? A `null` here is exactly the condition that draws bare
+   * paper. Handed out from the module that OWNS the cache, for the reason
+   * CLAUDE.md gives for every other bridge — a probe's own import can resolve
+   * to a second copy of the module on a dev server that has served HMR, and
+   * that copy's cache is empty no matter what the app has.
+   *
+   * Gated on the same `?fx=force` override the shelf's bridges use, so it is
+   * absent from an ordinary run.
+   */
+  onMount(() => {
+    if (new URLSearchParams(window.location.search).get('fx') === null) return;
+    (globalThis as Record<string, unknown>)['__flipCache'] = {
+      /** Do the faces a flip in this direction needs have textures yet? */
+      facesFor: (dir: FlipDirection) => {
+        const pages = getFlipPages(dir);
+        if (pages === null) return null;
+        const has = (id: string | null): boolean =>
+          id === null ? true : cache.get(id) !== undefined;
+        return {
+          front: pages.front,
+          back: pages.back,
+          revealed: pages.revealed,
+          hasFront: has(pages.front),
+          hasBack: has(pages.back),
+          hasRevealed: has(pages.revealed),
+        };
+      },
+      /** Forget everything, so a probe can ask what a cold book does. */
+      clear: () => cache.dispose(),
+    };
+  });
+
   let controller: PageFlipController | undefined;
 
   const api: FlipSurfaceApi = {

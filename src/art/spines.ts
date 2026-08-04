@@ -39,6 +39,7 @@ import { CLOTH_LABELS, CLOTHS, FLAT, inkWidth, panel, stroke as inkLine, wobbleR
 // draw books at card scale, where a binding's fine work would be a smudge.
 import { flatSpineFor } from './flatShelf';
 import { clamp, mulberry32, type RandomFn } from './noise';
+import { textWidth } from './textMetrics';
 
 /* ------------------------------ studio vocab ------------------------------ */
 
@@ -3415,11 +3416,20 @@ function measureSpineTitle(
   const minFont = Math.max(4.5, fontPx * 0.55);
   const runOf = (t: string): number => {
     m.font = `${fontPx.toFixed(2)}px ${family}`;
-    return m.measureText(t).width;
+    return textWidth(m, t);
   };
 
   let text = title;
-  while (runOf(text) > maxRun && fontPx > minFont) fontPx = Math.max(minFont, fontPx * 0.94);
+  /*
+   * One measurement, not a walk down in 6% steps. A run's width is linear in
+   * its font size for a given family, so the size that fits is arithmetic
+   * rather than a search — and every step of that search was a fresh
+   * `measureText` against a fresh `m.font`, with nothing cacheable about it
+   * because each step measures the same string at a size it will never use
+   * again. See the same change in `covers.ts`, and the profile that found it.
+   */
+  const atStart = runOf(text);
+  if (atStart > maxRun) fontPx = Math.max(minFont, (fontPx * maxRun) / atStart);
   if (runOf(text) > maxRun) {
     while (text.length > 1 && runOf(`${text}…`) > maxRun) text = text.slice(0, -1);
     const trimmed = text.replace(/[\s,;:.-]+$/u, '');
@@ -3427,7 +3437,7 @@ function measureSpineTitle(
   }
 
   m.font = `${fontPx.toFixed(2)}px ${family}`;
-  const len = m.measureText(text).width;
+  const len = textWidth(m, text);
   return { text, fontPx, family, len, runLen: len + pad * 2 };
 }
 
@@ -4088,7 +4098,7 @@ function paintSpineTitle(
   let advance = 0;
   for (const ch of run.text) {
     ctx.fillText(ch, advance, (wob() * 2 - 1) * 0.5 * scale);
-    advance += m.measureText(ch).width;
+    advance += textWidth(m, ch);
   }
   ctx.restore();
 }

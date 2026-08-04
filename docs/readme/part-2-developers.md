@@ -299,8 +299,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->285<!--/f--> of <!--f:srcFiles-->293<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6563<!--/f--> lines of it.
+<!--f:srcDocstrings-->286<!--/f--> of <!--f:srcFiles-->294<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6591<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1188,7 +1188,7 @@ using it.
 
 ### Probes
 
-<!--f:probeScripts-->39<!--/f--> scripts under [`scripts/`](../../scripts/) named
+<!--f:probeScripts-->42<!--/f--> scripts under [`scripts/`](../../scripts/) named
 `probe-*.mjs` drive the running app with Playwright. The important three:
 
 - [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice

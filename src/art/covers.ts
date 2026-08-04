@@ -78,6 +78,7 @@ import {
   type FlatCtx,
 } from './flat';
 import { clamp, mulberry32 } from './noise';
+import { textWidth } from './textMetrics';
 import {
   ORNAMENT_COUNT,
   PIGMENT_COUNT,
@@ -2455,11 +2456,28 @@ function paintLabel(
   // fallback `gen-lettering.mjs` emits as its block of two-attribute rules —
   // the block keeps its size and gives up only the face.
   for (let pass = 0; pass < 2; pass++) {
+    /*
+     * SOLVE for the size instead of walking down to it.
+     *
+     * This used to shrink by 8% and measure again, round and round, which is up
+     * to a dozen `measureText` calls per title — and each one is preceded by a
+     * `setHand()`, so each is a fresh `ctx.font` and a fresh shaping pass with
+     * nothing cached. Profiling the customize panel opening found `measureText`
+     * the largest single cost on the main thread, and memoising it did nothing
+     * at all: every iteration measures the SAME string at a DIFFERENT size, so
+     * every call is a unique key by construction. The loop was the bug, not the
+     * lookup.
+     *
+     * A run's width is linear in its font size for a given family and tracking
+     * — twice the size is twice the width — so one measurement gives the exact
+     * size that fits. Two calls, not twelve, and the second only confirms it.
+     */
     fontPx = startPx;
-    for (;;) {
+    cased = setHand(ctx, hand, stack, fontPx, text);
+    const atStart = textWidth(ctx, cased);
+    if (atStart > maxWidth) {
+      fontPx = Math.max(floorPx, (startPx * maxWidth) / atStart);
       cased = setHand(ctx, hand, stack, fontPx, text);
-      if (ctx.measureText(cased).width <= maxWidth || fontPx * 0.92 < floorPx) break;
-      fontPx *= 0.92;
     }
     fontPx = Math.max(fontPx, floorPx);
     cased = setHand(ctx, hand, stack, fontPx, text);
@@ -2468,8 +2486,8 @@ function paintLabel(
   }
 
   let fitted = cased;
-  if (ctx.measureText(fitted).width > maxWidth) {
-    while (fitted.length > 1 && ctx.measureText(`${fitted}…`).width > maxWidth) {
+  if (textWidth(ctx, fitted) > maxWidth) {
+    while (fitted.length > 1 && textWidth(ctx, `${fitted}…`) > maxWidth) {
       fitted = fitted.slice(0, -1);
     }
     fitted = `${fitted}…`;

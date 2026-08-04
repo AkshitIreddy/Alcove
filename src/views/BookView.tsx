@@ -413,6 +413,16 @@ export default function BookView(): JSX.Element {
   const [pageCapacity, setPageCapacity] = createSignal(0);
 
   /**
+   * How long after the last change of scale to re-measure.
+   *
+   * Longer than a frame so a tween costs one measurement rather than thirty,
+   * and short enough that a reader who opens a panel and immediately types is
+   * measured before they reach the foot of the page. The panel tween itself is
+   * ~280 ms, so this lands just after it.
+   */
+  const SETTLE_MS = 90;
+
+  /**
    * The capacity is in DRAWN pixels, because the thing it is compared against
    * is.
    *
@@ -448,6 +458,36 @@ export default function BookView(): JSX.Element {
       if (paper?.isConnected === true) measureCapacity(paper);
     }
   };
+
+  /**
+   * The same, but ONCE the scale stops moving.
+   *
+   * `measureCapacity` forces three synchronous layouts per leaf — a
+   * `getComputedStyle`, a `clientHeight` and a `getBoundingClientRect` — and it
+   * was being asked for on every frame of the panel tween, which runs for about
+   * a third of a second. Profiling a rail panel opening put `measureCapacity`
+   * at 118 ms of self time on its own, the largest cost in the whole window and
+   * the reason EVERY panel stalled by roughly the same amount whether it drew
+   * anything expensive or not.
+   *
+   * Nothing needs the number while the sheet is still sliding. It is compared
+   * against block bottoms when the reader types, and a reader is not typing
+   * mid-tween — so the measurement is coalesced to the last frame of the move.
+   * The timer is reset by each change, so a tween of any length costs exactly
+   * one measurement, and an interrupted one (a second panel opened over the
+   * first) costs one for both rather than one each.
+   */
+  let capacitySettle: ReturnType<typeof setTimeout> | undefined;
+  const remeasureCapacityWhenSettled = (): void => {
+    if (capacitySettle !== undefined) clearTimeout(capacitySettle);
+    capacitySettle = setTimeout(() => {
+      capacitySettle = undefined;
+      remeasureCapacity();
+    }, SETTLE_MS);
+  };
+  onCleanup(() => {
+    if (capacitySettle !== undefined) clearTimeout(capacitySettle);
+  });
 
   const capacityObserver =
     typeof ResizeObserver !== 'undefined'
@@ -500,26 +540,66 @@ export default function BookView(): JSX.Element {
   /** Watches the two boxes the fit is read off; see `attachStage` below. */
   const roomObserver =
     typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(() => fitSpread())
+      ? new ResizeObserver(() => {
+          invalidateRoom();
+          fitSpread();
+        })
       : null;
   onCleanup(() => roomObserver?.disconnect());
+
+  /**
+   * The parts of the fit that a SLIDING SHEET cannot change, cached per slide.
+   *
+   * `fitSpread` runs on every frame of the panel tween, and four of the five
+   * numbers it reads — the view's padding, its box, the stage's laid-out width
+   * and the gutter token — are layout reads. Reading layout inside an animation
+   * frame forces a synchronous style-and-layout pass, so the tween paid for
+   * about thirty of them per open. Only `--nb-panel-edge` actually moves while
+   * a sheet slides: the window is not resizing and the stage is not relaying
+   * out, which is precisely why the push was built as a transform in the first
+   * place (see `panelPush.ts`).
+   *
+   * So they are read once at the start of a slide and reused until something
+   * that really can change them says so. That is exactly ONE place — the
+   * ResizeObserver already watching both the view and the stage — and it is
+   * enough because every way these numbers can move is a resize of one of those
+   * two boxes: the window changing, the stage remounting with a book, and the
+   * focus rung, which alters the stage's laid-out width and therefore fires the
+   * observer on it (`attachStage` puts it under the same observer for this
+   * reason). Getting the invalidation wrong would leave the book fitted to a
+   * window it no longer has, so it is wired to the observer that already
+   * existed rather than to a list of things I think can move.
+   */
+  let roomCache: { room: { left: number; right: number }; width: number; gap: number } | null =
+    null;
+  const invalidateRoom = (): void => {
+    roomCache = null;
+  };
 
   const fitSpread = (): void => {
     const view = viewElement;
     const stage = stageElement;
     if (!view || !stage || !view.isConnected || !stage.isConnected) return;
 
-    const styles = getComputedStyle(view);
-    const box = view.getBoundingClientRect();
-    // The view is never itself transformed (the fit lives on its children), so
-    // its own rect is honest. The stage IS inside the focus zoom, so take its
-    // width from `offsetWidth` — a laid-out number — and its position from the
-    // room, which is where flex centring puts it.
-    const room = {
-      left: box.left + (Number.parseFloat(styles.paddingLeft) || 0),
-      right: box.right - (Number.parseFloat(styles.paddingRight) || 0),
-    };
-    const width = stage.offsetWidth;
+    if (roomCache === null) {
+      const styles = getComputedStyle(view);
+      const box = view.getBoundingClientRect();
+      // The view is never itself transformed (the fit lives on its children),
+      // so its own rect is honest. The stage IS inside the focus zoom, so take
+      // its width from `offsetWidth` — a laid-out number — and its position
+      // from the room, which is where flex centring puts it.
+      roomCache = {
+        room: {
+          left: box.left + (Number.parseFloat(styles.paddingLeft) || 0),
+          right: box.right - (Number.parseFloat(styles.paddingRight) || 0),
+        },
+        width: stage.offsetWidth,
+        // One source for the gutter between sheet and book: the same token the
+        // back arrow and the settings seal clear the sheet by.
+        gap: Number.parseFloat(styles.getPropertyValue('--space-16')) || 16,
+      };
+    }
+    const { room, width } = roomCache;
     const centre = (room.left + room.right) / 2;
     const edge =
       Number.parseFloat(
@@ -527,9 +607,7 @@ export default function BookView(): JSX.Element {
           '--nb-panel-edge',
         ),
       ) || 0;
-    // One source for the gutter between sheet and book: the same token the
-    // back arrow and the settings seal clear the sheet by.
-    const gap = Number.parseFloat(styles.getPropertyValue('--space-16')) || 16;
+    const gap = roomCache.gap;
 
     const next = fitSpreadToRoom(
       { left: centre - width / 2, right: centre + width / 2 },
@@ -541,11 +619,9 @@ export default function BookView(): JSX.Element {
     lastFit = next;
     setSpreadFit(next);
     // The leaf is now drawn at a different size, and the page capacity is
-    // quoted in drawn pixels — see measureCapacity. Next frame, once the
-    // transform has actually been applied.
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => remeasureCapacity());
-    }
+    // quoted in drawn pixels — see measureCapacity. Once the move SETTLES,
+    // not on every frame of it: this runs for the whole tween.
+    remeasureCapacityWhenSettled();
   };
 
   /** The view frame: fixed to the window, so this one is only the resize. */

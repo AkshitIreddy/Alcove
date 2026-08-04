@@ -62,3 +62,17 @@ void import("./features/templates/userStickers").then((m) =>
    to false and rollup drops the whole branch, so the barrel it names never
    reaches a shipped chunk. */
 if (import.meta.env.DEV) void import("./features/templates/groupD");
+
+/*
+ * A web font arriving after the first draw changes every width under its
+ * family, and `art/textMetrics.ts` would otherwise keep handing out the
+ * fallback's numbers for the rest of the session — titles laid out for one face
+ * and painted in another. The cache is told once, when the last face lands.
+ *
+ * Fire-and-forget on purpose: nothing downstream waits on it, and a browser
+ * without `document.fonts` simply never invalidates, which is exactly right
+ * because it never swapped a face either.
+ */
+void import("./art/textMetrics").then(({ invalidateTextMetrics }) => {
+  document.fonts?.ready.then(() => invalidateTextMetrics());
+});

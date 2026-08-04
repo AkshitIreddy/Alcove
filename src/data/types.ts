@@ -149,23 +149,67 @@ export interface AssetRow {
 export type ThemeName = 'parchment' | 'pastel' | 'botanical' | 'night';
 
 /**
- * The ruling a page is printed with, in picker order.
+ * Every ruling a page may be printed with — the ids, and nothing else.
  *
  * A VALUE and not just a union, because four separate places needed to iterate
- * it and each had typed the four ids out again: the stored-settings validator
+ * it and each had typed the ids out again: the stored-settings validator
  * (`data/settings.ts`), the document node's attribute guard
  * (`editor/document.ts`), the book studio's page-defaults row
  * (`views/rail/CustomizePanel.tsx`) and the rail's page-style panel
- * (`views/rail/PageStylePanel.tsx`, which also owns their labels). Three of
- * those are pickers and one decides what a stored blob may say — precisely
- * the split `data/settings.ts` warns about beside `THEMES`, where a picker and
- * its validator typed out twice drift and the half that drifts is the one the
- * reader can see.
+ * (`views/rail/PageStylePanel.tsx`). Three of those are pickers and one decides
+ * what a stored blob may say — precisely the split `data/settings.ts` warns
+ * about beside `THEMES`, where a picker and its validator typed out twice
+ * drift and the half that drifts is the one the reader can see.
  *
  * The union is DERIVED from the list, so there is no way to add a ruling to
  * one and not the other.
+ *
+ * **This order is the AUTHORING order, not the picker's.** What a ruling is
+ * called, which family it belongs to and how good it is live in
+ * `editor/rulings.ts`, which keys a `Record<PageStyle, …>` off this list — so a
+ * twenty-eighth id is a compile error there until somebody has named it and
+ * said which tier it is — and DERIVES the order every picker shows from those
+ * two facts. A list hand-sorted in two files is a list that gets re-sorted by
+ * accident in one of them.
+ *
+ * The first four are the four this app shipped with, kept at the head so a
+ * stored `pageStyleDefault` written before the rest existed still reads as the
+ * ruling it always was.
  */
-export const PAGE_STYLES = ['ruled', 'grid', 'blank', 'dotted'] as const;
+export const PAGE_STYLES = [
+  // horizontal writing rules
+  'ruled',
+  'grid',
+  'blank',
+  'dotted',
+  'narrow',
+  'wide',
+  'college',
+  'legal',
+  'double',
+  'dashed',
+  // squares and lattices
+  'graph',
+  'quadrille',
+  'quadrille-wide',
+  'iso',
+  'engineering',
+  // dots
+  'dot-fine',
+  'dot-wide',
+  'cross',
+  'hex',
+  // guides a hand is meant to be trained against
+  'manuscript',
+  'calligraphy',
+  'cornell',
+  'margin',
+  // staves and frames — paper that is not for prose
+  'staves',
+  'tab',
+  'storyboard',
+  'log',
+] as const;
 export type PageStyle = (typeof PAGE_STYLES)[number];
 
 export type AnimationLevel = 'full' | 'reduced' | 'off';

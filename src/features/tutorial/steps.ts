@@ -589,8 +589,18 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open In and out.',
       fact: 'spec-copied',
       done: 'The whole loop is on this one sheet — the format, the paste box, and the way back out.',
+      // Everything this step describes is INSIDE the sheet, and the sheet is
+      // shut again by the advance (dismiss.ts). Without the beat it was open
+      // for 1.5 seconds — measured — which is not long enough to find the row
+      // the paragraph above is naming, let alone read it.
+      dwell: PANEL_DWELL_MS,
     },
+    // The sheet FIRST, once it is up: the whole step is about what is on it, so
+    // lighting the rail icon and leaving the sheet under the dim was pointing
+    // at the door while talking about the room. Before it opens the icon is the
+    // only thing there is to point at, and `findTarget` walks the list in order.
     targets: [
+      { selector: '.nb-rail-panel[aria-hidden="false"][aria-label="In and out"]', pad: 6 },
       {
         selector: '.nb-rail-button[data-tool="share"]',
         padBox: { left: 8, right: 8, top: 8, bottom: 8 },

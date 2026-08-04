@@ -139,6 +139,37 @@
   box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-deep);
 }
 
+/* ----------------------------------------------------------------------------
+   PICKING THE CARD UP.
+
+   Reported: "we should let the user be able to move the step windows by
+   clicking and dragging". The tour parks the card beside whatever it points at,
+   which is right nearly always and wrong exactly when the reader wants to look
+   at the thing standing behind it.
+
+   The whole paper is the handle, so the whole paper says so — `grab`, then
+   `grabbing` while it is held. The controls put their own `pointer` back, and
+   TutorialOverlay ignores a press that lands on one, so "press next" never
+   costs the reader a nudged card.
+
+   `user-select: none`: every word on this card is instruction rather than
+   content, and without it a drag across the body selects three paragraphs of
+   it instead of moving anything.
+   -------------------------------------------------------------------------- */
+.nbt-card {
+  cursor: grab;
+  user-select: none;
+}
+
+.nbt-card.is-dragging {
+  cursor: grabbing;
+}
+
+.nbt-card button,
+.nbt-card a {
+  cursor: pointer;
+}
+
 .nbt-card--wide {
   width: 428px;
   padding: var(--space-24) var(--space-24) var(--space-20);
@@ -176,6 +207,14 @@
   transform: rotate(2.6deg);
 }
 
+/* The tape is where a taped-up note is picked up from, so it is the one part of
+   the card that takes the gesture away from the browser: `touch-action: none`
+   here and nowhere else means a touchscreen can drag the card by its tape while
+   the body of the card still scrolls under a finger. */
+.nbt-tape {
+  touch-action: none;
+}
+
 .nbt-eyebrow {
   margin: 0 0 var(--space-4);
   font-size: var(--text-ui);
@@ -190,6 +229,27 @@
 .nbt-scene {
   color: var(--wash-amber-deep);
   font-style: italic;
+}
+
+/* Only on a card the reader has moved. It is the undo for the drag — one press
+   and the tour has the placement back — and it is in the eyebrow rather than
+   beside the buttons because it is about the CARD, not about the tour. */
+.nbt-restore {
+  margin-left: auto;
+  padding: 1px 8px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: 80px 7px 70px 7px / 7px 70px 7px 80px;
+  cursor: pointer;
+  transition: background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbt-restore:hover {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
 }
 
 .nbt-title {
@@ -416,6 +476,120 @@
 /* The whole card leans into the moment: a moss hairline around the paper. */
 .nbt-card.is-done {
   border-color: var(--wash-moss-deep);
+}
+
+/* ----------------------------------------------------------------------------
+   THE BEAT BEFORE THE TOUR WALKS ON.
+
+   The tour advances by itself once a task lands, and it never told anybody.
+   From the reader's chair that is the screen changing on its own a second after
+   they did something — which reads as a bug, or as the app taking the wheel.
+
+   So the beat is drawn: a ring that empties over exactly the milliseconds the
+   timer is waiting (TutorialOverlay computes `celebrateDelay` ONCE and hands
+   the same number to `setTimeout` and to the ring — there is no duration in
+   this stylesheet, deliberately, because a CSS animation length would be a
+   second copy of it and the first divergence would be a lie the reader could
+   see), the sentence that says what is about to happen, and a way to stop it.
+
+   Moss, because it belongs to the green "you did it" state above it and not to
+   the amber "there is something to do" state. Flat: one hairline, one face, a
+   hand-cut radius, no glow around the ring.
+   -------------------------------------------------------------------------- */
+.nbt-advance {
+  margin: var(--space-8) 0 0;
+  padding: 6px 8px 6px 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  line-height: 1.4;
+  color: var(--wash-moss-deep);
+  background: var(--wash-moss-light);
+  border: 1px dashed var(--wash-moss-deep);
+  border-radius: 11px 5px 10px 6px / 6px 10px 5px 11px;
+}
+
+.nbt-advance-ring {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  line-height: 0;
+}
+
+.nbt-advance-ring svg {
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+}
+
+/* The dial the sweep runs around. A flat cream face with a hairline on it, the
+   way every small plate in this app is drawn — an empty circle at 30% read as a
+   broken ring rather than as three quarters of something left. */
+.nbt-advance-track {
+  fill: var(--paper-cream);
+  stroke: var(--wash-moss);
+  stroke-width: 1.5;
+}
+
+/* The sweep starts at twelve o'clock and empties clockwise. The rotation is on
+   the circle rather than on the svg so the pause bars below stay upright. */
+.nbt-advance-sweep {
+  fill: none;
+  stroke: var(--wash-moss-deep);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 13px 13px;
+}
+
+/* Held: two inked bars in the dial, drawn a little off-square like every other
+   mark in the app. Nothing is counting, and the ring says so without the copy
+   having to be read. */
+.nbt-advance-stay {
+  fill: none;
+  stroke: var(--wash-moss-deep);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.nbt-advance-say {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* "stay here" — a countdown you cannot stop is a warning, not a control. */
+.nbt-advance-hold {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  font-weight: 600;
+  color: var(--wash-moss-deep);
+  background: var(--paper-cream);
+  border: 1px solid var(--wash-moss-deep);
+  border-radius: 90px 8px 80px 8px / 8px 80px 8px 90px;
+  cursor: pointer;
+  transition:
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbt-advance-hold:hover {
+  background: var(--wash-moss-light);
+  transform: translateY(-1px) rotate(-0.6deg);
+}
+
+.nbt-advance-hold:active {
+  transform: translateY(1px);
+}
+
+/* Stopped: the row stays, quieter, because a line that vanished on the press
+   would look like the press did nothing. */
+.nbt-advance.is-held {
+  border-style: dotted;
+  opacity: 0.9;
 }
 
 /* ----------------------------------------------------------------------------

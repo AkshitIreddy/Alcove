@@ -8,17 +8,23 @@
  *
  * Keyboard: Escape closes; focus is trapped inside the sheet while open and
  * restored to the opener on close.
+ *
+ * The box under the title narrows the sheet to the rows that answer a word —
+ * see the "finding" section below for how a row is matched and how a chapter
+ * knows to disappear when the search has emptied it.
  */
 
 import {
   For,
   Show,
+  createContext,
   createEffect,
   createMemo,
   createResource,
   createSignal,
   onCleanup,
   onMount,
+  useContext,
   type JSX,
 } from 'solid-js';
 import { gsap } from 'gsap';
@@ -191,6 +197,21 @@ const VOLUME_LABELS: Record<VolumeSettingKey, string> = {
   soundPages: 'page sounds',
   soundShelf: 'bookshelf sounds',
   soundAmbient: 'ambient bed',
+};
+
+/**
+ * What each slider is called by somebody hunting for it in the search box.
+ *
+ * Four of the five labels above are written in the app's own voice ("little
+ * clicks & pops"), which is the right name for them on the page and the wrong
+ * one to have to guess at: nobody types "pops" looking for the UI volume.
+ */
+const VOLUME_WORDS: Record<VolumeSettingKey, string> = {
+  soundMaster: 'overall everything master',
+  soundUi: 'ui buttons interface clicks',
+  soundPages: 'paper turning writing pages',
+  soundShelf: 'shelf books wood',
+  soundAmbient: 'ambience background soundscape music',
 };
 
 /**
@@ -696,6 +717,228 @@ function closestOption(
   return best;
 }
 
+/* -------------------------------- finding ---------------------------------- */
+
+/**
+ * The search box's matcher, and the machinery that hides what it does not find.
+ *
+ * This sheet is nine chapters and something over a hundred and fifty rows on
+ * 3200px of paper, and a reader arrives knowing the WORD for the thing they
+ * want ("volume", "backup", "dark") rather than which chapter somebody filed
+ * it under. Typing narrows the paper to the rows that answer that word.
+ *
+ * Rows are HIDDEN, never unmounted. Every picker in here depends on `<For>`
+ * reusing a chip's DOM while the item reference holds, which is what keeps the
+ * focus ring on the chip that was just pressed (see `Seg`); tearing rows down
+ * per keystroke would rebuild all hundred-odd ink chips on every letter typed.
+ * `display: none` also takes a filtered row out of the accessibility tree and
+ * out of the Tab cycle — which is exactly what a row the reader has just
+ * filtered away should be, inside a dialog that traps Tab.
+ */
+
+/**
+ * One spelling for both sides of the comparison.
+ *
+ * Kin to `DesignPicker`'s `fold`, with the three extra folds this sheet needs:
+ * it is written in curly apostrophes and mid-dots ("the room’s own paper"), it
+ * says colour and customise where half the people typing say color and
+ * customize, and a row written in one register must not be findable only in
+ * that register.
+ */
+function fold(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/colou?r/g, 'color')
+    .replace(/gr[ae]y/g, 'gray')
+    .replace(/isation\b/g, 'ization')
+    .replace(/ise\b/g, 'ize')
+    .trim();
+}
+
+/** The words the reader typed, folded. Empty means "nothing is filtered". */
+function queryTerms(query: string): readonly string[] {
+  const q = fold(query);
+  return q.length === 0 ? [] : q.split(' ');
+}
+
+/**
+ * Does every word the reader typed appear in this row's text?
+ *
+ * Substring per term, not a fuzzy score. A settings row is looked up by a word
+ * somebody half-remembers, and a scorer that will spread "b-a-c-k" across a
+ * hint hands back a third of the sheet for four letters. Every term has to
+ * land, so a second word always narrows.
+ */
+function found(terms: readonly string[], text: string): boolean {
+  if (terms.length === 0) return true;
+  const hay = fold(text);
+  return terms.every(
+    (term) =>
+      hay.includes(term) ||
+      // "shortcuts" has to find "shortcut" and "doodles" "doodle", or a plural
+      // nobody thought about lands on an empty sheet with the row right there.
+      (term.length > 2 && term.endsWith('s') && hay.includes(term.slice(0, -1))),
+  );
+}
+
+/**
+ * What a row needs to know about the search, handed down through context.
+ *
+ * Two registrations rather than one, because they answer different questions:
+ * `claim` tells the CHAPTER above whether to draw its heading at all, `tally`
+ * tells the SHEET how many rows are left, which is how it knows to say that it
+ * found nothing instead of showing blank paper.
+ */
+interface FindScope {
+  terms: () => readonly string[];
+  claim: (shown: () => boolean) => void;
+  tally: (shown: () => boolean) => void;
+}
+
+/** The scope a row gets outside the sheet — nothing is filtered, so it shows. */
+const NO_FIND: FindScope = {
+  terms: () => [],
+  claim: () => undefined,
+  tally: () => undefined,
+};
+
+const FindCtx = createContext<FindScope>(NO_FIND);
+
+interface Registry {
+  add: (shown: () => boolean) => void;
+  shown: () => number;
+  total: () => number;
+}
+
+function createRegistry(): Registry {
+  const [members, setMembers] = createSignal<readonly (() => boolean)[]>([]);
+  const shown = createMemo(() => members().reduce((n, is) => (is() ? n + 1 : n), 0));
+  return {
+    add(is) {
+      setMembers((list) => [...list, is]);
+      // The list has to shrink with the DOM. This sheet mounts and unmounts
+      // whole runs of rows behind `Show` (the disclosures, the reader's own
+      // sound set), and an accessor left behind would hold a chapter open on
+      // a row that is no longer in it — and count it in the tally as well.
+      onCleanup(() => setMembers((list) => list.filter((f) => f !== is)));
+    },
+    shown,
+    total: () => members().length,
+  };
+}
+
+/**
+ * A heading with rows under it, which disappears when the search empties it.
+ *
+ * It is also where a query gets ANSWERED outright: when the heading's own words
+ * cover everything the reader typed ("sound", "help"), the rows below are
+ * handed an empty term list and every one of them shows. Somebody who asks for
+ * a chapter wants the chapter, not the three rows inside it that happen to
+ * repeat its name.
+ *
+ * The children are a FUNCTION so that they are built inside the provider. A row
+ * created outside it would look up the chapter above this one and report its
+ * visibility to the wrong heading — which is invisible until the day a section
+ * refuses to disappear.
+ */
+function Chapter(props: {
+  words: string;
+  children: (shown: () => boolean) => JSX.Element;
+}): JSX.Element {
+  const above = useContext(FindCtx);
+  const mine = createRegistry();
+  const named = createMemo(() => {
+    const terms = above.terms();
+    return terms.length > 0 && found(terms, props.words);
+  });
+  const shown = createMemo(() => named() || mine.shown() > 0);
+  above.claim(shown);
+  return (
+    <FindCtx.Provider
+      value={{
+        terms: () => (named() ? [] : above.terms()),
+        claim: mine.add,
+        tally: above.tally,
+      }}
+    >
+      {props.children(shown)}
+    </FindCtx.Provider>
+  );
+}
+
+/** Hand-drawn magnifier: a loop that does not quite close, and its handle. */
+function SearchIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" class="nbs-find-icon">
+      <path
+        d="M 13.1 6.4 C 14.2 9.3 12.4 12.5 9.3 13.1 C 6.4 13.7 3.6 11.6 3.4 8.6 C 3.2 5.7 5.7 3.3 8.6 3.6 C 10.6 3.8 12.4 5.0 13.1 6.6"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      />
+      <path
+        d="M 11.9 12.4 C 13.6 14.1 15.3 15.6 16.8 17.1"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The same glass, larger, with nothing in it — one flat dash where the hit
+ * would have been. Same stroke weight and the same one ink as the close cross
+ * and the reset loop; a drawing, not a mood.
+ */
+function NothingIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 44 44" aria-hidden="true" class="nbs-find-empty-icon">
+      <path
+        d="M 30.4 13.2 C 33.0 20.0 28.6 27.4 21.4 28.4 C 14.6 29.3 8.6 23.9 8.9 17.0 C 9.2 10.4 15.6 5.6 22.0 7.0 C 25.9 7.9 29.0 10.3 30.4 13.6"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.4"
+        stroke-linecap="round"
+      />
+      <path
+        d="M 27.6 26.6 C 30.6 29.8 33.6 32.8 36.2 35.4"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.4"
+        stroke-linecap="round"
+      />
+      <path
+        d="M 15.6 17.6 C 18.6 17.3 21.6 17.2 24.6 17.5"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.4"
+        stroke-linecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Words to try when a search finds nothing — one per chapter of the sheet, so
+ * pressing any of them lands on something. They are the reader's way back in
+ * from an empty result without having to guess a second time.
+ */
+const FIND_TRIES: readonly string[] = [
+  'theme',
+  'sound',
+  'backup',
+  'shortcuts',
+  'code',
+  'cursor',
+  'tour',
+];
+
 /* ---------------------------- small controls ------------------------------- */
 
 /**
@@ -707,6 +950,12 @@ function Row(props: {
   label: string;
   hint?: string;
   keys?: string;
+  /**
+   * The words a reader would actually TYPE for this row, which are very often
+   * not the words written on it — "dark mode" for the theme row, "fps" for the
+   * performance HUD, "typeface" for the hand. Searched, never drawn.
+   */
+  words?: string;
   wide?: boolean;
   /**
    * Stop the control column giving up its width to the text.
@@ -720,9 +969,22 @@ function Row(props: {
   holdControl?: boolean;
   children: JSX.Element;
 }): JSX.Element {
+  const find = useContext(FindCtx);
+  /* A row answers to everything a reader can see on it — its name, its hint,
+     the combo drawn beside it — plus the words nobody wrote on it. */
+  const shown = createMemo(() =>
+    found(
+      find.terms(),
+      `${props.label} ${props.hint ?? ''} ${props.words ?? ''} ${props.keys ?? ''}`,
+    ),
+  );
+  find.claim(shown);
+  find.tally(shown);
+
   return (
     <div
       class="nbs-row"
+      hidden={!shown() || undefined}
       classList={{
         'nbs-row--wide': props.wide,
         'nbs-row--hold': props.holdControl,
@@ -986,13 +1248,28 @@ type SectionAccent =
 function Section(props: {
   title: string;
   accent: SectionAccent;
+  /**
+   * Other words that mean this whole chapter. Typing one of them shows every
+   * row in the section rather than the two that repeat the title — see
+   * `Chapter`. Keep them wide: a word that means only ONE row in here belongs
+   * on that row's `words`, or the search stops narrowing.
+   */
+  words?: string;
   children: JSX.Element;
 }): JSX.Element {
   return (
-    <section class="nbs-section" data-accent={props.accent}>
-      <h3 class="nbs-section-title">{props.title}</h3>
-      {props.children}
-    </section>
+    <Chapter words={`${props.title} ${props.words ?? ''}`}>
+      {(shown) => (
+        <section
+          class="nbs-section"
+          data-accent={props.accent}
+          hidden={!shown() || undefined}
+        >
+          <h3 class="nbs-section-title">{props.title}</h3>
+          {props.children}
+        </section>
+      )}
+    </Chapter>
   );
 }
 
@@ -1011,6 +1288,12 @@ function Picker(props: {
   /** Row label; also the group's accessible name. */
   label: string;
   hint: string;
+  /**
+   * What a reader types when they want this vocabulary — "dark mode" for the
+   * theme, "typeface" for the hand. Carried by every shelf as well as by the
+   * row, because while a search is live the shelves ARE the picker.
+   */
+  words?: string;
   /** Chips shown while collapsed. Always contains the current value. */
   shortlist: readonly SegOption[];
   /** Every chip, shelved, shown while open. */
@@ -1018,72 +1301,142 @@ function Picker(props: {
   total: number;
   value: string;
   open: boolean;
+  /**
+   * Somebody is searching, so the disclosure is not the reader's to make.
+   *
+   * Every shelf is laid out and the "show all / show fewer" control is not
+   * drawn at all. Both halves matter: a hit that stayed folded away behind a
+   * button is a search that answered nothing, and a button that says "show
+   * fewer" over a list the QUERY is holding open is a control that does not
+   * do what it says.
+   */
+  searching: boolean;
   /** id for aria-controls — unique per picker within the dialog. */
   region: string;
   onOpen: (open: boolean) => void;
   onSelect: (value: string) => void;
 }): JSX.Element {
-  return (
-    <>
-      <Show
-        when={!props.open}
-        fallback={
-          <Row label={props.label} hint={props.hint}>
-            <button
-              type="button"
-              class="nbs-action-btn"
-              aria-expanded
-              aria-controls={props.region}
-              onClick={() => props.onOpen(false)}
-            >
-              show fewer
-            </button>
-          </Row>
-        }
-      >
-        <Row label={props.label} hint={props.hint} wide>
+  /**
+   * A shelf answers to its chips as well as to its own name, so a search for
+   * one pigment ("oxblood") finds the shelf that is holding it. The picker's
+   * label goes in too — "reds" on its own does not say reds of what.
+   */
+  const shelfWords = (group: ChipGroup): string =>
+    `${props.label} ${props.words ?? ''} ${group.blurb} ${group.options
+      .map((opt) => opt.label)
+      .join(' ')}`;
+
+  const shelves = (): JSX.Element => (
+    <For each={props.groups}>
+      {(group) => (
+        <Row
+          label={group.title}
+          hint={props.searching ? `${props.label} — ${group.blurb}` : group.blurb}
+          words={shelfWords(group)}
+          wide
+        >
           <Seg
-            label={props.label}
-            options={props.shortlist}
+            label={`${props.label}: ${group.title}`}
+            options={group.options}
             value={props.value}
             onSelect={(v) => props.onSelect(String(v))}
           />
         </Row>
-        <Show when={props.total > props.shortlist.length}>
-          <Row
-            label={`more ${props.label}`}
-            hint={`${props.total - props.shortlist.length} more, in ${props.groups.length} shelves`}
-            holdControl
-          >
-            <button
-              type="button"
-              class="nbs-action-btn"
-              aria-expanded={false}
-              aria-controls={props.region}
-              onClick={() => props.onOpen(true)}
-            >
-              show all {props.total}
-            </button>
+      )}
+    </For>
+  );
+
+  return (
+    <>
+      <Show when={props.searching}>
+        <div id={props.region}>{shelves()}</div>
+      </Show>
+      <Show when={!props.searching}>
+        <Show
+          when={!props.open}
+          fallback={
+            <Row label={props.label} hint={props.hint} words={props.words}>
+              <button
+                type="button"
+                class="nbs-action-btn"
+                aria-expanded
+                aria-controls={props.region}
+                onClick={() => props.onOpen(false)}
+              >
+                show fewer
+              </button>
+            </Row>
+          }
+        >
+          <Row label={props.label} hint={props.hint} words={props.words} wide>
+            <Seg
+              label={props.label}
+              options={props.shortlist}
+              value={props.value}
+              onSelect={(v) => props.onSelect(String(v))}
+            />
           </Row>
+          <Show when={props.total > props.shortlist.length}>
+            <Row
+              label={`more ${props.label}`}
+              hint={`${props.total - props.shortlist.length} more, in ${props.groups.length} shelves`}
+              words={props.words}
+              holdControl
+            >
+              <button
+                type="button"
+                class="nbs-action-btn"
+                aria-expanded={false}
+                aria-controls={props.region}
+                onClick={() => props.onOpen(true)}
+              >
+                show all {props.total}
+              </button>
+            </Row>
+          </Show>
+        </Show>
+        <Show when={props.open}>
+          <div id={props.region}>{shelves()}</div>
         </Show>
       </Show>
-      <Show when={props.open}>
-        <div id={props.region}>
-          <For each={props.groups}>
-            {(group) => (
-              <Row label={group.title} hint={group.blurb} wide>
-                <Seg
-                  label={`${props.label}: ${group.title}`}
-                  options={group.options}
-                  value={props.value}
-                  onSelect={(v) => props.onSelect(String(v))}
-                />
-              </Row>
-            )}
-          </For>
-        </div>
-      </Show>
     </>
+  );
+}
+
+/**
+ * One shortcut row, filtered by the search box like any other row.
+ *
+ * The list is a REFERENCE — twenty-one separate things somebody might be
+ * hunting for, which is exactly why it is grouped rather than capped — so it
+ * is the place in this sheet where narrowing pays best. It is not made of
+ * `Row`s, so it registers with the chapter above it itself.
+ */
+function KeyRow(props: {
+  action: string;
+  listening: boolean;
+  children: JSX.Element;
+}): JSX.Element {
+  const find = useContext(FindCtx);
+  const shown = createMemo(() =>
+    found(
+      find.terms(),
+      // The combo as well as the action: somebody who wants to know what has
+      // Ctrl+Shift+E on it can type that, which is the question this list is
+      // most often opened to answer.
+      `${bindingActionLabel(props.action)} ${formatBinding(binding(props.action))} shortcut key`,
+    ),
+  );
+  find.claim(shown);
+  find.tally(shown);
+
+  return (
+    <li
+      class="nbs-keys-item"
+      hidden={!shown() || undefined}
+      classList={{ 'is-listening': props.listening }}
+    >
+      {props.children}
+    </li>
   );
 }
 
@@ -1179,6 +1532,44 @@ export default function SettingsPanel(props: {
    * shelf's arrow keys for the rest of the session after one visit to the gear.
    */
   usePanelKeys(() => props.open);
+
+  /* --------------------------------- search --------------------------------
+     `query` is the reader's raw text — it is what the field shows and what the
+     "nothing here" note quotes back at them. `terms` is the folded form every
+     row is matched against, and an empty `terms` means the sheet is whole. */
+  const [query, setQuery] = createSignal('');
+  const terms = createMemo(() => queryTerms(query()));
+  const searching = (): boolean => terms().length > 0;
+  /** Every row in the sheet, so it can tell when it has narrowed to none. */
+  const rows = createRegistry();
+  const findScope: FindScope = {
+    terms,
+    // Nothing stands between the sheet and its chapters, so there is no
+    // heading above to report to — a `Section` decides its own visibility.
+    claim: () => undefined,
+    tally: rows.add,
+  };
+  let findRef: HTMLInputElement | undefined;
+
+  const clearSearch = (): void => {
+    setQuery('');
+    findRef?.focus();
+  };
+
+  const searchFor = (word: string): void => {
+    setQuery(word);
+    findRef?.focus();
+  };
+
+  /*
+   * A query must not outlive the sheet, for the reason a half-finished key
+   * capture must not: this sheet LATCHES (see App.tsx), and reopening it onto
+   * paper still filtered by a word typed an hour ago reads as an app that has
+   * lost most of its settings.
+   */
+  createEffect(() => {
+    if (!props.open) setQuery('');
+  });
 
   const inTauri = isTauri();
 
@@ -1809,6 +2200,24 @@ export default function SettingsPanel(props: {
       if (capturing() !== null) return;
       if (e.key === 'Escape') {
         e.preventDefault();
+        /*
+         * Give the sheet back before giving it up.
+         *
+         * A reader who has narrowed this to four rows and presses Escape means
+         * "put the rest back", not "throw the whole sheet away and let me go
+         * and find the gear again". The second press then closes, because by
+         * then there is nothing to undo.
+         *
+         * Here rather than on the field, so it holds wherever the focus went:
+         * searching and then pressing a chip moves focus onto the chip, and an
+         * Escape rule that only worked while the caret was in the box would
+         * have been the wrong one exactly when somebody had used the search.
+         * The field takes the caret back so the second press is unambiguous.
+         */
+        if (searching()) {
+          clearSearch();
+          return;
+        }
         props.onClose();
         return;
       }
@@ -1817,7 +2226,11 @@ export default function SettingsPanel(props: {
         sheetRef.querySelectorAll<HTMLElement>(
           'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
         ),
-      );
+        // A row the search has filtered out is `display: none`, and a hidden
+        // element cannot take focus — so leaving it in this list would make
+        // the wrap-around at either end focus nothing at all, and Tab out of a
+        // narrowed sheet would land the reader on the shelf behind it.
+      ).filter((el) => el.getClientRects().length > 0);
       if (focusables.length === 0) return;
       const first = focusables[0] as HTMLElement;
       const last = focusables[focusables.length - 1] as HTMLElement;
@@ -1851,6 +2264,11 @@ export default function SettingsPanel(props: {
         onClick={() => props.onClose()}
         aria-hidden="true"
       />
+      {/* Everything below is inside the search's scope — the sections, the
+          rows and the shortcut list all report through it. Deliberately NOT
+          re-indented under the provider: a thousand lines of shifted
+          whitespace would bury the change that put it here. */}
+      <FindCtx.Provider value={findScope}>
       <div
         class="nbs-sheet"
         ref={sheetRef}
@@ -1872,10 +2290,106 @@ export default function SettingsPanel(props: {
           >
             <CloseIcon />
           </button>
+          {/* In the STICKY header, not at the top of the paper: this is 3200px
+              of sheet, and a search box you have to scroll back up to reach is
+              one you use once and then stop believing in. */}
+          <div class="nbs-find" role="search">
+            <label class="nbs-find-box">
+              <span class="nb-sr-only">Search settings</span>
+              <SearchIcon />
+              <input
+                ref={findRef}
+                type="search"
+                class="nbs-find-input"
+                value={query()}
+                placeholder="search the settings…"
+                autocomplete="off"
+                spellcheck={false}
+                /* No keydown handler of its own, deliberately. The sheet
+                   already binds Escape and Tab on `window`, and a second
+                   listener here would be a second opinion about both; the
+                   Escape rule lives in the one place, in the trap below. */
+                onInput={(e) => setQuery(e.currentTarget.value)}
+              />
+              {/* The count is a number on the field rather than a line under
+                  it: this header is sticky, and a line that appears on the
+                  first keystroke would shove the whole sheet down under the
+                  reader's eye while they are still typing.
+
+                  It says "6 rows", not "6", and carries NO tooltip. The sheet
+                  is against the right edge of the window, so every bubble in
+                  it flips left — this one landed square on the field, hiding
+                  the query and the count it was explaining. Same trap the
+                  shortcut rows' own note describes. */}
+              <Show when={searching()}>
+                <span class="nbs-find-tally font-ui" aria-hidden="true">
+                  {rows.shown() === 1 ? '1 row' : `${rows.shown()} rows`}
+                </span>
+              </Show>
+            </label>
+            <Show when={query().length > 0}>
+              {/* No tooltip here either, and for the same reason: it flipped
+                  left over the field. The label reads it out, and the cross is
+                  the same one the header closes with. */}
+              <button
+                type="button"
+                class="nbs-find-clear"
+                aria-label="Clear the search"
+                onClick={clearSearch}
+              >
+                <CloseIcon />
+              </button>
+            </Show>
+            {/* The tally again, in words, for anyone who cannot see the sheet
+                narrow. `status` is polite, so it waits for a gap in the typing
+                instead of interrupting every letter. */}
+            <p class="nb-sr-only" role="status">
+              {searching()
+                ? rows.shown() === 1
+                  ? '1 setting matches'
+                  : `${rows.shown()} settings match`
+                : ''}
+            </p>
+          </div>
         </header>
 
+        {/* A search that finds nothing has to SAY so. Without this the sheet
+            simply empties, which reads as the settings having been lost rather
+            than as a word that is not in them — and leaves no way back except
+            guessing that the box is what did it. */}
+        <Show when={searching() && rows.shown() === 0}>
+          <div class="nbs-find-empty">
+            <NothingIcon />
+            <p class="nbs-find-empty-line">nothing in here answers to “{query().trim()}”</p>
+            <p class="nbs-find-empty-hint font-ui">
+              every setting is still where it was — clear the search to get the
+              sheet back, or try one of these
+            </p>
+            <div class="nbs-find-tries">
+              <For each={FIND_TRIES}>
+                {(word) => (
+                  <button
+                    type="button"
+                    class="nbs-seg-chip"
+                    onClick={() => searchFor(word)}
+                  >
+                    {word}
+                  </button>
+                )}
+              </For>
+            </div>
+            <button type="button" class="nbs-action-btn" onClick={clearSearch}>
+              clear the search
+            </button>
+          </div>
+        </Show>
+
         {/* ------------------------------ Appearance -------------------------- */}
-        <Section title="Appearance" accent="blush">
+        <Section
+          title="Appearance"
+          accent="blush"
+          words="look style skin decoration"
+        >
           {/*
             The four questions the tour opens with, offered again.
 
@@ -1891,6 +2405,7 @@ export default function SettingsPanel(props: {
           <Row
             label="choose my look again"
             hint="four questions, and the whole library takes after your answers"
+            words="taste questionnaire onboarding setup wizard start over restyle"
           >
             <button type="button" class="nbs-action-btn" onClick={chooseLookAgain}>
               start
@@ -1898,7 +2413,12 @@ export default function SettingsPanel(props: {
           </Row>
           {/* The whole look, in one line, above the four rows that make it —
               so the section can be read before it is operated. */}
-          <Row label="surprise me" hint={lookHint()} holdControl>
+          <Row
+            label="surprise me"
+            hint={lookHint()}
+            words="random shuffle roll dice whole look"
+            holdControl
+          >
             <button type="button" class="nbs-action-btn" onClick={surpriseLook}>
               roll a whole look
             </button>
@@ -1906,6 +2426,8 @@ export default function SettingsPanel(props: {
           <Picker
             label="theme"
             hint="the room this app is drawn in"
+            words="dark mode light night colour scheme palette appearance room"
+            searching={searching()}
             shortlist={themeShortlist()}
             groups={THEME_GROUPS}
             total={APP_THEMES.length}
@@ -1918,6 +2440,8 @@ export default function SettingsPanel(props: {
           <Picker
             label="hand"
             hint="the face every page is written in"
+            words="font typeface handwriting lettering face writing"
+            searching={searching()}
             shortlist={handShortlist()}
             groups={handGroups()}
             total={hands().length}
@@ -1927,7 +2451,11 @@ export default function SettingsPanel(props: {
             onOpen={setAllHandsOpen}
             onSelect={(v) => put({ handwritingFont: v })}
           />
-          <Row label="body size" hint="reading type on every page">
+          <Row
+            label="body size"
+            hint="reading type on every page"
+            words="font size type bigger smaller larger text zoom"
+          >
             <Slider
               label="body font size"
               min={15}
@@ -1942,6 +2470,8 @@ export default function SettingsPanel(props: {
           <Picker
             label="ink"
             hint="what the reading type is written with"
+            words="pen pigment colour text colour writing"
+            searching={searching()}
             shortlist={inkShortlist()}
             groups={inkGroups()}
             total={INKS.length}
@@ -1954,6 +2484,8 @@ export default function SettingsPanel(props: {
           <Picker
             label="paper"
             hint="the stock every page is printed on"
+            words="stock background page colour texture sheet"
+            searching={searching()}
             shortlist={paperShortlist()}
             groups={paperGroups()}
             total={PAPERS.length + 1}
@@ -1968,7 +2500,11 @@ export default function SettingsPanel(props: {
               (`.nb-page[data-style]` in styles/editor.css) and a fifth chip
               here would write a document attribute nothing knows how to
               paint. Growing this one is an editor job, not a settings job. */}
-          <Row label="new pages are ruled" wide>
+          <Row
+            label="new pages are ruled"
+            words="lines grid dotted blank ruling squared graph page style"
+            wide
+          >
             <Seg
               label="default page ruling"
               options={[
@@ -1983,7 +2519,11 @@ export default function SettingsPanel(props: {
               }
             />
           </Row>
-          <Row label="margin doodles" hint="little sketches in the margins">
+          <Row
+            label="margin doodles"
+            hint="little sketches in the margins"
+            words="sketches drawings decoration ornament"
+          >
             <Toggle
               label="show margin doodles"
               checked={settings.showMarginDoodles}
@@ -1998,6 +2538,7 @@ export default function SettingsPanel(props: {
           <Row
             label="cursors"
             hint="the pointer, drawn — or the one Windows gives you"
+            words="mouse pointer arrow hand cursor set"
             wide
           >
             <CursorSetPicker
@@ -2008,7 +2549,11 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* --------------------------- Library & shelf ------------------------ */}
-        <Section title="Library & shelf" accent="moss">
+        <Section
+          title="Library & shelf"
+          accent="moss"
+          words="bookcase books shelves"
+        >
           {/* The wood stain and the wallpaper pattern used to live here, as a
               four-way each, and neither had reached the screen since the case
               went flat — a segmented control that writes a setting nothing
@@ -2016,7 +2561,12 @@ export default function SettingsPanel(props: {
               in them (12 builds x 12 timber patterns, 19 papers x 4 axes), and
               both belong to the BOOKCASE rather than to the app: they are in
               the library studio on the shelf's left rail. */}
-          <Row label="mouse wheel" hint="what a plain wheel spin does" wide>
+          <Row
+            label="mouse wheel"
+            hint="what a plain wheel spin does"
+            words="scroll zoom trackpad pan"
+            wide
+          >
             <Seg
               label="wheel mode"
               options={[
@@ -2027,7 +2577,11 @@ export default function SettingsPanel(props: {
               onSelect={(v) => put({ wheelMode: v as Settings['wheelMode'] })}
             />
           </Row>
-          <Row label="sort books" wide>
+          <Row
+            label="sort books"
+            words="order arrange sorting recent favourites favorites"
+            wide
+          >
             <Seg
               label="shelf sort"
               options={[
@@ -2042,8 +2596,16 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ----------------------------- Motion & feel ------------------------ */}
-        <Section title="Motion & feel" accent="violet">
-          <Row label="animation" wide>
+        <Section
+          title="Motion & feel"
+          accent="violet"
+          words="animation movement"
+        >
+          <Row
+            label="animation"
+            words="motion reduced transitions accessibility vestibular"
+            wide
+          >
             <Seg
               label="animation level"
               options={[
@@ -2057,7 +2619,11 @@ export default function SettingsPanel(props: {
               }
             />
           </Row>
-          <Row label="zoom speed" hint="how fast the wheel travels">
+          <Row
+            label="zoom speed"
+            hint="how fast the wheel travels"
+            words="sensitivity wheel scroll camera"
+          >
             <Slider
               label="zoom sensitivity"
               min={0.5}
@@ -2069,21 +2635,33 @@ export default function SettingsPanel(props: {
               onInput={(v) => put({ zoomSensitivity: v })}
             />
           </Row>
-          <Row label="drag momentum" hint="flicks keep gliding">
+          <Row
+            label="drag momentum"
+            hint="flicks keep gliding"
+            words="inertia glide fling pan"
+          >
             <Toggle
               label="drag momentum"
               checked={settings.dragMomentum > 0}
               onChange={(v) => put({ dragMomentum: v ? 0.92 : 0 })}
             />
           </Row>
-          <Row label="confetti" hint="when a task list completes">
+          <Row
+            label="confetti"
+            hint="when a task list completes"
+            words="celebration checklist todo done"
+          >
             <Toggle
               label="confetti on complete"
               checked={settings.confettiOnComplete}
               onChange={(v) => put({ confettiOnComplete: v })}
             />
           </Row>
-          <Row label="minimalist mode" hint="hide all the decorations">
+          <Row
+            label="minimalist mode"
+            hint="hide all the decorations"
+            words="plain clean simple declutter bare"
+          >
             <Toggle
               label="minimalist mode"
               checked={settings.minimalistMode}
@@ -2093,7 +2671,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* -------------------------------- Sound ----------------------------- */}
-        <Section title="Sound" accent="turquoise">
+        <Section title="Sound" accent="turquoise" words="audio noise">
           {/* The headline choice, above the sliders: the sliders set how loud
               the app is, the set decides what it sounds like. Every cue is the
               same licensed recording either way — a set conditions them
@@ -2103,25 +2681,13 @@ export default function SettingsPanel(props: {
               full list repeating seven of its chips — a duplicate chip is a
               duplicate Tab stop inside a focus-trapped dialog, and the row's
               hint already names what is selected. */}
-          <Show
-            when={!allSetsOpen()}
-            fallback={
-              <Row
-                label="sound set"
-                hint={activeSetHint()}
-              >
-                <button
-                  type="button"
-                  class="nbs-action-btn"
-                  aria-expanded
-                  aria-controls="nbs-sound-sets"
-                  onClick={() => setAllSetsOpen(false)}
-                >
-                  show fewer
-                </button>
-              </Row>
-            }
-          >
+          {/* While a query is live the disclosure is the QUERY's, not the
+              reader's — every character is laid out and the show-all control
+              is not drawn. Same bargain the pickers strike above, and for the
+              same two reasons: a hit folded away behind a button is a search
+              that answered nothing, and a button reading "show fewer" over a
+              list it cannot fold is a control that lies. */}
+          <Show when={!allSetsOpen() && !searching()}>
             <Row label="sound set" hint={activeSetHint()} wide>
               <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
                 <Seg
@@ -2148,13 +2714,29 @@ export default function SettingsPanel(props: {
               </button>
             </Row>
           </Show>
-          <Show when={allSetsOpen()}>
+          <Show when={allSetsOpen() && !searching()}>
+            <Row label="sound set" hint={activeSetHint()}>
+              <button
+                type="button"
+                class="nbs-action-btn"
+                aria-expanded
+                aria-controls="nbs-sound-sets"
+                onClick={() => setAllSetsOpen(false)}
+              >
+                show fewer
+              </button>
+            </Row>
+          </Show>
+          <Show when={allSetsOpen() || searching()}>
             <div id="nbs-sound-sets">
               <For each={SOUND_SET_GROUP_IDS}>
                 {(group: SoundSetGroupId) => (
                   <Row
                     label={SOUND_SET_GROUPS[group].name.toLowerCase()}
                     hint={SOUND_SET_GROUPS[group].blurb}
+                    words={`sound set ${SOUND_SET_GROUP_OPTIONS[group]
+                      .map((opt) => opt.label)
+                      .join(' ')}`}
                     wide
                   >
                     <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
@@ -2181,6 +2763,7 @@ export default function SettingsPanel(props: {
             <Row
               label="your sets"
               hint={`${userSoundSets().length} of ${MAX_USER_SOUND_SETS} — your own files over a shipped room`}
+              words="custom my own sound sets"
               wide
             >
               <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
@@ -2197,6 +2780,7 @@ export default function SettingsPanel(props: {
           <Row
             label="add your own set"
             hint="your sound files — name each one after the cue it replaces, or place them by hand below"
+            words="import custom my own sounds files wav mp3"
             holdControl
           >
             <button
@@ -2220,6 +2804,7 @@ export default function SettingsPanel(props: {
                 <Row
                   label="the rest of this set"
                   hint={`everything you have not filled in is voiced by ${soundSetSpec(own().base).name}`}
+                  words="base sound set built on"
                   wide
                 >
                   <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
@@ -2239,7 +2824,7 @@ export default function SettingsPanel(props: {
                     one, twenty-one of the twenty-eight rooms are reachable
                     only by selecting them as the app's set FIRST and then
                     adding a new set on top — a path nobody would find. */}
-                <Show when={!allBasesOpen()}>
+                <Show when={!allBasesOpen() && !searching()}>
                   <Row
                     label="other rooms to build on"
                     hint={`${SOUND_SET_IDS.length - baseOptions().length} more, in ${SOUND_SET_GROUP_IDS.length} characters`}
@@ -2256,13 +2841,16 @@ export default function SettingsPanel(props: {
                     </button>
                   </Row>
                 </Show>
-                <Show when={allBasesOpen()}>
+                <Show when={allBasesOpen() || searching()}>
                   <div id="nbs-own-bases">
                     <For each={SOUND_SET_GROUP_IDS}>
                       {(group: SoundSetGroupId) => (
                         <Row
                           label={SOUND_SET_GROUPS[group].name.toLowerCase()}
                           hint={SOUND_SET_GROUPS[group].blurb}
+                          words={`sound set to build on ${SOUND_SET_GROUP_OPTIONS[group]
+                            .map((opt) => opt.label)
+                            .join(' ')}`}
                           wide
                         >
                           <div style={{ display: 'contents' }} {...{ [SILENT_ATTR]: '' }}>
@@ -2283,9 +2871,13 @@ export default function SettingsPanel(props: {
                     </For>
                   </div>
                 </Show>
+                {/* The button, only while it is the button that decides.
+                    See the note on the sound-set list above. */}
+                <Show when={!searching()}>
                 <Row
                   label="your cues"
                   hint={`${userCueCount(own())} of ${FAMILY_NAMES.length} — played as you recorded them, nothing is re-levelled`}
+                  words="own sounds files replace cue"
                   holdControl
                 >
                   <button
@@ -2298,7 +2890,8 @@ export default function SettingsPanel(props: {
                     {ownCuesOpen() ? 'hide the cues' : `place ${FAMILY_NAMES.length} cues`}
                   </button>
                 </Row>
-                <Show when={ownCuesOpen()}>
+                </Show>
+                <Show when={ownCuesOpen() || searching()}>
                   <div id="nbs-own-cues">
                     <For each={FAMILY_NAMES}>
                       {(role: FamilyName) => (
@@ -2308,6 +2901,7 @@ export default function SettingsPanel(props: {
                             own().cues[role]?.fileName ??
                             `${soundSetSpec(own().base).name} — name a file ${roleWords(role)}`
                           }
+                          words={`your cue sound ${roleWords(role)}`}
                           holdControl
                         >
                           <div class="nbs-cue-actions">
@@ -2334,7 +2928,11 @@ export default function SettingsPanel(props: {
                         </Row>
                       )}
                     </For>
-                    <Row label="more files at once" hint="fold a whole folder in by file name">
+                    <Row
+                      label="more files at once"
+                      hint="fold a whole folder in by file name"
+                      words="import folder bulk your own sounds"
+                    >
                       <button
                         type="button"
                         class="nbs-action-btn"
@@ -2349,6 +2947,7 @@ export default function SettingsPanel(props: {
                 <Row
                   label="forget this set"
                   hint="removes the set — the sound files themselves stay where they are"
+                  words="delete remove your own sound set"
                   holdControl
                 >
                   <button
@@ -2365,7 +2964,7 @@ export default function SettingsPanel(props: {
 
           <For each={VOLUME_KEYS}>
             {(key) => (
-              <Row label={VOLUME_LABELS[key]}>
+              <Row label={VOLUME_LABELS[key]} words={`volume loudness ${VOLUME_WORDS[key]}`}>
                 <Slider
                   label={VOLUME_LABELS[key]}
                   min={0}
@@ -2379,7 +2978,10 @@ export default function SettingsPanel(props: {
               </Row>
             )}
           </For>
-          <Row label="mute everything">
+          <Row
+            label="mute everything"
+            words="silence quiet off volume mute"
+          >
             <Toggle
               label="mute all sounds"
               checked={settings.muteAll}
@@ -2389,7 +2991,11 @@ export default function SettingsPanel(props: {
           {/* Not "ambient bed" — that name is already taken four rows up by
               the bed's volume slider, and two controls with one label read as
               a duplicate rather than as a switch and its level. */}
-          <Row label="play ambience" hint="run the chosen soundscape underneath">
+          <Row
+            label="play ambience"
+            hint="run the chosen soundscape underneath"
+            words="ambient background music loop atmosphere"
+          >
             <Toggle
               label="play ambience"
               checked={settings.ambientLoop}
@@ -2399,6 +3005,7 @@ export default function SettingsPanel(props: {
           <Row
             label="soundscape"
             hint={SOUNDSCAPE_BLURBS[settings.soundscape]}
+            words={`ambient background bed atmosphere ${SOUNDSCAPE_NAMES.join(' ')}`}
             wide
           >
             <Seg
@@ -2408,21 +3015,33 @@ export default function SettingsPanel(props: {
               onSelect={(v) => put({ soundscape: v as Settings['soundscape'] })}
             />
           </Row>
-          <Row label="typing sounds" hint="soft pencil scratches as you type">
+          <Row
+            label="typing sounds"
+            hint="soft pencil scratches as you type"
+            words="keyboard keypress clicks writing"
+          >
             <Toggle
               label="typing sounds"
               checked={settings.typingSounds}
               onChange={(v) => put({ typingSounds: v })}
             />
           </Row>
-          <Row label="hourly chime" hint="one soft clock note on the hour">
+          <Row
+            label="hourly chime"
+            hint="one soft clock note on the hour"
+            words="clock bell time hour"
+          >
             <Toggle
               label="hourly chime"
               checked={settings.hourlyChime}
               onChange={(v) => put({ hourlyChime: v })}
             />
           </Row>
-          <Row label="reduced sound" hint="skip hover ticks & scratches">
+          <Row
+            label="reduced sound"
+            hint="skip hover ticks & scratches"
+            words="fewer quieter accessibility"
+          >
             <Toggle
               label="reduced sound"
               checked={settings.reducedSound}
@@ -2433,7 +3052,11 @@ export default function SettingsPanel(props: {
               licence is only satisfied if the credit reaches a person. The
               panel reads public/sounds/CREDITS.json at runtime rather than
               repeating it here, so it cannot fall out of step with the audio. */}
-          <Row label="sound credits" hint="where every cue was recorded">
+          <Row
+            label="sound credits"
+            hint="where every cue was recorded"
+            words="licence license attribution freesound recordings"
+          >
             <button
               type="button"
               class="nbs-action-btn"
@@ -2449,15 +3072,23 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ------------------------------- Writing ----------------------------- */}
-        <Section title="Writing" accent="amber">
-          <Row label="spellcheck">
+        <Section
+          title="Writing"
+          accent="amber"
+          words="editor typing pages text"
+        >
+          <Row label="spellcheck" words="spelling dictionary typos red squiggle">
             <Toggle
               label="spellcheck"
               checked={settings.spellcheck}
               onChange={(v) => put({ spellcheck: v })}
             />
           </Row>
-          <Row label="autosave every" wide>
+          <Row
+            label="autosave every"
+            words="save saving interval automatic delay"
+            wide
+          >
             <Seg
               label="autosave interval"
               options={AUTOSAVE_OPTIONS}
@@ -2465,7 +3096,11 @@ export default function SettingsPanel(props: {
               onSelect={(v) => put({ autosaveIntervalMs: Number(v) })}
             />
           </Row>
-          <Row label="editor cursor" wide>
+          <Row
+            label="editor cursor"
+            words="caret nib pencil quill insertion point"
+            wide
+          >
             <Seg
               label="cursor style"
               options={[
@@ -2477,7 +3112,11 @@ export default function SettingsPanel(props: {
               onSelect={(v) => put({ cursorStyle: v as Settings['cursorStyle'] })}
             />
           </Row>
-          <Row label="page thumbnails" hint="filmstrip of mini pages">
+          <Row
+            label="page thumbnails"
+            hint="filmstrip of mini pages"
+            words="filmstrip previews minimap navigator"
+          >
             <Toggle
               label="page thumbnails strip"
               checked={settings.thumbnailsStrip}
@@ -2494,16 +3133,31 @@ export default function SettingsPanel(props: {
             a chip — a plate and three pigments cannot show what a comment
             above an indented block looks like at fifteen pixels, which is the
             only question anybody actually has. */}
-        <Section title="Code blocks" accent="lemon">
-          <Row label="how it looks" hint="the real thing, in the room you are in" wide>
+        <Section
+          title="Code blocks"
+          accent="lemon"
+          words="programming syntax listing monospace"
+        >
+          <Row
+            label="how it looks"
+            hint="the real thing, in the room you are in"
+            words="preview specimen sample"
+            wide
+          >
             <CodePreview />
           </Row>
-          <Row label="what the colours mean" wide>
+          <Row
+            label="what the colours mean"
+            words="legend key syntax highlighting roles keyword string comment"
+            wide
+          >
             <CodeRoleLegend />
           </Row>
           <Picker
             label="code look"
             hint="the plate a program is written on, and its colours"
+            words="syntax highlighting colour scheme theme dark listing"
+            searching={searching()}
             shortlist={codeThemeShortlist()}
             groups={codeThemeGroups()}
             total={CODE_THEMES.length}
@@ -2513,7 +3167,12 @@ export default function SettingsPanel(props: {
             onOpen={setAllCodeThemesOpen}
             onSelect={(v) => void saveCodeLook({ theme: v })}
           />
-          <Row label="drawn as" hint="how the block is framed on the page" wide>
+          <Row
+            label="drawn as"
+            hint="how the block is framed on the page"
+            words="frame border card plain code block"
+            wide
+          >
             <Seg
               label="code block frame"
               options={CODE_FRAME_OPTIONS}
@@ -2521,7 +3180,12 @@ export default function SettingsPanel(props: {
               onSelect={(v) => void saveCodeLook({ frame: v as CodeFrame })}
             />
           </Row>
-          <Row label="code face" hint="always monospaced — never a hand" wide>
+          <Row
+            label="code face"
+            hint="always monospaced — never a hand"
+            words="font typeface monospace mono"
+            wide
+          >
             <Seg
               label="code face"
               options={CODE_FACE_OPTIONS}
@@ -2529,7 +3193,11 @@ export default function SettingsPanel(props: {
               onSelect={(v) => void saveCodeLook({ face: v as CodeFace })}
             />
           </Row>
-          <Row label="code size" hint="a code block sets its own type size">
+          <Row
+            label="code size"
+            hint="a code block sets its own type size"
+            words="font size type bigger smaller"
+          >
             <Slider
               label="code font size"
               min={CODE_SIZE_MIN}
@@ -2541,7 +3209,11 @@ export default function SettingsPanel(props: {
               onInput={(v) => void saveCodeLook({ size: v })}
             />
           </Row>
-          <Row label="line numbers" hint="down the left, in the margin the code already keeps">
+          <Row
+            label="line numbers"
+            hint="down the left, in the margin the code already keeps"
+            words="gutter numbering lines"
+          >
             <Toggle
               label="code line numbers"
               checked={codeLook().numbers}
@@ -2551,9 +3223,14 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ------------------------------- System ------------------------------ */}
-        <Section title="System" accent="sky">
+        <Section
+          title="System"
+          accent="sky"
+          words="machine desktop windows app"
+        >
           <Row
             label="start with Windows"
+            words="autostart startup boot login launch on start"
             hint={
               inTauri
                 ? 'open Alcove when you log in'
@@ -2567,7 +3244,11 @@ export default function SettingsPanel(props: {
               onChange={(v) => void setAutostart(v)}
             />
           </Row>
-          <Row label="backups" hint="keep copies of the library">
+          <Row
+            label="backups"
+            hint="keep copies of the library"
+            words="backup copies safety snapshot"
+          >
             <Toggle
               label="backups"
               checked={settings.backupEnabled}
@@ -2575,7 +3256,11 @@ export default function SettingsPanel(props: {
             />
           </Row>
           <Show when={settings.backupEnabled}>
-            <Row label="back up" wide>
+            <Row
+              label="back up"
+              words="backup frequency schedule daily weekly monthly"
+              wide
+            >
               <Seg
                 label="backup interval"
                 options={BACKUP_OPTIONS}
@@ -2586,6 +3271,7 @@ export default function SettingsPanel(props: {
           </Show>
           <Row
             label="backup folder"
+            words="backup location directory path where saved"
             hint={
               settings.backupFolder !== null
                 ? folderDisplayName(settings.backupFolder)
@@ -2619,6 +3305,7 @@ export default function SettingsPanel(props: {
           </Row>
           <Row
             label="back up now"
+            words="backup manual run immediately"
             hint={
               !inTauri
                 ? 'available in the desktop app'
@@ -2638,7 +3325,11 @@ export default function SettingsPanel(props: {
               {backupBusy() ? 'backing up…' : 'back up now'}
             </button>
           </Row>
-          <Row label="open with last book" hint="jump straight back in">
+          <Row
+            label="open with last book"
+            hint="jump straight back in"
+            words="launch startup resume reopen"
+          >
             <Toggle
               label="launch into last book"
               checked={settings.launchIntoLastBook}
@@ -2647,6 +3338,7 @@ export default function SettingsPanel(props: {
           </Row>
           <Row
             label="tray quick capture"
+            words="system tray notification area inbox quick note taskbar"
             hint={
               inTauri
                 ? 'tray icon with a quick Inbox note'
@@ -2660,14 +3352,24 @@ export default function SettingsPanel(props: {
               onChange={(v) => put({ trayQuickCapture: v })}
             />
           </Row>
-          <Row label="performance HUD" hint="fps + texture memory overlay">
+          <Row
+            label="performance HUD"
+            hint="fps + texture memory overlay"
+            words="fps frame rate memory overlay debug stats"
+          >
             <Toggle
               label="performance HUD"
               checked={settings.perfHud}
               onChange={(v) => put({ perfHud: v })}
             />
           </Row>
-          <div class="nbs-keys" ref={keysRef}>
+          {/* The one list in this sheet that is a REFERENCE rather than a
+              choice, which is exactly why it earns the search box the most:
+              twenty-one separate things somebody might be hunting for, and the
+              one they want is never the one at the top. */}
+          <Chapter words="shortcuts keys keyboard hotkeys combinations bindings">
+            {(keysShown) => (
+          <div class="nbs-keys" ref={keysRef} hidden={!keysShown() || undefined}>
             <span class="nbs-row-label">shortcuts</span>
             {/* Says what you can do with them, because now there is something
                 to do. This line said "these are fixed — a reference, not a
@@ -2678,22 +3380,21 @@ export default function SettingsPanel(props: {
             </span>
             <For each={shortcutGroups()}>
               {(group) => (
+                <Chapter words={`${group.title} ${group.blurb} shortcuts keys`}>
+                  {(groupShown) => (
                 <>
                   {/* The heading says WHERE, not just what: half of these only
                       do anything in one room, and a reader hunting for "the
                       catalogue" finds it faster under "In a book" than in one
                       alphabetical run of twenty-one. */}
-                  <p class="nbs-keys-group font-ui">
+                  <p class="nbs-keys-group font-ui" hidden={!groupShown() || undefined}>
                     <span class="nbs-keys-group-title">{group.title}</span>
                     <span class="nbs-keys-group-where">{group.blurb}</span>
                   </p>
-                  <ul class="nbs-keys-list">
+                  <ul class="nbs-keys-list" hidden={!groupShown() || undefined}>
                     <For each={group.actions}>
                       {(action) => (
-                        <li
-                          class="nbs-keys-item"
-                          classList={{ 'is-listening': listening(action) }}
-                        >
+                        <KeyRow action={action} listening={listening(action)}>
                           <span class="nbs-keys-text">
                             <span class="nbs-keys-action">
                               {bindingActionLabel(action)}
@@ -2769,23 +3470,32 @@ export default function SettingsPanel(props: {
                               </button>
                             </Show>
                           </span>
-                        </li>
+                        </KeyRow>
                       )}
                     </For>
                   </ul>
                 </>
+                  )}
+                </Chapter>
               )}
             </For>
           </div>
+            )}
+          </Chapter>
         </Section>
 
         {/* --------------------------- Library files -------------------------- */}
-        <Section title="Library files" accent="coral">
+        <Section
+          title="Library files"
+          accent="coral"
+          words="export import transfer parcel bundle"
+        >
           {/* Chips are derived from the same binding the handler matches on
               (App.tsx), so a rebind cannot leave this row lying. */}
           <Row
             label="export library…"
             hint="pack books into one file you can keep or move"
+            words="save archive bundle share move copy out"
             keys={formatBinding(binding('export-library'))}
           >
             <button
@@ -2800,6 +3510,7 @@ export default function SettingsPanel(props: {
           <Row
             label="import library…"
             hint="add a bundle to this shelf — nothing is overwritten"
+            words="restore load open bundle bring in"
             keys={formatBinding(binding('import-library'))}
           >
             <button
@@ -2821,6 +3532,7 @@ export default function SettingsPanel(props: {
           <Row
             label="import Markdown…"
             hint="one book per file, one page per # heading"
+            words="md text files obsidian notes"
             keys={formatBinding(binding('import-markdown'))}
           >
             <button
@@ -2835,6 +3547,7 @@ export default function SettingsPanel(props: {
           <Row
             label="pack everything, now"
             hint="the whole library in one file, with no choices to make"
+            words="export all backup archive whole library"
           >
             <button
               type="button"
@@ -2848,6 +3561,7 @@ export default function SettingsPanel(props: {
           <Row
             label="export diagnostics…"
             hint={diagNote() ?? 'a plain-text report to share — no page text'}
+            words="logs bug report support troubleshoot problem crash"
           >
             <button
               type="button"
@@ -2861,8 +3575,16 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* ------------------------------- Help ------------------------------- */}
-        <Section title="Help" accent="lime">
-          <Row label="replay the tour" hint="the guided walk around the library, again">
+        <Section
+          title="Help"
+          accent="lime"
+          words="support guide learn"
+        >
+          <Row
+            label="replay the tour"
+            hint="the guided walk around the library, again"
+            words="tutorial walkthrough guide onboarding intro help again"
+          >
             <button type="button" class="nbs-action-btn" onClick={replayTour}>
               start
             </button>
@@ -2873,6 +3595,7 @@ export default function SettingsPanel(props: {
           everything saves itself, instantly · telemetry: never
         </p>
       </div>
+      </FindCtx.Provider>
     </div>
   );
 }

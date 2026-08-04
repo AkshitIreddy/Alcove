@@ -10,11 +10,13 @@ import { PAGE_STYLES } from '../data/types';
 import type { PageDoc, PageStyle } from '../data/types';
 
 /*
- * The rulings themselves live in `data/types.ts`, beside the `PageStyle` union
- * the settings blob is validated against. A page's style is persisted in TWO
- * shapes — a document attribute inside the doc JSON, and `pageStyleDefault` in
- * the settings row — and a list of four ids typed out on each side is how one
- * of them ends up accepting a ruling the other has never heard of.
+ * The ruling IDS live in `data/types.ts`, beside the `PageStyle` union the
+ * settings blob is validated against; what each one is called and how good it
+ * is lives in `./rulings.ts`; the lines themselves are drawn by
+ * `styles/rulings.css`. A page's style is persisted in TWO shapes — a document
+ * attribute inside the doc JSON, and `pageStyleDefault` in the settings row —
+ * and a list of ids typed out on each side is how one of them ends up
+ * accepting a ruling the other has never heard of.
  */
 export { PAGE_STYLES };
 export type EditorPageStyle = PageStyle;

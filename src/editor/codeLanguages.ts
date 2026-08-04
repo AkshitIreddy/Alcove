@@ -16,9 +16,12 @@
  *
  * Every entry declares a `tier`, exactly as the carpentry, the bindings and
  * the appearance vocabulary do, and the exported order is DERIVED from
- * group-then-tier rather than typed out. The picker opens on the signatures
- * and puts the rest behind "show all", because a flat list of eighty
- * languages inside a block is a menu you scroll rather than a menu you read.
+ * group-then-tier rather than typed out. `CODE_LANGUAGE_SHORTLIST` is the
+ * signatures alone — the handful the slash menu offers by name, because a flat
+ * list of eighty languages in a command palette is a menu you scroll rather
+ * than a menu you read. The block's own picker (`CODE_LANGUAGE_CHOICES`, at
+ * the foot of this file) shows all of them and hands the reader a search
+ * field, which is how every other long list in this app is browsed.
  *
  * ## Indentation
  *
@@ -269,3 +272,79 @@ export const CODE_LANGUAGE_SHELVES: readonly CodeLanguageShelf[] =
     title: CODE_GROUP_LABELS[group],
     languages: CODE_LANGUAGES.filter((spec) => spec.group === group),
   })).filter((shelf) => shelf.languages.length > 0);
+
+/* =============================== the picker =============================== */
+
+/**
+ * One ROW of the language picker — the shelves flattened, `auto` included.
+ *
+ * The picker walks a flat list because its keyboard does: an index that means
+ * the same thing to ArrowDown, to `aria-activedescendant` and to Enter cannot
+ * be a position inside one of four nested arrays. The shelf heading is carried
+ * on the row instead, and the card starts a new section wherever it changes.
+ */
+export interface CodeLanguageChoice {
+  /** `null` is the `auto` row: no language stored, the highlighter guesses. */
+  readonly id: CodeLangName | null;
+  readonly label: string;
+  /** One line under the name — what choosing this actually buys. */
+  readonly note: string;
+  /** The heading this row sits under. Empty for the `auto` row. */
+  readonly shelf: string;
+  /** Everything a search should match, pre-folded. */
+  readonly haystack: string;
+}
+
+/** How wide one press of Tab is, said in the reader's units rather than mine. */
+function indentWords(spec: CodeLanguageSpec): string {
+  return spec.indent === 0 ? 'a real tab' : `${spec.indent} spaces`;
+}
+
+/**
+ * Lowercase, plus a punctuation-stripped copy of the same words.
+ *
+ * BOTH, because the two halves catch different searches and neither catches
+ * the other's: `c#` and `c++` only survive with the punctuation kept, and
+ * "objective c" only finds `objective-c` with it gone.
+ */
+function haystack(...parts: readonly string[]): string {
+  const raw = parts.join(' ').toLowerCase();
+  return `${raw} ${raw.replace(/[^a-z0-9]+/g, ' ')}`;
+}
+
+export const CODE_LANGUAGE_CHOICES: readonly CodeLanguageChoice[] = [
+  {
+    id: null,
+    label: 'auto',
+    note: 'let the highlighter work it out',
+    shelf: '',
+    haystack: haystack('auto automatic guess detect plain none'),
+  },
+  ...CODE_LANGUAGE_SHELVES.flatMap((shelf) =>
+    shelf.languages.map((spec) => ({
+      id: spec.id,
+      label: spec.label,
+      note: `${indentWords(spec)} · ${spec.comment} comments`,
+      shelf: shelf.title,
+      haystack: haystack(spec.label, spec.id, shelf.title),
+    })),
+  ),
+];
+
+/**
+ * The rows a query matches, in the vocabulary's own order.
+ *
+ * Every word has to hit somewhere, which is the same rule `DesignPicker`
+ * searches its sixty rooms by — "shell config" finds bash without either word
+ * being in its name. An empty query is the whole list rather than nothing,
+ * because the picker opens on it.
+ */
+export function filterCodeLanguages(
+  query: string,
+): readonly CodeLanguageChoice[] {
+  const words = query.toLowerCase().trim().split(/\s+/).filter((w) => w !== '');
+  if (words.length === 0) return CODE_LANGUAGE_CHOICES;
+  return CODE_LANGUAGE_CHOICES.filter((row) =>
+    words.every((word) => row.haystack.includes(word)),
+  );
+}

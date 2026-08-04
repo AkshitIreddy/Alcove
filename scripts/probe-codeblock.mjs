@@ -272,8 +272,23 @@ await shot('code-01-typed');
 
 /* ------------------- 6. the language picker on the block ----------------- */
 console.log('\n6. the language picker');
-await page.locator('.nb-prose .nb-code-lang').first().selectOption('rust');
-await page.waitForTimeout(350);
+/*
+ * The language picker is no longer a native <select>, so `selectOption` cannot
+ * drive it — it is an in-app listbox (`.nb-langpick`) opened from a trigger
+ * button, which is the whole point of the change: a system dropdown dropped
+ * into a hand-drawn notebook, running the full height of the window.
+ *
+ * `pickLanguage` clicks it the way a reader does. Left as a helper rather than
+ * inlined twice because the next rename should cost one edit, not two.
+ */
+const pickLanguage = async (id) => {
+  await page.locator('.nb-prose .nb-code-lang').first().click();
+  await page.waitForSelector('.nb-langpick [role="option"]', { timeout: 10_000 });
+  await page.locator(`.nb-langpick [role="option"][data-lang="${id}"]`).first().click();
+  await page.waitForTimeout(350);
+};
+
+await pickLanguage('rust');
 check(
   'picking rust changed the word on the tab',
   (await page.locator('.nb-prose .nb-code-lang-word').first().innerText()).trim() === 'rust',
@@ -282,8 +297,7 @@ check(
   'and the block records it',
   (await page.locator('.nb-prose .nb-code').first().getAttribute('data-language')) === 'rust',
 );
-await page.locator('.nb-prose .nb-code-lang').first().selectOption('python');
-await page.waitForTimeout(350);
+await pickLanguage('python');
 
 /* --------------------- 7. pasting a fenced snippet ----------------------- */
 console.log('\n7. pasting');

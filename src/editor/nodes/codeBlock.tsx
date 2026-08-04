@@ -19,12 +19,9 @@
  *
  * ## What is added, and why each piece is here
  *
- *   - a LANGUAGE PICKER on the block, as a native `<select>` with the
- *     vocabulary's own shelves as `<optgroup>`s. Native because it is 76
- *     options inside a contenteditable: a hand-drawn popup would have to
- *     re-implement type-ahead, arrow keys, Escape, scroll-into-view and the
- *     "does not close the editor's selection" dance, and would be worse at
- *     all five. Its CLOSED state is drawn like everything else here.
+ *   - a LANGUAGE PICKER on the block — an aged-paper card in the app's own
+ *     hand, in the slash menu's register. See `LanguagePicker` below for what
+ *     it replaced and why.
  *   - INDENTATION that behaves — see `../codeIndent.ts` for the arithmetic
  *     and `escapeHatch` below for the part that matters most.
  *   - LANGUAGE DETECTION on paste, both from what the clipboard declares and
@@ -53,7 +50,17 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { findChildren } from '@tiptap/core';
-import { For, Show, createMemo, createSignal, onCleanup, type JSX } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  type JSX,
+} from 'solid-js';
+import { Portal } from 'solid-js/web';
+import { autoUpdate, computePosition, flip, offset, shift, size } from '@floating-ui/dom';
 
 import {
   NodeViewContent,
@@ -62,11 +69,15 @@ import {
   type SolidNodeViewProps,
 } from '../solid';
 import {
-  CODE_LANGUAGE_SHELVES,
+  CODE_LANGUAGE_CHOICES,
+  filterCodeLanguages,
   indentUnit,
   languageLabel,
   resolveLanguage,
+  type CodeLanguageChoice,
 } from '../codeLanguages';
+import { createHoverIntent } from '../menu/hoverIntent';
+import { play } from '../../sound/engine';
 import {
   autoIndent,
   backspaceIndent,
@@ -492,7 +503,8 @@ export const NotebookCodeBlock = CodeBlockLowlight.extend({
     return SolidNodeViewRenderer(CodeBlockView, {
       // Everything in the tab is chrome. Without this a click on the language
       // picker collapses the selection into a node selection first, and the
-      // select opens with the block flashing blue behind it.
+      // card opens with the block flashing blue behind it. (The card itself is
+      // in a body portal, so ProseMirror never sees its events at all.)
       stopEvent: ({ event }) => {
         const target = event.target;
         return (
@@ -502,6 +514,420 @@ export const NotebookCodeBlock = CodeBlockLowlight.extend({
     });
   },
 });
+
+/* ============================ the language picker ========================= */
+
+/**
+ * The block's language, chosen from a card drawn in this app's own hand.
+ *
+ * ## What this replaced
+ *
+ * A native `<select>`, sitting transparently on top of a drawn word so the
+ * CLOSED control looked right. The reader's report was two faults in one
+ * sentence: *"the dropdown isn't in our app UI, and it also goes all the way
+ * down to the bottom"*. Both are the platform popup rather than the app —
+ * Chromium draws its own list, in its own colours, at whatever height
+ * seventy-two rows come to, which on a laptop is the full window. Nothing in
+ * CSS reaches inside it.
+ *
+ * ## The pattern it follows, rather than a sixth one
+ *
+ * The slash menu, the `[[` page picker and the studio's design sheets are the
+ * three places this app already presents a long list, and they agree: an
+ * aged-paper card, a search field, sections with headings, arrow keys, a
+ * highlighted row, a count. This is the same card, positioned by the same
+ * `@floating-ui/dom` call the slash menu is positioned by — `flip` so it opens
+ * upward when the block sits near the foot of the page, and `size` so its
+ * height is capped by the space actually available. That cap is the second
+ * fault, fixed at the root: the list scrolls INSIDE the card, and the card is
+ * never taller than the window can hold.
+ *
+ * ## What a native select gave for free, and is given back here
+ *
+ * The old comment argued native because a hand-drawn popup would have to
+ * re-implement type-ahead, arrow keys, Escape and scroll-into-view. It does,
+ * and they are here: a search field (better than type-ahead over seventy-one
+ * names, and the same thing every other list in this app does), Up, Down,
+ * Home, End, PageUp, PageDown, Enter to take the active row, Escape to close,
+ * and focus handed back to the tab either way so a keyboard reader is never
+ * left standing in a portal that has gone.
+ *
+ * The listbox is a REAL listbox — `role="listbox"` with `role="option"` rows
+ * grouped into `role="group"` shelves, driven by `aria-activedescendant` from
+ * the search field, which is the combobox pattern rather than a div with
+ * click handlers on it.
+ */
+
+/** Distinct ids per instance: two pages of a spread both have code blocks. */
+let pickerSeq = 0;
+
+interface LanguagePickerProps {
+  /** The block's stored language, `null` for auto. */
+  readonly language: string | null;
+  /** The word on the tab, already resolved. */
+  readonly label: string;
+  onPick(id: string | null): void;
+}
+
+function LanguagePicker(props: LanguagePickerProps): JSX.Element {
+  const uid = `nb-langpick-${(pickerSeq += 1)}`;
+  const listId = `${uid}-list`;
+  const rowId = (index: number): string => `${uid}-r${index}`;
+
+  const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal('');
+  const [active, setActive] = createSignal(0);
+
+  let trigger: HTMLButtonElement | undefined;
+  let card: HTMLDivElement | undefined;
+  let field: HTMLInputElement | undefined;
+  let stopFollowing: (() => void) | undefined;
+
+  // The card opens under the tab, which is very often under a resting mouse —
+  // and an element appearing beneath a stationary pointer still fires
+  // mouseenter. Without this the highlight leaves the row the reader is
+  // reading. See menu/hoverIntent.ts for the bug in full.
+  const pointerMoved = createHoverIntent();
+
+  const rows = createMemo<readonly CodeLanguageChoice[]>(() =>
+    filterCodeLanguages(query()),
+  );
+
+  /**
+   * The rows cut into shelves, carrying the flat index with them.
+   *
+   * A consecutive run is the right grouping here (unlike the studio's sheets,
+   * which gather by name): `CODE_LANGUAGE_CHOICES` is already in shelf order,
+   * so a shelf can never appear twice. While a query is live the headings go
+   * away entirely — a hit list split into four one-row sections is harder to
+   * scan than a plain run, which is the whole reason somebody typed.
+   */
+  const sections = createMemo(() => {
+    const searching = query().trim() !== '';
+    const out: { title: string; items: { row: CodeLanguageChoice; i: number }[] }[] =
+      [];
+    rows().forEach((row, i) => {
+      const title = searching ? '' : row.shelf;
+      const last = out[out.length - 1];
+      if (last !== undefined && last.title === title) last.items.push({ row, i });
+      else out.push({ title, items: [{ row, i }] });
+    });
+    return out;
+  });
+
+  /** Where the reader's own language sits in the unfiltered list. */
+  const indexOfCurrent = (): number => {
+    const here = props.language;
+    const at = rows().findIndex((row) => row.id === here);
+    return at < 0 ? 0 : at;
+  };
+
+  const place = (): void => {
+    const anchor = trigger;
+    const el = card;
+    if (anchor === undefined || el === undefined) return;
+    void computePosition(anchor, el, {
+      placement: 'bottom-start',
+      strategy: 'fixed',
+      middleware: [
+        offset(8),
+        flip({ padding: 12 }),
+        shift({ padding: 12 }),
+        // THE SECOND FAULT, fixed where it starts. `flip` has already chosen a
+        // side by the time this runs, so `availableHeight` is the room really
+        // left on that side; the card takes it, or 420px, whichever is less.
+        // Floored at 180 so a block wedged against the bottom of the window
+        // still gets a card with rows in it rather than a sliver — `flip`
+        // picks the roomier side first, so both sides can only be under 180 in
+        // a window shorter than about 400px.
+        size({
+          padding: 12,
+          apply: ({ availableHeight, elements }) => {
+            elements.floating.style.setProperty(
+              '--nb-langpick-max',
+              `${Math.max(180, Math.min(420, Math.round(availableHeight)))}px`,
+            );
+          },
+        }),
+      ],
+    }).then(({ x, y }) => {
+      // transform-only positioning — never animate layout properties.
+      el.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+    });
+  };
+
+  /**
+   * Focus goes back to the tab it came from.
+   *
+   * A portal that vanishes while it holds focus drops a keyboard reader on
+   * `<body>`, which is the one way out of this control nobody can recover from
+   * without a mouse. Asked TWICE, and the second one is not superstition: the
+   * card is torn down by the same synchronous update that closes it, so the
+   * browser is settling focus after an element was removed from under it, and
+   * it lands on `<body>` a frame later — taking this call with it. Under a
+   * throttled headless frame clock it happened about one run in four.
+   */
+  const backToTab = (): void => {
+    const el = trigger;
+    if (el === undefined) return;
+    el.focus();
+    requestAnimationFrame(() => {
+      if (el.isConnected && document.activeElement !== el) el.focus();
+    });
+  };
+
+  const close = (refocus: boolean): void => {
+    if (!open()) return;
+    setOpen(false);
+    setQuery('');
+    if (refocus) backToTab();
+  };
+
+  const openNow = (startAt: number): void => {
+    if (open()) return;
+    setQuery('');
+    setActive(startAt);
+    setOpen(true);
+    void play('pop-soft');
+  };
+
+  const pick = (row: CodeLanguageChoice): void => {
+    props.onPick(row.id);
+    close(true);
+  };
+
+  /* ------------------------------ the wiring ----------------------------- */
+
+  createEffect(() => {
+    const isOpen = open();
+    stopFollowing?.();
+    stopFollowing = undefined;
+    if (!isOpen) return;
+    const anchor = trigger;
+    const el = card;
+    if (anchor === undefined || el === undefined) return;
+    // `autoUpdate` rather than one measurement: the page under this block can
+    // reflow while the card is open (an overflowing block peels to the next
+    // leaf), and a card left behind at the old position is worse than one that
+    // never opened.
+    stopFollowing = autoUpdate(anchor, el, place);
+    field?.focus();
+  });
+
+  createEffect(() => {
+    if (!open()) return;
+    const index = active();
+    card
+      ?.querySelector<HTMLElement>(`[data-index="${index}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  });
+
+  /** Close when the reader points somewhere else. */
+  createEffect(() => {
+    if (!open()) return;
+    const onDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (card?.contains(target) === true) return;
+      if (trigger?.contains(target) === true) return;
+      // No refocus: the reader has already said where they want to be.
+      close(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    onCleanup(() => document.removeEventListener('pointerdown', onDown, true));
+  });
+
+  onCleanup(() => stopFollowing?.());
+
+  const step = (delta: number): void => {
+    const count = rows().length;
+    if (count === 0) return;
+    setActive((active() + delta + count) % count);
+  };
+
+  const onFieldKeyDown = (event: KeyboardEvent): void => {
+    const count = rows().length;
+    switch (event.key) {
+      case 'ArrowDown':
+        step(1);
+        break;
+      case 'ArrowUp':
+        step(-1);
+        break;
+      case 'PageDown':
+        setActive(Math.min(count - 1, active() + 8));
+        break;
+      case 'PageUp':
+        setActive(Math.max(0, active() - 8));
+        break;
+      case 'Home':
+        setActive(0);
+        break;
+      case 'End':
+        setActive(Math.max(0, count - 1));
+        break;
+      case 'Enter': {
+        const row = rows()[active()];
+        if (row !== undefined) pick(row);
+        break;
+      }
+      case 'Escape':
+        close(true);
+        break;
+      case 'Tab':
+        // Tab means "I am done here" — close, and let focus move on normally.
+        // Deliberately NOT prevented: this block already costs a reader one
+        // escape hatch to get past (see the header), and a second trap on the
+        // way out of the picker would be the same mistake twice.
+        //
+        // Put on the tab by hand rather than through `close(true)`, and both
+        // halves of that matter. The trigger is what Tab then steps off, which
+        // it cannot do from an element that has just been removed; and
+        // `backToTab`'s next-frame retry would snatch focus back from wherever
+        // Tab had legitimately taken it.
+        setOpen(false);
+        setQuery('');
+        trigger?.focus();
+        return;
+      default:
+        return;
+    }
+    // Everything above is handled here and nowhere else: `installShortcuts`
+    // listens on window and steps aside for a prevented key, which is what
+    // keeps Home and PageDown from also driving the shelf behind the page.
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onTriggerKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    openNow(indexOfCurrent());
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        class="nb-code-lang"
+        ref={(el) => (trigger = el)}
+        aria-haspopup="listbox"
+        aria-expanded={open()}
+        aria-controls={open() ? listId : undefined}
+        // The VALUE is in the name, so a screen reader says what the block is
+        // set to without the reader having to open the thing to find out.
+        aria-label={`code language — ${props.label}`}
+        onClick={() => (open() ? close(true) : openNow(indexOfCurrent()))}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <span class="nb-code-lang-word font-ui">{props.label}</span>
+      </button>
+
+      <Show when={open()}>
+        {/* A body portal, exactly as the slash menu is: the card has to escape
+            the page's own clipping, and a page in this app never scrolls. */}
+        <Portal>
+          <div class="nb-langpick" ref={(el) => (card = el)}>
+            <div class="nb-langpick-head font-ui">the language of this block</div>
+            <input
+              ref={(el) => (field = el)}
+              class="nb-langpick-search font-ui"
+              type="text"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={
+                rows().length > 0 ? rowId(active()) : undefined
+              }
+              aria-label="search the languages"
+              placeholder="search…"
+              autocomplete="off"
+              spellcheck={false}
+              value={query()}
+              onInput={(event) => {
+                setQuery(event.currentTarget.value);
+                setActive(0);
+              }}
+              onKeyDown={onFieldKeyDown}
+            />
+            {/* Says how many, the way the studio's sheets do — and `aria-live`
+                so a reader who cannot see the list shrink is told that it did.
+                Above the list rather than under it, so it does not scroll
+                away from the field it is describing. */}
+            <p class="nb-langpick-count font-ui" aria-live="polite">
+              {query().trim() === ''
+                ? `${CODE_LANGUAGE_CHOICES.length - 1} languages, and auto`
+                : `${rows().length} of ${CODE_LANGUAGE_CHOICES.length}`}
+            </p>
+            <div class="nb-langpick-list" id={listId} role="listbox" aria-label="code language">
+              <For each={sections()}>
+                {(section) => (
+                  <div
+                    role="group"
+                    aria-label={section.title === '' ? 'languages' : section.title}
+                  >
+                    <Show when={section.title !== ''}>
+                      <div class="nb-langpick-shelf">{section.title}</div>
+                    </Show>
+                    <For each={section.items}>
+                      {(entry) => (
+                        <button
+                          type="button"
+                          role="option"
+                          class="nb-langpick-item"
+                          classList={{
+                            'is-active': entry.i === active(),
+                            'is-current': entry.row.id === props.language,
+                          }}
+                          id={rowId(entry.i)}
+                          data-index={entry.i}
+                          data-lang={entry.row.id ?? 'auto'}
+                          // Which row the KEYBOARD is on. The reader's stored
+                          // choice is `aria-current` below — two different
+                          // questions, and a listbox that answers them with one
+                          // attribute cannot say "you are looking at rust and
+                          // this block is still python".
+                          aria-selected={entry.i === active()}
+                          aria-current={
+                            entry.row.id === props.language ? 'true' : undefined
+                          }
+                          // mousedown, not click: a click would land after the
+                          // outside-pointerdown listener had already closed the
+                          // card out from under it.
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            pick(entry.row);
+                          }}
+                          onMouseEnter={() => {
+                            if (pointerMoved()) setActive(entry.i);
+                          }}
+                        >
+                          <span class="nb-langpick-tick" aria-hidden="true" />
+                          <span class="nb-langpick-text">
+                            <span class="nb-langpick-name">{entry.row.label}</span>
+                            <span class="nb-langpick-note font-ui">
+                              {entry.row.note}
+                            </span>
+                          </span>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                )}
+              </For>
+              <Show when={rows().length === 0}>
+                <p class="nb-langpick-empty font-accent">
+                  nothing by that name — try a shorter word?
+                </p>
+              </Show>
+            </div>
+          </div>
+        </Portal>
+      </Show>
+    </>
+  );
+}
 
 /* ============================== the node view ============================ */
 
@@ -546,33 +972,11 @@ function CodeBlockView(props: SolidNodeViewProps): JSX.Element {
     >
       <div class="nb-code-tab" contenteditable={false}>
         <span class="nb-code-tab-plate">
-          {/* The label is a real element rather than the select's own text so
-              the closed control can be drawn in this app's language. The
-              select sits transparently on top of it, which keeps every
-              keyboard and screen-reader behaviour a native one. */}
-          <span class="nb-code-lang-word font-ui" aria-hidden="true">
-            {label()}
-          </span>
-          <select
-            class="nb-code-lang"
-            aria-label="code language"
-            value={language() ?? ''}
-            onChange={(event) => {
-              const next = event.currentTarget.value;
-              props.updateAttributes({ language: next === '' ? null : next });
-            }}
-          >
-            <option value="">auto — work it out</option>
-            <For each={CODE_LANGUAGE_SHELVES}>
-              {(shelf) => (
-                <optgroup label={shelf.title}>
-                  <For each={shelf.languages}>
-                    {(spec) => <option value={spec.id}>{spec.label}</option>}
-                  </For>
-                </optgroup>
-              )}
-            </For>
-          </select>
+          <LanguagePicker
+            language={language()}
+            label={label()}
+            onPick={(next) => props.updateAttributes({ language: next })}
+          />
         </span>
         <button
           type="button"

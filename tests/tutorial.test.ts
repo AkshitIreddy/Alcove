@@ -18,8 +18,12 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 import {
+  ADVANCE_RING_LENGTH,
+  ADVANCE_RING_RADIUS,
   CELEBRATE_MS,
   CELEBRATE_SNAP_MS,
+  LANE_GAP,
+  advanceRemaining,
   applyInset,
   arrowHeadPath,
   arrowPath,
@@ -28,6 +32,8 @@ import {
   centerCard,
   chooseSide,
   clampToViewport,
+  clearPanelLane,
+  crossesPanelLane,
   edgePointToward,
   firstStepIndex,
   holePath,
@@ -38,6 +44,7 @@ import {
   keyAction,
   placeCard,
   rectCenter,
+  ringOffset,
   roundedRectPath,
   seedFrom,
   seededRandom,
@@ -136,6 +143,24 @@ describe('rect helpers', () => {
     expect(out.y).toBe(900 - 232 - 16);
   });
 
+  /* The reader can now pick the card up (TutorialOverlay: `dragged`), and the
+     drop position goes through the same clamp on every frame AND on every
+     resize — which is what keeps a card dropped in the corner of a big window
+     on screen after the window is made small. */
+  it('keeps a dragged card on screen, however far it was thrown', () => {
+    const tall: Rect = { x: -400, y: -600, width: 348, height: 817 };
+    const out = clampToViewport(tall, VP, 12);
+    expect(out.x).toBe(12);
+    expect(out.y).toBe(12);
+    expect(out.width).toBe(348);
+    // Dropped past the far corner, then the window shrinks under it.
+    const small: Size = { width: 700, height: 500 };
+    const far = clampToViewport({ x: 5000, y: 5000, width: 348, height: 817 }, small, 12);
+    expect(far.x + far.width).toBeLessThanOrEqual(small.width - 12);
+    // Taller than the window: pinned to the top margin rather than scrolled off.
+    expect(far.y).toBe(12);
+  });
+
   it('centres an anchorless card slightly above optical centre', () => {
     const rect = centerCard(VP, CARD);
     expect(rect.x).toBeCloseTo((1440 - 348) / 2, 5);
@@ -207,6 +232,115 @@ describe('card placement', () => {
     expect(edgePointToward(rect, { x: 50, y: -500 })).toEqual({ x: 50, y: 0 });
     // Degenerate: pointing at its own centre returns the centre.
     expect(edgePointToward(rect, { x: 50, y: 50 })).toEqual({ x: 50, y: 50 });
+  });
+});
+
+/* ---------------------------- the sheet's lane ---------------------------- */
+
+/*
+ * THE REPORTED DEFECT: "step 18 doesn't move the UI tutorial window when the
+ * user opens the In and Out window." Measured on the running app before the
+ * fix — sheet at 68..408 (`--nb-panel-edge: 408px`), card at x=134, tour layer
+ * z 400 over the rail's 300. The card was not hidden by the sheet; it was
+ * lying on top of it, covering every row the step had just described.
+ */
+describe("getting out of the sheet's lane", () => {
+  const card: Rect = { x: 134, y: 22, width: 348, height: 817 };
+
+  it('steps the card clear of the sheet, by the same hand the back arrow uses', () => {
+    const out = clearPanelLane(card, VP, 408);
+    expect(out.x).toBe(408 + LANE_GAP);
+    // Slid, never resized, and never nudged up or down.
+    expect(out.width).toBe(card.width);
+    expect(out.height).toBe(card.height);
+    expect(out.y).toBe(card.y);
+  });
+
+  it('is the identity with nothing open — which is most of the tour', () => {
+    expect(clearPanelLane(card, VP, 0)).toBe(card);
+    expect(clearPanelLane(card, VP, Number.NaN)).toBe(card);
+  });
+
+  it('never pulls a card that already clears the sheet back towards it', () => {
+    const clear: Rect = { x: 900, y: 22, width: 348, height: 400 };
+    expect(clearPanelLane(clear, VP, 408)).toBe(clear);
+  });
+
+  it('never pushes a card off the right of the window to escape a sheet', () => {
+    // A narrow window where the sheet takes most of it: the card takes the
+    // best clearance that still fits rather than walking off the glass.
+    const narrow: Size = { width: 700, height: 900 };
+    const out = clearPanelLane({ x: 12, y: 12, width: 348, height: 400 }, narrow, 500);
+    expect(out.x + out.width).toBeLessThanOrEqual(narrow.width - 12);
+    expect(out.x).toBeGreaterThan(12);
+  });
+
+  it('drops the arrow only when it would be scrawled across the sheet', () => {
+    // Card right of the sheet, target (a rail button) left of it.
+    expect(crossesPanelLane({ x: 422, y: 400 }, { x: 70, y: 430 }, 408)).toBe(true);
+    // The commonest arrow there is: card beside the sheet, pointing AT it. Its
+    // far end lands on the sheet's own edge, and an exact comparison would call
+    // that "crossing" and delete the arrow the reader most needs.
+    expect(crossesPanelLane({ x: 472, y: 400 }, { x: 408, y: 400 }, 408)).toBe(false);
+    // Nothing open: never.
+    expect(crossesPanelLane({ x: 422, y: 400 }, { x: 70, y: 430 }, 0)).toBe(false);
+  });
+});
+
+/* ------------------------- the countdown ring ----------------------------- */
+
+/*
+ * "We should tell the user that the steps move on their own." The ring is only
+ * worth drawing if it is TRUE, so what is pinned here is the honesty: the beat
+ * it draws is the beat `celebrateDelay` hands the timer, not a second number.
+ */
+describe('the countdown ring', () => {
+  it('runs from full to empty across exactly the beat it was given', () => {
+    const total = celebrateDelay(PANEL_DWELL_MS, 1);
+    expect(advanceRemaining(1000, 1000, total)).toBe(1);
+    expect(advanceRemaining(1000 + total / 2, 1000, total)).toBeCloseTo(0.5, 6);
+    expect(advanceRemaining(1000 + total, 1000, total)).toBe(0);
+  });
+
+  it('clamps both ends — a backgrounded tab lands whole seconds late', () => {
+    expect(advanceRemaining(9999, 1000, 1500)).toBe(0);
+    expect(advanceRemaining(900, 1000, 1500)).toBe(1);
+    // A nonsense beat reads as "already over" rather than as NaN in a path.
+    expect(advanceRemaining(1000, 1000, 0)).toBe(0);
+  });
+
+  /*
+   * ...and the stylesheet must not know how long the beat is. A CSS animation
+   * would be a second copy of the duration, and the first step that buys itself
+   * reading time is the step where the two disagree in front of the reader.
+   */
+  it('keeps the countdown out of the stylesheet, where a second number would live', () => {
+    const css = readFileSync(join(ROOT, 'src/styles/tutorial.css'), 'utf8');
+    expect(css).toContain('.nbt-advance-sweep');
+    expect(css).not.toMatch(/@keyframes/);
+    expect(css).not.toMatch(/\.nbt-advance[^{]*\{[^}]*animation/);
+  });
+
+  it('draws the whole circle at 1 and none of it at 0', () => {
+    expect(ADVANCE_RING_LENGTH).toBeCloseTo(2 * Math.PI * ADVANCE_RING_RADIUS, 9);
+    expect(ringOffset(1)).toBe(0);
+    expect(ringOffset(0)).toBe(ADVANCE_RING_LENGTH);
+    expect(ringOffset(0.25)).toBeCloseTo(ADVANCE_RING_LENGTH * 0.75, 9);
+    // Out-of-range input still produces a finite offset.
+    expect(Number.isFinite(ringOffset(4))).toBe(true);
+    expect(Number.isFinite(ringOffset(-4))).toBe(true);
+  });
+
+  /*
+   * The whole point, stated as arithmetic: a step that buys reading time gets a
+   * ring that takes that long, and an ordinary one gets a ring that takes the
+   * ordinary beat. If these two could ever be the same number the ring would be
+   * decoration.
+   */
+  it('is as long as the wait actually is, per step', () => {
+    expect(celebrateDelay(PANEL_DWELL_MS, 1)).toBe(PANEL_DWELL_MS);
+    expect(celebrateDelay(undefined, 1)).toBe(CELEBRATE_MS);
+    expect(celebrateDelay(PANEL_DWELL_MS, 1)).not.toBe(celebrateDelay(undefined, 1));
   });
 });
 
@@ -627,12 +761,19 @@ describe('tour script', () => {
     expect(targetsOf('customize-do').some((s) => s.includes('Customize this book'))).toBe(
       true,
     );
-    // The step AFTER it points at a rail button instead, which is not inside
-    // any sheet — so the sheet is put away on the way in.
-    for (const after of ['rail-actions', 'ai-script']) {
-      for (const selector of targetsOf(after)) {
-        expect(selector).not.toContain('nb-rail-panel');
-      }
+    // The steps AFTER it must not keep that sheet alive. `rail-actions` points
+    // at rail buttons, which are outside every sheet. `ai-script` points at its
+    // OWN sheet by name — which is the distinction this used to miss by banning
+    // the substring `nb-rail-panel` outright: a labelled selector cannot match
+    // the customize sheet, so the customize sheet is still put away, while the
+    // bare `.nb-rail-panel[aria-hidden="false"]` would have kept whatever
+    // happened to be standing.
+    for (const selector of targetsOf('rail-actions')) {
+      expect(selector).not.toContain('nb-rail-panel');
+    }
+    for (const selector of targetsOf('ai-script')) {
+      if (!selector.includes('nb-rail-panel')) continue;
+      expect(selector).toContain('aria-label="In and out"');
     }
     // Same shape one step later: the quick-switcher bar, then Settings.
     expect(targetsOf('quick-switch')).toContain('.nb-qs-bar');
@@ -885,6 +1026,10 @@ describe('tour script', () => {
       'catalogue',
       'finding-in-book',
       'customize-open',
+      // The click that satisfies this one IS the "In and out" sheet arriving,
+      // so it belongs with the presence facts: without the beat the sheet was
+      // measured open for 1.5s, and every row the step describes is on it.
+      'ai-script',
       'quick-switch',
       'settings',
     ]);

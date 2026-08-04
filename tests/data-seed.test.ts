@@ -7,11 +7,11 @@
  *  - welcome content: warning-free Notebook Script, real nodes, pages that
  *    fit on a leaf, and `[[…]]` references that resolve to pages of this book
  *  - WELCOME_BINDING: the authored binding, and that it is a valid style
- *  - isReplaceableWelcomeBook(): the v4 -> v5 decision, which is the one that
+ *  - isReplaceableWelcomeBook(): the refresh decision, which is the one that
  *    can destroy somebody's writing if it is wrong
  *  - seedIfEmpty(): end-to-end against the in-memory dev DB — fresh install,
- *    the v1 demo cleanup, every past rename, and the v5 page swap on a
- *    library that already has a welcome book AND a book of the reader's own.
+ *    the v1 demo cleanup, every past rename, and the page swap on a library
+ *    holding EITHER retired tour plus a book of the reader's own.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -174,8 +174,13 @@ function resolvedPageLinks(): number {
 
 describe('welcome book content', () => {
   it('is a proper tour, not a leaflet', () => {
-    expect(WELCOME_PAGE_SOURCES.length).toBeGreaterThanOrEqual(10);
-    expect(WELCOME_PAGE_SOURCES.length).toBeLessThanOrEqual(24);
+    // The floor rose from ten to twenty-four when the tour went to thirty-two
+    // leaves: the reader asked for "much longer and detailed, so the user can
+    // see many examples", and a range that still admitted a ten-page book
+    // would let the next edit quietly undo that. The ceiling is a book, not a
+    // manual — past forty leaves nobody turns to the end.
+    expect(WELCOME_PAGE_SOURCES.length).toBeGreaterThanOrEqual(24);
+    expect(WELCOME_PAGE_SOURCES.length).toBeLessThanOrEqual(40);
   });
 
   /**
@@ -209,6 +214,38 @@ describe('welcome book content', () => {
         cost,
         `page ${i + 1} "${titles[i]}" is too long for one leaf`,
       ).toBeLessThanOrEqual(PAGE_LINE_BUDGET);
+    });
+  });
+
+  /**
+   * …and every page FILLS one, which is the half of the rule that was missing.
+   *
+   * The reader's report was "a lot of pages have empty space at the second
+   * half", and nothing here could see it: the budget above only refuses a page
+   * that is too long, so a page at a third of its capacity passed every gate
+   * there was. Six of the sixteen v5 pages did.
+   *
+   * The floor is deliberately well under the budget rather than just under it,
+   * because `blockLineCost` is a proxy and a loose one — it charges a container
+   * `2 + children` while a one-line callout draws about 2.2 lines and an index
+   * card draws six, so the same cost buys anywhere between two thirds and all
+   * of a leaf. 18 is what the thinnest page that still *looked* full came out
+   * at when the whole book was walked and measured in the running app
+   * (`scripts/probe-welcome.mjs`); it catches a page written at half length and
+   * does not pretend to a precision the estimator has not got. The probe is
+   * what actually judges the fill — this is the tripwire that says go and run it.
+   */
+  it('every page fills one, too', () => {
+    const titles = welcomePageTitles();
+    WELCOME_PAGE_SOURCES.forEach((source, i) => {
+      const cost = parse(source).blocks.reduce(
+        (n, block) => n + blockLineCost(block),
+        0,
+      );
+      expect(
+        cost,
+        `page ${i + 1} "${titles[i]}" leaves most of its leaf blank`,
+      ).toBeGreaterThanOrEqual(18);
     });
   });
 
@@ -255,12 +292,20 @@ describe('welcome book content', () => {
       'spoiler',
       'table',
       'taskList',
-      // The four this rewrite exists for: an equation, maths in a sentence,
+      // The four the v5 rewrite existed for: an equation, maths in a sentence,
       // a note at the foot of the page, and a fold.
       'math',
       'mathInline',
       'footnote',
       'details',
+      // …and the four v5 owned but never showed. Three of them are containers
+      // that were in the catalogue, in the spec and in the parser, and in no
+      // book a reader would ever open; the fourth is a code fence, which the
+      // tour described in prose and never once drew.
+      'stamp',
+      'ledger',
+      'photo-corner',
+      'codeBlock',
     ]) {
       expect(types.has(type), `no ${type} node in the welcome book`).toBe(true);
     }
@@ -361,14 +406,14 @@ describe('the rename migration', () => {
   });
 });
 
-/* --------------------- v4 -> v5: replace, or leave alone ------------------ */
+/* ----------------- a rewrite: replace, or leave alone --------------------- */
 
 /**
  * The decision that can destroy somebody's writing if it is wrong, so it is
  * tested from both sides: what it agrees to replace, and — far more important
  * — everything it refuses to touch.
  */
-describe('isReplaceableWelcomeBook (the v5 swap decision)', () => {
+describe('isReplaceableWelcomeBook (the page-swap decision)', () => {
   const seeded = () =>
     buildWelcomePageDocs().map((page) => ({
       scriptSource: page.source,
@@ -455,9 +500,24 @@ function seedTitlesForTest(): readonly string[] {
   return LEGACY_WELCOME_BOOK_TITLES;
 }
 
-/** The v4 welcome book, exactly as the v4 seeder wrote it. */
+/**
+ * The retired welcome books, each exactly as its own seeder wrote it.
+ *
+ * Split rather than used whole: `LEGACY_WELCOME_PAGE_SOURCES` is now TWO
+ * generations end to end, and seeding all twenty-one pages into one book would
+ * build a library no version of this app ever produced — which would pass, and
+ * would stop testing the thing it is named for. The boundary is 5 because that
+ * is what v4 shipped; `tests/seed-encoding.test.ts` pins the same two counts,
+ * so a third generation appended without splitting it here fails there.
+ */
+const RETIRED_GENERATIONS: readonly (readonly string[])[] = [
+  LEGACY_WELCOME_PAGE_SOURCES.slice(0, 5), // v4 — five pages
+  LEGACY_WELCOME_PAGE_SOURCES.slice(5), // v5 — sixteen
+];
+
+/** The most recent retired book: what a library one version behind is holding. */
 function legacyWelcomeSources(): readonly string[] {
-  return LEGACY_WELCOME_PAGE_SOURCES;
+  return RETIRED_GENERATIONS[RETIRED_GENERATIONS.length - 1]!;
 }
 
 const docFromLegacySource = docFromSeededSource;
@@ -627,25 +687,31 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
    * covered by appending to the list and nothing else.
    */
   /**
-   * The v4 -> v5 case, and the one this rewrite exists for.
+   * The case every rewrite of this book exists for.
    *
-   * A library that already ran the old seed is holding the five-page welcome
-   * book AND a book the reader wrote themselves. The migration has to swap the
-   * first for the new sixteen-page tour and not go anywhere near the second —
-   * same book row, same id, same spine, new pages.
+   * A library that already ran an older seed is holding a retired welcome book
+   * AND a book the reader wrote themselves. The migration has to swap the first
+   * for the current tour and not go anywhere near the second — same book row,
+   * same id, same spine, new pages.
+   *
+   * Runs over EVERY retired generation, not just the most recent one. A
+   * library that skipped a version is holding an older book than the one you
+   * were thinking of when you wrote the migration, and that is exactly the
+   * install that silently keeps a five-page tour forever.
    */
-  it('v4 install: swaps the old welcome pages, leaves the reader’s book alone', async () => {
+  it.each(RETIRED_GENERATIONS.map((sources, i) => [i + 4, sources] as const))(
+    'a v%i library: swaps the old welcome pages, leaves the reader’s book alone',
+    async (version: number, oldSources: readonly string[]) => {
     const { seed, books, pages, db } = await freshDataLayer();
     const conn = await db.getDb();
 
-    // A library exactly as v4 left it: the old welcome book, verbatim.
+    // A library exactly as that version left it: its welcome book, verbatim.
     const welcome = await books.createBook({
       title: seed.WELCOME_BOOK_TITLE,
       floor: 0,
       slot: 3,
       spineSeed: seed.WELCOME_SPINE_SEED,
     });
-    const oldSources = legacyWelcomeSources();
     for (let i = 0; i < oldSources.length; i += 1) {
       await pages.createPage({
         bookId: welcome.id,
@@ -671,7 +737,7 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
     });
     await conn.execute(
       'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
-      [seed.SEED_VERSION_KEY, '4'],
+      [seed.SEED_VERSION_KEY, String(version)],
     );
 
     // Nothing was CREATED — the welcome book was already there.
@@ -700,14 +766,15 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
     expect(theirsAfter[0].id).toBe(theirPage.id);
     expect(seed.isEmptyPageDoc(theirsAfter[0].doc)).toBe(false);
     expect(JSON.stringify(theirsAfter[0].doc)).toContain('lemon, thyme');
-  });
+    },
+  );
 
   /**
    * The other half of the same decision, and the one worth being strict about:
    * a reader who wrote in their welcome book keeps every word of it, and the
    * nicer tour is simply not installed. A small loss against the alternative.
    */
-  it('v4 install: a welcome book that was written in is left completely alone', async () => {
+  it('an older install: a welcome book that was written in is left completely alone', async () => {
     const { seed, books, pages, db } = await freshDataLayer();
     const conn = await db.getDb();
 
@@ -775,6 +842,6 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
 
 // Re-exported constants stay wired (guards against accidental renames).
 it('exports the current seed version constants', () => {
-  expect(SEED_VERSION).toBe(5);
+  expect(SEED_VERSION).toBe(6);
   expect(SEED_VERSION_KEY).toBe('seedVersion');
 });

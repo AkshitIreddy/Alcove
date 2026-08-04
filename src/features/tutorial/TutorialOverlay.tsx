@@ -43,12 +43,18 @@ import { Portal } from 'solid-js/web';
 import { gsap } from 'gsap';
 import { play } from '../../sound/engine';
 import {
+  ADVANCE_RING_LENGTH,
+  ADVANCE_RING_RADIUS,
+  advanceRemaining,
   arrowHeadPath,
   arrowPoints,
   applyInset,
   celebrateDelay,
   centerCard,
+  clampToViewport,
+  clearPanelLane,
   clipRectToViewport,
+  crossesPanelLane,
   edgePointToward,
   firstStepIndex,
   holePath,
@@ -58,11 +64,13 @@ import {
   keyAction,
   placeCard,
   rectCenter,
+  ringOffset,
   seedFrom,
   smoothPath,
   solidScrimPath,
   spotlightPath,
   stepIndexAfter,
+  type Point,
   type Rect,
   type Size,
 } from './engine';
@@ -173,6 +181,34 @@ const stepPresent = (step: TutorialStep): boolean => findTarget(step) !== null;
  */
 const MODAL_OVER_TOUR = '.nbq-layer';
 
+/**
+ * How far into the window the open side sheet reaches, in px.
+ *
+ * `views/rail/panelPush.ts` owns this number and publishes it on <html> as
+ * `--nb-panel-edge`; the back arrow and the settings seal already clear the
+ * sheet by reading it from CSS. The tour's card is positioned from script, so
+ * it reads the same property and does the same arithmetic — one writer, three
+ * readers, and nothing here ever writes it back.
+ *
+ * The INLINE style, not the computed one. This is read on every frame of the
+ * tour's rAF loop, and `getComputedStyle` there would flush style on a frame
+ * the shelf is already painting; `panelPush.publish` writes the property with
+ * `documentElement.style.setProperty`, so the inline value is the live one.
+ * Empty (nothing has ever opened) reads as 0, which is what rail.css declares.
+ */
+function panelEdge(): number {
+  if (typeof document === 'undefined') return 0;
+  const raw = document.documentElement.style.getPropertyValue('--nb-panel-edge');
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+/** Does this press belong to a control on the card rather than to the card? */
+function onCardControl(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return target.closest('button, a, input, textarea, select, [contenteditable]') !== null;
+}
+
 function modalOverTour(): boolean {
   if (typeof document === 'undefined') return false;
   try {
@@ -198,8 +234,31 @@ export default function TutorialOverlay(): JSX.Element {
   const [finished, setFinished] = createSignal<readonly string[]>([]);
   /** Live view, so a step can say "you are in the wrong scene for this". */
   const [inBook, setInBook] = createSignal(false);
+  /** Right edge of the open side sheet, px — 0 with nothing out. */
+  const [lane, setLane] = createSignal(0);
+  /** Where the reader dragged the card, or null while the tour places it. */
+  const [dragged, setDragged] = createSignal<Point | null>(null);
+  /** True between pointerdown and pointerup on the card body. */
+  const [dragging, setDragging] = createSignal(false);
+  /**
+   * The pending auto-advance: when the beat started and how long it runs.
+   * The ring on the card draws THIS, and `advanceTimer` waits exactly the same
+   * `total` — see engine.advanceRemaining for why that matters.
+   */
+  const [advance, setAdvance] = createSignal<{ started: number; total: number } | null>(null);
+  /** Fraction of that beat still to run, 1 → 0, stepped by the rAF loop. */
+  const [remaining, setRemaining] = createSignal(1);
+  /** The reader pressed "stay here", so nothing is coming to move them on. */
+  const [held, setHeld] = createSignal(false);
 
   let cardEl: HTMLDivElement | undefined;
+  /**
+   * Offset from the pointer to the card's corner while it is being dragged,
+   * null the rest of the time. Declared up here with the other mutable handles
+   * because the effect that clears it on a step change is written above the
+   * handlers that set it.
+   */
+  let dragGrab: Point | null = null;
   let arrowEl: SVGPathElement | undefined;
   let ringEl: SVGPathElement | undefined;
   let tickEl: SVGPathElement | undefined;
@@ -232,6 +291,23 @@ export default function TutorialOverlay(): JSX.Element {
   function cancelAdvance(): void {
     if (advanceTimer !== undefined) clearTimeout(advanceTimer);
     advanceTimer = undefined;
+    // The ring is a promise about that timer. Clearing one without the other
+    // would leave a countdown draining towards nothing.
+    setAdvance(null);
+  }
+
+  /**
+   * "stay here": the reader wants longer with this step than the beat allows.
+   *
+   * The countdown told them the tour was about to move; a countdown you cannot
+   * stop is a warning rather than a control. The row stays on screen saying so,
+   * because a card that silently drops the line would look like the press did
+   * nothing.
+   */
+  function holdHere(): void {
+    cancelAdvance();
+    setHeld(true);
+    void play('tick-hover', { volume: 0.45 });
   }
 
   function goto(direction: 1 | -1): void {
@@ -308,6 +384,15 @@ export default function TutorialOverlay(): JSX.Element {
         const next = resolveAnchor(current);
         setAnchor((prev) => (sameRect(prev, next) ? prev : next));
         setInBook(inBookView());
+        // Tracked per frame rather than on a panel event, because the sheet
+        // ARRIVES over half a second (panelPush tweens it) and a card that
+        // stepped aside only once would step aside to where the sheet was
+        // going to be, then sit there while it got there.
+        setLane(panelEdge());
+        const beat = advance();
+        if (beat !== null) {
+          setRemaining(advanceRemaining(now, beat.started, beat.total));
+        }
         const task = current.task;
         if (task !== undefined && !isDone(current.id) && factHolds(task.fact, now)) {
           markDone(current);
@@ -338,10 +423,20 @@ export default function TutorialOverlay(): JSX.Element {
     void play('check-done', { volume: 0.55 });
     if (isLast()) return;
     cancelAdvance();
+    // ONE number, two consumers. `wait` is what the timer below waits and what
+    // the ring on the card draws down; there is deliberately no second copy of
+    // the duration anywhere, in this file or in the stylesheet.
     const wait = celebrateDelay(done.task?.dwell, motionScale());
     const from = untrack(stepIndex);
+    setHeld(false);
+    setAdvance({
+      started: typeof performance === 'undefined' ? 0 : performance.now(),
+      total: wait,
+    });
+    setRemaining(1);
     advanceTimer = setTimeout(() => {
       advanceTimer = undefined;
+      setAdvance(null);
       // A manual nav during the beat wins — never yank the reader sideways.
       if (untrack(stepIndex) === from && untrack(tutorialRunning)) goto(1);
     }, wait);
@@ -380,6 +475,20 @@ export default function TutorialOverlay(): JSX.Element {
       const current = untrack(step);
       dismissStale(stepTargets(current).map((t) => t.selector));
       armProbe();
+    }),
+  );
+
+  // A card the reader moved was moved to see THIS step's target. The next step
+  // points somewhere else, so the tour takes the placement back — otherwise a
+  // card parked out of the way once stays parked for the rest of the tour, over
+  // whatever the tour goes on to talk about. Same for "stay here": it holds one
+  // beat, not the tour.
+  createEffect(
+    on([stepIndex, tutorialRunToken], () => {
+      dragGrab = null;
+      setDragging(false);
+      setDragged(null);
+      setHeld(false);
     }),
   );
 
@@ -445,6 +554,59 @@ export default function TutorialOverlay(): JSX.Element {
   const cardObserver =
     typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => measureCard());
   onCleanup(() => cardObserver?.disconnect());
+
+  /* ------------------------------ dragging -------------------------------- */
+
+  /**
+   * Pick the card up and put it where you want it.
+   *
+   * THE REPORT: "we should let the user be able to move the step windows".
+   * The tour places the card beside whatever it is pointing at, which is right
+   * nearly always and wrong exactly when the reader wants to see the thing the
+   * card is standing in front of.
+   *
+   * The whole paper is the handle — the reader asked to drag "the window", not
+   * a title bar — minus the controls, which own their own clicks. `dragGrab`
+   * (declared with the other handles above) is the offset from the pointer to
+   * the card's corner, so the card does not jump to centre itself under the
+   * cursor on the first move.
+   */
+  function onCardPointerDown(event: PointerEvent): void {
+    if (event.button !== 0 || onCardControl(event.target)) return;
+    const el = cardEl;
+    if (el === undefined) return;
+    const rect = untrack(cardPlacement).rect;
+    dragGrab = { x: event.clientX - rect.x, y: event.clientY - rect.y };
+    setDragging(true);
+    // Captured, because everything under this card is live — the shelf, the
+    // page, the rail — and a drag that left the card would otherwise be read as
+    // a pan of the bookshelf halfway through.
+    try {
+      el.setPointerCapture(event.pointerId);
+    } catch {
+      /* a browser without pointer capture still drags, just not off the card */
+    }
+    // A card made of text would otherwise start selecting it instead of moving.
+    event.preventDefault();
+    el.focus({ preventScroll: true });
+  }
+
+  function onCardPointerMove(event: PointerEvent): void {
+    const grab = dragGrab;
+    if (grab === null) return;
+    setDragged({ x: event.clientX - grab.x, y: event.clientY - grab.y });
+  }
+
+  function onCardPointerUp(event: PointerEvent): void {
+    if (dragGrab === null) return;
+    dragGrab = null;
+    setDragging(false);
+    try {
+      cardEl?.releasePointerCapture(event.pointerId);
+    } catch {
+      /* already released — the browser dropped the capture on its own */
+    }
+  }
 
   function attachCard(el: HTMLDivElement): void {
     // Closing and reopening the tour mounts a fresh card; drop the old
@@ -554,17 +716,48 @@ export default function TutorialOverlay(): JSX.Element {
 
   /* ---------------------------- geometry --------------------------------- */
 
-  const placement = createMemo(() => {
+  /**
+   * Where the tour would put the card, sheet included.
+   *
+   * `clearPanelLane` is the last word on every branch: a step can be anchored
+   * to a rail button that is only 60px from the window edge, and the sheet that
+   * button opens then arrives across the next 340. See engine.clearPanelLane
+   * for the measured version of that.
+   */
+  const autoPlacement = createMemo(() => {
     const vp = viewport();
     const card = cardSize();
+    const edge = lane();
     const a = anchor();
     if (a === null) {
-      return { rect: centerCard(vp, card), side: 'bottom' as const, anchored: false };
+      return {
+        rect: clearPanelLane(centerCard(vp, card), vp, edge),
+        side: 'bottom' as const,
+        anchored: false,
+      };
     }
     // A generous gap is what gives the pencil arrow room to read as a
     // gesture rather than a stub between two touching boxes.
     const placed = placeCard(a, vp, card, { gap: 64, margin: 18, preferred: step().side });
-    return { ...placed, anchored: true };
+    return { ...placed, rect: clearPanelLane(placed.rect, vp, edge), anchored: true };
+  });
+
+  /**
+   * ...and where it actually is.
+   *
+   * A card the reader picked up stays where they put it. The placement above
+   * re-runs on every frame the anchor moves, so without this the tour and the
+   * reader would be writing the same two numbers sixty times a second and the
+   * card would spring back out from under the cursor. Dragging wins until the
+   * step changes; `clampToViewport` is what keeps it on screen, re-applied here
+   * rather than at pointermove so a window resize cannot strand it either.
+   */
+  const cardPlacement = createMemo(() => {
+    const auto = autoPlacement();
+    const moved = dragged();
+    if (moved === null) return { ...auto, moved: false };
+    const rect = clampToViewport({ ...moved, ...cardSize() }, viewport(), 12);
+    return { rect, side: auto.side, anchored: auto.anchored, moved: true };
   });
 
   const scrimPath = createMemo(() => {
@@ -580,12 +773,16 @@ export default function TutorialOverlay(): JSX.Element {
 
   const arrow = createMemo(() => {
     const a = anchor();
-    const place = placement();
+    const place = cardPlacement();
     if (a === null || !place.anchored) return { stroke: '', head: '' };
     const cardRect = place.rect;
     const targetCenter = rectCenter(a);
     const from = edgePointToward(cardRect, targetCenter);
     const to = edgePointToward(a, rectCenter(cardRect));
+    // The card has stepped over the sheet to a target on the far side of it.
+    // The tour paints above the rail, so the stroke would be scrawled across
+    // the panel the step just asked the reader to read.
+    if (crossesPanelLane(from, to, lane())) return { stroke: '', head: '' };
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dist = Math.hypot(dx, dy);
@@ -715,8 +912,22 @@ export default function TutorialOverlay(): JSX.Element {
         anchor: anchor(),
         /** Live spotlight rect — lags `anchor` while the GSAP tween runs. */
         hole: hole(),
-        card: placement().rect,
-        side: placement().side,
+        card: cardPlacement().rect,
+        side: cardPlacement().side,
+        /** The reader has dragged this card; the tour is not placing it. */
+        moved: cardPlacement().moved,
+        /** Right edge of the open side sheet the card is clearing, px. */
+        lane: lane(),
+        /**
+         * The pending auto-advance, as the ring is drawing it: `total` is the
+         * millisecond beat the timer is waiting and `remaining` the fraction of
+         * it left. A probe compares `total` against the step's own dwell —
+         * which is the only way to prove the ring is not a second number.
+         */
+        advance: ((beat) =>
+          beat === null ? null : { total: beat.total, remaining: remaining(), held: held() })(
+          advance(),
+        ),
         arrow: arrow().stroke !== '',
         /** The fact this step is waiting on, or null for a read-only step. */
         fact: step().task?.fact ?? null,
@@ -771,21 +982,32 @@ export default function TutorialOverlay(): JSX.Element {
           <div
             class="nbt-card"
             classList={{
-              'nbt-card--wide': !placement().anchored,
+              'nbt-card--wide': !cardPlacement().anchored,
               'is-done': currentDone(),
+              // No `is-moved` class: a card the reader has placed says so with
+              // the "put it back" control in its eyebrow, and a second, silent
+              // tell in CSS would be a state nobody could see the meaning of.
+              'is-dragging': dragging(),
             }}
-            data-side={placement().side}
+            data-side={cardPlacement().side}
             ref={attachCard}
             role="dialog"
             aria-modal="false"
             aria-labelledby="nbt-title"
             aria-describedby="nbt-body"
             tabindex="-1"
+            onPointerDown={onCardPointerDown}
+            onPointerMove={onCardPointerMove}
+            onPointerUp={onCardPointerUp}
+            onPointerCancel={onCardPointerUp}
             style={{
-              left: `${placement().rect.x}px`,
-              top: `${placement().rect.y}px`,
+              left: `${cardPlacement().rect.x}px`,
+              top: `${cardPlacement().rect.y}px`,
             }}
           >
+            {/* The tape is the card's grab handle in the drawing as well as in
+                the code — it is what a taped-up note is held by. Dragging works
+                anywhere on the paper; this is just where it looks like it. */}
             <span class="nbt-tape" aria-hidden="true" />
             <p class="nbt-eyebrow font-ui">
               <span>
@@ -793,6 +1015,16 @@ export default function TutorialOverlay(): JSX.Element {
               </span>
               <Show when={sceneLabel()}>
                 {(label) => <span class="nbt-scene">· {label()}</span>}
+              </Show>
+              <Show when={cardPlacement().moved}>
+                <button
+                  type="button"
+                  class="nbt-restore font-ui"
+                  onClick={() => setDragged(null)}
+                  aria-label="Put the card back where the tour had it"
+                >
+                  put it back
+                </button>
               </Show>
             </p>
             <h2 class="nbt-title" id="nbt-title">
@@ -894,6 +1126,51 @@ export default function TutorialOverlay(): JSX.Element {
               )}
             </Show>
 
+            {/* THE TOUR MOVES ON BY ITSELF, AND NEVER SAID SO.
+                The reader does the thing, the card goes green, and a beat later
+                the screen changes under them — which reads as the app deciding
+                things without them. So the beat is drawn: a ring that empties
+                over exactly the milliseconds the timer is waiting, the sentence
+                that says what is about to happen, and a way to stop it. */}
+            <Show when={advance() !== null || held()}>
+              <p
+                class="nbt-advance font-ui"
+                classList={{ 'is-held': held() }}
+                aria-live="polite"
+              >
+                <span class="nbt-advance-ring" aria-hidden="true">
+                  <svg viewBox="0 0 26 26">
+                    <circle class="nbt-advance-track" cx="13" cy="13" r={ADVANCE_RING_RADIUS} />
+                    <Show
+                      when={!held()}
+                      fallback={
+                        <path class="nbt-advance-stay" d="M 10.4 8.9 L 10.6 17.1 M 15.4 8.9 L 15.6 17.1" />
+                      }
+                    >
+                      <circle
+                        class="nbt-advance-sweep"
+                        cx="13"
+                        cy="13"
+                        r={ADVANCE_RING_RADIUS}
+                        stroke-dasharray={String(ADVANCE_RING_LENGTH)}
+                        stroke-dashoffset={String(ringOffset(remaining()))}
+                      />
+                    </Show>
+                  </svg>
+                </span>
+                <span class="nbt-advance-say">
+                  {held()
+                    ? 'staying on this one — press "on we go" when you are ready'
+                    : 'the tour goes on to the next step by itself'}
+                </span>
+                <Show when={!held()}>
+                  <button type="button" class="nbt-advance-hold font-ui" onClick={holdHere}>
+                    stay here
+                  </button>
+                </Show>
+              </p>
+            </Show>
+
             {/* Did something, but not the thing this step is waiting for. */}
             <Show when={nudgeLine()}>
               {(line) => (
@@ -989,6 +1266,9 @@ declare global {
         hole: Rect | null;
         card: Rect;
         side: string;
+        moved: boolean;
+        lane: number;
+        advance: { total: number; remaining: number; held: boolean } | null;
         arrow: boolean;
         fact: string | null;
         done: boolean;

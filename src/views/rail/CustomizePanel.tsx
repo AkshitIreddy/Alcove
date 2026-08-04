@@ -34,7 +34,11 @@ import { readBookStyleOverrides } from '../../data/books';
 import type { BookPageDefaults } from '../../data/books';
 import { getBook } from '../../data/books';
 import { persistBookStyle } from '../../features/bookshelf/bookIdentity';
-import { PAGE_STYLES } from '../../data/types';
+import {
+  RULING_ORDER,
+  RULING_SHORTLIST,
+  type RulingRow,
+} from '../../editor/rulings';
 import {
   DEFAULT_LINE_HEIGHT_PX,
   LINE_HEIGHT_MAX_PX,
@@ -130,6 +134,22 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
     props.onPageDefaultsChange({ ...(props.pageDefaults ?? {}), ...partial });
   };
 
+  /**
+   * The rulings this row offers: the signature tier, plus whatever the reader
+   * has actually chosen if it is not one of them.
+   *
+   * Without the second half, a reader who picks `isometric` in the page-style
+   * panel comes back here to a row with nothing pressed, which reads as the
+   * panel having forgotten.
+   */
+  const defaultStyleChoices = (): readonly RulingRow[] => {
+    const short = RULING_ORDER.slice(0, RULING_SHORTLIST);
+    const chosen = props.pageDefaults?.pageStyle;
+    if (chosen === undefined || short.some((r) => r.id === chosen)) return short;
+    const extra = RULING_ORDER.find((r) => r.id === chosen);
+    return extra === undefined ? short : [...short, extra];
+  };
+
   const lineSpacing = (): number =>
     props.pageDefaults?.lineHeightPx ?? DEFAULT_LINE_HEIGHT_PX;
 
@@ -205,16 +225,31 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
                 }
               />
             </label>
+            {/*
+              The ruling vocabulary went from 4 ids to 27, and this row printed
+              the RAW ID of every one of them — so "fine-quadrille" and
+              "manuscript-guide" appeared as chips, twenty-seven across, in a
+              panel that has room for six. The ids were readable enough as words
+              while there were four of them and stopped being the moment there
+              were not.
+
+              `RULING_ORDER` carries the drawn name and the tier, so this shows
+              the signature tier by name and the reader's own choice if it is
+              not among them — the same shortlist-plus-current pattern the
+              settings pickers use. The full set lives in the page-style panel,
+              which is the picker built for it; this row only sets the DEFAULT
+              for new pages and does not need to be a second copy of it.
+            */}
             <div class="nb-chip-row" role="group" aria-label="Default page style">
-              <For each={PAGE_STYLES}>
-                {(pageStyle) => (
+              <For each={defaultStyleChoices()}>
+                {(ruling) => (
                   <button
                     type="button"
                     class="nb-chip"
-                    aria-pressed={props.pageDefaults?.pageStyle === pageStyle}
-                    onClick={() => patchDefaults({ pageStyle })}
+                    aria-pressed={props.pageDefaults?.pageStyle === ruling.id}
+                    onClick={() => patchDefaults({ pageStyle: ruling.id })}
                   >
-                    {pageStyle}
+                    {ruling.name}
                   </button>
                 )}
               </For>

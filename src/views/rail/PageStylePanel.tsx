@@ -1,10 +1,23 @@
 /**
- * src/views/rail/PageStylePanel.tsx — the four page styles + line-height
- * slider, driving the focused page's document attributes through the live
- * editor (src/editor's active-editor registry). Replaces the old in-page
- * style switcher that used to overlap page content.
+ * src/views/rail/PageStylePanel.tsx — the rulings + the line-height slider,
+ * driving the focused page's document attributes through the live editor
+ * (src/editor's active-editor registry). Replaces the old in-page style
+ * switcher that used to overlap page content.
+ *
+ * This panel offered FOUR rulings for the whole of the app's life, which is
+ * what the reader finally said out loud: "page style only shows four options…
+ * at least 20 here". There are twenty-seven now, and the two things that
+ * changed here are small because the work is elsewhere:
+ *
+ *  - the cards come from `editor/rulings.ts` in ITS derived order, not from a
+ *    list this file keeps (it used to own the labels, which is how a picker and
+ *    a validator drift), and
+ *  - the grid is wrapped in `Capped`, so the six best land on the panel and the
+ *    other twenty-one are one press away. Twenty-seven cards unwrapped would be
+ *    twenty-seven tab stops in a rail panel 300px wide, and the reader's own
+ *    rule for this app was "after like 20, put them behind a more".
  */
-import { For, createEffect, createSignal, type JSX } from 'solid-js';
+import { createEffect, createSignal, type JSX } from 'solid-js';
 import { activeEditor } from '../../editor/insert/activeEditor';
 import {
   DEFAULT_LINE_HEIGHT_PX,
@@ -12,40 +25,37 @@ import {
   LINE_HEIGHT_MIN_PX,
   isPageStyle,
 } from '../../editor/document';
-import { PAGE_STYLES } from '../../data/types';
+import {
+  RULING_FAMILY,
+  RULING_ORDER,
+  RULING_SHORTLIST,
+} from '../../editor/rulings';
 import type { PageStyle } from '../../data/types';
-import { StarMark, createCuration, starWords } from './DesignStrip';
+import { Capped, StarMark, createCuration, starWords } from './DesignStrip';
+import '../../styles/rulings.css';
 
 /**
- * What each ruling is CALLED on a card. The rulings themselves — and the order
- * they are offered in — come from `data/types.ts`; this panel used to carry
- * its own copy of the four ids alongside their labels, which is a list that
- * can lose a ruling the settings validator still accepts. `Record<PageStyle,
- * …>` makes a new ruling a compile error here until it has a name.
+ * One card. `group` is the family SPOKEN, because that is the only thing the
+ * curation menu does with it ("first in the grids"); the machine word is what
+ * `editor/rulings.ts` sorts on and it never has to leave that file.
  */
-const PAGE_STYLE_LABELS: Readonly<Record<PageStyle, string>> = {
-  ruled: 'Ruled lines',
-  grid: 'Grid squares',
-  blank: 'Blank paper',
-  dotted: 'Dot grid',
-};
+interface RulingCard {
+  readonly id: PageStyle;
+  readonly name: string;
+  readonly blurb: string;
+  readonly group: string;
+}
+
+const CARDS: readonly RulingCard[] = RULING_ORDER.map((row) => ({
+  id: row.id,
+  name: row.name,
+  blurb: row.blurb,
+  group: RULING_FAMILY[row.group],
+}));
 
 export interface PageStylePanelProps {
   open: boolean;
 }
-
-/**
- * The four rulings as the reader's curation keys them.
- *
- * A four-entry list is still a list. The report's rule was "this notation for
- * pretty much anything", and a writer who never once wants grid paper has as
- * much reason to take it off this panel as they have to take a gothic arcade
- * off the carpentry — the shorter list is the whole benefit.
- */
-const PAGE_STYLE_ROWS: readonly { id: PageStyle; name: string }[] = PAGE_STYLES.map((id) => ({
-  id,
-  name: PAGE_STYLE_LABELS[id],
-}));
 
 export default function PageStylePanel(props: PageStylePanelProps): JSX.Element {
   const [style, setStyle] = createSignal<PageStyle>('ruled');
@@ -57,10 +67,10 @@ export default function PageStylePanel(props: PageStylePanelProps): JSX.Element 
    * `createCuration` is the one implementation; what varies between callers is
    * only the furniture the rows are drawn as.
    */
-  const curation = createCuration<{ id: PageStyle; name: string }>(() => ({
+  const curation = createCuration<RulingCard>(() => ({
     axis: 'page-style',
     label: 'page styles',
-    options: PAGE_STYLE_ROWS,
+    options: CARDS,
     activeId: style(),
   }));
 
@@ -107,31 +117,46 @@ export default function PageStylePanel(props: PageStylePanelProps): JSX.Element 
         aria-label="Page style"
         on:contextmenu={(event) => curation.onListContext(event)}
       >
-        <For each={curation.list()}>
+        <Capped
+          each={curation.list()}
+          limit={RULING_SHORTLIST}
+          label="page styles"
+          isActive={(row) => row.id === style()}
+          moreClass="nb-pagestyle-more"
+          /* A primitive, per Capped's contract — the curated list is rebuilt on
+             every star and every removal, and an object here would slam the
+             panel shut under the reader each time. */
+          resetKey={props.open}
+        >
           {(row) => (
             <button
               type="button"
               class="nb-pagestyle-card"
-              aria-pressed={style() === row.id}
-              aria-label={`${row.name}${starWords(curation.starsFor(row.id))}`}
-              classList={{ 'nb-cur-gone': curation.removed(row.id) }}
-              onClick={() => applyStyle(row.id)}
-              on:contextmenu={(event) => curation.onEntryContext(event, row.id)}
+              aria-pressed={style() === row().id}
+              aria-label={`${row().name} — ${row().blurb}${starWords(
+                curation.starsFor(row().id),
+              )}`}
+              data-tooltip={row().blurb}
+              classList={{ 'nb-cur-gone': curation.removed(row().id) }}
+              onClick={() => applyStyle(row().id)}
+              on:contextmenu={(event) => curation.onEntryContext(event, row().id)}
             >
               {/* The wrapper is the star's positioning context — see
-                  curation.css. The thumb is the card's whole surface. */}
+                  curation.css. The thumb is the card's whole surface, and it is
+                  painted by the SAME rule that paints the page (rulings.css),
+                  so a thumbnail cannot show a ruling the paper will not. */}
               <span class="nb-mark-wrap">
                 <span
                   class="nb-pagestyle-thumb"
-                  data-style={row.id}
+                  data-style={row().id}
                   aria-hidden="true"
                 />
-                <StarMark stars={curation.starsFor(row.id)} />
+                <StarMark stars={curation.starsFor(row().id)} />
               </span>
-              <span class="nb-pagestyle-label">{row.name}</span>
+              <span class="nb-pagestyle-label">{row().name}</span>
             </button>
           )}
-        </For>
+        </Capped>
       </div>
       <curation.Overlay />
 

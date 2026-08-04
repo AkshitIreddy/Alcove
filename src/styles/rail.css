@@ -690,7 +690,18 @@
   color: var(--ink-sepia);
 }
 
-/* Miniature page thumbnails per style. */
+/* The way through to the other twenty-one, dressed as one more cell of the
+   grid so it lands in the flow rather than under it. */
+.nb-pagestyle-more {
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Miniature page thumbnails per style — the BOX only. What is printed on it
+   comes from styles/rulings.css, which is the same rule that prints the page:
+   three hand-written copies used to live here, drawn at a fixed 10px pitch
+   while the page's own tracked the line-height slider, so the panel that
+   exists to show you the paper showed you a different paper. */
 .nb-pagestyle-thumb {
   /* Says so out loud rather than relying on the card blockifying it.
      This is a `<span>`, and width and height do NOTHING to an inline box —
@@ -705,26 +716,6 @@
   background-color: var(--paper-cream);
   border: var(--stroke-ink-thin);
   border-radius: var(--radius-sm);
-}
-
-.nb-pagestyle-thumb[data-style='ruled'] {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0 9px,
-    var(--paper-edge) 9px 10px
-  );
-}
-
-.nb-pagestyle-thumb[data-style='grid'] {
-  background-image:
-    repeating-linear-gradient(to bottom, transparent 0 9px, var(--paper-edge) 9px 10px),
-    repeating-linear-gradient(to right, transparent 0 9px, var(--paper-edge) 9px 10px);
-}
-
-.nb-pagestyle-thumb[data-style='dotted'] {
-  background-image: radial-gradient(var(--paper-edge) 1px, transparent 1.2px);
-  background-size: 10px 10px;
-  background-position: 4px 4px;
 }
 
 /* ---------------------------- rail footer (wave 2) --------------------------

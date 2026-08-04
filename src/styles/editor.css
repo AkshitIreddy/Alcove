@@ -149,6 +149,13 @@
    Page backgrounds — rules the text actually sits on.
    The gradients start at the content box, so every line lands at a multiple
    of --page-line-height below the first text line.
+
+   THE RULINGS THEMSELVES MOVED to styles/rulings.css. Three of them lived here
+   (ruled / grid / dotted) with a second, differently-drawn copy of each in
+   rail.css for the page-style panel's thumbnails, and the only job that panel
+   has is telling you what the paper will look like. There are twenty-seven
+   rulings now; one definition read by both surfaces is the only arrangement in
+   which a thumbnail cannot lie about the page.
    -------------------------------------------------------------------------- */
 .nb-page-editor {
   position: relative; /* drag-handle wrapper anchors here */
@@ -164,50 +171,6 @@
   background-origin: content-box;
   background-attachment: local;
   background-repeat: repeat;
-}
-
-.nb-page[data-style='ruled'] .ProseMirror {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent calc(var(--page-line-height) - 1px),
-    color-mix(in srgb, var(--paper-edge) 70%, transparent)
-      calc(var(--page-line-height) - 1px),
-    color-mix(in srgb, var(--paper-edge) 70%, transparent)
-      var(--page-line-height)
-  );
-}
-
-.nb-page[data-style='grid'] .ProseMirror {
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent calc(var(--page-line-height) / 2 - 1px),
-      color-mix(in srgb, var(--paper-edge) 45%, transparent)
-        calc(var(--page-line-height) / 2 - 1px),
-      color-mix(in srgb, var(--paper-edge) 45%, transparent)
-        calc(var(--page-line-height) / 2)
-    ),
-    repeating-linear-gradient(
-      to right,
-      transparent 0,
-      transparent calc(var(--page-line-height) / 2 - 1px),
-      color-mix(in srgb, var(--paper-edge) 45%, transparent)
-        calc(var(--page-line-height) / 2 - 1px),
-      color-mix(in srgb, var(--paper-edge) 45%, transparent)
-        calc(var(--page-line-height) / 2)
-    );
-}
-
-.nb-page[data-style='dotted'] .ProseMirror {
-  background-image: radial-gradient(
-    color-mix(in srgb, var(--paper-edge) 80%, transparent) 1.3px,
-    transparent 1.5px
-  );
-  background-size: calc(var(--page-line-height) / 2)
-    calc(var(--page-line-height) / 2);
-  background-position: 0 calc(var(--page-line-height) - 2px);
 }
 
 /* ----------------------------------------------------------------------------
@@ -691,14 +654,14 @@
   color: var(--code-ink);
 }
 
-/* The word the reader sees. The select sits invisibly on top of it, so every
-   keyboard and screen-reader behaviour is a native one while the CLOSED
-   control is drawn in this app's language. */
+/* The word the reader sees. Also drawn on its own, with no button around it,
+   by the settings sheet's live specimen (features/settings/SettingsPanel.tsx)
+   — so everything that makes the closed control LOOK like a control lives on
+   this class and its chevron, never on the button. */
 .nb-code-lang-word {
   font-size: var(--text-ui);
   letter-spacing: var(--tracking-ui);
   color: var(--code-ink);
-  pointer-events: none;
 }
 
 /* A little pencil chevron, drawn rather than the platform's own triangle. */
@@ -714,24 +677,33 @@
   transform: rotate(45deg) translate(-1px, -1px);
 }
 
+/* Points at the card while the card is open — the one thing the platform's own
+   triangle did that a drawn chevron has to be told to do. */
+.nb-code-lang[aria-expanded='true'] .nb-code-lang-word::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+/* The trigger. It fills the plate rather than sitting on top of it: this used
+   to be a transparent <select> stretched over a drawn word, which is exactly
+   what put an operating-system list — full window height, its own colours,
+   nothing in CSS able to reach inside it — in the middle of a hand-drawn
+   notebook. The list is now `.nb-langpick` below. */
 .nb-code-lang {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  display: inline-flex;
+  align-items: center;
   padding: 0;
   margin: 0;
+  background: none;
   border: none;
-  opacity: 0;
+  border-radius: var(--radius-wobble-sm);
   font: inherit;
+  color: inherit;
   cursor: pointer;
 }
 
-.nb-code-lang:focus-visible + .nb-code-lang-word,
-.nb-code-tab-plate:has(.nb-code-lang:focus-visible) {
+.nb-code-lang:focus-visible {
   outline: 2.5px solid var(--accent-deep);
-  outline-offset: 2px;
-  border-radius: var(--radius-wobble-sm);
+  outline-offset: 4px;
 }
 
 .nb-code-copy {
@@ -760,6 +732,180 @@
 .nb-code-copy:focus-visible {
   outline: 2.5px solid var(--accent-deep);
   outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   The language picker's card
+
+   Aged paper, Kalam names, dashed hover — the slash menu's register, because
+   this app already has one way of showing a long list and a sixth would be a
+   sixth. It is APP chrome rather than code chrome: none of the `--code-*`
+   tokens appear here, so the card looks the same whether the block under it
+   is foolscap or a dark lamplight plate.
+
+   Two faults are answered by the geometry alone. It is a drawn card rather
+   than a platform popup, and `max-height` is written by floating-ui's size()
+   from the room actually left below the tab — the old <select> ran the full
+   height of the window and no stylesheet could reach it.
+   -------------------------------------------------------------------------- */
+.nb-langpick {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-menus);
+  width: 276px;
+  /* Taller than the slash menu's 324px on purpose: that card shows a filtered
+     handful, this one shows seventy-one languages and a reader browsing them
+     should get more than five rows at a time. The real limit is the custom
+     property — see `place()` in nodes/codeBlock.tsx. */
+  max-height: var(--nb-langpick-max, 420px);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.nb-langpick-head {
+  padding: var(--space-8) var(--space-8) var(--space-4);
+  font-size: var(--text-ui-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-langpick-search {
+  flex: 0 0 auto;
+  margin: 0 var(--space-4) var(--space-4);
+  padding: 4px var(--space-8);
+  /* Patrick Hand, not the UI face: this is a field the reader writes in, and
+     nothing handwritten in this app is ever set below 13px. */
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 15px 12px 14px / 13px 11px 15px 12px;
+}
+
+.nb-langpick-search::placeholder {
+  color: var(--ink-graphite-soft);
+  opacity: 0.8;
+}
+
+.nb-langpick-search:focus-visible {
+  outline: 2.5px solid var(--accent-deep);
+  outline-offset: 1px;
+}
+
+.nb-langpick-count {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 var(--space-8) var(--space-4);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+/* `min-height: 0` is what actually makes the cap bite: without it a flex child
+   refuses to shrink below its content and the card grows past its own
+   max-height instead of scrolling — which is the reported fault wearing a
+   different hat. */
+.nb-langpick-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-4) var(--space-4);
+  scrollbar-width: thin;
+}
+
+.nb-langpick-shelf {
+  padding: var(--space-8) var(--space-8) 2px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-langpick-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 3px var(--space-8);
+  border: 1.5px dashed transparent;
+  border-radius: 8px 11px 9px 12px;
+  text-align: left;
+  /* Clears the pinned head when arrow-key browsing scrolls a row into view. */
+  scroll-margin: var(--space-4) 0;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out);
+}
+
+/* The row the KEYBOARD is on. */
+.nb-langpick-item.is-active {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-sepia-soft);
+}
+
+.nb-langpick-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nb-langpick-name {
+  font-family: var(--font-accent);
+  font-size: 15px;
+  line-height: 1.25;
+  color: var(--ink-sepia);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-langpick-note {
+  font-size: var(--text-ui-xs);
+  line-height: 1.3;
+  color: var(--ink-graphite-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The tick against the block's CURRENT language — two pencil strokes, drawn
+   from borders like the tab's chevron rather than set as a glyph, because a
+   ✓ from the system font is the one mark on this card that would come from
+   somewhere else. The box is always there so the two states do not shift the
+   names sideways. */
+.nb-langpick-tick {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.nb-langpick-item.is-current .nb-langpick-tick {
+  border-right: 2px solid var(--ink-sepia);
+  border-bottom: 2px solid var(--ink-sepia);
+  border-radius: 0 0 2px 0;
+  width: 6px;
+  height: 11px;
+  margin: 0 4px 3px 4px;
+  transform: rotate(40deg);
+}
+
+.nb-langpick-empty {
+  margin: 0;
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  font-size: 15px;
+  color: var(--ink-graphite-soft);
 }
 
 /* --------------------------------------------------------------------------

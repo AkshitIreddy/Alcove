@@ -97,6 +97,11 @@ export const SURFACE_FACTS: readonly TourFactKey[] = [
   'catalogue-open',
   'toc-open',
   'customize-open',
+  // `spec-copied` is set by the click on the rail's tray icon, and that click
+  // IS the "In and out" sheet arriving — so it ticks while the reader is still
+  // reading the sheet's first heading, exactly like the presence facts around
+  // it. Measured before it was on this list: the sheet was open for 1.5s.
+  'spec-copied',
   'quick-switcher',
   'settings-open',
 ];

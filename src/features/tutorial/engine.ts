@@ -259,6 +259,72 @@ export function placeCard(
   };
 }
 
+// ---------------------------------------------------------------------------
+// The side sheet's lane
+// ---------------------------------------------------------------------------
+
+/**
+ * A hand's width between the sheet's edge and anything stepping aside for it.
+ * The same gap `rail.css` gives the back arrow and the settings seal, so the
+ * three things that clear a sheet clear it by the same amount.
+ */
+export const LANE_GAP = 14;
+
+/**
+ * Slide a card out of the strip a side sheet is standing in.
+ *
+ * THE REPORTED BUG: the In-and-out step asks the reader to open a sheet, and
+ * then parks its own card exactly where that sheet arrives — the tour layer is
+ * `--z-toasts` (400) and a rail sheet is `--z-menus` (300), so the card is not
+ * hidden BY the sheet, it is sitting ON it. Measured on the running app: card
+ * at x=134 across a sheet spanning 68..408. Every word the step had just
+ * written about the rows in that sheet was covering them.
+ *
+ * `views/rail/panelPush.ts` already publishes where the sheet's right side
+ * lands (`--nb-panel-edge`), which is the number the back arrow reads to get
+ * out of the same lane. The tour reads it too and never writes it.
+ *
+ * Three things it will not do. It will not pull the card LEFT (a card that
+ * already clears the sheet is where the placement wanted it). It will not push
+ * the card off the right of the window — a card half over a sheet is bad, a
+ * card off screen is worse — so it stops at the last position that still fits
+ * and takes whatever clearance that buys. And with nothing open (`edge` 0) it
+ * is the identity, which is every step of the tour but a handful.
+ */
+export function clearPanelLane(
+  rect: Rect,
+  vp: Size,
+  edge: number,
+  gap = LANE_GAP,
+  margin = 12,
+): Rect {
+  if (!(edge > 0)) return rect;
+  const want = edge + gap;
+  if (rect.x >= want) return rect;
+  const maxX = Math.max(margin, vp.width - rect.width - margin);
+  const x = Math.min(want, maxX);
+  return x > rect.x ? { ...rect, x } : rect;
+}
+
+/**
+ * Would a pencil arrow between these two points have to cross the sheet?
+ *
+ * It would be drawn OVER it — the tour layer is above the rail's — so the
+ * reader gets a stroke scrawled across the panel they were just told to read.
+ * The ring around the target already says "this thing"; the arrow is the part
+ * that has to stand down, exactly as it does when the run is too short to read
+ * as a gesture.
+ */
+export function crossesPanelLane(from: Point, to: Point, edge: number): boolean {
+  if (!(edge > 0)) return false;
+  // Two pixels of tolerance, because the commonest arrow of all is the one
+  // from a card standing beside the sheet to the SHEET — its far end lands on
+  // the sheet's own boundary, and an exact comparison would call touching the
+  // edge "crossing it" and delete the arrow the reader most needs.
+  const inside = (p: Point): boolean => p.x < edge - 2;
+  return inside(from) !== inside(to);
+}
+
 /** Card with no target: a little above optical centre of the viewport. */
 export function centerCard(vp: Size, card: Size): Rect {
   return clampToViewport(
@@ -539,6 +605,42 @@ export function celebrateDelay(dwell: number | undefined, motion: number): numbe
   if (dwell !== undefined) return Math.max(CELEBRATE_SNAP_MS, dwell);
   if (motion <= 0) return CELEBRATE_SNAP_MS;
   return CELEBRATE_MS * Math.max(0.6, motion);
+}
+
+/**
+ * The countdown ring: how much of the beat is still to run, 1 → 0.
+ *
+ * THE POINT OF THE RING IS THAT IT IS TRUE. The tour walks on by itself and
+ * never said so, which reads either as a bug or as the app taking the screen
+ * away — so the card now shows the beat draining. That only helps if the ring
+ * and the timeout are the SAME number: `celebrateDelay` is called once, its
+ * answer is handed to `setTimeout` and to this, and nothing anywhere writes a
+ * second duration. A ring animating for a designed 1.5s beside a timer that
+ * fires at 5s would be a more confident lie than saying nothing.
+ *
+ * Clamped at both ends because `now` comes from the rAF clock: a frame can land
+ * a hair before the timer was armed, and a tab that was backgrounded lands
+ * whole seconds after it should have fired.
+ */
+export function advanceRemaining(now: number, started: number, total: number): number {
+  if (!(total > 0)) return 0;
+  const left = 1 - (now - started) / total;
+  return left < 0 ? 0 : left > 1 ? 1 : left;
+}
+
+/** Radius of the countdown ring, in its own 26×26 viewBox. */
+export const ADVANCE_RING_RADIUS = 9.4;
+
+/** Its circumference — the dash length that draws the whole circle. */
+export const ADVANCE_RING_LENGTH = 2 * Math.PI * ADVANCE_RING_RADIUS;
+
+/**
+ * Dash offset that leaves `remaining` of the ring drawn. Full circle at 1,
+ * nothing at 0, so the arc empties as the beat runs out.
+ */
+export function ringOffset(remaining: number, length = ADVANCE_RING_LENGTH): number {
+  const r = remaining < 0 ? 0 : remaining > 1 ? 1 : remaining;
+  return length * (1 - r);
 }
 
 // ---------------------------------------------------------------------------

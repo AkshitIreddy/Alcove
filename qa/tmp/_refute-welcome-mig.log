@@ -1,0 +1,26 @@
+  fresh install  : {"books":1,"pages":32,"settings":[{"key":"bookcaseVersion","value":"1"},{"key":"seedVersion","value":"6"}]}
+  planted v5     : {"bookId":"wd2t9oFgoncFJoipaTK1b","pages":16,"firstHeading":"# Welcome to Alcove ✎ {sticker=star}"}
+  spread 1: "Welcome to Alcove ✎"  "The shelf"
+  spread 2: "Welcome to Alcove ✎"  "The shelf"
+  spread 3: "A library of your own"  "Dressing a book"
+  spread 4: "Writing"  "Every mark there is"
+  spread 5: "Writing"  "Every mark there is"
+  spread 6: "Lists"  "Blocks"
+  spread 7: "Lists"  "Blocks"
+  spread 8: "The stationery drawer"  "The postal drawer"
+  spread 9: "Things stuck in"  "Four kinds of aside"
+  spread 10: "Notes to one side"  "Pictures"
+  spread 11: "Notes to one side"  "Pictures"
+  spread 12: "One picture, properly"  "Two up"
+  spread 13: "One picture, properly"  "Two up"
+  spread 14: "Diagrams, drawn by hand"  "The same thing, thrown outward"
+  spread 15: "Diagrams, drawn by hand"  "The same thing, thrown outward"
+  spread 16: "Diagrams, drawn by hand"  "The same thing, thrown outward"
+  spread 17: "Arrows"  "A process, step by step"
+  spread 18: "In order"  "Maths, in a notebook hand"
+
+  leaves drawn with a heading : 36
+  distinct headings           : 22
+  leaves drawing a code fence : 0
+  stored after migration      : {"pages":32,"version":"6"}
+EXIT=0

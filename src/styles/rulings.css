@@ -1,0 +1,580 @@
+/* ============================================================================
+   Notebook — the rulings: the lines a reader writes ON.
+
+   Twenty-seven of them (`src/editor/rulings.ts` names and ranks them,
+   `src/data/types.ts` holds the ids). Not to be confused with the paper STOCK,
+   which is a separate axis with its own twenty-four options — this file draws
+   what is PRINTED on the paper, in pencil, and nothing about the paper itself.
+
+   ONE DEFINITION, TWO SURFACES. Every ruling declares four custom properties
+   and nothing else; the page and the rail panel's thumbnail both read them:
+
+       --rule-image   the background-image stack
+       --rule-size    a matching background-size list (default: auto)
+       --rule-pos     a matching background-position list (default: 0 0)
+       --rule-repeat  a matching background-repeat list (default: repeat)
+
+   That indirection is the whole point of the file. The page and the thumb used
+   to carry two hand-written copies of each pattern — one in editor.css, one in
+   rail.css — and the ONLY thing the panel exists to tell you is what the paper
+   will look like. A thumbnail drawn from a second copy is a thumbnail that can
+   lie, and with four rulings it already had: the grid thumb was a flat 10px
+   lattice while the page's grid tracked the line-height slider.
+
+   The two surfaces differ in exactly two numbers, declared below and read by
+   every pattern as `var(--rule)` and `var(--rule-gutter)`: the pitch (the
+   page's line-height slider; a fixed miniature on a 64x46 thumb) and where the
+   margin rule falls (out in the drag-handle gutter on a page, just inside the
+   edge on a thumb, which has no gutter to hang it in).
+
+   FLAT LANGUAGE. Every line here is one flat colour at one opacity — pencil
+   on paper, never a UI grid. There is no blur, no shadow, no blend mode and no
+   light model; the only "shading" is a second, fainter mix of the same
+   --paper-edge, which is how ruled paper actually prints a minor line. Colour
+   comes from tokens.css so all four themes re-ink the page rather than keeping
+   a brown line on a night-blue sheet.
+   ========================================================================== */
+
+/* ----------------------------------------------------------------------------
+   The two surfaces, and the scale each of them works at.
+   -------------------------------------------------------------------------- */
+
+.nb-page[data-style],
+.nb-pagestyle-thumb[data-style] {
+  /* The pencils. A minor line is a fainter mix of the SAME pigment rather than
+     a second colour, so a theme that re-inks --paper-edge re-inks all of it. */
+  --rule-ink: color-mix(in srgb, var(--paper-edge) 70%, transparent);
+  --rule-faint: color-mix(in srgb, var(--paper-edge) 42%, transparent);
+  --rule-ghost: color-mix(in srgb, var(--paper-edge) 24%, transparent);
+  --rule-strong: var(--paper-edge);
+  /* The margin pencil. Printed margins are red on every pad ever sold, and it
+     is the one line on the page that is not a writing line. */
+  --rule-red: color-mix(in srgb, var(--wash-coral) 55%, transparent);
+}
+
+.nb-page[data-style] {
+  --rule: var(--page-line-height);
+  /* Negative, so the margin rule lands in the 40px drag-handle lane rather than
+     through the first letter of every line. `background-origin: content-box`
+     (editor.css) puts x=0 at the text edge; `background-clip` is still the
+     border box, so a layer positioned left of the content still paints. */
+  --rule-gutter: -18px;
+}
+
+.nb-pagestyle-thumb[data-style] {
+  /* A 64x46 card: four and a half writing lines, which is enough to tell a
+     narrow rule from a wide one at a glance and few enough to stay crisp. */
+  --rule: 10px;
+  --rule-gutter: 9px;
+}
+
+/* The prose surface itself. Four class-level parts on purpose: this file is
+   imported by the rail panel and so lands AHEAD of editor.css in the bundle,
+   and `.nb-page-editor .ProseMirror` there sets `background-repeat: repeat` —
+   an equal-specificity rule would lose the ties and the no-repeat layers (every
+   margin rule, the Cornell divider, the storyboard frames) would tile. */
+.nb-page[data-style] .nb-page-editor .ProseMirror,
+.nb-pagestyle-thumb[data-style] {
+  background-image: var(--rule-image, none);
+  background-size: var(--rule-size, auto);
+  background-position: var(--rule-pos, 0 0);
+  background-repeat: var(--rule-repeat, repeat);
+}
+
+/* ============================================================================
+   The rules — paper you write prose on
+   ========================================================================== */
+
+/* The house ruling: one line to write on, every line. */
+.nb-page[data-style='ruled'],
+.nb-pagestyle-thumb[data-style='ruled'] {
+  --rule-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--rule) - 1px),
+    var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+  );
+}
+
+/* Half pitch. A rule between every pair of writing lines, drawn fainter — a
+   full-strength line every 13px reads as a barcode rather than as paper. */
+.nb-page[data-style='narrow'],
+.nb-pagestyle-thumb[data-style='narrow'] {
+  --rule-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--rule) / 2 - 1px),
+    var(--rule-faint) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+  );
+}
+
+/* Double pitch: the writing lines are still there, only every other one is
+   printed. Deliberately a multiple and not the 1.2x of real wide-rule paper —
+   text rides `--page-line-height`, and any ratio that is not a whole number
+   floats half the lines off their rule. */
+.nb-page[data-style='wide'],
+.nb-pagestyle-thumb[data-style='wide'] {
+  --rule-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--rule) * 2 - 1px),
+    var(--rule-ink) calc(var(--rule) * 2 - 1px) calc(var(--rule) * 2)
+  );
+}
+
+.nb-page[data-style='college'],
+.nb-pagestyle-thumb[data-style='college'] {
+  --rule-image:
+    linear-gradient(to right, var(--rule-red) 0 1.5px, transparent 1.5px),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+    );
+  --rule-size: 100% 100%, auto;
+  --rule-pos: var(--rule-gutter) 0, 0 0;
+  --rule-repeat: no-repeat, repeat;
+}
+
+/* Two margin rules 3px apart — the only thing that tells a legal pad from a
+   college pad once the yellow is somebody else's axis. */
+.nb-page[data-style='legal'],
+.nb-pagestyle-thumb[data-style='legal'] {
+  --rule-image:
+    linear-gradient(
+      to right,
+      var(--rule-red) 0 1.5px,
+      transparent 1.5px 4.5px,
+      var(--rule-red) 4.5px 6px,
+      transparent 6px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+    );
+  --rule-size: 100% 100%, auto;
+  --rule-pos: var(--rule-gutter) 0, 0 0;
+  --rule-repeat: no-repeat, repeat;
+}
+
+/* A heavy line with a hairline under it, the way a ledger prints a total. */
+.nb-page[data-style='double'],
+.nb-pagestyle-thumb[data-style='double'] {
+  --rule-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--rule) - 4px),
+    var(--rule-faint) calc(var(--rule) - 4px) calc(var(--rule) - 3px),
+    transparent calc(var(--rule) - 3px) calc(var(--rule) - 1px),
+    var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+  );
+}
+
+/* Dashes, and the one shape a linear gradient cannot make: a mark bounded on
+   BOTH axes. A flat ellipse per tile is the whole trick — 5px across, 1px
+   tall, sat on the writing line, repeated every 14px. */
+.nb-page[data-style='dashed'],
+.nb-pagestyle-thumb[data-style='dashed'] {
+  --rule-image: radial-gradient(
+    5px 1px at 6px calc(var(--rule) - 1px),
+    var(--rule-ink) 0 70%,
+    transparent 72%
+  );
+  --rule-size: 14px var(--rule);
+}
+
+/* ============================================================================
+   Squares and lattices
+   ========================================================================== */
+
+/* The house grid: half a line apart, both ways. */
+.nb-page[data-style='grid'],
+.nb-pagestyle-thumb[data-style='grid'] {
+  --rule-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) / 2 - 1px),
+      var(--rule-faint) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) / 2 - 1px),
+      var(--rule-faint) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+    );
+}
+
+/* Real graph paper is two grids, not one: a fine one you count on and a heavy
+   one you find your place with. Fifths, so the heavy line lands on a writing
+   line — the reason it is not the tenth of millimetre paper is that a tenth of
+   a 32px line-height is 3px, which is a smudge. */
+.nb-page[data-style='graph'],
+.nb-pagestyle-thumb[data-style='graph'] {
+  --rule-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-strong) calc(var(--rule) - 1px) var(--rule)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-strong) calc(var(--rule) - 1px) var(--rule)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) / 5 - 1px),
+      var(--rule-ghost) calc(var(--rule) / 5 - 1px) calc(var(--rule) / 5)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) / 5 - 1px),
+      var(--rule-ghost) calc(var(--rule) / 5 - 1px) calc(var(--rule) / 5)
+    );
+}
+
+/* Quarter pitch. `--rule-faint` and not `--rule-ghost`: at 8px a ghost line is
+   a texture rather than a square you can count, and the ghost is reserved for
+   the grids that are deliberately meant to disappear under a drawing. */
+.nb-page[data-style='quadrille'],
+.nb-pagestyle-thumb[data-style='quadrille'] {
+  --rule-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) / 4 - 1px),
+      var(--rule-faint) calc(var(--rule) / 4 - 1px) calc(var(--rule) / 4)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) / 4 - 1px),
+      var(--rule-faint) calc(var(--rule) / 4 - 1px) calc(var(--rule) / 4)
+    );
+}
+
+.nb-page[data-style='quadrille-wide'],
+.nb-pagestyle-thumb[data-style='quadrille-wide'] {
+  --rule-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+    );
+}
+
+/* Thirty degrees each way plus verticals. The three families close into
+   triangles because the geometry says so and not because they were nudged:
+   lines at +30 satisfy 0.5x - 0.866y = kp and at -30 satisfy 0.5x + 0.866y =
+   mp, so every crossing sits at x = (k+m)p — which is why the verticals are at
+   the diagonals' own perpendicular spacing and not at twice it. */
+.nb-page[data-style='iso'],
+.nb-pagestyle-thumb[data-style='iso'] {
+  --rule-image:
+    repeating-linear-gradient(
+      30deg,
+      transparent 0 calc(var(--rule) / 2 - 1px),
+      var(--rule-faint) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+    ),
+    repeating-linear-gradient(
+      150deg,
+      transparent 0 calc(var(--rule) / 2 - 1px),
+      var(--rule-faint) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) / 2 - 1px),
+      var(--rule-ghost) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+    );
+}
+
+/* A pad you draw on, not write on: the grid is a ghost, and what you actually
+   see is the red margin and the title band two lines down from the top. */
+.nb-page[data-style='engineering'],
+.nb-pagestyle-thumb[data-style='engineering'] {
+  --rule-image:
+    linear-gradient(to right, var(--rule-red) 0 1.5px, transparent 1.5px),
+    linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) * 2),
+      var(--rule-red) calc(var(--rule) * 2) calc(var(--rule) * 2 + 1px),
+      transparent calc(var(--rule) * 2 + 1px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) / 4 - 1px),
+      var(--rule-ghost) calc(var(--rule) / 4 - 1px) calc(var(--rule) / 4)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--rule) / 4 - 1px),
+      var(--rule-ghost) calc(var(--rule) / 4 - 1px) calc(var(--rule) / 4)
+    );
+  --rule-size: 100% 100%, 100% 100%, auto, auto;
+  --rule-pos: var(--rule-gutter) 0, 0 0, 0 0, 0 0;
+  --rule-repeat: no-repeat, no-repeat, repeat, repeat;
+}
+
+/* ============================================================================
+   Dots
+   ========================================================================== */
+
+/* The house dot grid. Nudged down by 2px so the dots sit ON the writing line
+   rather than one hair above it. */
+.nb-page[data-style='dotted'],
+.nb-pagestyle-thumb[data-style='dotted'] {
+  --rule-image: radial-gradient(
+    color-mix(in srgb, var(--paper-edge) 80%, transparent) 1.3px,
+    transparent 1.5px
+  );
+  --rule-size: calc(var(--rule) / 2) calc(var(--rule) / 2);
+  --rule-pos: 0 calc(var(--rule) - 2px);
+}
+
+.nb-page[data-style='dot-fine'],
+.nb-pagestyle-thumb[data-style='dot-fine'] {
+  --rule-image: radial-gradient(var(--rule-ink) 1px, transparent 1.2px);
+  --rule-size: calc(var(--rule) / 3) calc(var(--rule) / 3);
+  --rule-pos: 0 calc(var(--rule) - 2px);
+}
+
+.nb-page[data-style='dot-wide'],
+.nb-pagestyle-thumb[data-style='dot-wide'] {
+  --rule-image: radial-gradient(var(--rule-strong) 1.5px, transparent 1.7px);
+  --rule-size: var(--rule) var(--rule);
+  --rule-pos: 0 calc(var(--rule) - 2px);
+}
+
+/* Two flat ellipses crossed at the middle of each cell — the surveyor's tick
+   that a dot grid becomes when you need to know which way is up. */
+.nb-page[data-style='cross'],
+.nb-pagestyle-thumb[data-style='cross'] {
+  --rule-image:
+    radial-gradient(3px 1px at 50% 50%, var(--rule-ink) 0 70%, transparent 72%),
+    radial-gradient(1px 3px at 50% 50%, var(--rule-ink) 0 70%, transparent 72%);
+  --rule-size: var(--rule) var(--rule), var(--rule) var(--rule);
+  --rule-pos: 0 calc(var(--rule) - 2px), 0 calc(var(--rule) - 2px);
+}
+
+/* The hexagonal lattice, which is a triangular one drawn in dots: every other
+   row offset by half a cell. Two layers rather than one, because that offset is
+   the whole difference between this and the square dot grid above.
+
+   The row spacing is d x sqrt(3), NOT d — a lattice is only hexagonal when the
+   rows sit far enough apart that a dot is the same distance from its six
+   neighbours. Halve it and you get a squashed diamond that reads as a mistake,
+   which is what the first pass drew. */
+.nb-page[data-style='hex'],
+.nb-pagestyle-thumb[data-style='hex'] {
+  /* `circle`, said out loud. A bare `radial-gradient(colour 1.1px, …)` defaults
+     to an ELLIPSE fitted to its tile, which is invisible on the square tiles
+     the other dot papers use and drew this one as a field of vertical dashes:
+     the hex tile is 1 x 1.732 and every dot came out stretched to match. */
+  --rule-image:
+    radial-gradient(circle, var(--rule-ink) 1.1px, transparent 1.3px),
+    radial-gradient(circle, var(--rule-ink) 1.1px, transparent 1.3px);
+  --rule-size:
+    calc(var(--rule) * 0.75) calc(var(--rule) * 1.299),
+    calc(var(--rule) * 0.75) calc(var(--rule) * 1.299);
+  --rule-pos:
+    0 0,
+    calc(var(--rule) * 0.375) calc(var(--rule) * 0.6495);
+}
+
+/* ============================================================================
+   Guides — paper that trains a hand
+   ========================================================================== */
+
+/* Three lines to a writing line: a solid baseline, a dashed x-height, and a
+   faint ascender line a quarter of the way down. What every primary school
+   handwriting book prints, and the reason the x-height is dashed is that it is
+   a guide rather than a line you write on. */
+.nb-page[data-style='manuscript'],
+.nb-pagestyle-thumb[data-style='manuscript'] {
+  --rule-image:
+    radial-gradient(
+      4px 1px at 5px calc(var(--rule) * 0.6),
+      var(--rule-faint) 0 70%,
+      transparent 72%
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) * 0.25),
+      var(--rule-ghost) calc(var(--rule) * 0.25) calc(var(--rule) * 0.25 + 1px),
+      transparent calc(var(--rule) * 0.25 + 1px) calc(var(--rule) - 1px),
+      var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+    );
+  --rule-size: 11px var(--rule), auto;
+}
+
+/* Baselines two lines apart, with the 55-degree slants a broad nib is held
+   at. The slant family is the point; the baselines only exist to sit them on. */
+.nb-page[data-style='calligraphy'],
+.nb-pagestyle-thumb[data-style='calligraphy'] {
+  --rule-image:
+    repeating-linear-gradient(
+      125deg,
+      transparent 0 calc(var(--rule) * 0.75),
+      var(--rule-ghost) calc(var(--rule) * 0.75) calc(var(--rule) * 0.75 + 1px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) * 2 - 1px),
+      var(--rule-ink) calc(var(--rule) * 2 - 1px) calc(var(--rule) * 2)
+    );
+}
+
+/* Cornell: ruled paper with a cue column down the left third. The divider is a
+   percentage and not a length, so it lands at the same third of a 64px thumb
+   as it does on a 700px page. */
+.nb-page[data-style='cornell'],
+.nb-pagestyle-thumb[data-style='cornell'] {
+  --rule-image:
+    linear-gradient(
+      to right,
+      transparent 0 30%,
+      var(--rule-red) 30% calc(30% + 1.5px),
+      transparent calc(30% + 1.5px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) - 1px),
+      var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
+    );
+  --rule-size: 100% 100%, auto;
+  --rule-repeat: no-repeat, repeat;
+}
+
+.nb-page[data-style='margin'],
+.nb-pagestyle-thumb[data-style='margin'] {
+  --rule-image: linear-gradient(
+    to right,
+    var(--rule-red) 0 1.5px,
+    transparent 1.5px
+  );
+  --rule-size: 100% 100%;
+  --rule-pos: var(--rule-gutter) 0;
+  --rule-repeat: no-repeat;
+}
+
+/* ============================================================================
+   Staves and frames — paper that is not for prose
+   ========================================================================== */
+
+/* Five lines to a stave and a stave every two writing lines, so there is a
+   whole line of air to write lyrics or fingering in. Spacing is a fraction of
+   the pitch rather than a fixed 5px: the line-height slider is the reader
+   saying how big their hand is, and a stave should grow with it. */
+.nb-page[data-style='staves'],
+.nb-pagestyle-thumb[data-style='staves'] {
+  --rule-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--rule) * 0.42),
+    var(--rule-ink) calc(var(--rule) * 0.42) calc(var(--rule) * 0.42 + 1px),
+    transparent calc(var(--rule) * 0.42 + 1px) calc(var(--rule) * 0.64),
+    var(--rule-ink) calc(var(--rule) * 0.64) calc(var(--rule) * 0.64 + 1px),
+    transparent calc(var(--rule) * 0.64 + 1px) calc(var(--rule) * 0.86),
+    var(--rule-ink) calc(var(--rule) * 0.86) calc(var(--rule) * 0.86 + 1px),
+    transparent calc(var(--rule) * 0.86 + 1px) calc(var(--rule) * 1.08),
+    var(--rule-ink) calc(var(--rule) * 1.08) calc(var(--rule) * 1.08 + 1px),
+    transparent calc(var(--rule) * 1.08 + 1px) calc(var(--rule) * 1.3),
+    var(--rule-ink) calc(var(--rule) * 1.3) calc(var(--rule) * 1.3 + 1px),
+    transparent calc(var(--rule) * 1.3 + 1px) calc(var(--rule) * 2)
+  );
+}
+
+/* Six strings, wider apart than a stave — a tab number has to fit between
+   them, which is the whole reason tab paper is not stave paper. */
+.nb-page[data-style='tab'],
+.nb-pagestyle-thumb[data-style='tab'] {
+  --rule-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--rule) * 0.4),
+    var(--rule-ink) calc(var(--rule) * 0.4) calc(var(--rule) * 0.4 + 1px),
+    transparent calc(var(--rule) * 0.4 + 1px) calc(var(--rule) * 0.6),
+    var(--rule-ink) calc(var(--rule) * 0.6) calc(var(--rule) * 0.6 + 1px),
+    transparent calc(var(--rule) * 0.6 + 1px) calc(var(--rule) * 0.8),
+    var(--rule-ink) calc(var(--rule) * 0.8) calc(var(--rule) * 0.8 + 1px),
+    transparent calc(var(--rule) * 0.8 + 1px) var(--rule),
+    var(--rule-ink) var(--rule) calc(var(--rule) + 1px),
+    transparent calc(var(--rule) + 1px) calc(var(--rule) * 1.2),
+    var(--rule-ink) calc(var(--rule) * 1.2) calc(var(--rule) * 1.2 + 1px),
+    transparent calc(var(--rule) * 1.2 + 1px) calc(var(--rule) * 1.4),
+    var(--rule-ink) calc(var(--rule) * 1.4) calc(var(--rule) * 1.4 + 1px),
+    transparent calc(var(--rule) * 1.4 + 1px) calc(var(--rule) * 2.4)
+  );
+}
+
+/* Two frames across, four lines tall, with a caption strip inside each. The
+   side walls run the full cell rather than stopping at the caption line: a
+   storyboard cell IS the picture and its caption, and a wall that stopped
+   short would read as two unrelated boxes. */
+.nb-page[data-style='storyboard'],
+.nb-pagestyle-thumb[data-style='storyboard'] {
+  --rule-image:
+    linear-gradient(
+      to right,
+      var(--rule-ink) 0 1px,
+      transparent 1px calc(100% - 1px),
+      var(--rule-ink) calc(100% - 1px)
+    ),
+    linear-gradient(
+      to bottom,
+      var(--rule-ink) 0 1px,
+      transparent 1px calc(100% - 1px),
+      var(--rule-ink) calc(100% - 1px)
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0 calc(100% - var(--rule)),
+      var(--rule-faint) calc(100% - var(--rule)) calc(100% - var(--rule) + 1px),
+      transparent calc(100% - var(--rule) + 1px)
+    );
+  --rule-size:
+    50% calc(var(--rule) * 4),
+    50% calc(var(--rule) * 4),
+    50% calc(var(--rule) * 4);
+}
+
+/* Semi-log: decades across at log10 of 2..9, plain rules down. The eight
+   fractions are the logarithms themselves — 30.1%, 47.7%, 60.2% … — which is
+   what makes this log paper rather than eight lines somebody spaced by eye. */
+.nb-page[data-style='log'],
+.nb-pagestyle-thumb[data-style='log'] {
+  --rule-image:
+    linear-gradient(
+      to right,
+      var(--rule-strong) 0 1px,
+      transparent 1px 30.1%,
+      var(--rule-faint) 30.1% calc(30.1% + 1px),
+      transparent calc(30.1% + 1px) 47.7%,
+      var(--rule-faint) 47.7% calc(47.7% + 1px),
+      transparent calc(47.7% + 1px) 60.2%,
+      var(--rule-faint) 60.2% calc(60.2% + 1px),
+      transparent calc(60.2% + 1px) 69.9%,
+      var(--rule-faint) 69.9% calc(69.9% + 1px),
+      transparent calc(69.9% + 1px) 77.8%,
+      var(--rule-ghost) 77.8% calc(77.8% + 1px),
+      transparent calc(77.8% + 1px) 84.5%,
+      var(--rule-ghost) 84.5% calc(84.5% + 1px),
+      transparent calc(84.5% + 1px) 90.3%,
+      var(--rule-ghost) 90.3% calc(90.3% + 1px),
+      transparent calc(90.3% + 1px) 95.4%,
+      var(--rule-ghost) 95.4% calc(95.4% + 1px),
+      transparent calc(95.4% + 1px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--rule) / 2 - 1px),
+      var(--rule-faint) calc(var(--rule) / 2 - 1px) calc(var(--rule) / 2)
+    );
+  --rule-size: calc(var(--rule) * 4) 100%, auto;
+  --rule-repeat: repeat-x, repeat;
+}
+
+/* And the paper with nothing printed on it. Said out loud rather than left to
+   the fallback: `blank` is a CHOICE a reader makes, and a choice that works
+   only because no rule matched is a choice one stray selector can take away. */
+.nb-page[data-style='blank'],
+.nb-pagestyle-thumb[data-style='blank'] {
+  --rule-image: none;
+}

@@ -547,6 +547,10 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   z-index: 2;
   display: flex;
   align-items: center;
+  /* Two lines: the title and the way out, then the search box under them on a
+     100% basis (.nbs-find). Wrapping rather than nesting keeps the close cross
+     first in the DOM, which is what `order: -1` below depends on. */
+  flex-wrap: wrap;
   gap: var(--space-8);
   margin: calc(var(--space-20) * -1) calc(var(--space-24) * -1) 0;
   padding: var(--space-20) var(--space-24) var(--space-12);
@@ -610,6 +614,196 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
 .nbs-close-icon {
   width: 16px;
   height: 16px;
+}
+
+/* ----------------------------------------------------------------------------
+   The search box
+
+   It sits on its own line INSIDE the sticky header (hence the wrap above and
+   the 100% basis here): this sheet is 3200px of paper, and a search box you
+   have to scroll back to the top to reach is one a reader uses once.
+
+   Drawn, not defaulted — a paper field with one ink outline and corners that
+   bow, the same three rules as the action chips beside it, with a hand-drawn
+   glass at the near end.
+   -------------------------------------------------------------------------- */
+.nbs-find {
+  order: 1;
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-4);
+}
+
+.nbs-find-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Roomy enough that the corners can be UNEVEN. At 3px of padding the box was
+     29px tall, every one of the four radii clamped at half the height, and the
+     drawn pill came out as a machine-made stadium — the one shape the whole
+     visual language is trying not to be. */
+  padding: var(--space-8) var(--space-12);
+  color: var(--ink-sepia-soft);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  /* The uneven inked pill the action chips are drawn with, one size up. */
+  border-radius: 10px 16px 12px 18px / 16px 10px 18px 12px;
+  box-shadow: var(--shadow-xs);
+  cursor: text;
+}
+
+/* The ring belongs to the drawn field, not to the bare input inside it — the
+   input has no edges of its own, so the global :focus-visible ring would land
+   in the middle of the paper. Same 3px accent and same 2px offset global.css
+   uses, moved onto the shape that reads as the control. */
+.nbs-find-box:focus-within {
+  border-color: var(--ink-line);
+  outline: 3px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+.nbs-find-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  transform: rotate(-6deg);
+}
+
+.nbs-find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 0;
+  font-family: var(--font-body); /* handwriting, so never below 13px */
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--ink-sepia);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.nbs-find-input::placeholder {
+  color: var(--ink-sepia-soft);
+  opacity: 0.85;
+}
+
+/* Chromium draws its own clear cross on type=search. There is a drawn one
+   beside the field; two crosses that do the same thing is one too many. */
+.nbs-find-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* How many rows are left, on the field rather than under it: the header is
+   sticky, so a line appearing on the first keystroke would shove the whole
+   sheet down under the reader while they are still typing. */
+.nbs-find-tally {
+  flex: 0 0 auto;
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-sepia-soft);
+}
+
+.nbs-find-clear {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-sepia-soft);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 46% 54% 50% 50% / 52% 48% 54% 46%;
+  transition:
+    color calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    background calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-out),
+    transform calc(var(--dur-xs) * var(--motion-scale, 1)) var(--ease-spring);
+}
+
+.nbs-find-clear:hover {
+  color: var(--ink-sepia);
+  background: var(--paper-deep);
+  transform: rotate(90deg);
+}
+
+.nbs-find-clear .nbs-close-icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* ----------------------------------------------------------------------------
+   Nothing found
+
+   A sheet that simply empties reads as an app that has lost its settings, so
+   the search says so out loud and hands back three ways on: the words it does
+   know, and the way out of the search itself.
+   -------------------------------------------------------------------------- */
+.nbs-find-empty {
+  /* The chips and the button below paint from --sec-*, which only exists
+     inside a section. This note lives above all of them, so it carries its
+     own pigment rather than hovering with an unset one. */
+  --sec-light: var(--wash-amber-light);
+  --sec: var(--wash-amber);
+  --sec-deep: var(--wash-amber-deep);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-20);
+  padding: var(--space-20) var(--space-16);
+  text-align: center;
+  background: var(--paper-cream);
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: 18px 24px 20px 22px / 22px 18px 24px 20px;
+}
+
+.nbs-find-empty-icon {
+  width: 52px;
+  height: 52px;
+  color: var(--ink-sepia-soft);
+  transform: rotate(-5deg);
+}
+
+.nbs-find-empty-line {
+  font-family: var(--font-heading);
+  font-size: 22px; /* Caveat stays above its 20px floor */
+  line-height: var(--leading-heading);
+  color: var(--ink-sepia);
+  transform: rotate(-0.6deg);
+}
+
+.nbs-find-empty-hint {
+  max-width: 34ch;
+  color: var(--ink-sepia-soft);
+}
+
+.nbs-find-tries {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+/* ----------------------------------------------------------------------------
+   Filtered out by the search
+
+   `display: none`, never opacity: a row the reader has just filtered away must
+   leave the Tab cycle and the accessibility tree with the paper, or a narrowed
+   sheet still tabs through the hundred rows that are not on it. Stated per
+   class because each of these sets its own `display`, which beats the UA
+   stylesheet's [hidden] rule.
+   -------------------------------------------------------------------------- */
+.nbs-section[hidden],
+.nbs-row[hidden],
+.nbs-keys[hidden],
+.nbs-keys-group[hidden],
+.nbs-keys-list[hidden],
+.nbs-keys-item[hidden] {
+  display: none;
 }
 
 /* Vertical rhythm: every section opens with 20px of air above its rule and

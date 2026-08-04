@@ -196,12 +196,54 @@
 
       `.github/workflows/release.yml` builds windows-x64, a universal macOS `.dmg` and Linux `.deb`/`.rpm`/AppImage from one tag.
 
-- [ ] **Extensive review, cleaning, optimisation and continuous visual testing.**
+- [x] **Extensive review, cleaning, optimisation and continuous visual testing.**
       > "at the end do a extensive code review, cleaning, optimising, visual
       > continuous testing, etc to make sure the app is perfect and ready"
 
-      Dead code, duplication, bundle size, first-paint cost, and a visual
-      regression pass that runs repeatedly rather than once.
+      Five lenses, each adversarially verified.
+
+      **Dead code.** The find that mattered was not dead code at all:
+      `transfer::bundle_write_asset` was declared `#[tauri::command]` and never
+      registered, so importing a bundle carrying pictures kept none of them and
+      logged a per-file warning indistinguishable from a corrupt file.
+      `cargo check` had said so all along — a command's only caller is
+      `generate_handler!`, so an unregistered one reads as `never used`.
+      `tests/ipc-surface.test.ts` holds the seam from both directions now. Two
+      Vite scaffold SVGs that had shipped in every installer, deleted.
+
+      **Duplication.** Sixteen facts written down twice, collapsed to one
+      definition each — the flip snapshot recipe, the timeline metrics, the
+      highlight labels, `PAGE_STYLES`, the ribbon hexes, the script effect
+      domains.
+
+      **First paint.** ShelfStudio and SettingsPanel lazy behind latches,
+      stickers loaded after render, the ambient bed coalescing every boot-time
+      ask into one idle start. Measured rather than guessed, and the measuring
+      tools kept (`shots-now/_ab-boot.mjs`, `_weigh.mjs`, `_importgraph.mjs`).
+      Recorded and NOT acted on: pixi.js is 746 kB, 43% of the boot chunk,
+      including DDS/KTX2 parsers and workers nothing uses.
+
+      **Correctness.** A page could hold a block taller than itself — the drain
+      peels TRAILING blocks and was gated on `doc.childCount > 1`, so one long
+      paragraph had nothing to peel and it gave up. It splits at a soft-wrap
+      boundary now. It was also comparing `getBoundingClientRect` distances
+      against layout px, so the fold sat wrong whenever a rail panel was open.
+
+      **Visual regression, which is the "runs repeatedly" half.**
+      `npm run visual` — 16 surfaces x 2 sizes x light/dark against committed
+      baselines, `--update` the deliberate yes, a report page of triptychs. A
+      comparison run no longer writes a baseline (it used to, and a suite that
+      accepts its own output agrees with the app by construction), and a
+      surface that never settles is a THIRD outcome: not baselined, not failed,
+      counted in its own column. See the open item below for what still moves.
+
+- [ ] **Six visual surfaces never stop moving.** `npm run visual` reports them
+      `MOVE` rather than judging them, so they are honestly uncovered rather
+      than noisily red: both `tour-blocks`, `tour-settings`, `focus-spread`.
+      The set VARIES between runs, so it is intermittent. Not CSS — the fixture
+      sets `animationLevel: 'off'`, Playwright adds `animations: 'disabled'`,
+      and `document.getAnimations()` is empty at rest — so it is canvas or
+      WebGL. Find it and those six surfaces become testable.
 
 
 ## 🔴 Reported 2026-08-04, from the INSTALLED build — WORK THIS LIST

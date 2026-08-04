@@ -558,7 +558,11 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
  *                     2. right-click on BARE PLANK                           *
  * ========================================================================== */
 
-export type ShelfSpotAction = 'new-book' | 'add-floor' | 'studio';
+export type ShelfSpotAction =
+  | 'new-book'
+  | 'from-template'
+  | 'add-floor'
+  | 'studio';
 
 export interface ShelfSpotMenuProps {
   /** Floor the right-click landed on (1-based in the label). */
@@ -571,6 +575,14 @@ export interface ShelfSpotMenuProps {
 
 const SPOT_ITEMS: readonly MenuItemSpec<ShelfSpotAction>[] = [
   { action: 'new-book', title: 'New book here', glyph: '✚' },
+  // Second, right under the blank one: the reader who right-clicks bare plank
+  // has already said "a book goes here", and this is the same act with the
+  // first five pages already written.
+  // 📋 and not 🗒 (NOTE PAD): the note pad has no glyph in the Windows emoji
+  // font this app ships against and rendered as an empty box — checked in
+  // `qa/ui/groupd-02-spot-menu.png`. Every other glyph in these cards is from
+  // the same well-covered block.
+  { action: 'from-template', title: 'From a template…', glyph: '📋' },
   { action: 'add-floor', title: 'Add a floor below', glyph: '▤' },
   { action: 'studio', title: 'Library studio…', glyph: '🎨' },
 ];
@@ -582,7 +594,7 @@ export function ShelfSpotMenu(props: ShelfSpotMenuProps): JSX.Element {
       y={props.y}
       label="Shelf actions"
       variant="shelf-menu--spot"
-      reach={180}
+      reach={220}
       onClose={() => props.onClose()}
     >
       <div class="shelf-menu__title">floor {props.floor + 1}</div>

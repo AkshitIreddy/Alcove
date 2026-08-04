@@ -530,8 +530,12 @@ describe('the packs feature is reachable from the app', () => {
 
   it('the reader’s papers and cases stand where papers and cases are chosen', () => {
     expect(studio).toContain('YourDesigns');
-    expect(studio).toContain('axis="wallpaper"');
-    expect(studio).toContain('axis="carpentry"');
+    // `pack`, not `axis`. The prop was called `axis` and held a pack CATEGORY,
+    // which collided in this same file with the `axis` a curated list takes —
+    // one of them a `CurationAxis` written into the reader's SQLite row, the
+    // other not. See the header of YourDesigns.tsx and tests/curation.test.ts.
+    expect(studio).toContain('pack="wallpaper"');
+    expect(studio).toContain('pack="carpentry"');
   });
 
   it('every category can open its own popup', () => {
@@ -539,7 +543,7 @@ describe('the packs feature is reachable from the app', () => {
     // category it will open a popup"), so the panel must pass the id through
     // rather than always opening the same one.
     expect(panel).toMatch(/openPackDialog\(category\.id\)/);
-    expect(yours).toMatch(/openPackDialog\(props\.axis\)/);
+    expect(yours).toMatch(/openPackDialog\(props\.pack\)/);
   });
 
   it('the popup carries all three parts the reader asked for', () => {

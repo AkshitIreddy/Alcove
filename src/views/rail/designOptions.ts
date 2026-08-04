@@ -71,6 +71,7 @@ import {
   getTheme,
   type ThemeId,
 } from '../../art/themes';
+import { getSavedRoom, savedRooms, type SavedRoom } from '../../data/shelfOfMine';
 import type { PickerOption } from './DesignPicker';
 
 /** One seed for every case tile in the studio, so only the design varies. */
@@ -653,35 +654,58 @@ function shelveRooms(book: readonly RoomPreset[]): readonly RoomPreset[] {
 /** The rooms, in the order the strip and the sheet show them. */
 export const ROOM_PRESETS: readonly RoomPreset[] = shelveRooms(ROOM_BOOK);
 
-/** Look up a preset by id. Null rather than a fallback — the caller decides. */
-export function getRoomPreset(id: string): RoomPreset | null {
-  return ROOM_PRESETS.find((p) => p.id === id) ?? null;
+/**
+ * A room the panel can apply: one of the shipped presets, or one the reader
+ * composed and kept.
+ *
+ * The two are deliberately one type at this boundary. Everything the studio
+ * does with a card — name it, paint it, write its four values to the room — is
+ * the same act for both, and the moment a saved room needs its own `applyMyRoom`
+ * beside `applyPreset` the two paths start drifting: one of them grows the
+ * clearing of the borrowed part colours and the other does not.
+ */
+export type RoomChoice = RoomPreset | SavedRoom;
+
+/**
+ * Look up a room by id. Null rather than a fallback — the caller decides.
+ *
+ * Falls through to the reader's own rooms, and that fall-through is the whole
+ * reason `saveRoomAsPreset` is worth anything: without it a kept room would be
+ * offered by `roomPresetOptions()`, drawn, pressed — and then answer null here,
+ * so `applyPreset` would return early and the press would do nothing at all.
+ * Offering a card that cannot be applied is worse than not offering it.
+ */
+export function getRoomPreset(id: string): RoomChoice | null {
+  return ROOM_PRESETS.find((p) => p.id === id) ?? getSavedRoom(id);
 }
 
 /**
- * Which preset the room is currently wearing, or '' for a room of your own.
+ * Which room the library is currently wearing, or '' for one nobody named.
  *
  * Compared through `wallpaperAxisKey` rather than field by field, for the same
  * reason `LibraryStudio.sameSpec` is: a spec that grows an axis leaves a
  * hand-spelled comparison quietly stale, and this answer decides which card the
  * strip shows as chosen.
+ *
+ * The house presets are searched first and the reader's own rooms after, so a
+ * kept room that happens to duplicate a shipped one shows the shipped card. The
+ * important half is the second: a reader who presses "keep what you have" while
+ * standing in a room of their own gets a card that lights up on the frame it
+ * appears, instead of a new entry in a list with nothing pressed in it.
  */
 export function matchRoomPreset(look: RoomLook): string {
   const wall = wallpaperAxisKey(look.wallpaper);
-  return (
-    ROOM_PRESETS.find(
-      (p) =>
-        p.theme === look.theme &&
-        p.build === look.build &&
-        p.pattern === look.pattern &&
-        wallpaperAxisKey(p.wallpaper) === wall,
-    )?.id ?? ''
-  );
+  const same = (p: RoomChoice): boolean =>
+    p.theme === look.theme &&
+    p.build === look.build &&
+    p.pattern === look.pattern &&
+    wallpaperAxisKey(p.wallpaper) === wall;
+  return (ROOM_PRESETS.find(same) ?? savedRooms().find(same))?.id ?? '';
 }
 
-/** The presets, as cards — each one painted in ITS OWN colours and paper. */
-export function roomPresetOptions(): readonly PickerOption[] {
-  return ROOM_PRESETS.map((preset) => ({
+/** One room — shipped or kept — as a card painted in ITS OWN colours and paper. */
+function roomCardOption(preset: RoomChoice, keptAt: number | null): PickerOption {
+  return {
     id: preset.id,
     name: preset.name,
     blurb: preset.blurb,
@@ -690,12 +714,39 @@ export function roomPresetOptions(): readonly PickerOption[] {
     // card paints itself in a scheme the tile cache knows nothing about (see
     // `drawInScheme`), and the paper has to be here through `wallpaperAxisKey`
     // because two papers can differ in only a tone or a nib.
-    artKey: `preset|${preset.theme}|${preset.build}.${preset.pattern}|${wallpaperAxisKey(preset.wallpaper)}`,
+    //
+    // A kept room adds its own id and the moment it was kept: two rooms saved
+    // from the same four values are two cards, and a card cache that served the
+    // first one's picture to the second is invisible until somebody renames one.
+    artKey:
+      keptAt === null
+        ? `preset|${preset.theme}|${preset.build}.${preset.pattern}|${wallpaperAxisKey(preset.wallpaper)}`
+        : `mine|${preset.id}|${keptAt}|${preset.theme}|${preset.build}.${preset.pattern}|${wallpaperAxisKey(preset.wallpaper)}`,
     terms: `${preset.group} ${getTheme(preset.theme).name} ${BUILDS[preset.build].name} ${
       PATTERNS[preset.pattern].name
-    } ${getWallpaper(preset.paper).name} ${getTheme(preset.theme).tags.join(' ')}`,
+    } ${preset.paper === '' ? '' : getWallpaper(preset.paper).name} ${getTheme(preset.theme).tags.join(' ')}`,
     draw: (ctx: FlatCtx, w: number, h: number) => drawRoomCard(ctx, w, h, preset),
-  }));
+  };
+}
+
+/**
+ * The rooms, as cards: the shipped presets, then the reader's own.
+ *
+ * Theirs come LAST in the authored order and lead anyway, because they arrive
+ * under their own heading (`SAVED_ROOM_GROUP`) and `DesignPicker` orders its
+ * headings by first appearance — so a reader who has kept nothing sees exactly
+ * what they saw before, and one who has kept a room finds it filed as "Yours"
+ * rather than jumbled into Antique. A star moves it wherever they want from
+ * there; that is what the notation is for.
+ *
+ * Reactive: `savedRooms()` subscribes, so keeping a room repaints the strip that
+ * kept it on the same frame.
+ */
+export function roomPresetOptions(): readonly PickerOption[] {
+  return [
+    ...ROOM_PRESETS.map((preset) => roomCardOption(preset, null)),
+    ...savedRooms().map((room) => roomCardOption(room, room.saved)),
+  ];
 }
 
 /* ------------------------------- the case -------------------------------- */

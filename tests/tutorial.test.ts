@@ -48,6 +48,12 @@ import {
   tourSteps,
 } from '../src/features/tutorial/steps';
 import { DISMISSIBLE, dismissStale, openSurfaceIds } from '../src/features/tutorial/dismiss';
+import { factHolds } from '../src/features/tutorial/probe';
+import {
+  rememberTasteChosen,
+  resetTasteStoreForTests,
+} from '../src/features/tutorial/tasteStore';
+import type { TasteAnswers } from '../src/features/tutorial/tasteProfile';
 
 const VP: Size = { width: 1440, height: 900 };
 const CARD: Size = { width: 348, height: 232 };
@@ -398,6 +404,7 @@ describe('tour script', () => {
   it('walks the shelf, then the book, then the library, in order', () => {
     expect(TUTORIAL_STEP_IDS).toEqual([
       'welcome',
+      'taste',
       'first-book',
       'shelf-moves',
       'shelf-dock',
@@ -609,6 +616,65 @@ describe('tour script', () => {
     expect(first.pad).toBe(0);
     expect(first.padBox).toBeUndefined();
     expect(first.inset).toBeUndefined();
+  });
+
+  /*
+   * THE TASTE STEP, and the reason it is worth three assertions rather than a
+   * glance at the id list above.
+   *
+   * `src/features/tutorial/tasteQuestionnaire.tsx` was written complete, unit
+   * tested, and reachable from exactly one settings row: the app shell did not
+   * render it and the tour had no step for it, so the four questions that dress
+   * a reader's whole library never ran for a reader. The panel opens itself off
+   * `data-tutorial-step` and matches on the literal string `taste` — there is no
+   * import in either direction — so the id IS the wiring, and renaming it breaks
+   * the feature silently and invisibly.
+   */
+  it("carries a step whose id is 'taste' — the questionnaire's whole contract", () => {
+    const taste = TUTORIAL_STEPS.find((s) => s.id === 'taste');
+    expect(
+      taste,
+      "no step carries id 'taste'; tasteQuestionnaire.tsx polls for exactly that string",
+    ).toBeDefined();
+    if (taste === undefined) return;
+
+    // EARLY, and in BOTH lengths: the answers repaint the room, rebuild the
+    // case and rehang the wall that every later step points at, so a reader who
+    // meets it last has taken the tour of somebody else's library.
+    expect(taste.short).toBe(true);
+    const at = TUTORIAL_STEP_IDS.indexOf('taste');
+    expect(at).toBeGreaterThan(0); // after the greeting, which picks the length
+    expect(at).toBeLessThanOrEqual(2);
+    expect(SHORT_TOUR_STEP_IDS.indexOf('taste')).toBe(1);
+    for (const later of ['shelf-moves', 'shelf-studio', 'open-a-book', 'settings']) {
+      expect(TUTORIAL_STEP_IDS.indexOf(later), later).toBeGreaterThan(at);
+    }
+
+    // Completion is "the library was dressed", never "the panel went away" —
+    // and the step must not gate the tour: no skipIfMissing, so it is always
+    // offered, and next walks past it like any other.
+    expect(taste.task?.fact).toBe('taste-chosen');
+    expect(taste.skipIfMissing).toBeUndefined();
+  });
+
+  /*
+   * …and the fact behind it is really the store's marker. A step naming a fact
+   * nothing observes ticks never or always, and both look like a working tour.
+   */
+  it("ticks 'taste-chosen' only once the library was actually dressed", async () => {
+    resetTasteStoreForTests();
+    // now = 0 on every call: the probe's DOM poll is inert without a document.
+    expect(factHolds('taste-chosen', 0)).toBe(false);
+    await rememberTasteChosen({
+      room: 'reading-room',
+      pitch: 'warm',
+      paper: 'ruled',
+      sound: 'house',
+    } as TasteAnswers);
+    expect(factHolds('taste-chosen', 0)).toBe(true);
+    // "choose my look again" clears it, and the step is outstanding once more.
+    resetTasteStoreForTests();
+    expect(factHolds('taste-chosen', 0)).toBe(false);
   });
 
   it('placement works for every step against a real-ish anchor', () => {

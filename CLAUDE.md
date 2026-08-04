@@ -65,8 +65,8 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 ## Map of the app
 
 - `src/art/` — the drawing vocabulary: `flat.ts` (palette + primitives), `flatShelf.ts` (case parts), and the three design vocabularies `shelfDesign.ts` / `wallpaperDesign.ts` / `bookDesign.ts`
-- `src/features/bookshelf/` — Pixi world, gestures, spine/cover factories, shelf menu, left dock rail (new book / studio / add floor / trash), floor plates
-- `src/views/` — `BookView` spread + `rail/` (icon rail and its panels, incl. the library and book studios and their pickers), TOC/thumbnails/cheat-sheet
+- `src/features/bookshelf/` — Pixi world, gestures, spine/cover factories, shelf menu, left dock rail (new book / template / studio / add floor / trash), floor plates
+- `src/views/` — `BookView` spread + `rail/` (icon rail and its panels, incl. the library and book studios and their pickers, and `SharePanel` — every way a page leaves the app), TOC/thumbnails/cheat-sheet
 - `src/data/` — SQLite access and the persisted stores: `bookcases.ts`, `designPrefs.ts`, `settings.ts`
 - `src/editor/` — TipTap setup, custom nodes, slash + context menus, effects, pagination, script bridge, exporters
 - `src/flip/` — WebGL page-curl engine and snapshot cache

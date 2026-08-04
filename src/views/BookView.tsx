@@ -64,7 +64,10 @@ import { getPageEditor } from '../editor/instances';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
+import { exportActivePagePng } from '../editor/script/exporters/exportPage';
 import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
+import { openExportPdfDialog } from '../features/templates/ExportPdfDialog';
+import { openTemplatesGallery } from '../features/templates/TemplatesGallery';
 import { countBook, countDoc } from '../editor/wordcount';
 import FlipSurface, { type FlipSurfaceApi } from '../flip/FlipSurface';
 import type { LeafSide } from '../flip/PageFlipController';
@@ -79,6 +82,7 @@ import CustomizePanel from './rail/CustomizePanel';
 import HistoryPanel from './rail/HistoryPanel';
 import PageStylePanel from './rail/PageStylePanel';
 import CataloguePanel from './rail/CataloguePanel';
+import SharePanel from './rail/SharePanel';
 import TocPanel from './rail/TocPanel';
 import FocusDial from './rail/FocusDial';
 import {
@@ -951,9 +955,40 @@ export default function BookView(): JSX.Element {
           const page = activePage();
           if (page) void exportScript(page.id);
         },
+        /*
+         * The four flows that had no key and no button (see
+         * `views/rail/SharePanel.tsx`). Pointed at the same module-level
+         * openers the sheet's rows call, for the same reason every other id
+         * here is: the icon and the key must be one implementation.
+         *
+         * `templates` is registered by the SHELF as well — the gallery makes a
+         * book from out there and adds its pages to this one from in here, and
+         * a reader should not have to know which room they are in.
+         *
+         * `import-markdown` is deliberately NOT here: it belongs to the shell
+         * (App.tsx), because importing files makes BOOKS and a reader on the
+         * shelf wants it at least as much as a reader inside one. Registering
+         * it in both would be worse than registering it in neither — this
+         * view's cleanup would not restore the shell's entry, so the key would
+         * work until the first time a book was closed.
+         */
+        templates: () => openTemplates(),
+        'export-pdf': () => {
+          setActivePanel(null);
+          openExportPdfDialog();
+        },
+        'export-png': () => void exportActivePagePng(),
       }),
     );
   });
+
+  /** The gallery, from the rail icon or from Ctrl+Alt+G. */
+  const openTemplates = (): void => {
+    // The sheet would sit under the overlay, and its Escape would close first.
+    setActivePanel(null);
+    void play('pop-soft');
+    openTemplatesGallery();
+  };
 
   // -------------------------------------------------------------------------
   // Zoom by wheel, and pan by drag — the two gestures the reader already knows
@@ -1524,6 +1559,7 @@ export default function BookView(): JSX.Element {
           )
         }
         onAddPage={() => void addPage()}
+        onOpenTemplates={openTemplates}
         focusMode={focusMode()}
         onToggleFocus={toggleFocus}
         bookmarked={activeBookmarked()}
@@ -1677,6 +1713,20 @@ export default function BookView(): JSX.Element {
                 onClose={() => setActivePanel(null)}
               >
                 <CataloguePanel />
+              </RailPanel>
+
+              <RailPanel
+                open={activePanel() === 'share'}
+                title="Take it out"
+                onClose={() => setActivePanel(null)}
+              >
+                <SharePanel
+                  onCopyScript={() => {
+                    const page = activePage();
+                    if (page) void exportScript(page.id);
+                  }}
+                  onClose={() => setActivePanel(null)}
+                />
               </RailPanel>
 
               <RailPanel

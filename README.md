@@ -118,6 +118,7 @@ captures taken by [`shots-now/readme-shots.mjs`](shots-now/readme-shots.mjs)
 after driving the running app into the state each sentence claims — no mock-ups
 and no compositing.
 
+<!-- gen:part-1-sections -->
 | Section | What you get |
 | --- | --- |
 | [Installing](docs/readme/part-1-users.md#installing) | What the download will be, what the installer does, where your library lives, and how to uninstall without losing it |
@@ -130,6 +131,7 @@ and no compositing.
 | [The keyboard](docs/readme/part-1-users.md#the-keyboard) | Every shortcut, grouped by where you are standing, and which ones you can rebind |
 | [Backups, export and import](docs/readme/part-1-users.md#backups-export-and-import) | Scheduled backups, `.nbk` bundles, Markdown in and out, PDF and PNG, tray capture |
 | [Questions](docs/readme/part-1-users.md#questions) | Where the data is, whether it is offline, moving machines, and the failure modes worth naming |
+<!-- /gen -->
 
 ### [Part 2 — Building Alcove](docs/readme/part-2-developers.md)
 
@@ -138,6 +140,7 @@ have to touch to add a wallpaper motif or a new kind of block without leaving it
 unreachable. Written for whoever has to change something — so it is organised
 around the failures this repo has actually had rather than around the tree.
 
+<!-- gen:part-2-sections -->
 | Section | What you get |
 | --- | --- |
 | [How it's built](docs/readme/part-2-developers.md#how-its-built) | The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row |
@@ -153,9 +156,13 @@ around the failures this repo has actually had rather than around the tree.
 | [The gates](docs/readme/part-2-developers.md#the-gates) | Every unit-test file and the specific class of bug it exists to stop |
 | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) | Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does |
 | [Things that were harder than they look](docs/readme/part-2-developers.md#things-that-were-harder-than-they-look) | Five places the obvious implementation is wrong |
-| [The design record](docs/readme/part-2-developers.md#the-design-record) | The ADR set in [`docs/design/`](docs/design/), including which documents are superseded and why they are kept |
+| [The design record](docs/readme/part-2-developers.md#the-design-record) | The ADR set in `docs/design/`, including which documents are superseded and why they are kept |
 | [Building and releasing](docs/readme/part-2-developers.md#building-and-releasing) | The bundle artefacts, the icon pipeline, and the tag-driven release workflow |
+| [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) | The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails |
+| [How this document stays true](docs/readme/part-2-developers.md#how-this-document-stays-true) | The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed |
 | [Non-goals](docs/readme/part-2-developers.md#non-goals) | No sync, no cloud, no mobile, no plugin API, no second visual language, no light model |
+| [Licence and credits](docs/readme/part-2-developers.md#licence-and-credits) | MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable |
+<!-- /gen -->
 
 ## The repo at a glance
 
@@ -164,11 +171,11 @@ Part 2 rather than here.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->278<!--/f--> TypeScript files, <!--f:srcDocstrings-->270<!--/f--> of which open with a module docstring — <!--f:docstringLines-->5834<!--/f--> lines of prose | [What the source files document about themselves](docs/readme/part-2-developers.md#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->279<!--/f--> TypeScript files, <!--f:srcDocstrings-->271<!--/f--> of which open with a module docstring — <!--f:docstringLines-->5925<!--/f--> lines of prose | [What the source files document about themselves](docs/readme/part-2-developers.md#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2292<!--/f--> lines, <!--f:rustCommands-->13<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](docs/readme/part-2-developers.md#how-its-built) |
 | Tests | <!--f:unitTests-->71<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
-| QA against the running app | <!--f:probeScripts-->31<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
-| Generated and checked in | <!--f:generatorScripts-->6<!--/f--> `gen-*` scripts, one of which is gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
+| QA against the running app | <!--f:probeScripts-->34<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
+| Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
 | Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
 
 ## Getting started
@@ -211,9 +218,17 @@ marker — `<!--f:wallpaperPapers-->126<!--/f-->`, which GitHub renders as `126`
 and nothing else — and recomputed from the tree:
 
 ```bash
-npm run readme:check   # recompute every marker, resolve every relative link
+npm run readme:check   # recompute every marker, resolve every link and anchor
 npm run readme:facts   # print the true values
+npm run readme:build   # recompose this page's navigation from the two halves
 ```
+
+The section tables above are not typed either. Each `##` in a half carries an
+invisible `<!--nav: …-->` summary beside it, and
+[`scripts/gen-readme.mjs`](scripts/gen-readme.mjs) composes the rows from them —
+so renaming a section moves its row rather than orphaning it, and every
+`#fragment` on these three pages is resolved against the real headings it points
+into.
 
 [`tests/readme.test.ts`](tests/readme.test.ts) is the real gate: it supplies the
 counts that need the TypeScript modules loaded, so a vocabulary that grows while

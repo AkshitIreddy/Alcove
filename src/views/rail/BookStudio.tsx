@@ -88,10 +88,11 @@ import OwnColour from './OwnColour';
 import { getTheme } from '../../art/themes';
 import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
 import DesignPicker, { type PickerOption } from './DesignPicker';
-import DesignStrip from './DesignStrip';
+import DesignStrip, { StarMark, cappedTo, createCuration, starWords } from './DesignStrip';
 import { DesignCanvas } from './designArt';
 import { bindingOptions, drawBindingCard, ownAxisOptions } from './designOptions';
 import { bookBinding, loadDesignPrefs, saveBookBinding } from '../../data/designPrefs';
+import type { CurationAxis } from '../../data/shelfOfMine';
 import { stopShelfKeys } from './shelfKeys';
 import '../../styles/studio.css';
 
@@ -126,6 +127,44 @@ const BINDING_H = 190;
  * rendering budget as much as a layout one.
  */
 const CLOTH_PAGE = PALETTE_PAGE;
+
+/**
+ * A row in one of the two colour grids, shaped so the reader's curation can key
+ * on it.
+ *
+ * `id` and `name` are the whole of `CurationRow`; the third field is the value
+ * the swatch actually writes. Naming the caption `name` rather than `label` is
+ * not cosmetic — it is what lets the shared controller print a removed swatch
+ * in the restore drawer without this panel handing it a translation table.
+ */
+interface ClothSwatch {
+  readonly id: string;
+  readonly name: string;
+  readonly pigment: number;
+}
+
+interface CharmSwatch {
+  readonly id: string;
+  readonly name: string;
+  readonly index: number;
+  readonly hex: string;
+}
+
+/**
+ * The three composable axes, in this panel's words and in the reader's.
+ *
+ * `art/bookDesign.ts` calls them shape / material / decoration; the reader is
+ * shown "the shape of it", "what it is covered in" and "the marks on it", and
+ * `CURATION_AXES` writes them down as 'spine-shape' / 'covering' / 'marks' —
+ * named for what is being CHOSEN rather than for the module that implements it.
+ * One table so a strip and the sheet it opens cannot pass different words for
+ * the same list, which would give that list two arrangements.
+ */
+const OWN_AXIS_CURATION: Record<'shape' | 'material' | 'decoration', CurationAxis> = {
+  shape: 'spine-shape',
+  material: 'covering',
+  decoration: 'marks',
+};
 
 /**
  * The cover-facing projection of what the reader has actually PINNED.
@@ -426,29 +465,52 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    * cloth of another name and the tooltip has to answer "what colour is the
    * book", not "which row of a table did this come from".
    */
-  const CLOTH_SWATCHES: readonly { pigment: number; label: string }[] = PIGMENT_LABELS.map(
-    (name, pigment) => ({
-      pigment,
-      label: PIGMENT_CLOTH_NAMES[pigment] === '' ? name : (PIGMENT_CLOTH_NAMES[pigment] as string),
-    }),
-  );
+  const CLOTH_SWATCHES: readonly ClothSwatch[] = PIGMENT_LABELS.map((name, pigment) => ({
+    // The curation is keyed by (axis, entry id) and the id goes into the
+    // reader's SQLite row, so it is the pigment's INDEX as a string rather than
+    // its label: a cloth renamed under a removal must come back as the same
+    // removal, and the fifty labels are exactly the thing most likely to be
+    // reworded.
+    id: String(pigment),
+    pigment,
+    name: PIGMENT_CLOTH_NAMES[pigment] === '' ? name : (PIGMENT_CLOTH_NAMES[pigment] as string),
+  }));
+
+  /**
+   * The pigment row is a list like any other, so the reader gets the same hand
+   * on it: right-click to remove one they will never use, star one they always
+   * do, and the drawer to take a removal back. It is a swatch grid rather than
+   * a strip of cards, which is why it drives `createCuration` directly instead
+   * of going through `DesignStrip` — same controller, different furniture.
+   */
+  const clothCuration = createCuration<ClothSwatch>(() => ({
+    axis: 'spine-cloth',
+    label: 'pigments',
+    options: CLOTH_SWATCHES,
+    activeId: String(style().pigment),
+  }));
+
   /**
    * Twenty, then the rest behind a count — the house rule for a long list, and
    * the same fold `art/customColour.ts` states for every picker in the app.
    * The current pigment is always among the shown ones, or collapsing the grid
    * after picking from its tail would leave no swatch pressed and read as
    * though the choice had been forgotten.
+   *
+   * `cappedTo` rather than the slice-and-swap this used to spell out by hand:
+   * the rule ("the head, with the reader's choice swapped into the last slot")
+   * is the same one every capped list in the app follows, and a fourth copy of
+   * it is a fourth place for it to go stale.
    */
   const [allCloths, setAllCloths] = createSignal(false);
-  const shownCloths = createMemo<readonly { pigment: number; label: string }[]>(() => {
-    if (allCloths()) return CLOTH_SWATCHES;
-    const head = CLOTH_SWATCHES.slice(0, CLOTH_PAGE);
-    const at = style().pigment;
-    if (at < CLOTH_PAGE) return head;
-    // Into the LAST slot: the head is ordered, and pushing the run along to
-    // make room at the front would move every swatch under the cursor.
-    return [...head.slice(0, head.length - 1), CLOTH_SWATCHES[at] as { pigment: number; label: string }];
-  });
+  const clothList = createMemo<readonly ClothSwatch[]>(() => clothCuration.list());
+  const shownCloths = createMemo<readonly ClothSwatch[]>(() =>
+    allCloths()
+      ? clothList()
+      : cappedTo(clothList(), CLOTH_PAGE, (row) => row.pigment === style().pigment),
+  );
+  /** What the "more" chip is offering. The REMAINING count, never the total. */
+  const clothsBehind = (): number => clothList().length - shownCloths().length;
   /* ------------------------------ charm colour ---------------------------- */
 
   /**
@@ -458,28 +520,36 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    * because the row folds at twenty like every other long list in the app and
    * a folded row's third tile is not colourway three.
    */
-  const CHARM_SWATCHES: readonly { index: number; hex: string; label: string }[] =
-    CHARM_COLORS.map((hex, index) => ({
-      index,
-      hex,
-      label: CHARM_COLOR_LABELS[index] ?? `colour ${index + 1}`,
-    }));
+  const CHARM_SWATCHES: readonly CharmSwatch[] = CHARM_COLORS.map((hex, index) => ({
+    id: String(index),
+    index,
+    hex,
+    name: CHARM_COLOR_LABELS[index] ?? `colour ${index + 1}`,
+  }));
+
+  /** The ribbon's colourways, curated exactly like the pigments above. */
+  const charmCuration = createCuration<CharmSwatch>(() => ({
+    axis: 'charm-colour',
+    label: 'charm colours',
+    options: CHARM_SWATCHES,
+    activeId: typeof style().charmColor === 'number' ? String(style().charmColor) : '',
+  }));
+
   const [allCharms, setAllCharms] = createSignal(false);
-  /** Twenty, then the rest behind a count — and never without the current one. */
-  const shownCharms = createMemo<readonly { index: number; hex: string; label: string }[]>(() => {
-    if (allCharms()) return CHARM_SWATCHES;
-    const head = CHARM_SWATCHES.slice(0, PALETTE_PAGE);
-    const at = style().charmColor;
-    // A hex is not in the table at all, so there is nothing to swap forward:
-    // no named swatch is lit and the head is the honest thing to show.
-    if (typeof at !== 'number' || at < PALETTE_PAGE) return head;
-    // Into the LAST slot, same as the cloths: pushing the run along to make
-    // room at the front would move every swatch out from under the cursor.
-    return [
-      ...head.slice(0, head.length - 1),
-      CHARM_SWATCHES[at] as { index: number; hex: string; label: string },
-    ];
-  });
+  /**
+   * Twenty, then the rest behind a count — and never without the current one.
+   *
+   * A hex of the reader's own is not in the table at all, so there is nothing
+   * to swap forward: `cappedTo` is handed a predicate that matches nothing, no
+   * named swatch is lit, and the plain head is the honest thing to show.
+   */
+  const charmList = createMemo<readonly CharmSwatch[]>(() => charmCuration.list());
+  const shownCharms = createMemo<readonly CharmSwatch[]>(() =>
+    allCharms()
+      ? charmList()
+      : cappedTo(charmList(), PALETTE_PAGE, (row) => row.index === style().charmColor),
+  );
+  const charmsBehind = (): number => charmList().length - shownCharms().length;
   /** The reader's own charm colour, when they typed one. */
   const ownCharm = (): string | null =>
     typeof style().charmColor === 'string' ? (style().charmColor as string) : null;
@@ -607,6 +677,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             cardH={150}
             columns={3}
             searchLabel="Search bindings"
+            /* The same word the strip below passes, so the sheet and the strip
+               are two views of ONE arranged list. */
+            axis="binding"
           />
         )}
       </Show>
@@ -637,6 +710,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             cardH={150}
             columns={3}
             searchLabel={`Search ${axis === 'decoration' ? 'marks' : axis}s`}
+            axis={OWN_AXIS_CURATION[axis]}
           />
         )}
       </Show>
@@ -722,6 +796,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           limit={7}
           tileW={72}
           tileH={104}
+          axis="binding"
         />
         <Show when={pinned() !== null && pinned() !== seedBinding()}>
           <div class="nb-chip-row">
@@ -776,6 +851,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           limit={7}
           tileW={72}
           tileH={104}
+          axis="spine-shape"
         />
         <p class="nb-panel-row-label nb-strip-label font-ui">Covered in</p>
         <DesignStrip
@@ -792,6 +868,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           limit={7}
           tileW={72}
           tileH={104}
+          axis="covering"
         />
         <p class="nb-panel-row-label nb-strip-label font-ui">Marks on the spine</p>
         <DesignStrip
@@ -808,6 +885,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           limit={7}
           tileW={72}
           tileH={104}
+          axis="marks"
         />
         <div class="nb-chip-row" role="group" aria-label="Tooling">
           {/*
@@ -866,11 +944,16 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         <h3 class="nb-panel-section-title">
           pigment
           <em class="nb-panel-row-hint">
-            {ownCloth() ?? CLOTH_SWATCHES[style().pigment]?.label ?? ''}
+            {ownCloth() ?? CLOTH_SWATCHES[style().pigment]?.name ?? ''}
           </em>
           <RerollDice section="pigment" onClick={() => reroll(REROLL_GROUPS.pigment)} />
         </h3>
-        <div class="nb-swatch-grid" role="group" aria-label="Spine pigment">
+        <div
+          class="nb-swatch-grid"
+          role="group"
+          aria-label="Spine pigment"
+          on:contextmenu={(event) => clothCuration.onListContext(event)}
+        >
           <For each={shownCloths()}>
             {(swatch) => {
               const cloth = clothForPalette(swatch.pigment);
@@ -887,21 +970,31 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
                   /* Two flat halves, not a ramp: the face and the turned board,
                      which is exactly what the spine will show. */
                   style={{ background: `linear-gradient(105deg, ${pair[0]} 62%, ${pair[1]} 62%)` }}
-                  aria-label={swatch.label}
-                  data-tooltip={swatch.label.toLowerCase()}
+                  aria-label={`${swatch.name}${starWords(clothCuration.starsFor(swatch.id))}`}
+                  data-tooltip={swatch.name.toLowerCase()}
                   aria-pressed={on()}
-                  classList={{ 'is-active': on() }}
+                  classList={{
+                    'is-active': on(),
+                    'nb-cur-gone': clothCuration.removed(swatch.id),
+                  }}
                   /* A named pigment clears the reader's own colour in the same
                      write. Two fields, one intent: without it, pressing a
                      swatch would move a value nothing draws and the row would
                      look broken in exactly the way it used to. */
                   onClick={() => patch({ pigment: swatch.pigment, clothHex: null })}
-                />
+                  on:contextmenu={(event) => clothCuration.onEntryContext(event, swatch.id)}
+                >
+                  {/* The wrapper is the star's positioning context — see
+                      curation.css. A swatch is a bare coloured box otherwise. */}
+                  <span class="nb-mark-wrap">
+                    <StarMark stars={clothCuration.starsFor(swatch.id)} />
+                  </span>
+                </button>
               );
             }}
           </For>
         </div>
-        <Show when={CLOTH_SWATCHES.length > CLOTH_PAGE}>
+        <Show when={allCloths() || clothsBehind() > 0}>
           <div class="nb-chip-row">
             <button
               type="button"
@@ -909,10 +1002,11 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
               aria-expanded={allCloths()}
               onClick={() => setAllCloths(!allCloths())}
             >
-              {allCloths() ? 'fewer' : `${CLOTH_SWATCHES.length - CLOTH_PAGE} more`}
+              {allCloths() ? 'fewer' : `${clothsBehind()} more`}
             </button>
           </div>
         </Show>
+        <clothCuration.Overlay />
         {/*
           The door out of the table. The fifty above are a vocabulary and a
           vocabulary cannot contain the colour a particular reader already has
@@ -928,7 +1022,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           clearLabel="back to the pigment"
         />
         <p class="nb-panel-footnote">
-          {CLOTH_SWATCHES.length} cloths and any colour you like — and a book
+          {/* The count the reader can check by opening the row, not the count
+              the vocabulary ships: they may have taken some of these off it. */}
+          {clothList().length} cloths and any colour you like — and a book
           keeps its own in every room
         </p>
       </section>
@@ -1158,27 +1254,40 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           </For>
         </div>
         <Show when={style().charm !== 'none'}>
-          <div class="nb-swatch-grid nb-swatch-grid-charm" role="group" aria-label="Charm colour">
+          <div
+            class="nb-swatch-grid nb-swatch-grid-charm"
+            role="group"
+            aria-label="Charm colour"
+            on:contextmenu={(event) => charmCuration.onListContext(event)}
+          >
             <For each={shownCharms()}>
               {(swatch) => (
                 <button
                   type="button"
                   class="nb-swatch"
                   style={{ background: swatch.hex }}
-                  aria-label={swatch.label}
-                  data-tooltip={swatch.label.toLowerCase()}
+                  aria-label={`${swatch.name}${starWords(charmCuration.starsFor(swatch.id))}`}
+                  data-tooltip={swatch.name.toLowerCase()}
                   /* A colour of the reader's own outranks every colourway, so
                      none of these is lit under one — the same rule the cloth
                      row follows, and for the same reason: a swatch left lit
                      would be claiming credit for a colour it did not paint. */
                   aria-pressed={style().charmColor === swatch.index}
-                  classList={{ 'is-active': style().charmColor === swatch.index }}
+                  classList={{
+                    'is-active': style().charmColor === swatch.index,
+                    'nb-cur-gone': charmCuration.removed(swatch.id),
+                  }}
                   onClick={() => patch({ charmColor: swatch.index })}
-                />
+                  on:contextmenu={(event) => charmCuration.onEntryContext(event, swatch.id)}
+                >
+                  <span class="nb-mark-wrap">
+                    <StarMark stars={charmCuration.starsFor(swatch.id)} />
+                  </span>
+                </button>
               )}
             </For>
           </div>
-          <Show when={CHARM_SWATCHES.length > PALETTE_PAGE}>
+          <Show when={allCharms() || charmsBehind() > 0}>
             <div class="nb-chip-row">
               <button
                 type="button"
@@ -1186,10 +1295,11 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
                 aria-expanded={allCharms()}
                 onClick={() => setAllCharms(!allCharms())}
               >
-                {allCharms() ? 'fewer' : `${CHARM_SWATCHES.length - PALETTE_PAGE} more`}
+                {allCharms() ? 'fewer' : `${charmsBehind()} more`}
               </button>
             </div>
           </Show>
+          <charmCuration.Overlay />
           {/*
             The door out of the charm's own table. A ribbon is the one thing on
             a book a reader is likeliest to want to MATCH — to a cover, to a

@@ -100,8 +100,120 @@ function walk(dir: string, out: string[] = []): string[] {
 const strip = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/[^\n]*$/gm, ' ');
 
+/* ========================================================================== *
+ *          what counts as READING something, and what only looks like it     *
+ * ========================================================================== *
+ *
+ * THE THREE WAYS A MENTION CAN LIE, all of which this tree has actually used.
+ * Each is stripped before a file is asked whether it names an export:
+ *
+ *   1. AN IMPORT. `import { openTemplatesGallery } from './TemplatesGallery'`
+ *      says a module MIGHT use the thing. Twelve of the files in here import
+ *      something they then only re-export.
+ *   2. A RE-EXPORT. `export { openTemplatesGallery } from './TemplatesGallery'`
+ *      moves a name; it does not read it. `features/templates/groupD.ts` is a
+ *      barrel of exactly these, and while the original version of this file
+ *      counted them, it certified four whole features as "read by somebody"
+ *      on the strength of a barrel nobody imported for them.
+ *   3. A DEV BRIDGE. `if (import.meta.env.DEV) { window.__nbGroupD = {…} }`
+ *      is not a home; it is a hatch for a test harness. The same four features
+ *      were on that object, and their Playwright specs drove them through it,
+ *      so every one of them passed continuously while being unreachable.
+ *
+ * What survives the strip is the code that runs in a production build, which
+ * is the only thing that can put a button in front of a reader.
+ */
+
+/**
+ * A module's source with imports, re-export relays and DEV blocks removed.
+ *
+ * EVERY PATTERN HERE IS ANCHORED TO THE START OF A LINE, and that is not
+ * cosmetic. The first cut matched `\bimport\s*['"]…['"]` anywhere, and
+ * `SettingsPanel.tsx` contains the type `(tab: 'export' | 'import')` — so the
+ * word inside that string literal opened a "side-effect import" that ran to
+ * the next quote a thousand characters later and quietly deleted three real
+ * call sites. A statement-shaped regex has to be pinned where statements are.
+ */
+function liveCode(src: string): string {
+  let text = strip(src);
+  // Bare `import '…'` FIRST: it has no `from`, so leaving it would let the
+  // pattern below start there and run on to some later import's `from`.
+  text = text.replace(/^\s*import\s*['"][^'"]*['"]\s*;?/gm, ' ');
+  text = text.replace(/^\s*import\s[\s\S]*?\bfrom\s*['"][^'"]*['"]\s*;?/gm, ' ');
+  // `export … from '…'`, in both the `*` and the `{ … }` forms.
+  text = text.replace(
+    /^\s*export\s+(?:\*(?:\s+as\s+[\w$]+)?|\{[\s\S]*?\})\s*from\s*['"][^'"]*['"]\s*;?/gm,
+    ' ',
+  );
+  return stripDevBlocks(text);
+}
+
+/**
+ * Blank out the body of every `if (import.meta.env.DEV …) { … }`.
+ *
+ * Brace-counted rather than regexed: the block in `groupD.ts` holds an object
+ * literal and an arrow function, and a non-greedy `\{[\s\S]*?\}` stops at the
+ * first inner brace — which would leave the half of the bridge that names the
+ * flows still standing.
+ *
+ * It also has to find the `if` that OWNS the mention rather than the next `{`
+ * in the file: `App.tsx` says `return import.meta.env.DEV === true;` inside a
+ * predicate, and blanking from there to the next matching brace took the whole
+ * of the following component with it. A mention with no `if (` in front of it
+ * on its own line is left exactly where it is.
+ */
+function stripDevBlocks(text: string): string {
+  let out = text;
+  let from = 0;
+  for (;;) {
+    const at = out.indexOf('import.meta.env.DEV', from);
+    if (at < 0) return out;
+    const block = devBlockAt(out, at);
+    if (block === null) {
+      from = at + 1;
+      continue;
+    }
+    out = out.slice(0, block.start) + ' '.repeat(block.end - block.start) + out.slice(block.end);
+    from = block.start;
+  }
+}
+
+/** The `if (…DEV…) { … }` a mention sits in, or null when it is not in one. */
+function devBlockAt(text: string, at: number): { start: number; end: number } | null {
+  const lineStart = text.lastIndexOf('\n', at) + 1;
+  const head = text.slice(lineStart, at);
+  const ifAt = head.lastIndexOf('if');
+  if (ifAt < 0 || !/^if\s*\(/.test(head.slice(ifAt))) return null;
+  const start = lineStart + ifAt;
+  // Walk the condition's parens, then the block's braces.
+  const close = matchAt(text, text.indexOf('(', start), '(', ')');
+  if (close < 0) return null;
+  const open = text.indexOf('{', close);
+  if (open < 0 || text.slice(close + 1, open).trim() !== '') return null;
+  const end = matchAt(text, open, '{', '}');
+  return end < 0 ? null : { start, end: end + 1 };
+}
+
+/** Index of the delimiter closing the one at `open`, or -1. */
+function matchAt(text: string, open: number, up: string, down: string): number {
+  if (open < 0) return -1;
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    if (text[i] === up) depth += 1;
+    else if (text[i] === down) {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
 const ALL_FILES = walk(SRC);
 const SOURCE = new Map(ALL_FILES.map((f) => [f, strip(readFileSync(f, 'utf8'))] as const));
+/** The same files with the three lying mentions removed — see above. */
+const LIVE = new Map(
+  ALL_FILES.map((f) => [f, liveCode(readFileSync(f, 'utf8'))] as const),
+);
 const WATCHED_FILES = ALL_FILES.filter((f) => WATCHED.some((dir) => f.startsWith(dir)));
 
 const rel = (file: string): string => relative(SRC, file).replace(/\\/g, '/');
@@ -109,23 +221,84 @@ const rel = (file: string): string => relative(SRC, file).replace(/\\/g, '/');
 const moduleName = (file: string): string => basename(file).replace(/\.tsx?$/, '');
 
 /**
- * Does any other module in `src/` really read `name` out of `file`?
+ * Every spelling an importer can use for this file.
+ *
+ * `index.ts` is imported by its FOLDER — `from '../transfer'`, never
+ * `from '../transfer/index'` — so a barrel matched only on its basename looks
+ * like a module nobody imports, and everything it supplies looks inert.
+ */
+function specifiers(file: string): string[] {
+  const base = moduleName(file);
+  return base === 'index' ? ['index', basename(join(file, '..'))] : [base];
+}
+
+/**
+ * Every module a name can be imported FROM: the one that defines it, plus
+ * every barrel that relays it, transitively.
+ *
+ * Without this the re-export strip above would be too sharp: a consumer that
+ * legitimately imports `exportEntireLibrary` from `features/transfer` (the
+ * barrel) would not be seen to import it from `features/transfer/index.ts`
+ * (where it is written), and a plugged-in flow would be reported as inert.
+ */
+function suppliers(file: string, name: string): Set<string> {
+  const found = new Set([file]);
+  for (;;) {
+    let grew = false;
+    for (const [other, text] of SOURCE) {
+      if (found.has(other)) continue;
+      const relays = [...found].some((source) =>
+        specifiers(source).some((spec) =>
+          new RegExp(
+            `export\\s*(?:\\*|\\{[^}]*\\b${name}\\b[^}]*\\})\\s*from\\s*['"][^'"]*/${spec}['"]`,
+          ).test(text),
+        ),
+      );
+      if (relays) {
+        found.add(other);
+        grew = true;
+      }
+    }
+    if (!grew) return found;
+  }
+}
+
+/**
+ * Does any module in `src/` really read `name` out of `file`?
  *
  * Both halves are required. Naming the identifier alone is not enough — `INKS`
  * or `SHAPES` could plausibly be somebody else's local — and importing the
  * module alone is not enough either, since a file usually wants one export out
- * of forty.
+ * of forty. What is new since this file was written is WHICH mentions count:
+ * see the three lies above.
+ *
+ * `includeOwn` is the difference between the two questions this file asks. A
+ * vocabulary read only by the module that defines it is still a vocabulary no
+ * menu offers (part one). A FLOW called by its own module's event wiring — the
+ * block context menu opening itself on a right-click — is genuinely reachable,
+ * so part three counts a second mention inside the defining file.
  */
-function consumers(file: string, name: string): string[] {
-  const from = new RegExp(`from\\s+['"][^'"]*/${moduleName(file)}['"]`);
+function readers(file: string, name: string, includeOwn = false): string[] {
+  const from = [...suppliers(file, name)].flatMap(specifiers);
   const word = new RegExp(`\\b${name}\\b`);
   const out: string[] = [];
-  for (const [other, text] of SOURCE) {
+  if (includeOwn) {
+    const mentions = (LIVE.get(file) ?? '').match(new RegExp(`\\b${name}\\b`, 'g'));
+    // Two, because the declaration itself is one of them.
+    if ((mentions?.length ?? 0) > 1) out.push(`${rel(file)} (its own wiring)`);
+  }
+  for (const [other, live] of LIVE) {
     if (other === file) continue;
-    if (from.test(text) && word.test(text)) out.push(rel(other));
+    const imported = from.some((spec) =>
+      new RegExp(`from\\s+['"][^'"]*/${spec}['"]`).test(SOURCE.get(other) ?? ''),
+    );
+    if (imported && word.test(live)) out.push(rel(other));
   }
   return out;
 }
+
+/** Part one's question: is this vocabulary read by anybody but its author? */
+const consumers = (file: string, name: string): string[] => readers(file, name);
 
 type Kind = 'vocabulary' | 'pool' | 'gate' | 'labels';
 
@@ -241,7 +414,14 @@ const KNOWN_UNPLUGGED: Readonly<Record<string, string>> = {
   'editor/effects/vocabulary.ts#TINT_ALL': 'as TAPE_ALL. This is the colour axis that shipped inert once already.',
   'editor/effects/vocabulary.ts#SCRIPT_DOMAINS': 'the script-vs-editor guard. Read by fuzzyCollisions in the same file and by tests; no app code asks it anything.',
   'editor/effects/blockEffects.ts#BLOCK_EFFECT_ATTRS':
-    'the attribute list the TipTap extension builds itself from, exported beside BLOCK_EFFECT_TYPES which IS read. Plugging it means the context menu deriving its rows from it.',
+    'the attribute list the TipTap extension builds itself from. Plugging it means the context menu deriving its rows from it.',
+  /* Found the day the reader stopped counting a re-export as a reader (see
+     `liveCode`): its note used to say BLOCK_EFFECT_TYPES "IS read", and what
+     was actually true is that `editor/nodes/index.ts` RELAYS it and nobody
+     imports it from there. Plugging it means the node barrel's own consumers
+     naming the list, or dropping the relay. */
+  'editor/effects/blockEffects.ts#BLOCK_EFFECT_TYPES':
+    'the node types a block effect can be hung on. Read inside blockEffects.ts and re-exported by editor/nodes/index.ts, which is not the same as being read.',
   'editor/effects/confetti.ts#CONFETTI_PALETTE':
     'the confetti colours, used inside confetti.ts. Exported for the bounds test.',
 
@@ -394,6 +574,247 @@ describe('every vocabulary, pool, gate and label map has a reader', () => {
         outstanding.map((key) => `    ${key} — ${KNOWN_UNPLUGGED[key]}`).join('\n'),
     );
     expect(outstanding.length).toBeLessThanOrEqual(BACKLOG_CEILING);
+  });
+});
+
+/* ========================================================================== *
+ *              part three — a finished FEATURE with no button                *
+ * ========================================================================== *
+ *
+ * Part one watches vocabularies. It could not have caught what happened next,
+ * and the post-mortem is worth writing down because all three reasons were
+ * design decisions rather than oversights.
+ *
+ * FOUR finished, e2e-tested features shipped with no entry point anywhere in
+ * the app — `openTemplatesGallery`, `openExportPdfDialog`, `importMarkdownBooks`
+ * and `exportActivePagePng`. The only way to reach any of them was to type
+ * `window.__nbGroupD` into a console. Part one said nothing, because:
+ *
+ *   1. IT WATCHES TWO DIRECTORIES. `WATCHED` is `src/art` and
+ *      `src/editor/effects`; these four live in `src/features/templates`.
+ *   2. IT CLASSIFIES DATA, NOT DOING. `classify()` looks for tables, pools,
+ *      predicates and label maps. A flow is a plain exported function and is
+ *      not this alarm's business by that definition.
+ *   3. ITS CONSUMER TEST COUNTED A BARREL. `features/templates/groupD.ts`
+ *      imports all four, re-exports all four, and hangs all four on a dev-only
+ *      global — so every one of them had a "consumer" in `src/`.
+ *
+ * Part three answers the other question: not "is this vocabulary offered?" but
+ * "can a reader get at this at all?". It is SOURCE-ONLY on purpose — part one
+ * imports the modules it watches, which is why it can only watch pure ones
+ * (`src/art` under a node environment), and a flow lives in a `.tsx` that
+ * pulls in Solid, Pixi, CSS and the DOM. Reading source is what lets this half
+ * cover every module in `src/` instead of two directories.
+ *
+ * (1) is fixed by walking all of `src/`; (2) by classifying by the SHAPE of an
+ * entry point; (3) by `liveCode()` above, which is shared with part one — so a
+ * vocabulary can no longer be laundered through a barrel either.
+ */
+
+/**
+ * What an entry point is called.
+ *
+ * Deliberately narrow, and every prefix earns its place by naming an act a
+ * reader performs rather than a value a module computes: something is OPENED,
+ * SHOWN, LAUNCHED or STARTED, or data is IMPORTed or EXPORTed across the app's
+ * edge. `getX`, `buildX`, `resolveX` and the rest are plumbing — a plumbing
+ * function with no caller is dead code, which is a tidiness problem, not the
+ * "we shipped a feature nobody can reach" problem this file exists for.
+ */
+const ENTRY_SHAPE = /^(open|show|launch|start|import|export)[A-Z]/;
+
+/**
+ * Exported functions matching `ENTRY_SHAPE`, found by reading declarations.
+ *
+ * Both forms this tree uses: `export function openX()` (with or without
+ * `async`) and `export const openX = (…) =>`. A re-export line cannot match
+ * either, which matters — `groupD.ts` would otherwise be reported as the
+ * definition site of all four of the flows it merely relays.
+ */
+function entryPoints(): Array<{ file: string; name: string }> {
+  const out: Array<{ file: string; name: string }> = [];
+  for (const [file, text] of SOURCE) {
+    for (const match of text.matchAll(
+      /\bexport\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+    )) {
+      if (ENTRY_SHAPE.test(match[1]!)) out.push({ file, name: match[1]! });
+    }
+    for (const match of text.matchAll(
+      /\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s*)?\(/g,
+    )) {
+      if (ENTRY_SHAPE.test(match[1]!)) out.push({ file, name: match[1]! });
+    }
+  }
+  return out;
+}
+
+/**
+ * Flows that really are reachable from their own module and nowhere else, or
+ * that exist as API beside the one the app calls. Same contract as `EXEMPT`:
+ * every line says why, and a line naming something that no longer exists fails
+ * the suite.
+ */
+const EXEMPT_FLOWS: Readonly<Record<string, string>> = {
+  'views/CheatSheet.tsx#openCheatSheet':
+    'the one-way half of the card’s API. CheatSheetHost registers toggleCheatSheet for the keyboard, which is the reachable one; this stays for anything that wants to open the card without first asking whether it is already up.',
+};
+
+const FLOWS = entryPoints();
+const FLOW_FINDINGS = FLOWS.filter(
+  ({ file, name }) => readers(file, name, true).length === 0,
+).map(({ file, name }) => `${rel(file)}#${name}`);
+
+describe('the flow alarm can see what part one could not', () => {
+  it('walks every module in src/, not two vocabularies', () => {
+    // The vacuous-pass guard, same as part one's. `src/features/templates`
+    // has to be in scope or this whole section is theatre.
+    expect(ALL_FILES.length).toBeGreaterThanOrEqual(200);
+    expect(FLOWS.length).toBeGreaterThanOrEqual(20);
+    expect(FLOWS.map((f) => rel(f.file))).toContain(
+      'features/templates/TemplatesGallery.tsx',
+    );
+  });
+
+  it('does not count an import or a re-export as a reader', () => {
+    const relay = liveCode(`
+      import { openThing } from './thing';
+      export { openThing } from './thing';
+      export * from './other';
+      const unrelated = 1;
+    `);
+    expect(relay).not.toMatch(/openThing/);
+    expect(relay).toMatch(/unrelated/);
+  });
+
+  it('does not count the dev bridge as a reader', () => {
+    // Read off the REAL file, not a fixture: `window.__nbGroupD` is the exact
+    // shape that certified four unreachable features as plugged in, and a
+    // fixture would stop testing that the day the bridge was rewritten.
+    const groupD = readFileSync(join(SRC, 'features', 'templates', 'groupD.ts'), 'utf8');
+    expect(groupD, 'the bridge this test is about has been removed').toMatch(
+      /import\.meta\.env\.DEV/,
+    );
+    expect(groupD).toMatch(/__nbGroupD/);
+    const live = liveCode(groupD);
+    expect(live).not.toMatch(/__nbGroupD/);
+    for (const flow of [
+      'openTemplatesGallery',
+      'openExportPdfDialog',
+      'importMarkdownBooks',
+      'exportActivePagePng',
+    ]) {
+      expect(
+        live,
+        `${flow} is still visible in groupD's live code — the barrel would vouch for it again`,
+      ).not.toMatch(new RegExp(flow));
+    }
+  });
+
+  it('still recognises a flow that really is wired', () => {
+    // Two controls, because a strip that removed everything would also report
+    // an empty findings list. The parcel desk is opened by App.tsx and by the
+    // settings sheet; the templates gallery is opened by the shelf dock and
+    // the book rail. Both must read as PLUGGED.
+    expect(
+      readers(join(SRC, 'features', 'transfer', 'TransferPanel.tsx'), 'openTransferPanel', true),
+    ).not.toEqual([]);
+    expect(
+      readers(join(SRC, 'features', 'templates', 'TemplatesGallery.tsx'), 'openTemplatesGallery', true),
+    ).not.toEqual([]);
+  });
+
+  it('counts a module that wires its own flow up', () => {
+    // `contextMenuController` opens its own menu from its own event handler.
+    // That is a button, it is just not somebody else's button — and an alarm
+    // that shouted about it would be an alarm somebody switched off.
+    expect(
+      readers(join(SRC, 'editor', 'menu', 'contextMenuController.ts'), 'openBlockContextMenu', true),
+    ).not.toEqual([]);
+  });
+});
+
+describe('every finished flow has a way in', () => {
+  it('nothing is reachable only from a dev global', () => {
+    const orphans = FLOW_FINDINGS.filter((key) => EXEMPT_FLOWS[key] === undefined).map(
+      (key) =>
+        `${key} — nothing in a production build opens this. Give it a button ` +
+        '(and a shortcut in data/keybindings), or add it to EXEMPT_FLOWS with the reason.',
+    );
+    expect(orphans.sort()).toEqual([]);
+  });
+
+  it('the flow exemptions cannot rot', () => {
+    const known = new Set(FLOWS.map(({ file, name }) => `${rel(file)}#${name}`));
+    const gone = Object.keys(EXEMPT_FLOWS).filter((key) => !known.has(key));
+    expect(gone, 'these name flows that no longer exist — delete the lines').toEqual([]);
+    const pointless = Object.keys(EXEMPT_FLOWS).filter(
+      (key) => !FLOW_FINDINGS.includes(key),
+    );
+    expect(pointless, 'these exemptions are not needed — the flow has a way in').toEqual([]);
+  });
+
+  it('the four that shipped inert are wired to real controls now', () => {
+    /*
+     * Belt and braces over the sweep above. The sweep proves SOMETHING names
+     * each flow; this names the file that has to, so moving a button out of
+     * the rail without putting it anywhere else fails here with the reason
+     * rather than three tests away.
+     */
+    const wiredIn = (module: string, flow: string): string[] =>
+      readers(join(SRC, ...module.split('/')), flow, true);
+    expect(wiredIn('features/templates/TemplatesGallery.tsx', 'openTemplatesGallery')).toEqual(
+      expect.arrayContaining([
+        'features/bookshelf/BookshelfWorld.tsx',
+        'views/BookView.tsx',
+      ]),
+    );
+    expect(wiredIn('features/templates/ExportPdfDialog.tsx', 'openExportPdfDialog')).toEqual(
+      expect.arrayContaining(['views/rail/SharePanel.tsx']),
+    );
+    expect(
+      wiredIn('editor/script/exporters/exportPage.ts', 'exportActivePagePng'),
+    ).toEqual(expect.arrayContaining(['views/rail/SharePanel.tsx']));
+    expect(wiredIn('features/templates/importMarkdown.ts', 'importMarkdownBooks')).toEqual(
+      expect.arrayContaining([
+        'App.tsx',
+        'features/settings/SettingsPanel.tsx',
+        'views/rail/SharePanel.tsx',
+      ]),
+    );
+  });
+
+  it('gives each of them a rebindable key, not just a button', () => {
+    /*
+     * A control the reader can find is half of it; the brief asked for the
+     * other half — "registered through the central map so it is rebindable and
+     * appears in the cheat sheet". Both surfaces are generated from
+     * SHORTCUT_ACTIONS (tests/keybindings.test.ts holds that), so being in the
+     * registry IS being in the cheat sheet.
+     */
+    const registry = readFileSync(join(SRC, 'data', 'keybindings.ts'), 'utf8');
+    for (const id of ['templates', 'export-pdf', 'export-png', 'import-markdown']) {
+      expect(registry, `${id} is not in the shortcut registry`).toMatch(
+        new RegExp(`id:\\s*'${id}'`),
+      );
+    }
+    // …and something on screen has to PERFORM each of them, or the row in the
+    // settings sheet captures a key that does nothing. A view claims an id by
+    // naming it as a key in a `registerCommands` map, quoted or bare — both
+    // spellings are in the tree and neither is wrong.
+    const performs = (id: string): string[] =>
+      [...LIVE]
+        .filter(
+          ([, live]) =>
+            live.includes('registerCommands') &&
+            new RegExp(`['"]?${id}['"]?\\s*:`).test(live),
+        )
+        .map(([file]) => rel(file));
+    expect(performs('templates')).toEqual(
+      expect.arrayContaining(['features/bookshelf/BookshelfWorld.tsx', 'views/BookView.tsx']),
+    );
+    expect(performs('export-pdf')).toEqual(expect.arrayContaining(['views/BookView.tsx']));
+    expect(performs('export-png')).toEqual(expect.arrayContaining(['views/BookView.tsx']));
+    expect(performs('import-markdown')).toEqual(expect.arrayContaining(['App.tsx']));
   });
 });
 
@@ -601,5 +1022,85 @@ describe('every ink can be read on every paper in every room', () => {
     // key would leave the kraft paper on the page forever.
     expect(Object.keys(cleared)).toEqual(Object.keys(withStock));
     expect(cleared['--paper-cream']).toBe('');
+  });
+});
+
+/* ========================================================================== *
+ *                 part four — the shell has to render the panel              *
+ * ========================================================================== *
+ *
+ * The seventh time, and the one that was written while this file was being
+ * read: `features/tutorial/tasteQuestionnaire.tsx` — four questions that dress
+ * a reader's whole library, complete, with thirty-eight passing tests, and
+ * reachable only from one row buried in the settings sheet. Neither half of
+ * this file could see it:
+ *
+ *   - part one watches `src/art` and `src/editor/effects`, and it is a panel;
+ *   - part three asks whether an OPENER has a caller, and `openTaste` had two
+ *     (the panel itself and the settings row) — so the flow alarm was satisfied
+ *     while nothing ever put the component on screen for a new reader.
+ *
+ * A full-viewport panel that owns its own open/closed state is inert until some
+ * long-lived host RENDERS it, and "somebody imports the opener" is not that.
+ * So this part reads the shell and checks the element is really in the tree.
+ * `LIVE` has already had the import lines cut out, so a mention here can only
+ * come from JSX.
+ */
+
+describe('the app shell mounts the panels that outlive what opens them', () => {
+  const shell = LIVE.get(join(SRC, 'App.tsx')) ?? '';
+
+  it('has an App.tsx to read', () => {
+    // The vacuous-pass guard: an empty string would satisfy nothing below by
+    // failing, but a mis-joined path would make every later regex meaningless.
+    expect(shell.length).toBeGreaterThan(200);
+    expect(shell).toMatch(/<QuickSwitcher\s*\/>/);
+  });
+
+  it('renders <TasteQuestionnaire /> beside <TutorialOverlay />', () => {
+    expect(
+      shell,
+      'App.tsx does not render <TasteQuestionnaire /> — the questionnaire ' +
+        'cannot open itself from a tree it is not in, so the tour reaches its ' +
+        'taste step and nothing happens',
+    ).toMatch(/<TasteQuestionnaire\s*\/>/);
+    // Beside the overlay, because that is the host that outlives the tour.
+    expect(shell).toMatch(/<TutorialOverlay\s*\/>/);
+    // …and the shell must be a real reader of the module, not a stray string.
+    expect(
+      readers(join(SRC, 'features', 'tutorial', 'tasteQuestionnaire.tsx'), 'TasteQuestionnaire'),
+    ).toContain('App.tsx');
+  });
+
+  /**
+   * The questionnaire opens ON a tour step, so for as long as it is up the two
+   * are stacked — and both hold a capture-phase `keydown` on `window`. Neither
+   * `stopPropagation` nor mount order can separate them: `stopPropagation()`
+   * does not stop other listeners on the SAME target, so both handlers run
+   * whatever the order. Observed before the guard went in: Escape closed the
+   * question AND ended the tour underneath it, and ← → moved both.
+   *
+   * So the tour — the thing behind — has to stand down, on both of the two
+   * things it can tell: the modal's layer is still on screen, or the modal
+   * already handled the key. One test per order.
+   */
+  it('makes the tour stand down while a modal question is over it', () => {
+    const overlay = LIVE.get(join(SRC, 'features', 'tutorial', 'TutorialOverlay.tsx')) ?? '';
+    expect(overlay.length).toBeGreaterThan(200);
+    expect(overlay, 'the overlay no longer looks for a modal above it').toMatch(
+      /modalOverTour/,
+    );
+    expect(
+      overlay,
+      'the guard has to cover the order where the modal handled the key first',
+    ).toMatch(/defaultPrevented/);
+    // The questionnaire's own layer is what it looks for; a renamed layer would
+    // silently hand Escape back to the tour.
+    expect(overlay).toMatch(/'\.nbq-layer'/);
+    const taste = readFileSync(
+      join(SRC, 'features', 'tutorial', 'taste.css'),
+      'utf8',
+    );
+    expect(taste, 'taste.css no longer draws .nbq-layer').toMatch(/\.nbq-layer\s*\{/);
   });
 });

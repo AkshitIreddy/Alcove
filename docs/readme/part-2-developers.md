@@ -44,6 +44,7 @@ shipped](#the-failure-modes-this-codebase-has-actually-shipped), which is the
 shortest useful thing on this page.
 
 ## How it's built
+<!--nav: The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row-->
 
 Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a WebView2
 window, and a [SolidJS](https://www.solidjs.com/) frontend built by Vite. Almost
@@ -174,6 +175,7 @@ would not meet (see [`src/features/transfer/zip.ts`](../../src/features/transfer
 for the reasoning in one concrete case).
 
 ## Getting it running
+<!--nav: `npm run tauri dev`, the browser-only dev path, and the four checks-->
 
 ```bash
 npm install
@@ -225,6 +227,7 @@ keeps the trace of the attempt that failed, which is how you tell the two apart.
 check to run when the repo is quiet.
 
 ## The map of the app
+<!--nav: Directory by directory, plus the module-docstring convention this README points at instead of copying-->
 
 Start with the directory, then the file. Every module in the tree opens with a
 docstring stating what it is responsible for and — where a decision needed
@@ -249,8 +252,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->270<!--/f--> of <!--f:srcFiles-->278<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->5834<!--/f--> lines of it.
+<!--f:srcDocstrings-->271<!--/f--> of <!--f:srcFiles-->279<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->5925<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -271,6 +274,7 @@ carries real measurements, and it is the clearest example of the house style of
 writing down a decision *and* the thing it replaced.
 
 ## The art pipeline
+<!--nav: Bake once, draw forever: atlas packing, LOD tiers, and the cache-key rule-->
 
 The rule is **bake once, draw forever**. Nothing in the shelf world is painted
 per frame. A part is drawn into an `OffscreenCanvas`, turned into an
@@ -409,6 +413,7 @@ gets sampled — which is to say, at the zoom levels where the most wall is visi
 Turning mipmaps on puts the seam back.
 
 ## The design vocabularies
+<!--nav: Colour, carpentry, wall and binding as four orthogonal axes — and adding a value end to end-->
 
 Colour is not the only axis a room varies on. There are four vocabularies, and
 each is deliberately independent of the others: repainting a room must not
@@ -570,6 +575,7 @@ pickers stored and previewed truthfully while the shelf kept drawing a plain pla
 case against a bare wall.
 
 ## The editor
+<!--nav: The vendored Solid bindings, the pagination contract, block effects, and adding a block type step by step-->
 
 One TipTap v3 editor per page. `@tiptap/core` plus `@tiptap/pm` only — no
 framework adapter from upstream, because there isn't a Solid one worth taking.
@@ -727,6 +733,7 @@ card, banner, index card, envelope, stamp, tag and margin note rendered as a bar
 slash menu inserted them. The only evidence was looking at a page.
 
 ## The flip
+<!--nav: The cylinder curl, the snapshot cache, and the library bug worked around at length-->
 
 At rest a page is live DOM. During a gesture it is a WebGL cylinder-curl mesh fed
 by pre-rasterised snapshots. The swap is the whole design, and
@@ -785,6 +792,7 @@ sweep, radius easing and snapshot-ratio decisions are gated
 [`cssFallback.ts`](../../src/flip/cssFallback.ts) is the no-WebGL path only.
 
 ## Notebook Script
+<!--nav: Why `parse()` is total, the round-trip invariant, and the generated spec-->
 
 A Markdown subset plus `:::name {attrs}` directives plus fenced mini-languages,
 handwritten in [`src/script/`](../../src/script/). The blueprint is
@@ -834,6 +842,7 @@ Current surface, counted from the vocabulary:
 ramp and warned).
 
 ## The data layer
+<!--nav: The schema, the bookcase model, and why every read is validated-->
 
 SQLite through `tauri-plugin-sql`, no ORM, migrations registered on the Rust side
 in [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs). There are
@@ -884,6 +893,7 @@ Junk resolves to the house choice; it never throws.
 alternative is an exception raised in the middle of drawing a room.
 
 ## The failure modes this codebase has actually shipped
+<!--nav: The three ways work here has looked finished and been unreachable, unreadable or wrong, with the real instances named-->
 
 Three shapes, each with real instances. They are worth knowing by name because
 none of them produces a red test, an exception, or anything visible on a clean
@@ -967,6 +977,7 @@ believed, and where the property is mechanical, gate it. This README is under th
 same rule — see *How this document stays true*.
 
 ## The gates
+<!--nav: Every unit-test file and the specific class of bug it exists to stop-->
 
 <!--f:unitTests-->71<!--/f--> unit-test files, and almost none of them are there
 for coverage. Each exists to stop a specific class of bug, and most of the
@@ -1075,6 +1086,7 @@ sort last. It counts toward the file total above. If you find another `zz-*`, it
 is the same thing.
 
 ## Driving the running app
+<!--nav: Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does-->
 
 Unit tests prove a module is right. They say nothing about whether the app can
 *reach* it, and that has been the expensive bug three times over. Three layers of
@@ -1097,7 +1109,7 @@ using it.
 
 ### Probes
 
-<!--f:probeScripts-->31<!--/f--> scripts under [`scripts/`](../../scripts/) named
+<!--f:probeScripts-->34<!--/f--> scripts under [`scripts/`](../../scripts/) named
 `probe-*.mjs` drive the running app with Playwright. The important three:
 
 - [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice
@@ -1106,6 +1118,12 @@ using it.
   whole spine bake path.
 - [`probe-studio-wiring.mjs`](../../scripts/probe-studio-wiring.mjs) — the studio panel,
   driven only by clicking.
+
+A fourth is worth naming because of what it deletes before it starts:
+[`probe-groupd.mjs`](../../scripts/probe-groupd.mjs) removes `window.__nbGroupD`
+— the dev bridge four finished features were reachable through and *only*
+through — and then drives all four by pointer. A green e2e spec had said nothing
+about that for a whole wave, because the spec drove the bridge.
 
 Two rules, both learned the hard way.
 
@@ -1140,6 +1158,7 @@ at it*. Keep it proportionate — the surface you changed, batched into boards w
 it makes sense.
 
 ## Things that were harder than they look
+<!--nav: Five places the obvious implementation is wrong-->
 
 Five places where the obvious implementation is wrong, each linking the docstring
 that tells the story in full.
@@ -1181,6 +1200,7 @@ above, along with the five siblings that led to a standing alarm.
 → [`tests/catalogue-reach.test.ts`](../../tests/catalogue-reach.test.ts)
 
 ## The design record
+<!--nav: The ADR set in `docs/design/`, including which documents are superseded and why they are kept-->
 
 [`docs/design/`](../design/) is an ADR set: <!--f:designDocs-->15<!--/f-->
 documents, of which <!--f:supersededDesignDocs-->5<!--/f--> carry an explicit
@@ -1215,6 +1235,7 @@ quality-of-life features and their ownership. [`docs/e2e.md`](../e2e.md) and
 architectural, and both are worth reading before their first red run.
 
 ## Building and releasing
+<!--nav: The bundle artefacts, the icon pipeline, and the tag-driven release workflow-->
 
 ```bash
 npm run build          # spec:check, then vite build → dist/
@@ -1292,15 +1313,17 @@ pushed, so nothing about this job has run in anger.
 > other way round.
 
 ## The generated artefacts
+<!--nav: The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails-->
 
-<!--f:generatorScripts-->6<!--/f--> scripts under [`scripts/`](../../scripts/) named
-`gen-*` write checked-in files. Exactly **one** of them has a regeneration check
-wired into the test suite, which is the difference between a generator and a
+<!--f:generatorScripts-->7<!--/f--> scripts under [`scripts/`](../../scripts/) named
+`gen-*` write checked-in files. **Two** of them have a regeneration check wired
+into the test suite, which is the difference between a generator and a
 guarantee — the rest are covered indirectly, or not at all.
 
 | Generator | Writes | Verified by |
 |---|---|---|
-| [`gen-spec.mjs`](../../scripts/gen-spec.mjs) | the AI-facing Notebook Script spec, twice (Tauri resource + inlined TS) | `npm run spec:check`, and `tests/script/spec-generated.test.ts` — the only one that fails on a forgotten regeneration |
+| [`gen-spec.mjs`](../../scripts/gen-spec.mjs) | the AI-facing Notebook Script spec, twice (Tauri resource + inlined TS) | `npm run spec:check`, and `tests/script/spec-generated.test.ts` — fails on a forgotten regeneration |
+| [`gen-readme.mjs`](../../scripts/gen-readme.mjs) | the front page's two navigation tables, composed from the `<!--nav: …-->` marker beside each `##` heading in these halves | `npm run readme:check`, and `tests/readme.test.ts` — fails on a forgotten regeneration, and resolves every `#fragment` besides |
 | [`gen-tints.mjs`](../../scripts/gen-tints.mjs) | the tint rules in `effects.css` | `tests/catalogue-reach.test.ts` (reachability, not regeneration) |
 | [`gen-underlines.mjs`](../../scripts/gen-underlines.mjs) | the underline rules | as above |
 | [`gen-lettering.mjs`](../../scripts/gen-lettering.mjs) | the hand / ink / size / ranging rules | as above, plus the 13px floor in `tests/styles.test.ts` |
@@ -1313,6 +1336,7 @@ reported 13 problems. Adding `"icons:check"` to `package.json` and calling it fr
 a test is the obvious next step and has not been done.
 
 ## How this document stays true
+<!--nav: The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed-->
 
 Two mechanisms, both with a failing check rather than just a writer:
 
@@ -1327,18 +1351,37 @@ Two mechanisms, both with a failing check rather than just a writer:
   read.
 - **`npm run readme:check`** covers all three pages — the front door
   [`README.md`](../../README.md) and the two halves in
-  [`docs/readme/`](.) — and does two things to each. It recomputes every number
+  [`docs/readme/`](.) — and does three things to them. It recomputes every number
   written inside an invisible `<!--f:key-->…<!--/f-->` marker, which GitHub
   renders as the number and nothing else; `npm run readme:facts` prints the true
-  values. And it resolves every relative link **from the directory of the file
+  values. It resolves every relative link **from the directory of the file
   the link is written in**, which is what a browser does, so the front door's
   root-relative paths and the halves' `../../` paths are each checked the way
-  their reader will follow them.
+  their reader will follow them. And it rebuilds the front page's navigation
+  from these halves and fails if the checked-in copy differs.
   [`tests/readme.test.ts`](../../tests/readme.test.ts) is the actual gate: it supplies
   the counts that need TypeScript loaded, so a vocabulary that grows and a README
   that says otherwise is a failing test. It also checks that the deferred-key list
   in the script and the values supplied by the test agree, because a key one side
   forgets is a number nobody verifies.
+
+  The third of those is newer than the other two and exists because the front
+  page rotted exactly once. The README is **three pages, not one file**, and
+  that is load-bearing rather than cosmetic: these halves write most of their
+  relative links as `../../src/…`, which resolve from `docs/readme/` and would
+  404 from the repo root, and *both* halves carry a `## Notebook Script`
+  section, which would collide into `#notebook-script` and `#notebook-script-1`
+  the moment they shared a page. Concatenating the halves into the front page is
+  therefore not a formatting choice — it breaks every link in this half. But the
+  front page's body *is* navigation into them, one row per section, and those
+  rows were typed by hand and drifted. So they are no longer typed:
+  [`scripts/gen-readme.mjs`](../../scripts/gen-readme.mjs) composes them from an
+  invisible `<!--nav: …-->` summary written directly under each `##` heading
+  here, `npm run readme:build` rewrites them, and `--check` fails when they
+  drift. Rename a section and the row follows it; add one without a summary and
+  the build stops and names the line. It also resolves every `#fragment` against
+  the real headings of the file it points into — the one thing the link checker
+  above cannot see, because it splits the fragment off and stats the file.
 
 Every number on these three pages and every relative link on them is a
 measurement, not a claim. If you write a new one, wrap it in a marker and
@@ -1357,6 +1400,7 @@ by hand is the entire value.
 > Duplicating one into the other makes both worse.
 
 ## Non-goals
+<!--nav: No sync, no cloud, no mobile, no plugin API, no second visual language, no light model-->
 
 - **No sync and no accounts.** The database is a file on your disk. There is no
   server to sign in to and nothing to be logged out of.
@@ -1378,6 +1422,7 @@ by hand is the entire value.
   are fine; a highlight placed to imply a lamp is not.
 
 ## Licence and credits
+<!--nav: MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable-->
 
 MIT — see [`LICENSE`](../../LICENSE).
 

@@ -52,6 +52,13 @@ import {
 } from '../../data/bookcases';
 import { save as saveSettings, subscribe as subscribeSettings } from '../../data/settings';
 import { liveCommandIds } from '../../data/keybindings';
+import {
+  hiddenIds,
+  rollPool,
+  savedRooms,
+  starsOf,
+  type CurationAxis,
+} from '../../data/shelfOfMine';
 import type { Book } from '../../data/types';
 import { flatScheme, setFlatScheme } from '../../art/flat';
 import type { ColourScheme } from '../../art/themes';
@@ -763,6 +770,29 @@ export class ShelfWorld {
       // module — the same trap `__shelfSaveDesign` exists to avoid, one
       // direction over.
       globals['__shelfBinding'] = (bookId: string): string | null => bookBinding(bookId);
+      /*
+       * The reader's own hand on a list — read only, and from THIS instance of
+       * `data/shelfOfMine` for the same reason as everything above it.
+       *
+       * A probe can prove a removal left the STRIP by looking at the DOM, and
+       * that is where the removal is easy. The half that is invisible from the
+       * DOM is the one the reader would notice second and mind more: whether
+       * "surprise me" still rolls the thing they took off the list. `roll` is
+       * the store's own `rollPool` over ids the caller supplies, so a probe can
+       * hand it the same pool the studio hands it and ask what survives.
+       *
+       * Nothing here writes. Curation is driven by clicking, which is the whole
+       * point of the exercise — a bridge that could remove an entry would be a
+       * bridge that proves the store works and says nothing about the menu.
+       */
+      globals['__shelfCuration'] = {
+        hidden: (axis: CurationAxis): readonly string[] => hiddenIds(axis),
+        stars: (axis: CurationAxis, id: string): number => starsOf(axis, id),
+        roll: (axis: CurationAxis, ids: readonly string[]): readonly string[] =>
+          rollPool(axis, ids, (id) => id),
+        rooms: (): readonly { id: string; name: string }[] =>
+          savedRooms().map((room) => ({ id: room.id, name: room.name })),
+      };
       // The bookcase collection, for switch/leak probes and specimen boards.
       globals['__shelfBookcases'] = {
         list: (): BookcaseState => snapshotBookcases(),

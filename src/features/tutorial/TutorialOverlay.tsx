@@ -73,7 +73,7 @@ import {
   type TourLength,
   type TutorialStep,
 } from './steps';
-import { armProbe, attachProbe, factHolds, inBookView } from './probe';
+import { armProbe, attachProbe, factHolds, inBookView, isVisible } from './probe';
 import { dismissStale, isDismissing, openSurfaceIds } from './dismiss';
 import {
   readCompleted,
@@ -158,6 +158,35 @@ function resolveAnchor(step: TutorialStep): Rect | null {
 }
 
 const stepPresent = (step: TutorialStep): boolean => findTarget(step) !== null;
+
+/**
+ * A modal question standing over the tour, whose keys are its own.
+ *
+ * The one that ships is the taste questionnaire (`./tasteQuestionnaire.tsx`),
+ * which the `taste` step puts on screen: a sheet with its own scrim, its own
+ * Escape ("leave without dressing anything") and its own ← →.
+ *
+ * IT CANNOT DEFEND THOSE KEYS BY ITSELF, and that is the whole reason this
+ * exists. Both it and this overlay hold a capture-phase `keydown` on `window`,
+ * and `stopPropagation()` does not stop other listeners on the SAME target — so
+ * however carefully the two are ordered, both handlers run. Observed: Escape in
+ * the questionnaire closed the question AND ended the tour underneath it, and
+ * ← → in the questionnaire moved both. The tour is the thing behind, so the tour
+ * is the thing that stands down.
+ *
+ * A selector, treated as a hint in the usual way (see ./probe.ts): a panel that
+ * renames its layer gets the old behaviour back rather than a crash.
+ */
+const MODAL_OVER_TOUR = '.nbq-layer';
+
+function modalOverTour(): boolean {
+  if (typeof document === 'undefined') return false;
+  try {
+    return Array.from(document.querySelectorAll(MODAL_OVER_TOUR)).some(isVisible);
+  } catch {
+    return false;
+  }
+}
 
 /* --------------------------------- view ----------------------------------- */
 
@@ -608,6 +637,12 @@ export default function TutorialOverlay(): JSX.Element {
     // The tour is pressing Escape at a menu it is tidying away — that is not
     // the reader asking to leave (see ./dismiss.ts).
     if (isDismissing()) return;
+    // Something modal is in front of the tour and owns every key it uses.
+    // TWO tests, because one cannot cover both orders. If the modal's handler
+    // has not run yet, its layer is still on screen; if it has, the layer may
+    // already be gone but it left `defaultPrevented` behind. Neither is
+    // reliable alone and together they do not care who went first.
+    if (event.defaultPrevented || modalOverTour()) return;
     const target = event.target as HTMLElement | null;
     // Hands off entirely while the caret is in a page, a search bar or any
     // other field: Enter belongs to whatever the reader is typing into, and

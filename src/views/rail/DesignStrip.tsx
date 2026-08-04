@@ -218,8 +218,27 @@ export function starWords(stars: Stars): string {
   return '';
 }
 
+/**
+ * The least a row has to be for the reader to curate it: something to key the
+ * curation by, something to call it in the restore drawer, and optionally the
+ * family a single star lifts it to the head of.
+ *
+ * `PickerOption` satisfies it, which is why the strip and the sheet need say
+ * nothing — but a row does NOT have to be one. The book studio's pigment and
+ * charm rows are CSS swatches with no art key and no draw function, and they
+ * are as much a list a reader wants to prune as any grid of cards. Requiring a
+ * `PickerOption` there would have meant handing this controller a fake
+ * `draw` nobody calls, which is the kind of lie that survives into the next
+ * caller.
+ */
+export interface CurationRow {
+  readonly id: string;
+  readonly name: string;
+  readonly group?: string;
+}
+
 /** Everything `createCuration` needs, read fresh so it tracks its caller. */
-export interface CurationHost {
+export interface CurationHost<T extends CurationRow = PickerOption> {
   /**
    * Which list this is. Omit and every part of this controller stands down —
    * the options pass through untouched and right-click means what it meant
@@ -229,7 +248,7 @@ export interface CurationHost {
   /** The list's name, in the reader's words: "room presets", "wallpaper". */
   label: string;
   /** The FULL list, before curation. The drawer needs names for removed ids. */
-  options: readonly PickerOption[];
+  options: readonly T[];
   activeId: string;
   /**
    * Offered as "keep what you have…" in the menu, with a name and a star
@@ -265,9 +284,11 @@ const MENU_H = 240;
  * furniture; the host decides where it lands, which for both of them is
  * directly under the list so the drawer is obviously attached to it.
  */
-export function createCuration(host: () => CurationHost): {
+export function createCuration<T extends CurationRow = PickerOption>(
+  host: () => CurationHost<T>,
+): {
   /** The list as the reader has arranged it. Identity when no axis is named. */
-  list(): readonly PickerOption[];
+  list(): readonly T[];
   starsFor(id: string): Stars;
   removed(id: string): boolean;
   /** Right-click on one entry. */
@@ -293,7 +314,7 @@ export function createCuration(host: () => CurationHost): {
   const axis = (): CurationAxis | undefined => host().axis;
   const live = (): boolean => host().axis !== undefined;
 
-  const list = (): readonly PickerOption[] => {
+  const list = (): readonly T[] => {
     const a = axis();
     return a === undefined ? host().options : curateList(a, host().options, host().activeId);
   };

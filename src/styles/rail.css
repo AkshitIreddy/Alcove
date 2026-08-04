@@ -28,9 +28,21 @@
   border: var(--stroke-ink);
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-md);
+  /*
+   * The rail grew past a dozen icons when "Take it out" and the templates
+   * gallery finally got buttons, and it is centred on the window — so on a
+   * short laptop the tools at BOTH ends were being cut off with nothing to say
+   * so. The page rule ("no scrollbars inside pages") is about pages; a tool
+   * rail that has run out of window has to be able to admit it.
+   */
+  max-height: calc(100vh - var(--space-16));
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .nb-rail-button {
+  /* A flex child in a scrolling column may not be squashed to make room. */
+  flex: 0 0 auto;
   position: relative;
   width: 40px;
   height: 40px;
@@ -68,6 +80,46 @@
   margin: var(--space-4) 0;
   background: var(--ink-line);
   transform: rotate(-1.2deg);
+}
+
+/*
+ * A SHORT WINDOW SHRINKS THE RAIL RATHER THAN LOSING ITS LAST TOOLS.
+ *
+ * Fourteen 40px icons plus the divider and the word-count footer want ~690px
+ * of window, and the rail is centred on it — so at 620px a tool was cut off
+ * each end, including "add a page", which is the one most often reached for.
+ * The `overflow-y` above is the last resort; these two steps are what stop it
+ * being needed on any window somebody actually writes in.
+ *
+ * AFTER the base rules on purpose: same specificity, so order is what decides.
+ */
+@media (max-height: 760px) {
+  .nb-rail {
+    gap: 3px;
+    padding: var(--space-4);
+  }
+
+  .nb-rail-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .nb-rail-icon {
+    width: 21px;
+    height: 21px;
+  }
+}
+
+@media (max-height: 660px) {
+  .nb-rail-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .nb-rail-icon {
+    width: 19px;
+    height: 19px;
+  }
 }
 
 /*
@@ -1208,4 +1260,82 @@
   letter-spacing: 0.03em;
   color: var(--ink-sepia);
   white-space: nowrap;
+}
+
+/* ========================= "Take it out" — the share sheet ==================
+   views/rail/SharePanel.tsx. A short list of ERRANDS rather than a grid of
+   chips: each row is one whole act ("export as PDF", "bring Markdown in"),
+   which wants a title, a sentence saying what it will do, and the key it is
+   on — a chip has room for none of those, and a reader deciding whether to
+   press this is a reader who needs all three.
+   ========================================================================== */
+.nb-share-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  margin: var(--space-4) 0;
+  padding: var(--space-8);
+  text-align: left;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  /* The house's uneven corner, so a row of these does not read as a table. */
+  border-radius: 12px 15px 11px 14px / 14px 11px 15px 12px;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-share-row:hover,
+.nb-share-row:focus-visible {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line);
+  transform: rotate(-0.5deg);
+}
+
+.nb-share-row-glyph {
+  display: grid;
+  place-items: center;
+  color: var(--ink-sepia);
+}
+
+.nb-share-row-glyph .nb-rail-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.nb-share-row-text {
+  display: block;
+  min-width: 0;
+}
+
+.nb-share-row-title {
+  display: block;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.15;
+}
+
+.nb-share-row-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-ui);
+  line-height: 1.25;
+  color: var(--ink-graphite-soft);
+}
+
+/* The key cap, drawn as the tooltip draws it so one shortcut looks like one
+   thing wherever it appears. */
+.nb-share-row-key {
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-sepia-soft);
+  white-space: nowrap;
+  padding: 2px var(--space-4);
+  background: var(--paper-aged);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
 }

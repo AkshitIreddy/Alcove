@@ -44,10 +44,18 @@ repaint it.
 | **binding** — a book | `art/bookDesign.ts` | 50 spine shapes × 50 materials × 50 decorations, **189** presets | the book (`designPrefs`) |
 
 Above all four sits a fifth thing that is *not* an axis: a **room preset**
-(`ROOM_PRESETS` in `views/rail/designOptions.ts`, **55** of them across nine
+(`ROOM_PRESETS` in `views/rail/designOptions.ts`, **69** of them across nine
 classifications) bundles a theme, a build, a timber pattern and a paper into one
 named room, so a reader can dress a whole library in one press. A preset *writes*
 four values; it does not couple them.
+
+Every preset declares a `tier` — `signature`, `shelf` or `plain` — and the
+exported order is DERIVED from it, dealing one family at a time so the five
+cards the panel shows inline are five different families' best. The tiering was
+done by photographing every room as a whole first-run screen rather than as a
+picker card (`shots-now/room-firstrun-sweep.mjs`); a card shows a case the size
+of a postage stamp, and at true shelf zoom the case is the largest object on
+the screen and half the presets that ranked well as cards did not.
 
 > The word "room" does double duty for historical reasons, and it is worth
 > naming: in the DATA a room is the colour blob a bookcase carries
@@ -159,13 +167,14 @@ grouped by family so the picker reads as a palette; `FEATURED_THEME_IDS` is the
 | id | name | the idea |
 |---|---|---|
 | `athenaeum` | **Old Athenaeum** | Warm oak, parchment plaster, terracotta cloth — the house style, and exactly the palette `art/flat.ts` hard-codes. A test pins the two together hex-for-hex, so it cannot drift away from the vocabulary. First in the picker |
-| `verdigris` | **Verdigris Library** | `DEFAULT_THEME_ID`: a blue-green painted case on warm plaster, in copper, saffron and ink |
+| `lapis` | **Lapis Cabinet** | `DEFAULT_THEME_ID`: deep blue paint with gilt, in amber, coral and mulberry cloth. It took the slot from `verdigris` when the opening room was judged as a whole first-run screen rather than as a picker card — see the note on the constant |
+| `verdigris` | **Verdigris Library** | The previous default: a blue-green painted case on warm plaster, in copper, saffron and ink |
 
-The other fifty-eight are in `art/themes.ts`; listing them here would be a second
+The other fifty-seven are in `art/themes.ts`; listing them here would be a second
 copy to go stale, which is exactly what happened to this table.
 
 `getTheme` falls back to `DEFAULT_THEME_ID` for any id it does not know — a
-library saved in the retired Sakura Pavilion opens in the Verdigris Library
+library saved in the retired Sakura Pavilion opens in the Lapis Cabinet
 rather than failing.
 
 ### Two constants per axis, never one
@@ -175,9 +184,9 @@ already been made here twice:
 
 | axis | what a NEW library opens on | what an unknown id resolves to |
 |---|---|---|
-| colour | `DEFAULT_THEME_ID` = `verdigris` | `DEFAULT_THEME_ID` — the room blob is validated field by field, so there is nothing else to fall to |
-| carpentry | `DEFAULT_SHELF_DESIGN` = scriptorium / guilloche | `FALLBACK_SHELF_DESIGN` = plank / none |
-| paper | `DEFAULT_WALLPAPER_ID` = `pin-quiet` | `FALLBACK_WALLPAPER_ID` = `plain-parchment` |
+| colour | `DEFAULT_THEME_ID` = `lapis` | `DEFAULT_THEME_ID` — the room blob is validated field by field, so there is nothing else to fall to |
+| carpentry | `DEFAULT_SHELF_DESIGN` = chapel / quatrefoil | `FALLBACK_SHELF_DESIGN` = plank / none |
+| paper | `DEFAULT_WALLPAPER_ID` = `fleur-royal` | `FALLBACK_WALLPAPER_ID` = `plain-parchment` |
 
 The opening value has to show *something* of the vocabulary, or a reader never
 learns the axis is theirs to choose. The fallback has to be a visible nothing you
@@ -367,9 +376,9 @@ wrong repaints the panel preview and nothing else.
 Five things, in this order:
 
 1. **which bookcase** you are standing in;
-2. a **room preset** — the whole room in one press, classified (Formal, Grand,
-   Antique, Quiet, Cosy, Botanical, Coastal, Storybook, Rustic) so it can be
-   browsed;
+2. a **room preset** — the whole room in one press, classified (Antique, Grand,
+   Formal, Storybook, Coastal, Botanical, Cosy, Rustic, Quiet — strongest
+   family first) so it can be browsed;
 3. the **colour scheme**, whole-room or one part at a time, with `OwnColour` for
    a hex the vocabulary does not own;
 4. how the case is **built**, and what is worked into its timber;

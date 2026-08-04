@@ -20,7 +20,9 @@ import QuickSwitcher from "./features/quickswitch/QuickSwitcher";
 import { initSystemFeatures } from "./features/system";
 import { installUiClickSounds } from "./sound/uiClicks";
 import TutorialOverlay, { maybeAutoStartTutorial } from "./features/tutorial";
+import TasteQuestionnaire from "./features/tutorial/tasteQuestionnaire";
 import { openTransferPanel } from "./features/transfer";
+import { importMarkdownBooks } from "./features/templates/importMarkdown";
 import ShelfView from "./views/ShelfView";
 import BookView from "./views/BookView";
 import { CheatSheetHost } from "./views/CheatSheet";
@@ -133,6 +135,12 @@ export default function App(): JSX.Element {
       registerCommands({
         "export-library": () => openTransferPanel("export"),
         "import-library": () => openTransferPanel("import"),
+        // Loose Markdown files become BOOKS, so this belongs to the shell
+        // rather than to the book view: a reader standing at the shelf wants
+        // it at least as much as one already inside a book. Its buttons are
+        // the settings sheet's "Library files" section and the book rail's
+        // "Take it out" sheet.
+        "import-markdown": () => void importMarkdownBooks(),
         "open-settings": () => setSettingsOpen((open) => !open),
       }),
     );
@@ -156,6 +164,20 @@ export default function App(): JSX.Element {
         <DevViewSwitcher />
       </Show>
       <QuickSwitcher />
+      {/* The taste questionnaire, mounted once for the life of the app and
+          inert until something opens it. It opens ITSELF when the tour reaches
+          the step whose id is `taste` (it polls the overlay's own
+          `data-tutorial-step` attribute), and `replayTaste()` opens it from the
+          settings sheet's "choose my look again" row.
+
+          Before <TutorialOverlay />, so the modal in front gets first refusal
+          on a key press. That is a preference, NOT the mechanism: both hold a
+          capture-phase keydown on `window`, and `stopPropagation()` does not
+          stop listeners on the same target, so ordering alone cannot stop
+          Escape closing the question and ending the tour underneath it in the
+          same breath. The overlay standing down is what does that — see
+          `modalOverTour` in TutorialOverlay.tsx. */}
+      <TasteQuestionnaire />
       <TutorialOverlay />
       {/* The cheat-sheet lives at the root so `?` answers on the shelf too —
           it used to belong to BookView, which meant the first screen a reader

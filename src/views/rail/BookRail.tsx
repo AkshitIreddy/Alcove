@@ -47,7 +47,10 @@ import {
   type JSX,
 } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { bindingFor, formatBinding } from '../../data/keybindings';
+import { settings } from '../../data/settings';
 import { lastSavedAt } from '../../editor/saveIndicator';
+import { OutTrayIcon, TemplatesIcon } from '../../features/templates/icons';
 import { LINGER_MS } from '../../styles/motion';
 import Tooltips from '../Tooltip';
 import {
@@ -91,7 +94,15 @@ export type RailPanelId =
   | 'page-style'
   | 'catalogue'
   | 'toc'
-  | 'history';
+  | 'history'
+  /**
+   * "Take it out" — every way a page or a book leaves this app, and the one
+   * way loose files come in, on one sheet. The four flows on it (the PDF
+   * chooser, the picture, the script, the Markdown import) were all finished,
+   * all e2e-tested, and all reachable only through a dev global; see the
+   * docblock on `features/templates/groupD.ts`.
+   */
+  | 'share';
 
 export interface BookRailProps {
   activePanel: RailPanelId | null;
@@ -100,6 +111,8 @@ export interface BookRailProps {
   onExportScript(): void;
   onCopySpec(): void;
   onAddPage(): void;
+  /** The templates gallery — a new book, or this template's pages here. */
+  onOpenTemplates(): void;
   /** Focus mode (roadmap #12) — rail icon mirror of F9. */
   focusMode: boolean;
   onToggleFocus(): void;
@@ -142,16 +155,33 @@ interface RailTool {
   /** Non-panel buttons that still show a pressed state (toggles). */
   readonly pressed?: (p: BookRailProps) => boolean;
   /**
-   * Shortcut, drawn on a key cap inside the tooltip rather than spelled out
-   * in brackets at the end of the label — "Focus mode (F9)" was one string a
-   * reader had to parse; this is a label and a key.
+   * The ACTION ID whose combination is drawn on a key cap inside the tooltip,
+   * rather than spelled out in brackets at the end of the label — "Focus mode
+   * (F9)" was one string a reader had to parse; this is a label and a key.
+   *
+   * An id and not the combination itself, which is what it used to be: the
+   * literal `'F9'` stayed 'F9' after a reader moved focus mode onto another
+   * key, so the bubble on the button was quietly lying. `bindingFor` reads the
+   * reader's own map, exactly as the dispatcher does.
    */
-  readonly key?: string;
+  readonly keyFor?: string;
 }
 
 const TOOLS: readonly RailTool[] = [
-  { id: 'customize', label: 'Customize this book', icon: BrushIcon, panel: 'customize' },
-  { id: 'page-style', label: 'Page style', icon: PageStyleIcon, panel: 'page-style' },
+  {
+    id: 'customize',
+    label: 'Customize this book',
+    icon: BrushIcon,
+    panel: 'customize',
+    keyFor: 'customize-book',
+  },
+  {
+    id: 'page-style',
+    label: 'Page style',
+    icon: PageStyleIcon,
+    panel: 'page-style',
+    keyFor: 'page-style',
+  },
   {
     id: 'catalogue',
     // Named for what the panel HOLDS, not for two of its seven shelves. A
@@ -160,9 +190,25 @@ const TOOLS: readonly RailTool[] = [
     label: 'Catalogue — everything you can add',
     icon: StickerIcon,
     panel: 'catalogue',
+    keyFor: 'catalogue',
   },
-  { id: 'toc', label: 'Table of contents', icon: TocIcon, panel: 'toc' },
+  {
+    id: 'toc',
+    label: 'Table of contents',
+    icon: TocIcon,
+    panel: 'toc',
+    keyFor: 'table-of-contents',
+  },
   { id: 'history', label: 'Page history', icon: HistoryIcon, panel: 'history' },
+  {
+    // The last panel in the group, because it is the one that ENDS a session:
+    // everything above dresses the book, this is how a page leaves it.
+    id: 'share',
+    label: 'Take it out — PDF, picture, script, Markdown',
+    icon: OutTrayIcon,
+    panel: 'share',
+    keyFor: 'export-pdf',
+  },
   {
     // ONE control (see the docblock): the press marks the page, and the plate
     // it opens is where the ribbons live. `action` is not used — the click is
@@ -170,12 +216,13 @@ const TOOLS: readonly RailTool[] = [
     id: 'bookmark',
     label: 'Ribbon this page — and pick which ribbon',
     icon: RibbonIcon,
+    keyFor: 'toggle-bookmark',
     pressed: (p) => p.bookmarked,
   },
   {
     id: 'focus',
     label: 'Focus mode',
-    key: 'F9',
+    keyFor: 'toggle-focus',
     icon: FocusIcon,
     action: (p) => p.onToggleFocus(),
     pressed: (p) => p.focusMode,
@@ -184,13 +231,43 @@ const TOOLS: readonly RailTool[] = [
     id: 'thumbs',
     label: 'Thumbnails strip',
     icon: FilmstripIcon,
+    keyFor: 'thumbnails',
     action: (p) => p.onToggleThumbnails(),
     pressed: (p) => p.thumbnails,
   },
-  { id: 'insert', label: 'Insert script', icon: InsertScriptIcon, action: (p) => p.onInsertScript() },
-  { id: 'export', label: 'Export script', icon: ExportScriptIcon, action: (p) => p.onExportScript() },
+  {
+    id: 'insert',
+    label: 'Insert script',
+    icon: InsertScriptIcon,
+    keyFor: 'insert-script',
+    action: (p) => p.onInsertScript(),
+  },
+  {
+    id: 'export',
+    label: 'Export script',
+    icon: ExportScriptIcon,
+    keyFor: 'export-script',
+    action: (p) => p.onExportScript(),
+  },
   { id: 'spec', label: 'Copy AI spec', icon: AiSpecIcon, action: (p) => p.onCopySpec() },
-  { id: 'add-page', label: 'Add a page', icon: AddPageIcon, action: (p) => p.onAddPage() },
+  {
+    // Beside "add a page", because that is the pair: a blank one, or five
+    // already written. The gallery's second verb — "add pages here" — only
+    // exists while a book is open, which is why it has a rail button as well
+    // as a dock button out on the shelf.
+    id: 'templates',
+    label: 'Start from a template',
+    icon: TemplatesIcon,
+    keyFor: 'templates',
+    action: (p) => p.onOpenTemplates(),
+  },
+  {
+    id: 'add-page',
+    label: 'Add a page',
+    icon: AddPageIcon,
+    keyFor: 'new-page',
+    action: (p) => p.onAddPage(),
+  },
 ];
 
 /**
@@ -307,6 +384,12 @@ export default function BookRail(props: BookRailProps): JSX.Element {
     if (scribbleTimer !== undefined) clearTimeout(scribbleTimer);
   });
 
+  /** The combination this tool is on right now, spelled for this platform. */
+  const capFor = (tool: RailTool): string | undefined =>
+    tool.keyFor === undefined
+      ? undefined
+      : formatBinding(bindingFor(tool.keyFor, settings.keybindings));
+
   /** The panel this icon opens is already up — see the tooltip note below. */
   const panelOpen = (tool: RailTool): boolean =>
     tool.id === 'bookmark'
@@ -339,7 +422,9 @@ export default function BookRail(props: BookRailProps): JSX.Element {
               // The shortcut rides the accessible name even though the visible
               // bubble draws it as a key cap: a screen reader gets one string.
               aria-label={
-                tool.key === undefined ? tool.label : `${tool.label} (${tool.key})`
+                capFor(tool) === undefined
+                  ? tool.label
+                  : `${tool.label} (${capFor(tool)})`
               }
               aria-pressed={
                 tool.panel !== undefined
@@ -354,7 +439,7 @@ export default function BookRail(props: BookRailProps): JSX.Element {
               // absent `data-tooltip` is how a call site says "not now".
               data-tooltip={panelOpen(tool) ? undefined : tool.label}
               data-tooltip-side="right"
-              data-tooltip-key={tool.key}
+              data-tooltip-key={capFor(tool)}
               data-tool={tool.id}
               onContextMenu={(event) => {
                 if (tool.id !== 'bookmark') return;

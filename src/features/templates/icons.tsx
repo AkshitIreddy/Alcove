@@ -80,22 +80,94 @@ export function ImportMdIcon(): JSX.Element {
   );
 }
 
-/** Stack of cards with a star — templates gallery. */
+/**
+ * A tied parcel — the row that leads on to the parcel desk (bundles in,
+ * bundles out, and the undo book).
+ *
+ * Its own drawing rather than `features/transfer/icons.tsx`'s: those carry
+ * `.nb-tr-icon` and are sized by transfer.css, which the book rail does not
+ * load, so a borrowed glyph would come out at whatever the SVG default is.
+ */
+export function ParcelIcon(): JSX.Element {
+  return frame(
+    <>
+      <path
+        d="M 4.3 7.6 C 9.4 6.7 14.6 6.7 19.7 7.5 C 20.1 12.1 20.1 16.4 19.6 20.6 C 14.5 21.4 9.4 21.4 4.4 20.5 C 3.9 16.3 3.9 11.9 4.3 7.6 Z"
+        {...S}
+      />
+      <path d="M 12 7.1 C 12.1 11.8 12.1 16.4 12 20.9" {...S} stroke-width="1.4" />
+      <path d="M 4.4 13.6 C 9.5 13 14.6 13 19.7 13.5" {...S} stroke-width="1.4" />
+      <path
+        d="M 12 7.2 C 10.6 5.6 9.3 4.4 8.2 3.6 C 7.2 2.9 6.2 3.5 6.4 4.6 C 6.7 5.9 8.4 6.8 11.9 7.2 C 15.4 6.8 17.2 5.8 17.5 4.5 C 17.7 3.4 16.7 2.9 15.7 3.6 C 14.6 4.4 13.3 5.6 12 7.2 Z"
+        {...S}
+        stroke-width="1.4"
+      />
+    </>,
+  );
+}
+
+/**
+ * An out-tray with something rising out of it — the rail button that opens
+ * "Take it out", where the PDF, the picture, the script and the Markdown
+ * import live together.
+ *
+ * Deliberately NOT another page-with-an-arrow: `ExportScriptIcon` in
+ * `views/rail/icons.tsx` is already that, and the two sit four buttons apart
+ * on the same rail.
+ */
+export function OutTrayIcon(): JSX.Element {
+  return frame(
+    <>
+      <path
+        d="M 4.4 13.3 C 4.6 16.1 4.7 18.3 4.9 19.9 C 9.6 20.6 14.4 20.6 19.2 19.9 C 19.4 18.3 19.5 16.1 19.6 13.2"
+        {...S}
+      />
+      <path
+        d="M 4.4 13.3 C 6.3 13.1 8 13.1 9.4 13.2 C 9.9 14.6 10.8 15.3 12 15.3 C 13.2 15.3 14.1 14.6 14.6 13.2 C 16 13.1 17.7 13.1 19.6 13.2"
+        {...S}
+        stroke-width="1.5"
+      />
+      <path
+        d="M 12 3.1 C 12 5.5 12 7.9 11.9 10.3 M 9.5 5.6 C 10.3 4.7 11.2 3.9 12 3.1 C 12.9 3.9 13.7 4.7 14.5 5.5"
+        {...S}
+        stroke-width="1.6"
+      />
+    </>,
+  );
+}
+
+/**
+ * A stack of ready-written cards with a spark over the corner — the templates
+ * gallery.
+ *
+ * The first cut put a five-pointed star INSIDE the front card. At 24px the
+ * star was 7px across and its inner points closed up into a blob, so the icon
+ * read as "a card with something on it". The spark sits outside the card now
+ * (the same four-point mark `StickerIcon` already uses, so the rail keeps one
+ * vocabulary) and the card carries plain ruled lines, which is what a template
+ * actually is: a page somebody has already written on.
+ */
 export function TemplatesIcon(): JSX.Element {
   return frame(
     <>
       <path
-        d="M 7.5 6.5 C 10.9 6.1 14.2 6.1 17.6 6.4 M 6.3 9.4 C 10.1 9 13.9 9 17.9 9.3"
+        d="M 8.4 5.4 C 11.1 5.1 13.8 5.1 16.4 5.4 M 6.9 8.3 C 10.1 7.9 13.3 7.9 17 8.2"
         {...S}
         stroke-width="1.4"
+        opacity="0.55"
+      />
+      <path
+        d="M 4.6 11.1 C 9.6 10.6 14.6 10.6 19.6 11.1 C 20 14.9 20 18.1 19.5 21.2 C 14.6 21.8 9.6 21.8 4.9 21.1 C 4.4 17.9 4.3 14.6 4.6 11.1 Z"
+        {...S}
+      />
+      <path
+        d="M 7.6 14.6 C 10.5 14.3 13.4 14.3 16.4 14.6 M 7.7 17.8 C 10.1 17.5 12.5 17.5 14.3 17.7"
+        {...S}
+        stroke-width="1.3"
         opacity="0.6"
       />
       <path
-        d="M 5.3 11.9 C 9.7 11.5 14.1 11.5 18.7 11.9 C 19 14.9 19 17.6 18.6 20.3 C 14.3 20.7 10 20.7 5.6 20.2 C 5.2 17.4 5.1 14.6 5.3 11.9 Z"
-        {...S}
-      />
-      <path
-        d="M 12 13.7 C 12.3 14.6 12.6 15.3 13 15.9 C 13.7 16 14.4 16.2 15.1 16.4 C 14.6 16.9 14.1 17.4 13.6 17.9 C 13.7 18.6 13.8 19.3 13.8 20 C 13.2 19.6 12.6 19.3 12 19 C 11.4 19.3 10.8 19.7 10.2 20 C 10.3 19.3 10.4 18.6 10.5 17.9 C 10 17.4 9.5 16.9 9 16.4 C 9.7 16.2 10.4 16 11 15.9 C 11.3 15.2 11.7 14.5 12 13.7 Z"
+        d="M 20.2 2.2 C 20.6 3.8 21.3 4.5 22.9 4.9 C 21.3 5.3 20.6 6 20.2 7.6 C 19.8 6 19.1 5.3 17.5 4.9 C 19.1 4.5 19.8 3.8 20.2 2.2 Z"
         {...S}
         stroke-width="1.3"
       />

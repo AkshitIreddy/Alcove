@@ -12,9 +12,34 @@
  *   } from '../features/templates/groupD';
  *
  * Importing this module also hydrates the user-sticker registry from the
- * assets table (roadmap 27) and, in dev builds, exposes the flows on
- * `window.__nbGroupD` so the Playwright suite can drive them before the
- * rail buttons are wired.
+ * assets table (roadmap 27).
+ *
+ * ## The dev bridge is not a home, and it hid that these had none
+ *
+ * `window.__nbGroupD` below was written so the Playwright suite could drive
+ * these four "before the rail buttons are wired". The rail buttons were then
+ * never wired, and for the whole of that time every one of the four passed its
+ * own e2e spec — because the spec drove the bridge. Four finished features,
+ * reachable only by typing a global into a console.
+ *
+ * They have real homes now, and each home is listed here so the next reader can
+ * check the claim rather than trust it:
+ *
+ *   openTemplatesGallery   the shelf dock's "template" button, the bare-plank
+ *                          right-click card, the book rail's template icon,
+ *                          and `templates` (Ctrl+Alt+G).
+ *   openExportPdfDialog    the book rail's "Take it out" sheet, and
+ *                          `export-pdf` (Ctrl+Alt+P).
+ *   exportActivePagePng    the same sheet, and `export-png`
+ *                          (Ctrl+Shift+Alt+P).
+ *   importMarkdownBooks    the same sheet, the settings sheet's "Library
+ *                          files" section, and `import-markdown`
+ *                          (Ctrl+Shift+Alt+M).
+ *
+ * The bridge stays — a probe that wants to run an export without hunting for a
+ * button is a fair thing to want — but `tests/plugged-in.test.ts` no longer
+ * counts it as a reader, so removing a button breaks the suite even while the
+ * bridge still works. See that file's "part three".
  */
 import {
   exportActivePagePdf,
@@ -45,6 +70,7 @@ export {
   ExportPdfIcon,
   ExportPngIcon,
   ImportMdIcon,
+  OutTrayIcon,
   TemplatesIcon,
 } from './icons';
 export { default as UserStickersSection } from './UserStickersSection';

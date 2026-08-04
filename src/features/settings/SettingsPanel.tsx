@@ -124,7 +124,8 @@ import {
   type PaperSpec,
 } from './appearance';
 import { loadPaperStock, paperStock, savePaperStock } from './appearancePrefs';
-import { openTransferPanel } from '../transfer';
+import { exportEntireLibrary, openTransferPanel } from '../transfer';
+import { importMarkdownBooks } from '../templates/importMarkdown';
 import { replayTutorial } from '../tutorial';
 import { ensureTasteMounted } from '../tutorial/tasteMount';
 import { replayTaste } from '../tutorial/tasteStore';
@@ -1257,6 +1258,35 @@ export default function SettingsPanel(props: {
   const openTransfer = (tab: 'export' | 'import'): void => {
     props.onClose();
     queueMicrotask(() => openTransferPanel(tab));
+  };
+
+  /**
+   * The loose-file import, from the same sheet the bundle import lives on.
+   *
+   * Closes first, exactly as `openTransfer` does: this sheet traps Tab, and
+   * the flow's next act is an OS file picker (or, in browser dev, a hidden
+   * `<input type=file>` that has to be reachable).
+   */
+  const importMarkdown = (): void => {
+    props.onClose();
+    queueMicrotask(() => void importMarkdownBooks());
+  };
+
+  /**
+   * "Everything, packed" — the one-click sibling of the parcel desk's export
+   * room. Same pipeline, library scope, default options, no panel; it is what
+   * `exportEntireLibrary`'s own docblock has advertised since it was written,
+   * and until now nothing called it.
+   */
+  const [packBusy, setPackBusy] = createSignal(false);
+  const packEverything = async (): Promise<void> => {
+    if (packBusy()) return;
+    setPackBusy(true);
+    try {
+      await exportEntireLibrary();
+    } finally {
+      setPackBusy(false);
+    }
   };
 
   /** Clear the "tour completed" marker and run it again from step one. */
@@ -2426,6 +2456,40 @@ export default function SettingsPanel(props: {
               onClick={() => openTransfer('import')}
             >
               import…
+            </button>
+          </Row>
+          {/* The loose-file half of the same errand, beside the bundle half.
+              It had no button anywhere in the app until now — the flow was
+              finished, e2e-tested, and reachable only through a dev global
+              (see features/templates/groupD.ts). The sheet closes first for
+              the same reason `openTransfer` closes it: this one is modal and
+              traps Tab, and the OS file picker has to come up over the app
+              rather than behind a trap. */}
+          <Row
+            label="import Markdown…"
+            hint="one book per file, one page per # heading"
+            keys={formatBinding(binding('import-markdown'))}
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              aria-keyshortcuts={ariaKeyshortcuts(binding('import-markdown'))}
+              onClick={() => importMarkdown()}
+            >
+              choose files…
+            </button>
+          </Row>
+          <Row
+            label="pack everything, now"
+            hint="the whole library in one file, with no choices to make"
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              disabled={packBusy()}
+              onClick={() => void packEverything()}
+            >
+              {packBusy() ? 'packing…' : 'export all…'}
             </button>
           </Row>
           <Row

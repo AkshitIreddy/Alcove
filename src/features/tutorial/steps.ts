@@ -131,6 +131,41 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     short: true,
   },
   {
+    // THE ID IS THE WHOLE CONTRACT.
+    //
+    // `./tasteQuestionnaire.tsx` polls `.nbt-layer[data-tutorial-step]` — the
+    // attribute the overlay already writes — and puts itself on screen when it
+    // reads `taste` and the reader has not finished it before. Neither module
+    // imports the other, so this list and that panel can each be rewritten
+    // without touching the other; rename this id and the panel simply never
+    // opens, which is why `tests/tutorial.test.ts` pins it.
+    //
+    // SECOND, and no later. The answers repaint the room, rebuild the case,
+    // rehang the wall, rebind the welcome book and swap the sound set — so
+    // every step after this one is describing the reader's own library rather
+    // than the shipped one. In BOTH lengths for the same reason.
+    //
+    // Nothing here gates the tour. The task is satisfied by the store's "we
+    // dressed it" marker, which `applyTaste` writes last; "I'll pick later"
+    // leaves it outstanding and the reader walks on with next, exactly as they
+    // can on any other step.
+    id: 'taste',
+    title: 'Four questions first',
+    body: 'Before the walk proper: four questions, and the answers dress the whole library at once — the colours of the room, how the bookcase is built, the paper on the wall behind it, the binding on your first book, and the sounds the app makes. Every option is the real drawing you would get rather than a word for it. None of it is settled afterwards — the studio repaints the room, the book studio rebinds any book, and Settings holds the sound. Say "I\'ll pick later" and the library stays as it came.',
+    hint: 'press a card in each · or "I\'ll pick later"',
+    task: {
+      ask: 'Answer the four questions, then press "dress my library".',
+      fact: 'taste-chosen',
+      done: 'Dressed. The rest of the tour is your own room.',
+    },
+    // No targets on purpose: the panel puts ITSELF on screen over everything,
+    // with its own scrim, so there is nothing on the app's surface to point at.
+    // An anchorless step renders as a centred card, which is what the reader
+    // sees the moment the questionnaire closes.
+    scene: 'any',
+    short: true,
+  },
+  {
     // FIRST RUN ONLY, and it is a gate on purpose.
     //
     // An empty case puts a "write my first one" invite in the middle of the

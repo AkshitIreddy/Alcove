@@ -12,6 +12,14 @@
  *  2. **Numbers.** "222 of 230 source files open with a module docstring",
  *     "126 papers", "five design docs carry a superseded banner". Every one
  *     was measured once and none is self-maintaining.
+ *  3. **Navigation.** The front page's body is two tables of anchor links into
+ *     the halves, one row per section. Those were typed by hand, which is how
+ *     the developer tail went stale in the first place: rename a heading and
+ *     the row still renders, still looks right, and lands the reader at the top
+ *     of the page. `checkLinks()` cannot see it — it splits `#` off and stats
+ *     the file — so the rows are now composed by `scripts/gen-readme.mjs` from
+ *     an invisible `<!--nav: …-->` beside each heading, and its `--check` is
+ *     gated below alongside a real resolution of all 87 fragments.
  *
  * So the numbers are not typed as prose — they are written into the markdown
  * inside an invisible marker (`<!--f:key-->126<!--/f-->`, which GitHub renders
@@ -21,7 +29,8 @@
  * import, so this is where they are gated.
  *
  * Fixing a failure is one command: `npm run readme:facts` prints the true
- * values, and the deferred ones are printed by this file's failure message.
+ * values, `npm run readme:build` recomposes the front page, and the deferred
+ * counts are printed by this file's failure message.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -32,6 +41,12 @@ import {
   computeFacts,
   readmeDocs,
 } from '../scripts/check-readme.mjs';
+import {
+  PARTS,
+  checkAnchors,
+  checkReadme,
+  sectionsOf,
+} from '../scripts/gen-readme.mjs';
 
 import { BUILD_IDS, PATTERN_IDS, SHELF_PRESETS } from '../src/art/shelfDesign';
 import { WALLPAPER_PATTERNS, WALLPAPER_PRESETS } from '../src/art/wallpaperDesign';
@@ -144,5 +159,40 @@ describe('the README describes this repo', () => {
     // Both halves have to agree or a marker silently checks nothing: a key the
     // script defers but this file forgets is a number nobody verifies.
     expect([...DEFERRED_FACTS].sort()).toEqual(Object.keys(vocabularyFacts()).sort());
+  });
+});
+
+describe('the front page is composed from the two halves', () => {
+  it('README.md matches what gen-readme.mjs builds from them', () => {
+    // The same check as `node scripts/gen-readme.mjs --check`, run here so a
+    // renamed section is a red test rather than a link that goes nowhere.
+    const { problems } = checkReadme();
+    expect(problems, problems.join('\n')).toEqual([]);
+  });
+
+  it('every section of every half is described exactly once', () => {
+    // The two failure directions the tables have: a section the front page
+    // never mentions (unreachable from the door) and a row pointing at a
+    // section that no longer exists (a link to nowhere). Composing the table
+    // makes both impossible, so this pins the property rather than the output.
+    for (const part of PARTS) {
+      const sections = sectionsOf(part);
+      const slugs = sections.map((s) => s.slug);
+      expect(new Set(slugs).size, `${part.href} has two sections with one slug`).toBe(
+        slugs.length,
+      );
+      for (const section of sections) {
+        expect(section.nav.trim(), `${part.href} '${section.text}' has an empty summary`)
+          .not.toBe('');
+      }
+    }
+  });
+
+  it('every #fragment resolves to a real heading', () => {
+    // check-readme.mjs resolves the file and drops the fragment; this resolves
+    // the fragment. Between them a moved file and a renamed section both fail.
+    const { checked, problems } = checkAnchors();
+    expect(problems, problems.join('\n')).toEqual([]);
+    expect(checked).toBeGreaterThan(0);
   });
 });

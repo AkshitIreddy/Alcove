@@ -77,6 +77,13 @@ import {
   type WallpaperSpec,
 } from '../../art/wallpaperDesign';
 import {
+  curateList,
+  rollPool,
+  saveRoomAsPreset,
+  type CurationAxis,
+  type Stars,
+} from '../../data/shelfOfMine';
+import {
   libraryPrefs,
   loadLibraryPrefs,
   partTheme,
@@ -133,6 +140,28 @@ type Sheet =
   | 'pattern'
   | 'named'
   | 'wallpaper';
+
+/**
+ * The sheet's own word for a list, and the reader's.
+ *
+ * Two vocabularies rather than one because they answer different questions: a
+ * `Sheet` is "which panel is up", scoped to this file and free to be renamed,
+ * while a `CurationAxis` is a key written into the reader's SQLite row and can
+ * never be renamed without splitting their curation in two. Spelled out as one
+ * table so the strip below and the sheet above cannot drift — passing 'colour'
+ * on the strip and 'room' on the sheet would give one list two arrangements,
+ * which is precisely the bug the shared controller exists to make impossible.
+ */
+const SHEET_AXIS: Record<Exclude<Sheet, null>, CurationAxis> = {
+  preset: 'room-preset',
+  room: 'colour',
+  'shelf-colour': 'shelf-colour',
+  'wall-colour': 'wall-colour',
+  build: 'build',
+  pattern: 'pattern',
+  named: 'named-case',
+  wallpaper: 'wallpaper',
+};
 
 /** One seed for every part-colour card, so only the colour varies across them. */
 const PART_CARD_SEED = fnv1a('studio|part-colour');
@@ -237,6 +266,8 @@ function ColourRow(props: {
   /** The row's own heading. The wall has two colour rows; they cannot both
       be called "colour" or neither says which half it moves. */
   title: string;
+  /** The list this row is a window onto — the same word its sheet passes. */
+  axis: CurationAxis;
   colour(theme: LibraryTheme): string;
   onPick(id: ThemeId): void;
   /** Hands the other fifty-two to the sheet. */
@@ -244,12 +275,29 @@ function ColourRow(props: {
 }): JSX.Element {
   const active = (): ThemeId => partTheme(libraryPrefs, props.part);
 
+  /**
+   * The reader's arrangement, applied to the dots as well as to the sheet.
+   *
+   * Without this the row and the sheet it leads to are two views of one list
+   * that disagree: a colour removed in the sheet would still be sitting in the
+   * featured eight, one press from the wall, having plainly ignored them. The
+   * dots are not `PickerOption`s, so the curated list is built out of bare
+   * `{ id }` rows — `curateList` asks for nothing else — rather than by
+   * re-implementing the filter here.
+   */
+  const arranged = (): readonly ThemeId[] =>
+    curateList(
+      props.axis,
+      COLOUR_ORDER.map((id) => ({ id })),
+      active(),
+    ).map((row) => row.id as ThemeId);
+
   const shown = (): readonly ThemeId[] =>
-    cappedTo(COLOUR_ORDER, FEATURED_THEME_IDS.length, (id) => id === active());
+    cappedTo(arranged(), FEATURED_THEME_IDS.length, (id) => id === active());
   /** What the way-through is offering. The REMAINING count, never the total —
       the reader can count the dots, so a chip that says sixty is a claim they
       can disprove. */
-  const hidden = (): number => COLOUR_ORDER.length - shown().length;
+  const hidden = (): number => arranged().length - shown().length;
 
   return (
     <div class="nb-panel-row nb-panel-row-stack">
@@ -283,8 +331,8 @@ function ColourRow(props: {
             class="nb-chip nb-chip-ghost nb-chip-more font-ui"
             /* Not `aria-expanded`: this opens a sheet, it does not unfold the
                row. The strip's ninth cell announces itself the same way. */
-            aria-label={`${props.label} colours: browse all ${COLOUR_ORDER.length}`}
-            data-tooltip={`all ${COLOUR_ORDER.length} colours, with their names`}
+            aria-label={`${props.label} colours: browse all ${arranged().length}`}
+            data-tooltip={`all ${arranged().length} colours, with their names`}
             onClick={() => props.onMore()}
           >
             <span class="nb-colour-more-count">{hidden()}</span> more…
@@ -441,6 +489,26 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     pattern: design().pattern,
     wallpaper: wall(),
   });
+
+  /**
+   * Keep the room as it stands, under a name, starred in the same action.
+   *
+   * The reader's words were "save their current room as preset and also star it
+   * simuntaosuly to make sure it stays up top", which is why the stars come in
+   * as an argument rather than as a second trip through the menu — and why this
+   * hangs off the PRESET strip rather than off a button of its own. The preset
+   * row is the one control that means "the whole room"; a "save" anywhere else
+   * would have to explain which parts of the room it was saving.
+   *
+   * The named paper travels with it (`wallPresetId()`), so a kept room can still
+   * be found by searching for the paper it hangs.
+   */
+  const keepThisRoom = (name: string, stars: Stars): void => {
+    setBusy(true);
+    void saveRoomAsPreset(name, { ...look(), paper: wallPresetId() }, stars).finally(() =>
+      setBusy(false),
+    );
+  };
 
   /**
    * The preset the room is wearing, or '' for a room of the reader's own.
@@ -658,9 +726,29 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
    * match falls back to its whole vocabulary (`withMood`) instead of pinning
    * itself to whatever it was already wearing.
    */
+  /*
+   * `rollPool` on the outside of every pool, `withMood` on the inside.
+   *
+   * Order matters and it is the reader's, not the vocabulary's. `rollPool`
+   * takes out what they removed; `withMood` then narrows what is LEFT, and
+   * falls back to what is left — never to the whole vocabulary — when the mood
+   * matches nothing there. Narrowing first and pruning second would let a mood
+   * with one survivor come back empty and take the fallback branch, handing
+   * back a removed entry with the reader's own removal as the reason.
+   *
+   * This is the gate this repo keeps forgetting to hang: `rollPool` was
+   * authored, unit-tested and called by nobody, exactly like `WALLPAPER_ROLL`
+   * before it and `ROLLABLE_BUILDS` before that. A "surprise me" that keeps
+   * handing back the six papers a reader has explicitly taken off the list is
+   * not a dice, it is a panel that did not listen.
+   */
   const surprise = (): void => {
     const wanted = mood();
-    const rooms = withMood(THEME_IDS, wanted, (id) => THEMES[id]);
+    const rooms = withMood(
+      rollPool('colour', THEME_IDS, (id) => id),
+      wanted,
+      (id) => THEMES[id],
+    );
     // ROLLABLE_BUILDS / ROLLABLE_PATTERNS, not BUILD_IDS / PATTERN_IDS — the
     // carpentry is tiered now for the same reason the papers are, decided by
     // rendering every build and every pattern at 1:1 and looking
@@ -668,8 +756,16 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     // FALLBACK case, so a roll can never land on the plain plank in bare
     // timber: that is what a corrupt row resolves to, and a reader handed it by
     // the dice could not tell a choice from a fault.
-    const builds = withMood(ROLLABLE_BUILDS, wanted, (spec) => spec);
-    const patterns = withMood(ROLLABLE_PATTERNS, wanted, (spec) => spec);
+    const builds = withMood(
+      rollPool('build', ROLLABLE_BUILDS, (spec) => spec.id),
+      wanted,
+      (spec) => spec,
+    );
+    const patterns = withMood(
+      rollPool('pattern', ROLLABLE_PATTERNS, (spec) => spec.id),
+      wanted,
+      (spec) => spec,
+    );
     // WALLPAPER_ROLL, not WALLPAPER_PRESETS. The papers carry a tier for
     // exactly this — decided by rendering all 126 at real pitch and looking —
     // and the whole point of the tiering was that the demoted ones stay
@@ -678,7 +774,11 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     // `WALLPAPER_ROLL` were reachable from nothing in src/, so "surprise me"
     // was still rolling all 126. The sheet's own pickers keep offering every
     // paper, which is where a back-tier one is found on purpose.
-    const papers = withMood(WALLPAPER_ROLL, wanted, (paper) => paper);
+    const papers = withMood(
+      rollPool('wallpaper', WALLPAPER_ROLL, (paper) => paper.id),
+      wanted,
+      (paper) => paper,
+    );
 
     const nextTheme = pickOne(rooms, libraryPrefs.theme);
     const paper = pickOne(papers, getWallpaper(wallPresetId()));
@@ -737,6 +837,12 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             cardW={148}
             cardH={102}
             columns={2}
+            /* The same word the strip that led here passes, off one table —
+               see SHEET_AXIS. */
+            axis={SHEET_AXIS[sheet() ?? 'preset']}
+            onSaveCurrent={sheet() === 'preset' ? keepThisRoom : undefined}
+            saveLabel="keep this room…"
+            savePlaceholder="name this room…"
           />
         )}
       </Show>
@@ -774,6 +880,12 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             limit={5}
             onPick={applyPreset}
             onMore={() => setSheet('preset')}
+            axis="room-preset"
+            /* The one list that can GROW: right-click offers to keep the room
+               you are standing in, named and starred in one action. */
+            onSaveCurrent={keepThisRoom}
+            saveLabel="keep this room…"
+            savePlaceholder="name this room…"
           />
           <p class="nb-panel-footnote nb-panel-footnote-tight">
             {ROOM_PRESETS.length} rooms, sorted by the kind of room they are.
@@ -810,6 +922,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             limit={5}
             onPick={(id) => patch({ theme: id as ThemeId })}
             onMore={() => setSheet('room')}
+            axis="colour"
           />
           <Swatches scheme={scheme()} name={theme().name} />
           <p class="nb-panel-footnote">
@@ -836,6 +949,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             part="shelf"
             label="shelves"
             title="colour"
+            axis="shelf-colour"
             colour={(t) => t.scheme.timber}
             onPick={pickShelfColour}
             onMore={() => setSheet('shelf-colour')}
@@ -864,6 +978,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             scheme={scheme()}
             onPick={(id) => patchDesign({ build: id as BuildId })}
             onMore={() => setSheet('build')}
+            axis="build"
           />
 
           <span class="nb-panel-row-label nb-strip-label">worked into the timber</span>
@@ -874,6 +989,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             scheme={scheme()}
             onPick={(id) => patchDesign({ pattern: id as PatternId })}
             onMore={() => setSheet('pattern')}
+            axis="pattern"
           />
 
           <div class="nb-chip-row">
@@ -886,7 +1002,10 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
               header of features/packs/YourDesigns.tsx: a vocabulary reachable
               only from a panel nobody opens is the failure this tree keeps
               having, and it is the same one tests/roll-gates.test.ts watches. */}
-          <YourDesigns axis="carpentry" />
+          {/* `pack`, not `axis`: this names a pack CATEGORY, and everywhere
+              else in the tree an `axis` prop is a CurationAxis. See the header
+              of YourDesigns.tsx — the two words collided in this very file. */}
+          <YourDesigns pack="carpentry" />
         </section>
 
         {/* ----------------------------- wallpaper -------------------------- */}
@@ -909,6 +1028,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             part="wall"
             label="wallpaper"
             title="the wall behind it"
+            axis="wall-colour"
             colour={(t) => t.scheme.wall}
             onPick={pickWallColour}
             onMore={() => setSheet('wall-colour')}
@@ -941,9 +1061,10 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             scheme={scheme()}
             onPick={(id) => patchDesign({ wallpaper: getWallpaper(id).spec })}
             onMore={() => setSheet('wallpaper')}
+            axis="wallpaper"
           />
 
-          <YourDesigns axis="wallpaper" />
+          <YourDesigns pack="wallpaper" />
 
           {/*
             The three rows below all tune a MOTIF, and `plain` is the absence of
@@ -979,6 +1100,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             tileW={100}
             tileH={62}
             onPick={(id) => patchWall({ ink: id as WallpaperInk })}
+            axis="wallpaper-ink"
           />
 
           <span class="nb-panel-row-label nb-strip-label">
@@ -994,6 +1116,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             tileW={62}
             tileH={44}
             onPick={(id) => patchWall({ scale: id as WallpaperScale })}
+            axis="wallpaper-scale"
           />
 
           <span class="nb-panel-row-label nb-strip-label">
@@ -1009,6 +1132,7 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
             tileW={78}
             tileH={54}
             onPick={(id) => patchWall({ depth: id as WallpaperDepth })}
+            axis="wallpaper-relief"
           />
           <p class="nb-panel-footnote">
             relief is the motif's own thickness — a second flat face beside the

@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_SHELF_DESIGN } from '../src/art/shelfDesign';
 import { DEFAULT_THEME_ID } from '../src/art/themes';
+import { ROOM_PRESETS, getRoomPreset, roomPresetOptions } from '../src/views/rail/designOptions';
 import {
   CURATION_AXES,
   SAVED_ROOM_GROUP,
@@ -53,6 +54,7 @@ import {
   setStars,
   starMeaning,
   starsOf,
+  type CurationAxis,
   type Stars,
 } from '../src/data/shelfOfMine';
 
@@ -74,6 +76,20 @@ const ROWS: readonly Row[] = [
 ];
 
 const ids = (rows: readonly Row[]): string[] => rows.map((row) => row.id);
+
+/** One of the rail's own files, read as text. Several gates below are source. */
+const read = (name: string): string =>
+  readFileSync(join(import.meta.dirname, '..', 'src', 'views', 'rail', name), 'utf8');
+
+/**
+ * Comments out.
+ *
+ * Every source gate here is about what the code DOES, and a prose paragraph
+ * naming `rollPool` while the call beside it rolls the raw table is exactly the
+ * shape of the bug being watched for.
+ */
+const strip = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/[^\n]*$/gm, ' ');
 
 /** Starts every test from an empty book without going near SQLite. */
 beforeEach(() => {
@@ -483,9 +499,6 @@ describe('persistence', () => {
  * ========================================================================== */
 
 describe('the strip and the sheet share one implementation', () => {
-  const read = (name: string): string =>
-    readFileSync(join(import.meta.dirname, '..', 'src', 'views', 'rail', name), 'utf8');
-
   it('routes both through createCuration rather than each filtering its own', () => {
     // The whole point of the mechanism is that a list opts in with one prop.
     // A caller that grew its own `.filter(isHidden)` would drift from this one
@@ -508,18 +521,222 @@ describe('the strip and the sheet share one implementation', () => {
   });
 
   /*
-   * The two halves this mechanism cannot wire from inside its own files, left
-   * named rather than left silent.
+   * The two halves this mechanism could not wire from inside its own files.
    *
    * This repo's recurring failure — `tests/roll-gates.test.ts` was written for
    * it — is a vocabulary that is authored, exported, validated and reachable
-   * from nowhere. `rollPool` is in exactly that position until the studio's
-   * "surprise me" reads it, and a saved room is until `roomPresetOptions()`
-   * carries it. Both live in files this agent does not own (LibraryStudio.tsx,
-   * designOptions.ts). Turn each of these into a real assertion at the moment
-   * it is wired; a todo that has been sitting here for a while is a feature
-   * nobody can reach.
+   * from nowhere. `rollPool` was in exactly that position until the studio's
+   * "surprise me" read it, and a saved room was until `roomPresetOptions()`
+   * carried it. Both lived in files the agent that wrote this mechanism did not
+   * own (LibraryStudio.tsx, designOptions.ts), and both were left here as
+   * `it.todo` rather than as silence. They are wired now, so they are gates.
    */
-  it.todo('the dice roll through rollPool once LibraryStudio names its axes');
-  it.todo('roomPresetOptions() carries savedRooms() so a kept room is pickable');
+  it('the dice roll through rollPool: no pool reaches withMood ungated', () => {
+    // The exact failure this catches: `surprise()` narrowing the FULL
+    // vocabulary by mood and handing back one of the six papers the reader
+    // explicitly took off the list. A dice that ignores the removals is not a
+    // dice, it is a panel that did not listen — and it looks identical to a
+    // working one until the removed entry comes back up.
+    const studio = strip(read('LibraryStudio.tsx'));
+    const at = studio.indexOf('const surprise');
+    expect(at, 'LibraryStudio has no surprise()').toBeGreaterThan(0);
+    const surprise = studio.slice(at, at + 1800);
+
+    const POOLS: readonly (readonly [CurationAxis, string])[] = [
+      ['colour', 'THEME_IDS'],
+      ['build', 'ROLLABLE_BUILDS'],
+      ['pattern', 'ROLLABLE_PATTERNS'],
+      ['wallpaper', 'WALLPAPER_ROLL'],
+    ];
+    for (const [axis, pool] of POOLS) {
+      expect(surprise, `${pool} is rolled without the reader's removals`).toMatch(
+        new RegExp(`rollPool\\('${axis}',\\s*${pool}`),
+      );
+    }
+    // The gate has to be on the OUTSIDE of every pool, not merely present
+    // somewhere in the function: `withMood(POOL, …)` beside an unused
+    // `rollPool` import would satisfy a looser check and roll the whole table.
+    expect(surprise, 'a pool reaches withMood without passing rollPool').not.toMatch(
+      new RegExp(`withMood\\(\\s*(?:${POOLS.map(([, pool]) => pool).join('|')})`),
+    );
+  });
+
+  it('roomPresetOptions() carries savedRooms() so a kept room is pickable', async () => {
+    const house = roomPresetOptions();
+    expect(house).toHaveLength(ROOM_PRESETS.length);
+
+    const room = await saveRoomAsPreset('The Study', LOOK, 2);
+    const withMine = roomPresetOptions();
+    expect(withMine).toHaveLength(ROOM_PRESETS.length + 1);
+
+    const card = withMine.find((option) => option.id === room!.id);
+    expect(card, 'a kept room is not on the list it was kept from').toBeDefined();
+    expect(card!.name).toBe('The Study');
+    expect(card!.group).toBe(SAVED_ROOM_GROUP);
+
+    // The half that is easy to miss, and fatal on its own: a card that is
+    // offered, drawn and pressed, and then answers null to the lookup the
+    // studio applies it through — so the press silently does nothing.
+    expect(getRoomPreset(room!.id)?.build).toBe(LOOK.build);
+    expect(getRoomPreset(room!.id)?.theme).toBe(LOOK.theme);
+
+    // Its own art key, or the card cache serves it somebody else's picture.
+    expect(new Set(withMine.map((option) => option.artKey)).size).toBe(withMine.length);
+
+    // And the notation reaches it: two stars put the reader's own room at the
+    // head of the whole sheet, which is what they saved it starred for.
+    expect(curateList('room-preset', withMine)[0]?.id).toBe(room!.id);
+
+    // Removable like any house preset, and restorable from the same drawer.
+    await hideEntry('room-preset', room!.id);
+    expect(curateList('room-preset', withMine).map((o) => o.id)).not.toContain(room!.id);
+    await restoreEntries('room-preset', [room!.id]);
+    expect(curateList('room-preset', withMine).map((o) => o.id)).toContain(room!.id);
+  });
+});
+
+/* ========================================================================== *
+ *              every studio list says which list it is, out loud             *
+ * ========================================================================== */
+
+/**
+ * The gate for the failure this whole wave exists for.
+ *
+ * `DesignStrip` and `DesignPicker` apply the reader's curation for their
+ * caller — but ONLY when the caller names its axis, because that is what lets a
+ * list opt in with one prop. The consequence is that forgetting the prop is
+ * completely silent: the strip renders, the tiles work, the right-click does
+ * what right-click used to do, and the entire mechanism underneath it is
+ * unreachable from that list forever. Nothing else in the tree can tell the
+ * difference between a list that opted out and a list nobody wired.
+ *
+ * So it is checked in the source, where the prop either is or is not written.
+ */
+describe('every studio list names its axis', () => {
+  /** Every `<Tag …/>` element in a file, as its own text. */
+  const elementsOf = (source: string, tag: string): readonly string[] => {
+    const out: string[] = [];
+    for (let at = source.indexOf(`<${tag}`); at >= 0; at = source.indexOf(`<${tag}`, at + 1)) {
+      const end = source.indexOf('/>', at);
+      out.push(source.slice(at, end < 0 ? source.length : end));
+    }
+    return out;
+  };
+
+  const STUDIOS = ['LibraryStudio.tsx', 'BookStudio.tsx'] as const;
+
+  it('mounts at least one of each, or this whole file passes vacuously', () => {
+    for (const file of STUDIOS) {
+      const source = strip(read(file));
+      expect(elementsOf(source, 'DesignStrip').length, file).toBeGreaterThan(0);
+      expect(elementsOf(source, 'DesignPicker').length, file).toBeGreaterThan(0);
+    }
+  });
+
+  it('gives every strip and every sheet an axis prop', () => {
+    for (const file of STUDIOS) {
+      const source = strip(read(file));
+      for (const tag of ['DesignStrip', 'DesignPicker']) {
+        elementsOf(source, tag).forEach((element, index) => {
+          const label = /label="([^"]*)"|title=\{?([^\n]*)/.exec(element)?.[1] ?? `#${index}`;
+          expect(element, `${file}: <${tag} ${label}> names no axis`).toMatch(/\baxis=/);
+        });
+      }
+    }
+  });
+
+  it('spells every axis with a word the store knows', () => {
+    // A typo — 'wallpapers' for 'wallpaper' — would split one reader's
+    // curation in two, silently, forever.
+    //
+    // Only the literal props are read. An `axis` that arrives as an expression
+    // is already a `CurationAxis` or TypeScript refused it; a bare string in
+    // the markup is the one form that could get past a cast, and it is also
+    // the form a hurried edit reaches for.
+    let checked = 0;
+    for (const file of STUDIOS) {
+      for (const word of strip(read(file)).matchAll(/axis=(?:"([a-z-]+)"|\{'([a-z-]+)'\})/g)) {
+        const axis = word[1] ?? word[2] ?? '';
+        expect(isCurationAxis(axis), `${file}: '${axis}' is not a curation axis`).toBe(true);
+        checked += 1;
+      }
+    }
+    expect(checked, 'no literal axis props at all — the regex has gone stale').toBeGreaterThan(8);
+  });
+
+  /**
+   * The lists each studio is expected to offer, by name.
+   *
+   * A word missing from the source is a list that silently cannot be curated,
+   * which — per the note in `CURATION_AXES` — is indistinguishable from one
+   * nobody has wired yet. That is precisely the state this wave found the
+   * mechanism in, so it is worth naming the axes rather than merely counting
+   * the props above.
+   */
+  const OFFERED: Record<(typeof STUDIOS)[number], readonly CurationAxis[]> = {
+    'LibraryStudio.tsx': [
+      'room-preset',
+      'colour',
+      'shelf-colour',
+      'wall-colour',
+      'build',
+      'pattern',
+      'named-case',
+      'wallpaper',
+      'wallpaper-scale',
+      'wallpaper-relief',
+      'wallpaper-ink',
+    ],
+    'BookStudio.tsx': [
+      'binding',
+      'spine-shape',
+      'covering',
+      'marks',
+      'spine-cloth',
+      'charm-colour',
+    ],
+  };
+
+  it('reaches every list the two studios actually offer', () => {
+    // The word itself, quoted, rather than `axis="…"` on an element: a studio
+    // whose sheet serves eight axes passes them through one lookup table
+    // (`SHEET_AXIS`, `OWN_AXIS_CURATION`) so the strip and the sheet cannot
+    // spell one list two ways, and the word is written in the table instead.
+    // What stops that from weakening the check is the two gates above — every
+    // element must carry the prop, and every axis literal must be a real one.
+    for (const [file, axes] of Object.entries(OFFERED)) {
+      const source = strip(read(file));
+      for (const axis of axes) {
+        expect(source, `${file} never names '${axis}'`).toMatch(new RegExp(`['"]${axis}['"]`));
+      }
+    }
+  });
+
+  it('files the reader’s own packs on a real axis rather than a lookalike', () => {
+    // The conflict this wave had to resolve: YourDesigns took its own `axis`
+    // prop over 'wallpaper' | 'carpentry'. The first collides with a
+    // CurationAxis by luck; the second is not one at all. A pack that could not
+    // be starred would be the one thing in the studio that is actually the
+    // reader's own and also the one thing they cannot arrange.
+    const yours = strip(
+      readFileSync(
+        join(import.meta.dirname, '..', 'src', 'features', 'packs', 'YourDesigns.tsx'),
+        'utf8',
+      ),
+    );
+    expect(yours, 'YourDesigns does not use the shared controller').toContain('createCuration');
+    expect(yours, 'YourDesigns re-implements the removal filter').not.toMatch(
+      /\.filter\([^)]*isHidden/,
+    );
+    for (const word of yours.matchAll(/^\s*(?:wallpaper|carpentry):\s*'([a-z-]+)',/gm)) {
+      expect(isCurationAxis(word[1]), `'${word[1]}' is not a curation axis`).toBe(true);
+    }
+    // And the mapping is a total record, so a third category cannot be added
+    // without somebody deciding which list a reader curates it in.
+    expect(yours).toMatch(/Record<PackAxis,\s*CurationAxis>/);
+    // The prop is `pack`, so that in this tree `axis` means exactly one thing.
+    expect(yours, 'the pack category is called `axis` again').not.toMatch(
+      /readonly axis:|props\.axis/,
+    );
+  });
 });

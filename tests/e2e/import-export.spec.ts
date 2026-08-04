@@ -1,11 +1,25 @@
 /**
  * Group D E2E — import/export & templates (roadmap 23-27).
  *
- * The rail buttons are wired by the orchestrator after the wave lands, so
- * these specs drive the flows through the dev hooks group D installs on
+ * These specs drive the flows through the dev hooks group D installs on
  * `window.__nbGroupD` (src/features/templates/groupD.ts, dev builds only —
  * exactly what `vite dev` serves here). File pickers use the browser
  * fallbacks (hidden inputs / download events), which Playwright can drive.
+ *
+ * WHAT THIS FILE CANNOT TELL YOU, and once did not.
+ *
+ * It was written while "the rail buttons are wired by the orchestrator after
+ * the wave lands". They were not, for a whole wave — four finished features
+ * with no entry point anywhere in the app — and every test below passed the
+ * entire time, because every one of them goes through the bridge. A spec that
+ * calls a flow directly proves the flow WORKS; it can say nothing about whether
+ * a reader can reach it.
+ *
+ * The other half now lives in `scripts/probe-groupd.mjs`, which DELETES
+ * `window.__nbGroupD` and then drives all four by clicking, and in
+ * `tests/plugged-in.test.ts` part three, which fails the suite if any flow's
+ * only mention in `src/` is an import, a re-export or this bridge. Keep both
+ * when you touch this file.
  */
 import { promises as fs } from 'node:fs';
 import { expect, test, type Page } from 'playwright/test';

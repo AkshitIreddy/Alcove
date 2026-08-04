@@ -91,8 +91,13 @@ describe("the studio's surprise reads the gated pool", () => {
     expect(surprise, 'surprise() must not roll the full wallpaper table').not.toMatch(
       /withMood\(\s*WALLPAPER_PRESETS/,
     );
+    // The reader's own removals may sit between the two — `rollPool` takes out
+    // what they took off the list before the mood narrows what is left (see
+    // LibraryStudio.surprise). What this gate cares about is that the thing
+    // reaching `withMood` is the TIERED pool and never the full table, so the
+    // reader's gate is optional here and pinned exactly in curation.test.ts.
     expect(surprise, 'surprise() should roll the gated pool').toMatch(
-      /withMood\(\s*WALLPAPER_ROLL/,
+      /withMood\(\s*(?:rollPool\('wallpaper',\s*)?WALLPAPER_ROLL/,
     );
   });
 
@@ -205,8 +210,10 @@ describe("the studio's surprise reads the gated carpentry", () => {
     expect(surprise, 'surprise() must not roll the full build table').not.toMatch(
       /withMood\(\s*BUILD_IDS/,
     );
+    // Same tolerance as the papers above: the reader's `rollPool` may sit
+    // inside, the full table may not.
     expect(surprise, 'surprise() should roll the gated build pool').toMatch(
-      /withMood\(\s*ROLLABLE_BUILDS/,
+      /withMood\(\s*(?:rollPool\('build',\s*)?ROLLABLE_BUILDS/,
     );
   });
 
@@ -215,7 +222,7 @@ describe("the studio's surprise reads the gated carpentry", () => {
       /withMood\(\s*PATTERN_IDS/,
     );
     expect(surprise, 'surprise() should roll the gated pattern pool').toMatch(
-      /withMood\(\s*ROLLABLE_PATTERNS/,
+      /withMood\(\s*(?:rollPool\('pattern',\s*)?ROLLABLE_PATTERNS/,
     );
   });
 

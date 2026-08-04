@@ -28,6 +28,7 @@ does not is a failing test.
 [Questions](#questions)
 
 ## Installing
+<!--nav: What the download will be, what the installer does, where your library lives, and how to uninstall without losing it-->
 
 There is **no published release yet**, so there is nothing to download today.
 This section describes what the download will be when the first tag lands, so
@@ -89,6 +90,7 @@ Node plus a stable Rust toolchain and nothing else; [Part 2 — Building
 Alcove](part-2-developers.md#getting-it-running) is the whole story.
 
 ## The first ten minutes
+<!--nav: Seven steps from arriving at the shelf to making a second book, plus the in-app guided tour-->
 
 1. **You arrive at the shelf.** One bookcase, <!--f:defaultFloors-->10<!--/f-->
    floors, one book on it. The
@@ -115,12 +117,15 @@ Alcove](part-2-developers.md#getting-it-running) is the whole story.
    same three things where you clicked.
 
 If you would rather be shown, the guided tour does exactly this walk inside the
-app: <!--f:tourSteps-->20<!--/f--> steps, each asking for one concrete action and
-turning green when it sees you do it, in a long or a short version. It runs on
+app: <!--f:tourSteps-->21<!--/f--> steps, each asking for one concrete action and
+turning green when it sees you do it, in a long or a short version. It opens by
+asking four questions about your taste and dressing the whole library from the
+answers, so the rest of the walk is through your own room. It runs on
 first launch, and *Settings → Help → replay the tour* starts it again
 ([`src/features/tutorial/steps.ts`](../../src/features/tutorial/steps.ts)).
 
 ## A tour
+<!--nav: The shelf, the spread, the page turn, the slash menu, the catalogue, the two studios, the switcher-->
 
 Each picture below is a real capture of the running app, taken by the harness in
 [`shots-now/`](../../shots-now/) — no mock-ups, no compositing. Each one is there to
@@ -230,6 +235,7 @@ open it because something you wrote is somewhere, and the one thing you reliably
 do not remember is which room it was in.
 
 ## Writing in a book
+<!--nav: Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end-->
 
 ### What a page can hold
 
@@ -374,6 +380,7 @@ about what a template is.
 > installed app. Everything else on this page is.
 
 ## Notebook Script
+<!--nav: The chatbot workflow, a whole worked script and the page it makes, and what the language has-->
 
 ### Why a writer would care
 
@@ -475,6 +482,7 @@ as script and re-run, or exported back out with **Export script**. A single
 block can be copied out as script from the right-click menu.
 
 ## Making it yours
+<!--nav: The two studios, every vocabulary counted, custom colours, stars and hiding, more bookcases, your own packs-->
 
 ### Two studios, and what each one owns
 
@@ -608,6 +616,7 @@ Pin a book from its right-click menu and it gets a star charm on the spine, and
 sorts first when *Settings → Library & shelf* is set to sort by favourites.
 
 ## Sound
+<!--nav: Sound sets, ambience beds, the volume model, and the in-app credits-->
 
 Every interaction has a sound, and the whole set can be re-voiced.
 
@@ -646,6 +655,7 @@ from. The full provenance is in
 [`docs/design/sound.md`](../design/sound.md).
 
 ## The keyboard
+<!--nav: Every shortcut, grouped by where you are standing, and which ones you can rebind-->
 
 Every shortcut in the app is in one registry
 ([`src/data/keybindings.ts`](../../src/data/keybindings.ts)), and that registry is what
@@ -653,7 +663,7 @@ draws the settings list, what draws the cheat sheet (`Ctrl+/`, or just `?` when
 you are not typing) and what the one key handler matches on — so the list cannot
 promise a key the app does not answer to.
 
-**<!--f:rebindableKeys-->20<!--/f--> of them are rebindable**, from *Settings →
+**<!--f:rebindableKeys-->24<!--/f--> of them are rebindable**, from *Settings →
 Input*. `Escape` deliberately is not: it is how you step back out of a book and
 how every panel and dialog closes, and one key doing one thing everywhere is
 worth more than that row being adjustable — the app says so in the row rather
@@ -674,6 +684,7 @@ no live command is left completely alone — which is why the shelf's bare `+`,
 installed.
 
 ## Backups, export and import
+<!--nav: Scheduled backups, `.nbk` bundles, Markdown in and out, PDF and PNG, tray capture-->
 
 Your library is a file on your disk and nothing is copying it anywhere. What
 follows exists so that this is a design decision rather than a risk.
@@ -742,6 +753,7 @@ you were ([`src/features/system/launch.ts`](../../src/features/system/launch.ts)
 off by default.
 
 ## Questions
+<!--nav: Where the data is, whether it is offline, moving machines, and the failure modes worth naming-->
 
 **Where is my data?**
 `%APPDATA%\com.alcove.app\notebook.db`, with `notebook.db-wal` and

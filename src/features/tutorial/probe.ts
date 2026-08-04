@@ -23,10 +23,23 @@
  * Facts are STICKY between `arm()` calls: the reader is allowed to right-click
  * a block, wander off, and come back to a step that is already satisfied.
  * `arm()` is what resets them, and it runs once per step entry.
+ *
+ * ONE FACT IS NOT A DOM READ, and it is worth saying why. `taste-chosen` asks
+ * `./tasteStore` whether the questionnaire was finished, because the thing that
+ * has to be observed — "the library was actually dressed" — leaves no mark on
+ * screen that can be told apart from "the reader pressed I'll pick later": both
+ * end with the panel gone. The store's own marker is written last, by
+ * `tasteApply`, only after the writes land. It is a synchronous signal read, so
+ * it is as safe on the rAF loop as a `querySelector`, and it stays inside this
+ * feature — the outside-in rule is about not reaching into the editor, the
+ * shelf world or the rail, none of which this touches.
  */
+
+import { hasChosenTaste } from './tasteStore';
 
 /** What a step can ask the reader to do. */
 export type TourFactKey =
+  | 'taste-chosen'
   | 'first-book-made'
   | 'shelf-moved'
   | 'shelf-dock-hovered'
@@ -325,6 +338,9 @@ export function armProbe(): void {
  * layout and one hashes a data URL.
  */
 function poll(now: number): void {
+  // Inert without a DOM rather than a throw — the same contract ./dismiss.ts
+  // keeps, and what lets a node test ask `factHolds` a question directly.
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
   if (now - lastPoll < POLL_MS) return;
   lastPoll = now;
 
@@ -378,6 +394,11 @@ export function isVisible(node: Element | null): boolean {
 export function factHolds(fact: TourFactKey, now: number): boolean {
   poll(now);
   switch (fact) {
+    // True only after "dress my library" wrote. Leaving by "I'll pick later"
+    // deliberately does not set it, so that step stays outstanding — and, like
+    // every other task, walkable past with next.
+    case 'taste-chosen':
+      return hasChosenTaste();
     case 'first-book-made':
       return seen.firstBook;
     case 'shelf-moved':

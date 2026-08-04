@@ -195,6 +195,44 @@ async function clickSpine(p) {
 
 /** Each step's task, done the way a reader would do it. */
 const ACTIONS = {
+  /**
+   * The taste questionnaire, which puts ITSELF on screen at this step — nothing
+   * here opens it, and that is the assertion: if the app shell has stopped
+   * rendering `<TasteQuestionnaire />`, or the step id has drifted away from
+   * `taste`, the wait below times out.
+   *
+   * Four cards and two presses. Only the first three questions walk on by
+   * themselves; the sound one deliberately does not, because the reader is
+   * meant to audition more than one family.
+   */
+  taste: async (p) => {
+    // Re-entrant: the retry loop above may call an action twice, and by then
+    // the library is already dressed and the panel gone.
+    if ((await p.locator('.nbq-sheet').count()) === 0) {
+      const s = await state(p);
+      if (s.stepId !== 'taste' || s.done) return;
+    }
+    await p.waitForSelector('.nbq-sheet', { state: 'visible', timeout: 15_000 });
+    for (const next of ['pitch', 'paper', 'sound']) {
+      await p.locator('.nbq-options .nbq-option').first().click();
+      await p.waitForFunction(
+        (axis) =>
+          document.querySelector('.nbq-layer')?.getAttribute('data-taste-step') === axis,
+        next,
+        { timeout: 15_000 },
+      );
+    }
+    await p.locator('.nbq-options .nbq-option').first().click();
+    await p.locator('.nbq-btn--primary').click(); // "see it"
+    await p.waitForFunction(
+      () => document.querySelector('.nbq-layer')?.getAttribute('data-taste-stage') === 'summary',
+      { timeout: 15_000 },
+    );
+    await p.locator('.nbq-btn--primary').click(); // "dress my library"
+    await p.waitForFunction(() => document.querySelector('.nbq-sheet') === null, {
+      timeout: 20_000,
+    });
+  },
   'first-book': async (p) => {
     // A big enough shelf drag can carry the empty floor — and with it the
     // invite — off screen. The card names the other way through for exactly
@@ -452,8 +490,24 @@ await phase('A', async () => {
   await tour(p, () => window.__nbTutorial.chooseLength('full'));
 
   let s = await until(p, (n) => n.stepId !== 'welcome');
+  // The taste questions come first now, and they are not what this phase is
+  // about — decline them and walk on. (Declining must leave the step
+  // outstanding and still be walkable past; that is asserted here by the
+  // simple fact that the rest of the phase runs.)
+  if (s.stepId === 'taste') {
+    ok('the tour asks about taste before it asks for anything else');
+    await p.waitForSelector('.nbq-sheet', { state: 'visible', timeout: 15_000 });
+    await p.locator('.nbq-exit--quiet').click();
+    await p.waitForFunction(() => document.querySelector('.nbq-sheet') === null, {
+      timeout: 10_000,
+    });
+    await tour(p, () => window.__nbTutorial.next());
+    s = await until(p, (n) => n.stepId !== 'taste');
+  } else {
+    fail(`the tour did not open with the taste questions: step 2 is "${s.stepId}"`);
+  }
   if (s.stepId !== 'first-book') {
-    fail(`the empty case did not gate: step 2 is "${s.stepId}", not "first-book"`);
+    fail(`the empty case did not gate: step 3 is "${s.stepId}", not "first-book"`);
   } else {
     ok('an empty case gates the tour on "write my first one"');
   }

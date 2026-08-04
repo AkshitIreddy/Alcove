@@ -710,7 +710,7 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * can NAME — a gable, an ogee, a pointed bay, a run of compartments. The
  * scriptorium's round-headed arcade is the shallowest of the arch openings, and
  * repeated five times across 1200px at 80% zoom it reads as bumps along the top
- * of a slab rather than as architecture (`shots-now/room-rank/board-07.png`,
+ * of a slab rather than as architecture (`shots-now/room-rank/board-before-7.png`,
  * the house room beside `coastal.stern-gallery`, which is the same arcade with
  * a lighter timber and reads far better).
  *

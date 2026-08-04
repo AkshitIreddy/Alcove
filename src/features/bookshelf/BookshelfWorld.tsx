@@ -40,7 +40,13 @@ import {
   updateBookPageCount,
 } from '../../data/books';
 import type { Book } from '../../data/types';
-import { registerCommands } from '../../data/keybindings';
+import { bindingFor, formatBinding, registerCommands } from '../../data/keybindings';
+import { settings } from '../../data/settings';
+// Imported from the module that DEFINES the gallery rather than from
+// `features/templates/groupD`: that barrel hydrates the custom-sticker
+// registry on import, and the shelf has no business paying for the editor's
+// asset table before a book has been opened.
+import { openTemplatesGallery } from '../templates/TemplatesGallery';
 import { play } from '../../sound/engine';
 import Tooltips from '../../views/Tooltip';
 import ShelfStudio from '../../views/rail/ShelfStudio';
@@ -172,6 +178,29 @@ function TrashIcon(): JSX.Element {
         <path d="M11.0 8.0 C11.1 6.2, 11.6 5.2, 14.0 5.1 C16.4 5.0, 17.0 6.0, 17.1 7.9" />
         <path d="M7.4 9.6 C7.8 16.4, 8.2 20.6, 8.6 22.6 C8.8 23.7, 9.6 24.2, 11.0 24.3 C13.0 24.5, 15.2 24.5, 17.2 24.3 C18.6 24.2, 19.3 23.7, 19.5 22.6 C19.9 20.5, 20.4 16.3, 20.8 9.5" />
         <path d="M11.7 12.6 L12.1 20.9 M16.4 12.5 L16.0 20.8" opacity="0.6" />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * A stack of ready-written cards with a spark over the corner — "start from a
+ * template".
+ *
+ * Drawn here rather than borrowed from `features/templates/icons.tsx`, whose
+ * icons carry `.nb-rail-icon` and a 24 viewBox: that class lives in rail.css,
+ * which the shelf does not load, so the borrowed glyph would size itself off
+ * whatever the SVG default happens to be. Same drawing, this rail's frame —
+ * and the same reason for the spark being OUTSIDE the card (see that file).
+ */
+function TemplateIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.8 6.3 C12.9 6 16 6 19.1 6.3 M8.1 9.7 C11.9 9.3 15.6 9.3 19.4 9.6" opacity="0.55" stroke-width="1.5" />
+        <path d="M5.4 12.6 C11.2 12.1 17 12.1 22.8 12.6 C23.2 16.6 23.2 20.4 22.7 23.8 C17 24.4 11.2 24.4 5.7 23.7 C5.1 20.2 5 16.4 5.4 12.6 Z" />
+        <path d="M8.9 16.6 C12.3 16.3 15.7 16.3 19.2 16.6 M9 20.2 C11.8 19.9 14.6 19.9 16.7 20.1" stroke-width="1.5" opacity="0.6" />
+        <path d="M23.4 2.6 C23.9 4.4 24.7 5.2 26.5 5.7 C24.7 6.2 23.9 7 23.4 8.8 C22.9 7 22.1 6.2 20.3 5.7 C22.1 5.2 22.9 4.4 23.4 2.6 Z" stroke-width="1.5" />
       </g>
     </svg>
   );
@@ -412,9 +441,30 @@ export default function BookshelfWorld(): JSX.Element {
         'library-studio': () => toggleDock('studio'),
         'open-trash': () => toggleDock('trash'),
         'add-floor': () => world?.addFloor(),
+        // The gallery is a book with a head start, so it belongs beside "new
+        // book" on both the rail and the keyboard. BookView registers the same
+        // id, which is what makes Ctrl+Alt+G work in either room — the gallery
+        // offers "add pages here" only when a book is actually open.
+        templates: () => openTemplates(),
       }),
     );
   });
+
+  /**
+   * The key cap in the dock's tooltip — the READER's binding, not the shipped
+   * one. Spelled from the same table the dispatcher matches on, so moving the
+   * shortcut in Settings re-labels the button rather than leaving it lying.
+   */
+  const templatesKey = (): string =>
+    formatBinding(bindingFor('templates', settings.keybindings));
+
+  /** The gallery, from the dock, the right-click card or the keyboard. */
+  function openTemplates(): void {
+    void play('pop-soft');
+    // A sheet claiming the left of the window would sit under the overlay.
+    setDockPanel(null);
+    openTemplatesGallery();
+  }
 
   /**
    * The keyboard's version of pressing a dock icon.
@@ -439,6 +489,7 @@ export default function BookshelfWorld(): JSX.Element {
 
   function handleSpotAction(state: SpotMenuState, action: ShelfSpotAction): void {
     if (action === 'new-book') addBook(state.floor);
+    else if (action === 'from-template') openTemplates();
     else if (action === 'add-floor') world?.addFloor();
     else openStudio(null);
   }
@@ -876,6 +927,24 @@ export default function BookshelfWorld(): JSX.Element {
             >
               <NewBookIcon />
               <span class="shelf-dock__label">new book</span>
+            </button>
+            {/* Directly under "new book", because it is the same verb with a
+                head start — a reader who wants a Cornell page or a weekly
+                planner is standing exactly where a reader who wants a blank
+                book is standing, and until now the gallery was reachable only
+                by typing a global into a console. */}
+            <button
+              type="button"
+              class="shelf-dock__btn"
+              data-shelf-dock="templates"
+              aria-label="Start from a template"
+              data-tooltip="Five hand-drawn starting points"
+              data-tooltip-side="right"
+              data-tooltip-key={templatesKey()}
+              onClick={() => openTemplates()}
+            >
+              <TemplateIcon />
+              <span class="shelf-dock__label">template</span>
             </button>
             <span class="shelf-dock__rule" aria-hidden="true" />
             <button

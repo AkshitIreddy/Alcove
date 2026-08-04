@@ -208,6 +208,17 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     label: 'this list of spells',
   },
   {
+    // Lives in "anywhere" rather than in "on the shelf" because BOTH scenes
+    // register it: the gallery makes a new book from the shelf and adds its
+    // pages to the open book from inside one, and a reader should not have to
+    // remember which of the two they are standing in.
+    kind: 'binding',
+    id: 'templates',
+    group: 'around',
+    binding: 'mod+alt+g',
+    label: 'start from a template — the gallery of five',
+  },
+  {
     kind: 'fixed',
     id: 'zoom-to-shelf',
     group: 'around',
@@ -440,6 +451,39 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     group: 'library',
     binding: 'mod+shift+i',
     label: 'add a bundle to this shelf',
+  },
+  /*
+   * The three page/file flows that shipped with no key and no button at all.
+   *
+   * `mod+alt+p` is the PDF; the picture is the SAME act in a different wrapper,
+   * so it is that combination plus Shift rather than a fourth letter picked
+   * because it was still free. Markdown gets `mod+shift+alt+m` for its own
+   * initial — `mod+alt+m` is the thumbnail strip and `mod+alt+i` is "insert
+   * script", so neither of the obvious two was available.
+   *
+   * Spelled in canonical order (mod, shift, alt — `canonicalBinding`), or the
+   * sheet would read a shipped default as a rebind the moment it loaded.
+   */
+  {
+    kind: 'binding',
+    id: 'export-pdf',
+    group: 'library',
+    binding: 'mod+alt+p',
+    label: 'export as PDF — this page or the whole book',
+  },
+  {
+    kind: 'binding',
+    id: 'export-png',
+    group: 'library',
+    binding: 'mod+shift+alt+p',
+    label: 'save this page as a picture',
+  },
+  {
+    kind: 'binding',
+    id: 'import-markdown',
+    group: 'library',
+    binding: 'mod+shift+alt+m',
+    label: 'turn Markdown files into books',
   },
   /*
    * Still here, still performed by nobody.

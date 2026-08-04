@@ -81,6 +81,24 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
       The second half is the real bug; the step is just where it was noticed.
 
+      **Not reproducible on the dev server**, and that is worth writing down
+      before anyone changes drag code on a hunch. `scripts/probe-drag.mjs`
+      hovers a paragraph, finds the handle (visible, 24x28, `pointer-events:
+      auto`, `draggable="true"`), and drags it — the paragraph MOVES, by both a
+      synthetic mouse drag and a real HTML5 one.
+
+      That probe also records a trap worth keeping: Playwright's
+      `mouse.down/move/up` never makes Chromium synthesise a `dragstart`, so a
+      hand-rolled drag reports "nothing moved" against an app that works. It
+      runs both paths for exactly that reason.
+
+      So the difference is the reader's environment, not the gesture. Two
+      candidates, in order: (a) the ~150-300ms main-thread stalls measured under
+      the FPS item — a stall mid-gesture drops the pointer stream and the drag
+      dies, which would also explain why they met it at step 10, where a panel
+      is open; (b) WebView2 on real hardware rather than headless Chromium.
+      Re-test on the installed 0.3 build before touching the drag code.
+
 - [ ] **Step 18 does not move the tutorial card when the panel opens.**
       > "Step 18 doesn't move the UI tutorial window when the user opens the In
       > and Out window. Also we should let the user be able to move the step

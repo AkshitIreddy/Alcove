@@ -111,6 +111,7 @@ import {
   type RibbonColor,
 } from './bookmarks';
 import {
+  MAX_TRAILING_BLANK_PAGES,
   SPREAD_FIT_REST,
   arrowFlipAction,
   canFlipSpread,
@@ -383,6 +384,98 @@ export default function BookView(): JSX.Element {
     }
     // target === current spread: the new page simply appears on the right leaf.
   };
+
+  /**
+   * KEEP TWO REAL PAGES STANDING READY AT THE END OF THE BOOK.
+   *
+   * The reader: *"always auto-create the next 2 pages when the user is on the
+   * last page, so the user never sees a blank page."*
+   *
+   * They are describing the seam in `onNavigate` below, whose own comment
+   * admits it: pages were created DURING the flip, fire-and-forget, so "the new
+   * spread shows cream blank faces for the few ms until the rows land". Turning
+   * onto a page that does not exist yet means turning onto cream paper and
+   * waiting for an editor to appear underneath you. Creating it a beat EARLIER
+   * costs the same page and removes the seam entirely.
+   *
+   * Bounded by the trailing blanks rather than by position, which is what stops
+   * a runaway: once two empty pages trail the book nothing more is made, and
+   * writing on one is what earns the next. `MAX_TRAILING_BLANK_PAGES` is four,
+   * so two ahead sits inside the allowance a reader already has for
+   * deliberately skipping a page — this cannot make `canFlipSpread` refuse a
+   * turn it would otherwise have allowed.
+   *
+   * Only near the end, or a book with two hundred written pages would grow two
+   * more the moment it opened.
+   */
+  const PAGES_AHEAD = 2;
+  let stocking = false;
+  createEffect(() => {
+    const count = pages().length;
+    const here = spreadIndex();
+    // Track both, so writing on the last page re-arms this.
+    const blanks = trailingBlanks();
+    if (!session()) return;
+    // Within one spread of the end — anywhere else there is nothing to stock.
+    if (spreadOfSlot(Math.max(0, count - 1)) > here + 1) return;
+    if (stocking) return;
+
+    /*
+     * Two blanks is not the whole answer, and the difference is visible.
+     *
+     * A spread is TWO slots, so an odd page count leaves the last spread with a
+     * real page on the left and nothing at all on the right — measured as
+     * ["empty-editor", "no-editor"], which on screen is a page you can write on
+     * beside a leaf of bare cream that does nothing when clicked. That bare
+     * leaf IS the blank page being complained about; stocking two more pages
+     * without evening the count just moves it along.
+     *
+     * So the target is the smallest page count that both leaves two blanks
+     * ahead AND completes the spread. In practice that is two or three pages,
+     * once, and then nothing until the reader writes on one.
+     */
+    let wanted = Math.max(0, PAGES_AHEAD - blanks);
+    if ((count + wanted) % 2 !== 0) wanted += 1;
+    if (wanted === 0) return;
+
+    /*
+     * AND NEVER PAST THE ALLOWANCE, or this defeats the runaway guard.
+     *
+     * `canFlipSpread` lets a reader turn onto a blank spread while fewer than
+     * MAX_TRAILING_BLANK_PAGES empty pages trail the book — the stop that keeps
+     * a held arrow key from appending without bound. Topping the blanks back up
+     * to two after every turn keeps that count permanently under the limit, so
+     * the guard never fires and the book grows forever. Measured: three turns
+     * past the end each produced another full spread.
+     *
+     * The count of trailing blanks stopped being a measure of the READER'S
+     * intent the moment this effect started creating them, so the bound is
+     * taken from the last page they actually wrote on instead. Four blanks past
+     * that is the same allowance as before, arrived at honestly.
+     */
+    const all = pages();
+    let lastInked = -1;
+    for (let i = all.length - 1; i >= 0; i -= 1) {
+      if (docHasContent(all[i]?.doc)) {
+        lastInked = i;
+        break;
+      }
+    }
+    const ceiling = lastInked + 1 + MAX_TRAILING_BLANK_PAGES;
+    wanted = Math.min(wanted, Math.max(0, ceiling - count));
+    if (wanted === 0) return;
+
+    stocking = true;
+    void (async () => {
+      try {
+        // Sequenced, not Promise.all: createPage derives its ord from the
+        // store, so two in flight would both claim the same slot.
+        for (let i = 0; i < wanted; i += 1) await appendPage();
+      } finally {
+        stocking = false;
+      }
+    })();
+  });
 
   /** Contract rule 3: synchronous store work only — no awaits in here. */
   const onNavigate = (direction: FlipDirection): void => {

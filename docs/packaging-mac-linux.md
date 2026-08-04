@@ -7,8 +7,12 @@ and what to look at when it does** — because no run has happened. Nothing belo
 was observed on a runner. Everything that is a prediction rather than a
 measurement says so.
 
-The companion document is [`packaging-icons.md`](packaging-icons.md), which is
-about what `icon.ico` has to contain. This one is about the pipeline around it.
+Two companion documents carry the parts this one deliberately does not:
+[`packaging-icons.md`](packaging-icons.md) is what `icon.ico` and `icon.icns`
+have to contain, and [`packaging-windows.md`](packaging-windows.md) is
+everything specific to the two Windows installers — the WebView2 decision and
+the numbers behind it, the uninstaller's "keep my library" page, and the drawn
+setup window. This one is about the pipeline around all of it.
 
 ---
 
@@ -56,18 +60,21 @@ never publishes a release with a platform quietly missing.
 
 ## What a first run should produce
 
-Six files plus a checksum manifest. **The names are predicted from the Tauri
-bundler's naming rules, not read off a run** — check them against the job log
-the first time, and correct this table if the bundler disagrees.
+Seven files plus a checksum manifest. The three Windows rows below were built
+locally and their names and sizes read off the files; **the macOS and Linux
+names are still predicted from the Tauri bundler's naming rules, not read off a
+run** — check those against the job log the first time, and correct this table
+if the bundler disagrees.
 
 | Platform | Artefact | Notes |
 | --- | --- | --- |
-| Windows x64 | `Alcove_0.1.0_x64-setup.exe` | NSIS. `installMode: currentUser`, so no administrator prompt. The one to hand to a reader. |
-| Windows x64 | `Alcove_0.1.0_x64_en-US.msi` | WiX. For policy deployment. |
-| macOS universal | `Alcove_0.1.0_universal.dmg` | Contains `Alcove.app`. Both architectures in one file — see below. |
-| Linux x64 | `Alcove_0.1.0_amd64.deb` | Debian, Ubuntu, Mint. |
-| Linux x64 | `Alcove-0.1.0-1.x86_64.rpm` | Fedora, openSUSE. Tauri 2 builds this with a pure-Rust packer, so the runner needs no `rpmbuild`. |
-| Linux x64 | `Alcove_0.1.0_amd64.AppImage` | Runs without installing. The one to offer anybody not on a `.deb`/`.rpm` distribution. |
+| Windows x64 | `Alcove_0.2.0_x64-setup.exe` | NSIS, **16.2 MB** — measured, this one was built. `installMode: currentUser`, so no administrator prompt. The one to hand to a reader. |
+| Windows x64 | `Alcove_0.2.0_x64-setup-offline.exe` | The same installer carrying the whole Edge WebView2 runtime, **217 MB**. Built by its own step and renamed. Only for a machine with no internet — see [`packaging-windows.md`](packaging-windows.md). |
+| Windows x64 | `Alcove_0.2.0_x64_en-US.msi` | WiX, **19.8 MB** — also measured. For policy deployment. |
+| macOS universal | `Alcove_0.2.0_universal.dmg` | Contains `Alcove.app`. Both architectures in one file — see below. |
+| Linux x64 | `Alcove_0.2.0_amd64.deb` | Debian, Ubuntu, Mint. |
+| Linux x64 | `Alcove-0.2.0-1.x86_64.rpm` | Fedora, openSUSE. Tauri 2 builds this with a pure-Rust packer, so the runner needs no `rpmbuild`. |
+| Linux x64 | `Alcove_0.2.0_amd64.AppImage` | Runs without installing. The one to offer anybody not on a `.deb`/`.rpm` distribution. |
 | all | `SHA256SUMS.txt` | Generated in the release job. |
 
 `bundle.targets` is `"all"`, so each runner produces whatever its platform
@@ -75,6 +82,17 @@ supports; the workflow does not name the formats, it globs the bundle
 directories and fails the upload if a glob matches nothing
 (`if-no-files-found: error`). That is deliberate — the alternative is an empty
 artefact and a release that publishes with a platform silently absent.
+
+**One step breaks that rule, on purpose.** The Windows job runs `npx tauri
+build` a second time with `--config` overriding `webviewInstallMode` to
+`offlineInstaller`, and renames the result to `*-setup-offline.exe`. Both builds
+write the same filename, so the first installer is moved aside and moved back
+around the second — one extra Rust link rather than a third full build to
+recreate a file that already existed. The `--config` patch is what keeps
+`tauri.conf.json` the single answer to "what does the default installer do about
+WebView2"; `tests/packaging.test.ts` fails if that ever becomes two answers.
+[`packaging-windows.md`](packaging-windows.md) has the three measured sizes the
+choice rests on.
 
 The `.app` itself is not uploaded separately. It is a directory, not a file,
 and a GitHub Release asset has to be a file; it lives inside the `.dmg`.

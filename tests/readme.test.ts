@@ -38,7 +38,14 @@
  * values, `npm run readme:build` recomposes the front page, and the deferred
  * counts are printed by this file's failure message.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
+
+/** The repo root, from this file's own location — no cwd assumption. */
+const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 import {
   DEFERRED_FACTS,
@@ -236,6 +243,35 @@ describe('the README shows this build of the app', () => {
     // Same trap as the fact markers: a key the script defers and this file
     // forgets is a picture nobody checks.
     expect([...DEPICTED_KEYS].sort()).toEqual(Object.keys(depictedIdentity()).sort());
+  });
+
+  it('the capture turns dev chrome OFF', () => {
+    // The one that would have caught it: `App.tsx`'s `devChromeEnabled()` falls
+    // through to `import.meta.env.DEV`, which is true on the dev server the
+    // shots are taken against — so the dev-only "shelf | book" view switcher
+    // was pinned over the bottom-right corner of EVERY picture on the front
+    // page, half across the page-curl dog-ear. Thirteen shots showed readers a
+    // control the installed app does not have, sitting on top of one it does,
+    // and every other check here passed: the pill is a dozen pixels tall, it
+    // does not change the app identity the shots spell out, and it is present
+    // in all of them equally so no two shots became twins.
+    //
+    // Read rather than imported: `readme-shots.mjs` launches Playwright at the
+    // top level, so importing it here would start a browser.
+    const source = readFileSync(join(ROOT, 'shots-now/readme-shots.mjs'), 'utf8');
+    const urls = [...source.matchAll(/\$\{URL_BASE\}\/\?[^`'"]*/g)].map((m) => m[0]);
+    expect(urls.length, 'no app URL found in readme-shots.mjs').toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url, `${url} would photograph the app with dev chrome on`).toContain('dev=0');
+      expect(url, `${url} would photograph the shelf in its reduced mode`).toContain(
+        'fx=force',
+      );
+    }
+    // And the gate it relies on has to keep honouring the parameter.
+    const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8');
+    expect(app, 'App.tsx no longer turns dev chrome off for ?dev=0').toContain(
+      `params.get("dev") === "0"`,
+    );
   });
 
   it('has pictures, and a manifest covering all of them', () => {

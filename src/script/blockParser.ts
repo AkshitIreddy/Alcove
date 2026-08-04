@@ -33,6 +33,7 @@ import { parseAttrBlock, parseBareAttrs } from "./attrParser";
 import {
   fuzzyMatch,
   normalizeName,
+  resolveCodeLang,
   resolveContainerName,
   resolveDiagramLang,
 } from "./normalize";
@@ -103,7 +104,23 @@ const ATTR_BLOCK = "\\{(?:[^{}]|\\{\\{[^{}]*\\}\\})*\\}";
 
 const COLON_RE = /^\s*(:{2,})\s*(.*)$/;
 const TICK_OPEN_RE = /^\s*(`{3,})\s*(.*)$/;
-const TICK_CLOSE_RE = /^\s*`{2,}\s*$/;
+const TICK_CLOSE_RE = /^\s*(`{2,})\s*$/;
+
+/**
+ * Does `text` close a fence that was opened with `openLen` backticks?
+ *
+ * Three markers keep the sloppy old rule — two backticks on a line of their
+ * own end them — because that tolerance is documented and somebody's note
+ * relies on it. A WIDER fence has to be closed by one at least as wide, and
+ * that is the whole point of writing a wide one: a code block about Markdown
+ * contains ``` and would otherwise be cut in half by its own contents, which
+ * is exactly what the printer widens the marker to avoid.
+ */
+function closesTick(text: string, openLen: number): boolean {
+  const m = TICK_CLOSE_RE.exec(text);
+  if (m === null) return false;
+  return openLen <= 3 || m[1].length >= openLen;
+}
 const HEADING_RE = /^\s*(#{1,6})\s+(.*)$/;
 const DIVIDER_RE = new RegExp(
   `^\\s*(-{3,}|\\*{3,}|_{3,})\\s*(${ATTR_BLOCK})?\\s*$`,
@@ -648,8 +665,9 @@ export function parseDoc(source: string): ScriptDoc {
     }
 
     // collect the raw body
+    const openLen = m[1].length;
     let j = i + 1;
-    while (j < lines.length && !TICK_CLOSE_RE.test(lines[j].text)) j++;
+    while (j < lines.length && !closesTick(lines[j].text, openLen)) j++;
     const closed = j < lines.length;
     let body = lines.slice(i + 1, j);
     if (!closed) {
@@ -660,7 +678,25 @@ export function parseDoc(source: string): ScriptDoc {
         "a closing ``` line",
       );
     }
-    if (body.length > 0 && PURE_ATTR_RE.test(body[0].text)) {
+    const srcStart = line.start;
+    const srcEnd = closed ? lines[j].end : source.length;
+    const resolved = resolveDiagramLang(rawLang);
+    /*
+     * A `{…}` first line is attrs — inside a DIAGRAM fence only.
+     *
+     * The convenience is real for `​```tree`, where the fence line is already
+     * crowded. In a code fence it is a trap with a name: the single most
+     * likely first line of a ```` ```json ```` block is `{`, and of a `​```yaml`
+     * block a flow mapping, and both match `PURE_ATTR_RE` exactly. Swallowing
+     * them would delete the opening brace of the reader's document and then
+     * warn about the unknown attribute keys inside it. A code body is verbatim
+     * — nothing in it is script, including something shaped like an attr.
+     */
+    if (
+      resolved.lang !== null &&
+      body.length > 0 &&
+      PURE_ATTR_RE.test(body[0].text)
+    ) {
       const res = parseAttrBlock(
         body[0].text.trim(),
         body[0].start + indentOf(body[0].text),
@@ -669,10 +705,6 @@ export function parseDoc(source: string): ScriptDoc {
       attrs = { ...attrs, ...res.attrs };
       body = body.slice(1);
     }
-
-    const srcStart = line.start;
-    const srcEnd = closed ? lines[j].end : source.length;
-    const resolved = resolveDiagramLang(rawLang);
     if (resolved.mermaid) {
       warn(
         "mermaid-fence",
@@ -721,32 +753,37 @@ export function parseDoc(source: string): ScriptDoc {
       }
       target().push(block);
     } else {
-      warn(
-        "fence-unknown-lang",
-        `unknown fence language '${rawLang === "" ? "(none)" : rawLang}' — kept as plain text in a box`,
-        lineSpan(line),
-        expectedOneOf(DIAGRAM_LANGS),
-      );
-      const container: ContainerBlock = {
-        kind: "container",
-        name: "generic",
-        rawName: rawLang === "" ? "code" : rawLang,
-        children: [],
+      /*
+       * Not a diagram, so it is CODE — and the body is taken verbatim.
+       *
+       * This used to build a "generic container" of paragraphs, one per
+       * non-blank line, each one run through the inline pass. That did four
+       * separate kinds of damage to the thing a reader had just pasted: it
+       * deleted every blank line, it trimmed the leading whitespace (which in
+       * Python or YAML is the program), it read `**kwargs` as bold and
+       * `_name_` as emphasis, and `resolve.ts` substituted `{{…}}` out of
+       * template literals. A code fence is source for a different renderer,
+       * exactly as `$$ … $$` is, so — like the maths block — nothing runs
+       * over it.
+       */
+      const lang = resolveCodeLang(rawLang);
+      if (rawLang !== "" && lang === null) {
+        warn(
+          "fence-unknown-lang",
+          `unknown fence language '${rawLang}' — kept as code, without colours`,
+          lineSpan(line),
+          expectedOneOf(DIAGRAM_LANGS),
+        );
+      }
+      target().push({
+        kind: "code",
+        lang,
+        code: body.map((b) => b.text).join("\n"),
         attrs,
         srcStart,
         srcEnd,
-      };
-      for (const b of body) {
-        if (b.text.trim() === "") continue;
-        container.children.push({
-          kind: "paragraph",
-          content: inline(b.text.trim(), b.start + indentOf(b.text)),
-          attrs: {},
-          srcStart: b.start,
-          srcEnd: b.end,
-        });
-      }
-      target().push(container);
+        ...(lang === null && rawLang !== "" ? { rawLang } : {}),
+      });
     }
     i = closed ? j + 1 : j;
   };

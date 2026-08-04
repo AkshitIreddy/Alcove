@@ -9,7 +9,6 @@
  */
 import type { AnyExtension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { DragHandle, type DragHandleOptions } from '@tiptap/extension-drag-handle';
 import NodeRange from '@tiptap/extension-node-range';
@@ -20,9 +19,9 @@ import TaskList from '@tiptap/extension-task-list';
 import { TextStyleKit } from '@tiptap/extension-text-style';
 import UniqueID from '@tiptap/extension-unique-id';
 import { offset } from '@floating-ui/dom';
-import { common, createLowlight } from 'lowlight';
 import { nanoid } from 'nanoid';
 import { NotebookDocument } from './document';
+import { NotebookCodeBlock } from './nodes/codeBlock';
 import { NotebookHighlight } from './highlightStyles';
 import { MediaImage } from './media';
 import { customNodeExtensions } from './nodes';
@@ -96,15 +95,13 @@ export interface EditorExtensionsOptions {
 export function createEditorExtensions(
   options: EditorExtensionsOptions = {},
 ): AnyExtension[] {
-  const lowlight = createLowlight(common);
-
   const extensions: AnyExtension[] = [
     NotebookDocument,
 
     StarterKit.configure({
       // Our Document carries pageStyle/lineHeightPx.
       document: false,
-      // Lowlight variant below replaces the plain code block.
+      // `NotebookCodeBlock` below replaces the plain code block.
       codeBlock: false,
       heading: { levels: [1, 2, 3, 4] },
       link: {
@@ -156,10 +153,12 @@ export function createEditorExtensions(
 
     MediaImage.configure({ allowBase64: true }),
 
-    CodeBlockLowlight.configure({
-      lowlight,
-      defaultLanguage: null,
-    }),
+    // The code block. `nodes/codeBlock.tsx` extends CodeBlockLowlight rather
+    // than replacing it, so this is the same node every existing page already
+    // stores — with a language picker, indentation, paste detection and a
+    // look the reader owns. It carries its own lowlight instance (one for the
+    // app, 76 grammars) so there is nothing to configure here.
+    NotebookCodeBlock,
 
     NodeRange.configure({ key: null }),
 

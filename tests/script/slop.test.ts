@@ -92,20 +92,49 @@ describe("slop corpus — fences", () => {
     expect(warned(doc, /not closed/)).toBe(true);
   });
 
-  it("10. unknown fence language becomes a plain text box", () => {
-    const doc = parse("```python\nprint(1)\n```");
-    const c = kindOf(doc.blocks[0], "container") as ContainerBlock;
-    expect(c.name).toBe("generic");
-    expect(c.rawName).toBe("python");
-    expect(c.children[0].kind).toBe("paragraph");
+  it("10. a language fence is CODE, verbatim, and warns about nothing", () => {
+    const doc = parse("```python\ndef f():\n\n    return {'a': 1}\n```");
+    const c = kindOf(doc.blocks[0], "code");
+    expect(c.lang).toBe("python");
+    // The blank line, the four spaces and the braces all survive. Each one of
+    // them used to be destroyed by a different pass — see CodeBlock in
+    // src/script/types.ts.
+    expect(c.code).toBe("def f():\n\n    return {'a': 1}");
+    expect(doc.diagnostics).toEqual([]);
+  });
+
+  it("10b. an unknown language is still code, and says so once", () => {
+    const doc = parse("```wobblescript\nblah\n```");
+    const c = kindOf(doc.blocks[0], "code");
+    expect(c.lang).toBeNull();
+    expect(c.rawLang).toBe("wobblescript");
+    expect(c.code).toBe("blah");
     expect(warned(doc, /unknown fence language/)).toBe(true);
   });
 
-  it("11. bare ``` fence with no language is kept as text", () => {
+  it("11. bare ``` fence with no language is plain code, unwarned", () => {
     const doc = parse("```\nsome text\n```");
-    const c = kindOf(doc.blocks[0], "container") as ContainerBlock;
-    expect(c.rawName).toBe("code");
-    expect(warned(doc, /unknown fence language/)).toBe(true);
+    const c = kindOf(doc.blocks[0], "code");
+    expect(c.lang).toBeNull();
+    expect(c.rawLang).toBeUndefined();
+    expect(c.code).toBe("some text");
+    // Nothing was misspelt — a fence with no language on it is a normal thing
+    // to write, and it used to be warned about every single time.
+    expect(doc.diagnostics).toEqual([]);
+  });
+
+  it("11b. ```json keeps a leading `{` line instead of eating it as attrs", () => {
+    const doc = parse('```json\n{\n  "a": 1\n}\n```');
+    const c = kindOf(doc.blocks[0], "code");
+    expect(c.code).toBe('{\n  "a": 1\n}');
+    expect(c.attrs).toEqual({});
+  });
+
+  it("11c. a wide fence survives a body that contains ```", () => {
+    const doc = parse("````markdown\n```js\nx\n```\n````");
+    const c = kindOf(doc.blocks[0], "code");
+    expect(c.lang).toBe("markdown");
+    expect(c.code).toBe("```js\nx\n```");
   });
 });
 

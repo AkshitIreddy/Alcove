@@ -19,6 +19,7 @@ you already know 80% of it. The other 20% is:
 - `::: name {attrs}` … `:::` containers (sticky notes, polaroids, callouts…)
 - `{key=value}` attributes on any block or inline span
 - tiny fenced diagram languages: ` ```tree `, ` ```graph `, ` ```timeline `
+  (any other fence language is ordinary highlighted code — section 6b)
 - `fetch:` lines that ask the app to find images for you
 - flat `key: value` frontmatter for page style
 - `::let name = value` variables, used as `{{name}}` (section 4)
@@ -421,6 +422,29 @@ The `| attrs` tail is optional per entry. Labels don't have to be years —
 `Monday:`, `Step 1:`, `9am:` all work; the label is whatever comes before
 the first `:` on the line.
 
+## 6b. Code fences
+
+A fence whose language is **not** one of the five above is **code**, and its
+body is kept exactly as you wrote it — indentation, blank lines, and every
+character that would otherwise read as markup:
+
+```python
+def totals(**kwargs):
+
+    weights = {"a": 1}
+    return _sum_(weights)
+```
+
+- Nothing inside a code fence is parsed. `**bold**`, `_em_`, `{{variables}}`
+  and `{attrs}` are all just characters in your program.
+- The language names the colours. Aliases work — `js`, `ts`, `py`, `c++`,
+  `yml`, `sh`, `toml`, `Objective-C` — and an unknown one still makes a code
+  block, just an uncoloured one (with a warning).
+- No language at all (` ``` ` on its own) is fine and is not warned about.
+- Use four or more backticks when the code itself contains three.
+
+<!-- gen:code-fences -->
+
 ## 7. Tolerance promises (relax — it will parse)
 
 The parser **never rejects a note**. It always produces a page plus, at most,
@@ -433,6 +457,8 @@ gentle warnings. Specifically:
 - If you misspell or re-style a container name (`Sticky Note`, `stickynote`,
   `note`), it resolves to `sticky-note`. Truly unknown names render as a
   plain box — never an error.
+- If you name a fence language nobody knows, you still get a code block; it
+  is simply not coloured (warned).
 - If you forget to close a `:::` container or a code fence, it auto-closes at
   the end of the note (warned).
 - Attrs on the fence line or alone on the first line inside — both work.

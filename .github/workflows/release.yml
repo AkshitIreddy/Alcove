@@ -139,13 +139,16 @@ jobs:
       matrix:
         include:
           # NSIS setup.exe + WiX MSI. `installMode: currentUser`, so installing
-          # asks for no administrator prompt.
+          # asks for no administrator prompt. A SECOND setup.exe is built after
+          # this one by the "offline installer" step below — see the comment
+          # there, and docs/packaging-windows.md.
           - name: windows-x64
             os: windows-latest
             rust-targets: x86_64-pc-windows-msvc
             tauri-args: ''
             artefacts: |
               src-tauri/target/release/bundle/nsis/*-setup.exe
+              src-tauri/target/release/bundle/nsis/*-setup-offline.exe
               src-tauri/target/release/bundle/msi/*.msi
 
           # ONE universal .dmg carrying BOTH slices, not two downloads and not a
@@ -259,6 +262,64 @@ jobs:
         env:
           NO_STRIP: 'true'
         run: npx tauri build ${{ matrix.tauri-args }}
+
+      # ---------------------------------------------------------------------
+      # The second Windows installer: the one that needs no internet.
+      #
+      # Alcove renders in the Microsoft Edge WebView2 runtime, which is present
+      # on any up-to-date Windows 11 and on most Windows 10 — but not all of
+      # it, and the app cannot start without it. `webviewInstallMode` decides
+      # what the installer does about that. Every mode was compiled from one
+      # payload so the deltas are exact (bytes, 0.2.0, measured not guessed —
+      # the method and the full reasoning are in docs/packaging-windows.md):
+      #
+      #   skip                   15,365,319   −10,181   installs, never paints
+      #   downloadBootstrapper   15,375,500        —    the Tauri default
+      #   embedBootstrapper      16,960,852   +10.31%  ← shipped as the default
+      #   offlineInstaller     ~227,700,000   +~202 MiB, and it tracks Edge
+      #   fixedRuntime           offline-sized, +849 MiB on disk, never updated
+      #
+      # embedBootstrapper carries Microsoft's 1.6 MB bootstrapper inside the
+      # setup, so the installer never has to fetch anything itself; the
+      # bootstrapper still pulls the runtime down if the machine lacks it. What
+      # the 10% buys is not merely "one fewer hop" — it deletes the hop done by
+      # NSISdl, which is proxy-blind and aborts the whole install when it
+      # fails, and keeps the one done by Microsoft's updater, which honours the
+      # system proxy. That is the case (corporate networks) where it decides
+      # whether the install works at all.
+      #
+      # offlineInstaller carries the whole runtime. It is fifteen times the app
+      # and there is no version of "small enough" that covers 200 MB, so it is
+      # a SECOND, separately named download for machines that are genuinely
+      # offline or behind a proxy that blocks Microsoft's CDN — never the one a
+      # reader lands on by default. Note it is the ONLY mode that installs with
+      # no internet: embedding the bootstrapper removes a download, not the
+      # need for one.
+      #
+      # `--config` patches the checked-in config rather than editing it, so the
+      # repository has exactly one webviewInstallMode and this file cannot
+      # silently become the source of truth for it.
+      # The second build writes to the SAME filename as the first, so the first
+      # one is moved out of the way and moved back — one extra Rust link rather
+      # than a third full build to recreate what already existed.
+      - name: Build the offline installer (Windows only)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: src-tauri/target/release/bundle
+        run: |
+          set -euo pipefail
+          mkdir -p keep
+          mv nsis/*-setup.exe keep/
+          cd "$GITHUB_WORKSPACE"
+          npx tauri build --bundles nsis \
+            --config '{"bundle":{"windows":{"webviewInstallMode":{"type":"offlineInstaller","silent":true}}}}'
+          cd src-tauri/target/release/bundle
+          for f in nsis/*-setup.exe; do
+            mv "$f" "nsis/$(basename "${f%-setup.exe}")-setup-offline.exe"
+          done
+          mv keep/*-setup.exe nsis/
+          rmdir keep
+          ls -lh nsis
 
       # Diagnostic only — never the reason a build goes red, which is why it
       # swallows its own exit code. The upload step below is what actually

@@ -676,6 +676,12 @@ function atLum(hex: string, target: number): string {
  * moves the least it can — a burgundy asked for 7:1 on cream comes back a
  * burgundy, not a black. On dark paper the search runs the other way, which is
  * how one table of pigments serves both a lit room and a dark one.
+ *
+ * Exported as `solveInkOn` because the CODE vocabulary needs exactly this and
+ * needs it to be the SAME arithmetic: `codeAppearance.ts` solves seven token
+ * pigments per theme against the plate they land on, and a second solver
+ * written beside this one would drift in the third decimal place and take the
+ * contrast gates with it.
  */
 function inkFor(pigment: string, paper: string, target: number): string {
   const seed = toOklch(pigment);
@@ -691,6 +697,8 @@ function inkFor(pigment: string, paper: string, target: number): string {
   }
   return toHex({ ...seed, L: onLight ? lo : hi });
 }
+
+export { inkFor as solveInkOn, atLum as solveLuminance };
 
 /** The four paper rungs, folded by the steps the shipped rooms are folded by. */
 function paperRungs(ground: string, dark: boolean): readonly [string, string, string, string] {
@@ -774,6 +782,42 @@ function selectionAlpha(pigment: string, ink: string, grounds: readonly string[]
 }
 
 /**
+ * The four paper rungs a room-and-stock combination actually prints on.
+ *
+ * Factored out of `appearanceTokens` because a second vocabulary now has to
+ * know what the page under it is made of: `codeAppearance.ts` solves a code
+ * plate against the paper it sits on, and a plate solved against the WRONG
+ * paper is the whole failure mode — it is how a listing ends up two shades
+ * from the page on cartridge and invisible on kraft board.
+ *
+ * Total, like everything else here: unknown ids resolve.
+ */
+export interface PageGrounds {
+  readonly cream: string;
+  readonly aged: string;
+  readonly deep: string;
+  readonly edge: string;
+  /** True when the room is lit by a lamp rather than a window. */
+  readonly dark: boolean;
+}
+
+export function pageGrounds(
+  themeId: string,
+  paperId: string | null,
+): PageGrounds {
+  const theme = resolveTheme(themeId);
+  const stock = resolvePaper(paperId);
+  const ground =
+    stock !== null
+      ? theme.dark
+        ? atLum(stock.ground, lum(theme.paper))
+        : stock.ground
+      : theme.paper;
+  const [cream, aged, deep, edge] = paperRungs(ground, theme.dark);
+  return { cream, aged, deep, edge, dark: theme.dark };
+}
+
+/**
  * Every custom property the appearance settings write, for one combination.
  *
  * Total and pure: unknown ids resolve, so this can be handed straight out of
@@ -795,14 +839,8 @@ export function appearanceTokens(
   // A shipped room on its own paper writes nothing: those four grounds are
   // hand-tuned and contrast-gated in styles/settings.css, and re-deriving them
   // here would move somebody's page by a hair for no reason at all.
-  const ground =
-    stock !== null
-      ? theme.dark
-        ? atLum(stock.ground, lum(theme.paper))
-        : stock.ground
-      : theme.paper;
   const writePaper = stock !== null || !onBaseRoom;
-  const [cream, aged, deep, edge] = paperRungs(ground, theme.dark);
+  const { cream, aged, deep, edge } = pageGrounds(themeId, paperId);
 
   /* -------------------------------- the ink ------------------------------- */
   const ink = resolveInk(inkId);

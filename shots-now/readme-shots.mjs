@@ -76,6 +76,30 @@ const opt = (name, fallback) => {
   return hit ? hit.split('=').slice(1).join('=') : fallback;
 };
 const URL_BASE = opt('url', 'http://localhost:1420');
+
+/**
+ * The one URL every app shot is taken at, and BOTH parameters are load-bearing.
+ *
+ * `fx=force` is the old one: headless Chromium reports no WebGL worth having,
+ * and without it the shelf draws in its reduced mode and the README shows an
+ * app nobody runs.
+ *
+ * `dev=0` is the new one, and it fixes a defect that had shipped into every
+ * picture on the front page. `App.tsx`'s `devChromeEnabled()` falls through to
+ * `import.meta.env.DEV`, which is TRUE on the dev server these shots are taken
+ * against — so the dev-only "shelf | book" view switcher was pinned over the
+ * bottom-right corner of every single one of them, half across the page-curl
+ * dog-ear. The README was showing readers a control the installed app does not
+ * have, sitting on top of one it does. The gate already accepted `dev=0`;
+ * nothing ever passed it.
+ *
+ * `tests/readme.test.ts` pins this line by READING this file rather than
+ * importing it — importing would launch Playwright, because everything here
+ * runs at the top level. The failure is otherwise silent: the shots still
+ * render, still pass every size and freshness check, and the pill is small
+ * enough to read as part of the app.
+ */
+const SHOT_URL = `${URL_BASE}/?fx=force&dev=0`;
 const ONLY = opt('only', '')
   .split(',')
   .map((s) => s.trim())
@@ -240,17 +264,86 @@ const wait = (page, ms) => page.waitForTimeout(ms);
  * Nothing is faked to fix it: the caret is put in empty ruled space low on the
  * leaf, which is the reader's own way out of the same state (clicking blank
  * ruled space starts typing there), and the selection moves off the node.
+ *
+ * ## Which leaf, and why it is asked rather than told
+ *
+ * This used to take the side as an argument, and both call sites passed a
+ * guess. That is wrong, and it failed intermittently in a way that looked like
+ * a regression in the app: **there is one editor per page**, so a spread holds
+ * two independent ProseMirror states, and a NodeSelection lives in the state of
+ * the page that owns the node. Clicking blank space on the RIGHT leaf focuses
+ * the right editor and does nothing whatever to a selection sitting in the
+ * left one — the node keeps `props.selected`, keeps its dashed frame, and the
+ * guard fires. Whether that happened depended on which leaf the diagram
+ * paginated onto, so the same script passed and failed on the same commit as
+ * the Welcome book's length drifted.
+ *
+ * So the leaf is now READ from the selection rather than assumed, every leaf
+ * holding one is clicked, and the whole thing is retried — a click that lands
+ * while the flip is still settling is a click on a moving target.
  */
-async function clearNodeSelection(page, side) {
-  if ((await page.locator('.nb-diagram.is-selected').count()) === 0) return;
-  const leaf = await page.locator(`.nb-flip-leaf-${side}`).boundingBox();
-  if (leaf !== null) {
-    await page.mouse.click(leaf.x + leaf.width * 0.45, leaf.y + leaf.height * 0.95);
-    await wait(page, 1400);
+async function clearNodeSelection(page) {
+  /** The leaves that actually own a selected diagram, front to back. */
+  const owningSides = () =>
+    page.evaluate(() => {
+      const sides = new Set();
+      for (const el of document.querySelectorAll('.nb-diagram.is-selected')) {
+        if (el.closest('.nb-flip-leaf-left')) sides.add('left');
+        else if (el.closest('.nb-flip-leaf-right')) sides.add('right');
+      }
+      return [...sides];
+    });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const sides = await owningSides();
+    if (sides.length === 0) break;
+    for (const side of sides) {
+      const leaf = await page.locator(`.nb-flip-leaf-${side}`).boundingBox();
+      if (leaf === null) continue;
+      await page.mouse.click(leaf.x + leaf.width * 0.45, leaf.y + leaf.height * 0.95);
+      await wait(page, 1400);
+    }
   }
-  if ((await page.locator('.nb-diagram.is-selected').count()) > 0) {
-    throw new Error('readme-shots: a diagram will not deselect — its edit chrome is showing');
+
+  const left = await owningSides();
+  if (left.length > 0) {
+    throw new Error(
+      `readme-shots: a diagram on the ${left.join(' and ')} leaf will not deselect — ` +
+        'its edit chrome is showing',
+    );
   }
+
+  /*
+   * And then move the caret off any EMPTY block, which is a second piece of
+   * edit chrome and had to be chased separately.
+   *
+   * Moving the selection off a diagram parks the caret in the blank ruled line
+   * that was clicked, and TipTap's placeholder then writes "Type / for
+   * commands..." into it — so the dashed frame is traded for a whisper rather
+   * than removed. Blurring does NOT fix this and it is worth saying why: the
+   * placeholder decoration follows the selection ANCHOR, not the focus, so a
+   * blurred editor whose selection still sits in an empty paragraph keeps its
+   * placeholder.
+   *
+   * That whisper is NOT chased any further, and the reason is worth recording
+   * so nobody spends the afternoon on it twice. The rule in the extension is
+   * `(hasAnchor || !showOnlyCurrent) && isEmpty`, and `showOnlyCurrent`
+   * defaults to true — so it appears on exactly the empty block holding the
+   * caret. That is the app's own designed affordance for a blank trailing line
+   * (editor.css calls it "a soft pencil whisper"), which means a page shot
+   * with a caret in blank space is showing a reader something real rather than
+   * a capture artefact. Two attempts to move the anchor off it — Ctrl+Home,
+   * then clicking the page heading — bought nothing and the second left the
+   * back button sitting expanded, which is a worse thing to photograph than
+   * the whisper.
+   *
+   * The blur stays: it costs nothing and keeps a caret from blinking mid-shot.
+   */
+  await page.evaluate(() => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  });
+  await wait(page, 600);
 }
 
 /**
@@ -406,9 +499,9 @@ if (appShots.some(wanted)) {
   });
 
   console.log('\n2. boot');
-  await page.goto(`${URL_BASE}/?fx=force`, { waitUntil: 'domcontentloaded' });
+  await page.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => localStorage.clear());
-  await page.goto(`${URL_BASE}/?fx=force`, { waitUntil: 'domcontentloaded' });
+  await page.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
   await page.evaluate(() => {
     globalThis.__worldReady = false;
@@ -680,7 +773,7 @@ if (appShots.some(wanted)) {
       { polling: 300, timeout: 60_000 },
     );
     await wait(page, 2600);
-    await clearNodeSelection(page, 'right');
+    await clearNodeSelection(page);
     await shot(page, 'diagrams');
   }
 
@@ -712,7 +805,22 @@ if (appShots.some(wanted)) {
     }, FLOOR_0[0]);
     await page.waitForSelector('.nb-rail', { timeout: 60_000 });
     await wait(page, 4000);
-    await page.getByRole('button', { name: /Insert script/i }).first().click({ force: true });
+    /*
+     * TWO clicks, because insert script is no longer a rail icon of its own.
+     * Insert, export, the AI spec and start-from-a-template used to be four
+     * separate icons down the rail and are now four rows on the "In and out"
+     * sheet (see `src/views/rail/SharePanel.tsx`) — so this used to wait two
+     * minutes for a button that no longer exists and then die on a timeout.
+     *
+     * The row is found by `data-share`, not by its label. The labels here are
+     * composed at render time as "title — hint (key cap)" and are meant to be
+     * rewritten whenever the wording improves; the id is the thing the panel
+     * actually keys off, so matching it is matching what the app calls the row
+     * rather than what it currently says about it.
+     */
+    await page.getByRole('button', { name: /In and out/i }).first().click({ force: true });
+    await page.waitForSelector('[data-share="insert"]', { timeout: 30_000 });
+    await page.locator('[data-share="insert"]').first().click({ force: true });
     await wait(page, 1400);
     const box = page.locator('textarea').first();
     await box.click({ force: true });
@@ -732,7 +840,7 @@ if (appShots.some(wanted)) {
       );
       // The last thing inserted stays selected, so without this the timeline
       // photographs inside its dashed edit frame.
-      await clearNodeSelection(page, 'left');
+      await clearNodeSelection(page);
       await wait(page, 1200);
       await shot(page, 'script-page');
     } else {

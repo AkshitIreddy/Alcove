@@ -104,8 +104,38 @@ if (hidden.length > 0) {
   lines.push('');
 }
 
+// Which file to take. Two of the six downloads below are Windows installers
+// that differ only in what they do about the Edge WebView2 runtime, so the
+// difference has to be stated here — a reader looking at two setup.exes that
+// differ by 200 MB and no explanation will pick wrong.
 lines.push('### Install');
 lines.push('');
-lines.push('Download the `-setup.exe` below and run it — it installs for the current user, no admin prompt.');
+lines.push('| You are on | Take | |');
+lines.push('| --- | --- | --- |');
+lines.push(
+  '| **Windows** | `_x64-setup.exe` | The one to take. Installs for the current user — ' +
+    'no administrator prompt. |',
+);
+lines.push(
+  '| Windows, no internet | `_x64-setup-offline.exe` | Same app. ~200 MB bigger because it ' +
+    'carries the whole Edge WebView2 runtime instead of fetching it, so it installs on a ' +
+    'machine that is offline or behind a proxy that blocks Microsoft. Only take this one if ' +
+    'the other fails. |',
+);
+lines.push('| Windows, deployed by policy | `_x64_en-US.msi` | The same app as an MSI. |');
+lines.push(
+  '| **macOS** | `_universal.dmg` | One file for both Apple silicon and Intel. |',
+);
+lines.push('| **Linux** | `.deb` / `.rpm` / `.AppImage` | The AppImage runs without installing. |');
+lines.push('');
+lines.push(
+  'Nothing is code-signed, so Windows shows a SmartScreen warning the first time and macOS ' +
+    'quarantines the first launch. `SHA256SUMS.txt` is attached if you want to check a download.',
+);
+lines.push('');
+lines.push(
+  'Your library lives in `%APPDATA%\\com.alcove.app` on Windows. Upgrading never touches it, ' +
+    'and the uninstaller keeps it unless you tick the box that says otherwise.',
+);
 
 process.stdout.write(lines.join('\n') + '\n');

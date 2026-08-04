@@ -91,14 +91,28 @@
         box-shadow: 9px 9px 0 0 #d8cdb2, 9px 9px 0 3px var(--ink);
       }
 
+      /*
+        Two separate causes made one box, and fixing either alone leaves it.
+
+        1. The frame. This used to carry a 22px radius, a 3px ink border and a
+           paper fill. Two rounded rectangles at slightly different radii leave
+           four pale slivers where the outer corner clears the inner one.
+        2. The source. `alcove-art.png` is the SUPPLIED master — RGB, no alpha
+           at all, with a solid #fdfdfd surround baked in. Against the card's
+           #f7f1e3 that surround reads as four white corners, which is what the
+           reader photographed: "the icon in the above picture seems to have
+           white background while everything else is a different white".
+
+        So: no frame, and the source is `alcove-1024.png` — the same master
+        after `scripts/gen-icons.py`'s `unframe()` has flooded the surround to
+        alpha 0. Corners genuinely transparent, verified (0,0,0,0) at all four.
+        Point this at alcove-art.png again and the box comes straight back.
+      */
       .mark {
         width: 168px;
         height: 168px;
-        border-radius: 22px;
-        border: 3px solid var(--ink);
-        object-fit: cover;
+        object-fit: contain;
         flex: none;
-        background: var(--paper-aged);
       }
 
       .words { flex: 1; }
@@ -121,7 +135,7 @@
 
       .chips {
         display: flex;
-        gap: 10px;
+        gap: 9px;
         margin-top: 16px;
       }
       .chip {
@@ -132,10 +146,15 @@
         border-radius: 999px;
         padding: 3px 14px 5px;
         background: var(--paper-aged);
+        /* A chip that wraps is two lines inside one pill and reads as a
+           mistake. Pin them to one line — if they no longer fit, the answer is
+           one chip fewer, not a chip folded in half. */
+        white-space: nowrap;
       }
       .chip.a { background: #f7e6bb; }
       .chip.b { background: #dfe7cd; }
       .chip.c { background: #f4d9c8; }
+      .chip.d { background: #d9e4ea; }
 
       /* A strip of washi tape holding the card to the wall — the app puts one
          on a block; the README wears one too. */
@@ -216,18 +235,24 @@
     <div class="wall"></div>
 
     <div class="card">
-      <img class="mark" src="../assets/brand/alcove-art.png" alt="" />
+      <img class="mark" src="../assets/brand/alcove-1024.png" alt="" />
       <div class="words">
         <h1>Alcove</h1>
         <div class="tag">
           A notebook that lives on a bookshelf.<br />
-          Windows desktop &middot; everything stays on your machine.
+          Windows, macOS and Linux &middot; everything stays on your machine.
         </div>
+        <!--
+          Four chips is what the width takes at this size, so the fifth had to
+          earn its place and "no account" could not: the line directly above
+          already says everything stays on your machine. "Paste from any AI" is
+          the one thing a reader cannot guess from a picture of a bookshelf.
+        -->
         <div class="chips">
           <span class="chip a">endless shelf</span>
           <span class="chip b">block editor</span>
           <span class="chip c">pages that flow</span>
-          <span class="chip">no account</span>
+          <span class="chip d">paste from any AI</span>
         </div>
       </div>
     </div>

@@ -149,13 +149,25 @@ Where a group's territory line was wrong, it is corrected in place.
 > unit- and e2e-tested, and had no button anywhere in the app: the only way in
 > was `window.__nbGroupD`, the dev bridge group D put up *"before the rail
 > buttons are wired"*. The buttons were never wired, and the e2e specs drove the
-> bridge, so nothing failed. They have homes now — the shelf dock, the
-> bare-plank right-click card and the book rail for the gallery; the rail's
-> "Take it out" sheet (`views/rail/SharePanel.tsx`) and the settings sheet's
-> "Library files" section for the exports and the import — plus four rebindable
-> shortcuts in `data/keybindings.ts` and `scripts/probe-groupd.mjs`, which
-> deletes the bridge before it clicks anything. `tests/plugged-in.test.ts` part
-> three is the standing alarm for the next one.
+> bridge, so nothing failed. They have homes now — the shelf dock and the
+> bare-plank right-click card for the gallery; the book rail's **"In and out"**
+> sheet (`views/rail/SharePanel.tsx`) and the settings sheet's "Library files"
+> section for the exports, the import and the gallery from inside a book —
+> plus four rebindable shortcuts in `data/keybindings.ts` and
+> `scripts/probe-groupd.mjs`, which deletes the bridge before it clicks
+> anything. `tests/plugged-in.test.ts` part three is the standing alarm for the
+> next one.
+>
+> **2026-08-04 — one sheet, not seven controls.** Being reachable turned out
+> not to be the same as being findable: the four flows above landed next to
+> three script tools that had grown up separately (insert script, export
+> script, copy AI spec), and the rail carried seven icons for one errand. The
+> reader asked to *"condense insert, copy AI spec, export things into a single
+> setting in side bar"*. `insert`, `export`, `spec` and `templates` came off
+> the rail and became rows on that sheet, grouped **bring in / take out / for
+> an assistant** — fourteen rail buttons down to ten, every shortcut unchanged,
+> and `tests/plugged-in.test.ts` part five checks the whole chain from the rail
+> button to the flow.
 
 23. **◑ Export book/page to PDF** — shipped, but **not** "Tauri print-to-PDF via
     a hidden window".

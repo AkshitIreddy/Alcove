@@ -184,7 +184,7 @@ export default function App(): JSX.Element {
         // rather than to the book view: a reader standing at the shelf wants
         // it at least as much as one already inside a book. Its buttons are
         // the settings sheet's "Library files" section and the book rail's
-        // "Take it out" sheet.
+        // "In and out" sheet.
         //
         // Reached by `import()`: the importer turns Markdown into TipTap
         // documents, so a static import would put the whole editor back into

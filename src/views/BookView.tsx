@@ -1138,7 +1138,16 @@ export default function BookView(): JSX.Element {
     );
   });
 
-  /** The gallery, from the rail icon or from Ctrl+Alt+G. */
+  /**
+   * The gallery, from Ctrl+Alt+G.
+   *
+   * The rail icon that used to call this is gone — the gallery is a row on the
+   * "In and out" sheet now, and that row calls `openTemplatesGallery` itself
+   * (SharePanel closes the sheet before running a row that opens an overlay,
+   * which is the only other thing this wrapper does). The key still comes
+   * through here, because a shortcut pressed with a sheet open has the same
+   * problem the row does.
+   */
   const openTemplates = (): void => {
     // The sheet would sit under the overlay, and its Escape would close first.
     setActivePanel(null);
@@ -1710,19 +1719,7 @@ export default function BookView(): JSX.Element {
         onTogglePanel={(panel) =>
           setActivePanel((current) => (current === panel ? null : panel))
         }
-        onInsertScript={() => setInsertOpen(true)}
-        onExportScript={() => {
-          const page = activePage();
-          if (page) void exportScript(page.id);
-        }}
-        onCopySpec={() =>
-          void copyText(
-            NOTEBOOK_SCRIPT_SPEC,
-            'spec copied — paste it to your AI',
-          )
-        }
         onAddPage={() => void addPage()}
-        onOpenTemplates={openTemplates}
         focusMode={focusMode()}
         onToggleFocus={toggleFocus}
         bookmarked={activeBookmarked()}
@@ -1881,14 +1878,25 @@ export default function BookView(): JSX.Element {
 
               <RailPanel
                 open={activePanel() === 'share'}
-                title="Take it out"
+                title="In and out"
                 onClose={() => setActivePanel(null)}
               >
+                {/* The three that cannot resolve their own context: the paste
+                    box is mounted against the focused leaf, and both copies
+                    need this view's page and its toast. Everything else on the
+                    sheet calls its own module-level opener. */}
                 <SharePanel
+                  onInsertScript={() => setInsertOpen(true)}
                   onCopyScript={() => {
                     const page = activePage();
                     if (page) void exportScript(page.id);
                   }}
+                  onCopySpec={() =>
+                    void copyText(
+                      NOTEBOOK_SCRIPT_SPEC,
+                      'spec copied — paste it to your AI',
+                    )
+                  }
                   onClose={() => setActivePanel(null)}
                 />
               </RailPanel>

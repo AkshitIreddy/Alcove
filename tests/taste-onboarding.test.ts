@@ -30,6 +30,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+// Reactivity only — no DOM, no JSX, so this stays a `node` environment file.
+// The panel's collapse bug lives in the SHAPE of its memos rather than in any
+// pure function, and this is the only way to pin that without jsdom.
+import { createEffect, createMemo, createRoot, createSignal } from 'solid-js';
 
 import {
   PALETTE_HEAD,
@@ -593,6 +597,85 @@ describe('the palette a reader points at', () => {
     }
   });
 
+  /**
+   * …and it does not SHUT when the reader presses a card either.
+   *
+   * The panel hands the steer's theme to `Capped` as its `resetKey`, and
+   * `Capped` collapses on every notification from it rather than on a change of
+   * value — it cannot tell the difference, since a `resetKey` is `unknown`. The
+   * theme is read off `steerRoom`, a memo that rebuilds a whole room object
+   * whenever ANY answer moves, the palette one included. As a plain derived
+   * accessor that fired on every card press: a reader who opened the forty
+   * behind "more" and pressed one had the grid slam shut and their card jump
+   * forty slots up the page. Nothing else broke — the pick was stored, the tick
+   * moved, the shelf wore it — so only a reader browsing would ever have seen
+   * it, and only `scripts/probe-taste.mjs` did.
+   *
+   * Both halves are asserted, because the fix is one word and the fix is the
+   * whole thing: the raw accessor MUST churn (otherwise this test is passing for
+   * a reason that has nothing to do with the panel) and the memoised one must
+   * not.
+   */
+  it('does not collapse the grid when only the palette answer moves', () => {
+    const strip = (a: TasteAnswers): TasteAnswers => {
+      const out = { ...a };
+      delete out.palette;
+      return out;
+    };
+
+    // Built inside a root and asserted OUTSIDE it: Solid queues effects until
+    // the root's body returns, so counts read in there are all still zero. A
+    // signal written after that flushes its effects synchronously, which is
+    // what makes the counts below meaningful.
+    const rig = createRoot((dispose) => {
+      const [answers, setAnswers] = createSignal<TasteAnswers>(steer);
+      // The panel's own chain, verbatim: one room for the whole grid…
+      const steerRoom = createMemo(() => resolveRoom(strip(answers())));
+      // …and the two ways to read a theme off it.
+      const raw = (): ThemeId => steerRoom().theme;
+      const memoised = createMemo<ThemeId>(() => steerRoom().theme);
+
+      const collapses = { raw: 0, memo: 0 };
+      createEffect(() => {
+        void raw();
+        collapses.raw += 1;
+      });
+      createEffect(() => {
+        void memoised();
+        collapses.memo += 1;
+      });
+
+      return { setAnswers, collapses, raw, memoised, dispose };
+    });
+
+    const openedRaw = rig.collapses.raw;
+    const openedMemo = rig.collapses.memo;
+    expect(openedMemo, 'the grid opened once').toBe(1);
+
+    // A card pressed. The steer cannot have moved — `strip` removes the only
+    // field that changed — so neither reading has a new value to report.
+    rig.setAnswers({ ...steer, palette: 'carousel' } as TasteAnswers);
+    expect(rig.raw()).toBe(rig.memoised());
+    expect(rig.collapses.raw, 'the object identity churns').toBeGreaterThan(openedRaw);
+    expect(rig.collapses.memo, 'the memo absorbs it').toBe(openedMemo);
+
+    // A second card, to prove the first was not a one-off flush.
+    rig.setAnswers({ ...steer, palette: 'snowline' } as TasteAnswers);
+    expect(rig.collapses.memo).toBe(openedMemo);
+
+    // And the reset the reader DOES want: a steer that now points elsewhere.
+    const elsewhere = optionIds('pitch').find(
+      (pitch) => steerTheme({ ...steer, pitch } as TasteAnswers) !== steerTheme(steer),
+    );
+    expect(elsewhere, 'some pitch answer moves the steer').toBeDefined();
+    rig.setAnswers({ ...steer, pitch: elsewhere } as TasteAnswers);
+    expect(rig.collapses.memo, 'a real steer change still collapses it').toBeGreaterThan(
+      openedMemo,
+    );
+
+    rig.dispose();
+  });
+
   /** Total: no answers at all still gives a full, ordered, drawable grid. */
   it('orders a grid for a reader who has answered nothing', () => {
     const order = paletteOrder({});
@@ -853,6 +936,33 @@ describe('applyTasteWith', () => {
 /* -------------------------------------------------------------------------
    7. The stylesheet, gated where styles.test.ts cannot see it
    ---------------------------------------------------------------------- */
+
+/**
+ * The reproduction above proves WHY the grid's reset key has to be memoised. It
+ * cannot prove the panel still does it — revert `steerPick` to a plain arrow and
+ * every assertion in it still passes, because it builds its own chain. So the
+ * source is read, the way `taste.css` is read below: whatever accessor the
+ * palette grid hands to `resetKey`, that accessor must be a memo.
+ *
+ * Written against the `resetKey=` in the file rather than against the name
+ * `steerPick`, so renaming it cannot quietly turn this gate off.
+ */
+describe('the grid keeps its reset key memoised', () => {
+  const source = readFileSync(
+    join(import.meta.dirname, '..', 'src', 'features', 'tutorial', 'tasteQuestionnaire.tsx'),
+    'utf8',
+  );
+
+  it('hands Capped a value it can compare, not a rebuilt object', () => {
+    const keys = [...source.matchAll(/resetKey=\{([A-Za-z_$][\w$]*)\(\)\}/g)].map(
+      (m) => m[1],
+    );
+    expect(keys.length, 'the palette grid still caps its list').toBe(1);
+    expect(source).toMatch(
+      new RegExp(`const\\s+${keys[0]}\\s*=\\s*createMemo`),
+    );
+  });
+});
 
 describe('taste.css follows the flat rule', () => {
   const css = readFileSync(

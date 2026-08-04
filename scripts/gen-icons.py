@@ -97,6 +97,7 @@ import io
 import struct
 import sys
 from collections import deque
+from math import cos, pi, sin
 from pathlib import Path
 
 try:
@@ -765,40 +766,453 @@ def build_icns(art: Image.Image) -> None:
           f"{', '.join(str(s) for s in sizes)}px)")
 
 
-def build_installer_art(art: Image.Image) -> None:
-    """The two NSIS bitmaps, drawn from the same master as everything else.
+# ---------------------------------------------------------------------------
+# The NSIS bitmaps — see the "The installer is drawn, not stamped" section of
+# the module header, and docs/packaging-windows.md
+# ---------------------------------------------------------------------------
 
-    These used to be left to the Tauri CLI, which meant they were the ONLY
-    shipped surface not regenerated when the mark changed — and after two
-    renames they were four days stale, still showing the previous app's
-    artwork on the first screen of the installer.
+# The app's palette, lifted from src/art/flat.ts. Mirrored here rather than
+# imported because this is Python and that is TypeScript; `tests/installer-
+# art.test.ts` reads both files and fails if a hex drifts, so the copy cannot
+# rot into a second palette.
+FLAT = {
+    "ink": "#4f3120",
+    "inkSoft": "#6b4a32",
+    "terracotta": "#c96f4a",
+    "terracottaDark": "#a8552f",
+    "cream": "#f7f1e3",
+    "creamDeep": "#eee2c8",
+    "gilt": "#e8b64c",
+    "giltPale": "#f0d9a8",
+    "moss": "#7d915c",
+    "mossDark": "#4f6138",
+    "slate": "#5f7d8c",
+    "slateDark": "#456170",
+    "plum": "#8a5a72",
+    "plumDark": "#6d4359",
+    "ochre": "#c9973f",
+    "ochreDark": "#a4762a",
+    "sage": "#8a9a6b",
+    "sageDark": "#6b7a4e",
+    "timber": "#c08a52",
+    "timberDark": "#9d6b3c",
+    "recess": "#7d5638",
+    "wall": "#e9e2d0",
+    "shadow": "#5d3a26",
+}
 
-    Both must be 24-bit BMP with no alpha: NSIS renders them through a control
-    that has no idea what transparency is, and a 32-bit BMP comes out with a
-    black box where the surround was. So the mark is composited onto the
-    cream ground here rather than saved with its alpha intact.
+# Everything is drawn at this multiple and downsampled once at the end. Flat
+# art is all hard edges, and a hard edge drawn straight into a 150x57 bitmap is
+# a staircase — Pillow antialiases nothing. Supersampling is also what makes
+# the bowed edges below worth drawing at all: at 1x a two-pixel bow rounds to
+# no bow.
+SS = 4
+
+# The six cloths the shelves are stocked from, in the order they read best
+# beside each other. `dark` is the spine's shadowed face — a darker flat
+# colour, never a shading pass.
+CLOTHS = [
+    ("terracotta", "terracottaDark"),
+    ("slate", "slateDark"),
+    ("moss", "mossDark"),
+    ("plum", "plumDark"),
+    ("ochre", "ochreDark"),
+    ("sage", "sageDark"),
+]
+
+
+def _rgb(name: str) -> tuple[int, int, int]:
+    h = FLAT[name].lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _mix(a: str, b: str, t: float) -> tuple[int, int, int]:
+    """A flat blend of two palette entries — a colour, not a gradient."""
+    x, y = _rgb(a), _rgb(b)
+    return tuple(round(x[i] + (y[i] - x[i]) * t) for i in range(3))  # type: ignore[return-value]
+
+
+def _bow(p0, p1, amount):
+    """Points along a gentle arc from p0 to p1, bulging `amount` to the left.
+
+    This is the "nothing is axis-true" rule from `src/art/flat.ts`: every long
+    edge bows by a hair, which is most of why the app's shapes read as drawn
+    rather than as calls to `rectangle()`.
     """
-    ground = (246, 241, 230)
+    (x0, y0), (x1, y1) = p0, p1
+    dx, dy = x1 - x0, y1 - y0
+    n = max(4, int(max(abs(dx), abs(dy)) / 12))
+    out = []
+    for i in range(n + 1):
+        t = i / n
+        # A quadratic hump: zero at both ends, `amount` in the middle.
+        k = 4 * t * (1 - t) * amount
+        out.append((x0 + dx * t - dy_norm(dx, dy) * k, y0 + dy * t + dx_norm(dx, dy) * k))
+    return out
 
-    def place(size: tuple[int, int], mark_h: float, at: str) -> Image.Image:
-        w, h = size
-        bmp = Image.new("RGB", size, ground)
-        side = int(h * mark_h)
-        mark = art.resize((side, side), Image.LANCZOS)
-        if at == "left":
-            pos = (int(h * 0.14), (h - side) // 2)
-        else:
-            pos = ((w - side) // 2, int(h * 0.10))
-        bmp.paste(mark, pos, mark)
-        return bmp
 
-    header = place((150, 57), 0.82, "left")
-    header.save(ICONS / "installer-header.bmp", "BMP")
-    print("  installer-header.bmp (150x57)")
+def dx_norm(dx, dy):
+    m = (dx * dx + dy * dy) ** 0.5 or 1.0
+    return dx / m
 
-    sidebar = place((164, 314), 0.42, "top")
-    sidebar.save(ICONS / "installer-sidebar.bmp", "BMP")
-    print("  installer-sidebar.bmp (164x314)")
+
+def dy_norm(dx, dy):
+    m = (dx * dx + dy * dy) ** 0.5 or 1.0
+    return dy / m
+
+
+def rrect(x0, y0, x1, y1, r, bow=0.0, arch=0.0):
+    """A rounded rectangle as a point list, with bowed edges and an optional
+    arched top — the one shape nearly everything in this vocabulary is made of.
+
+    `arch` lifts the middle of the top edge, which is how the bookcase gets its
+    crown without a second code path.
+    """
+    r = min(r, (x1 - x0) / 2, (y1 - y0) / 2)
+    pts: list[tuple[float, float]] = []
+
+    def corner(cx, cy, a0, a1):
+        steps = max(3, int(r / 2))
+        for i in range(steps + 1):
+            a = a0 + (a1 - a0) * i / steps
+            pts.append((cx + r * cos(a), cy + r * sin(a)))
+
+    corner(x0 + r, y0 + r, pi, 1.5 * pi)                 # top-left
+    pts.extend(_bow((x0 + r, y0), (x1 - r, y0), -bow - arch)[1:-1])
+    corner(x1 - r, y0 + r, 1.5 * pi, 2 * pi)             # top-right
+    pts.extend(_bow((x1, y0 + r), (x1, y1 - r), -bow)[1:-1])
+    corner(x1 - r, y1 - r, 0, 0.5 * pi)                  # bottom-right
+    pts.extend(_bow((x1 - r, y1), (x0 + r, y1), -bow)[1:-1])
+    corner(x0 + r, y1 - r, 0.5 * pi, pi)                 # bottom-left
+    pts.extend(_bow((x0, y1 - r), (x0, y0 + r), -bow)[1:-1])
+    return pts
+
+
+def flat(d: ImageDraw.ImageDraw, pts, fill, ink="ink", w=2.0):
+    """One flat shape: a solid fill, then THE ink outline. Never a lighter or
+    darker version of the fill — the single outline colour is most of why a
+    pile of these reads as one drawing."""
+    if fill is not None:
+        d.polygon(pts, fill=fill if isinstance(fill, tuple) else _rgb(fill))
+    if ink and w > 0:
+        d.line(list(pts) + [pts[0]], fill=_rgb(ink), width=max(1, round(w)), joint="curve")
+
+
+def spine(d, x0, y0, x1, y1, cloth, dark, rng, ss):
+    """One book, standing. Cloth face, a darker face down its hinge side, and
+    then whichever ornament its width can carry: gilt bands, a cream label
+    plate, or a plain cloth back."""
+    w = x1 - x0
+    r = min(w * 0.28, 3.0 * ss)
+    flat(d, rrect(x0, y0, x1, y1, r, bow=w * 0.05), cloth, w=max(1.2, w * 0.11))
+
+    # The hinge: a darker flat strip down one side. This is the icon's own
+    # trick for depth — a second face, not a shadow.
+    hinge = max(1.6 * ss, w * 0.22)
+    if w > 5 * ss:
+        flat(d, rrect(x0, y0, x0 + hinge, y1, r * 0.6, bow=0.4), dark, w=0)
+        d.line(
+            _bow((x0 + hinge, y0 + r * 0.6), (x0 + hinge, y1 - r * 0.6), 0.4),
+            fill=_rgb("ink"),
+            width=max(1, round(w * 0.07)),
+        )
+
+    if w < 5 * ss:
+        return
+
+    style = rng.random()
+    mid = (y0 + y1) / 2
+    # A label plate is cream on cloth, so at a narrow width it survives the
+    # downsample as a white speck rather than a label. Narrow books get bands.
+    if style >= 0.42 and style < 0.72 and w < 7.0 * ss:
+        style = 0.1
+    if style < 0.42:
+        # Two gilt bands near the head and tail.
+        for yy in (y0 + (y1 - y0) * 0.17, y1 - (y1 - y0) * 0.17):
+            band = max(1.2 * ss, w * 0.13)
+            flat(
+                d,
+                rrect(x0 + hinge * 0.9, yy - band / 2, x1 - w * 0.14, yy + band / 2,
+                      band * 0.4, bow=0.3),
+                "gilt",
+                w=max(1, w * 0.06),
+            )
+    elif style < 0.72:
+        # A cream label plate with two rules of ink on it — the app's book
+        # label, at shelf scale.
+        ph = (y1 - y0) * 0.30
+        px0, px1 = x0 + hinge * 0.9, x1 - w * 0.16
+        flat(d, rrect(px0, mid - ph / 2, px1, mid + ph / 2, w * 0.18, bow=0.4),
+             "cream", w=max(1, w * 0.07))
+        if px1 - px0 > 3 * ss:
+            for k in (0.38, 0.62):
+                yy = mid - ph / 2 + ph * k
+                d.line(
+                    _bow((px0 + w * 0.16, yy), (px1 - w * 0.16, yy), 0.25),
+                    fill=_rgb("inkSoft"),
+                    width=max(1, round(w * 0.05)),
+                )
+    else:
+        # A single gilt rule and a stud — the plainest binding on the shelf.
+        yy = y0 + (y1 - y0) * 0.24
+        d.line(_bow((x0 + hinge * 1.1, yy), (x1 - w * 0.18, yy), 0.3),
+               fill=_rgb("gilt"), width=max(1, round(w * 0.10)))
+
+
+def sprig(d, cx, cy, s, colour):
+    """A wallpaper mark: three leaves off a stem. Flat, one colour, no ink —
+    the wall is a backdrop and an outlined motif fights the bookcase."""
+    d.line(
+        _bow((cx, cy + s), (cx, cy - s), s * 0.10),
+        fill=colour,
+        width=max(1, round(s * 0.20)),
+    )
+    for sx in (-1, 1):
+        for k in (0.18, 0.58):
+            ax = cx + sx * s * 0.06
+            bx = cx + sx * s * 0.84
+            ay = cy - s + s * 2 * k - s * 0.30
+            by = cy - s + s * 2 * k + s * 0.16
+            d.ellipse([min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)], fill=colour)
+
+
+def wallpaper(d, x0, y0, x1, y1, pitch, colour):
+    """The staggered lattice of sprigs behind the case."""
+    row = 0
+    y = y0 + pitch * 0.5
+    while y < y1 + pitch:
+        offset = 0 if row % 2 == 0 else pitch * 0.5
+        x = x0 + offset - pitch
+        while x < x1 + pitch:
+            if y0 - pitch < y < y1 and x0 - pitch < x < x1 + pitch:
+                sprig(d, x, y, pitch * 0.17, colour)
+            x += pitch
+        y += pitch * 0.86
+        row += 1
+
+
+def draw_bookcase(base, x0, y0, x1, y1, rng, ss, shelves=4, lean_at=None):
+    """The case: crown, carcase, recess, shelf boards, books, plinth.
+
+    Straight on, the way the app draws one. `lean_at` is the shelf whose last
+    book has tipped over — a shelf where nothing has ever been taken down is a
+    shelf nobody reads.
+
+    Takes and returns an image rather than a `Draw`, because the leaning book
+    has to be rotated on its own layer and composited back in BEFORE that bay's
+    board is drawn: the book pivots at its foot, so its bottom corner dips
+    below the board line and the board has to cover it.
+    """
+    case = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(case)
+    w = x1 - x0
+    wall_th = w * 0.075
+    crown_h = (y1 - y0) * 0.055
+    plinth_h = (y1 - y0) * 0.070
+    ink_w = max(1.5, w * 0.016)
+
+    # Carcase, arched at the head.
+    flat(d, rrect(x0, y0 + crown_h, x1, y1, w * 0.05, bow=w * 0.012,
+                  arch=(y1 - y0) * 0.030), "timber", w=ink_w)
+
+    # Recess — always darker than the timber, per the palette note.
+    rx0, rx1 = x0 + wall_th, x1 - wall_th
+    ry0, ry1 = y0 + crown_h + wall_th * 1.5, y1 - plinth_h
+    flat(d, rrect(rx0, ry0, rx1, ry1, w * 0.035, bow=w * 0.008,
+                  arch=(y1 - y0) * 0.022), "recess", w=ink_w * 0.85)
+
+    # Crown: a band across the top with three gilt studs.
+    flat(d, rrect(x0 - w * 0.035, y0, x1 + w * 0.035, y0 + crown_h * 1.6,
+                  crown_h * 0.5, bow=w * 0.010), "timberDark", w=ink_w)
+    for k in (0.28, 0.5, 0.72):
+        cx = x0 + w * k
+        cy = y0 + crown_h * 0.8
+        r = crown_h * 0.34
+        flat(d, rrect(cx - r, cy - r, cx + r, cy + r, r, bow=0.2), "gilt",
+             w=max(1, ink_w * 0.6))
+
+    # Shelf boards and their books.
+    inner_h = ry1 - ry0
+    board_h = inner_h * 0.030
+    bay = (inner_h - board_h) / shelves
+    for i in range(shelves):
+        top = ry0 + bay * i + (inner_h * 0.045 if i == 0 else 0)
+        board_y = ry0 + bay * (i + 1)
+        # Books first, so the board's ink line reads in front of their feet.
+        tipped: list[Image.Image] = []
+        _stock_shelf(d, rx0 + wall_th * 0.35, top, rx1 - wall_th * 0.35, board_y,
+                     rng, ss, lean=(i == lean_at), layers=tipped)
+        for layer in tipped:
+            case = Image.alpha_composite(case, layer)
+            d = ImageDraw.Draw(case)
+        flat(d, rrect(rx0 - wall_th * 0.25, board_y, rx1 + wall_th * 0.25,
+                      board_y + board_h, board_h * 0.45, bow=w * 0.006),
+             "timberDark", w=ink_w * 0.8)
+        d.line(_bow((rx0, board_y + board_h * 0.30), (rx1, board_y + board_h * 0.30),
+                    w * 0.004), fill=_mix("timber", "cream", 0.25),
+               width=max(1, round(board_h * 0.30)))
+
+    # Plinth — the case has a visible bottom.
+    flat(d, rrect(x0 - w * 0.02, y1 - plinth_h, x1 + w * 0.02, y1,
+                  plinth_h * 0.34, bow=w * 0.008), "timberDark", w=ink_w)
+
+    return Image.alpha_composite(base.convert("RGBA"), case).convert("RGB")
+
+
+def _leaning(size, x0, top, x1, floor_y, cloth, dark, rng, ss, angle):
+    """The last book on a row, tipped over against its neighbour.
+
+    Drawn upright into its own layer and rotated, because a leaning spine is
+    the single most legible sign that a shelf belongs to somebody who reads —
+    and it is the app's own gesture (books come OUT of the shelf). Rotation
+    happens on a transparent layer so the wall behind it is untouched; the
+    layer is composited, never blended.
+    """
+    layer = Image.new("RGBA", size, (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    spine(ld, x0, top, x1, floor_y, cloth, dark, rng, ss)
+    # Rotate about the book's foot, so it pivots where it touches the board.
+    pivot = ((x0 + x1) / 2, floor_y)
+    turned = layer.rotate(angle, resample=Image.BICUBIC, center=pivot)
+    return turned
+
+
+def _stock_shelf(d, x0, top, x1, floor_y, rng, ss, lean=False, layers=None):
+    """Fill one bay with books, left to right, leaving a little air at the end.
+
+    `lean` tips the last book of the row. It cannot be drawn straight into `d`
+    (it has to be rotated on its own layer), so the caller passes a `layers`
+    list to collect it and composites once at the end.
+    """
+    bay_h = floor_y - top
+    x = x0 + rng.uniform(0.2, 0.8) * ss
+    limit = x1 - rng.uniform(1.0, 3.5) * ss
+    placed = []
+    while x < limit:
+        wdt = rng.uniform(4.2, 9.5) * ss
+        if x + wdt > limit:
+            break
+        placed.append((x, wdt))
+        x += wdt + rng.uniform(0.15, 0.7) * ss
+
+    for i, (bx, wdt) in enumerate(placed):
+        h = bay_h * rng.uniform(0.64, 0.94)
+        cloth, dark = CLOTHS[(i * 2 + rng.randrange(3)) % len(CLOTHS)]
+        last = i == len(placed) - 1
+        if lean and last and layers is not None and len(placed) > 2:
+            # It leans into the gap the row left, so it needs room to fall.
+            gap = (x1 - (bx + wdt)) / ss
+            angle = max(-26.0, -12.0 - gap * 2.2)
+            layers.append(
+                _leaning(d.im.size, bx, floor_y - h * 0.92, bx + wdt, floor_y,
+                         cloth, dark, rng, ss, angle)
+            )
+            continue
+        spine(d, bx, floor_y - h, bx + wdt, floor_y, cloth, dark, rng, ss)
+
+
+def build_installer_art() -> None:
+    """The two NSIS bitmaps — DRAWN, in the app's own flat vocabulary.
+
+    They used to be the mark pasted onto a cream field, at two sizes. That is
+    the shape every boring installer has, and the reader said so:
+
+        > "most install and unistall exe look boring make sure ours looks
+        >  interesting, pretty like our app"
+
+    So the header is a shelf of books and the sidebar is a whole bookcase
+    standing against a papered wall — flat colour, one ink outline, rounded
+    corners, edges that bow, exactly the rules `src/art/flat.ts` draws the app
+    itself by. The mark is not in either: `icon.ico` already carries it into
+    the window's title bar and the taskbar button, and the register that suits
+    a 1024px illustration is not the one that survives a 150x57 strip.
+
+    Both must be 24-bit BMP with no alpha. NSIS renders them through a control
+    that has no idea what transparency is, and a 32-bit BMP comes out with a
+    black box where the transparent pixels were — so everything is composited
+    onto an opaque ground here.
+
+    The ground is `FLAT.cream`, and `src-tauri/installer/alcove.nsh` sets
+    `MUI_BGCOLOR` to the same hex. That pairing is the whole reason the
+    bitmaps look built into the window rather than stuck onto it; change one
+    and change the other.
+    """
+    import random
+
+    def canvas(w: int, h: int, ground: str):
+        im = Image.new("RGB", (w * SS, h * SS), _rgb(ground))
+        return im, ImageDraw.Draw(im)
+
+    # ---------------------------------------------------------------- header
+    # 150x57, on the MUI_BGCOLOR band at the top of every interior page. MUI2
+    # puts this bitmap at the LEFT and the page's title and subtitle to the
+    # right of it — checked by looking, because the NSIS documentation and half
+    # the internet describe the header image as right-aligned, which is the
+    # `MUI_HEADERIMAGE_RIGHT` variant nothing here sets. So the shelf is
+    # weighted LEFT, against the window edge, and the right third is left quiet
+    # for the type that lands beside it.
+    w, h = 150, 57
+    im, d = canvas(w, h, "cream")
+    rng = random.Random(0x0A1C0)
+    s = SS
+
+    shelf_y = 45 * s
+    board_h = 4.5 * s
+    row = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    rd = ImageDraw.Draw(row)
+    tipped: list[Image.Image] = []
+    _stock_shelf(rd, 11 * s, 7 * s, 116 * s, shelf_y, rng, s, lean=True, layers=tipped)
+    for layer in tipped:
+        row = Image.alpha_composite(row, layer)
+        rd = ImageDraw.Draw(row)
+    flat(rd, rrect(4 * s, shelf_y, 122 * s, shelf_y + board_h, board_h * 0.42, bow=1.2),
+         "timber", w=2.0)
+    # Two brackets under the board, so it is carpentry rather than a line.
+    for bx in (9 * s, 117 * s):
+        flat(rd, rrect(bx - 1.8 * s, shelf_y + board_h, bx + 1.8 * s, 51 * s,
+                       1.2 * s, bow=0.4), "timberDark", w=1.6)
+    im = Image.alpha_composite(im.convert("RGBA"), row).convert("RGB")
+    d = ImageDraw.Draw(im)
+    # Two sprigs at the quiet end, so the empty third is composed and not blank.
+    sprig(d, 136 * s, 26 * s, 6.0 * s, _mix("cream", "moss", 0.42))
+    sprig(d, 129 * s, 38 * s, 4.2 * s, _mix("cream", "moss", 0.30))
+
+    im.resize((w, h), Image.LANCZOS).save(ICONS / "installer-header.bmp", "BMP")
+    print(f"  installer-header.bmp ({w}x{h}) - drawn shelf, flat")
+
+    # --------------------------------------------------------------- sidebar
+    # 164x314, the whole left edge of the Welcome and Finish pages. This is the
+    # first thing anybody sees of the app, so it carries the actual subject: a
+    # bookcase, papered wall behind it, standing on a floor.
+    w, h = 164, 314
+    im, d = canvas(w, h, "wall")
+    rng = random.Random(0x0A1C0FE)
+    s = SS
+
+    floor_y = 274
+    wallpaper(d, 0, 0, w * s, floor_y * s, 23 * s, _mix("wall", "moss", 0.16))
+
+    # Floor: one flat band under an ink skirting line. Two faces, no light.
+    flat(d, [(0, floor_y * s), (w * s, floor_y * s), (w * s, h * s), (0, h * s)],
+         _mix("wall", "timber", 0.40), ink=None)
+    d.line(_bow((0, floor_y * s), (w * s, floor_y * s), 2.0), fill=_rgb("ink"), width=2)
+
+    # Contact shadow: flat, hard-edged, low alpha. Composited rather than
+    # drawn, because a flat fill at 18% is the only way Pillow will give a
+    # translucent shape — it is NOT a blur and must not become one.
+    shade = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shade)
+    sd.polygon(
+        rrect(12 * s, (floor_y - 2) * s, 152 * s, (floor_y + 8) * s, 5 * s, bow=1.5),
+        fill=_rgb("shadow") + (46,),
+    )
+    im = Image.alpha_composite(im.convert("RGBA"), shade).convert("RGB")
+
+    im = draw_bookcase(im, 18 * s, 38 * s, 146 * s, floor_y * s, rng, s,
+                       shelves=4, lean_at=1)
+
+    im.resize((w, h), Image.LANCZOS).save(ICONS / "installer-sidebar.bmp", "BMP")
+    print(f"  installer-sidebar.bmp ({w}x{h}) - drawn bookcase, flat")
 
 
 def main() -> int:
@@ -842,7 +1256,7 @@ def main() -> int:
 
     build_ico(art)
     build_icns(art)
-    build_installer_art(art)
+    build_installer_art()
 
     rc = report(ICO) | report_icns(ICNS, art)
     print("\ndone. Every icon Tauri names in bundle.icon now comes from this one "

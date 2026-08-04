@@ -3,7 +3,7 @@
  * a rail sheet is out?
  *
  * The defect this exists for: every rail panel — Customize, Page style,
- * Catalogue, Contents, History, Take it out — pushed the spread right by the
+ * Catalogue, Contents, History, In and out — pushed the spread right by the
  * sheet's own width and nothing else. On a 1440×900 window that put the right
  * leaf's fore-edge at x=1711 (271px past the glass) and the dog-ear curl
  * entirely off screen, so the last words of every line on the right page were

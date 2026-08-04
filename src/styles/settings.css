@@ -189,6 +189,21 @@
   --ink-blue-soft: #93aab8;
   --ink-accent: #e8a184;
 
+  /* The seven code roles, after dark.
+     Same argument as in tokens.css, run the other way: on a dark ground it is
+     the LIGHTEST possible --paper-aged that is hardest, and a dark room on a
+     pale stock reaches #393311. These are the wash hues solved against that,
+     so a listing stays readable in every dark room on every stock. The other
+     `--code-*` tokens are var() chains into the rungs above and need no
+     restating here — that is the point of writing them as chains. */
+  --code-comment: #a19c93;
+  --code-keyword: #e08560;
+  --code-string: #8ea377;
+  --code-number: #be9651;
+  --code-name: #82a1b2;
+  --code-type: #be8fa5;
+  --code-attr: #d087a1;
+
   --wash-amber-light: #443c18;
   --wash-amber: #e8b64c;
   --wash-amber-deep: #f2d79a;
@@ -651,6 +666,55 @@ body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
   --sec-light: var(--wash-lime-light);
   --sec: var(--wash-lime);
   --sec-deep: var(--wash-lime-deep);
+}
+.nbs-section[data-accent='lemon'] {
+  --sec-light: var(--wash-lemon-light);
+  --sec: var(--wash-lemon);
+  --sec-deep: var(--wash-lemon-deep);
+}
+
+/* The code specimen in the Code blocks section.
+   It is a real `.nb-code`, so it inherits every frame rule and every token the
+   page uses — which is the point. It only has to be told not to take the
+   margins a block on a page takes, and not to accept a caret. */
+.nbs-code-preview {
+  width: 100%;
+  margin: 0;
+  cursor: default;
+  user-select: none;
+}
+
+/* The `card` frame tilts a real block by half a degree. In a settings row that
+   reads as a rendering fault rather than as a choice, so the specimen keeps
+   the frame's colours and drops its lean. */
+:root[data-code-frame='card'] .nbs-code-preview {
+  transform: none;
+}
+
+/* The key to the specimen: seven words, each with its own pigment beside it.
+   The swatch is a flat tile with one ink outline at 16 by 10 — the same three
+   rules, and the same shape, as the picker chips' own swatches. */
+.nbs-code-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  width: 100%;
+}
+
+.nbs-code-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-ui);
+  color: var(--ink-sepia-soft);
+}
+
+.nbs-code-legend-swatch {
+  display: inline-block;
+  width: 15px;
+  height: 9px;
+  border-radius: 5px 6px 5px 7px / 6px 5px 7px 5px;
+  border: 1.5px solid var(--ink-line);
 }
 
 /* The title is the section's colour statement: full-strength ink for the

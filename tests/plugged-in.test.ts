@@ -84,8 +84,29 @@ import { HANDWRITING_FONT_STACKS } from '../src/features/settings/apply';
 
 const SRC = join(import.meta.dirname, '..', 'src');
 
-/** The two vocabulary roots this alarm watches. */
-const WATCHED = [join(SRC, 'art'), join(SRC, 'editor', 'effects')];
+/**
+ * What this alarm watches.
+ *
+ * Two directories and two files. The directories are the vocabulary roots;
+ * the files are named one at a time because their FOLDERS cannot be watched —
+ * part one IMPORTS everything it watches under a node environment, and
+ * `src/features/settings/` also holds `SettingsPanel.tsx`, which pulls in
+ * Solid, GSAP and the DOM. Naming the pure module is what lets the alarm cover
+ * a vocabulary that happens to live beside a component.
+ *
+ * `codeLanguages` and `codeAppearance` are the seventh and eighth vocabularies
+ * in the app, and both are exactly the shape this file exists to watch: a
+ * table of entries with tiers, a shortlist derived from them, and a roll pool.
+ * The appearance vocabulary was the sixth thing the alarm found — on itself,
+ * the day it was written — so a new one going unwatched is a mistake this
+ * file has already made once.
+ */
+const WATCHED = [
+  join(SRC, 'art'),
+  join(SRC, 'editor', 'effects'),
+  join(SRC, 'editor', 'codeLanguages.ts'),
+  join(SRC, 'features', 'settings', 'codeAppearance.ts'),
+];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -1127,5 +1148,198 @@ describe('the app shell mounts the panels that outlive what opens them', () => {
       'utf8',
     );
     expect(taste, 'taste.css no longer draws .nbq-layer').toMatch(/\.nbq-layer\s*\{/);
+  });
+});
+
+/* ========================================================================== *
+ *        part five — one panel for everything that arrives or leaves         *
+ * ========================================================================== *
+ *
+ * The eighth instance is the opposite shape from the other seven, and it is
+ * why this part exists.
+ *
+ * Getting work IN and OUT of a book was seven separate controls: insert
+ * script, export script, copy AI spec and start-from-a-template each had a
+ * rail icon, and the PDF chooser, the picture and the Markdown import were
+ * rows on a sheet behind an eighth. Every one of them was reachable — part
+ * three would have said so — and the reader still could not find them:
+ *
+ *   > "maybe condense insert, copy AI spec, export things into a single
+ *   >  setting in side bar, with the above options as well in its panel below"
+ *
+ * So "reachable" is not the whole of "plugged in". Four of those icons are now
+ * rows on `views/rail/SharePanel.tsx`, and the risk in doing that is the exact
+ * failure this file is for, run backwards: a flow that had a button loses it
+ * and gains a row that is never rendered, or a row that runs nothing. What
+ * follows checks the whole chain — the rail draws the one button, the shell
+ * renders the panel, the panel lists the row, and the row calls the flow.
+ *
+ * (It also caught a real one on the way in. `DIVIDER_AT` in BookRail was
+ * `findIndex(tool => tool.id === 'insert')`; `insert` moved onto the sheet,
+ * `findIndex` returned -1, and the divider the tour teaches stopped rendering
+ * with nothing failing anywhere.)
+ */
+
+describe('one panel for everything that goes in or out of a book', () => {
+  const SHARE = join(SRC, 'views', 'rail', 'SharePanel.tsx');
+  const share = LIVE.get(SHARE) ?? '';
+  const rail = LIVE.get(join(SRC, 'views', 'rail', 'BookRail.tsx')) ?? '';
+  const bookView = LIVE.get(join(SRC, 'views', 'BookView.tsx')) ?? '';
+
+  /** Every `id: '…'` in a table, off the live source. */
+  const ids = (text: string): string[] =>
+    [...text.matchAll(/^\s*id: '([a-z-]+)',$/gm)].map((m) => m[1]!);
+
+  it('has all three files to read', () => {
+    // The vacuous-pass guard the rest of this section leans on.
+    expect(share.length).toBeGreaterThan(500);
+    expect(rail.length).toBeGreaterThan(500);
+    expect(bookView.length).toBeGreaterThan(500);
+  });
+
+  it('is rendered by the shell that outlives it', () => {
+    // Part four's lesson: an opener with callers is not a component on screen.
+    // The sheet is BookView's, and only BookView can put it in the tree.
+    expect(bookView, 'BookView does not render <SharePanel').toMatch(/<SharePanel\b/);
+    expect(readers(SHARE, 'SharePanel')).toContain('views/BookView.tsx');
+    // …under the title the rail button promises, or the reader opens a sheet
+    // called something else and does not believe it is the right one.
+    expect(bookView).toMatch(/title="In and out"/);
+  });
+
+  it('lists the three questions a reader arrives with, in that order', () => {
+    const groups = [...share.matchAll(/id: '(in|out|ai)', title:/g)].map((m) => m[1]);
+    expect(groups).toEqual(['in', 'out', 'ai']);
+    for (const heading of [
+      'Bring something in',
+      'Take this page, or this book, out',
+      'For an assistant',
+    ]) {
+      expect(share, `the sheet no longer says "${heading}"`).toContain(heading);
+    }
+  });
+
+  it('carries a row for every one of the eight errands', () => {
+    // The brief, spelled out: bring in — paste script, import Markdown, start
+    // from a template; take out — PDF, picture, the parcel desk; for an AI —
+    // the spec, and this page as script.
+    expect(ids(share).sort()).toEqual(
+      ['insert', 'markdown', 'pdf', 'png', 'parcel', 'script', 'spec', 'templates'].sort(),
+    );
+  });
+
+  it('runs the real flow from every row, not a copy of it', () => {
+    // The five that resolve their own context call the module-level opener —
+    // the same call the keyboard makes — so a row and its key cannot drift.
+    for (const [module, flow] of [
+      ['features/templates/TemplatesGallery.tsx', 'openTemplatesGallery'],
+      ['features/templates/ExportPdfDialog.tsx', 'openExportPdfDialog'],
+      ['editor/script/exporters/exportPage.ts', 'exportActivePagePng'],
+      ['features/templates/importMarkdown.ts', 'importMarkdownBooks'],
+      ['features/transfer/TransferPanel.tsx', 'openTransferPanel'],
+    ] as const) {
+      expect(
+        readers(join(SRC, ...module.split('/')), flow, true),
+        `${flow} is no longer run from the one sheet that offers it`,
+      ).toContain('views/rail/SharePanel.tsx');
+    }
+    // …and the three that cannot: the paste box is mounted against the focused
+    // leaf, and both copies need this view's page and its toast. If BookView
+    // stops passing one, its row becomes a button that does nothing.
+    for (const prop of ['onInsertScript', 'onCopyScript', 'onCopySpec']) {
+      expect(share, `SharePanel no longer calls ${prop}`).toContain(`props.${prop}()`);
+      expect(bookView, `BookView no longer hands SharePanel ${prop}`).toContain(
+        `${prop}={`,
+      );
+    }
+  });
+
+  it('took the four folded icons off the rail, and left the one that opens it', () => {
+    // The point of the change was FEWER controls, so this is the half that
+    // stops the panel from becoming a second door beside four first ones.
+    const tools = ids(rail);
+    expect(tools).toContain('share');
+    for (const gone of ['insert', 'export', 'spec', 'templates']) {
+      expect(
+        tools,
+        `'${gone}' is a rail icon again — the sheet was supposed to be its one home`,
+      ).not.toContain(gone);
+    }
+    // Ten buttons, not fourteen. A number, because "fewer" is not checkable
+    // and the rail's crowding is the reason the reader wrote in.
+    expect(tools.length).toBeLessThanOrEqual(10);
+  });
+
+  it('still draws the divider it teaches, wherever the tools move', () => {
+    // Derived from the STRUCTURE (the first tool that opens no panel), never
+    // from a tool id — an id is exactly what moved.
+    expect(rail).toMatch(/DIVIDER_AT\s*=\s*TOOLS\.findIndex\(\(tool\) => tool\.panel === undefined\)/);
+    expect(rail).not.toMatch(/DIVIDER_AT[\s\S]{0,80}tool\.id === /);
+  });
+
+  it('draws only key caps that a real shortcut answers', () => {
+    // A row whose `keyFor` names nothing renders an empty cap; a row that
+    // borrows another action's id renders a key that opens something else.
+    // (The AI spec row deliberately has neither — nothing binds it.)
+    const registry = readFileSync(join(SRC, 'data', 'keybindings.ts'), 'utf8');
+    const claimed = [...share.matchAll(/keyFor: '([a-z-]+)'/g)].map((m) => m[1]!);
+    expect(claimed.sort()).toEqual(
+      [
+        'export-library',
+        'export-pdf',
+        'export-png',
+        'export-script',
+        'import-markdown',
+        'insert-script',
+        'templates',
+      ].sort(),
+    );
+    for (const id of claimed) {
+      expect(registry, `${id} is not in the shortcut registry`).toMatch(
+        new RegExp(`id:\\s*'${id}'`),
+      );
+    }
+  });
+
+  it('keeps the doors a reader would already have used', () => {
+    // Consolidating is not walling off. The gallery is where a book is MADE,
+    // out on the shelf; the Markdown import is a library errand as much as a
+    // book one; and the insert dialog hands out the spec itself, because
+    // wanting the format is what you discover at an empty paste box.
+    expect(
+      readers(join(SRC, 'features', 'templates', 'TemplatesGallery.tsx'), 'openTemplatesGallery', true),
+    ).toEqual(
+      expect.arrayContaining([
+        'features/bookshelf/BookshelfWorld.tsx',
+        'views/rail/SharePanel.tsx',
+      ]),
+    );
+    expect(
+      readers(join(SRC, 'features', 'templates', 'importMarkdown.ts'), 'importMarkdownBooks', true),
+    ).toEqual(
+      expect.arrayContaining([
+        'App.tsx',
+        'features/settings/SettingsPanel.tsx',
+        'views/rail/SharePanel.tsx',
+      ]),
+    );
+    const insertDialog = LIVE.get(join(SRC, 'editor', 'insert', 'InsertScriptDialog.tsx')) ?? '';
+    expect(insertDialog).toContain('NOTEBOOK_SCRIPT_SPEC');
+  });
+
+  it('sends the tour to a button that exists', () => {
+    // The tour asked for `data-tool="spec"` for one commit after that button
+    // stopped being drawn. A missing target does not throw — the engine
+    // survives it on purpose — so nothing anywhere would have said so.
+    const steps = LIVE.get(join(SRC, 'features', 'tutorial', 'steps.ts')) ?? '';
+    const railIds = new Set(ids(rail));
+    const pointed = [...steps.matchAll(/data-tool="([a-z-]+)"/g)].map((m) => m[1]!);
+    expect(pointed.length).toBeGreaterThan(3);
+    expect(pointed.filter((id) => !railIds.has(id))).toEqual([]);
+    // …and the fact behind that step has to be gettable from what is on
+    // screen now: the sheet's button, or one of its three script rows.
+    const probe = LIVE.get(join(SRC, 'features', 'tutorial', 'probe.ts')) ?? '';
+    expect(probe).toMatch(/nb-share-row/);
+    expect(probe).toMatch(/id === 'share'/);
   });
 });

@@ -10,9 +10,14 @@
  *
  * So the FIRST thing this file does is DELETE THE BRIDGE. Everything after
  * that is pointer input against the real chrome: the shelf's dock, the shelf's
- * right-click card, the book rail's two new icons, the "Take it out" sheet and
- * the settings sheet's "Library files" section. If any of it still works, it
- * works because a control exists.
+ * right-click card, the book rail's "In and out" sheet and the settings
+ * sheet's "Library files" section. If any of it still works, it works because
+ * a control exists.
+ *
+ * The sheet was "Take it out" and the gallery had a rail icon of its own until
+ * 2026-08-04, when four icons were folded onto that one sheet — insert script,
+ * export script, copy AI spec, start from a template. Everything below drives
+ * the sheet instead, which is what a reader now has.
  *
  * The keyboard half is proved the same way (the combinations, not the
  * registry) — `tests/plugged-in.test.ts` part three holds the registry.
@@ -211,10 +216,17 @@ console.log(
   ).join(', '),
 );
 
-console.log('\n4a. the rail template icon');
-await page.locator('.nb-rail-button[data-tool="templates"]').click();
+/*
+ * The gallery used to have a rail icon of its own. It is a row on the "In and
+ * out" sheet now — four icons folded into one (views/rail/SharePanel.tsx) —
+ * so this drives the sheet, which is the way a reader in a book reaches it.
+ */
+console.log('\n4a. the template row, from inside a book');
+await page.locator('.nb-rail-button[data-tool="share"]').click();
+await poll(() => document.querySelector('.nb-share-row[data-share="templates"]') !== null);
+await page.locator('.nb-share-row[data-share="templates"]').click();
 check(
-  'the rail opens the gallery',
+  'the sheet opens the gallery',
   (await poll(() => document.querySelectorAll('.nb-tpl-card').length > 0)) !== null,
 );
 check(
@@ -224,30 +236,46 @@ check(
 await shot('groupd-03-templates-in-book');
 await closeGallery();
 
-/* 5 — "Take it out": the sheet, and the PDF chooser ----------------------- */
+/* 5 — "In and out": the sheet, and the PDF chooser ------------------------ */
 
-console.log('\n5. the "Take it out" sheet');
+console.log('\n5. the "In and out" sheet');
 await page.locator('.nb-rail-button[data-tool="share"]').click();
 const sheet = await poll(() => {
   const el = document.querySelector('.nb-rail-panel[aria-hidden="false"]');
   return el === null ? null : (el.querySelector('.nb-rail-panel-title')?.textContent ?? '?');
 });
-check('the rail opens it', sheet === 'Take it out', sheet ?? 'nothing opened');
+check('the rail opens it', sheet === 'In and out', sheet ?? 'nothing opened');
 const rows = await page.evaluate(() =>
   [...document.querySelectorAll('.nb-share-row')].map((r) => r.dataset.share),
 );
 console.log('  rows:', rows.join(', '));
 check(
-  'it holds both exports and the import',
-  ['pdf', 'png', 'script', 'markdown', 'parcel'].every((id) => rows.includes(id)),
+  'it holds every errand, in and out and for an AI',
+  ['insert', 'markdown', 'templates', 'pdf', 'png', 'parcel', 'spec', 'script'].every(
+    (id) => rows.includes(id),
+  ),
   rows.join(', '),
 );
 check(
-  'every row carries a key cap, not a bare label',
+  'the three groups are labelled, so eight rows can be scanned',
   await page.evaluate(() =>
-    [...document.querySelectorAll('.nb-share-row')].every(
-      (r) => (r.querySelector('.nb-share-row-key')?.textContent ?? '').length > 0,
+    ['in', 'out', 'ai'].every(
+      (id) =>
+        (
+          document.querySelector(`.nb-share-group[data-share-group="${id}"] .nb-panel-section-title`)
+            ?.textContent ?? ''
+        ).length > 0,
     ),
+  ),
+);
+check(
+  // Not "every row": the AI spec is bound to nothing, and a cap on it would be
+  // a key that opens something else.
+  'every row that claims a shortcut draws its key cap',
+  await page.evaluate(() =>
+    [...document.querySelectorAll('.nb-share-row')]
+      .filter((r) => r.dataset.share !== 'spec')
+      .every((r) => (r.querySelector('.nb-share-row-key')?.textContent ?? '').length > 0),
   ),
 );
 await shot('groupd-04-share-sheet');

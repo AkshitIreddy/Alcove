@@ -83,13 +83,12 @@ import {
   type LibrarySnapshot,
 } from './scope';
 import { loadHistory, setRetention } from './store';
+import { APP_VERSION } from '../../version';
 // The shared toast chrome `notify()` renders into lives in insert.css.
 import '../../styles/insert.css';
 import '../../styles/transfer.css';
 
 export type TransferTab = 'export' | 'import' | 'history';
-
-const APP_VERSION = '0.1.0';
 
 const TABS: ReadonlyArray<{ id: TransferTab; label: string; icon: () => JSX.Element }> = [
   { id: 'export', label: 'Send out', icon: () => <ExportIcon /> },

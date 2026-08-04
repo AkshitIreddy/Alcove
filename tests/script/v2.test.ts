@@ -248,7 +248,9 @@ describe("structure diagnostics", () => {
   it("unknown containers and fences name the alternatives", () => {
     const box = find(parse("::: wobbly-box\nhi\n:::"), "unknown-container");
     expect(box.expected).toContain("sticky-note");
-    const fence = find(parse("```python\nprint(1)\n```"), "fence-unknown-lang");
+    // `python` is a language the app knows, so it is code and nothing is
+    // reported. The diagnostic is for a word that names nothing at all.
+    const fence = find(parse("```wobbly\nprint(1)\n```"), "fence-unknown-lang");
     expect(fence.expected).toContain("timeline");
   });
 });

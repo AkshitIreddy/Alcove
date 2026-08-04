@@ -468,6 +468,225 @@ export const DIAGRAM_LANG_ALIASES: Record<
   chronology: "timeline",
 };
 
+// ---------------------------------------------------------------------------
+// Code fence languages
+// ---------------------------------------------------------------------------
+
+/**
+ * Every language a ```` ``` ```` fence may name, and the ONLY list of them.
+ *
+ * A fence that is not one of the five diagram grammars above is CODE, and a
+ * code fence keeps its body verbatim — indentation, blank lines, and every
+ * character that would otherwise read as markup. Before this list existed the
+ * parser had no third answer: a `python` fence became a "generic container"
+ * full of paragraphs, so the first thing it did to a pasted function was strip
+ * its indentation and delete its blank lines, and `**kwargs` came out bold.
+ *
+ * The ids are highlight.js language names, because that is what actually
+ * colours the block (`src/editor/codeLanguages.ts` builds the reader-facing
+ * table on top of these ids and is compile-checked against this array). One
+ * list, two consumers — the parser cannot come to know a language the
+ * highlighter does not, which is the drift a second list would invite.
+ */
+export const CODE_LANGS = [
+  // the everyday ones
+  "plaintext",
+  "javascript",
+  "typescript",
+  "python",
+  "rust",
+  "go",
+  "java",
+  "csharp",
+  "cpp",
+  "c",
+  "ruby",
+  "php",
+  "swift",
+  "kotlin",
+  "sql",
+  // the web
+  "html",
+  "css",
+  "scss",
+  "less",
+  "json",
+  "yaml",
+  "xml",
+  "graphql",
+  "markdown",
+  "diff",
+  // shells, build and config
+  "bash",
+  "powershell",
+  "dos",
+  "makefile",
+  "dockerfile",
+  "ini",
+  "nginx",
+  "http",
+  "cmake",
+  "gradle",
+  // the rest of the shelf
+  "dart",
+  "scala",
+  "elixir",
+  "erlang",
+  "haskell",
+  "clojure",
+  "lisp",
+  "scheme",
+  "ocaml",
+  "fsharp",
+  "lua",
+  "perl",
+  "r",
+  "julia",
+  "matlab",
+  "groovy",
+  "objectivec",
+  "vbnet",
+  "delphi",
+  "fortran",
+  "nim",
+  // No `zig` — highlight.js ships no grammar for it, and a language in the
+  // picker that colours nothing is a name that lies. An unknown fence still
+  // keeps its word (`rawLang`) and prints back as ```zig, so a note that uses
+  // one round-trips exactly; it simply arrives in grey.
+  "crystal",
+  "elm",
+  "haxe",
+  "coffeescript",
+  "nix",
+  "protobuf",
+  "latex",
+  "gherkin",
+  "wasm",
+  "llvm",
+  "x86asm",
+  "verilog",
+  "vhdl",
+  "gcode",
+  "brainfuck",
+] as const;
+
+export type CodeLangName = (typeof CODE_LANGS)[number];
+
+/**
+ * Normalized fence spellings → canonical code language.
+ *
+ * `normalizeName` has already lowercased the info-string and stripped spaces,
+ * hyphens and underscores by the time this is consulted, so `Objective-C`,
+ * `objective c` and `objectivec` are one key. Every canonical id is its own
+ * alias (built below) — this table is only the OTHER spellings, which is what
+ * keeps it readable as a list of what people actually type.
+ */
+const CODE_LANG_ALIAS_TABLE: Record<string, CodeLangName> = {
+  text: "plaintext",
+  plain: "plaintext",
+  txt: "plaintext",
+  none: "plaintext",
+  js: "javascript",
+  jsx: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  node: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  python3: "python",
+  rs: "rust",
+  golang: "go",
+  cs: "csharp",
+  "c#": "csharp",
+  dotnet: "csharp",
+  "c++": "cpp",
+  cxx: "cpp",
+  cc: "cpp",
+  hpp: "cpp",
+  h: "c",
+  rb: "ruby",
+  kt: "kotlin",
+  postgres: "sql",
+  postgresql: "sql",
+  mysql: "sql",
+  sqlite: "sql",
+  htm: "html",
+  vue: "html",
+  svelte: "html",
+  sass: "scss",
+  jsonc: "json",
+  json5: "json",
+  yml: "yaml",
+  svg: "xml",
+  xhtml: "xml",
+  gql: "graphql",
+  md: "markdown",
+  patch: "diff",
+  sh: "bash",
+  shell: "bash",
+  zsh: "bash",
+  console: "bash",
+  ps1: "powershell",
+  pwsh: "powershell",
+  bat: "dos",
+  cmd: "dos",
+  batch: "dos",
+  make: "makefile",
+  docker: "dockerfile",
+  toml: "ini",
+  conf: "ini",
+  cfg: "ini",
+  editorconfig: "ini",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  hs: "haskell",
+  clj: "clojure",
+  edn: "clojure",
+  cl: "lisp",
+  elisp: "lisp",
+  emacslisp: "lisp",
+  racket: "scheme",
+  scm: "scheme",
+  ml: "ocaml",
+  "f#": "fsharp",
+  fs: "fsharp",
+  pl: "perl",
+  rlang: "r",
+  jl: "julia",
+  octave: "matlab",
+  gvy: "groovy",
+  objc: "objectivec",
+  objectivecpp: "objectivec",
+  vb: "vbnet",
+  visualbasic: "vbnet",
+  pascal: "delphi",
+  f90: "fortran",
+  cr: "crystal",
+  coffee: "coffeescript",
+  proto: "protobuf",
+  tex: "latex",
+  cucumber: "gherkin",
+  feature: "gherkin",
+  webassembly: "wasm",
+  wat: "wasm",
+  asm: "x86asm",
+  assembly: "x86asm",
+  nasm: "x86asm",
+  sv: "verilog",
+  gerber: "gcode",
+  bf: "brainfuck",
+};
+
+/** Every accepted fence spelling → canonical code language, ids included. */
+export const CODE_LANG_ALIASES: Record<string, CodeLangName> = {
+  ...Object.fromEntries(
+    CODE_LANGS.map((lang) => [lang.replace(/[\s\-_]+/g, ""), lang] as const),
+  ),
+  ...CODE_LANG_ALIAS_TABLE,
+};
+
 /**
  * Node shapes the diagram renderer can draw (`{shape=…}` on a graph node).
  * Documentation-only mirror of DIAGRAM_SHAPES in src/diagrams/types.ts —

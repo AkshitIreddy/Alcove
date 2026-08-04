@@ -237,6 +237,37 @@ export interface MathBlock extends BlockBase {
   latex: string;
 }
 
+/**
+ * ```` ```python … ``` ```` — a fence that is not one of the five diagram
+ * grammars.
+ *
+ * `code` is kept VERBATIM, exactly as `MathBlock.latex` is and for a stronger
+ * reason: every one of the parser's other passes would damage it. The inline
+ * pass would read `**kwargs` as bold and `_private` as emphasis, the block
+ * pass would eat blank lines between functions, `resolve.ts` would substitute
+ * `{{var}}` out of a template literal, and trimming would flatten the
+ * indentation that IS the program in Python or YAML. So nothing runs over it.
+ *
+ * `lang` is a canonical `CODE_LANGS` id or null. Null is not a failure — it is
+ * a fence with no language on it, or one naming something this app cannot
+ * colour, and both are perfectly good plain code.
+ */
+export interface CodeBlock extends BlockBase {
+  kind: "code";
+  /** Canonical language id (src/script/vocab.ts `CODE_LANGS`), or null. */
+  lang: string | null;
+  /** The fence body, verbatim. No trailing newline. */
+  code: string;
+  /**
+   * What the fence actually said, when it did not resolve.
+   *
+   * Kept so the printer can write back the word the reader typed rather than
+   * silently correcting their note to a bare fence — the same courtesy
+   * `ContainerBlock.rawName` extends to an unknown container.
+   */
+  rawLang?: string;
+}
+
 /** Canonical container names. Unknown names become "generic" (never an error). */
 export type ContainerName =
   | "sticky-note"
@@ -352,6 +383,7 @@ export type Block =
   | TableBlock
   | ImageBlock
   | MathBlock
+  | CodeBlock
   | ContainerBlock
   | DiagramBlock
   | FetchDirectiveBlock;

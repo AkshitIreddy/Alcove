@@ -8,9 +8,11 @@
 
 import type { ContainerName } from "./types";
 import {
+  CODE_LANG_ALIASES,
   CONTAINER_ALIASES,
   DIAGRAM_LANGS,
   DIAGRAM_LANG_ALIASES,
+  type CodeLangName,
   type ContainerAlias,
 } from "./vocab";
 
@@ -104,13 +106,44 @@ export interface ResolvedDiagramLang {
   mermaid: boolean;
 }
 
-/** Resolve a fence info-string language. Unknown → null (generic handling). */
+/**
+ * Resolve a fence info-string to a CODE language. Unknown → null.
+ *
+ * Exact spellings only, deliberately: `resolveDiagramLang` fuzzes and this
+ * does not. A misspelt diagram language is a mistake worth correcting because
+ * there are five of them and the grammar inside the fence is unusable if the
+ * wrong one wins. A misspelt code language costs nothing but the colours, and
+ * the list is eighty long, so fuzzing it would mean `zig` and `zsh` — two
+ * characters apart, and both real — fighting over every fence either one
+ * opens. Unknown spellings still make a code block; they simply make a plain
+ * one.
+ */
+export function resolveCodeLang(raw: string): CodeLangName | null {
+  const norm = normalizeName(raw);
+  if (norm === "") return null;
+  return CODE_LANG_ALIASES[norm] ?? null;
+}
+
+/** Resolve a fence info-string language. Unknown → null (code handling). */
 export function resolveDiagramLang(raw: string): ResolvedDiagramLang {
   const norm = normalizeName(raw);
   if (norm === "") return { lang: null, corrected: false, mermaid: false };
   const exact = DIAGRAM_LANG_ALIASES[norm];
   if (exact) {
     return { lang: exact, corrected: false, mermaid: norm === "mermaid" };
+  }
+  /*
+   * An exact code language is never fuzzed into a diagram.
+   *
+   * `graphql` is two edits from `graph`, which is inside the Levenshtein cap,
+   * so every GraphQL fence in the app was being handed to the flowchart
+   * grammar — parsed as a graph, drawn as a diagram, and warned about as a
+   * near-miss the reader never made. `zig`/`tree`, `elm`/`elm`… the general
+   * shape is that a fuzzy match against five short words will always beat an
+   * exact match against eighty if it is asked first, so it is asked second.
+   */
+  if (CODE_LANG_ALIASES[norm] !== undefined) {
+    return { lang: null, corrected: false, mermaid: false };
   }
   const fuzzy = fuzzyMatch(norm, Object.keys(DIAGRAM_LANG_ALIASES));
   if (fuzzy) {

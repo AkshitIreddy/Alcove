@@ -29,6 +29,18 @@ import type { AnimationLevel, Settings } from '../../data/types';
 import { HANDS, appearanceTokens, themeBase } from './appearance';
 import { loadPaperStock, paperStock, subscribePaperStock } from './appearancePrefs';
 import {
+  CODE_SIZE_MAX,
+  CODE_SIZE_MIN,
+  codeTokens,
+  resolveCodeFace,
+} from './codeAppearance';
+import {
+  codeLook,
+  loadCodeLook,
+  subscribeCodeLook,
+  type CodeLook,
+} from './codeAppearancePrefs';
+import {
   muteAll as engineMuteAll,
   setHourlyChime as engineSetHourlyChime,
   setReducedSound as engineSetReducedSound,
@@ -151,6 +163,7 @@ export function applySettingsTo(
   osPrefersReduced = osPrefersReducedMotion(),
   paper: string | null = null,
   osForced = osForcedColours(),
+  code: CodeLook | null = null,
 ): void {
   // Theme + ink: attributes on <html>; settings.css remaps the tokens.
   //
@@ -174,6 +187,32 @@ export function applySettingsTo(
   )) {
     root.style.setProperty(name, value);
   }
+
+  /*
+   * The code look: fourteen `--code-*` colours plus the three that are not
+   * colours at all.
+   *
+   * It is written HERE rather than by the editor because a code block is not
+   * the only thing that draws code — the insert dialog's preview, an exported
+   * page and the diff a pack shows all do — and a token on <html> is the one
+   * place all of them can read the same answer from. `data-code-frame` is an
+   * attribute rather than a variable because it selects a whole set of rules
+   * in editor.css (a tab is not a rule is not a pinned card), which is the
+   * same split `data-theme` and the appearance tokens already keep.
+   */
+  const look = code ?? codeLook();
+  root.setAttribute('data-code-frame', look.frame);
+  root.setAttribute('data-code-numbers', look.numbers ? 'on' : 'off');
+  for (const [name, value] of Object.entries(
+    codeTokens(look.theme, s.theme, s.inkColor, paper),
+  )) {
+    root.style.setProperty(name, value);
+  }
+  root.style.setProperty('--font-code', resolveCodeFace(look.face).stack);
+  root.style.setProperty(
+    '--text-code',
+    `${clamp(Math.round(look.size), CODE_SIZE_MIN, CODE_SIZE_MAX)}px`,
+  );
 
   // Motion: GSAP code multiplies durations by this; CSS uses calc() with it.
   root.style.setProperty(
@@ -237,6 +276,7 @@ export function applySettingsTo(
  */
 let lastApplied: Settings | null = null;
 let watchingPaper = false;
+let watchingCode = false;
 let watchingSheets = false;
 
 /**
@@ -255,6 +295,16 @@ export function applySettings(s: Settings): void {
     // paper, which is exactly what a reader who has never chosen a stock has.
     void loadPaperStock();
   }
+  if (!watchingCode) {
+    watchingCode = true;
+    // Same shape as the paper stock, and for the same reason: the code look
+    // lives in its own row, so it changes without a settings write and the
+    // page has to be repainted from the settings that are already applied.
+    subscribeCodeLook(() => {
+      if (lastApplied !== null) applySettings(lastApplied);
+    });
+    void loadCodeLook();
+  }
   if (!watchingSheets) {
     watchingSheets = true;
     // The half of the cursor feature that cannot be a property write: the
@@ -271,5 +321,7 @@ export function applySettings(s: Settings): void {
     engineAdapter,
     osPrefersReducedMotion(),
     paperStock(),
+    osForcedColours(),
+    codeLook(),
   );
 }

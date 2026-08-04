@@ -266,6 +266,19 @@ function PreviewBlock(props: { block: Block }): JSX.Element {
       );
     case 'mathBlock':
       return <pre class="nb-ins-mathblock">{b.latex}</pre>;
+    case 'code':
+      // Unhighlighted on purpose: this is the "what am I about to insert"
+      // panel, not the page. It names the language and shows the shape, and
+      // it does it without loading a highlighter into a dialog that has to
+      // repaint on every keystroke of the script being typed beside it.
+      return (
+        <div class="nb-ins-code">
+          <span class="nb-ins-chip font-ui">
+            {b.lang ?? b.rawLang ?? 'code'}
+          </span>
+          <pre class="nb-ins-code-body">{b.code}</pre>
+        </div>
+      );
     case 'fetchDirective':
       return (
         <div class="nb-ins-fetch font-ui">

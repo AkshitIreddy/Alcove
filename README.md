@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/img/hero.png" alt="Alcove — a notebook that lives on a bookshelf. A cream card held to a papered wall by a strip of washi tape, carrying the app's red spiral-notebook icon, the wordmark in a handwriting face, the lines 'A notebook that lives on a bookshelf' and 'Windows desktop · everything stays on your machine', and four pill labels: endless shelf, block editor, pages that flow, no account. Six coloured book spines stand on a timber plank below." width="880">
+  <img src="docs/readme/img/hero.png" alt="Alcove — a notebook that lives on a bookshelf. A cream card held to a papered wall by a strip of washi tape, carrying the app's red spiral-notebook icon, the wordmark in a handwriting face, the lines 'A notebook that lives on a bookshelf' and 'Windows, macOS and Linux · everything stays on your machine', and four pill labels: endless shelf, block editor, pages that flow, paste from any AI. Six coloured book spines stand on a timber plank below." width="880">
 </p>
 
 <!--
@@ -19,10 +19,10 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.1.0%20for%20Windows-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.1.0 for Windows"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-b8863b?style=flat-square&labelColor=4f3120" alt="Version 0.1.0">
-  <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-7d915c?style=flat-square&labelColor=4f3120" alt="Platform: Windows 10 and 11">
-  <img src="https://img.shields.io/badge/storage-local%20SQLite%20%C2%B7%20no%20account-5f7d8c?style=flat-square&labelColor=4f3120" alt="Storage: local SQLite, no account">
+  <a href="https://github.com/AkshitIreddy/alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.2.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.2.0"></a>
+  <img src="https://img.shields.io/badge/version-0.2.0-b8863b?style=flat-square&labelColor=4f3120" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
+  <img src="https://img.shields.io/badge/offline-no%20account%20%C2%B7%20no%20cloud-5f7d8c?style=flat-square&labelColor=4f3120" alt="Offline: no account, no cloud">
   <img src="https://img.shields.io/badge/licence-MIT-6f6a86?style=flat-square&labelColor=4f3120" alt="Licence: MIT">
 </p>
 <!-- /gen -->
@@ -30,15 +30,19 @@
 <h1 align="center">Alcove</h1>
 
 <p align="center">
-  <b>A Windows notes app that puts your notes on a bookshelf you can walk around in.</b>
+  <b>A notes app that keeps your writing in books, on a shelf you can walk around in.</b>
 </p>
 
 <p align="center">
   <a href="#download-and-install"><b>▸ Download</b></a>
   &nbsp;·&nbsp;
-  <a href="#the-first-ten-minutes"><b>▸ Start here</b></a>
+  <a href="#a-tour"><b>▸ See it</b></a>
   &nbsp;·&nbsp;
-  <a href="#for-developers"><b>▸ For developers</b></a>
+  <a href="#written-with-an-ai"><b>▸ Write it with an AI</b></a>
+  &nbsp;·&nbsp;
+  <a href="docs/readme/releases.md"><b>▸ What's new</b></a>
+  &nbsp;·&nbsp;
+  <a href="#how-its-built"><b>▸ For developers</b></a>
 </p>
 
 ---
@@ -49,127 +53,216 @@ book off its floor, and it opens as a two-page spread you write in with a block
 editor of the kind you already know — slash menu, drag handles, right-click
 menu, tables, callouts, code, diagrams.
 
-Everything is one SQLite file on your own disk: no account to make, nothing to
-sign into, and no network call unless you ask for one. It is built with
-[Tauri 2](https://tauri.app/) (Rust) and [SolidJS](https://www.solidjs.com/),
-draws its shelf on [PixiJS](https://pixijs.com/) and its pages with
-[TipTap](https://tiptap.dev/), and ships as a Windows installer that borrows the
-system webview instead of bundling a browser — so the download is small, and
-nothing runs in the background once you close the window unless you switch on
-tray quick capture.
+Pages are real pages: a page is a fixed leaf that never scrolls, so filling one
+flows your writing onto the next and turning it is a turn rather than a scroll.
+The room is yours to dress, and much further than a colour picker goes. And
+nothing you write leaves your machine — there is no account and nothing to sign
+into.
+
+**And a page does not have to be typed by you.** Alcove reads *Notebook Script*,
+a small Markdown dialect any chatbot can write once it has been handed the
+grammar — which is one button, *copy the format for your AI*. Ask ChatGPT or
+Claude or whatever you already use for revision notes; paste the answer into
+*paste a script in*; it lands as real editable pages, with the sticky notes, the
+callouts, the highlights and the hand-drawn diagrams already made. No API key,
+no model inside the app, nothing sent anywhere: you carry the text there and
+back yourself, which is why it works with an assistant that has never heard of
+Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
 
 <p align="center">
-  <img src="docs/readme/img/shelf.png" alt="The Alcove shelf: a lapis-blue bookcase with a crenellated cornice and arched recesses, standing against cream wallpaper strewn with gold fleur-de-lys, three floors of individually drawn book spines, and a cream tool dock on the left." width="47%">
+  <img src="docs/readme/img/shelf.png" alt="The Alcove shelf: a dark walnut bookcase with a plain slab cornice, a chain of gilt rings running along every board, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis, three floors of individually drawn book spines, and a cream tool dock on the left." width="47%">
   <img src="docs/readme/img/spread.png" alt="A book open on its first spread: two ruled pages carrying a handwritten title, a green callout, a green banner, checkboxes, highlights, a yellow sticky note and a strip of pink washi tape, with a vertical rail of hand-drawn tool icons down the left edge." width="47%">
 </p>
 
-**This page is the whole manual.** Everything a reader needs is written out
-below rather than linked to — install, first run, every block a page can hold,
-the whole customisation vocabulary, the keyboard, backups, and the developer
-half's essentials. The deep design records stay in
-[`docs/design/`](docs/design/) for people changing the code.
+> ### This page has two halves, and they are for different people
+>
+> **▸ [Part 1 — Using Alcove](#whats-in-the-box) · for the person writing in it**
+> <br>The whole user manual: how to get it, what it does, and how to use every
+> part of it. It starts immediately below, it assumes nothing about code, and it
+> is the longer half.
+>
+> **▸ [Part 2 — Building Alcove](#how-its-built) · for a developer, or for an AI
+> agent helping one**
+> <br>The architecture, the stack, the gates, and how to add something without
+> breaking the rest. If you are an assistant asked to contribute here, that half
+> plus [`CLAUDE.md`](CLAUDE.md) is your brief.
+>
+> **Every technical fact lives in the second half** — including the ones a README
+> usually opens with, like where the database is, what touches the network, and
+> what runs in which process. None of it is needed to use the app, so none of it
+> is above the line.
+>
+> Each half is also a page of its own under [`docs/readme/`](docs/readme/),
+> carrying exactly the same words as the copy here.
+
+**On this page**
 
 <!-- gen:contents -->
-**On this page:** [What is actually in the box](#what-is-actually-in-the-box) ·
-[Download and install](#download-and-install) · [Release notes](#release-notes) ·
-[The first ten minutes](#the-first-ten-minutes) · [A tour](#a-tour) ·
-[Writing in a book](#writing-in-a-book) · [Notebook Script](#notebook-script) ·
-[Making it yours](#making-it-yours) · [Sound](#sound) ·
-[The keyboard](#the-keyboard) ·
-[Backups, export and import](#backups-export-and-import) · [Questions](#questions) ·
-[For developers](#for-developers) · [How it's built](#how-its-built) ·
-[Getting it running](#getting-it-running) ·
-[The map of the app](#the-map-of-the-app) ·
-[Building and releasing](#building-and-releasing) · [Non-goals](#non-goals) ·
-[The repo at a glance](#the-repo-at-a-glance) · [Deeper reading](#deeper-reading) ·
-[How this page stays honest](#how-this-page-stays-honest) ·
-[Licence and credits](#licence-and-credits)
+**Part 1 — Using Alcove** — for the person writing in it. No code below this line.
+
+- [What's in the box](#whats-in-the-box) — The five things that make this different from a folder of Markdown files
+- [Written with an AI](#written-with-an-ai) — Notebook Script is a language a chatbot can write for you, the spec is one button, and the design packs generate their own prompt
+- [Download and install](#download-and-install) — The installer, what it puts where, what the first launch looks like, and how to uninstall without losing your notes
+- [A tour](#a-tour) — The shelf, the spread, the page turn, the slash menu, the catalogue, the two studios, the switcher
+- [Writing in a book](#writing-in-a-book) — Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end
+- [Notebook Script](#notebook-script) — The language itself — a whole worked script, the page it makes, and everything it can say
+- [Making it yours](#making-it-yours) — The two studios, every vocabulary counted, custom colours, stars and hiding, more bookcases, your own packs
+- [Sound](#sound) — Sound sets, ambience beds, the volume model, and the in-app credits
+- [The keyboard](#the-keyboard) — Every shortcut, grouped by where you are standing, and which ones you can rebind
+- [Backups, export and import](#backups-export-and-import) — Scheduled backups, `.nbk` bundles, Markdown in and out, PDF and PNG, tray capture
+- [Questions](#questions) — Where the data is, whether it is offline, moving machines, and the failure modes worth naming
+
+**Part 2 — Building Alcove** — for a developer, or for an AI agent helping one. Nothing below is needed to use the app.
+
+- [How it's built](#how-its-built) — The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row
+- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the four checks
+- [The map of the app](#the-map-of-the-app) — Directory by directory, plus the module-docstring convention this README points at instead of copying
+- [Building and releasing](#building-and-releasing) — The bundle artefacts, the icon pipeline, and the tag-driven release workflow
+- [Non-goals](#non-goals) — No sync, no cloud, no mobile, no plugin API, no second visual language, no light model
+- [The repo at a glance](#the-repo-at-a-glance) — Six measurements of the tree, every one recomputed rather than typed
+- [Deeper reading](#deeper-reading) — The two halves as pages of their own, and every section of them this page does not already carry
+- [How this page stays honest](#how-this-page-stays-honest) — Why no number here is typed, why no paragraph is written twice, and what the check does and does not do
+- [Licence and credits](#licence-and-credits) — MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable
 <!-- /gen -->
 
-## What is actually in the box
+# Part 1 — Using Alcove
+<!--nav: for the person writing in it. No code below this line.-->
 
-- **A bookshelf world.** A WebGL room you pan and zoom through, with as many
-  bookcases as you care to build and <!--f:defaultFloors-->10<!--/f--> floors
-  per case to start with. Books are drawn objects, not rows in a list — you
-  recognise yours by its binding.
+## What's in the box
+<!--nav: The five things that make this different from a folder of Markdown files-->
+
+- **A bookshelf world.** A room you pan and zoom through, with as many bookcases
+  as you care to build and <!--f:defaultFloors-->10<!--/f--> floors per case to
+  start with. Books are drawn objects, not rows in a list — you recognise yours
+  by its binding.
+- **A language an AI can write for you.** *Copy the format for your AI* puts
+  <!--f:specLines-->821<!--/f--> lines of generated grammar on your clipboard;
+  any chatbot then writes you a note in it, and *paste a script in* turns that
+  answer into formatted pages — sticky notes, callouts, highlights, and trees,
+  graphs and timelines drawn as real diagrams rather than pasted as pictures.
+  Pages come back out in the same language, so one an assistant wrote can be
+  handed back to it. [The whole story is below](#written-with-an-ai).
 - **Pages that never scroll.** A page is a fixed leaf of paper. When you fill
   it, the trailing blocks flow onto the next page, and a new page is made if
-  there isn't one. Turning a page is a page turn, not a scroll.
-- **Notebook Script.** A small Markdown dialect you can hand to any chatbot.
-  Ask it for a note, paste the reply into *Insert script*, and it becomes
-  formatted pages — including trees, graphs and timelines drawn as hand-drawn
-  diagrams.
-- **Customisation that goes further than a colour picker.**
+  there isn't one. Turning a page is a page turn.
+- **Customisation that goes much further than a colour picker.**
   <!--f:roomPresets-->69<!--/f--> named rooms,
   <!--f:shelfPresets-->113<!--/f--> named bookcase designs,
   <!--f:wallpaperPapers-->126<!--/f--> wallpapers,
   <!--f:bookPresets-->189<!--/f--> book bindings,
   <!--f:stickers-->50<!--/f--> stickers,
-  <!--f:effectAxes-->11<!--/f--> axes of block decoration.
+  <!--f:effectAxes-->11<!--/f--> axes of block decoration — and a hex box in
+  every picker, for when none of them is the colour you meant.
 - **The quiet infrastructure.** Full-text search, a `Ctrl+K` switcher, scheduled
-  backups, an export bundle that another copy of the app can import, a tray icon
-  for capturing a thought without opening the window, and a sound for everything
-  you touch.
+  backups, an export bundle another copy of the app can import, a tray icon for
+  capturing a thought without opening the window, and a sound for everything you
+  touch.
 
-Every number on this page was read out of the module that defines it and
-wrapped in a marker `npx vitest run` recomputes — see
+Every number on this page was read out of the module that defines it and wrapped
+in a marker `npx vitest run` recomputes — see
 [How this page stays honest](#how-this-page-stays-honest).
 
-> [!NOTE]
-> **Where this stands, so you can judge it before installing.**
-> - **Windows only.** Windows 10 or 11, x64. The macOS and Linux rows of the
->   table below say "not built yet" rather than linking to something that is not
->   there. There is no mobile app and no browser version.
-> - **Pre-1.0.** This is the first release. The app is finished enough to write
->   in every day — that is what it is used for — but the version number is
->   honest about how long it has been in anybody else's hands.
-> - **Your library is one local SQLite file.** No account, no sync, no cloud, no
->   telemetry — `telemetry` is typed as the literal `false` in
->   [`src/data/types.ts`](src/data/types.ts), so it is not a setting that can be
->   turned on. That is a deliberate design, not a missing feature, and it means
->   the scheduled backups are your only copies.
-> - **Two things touch the network, and both because you asked.** Searching for
->   a picture (`::fetch` in Notebook Script) and previewing a link you pasted.
->   Both are https-only, refuse private and loopback addresses, time out fast
->   and cap what they will download. Nothing else leaves the machine.
+<!-- gen:lift-ai -->
+## Written with an AI
+<!--nav: Notebook Script is a language a chatbot can write for you, the spec is one button, and the design packs generate their own prompt-->
+
+Most notes apps let you paste text an assistant wrote. Alcove is built so an
+assistant can write the **whole page** — the sticky notes, the callouts, the
+highlights, the hand-drawn diagrams — and so you never have to teach it how.
+
+**1. Take the grammar.** The rail's *In and out* sheet offers *copy the format
+for your AI*: <!--f:specLines-->821<!--/f--> lines of specification onto your
+clipboard, every container, every attribute, every diagram fence, with examples.
+You did not write it and neither did anybody else — it is generated from the
+parser's own tables
+([`src-tauri/resources/notebook-script-spec.md`](src-tauri/resources/notebook-script-spec.md)),
+so it cannot describe a language the app would refuse.
+
+**2. Ask for a note.** Paste the spec into any chatbot, then ask for what you
+want in your own words: *"revision notes on photosynthesis, sticky note for the
+exam date, a timeline of the discoveries"*.
+
+**3. Paste it back.** *Paste a script in*, on the same sheet, previews what it
+recognised — one sticky note, a graph of four edges, a timeline of three entries
+— before anything lands on the page. Then it becomes real editable blocks, with
+the diagrams **drawn** rather than embedded as pictures.
+
+The same idea runs through the customisation. The *your designs* dialog does not
+just accept a JSON file — it hands you a prompt for making one, and that prompt
+is generated from the importer's own schema
+([`src/features/packs/prompt.ts`](src/features/packs/prompt.ts)), listing
+the real motifs, the real materials and the real cue names. A hand-written
+prompt describing a format the importer would reject is worse than no prompt at
+all, so this one cannot be hand-written.
+
+Three things worth knowing about how this works:
+
+- **Nothing is sent anywhere.** There is no API key, no model in the app, no
+  request to anybody's server. You carry the text to whichever assistant you
+  already use and you carry the answer back, which is why this works with a
+  chatbot that has no idea Alcove exists.
+- **It cannot break the app.** The parser is total: a malformed line produces a
+  diagnostic naming the line and the column, near-miss spellings are corrected
+  with a warning, and your page still arrives. A chatbot's typo should not cost
+  you a page.
+- **It reads back out.** *Copy this page as script* takes a whole page back out
+  in the same language, and the right-click menu takes a single block — so a
+  page an assistant wrote can be handed back to it for revision.
+
+[Notebook Script](#notebook-script) below is the language itself, with a whole
+worked example and the page it makes.
+<!-- /gen -->
 
 <!-- gen:lift-download -->
 ## Download and install
+<!--nav: The installer, what it puts where, what the first launch looks like, and how to uninstall without losing your notes-->
 
-Alcove is one installer you double-click. It does not ask for an administrator,
-it does not bring a browser along with it, and there is no account to make.
+One file you double-click. It does not ask for an administrator, it does not
+bring a browser along with it, and there is no account to make.
 
-| Platform | Download | What you get |
+| Platform | What to download | First launch |
 | --- | --- | --- |
-| **Windows 10 / 11** · x64 | [`Alcove_0.1.0_x64-setup.exe`](https://github.com/AkshitIreddy/alcove/releases/latest) · about 15 MB | The one to take. Installs for **the current user**, so Windows never asks for an administrator, and lands in `%LOCALAPPDATA%\Alcove`. |
-| **macOS** · universal | not built yet | The release job builds one universal `.dmg` carrying both the Apple-silicon and the Intel slice, so there is nothing for a reader to choose between — but it has never produced one. |
-| **Linux** · x64 | not built yet | The same job builds a `.deb`, an `.rpm` and an AppImage on `ubuntu-22.04`, so they start on 22.04 and anything later. Also never produced. |
+| **Windows 10 / 11** · x64 | [`Alcove_0.2.0_x64-setup.exe`](https://github.com/AkshitIreddy/alcove/releases/latest) · about 16 MB | Double-click. It installs for **the current user**, so Windows never asks for an administrator. SmartScreen warns once — *More info* → *Run anyway*. |
+| **macOS 11+** · Apple silicon and Intel | [`Alcove_0.2.0_universal.dmg`](https://github.com/AkshitIreddy/alcove/releases/latest) | One universal disk image for both chips, so there is nothing to choose between. Unsigned, so the first open is right-click → *Open* rather than a double-click. |
+| **Linux** · x64 | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/alcove/releases/latest) | Built on Ubuntu 22.04, so it runs on 22.04 and anything newer. The AppImage needs no install — mark it executable and run it. |
 
-Beside the installer sits `Alcove_0.1.0_x64_en-US.msi` — the same app as an MSI, for anyone who deploys software with a policy rather than a double-click. Everything is attached to the GitHub Release by `.github/workflows/release.yml` when the version tag is pushed, with a `SHA256SUMS.txt`, and **nothing is signed on any platform** — so Windows shows a SmartScreen warning the first time and macOS will quarantine the first launch. If the Releases page is empty, that tag has not landed yet: `npm run tauri build` writes the same artefacts for whichever platform you are on, into `src-tauri/target/release/bundle/`.
+All three are built from the same tag by `.github/workflows/release.yml` and attached to the GitHub Release with a `SHA256SUMS.txt` beside them. Windows also gets `Alcove_0.2.0_x64_en-US.msi`, the same app as an MSI, for anyone who deploys software with a policy rather than a double-click.
 
-The one requirement is the Microsoft Edge **WebView2** runtime — already present
-on Windows 11 and on any up-to-date Windows 10, and fetched by the installer if
-it is missing. Alcove is a [Tauri](https://tauri.app/) app, so it uses that
-system webview instead of shipping a browser of its own: the download stays
-small, and nothing runs in the background when the window is closed unless you
-turn on tray quick capture.
+There is a second Windows file, `Alcove_0.2.0_x64-setup-offline.exe`, and you almost certainly do not want it. Alcove draws itself in the Microsoft Edge WebView2 runtime, which is already on any current Windows — the normal installer fetches it in the rare case it is missing, and the offline one carries the whole runtime instead, which is why it is around 217 MB rather than 16. Take it only if the machine has no internet, or the normal installer failed while fetching.
 
-### What the installer does, and where things end up
+**Nothing is signed on any platform yet**, which is why the first-launch column says what it says, and why the checksums are there: the line for your file in `SHA256SUMS.txt` is how you check the download yourself rather than taking anybody's word for it.
 
-The NSIS build is configured with `installMode: currentUser`
-([`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json)), which is the whole
-reason there is no administrator prompt: the program is written into your own
+**[What is new in this version](docs/readme/releases.md)** — the release notes are their own
+page rather than the first thing you have to scroll past.
+
+Alcove borrows the webview the operating system already has instead of packing a
+browser inside itself, which is why the download is measured in megabytes rather
+than hundreds of them, and why nothing of it runs in the background once you
+close the window (unless you switch on tray quick capture). On Windows that
+means the Microsoft Edge **WebView2** runtime — present on Windows 11 and on any
+up-to-date Windows 10, and fetched by the installer when it is missing. On macOS
+and Linux the system webview is already there.
+
+### Where your writing lives
+
+Two roots, always: the **program** in one place and your **library** in another.
+That separation is the useful part — uninstalling removes the first and leaves
+the second exactly where it was.
+
+| | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| **The program** | `%LOCALAPPDATA%\Alcove\` | `/Applications/Alcove.app` | wherever your package manager puts it |
+| **Your library** | `%APPDATA%\com.alcove.app\` | `~/Library/Application Support/com.alcove.app/` | `~/.local/share/com.alcove.app/` |
+
+Inside that library folder: `notebook.db` is everything you have written (plus
+`notebook.db-wal` and `notebook.db-shm` while the app is running), `assets/`
+holds every picture you pasted or fetched, and `backups/` holds the scheduled
+ZIPs unless you point *Settings → System* somewhere else.
+
+On Windows the installer is configured with `installMode: currentUser`
+([`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json)), which is the
+whole reason there is no administrator prompt: the program goes into your own
 user profile rather than into `C:\Program Files`.
-
-| | Where |
-| --- | --- |
-| **The program** | `%LOCALAPPDATA%\Alcove\` — your account only, no elevation, no machine-wide registry keys |
-| **Your library** | `%APPDATA%\com.alcove.app\notebook.db` (plus `notebook.db-wal` and `notebook.db-shm` while the app is running) |
-| **Pictures you paste or fetch** | `%APPDATA%\com.alcove.app\assets\` |
-| **Backups** | `%APPDATA%\com.alcove.app\backups\`, or the folder you choose in *Settings → System* |
-
-The two roots are deliberately separate, and that separation is the useful part:
-**uninstalling removes the program and leaves your notes alone.**
 
 ### The first time you open it
 
@@ -191,127 +284,55 @@ Nothing to configure, nothing to sign into, no splash screen. In order:
    first click — so the app is never making noise at somebody who has not
    touched it yet. One switch turns it off for good.
 
-What you land on is the shelf itself, which is where [the first ten
-minutes](#the-first-ten-minutes) picks up.
+What you land on is the shelf itself, which is where [A tour](#a-tour) picks up.
 
 ### Uninstalling
 
-Settings → Apps → Installed apps → Alcove → Uninstall, or run the uninstaller in
-the install folder above. Your library is not in that folder, so it survives. If
-you want it gone as well, delete `%APPDATA%\com.alcove.app` afterwards — and take
-a `.nbk` bundle first if there is any chance you will want it back.
+On Windows: Settings → Apps → Installed apps → Alcove → Uninstall, or run the
+uninstaller in the install folder above. Elsewhere, remove the app the way you
+installed it. Your library is not in that folder, so it survives either way. If
+you want it gone as well, delete the library folder from the table above
+afterwards — and take a `.nbk` bundle first if there is any chance you will want
+it back.
 
 ### Building it yourself
 
-You do not have to take the published build. `npm install` then
-`npm run tauri build` writes the same artefacts for whichever platform you are
-on, into `src-tauri/target/release/bundle/`. The toolchain is Node plus a stable
-Rust toolchain and nothing else; [Getting it
-running](#getting-it-running) is the whole story.
+Nothing is held back from the download — the installer above is the whole app.
+But the source is here, and building your own copy is two commands on any of the
+three platforms. They live in the developer half, under [Building and
+releasing](#building-and-releasing), with the toolchain and
+the artefact names.
 <!-- /gen -->
 
-## Release notes
-
-### 0.1.0 — the first release
-
-Everything named below is in the installer above. It is a first release rather
-than a preview: the shelf, the editor, the script language, the two studios, the
-backups and the transfer bundles are all finished and in daily use.
-
-**The room.** A WebGL bookshelf you pan and zoom through, with as many bookcases
-as you care to build. Books drag out of the shelf, move between cases, and carry
-their own binding wherever they go. The customisation is the point of the
-release: <!--f:roomPresets-->69<!--/f--> named rooms,
-<!--f:shelfPresets-->113<!--/f--> bookcase carpentries,
-<!--f:wallpaperPapers-->126<!--/f--> wallpapers and
-<!--f:bookPresets-->189<!--/f--> bindings, plus
-<!--f:roomThemes-->60<!--/f--> colour schemes on their own — and every long list
-takes a hex code of your own, stars what you like and hides what you do not.
-
-**The pages.** A block editor with <!--f:slashCommands-->99<!--/f--> slash
-commands, <!--f:stickers-->50<!--/f--> stickers and
-<!--f:effectAxes-->11<!--/f--> axes of block decoration carrying
-<!--f:effectValues-->472<!--/f--> values. Pages are fixed leaves that never
-scroll: fill one and the trailing blocks flow onto the next, carrying your caret
-with them. The turn is a real page turn — live DOM at rest, a WebGL cylinder
-curl during the gesture.
-
-**Notebook Script.** A Markdown dialect small enough that a chatbot writes it
-correctly first time, with <!--f:scriptContainers-->24<!--/f--> containers and
-<!--f:scriptDiagrams-->5<!--/f--> kinds of drawn diagram. *Copy AI spec* puts
-the whole generated grammar on your clipboard; *Insert script* previews what it
-recognised before it lands.
-
-**The quiet infrastructure.** Full-text search and a `Ctrl+K` switcher across
-every bookcase, scheduled ZIP backups, `.nbk` bundles that import additively
-with a restore point, Markdown in and out, tray quick capture, and
-<!--f:soundSets-->28<!--/f--> sound sets over
-<!--f:ambienceBeds-->10<!--/f--> ambience beds.
-<!--f:settingsOptions-->40<!--/f--> settings and
-<!--f:rebindableKeys-->24<!--/f--> rebindable shortcuts.
-
-**Known edges in this release.**
-
-- **The template gallery, Markdown import, PDF export and PNG export have no
-  button yet.** The code is finished and covered end to end by the Playwright
-  suite, which drives it through a development hook rather than through the UI.
-  Until a rail entry is wired, they are not reachable from the installed app.
-- **Windows only, for now.** The release job builds macOS and Linux as well, but
-  neither has ever been produced — the table above says so rather than linking
-  to a file that does not exist. Nothing is signed on any platform.
-- **No CI badge.** The only workflow fires on a version tag, so nothing runs
-  `tsc` or `vitest` on an ordinary push yet. The gates run locally, and again at
-  the tag.
-
-<!-- gen:lift-manual -->
-## The first ten minutes
-
-1. **You arrive at the shelf.** One bookcase, <!--f:defaultFloors-->10<!--/f-->
-   floors, one book on it. The
-   plain mouse wheel **zooms**, shift+wheel pans, and dragging bare wall moves
-   the camera. (If you would rather the wheel scrolled and the shift key zoomed,
-   swap them in *Settings → Library & shelf*.)
-2. **Pull the book off.** Drag it out of its slot — a plain click works too, as a
-   quick pull. `Escape` puts it back and returns the camera to the shelf, from
-   anywhere in the app.
-3. **Write something.** Click any ruled line and start typing. Clicking empty
-   paper below your last line starts a new line there rather than doing nothing.
-4. **Press `/`.** The block menu opens on an empty line:
-   <!--f:slashCommands-->99<!--/f--> commands, filtered as you type. `head`
-   finds the headings, `tab` finds the table, `cat` finds the cat sticker.
-5. **Right-click a block.** Turn it into something else, colour its ink, wash it
-   in a highlight, split it into columns, duplicate it, or copy it out as script.
-6. **Look at the left rail.** Every book-level tool lives there as a hand-drawn
-   icon with its own tooltip: customise the book, change the paper, browse the
-   catalogue, the table of contents, page history, ribbons, focus mode,
-   thumbnails, insert script, export script, copy the AI spec, add a page.
-   There is no top bar anywhere in the app — the space goes to the pages.
-7. **Make a second book.** Back on the shelf (`Escape`), the left dock has *new
-   book*, *template*, *studio*, *add floor* and *trash*. Right-clicking bare
-   plank offers four of those — a new book, one from a template, a floor and
-   the studio — at the spot you clicked.
-
-If you would rather be shown, the guided tour does exactly this walk inside the
-app: <!--f:tourSteps-->21<!--/f--> steps, each asking for one concrete action and
-turning green when it sees you do it, in a long or a short version. It opens by
-asking four questions about your taste and dressing the whole library from the
-answers, so the rest of the walk is through your own room. It runs on
-first launch, and *Settings → Help → replay the tour* starts it again
-([`src/features/tutorial/steps.ts`](src/features/tutorial/steps.ts)).
-
+<!-- gen:lift-tour -->
 ## A tour
+<!--nav: The shelf, the spread, the page turn, the slash menu, the catalogue, the two studios, the switcher-->
 
-Each picture below is a real capture of the running app, taken by the harness in
-[`shots-now/`](shots-now/) — no mock-ups, no compositing. Each one is there to
-prove the sentence above it.
+Every picture below is a real capture of the running app, taken by the harness
+in [`shots-now/`](shots-now/) — no mock-ups, no compositing. Each one is
+there to prove the sentence above it.
+
+| To do this | Do that |
+| --- | --- |
+| Move around the room | wheel **zooms**, shift+wheel pans, dragging bare wall moves the camera — and the two can be swapped in *Settings → Library & shelf* |
+| Open a book | drag it out of its slot, or just click it for a quick pull |
+| Go back | `Escape`, from anywhere in the app |
+| Write | click any ruled line and type; clicking bare paper below your last line starts a line there |
+| Reach for a block | `/` on an empty line, or right-click a block you have already written |
+| Reach for a tool | the left rail inside a book, the left dock on the shelf. There is no top bar anywhere in the app |
+
+If you would rather be shown than read, the guided tour does this walk inside
+the app: <!--f:tourSteps-->21<!--/f--> steps in a long or a short version, each
+asking for one concrete action and turning green when it sees you do it. It runs
+on first launch, and *Settings → Help → replay the tour* starts it again
+([`src/features/tutorial/steps.ts`](src/features/tutorial/steps.ts)).
 
 ### The shelf is the file browser
 
 Books stand on floors of a bookcase, and the bookcase is the only file browser
 there is: no tree, no list view, no "all notes". A floor is a shelf you can see
 along, a slot is where a book stands, and the dashed outline at the end of a row
-is the next free one. Camera and dock are as described in [the first ten
-minutes](#the-first-ten-minutes) above.
+is the next free one.
 
 ![The Alcove shelf at 80% zoom: a dark walnut bookcase with a plain slab cornice, a chain of gilt rings running the length of every board and upright, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis. Three floors carry thirty-three books and no two spines are alike — cream label plates, gilt bands, raised cords, a green plate reading Field Notes, a leather one reading Sourdough, one book leaning against its neighbour — and a dashed outline with a plus in it marks the next free slot at the end of Floor 1. A fourth floor starts below them, empty. A cream dock on the left offers new book, template, studio, add floor and trash, its top button washed pale green; a zoom control reading 80% sits at the foot, and a moss-green settings seal in the bottom corner.](docs/readme/img/shelf.png)
 
@@ -356,7 +377,7 @@ CSS fallback used when WebGL is unavailable — is written up in
 ### Writing: a slash menu, and a catalogue of everything
 
 Press `/` on an empty line for the menu. There are
-<!--f:slashCommands-->99<!--/f--> commands in it, in three sections — the blocks
+<!--f:slashCommands-->110<!--/f--> commands in it, in three sections — the blocks
 (diagram starters among them), the stickers, and *turn into* for changing what
 the current line already is. It is defined in
 [`src/editor/slash/registry.ts`](src/editor/slash/registry.ts), and the fuzzy
@@ -409,6 +430,7 @@ open it because something you wrote is somewhere, and the one thing you reliably
 do not remember is which room it was in.
 
 ## Writing in a book
+<!--nav: Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end-->
 
 ### What a page can hold
 
@@ -500,15 +522,18 @@ Paste or drop an image and it is stored under your library's `assets/` folder
 and inserted; several at once become an image row. Paste a bare URL on an
 empty line and you get a link card, which fills itself in with the page's title,
 description and favicon a moment later, and degrades to a plain link chip if the
-site does not answer. Both fetches are https-only and refuse private addresses
-([`src/editor/media/urlGuard.ts`](src/editor/media/urlGuard.ts) mirrors the Rust
-guard).
+site does not answer. Those two moments are the only times the app reaches the
+internet at all, they only happen because you asked, and neither of them sends
+anything you wrote.
 
 Pages can also point at each other: type `[[` for the page picker, and the page
 you pointed at lists yours back at the bottom
 ([`src/editor/backlinks/`](src/editor/backlinks/)).
 
 ### The rail, end to end
+
+Ten hand-drawn icons, each with its own tooltip. The first six open a panel; a
+divider, then the four that just do something.
 
 | Tool | What it opens |
 | --- | --- |
@@ -517,13 +542,26 @@ you pointed at lists yours back at the bottom
 | Catalogue | everything you can put on a page, browsable and searchable |
 | Table of contents | every heading in the book, click to jump |
 | Page history | the autosave snapshots of this page, with a one-line preview each |
+| **In and out** | the one sheet where writing enters and leaves — see below |
 | Ribbon this page | marks the page in one press, and opens the ribbon plate to choose which ribbon |
 | Focus mode | the rungs of the ladder, and the zoom |
 | Thumbnails | the strip of little pages along the bottom |
-| Insert script | paste Notebook Script and see it previewed before it lands |
-| Export script | copy this page back out as script |
-| Copy AI spec | the whole grammar on your clipboard, for a chatbot |
 | Add a page | a new page after this one |
+
+**In and out** is one sheet rather than four rail buttons, because "get this
+page out of the app" and "get these files into it" are one errand and a reader
+who has to look in three places for them concludes the app cannot do it
+([`src/views/rail/SharePanel.tsx`](src/views/rail/SharePanel.tsx)):
+
+| | |
+| --- | --- |
+| **Bring something in** | paste a script · bring Markdown in · start from a template |
+| **Take this page, or this book, out** | export as PDF · this page as a picture · the parcel desk, for whole bundles |
+| **For an assistant** | copy the format for your AI · copy this page as script |
+
+Every row carries its own key cap, read from your own keymap rather than
+printed, and calls exactly the same opener the keyboard calls — so a button and
+its shortcut cannot drift apart.
 
 Page history deserves a note: it is a ring of recent autosave snapshots merged
 with the persisted tail, newest first, each labelled *3:41 pm · Jul 30* with a
@@ -540,36 +578,21 @@ for the ten seconds after you realise you have just wrecked a page.
 There are <!--f:templates-->5<!--/f--> built-in templates — Cornell notes,
 Lecture notes, Flashcard deck, Weekly planner, Reading log — and each is authored
 as Notebook Script ([`src/features/templates/templates.ts`](src/features/templates/templates.ts)),
-so the gallery preview, the inserted pages and *Export script* cannot disagree
-about what a template is.
+so the gallery preview, the inserted pages and the script it copies back out
+about what a template is. The gallery is the *template* button on the shelf's
+left dock, and the same entry sits on the bare-plank right-click menu, because
+a template is a way of starting a book rather than a thing you do to one.
+<!-- /gen -->
 
-> [!IMPORTANT]
-> **A known edge, stated plainly.** The template gallery, Markdown import, PDF
-> export and PNG export are finished and have no button in the app yet.
-> The code is complete and covered end to end by the Playwright suite, which
-> drives it through a development-build hook rather than through the UI
-> ([`src/features/templates/groupD.ts`](src/features/templates/groupD.ts)). Until
-> a rail button is wired, they are not reachable by a person using the
-> installed app. Everything else on this page is.
-
+<!-- gen:lift-manual -->
 ## Notebook Script
+<!--nav: The language itself — a whole worked script, the page it makes, and everything it can say-->
 
-### Why a writer would care
-
-Notebook Script is the reason the app has a *Copy AI spec* button. It is a
-Markdown dialect small enough that any chatbot can write it correctly on the
-first try, and expressive enough to produce a decorated page rather than a wall
-of paragraphs.
-
-The workflow it exists for is short. Press **Copy AI spec** — that puts
-the whole grammar, [`src-tauri/resources/notebook-script-spec.md`](src-tauri/resources/notebook-script-spec.md),
-<!--f:specLines-->777<!--/f--> lines of it, generated from the parser's own
-vocabulary, on your clipboard. Paste it into a chatbot and ask for the note you
-want. Paste the answer into *Insert script*.
-
-Because the grammar is generated from the same tables the parser reads, the spec
-cannot describe a language the app does not accept — that is checked by
-`npm run spec:check` and a test, not by somebody remembering.
+The language behind [Written with an AI](#written-with-an-ai) above: a Markdown
+dialect small enough that a chatbot writes it correctly on the first try, and
+expressive enough to produce a decorated page rather than a wall of paragraphs.
+Plain Markdown is a subset of it, so you can write it yourself and never learn a
+directive.
 
 ### A whole script, and the page it makes
 
@@ -602,7 +625,7 @@ Glucose {color=amber}
 ```
 ````
 
-*Insert script* previews as you paste, naming each piece it recognised — one
+The paste box previews as you paste, naming each piece it recognised — one
 sticky note, a graph of four edges, a timeline of three entries — so you can see
 the shape of the result before you commit it:
 
@@ -637,23 +660,21 @@ not embedded as images:
   for a query. This is the one construct that goes to the network, and it is
   openly-licensed images only.
 
-Plain Markdown is a subset of it, so pasting ordinary Markdown just works.
-
 ### It does not fail
 
 `parse()` is **total**: it never throws. A malformed line produces a diagnostic
 naming the line, the column and what was expected, and the app renders your
 intent anyway — near-miss spellings like `papper` and `microscop` are corrected
-with a warning rather than dropped, because a chatbot's typo should not cost you
-a page. That promise, and the grammar it guards, are specified in
-[`docs/design/script-language.md`](docs/design/script-language.md) and
-implemented in [`src/script/`](src/script/).
+with a warning rather than dropped. That promise, and the grammar it guards, are
+specified in [`docs/design/script-language.md`](docs/design/script-language.md)
+and implemented in [`src/script/`](src/script/).
 
 The script is kept alongside the page, so a note written this way can be edited
-as script and re-run, or exported back out with **Export script**. A single
-block can be copied out as script from the right-click menu.
+as script and re-run, or copied back out with *copy this page as script*. A
+single block comes out the same way from the right-click menu.
 
 ## Making it yours
+<!--nav: The two studios, every vocabulary counted, custom colours, stars and hiding, more bookcases, your own packs-->
 
 ### Two studios, and what each one owns
 
@@ -787,6 +808,7 @@ Pin a book from its right-click menu and it gets a star charm on the spine, and
 sorts first when *Settings → Library & shelf* is set to sort by favourites.
 
 ## Sound
+<!--nav: Sound sets, ambience beds, the volume model, and the in-app credits-->
 
 Every interaction has a sound, and the whole set can be re-voiced.
 
@@ -825,6 +847,7 @@ from. The full provenance is in
 [`docs/design/sound.md`](docs/design/sound.md).
 
 ## The keyboard
+<!--nav: Every shortcut, grouped by where you are standing, and which ones you can rebind-->
 
 Every shortcut in the app is in one registry
 ([`src/data/keybindings.ts`](src/data/keybindings.ts)), and that registry is what
@@ -844,7 +867,7 @@ than greying it out.
 | On the shelf | `Ctrl+Alt+N` new book · `Ctrl+Alt+S` the studio · `Ctrl+Alt+F` add a floor · `Ctrl+Alt+X` the trash · `+` `−` `0` zoom · arrows walk the shelf · `Enter` take the lit book · `Home` back to the first book |
 | In a book | `Ctrl+N` add a page · `Ctrl+Alt+B` ribbon this page · `F9` focus mode · `Ctrl+Alt+T` contents · `Ctrl+Alt+A` catalogue · `Ctrl+Alt+L` page style · `Ctrl+Alt+D` dress this book · `Ctrl+Alt+M` thumbnails · `←` `→` turn the page · `[` `]` step focus · drag a page edge to curl it |
 | While writing | `/` the block menu · `/today` today's journal page · `Ctrl+B` `Ctrl+I` bold and italic · right-click for the block menu · drag the dots to reorder · click bare paper to start a line there |
-| The whole library | `Ctrl+Alt+I` insert script · `Ctrl+Alt+E` export this page as script · `Ctrl+Shift+E` pack books into one file · `Ctrl+Shift+I` add a bundle to this shelf |
+| In and out | `Ctrl+Alt+I` paste a script in · `Ctrl+Alt+E` copy this page out as script · `Ctrl+Alt+G` start from a template · `Ctrl+Alt+P` export as PDF · `Ctrl+Shift+Alt+P` this page as a picture · `Ctrl+Shift+Alt+M` bring Markdown in · `Ctrl+Shift+E` pack books into one file · `Ctrl+Shift+I` add a bundle to this shelf |
 
 Everything the app added for itself sits on `Ctrl+Alt`, which is the one
 modifier pair neither the editor nor the webview had already claimed. A key with
@@ -853,14 +876,16 @@ no live command is left completely alone — which is why the shelf's bare `+`,
 installed.
 
 ## Backups, export and import
+<!--nav: Scheduled backups, `.nbk` bundles, Markdown in and out, PDF and PNG, tray capture-->
 
 Your library is a file on your disk and nothing is copying it anywhere. What
 follows exists so that this is a design decision rather than a risk.
 
 ### Scheduled backups
 
-On by default, weekly, into `%APPDATA%\com.alcove.app\backups\` or a folder you
-choose ([`src/features/system/backup.ts`](src/features/system/backup.ts)). A
+On by default, weekly, into the `backups/` folder beside your library or a
+folder you choose
+([`src/features/system/backup.ts`](src/features/system/backup.ts)). A
 backup is a timestamped ZIP of the database — including its write-ahead sidecars,
 so a WAL-mode database restores intact — and the whole `assets/` tree.
 
@@ -870,7 +895,8 @@ a hand-edited ZIP cannot write outside the two places it is allowed to.
 
 ### Bundles you can move (`.nbk`)
 
-*Settings → Library files → export* (`Ctrl+Shift+E`) packs books into a single
+The **parcel desk** — the rail's *In and out* sheet, *Settings → Library files*,
+or `Ctrl+Shift+E` — packs books into a single
 `.nbk` file ([`src/features/transfer/`](src/features/transfer/)). You choose the
 scope — the whole library, one bookcase, one floor, or a hand-picked selection —
 and whether to include pictures, cover styling, the library theme and the
@@ -905,9 +931,8 @@ a one-page PDF; a whole book renders every page offscreen — no caret, no
 selection chrome — and assembles into one PDF
 ([`src/editor/script/exporters/`](src/editor/script/exporters/)).
 
-As noted above, PDF export, PNG export and the Markdown import currently have no
-button in the app. They work, they are tested, and they are waiting on a rail
-entry.
+Both live on the rail's **In and out** sheet, beside the Markdown import and the
+parcel desk.
 
 ### Two more small things
 
@@ -921,33 +946,35 @@ you were ([`src/features/system/launch.ts`](src/features/system/launch.ts)). Als
 off by default.
 
 ## Questions
+<!--nav: Where the data is, whether it is offline, moving machines, and the failure modes worth naming-->
 
 **Where is my data?**
-`%APPDATA%\com.alcove.app\notebook.db`, with `notebook.db-wal` and
-`notebook.db-shm` beside it while the app runs, pictures under `assets\` and
-backups under `backups\`. Paste that path into the Explorer address bar and you
-are there. It is an ordinary SQLite file — you can open it with any SQLite
-browser and read your own words out of it.
+In the library folder from [the table above](#where-your-writing-lives) —
+`%APPDATA%\com.alcove.app\` on Windows. Everything you have written is in
+`notebook.db`, pictures are under `assets/` and backups under `backups/`. Copy
+that folder and you have copied your library. And if you would rather hold your
+writing as plain files, the parcel desk exports every page as ordinary Markdown,
+which any editor on any machine can read without Alcove installed at all.
 
 **Is it offline?**
-Yes. There is no account, no sync, no cloud and no telemetry, and `telemetry` is
-typed as the literal `false` in the settings so it cannot be switched on. Two
-features reach the network and only when you invoke them: searching for an
-openly-licensed picture, and previewing a link you pasted. Both are https-only,
-refuse private and loopback addresses, time out fast, and cap how many bytes
-they will accept.
+Yes. No account, no sync, no cloud, and nothing anywhere reporting back on what
+you write or how you use it. Two things go out to the internet and only in the
+moment you ask for them: finding an openly-licensed picture, and filling in the
+card for a link you pasted. Neither one sends anything off your page. How that
+is enforced, rather than merely intended, is in [the developer
+half](#how-its-built).
 
 **How do I move my library to another machine?**
-Two ways. Copy `%APPDATA%\com.alcove.app` wholesale with the app closed — that
-is everything, database and pictures and backups. Or use *Settings → Library
-files → export* for a `.nbk` bundle and import it on the other side, which is the
-better option when the other machine already has notes on it, because import is
-additive and never overwrites.
+Two ways. Copy the whole library folder with the app closed — that is
+everything, database and pictures and backups, and it moves between platforms
+unchanged. Or take a `.nbk` bundle from the parcel desk and import it on the
+other side, which is the better option when the other machine already has notes
+on it, because import is additive and never overwrites.
 
 **Does uninstalling delete my notes?**
-No. The program lives under `%LOCALAPPDATA%` and your library under `%APPDATA%`;
-the uninstaller only removes the first. If you want the library gone too, delete
-`%APPDATA%\com.alcove.app` yourself.
+No. The program and the library are two separate folders and the uninstaller
+only removes the first. If you want the library gone too, delete it yourself —
+it is the second row of [the table above](#where-your-writing-lives).
 
 **Half my page just moved to the next page.**
 That is the pagination contract working. A page is a fixed height and the
@@ -961,10 +988,11 @@ usually a virtual machine, a remote desktop session, or a driver that has fallen
 back to software rendering. Updating the graphics driver is the usual fix.
 
 **It won't start.**
-The most likely cause is a missing WebView2 runtime on an old Windows 10
-install. The installer fetches it, but a blocked download leaves you with a
-window that never paints. Installing the Microsoft Edge WebView2 Evergreen
-Runtime by hand fixes it.
+On Windows the most likely cause is a missing WebView2 runtime on an old
+Windows 10 install. The installer fetches it, but a blocked download leaves you
+with a window that never paints; installing the Microsoft Edge WebView2
+Evergreen Runtime by hand fixes it. On Linux the equivalent is a missing
+`webkit2gtk` — install it from your own package manager.
 
 **The ambience does not play until I click.**
 Browser autoplay policy, and the app leans on it rather than working around it —
@@ -981,26 +1009,62 @@ else means editing the vocabularies, which [Adding a value, end to
 end](docs/readme/part-2-developers.md#adding-a-value-end-to-end) walks through stop by stop.
 <!-- /gen -->
 
-## For developers
+# Part 2 — Building Alcove
+<!--nav: for a developer, or for an AI agent helping one. Nothing below is needed to use the app.-->
 
-The rest of this page is the developer half's essentials — how the app draws
-itself three different ways, how to get it running, where everything lives, and
-how a release is cut. The parts that only matter once you are editing a
-particular corner of it (the art pipeline, the vocabularies, the editor, the
-flip, the parser, the data layer, the gates, the failure modes this codebase has
-actually shipped) stay in [Part 2](docs/readme/part-2-developers.md) and are
-listed under [Deeper reading](#deeper-reading).
+**Nothing below this line is needed to use Alcove.** Everything from here down is
+for somebody changing the code — a developer, or an AI agent working on their
+behalf — and it is where the facts a README usually opens with have been put
+instead: the storage model, the two outbound calls, what runs in which process.
+It is the developer half's essentials: how the app draws itself three different
+ways at once, what it is made of and why, how to get it running, where
+everything lives, and how a release is cut.
+
+The parts that only matter once you are editing a particular corner of it — the
+art pipeline, the vocabularies, the editor, the flip, the parser, the data
+layer, the gates, and the failure modes this codebase has actually shipped —
+stay in [Part 2](docs/readme/part-2-developers.md) and are listed under
+[Deeper reading](#deeper-reading).
 
 <!-- gen:lift-build -->
 ## How it's built
+<!--nav: The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row-->
 
-Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a WebView2
-window, and a [SolidJS](https://www.solidjs.com/) frontend built by Vite. Almost
-everything interesting happens in the frontend. The Rust side is
+Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
+webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
+Vite. Almost everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->13<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
 migrations, in <!--f:rustFiles-->8<!--/f--> files and
 <!--f:rustLines-->2292<!--/f--> lines.
+
+### The shape of the thing, in four facts
+
+These are the constraints every decision below is downstream of. They are stated
+here rather than at the top of the front page on purpose: a reader deciding
+whether to install a notes app does not need the storage model first, and the
+one who does need it is you.
+
+- **One SQLite file, on the reader's own disk.** `notebook.db` in the app data
+  directory, opened through `tauri-plugin-sql`, with `assets/` beside it for
+  pictures and `backups/` for the scheduled ZIPs. There is no server half of
+  this app to write.
+- **No account, no sync, no telemetry.** `telemetry` is typed as the literal
+  `false` in [`src/data/types.ts`](src/data/types.ts), so it is not a
+  setting somebody can flip — it is a type error to try. Adding a network
+  dependency to a feature is therefore an architectural change, not a
+  convenience.
+- **Exactly two outbound calls, both reader-initiated.** Searching for an
+  openly-licensed picture (`::fetch`) and previewing a pasted link. Both go
+  through an SSRF guard that is written twice on purpose —
+  [`src-tauri/src/media.rs`](src-tauri/src/media.rs) is the real one and
+  [`src/editor/media/urlGuard.ts`](src/editor/media/urlGuard.ts) mirrors
+  it — https only, private and loopback addresses refused, fast timeouts, capped
+  body size.
+- **The webview is the OS's, not ours.** That is what makes the installer about
+  sixteen megabytes rather than ten times that, and it is also why the app
+  inherits the platform's autoplay policy, its IME and its font stack rather
+  than choosing them.
 
 What makes the frontend unusual is that it draws itself three different ways at
 once, and the three have to agree on what a page looks like.
@@ -1099,7 +1163,7 @@ wrong.
 
 | Piece | Version | Why this one |
 |---|---|---|
-| [Tauri 2](https://tauri.app/) | 2.x | Ships the OS webview instead of bundling Chromium: a single-digit-MB installer and one process tree. Rust gets the things a webview cannot do — filesystem, SQLite, tray, an SSRF-guarded image fetcher. |
+| [Tauri 2](https://tauri.app/) | 2.x | Ships the OS webview instead of bundling Chromium: a 16 MB installer rather than ten times that, and one process tree. Rust gets the things a webview cannot do — filesystem, SQLite, tray, an SSRF-guarded image fetcher. |
 | [SolidJS](https://www.solidjs.com/) | ^1.9.3 | Fine-grained reactivity with no virtual DOM. That is not a benchmark preference here: the app mounts dozens of TipTap node views, and a VDOM diff over a node view is exactly the thing that fights ProseMirror for ownership of the DOM. |
 | TypeScript + Vite | ~5.6 / ^6.0 | `strict`, plus `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch`. Vite's dev server is also the QA harness — see *Driving the running app*. |
 | [PixiJS v8](https://pixijs.com/) | ^8.19 | Continuous zoom is the hard requirement, and it is what DOM loses on: Chromium rasterises a layer at a fixed scale, so animating `transform: scale()` on a big container gives blurry pixels during the zoom and a re-raster hitch at the end. A single SVG loses harder — filter-based linework is CPU-bound. |
@@ -1123,6 +1187,7 @@ would not meet (see [`src/features/transfer/zip.ts`](src/features/transfer/zip.t
 for the reasoning in one concrete case).
 
 ## Getting it running
+<!--nav: `npm run tauri dev`, the browser-only dev path, and the four checks-->
 
 ```bash
 npm install
@@ -1146,7 +1211,7 @@ Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->76<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->80<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](docs/e2e.md). |
 
@@ -1174,6 +1239,7 @@ keeps the trace of the attempt that failed, which is how you tell the two apart.
 check to run when the repo is quiet.
 
 ## The map of the app
+<!--nav: Directory by directory, plus the module-docstring convention this README points at instead of copying-->
 
 Start with the directory, then the file. Every module in the tree opens with a
 docstring stating what it is responsible for and — where a decision needed
@@ -1194,12 +1260,15 @@ defending — why it is that way and what it replaced.
 | [`src/features/system/`](src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](src/features/packs/), [`src/features/templates/`](src/features/templates/), [`src/features/tutorial/`](src/features/tutorial/), [`src/features/quickswitch/`](src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
 | [`src/sound/`](src/sound/) | The Howler engine, the named sound sets, and the in-app credits panel. |
+| [`src/search/`](src/search/) | The fuzzy matcher and the full-text index behind `Ctrl+K` and `Ctrl+Shift+F`. In-repo, because the ranking rules are the product. |
+| [`src/state/`](src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
+| [`src/features/settings/`](src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
 | [`src-tauri/src/`](src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs`, all registered in `lib.rs`. |
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->274<!--/f--> of <!--f:srcFiles-->282<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6092<!--/f--> lines of it.
+<!--f:srcDocstrings-->281<!--/f--> of <!--f:srcFiles-->289<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6355<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1222,6 +1291,7 @@ writing down a decision *and* the thing it replaced.
 
 <!-- gen:lift-releasing -->
 ## Building and releasing
+<!--nav: The bundle artefacts, the icon pipeline, and the tag-driven release workflow-->
 
 ```bash
 npm run build          # spec:check, then vite build → dist/
@@ -1328,13 +1398,13 @@ should produce, and what to check when it does.
 Notes come from [`scripts/release-notes.mjs`](scripts/release-notes.mjs) by
 diffing against the previous tag. A tag containing `-` publishes as a prerelease.
 
-Three honest edges. **Nothing is signed** on any platform, so Windows shows a
+Two honest edges. **Nothing is signed** on any platform, so Windows shows a
 SmartScreen warning and macOS quarantines the first launch — which is why the
-release carries checksums. **No tag has ever been pushed**, so nothing about any
-of this has run in anger and the artefact filenames in that document are
-predictions from the bundler's naming rules rather than observations. And it is
-still the *only* workflow: it fires on tags, so nothing runs `tsc` or `vitest` on
-an ordinary push.
+release carries checksums. And this is still the *only* workflow: it fires on
+tags, so nothing runs `tsc` or `vitest` on an ordinary push, and the artefact
+names in `docs/packaging-mac-linux.md` are read off the bundler's naming rules
+rather than off a run that has already happened on every platform. Check them
+against the Release before quoting one at a reader.
 
 > [!NOTE]
 > There is consequently no CI badge to display yet. The gates run locally, and
@@ -1344,6 +1414,7 @@ an ordinary push.
 
 <!-- gen:lift-nongoals -->
 ## Non-goals
+<!--nav: No sync, no cloud, no mobile, no plugin API, no second visual language, no light model-->
 
 - **No sync and no accounts.** The database is a file on your disk. There is no
   server to sign in to and nothing to be logged out of.
@@ -1366,27 +1437,27 @@ an ordinary push.
 <!-- /gen -->
 
 ## The repo at a glance
-
-Each of these is a marker recomputed from the tree.
+<!--nav: Six measurements of the tree, every one recomputed rather than typed-->
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->282<!--/f--> TypeScript files, <!--f:srcDocstrings-->274<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6092<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->289<!--/f--> TypeScript files, <!--f:srcDocstrings-->281<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6355<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2292<!--/f--> lines, <!--f:rustCommands-->13<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
-| Tests | <!--f:unitTests-->76<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
-| QA against the running app | <!--f:probeScripts-->35<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
+| Tests | <!--f:unitTests-->80<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
+| QA against the running app | <!--f:probeScripts-->37<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
 | Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
 
 ## Deeper reading
+<!--nav: The two halves as pages of their own, and every section of them this page does not already carry-->
 
 Nothing below is required to use or build the app — it is the long form of what
 is already on this page, plus the corners this page does not go into.
 
 <!-- gen:deeper-reading -->
-**[Part 1 — Using Alcove](docs/readme/part-1-users.md)** — everything above, as its own page.
+**[Part 1 — Using Alcove](docs/readme/part-1-users.md)** — *for the person writing in it.* The whole user manual, as a page of its own — everything in Part 1 above.
 
-**[Part 2 — Building Alcove](docs/readme/part-2-developers.md)** — the parts that are not on this page.
+**[Part 2 — Building Alcove](docs/readme/part-2-developers.md)** — *for a developer, or for an AI agent helping one.* The long form of Part 2 above, plus every corner this page does not go into.
 
 | Section | What you get |
 | --- | --- |
@@ -1396,7 +1467,7 @@ is already on this page, plus the corners this page does not go into.
 | [The flip](docs/readme/part-2-developers.md#the-flip) | The cylinder curl, the snapshot cache, and the library bug worked around at length |
 | [Notebook Script](docs/readme/part-2-developers.md#notebook-script) | Why `parse()` is total, the round-trip invariant, and the generated spec |
 | [The data layer](docs/readme/part-2-developers.md#the-data-layer) | The schema, the bookcase model, and why every read is validated |
-| [The failure modes this codebase has actually shipped](docs/readme/part-2-developers.md#the-failure-modes-this-codebase-has-actually-shipped) | The three ways work here has looked finished and been unreachable, unreadable or wrong, with the real instances named |
+| [The failure modes this codebase has actually shipped](docs/readme/part-2-developers.md#the-failure-modes-this-codebase-has-actually-shipped) | The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named |
 | [The gates](docs/readme/part-2-developers.md#the-gates) | Every unit-test file and the specific class of bug it exists to stop |
 | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) | Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does |
 | [Things that were harder than they look](docs/readme/part-2-developers.md#things-that-were-harder-than-they-look) | Five places the obvious implementation is wrong |
@@ -1413,17 +1484,30 @@ file for agents working in this repo — it states the constraints and
 deliberately does not restate this page.
 
 ## How this page stays honest
+<!--nav: Why no number here is typed, why no paragraph is written twice, and what the check does and does not do-->
 
 A README that quotes numbers goes stale silently, so none of the numbers on this
 page are typed as prose. Each is written inside an invisible marker —
 `<!--f:wallpaperPapers-->126<!--/f-->`, which GitHub renders as `126` and
-nothing else — and recomputed from the tree:
+nothing else — and recomputed from the tree. So are the
+<!--f:readmeShots-->13<!--/f--> screenshots: each one records the app it
+photographed and the room it stood in, so a picture that has outlived what it
+shows says so rather than quietly lying.
 
 ```bash
-npm run readme:check   # recompute every marker, resolve every link and anchor
+npm run readme:check   # report what has drifted, and what is missing
 npm run readme:facts   # print the true values
 npm run readme:build   # recompose this page from package.json and the halves
 ```
+
+**The check reports; it does not block, and it never rewrites a sentence.** It
+prints a grouped list — numbers that no longer match the tree, links that go
+nowhere, pictures that no longer show this app, and things that are in the repo
+but on no page at all — and then leaves the editing to whoever is doing it,
+which may well be an agent. What a page *ought* to say is a judgement, and a
+script should not be making it. The one thing that does still fail is
+`npx vitest run`, on a stale count, because a count that has stopped being true
+is a fact rather than an opinion.
 
 **Nor is the prose typed twice.** The manual above is *lifted* out of
 [`docs/readme/part-1-users.md`](docs/readme/part-1-users.md) and
@@ -1434,26 +1518,22 @@ it wants them, and the lift retargets every relative link from `docs/readme/` to
 the repo root, leaves code alone, and resolves bare `#fragment` links against
 this page's own headings — keeping the ones whose heading came with the text and
 pointing the rest back at the half. Two headings that would slug the same way
-stop the build and name both lines. The badge strip and the download table are
-composed the same way, from the version in
+stop the build and name both lines. The badge strip, the download table and
+every contents list on every page are composed the same way, from the version in
 [`package.json`](package.json), cross-checked against
 [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json).
 
 So editing a generated region by hand is a red test, not a divergence somebody
 notices months later. [`tests/readme.test.ts`](tests/readme.test.ts) is the real
-gate: it supplies the counts that need the TypeScript modules loaded, so a
-vocabulary that grows while this page says otherwise is a failing test, and it
+gate: it supplies the counts that need the TypeScript modules loaded, and it
 resolves every relative link the way a reader's browser would follow it.
-
-The same discipline runs elsewhere in the repo: `npm run spec:check` regenerates
-the AI-facing Notebook Script spec from the parser's own vocabulary and fails if
-the checked-in copy differs. [How this document stays
-true](docs/readme/part-2-developers.md#how-this-document-stays-true) is the long
-version of both, and the place the procedure for adding a marker of your own is
-written out.
+[How this document stays true](docs/readme/part-2-developers.md#how-this-document-stays-true)
+is the long version, and the place the procedure for adding a marker of your own
+is written out.
 
 <!-- gen:lift-credits -->
 ## Licence and credits
+<!--nav: MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable-->
 
 MIT — see [`LICENSE`](LICENSE).
 

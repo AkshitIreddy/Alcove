@@ -22,6 +22,7 @@ import type {
 } from '../../script/types';
 import type { PageDoc } from '../../data/types';
 import { print } from '../../script';
+import { resolveCodeLang } from '../../script/normalize';
 import { CONTAINER_NAMES, DIAGRAM_LANGS } from '../../script/vocab';
 import type { TiptapMark, TiptapNode } from './toTiptap';
 
@@ -583,32 +584,30 @@ function blockFromNode(node: TiptapNode): Block[] {
         ];
       }
       case 'codeBlock': {
-        // Script has no plain code fence — mirror the parser's treatment of
-        // unknown fences: a generic box with one paragraph per line.
+        /*
+         * Straight out to a fence, body verbatim.
+         *
+         * This used to emit a "generic container" with one paragraph per
+         * non-blank line, on the grounds that "script has no plain code
+         * fence". It has one now (`CodeBlock` in src/script/types.ts), and the
+         * old shape was lossy in four directions at once — it dropped the
+         * blank lines, trimmed the indentation, re-parsed `**kwargs` as bold
+         * on the way back in, and named the language in `rawName`, where the
+         * parser could only read it as an unknown container. Copy a function
+         * out of a page, paste it back, and it was no longer a function.
+         */
         const attrs = nodeAttrs(node);
-        const language =
-          typeof attrs.language === 'string' && attrs.language !== ''
-            ? attrs.language
-            : 'code';
-        const text = childNodes(node)
-          .map((c) => (typeof c.text === 'string' ? c.text : ''))
-          .join('');
-        const children: Block[] = text
-          .split('\n')
-          .filter((line) => line.trim() !== '')
-          .map((line) => ({
-            kind: 'paragraph',
-            content: [{ kind: 'text', text: line, ...ZERO }],
-            attrs: {},
-            ...ZERO,
-          }));
+        const raw = typeof attrs.language === 'string' ? attrs.language : '';
+        const lang = resolveCodeLang(raw);
         return [
           {
-            kind: 'container',
-            name: 'generic',
-            rawName: language,
-            children,
+            kind: 'code',
+            lang,
+            code: childNodes(node)
+              .map((c) => (typeof c.text === 'string' ? c.text : ''))
+              .join(''),
             attrs: attrsFrom(attrs, ['language']),
+            ...(lang === null && raw !== '' ? { rawLang: raw } : {}),
             ...ZERO,
           },
         ];

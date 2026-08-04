@@ -300,7 +300,7 @@ Click anywhere on the ruled lines and start typing. Everything saves itself as y
 :::
 
 - The **shelf** goes on and on — drag to pan, scroll to zoom
-- **Pull a book off the shelf** and it opens. \`Esc\` puts it back
+- **Click a book** and it comes forward; click it again to open. \`Esc\` puts it back
 - **Arrow keys** turn the pages, or drag a corner and watch it curl
 - The **rail on the left** holds everything else
 
@@ -419,7 +419,7 @@ Up to four pictures will stand in a row together.
 A polaroid is one picture in a white frame, captioned underneath in pencil.
 :::
 
-Drag a corner to resize a picture, or write \`{width=320}\`. Give it \`{align=right}\` and the words will sit beside it.
+Drag a corner to resize a picture, or write \`{width=320}\`. Give it \`{align=left}\`, \`{align=center}\` or \`{align=right}\` to slide it across the page. For words beside a picture, put the two in \`:::columns\`.
 `,
 
   // Page 8 — columns, and the two kinds of fold

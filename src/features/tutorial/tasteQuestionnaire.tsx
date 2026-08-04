@@ -645,8 +645,18 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
    * Read off `steerRoom` rather than through `steerTheme`, which would resolve
    * the same room a second time: `answersBefore('palette')` cannot contain a
    * palette answer, so the two are the same value by construction.
+   *
+   * A MEMO, and it has to be one. This is the grid's `resetKey`, and `Capped`
+   * collapses on every notification from it rather than on a change of value —
+   * it cannot tell the difference, because a `resetKey` is an opaque `unknown`.
+   * `steerRoom` returns a fresh object whenever ANY answer moves, the palette
+   * one included, so as a plain derived accessor this fired on every card press
+   * and the reader browsing the forty behind "more" had the grid slam shut under
+   * the card they had just pressed. Memoised it yields a string, `createMemo`
+   * compares strings by value, and the grid now collapses only when the steer
+   * genuinely points somewhere else.
    */
-  const steerPick = (): ThemeId => steerRoom().theme;
+  const steerPick = createMemo<ThemeId>(() => steerRoom().theme);
 
   /**
    * The lit card: the reader's pick, or the steer's if they have not pressed one.

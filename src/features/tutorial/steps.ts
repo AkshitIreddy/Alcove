@@ -547,19 +547,25 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     scene: 'book',
   },
   {
+    /*
+     * Pointed at three separate rail icons until 2026-08-04 — copy AI spec,
+     * insert script, export script. All three are rows on the "In and out"
+     * sheet now (views/rail/SharePanel.tsx), so the step teaches the sheet and
+     * the loop it holds rather than a row of buttons that no longer exists.
+     */
     id: 'ai-script',
     title: 'Have an assistant write a page',
-    body: 'Every page can be read and written as plain text — a small format called Notebook Script, with headings, lists, tables, callouts, and fenced blocks for trees, graphs and timelines. Copy AI spec puts that whole format on your clipboard: paste it to any assistant, say what the page should contain, and it writes the script for you. Insert script turns what comes back into real blocks — diagrams drawn, tables built, nothing left to tidy. Export script does the reverse and hands you the page as text.',
-    hint: 'copy the spec → paste it to an assistant → insert what it writes',
+    body: 'Every page can be read and written as plain text — a small format called Notebook Script, with headings, lists, tables, callouts, and fenced blocks for trees, graphs and timelines. One icon on the rail opens In and out, where everything that arrives in a book or leaves it lives together. At the bottom of that sheet: Copy the format for your AI puts the whole spec on your clipboard — paste it to any assistant, say what the page should contain, and it writes the script for you. Paste a script in, at the top, turns what comes back into real blocks: diagrams drawn, tables built, nothing left to tidy. Copy this page as script does the reverse and hands you the page as text.',
+    hint: 'copy the format → paste it to an assistant → paste what it writes back in',
     task: {
-      ask: 'Press Copy AI spec.',
+      ask: 'Open In and out.',
       fact: 'spec-copied',
-      done: 'The format is on your clipboard.',
+      done: 'The whole loop is on this one sheet — the format, the paste box, and the way back out.',
     },
     targets: [
       {
-        selector: '.nb-rail-button[data-tool="spec"]',
-        padBox: { left: 8, right: 8, top: 104, bottom: 8 },
+        selector: '.nb-rail-button[data-tool="share"]',
+        padBox: { left: 8, right: 8, top: 8, bottom: 8 },
       },
       { selector: '.nb-rail', pad: 8 },
     ],

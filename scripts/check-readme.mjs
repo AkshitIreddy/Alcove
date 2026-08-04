@@ -29,8 +29,29 @@
  * The same treatment is given to the SCREENSHOTS, for the same reason and after
  * the same failure — see {@link checkShots} and `docs/readme/img/shots.json`.
  *
+ * ## It reports; it does not block, and it never edits prose
+ *
+ * The reader's instruction, verbatim: *"the check exists to say that hey
+ * something is missing from readme, but final editing of readme is left in the
+ * hands of the dev/ai"*. So this prints a grouped report and exits **0**. It has
+ * never written a word into the markdown and still does not — `npm run
+ * readme:build` composes the regions that are marked as generated, and every
+ * sentence outside them is somebody's to write.
+ *
+ * That leaves the numbers gated where they should be: `tests/readme.test.ts`
+ * fails on a stale count, because a count that has stopped being true is a fact
+ * rather than an editorial choice. `--strict` here exits 1 for a caller that
+ * wants the same thing from a shell.
+ *
+ * It also answers the other half of the question — what is MISSING. See
+ * {@link checkCoverage}: a number this script can compute that the page never
+ * quotes, a design document nothing links, a directory of the app the map does
+ * not name, a screenshot no page shows. None of those is a failure. Each is a
+ * line saying "there is a hole here", and what to put in it is yours.
+ *
  * Usage:
- *   node scripts/check-readme.mjs            check, exit 1 on any drift
+ *   node scripts/check-readme.mjs            report drift and gaps, exit 0
+ *   node scripts/check-readme.mjs --strict   …and exit 1 if anything has drifted
  *   node scripts/check-readme.mjs --facts    print every computed fact
  *
  * The vocabulary counts (how many shelf builds, how many papers) are NOT here:
@@ -293,6 +314,72 @@ export function checkLinks(docs = readmeDocs()) {
   return { checked, problems };
 }
 
+/* -------------------------------- coverage ------------------------------- */
+
+/**
+ * What the repo has that the README never mentions.
+ *
+ * Everything above answers "is what this page says still true?". This answers
+ * the question the reader actually asked for — *"the check exists to say that
+ * hey something is missing from readme"* — and it is a different kind of
+ * answer, so it is kept apart from {@link checkFacts} and never counted as a
+ * failure. A page is allowed to leave things out on purpose. What it is not
+ * allowed to do is leave them out by accident, and the difference between those
+ * two is a judgement only the person editing can make.
+ *
+ * Four holes worth naming, each chosen because it has actually opened here:
+ *
+ *  1. **A number nobody quotes.** This script computes twelve facts and the
+ *     test file another thirty-six. A key with no marker anywhere is a claim
+ *     the page could make for free and does not.
+ *  2. **A design document nothing links.** `docs/design/` is the canonical
+ *     record; one that no page points at is a document nobody will ever open.
+ *  3. **A part of the app the map does not name.** The map of the app is a
+ *     table of directories, and a new feature directory does not add itself.
+ *  4. **A screenshot no page shows.** A picture that costs a capture run and
+ *     appears nowhere.
+ *
+ * The vocabulary counts this file cannot compute are covered anyway: they are
+ * named in {@link DEFERRED_FACTS}, and a deferred key with no marker is exactly
+ * as missing as a computed one.
+ */
+export function checkCoverage(facts = computeFacts(), docs = readmeDocs()) {
+  const prose = docs.map((rel) => readFileSync(join(ROOT, rel), 'utf8')).join('\n');
+  const mentioned = (needle) => prose.includes(needle);
+  const notes = [];
+
+  const quoted = new Set();
+  for (const m of prose.matchAll(FACT_RE)) quoted.add(m[1]);
+  for (const key of [...Object.keys(facts), ...DEFERRED_FACTS].sort()) {
+    if (!quoted.has(key)) {
+      notes.push(`no page quotes '${key}' — a number this run can compute and nothing says`);
+    }
+  }
+
+  for (const abs of walk(join(ROOT, 'docs', 'design'), (n) => n.endsWith('.md'))) {
+    const rel = abs.slice(ROOT.length + 1).split(sep).join('/');
+    if (!mentioned(rel.slice('docs/'.length))) {
+      notes.push(`nothing links ${rel} — a design record no reader can reach from here`);
+    }
+  }
+
+  const areas = [];
+  for (const dir of ['src', join('src', 'features')]) {
+    for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+      if (entry.isDirectory()) areas.push(`${dir.split(sep).join('/')}/${entry.name}/`);
+    }
+  }
+  for (const area of areas.sort()) {
+    if (!mentioned(area)) notes.push(`the map of the app never names ${area}`);
+  }
+
+  for (const file of shotFiles()) {
+    if (!mentioned(`img/${file}`)) notes.push(`no page shows ${SHOTS_DIR}/${file}`);
+  }
+
+  return { checked: quoted.size + areas.length, notes };
+}
+
 /* ------------------------------ the screenshots -------------------------- */
 
 /*
@@ -374,7 +461,19 @@ export const MIN_SHOT_BYTES = 40_000;
  * below, which apply to all of them.
  */
 export const SHOT_SOURCES = {
-  'hero.png': ['shots-now/readme-hero.html', 'assets/brand/alcove-art.png'],
+  // BOTH marks, and the second is the one actually drawn. The banner used to
+  // embed `alcove-art.png`, the supplied master — which is RGB with a solid
+  // white surround baked in, so it painted four white corners onto a cream
+  // card. It now embeds `alcove-1024.png`, the same master after
+  // `gen-icons.py`'s `unframe()` has cut that surround to alpha. The supplied
+  // master stays listed because swapping it is how the mark changes at all;
+  // the derived one is listed because regenerating with a different crop or
+  // tolerance moves it while the supplied file sits still.
+  'hero.png': [
+    'shots-now/readme-hero.html',
+    'assets/brand/alcove-art.png',
+    'assets/brand/alcove-1024.png',
+  ],
 };
 
 /**
@@ -596,6 +695,14 @@ export function checkShots(depicted = {}) {
 
 /* --------------------------------- the CLI ------------------------------- */
 
+/** One headed block of the report, or nothing at all when the list is empty. */
+function block(title, lines, advice) {
+  if (lines.length === 0) return;
+  console.log(`\n  ${title} (${lines.length})`);
+  for (const line of lines) console.log(`    ${line}`);
+  if (advice) console.log(`    → ${advice}`);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const facts = computeFacts();
   if (process.argv.includes('--facts')) {
@@ -607,16 +714,41 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.error('check-readme: no README.md and no docs/readme/*.md found');
     process.exit(1);
   }
+  const strict = process.argv.includes('--strict');
   const links = checkLinks(docs);
   const marks = checkFacts(facts, docs);
   const shots = checkShots();
+  const cover = checkCoverage(facts, docs);
   const problems = [...links.problems, ...marks.problems, ...shots.problems];
-  for (const p of problems) console.error(`  ${p}`);
+
   console.log(
-    `check-readme: ${docs.length} file(s), ${links.checked} relative link(s), ` +
+    `README report — ${docs.length} file(s), ${links.checked} relative link(s), ` +
       `${marks.checked} fact marker(s) and ${shots.checked} screenshot(s) checked, ` +
-      `${marks.deferred + shots.deferred} deferred to tests/readme.test.ts, ` +
-      `${problems.length} problem(s)`,
+      `${marks.deferred + shots.deferred} deferred to tests/readme.test.ts`,
   );
-  process.exit(problems.length === 0 ? 0 : 1);
+  block(
+    'numbers that no longer match the tree',
+    marks.problems,
+    'these are facts, not prose — npm run readme:facts prints the true values',
+  );
+  block('links that go nowhere', links.problems, 'fix the path, or the file that moved');
+  block(
+    'pictures that no longer show this app',
+    shots.problems,
+    "node shots-now/readme-shots.mjs (needs 'npm run dev')",
+  );
+  block(
+    'in the repo, not on the page',
+    cover.notes,
+    'nothing here is wrong — decide whether the page should say it',
+  );
+  if (problems.length === 0 && cover.notes.length === 0) {
+    console.log('\n  nothing has drifted, nothing is missing.');
+  } else if (!strict) {
+    console.log(
+      '\n  Reported, not enforced — the editing is yours.\n' +
+        '  (npx vitest run tests/readme.test.ts is the gate; --strict exits 1 here.)',
+    );
+  }
+  process.exit(strict && problems.length > 0 ? 1 : 0);
 }

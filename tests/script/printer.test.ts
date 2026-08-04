@@ -273,6 +273,35 @@ const fetchArb: fc.Arbitrary<Block> = fc
   .tuple(textArb, attrsArb)
   .map(([query, attrs]) => ({ kind: "fetchDirective", query, attrs, ...span0 }));
 
+/**
+ * A code fence, with bodies chosen to be exactly what the parser used to
+ * destroy: leading indentation, a blank line in the middle, inline markup that
+ * is NOT markup here, a `{…}` first line that is not attrs, a `{{var}}` that
+ * must not be substituted, and a nested fence that the printer has to widen
+ * its marker past.
+ */
+const codeBlockArb: fc.Arbitrary<Block> = fc
+  .tuple(
+    fc.constantFrom(null, "python", "javascript", "json", "makefile"),
+    fc.constantFrom(
+      "def f(**kwargs):\n\n    return _private_",
+      '{\n  "a": 1\n}',
+      "const t = `${x}` // {{not a variable}}",
+      "```js\nnested\n```",
+      "a\n\n\nb",
+      "\tstill\ttabs",
+      "",
+    ),
+    attrsArb,
+  )
+  .map(([lang, code, attrs]) => ({
+    kind: "code",
+    lang,
+    code,
+    attrs,
+    ...span0,
+  }));
+
 const simpleChildArb = fc.oneof(paragraphArb, headingArb, quoteArb, dividerArb, listArb);
 
 const namedContainerArb: fc.Arbitrary<Block> = fc
@@ -446,6 +475,7 @@ const topBlockArb: fc.Arbitrary<Block> = fc.oneof(
   tableArb,
   imageArb,
   mathBlockArb,
+  codeBlockArb,
   fetchArb,
   namedContainerArb,
   columnsArb,

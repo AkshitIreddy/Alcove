@@ -69,6 +69,7 @@ import { notify } from '../../editor/script/exporters/toast';
 import { formatBytes } from './format';
 import { loadLibrarySnapshot } from './library';
 import { writeBundle } from './io';
+import { APP_VERSION } from '../../version';
 import {
   DEFAULT_EXPORT_OPTIONS,
   buildExportPlan,
@@ -101,7 +102,7 @@ export async function exportEntireLibrary(): Promise<boolean> {
         options: DEFAULT_EXPORT_OPTIONS,
         label: 'The whole library',
         createdAt: new Date().toISOString(),
-        appVersion: '0.1.0',
+        appVersion: APP_VERSION,
       },
       fileName,
       false,

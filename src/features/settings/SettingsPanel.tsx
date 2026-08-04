@@ -124,6 +124,27 @@ import {
   type PaperSpec,
 } from './appearance';
 import { loadPaperStock, paperStock, savePaperStock } from './appearancePrefs';
+import {
+  CODE_FACE_SPECS,
+  CODE_FAMILY_BLURBS,
+  CODE_FAMILY_LABELS,
+  CODE_FRAMES,
+  CODE_FRAME_BLURBS,
+  CODE_FRAME_LABELS,
+  CODE_SIZE_MAX,
+  CODE_SIZE_MIN,
+  CODE_THEMES,
+  CODE_THEME_FAMILIES,
+  CODE_THEME_ROLL,
+  CODE_THEME_SHORTLIST,
+  CODE_ROLES,
+  CODE_ROLE_LABELS,
+  codeSwatch,
+  type CodeFace,
+  type CodeFrame,
+  type CodeThemeSpec,
+} from './codeAppearance';
+import { codeLook, loadCodeLook, saveCodeLook } from './codeAppearancePrefs';
 /* The parcel desk is reached by `import()` in the two handlers below, not from
    here. It reads and writes whole books, so it reaches
    `editor/script/fromTiptap` and from there TipTap and ProseMirror — 300kB
@@ -456,6 +477,144 @@ const HAND_FAMILY_BLURBS: Readonly<Record<string, string>> = {
   system: 'faces Windows already gave you',
 };
 
+/**
+ * A code-theme chip, painted in the room the reader is actually in.
+ *
+ * Four flat bands rather than one tile: a code theme is a PLATE and a set of
+ * pigments, and a chip showing only the plate would have twenty-two entries
+ * that differ by two shades of cream. Bands, not a blend — this is four flat
+ * colours side by side, which is the drawing's own idiom, not a gradient
+ * standing in for a light source.
+ */
+const codeThemeOption = (
+  spec: CodeThemeSpec,
+  themeId: string,
+  inkId: string,
+  paperId: string | null,
+): SegOption => {
+  const s = codeSwatch(spec.id, themeId, inkId, paperId);
+  return {
+    value: spec.id,
+    label: spec.label,
+    // Several of these words are also a room, a paper or a soundscape in this
+    // one dialog — "honeycomb" is a theme AND a listing.
+    ariaLabel: `${spec.label} code look`,
+    title: spec.blurb,
+    swatch:
+      `linear-gradient(97deg, ${s.plate} 0 40%, ${s.keyword} 40% 60%, ` +
+      `${s.string} 60% 80%, ${s.comment} 80% 100%)`,
+  };
+};
+
+function codeThemeOptionsFor(
+  themeId: string,
+  inkId: string,
+  paperId: string | null,
+): ReadonlyMap<string, SegOption> {
+  return new Map(
+    CODE_THEMES.map(
+      (spec) => [spec.id, codeThemeOption(spec, themeId, inkId, paperId)] as const,
+    ),
+  );
+}
+
+const CODE_FRAME_OPTIONS: readonly SegOption[] = CODE_FRAMES.map((frame) => ({
+  value: frame,
+  label: CODE_FRAME_LABELS[frame],
+  ariaLabel: `code block drawn as ${CODE_FRAME_LABELS[frame]}`,
+  title: CODE_FRAME_BLURBS[frame],
+}));
+
+const CODE_FACE_OPTIONS: readonly SegOption[] = CODE_FACE_SPECS.map((face) => ({
+  value: face.id,
+  label: face.label,
+  ariaLabel: `code face: ${face.label}`,
+  title: face.blurb,
+  face: face.stack,
+}));
+
+/**
+ * Six lines of make-believe code, painted with the live `--code-*` tokens.
+ *
+ * A picker chip can show a plate and three pigments; it cannot show what a
+ * comment above an indented block looks like at fifteen pixels, which is the
+ * only question a reader actually has. The markup is the highlighter's own
+ * class names, so this preview is coloured by the SAME nine rules the real
+ * block is — it cannot drift into showing a look the page will not give.
+ */
+function CodePreview(): JSX.Element {
+  return (
+    <div class="nb-code nbs-code-preview" aria-hidden="true">
+      <div class="nb-code-tab">
+        <span class="nb-code-tab-plate">
+          <span class="nb-code-lang-word font-ui">python</span>
+        </span>
+      </div>
+      {/* The line numbers are `data-line` on a span around the line's FIRST
+          CHARACTER, exactly as `lineNumberDecorations` builds them on a real
+          block — the digits are generated content, so a specimen that put a
+          "1" in the markup would draw two of them. */}
+      <pre class="nb-code-sheet">
+        <code class="nb-code-body">
+          <span class="nb-code-num" data-line="1">
+            #
+          </span>
+          <span class="hljs-comment"> how many pages fit on one shelf</span>
+          {'\n'}
+          <span class="nb-code-num" data-line="2">
+            <span class="hljs-keyword">d</span>
+          </span>
+          <span class="hljs-keyword">ef</span>{' '}
+          <span class="hljs-title">capacity</span>(
+          <span class="hljs-params">shelf</span>):{'\n'}
+          <span class="nb-code-num" data-line="3">
+            {' '}
+          </span>
+          {'   '}
+          <span class="hljs-variable">width</span> ={' '}
+          <span class="hljs-built_in">len</span>(shelf.
+          <span class="hljs-attr">books</span>){'\n'}
+          <span class="nb-code-num" data-line="4">
+            {' '}
+          </span>
+          {'   '}
+          <span class="hljs-keyword">return</span> width *{' '}
+          <span class="hljs-number">12</span> +{' '}
+          <span class="hljs-string">"a little more"</span>
+        </code>
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * What each colour in the specimen above is FOR.
+ *
+ * Seven words with the pigment beside each — built from `CODE_ROLES`, so the
+ * legend cannot come to name a role the derivation does not produce. It reads
+ * as a key to the specimen, and it is also the only place in the app that says
+ * out loud what the seven roles are; a reader comparing two listings is
+ * usually comparing exactly one of them.
+ */
+function CodeRoleLegend(): JSX.Element {
+  return (
+    <div class="nbs-code-legend">
+      <For each={CODE_ROLES}>
+        {(role) => (
+          <span class="nbs-code-legend-item font-ui">
+            <span
+              aria-hidden="true"
+              class="nbs-code-legend-swatch"
+              style={{ background: `var(--code-${role})` }}
+            />
+            {CODE_ROLE_LABELS[role]}
+          </span>
+        )}
+      </For>
+    </div>
+  );
+}
+
 const THEME_GROUPS = groupsOf(
   APP_THEMES,
   APP_THEME_FAMILIES,
@@ -759,7 +918,8 @@ type SectionAccent =
   | 'amber'
   | 'sky'
   | 'coral'
-  | 'lime';
+  | 'lime'
+  | 'lemon';
 
 function Section(props: {
   title: string;
@@ -984,7 +1144,9 @@ export default function SettingsPanel(props: {
   const [allHandsOpen, setAllHandsOpen] = createSignal(false);
   const [allInksOpen, setAllInksOpen] = createSignal(false);
   const [allPapersOpen, setAllPapersOpen] = createSignal(false);
+  const [allCodeThemesOpen, setAllCodeThemesOpen] = createSignal(false);
   void loadPaperStock();
+  void loadCodeLook();
 
   /**
    * A shortlist that always contains the current value.
@@ -1058,6 +1220,32 @@ export default function SettingsPanel(props: {
     ),
   );
 
+  // The code chips are painted in the room too, and for the same reason the
+  // ink chips are: a code theme's plate is SOLVED against the paper the reader
+  // chose, so a chip painted from the authored hex would advertise a listing
+  // the page will not give.
+  const codeThemeOptions = createMemo(() =>
+    codeThemeOptionsFor(settings.theme, settings.inkColor, paperStock()),
+  );
+  const codeThemeGroups = createMemo(() =>
+    groupsOf(
+      CODE_THEMES,
+      CODE_THEME_FAMILIES,
+      CODE_FAMILY_LABELS,
+      CODE_FAMILY_BLURBS,
+      codeThemeOptions(),
+    ),
+  );
+  const codeThemeShortlist = createMemo(() =>
+    withCurrent(
+      CODE_THEME_SHORTLIST.map(
+        (spec) => codeThemeOptions().get(spec.id) as SegOption,
+      ),
+      codeLook().theme,
+      codeThemeOptions(),
+    ),
+  );
+
   /** What the four rows add up to, said in one line above them. */
   const lookHint = (): string => {
     const stock = resolvePaper(paperStock());
@@ -1082,6 +1270,11 @@ export default function SettingsPanel(props: {
       handwritingFont: (usable.length > 0 ? pick(usable) : pick(HAND_ROLL)).id,
     });
     void savePaperStock(pick(PAPER_ROLL).id);
+    // The listing is part of the look. A room rolled dark with a warm-cream
+    // code plate still in it is the one thing on the page that did not come
+    // along, and the reader would have to go and fix it by hand — which is
+    // the opposite of what one button called "roll a whole look" promises.
+    void saveCodeLook({ theme: pick(CODE_THEME_ROLL).id });
   };
 
   // Sound credits: collapsed by default — reference material, not a control.
@@ -2209,6 +2402,70 @@ export default function SettingsPanel(props: {
               label="page thumbnails strip"
               checked={settings.thumbnailsStrip}
               onChange={(v) => put({ thumbnailsStrip: v })}
+            />
+          </Row>
+        </Section>
+
+        {/* ----------------------------- Code blocks --------------------------
+            Its own section rather than four more rows under Appearance: these
+            five change ONE kind of block, not the app, and a reader looking
+            for them is looking for the word "code". The live specimen sits at
+            the top because none of the four rows below it can be judged from
+            a chip — a plate and three pigments cannot show what a comment
+            above an indented block looks like at fifteen pixels, which is the
+            only question anybody actually has. */}
+        <Section title="Code blocks" accent="lemon">
+          <Row label="how it looks" hint="the real thing, in the room you are in" wide>
+            <CodePreview />
+          </Row>
+          <Row label="what the colours mean" wide>
+            <CodeRoleLegend />
+          </Row>
+          <Picker
+            label="code look"
+            hint="the plate a program is written on, and its colours"
+            shortlist={codeThemeShortlist()}
+            groups={codeThemeGroups()}
+            total={CODE_THEMES.length}
+            value={codeLook().theme}
+            open={allCodeThemesOpen()}
+            region="nbs-code-themes"
+            onOpen={setAllCodeThemesOpen}
+            onSelect={(v) => void saveCodeLook({ theme: v })}
+          />
+          <Row label="drawn as" hint="how the block is framed on the page" wide>
+            <Seg
+              label="code block frame"
+              options={CODE_FRAME_OPTIONS}
+              value={codeLook().frame}
+              onSelect={(v) => void saveCodeLook({ frame: v as CodeFrame })}
+            />
+          </Row>
+          <Row label="code face" hint="always monospaced — never a hand" wide>
+            <Seg
+              label="code face"
+              options={CODE_FACE_OPTIONS}
+              value={codeLook().face}
+              onSelect={(v) => void saveCodeLook({ face: v as CodeFace })}
+            />
+          </Row>
+          <Row label="code size" hint="a code block sets its own type size">
+            <Slider
+              label="code font size"
+              min={CODE_SIZE_MIN}
+              max={CODE_SIZE_MAX}
+              step={1}
+              ticks={5}
+              display={`${codeLook().size}px`}
+              value={codeLook().size}
+              onInput={(v) => void saveCodeLook({ size: v })}
+            />
+          </Row>
+          <Row label="line numbers" hint="down the left, in the margin the code already keeps">
+            <Toggle
+              label="code line numbers"
+              checked={codeLook().numbers}
+              onChange={(v) => void saveCodeLook({ numbers: v })}
             />
           </Row>
         </Section>

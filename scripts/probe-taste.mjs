@@ -205,8 +205,28 @@ async function answerPalette(tag, swatch) {
       name: lit?.querySelector('.nbq-swatch-name')?.textContent ?? '',
       stillSteer: lit?.classList.contains('is-steer') ?? true,
       lit: document.querySelectorAll('.nbq-swatch.is-picked').length,
+      // Still all sixty, or did the grid collapse when the card was pressed?
+      shown: document.querySelectorAll('.nbq-swatch').length,
     };
   });
+  /*
+   * THE GRID STAYS OPEN, and this is a check and not an assumption because it
+   * did not.
+   *
+   * `Capped`'s `resetKey` was the steer's theme read straight off a memo that
+   * rebuilds a room object whenever ANY answer moves — the palette answer
+   * included — so pressing a card notified the effect that collapses the list
+   * and the forty the reader had just opened vanished under their cursor,
+   * carrying the card they pressed forty slots up the page. Everything else in
+   * this function still passed: the pick was written, the tick moved, the shelf
+   * wore it. Only a reader browsing would have noticed, which is exactly the
+   * class of failure a probe is for. (Playwright scrolls a click target into
+   * view, so the press itself never felt it either.)
+   */
+  check(
+    mine.shown === 60,
+    `${tag}: the grid stays open when a card is pressed (showing ${mine.shown})`,
+  );
   check(mine.lit === 1, `${tag}: pressing a card moves the tick rather than adding one`);
   check(!mine.stillSteer, `${tag}: …and the card stops claiming to be the steer's`);
   check(

@@ -146,6 +146,74 @@ describe('script → tiptap → script round trip', () => {
 
 /* ------------------------- degradation behaviors -------------------------- */
 
+describe('a code fence survives the whole trip', () => {
+  /*
+   * The specific failure this replaces: `codeBlock` used to leave the editor
+   * as a "generic container" holding one paragraph per non-blank line. That
+   * deleted the blank lines, trimmed the indentation, read `**kwargs` as bold
+   * on the way back in, and named the language somewhere only an unknown
+   * container could read it. Copy a function out of a page, paste it back, and
+   * it was no longer a function.
+   */
+  const SOURCE = [
+    '```python',
+    'def totals(**kwargs):',
+    '',
+    '    weights = {"a": 1}',
+    '    return _sum_(weights)  # {{not a variable}}',
+    '```',
+  ].join('\n');
+
+  const doc = parse(SOURCE);
+  const json = scriptDocToTiptap(doc);
+  const block = content(json)[0];
+
+  it('parses to one code block, verbatim, with no warnings', () => {
+    expect(doc.diagnostics).toEqual([]);
+    expect(doc.blocks).toHaveLength(1);
+    expect(doc.blocks[0].kind).toBe('code');
+  });
+
+  it('becomes a real codeBlock node carrying its language', () => {
+    expect(block.type).toBe('codeBlock');
+    expect(block.attrs?.language).toBe('python');
+    // ONE text node, newlines and all — not a paragraph per line.
+    expect(block.content).toHaveLength(1);
+    expect(block.content?.[0]?.type).toBe('text');
+  });
+
+  it('keeps the blank line, the indentation and every character of markup', () => {
+    const text = block.content?.[0]?.text ?? '';
+    expect(text).toContain('\n\n');
+    expect(text).toContain('    weights');
+    expect(text).toContain('**kwargs');
+    expect(text).toContain('_sum_');
+    expect(text).toContain('{{not a variable}}');
+  });
+
+  it('prints back byte-identically', () => {
+    expect(print(tiptapToScriptDoc(json))).toBe(`${SOURCE}\n`);
+  });
+
+  it('an empty fence makes a valid node rather than an invalid text child', () => {
+    // A zero-length text node is illegal in ProseMirror and `nodeFromJSON`
+    // throws on one, which would turn a stray ``` into a page that will not
+    // open.
+    const empty = scriptDocToTiptap(parse('```\n```'));
+    const node = content(empty)[0];
+    expect(node.type).toBe('codeBlock');
+    expect(node.content ?? []).toEqual([]);
+    expect(() => schema.nodeFromJSON(empty)).not.toThrow();
+  });
+
+  it('a language this app cannot colour keeps its word', () => {
+    const zig = parse('```zig\nconst x = 1;\n```');
+    expect(print(tiptapToScriptDoc(scriptDocToTiptap(zig)))).toBe(
+      '```zig\nconst x = 1;\n```\n',
+    );
+  });
+});
+
 describe('unknown-container degradation', () => {
   const doc = parse('::: mystery-box {color=sky}\nHello inside.\n:::');
   const json = scriptDocToTiptap(doc);

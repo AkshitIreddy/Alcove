@@ -9,6 +9,8 @@
  * rules that guarantee a missing target can never trap the user.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -483,7 +485,7 @@ describe('tour script', () => {
     const selectors = TUTORIAL_STEPS.flatMap((s) =>
       stepTargets(s).map((t) => t.selector),
     ).join(' ');
-    for (const tool of ['customize', 'page-style', 'catalogue', 'toc', 'focus', 'spec']) {
+    for (const tool of ['customize', 'page-style', 'catalogue', 'toc', 'focus', 'share']) {
       expect(selectors).toContain(`data-tool="${tool}"`);
     }
     expect(selectors).toContain('.shelf-dock');
@@ -492,6 +494,48 @@ describe('tour script', () => {
     for (const label of ['Page style', 'Catalogue', 'Table of contents', 'Customize this book']) {
       expect(selectors).toContain(`aria-label="${label}"`);
     }
+  });
+
+  /*
+   * The other direction, and the one the list above could not ask.
+   *
+   * `data-tool="spec"` was a rail button until four of them were folded into
+   * the "In and out" sheet (views/rail/SharePanel.tsx). The tour went on
+   * naming it, and a tour target that matches nothing is not an error — the
+   * engine deliberately survives a missing target so a step can never trap the
+   * reader — so the step would simply have spotlit the whole rail and asked
+   * for a press that could not happen. Nothing above would have failed if the
+   * hard-coded list had not happened to name that one tool.
+   *
+   * So: every `data-tool` the tour points at has to be a tool BookRail really
+   * declares. Read off the rail's own TOOLS table, which is the only place a
+   * tool id is written.
+   */
+  it('never points at a rail tool that has been taken away', () => {
+    const rail = readFileSync(
+      join(import.meta.dirname, '..', 'src', 'views', 'rail', 'BookRail.tsx'),
+      'utf8',
+    );
+    const declared = new Set(
+      [...rail.matchAll(/^\s*id: '([a-z-]+)',$/gm)].map((m) => m[1]!),
+    );
+    // The vacuous-pass guard: a table this regex could not read would make
+    // every assertion below pass by finding nothing to check.
+    expect(declared.size).toBeGreaterThanOrEqual(8);
+    expect(declared).toContain('customize');
+
+    const pointedAt = [
+      ...new Set(
+        TUTORIAL_STEPS.flatMap((s) => stepTargets(s).map((t) => t.selector))
+          .flatMap((sel) => [...sel.matchAll(/data-tool="([a-z-]+)"/g)])
+          .map((m) => m[1]!),
+      ),
+    ].sort();
+    expect(pointedAt.length).toBeGreaterThan(3);
+    expect(
+      pointedAt.filter((id) => !declared.has(id)),
+      'the tour spotlights rail buttons that BookRail no longer draws',
+    ).toEqual([]);
   });
 
   it('every step has unique id, title and body copy', () => {

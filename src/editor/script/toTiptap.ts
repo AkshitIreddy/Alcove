@@ -980,6 +980,30 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
         ];
       }
       return [node('math', { latex: block.latex, ...extraAttrs(block.attrs) })];
+    case 'code': {
+      /*
+       * The body is ONE text node, newlines and all.
+       *
+       * `codeBlock` is `content: 'text*'` with `code: true`, so the document
+       * model stores a program the way a file does — a single run of
+       * characters — rather than as a paragraph per line. That is what lets
+       * the indentation survive the trip, and it is why this case cannot go
+       * through `contentWithSticker` or any other inline pass.
+       *
+       * An empty fence gets NO text child: a zero-length text node is invalid
+       * in ProseMirror and `nodeFromJSON` throws on one, which would turn a
+       * reader's stray ```` ``` ```` into a page that will not open.
+       */
+      const language =
+        block.lang ?? (typeof block.rawLang === 'string' ? block.rawLang : null);
+      return [
+        node(
+          'codeBlock',
+          { language, ...extraAttrs(block.attrs) },
+          block.code === '' ? [] : [{ type: 'text', text: block.code }],
+        ),
+      ];
+    }
     case 'container':
       return mapContainer(block, options);
     case 'diagram':

@@ -26,15 +26,19 @@
  * check the claim rather than trust it:
  *
  *   openTemplatesGallery   the shelf dock's "template" button, the bare-plank
- *                          right-click card, the book rail's template icon,
- *                          and `templates` (Ctrl+Alt+G).
- *   openExportPdfDialog    the book rail's "Take it out" sheet, and
- *                          `export-pdf` (Ctrl+Alt+P).
+ *                          right-click card, the book rail's "In and out"
+ *                          sheet, and `templates` (Ctrl+Alt+G).
+ *   openExportPdfDialog    the same sheet, and `export-pdf` (Ctrl+Alt+P).
  *   exportActivePagePng    the same sheet, and `export-png`
  *                          (Ctrl+Shift+Alt+P).
  *   importMarkdownBooks    the same sheet, the settings sheet's "Library
  *                          files" section, and `import-markdown`
  *                          (Ctrl+Shift+Alt+M).
+ *
+ * The sheet was called "Take it out" and carried the three exports plus the
+ * Markdown import. It is "In and out" now and carries everything in this list:
+ * the reader asked for the insert dialog, the AI spec and the exports to stop
+ * being four rail icons and become one — see `views/rail/SharePanel.tsx`.
  *
  * The bridge stays — a probe that wants to run an export without hunting for a
  * button is a fair thing to want — but `tests/plugged-in.test.ts` no longer
@@ -70,8 +74,8 @@ export {
   ExportPdfIcon,
   ExportPngIcon,
   ImportMdIcon,
-  OutTrayIcon,
   TemplatesIcon,
+  TrayIcon,
 } from './icons';
 export { default as UserStickersSection } from './UserStickersSection';
 

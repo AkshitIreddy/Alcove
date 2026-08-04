@@ -143,7 +143,7 @@ interface Observed {
   restyleClicked: boolean;
   /** The generated cover art changed. */
   coverChanged: boolean;
-  /** Copy AI spec / Insert script was pressed. */
+  /** The "In and out" sheet was opened, or one of its script rows pressed. */
   specCopied: boolean;
   /** The Ctrl+K bar appeared. */
   quickSwitcher: boolean;
@@ -303,10 +303,24 @@ function onClick(event: MouseEvent): void {
   if (tool !== null) {
     seen.railHovered = true; // a click implies the reader found the rail
     const id = tool.getAttribute('data-tool');
-    if (id === 'spec' || id === 'insert') seen.specCopied = true;
+    /*
+     * `spec` and `insert` were rail buttons of their own; both are rows on the
+     * "In and out" sheet now, so opening that sheet is what the step asks for.
+     * (Checked below as well, for the reader who goes on and presses one.)
+     */
+    if (id === 'share') seen.specCopied = true;
     // Either view toggle counts: the step teaches both, and the filmstrip is
     // the one it asks for only because focus mode takes the rail away.
     if (id === 'thumbs' || id === 'focus') seen.viewToggled = true;
+  }
+  // The three script rows inside that sheet — the format, the paste box, and
+  // the page back out — are the act the step is really about.
+  const share = closestMatch(event.target, '.nb-share-row');
+  if (share !== null) {
+    const what = share.getAttribute('data-share');
+    if (what === 'spec' || what === 'insert' || what === 'script') {
+      seen.specCopied = true;
+    }
   }
   if (closestMatch(event.target, '[data-shelf-dock]') !== null) seen.dockHovered = true;
   // The invite, the ghost slot and the dock's own button all make a book. The

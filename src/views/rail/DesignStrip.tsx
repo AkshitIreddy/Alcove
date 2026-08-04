@@ -147,6 +147,14 @@ export interface CappedProps<T> {
   /**
    * Collapse again whenever this value changes — a new search, a new shelf.
    * Read reactively, so pass the value itself, not an accessor.
+   *
+   * PASS A PRIMITIVE. The effect below collapses on every notification, not on
+   * a change of value, and it has no way to do better: `unknown` cannot be
+   * compared usefully. So a key read out of a memo that rebuilds an object —
+   * `resolveRoom(...)` and its like — reduces to "collapse whenever anything
+   * upstream moved", and the taste panel's palette grid slammed shut under the
+   * reader every time they pressed a card. Memoise down to the string or the id
+   * first, so the memo's own `===` absorbs a recompute that changed nothing.
    */
   resetKey?: unknown;
   children: (item: () => T) => JSX.Element;

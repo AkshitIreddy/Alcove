@@ -107,15 +107,23 @@ export function ParcelIcon(): JSX.Element {
 }
 
 /**
- * An out-tray with something rising out of it — the rail button that opens
- * "Take it out", where the PDF, the picture, the script and the Markdown
- * import live together.
+ * A tray with one thing rising out of it and one thing dropping in — the rail
+ * button that opens "In and out", the single sheet where a page or a book
+ * leaves this app, where loose files arrive in it, and where an assistant is
+ * handed the format.
+ *
+ * It was an out-tray with ONE arrow, drawn when the sheet only carried the
+ * exports. The sheet grew the "bring in" half and the AI half (the reader:
+ * *"maybe condense insert, copy AI spec, export things into a single setting
+ * in side bar"*), and a glyph that says only "out" on the button that is now
+ * also the only way in is a name that lies.
  *
  * Deliberately NOT another page-with-an-arrow: `ExportScriptIcon` in
- * `views/rail/icons.tsx` is already that, and the two sit four buttons apart
- * on the same rail.
+ * `views/rail/icons.tsx` is already that, and both are drawn in this rail.
+ * The two arrows are spaced 3.4px apart at the heads — the first cut had them
+ * at 2px and at 22px they closed into one dark smudge.
  */
-export function OutTrayIcon(): JSX.Element {
+export function TrayIcon(): JSX.Element {
   return frame(
     <>
       <path
@@ -127,8 +135,15 @@ export function OutTrayIcon(): JSX.Element {
         {...S}
         stroke-width="1.5"
       />
+      {/* Out — rising from the tray. */}
       <path
-        d="M 12 3.1 C 12 5.5 12 7.9 11.9 10.3 M 9.5 5.6 C 10.3 4.7 11.2 3.9 12 3.1 C 12.9 3.9 13.7 4.7 14.5 5.5"
+        d="M 8.5 10.6 C 8.4 8.2 8.5 5.8 8.6 3.4 M 6.9 5.4 C 7.5 4.7 8.1 4 8.6 3.3 C 9.2 4 9.8 4.7 10.4 5.4"
+        {...S}
+        stroke-width="1.6"
+      />
+      {/* In — dropping into it. */}
+      <path
+        d="M 15.4 3.3 C 15.5 5.7 15.6 8.1 15.5 10.6 M 13.7 8.5 C 14.3 9.2 14.9 9.9 15.5 10.7 C 16 9.9 16.6 9.2 17.2 8.5"
         {...S}
         stroke-width="1.6"
       />

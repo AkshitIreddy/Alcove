@@ -253,7 +253,11 @@ for (const theme of THEMES) {
   if (SURFACES.includes('toast')) {
     try {
       await closeEverywhere();
-      await page.locator('button[data-tool="spec"]').first().dispatchEvent('click');
+      // Two presses now: "copy AI spec" was a rail icon until four of them
+      // were folded onto the "In and out" sheet (views/rail/SharePanel.tsx).
+      await page.locator('button[data-tool="share"]').first().dispatchEvent('click');
+      await page.waitForSelector('.nb-share-row[data-share="spec"]', { timeout: 15000 });
+      await page.locator('.nb-share-row[data-share="spec"]').first().dispatchEvent('click');
       await page.waitForSelector('.nb-script-toast', { timeout: 15000 });
       await page.waitForTimeout(650);
       const tone = await page.evaluate(
@@ -270,7 +274,10 @@ for (const theme of THEMES) {
   if (SURFACES.includes('insert')) {
     try {
       await closeEverywhere();
-      await page.locator('button[data-tool="insert"]').first().dispatchEvent('click');
+      // As above — the paste box is a row on the sheet, not a rail icon.
+      await page.locator('button[data-tool="share"]').first().dispatchEvent('click');
+      await page.waitForSelector('.nb-share-row[data-share="insert"]', { timeout: 15000 });
+      await page.locator('.nb-share-row[data-share="insert"]').first().dispatchEvent('click');
       await page.waitForSelector('.nb-ins-card', { timeout: 15000 });
       await page.waitForTimeout(700);
       await shot(theme, 'insert');

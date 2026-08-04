@@ -16,6 +16,18 @@
  * `views/bookmarks.ts` already knows which book is on screen, and everything
  * it edits is that module's vocabulary.
  *
+ * ## Ten buttons, not fourteen
+ *
+ * Insert script, export script, copy AI spec and start-from-a-template were
+ * four separate icons down here. They are four rows on the "In and out" sheet
+ * now — the reader's words were *"maybe condense insert, copy AI spec, export
+ * things into a single setting in side bar, with the above options as well in
+ * its panel below"*, and the sheet that already held the exports was where
+ * they belonged. Nothing was taken away: every one of those flows keeps its
+ * shortcut, and the ones that live outside a book (the gallery on the shelf,
+ * the Markdown import in settings) keep their other doors too. See
+ * `SharePanel.tsx`.
+ *
  * ## One ribbon control, not two
  *
  * The rail used to carry a "bookmark this page" button AND a "ribbons" button,
@@ -50,7 +62,7 @@ import { Portal } from 'solid-js/web';
 import { bindingFor, formatBinding } from '../../data/keybindings';
 import { settings } from '../../data/settings';
 import { lastSavedAt } from '../../editor/saveIndicator';
-import { OutTrayIcon, TemplatesIcon } from '../../features/templates/icons';
+import { TrayIcon } from '../../features/templates/icons';
 import { LINGER_MS } from '../../styles/motion';
 import Tooltips from '../Tooltip';
 import {
@@ -75,13 +87,10 @@ import { Capped } from './DesignStrip';
 import RailPanel from './RailPanel';
 import {
   AddPageIcon,
-  AiSpecIcon,
   BrushIcon,
-  ExportScriptIcon,
   FilmstripIcon,
   FocusIcon,
   HistoryIcon,
-  InsertScriptIcon,
   PageStyleIcon,
   PencilIcon,
   RibbonIcon,
@@ -96,23 +105,22 @@ export type RailPanelId =
   | 'toc'
   | 'history'
   /**
-   * "Take it out" — every way a page or a book leaves this app, and the one
-   * way loose files come in, on one sheet. The four flows on it (the PDF
-   * chooser, the picture, the script, the Markdown import) were all finished,
-   * all e2e-tested, and all reachable only through a dev global; see the
-   * docblock on `features/templates/groupD.ts`.
+   * "In and out" — everything that arrives in a book or leaves it, on one
+   * sheet: paste a script, import Markdown, start from a template, export a
+   * PDF or a picture, reach the parcel desk, and hand the format to an AI.
+   *
+   * Four of those flows (the PDF chooser, the picture, the gallery, the
+   * Markdown import) were finished, e2e-tested and reachable only through a
+   * dev global; see the docblock on `features/templates/groupD.ts`. The other
+   * four had rail icons of their own until the reader asked for one setting
+   * instead of several — see `SharePanel.tsx`.
    */
   | 'share';
 
 export interface BookRailProps {
   activePanel: RailPanelId | null;
   onTogglePanel(panel: RailPanelId): void;
-  onInsertScript(): void;
-  onExportScript(): void;
-  onCopySpec(): void;
   onAddPage(): void;
-  /** The templates gallery — a new book, or this template's pages here. */
-  onOpenTemplates(): void;
   /** Focus mode (roadmap #12) — rail icon mirror of F9. */
   focusMode: boolean;
   onToggleFocus(): void;
@@ -202,12 +210,21 @@ const TOOLS: readonly RailTool[] = [
   { id: 'history', label: 'Page history', icon: HistoryIcon, panel: 'history' },
   {
     // The last panel in the group, because it is the one that ENDS a session:
-    // everything above dresses the book, this is how a page leaves it.
+    // everything above dresses the book, this is how work gets in and out.
+    //
+    // FOUR icons used to sit below the divider doing pieces of this — insert
+    // script, export script, copy AI spec, start from a template — plus this
+    // one for the exports. They are all rows on the sheet now (SharePanel.tsx),
+    // which is what the reader asked for and what took the rail from fourteen
+    // buttons to ten.
+    //
+    // No `keyFor`: there is no combination that opens this sheet, and the one
+    // it used to borrow (`export-pdf`) opens the PDF chooser straight past it.
+    // Every key that belongs here is drawn on its own row inside.
     id: 'share',
-    label: 'Take it out — PDF, picture, script, Markdown',
-    icon: OutTrayIcon,
+    label: 'In and out — scripts, templates, exports, the AI spec',
+    icon: TrayIcon,
     panel: 'share',
-    keyFor: 'export-pdf',
   },
   {
     // ONE control (see the docblock): the press marks the page, and the plate
@@ -236,32 +253,6 @@ const TOOLS: readonly RailTool[] = [
     pressed: (p) => p.thumbnails,
   },
   {
-    id: 'insert',
-    label: 'Insert script',
-    icon: InsertScriptIcon,
-    keyFor: 'insert-script',
-    action: (p) => p.onInsertScript(),
-  },
-  {
-    id: 'export',
-    label: 'Export script',
-    icon: ExportScriptIcon,
-    keyFor: 'export-script',
-    action: (p) => p.onExportScript(),
-  },
-  { id: 'spec', label: 'Copy AI spec', icon: AiSpecIcon, action: (p) => p.onCopySpec() },
-  {
-    // Beside "add a page", because that is the pair: a blank one, or five
-    // already written. The gallery's second verb — "add pages here" — only
-    // exists while a book is open, which is why it has a rail button as well
-    // as a dock button out on the shelf.
-    id: 'templates',
-    label: 'Start from a template',
-    icon: TemplatesIcon,
-    keyFor: 'templates',
-    action: (p) => p.onOpenTemplates(),
-  },
-  {
     id: 'add-page',
     label: 'Add a page',
     icon: AddPageIcon,
@@ -276,10 +267,25 @@ const TOOLS: readonly RailTool[] = [
  * It was the literal 8, which was the index of `insert` on the day it was
  * written. Adding one tool above that line silently moved the divider up a
  * button, which is the whole "a constant restating another table's shape"
- * mistake in miniature. The divider separates the tools that open something
- * from the tools that do something; `insert` is the first of the second kind.
+ * mistake in miniature.
+ *
+ * Then it was `findIndex(id === 'insert')`, which was the same mistake wearing
+ * a name: `insert` moved into the "In and out" sheet, `findIndex` returned -1,
+ * and the divider the tour teaches ("below this line nothing opens a panel")
+ * simply stopped rendering — silently, because -1 matches no index. It asks
+ * the STRUCTURAL question now: the divider separates the tools that open
+ * something from the tools that do something, so it lands before the first
+ * tool with no panel, whatever that tool happens to be called.
+ *
+ * That moves the line up three buttons, and it moves it to where the app
+ * already said it was. `insert` sat below `focus` and `thumbs`, so those two
+ * were on the PANEL side of a divider whose whole job is to separate panels
+ * from acts — while the tour step that teaches the line has always said
+ * *"below the divider nothing opens a panel … focus mode … the filmstrip …
+ * and the last one adds a page"* (features/tutorial/steps.ts, `rail-actions`).
+ * The words were right and the rail was wrong.
  */
-const DIVIDER_AT = TOOLS.findIndex((tool) => tool.id === 'insert');
+const DIVIDER_AT = TOOLS.findIndex((tool) => tool.panel === undefined);
 
 export default function BookRail(props: BookRailProps): JSX.Element {
   // The rail's own sheet. Kept here rather than in BookView's `activePanel`

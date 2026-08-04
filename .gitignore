@@ -1,5 +1,11 @@
 node_modules
 dist
+# `dist` above does NOT cover this: the pattern matches a directory named
+# exactly `dist`, and the release build writes the compiled frontend to
+# `dist-release/` instead — a hundred-odd built JS, CSS and font files that
+# turned up untracked and would have been swept into a commit by `git add -A`.
+# Same trap `shots-now/out/` fell into.
+dist-release
 
 # Playwright E2E artifacts
 tests/e2e/.artifacts
@@ -8,7 +14,7 @@ playwright-report
 # scheduled task lock
 .claude/scheduled_tasks.lock
 
-# Generated art intermediates � the shipped copies live in public/
+# Generated art intermediates � the shipped copies live in public/
 assets/spinewalls/
 assets/spinelayouts/*.png
 assets/spines/
@@ -16,3 +22,9 @@ assets/spines/
 # Probe screenshots are regenerated on demand by shots-now/*.mjs.
 shots-now/out/
 shots-now/bookfit/
+
+# Generated audition track — scripts/audition-sounds.mjs rebuilds it from
+# public/sounds/ in a second, and it is 6.8 MB. Committing it would put a
+# regenerable binary in history for good, the same trap dist-release/ and
+# shots-now/out/ fell into.
+qa/sound/

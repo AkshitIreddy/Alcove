@@ -6,33 +6,48 @@
 
 # Part 2 — Building Alcove
 
-This half is for the person who has to change something: the architecture, the
-reason behind each dependency, the stop-by-stop walks for adding a value or a
-block type, and every gate that stops a change going wrong.
+**This half is for a developer — or for an AI agent helping one.** The
+architecture, the reason behind each dependency, the stop-by-stop walks for
+adding a value or a block type, and every gate that stops a change going wrong.
+Nothing in it is needed to *use* the app.
 
-It describes what this codebase actually is rather than an idealised version of
-it, which means naming the bugs it has shipped. That is not confession for its
-own sake — the expensive failures here share a property, they produce no red
-test and nothing visible on a clean profile, and a document that only described
-the intended design would leave you unable to recognise them.
+If you are an agent working in this repo, read
+[`CLAUDE.md`](../../CLAUDE.md) as well: it is the binding rules file, it states
+the constraints this page only describes, and it deliberately does not restate
+what is here.
+
+This page describes what the codebase actually is rather than an idealised
+version of it, which means naming the bugs it has shipped. That is not
+confession for its own sake — the expensive failures here share a property, they
+produce no red test and nothing visible on a clean profile, and a document that
+only described the intended design would leave you unable to recognise them.
 
 For what the app *is* and how a reader uses it, read [Part 1 — Using
 Alcove](part-1-users.md) first — this half assumes it.
 
-**On this page:** [How it's built](#how-its-built) ·
-[Getting it running](#getting-it-running) · [The map of the app](#the-map-of-the-app) ·
-[The art pipeline](#the-art-pipeline) ·
-[The design vocabularies](#the-design-vocabularies) · [The editor](#the-editor) ·
-[The flip](#the-flip) · [Notebook Script](#notebook-script) ·
-[The data layer](#the-data-layer) ·
-[The failure modes](#the-failure-modes-this-codebase-has-actually-shipped) ·
-[The gates](#the-gates) · [Driving the running app](#driving-the-running-app) ·
-[Things that were harder than they look](#things-that-were-harder-than-they-look) ·
-[The design record](#the-design-record) ·
-[Building and releasing](#building-and-releasing) ·
-[The generated artefacts](#the-generated-artefacts) ·
-[How this document stays true](#how-this-document-stays-true) ·
-[Non-goals](#non-goals) · [Licence and credits](#licence-and-credits)
+**On this page**
+
+<!-- gen:contents-part-2 -->
+- [How it's built](#how-its-built) — The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row
+- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the four checks
+- [The map of the app](#the-map-of-the-app) — Directory by directory, plus the module-docstring convention this README points at instead of copying
+- [The art pipeline](#the-art-pipeline) — Bake once, draw forever: atlas packing, LOD tiers, and the cache-key rule
+- [The design vocabularies](#the-design-vocabularies) — Colour, carpentry, wall and binding as four orthogonal axes — and adding a value end to end
+- [The editor](#the-editor) — The vendored Solid bindings, the pagination contract, block effects, and adding a block type step by step
+- [The flip](#the-flip) — The cylinder curl, the snapshot cache, and the library bug worked around at length
+- [Notebook Script](#notebook-script) — Why `parse()` is total, the round-trip invariant, and the generated spec
+- [The data layer](#the-data-layer) — The schema, the bookcase model, and why every read is validated
+- [The failure modes this codebase has actually shipped](#the-failure-modes-this-codebase-has-actually-shipped) — The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named
+- [The gates](#the-gates) — Every unit-test file and the specific class of bug it exists to stop
+- [Driving the running app](#driving-the-running-app) — Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does
+- [Things that were harder than they look](#things-that-were-harder-than-they-look) — Five places the obvious implementation is wrong
+- [The design record](#the-design-record) — The ADR set in `docs/design/`, including which documents are superseded and why they are kept
+- [Building and releasing](#building-and-releasing) — The bundle artefacts, the icon pipeline, and the tag-driven release workflow
+- [The generated artefacts](#the-generated-artefacts) — The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails
+- [How this document stays true](#how-this-document-stays-true) — The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed
+- [Non-goals](#non-goals) — No sync, no cloud, no mobile, no plugin API, no second visual language, no light model
+- [Licence and credits](#licence-and-credits) — MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable
+<!-- /gen -->
 
 Three places to start, depending on why you are here. Changing what the app
 *draws*: [The art pipeline](#the-art-pipeline), then
@@ -47,13 +62,41 @@ shortest useful thing on this page.
 ## How it's built
 <!--nav: The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row-->
 
-Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a WebView2
-window, and a [SolidJS](https://www.solidjs.com/) frontend built by Vite. Almost
-everything interesting happens in the frontend. The Rust side is
+Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
+webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
+Vite. Almost everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->13<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
 migrations, in <!--f:rustFiles-->8<!--/f--> files and
 <!--f:rustLines-->2292<!--/f--> lines.
+
+### The shape of the thing, in four facts
+
+These are the constraints every decision below is downstream of. They are stated
+here rather than at the top of the front page on purpose: a reader deciding
+whether to install a notes app does not need the storage model first, and the
+one who does need it is you.
+
+- **One SQLite file, on the reader's own disk.** `notebook.db` in the app data
+  directory, opened through `tauri-plugin-sql`, with `assets/` beside it for
+  pictures and `backups/` for the scheduled ZIPs. There is no server half of
+  this app to write.
+- **No account, no sync, no telemetry.** `telemetry` is typed as the literal
+  `false` in [`src/data/types.ts`](../../src/data/types.ts), so it is not a
+  setting somebody can flip — it is a type error to try. Adding a network
+  dependency to a feature is therefore an architectural change, not a
+  convenience.
+- **Exactly two outbound calls, both reader-initiated.** Searching for an
+  openly-licensed picture (`::fetch`) and previewing a pasted link. Both go
+  through an SSRF guard that is written twice on purpose —
+  [`src-tauri/src/media.rs`](../../src-tauri/src/media.rs) is the real one and
+  [`src/editor/media/urlGuard.ts`](../../src/editor/media/urlGuard.ts) mirrors
+  it — https only, private and loopback addresses refused, fast timeouts, capped
+  body size.
+- **The webview is the OS's, not ours.** That is what makes the installer about
+  sixteen megabytes rather than ten times that, and it is also why the app
+  inherits the platform's autoplay policy, its IME and its font stack rather
+  than choosing them.
 
 What makes the frontend unusual is that it draws itself three different ways at
 once, and the three have to agree on what a page looks like.
@@ -152,7 +195,7 @@ wrong.
 
 | Piece | Version | Why this one |
 |---|---|---|
-| [Tauri 2](https://tauri.app/) | 2.x | Ships the OS webview instead of bundling Chromium: a single-digit-MB installer and one process tree. Rust gets the things a webview cannot do — filesystem, SQLite, tray, an SSRF-guarded image fetcher. |
+| [Tauri 2](https://tauri.app/) | 2.x | Ships the OS webview instead of bundling Chromium: a 16 MB installer rather than ten times that, and one process tree. Rust gets the things a webview cannot do — filesystem, SQLite, tray, an SSRF-guarded image fetcher. |
 | [SolidJS](https://www.solidjs.com/) | ^1.9.3 | Fine-grained reactivity with no virtual DOM. That is not a benchmark preference here: the app mounts dozens of TipTap node views, and a VDOM diff over a node view is exactly the thing that fights ProseMirror for ownership of the DOM. |
 | TypeScript + Vite | ~5.6 / ^6.0 | `strict`, plus `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch`. Vite's dev server is also the QA harness — see *Driving the running app*. |
 | [PixiJS v8](https://pixijs.com/) | ^8.19 | Continuous zoom is the hard requirement, and it is what DOM loses on: Chromium rasterises a layer at a fixed scale, so animating `transform: scale()` on a big container gives blurry pixels during the zoom and a re-raster hitch at the end. A single SVG loses harder — filter-based linework is CPU-bound. |
@@ -200,7 +243,7 @@ Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->76<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->80<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](../e2e.md). |
 
@@ -249,12 +292,15 @@ defending — why it is that way and what it replaced.
 | [`src/features/system/`](../../src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](../../src/features/packs/), [`src/features/templates/`](../../src/features/templates/), [`src/features/tutorial/`](../../src/features/tutorial/), [`src/features/quickswitch/`](../../src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
 | [`src/sound/`](../../src/sound/) | The Howler engine, the named sound sets, and the in-app credits panel. |
+| [`src/search/`](../../src/search/) | The fuzzy matcher and the full-text index behind `Ctrl+K` and `Ctrl+Shift+F`. In-repo, because the ranking rules are the product. |
+| [`src/state/`](../../src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
+| [`src/features/settings/`](../../src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
 | [`src-tauri/src/`](../../src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs`, all registered in `lib.rs`. |
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->274<!--/f--> of <!--f:srcFiles-->282<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6092<!--/f--> lines of it.
+<!--f:srcDocstrings-->281<!--/f--> of <!--f:srcFiles-->289<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6355<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -713,7 +759,7 @@ spoiler is the one that is).
 
 **5. Make it reachable.** Add a slash command in
 [`editor/slash/registry.ts`](../../src/editor/slash/registry.ts) — there are
-<!--f:slashCommands-->99<!--/f--> — and put it on a shelf in
+<!--f:slashCommands-->110<!--/f--> — and put it on a shelf in
 [`CataloguePanel.tsx`](../../src/views/rail/CataloguePanel.tsx). The catalogue is not
 optional: the panel is what a reader browses when they do not know the name yet.
 
@@ -823,7 +869,7 @@ is silently rewritten to the existing one on the way in.
 
 **The spec is generated, and the generation is gated.**
 [`src-tauri/resources/notebook-script-spec.md`](../../src-tauri/resources/notebook-script-spec.md)
-is the file a person copies into a chatbot — <!--f:specLines-->777<!--/f--> lines,
+is the file a person copies into a chatbot — <!--f:specLines-->821<!--/f--> lines,
 built by [`scripts/gen-spec.mjs`](../../scripts/gen-spec.mjs) from
 [`src/script/vocab.ts`](../../src/script/vocab.ts) and
 [`scripts/spec-template.md`](../../scripts/spec-template.md), and inlined a second time
@@ -895,9 +941,9 @@ Junk resolves to the house choice; it never throws.
 alternative is an exception raised in the middle of drawing a room.
 
 ## The failure modes this codebase has actually shipped
-<!--nav: The three ways work here has looked finished and been unreachable, unreadable or wrong, with the real instances named-->
+<!--nav: The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named-->
 
-Three shapes, each with real instances. They are worth knowing by name because
+Four shapes, each with real instances. They are worth knowing by name because
 none of them produces a red test, an exception, or anything visible on a clean
 profile — and because a newcomer's first instinct on all three is "surely
 something would have caught that".
@@ -974,14 +1020,41 @@ The design docs are load-bearing here, which makes a wrong one expensive.
   **not** the cause of the reported symptom. That section is the most useful part
   of the document.
 
-The mitigation is the same in all four cases: state what is true, name what was
-believed, and where the property is mechanical, gate it. This README is under the
-same rule — see *How this document stays true*.
+The mitigation is the same in all four of those: state what is true, name what
+was believed, and where the property is mechanical, gate it.
+
+### 4. A finished feature with no button
+
+Shape 1's louder cousin, and the one this README itself was wrong about for a
+release. Four flows — the templates gallery, the PDF chooser, the page picture
+and the Markdown import — were written, unit-tested, driven end to end by
+Playwright, and reachable only by typing `window.__nbGroupD` into a console.
+Every gate above was happy: the code existed, the tests passed, and
+[`features/templates/groupD.ts`](../../src/features/templates/groupD.ts)
+re-exported all four, which gave each of them a "consumer" in `src/`.
+
+They have buttons now — the gallery on the shelf dock, the other three on the
+rail's *In and out* sheet
+([`views/rail/SharePanel.tsx`](../../src/views/rail/SharePanel.tsx)) — and the
+alarm that would have caught it is part three of
+[`tests/plugged-in.test.ts`](../../tests/plugged-in.test.ts). It walks every
+module in `src/`, classifies an entry point by the SHAPE of its name
+(`open…`, `show…`, `launch…`, `start…`, `import…`, `export…`), strips dev-only
+blocks and re-export lines before looking for callers, and fails when nothing in
+a production build opens it. The exemption list is empty, which is the state to
+keep it in.
+
+The README lesson is separate and worth stating: this page carried an
+`[!IMPORTANT]` caveat about those four for as long as they were inert, which was
+right — and the caveat outlived the fix, which was not. A warning is a fact with
+an expiry date on it. This README is under the same rule as all four shapes —
+state what is true, name what was believed, gate what is mechanical. See *How
+this document stays true*.
 
 ## The gates
 <!--nav: Every unit-test file and the specific class of bug it exists to stop-->
 
-<!--f:unitTests-->76<!--/f--> unit-test files, and almost none of them are there
+<!--f:unitTests-->80<!--/f--> unit-test files, and almost none of them are there
 for coverage. Each exists to stop a specific class of bug, and most of the
 docstrings name the day the bug shipped. This is the fastest way to learn what
 this codebase is afraid of.
@@ -1115,7 +1188,7 @@ using it.
 
 ### Probes
 
-<!--f:probeScripts-->35<!--/f--> scripts under [`scripts/`](../../scripts/) named
+<!--f:probeScripts-->37<!--/f--> scripts under [`scripts/`](../../scripts/) named
 `probe-*.mjs` drive the running app with Playwright. The important three:
 
 - [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice
@@ -1350,13 +1423,13 @@ should produce, and what to check when it does.
 Notes come from [`scripts/release-notes.mjs`](../../scripts/release-notes.mjs) by
 diffing against the previous tag. A tag containing `-` publishes as a prerelease.
 
-Three honest edges. **Nothing is signed** on any platform, so Windows shows a
+Two honest edges. **Nothing is signed** on any platform, so Windows shows a
 SmartScreen warning and macOS quarantines the first launch — which is why the
-release carries checksums. **No tag has ever been pushed**, so nothing about any
-of this has run in anger and the artefact filenames in that document are
-predictions from the bundler's naming rules rather than observations. And it is
-still the *only* workflow: it fires on tags, so nothing runs `tsc` or `vitest` on
-an ordinary push.
+release carries checksums. And this is still the *only* workflow: it fires on
+tags, so nothing runs `tsc` or `vitest` on an ordinary push, and the artefact
+names in `docs/packaging-mac-linux.md` are read off the bundler's naming rules
+rather than off a run that has already happened on every platform. Check them
+against the Release before quoting one at a reader.
 
 > [!NOTE]
 > There is consequently no CI badge to display yet. The gates run locally, and
@@ -1401,23 +1474,35 @@ Two mechanisms, both with a failing check rather than just a writer:
   is the vocabulary the parser actually implements. Without it, teaching the
   parser a new container silently leaves chatbots writing script the app cannot
   read.
-- **`npm run readme:check`** covers all three pages — the front door
-  [`README.md`](../../README.md) and the two halves in
-  [`docs/readme/`](.) — and does three things to them. It recomputes every number
-  written inside an invisible `<!--f:key-->…<!--/f-->` marker, which GitHub
-  renders as the number and nothing else; `npm run readme:facts` prints the true
-  values. It resolves every relative link **from the directory of the file
-  the link is written in**, which is what a browser does, so the front door's
-  root-relative paths and the halves' `../../` paths are each checked the way
-  their reader will follow them. And it rebuilds every generated region of all
-  three pages and fails if a checked-in copy differs.
-  [`tests/readme.test.ts`](../../tests/readme.test.ts) is the actual gate: it supplies
-  the counts that need TypeScript loaded, so a vocabulary that grows and a README
-  that says otherwise is a failing test. It also checks that the deferred-key list
-  in the script and the values supplied by the test agree, because a key one side
-  forgets is a number nobody verifies.
+- **`npm run readme:check`** covers all four pages — the front door
+  [`README.md`](../../README.md), the two halves in [`docs/readme/`](.) and the
+  [release notes](releases.md) beside them. It recomputes every number written
+  inside an invisible `<!--f:key-->…<!--/f-->` marker, which GitHub renders as
+  the number and nothing else; `npm run readme:facts` prints the true values. It
+  resolves every relative link **from the directory of the file the link is
+  written in**, which is what a browser does, so the front door's root-relative
+  paths and the halves' `../../` paths are each checked the way their reader will
+  follow them. It rebuilds every generated region and says so when a checked-in
+  copy differs. And it names what is **missing**: a number it can compute that no
+  page quotes, a design document nothing links, a directory of the app the map
+  never names, a screenshot no page shows, a section with no summary written
+  beside it.
 
-  The third of those is newer than the other two and exists because the front
+  **It reports; it does not block, and it does not write prose.** That is the
+  reader's instruction — *"the check exists to say that hey something is missing
+  from readme, but final editing of readme is left in the hands of the dev/ai"* —
+  and it is also the right division: whether the page ought to mention something
+  is an editorial judgement, and a script that made it would be wrong about half
+  of them. So the CLI prints a grouped report and exits 0.
+  [`tests/readme.test.ts`](../../tests/readme.test.ts) is the gate that still
+  bites, because a stale COUNT is a fact rather than an opinion: it supplies the
+  counts that need TypeScript loaded, so a vocabulary that grows while a page
+  says otherwise is a failing test. It also checks that the deferred-key list in
+  the script and the values supplied by the test agree, because a key one side
+  forgets is a number nobody verifies. `--strict` on either script exits 1, for
+  a caller that wants a gate in a shell.
+
+  The composition is newer than the other two and exists because the front
   page rotted exactly once, as a signpost: two tables of anchor links, typed by
   hand, one row per section. Rename a heading and the row still rendered, still
   looked right, and landed the reader at the top of the page — and
@@ -1426,10 +1511,12 @@ Two mechanisms, both with a failing check rather than just a writer:
   [`scripts/gen-readme.mjs`](../../scripts/gen-readme.mjs) **lifts** whole runs of
   sections out of these halves — a half wraps them in `<!--lift: name-->` and
   the front page places `<!-- gen:lift-name -->` where it wants them — and
-  composes the remaining navigation from the invisible `<!--nav: …-->` summary
-  written under each `##` heading here, listing only the sections it did *not*
-  lift. The version on the badge and the filenames in the download table are
-  composed the same way, from `package.json`.
+  composes every contents list on every page from the invisible `<!--nav: …-->`
+  summary written under each heading, and the *Deeper reading* table from the
+  same summaries — listing only the sections it did *not* lift, so the front
+  page cannot offer a link to something the reader has already read three inches
+  higher up. The version on the badge and the filenames in the download table
+  are composed the same way, from `package.json`.
 
   Lifting is what a naive concatenation could never be. These halves write most
   of their relative links as `../../src/…`, which resolve from `docs/readme/`

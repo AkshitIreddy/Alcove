@@ -553,11 +553,25 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Code — monospace on aged paper, moss accent
+   Code
+
+   The inline span first, then the block. Both are drawn from the `--code-*`
+   tokens in tokens.css, which `features/settings/apply.ts` overwrites with
+   values solved against the reader's own paper — so nothing in here names a
+   colour, and every one of the twenty-two code themes arrives through the
+   same nine rules.
+
+   The block is a flat plate with ONE ink outline and corners that bow, like
+   every other object in this app. It is deliberately NOT a stock IDE theme:
+   those are built for a full-screen editor on a black field, and lying one on
+   warm cream turns the block into a screenshot of another program. See
+   features/settings/codeAppearance.ts for the argument in full.
+
+   Five frames, selected by `data-code-frame` on <html>: a plate, a filing
+   tab, a margin rule, a pinned card, or nothing at all.
    -------------------------------------------------------------------------- */
 .nb-prose code {
-  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas,
-    monospace;
+  font-family: var(--font-code);
   font-size: 0.78em;
   background: var(--paper-aged);
   border: 1px solid var(--paper-edge);
@@ -566,67 +580,425 @@
   color: var(--ink-graphite);
 }
 
-.nb-prose pre {
-  margin: var(--space-8) 0;
+/* The bare `pre` — no node view. This is what an EXPORT is made of, and what
+   a page renders as before the editor mounts, so it carries the same plate
+   rather than falling back to something else.
+
+   `:not(.nb-code-sheet)` is load-bearing, not tidiness. The node view's own
+   `<pre>` is inside `.nb-prose` too, so this rule matched it as well, and it
+   OUT-SPECIFIES the `.nb-code-sheet` reset one class to two — which drew the
+   plate twice, one box inside the other, with the inner one a shade lighter.
+   Excluding it here says what is meant: this is the pre that has no block
+   drawing it. */
+.nb-prose pre:not(.nb-code-sheet) {
+  margin: var(--space-12) 0;
   padding: var(--space-16) var(--space-20);
-  background: var(--paper-aged);
-  border: 1.5px solid var(--paper-edge);
-  border-left: 4px solid var(--wash-moss);
-  border-radius: 8px 12px 10px 14px / 12px 8px 14px 10px;
-  box-shadow: var(--shadow-inset-paper);
-  overflow-x: auto;
+  background: var(--code-plate);
+  border: 1.5px solid var(--code-rim);
+  border-radius: var(--radius-wobble-md);
+  color: var(--code-ink);
 }
 
-.nb-prose pre code {
+.nb-prose pre:not(.nb-code-sheet) code {
   display: block;
   background: none;
   border: none;
   padding: 0;
-  font-size: 14.5px;
+  font-family: var(--font-code);
+  font-size: var(--text-code);
   line-height: 1.6;
-  color: var(--ink-graphite);
+  color: var(--code-ink);
+  /* Wrap rather than scroll. Pages in this app never scroll — overflow flows
+     to the next page — and a horizontal scrollbar inside a code block is the
+     same rule broken sideways. `anywhere` so one 300-character minified line
+     cannot push the plate off the sheet. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
 }
 
-/* lowlight / highlight.js token colors, in wash pigments */
-.nb-prose .hljs-comment,
-.nb-prose .hljs-quote {
-  color: var(--ink-graphite-soft);
+/* --------------------------------------------------------------------------
+   The block, as the node view draws it
+   -------------------------------------------------------------------------- */
+.nb-code {
+  position: relative;
+  margin: var(--space-16) 0 var(--space-12);
+  padding: var(--space-12) var(--space-16) var(--space-12);
+  background: var(--code-plate);
+  border: 1.5px solid var(--code-rim);
+  border-radius: var(--radius-wobble-md);
+  color: var(--code-ink);
+}
+
+.nb-code.is-selected {
+  outline: 2.5px solid var(--accent-deep);
+  outline-offset: 3px;
+}
+
+.nb-code-sheet {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: inherit;
+}
+
+.nb-code-body {
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: var(--font-code);
+  font-size: var(--text-code);
+  line-height: 1.62;
+  letter-spacing: 0;
+  color: var(--code-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+  /* Every drawn face is a handwriting face; a code block borrows none of the
+     page's type settings on purpose. */
+  font-variant-ligatures: none;
+}
+
+.nb-code-body::selection,
+.nb-code-body *::selection {
+  background: var(--code-selection);
+}
+
+/* --------------------------------------------------------------------------
+   The tab: the language, and a copy button
+   -------------------------------------------------------------------------- */
+.nb-code-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin: 0 0 var(--space-8);
+  user-select: none;
+}
+
+.nb-code-tab-plate {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-12) 2px var(--space-8);
+  background: var(--code-tab);
+  border: 1.5px solid var(--code-rim);
+  border-radius: var(--radius-wobble-sm);
+  color: var(--code-ink);
+}
+
+/* The word the reader sees. The select sits invisibly on top of it, so every
+   keyboard and screen-reader behaviour is a native one while the CLOSED
+   control is drawn in this app's language. */
+.nb-code-lang-word {
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--code-ink);
+  pointer-events: none;
+}
+
+/* A little pencil chevron, drawn rather than the platform's own triangle. */
+.nb-code-lang-word::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  vertical-align: 1px;
+  border-right: 1.5px solid var(--code-ink);
+  border-bottom: 1.5px solid var(--code-ink);
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.nb-code-lang {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  opacity: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nb-code-lang:focus-visible + .nb-code-lang-word,
+.nb-code-tab-plate:has(.nb-code-lang:focus-visible) {
+  outline: 2.5px solid var(--accent-deep);
+  outline-offset: 2px;
+  border-radius: var(--radius-wobble-sm);
+}
+
+.nb-code-copy {
+  padding: 2px var(--space-12);
+  font-size: var(--text-ui);
+  letter-spacing: var(--tracking-ui);
+  color: var(--code-ink);
+  background: var(--code-tab);
+  border: 1.5px solid var(--code-rim);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+/* The copy button appears when the block is under the pointer or has the
+   caret in it — a control on every code block on a page of twenty is clutter,
+   and one that is never reachable by keyboard is worse, hence :focus-within
+   alongside :hover. */
+.nb-code:hover .nb-code-copy,
+.nb-code:focus-within .nb-code-copy,
+.nb-code-copy:focus-visible {
+  opacity: 1;
+}
+
+.nb-code-copy:focus-visible {
+  outline: 2.5px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Line numbers
+
+   The number HANGS in the padding the code already reserves: an inline-block
+   of width N with a margin-left of -N advances the line by zero. So numbered
+   and unnumbered code start at the same column, and — the thing a separate
+   gutter column cannot do — a line that wraps continues under the CODE rather
+   than under the numbers.
+   -------------------------------------------------------------------------- */
+/* `.nb-code-num` wraps the first CHARACTER of a line, so it must stay a plain
+   inline box — all the gutter geometry belongs to its ::before. */
+:root[data-code-numbers='on'] .nb-code-body,
+:root[data-code-numbers='on'] .nb-prose pre:not(.nb-code-sheet) code {
+  padding-left: 4ch;
+}
+
+/* The digits are generated content, never a text node — see
+   `lineNumberDecorations` in nodes/codeBlock.tsx for why the number is an
+   inline decoration rather than a widget, and why that matters to the caret. */
+:root[data-code-numbers='on'] .nb-code-num::before {
+  content: attr(data-line);
+  display: inline-block;
+  box-sizing: border-box;
+  width: 4ch;
+  margin-left: -4ch;
+  padding-right: 1.2ch;
+  text-align: right;
+  color: var(--code-gutter);
+  user-select: none;
+}
+
+/* --------------------------------------------------------------------------
+   The escape hatch, said out loud
+
+   Tab indents inside a code block, which means it is not moving focus — so
+   the block has to say how to leave. Only while the caret is actually in it:
+   a permanent label on every code block would be noise on a page of twenty.
+   -------------------------------------------------------------------------- */
+.nb-code-hint {
+  position: absolute;
+  right: var(--space-12);
+  bottom: -9px;
+  padding: 0 var(--space-8);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+  color: var(--code-gutter);
+  background: var(--code-plate);
+  border-radius: var(--radius-pill);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-sm) var(--ease-out);
+}
+
+.nb-code:focus-within .nb-code-hint {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   The five frames
+   -------------------------------------------------------------------------- */
+
+/* `tab` — the language is a filing tab cut into the plate's top edge. */
+:root[data-code-frame='tab'] .nb-code {
+  margin-top: var(--space-24);
+}
+
+:root[data-code-frame='tab'] .nb-code-tab {
+  position: absolute;
+  top: -14px;
+  left: var(--space-16);
+  right: var(--space-12);
+  margin: 0;
+}
+
+:root[data-code-frame='tab'] .nb-code-tab-plate {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+:root[data-code-frame='tab'] .nb-code-sheet {
+  padding-top: var(--space-8);
+}
+
+/* `rule` — no box at all, one thick pencil rule down the left, the way a
+   quotation is marked. The plate becomes the page. */
+:root[data-code-frame='rule'] .nb-code {
+  padding: var(--space-4) 0 var(--space-4) var(--space-20);
+  background: transparent;
+  border: none;
+  border-left: 5px solid var(--code-rim);
+  border-radius: 0;
+}
+
+:root[data-code-frame='rule'] .nb-code-tab-plate,
+:root[data-code-frame='rule'] .nb-code-copy {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-code-frame='rule'] .nb-code-hint {
+  background: transparent;
+}
+
+/* `card` — the plate, set a little askew, the way a card lies on a page.
+   A transform, not a shadow: depth here is a second flat face, never a blur. */
+:root[data-code-frame='card'] .nb-code {
+  transform: rotate(-0.45deg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* `bare` — just the code in its own face, for notes that are mostly code. */
+:root[data-code-frame='bare'] .nb-code {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+:root[data-code-frame='bare'] .nb-code-tab-plate,
+:root[data-code-frame='bare'] .nb-code-copy {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-code-frame='bare'] .nb-code-hint {
+  background: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   The seven roles
+
+   highlight.js emits about thirty class names; these fold them onto the seven
+   the reader is actually offered a colour for (codeAppearance.ts CODE_ROLES).
+   Seven because a palette you can hold in your head is worth more than one
+   that distinguishes `meta-string` from `string`.
+   -------------------------------------------------------------------------- */
+.nb-code .hljs-comment,
+.nb-code .hljs-quote,
+.nb-prose pre .hljs-comment,
+.nb-prose pre .hljs-quote {
+  color: var(--code-comment);
   font-style: italic;
 }
-.nb-prose .hljs-keyword,
-.nb-prose .hljs-selector-tag,
-.nb-prose .hljs-tag {
-  color: var(--wash-terracotta-deep);
+
+.nb-code .hljs-keyword,
+.nb-code .hljs-selector-tag,
+.nb-code .hljs-tag,
+.nb-code .hljs-meta-keyword,
+.nb-code .hljs-doctag,
+.nb-prose pre .hljs-keyword,
+.nb-prose pre .hljs-selector-tag,
+.nb-prose pre .hljs-tag {
+  color: var(--code-keyword);
 }
-.nb-prose .hljs-string,
-.nb-prose .hljs-regexp,
-.nb-prose .hljs-addition {
-  color: var(--wash-moss-deep);
+
+.nb-code .hljs-string,
+.nb-code .hljs-regexp,
+.nb-code .hljs-addition,
+.nb-code .hljs-char,
+.nb-code .hljs-meta-string,
+.nb-prose pre .hljs-string,
+.nb-prose pre .hljs-regexp,
+.nb-prose pre .hljs-addition {
+  color: var(--code-string);
 }
-.nb-prose .hljs-number,
-.nb-prose .hljs-literal,
-.nb-prose .hljs-symbol {
-  color: var(--wash-amber-deep);
+
+.nb-code .hljs-number,
+.nb-code .hljs-literal,
+.nb-code .hljs-symbol,
+.nb-code .hljs-bullet,
+.nb-prose pre .hljs-number,
+.nb-prose pre .hljs-literal,
+.nb-prose pre .hljs-symbol {
+  color: var(--code-number);
 }
-.nb-prose .hljs-title,
-.nb-prose .hljs-function,
-.nb-prose .hljs-section,
-.nb-prose .hljs-name {
-  color: var(--ink-blue);
+
+.nb-code .hljs-title,
+.nb-code .hljs-function,
+.nb-code .hljs-section,
+.nb-code .hljs-name,
+.nb-code .hljs-selector-id,
+.nb-prose pre .hljs-title,
+.nb-prose pre .hljs-function,
+.nb-prose pre .hljs-section,
+.nb-prose pre .hljs-name {
+  color: var(--code-name);
 }
-.nb-prose .hljs-attr,
-.nb-prose .hljs-attribute,
-.nb-prose .hljs-variable,
-.nb-prose .hljs-template-variable {
-  color: var(--wash-sky-deep);
+
+.nb-code .hljs-built_in,
+.nb-code .hljs-type,
+.nb-code .hljs-class,
+.nb-code .hljs-meta,
+.nb-code .hljs-selector-class,
+.nb-prose pre .hljs-built_in,
+.nb-prose pre .hljs-type,
+.nb-prose pre .hljs-class {
+  color: var(--code-type);
 }
-.nb-prose .hljs-built_in,
-.nb-prose .hljs-type,
-.nb-prose .hljs-class {
-  color: var(--wash-plum-deep);
+
+.nb-code .hljs-attr,
+.nb-code .hljs-attribute,
+.nb-code .hljs-variable,
+.nb-code .hljs-template-variable,
+.nb-code .hljs-selector-attr,
+.nb-code .hljs-property,
+.nb-code .hljs-params,
+.nb-prose pre .hljs-attr,
+.nb-prose pre .hljs-attribute,
+.nb-prose pre .hljs-variable,
+.nb-prose pre .hljs-template-variable {
+  color: var(--code-attr);
 }
-.nb-prose .hljs-deletion {
-  color: var(--wash-blush-deep);
+
+/* Brackets, operators and the punctuation that holds a program together: one
+   step quieter than the code, and derived from the ink rather than authored,
+   because nobody has an opinion about the colour of a semicolon. */
+.nb-code .hljs-punctuation,
+.nb-code .hljs-operator,
+.nb-code .hljs-subst,
+.nb-prose pre .hljs-punctuation,
+.nb-prose pre .hljs-operator {
+  color: var(--code-punct);
+}
+
+/* A diff says one thing with colour and one with weight, so a removed line
+   still reads as removed to somebody who cannot tell the two hues apart. */
+.nb-code .hljs-deletion,
+.nb-prose pre .hljs-deletion {
+  color: var(--code-keyword);
+  text-decoration: line-through;
+}
+
+.nb-code .hljs-emphasis {
+  font-style: italic;
+}
+
+.nb-code .hljs-strong {
+  font-weight: 700;
 }
 
 /* ----------------------------------------------------------------------------

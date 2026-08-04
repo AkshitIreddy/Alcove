@@ -6,6 +6,7 @@ import type { Editor, Range } from '@tiptap/core';
 import { SLASH_DIAGRAM_COMMANDS } from '../../diagrams/slashCommands';
 import { openToday } from '../journal';
 import { STICKER_IDS, STICKER_TAGS, type StickerId } from '../nodes/stickers';
+import { CODE_LANGUAGE_SHORTLIST } from '../codeLanguages';
 
 export interface SlashCommandContext {
   readonly editor: Editor;
@@ -162,9 +163,9 @@ const blockCommands: SlashCommand[] = [
   {
     id: 'code-block',
     title: 'Code block',
-    subtitle: 'Monospace on aged paper',
+    subtitle: 'Highlighted, with a language on it',
     icon: glyph('{ }'),
-    keywords: ['code', 'codeblock', 'snippet', 'monospace', 'pre'],
+    keywords: ['code', 'codeblock', 'snippet', 'monospace', 'pre', 'syntax'],
     section: 'blocks',
     run: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
@@ -684,8 +685,39 @@ const turnIntoCommands: SlashCommand[] = [
   },
 ];
 
+/**
+ * One command per everyday language: `/python` makes a Python block.
+ *
+ * Derived from the shortlist rather than typed out, so a language promoted to
+ * `signature` in `editor/codeLanguages.ts` arrives here without anybody
+ * remembering this file exists. Only the signatures — all seventy-six would
+ * bury every other block command in the menu, and the picker ON the block is
+ * where the long list belongs.
+ *
+ * The generic "Code block" above stays: a reader who does not know what they
+ * are about to paste should not have to choose a language first.
+ */
+const codeLanguageCommands: SlashCommand[] = CODE_LANGUAGE_SHORTLIST.filter(
+  (spec) => spec.id !== 'plaintext',
+).map((spec) => ({
+  id: `code-${spec.id}`,
+  title: `${spec.label} block`,
+  subtitle: 'A code block, already set to this language',
+  icon: glyph('{ }'),
+  keywords: ['code', 'codeblock', 'snippet', spec.id, spec.label],
+  section: 'blocks',
+  run: ({ editor, range }) =>
+    editor
+      .chain()
+      .focus()
+      .deleteRange(range)
+      .toggleCodeBlock({ language: spec.id })
+      .run(),
+}));
+
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   ...blockCommands,
+  ...codeLanguageCommands,
   ...SLASH_DIAGRAM_COMMANDS,
   ...stickerCommands,
   ...turnIntoCommands,

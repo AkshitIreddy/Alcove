@@ -467,6 +467,30 @@
   color: var(--ink-graphite-soft);
 }
 
+/* Code fences: the shape and the language, without loading a highlighter
+   into a dialog that repaints on every keystroke. */
+.nb-ins-code {
+  position: relative;
+  margin: var(--space-16) 0 var(--space-12);
+  padding: var(--space-12) var(--space-12) var(--space-8);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-wobble-sm);
+}
+
+.nb-ins-code-body {
+  margin: 0;
+  max-height: 180px;
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+}
+
 /* fetch: directives */
 .nb-ins-fetch {
   margin: var(--space-8) 0;

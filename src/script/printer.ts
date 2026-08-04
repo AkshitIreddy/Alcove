@@ -254,6 +254,26 @@ function printBlock(block: Block, inImageRow: boolean): string {
       // Always the fenced form, even for a one-liner: the body is verbatim,
       // and `$$ … $$` on one line cannot hold a formula containing `$$`.
       return ["$$" + attrSuffix(block.attrs), block.latex, "$$"].join("\n");
+    case "code": {
+      /*
+       * The fence marker grows past anything the body contains.
+       *
+       * A snippet about Markdown holds ``` of its own, and a three-marker
+       * fence around it would close on the reader's first line. So the marker
+       * grows past the longest run in the body — the same widening `printCode`
+       * does for an inline code span one file up — and the parser's close rule
+       * (`closesTick` in blockParser.ts) only lets a wide fence be closed by
+       * one at least as wide.
+       */
+      let marker = "```";
+      while (block.code.includes(marker)) marker += "`";
+      const lang = block.lang ?? block.rawLang ?? "";
+      return [
+        marker + lang + attrSuffix(block.attrs),
+        block.code,
+        marker,
+      ].join("\n");
+    }
     case "fetchDirective": {
       if (inImageRow) {
         const tail =

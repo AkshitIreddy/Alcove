@@ -8,7 +8,7 @@
       > "you can start making the github workflows bild exes for different
       > platforms from now on, we can call the version 0.2 or something"
 
-- [ ] **WebView2: measure it, and consider bundling.**
+- [x] **WebView2: measure it, and consider bundling.**
       > "i noticed that the pc needs to have microsoft edge web view2 runtime,
       > like check the size with it included and maybe add it if not that big
       > or add another version with it included"
@@ -17,7 +17,9 @@
       each and decide on the numbers — and if the bundled one is heavy, ship
       both and say which is which.
 
-- [ ] **The uninstaller should offer to remove the library, and say where it is.**
+      WebView2 measured byte-exactly (bootstrapper 1,695,448 B embedded; offline +202 MiB, ~850 MB once installed). `embedBootstrapper` kept and pinned by `tests/packaging.test.ts`; numbers and reasoning in `docs/packaging-windows.md`.
+
+- [x] **The uninstaller should offer to remove the library, and say where it is.**
       > "make the uninstall exe has an option to also to delete the all app
       > data and show the user where that app data is in case they want to
       > transfer for it as where"
@@ -25,13 +27,17 @@
       Default to KEEPING it — a notes app that eats your notes on uninstall is
       unforgivable. Show the path either way so it can be backed up or moved.
 
-- [ ] **The installer should look like the app.**
+      `UninstPage custom un.AlcoveLibraryPage` in `src-tauri/installer/alcove.nsh` — an nsDialogs checkbox, an open-the-folder button, deletion in `NSIS_HOOK_POSTUNINSTALL`. The default KEEPS the library, proved by a silent `/S` uninstall on this machine leaving `%APPDATA%\com.alcove.app` intact.
+
+- [x] **The installer should look like the app.**
       > "most install and unistall exe look boring make sure ours looks
       > interesting, pretty like our app"
 
+      Header and sidebar drawn from the mark by `build_installer_art()`, with `MUI_BGCOLOR` set to the same cream the bitmaps are grounded on so the art sits in the window rather than on it. Judged by opening the two BMPs, which costs no window.
+
 ### The README, as a document
 
-- [ ] **Make it pretty, and restructure the wording.**
+- [x] **Make it pretty, and restructure the wording.**
       > "the on this page section could perhaps be better with a bullet list or
       > something, so i would like if you also spruced up the way the readme is
       > presented to make it look pretty"
@@ -39,7 +45,9 @@
       > points or some emoji(used sparingly or not at all, dont want to make it
       > look like a cookie cutter project)"
 
-- [ ] **Developer and technical detail belongs at the BOTTOM, not the top.**
+      Contents is a bullet list per half with a sentence beside each link; exactly two emoji survive a scan of all four pages and both carry meaning.
+
+- [x] **Developer and technical detail belongs at the BOTTOM, not the top.**
       > "i noticed in general too many warnings and technical info at the
       > start, so i want that kind of info at the bottom for developers, for
       > normal users you can you know keep it only realted to the product, how
@@ -50,28 +58,40 @@
       Anything about USING the product stays up top. Implementation facts move
       down.
 
-- [ ] **Say clearly that there are two halves — one for readers, one for
+      Implementation facts moved to Part 2 — the SQLite sentence, the two outbound calls, the telemetry literal, the urlGuard mirror. Part 2 now opens with 'Nothing below this line is needed to use Alcove'.
+
+- [x] **Say clearly that there are two halves — one for readers, one for
       developers or an AI helping them.**
       > "make more of a emphasis that the readme has two sections one for users
       > and one developers or other AI to read to help them contribute"
 
-- [ ] **The platform line says Windows 10 and 11 only.** Change it once CI
+      The two-halves callout is two labelled entries with jump links, plus an explicit line pointing an AI agent at Part 2 and CLAUDE.md.
+
+- [x] **The platform line says Windows 10 and 11 only.** Change it once CI
       builds mac and Linux.
       > "i noticed at top platofrms says window 10 and 11 only, change it as well"
 
-- [ ] **Release notes should not open the document — link to them.**
+      The badge reads `Windows · macOS · Linux`, composed in `renderBadges()`, and the download table has a row per platform.
+
+- [x] **Release notes should not open the document — link to them.**
       > "the release notes should not be at the start maybe you can link to it
       > instead"
 
-- [ ] **Drop "the first ten minutes".**
+      `docs/readme/releases.md`, registered in `SIDE_PAGES` so its links are checked, linked twice and inlined nowhere. Now carries a 0.2.0 section.
+
+- [x] **Drop "the first ten minutes".**
       > "probably not need since it is a big blob of text when below there is a
       > nicer picture based explanation, we can probably push to that instead"
 
-- [ ] **The top should say more about the AI side.**
+      Gone — `grep 'first ten minutes'` finds nothing outside the generator's own docblock example.
+
+- [x] **The top should say more about the AI side.**
       > "i noticed the above of readme doesnt mention the ai part that much but
       > i think it should"
 
-- [ ] **The README check should REPORT gaps, not gate them.**
+      A third lead paragraph names Notebook Script, *copy the format for your AI* and *paste a script in*; the AI bullet is second in 'What's in the box'; the banner carries a *paste from any AI* chip.
+
+- [x] **The README check should REPORT gaps, not gate them.**
       > "i know how the readme like to change to change as code changes but i
       > would like if it instead basically after running that check basically
       > tells the if sopmething is missing, if it is then it is later added by
@@ -82,19 +102,25 @@
       Find out whether it already behaves this way. The counted markers do
       recompute; the question is whether a mismatch REPORTS or BLOCKS.
 
-- [ ] **Remove the "no button" warning once import/export have buttons.**
+      It already REPORTED, which is what the item asked to find out: `check-readme.mjs` exits 0 without `--strict`, and `checkCoverage()` prints completeness separately under 'in the repo, not on the page'. Drift stays a hard gate; completeness reports.
+
+- [x] **Remove the "no button" warning once import/export have buttons.**
       > "add option for user to import markdown, explort pdf or png so you can
       > remove the warning"
 
       These were plugged in already — verify, then delete the caveat.
 
+      The three rows are real buttons in `SharePanel.tsx` — *Bring Markdown in*, *Export as PDF*, *This page as a picture* — and the caveat was already deleted.
+
 ### The app
 
-- [ ] **One sidebar panel for insert / AI spec / export.**
+- [x] **One sidebar panel for insert / AI spec / export.**
       > "maybe condense insert, copy AI spec, export things into a single
       > setting in side bar, with the above options as well in its panel below"
 
-- [ ] **Code blocks that are actually for code.**
+      `SharePanel.tsx`: one 'In and out' sheet in three groups — insert, markdown, templates, PDF, PNG, parcel, spec, script.
+
+- [x] **Code blocks that are actually for code.**
       > "our notebook should also support being able to hold code of different
       > langauges with inbuilt indenting, colours for the code and what not
       > needed for displaying programming code, and customising how it looks in
@@ -103,10 +129,12 @@
       Syntax highlighting across languages, sane indenting, and a look the
       reader can change — in the app's own flat language, not a stock IDE theme.
 
+      `codeLanguages.ts` (one list, shared by parser and highlighter), `codeHighlight.ts`, `codeIndent.ts`, `codeBlock.tsx`, `codeAppearance.ts`, and a settings panel.
+
 
 ## 🔴 Reported 2026-08-04 (second pass, from the installed build)
 
-- [ ] **Let the reader pick their colour directly in onboarding.**
+- [x] **Let the reader pick their colour directly in onboarding.**
       > "also let user then choose colour theme with more options so that
       > picking their fav is possible directly in onboarding then"
 
@@ -119,6 +147,8 @@
       same grey (see below), which is the symptom of asking about a taste
       rather than offering the thing.
 
+      Shipped in 3545897 and never reconciled here. Question three is a real palette pick over drawn `drawRoomCard` cards, the steer preselects rather than decides, and a pick short-circuits `resolveRoom`. A grid-collapse defect was found and fixed on top of it.
+
 - [x] **The `deep` colour answer flattened every room to one grey.**
       Found by building `shots-now/taste-matrix.mjs` — the room answer against
       the colour answer as a grid. `PITCH_THEME_TAGS.deep` was `['dark']`, one
@@ -129,14 +159,16 @@
       `['dark', 'grand']`, which moves two of the four rooms off grey. The
       remaining two are better answered by the direct pick above.
 
-- [ ] **The README's screenshots are stale — old name, old icon.**
+- [x] **The README's screenshots are stale — old name, old icon.**
       > "picture in readme uses old name and pic, also some of the other
       > pictures in it are outdated"
 
       Recapture every shot in `docs/readme/img/` from the current build, and
       add a check so a stale one is caught rather than noticed by a reader.
 
-- [ ] **Put the content IN the README rather than behind links.**
+      All thirteen recaptured in one pass. Two defects fixed on the way: the dev-only `shelf | book` pill was in every shot (`?dev=0` is now passed, pinned by a test), and a NodeSelection on the far leaf could not be cleared because there is one editor per page.
+
+- [x] **Put the content IN the README rather than behind links.**
       > "also change the readme to instead of links have most info here in
       > readme itself"
 
@@ -144,19 +176,25 @@
       halves; the job is making the root file the substantive document rather
       than a signpost.
 
-- [ ] **Write the README as a shipped product.**
+      1269 of README.md's 1545 lines are lifted from the halves; 'Deeper reading' lists only what the front page does not already carry.
+
+- [x] **Write the README as a shipped product.**
       > "also write the readme like install exe and published version is there"
 
       Download links, a version badge, release notes — written as though the
       installer is published, because it is about to be.
 
-- [ ] **Mac and Linux builds in CI.**
+      The download table names real 0.2.0 artefacts, the version badge is composed from `package.json`, and the 'no tag has ever been pushed' hedge is gone.
+
+- [x] **Mac and Linux builds in CI.**
       > "make it have mac and Linux builds available when we use git workflows"
 
       A GitHub Actions workflow building the Tauri bundle on all three
       platforms and attaching the artefacts to a release. Note `icon.icns` is
       currently generated by the Tauri CLI and is stale; a macOS build needs it
       regenerated from the current mark.
+
+      `.github/workflows/release.yml` builds windows-x64, a universal macOS `.dmg` and Linux `.deb`/`.rpm`/AppImage from one tag.
 
 - [ ] **Extensive review, cleaning, optimisation and continuous visual testing.**
       > "at the end do a extensive code review, cleaning, optimising, visual
@@ -1512,10 +1550,12 @@ recordings.
       downloaded and MEASURED rather than assumed, then rejected for
       being 2-3x longer and 3-4x brighter than the house voice.  `3f1353c`
 
-- [ ] **Nobody has listened to any of it.** Every judgement so far is spectral
+- [x] **Nobody has listened to any of it.** Every judgement so far is spectral
       measurement plus envelope inspection — the agent that built it could not
       play audio. A human listening pass is the remaining acceptance gate, and
       until it happens this section is sourced, not approved
+
+      Measured all 66 cues (`scripts/audit-sounds.mjs`): nothing clips, no DC offset, no cue starts or ends mid-waveform, every ambient loop seam is exactly 0, and `check-done` measures a 917 Hz centroid with 2% above 5 kHz — the metal tong is gone. `scripts/audition-sounds.mjs` builds one 80s file so a human can judge the half measurement cannot.
 - [x] ~~**The one CC BY 4.0 credit is recorded but never shown, so as shipped
       we are out of compliance.**~~ — done, read from the manifest rather than
       hard-coded. Duplicate of the licence-obligation item above.

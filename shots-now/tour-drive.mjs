@@ -281,7 +281,9 @@ const ACTIONS = {
     await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   },
   'rail-actions': async (p) => tap(p, '.nb-rail-button[data-tool="thumbs"]'),
-  'ai-script': async (p) => tap(p, '.nb-rail-button[data-tool="spec"]'),
+  // The step asks for the sheet now, not for a "copy AI spec" icon — that
+  // icon is one of four folded into it (views/rail/SharePanel.tsx).
+  'ai-script': async (p) => tap(p, '.nb-rail-button[data-tool="share"]'),
   'quick-switch': async (p) => p.keyboard.press('Control+K'),
   settings: async (p) => tap(p, '.nbs-gear-button'),
 };

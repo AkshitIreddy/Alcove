@@ -64,6 +64,11 @@ export function blockLineCost(block: Block): number {
       // An equation is drawn a good deal taller than the line it sits on, and
       // a multi-line aligned environment taller again.
       return 2 + block.latex.split('\n').length;
+    case 'code':
+      // One line per line, plus the plate the block is drawn on and the tab
+      // carrying its language. Code does not reflow, so unlike a paragraph
+      // there is no wrapping estimate to make — the newlines ARE the height.
+      return block.code.split('\n').length + 2;
     case 'diagram':
       return 10;
     case 'fetchDirective':

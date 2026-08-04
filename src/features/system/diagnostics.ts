@@ -30,9 +30,10 @@ import { snapshotLibraryPrefs } from '../bookshelf/libraryPrefs';
 import { saveBytes, type SaveOutcome } from '../../editor/script/exporters/saveFile';
 import { collectPixiStats } from './PerfHud';
 import { recentErrors, type LoggedError } from './errorLog';
+import { APP_VERSION } from '../../version';
 
-/** Mirrors package.json / tauri.conf.json; used when the Tauri API is absent. */
-const FALLBACK_APP_VERSION = '0.1.0';
+/** Used when the Tauri API is absent; `src/version.ts` is the one copy. */
+const FALLBACK_APP_VERSION = APP_VERSION;
 
 /* ------------------------------- redaction --------------------------------- */
 

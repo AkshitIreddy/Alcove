@@ -215,6 +215,31 @@ export const REGIONS = {
     return [table(['fence', 'grammar', 'also accepted'], rows), ...footnote].join('\n');
   },
 
+  /**
+   * Every language a code fence may name, in columns.
+   *
+   * Printed as a plain grid rather than a table with a "what it is" column:
+   * the reader of this document is a chatbot deciding whether ` ```kotlin `
+   * will work, and eighty rows of "the Kotlin language" answers that question
+   * eighty times more slowly than a list does.
+   */
+  'code-fences': (v) => {
+    const names = [...v.CODE_LANGS].sort();
+    const colw = widest(names) + 2;
+    const perRow = 5;
+    const lines = ['Code fence languages (aliases in section 6b):', ''];
+    for (let i = 0; i < names.length; i += perRow) {
+      lines.push(
+        names
+          .slice(i, i + perRow)
+          .map((n) => pad(n, colw))
+          .join('')
+          .trimEnd(),
+      );
+    }
+    return ['```', ...lines, '```'].join('\n');
+  },
+
   /** Quick-reference card: containers in three columns beside the fences. */
   'quickref-containers': (v) => {
     const names = [...v.CONTAINER_NAMES];

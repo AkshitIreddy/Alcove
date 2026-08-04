@@ -206,6 +206,54 @@
   --selection-wash: rgba(232, 182, 76, 0.5);
 
   /* ------------------------------------------------------------------------
+     Code — the block a program is written in.
+
+     These fourteen are the SHIPPED look ("marginalia" in
+     features/settings/codeAppearance.ts), and they are written as references
+     into the palette above rather than as hexes of their own. That is the
+     whole trick: every one of them is a token settings.css already remaps per
+     room and scripts/check-contrast.mjs already gates, so the code block
+     follows the four hand-tuned rooms for free and cannot drift from them.
+
+     At runtime `features/settings/apply.ts` overwrites all fourteen with
+     values SOLVED against the paper the reader actually chose — that is what
+     makes twenty-two code themes safe across thirty rooms and thirty-four
+     inks. These are what the page is painted with in the moment before that
+     lands, and what an exported page carries when there is no app around it.
+
+     One outline colour on everything still holds: --code-rim is --ink-line.
+     ---------------------------------------------------------------------- */
+  --code-plate: var(--paper-aged); /* the block's own flat face */
+  --code-tab: var(--paper-deep); /* the card the language sits on */
+  --code-rim: var(--ink-line); /* THE outline, same as everything else */
+  --code-ink: var(--ink-sepia); /* code that is not any other role */
+  --code-punct: var(--ink-sepia-soft); /* brackets and operators, quieter */
+  --code-gutter: var(--ink-sepia-soft); /* the line numbers */
+  --code-selection: var(--selection-wash);
+
+  /* The seven roles.
+     These are the ONLY colours in this block written as hexes rather than as
+     `var(--wash-…-deep)`, and it is not a style choice. `--code-plate` follows
+     the paper stock, and the reader can pick kraft board or papyrus, which
+     drops --paper-aged to #dac5a0 — two rungs below anything the wash
+     pigments were tuned against. At that ground terracotta measures 4.03:1 and
+     amber 3.81:1, both under AA, and nothing would have said so: the pigments
+     are correct on the papers they were made for, and a var() chain would have
+     carried them onto one they were not.
+     So each is its own pigment, solved by the same OKLCh arithmetic
+     `features/settings/appearance.ts` solves an ink with, against the DARKEST
+     ground any room-and-stock combination can produce. Hue and chroma are the
+     wash pigment's; only lightness moved, and only as far as it had to.
+     tests/control-contrast.test.ts sweeps all 30 rooms x 34 inks x 24 stocks. */
+  --code-comment: #3f3a33; /* prose a human wrote for a human — never grey-on-grey */
+  --code-keyword: #8c3811; /* terracotta, taken down for kraft board */
+  --code-string: #46582f; /* moss */
+  --code-number: #6e4c00; /* amber */
+  --code-name: #3a5665; /* sky — function and class names */
+  --code-type: #5c3448; /* plum */
+  --code-attr: #7c3b55; /* blush — attributes, variables, properties */
+
+  /* ------------------------------------------------------------------------
      Spacing scale (px values match names)
      ---------------------------------------------------------------------- */
   --space-4: 4px;
@@ -297,6 +345,13 @@
   --font-accent: "Kalam", "Segoe Print", cursive;
   --font-label: "Architects Daughter", "Segoe Print", cursive;
   --font-ui: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+  /* Code is NEVER a hand. A column of code lines up because every character
+     is the same width, and `l`, `1` and `I` have to be told apart — which is
+     the same argument as the 13px handwriting floor, applied to shape rather
+     than to size. The reader can change the face (four of them, in settings);
+     they cannot change it to a handwriting one. */
+  --font-code: ui-monospace, "Cascadia Code", "Cascadia Mono", "Segoe UI Mono",
+    Consolas, monospace;
 
   /* Type scale */
   --text-h1: 44px;
@@ -306,6 +361,7 @@
   --text-body: 17px;
   --text-sm: 15px;
   --text-chip: 13px; /* handwriting floor — chips, inline buttons, meta */
+  --text-code: 15px; /* code blocks; the reader moves this 12–20 in settings */
   --text-label: 14px;
   --text-ui: 12px; /* Nunito Sans territory (below 13px) */
   /* Reserved for non-essential ornament ONLY. Anything a user must READ

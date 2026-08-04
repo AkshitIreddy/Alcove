@@ -29,11 +29,15 @@
   border-radius: var(--radius-hand);
   box-shadow: var(--shadow-md);
   /*
-   * The rail grew past a dozen icons when "Take it out" and the templates
+   * The rail grew past a dozen icons when the share sheet and the templates
    * gallery finally got buttons, and it is centred on the window — so on a
    * short laptop the tools at BOTH ends were being cut off with nothing to say
    * so. The page rule ("no scrollbars inside pages") is about pages; a tool
    * rail that has run out of window has to be able to admit it.
+   *
+   * It is back to ten (four of those icons folded into the "In and out" sheet)
+   * and the overflow stays: ten 40px buttons plus the footer still do not fit
+   * a 620px window, which is this app's own minimum.
    */
   max-height: calc(100vh - var(--space-16));
   overflow-y: auto;
@@ -1207,12 +1211,26 @@
   white-space: nowrap;
 }
 
-/* ========================= "Take it out" — the share sheet ==================
+/* ========================= "In and out" — the share sheet ===================
    views/rail/SharePanel.tsx. A short list of ERRANDS rather than a grid of
    chips: each row is one whole act ("export as PDF", "bring Markdown in"),
    which wants a title, a sentence saying what it will do, and the key it is
    on — a chip has room for none of those, and a reader deciding whether to
    press this is a reader who needs all three.
+
+   EIGHT rows now rather than five: the paste box, the templates gallery, the
+   AI spec and "copy this page as script" all moved off the rail and onto this
+   sheet, in three labelled groups (bring in / take out / for an assistant).
+   At eight the list has to be
+   SCANNABLE — a reader is looking for one of three things and should be able
+   to skip two groups without reading them — so the groups carry the shared
+   `.nb-panel-section-title` and are ruled apart by `.nb-panel-section-divided`
+   rather than being run together with more whitespace.
+   A group has NO rules of its own on purpose — `.nb-share-group` is a hook for
+   the probe and a name for the region, and it wears `.nb-panel-section` /
+   `.nb-panel-section-divided` from the shared kit above. A second set of
+   spacing rules here would be a second answer to the same question, and the
+   two would drift.
    ========================================================================== */
 .nb-share-row {
   display: grid;

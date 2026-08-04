@@ -32,6 +32,21 @@
   min-height: 0;
   /* Cap the aspect so ultrawide screens keep a believable book. */
   width: min(100%, calc((100vh - 96px) * 1.58), 1760px);
+  /*
+   * THIS WIDTH KNOWS NOTHING ABOUT AN OPEN RAIL SHEET, AND MUST NOT.
+   *
+   * A sheet takes ~340px of the window and the book already fills what is
+   * left, so the obvious repair — subtract the sheet from this `min()` — is
+   * the wrong one: this is the LAYOUT width, the leaf's width and height come
+   * off it, and `pageCapacityPx` and the line wrap come off those. Narrowing
+   * it reflows the reader's text, and the pagination contract peels blocks
+   * forward without ever pulling them back, so closing the panel would leave
+   * the book permanently repaginated.
+   *
+   * The room a sheet leaves is answered with a TRANSFORM instead —
+   * `--nb-spread-shift` / `--nb-spread-fit`, rail.css, arithmetic in
+   * views/spread.ts. Same reasoning as the focus dial's zoom (reader.css).
+   */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -285,6 +300,13 @@
 /* ----------------------------------------------------------------------------
    Page-turn discoverability — a dog-ear curl at the bottom-right corner and
    a soft glow along the edge hotspots on hover. Transform/opacity only.
+
+   The far corner of the book, which makes it the first thing off the glass
+   whenever the spread is moved without being re-fitted: every rail panel used
+   to push it clean out of a 1440px window, so the affordance the tour spends
+   a whole card teaching could not be reached while any sheet was open.
+   `scripts/probe-spread-fit.mjs` asserts on this box, by name, at four window
+   sizes — it is the canary, not an afterthought.
    -------------------------------------------------------------------------- */
 .nb-page-curl {
   position: absolute;

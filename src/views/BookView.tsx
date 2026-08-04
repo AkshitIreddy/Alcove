@@ -109,15 +109,19 @@ import {
   type RibbonColor,
 } from './bookmarks';
 import {
+  SPREAD_FIT_REST,
   arrowFlipAction,
   canFlipSpread,
   docHasContent,
+  fitSpreadToRoom,
   leftSlot,
   newPageDoc,
   pagesToCreateOnFlip,
   prependBlocksToDoc,
   spreadOfSlot,
   spreadPageIds,
+  visualScale,
+  type SpreadFit,
   type SpreadIds,
 } from './spread';
 import '../styles/editor.css';
@@ -406,13 +410,41 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   const [pageCapacity, setPageCapacity] = createSignal(0);
 
+  /**
+   * The capacity is in DRAWN pixels, because the thing it is compared against
+   * is.
+   *
+   * PageEditor measures block bottoms with `getBoundingClientRect()`, which
+   * reports what is on the glass; the leaf's own height comes from
+   * `clientHeight`, which reports what was laid out. Those were the same number
+   * until the spread started carrying a scale — the focus dial's zoom, and now
+   * the panel fit — and after that a page at 78% measured its blocks 22% short
+   * against an unshrunk capacity and quietly held a quarter more text than it
+   * has room to show. A ResizeObserver never notices, either: a transform does
+   * not resize anything.
+   *
+   * So multiply the laid-out capacity by however much the leaf is being drawn
+   * at. `visualScale` is 1 whenever nothing is scaling, which is most of the
+   * time, and the whole thing collapses to what it was.
+   */
   const measureCapacity = (paper: HTMLElement): void => {
     const styles = getComputedStyle(paper);
-    const capacity =
+    const laidOut =
       paper.clientHeight -
       (Number.parseFloat(styles.paddingTop) || 0) -
       (Number.parseFloat(styles.paddingBottom) || 0);
+    const capacity =
+      laidOut *
+      visualScale(paper.getBoundingClientRect().height, paper.clientHeight);
     if (capacity > 120) setPageCapacity(Math.floor(capacity));
+  };
+
+  /** Both leaves, re-measured — for when the SCALE moved rather than the box. */
+  const remeasureCapacity = (): void => {
+    for (const side of ['left', 'right'] as const) {
+      const paper = paperElements[side];
+      if (paper?.isConnected === true) measureCapacity(paper);
+    }
   };
 
   const capacityObserver =
@@ -426,6 +458,130 @@ export default function BookView(): JSX.Element {
         })
       : null;
   onCleanup(() => capacityObserver?.disconnect());
+
+  // -------------------------------------------------------------------------
+  // Fitting the spread beside an open rail panel
+  // =========================================================================
+  // A sheet claims its width through views/rail/panelPush.ts, which tweens
+  // `--nb-panel-edge` on <html> frame by frame. The shelf answers that by
+  // sliding its whole world right; the book cannot, because it is a finite
+  // object that already fills the view — pushed by the sheet's width its right
+  // leaf ended up 271px past a 1440px window, taking the end of every line and
+  // the page-curl corner with it.
+  //
+  // The arithmetic is `fitSpreadToRoom` (views/spread.ts, DOM-free and walked
+  // at real window sizes in tests/spread.test.ts); this half is the two reads
+  // it needs and the three things that can change them.
+  //
+  // WHY A MUTATION OBSERVER and not a signal off `activePanel()`: the edge is
+  // tweened, so the book has to keep step with it for the length of the slide
+  // or it jumps into place after the sheet has arrived — and BookView is not
+  // the only thing that opens a sheet (BookRail's own ribbon plate claims the
+  // same push without ever touching `activePanel`). Watching what panelPush
+  // actually published answers both, and costs a handful of reads per toggle.
+  // The observer is NOT `subtree`, and the fit is published on this view's own
+  // element rather than back onto <html>, so writing it cannot re-trigger it.
+  // -------------------------------------------------------------------------
+  const [spreadFit, setSpreadFit] = createSignal<SpreadFit>(SPREAD_FIT_REST);
+  let viewElement: HTMLElement | undefined;
+  let stageElement: HTMLElement | undefined;
+  /**
+   * A plain mirror of the signal, and not a convenience.
+   *
+   * `fitSpread` runs from a ref callback, which Solid invokes inside the render
+   * effect that is building the spread. Reading the signal there would
+   * subscribe THAT effect to the fit, and every frame of the slide would then
+   * re-run the render — remounting the leaves, and with them a TipTap instance
+   * per page. Compare against the mirror; the signal is write-only from here.
+   */
+  let lastFit: SpreadFit = SPREAD_FIT_REST;
+  /** Watches the two boxes the fit is read off; see `attachStage` below. */
+  const roomObserver =
+    typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => fitSpread())
+      : null;
+  onCleanup(() => roomObserver?.disconnect());
+
+  const fitSpread = (): void => {
+    const view = viewElement;
+    const stage = stageElement;
+    if (!view || !stage || !view.isConnected || !stage.isConnected) return;
+
+    const styles = getComputedStyle(view);
+    const box = view.getBoundingClientRect();
+    // The view is never itself transformed (the fit lives on its children), so
+    // its own rect is honest. The stage IS inside the focus zoom, so take its
+    // width from `offsetWidth` — a laid-out number — and its position from the
+    // room, which is where flex centring puts it.
+    const room = {
+      left: box.left + (Number.parseFloat(styles.paddingLeft) || 0),
+      right: box.right - (Number.parseFloat(styles.paddingRight) || 0),
+    };
+    const width = stage.offsetWidth;
+    const centre = (room.left + room.right) / 2;
+    const edge =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          '--nb-panel-edge',
+        ),
+      ) || 0;
+    // One source for the gutter between sheet and book: the same token the
+    // back arrow and the settings seal clear the sheet by.
+    const gap = Number.parseFloat(styles.getPropertyValue('--space-16')) || 16;
+
+    const next = fitSpreadToRoom(
+      { left: centre - width / 2, right: centre + width / 2 },
+      room,
+      edge,
+      gap,
+    );
+    if (next.shift === lastFit.shift && next.scale === lastFit.scale) return;
+    lastFit = next;
+    setSpreadFit(next);
+    // The leaf is now drawn at a different size, and the page capacity is
+    // quoted in drawn pixels — see measureCapacity. Next frame, once the
+    // transform has actually been applied.
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => remeasureCapacity());
+    }
+  };
+
+  /** The view frame: fixed to the window, so this one is only the resize. */
+  const attachView = (el: HTMLElement): void => {
+    viewElement = el;
+    roomObserver?.observe(el);
+    queueMicrotask(fitSpread);
+  };
+
+  /**
+   * The stage mounts and unmounts with the book session, and its width follows
+   * both the window and the focus rung — so it is watched from its own ref
+   * rather than from a signal that would have to guess when it exists.
+   *
+   * Deferred a microtask, like the view's: a ref fires before the element is in
+   * the document, so measuring here reads zeros.
+   */
+  const attachStage = (el: HTMLElement | undefined): void => {
+    if (stageElement && stageElement !== el) {
+      roomObserver?.unobserve(stageElement);
+    }
+    stageElement = el;
+    if (el) roomObserver?.observe(el);
+    queueMicrotask(fitSpread);
+  };
+
+  onMount(() => {
+    if (typeof MutationObserver === 'undefined') return;
+    // panelPush writes the tweened edge onto <html>'s inline style; every
+    // frame of every slide arrives here.
+    const pushWatcher = new MutationObserver(() => fitSpread());
+    pushWatcher.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+    });
+    onCleanup(() => pushWatcher.disconnect());
+    fitSpread();
+  });
 
   /** Serialize carries: bursts of overflow land one at a time, in order. */
   let carryChain: Promise<void> = Promise.resolve();
@@ -1469,6 +1625,7 @@ export default function BookView(): JSX.Element {
   return (
     <main
       class="nb-book-view"
+      ref={attachView}
       classList={{
         'is-focus-mode': focusMode(),
         'is-zoomed': focusMode() && focusZoom() !== ZOOM_REST,
@@ -1485,6 +1642,12 @@ export default function BookView(): JSX.Element {
         '--nb-focus-zoom': String(clampZoom(focusZoom())),
         '--nb-focus-pan-x': `${focusPan().x}px`,
         '--nb-focus-pan-y': `${focusPan().y}px`,
+        /* Where the book sits, and how big, in the room an open rail sheet
+           leaves it (rail.css `.nb-book-view .nb-book-cover`). Published here
+           rather than on <html> so the fit cannot re-trigger the observer that
+           computes it — and so it dies with the view. */
+        '--nb-spread-shift': `${spreadFit().shift}px`,
+        '--nb-spread-fit': String(spreadFit().scale),
       }}
       onPointerDown={onPanDown}
     >
@@ -1609,6 +1772,7 @@ export default function BookView(): JSX.Element {
           return (
             <div
               class="nb-spread-stage"
+              ref={attachStage}
               data-spread-index={spreadIndex()}
               data-book-ink={pageDefaults()?.ink ?? 'inherit'}
             >

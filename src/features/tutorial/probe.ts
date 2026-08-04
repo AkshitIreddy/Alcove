@@ -44,6 +44,7 @@ export type TourFactKey =
   | 'shelf-moved'
   | 'shelf-dock-hovered'
   | 'shelf-studio-open'
+  | 'book-pulled'
   | 'book-open'
   | 'rail-hovered'
   | 'typed'
@@ -68,6 +69,37 @@ const CUSTOMIZE_PANEL = openPanel('Customize this book');
 
 /** The shelf's own studio sheet (RailPanel with `is-shelf`). */
 const SHELF_STUDIO_PANEL = '.nb-rail-panel.is-shelf[aria-hidden="false"]';
+
+/**
+ * A book that has come out of the case and is standing in front of it, waiting
+ * for the second press that opens it.
+ *
+ * `is-held` and not `.pulled-book` alone: the same element carries the book
+ * through the flight, and "it is in the air" is not a state the reader can be
+ * told to press. `PulledBookOverlay` puts the class on at rest — the same
+ * moment it gives the book `role="button"` and puts the corner arrow up.
+ */
+const HELD_BOOK = '.pulled-book.is-held';
+
+/**
+ * Facts that are true because a SURFACE IS ON SCREEN, rather than because a
+ * gesture was seen.
+ *
+ * They tick the instant the thing appears — which is the moment the reader
+ * starts looking at it, not the moment they have finished. A step naming one
+ * of these must therefore give itself a reading `dwell` (steps.ts), or the
+ * tour advances a second later and `./dismiss.ts` shuts the panel it just
+ * asked for. `tests/tutorial.test.ts` pins the two lists against each other.
+ */
+export const SURFACE_FACTS: readonly TourFactKey[] = [
+  'shelf-studio-open',
+  'page-style-open',
+  'catalogue-open',
+  'toc-open',
+  'customize-open',
+  'quick-switcher',
+  'settings-open',
+];
 
 /** The first-run invite that stands on an empty case. */
 const FIRSTRUN_INVITE = '.shelf-firstrun';
@@ -407,6 +439,10 @@ export function factHolds(fact: TourFactKey, now: number): boolean {
       return seen.dockHovered;
     case 'shelf-studio-open':
       return present(SHELF_STUDIO_PANEL);
+    // Out of the case but not open yet — the half-way state the reader lands
+    // in after one click, and the one the tour has to name out loud.
+    case 'book-pulled':
+      return present(HELD_BOOK);
     case 'book-open':
       return inBookView();
     case 'rail-hovered':

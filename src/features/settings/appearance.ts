@@ -174,8 +174,14 @@ const THEME_TABLE: readonly AppThemeSpec[] = [
     'a warm ground under a bruised pink; handsome, and not for every day'),
 
   /* ------------------------------ soft papers ---------------------------- */
-  t('pastel', 'blossom', 'blossom', 'pastel', '#f9eff2', '#c96f4a', 'signature',
-    'the shipped pastel room — blossom paper, terracotta accent'),
+  // The accent is the ROSE styles/settings.css actually paints the blossom room
+  // with, not the terracotta this row used to claim. A shipped room writes no
+  // accent tokens, so nothing on screen contradicted it — except the picker
+  // chip, which paints itself from `swatchFor` and was therefore advertising a
+  // colour the room does not use, and the accent INK, which is derived from
+  // this hex the moment the reader picks a paper stock.
+  t('pastel', 'blossom', 'blossom', 'pastel', '#f9eff2', '#c96186', 'signature',
+    'the shipped pastel room — blossom paper, rose accent'),
   t('peony', 'peony', 'blossom', 'pastel', '#fceaf0', '#a8324f', 'signature',
     'the vivid end of the soft papers — deep rose on pale pink'),
   t('rosewater', 'rosewater', 'blossom', 'pastel', '#fbeef0', '#b04d70', 'shelf',
@@ -695,6 +701,71 @@ function paperRungs(ground: string, dark: boolean): readonly [string, string, st
 /** The reading ink is only offered here in a colour it can be read in. */
 const BODY_INK_RATIO = 7;
 const SOFT_INK_RATIO = 4.5;
+/**
+ * The floor the reading ink also has to clear on `--paper-deep`.
+ *
+ * `--paper-deep` is a GROUND (tokens.css: "the third face: wells, tracks,
+ * thumbnails") and things are written on it — the settings sheet's close
+ * button hover, a transfer chip, a diagram's kind label. Solving the ink
+ * against `aged` alone left those at 3.57:1 on the darker stocks, because
+ * `paperRungs` folds by luminance and a darker sheet compresses the fold.
+ * 4.6 rather than 4.5 so the gate has a hair of room in it.
+ */
+const DEEP_INK_RATIO = 4.6;
+/**
+ * What every derived ink is actually solved TO.
+ *
+ * A hair over `SOFT_INK_RATIO`, because solving to exactly the gate is how a
+ * pigment lands at 4.48:1 — inside the binary search's own resolution, and
+ * outside WCAG AA. The gate stays 4.5; the solve aims past it.
+ */
+const AA_FLOOR = SOFT_INK_RATIO + 0.1;
+
+/**
+ * The reading ink, solved against BOTH paper rungs it lands on.
+ *
+ * `inkFor` moves lightness one way only, so taking whichever of the two solves
+ * is further from the paper satisfies both at once: an ink dark enough for
+ * `deep` is more than dark enough for the lighter `aged`.
+ */
+function bodyInkFor(pigment: string, aged: string, deep: string): string {
+  const onAged = inkFor(pigment, aged, BODY_INK_RATIO);
+  if (contrastRatio(onAged, deep) >= DEEP_INK_RATIO) return onAged;
+  return inkFor(pigment, deep, DEEP_INK_RATIO);
+}
+
+/**
+ * The alpha a selection wash may carry before it stops being see-through.
+ *
+ * A selection is a translucent band UNDER the text (tokens.css: "translucent
+ * so ink reads through"), which means the ink has to survive the ground the
+ * band makes of the paper. A fixed alpha cannot promise that across thirty
+ * accents: at the shipped 0.45 / 0.32 the wash took the reading ink down to
+ * 2.59:1. So the alpha is solved, not typed — the LARGEST one that still
+ * leaves `ink` readable on the band, so the selection stays as visible as it
+ * is allowed to be.
+ */
+function selectionAlpha(pigment: string, ink: string, grounds: readonly string[]): number {
+  const [pr, pg, pb] = channels(pigment);
+  const clears = (alpha: number): boolean =>
+    grounds.every((ground) => {
+      const [gr, gg, gb] = channels(ground);
+      const mix = (p: number, g: number): number => Math.round(p * alpha + g * (1 - alpha));
+      const band = `#${[mix(pr, gr), mix(pg, gg), mix(pb, gb)]
+        .map((c) => c.toString(16).padStart(2, '0'))
+        .join('')}`;
+      return contrastRatio(ink, band) >= AA_FLOOR;
+    });
+  let lo = 0.1;
+  let hi = 0.5;
+  if (!clears(lo)) return lo;
+  for (let i = 0; i < 16; i++) {
+    const mid = (lo + hi) / 2;
+    if (clears(mid)) lo = mid;
+    else hi = mid;
+  }
+  return Math.round(lo * 100) / 100;
+}
 
 /**
  * Every custom property the appearance settings write, for one combination.
@@ -729,14 +800,46 @@ export function appearanceTokens(
 
   /* -------------------------------- the ink ------------------------------- */
   const ink = resolveInk(inkId);
-  // The three the stylesheet already remaps keep their hand-tuned values.
-  // Everything else is solved against the paper it will really sit on — and
-  // against `aged`, the darkest ground a soft ink ever lands on.
-  const writeInk = ink.stylesheet !== true;
-  const body = writeInk ? inkFor(ink.pigment, aged, BODY_INK_RATIO) : '';
+  /*
+   * The three inks styles/settings.css remaps by hand keep their hand-tuned,
+   * contrast-tested values — but only in the room they were tuned FOR.
+   *
+   * That used to read `ink.stylesheet !== true` alone, which meant a reader who
+   * chose sepia and then chose kraft board kept the sepia that was measured
+   * against cartridge: 3.90:1 at worst, and nothing in the app noticed, because
+   * the ink and the paper are two different settings and neither one was ever
+   * asked about the other. A shipped room on its own paper still writes
+   * nothing, so the promise that "a reader who has been on sepia since install
+   * sees the pixel they have always seen" holds exactly where it was made.
+   */
+  const shippedRoom = onBaseRoom && stock === null;
+  const writeInk = ink.stylesheet !== true || !shippedRoom;
+  const body = writeInk ? bodyInkFor(ink.pigment, aged, deep) : '';
+  // AA_FLOOR rather than SOFT_INK_RATIO: solving to exactly the gate landed
+  // some pigments at 4.48:1 — inside the binary search's own resolution, and
+  // outside WCAG AA.
   const soft = writeInk
-    ? inkFor(mixOklab(ink.pigment, aged, 0.3), aged, SOFT_INK_RATIO)
+    ? inkFor(mixOklab(ink.pigment, aged, 0.3), aged, AA_FLOOR)
     : '';
+
+  /*
+   * The other two named ink rungs, re-solved on the same paper.
+   *
+   * `--ink-graphite`, `--ink-blue` and their soft rungs are not only what
+   * `[data-ink=…]` aliases: a dozen rules name them directly (a run count, a
+   * maths source line, a card blurb) because they want THAT voice rather than
+   * the reader's. Those rules follow the paper stock or they do not follow
+   * anything, and on the darker stocks they were the ones left behind.
+   */
+  const rung = (id: string): readonly [string, string] => {
+    const spec = resolveInk(id);
+    return [
+      bodyInkFor(spec.pigment, aged, deep),
+      inkFor(mixOklab(spec.pigment, aged, 0.3), aged, AA_FLOOR),
+    ];
+  };
+  const [graphite, graphiteSoft] = shippedRoom ? ['', ''] : rung('graphite');
+  const [blue, blueSoft] = shippedRoom ? ['', ''] : rung('ink-blue');
 
   /* ------------------------------ the accent ------------------------------ */
   const faces = washFaces(theme.accent);
@@ -745,14 +848,31 @@ export function appearanceTokens(
   // filled with and `-deep` becomes the bright face (styles/settings.css says
   // this in words for the night room; this restates it in arithmetic).
   const accentLight = theme.dark ? mixOklab(base, cream, 0.72) : faces.light;
-  const accentDeep = theme.dark ? inkFor(base, cream, 4.6) : faces.deep;
-  const accentInk = inkFor(base, aged, SOFT_INK_RATIO);
+  const accentDeep = theme.dark ? inkFor(base, cream, AA_FLOOR) : faces.deep;
+  /*
+   * Solved against every ground it actually lands on, not just `aged`.
+   *
+   * The accent ink is a LABEL on the pale accent face as often as it is type on
+   * paper — the shelf dock's primary button, the pack panel's forget control —
+   * and it is set on `--paper-deep` too. Neither is `--paper-aged`, so an ink
+   * solved only against that sat on them at 3.32:1. Take whichever ground is
+   * HARDEST for this room and the rest come free, because `inkFor` only ever
+   * moves lightness one way: the darkest ground under a window, the lightest
+   * under a lamp.
+   */
+  const harder = (a: string, b: string): string =>
+    (theme.dark ? relLum(b) > relLum(a) : relLum(b) < relLum(a)) ? b : a;
+  const accentInk = inkFor(base, [aged, deep, accentLight].reduce(harder), AA_FLOOR);
   // The label a FILLED accent control wears has to clear its own fill.
   const onAccent =
     contrastRatio('#fdf9f0', accentDeep) >= contrastRatio('#2b1a10', accentDeep)
       ? '#fdf9f0'
       : '#2b1a10';
   const [ar, ag, ab] = channels(base);
+  // The selection band is solved against the ink that will really be on it —
+  // which is why this sits below the ink block rather than beside the accent.
+  const selectionInk = body !== '' ? body : ink.pigment;
+  const alpha = selectionAlpha(base, selectionInk, [cream, aged]);
 
   return {
     '--paper-cream': writePaper ? cream : '',
@@ -761,14 +881,23 @@ export function appearanceTokens(
     '--paper-edge': writePaper ? edge : '',
     '--ink-sepia': body,
     '--ink-sepia-soft': soft,
+    '--ink-graphite': graphite,
+    '--ink-graphite-soft': graphiteSoft,
+    '--ink-blue': blue,
+    '--ink-blue-soft': blueSoft,
     '--accent-light': onBaseRoom ? '' : accentLight,
     '--accent': onBaseRoom ? '' : base,
     '--accent-deep': onBaseRoom ? '' : accentDeep,
-    '--accent-ink': onBaseRoom ? '' : accentInk,
+    // These two are the accent AS TYPE, so they follow the paper, not just the
+    // room: a shipped room on kraft board kept the accent ink that was solved
+    // against cartridge (4.07:1). `--ink-accent` is written alongside
+    // `--accent-ink` because tokens.css declares both, gives them the same
+    // value, and the app uses both — deriving one of the twins is how a rail
+    // button ends up on a colour the theme abandoned.
+    '--accent-ink': shippedRoom ? '' : accentInk,
+    '--ink-accent': shippedRoom ? '' : accentInk,
     '--on-accent': onBaseRoom ? '' : onAccent,
-    '--selection-wash': onBaseRoom
-      ? ''
-      : `rgba(${ar}, ${ag}, ${ab}, ${theme.dark ? '0.32' : '0.45'})`,
+    '--selection-wash': onBaseRoom ? '' : `rgba(${ar}, ${ag}, ${ab}, ${alpha})`,
   };
 }
 

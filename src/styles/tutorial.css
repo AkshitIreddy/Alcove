@@ -208,14 +208,22 @@
   color: var(--ink-graphite);
 }
 
+/* The amber tint is a TOKEN, not a literal.
+   `rgba(233, 196, 106, 0.18)` was a theme-blind swatch: after dark it landed
+   over near-black paper as a muddy mid-brown, and the soft ink went to 3.73:1
+   on it. `--wash-amber-light` is the same face and it INVERTS with the room —
+   pale amber under a window, deep amber under a lamp — so the ink stays on the
+   other side of it in every theme. The reading ink rather than the soft rung
+   because this is 12px: tokens.css's own note is that small secondary ink is
+   the most common legibility failure in the app. */
 .nbt-hint {
   margin: var(--space-8) 0 0;
   padding: 5px 9px;
   display: inline-block;
   font-size: var(--text-ui);
   letter-spacing: var(--tracking-ui);
-  color: var(--ink-sepia-soft);
-  background: rgba(233, 196, 106, 0.18);
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
   border: 1px dashed var(--ink-line-soft);
   border-radius: var(--radius-md);
 }
@@ -262,9 +270,14 @@
   transform: translateY(1px);
 }
 
+/* The amber face is bright in EVERY room — it is the gilt band, as a fill —
+   so what sits on it is `--on-gilt`, the one ink token that does not invert.
+   Inheriting `--ink-sepia` here meant the picked card's label went to 1.05:1
+   after dark, exactly as the primary button below did. */
 .nbt-choice-btn.is-picked {
   background: var(--wash-amber);
   border-color: var(--wash-amber-deep);
+  color: var(--on-gilt);
   box-shadow: var(--shadow-xs);
 }
 
@@ -281,7 +294,7 @@
 }
 
 .nbt-choice-btn.is-picked .nbt-choice-sub {
-  color: var(--ink-sepia);
+  color: var(--on-gilt);
 }
 
 /* ----------------------------------------------------------------------------
@@ -299,7 +312,9 @@
   letter-spacing: var(--tracking-ui);
   line-height: 1.45;
   color: var(--wash-terracotta-deep);
-  background: rgba(201, 111, 74, 0.16);
+  /* The token, not a hand-mixed literal: the same theme-blind swatch the hint
+     and the task box carried, and it took the terracotta ink to 3.59:1. */
+  background: var(--wash-terracotta-light);
   border: 1px dashed var(--wash-terracotta-deep);
   border-radius: 11px 5px 10px 6px / 6px 10px 5px 11px;
 }
@@ -324,7 +339,11 @@
   font-weight: 600;
   line-height: 1.45;
   color: var(--ink-sepia);
-  background: rgba(233, 196, 106, 0.42);
+  /* Token, not a literal — same reason as .nbt-hint above. The hand-mixed
+     amber at 42% read as a lit patch of paper in the three light rooms and as
+     mud in the dark one (2.62:1). The `-light` face is what tokens.css calls
+     "the pale face a callout is painted with", and it inverts with the room. */
+  background: var(--wash-amber-light);
   border: 1.5px solid var(--wash-amber-deep);
   border-radius: 12px 5px 11px 6px / 6px 11px 5px 12px;
   box-shadow: var(--shadow-xs);
@@ -373,8 +392,12 @@
   stroke-linejoin: round;
 }
 
+/* The paper face, not a hardcoded white: `rgba(255, 255, 255, 0.6)` is the
+   only mark in this file that never heard about the lamp, and after dark it
+   turned the ticked box into a pale grey plate while the unticked one beside
+   it stayed dark paper. */
 .nbt-task.is-done .nbt-task-box {
-  fill: rgba(255, 255, 255, 0.6);
+  fill: var(--paper-cream);
   stroke: var(--wash-moss-deep);
 }
 
@@ -573,29 +596,54 @@
   cursor: default;
 }
 
+/* THE ADVANCE CONTROL, and the one this file got most wrong.
+ *
+ * `color: var(--ink-sepia)` on `background: var(--wash-amber)` looks like two
+ * house tokens agreeing, and it is not: the amber face is FIXED bright in all
+ * four rooms (tokens.css: "FLAT.gilt — the gilt band, as a fill") while
+ * `--ink-sepia` is the READER'S ink and inverts with the room. After dark it
+ * is #f2e8d4, and settings.css rebinds it again to #9fbecd on fountain blue —
+ * so the primary "next" button on the first card of the tour measured
+ *
+ *     day 6.26 / 6.02 / 3.89   ·   night 1.54 / 1.30 / 1.05
+ *
+ * across sepia / graphite / fountain-blue. The BACK button beside it was
+ * 8.03:1: the least readable thing on the card was the one to press.
+ *
+ * `--on-gilt` is the token that exists for this — the one ink that does NOT
+ * invert, because the face under it does not either. 5.24:1 at worst, in every
+ * theme x ink. The hover lightens to the pale face, which DOES invert, so it
+ * takes the reading ink back: two grounds, two inks, both measured by
+ * tests/control-contrast.test.ts. */
 .nbt-btn--primary {
   background: var(--wash-amber);
   border-color: var(--wash-amber-deep);
-  color: var(--ink-sepia);
+  color: var(--on-gilt);
   font-weight: 700;
   padding: 7px 18px;
 }
 
 .nbt-btn--primary:hover:not(:disabled) {
   background: var(--wash-amber-light);
+  color: var(--ink-sepia);
 }
 
 /* Task landed: the button that carries you on says so too. The tour advances
    by itself after a beat, so this is a "you can hurry me" affordance rather
-   than the only way forward. */
+   than the only way forward.
+   The fill is the DEEP moss face, not the base one: `--paper-cream` on
+   `--wash-moss` was 2.82:1 in the light rooms — a mid pigment cannot carry
+   paper-white type. Deep-and-cream invert together, so the pair holds in every
+   room (5.96:1 at worst), and the hover lightens the way the amber one does. */
 .nbt-btn--primary.is-done {
-  background: var(--wash-moss);
+  background: var(--wash-moss-deep);
   border-color: var(--wash-moss-deep);
   color: var(--paper-cream);
 }
 
 .nbt-btn--primary.is-done:hover:not(:disabled) {
-  background: var(--wash-moss-deep);
+  background: var(--wash-moss-light);
+  color: var(--wash-moss-deep);
 }
 
 .nbt-btn--ghost {

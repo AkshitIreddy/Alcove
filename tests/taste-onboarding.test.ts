@@ -32,19 +32,26 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  PALETTE_HEAD,
   TASTE_AXES,
   TASTE_QUESTIONS,
+  TASTE_REQUIRED_AXES,
   describeTaste,
   isTasteAnswer,
   isTasteComplete,
   mergeTasteAnswers,
+  paletteOrder,
+  pitchOfTheme,
+  repaintedAs,
   resolveBinding,
   resolveInterface,
   resolveRoom,
   resolveRoomPreset,
   resolveSoundSet,
   resolveTaste,
+  steerTheme,
   tasteOutcomeKey,
+  tasteRoomKey,
   type TasteAnswers,
   type TasteAxis,
 } from '../src/features/tutorial/tasteProfile';
@@ -54,7 +61,7 @@ import { ROOM_PRESETS } from '../src/views/rail/designOptions';
 import { BOOK_PRESET_IDS, ROLLABLE_PRESETS } from '../src/art/bookDesign';
 import { isBuildId, isPatternId } from '../src/art/shelfDesign';
 import { getWallpaper } from '../src/art/wallpaperDesign';
-import { isThemeId } from '../src/art/themes';
+import { THEMES, THEME_IDS, isThemeId, type ThemeId } from '../src/art/themes';
 import {
   SOUND_SET_GROUPS,
   SOUND_SET_GROUP_IDS,
@@ -91,6 +98,24 @@ const UI_THEMES = ['parchment', 'pastel', 'botanical', 'night'];
 /** The three `settings.css` draws a `data-ink` rule for. */
 const INKS = ['sepia', 'graphite', 'ink-blue'];
 
+/**
+ * `CAP` — the one number every long list in this app stops at — read out of
+ * `DesignStrip.tsx` as SOURCE rather than imported.
+ *
+ * That module is a Solid component with a stylesheet import, so a node test
+ * cannot pull it in; and the point of the check it feeds is precisely that two
+ * files must not hold two different answers to one rule the reader stated once
+ * ("after like 20"). A regex over the declaration is the only way to ask.
+ */
+const CAP = ((): number => {
+  const source = readFileSync(
+    join(import.meta.dirname, '..', 'src', 'views', 'rail', 'DesignStrip.tsx'),
+    'utf8',
+  );
+  const found = /export const CAP = (\d+)/.exec(source);
+  return found === null ? Number.NaN : Number(found[1]);
+})();
+
 /* -------------------------------------------------------------------------
    1. The questions
    ---------------------------------------------------------------------- */
@@ -115,12 +140,18 @@ describe('the questions', () => {
    * The reader's aside — "(make it sound better)" — is the brief for the copy,
    * so it is worth a mechanical check that the two words they used as shorthand
    * never made it onto the screen as the question itself.
+   *
+   * The AUTHORED prose only. The palette question's sixty options are the theme
+   * table's own names and blurbs (`art/themes.ts`), which this feature does not
+   * own and which gets re-cut; a room blurb that one day says "vivid" is a
+   * perfectly honest description of a room, and failing this suite over it would
+   * be the same over-wide pin the resolver's own notes warn about.
    */
   it('never asks the reader to describe themselves as bland or vivid', () => {
     const prose = TASTE_QUESTIONS.flatMap((q) => [
       q.title,
       q.body,
-      ...q.options.flatMap((o) => [o.label, o.line]),
+      ...(q.shape === 'palettes' ? [] : q.options.flatMap((o) => [o.label, o.line])),
     ])
       .join(' ')
       .toLowerCase();
@@ -129,19 +160,63 @@ describe('the questions', () => {
     }
   });
 
-  /** Long lists cap at ~20 with an "N more" control; none of these is close. */
-  it('keeps every question inside one screenful', () => {
+  /**
+   * Long lists cap at ~20 with an "N more" control.
+   *
+   * Four of the five questions are short enough that the rule never bites. The
+   * palette question is the one that does — it is sixty rooms on purpose, since
+   * hiding them behind four adjectives is the thing it was added to stop — so
+   * the rule is checked on it as a CAP rather than as a shorter list.
+   */
+  it('keeps every question inside one screenful, or caps it', () => {
     for (const question of TASTE_QUESTIONS) {
-      expect(question.options.length, question.axis).toBeLessThanOrEqual(20);
       expect(question.options.length, question.axis).toBeGreaterThanOrEqual(4);
+      if (question.shape === 'palettes') {
+        expect(PALETTE_HEAD, question.axis).toBeLessThanOrEqual(20);
+        expect(question.options.length, question.axis).toBeGreaterThan(PALETTE_HEAD);
+        continue;
+      }
+      expect(question.options.length, question.axis).toBeLessThanOrEqual(20);
     }
+  });
+
+  /**
+   * Exactly one question is long, and it is the one the panel knows how to cap.
+   *
+   * Without this, growing another axis past twenty would leave a wall of cards
+   * on screen with no control on it and nothing failing — the panel only reaches
+   * for `Capped` on the `palettes` shape.
+   */
+  it('has only one shape the panel has to cap', () => {
+    const long = TASTE_QUESTIONS.filter((q) => q.options.length > 20);
+    expect(long.map((q) => q.axis)).toEqual(['palette']);
+    expect(long[0].shape).toBe('palettes');
+  });
+
+  /** …and the cap is the app's one cap, not a second answer to the same rule. */
+  it('caps the palette grid at the number every other long list caps at', () => {
+    expect(Number.isFinite(CAP), 'DesignStrip.tsx no longer declares CAP').toBe(true);
+    expect(PALETTE_HEAD).toBe(CAP);
   });
 
   it('derives the sound question from the sound module, not a second list', () => {
     expect(optionIds('sound')).toEqual([...SOUND_SET_GROUP_IDS]);
+    const sound = TASTE_QUESTIONS.find((q) => q.axis === 'sound');
+    expect(sound).toBeDefined();
     for (const id of SOUND_SET_GROUP_IDS) {
-      const option = TASTE_QUESTIONS[3].options.find((o) => o.id === id);
+      const option = sound?.options.find((o) => o.id === id);
       expect(option?.line).toBe(SOUND_SET_GROUPS[id].blurb);
+    }
+  });
+
+  /** And the palette question from the theme table, for the same reason. */
+  it('derives the palette question from the theme table', () => {
+    expect(optionIds('palette')).toEqual([...THEME_IDS]);
+    const palette = TASTE_QUESTIONS.find((q) => q.axis === 'palette');
+    for (const id of THEME_IDS) {
+      const option = palette?.options.find((o) => o.id === id);
+      expect(option?.label, id).toBe(THEMES[id].name);
+      expect(option?.line, id).toBe(THEMES[id].blurb);
     }
   });
 });
@@ -363,6 +438,212 @@ describe('every question changes the answer', () => {
 });
 
 /* -------------------------------------------------------------------------
+   4b. The palette a reader points at
+   ----------------------------------------------------------------------
+
+   The whole of the reported item:
+
+     "also let user then choose colour theme with more options so that picking
+      their fav is possible directly in onboarding then"
+
+   Four things have to be true, and each of them is a way the feature could ship
+   looking finished and be worthless:
+
+     IT WINS       a pressed card beats the steer, everywhere, whatever the steer
+                   said. If it merely scored higher, a strong enough steer would
+                   quietly overrule the reader — which is the bug this replaces.
+     IT REACHES    every one of the sixty is choosable and resolves to a real
+                   library, not just the ones near the steer.
+     THE STEER
+     STILL EARNS   the grid opens on the palette the resolver would have chosen,
+                   and it is FIRST — otherwise "press on" hands over a room
+                   nobody looked at.
+     IT IS OPTIONAL somebody who never touches it is not stuck on an incomplete
+                   questionnaire.
+   ---------------------------------------------------------------------- */
+
+describe('the palette a reader points at', () => {
+  const steer: TasteAnswers = {
+    room: 'reading-room',
+    pitch: 'deep',
+    paper: 'ruled',
+    sound: 'house',
+  } as TasteAnswers;
+
+  it('is not required — the steer answers it when nobody presses a card', () => {
+    expect([...TASTE_REQUIRED_AXES]).not.toContain('palette');
+    expect(isTasteComplete(steer)).toBe(true);
+    // …and it is still an AXIS, so the panel walks to it and the blob keeps it.
+    expect([...TASTE_AXES]).toContain('palette');
+  });
+
+  it('hands the steer the room it always did when nothing is pressed', () => {
+    for (const answers of everyCombination()) {
+      expect(resolveRoom(answers).theme).toBe(steerTheme(answers));
+      expect(resolveRoom(answers).picked).toBe(false);
+    }
+  });
+
+  /** The load-bearing one: a pressed card is not a vote, it is the answer. */
+  it('gives the reader the palette they pressed, whatever the steer wanted', () => {
+    for (const id of THEME_IDS) {
+      const out = resolveTaste({ ...steer, palette: id } as TasteAnswers);
+      expect(out.room.theme, id).toBe(id);
+      expect(out.room.picked, id).toBe(true);
+    }
+  });
+
+  /** …including from every steer, not just one that happens to be compatible. */
+  it('wins from every combination of the other answers', () => {
+    const wanted: ThemeId = 'snowline';
+    for (const answers of everyCombination()) {
+      const out = resolveRoom({ ...answers, palette: wanted } as TasteAnswers);
+      expect(out.theme, JSON.stringify(answers)).toBe(wanted);
+    }
+  });
+
+  /**
+   * A palette repaints the room. It does NOT rebuild it.
+   *
+   * CLAUDE.md's rule, and the reason the studio's axes are separate at all:
+   * "repainting a room must not straighten its arches". A reader who picked the
+   * chapter house and then a pink palette wants a pink chapter house.
+   */
+  it('repaints the room without rebuilding or rehanging it', () => {
+    for (const answers of everyCombination().slice(0, 60)) {
+      const plain = resolveRoom(answers);
+      const painted = resolveRoom({ ...answers, palette: 'carousel' } as TasteAnswers);
+      expect(painted.from.id).toBe(plain.from.id);
+      expect(painted.build).toBe(plain.build);
+      expect(painted.pattern).toBe(plain.pattern);
+      expect(painted.paper).toBe(plain.paper);
+    }
+  });
+
+  it('resolves every one of the sixty into a whole real library', () => {
+    for (const id of THEME_IDS) {
+      const out = resolveTaste({ ...steer, palette: id } as TasteAnswers);
+      expect(ROOM_PRESETS, id).toContain(out.room.from);
+      expect(isThemeId(out.room.theme), id).toBe(true);
+      expect(isBuildId(out.room.build), id).toBe(true);
+      expect(getWallpaper(out.room.paper).id, id).toBe(out.room.paper);
+      expect(UI_THEMES, id).toContain(out.uiTheme);
+      expect(INKS, id).toContain(out.ink);
+    }
+  });
+
+  it('validates a stored palette, and drops one no theme table knows', () => {
+    expect(isTasteAnswer('palette', 'lapis')).toBe(true);
+    expect(isTasteAnswer('palette', 'sakura-pavilion')).toBe(false);
+    expect(mergeTasteAnswers({ ...steer, palette: 'lapis' })).toMatchObject({
+      palette: 'lapis',
+    });
+    expect(mergeTasteAnswers({ ...steer, palette: 'nope' })).not.toHaveProperty('palette');
+  });
+
+  /* ------------------------------- the grid ------------------------------ */
+
+  it('offers all sixty, once each', () => {
+    for (const answers of [steer, {}, { room: 'toy-box' }] as TasteAnswers[]) {
+      const order = paletteOrder(answers);
+      expect(new Set(order).size).toBe(THEME_IDS.length);
+      expect([...order].sort()).toEqual([...THEME_IDS].sort());
+    }
+  });
+
+  /**
+   * The steer's whole remaining job, and the thing the reader asked for by name
+   * ("with the steer's pick preselected so anyone who does not want to browse
+   * can press on"). If this drifts, the grid opens on a room nobody chose.
+   */
+  it('opens on the palette the steer picked, in the very first slot', () => {
+    for (const answers of everyCombination()) {
+      expect(paletteOrder(answers)[0], JSON.stringify(answers)).toBe(steerTheme(answers));
+    }
+  });
+
+  /** And it is in the head the panel actually paints, not behind "N more". */
+  it('keeps the preselection inside the capped head', () => {
+    for (const answers of everyCombination()) {
+      expect(paletteOrder(answers).slice(0, PALETTE_HEAD)).toContain(steerTheme(answers));
+    }
+  });
+
+  /**
+   * The steer decides what is shown FIRST — so two different steers must not
+   * open on the same twenty. Otherwise question two has stopped mattering again,
+   * which is the exact failure (`deep` resolving everything to one grey) that
+   * this whole item came out of.
+   */
+  it('orders the head differently for different steers', () => {
+    const heads = new Set(
+      optionIds('pitch').map((pitch) =>
+        paletteOrder({ room: 'reading-room', pitch } as TasteAnswers)
+          .slice(0, PALETTE_HEAD)
+          .join(','),
+      ),
+    );
+    expect(heads.size).toBe(optionIds('pitch').length);
+  });
+
+  it('does not reshuffle when the reader presses a card', () => {
+    const before = paletteOrder(steer);
+    for (const id of ['carousel', 'snowline', 'garnet'] as ThemeId[]) {
+      expect(paletteOrder({ ...steer, palette: id } as TasteAnswers)).toEqual(before);
+    }
+  });
+
+  /** Total: no answers at all still gives a full, ordered, drawable grid. */
+  it('orders a grid for a reader who has answered nothing', () => {
+    const order = paletteOrder({});
+    expect(order.length).toBe(THEME_IDS.length);
+    expect(order[0]).toBe(steerTheme({}));
+  });
+
+  /* ------------------------- the panel's cheap draw ----------------------- */
+
+  /**
+   * `repaintedAs` is what the grid draws with — sixty cards from one resolved
+   * room — so it has to agree with the resolver exactly. If it did not, the card
+   * a reader pressed would be a picture of a room they do not get, which is the
+   * one failure a picker cannot survive.
+   */
+  it('draws each card as the room that palette really produces', () => {
+    for (const answers of everyCombination().slice(0, 24)) {
+      const base = resolveRoom(answers);
+      for (const id of THEME_IDS) {
+        const card = repaintedAs(base, id);
+        const real = resolveRoom({ ...answers, palette: id } as TasteAnswers);
+        expect(tasteRoomKey(card), `${JSON.stringify(answers)} → ${id}`).toBe(
+          tasteRoomKey(real),
+        );
+        expect(card.repainted).toBe(real.repainted);
+        expect(card.picked).toBe(real.picked);
+      }
+    }
+  });
+
+  it('says "painted" for a choice and "repainted" for a swap it made', () => {
+    const mine = resolveRoom({ room: 'bare-desk', pitch: 'hushed', palette: 'carousel' } as TasteAnswers);
+    expect(mine.picked).toBe(true);
+    expect(mine.repainted).toBe(true);
+    expect(mine.note).toMatch(/^painted in /);
+
+    const theirs = resolveRoom({ room: 'bare-desk', pitch: 'bright' } as TasteAnswers);
+    expect(theirs.picked).toBe(false);
+    expect(theirs.note).toMatch(/repainted in /);
+  });
+
+  it('reports a pick that changed nothing as picked but not repainted', () => {
+    const from = resolveRoomPreset(steer);
+    const same = resolveRoom({ ...steer, palette: from.theme } as TasteAnswers);
+    expect(same.picked).toBe(true);
+    expect(same.repainted).toBe(false);
+    expect(same.note).toBeNull();
+  });
+});
+
+/* -------------------------------------------------------------------------
    5. The interface answer
    ---------------------------------------------------------------------- */
 
@@ -384,6 +665,49 @@ describe('the interface colours', () => {
 
   it('defaults to the house room and the house ink when nothing was asked', () => {
     expect(resolveInterface({})).toEqual({ uiTheme: 'parchment', ink: 'sepia' });
+  });
+
+  /**
+   * The finger beats the sentence.
+   *
+   * Answering "deep" and then choosing a white-painted room used to leave the
+   * app in its after-dark interface around a room made of chalk — the app
+   * listening to what the reader SAID and ignoring what they then pointed at.
+   */
+  it('takes its temperature from the palette that was pressed, not the pitch', () => {
+    const dark = resolveInterface({ room: 'bare-desk', pitch: 'bright', palette: 'ebonised' } as TasteAnswers);
+    expect(dark.uiTheme).toBe('night');
+    const pale = resolveInterface({ room: 'bare-desk', pitch: 'deep', palette: 'snowline' } as TasteAnswers);
+    expect(pale.uiTheme).not.toBe('night');
+  });
+
+  it('still writes a theme and an ink the settings validator accepts, for all sixty', () => {
+    for (const id of THEME_IDS) {
+      for (const pitch of optionIds('pitch')) {
+        const { uiTheme, ink } = resolveInterface({
+          room: 'harbour',
+          pitch,
+          palette: id,
+        } as TasteAnswers);
+        const merged = mergeSettings({ theme: uiTheme, inkColor: ink });
+        expect(merged.theme, `${id}/${pitch}: theme "${uiTheme}" rejected`).toBe(uiTheme);
+        expect(merged.inkColor, `${id}/${pitch}: ink "${ink}" rejected`).toBe(ink);
+      }
+    }
+  });
+
+  /** Every palette classifies as one of the four, so the ink table is total. */
+  it('reads a pitch off every palette in the table', () => {
+    const seen = new Set<string>();
+    for (const id of THEME_IDS) {
+      const pitch = pitchOfTheme(id);
+      expect(optionIds('pitch'), id).toContain(pitch);
+      seen.add(pitch);
+    }
+    // …and it is a real classification rather than one answer sixty times.
+    expect(seen.size).toBeGreaterThanOrEqual(3);
+    expect(pitchOfTheme('snowline'), 'a room of white paint reads as hushed').toBe('hushed');
+    expect(pitchOfTheme('carousel'), 'a fairground reads as bright').toBe('bright');
   });
 
   /**

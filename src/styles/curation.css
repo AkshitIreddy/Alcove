@@ -331,8 +331,12 @@
   font-weight: 700;
 }
 
+/* The hover ground is `--gilt-light`, and that face INVERTS with the room
+   (after dark it is #5a4514) while the label it inherited, `--on-gilt`, never
+   does — 1.72:1 after dark. `--gilt-ink` is the ink for the pale gilt face. */
 .nb-cur-btn.is-primary:hover:not(:disabled) {
   background: var(--gilt-light);
+  color: var(--gilt-ink);
 }
 
 /* The line that runs when there is nothing in the drawer. It is a sentence and

@@ -14,12 +14,28 @@
  *   fresh library  → the tour auto-starts
  *   pick a length  → the tour walks to the step whose id is `taste`
  *   (nothing else) → the panel puts ITSELF on screen
- *   four clicks    → "dress my library"
+ *   five clicks    → "dress my library"
  *   read back      → the room, the wall, the welcome book's binding, the sound
  *                    set and the interface all changed
  *   …and the tour's own task went green and it walked on by itself.
  *
  * Run twice with different answers: two libraries that must not match.
+ *
+ * ## The palette grid gets its own pass, because it can fail silently
+ *
+ * Question three shows all sixty palettes and preselects the one the steer
+ * worked out. Both halves of that are invisible from a unit test and both are
+ * the kind of thing that looks right and is not:
+ *
+ *   - the grid must OPEN on the steer's pick, in the first slot, lit — otherwise
+ *     "press on" hands over a room nobody looked at;
+ *   - a card pressed must be the palette the SHELF ends up wearing, read back
+ *     through `__libraryPrefs`, not the one the steer inferred. A resolver that
+ *     scored the pick instead of obeying it would pass every unit test and still
+ *     overrule a reader whose steer was strong enough.
+ *
+ * Run `a` presses a palette; run `b` presses on and keeps the steer's, so both
+ * paths through the new question are driven.
  *
  * Usage: node scripts/probe-taste.mjs [--url=http://localhost:1420]
  */
@@ -104,12 +120,120 @@ async function pickCard(n, shot) {
   if (shot) await page.screenshot({ path: `${OUT}/${shot}` });
 }
 
+/** What the panel resolves right now, and what it would resolve without a pick. */
+const decided = () =>
+  page.evaluate(() => {
+    const bridge = window.__nbTaste;
+    if (bridge === undefined) return null;
+    const answers = bridge.answers();
+    const steer = { ...answers };
+    delete steer.palette;
+    return {
+      answers,
+      theme: bridge.resolve(answers).room.theme,
+      picked: bridge.resolve(answers).room.picked,
+      steerTheme: bridge.resolve(steer).room.theme,
+    };
+  });
+
+/**
+ * Question three: the sixty palettes.
+ *
+ * `swatch` is the index of the card to press, or null to keep what the steer
+ * chose. Returns the palette the panel is now settled on.
+ */
+async function answerPalette(tag, swatch) {
+  await poll(
+    () => document.querySelector('.nbq-layer')?.getAttribute('data-taste-step') === 'palette',
+    15000,
+    'the palette question',
+  );
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/taste-${tag}-4-palettes.png` });
+
+  // It OPENS on the steer's pick: one lit card, it is the first one, and it is
+  // marked as the steer's rather than as something the reader pressed.
+  const opening = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.nbq-swatch')];
+    const lit = cards.filter((c) => c.classList.contains('is-picked'));
+    return {
+      shown: cards.length,
+      lit: lit.length,
+      litIsFirst: lit.length === 1 && cards.indexOf(lit[0]) === 0,
+      bySteer: lit.length === 1 && lit[0].classList.contains('is-steer'),
+      litName: lit[0]?.querySelector('.nbq-swatch-name')?.textContent ?? '',
+      more: document.querySelector('.nbq-palette .nb-more')?.textContent ?? '',
+    };
+  });
+  const before = await decided();
+  check(opening.lit === 1, `${tag}: exactly one palette is lit when the grid opens`);
+  check(opening.litIsFirst, `${tag}: …and it is the first card in the grid`);
+  check(opening.bySteer, `${tag}: …marked as the steer's pick, not as one pressed`);
+  check(
+    opening.litName.trim().length > 0 && before?.theme === before?.steerTheme,
+    `${tag}: the lit card is the room the answers resolve to ("${opening.litName}")`,
+  );
+  check(before?.answers.palette === undefined, `${tag}: nothing was written for them`);
+  check(
+    opening.shown === 20,
+    `${tag}: the grid caps at twenty (showed ${opening.shown})`,
+  );
+  check(
+    /40\s*more/.test(opening.more.replace(/\s+/g, ' ')),
+    `${tag}: …and offers the remaining forty ("${opening.more.trim()}")`,
+  );
+
+  if (swatch === null) {
+    check(true, `${tag}: keeping the steer's palette and pressing on`);
+    await page.locator('.nbq-btn--primary').click(); // "next"
+    return before?.theme ?? null;
+  }
+
+  // "N more" opens the rest of the sixty — the reader browsing for their
+  // favourite, which is the whole reason the grid exists.
+  await page.locator('.nbq-palette .nb-more').click();
+  const all = await page.locator('.nbq-swatch').count();
+  check(all === 60, `${tag}: "more" opens the whole sixty (showed ${all})`);
+  await page.screenshot({ path: `${OUT}/taste-${tag}-5-palettes-all.png` });
+
+  await page.locator('.nbq-swatch').nth(swatch).click();
+  await page.waitForTimeout(300);
+  const after = await decided();
+  const mine = await page.evaluate(() => {
+    const lit = document.querySelector('.nbq-swatch.is-picked');
+    return {
+      name: lit?.querySelector('.nbq-swatch-name')?.textContent ?? '',
+      stillSteer: lit?.classList.contains('is-steer') ?? true,
+      lit: document.querySelectorAll('.nbq-swatch.is-picked').length,
+    };
+  });
+  check(mine.lit === 1, `${tag}: pressing a card moves the tick rather than adding one`);
+  check(!mine.stillSteer, `${tag}: …and the card stops claiming to be the steer's`);
+  check(
+    after?.answers.palette !== undefined && after.picked === true,
+    `${tag}: the pick was written down (${after?.answers.palette})`,
+  );
+  check(
+    after?.theme === after?.answers.palette,
+    `${tag}: the panel now resolves to the palette pressed, not the inferred one`,
+  );
+  check(
+    after?.theme !== after?.steerTheme,
+    `${tag}: …and it is a DIFFERENT palette from the steer's (${after?.steerTheme} → ${after?.theme})`,
+  );
+  console.log(`  palette: steer wanted ${after?.steerTheme}, reader pressed "${mine.name.trim()}" (${after?.theme})`);
+
+  await page.locator('.nbq-btn--primary').click(); // "next"
+  return after?.theme ?? null;
+}
+
 /**
  * One whole run: fresh library, take the tour, answer, dress.
- * `picks` is the card index for each of the four questions.
+ * `picks` is the card index for each of the four steer questions; `swatch` is
+ * the palette card to press, or null to keep the one the steer chose.
  */
-async function run(tag, picks, length) {
-  console.log(`\n=== ${tag} — picks ${picks.join(',')} on the ${length} tour ===`);
+async function run(tag, picks, length, swatch) {
+  console.log(`\n=== ${tag} — picks ${picks.join(',')} (palette ${swatch ?? 'the steer\'s'}) on the ${length} tour ===`);
 
   await page.goto(`${URL_BASE}/?fx=force`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => localStorage.clear());
@@ -157,8 +281,10 @@ async function run(tag, picks, length) {
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${OUT}/taste-${tag}-2-q1.png` });
 
-  // Four questions. The first three walk on by themselves after the beat; the
-  // sound question does not (the reader is meant to audition more than one).
+  // Five questions. One, two and four walk on by themselves after the beat; the
+  // palette grid and the sound question do not — both are lists the reader is
+  // meant to browse, and being carried off mid-browse is the panel deciding they
+  // were finished.
   await pickCard(picks[0]);
   await poll(
     () => document.querySelector('.nbq-layer')?.getAttribute('data-taste-step') === 'pitch',
@@ -167,19 +293,22 @@ async function run(tag, picks, length) {
   );
   await page.screenshot({ path: `${OUT}/taste-${tag}-3-q2.png` });
   await pickCard(picks[1]);
+
+  const wanted = await answerPalette(tag, swatch);
+
   await poll(
     () => document.querySelector('.nbq-layer')?.getAttribute('data-taste-step') === 'paper',
     15000,
-    'question three',
+    'question four',
   );
-  await page.screenshot({ path: `${OUT}/taste-${tag}-4-q3.png` });
+  await page.screenshot({ path: `${OUT}/taste-${tag}-6-q4.png` });
   await pickCard(picks[2]);
   await poll(
     () => document.querySelector('.nbq-layer')?.getAttribute('data-taste-step') === 'sound',
     15000,
-    'question four',
+    'question five',
   );
-  await page.screenshot({ path: `${OUT}/taste-${tag}-5-q4.png` });
+  await page.screenshot({ path: `${OUT}/taste-${tag}-7-q5.png` });
   await pickCard(picks[3]);
   await page.locator('.nbq-btn--primary').click(); // "see it"
 
@@ -189,7 +318,7 @@ async function run(tag, picks, length) {
     'the summary',
   );
   await page.waitForTimeout(600);
-  await page.screenshot({ path: `${OUT}/taste-${tag}-6-summary.png` });
+  await page.screenshot({ path: `${OUT}/taste-${tag}-8-summary.png` });
 
   const summary = await page.evaluate(() => ({
     title: document.querySelector('.nbq-final .nbq-title')?.textContent ?? '',
@@ -215,7 +344,33 @@ async function run(tag, picks, length) {
 
   const after = await readLibrary();
   console.log('  after: ', JSON.stringify(after));
-  await page.screenshot({ path: `${OUT}/taste-${tag}-7-dressed.png` });
+  await page.screenshot({ path: `${OUT}/taste-${tag}-9-dressed.png` });
+
+  /*
+   * THE ITEM'S OWN CHECK, and the reason this probe was extended.
+   *
+   * `after.theme` comes out of `__libraryPrefs.current()` — the store the world
+   * repaints from — so this is the shelf, not the panel's opinion of itself. A
+   * pick that scored highly instead of winning outright would pass every unit
+   * test in the suite and fail exactly here.
+   */
+  check(
+    wanted !== null && after.theme === wanted,
+    `${tag}: the shelf is wearing the palette that was settled on (${wanted} → ${after.theme})`,
+  );
+  if (swatch !== null) {
+    const finalSteer = await decided();
+    check(
+      after.theme !== finalSteer?.steerTheme,
+      `${tag}: …and NOT the one the steer inferred (${finalSteer?.steerTheme})`,
+    );
+    check(
+      finalSteer?.picked === true,
+      `${tag}: the outcome still reports the colours as the reader's pick`,
+    );
+    const ledger = summary.ledger.find((row) => row.startsWith('colours:')) ?? '';
+    check(/your pick/.test(ledger), `${tag}: the summary said so out loud ("${ledger}")`);
+  }
 
   // The five things the four answers are supposed to have dressed.
   check(after.theme !== before.theme, `${tag}: the room's colours changed (${before.theme} → ${after.theme})`);
@@ -234,26 +389,26 @@ async function run(tag, picks, length) {
   check(after.soundSet !== before.soundSet, `${tag}: the sound set changed (${before.soundSet} → ${after.soundSet})`);
 
   // The stronger form of the same question: what the app is PLAYING is the set
-  // the four answers resolve to, not merely a set that is not the old one. (The
+  // the answers resolve to, not merely a set that is not the old one. (The
   // audition while the sound question is on screen is engine-only, so a run
   // that never pressed "dress my library" would leave the reader's own set on.)
-  const decided = await page.evaluate(() => {
+  const settled = await page.evaluate(() => {
     const bridge = window.__nbTaste;
     if (bridge === undefined) return null;
     const out = bridge.resolve(bridge.answers());
     return { set: out.soundSet, binding: out.binding.id, theme: out.room.theme };
   });
   check(
-    decided !== null && decided.set === after.soundSet,
-    `${tag}: the set playing is the one the answers resolve to (${decided?.set})`,
+    settled !== null && settled.set === after.soundSet,
+    `${tag}: the set playing is the one the answers resolve to (${settled?.set})`,
   );
   check(
-    decided !== null && decided.binding === after.binding,
-    `${tag}: the binding on the shelf is the one the answers resolve to (${decided?.binding})`,
+    settled !== null && settled.binding === after.binding,
+    `${tag}: the binding on the shelf is the one the answers resolve to (${settled?.binding})`,
   );
   check(
-    decided !== null && decided.theme === after.theme,
-    `${tag}: the room's colours are the ones the answers resolve to (${decided?.theme})`,
+    settled !== null && settled.theme === after.theme,
+    `${tag}: the room's colours are the ones the answers resolve to (${settled?.theme})`,
   );
 
   // …and the tour saw it. Green, then on by itself.
@@ -276,7 +431,7 @@ async function run(tag, picks, length) {
     .then(() => true)
     .catch(() => false);
   check(moved, `${tag}: …and the tour walked on to the next step`);
-  await page.screenshot({ path: `${OUT}/taste-${tag}-8-next-step.png` });
+  await page.screenshot({ path: `${OUT}/taste-${tag}-10-next-step.png` });
 
   return { before, after, summary };
 }
@@ -377,9 +532,14 @@ async function pickLater() {
 // Two very different readers: near the top of every list versus near the
 // bottom. (Not card 0 for the sound question — its first family IS the shipped
 // default, so "the set changed" would be a false alarm on a correct run.)
-const a = await run('a', [0, 0, 0, 3], 'full');
+//
+// `a` browses the palette grid and presses card 41 — deep in the "40 more", the
+// case the steer would never have offered, which is the whole point of the item.
+// `b` presses on and keeps the steer's, so the path a reader who does not want
+// to browse takes is driven too.
+const a = await run('a', [0, 0, 0, 3], 'full', 41);
 await returningReader();
-const b = await run('b', [7, 3, 4, 6], 'short');
+const b = await run('b', [7, 3, 4, 6], 'short', null);
 await pickLater();
 
 if (a !== null && b !== null) {

@@ -985,14 +985,24 @@ describe('every ink can be read on every paper in every room', () => {
           const accentInk = tokens['--accent-ink'];
           const accentDeep = tokens['--accent-deep'];
           const onAccent = tokens['--on-accent'];
-          if (aged === '' || accentInk === '') continue;
+          if (aged === '') continue;
           const where = `${theme.id}/${paper ?? 'auto'}`;
-          const asType = contrastRatio(accentInk, aged);
+          // Each token is skipped on its own emptiness, not on the first one's.
+          // A shipped room on a chosen PAPER now writes the accent ink (it is
+          // solved against the paper) while leaving the accent RAMP to the
+          // stylesheet — so `accentInk` being present no longer means
+          // `accentDeep` is, and a shared guard measured '' against '' at a
+          // cheerful 1.00:1 in twelve rooms.
+          if (accentInk !== '') {
+            measured += 1;
+            const asType = contrastRatio(accentInk, aged);
+            if (asType < 4.45) fails.push(`${where}: accent as type ${asType.toFixed(2)}:1`);
+          }
+          if (accentDeep === '') continue;
           const asRim = contrastRatio(accentDeep, aged);
-          const label = contrastRatio(onAccent, accentDeep);
-          measured += 1;
-          if (asType < 4.45) fails.push(`${where}: accent as type ${asType.toFixed(2)}:1`);
           if (asRim < 2.9) fails.push(`${where}: accent as rim ${asRim.toFixed(2)}:1`);
+          if (onAccent === '') continue;
+          const label = contrastRatio(onAccent, accentDeep);
           if (label < 4.45) fails.push(`${where}: label on accent ${label.toFixed(2)}:1`);
         }
       }

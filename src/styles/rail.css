@@ -156,14 +156,53 @@
 }
 
 /*
+ * THE SHELF SLIDES BY THE SHEET'S WIDTH. THE BOOK CANNOT.
+ *
+ * The shelf's world is a canvas the size of the window with a camera behind
+ * it: push it 340px right and the room simply carries on off the edge, which
+ * is what a room does. A book is a finite object with a right-hand page, a
+ * fore-edge and a dog-ear curl, and on a 1440×900 window it is already 1270px
+ * of the 1332 the view has — so pushing it by the sheet's width put its right
+ * leaf 271px PAST the window, taking the end of every line on that page and
+ * the curl corner with it. Every panel did it, at every window size.
+ *
+ * So the book gets its own two numbers, published per frame by views/BookView
+ * (`fitSpreadToRoom` in views/spread.ts does the arithmetic, DOM-free, so the
+ * window sizes are walked in tests/spread.test.ts):
+ *
+ *   --nb-spread-shift  slide the book's centre to the centre of the room the
+ *                      sheet leaves — NOT by the sheet's width, which is a
+ *                      different number the moment the book is not centred in
+ *                      what is left;
+ *   --nb-spread-fit    shrink it just enough that both edges land inside.
+ *
+ * The fit is a SCALE and not a narrower leaf on purpose: the leaf's layout box
+ * is what `pageCapacityPx` and the line wrap are measured from, so narrowing
+ * it would repaginate the reader's book on opening a colour picker — and the
+ * pagination contract peels forward without ever pulling back, so closing the
+ * panel would not undo it. Same reasoning, same mechanism, as the focus dial's
+ * zoom (reader.css). Both defaults below are the identity, so a book view that
+ * has not measured yet paints exactly where it always did.
+ */
+:root {
+  --nb-spread-shift: 0px;
+  --nb-spread-fit: 1;
+}
+
+/*
  * The book area, named piece by piece rather than as `.nb-spread-stage`: the
  * rail panels are children of that stage, and a transform there would drag
  * the sheets along with the thing they are pushing.
+ *
+ * All three pieces are centred on the stage, so one origin at their own centre
+ * lands all three on the same axis however differently wide they are — and the
+ * shift is computed against that same centre.
  */
 .nb-book-view .nb-spread-header,
 .nb-book-view .nb-book-cover,
 .nb-book-view .nb-thumb-strip {
-  transform: translate3d(var(--nb-panel-push), 0, 0);
+  transform: translate3d(var(--nb-spread-shift), 0, 0) scale(var(--nb-spread-fit));
+  transform-origin: 50% 50%;
 }
 
 /*
@@ -977,7 +1016,12 @@
     transform var(--dur-xs) var(--ease-out);
 }
 
+/* The reading ink comes with the wash. The soft rung is tuned against the
+   PAPER rungs, and an amber face is a pigment that inverts on its own
+   schedule — 3.49:1 after dark. (The active state below already knew this:
+   `--on-gilt` on `--gilt-face`.) */
 .nb-studio-tab:hover {
+  color: var(--ink-sepia);
   background: var(--wash-amber-light);
   transform: rotate(-0.8deg);
 }

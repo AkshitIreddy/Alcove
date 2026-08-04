@@ -33,6 +33,7 @@ export {
   tutorialRunning,
 } from './state';
 export {
+  PANEL_DWELL_MS,
   SHORT_TOUR_STEP_IDS,
   TUTORIAL_STEPS,
   TUTORIAL_STEP_IDS,
@@ -44,4 +45,13 @@ export {
   type TutorialStep,
 } from './steps';
 export { DISMISSIBLE, dismissStale, openSurfaceIds } from './dismiss';
-export type { TourFactKey } from './probe';
+export { SURFACE_FACTS, type TourFactKey } from './probe';
+// The contract a panel rides a tour step on — both directions of it. See
+// ./tourStep.ts for why it is a module rather than a string in two files.
+export {
+  TOUR_LAYER_SELECTOR,
+  TOUR_STEP_ATTR,
+  stepWatchVerdict,
+  type StepWatch,
+  type StepWatchVerdict,
+} from './tourStep';

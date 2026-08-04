@@ -234,8 +234,10 @@
   transform: translateY(-1px) rotate(-0.8deg);
 }
 
+/* `--on-gilt` on the amber face — the reader's ink inverts with the room and
+   the face does not, so the ACTIVE chip was the unreadable one after dark. */
 .nb-tr-chip[data-active='true'] {
-  color: var(--ink-sepia);
+  color: var(--on-gilt);
   font-weight: 700;
   background: var(--wash-amber);
   border-color: var(--wash-amber-deep);
@@ -711,7 +713,8 @@
   padding: var(--space-8) var(--space-12);
   font-size: var(--text-ui);
   line-height: 1.5;
-  color: var(--ink-sepia-soft);
+  /* Reading ink on a wash face — the soft rung is for paper (4.03:1 here). */
+  color: var(--ink-sepia);
   background: var(--wash-sky-light);
   border: 1.5px dashed var(--wash-sky-deep);
   border-radius: var(--radius-hand);
@@ -814,7 +817,10 @@
   font-size: var(--text-ui-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-sepia-soft);
+  /* The reading ink, not the soft rung: the soft inks are tuned to clear
+     4.5:1 on `--paper-aged`, and this pill is a rung darker on `--paper-deep`,
+     where fountain blue fell to 4.28:1 at 11px. */
+  color: var(--ink-sepia);
   background: var(--paper-deep);
   border: var(--stroke-ink-thin);
   border-radius: var(--radius-pill);

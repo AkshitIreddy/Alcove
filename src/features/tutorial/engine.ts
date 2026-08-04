@@ -503,6 +503,45 @@ export function solidScrimPath(vp: Size): string {
 }
 
 // ---------------------------------------------------------------------------
+// Beats
+// ---------------------------------------------------------------------------
+
+/**
+ * How long the green "you did it" state holds on an ordinary step before the
+ * tour walks on. Long enough to read the line and see the tick draw; short
+ * enough that finishing a step feels like it moved you forward.
+ */
+export const CELEBRATE_MS = 1500;
+
+/** With motion off there is no tick to watch draw, so do not sit there. */
+export const CELEBRATE_SNAP_MS = 450;
+
+/**
+ * How long to hold before advancing, given the step's own `dwell` and the
+ * motion preference.
+ *
+ * THE REPORTED BUG: a step whose whole lesson is a PANEL ("open the studio —
+ * the palette on the shelf rail") went green the instant the panel appeared,
+ * and 1.2s later the tour advanced and `dismissStale` shut the panel again.
+ * Measured: visible at 488ms, gone at 1696ms. The reader was asked to open a
+ * drawer and then had it closed in their face before they could look in it.
+ *
+ * A step that teaches a surface therefore names its own `dwell`, and that
+ * number is READING TIME, not movement — so, exactly as `styles/motion.ts`
+ * says of `LINGER_MS`, it is never multiplied by the motion scale and does not
+ * collapse to nothing when animation is switched off. Someone who turned
+ * animation off still needs the same beat to read a panel.
+ *
+ * Only the default beat, which exists to let a bit of choreography play, is
+ * scaled.
+ */
+export function celebrateDelay(dwell: number | undefined, motion: number): number {
+  if (dwell !== undefined) return Math.max(CELEBRATE_SNAP_MS, dwell);
+  if (motion <= 0) return CELEBRATE_SNAP_MS;
+  return CELEBRATE_MS * Math.max(0.6, motion);
+}
+
+// ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 

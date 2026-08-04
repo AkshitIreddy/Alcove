@@ -51,19 +51,45 @@ So `_ico()` below emits the container directly: BMP/DIB under 256, PNG at 256,
 was written and refuses to pass it silently — run `python scripts/gen-icons.py
 --check` to audit the committed file without regenerating it.
 
+## icon.icns is written here too, and why
+
+It used to be left to `npx @tauri-apps/cli icon`, on the reasoning that macOS
+was not a shipping target. CI now builds a macOS bundle, and the moment it did
+the consequence showed: the committed `icon.icns` still carried the artwork from
+two renames ago. Nothing regenerated it when the master changed, because nothing
+in this repo knew how. Measured, not assumed — the mean absolute channel
+difference between the old container's 1024px frame and the current master is
+**75/255**, i.e. a different picture, not a stale encode.
+
+The alternative was to run the Tauri CLI icon step inside the macOS build job.
+That was rejected for the reason in the section below: the CLI rewrites the
+close-crops, the installer bitmaps and `alcove-1024.png` as plain downscales, so
+a build that ran it would ship art the repository does not contain, and only the
+runner would ever have the right icon. One master, one script, one `--check`.
+
+`build_icns()` emits the container directly for the same reason `_ico()` does:
+the frame set is a decision (which OSTypes, at which sizes, with the small-size
+treatment applied to the small ones) and a library that takes one image and
+downscales it cannot express it. `verify_icns()` re-reads the bytes on disk,
+decodes every frame — including round-tripping the run-length ones — and
+compares the largest against the master, so a container that is merely *old*
+fails as loudly as one that is malformed.
+
 ## Order matters
 
 `npx @tauri-apps/cli icon` regenerates the PNGs as plain downscales and would
-clobber the close-crops. Run it FIRST, for icon.icns and the installer bitmaps,
-then this script:
+clobber the close-crops. There is now no reason to run it at all — this script
+writes every icon Tauri names in `bundle.icon`, on Windows, macOS and Linux
+alike. If you ever do run it, run it FIRST and then this script over the top:
 
-    npx @tauri-apps/cli icon assets/brand/alcove-1024.png
+    npx @tauri-apps/cli icon assets/brand/alcove-1024.png   # not needed any more
     python scripts/gen-icons.py
 
 Usage:
     python scripts/gen-icons.py              # everything, from the master art
     python scripts/gen-icons.py --ico-only   # just repack icon.ico
-    python scripts/gen-icons.py --check      # audit the committed icon.ico, exit 1 if bad
+    python scripts/gen-icons.py --icns-only  # just repack icon.icns
+    python scripts/gen-icons.py --check      # audit the committed .ico AND .icns, exit 1 if bad
 """
 from __future__ import annotations
 
@@ -83,6 +109,7 @@ SRC = ROOT / "assets/brand/alcove-art.png"
 ICONS = ROOT / "src-tauri/icons"
 MASTER = ROOT / "assets/brand/alcove-1024.png"
 ICO = ICONS / "icon.ico"
+ICNS = ICONS / "icon.icns"
 
 # How close a pixel must be to the corner colour to count as the surround.
 # A tolerance rather than a threshold, because the surround is now DETECTED
@@ -104,6 +131,42 @@ RADIUS = 0.18     # rounded-mask radius as a fraction of the tile
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
 ICO_PNG_FROM = 256   # this size and up is PNG-compressed, everything under it BMP/DIB
 ICO_REQUIRED = (16, 32, 48)   # absent any of these, Explorer surfaces go blank
+
+# What goes in icon.icns. macOS looks an icon up by OSType, and an OSType is a
+# (point size, scale) pair rather than a pixel size — ic11 is "16pt at @2x",
+# which is 32 pixels. A type that is absent is derived by resampling whichever
+# one is present, and a derived 16pt lands visibly soft in Finder's list view
+# and the Dock's smallest state. This is the same set `npx @tauri-apps/cli icon`
+# emits, so replacing that step changes the artwork and nothing else.
+ICNS_PNG = (
+    ("ic11", 32),     # 16pt @2x
+    ("ic12", 64),     # 32pt @2x
+    ("ic07", 128),    # 128pt @1x
+    ("ic13", 256),    # 128pt @2x
+    ("ic08", 256),    # 256pt @1x
+    ("ic14", 512),    # 256pt @2x
+    ("ic09", 512),    # 512pt @1x
+    ("ic10", 1024),   # 512pt @2x
+)
+# The two @1x small sizes predate PNG-in-icns and are still what the older
+# lookup paths ask for. They are a 24-bit RLE colour frame plus a separate
+# uncompressed 8-bit alpha frame — PNG is not accepted for these OSTypes.
+ICNS_RLE = (
+    ("is32", "s8mk", 16),    # 16pt @1x
+    ("il32", "l8mk", 32),    # 32pt @1x
+)
+ICNS_REQUIRED = tuple(t for t, _ in ICNS_PNG) + tuple(
+    t for pair in ((c, m) for c, m, _ in ICNS_RLE) for t in pair
+)
+
+# Freshness. Both images are flattened onto white, reduced to FRESH_AT and
+# compared as a mean absolute channel difference, because the question is "is
+# this the same picture" and not "are these the same bytes" — PNG output drifts
+# between Pillow and zlib versions and a byte comparison would fail on a CI
+# runner for no reason. The stale container this check was written for scored
+# 75; a re-encode of the same art scores under 1.
+FRESH_AT = 64
+FRESH_TOL = 20.0
 
 # Tauri's expected set. The Square*Logo files are the Windows Store tiles; the
 # plain sizes are the Linux/dev ones. Names must match exactly — the bundler
@@ -432,6 +495,276 @@ def build_ico(art: Image.Image) -> None:
     print(f"  icon.ico ({', '.join(str(s) for s in ICO_SIZES)})")
 
 
+# ---------------------------------------------------------------------------
+# icon.icns — see the header, and docs/packaging-mac-linux.md
+# ---------------------------------------------------------------------------
+
+def _rle24(plane: bytes) -> bytes:
+    """One 8-bit plane, run-length encoded the way an icns 24-bit frame wants.
+
+    A PackBits variant, and the two ranges are the part that is silent when
+    wrong: a RUN marker is `0x80 | (count - 3)`, so a run carries 3..130 bytes
+    and never 1 or 2; a LITERAL marker is `count - 1`, so a literal carries
+    1..128. That is what keeps the marker byte unambiguous — every literal
+    marker is below 0x80 and every run marker is at or above it. Encode a
+    two-byte run as a run and the decoder reads a byte that was never written.
+    """
+    out = bytearray()
+    i, n = 0, len(plane)
+    while i < n:
+        run = 1
+        while i + run < n and plane[i + run] == plane[i] and run < 130:
+            run += 1
+        if run >= 3:
+            out.append(0x80 | (run - 3))
+            out.append(plane[i])
+            i += run
+            continue
+        start = i
+        i += 1
+        # A literal ends where a run worth encoding begins, or at 128 bytes.
+        while i < n and i - start < 128:
+            if i + 2 < n and plane[i] == plane[i + 1] == plane[i + 2]:
+                break
+            i += 1
+        out.append(i - start - 1)
+        out += plane[start:i]
+    return bytes(out)
+
+
+def _unrle24(blob: bytes, expected: int) -> tuple[bytes, int]:
+    """Decode `expected` bytes back out. Returns (plane, bytes consumed).
+
+    Only `verify_icns` calls this, and that is the point: an encoder that is
+    checked by its own decoder is checked by nothing, so this one exists to be
+    run against the file on disk and compared with the source pixels.
+    """
+    out = bytearray()
+    i = 0
+    while len(out) < expected:
+        if i >= len(blob):
+            raise ValueError("ran out of input")
+        marker = blob[i]
+        i += 1
+        if marker & 0x80:
+            count = (marker & 0x7F) + 3
+            if i >= len(blob):
+                raise ValueError("run marker with no byte after it")
+            out += bytes([blob[i]]) * count
+            i += 1
+        else:
+            count = marker + 1
+            if i + count > len(blob):
+                raise ValueError("literal runs past the end")
+            out += blob[i:i + count]
+            i += count
+    return bytes(out), i
+
+
+def _planes(im: Image.Image) -> tuple[bytes, bytes, bytes]:
+    """R, G and B as three separate byte planes, plus nothing else.
+
+    An icns 24-bit frame is channel-planar, not interleaved. Alpha does not
+    live here at all — it goes in the paired s8mk/l8mk chunk.
+    """
+    rgba = im.convert("RGBA")
+    r, g, b, _ = rgba.split()
+    return r.tobytes(), g.tobytes(), b.tobytes()
+
+
+def _icns(frames: dict[int, Image.Image]) -> bytes:
+    """Assemble the .icns container by hand.
+
+    Layout is as plain as it looks: the magic, the total length INCLUDING the
+    8-byte header, then one chunk per frame of `OSType + length + data`, where
+    the length again includes its own 8-byte header. Getting either length to
+    exclude its header produces a file that parses far enough to look fine and
+    then walks off the end.
+    """
+    body = bytearray()
+
+    def chunk(ostype: str, data: bytes) -> None:
+        body.extend(ostype.encode("ascii"))
+        body.extend(struct.pack(">I", len(data) + 8))
+        body.extend(data)
+
+    for colour_type, mask_type, size in ICNS_RLE:
+        im = frames[size].convert("RGBA")
+        r, g, b = _planes(im)
+        chunk(colour_type, _rle24(r) + _rle24(g) + _rle24(b))
+        chunk(mask_type, im.getchannel("A").tobytes())
+
+    for ostype, size in ICNS_PNG:
+        buf = io.BytesIO()
+        frames[size].convert("RGBA").save(buf, format="PNG", optimize=True)
+        chunk(ostype, buf.getvalue())
+
+    return b"icns" + struct.pack(">I", len(body) + 8) + bytes(body)
+
+
+def freshness(frame: Image.Image, art: Image.Image, size: int) -> float:
+    """Mean absolute channel difference between a shipped frame and the master.
+
+    Flattened onto white first, because the transparent surround carries
+    whatever RGB the encoder happened to leave there and comparing it would be
+    comparing noise.
+    """
+    def thumb(im: Image.Image) -> list[tuple[int, int, int]]:
+        rgba = im.convert("RGBA")
+        flat = Image.new("RGB", rgba.size, (255, 255, 255))
+        flat.paste(rgba, (0, 0), rgba)
+        return list(flat.resize((FRESH_AT, FRESH_AT), Image.LANCZOS).getdata())
+
+    a, b = thumb(frame), thumb(render(art, size))
+    return sum(
+        abs(x - y) for p, q in zip(a, b) for x, y in zip(p, q)
+    ) / (len(a) * 3)
+
+
+def verify_icns(path: Path, art: Image.Image | None = None) -> tuple[list[str], list[str]]:
+    """Re-read a written .icns and check it against what macOS wants.
+
+    Same contract as `verify_ico`: returns (problems, rows), trusts nothing the
+    writer said, and parses the bytes that would actually ship. Pass `art` to
+    also check the container is not simply OLD — that is the failure this file
+    was written for, and it is the one a structural check cannot see.
+    """
+    problems: list[str] = []
+    rows: list[str] = []
+    if not path.exists():
+        return [f"{path} does not exist"], rows
+
+    b = path.read_bytes()
+    if len(b) < 8:
+        return [f"{path.name} is {len(b)} bytes - not an .icns"], rows
+
+    magic, declared = struct.unpack_from(">4sI", b, 0)
+    if magic != b"icns":
+        problems.append(f"bad magic {magic!r}, want b'icns'")
+    if declared != len(b):
+        problems.append(
+            f"header says {declared} bytes, file is {len(b)} - the length "
+            f"counts the 8-byte header too"
+        )
+
+    want_png = dict(ICNS_PNG)
+    want_rle = {c: s for c, _, s in ICNS_RLE}
+    want_mask = {m: s for _, m, s in ICNS_RLE}
+
+    seen: list[str] = []
+    off = 8
+    while off + 8 <= len(b):
+        ostype_raw, length = struct.unpack_from(">4sI", b, off)
+        ostype = ostype_raw.decode("ascii", "replace")
+        if length < 8 or off + length > len(b):
+            problems.append(f"{ostype}: chunk length {length} runs past the end of the file")
+            break
+        data = b[off + 8:off + length]
+        seen.append(ostype)
+        note = ""
+
+        if ostype in want_png:
+            size = want_png[ostype]
+            if data[:8] != b"\x89PNG\r\n\x1a\n":
+                problems.append(f"{ostype}: not a PNG - this OSType carries one")
+            else:
+                iw, ih = struct.unpack_from(">II", data, 16)
+                note = f"PNG {iw}x{ih}"
+                if (iw, ih) != (size, size):
+                    problems.append(f"{ostype}: PNG is {iw}x{ih}, want {size}x{size}")
+        elif ostype in want_rle:
+            size = want_rle[ostype]
+            note = f"RLE24 {size}x{size}"
+            used = 0
+            try:
+                for channel in "RGB":
+                    plane, consumed = _unrle24(data[used:], size * size)
+                    if len(plane) != size * size:
+                        problems.append(
+                            f"{ostype}: {channel} plane decoded to {len(plane)} "
+                            f"bytes, want {size * size}"
+                        )
+                    used += consumed
+            except ValueError as exc:
+                problems.append(f"{ostype}: run-length data is corrupt ({exc})")
+            else:
+                if used != len(data):
+                    problems.append(
+                        f"{ostype}: three planes decode out of {used} bytes but the "
+                        f"chunk is {len(data)} - trailing junk or a fourth plane"
+                    )
+        elif ostype in want_mask:
+            size = want_mask[ostype]
+            note = f"alpha {size}x{size}"
+            if len(data) != size * size:
+                problems.append(
+                    f"{ostype}: mask is {len(data)} bytes, want {size * size} - "
+                    f"an 8-bit mask is uncompressed and one byte per pixel"
+                )
+        else:
+            note = "unrecognised"
+
+        rows.append(f"  {ostype}  {len(data):>8} bytes  {note}")
+        off += length
+
+    if off != len(b) and not problems:
+        problems.append(f"{len(b) - off} trailing bytes after the last chunk")
+
+    for need in ICNS_REQUIRED:
+        if need not in seen:
+            problems.append(f"no {need} chunk - macOS would resample a neighbour for it")
+    if len(set(seen)) != len(seen):
+        dupes = sorted({t for t in seen if seen.count(t) > 1})
+        problems.append(f"duplicate chunk types: {dupes}")
+
+    if art is not None and "ic10" in seen:
+        off = 8
+        while off + 8 <= len(b):
+            ostype_raw, length = struct.unpack_from(">4sI", b, off)
+            if ostype_raw == b"ic10":
+                frame = Image.open(io.BytesIO(b[off + 8:off + length]))
+                drift = freshness(frame, art, 1024)
+                rows.append(f"  ic10 vs {SRC.name}: mean abs difference {drift:.1f}/255")
+                if drift > FRESH_TOL:
+                    problems.append(
+                        f"ic10 differs from the master by {drift:.1f} (tolerance "
+                        f"{FRESH_TOL}) - this container is STALE artwork, not a "
+                        f"stale encode. Run: python scripts/gen-icons.py --icns-only"
+                    )
+                break
+            off += length
+
+    return problems, rows
+
+
+def report_icns(path: Path, art: Image.Image | None = None) -> int:
+    problems, rows = verify_icns(path, art)
+    print(f"\n{path.relative_to(ROOT)} - {path.stat().st_size if path.exists() else 0} bytes")
+    for r in rows:
+        print(r)
+    if problems:
+        print(f"\n  {len(problems)} PROBLEM(S):")
+        for p in problems:
+            print(f"    ! {p}")
+        return 1
+    print("\n  ok - every chunk is what macOS wants, and the art is current")
+    return 0
+
+
+def build_icns(art: Image.Image) -> None:
+    """icon.icns, every frame rendered at its own treatment.
+
+    16 and 32 go through the same close-crop as their Windows counterparts:
+    Finder's list view and the Dock's smallest state are exactly the sizes at
+    which the full illustration averages to a grey square.
+    """
+    sizes = sorted({s for _, s in ICNS_PNG} | {s for _, _, s in ICNS_RLE})
+    frames = {s: render(art, s) for s in sizes}
+    ICNS.write_bytes(_icns(frames))
+    print(f"  icon.icns ({len(ICNS_PNG) + 2 * len(ICNS_RLE)} chunks, "
+          f"{', '.join(str(s) for s in sizes)}px)")
+
+
 def build_installer_art(art: Image.Image) -> None:
     """The two NSIS bitmaps, drawn from the same master as everything else.
 
@@ -471,7 +804,13 @@ def build_installer_art(art: Image.Image) -> None:
 def main() -> int:
     args = sys.argv[1:]
     if "--check" in args:
-        return report(ICO)
+        # The .icns audit needs the master to answer "is this the current
+        # artwork", which is the whole reason it exists. Without the master it
+        # still checks the container; it says so rather than passing silently.
+        art = unframe(Image.open(SRC).convert("RGB")) if SRC.exists() else None
+        if art is None:
+            print(f"  note: {SRC} is missing - checking structure only, not freshness")
+        return report(ICO) | report_icns(ICNS, art)
 
     if not SRC.exists():
         sys.exit(f"missing master: {SRC}")
@@ -489,6 +828,10 @@ def main() -> int:
         build_ico(art)
         return report(ICO)
 
+    if "--icns-only" in args:
+        build_icns(art)
+        return report_icns(ICNS, art)
+
     art.resize((1024, 1024), Image.LANCZOS).save(MASTER)
     print(f"  {MASTER.relative_to(ROOT)} (1024px)")
 
@@ -498,13 +841,12 @@ def main() -> int:
         print(f"  {name} ({size}px){tag}")
 
     build_ico(art)
+    build_icns(art)
     build_installer_art(art)
 
-    # icon.icns is left to `npx @tauri-apps/cli icon` — macOS only, and this
-    # ships on Windows, so there is nothing here to verify it against.
-    rc = report(ICO)
-    print("\ndone. icon.icns still comes from `npx @tauri-apps/cli icon` (macOS "
-          "only);\nrun that BEFORE this script or it overwrites the close-crops.")
+    rc = report(ICO) | report_icns(ICNS, art)
+    print("\ndone. Every icon Tauri names in bundle.icon now comes from this one "
+          "master;\n`npx @tauri-apps/cli icon` is no longer part of the pipeline.")
     return rc
 
 

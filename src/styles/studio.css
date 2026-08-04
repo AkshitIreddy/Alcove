@@ -330,7 +330,11 @@
   box-shadow: var(--shadow-md);
 }
 
-/* The tick sits on the card, not on the art: the art is the subject. */
+/* The tick sits on the card, not on the art: the art is the subject.
+   `--gilt-ink` rather than `--on-gilt`, because the badge's ground is
+   `--gilt-light` and THAT face inverts: after dark it is #5a4514, and
+   `--on-gilt` (which by design never inverts) sat on it at 1.72:1. The
+   non-inverting ink belongs on the non-inverting face, `--gilt-face`. */
 .nb-pick-card.is-active::after {
   content: '✓';
   position: absolute;
@@ -339,9 +343,9 @@
   font-family: var(--font-ui);
   font-size: 11px;
   line-height: 1;
-  color: var(--on-gilt);
+  color: var(--gilt-ink);
   background: var(--gilt-light);
-  border: 1.5px solid var(--on-gilt);
+  border: 1.5px solid var(--gilt-ink);
   border-radius: var(--radius-pill);
   padding: 2px 5px;
 }
@@ -389,8 +393,14 @@
   overflow: hidden;
 }
 
+/* `--on-gilt`, the same ink the name takes. `--gilt-ink` is the token for gilt
+   as TYPE ON PAPER; on the gilt FACE it measured 3.90:1 under a window and
+   1.53:1 after dark, because after dark `--gilt-ink` is a bright cream sitting
+   on bright gold. The hierarchy between name and blurb is already carried by
+   20px Caveat against 10.5px Nunito — it does not need a second, unreadable
+   voice as well. */
 .nb-pick-card.is-active .nb-pick-blurb {
-  color: var(--gilt-ink);
+  color: var(--on-gilt);
 }
 
 /* While a full-axis sheet is out the studio IS that sheet, so anything the
@@ -623,8 +633,13 @@
   font-weight: 700;
 }
 
+/* Hover FILLS with the deep face and takes the pale one as its label, rather
+   than moving to the mid pigment and keeping the deep ink on it: deep-on-mid
+   is 2.19:1 under a window and 1.68:1 after dark, and both faces of that pair
+   invert together so it fails in every room. Light-on-deep is 6.02:1. */
 .nb-chip-danger:hover {
-  background: var(--wash-coral);
+  background: var(--wash-coral-deep);
+  color: var(--wash-coral-light);
 }
 
 .nb-chip:disabled {

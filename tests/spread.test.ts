@@ -13,9 +13,12 @@ import { describe, expect, it } from 'vitest';
 import type { PageDoc } from '../src/data/types';
 import {
   MAX_TRAILING_BLANK_PAGES,
+  MIN_SPREAD_SCALE,
+  SPREAD_FIT_REST,
   arrowFlipAction,
   canFlipSpread,
   docHasContent,
+  fitSpreadToRoom,
   isLastSpread,
   lastSpreadIndex,
   leftSlot,
@@ -27,6 +30,7 @@ import {
   spreadCount,
   spreadOfSlot,
   spreadPageIds,
+  visualScale,
 } from '../src/views/spread';
 
 /** A book of n pages with ids p0..p(n-1). */
@@ -375,5 +379,165 @@ describe('arrowFlipAction', () => {
     expect(arrowFlipAction('ArrowDown', false)).toBeNull();
     expect(arrowFlipAction('Enter', false)).toBeNull();
     expect(arrowFlipAction(' ', false)).toBeNull();
+  });
+});
+
+/* ──────────────────── fitting the spread beside a sheet ───────────────── */
+
+/**
+ * The reported defect, in numbers: at 1440×900 the book view's content box is
+ * 88..1420 and the stage is 1270px wide inside it, so the spread runs
+ * 119..1389. A rail sheet is `min(340px, 78vw)` hinged at left:68, so its
+ * right edge — `--nb-panel-edge` — lands at 408. Pushed by the sheet's WIDTH
+ * the cover ended at 1729: 289px past the glass, with the dog-ear curl gone
+ * with it. Every case below is a real window the app can be opened at.
+ */
+const GAP = 16;
+
+/** The book view's content box for a window of `width` (padding 88 / 20). */
+const roomAt = (width: number) => ({ left: 88, right: width - 20 });
+
+/** Where flex centring puts a stage of `width` inside that room. */
+const stageIn = (room: { left: number; right: number }, width: number) => {
+  const centre = (room.left + room.right) / 2;
+  return { left: centre - width / 2, right: centre + width / 2 };
+};
+
+describe('fitSpreadToRoom', () => {
+  it('does nothing at all with no sheet open', () => {
+    const room = roomAt(1440);
+    expect(fitSpreadToRoom(stageIn(room, 1270), room, 0, GAP)).toEqual(
+      SPREAD_FIT_REST,
+    );
+  });
+
+  it('keeps the whole spread inside the window at 1440×900 — the report', () => {
+    const room = roomAt(1440);
+    const stage = stageIn(room, 1270);
+    const fit = fitSpreadToRoom(stage, room, 408, GAP);
+
+    const width = (stage.right - stage.left) * fit.scale;
+    const centre = (stage.left + stage.right) / 2 + fit.shift;
+    // Both edges, which is the whole assertion: clear of the sheet's gutter
+    // on the left, inside the window on the right.
+    expect(centre - width / 2).toBeGreaterThanOrEqual(408 + GAP - 1);
+    expect(centre + width / 2).toBeLessThanOrEqual(room.right + 1);
+    // …and it had to shrink to manage it. A translate alone cannot: the room
+    // left is 996px and the book is 1270.
+    expect(fit.scale).toBeLessThan(1);
+  });
+
+  it('shrinks only as far as it must — the room, over the book', () => {
+    const room = roomAt(1440);
+    const stage = stageIn(room, 1270);
+    const fit = fitSpreadToRoom(stage, room, 408, GAP);
+    expect(fit.scale).toBeCloseTo((room.right - (408 + GAP)) / 1270, 3);
+  });
+
+  it('holds at every window size the app can be opened at', () => {
+    // width × the stage width the height formula gives there.
+    const windows: Array<[number, number]> = [
+      [1920, 1555],
+      [1600, 1400],
+      [1440, 1270],
+      [1366, 1200],
+      [1280, 1112],
+      [1100, 950],
+      [960, 828], // src-tauri/tauri.conf.json minWidth/minHeight
+    ];
+    for (const [width, stageWidth] of windows) {
+      const room = roomAt(width);
+      const stage = stageIn(room, stageWidth);
+      const fit = fitSpreadToRoom(stage, room, 408, GAP);
+      const drawn = stageWidth * fit.scale;
+      const centre = (stage.left + stage.right) / 2 + fit.shift;
+      expect({ width, right: centre + drawn / 2 <= room.right + 1 }).toEqual({
+        width,
+        right: true,
+      });
+      expect({ width, left: centre - drawn / 2 >= 408 + GAP - 1 }).toEqual({
+        width,
+        left: true,
+      });
+    }
+  });
+
+  it('re-centres without shrinking when the room left is big enough', () => {
+    // An ultrawide window: the room the sheet leaves (424..2980) is still
+    // wider than the book, so the book only slides to the middle of it. The
+    // slide is half the sheet's width, not the whole of it — which is exactly
+    // the number pushing by `--nb-panel-push` got wrong.
+    const room = { left: 88, right: 3000 };
+    const fit = fitSpreadToRoom(stageIn(room, 1400), room, 408, GAP);
+    expect(fit.scale).toBe(1);
+    expect(fit.shift).toBe(168);
+    expect(fit.shift).toBeLessThan(340);
+  });
+
+  it('rounds the scale DOWN, so a fit computed to the edge never crosses it', () => {
+    const room = { left: 0, right: 1000 };
+    // 1000/1003 = 0.99700897…: rounding to 4 dp the ordinary way gives 0.997
+    // and floors to the same, but the fifth digit is what decides whether the
+    // right edge lands on the window or a hair past it.
+    const fit = fitSpreadToRoom(stageIn(room, 1003), room, 0, 0);
+    expect(fit.scale).toBe(0.997);
+    expect(1003 * fit.scale).toBeLessThanOrEqual(1000);
+    // The case that actually bites: 1000/1001 = 0.999000999… — near enough to
+    // 1 that rounding up would snap it to 1 and overhang by a pixel.
+    const tight = fitSpreadToRoom(stageIn(room, 1001), room, 0, 0);
+    expect(tight.scale).toBeLessThan(1);
+    expect(1001 * tight.scale).toBeLessThanOrEqual(1000);
+  });
+
+  it('snaps to exactly 1 rather than leaving a 0.9999 scale on the book', () => {
+    const room = { left: 0, right: 1000 };
+    expect(fitSpreadToRoom(stageIn(room, 1000.05), room, 0, 0).scale).toBe(1);
+  });
+
+  it('shifts by whole pixels — a leaf never lands on a half one', () => {
+    const room = { left: 88.4, right: 1419.7 };
+    const fit = fitSpreadToRoom(stageIn(room, 1270.3), room, 408.2, GAP);
+    expect(Number.isInteger(fit.shift)).toBe(true);
+  });
+
+  it('floors the scale rather than shrinking the book to a dot', () => {
+    // A window narrower than the sheet plus its gutter: the room goes
+    // negative, and an unclamped ratio would flip the book inside out.
+    const room = { left: 88, right: 380 };
+    const fit = fitSpreadToRoom(stageIn(room, 300), room, 408, GAP);
+    expect(fit.scale).toBe(MIN_SPREAD_SCALE);
+    expect(fit.scale).toBeGreaterThan(0);
+  });
+
+  it('stands down for a stage that has not been laid out yet', () => {
+    const room = roomAt(1440);
+    expect(fitSpreadToRoom({ left: 0, right: 0 }, room, 408, GAP)).toEqual(
+      SPREAD_FIT_REST,
+    );
+    expect(
+      fitSpreadToRoom({ left: 0, right: Number.NaN }, room, 408, GAP),
+    ).toEqual(SPREAD_FIT_REST);
+    expect(
+      fitSpreadToRoom(stageIn(room, 1270), room, Number.NaN, GAP),
+    ).toEqual(SPREAD_FIT_REST);
+  });
+});
+
+describe('visualScale', () => {
+  it('is the ratio of drawn to laid-out pixels', () => {
+    expect(visualScale(784, 1000)).toBeCloseTo(0.784, 6);
+    expect(visualScale(2400, 1000)).toBeCloseTo(2.4, 6);
+  });
+
+  it('is 1 whenever nothing is scaling, so callers can multiply blindly', () => {
+    expect(visualScale(640, 640)).toBe(1);
+  });
+
+  it('is 1 for every degenerate input rather than a division by zero', () => {
+    expect(visualScale(640, 0)).toBe(1);
+    expect(visualScale(0, 640)).toBe(1);
+    expect(visualScale(Number.NaN, 640)).toBe(1);
+    expect(visualScale(640, Number.NaN)).toBe(1);
+    expect(visualScale(-10, 640)).toBe(1);
   });
 });

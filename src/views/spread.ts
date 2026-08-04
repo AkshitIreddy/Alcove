@@ -275,3 +275,136 @@ export function arrowFlipAction(
   if (key === 'ArrowLeft') return 'prev';
   return null;
 }
+
+/* ----------------------------------------------------------------------------
+   Fitting the spread into the room an open rail panel leaves
+   ============================================================================
+   A rail sheet does not float over the book — it PUSHES, and the book has to
+   land somewhere real. It used to be pushed by exactly the sheet's own width
+   and nothing else, which on a 1440×900 window walked the right-hand leaf 271
+   px past the window edge: the last words of every line on the right page were
+   gone, and so was the dog-ear curl the tour spends a whole card teaching.
+
+   The room a 340 px sheet leaves is genuinely smaller than the book, so a
+   translate alone cannot be the answer at any window size — something has to
+   give. The three candidates, and why this one:
+
+     - Narrow the LEAF (a layout width). The leaf's height is what
+       `pageCapacityPx` is measured from and its width is what the text wraps
+       to, so the reader's book would repaginate the moment a panel opened.
+       The pagination contract only ever PEELS blocks forward, never pulls them
+       back, so closing the panel would not undo it. That is the reader's own
+       document, damaged by opening a colour picker.
+     - Cover the left page. That is the bug panels-that-push were introduced to
+       fix in the first place.
+     - Scale the whole spread down by transform. The leaf's layout box — and
+       therefore where every word sits and how many fit — is untouched; only
+       the size it is DRAWN at changes. Same reasoning, and the same mechanism,
+       as the focus dial's zoom (styles/reader.css).
+
+   So: `shift` slides the book's centre to the centre of the room that is left,
+   and `scale` shrinks it just enough that both of its edges land inside. Pure
+   here, DOM-free, so tests/spread.test.ts can walk real window sizes.
+   -------------------------------------------------------------------------- */
+
+/** A horizontal span in viewport px. Nothing in this fit is vertical. */
+export interface Span {
+  readonly left: number;
+  readonly right: number;
+}
+
+/** What the book's pieces wear so they sit inside the room (styles/rail.css). */
+export interface SpreadFit {
+  /** Whole-px horizontal translate, applied before the scale. */
+  readonly shift: number;
+  /** Uniform scale about the piece's own centre; never above 1. */
+  readonly scale: number;
+}
+
+/** Nothing open, nothing to do — and the identity the CSS defaults restate. */
+export const SPREAD_FIT_REST: SpreadFit = { shift: 0, scale: 1 };
+
+/**
+ * How small the book may be drawn before we stop shrinking it and let it
+ * overhang instead.
+ *
+ * The floor exists for the degenerate window only. The app's own minimum is
+ * 960×620 (src-tauri/tauri.conf.json) and a 340 px sheet leaves 0.62 there, so
+ * nothing a reader can actually open comes near this. What it protects against
+ * is a browser window narrower than the sheet plus its gutter, where the room
+ * goes to zero or negative and an unclamped ratio would scale the book to a
+ * dot — or, with a negative room, flip it inside out.
+ */
+export const MIN_SPREAD_SCALE = 0.3;
+
+/** Whole px in, so a scaled leaf is never resampled onto a half pixel. */
+const roundShift = (n: number): number => Math.round(n);
+
+/**
+ * Down, never up, to 4 dp: rounding a scale UP is how a fit that computed
+ * exactly to the window edge ends up a hair past it.
+ */
+const roundScale = (n: number): number =>
+  n >= 0.9999 ? 1 : Math.floor(n * 10_000) / 10_000;
+
+/**
+ * Where the book must sit, and how big, for the whole spread — curl corner
+ * included — to stay inside the window while `panelEdge` is claimed.
+ *
+ * @param stage     The spread stage's UNTRANSFORMED box. Measure it with
+ *                  `offsetWidth`/the view's own padding rather than with
+ *                  `getBoundingClientRect()` on something already carrying
+ *                  this fit, or the second read compounds the first.
+ * @param room      The book view's content box — its padding is what keeps the
+ *                  book off the window edge and off the icon rail.
+ * @param panelEdge Where the open sheet's right side lands, viewport px, or 0
+ *                  with nothing open (rail.css `--nb-panel-edge`).
+ * @param gap       Hand's width between the sheet and the book.
+ */
+export function fitSpreadToRoom(
+  stage: Span,
+  room: Span,
+  panelEdge: number,
+  gap: number,
+): SpreadFit {
+  const width = stage.right - stage.left;
+  const finite =
+    Number.isFinite(width) &&
+    Number.isFinite(room.left) &&
+    Number.isFinite(room.right) &&
+    Number.isFinite(panelEdge) &&
+    Number.isFinite(gap);
+  // A stage that has not been laid out yet (a book mounting, a hidden view)
+  // measures 0 and must not be "fitted" into anything.
+  if (!finite || width <= 0) return SPREAD_FIT_REST;
+
+  // The sheet only takes room when it reaches past the padding the book
+  // already keeps clear, so a narrow sheet on a wide window costs nothing.
+  const laneLeft = Math.max(room.left, panelEdge > 0 ? panelEdge + gap : 0);
+  const laneRight = room.right;
+  const lane = laneRight - laneLeft;
+  if (lane <= 0) return { shift: 0, scale: MIN_SPREAD_SCALE };
+
+  const scale = roundScale(
+    Math.max(MIN_SPREAD_SCALE, Math.min(1, lane / width)),
+  );
+  const shift = roundShift(
+    (laneLeft + laneRight) / 2 - (stage.left + stage.right) / 2,
+  );
+  return { shift, scale };
+}
+
+/**
+ * How much an ancestor transform is magnifying an element: drawn ÷ laid out.
+ *
+ * The spread now carries a scale in two independent places — this fit and the
+ * focus dial's zoom — and anything that compares a `getBoundingClientRect()`
+ * distance (drawn px) against a `clientHeight` one (layout px) is comparing
+ * two different units the moment either is in play. Returns 1 for every
+ * degenerate input, so a caller can multiply by it unconditionally.
+ */
+export function visualScale(drawnPx: number, layoutPx: number): number {
+  if (!Number.isFinite(drawnPx) || !Number.isFinite(layoutPx)) return 1;
+  if (layoutPx <= 0 || drawnPx <= 0) return 1;
+  return drawnPx / layoutPx;
+}

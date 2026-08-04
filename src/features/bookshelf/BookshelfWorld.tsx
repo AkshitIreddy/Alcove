@@ -12,7 +12,8 @@
  *    first free stretch of plank, following the camera (world.AddSpot);
  *  - the **shelf dock**: the left rail — "new book", the studio, "add a
  *    floor" and the trash, so none of them is ever more than one click away;
- *  - the **inline spine title**, written straight up the new book's spine;
+ *  - the **inline title tag**, standing beside a brand-new book (and never
+ *    over it — see namePlate.ts);
  *  - the **first-run invitation** when the case is completely bare.
  *
  * Everything above rides inside `.shelf-stage`, which is the half of this
@@ -51,6 +52,7 @@ import { play } from '../../sound/engine';
 import Tooltips from '../../views/Tooltip';
 import ShelfStudio from '../../views/rail/ShelfStudio';
 import { floorNameSync, saveFloorName } from './floorNames';
+import { namePlateBox, type NamePlateBox } from './namePlate';
 import PulledBookOverlay from './PulledBookOverlay';
 import ShelfMenu, {
   ShelfSpotMenu,
@@ -663,8 +665,12 @@ export default function BookshelfWorld(): JSX.Element {
       <Tooltips />
       {/* ==== the room itself — the half a side panel pushes aside ======== */}
       <div class="shelf-stage" ref={host}>
-        {/* ---- the dashed "put a book here" outline, standing on the plank -- */}
-        <Show when={ghostBox()}>
+        {/* ---- the dashed "put a book here" outline, standing on the plank --
+             Stood down while a new book is being named: the ghost is the same
+             cream, the same dashed ink and roughly the same size as the book
+             beside it, and the two together are what a reader reads as one
+             blank slab. It comes straight back when the name is committed. */}
+        <Show when={naming() === null && ghostBox()}>
           {(box) => (
             <button
               type="button"
@@ -736,65 +742,68 @@ export default function BookshelfWorld(): JSX.Element {
           )}
         </Show>
 
-        {/* ---- write the title straight up the new spine ------------------- */}
+        {/* ---- name the new book, from a tag tied to its spine ------------- */}
         <Show when={naming()}>
           {(state) => {
-            const rect = state().rect;
             /*
-             * A LABEL PLATE across the spine, not a slab over the whole book.
-             *
-             * Reported: *"for some reason the new book is white"*. It was not —
-             * it was this input, which is cream (`--paper-cream`) and used to be
-             * sized to the entire spine: `Math.max(rect.height, 132)` long by
-             * the spine's full width. A book had just been made, and what stood
-             * on the plank was a white rectangle where its colour should be.
-             *
-             * Just under two thirds of the height, so the book's own cloth
-             * reads above and below it and the plate lands where a title plate
-             * belongs. The 84px floor is what "name it…" needs to stay legible
-             * on a spine seen at a distance; the 90% cap is what stops that
-             * floor from swallowing a short one again. (Rotated -90°, so `boxW`
-             * runs along the spine's HEIGHT and `boxH` across its width.)
+             * NOTHING is drawn over the new book. The geometry, and the long
+             * story of why the editor stands beside the spine instead of on
+             * it, live in `namePlate.ts` — so a node test can hold it to that
+             * invariant without a browser. All this layer does is spend the
+             * answer.
              */
-            const boxW = Math.min(Math.max(rect.height * 0.62, 84), rect.height * 0.9);
-            const boxH = Math.max(rect.width, 26);
+            const box = (): NamePlateBox =>
+              namePlateBox(state().rect, { width: viewportW(), height: viewportH() });
             return (
-              <input
-                class="shelf-spine-name"
-                data-testid="shelf-spine-name"
-                type="text"
-                maxLength={80}
-                aria-label="Name this book"
-                placeholder="name it…"
-                value={state().book.title === NEW_BOOK_TITLE ? '' : state().book.title}
-                style={{
-                  left: `${rect.x + rect.width / 2}px`,
-                  top: `${rect.y + rect.height / 2}px`,
-                  width: `${boxW}px`,
-                  height: `${boxH}px`,
-                  'font-size': `${Math.max(13, Math.min(19, boxH * 0.62))}px`,
-                }}
-                ref={(node) =>
-                  queueMicrotask(() => {
-                    node.focus();
-                    node.select();
-                  })
-                }
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commitName(state(), e.currentTarget.value);
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setNaming(null);
+              <>
+                {/* The leader that ties the tag back to the book it names. */}
+                <span
+                  class="shelf-spine-name__tie"
+                  aria-hidden="true"
+                  style={{
+                    left: `${box().tie.left}px`,
+                    top: `${box().tie.top}px`,
+                    width: `${box().tie.width}px`,
+                  }}
+                />
+                <input
+                  class="shelf-spine-name"
+                  data-testid="shelf-spine-name"
+                  data-side={box().side}
+                  type="text"
+                  maxLength={80}
+                  aria-label="Name this book"
+                  placeholder="name it…"
+                  value={state().book.title === NEW_BOOK_TITLE ? '' : state().book.title}
+                  style={{
+                    left: `${box().left}px`,
+                    top: `${box().top}px`,
+                    width: `${box().width}px`,
+                    height: `${box().height}px`,
+                    'font-size': `${box().fontSize}px`,
+                  }}
+                  ref={(node) =>
+                    queueMicrotask(() => {
+                      node.focus();
+                      node.select();
+                    })
                   }
-                }}
-                onBlur={(e) => {
-                  const current = naming();
-                  if (current !== null) commitName(current, e.currentTarget.value);
-                }}
-              />
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitName(state(), e.currentTarget.value);
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setNaming(null);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const current = naming();
+                    if (current !== null) commitName(current, e.currentTarget.value);
+                  }}
+                />
+              </>
             );
           }}
         </Show>

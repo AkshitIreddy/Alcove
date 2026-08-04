@@ -1,5 +1,5 @@
 /**
- * src/features/tutorial/tasteQuestionnaire.tsx — four questions, asked once,
+ * src/features/tutorial/tasteQuestionnaire.tsx — five questions, asked once,
  * that dress the reader's whole library.
  *
  * ## The rule this panel is built on: no adjectives about the reader
@@ -17,6 +17,26 @@
  * its fixed card seeds, and for the same reason: the eye reads the wrong
  * difference first.
  *
+ * ## The palette grid, and why the steer survives it
+ *
+ * Question three is all sixty palettes as drawn cards, because four buckets that
+ * INFER a palette are a steer and the reader asked to be able to point at their
+ * favourite. It is the only list in this panel longer than a screenful, so it is
+ * the only one capped — twenty and an "N more", through `Capped` from
+ * `DesignStrip`, the same control every other long list in the app uses.
+ *
+ * Two things keep it from being a wall of sixty:
+ *
+ *  - the order comes from the two answers already given (`paletteOrder`), so the
+ *    palettes that answer them are the ones on screen before anything is
+ *    expanded;
+ *  - the steer's own pick is FIRST and shown as chosen, without being written
+ *    down. `answers.palette === undefined` genuinely means "whatever the steer
+ *    worked out", so pressing "next" here is not skipping a question — and
+ *    because nothing was stored, going back and changing the steer moves the
+ *    preselection with it. A pressed card overrides all of that, permanently,
+ *    which is the point of pressing it.
+ *
  * ## Mounting
  *
  * Self-contained and inert until opened. Render it once, anywhere:
@@ -24,13 +44,23 @@
  *     import TasteQuestionnaire from './features/tutorial/tasteQuestionnaire';
  *     <TasteQuestionnaire />
  *
- * It opens itself when the guided tour reaches a step whose id is `taste`
- * (`openOnStep`), which it reads from the `data-tutorial-step` attribute the
- * overlay already puts on its own layer — the same outside-in contract
- * `./probe.ts` uses to watch the app. No import in either direction, so the
- * tour's step list and this panel can be changed without touching each other.
+ * It RIDES the guided tour's step whose id is `taste` (`openOnStep`), read off
+ * the `data-tutorial-step` attribute the overlay already puts on its own layer
+ * — the same outside-in contract `./probe.ts` uses to watch the app. No import
+ * in either direction, so the tour's step list and this panel can be changed
+ * without touching each other.
+ *
+ * Riding it means BOTH directions. The watcher used to open the panel and never
+ * close it, so a reader who answered one question and pressed next walked on
+ * with all five questions still standing: the card covered the tour's own next
+ * and skip, and `.nbq-scrim` swallowed the shelf gesture the new step was
+ * asking for. `./tourStep.ts` holds the open/close verdict and the reasoning;
+ * `./dismiss.ts` does the same job from the tour's side, on the frame the step
+ * changes.
+ *
  * `openTaste()` / `replayTaste()` open it directly for every other caller (the
- * settings sheet's "choose my look again" row is one).
+ * settings sheet's "choose my look again" row is one), and a panel opened that
+ * way is never taken away by the tour.
  *
  * ## Nothing here is a lock
  *
@@ -60,7 +90,7 @@ import type { FlatCtx, FlatScheme } from '../../art/flat';
 import { clothForPalette } from '../../art/spines';
 import { BUILDS, PATTERNS } from '../../art/shelfDesign';
 import { getWallpaper } from '../../art/wallpaperDesign';
-import { getTheme } from '../../art/themes';
+import { getTheme, type ThemeId } from '../../art/themes';
 import { WELCOME_BINDING, WELCOME_SPINE_SEED } from '../../data/seed';
 import { play, setSoundSet } from '../../sound/engine';
 import { cancelSoundSetPreview, previewSoundSet } from '../../sound/preview';
@@ -69,6 +99,14 @@ import { SOUND_SET_GROUPS, type SoundSetGroupId } from '../../sound/soundSets';
 import { motionScale } from '../../styles/motion';
 import { DesignCanvas, drawInScheme } from '../../views/rail/designArt';
 import { drawBindingCard, drawRoomCard } from '../../views/rail/designOptions';
+// The app's one "there is more behind this" control. Borrowed rather than
+// re-written: DesignStrip's header states the rule ("anything in the app with
+// more rows than a reader wants at once should reach for those three"), and a
+// fourth copy of a capped list is how the count on the control starts lying.
+// (`PALETTE_HEAD` is this panel's limit and is pinned against `CAP` by
+// tests/taste-onboarding.test.ts — tasteProfile.ts stays DOM-free, so it cannot
+// import the constant from a component module.)
+import { Capped } from '../../views/rail/DesignStrip';
 import {
   loadLibraryPrefs,
   libraryPrefs,
@@ -76,11 +114,15 @@ import {
 } from '../bookshelf/libraryPrefs';
 import { loadDesignPrefs } from '../../data/designPrefs';
 import { applyTaste, type TasteReport } from './tasteApply';
+import { TOUR_LAYER_SELECTOR, TOUR_STEP_ATTR, stepWatchVerdict } from './tourStep';
 import {
+  PALETTE_HEAD,
   TASTE_AXES,
   TASTE_QUESTIONS,
   describeTaste,
   isTasteComplete,
+  paletteOrder,
+  repaintedAs,
   resolveRoom,
   resolveSoundSet,
   resolveTaste,
@@ -119,6 +161,19 @@ const ADVANCE_MS = 620;
 const CARD_W = 152;
 const CARD_H = 106;
 
+/**
+ * A palette swatch, in CSS px.
+ *
+ * Smaller than a room card because there are twenty of them on screen instead of
+ * eight, and because the only thing that differs between them is the COLOUR —
+ * the carpentry and the paper are the reader's own and identical across the
+ * grid, so a swatch does not have to be big enough to read a motif in. At 124 a
+ * row of five fits the 864px sheet with room for the name under each, and the
+ * capped twenty is four tidy rows rather than five and a half.
+ */
+const SWATCH_W = 124;
+const SWATCH_H = 82;
+
 /** The room on the last panel, drawn big enough to be a decision. */
 const FINAL_W = 340;
 const FINAL_H = 214;
@@ -128,10 +183,30 @@ const BOOK_W = 96;
 const BOOK_H = 214;
 
 /**
- * The tour's own layer carries its current step id. Read rather than imported:
- * the step list belongs to another module and this panel must not pin its shape.
+ * How often the tour's layer is looked at.
+ *
+ * A poll rather than a rAF loop or a MutationObserver: this is a "where has the
+ * tour got to" question, it is alive for the whole session, and three reads a
+ * second of one attribute is already more than the answer can change. Short
+ * enough that the panel is never the thing standing between a reader and the
+ * step in front of them for longer than a blink.
  */
-const TOUR_STEP_SELECTOR = '.nbt-layer[data-tutorial-step]';
+const TOUR_POLL_MS = 300;
+
+/**
+ * The palette question's options, by id.
+ *
+ * The grid iterates `paletteOrder()` — ids, ordered by the steer — and still has
+ * to say what each one is CALLED, so it looks the name up here rather than
+ * reaching into `art/themes.ts` for a second opinion. One copy of the wording,
+ * in the module that authors every other option's wording too.
+ */
+const PALETTE_OPTIONS: ReadonlyMap<string, TasteOption> = new Map(
+  (TASTE_QUESTIONS.find((q) => q.shape === 'palettes')?.options ?? []).map((option) => [
+    option.id,
+    option,
+  ]),
+);
 
 /* --------------------------------- marks ---------------------------------- */
 
@@ -271,6 +346,19 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
   const answered = (): number =>
     TASTE_AXES.filter((axis) => answers()[axis] !== undefined).length;
 
+  /**
+   * Does this question have an answer the panel can move on from?
+   *
+   * Not the same as "was a card pressed", and only the palette question makes
+   * that distinction. It always has an answer — the steer's, until the reader
+   * overrules it — so its dot lights and its "next" is live the moment the two
+   * questions it takes its steer from are in. Every other axis needs a press.
+   */
+  const settled = (axis: TasteAxis): boolean => {
+    if (answers()[axis] !== undefined) return true;
+    return axis === 'palette' && chosen('room') !== undefined && chosen('pitch') !== undefined;
+  };
+
   /* ------------------------------ lifecycle ------------------------------ */
 
   onMount(() => {
@@ -312,41 +400,57 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
   });
 
   /**
-   * Open when the tour reaches its taste step.
+   * Ride the tour's taste step: on screen for it, off screen for anything else.
    *
-   * A 300ms poll rather than a rAF loop: this is a "has the tour got here yet"
-   * question, it is alive for the whole session, and four reads a second of one
-   * attribute is already more than the answer can change.
+   * BOTH DIRECTIONS, and the second one is the reported bug. The watcher used
+   * to open the panel and never close it, so answering one question and
+   * pressing next left all five standing over the next step — card over the
+   * tour's own next and skip, scrim over the shelf control the new step was
+   * asking for. `./tourStep.ts` holds the verdict and says why it takes five
+   * inputs to get right; everything here is the DOM around it.
+   *
+   * `openedByTour` is what keeps this out of the settings sheet's business: a
+   * panel opened from "choose my look again" is not riding the tour and is
+   * never taken away by it.
    */
   onMount(() => {
     const stepId = (): string => props.openOnStep ?? 'taste';
     if (stepId() === '') return;
-    /**
-     * Opened for THIS visit to the step already.
-     *
-     * Without it, "I'll pick later" is not a way out: the tour is still parked
-     * on the taste step (its task is outstanding, because the reader just
-     * declined it), so the very next poll reopened the panel over the top of
-     * them. Cleared when the tour moves to a different step, so walking back to
-     * it offers the questions again.
-     */
     let openedForStep = false;
+    let openedByTour = false;
     const timer = setInterval(() => {
-      const layer = document.querySelector(TOUR_STEP_SELECTOR);
-      const here = layer?.getAttribute('data-tutorial-step') ?? '';
-      if (here !== stepId()) {
-        openedForStep = false;
+      const layer = document.querySelector(TOUR_LAYER_SELECTOR);
+      const here = layer?.getAttribute(TOUR_STEP_ATTR) ?? '';
+      const open = untrack(tasteOpen);
+      const verdict = stepWatchVerdict({
+        here,
+        stepId: stepId(),
+        open,
+        mine: openedByTour,
+        settled: hasChosenTaste(),
+        openedForStep,
+      });
+      if (here !== stepId()) openedForStep = false;
+      if (verdict === 'leave-alone') return;
+      if (verdict === 'close') {
+        // The reader's own way out, not a private close: it restores the sound
+        // set the audition swapped and keeps every answer they gave, so the
+        // step they walk back to offers the questions where they left them.
+        openedByTour = false;
+        leave();
         return;
       }
-      if (openedForStep || untrack(tasteOpen) || hasChosenTaste()) return;
       openedForStep = true;
       // The stored record decides, not the signal's opening default: a reader
       // who finished this last week must not be asked again because the tour
       // was replayed before `loadTaste()` landed.
       void loadTaste().then(() => {
-        if (!hasChosenTaste() && !untrack(tasteOpen)) openTaste();
+        if (!hasChosenTaste() && !untrack(tasteOpen)) {
+          openedByTour = true;
+          openTaste();
+        }
       });
-    }, 300);
+    }, TOUR_POLL_MS);
     onCleanup(() => clearInterval(timer));
   });
 
@@ -411,6 +515,13 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
     }
 
     void play('click-soft', { volume: 0.6 });
+
+    // The palette grid does not walk on either, and for the sound question's
+    // reason: it is sixty cards and the reader came here to compare them. Being
+    // carried off to the next question 0.6s after pressing the fortieth — losing
+    // the scroll position that took to reach — is the panel deciding they were
+    // finished. "next" is one press away and never disabled here.
+    if (axis === 'palette') return;
     const ms = motionScale();
     if (ms <= 0) {
       forward();
@@ -512,6 +623,57 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
    */
   const roomFor = (axis: TasteAxis, option: TasteOption): TasteRoom =>
     resolveRoom({ ...answersBefore(axis), [axis]: option.id } as TasteAnswers);
+
+  /* ------------------------------ the palettes ---------------------------- */
+
+  /**
+   * The room as the STEER has it — the reader's carpentry and paper, painted in
+   * the palette the two answers before this question worked out.
+   *
+   * One `resolveRoom` for the whole grid. Every swatch is this room with one
+   * field changed (`repaintedAs`), which is both cheap and the panel's own
+   * discipline: one variable per question, and here the variable is the colour.
+   */
+  const steerRoom = createMemo(() => resolveRoom(answersBefore('palette')));
+
+  /** All sixty, best answer to the steer first. Recomputed only when it moves. */
+  const palettes = createMemo(() => paletteOrder(answersBefore('palette')));
+
+  /**
+   * What the grid opens on when nothing has been pressed.
+   *
+   * Read off `steerRoom` rather than through `steerTheme`, which would resolve
+   * the same room a second time: `answersBefore('palette')` cannot contain a
+   * palette answer, so the two are the same value by construction.
+   */
+  const steerPick = (): ThemeId => steerRoom().theme;
+
+  /**
+   * The lit card: the reader's pick, or the steer's if they have not pressed one.
+   *
+   * The fallback is why `answers.palette` can stay `undefined` and still show a
+   * chosen card. It is not a white lie — `resolveRoom` resolves an absent
+   * palette to exactly this theme, so the lit card is genuinely the room they
+   * will get if they press on.
+   */
+  const litPalette = createMemo<ThemeId>(
+    () => (chosen('palette') as ThemeId | undefined) ?? steerPick(),
+  );
+
+  /** The room one palette would give, drawn by the studio's own routine. */
+  const paletteCard = (id: ThemeId): JSX.Element => {
+    const room = (): TasteRoom => repaintedAs(steerRoom(), id);
+    return (
+      <DesignCanvas
+        class="nbq-art nbq-art--swatch"
+        key={`taste-pal|${roomKey(room())}`}
+        w={SWATCH_W}
+        h={SWATCH_H}
+        scheme={scheme()}
+        draw={(ctx: FlatCtx, w: number, h: number) => drawRoomCard(ctx, w, h, room())}
+      />
+    );
+  };
 
   /** The room one option would produce, as a card. */
   const roomCard = (axis: TasteAxis, option: TasteOption): JSX.Element => (
@@ -625,7 +787,16 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                   <dl class="nbq-ledger font-ui">
                     <div>
                       <dt>colours</dt>
-                      <dd>{getTheme(finalRoom().theme).name}</dd>
+                      <dd>
+                        {getTheme(finalRoom().theme).name}
+                        {/* Which of the two happened is the one thing the reader
+                            came to this row to check, and the name alone cannot
+                            say it: the steer's pick and their own pick print
+                            identically. */}
+                        <Show when={finalRoom().picked}>
+                          <span class="nbq-ledger-by"> · your pick</span>
+                        </Show>
+                      </dd>
                     </div>
                     <div>
                       <dt>carpentry</dt>
@@ -671,6 +842,90 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                 </h2>
                 <p class="nbq-body">{question().body}</p>
 
+                <Show when={question().shape === 'palettes'}>
+                  <div
+                    class="nbq-palette"
+                    role="radiogroup"
+                    aria-label={question().title}
+                  >
+                    {/* Twenty, then "40 more" — the app's own cap, and the app's
+                        own control. `isActive` keeps the lit card in the head
+                        when the grid is collapsed again, so a palette chosen
+                        from the bottom of the sixty does not vanish and read as
+                        forgotten. */}
+                    <Capped
+                      each={palettes()}
+                      limit={PALETTE_HEAD}
+                      isActive={(id) => id === litPalette()}
+                      label="palettes"
+                      moreClass="nbq-swatch-more"
+                      resetKey={steerPick()}
+                    >
+                      {(id) => {
+                        const option = (): TasteOption =>
+                          PALETTE_OPTIONS.get(id()) ?? {
+                            id: id(),
+                            label: id(),
+                            line: '',
+                          };
+                        const picked = (): boolean => litPalette() === id();
+                        /* Lit without having been pressed — the steer's own
+                           pick. Said out loud rather than left as a colour
+                           difference, because "already chosen" is exactly the
+                           thing a reader has to know to be able to press on. */
+                        const bySteer = (): boolean =>
+                          picked() && chosen('palette') === undefined;
+                        return (
+                          <button
+                            type="button"
+                            class="nbq-swatch"
+                            classList={{
+                              'is-picked': picked(),
+                              'is-steer': bySteer(),
+                            }}
+                            role="radio"
+                            aria-checked={picked()}
+                            aria-label={`${option().label} — ${option().line}${
+                              bySteer() ? ' — chosen for you by your answers' : ''
+                            }`}
+                            data-tooltip={`${option().label} — ${option().line}`}
+                            onClick={() => pick('palette', option())}
+                          >
+                            {paletteCard(id())}
+                            <span class="nbq-swatch-name font-ui">{option().label}</span>
+                            <Show when={picked()}>
+                              <span class="nbq-picked nbq-picked--small" aria-hidden="true">
+                                <svg viewBox="0 0 20 20">
+                                  <path d="M 4.4 10.4 L 8.2 14.6 L 15.6 5.2" />
+                                </svg>
+                              </span>
+                            </Show>
+                          </button>
+                        );
+                      }}
+                    </Capped>
+                  </div>
+                  <p class="nbq-steer-note font-ui">
+                    <Show
+                      when={chosen('palette') !== undefined}
+                      fallback={
+                        <>
+                          {getTheme(steerPick()).name} is what your answers came to,
+                          and it is already chosen — press next and you keep it.
+                        </>
+                      }
+                    >
+                      {getTheme(litPalette()).name} it is. Your answers pointed at{' '}
+                      {getTheme(steerPick()).name}; yours wins.
+                    </Show>
+                  </p>
+                </Show>
+
+                {/* A sibling `Show` rather than `hidden` on the grid below:
+                    `<For>` builds its rows whatever the CSS says, so a hidden
+                    options grid would draw sixty room cards for the one
+                    question that has already drawn its own. */}
+                <Show when={question().shape !== 'palettes'}>
                 <div
                   class="nbq-options"
                   classList={{ 'nbq-options--sounds': question().shape === 'sounds' }}
@@ -717,6 +972,7 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                     }}
                   </For>
                 </div>
+                </Show>
               </div>
             </Show>
 
@@ -729,7 +985,7 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                       class="nbq-dot"
                       classList={{
                         'is-current': stage() === 'ask' && i() === index(),
-                        'is-done': chosen(q.axis) !== undefined,
+                        'is-done': settled(q.axis),
                       }}
                       role="tab"
                       aria-selected={stage() === 'ask' && i() === index()}
@@ -750,7 +1006,7 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                   <button
                     type="button"
                     class="nbq-btn nbq-btn--primary font-ui"
-                    disabled={chosen(question().axis) === undefined}
+                    disabled={!settled(question().axis)}
                     onClick={forward}
                   >
                     {index() === TASTE_QUESTIONS.length - 1 ? 'see it' : 'next'}

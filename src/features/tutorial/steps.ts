@@ -87,6 +87,27 @@ export interface StepNudge {
   readonly say: string;
 }
 
+/**
+ * How long a step that TEACHES A SURFACE holds its green state before the tour
+ * walks on and `./dismiss.ts` puts that surface away again.
+ *
+ * THE REPORTED BUG: "open the studio — the palette on the shelf rail", the
+ * reader does, and 1.2 seconds later the studio closes in their face. Measured
+ * on the running app: the panel was visible at 488ms and gone at 1696ms. The
+ * fact behind those steps ("a panel with this label is on screen") is true the
+ * instant the panel appears — which is when the reader STARTS looking at it,
+ * not when they have finished — so the ordinary 1.5s celebration beat is the
+ * wrong unit entirely.
+ *
+ * Five seconds is long enough to read a panel's headings and see what kind of
+ * thing is in it, which is all these steps claim to teach. A reader who is done
+ * sooner presses "on we go"; a reader who wants longer presses the same icon
+ * again once the tour has moved on, which is the point of the step. It is
+ * READING time, so `celebrateDelay` never scales it by the motion preference
+ * (`styles/motion.ts` states that rule for `LINGER_MS`).
+ */
+export const PANEL_DWELL_MS = 5000;
+
 /** What the reader has to do before the step counts as finished. */
 export interface StepTask {
   /** Imperative line, shown while the step is unfinished. */
@@ -97,6 +118,14 @@ export interface StepTask {
   readonly done: string;
   /** Said when the reader tries the wrong thing (see StepNudge). */
   readonly nudge?: StepNudge;
+  /**
+   * Milliseconds to hold before advancing, instead of the default beat.
+   *
+   * Every step whose fact is one of `probe.SURFACE_FACTS` needs one — see
+   * `PANEL_DWELL_MS`. `tests/tutorial.test.ts` pins the two lists together, so
+   * a new "open this panel" step cannot be added without a dwell.
+   */
+  readonly dwell?: number;
 }
 
 export interface TutorialStep {
@@ -149,12 +178,18 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     // dressed it" marker, which `applyTaste` writes last; "I'll pick later"
     // leaves it outstanding and the reader walks on with next, exactly as they
     // can on any other step.
+    // FIVE, AND THE PANEL COUNTS THEM OUT LOUD. The questionnaire's own header
+    // reads "question 1 of 5" off `TASTE_QUESTIONS.length`, so a number typed
+    // here is a number that goes stale the moment an axis is added — and it
+    // did: this said "four" in three places while the panel said five.
+    // `tests/tutorial.test.ts` now pins every count in this step against
+    // `TASTE_AXES.length`.
     id: 'taste',
-    title: 'Four questions first',
-    body: 'Before the walk proper: four questions, and the answers dress the whole library at once — the colours of the room, how the bookcase is built, the paper on the wall behind it, the binding on your first book, and the sounds the app makes. Every option is the real drawing you would get rather than a word for it. None of it is settled afterwards — the studio repaints the room, the book studio rebinds any book, and Settings holds the sound. Say "I\'ll pick later" and the library stays as it came.',
+    title: 'Five questions first',
+    body: 'Before the walk proper: five questions, and the answers dress the whole library at once — the colours of the room, how the bookcase is built, the paper on the wall behind it, the binding on your first book, and the sounds the app makes. Every option is the real drawing you would get rather than a word for it. None of it is settled afterwards — the studio repaints the room, the book studio rebinds any book, and Settings holds the sound. Say "I\'ll pick later" and the library stays as it came.',
     hint: 'press a card in each · or "I\'ll pick later"',
     task: {
-      ask: 'Answer the four questions, then press "dress my library".',
+      ask: 'Answer the five questions, then press "dress my library".',
       fact: 'taste-chosen',
       done: 'Dressed. The rest of the tour is your own room.',
     },
@@ -250,6 +285,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open the studio — the palette on the shelf rail.',
       fact: 'shelf-studio-open',
       done: 'The whole room lives in here.',
+      dwell: PANEL_DWELL_MS,
     },
     targets: [
       { selector: '.nb-rail-panel.is-shelf[aria-hidden="false"]', pad: 6 },
@@ -259,14 +295,32 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     scene: 'shelf',
   },
   {
+    // TWO PRESSES, AND THE TOUR HAS TO SAY SO.
+    //
+    // This step said "click a spine and the book tips out of the case and
+    // opens" long after that stopped being true. A click brings the book
+    // forward and leaves it standing in front of the case; a SECOND press on
+    // the cover opens it (PulledBookOverlay's docblock: "Pulling a book out
+    // brings it FORWARD. A second click opens it" — the reader asked for that
+    // half-way state). Nothing anywhere told them about the second press, so
+    // the reader clicked once, got a big cover, and sat on a step whose task
+    // could not go green.
+    //
+    // The nudge is the same sentence aimed at the moment it is needed: the
+    // probe watches for `.pulled-book.is-held`, so the card says "press it
+    // again" exactly while the book is standing there waiting to be pressed.
     id: 'open-a-book',
     title: 'Opening a book',
-    body: 'Click a spine and the book tips out of the case and opens. Wrong one? Catch it mid-flight and drag it back onto the case, or press Escape and it goes home. The way back to the shelf waits in the top-left corner.',
-    hint: 'click a spine · Esc puts it back',
+    body: 'Click a spine and the book comes out of the case and stands in front of it — out, but not open yet. Press the cover and it opens. Wrong one? Carry it back onto the case and drop it, or press Escape and it goes home. Once it is open, the way back to the shelf waits in the top-left corner.',
+    hint: 'click a spine · press the cover to open it · Esc puts it back',
     task: {
-      ask: 'Take the book off the shelf and open it.',
+      ask: 'Click a spine, then press the cover to open the book.',
       fact: 'book-open',
       done: 'The book is open.',
+      nudge: {
+        when: 'book-pulled',
+        say: 'that is the book out of the case — press the cover once more and it opens',
+      },
     },
     // Three scenes, one step: the books standing on the shelf, the book in
     // flight, and — the moment it lands — the whole opened book. That last one
@@ -378,6 +432,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open Page style — the second icon down.',
       fact: 'page-style-open',
       done: 'That is the paper, and the rules on it.',
+      dwell: PANEL_DWELL_MS,
     },
     targets: [
       { selector: '.nb-rail-panel[aria-hidden="false"][aria-label="Page style"]', pad: 6 },
@@ -395,6 +450,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open the Catalogue — the third icon down.',
       fact: 'catalogue-open',
       done: 'Seven shelves of things to add.',
+      dwell: PANEL_DWELL_MS,
     },
     targets: [
       { selector: '.nb-rail-panel[aria-hidden="false"][aria-label="Catalogue"]', pad: 6 },
@@ -412,6 +468,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open the table of contents.',
       fact: 'toc-open',
       done: 'Contents, history and ribbons — all four live here.',
+      dwell: PANEL_DWELL_MS,
     },
     targets: [
       {
@@ -435,6 +492,11 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open Customize — the brush at the top of the rail.',
       fact: 'customize-open',
       done: 'There it is.',
+      // The step after this one points INSIDE the sheet, so it would survive
+      // the advance anyway — but the rule is "a fact that means a surface is on
+      // screen gets reading time", and an exception here is one more thing to
+      // remember when the order changes.
+      dwell: PANEL_DWELL_MS,
     },
     targets: [
       { selector: '.nb-rail-button[data-tool="customize"]', pad: 8 },
@@ -513,6 +575,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Press Ctrl+K.',
       fact: 'quick-switcher',
       done: 'One bar, the whole library.',
+      dwell: PANEL_DWELL_MS,
     },
     targets: [{ selector: '.nb-qs-bar', pad: 12 }],
     side: 'bottom',
@@ -532,6 +595,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       ask: 'Open Settings.',
       fact: 'settings-open',
       done: 'Everything else lives in here.',
+      dwell: PANEL_DWELL_MS,
     },
     targets: [
       { selector: '.nbs-sheet', pad: 6 },

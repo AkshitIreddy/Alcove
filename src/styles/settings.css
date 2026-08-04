@@ -84,7 +84,14 @@
   --gilt-deep: #7a4d19;
   --gilt-ink: #6a4116;
 
-  --selection-wash: rgba(201, 97, 134, 0.34);
+  /* 0.28, not 0.34. A selection is a translucent band UNDER the text, so its
+     alpha decides how far the paper moves toward the pigment and therefore how
+     much contrast the ink has left: at 0.34 the rose band took fountain-blue
+     ink to 4.38:1. Solved, not guessed — the largest alpha that keeps the
+     worst ink x paper combination this room can build above 4.6:1
+     (tests/control-contrast.test.ts measures it; the derived rooms solve their
+     own in `appearance.ts`). */
+  --selection-wash: rgba(201, 97, 134, 0.28);
 }
 
 /* Botanical — pressed-leaf paper, moss ink, a terracotta-pot accent. */
@@ -253,7 +260,14 @@
   --gilt-deep: #f2dc9e;
   --gilt-ink: #f7e8bd;
 
-  --selection-wash: rgba(232, 182, 76, 0.32);
+  /* 0.18, not 0.32 — and the drop is much bigger here than in the blossom
+     room because the arithmetic is harsher after dark. The ink is the LIGHT
+     end of the scale now, so every point of alpha lifts the ground TOWARD the
+     ink instead of away from it: at 0.32 the amber band left the reading ink
+     at 3.50:1 and fountain blue at 3.35:1 — selected text you could not read.
+     The band is still plainly a band (#2b211a becomes #4e3b22 under it); it is
+     just no longer bright enough to swallow what is written on it. */
+  --selection-wash: rgba(232, 182, 76, 0.18);
 
   /* The one shadow, restated for a dark room: still flat, still offset,
      never a blur. */

@@ -956,8 +956,11 @@ html[data-nb-col-resizing='true'] {
   content: '*';
 }
 
+/* The accent ink is solved against the PAPER, so on an amber wash face it ran
+   to 3.44:1. The reading ink takes over the moment the ref is on a wash. */
 .nb-prose .nb-footnote-ref:hover,
 .nb-prose .nb-footnote-ref.ProseMirror-selectednode {
+  color: var(--ink-sepia);
   background: var(--wash-amber-light);
 }
 
@@ -1948,17 +1951,26 @@ html[data-nb-col-resizing='true'] {
 
 /* Lit = the mark is on the selection. Open = its tray is showing. Both read
    as the same "pressed" plate, because to a hand they are the same press. */
+/* The amber face is fixed-bright in every room, so the pressed plate carries
+   `--on-gilt` — the ink that does not invert — rather than the reader's ink,
+   which after dark is near-white and left the lit chip at 1.05:1. */
 .nb-seltool-btn.is-on,
 .nb-seltool-btn.is-open {
   background: var(--wash-amber);
-  border-color: var(--ink-sepia);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
 }
 
+/* `color: inherit`, not a repeat of `--ink-sepia`.
+   The letter is the button's whole label, and a child that names its own ink
+   is invisible to any sweep of the button's own rule — the pressed state above
+   could be fixed and the glyph on it would still be the old colour. One place
+   decides the ink now, and it is the element that also owns the ground. */
 .nb-seltool-letter {
   font-family: var(--font-accent);
   font-size: 15px;
   line-height: 1;
-  color: var(--ink-sepia);
+  color: inherit;
 }
 
 .nb-seltool-letter[data-mark='bold'] {
@@ -2054,7 +2066,8 @@ html[data-nb-col-resizing='true'] {
 
 .nb-seltool-style.is-on {
   background: var(--wash-amber);
-  border-color: var(--ink-sepia);
+  border-color: var(--on-gilt);
+  color: var(--on-gilt);
 }
 
 /* --- the link tray ------------------------------------------------------- */
@@ -2108,6 +2121,7 @@ html[data-nb-col-resizing='true'] {
 
 .nb-seltool-apply:hover {
   background: var(--wash-amber);
+  color: var(--on-gilt);
 }
 
 .nb-seltool-apply.is-remove {
@@ -2173,8 +2187,12 @@ html[data-nb-col-resizing='true'] {
   opacity: 0.72;
 }
 
+/* The reading ink on the wash, not the soft rung: the soft inks are tuned
+   against the PAPER rungs, and `--wash-amber-light` is a pigment face that
+   inverts on its own schedule — 3.42:1 after dark. */
 .nb-th-sort:hover {
   opacity: 1;
+  color: var(--ink-sepia);
   background: var(--wash-amber-light);
   border-color: var(--ink-sepia);
 }
@@ -2223,13 +2241,19 @@ html[data-nb-col-resizing='true'] {
 }
 
 .nb-prose .nb-pagelink:hover {
+  color: var(--ink-sepia);
   background: var(--wash-amber-light);
 }
 
+/* Selected: the amber plate, and the ink that goes with it. `--accent-ink` was
+   inherited straight through from the resting link, and accent ink on the gilt
+   face is 3.66:1 in the light rooms and 1.14:1 after dark — a selected link was
+   the one you could not read. */
 .nb-prose .nb-pagelink.is-selected,
 .nb-prose .nb-pagelink.ProseMirror-selectednode {
   background: var(--wash-amber);
-  border-bottom-color: var(--ink-sepia);
+  color: var(--on-gilt);
+  border-bottom-color: var(--on-gilt);
 }
 
 .nb-pagelink-mark {

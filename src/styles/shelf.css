@@ -507,15 +507,22 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Inline spine title — a brand-new book is named ON its spine, written the
-   way a spine is read (bottom to top).
+   Inline title tag — a brand-new book is named from a tag standing BESIDE it,
+   tied to its spine by a dashed leader.
+
+   It used to be written up the spine itself, and that is what twice made a
+   new book read as a white slab: this element is cream, and on a spine 6-30px
+   wide there is no size it can be that both holds 13px of handwriting and
+   lets the cloth through. `features/bookshelf/namePlate.ts` carries the
+   arithmetic and the whole argument; every number below is either fixed or
+   comes from there. Nothing here may put it back over the book.
    -------------------------------------------------------------------------- */
 .shelf-spine-name {
   position: absolute;
   z-index: var(--z-menus);
-  transform: translate(-50%, -50%) rotate(-90deg);
-  transform-origin: center center;
-  padding: 2px 10px;
+  transform: translate(-50%, -50%);
+  padding: 0 12px;
+  line-height: 1;
   text-align: center;
   font-family: var(--font-body);
   color: var(--ink-sepia);
@@ -525,6 +532,19 @@
   box-shadow: var(--shadow-md);
   outline: none;
   /* Fades in as the new spine finishes sliding onto the plank. */
+  animation: shelf-spine-name-in calc(0.22s * var(--motion-scale, 1))
+    var(--ease-out) calc(0.22s * var(--motion-scale, 1)) both;
+}
+
+/* The dashed leader tying the tag back to its book. A 2px rule, not a blurred
+   connector: one ink colour, flat, like everything else on the case. */
+.shelf-spine-name__tie {
+  position: absolute;
+  z-index: var(--z-menus);
+  height: 0;
+  border-top: 2px dashed var(--accent-deep);
+  transform: translateY(-50%);
+  pointer-events: none;
   animation: shelf-spine-name-in calc(0.22s * var(--motion-scale, 1))
     var(--ease-out) calc(0.22s * var(--motion-scale, 1)) both;
 }

@@ -270,6 +270,122 @@
 }
 
 /* ----------------------------------------------------------------------------
+   The palette question — sixty real rooms, capped at twenty with an "N more".
+
+   A different grid from .nbq-options on purpose. These cards differ in ONE
+   thing (the colour), so they do not need a line of prose each and they do not
+   need to be 172px wide; what they need is enough of them on screen at once
+   that the reader is choosing rather than scrolling.
+   -------------------------------------------------------------------------- */
+
+.nbq-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+}
+
+.nbq-swatch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 5px;
+  text-align: left;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+  color: var(--ink-sepia);
+  transition:
+    transform calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-spring),
+    border-color calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out),
+    background calc(var(--dur-sm) * var(--motion-scale, 1)) var(--ease-out);
+}
+
+.nbq-swatch:hover {
+  transform: translateY(-2px);
+  border-color: var(--wash-amber-deep);
+}
+
+.nbq-swatch:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+/* Chosen by hand: the same flat amber plate the big cards wear. */
+.nbq-swatch.is-picked {
+  background: var(--wash-amber-light);
+  border: 2px solid var(--wash-amber-deep);
+  box-shadow: 0 3px 0 0 var(--wash-amber-deep);
+  padding: 4px;
+}
+
+/* Chosen FOR them by the steer. Deliberately a lighter mark than a pressed
+   card — it is a preselection, not a decision, and the two must not read as the
+   same thing. Dashed rather than paler, because a paler amber on cream is a
+   difference the eye loses next to a drawn card. */
+.nbq-swatch.is-steer {
+  background: var(--paper-cream);
+  border-style: dashed;
+}
+
+.nbq-art--swatch {
+  border-radius: var(--radius-sm);
+}
+
+.nbq-swatch-name {
+  font-size: var(--text-ui);
+  line-height: 1.25;
+  color: var(--ink-sepia);
+  overflow-wrap: anywhere;
+}
+
+/* The "40 more" cell, sitting in the grid as one more swatch. `nb-more` in
+   curation.css draws the control; this only makes it the size of its
+   neighbours. */
+.nbq-swatch-more {
+  min-height: 92px;
+  border-radius: var(--radius-hand);
+}
+
+/* What the grid is doing, in words, under it. */
+/* Token, not a hand-mixed literal: `rgba(233, 196, 106, 0.18)` is a swatch
+   that knows nothing about the room it lands in, and after dark it took the
+   soft ink to 3.73:1. `--wash-amber-light` is the same face and it inverts. */
+.nbq-steer-note {
+  margin: var(--space-8) 0 0;
+  padding: 6px 10px;
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: var(--radius-md);
+}
+
+.nbq-ledger-by {
+  color: var(--wash-amber-deep);
+  font-weight: 400;
+  font-style: italic;
+}
+
+/* The tick, at swatch scale. */
+.nbq-picked--small {
+  top: -7px;
+  right: -7px;
+  width: 21px;
+  height: 21px;
+}
+
+.nbq-picked--small svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ----------------------------------------------------------------------------
    The sound question — nothing to draw, so it is a list with a mark.
    -------------------------------------------------------------------------- */
 
@@ -363,13 +479,14 @@
   font-style: italic;
 }
 
+/* Same token, same reason as .nbq-steer-note above. */
 .nbq-note {
   margin: 0 0 var(--space-8);
   padding: 7px 10px;
   font-size: var(--text-ui);
   line-height: 1.5;
-  color: var(--ink-sepia-soft);
-  background: rgba(233, 196, 106, 0.18);
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
   border: 1px dashed var(--ink-line-soft);
   border-radius: var(--radius-md);
 }
@@ -387,6 +504,13 @@
   bottom: 0;
   background: var(--paper-aged);
   padding-top: var(--space-8);
+  /* The sheet keeps 16px of padding below its scrollport and a `bottom: 0`
+     sticky bar stops at the PADDING edge, so a list long enough to scroll runs
+     its rows through that gutter under the controls. Before the palette grid
+     nothing in here was long enough for it to show. A flat plate of the sheet's
+     own paper, hung off the foot: zero blur, nothing moved, and it follows the
+     theme because it is the same token the foot is filled with. */
+  box-shadow: 0 20px 0 0 var(--paper-aged);
 }
 
 .nbq-spacer {
@@ -453,23 +577,37 @@
   cursor: default;
 }
 
+/* The one forward action, filled the way every other filled-accent control in
+   the app is filled: `--on-accent` on `--accent-deep`, which tokens.css gates
+   at 4.5:1 in all four rooms. It used to be `--paper-cream` on plain
+   `--accent` — a mid pigment cannot carry paper-white type, and it measured
+   3.04:1 in the light rooms. `--accent` is a rim and a wash colour; the FILL
+   rung is `-deep`, and the plate under it goes back to the house lift because
+   an accent-deep plate under an accent-deep face is not a plate.
+   The hover drops to the pale face and takes the reading ink with it, which is
+   the same two-ground move the tour's primary button makes. */
 .nbq-btn--primary {
-  background: var(--accent);
-  color: var(--paper-cream);
-  border-color: var(--accent-deep);
-  box-shadow: 0 3px 0 0 var(--accent-deep);
+  background: var(--accent-deep);
+  color: var(--on-accent);
+  border-color: var(--ink-line);
+  box-shadow: var(--shadow-sm);
   font-weight: 700;
 }
 
 .nbq-btn--primary:hover:not(:disabled) {
-  background: var(--accent-deep);
+  background: var(--accent-light);
+  color: var(--ink-sepia);
 }
 
 .nbq-btn--primary:disabled {
   box-shadow: none;
 }
 
+/* Positioned, and only so that it paints AFTER the sticky foot above it: the
+   foot's plate hangs 20px into this line's row, and an unpositioned paragraph
+   loses to a positioned sibling however late it comes in the tree. */
 .nbq-summary-line {
+  position: relative;
   margin: var(--space-8) 0 0;
   font-size: var(--text-ui);
   font-style: italic;
@@ -484,6 +622,10 @@
 @media (max-width: 720px) {
   .nbq-options {
     grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+  }
+
+  .nbq-palette {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   }
 
   .nbq-sheet {

@@ -1,6 +1,6 @@
 /**
  * src/features/tutorial/tasteProfile.ts — the taste questionnaire's questions,
- * and the pure function that turns four answers into a whole dressed library.
+ * and the pure function that turns the answers into a whole dressed library.
  *
  * ## What the reader asked for, and what is NOT built here
  *
@@ -19,6 +19,19 @@
  * each card with `drawRoomCard`, the same routine the studio previews with).
  * The loud/quiet axis is still in there; it is question two, and it is asked by
  * showing four rooms rather than by naming a preference.
+ *
+ * ## A steer is not a choice, so there is a choice behind it
+ *
+ *   "also let user then choose colour theme with more options so that picking
+ *    their fav is possible directly in onboarding then"
+ *
+ * Four buckets standing in front of sixty palettes is still the app deciding.
+ * Question three is therefore the palettes themselves — all sixty, drawn, in the
+ * reader's own carpentry — and the two answers before it decide only what leads
+ * the grid and what is lit when it opens (`paletteOrder`, `steerTheme`). Nobody
+ * has to browse: the preselection is the room the steer worked out, so "press
+ * on" and "point at one" are both one press. `TASTE_REQUIRED_AXES` is where that
+ * optionality is written down.
  *
  * ## This is a STARTING POINT, never a lock
  *
@@ -55,7 +68,14 @@ import {
   type BookPreset,
   type BookTag,
 } from '../../art/bookDesign';
-import { THEMES, THEME_IDS, getTheme, type ThemeId, type ThemeTag } from '../../art/themes';
+import {
+  THEMES,
+  THEME_IDS,
+  getTheme,
+  isThemeId,
+  type ThemeId,
+  type ThemeTag,
+} from '../../art/themes';
 import {
   WALLPAPER_ROLL,
   getWallpaper,
@@ -95,22 +115,61 @@ export type TasteRoomId =
 /** Question two: how much colour is in it. This is "bland or vivid", asked properly. */
 export type TastePitchId = 'hushed' | 'warm' | 'deep' | 'bright';
 
-/** Question three: what is on the wall behind the case. */
+/** Every pitch, in the order the cards are shown. */
+export const TASTE_PITCH_IDS = ['hushed', 'warm', 'deep', 'bright'] as const;
+
+/**
+ * Question three: the palette itself, named, out of all sixty.
+ *
+ * ## Why a steer needed a choice behind it
+ *
+ * Question two is four buckets and it INFERS a palette. That is a steer, and a
+ * steer was all there was — sixty rooms hidden behind four words, which is the
+ * app deciding for a reader who is perfectly capable of pointing at the one they
+ * want. It also produced a real bug rather than merely a limitation: `deep` was
+ * tagged `['dark']`, ten palettes tied on that one word, the tiebreak picked
+ * Ebonised every time, and all four room answers came out the same grey (see the
+ * long note on `PITCH_THEME_TAGS.deep`). A steer that ties is invisible; a grid
+ * of drawn cards cannot tie, because the reader is looking at them.
+ *
+ * So the steer stays and keeps its job — it decides what is shown FIRST and what
+ * is preselected — and this axis is the choice. It is the ONLY optional answer:
+ * `undefined` means "whatever the steer worked out", which is what lets somebody
+ * who does not want to browse press straight on. See `TASTE_REQUIRED_AXES`.
+ */
+export type TastePaletteId = ThemeId;
+
+/** Question four: what is on the wall behind the case. */
 export type TastePaperId = 'bare' | 'ruled' | 'growing' | 'figured' | 'gilded';
 
-/** Question four: what the app sounds like under their hands. */
+/** Question five: what the app sounds like under their hands. */
 export type TasteSoundId = SoundSetGroupId;
 
 export interface TasteAnswers {
   room?: TasteRoomId;
   pitch?: TastePitchId;
+  /** Chosen by pressing a card. Absent means "the one the steer picked". */
+  palette?: TastePaletteId;
   paper?: TastePaperId;
   sound?: TasteSoundId;
 }
 
-/** The four question ids, in the order they are asked. */
-export const TASTE_AXES = ['room', 'pitch', 'paper', 'sound'] as const;
+/** The five question ids, in the order they are asked. */
+export const TASTE_AXES = ['room', 'pitch', 'palette', 'paper', 'sound'] as const;
 export type TasteAxis = (typeof TASTE_AXES)[number];
+
+/**
+ * The axes a library cannot be dressed without.
+ *
+ * `palette` is deliberately not one of them. Every other question has no sane
+ * default — there is no "average room", no "average wall — but the palette has
+ * exactly one: the room the other four answers already resolve to. Requiring it
+ * would mean a reader who is happy with what they were shown still has to press
+ * the card that is already lit, and a reader who skipped straight to the sound
+ * question by pressing a dot would find "dress my library" greyed out with no
+ * visibly unanswered question to fix it.
+ */
+export const TASTE_REQUIRED_AXES = ['room', 'pitch', 'paper', 'sound'] as const;
 
 /* ========================================================================== *
  *  What each answer means to each vocabulary
@@ -298,8 +357,16 @@ export interface TasteQuestion<Id extends string = string> {
   title: string;
   /** A sentence of context under the title. */
   body: string;
-  /** How the option cards are laid out — art cards, or a list with marks. */
-  shape: 'rooms' | 'sounds';
+  /**
+   * How the option cards are laid out.
+   *
+   *  - `rooms`   — a handful of big art cards with a name and a line each.
+   *  - `palettes`— the whole vocabulary as small drawn swatches, capped with an
+   *                "N more" control. The one shape whose option list is longer
+   *                than a screenful, and the only one the panel caps.
+   *  - `sounds`  — a list with a mark, for the one axis with nothing to draw.
+   */
+  shape: 'rooms' | 'palettes' | 'sounds';
   options: readonly TasteOption<Id>[];
 }
 
@@ -331,6 +398,35 @@ const PITCH_QUESTION: TasteQuestion<TastePitchId> = {
     { id: 'deep', label: 'deep', line: 'Ink, forest, claret. Dark, and saturated all the way down.' },
     { id: 'bright', label: 'plenty', line: 'The dial turned up. Colour you could not walk past.' },
   ],
+};
+
+/**
+ * The palette question, DERIVED from `art/themes.ts` rather than written out.
+ *
+ * Sixty options and not a curated eight, because the whole complaint this
+ * answers is that four words were standing in front of sixty rooms. A name and
+ * the theme's own blurb; the picture is the point and the panel draws it with
+ * `drawRoomCard` — the studio's own routine — so a card here cannot describe a
+ * room the studio would paint differently.
+ *
+ * The panel shows `PALETTE_HEAD` of them and offers the rest behind one "N
+ * more" control, which is this app's rule for every long list
+ * (`DesignStrip.CAP`, and `Capped` is the component both use). Which ones are in
+ * that head is `paletteOrder`'s job, and that is where the steer earns its keep.
+ */
+const PALETTE_QUESTION: TasteQuestion<TastePaletteId> = {
+  axis: 'palette',
+  title: 'And here is every colour. Pick yours.',
+  body: 'Your bookcase and your wall, painted in each one. The palette your answers point at is first and already chosen — press on and you keep it, or press any other and that is the room you get.',
+  shape: 'palettes',
+  options: THEME_IDS.map((id) => ({
+    id,
+    // A proper name, left as it is written. Every other option label in this
+    // panel is lowercase micro-copy; "Verdigris Library" is not micro-copy, and
+    // the ledger, the studio and the settings sheet all call it that already.
+    label: THEMES[id].name,
+    line: THEMES[id].blurb,
+  })),
 };
 
 const PAPER_QUESTION: TasteQuestion<TastePaperId> = {
@@ -365,10 +461,11 @@ const SOUND_QUESTION: TasteQuestion<TasteSoundId> = {
   })),
 };
 
-/** The four questions, in the order they are asked. */
+/** The five questions, in the order they are asked. */
 export const TASTE_QUESTIONS: readonly TasteQuestion[] = [
   ROOM_QUESTION as TasteQuestion,
   PITCH_QUESTION as TasteQuestion,
+  PALETTE_QUESTION as TasteQuestion,
   PAPER_QUESTION as TasteQuestion,
   SOUND_QUESTION as TasteQuestion,
 ];
@@ -392,9 +489,14 @@ export function mergeTasteAnswers(raw: unknown): TasteAnswers {
   return out as unknown as TasteAnswers;
 }
 
-/** True once every question has an answer this module recognises. */
+/**
+ * True once every question that NEEDS an answer has one.
+ *
+ * `palette` is exempt on purpose — see `TASTE_REQUIRED_AXES`. Skipping it is not
+ * a half-finished questionnaire; it is the reader keeping what they were shown.
+ */
 export function isTasteComplete(answers: TasteAnswers): boolean {
-  return TASTE_AXES.every((axis) => isTasteAnswer(axis, answers[axis]));
+  return TASTE_REQUIRED_AXES.every((axis) => isTasteAnswer(axis, answers[axis]));
 }
 
 /* ========================================================================== *
@@ -415,8 +517,18 @@ export interface TasteRoom extends RoomLook {
   from: RoomPreset;
   /** The named paper actually hung, for the ledger and for search. */
   paper: string;
-  /** The colours were swapped to answer the pitch question. */
+  /** The colours were swapped away from the preset's own. */
   repainted: boolean;
+  /**
+   * The colours were POINTED AT rather than worked out.
+   *
+   * Separate from `repainted` because they answer different questions and the
+   * panel says different things about them: `repainted` is "this is not the
+   * preset's own palette", `picked` is "you chose this one". A reader who
+   * presses the card the preset already wears gets `picked` without `repainted`,
+   * and one who never opened the grid gets neither.
+   */
+  picked: boolean;
   /** The paper was swapped to answer the wall question. */
   rehung: boolean;
   /** What was changed, in the reader's words, or null when nothing was. */
@@ -583,33 +695,54 @@ function pitchAffinity(tags: readonly ThemeTag[], pitch: TastePitchId): number {
 /** One clean hit with nothing pulling the other way. */
 const ANSWERS_PITCH = 3;
 
+/**
+ * The character words a room answer contributes to a PALETTE decision — its own
+ * words, MINUS any that are really about colour and belong to a different pitch.
+ *
+ * "A reading room" carries `dark`, and `dark` is what "deep" means — so when the
+ * reader asked for plenty of colour, the character was quietly voting for a
+ * near-black oak and winning, and "deep" and "plenty" showed the same card.
+ * Question one owns the room's character; question two owns its colour, and
+ * where a word is both, question two has it.
+ */
+function characterTags(answers: TasteAnswers): readonly ThemeTag[] {
+  const words = answers.room === undefined ? [] : ROOM_THEME_TAGS[answers.room];
+  const pitch = answers.pitch;
+  if (pitch === undefined) return words;
+  return words.filter((tag) => !OTHER_PITCH_TAGS[pitch].includes(tag));
+}
+
+/**
+ * How well ONE palette answers the steer — the two questions asked before it.
+ *
+ * Shared by `bestTheme` (which takes the argmax) and `paletteOrder` (which sorts
+ * on it), and that sharing is the contract the palette grid rests on: the card
+ * the resolver would have chosen for you is by construction the first card in
+ * the grid, because both are reading the same number. Two functions with two
+ * copies of this arithmetic would drift, and the first symptom would be a grid
+ * that opens with the second-best palette lit.
+ *
+ * The pitch is what the swap is FOR, but the character has to stay audible: at a
+ * whisper, every "warm" answer in the app resolved to the same dark library
+ * brown and a toy box came out looking like a chambers. At 3 a room matching
+ * both of its character words outweighs one clean pitch hit, which is the
+ * balance a card needs to still look like the room chosen in question one.
+ */
+function themeAffinity(answers: TasteAnswers, id: ThemeId): number {
+  const tags = THEMES[id].tags;
+  const pitch = answers.pitch;
+  return (
+    (pitch === undefined ? 0 : pitchAffinity(tags, pitch)) +
+    tagScore(tags, characterTags(answers), 3)
+  );
+}
+
 function bestTheme(answers: TasteAnswers, fallback: ThemeId): ThemeId {
   if (answers.pitch === undefined) return fallback;
-  const pitch = answers.pitch;
-  /*
-   * The character's own words, MINUS any that are really about colour and
-   * belong to a different pitch.
-   *
-   * "A reading room" carries `dark`, and `dark` is what "deep" means — so when
-   * the reader asked for plenty of colour, the character was quietly voting for
-   * a near-black oak and winning, and "deep" and "plenty" showed the same card.
-   * Question one owns the room's character; question two owns its colour, and
-   * where a word is both, question two has it.
-   */
-  const character = (answers.room === undefined ? [] : ROOM_THEME_TAGS[answers.room]).filter(
-    (tag) => !OTHER_PITCH_TAGS[pitch].includes(tag),
-  );
   let best = fallback;
   let bestScore = Number.NEGATIVE_INFINITY;
   for (const id of THEME_IDS) {
-    const tags = THEMES[id].tags;
-    // The pitch is what this swap is FOR, but the character has to stay
-    // audible: at a whisper, every "warm" answer in the app resolved to the
-    // same dark library brown and a toy box came out looking like a chambers.
-    // At 2.5 a room matching both of its character words outweighs one clean
-    // pitch hit, which is the balance a card in question two needs to still
-    // look like the room the reader chose in question one.
-    const score = pitchAffinity(tags, pitch) + tagScore(tags, character, 3);
+    const score = themeAffinity(answers, id);
     if (score > bestScore) {
       best = id;
       bestScore = score;
@@ -641,10 +774,32 @@ function bestPaper(answers: TasteAnswers, fallback: string): string {
 export function resolveRoom(answers: TasteAnswers): TasteRoom {
   const from = resolveRoomPreset(answers);
 
+  /*
+   * A pointed-at palette beats every steer in this file, and it beats them
+   * outright rather than by scoring higher.
+   *
+   * This is the whole difference between the two questions. The pitch answer is
+   * a description and the resolver is entitled to interpret it — that is what
+   * `bestTheme` and the vetted-preset shortcut under it are for. A card press is
+   * not a description; the reader looked at sixty drawings and pointed at one,
+   * and there is nothing left to interpret. So the branch is a short-circuit,
+   * not another term in the sum: a reader who picks Snowline after answering
+   * "deep" gets Snowline, and the panel says so in the ledger.
+   *
+   * Note what does NOT move with it. The carpentry is still `from` — the preset
+   * the character chose — because the vocabularies are orthogonal and repainting
+   * a room must not straighten its arches. Picking a palette repaints the room
+   * the reader already chose; it does not choose them a different room.
+   */
+  const picked = isThemeId(answers.palette);
   const answersPitch =
     answers.pitch !== undefined &&
     pitchAffinity(getTheme(from.theme).tags, answers.pitch) >= ANSWERS_PITCH;
-  const theme = answersPitch ? from.theme : bestTheme(answers, from.theme);
+  const theme = picked
+    ? (answers.palette as ThemeId)
+    : answersPitch
+      ? from.theme
+      : bestTheme(answers, from.theme);
   const repainted = theme !== from.theme;
 
   const answersPaper =
@@ -654,7 +809,11 @@ export function resolveRoom(answers: TasteAnswers): TasteRoom {
   const rehung = paper !== from.paper;
 
   const changes: string[] = [];
-  if (repainted) changes.push(`repainted in ${getTheme(theme).name}`);
+  // "painted" for a choice, "repainted" for a swap the app made. The reader did
+  // not repaint anything — they said what colour they wanted.
+  if (repainted) {
+    changes.push(`${picked ? 'painted' : 'repainted'} in ${getTheme(theme).name}`);
+  }
   if (rehung) changes.push(`rehung with ${getWallpaper(paper).name}`);
 
   return {
@@ -665,7 +824,87 @@ export function resolveRoom(answers: TasteAnswers): TasteRoom {
     from,
     paper,
     repainted,
+    picked,
     rehung,
+    note: changes.length === 0 ? null : changes.join(', '),
+  };
+}
+
+/* ------------------------- the palette grid's order ----------------------- */
+
+/**
+ * How many palette cards the panel shows before the "N more" control.
+ *
+ * The same twenty every long list in this app caps at (`DesignStrip.CAP`, and
+ * the reader's own words there were "after like 20"). Kept as its own constant
+ * rather than imported so this module stays DOM-free and node-testable, and
+ * pinned against `CAP` by `tests/taste-onboarding.test.ts` so the two cannot
+ * drift into two different answers to one reader-stated rule.
+ */
+export const PALETTE_HEAD = 20;
+
+/**
+ * The palette the steer alone would hand over — what the grid opens on.
+ *
+ * Deliberately resolved with the reader's own pick REMOVED, so it is the answer
+ * to "what would you have given me", not "what did I choose". The panel wants
+ * both: this one leads the grid and is lit when nothing has been pressed, and
+ * `resolveRoom(answers).theme` is what they will actually get.
+ */
+export function steerTheme(answers: TasteAnswers): ThemeId {
+  const steer: TasteAnswers = { ...answers };
+  delete steer.palette;
+  return resolveRoom(steer).theme;
+}
+
+/**
+ * Every palette, best answer to the steer first.
+ *
+ * This is where the steer keeps its job. Sixty cards in an arbitrary order is
+ * the same wall of choice the four buckets were hiding, so the two questions
+ * already answered ORDER the grid: the palette the resolver would have picked
+ * leads, the ones that answer the same words follow, and the rooms that answer
+ * the opposite of what was asked sink to the bottom where the "N more" control
+ * holds them. Somebody who answers the steer and presses straight on gets the
+ * good room; somebody who wants to browse has all sixty, in the order most
+ * likely to end the browse quickly.
+ *
+ * The order is computed from the STEER and never from the pick, so pressing a
+ * card cannot reshuffle the grid under the reader's cursor.
+ *
+ * Total, and stable: ties break on `THEME_IDS` order, which is the studio's own
+ * picker order, so a reader who has seen the library studio meets its shelves in
+ * the same sequence here.
+ */
+export function paletteOrder(answers: TasteAnswers): readonly ThemeId[] {
+  const lead = steerTheme(answers);
+  const rest = THEME_IDS.filter((id) => id !== lead)
+    .map((id, at) => ({ id, at, score: themeAffinity(answers, id) }))
+    .sort((a, b) => (b.score === a.score ? a.at - b.at : b.score - a.score))
+    .map((entry) => entry.id);
+  return [lead, ...rest];
+}
+
+/**
+ * The same room, in another palette. No preset scan.
+ *
+ * The grid draws sixty of these per render and `resolveRoom` walks all sixty-odd
+ * presets each time it is called; sixty times that, twice per card (the cache
+ * key and the draw), is four figures of scoring to redraw a grid whose carpentry
+ * did not move. Only the colours differ between these cards — that is the whole
+ * discipline of the panel, one variable per question — so only the colours are
+ * recomputed.
+ */
+export function repaintedAs(room: TasteRoom, theme: ThemeId): TasteRoom {
+  const repainted = theme !== room.from.theme;
+  const changes: string[] = [];
+  if (repainted) changes.push(`painted in ${getTheme(theme).name}`);
+  if (room.rehung) changes.push(`rehung with ${getWallpaper(room.paper).name}`);
+  return {
+    ...room,
+    theme,
+    repainted,
+    picked: true,
     note: changes.length === 0 ? null : changes.join(', '),
   };
 }
@@ -726,22 +965,54 @@ export function resolveSoundSet(answers: TasteAnswers): {
   return { set: first ?? 'house', group };
 }
 
+/**
+ * Which of the four pitches a palette IS, in its own words.
+ *
+ * The pitch question's inverse, and the reason it exists is the palette grid.
+ * The interface colours and the ink are chosen off the pitch ANSWER, which is a
+ * description of what the reader wanted; once they have pointed at an actual
+ * palette, that description is stale. Answering "deep" and then choosing
+ * Snowline used to leave the app in its after-dark interface around a room made
+ * of white paint — the app listening to the sentence and ignoring the finger.
+ *
+ * Scored with `pitchAffinity`, the same function the palette grid orders on, so
+ * a palette is classified by exactly the words that put it where it is in the
+ * grid. Total: `PITCH_INK` and the branches below cover all four.
+ */
+export function pitchOfTheme(id: ThemeId): TastePitchId {
+  let best: TastePitchId = 'warm';
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const pitch of TASTE_PITCH_IDS) {
+    const score = pitchAffinity(THEMES[id].tags, pitch);
+    if (score > bestScore) {
+      best = pitch;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /** The interface's colour scheme and ink. */
 export function resolveInterface(answers: TasteAnswers): {
   uiTheme: ThemeName;
   ink: string;
 } {
   const base: ThemeName = answers.room === undefined ? 'parchment' : ROOM_UI_THEME[answers.room];
+  // A pointed-at palette speaks for the pitch answer from here down. See
+  // `pitchOfTheme` for why the sentence stops counting once there is a finger.
+  const pitch = isThemeId(answers.palette)
+    ? pitchOfTheme(answers.palette)
+    : answers.pitch;
   let uiTheme = base;
-  if (answers.pitch === 'deep') {
+  if (pitch === 'deep') {
     // They asked for dark. A cream interface around a claret room is the app
     // not listening — and night is the only theme that answers it.
     uiTheme = 'night';
-  } else if (answers.pitch === 'bright' && base === 'parchment') {
+  } else if (pitch === 'bright' && base === 'parchment') {
     uiTheme = 'pastel';
   }
 
-  let ink = answers.pitch === undefined ? 'sepia' : PITCH_INK[answers.pitch];
+  let ink = pitch === undefined ? 'sepia' : PITCH_INK[pitch];
   // A cool room writes in a cool ink whatever the pitch said. Sepia against
   // harbour teal is the one pairing that reads as an oversight.
   if ((answers.room === 'harbour' || answers.room === 'chapter-house') && ink === 'sepia') {
@@ -751,7 +1022,7 @@ export function resolveInterface(answers: TasteAnswers): {
 }
 
 /**
- * Four answers in, a whole library out. Total — every field is filled even
+ * The answers in, a whole library out. Total — every field is filled even
  * when nothing was answered at all, which is what the "surprise me" path and a
  * half-finished questionnaire both rely on.
  */

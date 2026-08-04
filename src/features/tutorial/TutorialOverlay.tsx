@@ -46,6 +46,7 @@ import {
   arrowHeadPath,
   arrowPoints,
   applyInset,
+  celebrateDelay,
   centerCard,
   clipRectToViewport,
   edgePointToward,
@@ -91,13 +92,6 @@ import { motionScale } from '../../styles/motion';
 import '../../styles/tutorial.css';
 
 /* ------------------------------- helpers ---------------------------------- */
-
-/**
- * How long the green "you did it" state holds before the tour walks on. Long
- * enough to read the line and see the tick draw; short enough that finishing
- * a step feels like it moved you forward rather than parked you.
- */
-const CELEBRATE_MS = 1500;
 
 /**
  * The tour's beats (spotlight travel, pencil draw-on, card entrance) are
@@ -316,7 +310,7 @@ export default function TutorialOverlay(): JSX.Element {
         setInBook(inBookView());
         const task = current.task;
         if (task !== undefined && !isDone(current.id) && factHolds(task.fact, now)) {
-          markDone(current.id);
+          markDone(current);
         }
         // The wrong-turn watch: only ever asked about on a step that declares
         // one, so this is a no-op on nearly every step.
@@ -329,15 +323,22 @@ export default function TutorialOverlay(): JSX.Element {
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
-  /** The reader just did the thing: celebrate, then walk on by ourselves. */
-  function markDone(id: string): void {
+  /**
+   * The reader just did the thing: celebrate, then walk on by ourselves.
+   *
+   * How long the celebration lasts is the STEP's business, not this file's: a
+   * step that asked the reader to open a panel has to leave the panel open long
+   * enough to look at, because walking on is what closes it again (dismiss.ts).
+   * `celebrateDelay` holds that rule; `steps.ts → PANEL_DWELL_MS` holds the
+   * number and the report behind it.
+   */
+  function markDone(done: TutorialStep): void {
+    const id = done.id;
     setFinished((prev) => (prev.includes(id) ? prev : [...prev, id]));
     void play('check-done', { volume: 0.55 });
     if (isLast()) return;
     cancelAdvance();
-    const ms = motionScale();
-    // With motion off there is no tick to watch draw, so do not sit there.
-    const wait = ms <= 0 ? 450 : CELEBRATE_MS * Math.max(0.6, ms);
+    const wait = celebrateDelay(done.task?.dwell, motionScale());
     const from = untrack(stepIndex);
     advanceTimer = setTimeout(() => {
       advanceTimer = undefined;

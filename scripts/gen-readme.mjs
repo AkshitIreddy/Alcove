@@ -1,63 +1,194 @@
 /**
- * scripts/gen-readme.mjs — compose the front page's navigation from the two
- * halves, so it cannot describe a document that no longer exists.
+ * scripts/gen-readme.mjs — compose the front page OUT OF the two halves, so the
+ * page a reader lands on carries the substance instead of pointing at it.
  *
- * The README is three pages, not one file: [`README.md`](../README.md) is a
- * front door, and `docs/readme/part-1-users.md` and `part-2-developers.md` are
- * pages a reader opens. That is deliberate and it is load-bearing — the halves
- * write 356 of their relative links as `../../src/…`, which resolve from
- * `docs/readme/` and would 404 from the repo root, and both halves carry a
- * `## Notebook Script` section, which would collide into `#notebook-script` and
- * `#notebook-script-1` the moment they shared a page. Concatenating them is not
- * a formatting choice; it breaks every link in the developer half and silently
- * repoints half the front page's own table. `scripts/check-readme.mjs` says the
- * same thing in its header, having already been wrong about it once.
+ * The README used to be a signpost: two tables of anchor links and a sentence
+ * per row. A reader who wanted to know what the installer puts on their disk had
+ * to follow a link to find out, which is the wrong shape for the first page of a
+ * shipped product. So the front page now carries the whole user manual and the
+ * developer essentials inline — and it carries them WITHOUT anybody copying a
+ * paragraph, because a copied paragraph is a paragraph that drifts.
  *
- * What that leaves is a real assembly problem in a different place. The front
- * page's body is almost entirely *navigation into the halves* — two tables, one
- * row per section, each row an anchor link plus a sentence describing it. Those
- * rows were typed by hand, which is exactly how a fragment goes stale: rename a
- * heading and the row still renders, still looks right, and lands the reader at
- * the top of the page instead of the section. Nothing caught it, because
- * `checkLinks()` splits `#` off and stats the file.
+ * Three mechanisms, in the order they run.
  *
- * So the rows are no longer typed. Each `##` in a half carries an invisible
- * summary next to the thing it summarises:
+ *  1. **Generated regions.** `<!-- gen:name -->…<!-- /gen -->` in any of the
+ *     three pages is rewritten from `tables[name]`. That is how the version
+ *     appears: `package.json` is the only place `0.1.0` is typed, and the badge
+ *     block and the download table are composed from it. A version bump plus
+ *     `npm run readme:build` moves every mention of it at once.
  *
- *     ## Installing
- *     <!--nav: What the download will be, what the installer does, …-->
+ *  2. **Lifts.** A half wraps a run of sections in
  *
- * and this script writes the tables into the marked regions of README.md, in
- * source order, one row per section — no orphans, no phantoms. Same shape as
- * `npm run spec:check`, and for the same reason: a generator nobody runs is
- * worth nothing, a check that fails a test run is worth everything.
+ *         <!--lift: manual-->
+ *         ## The first ten minutes
+ *         …
+ *         <!--/lift-->
+ *
+ *     and the front page places `<!-- gen:lift-manual -->…<!-- /gen -->` where
+ *     it wants that text. The half stays the source; the front page gets a copy
+ *     that is rebuilt, never edited. Editing a lifted region by hand is a red
+ *     test, which is the entire value.
+ *
+ *  3. **Navigation for what is left.** `<!-- gen:deeper-reading -->` lists only
+ *     the sections that were NOT lifted, so the table cannot offer the reader a
+ *     link to something they have already read three inches higher up.
+ *
+ * ### Why concatenating the halves is still wrong, and what a lift does instead
+ *
+ * The halves live in `docs/readme/` and write 356 of their relative links as
+ * `../../src/…`, which resolve from that directory and would 404 from the repo
+ * root. Pasting a half into `README.md` breaks every one of them, silently —
+ * `checkLinks()` in `check-readme.mjs` resolves a link from the directory of the
+ * file it is written in, so it would go on passing while every link on the front
+ * page went nowhere. That is why an earlier version of this file said flatly
+ * that the halves must not be concatenated, and it was right about the mechanics
+ * and wrong about the conclusion: the fix is to rewrite the links, not to refuse
+ * to move the text.
+ *
+ * So `rewriteLift()` retargets every relative link through `path.posix.join`
+ * from `docs/readme/` to the root, leaves fenced and inline code alone, and
+ * resolves bare `#fragment` links against the front page's OWN headings —
+ * keeping the ones that landed there with the text and pointing the rest back at
+ * the half they came from. And because both halves carry a `## Notebook Script`
+ * section, which would collide into `#notebook-script` and `#notebook-script-1`
+ * the moment they shared a page, `assemble()` refuses to build a front page with
+ * two headings that slug the same way, naming both lines. Lift one of them or
+ * rename it; do not discover it as a link that lands at the top of the page.
  *
  * Usage:
- *   npm run readme:build     rewrite the generated regions of README.md
- *   node scripts/gen-readme.mjs --check     fail if README.md has drifted
+ *   npm run readme:build     rewrite the generated regions of all three pages
+ *   node scripts/gen-readme.mjs --check     fail if any of them has drifted
  *
- * `--check` is wired into `tests/readme.test.ts`, so a renamed section is a red
- * test rather than a link that quietly goes nowhere.
+ * `--check` is wired into `tests/readme.test.ts`, so a renamed section, a stale
+ * version number and a hand-edited lift are all red tests rather than something
+ * a reader finds first.
  */
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const README = 'README.md';
 
 /**
- * The halves, in reading order. `region` is the name in the README placeholder
- * (`<!-- gen:part-1-sections -->`); `href` is how the front page reaches the
- * file, which is root-relative because the front page IS the root.
+ * The halves, in reading order. `href` is how the front page reaches the file,
+ * which is root-relative because the front page IS the root; `title` is what the
+ * navigation calls it.
  */
 export const PARTS = [
-  { id: 'part-1', region: 'part-1-sections', href: 'docs/readme/part-1-users.md' },
-  { id: 'part-2', region: 'part-2-sections', href: 'docs/readme/part-2-developers.md' },
+  {
+    id: 'part-1',
+    title: 'Part 1 — Using Alcove',
+    href: 'docs/readme/part-1-users.md',
+    note: 'everything above, as its own page',
+  },
+  {
+    id: 'part-2',
+    title: 'Part 2 — Building Alcove',
+    href: 'docs/readme/part-2-developers.md',
+    note: 'the parts that are not on this page',
+  },
 ];
 
-/** Every markdown page the front page's navigation spans. */
+/** Every markdown page this script composes or navigates. */
 export const PAGES = [README, ...PARTS.map((p) => p.href)];
+
+/* --------------------------- the shipped product ------------------------- */
+
+/** Where releases are published. The repo the remote actually points at. */
+export const RELEASES = 'https://github.com/AkshitIreddy/alcove/releases';
+
+/**
+ * Rounded size of the NSIS installer, for the download table.
+ *
+ * Measured off the 0.1.0 bundle — `Alcove_0.1.0_x64-setup.exe` is 15,314,265
+ * bytes — and deliberately NOT a `<!--f:…-->` marker: the bundle is not checked
+ * in, so a marker recomputed from the tree would read 0 on every clean clone and
+ * a fact that quietly reads 0 is worse than a rounded one that says "about".
+ */
+const INSTALLER_SIZE = 'about 15 MB';
+
+/**
+ * The version, from the one file that owns it — cross-checked against the Rust
+ * side, because a `package.json` and a `tauri.conf.json` that disagree ship an
+ * installer whose filename does not match the number on the badge.
+ */
+export function appVersion() {
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const conf = JSON.parse(readFileSync(join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  if (pkg.version !== conf.version) {
+    throw new Error(
+      `package.json says version ${pkg.version} and src-tauri/tauri.conf.json says ` +
+        `${conf.version} — the installer is named from the second and the badge from ` +
+        `the first, so they have to agree before this page can be built`,
+    );
+  }
+  return pkg.version;
+}
+
+const badgeText = (s) => encodeURIComponent(s.replace(/-/g, '--').replace(/_/g, '__'));
+const shield = (label, message, colour) =>
+  `https://img.shields.io/badge/${badgeText(label)}-${badgeText(message)}-${colour}` +
+  `?style=flat-square&labelColor=4f3120`;
+
+/** The badge strip: composed, so the version on it cannot lag `package.json`. */
+export function renderBadges(version = appVersion()) {
+  const img = (label, message, colour, alt) =>
+    `  <img src="${shield(label, message, colour)}" alt="${alt}">`;
+  return [
+    '<p align="center">',
+    `  <a href="${RELEASES}/latest"><img src="${shield(
+      'download',
+      `Alcove ${version} for Windows`,
+      'c96f4a',
+    )}" alt="Download Alcove ${version} for Windows"></a>`,
+    img('version', version, 'b8863b', `Version ${version}`),
+    img('platform', 'Windows 10 / 11', '7d915c', 'Platform: Windows 10 and 11'),
+    img(
+      'storage',
+      'local SQLite · no account',
+      '5f7d8c',
+      'Storage: local SQLite, no account',
+    ),
+    img('licence', 'MIT', '6f6a86', 'Licence: MIT'),
+    '</p>',
+  ].join('\n');
+}
+
+/**
+ * The download table: one row per platform, and the two that are not built say
+ * so rather than promising a link that would 404.
+ *
+ * Every path in it is inline code and every link is absolute, deliberately: this
+ * table is written into a half and then lifted to the root, and a repo-relative
+ * link would have to be correct in two directories at once.
+ */
+export function renderDownloads(version = appVersion()) {
+  const exe = `Alcove_${version}_x64-setup.exe`;
+  const msi = `Alcove_${version}_x64_en-US.msi`;
+  return [
+    '| Platform | Download | What you get |',
+    '| --- | --- | --- |',
+    `| **Windows 10 / 11** · x64 | [\`${exe}\`](${RELEASES}/latest) · ${INSTALLER_SIZE} | ` +
+      'The one to take. Installs for **the current user**, so Windows never asks for an ' +
+      'administrator, and lands in `%LOCALAPPDATA%\\Alcove`. |',
+    '| **macOS** · universal | not built yet | The release job builds one universal ' +
+      '`.dmg` carrying both the Apple-silicon and the Intel slice, so there is nothing ' +
+      'for a reader to choose between — but it has never produced one. |',
+    '| **Linux** · x64 | not built yet | The same job builds a `.deb`, an `.rpm` and an ' +
+      'AppImage on `ubuntu-22.04`, so they start on 22.04 and anything later. Also ' +
+      'never produced. |',
+    '',
+    `Beside the installer sits \`${msi}\` — the same app as an MSI, for anyone who ` +
+      'deploys software with a policy rather than a double-click. Everything is attached ' +
+      'to the GitHub Release by `.github/workflows/release.yml` when the version tag is ' +
+      'pushed, with a `SHA256SUMS.txt`, and **nothing is signed on any platform** — so ' +
+      'Windows shows a SmartScreen warning the first time and macOS will quarantine the ' +
+      'first launch. If the Releases page is empty, that tag has not landed yet: ' +
+      '`npm run tauri build` writes the same artefacts for whichever platform you are ' +
+      'on, into `src-tauri/target/release/bundle/`.',
+  ].join('\n');
+}
 
 /* -------------------------------- headings ------------------------------- */
 
@@ -109,16 +240,198 @@ export function headings(text) {
   return out;
 }
 
+/**
+ * Two headings that slug the same way on one page: the second is reachable only
+ * as `#slug-1`, which nothing writes, so every link meant for it lands on the
+ * first. Cheap to detect, invisible to a reader, and the exact reason the halves
+ * were kept apart before lifts existed.
+ */
+export function duplicateSlugs(text) {
+  const seen = new Map();
+  const problems = [];
+  for (const h of headings(text)) {
+    const base = slugify(h.text);
+    const first = seen.get(base);
+    if (first === undefined) seen.set(base, h);
+    else
+      problems.push(
+        `heading '${h.text}' (line ${h.line}) slugs to '#${base}', the same as ` +
+          `'${first.text}' (line ${first.line}) — only the first is reachable`,
+      );
+  }
+  return problems;
+}
+
+/* --------------------------------- lifts --------------------------------- */
+
+const LIFT_OPEN = /^<!--lift:\s*([a-z0-9-]+)\s*-->\s*$/;
+const LIFT_CLOSE = /^<!--\/lift-->\s*$/;
+
+/**
+ * Every `<!--lift: name-->…<!--/lift-->` block of one source, plus the line span
+ * each covers so a section can be asked whether it was lifted.
+ *
+ * Unclosed blocks throw by name: a lift that runs to the end of the file would
+ * quietly move the whole half onto the front page.
+ */
+export function liftsOf(text) {
+  const lines = text.split('\n');
+  const found = new Map();
+  let open = null;
+  for (let i = 0; i < lines.length; i++) {
+    const start = LIFT_OPEN.exec(lines[i]);
+    if (start !== null) {
+      if (open !== null) {
+        throw new Error(
+          `line ${i + 1}: <!--lift: ${start[1]}--> opens inside <!--lift: ${open.name}--> ` +
+            `(line ${open.from}) — lifts do not nest`,
+        );
+      }
+      open = { name: start[1], from: i + 1, body: [] };
+      continue;
+    }
+    if (LIFT_CLOSE.test(lines[i])) {
+      if (open === null) throw new Error(`line ${i + 1}: <!--/lift--> with no lift open`);
+      if (found.has(open.name)) {
+        throw new Error(`two lifts are named '${open.name}' — names are the region key`);
+      }
+      found.set(open.name, { name: open.name, from: open.from, to: i + 1, body: open.body.join('\n') });
+      open = null;
+      continue;
+    }
+    if (open !== null) open.body.push(lines[i]);
+  }
+  if (open !== null) {
+    throw new Error(`<!--lift: ${open.name}--> (line ${open.from}) is never closed`);
+  }
+  return found;
+}
+
+// A markdown link, an HTML `src="…"`, or a run of inline code. Code comes first
+// so a path quoted as an illustration is never retargeted; a link whose LABEL
+// contains code still matches as a link, because the `[` is reached first.
+//
+// The label may wrap across lines — the halves are hard-wrapped at 80 columns
+// and several links break mid-label — but not across a blank line, which would
+// let one stray `[` in a paragraph swallow the next paragraph's link. Inline
+// code, by contrast, is line-bounded: an unpaired backtick is a typo, not an
+// invitation to treat the rest of the section as code.
+const INLINE_RE =
+  /(`+[^`\n]*?`+)|(!?\[(?:[^\]\n]|\n(?!\n))*\])\(\s*([^)\s]+)((?:\s+"[^"]*")?)\s*\)|(src=")([^"]+)(")/g;
+
+const EXTERNAL = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+
+/**
+ * One link, moved from a page in `fromDir` to the repo root.
+ *
+ * A bare `#fragment` is the interesting case: it means "elsewhere on my own
+ * page", and once the text is on the front page that is only true if the heading
+ * came with it. So it is resolved against the front page's real slugs, and
+ * pointed back at `href` when it is not there.
+ *
+ * The mirror of that: a link INTO the other half, at a section the front page
+ * also carries, collapses to the plain fragment. Otherwise the page a reader is
+ * already reading would send them somewhere else to read the same words, which
+ * is the signpost behaviour this whole mechanism exists to end.
+ */
+export function retarget(target, fromDir, href, slugs) {
+  if (EXTERNAL.test(target)) return target;
+  if (target.startsWith('#')) {
+    return slugs.has(decodeURI(target.slice(1))) ? target : `${href}${target}`;
+  }
+  const hash = target.indexOf('#');
+  const file = hash === -1 ? target : target.slice(0, hash);
+  const frag = hash === -1 ? '' : target.slice(hash);
+  if (file === '') return target;
+  const moved = posix.join(fromDir, file);
+  if (frag !== '' && PARTS.some((p) => p.href === moved) && slugs.has(decodeURI(frag.slice(1)))) {
+    return frag;
+  }
+  return moved + frag;
+}
+
+const FENCE_RE = /^\s*(`{3,}|~{3,})/;
+
+/**
+ * Rewrite every link in `text` outside fenced code, leaving code untouched.
+ *
+ * The fence is tracked by its own marker rather than toggled on sight, because
+ * the user half quotes a whole Notebook Script document inside a ````` ```` `````
+ * fence and that document contains ` ```graph ` fences of its own. Toggling
+ * would treat the graph's body as prose.
+ */
+function rewriteLinks(text, map) {
+  const out = [];
+  let prose = [];
+  let fence = null;
+  // Prose is rewritten in runs rather than line by line, so a link whose label
+  // wraps is still one match. Everything inside a fence is emitted untouched.
+  const flush = () => {
+    if (prose.length === 0) return;
+    out.push(
+      prose.join('\n').replace(INLINE_RE, (whole, code, label, target, title, pre, src, post) => {
+        if (code !== undefined) return whole;
+        if (label !== undefined) return `${label}(${map(target)}${title ?? ''})`;
+        return `${pre}${map(src)}${post}`;
+      }),
+    );
+    prose = [];
+  };
+  for (const line of text.split('\n')) {
+    const m = FENCE_RE.exec(line);
+    if (m !== null) {
+      if (fence === null) {
+        flush();
+        fence = m[1];
+      } else if (m[1][0] === fence[0] && m[1].length >= fence.length) {
+        fence = null;
+      }
+      out.push(line);
+      continue;
+    }
+    if (fence !== null) out.push(line);
+    else prose.push(line);
+  }
+  flush();
+  return out.join('\n');
+}
+
+/**
+ * One lift, as the front page should carry it: markers dropped, links moved to
+ * the root, fragments resolved against the front page's own headings.
+ *
+ * The `<!-- gen:… -->` markers go because a generated region inside a generated
+ * region is a region nobody can rewrite; the `<!--nav: …-->` summaries go
+ * because they describe a row in a table that is about the half, not this page.
+ */
+export function rewriteLift(lift, part, slugs) {
+  const fromDir = posix.dirname(part.href.split('\\').join('/'));
+  const kept = lift.body
+    .split('\n')
+    .filter(
+      (line) =>
+        !/^<!--\s*gen:[a-z0-9-]+\s*-->\s*$/.test(line) &&
+        !/^<!--\s*\/gen\s*-->\s*$/.test(line) &&
+        !/^<!--nav:[\s\S]*-->\s*$/.test(line),
+    )
+    .join('\n');
+  return rewriteLinks(kept, (t) => retarget(t, fromDir, part.href, slugs)).trim();
+}
+
+/* ------------------------------- navigation ------------------------------ */
+
 const NAV_RE = /^<!--nav:\s*([\s\S]*?)\s*-->\s*$/;
 
 /**
- * The `##` sections of one half, each with the summary written beside it.
+ * The `##` sections of one half, each with the summary written beside it and a
+ * flag saying whether the front page already carries it.
  *
- * Throws by name when a section has no `<!--nav: …-->`. A section the front
- * page cannot describe is a section it would silently omit, which is the
- * failure this file exists to prevent — so it is loud, and it names the line.
+ * Throws by name when a section has no `<!--nav: …-->`. A section the front page
+ * cannot describe is a section it would silently omit, which is the failure this
+ * file exists to prevent — so it is loud, and it names the line.
  */
 export function sectionsOf(part, text = readFileSync(join(ROOT, part.href), 'utf8')) {
+  const lifts = [...liftsOf(text).values()];
   const sections = [];
   for (const h of headings(text)) {
     if (h.depth !== 2) continue;
@@ -130,15 +443,18 @@ export function sectionsOf(part, text = readFileSync(join(ROOT, part.href), 'utf
           `  on the line directly under the heading, then run: npm run readme:build`,
       );
     }
-    sections.push({ text: h.text, slug: h.slug, nav: m[1] });
+    sections.push({
+      text: h.text,
+      slug: h.slug,
+      nav: m[1],
+      lifted: lifts.some((l) => h.line > l.from && h.line < l.to),
+    });
   }
   if (sections.length === 0) {
     throw new Error(`${part.href} has no '## ' sections — the front page would be blank`);
   }
   return sections;
 }
-
-/* ------------------------------- rendering ------------------------------- */
 
 /** A table cell: the one character that would split a row is escaped. */
 const cell = (s) => s.replace(/\|/g, '\\|');
@@ -148,40 +464,128 @@ export function renderNavTable(part, sections) {
   return [
     '| Section | What you get |',
     '| --- | --- |',
-    ...sections.map(
-      (s) => `| [${cell(s.text)}](${part.href}#${s.slug}) | ${cell(s.nav)} |`,
-    ),
+    ...sections.map((s) => `| [${cell(s.text)}](${part.href}#${s.slug}) | ${cell(s.nav)} |`),
   ].join('\n');
 }
+
+/**
+ * What is left after the lifts: per half, a line saying what it is, and a table
+ * of only the sections the front page does NOT already carry.
+ */
+export function renderDeeper(halves) {
+  const out = [];
+  for (const { part, want } of halves) {
+    const rest = sectionsOf(part, want).filter((s) => !s.lifted);
+    out.push(`**[${part.title}](${part.href})** — ${part.note}.`);
+    if (rest.length > 0) out.push('', renderNavTable(part, rest));
+    out.push('');
+  }
+  return out.join('\n').trimEnd();
+}
+
+/** The `##` sections of a built page, as one line a reader can scan. */
+export function renderContents(text) {
+  const links = headings(text)
+    .filter((h) => h.depth === 2)
+    .map((h) => `[${h.text}](#${h.slug})`);
+  const lines = [];
+  let line = '**On this page:**';
+  for (const link of links) {
+    const next = `${line} ${link} ·`;
+    if (next.length > 84 && line !== '**On this page:**') {
+      lines.push(line);
+      line = `${link} ·`;
+    } else {
+      line = next;
+    }
+  }
+  lines.push(line.replace(/\s·$/, ''));
+  return lines.join('\n');
+}
+
+/* -------------------------------- assembly ------------------------------- */
 
 // The body is lazy AND may be empty — an empty region is how a new one is
 // added by hand, and a pattern that needs a line to sit in runs straight past
 // it into the NEXT region's closing marker, silently swallowing both.
 const REGION_RE = /(<!-- gen:([a-z0-9-]+) -->\n)([\s\S]*?)(<!-- \/gen -->)/g;
 
-/**
- * Rewrite every `<!-- gen:name -->…<!-- /gen -->` region of the front page.
- *
- * Unknown region names and unplaced regions both throw: a table generated but
- * never placed is a table nobody reads, and the reverse is a placeholder that
- * renders as a comment forever. `gen-spec.mjs` learned this the same way.
- */
-export function buildReadme(current, tables) {
-  const placed = new Set();
-  const unknown = new Set();
-  const body = current.replace(REGION_RE, (match, open, name, _old, close) => {
-    const table = tables[name];
-    if (table === undefined) {
+/** Rewrite every `<!-- gen:name -->…<!-- /gen -->` region of one page. */
+function replaceRegions(current, tables, placed, unknown) {
+  return current.replace(REGION_RE, (match, open, name, _old, close) => {
+    const body = tables[name];
+    if (body === undefined) {
       unknown.add(name);
       return match;
     }
     placed.add(name);
-    return `${open}${table}\n${close}`;
+    return `${open}${body === '' ? '' : `${body}\n`}${close}`;
   });
+}
+
+/**
+ * All three pages as they should be, beside the ones on disk.
+ *
+ * Two passes, because the front page's own table of contents and its lifted
+ * `#fragment` links both need to know what headings the finished page has. Pass
+ * one settles that; nothing in pass two adds or removes a heading, so pass two
+ * is the fixed point rather than the start of an iteration.
+ */
+export function assemble() {
+  const version = appVersion();
+  const shared = { badges: renderBadges(version), downloads: renderDownloads(version) };
+
+  const halves = PARTS.map((part) => {
+    const have = readFileSync(join(ROOT, part.href), 'utf8');
+    // The lifted copy has to come from the half as it SHOULD be, or a stale
+    // generated region in a half would be copied onto the front page as fact.
+    const want = replaceRegions(have, shared, new Set(), new Set());
+    return { part, have, want, lifts: liftsOf(want) };
+  });
+
+  const lifted = [];
+  for (const half of halves) {
+    for (const lift of half.lifts.values()) {
+      const region = `lift-${lift.name}`;
+      if (lifted.some((l) => l.region === region)) {
+        throw new Error(`two halves both lift '${lift.name}' — the region name would collide`);
+      }
+      lifted.push({ region, lift, part: half.part });
+    }
+  }
+
+  const tablesFor = (slugs, contents) => {
+    const tables = { ...shared, contents, 'deeper-reading': renderDeeper(halves) };
+    for (const { region, lift, part } of lifted) tables[region] = rewriteLift(lift, part, slugs);
+    return tables;
+  };
+
+  const haveReadme = readFileSync(join(ROOT, README), 'utf8');
+  const draft = replaceRegions(haveReadme, tablesFor(new Set(), ''), new Set(), new Set());
+  const collisions = duplicateSlugs(draft);
+  if (collisions.length > 0) {
+    throw new Error(
+      `${README} would have two headings with one slug — lift only one of them, or ` +
+        `rename it:\n  ${collisions.join('\n  ')}`,
+    );
+  }
+
+  const tables = tablesFor(new Set(headings(draft).map((h) => h.slug)), renderContents(draft));
+  const placed = new Set();
+  const unknown = new Set();
+  const pages = [
+    { rel: README, have: haveReadme, want: replaceRegions(haveReadme, tables, placed, unknown) },
+    ...halves.map((h) => ({
+      rel: h.part.href,
+      have: h.have,
+      want: replaceRegions(h.have, tables, placed, unknown),
+    })),
+  ];
+
   if (unknown.size > 0) {
     throw new Error(
-      `${README} asks for unknown generated region(s): ${[...unknown].join(', ')} — ` +
-        `known regions are ${Object.keys(tables).join(', ')}`,
+      `asked for unknown generated region(s): ${[...unknown].join(', ')} — known ` +
+        `regions are ${Object.keys(tables).join(', ')}`,
     );
   }
   const orphans = Object.keys(tables).filter((name) => !placed.has(name));
@@ -191,17 +595,7 @@ export function buildReadme(current, tables) {
         `<!-- gen:${orphans[0]} -->\n<!-- /gen --> to ${README}`,
     );
   }
-  return body;
-}
-
-/** The front page as it should be: current file, generated regions rewritten. */
-export function assemble() {
-  const tables = {};
-  for (const part of PARTS) {
-    tables[part.region] = renderNavTable(part, sectionsOf(part));
-  }
-  const have = readFileSync(join(ROOT, README), 'utf8');
-  return { have, want: buildReadme(have, tables), tables };
+  return { pages, tables };
 }
 
 /* -------------------------------- anchors -------------------------------- */
@@ -214,8 +608,8 @@ const LINK_RE = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
  *
  * `check-readme.mjs` splits the fragment off and stats the file, which passes a
  * link to a section that was renamed out from under it. That is precisely the
- * drift the front page is made of — 84 of its links carry a fragment — so it is
- * checked here rather than left to a reader noticing they landed at the top.
+ * drift the front page is made of — most of its links carry a fragment — so it
+ * is checked here rather than left to a reader noticing they landed at the top.
  */
 export function checkAnchors(pages = PAGES) {
   const problems = [];
@@ -277,14 +671,12 @@ export function firstDifferences(want, have, limit = 8) {
  */
 export function checkReadme() {
   const problems = [];
-  let want = '';
   try {
-    const built = assemble();
-    want = built.want;
-    if (built.have !== want) {
+    for (const page of assemble().pages) {
+      if (page.have === page.want) continue;
       problems.push(
-        `${README} does not match its sources:`,
-        ...firstDifferences(want, built.have),
+        `${page.rel} does not match its sources:`,
+        ...firstDifferences(page.want, page.have),
         '',
         'Run: npm run readme:build',
       );
@@ -294,7 +686,7 @@ export function checkReadme() {
   }
   const anchors = checkAnchors();
   problems.push(...anchors.problems);
-  return { problems, want, anchors: anchors.checked };
+  return { problems, anchors: anchors.checked };
 }
 
 /* --------------------------------- the CLI ------------------------------- */
@@ -303,25 +695,32 @@ const invokedDirectly =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (invokedDirectly) {
-  const check = process.argv.includes('--check');
-  if (check) {
+  if (process.argv.includes('--check')) {
     const { problems, anchors } = checkReadme();
     for (const p of problems) console.error(p.startsWith(' ') ? p : `  ${p}`);
     console.log(
-      `gen-readme: ${PARTS.length} halves composed, ${anchors} anchor ` +
+      `gen-readme: ${PAGES.length} page(s) composed, ${anchors} anchor ` +
         `link(s) resolved, ${problems.length} problem(s)`,
     );
     process.exit(problems.length === 0 ? 0 : 1);
   }
-  const { have, want, tables } = assemble();
-  if (have !== want) writeFileSync(join(ROOT, README), want, 'utf8');
-  const rows = Object.values(tables).reduce((n, t) => n + t.split('\n').length - 2, 0);
+  const { pages, tables } = assemble();
+  const rewritten = [];
+  for (const page of pages) {
+    if (page.have === page.want) continue;
+    writeFileSync(join(ROOT, page.rel), page.want, 'utf8');
+    rewritten.push(page.rel);
+  }
+  const liftedLines = Object.entries(tables)
+    .filter(([name]) => name.startsWith('lift-'))
+    .reduce((n, [, body]) => n + body.split('\n').length, 0);
   const anchors = checkAnchors();
   for (const p of anchors.problems) console.error(`  ${p}`);
   console.log(
-    `README.md ${have === want ? 'already up to date' : 'rewritten'} — ` +
-      `${rows} section row(s) from ${PARTS.length} halves, ` +
-      `${anchors.checked} anchor link(s) resolved, ${anchors.problems.length} problem(s)`,
+    `${rewritten.length === 0 ? 'already up to date' : `rewritten: ${rewritten.join(', ')}`} — ` +
+      `${Object.keys(tables).length} generated region(s), ${liftedLines} line(s) lifted ` +
+      `from the halves, ${anchors.checked} anchor link(s) resolved, ` +
+      `${anchors.problems.length} problem(s)`,
   );
   process.exit(anchors.problems.length === 0 ? 0 : 1);
 }

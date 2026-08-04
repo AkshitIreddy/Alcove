@@ -43,6 +43,7 @@ Trying to work out why something that looks finished is not reachable:
 shipped](#the-failure-modes-this-codebase-has-actually-shipped), which is the
 shortest useful thing on this page.
 
+<!--lift: build-->
 ## How it's built
 <!--nav: The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row-->
 
@@ -199,7 +200,7 @@ Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->71<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->75<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](../e2e.md). |
 
@@ -252,8 +253,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->271<!--/f--> of <!--f:srcFiles-->279<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->5925<!--/f--> lines of it.
+<!--f:srcDocstrings-->273<!--/f--> of <!--f:srcFiles-->281<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6048<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -272,6 +273,7 @@ The convention:
 If you read only one, read [`src/art/bake.ts`](../../src/art/bake.ts): it is short, it
 carries real measurements, and it is the clearest example of the house style of
 writing down a decision *and* the thing it replaced.
+<!--/lift-->
 
 ## The art pipeline
 <!--nav: Bake once, draw forever: atlas packing, LOD tiers, and the cache-key rule-->
@@ -979,7 +981,7 @@ same rule — see *How this document stays true*.
 ## The gates
 <!--nav: Every unit-test file and the specific class of bug it exists to stop-->
 
-<!--f:unitTests-->71<!--/f--> unit-test files, and almost none of them are there
+<!--f:unitTests-->75<!--/f--> unit-test files, and almost none of them are there
 for coverage. Each exists to stop a specific class of bug, and most of the
 docstrings name the day the bug shipped. This is the fastest way to learn what
 this codebase is afraid of.
@@ -996,6 +998,7 @@ this codebase is afraid of.
 | [`design-cache-keys.test.ts`](../../tests/design-cache-keys.test.ts) | An axis that changes a pixel and is missing from the key that pixel is filed under. |
 | [`styles.test.ts`](../../tests/styles.test.ts) | A blur, a `backdrop-filter`, a non-zero box-shadow blur radius, or a handwriting face set below 13px, anywhere in `src/styles/`. |
 | [`contrast.test.ts`](../../tests/contrast.test.ts) | A token pair that fails its contrast target, in each of the four UI themes, without needing a browser. |
+| [`control-contrast.test.ts`](../../tests/control-contrast.test.ts) | The other direction: not the pairs somebody thought to list, but every colour-on-ground the stylesheets actually declare, measured across every room the appearance settings can build. The tour's own "next" button sat at 1.05:1 in one of them. |
 | [`brand-consistency.test.ts`](../../tests/brand-consistency.test.ts) | A surface that disagrees with `brand.json`. Renaming the app is a scavenger hunt across the tree in four languages, and this is what makes it one command instead. |
 | [`readme.test.ts`](../../tests/readme.test.ts) | A broken relative link or a stale number in this document. |
 | [`script/spec-generated.test.ts`](../../tests/script/spec-generated.test.ts) | A checked-in AI spec that no longer regenerates, or a vocabulary the parser does not implement. |
@@ -1023,6 +1026,7 @@ this codebase is afraid of.
 | [`taste-onboarding.test.ts`](../../tests/taste-onboarding.test.ts) | An onboarding answer pointing into a vocabulary at an id that silently resolves to the house default. |
 | [`spine-resolution.test.ts`](../../tests/spine-resolution.test.ts) | Bake scales that are world-px rather than device-px, which is what made books look low-res on a scaled display. |
 | [`bookshelf.test.ts`](../../tests/bookshelf.test.ts) | Camera math, virtualizer windowing diffs, LOD hysteresis, and the shelf-life data layer. |
+| [`name-plate.test.ts`](../../tests/name-plate.test.ts) | The inline name box covering the book it names — the reason a brand-new book read as a white slab twice. The geometry had to leave `BookshelfWorld.tsx` before node could see it, so half the file keeps it out. |
 
 ### The editor and the pages
 
@@ -1035,6 +1039,7 @@ this codebase is afraid of.
 | [`effects.test.ts`](../../tests/effects.test.ts) | A script container name with no registered node, and block-effect attributes that do not survive the real schema. |
 | [`pagination.test.ts`](../../tests/pagination.test.ts) | An overflow computation that peels the wrong blocks, or peels the last one. |
 | [`spread.test.ts`](../../tests/spread.test.ts) | Ord↔spread math, the six-id window handed to the flip surface, and the auto-create rule. |
+| [`spread-fit.test.ts`](../../tests/spread-fit.test.ts) | Correct fit arithmetic wired to nothing — or wired to the wrong number, which is what walked an open book off the right of the window when a rail panel opened. |
 | [`selection-toolbar.test.ts`](../../tests/selection-toolbar.test.ts) | The plugin-view card that follows a selection, which lives on `document.body` for reasons its own header states. |
 | [`table-sort.test.ts`](../../tests/table-sort.test.ts) | Header-click sorting, at each of the three layers it can fail at. |
 | [`backlinks.test.ts`](../../tests/backlinks.test.ts) | A page that links to another not being findable from the other end. |
@@ -1075,6 +1080,7 @@ this codebase is afraid of.
 | [`transfer.test.ts`](../../tests/transfer.test.ts) | Bundle format, the ZIP codec, export scoping, the import conflict matrix, restore-point retention. |
 | [`transfer-bookcases.test.ts`](../../tests/transfer-bookcases.test.ts) | The database half of transfer — snapshot, apply, revert. |
 | [`tutorial.test.ts`](../../tests/tutorial.test.ts) | The guided tour's pure surfaces (the overlay itself needs a DOM, which is not installed). |
+| [`tutorial-surfaces.test.ts`](../../tests/tutorial-surfaces.test.ts) | The same tour against a document — [`tests/support/fakeDom.ts`](../../tests/support/fakeDom.ts), a selector matcher rather than a DOM. A surface missing from the dismiss list outlives its step and its scrim then eats the gesture the next step waits for. |
 | [`sound.test.ts`](../../tests/sound.test.ts) | The generated WAVs themselves, plus engine routing, rotation and character. |
 | [`sound-sets.test.ts`](../../tests/sound-sets.test.ts) | Three already-shipped failures in the named sound sets and their persisted choice. |
 | [`sound-voicing.test.ts`](../../tests/sound-voicing.test.ts) | The level a cue starts at — the bug that turned a tap into "jittery sand paper" about twice in three clicks. Measured off the app's real Web Audio output by `shots-now/sound-grit.mjs`. |
@@ -1109,7 +1115,7 @@ using it.
 
 ### Probes
 
-<!--f:probeScripts-->34<!--/f--> scripts under [`scripts/`](../../scripts/) named
+<!--f:probeScripts-->35<!--/f--> scripts under [`scripts/`](../../scripts/) named
 `probe-*.mjs` drive the running app with Playwright. The important three:
 
 - [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice
@@ -1230,10 +1236,12 @@ Read the relevant one **before** working in its area.
 | [`generated-assets.md`](../design/generated-assets.md) | ⚠️ Superseded (runtime) | No generated asset ships. The local ComfyUI setup is still a usable authoring tool, which is why it is kept. |
 
 [`docs/ROADMAP-wave2.md`](../ROADMAP-wave2.md) tracks the customization and
-quality-of-life features and their ownership. [`docs/e2e.md`](../e2e.md) and
-[`docs/packaging-icons.md`](../packaging-icons.md) are operational rather than
-architectural, and both are worth reading before their first red run.
+quality-of-life features and their ownership. [`docs/e2e.md`](../e2e.md),
+[`docs/packaging-icons.md`](../packaging-icons.md) and
+[`docs/packaging-mac-linux.md`](../packaging-mac-linux.md) are operational rather
+than architectural, and all three are worth reading before their first red run.
 
+<!--lift: releasing-->
 ## Building and releasing
 <!--nav: The bundle artefacts, the icon pipeline, and the tag-driven release workflow-->
 
@@ -1246,12 +1254,18 @@ npm run tauri build    # the above, then the Rust bundle
 
 | Artefact | Notes |
 |---|---|
-| `Alcove_<version>_x64-setup.exe` | NSIS. `installMode: currentUser`, so installing needs no administrator prompt. |
+| `Alcove_<version>_x64-setup.exe` | NSIS, and the one a reader downloads. `installMode: currentUser`, so installing needs no administrator prompt. |
 | `Alcove_<version>_x64_en-US.msi` | WiX. For policy deployment. |
 | `alcove.exe` | The app itself, with the icon group compiled in by `tauri_winres`. |
 
-`bundle.targets` is `"all"`, so the target list follows the host platform; on
-Windows that is the two installers above.
+`bundle.targets` is `"all"`, so the target list follows the host platform: on
+Windows the two installers above, on macOS a `.app` and a `.dmg`, on Linux a
+`.deb`, an `.rpm` and an `.AppImage`. CI builds all three — see
+[Releases](#releases). The version in those filenames comes
+from `package.json`, and `src-tauri/tauri.conf.json` has to carry the same one —
+`scripts/gen-readme.mjs` refuses to compose the front page when the two
+disagree, because the badge is written from the first and the filename from the
+second.
 
 ### The icon pipeline
 
@@ -1261,9 +1275,10 @@ for the app's interior — that is [`assets/brand/icon.svg`](../../assets/brand/
 and confusing the two will send you the wrong way.
 
 ```bash
-python scripts/gen-icons.py             # every PNG size, the .ico and the .icns
-python scripts/gen-icons.py --ico-only  # repack just icon.ico
-python scripts/gen-icons.py --check     # audit the committed .ico, exit 1 if bad
+python scripts/gen-icons.py              # every PNG size, the .ico and the .icns
+python scripts/gen-icons.py --ico-only   # repack just icon.ico
+python scripts/gen-icons.py --icns-only  # repack just icon.icns
+python scripts/gen-icons.py --check      # audit both containers, exit 1 if bad
 ```
 
 [`scripts/gen-icons.py`](../../scripts/gen-icons.py) does two things a plain resize does
@@ -1276,8 +1291,10 @@ replaced). And it **treats small sizes differently** — straight-downscaled to
 below `SMALL_AT` crops past the scene onto the book, lifts brightness and
 contrast, and re-applies a rounded mask.
 
-It also writes the `.ico` container by hand, because Pillow's encoder
-PNG-compresses every frame and always writes `wPlanes = 0`.
+It also writes **both** OS containers by hand, `icon.ico` and `icon.icns`,
+because the frame set is a decision and a library that takes one image and
+downscales it cannot express it. For the `.ico` that is because Pillow's encoder
+PNG-compresses every frame and always writes `wPlanes = 0`;
 [`docs/packaging-icons.md`](../packaging-icons.md) is the long version, and it
 is worth reading before touching any of this: `tauri_winres` quietly repairs
 `wPlanes` for the app exe and **NSIS does not**, so the installer once shipped a
@@ -1285,32 +1302,67 @@ worse icon directory than the app did. That document also records, honestly, tha
 the defects it found were *not* the cause of the symptom that prompted the
 investigation.
 
+The `.icns` was added when CI grew a macOS build, and it was added because of
+what that build would otherwise have shipped: the container had been generated
+once by the Tauri CLI and never again, so it still carried the artwork from two
+renames ago — 75/255 mean absolute difference from the master, a different
+picture rather than a stale encode. `--check` now compares the largest `.icns`
+frame against the master, so *old* fails as loudly as *malformed*.
+[`docs/packaging-mac-linux.md`](../packaging-mac-linux.md) has the frame set, the
+run-length encoding, and how the encoder was verified without a Mac to hand.
+
 > [!NOTE]
-> `npx @tauri-apps/cli icon` regenerates the PNGs as plain downscales and clobbers
-> the close-crops, so it must run **before** `scripts/gen-icons.py`, never after.
+> `npx @tauri-apps/cli icon` is no longer part of the pipeline — this one script
+> writes every icon `bundle.icon` names. If you ever do run it, run it **before**
+> `scripts/gen-icons.py`, never after: it regenerates the PNGs as plain
+> downscales and clobbers the close-crops.
 
 ### Releases
 
-Tag-driven. [`.github/workflows/release.yml`](../../.github/workflows/release.yml) runs
-on `windows-latest` whenever a `v*` tag is pushed (or on manual dispatch with a
-tag). It checks out with full history so the changelog can diff, typechecks, runs
-`npx vitest run`, builds with `npm run tauri build`, generates notes with
-[`scripts/release-notes.mjs`](../../scripts/release-notes.mjs) by diffing against the
-previous tag, and publishes a GitHub Release with **both** installers attached
-(`bundle/nsis/*-setup.exe` and `bundle/msi/*.msi`). A tag containing `-` is
-published as a prerelease.
+Tag-driven, and now on all three platforms.
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) fires when a
+`v*` tag is pushed, or on manual dispatch against a tag that already exists. It
+is three jobs rather than one matrix:
 
-Two honest edges: the release is titled `Notebook <tag>`, which is a leftover from
-an earlier name and does not match `productName` in
-[`src-tauri/tauri.conf.json`](../../src-tauri/tauri.conf.json); and no tag has ever been
-pushed, so nothing about this job has run in anger.
+| Job | Runner | What it does |
+|---|---|---|
+| `gates` | `ubuntu-latest` | `tsc --noEmit`, `vitest run`, `spec:check`, `readme:check`, `gen-icons.py --check` |
+| `build` ×3 | `windows-latest`, `macos-15`, `ubuntu-22.04` | the bundle, and nothing else |
+| `release` | `ubuntu-latest` | notes, `SHA256SUMS.txt`, one GitHub Release |
+
+**The gates run once.** None of them can fail differently on a different
+operating system, so running them on all three runners would triple their cost
+and buy three copies of the same red X — and putting them *before* the matrix
+means a typo fails in two minutes rather than after three parallel Rust builds.
+`build` is `fail-fast: false` so one broken platform still reports on the other
+two; `release` needs all three, so a partial matrix never publishes with a
+platform quietly missing.
+
+macOS builds **one universal `.dmg`** carrying both arm64 and x86_64
+(`--target universal-apple-darwin` on an Apple-silicon runner), rather than
+making the reader choose. Linux builds on `ubuntu-22.04` deliberately: a `.deb`
+and an AppImage link against the builder's glibc, so building on 24.04 would
+produce packages that refuse to start on 22.04.
+[`docs/packaging-mac-linux.md`](../packaging-mac-linux.md) is the operational
+document — the system packages Linux needs and why each one, what a first run
+should produce, and what to check when it does.
+
+Notes come from [`scripts/release-notes.mjs`](../../scripts/release-notes.mjs) by
+diffing against the previous tag. A tag containing `-` publishes as a prerelease.
+
+Three honest edges. **Nothing is signed** on any platform, so Windows shows a
+SmartScreen warning and macOS quarantines the first launch — which is why the
+release carries checksums. **No tag has ever been pushed**, so nothing about any
+of this has run in anger and the artefact filenames in that document are
+predictions from the bundler's naming rules rather than observations. And it is
+still the *only* workflow: it fires on tags, so nothing runs `tsc` or `vitest` on
+an ordinary push.
 
 > [!NOTE]
-> That is the *only* workflow, and it fires on tags — nothing runs `tsc` or
-> `vitest` on an ordinary push. There is consequently no CI badge to display yet;
-> the four checks above are run locally, and again inside the release job. Wiring
-> a push-triggered workflow is the prerequisite for earning that badge, not the
-> other way round.
+> There is consequently no CI badge to display yet. The gates run locally, and
+> again at the tag — not on every commit. Wiring a push-triggered workflow is the
+> prerequisite for earning that badge, not the other way round.
+<!--/lift-->
 
 ## The generated artefacts
 <!--nav: The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails-->
@@ -1323,7 +1375,7 @@ guarantee — the rest are covered indirectly, or not at all.
 | Generator | Writes | Verified by |
 |---|---|---|
 | [`gen-spec.mjs`](../../scripts/gen-spec.mjs) | the AI-facing Notebook Script spec, twice (Tauri resource + inlined TS) | `npm run spec:check`, and `tests/script/spec-generated.test.ts` — fails on a forgotten regeneration |
-| [`gen-readme.mjs`](../../scripts/gen-readme.mjs) | the front page's two navigation tables, composed from the `<!--nav: …-->` marker beside each `##` heading in these halves | `npm run readme:check`, and `tests/readme.test.ts` — fails on a forgotten regeneration, and resolves every `#fragment` besides |
+| [`gen-readme.mjs`](../../scripts/gen-readme.mjs) | the front page's body — the badge strip and download table from `package.json`, whole sections lifted out of these halves with their links retargeted, and a navigation table of only what it did not lift | `npm run readme:check`, and `tests/readme.test.ts` — fails on a forgotten regeneration or a hand-edited lift, and resolves every `#fragment` besides |
 | [`gen-tints.mjs`](../../scripts/gen-tints.mjs) | the tint rules in `effects.css` | `tests/catalogue-reach.test.ts` (reachability, not regeneration) |
 | [`gen-underlines.mjs`](../../scripts/gen-underlines.mjs) | the underline rules | as above |
 | [`gen-lettering.mjs`](../../scripts/gen-lettering.mjs) | the hand / ink / size / ranging rules | as above, plus the 13px floor in `tests/styles.test.ts` |
@@ -1357,8 +1409,8 @@ Two mechanisms, both with a failing check rather than just a writer:
   values. It resolves every relative link **from the directory of the file
   the link is written in**, which is what a browser does, so the front door's
   root-relative paths and the halves' `../../` paths are each checked the way
-  their reader will follow them. And it rebuilds the front page's navigation
-  from these halves and fails if the checked-in copy differs.
+  their reader will follow them. And it rebuilds every generated region of all
+  three pages and fails if a checked-in copy differs.
   [`tests/readme.test.ts`](../../tests/readme.test.ts) is the actual gate: it supplies
   the counts that need TypeScript loaded, so a vocabulary that grows and a README
   that says otherwise is a failing test. It also checks that the deferred-key list
@@ -1366,22 +1418,33 @@ Two mechanisms, both with a failing check rather than just a writer:
   forgets is a number nobody verifies.
 
   The third of those is newer than the other two and exists because the front
-  page rotted exactly once. The README is **three pages, not one file**, and
-  that is load-bearing rather than cosmetic: these halves write most of their
-  relative links as `../../src/…`, which resolve from `docs/readme/` and would
-  404 from the repo root, and *both* halves carry a `## Notebook Script`
-  section, which would collide into `#notebook-script` and `#notebook-script-1`
-  the moment they shared a page. Concatenating the halves into the front page is
-  therefore not a formatting choice — it breaks every link in this half. But the
-  front page's body *is* navigation into them, one row per section, and those
-  rows were typed by hand and drifted. So they are no longer typed:
-  [`scripts/gen-readme.mjs`](../../scripts/gen-readme.mjs) composes them from an
-  invisible `<!--nav: …-->` summary written directly under each `##` heading
-  here, `npm run readme:build` rewrites them, and `--check` fails when they
-  drift. Rename a section and the row follows it; add one without a summary and
-  the build stops and names the line. It also resolves every `#fragment` against
-  the real headings of the file it points into — the one thing the link checker
-  above cannot see, because it splits the fragment off and stats the file.
+  page rotted exactly once, as a signpost: two tables of anchor links, typed by
+  hand, one row per section. Rename a heading and the row still rendered, still
+  looked right, and landed the reader at the top of the page — and
+  `checkLinks()` could not see it, because it splits `#` off and stats the file.
+  So nothing on the front page is typed twice any more.
+  [`scripts/gen-readme.mjs`](../../scripts/gen-readme.mjs) **lifts** whole runs of
+  sections out of these halves — a half wraps them in `<!--lift: name-->` and
+  the front page places `<!-- gen:lift-name -->` where it wants them — and
+  composes the remaining navigation from the invisible `<!--nav: …-->` summary
+  written under each `##` heading here, listing only the sections it did *not*
+  lift. The version on the badge and the filenames in the download table are
+  composed the same way, from `package.json`.
+
+  Lifting is what a naive concatenation could never be. These halves write most
+  of their relative links as `../../src/…`, which resolve from `docs/readme/`
+  and would 404 from the repo root; pasting a half into the front page breaks
+  every one of them *silently*, because the link checker resolves each link from
+  the directory of the file it is written in and would go on passing. So the
+  lift retargets every relative link through `path.posix.join`, leaves fenced
+  and inline code alone, and resolves bare `#fragment` links against the front
+  page's own headings — keeping the ones whose heading came with the text and
+  pointing the rest back here. And because *both* halves carry a
+  `## Notebook Script` section, which would collide into `#notebook-script` and
+  `#notebook-script-1` the moment they shared a page, the composer refuses to
+  build a front page with two headings that slug the same way and names both
+  lines. It also resolves every `#fragment` on all three pages against the real
+  headings of the file it points into.
 
 Every number on these three pages and every relative link on them is a
 measurement, not a claim. If you write a new one, wrap it in a marker and
@@ -1399,6 +1462,7 @@ by hand is the entire value.
 > constraints; the README tells the story once and links to the enforcement.
 > Duplicating one into the other makes both worse.
 
+<!--lift: nongoals-->
 ## Non-goals
 <!--nav: No sync, no cloud, no mobile, no plugin API, no second visual language, no light model-->
 
@@ -1411,8 +1475,8 @@ by hand is the entire value.
 - **No mobile, no web build.** Touch, small viewports and a shelf you cannot
   hover are three separate redesigns, not a media query. The browser dev server
   is a test harness, not a product.
-- **No plugin API.** The vocabularies are extended by editing them; see the
-  end-to-end walk above.
+- **No plugin API.** The vocabularies are extended by editing them; see
+  [Adding a value, end to end](#adding-a-value-end-to-end).
 - **No collaborative editing.** ProseMirror could support it; the storage model,
   the pagination contract and the whole single-reader framing do not.
 - **No second visual language.** One flat vocabulary, one ink colour, one small
@@ -1420,7 +1484,9 @@ by hand is the entire value.
 - **No light model.** Flat colour, one ink colour on everything, rounded corners,
   edges that bow, and `contactShadow()` where an object meets a surface. Gradients
   are fine; a highlight placed to imply a lamp is not.
+<!--/lift-->
 
+<!--lift: credits-->
 ## Licence and credits
 <!--nav: MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable-->
 
@@ -1452,7 +1518,9 @@ mark to match the app, and do not add rendering to the app to match the mark.
 [`src/editor/solid/`](../../src/editor/solid/) based on `@vrite/tiptap-solid` (MIT),
 PixiJS (MIT), GSAP (standard licence, all plugins free), Howler (MIT), lowlight
 and the `highlight.js` grammars (BSD-3-Clause / MIT), Tauri (MIT/Apache-2.0).
-`roughjs` (MIT) is in `package.json` but nothing imports it — see the stack table.
+`roughjs` (MIT) is in `package.json` but nothing imports it — see
+[the stack table](#the-stack-and-why-each-piece-is-here).
+<!--/lift-->
 
 ---
 

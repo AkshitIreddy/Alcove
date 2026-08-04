@@ -26,6 +26,9 @@
  * opens — so root-relative resolution was passing every link in `docs/readme/`
  * while every one of them 404'd for that reader, including the screenshots.
  *
+ * The same treatment is given to the SCREENSHOTS, for the same reason and after
+ * the same failure — see {@link checkShots} and `docs/readme/img/shots.json`.
+ *
  * Usage:
  *   node scripts/check-readme.mjs            check, exit 1 on any drift
  *   node scripts/check-readme.mjs --facts    print every computed fact
@@ -35,6 +38,7 @@
  * simply import those modules. It calls the functions below for everything
  * else, so `npx vitest run` is the gate and this script is the convenience.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -289,6 +293,307 @@ export function checkLinks(docs = readmeDocs()) {
   return { checked, problems };
 }
 
+/* ------------------------------ the screenshots -------------------------- */
+
+/*
+ * Everything below exists because the README's thirteen screenshots went stale
+ * the way only pictures can: silently, and all at once.
+ *
+ * The reader's report was "picture in readme uses old name and pic, also some
+ * of the other pictures in it are outdated". Every shot in `docs/readme/img/`
+ * predated the rename to Alcove — the banner said *Bellanote* over the old blue
+ * mark, the open spread was headed "Welcome to Bellanote", the tree diagram had
+ * Bellanote at its root — and the shelf shots predated the day the opening room
+ * moved off verdigris. Nothing in the repo could tell: a PNG is a PNG, its
+ * bytes are valid, its link resolves, and `checkLinks()` above was perfectly
+ * happy the whole time.
+ *
+ * The fix is the same shape as the fact markers: write down what the picture
+ * SHOWS, then recompute it. `shots-now/readme-shots.mjs` captures all thirteen
+ * in one run and records, in `docs/readme/img/shots.json`, the app it
+ * photographed (product name and version), the commit it stood on, a digest of
+ * every file whose CONTENT is in shot, and the identity strings the pictures
+ * literally spell out. When any of that stops matching the tree, the shots are
+ * older than what they claim to depict and the suite says so.
+ *
+ * Three deliberate non-choices, because each was the obvious first idea:
+ *
+ *  - **not mtimes.** "Fail when the PNG is older than the source" is what this
+ *    wants to mean, but a checkout, a rebase and a `git clean` all rewrite
+ *    mtimes in whatever order the filesystem felt like, so it fails for
+ *    everybody at random and nobody trusts it a week later.
+ *  - **not `commit === HEAD`.** The manifest records the commit for provenance
+ *    and every failure message prints it, but comparing it to HEAD would go red
+ *    on the very next commit — a check that is red by default is a check that
+ *    gets deleted. What is compared is the handful of things that make a
+ *    picture a LIE, not the fact that the repo moved on.
+ *  - **not a digest of `src/art/`.** The drawing vocabularies change most
+ *    weeks and a shelf photograph survives nearly all of it. What ages a shelf
+ *    photograph is the room it opens in CHANGING, so the four default ids are
+ *    recorded instead — the exact thing that happened when verdigris lost the
+ *    slot to lapis.
+ *
+ * One more failure this could not see, added after it happened: a recapture
+ * where the library studio's sheet was still off-screen on its tween when the
+ * shutter went, so `studio.png` came out as the shelf with no panel on it —
+ * byte for byte the same file as `shelf.png`, taken seconds earlier. Everything
+ * above was perfectly happy: the app was Alcove 0.1.0, the room was the default
+ * one, the manifest recorded the shot's own digest, and that digest matched.
+ * The cause is fixed at the capture end — `onScreen()` in
+ * `shots-now/readme-shots.mjs` now waits for the sheet's left edge to be inside
+ * the window rather than trusting Playwright's `visible`, which a sheet parked
+ * off-canvas satisfies. This is the other end of it, and worth having on its
+ * own: two shots with two different captions cannot both be the same picture,
+ * whatever went wrong upstream to make them one. {@link checkShots} therefore
+ * compares the pictures to EACH OTHER as well as to the tree.
+ */
+
+/** Where the capture script writes what it photographed. */
+export const SHOTS_MANIFEST = 'docs/readme/img/shots.json';
+
+/** The directory the README's pictures live in. */
+export const SHOTS_DIR = 'docs/readme/img';
+
+/**
+ * A PNG smaller than this did not photograph an application.
+ *
+ * The brief for the recapture said a half-loaded shot is worse than the stale
+ * one it replaced, and the cheapest signature of one is its size: the app's
+ * screens compress to 120–560 kB, while a cream rectangle with nothing on it
+ * lands around 15 kB. This is not a quality bar — it is the floor under
+ * "something went wrong and the file was written anyway".
+ */
+export const MIN_SHOT_BYTES = 40_000;
+
+/**
+ * Files whose CONTENT is inside a picture, and which picture.
+ *
+ * Kept to things that are literally visible: the banner is a render of one HTML
+ * file and one image, so those two age it and nothing else does. A shot with no
+ * entry here is still gated — by the app identity and the depicted strings
+ * below, which apply to all of them.
+ */
+export const SHOT_SOURCES = {
+  'hero.png': ['shots-now/readme-hero.html', 'assets/brand/alcove-art.png'],
+};
+
+/**
+ * Identity the pictures spell out in words, deferred to `tests/readme.test.ts`
+ * for the same reason {@link DEFERRED_FACTS} is: reading these means loading
+ * TypeScript, and a vitest file can simply import the modules.
+ *
+ * These are the five things whose change made the last set of shots wrong: the
+ * title written across the open spread and drawn into the root of the tree
+ * diagram, and the four ids that decide what an untouched bookcase and the wall
+ * behind it look like on the day somebody opens the app.
+ */
+export const DEPICTED_KEYS = [
+  'welcomeTitle',
+  'defaultTheme',
+  'defaultBuild',
+  'defaultPattern',
+  'defaultWallpaper',
+];
+
+/** First 16 hex of the sha256 of a repo-relative file. Short enough to read. */
+export function digestOf(rel) {
+  return createHash('sha256').update(readFileSync(join(ROOT, rel))).digest('hex').slice(0, 16);
+}
+
+/** Every path any shot declares a source, digested — the recorded shape. */
+export function sourceDigests() {
+  const out = {};
+  for (const paths of Object.values(SHOT_SOURCES)) {
+    for (const rel of paths) out[rel] = digestOf(rel);
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/**
+ * The app as the shots would have photographed it: the name on the window and
+ * the version in package.json. The rename is exactly what the old shots got
+ * wrong, and the version is what makes a release recapture them.
+ */
+export function appIdentity() {
+  const tauri = JSON.parse(readFileSync(join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  return { product: String(tauri.productName), version: String(pkg.version) };
+}
+
+/** Every screenshot on disk, as bare file names, sorted. */
+export function shotFiles() {
+  try {
+    return readdirSync(join(ROOT, SHOTS_DIR))
+      .filter((n) => n.endsWith('.png'))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** `{ bytes, sha256, width, height }` for one shot, read off the file itself. */
+export function measureShot(file) {
+  const buf = readFileSync(join(ROOT, SHOTS_DIR, file));
+  // IHDR is the first chunk of every PNG: 8-byte signature, 4-byte length,
+  // 4-byte type, then width and height as big-endian uint32.
+  const png = buf.length > 24 && buf.readUInt32BE(12) === 0x49484452;
+  return {
+    bytes: buf.length,
+    sha256: createHash('sha256').update(buf).digest('hex').slice(0, 16),
+    width: png ? buf.readUInt32BE(16) : 0,
+    height: png ? buf.readUInt32BE(20) : 0,
+  };
+}
+
+/** The manifest as written, or null if it is missing or unreadable. */
+export function readShotsManifest() {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, SHOTS_MANIFEST), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare `docs/readme/img/shots.json` against the tree.
+ *
+ * `depicted` carries the values from {@link DEPICTED_KEYS} that only a
+ * TypeScript import can supply; anything missing from it is counted as deferred
+ * rather than failed, so the CLI stays runnable on its own and
+ * `tests/readme.test.ts` is where those become a gate.
+ */
+export function checkShots(depicted = {}) {
+  const problems = [];
+  const manifest = readShotsManifest();
+  if (manifest === null) {
+    return {
+      checked: 0,
+      deferred: 0,
+      problems: [`${SHOTS_MANIFEST} is missing or unreadable — run 'node shots-now/readme-shots.mjs'`],
+    };
+  }
+
+  /*
+   * Provenance is quoted, never compared. The manifest records the commit each
+   * shot was taken at and every failure below prints it, so the fix is always
+   * "here is how old this picture is and what has moved since" — but comparing
+   * it to HEAD would go red on the very next commit, and a check that is red by
+   * default is a check somebody deletes.
+   */
+  const at = (entry) => (entry?.commit ? ` (taken at ${entry.commit})` : '');
+  const from = at(manifest.commit?.short ? { commit: manifest.commit.short } : null);
+  const stale = (what, entry) =>
+    problems.push(
+      `${what}${entry ? at(entry) : from} — recapture with ` +
+        "'node shots-now/readme-shots.mjs' (needs 'npm run dev')",
+    );
+
+  /* 1. the app in the picture */
+  const app = appIdentity();
+  const shotApp = manifest.app ?? {};
+  if (shotApp.product !== app.product) {
+    stale(`shots were taken of '${shotApp.product}', this app is called '${app.product}'`);
+  }
+  if (shotApp.version !== app.version) {
+    stale(`shots are of version ${shotApp.version}, package.json says ${app.version}`);
+  }
+
+  /* 2. the strings the pictures spell out */
+  let deferred = 0;
+  const shown = manifest.depicts ?? {};
+  for (const key of DEPICTED_KEYS) {
+    if (!(key in shown)) {
+      problems.push(`${SHOTS_MANIFEST} records no '${key}' — the manifest predates this check`);
+      continue;
+    }
+    if (!(key in depicted)) {
+      deferred += 1;
+      continue;
+    }
+    if (String(shown[key]) !== String(depicted[key])) {
+      stale(`shots show ${key} '${shown[key]}', the tree says '${depicted[key]}'`);
+    }
+  }
+  for (const key of Object.keys(shown)) {
+    if (!DEPICTED_KEYS.includes(key)) {
+      problems.push(`${SHOTS_MANIFEST} records '${key}', which nothing checks`);
+    }
+  }
+
+  /* 3. the files whose content is in shot */
+  const digests = sourceDigests();
+  const recorded = manifest.sources ?? {};
+  for (const [rel, digest] of Object.entries(digests)) {
+    if (!(rel in recorded)) {
+      problems.push(`${SHOTS_MANIFEST} records no digest for ${rel}`);
+    } else if (recorded[rel] !== digest) {
+      stale(`${rel} has changed since the shot that draws it was taken`);
+    }
+  }
+  for (const rel of Object.keys(recorded)) {
+    if (!(rel in digests)) {
+      problems.push(`${SHOTS_MANIFEST} records ${rel}, which no shot declares a source`);
+    }
+  }
+
+  /* 4. the pictures themselves */
+  const listed = new Map((manifest.shots ?? []).map((s) => [s.file, s]));
+  const onDisk = shotFiles();
+  let checked = 0;
+  /*
+   * Every shot has its own caption in `docs/readme/part-1-users.md`, so no two
+   * of them can honestly be the same image. When they are, a capture step did
+   * not reach the state it was aiming at and photographed the previous one
+   * again — which is how a `studio.png` with no studio in it got past every
+   * other check on this page. Keyed by content, so it catches the pair
+   * regardless of which one of them was the accident.
+   */
+  const byPicture = new Map();
+  for (const file of onDisk) {
+    const entry = listed.get(file);
+    if (entry === undefined) {
+      problems.push(`${SHOTS_DIR}/${file} is not in the manifest — nothing knows how old it is`);
+      continue;
+    }
+    checked += 1;
+    if (!entry.commit || !entry.at) {
+      problems.push(`${SHOTS_MANIFEST} says nothing about when ${file} was taken`);
+    }
+    const now = measureShot(file);
+    if (now.bytes < MIN_SHOT_BYTES) {
+      problems.push(
+        `${SHOTS_DIR}/${file} is ${now.bytes} bytes — under ${MIN_SHOT_BYTES}, ` +
+          'which is a blank or half-loaded capture, not a screenshot',
+      );
+    }
+    const twin = byPicture.get(now.sha256);
+    if (twin === undefined) byPicture.set(now.sha256, file);
+    else {
+      problems.push(
+        `${SHOTS_DIR}/${file} and ${SHOTS_DIR}/${twin} are the same picture, byte for ` +
+          'byte — one of the two never reached the state its caption describes',
+      );
+    }
+    if (entry.sha256 !== now.sha256) {
+      stale(`${SHOTS_DIR}/${file} was edited after it was recorded`, entry);
+    }
+    if (entry.width !== now.width || entry.height !== now.height) {
+      problems.push(
+        `${SHOTS_DIR}/${file} is ${now.width}×${now.height}, the manifest says ` +
+          `${entry.width}×${entry.height}`,
+      );
+    }
+  }
+  for (const file of listed.keys()) {
+    if (!onDisk.includes(file)) problems.push(`${SHOTS_MANIFEST} lists ${file}, which is gone`);
+  }
+  for (const file of Object.keys(SHOT_SOURCES)) {
+    if (!listed.has(file)) problems.push(`SHOT_SOURCES names ${file}, which is not a shot`);
+  }
+
+  return { checked, deferred, problems };
+}
+
 /* --------------------------------- the CLI ------------------------------- */
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -304,12 +609,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   const links = checkLinks(docs);
   const marks = checkFacts(facts, docs);
-  const problems = [...links.problems, ...marks.problems];
+  const shots = checkShots();
+  const problems = [...links.problems, ...marks.problems, ...shots.problems];
   for (const p of problems) console.error(`  ${p}`);
   console.log(
     `check-readme: ${docs.length} file(s), ${links.checked} relative link(s), ` +
-      `${marks.checked} fact marker(s) checked, ${marks.deferred} deferred to ` +
-      `tests/readme.test.ts, ${problems.length} problem(s)`,
+      `${marks.checked} fact marker(s) and ${shots.checked} screenshot(s) checked, ` +
+      `${marks.deferred + shots.deferred} deferred to tests/readme.test.ts, ` +
+      `${problems.length} problem(s)`,
   );
   process.exit(problems.length === 0 ? 0 : 1);
 }

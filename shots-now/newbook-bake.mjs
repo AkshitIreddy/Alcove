@@ -132,8 +132,20 @@ await named.waitFor({ state: 'visible', timeout: 20_000 });
  * "the new book is white" — and it was not the spine. The inline title editor
  * is cream, and it used to be sized to the WHOLE spine (`max(rect.height, 132)`
  * long by the spine's full width), so the object standing on the plank the
- * instant a book was made was a white rectangle. It has to read as a label
- * plate ON a book, which means the book's own colour has to be left showing.
+ * instant a book was made was a white rectangle.
+ *
+ * This check used to be `box.height / spine.height > 0.8`, and it is why the
+ * SECOND report — *"a brand-new book still reads as a blank white slab"* —
+ * got past it. Two things were wrong with it. It measured one axis: the fix
+ * that shipped shortened the plate to 62% of the spine's LENGTH and left it
+ * at 100% of its WIDTH, which this called a pass. And 0.8 is not a rule
+ * anybody could defend — it is the number that happened to be above what the
+ * code did.
+ *
+ * The rule is that the editor does not stand on the book at all. Two boxes,
+ * no intersection, nothing to tune. `features/bookshelf/namePlate.ts` is
+ * where that is arranged and why; `shots-now/new-book-is-a-book.mjs` proves
+ * it in pixels rather than in DOM rects.
  */
 await dismissTour('the naming plate');
 // The new spine slides in from the right; photograph it where it lands.
@@ -145,18 +157,28 @@ const plate = await p.evaluate(() => {
   const fresh = books[books.length - 1];
   const spine = fresh === undefined ? null : globalThis.__shelfSpineRect(fresh.id);
   if (el === null || spine === null) return null;
+  // getBoundingClientRect already reports the transformed box, so this stays
+  // true whatever the editor is rotated by.
   const box = el.getBoundingClientRect();
-  // The editor is rotated -90°, so its on-screen height is what covers the
-  // spine's height. getBoundingClientRect already reports the rotated box.
-  return { covers: box.height / spine.height, spineH: spine.height };
+  const overlapW = Math.min(box.right, spine.x + spine.width) - Math.max(box.left, spine.x);
+  const overlapH = Math.min(box.bottom, spine.y + spine.height) - Math.max(box.top, spine.y);
+  return {
+    spine: `${spine.width.toFixed(0)}x${spine.height.toFixed(0)}`,
+    plate: `${box.width.toFixed(0)}x${box.height.toFixed(0)}`,
+    // Share of the SPINE the editor sits on. Zero, or the book is hidden.
+    overlap:
+      overlapW <= 0 || overlapH <= 0
+        ? 0
+        : (overlapW * overlapH) / (spine.width * spine.height),
+  };
 });
 console.log('  naming plate:', JSON.stringify(plate));
 if (plate === null) {
   fails.push('could not measure the naming plate against the spine it stands on');
-} else if (plate.covers > 0.8) {
+} else if (plate.overlap > 0) {
   fails.push(
-    `the naming plate covers ${(plate.covers * 100).toFixed(0)}% of the new ` +
-      'spine — the book a reader just made reads as a white rectangle',
+    `the naming plate stands on ${(plate.overlap * 100).toFixed(0)}% of the new ` +
+      'spine — the book a reader just made is hidden under the box they name it in',
   );
 }
 

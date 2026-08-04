@@ -1,8 +1,26 @@
 name: Release
 
-# Builds the Windows installer and publishes a GitHub Release whenever a
-# version tag is pushed (e.g. `git tag v0.2.0 && git push origin v0.2.0`).
-# Nothing runs on ordinary pushes — tag when you actually want a release.
+# Builds the Tauri bundle on Windows, macOS and Linux and attaches every
+# artefact to one GitHub Release.
+#
+#     git tag v0.2.0 && git push origin v0.2.0
+#
+# Nothing runs on an ordinary push — tag when you actually want a release, or
+# dispatch this by hand against a tag that already exists.
+#
+# The shape is three jobs, not one matrix, and that is deliberate:
+#
+#   gates   — tsc, vitest, spec:check, readme:check and the icon audit, ONCE,
+#             on the cheapest runner. None of them can fail differently on a
+#             different operating system, so running them three times would buy
+#             nothing and cost the slowest runner in the matrix.
+#   build   — the three bundles, in parallel, each doing only what is
+#             platform-specific.
+#   release — one release, one set of notes, one checksum file.
+#
+# docs/packaging-mac-linux.md is the long version: what a first run is expected
+# to produce, and what to check when it does.
+
 on:
   push:
     tags:
@@ -12,41 +30,74 @@ on:
       tag:
         description: 'Existing tag to build (e.g. v0.2.0)'
         required: true
+      draft:
+        description: 'Publish as a draft rather than live'
+        type: boolean
+        default: false
 
+# Least privilege: only the job that publishes needs write.
 permissions:
-  contents: write
+  contents: read
+
+# Two runs against the same tag would race to create the same release. Queue
+# them instead of cancelling — a half-published release is worse than a slow one.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Pinned to the version this repository is actually developed and verified on.
+  # A release pipeline should build what somebody has run the tests against, not
+  # whatever is newest — and 20 is past its LTS window, so this is a deliberate
+  # one-line bump to make locally first and here second, never the other way
+  # round. The gates job runs the whole suite on it before anything is built.
+  NODE_VERSION: '20'
 
 jobs:
-  release:
-    runs-on: windows-latest
+  # ---------------------------------------------------------------------------
+  # Everything that is true regardless of which OS is going to build the bundle.
+  # ---------------------------------------------------------------------------
+  gates:
+    name: Gates (once)
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
+      # The tag arrives through env rather than being interpolated into the
+      # script. A workflow_dispatch input is attacker-controlled the moment
+      # anyone with write access is phished, and `${{ }}` inside a `run:` is
+      # textual substitution into a shell — env is not.
+      - name: Resolve the tag being released
+        id: resolve
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            v*) ;;
+            *) echo "::error::'$TAG' is not a version tag (expected v*)"; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG"
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-          fetch-depth: 0 # full history so the changelog can diff against the previous tag
+          ref: ${{ steps.resolve.outputs.ref }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
+          # Caches ~/.npm (the download cache), keyed on package-lock.json.
+          # NOT node_modules — `npm ci` deletes that directory before it
+          # installs, so caching it restores something that is immediately
+          # thrown away. The download cache is the part that saves the network.
           cache: npm
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --fund=false
 
       - name: Typecheck
         run: npx tsc --noEmit
@@ -54,25 +105,232 @@ jobs:
       - name: Unit tests
         run: npx vitest run
 
-      - name: Build installer
-        run: npm run tauri build
+      - name: Generated spec is current
+        run: npm run spec:check
+
+      - name: README is current
+        run: npm run readme:check
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      # This is the check that would have caught the reason this workflow
+      # exists. icon.icns had been generated once by the Tauri CLI and never
+      # again, so a macOS bundle would have shipped the artwork from two
+      # renames ago. --check parses icon.ico and icon.icns off disk and
+      # compares the largest .icns frame against assets/brand/alcove-art.png.
+      - name: Icons are well-formed and current
+        run: python scripts/gen-icons.py --check
+
+  # ---------------------------------------------------------------------------
+  # The bundles. Nothing here re-runs a gate.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.name }}
+    needs: gates
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # NSIS setup.exe + WiX MSI. `installMode: currentUser`, so installing
+          # asks for no administrator prompt.
+          - name: windows-x64
+            os: windows-latest
+            rust-targets: x86_64-pc-windows-msvc
+            tauri-args: ''
+            artefacts: |
+              src-tauri/target/release/bundle/nsis/*-setup.exe
+              src-tauri/target/release/bundle/msi/*.msi
+
+          # ONE universal .dmg carrying BOTH slices, not two downloads and not a
+          # choice the reader has to make. `--target universal-apple-darwin`
+          # builds aarch64-apple-darwin and x86_64-apple-darwin and lipos them
+          # into one binary, which is why both targets are installed below; the
+          # runner is Apple silicon and cross-builds the Intel slice from the
+          # same SDK. Output lands under target/universal-apple-darwin/release/,
+          # NOT target/release/ — that is the path mistake to avoid.
+          #
+          # macos-15 is the arm64 label (macos-15-intel is the x64 one, and
+          # macos-14 is deprecated). Any arm64 macOS runner works here, because
+          # nothing about the build depends on the host arch once both Rust
+          # targets are present.
+          - name: macos-universal
+            os: macos-15
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri-args: '--target universal-apple-darwin'
+            artefacts: |
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+          # 22.04 on purpose. The .deb and the AppImage are linked against the
+          # builder's glibc, so building on 24.04 (glibc 2.39) would produce a
+          # package that refuses to start on 22.04 (2.35). Build on the oldest
+          # runner you are willing to support, never the newest.
+          - name: linux-x64
+            os: ubuntu-22.04
+            rust-targets: x86_64-unknown-linux-gnu
+            tauri-args: ''
+            artefacts: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/rpm/*.rpm
+              src-tauri/target/release/bundle/appimage/*.AppImage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gates.outputs.ref }}
+
+      # Tauri 2 on Linux is a system-library build, and the packages below are
+      # not interchangeable guesses:
+      #
+      #   libwebkit2gtk-4.1-dev   the webview itself. Tauri *2* links 4.1;
+      #                           4.0 is the v1 series, and installing that by
+      #                           habit is the classic red Linux CI run.
+      #   libgtk-3-dev            window, native menus, file dialogs.
+      #   libayatana-appindicator3-dev
+      #                           the tray icon — src-tauri/src/tray.rs is not
+      #                           optional in this app, and without this the
+      #                           link step fails rather than degrading.
+      #   librsvg2-dev            rasterises the icon into the .desktop entry
+      #                           and the AppImage.
+      #   libxdo-dev              X11 input, wanted by plugin-global-shortcut.
+      #   libssl-dev              OpenSSL headers for the transitive TLS stack.
+      #   patchelf                the AppImage bundler rewrites RPATHs with it.
+      #   build-essential/curl/wget/file
+      #                           compiler, and the fetch+identify tools the
+      #                           AppImage bundler shells out to.
+      - name: Install Linux system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      # Caches ~/.cargo/{registry,git} and src-tauri/target, keyed on the
+      # lockfile and the exact rustc. A cold Tauri build is several hundred
+      # crates; warm, it is this crate and the link. `key` keeps the universal
+      # macOS target directory from colliding with anything else.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.name }}
+          cache-on-failure: true
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --fund=false
+
+      # `beforeBuildCommand` in tauri.conf.json runs `npm run build`, so the
+      # frontend (spec:check + vite build) is built here per runner. That is the
+      # one gate that does repeat across the matrix; it is seconds, and sharing
+      # dist/ between jobs would cost more in upload than it saves.
+      - name: Build the bundle
+        shell: bash
+        # NO_STRIP: binutils 2.38 on 22.04 strips the AppImage runtime in a way
+        # that breaks it. Harmless everywhere else, so it is set unconditionally
+        # rather than guarded, and can be dropped once that is no longer true.
+        env:
+          NO_STRIP: 'true'
+        run: npx tauri build ${{ matrix.tauri-args }}
+
+      # Diagnostic only — never the reason a build goes red, which is why it
+      # swallows its own exit code. The upload step below is what actually
+      # enforces that the files exist.
+      - name: Show what was bundled
+        shell: bash
+        run: find src-tauri/target -type d -name bundle -exec ls -lhR {} + || true
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: alcove-${{ matrix.name }}
+          path: ${{ matrix.artefacts }}
+          # Without this a glob that matches nothing uploads an empty artefact
+          # and the release publishes with a platform silently missing.
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # One release, assembled after all three bundles exist.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish release
+    needs: [gates, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gates.outputs.ref }}
+          # release-notes.mjs diffs this tag against the previous one, so it
+          # needs the tags and the history between them.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download every platform's artefacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artefacts
+          pattern: alcove-*
+          merge-multiple: true
 
       - name: Write release notes
-        id: notes
-        shell: bash
+        env:
+          TAG: ${{ needs.gates.outputs.tag }}
         run: |
-          node scripts/release-notes.mjs > RELEASE_NOTES.md
-          echo "Generated notes:"
+          node scripts/release-notes.mjs "$TAG" > RELEASE_NOTES.md
+          echo "--- notes ---"
           cat RELEASE_NOTES.md
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+      # Neither the .dmg nor the AppImage is code-signed, so a reader has no
+      # way to tell a good download from a truncated one. Ship the sums.
+      - name: Checksums
+        working-directory: artefacts
+        run: |
+          ls -lh
+          sha256sum * | tee SHA256SUMS.txt
+
+      - name: Publish
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: Notebook ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.gates.outputs.tag }}
+          name: Alcove ${{ needs.gates.outputs.tag }}
           body_path: RELEASE_NOTES.md
-          draft: false
-          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
-          files: |
-            src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          draft: ${{ github.event.inputs.draft == 'true' }}
+          # A tag with a hyphen in it is a prerelease: v0.2.0-beta.1.
+          prerelease: ${{ contains(needs.gates.outputs.tag, '-') }}
+          fail_on_unmatched_files: true
+          files: artefacts/*

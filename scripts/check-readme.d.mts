@@ -24,3 +24,73 @@ export function checkFacts(
 
 /** Resolve every relative link, always against the repo root. */
 export function checkLinks(docs?: string[]): { checked: number; problems: string[] };
+
+/* ------------------------------ the screenshots -------------------------- */
+
+/** Repo-relative path of the capture manifest. */
+export const SHOTS_MANIFEST: string;
+
+/** Repo-relative path of the directory the README's pictures live in. */
+export const SHOTS_DIR: string;
+
+/** Floor under "a screenshot rather than a blank frame", in bytes. */
+export const MIN_SHOT_BYTES: number;
+
+/** Files whose content is inside a picture, keyed by the picture's file name. */
+export const SHOT_SOURCES: Readonly<Record<string, readonly string[]>>;
+
+/** Identity keys the manifest records and tests/readme.test.ts supplies. */
+export const DEPICTED_KEYS: readonly string[];
+
+/** Short sha256 of a repo-relative file. */
+export function digestOf(rel: string): string;
+
+/** Every path declared in {@link SHOT_SOURCES}, digested. */
+export function sourceDigests(): Record<string, string>;
+
+/** Product name (tauri.conf.json) and version (package.json). */
+export function appIdentity(): { product: string; version: string };
+
+/** Bare file names of every PNG in {@link SHOTS_DIR}, sorted. */
+export function shotFiles(): string[];
+
+/** Size, digest and pixel dimensions of one shot, read off the file. */
+export function measureShot(
+  file: string,
+): { bytes: number; sha256: string; width: number; height: number };
+
+/** One entry of the manifest's `shots` array. */
+export interface ShotRecord {
+  file: string;
+  bytes: number;
+  sha256: string;
+  width: number;
+  height: number;
+  /** ISO timestamp of the run that took THIS picture. */
+  at: string;
+  /** Short sha of the tree it photographed, `+dirty` when uncommitted. */
+  commit: string;
+}
+
+/** What `shots-now/readme-shots.mjs` writes after a capture run. */
+export interface ShotsManifest {
+  capturedBy: string;
+  /** The last run, whatever it captured. Per-shot provenance is on each entry. */
+  lastRunAt: string;
+  app: { product: string; version: string };
+  commit: { sha: string; short: string; dirty: boolean };
+  viewport: { width: number; height: number; scale: number };
+  depicts: Record<string, string>;
+  sources: Record<string, string>;
+  shots: ShotRecord[];
+}
+
+/** The manifest as written, or null when missing or unreadable. */
+export function readShotsManifest(): ShotsManifest | null;
+
+/** Compare the manifest against the tree; `depicted` supplies the TS-only values. */
+export function checkShots(depicted?: Record<string, string>): {
+  checked: number;
+  deferred: number;
+  problems: string[];
+};

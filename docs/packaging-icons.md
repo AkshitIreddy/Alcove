@@ -9,6 +9,15 @@ written down here rather than living in one script's header.
 - The **second** break is this document: `icon.ico` was written by Pillow's ICO
   encoder, which packs a container Windows reads but no Windows tool would
   write.
+- The **third**, found when CI grew a macOS build: `icon.icns` was the one
+  shipped surface still left to the Tauri CLI, so it had been generated once and
+  never again, and carried the artwork from two renames ago — measured at 75/255
+  mean absolute difference from the master, i.e. a different picture. That is
+  fixed the same way as the second: `scripts/gen-icons.py` writes the container
+  itself and `--check` audits it.
+  [`packaging-mac-linux.md`](packaging-mac-linux.md) is the long version, and
+  covers the frame set, the run-length encoding and how the encoder was verified
+  without a Mac.
 
 Everything below was measured on this machine, not taken from a blog post. The
 probes are reproducible and are described at the bottom.
@@ -76,8 +85,9 @@ are one byte each, so **256 is written as 0**.
 because Pillow's encoder cannot express "BMP below 256, PNG at 256" and always
 writes `wPlanes = 0`.
 
-    python scripts/gen-icons.py --check      # audit the committed file, exit 1 if bad
+    python scripts/gen-icons.py --check      # audit icon.ico AND icon.icns, exit 1 if bad
     python scripts/gen-icons.py --ico-only   # repack just icon.ico from the master art
+    python scripts/gen-icons.py --icns-only  # repack just icon.icns
     python scripts/gen-icons.py              # everything, including the PNG set
 
 `--check` parses the bytes on disk rather than trusting the writer, and it is
@@ -85,11 +95,15 @@ not decorative: run against the file this document replaced it reported 13
 problems. `--ico-only` exists because the container encoding and the artwork are
 separate concerns that have now broken separately — a full run also rewrites
 `assets/brand/alcove-1024.png` and fifteen PNGs, which is pure churn when all
-that changed is how the .ico is packed.
+that changed is how the .ico is packed. `--icns-only` is the same idea for the
+macOS container.
 
-`--check` is not yet wired into CI or vitest. Doing that is the obvious next
-step and would want `"icons:check": "python scripts/gen-icons.py --check"` in
-`package.json`.
+`--check` **is** wired into CI now: the `gates` job of
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs it
+before any bundle is built, so a stale or malformed container fails the release
+rather than shipping in it. It is still not in vitest, deliberately — the audit
+needs Pillow, and a guard that is skipped in the one environment that needed it
+is not a guard.
 
 ## Reproducing the measurements
 

@@ -59,12 +59,15 @@
   background: var(--wash-amber-light);
 }
 
+/* `--on-gilt`, not the reader's ink: the amber face is fixed-bright in every
+   room while `--ink-sepia` inverts with it, so the CHOSEN tab was the one you
+   could not read after dark (1.05:1 on fountain blue). */
 .nb-pack-tab.is-active {
-  color: var(--ink-sepia);
+  color: var(--on-gilt);
   font-weight: 700;
   background: var(--wash-amber);
   border-style: solid;
-  border-color: var(--ink-line);
+  border-color: var(--on-gilt);
   box-shadow: var(--shadow-xs);
 }
 
@@ -126,9 +129,11 @@
   font-family: var(--font-ui);
   font-size: var(--text-chip);
   font-weight: 700;
-  color: var(--ink-sepia);
+  /* `--on-gilt` for the same reason the active tab above carries it: a gilt
+     face does not invert, so the ink on it must not either. */
+  color: var(--on-gilt);
   background: var(--wash-amber);
-  border: 1.5px solid var(--ink-line);
+  border: 1.5px solid var(--on-gilt);
   border-radius: 11px 9px 12px 10px / 10px 12px 9px 11px;
 }
 
@@ -301,7 +306,9 @@
   padding: var(--space-8) var(--space-12);
   font-size: var(--text-ui);
   line-height: 1.5;
-  color: var(--ink-sepia-soft);
+  /* Reading ink on a wash face: the soft rung is tuned against the PAPER
+     rungs and ran to 3.49:1 on amber-light after dark. */
+  color: var(--ink-sepia);
   background: var(--wash-amber-light);
   border: 1.5px dashed var(--paper-edge);
   border-radius: var(--radius-hand);
@@ -522,20 +529,28 @@
     background var(--dur-xs) var(--ease-out);
 }
 
+/* The hover ground is the ACCENT's pale face, not the third paper rung.
+   tokens.css only promises the soft and accent inks 4.5:1 against
+   `--paper-aged`; `--paper-deep` is a rung darker, and accent ink on it came
+   in at 4.46:1. `--accent-light` is where an accent hover belongs anyway. */
 .nb-packs-forget:hover,
 .nb-packs-forget:focus-visible {
   color: var(--ink-accent);
-  background: var(--paper-deep);
+  background: var(--accent-light);
 }
 
 /* Armed: solid rim and the accent ink, so "sure?" reads as a different state
    rather than as the same button with new text. */
+/* The blush face carries the blush ink. `--ink-accent` is solved against the
+   paper, not against a wash, and on blush-light it came in at 4.49:1 — a hair
+   under, in fifty rooms. A pigment's own deep rung is the ink for its own
+   light rung, and that pair inverts together. */
 .nb-packs-forget.is-arming {
-  color: var(--ink-accent);
+  color: var(--wash-blush-deep);
   font-weight: 700;
   background: var(--wash-blush-light);
   border-style: solid;
-  border-color: var(--ink-accent);
+  border-color: var(--wash-blush-deep);
 }
 
 .nb-packs-notyet {
@@ -599,6 +614,7 @@
 
 .nb-yours-add:hover,
 .nb-yours-add:focus-visible {
+  color: var(--ink-sepia);
   background: var(--wash-amber-light);
   border-color: var(--ink-line-soft);
 }

@@ -12,10 +12,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CELEBRATE_MS,
+  CELEBRATE_SNAP_MS,
   applyInset,
   arrowHeadPath,
   arrowPath,
   arrowPoints,
+  celebrateDelay,
   centerCard,
   chooseSide,
   clampToViewport,
@@ -41,6 +44,7 @@ import {
   type Size,
 } from '../src/features/tutorial/engine';
 import {
+  PANEL_DWELL_MS,
   SHORT_TOUR_STEP_IDS,
   TUTORIAL_STEPS,
   TUTORIAL_STEP_IDS,
@@ -48,12 +52,21 @@ import {
   tourSteps,
 } from '../src/features/tutorial/steps';
 import { DISMISSIBLE, dismissStale, openSurfaceIds } from '../src/features/tutorial/dismiss';
-import { factHolds } from '../src/features/tutorial/probe';
+import { SURFACE_FACTS, factHolds } from '../src/features/tutorial/probe';
+import {
+  TOUR_LAYER_SELECTOR,
+  TOUR_STEP_ATTR,
+  stepWatchVerdict,
+} from '../src/features/tutorial/tourStep';
 import {
   rememberTasteChosen,
   resetTasteStoreForTests,
 } from '../src/features/tutorial/tasteStore';
-import type { TasteAnswers } from '../src/features/tutorial/tasteProfile';
+import {
+  TASTE_AXES,
+  TASTE_QUESTIONS,
+  type TasteAnswers,
+} from '../src/features/tutorial/tasteProfile';
 
 const VP: Size = { width: 1440, height: 900 };
 const CARD: Size = { width: 348, height: 232 };
@@ -357,6 +370,39 @@ describe('keyboard contract', () => {
     expect(isTypingTarget({ tagName: 'P', closest: () => null })).toBe(false);
     expect(isTypingTarget({ tagName: 'BUTTON' })).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+});
+
+/* -------------------------------- beats ----------------------------------- */
+
+/*
+ * THE REPORTED DEFECT, in one number: a step that asked the reader to open a
+ * panel went green the instant the panel appeared and the tour advanced 1.2s
+ * later — at which point dismiss.ts shut the panel again. Measured on the
+ * running app: visible at 488ms, gone at 1696ms.
+ */
+describe('the beat before the tour walks on', () => {
+  it('scales the ordinary celebration with the motion preference', () => {
+    expect(celebrateDelay(undefined, 1)).toBe(CELEBRATE_MS);
+    // Floored at 0.6 so "half the motion" is still long enough to read a line.
+    expect(celebrateDelay(undefined, 0.5)).toBe(CELEBRATE_MS * 0.6);
+    // Motion off: no tick to watch draw, so do not sit there.
+    expect(celebrateDelay(undefined, 0)).toBe(CELEBRATE_SNAP_MS);
+  });
+
+  /* A dwell is READING time, and styles/motion.ts states the rule for those:
+     someone who turned animation off still needs the same beat. */
+  it('never scales a reading dwell, and never collapses it', () => {
+    for (const motion of [0, 0.25, 0.5, 1, 2]) {
+      expect(celebrateDelay(PANEL_DWELL_MS, motion), `motion ${motion}`).toBe(PANEL_DWELL_MS);
+    }
+    // A nonsense dwell still leaves the tick time to appear.
+    expect(celebrateDelay(0, 1)).toBe(CELEBRATE_SNAP_MS);
+  });
+
+  it('holds a taught panel open far longer than the 1208ms that was reported', () => {
+    expect(celebrateDelay(PANEL_DWELL_MS, 1)).toBeGreaterThan(1208 * 2);
+    expect(celebrateDelay(undefined, 1)).toBeLessThan(celebrateDelay(PANEL_DWELL_MS, 1));
   });
 });
 
@@ -677,6 +723,103 @@ describe('tour script', () => {
     expect(factHolds('taste-chosen', 0)).toBe(false);
   });
 
+  /*
+   * THE COUNT THE PANEL SAYS OUT LOUD.
+   *
+   * The questionnaire's header renders "question 1 of N" straight off
+   * TASTE_QUESTIONS.length, and the tour step in front of it typed the number
+   * into three sentences. An axis was added and the panel said five while the
+   * step said four — the first three sentences a new reader ever reads, and one
+   * of them was already wrong. Pinned against the vocabulary rather than
+   * against a literal, so the next axis breaks this test instead of the copy.
+   */
+  it('counts the taste questions the way the panel counts them', () => {
+    const words = [
+      'zero', 'one', 'two', 'three', 'four', 'five',
+      'six', 'seven', 'eight', 'nine', 'ten',
+    ];
+    // One question per axis, which is what makes either count a valid pin.
+    expect(TASTE_QUESTIONS.length).toBe(TASTE_AXES.length);
+    const word = words[TASTE_AXES.length];
+    expect(word, 'add a word above if the questionnaire grows past ten').toBeDefined();
+
+    const step = TUTORIAL_STEPS.find((s) => s.id === 'taste');
+    expect(step).toBeDefined();
+    if (step === undefined) return;
+    for (const line of [step.title, step.body, step.task?.ask ?? '']) {
+      expect(line.toLowerCase(), `no count in: ${line}`).toContain(word);
+      for (const other of words.slice(2)) {
+        if (other === word) continue;
+        expect(line.toLowerCase(), `stale "${other}" in: ${line}`).not.toMatch(
+          new RegExp(`\\b${other}\\b`),
+        );
+      }
+    }
+  });
+
+  /*
+   * OPENING A BOOK TAKES TWO PRESSES, and the tour has to say so.
+   *
+   * `PulledBookOverlay` docblock: "Pulling a book out brings it FORWARD. A
+   * second click opens it" — the reader asked for that half-way state. The step
+   * still said "click a spine and the book tips out of the case and opens", and
+   * nothing anywhere mentioned the second press, so a reader who followed the
+   * card exactly got a big cover and a task that would not go green.
+   */
+  it('tells the reader a book takes two presses, and names the state between', () => {
+    const step = TUTORIAL_STEPS.find((s) => s.id === 'open-a-book');
+    expect(step).toBeDefined();
+    if (step === undefined) return;
+    // The sentence that was wrong.
+    expect(step.body).not.toMatch(/out of the case and opens/i);
+    expect(step.body).toMatch(/press the cover/i);
+    expect(step.hint ?? '').toMatch(/press the cover/i);
+    expect(step.task?.ask ?? '').toMatch(/press the cover/i);
+    // Completion is still the book being open, never merely out.
+    expect(step.task?.fact).toBe('book-open');
+    // ...and the half-way state gets a line of its own, on the fact that IS it,
+    // so the card speaks up exactly while the book is standing there waiting.
+    expect(step.task?.nudge?.when).toBe('book-pulled');
+    expect(step.task?.nudge?.say ?? '').toMatch(/press the cover/i);
+  });
+
+  /*
+   * A step whose fact means "a surface is on screen" ticks the moment that
+   * surface APPEARS — which is when the reader starts looking at it. Walking on
+   * is what closes it again (dismiss.ts), so those steps must buy reading time
+   * or the tour opens a drawer and shuts it in the reader's face.
+   */
+  it('gives every step that teaches a panel time to read it', () => {
+    const surface = new Set<string>(SURFACE_FACTS);
+    const teaching = TUTORIAL_STEPS.filter(
+      (s) => s.task !== undefined && surface.has(s.task.fact),
+    );
+    expect(teaching.map((s) => s.id)).toEqual([
+      'shelf-studio',
+      'page-style',
+      'catalogue',
+      'finding-in-book',
+      'customize-open',
+      'quick-switch',
+      'settings',
+    ]);
+    for (const step of teaching) {
+      expect(step.task?.dwell, `"${step.id}" would be shut 1.2s after opening`).toBe(
+        PANEL_DWELL_MS,
+      );
+    }
+    // A step that asks for a GESTURE has already been done by the time it
+    // ticks, so it keeps the ordinary beat.
+    for (const step of TUTORIAL_STEPS) {
+      if (step.task === undefined || surface.has(step.task.fact)) continue;
+      expect(step.task.dwell, `"${step.id}" does not teach a panel`).toBeUndefined();
+    }
+    // Every fact on the list is one a step actually names; a fact nobody uses
+    // is a rule that quietly stops covering anything.
+    const used = new Set(TUTORIAL_STEPS.map((s) => s.task?.fact));
+    for (const fact of SURFACE_FACTS) expect(used.has(fact), fact).toBe(true);
+  });
+
   it('placement works for every step against a real-ish anchor', () => {
     const anchor: Rect = { x: 40, y: 300, width: 64, height: 300 };
     for (const step of TUTORIAL_STEPS) {
@@ -684,5 +827,62 @@ describe('tour script', () => {
       expect(rect.x).toBeGreaterThanOrEqual(0);
       expect(rect.y).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+/* --------------------- a panel riding a tour step -------------------------- */
+
+/*
+ * The taste questionnaire watches `data-tutorial-step` and puts itself on
+ * screen for the `taste` step. It used to do ONLY that: never close. Answer one
+ * question, press next, and all five stayed up over the shelf — card across the
+ * tour's own next and skip, scrim across the control the new step was asking
+ * for. The verdict below is the whole watcher, so a half of it cannot go
+ * missing again without this failing.
+ */
+describe('a panel that rides a tour step', () => {
+  const base = {
+    here: 'taste',
+    stepId: 'taste',
+    open: false,
+    mine: false,
+    settled: false,
+    openedForStep: false,
+  };
+
+  it('opens once, on its own step, for a reader who has not answered', () => {
+    expect(stepWatchVerdict(base)).toBe('open');
+    // …and not a second time on the same visit: that is what makes "I'll pick
+    // later" a way out rather than a panel that reopens over the top of you.
+    expect(stepWatchVerdict({ ...base, openedForStep: true })).toBe('leave-alone');
+    expect(stepWatchVerdict({ ...base, open: true })).toBe('leave-alone');
+    // A reader who finished it last week is never asked again.
+    expect(stepWatchVerdict({ ...base, settled: true })).toBe('leave-alone');
+  });
+
+  it('closes itself the moment the tour is on any other step', () => {
+    const up = { ...base, open: true, mine: true, openedForStep: true };
+    expect(stepWatchVerdict({ ...up, here: 'first-book' })).toBe('close');
+    // Including "no tour at all", which is what a closed tour reads as.
+    expect(stepWatchVerdict({ ...up, here: '' })).toBe('close');
+  });
+
+  it('never takes away a panel the tour did not open', () => {
+    // The settings sheet's "choose my look again" row: opened with no tour
+    // running, which reads as `here: ''` and must not be closed instantly.
+    const settingsRow = { ...base, here: '', open: true, mine: false };
+    expect(stepWatchVerdict(settingsRow)).toBe('leave-alone');
+    expect(stepWatchVerdict({ ...base, here: 'writing', open: false, mine: true })).toBe(
+      'leave-alone',
+    );
+  });
+
+  it('names the attribute the overlay actually writes', () => {
+    // The contract is a string in two files; this is the one place both can be
+    // checked against. TutorialOverlay renders `data-tutorial-step` on
+    // `.nbt-layer`, which is what the selector has to find.
+    expect(TOUR_LAYER_SELECTOR).toContain(TOUR_STEP_ATTR);
+    expect(TOUR_LAYER_SELECTOR.startsWith('.nbt-layer')).toBe(true);
+    expect(TOUR_STEP_ATTR).toBe('data-tutorial-step');
   });
 });

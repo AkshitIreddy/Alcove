@@ -14,6 +14,12 @@
  * target list (steps.ts) — and that is the same list the spotlight uses, so
  * the two can never disagree.
  *
+ * A general rule is only as general as `DISMISSIBLE`, which is the third
+ * report: the taste questionnaire — the one surface a tour STEP opens rather
+ * than the reader — was not on the list, outlived its step, and covered both
+ * the tour's own buttons and the shelf the next step was asking about. If a
+ * step can leave it standing, it belongs below.
+ *
  * HOW IT CLOSES: by the surface's own way out — the × in its header, the same
  * button the reader would press — or by Escape where a surface has no button.
  * Nothing here reaches into another feature's state; the tour still watches
@@ -49,6 +55,23 @@ export const DISMISSIBLE: readonly Dismissible[] = [
     open: '.nb-rail-panel[aria-hidden="false"]',
     close: '.nb-rail-panel-close',
   },
+  // THE TASTE QUESTIONNAIRE, and the reason this list needs the one surface a
+  // tour STEP puts up rather than the reader.
+  //
+  // The reported bug: answer one question, press next, and the tour walks on to
+  // shelf-dock with all five questions still standing. Its card covered the
+  // tour's own next and skip, so there was no way forward, and `.nbq-scrim`
+  // takes pointer events — so the drag the following steps ask for never
+  // reached the shelf at all and the first-book nudge could never fire either.
+  // Two reported defects, one surface nobody had put on this list.
+  //
+  // "I'll pick later" is the panel's own way out and the one that keeps the
+  // answers, so reopening it later is a revision rather than a fresh
+  // interrogation. The panel ALSO stands itself down when the tour's step
+  // attribute moves off `taste` (see ./tourStep.ts) — this entry is what
+  // catches it on the frame the step changes, before the reader can press
+  // anything into a scrim.
+  { id: 'taste', open: '.nbq-layer', close: '.nbq-exit--quiet' },
   { id: 'trash', open: '.shelf-trash', close: '.shelf-trash__close' },
   { id: 'settings', open: '.nbs-sheet', close: '.nbs-close' },
   { id: 'quick-switcher', open: '.nb-qs-bar', close: '.nb-qs-close' },

@@ -12,7 +12,13 @@
  *  2. **Numbers.** "222 of 230 source files open with a module docstring",
  *     "126 papers", "five design docs carry a superseded banner". Every one
  *     was measured once and none is self-maintaining.
- *  3. **Navigation.** The front page's body is two tables of anchor links into
+ *  3. **Pictures.** Thirteen screenshots, which drift the most quietly of all:
+ *     the whole set predated the rename, so the banner said *Bellanote* over
+ *     the old blue mark and the open spread was headed "Welcome to Bellanote"
+ *     while every link to them resolved and every byte was valid.
+ *     `shots-now/readme-shots.mjs` now takes all thirteen in one run and writes
+ *     down what it photographed; `checkShots()` reads that back.
+ *  4. **Navigation.** The front page's body is two tables of anchor links into
  *     the halves, one row per section. Those were typed by hand, which is how
  *     the developer tail went stale in the first place: rename a heading and
  *     the row still renders, still looks right, and lands the reader at the top
@@ -36,10 +42,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFERRED_FACTS,
+  DEPICTED_KEYS,
+  SHOTS_MANIFEST,
   checkFacts,
   checkLinks,
+  checkShots,
   computeFacts,
+  measureShot,
+  readShotsManifest,
   readmeDocs,
+  shotFiles,
 } from '../scripts/check-readme.mjs';
 import {
   PARTS,
@@ -48,16 +60,26 @@ import {
   sectionsOf,
 } from '../scripts/gen-readme.mjs';
 
-import { BUILD_IDS, PATTERN_IDS, SHELF_PRESETS } from '../src/art/shelfDesign';
-import { WALLPAPER_PATTERNS, WALLPAPER_PRESETS } from '../src/art/wallpaperDesign';
+import {
+  BUILD_IDS,
+  DEFAULT_SHELF_DESIGN,
+  PATTERN_IDS,
+  SHELF_PRESETS,
+} from '../src/art/shelfDesign';
+import {
+  DEFAULT_WALLPAPER_ID,
+  WALLPAPER_PATTERNS,
+  WALLPAPER_PRESETS,
+} from '../src/art/wallpaperDesign';
 import {
   BOOK_PRESETS,
   DECORATIONS,
   MATERIAL_LOOKS,
   SPINE_SHAPES,
 } from '../src/art/bookDesign';
-import { THEME_IDS } from '../src/art/themes';
+import { DEFAULT_THEME_ID, THEME_IDS } from '../src/art/themes';
 import { CLOTHS } from '../src/art/flat';
+import { WELCOME_BOOK_TITLE } from '../src/data/seed';
 import { SOUND_SET_IDS } from '../src/sound/soundSets';
 import { SOUND_NAMES, SOUNDSCAPE_LOOPS } from '../src/sound/engine';
 import { ROOM_PRESETS } from '../src/views/rail/designOptions';
@@ -159,6 +181,72 @@ describe('the README describes this repo', () => {
     // Both halves have to agree or a marker silently checks nothing: a key the
     // script defers but this file forgets is a number nobody verifies.
     expect([...DEFERRED_FACTS].sort()).toEqual(Object.keys(vocabularyFacts()).sort());
+  });
+});
+
+/**
+ * What the README's pictures SHOW, as the tree spells it today.
+ *
+ * The same deferral {@link vocabularyFacts} uses, one door over: reading these
+ * five means loading TypeScript, which `scripts/check-readme.mjs` cannot do and
+ * a vitest file gets for free. They are the five strings whose change made the
+ * last set of screenshots wrong — the title written across the open spread and
+ * drawn into the tree diagram, and the three ids plus the paper that decide
+ * what an untouched bookcase looks like on the day someone opens the app.
+ */
+function depictedIdentity(): Record<string, string> {
+  return {
+    welcomeTitle: WELCOME_BOOK_TITLE,
+    defaultTheme: DEFAULT_THEME_ID,
+    defaultBuild: DEFAULT_SHELF_DESIGN.build,
+    defaultPattern: DEFAULT_SHELF_DESIGN.pattern,
+    defaultWallpaper: DEFAULT_WALLPAPER_ID,
+  };
+}
+
+describe('the README shows this build of the app', () => {
+  it('every screenshot still depicts the app in the tree', () => {
+    // The one that would have caught it: the shots said Bellanote for months
+    // after the app stopped being called that, and nothing was red.
+    const { problems } = checkShots(depictedIdentity());
+    expect(problems, problems.join('\n')).toEqual([]);
+  });
+
+  it('no two screenshots are the same picture', () => {
+    // The one that would have caught it: a recapture took `studio.png` while
+    // the studio's sheet was still off-screen on its open tween, so the file
+    // came out byte-identical to the `shelf.png` shot seconds earlier — a
+    // picture of the studio with no studio in it. Everything else on this page
+    // passed it, because each of those checks asks whether a shot matches the
+    // TREE and this is the one question only the shots can answer about each
+    // other: thirteen captions, thirteen states, so no two of them can be one
+    // image. Duplicated in checkShots() so `npm run readme:check` sees it too.
+    const seen = new Map<string, string>();
+    const twins: string[] = [];
+    for (const file of shotFiles()) {
+      const { sha256 } = measureShot(file);
+      const first = seen.get(sha256);
+      if (first === undefined) seen.set(sha256, file);
+      else twins.push(`${file} is the same image as ${first}`);
+    }
+    expect(twins, twins.join('\n')).toEqual([]);
+  });
+
+  it('the deferred identity list matches what this file supplies', () => {
+    // Same trap as the fact markers: a key the script defers and this file
+    // forgets is a picture nobody checks.
+    expect([...DEPICTED_KEYS].sort()).toEqual(Object.keys(depictedIdentity()).sort());
+  });
+
+  it('has pictures, and a manifest covering all of them', () => {
+    // A silent pass because the folder emptied — or because the manifest went
+    // missing and checkShots() found nothing to compare — would defeat this
+    // whole section.
+    const files = shotFiles();
+    expect(files.length, 'no screenshots in docs/readme/img/').toBeGreaterThan(0);
+    const manifest = readShotsManifest();
+    expect(manifest, `${SHOTS_MANIFEST} is missing`).not.toBeNull();
+    expect(manifest?.shots.map((s) => s.file).sort()).toEqual(files);
   });
 });
 

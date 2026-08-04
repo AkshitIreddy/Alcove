@@ -7,19 +7,18 @@
 # Part 1 — Using Alcove
 
 **A Windows notes app that puts your notes on a bookshelf you can walk around
-in.** This half is for the person using it: what it is, how to install it, and
-how every part of it works. The other half,
+in.** This half is for the person using it: what the download is, what the
+installer does, and how every part of the app works. The other half,
 [Building Alcove](part-2-developers.md), is for the person changing it.
 
-The [front page](../../README.md) has the short version of what Alcove is and
-the four things worth knowing before you install — Windows 10 or 11 only,
-pre-1.0 with no release published yet, one local SQLite file with no account and
-no sync, and two features that touch the network only when you invoke them.
-Every count below was read out of the module that defines it, wrapped in a
-marker `npx vitest run` recomputes, so a vocabulary that grows while this page
-does not is a failing test.
+Every section below is also on the [front page](../../README.md), which carries
+this text inline rather than linking to it, so read whichever one you landed on.
+The two cannot disagree: `scripts/gen-readme.mjs` lifts these sections into it
+and `npx vitest run` fails when the copy has drifted. Every count is read out of
+the module that defines it and wrapped in a marker the same run recomputes, so a
+vocabulary that grows while this page does not is a failing test.
 
-**On this page:** [Installing](#installing) ·
+**On this page:** [Download and install](#download-and-install) ·
 [The first ten minutes](#the-first-ten-minutes) · [A tour](#a-tour) ·
 [Writing in a book](#writing-in-a-book) · [Notebook Script](#notebook-script) ·
 [Making it yours](#making-it-yours) · [Sound](#sound) ·
@@ -27,31 +26,29 @@ does not is a failing test.
 [Backups, export and import](#backups-export-and-import) ·
 [Questions](#questions)
 
-## Installing
-<!--nav: What the download will be, what the installer does, where your library lives, and how to uninstall without losing it-->
+<!--lift: download-->
+## Download and install
+<!--nav: The installer, what it puts where, what the first launch looks like, and how to uninstall without losing your notes-->
 
-There is **no published release yet**, so there is nothing to download today.
-This section describes what the download will be when the first tag lands, so
-you can tell whether it is the kind of thing you want.
+Alcove is one installer you double-click. It does not ask for an administrator,
+it does not bring a browser along with it, and there is no account to make.
 
-### What the download will be
+<!-- gen:downloads -->
+| Platform | Download | What you get |
+| --- | --- | --- |
+| **Windows 10 / 11** · x64 | [`Alcove_0.1.0_x64-setup.exe`](https://github.com/AkshitIreddy/alcove/releases/latest) · about 15 MB | The one to take. Installs for **the current user**, so Windows never asks for an administrator, and lands in `%LOCALAPPDATA%\Alcove`. |
+| **macOS** · universal | not built yet | The release job builds one universal `.dmg` carrying both the Apple-silicon and the Intel slice, so there is nothing for a reader to choose between — but it has never produced one. |
+| **Linux** · x64 | not built yet | The same job builds a `.deb`, an `.rpm` and an AppImage on `ubuntu-22.04`, so they start on 22.04 and anything later. Also never produced. |
 
-When a maintainer pushes a version tag, [the release
-workflow](../../.github/workflows/release.yml) typechecks, runs the unit tests, builds
-on `windows-latest`, and publishes to
-[Releases](https://github.com/AkshitIreddy/alcove/releases):
-
-| File | What it is |
-| --- | --- |
-| `Alcove_<version>_x64-setup.exe` | NSIS installer. Installs for the **current user**, so Windows will not ask for an administrator. This is the one to take. |
-| `Alcove_<version>_x64_en-US.msi` | MSI, for anyone who deploys software with a policy rather than a double-click. |
+Beside the installer sits `Alcove_0.1.0_x64_en-US.msi` — the same app as an MSI, for anyone who deploys software with a policy rather than a double-click. Everything is attached to the GitHub Release by `.github/workflows/release.yml` when the version tag is pushed, with a `SHA256SUMS.txt`, and **nothing is signed on any platform** — so Windows shows a SmartScreen warning the first time and macOS will quarantine the first launch. If the Releases page is empty, that tag has not landed yet: `npm run tauri build` writes the same artefacts for whichever platform you are on, into `src-tauri/target/release/bundle/`.
+<!-- /gen -->
 
 The one requirement is the Microsoft Edge **WebView2** runtime — already present
 on Windows 11 and on any up-to-date Windows 10, and fetched by the installer if
 it is missing. Alcove is a [Tauri](https://tauri.app/) app, so it uses that
-system webview instead of shipping a browser of its own: the download is small,
-and nothing runs in the background when the window is closed unless you turn on
-tray quick capture.
+system webview instead of shipping a browser of its own: the download stays
+small, and nothing runs in the background when the window is closed unless you
+turn on tray quick capture.
 
 ### What the installer does, and where things end up
 
@@ -70,10 +67,28 @@ user profile rather than into `C:\Program Files`.
 The two roots are deliberately separate, and that separation is the useful part:
 **uninstalling removes the program and leaves your notes alone.**
 
-On first launch the library is created and seeded with exactly one book —
-*Welcome to Alcove ✎* ([`src/data/seed.ts`](../../src/data/seed.ts)) — which is a real
-book you can edit, rename or crumple like any other. It is also a worked example:
-every page of it is authored in Notebook Script.
+### The first time you open it
+
+Nothing to configure, nothing to sign into, no splash screen. In order:
+
+1. **A library is created** at the path above and seeded with exactly one book —
+   *Welcome to Alcove ✎* ([`src/data/seed.ts`](../../src/data/seed.ts)) — which is a
+   real book you can edit, rename or crumple like any other. It is also a worked
+   example: every page of it is authored in Notebook Script.
+2. **You are asked four questions about your taste** — how much colour you want,
+   what kind of room, and so on — and the whole library is dressed from your
+   answers, so what you see next is a room you chose rather than a demo.
+3. **The guided tour runs**, <!--f:tourSteps-->21<!--/f--> steps in a long or a
+   short version, each asking for one concrete action and turning green when it
+   sees you do it. Skip it if you would rather poke at it yourself; *Settings →
+   Help → replay the tour* starts it again later.
+4. **The room is quiet until you touch it.** A fireplace bed is mixed low under
+   everything by default, and the webview's autoplay policy holds it until your
+   first click — so the app is never making noise at somebody who has not
+   touched it yet. One switch turns it off for good.
+
+What you land on is the shelf itself, which is where [the first ten
+minutes](#the-first-ten-minutes) picks up.
 
 ### Uninstalling
 
@@ -84,11 +99,14 @@ a `.nbk` bundle first if there is any chance you will want it back.
 
 ### Building it yourself
 
-You do not have to wait for a release. `npm install` then `npm run tauri build`
-writes the same installer to `src-tauri/target/release/bundle/`. The toolchain is
-Node plus a stable Rust toolchain and nothing else; [Part 2 — Building
-Alcove](part-2-developers.md#getting-it-running) is the whole story.
+You do not have to take the published build. `npm install` then
+`npm run tauri build` writes the same artefacts for whichever platform you are
+on, into `src-tauri/target/release/bundle/`. The toolchain is Node plus a stable
+Rust toolchain and nothing else; [Getting it
+running](part-2-developers.md#getting-it-running) is the whole story.
+<!--/lift-->
 
+<!--lift: manual-->
 ## The first ten minutes
 <!--nav: Seven steps from arriving at the shelf to making a second book, plus the in-app guided tour-->
 
@@ -812,6 +830,7 @@ rather than a product.
 No. The design packs above are the extension route for art and sound; anything
 else means editing the vocabularies, which [Adding a value, end to
 end](part-2-developers.md#adding-a-value-end-to-end) walks through stop by stop.
+<!--/lift-->
 
 ---
 

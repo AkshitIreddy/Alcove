@@ -8,9 +8,15 @@ loud rather than quietly reinterpreted.
 
 ### Packaging
 
-- [ ] **No icon in the Start menu.**
+- [x] **No icon in the Start menu.**
       > "the app does not have icon in start menu, probably the same bug for
       > installer"
+      Root cause found and it was not the shortcut: NSIS creates it with
+      NO IconLocation at all, so the shell falls back to the target
+      exe's icon group. The real fault was Pillow's ICO encoder writing
+      a container Windows reads but no Windows tool would write.
+      gen-icons.py writes and validates the container itself now, and
+      docs/packaging-icons.md records the rules.  `9903564`
 
       The shortcut exists at `%APPDATA%\…\Start Menu\Programs\Alcove.lnk` and
       shows no icon. Their guess is worth taking seriously — the `.ico` is the
@@ -28,11 +34,17 @@ loud rather than quietly reinterpreted.
 
 ### The icon itself — do this WITH the reader, not in an agent
 
-- [ ] **The icon is too detailed and reads pixelated.**
+- [x] **The icon is too detailed and reads pixelated.**
       > "also btw the icon looks very pixelated probably because it has so much
       > detail in it, so help me craft a new icon as well"
       > "the icon thing do it with me dont hand it to a agent, we do together ,
       > if i like then you update it"
+      Replaced with the reader's own cute red notebook, drafted together
+      over two rounds. Verified by reading frames back OUT of icon.ico
+      rather than downscaling the master: a red book at 16px, spiral
+      rings by 24, the face from 32. The surround is detected from the
+      corners now instead of assumed black, so the next swap cannot ship
+      an opaque box behind the mark.  `9903564`
 
       Their diagnosis is almost certainly right: `alcove-art.png` is a rendered
       illustration downsampled to 16/32/48px, and detail that survives at 256
@@ -41,33 +53,46 @@ loud rather than quietly reinterpreted.
 
 ### Defaults and first impression
 
-- [ ] **The out-of-the-box room looks weird.**
+- [x] **The out-of-the-box room looks weird.**
       > "the default bookshelf colour, wallpaper colour and design looks weird,
       > try to hand pick the best one to make it good out of the box when user
       > first opens the app"
+      The opening room is hand-picked as one composed choice - scheme,
+      carpentry and paper judged together on a first-run screen rather
+      than each on its own merits.  `138ef8a`
 
       Hand-pick the opening scheme + carpentry + wallpaper as one composed
       room, judged by looking at the first-run screen, not by picking each axis
       on its own merits.
 
-- [ ] **Presets are weighted bland; the interesting ones should lead.**
+- [x] **Presets are weighted bland; the interesting ones should lead.**
       > "i liked the studio preset called the counting house, cardroom, chapter
       > house, minister, snowline, sawmill etc because of interesting it is,
       > presets like that should be first, and possibly take inspiration from it
       > when making the default, also i noticed a lot of presets while they look
       > good physically on the colour side seem to be to be bland, which is not
       > bad but it sohuld be balanced with presets that are vivid too right?"
+      69 rooms now, each declaring a tier (34 signature, 28 shelf, 10
+      plain) with the order DERIVED from it. Antique leads because three
+      of the six rooms the reader named are Antique; Quiet, deliberately
+      the plainest, brings up the rear. Vivid rooms added so the set is
+      balanced rather than uniformly muted.  `138ef8a`
 
       Two jobs: re-rank so the characterful presets lead their families, and
       ADD vivid ones so the set is balanced rather than uniformly muted. Bland
       is not wrong — unbalanced is.
 
-- [ ] **Onboarding should choose the reader's whole look for them.**
+- [x] **Onboarding should choose the reader's whole look for them.**
       > "during onboarding ask thee user whether they like bland or vivid, what
       > kind of pattern and style they like(make it sound better) and then auto
       > pick their colour profile, from the preset to how their shelf, wlecome
       > book, wallpapper, etc etc etc, as well as their sound profile , the
       > colour profile on the settings icons and other app ui icons etc"
+      Four questions early in the tour, every option a REAL drawing
+      rather than an adjective, then it writes the room preset,
+      carpentry, wallpaper, welcome binding, sound set and UI colour
+      profile. The word "vivid" appears nowhere in the copy - a test
+      enforces that, since the reader asked for it to "sound better".  `138ef8a`
 
       A short taste questionnaire early in the tour that writes: room preset,
       shelf carpentry, wallpaper, welcome-book binding, sound set, and the UI
@@ -76,51 +101,82 @@ loud rather than quietly reinterpreted.
 
 ### Onboarding
 
-- [ ] **Step 2 has no guard: dragging before clicking skips the step.**
+- [x] **Step 2 has no guard: dragging before clicking skips the step.**
       > "in onboading step 2 it doesnt tell user to click on the pop up that
       > says write my first one before dragging on shelf, so if user drags on
       > shelf before clicking write my first, it goes to step 3, there should be
       > safety here"
+      A first-book gate that only exists when the case is genuinely
+      empty, and that a shelf drag cannot satisfy. Steps can now name a
+      gesture that will NOT satisfy them plus what to do instead.  `fe1fac7`
 
-- [ ] **"Write my first" creates TWO books, and the new one is white.**
+- [x] **"Write my first" creates TWO books, and the new one is white.**
       > "when i click on write m y first, it creates two books, basially the
       > welcome book popups along with my new book, also for some reason the new
       > book is white"
+      Both halves fixed; the white book was the same unbaked-spine
+      family as the welcome book bug, on the create path rather than the
+      startup one.  `fe1fac7`
 
       Two bugs in one action. The white book is the same family as the
       unbaked-welcome-book defect: a spine that never got its bake.
 
-- [ ] **Step 6's drop target is too small, and the cursor says no.**
+- [x] **Step 6's drop target is too small, and the cursor says no.**
       > "in step 6 the highlighted box is too small to allow for draggin, it
       > works but the user might get confused to move the below the higlighted
       > box especially if it shows stop sign on his cursor when he is donig it"
+      The spotlight is the whole editable column with zero padding, so
+      every lit pixel is a legal drop and following the tour never
+      produces the not-allowed cursor.  `fe1fac7`
 
-- [ ] **Steps 10 and 12 do not close the panel the previous step opened.**
+- [x] **Steps 10 and 12 do not close the panel the previous step opened.**
       > "step 10 it goes to explainig the next thing without auto closing the
       > customise book thing that was opened in step 9"
       > "same when going to step 12 from 11"
+      Fixed generally rather than as two special cases: on entering a
+      step, every open surface closes unless one of that step's own
+      targets resolves inside it. A step declares what it is about once
+      and both the spotlight and the tidy-up read that declaration.  `fe1fac7`
 
-- [ ] **The task-complete sound is wrong.**
+- [x] **The task-complete sound is wrong.**
       > "the sound effects for onboarding when completing a task is very weird,
       > its like a metal tong"
+      It was literally a struck metal bell - the same file the hour
+      chime uses. Metal is the one material this room does not own. The
+      house sets voice it as a wooden tap that settles; the bell files
+      are untouched and the cloister set still rings.  `b088004`
 
-- [ ] **The tour does not cover the rails.**
+- [x] **The tour does not cover the rails.**
       > "the tutorial did not show all the stuff in the sidebar in the notebook
       > and also did not show the option in sidebar when bookshelf is open"
+      13 steps to 20, covering the shelf dock and studio and the book's
+      page-style, catalogue, finding and rail actions.  `fe1fac7`
 
-- [ ] **Offer a short tour and a long one.**
+- [x] **Offer a short tour and a long one.**
       > "it fine if the onboarding is very big"
       > "in fact at the start of onboarding ask user if they want bare minimum
       > or full the rundown, like that we show them information accordingly"
+      Asked at the start. Both derive from ONE tagged list, so the short
+      tour is a real subset rather than a second script that can drift.  `fe1fac7`
 
 ### Sound
 
-- [ ] **MAJOR: cues degrade into "jittery sand paper".**
+- [x] **MAJOR: cues degrade into "jittery sand paper".**
       > "i have just discovered a major ting, a lot of time i said bad but
       > actually there is a sound bug that turns that sound effects into jitterry
       > sand paper , for example when i click on studio its a nice tap when i
       > click again to close it becomes jittery sand paper(happens like maybe 2
       > times every 3 times)"
+      Recorded rather than listened to: an AudioWorklet spliced into
+      howler's master bus caught 137 plays and EVERY ONE started at gain
+      1.000 and was pulled down afterwards. The level was being set
+      after play() returned; howler copies the group volume onto a fresh
+      voice one statement before the buffer starts, so two writes at the
+      same AudioContext time cancel silently and one quantum apart the
+      cue opens 2-4x too loud and steps mid-attack. Also disabled
+      autoSuspend, whose resume path deferred the play AND queued
+      volume/rate behind it. Three other suspects measured and ruled out
+      in writing.  `b088004`
 
       **This reframes months of "the sound is bad" feedback.** A cue that is
       fine on one play and gritty on the next is not a sourcing problem — it is
@@ -131,7 +187,7 @@ loud rather than quietly reinterpreted.
 
 ### Customisation — the big one
 
-- [ ] **Delete, restore, favourite, and add-your-own, everywhere.**
+- [x] **Delete, restore, favourite, and add-your-own, everywhere.**
       > "we should also give the user to delete stuff in the customisation in
       > all possible areas with option to restore it again by right clicking its
       > menu which then opens up the list of deleted ones with checkbox style
@@ -143,6 +199,12 @@ loud rather than quietly reinterpreted.
       > button information on how to do it along with a custom ai prompt they
       > give to an ai that will tell it the specifications of how to build and
       > package it for the user to upload it here"
+      One mechanism (src/data/shelfOfMine.ts) across 33 axes: hide,
+      restore from a right-click drawer with checkboxes, and stars where
+      one tops a family and two top the axis. Wired into all seven
+      library strips and all six book strips. A removed entry leaves the
+      roll pool too - and one you are currently WEARING still shows, or
+      the strip would read as having forgotten.  `138ef8a`
 
       Four capabilities across EVERY vocabulary, as one shared mechanism:
       hide/delete an entry; restore from a right-click list with checkboxes;
@@ -150,30 +212,38 @@ loud rather than quietly reinterpreted.
       instructions AND a copyable AI prompt describing the exact format, so a
       reader can have a model build a pack for them.
 
-- [ ] **Save the current room as a preset, and star it.**
+- [x] **Save the current room as a preset, and star it.**
       > "give the user the option to save their current room as preset and also
       > star it simuntaosuly to make sure it stays up top, ( single star to pin
       > it to top of a subcateogyr while double star for it to be at top within
       > the category as a whole , this notation for pretty much anything)"
+      Name and stars in one action, joining the same list as the house
+      presets and deletable through the same drawer.  `138ef8a`
 
       The star notation is the same favourite-level mechanism as above and must
       share it, not be a second implementation.
 
-- [ ] **Appearance offers 4 themes; handwriting, ink and paper are thin too.**
+- [x] **Appearance offers 4 themes; handwriting, ink and paper are thin too.**
       > "in appearance i noticed only 4 themes, are there fix it to atleat have
       > 20, same bug for handwriting, you know what though i feel you have
       > already done this thouhg and the option is not showing but anyway might
       > be worth to check the code for stuff that may have been written but not
       > plugged"
       > "btw same issue for ink, paper type , atleast 20 options"
+      The reader's instinct was right again. 30 app themes, 34 inks, 24
+      papers and 27 handwriting faces now, each tiered and
+      family-grouped.  `138ef8a`
 
       Their instinct is right and this has happened four times already (the
       colour axis, the lettering shelf, the underlines, the wallpaper roll
       gate). Find the written-but-unplugged surfaces and plug them.
 
-- [ ] **A standing alarm for written-but-unplugged code.**
+- [x] **A standing alarm for written-but-unplugged code.**
       > "perhaps even a safety clever functionality sort of like alarm to every
       > part of the code to basically spit out errors if it isn't plugged in"
+      tests/plugged-in.test.ts. It missed six things on its first outing
+      - including a component that was imported but never RENDERED - and
+      was widened until every one of them would have failed it.  `138ef8a`
 
       Generalise `tests/roll-gates.test.ts`: a gate that every exported
       vocabulary / pool / gate has a real consumer in `src/`, failing loudly
@@ -181,65 +251,89 @@ loud rather than quietly reinterpreted.
 
 ### Book, page and editor
 
-- [ ] **A click should bring the book forward, not open it.**
+- [x] **A click should bring the book forward, not open it.**
       > "the book is auto opening when i click it should isntead just come in
       > foreview and only if user clicks on it does it go inside , with a back
       > button on top left"
+      One click brings it forward out of the shelf; a second opens it.
+      Back is top-left. Drag-out still works.  `138ef8a`
 
-- [ ] **The page changes colour mid-turn.**
+- [x] **The page changes colour mid-turn.**
       > "i noticed when turining the page the colour of page changes before
       > going back to original colour"
+      src/flip/paperTone.ts - the snapshot and the live DOM now agree
+      about the paper.  `138ef8a`
 
-- [ ] **Stickers and effects should be placeable anywhere.**
+- [x] **Stickers and effects should be placeable anywhere.**
       > "give user the option to drag and place stickers or any effects, like i
       > mean click on it and put it anywhere on the page, not caring about where
       > lines are"
+      Free placement, dragged with the pointer and persisted with the
+      page, with the reflow behaviour decided deliberately rather than
+      left to chance.  `138ef8a`
 
-- [ ] **Merge the bookmark button into Ribbons.**
+- [x] **Merge the bookmark button into Ribbons.**
       > "there should be an option for user to make their own custom bookmarks,
       > right now it just places a bokomark when i click on bookmark button, i
       > feel you may have written code for this but not plugged in, oh wait never
       > mind you just have it as options in sidebar called ribbon, maybe it might
       > be worth merging those two instead having a seperate button"
+      One control: bookmark this page and choose which ribbon does it,
+      with a one-press default so it stays fast.  `138ef8a`
 
-- [ ] **Focus mode should be a range, not a switch.**
+- [x] **Focus mode should be a range, not a switch.**
       > "focus mode should allow user to basically zoom in and also even just
       > get into full page mode where the book isnt even visible and it just page
       > and even go as far just making one page visible, so basically it should
       > be controllable by user"
+      Four rungs - off, spread, page, single leaf - plus a zoom the
+      reader controls and a leaf chooser, on a plate under the top-left
+      exit.  `138ef8a`
 
-- [ ] **Rework the welcome book to show everything off.**
+- [x] **Rework the welcome book to show everything off.**
       > "completely rework the welcome book content to showcase all the
       > different possiblities, also i hope you added math latex options etc"
       > "make the welcome book very detailed and beautofil and playful and fun
       > showing what all can be done like adding images, banenrs, also ithink the
       > code even shows how to add random images based on a search query, so
       > maybe add some cute kittens"
+      Rewritten as a real showcase, and yes - there are kittens.  `138ef8a`
 
-- [ ] **More shortcuts.**
+- [x] **More shortcuts.**
       > "more shortcuts would be nice"
+      Widened across the shelf, the panels, the book and focus mode, all
+      through the central map so every one is rebindable and appears in
+      the cheat sheet.  `138ef8a`
 
 ### Art quality
 
-- [ ] **Some spine designs are still too weird for the dice.**
+- [x] **Some spine designs are still too weird for the dice.**
       > "we might need to do a purge or atleast remove the randomise/new book
       > creator some new book designs on spine and perhaps elsewhere because they
       > too weird like look at how weird this is"
+      Re-judged on a real dice-rolled SHELF at the zoom the app opens on
+      rather than on a specimen board - the reason the first pass
+      under-demoted. Nothing deleted; all still pickable.  `138ef8a`
 
       They attached a shelf shot. Note this is now the SECOND pass on the same
       complaint, so the tiering is not demoting enough — re-judge against what
       they actually see on a shelf, not on a board.
 
-- [ ] **An effect renders wrongly.**
+- [x] **An effect renders wrongly.**
       > "fix and verify the effects, for example look at how weird this effect
       > is"
+      Found and fixed, then all 472 effect values swept on a real page
+      at real size to catch the others.  `138ef8a`
 
       They attached a page shot: a washi/tape strip sitting across the text
       rather than behind or above it.
 
-- [ ] **Custom cursors.**
+- [x] **Custom cursors.**
       > "add custom cursor states and cursor icons wiht customisation options
       > for the user pick"
+      Drawn cursor sets the reader picks between, with hotspots verified
+      by clicking small targets. `system` stays available and Windows
+      High Contrast hands it back on its own.  `138ef8a`
 
 ## 🏷️ Rename to **Alcove** — DEFERRED until the running workflows land
 

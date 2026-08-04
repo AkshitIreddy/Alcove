@@ -1,5 +1,182 @@
 # Alcove — running TODO
 
+## 🔴 Reported 2026-08-05 — toward 0.3, WORK THIS LIST SEQUENTIALLY
+
+The reader asked for these one at a time rather than fanned out: *"this time I
+think maybe we should do stuff sequentially instead of parallel so don't use
+workflows and work through them one by one"*. Their words are quoted verbatim
+under each item (grammar tidied, nothing else), then the task as understood.
+
+### Sound
+
+- [ ] **Static during onboarding — a rendering bug, not the recordings.**
+      > "During onboarding, for example when I move through each one, sometimes
+      > there is a sound effect bug of static. The static sound comes when it
+      > auto-moves as well, sometimes — so it's not consistent. It's a sound
+      > rendering bug, not a sound source quality problem."
+      > "The static sound bug also happens when I am selecting a sound profile
+      > during onboarding: when you select a profile it plays sounds in rapid
+      > succession, which causes some of them to sound like static."
+
+      Two symptoms, one likely cause. `scripts/audit-sounds.mjs` already proved
+      every shipped WAV is clean — no clipping, no DC, no discontinuities, every
+      loop seam exactly 0 — so this is in the PLAYBACK path. The profile picker
+      firing several cues at once is the reproducible case: overlapping voices
+      summing past full scale, or Howler being asked to play a sound already
+      playing and restarting it mid-render.
+
+### First impression
+
+- [ ] **The app chose a dark theme without asking.**
+      > "For some reason the app chose dark theme for UI without letting me
+      > choose. It should default to normal theme — don't take from the user's
+      > system settings, if that's what you are doing. Basically I don't want a
+      > situation where the user has chosen their themes and it's pretty light,
+      > or light with some dark, and then all of a sudden the UI colour themes
+      > become dark. Personally I would say night theme should not even be an
+      > option during onboarding, but available in settings."
+
+      Stop reading `prefers-color-scheme`. Default to the light/normal theme.
+      Take night out of the onboarding choices; it stays in Settings.
+
+### The tutorial
+
+- [ ] **Step 10 does not allow dragging — and dragging is broken outside the
+      tutorial too.**
+      > "Step 10 does not allow dragging stuff. In fact dragging does not work
+      > even outside the tutorial."
+
+      The second half is the real bug; the step is just where it was noticed.
+
+- [ ] **Step 18 does not move the tutorial card when the panel opens.**
+      > "Step 18 doesn't move the UI tutorial window when the user opens the In
+      > and Out window. Also we should let the user be able to move the step
+      > windows by clicking and dragging."
+
+- [ ] **Say that a step advances on its own.**
+      > "We should tell the user that the steps move on their own by using the
+      > UI. So let's say they do something correct — then a green timer circle
+      > or something in that window. Or again, anything else you think of that
+      > would be good in a UI sense, to let the user know it will auto-move to
+      > the next step a certain amount of time after they've completed the step."
+
+### Pages and the editor
+
+- [ ] **The page turn flickers the effects in a beat late.**
+      > "When turning pages, after the page turn and we go to the next page,
+      > there is a flicker for a second where it then puts all the processing
+      > effects we have on it — for example the shadow effect in the middle and
+      > so on. It either needs to be there from the start as soon as the page
+      > turn begins, or needs to be really, really fast."
+
+- [ ] **A page never seen before turns up blank white.**
+      > "There is a bug in the welcome book: let's say I am turning to a page I
+      > haven't seen before, then it shows as a blank white page. But after
+      > turning it, and then going back and turning to that page again, the
+      > content is there as usual during the page turn."
+
+      The raster cache has nothing for a page that has never been mounted, and
+      the flip shows the empty snapshot rather than waiting or falling back.
+
+- [ ] **Always keep two blank pages ahead.**
+      > "Always auto-create the next 2 pages when the user is on the last page,
+      > so the user never sees a blank page."
+
+- [ ] **Page style offers four options; it should offer at least twenty.**
+      > "In the sidebar, when inside the app, page style only shows four
+      > options: ruled lines, grid squares, blank paper, dot grid. At least 20
+      > here."
+
+- [ ] **Handwriting by default, and a way to change the face of a selection.**
+      > "I want the default text style in the notebook when I write to be like
+      > handwriting. Also I don't see an option, when in the notebook, to change
+      > the text font style — for example I might want different pieces of text
+      > to have different font styles. So fix that."
+
+- [ ] **The code block's language dropdown is not our UI and runs off the page.**
+      > "I noticed for code blocks the dropdown isn't in our app UI, and it also
+      > goes all the way down to the bottom."
+
+### The welcome book
+
+- [ ] **Half-empty pages, and it should be much longer.**
+      > "I noticed a lot of pages in the welcome book have empty space at the
+      > second half, because you didn't fill anything in it. You should put
+      > something in it — more examples or something."
+      > "I think you can make the welcome book much longer and detailed, so the
+      > user can see many examples."
+
+### Settings
+
+- [ ] **A search box in Settings.**
+      > "Settings should have a search bar for the user to search things in it."
+
+### Performance
+
+- [ ] **Opening a panel drops the frame rate hard.**
+      > "Checking with the FPS overlay I noticed that sometimes if the user, for
+      > example, clicks on the sidebar options to open a panel, there is a huge
+      > FPS drop before it gets restored again back to 240 FPS. Similarly it may
+      > be happening for the studio. We need to make sure FPS drops never
+      > happen."
+
+### The README and the release page
+
+- [ ] **The pictures and the words around them need updating.**
+      > "The readme — you will now have to update the pictures and explanation
+      > maybe."
+
+- [ ] **Part 1 should be pictures with explanation, not a wall of text.**
+      > "I kind of want it to have more of a picture-and-explanation vibe for
+      > most of part 1. We already do this, but there is a substantial amount of
+      > text between the 2nd and 3rd occurrence of pictures — you know, the
+      > parts index, downloads, etc. So maybe add pictures, or reduce text, or
+      > actually do both. We want part 1 to have as many pictures as possible,
+      > to not intimidate users."
+
+- [ ] **Put the what-is-what table at the TOP of the release notes.**
+      > "In the releases page, the table of what is what should be at top, and
+      > then under it what's new — otherwise that table gets buried in the 'read
+      > more' of the GitHub UI."
+
+- [ ] **Make the release document look like the app.**
+      > "See if you can spruce up the text and UI in that release document to
+      > better align with our app."
+
+### The demo
+
+- [ ] **A looping GIF demo, built with the reader's own `gifsmith`.**
+      > "Use the gifsmith package — I made it — to create a GIF demo of the app.
+      > You may start with showing the bookshelf (pick a fancy, grand-looking
+      > preset for wallpaper, books and shelves, and fill up the shelf with some
+      > books for this demo), click on studio to show that it has so many
+      > options in different areas of customisation — in fact try clicking many
+      > different categories to show how it customises in real time, to show how
+      > you can change it drastically — then close it and open the welcome book,
+      > turn through the pages to show them one by one, occasionally opening a
+      > panel in between so that you open all panels, and then finally once you
+      > reach all the pages go back by pressing the back button and end, so it
+      > will look like it goes to the shelf but it is the beginning of the GIF
+      > (as how GIFs usually work), so it becomes forward-looping."
+      > "If at any point you feel gifsmith doesn't have what you need, or
+      > something in it needs to be changed, I have the repo here — make your
+      > changes and push with a version tag and it will auto-publish on the npm
+      > page with the new package."
+
+      `C:\Users\akshi\Desktop\Code Palace\gifsmith` ·
+      https://www.npmjs.com/package/gifsmith
+
+### Shipping 0.3
+
+- [ ] **Make the repo public, then release 0.3.**
+      > "After all this you can make the repo public, then do a new release that
+      > encompasses all these changes as 0.3."
+
+- [ ] **Uninstall the app and remove its data — and stop installing it.**
+      > "Delete the app you installed for me, with app data of it now. I will go
+      > through the experience myself from GitHub. No need for you to install
+      > the app for me any more either."
+
 ## 🔴 Reported 2026-08-04 (third pass) — toward the 0.2 release
 
 ### Packaging and release

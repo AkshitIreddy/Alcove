@@ -18,12 +18,45 @@ under each item (grammar tidied, nothing else), then the task as understood.
       > during onboarding: when you select a profile it plays sounds in rapid
       > succession, which causes some of them to sound like static."
 
-      Two symptoms, one likely cause. `scripts/audit-sounds.mjs` already proved
-      every shipped WAV is clean — no clipping, no DC, no discontinuities, every
-      loop seam exactly 0 — so this is in the PLAYBACK path. The profile picker
-      firing several cues at once is the reproducible case: overlapping voices
-      summing past full scale, or Howler being asked to play a sound already
-      playing and restarting it mid-render.
+      NOT the recordings: `scripts/audit-sounds.mjs` measured all 66 and none
+      clips, none carries DC, none starts or ends mid-waveform, every ambient
+      loop seam is exactly 0. And the reader was explicit that this is a
+      rendering fault, not cues mushing together.
+
+      **Four explanations measured and KILLED** (`scripts/probe-sound-clip.mjs`,
+      which taps Howler's master in the running app). Written down so nobody
+      spends the afternoon on them twice:
+
+      1. *Summing past full scale.* Six auditions stacked reach peak **0.18**.
+         Nowhere near clipping.
+      2. *A wash of overlapping noise cues.* Spectral flatness at the master
+         stays **0.02–0.03** under the same stacking. Not broadband noise.
+      3. *The bus being torn down mid-render.* `applyBusFilter` does
+         `master.disconnect()` and rebuilds when the set changes — which is
+         exactly when the reader hears it. Rewritten to re-tune a chain wired
+         once, then A/B'd with a ScriptProcessor tap recording EVERY rendered
+         block: **0 dropouts on the old code as well as the new**. Web Audio
+         applies graph edits atomically at a render-quantum boundary, so the gap
+         never reaches the audio thread. The change was REVERTED rather than
+         shipped as a fix it is not.
+      4. *Howler stealing a voice when its pool is exhausted.* `_drain()` only
+         recycles ENDED sounds; a busy Howl allocates a new one.
+
+      Also ruled out by reading: the group volume/rate pre-set is deliberate and
+      already measured (`presetLevel`'s docblock records a 7% correction it was
+      written to avoid).
+
+      **The structural limit on all of the above**, and the reason the next
+      attempt should not be another headless probe: headless Chromium has no
+      audio device. Anything that manifests at the device boundary — a missed
+      callback deadline, a resample to the device rate, a WASAPI glitch — cannot
+      occur there at all. The reader hears it in WebView2 on real hardware.
+
+      **Leading remaining explanation:** main-thread stalls starving the audio
+      callback. It fits every detail — intermittent ("not consistent"), on step
+      advance whether manual or automatic, and while a picker re-renders. It is
+      also the same suspect as the FPS-drop item below, which the reader
+      reported independently. Do that one first and re-test this.
 
 ### First impression
 

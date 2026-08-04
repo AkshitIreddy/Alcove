@@ -4,9 +4,28 @@
 
 ### Packaging and release
 
-- [ ] **Ship 0.2, and let CI build every platform from now on.**
-      > "you can start making the github workflows bild exes for different
-      > platforms from now on, we can call the version 0.2 or something"
+- [x] **Ship 0.2, and let CI build every platform from now on.**
+      Released at `v0.2.0`: seven artefacts and a `SHA256SUMS.txt`, built from
+      one tag on three runners. Windows `-setup.exe` 16,936,253 and the
+      `-setup-offline.exe` carrying the whole WebView2 runtime at 227,633,407;
+      an `.msi` beside them; a universal `.dmg`; `.deb`, `.rpm` and AppImage.
+
+      It took three tags to get right, and every failure was real:
+      1. the shot-source digest was computed over raw bytes, so Windows and
+         Linux could never agree — and recapturing re-recorded the wrong one,
+         which made it unclearable;
+      2. `gen-spec.mjs --check` compared generated LF against a CRLF checkout,
+         so the Linux gates job passed the same check the Windows build failed.
+         Both were the same cause wearing different faces, and the repo had no
+         `.gitattributes` at all — it does now;
+      3. the release published ONE asset of six with every job green.
+         `upload-artifact` roots an artefact at the least common ancestor of
+         its paths, so macOS arrived flat and Windows and Linux arrived as
+         directories; `sha256sum *` hashed the one file and `files:
+         artefacts/*` uploaded it. `fail_on_unmatched_files` could not see it:
+         the glob matched something, just not everything. The publish job now
+         flattens and REFUSES to publish unless one artefact matches each of
+         the six platform patterns the README's download table promises.
 
 - [x] **WebView2: measure it, and consider bundling.**
       > "i noticed that the pc needs to have microsoft edge web view2 runtime,

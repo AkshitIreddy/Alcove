@@ -53,12 +53,21 @@ qa/tmp/
 # something reads them back: `qa/baseline/**` is what `npm run visual` compares
 # against, `docs/readme/img/**` is what the README shows, and `assets/brand/**`
 # is the app's own mark.
+#
+# JSON joined the list the same day three probes (`probe-panel-foot.mjs`,
+# a panel-drain measurement, `probe-turn-face.mjs`) each wrote their per-frame
+# readings to `qa/<name>/*.json` and all three turned up untracked — 20,462
+# lines of numbers nobody reads back, the same shape as the pictures above.
+# `qa/verify/10-studio-struct.json` predates this rule and stays tracked
+# (gitignore never untracks a file already in the index); a NEW probe's JSON
+# output should not be added by hand to match it.
 # ---------------------------------------------------------------------------
 qa/**/*.png
 qa/**/*.jpg
 qa/**/*.jpeg
 qa/**/*.webp
 qa/**/*.gif
+qa/**/*.json
 !qa/baseline/**
 shots-now/**/*.png
 shots-now/**/*.jpg

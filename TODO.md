@@ -1,5 +1,85 @@
 # Alcove — running TODO
 
+## 🎯 OPEN — everything left, in the order to do it
+
+This index exists because the file below it is 3,900 lines of dated reports and
+293 done items interleaved with the 12 still open. The detail for every row
+below lives at its line number IN THIS FILE — this is a map, not a copy, so
+nothing here can drift out of sync with the real entry.
+
+**See also [`HANDOFF.md`](HANDOFF.md)** for the fuller picture: what state the
+tree is in right now, what's uncommitted, and what to check first.
+
+### Blocked on the owner (a real decision, not busywork)
+
+- `:1089` **Nothing checks an ordinary commit.** No push/PR CI workflow exists;
+  adding one spends the owner's Actions minutes. Their call, not an agent's.
+
+### Needs tracing, not yet started
+
+- `:197` **The curl freezes near the end of the first turn after a panel
+  closes** — up to 2,523ms stuck at p=0.89. A hypothesis is written down
+  (stale-scale re-rasterise contending with the next `beginFlip`) but untested.
+- A temporal-review finding, filed just above `:197` (search `wrong spread`) —
+  the right leaf briefly shows content from elsewhere in the book, 5 times in
+  the old recording. `scripts/probe-turn-face.mjs` exists to chase it and has
+  not been run against the current app yet.
+
+### The release sequence — do these IN ORDER, on a dev server nothing else is
+### writing to (see `:1236` for the full six-step breakdown and why order matters)
+
+1. `:1110` **Run the history rewrite.** `scripts/shrink-history.mjs --yes`,
+   verified safe by a full rehearsal on a throwaway clone (GO, not just
+   planned) — 1,406.6 MB → 317.9 MB, zero live files touched. Then `--remap`,
+   then force-push `main` **and `--tags`** (both, or the release pipeline
+   silently diffs against the wrong "previous" tag), then `git tag v0.4.0`.
+   *Actually, do this LAST — see the numbered order at `:1236`; it's listed
+   first here only because it has no dependency on anything else finishing.*
+2. `npm run visual`, full matrix. Watch the sabotage gate fail first
+   (`--sabotage --only=desk-day-shelf` on a QUIET tree — the one attempt so far
+   was contaminated by concurrent agents and inconclusive).
+3. `:1181` Re-capture the 23 README shots — `--only=hero` first to watch the
+   new atomic-commit machinery work, then the full run, then re-read every alt
+   string against the new pictures (a gate exists for this now, but only for
+   welcome-book prose shots).
+4. `npm run readme:build`, then re-check the 0.4.0 release-notes arithmetic
+   against whatever the numbers land on (they've moved twice already).
+5. `:1223` Re-render the demo, once, last. Check it against the two open
+   findings above before calling it done.
+6. Tag and ship.
+
+### Smaller, not release-blocking
+
+- `:2024` **Pin to Start fails with `E_ACCESSDENIED`.** Needs the owner at the
+  keyboard for the real right-click grant; do not use the `ConfigureStartPins`
+  policy (needs admin, replaces their whole pinned layout).
+
+### Superseded — kept for the original quote, not actionable on their own
+
+- `:142`, `:297` are the FIRST, bare reports of the turn-symptom and demo-looks-
+  broken complaints. Both are superseded by the measured, gated follow-up
+  entries at `:170` and `:228` — read those instead.
+- `:303` **"the visual harness should detect frame-to-frame changes, ideally in
+  gifsmith"** — very likely already built: `gifsmith`'s `src/review/` (~1,300
+  lines: `detect.ts`, `signal.ts`, `atlas.ts`, `ledger.ts`) exists and
+  `scripts/probe-turn-face.mjs` in THIS repo cites "the temporal review of the
+  demo" as having found the wrong-spread defect above. Not verified from this
+  side — check `gifsmith`'s own commit log and tests before assuming it shipped
+  cleanly; that repo is separate and this session did not audit it directly.
+
+### Uncommitted work in flight, from a background agent this session lost track of
+
+- `src/flip/offscreenPages.ts`, `src/flip/FlipSurface.tsx`, `src/views/BookView.tsx`
+  carry ~176 lines of uncommitted, additive changes (`git diff --stat` to see
+  them) that appear to make offscreen flip-face captures DRAIN a staged page
+  before photographing it — which would plausibly explain the "wrong spread"
+  finding above, since an undrained page's stale content is exactly what a
+  stale flip texture would show. **Not verified, not tested, not committed.**
+  Read the diff, run `npx tsc --noEmit` and the flip test suite, and either
+  finish and commit it or revert it — do not leave it sitting uncommitted.
+
+---
+
 ## 🔴 Reported 2026-08-05 (fourth pass) — the demo, and the bugs it exposed
 
 Recorded verbatim (grammar tidied only) from two messages while the 0.3 demo was
@@ -397,7 +477,7 @@ being reviewed frame by frame.
       (Recorded here after the fact — both entries were lost from this file
       during a bulk edit and restored once the loss was noticed.)
 
-- [ ] **The Welcome book's first page teaches two things that contradict each
+- [x] **The Welcome book's first page teaches two things that contradict each
       other, four lines apart.** **RULED — arrows do not turn pages.**
       > "well we can not make arrow keys turn pages then"
 
@@ -420,6 +500,15 @@ being reviewed frame by frame.
       one can STRAND a reader rather than merely mislead them; and the welcome
       page's own bullet, which is the last one because `src/data/seed.ts` is
       being re-cut by another workflow as this is written.
+
+      **DONE, all of it, plus a second binding the survey above missed.**
+      `9375f9e` `0521c4c`. A completely independent `window` keydown listener
+      inside `src/flip/FlipSurface.tsx` was calling `flipNext`/`flipPrev`
+      directly — found not by reading but by the inverted e2e test (below)
+      going red against a tree where the first binding was already gone.
+      `tests/e2e/pages.spec.ts`'s old passing test is now "arrow keys do not
+      turn the page" — inverted rather than deleted, because a removal nothing
+      watches is a removal that comes back.
 
       *(the original entry follows — a product question, the owner's to rule on,
       not a bug to quietly fix)*
@@ -831,7 +920,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
           four books above it whose label plates and bands the palette flattens
           into featureless blocks.
 
-- [ ] **Nine tests were proven unable to fail.** *(the sharpened version of "most
+- [x] **Nine tests were proven unable to fail.** *(the sharpened version of "most
       testing we do now is useless" — asked as "which tests CANNOT fail?" and
       answered by mutating the code they claim to guard)*
 
@@ -895,8 +984,11 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       modules as source and assert their shape, and `design-cache-keys.test.ts`
       already tests a key differentially and went RED under mutation.
 
-      Being fixed now, each one watched failing against the exact mutation that
-      fooled it.
+      **DONE — all nine, `1ea6835`.** Each watched red against the exact
+      mutation that fooled the old version, then green on revert. The
+      cache-tag fix also gained a dedicated case for cloth REORDERING (same
+      hexes, different arrangement, different shelf) — the actual shape of
+      the audit's collision, which a per-field nudge alone cannot catch.
 
 - [x] **Replace most of the test suite with AI-in-the-loop visual verification.**
       > "I want there to be some sort of AI (you) in the loop testing where you

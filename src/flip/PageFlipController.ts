@@ -20,9 +20,11 @@
  *       physics when the plugin is registered
  *   pointerdown mid-tween → tween.kill(), resume drag from current p
  *   land() → flat-state swap: draw the end state, commit navigation (p=1) or
- *       restore selection/focus (p=0) under the canvas, wait one rAF for the
- *       new DOM to paint, clear the overlay and reveal the leaf together,
- *       then hide the canvas a frame later (see land() for why)
+ *       restore selection/focus (p=0) under the canvas, reveal the moving leaf
+ *       in that same frame, then wait one rAF for the new DOM to paint before
+ *       clearing the overlay and one more before hiding the canvas (see
+ *       land() for the frame-by-frame, and for why the landing frame has to be
+ *       a complete picture of the spread rather than merely a matching one)
  *
  * Fallbacks: WebGL unavailable → rigid CSS 3D fold (same gesture math);
  * context loss mid-flip → instant land via a crossfade veil; reduced motion
@@ -577,13 +579,24 @@ export class PageFlipController {
    *
    *   frame N  — we are inside a rAF callback (GSAP's ticker drives the
    *              tween, so onComplete lands here). Draw the p=target frame
-   *              synchronously, THEN commit navigation. Both the raster and
-   *              the new DOM are therefore painted at the end of this same
-   *              frame, one exactly on top of the other.
+   *              synchronously, THEN commit navigation, THEN drop the moving
+   *              leaf's `visibility: hidden`. Raster, new DOM and the leaf's
+   *              own fore-edge hairlines are therefore all painted at the end
+   *              of this same frame, one exactly on top of the other.
    *   frame N+1 — the new DOM is on screen (under the canvas) and proven
-   *              painted. Clear the GL colour buffer and reveal the moving
-   *              leaf in the same callback, so they land in one paint.
+   *              painted. Clear the GL colour buffer.
    *   frame N+2 — display:none the canvas.
+   *
+   * FRAME N IS THE ONE THAT HAS TO BE RIGHT ON ITS OWN, and that is a stronger
+   * requirement than "the swap is seamless". A landing is the busiest moment in
+   * the app, so frames N+1 and N+2 can be starved for hundreds of milliseconds
+   * (218–665ms long tasks, measured) and the reader sits on frame N for all of
+   * it. Everything the settled spread wears, frame N must already wear: the
+   * page textures (this method's renderNow), the gutter band and the dog-ear
+   * (spread.css lifts them over the canvas for the length of the turn) and the
+   * page-stack hairlines (the reveal below). Anything left for N+1 is not a
+   * frame late — it is half a second late, and it reads as the page loading its
+   * shading after it lands.
    *
    * It used to wait two rAFs before the clear, which held a stale raster over
    * the already-committed spread for an extra frame; with the main thread
@@ -629,9 +642,32 @@ export class PageFlipController {
       // The saved ranges are clones, so a cancelled flip can still restore.
       this.clearSelection();
       this.options.navigate(dir); // new spread mounts under the canvas
-    } else if (leafElement) {
-      leafElement.style.visibility = '';
     }
+
+    /*
+     * THE MOVING LEAF COMES BACK NOW, IN THE FRAME THAT SWAPPED — not in the
+     * rAF below, and not on both branches at different times.
+     *
+     * A cancelled flip has always revealed it here; a completed one waited for
+     * frame N+1, and the asymmetry was costing the landing a piece of its
+     * shading. `visibility: hidden` on the leaf wrapper takes its
+     * `.nb-leaf-paper` box-shadow with it — the five offset hairlines that draw
+     * the fore-edges of the pages beneath (see the leaf rules above) — and
+     * those paint OUTSIDE the leaf's border box, which is to say outside the
+     * canvas, which is to say the overlay cannot draw them back. So for every
+     * frame between the swap and rAF #1 the new page stood there with no page
+     * stack down its outer edge, and `probe-landing-effects.mjs` duly reported
+     * `right.paperVis` moving hidden → visible 26–48ms after the DOM was
+     * already correct. On a starved landing that is the same half second as
+     * everything else.
+     *
+     * Safe to do under the overlay because the overlay is opaque exactly where
+     * this leaf is: the ground pass writes `vec4(color, 1.0)` over the moving
+     * leaf's whole rect at every p (curl.ts), and at p=1 the curl mesh covers
+     * the other leaf's rect as well. Nothing of the live DOM reaches the glass
+     * a frame early — only the hairlines just outside it, which is the point.
+     */
+    if (leafElement) leafElement.style.visibility = '';
 
     // A newer flip (or destroy / context loss) bumps landToken and owns the
     // overlay from that moment; these frames must then do nothing.
@@ -642,8 +678,9 @@ export class PageFlipController {
       // The live DOM committed above has now been painted once beneath the
       // canvas, so the overlay can go without a visible pop.
       this.renderer?.clear();
-      // The old leaf element may have been unmounted by navigation; clear
-      // the inline style anyway in case the host recycles it.
+      // Belt and braces: the reveal happened in frame N, but a host that
+      // recycles the wrapper (or a re-entrant landing) must never be left
+      // holding an inline `hidden`.
       if (leafElement) leafElement.style.visibility = '';
       this.phase = 'rest';
       this.landing = false;

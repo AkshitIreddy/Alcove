@@ -252,7 +252,11 @@
 .nb-flip-veil {
   position: absolute;
   inset: 0;
-  z-index: calc(var(--z-flip) + 1);
+  /* +4, above the gutter (+2) and the dog-ear (+3), which spread.css lifts over
+     the canvas for the length of a turn. A veil that something shows through is
+     not a veil: this one has to be able to mask an emergency landing after GPU
+     context loss, and the canvas is still up at that moment. */
+  z-index: calc(var(--z-flip) + 4);
   background: var(--paper-cream);
   pointer-events: none;
   will-change: opacity;

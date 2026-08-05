@@ -266,9 +266,14 @@
 
 /* ----------------------------------------------------------------------------
    Gutter — static spine ambient occlusion down the middle (design doc: CSS
-   gradient overlay, never animated). Sits above the resting leaves, below
-   the flip hotspots/canvas, and outside the snapshot roots so rest and
-   mid-flip frames match.
+   gradient overlay, never animated). Sits above the resting leaves and outside
+   the snapshot roots.
+
+   It used to sit BELOW the flip canvas too, on the reasoning that this made
+   "rest and mid-flip frames match". It did the opposite — a 26px band that the
+   overlay covered for the whole of every turn and for the whole of the starved
+   landing after it. See the block at the foot of this file; the raise lives
+   there, next to the dog-ear's, because the two share one reason.
    -------------------------------------------------------------------------- */
 .nb-spread-gutter {
   position: absolute;
@@ -336,6 +341,78 @@
   opacity: 1;
   transform: scale(1.18);
 }
+
+/* ----------------------------------------------------------------------------
+   THE TWO MARKS NO PAGE TEXTURE CAN EVER CONTAIN
+
+   The reader, on the turn: *"it doesn't have the shading — for example the
+   shadow in the middle — the page looks whitish for maybe 0.5 seconds and then
+   all of it comes. So it feels like it loads those effects when the user
+   finishes turning the pages."*
+
+   Nothing was loading. `scripts/probe-landing-effects.mjs` sampled every value
+   the leaf's look is made of, every 8ms, anchored on the DOM swap — the paper
+   colour, the fore-edge hairlines, the ruling stack, the two doc attributes it
+   is computed from, the tokens resolved at the leaf — and every one of them was
+   already at its settled value on the very sample the new leaf appeared in.
+   0ms late, on every turn, on every run.
+
+   What was late was not a VALUE but a VIEW. The gutter band above, its crease
+   and the dog-ear are DOM siblings of the flip surface at z-index 10 and 11,
+   and the curl canvas is `position: absolute; inset: 0` at `--z-flip` (200)
+   across the whole spread. So for as long as the overlay is up they are simply
+   not on the glass: measured buried by name, 26px of overlap — the band's full
+   width — for 557–1039ms of every turn. The landing is the busiest moment in
+   the app (two PageEditors mount, two TipTap documents parse, the pagination
+   drain runs), so the frame that finally takes the overlay down is starved for
+   up to half a second, and everything appears at once when it lands. That is
+   the reader's half second exactly: not when the shading became true, but when
+   it became visible.
+
+   And warming more bitmaps — the obvious "preload the effects" fix — provably
+   cannot help. §5 of that probe asserts it: both of these live OUTSIDE every
+   `.nb-sheet-paper`, and a page texture is a capture of a sheet. No snapshot,
+   warmed however early, can contain them.
+
+   So while the overlay is up they go ABOVE it. The band is then painted by the
+   DOM continuously, through the whole turn and through the whole starved
+   landing, which is also the only way to be pixel-exact with the resting spread
+   — drawing it a second time in the shader would double its alpha wherever the
+   canvas is transparent (at p=0 the left half of the band already shows through
+   the untouched half of the overlay).
+
+   Conditional rather than a flat raise, and keyed on the same `:has()` that
+   reader.css uses to DEMOTE the sticker layer for the same reason in reverse:
+   nothing about the resting spread changes, and both the raise and the canvas's
+   own `display` come off one class on one element, so there is no frame where
+   the two disagree.
+
+   The stack above `--z-flip`, top down: sticker layer +6, drag handles +5,
+   crossfade veil +4 (flip.css — it masks EVERYTHING, including these two),
+   dog-ear +3, gutter +2, the curl canvas itself.
+   -------------------------------------------------------------------------- */
+.nb-spread:has(.nb-flip-canvas.is-flipping) .nb-spread-gutter {
+  z-index: calc(var(--z-flip) + 2);
+}
+
+.nb-spread:has(.nb-flip-canvas.is-flipping) .nb-page-curl {
+  z-index: calc(var(--z-flip) + 3);
+}
+
+/*
+ * AND THE DOG-EAR DOES NOT FADE OUT FOR THE TURN, though it is tempting.
+ *
+ * Tried and measured: `:has(.is-flip-gesture)` → `opacity: 0`, so the corner
+ * peels away with the page and its own 180ms transition settles it back onto
+ * the one that lands. It reads well and it is wrong, for the same reason the
+ * whole bug is: the fade BACK is a main-thread transition started by a style
+ * recalc, and the moment it has to start is the moment the main thread is gone.
+ * `scripts/check-gutter-lift.mjs` caught it — the class came off at +906ms and
+ * the dog-ear was still at 0.28 opacity at +1219ms, arriving a quarter of a
+ * second after the page it belongs to. A mark that is always there cannot be
+ * late; that is the whole lesson of this file, and it applies to the affordance
+ * as much as to the band.
+ */
 
 /* Edge hotspot glow (the hotspots themselves come from flip.css). */
 .nb-spread .nb-flip-hotspot {

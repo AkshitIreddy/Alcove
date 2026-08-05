@@ -850,7 +850,15 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
          string against the new picture. `tests/readme.test.ts` goes green here
          and not before.
       4. **`npm run readme:build`**, because the counts move every time an agent
-         adds a probe, and they have moved a dozen times today.
+         adds a probe, and they have moved a dozen times today. **Then re-read
+         the 0.4.0 section of `releases.md` against the constants as they
+         finally are.** It states arithmetic — "25.66 lines against 19.41", "a
+         592px column against 434px", "136% of the leaf", "84% of the leaf now"
+         — and those were true of the FIRST cut. The budget was refined again
+         afterwards (the estimator's slack is a function of the column now, so
+         the target budget moved), and the seed was re-cut against it. Nothing
+         gates prose. Recompute the four numbers and fix them, or the release
+         page ships confident arithmetic about a build that does something else.
       5. **Re-render the demo. Last, and once.** Then review it: the two
          over-full moments (f0705, f0857 in the old recording), the preset click
          where the ring lagged the room, and every turn's landing.

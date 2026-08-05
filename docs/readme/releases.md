@@ -125,6 +125,21 @@ panel is open; "opening the book…" no longer holds a bare window for a second
 and a bit; and the first page of the Welcome book is ruled paper, which is what
 its own first callout has always told you to click on.
 
+**Arrow keys no longer turn pages, and this is a removal on purpose.** The
+Welcome book's first page told you to click the ruled lines and start typing,
+and then, four lines later, that arrow keys turn pages. Do the first and the
+second stops being true: once the caret is in the page an arrow key moves the
+caret, because an arrow key belongs to the text before it belongs to the book.
+So the shortcut only worked in a state you were rarely in, and could not be
+described in one honest line — which is exactly what its own page proved by
+having to teach both.
+
+Turning a page was never the arrow key's job anyway. **Click the outer edge of a
+page to turn it, or drag it** — a strip down each outer edge, with the folded
+corner drawn on every leaf, and both work whether or not you are in the middle
+of a sentence. The table of contents and the thumbnail strip still open with a
+key and still move you between pages.
+
 **Two labels stopped lying.** The same clipboard was called *Copy the format for
 your AI* in one place and *Copy spec for your AI* in another — it is the first
 everywhere now, and "spec" was jargon the app used nowhere else a reader could

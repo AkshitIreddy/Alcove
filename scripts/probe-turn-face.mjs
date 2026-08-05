@@ -19,25 +19,31 @@
  * So the question this asks is not "what does the DOM say" but:
  *
  *     is the document the flip rasterized for the destination page the same
- *     document that page turns out to hold once it has mounted?
+ *     document that page turns out to hold once it has mounted and published
+ *     its pagination drain?
  *
  * If it is not, the reader was shown a page that does not exist — for the
  * whole gesture and for the landing frames after it — and then watched it
  * snap. The two sides are read the way the app reads them: the BEFORE side out
  * of the store through `data/pages` (which is literally what `loadPageDoc`
- * hands the capture), the AFTER side off the live leaves.
+ * hands the capture), and the AFTER side from that same store after the live
+ * leaf has published its drain. The live leaves are recorded beside the
+ * result so a failure remains legible in prose and pictures.
  *
  * A screencast runs across every turn as well, and the frames either side of
  * the landing are written out, because a number is not a picture and this
  * defect was found by looking at one.
  *
- *   node scripts/probe-turn-face.mjs [--url=…] [--turns=6] [--out=qa/turn-face]
- *                                    [--shots] [--sabotage]
+ *   node scripts/probe-turn-face.mjs [--url=…] [--turns=6] [--viewport=WxH]
+ *                                    [--out=qa/turn-face] [--shots] [--off]
  *
- * `--sabotage` edits the destination page's stored document behind the app's
- * back between the snapshot and the turn, which is exactly the failure mode in
- * different clothes: the flip's picture and the mounted page disagree. A gate
- * you have not watched fail is not a gate.
+ * TWO THINGS TO KNOW BEFORE RUNNING IT. The window size decides everything: a
+ * book whose pages have already been drained at this height is settled, and a
+ * settled book cannot show this defect at all — the first run came back clean
+ * at 1500x940 against a database a dozen probe runs had walked. Use a height
+ * nothing has read the book at. And `--off` runs the same build with
+ * `?settleahead=0`, which is the app before the fix: that is how this check
+ * was watched going red, 0 of 6 turns to 6 of 6.
  */
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -59,7 +65,13 @@ const SHOTS = process.argv.includes('--shots');
  * recorded on a smaller window and on a library that had never been read.
  */
 const [VW, VH] = arg('viewport', '1500x940').split('x').map(Number);
-const SABOTAGE = process.argv.includes('--sabotage');
+/*
+ * `--off` runs the app with `?settleahead=0`, which is the app BEFORE the fix:
+ * the flip photographs each page's stored document rather than draining it
+ * first. Same build, same book, same window — the only honest A/B, and the way
+ * to watch this check go red on purpose.
+ */
+const OFF = process.argv.includes('--off');
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -100,7 +112,7 @@ const stopCast = async () => {
 };
 
 /* -------------------------------- boot ------------------------------------ */
-await page.goto(`${URL_BASE}/?fx=force&dev=0`, { waitUntil: 'domcontentloaded' });
+await page.goto(`${URL_BASE}/?fx=force&dev=0${OFF ? '&settleahead=0' : ''}`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
 await page.evaluate(async () => { await globalThis.__shelfWorld.ready; });
 const skip = page.getByText('skip the tour');
@@ -138,12 +150,66 @@ const storedPages = () =>
       const kids = Array.isArray(node.content) ? node.content : [];
       return kids.map(textOf).join('');
     };
+    /*
+     * Compare the documents themselves, not DOM text.
+     *
+     * A diagram can have no text in JSON and still paint a whole SVG, while
+     * StarterKit's trailing paragraph has no text and paints nothing. The old
+     * heads-only comparison could not tell those apart: it discarded a
+     * diagram at the end of a stored page, then counted its rendered labels as
+     * a carried block. Conversely, a genuinely empty paragraph carried onto
+     * the front of a page changed the DOM child count without changing a
+     * single visible mark.
+     *
+     * The flip and the landing are both backed by PageDoc, so use a canonical
+     * top-level block signature and ignore only empty paragraphs. This keeps
+     * pictures/diagrams/cards structural even when their ink lives in attrs or
+     * a node view, and removes the one DOM-only phantom the reader cannot see.
+     */
+    const marksOf = (doc) => {
+      const blocks = [...(Array.isArray(doc?.content) ? doc.content : [])];
+      // Only the FINAL empty paragraph is StarterKit bookkeeping. An empty
+      // paragraph anywhere else is a visible ruled line with the editor's
+      // placeholder and it shifts every block below it — turn 4 of the first
+      // fixed run caught exactly that, so filtering every empty paragraph
+      // would make this gate inert again.
+      const tail = blocks[blocks.length - 1];
+      if (
+        blocks.length > 1 &&
+        tail?.type === 'paragraph' &&
+        textOf(tail).trim() === ''
+      ) {
+        blocks.pop();
+      }
+      return blocks.map((block) => {
+        /*
+         * Mounting a seeded doc fills schema defaults (`id`, null decoration
+         * attrs, diagram width, sticker x/y) without changing its page. The
+         * identity relevant here is the block kind, its complete text and the
+         * attrs that name non-text content. This keeps a tree/image distinct
+         * while refusing to call generated ids a different page.
+         */
+        const attrs = block?.attrs ?? {};
+        const identity = {};
+        for (const key of [
+          'kind', 'data', 'src', 'assetId', 'url', 'href', 'stickerId',
+          'title', 'language', 'checked', 'start', 'level',
+        ]) {
+          const value = attrs[key];
+          // OrderedList's schema materialises its default `start: 1` on mount.
+          if (key === 'start' && value === 1) continue;
+          if (value !== undefined && value !== null) identity[key] = value;
+        }
+        return JSON.stringify([block?.type ?? null, textOf(block), identity]);
+      });
+    };
     return list.map((p) => ({
       id: p.id,
       blocks: Array.isArray(p.doc?.content) ? p.doc.content.length : 0,
       heads: (Array.isArray(p.doc?.content) ? p.doc.content : []).map((b) =>
         textOf(b).trim().slice(0, 28),
       ),
+      marks: marksOf(p.doc),
     }));
   }, bookId);
 
@@ -186,32 +252,11 @@ const turn = async () => {
   await page.mouse.click(hot.x + hot.width / 2, hot.y + hot.height / 2);
 };
 
-/**
- * Do these two describe the same page?
- *
- * Two differences are NOISE and both were in the first run of this probe.
- * StarterKit's TrailingNode keeps an empty paragraph at the foot of a live
- * page that is not in the stored document, so every single turn came back
- * MISMATCH on an empty string. And a node view can render chrome of its own —
- * a spoiler's "psst… click to reveal" is in the leaf's textContent and nowhere
- * in the doc — so the text of one block is not always the text of the other.
- *
- * What the defect actually does is MOVE BLOCKS between pages, so the two
- * things compared are the number of blocks that carry ink and the ink of the
- * first and last of them. A carried block changes both; a trailing empty line
- * and a bit of node-view chrome change neither.
- */
-const inked = (heads) => (heads ?? []).filter((h) => h !== '');
-const near = (a, b) =>
-  a === b || (a !== undefined && b !== undefined && (a.startsWith(b) || b.startsWith(a)));
-const sameHeads = (a, b) => {
-  if (a === null || b === null) return false;
-  const x = inked(a);
-  const y = inked(b);
-  if (x.length !== y.length) return false;
-  if (x.length === 0) return true;
-  return near(x[0], y[0]) && near(x[x.length - 1], y[y.length - 1]);
-};
+const sameMarks = (a, b) =>
+  Array.isArray(a) &&
+  Array.isArray(b) &&
+  a.length === b.length &&
+  a.every((mark, i) => mark === b[i]);
 
 /* -------------------------------- the drive -------------------------------- */
 const rows = [];
@@ -223,48 +268,77 @@ for (let n = 0; n < TURNS; n += 1) {
   const dest = { left: stored[slot + 2] ?? null, right: stored[slot + 3] ?? null };
   if (dest.left === null && dest.right === null) break;
 
-  if (SABOTAGE && n === 0 && dest.right !== null) {
-    /*
-     * Rewrite the destination page in the store, behind the app's back, AFTER
-     * the flip has cached its picture of it. The flip then draws a page that
-     * the mounted leaf will not agree with — the same disagreement the defect
-     * produces, arrived at from the other end.
-     */
-    await page.evaluate(async ([id]) => {
-      const mod = await import('/src/data/pages.ts');
-      const p = await mod.getPage(id);
-      const doc = p?.doc ?? { type: 'doc', content: [] };
-      await mod.savePageDoc(id, {
-        ...doc,
-        content: [
-          { type: 'paragraph', content: [{ type: 'text', text: 'SABOTAGE — not the page you saw' }] },
-          ...(Array.isArray(doc.content) ? doc.content : []),
-        ],
-      });
-    }, [dest.right.id]);
-    await page.waitForTimeout(400);
-  }
-
   await startCast();
   const castStart = Date.now();
   await turn();
   await page.waitForTimeout(2600);
   await stopCast();
   const after = await liveLeaves();
+  /*
+   * The store as it stands once the dust has settled.
+   *
+   * This tells the two failures apart, and they are not the same defect. If
+   * the store AFTER matches the live leaves but the store BEFORE did not, the
+   * document moved between the snapshot and the turn — a settle still in
+   * flight, which is a question of how far ahead the reader is. If the store
+   * after DISAGREES with the leaves, the picture and the page genuinely do not
+   * match, which is the reported defect.
+   */
+  const storedAfter = await storedPages();
 
   if (after.spread === before.spread) {
     console.log(`  turn ${n + 1}: the book did not turn (still spread ${after.spread})`);
     break;
   }
 
-  const leftOk = sameHeads(dest.left?.heads ?? null, after.left?.heads ?? null);
-  const rightOk = sameHeads(dest.right?.heads ?? null, after.right?.heads ?? null);
-  rows.push({ n: n + 1, from: before.spread, to: after.spread, armed, dest, after, leftOk, rightOk });
+  const landedLeft = dest.left === null
+    ? null
+    : storedAfter.find((p) => p.id === dest.left.id) ?? null;
+  const landedRight = dest.right === null
+    ? null
+    : storedAfter.find((p) => p.id === dest.right.id) ?? null;
+  const leftOk = sameMarks(dest.left?.marks ?? null, landedLeft?.marks ?? null);
+  const rightOk = sameMarks(dest.right?.marks ?? null, landedRight?.marks ?? null);
+  /*
+   * HOW BADLY WRONG, not whether it was allowed to be wrong.
+   *
+   * There was a classifier here that asked whether the STORE had moved on by
+   * the time everything settled, and called those turns "a settle still in
+   * flight" rather than failures. It is inert by construction: the mounted
+   * page publishes its own drain to the store, so the store always agrees with
+   * the leaves a second later — every failure was excused, and the `--off` run
+   * (the app WITH the defect) came back GATE INERT while reporting four
+   * mismatched turns. Whatever the reason, a reader who was shown one page and
+   * handed another was shown the wrong page.
+   *
+   * What is worth grading is the SIZE of it: a page whose first block differs
+   * is a different page (the demo's "Four kinds of aside" where "The
+   * stationery drawer" landed), while one that differs by a block at the edge
+   * is the same page one carry out of date.
+   */
+  const grade = (a, b) => {
+    const x = a?.marks ?? [];
+    const y = b?.marks ?? [];
+    if (x.length === 0 && y.length === 0) return 'ok';
+    return x[0] === y[0] ? 'edge' : 'other page';
+  };
+  const how = [
+    leftOk ? null : `left ${grade(dest.left, landedLeft)}`,
+    rightOk ? null : `right ${grade(dest.right, landedRight)}`,
+  ].filter((v) => v !== null);
+  const otherPage = how.some((v) => v.endsWith('other page'));
+  rows.push({
+    n: n + 1, from: before.spread, to: after.spread, armed, dest, after,
+    leftOk, rightOk, how, otherPage,
+    storedAfterLeft: landedLeft,
+    storedAfterRight: landedRight,
+  });
 
   console.log(
     `  turn ${n + 1} (spread ${before.spread} → ${after.spread}): ` +
       `curl had front/back/revealed ${armed ? [armed.hasFront, armed.hasBack, armed.hasRevealed].map((b) => (b ? 'y' : 'n')).join('') : '???'} · ` +
-      `left ${leftOk ? 'matches' : 'MISMATCH'} · right ${rightOk ? 'matches' : 'MISMATCH'}`,
+      `left ${leftOk ? 'matches' : 'MISMATCH'} · right ${rightOk ? 'matches' : 'MISMATCH'}` +
+      (how.length > 0 ? ` · ${how.join(', ')}` : ''),
   );
   if (!leftOk || !rightOk) {
     const show = (label, a, b) =>
@@ -292,18 +366,39 @@ for (let n = 0; n < TURNS; n += 1) {
 
 /* -------------------------------- report ---------------------------------- */
 writeFileSync(join(OUT, 'turns.json'), JSON.stringify(rows, null, 1));
-const bad = rows.filter((r) => !r.leftOk || !r.rightOk);
+const wrong = rows.filter((r) => !r.leftOk || !r.rightOk);
+const otherPage = wrong.filter((r) => r.otherPage);
 console.log('\n================ VERDICT ================');
+const where = (r) => `spread ${r.to} (${r.how.join(', ')})`;
 console.log(
-  bad.length === 0
+  wrong.length === 0
     ? `every one of ${rows.length} turns landed on the page it drew.`
-    : `${bad.length} of ${rows.length} turns DREW A PAGE THAT DOES NOT EXIST: ` +
-        bad
-          .map((r) => `spread ${r.to} (${!r.leftOk ? 'left' : ''}${!r.leftOk && !r.rightOk ? '+' : ''}${!r.rightOk ? 'right' : ''})`)
-          .join(', '),
+    : `${wrong.length} of ${rows.length} turns DREW A PAGE THEY DID NOT LAND ON: ` +
+        wrong.map(where).join(', '),
 );
-if (SABOTAGE) console.log(bad.length > 0 ? 'GATE ALIVE' : 'GATE INERT');
+if (wrong.length > 0) {
+  console.log(
+    `  of those, ${otherPage.length} showed a DIFFERENT PAGE (the first block does not ` +
+      `even match — the reported defect) and ${wrong.length - otherPage.length} differed by ` +
+      `a block at the edge (the same page, one carry out of date).`,
+  );
+}
+/*
+ * THE ONLY SABOTAGE THAT BITES, and the first one did not.
+ *
+ * The first version rewrote the destination page in the store behind the
+ * app's back after the snapshot, on the theory that the flip would then draw
+ * a page the mounted leaf disagreed with. It cannot: the leaf mounts from the
+ * host's in-memory page list, which that write never touches, so both sides
+ * moved together and the run came back green while claiming to be broken —
+ * an inert gate of exactly the kind this repo keeps finding.
+ *
+ * `--off` is the real one. It puts the app back to photographing the stored
+ * document (`?settleahead=0`), which is the defect itself, in the same build,
+ * against the same book, at the same window size.
+ */
+if (OFF) console.log(wrong.length > 0 ? 'GATE ALIVE' : 'GATE INERT');
 console.log('errors:', errors.length ? errors.slice(0, 3) : 'none');
 if (reloads.length) console.log(`WARNING: page reloaded ${reloads.length}x mid-run — re-run before trusting this`);
 await browser.close();
-process.exit(!SABOTAGE && bad.length > 0 ? 1 : 0);
+process.exit(!OFF && wrong.length > 0 ? 1 : 0);

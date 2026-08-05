@@ -20,10 +20,6 @@ tree is in right now, what's uncommitted, and what to check first.
 - `:197` **The curl freezes near the end of the first turn after a panel
   closes** — up to 2,523ms stuck at p=0.89. A hypothesis is written down
   (stale-scale re-rasterise contending with the next `beginFlip`) but untested.
-- A temporal-review finding, filed just above `:197` (search `wrong spread`) —
-  the right leaf briefly shows content from elsewhere in the book, 5 times in
-  the old recording. `scripts/probe-turn-face.mjs` exists to chase it and has
-  not been run against the current app yet.
 
 ### The release sequence — do these IN ORDER, on a dev server nothing else is
 ### writing to (see `:1236` for the full six-step breakdown and why order matters)
@@ -167,11 +163,31 @@ being reviewed frame by frame.
       LOCATE a frame; the judging has to happen at `--frame=NNNN`, and a finding
       that never left the thumbnail is not a finding.
 
-- [ ] **A temporal review of the demo (gifsmith's frame-diff tooling, run by a
+- [x] **A temporal review of the demo (gifsmith's frame-diff tooling, run by a
       separate workflow) found the right leaf briefly showing the WRONG spread,
-      five times: frames 579, 695, 926, 1043, 1089.** Not yet traced — recorded
-      here so the finding survives, and `scripts/probe-turn-face.mjs` exists to
-      chase it.
+      five times: frames 579, 695, 926, 1043, 1089.** FIXED and watched red
+      against the same build with `?settleahead=0`: normal **0/6** wrong turns,
+      fix disabled **6/6**, all six showing a genuinely different right page.
+
+      The adjacent spread is never mounted while its flip faces are captured,
+      so the cache photographed its stored document before pagination had
+      drained it. Each drain pushes a tail into the next page, making an
+      unread stored page contain content from further along the book — exactly
+      the 120-frames-early page seen at f579. Offscreen staging now measures
+      against the live leaf capacity, removes the real overflowing tail before
+      rasterization, and hands that carry back to BookView so the document the
+      reader lands on is the document they were shown.
+
+      Two follow-up defects in the first attempted fix were caught by the gate
+      and the pictures rather than accepted: a diagram whose JSON has no text
+      was misclassified as an empty block, and a persisted StarterKit trailing
+      paragraph was carried onto the next page, visibly shifting the landing
+      down one ruled line. The probe now compares structural page signatures;
+      the staged drain preserves trailing bookkeeping; the host uses the exact
+      source PageDoc as a compare-and-swap token; and a capture must remain
+      outside the mounted spread for its whole lifetime before it may settle.
+      Four pure regression cases pin the phantom and stale-document rules in
+      `tests/offscreen-pages.test.ts`.
 
       The shape every time: the curl finishes, both leaves are fully painted
       with no transition chrome, and for two or three frames the RIGHT leaf

@@ -72,6 +72,7 @@ import { countBook, countDoc } from '../editor/wordcount';
 import FlipSurface, { type FlipSurfaceApi } from '../flip/FlipSurface';
 import type { LeafSide } from '../flip/PageFlipController';
 import type { FlipDirection } from '../flip/math';
+import { planAheadSettlement } from '../flip/settleAhead';
 import { play } from '../sound/engine';
 import { LINGER_MS } from '../styles/motion';
 import { useSearchJump } from '../search/jump';
@@ -911,6 +912,12 @@ export default function BookView(): JSX.Element {
     // so the mutation observer never fires — mark the flip snapshots stale
     // explicitly or the back/revealed faces show the pre-carry page.
     flipApi?.invalidateSnapshots();
+    // …and the target BY NAME, because it can be past the six pages that
+    // covers. Re-staging it drains it in turn, so one carry off a page the
+    // reader has not reached runs the whole reflow forward on its own instead
+    // of one spread per turn (settleAhead; probe-turn-face.mjs measured the
+    // reader outrunning it twice in six turns without this).
+    flipApi?.settlePage(next.id);
 
     // Clear any stale mid-drain scroll on both leaves (before + after the
     // browser settles layout — rAF covers late scrollIntoView calls).
@@ -947,6 +954,71 @@ export default function BookView(): JSX.Element {
         () => undefined,
       ),
     );
+  };
+
+  /**
+   * THE SAME CARRY, ONE TURN EARLY — for a page nobody has looked at yet.
+   *
+   * A page is drained when it MOUNTS, and until then its stored document is
+   * whatever it was before the reader's window decided what fits. That is
+   * invisible while it stays a document, and it stops being invisible the
+   * moment the flip photographs it: the faces of a curl are the adjacent
+   * spread, which is never mounted, so the reader spends the whole gesture and
+   * the landing frames looking at the page as it was BEFORE the reflow — and
+   * because a drain pushes its tail onto the next page and that page's tail
+   * onto the one after, "before the reflow" is a page from further along the
+   * book. The temporal review of the demo caught exactly that five times
+   * (frames 579, 695, 926, 1043, 1089: the curl finishes, the right leaf shows
+   * a spread from elsewhere for two or three frames, then snaps), and
+   * `scripts/probe-turn-face.mjs` reproduces it on every turn of the Welcome
+   * book at 1180×720.
+   *
+   * `flip/offscreenPages` now drains the sheet it stages before it photographs
+   * it, and tells us how much came off. The picture is therefore right on its
+   * own; this puts the reader's DOCUMENT in the same state, so what they turn
+   * onto is what they were shown. It is the identical carry `handleOverflow`
+   * runs — trim the source, hand the blocks to the next page — with no caret to
+   * chase, because nobody is typing on a page they have not reached.
+   *
+   * TWO GUARDS, both of which have to be here rather than in the flip:
+   *
+   *  - A MOUNTED PAGE IS NOT OURS. The staging path runs for the current
+   *    leaves too (rasterCache prefers it even for a page in the DOM, so a
+   *    capture never writes to the page the reader is looking at). Its live
+   *    PageEditor owns that document and is draining it against the same
+   *    capacity; a second writer would race it and could duplicate a block.
+   *  - THE DOCUMENT MAY HAVE MOVED. The measurement happened inside an async
+   *    staging; if the page has been written to since, a count is not a safe
+   *    compare-and-swap (an equal-length edit would pass). `source` is the
+   *    exact PageDoc that was staged, and any mismatch simply stands down —
+   *    the next capture measures again.
+   *
+   * A persisted final TrailingNode paragraph is not one of the moved blocks.
+   * It stays at the source page's tail, exactly as the live PageEditor drain
+   * keeps it; otherwise it becomes a visible placeholder at the head of the
+   * next page and shifts the entire landing down one ruled line.
+   */
+  const settleAhead = (
+    pageId: string,
+    remove: number,
+    source: PageDoc,
+    trailingPhantom: 0 | 1,
+  ): void => {
+    if (remove < 1) return;
+    if (pageId === leftPage()?.id || pageId === rightPage()?.id) return;
+    const page = pages().find((p) => p.id === pageId);
+    const plan = planAheadSettlement(page?.doc, source, remove, trailingPhantom);
+    if (plan === null) return;
+    const { trimmed, moved } = plan;
+    // Source first, target second — the ordering rule the drain's own long
+    // note is about: a carry that reads the store between the two puts the
+    // blocks back into a document that still has them.
+    updatePageDoc(pageId, trimmed);
+    bumpDocVersion(pageId);
+    carryChain = carryChain.then(async () => {
+      await savePageDoc(pageId, trimmed);
+      await carryOverflow(pageId, moved, false, null);
+    }).catch(() => undefined);
   };
 
   // -------------------------------------------------------------------------
@@ -1965,6 +2037,12 @@ export default function BookView(): JSX.Element {
                     pageIds={ids()}
                     getPageElement={(side) => paperElements[side] ?? null}
                     loadPageDoc={async (pageId) => (await getPage(pageId))?.doc ?? null}
+                    // A page staged for its snapshot is drained first, against
+                    // the same budget the mounted leaves use, and hands the
+                    // tail back here — so a reader turns onto the page they
+                    // were shown (settleAhead).
+                    pageCapacityPx={pageCapacity()}
+                    onAheadOverflow={settleAhead}
                     onNavigate={onNavigate}
                     canFlip={canFlip}
                     leftPage={leftLeaf}

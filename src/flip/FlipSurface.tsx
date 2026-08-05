@@ -85,6 +85,20 @@ export interface FlipSurfaceApi {
    * opened can have one — callers need a placeholder fallback.
    */
   getSnapshot(pageId: string): RasterEntry | undefined;
+  /**
+   * Re-stage ONE page, by id, whether or not it is in the flip's own six-page
+   * window — which is how a settle chases its own target.
+   *
+   * Staging a page drains it (`offscreenPages.settleStaged`) and reports what
+   * came off, so the host can move it onward; that carry lands on the NEXT
+   * page, which may be well outside the window and would otherwise not be
+   * looked at until the reader had almost reached it. Measured with
+   * `probe-turn-face.mjs`: without this the reflow ran exactly one spread ahead
+   * of the reader and a probe turning every three seconds outran it twice in
+   * six turns. `notifyEdited` rather than `ensure` because the doc has just
+   * changed and the cached bitmap is of the old one.
+   */
+  settlePage(pageId: string): void;
 }
 
 export interface FlipSurfaceProps {
@@ -105,6 +119,25 @@ export interface FlipSurfaceProps {
    * spread, never in the DOM at rest) fall back to blank cream.
    */
   loadPageDoc?(pageId: string): Promise<PageDoc | null>;
+  /**
+   * The page content budget (`BookView`'s `pageCapacityPx`). With it, a page
+   * staged for its snapshot is DRAINED first, so the faces of a flip show the
+   * pages as they will stand once they mount rather than as they were stored
+   * before the reader's window decided what fits (offscreenPages.settleStaged).
+   */
+  pageCapacityPx?: number;
+  /**
+   * "The page staged for its snapshot holds `remove` real blocks more than
+   * fit." The exact source document is the compare-and-swap token; the host
+   * moves the blocks only if that document is still current. A final persisted
+   * TrailingNode paragraph is reported separately so it stays on the source.
+   */
+  onAheadOverflow?(
+    pageId: string,
+    remove: number,
+    source: PageDoc,
+    trailingPhantom: 0 | 1,
+  ): void;
   /** Optional override for direction gating. */
   canFlip?(direction: FlipDirection): boolean;
   ref?: (api: FlipSurfaceApi) => void;
@@ -181,6 +214,20 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
             // standalone sheet geometry, wrapped its text at different words,
             // and every landing swapped that for the live page — the flicker.
             spreadRoot: () => rootEl?.closest<HTMLElement>('.nb-spread') ?? null,
+            // …and paginated like one. Without these two the faces of a flip
+            // are the pages as they were STORED, which for anything the reader
+            // has not reached yet is a page from further along the book (see
+            // offscreenPages.settleStaged, and probe-turn-face.mjs).
+            pageCapacityPx: () => props.pageCapacityPx ?? 0,
+            // Only pages that stayed outside the mounted spread for the whole
+            // capture may be drained here. createOffscreenPageCapture checks
+            // this once at admission and once immediately before reporting.
+            canSettlePage: (pageId) => {
+              const current = ids();
+              return pageId !== current.left && pageId !== current.right;
+            },
+            onTrailingOverflow: (pageId, remove, source, trailingPhantom) =>
+              props.onAheadOverflow?.(pageId, remove, source, trailingPhantom),
           }),
         }
       : {}),
@@ -250,6 +297,7 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
       }
     },
     getSnapshot: (pageId) => cache.peek(pageId),
+    settlePage: (pageId) => cache.notifyEdited(pageId),
   };
 
   /*

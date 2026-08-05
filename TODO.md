@@ -81,8 +81,35 @@ being reviewed frame by frame.
 
 ### The app bugs the demo exposed
 
-- [ ] **Make the Welcome book behave like any other book.** *(the owner's ruling
-      on the capacity question — the answer is "stop special-casing it")*
+- [x] **Make the Welcome book behave like any other book.** DONE, and in the
+      order the ruling implies: the flowing was left alone, the duplication was
+      fixed, the reader got the size lever, and only then was the seed re-cut
+      so the pages fit the leaf they land on rather than the leaf they were
+      written against.  `e095e2a` `9d64c10`
+
+      `PAGE_LINE_BUDGET` is derived from the window now, off two laws measured
+      at five sizes — the chrome above and below a leaf is a constant 179px and
+      the 32px rule grid does not scale with the frame. Cut for 1280x800, the
+      window `tauri.conf.json` opens: 17.2 lines rather than 23.5. Cutting for
+      the 960x620 minimum would guarantee nothing ever reflows and would put
+      every seeded page at 60% of the leaf a NEW READER SEES, which is the
+      half-empty pages already reported once.
+
+      Seed v7 is the same thirty-two leaves saying the same things in fewer
+      words. Every v6 page cost 136% of the leaf it landed on — the tour turned
+      into 46 leaves the moment it was opened, which was pagination doing
+      exactly its job. Now 84% of the leaf at the default window, and generously
+      margined rather than full at 1600x1000.
+
+      Two side effects worth recording. `probe-diagram-scale.mjs` was written
+      before assuming a diagram's cost moves with the window: `.nb-dg-svg` is
+      `width: 100%`, which SAYS it scales, and being wrong there would have
+      gutted three leaves for nothing. And **f778 went with it** (see below) —
+      the verifier who rejected the first footnote fix said the real cause was
+      an over-full page, and it was.
+
+      *(the owner's ruling on the capacity question — the answer is "stop
+      special-casing it")*
       > "Wait, you did need to say something on the book filling thing? Just make
       > it work like any other book — if it's too big it goes to the next page.
       > Or just give the user the option to make it tiny by resizing, perhaps you
@@ -436,8 +463,21 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 - [x] **f617 — a key cap breaks across a line.** FIXED with `display: inline-block` rather than `nowrap`, so an over-long cap becomes a two-line pill instead of running off a page that has no scrollbar. A 59-character unbreakable token overflowed the column by 168px before; contained now. "Ctrl Alt N" renders as two
       half-open pills. A key cap is a single object and must not wrap.
 
-- [ ] **f778 — a footnote collides with a callout.** *(a fix was attempted and
-      REJECTED by the verifier; the real cause is an over-full page)*
+- [x] **f778 — a footnote collides with a callout.** GONE, and by the route the
+      verifier named rather than the one the first attempt took: the fullness
+      was fixed (seed v7 + a window-derived budget) and the footnote came with
+      it. Measured at both windows with `scripts/probe-footnote-overprint.mjs`
+      — three rails, every one with the foot to itself, at 1280x800 and at
+      1600x1000. Then looked at.
+
+      **And the gate was watched failing first.** `--sabotage` blanks the rail
+      out of the prose's padding-bottom, which is the reader's own defect, and
+      the probe reports OVERPRINT on 2 of 3 rails with the offending paragraph
+      and its overshoot in pixels. A probe that only ever prints CLEAR proves
+      nothing about the app and everything about itself.
+
+      *(a fix was attempted and REJECTED by the verifier; the real cause is an
+      over-full page)*
 
       The footnote at the foot of the left page is overprinted by "The seven
       washes" card and its wash. The first attempt changed the page splitter and
@@ -523,8 +563,24 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### Shipping
 
-- [ ] **The release page's own tagline still gets the naming backwards.**
-      `scripts/release-notes.mjs:112` prints
+- [x] **The release page's own tagline still gets the naming backwards.** FIXED,
+      and the hunch at the foot of this entry was right — there were three more,
+      all of them outside the sweep's reach and all of them read by somebody who
+      is not in the repo: `brand.json`'s tagline (the source every other surface
+      is checked against), the Cargo description that becomes the Windows
+      executable's metadata, and the NSIS welcome page — the first sentence
+      anybody installing the app reads, on a dialog, before the app exists.
+      `2887d32`
+
+      HANDOFF.md went in the same pass, deleted rather than corrected: it was
+      written for the private `AkshitIreddy/notebook` repo at 48 commits and
+      1,026 tests, and every line is done or reversed — the 118-second startup
+      freeze, "there is currently no way to create a book anywhere in the app",
+      eleven failing tests, and a page and a half of art direction for the
+      painterly pipeline `RESET-render-architecture.md` deleted. That last part
+      is why it could not simply be left alone.
+
+      `scripts/release-notes.mjs:112` printed
       **"A hand-drawn bookshelf that opens into real pages."** on every GitHub
       Release. Under the owner's ruling that is inside out: the BOOKSHELF is the
       flat half and the PAGES are the hand-drawn one. It should read something
@@ -1255,13 +1311,35 @@ under each item (grammar tidied, nothing else), then the task as understood.
       surface that never settles is a THIRD outcome: not baselined, not failed,
       counted in its own column. See the open item below for what still moves.
 
-- [ ] **Six visual surfaces never stop moving.** `npm run visual` reports them
-      `MOVE` rather than judging them, so they are honestly uncovered rather
-      than noisily red: both `tour-blocks`, `tour-settings`, `focus-spread`.
-      The set VARIES between runs, so it is intermittent. Not CSS — the fixture
-      sets `animationLevel: 'off'`, Playwright adds `animations: 'disabled'`,
-      and `document.getAnimations()` is empty at rest — so it is canvas or
-      WebGL. Find it and those six surfaces become testable.
+- [x] **Six visual surfaces never stop moving.** They were two bugs, and both
+      were fixed elsewhere in the tree before this file was pointed at them.
+      All three surfaces settle in three frames now and carry baselines.
+      `895958d`
+
+      The guess written down at the time — "not CSS, so canvas or WebGL,
+      because `getAnimations()` is empty at rest" — was wrong in a way worth
+      keeping: the two real causes were both DOM, and both invisible to
+      `getAnimations()` because neither is an animation.
+
+        - `f00fc92` — every offscreen page capture was failing silently, so the
+          raster cache fell through to its LIVE path and wrote `.snapshotting`
+          (which hides the drag handle, the style switcher and the selection
+          tint) plus inline SVG paint onto the leaf being looked at, held for
+          the 200ms+ of a rasterise. A screenshot landing inside that window is
+          a different picture from one landing outside it, and the window opens
+          at idle — intermittent, load-dependent, and exactly the shape of the
+          symptom.
+        - `53174e7` — the pagination drain published its removal too late, so a
+          carry re-materialised the block it had just moved. A spread that
+          rewrites itself cannot settle by definition.
+
+      Confirmed with a MutationObserver census over the whole document, parked
+      twenty seconds on each surface, rather than assumed from the fixes'
+      dates. Two things kept so the next one is cheap: a MOVE case writes a
+      `.moving.png`, and `--sabotage` paints a patch that changes every 200ms
+      and asserts the suite still says MOVE — this gate fails QUIETLY, so a
+      broken `settle()` would take six surfaces out of coverage and make the
+      summary GREENER.
 
 
 ## 🔴 Reported 2026-08-04, from the INSTALLED build — WORK THIS LIST

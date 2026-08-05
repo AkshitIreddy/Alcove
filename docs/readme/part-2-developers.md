@@ -68,7 +68,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->14<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
 migrations, in <!--f:rustFiles-->8<!--/f--> files and
-<!--f:rustLines-->2300<!--/f--> lines.
+<!--f:rustLines-->2306<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -300,7 +300,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->286<!--/f--> of <!--f:srcFiles-->294<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6901<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->6910<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1188,7 +1188,7 @@ using it.
 
 ### Probes
 
-<!--f:probeScripts-->90<!--/f--> scripts under [`scripts/`](../../scripts/) named
+<!--f:probeScripts-->93<!--/f--> scripts under [`scripts/`](../../scripts/) named
 `probe-*.mjs` drive the running app with Playwright. The important three:
 
 - [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice

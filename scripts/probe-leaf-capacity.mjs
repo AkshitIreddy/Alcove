@@ -78,5 +78,11 @@ for (const s of SIZES) {
       `${String(m.line).padStart(5)}px  ${lines.toFixed(2).padStart(6)}  ${budget.toFixed(1).padStart(10)}   ${s.note}`,
   );
 }
-console.log('\n  PAGE_LINE_BUDGET is 23.5 today.');
+console.log(
+  '\n  These readings are now the SOURCE of PAGE_LINE_BUDGET rather than a check' +
+    '\n  on it: split.ts derives the budget from the window (leafCapacityPx,' +
+    '\n  lineBudgetFor) and tests/split-calibration.test.ts pins the law against the' +
+    '\n  table above. Re-run this after anything that changes the height of a leaf,' +
+    '\n  and move the table in that test to match.',
+);
 await browser.close();

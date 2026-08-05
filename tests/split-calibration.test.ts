@@ -9,11 +9,20 @@
  * being true, so the readings themselves are written down here and the
  * estimator is checked against them.
  *
- * Two probes produced everything below, and both must be re-run after
- * touching the constants:
+ * Four probes produced everything below, and they must be re-run after touching
+ * the constants:
  *
  *   node scripts/probe-block-heights.mjs   one block per leaf, measured alone
  *   node scripts/probe-page-cost.mjs       whole seeded pages, measured whole
+ *   node scripts/probe-leaf-capacity.mjs   how tall a leaf is, at five windows
+ *   node scripts/probe-leaf-column.mjs     how wide, and what a paragraph wraps to
+ *
+ * The last two are the newest and the reason this file grew a first section.
+ * `PAGE_LINE_BUDGET` used to be a literal with the window it was measured in
+ * written in its comment, and the window was not the one the app opens at; it
+ * is now DERIVED from `tauri.conf.json`'s window through two measured laws, and
+ * those two probes are where the laws come from. A derivation is only as good
+ * as its law, so the readings are written down here and checked.
  *
  * The second is the one that matters, because a specimen board proves a block
  * draws at a certain height and says nothing about what a PAGE of them costs:
@@ -78,8 +87,19 @@ const LONG =
   'let a real sentence wrap inside one and count the lines it took to say ' +
   'itself, which is what this paragraph is doing right now on your behalf.';
 
-/** The worst the estimator under-states a page by, over the seeded book. */
+/**
+ * The worst the estimator under-states a page by, over the seeded book — AT
+ * EACH WINDOW, because it is not one number.
+ *
+ * 1.14 lines at 1600x1000 (`scripts/probe-page-cost.mjs`) and 2.85 at 1280x800
+ * (`scripts/probe-welcome-windows.mjs`, which walks the same book at the window
+ * the app opens at and measures what each leaf really spends). Same pages, same
+ * estimator, two and a half times the error: everything the model misses is a
+ * per-block residual, and a narrower column puts more lines under each block.
+ * `estimatorSlack` in split.ts is the fit through these two points.
+ */
 const WORST_UNDER_ESTIMATE = 1.14;
+const WORST_UNDER_ESTIMATE_AT_TARGET = 2.85;
 
 /**
  * A leaf, measured at five window sizes: capacity in laid-out pixels
@@ -157,12 +177,27 @@ describe('the budget is derived from the window, not written beside it', () => {
 
   it('leaves room for the estimator being wrong in the direction that hurts', () => {
     // A page cut late does not clip: the excess flows onward and the book comes
-    // back longer than it was made. So the budget is the leaf less the most the
-    // estimator has been seen to under-state a page by...
-    const leaf = leafLines(TARGET_WINDOW);
-    expect(PAGE_LINE_BUDGET).toBeLessThanOrEqual(leaf - WORST_UNDER_ESTIMATE);
-    // ...and no more than that, or every page stops a block short.
-    expect(PAGE_LINE_BUDGET).toBeGreaterThan(leaf - 3);
+    // back longer than it was made. So the budget at a window is that window's
+    // leaf, less the most the estimator has been seen to under-state a page by
+    // THERE — and the reference figure is not the one that matters, because
+    // the reference is not where anybody reads.
+    for (const [win, worst] of [
+      [REFERENCE_WINDOW, WORST_UNDER_ESTIMATE],
+      [TARGET_WINDOW, WORST_UNDER_ESTIMATE_AT_TARGET],
+    ] as const) {
+      const leaf = leafLines(win);
+      const budget = lineBudgetFor(win);
+      expect(budget, `${win.width}x${win.height} cuts too late`).toBeLessThanOrEqual(
+        leaf - worst,
+      );
+      // ...and not far under it either, or every page stops a block short.
+      // A line and a half of tolerance, because the slack is a two-point fit
+      // and lands a little either side of each reading rather than on it.
+      expect(
+        budget,
+        `${win.width}x${win.height} cuts too early`,
+      ).toBeGreaterThan(leaf - worst - 1.5);
+    }
   });
 
   it('costs a picture and a mindmap less when the column is narrower', () => {
@@ -377,9 +412,9 @@ describe('inline code sets wider than the hand it sits in', () => {
  * the pages that were measured.
  */
 const WELCOME_MEASURED_LINES: readonly number[] = [
-  17.75, 14.47, 16.31, 15.69, 15.69, 14.94, 16.0, 13.0, 15.88, 18.25, 17.0,
-  13.75, 13.22, 16.66, 18.19, 18.31, 15.78, 21.84, 17.06, 16.38, 17.66, 16.16,
-  14.88, 14.0, 14.31, 13.69, 17.06, 14.81, 15.31, 15.0, 16.19, 15.25,
+  16.75, 14.47, 16.31, 15.69, 15.69, 13.31, 15.0, 13.0, 15.88, 17.25, 17.0,
+  13.75, 13.47, 16.66, 17.19, 18.31, 14.78, 20.84, 17.06, 16.38, 17.66,
+  16.16, 14.88, 14.0, 14.31, 13.69, 17.06, 14.81, 15.31, 15.0, 16.19, 15.25,
 ];
 
 describe('the estimator against thirty-two real leaves', () => {

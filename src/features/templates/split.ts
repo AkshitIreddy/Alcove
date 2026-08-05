@@ -180,85 +180,9 @@ export const TARGET_WINDOW: WindowSize = { width: 1280, height: 800 };
  */
 export const MINIMUM_WINDOW: WindowSize = { width: 960, height: 620 };
 
-/**
- * Window height that never reaches the leaf: everything above and below it.
- *
- * Measured, and it is a CONSTANT — `scripts/probe-leaf-capacity.mjs` read the
- * capacity the app itself computes at five window sizes and every one of them
- * came back at the height less exactly this:
- *
- *   1600x1000  821px      1280x800  621px      1360x850  671px
- *   1100x720   541px       960x620  441px
- *
- * Which is what one would hope: `.nb-book-view` is `100vh` with fixed padding,
- * the title plate above the spread is fixed, and the cover and the leaf inside
- * it are `flex: 1 1 auto` all the way down. The width plays no part at all.
- */
-const LEAF_CHROME_PX = 179;
-
-/**
- * The rule grid the whole estimator is denominated in.
- *
- * 32px at every window size measured — **the type does not scale with the
- * frame**. That is the fact that makes a small window expensive rather than
- * merely smaller: the leaf shrinks and the writing does not, so a page loses
- * room in both directions at once and keeps none of it back.
- */
-const PAGE_LINE_PX = 32;
-
-/** Capacity of one leaf in laid-out pixels, at a given window. */
-export function leafCapacityPx(win: WindowSize): number {
-  return win.height - LEAF_CHROME_PX;
-}
-
-/** Capacity of one leaf in page lines. */
-export function leafLines(win: WindowSize): number {
-  return leafCapacityPx(win) / PAGE_LINE_PX;
-}
-
-/**
- * The estimator's own error, in lines, held back from the budget.
- *
- * The budget is not the capacity, because the estimator is not exact and the
- * two ways of being wrong do not cost the same. A page cut early is a leaf
- * that stops a little short; a page cut LATE does not clip — leaves never
- * scroll, so the excess flows onward and the book comes back longer than it
- * was made, with every page after the guilty one carrying somebody else's
- * tail.
- *
- * The error is measured, against the seeded pages walked by
- * `scripts/probe-page-cost.mjs`: it is under a line on average and under-states
- * by at most 1.9. This leaves room for the worst of those, and
- * `scripts/probe-split-fill.mjs` is where it was settled — with only 0.16 of a
- * line held back a nine-page import arrived as ten, which is exactly the
- * failure above.
- */
-const ESTIMATOR_SLACK = 2.16;
-
-/** What the splitter is allowed to put on a page at a given window. */
-export function lineBudgetFor(win: WindowSize): number {
-  return leafLines(win) - ESTIMATOR_SLACK;
-}
-
-/**
- * What the splitter is allowed to put on a page.
- *
- * DERIVED, and that is the whole point of the arithmetic above. This used to be
- * the literal `23.5`, with a comment saying it came from a leaf that holds
- * 25.66 lines *"at a 1600x1000 window"* — a window `tauri.conf.json` never
- * opens and a reader would have to drag the frame out to reach. So every
- * authored page was cut a third over the capacity of the leaf it actually
- * landed on, and merely opening the welcome book grew it from 32 leaves to 46
- * as the drain pushed each page's tail onto the next one.
- *
- * At the reference window this law still gives 23.5 to two decimal places,
- * which is the check that it is the same model and not a new one; at the
- * window the app opens it gives 17.2.
- */
-export const PAGE_LINE_BUDGET = lineBudgetFor(TARGET_WINDOW);
-
 // ---------------------------------------------------------------------------
-// ...and how wide it is, which costs as much as how tall
+// How wide a leaf is — which costs as much as how tall does, and comes first
+// here because the budget's own slack is a function of it
 // ---------------------------------------------------------------------------
 
 /**
@@ -279,11 +203,15 @@ export const PAGE_LINE_BUDGET = lineBudgetFor(TARGET_WINDOW);
  * leaf, six at the default window and ten at the minimum. A budget alone would
  * have fixed half of this bug.
  *
- * The `100%` arm is the one that stops mattering below about a 4:3 window and
- * takes over above it — a tall narrow frame runs out of width before it runs
- * out of height. Every window between the minimum and the default is in the
- * height-driven regime; the clamp is here so that a reader who is not, is not
- * costed as though they were.
+ * All five of those readings are in the HEIGHT-driven regime, which is where
+ * every window between the minimum and the default sits: at 960x620 the height
+ * arm gives 828px against the width arm's 852px, and the gap only widens from
+ * there. The other two arms are transcribed from the stylesheet rather than
+ * measured — a tall narrow frame (960x1080, say) runs out of width first, and
+ * an enormous one is capped at 1760 — and they are here so a reader outside the
+ * regime is not costed as though they were inside it. If a page is ever cut for
+ * such a window, measure it first; this much of the expression is a reading of
+ * spread.css and not a reading of the app.
  */
 const STAGE_HEADER_PX = 96;
 const STAGE_ASPECT = 1.58;
@@ -345,6 +273,111 @@ export function charsPerLine(win: WindowSize): number {
  * one on the page.
  */
 const IMAGE_LINES = 15;
+
+// ---------------------------------------------------------------------------
+// ...and how tall
+// ---------------------------------------------------------------------------
+
+/**
+ * Window height that never reaches the leaf: everything above and below it.
+ *
+ * Measured, and it is a CONSTANT — `scripts/probe-leaf-capacity.mjs` read the
+ * capacity the app itself computes at five window sizes and every one of them
+ * came back at the height less exactly this:
+ *
+ *   1600x1000  821px      1280x800  621px      1360x850  671px
+ *   1100x720   541px       960x620  441px
+ *
+ * Which is what one would hope: `.nb-book-view` is `100vh` with fixed padding,
+ * the title plate above the spread is fixed, and the cover and the leaf inside
+ * it are `flex: 1 1 auto` all the way down. The width plays no part at all.
+ */
+const LEAF_CHROME_PX = 179;
+
+/**
+ * The rule grid the whole estimator is denominated in.
+ *
+ * 32px at every window size measured — **the type does not scale with the
+ * frame**. That is the fact that makes a small window expensive rather than
+ * merely smaller: the leaf shrinks and the writing does not, so a page loses
+ * room in both directions at once and keeps none of it back.
+ */
+const PAGE_LINE_PX = 32;
+
+/** Capacity of one leaf in laid-out pixels, at a given window. */
+export function leafCapacityPx(win: WindowSize): number {
+  return win.height - LEAF_CHROME_PX;
+}
+
+/** Capacity of one leaf in page lines. */
+export function leafLines(win: WindowSize): number {
+  return leafCapacityPx(win) / PAGE_LINE_PX;
+}
+
+/**
+ * The estimator's own error, in lines, held back from the budget — **and it is
+ * bigger the narrower the leaf is**.
+ *
+ * The budget is not the capacity, because the estimator is not exact and the
+ * two ways of being wrong do not cost the same. A page cut early is a leaf that
+ * stops a little short; a page cut LATE does not clip — leaves never scroll, so
+ * the excess flows onward and the book comes back longer than it was made, with
+ * every page after the guilty one carrying somebody else's tail.
+ *
+ * Two windows have now been measured, and they do not agree:
+ *
+ *   1600x1000  worst under-estimate 1.14 lines  (probe-page-cost.mjs, 32 pages)
+ *   1280x800   worst under-estimate 2.85 lines  (probe-welcome-windows.mjs)
+ *
+ * The same thirty-two pages, the same estimator, and two and a half times the
+ * error — because everything the model does NOT capture is a per-block or
+ * per-line residual, and a narrow column has more lines in it. `charsPerLine`
+ * predicts the wrap of a long paragraph to the line, but half a line of
+ * residual on each of ten wrapped blocks is five lines whichever way it is
+ * described, and the leaf it has to fit inside got smaller at the same time.
+ *
+ * So the slack is a two-point fit against the column: 2.16 lines at the
+ * reference column (which is where 23.5 came from and keeps it exactly), rising
+ * by `SLACK_PER_COLUMN` for each unit the column has shrunk by. It is a fit
+ * over two readings and is written down as such — the honest reading of it is
+ * "the estimator is less trustworthy in a narrow column, by about this much",
+ * not "this is a law". A third window would improve it.
+ *
+ * `scripts/probe-split-fill.mjs` is where the reference figure was settled:
+ * with only 0.16 of a line held back a nine-page import arrived as ten, which
+ * is exactly the failure above.
+ */
+const SLACK_AT_REFERENCE = 2.16;
+const SLACK_PER_COLUMN = 3.15;
+
+/** The estimator's measured error at a given window, in page lines. */
+export function estimatorSlack(win: WindowSize): number {
+  const narrowedBy =
+    1 - proseColumnPx(win) / proseColumnPx(REFERENCE_WINDOW);
+  return SLACK_AT_REFERENCE + SLACK_PER_COLUMN * Math.max(0, narrowedBy);
+}
+
+/** What the splitter is allowed to put on a page at a given window. */
+export function lineBudgetFor(win: WindowSize): number {
+  return leafLines(win) - estimatorSlack(win);
+}
+
+/**
+ * What the splitter is allowed to put on a page.
+ *
+ * DERIVED, and that is the whole point of the arithmetic above. This used to be
+ * the literal `23.5`, with a comment saying it came from a leaf that holds
+ * 25.66 lines *"at a 1600x1000 window"* — a window `tauri.conf.json` never
+ * opens and a reader would have to drag the frame out to reach. So every
+ * authored page was cut a third over the capacity of the leaf it actually
+ * landed on, and merely opening the welcome book grew it from 32 leaves to 46
+ * as the drain pushed each page's tail onto the next one.
+ *
+ * At the reference window this law still gives 23.5 to two decimal places,
+ * which is the check that it is the same model and not a new one; at the
+ * window the app opens it gives 17.2.
+ */
+export const PAGE_LINE_BUDGET = lineBudgetFor(TARGET_WINDOW);
 
 /**
  * How wide, how tall and in what type a run of text is being set.

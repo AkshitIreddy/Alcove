@@ -272,13 +272,19 @@ Nothing to configure, nothing to sign into, no splash screen. In order:
    *Welcome to Alcove ✎* ([`src/data/seed.ts`](src/data/seed.ts)) — which is a
    real book you can edit, rename or crumple like any other. It is also a worked
    example: every page of it is authored in Notebook Script.
-2. **You are asked four questions about your taste** — how much colour you want,
-   what kind of room, and so on — and the whole library is dressed from your
-   answers, so what you see next is a room you chose rather than a demo.
+2. **You are asked <!--f:tasteQuestions-->5<!--/f--> questions about your
+   taste** — which room you would rather sit in, how much colour you want, what
+   the paper should be — and the whole library is dressed from your answers, so
+   what you see next is a room you chose rather than a demo.
+
+   ![The first taste question on a cream sheet over the library, headed "Where would you rather be sitting?" with "question 1 of 5" above it and "I'll pick later" in the top-left corner. Under it, eight choices in two rows, and each one is a real little painting of that room rather than a word or a swatch — a reading room in dark squared cabinet work, a chapter house with pointed bays, a plain desk of board and uprights, the good parlour in soft pink, a glasshouse of slender bars and ferns, a room by the water in harbour blue, a toy box in shouting colours, and a workshop of sawn boards and pegs — each with its name and a line describing it. Five progress dots and a "next" button sit at the foot.](docs/readme/img/first-run.png)
+
 3. **The guided tour runs**, <!--f:tourSteps-->21<!--/f--> steps in a long or a
    short version, each asking for one concrete action and turning green when it
    sees you do it. Skip it if you would rather poke at it yourself; *Settings →
    Help → replay the tour* starts it again later.
+
+   ![The tour's first card over a dimmed first-launch shelf — one small book on an otherwise empty bookcase, which is exactly what a new library holds. The card reads "step 1 of 21", is headed "Welcome to Alcove", and explains that each step asks you to try one thing and turns green once you have. Under a key hint reading "Enter to go on · Esc to leave" are the two lengths to choose between: "the short way — 11 steps — open a book, write, find things" and "the full rundown — 21 steps — every tool on both rails". A row of twenty-one step dots runs beneath, the first one filled, with "skip the tour" bottom-left and back and next bottom-right.](docs/readme/img/tour.png)
 4. **The room is quiet until you touch it.** A fireplace bed is mixed low under
    everything by default, and the webview's autoplay policy holds it until your
    first click — so the app is never making noise at somebody who has not
@@ -334,7 +340,7 @@ there is: no tree, no list view, no "all notes". A floor is a shelf you can see
 along, a slot is where a book stands, and the dashed outline at the end of a row
 is the next free one.
 
-![The Alcove shelf at 80% zoom: a dark walnut bookcase with a plain slab cornice, a chain of gilt rings running the length of every board and upright, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis. Three floors carry thirty-three books and no two spines are alike — cream label plates, gilt bands, raised cords, a green plate reading Field Notes, a leather one reading Sourdough, one book leaning against its neighbour — and a dashed outline with a plus in it marks the next free slot at the end of Floor 1. A fourth floor starts below them, empty. A cream dock on the left offers new book, template, studio, add floor and trash, its top button washed pale green; a zoom control reading 80% sits at the foot, and a moss-green settings seal in the bottom corner.](docs/readme/img/shelf.png)
+![The Alcove shelf at 80% zoom: a walnut bookcase with a plain slab cornice, a chain of gilt rings running the length of every board and upright, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis. Three floors are full and no two spines are alike — cream label plates, gilt bands, raised cords, magenta and moss and ochre cloths, a pair of tall pale ones standing a head above their neighbours — and a dashed outline with a plus in it marks the next free slot at the end of Floor 1. A fourth floor starts below them, empty, and the arcade runs on down out of frame. A cream dock on the left offers new book, template, studio, add floor and trash, its top button washed pale green; a zoom control reading 80% sits at the foot, and a moss-green settings seal in the bottom corner.](docs/readme/img/shelf.png)
 
 Nothing here is a rectangle with a gradient on it: every spine is drawn from the
 book's own seed through [`src/art/bookDesign.ts`](src/art/bookDesign.ts), baked
@@ -352,7 +358,7 @@ Pull back and the whole case is one object — <!--f:defaultFloors-->10<!--/f-->
 floors as standard, up to <!--f:maxFloors-->60<!--/f--> when you keep pressing
 *add floor*, and as many separate bookcases as you want to build.
 
-![The same bookcase at 38% zoom, the whole width of it in frame now: the slab cornice, then seven complete floors and the top of an eighth running off the bottom of the window. Only the top three hold books; the rest are rows of empty ogee-arched recesses waiting to be filled, and the gold trellis wall runs away on both sides of the case, gone to a fine net at this size.](docs/readme/img/shelf-zoomout.png)
+![The same bookcase pulled all the way back to 38%, the whole of it in frame now and small against the wall: the slab cornice, then eight complete floors and the top of a ninth running off the bottom of the window. Only the top three hold books — three tight rows of colour — and the rest are ranks of empty ogee-arched recesses waiting to be filled. The gold trellis wallpaper runs away on both sides and above, gone to a fine net at this size, which is what a library with room left in it actually looks like.](docs/readme/img/shelf-zoomout.png)
 
 ### A book opens as a spread, and turns like a book
 
@@ -361,11 +367,11 @@ count at its foot. Arrow keys turn pages; so does dragging the outer edge or a
 corner of a leaf, which lets you take the turn at your own speed and change your
 mind halfway.
 
-![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove" in a large handwriting face with a gold star beside it, a paragraph with an amber-highlighted phrase, a green callout, a four-item bulleted list, and a green banner reading "The rest of this book is a tour of what the paper can do." The right page is headed Writing and shows bold, italic, code, struck-out text, a yellow highlight and a blue-grey colour wash; three checkboxes, the last ticked and crossed through; a yellow sticky note with a curled corner; and a strip of pink striped washi tape. A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](docs/readme/img/spread.png)
+![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove ✎" in a large handwriting face with a gold star beside it, a paragraph with the phrase "real paper you can write on" in an amber highlight, a green callout telling you to click anywhere on the ruled lines and start typing, a three-item bulleted list about the shelf, opening a book and turning pages, a tan card headed "Thirty-two leaves, and every one of them a demonstration", and a green banner reading "So: turn the page." The right page is headed "The shelf" and carries two tan callouts — "Getting about" and "Books come off the shelf" — with key caps drawn into the sentences, a tilted yellow sticky note about the dock, and a line reading "Ctrl Alt F grows the case by a floor". A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](docs/readme/img/spread.png)
 
 Mid-turn, the leaf lifts off the spread and you can see the next page under it:
 
-![The same spread mid page-turn. The right leaf has peeled up along a diagonal and is curling back across itself, taking the Writing page and its yellow sticky note with it; through the gap the next page shows a ruled index card, a pink quote card with its closing quotation mark, and an amber envelope with the flap still open. The left page stays put.](docs/readme/img/page-turn.png)
+![The same spread mid page-turn. The right leaf has peeled up along a diagonal and is curling back across itself, taking "The shelf" page and its yellow sticky note with it; the curl catches the light along its rolled edge and throws a soft shadow onto the paper below. Through the gap the next page shows tan cards, a pink quote card with its closing quotation mark, and an amber tag — all of it half-covered by the turning sheet. The left page stays put.](docs/readme/img/page-turn.png)
 
 At rest the pages are live DOM, so text stays selectable and crisp. The moment
 you start a turn, the app swaps to a WebGL cylinder-curl shader fed by
@@ -405,7 +411,7 @@ The **library studio** dresses the room. A room preset sets the colours, the
 carpentry and the paper together, and every one of those stays yours to change
 afterwards.
 
-![The library studio open down the left edge, pushing the shelf to the right rather than covering it. The panel is headed "Library studio" and has "this library" and "your own" tabs; under "bookcases" a card shows a little drawing of the current case, "My Library", "33 books · 10 floors" and rename, clone and delete buttons, then "add bookcase" and "add a floor" and a line reading "this bookcase has 10 floors. everything below is dressed here." Under "presets — the house room" is a grid of room thumbnails, each a tiny painting of that whole room — The House Room (selected, ringed amber), Gilt Salon, Card Room, Carnival and a teal one running off the bottom edge — beside a dashed tile reading "64 more…". To the right stands the dark walnut bookcase against its gold trellis wallpaper, with the new book / template / studio / add floor / trash dock between them, studio lit, and a zoom control reading 80% at the foot.](docs/readme/img/studio.png)
+![The library studio open down the left edge, pushing the shelf to the right rather than covering it. The panel is headed "Library studio" and has "this library" and "your own" tabs; under "bookcases" a card shows a little drawing of the current case, "My Library", "61 books · 10 floors" and rename, clone and delete buttons, then "add bookcase" and "add a floor" and a line reading "this bookcase has 10 floors. everything below is dressed here." Under "presets — the house room" is a grid of room thumbnails, each a tiny painting of that whole room rather than a swatch — The House Room (selected, ringed amber), Gilt Salon, Card Room, Carnival and a teal one running off the bottom edge — beside a dashed tile reading "64 more…". To the right stands the walnut bookcase against its gold trellis wallpaper, three floors full, with the new book / template / studio / add floor / trash dock between them, studio lit, and a zoom control reading 80% at the foot.](docs/readme/img/studio.png)
 
 The **book studio** dresses one book, and only that book: a binding follows its
 book into every room, which is what lets you recognise it after you have
@@ -423,7 +429,7 @@ at the top) flips it into full-text search across every page in every bookcase.
 Activating a search result opens the book, turns to the page and pulses the
 match so you can see where it was.
 
-![The quick switcher open over a greyed-out spread: a cream sheet with "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (> to search text)", and a list of books each tagged "book" down the right — Sea Glass lit at the top, then Recipes II, Old Letters, Mushrooms, House Plants, Film Diary, Knots, Latin, Reading Log, Wine Notes and Trail Notes running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](docs/readme/img/quickswitch.png)
+![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Constellations, Woodcuts, Fermenting, Rope Work, Birds, Ferns and Tide Tables running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](docs/readme/img/quickswitch.png)
 
 Search deliberately ignores which bookcase you are standing in front of. You
 open it because something you wrote is somewhere, and the one thing you reliably
@@ -491,6 +497,8 @@ alone edge to edge. There is a zoom on top of it, and it is a transform rather
 than a bigger box — deliberately, because growing the leaf would change how much
 fits on a page and repaginate your book behind your back.
 
+![The spread on the first rung of focus mode. The icon rail and the word count have gone and the spread has grown into the room they were using; the book itself is still there, its boards showing at the edges. The only chrome left is in the top-left corner: "✕ leave focus  Esc", and under it the ladder itself as three tabs — "the book" (lit), "the pages", "one page" — with a 100% zoom control and a line of key hints beneath.](docs/readme/img/focus.png)
+
 ### Maths, without a webfont
 
 `$x^2$` inline, or an equation block on its own line. The renderer is a
@@ -514,7 +522,7 @@ slash menu with a small worked example already in it, and each is edited as a
 few lines of text — the layout algorithms and the hand-drawn SVG renderers are
 in [`src/diagrams/`](src/diagrams/).
 
-![A later spread of the Welcome book. The left page runs from a note about resizing a picture into "Two up, and things that fold" — two columns of text side by side, a closed fold reading "A fold. Click it.", and a spoiler reading "psst… click to reveal" with its answer still hidden under a solid tan bar — and ends on the heading "Diagrams, drawn by hand". The right page carries a hand-drawn tree: Alcove branching to A library and A book, A library on to Bookcases and Floors, A book on to a wider Pages box captioned "this thing you are reading". Below it the heading "Arrows" and a three-step flowchart running downward — Write, edge labelled "wherever", Decorate, edge labelled "eventually", Turn.](docs/readme/img/diagrams.png)
+![A later spread of the Welcome book, and every mark on it is drawn by the page rather than pasted onto it. The left page is headed "A library of your own" with a gold star, and carries a hand-drawn tree — "Your library" branching to "Study" and "Workshop", Study on to "Books on ten floors" and "A wall, a wallpaper", Workshop on to "Books" — with the boxes and joins wobbled the way a pen wobbles. Under it a tan callout, "The studio, under the shelf", and a green one carrying two key caps: Ctrl Alt S opens the studio, Ctrl Alt N puts a new book on the shelf. The right page is headed "Dressing a book" and holds two tan callouts, "The outside" and "The inside", a pink quote card reading "This one is claret leather with four raised cords. Yours can be anything at all.", and an amber tag reading Ctrl Alt D dresses the open book.](docs/readme/img/diagrams.png)
 
 ### Pictures and links
 
@@ -634,7 +642,7 @@ the shape of the result before you commit it:
 Insert, and it lands on the page as real editable blocks — the diagrams drawn,
 not embedded as images:
 
-![The left-hand page after inserting, on grid paper: "Photosynthesis" in large handwriting with a leaf sticker, the paragraph with "light-dependent" in an amber highlight, a tilted yellow sticky note with a curled corner reading "Exam Friday — learn both stages.", then a hand-drawn node graph — Sun by an edge labelled "light" and Water both flowing into Leaf, Leaf out to an amber-filled Glucose and to Oxygen — and below it a timeline of three cards stepping down a vertical spine: 1771 Priestley, 1779 Ingenhousz, 1845 Mayer. The right-hand page is still blank.](docs/readme/img/script-page.png)
+![The page after inserting, on grid paper: "Photosynthesis" in large handwriting with a leaf sticker, the paragraph with "light-dependent" in an amber highlight, a yellow sticky note with a curled corner reading "Exam Friday — learn both stages.", then a hand-drawn node graph — Sun by an edge labelled "light" and Water both flowing into Leaf, Leaf out to an amber-filled Glucose and to Oxygen — and below it a timeline hung on a vertical spine with three dated cards off it: 1771 Priestley — air is "restored", 1779 Ingenhousz — only in the light, 1845 Mayer — sunlight becomes chemical energy. The facing page is still blank ruled paper, because the script was inserted into an empty book.](docs/readme/img/script-page.png)
 
 ### What the language has
 
@@ -812,6 +820,8 @@ sorts first when *Settings → Library & shelf* is set to sort by favourites.
 
 Every interaction has a sound, and the whole set can be re-voiced.
 
+![The settings sheet open down the right-hand edge over the library, its ✕ in the sheet's own top-left corner. A search box sits under the "Settings" heading, then the Appearance section: "choose my look again — 5 questions, and the whole library takes after your answers" with a start button; "surprise me — parchment · sepia ink · the room's own paper · everyday hand" with "roll a whole look"; a "theme" row whose nine chips each carry their own colour — parchment (ticked), honeycomb, apricot, blossom, peony, botanical, verdigris, night, midnight — over "more theme · 21 more, in 4 shelves · show all 30"; a "hand" row whose chips are each drawn IN the face they name — everyday hand (ticked), quick note, brush hand, drafting hand, marker, book serif — over "more hand · 21 more, in 3 shelves · show all 27"; a body-size slider reading 18px; and an "ink" row of coloured chips from sepia through graphite, fountain blue, iron gall, walnut, burgundy, forest, navy, teal and indigo.](docs/readme/img/settings.png)
+
 A **sound set** is a named character every cue in the app is heard through — the
 button, the panel, the checkbox, the page turn, the book coming off the shelf,
 the crumple, the keystroke, the bell. There are
@@ -855,6 +865,8 @@ draws the settings list, what draws the cheat sheet (`Ctrl+/`, or just `?` when
 you are not typing) and what the one key handler matches on — so the list cannot
 promise a key the app does not answer to.
 
+![The cheat sheet over the spread: a wide cream card headed "keyboard spells", the shortcuts laid out in three columns and grouped by where you are standing — "Finding your way / anywhere in the app", "On the shelf / while the bookcase is in front of you", "In a book / while a book is open", "While writing / with the pen on the page", and "The whole library / scripts, bundles, files". Every row pairs a drawn key cap with plain English: Ctrl+K jump to a book, a heading or a page; Enter take the lit book off the shelf; F9 focus mode — just you and the paper; / the block &amp; sticker menu; drag a page edge curl a page by hand. A footnote runs along the bottom: "press ? or Esc to close · every key here can be changed in Settings".](docs/readme/img/keyboard.png)
+
 **<!--f:rebindableKeys-->24<!--/f--> of them are rebindable**, from *Settings →
 Input*. `Escape` deliberately is not: it is how you step back out of a book and
 how every panel and dialog closes, and one key doing one thing everywhere is
@@ -880,6 +892,8 @@ installed.
 
 Your library is a file on your disk and nothing is copying it anywhere. What
 follows exists so that this is a design decision rather than a risk.
+
+![The "In and out" sheet open down the left edge, pushing the spread aside rather than covering it. Its rows are grouped under three headings that answer three different questions. "Bring something in": paste a script in (Ctrl+Alt+I), bring Markdown in — a book per file, a page per # heading (Ctrl+Shift+Alt+M), start from a template (Ctrl+Alt+G). "Take this page, or this book, out": export as PDF — rendered at 2× (Ctrl+Alt+P), this page as a picture (Ctrl+Shift+Alt+P), the parcel desk — whole bundles in and out, and undo an import (Ctrl+Shift+E). "For an assistant": copy the format for your AI, and copy this page as script (Ctrl+Alt+E). Each row carries a hand-drawn glyph, a line of hint text and its own key cap, and a footnote at the bottom reads "taking something out is always a copy — the book itself is never touched."](docs/readme/img/share.png)
 
 ### Scheduled backups
 
@@ -1490,7 +1504,7 @@ A README that quotes numbers goes stale silently, so none of the numbers on this
 page are typed as prose. Each is written inside an invisible marker —
 `<!--f:wallpaperPapers-->126<!--/f-->`, which GitHub renders as `126` and
 nothing else — and recomputed from the tree. So are the
-<!--f:readmeShots-->13<!--/f--> screenshots: each one records the app it
+<!--f:readmeShots-->19<!--/f--> screenshots: each one records the app it
 photographed and the room it stood in, so a picture that has outlived what it
 shows says so rather than quietly lying.
 

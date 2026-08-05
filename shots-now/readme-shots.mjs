@@ -24,9 +24,10 @@
  * to prove that sentence, so the app is driven into the state the sentence
  * claims rather than into something that photographs well:
  *
- *  - the shelf carries thirty-two books over three floors (thirty-three with
- *    the Welcome book, which is the count the studio card prints), because ten
- *    on one floor photographed as a showroom;
+ *  - the shelf carries sixty books over three FULL floors (sixty-one with the
+ *    Welcome book, which is the count the studio card prints), because a
+ *    part-filled floor is centred by `layout.ts` and photographs as an island
+ *    of books in the middle of an empty case;
  *  - the room is left at the app's own DEFAULT — today `walnut` over
  *    `refectory`/`guilloche` under `trellis-gilt`, and whatever those four
  *    constants say tomorrow. A first screenshot that is not
@@ -121,12 +122,23 @@ const HERO = { width: 1040, height: 420, scale: 2 };
 /**
  * Titles for the shelf: three floors of them, plus the Welcome book.
  *
- * Sized by looking rather than by taste. Ten on a floor left the case reading
- * as a showroom — one part-filled row over eight empty bays — and the shelf is
- * the picture that has to say "this is where your notes live". Thirty-two
- * across three floors fills the top of the case at the reading zoom while
- * leaving the arcade below plainly empty, which is the honest shape of a
- * library somebody has started rather than a stock photograph of one.
+ * Sized by ARITHMETIC, after two rounds of sizing it by looking and getting it
+ * wrong in both directions. Ten on a floor read as a showroom. Eleven — the
+ * count that replaced it — read as sparse for a reason the picture makes
+ * obvious once you know to look: `layout.ts` deliberately CENTRES a part-filled
+ * row ("left-packing would be just as truthful, but it makes the case look
+ * lopsided"), so eleven books do not sit at the left end of a wide case, they
+ * sit as an island in the middle of it with empty arches on both sides. The
+ * README's headline picture was a mostly-empty bookcase.
+ *
+ * The number that fills a floor falls straight out of the layout constants:
+ * `avail = SHELF_WIDTH - 2 * LAYOUT_MARGIN_X` = 1200 - 2 x 64 = 1072 world px,
+ * and a spine with its gap averages a little over 50 across the width band the
+ * factory draws, so twenty is a full row with the ends still breathing.
+ *
+ * Three full floors over an empty arcade is also the more honest picture: a
+ * library somebody has been keeping for a while, rather than one they opened
+ * yesterday.
  *
  * The titles are deliberately somebody's actual life — a language, a hobby, a
  * course, the tax return — because the quick switcher photographs this list and
@@ -144,6 +156,15 @@ const FLOOR_0 = [
   'Garden Log',
   'Letters Home',
   'Bird Counts',
+  'Rock Pools',
+  'Tea',
+  'First Aid',
+  'Allotment',
+  'Sea Glass',
+  'Hedgerows',
+  'Night Sky',
+  'Bread',
+  'Cold Frames',
 ];
 const FLOOR_1 = [
   'Sourdough',
@@ -157,6 +178,15 @@ const FLOOR_1 = [
   'Quotes',
   'Marginalia',
   'Trail Notes',
+  'Moths',
+  'Orchards',
+  'Stone Walls',
+  'Cyanotype',
+  'Beekeeping',
+  'Lichen',
+  'Seed Saving',
+  'Rivers',
+  'Paper Marbling',
 ];
 const FLOOR_2 = [
   'Wine Notes',
@@ -168,7 +198,17 @@ const FLOOR_2 = [
   'Mushrooms',
   'Old Letters',
   'Recipes II',
-  'Sea Glass',
+  'Ferns',
+  'Tide Tables',
+  'Birds',
+  'Rope Work',
+  'Fermenting',
+  'Woodcuts',
+  'Constellations',
+  'Frost Dates',
+  'Bookbinding',
+  'Hill Walks',
+  'Winter Notes',
 ];
 
 /** The script typed into the insert sheet, and then rendered on the page. */
@@ -449,6 +489,39 @@ async function closeRailPanel(page, selector, title) {
   await wait(page, 600);
 }
 
+/**
+ * Open the settings sheet and wait until it is really open.
+ *
+ * `.nbs-sheet` is MOUNTED whether the sheet is up or not — the same trap as the
+ * rail panels, and `waitForSelector` reports "62 x locator resolved to hidden"
+ * and then times out. So this presses the seal by its own class rather than by
+ * an accessible name that also matches other things, and waits on POSITION
+ * through `onScreen`, which is the honest signal everywhere else in this file.
+ */
+async function openSettings(target) {
+  /*
+   * REAL visibility, not `onScreen`. The rail panels are parked off-canvas when
+   * shut, so position is the honest signal for them; the settings sheet is a
+   * different animal — it stays where it is and goes `visibility: hidden`, so
+   * `onScreen` answered true for a shut sheet and this returned happily, and
+   * the next line then spent two minutes trying to type into a search box
+   * nobody could see.
+   */
+  const up = () => target.locator('.nbs-sheet').first().isVisible();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (!(await up())) await target.locator('.nbs-gear-button').first().click({ force: true });
+    for (let i = 0; i < 30; i += 1) {
+      if (await up()) {
+        await wait(target, 1200);
+        return;
+      }
+      await wait(target, 400);
+    }
+    console.log(`   retry ${attempt + 1}: the settings seal did not open the sheet`);
+  }
+  throw new Error('readme-shots: the settings sheet would not open');
+}
+
 /* ------------------------------- 1. the banner ---------------------------- */
 
 /*
@@ -488,6 +561,14 @@ const appShots = [
   'quickswitch',
   'script-dialog',
   'script-page',
+  // Sections 13-16 below. Leaving these out is not "they get skipped by
+  // default" — the whole `if (appShots.some(wanted))` block is gated on this
+  // list, so `--only=share` opened a browser, booted the app and photographed
+  // nothing at all.
+  'share',
+  'focus',
+  'keyboard',
+  'settings',
 ];
 
 if (appShots.some(wanted)) {
@@ -848,8 +929,196 @@ if (appShots.some(wanted)) {
     }
   }
 
+  /* --------------- 13. the sheets that had no picture at all -------------- */
+
+  /*
+   * Part 1 is read by somebody who has not installed anything yet, and the
+   * reader's note about it was about intimidation rather than accuracy:
+   * *"we want part 1 to have as many pictures as possible, to not intimidate
+   * users."* Four of its ten sections described a surface in prose and never
+   * showed it — the keyboard, sound and settings, everything going in and out,
+   * and focus mode. These are those four.
+   */
+  /*
+   * These four have to stand on their own, because `--only` skips whatever came
+   * before them. The rail only exists INSIDE a book, so the first version of
+   * this section went looking for "In and out" on a bare shelf and spent two
+   * minutes timing out on a button that could not be there.
+   */
+  const ensureBookOpen = async () => {
+    if ((await page.locator('.nb-rail').count()) > 0) return;
+    await page.evaluate(async () => {
+      const app = await import('/src/state/app.ts');
+      const books = await import('/src/data/books.ts');
+      const list = await books.listBooksByFloorRange(0, 20);
+      const welcome = list.find((b) => /welcome/i.test(b.title)) ?? list[0];
+      app.appState.openBook(welcome.id);
+    });
+    await page.waitForSelector('.nb-prose', { timeout: 60_000 });
+    await settle(page);
+    await wait(page, 2500);
+  };
+
+  if (wanted('share')) {
+    console.log('\n13. in and out');
+    await ensureBookOpen();
+    // `.nb-share`, not `.nb-share-panel` — the sheet's root carries the short
+    // name like `.nb-catalogue` and `.nb-toc` above it. Guessed wrong once, and
+    // the cost was not an error: `openRailPanel` retries by CLICKING, so it sat
+    // there toggling the sheet open and shut against a selector that could
+    // never match.
+    await openRailPanel(page, '.nb-rail', /In and out/, '.nb-share');
+    await shot(page, 'share');
+    await closeRailPanel(page, '.nb-share', 'In and out');
+  }
+
+  if (wanted('focus')) {
+    console.log('\n14. focus mode');
+    await ensureBookOpen();
+    await page.keyboard.press('F9');
+    await settle(page);
+    await wait(page, 1600);
+    await shot(page, 'focus');
+    await page.keyboard.press('F9');
+    await settle(page);
+    await wait(page, 900);
+  }
+
+  if (wanted('keyboard')) {
+    console.log('\n15. the cheat sheet');
+    await ensureBookOpen();
+    /*
+     * `?` is the binding, and it is gated on not-typing — the caret is in a
+     * page at this point, so pressing it straight away types a question mark
+     * into the Welcome book and photographs nothing. Blur first, then use the
+     * real key: driving `runCommand` through the probe's own import would risk
+     * the second-module-copy trap, and going through the keyboard proves the
+     * binding a reader would use actually works.
+     */
+    await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement) el.blur();
+    });
+    await wait(page, 500);
+    await page.keyboard.press('?');
+    // Its own veil, so this is a modal over the spread rather than a rail
+    // sheet — `openRailPanel` would wait for a slide that never happens.
+    await page.waitForSelector('.nb-cheat-card', { timeout: 30_000 });
+    await wait(page, 1400);
+    await shot(page, 'keyboard');
+    await page.keyboard.press('Escape');
+    await wait(page, 900);
+  }
+
+  if (wanted('settings')) {
+    console.log('\n16. settings');
+    // The seal lives in the window's bottom-left corner, outside the book, so
+    // the book goes back on the shelf first.
+    await page.evaluate(async () => {
+      const app = await import('/src/state/app.ts');
+      app.appState.closeBook();
+    });
+    await page.waitForSelector('.shelf-dock', { timeout: 30_000 });
+    await wait(page, 2000);
+    await openSettings(page);
+    await settle(page, '.nbs-sheet');
+    await wait(page, 1400);
+    await shot(page, 'settings');
+    await page.keyboard.press('Escape');
+    await wait(page, 900);
+  }
+
   await page.close();
 }
+
+/* ------------------- 17. the first launch, on a clean slate ---------------- */
+
+/*
+ * A PAGE PER SHOT, and both of them separate from everything above.
+ *
+ * Everything above runs after "skip the tour" has been pressed, because
+ * thirteen pictures of the app should not have a tour card sitting on them. The
+ * two things a first-time reader actually meets first are the taste questions
+ * and the tour, so they are taken here instead.
+ *
+ * NOT by clearing localStorage, which was the first attempt and timed out
+ * waiting for a panel that was never going to open: the taste answers live in
+ * the SQLite `settings` table (`tasteStore.ts`), so wiping web storage resets
+ * nothing and the questionnaire stays answered. Each is reopened the way a
+ * reader reopens it, from Settings — which has the side benefit of
+ * photographing a state that is actually reachable.
+ *
+ * And each gets its OWN page because the two do not compose: answering the
+ * questionnaire leaves a modal layer that swallows the next press of the
+ * settings seal, so taking them in sequence on one page spent four retries
+ * reporting "the settings seal did not open the sheet". Two pages cost one
+ * extra boot and cannot interfere.
+ */
+async function bootFresh(label) {
+  const fresh = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
+  fresh.setDefaultTimeout(120_000);
+  console.log(`\n${label}`);
+  await fresh.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
+  await fresh.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
+  await fresh.evaluate(() => {
+    globalThis.__worldReady = false;
+    void globalThis.__shelfWorld.ready.then(() => {
+      globalThis.__worldReady = true;
+    });
+  });
+  await fresh.waitForFunction(() => globalThis.__worldReady === true, null, { polling: 400 });
+  const skipFirst = fresh.getByText('skip the tour');
+  if (await skipFirst.count()) {
+    await skipFirst.first().click({ force: true });
+    await wait(fresh, 900);
+  }
+  return fresh;
+}
+
+/**
+ * Press one of the settings sheet's "start" buttons, found by the label of its
+ * own row.
+ *
+ * Through the sheet's own SEARCH box, because the sections collapse and a row
+ * inside a shut one is not there to click. Typing reveals collapsed groups,
+ * which is exactly what the search was built to do, so this drives the feature
+ * rather than working around it. Scoping to the row matters as well: two rows
+ * carry a button that says "start", and a bare text match is a coin flip.
+ */
+async function pressSettingsRow(target, query, rowText) {
+  await openSettings(target);
+  await target.getByPlaceholder('search the settings…').first().fill(query);
+  await wait(target, 900);
+  await target
+    .locator('.nbs-row', { hasText: rowText })
+    .getByRole('button', { name: /^start$/ })
+    .first()
+    .click({ force: true });
+}
+
+if (wanted('first-run')) {
+  const fresh = await bootFresh('17. the taste questions');
+  await pressSettingsRow(fresh, 'choose my look', 'choose my look again');
+  await fresh.waitForSelector('.nbq-layer', { timeout: 60_000 });
+  await wait(fresh, 2200);
+  await shot(fresh, 'first-run');
+  await fresh.close();
+}
+
+if (wanted('tour')) {
+  const fresh = await bootFresh('18. the guided tour');
+  await pressSettingsRow(fresh, 'replay', 'replay the tour');
+  await fresh.waitForSelector('.nbt-card', { timeout: 60_000 });
+  /*
+   * Long enough for the card to have finished arriving AND for its pencil arrow
+   * to have drawn itself on — the arrow is the part that says what the card is
+   * pointing at, and a shot taken at 1s catches it half-drawn.
+   */
+  await wait(fresh, 3200);
+  await shot(fresh, 'tour');
+  await fresh.close();
+}
+
 
 await browser.close();
 

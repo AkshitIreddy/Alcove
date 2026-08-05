@@ -245,6 +245,7 @@ export const DEFERRED_FACTS = [
   'packCategories',
   'packRefusals',
   'tourSteps',
+  'tasteQuestions',
 ];
 
 /**

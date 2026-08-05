@@ -169,6 +169,7 @@ import { codeLook, loadCodeLook, saveCodeLook } from './codeAppearancePrefs';
 import { replayTutorial } from '../tutorial';
 import { ensureTasteMounted } from '../tutorial/tasteMount';
 import { replayTaste } from '../tutorial/tasteStore';
+import { TASTE_QUESTIONS } from '../tutorial/tasteProfile';
 
 /* ------------------------------- helpers ---------------------------------- */
 
@@ -2391,7 +2392,7 @@ export default function SettingsPanel(props: {
           words="look style skin decoration"
         >
           {/*
-            The four questions the tour opens with, offered again.
+            The five questions the tour opens with, offered again.
 
             It sits at the TOP of Appearance rather than beside "replay the
             tour" in Help because of what it writes: the room, the case, the
@@ -2402,9 +2403,15 @@ export default function SettingsPanel(props: {
             its own control, and this is only the fast way to move all of them
             at once.
           */}
+          {/*
+            The count comes from the table, not from a number typed here. It
+            said "four" while `TASTE_QUESTIONS` held five — a row that miscounts
+            its own questionnaire, in the settings sheet, under a heading about
+            being able to trust what the app tells you.
+          */}
           <Row
             label="choose my look again"
-            hint="four questions, and the whole library takes after your answers"
+            hint={`${TASTE_QUESTIONS.length} questions, and the whole library takes after your answers`}
             words="taste questionnaire onboarding setup wizard start over restyle"
           >
             <button type="button" class="nbs-action-btn" onClick={chooseLookAgain}>

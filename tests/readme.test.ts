@@ -113,6 +113,7 @@ import { NOTEBOOK_TEMPLATES } from '../src/features/templates/templates';
 import { DEFAULT_FLOOR_COUNT, MAX_FLOOR_COUNT } from '../src/data/bookcases';
 import { PACK_CATEGORIES, UNSUPPORTED_CATEGORIES } from '../src/features/packs/categories';
 import { tourSteps } from '../src/features/tutorial/steps';
+import { TASTE_QUESTIONS } from '../src/features/tutorial/tasteProfile';
 
 /** The counts `scripts/check-readme.mjs` defers to this file. */
 function vocabularyFacts(): Record<string, number> {
@@ -170,6 +171,7 @@ function vocabularyFacts(): Record<string, number> {
     packCategories: PACK_CATEGORIES.length,
     packRefusals: UNSUPPORTED_CATEGORIES.length,
     tourSteps: tourSteps('full').length,
+    tasteQuestions: TASTE_QUESTIONS.length,
   };
 }
 

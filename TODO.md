@@ -278,68 +278,26 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       through by the card's bottom border; and a picture caption beside it is cut
       off mid-word.
 
-- [ ] **f225 — the studio panel draws its thumbnails in the wrong place.** The
-      "how it is built" previews sit about 65px above their cards, covering the
-      colour swatches and the whole "or a colour of your own" row, while the
-      cards beneath are empty. In the room grid two cards have lost their
-      thumbnails entirely and a third shows the wrong case under a smeared label.
+- [x] **f225 — the studio panel draws its thumbnails in the wrong place.**
+
+      GONE on the current tree, and it was almost certainly never a layout bug.
+      Re-checked by driving the running app, scrolling the panel to the section
+      the frame showed empty, and counting: **51 tile canvases, 0 blank** — then
+      looking at the screenshot, where "how it is built" carries eight filled
+      thumbnails and a "44 more…" tile, all inside their own cards.
+
+      What f225 caught was the frame budget in `designArt.tsx` meeting a blocked
+      main thread. A card that misses its cache is painted on the first frame
+      with room in it — and the studio open was stalling for ~900ms with no
+      frames at all, so the queue could not drain and the cards sat empty for as
+      long as the stall lasted. Fixing the stalls fixed the symptom.
 
 - [ ] **f295 — a floor draws one hairline sliver of a book** while the floor
       above is half-populated with featureless blocks. Same family as the flat
-      spines above; may be the same fix.
-
-### The renderer
-
-- [x] **Make gifsmith deterministic, like Blender.** BUILT and measured: same scene, screencast 13.75s output for 46.5s real; deterministic 9.38s output for 20.1s real, against a designed length of 9.4s. Render time has stopped being playback time. Being hardened for release — the gate has found real defects twice.
-      > "Don't think twice, go ahead with the Blender thing if it will help."
-
-      Their original framing: *"maybe you should modify gifsmith to kind of be
-      like Blender, where it doesn't matter if maybe the PC is slow or
-      something — it generates as per design."* Measured and confirmed: the app
-      idles at 244 fps under the capture and then blocks the main thread for
-      904 ms opening the studio and 1147 ms changing a room preset, and the
-      capture records those stalls faithfully. Virtual time makes render time
-      stop being playback time.
-
-- [x] **The demo is lossy, and unevenly so.** *(measured; the lossy option was
-      making the file BIGGER)*
-      > "I feel this gif is very lossy as well. Like, if there is a way to
-      > generate high quality or use a reliability solution that would be good.
-      > Basically when it is showing the gif, it is not always the same spot
-      > that gets messy and lossy. Might be a GitHub problem, I don't know."
-
-      Not GitHub. Two stages were losing the picture and each was measured on
-      its own, against the frames that stage was handed, so the numbers are that
-      stage's own damage rather than the whole pipeline's.
-
-      **The capture stage was throwing away quality AND paying for it.** Frames
-      were JPEG q92 before the encoder ever saw them — 45.40 dB / SSIM 0.991
-      against what Chromium composited. Switching to PNG makes the pipeline
-      lossless end to end, and the resulting GIF is **27% SMALLER**:
-      14,572,788 B from JPEG frames versus 11,481,042 B from PNG. JPEG ringing
-      around ink lines is high-frequency noise a palette and LZW cannot
-      compress, so the lossy option was buying nothing in either direction.
-
-      **The encoder was the bigger loss, by about 10 dB.** On the two-page
-      spread — the content the complaint was actually about:
-
-          defaults (128 colours, bayer, diff)   3,362,546 B   41.39 dB   0.981
-          256 colours, no dither, full palette  3,373,170 B   46.06 dB   0.997
-
-      +4.7 dB and SSIM 0.981 -> 0.997 for **+0.3% bytes**. Over the whole loop
-      it is +6.3% bytes for +3.2 dB.
-
-      Also settled, so nobody re-derives it: error diffusion (`sierra2_4a`) is
-      WORSE than bayer and bigger — it re-rolls its noise every frame and
-      destroys inter-frame compression. `bayerScale: 1` is a disaster, 30.2 dB.
-      Per-frame palettes buy +3.4 dB for FOURTEEN times the size. Lossless
-      animated WebP is exact but impractically slow: 300 frames took six
-      minutes, and the full 1209-frame loop had not finished after an hour.
-
-      "Not always the same spot" was the tell and it was right — that is dither
-      and palette noise moving frame to frame, not a fixed artefact.
-
-### Testing
+      spines, which is fixed — the books were on `placeholderTint` because every
+      spine texture had been destroyed before a replacement existed. NOT ticked,
+      because unlike f225 it has not been re-checked against a fresh recording;
+      do that when the demo is re-rendered rather than assuming.
 
 - [ ] **Replace most of the test suite with AI-in-the-loop visual verification.**
       > "I want there to be some sort of AI (you) in the loop testing where you

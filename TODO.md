@@ -87,6 +87,33 @@ being reviewed frame by frame.
       LOCATE a frame; the judging has to happen at `--frame=NNNN`, and a finding
       that never left the thumbnail is not a finding.
 
+- [ ] **A temporal review of the demo (gifsmith's frame-diff tooling, run by a
+      separate workflow) found the right leaf briefly showing the WRONG spread,
+      five times: frames 579, 695, 926, 1043, 1089.** Not yet traced — recorded
+      here so the finding survives, and `scripts/probe-turn-face.mjs` exists to
+      chase it.
+
+      The shape every time: the curl finishes, both leaves are fully painted
+      with no transition chrome, and for two or three frames the RIGHT leaf
+      shows a spread from ELSEWHERE in the book before snapping to the correct
+      one. At f579 the wrongly-shown page is one the demo does not legitimately
+      reach for another 120 frames — so this reads as a genuine content mix-up,
+      not a rounding artefact.
+
+      Why no DOM-sampling probe in this repo could have caught it on its own:
+      during a curl the live leaves are `visibility: hidden` with their text
+      still in them, so a probe reading the DOM reports an inked leaf however
+      wrong the picture on screen actually is. What the reader sees is a WebGL
+      texture from `flip/rasterCache`, and the probe reads that layer instead.
+
+      Given everything else measured today about the recorder (14fps
+      compressing a 450ms turn into ~6 output frames, `capture: 'deterministic'`
+      costing zero rendered frames to a main-thread stall), the prior should be
+      "recorder artefact" rather than "app bug" until traced — but f579's
+      120-frame-early page is specific enough that it deserves the trace rather
+      than being waved off with that prior. Run `probe-turn-face.mjs` against
+      the running app before the next demo re-render.
+
 - [ ] **The curl freezes near the end of the first turn after a panel closes.**
       *(found while trying to reproduce the three symptoms — none of which
       reproduced, and this did)*

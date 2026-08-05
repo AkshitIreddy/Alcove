@@ -1664,6 +1664,8 @@ await cmp.goto('about:blank');
  */
 const shots = [];
 const results = [];
+/** Set when a scene walk was disturbed — see the sabotage verdict at the foot. */
+let sabotageContaminated = false;
 const record = (c, status, extra = {}) => {
   const row = { name: caseName(c), status, ...extra };
   results.push(row);
@@ -1868,6 +1870,27 @@ for (const [, group] of byScene) {
   }
   if (outcome.reloads > 0) {
     console.log('  (still reloading — these pictures are of a moving target)');
+    /*
+     * A CONTAMINATED RUN CANNOT ANSWER THE SABOTAGE QUESTION EITHER WAY.
+     *
+     * `--sabotage` asks one thing: with a patch on screen that changes every
+     * 200ms, does `settle()` still report MOVE? A dev server reloading the page
+     * mid-walk restarts the scene under the camera, so the case comes back
+     * `fail` — 669 changed pixels against its baseline — and the verdict below,
+     * which only asks "did every case come back MOVE", reads that as GATE
+     * INERT.
+     *
+     * Which is the wrong answer, and the more damaging direction: a gate that
+     * cries INERT on a noisy machine is a gate somebody stops running. It
+     * happened the first time this switch was used for real, with five other
+     * agents saving files into the same dev server.
+     *
+     * So a reload makes the sabotage verdict INCONCLUSIVE rather than a
+     * failure — the same third outcome `settle()` itself already has, and for
+     * the same reason: it could not be measured, which is not the same as
+     * measuring badly.
+     */
+    sabotageContaminated = true;
   }
   const excused = new Set(outcome.failures.map(({ c }) => caseName(c)));
   for (const { c, why } of outcome.failures) {
@@ -2131,6 +2154,15 @@ if (SABOTAGE) {
   const missed = results.filter((r) => r.status !== 'skip');
   const blind = unstable.filter((r) => r.sawSabotage !== true);
   console.log('');
+  if (sabotageContaminated) {
+    console.log(
+      '  GATE INCONCLUSIVE — the dev server reloaded the page mid-walk, so the\n' +
+        '  scene restarted under the camera and every case is of a moving target.\n' +
+        '  That is not the movement this switch is testing for. Run it again on a\n' +
+        '  tree nothing else is writing to.',
+    );
+    process.exit(4);
+  }
   if (missed.length === 0 && blind.length === 0 && unstable.length > 0) {
     console.log(
       `  GATE ALIVE — all ${unstable.length} sabotaged case(s) reported MOVE, ` +

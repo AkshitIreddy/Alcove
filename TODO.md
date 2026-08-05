@@ -286,25 +286,62 @@ so a reappearance would be flagged as a regression rather than a fresh find.
 
 ### Two latent defects found on the way, neither of them reported
 
-- [ ] **A 32-bit hash files the case bakes.** `textures.ts` keys the four case
-      bakes under `roomTag()` = `fnv1a(schemeKey(...)).toString(36)`.
-      `art/bake.ts`'s own header explains it deliberately keys on the full
-      parameter string rather than a hash, naming "a (small) correctness risk in
-      a 32-bit collision serving one room's plank to another" — and `textures.ts`
-      then hashes it anyway. `tests/design-cache-keys.test.ts` proves
-      `themeKeyOf` is injective, which says nothing about the string the bake is
-      actually filed under. Low probability, no symptoms until it happens.
+- [x] **A 32-bit hash files the case bakes — and it DOES collide, on colours a
+      reader can pick.**
 
-- [ ] **`bookDesignTag()` is dead as a cache key, and a test guards it anyway.**
-      `grep -rn bookDesignTag src/` finds only doc comments. The spine params key
-      is `${styleEpoch}|${bookId}|${pinnedPresetId}` and the atlas key is
-      `${variant}|${bookId}`. Comments in `art/bookDesign.ts`, `art/bookStyle.ts`
-      and `art/spines.ts` all assert it IS the spine factory's params key — it is
-      not — and `tests/design-cache-keys.test.ts` guards a function no cache
-      consults. Also stale: `textures.ts`, `libraryKey.ts`, `wallpaperDesign.ts`
-      and that test's own header all still reason about "the disk cache"
-      surviving reinstalls. There is no disk cache; `art/bake.ts` removed it, so
-      the whole class of bug is now within-session only.
+      The 60 authored rooms are fine: all 60 swept through the old
+      `fnv1a(schemeKey(…)).toString(36)` gave 0 collisions. But the input space
+      is not 60 — `libraryPrefs.composeScheme` folds a READER-TYPED `timberHex`
+      through `palette.caseFaces`, so it is millions of schemes wide. Sweeping
+      400,000 timber hexes (223,070 distinct schemes) hit **6 collision pairs**.
+
+      The first: timber `#0043a9` (navy) and `#006b82` (teal) both tag
+      `9sjds2` — the same plank, recess, post and cornice served to whichever
+      room asked for them second. `art/bake.ts`'s header had named this exact
+      risk as its reason for keying on full parameter strings, and `textures.ts`
+      hashed the key before handing it over, undoing that for nothing.
+
+      Fixed by passing the key through in full. `roomTag` is gone; the four
+      bakes call a new pure `caseBakeKey(part, w, h, roomKey)` in
+      `libraryKey.ts`, which is also where `FLAT_ART_VERSION` now lives — so the
+      whole string a bake is filed under is spelled in the one module a node
+      test can load. That was the real defect behind the defect: `themeKeyOf`
+      was being proved injective one step away from the string that actually
+      reached `bakeCached`. The key is reordered so `params.slice(0, 96)` in the
+      profile ring still identifies the part.
+
+      Pinned: the navy/teal pair as a regression asserting the old hash DID
+      collide and the new key does not, plus a 156,000-key sweep
+      (60 schemes x 52 builds x 50 patterns).
+
+- [x] **`bookDesignTag()` is dead as a cache key, and a test guards it anyway.**
+
+      Verdict: the binding IS covered, but not for the reason the three comments
+      gave — **the spine caches are invalidation-keyed, not content-keyed.**
+      Established by driving the running app and diffing screenshot crops rather
+      than by reading: pinning `plain-cloth` moved 11.6% of the crop, pinning
+      `full-morocco` another 8.9%, unpinning restored the seeded binding with
+      **0 differing pixels**, and re-pinning gave 0 again — a real cache hit, not
+      an absent cache.
+
+      The decisive case is the one `pinnedPresetId` cannot carry: with the
+      factory epoch observed at 1 before and after and the binding held at
+      `plain-cloth`, a `__shelfSetBookStyle` edit still repainted **14.7%** of
+      the crop. Neither key component moved, so the mechanism is
+      `SpineFactory.invalidate` destroying the texture — not a key.
+
+      `bookDesignTag` is kept and its purpose written down: it is the tests'
+      observable for "are these two resolved bindings different pixels", which
+      is the only way to show 50 shapes x 50 coverings x 189 presets are
+      genuinely distinct — a specimen board shows one binding and can never show
+      that two differ. Four comment sites and the design-doc table corrected.
+
+      The fake coverage was replaced with a real gap it exposed: nothing tested
+      `ownBindingId`, which IS load-bearing for a key — the composed
+      `own:shape/material/decoration/gilt` id is the params cache's whole view of
+      a hand-composed binding, so two agreeing on an id would share one
+      `ResolvedBookStyle`. Now a round-trip, a 255,000-combination injectivity
+      sweep, and a no-collision-with-preset-ids check.
 
 ### Twelve more the frame review confirmed, none of them reported by hand
 

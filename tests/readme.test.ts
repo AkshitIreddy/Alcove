@@ -86,7 +86,7 @@ import {
 } from '../src/art/bookDesign';
 import { DEFAULT_THEME_ID, THEME_IDS } from '../src/art/themes';
 import { CLOTHS } from '../src/art/flat';
-import { WELCOME_BOOK_TITLE } from '../src/data/seed';
+import { WELCOME_BOOK_TITLE, WELCOME_PAGE_SOURCES } from '../src/data/seed';
 import { SOUND_SET_IDS } from '../src/sound/soundSets';
 import { SOUND_NAMES, SOUNDSCAPE_LOOPS } from '../src/sound/engine';
 import { ROOM_PRESETS } from '../src/views/rail/designOptions';
@@ -296,6 +296,217 @@ describe('the README shows this build of the app', () => {
     const manifest = readShotsManifest();
     expect(manifest, `${SHOTS_MANIFEST} is missing`).not.toBeNull();
     expect(manifest?.shots.map((s) => s.file).sort()).toEqual(files);
+  });
+});
+
+/* ------------------- what the alt text quotes off the page ---------------- */
+
+/**
+ * The alt text is the one thing on the front page nothing else can see.
+ *
+ * Twenty-three of the pictures carry hand-written alt text, and it is long and
+ * specific on purpose — `img/spread.png` alone quotes a card title, a banner and
+ * a highlighted phrase straight out of the Welcome book. Every other check on
+ * this page looks at the picture as a FILE: {@link checkShots} weighs it, hashes
+ * it and compares the app identity it was taken against; the twins test compares
+ * the shots to each other; `checkLinks()` resolves the path. None of them reads a
+ * word of the caption, no browser renders it, and the only reader it misleads is
+ * somebody who cannot see the picture to notice. So it can be wrong for a whole
+ * release and come out the other side.
+ *
+ * It was. Seed v7 (`src/data/seed.ts`, `WELCOME_PAGE_SOURCES`) re-cut every page
+ * of the Welcome book — same thirty-two leaves, same subjects, said in fewer
+ * words, with the second card dropped from the pages that carried two — and
+ * three alt-text claims were left describing sentences that no longer existed:
+ *
+ *     "Books come off the shelf"                 a card the shelf page had lost
+ *     "the next five leaves are the other four"  a tag dropped with its card
+ *     "The same thing, thrown outward"           now just "Thrown outward"
+ *
+ * Corrected by hand in `bded4a2`; this is about the next time. The rule below is
+ * the one that found them, and the two halves of it are both load-bearing:
+ *
+ *  - **Four words or more.** Shorter quotes are UI chrome — "Getting about",
+ *    "the book", "one page", "Table of contents" — which is not in the seed and
+ *    never will be. Without that filter every picture of a panel fails and the
+ *    gate is unusable. A token has to carry a letter or a digit to count as a
+ *    word, which is what keeps `"✕ leave focus  Esc"` (a glyph and three words)
+ *    out; `"Welcome to Alcove ✎"` goes the same way and loses nothing, because
+ *    the title is already gated as `welcomeTitle` in {@link depictedIdentity}.
+ *  - **Normalise first.** Backticks come off (the seed writes `` `Ctrl Alt F` ``
+ *    and the alt text writes the rendered `Ctrl Alt F`), whitespace collapses,
+ *    HTML entities decode, and the tree renderer's ` · ` separator maps onto the
+ *    source's ` | ` — the seed writes `Bookcases | one per subject` and the drawn
+ *    diagram the alt is describing reads `Bookcases · one per subject`. Three of
+ *    the six phrases the first hand run reported missing were that separator and
+ *    nothing else; a gate that cries about them is a gate somebody switches off.
+ *
+ * Which pictures are covered is read off the alt text rather than listed here:
+ * one whose SUBJECT is a page of the Welcome book ("The spread…", "The same
+ * spread…", "The Welcome book…", or a thing standing "on the right-hand page of
+ * the Welcome book") is a photograph of seed prose and every phrase it quotes has
+ * to be seed prose. A panel with the spread behind it — the catalogue, the quick
+ * switcher, the cheat sheet, the parcel desk — is a photograph of chrome, and its
+ * quotes are chrome: `transfer.png` quotes a page COUNT, "32 pages", not a
+ * sentence. The last test below closes the loop the other way, so a new picture
+ * of a welcome page cannot quietly fall outside the pattern.
+ */
+const ALT_QUOTE_EXCEPTIONS: readonly string[] = [
+  // Empty, and meant to stay that way. An entry belongs here only for a phrase
+  // that is genuinely not seed prose and cannot be filtered by length — a UI
+  // label of four words or more that a covered picture has to quote. A list that
+  // grows is this gate being switched off one line at a time.
+];
+
+/** Alt text and the picture it is written for, wherever it is written. */
+interface AltText {
+  /** Repo-relative markdown file it was read from. */
+  doc: string;
+  /** Bare file name of the picture, so both halves' link forms agree. */
+  file: string;
+  alt: string;
+}
+
+/** Both spellings of a picture on the front page: markdown, and a sized `<img>`. */
+const MD_IMAGE = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const HTML_IMAGE = /<img\b[^>]*>/g;
+
+function altTexts(): AltText[] {
+  const found: AltText[] = [];
+  const add = (doc: string, src: string, alt: string) => {
+    // Badges are remote and their alt is a label, not a description.
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(src)) return;
+    found.push({ doc, file: src.split('/').pop() ?? src, alt });
+  };
+  for (const doc of readmeDocs()) {
+    const text = readFileSync(join(ROOT, doc), 'utf8');
+    for (const m of text.matchAll(MD_IMAGE)) add(doc, m[2]!, m[1]!);
+    for (const m of text.matchAll(HTML_IMAGE)) {
+      const src = /\bsrc="([^"]*)"/.exec(m[0])?.[1];
+      const alt = /\balt="([^"]*)"/.exec(m[0])?.[1];
+      if (src !== undefined && alt !== undefined) add(doc, src, alt);
+    }
+  }
+  return found;
+}
+
+/** One run of prose, in the form both the alt text and the seed can be read in. */
+function normaliseQuote(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/`/g, '')
+    .replace(/\s*·\s*/g, ' | ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Words in a normalised run — a token needs a letter or a digit to be one. */
+function wordCount(quote: string): number {
+  return quote.split(' ').filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
+}
+
+/** Every `"…"` run in one alt text, normalised. */
+function quotedRuns(alt: string): string[] {
+  return [...alt.matchAll(/"([^"]+)"/g)].map((m) => normaliseQuote(m[1]!));
+}
+
+/** A quote long enough to be a claim about the page rather than a UI label. */
+function isClaim(quote: string): boolean {
+  return wordCount(quote) >= 4 && !ALT_QUOTE_EXCEPTIONS.includes(quote);
+}
+
+/** Whether this caption's subject is a page of the Welcome book. */
+function showsWelcomeProse(alt: string): boolean {
+  const text = alt.trim();
+  return (
+    /^The (?:same )?spread\b/.test(text) ||
+    /^The Welcome book\b/.test(text) ||
+    /\bpage of the Welcome book\b/.test(text)
+  );
+}
+
+/** Bare file names of the pictures whose captions describe a welcome page. */
+function shotsShowingWelcomeProse(alts = altTexts()): Set<string> {
+  return new Set(alts.filter((a) => showsWelcomeProse(a.alt)).map((a) => a.file));
+}
+
+/** The Welcome book's prose as one haystack, in the same normalised form. */
+function welcomeProse(): string {
+  return normaliseQuote(WELCOME_PAGE_SOURCES.join('\n'));
+}
+
+describe('the README quotes the Welcome book as it is written now', () => {
+  it('every phrase the pictures quote is still in WELCOME_PAGE_SOURCES', () => {
+    const alts = altTexts();
+    const covered = shotsShowingWelcomeProse(alts);
+    const prose = welcomeProse();
+    const seen = new Set<string>();
+    const problems: string[] = [];
+    let checked = 0;
+    for (const { doc, file, alt } of alts) {
+      if (!covered.has(file)) continue;
+      for (const quote of quotedRuns(alt)) {
+        if (!isClaim(quote)) continue;
+        const key = `${file} ${quote}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        checked += 1;
+        if (!prose.includes(quote)) {
+          problems.push(
+            `${file} (${doc}) quotes "${quote}", which is not in WELCOME_PAGE_SOURCES`,
+          );
+        }
+      }
+    }
+    // A silent pass because the alt text stopped being extractable — a caption
+    // rewritten with curly quotes, a picture moved out of the walked docs —
+    // would leave this whole describe asserting nothing.
+    expect(checked, 'no quoted claims found in any welcome-page caption').toBeGreaterThan(
+      8,
+    );
+    expect(problems, problems.join('\n')).toEqual([]);
+  });
+
+  it('covers every picture taken of a welcome page', () => {
+    // Derived, not listed — but these six are the ones that exist today, and a
+    // pattern that stops matching them has stopped selecting anything.
+    const covered = shotsShowingWelcomeProse();
+    for (const file of [
+      'spread.png',
+      'page-turn.png',
+      'diagrams.png',
+      'focus.png',
+      'rail.png',
+      'slash.png',
+    ]) {
+      expect([...covered], `${file} is no longer read as a picture of a page`).toContain(
+        file,
+      );
+    }
+  });
+
+  it('no picture it skips is quoting the Welcome book anyway', () => {
+    // The hole the pattern above could leave: a new photograph of a welcome page
+    // whose caption opens on some other noun would be checked by nothing, and
+    // nothing would say so. A skipped picture that quotes a real sentence out of
+    // the seed is that picture, so it fails here and the pattern gets widened.
+    const alts = altTexts();
+    const covered = shotsShowingWelcomeProse(alts);
+    const prose = welcomeProse();
+    const missed = new Set<string>();
+    for (const { file, alt } of alts) {
+      if (covered.has(file)) continue;
+      for (const quote of quotedRuns(alt)) {
+        if (isClaim(quote) && prose.includes(quote)) {
+          missed.add(`${file} quotes welcome-book prose ("${quote}") but is not covered`);
+        }
+      }
+    }
+    expect([...missed], [...missed].join('\n')).toEqual([]);
   });
 });
 

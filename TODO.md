@@ -202,6 +202,21 @@ being reviewed frame by frame.
       f0100 exactly 4500 px change, confined to the two cards' borders and label
       bands, with the world unmoved. The panel's selected state arrives late.
 
+      **Ticked as diagnosed, NOT as re-verified — check it in the re-render.**
+      The ring is a CSS class on a card whose `is-active` reads the same signal
+      the subtitle does, and the subtitle was already right in that frame, so
+      nothing in the panel's own wiring explains a lag. What does explain it is
+      a blocked main thread: no frames paint during a stall, so a class that
+      changed on time still appears late, and 770ms sits squarely inside the
+      ~900ms studio stall `ce4166f` removed (design change 124ms → 0ms of
+      blocked main thread). That is the same story as f225, which was ticked
+      for the same reason.
+      It is a story, though, and the frame that would settle it is in a
+      recording that no longer describes this build. When the demo is
+      re-rendered, find the moment a preset is chosen and check the ring and the
+      subtitle change on the SAME frame. If they do not, this is open again and
+      the diagnosis above is wrong.
+
 - [x] **A blank page at the end, and a blank screen on the way back.**
       > "I noticed at the end of the gif it shows a blank page, and also when
       > 'back to shelf' is clicked, for a second it shows just a blank screen."

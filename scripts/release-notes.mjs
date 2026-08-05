@@ -146,6 +146,8 @@ lines.push(
     (previous ? ` · [every commit in ${previous}…${tag}](${REPO}/compare/${previous}...${tag})` : ''),
 );
 lines.push('');
+lines.push('---');
+lines.push('');
 
 /*
  * Which file to take.
@@ -156,41 +158,46 @@ lines.push('');
  * will pick wrong, and the wrong one is a quarter-gigabyte download they did
  * not need.
  *
- * The recommended row is marked rather than merely listed first: most people
- * want exactly one answer, and a five-row table without one is a decision.
+ * Windows is first and says "the one to take", which is enough of an answer —
+ * an earlier version put a ✔ column beside it and the reader asked what it was
+ * for. A tick that decorates the row you would have read first anyway is a
+ * third column of nothing.
+ *
+ * And no SmartScreen or administrator paragraph: *"no need to talk about
+ * smartscreen admin stuff"*. It described a warning dialog before the reader
+ * had downloaded anything, which is a worse first impression than the dialog.
+ *
+ * THE TABLE COMES AFTER "What changed", which reverses where it started. It was
+ * moved to the top so GitHub's fold could not bury it — then seen in place:
+ * *"in releases can you actually put what changed at top"*. A release page that
+ * opens with a download table reads like a download page; what a release is
+ * FOR is what it changed, and the table is two lines below either way.
  */
 const install = [];
 install.push('## Which file do I want?');
 install.push('');
-install.push('| | You are on | Take this |');
-install.push('| :---: | --- | --- |');
+install.push('| You are on | Take this |');
+install.push('| --- | --- |');
 install.push(
-  '| ✔ | **Windows** | **`_x64-setup.exe`** — the one to take. Installs just for you, ' +
-    'with no administrator prompt. |',
+  '| **Windows** | `_x64-setup.exe` — the one to take. |',
 );
 install.push(
-  '| | Windows, offline | `_x64-setup-offline.exe` — the same app, about 200 MB bigger ' +
+  '| Windows, offline | `_x64-setup-offline.exe` — the same app, about 200 MB bigger ' +
     'because it carries the whole Edge WebView2 runtime instead of fetching it. Only if ' +
     'the one above fails. |',
 );
-install.push('| | Windows, by policy | `_x64_en-US.msi` — the same app as an MSI. |');
+install.push('| Windows, by policy | `_x64_en-US.msi` — the same app as an MSI. |');
 install.push(
-  '| | **macOS** | `_universal.dmg` — one file for both Apple silicon and Intel. |',
+  '| **macOS** | `_universal.dmg` — one file for both Apple silicon and Intel. |',
 );
 install.push(
-  '| | **Linux** | `.deb`, `.rpm`, or `.AppImage` — the AppImage runs without installing. |',
-);
-install.push('');
-install.push(
-  '> Nothing here is code-signed, so Windows shows a SmartScreen warning the first time ' +
-    '(**More info → Run anyway**) and macOS quarantines the first launch ' +
-    '(**right-click → Open**). `SHA256SUMS.txt` is attached if you would rather check a ' +
-    'download than trust one.',
+  '| **Linux** | `.deb`, `.rpm`, or `.AppImage` — the AppImage runs without installing. |',
 );
 install.push('');
 install.push(
   'Your library lives in `%APPDATA%\\com.alcove.app` on Windows. Upgrading never touches ' +
-    'it, and the uninstaller leaves it alone unless you tick the box that says otherwise.',
+    'it, and the uninstaller leaves it alone unless you tick the box that says otherwise. ' +
+    '`SHA256SUMS.txt` is attached if you would rather check a download than trust one.',
 );
 install.push('');
 
@@ -201,8 +208,6 @@ if (total > 0) {
   const bits = [];
   if (feats) bits.push(`${feats} improvement${feats === 1 ? '' : 's'}`);
   if (fixes) bits.push(`${fixes} fix${fixes === 1 ? '' : 'es'}`);
-  body.push('---');
-  body.push('');
   body.push(
     bits.length
       ? `## What changed\n\n${bits.join(' and ')}${previous ? ` since ${previous}` : ''}.`
@@ -216,7 +221,7 @@ body.push(...lines);
  * Collapse any run of blank lines the three parts leave where they meet, so
  * the seams between head, install and body are invisible in the rendered page.
  */
-const out = [...head, ...install, ...body]
+const out = [...head, ...body, ...install]
   .join('\n')
   .replace(/\n{3,}/g, '\n\n');
 process.stdout.write(out + '\n');

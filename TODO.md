@@ -711,6 +711,23 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       failure was only that — the timeout may have been HMR mid-edit, or it may
       be real.
 
+      **Then re-read the alt text against the new pictures, one by one.** The 23
+      alt strings are hand-written and long — `img/spread.png` alone quotes a
+      green callout, a three-item list, a tan card headed "Thirty-two leaves,
+      and every one of them a demonstration" and a green banner reading "So:
+      turn the page". Seed v7 kept all thirty-two leaves and all their subjects
+      but says them **in fewer words**, and dropped the second card from the
+      pages that carried two. So some of those quotations are now describing
+      sentences that no longer exist, on a picture where they are not.
+
+      That is worse than a stale picture, because it is invisible: the image
+      renders, the page reads fine, and the only person it lies to is somebody
+      using a screen reader — who gets a confident, detailed account of a page
+      that is not the one in the file. Nothing gates it. The shots at risk are
+      the ones showing welcome-book prose: `spread`, `page-turn`, `diagrams`,
+      `focus`, `rail`, `slash`, and the page count in `transfer` (still 32, but
+      check).
+
 - [ ] **Re-render the demo ONE more time, last.** The shipped `demo.webp` was
       rendered before two changes that are visible in it: the Welcome book's
       first page became ruled paper, and the studio scroll moved from

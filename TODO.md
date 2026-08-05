@@ -258,7 +258,30 @@ being reviewed frame by frame.
       during a bulk edit and restored once the loss was noticed.)
 
 - [ ] **The Welcome book's first page teaches two things that contradict each
-      other, four lines apart.** *(a product question, the owner's to rule on —
+      other, four lines apart.** **RULED — arrows do not turn pages.**
+      > "well we can not make arrow keys turn pages then"
+
+      That is the fourth option below taken: no new keybinding, no "except
+      while typing" caveat, no Escape-to-leave. **Arrows do not turn pages and
+      nothing in the app or its documentation says they do.** A binding that
+      works only in a state the reader is rarely in, and cannot be described
+      honestly in one line, is exactly what is being removed — the app's own
+      first page proved it by having to teach both.
+
+      What is left to a reader, all of it already there and already true in
+      every focus state: drag a page edge, click the drawn curl at the corner
+      (`page-curl` and `page-corner` in `src/data/keybindings.ts`), the table of
+      contents on Ctrl+Alt+T, the thumbnail strip on Ctrl+Alt+M.
+
+      The surfaces to fix: `arrowFlipAction` in `src/views/spread.ts` and its
+      caller in `BookView.tsx`; the `page-turn` house action advertising
+      `←  →`; `docs/readme/part-1-users.md` (README is composed from it, never
+      edited by hand); any tour step that presses or waits for an arrow — that
+      one can STRAND a reader rather than merely mislead them; and the welcome
+      page's own bullet, which is the last one because `src/data/seed.ts` is
+      being re-cut by another workflow as this is written.
+
+      *(the original entry follows — a product question, the owner's to rule on,
       not a bug to quietly fix)*
 
       Page 1 of the tour, in order:
@@ -733,7 +756,36 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       `src-tauri/**`, `tests/**`).
 
 - [ ] **Rewrite the history and force-push.** *(authorized — "on online as
-      well")* **Do this LAST, after the 0.4.0 content is final and before the
+      well"; rehearsed on a throwaway clone, fixed, now GO)*
+
+      **The rehearsal came back NO-GO first, and that is the whole value of it.**
+      Everything mechanical was sound — 261 commits in, 261 out, none emptied;
+      both tags remapped and byte-identical; `refs/stash` rewritten and still
+      reachable; all 75 SHA references in TODO.md verified commit-for-commit
+      against the originals, with the verifier itself sabotaged first because
+      its first version silently matched nothing (`grep -P` refusing the
+      locale) and would have "passed" while asserting nothing.
+
+      What it caught was the RULES. They reached 26 files tracked at HEAD —
+      eighteen QA drivers under `qa/verify/`, the kept discarded duplication
+      fix under `qa/wip/`, four capture scripts inside `shots-now/hero/`, three
+      run reports — five of them cited by name from live source, all of them
+      0.52 MB of the 1,101 MB saved. filter-repo re-checks-out, so they would
+      have left the disk too. Fixed in `4498c87`, and the promise is now an
+      enforced invariant rather than a paragraph: nothing tracked at HEAD may
+      be matched by a removal rule, checked in both modes, watched failing.
+
+      1,406.6 MB → 317.9 MB. Three more facts from the rehearsal worth having
+      before the real run:
+
+        - **`git gc` afterwards is pointless** — filter-repo already repacks
+          and prunes. An aggressive gc took 71 seconds and moved 228M to 228M.
+        - **The reflog is wiped**, so the bundle really is the only undo. It is
+          written beside the repository now, not into gitignored `qa/tmp/`.
+        - **A tag checkout no longer reproduces its released tree** — v0.2.0
+          loses 1,174 paths and v0.3.0 loses 1,531, all of them capture output.
+          Both still build. Worth knowing before somebody diffs a tag against
+          a downloaded source archive and finds them different. **Do this LAST, after the 0.4.0 content is final and before the
       tag**, because a rewrite moves every SHA and a tag placed first would be
       left pointing at a commit that no longer exists.
 

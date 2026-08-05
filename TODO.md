@@ -7,7 +7,41 @@ being reviewed frame by frame.
 
 ## 🔴 Reported 2026-08-06 — what a still-frame review cannot see
 
-- [ ] **The landing page loads its shadow and paper colour half a second late.**
+- [x] **The landing page loads its shadow and paper colour half a second late.**
+      FIXED, and the diagnosis in the original entry — "preload for the
+      adjacent pages" — turned out to be impossible rather than merely
+      untried. `ccd822f`
+
+      Nothing in the DOM was ever late: every property the leaf's look is made
+      of (paper colour, fore-edge hairlines, the ruling stack, the two doc
+      attributes it's computed from) was already settled on the sample the new
+      leaf appeared in, 0ms, every turn. What was late was a VIEW — the gutter
+      band, its crease and the dog-ear are DOM siblings of the flip surface,
+      buried under the curl canvas's `position:absolute; inset:0` for
+      557-1039ms per turn, and the landing (two editors mounting, two documents
+      parsing, the pagination drain) starves the frame that finally takes the
+      overlay down. A preload cannot touch this — both marks sit outside every
+      `.nb-sheet-paper`, and a page texture is a capture of a sheet; the probe
+      now asserts that rather than assuming it. Fixed by drawing the band and
+      the dog-ear ABOVE the overlay for the length of a turn, conditional on
+      `.is-flipping` so nothing about the resting spread moves.
+
+      Independently verified: mechanism traced and confirmed, the fix
+      neutralised and re-measured back to the reported baseline, and a second
+      capture harness built from scratch that jams the main thread for 4.5s and
+      screenshots through it. Two things found and left open rather than
+      silently accepted:
+
+        - **A new mark during the turn.** At high lift the band is now a
+          vertical stripe cutting through the moving sheet's own text —
+          intended to read as a crease shadow where the page passes through the
+          binding, but that is a judgement, not a measurement. Worth a look
+          before calling it settled.
+        - **No automated gate protects the raise.** Delete the two `:has()`
+          rules and nothing goes red except a probe that is not in CI. A case
+          in `tests/styles.test.ts` asserting both selectors exist and resolve
+          above `--z-flip` would be cheap and is not written yet.
+
       *(observed in the RUNNING APP, not in the recording — this one is real)*
       > "Another bug: let's say I turn a page, then it goes to the next page, it
       > doesn't have the shading — for example the shadow in the middle — the

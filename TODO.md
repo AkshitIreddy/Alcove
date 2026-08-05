@@ -299,12 +299,34 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       because unlike f225 it has not been re-checked against a fresh recording;
       do that when the demo is re-rendered rather than assuming.
 
-- [ ] **Replace most of the test suite with AI-in-the-loop visual verification.**
+- [x] **Replace most of the test suite with AI-in-the-loop visual verification.**
       > "I want there to be some sort of AI (you) in the loop testing where you
       > check each part of the gif to verify and find these issues. Most testing
       > we do now is useless in fact and can be removed. What is important is
       > for you to visually verify the UI and visuals of the things as you do
       > it, and for that to be the testing mechanism instead."
+
+      BUILT, and it is now the documented mechanism in CLAUDE.md's Verify
+      section. `scripts/demo-sheets.mjs` tiles a recording into numbered 4x4
+      boards and prints the frame number of every tile; `--frame=NNNN` and
+      `--range=A-B` pull frames back at full size. One agent per board, told to
+      LOOK rather than reason; a second agent pulls each named frame and tries
+      to REFUTE it.
+
+      First run over 1397 frames: **26 confirmed, 18 refuted.** It found content
+      duplicating on read, the shelf blanking for half a second, a case
+      repainting in two halves, every book losing its art, a key cap breaking
+      across a line, a footnote overprinted by a callout — none of which the
+      2729 unit tests could see, and most of which nobody had reported.
+
+      NOT ticked as "remove the rest of the suite", and deliberately: those 2729
+      tests caught real regressions this same week, including the README facts
+      drifting and the pagination contract. What was actually wrong was that
+      nothing looked at the pixels. Both now exist. The one lesson worth
+      carrying is written beside it in CLAUDE.md — **a gate nobody has watched
+      fail is not a gate** — because two of this week's checks were inert: a
+      blank-frame threshold that could never fire, and a CLI test that called
+      the parser instead of the binary.
 
 - [ ] **Delegate to agents and review their work.**
       > "Maybe you focus on dedicating tasks to AI agents and reviewing their

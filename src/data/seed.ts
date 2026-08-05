@@ -25,6 +25,11 @@
  *   v5 → v6  rewritten again (sixteen pages to thirty-two), by the same
  *            machinery: half the v5 pages stopped two thirds of the way down
  *            the leaf and the tour was thinner than the app.
+ *   v6 → v7  the same thirty-two leaves, re-cut. Every v6 page was authored
+ *            against a budget measured in a 1600x1000 window and the app opens
+ *            at 1280x800, so each one arrived a third over the leaf it landed
+ *            on and the drain grew the book from 32 leaves to 46 the first
+ *            time anybody opened it. Same machinery again.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -54,10 +59,22 @@ import type { PageDoc } from './types';
  * accounts drawers, `::let` and `::style`, sub- and superscript, the lettering
  * axes, and the page's own paper.
  *
+ * v7: the same thirty-two leaves, re-cut for the window the app actually
+ * opens at. v6 was measured with `probe-welcome.mjs` at 1600x1000 and came
+ * back at 81% of the leaf with nothing overflowing — and both halves of that
+ * were true only in a window `tauri.conf.json` never opens.
+ * `src-tauri/tauri.conf.json` starts the app at 1280x800, where a leaf holds
+ * 19.41 lines rather than 25.66 AND the column narrows from 592px to 434px, so
+ * the same words wrap half again as often. Every v6 page costed 136% of that
+ * leaf on average, which is why opening the book turned 32 pages into 46.
+ * Nothing here changes what the tour teaches: the leaves and their subjects
+ * are v6's, said in fewer words, with the second card dropped from the pages
+ * that carried two.
+ *
  * See refreshWelcomeBook for what a bump does to a library that already has a
  * welcome book: nothing at all, unless every page in it is still ours.
  */
-export const SEED_VERSION = 6;
+export const SEED_VERSION = 7;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
@@ -303,24 +320,1138 @@ const KITTENS = {
  *    render — as its own words — but the backlinks page would then be
  *    teaching something the reader cannot see happening.
  *
- * ## Why a page is built the way it is, and not the way it costs
+ * ## Which leaf these pages are cut for, which is not the leaf they were
  *
- * The estimator and the leaf disagree, measurably. `blockLineCost` charges a
- * container `2 + children` and a paragraph `lines + 1`, and on the real leaf a
- * one-line callout draws about 2.2 lines while a `pressed-flower` or an
- * `index-card` draws five or six — chrome the estimator knows nothing about.
- * So a page of many small blocks is charged for a full leaf and covers two
- * thirds of one, and a page of few large blocks is the other way round.
+ * **1280x800 — the window `src-tauri/tauri.conf.json` opens the app at.** Every
+ * generation before v7 was authored against a budget measured at 1600x1000, a
+ * window a reader has to drag the frame out to reach, and the difference is not
+ * small: a leaf there holds 25.66 lines against 19.41, and its prose column is
+ * 592px against 434px, so the same sentence wraps half again as often. Both
+ * losses compound, every v6 page cost 136% of the leaf it landed on, and the
+ * drain turned the tour from 32 leaves into 46 the moment it was opened.
  *
- * That is why these pages are built from FEW, MEATY blocks rather than many
- * thin ones, and why the pages that are inherently thin (four callouts; a
- * diagram, which draws shorter than its cost) carry a table or a card to make
- * the height up. Every one of them was walked in the running app and measured
- * — `node scripts/probe-welcome.mjs`, which prints the fill of every leaf and
- * names any page whose tail is being carried onto the next one. Change the
- * text here and run it again; the arithmetic above is not a substitute for it.
+ * So a page here is written to about 16 of the 17.2 lines
+ * `PAGE_LINE_BUDGET` allows — 87% to 100% of the budget, 84% of the leaf. On a
+ * 1600x1000 screen the same pages cover 60% of the (much larger) leaf and read
+ * as generously margined rather than full, which is the side of the trade the
+ * owner's *"half-empty pages"* report argues against paying at the DEFAULT
+ * window and says nothing about paying at a window nobody is given.
+ *
+ * Two consequences for anyone editing this text:
+ *
+ *  - **A container's chrome is fixed and its text is not.** A card costs 2.7
+ *    lines before a word is written and an index card 4.9, whatever the window;
+ *    what moves is the wrap. So the cheapest way to bring a page down is to
+ *    shorten a SENTENCE, and the cheapest way to bring it down a lot is to drop
+ *    a whole container. Pages that carried two cards explaining the same thing
+ *    now carry one.
+ *  - **The estimator is not the judge.** Every page was walked in the running
+ *    app and measured — `node scripts/probe-page-cost.mjs`, which reports what
+ *    each leaf really spends and names any page whose tail is being carried
+ *    onto the next one, and `scripts/probe-welcome.mjs` for the fill. Change
+ *    the text here and run them again; the arithmetic is not a substitute.
  */
 export const WELCOME_PAGE_SOURCES: readonly string[] = [
+  // ---------------------------------------------------------------- the world
+  // Page 1 — what this is, and how to move around
+  `---
+paper: lined
+wash: amber
+---
+
+# Welcome to Alcove ✎ {sticker=star}
+
+Every book on that shelf opens into pages like this one — ==real paper you can write on=={color=amber}.
+
+::: callout {variant=tip}
+Click the ruled lines and type. It saves itself, and never leaves this machine.
+:::
+
+- Drag to pan the shelf, scroll to zoom
+- Click a book to bring it forward, again to open
+- Arrow keys turn pages, or drag a corner
+
+::: card {title="Thirty-two leaves, every one a demonstration"}
+Nothing here is a screenshot. Every card, diagram and picture is the real thing.
+:::
+
+::: banner {color=moss}
+So: turn the page. {sticker=arrow}
+:::
+`,
+
+  // Page 2 — the shelf you just came from
+  `# The shelf {sticker=book}
+
+Behind this book is a bookcase, and behind that a room.
+
+::: card {title="Getting about"}
+Drag to pan, scroll to zoom. Pull a book out, or press \`Enter\` on the lit one.
+:::
+
+::: sticky-note {color=lemon, rotate=-2}
+The dock at the foot of the rail holds a new book, another floor, the studio and the trash.
+:::
+
+::: tag {color=moss}
+\`Ctrl Alt F\` grows the case by a floor
+:::
+`,
+
+  // Page 3 — more than one bookcase
+  `# A library of your own {sticker=star}
+
+One bookcase is a start. Make another for another subject.
+
+\`\`\`tree
+Your library
+  Study
+    Books | on ten floors
+    A wall, a wallpaper
+  Workshop
+    Books
+\`\`\`
+
+::: card {title="The studio, under the shelf"}
+Carpentry, timber, wallpaper and colour are four separate dials — \`Ctrl Alt S\`.
+:::
+`,
+
+  // Page 4 — the book itself is a thing you can dress
+  `# Dressing a book {sticker=sparkle}
+
+The paintbrush at the top of the rail opens the **book studio**.
+
+::: card {title="The outside"}
+Leather, cloth or board; raised cords, gilt rules, a title plate and gilt edges.
+:::
+
+::: card {title="The inside"}
+Ruled, grid, dotted or blank paper; the wash at the page edge; a ribbon in any cloth.
+:::
+
+::: tag {color=amber}
+\`Ctrl Alt D\` dresses the open book
+:::
+`,
+
+  // --------------------------------------------------------------- the writing
+  // Page 5 — the writing surface itself
+  `# Writing {sticker=book}
+
+Press \`/\` on an empty line for the **slash menu** — headings, lists, tables, callouts, diagrams, the lot.
+
+- [ ] Press \`/\` and put a callout here
+- [ ] Drag a block by its **handle**
+- [ ] Right-click a word for washes
+- [x] Read this far
+
+::: sticky-note {color=lemon, rotate=-2}
+Sticky notes are blocks too — move me.
+:::
+
+> A page that fills up flows onto the next. Nothing here scrolls. {washi=top}
+
+::: callout {variant=info}
+No save button and no cloud — every keystroke lands in a file on this machine.
+:::
+`,
+
+  // Page 6 — every inline mark the language has AND THE EDITOR DRAWS.
+  //
+  // Deliberately no `^sup^` or `~sub~`, though the parser reads both and the
+  // spec teaches them: `toTiptap` degrades them to plain text because no
+  // sub/superscript mark is installed, so "H~2~O" arrives on the leaf as the
+  // flat characters H2O. Same rule as the kittens above — a welcome book may
+  // not demonstrate a feature by failing at it. Put them back the day the mark
+  // exists, and not before.
+  `# Every mark there is {sticker=pin}
+
+**Bold**, *italic*, \`code\`, ~~struck out~~, ==highlighted=={color=lemon}, and [a link out](https://example.com).
+
+A note can hang off a word[^ like this one ].
+
+::: card {title="The seven washes"}
+==amber=={color=amber} ==terracotta=={color=terracotta} ==moss=={color=moss} ==lemon=={color=lemon} ==sky=={color=sky} ==blush=={color=blush} ==graphite=={color=graphite}
+:::
+
+::: index-card {title="Two spellings of everything"}
+\`**bold**\` or \`__bold__\`. The parser takes whichever you reach for.
+:::
+
+::: marginalia
+Select words for the little toolbar.
+:::
+`,
+
+  // Page 7 — lists, three kinds
+  `# Lists {sticker=leaf}
+
+A dash makes a bullet, a number a numbered list.
+
+- Bindings
+  - Leather
+  - Buckram
+- Papers
+  - Laid
+  - Wove
+
+1. Pull a book off the shelf
+2. Write in it
+3. Put it back
+
+- [ ] Square brackets make a box
+- [x] A cross fills it in
+
+::: marginalia
+Tab and Shift-Tab move a line in and out again.
+:::
+`,
+
+  // Page 8 — the block model, and the handle that moves one
+  `# Blocks {sticker=pin}
+
+Every paragraph, list, picture and card is a **block**.
+
+::: card {title="What the handle does"}
+Hover a block and a handle appears at its left edge. Drag it to move the block; click it for turn-into, wash, colour, duplicate, delete.
+:::
+
+::: callout {variant=warn}
+Nothing scrolls. When a page fills, its last block moves onto the next leaf by itself.
+:::
+
+::: marginalia
+Right-click a block for the same menu.
+:::
+`,
+
+  // ---------------------------------------------------------------- the drawers
+  // Page 9 — the stationery drawer
+  `# The stationery drawer {sticker=pin}
+
+::: card {title="What a card is for"}
+Anything worth fencing off from the prose.
+:::
+
+::: index-card {title="Buttermilk scones"}
+Rub 60g of butter into 250g of flour. Milk to bind. Hot oven, eight minutes.
+:::
+
+::: quote-card {color=blush}
+"A room without books is like a body without a soul."
+:::
+
+::: marginalia
+Two dozen in all, in the catalogue.
+:::
+`,
+
+  // Page 10 — the postal drawer
+  `# The postal drawer {sticker=heart}
+
+::: envelope {color=amber}
+Something folded away for later.
+:::
+
+::: stamp {color=terracotta}
+Perforated, postmarked, worth one penny.
+:::
+
+::: postcard {title="WISH YOU WERE HERE"}
+Message left, address right, and no room for either.
+:::
+
+::: map-pin {title="The blue door"}
+Second on the left, past the bakery.
+:::
+`,
+
+  // Page 11 — the keepsake drawer
+  `# Things stuck in {sticker=flower}
+
+::: pressed-flower {title="Meadow cranesbill — June"}
+Flat between the pages for a fortnight, and still blue.
+:::
+
+::: ticket-stub {title="ADMIT ONE"}
+Row H, seat 12. It rained the whole way home.
+:::
+
+::: wax-seal {title=A}
+Pressed while still soft. Not to be opened before Sunday.
+:::
+`,
+
+  // Page 12 — the four callouts, each being itself
+  `# Four kinds of aside {sticker=coffee}
+
+::: callout {variant=info}
+**Info** — what a reader needs first.
+:::
+
+::: callout {variant=tip}
+**Tip** — the thing you would say over a shoulder.
+:::
+
+::: callout {variant=warn}
+**Warn** — the one that raises its voice.
+:::
+
+::: callout {variant=star}
+**Star** — worth keeping, and worth using sparingly.
+:::
+
+::: marginalia
+\`:::info\`, \`:::tip\`, \`:::warn\` and \`:::star\` are the short spellings.
+:::
+`,
+
+  // Page 13 — the asides that are not callouts, and the two folds
+  `# Notes to one side {sticker=music}
+
+::: sticky-note {color=lemon, rotate=-2}
+A post-it. Pick it up by its handle, then tilt it with \`{rotate=-2}\`.
+:::
+
+::: washi-box {color=sky}
+A box held to the page by a strip of washi tape.
+:::
+
+::: toggle {title="A fold — click it"}
+Here is what was folded away. A toggle nests as deep as the thought goes.
+:::
+
+::: spoiler
+And a spoiler hides one answer until you look.
+:::
+`,
+
+  // ---------------------------------------------------------------- the pictures
+  // Page 14 — pictures (the kittens the reader asked for)
+  `# Pictures {sticker=cat}
+
+Paste one in, drop one on the page, or write \`![a caption](picture.png)\`.
+
+::: image-row {style=polaroid, cols=3}
+![A ginger kitten](${KITTENS.ginger}){caption="Has plans"}
+![A grey kitten asleep](${KITTENS.asleep}){caption="On the good chair"}
+![A cream kitten in a box](${KITTENS.box}){caption="His box now"}
+:::
+
+::: card {title="How a row behaves"}
+Up to four stand side by side. \`{style=plain}\` takes the frames off.
+:::
+`,
+
+  // Page 15 — one picture, properly
+  `# One picture, properly {sticker=sun}
+
+::: columns {gap=lg}
+::: col
+::: polaroid
+![The ginger kitten again](${KITTENS.ginger})
+A white frame, captioned in pencil.
+:::
+:::
+::: col
+::: photo-corner {title="or four paper corners"}
+![A grey kitten asleep](${KITTENS.asleep})
+:::
+:::
+:::
+
+::: card {title="Both are only containers"}
+Drag a corner to resize, or write \`{width=320}\`. \`{align=left}\` slides one across.
+:::
+`,
+
+  // Page 16 — columns, shown by doing the thing columns are for
+  `# Two up {sticker=leaf}
+
+::: columns {gap=lg}
+::: col
+![A cream kitten in a box](${KITTENS.box}){width=260}
+:::
+::: col
+**Words beside a picture**
+
+The picture keeps its column and the words keep theirs, and neither is measured against the other.
+:::
+:::
+
+::: card {title="How it is written"}
+\`::: columns\`, a \`::: col\` for each, and a plain \`:::\` to close each one.
+:::
+
+::: marginalia
+A column may hold anything a page may hold, including more columns.
+:::
+`,
+
+  // ---------------------------------------------------------------- the diagrams
+  // Page 17 — things that nest
+  `# Diagrams, drawn by hand {sticker=microscope}
+
+Indentation alone makes a \`tree\`: two spaces to a level, \`|\` for a note.
+
+\`\`\`tree {style=watercolor}
+Alcove
+  A library
+    Bookcases | one per subject
+    Floors
+  A book
+    Pages | this thing you are reading
+    Ribbons
+\`\`\`
+
+::: card {title="Five fences, no library"}
+\`tree\`, \`mindmap\`, \`graph\`, \`flowchart\`, \`timeline\` — every line drawn by hand.
+:::
+`,
+
+  // Page 18 — the same grammar, laid out the other way
+  `# Thrown outward {sticker=sparkle}
+
+A \`mindmap\` reads exactly like a \`tree\`, and lays its branches around the middle.
+
+\`\`\`mindmap
+Bookbinding
+  Sewing
+    Kettle stitch
+    Long stitch
+  Covering
+    Cloth
+    Quarter leather
+  Tools
+    Bone folder
+\`\`\`
+
+::: marginalia
+Swap one word for the other and the same fence draws the other picture.
+:::
+`,
+
+  // Page 19 — arrows
+  `# Arrows {sticker=arrow}
+
+One edge to a line makes a \`graph\`.
+
+\`\`\`graph
+Idea {shape=cloud, color=amber}
+Idea -> Draft, Notes
+Draft -> Page: eventually
+Notes -> Page
+\`\`\`
+
+::: card {title="The arrow is forgiving"}
+\`->\`, \`-->\`, \`=>\` and \`→\` all mean the same thing, and a comma fans out to several.
+:::
+`,
+
+  // Page 20 — the same fence, for a process
+  `# A process, step by step {sticker=coffee}
+
+\`flowchart\` is the same grammar, renamed.
+
+\`\`\`flowchart
+Write -> Fills up: a page
+Fills up -> Flows on: by itself
+Flows on -> Carry on: a fresh leaf
+\`\`\`
+
+::: marginalia
+A pasted \`mermaid\` fence renders too.
+:::
+`,
+
+  // Page 21 — things in order
+  `# In order {sticker=moon}
+
+\`label: text\` on each line makes a \`timeline\`, and \`| color=…\` tints one.
+
+\`\`\`timeline
+1665: Hooke looks down a microscope and names the cell
+1839: Schwann — animal cells
+1855: Virchow — cells come from cells | color=amber
+1931: The electron microscope
+\`\`\`
+
+::: card {title="What goes in the label"}
+Anything: a year, a step number, a day of the week. It is printed as written.
+:::
+
+::: marginalia
+\`| color=amber\` tints one entry.
+:::
+`,
+
+  // ---------------------------------------------------------------- the precise
+  // Page 22 — maths, both kinds, on squared paper
+  `---
+paper: grid
+---
+
+# Maths, in a notebook hand {sticker=sparkle}
+
+A dollar either side puts maths in a sentence — a circle is $\\pi r^2$ — and two dollars make an equation.
+
+$$
+e^{i\\pi} + 1 = 0
+$$
+
+$$
+\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}
+$$
+
+::: callout {variant=info}
+Click any formula to see the TeX behind it. Enter puts the drawing back.
+:::
+
+::: card {title="Squared paper, because this page asked"}
+\`paper: grid\` at the top of the script, and the leaf is ruled in squares.
+:::
+`,
+
+  // Page 23 — code, kept exactly as it was pasted
+  `# Code, in its own colours {sticker=microscope}
+
+Three backticks and a language name. Every space you gave it is kept.
+
+\`\`\`python
+def shelve(book, case):
+    """Put a book back where it belongs."""
+    floor, slot = case.free_spot()
+    if slot is None:
+        case.add_floor()
+    case.books[floor][slot] = book
+\`\`\`
+
+::: card {title="Seventy-odd languages"}
+An unknown one keeps its name and its spacing anyway, and arrives in grey.
+:::
+`,
+
+  // Page 24 — tables, and the one keepsake that is a table
+  `# Tables and figures {sticker=coffee}
+
+| Key | What it does |
+| --- | --- |
+| \`/\` | opens the slash menu |
+| \`Esc\` | back to the shelf |
+| \`Ctrl K\` | jumps to any page |
+| \`Ctrl /\` | every other shortcut |
+
+Click a column heading to sort by it; click again to sort the other way.
+
+::: ledger {title="Bindery, March"}
+Buckram 12.00 · Bookcloth 18.50 · Thread 3.20 · Bone folder 9.00
+:::
+`,
+
+  // Page 25 — footnotes, and why they travel with the paragraph
+  `# Footnotes {sticker=pin}
+
+A footnote is a marker in the prose[^ Bracket, caret, note, bracket. ] and the note is printed at the foot of the leaf[^flow].
+
+The Markdown spelling works too[^why].
+
+::: card {title="Why they travel"}
+A note that stayed behind would be orphaned.
+:::
+
+::: index-card {title="Both spellings"}
+\`[^ inline ]\` puts the words in the marker; \`[^name]\` puts a label there.
+:::
+
+[^flow]: So when a paragraph moves on, its note goes with it.
+[^why]: Because an assistant will reach for it first.
+`,
+
+  // Page 26 — references, and the backlinks they grow
+  `# Pages point at pages {sticker=heart}
+
+Type \`[[\` and pick a page, or write its name between double brackets.
+
+The equations are on [[Maths, in a notebook hand]], the fences on [[Diagrams, drawn by hand]], the kittens on [[Pictures]].
+
+::: callout {variant=star}
+Open a page that is being pointed at and it tells you what mentions it.
+:::
+
+::: index-card {title="A reference that finds nothing"}
+It stays on the page as its own words, rather than a chip pointing nowhere.
+:::
+`,
+
+  // ------------------------------------------------------------- the decoration
+  // Page 27 — the universal block attrs
+  `# Decorations {sticker=star}
+
+Any block will wear them, and they stack.
+
+Underlined by hand. {underline=squiggle}
+
+A little tilt, and a piece of tape. {rotate=-2, tape=top}
+
+Torn paper, inside a scalloped frame. {paper=torn, frame=scallop}
+
+Circled, as if in red pencil. {underline=circled}
+
+::: washi-box {color=sky}
+Held down with a strip of tape.
+:::
+
+::: marginalia
+Under the paintbrush in the rail, and on the effects shelf — \`Ctrl Alt A\`.
+:::
+`,
+
+  // Page 28 — the lettering axes
+  `# Lettering and ink {sticker=music}
+
+The everyday hand. {font=hand}
+
+A marker pen. {font=marker}
+
+Set in a book face, for a page that wants to look printed. {font=book}
+
+Written in crimson. {ink=crimson}
+
+Larger, and ranged right. {size=lg, align=right}
+
+Small, centred, in ink-blue. {size=sm, align=center, ink=ink-blue}
+
+::: card {title="Nine hands, five inks, five sizes"}
+\`{font=marker}\`, \`{ink=crimson}\`, \`{size=lg}\` — they stack, on any block.
+:::
+
+::: marginalia
+Every face travels with the app.
+:::
+`,
+
+  // Page 29 — the page's own style, set from the top of the script
+  `---
+paper: dotted
+wash: moss
+---
+
+# Paper and wash {sticker=leaf}
+
+This leaf is dotted, with a moss wash at its edge. Both were set in three lines at the top of the script.
+
+::: card {title="Four papers"}
+\`cream\`, \`lined\`, \`grid\`, \`dotted\`. The page-style panel sets the same by hand.
+:::
+
+::: callout {variant=tip}
+\`Ctrl Alt L\` opens it. The choice belongs to the page, not the book.
+:::
+
+::: tag {color=moss}
+\`wash: amber\`, \`terracotta\`, \`moss\` or \`none\`
+:::
+`,
+
+  // Page 30 — the two leaf directives, demonstrated on themselves
+  `# Shorthand {sticker=pin}
+
+::let course = Bookbinding, Michaelmas
+::let {room=B12, week=3}
+::style hero {color=amber, underline=marker}
+
+Two colons define a value once, and \`{{name}}\` uses it anywhere.
+
+**{{course}}** — room {{room}}, week {{week}}. {use=hero}
+
+::: card {title="Named sets of decoration"}
+\`::style hero {…}\` names a bundle and \`{use=hero}\` puts it on any block.
+:::
+
+::: callout {variant=info}
+An unknown name never breaks a page. It stays on the leaf, verbatim.
+:::
+
+::: marginalia
+Both lines are lifted out before the page is built, so they cost nothing on the leaf.
+:::
+`,
+
+  // -------------------------------------------------------------- the way about
+  // Page 31 — getting back to something you wrote
+  `# Finding it again {sticker=book}
+
+::: card {title="Three ways back"}
+\`Ctrl K\` jumps to any book or page. \`Ctrl Shift F\` searches every word.
+:::
+
+::: index-card {title="Six of the useful ones"}
+- \`Ctrl Alt B\` a ribbon on this page
+- \`Ctrl Alt T\` the table of contents
+- \`Ctrl N\` a new page after this one
+- \`F9\` focus mode
+- \`Ctrl /\` every other shortcut
+- \`Esc\` back to the shelf
+:::
+`,
+
+  // Page 32 — the language, and the way out
+  `# Write it with your AI {sticker=sparkle}
+
+Every page here is written in **Notebook Script**, which the app reads back out.
+
+1. Open the tray at the foot of the rail
+2. Click **Copy AI spec**, paste it to your assistant
+3. Paste the reply into **Insert script**
+
+::: card {title="And back out again"}
+The tray exports a page as script, PDF or picture, packs the library into one file, and turns a folder of Markdown into books.
+:::
+
+::: quote-card {color=amber}
+Now go and write something of your own.
+:::
+`,
+];
+
+/**
+ * Every page this book USED to be, kept verbatim — the v4 five, then the v5
+ * sixteen.
+ *
+ * They are here for one job: telling a welcome book nobody has touched from a
+ * welcome book somebody has been writing in. A refresh replaces the first and
+ * never goes near the second, and the only way to know which is which is to
+ * still have the old text to compare against.
+ *
+ * Append the outgoing generation here whenever this book is rewritten; never
+ * edit an entry. A character out of place makes an untouched book look
+ * written-in, which is the safe direction to be wrong in (the reader keeps the
+ * old tour) but it is still wrong — `tests/seed-encoding.test.ts` exists
+ * because that has already happened once, to a whole generation, over a
+ * mojibaked pencil.
+ */
+export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
+  // Page 1 — what Alcove is + how to get around
+  `---
+paper: cream
+wash: amber
+---
+
+# Welcome to Alcove ✎ {sticker=star}
+
+This is your **library**. Every book on the shelf opens into pages like this one — ==real, editable pages=={color=amber}, not a demo.
+
+::: callout {variant=tip}
+Click anywhere below the ink and just start typing. Everything autosaves as you write.
+:::
+
+- The **shelf** goes on forever — drag to pan, scroll to zoom
+- **Click a spine** and the book comes off the shelf and opens. Wrong one? Press \`Esc\` and it goes back
+- Use the **arrow keys** to flip through a book's pages
+
+> Flip to the next page to meet the editor → {washi=top}
+`,
+
+  // Page 2 — writing + slash commands
+  `# Writing {sticker=book}
+
+Write like in any notes app — then press \`/\` on an empty line to open the **slash menu**: headings, lists, tables, callouts, stickers, diagrams…
+
+## Try it
+
+- [ ] Press \`/\` and insert a callout
+- [ ] Grab a block's **drag handle** to reorder it
+- [ ] Right-click a block for quick actions
+
+Inline styles: **bold**, *italic*, \`code\`, ~~strikethrough~~, ==highlight=={color=lemon}, and ==colored washes=={color=sky}.
+
+::: sticky-note {color=lemon, rotate=-2}
+Sticky notes are blocks too — pick me up and move me anywhere!
+:::
+`,
+
+  // Page 3 — stickers & effects showcase
+  `# Make it yours {sticker=flower}
+
+Blocks can wear decorations — stickers, tape, washi strips, a little tilt…
+
+::: columns {gap=lg}
+::: col
+::: card {color=sky, tape=top}
+A **card** held down with tape.
+:::
+:::
+::: col
+::: quote-card {color=blush}
+"A quote worth keeping."
+:::
+:::
+:::
+
+::: banner {color=moss}
+Banners announce things loudly.
+:::
+
+::: spoiler
+Hidden until you peek — great for quiz answers.
+:::
+
+Highlights come in seven washes: ==amber=={color=amber}, ==moss=={color=moss}, ==sky=={color=sky}, ==blush=={color=blush}, ==terracotta=={color=terracotta}.
+`,
+
+  // Page 4 — diagram example
+  `# Diagrams {sticker=microscope}
+
+Fenced mini-languages render as hand-drawn diagrams. A \`tree\`:
+
+\`\`\`tree {style=watercolor}
+Alcove
+  Shelf
+    Floors | endless
+    Books
+  Pages
+    Blocks
+    Diagrams | like this one
+\`\`\`
+
+And a \`timeline\`:
+
+\`\`\`timeline
+1: Pull a book off the shelf
+2: Write and decorate | color=amber
+3: Flip to a fresh page
+\`\`\`
+`,
+
+  // Page 5 — the AI-script workflow + closing hint
+  `# Your AI can write pages {sticker=sparkle}
+
+Every page in this book was written in **Notebook Script** — a forgiving Markdown dialect any AI assistant can produce.
+
+1. Open any page and click **Insert script** in the toolbar
+2. Click **Copy AI spec** and paste the spec into your AI chat
+3. Ask it to write a page — paste its reply into the dialog and insert
+
+::: callout {variant=info}
+The parser is tolerant: small syntax slips still render, with gentle warnings instead of errors.
+:::
+
+::: callout {variant=star}
+This very page has script source attached — try **Export script** to read it.
+:::
+
+Happy writing! {sticker=heart}
+`,
+
+  // -------------------------------------------------------------------------
+  // The v5 generation: sixteen pages. Outgoing because half of them stopped
+  // two thirds of the way down the leaf — measured on the running app rather
+  // than argued about, `scripts/probe-welcome.mjs`, median fill 51%.
+  //
+  // Verbatim, including the `${KITTENS.…}` interpolations: what has to match
+  // is the STRING a v5 install stored, and that string had the paths in it.
+  // -------------------------------------------------------------------------
+
+  // Page 1 — what this is, and how to move around
+  `---
+paper: cream
+wash: amber
+---
+
+# Welcome to Alcove ✎ {sticker=star}
+
+This is your **library**. Every book on that shelf opens into pages like this one — ==real paper you can write on=={color=amber}, not a picture of some.
+
+::: callout {variant=tip}
+Click anywhere on the ruled lines and start typing. Everything saves itself as you go.
+:::
+
+- The **shelf** goes on and on — drag to pan, scroll to zoom
+- **Click a book** and it comes forward; click it again to open. \`Esc\` puts it back
+- **Arrow keys** turn the pages, or drag a corner and watch it curl
+- The **rail on the left** holds everything else
+
+::: banner {color=moss}
+The rest of this book is a tour of what the paper can do. {sticker=arrow}
+:::
+`,
+
+  // Page 2 — the writing surface itself
+  `# Writing {sticker=book}
+
+Write the way you would anywhere else. Then press \`/\` on an empty line for the **slash menu** — headings, lists, tables, callouts, diagrams, equations, stickers, the lot.
+
+**Bold**, *italic*, \`code\`, ~~struck out~~, ==highlighted=={color=lemon}, or ==washed in another colour=={color=sky}.
+
+- [ ] Press \`/\` and put a callout on this page
+- [ ] Drag a block somewhere else by its **handle**
+- [x] Read this far
+
+::: sticky-note {color=lemon, rotate=-2}
+Sticky notes are blocks too. Pick me up and move me.
+:::
+
+> A page that fills up simply flows onto the next one. Nothing here ever scrolls. {washi=top}
+`,
+
+  // Page 3 — maths, both kinds
+  `# Maths, in a notebook hand {sticker=sparkle}
+
+A dollar either side puts maths inside a sentence: a circle is $\\pi r^2$, the golden ratio is $\\frac{1+\\sqrt{5}}{2}$, and $\\sigma$ is one standard deviation.
+
+Two dollars on a line of their own make an equation:
+
+$$
+e^{i\\pi} + 1 = 0
+$$
+
+$$
+\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}
+$$
+
+::: callout {variant=info}
+Click any formula to see the TeX behind it. Enter puts the drawing back.
+:::
+`,
+
+  // Page 4 — the stationery drawer
+  `# The stationery drawer {sticker=pin}
+
+::: card {title="What a card is for"}
+Definitions, rules, anything worth fencing off from the prose around it.
+:::
+
+::: index-card {title="Buttermilk scones"}
+Rub 60g of butter into 250g of flour. Milk to bind. Hot oven, eight minutes.
+:::
+
+::: quote-card {color=blush}
+"A room without books is like a body without a soul."
+:::
+
+::: envelope {color=amber}
+Something folded away for later, with the flap still open.
+:::
+
+::: tag {color=moss}
+a luggage tag, for labelling whatever comes next
+:::
+`,
+
+  // Page 5 — the keepsake drawer
+  `# Things stuck in {sticker=flower}
+
+::: pressed-flower {title="Meadow cranesbill — the lane, June"}
+Flat between the pages for a fortnight, and still blue.
+:::
+
+::: ticket-stub {title="ADMIT ONE"}
+Row H, seat 12. It rained the whole way home.
+:::
+
+::: postcard {title="WISH YOU WERE HERE"}
+Ran out of room on the front, as usual.
+:::
+
+::: map-pin {title="The blue door"}
+Second on the left, past the bakery.
+:::
+
+::: wax-seal {title=A}
+Not to be opened before Sunday.
+:::
+`,
+
+  // Page 6 — pictures (the kittens the reader asked for)
+  `# Pictures {sticker=cat}
+
+Paste one in, drop one on the page, or write it out: \`![a caption](path/to/picture.png)\`.
+
+::: image-row {style=polaroid, cols=3}
+![A ginger kitten](${KITTENS.ginger}){caption="Has plans"}
+![A grey kitten asleep](${KITTENS.asleep}){caption="On the good chair"}
+![A cream kitten in a box](${KITTENS.box}){caption="His box now"}
+:::
+
+::: marginalia
+Up to four pictures will stand in a row together.
+:::
+`,
+
+  // Page 7 — one picture, properly
+  `# One picture, properly {sticker=sun}
+
+::: polaroid {rotate=-2}
+![The ginger kitten again](${KITTENS.ginger})
+A polaroid is one picture in a white frame, captioned underneath in pencil.
+:::
+
+Drag a corner to resize a picture, or write \`{width=320}\`. Give it \`{align=left}\`, \`{align=center}\` or \`{align=right}\` to slide it across the page. For words beside a picture, put the two in \`:::columns\`.
+`,
+
+  // Page 8 — columns, and the two kinds of fold
+  `# Two up, and things that fold {sticker=leaf}
+
+::: columns {gap=lg}
+::: col
+**On the left.** Columns hold two to four of these, side by side.
+:::
+::: col
+**On the right.** Anything goes in one — a list, a picture, another fold.
+:::
+:::
+
+::: toggle {title="A fold. Click it."}
+Toggles put a long aside out of the way until it is wanted.
+
+::: toggle {title="And they nest"}
+All the way down, as deep as the thought goes.
+:::
+:::
+
+::: spoiler
+A spoiler is the other kind of fold: one answer, hidden until you look.
+:::
+`,
+
+  // Page 9 — diagrams: things that nest
+  `# Diagrams, drawn by hand {sticker=microscope}
+
+Fenced mini-languages come out as hand-drawn diagrams. Indentation alone makes a \`tree\`:
+
+\`\`\`tree {style=watercolor}
+Alcove
+  A library
+    Bookcases
+    Floors
+  A book
+    Pages | this thing you are reading
+\`\`\`
+`,
+
+  // Page 10 — diagrams: arrows
+  `# Arrows {sticker=arrow}
+
+One edge to a line makes a \`graph\` — or a \`flowchart\`, which is the same grammar under a name that suits a process better:
+
+\`\`\`graph
+Write -> Decorate: whenever
+Decorate -> Turn: eventually
+Turn -> Write: forever
+\`\`\`
+
+::: callout {variant=tip}
+None of these is Mermaid, and none of them needs to be.
+:::
+`,
+
+  // Page 11 — diagrams: things in order
+  `# In order {sticker=moon}
+
+\`label: text\` on each line makes a \`timeline\`:
+
+\`\`\`timeline
+1: Pull a book off the shelf
+2: Write, decorate, wander
+3: Turn to a fresh page | color=amber
+\`\`\`
+
+::: card {title="The four fences"}
+\`tree\` for things that nest, \`mindmap\` for the same laid out radially, \`graph\` for arrows, \`timeline\` for anything with an order.
+:::
+`,
+
+  // Page 12 — tables and footnotes
+  `# Tables, and notes at the foot {sticker=coffee}
+
+| Key | What it does |
+| --- | --- |
+| \`/\` | opens the slash menu |
+| \`Esc\` | puts the book back on the shelf |
+| \`Ctrl K\` | jumps to any page in the library |
+| \`Ctrl /\` | every other shortcut there is |
+
+Click a column heading to sort by it.
+
+A footnote is a marker in the prose[^ Bracket, caret, the note, close bracket. ] and the note is printed at the foot of whichever page the marker lands on[^flow].
+
+The Markdown spelling works too[^why].
+
+[^flow]: So when a paragraph flows to the next page, its notes go with it.
+[^why]: Because an assistant writing you a page will reach for it.
+`,
+
+  // Page 13 — one page pointing at another
+  `# One page pointing at another {sticker=heart}
+
+Type \`[[\` and pick a page, or write its name between double brackets.
+
+The equations are back on [[Maths, in a notebook hand]], the fences are on [[Diagrams, drawn by hand]], and the kittens are on [[Pictures]].
+
+::: callout {variant=star}
+References work both ways. Open a page that is being pointed at and it tells you what mentions it — a table of contents nobody had to keep.
+:::
+
+Links to the outside work too: \`[a link](https://example.com)\`.
+`,
+
+  // Page 14 — the decorations
+  `# Decorations {sticker=star}
+
+Any block will wear them. {underline=marker}
+
+A little tilt, and a piece of tape. {rotate=-2, tape=top}
+
+Torn paper, inside a scalloped frame. {paper=torn, frame=scallop}
+
+A different hand, in a different ink. {font=marker, ink=crimson}
+
+Ranged right, and written larger. {align=right, size=lg}
+
+::: washi-box {color=sky}
+Held to the page with washi tape.
+:::
+
+All of them live in the rail on the left, under the paintbrush.
+`,
+
+  // Page 15 — finding your way back to something
+  `# Finding it again {sticker=book}
+
+::: card {title="Three ways back"}
+\`Ctrl K\` jumps to any page by name. \`Ctrl Shift F\` searches the words inside every book you own. And the contents panel in the rail lists this book's pages in order.
+:::
+
+Drop a **bookmark** on a page and a ribbon appears at the edge of the book, so the page you keep coming back to is one click away.
+
+::: callout {variant=tip}
+Every new book lands on the shelf behind this one, and the shelf has a rail of its own: a new book, the studio, another floor, and the trash.
+:::
+`,
+
+  // Page 16 — the language, and the way out
+  `# Write it with your AI {sticker=sparkle}
+
+Every page in this book is written in **Notebook Script** — a forgiving Markdown dialect, which the app also reads back out again.
+
+1. Open the left rail and choose **Insert script**
+2. Click **Copy AI spec** and paste that into your assistant
+3. Ask it for a page, then paste back what it writes
+
+::: callout {variant=info}
+The parser never fails. A small slip renders anyway, with a gentle note saying what it did instead.
+:::
+
+::: quote-card {color=amber}
+Now go and write something of your own.
+:::
+`,
+
+  // ------------------------------------------------------------------------
+  // v6 — the thirty-two-leaf tour, cut for a 1600x1000 window nobody was
+  // given. Retired by v7, which cuts for the window the app opens at.
+  // ------------------------------------------------------------------------
   // ---------------------------------------------------------------- the world
   // Page 1 — what this is, and how to move around
   `---
@@ -1068,440 +2199,6 @@ The parser never fails. A small slip renders anyway, with a gentle note saying w
 
 ::: card {title="And back out again"}
 The same tray exports a page as script, as a PDF or as a picture, packs the whole library into one file, and turns a folder of Markdown into books.
-:::
-
-::: quote-card {color=amber}
-Now go and write something of your own.
-:::
-`,
-];
-
-/**
- * Every page this book USED to be, kept verbatim — the v4 five, then the v5
- * sixteen.
- *
- * They are here for one job: telling a welcome book nobody has touched from a
- * welcome book somebody has been writing in. A refresh replaces the first and
- * never goes near the second, and the only way to know which is which is to
- * still have the old text to compare against.
- *
- * Append the outgoing generation here whenever this book is rewritten; never
- * edit an entry. A character out of place makes an untouched book look
- * written-in, which is the safe direction to be wrong in (the reader keeps the
- * old tour) but it is still wrong — `tests/seed-encoding.test.ts` exists
- * because that has already happened once, to a whole generation, over a
- * mojibaked pencil.
- */
-export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
-  // Page 1 — what Alcove is + how to get around
-  `---
-paper: cream
-wash: amber
----
-
-# Welcome to Alcove ✎ {sticker=star}
-
-This is your **library**. Every book on the shelf opens into pages like this one — ==real, editable pages=={color=amber}, not a demo.
-
-::: callout {variant=tip}
-Click anywhere below the ink and just start typing. Everything autosaves as you write.
-:::
-
-- The **shelf** goes on forever — drag to pan, scroll to zoom
-- **Click a spine** and the book comes off the shelf and opens. Wrong one? Press \`Esc\` and it goes back
-- Use the **arrow keys** to flip through a book's pages
-
-> Flip to the next page to meet the editor → {washi=top}
-`,
-
-  // Page 2 — writing + slash commands
-  `# Writing {sticker=book}
-
-Write like in any notes app — then press \`/\` on an empty line to open the **slash menu**: headings, lists, tables, callouts, stickers, diagrams…
-
-## Try it
-
-- [ ] Press \`/\` and insert a callout
-- [ ] Grab a block's **drag handle** to reorder it
-- [ ] Right-click a block for quick actions
-
-Inline styles: **bold**, *italic*, \`code\`, ~~strikethrough~~, ==highlight=={color=lemon}, and ==colored washes=={color=sky}.
-
-::: sticky-note {color=lemon, rotate=-2}
-Sticky notes are blocks too — pick me up and move me anywhere!
-:::
-`,
-
-  // Page 3 — stickers & effects showcase
-  `# Make it yours {sticker=flower}
-
-Blocks can wear decorations — stickers, tape, washi strips, a little tilt…
-
-::: columns {gap=lg}
-::: col
-::: card {color=sky, tape=top}
-A **card** held down with tape.
-:::
-:::
-::: col
-::: quote-card {color=blush}
-"A quote worth keeping."
-:::
-:::
-:::
-
-::: banner {color=moss}
-Banners announce things loudly.
-:::
-
-::: spoiler
-Hidden until you peek — great for quiz answers.
-:::
-
-Highlights come in seven washes: ==amber=={color=amber}, ==moss=={color=moss}, ==sky=={color=sky}, ==blush=={color=blush}, ==terracotta=={color=terracotta}.
-`,
-
-  // Page 4 — diagram example
-  `# Diagrams {sticker=microscope}
-
-Fenced mini-languages render as hand-drawn diagrams. A \`tree\`:
-
-\`\`\`tree {style=watercolor}
-Alcove
-  Shelf
-    Floors | endless
-    Books
-  Pages
-    Blocks
-    Diagrams | like this one
-\`\`\`
-
-And a \`timeline\`:
-
-\`\`\`timeline
-1: Pull a book off the shelf
-2: Write and decorate | color=amber
-3: Flip to a fresh page
-\`\`\`
-`,
-
-  // Page 5 — the AI-script workflow + closing hint
-  `# Your AI can write pages {sticker=sparkle}
-
-Every page in this book was written in **Notebook Script** — a forgiving Markdown dialect any AI assistant can produce.
-
-1. Open any page and click **Insert script** in the toolbar
-2. Click **Copy AI spec** and paste the spec into your AI chat
-3. Ask it to write a page — paste its reply into the dialog and insert
-
-::: callout {variant=info}
-The parser is tolerant: small syntax slips still render, with gentle warnings instead of errors.
-:::
-
-::: callout {variant=star}
-This very page has script source attached — try **Export script** to read it.
-:::
-
-Happy writing! {sticker=heart}
-`,
-
-  // -------------------------------------------------------------------------
-  // The v5 generation: sixteen pages. Outgoing because half of them stopped
-  // two thirds of the way down the leaf — measured on the running app rather
-  // than argued about, `scripts/probe-welcome.mjs`, median fill 51%.
-  //
-  // Verbatim, including the `${KITTENS.…}` interpolations: what has to match
-  // is the STRING a v5 install stored, and that string had the paths in it.
-  // -------------------------------------------------------------------------
-
-  // Page 1 — what this is, and how to move around
-  `---
-paper: cream
-wash: amber
----
-
-# Welcome to Alcove ✎ {sticker=star}
-
-This is your **library**. Every book on that shelf opens into pages like this one — ==real paper you can write on=={color=amber}, not a picture of some.
-
-::: callout {variant=tip}
-Click anywhere on the ruled lines and start typing. Everything saves itself as you go.
-:::
-
-- The **shelf** goes on and on — drag to pan, scroll to zoom
-- **Click a book** and it comes forward; click it again to open. \`Esc\` puts it back
-- **Arrow keys** turn the pages, or drag a corner and watch it curl
-- The **rail on the left** holds everything else
-
-::: banner {color=moss}
-The rest of this book is a tour of what the paper can do. {sticker=arrow}
-:::
-`,
-
-  // Page 2 — the writing surface itself
-  `# Writing {sticker=book}
-
-Write the way you would anywhere else. Then press \`/\` on an empty line for the **slash menu** — headings, lists, tables, callouts, diagrams, equations, stickers, the lot.
-
-**Bold**, *italic*, \`code\`, ~~struck out~~, ==highlighted=={color=lemon}, or ==washed in another colour=={color=sky}.
-
-- [ ] Press \`/\` and put a callout on this page
-- [ ] Drag a block somewhere else by its **handle**
-- [x] Read this far
-
-::: sticky-note {color=lemon, rotate=-2}
-Sticky notes are blocks too. Pick me up and move me.
-:::
-
-> A page that fills up simply flows onto the next one. Nothing here ever scrolls. {washi=top}
-`,
-
-  // Page 3 — maths, both kinds
-  `# Maths, in a notebook hand {sticker=sparkle}
-
-A dollar either side puts maths inside a sentence: a circle is $\\pi r^2$, the golden ratio is $\\frac{1+\\sqrt{5}}{2}$, and $\\sigma$ is one standard deviation.
-
-Two dollars on a line of their own make an equation:
-
-$$
-e^{i\\pi} + 1 = 0
-$$
-
-$$
-\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}
-$$
-
-::: callout {variant=info}
-Click any formula to see the TeX behind it. Enter puts the drawing back.
-:::
-`,
-
-  // Page 4 — the stationery drawer
-  `# The stationery drawer {sticker=pin}
-
-::: card {title="What a card is for"}
-Definitions, rules, anything worth fencing off from the prose around it.
-:::
-
-::: index-card {title="Buttermilk scones"}
-Rub 60g of butter into 250g of flour. Milk to bind. Hot oven, eight minutes.
-:::
-
-::: quote-card {color=blush}
-"A room without books is like a body without a soul."
-:::
-
-::: envelope {color=amber}
-Something folded away for later, with the flap still open.
-:::
-
-::: tag {color=moss}
-a luggage tag, for labelling whatever comes next
-:::
-`,
-
-  // Page 5 — the keepsake drawer
-  `# Things stuck in {sticker=flower}
-
-::: pressed-flower {title="Meadow cranesbill — the lane, June"}
-Flat between the pages for a fortnight, and still blue.
-:::
-
-::: ticket-stub {title="ADMIT ONE"}
-Row H, seat 12. It rained the whole way home.
-:::
-
-::: postcard {title="WISH YOU WERE HERE"}
-Ran out of room on the front, as usual.
-:::
-
-::: map-pin {title="The blue door"}
-Second on the left, past the bakery.
-:::
-
-::: wax-seal {title=A}
-Not to be opened before Sunday.
-:::
-`,
-
-  // Page 6 — pictures (the kittens the reader asked for)
-  `# Pictures {sticker=cat}
-
-Paste one in, drop one on the page, or write it out: \`![a caption](path/to/picture.png)\`.
-
-::: image-row {style=polaroid, cols=3}
-![A ginger kitten](${KITTENS.ginger}){caption="Has plans"}
-![A grey kitten asleep](${KITTENS.asleep}){caption="On the good chair"}
-![A cream kitten in a box](${KITTENS.box}){caption="His box now"}
-:::
-
-::: marginalia
-Up to four pictures will stand in a row together.
-:::
-`,
-
-  // Page 7 — one picture, properly
-  `# One picture, properly {sticker=sun}
-
-::: polaroid {rotate=-2}
-![The ginger kitten again](${KITTENS.ginger})
-A polaroid is one picture in a white frame, captioned underneath in pencil.
-:::
-
-Drag a corner to resize a picture, or write \`{width=320}\`. Give it \`{align=left}\`, \`{align=center}\` or \`{align=right}\` to slide it across the page. For words beside a picture, put the two in \`:::columns\`.
-`,
-
-  // Page 8 — columns, and the two kinds of fold
-  `# Two up, and things that fold {sticker=leaf}
-
-::: columns {gap=lg}
-::: col
-**On the left.** Columns hold two to four of these, side by side.
-:::
-::: col
-**On the right.** Anything goes in one — a list, a picture, another fold.
-:::
-:::
-
-::: toggle {title="A fold. Click it."}
-Toggles put a long aside out of the way until it is wanted.
-
-::: toggle {title="And they nest"}
-All the way down, as deep as the thought goes.
-:::
-:::
-
-::: spoiler
-A spoiler is the other kind of fold: one answer, hidden until you look.
-:::
-`,
-
-  // Page 9 — diagrams: things that nest
-  `# Diagrams, drawn by hand {sticker=microscope}
-
-Fenced mini-languages come out as hand-drawn diagrams. Indentation alone makes a \`tree\`:
-
-\`\`\`tree {style=watercolor}
-Alcove
-  A library
-    Bookcases
-    Floors
-  A book
-    Pages | this thing you are reading
-\`\`\`
-`,
-
-  // Page 10 — diagrams: arrows
-  `# Arrows {sticker=arrow}
-
-One edge to a line makes a \`graph\` — or a \`flowchart\`, which is the same grammar under a name that suits a process better:
-
-\`\`\`graph
-Write -> Decorate: whenever
-Decorate -> Turn: eventually
-Turn -> Write: forever
-\`\`\`
-
-::: callout {variant=tip}
-None of these is Mermaid, and none of them needs to be.
-:::
-`,
-
-  // Page 11 — diagrams: things in order
-  `# In order {sticker=moon}
-
-\`label: text\` on each line makes a \`timeline\`:
-
-\`\`\`timeline
-1: Pull a book off the shelf
-2: Write, decorate, wander
-3: Turn to a fresh page | color=amber
-\`\`\`
-
-::: card {title="The four fences"}
-\`tree\` for things that nest, \`mindmap\` for the same laid out radially, \`graph\` for arrows, \`timeline\` for anything with an order.
-:::
-`,
-
-  // Page 12 — tables and footnotes
-  `# Tables, and notes at the foot {sticker=coffee}
-
-| Key | What it does |
-| --- | --- |
-| \`/\` | opens the slash menu |
-| \`Esc\` | puts the book back on the shelf |
-| \`Ctrl K\` | jumps to any page in the library |
-| \`Ctrl /\` | every other shortcut there is |
-
-Click a column heading to sort by it.
-
-A footnote is a marker in the prose[^ Bracket, caret, the note, close bracket. ] and the note is printed at the foot of whichever page the marker lands on[^flow].
-
-The Markdown spelling works too[^why].
-
-[^flow]: So when a paragraph flows to the next page, its notes go with it.
-[^why]: Because an assistant writing you a page will reach for it.
-`,
-
-  // Page 13 — one page pointing at another
-  `# One page pointing at another {sticker=heart}
-
-Type \`[[\` and pick a page, or write its name between double brackets.
-
-The equations are back on [[Maths, in a notebook hand]], the fences are on [[Diagrams, drawn by hand]], and the kittens are on [[Pictures]].
-
-::: callout {variant=star}
-References work both ways. Open a page that is being pointed at and it tells you what mentions it — a table of contents nobody had to keep.
-:::
-
-Links to the outside work too: \`[a link](https://example.com)\`.
-`,
-
-  // Page 14 — the decorations
-  `# Decorations {sticker=star}
-
-Any block will wear them. {underline=marker}
-
-A little tilt, and a piece of tape. {rotate=-2, tape=top}
-
-Torn paper, inside a scalloped frame. {paper=torn, frame=scallop}
-
-A different hand, in a different ink. {font=marker, ink=crimson}
-
-Ranged right, and written larger. {align=right, size=lg}
-
-::: washi-box {color=sky}
-Held to the page with washi tape.
-:::
-
-All of them live in the rail on the left, under the paintbrush.
-`,
-
-  // Page 15 — finding your way back to something
-  `# Finding it again {sticker=book}
-
-::: card {title="Three ways back"}
-\`Ctrl K\` jumps to any page by name. \`Ctrl Shift F\` searches the words inside every book you own. And the contents panel in the rail lists this book's pages in order.
-:::
-
-Drop a **bookmark** on a page and a ribbon appears at the edge of the book, so the page you keep coming back to is one click away.
-
-::: callout {variant=tip}
-Every new book lands on the shelf behind this one, and the shelf has a rail of its own: a new book, the studio, another floor, and the trash.
-:::
-`,
-
-  // Page 16 — the language, and the way out
-  `# Write it with your AI {sticker=sparkle}
-
-Every page in this book is written in **Notebook Script** — a forgiving Markdown dialect, which the app also reads back out again.
-
-1. Open the left rail and choose **Insert script**
-2. Click **Copy AI spec** and paste that into your assistant
-3. Ask it for a page, then paste back what it writes
-
-::: callout {variant=info}
-The parser never fails. A small slip renders anyway, with a gentle note saying what it did instead.
 :::
 
 ::: quote-card {color=amber}

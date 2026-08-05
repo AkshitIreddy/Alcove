@@ -74,13 +74,13 @@ describe('the seeded pages are not double-encoded', () => {
   });
 
   it('holds every retired generation, and only retired ones', async () => {
-    // Five from v4 and sixteen from v5. The count is pinned because BOTH ways
-    // of getting it wrong are silent: a missing generation means a library on
-    // that version is not recognised and keeps its old tour forever, and the
-    // LIVE pages appearing here would make the current book look like the
-    // outgoing one and stop the next refresh dead.
+    // Five from v4, sixteen from v5 and thirty-two from v6. The count is
+    // pinned because BOTH ways of getting it wrong are silent: a missing
+    // generation means a library on that version is not recognised and keeps
+    // its old tour forever, and the LIVE pages appearing here would make the
+    // current book look like the outgoing one and stop the next refresh dead.
     const seed = await import('../src/data/seed');
-    expect(seed.LEGACY_WELCOME_PAGE_SOURCES).toHaveLength(5 + 16);
+    expect(seed.LEGACY_WELCOME_PAGE_SOURCES).toHaveLength(5 + 16 + 32);
     for (const source of seed.LEGACY_WELCOME_PAGE_SOURCES) {
       expect(source.length).toBeGreaterThan(80);
     }

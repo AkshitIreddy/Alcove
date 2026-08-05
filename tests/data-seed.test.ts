@@ -202,6 +202,14 @@ describe('welcome book content', () => {
    * opens the book. That is not hypothetical: pages authored at ~30 estimated
    * lines pushed their tails forward and left blank leaves behind, measured in
    * `shots-now/welcome-tour.mjs`, which is what this budget is calibrated from.
+   *
+   * **`PAGE_LINE_BUDGET` is a leaf at 1280x800**, the window `tauri.conf.json`
+   * opens the app at, and `blockLineCost` costs at that window's column by
+   * default. Both used to mean 1600x1000, and that is the whole of what v7
+   * fixed: every v6 page passed this test and every one of them was a third
+   * over the leaf a reader was actually handed, so opening the book grew it
+   * from 32 leaves to 46. A gate calibrated in a window nobody has is a gate
+   * that goes green while the thing it guards is broken.
    */
   it('every page fits on a leaf', () => {
     const titles = welcomePageTitles();
@@ -241,8 +249,16 @@ describe('welcome book content', () => {
    * the fill (`scripts/probe-welcome.mjs` walks the book in the running app and
    * measures drawn pixels); this is the tripwire that says go and run it.
    */
-  /** Two thirds of a leaf — see the docblock above for why it is a ratio. */
-  const FILL_FLOOR = 2 / 3;
+  /**
+   * Three quarters of a leaf — see the docblock above for why it is a ratio.
+   *
+   * Was two thirds, and rose when the budget was corrected to the real window:
+   * the v7 pages sit between 87% and 100% of their leaf, so a floor at 67% is
+   * two whole blocks of slack and would not notice a page losing one. At 75%
+   * there is still room for an edit to shorten a page without failing the
+   * suite, and none for a page to quietly go half-empty.
+   */
+  const FILL_FLOOR = 3 / 4;
 
   it('every page fills one, too', () => {
     const titles = welcomePageTitles();
@@ -852,6 +868,6 @@ describe('seedIfEmpty (in-memory end-to-end)', () => {
 
 // Re-exported constants stay wired (guards against accidental renames).
 it('exports the current seed version constants', () => {
-  expect(SEED_VERSION).toBe(6);
+  expect(SEED_VERSION).toBe(7);
   expect(SEED_VERSION_KEY).toBe('seedVersion');
 });

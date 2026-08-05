@@ -21,7 +21,13 @@
  * @param capacityPx   The page capacity (compared against the projected
  *                     scroll height after removal).
  * @param paddingBottomPx The prose root's padding-bottom — it survives the
- *                     removal, so it counts toward the projected height.
+ *                     removal, so it counts toward the projected height. It is
+ *                     not a constant and must not be treated as one: editor.css
+ *                     builds it out of a 32px foot PLUS the footnote rail's
+ *                     measured height and the backlinks tab's, so this argument
+ *                     is how a page carrying notes tells the drain it is
+ *                     shorter than a page without them. Freeze it and the notes
+ *                     get printed under the last block instead.
  * @returns Number of trailing blocks to remove. Always leaves at least one
  *          block on the page; returns 0 when the input is degenerate.
  */

@@ -42,6 +42,38 @@
  * `display: none`, and a footnote inside a closed toggle is exactly that — the
  * markers after it would have been numbered one lower than the rail's notes.
  * One walk of the document numbers both.
+ *
+ * HOW TO MEASURE THE ONE THING THAT CAN GO WRONG HERE
+ *
+ * The rail is `position: absolute`, so it cannot push: if the reservation above
+ * ever fails to reach the drain, the notes are simply printed under whatever is
+ * standing at the foot of the page. That is what frame 778 of the first demo
+ * recording showed — a note running beneath a callout card and its wash — and
+ * `scripts/probe-footnote-overprint.mjs` is the instrument for it. It turns to a
+ * page carrying notes, measures the rail's top edge against the bottom of every
+ * top-level block, and does it three times: as the page was authored, with the
+ * page typed full to its fold, and again after a note has been grown long enough
+ * to wrap the rail onto a third line UNDER a page that was already full. That
+ * last one is the interesting direction — nothing schedules a fresh drain when a
+ * note gets taller except the transaction the note's own text arrives in.
+ *
+ * TWO THINGS THAT MAKE THIS EASY TO MEASURE WRONGLY, both paid for once:
+ *
+ *  - The page as authored proves nothing. Seed page 25 stands 652px tall in an
+ *    821px prose whose rail begins at 712px, so it reads clean whether the
+ *    reservation is honoured or not — deleting the reservation outright left the
+ *    verdict green. A page with room to spare cannot testify about a mechanism
+ *    that only matters when there is none. Hence the fill, and hence the
+ *    probe's `--sabotage`, which blanks the rail out of the padding so the check
+ *    can be watched going red before it is believed going green.
+ *  - `.nb-export-sheet` also wears `.nb-leaf-paper` — on purpose, so every
+ *    `.nb-spread …` rule reaches the export capture's staging sheet
+ *    (src/editor/script/exporters/capture.ts, and src/flip/offscreenPages.ts
+ *    stages one inside the live spread for the turning page's back face). It
+ *    holds a whole document, it is never drained, and it lives at left:-11880.
+ *    Counted as a leaf it reports tens of blocks and thousands of pixels of
+ *    overprint on a page the reader is seeing seven blocks of. A measurement of
+ *    this defect that does not exclude it is measuring a page nobody can see.
  */
 import { Node, mergeAttributes } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';

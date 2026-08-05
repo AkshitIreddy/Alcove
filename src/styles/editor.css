@@ -1549,6 +1549,15 @@ html[data-nb-col-resizing='true'] {
    bottom padding (the click-below-to-type lane) and nothing paginates, so
    restating the padding there would change a layout this feature has no
    business changing, to fix a problem it does not have.
+
+   THIS DECLARATION IS THE WHOLE PROTECTION, and it has been watched failing.
+   `scripts/probe-footnote-overprint.mjs --sabotage` overrides exactly this one
+   line back to a flat `var(--space-32)`, and on a leaf typed full to its fold
+   the prose then runs eight, thirty and fifty-one pixels down through the notes
+   — which is frame 778 of the first demo recording, reproduced on demand. Run
+   without the flag, the same walk keeps every note's band empty. If this rule
+   is ever moved, made less specific, or overtaken by a later stylesheet, that
+   is what it will look like.
    -------------------------------------------------------------------------- */
 .nb-spread .nb-page-editor .ProseMirror.nb-prose {
   /* Two strips can stand at the foot of a page, and BOTH have to be in this

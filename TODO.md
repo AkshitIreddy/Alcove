@@ -747,6 +747,14 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       failure was only that — the timeout may have been HMR mid-edit, or it may
       be real.
 
+      The script survives a dead run now (`b5c3828`): staging directory, atomic
+      commit of the whole set, two retries per step behind a reload. **Do one
+      `--only=hero` run FIRST and read the manifest before the full run** — it
+      is the one path in that change not yet watched working, and what it must
+      show is the version left at whatever the previous manifest said, with
+      `PARTIAL RUN` printed. If it stamps 0.4.0 onto a set of 0.3.0 pictures,
+      the fix is wrong and the alarm is off for all twenty-three.
+
       **Then re-read the alt text against the new pictures, one by one.** The 23
       alt strings are hand-written and long — `img/spread.png` alone quotes a
       green callout, a three-item list, a tan card headed "Thirty-two leaves,

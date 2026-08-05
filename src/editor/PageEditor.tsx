@@ -422,21 +422,37 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         passes += 1;
         const rootRect = root.getBoundingClientRect();
         const rootTop = rootRect.top;
+        /*
+         * BOTH SIDES OF THE COMPARISON IN LAID-OUT PIXELS, AND THE CONVERSION
+         * ON THIS SIDE OF IT.
+         *
+         * Block bottoms come off `getBoundingClientRect()` — DRAWN px, which a
+         * scaled spread (the focus dial's zoom, the fit beside an open rail
+         * sheet) scales. The capacity and this padding are laid-out numbers a
+         * transform cannot touch. Something has to convert, and which side
+         * converts is not a matter of taste:
+         *
+         *   - scaling the CAPACITY up to drawn px is what this used to do, via
+         *     `floor(laidOut × s)` in BookView. `floor` is not proportional to
+         *     `s`, so what fits on the page moved by half a pixel when a sheet
+         *     opened and by up to ~3px at the smallest fit — and a page the
+         *     drain had already packed to its boundary lost its last block to a
+         *     colour picker, permanently, because the contract peels forward
+         *     and never pulls back (demo frames 862/863; measured on every
+         *     spread by scripts/probe-panel-repaginate.mjs).
+         *   - dividing the RECT distances down to laid-out px, as here, leaves
+         *     one residual: `clientHeight` is rounded to a whole pixel, so
+         *     `scale` is out by a factor of about H_true/round(H_true). That
+         *     error is CONSTANT in `s` — it cancels between two scales — so the
+         *     drain's verdict is identical whether the sheet is open or shut,
+         *     which is the property `styles/spread.css` promises the reader.
+         */
+        const scale = visualScale(rootRect.height, root.clientHeight);
         const bottoms = Array.from(root.children).map(
-          (child) => child.getBoundingClientRect().bottom - rootTop,
+          (child) => (child.getBoundingClientRect().bottom - rootTop) / scale,
         );
-        // Both sides of the comparison have to be in the SAME pixels. Block
-        // bottoms come off getBoundingClientRect — DRAWN px, so a scaled
-        // spread scales them — and the capacity is quoted in drawn px for that
-        // reason (BookView's measureCapacity says why). A computed padding is
-        // a LAYOUT number and a transform does not touch it, so it has to be
-        // scaled to join them. Left unscaled, a book drawn at 62% beside an
-        // open rail sheet charged itself a 32px foot it was only paying 20px
-        // for and peeled a line the page still had room for — and nothing
-        // pulls a carried block BACK, so closing the sheet did not undo it.
         const padBottom =
-          (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0) *
-          visualScale(rootRect.height, root.clientHeight);
+          Number.parseFloat(getComputedStyle(root).paddingBottom) || 0;
         const doc = view.state.doc;
 
         // The empty line StarterKit's TrailingNode keeps at the foot of any
@@ -478,7 +494,9 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
           if (
             !splitOverflowingBlock(
               view,
-              rootTop + capacity - padBottom,
+              // Back into DRAWN px on the way out: this one is a client y for
+              // `coordsAtPos` to be compared against, not a page measurement.
+              rootTop + (capacity - padBottom) * scale,
               realCount,
             )
           ) {
@@ -606,15 +624,17 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     }
 
     if (isPaginated()) {
-      // Content height = last block bottom + surviving padding (see
-      // extractOverflow for why scrollHeight is unusable here — and for why
-      // the padding is scaled into drawn px before it joins a rect distance).
+      // Content height = last block bottom + surviving padding, in LAID-OUT px
+      // (see extractOverflow for why scrollHeight is unusable here, and why the
+      // rect distance is the side that converts). The line height this is about
+      // to be compared against is a laid-out number too — it comes off the
+      // doc's own attrs — so a drawn-px content height silently charged a
+      // scaled book for a line 27% taller than the one it was about to add.
       const rootRect = root.getBoundingClientRect();
       const contentHeight =
-        lastRect.bottom -
-        rootRect.top +
-        (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0) *
-          visualScale(rootRect.height, root.clientHeight);
+        (lastRect.bottom - rootRect.top) /
+          visualScale(rootRect.height, root.clientHeight) +
+        (Number.parseFloat(getComputedStyle(root).paddingBottom) || 0);
       if (pageIsFull(contentHeight, lineHeightPx(), capacityPx())) {
         pulsePageFullHint();
         return true;

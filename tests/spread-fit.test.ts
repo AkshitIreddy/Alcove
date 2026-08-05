@@ -122,11 +122,27 @@ describe('BookView publishes what the stylesheet consumes', () => {
     expect(bookView).toContain('--nb-panel-edge');
   });
 
-  it('measures the page capacity in the same units the blocks are measured in', () => {
-    // PageEditor compares `getBoundingClientRect()` distances (drawn px)
-    // against `pageCapacityPx`. Once the spread carries a scale those are two
-    // different units, and a page at 78% quietly holds a quarter more text
-    // than it can show. See the docblock on `measureCapacity`.
-    expect(bookView).toContain('visualScale(');
+  it('measures the page capacity in laid-out px, unconverted by any scale', () => {
+    // `measureCapacity` used to multiply the laid-out capacity by
+    // `visualScale` so it would compare directly against PageEditor's drawn-px
+    // block rects. That conversion did not survive `Math.floor`: at s=1 a
+    // 761px leaf floors to 760px, at s=0.7913 it floors to 602 (760.8
+    // laid-out px) — a scaled panel changed what fits on the page by design.
+    // BookView now hands over an unscaled number and does not import
+    // `visualScale` for this at all; see the next test for where the
+    // conversion actually happens now.
+    expect(bookView).not.toContain('visualScale(paper');
+  });
+
+  it('leaves the scale conversion to PageEditor, where the drawn-px rects are', () => {
+    // The fix for the above: PageEditor.extractOverflow divides its own
+    // getBoundingClientRect() distances by the leaf's scale before comparing
+    // them to the still-unscaled capacity, rather than scaling the capacity to
+    // meet them. The residual rounding error is then a CONSTANT (a clientHeight
+    // rounded to a whole pixel) rather than one that grows with how open a
+    // panel is. `scripts/probe-panel-repaginate.mjs` gates the result at
+    // 0.00px across the Welcome book at MIN_SPREAD_SCALE.
+    const pageEditor = readFileSync(join(ROOT, 'src', 'editor', 'PageEditor.tsx'), 'utf8');
+    expect(pageEditor).toContain('/ scale');
   });
 });

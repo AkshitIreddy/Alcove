@@ -557,7 +557,36 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       blank-frame threshold that could never fire, and a CLI test that called
       the parser instead of the binary.
 
-- [ ] **Delegate to agents and review their work.**
+- [x] **Delegate to agents and review their work.** This is how the work has run
+      since it was asked for, and it is worth writing down what the review
+      layer actually caught, because the answer is "enough to justify itself
+      several times over":
+
+        - a duplication fix that took the measurement to zero and **lost typed
+          text** — 22 lines typed, 10 stored. Reverted, and redone with its
+          regression probes written first and proved to fail against the
+          discarded attempt.
+        - a diagnosis of mine ("two writers on one row") rejected by three
+          independent agents, correctly.
+        - "the repaint is a stale cache key" — disproved in one sentence: *a
+          stale key cannot heal, and these healed.*
+        - an attack agent that commented the pagination fix out for an A/B,
+          wrote "restored immediately after the run", and never restored it.
+        - an agent that ran `git stash push -- src` and swept up another
+          agent's in-flight `BookView.tsx`.
+        - a probe gate that scored 140/152 on genuinely blank frames, because
+          `colours <= 3` is not a blankness test.
+        - a CLI test that asserted a broken product — it called the parser
+          directly while the binary still printed the old error.
+
+      The last four are the argument for the practice rather than against it:
+      every one is a thing a single writer would have shipped, and each was
+      found by somebody whose only job was to disbelieve. The rule that came
+      out of it is now in CLAUDE.md — **a gate nobody has watched fail is not a
+      gate** — along with its corollary, that a confirmed finding is a
+      confirmed OBSERVATION and the mechanism still has to be traced before it
+      is a bug.
+
       > "Maybe you focus on dedicating tasks to AI agents and reviewing their
       > work as an extra measure."
 
@@ -594,6 +623,48 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
       Not fixed yet only because the file is being edited by the release audit
       as this is written; a second writer would lose that work.
+
+- [ ] **Rewrite the history and force-push.** *(authorized — "on online as
+      well")* **Do this LAST, after the 0.4.0 content is final and before the
+      tag**, because a rewrite moves every SHA and a tag placed first would be
+      left pointing at a commit that no longer exists.
+
+      The clean pass untracked and deleted 469 MB + 88 MB from the WORKING TREE
+      and said so at the time: *it does not shrink a clone, git still holds
+      every old copy.* It holds 1.4 GB of them. Measured by summing every blob
+      in `--all` by its top two path segments:
+
+        qa/**            ~685 MB   capture leftovers, refutation scratch,
+                                   comparison boards, every one of them the
+                                   output of a run that has already been read
+        shots-now/**     ~223 MB   room-rank, roster, hero, dice — same
+        assets/generated  ~89 MB   the painterly pipeline's baked output
+        assets/photoreal  ~23 MB   its source material, deleted with it
+        assets/scenes     ~17 MB
+        assets/cutouts    ~16 MB
+
+      That is a gigabyte of a 1.4 GB repository, and **every path above is
+      already absent from the working tree or gitignored** — the four `assets/`
+      directories do not exist at all. Nobody loses anything they can currently
+      open.
+
+      Three things must survive, and the filter has to be written to spare them
+      rather than to catch everything with the same prefix:
+
+        - `qa/baseline/**` — the LIVE visual-regression pictures. 22.7 MB, 65
+          tracked files, and `npm run visual` compares against them.
+        - `shots-now/*.mjs` — the capture scripts themselves. Only the
+          capture-output subdirectories go.
+        - `docs/readme/img/**` and `public/sounds/**` — shipped.
+
+      Two costs to accept out loud rather than discover:
+
+        - **Every commit SHA in this file and in `docs/readme/releases.md`
+          becomes wrong.** `git filter-repo` writes a commit map; remap them
+          from it in one pass and commit that before tagging. There are enough
+          of them that doing it by hand would miss some.
+        - **Anyone holding a clone must re-clone.** For a repo whose only
+          remote copy is the owner's, that is nobody.
 
 - [ ] **Re-capture all 23 README shots, once, after the app settles.** A run
       against 0.4 died at the book-studio shot — `openRailPanel` waited 120s for

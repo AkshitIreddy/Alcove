@@ -833,6 +833,36 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       > "Once you finish all this, btw, you can call it 0.4 — do this at the end
       > once all is done."
 
+      The version itself is already bumped in all six places (`c77a35c`) and
+      `tests/version.test.ts` pins them to each other, so what is left is
+      ORDER, and the order matters more than any single step:
+
+      1. **Everything that changes a pixel lands first.** The flip's late
+         gutter, the seed's second cut, whatever the sliver and turn
+         investigations turn into. A picture taken before this is a picture that
+         has to be taken again.
+      2. **`npm run visual`**, full matrix, and read the failures. This is the
+         only sweep that looks at surfaces the README does not photograph, and
+         seed v7 changes two of them legitimately — so expect real diffs and
+         judge them rather than running `--update` at the first red.
+      3. **Re-capture the 23 shots** — one `--only=hero` run first to watch the
+         partial-manifest guard work, then one full run, then re-read every alt
+         string against the new picture. `tests/readme.test.ts` goes green here
+         and not before.
+      4. **`npm run readme:build`**, because the counts move every time an agent
+         adds a probe, and they have moved a dozen times today.
+      5. **Re-render the demo. Last, and once.** Then review it: the two
+         over-full moments (f0705, f0857 in the old recording), the preset click
+         where the ring lagged the room, and every turn's landing.
+      6. **The history rewrite, then the tag.** `scripts/shrink-history.mjs`,
+         then `--remap`, then the force-push of `main` AND `--tags`, and only
+         then `git tag -a v0.4.0`. A tag placed before the rewrite points at a
+         commit that stops existing.
+
+      Steps 2-5 all need a dev server nothing else is writing to. That is the
+      single scheduling constraint on the whole list, and it is what killed the
+      last shot run.
+
 ### Naming
 
 - [x] **Say "flat" where it is flat, and "hand-drawn" where it is hand-drawn.** 16 occurrences changed, 118 left alone because they were accurate. CLAUDE.md now states the two registers as a rule.

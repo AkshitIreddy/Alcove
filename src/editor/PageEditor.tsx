@@ -25,6 +25,12 @@
  *   the empty line StarterKit's TrailingNode keeps below a code block or a
  *   table, which is put back the instant it is peeled — the drain reasons
  *   about the page without it.
+ *   ORDERING RULE, and the reason merely reading a book used to duplicate it:
+ *   the removal is published to the store (`publish`) BEFORE `onOverflow`
+ *   hands the blocks up, never a microtask after it. The host reads the target
+ *   page out of that store synchronously, so a document that is one drain out
+ *   of date is a document it will happily put the drained blocks back into.
+ *   The long note at the foot of `extractOverflow` is the one to read.
  *
  * Props are read once at mount (an editor instance is not hot-swappable);
  * remount with a keyed <Show>/<For> when the page changes.
@@ -271,6 +277,23 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   let mirrorQueued = false;
 
   /**
+   * Serialize the document NOW and feed both consumers from it.
+   *
+   * Split out of `mirror` so the overflow drain can publish its own removal on
+   * the spot — see the long note at the foot of `extractOverflow`, which is the
+   * whole reason this is callable rather than only queueable. Everything it
+   * does is idempotent: clearing `dirtyEditor` is what makes the queued
+   * microtask a no-op once the work it was queued for has already been done.
+   */
+  const publish = (instance: Editor): void => {
+    dirtyEditor = null;
+    if (instance.isDestroyed) return;
+    const doc = instance.getJSON() as PageDoc;
+    pendingDoc = doc;
+    props.onDocChange?.(doc);
+  };
+
+  /**
    * Serialize the document ONCE and feed both consumers from it.
    *
    * getJSON() walks the whole doc, and a single user action routinely lands
@@ -282,11 +305,8 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   const mirror = (): void => {
     mirrorQueued = false;
     const instance = dirtyEditor;
-    dirtyEditor = null;
-    if (instance === null || instance.isDestroyed) return;
-    const doc = instance.getJSON() as PageDoc;
-    pendingDoc = doc;
-    props.onDocChange?.(doc);
+    if (instance === null) return;
+    publish(instance);
   };
 
   const flushSave = (): void => {
@@ -491,6 +511,58 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       }
 
       if (removed.length > 0) {
+        /*
+         * THE REMOVAL REACHES THE STORE BEFORE THE BLOCKS REACH THE HOST, AND
+         * THAT ORDERING IS THE WHOLE FIX FOR READING A BOOK DUPLICATING IT.
+         *
+         * Nothing had to be typed. Opening the Welcome book and turning through
+         * it took a clean 32 pages to a block on two pages and eight blocks
+         * twice on one (`scripts/probe-page-duplication.mjs`), and the reader
+         * saw it as a green callout printed twice — *"it shows the same section
+         * copied on the next page as well"*.
+         *
+         * Both leaves of a spread mount inside ONE synchronous Solid effects
+         * flush, and each runs the initial drain above inside it. So by the end
+         * of that single task the RIGHT leaf has already peeled its own tail B1
+         * off itself. But a drain's removal only reached the store through
+         * `queueMicrotask(mirror)`, while `onOverflow` fires SYNCHRONOUSLY on
+         * the line below and BookView commits the carry to its chain the
+         * instant it arrives — which parked the host's read of the target page
+         * squarely BETWEEN the two:
+         *
+         *     MT-1  mirror(page 0)   the left leaf's removal lands. Fine.
+         *     MT-2  carry(page 0)    reads page 1 from the store — PRE-DRAIN.
+         *     MT-3  mirror(page 1)   too late: B1 has already been put back.
+         *
+         * At MT-2 the carry therefore prepended its blocks to a page-1 document
+         * that still held B1, wrote that back to the store and to the row, and
+         * bumped the version — which remounts the leaf. The fresh editor was
+         * handed the resurrected B1 as its initial doc, drained it a SECOND
+         * time, and the page after it received the same block twice at adjacent
+         * indices. (The remount also destroyed the first editor before MT-3
+         * ever ran, so `mirror` and `flushSave` both bailed on `isDestroyed`
+         * and its removal reached neither the store nor the database.) The very
+         * first duplicate needed ZERO page turns, because this was never a page
+         * turn: it was the two leaves of the opening spread.
+         *
+         * Publishing here closes it at the SOURCE instead of at the reader. The
+         * store cannot hold a pre-drain document past the drain that made it
+         * stale, so nothing downstream — the carry, a leaf remount, a flip
+         * snapshot — can pick one up, and none of them has to know how far
+         * behind the store might be. It also materializes `pendingDoc` on the
+         * spot, which is what lets `onCleanup(flushSave)` still write the row
+         * when a remount destroys this editor before its 400ms elapses.
+         *
+         * The other cut was to fix the READER — hand the blocks to the target's
+         * live editor as a transaction rather than rewriting its stored doc
+         * (kept at `qa/wip/BookView.duplication-fix-v1.tsx`). It also took the
+         * probe to zero, and it moved the target's SELECTION; the drain reads
+         * the selection to decide the caret travelled with the text, so reading
+         * a book threw the reader nineteen spreads forward, stole focus into a
+         * ProseMirror and killed the arrow keys. Fixing the writer moves
+         * neither the caret nor the spread, and this is the only line of it.
+         */
+        publish(instance);
         props.onOverflow?.(removed, caretOffset !== null, caretOffset);
       }
     } finally {
@@ -655,6 +727,25 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   createEffect(() => {
     const instance = editor();
     if (!instance || !isPaginated()) return;
+    /*
+     * THE READING TYPE IS A PAGE METRIC, and this line is what says so.
+     *
+     * Settings' "body size" moves the type on the page (and the rule pitch with
+     * it), so what fits on a leaf changes — but the LEAF'S BOX does not, and the
+     * box is what capacity is measured from. `remeasureCapacityWhenSettled()`
+     * would hand `setPageCapacity` the identical number, and a signal set to
+     * what it already holds notifies nobody.
+     *
+     * The drain does re-run today, and that is the problem: it re-runs by
+     * ACCIDENT. `--text-body` still sizes the chrome the spread is laid out
+     * beside, so the leaf measures 638px at slider 15 and 635px at 21 — three
+     * pixels of unrelated shell moving the capacity by enough to notify. It
+     * works, and it would stop working SILENTLY, as text clipped under
+     * `overflow: hidden`, the day the shell stops reading that variable.
+     *
+     * So the dependency is declared rather than inherited.
+     */
+    void settings.bodyFontSize;
     if (!instance.isDestroyed) extractOverflow(instance);
     void document.fonts?.ready.then(() => {
       if (!instance.isDestroyed) extractOverflow(instance);

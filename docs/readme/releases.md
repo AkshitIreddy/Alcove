@@ -34,6 +34,38 @@ and zero. A first fix took the same measurement to zero and **lost typed text**
 one that shipped was re-done with its regression probes written first and proved
 to fail against the discarded attempt.
 
+**And the tour stops growing when you open it.** Thirty-two leaves became
+forty-six the first time anybody read them — pagination doing exactly its job on
+pages that did not fit. The pages were written against a leaf holding 25.66
+lines, measured in a 1600x1000 window; the app opens at 1280x800, where a leaf
+holds 19.41 and the prose column narrows from 592px to 434px, so the same
+sentences wrap half again as often. Both losses compound and every page cost
+136% of the leaf it landed on.
+
+Two things changed together. The budget is now DERIVED from the window rather
+than written down beside one, off two facts measured at five sizes: the chrome
+above and below a leaf is a constant 179px whatever the width, and the 32px rule
+grid does not scale with the frame — which is what makes a small window
+expensive rather than merely smaller. And the Welcome book was re-cut for the
+window it opens in: the same thirty-two leaves on the same subjects, said in
+fewer words, with the second card dropped from the pages that carried two. They
+sit at 84% of the leaf now, and read as generously margined on a larger screen.
+
+It is cut for the size the app OPENS at rather than the smallest it allows.
+Cutting for the minimum would guarantee nothing ever reflowed at any window —
+and would put every page of the tour at 60% of the leaf a new reader is actually
+handed, which is the half-empty pages already complained about once. Shrink the
+frame past the default and the tail flows onward, which is what the owner asked
+for in the first place: *"just make it work like any other book — if it's too
+big it goes to the next page."*
+
+A footnote went with it. Notes sit on an absolutely-positioned rail at the foot
+of a page, so they cannot push anything out of the way; the only thing keeping
+prose off them is a padding the drain re-reads on every pass, and a page five
+times taller than its paper defeats that. Nothing overprints now, at either
+window size — checked with a probe that can be made to fail on demand, because a
+check only ever seen passing is not evidence.
+
 **A turn no longer goes blank halfway across.** 0.3.0's notes claimed this and
 were written one commit too early — the fix was cut after that build was. The
 curl used to start on the front face alone, reasoning in a comment that the

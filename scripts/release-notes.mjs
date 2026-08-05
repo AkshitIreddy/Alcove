@@ -19,12 +19,23 @@ const trySh = (cmd) => {
 };
 
 const label = process.argv[2] ?? trySh('git describe --tags --exact-match HEAD') ?? '';
-/** Resolve to something git can actually walk — an unknown tag falls back to HEAD. */
-const rev = label && trySh(`git rev-parse --verify ${label}^{commit}`) ? label : 'HEAD';
+/*
+ * Resolve to something git can actually walk — an unknown tag falls back to HEAD.
+ *
+ * NO `^` ANYWHERE IN THESE COMMANDS. `execSync` runs them through the platform
+ * shell, and on Windows that is cmd.exe, where `^` is the escape character:
+ * `git rev-parse --verify v0.3.0^{commit}` arrives as `v0.3.0{commit}`, fails,
+ * and the tag argument is silently discarded. Running this locally for any tag
+ * therefore described HEAD instead, and did it without a word — the notes for
+ * v0.2.0 came out listing the 0.3 work. The release workflow runs on Linux, so
+ * CI was right the whole time and only a human checking a tag by hand was lied
+ * to. `~0` and `~1` mean the same things and survive both shells.
+ */
+const rev = label && trySh(`git rev-parse --verify ${label}~0`) ? label : 'HEAD';
 const tag = label || 'unreleased';
 
 /** The tag before this one, if any — otherwise summarise the whole history. */
-const previous = trySh(`git describe --tags --abbrev=0 ${rev}^`);
+const previous = trySh(`git describe --tags --abbrev=0 ${rev}~1`);
 
 const range = previous ? `${previous}..${rev}` : rev;
 const log = trySh(`git log ${range} --no-merges --pretty=format:%s`);
@@ -55,24 +66,40 @@ const tidy = (text) =>
     .replace(/\.$/, '')
     .replace(/^([a-z])/, (m) => m.toUpperCase());
 
-const lines = [];
-lines.push(`## Alcove ${tag}`);
-lines.push('');
+/*
+ * THE DOWNLOAD TABLE GOES FIRST, above everything.
+ *
+ * The reader: *"in the releases page, the table of what is what should be at
+ * top, and then under it what's new — otherwise that table gets buried in the
+ * 'read more' of the GitHub UI."* Exactly right, and it is not a matter of
+ * taste: GitHub collapses a long release body behind a fold, and the one thing
+ * every visitor to a release page came for is which file to click. A changelog
+ * is what you read AFTER you have the app.
+ *
+ * So the notes are composed in three parts and joined at the end, rather than
+ * pushed onto one array in the order they happen to be computed.
+ */
+const RAW = 'https://raw.githubusercontent.com/AkshitIreddy/alcove/main';
+
+const head = [];
+// Centred mark and title. GitHub release bodies do not resolve repo-relative
+// image paths, so this has to be an absolute raw URL.
+head.push('<div align="center">');
+head.push('');
+head.push(`<img src="${RAW}/assets/brand/alcove-1024.png" width="96" alt="">`);
+head.push('');
+head.push(`# Alcove ${tag}`);
+head.push('');
+head.push('**A hand-drawn bookshelf that opens into real pages.**');
+head.push('');
+head.push('</div>');
+head.push('');
 
 const total = parsed.length;
 const feats = parsed.filter((c) => c.type === 'feat').length;
 const fixes = parsed.filter((c) => c.type === 'fix').length;
-if (total > 0) {
-  const bits = [];
-  if (feats) bits.push(`${feats} improvement${feats === 1 ? '' : 's'}`);
-  if (fixes) bits.push(`${fixes} fix${fixes === 1 ? '' : 'es'}`);
-  lines.push(
-    bits.length
-      ? `${bits.join(' and ')}${previous ? ` since ${previous}` : ''}.`
-      : `Changes${previous ? ` since ${previous}` : ''}.`,
-  );
-  lines.push('');
-}
+
+const lines = [];
 
 for (const section of SECTIONS) {
   const items = parsed.filter((c) => c.type === section.key);
@@ -104,38 +131,76 @@ if (hidden.length > 0) {
   lines.push('');
 }
 
-// Which file to take. Two of the six downloads below are Windows installers
-// that differ only in what they do about the Edge WebView2 runtime, so the
-// difference has to be stated here — a reader looking at two setup.exes that
-// differ by 200 MB and no explanation will pick wrong.
-lines.push('### Install');
-lines.push('');
-lines.push('| You are on | Take | |');
-lines.push('| --- | --- | --- |');
-lines.push(
-  '| **Windows** | `_x64-setup.exe` | The one to take. Installs for the current user — ' +
-    'no administrator prompt. |',
+/*
+ * Which file to take.
+ *
+ * Two of the six downloads are Windows installers that differ only in what they
+ * do about the Edge WebView2 runtime, so the difference has to be stated right
+ * here — a reader looking at two setup.exes 200 MB apart with no explanation
+ * will pick wrong, and the wrong one is a quarter-gigabyte download they did
+ * not need.
+ *
+ * The recommended row is marked rather than merely listed first: most people
+ * want exactly one answer, and a five-row table without one is a decision.
+ */
+const install = [];
+install.push('## Which file do I want?');
+install.push('');
+install.push('| | You are on | Take this |');
+install.push('| :---: | --- | --- |');
+install.push(
+  '| ✔ | **Windows** | **`_x64-setup.exe`** — the one to take. Installs just for you, ' +
+    'with no administrator prompt. |',
 );
-lines.push(
-  '| Windows, no internet | `_x64-setup-offline.exe` | Same app. ~200 MB bigger because it ' +
-    'carries the whole Edge WebView2 runtime instead of fetching it, so it installs on a ' +
-    'machine that is offline or behind a proxy that blocks Microsoft. Only take this one if ' +
-    'the other fails. |',
+install.push(
+  '| | Windows, offline | `_x64-setup-offline.exe` — the same app, about 200 MB bigger ' +
+    'because it carries the whole Edge WebView2 runtime instead of fetching it. Only if ' +
+    'the one above fails. |',
 );
-lines.push('| Windows, deployed by policy | `_x64_en-US.msi` | The same app as an MSI. |');
-lines.push(
-  '| **macOS** | `_universal.dmg` | One file for both Apple silicon and Intel. |',
+install.push('| | Windows, by policy | `_x64_en-US.msi` — the same app as an MSI. |');
+install.push(
+  '| | **macOS** | `_universal.dmg` — one file for both Apple silicon and Intel. |',
 );
-lines.push('| **Linux** | `.deb` / `.rpm` / `.AppImage` | The AppImage runs without installing. |');
-lines.push('');
-lines.push(
-  'Nothing is code-signed, so Windows shows a SmartScreen warning the first time and macOS ' +
-    'quarantines the first launch. `SHA256SUMS.txt` is attached if you want to check a download.',
+install.push(
+  '| | **Linux** | `.deb`, `.rpm`, or `.AppImage` — the AppImage runs without installing. |',
 );
-lines.push('');
-lines.push(
-  'Your library lives in `%APPDATA%\\com.alcove.app` on Windows. Upgrading never touches it, ' +
-    'and the uninstaller keeps it unless you tick the box that says otherwise.',
+install.push('');
+install.push(
+  '> Nothing here is code-signed, so Windows shows a SmartScreen warning the first time ' +
+    '(**More info → Run anyway**) and macOS quarantines the first launch ' +
+    '(**right-click → Open**). `SHA256SUMS.txt` is attached if you would rather check a ' +
+    'download than trust one.',
 );
+install.push('');
+install.push(
+  'Your library lives in `%APPDATA%\\com.alcove.app` on Windows. Upgrading never touches ' +
+    'it, and the uninstaller leaves it alone unless you tick the box that says otherwise.',
+);
+install.push('');
 
-process.stdout.write(lines.join('\n') + '\n');
+/* ------------------------------------------------------------------------- */
+
+const body = [];
+if (total > 0) {
+  const bits = [];
+  if (feats) bits.push(`${feats} improvement${feats === 1 ? '' : 's'}`);
+  if (fixes) bits.push(`${fixes} fix${fixes === 1 ? '' : 'es'}`);
+  body.push('---');
+  body.push('');
+  body.push(
+    bits.length
+      ? `## What changed\n\n${bits.join(' and ')}${previous ? ` since ${previous}` : ''}.`
+      : `## What changed${previous ? `\n\nSince ${previous}.` : ''}`,
+  );
+  body.push('');
+}
+body.push(...lines);
+
+/*
+ * Collapse any run of blank lines the three parts leave where they meet, so
+ * the seams between head, install and body are invisible in the rendered page.
+ */
+const out = [...head, ...install, ...body]
+  .join('\n')
+  .replace(/\n{3,}/g, '\n\n');
+process.stdout.write(out + '\n');

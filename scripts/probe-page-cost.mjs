@@ -35,6 +35,9 @@ const b = await chromium.launch({
 });
 const p = await b.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
 p.on('pageerror', (e) => console.log('  page error:', e.message));
+// Headless Chromium can report reduced motion, which bypasses the ordinary
+// page-edge flip. Cost the pages while traversing the path a reader sees.
+await p.emulateMedia({ reducedMotion: 'no-preference' });
 await p.goto('http://localhost:1420/?fx=force', { waitUntil: 'domcontentloaded' });
 await p.waitForTimeout(9000);
 
@@ -143,6 +146,18 @@ const readSettled = async () => {
   return last;
 };
 
+/** Turn through the same outer-edge pointer target a reader uses. */
+const turnNext = async () => {
+  await p.evaluate(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  });
+  await p.waitForTimeout(150);
+  const hot = await p.locator('.nb-flip-hotspot-next').first().boundingBox();
+  if (hot === null) throw new Error('no next hotspot — the book is not open');
+  await p.mouse.click(hot.x + hot.width / 2, hot.y + hot.height / 2);
+};
+
 const leaves = [];
 let previous = '';
 for (let spread = 0; spread < SPREADS; spread++) {
@@ -151,7 +166,7 @@ for (let spread = 0; spread < SPREADS; spread++) {
   for (let retry = 0; retry < 3; retry++) {
     const signature = read.map((l) => l.title).join('|');
     if (spread === 0 || signature !== previous) break;
-    await p.keyboard.press('ArrowRight');
+    await turnNext();
     await p.waitForTimeout(1400);
     read = await readSettled();
   }
@@ -167,7 +182,7 @@ for (let spread = 0; spread < SPREADS; spread++) {
         .map((l) => `${l.side}: ${l.lines.toFixed(2)} lines  "${l.title.slice(0, 34)}"`)
         .join('   '),
   );
-  await p.keyboard.press('ArrowRight');
+  await turnNext();
 }
 
 const carried = leaves.filter((l) => l.carriedIn);

@@ -35,6 +35,9 @@ const browser = await chromium.launch({
 
 for (const s of SIZES) {
   const page = await browser.newPage({ viewport: { width: s.w, height: s.h } });
+  // Exercise the ordinary page-edge flip even when headless Chromium's host
+  // advertises reduced motion.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('http://localhost:1420/?fx=force&dev=0', {
     waitUntil: 'domcontentloaded',
   });
@@ -84,9 +87,21 @@ for (const s of SIZES) {
     }, bookId);
   const before = await countPages();
 
+  /** Turn through the same outer-edge pointer target a reader uses. */
+  const turnNext = async () => {
+    await page.evaluate(() => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+    });
+    await page.waitForTimeout(150);
+    const hot = await page.locator('.nb-flip-hotspot-next').first().boundingBox();
+    if (hot === null) throw new Error('no next hotspot — the book is not open');
+    await page.mouse.click(hot.x + hot.width / 2, hot.y + hot.height / 2);
+  };
+
   /* Turn to the last spread the book already has, and no further.
-     NOT "until a blank leaf appears": turning right off the end APPENDS a page
-     (BookView.turn), so a loop that stops when it sees blank paper has already
+     NOT "until a blank leaf appears": a forward page-edge turn off the end
+     APPENDS a page, so a loop that stops when it sees blank paper has already
      made some, and the first version of this probe reported four leaves of
      drain at a window where every page covers 60% of its leaf. The book's own
      length is the bound. */
@@ -133,7 +148,7 @@ for (const s of SIZES) {
       )),
     );
     if (spread === spreads - 1) break;
-    await page.keyboard.press('ArrowRight');
+    await turnNext();
   }
   await page.waitForTimeout(2500);
   const after = await countPages();

@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.3.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.3.0"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.4.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.4.0"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -216,8 +216,8 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.3.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.3.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.4.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.4.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
@@ -321,7 +321,7 @@ count at its foot. Arrow keys turn pages; so does dragging the outer edge or a
 corner of a leaf, which lets you take the turn at your own speed and change your
 mind halfway.
 
-![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove ✎" in a large handwriting face with a gold star beside it, a paragraph with the phrase "real paper you can write on" in an amber highlight, a green callout telling you to click anywhere on the ruled lines and start typing, a three-item bulleted list about the shelf, opening a book and turning pages, a tan card headed "Thirty-two leaves, and every one of them a demonstration", and a green banner reading "So: turn the page." The right page is headed "The shelf" and carries two tan callouts — "Getting about" and "Books come off the shelf" — with key caps drawn into the sentences, a tilted yellow sticky note about the dock, and a line reading "Ctrl Alt F grows the case by a floor". A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](docs/readme/img/spread.png)
+![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove ✎" in a large handwriting face with a gold star beside it, a paragraph with the phrase "real paper you can write on" in an amber highlight, a green callout telling you to click anywhere on the ruled lines and start typing, a three-item bulleted list about the shelf, opening a book and turning pages, a tan card headed "Thirty-two leaves, every one a demonstration", and a green banner reading "So: turn the page." The right page is headed "The shelf", opens "Behind this book is a bookcase, and behind that a room", and carries a tan card headed "Getting about" with an Enter key cap drawn into the sentence, a tilted yellow sticky note about the dock at the foot of the rail, and a moss tag reading "Ctrl Alt F grows the case by a floor". A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](docs/readme/img/spread.png)
 
 Mid-turn, the leaf lifts off the spread and you can see the next page under it:
 
@@ -476,7 +476,7 @@ slash menu with a small worked example already in it, and each is edited as a
 few lines of text — the layout algorithms and the hand-drawn SVG renderers are
 in [`src/diagrams/`](src/diagrams/).
 
-![The Welcome book open where its diagram chapter begins, and every mark on the right-hand page is drawn by the page rather than pasted onto it. That page opens "Indentation alone makes a `tree`: two spaces to a level, `|` for a note", and under the sentence stands the tree it describes — Alcove branching to "A library" and "A book", the library on to "Bookcases · one per subject" and "Floors", the book on to "Pages · this thing you are reading" and "Ribbons" — every box and every join wobbled the way a pen wobbles. Below it a tan card headed "Five fences, no library" names all five in their own key caps — tree, mindmap, graph, flowchart and timeline — and says they are about eighty lines of parser each, and that every line of every diagram is drawn by hand on the page. An amber tag under it reads "the next five leaves are the other four", and the next chapter's heading, "The same thing, thrown outward", starts at the foot. The left-hand page is the tail of the chapter before: a polaroid of a cat in a box in one column with a paragraph about columns in the other, a card headed "How it is written" showing `::: columns`, `::: col` and a plain `:::`, a margin note reading "A column may hold anything a page may hold, including more columns", and then this chapter's own title on the last ruled line — "Diagrams, drawn by hand".](docs/readme/img/diagrams.png)
+![The Welcome book open where its diagram chapter begins, and every mark on the right-hand page is drawn by the page rather than pasted onto it. That page opens "Indentation alone makes a `tree`: two spaces to a level, `|` for a note", and under the sentence stands the tree it describes — Alcove branching to "A library" and "A book", the library on to "Bookcases · one per subject" and "Floors", the book on to "Pages · this thing you are reading" and "Ribbons" — every box and every join wobbled the way a pen wobbles. Below it a tan card headed "Five fences, no library" names all five in their own key caps — tree, mindmap, graph, flowchart and timeline — and says every line is drawn by hand. The left-hand page is the tail of the chapter before: a polaroid of a cat in a box in one column with a paragraph about columns in the other, a card headed "How it is written" showing `::: columns`, `::: col` and a plain `:::`, a margin note reading "A column may hold anything a page may hold, including more columns", and then this chapter's own title on the last ruled line — "Diagrams, drawn by hand".](docs/readme/img/diagrams.png)
 
 ### Pictures and links
 
@@ -1161,7 +1161,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->286<!--/f--> of <!--f:srcFiles-->294<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6854<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->6901<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1334,10 +1334,10 @@ against the Release before quoting one at a reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->294<!--/f--> TypeScript files, <!--f:srcDocstrings-->286<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6854<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->294<!--/f--> TypeScript files, <!--f:srcDocstrings-->286<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6901<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2300<!--/f--> lines, <!--f:rustCommands-->14<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Tests | <!--f:unitTests-->87<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
-| QA against the running app | <!--f:probeScripts-->85<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
+| QA against the running app | <!--f:probeScripts-->90<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
 | Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
 

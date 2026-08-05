@@ -44,7 +44,7 @@
  * (`views/rail/designOptions.ts` reads them structurally). Neither is drawn.
  *
  * The bake cache key spreads every hex of a scheme (`libraryKey.ts`), so a new
- * room, or a nudged hex in an old one, invalidates the case art on disk by
+ * room, or a nudged hex in an old one, invalidates the case art by
  * construction. Adding a room needs nothing else.
  *
  * This module is the TYPE + DATA root of the theme system. It imports only

@@ -324,7 +324,7 @@ export const WELCOME_PAGE_SOURCES: readonly string[] = [
   // ---------------------------------------------------------------- the world
   // Page 1 — what this is, and how to move around
   `---
-paper: cream
+paper: lined
 wash: amber
 ---
 

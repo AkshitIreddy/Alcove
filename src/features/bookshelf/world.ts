@@ -1973,7 +1973,7 @@ export class ShelfWorld {
    *    bleeds across the wrap when a mip is sampled, and `tileScale < 1` is
    *    exactly when a mip is sampled — so mipmaps put a soft seam back on the
    *    wall at the zoom levels where you can see the most of it;
-   *  - the bake key already carries `flatSchemeTag()`, so the disk cache
+   *  - the bake key already carries `flatSchemeTag()`, so the bake cache
    *    cannot serve the athenaeum's damask into the reef.
    */
   private async applyWallpaper(spec: WallpaperSpec, scheme: ColourScheme): Promise<void> {
@@ -2037,7 +2037,8 @@ export class ShelfWorld {
    * Dress the whole world in a library theme (§1). Order matters:
    *  1. snapshot the current frame so the swap crossfades rather than pops;
    *  2. re-spec the spine palette immediately (cheap);
-   *  3. kick the case bakes — disk-cached, so a revisited room is instant;
+   *  3. kick the case bakes — memoized, so a room revisited in this session
+   *     is instant;
    *  4. when they land, fade the snapshot out.
    */
   /**

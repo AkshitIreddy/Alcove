@@ -2558,12 +2558,21 @@ export const BOOK_PRESET_IDS: readonly string[] = BOOK_PRESETS.map((p) => p.id);
  *
  * So a composed binding is written as `own:shape/material/decoration/gilt` and
  * resolved on read. That is deliberately an ID rather than a new shape of
- * stored value: `designPrefs` persists `Record<bookId, BookPresetId>`, every
- * cache key that varies with a binding already carries that string
- * (`bookDesignTag`, the spine factory's params key), and `SpineParams.binding`
- * passes it through untouched. Widening the stored type would have meant a
- * migration, a second validator, and a new axis for every one of those keys to
- * forget.
+ * stored value: `designPrefs` persists `Record<bookId, BookPresetId>`,
+ * `SpineParams.binding` passes it through untouched, and the ONE cache that
+ * varies with a binding — `SpineFactory.paramsCache`, keyed
+ * `${styleEpoch}|${bookId}|${pinned}` — carries that same string. Widening the
+ * stored type would have meant a migration, a second validator, and a new axis
+ * for that key to forget.
+ *
+ * Which is why the id must spell every axis out. It is not a label for a
+ * binding, it IS the binding as far as the params cache can tell: two composed
+ * bindings that agreed on their id would share one cached `ResolvedBookStyle`
+ * and one of them would be served the other's spine, silently, until something
+ * else happened to invalidate the book. `ownBindingId` is therefore required to
+ * be injective over `OwnBinding`, and `tests/design-cache-keys.test.ts` sweeps
+ * it. (An earlier version of this comment credited `bookDesignTag` with the
+ * same duty; no cache has ever consulted that function — see its own header.)
  *
  * `decoration` may be `none`, which is how a reader takes the marks off.
  *
@@ -2870,29 +2879,60 @@ export function bindingMaterialFor(look: MaterialLook): string {
 }
 
 /**
- * A short stable tag for one design.
+ * One resolved binding, reduced to a single comparable string.
  *
- * **Every cache that stores drawn book pixels must carry this** alongside
- * `flatSchemeTag()`. The binding is a new axis of variation and it is *not*
- * implied by the seed once the studio can pin a preset — without the tag in the
- * key, a book restyled from Plain Wrapper to Full Morocco keeps serving the
- * wrapper off the disk cache forever.
+ * ## It is not a cache key, whatever this comment used to say
+ *
+ * It said "**every cache that stores drawn book pixels must carry this**", and
+ * `bookStyle.ts` and `spines.ts` repeated it. Nothing in `src/` calls this
+ * function; its only callers are tests. The spine caches are
+ * INVALIDATION-keyed rather than content-keyed, and that is a deliberate
+ * design, not an oversight:
+ *
+ *   - `SpineFactory.paramsCache` is `${styleEpoch}|${bookId}|${pinned}`. The
+ *     pin is in it because a binding lives in `data/designPrefs.ts`, outside
+ *     `cover_meta`, where `bookStyleOverridesFor` cannot see it — so nothing
+ *     else would notice it moving.
+ *   - the atlas key is `${variant}|${bookId}` and carries no binding at all.
+ *
+ * Every other axis spelled below — cloth, accent, wear, cords, endbands,
+ * silhouette, covering — reaches the shelf only through a studio edit or a
+ * room change, and both of those call `SpineFactory.invalidate` /
+ * `invalidateAll`, which DROP the baked texture and release the atlas rect
+ * instead of keying around them.
+ *
+ * Checked on the running shelf rather than argued: with `styleEpoch` held at 1
+ * and the pin held at `plain-cloth`, a Book Studio edit repainted 14.7% of the
+ * spine's crop; pinning and unpinning moved the art both ways; and unpinning
+ * restored the seeded binding byte-for-byte (0 differing pixels), which is the
+ * cache being right rather than the cache being absent.
+ *
+ * ## What it IS for
+ *
+ * "Are these two resolved bindings different pixels?", answered as one string
+ * two tests can compare. That is the observable `tests/book-bindings.test.ts`
+ * and `tests/design-cache-keys.test.ts` use to prove the vocabularies really
+ * are fifty shapes, fifty coverings and 189 presets rather than a table with
+ * duplicates in it — which is not something a specimen board can establish,
+ * because a board shows what a binding looks like and never that two of them
+ * look different. It is also the tag a content-keyed spine cache would carry
+ * if one is ever built, which is why the separators below are still exact.
  *
  * The shape is spelled out separately from the preset because `resolveBookDesign`
- * can now be handed one directly: two books on the same preset with different
- * silhouettes are different pixels and must be different keys.
+ * can be handed one directly: two books on the same preset with different
+ * silhouettes are different pixels and must be different strings.
  */
 export function bookDesignTag(design: BookDesign): string {
-  // The studio's four axes belong in the key for the same reason the preset
-  // does: they change pixels, and a cache that ignores them serves a pristine
-  // spine to a book the reader just wore out.
+  // The studio's four axes belong here for the same reason the preset does:
+  // they change pixels, so a tag that ignored them would call a pristine
+  // binding and a worn-out one the same binding.
   //
   // EVERY numeric field is separated. They used to be concatenated bare, which
   // was unambiguous only while each was a single digit: with cloths at 50,
-  // cloth 1 + accent 23 and cloth 12 + accent 3 both spell "123", so two
-  // different books shared a cache key and one of them was served the other's
-  // art. Nothing fails when that happens — the disk cache validates nothing
-  // about a hit — so the separators are load-bearing, not tidiness.
+  // cloth 1 + accent 23 and cloth 12 + accent 3 both spell "123" — so the
+  // string said two different bindings were the same one, and the test that
+  // was meant to prove the fifty cloths are fifty distinct bindings passed
+  // anyway. The separators are load-bearing, not tidiness.
   return [
     design.preset,
     design.shape,

@@ -978,7 +978,7 @@ describe('library prefs: validated merge', () => {
       mergeLibraryPrefs({ theme: 'reef', shelf: 'apothecary' }),
     ).key;
     // Or a case baked with reef timber would be served to a room wearing
-    // apothecary's, forever, off the disk cache.
+    // apothecary's, for the rest of the session, off the bake cache.
     expect(mixed).not.toBe(plain);
     // Naming the preset explicitly is the same room, not a third key.
     expect(resolveLibrary(mergeLibraryPrefs({ theme: 'reef', shelf: 'reef' })).key).toBe(plain);
@@ -995,7 +995,7 @@ describe('library prefs: validated merge', () => {
     // Different scheme ⇒ different case art ⇒ the bake cache must miss.
     expect(a.key).not.toBe(resolveLibrary(mergeLibraryPrefs({ theme: 'reef' })).key);
     // Every colour that reaches the case is in the key, so editing one hex
-    // cannot serve stale art out of the disk cache.
+    // cannot serve stale art out of the bake cache.
     for (const colour of Object.values(getTheme('blossom').scheme).flat(2)) {
       expect(a.key).toContain(colour as string);
     }

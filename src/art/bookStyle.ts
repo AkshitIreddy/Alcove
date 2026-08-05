@@ -158,8 +158,13 @@ export interface BookStyle {
    * colour typed in one picker can be pasted into the other.
    *
    * It reaches the drawing through `SpineParams.clothHex` and
-   * `CoverParams.clothHex`, both of which are already in the caches that hold
-   * those pixels (`bookDesign.bookDesignTag`, `covers`' own key).
+   * `CoverParams.clothHex`, and the pixels it changes are dropped rather than
+   * re-keyed: a cloth colour is a `BookStyle` field, so editing one goes
+   * through `persistBookStyle` → `SpineFactory.invalidate`, which destroys the
+   * book's baked spine and releases its atlas rect. (`covers` does key on it
+   * for real, in its own key. `bookDesign.bookDesignTag` spells it too and used
+   * to be cited here as if a cache read that function; none does — see its
+   * header.)
    */
   clothHex: string | null;
   /** Extra hue rotation in degrees, ±12. */

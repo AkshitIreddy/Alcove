@@ -835,9 +835,9 @@ export function resolveShelfDesign(input: ShelfDesignInput): ShelfDesign {
  *
  * The build and the pattern are a NEW axis of variation in every drawing this
  * module touches, which means every cache holding those pixels has to carry
- * this next to `flatSchemeTag()`. The disk cache in `art/bake.ts` validates
- * nothing about a hit: a plank baked as a gothic case and stored under a
- * design-blind key would be served to every case on the machine, forever.
+ * this next to `flatSchemeTag()`. `art/bake.ts` validates nothing about a hit:
+ * a plank baked as a gothic case and stored under a design-blind key is served
+ * to every case in the window, for as long as the window is open.
  */
 export function shelfDesignTag(design: ShelfDesignInput): string {
   const d = resolveShelfDesign(design);

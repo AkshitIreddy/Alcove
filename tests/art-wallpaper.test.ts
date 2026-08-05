@@ -625,7 +625,7 @@ describe('wallpaper cache key', () => {
     expect(axis).not.toMatch(/\br\d+\b/);
   });
 
-  it('an axis absent from the key is an axis the disk cache eats', () => {
+  it('an axis absent from the key is an axis the bake cache eats', () => {
     // The guard that makes the rule enforceable rather than remembered: every
     // field of the spec has to move the key. A new axis added without touching
     // `wallpaperAxisKey` fails here rather than three months later, as a

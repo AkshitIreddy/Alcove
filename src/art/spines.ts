@@ -1282,10 +1282,13 @@ export interface SpineParams {
    * `art/customColour.ts`, which is the app's one answer to "the reader wants
    * a colour we do not own".
    *
-   * It reaches every cache that holds spine pixels for free: `bookDesignTag`
-   * already spells `design.cloth` into the binding key, and the studio's edit
-   * goes through `cover_meta.style`, which `spineFactory.invalidateStyle`
-   * already drops.
+   * It reaches every cache that holds spine pixels for free, though not the
+   * way this comment used to claim. It is not in a key: the studio's edit goes
+   * through `cover_meta.style` → `persistBookStyle` → `spineFactory.invalidate`,
+   * which drops the book's baked spine, releases its atlas rect and clears its
+   * cached params. The spine caches are invalidation-keyed throughout — see
+   * `bookDesign.bookDesignTag`, which spells `design.cloth` and which no cache
+   * has ever consulted.
    */
   clothHex?: string | null;
   /** Extra per-book hue rotation, ±6°. */

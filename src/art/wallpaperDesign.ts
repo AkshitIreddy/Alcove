@@ -4992,12 +4992,13 @@ export function wallpaperTilePx(spec: WallpaperSpec, dpr = 1): number {
  * The revision of the DRAWING itself. Bump it when a motif's geometry changes.
  *
  * The axes were never the only way a tile's pixels move, and this is the hole
- * that left. `world.ts` bakes through `bakeCached(wallpaperTileKey(…))` onto
- * disk, and the disk cache validates NOTHING about a hit — so redrawing a motif
- * while leaving every axis alone means every machine that has already seen that
- * paper keeps the old art forever. Caught the honest way: the moire was fixed,
- * the tests passed, the specimen board showed watered silk, and the running app
- * carried on painting the chain-link fence it had baked an hour earlier.
+ * that left. `world.ts` bakes through `bakeCached(wallpaperTileKey(…))`, and
+ * that cache validates NOTHING about a hit — so redrawing a motif while leaving
+ * every axis alone means the tile already in memory keeps being served for the
+ * rest of the session. Caught the honest way: the moire was fixed, the tests
+ * passed, the specimen board showed watered silk, and the running app carried on
+ * painting the chain-link fence it had baked an hour earlier — which is exactly
+ * how long a session can last, disk cache or no disk cache.
  *
  * It rides on the TILE key and deliberately not on `wallpaperAxisKey`, which
  * answers a different question — "is the reader looking at a different paper" —
@@ -5019,16 +5020,16 @@ const WALLPAPER_ART_REV = 3;
  * Cache key for a rendered tile.
  *
  * Carries `flatSchemeTag()` because every colour in the tile is derived from
- * the live scheme — without it the disk cache would serve the athenaeum's
- * damask forever after the reader moved to the reef, which is the exact bug the
- * cover memo had. And {@link WALLPAPER_ART_REV}, because a redrawn motif is the
- * same class of change with none of the same warning signs.
+ * the live scheme — without it the bake cache would go on serving the
+ * athenaeum's damask after the reader moved to the reef, which is the exact bug
+ * the cover memo had. And {@link WALLPAPER_ART_REV}, because a redrawn motif is
+ * the same class of change with none of the same warning signs.
  */
 export function wallpaperTileKey(spec: WallpaperSpec, size: number, dpr = 1): string {
   // Every axis, through `wallpaperAxisKey`, so a new one cannot be added
   // without entering the key — a tone that is not in the key is a tone the
-  // disk cache overwrites with whatever it baked first. Plus the revision of
-  // the DRAWING, which is the other way the same pixels change.
+  // bake cache eats, serving whatever it happened to draw first. Plus the
+  // revision of the DRAWING, which is the other way the same pixels change.
   return `wall|r${WALLPAPER_ART_REV}|${flatSchemeTag()}|${wallpaperAxisKey(spec)}|${Math.round(size)}|${dpr}`;
 }
 

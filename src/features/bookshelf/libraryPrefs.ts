@@ -286,7 +286,7 @@ export function resolveLibrary(prefs: LibraryPrefs): ResolvedLibrary {
     prefs,
     theme,
     scheme,
-    // Both parts are in the key: the disk cache validates nothing about a hit,
+    // Both parts are in the key: the bake cache validates nothing about a hit,
     // so a case baked with reef timber would otherwise be served to a room
     // that only borrowed reef's wall. The reader's own hexes are in it for the
     // same reason and are load-bearing in a way the part ids are not — a

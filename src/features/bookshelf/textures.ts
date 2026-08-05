@@ -21,16 +21,17 @@
  * scheme, so the reader can keep their carpentry across a repaint, and it is
  * carried on `ThemeRequest.design` rather than on the scheme.
  *
- * Both axes are in every bake key. The disk cache validates nothing about a
+ * Both axes are in every bake key. The bake cache validates nothing about a
  * hit, so a gothic case stored under a colour-only key would be served to a
- * reader who had since gone back to plain planks — forever, on any machine
- * that had ever drawn it.
+ * reader who had since gone back to plain planks, for the rest of the session
+ * and without a word about it.
  *
  * ## What this replaced, and why the surface did not change
  *
  * This module used to be a thin dispatcher onto a runtime painting stack —
- * seconds of brush work per room, disk-cached because it had to be. The public
- * shape stayed byte-for-byte identical through the restyle on purpose:
+ * seconds of brush work per room, and disk-cached because it had to be (that
+ * disk cache is gone with the stack that needed it; see `art/bake.ts`). The
+ * public shape stayed byte-for-byte identical through the restyle on purpose:
  * `world.ts` and `floorView.ts` are this class's only consumers, they are
  * large, and a renderer swap has no business rewriting them. Same fields, same
  * getters, same promises — different pixels.
@@ -68,11 +69,10 @@ import { drawCrown, drawPlank, drawPost, drawRecess } from '../../art/flatShelf'
 import {
   DEFAULT_SHELF_DESIGN,
   resolveShelfDesign,
-  shelfDesignTag,
   type ShelfDesign,
 } from '../../art/shelfDesign';
-import { schemeKey, themeKeyOf, type ThemeRequest } from './libraryKey';
-import { getTheme, type ColourScheme, type LibraryTheme, type ThemeId } from '../../art/themes';
+import { caseBakeKey, themeKeyOf, type ThemeRequest } from './libraryKey';
+import { getTheme, type ColourScheme, type LibraryTheme } from '../../art/themes';
 import { fnv1a } from '../../art/noise';
 import {
   BOOK_ZONE_H,
@@ -145,17 +145,6 @@ export function doodleVariantFor(floorIndex: number): number {
   return fnv1a(`doodle|${floorIndex}`) % EMPTY_DOODLE_VARIANTS;
 }
 
-/**
- * Cache-key generation for the flat case.
- *
- * Every key below carries it. The disk cache (`art/bake.ts`) validates
- * nothing about a hit — a stale PNG from the painting era is indistinguishable
- * from a fresh one and would be served forever on any machine that has already
- * run the app. Bumping this is the escape hatch; it must move whenever the
- * flat recipes change.
- */
-const FLAT_ART_VERSION = 'flat3';
-
 function textureFromBitmap(bitmap: ImageBitmap, mipmaps: boolean): Texture {
   const source = new ImageSource({
     resource: bitmap,
@@ -219,16 +208,17 @@ function outlinePad(shortSide: number): number {
 }
 
 /**
- * Bake one flat part, in one room's colours, through the shared disk cache.
+ * Bake one flat part, in one room's colours, through the shared bake cache.
  *
  * The scheme is applied around the draw and put straight back. It has to be
  * this close to the `draw` call: `flatScheme()` is module state, `bakeCached`
  * is async, and anything that awaited between the set and the draw would let a
  * second room's bake repaint the first one mid-flight.
  *
- * `key` MUST carry the room (see `roomTag`) — the disk cache validates nothing
- * about a hit, so a reef plank stored under a scheme-blind key would be served
- * to every room forever, on any machine that had ever visited the reef.
+ * `key` MUST carry the room, and must carry it WHOLE — see `caseBakeKey`, and
+ * the collision that made it stop being a hash. The cache validates nothing
+ * about a hit, so a reef plank stored under a key that cannot tell the reef
+ * from the room next door is served to both for the rest of the session.
  */
 function bakeFlatPart(
   key: string,
@@ -255,34 +245,28 @@ function bakeFlatPart(
 }
 
 /**
- * Short stable tag for a scheme, for cache keys.
+ * A room reduced to what a bake needs: the colours to draw in, the carpentry
+ * to draw, and the identity string both of them go into.
  *
- * The hexes, not the theme id: editing a colour in `art/themes.ts` has to
- * invalidate the PNGs on disk, and an id-only tag would not notice.
- */
-function roomTag(themeId: ThemeId, scheme: ColourScheme): string {
-  return fnv1a(schemeKey(themeId, scheme)).toString(36);
-}
-
-/**
- * A room reduced to what a bake needs: its colours, its carpentry, and a tag
- * for each. Two tags rather than one composite because they are two
- * independent axes and reading a key should say which of them moved.
+ * `key` is `themeKeyOf` in full — the hexes and the design tag, both spelled
+ * out. It carried a 32-bit hash of the hexes instead until a sweep of the
+ * timber colours a reader can type turned up real collisions; `caseBakeKey`
+ * has the details and the two hexes.
+ *
+ * The scheme half comes first and the carpentry tag last, so reading a key
+ * still says which of the two axes moved.
  */
 interface Room {
   scheme: FlatScheme;
-  tag: string;
   design: ShelfDesign;
-  designTag: string;
+  key: string;
 }
 
 function roomOf(req: ThemeRequest): Room {
-  const design = resolveShelfDesign(req.design);
   return {
     scheme: req.scheme,
-    tag: roomTag(req.themeId, req.scheme),
-    design,
-    designTag: shelfDesignTag(design),
+    design: resolveShelfDesign(req.design),
+    key: themeKeyOf(req),
   };
 }
 
@@ -296,7 +280,7 @@ function roomOf(req: ThemeRequest): Room {
  * keeping — it is what the floor beneath sees of the board above it.
  */
 function bakeFlatPlank(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|plank|${w}x${h}`;
+  const key = caseBakeKey('plank', w, h, room.key);
   return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
     // No `frame` — the pad is ~2px, so the drawn rect and the true part
@@ -315,7 +299,7 @@ function bakeFlatPlank(room: Room, w: number, h: number, dpr: number): Promise<I
  * than the space inside one.
  */
 function bakeFlatBack(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|recess|${w}x${h}`;
+  const key = caseBakeKey('recess', w, h, room.key);
   return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const over = Math.max(w, h) * 0.05 + 8;
     // `frame` is the VISIBLE opening, between the two uprights — arcades,
@@ -339,7 +323,7 @@ function bakeFlatBack(room: Room, w: number, h: number, dpr: number): Promise<Im
  * side instead of two continuous uprights.
  */
 function bakeFlatRail(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|post|${w}x${h}`;
+  const key = caseBakeKey('post', w, h, room.key);
   return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(w);
     const over = w * 0.3 + inkWidth(w) + 2;
@@ -376,7 +360,7 @@ function bakeFlatRail(room: Room, w: number, h: number, dpr: number): Promise<Im
  * is the whole of the "un-inked corner against the wall" defect.
  */
 function bakeFlatCrown(room: Room, w: number, h: number, dpr: number): Promise<ImageBitmap> {
-  const key = `${FLAT_ART_VERSION}|${room.tag}|${room.designTag}|crown|${w}x${h}`;
+  const key = caseBakeKey('crown', w, h, room.key);
   return bakeFlatPart(key, room.scheme, w, h, dpr, (ctx) => {
     const pad = outlinePad(h);
     // Top and sides inset by `pad` so their outlines land on the bitmap; the
@@ -486,8 +470,11 @@ export class EnvTextures {
    *
    * A room is a colour scheme, so the four parts really are re-baked in its
    * hexes — same shapes, same ink, different fills. Revisiting a room is still
-   * instant: the bake keys carry the scheme (see `roomTag`), so the disk cache
-   * hits and the crossfade is over in a frame.
+   * instant *within a session*: the bake keys carry the scheme (see
+   * `caseBakeKey`), so `art/bake.ts`'s memory cache hits and the crossfade is
+   * over in a frame. Across a restart it is a redraw, which is the trade that
+   * retired the disk cache — the four parts cost ~23ms at dpr 1 to draw and
+   * more than that to decode.
    */
   setTheme(req: ThemeRequest): Promise<void> {
     if (this.destroyed) return Promise.resolve();

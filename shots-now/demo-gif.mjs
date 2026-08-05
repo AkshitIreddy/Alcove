@@ -241,9 +241,24 @@ const tl = timeline((t) => {
     // Bring it into the sheet's own scroll before pointing at it — the later
     // axes are below the fold, and a cursor glide to an off-screen tile lands
     // on nothing.
+    /*
+     * `nearest`, NOT `center`, and the difference is visible in the recording.
+     *
+     * The sheet has a PINNED tab row (`.nb-studio-tabs`, sticky, opaque). With
+     * `center` the scroller happily parks a heading halfway under it, and the
+     * frame review picked that up as a defect — "My Library" sliced through its
+     * cap height, reading as "my Ciorary", held byte-identical for the whole
+     * time the studio was open. The app was behaving correctly; a pinned strip
+     * is SUPPOSED to cover what scrolls beneath it. It was the demo that chose
+     * a scroll position where the covering line fell through a word.
+     *
+     * `nearest` scrolls the least it can to bring the tile into view, so a tile
+     * already on screen does not move at all and one below the fold arrives at
+     * the bottom edge rather than dragging the section headings under the tabs.
+     */
     t.call(async function scrollTileIntoView(page, ctx) {
       await page.evaluate((sel) => {
-        document.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        document.querySelector(sel)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }, selector);
       // Not a pause — this IS the smooth scroll, and it only happens in scene
       // time. Sleeping here would leave the sheet mid-scroll for the click.

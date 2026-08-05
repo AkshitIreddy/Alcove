@@ -246,6 +246,44 @@ being reviewed frame by frame.
       drawn, and with the atlas keyed by identity (`variant|bookId`) rather than
       by content, so there was nowhere to keep the outgoing pixels.
 
+### The second frame review — 26 confirmed became 2, and 0 regressions
+
+Run against the re-rendered demo, primed with the list of already-fixed defects
+so a reappearance would be flagged as a regression rather than a fresh find.
+**Zero regressions.** Every fix reached the picture. 2 confirmed, 4 refuted.
+
+- [x] **f337 — "My Library" sliced through its cap height in the studio.**
+      NOT AN APP DEFECT, and worth writing down because the review's evidence
+      was right while its conclusion was not. It measured the cut precisely — no
+      ink at all in the four rows above the line, every glyph starting on the
+      same row, a flat top across mixed letterforms — and called it "a hard
+      container clip, not typography". It is: `.nb-studio-tabs` is a PINNED
+      strip with an opaque background, and covering what scrolls beneath it is
+      its job. Reproduced in the live app by scrolling the panel the way the
+      demo does, then measured the card unscrolled: 227px tall, thumbnail
+      present, nothing squashed.
+
+      What was wrong was the demo's `scrollIntoView({ block: 'center' })`, which
+      parked a heading halfway under the strip and held it there for the whole
+      time the studio was open. Now `block: 'nearest'`, which moves the least it
+      can. The lesson is the general one: a confirmed finding is a confirmed
+      OBSERVATION, and the mechanism still has to be traced before it is a bug.
+
+- [x] **f442 — the first page has no ruled lines, on the page that says it has.**
+      A REAL defect, and the frame review found it by noticing the left leaf was
+      a flat cream field while the right one was ruled. Measured: the left page
+      reads 236.33-238.33 with std 0.42 across its whole width — no horizontal
+      structure at any pitch — while the right page's rule rows dip 32 levels
+      below paper.
+
+      The cause is in the seed, not the renderer. `data/seed.ts` opened page 1
+      with `paper: cream`, and `PAPER_TO_PAGE_STYLE` maps `cream` to **blank**.
+      So the Welcome book's first page — the first thing every new reader sees —
+      was blank paper carrying a callout that reads *"Click anywhere on the
+      ruled lines and start typing."* Now `paper: lined`. The two LEGACY page
+      sets keep `cream`: they exist to be matched against old libraries during
+      migration, and editing them would stop them matching.
+
 ### Two latent defects found on the way, neither of them reported
 
 - [ ] **A 32-bit hash files the case bakes.** `textures.ts` keys the four case

@@ -342,9 +342,9 @@ describe('a board folds instead of ending', () => {
   });
 
   it('derives the same faces every time it is asked', () => {
-    // These hexes reach the disk cache key (`libraryKey.ts`), which validates
+    // These hexes reach the bake cache key (`libraryKey.ts`), which validates
     // nothing about a hit. A derivation that wobbled would serve one room's
-    // baked case art in another, forever.
+    // baked case art in another for the rest of the session.
     for (const timber of ['#c08a52', '#3f8a7d', '#2f7f8c', '#e6cf8a', '#6a615c']) {
       expect(caseFaces(timber)).toEqual(caseFaces(timber));
     }

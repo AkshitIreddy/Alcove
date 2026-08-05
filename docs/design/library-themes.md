@@ -320,11 +320,22 @@ appear in the relevant cache key next to `flatSchemeTag()`:
 |---|---|
 | the four case bakes, and `themeKeyOf` in `libraryKey.ts` | `shelfDesignTag()` |
 | `wallpaperTileKey`, `mergeWallpaperSpec`, `designOptions.wallpaperKey`, `LibraryStudio.sameSpec` | every wallpaper axis, via the exported `wallpaperAxisKey` |
-| the spine factory's params key | the binding (`bookDesignTag`) |
+| the spine factory's params key | the pinned binding id (`bookBinding(bookId)`, verbatim) |
 
 `tests/design-cache-keys.test.ts` pins this. `themeKeyOf` lives in
 `libraryKey.ts` rather than `textures.ts` precisely so a node test can load it
 without pulling in Pixi.
+
+The book row is the odd one out and is worth reading twice: the spine caches are
+**invalidation-keyed, not content-keyed**. Only the pin is in a key, and only
+because a binding is persisted outside `cover_meta` where nothing else would
+notice it move; the atlas key is `${variant}|${bookId}` and carries no binding at
+all. Every other axis of a binding — cloth, wear, cords, endbands, silhouette,
+covering — arrives through a studio edit or a room change, and both of those call
+`SpineFactory.invalidate` / `invalidateAll`, which destroy the baked spine rather
+than key around it. `bookDesignTag` is NOT that key and never was, whatever three
+comments in `art/` used to say; it is the tests' observable for "these two
+bindings draw differently".
 
 Getting it wrong is invisible: a cache validates nothing about a hit, so a key
 missing an axis serves the wrong art to everyone who already has the right art

@@ -23,8 +23,8 @@
  * the timber. Both are optional and both default to the house case, so every
  * existing call site draws exactly what it drew before. Anything that CACHES
  * these pixels has to key on `shelfDesignTag()` next to `flatSchemeTag()` — a
- * new axis of variation that is missing from a cache key is a stale PNG served
- * forever off the disk cache.
+ * new axis of variation missing from a cache key is stale art served for the
+ * rest of the session, by a cache that validates nothing about a hit.
  */
 
 import {

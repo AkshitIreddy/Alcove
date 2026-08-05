@@ -90,8 +90,15 @@ const WARM_WINDOW_MS = 520;
  * very slightly longer, so the tail's point just touches the control — which
  * is what makes the bubble read as coming OUT of the thing it labels rather
  * than floating beside it. Change it with the nub size in tooltip.css.
+ *
+ * Exported for `tests/tooltip.test.ts` alone. It was private, and the test
+ * therefore recovered the gap by CALLING `placeTip` and subtracting the
+ * anchor's edge — so every offset it asserted was placeTip measured against
+ * placeTip, and this number was pinned by nothing at all. Set it to 40 and the
+ * whole file stayed green while every bubble in the app floated a thumb's
+ * width off the control it is supposed to be growing out of.
  */
-const GAP = 11;
+export const GAP = 11;
 /** The bubble never comes closer than this to a window edge. */
 const EDGE = 8;
 /** How far from a corner the nub may sit, so it never rides a round. */

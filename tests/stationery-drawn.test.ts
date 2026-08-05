@@ -209,7 +209,13 @@ describe('every container survives a round trip through the script', () => {
  * for `window` at import time, and neither can load in a node environment.
  */
 describe('a reader can reach the stationery without writing script', () => {
-  const slash = readFileSync(join(SRC, 'editor', 'slash', 'registry.ts'), 'utf8');
+  /**
+   * Comments stripped, because the registry explains itself at length and a
+   * name in prose must not vouch for a command that inserts it.
+   */
+  const slash = readFileSync(join(SRC, 'editor', 'slash', 'registry.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^\s*\/\/[^\n]*$/gm, ' ');
   const catalogue = readFileSync(
     join(SRC, 'views', 'rail', 'CataloguePanel.tsx'),
     'utf8',
@@ -228,15 +234,53 @@ describe('a reader can reach the stationery without writing script', () => {
     (name) => name !== 'col' && name !== 'callout' && name !== 'image-row',
   );
 
+  /**
+   * The call in `registry.ts` that actually inserts a container, for the two
+   * that do not go through `wrapIn`.
+   *
+   * Both are commands of their own for a reason written down beside them:
+   *   `columns` — `setColumns(n)` carries the block the caret was on into the
+   *               first column and nests when the caret is already inside one,
+   *               which is also the path the right-click menu takes, so three
+   *               columns from the menu and three from `/` cannot drift;
+   *   `toggle`  — TipTap's disclosure element, inserted by `setDetails()`. Same
+   *               one spelling / one block note as `PAINTED_BY_ANOTHER_SELECTOR`
+   *               above: the node is `details` everywhere but the script.
+   * Everything else is `wrapIn('<name>')`, and naming these two here is the
+   * point — an exception you can read beats a clause loose enough to swallow
+   * the whole list.
+   */
+  const INSERTED_BY: Readonly<Record<string, RegExp>> = {
+    columns: /\.setColumns\(\s*\d+\s*\)/,
+    toggle: /\.setDetails\(\s*\)/,
+  };
+
+  /**
+   * WHY THIS IS NOT A `.includes` CHAIN ANY MORE.
+   *
+   * It used to end in `slash.includes(`'${name}'`)` — the name in quotes,
+   * anywhere in the file. Every entry in the registry carries `id: 'postcard'`
+   * and `keywords: ['postcard', …]`, so that last clause matched every
+   * container unconditionally and the three meaningful clauses above it were
+   * unreachable. Change `wrapIn('postcard')` to `wrapIn('paragraph')` — `/postcard`
+   * then inserts a bare paragraph, the keepsake is gone from the app — and all
+   * 93 specs in this file stayed green, plus 84 others.
+   *
+   * So the assertion is now the INSERTING CALL, named per container. A command
+   * that still lists postcard in its keywords while wrapping something else is
+   * exactly the defect, and it now reads as one.
+   */
   it.each(INSERTABLE.map((name) => [name] as const))(
     '/%s is in the slash menu',
     (name) => {
+      const call =
+        INSERTED_BY[name] ??
+        new RegExp(`\\.(?:wrapIn|setNode|insertContainer)\\('${name}'\\)`);
       expect(
-        slash.includes(`wrapIn('${name}')`) ||
-          slash.includes(`setNode('${name}')`) ||
-          slash.includes(`insertContainer('${name}')`) ||
-          slash.includes(`'${name}'`),
-        `no slash command inserts ${name}`,
+        call.test(slash),
+        `no slash command inserts ${name} — nothing in registry.ts matches ` +
+          `${String(call)}. A title, an id and a keyword list mentioning ` +
+          `${name} are what the reader SEARCHES; the call is what they get.`,
       ).toBe(true);
     },
   );

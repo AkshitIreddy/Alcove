@@ -509,21 +509,195 @@ describe('picking a room actually repaints it', () => {
     drawRecess(recording.ctx, 0, 0, 100, 100);
     expect(recording.fills).toContain(FLAT.recess);
   });
+});
 
-  it('gives every room a distinct cache tag, and the same room the same one', () => {
-    // Every memo that stores drawn pixels keys on this. Two rooms sharing a tag
-    // would serve one room's art in the other — which is exactly what the cover
-    // data-url cache did before it carried the tag.
-    const tags = new Map<string, string>();
+/* ============================== the cache tag ============================= */
+
+/**
+ * One single-colour edit to a room, and the name of the thing it edits.
+ *
+ * `field` is the key it belongs to and exists only so the table can be proved
+ * COMPLETE — a seventh colour added to a scheme has to arrive here, and fails
+ * below until it does. `what` is what a failure says out loud, because "the tag
+ * did not move" is useless and "cloths[3] turned edge left the cache tag" is the
+ * whole diagnosis.
+ *
+ * Typed in `ColourScheme` rather than `FlatScheme` because that is what a theme
+ * hands over; the two are structurally identical on purpose (see the header of
+ * `FlatScheme`), which is what lets a room be set without either module
+ * importing the other.
+ */
+interface Nudge {
+  readonly field: keyof ColourScheme;
+  readonly what: string;
+  readonly apply: (scheme: ColourScheme) => ColourScheme;
+}
+
+/**
+ * The same hex, moved somewhere it cannot coincidentally already be.
+ *
+ * Every digit changes: `0` becomes `1`, and anything that is not `0` becomes
+ * `0`. Borrowing a second authored room's colours would read better and would
+ * also quietly make this test depend on no two of the sixty rooms sharing a
+ * wall — a property nothing guarantees, and one whose failure would look like a
+ * cache bug rather than like a coincidence. The tag is a function of strings;
+ * it does not care that `#101011` is not a colour anybody would paint a shelf.
+ */
+function elsewhere(hex: string): string {
+  return `#${hex.slice(1).replace(/./g, (c) => (c === '0' ? '1' : '0'))}`;
+}
+
+/** Every field of a scheme, one at a time — both halves of all six cloths. */
+const NUDGES: readonly Nudge[] = [
+  { field: 'timber', what: 'timber', apply: (s) => ({ ...s, timber: elsewhere(s.timber) }) },
+  {
+    field: 'timberDark',
+    what: 'timberDark (the board turning away)',
+    apply: (s) => ({ ...s, timberDark: elsewhere(s.timberDark) }),
+  },
+  { field: 'recess', what: 'recess', apply: (s) => ({ ...s, recess: elsewhere(s.recess) }) },
+  { field: 'wall', what: 'wall', apply: (s) => ({ ...s, wall: elsewhere(s.wall) }) },
+  // Both halves, not just the face. `tagOf` spreads `cloths.flat()`, so a
+  // rewrite to `cloths.map(([face]) => face)` would drop six hexes and still
+  // look like it carried the cloths — and every turned spine band in the room
+  // would come back off the cache in the previous room's colour.
+  ...([0, 1, 2, 3, 4, 5] as const).flatMap((slot) =>
+    ([0, 1] as const).map(
+      (half): Nudge => ({
+        field: 'cloths',
+        what: `cloths[${slot}] ${half === 0 ? 'face' : 'turned edge'}`,
+        apply: (s) => ({
+          ...s,
+          cloths: s.cloths.map((pair, i) =>
+            i === slot
+              ? ((half === 0
+                  ? [elsewhere(pair[0]), pair[1]]
+                  : [pair[0], elsewhere(pair[1])]) as readonly [string, string])
+              : pair,
+          ),
+        }),
+      }),
+    ),
+  ),
+];
+
+describe('the room’s cache tag carries every colour in it', () => {
+  /**
+   * `flatSchemeTag()` is what every memo holding drawn pixels keys on — the
+   * case parts through `art/bake.ts`, the wallpaper tile, the cover data-url.
+   * A cache validates nothing about a hit, so a colour missing from the tag is
+   * not one wrong picture: it is one room's art served in another for the rest
+   * of the session, to everybody who already has the right art filed under that
+   * key, with nothing logged and nothing to notice.
+   *
+   * **What stood here could not fail.** It was a sweep — tag all sixty rooms,
+   * expect sixty distinct tags — and every one of the sixty differs in its CASE
+   * colours, so a `tagOf` reading nothing but timber/timberDark/recess/wall is
+   * still injective over them. That is not hypothetical. Delete
+   * `...scheme.cloths.flat()` from `tagOf` in `src/art/flat.ts` and the ENTIRE
+   * suite stays green, all of it, while a room and the same room with its six
+   * cloths rotated by one both tag `49800n`. Those two rooms are not a
+   * technicality apart: a book picks its cloth by `seed % cloths.length`, so
+   * rotating the list re-dresses every book on the shelf.
+   *
+   * So the guard here is differential instead — hold a room still, move exactly
+   * ONE colour, require the tag to move, and name the colour when it does not.
+   * That is the only shape that notices an axis leaving a key, and it is the
+   * shape `design-cache-keys.test.ts` and `art-wallpaper.test.ts` already use
+   * for the wallpaper's six axes; both of those went red when an axis was
+   * dropped, which is the whole reason to copy them rather than invent a second
+   * approach.
+   */
+
+  afterEach(() => setFlatScheme(null));
+
+  const tagFor = (scheme: ColourScheme): string => {
+    setFlatScheme(scheme);
+    return flatSchemeTag();
+  };
+
+  it('has a nudge for every field a scheme has', () => {
+    // The table above is only as good as its coverage, and a table of colours
+    // is exactly the kind of thing a seventh colour gets added next to rather
+    // than into. Fail here — one line, naming the field — instead of leaving a
+    // new axis outside the key and outside the test that guards the key.
+    expect(new Set(NUDGES.map((n) => n.field))).toEqual(
+      new Set(Object.keys(themes[0]!.scheme) as (keyof ColourScheme)[]),
+    );
+  });
+
+  it('moves when any ONE colour of a room moves, in every room', () => {
     for (const theme of themes) {
-      setFlatScheme(theme.scheme);
-      tags.set(theme.id, flatSchemeTag());
+      const base = theme.scheme;
+      const before = tagFor(base);
+      for (const nudge of NUDGES) {
+        expect(
+          tagFor(nudge.apply(base)),
+          `${theme.id}: ${nudge.what} is not in the cache tag — a room differing only there ` +
+            `will be served this room's baked art`,
+        ).not.toBe(before);
+      }
     }
-    expect(new Set(tags.values()).size).toBe(themes.length);
+  });
+
+  it('moves when the same six cloths are merely REORDERED', () => {
+    // The collision actually observed under the mutation, and the reason the
+    // test above is not enough on its own. Both cases below hold the multiset
+    // of hexes exactly and change only the arrangement — and both arrangements
+    // paint a visibly different shelf, since the slot a book lands in decides
+    // its cloth and the pair's order decides which half is the turned band.
+    //
+    // Watched, not assumed: put `.sort()` in front of `tagOf`'s `.join('')` and
+    // every single-colour nudge above still passes, because sorting a changed
+    // multiset still gives a changed string. Only this test goes red.
     for (const theme of themes) {
-      setFlatScheme(theme.scheme);
-      expect(flatSchemeTag()).toBe(tags.get(theme.id));
+      const base = theme.scheme;
+      const before = tagFor(base);
+
+      const rotated: ColourScheme = { ...base, cloths: [...base.cloths.slice(1), base.cloths[0]!] };
+      expect(tagFor(rotated), `${theme.id}: the cloth ORDER is not in the tag`).not.toBe(before);
+
+      const turned: ColourScheme = {
+        ...base,
+        cloths: base.cloths.map(([face, dark]) => [dark, face] as const),
+      };
+      expect(
+        tagFor(turned),
+        `${theme.id}: which half of a cloth pair is the face is not in the tag`,
+      ).not.toBe(before);
     }
+  });
+
+  it('gives the same room the same tag, however it was arrived at', () => {
+    // The live half of the old sweep, kept: the tag has to be a function of the
+    // colours and of nothing else — not of what was set before it, not of how
+    // many times it has been asked. A tag that drifted would be the opposite
+    // failure to the one above, rebaking every part of a case nobody repainted.
+    const first = new Map(themes.map((t) => [t.id, tagFor(t.scheme)] as const));
+    for (const theme of themes) {
+      setFlatScheme(THEMES.reef.scheme); // a detour through another room
+      expect(tagFor(theme.scheme), theme.id).toBe(first.get(theme.id));
+      // Structurally equal, separately constructed: the tag is derived from the
+      // hexes, never from object identity or from a theme id.
+      expect(tagFor(structuredClone(theme.scheme) as ColourScheme)).toBe(first.get(theme.id));
+    }
+    // …and the house palette is reached the same way every time.
+    setFlatScheme(THEMES.lapis.scheme);
+    setFlatScheme(null);
+    const house = flatSchemeTag();
+    setFlatScheme(THEMES.reef.scheme);
+    setFlatScheme(null);
+    expect(flatSchemeTag()).toBe(house);
+  });
+
+  it('still separates the sixty authored rooms', () => {
+    // The old claim, kept because it is true and cheap and a 32-bit tag really
+    // can collide — `design-cache-keys.test.ts` has a navy and a teal bookcase
+    // that did exactly that. It is NOT the guard, though, and should not be
+    // read as one: this is the assertion that stayed green while the cloths
+    // were missing from the key.
+    const tags = themes.map((t) => tagFor(t.scheme));
+    expect(new Set(tags).size).toBe(themes.length);
   });
 });
 

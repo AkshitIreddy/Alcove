@@ -84,10 +84,53 @@ import {
 const VP: Size = { width: 1440, height: 900 };
 const CARD: Size = { width: 348, height: 232 };
 
-/** Every number in an SVG path must be finite — NaN silently blanks the path. */
-function pathNumbersAreFinite(d: string): boolean {
-  const numbers = d.match(/-?\d+(\.\d+)?/g) ?? [];
-  return numbers.length > 0 && numbers.every((t) => Number.isFinite(Number(t)));
+/**
+ * Every token in an SVG path that is NOT a command letter or a finite numeral.
+ *
+ * THE MUTATION THIS USED TO SLEEP THROUGH: force one control point in
+ * `arrowPath` to NaN. The engine renders `n(NaN)` as the string `NaN`, the path
+ * comes out `M 100 100 Q NaN NaN NaN NaN …`, the browser rejects the whole `d`
+ * and EVERY arrow in the tour disappears. Four assertions in this file exist to
+ * catch exactly that, and all four stayed green.
+ *
+ * The reason is worth writing down, because it is the shape of the mistake
+ * rather than a typo. The old helper was:
+ *
+ *     const numbers = d.match(/-?\d+(\.\d+)?/g) ?? [];
+ *     return numbers.length > 0 && numbers.every((t) => Number.isFinite(Number(t)));
+ *
+ * — it EXTRACTED numerals with a regex and then asked whether each one was
+ * finite. But that regex can only match a well-formed numeral, so `Number(t)`
+ * was finite by construction and `.every` was a tautology. `NaN` produces no
+ * match at all, so the one string it was written to catch is the one string it
+ * cannot see; what it actually asserted was "the path contains a digit
+ * somewhere", which `M 100 100 Q NaN NaN NaN NaN 400 260` satisfies twice over.
+ *
+ * So this reads the path as the browser does — split it into tokens and require
+ * every one of them to be something SVG accepts — rather than fishing the good
+ * tokens out and grading those. `NaN`, `Infinity`, `undefined` and `null` all
+ * stringify into a path the same way and all fail here.
+ *
+ * Returns the offenders rather than a boolean so a failure names the token.
+ */
+function pathTokenFaults(d: string): string[] {
+  const faults: string[] = [];
+  let numerals = 0;
+  for (const token of d.trim().split(/[\s,]+/)) {
+    if (token === '') continue;
+    // Everything engine.ts emits separates its commands: `M`, `L`, `Q`, `H`,
+    // `V`, `A`, `Z`. A word of more than one letter is never a command, which
+    // is what makes `NaN` land in the numeral branch below and fail there.
+    if (/^[A-Za-z]$/.test(token)) continue;
+    if (/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(token) && Number.isFinite(Number(token))) {
+      numerals += 1;
+      continue;
+    }
+    faults.push(token);
+  }
+  // A path of pure commands, or an empty string, asserts nothing about numbers.
+  if (numerals === 0) faults.push('(no numerals in the path at all)');
+  return faults;
 }
 
 /* --------------------------------- rects ---------------------------------- */
@@ -383,6 +426,35 @@ describe('pencil paths', () => {
   const from = { x: 100, y: 100 };
   const to = { x: 400, y: 260 };
 
+  /*
+   * The gate on the gate, and the reason the four `pathTokenFaults` assertions
+   * below are worth anything. A matcher that cannot go red is the defect it was
+   * written to catch, wearing more lines — so before trusting it, break the
+   * path on purpose and watch it name the token.
+   *
+   * The second string is what `arrowPath` really emits when one control point
+   * is NaN: `n()` stringifies it, the browser throws the whole `d` away, and
+   * the arrow the step is pointing with is simply not drawn. The old helper
+   * called that path fine.
+   */
+  it('would notice a NaN in a path — the matcher, proved before it is used', () => {
+    expect(pathTokenFaults('M 100 100 Q 250 180 400 260')).toEqual([]);
+    expect(pathTokenFaults('M 100 100 Q NaN NaN NaN NaN 400 260')).toEqual([
+      'NaN',
+      'NaN',
+      'NaN',
+      'NaN',
+    ]);
+    expect(pathTokenFaults('M 0 0 L Infinity 40')).toEqual(['Infinity']);
+    expect(pathTokenFaults('M 0 0 L undefined 40')).toEqual(['undefined']);
+    // The old helper's real assertion, spelled out: "there is a digit in here".
+    // It is not enough, and neither is a path with no numbers in it at all.
+    expect(pathTokenFaults('M Z').length).toBe(1);
+    expect(pathTokenFaults('')).toEqual(['(no numerals in the path at all)']);
+    // Negatives, decimals and bare-decimal values are ordinary path data.
+    expect(pathTokenFaults('M -4.5 .25 L 0 -0.5')).toEqual([]);
+  });
+
   it('anchors the arrow exactly at both endpoints despite the wobble', () => {
     const pts = arrowPoints(from, to, seedFrom('endless-shelf'));
     expect(pts[0]).toEqual(from);
@@ -403,7 +475,7 @@ describe('pencil paths', () => {
     const d = arrowPath(from, to, 7);
     expect(d.startsWith('M ')).toBe(true);
     expect(d).toContain('Q ');
-    expect(pathNumbersAreFinite(d)).toBe(true);
+    expect(pathTokenFaults(d), `arrowPath emitted: ${d}`).toEqual([]);
   });
 
   it('degrades gracefully for 0/1/2 points', () => {
@@ -416,7 +488,7 @@ describe('pencil paths', () => {
     const pts = arrowPoints(from, to, 9);
     const head = arrowHeadPath(pts, 9, 14);
     expect(head.match(/M /g)?.length).toBe(2);
-    expect(pathNumbersAreFinite(head)).toBe(true);
+    expect(pathTokenFaults(head), `arrowHeadPath emitted: ${head}`).toEqual([]);
     expect(arrowHeadPath([from], 9)).toBe('');
   });
 
@@ -430,7 +502,7 @@ describe('pencil paths', () => {
     // No quadratics: nothing bows off the box.
     expect(d).not.toContain('Q ');
     expect(d.endsWith('Z')).toBe(true);
-    expect(pathNumbersAreFinite(d)).toBe(true);
+    expect(pathTokenFaults(d), `roundedRectPath emitted: ${d}`).toEqual([]);
     // The edges ARE the rect's edges — the old wobble drifted off them.
     expect(d).toContain('M 214 150');
     expect(d).toContain('H 426');
@@ -452,7 +524,7 @@ describe('pencil paths', () => {
     expect(d.startsWith('M 0 0 H 1440 V 900 H 0 Z')).toBe(true);
     expect(d.match(/M /g)?.length).toBeGreaterThanOrEqual(2);
     expect(d.endsWith('Z')).toBe(true);
-    expect(pathNumbersAreFinite(d)).toBe(true);
+    expect(pathTokenFaults(d), `spotlightPath emitted: ${d}`).toEqual([]);
     expect(d).toContain(holePath(hole, 14));
   });
 
@@ -474,8 +546,9 @@ describe('keyboard contract', () => {
     expect(keyAction('Enter')).toBe('next');
   });
 
-  /* The tour asks the reader to type, and to turn pages with ← →. Every key
-     it used to swallow is a key one of its own steps needs. */
+  /* The tour asks the reader to type, and the arrows move the caret through
+     what they typed. Every key it used to swallow is a key one of its own
+     steps needs. */
   it('never steals a key a step is teaching', () => {
     for (const key of [
       ' ',

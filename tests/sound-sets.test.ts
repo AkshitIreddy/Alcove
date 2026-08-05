@@ -22,7 +22,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   CHARACTER_PROFILES,
@@ -64,7 +64,7 @@ import {
   soundSetsInGroup,
   type SoundSetId,
 } from '../src/sound/soundSets';
-import { PREVIEW_MS } from '../src/sound/preview';
+import { PREVIEW_MS, cancelSoundSetPreview, previewSoundSet } from '../src/sound/preview';
 import {
   loadSoundSet,
   resetSoundSetPrefsForTests,
@@ -731,10 +731,133 @@ describe('the stored sound set', () => {
 
 /* ─────────────────────────────── the audition ───────────────────────────── */
 
+/**
+ * WHAT THIS BLOCK USED TO BE, because it is the exact shape this file exists to
+ * argue against.
+ *
+ * It was two lines: `PREVIEW_MS > 500` and `PREVIEW_MS <= 1500`. `PREVIEW_MS`
+ * is 1180 and is DERIVED — `SIGNATURE.reduce(max)` — so it moves with the
+ * signature and cannot be pinned by a window either side of it. Delete the last
+ * beat, `['check-done', 1180]`: the audition loses the thing that answers when
+ * you finish something and drops to barely half its length, `PREVIEW_MS`
+ * quietly becomes 620, both bounds still hold, and every test in the repo stays
+ * green. `previewSoundSet` — the whole subject of the "made of roles" half of
+ * the title — was never called at all.
+ *
+ * So the audition is now PLAYED, through the same stub the engine specs use,
+ * and what is heard is compared against `resolveVoice`. The ms window stays as
+ * a sanity rail, which is all it ever was.
+ */
 describe('the sound-set audition', () => {
-  it('is short, and made of roles rather than files', () => {
+  /**
+   * The four beats, as ROLES — the four the reader named when asking for this:
+   * a click, a page, a book, and the thing that answers when you finish
+   * something (`src/sound/preview.ts`). Spelled out here because the schedule
+   * is private to that module; changing it is meant to cost this line too.
+   */
+  const BEATS: readonly FamilyName[] = ['click-soft', 'page-flip', 'book-pull', 'check-done'];
+
+  /** What one set voices the beats with, in order. A silenced beat is a rest. */
+  const beatCues = (set: SoundSetId): FamilyName[] =>
+    BEATS.map((role) => resolveVoice(set, role))
+      .filter((voice): voice is NonNullable<typeof voice> => voice !== null)
+      .map((voice) => voice.cue);
+
+  /** The cues that arrive UNDER a beat rather than as one. */
+  const layerCues = (set: SoundSetId): FamilyName[] =>
+    BEATS.map((role) => resolveVoice(set, role)?.layer?.cue).filter(
+      (cue): cue is FamilyName => cue !== undefined && cue !== null,
+    );
+
+  /**
+   * The beats out of the play log, with any layer dropped.
+   *
+   * By name, which is only sound while no beat is voiced by the same family as
+   * another beat's layer — asserted where it is used rather than assumed, so a
+   * future voicing that breaks the model says so instead of mismeasuring.
+   */
+  const heardBeats = (cues: readonly FamilyName[]): FamilyName[] =>
+    playedNames()
+      .map(familyOf)
+      .filter((family): family is FamilyName => family !== undefined && cues.includes(family));
+
+  beforeEach(() => {
+    installStub();
+  });
+
+  afterEach(() => {
+    cancelSoundSetPreview(); // never leave a timer running into the next spec
+  });
+
+  it('is short, and made of roles rather than files', async () => {
     // A picker for the ear that makes you choose blind is not a picker.
     expect(PREVIEW_MS).toBeGreaterThan(500);
     expect(PREVIEW_MS).toBeLessThanOrEqual(1500);
+
+    setSoundSet(DEFAULT_SOUND_SET_ID);
+    const cues = beatCues(DEFAULT_SOUND_SET_ID);
+    expect(cues, 'the house set silences a beat of its own audition').toHaveLength(BEATS.length);
+    expect(
+      cues.filter((cue) => layerCues(DEFAULT_SOUND_SET_ID).includes(cue)),
+      'a beat is voiced by another beat’s layer — heardBeats can no longer tell them apart',
+    ).toEqual([]);
+
+    previewSoundSet();
+
+    // Sampled just before the advertised end: the last beat has NOT landed, so
+    // PREVIEW_MS is the length of the audition rather than a number beside it.
+    await flush(Math.max(0, PREVIEW_MS - 150));
+    const early = heardBeats(cues);
+    expect(early, 'the audition finished early — PREVIEW_MS overstates it').not.toContain(
+      cues[cues.length - 1],
+    );
+
+    await flush(300);
+    // ROLES, not files: every beat comes out as whatever the ACTIVE SET voices
+    // that role with. Under the house group `check-done` is not its own family
+    // at all — it is `pop-soft` with a thump under it, because the reader said
+    // the bell "is like a metal tong". A signature written as filenames would
+    // still ring here, and this is the assertion that would notice.
+    expect(heardBeats(cues), 'the audition is not the four beats, in order').toEqual(cues);
+  });
+
+  it('sounds like the set being auditioned, not always like the house', async () => {
+    // Otherwise every chip auditions identically and the picker is deaf — the
+    // one failure an audition exists to prevent.
+    const house = beatCues(DEFAULT_SOUND_SET_ID);
+    const contrast = SOUND_SET_IDS.find((id) => {
+      const cues = beatCues(id);
+      return (
+        cues.length === BEATS.length &&
+        cues.some((cue, i) => cue !== house[i]) &&
+        layerCues(id).every((layer) => !cues.includes(layer))
+      );
+    });
+    expect(contrast, 'no set re-voices any beat of the audition').toBeDefined();
+
+    setSoundSet(contrast as SoundSetId);
+    const cues = beatCues(contrast as SoundSetId);
+    previewSoundSet();
+    await flush(PREVIEW_MS + 250);
+    expect(heardBeats(cues)).toEqual(cues);
+    expect(heardBeats(cues), 'the audition ignored the chosen set').not.toEqual(house);
+  });
+
+  it('a second audition replaces the first rather than stacking on it', async () => {
+    // "holding down the arrow keys through a row of chips auditions the set
+    // under the cursor rather than stacking four of them" — the module says so;
+    // nothing checked it. Only the scheduled beats can be cancelled, so the
+    // opening click is heard twice and the three after it once each.
+    setSoundSet(DEFAULT_SOUND_SET_ID);
+    const cues = beatCues(DEFAULT_SOUND_SET_ID);
+    previewSoundSet();
+    await flush(80);
+    previewSoundSet();
+    await flush(PREVIEW_MS + 250);
+
+    const heard = heardBeats(cues);
+    for (const cue of cues.slice(1)) {
+      expect(heard.filter((f) => f === cue), `${cue} played twice`).toHaveLength(1);
+    }
   });
 });

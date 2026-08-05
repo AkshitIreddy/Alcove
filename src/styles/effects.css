@@ -975,8 +975,8 @@
  * `--ws-top` defaults to -10px so the tape straddles the block's top edge,
  * which is what tape does. But prose blocks carry `margin: 0` — they ride the
  * rule grid — so there is no air up there, and the strip landed on the line
- * ABOVE it. On the Welcome book's first page it struck clean through "Use the
- * arrow keys to flip through a book's pages".
+ * ABOVE it. On the Welcome book's first page it struck clean through the third
+ * bullet of the opening list.
  *
  * One full rule of top margin, not ten pixels: the grid is the constraint, and
  * a block offset by anything other than a whole band knocks every line after it

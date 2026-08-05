@@ -51,6 +51,9 @@ import {
   isRollableBuild,
   isRollablePattern,
 } from '../src/art/shelfDesign';
+// The picker itself, not a mention of it in a component that does not build it
+// — see `still offers every paper in the pickers` below.
+import { wallpaperOptions } from '../src/views/rail/designOptions';
 
 const SRC = join(import.meta.dirname, '..', 'src');
 const studio = readFileSync(join(SRC, 'views', 'rail', 'LibraryStudio.tsx'), 'utf8');
@@ -101,9 +104,42 @@ describe("the studio's surprise reads the gated pool", () => {
     );
   });
 
+  /**
+   * Rolling the gated pool must not have narrowed what a reader can CHOOSE —
+   * which is a fact about the PICKER, and the picker is not in this file.
+   *
+   * This used to be `expect(code).toMatch(/WALLPAPER_PRESETS/)` over
+   * `LibraryStudio.tsx`: the identifier appearing somewhere in a component that
+   * does not build the list. Slice `wallpaperOptions()` in `designOptions.ts` to
+   * twenty and thirty of the fifty papers become unpickable — this test green
+   * throughout, because the studio still MENTIONS the table it no longer offers
+   * in full. (`design-cache-keys.test.ts` does catch that slice, but it catches
+   * it as "a preset has no card key", which is a true sentence about a
+   * different subject; a reader chasing that failure is not being told the
+   * picker shrank.)
+   *
+   * So it asks the real function, the same way the carpentry twin below asks
+   * `buildOptions`/`patternOptions` — and by ID rather than by count, because a
+   * list of the right length can still be missing a paper.
+   */
   it('still offers every paper in the pickers', () => {
-    // Rolling the gated pool must not have narrowed what a reader can CHOOSE.
-    expect(code).toMatch(/WALLPAPER_PRESETS/);
+    const offered = new Set(wallpaperOptions().map((option) => option.id));
+    const missing = WALLPAPER_PRESETS.filter((preset) => !offered.has(preset.id)).map(
+      (preset) => preset.id,
+    );
+    expect(
+      missing,
+      'these papers are in the table and not in the picker — gating the dice ' +
+        'must never take a design off the list, only off the roll',
+    ).toEqual([]);
+    expect(offered.size, 'the picker offers a paper twice').toBe(WALLPAPER_PRESETS.length);
+    // …and it is built from the TABLE, not from the pool: the same rule the
+    // carpentry twin holds, stated for the papers so all three vocabularies
+    // read the same way in this file.
+    expect(
+      optionsCode,
+      'the paper picker must not be built from the gated pool',
+    ).not.toMatch(/WALLPAPER_ROLL/);
   });
 });
 

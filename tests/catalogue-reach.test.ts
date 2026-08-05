@@ -14,6 +14,33 @@
  *
  * These do. They are deliberately about REACHABILITY rather than about counts:
  * a number here would just be a third place to update.
+ *
+ * ...AND THE WAY THE FIRST TWO OF THEM USED TO BE VACUOUS, which is worth as
+ * many lines as the regression itself, because the shape recurs.
+ *
+ * They were written against a local helper:
+ *
+ *     function catalogueEffects() {
+ *       return EFFECT_AXES.flatMap((axis) =>
+ *         axis.values.map((entry) => ({ key: axis.key, value: entry.value })));
+ *     }
+ *
+ * — a MIRROR of `enumEffects` in CataloguePanel.tsx, written here because the
+ * panel is a Solid component that cannot be imported into a node test. The two
+ * tests then asked whether every entry of `EFFECT_AXES` appears in a set built
+ * from `EFFECT_AXES`. `missing` was provably always `[]`; the panel's own file
+ * was never opened; the mirror could not drift out of step with itself.
+ *
+ * Proved rather than argued: put the ORIGINAL BUG back — `enumEffects`
+ * returning `axis.values.slice(0, 5).map(...)`, five values per axis where the
+ * editor takes fifty, which is precisely the defect the header above describes
+ * — and this file stayed 17/17 green, along with 223 tests in four other
+ * files. Nothing in the suite could see it.
+ *
+ * So the panel is now READ. Not imported, not mirrored: opened as source, its
+ * construction step located by name, and asserted on where it stands. That is
+ * weaker than calling it and stronger than restating it, and it is the most a
+ * node test can honestly do with a component it cannot load.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,45 +50,125 @@ import { EFFECT_AXES, EFFECT_KEYS } from '../src/editor/effects/vocabulary';
 import { BLOCK_EFFECT_ATTRS } from '../src/editor/effects/blockEffects';
 import * as scriptVocab from '../src/script/vocab';
 
+const ROOT = join(import.meta.dirname, '..');
+const PANEL_PATH = join(ROOT, 'src', 'views', 'rail', 'CataloguePanel.tsx');
+
 /**
- * Rebuild the catalogue's effect list the way CataloguePanel does.
+ * The panel's CODE, with its prose taken out.
  *
- * The panel itself is a Solid component that reaches for `window` on import,
- * so it cannot load in this environment; this mirrors its one construction
- * step instead. If that step changes shape, this stops matching and should be
- * updated with it — which is the point.
+ * It has to be the code. This file's own header quotes `.slice(0, 5)` and the
+ * panel's docblocks discuss "five tapes" and "fifty of each" at length — a
+ * check run over the comments would be answered by the comments, which is the
+ * same species of nothing as the mirror it replaces.
  */
-function catalogueEffects(): Array<{ key: string; value: string }> {
-  return EFFECT_AXES.flatMap((axis) =>
-    axis.values.map((entry) => ({ key: axis.key, value: entry.value })),
-  );
+function panelSource(): string {
+  return readFileSync(PANEL_PATH, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+/**
+ * The `{…}` block that follows `marker`, matched by brace depth.
+ *
+ * Good enough for this one file because nothing it is pointed at holds a brace
+ * inside a string or a template literal; if that ever changes, the block comes
+ * back short and the guards on each caller fail loudly rather than quietly
+ * passing on an empty string.
+ */
+function blockAfter(src: string, marker: string): string {
+  const at = src.indexOf(marker);
+  if (at < 0) {
+    throw new Error(
+      `CataloguePanel.tsx no longer contains \`${marker}\` — this test reads the ` +
+        `panel's construction by name, so it must be renamed here too rather ` +
+        `than left to pass on a file it can no longer find.`,
+    );
+  }
+  const open = src.indexOf('{', at);
+  let depth = 0;
+  for (let i = open; i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(open + 1, i);
+    }
+  }
+  throw new Error(`unbalanced braces after \`${marker}\` in CataloguePanel.tsx`);
 }
 
 describe('the catalogue reaches the whole editor vocabulary', () => {
-  it('offers every value of every axis', () => {
-    const offered = new Set(catalogueEffects().map((e) => `${e.key}:${e.value}`));
-    const missing: string[] = [];
-    for (const axis of EFFECT_AXES) {
-      for (const entry of axis.values) {
-        if (!offered.has(`${axis.key}:${entry.value}`)) {
-          missing.push(`${axis.key}:${entry.value}`);
-        }
-      }
+  it('turns every value of an axis into a tile, and never a prefix of them', () => {
+    const body = blockAfter(panelSource(), 'function enumEffects(');
+
+    // The vacuous-pass guard, first. An extractor that came back empty would
+    // make every assertion below pass by having nothing to look at — which is
+    // exactly the failure this whole file is being repaired for.
+    expect(body.length, 'enumEffects body came back empty').toBeGreaterThan(120);
+    expect(body, 'this is not enumEffects').toContain("axis.shelf === 'colour'");
+
+    // THE REGRESSION, as the one line of code it lives in. `axis.values.map`
+    // is the whole list; `axis.values.slice(0, 5).map` was the bug, and reads
+    // identically at a glance.
+    expect(body, "the panel must map the axis's WHOLE value list").toMatch(
+      /return\s+axis\.values\.map\(/,
+    );
+    for (const narrowing of ['.slice(', '.filter(', '.splice(', 'CAP', 'limit']) {
+      expect(
+        body,
+        `enumEffects narrows the axis with \`${narrowing}\` — every value it drops ` +
+          `is a value the editor accepts and no menu in the app can reach`,
+      ).not.toContain(narrowing);
     }
-    expect(missing, `unreachable from the catalogue: ${missing.slice(0, 8).join(', ')}`).toEqual([]);
+
+    // …and each tile carries the editor's own key, value and word for it. The
+    // hand-written label map this replaced was the second place to forget.
+    expect(body).toContain('key: axis.key');
+    expect(body).toContain('value: entry.value');
+    expect(body).toContain('label: entry.label');
   });
 
-  it('offers every axis, not just the ones with short lists', () => {
-    const keys = new Set(catalogueEffects().map((e) => e.key));
-    for (const axis of EFFECT_AXES) expect(keys, `axis ${axis.key} missing`).toContain(axis.key);
+  it('feeds it every axis, and turns every spec into a tile', () => {
+    const src = panelSource();
+
+    // Every axis, spread whole. A hand-picked subset here would hide four
+    // hundred values just as completely as a slice inside enumEffects.
+    expect(src, 'EFFECTS must be built from every axis').toMatch(
+      /\.\.\.EFFECT_AXES\.flatMap\(enumEffects\)/,
+    );
+
+    // …and the panel's entry list must draw one tile per spec. A spec that
+    // reaches EFFECTS and never reaches `out` is unreachable by another route.
+    const loop = blockAfter(src, 'for (const spec of EFFECTS)');
+    expect(loop.length).toBeGreaterThan(120);
+    expect(loop, 'the EFFECTS loop no longer pushes a tile').toContain('out.push(');
+    expect(
+      loop,
+      'the EFFECTS loop skips specs — which spec, and can the reader reach it another way?',
+    ).not.toContain('continue');
   });
 
   /**
-   * The specific regression. The script domain is ALLOWED to be smaller — a
-   * name there is a promise to a chatbot — but the reader's panel may never be
-   * capped by it.
+   * The specific regression, and now BOTH halves of it.
+   *
+   * The script domain is ALLOWED to be smaller — a name there is a promise to
+   * a chatbot — but the reader's panel may never be capped by it. The size
+   * comparison below was the only thing here, and it compares two vocabularies
+   * to each other without ever looking at the panel: it would have gone on
+   * passing for as long as the editor's lists were the longer ones, no matter
+   * which of the two the panel had its import pointed at. The import IS the
+   * bug, so the import is what is checked.
    */
   it('is not capped by the writing language domain', () => {
+    const src = panelSource();
+    expect(src, 'the panel must read the EDITOR vocabulary').toMatch(
+      /import \{[^}]*EFFECT_AXES[^}]*\} from '[^']*editor\/effects\/vocabulary'/,
+    );
+    expect(
+      src,
+      "the panel is reading src/script/vocab — that is the writing language's " +
+        'domain, deliberately small, and it caps the reader at five tapes',
+    ).not.toMatch(/from '[^']*script\/vocab'/);
+
     const byKey = new Map(EFFECT_AXES.map((a) => [a.key, a.values.length]));
     const pairs: Array<[string, readonly string[]]> = [
       ['tape', scriptVocab.TAPE_VALUES],
@@ -76,6 +183,29 @@ describe('the catalogue reaches the whole editor vocabulary', () => {
         scriptValues.length,
       );
     }
+  });
+
+  /*
+   * The one cap that is NOT a cap, said out loud so nobody removes it thinking
+   * it is the bug: the render wraps each run in `<Capped limit={CAP}>`, which
+   * shows twenty and offers "37 more" (DesignStrip.Capped — open() returns
+   * `props.each` whole). That is a reveal, and a reveal keeps the value
+   * reachable. Only a narrowing of the LIST makes a value unreachable, which
+   * is why the checks above are scoped to the construction and not to the file.
+   */
+  it('caps the runs with a reveal, never with a cut', () => {
+    const src = panelSource();
+    expect(src, 'the runs are no longer wrapped in <Capped limit={CAP}>').toMatch(
+      /<Capped[\s\S]{0,400}?limit=\{CAP\}/,
+    );
+    const strip = readFileSync(join(ROOT, 'src', 'views', 'rail', 'DesignStrip.tsx'), 'utf8');
+    // The head is the CAP; `open()` hands back the untouched list behind it.
+    expect(
+      strip,
+      'DesignStrip.Capped no longer returns the whole list when open — if it now ' +
+        'truncates, the catalogue caps the reader at CAP values per axis and the ' +
+        'checks above are looking at the wrong end of the pipe',
+    ).toMatch(/open\(\)\s*\?\s*props\.each\s*:/);
   });
 });
 

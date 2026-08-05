@@ -83,9 +83,38 @@ function nativeTitles(): Hit[] {
 }
 
 describe('the app draws its own tooltips', () => {
+  it('has a tree to sweep at all', () => {
+    /*
+     * THE HOLE THIS FILLS. `nativeTitles()` walks `tsxFiles(SRC)` and reports
+     * what it found; if that walk ever returns NOTHING — a moved `src/`, a
+     * renamed extension, a `readdirSync` that stops recursing — the offender
+     * list below is empty and the suite says the app draws its own tooltips
+     * when in truth nobody looked at a single file.
+     *
+     * The test that used to stand here was meant to be exactly this guard, and
+     * it was not one: it ran a RE-TYPED copy of the regex against a string
+     * literal declared three lines above it. It never called `nativeTitles()`
+     * and never opened a file in `src/`, so `SRC` could have pointed at an
+     * empty directory and it would still have gone green. That is the whole
+     * shape of a vacuous test — an anti-vacuity guard which is itself vacuous.
+     *
+     * Seventy-four `.tsx` files today. The floor is set well under that so a
+     * component being deleted does not fail this, and well over zero so a
+     * broken sweep does.
+     */
+    expect(
+      tsxFiles(SRC).length,
+      'the .tsx sweep found almost nothing — every assertion below is vacuous ' +
+        'until this is explained (has src/ moved?)',
+    ).toBeGreaterThan(50);
+  });
+
   it('finds the attribute it is meant to be watching', () => {
     // A sweep that matches nothing passes forever. Prove the matcher fires on
-    // the shape it is looking for, and does NOT fire on a component prop.
+    // the shape it is looking for, and does NOT fire on a component prop —
+    // run through `nativeTitles`'s OWN reader rather than a re-typed copy of
+    // its regex, so the two cannot drift apart. (They already had: this test
+    // asserted a matcher that no file in the tree was ever passed through.)
     const probe = `
       <button title="x" />
       <RailPanel title="Catalogue" />

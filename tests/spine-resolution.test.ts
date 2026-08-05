@@ -99,15 +99,20 @@ describe('spine bake scale', () => {
     // The arithmetic the header now spells out, pinned so nobody has to redo
     // it: sampling is HI_SCALE_BASE / zoom, with the dpr cancelling. This is
     // why softness at max zoom is not a retina problem, and why covering zoom
-    // 2.5 needs HI_SCALE_BASE 2.5 (1.56× the area) rather than 5 (6.25×).
+    // 2.5 needs HI_SCALE_BASE 2.5 (1.56× the area) rather than 5 (6.25×) —
+    // which is the whole of the "2.5 makes max zoom exactly crisp" claim, and
+    // it is the loop below that carries it. A line reading
+    // `expect(2.5 / 2.5).toBe(1)` used to sit under this comment pretending to
+    // be that claim; it asserted a division of two literals against a third,
+    // named nothing out of `spineScale.ts`, and would have gone on passing
+    // with HI_SCALE_BASE at any value on earth. Deleted rather than fixed,
+    // because the loop already says it against the real constants.
     for (const dpr of [1, 1.25, 1.5, 2]) {
       for (const zoom of [0.8, 1.6, 2.5]) {
         expect(spineSampling('hi', zoom, dpr)).toBeCloseTo(HI_SCALE_BASE / zoom, 6);
         expect(spineSampling('lo', zoom, dpr)).toBeCloseTo(LO_SCALE_BASE / zoom, 6);
       }
     }
-    // And the specific claim: 2.5 is what would make max zoom exactly crisp.
-    expect(2.5 / 2.5).toBe(1);
   });
 });
 

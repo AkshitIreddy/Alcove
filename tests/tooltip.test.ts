@@ -13,7 +13,7 @@
  * It touches no DOM, which is exactly what makes it testable.
  */
 import { describe, expect, it } from 'vitest';
-import { placeTip, type TipSide } from '../src/views/Tooltip';
+import { GAP as TIP_GAP, placeTip, type TipSide } from '../src/views/Tooltip';
 
 /** The card's constants, restated only as the shape of an anchor. */
 const anchorAt = (
@@ -31,32 +31,55 @@ const anchorAt = (
 const CARD = { width: 200, height: 40 };
 const SCREEN = { width: 1280, height: 800 };
 
-/** Gap in Tooltip.ts. Derived from an actual placement, never restated. */
-const gapOf = (): number => {
-  const p = placeTip(anchorAt(100, 400), CARD, 'right', SCREEN);
-  return p.x - 140;
-};
+/**
+ * The gap between the control and the bubble, WRITTEN OUT.
+ *
+ * THE MUTATION THIS FILE USED TO SLEEP THROUGH: `GAP = 11` → `GAP = 40` in
+ * src/views/Tooltip.tsx, and every one of these tests stayed green.
+ *
+ * The reason was a helper called `gapOf()`, which recovered the gap by calling
+ * `placeTip` on a known anchor and subtracting that anchor's edge. So the four
+ * expectations below read `640 + gapOf()` — placeTip measured against placeTip
+ * — and the only number in the file that pins the module to a LOOK was not
+ * pinned by anything. At 40 the nub (11px in tooltip.css, deliberately a shade
+ * longer than the gap so its point just touches the control) no longer reaches
+ * anything, and every bubble in the app floats a thumb's width off the button
+ * it labels. That is not arithmetic, it is the thing you can see, and a test
+ * that cannot see it is not testing the placement.
+ *
+ * So it is a literal, and the module's own constant is checked against it
+ * below. If the design changes, both numbers move, deliberately, together.
+ */
+const GAP = 11;
 
 describe('placeTip puts the bubble beside the control', () => {
+  it('grows the bubble out of the control, one gap away', () => {
+    // The constant first: everything after this is only meaningful if the
+    // module and this file agree on what the gap actually is.
+    expect(
+      TIP_GAP,
+      'GAP moved in Tooltip.tsx — is the nub in tooltip.css still a shade longer?',
+    ).toBe(GAP);
+  });
+
   it('honours the side it was asked for when there is room', () => {
-    const gap = gapOf();
     const anchor = anchorAt(600, 400);
 
     expect(placeTip(anchor, CARD, 'right', SCREEN)).toMatchObject({
       side: 'right',
-      x: 640 + gap,
+      x: 640 + GAP,
     });
     expect(placeTip(anchor, CARD, 'left', SCREEN)).toMatchObject({
       side: 'left',
-      x: 600 - gap - CARD.width,
+      x: 600 - GAP - CARD.width,
     });
     expect(placeTip(anchor, CARD, 'top', SCREEN)).toMatchObject({
       side: 'top',
-      y: 400 - gap - CARD.height,
+      y: 400 - GAP - CARD.height,
     });
     expect(placeTip(anchor, CARD, 'bottom', SCREEN)).toMatchObject({
       side: 'bottom',
-      y: 440 + gap,
+      y: 440 + GAP,
     });
   });
 

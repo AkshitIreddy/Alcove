@@ -430,8 +430,9 @@ const EXEMPT: Readonly<Record<string, string>> = {
  *     neither exempt nor listed here;
  *   - a name here that no longer exists fails the suite, so the list cannot
  *     rot into names nobody recognises;
- *   - the count can only go down (`BACKLOG_CEILING`), so plugging one is the
- *     only way to make this shorter.
+ *   - plugging one FAILS the suite until the line is deleted and
+ *     `BACKLOG_CEILING` is lowered by hand, so the backlog shortens in the
+ *     file rather than only in the console.
  *
  * Every run prints what is left. That is the "spit out errors if it isn't
  * plugged in" the reader asked for, in the one place that gets read.
@@ -508,15 +509,40 @@ const KNOWN_UNPLUGGED: Readonly<Record<string, string>> = {
   'art/covers.ts#FRAME_LABELS': 'what the cover frames are called.',
   'art/flat.ts#HOUSE_CLOTHS': 'the icon’s original six, which the default room is pinned against. Read by tests only.',
 
-  /* --- the pointer skin, mid-flight -------------------------------------- */
-  'art/cursors.ts#CURSOR_ROLES': 'new this session; may well be plugged by the time you read this.',
-  'art/cursors.ts#CURSOR_CLASSES': 'as CURSOR_ROLES.',
-  'art/cursors.ts#CURSOR_ALIASES': 'as CURSOR_ROLES.',
-  'art/cursors.ts#CURSOR_FALLBACK': 'as CURSOR_ROLES.',
+  /* --- the pointer skin, mid-flight --------------------------------------
+     `CURSOR_ROLES` was the fifth line of this block and is gone from it,
+     because `features/settings/CursorSetPicker.tsx` now walks it — which is
+     exactly what a backlog entry is supposed to do. Deleting it is the ratchet
+     working; see BACKLOG_CEILING. */
+  'art/cursors.ts#CURSOR_CLASSES': 'the class name per role; the picker reads CURSOR_ROLES only.',
+  'art/cursors.ts#CURSOR_ALIASES': 'as CURSOR_CLASSES.',
+  'art/cursors.ts#CURSOR_FALLBACK': 'as CURSOR_CLASSES.',
 };
 
-/** The backlog may shrink. It may not grow. */
-const BACKLOG_CEILING = Object.keys(KNOWN_UNPLUGGED).length;
+/**
+ * How many of the backlog are still unplugged. A FROZEN NUMBER, checked in by
+ * hand beside the list.
+ *
+ * IT USED TO BE `Object.keys(KNOWN_UNPLUGGED).length`, and that is the bug this
+ * comment exists for. `outstanding` is the SUBSET of the findings whose key is
+ * in `KNOWN_UNPLUGGED`, so `outstanding.length <= Object.keys(KNOWN_UNPLUGGED)`
+ * is true by the definition of a subset — arithmetically unfalsifiable, for any
+ * edit to any file. The ceiling tracked the list instead of pinning it, and the
+ * only work the test did was a `console.log`. It ran for months over a list
+ * that had in fact shrunk by one (CURSOR_ROLES, above) with nothing to say
+ * about it.
+ *
+ * Frozen, the number does the job it was named for: plug one, and the suite
+ * fails until you delete its line and lower this by one. That is a ratchet; the
+ * old one was a mirror.
+ *
+ * Note which direction is gated here and which is not. Growth cannot be caught
+ * from this number at all — a newly inert export is not in `KNOWN_UNPLUGGED`,
+ * so it never joins `outstanding`; it is caught one test up, by 'nothing NEW is
+ * exported into the void', which is where it belongs. This gates the direction
+ * that was silent: SHRINKAGE.
+ */
+const BACKLOG_CEILING = 44;
 
 interface Finding {
   readonly where: string;
@@ -612,7 +638,19 @@ describe('every vocabulary, pool, gate and label map has a reader', () => {
       `\n  still unplugged (${outstanding.length} of ${BACKLOG_CEILING}):\n` +
         outstanding.map((key) => `    ${key} — ${KNOWN_UNPLUGGED[key]}`).join('\n'),
     );
-    expect(outstanding.length).toBeLessThanOrEqual(BACKLOG_CEILING);
+    // Equality, against the frozen number — see BACKLOG_CEILING for why the
+    // `<=` this replaced could not fail. Every line of KNOWN_UNPLUGGED is a
+    // finding today, so the two agree exactly, and the day one of them gains a
+    // reader this is the test that says so instead of the console whispering it
+    // into a log nobody reads.
+    const plugged = Object.keys(KNOWN_UNPLUGGED).filter((key) => !outstanding.includes(key));
+    expect(
+      outstanding.length,
+      plugged.length > 0
+        ? `these are plugged in now — delete their lines from KNOWN_UNPLUGGED and set ` +
+          `BACKLOG_CEILING to ${outstanding.length}:\n    ${plugged.join('\n    ')}`
+        : 'the backlog changed size without a line changing — read the list printed above',
+    ).toBe(BACKLOG_CEILING);
   });
 });
 
@@ -692,6 +730,12 @@ function entryPoints(): Array<{ file: string; name: string }> {
  * that exist as API beside the one the app calls. Same contract as `EXEMPT`:
  * every line says why, and a line naming something that no longer exists fails
  * the suite.
+ *
+ * IT IS EMPTY, AND THAT IS THE GOOD STATE — every flow in the tree has a way
+ * in, so nothing has needed to be excused yet. Do not add a line to make the
+ * rot check below "do something": the check earns its keep by being ready, and
+ * `rotted()` is exercised against a synthetic list so it is a live gate even
+ * while the real one is `{}`.
  */
 const EXEMPT_FLOWS: Readonly<Record<string, string>> = {};
 
@@ -699,6 +743,40 @@ const FLOWS = entryPoints();
 const FLOW_FINDINGS = FLOWS.filter(
   ({ file, name }) => readers(file, name, true).length === 0,
 ).map(({ file, name }) => `${rel(file)}#${name}`);
+
+/**
+ * The two ways an exemption list rots, as a function rather than as two
+ * expressions inlined into a test.
+ *
+ * WHY IT IS A FUNCTION NOW. The test below used to read
+ * `Object.keys(EXEMPT_FLOWS).filter(…)` twice, directly, and `EXEMPT_FLOWS` is
+ * `{}` — so both filters were `[].filter(…)`, both assertions were
+ * `expect([]).toEqual([])`, and the test could not fail for any edit to any
+ * file in the repository. It was not merely weak; it read no product source at
+ * all, so there was no mutation anywhere that could turn it red. That is the
+ * worst kind of green: it looked like the same ratchet `EXEMPT` gets, and it
+ * was a constant.
+ *
+ * Pulling it out lets the same code be run against a list that ISN'T empty,
+ * which is what makes the machinery testable while the real list is not. Both
+ * halves read `FLOWS` and `FLOW_FINDINGS`, which are derived from the source of
+ * every module in `src/` — so renaming a flow out there now reaches this file.
+ */
+function rotted(list: Readonly<Record<string, string>>): {
+  gone: string[];
+  pointless: string[];
+} {
+  const known = new Set(FLOWS.map(({ file, name }) => `${rel(file)}#${name}`));
+  return {
+    // Named flows that no longer exist — the list has drifted off the tree.
+    gone: Object.keys(list).filter((key) => !known.has(key)),
+    // Excused flows that DO have a way in — dead weight, and dead weight is
+    // how a list stops being read.
+    pointless: Object.keys(list).filter(
+      (key) => known.has(key) && !FLOW_FINDINGS.includes(key),
+    ),
+  };
+}
 
 describe('the flow alarm can see what part one could not', () => {
   it('walks every module in src/, not two vocabularies', () => {
@@ -779,13 +857,54 @@ describe('every finished flow has a way in', () => {
     expect(orphans.sort()).toEqual([]);
   });
 
+  it('the rot check for the flow exemptions is a live gate, not an empty loop', () => {
+    /*
+     * THE ANTI-VACUITY GUARD, and the reason it has to exist.
+     *
+     * `EXEMPT_FLOWS` is `{}` — truthfully, because nothing in the tree needs
+     * excusing — so running the rot check over it asserts nothing at all. The
+     * test underneath this one is therefore honest about being a placeholder,
+     * and THIS one is what keeps the machinery working in the meantime: the
+     * same `rotted()` the real list is passed through, run against a list with
+     * one of each kind of rot in it.
+     *
+     * A flow that is wired must be reported POINTLESS (excusing it is dead
+     * weight); a name that no longer exists must be reported GONE. Both answers
+     * come out of `FLOWS` / `FLOW_FINDINGS`, which are read off every `.ts(x)`
+     * in `src/` — so this fails if the sweep stops finding entry points, if
+     * `openTemplatesGallery` is renamed, or if it loses the two controls that
+     * open it. Watched fail: renaming it in `TemplatesGallery.tsx` moves it out
+     * of `gone`'s complement and the first expectation goes red.
+     *
+     * The two halves are also disjoint now. The old `pointless` filter did not
+     * exclude names that were already reported `gone`, so a single rotted line
+     * came out of both — fine when the list was empty forever, wrong the moment
+     * it is not.
+     */
+    const WIRED = 'features/templates/TemplatesGallery.tsx#openTemplatesGallery';
+    const NOWHERE = 'features/templates/TemplatesGallery.tsx#openNothingAtAll';
+    const probe = rotted({
+      [WIRED]: 'a flow with two real buttons — excusing it would be dead weight',
+      [NOWHERE]: 'a flow that was never written',
+    });
+    expect(probe.gone, 'the rot check no longer notices a name off the tree').toEqual([
+      NOWHERE,
+    ]);
+    expect(
+      probe.pointless,
+      'the rot check no longer notices an exemption the app does not need',
+    ).toEqual([WIRED]);
+  });
+
   it('the flow exemptions cannot rot', () => {
-    const known = new Set(FLOWS.map(({ file, name }) => `${rel(file)}#${name}`));
-    const gone = Object.keys(EXEMPT_FLOWS).filter((key) => !known.has(key));
+    /*
+     * A PLACEHOLDER, said out loud. With `EXEMPT_FLOWS` empty this asserts
+     * nothing; it is here so that the day somebody excuses a flow, the line
+     * they add is already being checked back against the tree. The gate above
+     * is what proves the check still works while this one sleeps.
+     */
+    const { gone, pointless } = rotted(EXEMPT_FLOWS);
     expect(gone, 'these name flows that no longer exist — delete the lines').toEqual([]);
-    const pointless = Object.keys(EXEMPT_FLOWS).filter(
-      (key) => !FLOW_FINDINGS.includes(key),
-    );
     expect(pointless, 'these exemptions are not needed — the flow has a way in').toEqual([]);
   });
 

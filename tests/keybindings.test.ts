@@ -92,6 +92,33 @@ describe('SHORTCUT_ACTIONS', () => {
     }
   });
 
+  /*
+   * INSIDE A BOOK, THE ARROWS BELONG TO THE CARET.
+   *
+   * `page-turn` used to advertise `←  →` in the book group, and it turned the
+   * page only while the caret sat outside the paper — which is a state the
+   * welcome page's first sentence tells the reader to leave. The owner ruled
+   * the binding out rather than caveat it, so the row went with it: a shortcut
+   * list is a promise, and "turn the page, except while typing" is not one this
+   * module can keep. The gate is on the GROUP rather than on the id, because
+   * re-adding it under any other name is the same regression — and it is
+   * scoped to the book so `shelf-walk` keeps its `← ↑ ↓ →`, where nothing
+   * takes typing and the arrows are honestly the shelf's.
+   *
+   * Watched fail: putting the old `page-turn` row back turns this red.
+   */
+  it('advertises no arrow key inside a book', () => {
+    const inBook = SHORTCUT_ACTIONS.filter((action) => action.group === 'book');
+    expect(inBook.length, 'the book group emptied out').toBeGreaterThan(0);
+    for (const action of inBook) {
+      const keys = action.kind === 'house' ? action.keys : action.binding;
+      expect(
+        /[←→↑↓]|arrow/i.test(keys),
+        `${action.id} advertises an arrow key ("${keys}") inside a book`,
+      ).toBe(false);
+    }
+  });
+
   it('gives every action a distinct combination, spelled one way', () => {
     const combos = Object.values(DEFAULT_KEYBINDINGS).map(canonicalBinding);
     expect(new Set(combos).size).toBe(combos.length);

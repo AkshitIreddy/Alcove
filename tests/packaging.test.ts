@@ -27,14 +27,29 @@
  *     in the TypeScript are the same colour, or the header art sits on a
  *     visible rectangle of the wrong cream.
  */
-import { readFileSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { extname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { FLAT } from '../src/art/flat';
 
 const ROOT = resolve(__dirname, '..');
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), 'utf8');
+
+/** Every `.ts`/`.tsx` under `src/`, for the one scan below that needs them all. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...sourceFiles(full));
+    else if (extname(entry.name) === '.ts' || extname(entry.name) === '.tsx') out.push(full);
+  }
+  return out;
+}
+
+/** Comments blanked, so prose explaining a ban cannot trip the ban. */
+const stripComments = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/[^\n]*$/gm, ' ');
 
 const CONF = JSON.parse(read('src-tauri', 'tauri.conf.json'));
 const NSIS = CONF.bundle.windows.nsis;
@@ -263,11 +278,77 @@ describe('the webview lets the frontend drag', () => {
     ).toBe(false);
   });
 
+  /**
+   * The absence this test's NAME claims, which it never actually checked.
+   *
+   * It asserted `pastePlugin.ts` contains the string `handleDrop`, and a file
+   * containing a word is not a file doing anything. Put `return false;` at the
+   * top of `handleDrop`'s body — image file drop is dead, in dev and in the
+   * installed build alike — and it passed, because the word was still there.
+   * Both halves are now checked, and neither is a grep:
+   *
+   *   the ABSENCE — nothing in `src/` subscribes to Tauri's own drag-drop
+   *                 event, which the flag above has switched off and which
+   *                 would therefore never fire (this test);
+   *   the PRESENCE — the web-standard handler, RUN, against a drop carrying an
+   *                 image file (the next one).
+   */
   it('and nothing has started depending on Tauri’s drag-drop event instead', () => {
-    // If a future reader wires `onDragDropEvent`, turning the handler off
-    // silently stops it — so the two facts are pinned together.
-    const src = read('src', 'editor', 'media', 'pastePlugin.ts');
-    expect(src, 'file drop must stay on the web-standard path').toContain('handleDrop');
+    // `dragDropEnabled: false` means these never fire. A reader who wires one
+    // gets a handler that is silent in the installed build and silent in a
+    // browser too, so nothing they can run would tell them.
+    const TAURI_DRAG = /onDragDropEvent|TauriEvent\.DRAG_|['"`]tauri:\/\/drag-/;
+    const offenders = sourceFiles(join(ROOT, 'src'))
+      .filter((file) => TAURI_DRAG.test(stripComments(readFileSync(file, 'utf8'))))
+      .map((file) => relative(ROOT, file).replaceAll('\\', '/'));
+    expect(
+      offenders,
+      'these listen for Tauri’s OS drag-drop event, which `dragDropEnabled: false` ' +
+        'above has switched off — the listener will never fire in the installed app',
+    ).toEqual([]);
+  });
+
+  it('and the web-standard path really takes a dropped image', async () => {
+    // The plugin itself, run in node: `handleDrop` is a synchronous decision
+    // (take the drop, prevent the default, kick off the async store) and every
+    // part of that decision is observable from a stub view. `isDestroyed` is
+    // true so the insert that follows the await bows out without a schema.
+    const { createMediaPastePlugin } = await import('../src/editor/media/pastePlugin');
+    const props = (createMediaPastePlugin() as unknown as {
+      props: {
+        handleDrop(view: unknown, event: unknown, slice: unknown, moved: boolean): boolean;
+      };
+    }).props;
+
+    let prevented = 0;
+    const view = {
+      isDestroyed: true,
+      state: { schema: { nodes: {} }, doc: { content: { size: 0 } }, tr: {} },
+      posAtCoords: () => ({ pos: 3 }),
+      dispatch: () => {},
+    };
+    const drop = (files: Array<{ type: string }>) => ({
+      dataTransfer: { files },
+      clientX: 10,
+      clientY: 20,
+      preventDefault: () => {
+        prevented += 1;
+      },
+    });
+
+    expect(
+      props.handleDrop(view, drop([{ type: 'image/png' }]), null, false),
+      'a dropped image file must be TAKEN by the ProseMirror handler — this is the ' +
+        'whole path that `dragDropEnabled: false` exists to keep alive',
+    ).toBe(true);
+    expect(prevented, 'taking the drop without preventing the default drops the file twice').toBe(1);
+
+    // …and it still declines the two it should: an internal block drag, and a
+    // drop carrying no image. Otherwise `return true` everywhere would pass the
+    // line above while eating every other drop in the editor.
+    expect(props.handleDrop(view, drop([{ type: 'image/png' }]), null, true)).toBe(false);
+    expect(props.handleDrop(view, drop([{ type: 'text/plain' }]), null, false)).toBe(false);
+    expect(prevented).toBe(1);
   });
 });
 

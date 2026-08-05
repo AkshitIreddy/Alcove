@@ -34,6 +34,24 @@
  * covered: the menus in this app are transient popovers that stop their own
  * keys in the capture phase (`ShelfMenu`), and most of them are nested inside a
  * panel that has already claimed.
+ *
+ * AND THE HALF THAT WAS ITSELF ASLEEP. `claimsTheKeyboard` used to be
+ * `/\busePanelKeys\s*\(/` over the raw file — a token grep, which proves the
+ * wiring was once WRITTEN and not that it still runs. Comment out the one call
+ * in `CheatSheet.tsx`:
+ *
+ *     // usePanelKeys();
+ *     void 0;
+ *
+ * and the card that lists the keyboard shortcuts goes back to letting arrows
+ * walk the shelf behind it — while this file, and the other 2,744 tests, stay
+ * green, because the commented-out line still contains the token. So the source
+ * is comment-stripped and the claim has to be a CALL AT STATEMENT POSITION:
+ * indented, first thing on its line, i.e. a hook invoked in a body rather than
+ * a name mentioned in prose, in a keyword array or in an import. The detector
+ * has its own gate below — `the detector needs the call, not the word` re-applies
+ * that exact mutation in memory and fails if it is not caught, because a
+ * detector nobody has watched go red is the same defect with more lines.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
@@ -73,9 +91,39 @@ function dialogTags(source: string): string[] {
   return out;
 }
 
-/** A panel says the keys are its own with the hook, or via RailPanel's push. */
+/**
+ * Comments blanked, LINE BY LINE so nothing else moves.
+ *
+ * Whitespace rather than deletion, and the block form keeps its newlines, so a
+ * position in the stripped text is the same position in the file — which is
+ * what lets `claimsTheKeyboard` below insist on a line-leading call.
+ */
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/^([ \t]*)\/\/[^\n]*$/gm, (_m, indent: string) => indent);
+}
+
+/**
+ * A panel says the keys are its own with the hook, or via RailPanel's push —
+ * and it has to SAY it, in code that runs.
+ *
+ * The claim must be a call at statement position: comments gone, indented (so
+ * it is inside a body rather than at module scope), and the first thing on its
+ * line. That last part is the whole difference between this and the token grep
+ * it replaces — `usePanelKeys` appearing in an import, in a docblock, in a
+ * `keywords: [...]` array or halfway along a line of prose is a mention, and a
+ * mention has never stopped a single arrow key.
+ *
+ * All eleven claiming dialogs match on one line each today, at brace depth 1
+ * (RailPanel's is 3, inside its mount effect), every one of them above its own
+ * markup. `void ` is allowed in front because it is how this codebase spells
+ * "yes, deliberately ignoring the return".
+ */
+const CLAIM = /^[ \t]+(?:void\s+)?(?:usePanelKeys|claimPanelPush)\s*\(/m;
+
 function claimsTheKeyboard(source: string): boolean {
-  return /\busePanelKeys\s*\(/.test(source) || /\bclaimPanelPush\s*\(/.test(source);
+  return CLAIM.test(stripComments(source));
 }
 
 describe('every dialog claims the keyboard', () => {
@@ -107,6 +155,57 @@ describe('every dialog claims the keyboard', () => {
         'add usePanelKeys() from src/state/panelKeys.ts, or mark the dialog ' +
         'aria-modal="false" if it really means to leave the app driveable',
     ).toEqual([]);
+  });
+
+  /**
+   * GATE ALIVE, in the sense CLAUDE.md means it: break the thing on purpose and
+   * watch the check go red.
+   *
+   * Everything above this point is a scan that reports an empty list, and an
+   * empty list is what a scan matching nothing also reports. The test two above
+   * guards the FIND half (twelve dialogs are located); this guards the JUDGE
+   * half, by taking a real claiming file and applying the two mutations that
+   * actually happen to one — the call commented out while somebody debugs, and
+   * the call deleted with the import left behind — and requiring both to be
+   * seen as what they are.
+   *
+   * The old detector passed the first of these. That is not hypothetical: it is
+   * the mutation this file was rewritten for.
+   */
+  it('the detector needs the call, not the word', () => {
+    // Any real claiming dialog will do, chosen by shape rather than by name so
+    // that renaming or re-shaping one panel cannot quietly retire this gate.
+    const CALL_LINE = /^([ \t]*)((?:usePanelKeys|claimPanelPush)\([^\n]*)$/m;
+    const subject = files
+      .map((file) => [file, readFileSync(file, 'utf8')] as const)
+      .find(
+        ([, source]) =>
+          dialogTags(source).length > 0 &&
+          // Exactly one, or commenting it out would leave a second claim behind
+          // and the mutation below would prove nothing.
+          (source.match(new RegExp(CALL_LINE.source, 'gm')) ?? []).length === 1,
+      );
+    expect(subject, 'no dialog claims on a line of its own any more').toBeDefined();
+    const [file, source] = subject as readonly [string, string];
+    const name = relative(ROOT, file).replaceAll('\\', '/');
+    expect(claimsTheKeyboard(source), `${name} has stopped claiming at all`).toBe(true);
+
+    // 1. The call commented out — a debugging line somebody forgot to put back.
+    //    This is the one the old token grep passed.
+    const commentedOut = source.replace(CALL_LINE, '$1// $2');
+    expect(commentedOut, 'the mutation did not apply').not.toBe(source);
+    expect(
+      claimsTheKeyboard(commentedOut),
+      `a commented-out claim in ${name} counts as a claim — the detector is a token grep again`,
+    ).toBe(false);
+
+    // 2. The call deleted. The import stays behind, and must not vouch for it.
+    const deleted = source.replace(CALL_LINE, '$1void 0;');
+    expect(deleted).toMatch(/import \{[^}]*(?:usePanelKeys|claimPanelPush)/);
+    expect(
+      claimsTheKeyboard(deleted),
+      `the import alone counts as a claim in ${name}`,
+    ).toBe(false);
   });
 
   it('the tour card is the exemption, and it is the only one', () => {

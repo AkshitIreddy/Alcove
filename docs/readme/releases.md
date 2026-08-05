@@ -168,8 +168,8 @@ were looking at, and now stages a copy off-screen instead.
 **Two blank pages always stand ready** at the end of a book, and the spread is
 completed as well — an odd page count used to leave the last spread with a page
 on the left and bare cream on the right, which was the blank being complained
-about. Bounded by the last page you actually wrote on, so a held arrow key
-cannot grow a book without end.
+about. Bounded by the last page you actually wrote on, so repeated turns cannot
+grow a book without end.
 
 **Dragging works on Windows.** `dragDropEnabled` was never set in the Tauri
 config, so it took the default of `true` — whose own documentation says

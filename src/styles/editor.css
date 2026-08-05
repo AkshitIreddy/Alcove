@@ -53,23 +53,15 @@
 }
 
 /*
- * The beat between the shelf going and the spread arriving.
+ * The beat between the shelf going and the spread arriving MOVED OUT of this
+ * file, to styles/opening.css.
  *
- * `BookView` is lazy AND its session is a resource, so Solid suspends the whole
- * subtree — rail included — while either is pending. Without this the reader
- * got a bare window for a moment; with it they get the paper the spread is
- * about to land on, which reads as the book opening. Full-bleed and centred,
- * because there is nothing else on screen to sit beside.
+ * It was four rules here, and this file is imported by BookView — the module
+ * the fallback stands in for. So on the one path where it matters, a cold open
+ * with the chunk still in flight, the fallback painted with no stylesheet at
+ * all. opening.css is imported by App.tsx instead and owes the editor nothing;
+ * its header carries the measurements that decided what it draws.
  */
-.nb-book-opening {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--paper-cream);
-  color: var(--ink-graphite-soft);
-  font-size: var(--text-label);
-}
 
 /* ----------------------------------------------------------------------------
    The paper sheet — soft warm shadow outside, deckled top edge on the paper
@@ -115,6 +107,48 @@
   --page-line-height: 32px;
   position: relative;
   padding: 0 var(--space-40);
+
+  /* ------------------------------------------------------------------------
+     The grid the words actually sit on, once the reader has resized the type.
+
+     `--page-line-height` is the reader's PITCH — a per-book choice (24–64px,
+     the page-style panel's slider), written inline on this element by
+     PageEditor from the document attribute. It is a leading, and a leading only
+     means anything against a type size: at 20px type a 32px band is 1.6, and
+     every px metric on a leaf was measured against that pairing.
+
+     So the pitch is the stored one TIMES the reader's type scale. Two things
+     fall out of that, and both are the point:
+
+      - the words keep their exact relationship to their rules. Scale the type
+        and leave the rules where they are and the writing floats — the glyphs
+        shrink inside a band that did not, so the baseline creeps up off the
+        line it is printed on. Everything here scales together, so 15px type on
+        a 24px band is the same picture as 21px type on a 34px one.
+      - a smaller hand FITS MORE. This is the reason the row exists: the owner
+        asked for "the option to make it tiny by resizing" so a page that holds
+        less than its author assumed simply holds more. Shrinking the type
+        against a fixed pitch would have fitted exactly the same number of
+        lines and answered nothing.
+
+     Published as a second name rather than folded into `--page-line-height`
+     because a custom property cannot be defined in terms of itself — that is a
+     cycle, and a cycle makes BOTH sides invalid. The scaled value is handed to
+     the pitch's own name one element down (see `.nb-page > .nb-page-editor`),
+     which is what lets every existing reader of `--page-line-height` inside the
+     editor — the prose leading, the heading bands, effects.css's tape margins
+     and lettering, the task box — follow without being touched. The rulings
+     read `--page-rule-pitch` directly (styles/rulings.css), because they are
+     painted from THIS element, outside that reach.
+     -------------------------------------------------------------------------- */
+  --page-rule-pitch: calc(var(--page-line-height) * var(--page-text-scale, 1));
+}
+
+/* The pitch, under its own name, for everything drawn inside the editor.
+   NOT a cycle: `--page-rule-pitch` is not declared on this element, so it
+   arrives already computed from the parent. */
+.nb-page > .nb-page-editor {
+  --page-line-height: var(--page-rule-pitch);
 }
 
 /* When paginated, overflow is handed to the next page — never a scrollbar. */
@@ -195,9 +229,14 @@
 /* ----------------------------------------------------------------------------
    Prose — handwritten by default
    -------------------------------------------------------------------------- */
+/* The reading type, and the one thing the settings sheet's "body size" row
+   claims to move. It was a hardcoded 20px, so the row moved the shell and left
+   the page alone — see features/settings/apply.ts (PAGE_TEXT_LEAD). The 20px
+   is kept as the fallback, which is what an export sheet or a specimen board
+   that never had settings applied to it is drawn at. */
 .nb-prose {
   font-family: var(--font-body);
-  font-size: 20px;
+  font-size: var(--page-text-size, 20px);
   line-height: var(--page-line-height);
   letter-spacing: var(--tracking-body);
   color: var(--ink-sepia);
@@ -234,22 +273,39 @@
    baseline the same distance above its rule that body text keeps
    (Patrick Hand at 20px: band/2 − 8.5px), which solves to
    L = band/2 + 8.5px − 0.321em. Both constants are font metrics — change the
-   heading or body face and they have to be re-measured. */
+   heading or body face and they have to be re-measured.
+
+   AND BOTH SCALE WITH THE TYPE. 8.5px is half the difference between Patrick
+   Hand's ascent and descent AT 20px — it is a fraction of the body size, not a
+   fixed distance — so it is multiplied by `--page-text-scale` alongside the
+   band. 0.321em needs no help: it is already relative to the heading's own
+   size, which scales below. Left as a flat 8.5px, a reader who shrank the type
+   would have watched every heading drift off its rule while the body text sat
+   perfectly on its own, which is the exact failure this correction exists to
+   fix — just aimed at a different line. */
 .nb-prose h1,
 .nb-prose h2 {
-  --nb-heading-lead: calc(var(--page-line-height) / 2 + 8.5px - 0.321em);
+  --nb-heading-lead: calc(
+    var(--page-line-height) / 2 + 8.5px * var(--page-text-scale, 1) - 0.321em
+  );
   padding-top: var(--nb-heading-lead);
   margin-bottom: calc(-1 * var(--nb-heading-lead));
   line-height: calc(2 * var(--page-line-height));
 }
 
+/* The heading scale rides the reading type.
+   A heading is the same page's voice raised, so it moves with the page: 42px
+   against the shipped 20px body is 2.1x, and it stays 2.1x at every size the
+   slider offers. Pinned at 42px it would have become a banner over 17px prose
+   at the bottom of the range and a whisper over 23px at the top — and it would
+   still have had to fit the two-rule band above, which does scale. */
 .nb-prose h1 {
-  font-size: 42px;
+  font-size: calc(42px * var(--page-text-scale, 1));
   font-weight: 700;
 }
 
 .nb-prose h2 {
-  font-size: 33px;
+  font-size: calc(33px * var(--page-text-scale, 1));
   font-weight: 700;
 }
 
@@ -264,19 +320,29 @@
    only the line-height differs (one band rather than two). */
 .nb-prose h3,
 .nb-prose h4 {
-  --nb-heading-lead: calc(var(--page-line-height) / 2 + 8.5px - 0.321em);
+  --nb-heading-lead: calc(
+    var(--page-line-height) / 2 + 8.5px * var(--page-text-scale, 1) - 0.321em
+  );
   padding-top: var(--nb-heading-lead);
   margin-bottom: calc(-1 * var(--nb-heading-lead));
   line-height: var(--page-line-height);
 }
 
 .nb-prose h3 {
-  font-size: 26px;
+  font-size: calc(26px * var(--page-text-scale, 1));
   font-weight: 600;
 }
 
+/* h4 is the one heading the type scale can push under Caveat's floor.
+   The face is unreadable below 20px (tokens.css says so where --text-h4 is
+   pinned at 21px for the same reason, and CLAUDE.md makes it a rule), and 21px
+   scaled to the bottom of the slider is 17.85px. h1, h2 and h3 cannot reach the
+   floor from inside the slider's range — the smallest is 26px x 0.85 = 22.1px —
+   so only this one carries the max(), and only this one needs to: at the bottom
+   of the range h4 stops shrinking and sits at 20px over 17px prose, which is
+   still a heading, just a quieter one. */
 .nb-prose h4 {
-  font-size: 21px;
+  font-size: max(20px, calc(21px * var(--page-text-scale, 1)));
   font-weight: 600;
 }
 
@@ -595,6 +661,49 @@
   border-radius: 4px 7px 5px 8px;
   padding: 1px 6px;
   color: var(--ink-graphite);
+}
+
+/* A key cap is ONE object, and an inline run cannot be one.
+   `Ctrl Alt N` is a single pill with an outline all the way round it, but as
+   an inline box it is only a background painted behind a text run — and a text
+   run breaks at its spaces like every other. When the line ran out between the
+   "Alt" and the "N" the browser did exactly what it had been told: it left an
+   open-ended pill at the end of one line and opened a second one on the next,
+   so the reader was handed two half caps instead of one key. (Demo frame 617,
+   right page, the studio callout: "Ctrl Alt |" then "| N".)
+
+   `inline-block` is the fix rather than `white-space: nowrap`, and the
+   difference between them is the whole point. An atomic inline box cannot be
+   split across lines, so the cap moves to the next line WHOLE when it does not
+   fit where it stands — and yet its text still wraps INSIDE the pill if the
+   pill is wider than the column, which keeps it one object either way. Nowrap
+   would have bought the same atomicity by letting a long cap run out over the
+   edge of the sheet, and pages in this app have no scrollbar to rescue it
+   with. Shrink-to-fit already clamps the box to the column; `max-width: 100%`
+   says so again where that column is a flex or grid track, and
+   `overflow-wrap: break-word` catches the one long token that has no space in
+   it to break at.
+
+   The explicit line-height is what keeps the ruled grid, and it is not
+   optional. An inline box hands the line a leading box built from its own
+   line-height — its padding and border are painted but never measured — while
+   an inline-block hands the line its whole margin box. Left to inherit the
+   page's 32px rule spacing, a 0.78em pill would have measured 36px with its
+   padding and border on and lifted every line under it off the ruling for the
+   rest of the sheet. At 1.2 the pill stands about 22px, well inside the 32px
+   strut, so the line stays exactly as tall as the paper says it is. Measured
+   on the Welcome book by scripts/probe-keycap-wrap.mjs, which also caught that
+   the INLINE cap was already spending 4px a line there — so this is the reading
+   that puts those paragraphs back on their rules, not one that pays for them.
+
+   `:not(.nb-code-body)` because a code BLOCK's body is a <code> inside
+   .nb-prose as well, and this selector out-specifies the single class it is
+   styled with — the same trap the `pre` rule below is excluded from. */
+.nb-prose code:not(.nb-code-body) {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.2;
+  overflow-wrap: break-word;
 }
 
 /* The bare `pre` — no node view. This is what an EXPORT is made of, and what

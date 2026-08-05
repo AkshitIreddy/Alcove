@@ -3698,8 +3698,26 @@
   position: relative;
   min-height: 176px;
   margin: var(--space-24) 0;
-  /* The right 44% belongs to the address side; the message never crosses. */
-  padding: var(--space-20) 46% var(--space-20) var(--space-20);
+  /*
+   * The right half belongs to the address side, and the message stops short
+   * of it by the same 16px the printed grid is inset by.
+   *
+   * This used to reserve 46% and claim in a comment that "the message never
+   * crosses". It crossed: the divider is drawn at 50% (the ::before below
+   * starts there), 46% leaves the text running to 54%, and every line long
+   * enough to reach the edge was printed 16px INTO the address side, straight
+   * through the rule — "and no room for either" on the welcome book's own
+   * card. A comment that asserts what the numbers deny is worse than no
+   * comment, so the number now says it: half, plus a gutter.
+   *
+   * The card gets taller for it — the same message wraps to six lines in the
+   * narrower column instead of five — and that is the right trade. A postcard
+   * grows to hold its message (there is no height here, only a minimum); a
+   * message that will not fit its half is not made to fit by lending it the
+   * address lines.
+   */
+  padding: var(--space-20) calc(50% + var(--space-16)) var(--space-20)
+    var(--space-20);
   background: color-mix(in srgb, var(--paper-cream) 88%, var(--fx-light));
   border: 1.5px solid var(--ink-line);
   border-radius: var(--radius-sm);

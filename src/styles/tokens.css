@@ -369,6 +369,21 @@
      11px secondary ink is the single most common legibility failure. */
   --text-ui-xs: 11px;
 
+  /* The PAGE's reading type, which is not --text-body above.
+     --text-body sizes the shell; this sizes the writing on a leaf, and the two
+     have always been two pixels apart (features/settings/apply.ts,
+     PAGE_TEXT_LEAD, says why). The settings sheet overwrites both inline on
+     <html>; these are what the page is drawn at before it has, and what an
+     export or a specimen board that never applied settings falls back to.
+
+     --page-text-scale is the same number as a ratio against the 20px the rest
+     of the leaf's px metrics were measured at. The rule pitch, the heading
+     lead and the heading scale all multiply by it, so the words keep sitting on
+     the rules at every size and a smaller hand genuinely fits more on a page.
+     Never write a third number here: it is --page-text-size / 20, always. */
+  --page-text-size: 20px;
+  --page-text-scale: 1;
+
   --leading-body: 1.65;
   --leading-heading: 1.15;
   --tracking-body: 0.01em;

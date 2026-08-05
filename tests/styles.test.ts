@@ -239,10 +239,16 @@ const SIZE_TOKENS: Record<string, number> = {
   '--text-chip': 13,
   '--text-ui': 12,
   '--text-ui-xs': 11,
+  /* The page's reading type, at the SMALLEST the settings slider can drive it
+     (features/settings/apply.ts: 15 + PAGE_TEXT_LEAD). The worst case is the
+     only useful number for a floor: `.nb-prose` is the largest handwritten
+     surface in the app and it stopped being a literal `20px` the day the body
+     size row was wired up, which took it out of this gate entirely. */
+  '--page-text-size': 17,
 };
 
 function sizeInPx(value: string): number | null {
-  const token = value.match(/var\(\s*(--text-[a-z0-9-]+)/i);
+  const token = value.match(/var\(\s*(--(?:text|page-text)-[a-z0-9-]+)/i);
   if (token !== null) return SIZE_TOKENS[token[1]!.toLowerCase()] ?? null;
   const px = value.match(/^(-?\d*\.?\d+)px$/);
   return px === null ? null : Number.parseFloat(px[1]!);

@@ -10,7 +10,7 @@
  * - a Solid node view with a selected halo + the controls above.
  */
 import Image from '@tiptap/extension-image';
-import { Show, createSignal, type JSX } from 'solid-js';
+import { Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
 import {
   NodeViewWrapper,
   SolidNodeViewRenderer,
@@ -108,6 +108,59 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     props.updateAttributes({ caption: trimmed.length > 0 ? trimmed : null });
   };
 
+  /*
+   * THE CAPTION WRAPS, AND THE FIELD GROWS TO WHAT IT WRAPPED TO.
+   *
+   * It was an `<input type="text">`, which can do neither. A caption is as
+   * wide as its picture and a picture in a row of four is narrow, so the
+   * welcome book's own middle kitten — "On the good chair", 107px of Kalam in
+   * a 102px box — was shown to the reader as "On the good chai", cut mid-word
+   * with nothing to say it had been cut. An input clips silently: no wrap, no
+   * ellipsis, and the missing tail only reachable by clicking in and arrowing
+   * right, which nobody does to a label they cannot see is incomplete.
+   *
+   * Growing beats clipping here. A caption exists to be read, it is one short
+   * line of prose, and a second line under a photograph is what a caption
+   * looks like anyway — whereas an ellipsis would simply lose the words. So:
+   * a textarea, wrapping, with the scroll bar off and the height measured.
+   *
+   * `rows` cannot express "as tall as the text": a textarea's height is set in
+   * whole rows from the CSS box, so it is measured instead — collapse to
+   * `auto` first, because scrollHeight of an already-tall box reports the box.
+   */
+  let captionEl: HTMLTextAreaElement | undefined;
+
+  const fitCaption = (el: HTMLTextAreaElement): void => {
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  /* Re-fit whenever the words change... */
+  createEffect(() => {
+    const text = caption();
+    const el = captionEl;
+    if (el === undefined) return;
+    if (el.value !== text && document.activeElement !== el) el.value = text;
+    fitCaption(el);
+  });
+
+  /*
+   * ...and whenever the picture changes width, which is what changes where
+   * the caption wraps. The IMAGE is what is observed, deliberately: observing
+   * the caption's own box (or the wrapper that contains it) would feed the
+   * height this callback sets back into the callback that set it.
+   */
+  const observeWidth = (img: HTMLImageElement): void => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (captionEl !== undefined) fitCaption(captionEl);
+    });
+    ro.observe(img);
+    onCleanup(() => {
+      ro.disconnect();
+    });
+  };
+
   return (
     <NodeViewWrapper
       ref={(el: HTMLElement) => {
@@ -117,13 +170,26 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       classList={{ 'is-selected': props.selected, 'is-resizing': dragPct() !== null }}
       data-align={align()}
       data-frame={frame()}
+      /*
+       * Whether anything is actually written under the picture. A polaroid's
+       * white foot is reserved with padding when it is bare and given to the
+       * caption's own flow when it is not — see media.css; a caption that can
+       * wrap to two lines cannot be parked absolutely over the picture.
+       */
+      data-captioned={caption().length > 0 ? '' : undefined}
       style={{
         width: effectivePct() === null ? undefined : `${effectivePct()}%`,
         'flex-basis': effectivePct() === null ? undefined : `${effectivePct()}%`,
       }}
     >
       <figure class="nb-image-figure" contenteditable={false}>
-        <img class="nb-image-img" src={src()} alt={alt()} draggable={false} />
+        <img
+          class="nb-image-img"
+          src={src()}
+          alt={alt()}
+          draggable={false}
+          ref={observeWidth}
+        />
 
         <Show when={props.selected}>
           <div class="nb-image-controls">
@@ -158,14 +224,24 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
 
         <Show when={props.selected || caption().length > 0}>
           <figcaption class="nb-image-captionbox">
-            <input
+            <textarea
               class="nb-image-caption"
-              type="text"
+              rows={1}
               placeholder="Add a caption…"
               value={caption()}
+              ref={(el: HTMLTextAreaElement) => {
+                captionEl = el;
+              }}
+              onInput={(event) => fitCaption(event.currentTarget)}
               onKeyDown={(event) => {
                 event.stopPropagation();
+                /*
+                 * Enter still commits and leaves, exactly as it did when this
+                 * was an input. A caption wraps by itself; a newline typed
+                 * into one would be a line break the attribute cannot hold.
+                 */
                 if (event.key === 'Enter') {
+                  event.preventDefault();
                   commitCaption(event.currentTarget.value);
                   event.currentTarget.blur();
                 }

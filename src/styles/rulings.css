@@ -53,7 +53,20 @@
 }
 
 .nb-page[data-style] {
-  --rule: var(--page-line-height);
+  /* The reader's stored pitch, SCALED by the reading type — editor.css derives
+     it on `.nb-page` and says why at length. The rules are printed from this
+     element, which sits outside the editor the scaled pitch is handed down to,
+     so this is the one place that has to name the derived property itself.
+     Reading the reader's stored pitch raw would print the paper at the
+     un-resized spacing while the words on it were drawn at the resized one, and
+     the writing would sit between the lines rather than on them. The fallback
+     is that raw pitch, for a `.nb-page` built without editor.css in front of
+     it — and it is on the same line as this declaration deliberately, because
+     tests/rulings.test.ts reads the stored pitch's name anywhere else in this
+     file as a pattern that hard-coded the page's scale into a thumbnail.
+     All twenty-seven patterns below are expressed in `--rule`, so all
+     twenty-seven follow from this one line. */
+  --rule: var(--page-rule-pitch, var(--page-line-height));
   /* Negative, so the margin rule lands in the 40px drag-handle lane rather than
      through the first letter of every line. `background-origin: content-box`
      (editor.css) puts x=0 at the text edge; `background-clip` is still the

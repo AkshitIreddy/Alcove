@@ -9,6 +9,9 @@
  * - Each block gets an estimated line cost; when a page's total would blow
  *   past the budget, the page is cut *before* the block (capacity split) —
  *   so headingless documents still split into book-sized pages.
+ * - A page's total is its blocks PLUS its foot: the strip of notes any
+ *   footnotes on it will stand in (`footnoteRailLines`). That is not a block
+ *   cost and it is not calibrated with them — see the long comment there.
  *
  * ## The costs below are MEASURED, not guessed
  *
@@ -32,6 +35,12 @@
  *   probe-split-fill.mjs     a long import through the real create path,
  *                            asking the only question that matters: did every
  *                            page the splitter made fit the leaf it landed on.
+ *
+ * Two more produced the foot-of-the-page numbers, and belong to that same
+ * rule — `probe-footnote-capacity.mjs` (what a rail reserves, and the same
+ * authored page with and without its note) and `probe-footnote-fit.mjs` (how
+ * many blocks the splitter put on page one against how many the app was still
+ * holding there once it had settled).
  *
  * `tests/split-calibration.test.ts` writes the readings down and checks the
  * estimator against them. Against the thirty-two seeded pages it is out by 0.7
@@ -195,11 +204,17 @@ const CONTAINER: Record<string, ContainerCost> = {
   marginalia: { chrome: 0.6, min: 1.6, chars: 60, line: 1, width: 0.91 },
   'pressed-flower': { chrome: 2.4, min: 6.0, chars: 45, line: 1, width: 0.77 },
   'ticket-stub': { chrome: 1.8, min: 3.5, chars: 45, line: 1, width: 0.82 },
-  // 27, where the canvas measurement of the postcard's column said 30: this
+  // 24, where the canvas measurement of the postcard's column said 26: this
   // is the one entry taken from the line COUNT (287 characters wrapped to
-  // eleven lines inside one) rather than from the width, because a postcard
+  // twelve lines inside one) rather than from the width, because a postcard
   // sets its address side with enough inline padding that the two disagree.
-  postcard: { chrome: 2.1, min: 6.3, chars: 27, line: 1, width: 0.5 },
+  //
+  // Was 27/eleven lines. The card's message column lost 33px when its reserve
+  // was corrected to clear the printed divider instead of running 16px past it
+  // (styles/effects.css, 6.16), and a narrower column is more lines for the
+  // same words: re-measured with `PART=containers scripts/probe-block-heights`
+  // in the same 1600×1000 window the rest of this table was read in.
+  postcard: { chrome: 2.1, min: 6.3, chars: 24, line: 1, width: 0.5 },
   ledger: { chrome: 2.3, min: 3.3, chars: 68, line: 1, width: 0.94 },
   'wax-seal': { chrome: 1.6, min: 4.8, chars: 46, line: 1, width: 0.78 },
   'map-pin': { chrome: 1.8, min: 2.9, chars: 65, line: 1, width: 0.9 },
@@ -252,18 +267,153 @@ export function inlineText(content: readonly Inline[]): string {
  */
 const CODE_WIDTH = 1.85;
 
-/** Characters of a run of inline content, weighted by how wide they set. */
+/**
+ * Characters of a run of inline content, weighted by how wide they set.
+ *
+ * A FOOTNOTE IS ONE CHARACTER on the line, whatever is written in it. The note
+ * is drawn at the foot of the page and the line only carries the raised number
+ * that points at it (`.nb-prose .nb-footnote-ref`, a 13px digit) — so a note
+ * of forty words was charging its paragraph forty words of wrap that nothing
+ * on that line ever sets. Where the note's height IS charged is
+ * `footnoteRailLines` below, against the strip it is actually drawn in.
+ */
 function textWeight(content: readonly Inline[]): number {
   let total = 0;
   for (const node of content) {
     if (node.kind === 'code') total += node.text.length * CODE_WIDTH;
     else if (node.kind === 'text') total += node.text.length;
-    else if (node.kind === 'math' || node.kind === 'footnote') {
-      total += node.text.length;
-    } else if (node.kind === 'pageref') total += node.label.length;
+    else if (node.kind === 'math') total += node.text.length;
+    else if (node.kind === 'footnote') total += 1;
+    else if (node.kind === 'pageref') total += node.label.length;
     else total += textWeight(node.children);
   }
   return total;
+}
+
+// ---------------------------------------------------------------------------
+// The foot of the page — what the footnote rail takes out of the leaf
+// ---------------------------------------------------------------------------
+
+/**
+ * A page with footnotes is SHORTER THAN A PAGE WITHOUT THEM, and this is where
+ * the estimator learns it.
+ *
+ * Everything else in this file costs a block. The rail is not a block: it is a
+ * strip that `src/editor/nodes/footnote.ts` stands at the foot of the leaf and
+ * pays for by adding its own measured height into the prose's padding-bottom,
+ * which is the one quantity the overflow drain re-reads on every pass. The
+ * drain is therefore always right about it; the SPLITTER never knew it existed,
+ * and the splitter is what decides how much goes on a page in the first place.
+ *
+ * What that costs, measured with `scripts/probe-footnote-capacity.mjs`: the
+ * same authored page, once with its footnote and once with the marker deleted,
+ * built through `createBookFromScript` and opened at 1360x850. Without the note
+ * all six blocks stood on the leaf. With it the page reserved 41px, and the
+ * last block — an index card — was evicted by the drain the first time the page
+ * was looked at. One marker, one block off the end of the page.
+ *
+ * The numbers here are read off the same probe:
+ *
+ *  - the rail reserves `18 + 23n` pixels for n note LINES (8px of padding above
+ *    the foot-rule, 23px a line, and 10px of slack the rail adds so the last
+ *    block never touches it). Six notes measured 156px, which is that formula
+ *    exactly. Over a 32px page line that is 0.56 of a line of chrome and 0.72
+ *    of a line each.
+ *  - a note wraps at 82 characters: 454px of note column at 5.55px a character,
+ *    Patrick Hand at 15px. Wider than the page's 72 because the rail runs the
+ *    full width of the leaf — it has neither the prose's 40px drag-handle lane
+ *    nor its right padding — and is set five points smaller.
+ *
+ * Charged, like everything else here, in the direction that hurts less: a note
+ * always costs at least one line even when it is empty, because an empty note
+ * still draws its placeholder and still stands the rail up.
+ */
+const FOOTNOTE_RAIL_CHROME = 0.56;
+const FOOTNOTE_NOTE_LINE = 0.72;
+const FOOTNOTE_NOTE_CHARS = 82;
+
+/** Every footnote's note text in a run of inline content, in reading order. */
+function inlineNotes(content: readonly Inline[], out: string[]): void {
+  for (const node of content) {
+    if (node.kind === 'footnote') out.push(node.text);
+    else if (
+      node.kind !== 'text' &&
+      node.kind !== 'code' &&
+      node.kind !== 'math' &&
+      node.kind !== 'pageref'
+    ) {
+      inlineNotes(node.children, out);
+    }
+  }
+}
+
+function listNotes(items: readonly ListItem[], out: string[]): void {
+  for (const item of items) {
+    inlineNotes(item.content, out);
+    listNotes(item.children, out);
+  }
+}
+
+/**
+ * Every note one block carries, however deeply it is buried.
+ *
+ * It reaches into containers, list items and table cells for the same reason
+ * `collectFootnotes` walks the whole document with `descendants`: a note
+ * inside a toggle or a column is still a note on this page, and still stands
+ * the rail up.
+ */
+function blockNotes(block: Block, out: string[]): void {
+  switch (block.kind) {
+    case 'heading':
+    case 'paragraph':
+    case 'quote':
+      inlineNotes(block.content, out);
+      return;
+    case 'list':
+    case 'taskList':
+      listNotes(block.items, out);
+      return;
+    case 'table':
+      if (block.header !== null) {
+        for (const cell of block.header.cells) inlineNotes(cell, out);
+      }
+      for (const row of block.rows) {
+        for (const cell of row.cells) inlineNotes(cell, out);
+      }
+      return;
+    case 'container':
+      for (const child of block.children) blockNotes(child, out);
+      return;
+    default:
+      // A divider, a picture, a code fence, a diagram and a fetch card have no
+      // inline content of their own, so none of them can carry a note.
+      return;
+  }
+}
+
+/** What a run of note texts costs as a rail, in page lines. */
+function railLines(notes: readonly string[]): number {
+  if (notes.length === 0) return 0;
+  let lines = 0;
+  for (const note of notes) {
+    lines += Math.max(1, Math.ceil(note.trim().length / FOOTNOTE_NOTE_CHARS));
+  }
+  return FOOTNOTE_RAIL_CHROME + FOOTNOTE_NOTE_LINE * lines;
+}
+
+/**
+ * What the footnotes on a run of blocks take out of the leaf, in page lines.
+ *
+ * Kept out of `blockLineCost` and `pageLineCost` deliberately: those two model
+ * what a block DRAWS, they are calibrated against measured block heights in
+ * `tests/split-calibration.test.ts`, and the rail is not a block's height. It
+ * is page furniture, like a margin — a page-level term, and the splitter adds
+ * it to the page-level total.
+ */
+export function footnoteRailLines(blocks: readonly Block[]): number {
+  const notes: string[] = [];
+  for (const block of blocks) blockNotes(block, notes);
+  return railLines(notes);
 }
 
 /** Rendered lines of a run of inline content, in page lines. */
@@ -538,7 +688,15 @@ export function blockLineCost(block: Block): number {
   return blockLines(block, PAGE_FRAME);
 }
 
-/** What a run of blocks costs on one leaf. */
+/**
+ * What a run of blocks DRAWS on one leaf.
+ *
+ * Blocks only. The foot of the page — the footnote rail — is
+ * `footnoteRailLines`, and it is deliberately not added in here: this number is
+ * checked against measured block heights in `tests/split-calibration.test.ts`,
+ * and folding page furniture into it would make that comparison compare two
+ * different things. Anything asking "does this fit a leaf" wants both.
+ */
 export function pageLineCost(blocks: readonly Block[]): number {
   let total = 0;
   for (const block of blocks) total += blockLineCost(block);
@@ -566,12 +724,16 @@ export function splitBlocksIntoPages(
   const pages: Block[][] = [];
   let current: Block[] = [];
   let currentLines = 0;
+  /* The notes the page in hand is carrying, so the foot can be priced without
+     re-walking every block on it for each new one. */
+  let currentNotes: string[] = [];
 
   const flush = (): void => {
     if (current.length > 0) {
       pages.push(current);
       current = [];
       currentLines = 0;
+      currentNotes = [];
     }
   };
 
@@ -580,10 +742,20 @@ export function splitBlocksIntoPages(
     if (splitOnH1 && isH1) flush();
 
     const cost = blockLineCost(block);
-    if (current.length > 0 && currentLines + cost > maxLines) flush();
+    // The foot of the page is charged against the WHOLE page, not against the
+    // block that happens to carry the marker: a note anywhere on the leaf
+    // stands the same rail up, and a second note on the same page costs one
+    // more line rather than another rail. So the test is the page as it would
+    // be with this block on it — blocks, plus the rail those blocks' notes
+    // would need.
+    const notes: string[] = [];
+    blockNotes(block, notes);
+    const foot = railLines([...currentNotes, ...notes]);
+    if (current.length > 0 && currentLines + cost + foot > maxLines) flush();
 
     current.push(block);
     currentLines += cost;
+    currentNotes = [...currentNotes, ...notes];
   }
   flush();
 

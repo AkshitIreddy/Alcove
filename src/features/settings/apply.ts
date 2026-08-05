@@ -9,6 +9,8 @@
  *  - `data-theme` / `data-ink` attributes on <html> (settings.css maps them)
  *  - `--motion-scale` (folded with the OS reduced-motion preference — see
  *    `effectiveMotionScale`), `--font-body`, `--text-body` inline vars on <html>
+ *  - `--page-text-size` / `--page-text-scale`: the PAGE's reading type and the
+ *    ratio the rest of the leaf's px metrics follow (see `PAGE_TEXT_LEAD`)
  *  - `nb-minimalist` / `nb-no-doodles` root classes (decoration hooks)
  *  - `data-cursor-set` plus the fourteen `--nb-cur-*` vars (styles/cursors.css
  *    reads them; see ./cursorSkin.ts for the half that cannot be a pure write)
@@ -104,6 +106,46 @@ export const HANDWRITING_FONT_STACKS: Record<string, string> = Object.fromEntrie
 /** Slider bounds for the body font size (px). Applied values are clamped. */
 export const BODY_FONT_MIN = 15;
 export const BODY_FONT_MAX = 21;
+
+/**
+ * The page's reading type is drawn two pixels above the app's chrome type.
+ *
+ * The "body size" row says *reading type on every page*, and for a long time it
+ * moved everything EXCEPT that: `--text-body` sizes the shell (global.css, the
+ * search sheet, the transfer panel, the tour) while `.nb-prose` carried a
+ * hardcoded 20px, so the one surface the hint names was the one surface the
+ * slider could not reach.
+ *
+ * Wiring it up is not a rename, because the two numbers were never the same
+ * number. The shell has always been drawn at the shipped 18 and the page at 20:
+ * chrome is GLANCED at and a page is READ at arm's length, and two pixels is
+ * the difference that has been on the screen since the first spread. So the
+ * slider moves the whole relationship rather than collapsing it — the shipped
+ * 18 gives back exactly the 20px page this app has always drawn, which is what
+ * makes this a fix a reader can only notice by using it. The page's range is
+ * therefore 17–23px, and the bottom of it is comfortably clear of the 13px
+ * handwriting floor (CLAUDE.md).
+ */
+export const PAGE_TEXT_LEAD = 2;
+
+/**
+ * The page size the rest of the page was measured against — the old hardcode.
+ *
+ * Everything else on a leaf that is expressed in px rather than em is a metric
+ * of THIS size: the rule pitch, the lead that puts a heading's baseline on its
+ * rule, the heading scale. Publishing the ratio alongside the size is what lets
+ * those follow the type without any of them restating the arithmetic, and it is
+ * why the page has one scale rather than a second slider per part.
+ */
+export const PAGE_TEXT_BASE = 20;
+
+/** The page's reading type, in px, for a given settings value. */
+export function pageTextSize(bodyFontSize: number): number {
+  return (
+    clamp(Math.round(bodyFontSize), BODY_FONT_MIN, BODY_FONT_MAX) +
+    PAGE_TEXT_LEAD
+  );
+}
 
 /** Root class that hides decorations app-wide (features opt in via CSS). */
 export const MINIMALIST_CLASS = 'nb-minimalist';
@@ -284,6 +326,21 @@ export function applySettingsTo(
     '--text-body',
     `${clamp(Math.round(s.bodyFontSize), BODY_FONT_MIN, BODY_FONT_MAX)}px`,
   );
+
+  // …and the same slider aimed at the page, which is what its hint promises.
+  // See PAGE_TEXT_LEAD for why this is not simply `--text-body` under another
+  // name, and PAGE_TEXT_BASE for why the ratio ships next to the size.
+  //
+  // The RATIO is the load-bearing half. A leaf is ruled paper: shrink the type
+  // without closing up the rules and the writing floats off the lines it is
+  // supposed to sit on, and — worse for the reason this row exists at all —
+  // the page holds exactly as many lines as it did before, so making the type
+  // smaller fits not one extra word. styles/editor.css multiplies the rule
+  // pitch by this, once, on `.nb-page`; everything that rides the grid
+  // (headings, tape, lettering, the task box) reads the pitch and follows.
+  const pageText = pageTextSize(s.bodyFontSize);
+  root.style.setProperty('--page-text-size', `${pageText}px`);
+  root.style.setProperty('--page-text-scale', String(pageText / PAGE_TEXT_BASE));
 
   // Decoration hooks.
   root.classList.toggle(MINIMALIST_CLASS, s.minimalistMode);

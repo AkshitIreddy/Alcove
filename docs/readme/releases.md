@@ -138,7 +138,7 @@ reports were deleted outright — which takes a fresh checkout from 448 MB to
 about 64. It does not shrink a clone: git still holds every old copy, and
 rewriting the history of a public repository is a separate decision.
 
-## 0.3.0 — the build before this one
+## 0.3.0 — the one before it
 
 **Pages behave.** Three defects in the page-turn machinery turned out to be one
 bug and two of its symptoms. A node view read `editor.view.dom` on a staged
@@ -188,11 +188,10 @@ constant the timer uses, rather than a second copy of the number.
 to 82% — and the release page you are reading now leads with the download table
 instead of burying it under the changelog.
 
-## 0.2.0 — the published build
+## 0.2.0 — the first one on the Releases page
 
-The version on the download button, and the first one built for **Windows, macOS
-and Linux from a single tag** — one release, three platforms, and a
-`SHA256SUMS.txt` line for every file in it.
+The first build made for **Windows, macOS and Linux from a single tag** — one
+release, three platforms, and a `SHA256SUMS.txt` line for every file in it.
 
 **Installing it asks less of you.** The Windows setup now carries Microsoft's
 WebView2 bootstrapper inside itself instead of fetching one, so an ordinary

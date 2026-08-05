@@ -52,6 +52,25 @@
   text-align: center;
 }
 
+/*
+ * The beat between the shelf going and the spread arriving.
+ *
+ * `BookView` is lazy AND its session is a resource, so Solid suspends the whole
+ * subtree — rail included — while either is pending. Without this the reader
+ * got a bare window for a moment; with it they get the paper the spread is
+ * about to land on, which reads as the book opening. Full-bleed and centred,
+ * because there is nothing else on screen to sit beside.
+ */
+.nb-book-opening {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--paper-cream);
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-label);
+}
+
 /* ----------------------------------------------------------------------------
    The paper sheet — soft warm shadow outside, deckled top edge on the paper
    itself (clip-path on the inner layer so the shadow is not clipped away)

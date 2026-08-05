@@ -3,24 +3,41 @@
 </p>
 
 <!--
+  The demo is generated, not recorded by hand: `node shots-now/demo-gif.mjs`
+  drives the real app with gifsmith and emits both a .webp and a .gif. It is a
+  forward loop with no crossfade — the scene returns to the shelf it started on
+  and the trim cuts on that seam, so the last frame IS the first frame.
+
+  The WEBP is the one shown, and the .gif is gitignored. They are the same 38
+  seconds; the webp is 4MB against the gif's 7, and GitHub renders animated webp
+  inline just the same. Committing both would put 11MB into history on every
+  re-render, on a repo people are meant to clone.
+-->
+<p align="center">
+  <img src="docs/readme/img/demo.webp" alt="A loop through Alcove: a full bookcase against gold-trellised wallpaper; the library studio opens and the whole room is repainted three times over — a gilt salon, a card room, a carnival — then the carpentry, the wallpaper and the colours are each changed on their own before the first room is put back; a book is pulled off the shelf, swings open into a two-page spread, and the pages are turned one at a time with a panel opened between each — page style, the catalogue, the table of contents, the book studio, in and out — before the way back returns to the shelf it began on." width="880">
+</p>
+
+<p align="center">
+  <sub>Every frame is the real app. <a href="shots-now/demo-gif.mjs">How it is made</a> · built with <a href="https://www.npmjs.com/package/gifsmith">gifsmith</a></sub>
+</p>
+
+<!--
   The badge strip below is GENERATED — `npm run readme:build` composes it from
   the version in package.json, so a release bump moves the badge, the download
   filenames and the release table together. Edit scripts/gen-readme.mjs, not
   this block.
 
-  Two badges are deliberately static images rather than live shields endpoints:
-  the repository is private, so shields cannot read its releases or its actions
-  and would render "inaccessible" instead of a fact. When it goes public, swap
-  the first two in renderBadges() for:
-
-  https://img.shields.io/github/v/release/AkshitIreddy/alcove
-  https://img.shields.io/github/actions/workflow/status/AkshitIreddy/alcove/release.yml
+  The first two are LIVE shields endpoints now that the repository is public:
+  the real latest release and the real build status. While it was private they
+  had to be static images, because shields cannot read a private repo and would
+  have rendered "inaccessible" where a fact should be.
 -->
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.2.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.2.0"></a>
-  <img src="https://img.shields.io/badge/version-0.2.0-b8863b?style=flat-square&labelColor=4f3120" alt="Version 0.2.0">
+  <a href="https://github.com/AkshitIreddy/alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.3.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.3.0"></a>
+  <a href="https://github.com/AkshitIreddy/alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
+  <a href="https://github.com/AkshitIreddy/alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
   <img src="https://img.shields.io/badge/offline-no%20account%20%C2%B7%20no%20cloud-5f7d8c?style=flat-square&labelColor=4f3120" alt="Offline: no account, no cloud">
   <img src="https://img.shields.io/badge/licence-MIT-6f6a86?style=flat-square&labelColor=4f3120" alt="Licence: MIT">
@@ -222,13 +239,13 @@ bring a browser along with it, and there is no account to make.
 
 | Platform | What to download | First launch |
 | --- | --- | --- |
-| **Windows 10 / 11** · x64 | [`Alcove_0.2.0_x64-setup.exe`](https://github.com/AkshitIreddy/alcove/releases/latest) · about 16 MB | Double-click. It installs for **the current user**, so Windows never asks for an administrator. SmartScreen warns once — *More info* → *Run anyway*. |
-| **macOS 11+** · Apple silicon and Intel | [`Alcove_0.2.0_universal.dmg`](https://github.com/AkshitIreddy/alcove/releases/latest) | One universal disk image for both chips, so there is nothing to choose between. Unsigned, so the first open is right-click → *Open* rather than a double-click. |
+| **Windows 10 / 11** · x64 | [`Alcove_0.3.0_x64-setup.exe`](https://github.com/AkshitIreddy/alcove/releases/latest) · about 16 MB | Double-click. It installs for **the current user**, so Windows never asks for an administrator. SmartScreen warns once — *More info* → *Run anyway*. |
+| **macOS 11+** · Apple silicon and Intel | [`Alcove_0.3.0_universal.dmg`](https://github.com/AkshitIreddy/alcove/releases/latest) | One universal disk image for both chips, so there is nothing to choose between. Unsigned, so the first open is right-click → *Open* rather than a double-click. |
 | **Linux** · x64 | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/alcove/releases/latest) | Built on Ubuntu 22.04, so it runs on 22.04 and anything newer. The AppImage needs no install — mark it executable and run it. |
 
-All three are built from the same tag by `.github/workflows/release.yml` and attached to the GitHub Release with a `SHA256SUMS.txt` beside them. Windows also gets `Alcove_0.2.0_x64_en-US.msi`, the same app as an MSI, for anyone who deploys software with a policy rather than a double-click.
+All three are built from the same tag by `.github/workflows/release.yml` and attached to the GitHub Release with a `SHA256SUMS.txt` beside them. Windows also gets `Alcove_0.3.0_x64_en-US.msi`, the same app as an MSI, for anyone who deploys software with a policy rather than a double-click.
 
-There is a second Windows file, `Alcove_0.2.0_x64-setup-offline.exe`, and you almost certainly do not want it. Alcove draws itself in the Microsoft Edge WebView2 runtime, which is already on any current Windows — the normal installer fetches it in the rare case it is missing, and the offline one carries the whole runtime instead, which is why it is around 217 MB rather than 16. Take it only if the machine has no internet, or the normal installer failed while fetching.
+There is a second Windows file, `Alcove_0.3.0_x64-setup-offline.exe`, and you almost certainly do not want it. Alcove draws itself in the Microsoft Edge WebView2 runtime, which is already on any current Windows — the normal installer fetches it in the rare case it is missing, and the offline one carries the whole runtime instead, which is why it is around 217 MB rather than 16. Take it only if the machine has no internet, or the normal installer failed while fetching.
 
 **Nothing is signed on any platform yet**, which is why the first-launch column says what it says, and why the checksums are there: the line for your file in `SHA256SUMS.txt` is how you check the download yourself rather than taking anybody's word for it.
 

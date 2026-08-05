@@ -46,6 +46,13 @@
  *
  *   npm run dev                                 (a dev server on :1420)
  *   node shots-now/readme-shots.mjs
+ *
+ * A DEV SERVER, not `vite preview` on a build. This script drives the app
+ * through `import('/src/state/app.ts')` in a few places, and those URLs exist
+ * only while Vite is serving source — against a production preview every one of
+ * them is "Failed to fetch dynamically imported module". (The demo GIF is the
+ * opposite case and IS recorded against a build: it photographs timing, and a
+ * dev server's on-demand module graph makes the app look slower than it ships.)
  *   node shots-now/readme-shots.mjs --only=hero,spread     one or two of them
  *   node shots-now/readme-shots.mjs --url=http://localhost:1431
  *

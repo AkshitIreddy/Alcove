@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.2.0"
+version = "0.3.0"
 description = "Alcove - a hand-drawn bookshelf for beautiful study notes"
 authors = ["Akshit"]
 edition = "2021"

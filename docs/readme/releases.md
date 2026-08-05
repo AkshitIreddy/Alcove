@@ -19,6 +19,58 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npx vitest run` recomputes, exactly as on the other three pages.
 
+## 0.3.0 — the current build
+
+**Pages behave.** Three defects in the page-turn machinery turned out to be one
+bug and two of its symptoms. A node view read `editor.view.dom` on a staged
+editor — which THROWS while the view is being constructed — and a bare `catch`
+swallowed it, so **every offscreen page capture had been failing silently**.
+That is what drew a page you had never seen as blank white paper: the back of
+the turning sheet and the page revealed under the curl both had no texture, and
+a null texture draws bare paper. With the capture path working again, the
+landing flicker went too — the rasteriser had been editing the two leaves you
+were looking at, and now stages a copy off-screen instead. And a turn that finds
+no bitmap falls back to the rigid fold, whose front face is the live leaf, so
+there is no way left to land on a blank sheet.
+
+**Two blank pages always stand ready** at the end of a book, and the spread is
+completed as well — an odd page count used to leave the last spread with a page
+on the left and bare cream on the right, which was the blank being complained
+about. Bounded by the last page you actually wrote on, so a held arrow key
+cannot grow a book without end.
+
+**Dragging works on Windows.** `dragDropEnabled` was never set in the Tauri
+config, so it took the default of `true` — whose own documentation says
+disabling it is *required* for HTML5 drag and drop on Windows. Every test
+passed, because headless Chromium is not Tauri.
+
+**Panels do not cost frames any more.** Two causes, both found by blaming a
+profile on the nearest line in `src/` rather than on the native function it
+bottoms out in. `fitSpread` resolved one custom property through
+`getComputedStyle(document.documentElement)` on every frame of the panel slide —
+227ms per open, because that recomputes every property on `<html>` first. And a
+studio design change missed every cached preview tile at once and redrew them
+all in one frame: 1337ms. Studio open is 215ms → 70ms, a design change 124ms →
+0ms of blocked main thread.
+
+**Writing.** Page style went from 4 rulings to 27, each with one stylesheet
+definition read by both the paper and the panel thumbnail, so a thumbnail cannot
+advertise something the page will not draw. The code block's language dropdown
+is ours now — grouped, type-to-filter, full keyboard — instead of a native
+`<select>` that ran off the page. Any selection can be set in any of the 27
+handwriting faces, with a floor that keeps a hand legible. Settings has a search
+box that reveals collapsed groups.
+
+**Onboarding.** A "deep" answer to the taste questions used to darken the whole
+interface; it dresses the ROOM now and leaves the app alone. The tour card
+steps out of the way when a panel opens, and a moss dial under the task shows
+how long a step will wait before advancing on its own — read from the same
+constant the timer uses, rather than a second copy of the number.
+
+**The Welcome book is longer and fuller** — 16 pages to 32, median leaf fill 51%
+to 82% — and the release page you are reading now leads with the download table
+instead of burying it under the changelog.
+
 ## 0.2.0 — the published build
 
 The version on the download button, and the first one built for **Windows, macOS

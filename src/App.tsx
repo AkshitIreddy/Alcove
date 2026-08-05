@@ -1,6 +1,7 @@
 import {
   For,
   Show,
+  Suspense,
   createSignal,
   lazy,
   onCleanup,
@@ -237,7 +238,34 @@ export default function App(): JSX.Element {
   return (
     <>
       <Show when={appState.viewState() === "book"} fallback={<ShelfView />}>
-        <BookView />
+        {/*
+          A SUSPENSE BOUNDARY, and it is not decoration.
+
+          Two things here suspend: `BookView` is `lazy()`, and inside it the
+          book's session is a `createResource` reading SQLite. With no boundary,
+          Solid hides the WHOLE subtree while either is pending — including the
+          icon rail and BookView's own "opening the book…" fallback, which is
+          rendered outside the session `<Show>` precisely so it would show.
+
+          The result was a genuinely empty screen between the shelf unmounting
+          and the spread arriving: cream, the settings seal, nothing else. It is
+          brief, and it was invisible in every test because tests wait for
+          `.nb-prose` rather than watching the gap — it turned up as two blank
+          frames in the middle of the README's demo GIF, in a production build,
+          which is where a reader meets it too.
+
+          The fallback is the paper the spread is about to land on, so the beat
+          reads as the book opening rather than as the app losing its place.
+        */}
+        <Suspense
+          fallback={
+            <div class="nb-book-opening" aria-live="polite">
+              <p class="font-label">opening the book…</p>
+            </div>
+          }
+        >
+          <BookView />
+        </Suspense>
       </Show>
       <Show when={showDevChrome}>
         <DevViewSwitcher />

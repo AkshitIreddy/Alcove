@@ -310,7 +310,7 @@ under each item (grammar tidied, nothing else), then the task as understood.
       Mark, title and tagline centred above the table; the recommended row
       marked rather than merely listed first (five rows with no answer is a
       decision); SmartScreen and Gatekeeper spelled out instead of alluded to.
-- [ ] **A looping GIF demo, built with the reader's own `gifsmith`.**
+- [x] **A looping GIF demo, built with the reader's own `gifsmith`.**
       > "Use the gifsmith package — I made it — to create a GIF demo of the app.
       > You may start with showing the bookshelf (pick a fancy, grand-looking
       > preset for wallpaper, books and shelves, and fill up the shelf with some
@@ -331,6 +331,36 @@ under each item (grammar tidied, nothing else), then the task as understood.
       `C:\Users\akshi\Desktop\Code Palace\gifsmith` ·
       https://www.npmjs.com/package/gifsmith
 
+
+      DONE — `shots-now/demo-gif.mjs`, 38 seconds, a true forward loop (seam MSE
+      0.068, no crossfade): a full bookcase, the studio repainting the room three
+      times and then the carpentry, wallpaper and colours on their own axes, the
+      first room put back, a book pulled off the shelf and opened, every page
+      turned with a different panel opened between them, and the way back to the
+      shelf it started on.
+
+      **The loop shaped the script.** A room preset sets colour, carpentry and
+      paper together, so the studio tour ENDS on the room it began with — that
+      one press undoes the three individual changes above it and is what lets the
+      scene come home.
+
+      **Two bugs found in gifsmith, both fixed there and published as 0.2.3.**
+      (a) `findAnchorLoop` took the globally-lowest seam MSE, which is wrong for
+      the case the strategy exists for: a demo holds still on its neutral pose
+      after `loopAnchor()`, so every pair of frames inside that hold matches and
+      the search returns the SHORTEST qualifying loop. It handed back 4.29
+      seconds of a motionless bookshelf out of a 50-second walkthrough. It now
+      prefers the LONGEST span among equally-invisible seams. (b) `minCycleSeconds`
+      was threaded all the way to the search and nothing could set it, because
+      `RenderConfig.loop` was a bare string; `loop` now also takes
+      `{ strategy, minCycleSeconds }`.
+
+      **And one in this app.** The demo is recorded against a production build,
+      and it showed two frames of a completely empty window when a book opens.
+      `BookView` is `lazy()` and its session is a `createResource` — both suspend
+      — and with no boundary Solid hides the entire subtree, including the rail
+      and BookView's own "opening the book…" fallback. There is a `<Suspense>`
+      there now.
 ### Shipping 0.3
 
 - [ ] **Make the repo public, then release 0.3.**

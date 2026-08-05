@@ -64,6 +64,15 @@ const APP_URL = `${URL_BASE}/?fx=force&dev=0`;
 const OUT_DIR = 'docs/readme/img';
 mkdirSync(OUT_DIR, { recursive: true });
 
+/*
+ * The contact sheet is a QA artefact, NOT one of the README's pictures, so it
+ * goes to qa/ — `check-readme.mjs` counts every PNG in `docs/readme/img` as a
+ * screenshot and demands a page that shows it, and dropping one there quietly
+ * broke the shot count.
+ */
+const QA_DIR = 'qa/demo';
+mkdirSync(QA_DIR, { recursive: true });
+
 /** The books on the shelf. Plausible titles, not lorem — this is a portrait. */
 const FLOOR_1 = [
   'Sea Glass', 'Sourdough', 'Field Notes', 'Old Letters', 'Mushrooms',
@@ -156,7 +165,7 @@ const tl = timeline((t) => {
     }
     await new Promise((r) => setTimeout(r, 3000));
   });
-  t.hold(1.8);
+  t.hold(1.2);
 
   /*
    * THE SEAM. Everything above is setup the reader never sees — the trim
@@ -165,13 +174,13 @@ const tl = timeline((t) => {
    */
   t.loopAnchor();
   t.cue('shelf');
-  t.hold(1.4);
+  t.hold(0.9);
 
   /* ---------------------------- 2. the studio ---------------------------- */
 
   t.click('[aria-label="Library studio"]', { via: 'cursor' });
   t.waitFor('.nb-library-studio');
-  t.hold(1.6);
+  t.hold(1.0);
   t.cue('studio');
 
   for (const step of STUDIO_TOUR) {
@@ -183,16 +192,16 @@ const tl = timeline((t) => {
       await page.evaluate((sel) => {
         document.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }, selector);
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 500));
     });
     t.click(selector, { via: 'cursor' });
     // Long enough to watch the case and the wall actually repaint, which is
     // the whole point of this section.
-    t.hold(1.7);
+    t.hold(1.15);
   }
 
   t.click('[aria-label="Close Library studio"]', { via: 'cursor' });
-  t.hold(1.2);
+  t.hold(0.8);
 
   /* -------------------------- 3. open a book ----------------------------- */
 
@@ -220,7 +229,7 @@ const tl = timeline((t) => {
   });
   t.waitFor('.pulled-book');
   // Let the hinge, the arc and the overshoot finish before touching it.
-  t.hold(1.5);
+  t.hold(1.1);
   /*
    * A REAL pointer, which `via: 'cursor'` gives. The cover listens for pointer
    * events, so a synthetic `element.click()` does nothing at all — checked,
@@ -228,7 +237,7 @@ const tl = timeline((t) => {
    */
   t.click('.pulled-book', { via: 'cursor' });
   t.waitFor('.nb-prose');
-  t.hold(2.0);
+  t.hold(1.4);
   t.cue('book');
 
   /* ------------------ 4. turn pages, opening panels between --------------- */
@@ -256,22 +265,22 @@ const tl = timeline((t) => {
   const turn = () => {
     t.call(async (page) => {
       await page.keyboard.press('ArrowRight');
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1000));
     });
-    t.hold(1.1);
+    t.hold(0.75);
   };
 
   turn();
   for (const [name, selector] of PANELS) {
     t.click(`.nb-rail button[aria-label^="${name}"]`, { via: 'cursor' });
     t.waitFor(selector);
-    t.hold(1.5);
+    t.hold(1.05);
     t.call(async (page) => {
       const close = await page.$(`[aria-label^="Close ${name}"]`);
       if (close) await close.click();
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, 650));
     });
-    t.hold(0.5);
+    t.hold(0.35);
     turn();
   }
   turn();
@@ -293,7 +302,7 @@ const tl = timeline((t) => {
    * what gives the trimmer a matching frame to cut on; too short and the seam
    * lands mid-animation.
    */
-  t.hold(2.2);
+  t.hold(1.6);
 });
 
 const scene = {
@@ -309,8 +318,26 @@ const scene = {
   viewport: { width: 1360, height: 850 },
   props: [cursor(), bezel()],
   timeline: tl,
-  loop: 'anchor',
-  encode: { width: 900, fps: 14, speed: 1.25, colors: 128, targetMB: 6 },
+  /*
+   * A FLOOR ON THE LOOP, or the trim throws the tour away.
+   *
+   * The scene holds still on the shelf for a beat after `loopAnchor()` — that
+   * hold is what makes an artifact-free seam possible — but it also means every
+   * pair of frames inside it matches almost perfectly. gifsmith 0.2.2 answered
+   * with the shortest qualifying loop: anchor 45, end 105, seam MSE 0.0, and a
+   * 4.29-second clip of a bookshelf doing nothing. Fixed in gifsmith 0.2.3
+   * (equally-invisible seams now prefer the longest span); this floor says out
+   * loud what this particular demo needs, and costs nothing if the rule already
+   * gets it right.
+   */
+  loop: { strategy: 'anchor', minCycleSeconds: 30 },
+  /*
+   * Sized against the file, not against taste. The first full-length render
+   * came out at 79.6s and a 10.8MB GIF — a correct demo nobody would wait for.
+   * A product tour is mostly holds, so playback carries a lot of speed before
+   * anything reads as hurried; the rest comes off the frame budget.
+   */
+  encode: { width: 860, fps: 12, speed: 2.3, colors: 96, targetMB: 5 },
 };
 
 if (CHECK) {
@@ -320,7 +347,7 @@ if (CHECK) {
   // The shape varies by version, so take whichever field carries the base64
   // rather than assuming one — an object handed to Buffer.from throws.
   const b64 = typeof sheet === 'string' ? sheet : (sheet.gridBase64 ?? sheet.png ?? sheet.base64);
-  const file = `${OUT_DIR}/demo-contact.png`;
+  const file = `${QA_DIR}/demo-contact.png`;
   if (typeof b64 === 'string') {
     writeFileSync(file, Buffer.from(b64, 'base64'));
     console.log(`\ncontact sheet -> ${file}`);

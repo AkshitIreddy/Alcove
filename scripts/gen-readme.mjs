@@ -196,7 +196,18 @@ export function renderBadges(version = appVersion()) {
       `Alcove ${version}`,
       'c96f4a',
     )}" alt="Download Alcove ${version}"></a>`,
-    img('version', version, 'b8863b', `Version ${version}`),
+    /*
+     * LIVE shields, now that the repository is public.
+     *
+     * These two were static images with a comment above the generated block
+     * explaining why: shields.io cannot read a private repo's releases or its
+     * actions, and would have rendered "inaccessible" where a fact should be.
+     * That constraint is gone, and a badge that reports the real latest release
+     * and the real build status is worth more than one that repeats
+     * package.json back at itself.
+     */
+    `  <a href="${RELEASES}/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>`,
+    `  <a href="https://github.com/AkshitIreddy/alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>`,
     // Windows first because it is the platform this was built and used on, but
     // no longer ALONE: the release workflow builds a universal macOS .dmg and
     // Linux packages from the same tag, and a badge that said Windows only

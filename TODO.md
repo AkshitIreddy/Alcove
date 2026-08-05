@@ -449,6 +449,23 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### Shipping
 
+- [ ] **Re-capture all 23 README shots, once, after the app settles.** A run
+      against 0.4 died at the book-studio shot — `openRailPanel` waited 120s for
+      "Customize this book" on a dev server that three workflows were editing
+      underneath it. Seven shots had been rewritten by then, so the partial set
+      was REVERTED rather than left half-updated: the whole point of one capture
+      script is that the pictures cannot drift apart, and a set where seven
+      frames show a ruled first page and sixteen do not is exactly that drift.
+
+      `tests/readme.test.ts` currently fails on the shot manifest, correctly —
+      it records app 0.3.0 against a tree that says 0.4.0, and the freshness
+      gate is doing its job. Do NOT paper over it by editing the manifest; it
+      goes green when the shots are re-taken.
+
+      Re-run when nothing else is writing to `src/`, and check the rail button
+      failure was only that — the timeout may have been HMR mid-edit, or it may
+      be real.
+
 - [ ] **Re-render the demo ONE more time, last.** The shipped `demo.webp` was
       rendered before two changes that are visible in it: the Welcome book's
       first page became ruled paper, and the studio scroll moved from

@@ -39,3 +39,29 @@ qa/demo/
 # moment the answer is written down. 519 of them were tracked, 85MB, and a
 # `git add -A` during a busy session swept in 254 more.
 qa/tmp/
+
+# ---------------------------------------------------------------------------
+# QA and capture OUTPUT.
+#
+# `qa/` and `shots-now/` hold two different kinds of thing and only one of them
+# belongs in git: the SCRIPTS that drive the app (`shots-now/*.mjs`,
+# `scripts/probe-*.mjs`) are the work, and the PICTURES they emit are a run's
+# leftovers. 1384 of those pictures were tracked — 384 MB, and the whole
+# repository had reached 1.3 GB to clone.
+#
+# The three sets of pictures that are NOT leftovers stay tracked, because
+# something reads them back: `qa/baseline/**` is what `npm run visual` compares
+# against, `docs/readme/img/**` is what the README shows, and `assets/brand/**`
+# is the app's own mark.
+# ---------------------------------------------------------------------------
+qa/**/*.png
+qa/**/*.jpg
+qa/**/*.jpeg
+qa/**/*.webp
+qa/**/*.gif
+!qa/baseline/**
+shots-now/**/*.png
+shots-now/**/*.jpg
+shots-now/**/*.jpeg
+shots-now/**/*.webp
+shots-now/**/*.gif

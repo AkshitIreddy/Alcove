@@ -42,6 +42,32 @@
  *
  * Each of those is a paragraph of its own further down, next to the code.
  *
+ * ## A run that cannot finish leaves the previous set exactly as it found it
+ *
+ * The 0.4.0 recapture died two thirds of the way down this file: `openRailPanel`
+ * spent its full two minutes waiting for "Customize this book" on a dev server
+ * that three other workflows were saving files into, and Playwright threw. By
+ * then **seven pictures had already been written over the real ones**. Every one
+ * of those seven was a valid PNG of a working app and not one of them was wrong
+ * on its own — but the set as a whole was half 0.3.0 and half 0.4.0, which is
+ * the one state nothing here could see. The manifest is what `checkShots()`
+ * compares against the tree, and the manifest is written last, so it still
+ * described the old set; the only tell that anything had happened at all was a
+ * version string, and the repair was `git checkout` over files somebody first
+ * had to work out were bad.
+ *
+ * So the run is now atomic at the set level. Every shot is taken into a staging
+ * directory outside the repo, the manifest is written there too, and the whole
+ * lot is moved over `docs/readme/img/` in one pass at the very end — see
+ * {@link STAGING} and {@link commitShots}. A run that throws, times out or is
+ * killed touches nothing the README shows.
+ *
+ * And a step that fails is retried before the run gives up on it ({@link step}):
+ * a rail panel that will not open in 120s mid-HMR is a busy dev server far more
+ * often than it is a broken app, so the page is reloaded and that ONE shot is
+ * taken again, twice, with each retry printed. A slow run should be visible
+ * rather than mysterious.
+ *
  * ## Usage
  *
  *   npm run dev                                 (a dev server on :1420)
@@ -55,13 +81,29 @@
  * dev server's on-demand module graph makes the app look slower than it ships.)
  *   node shots-now/readme-shots.mjs --only=hero,spread     one or two of them
  *   node shots-now/readme-shots.mjs --url=http://localhost:1431
+ *   node shots-now/readme-shots.mjs --sabotage=studio      break it on purpose
  *
  * `--only` rewrites just those entries in the manifest and leaves the rest
  * alone, so a single re-take does not claim the others were taken with it.
+ *
+ * `--sabotage=<shot>` makes that one shot throw once it has been taken, which is
+ * how the paragraph above is checked rather than believed — see the note on the
+ * flag itself. *"A gate you have not watched fail is not a gate"*, and this one
+ * guards against a silent bad outcome, which is the worst kind.
  */
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -70,7 +112,6 @@ import {
   SHOTS_DIR,
   SHOTS_MANIFEST,
   appIdentity,
-  measureShot,
   readShotsManifest,
   shotFiles,
   sourceDigests,
@@ -114,8 +155,61 @@ const ONLY = opt('only', '')
   .filter(Boolean);
 const wanted = (name) => ONLY.length === 0 || ONLY.includes(name);
 
-const OUT = join(ROOT, SHOTS_DIR);
-mkdirSync(OUT, { recursive: true });
+/**
+ * The name of one shot that is to fail on purpose, or ''.
+ *
+ * Not a debug aid and not dead weight: the guarantee this file now makes — *a
+ * run that cannot finish leaves the committed pictures alone* — is a guarantee
+ * about the FAILURE path, and a failure path nobody has walked is a guess. The
+ * repo's own rule for this is `probe-studio-repaint.mjs --sabotage`: break the
+ * thing deliberately, watch the check go red, and only then believe it.
+ *
+ * The throw lands in {@link shot}, AFTER the screenshot has been written, so the
+ * staging directory holds a genuine half-set at the moment the run dies — which
+ * is the shape of the real accident. What has to be true afterwards: the run
+ * exits non-zero, `git status` shows `docs/readme/img/` untouched, and the
+ * half-set is somewhere obviously named as debris.
+ */
+const SABOTAGE = opt('sabotage', '');
+
+/* --------------------------- staging, and why ----------------------------- */
+
+/**
+ * Where the pictures live until every one of them has been taken.
+ *
+ * Outside the repo on purpose. Anywhere inside it and the half-set becomes
+ * something `git status` has to be read past — and `docs/readme/img/` itself is
+ * worse still, because `computeFacts()` counts every `.png` under that
+ * directory RECURSIVELY, so a staging folder tucked in there would inflate
+ * `readmeShots` and turn a capture run into a red README test.
+ *
+ * The directory is left behind when a run fails, and its name says what it is.
+ * That is deliberate too: the pictures a failed run did manage to take are the
+ * cheapest evidence of how far it got, and the alternative — deleting them — is
+ * how you end up rerunning five minutes of capture to find out what step 10 did.
+ */
+const STAGING = mkdtempSync(join(tmpdir(), 'readme-shots-'));
+
+/** `name.png` → its path in {@link STAGING}, for everything taken so far. */
+const staged = new Map();
+
+/** Flipped by {@link commitShots} once the set is really on disk. */
+let committed = false;
+
+/**
+ * Say so on the way out, however the run ended.
+ *
+ * The whole point of the staging directory is that a wrecked run is INVISIBLE
+ * in the repo afterwards, and something invisible needs saying out loud or the
+ * next person assumes the pictures moved.
+ */
+process.on('exit', () => {
+  if (committed) return;
+  console.log(
+    `\nNOTHING WAS COMMITTED — ${SHOTS_DIR} is byte for byte as this run found it.\n` +
+      `  ${staged.size} shot(s) were staged; they are in ${STAGING}`,
+  );
+});
 
 /** The app's window in the pictures. Wide enough that the rail, the spread and
  *  a pushed-aside panel all fit without the layout folding to its narrow mode. */
@@ -275,7 +369,33 @@ const browser = await chromium.launch({
 });
 
 /**
- * Shoot the whole viewport into `docs/readme/img/`.
+ * `{ bytes, sha256, width, height }` for a PNG at an absolute path.
+ *
+ * A near-copy of `measureShot()` in `scripts/check-readme.mjs`, and the
+ * duplication is the point rather than an oversight. That one reads
+ * `docs/readme/img/<file>`, which is exactly right for the CHECKER — it measures
+ * the picture the README actually shows — and exactly wrong here, where the
+ * picture has deliberately not got there yet. Called against a staged shot it
+ * would measure the PREVIOUS release's file and write that digest into the new
+ * manifest: a manifest that describes one set while the directory holds another
+ * is a worse lie than the one this file exists to stop telling.
+ */
+function measurePng(abs) {
+  const buf = readFileSync(abs);
+  // IHDR is the first chunk of every PNG: 8-byte signature, 4-byte length,
+  // 4-byte type, then width and height as big-endian uint32.
+  const png = buf.length > 24 && buf.readUInt32BE(12) === 0x49484452;
+  return {
+    bytes: buf.length,
+    sha256: createHash('sha256').update(buf).digest('hex').slice(0, 16),
+    width: png ? buf.readUInt32BE(16) : 0,
+    height: png ? buf.readUInt32BE(20) : 0,
+  };
+}
+
+/**
+ * Shoot the whole viewport into {@link STAGING} — never straight into
+ * `docs/readme/img/`, for the reason in this file's header.
  *
  * `animations: 'disabled'` everywhere EXCEPT the page-turn: the option finishes
  * every running animation at its end state, which for a flip is precisely the
@@ -287,17 +407,111 @@ async function shot(page, name, { freeze = true, park = true } = {}) {
   // the diagrams spread wearing its resize handles and a floating toolbar,
   // which is a picture of the app being edited rather than of the page.
   if (park) await page.mouse.move(6, VIEWPORT.height - 6);
+  const file = `${name}.png`;
+  const path = join(STAGING, file);
   await page.screenshot({
-    path: join(OUT, `${name}.png`),
+    path,
     animations: freeze ? 'disabled' : 'allow',
     caret: 'hide',
   });
-  const m = measureShot(`${name}.png`);
-  taken.push({ file: `${name}.png`, ...m, at: RUN_AT, commit: STAMP });
+  // Thrown here rather than at the top of the function so the staging directory
+  // holds a real, complete picture that never reaches the README — the shape of
+  // the accident being guarded against, not a cartoon of it.
+  if (SABOTAGE === name) {
+    throw new Error(`readme-shots: --sabotage=${name}, so this shot fails on purpose`);
+  }
+  staged.set(file, path);
+  const m = measurePng(path);
+  taken.push({ file, ...m, at: RUN_AT, commit: STAMP });
   console.log(`  ${name}.png  ${m.width}×${m.height}  ${(m.bytes / 1024).toFixed(0)} kB`);
 }
 
 const wait = (page, ms) => page.waitForTimeout(ms);
+
+/* ------------------------- one step, and its retries ---------------------- */
+
+/** How many goes a step gets before the run gives up on it. */
+const STEP_ATTEMPTS = 3;
+
+/** What each step cost and what it took — printed as the report at the end. */
+const timings = [];
+
+/**
+ * Put the app back to a known state WITHOUT touching the library.
+ *
+ * A plain reload, and emphatically not the boot at section 2: that one clears
+ * localStorage first, which is where the browser build keeps its SQLite stand-in
+ * (`src/data/db.ts` — "tables persist to localStorage, so a book created in the
+ * browser survives"). Booting that way mid-run would throw away the sixty books
+ * section 3 seeded and every picture after it would be of an empty case.
+ *
+ * What a reload does leave: no book open, every panel shut, the camera home at
+ * 100%. That is the state each step below already has to reach from, which is
+ * why a retry can simply be "reload, then do that step again".
+ */
+async function reboot(page) {
+  await page.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
+  await page.evaluate(() => {
+    globalThis.__worldReady = false;
+    void globalThis.__shelfWorld.ready.then(() => {
+      globalThis.__worldReady = true;
+    });
+  });
+  await page.waitForFunction(() => globalThis.__worldReady === true, null, { polling: 400 });
+  const skip = page.getByText('skip the tour');
+  if (await skip.count()) await skip.first().click({ force: true });
+  await wait(page, 2500);
+}
+
+/**
+ * Run one numbered section, and give it two more goes before the run dies.
+ *
+ * The failure this is for is not a broken app. `openRailPanel` waits 120s for a
+ * sheet to slide in, and the thing that used up those 120s was a dev server
+ * being written to by three other workflows — a Vite HMR update mid-click, the
+ * toggle lost, the sheet never arriving. The app was fine the whole time; the
+ * app is *always* fine the whole time in that failure. What it cost was the
+ * other twenty-two pictures.
+ *
+ * So a step that throws gets a reload and another go. Three attempts, because
+ * two is not enough to ride out a save-rebuild-save and four is long enough that
+ * a genuinely broken step wastes eight minutes proving it. `page` may be null
+ * for the sections that boot their own page — those retry by booting again,
+ * which is the same idea with a bigger hammer.
+ *
+ * Every attempt is announced. A run that is quietly taking three times as long
+ * as it should is indistinguishable from a hung one, and the person watching it
+ * has no way to tell which without this.
+ *
+ * The body is handed its attempt number, because one step cannot simply be done
+ * twice — see section 13, which WRITES to a book.
+ */
+async function step(page, label, body) {
+  const began = Date.now();
+  for (let attempt = 1; attempt <= STEP_ATTEMPTS; attempt += 1) {
+    console.log(`\n${label}${attempt > 1 ? `  (attempt ${attempt}/${STEP_ATTEMPTS})` : ''}`);
+    try {
+      await body(attempt);
+      timings.push({ label, ms: Date.now() - began, attempts: attempt });
+      return;
+    } catch (err) {
+      const why = String(err?.message ?? err).split('\n')[0];
+      if (attempt === STEP_ATTEMPTS) {
+        timings.push({ label, ms: Date.now() - began, attempts: attempt, failed: why });
+        console.log(`   ✗ ${label} failed ${STEP_ATTEMPTS} times, giving up: ${why}`);
+        // Let the browser go before the throw unwinds. Node will not exit while
+        // Playwright still holds a live one, and a run that has already decided
+        // to fail should fail rather than hang.
+        await browser.close().catch(() => {});
+        throw err;
+      }
+      console.log(`   ! ${label} attempt ${attempt}/${STEP_ATTEMPTS} failed: ${why}`);
+      console.log('     reloading the app and taking that step again');
+      if (page !== null) await reboot(page).catch(() => {});
+    }
+  }
+}
 
 /**
  * Take the selection off a diagram before photographing the page it is on.
@@ -639,18 +853,25 @@ async function parkZoom(target, percent) {
  * is visibly soft on any recent display.
  */
 if (wanted('hero')) {
-  console.log('\n1. the banner');
-  const heroPage = await browser.newPage({
-    viewport: { width: HERO.width, height: HERO.height },
-    deviceScaleFactor: HERO.scale,
+  // Its own page, so a retry boots its own page too — `step` is passed null and
+  // reloads nothing. The `finally` is what makes that safe: without it a failed
+  // attempt would leak a page and the retry would photograph in a second one.
+  await step(null, '1. the banner', async () => {
+    const heroPage = await browser.newPage({
+      viewport: { width: HERO.width, height: HERO.height },
+      deviceScaleFactor: HERO.scale,
+    });
+    try {
+      await heroPage.goto(pathToFileURL(resolve(ROOT, 'shots-now/readme-hero.html')).href, {
+        waitUntil: 'networkidle',
+      });
+      await heroPage.evaluate(() => document.fonts.ready);
+      await heroPage.waitForTimeout(600);
+      await shot(heroPage, 'hero');
+    } finally {
+      await heroPage.close().catch(() => {});
+    }
   });
-  await heroPage.goto(pathToFileURL(resolve(ROOT, 'shots-now/readme-hero.html')).href, {
-    waitUntil: 'networkidle',
-  });
-  await heroPage.evaluate(() => document.fonts.ready);
-  await heroPage.waitForTimeout(600);
-  await shot(heroPage, 'hero');
-  await heroPage.close();
 }
 
 /* ------------------------------ 2. boot the app --------------------------- */
@@ -695,24 +916,24 @@ if (appShots.some(wanted)) {
     errors.set(k, (errors.get(k) ?? 0) + 1);
   });
 
-  console.log('\n2. boot');
-  await page.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
-  await page.evaluate(() => {
-    globalThis.__worldReady = false;
-    void globalThis.__shelfWorld.ready.then(() => {
-      globalThis.__worldReady = true;
-    });
+  // The ONE place localStorage is cleared. `reboot()` below deliberately does
+  // not: everything from section 3 on stands on a library that lives there.
+  await step(null, '2. boot', async () => {
+    await page.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => localStorage.clear());
+    await reboot(page);
   });
-  await page.waitForFunction(() => globalThis.__worldReady === true, null, { polling: 400 });
-  const skip = page.getByText('skip the tour');
-  if (await skip.count()) await skip.first().click({ force: true });
-  await wait(page, 1200);
 
   /* --------------------------- 3. stock the shelf ------------------------- */
 
+  /*
+   * Seeded OUTSIDE the retry, and that is not an oversight. `__shelfSeedBooks`
+   * fills from `nextFreeSlot`, so seeding twice does not re-seed — it adds sixty
+   * MORE books, on top of the sixty already there, and the picture that comes
+   * back is of a case nobody has. A step is only safe to retry if doing it twice
+   * is the same as doing it once; this one is not, so only the shot is retried
+   * and a failure to seed ends the run honestly.
+   */
   console.log('\n3. stock the shelf');
   await page.evaluate((t) => globalThis.__shelfSeedBooks(t, 0), FLOOR_0);
   await wait(page, 1500);
@@ -720,7 +941,13 @@ if (appShots.some(wanted)) {
   await wait(page, 1500);
   await page.evaluate((t) => globalThis.__shelfSeedBooks(t, 2), FLOOR_2);
   await wait(page, 4500);
-  if (wanted('shelf')) await shot(page, 'shelf');
+  if (wanted('shelf')) {
+    await step(page, '3. the stocked shelf', async () => {
+      await settle(page);
+      await wait(page, 2500);
+      await shot(page, 'shelf');
+    });
+  }
 
   /* --------------------------- 4. the library studio ---------------------- */
 
@@ -732,42 +959,50 @@ if (appShots.some(wanted)) {
    * zoom therefore happens while the camera has never been touched.
    */
   if (wanted('studio')) {
-    console.log('\n4. the library studio');
-    await openRailPanel(page, '.shelf-dock', /Library studio/, '.nb-library-studio');
-    await shot(page, 'studio');
-    await closeRailPanel(page, '.nb-library-studio', 'Library studio');
+    // A reload puts the camera back at 100% with nothing open, which is exactly
+    // the state this step wants — so the retry needs no restoring of its own.
+    await step(page, '4. the library studio', async () => {
+      await openRailPanel(page, '.shelf-dock', /Library studio/, '.nb-library-studio');
+      await shot(page, 'studio');
+      await closeRailPanel(page, '.nb-library-studio', 'Library studio');
+    });
   }
 
   /* ------------------------- 5. the case as one object -------------------- */
 
   if (wanted('shelf-zoomout')) {
-    console.log('\n5. pull the camera back');
-    // Plain wheel is ZOOM in this app (shift+wheel pans), so scrolling down on
-    // the canvas is how the reader pulls back to see the whole case. The camera
-    // is left where this leaves it — the book view is a DOM overlay and does
-    // not care, and nothing below photographs the shelf again.
-    /*
-     * All the way out, and "all the way" is asked rather than counted: the
-     * camera has a floor (`minZoomFor(viewport)`, 38% at this window size), so
-     * this presses the pill's own zoom-out button until the percentage stops
-     * moving. Six wheel notches and eight wheel notches both landed on the same
-     * number, which is what gave the floor away.
-     *
-     * NOT the pill's "fit" button, which was tried: `zoomFit` fits the case's
-     * WIDTH to the window and here that means zooming IN, to 107%.
-     */
-    const pct = page.locator('.shelf-zoom-pill__pct');
-    const zoomOut = page.getByRole('button', { name: /Zoom out/i }).first();
-    let last = null;
-    for (let i = 0; i < 24; i += 1) {
-      const now = (await pct.textContent())?.trim() ?? '';
-      if (now === last) break;
-      last = now;
-      await zoomOut.click();
-      await wait(page, 400);
-    }
-    await wait(page, 4000);
-    await shot(page, 'shelf-zoomout');
+    await step(page, '5. pull the camera back', async () => {
+      // Plain wheel is ZOOM in this app (shift+wheel pans), so scrolling down on
+      // the canvas is how the reader pulls back to see the whole case. The camera
+      // is left where this leaves it — the book view is a DOM overlay and does
+      // not care, and nothing below photographs the shelf again.
+      /*
+       * All the way out, and "all the way" is asked rather than counted: the
+       * camera has a floor (`minZoomFor(viewport)`, 38% at this window size), so
+       * this presses the pill's own zoom-out button until the percentage stops
+       * moving. Six wheel notches and eight wheel notches both landed on the same
+       * number, which is what gave the floor away.
+       *
+       * NOT the pill's "fit" button, which was tried: `zoomFit` fits the case's
+       * WIDTH to the window and here that means zooming IN, to 107%.
+       *
+       * Written as a walk to the floor rather than as a number of presses, which
+       * is also what makes it safe to retry: a reload leaves the camera at 100%,
+       * and this arrives at the same place from wherever it starts.
+       */
+      const pct = page.locator('.shelf-zoom-pill__pct');
+      const zoomOut = page.getByRole('button', { name: /Zoom out/i }).first();
+      let last = null;
+      for (let i = 0; i < 24; i += 1) {
+        const now = (await pct.textContent())?.trim() ?? '';
+        if (now === last) break;
+        last = now;
+        await zoomOut.click();
+        await wait(page, 400);
+      }
+      await wait(page, 4000);
+      await shot(page, 'shelf-zoomout');
+    });
   }
 
   /* ------------------------------ 6. open a book -------------------------- */
@@ -784,8 +1019,22 @@ if (appShots.some(wanted)) {
     'script-page',
   ].some(wanted);
 
-  if (needsBook) {
-    console.log('\n6. open the Welcome book');
+  /*
+   * Open the Welcome book if it is not already open, and say nothing if it is.
+   *
+   * Two jobs, and it grew the second one. The first: the sections at the bottom
+   * of this file have to stand on their own, because `--only` skips whatever came
+   * before them, and the rail only exists INSIDE a book — the first version of
+   * those went looking for "In and out" on a bare shelf and spent two minutes
+   * timing out on a button that could not be there.
+   *
+   * The second: it is how a RETRY gets back. `reboot()` puts the book away with
+   * everything else, so every step between here and section 12 begins by asking
+   * for the book again rather than assuming the last step left it open. On the
+   * first attempt that costs one `count()`.
+   */
+  const ensureBookOpen = async () => {
+    if ((await page.locator('.nb-rail').count()) > 0) return;
     await page.evaluate(async () => {
       const app = await import('/src/state/app.ts');
       const books = await import('/src/data/books.ts');
@@ -793,124 +1042,151 @@ if (appShots.some(wanted)) {
       const welcome = list.find((b) => /welcome/i.test(b.title)) ?? list[0];
       app.appState.openBook(welcome.id);
     });
-    await page.waitForSelector('.nb-rail', { timeout: 60_000 });
-    await page.waitForSelector('.nb-prose p', { timeout: 60_000 });
-    // Long, and on purpose: the flip's page snapshots (html-to-image, ~200ms of
-    // main thread each) are taken at IDLE, and under SwiftShader idle arrives
-    // late. Photographing the curl before they land gives a leaf with grey
-    // where the paper should be — which is exactly what the first run produced.
-    await wait(page, 9000);
-    if (wanted('spread')) await shot(page, 'spread');
+    await page.waitForSelector('.nb-prose', { timeout: 60_000 });
+    await settle(page);
+    await wait(page, 2500);
+  };
+
+  if (needsBook) {
+    await step(page, '6. open the Welcome book', async () => {
+      await ensureBookOpen();
+      await page.waitForSelector('.nb-rail', { timeout: 60_000 });
+      await page.waitForSelector('.nb-prose p', { timeout: 60_000 });
+      // Long, and on purpose: the flip's page snapshots (html-to-image, ~200ms of
+      // main thread each) are taken at IDLE, and under SwiftShader idle arrives
+      // late. Photographing the curl before they land gives a leaf with grey
+      // where the paper should be — which is exactly what the first run produced.
+      await wait(page, 9000);
+      if (wanted('spread')) await shot(page, 'spread');
+    });
   }
 
   /* ----------------------------- 7. the page turn ------------------------- */
 
   if (wanted('page-turn')) {
-    console.log('\n7. hold the curl half-way');
-    /*
-     * Two things had to be got right here, and both were found by shooting it
-     * wrong first (`shots-now/_probe` boards, not kept).
-     *
-     * **Held, not timed.** `readme-curl.mjs` used to fire a flip and shoot on a
-     * short delay, which under SwiftShader — where rAF is throttled — landed on
-     * whatever frame it landed on. A pointer drag is a POSITION rather than a
-     * moment: `dragToP(x, w) = (w − x) / 2w`, so parking the pointer at 0.32·w
-     * holds the curl at p ≈ 0.34 for as long as the shutter needs, and the
-     * BOTTOM CORNER is gripped rather than the edge because a corner grip tilts
-     * the fold (`foldTilt`) and a tilted fold is what reads as a page turning
-     * rather than as a page cut in half.
-     *
-     * **The turn has to have somewhere to turn to.** The sheet's back and the
-     * page uncovered beneath it belong to the NEXT spread, which is not mounted
-     * at rest; they come from the raster cache's offscreen path, and under
-     * SwiftShader that path had not delivered after thirty seconds of idle. So
-     * the spread is visited and left again first: the pages come back from the
-     * MOUNTED capture path, which works, and the curl then has real paper on
-     * both faces instead of the grey band the first three attempts produced.
-     */
-    await page.keyboard.press('ArrowRight');
-    await wait(page, 7000);
-    await page.keyboard.press('ArrowLeft');
-    await wait(page, 7000);
+    await step(page, '7. hold the curl half-way', async () => {
+      await ensureBookOpen();
+      /*
+       * Two things had to be got right here, and both were found by shooting it
+       * wrong first (`shots-now/_probe` boards, not kept).
+       *
+       * **Held, not timed.** `readme-curl.mjs` used to fire a flip and shoot on a
+       * short delay, which under SwiftShader — where rAF is throttled — landed on
+       * whatever frame it landed on. A pointer drag is a POSITION rather than a
+       * moment: `dragToP(x, w) = (w − x) / 2w`, so parking the pointer at 0.32·w
+       * holds the curl at p ≈ 0.34 for as long as the shutter needs, and the
+       * BOTTOM CORNER is gripped rather than the edge because a corner grip tilts
+       * the fold (`foldTilt`) and a tilted fold is what reads as a page turning
+       * rather than as a page cut in half.
+       *
+       * **The turn has to have somewhere to turn to.** The sheet's back and the
+       * page uncovered beneath it belong to the NEXT spread, which is not mounted
+       * at rest; they come from the raster cache's offscreen path, and under
+       * SwiftShader that path had not delivered after thirty seconds of idle. So
+       * the spread is visited and left again first: the pages come back from the
+       * MOUNTED capture path, which works, and the curl then has real paper on
+       * both faces instead of the grey band the first three attempts produced.
+       */
+      await page.keyboard.press('ArrowRight');
+      await wait(page, 7000);
+      await page.keyboard.press('ArrowLeft');
+      await wait(page, 7000);
 
-    const leaf = await page.locator('.nb-flip-leaf-right').boundingBox();
-    if (leaf === null) throw new Error('readme-shots: no right leaf to turn');
-    const grip = { x: leaf.x + leaf.width - 12, y: leaf.y + leaf.height * 0.93 };
-    await page.mouse.move(grip.x, grip.y);
-    await page.mouse.down();
-    await wait(page, 250);
-    await page.mouse.move(leaf.x + leaf.width * 0.32, leaf.y + leaf.height * 0.86, { steps: 26 });
-    await wait(page, 1500);
-    await shot(page, 'page-turn', { freeze: false, park: false });
-    // Walk back to p ≈ 0 before letting go, so the release CANCELS the turn and
-    // the book is still on its first spread for everything below.
-    await page.mouse.move(grip.x, grip.y, { steps: 18 });
-    await wait(page, 250);
-    await page.mouse.up();
-    await wait(page, 3000);
+      const leaf = await page.locator('.nb-flip-leaf-right').boundingBox();
+      if (leaf === null) throw new Error('readme-shots: no right leaf to turn');
+      const grip = { x: leaf.x + leaf.width - 12, y: leaf.y + leaf.height * 0.93 };
+      await page.mouse.move(grip.x, grip.y);
+      await page.mouse.down();
+      await wait(page, 250);
+      await page.mouse.move(leaf.x + leaf.width * 0.32, leaf.y + leaf.height * 0.86, { steps: 26 });
+      await wait(page, 1500);
+      await shot(page, 'page-turn', { freeze: false, park: false });
+      // Walk back to p ≈ 0 before letting go, so the release CANCELS the turn and
+      // the book is still on its first spread for everything below.
+      await page.mouse.move(grip.x, grip.y, { steps: 18 });
+      await wait(page, 250);
+      await page.mouse.up();
+      await wait(page, 3000);
+    });
   }
 
   /* ----------------------------- 8. the slash menu ------------------------ */
 
   if (wanted('slash')) {
-    console.log('\n8. the slash menu');
-    /*
-     * Opened by clicking blank ruled space on the RIGHT leaf, which is both the
-     * gesture the sentence above the picture describes ("clicking empty ruled
-     * space starts typing there") and the only way to say WHICH page it opens
-     * on. Driving it through `activeEditor()` instead put the menu on whichever
-     * of the two page editors had registered last — the left one about half the
-     * time — so the same script produced two different pictures on two runs.
-     */
-    const leaf = await page.locator('.nb-flip-leaf-right').boundingBox();
-    if (leaf === null) throw new Error('readme-shots: no right leaf to type on');
-    await page.mouse.click(leaf.x + leaf.width * 0.45, leaf.y + leaf.height * 0.86);
-    await wait(page, 900);
-    await page.keyboard.type('/');
-    await wait(page, 1600);
-    await shot(page, 'slash');
-    await page.keyboard.press('Escape');
-    // And take the '/' back out. Escape closes the menu but leaves the
-    // character that opened it, and a stray slash sat on the right-hand page
-    // of the catalogue and book-studio shots for a whole run before anyone
-    // noticed it.
-    await page.keyboard.press('Backspace');
-    await wait(page, 900);
+    await step(page, '8. the slash menu', async () => {
+      await ensureBookOpen();
+      /*
+       * Opened by clicking blank ruled space on the RIGHT leaf, which is both the
+       * gesture the sentence above the picture describes ("clicking empty ruled
+       * space starts typing there") and the only way to say WHICH page it opens
+       * on. Driving it through `activeEditor()` instead put the menu on whichever
+       * of the two page editors had registered last — the left one about half the
+       * time — so the same script produced two different pictures on two runs.
+       */
+      const leaf = await page.locator('.nb-flip-leaf-right').boundingBox();
+      if (leaf === null) throw new Error('readme-shots: no right leaf to type on');
+      await page.mouse.click(leaf.x + leaf.width * 0.45, leaf.y + leaf.height * 0.86);
+      await wait(page, 900);
+      await page.keyboard.type('/');
+      await wait(page, 1600);
+      await shot(page, 'slash');
+      await page.keyboard.press('Escape');
+      // And take the '/' back out. Escape closes the menu but leaves the
+      // character that opened it, and a stray slash sat on the right-hand page
+      // of the catalogue and book-studio shots for a whole run before anyone
+      // noticed it.
+      await page.keyboard.press('Backspace');
+      await wait(page, 900);
+    });
   }
 
   /* ------------------------------ 9. the catalogue ------------------------ */
 
   if (wanted('catalogue')) {
-    console.log('\n9. the catalogue');
-    await openRailPanel(page, '.nb-rail', /Catalogue/, '.nb-catalogue');
-    await shot(page, 'catalogue');
-    await closeRailPanel(page, '.nb-catalogue', 'Catalogue');
+    await step(page, '9. the catalogue', async () => {
+      await ensureBookOpen();
+      await openRailPanel(page, '.nb-rail', /Catalogue/, '.nb-catalogue');
+      await shot(page, 'catalogue');
+      await closeRailPanel(page, '.nb-catalogue', 'Catalogue');
+    });
   }
 
   /* ----------------------------- 10. the book studio ---------------------- */
 
+  /*
+   * The step that killed the 0.4.0 run: `openRailPanel` waited its full two
+   * minutes for "Customize this book" while the dev server was rebuilding under
+   * it, threw, and took twenty-two other pictures down with it — seven of them
+   * already written over the real ones. Both halves of that are fixed, and this
+   * is the one to watch: a reload and two more goes, over a set that is not on
+   * disk yet either way.
+   */
   if (wanted('book-studio')) {
-    console.log('\n10. the book studio');
-    await openRailPanel(page, '.nb-rail', /Customize this book/, '.nb-book-studio');
-    await shot(page, 'book-studio');
-    await closeRailPanel(page, '.nb-book-studio', 'Customize this book');
+    await step(page, '10. the book studio', async () => {
+      await ensureBookOpen();
+      await openRailPanel(page, '.nb-rail', /Customize this book/, '.nb-book-studio');
+      await shot(page, 'book-studio');
+      await closeRailPanel(page, '.nb-book-studio', 'Customize this book');
+    });
   }
 
   /* --------------------------- 11. the quick switcher --------------------- */
 
   if (wanted('quickswitch')) {
-    console.log('\n11. the quick switcher');
-    await page.keyboard.press('Control+k');
-    await page.waitForSelector('.nb-qs-bar', { state: 'visible', timeout: 20_000 });
-    await wait(page, 1600);
-    await shot(page, 'quickswitch');
-    // Escape here is the palette's own dismiss — but Escape is ALSO how a
-    // reader puts the book back on the shelf, so wait for the palette to be
-    // gone rather than sending a second one blind.
-    await page.keyboard.press('Escape');
-    await page.waitForSelector('.nb-qs-bar', { state: 'detached', timeout: 15_000 })
-      .catch(() => {});
-    await wait(page, 800);
+    await step(page, '11. the quick switcher', async () => {
+      await ensureBookOpen();
+      await page.keyboard.press('Control+k');
+      await page.waitForSelector('.nb-qs-bar', { state: 'visible', timeout: 20_000 });
+      await wait(page, 1600);
+      await shot(page, 'quickswitch');
+      // Escape here is the palette's own dismiss — but Escape is ALSO how a
+      // reader puts the book back on the shelf, so wait for the palette to be
+      // gone rather than sending a second one blind.
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.nb-qs-bar', { state: 'detached', timeout: 15_000 })
+        .catch(() => {});
+      await wait(page, 800);
+    });
   }
 
   /* -------------------------- 12. the decorated spread -------------------- */
@@ -923,8 +1199,15 @@ if (appShots.some(wanted)) {
    * ArrowLeft the same number of times landed four later shots on two blank
    * leaves. Going last means nothing has to come back.
    */
-  if (wanted('diagrams')) {
-    console.log('\n12. flip to the diagrams spread');
+  /*
+   * Lifted into a named function rather than wrapped in place, purely so that
+   * handing it to `step` does not move a hundred and eighty lines of hard-bought
+   * comment two spaces to the right in the diff. Sections with a short body are
+   * wrapped inline above; these two are long enough that the churn would be the
+   * only thing anybody could see in the change.
+   */
+  const shootDiagramSpread = async () => {
+    await ensureBookOpen();
     /*
      * FOUND, not counted. This used to press ArrowRight twice, because the
      * decorated spread was the third one; the day the Welcome book grew a page
@@ -1099,6 +1382,10 @@ if (appShots.some(wanted)) {
     await wait(page, 2600);
     await clearNodeSelection(page);
     await shot(page, 'diagrams');
+  };
+
+  if (wanted('diagrams')) {
+    await step(page, '12. flip to the diagrams spread', shootDiagramSpread);
   }
 
   /* ------------------------------ 13. the script -------------------------- */
@@ -1116,8 +1403,16 @@ if (appShots.some(wanted)) {
    * a script does. An empty book shows the script and nothing else, which is
    * what the sentence above the picture claims.
    */
-  if (wanted('script-dialog') || wanted('script-page')) {
-    console.log('\n13. insert a script into an empty book');
+  /*
+   * Named for the same reason as section 12, and taking its attempt number for a
+   * reason of its own: this step WRITES. If it dies after the Insert button and
+   * before the picture, the book it chose is no longer empty, and doing the whole
+   * thing again would photograph the script twice over — the wreckage the note
+   * above is about, arrived at from the other direction. So each attempt takes
+   * the next untouched title off the first floor. Twenty of them, three attempts,
+   * and the picture is of a page rather than of a book's name.
+   */
+  const shootScript = async (attempt) => {
     await page.evaluate(async (title) => {
       const app = await import('/src/state/app.ts');
       const books = await import('/src/data/books.ts');
@@ -1126,7 +1421,7 @@ if (appShots.some(wanted)) {
       if (!target) throw new Error(`readme-shots: no book called ${title}`);
       app.appState.closeBook();
       app.appState.openBook(target.id);
-    }, FLOOR_0[0]);
+    }, FLOOR_0[attempt - 1]);
     await page.waitForSelector('.nb-rail', { timeout: 60_000 });
     await wait(page, 4000);
     /*
@@ -1170,6 +1465,10 @@ if (appShots.some(wanted)) {
     } else {
       await page.keyboard.press('Escape');
     }
+  };
+
+  if (wanted('script-dialog') || wanted('script-page')) {
+    await step(page, '13. insert a script into an empty book', shootScript);
   }
 
   /* --------------- 13. the sheets that had no picture at all -------------- */
@@ -1182,75 +1481,58 @@ if (appShots.some(wanted)) {
    * showed it — the keyboard, sound and settings, everything going in and out,
    * and focus mode. These are those four.
    */
-  /*
-   * These four have to stand on their own, because `--only` skips whatever came
-   * before them. The rail only exists INSIDE a book, so the first version of
-   * this section went looking for "In and out" on a bare shelf and spent two
-   * minutes timing out on a button that could not be there.
-   */
-  const ensureBookOpen = async () => {
-    if ((await page.locator('.nb-rail').count()) > 0) return;
-    await page.evaluate(async () => {
-      const app = await import('/src/state/app.ts');
-      const books = await import('/src/data/books.ts');
-      const list = await books.listBooksByFloorRange(0, 20);
-      const welcome = list.find((b) => /welcome/i.test(b.title)) ?? list[0];
-      app.appState.openBook(welcome.id);
-    });
-    await page.waitForSelector('.nb-prose', { timeout: 60_000 });
-    await settle(page);
-    await wait(page, 2500);
-  };
-
   if (wanted('share')) {
-    console.log('\n13. in and out');
-    await ensureBookOpen();
-    // `.nb-share`, not `.nb-share-panel` — the sheet's root carries the short
-    // name like `.nb-catalogue` and `.nb-toc` above it. Guessed wrong once, and
-    // the cost was not an error: `openRailPanel` retries by CLICKING, so it sat
-    // there toggling the sheet open and shut against a selector that could
-    // never match.
-    await openRailPanel(page, '.nb-rail', /In and out/, '.nb-share');
-    await shot(page, 'share');
-    await closeRailPanel(page, '.nb-share', 'In and out');
+    await step(page, '13. in and out', async () => {
+      await ensureBookOpen();
+      // `.nb-share`, not `.nb-share-panel` — the sheet's root carries the short
+      // name like `.nb-catalogue` and `.nb-toc` above it. Guessed wrong once, and
+      // the cost was not an error: `openRailPanel` retries by CLICKING, so it sat
+      // there toggling the sheet open and shut against a selector that could
+      // never match.
+      await openRailPanel(page, '.nb-rail', /In and out/, '.nb-share');
+      await shot(page, 'share');
+      await closeRailPanel(page, '.nb-share', 'In and out');
+    });
   }
 
   if (wanted('focus')) {
-    console.log('\n14. focus mode');
-    await ensureBookOpen();
-    await page.keyboard.press('F9');
-    await settle(page);
-    await wait(page, 1600);
-    await shot(page, 'focus');
-    await page.keyboard.press('F9');
-    await settle(page);
-    await wait(page, 900);
+    await step(page, '14. focus mode', async () => {
+      await ensureBookOpen();
+      await page.keyboard.press('F9');
+      await settle(page);
+      await wait(page, 1600);
+      await shot(page, 'focus');
+      await page.keyboard.press('F9');
+      await settle(page);
+      await wait(page, 900);
+    });
   }
 
   if (wanted('keyboard')) {
-    console.log('\n15. the cheat sheet');
-    await ensureBookOpen();
-    /*
-     * `?` is the binding, and it is gated on not-typing — the caret is in a
-     * page at this point, so pressing it straight away types a question mark
-     * into the Welcome book and photographs nothing. Blur first, then use the
-     * real key: driving `runCommand` through the probe's own import would risk
-     * the second-module-copy trap, and going through the keyboard proves the
-     * binding a reader would use actually works.
-     */
-    await page.evaluate(() => {
-      const el = document.activeElement;
-      if (el instanceof HTMLElement) el.blur();
+    await step(page, '15. the cheat sheet', async () => {
+      await ensureBookOpen();
+      /*
+       * `?` is the binding, and it is gated on not-typing — the caret is in a
+       * page at this point, so pressing it straight away types a question mark
+       * into the Welcome book and photographs nothing. Blur first, then use the
+       * real key: driving `runCommand` through the probe's own import would risk
+       * the second-module-copy trap, and going through the keyboard proves the
+       * binding a reader would use actually works.
+       */
+      await page.evaluate(() => {
+        const el = document.activeElement;
+        if (el instanceof HTMLElement) el.blur();
+      });
+      await wait(page, 500);
+      await page.keyboard.press('?');
+      // Its own veil, so this is a modal over the spread rather than a rail
+      // sheet — `openRailPanel` would wait for a slide that never happens.
+      await page.waitForSelector('.nb-cheat-card', { timeout: 30_000 });
+      await wait(page, 1400);
+      await shot(page, 'keyboard');
+      await page.keyboard.press('Escape');
+      await wait(page, 900);
     });
-    await wait(page, 500);
-    await page.keyboard.press('?');
-    // Its own veil, so this is a modal over the spread rather than a rail
-    // sheet — `openRailPanel` would wait for a slide that never happens.
-    await page.waitForSelector('.nb-cheat-card', { timeout: 30_000 });
-    await wait(page, 1400);
-    await shot(page, 'keyboard');
-    await page.keyboard.press('Escape');
-    await wait(page, 900);
   }
 
   /*
@@ -1274,82 +1556,89 @@ if (appShots.some(wanted)) {
    * argument for this file existing.
    */
   if (wanted('appearance') || wanted('settings')) {
-    console.log('\n16. the settings sheet — appearance, then sound');
-    // The seal lives in the window's bottom-left corner, outside the book, so
-    // the book goes back on the shelf first.
-    await page.evaluate(async () => {
-      const app = await import('/src/state/app.ts');
-      app.appState.closeBook();
-    });
-    await page.waitForSelector('.shelf-dock', { timeout: 30_000 });
-    await wait(page, 2000);
-    await parkZoom(page, 80);
-    await openSettings(page);
-    await settle(page, '.nbs-sheet');
-    await wait(page, 1400);
-    if (wanted('appearance')) await shot(page, 'appearance');
-    if (wanted('settings')) {
-      await scrollSettingsTo(page, 'Sound');
+    await step(page, '16. the settings sheet — appearance, then sound', async () => {
+      // The seal lives in the window's bottom-left corner, outside the book, so
+      // the book goes back on the shelf first. A reload has already done that,
+      // which is why the retry needs nothing extra: closing a book that is not
+      // open is a no-op, and `parkZoom` walks down from wherever it finds the
+      // camera.
+      await page.evaluate(async () => {
+        const app = await import('/src/state/app.ts');
+        app.appState.closeBook();
+      });
+      await page.waitForSelector('.shelf-dock', { timeout: 30_000 });
+      await wait(page, 2000);
+      await parkZoom(page, 80);
+      await openSettings(page);
+      await settle(page, '.nbs-sheet');
       await wait(page, 1400);
-      await shot(page, 'settings');
-    }
-    await page.keyboard.press('Escape');
-    await wait(page, 900);
+      if (wanted('appearance')) await shot(page, 'appearance');
+      if (wanted('settings')) {
+        await scrollSettingsTo(page, 'Sound');
+        await wait(page, 1400);
+        await shot(page, 'settings');
+      }
+      await page.keyboard.press('Escape');
+      await wait(page, 900);
+    });
   }
 
 
   /* ------------- 19-21. the three that were still only words ------------- */
 
   if (wanted('rail')) {
-    console.log('\n19. the rail, end to end');
-    await ensureBookOpen();
-    // Hovered, so the shot carries a hand-drawn tooltip and the reader can see
-    // what the icons ARE — a column of glyphs on its own explains nothing.
-    const target = page.locator('.nb-rail .nb-rail-button').nth(3);
-    const box = await target.boundingBox();
-    if (box !== null) {
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await wait(page, 1400);
-    }
-    await shot(page, 'rail', { park: false });
+    await step(page, '19. the rail, end to end', async () => {
+      await ensureBookOpen();
+      // Hovered, so the shot carries a hand-drawn tooltip and the reader can see
+      // what the icons ARE — a column of glyphs on its own explains nothing.
+      const target = page.locator('.nb-rail .nb-rail-button').nth(3);
+      const box = await target.boundingBox();
+      if (box !== null) {
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await wait(page, 1400);
+      }
+      await shot(page, 'rail', { park: false });
+    });
   }
 
   if (wanted('ai')) {
-    console.log('\n20. the AI front door');
-    await ensureBookOpen();
-    /*
-     * The EMPTY insert dialog, not the filled one. `script-dialog.png` shows a
-     * script already pasted and belongs to the language section; what the AI
-     * section is about is the invitation — "paste Notebook Script, from your AI
-     * or your own pen" — and the button that hands the whole spec to a chatbot.
-     */
-    await openRailPanel(page, '.nb-rail', /In and out/, '.nb-share');
-    await page.getByRole('button', { name: /Paste a script in/i }).first().click({ force: true });
-    // `.nb-ins-card`, its own root. `[role="dialog"]` was the first guess and
-    // matched eight things — every rail panel is a dialog too, and they are all
-    // MOUNTED whether open or shut, so the wait resolved on a hidden one and
-    // then timed out on visibility.
-    await page.waitForSelector('.nb-ins-card', { timeout: 30_000 });
-    await wait(page, 1600);
-    await shot(page, 'ai');
-    await page.keyboard.press('Escape');
-    await wait(page, 900);
+    await step(page, '20. the AI front door', async () => {
+      await ensureBookOpen();
+      /*
+       * The EMPTY insert dialog, not the filled one. `script-dialog.png` shows a
+       * script already pasted and belongs to the language section; what the AI
+       * section is about is the invitation — "paste Notebook Script, from your AI
+       * or your own pen" — and the button that hands the whole spec to a chatbot.
+       */
+      await openRailPanel(page, '.nb-rail', /In and out/, '.nb-share');
+      await page.getByRole('button', { name: /Paste a script in/i }).first().click({ force: true });
+      // `.nb-ins-card`, its own root. `[role="dialog"]` was the first guess and
+      // matched eight things — every rail panel is a dialog too, and they are all
+      // MOUNTED whether open or shut, so the wait resolved on a hidden one and
+      // then timed out on visibility.
+      await page.waitForSelector('.nb-ins-card', { timeout: 30_000 });
+      await wait(page, 1600);
+      await shot(page, 'ai');
+      await page.keyboard.press('Escape');
+      await wait(page, 900);
+    });
   }
 
   if (wanted('transfer')) {
-    console.log('\n21. the parcel desk');
-    await ensureBookOpen();
-    await page.evaluate(() => {
-      const el = document.activeElement;
-      if (el instanceof HTMLElement) el.blur();
+    await step(page, '21. the parcel desk', async () => {
+      await ensureBookOpen();
+      await page.evaluate(() => {
+        const el = document.activeElement;
+        if (el instanceof HTMLElement) el.blur();
+      });
+      await page.keyboard.press('Control+Shift+E');
+      await page.waitForSelector('.nb-tr-box', { timeout: 30_000 });
+      await settle(page, '.nb-tr-box');
+      await wait(page, 1600);
+      await shot(page, 'transfer');
+      await page.keyboard.press('Escape');
+      await wait(page, 900);
     });
-    await page.keyboard.press('Control+Shift+E');
-    await page.waitForSelector('.nb-tr-box', { timeout: 30_000 });
-    await settle(page, '.nb-tr-box');
-    await wait(page, 1600);
-    await shot(page, 'transfer');
-    await page.keyboard.press('Escape');
-    await wait(page, 900);
   }
 
   await page.close();
@@ -1378,10 +1667,9 @@ if (appShots.some(wanted)) {
  * reporting "the settings seal did not open the sheet". Two pages cost one
  * extra boot and cannot interfere.
  */
-async function bootFresh(label) {
+async function bootFresh() {
   const fresh = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
   fresh.setDefaultTimeout(120_000);
-  console.log(`\n${label}`);
   await fresh.goto(SHOT_URL, { waitUntil: 'domcontentloaded' });
   await fresh.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
   await fresh.evaluate(() => {
@@ -1425,34 +1713,56 @@ async function pressSettingsRow(target, query, rowText) {
  * and a single Welcome book. No sample library, no demo content to clear out.
  * `bootFresh` already skips the tour, so this is just the shelf.
  */
+/*
+ * These three retry by BOOTING AGAIN rather than by reloading — `step` is passed
+ * null, and the body opens its own page every time. It is the same idea with a
+ * bigger hammer, and it is free here because each of them already pays for a
+ * boot. The `finally` is what stops a failed attempt leaking the page it was
+ * using into the next one.
+ */
 if (wanted('box')) {
-  const fresh = await bootFresh('22. what is in the box');
-  await wait(fresh, 2500);
-  await shot(fresh, 'box');
-  await fresh.close();
+  await step(null, '22. what is in the box', async () => {
+    const fresh = await bootFresh();
+    try {
+      await wait(fresh, 2500);
+      await shot(fresh, 'box');
+    } finally {
+      await fresh.close().catch(() => {});
+    }
+  });
 }
 
 if (wanted('first-run')) {
-  const fresh = await bootFresh('17. the taste questions');
-  await pressSettingsRow(fresh, 'choose my look', 'choose my look again');
-  await fresh.waitForSelector('.nbq-layer', { timeout: 60_000 });
-  await wait(fresh, 2200);
-  await shot(fresh, 'first-run');
-  await fresh.close();
+  await step(null, '17. the taste questions', async () => {
+    const fresh = await bootFresh();
+    try {
+      await pressSettingsRow(fresh, 'choose my look', 'choose my look again');
+      await fresh.waitForSelector('.nbq-layer', { timeout: 60_000 });
+      await wait(fresh, 2200);
+      await shot(fresh, 'first-run');
+    } finally {
+      await fresh.close().catch(() => {});
+    }
+  });
 }
 
 if (wanted('tour')) {
-  const fresh = await bootFresh('18. the guided tour');
-  await pressSettingsRow(fresh, 'replay', 'replay the tour');
-  await fresh.waitForSelector('.nbt-card', { timeout: 60_000 });
-  /*
-   * Long enough for the card to have finished arriving AND for its pencil arrow
-   * to have drawn itself on — the arrow is the part that says what the card is
-   * pointing at, and a shot taken at 1s catches it half-drawn.
-   */
-  await wait(fresh, 3200);
-  await shot(fresh, 'tour');
-  await fresh.close();
+  await step(null, '18. the guided tour', async () => {
+    const fresh = await bootFresh();
+    try {
+      await pressSettingsRow(fresh, 'replay', 'replay the tour');
+      await fresh.waitForSelector('.nbt-card', { timeout: 60_000 });
+      /*
+       * Long enough for the card to have finished arriving AND for its pencil
+       * arrow to have drawn itself on — the arrow is the part that says what the
+       * card is pointing at, and a shot taken at 1s catches it half-drawn.
+       */
+      await wait(fresh, 3200);
+      await shot(fresh, 'tour');
+    } finally {
+      await fresh.close().catch(() => {});
+    }
+  });
 }
 
 
@@ -1507,9 +1817,55 @@ const previous = readShotsManifest();
  */
 const kept = new Map((previous?.shots ?? []).map((s) => [s.file, s]));
 for (const entry of taken) kept.set(entry.file, entry);
-// A picture nobody took and nobody has is not a record, it is a rumour.
+/*
+ * A picture nobody took and nobody has is not a record, it is a rumour.
+ *
+ * Asked of the set as it will be AFTER the commit below, not as it is now:
+ * `shotFiles()` reads `docs/readme/img/`, and a shot taken for the first time
+ * this run is not there yet. Asked the old way, a brand new picture would be
+ * staged, committed, and then deleted from its own manifest — present on disk,
+ * unrecorded, and reported by `checkShots()` as "nothing knows how old it is".
+ */
+const willExist = new Set([...shotFiles(), ...staged.keys()]);
 for (const file of [...kept.keys()]) {
-  if (!shotFiles().includes(file)) kept.delete(file);
+  if (!willExist.has(file)) kept.delete(file);
+}
+
+/*
+ * THE SET'S IDENTITY IS ONLY REWRITTEN BY A RUN THAT TOOK THE WHOLE SET.
+ *
+ * `app`, `depicts` and `sources` describe the twenty-three PICTURES, not the
+ * run: "these are what the app looked like at this version, in this room, with
+ * these sources". `--only=hero` takes one of them and leaves twenty-two alone —
+ * and used to stamp today's tree onto all twenty-three anyway, which is a
+ * strictly worse outcome than the drift it was meant to record. `checkShots()`
+ * compares this block against the tree, so a one-shot run silenced the
+ * "pictures are 0.3.0, the app says 0.4.0" alarm for the entire set. The
+ * pictures did not change. The only thing that changed was the alarm.
+ *
+ * Found while testing the staging work, by hitting it: a partial run had to be
+ * reverted by hand because the manifest quietly agreed with a tree the pictures
+ * had never seen. Same family as the half-set this run is built to prevent — a
+ * result that looks fine and is not.
+ *
+ * So a partial run keeps whatever the previous manifest said, and prints that
+ * it did. `lastRunAt`, `commit` and the per-shot provenance still move, because
+ * those describe the run and the individual pictures it did take, both of which
+ * are true.
+ */
+const complete = ONLY.length === 0;
+const identity = complete
+  ? { app: appIdentity(), depicts: depicts(), sources: sourceDigests() }
+  : {
+      app: previous?.app ?? appIdentity(),
+      depicts: previous?.depicts ?? depicts(),
+      sources: previous?.sources ?? sourceDigests(),
+    };
+if (!complete) {
+  console.log(
+    `\n  PARTIAL RUN (--only) — the set's identity is left at ${identity.app?.version ?? '?'}` +
+      ` as the previous manifest recorded it.\n  Only a full run may say what the whole set depicts.`,
+  );
 }
 
 const manifest = {
@@ -1517,16 +1873,89 @@ const manifest = {
   capturedBy: 'shots-now/readme-shots.mjs',
   // The LAST run. Per-shot provenance is on each entry below.
   lastRunAt: RUN_AT,
-  app: appIdentity(),
   commit: HEAD,
   viewport: { ...VIEWPORT, scale: SCALE },
-  depicts: depicts(),
-  sources: sourceDigests(),
+  ...identity,
   shots: [...kept.values()].sort((a, b) => (a.file < b.file ? -1 : 1)),
 };
-writeFileSync(join(ROOT, SHOTS_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+// Into the staging directory with everything else. The manifest is part of the
+// set, not a note about it: a shots.json describing pictures that are not there
+// is exactly the half-and-half state this run is built to make impossible.
+const manifestName = SHOTS_MANIFEST.split('/').pop();
+writeFileSync(join(STAGING, manifestName), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
-console.log(`\nwrote ${SHOTS_MANIFEST} — ${manifest.shots.length} shot(s)`);
+/**
+ * Move the staged set over the committed one — the last thing this run does.
+ *
+ * Two passes, because "move twenty-four files" is not one operation and the gap
+ * between the first and the last is precisely the state being made impossible.
+ * Everything is COPIED into `docs/readme/img/` first under an `.incoming`
+ * suffix — invisible to `shotFiles()` and to `computeFacts()`, which both match
+ * on `.png` — and only then renamed into place. A rename inside one directory is
+ * the cheapest thing a filesystem does, so the whole set turns over in a few
+ * milliseconds with nothing between the renames that can fail; a copy that dies
+ * part way through has renamed nothing at all, and its leavings are swept.
+ *
+ * This is not POSIX atomicity and does not claim to be. What it guarantees is
+ * the thing that was actually wanted: **no picture the README shows is written
+ * until every picture has been taken and the manifest describing them exists.**
+ * A run that throws at shot nineteen of twenty-three now leaves a repo it never
+ * touched, instead of a library that is two thirds of one release and one third
+ * of another.
+ *
+ * The manifest goes last, so it is never newer than the pictures it describes.
+ */
+function commitShots() {
+  const target = join(ROOT, SHOTS_DIR);
+  mkdirSync(target, { recursive: true });
+  const order = [...staged.entries(), [manifestName, join(STAGING, manifestName)]];
+  const moves = [];
+  try {
+    for (const [name, from] of order) {
+      const incoming = join(target, `${name}.incoming`);
+      copyFileSync(from, incoming);
+      moves.push([incoming, join(target, name)]);
+    }
+  } catch (err) {
+    for (const [incoming] of moves) rmSync(incoming, { force: true });
+    throw err;
+  }
+  for (const [incoming, real] of moves) renameSync(incoming, real);
+  committed = true;
+  return moves.length;
+}
+
+const moved = commitShots();
+// The staging copy has done its job the moment the set is committed. Kept only
+// when the run FAILED, where it is the cheapest evidence of how far it got.
+rmSync(STAGING, { recursive: true, force: true });
+
+/* -------------------------------- the report ------------------------------ */
+
+/*
+ * What it did, in a form somebody can check — and specifically in a form that
+ * answers the two questions asked of a capture run: is this the whole set, and
+ * what is it a picture of? A run that prints only "done" is a run whose retries,
+ * and therefore whose slow steps, are invisible.
+ */
+// `staged.size` rather than `taken.length`: a step that photographed something
+// and then failed later pushes twice, and the number that matters is how many
+// PICTURES were committed, not how many times the shutter went.
+console.log(
+  `\ncommitted ${moved} file(s) to ${SHOTS_DIR} — ${staged.size} picture(s) and the manifest`,
+);
+for (const t of timings) {
+  const secs = `${(t.ms / 1000).toFixed(1)}s`.padStart(7);
+  const again = t.attempts > 1 ? `  ← ${t.attempts} attempts` : '';
+  console.log(`  ${secs}  ${t.label}${again}`);
+}
+const retried = timings.filter((t) => t.attempts > 1);
+console.log(
+  retried.length === 0
+    ? '  every step passed first time'
+    : `  retried: ${retried.map((t) => `${t.label} (×${t.attempts})`).join(', ')}`,
+);
+console.log(`\nwrote ${SHOTS_MANIFEST} — ${manifest.shots.length} shot(s) listed`);
 console.log(`  app     ${manifest.app.product} ${manifest.app.version}`);
 console.log(`  commit  ${manifest.commit.short}${manifest.commit.dirty ? ' (dirty)' : ''}`);
 console.log(`  room    ${Object.values(manifest.depicts).slice(1).join(' / ')}`);

@@ -710,12 +710,65 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       frames at all, so the queue could not drain and the cards sat empty for as
       long as the stall lasted. Fixing the stalls fixed the symptom.
 
-- [ ] **f295 — a floor draws one hairline sliver of a book** while the floor
-      above is half-populated with featureless blocks. Same family as the flat
-      spines, which is fixed — the books were on `placeholderTint` because every
-      spine texture had been destroyed before a replacement existed. NOT ticked,
-      because unlike f225 it has not been re-checked against a fresh recording;
-      do that when the demo is re-rendered rather than assuming.
+- [x] **f295 — a floor draws one hairline sliver of a book** while the floor
+      above is half-populated with featureless blocks.
+
+      REPRODUCED and REFUTED. Re-checked against the running app rather than a
+      recording, because the app can be asked what width a book is SUPPOSED to
+      be — `scripts/probe-sliver.mjs`, which walks the shelf and compares three
+      numbers per book: `BookStyle.thickness` (the store), `visual.w` (the row's
+      layout) and |scale.x| × `texture.orig.width` (the pixels Pixi rasterizes).
+
+        - **The sliver is a book at its true width.** Narrowest drawn/expected
+          ratio over 7,239 sampled frames — twelve zooms, both LOD boundaries
+          and their hysteresis bands, live wheel zooms through both, panning, a
+          bookcase switch, three room applies — is **1.0000**, and 263
+          store-to-pixel comparisons across five camera stops disagree **zero**
+          times. What a sliver actually is: `SPINE_THICKNESS_RANGE.min` is 8
+          world px and the pamphlet class (8–13px) is 9% of every shelf, which
+          is the art direction's own "a 7px pamphlet standing next to a 54px
+          atlas". Eight world px is 6.4 screen px at the demo's 80%, 4.0 at
+          50%, 1.7 at 19%. A floor holding one pamphlet draws one hairline, and
+          a 6× crop shows a complete spine in it — two gilt bands, ink outline,
+          taper.
+        - **No floor ever draws fewer books than it holds.** Zero shortfall
+          frames; a floor is fully populated on the frame it mounts (toData 0ms,
+          toFirstSprite 0ms, toFull 0ms). No book overhangs a rail either.
+        - **Both gates were watched failing.** `--sabotage` narrows one live
+          sprite to 5% and pops half of another floor's visuals: the probe
+          reports 1.15px against an expected 23px and 83 shortfall frames, and
+          prints WIDTH GATE ALIVE / POPULATION GATE ALIVE. The sabotaged frame
+          also shows what a REAL sliver looks like, and it is indistinguishable
+          by eye from the legitimate pamphlet — which is the whole reason this
+          had to be settled by arithmetic.
+        - **The featureless blocks are the cold start, and only the cold
+          start.** Warm: zero placeholder frames across 725 frames of panning
+          and 871 of wheel-zooming — a floor re-entering the window mounts
+          already textured. A room preset apply flashes 31–65ms per book (1–4
+          frames) under the 0.42s theme-fade photograph, and an A/B says the
+          retirement generation is holding: colour-only 0 flashes, wallpaper-only
+          0, one carpentry direction 52 at 16–33ms. A bookcase switch is 15–81ms
+          (the other case's spines are evicted from the atlas). But on a page
+          load the whole shelf stands as flat tinted blocks for **173ms to 3.2s**
+          across nine measurements — a wall, not a ramp, everything flipping
+          within ~90ms of everything else, because the queue goes out in one
+          batch to a three-worker pool. Never permanent: nothing was ever left
+          untextured. (Headless SwiftShader on a machine shared with three other
+          agents, so the seconds are an upper bound; the honest number wants a
+          Tauri-window measurement.)
+        - **The frame itself is gone.** `demo.gif` was re-rendered and is 1177
+          frames, not the 1397 the finding was named against, so the numbering
+          has moved; the current f0295 is the Library studio open over a shelf
+          of properly bound spines. A featureless-block detector (validated at
+          0.051 for a known placeholder shelf against 0.235 settled, after two
+          earlier versions were thrown out as inert) ranks nothing in the new
+          recording as featureless except the pulled-out book cover and the
+          saturated studio rooms.
+        - **Why it looked like a defect.** Put the reproduction through the
+          recording's own 900×562 and 256-colour palette and a correctly drawn
+          shelf reads exactly as reported: one hairline on the lower floor, and
+          four books above it whose label plates and bands the palette flattens
+          into featureless blocks.
 
 - [ ] **Nine tests were proven unable to fail.** *(the sharpened version of "most
       testing we do now is useless" — asked as "which tests CANNOT fail?" and

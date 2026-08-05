@@ -257,6 +257,50 @@ being reviewed frame by frame.
       (Recorded here after the fact — both entries were lost from this file
       during a bulk edit and restored once the loss was noticed.)
 
+- [ ] **The Welcome book's first page teaches two things that contradict each
+      other, four lines apart.** *(a product question, the owner's to rule on —
+      not a bug to quietly fix)*
+
+      Page 1 of the tour, in order:
+
+          ::: callout {variant=tip}
+          Click the ruled lines and type. …
+          :::
+
+          - Drag to pan the shelf, scroll to zoom
+          - Click a book to bring it forward, again to open
+          - Arrow keys turn pages, or drag a corner
+
+      Do the first thing and the last thing stops being true. `arrowFlipAction`
+      returns null while the caret sits in a typing target — deliberately, and
+      correctly for an editor, because an arrow key belongs to the text before
+      it belongs to the book. So a reader who follows the callout, types a word,
+      and then presses → gets a caret move and a page that does not turn, within
+      the first minute of using the app.
+
+      This surfaced sideways: the demo recording pressed → after opening a book
+      and filmed no page turns at all for exactly this reason (fixed there by
+      blurring first). The app half of it was written down in `demo-gif.mjs` as
+      "a real question about the app, not about this file" and never given an
+      entry of its own. It has one now.
+
+      The options, none of them obviously right:
+
+        - **Say it properly on the page** — "click outside the writing, then
+          arrow keys turn pages; or drag a corner any time". Cheapest, honest,
+          and slightly deflating for line three of the tour.
+        - **Escape leaves the page**, and say so. One key, learnable, and it
+          gives the reader something to do rather than a caveat.
+        - **Turn on → only when the caret is at the very end of the last block**
+          (and ← at the very start). This is what a physical book does, it never
+          steals a keystroke that had somewhere to go, and it costs a real
+          decision about what "the end" means when a page ends in a table.
+        - **Leave it and drop the line.** Corners already turn pages and the
+          dog-ear is drawn on every leaf.
+
+      Not to be decided by an agent: it changes what the app's own first lesson
+      says.
+
 ### The duplication fix, and the discipline that caught the first attempt
 
 - [x] **Reading a book duplicated its content.** FIXED, and the fix is the

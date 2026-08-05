@@ -34,3 +34,8 @@ qa/sound/
 # add 11MB to history every time it is re-rendered.
 docs/readme/img/demo.gif
 qa/demo/
+# One-off refutation scripts and their screenshots. Scratch by name and by
+# nature: an agent writes one to kill a hypothesis and it has done its job the
+# moment the answer is written down. 519 of them were tracked, 85MB, and a
+# `git add -A` during a busy session swept in 254 more.
+qa/tmp/

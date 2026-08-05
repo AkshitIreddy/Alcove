@@ -576,6 +576,11 @@ const appShots = [
   'focus',
   'keyboard',
   'settings',
+  // Sections 19-21: the three surfaces Part 1 described in prose and never
+  // showed, once every other section had a picture beside it.
+  'rail',
+  'ai',
+  'transfer',
 ];
 
 if (appShots.some(wanted)) {
@@ -1035,6 +1040,61 @@ if (appShots.some(wanted)) {
     await wait(page, 900);
   }
 
+
+  /* ------------- 19-21. the three that were still only words ------------- */
+
+  if (wanted('rail')) {
+    console.log('\n19. the rail, end to end');
+    await ensureBookOpen();
+    // Hovered, so the shot carries a hand-drawn tooltip and the reader can see
+    // what the icons ARE — a column of glyphs on its own explains nothing.
+    const target = page.locator('.nb-rail .nb-rail-button').nth(3);
+    const box = await target.boundingBox();
+    if (box !== null) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await wait(page, 1400);
+    }
+    await shot(page, 'rail', { park: false });
+  }
+
+  if (wanted('ai')) {
+    console.log('\n20. the AI front door');
+    await ensureBookOpen();
+    /*
+     * The EMPTY insert dialog, not the filled one. `script-dialog.png` shows a
+     * script already pasted and belongs to the language section; what the AI
+     * section is about is the invitation — "paste Notebook Script, from your AI
+     * or your own pen" — and the button that hands the whole spec to a chatbot.
+     */
+    await openRailPanel(page, '.nb-rail', /In and out/, '.nb-share');
+    await page.getByRole('button', { name: /Paste a script in/i }).first().click({ force: true });
+    // `.nb-ins-card`, its own root. `[role="dialog"]` was the first guess and
+    // matched eight things — every rail panel is a dialog too, and they are all
+    // MOUNTED whether open or shut, so the wait resolved on a hidden one and
+    // then timed out on visibility.
+    await page.waitForSelector('.nb-ins-card', { timeout: 30_000 });
+    await wait(page, 1600);
+    await shot(page, 'ai');
+    await page.keyboard.press('Escape');
+    await wait(page, 900);
+  }
+
+  if (wanted('transfer')) {
+    console.log('\n21. the parcel desk');
+    await ensureBookOpen();
+    await page.evaluate(() => {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement) el.blur();
+    });
+    await page.keyboard.press('Control+Shift+E');
+    await page.waitForSelector('.nb-tr-box', { timeout: 30_000 });
+    await settle(page, '.nb-tr-box');
+    await wait(page, 1600);
+    await shot(page, 'transfer');
+    await page.keyboard.press('Escape');
+    await wait(page, 900);
+  }
+
   await page.close();
 }
 
@@ -1101,6 +1161,18 @@ async function pressSettingsRow(target, query, rowText) {
     .getByRole('button', { name: /^start$/ })
     .first()
     .click({ force: true });
+}
+
+/*
+ * What you actually get, on the day you install it: one bookcase, ten floors,
+ * and a single Welcome book. No sample library, no demo content to clear out.
+ * `bootFresh` already skips the tour, so this is just the shelf.
+ */
+if (wanted('box')) {
+  const fresh = await bootFresh('22. what is in the box');
+  await wait(fresh, 2500);
+  await shot(fresh, 'box');
+  await fresh.close();
 }
 
 if (wanted('first-run')) {

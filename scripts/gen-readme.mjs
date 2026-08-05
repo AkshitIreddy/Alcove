@@ -245,39 +245,28 @@ export function renderBadges(version = appVersion()) {
  * table is written into a half and then lifted to the root, and a repo-relative
  * link would have to be correct in two directories at once.
  */
+/**
+ * The download table, and nothing else.
+ *
+ * It used to carry four paragraphs under it — the MSI, the offline installer,
+ * how code signing works, what SmartScreen would say. The reader on reading it:
+ * *"download and install ... should be very small"*, and they are right: a
+ * person who has not got the app yet does not want a briefing, they want a
+ * link. Everything that was here is still true and still written down, on the
+ * Release page where somebody looking for it is already standing.
+ */
 export function renderDownloads(version = appVersion()) {
   const exe = `Alcove_${version}_x64-setup.exe`;
-  const msi = `Alcove_${version}_x64_en-US.msi`;
   const dmg = `Alcove_${version}_universal.dmg`;
   return [
-    '| Platform | What to download | First launch |',
-    '| --- | --- | --- |',
-    `| **Windows 10 / 11** · x64 | [\`${exe}\`](${RELEASES}/latest) · ${INSTALLER_SIZE} | ` +
-      'Double-click. It installs for **the current user**, so Windows never asks for an ' +
-      'administrator. SmartScreen warns once — *More info* → *Run anyway*. |',
-    `| **macOS 11+** · Apple silicon and Intel | [\`${dmg}\`](${RELEASES}/latest) | ` +
-      'One universal disk image for both chips, so there is nothing to choose between. ' +
-      'Unsigned, so the first open is right-click → *Open* rather than a double-click. |',
-    `| **Linux** · x64 | [\`.deb\`, \`.rpm\` or \`.AppImage\`](${RELEASES}/latest) | ` +
-      'Built on Ubuntu 22.04, so it runs on 22.04 and anything newer. The AppImage needs ' +
-      'no install — mark it executable and run it. |',
+    '| Platform | Take |',
+    '| --- | --- |',
+    `| **Windows 10 / 11** | [\`${exe}\`](${RELEASES}/latest) · ${INSTALLER_SIZE} |`,
+    `| **macOS 11+** | [\`${dmg}\`](${RELEASES}/latest) · Apple silicon and Intel |`,
+    `| **Linux** | [\`.deb\`, \`.rpm\` or \`.AppImage\`](${RELEASES}/latest) |`,
     '',
-    'All three are built from the same tag by `.github/workflows/release.yml` ' +
-      'and attached to the GitHub Release with a `SHA256SUMS.txt` beside them. ' +
-      `Windows also gets \`${msi}\`, the same app as an MSI, for anyone who deploys ` +
-      'software with a policy rather than a double-click.',
-    '',
-    `There is a second Windows file, \`Alcove_${version}_x64-setup-offline.exe\`, and ` +
-      'you almost certainly do not want it. Alcove draws itself in the Microsoft Edge ' +
-      'WebView2 runtime, which is already on any current Windows — the normal installer ' +
-      'fetches it in the rare case it is missing, and the offline one carries the whole ' +
-      'runtime instead, which is why it is around 217 MB rather than 16. Take it only if ' +
-      'the machine has no internet, or the normal installer failed while fetching.',
-    '',
-    '**Nothing is signed on any platform yet**, which is why the first-launch column ' +
-      'says what it says, and why the checksums are there: the line for your file in ' +
-      '`SHA256SUMS.txt` is how you check the download yourself rather than taking ' +
-      "anybody's word for it.",
+    `An MSI, an offline installer and a \`SHA256SUMS.txt\` are on the ` +
+      `[Release page](${RELEASES}/latest) too, along with what each one is for.`,
   ].join('\n');
 }
 

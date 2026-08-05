@@ -1188,7 +1188,7 @@ using it.
 
 ### Probes
 
-<!--f:probeScripts-->66<!--/f--> scripts under [`scripts/`](../../scripts/) named
+<!--f:probeScripts-->67<!--/f--> scripts under [`scripts/`](../../scripts/) named
 `probe-*.mjs` drive the running app with Playwright. The important three:
 
 - [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice

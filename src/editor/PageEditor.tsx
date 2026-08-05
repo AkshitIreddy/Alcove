@@ -628,15 +628,34 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     if (instance) unregisterPageEditor(pageId, instance);
   });
 
-  // Initial-overflow pass: a freshly (re)mounted paginated page may already
-  // exceed capacity (BookView prepends carried blocks). Measure after layout
-  // and again once the handwriting fonts are in (metrics shift).
+  /*
+   * Initial-overflow pass: a freshly (re)mounted paginated page may already
+   * exceed capacity (BookView prepends carried blocks).
+   *
+   * SYNCHRONOUS, BEFORE THE FRAME IS PAINTED. This used to wait for a
+   * `requestAnimationFrame`, and rAF fires *after* the browser has painted —
+   * so the reader saw one painted frame of the un-drained page and then watched
+   * a block leave it. Reported from the demo: *"weird bug when turning pages,
+   * basically items at bottom of left page after page turn go to the right in a
+   * second"*, and it is a real edit rather than a wobble — the drain REMOVES
+   * trailing blocks from one page's document and hands them to the next, and
+   * nothing pulls them back.
+   *
+   * Measured with `probe-turn-reflow.mjs`: 2 of 6 turns moved a block after
+   * landing, and BOTH were turns that took the rigid fold. That is the whole
+   * asymmetry — on a curl the leaves mount `visibility: hidden` behind the
+   * canvas and drain out of sight, so the same reflow was always happening and
+   * only the fold ever showed it.
+   *
+   * `extractOverflow` reads `getBoundingClientRect()`, which forces layout
+   * itself, so there is nothing to wait for: the rAF was buying a paint, not a
+   * measurement. The fonts pass stays — handwriting metrics land later and
+   * genuinely change what fits.
+   */
   createEffect(() => {
     const instance = editor();
     if (!instance || !isPaginated()) return;
-    requestAnimationFrame(() => {
-      if (!instance.isDestroyed) extractOverflow(instance);
-    });
+    if (!instance.isDestroyed) extractOverflow(instance);
     void document.fonts?.ready.then(() => {
       if (!instance.isDestroyed) extractOverflow(instance);
     });

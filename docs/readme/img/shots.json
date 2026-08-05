@@ -1,14 +1,14 @@
 {
   "$schema": "see scripts/check-readme.mjs — checkShots()",
   "capturedBy": "shots-now/readme-shots.mjs",
-  "lastRunAt": "2026-08-05T06:09:33.694Z",
+  "lastRunAt": "2026-08-05T07:26:41.912Z",
   "app": {
     "product": "Alcove",
     "version": "0.3.0"
   },
   "commit": {
-    "sha": "56c5d9c969977be87e939326d53e18feb5127b67",
-    "short": "56c5d9c",
+    "sha": "4ac8edd1583c318967502d3cde5aba7fc980e729",
+    "short": "4ac8edd",
     "dirty": true
   },
   "viewport": {
@@ -30,6 +30,15 @@
   },
   "shots": [
     {
+      "file": "ai.png",
+      "bytes": 161667,
+      "sha256": "5b19fe25726bdd2e",
+      "width": 1500,
+      "height": 940,
+      "at": "2026-08-05T07:19:40.526Z",
+      "commit": "4ac8edd+dirty"
+    },
+    {
       "file": "book-studio.png",
       "bytes": 261281,
       "sha256": "918ae507f064dece",
@@ -37,6 +46,15 @@
       "height": 940,
       "at": "2026-08-05T06:09:33.694Z",
       "commit": "56c5d9c+dirty"
+    },
+    {
+      "file": "box.png",
+      "bytes": 518934,
+      "sha256": "6497c0166f632535",
+      "width": 1500,
+      "height": 940,
+      "at": "2026-08-05T07:26:41.912Z",
+      "commit": "4ac8edd+dirty"
     },
     {
       "file": "catalogue.png",
@@ -109,6 +127,15 @@
       "height": 940,
       "at": "2026-08-05T06:09:33.694Z",
       "commit": "56c5d9c+dirty"
+    },
+    {
+      "file": "rail.png",
+      "bytes": 264439,
+      "sha256": "3042c91583c95413",
+      "width": 1500,
+      "height": 940,
+      "at": "2026-08-05T07:22:19.399Z",
+      "commit": "4ac8edd+dirty"
     },
     {
       "file": "script-dialog.png",
@@ -199,6 +226,15 @@
       "height": 940,
       "at": "2026-08-05T06:09:33.694Z",
       "commit": "56c5d9c+dirty"
+    },
+    {
+      "file": "transfer.png",
+      "bytes": 340531,
+      "sha256": "d09e356ec287292e",
+      "width": 1500,
+      "height": 940,
+      "at": "2026-08-05T07:19:40.526Z",
+      "commit": "4ac8edd+dirty"
     }
   ]
 }

@@ -30,7 +30,7 @@ being reviewed frame by frame.
       constants rather than written beside them. But it is now a QUALITY issue
       (how full a seeded page looks) rather than a correctness one.
 
-- [ ] **The "body size" slider does not touch page text at all.**
+- [x] **The "body size" slider does not touch page text at all.** FIXED — the page reads the setting, the rule grid is derived from the type (constant 1.600 leading at every size, all 27 rulings from one line), and 22 lines fit at 15px against 16 at 21px. `PageEditor` now DECLARES `settings.bodyFontSize`: the drain already re-ran, but by accident — three pixels of unrelated chrome moving the leaf box was what notified it, and that would have failed silently as clipped text.
 
       `src/features/settings/apply.ts:285` writes the reader's choice out as a
       CSS variable, and `src/styles/editor.css:192` sets `.nb-prose` — the page
@@ -47,13 +47,13 @@ being reviewed frame by frame.
       of leaving the old fold in place. `CLAUDE.md` forbids handwriting below
       13px and the slider floor is 15px, so the range is already safe.
 
-- [ ] **Headings land at the foot of a page, or vanish a second after a turn.**
+- [x] **Headings land at the foot of a page, or vanish a second after a turn.** FIXED with the duplication bug — a block duplicated above them was pushing everything down.
       > "If you notice the gif, sometimes the headings are at the bottom of the
       > page or go missing after a second when the page turn happens — like
       > completely wrong. Again not sure if this is a code bug or a GIF
       > rendering bug, so figure it out."
 
-- [ ] **A section appears duplicated on the following page.**
+- [x] **A section appears duplicated on the following page.** FIXED. This was the wax-seal page, and it was the drain reading a pre-drain document.
       > "There is some page with a big A in a circle saying 'pressed when soft'
       > something, so there is a bug in the gif where it shows the same section
       > copied on the next page as well. Not sure if it is part of the welcome
@@ -234,17 +234,17 @@ Each was raised by an agent looking at a contact sheet, then confirmed by a
 second agent pulling the full-size frame and trying to refute it. 26 findings
 were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
-- [ ] **f421 — "opening the book…" holds a bare cream window for 1.2 seconds.**
+- [x] **f421 — "opening the book…" holds a bare cream window for 1.2 seconds.**
       17 straight frames of an empty screen with one caption on it. The Suspense
       fallback in `App.tsx` was added to stop a genuinely blank gap; it is now
       the gap. And at f428 the synthetic cursor parks on the caption and covers
       a word, so the only text on screen reads "openin  the book…".
 
-- [ ] **f629 — a diagram vanishes into its own placeholder just before a turn.**
+- [x] **f629 — a diagram vanishes into its own placeholder just before a turn.**
       The hand-drawn tree on the right page is replaced by an empty dashed
       rectangle as the page turns.
 
-- [ ] **f617 — a key cap breaks across a line.** "Ctrl Alt N" renders as two
+- [x] **f617 — a key cap breaks across a line.** FIXED with `display: inline-block` rather than `nowrap`, so an over-long cap becomes a two-line pill instead of running off a page that has no scrollbar. A 59-character unbreakable token overflowed the column by 168px before; contained now. "Ctrl Alt N" renders as two
       half-open pills. A key cap is a single object and must not wrap.
 
 - [ ] **f778 — a footnote collides with a callout.** *(a fix was attempted and
@@ -270,11 +270,11 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       772px page. A footnote cannot sit at the foot of a page whose content is
       five times the paper. Fix the fullness and this goes with it.
 
-- [ ] **f869 — the way back becomes invisible while a panel is open.** Reduced to
+- [x] **f869 — the way back becomes invisible while a panel is open.** Reduced to
       a pale grey arrow with no label and no outline, against the Table of
       contents sheet. It is supposed to recede, not disappear.
 
-- [ ] **f1198 — a postcard's message overflows its own card**, the last line cut
+- [x] **f1198 — a postcard's message overflows its own card**, the last line cut
       through by the card's bottom border; and a picture caption beside it is cut
       off mid-word.
 
@@ -290,7 +290,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### The renderer
 
-- [ ] **Make gifsmith deterministic, like Blender.**
+- [x] **Make gifsmith deterministic, like Blender.** BUILT and measured: same scene, screencast 13.75s output for 46.5s real; deterministic 9.38s output for 20.1s real, against a designed length of 9.4s. Render time has stopped being playback time. Being hardened for release — the gate has found real defects twice.
       > "Don't think twice, go ahead with the Blender thing if it will help."
 
       Their original framing: *"maybe you should modify gifsmith to kind of be
@@ -360,7 +360,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### Naming
 
-- [ ] **Say "flat" where it is flat, and "hand-drawn" where it is hand-drawn.**
+- [x] **Say "flat" where it is flat, and "hand-drawn" where it is hand-drawn.** 16 occurrences changed, 118 left alone because they were accurate. CLAUDE.md now states the two registers as a rule.
       > "Btw isn't it kind of weird we call it hand-drawn style when it isn't?
       > Like we say that in the readme description etc etc — should it be
       > flaticon style instead?"
@@ -386,7 +386,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### The README
 
-- [ ] **Some pictures do not show what the section is about.**
+- [x] **Some pictures do not show what the section is about.** The Sound picture shows sound controls, the Diagrams picture shows the diagram chapter, four alt texts rewritten from the images, and two app strings fixed.
       > "The pictures in the readme sometimes are not relevant — like the sound
       > picture does not show sound options and just shows a very long shelf."
 

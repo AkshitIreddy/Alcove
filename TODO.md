@@ -7,6 +7,45 @@ being reviewed frame by frame.
 
 ## 🔴 Reported 2026-08-06 — what a still-frame review cannot see
 
+- [ ] **The landing page loads its shadow and paper colour half a second late.**
+      *(observed in the RUNNING APP, not in the recording — this one is real)*
+      > "Another bug: let's say I turn a page, then it goes to the next page, it
+      > doesn't have the shading — for example the shadow in the middle — the
+      > page looks whitish for maybe 0.5 seconds and then all of it comes. So it
+      > feels like it loads those effects when the user finishes turning the
+      > pages. I only mean the shadow and page colour thing, everything else is
+      > fine. Maybe you should preload those effects for the next pages so the
+      > user doesn't see that flicker. We want it to be close to a real book,
+      > right."
+
+      Note this is NOT the landing flicker fixed in 28c7691. That one was the
+      raster cache writing `.snapshotting` onto the leaf the reader was looking
+      at, and it is gone — `snapOnVisible` never fires now. This is a different
+      thing arriving late: the gutter shadow and the paper wash on the page just
+      landed on. Preload them for the adjacent pages, the way the flip already
+      warms their bitmaps.
+
+- [ ] **THE THREE PAGE-TURN SYMPTOMS DO NOT REPRODUCE IN THE APP.**
+      > "I didn't notice any of the bugs I mentioned in the gif's video when I
+      > was testing in the web server."
+
+      That is decisive and it redirects the whole investigation. Skipping pages,
+      future pages showing, and the foot of the right page emptying were all
+      seen ONLY in the recording. So the prime suspect is the RECORDING
+      PIPELINE, not `src/flip/`:
+
+        - frames dropped or mis-paced by the deterministic capture;
+        - the loop trim splicing a frame from elsewhere in the timeline — "a
+          future page showing" is exactly what a bad seam looks like;
+        - GIF palette/dither quantisation making a half-drawn frame read as
+          different content.
+
+      The temporal detector being built is still exactly the right tool — it
+      just has a different subject. Point it at the pipeline first: compare the
+      captured PNG frames against the encoded output, and the pre-trim sequence
+      against the post-trim one. A defect present in the GIF and absent in the
+      source frames is gifsmith's; one present in both is the app's.
+
 - [ ] **The demo looks broken during page turns, in three ways.**
       > "The current demo seems to be broken during page turns — it's hard to
       > say what happens. Sometimes it's like pages are skipping during a turn,

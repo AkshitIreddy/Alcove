@@ -175,6 +175,8 @@
  */
 
 import { chromium } from 'playwright';
+import { sabotageColour } from './visual-sabotage.mjs';
+import { beginSettle, observeSettle } from './visual-settle.mjs';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -204,6 +206,18 @@ const CELL_FAIL = 20;
 
 /** How long a surface may take to stop moving before we shoot it anyway. */
 const SETTLE_BUDGET_MS = 30_000;
+
+/**
+ * A repeated pixel signature is only evidence of rest after it survives a
+ * real span of time. Sampling at one fixed cadence can alias with a periodic
+ * repaint: the old two-colour sabotage once presented the same colour three
+ * shots in a row while changing between them. Uneven sampling reduces that
+ * risk, while the time floor keeps frames from one compositor stall from
+ * counting as rest. The sabotage itself uses a non-repeating sequence, which
+ * makes its gate deterministic rather than relying on sampling luck.
+ */
+const SETTLE_STILL_MS = 1_200;
+const SETTLE_SAMPLE_DELAYS_MS = [137, 211, 283, 359];
 
 const BASELINE_DIR = 'qa/baseline';
 const REPORT_DIR = join(BASELINE_DIR, '__report');
@@ -299,8 +313,9 @@ const KEEP_PASSES = flag('keep-passes');
  * worst possible failure mode for a suite, and the only defence is a switch
  * that makes a surface genuinely never stop and then checks the suite says so.
  *
- * `--sabotage` paints a 160×120 patch at (40, 200) that changes colour every
- * 200ms, in a Portal above everything, and expects every wanted case to come
+ * `--sabotage` paints a 160×120 patch at (40, 200) that advances through a
+ * long colour cycle every 200ms, in a Portal above everything, and expects
+ * every wanted case to come
  * back MOVE with a moving box over that patch. It prints GATE ALIVE or GATE
  * INERT and exits non-zero on INERT. Pair it with a cheap case:
  *
@@ -1042,11 +1057,20 @@ async function installSabotage(page) {
       `width:${rect.w}px;height:${rect.h}px;z-index:2147483647;pointer-events:none;`;
     document.body.appendChild(patch);
     let n = 0;
+    const colours = rect.colours;
+    const paint = () => {
+      patch.style.background = colours[n % colours.length];
+    };
+    paint();
     setInterval(() => {
       n += 1;
-      patch.style.background = n % 2 === 0 ? '#ff1f9c' : '#1f9cff';
+      paint();
     }, 200);
-  }, SABOTAGE_RECT);
+  }, {
+    ...SABOTAGE_RECT,
+    // Functions cannot cross page.evaluate's structured-clone boundary.
+    colours: Array.from({ length: 256 }, (_, tick) => sabotageColour(tick)),
+  });
 }
 
 /** Does any box the mask found overlap the patch we broke on purpose? */
@@ -1163,26 +1187,25 @@ async function settle(page, cmp) {
   };
   let buffer = await shoot();
   keep(buffer);
-  let previous = await pixelSignature(cmp, buffer);
+  const previous = await pixelSignature(cmp, buffer);
   const seen = new Set([previous]);
   const deadline = Date.now() + SETTLE_BUDGET_MS;
-  let stillFor = 0;
+  let settleState = beginSettle(previous, Date.now());
+  let delayIndex = 0;
   let shots = 1;
   for (;;) {
-    await sleep(320);
+    await sleep(SETTLE_SAMPLE_DELAYS_MS[delayIndex % SETTLE_SAMPLE_DELAYS_MS.length]);
+    delayIndex += 1;
     buffer = await shoot();
     keep(buffer);
     shots += 1;
     const next = await pixelSignature(cmp, buffer);
     seen.add(next);
-    if (next === previous) {
-      stillFor += 1;
-      // Twice in a row: one match can be two frames inside the same stall.
-      if (stillFor >= 2) return { buffer, settled: true, shots, distinct: seen.size, tail: [] };
-    } else {
-      stillFor = 0;
+    const observation = observeSettle(settleState, next, Date.now(), SETTLE_STILL_MS);
+    settleState = observation.state;
+    if (observation.settled) {
+      return { buffer, settled: true, shots, distinct: seen.size, tail: [] };
     }
-    previous = next;
     if (Date.now() > deadline) {
       return { buffer, settled: false, shots, distinct: seen.size, tail };
     }

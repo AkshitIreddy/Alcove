@@ -216,9 +216,27 @@ mod tests {
         for (i, entry) in entries.iter().enumerate() {
             let offset: usize = entry[..10].parse().unwrap();
             let expected = format!("{} 0 obj", i + 1);
+            /*
+             * AGAINST `pdf`, NOT `text` — the offsets in an xref table are byte
+             * offsets into the FILE, and `text` is not the file.
+             *
+             * `from_utf8_lossy` is fine for FINDING things (the sibling test
+             * above uses it to locate `startxref`) and wrong for indexing by a
+             * number the file gave you: a PDF opens with a binary comment line
+             * whose bytes are not valid UTF-8, so they come back as U+FFFD and
+             * every byte after byte 9 sits somewhere else in the string than it
+             * does in the file. Object 1 really does begin at byte 15 of the
+             * PDF; byte 15 of the lossy string is the middle of a replacement
+             * character, which is what this line used to panic on.
+             *
+             * The product was never wrong — `startxref_points_at_xref_table`
+             * takes an offset the same way and indexes `pdf`, and it has always
+             * passed. This test just could not tell the two buffers apart, and
+             * nothing noticed because the Verify list said `cargo check`.
+             */
             assert_eq!(
-                &text[offset..offset + expected.len()],
-                expected.as_str(),
+                &pdf[offset..offset + expected.len()],
+                expected.as_bytes(),
                 "object {} offset mismatch",
                 i + 1
             );

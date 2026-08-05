@@ -92,7 +92,7 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 ## Verify
 
 - Frontend typecheck: `npx tsc --noEmit` (agents working in parallel: use this, do NOT run `npm run build` or `npm run tauri dev`)
-- Rust: `cargo check --manifest-path src-tauri/Cargo.toml`
+- Rust: `cargo check --manifest-path src-tauri/Cargo.toml`, and **`cargo test --manifest-path src-tauri/Cargo.toml` — this line said only `check` for a long time, and a Rust unit test was failing the whole while.** `xref_offsets_point_at_objects` took byte offsets out of a PDF's xref table and indexed them into a `from_utf8_lossy` string, which is not the file: a PDF opens with a binary comment line, so every byte past the ninth sits somewhere else in the string than in the buffer. The exporter was fine. Nothing ran the test. `check` compiles; only `test` runs anything.
 - Unit tests: `npx vitest run`
 - End-to-end: `npm run e2e` (Playwright; reuses a dev server on :1420). Headless uses SwiftShader — append `?fx=force` for full shelf effects and poll for state instead of fixed waits, because rAF is throttled there.
 - Visual regression: `npm run visual` (`shots-now/visual-suite.mjs`) walks 16 surfaces × 2 window sizes × light/dark against the committed pictures in `qa/baseline/**` and writes a triptych per failure to `qa/baseline/__report/index.html`; a comparison run NEVER writes a baseline — `npm run visual -- --update` is the deliberate yes, `--only=<substring>` narrows it, and the whole matrix is ~30–45 min against the dev server on :1420. A surface that never stops moving is reported `MOVE`, counted in its own column, and neither baselined nor failed — it could not be measured, which is a third outcome rather than a bad second one.

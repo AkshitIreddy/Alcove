@@ -15,8 +15,17 @@
 //! A pure-TypeScript codec (src/features/transfer/zip.ts) mirrors the first
 //! two so the browser dev build and the unit tests work without Rust; these
 //! commands are an optimization (real deflate) and the Tauri filesystem path,
-//! never a requirement. `fnv1a_hex` is byte-identical to `checksumBytes` in
-//! src/features/transfer/format.ts — keep the two in sync.
+//! never a requirement.
+//!
+//! There was a third mirror here — `fnv1a_hex`, byte-identical to
+//! `checksumBytes` in src/features/transfer/format.ts, with a note saying to
+//! keep the two in sync. Nothing called it. It could not have been called
+//! usefully either: a checksum is over a manifest's inventory, and the first
+//! paragraph of this file is the promise that Rust never opens a manifest. So
+//! it was a standing obligation to maintain a function for a caller the design
+//! forbids, and `cargo check` had been printing the only warning this crate
+//! emits about it — which is worse than it sounds, because a build that always
+//! has one warning is a build whose warnings stop being read.
 //!
 //! Registration (orchestrator): add `mod transfer;` in lib.rs and
 //! `transfer::bundle_write`, `transfer::bundle_read`, `transfer::bundle_probe`,
@@ -77,19 +86,6 @@ pub fn is_safe_archive_path(path: &str) -> bool {
     !path
         .split('/')
         .any(|part| part == ".." || part == "." || part.is_empty())
-}
-
-// ---------------------------------------------------------------------------
-// Checksum — FNV-1a/32, hex. Mirror of checksumBytes() in format.ts.
-// ---------------------------------------------------------------------------
-
-pub fn fnv1a_hex(bytes: &[u8]) -> String {
-    let mut hash: u32 = 0x811c_9dc5;
-    for byte in bytes {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    format!("{hash:08x}")
 }
 
 // ---------------------------------------------------------------------------
@@ -312,14 +308,6 @@ mod tests {
         let back = read_archive(build_archive(&entries).unwrap()).unwrap();
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].path, "ok.nbs");
-    }
-
-    #[test]
-    fn checksum_matches_the_typescript_twin() {
-        // FNV-1a/32 of "notebook" — same constant asserted in
-        // tests/transfer.test.ts so the two implementations cannot drift.
-        assert_eq!(fnv1a_hex(b"notebook"), "4dec6320");
-        assert_eq!(fnv1a_hex(b""), "811c9dc5");
     }
 
     #[test]

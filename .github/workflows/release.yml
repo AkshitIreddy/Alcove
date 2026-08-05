@@ -250,6 +250,28 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --fund=false
 
+      # The Rust unit tests, on one runner only.
+      #
+      # They had never run anywhere. The Gates job has no Rust in it — no
+      # toolchain, and on Linux no webkit2gtk either, so putting them there
+      # means installing a build environment to run 29 tests that take 0.06s.
+      # Here the toolchain, the crates and a warm `target/` are already set up
+      # for the build that is about to happen, so the marginal cost is the
+      # compile of the test harness and nothing else.
+      #
+      # Windows only, because the tests are pure logic — archive path safety,
+      # PDF structure, media hashing — and none of them touches a platform API.
+      # Running them three times would buy nothing.
+      #
+      # It sits BEFORE `tauri build` so a failure costs the cheap half of the
+      # job. That is still later than a gate should fire, and it is a stopgap:
+      # this repository has no push or pull-request workflow at all, so nothing
+      # checks an ordinary commit. Written down in TODO.md as the owner's call,
+      # because a CI workflow spends their Actions minutes.
+      - name: Rust unit tests
+        if: matrix.name == 'windows-x64'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
       # `beforeBuildCommand` in tauri.conf.json runs `npm run build`, so the
       # frontend (spec:check + vite build) is built here per runner. That is the
       # one gate that does repeat across the matrix; it is seconds, and sharing

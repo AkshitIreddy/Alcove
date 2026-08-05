@@ -652,6 +652,27 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       Not fixed yet only because the file is being edited by the release audit
       as this is written; a second writer would lose that work.
 
+- [ ] **Nothing checks an ordinary commit.** *(the owner's call — it spends
+      their Actions minutes)*
+
+      `.github/workflows/` holds exactly one file, `release.yml`, and it runs on
+      a tag. There is no push workflow and no pull-request workflow, so every
+      gate this repository has — typecheck, 2,742 unit tests, `spec:check`,
+      `readme:check`, the icon container check — fires for the first time when a
+      release is already being cut. Everything in between is gated by whoever
+      remembers to run it.
+
+      That is how a failing Rust test survived: `cargo test` was in no workflow
+      at all, and the Verify list in CLAUDE.md said `check`, which compiles
+      without running anything. It has been added to the Windows build job as a
+      stopgap, but that still fires at tag time.
+
+      The fix is a `ci.yml` on push and PR that runs the Gates job's contents.
+      It is not free — every push spends minutes — so it is the owner's
+      decision, not a thing to switch on for them. Options if the cost matters:
+      run it only on `main`, or only on paths that can break it (`src/**`,
+      `src-tauri/**`, `tests/**`).
+
 - [ ] **Rewrite the history and force-push.** *(authorized — "on online as
       well")* **Do this LAST, after the 0.4.0 content is final and before the
       tag**, because a rewrite moves every SHA and a tag placed first would be

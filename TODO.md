@@ -717,6 +717,73 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       because unlike f225 it has not been re-checked against a fresh recording;
       do that when the demo is re-rendered rather than assuming.
 
+- [ ] **Nine tests were proven unable to fail.** *(the sharpened version of "most
+      testing we do now is useless" — asked as "which tests CANNOT fail?" and
+      answered by mutating the code they claim to guard)*
+
+      15 source files mutated across 15 different \`src/\` files: nine tests stayed
+      green against a real, re-committed defect; five went red and are therefore
+      earning their place; one was green but guards unreachable defensive code.
+      A sample of 87 files, not a census.
+
+      **The worst is `art-themes.test.ts:513`, and it is the only finding where
+      the entire 2,745-test suite went green on a live defect.** It proves the
+      flat scheme's cache tag is injective over the 60 authored schemes — all 60
+      differ in case colours, so an axis dropped from the tag is invisible. With
+      `...scheme.cloths.flat()` removed from `tagOf`, a scheme and the same
+      scheme with its cloths reordered both tag `49800n`. That is exactly the
+      failure CLAUDE.md singles out: a cache validates nothing about a hit, so a
+      key missing an axis serves the wrong art to everyone who already has the
+      right art under that key.
+
+      The others, each with the mutation that fooled it:
+
+        - `catalogue-reach.test.ts:41/:54` — `catalogueEffects()` is
+          `EFFECT_AXES.flatMap(...)` in the test file, so it asks whether
+          `EFFECT_AXES` is in a set built from `EFFECT_AXES`. The panel it names
+          is never read. Re-committing the original bug (5 values per axis
+          instead of 50) leaves 17/17 green, plus 223 tests in four other files.
+        - `tutorial.test.ts:402` (+ :419, :433, :455) — extracts numerals with
+          `/-?\d+(\.\d+)?/g` then asserts each is finite. The regex can only
+          match well-formed numerals, and `NaN` produces no match at all: the
+          one case the docblock says it guards is the one case it cannot see.
+          A `NaN` control point makes every tutorial arrow disappear, green.
+        - `panel-keys.test.ts:91` — greps un-comment-stripped source for
+          `usePanelKeys(`, so a docblock mention satisfies every dialog in the
+          file. Replacing the real call with `void 0` stays green.
+        - `stationery-drawn.test.ts:232` — an `||` chain ending in a clause that
+          matches every entry's `id`, so the three meaningful clauses are
+          unreachable. `/postcard` inserting a plain paragraph: 93/93 green.
+        - `packaging.test.ts:266` — named "nothing has started depending on
+          Tauri's drag-drop event instead", asserts only that a file CONTAINS
+          `handleDrop`, never the absence. Killing image drop entirely: green.
+        - `tooltip.test.ts:41` — expected offsets built by calling the function
+          under test, so `GAP` is unpinned. 11 → 40: whole file green.
+        - `sound-sets.test.ts:735` — a >500/<=1500 window on `PREVIEW_MS` and
+          the function never called. Dropping the last beat takes it to 620:
+          green.
+        - `roll-gates.test.ts:104` — `toMatch(/WALLPAPER_PRESETS/)` over a file
+          the picker list does not live in. (Covered elsewhere:
+          `design-cache-keys.test.ts:335` DOES catch it.)
+        - Four more that read no product file at all, so no mutation can exist:
+          two in `plugged-in.test.ts` (one over a literally empty exemption map,
+          one arithmetically unfalsifiable), `tooltips.test.ts:86` — the file's
+          OWN anti-vacuity guard, which re-types its regex and tests it against
+          a literal instead of asserting the sweep found any files — and a
+          `expect(2.5 / 2.5).toBe(1)`.
+
+      **The shape, and it is not laziness.** Both patterns are a test written
+      where the product could not be imported: the MIRROR reimplements the one
+      construction step and asserts it against its own inputs; the TOKEN GREP
+      asserts a file contains an identifier, which proves the wiring was once
+      written and not that it still does anything. The fixes are known —
+      `shelf-headroom.test.ts` and `stationery-drawn.test.ts` already read
+      modules as source and assert their shape, and `design-cache-keys.test.ts`
+      already tests a key differentially and went RED under mutation.
+
+      Being fixed now, each one watched failing against the exact mutation that
+      fooled it.
+
 - [x] **Replace most of the test suite with AI-in-the-loop visual verification.**
       > "I want there to be some sort of AI (you) in the loop testing where you
       > check each part of the gif to verify and find these issues. Most testing

@@ -15,12 +15,6 @@ tree is in right now, what's uncommitted, and what to check first.
 - `:1089` **Nothing checks an ordinary commit.** No push/PR CI workflow exists;
   adding one spends the owner's Actions minutes. Their call, not an agent's.
 
-### Needs tracing, not yet started
-
-- `:197` **The curl freezes near the end of the first turn after a panel
-  closes** — up to 2,523ms stuck at p=0.89. A hypothesis is written down
-  (stale-scale re-rasterise contending with the next `beginFlip`) but untested.
-
 ### The release sequence — do these IN ORDER, on a dev server nothing else is
 ### writing to (see `:1236` for the full six-step breakdown and why order matters)
 
@@ -210,9 +204,36 @@ being reviewed frame by frame.
       than being waved off with that prior. Run `probe-turn-face.mjs` against
       the running app before the next demo re-render.
 
-- [ ] **The curl freezes near the end of the first turn after a panel closes.**
+- [x] **The curl freezes near the end of the first turn after a panel closes.**
+      REFUTED as a headless SwiftShader presentation artefact, not a cache or
+      application-main-thread stall. The repaired pointer-driven probe now
+      measures the timing it previously only printed incidentally, defaults to
+      no screencast, rejects real HMR, traces the raster cache and offscreen
+      `toCanvas`, records long tasks, visibility and font lifecycle, and has a
+      live `midcurl` sabotage watched red (**18 missing-face frames, ~280ms,
+      GATE ALIVE**).
+
+      The original hypothesis is false. On a reproduced 2,710ms turn the two
+      missing presentation intervals were 845ms and 1,331ms, but
+      `cache.suspend()` entered with no work in flight, no capture or
+      offscreen raster overlapped either interval, and no browser long task
+      overlapped them. A warmed-panel run refuted first-mount and font work;
+      a no-panel run on the same destination was clean (529ms, 20ms worst
+      gap); CDP screencast amplified the pause but did not create it.
+
+      The isolating control was the compositor path: with the normal book
+      panel-fit translate+scale, a warmed Page style close produced a 320ms
+      rAF gap and 1,074ms landing hold; the identical run with only that
+      transform disabled measured 23ms and 145ms. Visibility stayed `visible`
+      and fonts stayed `loaded`. The report was found only under headless
+      SwiftShader, while the owner had already said the web-server app did not
+      show the turn symptoms. Changing the real panel-fit behavior to appease
+      software rendering would reintroduce the actual covered-book defect, so
+      no production code changed. Evidence lives under
+      `qa/demo-freeze-{cause,no-panels,page-style-warm,no-panel-fit}/`.
+
       *(found while trying to reproduce the three symptoms — none of which
-      reproduced, and this did)*
+      reproduced at the time, and this appeared to)*
 
       Measured at 1360x850, the demo's own viewport, driving the demo's own
       sequence. A turn is designed to take 450ms and measures 436-518ms. The

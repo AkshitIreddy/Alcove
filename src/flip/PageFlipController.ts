@@ -453,10 +453,35 @@ export class PageFlipController {
       // is to have it ready for the next one.
       for (const id of missing) void this.options.cache.ensure(id);
     }
-    // `front` is the face the reader is looking at as it lifts. Without it the
-    // curl is a blank sheet; the other two only matter once it is part-way over,
-    // by which time an idle capture has usually landed.
-    const canCurl = pages.front === null || cachedFor(pages.front) !== null;
+    /*
+     * BOTH BIG FACES, not just the front.
+     *
+     * This used to require only `front`, on the reasoning that "the other two
+     * only matter once it is part-way over, by which time an idle capture has
+     * usually landed". Usually is the problem. `revealed` is the PAGE UNDER THE
+     * CURL — the thing the reader is turning towards, and the largest area on
+     * screen for most of the gesture — and when its bitmap has not landed the
+     * shader samples nothing and draws bare paper. The result is a spread that
+     * goes completely blank mid-turn and fills in afterwards, which is the
+     * defect this whole subsystem has now been through twice.
+     *
+     * Seen in the README's demo, which turns pages about a second apart: four
+     * frames of an empty book between one spread and the next. Not seen by any
+     * probe here, because they all measure the DOM — and during a curl the DOM
+     * leaves are `visibility: hidden` WITH their text still in them, so a leaf
+     * reads as inked while the reader is looking at a blank canvas.
+     *
+     * `back` is deliberately NOT required: it is the underside of the turning
+     * sheet, seen briefly and at a steep angle, and blank paper is what the
+     * back of a sheet looks like anyway.
+     *
+     * The alternative when this says no is not "nothing" — it is the rigid CSS
+     * fold, whose faces are the live leaves, so it always has the real words on
+     * it. A plainer turn beats a blank one.
+     */
+    const faceReady = (id: string | null): boolean =>
+      id === null || cachedFor(id) !== null;
+    const canCurl = faceReady(pages.front) && faceReady(pages.revealed);
 
     if (this.usesWebGL && this.ctx && this.renderer && canCurl) {
       // What colour is blank paper today? The reader may have changed theme

@@ -9,6 +9,24 @@
   inset: 0;
   overflow: hidden;
   z-index: var(--z-shelf);
+  /*
+   * THE WALL, under the canvas.
+   *
+   * Nothing was painted here, so between the book view unmounting and the Pixi
+   * world's first frame the reader got the bare page background: the dock and
+   * the zoom pill floating on blank cream. Measured on the README's demo, in a
+   * production build — eleven frames, about three quarters of a second, every
+   * time a book is closed.
+   *
+   * `--wall` is the house scheme's backdrop, the same value `FLAT.wall` gives
+   * the world, so the gap now reads as a room whose furniture has not arrived
+   * rather than as nothing at all. It is deliberately the STATIC token and not
+   * the live room's wall: this is a fallback for the frames before the world
+   * exists to be asked, and a per-scheme custom property written on <html>
+   * would cost a document-wide style invalidation to be right about a colour
+   * nobody sees for long.
+   */
+  background: var(--wall);
 }
 
 /* ----------------------------------------------------------------------------

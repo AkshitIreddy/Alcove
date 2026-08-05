@@ -165,7 +165,7 @@ const tl = timeline((t) => {
     }
     await new Promise((r) => setTimeout(r, 3000));
   });
-  t.hold(1.2);
+  t.hold(2.0);
 
   /*
    * THE SEAM. Everything above is setup the reader never sees — the trim
@@ -174,13 +174,13 @@ const tl = timeline((t) => {
    */
   t.loopAnchor();
   t.cue('shelf');
-  t.hold(0.9);
+  t.hold(1.8);
 
   /* ---------------------------- 2. the studio ---------------------------- */
 
   t.click('[aria-label="Library studio"]', { via: 'cursor' });
   t.waitFor('.nb-library-studio');
-  t.hold(1.0);
+  t.hold(1.8);
   t.cue('studio');
 
   for (const step of STUDIO_TOUR) {
@@ -197,11 +197,11 @@ const tl = timeline((t) => {
     t.click(selector, { via: 'cursor' });
     // Long enough to watch the case and the wall actually repaint, which is
     // the whole point of this section.
-    t.hold(1.15);
+    t.hold(1.9);
   }
 
   t.click('[aria-label="Close Library studio"]', { via: 'cursor' });
-  t.hold(0.8);
+  t.hold(1.5);
 
   /* -------------------------- 3. open a book ----------------------------- */
 
@@ -229,7 +229,7 @@ const tl = timeline((t) => {
   });
   t.waitFor('.pulled-book');
   // Let the hinge, the arc and the overshoot finish before touching it.
-  t.hold(1.1);
+  t.hold(1.7);
   /*
    * A REAL pointer, which `via: 'cursor'` gives. The cover listens for pointer
    * events, so a synthetic `element.click()` does nothing at all — checked,
@@ -237,7 +237,7 @@ const tl = timeline((t) => {
    */
   t.click('.pulled-book', { via: 'cursor' });
   t.waitFor('.nb-prose');
-  t.hold(1.4);
+  t.hold(2.4);
   t.cue('book');
 
   /* ------------------ 4. turn pages, opening panels between --------------- */
@@ -262,25 +262,35 @@ const tl = timeline((t) => {
     ['In and out', '.nb-share'],
   ];
 
+  /*
+   * A READER'S PACE, and it is not only about the look.
+   *
+   * The raster cache warms the faces for the NEXT turn in idle time, so how
+   * fast you turn decides whether the curl has textures to draw. Measured
+   * earlier: at 1.6s between turns 2 of 4 turns had all three, at 3s it was
+   * 4 of 4. Hammering the key outruns the warm, and a turn that outruns it now
+   * falls back to the rigid fold rather than curling onto blank paper — correct,
+   * but the demo should show the curl, because that is what a reader gets.
+   */
   const turn = () => {
     t.call(async (page) => {
       await page.keyboard.press('ArrowRight');
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1900));
     });
-    t.hold(0.75);
+    t.hold(1.5);
   };
 
   turn();
   for (const [name, selector] of PANELS) {
     t.click(`.nb-rail button[aria-label^="${name}"]`, { via: 'cursor' });
     t.waitFor(selector);
-    t.hold(1.05);
+    t.hold(1.9);
     t.call(async (page) => {
       const close = await page.$(`[aria-label^="Close ${name}"]`);
       if (close) await close.click();
-      await new Promise((r) => setTimeout(r, 650));
+      await new Promise((r) => setTimeout(r, 900));
     });
-    t.hold(0.35);
+    t.hold(0.7);
     turn();
   }
   turn();
@@ -302,7 +312,7 @@ const tl = timeline((t) => {
    * what gives the trimmer a matching frame to cut on; too short and the seam
    * lands mid-animation.
    */
-  t.hold(1.6);
+  t.hold(2.6);
 });
 
 const scene = {
@@ -337,7 +347,13 @@ const scene = {
    * A product tour is mostly holds, so playback carries a lot of speed before
    * anything reads as hurried; the rest comes off the frame budget.
    */
-  encode: { width: 860, fps: 12, speed: 2.3, colors: 96, targetMB: 5 },
+  /*
+   * Unhurried, on purpose. The reader on seeing the first cut: *"the gif is
+   * moving too fast, like make sure it is slow"* — and *"i dont mind if gif is
+   * big readme has space"*. So playback is near real time, the frame rate is
+   * up for smoothness, and the size budget is loose enough not to fight it.
+   */
+  encode: { width: 900, fps: 14, speed: 1.1, colors: 128, targetMB: 20 },
 };
 
 if (CHECK) {

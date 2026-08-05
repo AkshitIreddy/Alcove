@@ -11,7 +11,7 @@ the front page, because somebody arriving at the front page has not installed
 anything yet and a changelog is the wrong first thing to hand them.
 
 The definitive list for a given build is the
-[GitHub Release](https://github.com/AkshitIreddy/alcove/releases) it is attached
+[GitHub Release](https://github.com/AkshitIreddy/Alcove/releases) it is attached
 to — those notes are generated at the tag by
 [`scripts/release-notes.mjs`](../../scripts/release-notes.mjs), which diffs
 against the previous one. This page is the human summary beside it.

@@ -145,7 +145,7 @@ export const DOC_PAGES = [...PAGES, ...SIDE_PAGES];
 /* --------------------------- the shipped product ------------------------- */
 
 /** Where releases are published. The repo the remote actually points at. */
-export const RELEASES = 'https://github.com/AkshitIreddy/alcove/releases';
+export const RELEASES = 'https://github.com/AkshitIreddy/Alcove/releases';
 
 /**
  * Rounded size of the NSIS installer, for the download table.
@@ -206,8 +206,8 @@ export function renderBadges(version = appVersion()) {
      * and the real build status is worth more than one that repeats
      * package.json back at itself.
      */
-    `  <a href="${RELEASES}/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>`,
-    `  <a href="https://github.com/AkshitIreddy/alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>`,
+    `  <a href="${RELEASES}/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>`,
+    `  <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>`,
     // Windows first because it is the platform this was built and used on, but
     // no longer ALONE: the release workflow builds a universal macOS .dmg and
     // Linux packages from the same tag, and a badge that said Windows only

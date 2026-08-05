@@ -79,7 +79,8 @@ const tidy = (text) =>
  * So the notes are composed in three parts and joined at the end, rather than
  * pushed onto one array in the order they happen to be computed.
  */
-const RAW = 'https://raw.githubusercontent.com/AkshitIreddy/alcove/main';
+const REPO = 'https://github.com/AkshitIreddy/Alcove';
+const RAW = 'https://raw.githubusercontent.com/AkshitIreddy/Alcove/main';
 
 const head = [];
 // Centred mark and title. GitHub release bodies do not resolve repo-relative
@@ -130,6 +131,21 @@ if (hidden.length > 0) {
   lines.push(`_Plus ${hidden.length} maintenance change${hidden.length === 1 ? '' : 's'}._`);
   lines.push('');
 }
+
+/*
+ * The way out of the summary and into the detail.
+ *
+ * These notes are deliberately short — grouped subjects, not a commit wall —
+ * which is only defensible if the long version is one click away. Two links,
+ * because they answer different questions: the changelog PAGE is the written
+ * account of what each version changed and why, and the compare view is the
+ * literal diff for anyone who would rather read the code than the prose.
+ */
+lines.push(
+  `📖 **[The full changelog](${REPO}/blob/main/docs/readme/releases.md)**` +
+    (previous ? ` · [every commit in ${previous}…${tag}](${REPO}/compare/${previous}...${tag})` : ''),
+);
+lines.push('');
 
 /*
  * Which file to take.

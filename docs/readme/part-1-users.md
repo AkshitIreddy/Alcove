@@ -49,9 +49,9 @@ bring a browser along with it, and there is no account to make.
 <!-- gen:downloads -->
 | Platform | What to download | First launch |
 | --- | --- | --- |
-| **Windows 10 / 11** · x64 | [`Alcove_0.3.0_x64-setup.exe`](https://github.com/AkshitIreddy/alcove/releases/latest) · about 16 MB | Double-click. It installs for **the current user**, so Windows never asks for an administrator. SmartScreen warns once — *More info* → *Run anyway*. |
-| **macOS 11+** · Apple silicon and Intel | [`Alcove_0.3.0_universal.dmg`](https://github.com/AkshitIreddy/alcove/releases/latest) | One universal disk image for both chips, so there is nothing to choose between. Unsigned, so the first open is right-click → *Open* rather than a double-click. |
-| **Linux** · x64 | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/alcove/releases/latest) | Built on Ubuntu 22.04, so it runs on 22.04 and anything newer. The AppImage needs no install — mark it executable and run it. |
+| **Windows 10 / 11** · x64 | [`Alcove_0.3.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB | Double-click. It installs for **the current user**, so Windows never asks for an administrator. SmartScreen warns once — *More info* → *Run anyway*. |
+| **macOS 11+** · Apple silicon and Intel | [`Alcove_0.3.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) | One universal disk image for both chips, so there is nothing to choose between. Unsigned, so the first open is right-click → *Open* rather than a double-click. |
+| **Linux** · x64 | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) | Built on Ubuntu 22.04, so it runs on 22.04 and anything newer. The AppImage needs no install — mark it executable and run it. |
 
 All three are built from the same tag by `.github/workflows/release.yml` and attached to the GitHub Release with a `SHA256SUMS.txt` beside them. Windows also gets `Alcove_0.3.0_x64_en-US.msi`, the same app as an MSI, for anyone who deploys software with a policy rather than a double-click.
 

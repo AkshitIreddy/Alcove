@@ -49,10 +49,10 @@
  *
  * ## The two costs, stated rather than discovered
  *
- *   - **Every commit SHA moves.** TODO.md and docs/readme/releases.md quote
- *     them by the dozen. filter-repo writes a commit map; `--remap` reads it
- *     and rewrites those references in one pass, which is the only way that
- *     does not miss some.
+ *   - **Every commit SHA moves.** The handoff, review and release documents
+ *     quote them by the dozen. filter-repo writes a commit map; `--remap`
+ *     scans every tracked text file and rewrites those references in one pass,
+ *     then scans the same set again to prove no mapped old reference remains.
  *   - **Anybody holding a clone must re-clone.** For a repository whose only
  *     other copy is the owner's remote, that is nobody.
  *
@@ -323,23 +323,76 @@ if (REMAP) {
   }
   /*
    * The map is "<old> <new>" per line, full 40-char SHAs, and a commit that
-   * was dropped entirely maps to all-zeros. Documents quote SHAs at seven
-   * characters, so the lookup is built on the short form — and a short SHA is
-   * only unambiguous because git says so, which is why a prefix that matches
-   * two entries is reported rather than guessed at.
+   * was dropped entirely maps to all-zeros. Documents normally quote seven
+   * characters, so entries are bucketed by the short form. A collision is
+   * resolved only when a longer token identifies one entry; a seven-character
+   * collision is named for a human rather than guessed at.
    */
-  const fullNew = new Map(); // short old prefix -> full new sha
-  const fullOldByShort = new Map(); // short old prefix -> full old sha
-  const ambiguous = new Set();
+  const byShort = new Map(); // short old prefix -> [{ oldSha, newSha }]
   for (const line of readFileSync(mapPath, 'utf8').split('\n')) {
     const [oldSha, newSha] = line.trim().split(/\s+/);
-    if (!oldSha || !newSha) continue;
-    if (/^0+$/.test(newSha)) continue; // the commit itself is gone
+    if (!/^[0-9a-f]{40}$/.test(oldSha ?? '') || !/^[0-9a-f]{40}$/.test(newSha ?? '')) {
+      continue;
+    }
     const key = oldSha.slice(0, 7);
-    if (fullNew.has(key) && fullNew.get(key) !== newSha) ambiguous.add(key);
-    fullNew.set(key, newSha);
-    fullOldByShort.set(key, oldSha);
+    const entries = byShort.get(key) ?? [];
+    if (!entries.some((entry) => entry.oldSha === oldSha && entry.newSha === newSha)) {
+      entries.push({ oldSha, newSha });
+      byShort.set(key, entries);
+    }
   }
+
+  /**
+   * Every tracked, non-binary file that could contain a hexadecimal token.
+   *
+   * `git grep -I` uses Git's own binary classification and searches the index's
+   * tracked set. The small `[0-9a-f]` prefilter cannot omit a SHA, and it avoids
+   * reading PNGs merely to decide they are PNGs. `-z` keeps spaces and other
+   * ordinary filename punctuation lossless.
+   */
+  const trackedTextFiles = () => {
+    try {
+      const out = execFileSync(
+        'git',
+        ['grep', '-I', '-l', '-z', '-e', '[0-9a-f]', '--', '.'],
+        { encoding: 'utf8', maxBuffer: 1 << 28 },
+      );
+      return out.split('\0').filter(Boolean);
+    } catch (error) {
+      // `git grep` uses 1 for the ordinary "nothing matched" result.
+      if (error && typeof error === 'object' && error.status === 1) return [];
+      throw error;
+    }
+  };
+
+  const remapText = (text, file) => {
+    const issues = [];
+    let replacements = 0;
+    const output = text.replace(/\b[0-9a-f]{7,40}\b/g, (sha) => {
+      const entries = byShort.get(sha.slice(0, 7));
+      if (!entries) return sha; // a hex colour, digest, or unrelated revision
+
+      // Seven characters identify the bucket; longer references must agree
+      // with the old full SHA over their whole quoted length.
+      const matching = entries.filter(
+        (entry) => sha.length === 7 || entry.oldSha.startsWith(sha),
+      );
+      if (matching.length === 0) return sha;
+      if (matching.length > 1) {
+        issues.push(`AMBIGUOUS ${sha} in ${file} — resolve by hand`);
+        return sha;
+      }
+      const [{ newSha }] = matching;
+      if (/^0+$/.test(newSha)) {
+        issues.push(`DROPPED ${sha} in ${file} — its commit has no replacement`);
+        return sha;
+      }
+      const next = newSha.slice(0, sha.length);
+      if (next !== sha) replacements += 1;
+      return next;
+    });
+    return { output, replacements, issues };
+  };
   /*
    * A longer reference gets the SAME number of characters back.
    *
@@ -352,36 +405,48 @@ if (REMAP) {
    * The full map is kept alongside the short one so a long reference is
    * rewritten from the real new SHA rather than padded from its prefix.
    */
-  const files = ['TODO.md', 'docs/readme/releases.md', 'CLAUDE.md'];
+  const files = trackedTextFiles();
+  const changedFiles = [];
   let changed = 0;
-  let missed = 0;
   for (const file of files) {
-    if (!existsSync(file)) continue;
     const before = readFileSync(file, 'utf8');
-    const after = before.replace(/\b[0-9a-f]{7,40}\b/g, (sha) => {
-      const key = sha.slice(0, 7);
-      if (ambiguous.has(key)) {
-        console.error(`  AMBIGUOUS ${key} in ${file} — resolve by hand`);
-        missed += 1;
-        return sha;
-      }
-      const full = fullNew.get(key);
-      if (!full) return sha; // not a commit of ours: a hex colour, a digest, prose
-      /*
-       * A hex run that merely SHARES a commit's seven-character prefix is not
-       * that commit. Rewriting it would corrupt a content digest into a commit
-       * id — and this file quotes digests, in the commit that explains what
-       * "same bytes on this machine" meant. So a longer token must match the
-       * old SHA over its whole length before it is touched.
-       */
-      if (sha.length > 7 && !fullOldByShort.get(key)?.startsWith(sha)) return sha;
-      changed += 1;
-      return full.slice(0, sha.length);
-    });
-    if (after !== before) writeFileSync(file, after);
+    const result = remapText(before, file);
+    changed += result.replacements;
+    if (result.output !== before) {
+      writeFileSync(file, result.output);
+      changedFiles.push(file);
+    }
   }
-  console.log(`  remapped ${changed} reference(s); ${missed} left for a human.`);
-  process.exit(missed > 0 ? 1 : 0);
+
+  /*
+   * Verification is a second read, not an assertion about the values above.
+   * If a write was skipped, a new tracked document was forgotten, or a mapped
+   * commit was dropped/ambiguous, this pass sees the stale token on disk.
+   */
+  const unresolved = [];
+  for (const file of trackedTextFiles()) {
+    const result = remapText(readFileSync(file, 'utf8'), file);
+    unresolved.push(...result.issues);
+    if (result.replacements > 0) {
+      unresolved.push(`STALE mapped reference(s) remain in ${file}`);
+    }
+  }
+  const uniqueUnresolved = [...new Set(unresolved)];
+  console.log(
+    `  remapped ${changed} reference(s) in ${changedFiles.length} file(s); ` +
+      `verified ${files.length} tracked text file(s).`,
+  );
+  if (changedFiles.length > 0) {
+    console.log('  changed files (stage only these):');
+    for (const file of changedFiles) console.log(`    ${file}`);
+  }
+  if (uniqueUnresolved.length > 0) {
+    console.error(`  verification failed — ${uniqueUnresolved.length} unresolved item(s):`);
+    for (const issue of uniqueUnresolved) console.error(`    ${issue}`);
+  } else {
+    console.log('  verification passed — no mapped old commit reference remains.');
+  }
+  process.exit(uniqueUnresolved.length > 0 ? 1 : 0);
 }
 
 /* ---------------------------------------------------------------------- run */
@@ -457,7 +522,8 @@ console.log(`
   Next, in this order:
 
     node scripts/shrink-history.mjs --remap     the SHAs in the docs moved
-    git add -A && git commit                    that remap as its own commit
+    git diff --name-only                        inspect the files --remap printed
+    git add -- <only those files> && git commit that remap as its own commit
     git remote add origin <url>                 filter-repo drops the remote
     git push --force origin main                deliberate, and typed by a person
     git push --force --tags origin              SEE BELOW — not optional

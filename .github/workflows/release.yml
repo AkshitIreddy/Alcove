@@ -424,7 +424,7 @@ jobs:
           # is a platform a reader was promised on the download table, so a
           # missing one is a broken promise rather than a smaller release.
           missing=''
-          for pattern in '*-setup.exe' '*.msi' '*.dmg' '*.deb' '*.rpm' '*.AppImage'; do
+          for pattern in '*-setup.exe' '*-setup-offline.exe' '*.msi' '*.dmg' '*.deb' '*.rpm' '*.AppImage'; do
             # shellcheck disable=SC2086
             set -- $pattern
             [ -e "$1" ] || missing="$missing $pattern"

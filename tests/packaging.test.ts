@@ -361,6 +361,16 @@ describe('the release workflow', () => {
     expect(WF).toMatch(/nsis\/\*-setup-offline\.exe/);
   });
 
+  it('refuses to publish unless BOTH Windows installers reached the release', () => {
+    // Uploading several paths with `if-no-files-found: error` proves only that
+    // at least one path matched. The release job therefore has its own list of
+    // promised file patterns, and the offline setup must be named separately:
+    // `*-setup.exe` does not match `*-setup-offline.exe`.
+    const presenceGate = /for pattern in ([^;]+); do/.exec(WF)?.[1] ?? '';
+    expect(presenceGate).toContain("'*-setup.exe'");
+    expect(presenceGate).toContain("'*-setup-offline.exe'");
+  });
+
   it('still builds all three platforms', () => {
     for (const name of ['windows-x64', 'macos-universal', 'linux-x64']) {
       expect(WF).toContain(`name: ${name}`);

@@ -595,6 +595,46 @@ export class PageRasterCache {
   }
 
   private async capture(pageId: string): Promise<RasterEntry | null> {
+    /*
+     * OFF-SCREEN FIRST, EVEN FOR A PAGE THAT IS MOUNTED.
+     *
+     * Capturing a mounted leaf means capturing the leaf the reader is looking
+     * at, and this routine cannot do that without WRITING TO IT: it adds
+     * `.snapshotting` — which hides the drag handle, the style switcher, both
+     * ProseMirror cursors and anything marked `data-snapshot-hide`, and kills
+     * the caret and the selection tint — then inlines paint onto every SVG
+     * inside it, and puts both back after an await that is 200ms+ of
+     * rasterising.
+     *
+     * Measured on a real page turn (`scripts/probe-landing-flicker.mjs`,
+     * sampling the DOM every animation frame, with reduced motion forced OFF so
+     * a curl actually happens): the turn is over at 665ms, the cache resumes
+     * and starts capturing at 928ms, two pages carry `.snapshotting` at once,
+     * and the last is released at 1238ms. The reader's page is edited underneath
+     * them for a third of a second, about a second after the turn — reported as
+     * *"a flicker for a second where it then puts all the processing effects we
+     * have on it"*.
+     *
+     * This was tried once before and reverted as inert: `captureUnmounted`
+     * returned null every time, so it fell straight through to the live path
+     * and changed nothing. The reason was a separate bug — `freeMark.tsx` threw
+     * on `editor.view.dom` for a staged editor and a bare `catch` swallowed it,
+     * so the offscreen path had never worked for anything. With that fixed the
+     * staged sheet appears in the trace (`nb-export-sheet` at x=-11881) and
+     * this preference does what it says.
+     *
+     * The cost is a snapshot that can lag the live DOM by a save, and this file
+     * already accepts exactly that: a "≤300ms-stale frame is accepted by design
+     * (content is unreadable mid-flip; landings always swap to live DOM)". A
+     * texture one keystroke behind, behind a moving curl, is invisible. A page
+     * that changes under the reader is not.
+     *
+     * The live path stays as the fallback, so a build with no offscreen capture
+     * wired still gets textures rather than blank cream.
+     */
+    const staged = await this.captureUnmounted(pageId);
+    if (staged !== null) return staged;
+
     const element = this.options.getElement(pageId);
     if (
       element === null ||
@@ -602,10 +642,7 @@ export class PageRasterCache {
       element.clientWidth < 1 ||
       element.clientHeight < 1
     ) {
-      // No live leaf for this page (adjacent spread, or mid-remount with no
-      // layout yet) — stage it offscreen so the flip's back and revealed
-      // faces still get real content instead of blank cream.
-      return this.captureUnmounted(pageId);
+      return null;
     }
     const versionAtStart = this.version(pageId);
     // The theme can have changed since the last capture; re-read it now so the

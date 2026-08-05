@@ -259,11 +259,19 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### The README and the release page
 
-- [ ] **The pictures and the words around them need updating.**
+- [x] **The pictures and the words around them need updating.**
       > "The readme — you will now have to update the pictures and explanation
       > maybe."
 
-- [ ] **Part 1 should be pictures with explanation, not a wall of text.**
+
+      All 19 recaptured against this build, and every alt text read back
+      against its own picture rather than assumed. Eight had stopped being
+      true: the Welcome book was rewritten for 0.3, so the right-hand page is
+      "The shelf" and not "Writing"; the later spread is "A library of your
+      own" and "Dressing a book", not folds and spoilers; the script renders
+      on the RIGHT leaf, not the left; and the studio card now reads 61 books.
+      The shelf itself was re-seeded — see below.
+- [x] **Part 1 should be pictures with explanation, not a wall of text.**
       > "I kind of want it to have more of a picture-and-explanation vibe for
       > most of part 1. We already do this, but there is a substantial amount of
       > text between the 2nd and 3rd occurrence of pictures — you know, the
@@ -271,17 +279,37 @@ under each item (grammar tidied, nothing else), then the task as understood.
       > actually do both. We want part 1 to have as many pictures as possible,
       > to not intimidate users."
 
-- [ ] **Put the what-is-what table at the TOP of the release notes.**
+
+      Part 1 opened with 156 lines of solid text; its first picture is now at
+      line 12. Six new ones — the taste questions, the tour card, settings,
+      the cheat sheet, "In and out" and focus mode — so thirteen became
+      nineteen, and the four sections that described a surface in prose and
+      never showed it now show it. The headline shelf picture was also a
+      mostly-empty bookcase, because `layout.ts` CENTRES a part-filled row:
+      sized from the layout constants instead of by eye, twenty a floor fills
+      it. Caught on the way: `TASTE_QUESTIONS` holds five and both the README
+      and the settings sheet said four.
+- [x] **Put the what-is-what table at the TOP of the release notes.**
       > "In the releases page, the table of what is what should be at top, and
       > then under it what's new — otherwise that table gets buried in the 'read
       > more' of the GitHub UI."
 
-- [ ] **Make the release document look like the app.**
+
+      `release-notes.mjs` composes head + install + body and joins at the end,
+      so the download table cannot be pushed below GitHub's fold by a long
+      changelog. Found while checking it: the tag argument had never worked on
+      Windows — `^` is cmd.exe's escape character, so `v0.2.0^{commit}` arrived
+      as `v0.2.0{commit}`, failed, and HEAD was used instead without a word.
+- [x] **Make the release document look like the app.**
       > "See if you can spruce up the text and UI in that release document to
       > better align with our app."
 
 ### The demo
 
+
+      Mark, title and tagline centred above the table; the recommended row
+      marked rather than merely listed first (five rows with no answer is a
+      decision); SmartScreen and Gatekeeper spelled out instead of alluded to.
 - [ ] **A looping GIF demo, built with the reader's own `gifsmith`.**
       > "Use the gifsmith package — I made it — to create a GIF demo of the app.
       > You may start with showing the bookshelf (pick a fancy, grand-looking
@@ -309,7 +337,7 @@ under each item (grammar tidied, nothing else), then the task as understood.
       > "After all this you can make the repo public, then do a new release that
       > encompasses all these changes as 0.3."
 
-- [ ] **Uninstall the app and remove its data — and stop installing it.**
+- [x] **Uninstall the app and remove its data — and stop installing it.**
       > "Delete the app you installed for me, with app data of it now. I will go
       > through the experience myself from GitHub. No need for you to install
       > the app for me any more either."
@@ -318,6 +346,14 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### Packaging and release
 
+
+      Done, and silently — the uninstaller ran with `/S` and a hidden window,
+      so nothing appeared on screen. Gone: the program folder, the library at
+      `%APPDATA%\com.alcove.app`, the WebView2 cache at
+      `%LOCALAPPDATA%\com.alcove.app`, the Start Menu shortcut and the
+      registry entry. The database was read first — every title in it came
+      from the seeded Welcome book and it was created at 23:43 on 4 Aug, when
+      I installed it, so nothing written by hand was in it.
 - [x] **Ship 0.2, and let CI build every platform from now on.**
       Released at `v0.2.0`: seven artefacts and a `SHA256SUMS.txt`, built from
       one tag on three runners. Windows `-setup.exe` 16,936,253 and the

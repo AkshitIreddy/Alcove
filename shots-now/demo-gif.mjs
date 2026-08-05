@@ -79,13 +79,42 @@ const FLOOR_3 = [
 ];
 
 /**
- * The rooms the studio tours, in order, ending where it began.
+ * What the studio tour presses, in order.
  *
- * By VISIBLE NAME rather than by preset id: the cards are the thing being
- * demonstrated, so the demo should press what the reader would press. The last
- * entry is the opening room — see the note about the loop at the top.
+ * By VISIBLE NAME rather than by preset id, through the `aria-label` every
+ * `DesignStrip` tile already carries (`"<name> — <blurb>"`), which an attribute
+ * prefix match reaches with ordinary CSS. gifsmith resolves selectors with
+ * `querySelector`, so Playwright's `:has-text()` is a syntax error here — worth
+ * saying out loud because the dry run is what caught it.
+ *
+ * Four axes, not one, because the point the reader asked for is *"so many
+ * options in different areas of customisation … to show how you can change it
+ * drastically"*: a whole room, then the timber under it, then the wall behind
+ * it, then the colours over all of it. Repainting a room never straightens its
+ * arches, so pressing them one after another shows four independent dials
+ * rather than four versions of the same one.
+ *
+ * THE LAST ENTRY RETURNS TO THE OPENING ROOM. A room preset sets colour,
+ * carpentry and paper together, so pressing The House Room again undoes all
+ * three of the individual changes above it in one press — which is what lets
+ * the scene come home, and the loop close without a crossfade. See the note at
+ * the top of the file.
  */
-const ROOM_TOUR = ['Gilt Salon', 'Card Room', 'Carnival', 'The House Room'];
+const STUDIO_TOUR = [
+  { strip: 'Room presets', name: 'Gilt Salon' },
+  { strip: 'Room presets', name: 'Card Room' },
+  { strip: 'Room presets', name: 'Carnival' },
+  { strip: 'Bookcase build', index: 3 },
+  { strip: 'Wallpaper', index: 4 },
+  { strip: 'Library colours', index: 2 },
+  { strip: 'Room presets', name: 'The House Room' },
+];
+
+/** A CSS selector for one tile in one named strip. */
+const tileSelector = (step) =>
+  step.name !== undefined
+    ? `[aria-label="${step.strip}"] .nb-strip-tile[aria-label^="${step.name}"]`
+    : `[aria-label="${step.strip}"] .nb-strip-tile:nth-of-type(${step.index})`;
 
 const tl = timeline((t) => {
   /* ----------------------------- 1. the shelf ---------------------------- */
@@ -97,11 +126,20 @@ const tl = timeline((t) => {
     await page.evaluate(async () => {
       await globalThis.__shelfWorld.ready;
     });
-    const skip = await page.$('text=skip the tour');
-    if (skip) {
-      await skip.click();
-      await new Promise((r) => setTimeout(r, 900));
-    }
+    /*
+     * PUPPETEER, not Playwright. gifsmith drives puppeteer-core, which has no
+     * `text=` selector engine — `page.$('text=skip the tour')` is not "no match",
+     * it throws, and the failure surfaced a long way from here as `.nb-prose`
+     * timing out because the tour card was still sitting over the shelf.
+     * Everything in this file that touches the page has to be puppeteer's API.
+     */
+    await page.evaluate(() => {
+      const skip = [...document.querySelectorAll('button, a')].find((el) =>
+        /skip the tour/i.test(el.textContent ?? ''),
+      );
+      skip?.click();
+    });
+    await new Promise((r) => setTimeout(r, 900));
     // Stock three floors. Awaited one floor at a time — each is a run of
     // inserts plus a store refresh, and firing all three at once races the
     // slot allocator.
@@ -136,19 +174,20 @@ const tl = timeline((t) => {
   t.hold(1.6);
   t.cue('studio');
 
-  for (const room of ROOM_TOUR) {
+  for (const step of STUDIO_TOUR) {
+    const selector = tileSelector(step);
+    // Bring it into the sheet's own scroll before pointing at it — the later
+    // axes are below the fold, and a cursor glide to an off-screen tile lands
+    // on nothing.
     t.call(async (page) => {
-      await page.evaluate((name) => {
-        const card = [...document.querySelectorAll('.nb-library-studio button')].find(
-          (b) => (b.textContent ?? '').trim().startsWith(name),
-        );
-        card?.scrollIntoView({ block: 'center' });
-      }, room);
-      await new Promise((r) => setTimeout(r, 500));
+      await page.evaluate((sel) => {
+        document.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, selector);
+      await new Promise((r) => setTimeout(r, 700));
     });
-    t.click(`.nb-library-studio button:has-text("${room}")`, { via: 'cursor' });
+    t.click(selector, { via: 'cursor' });
     // Long enough to watch the case and the wall actually repaint, which is
-    // the point of this section.
+    // the whole point of this section.
     t.hold(1.7);
   }
 
@@ -157,25 +196,37 @@ const tl = timeline((t) => {
 
   /* -------------------------- 3. open a book ----------------------------- */
 
+  /*
+   * TWO BEATS, because that is what the app does.
+   *
+   * `pullOut` does NOT open a book. `world.ts:1163` flies the spine out of the
+   * case on a hinge and leaves it standing in front of the shelf, big enough to
+   * read the cover, with nothing committed — and the cover itself is then the
+   * button ("no need for the menu with read it put it back"). So the demo pulls
+   * it out, lets the flight land, and clicks the cover.
+   *
+   * Which is the better demo anyway: the reader sees the book leave the shelf
+   * and then sees it opened, rather than the shelf cutting to a spread.
+   */
   t.call(async (page) => {
-    const rect = await page.evaluate(() => {
-      const books = globalThis.__shelfVisibleBooks();
+    const opened = await page.evaluate(() => {
+      const books = globalThis.__shelfVisibleBooks?.() ?? [];
       const welcome = books.find((b) => /welcome/i.test(b.title)) ?? books[0];
-      return welcome ? { id: welcome.id, ...globalThis.__shelfSpineRect(welcome.id) } : null;
+      if (!welcome) return { ok: false, seen: books.length };
+      globalThis.__shelfPullOut(welcome.id);
+      return { ok: true, title: welcome.title, seen: books.length };
     });
-    if (rect) globalThis.__alcoveBook = rect;
+    if (!opened.ok) throw new Error(`demo-gif: no book to pull out (${opened.seen} visible)`);
   });
-  t.hold(0.4);
-  t.call(async (page) => {
-    // Pull it out the way the shelf does it, so the book leaves the case with
-    // its own animation rather than the view simply cutting to a spread.
-    await page.evaluate(() => {
-      const books = globalThis.__shelfVisibleBooks();
-      const welcome = books.find((b) => /welcome/i.test(b.title)) ?? books[0];
-      if (welcome) globalThis.__shelfPullOut(welcome.id);
-    });
-    await new Promise((r) => setTimeout(r, 1600));
-  });
+  t.waitFor('.pulled-book');
+  // Let the hinge, the arc and the overshoot finish before touching it.
+  t.hold(1.5);
+  /*
+   * A REAL pointer, which `via: 'cursor'` gives. The cover listens for pointer
+   * events, so a synthetic `element.click()` does nothing at all — checked,
+   * because it silently left the demo on the shelf for the rest of the scene.
+   */
+  t.click('.pulled-book', { via: 'cursor' });
   t.waitFor('.nb-prose');
   t.hold(2.0);
   t.cue('book');
@@ -188,12 +239,18 @@ const tl = timeline((t) => {
    * and closed by its own ✕ — never Escape, which is also how a reader puts
    * the book back and would end the scene early.
    */
+  /*
+   * The sheet roots carry the SHORT name — `.nb-share`, not `.nb-share-panel`,
+   * and `.nb-pagestyle`, not `.nb-page-style`. Guessing these cost a
+   * five-minute run in `readme-shots.mjs`, because a wrong selector does not
+   * error: the opener just keeps clicking a toggle and waiting.
+   */
   const PANELS = [
-    ['Page style', '.nb-page-style-panel'],
-    ['Catalogue', '.nb-catalogue-panel'],
-    ['Table of contents', '.nb-toc-panel'],
+    ['Page style', '.nb-pagestyle'],
+    ['Catalogue', '.nb-catalogue'],
+    ['Table of contents', '.nb-toc'],
     ['Customize this book', '.nb-book-studio'],
-    ['In and out', '.nb-share-panel'],
+    ['In and out', '.nb-share'],
   ];
 
   const turn = () => {
@@ -260,9 +317,16 @@ if (CHECK) {
   const plan = await dryRun(scene);
   console.log(JSON.stringify(plan, null, 2));
   const sheet = await contactSheet(scene, 9);
+  // The shape varies by version, so take whichever field carries the base64
+  // rather than assuming one — an object handed to Buffer.from throws.
+  const b64 = typeof sheet === 'string' ? sheet : (sheet.gridBase64 ?? sheet.png ?? sheet.base64);
   const file = `${OUT_DIR}/demo-contact.png`;
-  writeFileSync(file, Buffer.from(sheet.png ?? sheet, 'base64'));
-  console.log(`\ncontact sheet -> ${file}`);
+  if (typeof b64 === 'string') {
+    writeFileSync(file, Buffer.from(b64, 'base64'));
+    console.log(`\ncontact sheet -> ${file}`);
+  } else {
+    console.log('\ncontact sheet keys:', Object.keys(sheet).join(', '));
+  }
 } else {
   const result = await render(scene);
   console.log(JSON.stringify(result, null, 2));

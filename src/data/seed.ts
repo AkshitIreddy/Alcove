@@ -369,10 +369,10 @@ Click the ruled lines and type. It saves itself, and never leaves this machine.
 
 - Drag to pan the shelf, scroll to zoom
 - Click a book to bring it forward, again to open
-- Arrow keys turn pages, or drag a corner
+- Click a page edge to turn it, or drag it
 
 ::: card {title="Thirty-two leaves, every one a demonstration"}
-Nothing here is a screenshot. Every card, diagram and picture is the real thing.
+Nothing here is a screenshot.
 :::
 
 ::: banner {color=moss}
@@ -390,8 +390,9 @@ Drag to pan, scroll to zoom. Pull a book out, or press \`Enter\` on the lit one.
 :::
 
 ::: sticky-note {color=lemon, rotate=-2}
-The dock at the foot of the rail holds a new book, another floor, the studio and the trash.
+The dock at the foot of the rail holds a new book, a floor, the studio and the trash.
 :::
+
 
 ::: tag {color=moss}
 \`Ctrl Alt F\` grows the case by a floor
@@ -420,7 +421,7 @@ Carpentry, timber, wallpaper and colour are four separate dials — \`Ctrl Alt S
   // Page 4 — the book itself is a thing you can dress
   `# Dressing a book {sticker=sparkle}
 
-The paintbrush at the top of the rail opens the **book studio**.
+The paintbrush opens the **book studio**.
 
 ::: card {title="The outside"}
 Leather, cloth or board; raised cords, gilt rules, a title plate and gilt edges.
@@ -450,7 +451,7 @@ Press \`/\` on an empty line for the **slash menu** — headings, lists, tables,
 Sticky notes are blocks too — move me.
 :::
 
-> A page that fills up flows onto the next. Nothing here scrolls. {washi=top}
+> A page that fills up flows onto the next. {washi=top}
 
 ::: callout {variant=info}
 No save button and no cloud — every keystroke lands in a file on this machine.
@@ -478,10 +479,6 @@ A note can hang off a word[^ like this one ].
 ::: index-card {title="Two spellings of everything"}
 \`**bold**\` or \`__bold__\`. The parser takes whichever you reach for.
 :::
-
-::: marginalia
-Select words for the little toolbar.
-:::
 `,
 
   // Page 7 — lists, three kinds
@@ -494,7 +491,6 @@ A dash makes a bullet, a number a numbered list.
   - Buckram
 - Papers
   - Laid
-  - Wove
 
 1. Pull a book off the shelf
 2. Write in it
@@ -562,8 +558,8 @@ Perforated, postmarked, worth one penny.
 Message left, address right, and no room for either.
 :::
 
-::: map-pin {title="The blue door"}
-Second on the left, past the bakery.
+::: callout {variant=tip}
+Type \`:::\` to open the whole drawer.
 :::
 `,
 
@@ -575,7 +571,7 @@ Flat between the pages for a fortnight, and still blue.
 :::
 
 ::: ticket-stub {title="ADMIT ONE"}
-Row H, seat 12. It rained the whole way home.
+Row H, seat 12. It rained.
 :::
 
 ::: wax-seal {title=A}
@@ -614,8 +610,8 @@ Pressed while still soft. Not to be opened before Sunday.
 A post-it. Pick it up by its handle, then tilt it with \`{rotate=-2}\`.
 :::
 
-::: washi-box {color=sky}
-A box held to the page by a strip of washi tape.
+::: map-pin {title="The blue door"}
+Second on the left, past the bakery.
 :::
 
 ::: toggle {title="A fold — click it"}
@@ -662,7 +658,7 @@ A white frame, captioned in pencil.
 :::
 
 ::: card {title="Both are only containers"}
-Drag a corner to resize, or write \`{width=320}\`. \`{align=left}\` slides one across.
+Drag a corner, or write \`{width=320}\`.
 :::
 `,
 
@@ -705,8 +701,8 @@ Alcove
     Ribbons
 \`\`\`
 
-::: card {title="Five fences, no library"}
-\`tree\`, \`mindmap\`, \`graph\`, \`flowchart\`, \`timeline\` — every line drawn by hand.
+::: card {title="tree, mindmap, graph, flowchart, timeline"}
+Five fences, no library: every line is drawn by hand.
 :::
 `,
 
@@ -728,7 +724,7 @@ Bookbinding
 \`\`\`
 
 ::: marginalia
-Swap one word for the other and the same fence draws the other picture.
+Swap the word and it redraws.
 :::
 `,
 
@@ -1006,7 +1002,7 @@ Every page here is written in **Notebook Script**, which the app reads back out.
 3. Paste the reply into **Insert script**
 
 ::: card {title="And back out again"}
-The tray exports a page as script, PDF or picture, packs the library into one file, and turns a folder of Markdown into books.
+The tray exports a page as script, PDF or picture, and packs the library into one file.
 :::
 
 ::: quote-card {color=amber}

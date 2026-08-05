@@ -42,15 +42,25 @@
  * many blocks the splitter put on page one against how many the app was still
  * holding there once it had settled).
  *
+ * And two more again for the WINDOW, which is the axis all of the above were
+ * blind to: `probe-leaf-capacity.mjs` (how tall a leaf is at five window sizes)
+ * and `probe-leaf-column.mjs` (how wide, and what a paragraph of known length
+ * wraps to in it). Those two are what the budget is now derived from rather
+ * than compared against.
+ *
  * `tests/split-calibration.test.ts` writes the readings down and checks the
  * estimator against them. Against the thirty-two seeded pages it is out by 0.7
  * of a line on average and never by more than 2.1.
  *
  * What the measurements found, and what the old estimator was doing instead:
  *
- *  - **A leaf holds 25.66 lines** (821px of capacity over 32px lines, at a
- *    1600x1000 window). `PAGE_LINE_BUDGET` was 26 and its comment said "26px
- *    lines on ~780px" — right number, wrong arithmetic underneath it.
+ *  - **A leaf holds 25.66 lines** (821px of capacity over 32px lines) *at a
+ *    1600x1000 window* — and that qualifier turned out to be the whole story.
+ *    `tauri.conf.json` opens the app at 1280x800, where the same leaf holds
+ *    19.41, so the budget was written for a window nobody is given and every
+ *    authored page arrived a third over capacity. The budget is now DERIVED
+ *    from the window instead of written beside it; see `PAGE_LINE_BUDGET` and
+ *    the two laws above it, both measured at five window sizes.
  *  - **A paragraph costs exactly the lines it wraps to** — `.nb-prose p` has
  *    `margin: 0` because paragraphs ride the rule grid. The old cost was
  *    `lines + 1`, so a page of short paragraphs was charged for twice what it
@@ -102,30 +112,230 @@ import type {
   TreeNode,
 } from '../../script/types';
 
+// ---------------------------------------------------------------------------
+// The window a page is cut for
+// ---------------------------------------------------------------------------
+
 /**
- * What the splitter is allowed to put on a page.
+ * A window the book might be read in, in CSS pixels of the web view.
  *
- * A leaf holds **25.66** lines, measured: 821px of capacity (`.nb-leaf-paper`
- * clientHeight less its padding, which is what `BookView.measureCapacity`
- * compares block bottoms against) over 32px lines, at a 1600x1000 window.
+ * `src-tauri/tauri.conf.json` is the authority for the two that matter — the
+ * size the app opens at and the smallest it may be dragged to — and
+ * `tests/split-calibration.test.ts` reads that file and refuses to pass if the
+ * constants below have drifted from it. Same discipline as `src/version.ts`,
+ * and for the same reason: a number written down in two places is a number
+ * that is wrong in one of them. It is copied rather than imported because
+ * `src-tauri/` is the Rust side of the tree and nothing in `src/` reaches
+ * across that line at build time.
+ */
+export interface WindowSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * The window every measurement in this file was taken in.
  *
- * The budget is not that number, because the estimator is not exact and the
+ * Not a window anybody gets — it is where the ruler was held. Every constant
+ * below, and every entry in `CONTAINER`, `EFFECT_LINES` and the diagram costs,
+ * is a reading from a 1600x1000 web view, and they stay that way: a
+ * calibration is worth more the longer it is left alone.
+ */
+export const REFERENCE_WINDOW: WindowSize = { width: 1600, height: 1000 };
+
+/**
+ * The window the app opens at (`tauri.conf.json` → `app.windows[0]`), and the
+ * one pages are cut for.
+ *
+ * **Why the default and not the minimum.** The choice is between authoring for
+ * the window a new reader is handed and authoring for the smallest window the
+ * app permits, and the two fail in opposite directions:
+ *
+ *   window       leaf holds   budget   a page cut for the default is...
+ *   1600x1000    25.66        23.5     ...67% of the leaf. Roomier margins.
+ *   1280x800     19.41        17.2     ...exactly right. The DEFAULT.
+ *   960x620      13.78        11.6     ...over by three lines; the tail flows.
+ *
+ * Cutting for 960x620 would mean nothing ever reflows on open at any size the
+ * app allows — and it would put every seeded page at 60% of the leaf a NEW
+ * READER SEES, which is the "half-empty pages" the owner already reported
+ * once. It buys a guarantee at the one window a reader has to drag the frame
+ * to reach, and pays for it at the window everybody starts in.
+ *
+ * So: the default. A reader who shrinks the frame past it gets the flow-onward
+ * behaviour the owner has already ruled correct — *"just make it work like any
+ * other book — if it's too big it goes to the next page"* — and a reader who
+ * grows it gets a page with more air around the writing, which is the failure
+ * that costs least. It is also the size `shots-now/visual-suite.mjs` calls
+ * "desk" and looks at every surface in, so it is the window this project
+ * already treats as the app.
+ */
+export const TARGET_WINDOW: WindowSize = { width: 1280, height: 800 };
+
+/**
+ * The smallest window `tauri.conf.json` permits (`minWidth`/`minHeight`).
+ *
+ * Nothing is cut for it. It is here so the test can pin it, and so anything
+ * asking "how badly does a page overflow at the worst size" has the size.
+ */
+export const MINIMUM_WINDOW: WindowSize = { width: 960, height: 620 };
+
+/**
+ * Window height that never reaches the leaf: everything above and below it.
+ *
+ * Measured, and it is a CONSTANT — `scripts/probe-leaf-capacity.mjs` read the
+ * capacity the app itself computes at five window sizes and every one of them
+ * came back at the height less exactly this:
+ *
+ *   1600x1000  821px      1280x800  621px      1360x850  671px
+ *   1100x720   541px       960x620  441px
+ *
+ * Which is what one would hope: `.nb-book-view` is `100vh` with fixed padding,
+ * the title plate above the spread is fixed, and the cover and the leaf inside
+ * it are `flex: 1 1 auto` all the way down. The width plays no part at all.
+ */
+const LEAF_CHROME_PX = 179;
+
+/**
+ * The rule grid the whole estimator is denominated in.
+ *
+ * 32px at every window size measured — **the type does not scale with the
+ * frame**. That is the fact that makes a small window expensive rather than
+ * merely smaller: the leaf shrinks and the writing does not, so a page loses
+ * room in both directions at once and keeps none of it back.
+ */
+const PAGE_LINE_PX = 32;
+
+/** Capacity of one leaf in laid-out pixels, at a given window. */
+export function leafCapacityPx(win: WindowSize): number {
+  return win.height - LEAF_CHROME_PX;
+}
+
+/** Capacity of one leaf in page lines. */
+export function leafLines(win: WindowSize): number {
+  return leafCapacityPx(win) / PAGE_LINE_PX;
+}
+
+/**
+ * The estimator's own error, in lines, held back from the budget.
+ *
+ * The budget is not the capacity, because the estimator is not exact and the
  * two ways of being wrong do not cost the same. A page cut early is a leaf
  * that stops a little short; a page cut LATE does not clip — leaves never
  * scroll, so the excess flows onward and the book comes back longer than it
  * was made, with every page after the guilty one carrying somebody else's
- * tail. So the budget is the capacity less the estimator's own error.
+ * tail.
  *
- * That error is measured too, against the thirty-two seeded pages walked by
- * `scripts/probe-page-cost.mjs`: it is 0.7 of a line on average and it
- * under-states by at most 1.9. 23.5 leaves room for the worst of those, and
- * `scripts/probe-split-fill.mjs` is where the number was settled — at 25.5 a
- * nine-page import arrived as ten, which is exactly the failure above.
+ * The error is measured, against the seeded pages walked by
+ * `scripts/probe-page-cost.mjs`: it is under a line on average and under-states
+ * by at most 1.9. This leaves room for the worst of those, and
+ * `scripts/probe-split-fill.mjs` is where it was settled — with only 0.16 of a
+ * line held back a nine-page import arrived as ten, which is exactly the
+ * failure above.
  */
-export const PAGE_LINE_BUDGET = 23.5;
+const ESTIMATOR_SLACK = 2.16;
 
-/** ~chars per rendered line of body text across the full page column. */
+/** What the splitter is allowed to put on a page at a given window. */
+export function lineBudgetFor(win: WindowSize): number {
+  return leafLines(win) - ESTIMATOR_SLACK;
+}
+
+/**
+ * What the splitter is allowed to put on a page.
+ *
+ * DERIVED, and that is the whole point of the arithmetic above. This used to be
+ * the literal `23.5`, with a comment saying it came from a leaf that holds
+ * 25.66 lines *"at a 1600x1000 window"* — a window `tauri.conf.json` never
+ * opens and a reader would have to drag the frame out to reach. So every
+ * authored page was cut a third over the capacity of the leaf it actually
+ * landed on, and merely opening the welcome book grew it from 32 leaves to 46
+ * as the drain pushed each page's tail onto the next one.
+ *
+ * At the reference window this law still gives 23.5 to two decimal places,
+ * which is the check that it is the same model and not a new one; at the
+ * window the app opens it gives 17.2.
+ */
+export const PAGE_LINE_BUDGET = lineBudgetFor(TARGET_WINDOW);
+
+// ---------------------------------------------------------------------------
+// ...and how wide it is, which costs as much as how tall
+// ---------------------------------------------------------------------------
+
+/**
+ * The prose column, in pixels, at a given window.
+ *
+ * A shorter window is a NARROWER book, because `.nb-spread-stage` takes its
+ * width from its height (`min(100%, (100vh - 96px) * 1.58, 1760px)`, spread.css)
+ * so the spread keeps the proportions of a book instead of stretching. The leaf
+ * is half of that less the cover's padding, and the prose box inside it less
+ * the drag-handle lane. Measured by `scripts/probe-leaf-column.mjs`:
+ *
+ *   1600x1000  592px      1280x800  434px      1360x850  474px
+ *   1100x720   371px       960x620  292px
+ *
+ * ...and this expression reproduces all five to the pixel. It matters because
+ * the type does NOT shrink with the column: 20px on a 32px rule at every one of
+ * those sizes, so 287 characters of prose wrap to four lines on the reference
+ * leaf, six at the default window and ten at the minimum. A budget alone would
+ * have fixed half of this bug.
+ *
+ * The `100%` arm is the one that stops mattering below about a 4:3 window and
+ * takes over above it — a tall narrow frame runs out of width before it runs
+ * out of height. Every window between the minimum and the default is in the
+ * height-driven regime; the clamp is here so that a reader who is not, is not
+ * costed as though they were.
+ */
+const STAGE_HEADER_PX = 96;
+const STAGE_ASPECT = 1.58;
+const STAGE_MAX_PX = 1760;
+/** The fixed rail lane and right padding of `.nb-book-view`. */
+const VIEW_SIDE_PX = 108;
+/** The cover board's padding and outline, per leaf. */
+const COVER_INSET_PX = 18;
+/** The sheet's own padding plus the prose box's drag lane and right margin. */
+const LEAF_INSET_PX = 104;
+
+export function proseColumnPx(win: WindowSize): number {
+  const stage = Math.min(
+    win.width - VIEW_SIDE_PX,
+    (win.height - STAGE_HEADER_PX) * STAGE_ASPECT,
+    STAGE_MAX_PX,
+  );
+  return stage / 2 - COVER_INSET_PX - LEAF_INSET_PX;
+}
+
+/**
+ * ~chars per rendered line of body text across the full page column, at the
+ * reference window.
+ *
+ * 72 rather than the 82 the column's width over the face's 7.25px a character
+ * would say, and the difference is greedy word wrap eating half a word off the
+ * end of every line: measured against a ladder of paragraphs of graded length,
+ * 72 is the value that misplaces the fewest rungs of it.
+ */
 const CHARS_PER_LINE = 72;
+
+/** Width of one character of the body hand, measured: Patrick Hand at 20px. */
+const BODY_CHAR_PX = 7.25;
+
+/**
+ * The same, at any window.
+ *
+ * Anchored on the measured 72 and moved by the pixels the column has gained or
+ * lost, rather than scaled by the ratio of the two columns. That is not a
+ * stylistic choice: the half-word greedy wrap throws away is roughly a fixed
+ * number of CHARACTERS, not a fixed fraction of the line, so the additive form
+ * predicts all five measured wraps of the same 287-character paragraph
+ * (4 / 6 / 6 / 7 / 10 lines) and the multiplicative one misses the narrowest by
+ * a line. It also leaves the reference window costing exactly what it costed
+ * before, so none of the calibration above had to be re-read.
+ */
+export function charsPerLine(win: WindowSize): number {
+  return (
+    CHARS_PER_LINE +
+    (proseColumnPx(win) - proseColumnPx(REFERENCE_WINDOW)) / BODY_CHAR_PX
+  );
+}
 
 /**
  * A picture with nothing constraining it fills the column, and a picture of
@@ -145,7 +355,7 @@ const IMAGE_LINES = 15;
  * converts, so a sticky note's 26.4px lines come back as 0.82 of a page line
  * each.
  */
-interface Frame {
+export interface Frame {
   /** Characters that fit on one rendered line here. */
   chars: number;
   /** Height of one of those lines, in page lines. */
@@ -154,7 +364,38 @@ interface Frame {
   width: number;
 }
 
-const PAGE_FRAME: Frame = { chars: CHARS_PER_LINE, line: 1, width: 1 };
+/**
+ * The page's own frame at a given window — the top of the chain every cost is
+ * taken in.
+ *
+ * `width` is a fraction of the REFERENCE column rather than of itself, because
+ * that is what the one thing reading it needs: `IMAGE_LINES` is the height of a
+ * full-width picture measured on the reference leaf, and a picture in a column
+ * two thirds as wide is two thirds as tall while the rule under it stays 32px.
+ * `line` is 1 at every window, and that is measured rather than assumed — the
+ * leaf shrinks, the writing does not.
+ *
+ * What does NOT move with the window: a container's `chrome` and `min`, the
+ * decoration heights, the diagram heights. Those are all fixed furniture in
+ * pixels — a card's plate is a card's plate — and where they are not (a diagram
+ * is scaled to fit its column, so a narrower one draws shorter) the error is
+ * an OVER-charge, which cuts a page early instead of overflowing it. That is
+ * the direction this whole file leans in, so they are left alone.
+ */
+export function pageFrameFor(win: WindowSize): Frame {
+  const column = proseColumnPx(win);
+  return {
+    chars: charsPerLine(win),
+    line: 1,
+    width: column / proseColumnPx(REFERENCE_WINDOW),
+  };
+}
+
+/** The frame the calibration table was read in — `chars` 72, everything 1. */
+export const REFERENCE_FRAME: Frame = pageFrameFor(REFERENCE_WINDOW);
+
+/** The frame pages are cut in, unless a caller names another window. */
+export const TARGET_FRAME: Frame = pageFrameFor(TARGET_WINDOW);
 
 /** Narrow a frame to a fraction of itself (a column, a photo row cell). */
 function narrow(frame: Frame, fraction: number): Frame {
@@ -332,6 +573,24 @@ const FOOTNOTE_RAIL_CHROME = 0.56;
 const FOOTNOTE_NOTE_LINE = 0.72;
 const FOOTNOTE_NOTE_CHARS = 82;
 
+/** Width of one character of the rail's hand — Patrick Hand at 15px. */
+const NOTE_CHAR_PX = 5.55;
+
+/**
+ * How wide a note sets at a given window.
+ *
+ * The rail's column is the leaf's full width, so it loses exactly the pixels
+ * the prose column loses when the frame shrinks — both come off the same half
+ * of the same spread. Moved additively for the same reason as `charsPerLine`,
+ * and at the reference window it is the measured 82 unchanged.
+ */
+function noteCharsFor(win: WindowSize): number {
+  return (
+    FOOTNOTE_NOTE_CHARS +
+    (proseColumnPx(win) - proseColumnPx(REFERENCE_WINDOW)) / NOTE_CHAR_PX
+  );
+}
+
 /** Every footnote's note text in a run of inline content, in reading order. */
 function inlineNotes(content: readonly Inline[], out: string[]): void {
   for (const node of content) {
@@ -392,11 +651,11 @@ function blockNotes(block: Block, out: string[]): void {
 }
 
 /** What a run of note texts costs as a rail, in page lines. */
-function railLines(notes: readonly string[]): number {
+function railLines(notes: readonly string[], chars: number): number {
   if (notes.length === 0) return 0;
   let lines = 0;
   for (const note of notes) {
-    lines += Math.max(1, Math.ceil(note.trim().length / FOOTNOTE_NOTE_CHARS));
+    lines += Math.max(1, Math.ceil(note.trim().length / chars));
   }
   return FOOTNOTE_RAIL_CHROME + FOOTNOTE_NOTE_LINE * lines;
 }
@@ -410,10 +669,13 @@ function railLines(notes: readonly string[]): number {
  * is page furniture, like a margin — a page-level term, and the splitter adds
  * it to the page-level total.
  */
-export function footnoteRailLines(blocks: readonly Block[]): number {
+export function footnoteRailLines(
+  blocks: readonly Block[],
+  win: WindowSize = TARGET_WINDOW,
+): number {
   const notes: string[] = [];
   for (const block of blocks) blockNotes(block, notes);
-  return railLines(notes);
+  return railLines(notes, noteCharsFor(win));
 }
 
 /** Rendered lines of a run of inline content, in page lines. */
@@ -521,8 +783,50 @@ function graphLayers(diagram: DiagramBlock & { lang: 'graph' | 'flowchart' }): n
   return longest;
 }
 
+/**
+ * The gutter a diagram's canvas keeps inside the prose column, in pixels.
+ *
+ * Measured: at a 592px column the widest an `.nb-dg-svg` was ever drawn was
+ * 544px, and at a 434px column it was 386px. The same 48 either time.
+ */
+const DIAGRAM_INSET_PX = 48;
+
+/**
+ * How much a diagram that runs to the width of its column is shrunk to fit it,
+ * relative to the reference window everything here was measured in.
+ *
+ * `scripts/probe-diagram-scale.mjs` settled what a diagram does when the window
+ * moves, and the answer is TWO answers. The SVG carries a viewBox sized by the
+ * layout and is drawn at `min(intrinsic width, column - 48)`:
+ *
+ *   Mindmap    viewBox 663 wide   drawn 544 -> 386   14.22 lines -> 10.09
+ *   Timeline   viewBox 580 wide   drawn 544 -> 386    6.34 lines ->  4.50
+ *   Graph      viewBox 207 wide   drawn 207 -> 207    8.38 lines ->  8.38
+ *   Flowchart  viewBox 125 wide   drawn 125 -> 125   10.75 lines -> 10.75
+ *
+ * So a layout that spreads SIDEWAYS is clamped by the column and scales with
+ * it exactly (10.09/14.22 and 4.50/6.34 are both 386/544 to three places),
+ * while a layout that stacks DOWNWARD is narrower than the column at any window
+ * anyone uses and does not move at all.
+ *
+ * That is why this is applied to the mindmap and the timeline and not to the
+ * graph, the flowchart or the tree. A tree is the awkward one — it was measured
+ * at both, 7.63 lines shrinking to 6.53 (clamped) and 7.09 to 5.03 (clamped
+ * harder) — and it is left unscaled deliberately, because a tree narrow enough
+ * to escape the clamp would then be charged for a shrink that never happened,
+ * and under-charging a page rearranges the book while over-charging one only
+ * ends it early.
+ */
+function diagramFitScale(frame: Frame): number {
+  const reference = proseColumnPx(REFERENCE_WINDOW);
+  return Math.min(
+    1,
+    (frame.width * reference - DIAGRAM_INSET_PX) / (reference - DIAGRAM_INSET_PX),
+  );
+}
+
 /** Estimated drawn height of a diagram, in page lines. */
-function diagramLines(block: DiagramBlock): number {
+function diagramLines(block: DiagramBlock, frame: Frame): number {
   switch (block.lang) {
     case 'tree':
       // 5.1 lines at two levels, 7.6 at three. Capped because the renderer
@@ -534,17 +838,26 @@ function diagramLines(block: DiagramBlock): number {
       // starts holding it back). Reading it as a tree is what left the
       // welcome book's mindmap page predicted at 57% of a leaf and drawn at
       // 90 — the largest single error the calibration turned up.
-      return Math.min(16.5, 4.9 * Math.max(1, treeDepth(block.roots)) - 0.6);
+      //
+      // Scaled by the fit, because a mindmap is always wider than the column
+      // and is always shrunk into it — see `diagramFitScale`.
+      return (
+        Math.min(16.5, 4.9 * Math.max(1, treeDepth(block.roots)) - 0.6) *
+        diagramFitScale(frame)
+      );
     case 'timeline':
       // 3.3 lines for two short entries, 8.7 for eight, 6.8 for four whose
       // text wraps — an entry's column is narrow, about 30 characters.
+      // Scaled by the fit for the same reason as the mindmap: a timeline runs
+      // along the page and is clamped to the column at every window measured.
       return (
-        1.4 +
-        0.9 *
-          block.entries.reduce(
-            (n, entry) => n + Math.max(1, Math.ceil(entry.text.length / 30)),
-            0,
-          )
+        (1.4 +
+          0.9 *
+            block.entries.reduce(
+              (n, entry) => n + Math.max(1, Math.ceil(entry.text.length / 30)),
+              0,
+            )) *
+        diagramFitScale(frame)
       );
     default:
       // 8.4 lines for a chain of three, 17.0 for a chain of six.
@@ -667,7 +980,7 @@ function bareBlockLines(block: Block, frame: Frame): number {
       // height and there is no wrapping estimate to make.
       return 1.55 + 0.79 * block.code.split('\n').length;
     case 'diagram':
-      return diagramLines(block);
+      return diagramLines(block, frame);
     case 'fetchDirective':
       // The one unmeasured cost left: it draws a card built from a network
       // fetch, which a headless probe has nothing to answer with.
@@ -683,9 +996,14 @@ function bareBlockLines(block: Block, frame: Frame): number {
  * The public surface, and the one the seed test and the splitter both use.
  * Costs inside a container go through `blockLines` with that container's
  * frame instead.
+ *
+ * The frame defaults to the window the app opens at, which is the question
+ * anybody costing a page is really asking. Pass `REFERENCE_FRAME` to ask the
+ * other one — what this block measured at, in the window the table was read
+ * in — which is what `tests/split-calibration.test.ts` does.
  */
-export function blockLineCost(block: Block): number {
-  return blockLines(block, PAGE_FRAME);
+export function blockLineCost(block: Block, frame: Frame = TARGET_FRAME): number {
+  return blockLines(block, frame);
 }
 
 /**
@@ -697,14 +1015,23 @@ export function blockLineCost(block: Block): number {
  * and folding page furniture into it would make that comparison compare two
  * different things. Anything asking "does this fit a leaf" wants both.
  */
-export function pageLineCost(blocks: readonly Block[]): number {
+export function pageLineCost(
+  blocks: readonly Block[],
+  frame: Frame = TARGET_FRAME,
+): number {
   let total = 0;
-  for (const block of blocks) total += blockLineCost(block);
+  for (const block of blocks) total += blockLineCost(block, frame);
   return total;
 }
 
 export interface SplitOptions {
-  /** Line budget per page (default PAGE_LINE_BUDGET). */
+  /**
+   * The window the pages are being cut for — default `TARGET_WINDOW`, the size
+   * the app opens at. Sets the budget, the wrap and the width of a picture all
+   * at once, because at a smaller window all three move together.
+   */
+  window?: WindowSize;
+  /** Line budget per page (default: the budget for `window`). */
   maxLines?: number;
   /** Start a new page on every level-1 heading (default true). */
   splitOnH1?: boolean;
@@ -718,7 +1045,10 @@ export function splitBlocksIntoPages(
   blocks: readonly Block[],
   options: SplitOptions = {},
 ): Block[][] {
-  const maxLines = options.maxLines ?? PAGE_LINE_BUDGET;
+  const win = options.window ?? TARGET_WINDOW;
+  const frame = options.window === undefined ? TARGET_FRAME : pageFrameFor(win);
+  const noteChars = noteCharsFor(win);
+  const maxLines = options.maxLines ?? lineBudgetFor(win);
   const splitOnH1 = options.splitOnH1 ?? true;
 
   const pages: Block[][] = [];
@@ -741,7 +1071,7 @@ export function splitBlocksIntoPages(
     const isH1 = block.kind === 'heading' && block.level === 1;
     if (splitOnH1 && isH1) flush();
 
-    const cost = blockLineCost(block);
+    const cost = blockLineCost(block, frame);
     // The foot of the page is charged against the WHOLE page, not against the
     // block that happens to carry the marker: a note anywhere on the leaf
     // stands the same rail up, and a second note on the same page costs one
@@ -750,7 +1080,7 @@ export function splitBlocksIntoPages(
     // would need.
     const notes: string[] = [];
     blockNotes(block, notes);
-    const foot = railLines([...currentNotes, ...notes]);
+    const foot = railLines([...currentNotes, ...notes], noteChars);
     if (current.length > 0 && currentLines + cost + foot > maxLines) flush();
 
     current.push(block);

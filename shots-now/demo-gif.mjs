@@ -338,28 +338,31 @@ const tl = timeline((t) => {
    * The raster cache warms the faces for the NEXT turn in idle time, so how
    * fast you turn decides whether the curl has textures to draw. Measured
    * earlier: at 1.6s between turns 2 of 4 turns had all three, at 3s it was
-   * 4 of 4. Hammering the key outruns the warm, and a turn that outruns it now
-   * falls back to the rigid fold rather than curling onto blank paper — correct,
-   * but the demo should show the curl, because that is what a reader gets.
+   * 4 of 4. Turning faster than that outruns the warm, and a turn that outruns
+   * it now falls back to the rigid fold rather than curling onto blank paper —
+   * correct, but the demo should show the curl, because that is what a reader
+   * gets.
    */
   /*
-   * BLUR FIRST, or the page does not curl — and that is why the reader said
-   * *"page turn animation is not even visible in the gif"*.
+   * HOW THE MISSING TURN WAS FOUND, kept because the reasoning outlived it.
    *
-   * `arrowFlipAction(key, isTyping)` in views/spread.ts returns null when the
-   * active element is a typing target, so the arrow can move the caret instead
-   * of turning the leaf. Once a book has been opened the caret is IN the page,
-   * so every ArrowRight in this demo was a caret move.
+   * The reader: *"page turn animation is not even visible in the gif"*. The
+   * cause was that this file pressed →, and `arrowFlipAction(key, isTyping)`
+   * returned null whenever the caret sat in a typing target — which, once a
+   * book has been opened, is always. Every ArrowRight here was a caret move.
    *
    * Measured both ways before changing anything (`probe-curl-capture.mjs`):
-   * with the editor blurred the flip runs for 17 frames and the CDP screencast
-   * catches 11 of them — the curl is plainly visible in the captured JPEG. So
-   * neither the app nor the recorder was at fault; the demo was pressing a key
-   * that, in that focus state, does not turn a page.
+   * with the editor blurred the flip ran for 17 frames and the CDP screencast
+   * caught 11 of them, the curl plainly visible in the captured JPEG. So
+   * neither the app nor the recorder was ever at fault; the demo was pressing a
+   * key that, in that focus state, did not turn a page.
    *
-   * (That the app cannot be turned with the arrows while the caret sits in the
-   * page is a real question about the app, not about this file. It is written
-   * down in TODO.md for the owner to rule on rather than quietly changed here.)
+   * The workaround was to blur first. The finding was written into TODO.md as a
+   * question for the owner rather than quietly worked around forever — *"that
+   * the app cannot be turned with the arrows while the caret sits in the page
+   * is a real question about the app, not about this file"* — and they ruled:
+   * arrows do not turn pages at all. So the blur is gone with the key, and this
+   * file drives the affordance the app actually has.
    */
   /*
    * AND THE 1900 IS NOW SCENE TIME, WHICH IS THE WHOLE POINT.
@@ -371,14 +374,37 @@ const tl = timeline((t) => {
    * SCENE, so at 14fps and speed 1.1 it is exactly 24 frames of page turn, on
    * this machine and on anyone else's.
    */
+  /*
+   * THE DEMO CLICKS THE PAGE EDGE. It used to press →, and that key no longer
+   * turns a page at all.
+   *
+   * The owner's ruling, after being shown that the Welcome book's own first
+   * page said "click the ruled lines and type" and then, four lines later,
+   * "arrow keys turn pages" — do the first and the second stops being true:
+   *
+   *   *"well we can not make arrow keys turn pages then"*
+   *
+   * So `arrowFlipAction` is gone, and with it the blur-then-press dance above,
+   * which existed ONLY to work around the very conflict that ruling removes.
+   *
+   * `.nb-flip-hotspot-next` is the real thing: a 48px strip down the outer edge
+   * of the right leaf, `cursor: grab`, `display: none` when there is nowhere to
+   * turn to (so `t.click` waiting on it is also the check that a turn is
+   * possible). A pointerdown and pointerup inside 6px and 300ms is a TAP, which
+   * `PageFlipController` tweens to a full turn in `TAP_FLIP_DURATION_S`.
+   *
+   * And it is a better demo for it. A recording of somebody pressing a key
+   * shows nothing; a cursor going to the edge of the page and the page peeling
+   * after it shows the reader what to do with their hand.
+   *
+   * The pacing is unchanged and still deliberate: ~1.9s of SCENE time per turn,
+   * because the raster cache warms the next faces in idle time and a turn that
+   * outruns the warm falls back to the rigid fold. Measured earlier: at 1.6s
+   * between turns 2 of 4 had all their faces, at 3s it was 4 of 4.
+   */
   const turn = () => {
-    t.call(async function turnThePage(page, ctx) {
-      await page.evaluate(() => {
-        const el = document.activeElement;
-        if (el instanceof HTMLElement) el.blur();
-      });
-      await ctx.advance(250);
-      await page.keyboard.press('ArrowRight');
+    t.click('.nb-flip-hotspot-next', { via: 'cursor' });
+    t.call(async function letTheTurnRun(page, ctx) {
       await ctx.advance(1900);
     });
     t.hold(1.5);

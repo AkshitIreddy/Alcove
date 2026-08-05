@@ -14,9 +14,7 @@
  *
  * A surface can also come back UNMEASURABLE. `settle()` waits for the screen to
  * stop and gives up after its deadline, reporting how many distinct frames it
- * saw; a handful of surfaces never stop (both tour-blocks, tour-settings and
- * focus-spread, and the set varies between runs, which is itself the tell).
- * Those are marked `MOVE`, counted in their own column, and:
+ * saw. Those are marked `MOVE`, counted in their own column, and:
  *
  *  - `--update` will NOT write them down. A baseline captured from a moving
  *    surface is whichever moment the deadline fell on, so every later run
@@ -27,7 +25,40 @@
  *
  * That is deliberately not the same as passing them. The tally prints the count
  * on every run, so it can never read as full coverage while covering less.
- * Finding what moves is its own piece of work, tracked as such.
+ *
+ * ### The six that used to move, and what they were doing
+ *
+ * Three surfaces — `tour-blocks`, `tour-settings` and `focus-spread` — reported
+ * MOVE in six of their twelve cases, and WHICH six varied between runs. All
+ * three are book-view surfaces, which was the clue: nothing on the shelf ever
+ * did it. The note left behind at the time guessed "canvas or WebGL, because
+ * `document.getAnimations()` is empty at rest". It was neither, and there were
+ * two of them, both fixed elsewhere in the tree before this file was pointed at
+ * them:
+ *
+ *  - `f00fc92` — EVERY offscreen page capture had been failing silently, so
+ *    `rasterCache.capture()` fell through to its live path, which writes to the
+ *    leaf the reader is looking at: `.snapshotting` (which hides the drag
+ *    handle, the style switcher and the selection tint) plus inline paint on
+ *    every SVG inside the page, held for the 200ms+ of the rasterise and then
+ *    put back. A screenshot landing inside that window is a different picture
+ *    from one landing outside it, and the window opens at idle — so it is
+ *    intermittent, load-dependent, and invisible to `getAnimations()`. That is
+ *    the whole shape of the symptom.
+ *  - `53174e7` — the pagination drain published its removal to the store too
+ *    late, so a carry re-materialised the block it had just moved, remounted
+ *    the leaf synchronously, drained it again and queued another carry. A
+ *    spread that rewrites and repaints itself cannot settle by definition.
+ *
+ * Confirmed rather than assumed, with a MutationObserver census over the whole
+ * document while parked on each surface for twenty seconds: today the only
+ * thing that changes is the offscreen staged sheet (`.nb-export-sheet`) and the
+ * back chip receding once. `.snapshotting` never lands on a mounted leaf. All
+ * three surfaces now settle in three frames and carry baselines.
+ *
+ * The lesson kept in code rather than in prose: a MOVE case now writes a
+ * `.moving.png` (see `diagnoseMovement`), so the next one to appear arrives
+ * with the answer attached instead of costing a day of driving the app by hand.
  *
  * ## Why this exists
  *
@@ -117,13 +148,21 @@
  * ## Usage
  *
  *   node shots-now/visual-suite.mjs [--update] [--url=http://localhost:1420]
- *                                   [--only=<substring>] [--list] [--keep-passes]
+ *                                   [--only=<substring>[,<substring>…]]
+ *                                   [--list] [--keep-passes] [--sabotage]
  *
  * `--only` matches the case name (`<size>-<room>-<surface>`) and selects what is
  * COMPARED, not what is walked: the scene still runs in order up TO the last
  * case you asked for, because half these surfaces are only reachable through
  * the ones before them. It stops there rather than walking out the rest of the
  * scene for nobody.
+ *
+ * It takes a COMMA-SEPARATED list, and that is not a convenience. The three
+ * surfaces this suite could not measure (see `settle`) live at indices 8, 9 and
+ * 10 of a sixteen-surface walk, so asking after all three at once costs one
+ * walk to index 10 — while three separate `--only` runs would walk the whole
+ * scene three times over to photograph one surface each. Anything that makes
+ * chasing an unstable surface cheaper gets it chased.
  *
  * The full matrix takes 45–60 minutes on this machine — SwiftShader, four boots,
  * and a settle loop that waits for the screen rather than guessing. `--only=desk`
@@ -241,9 +280,35 @@ const opt = (name, fallback) => {
 
 const URL_BASE = opt('url', 'http://localhost:1420');
 const UPDATE = flag('update');
-const ONLY = opt('only', null);
+/** null = every case; otherwise the substrings a case name may match any of. */
+const ONLY = (() => {
+  const raw = opt('only', null);
+  if (raw === null) return null;
+  const parts = raw.split(',').map((s) => s.trim()).filter((s) => s !== '');
+  return parts.length === 0 ? null : parts;
+})();
 const LIST = flag('list');
 const KEEP_PASSES = flag('keep-passes');
+/**
+ * Break the screen on purpose, to check that "still moving" can still be said.
+ *
+ * A gate nobody has watched fail is not a gate. The third outcome is the
+ * quietest thing this file does — a MOVE case does not fail the run — so a
+ * `settle()` that started returning `settled: true` unconditionally would take
+ * six surfaces out of coverage and the summary would get GREENER. That is the
+ * worst possible failure mode for a suite, and the only defence is a switch
+ * that makes a surface genuinely never stop and then checks the suite says so.
+ *
+ * `--sabotage` paints a 160×120 patch at (40, 200) that changes colour every
+ * 200ms, in a Portal above everything, and expects every wanted case to come
+ * back MOVE with a moving box over that patch. It prints GATE ALIVE or GATE
+ * INERT and exits non-zero on INERT. Pair it with a cheap case:
+ *
+ *   node shots-now/visual-suite.mjs --sabotage --only=desk-day-shelf
+ */
+const SABOTAGE = flag('sabotage');
+/** Where the sabotage patch sits, in CSS pixels. Checked against the mask. */
+const SABOTAGE_RECT = { x: 40, y: 200, w: 160, h: 120 };
 
 /* ============================ tiny utilities ============================== */
 
@@ -547,11 +612,41 @@ const SURFACES = [
  *
  * Several of these controls re-render the moment they are pressed (a rail
  * toggle, the first-run invite), and actionability retries then restart against
- * a node that no longer matches — a 30s timeout on a click that worked. */
+ * a node that no longer matches — a 30s timeout on a click that worked.
+ *
+ * ## But measuring a box is not the same as being able to press it
+ *
+ * Measuring alone cost `focus-spread` its picture: the surface before it leaves
+ * the tour and calls `tidy()`, the settings sheet it opened is still sliding
+ * out, and a rail button perfectly visible UNDER that sheet has a box like any
+ * other. The click went into the sheet, the focus dial never appeared, and the
+ * case was recorded as an error — one of the six surfaces this suite cannot
+ * measure, lost to a timing race rather than to anything about the app.
+ *
+ * So the point is hit-tested before it is clicked: `elementFromPoint` has to
+ * come back with the target or something inside it, and if it does not we wait
+ * and look again. After the last attempt the click is sent ANYWAY rather than
+ * thrown, because this helper's failure mode must stay "the next wait times
+ * out and says what it was waiting for" — a throw here would replace a specific
+ * complaint with a generic one.
+ */
 async function tap(page, selector) {
   await page.waitForSelector(selector, { state: 'visible', timeout: 30_000 });
-  const box = await page.locator(selector).first().boundingBox();
-  if (box === null) throw new Error(`no box for ${selector}`);
+  let box = null;
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    box = await page.locator(selector).first().boundingBox();
+    if (box === null) throw new Error(`no box for ${selector}`);
+    const clear = await page.evaluate(
+      ({ x, y, sel }) => {
+        const hit = document.elementFromPoint(x, y);
+        const want = document.querySelector(sel);
+        return hit !== null && want !== null && (want === hit || want.contains(hit));
+      },
+      { x: box.x + box.width / 2, y: box.y + box.height / 2, sel: selector },
+    );
+    if (clear) break;
+    await sleep(400);
+  }
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await sleep(250);
 }
@@ -928,6 +1023,42 @@ const STILL_CSS = `
   ::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
 `;
 
+/**
+ * The deliberate defect: a patch that will not hold still.
+ *
+ * `setInterval` and an inline background colour, on purpose. It is not a CSS
+ * animation and not a transition, because Playwright's `animations: 'disabled'`
+ * would freeze either of those at screenshot time and the sabotage would be
+ * inert — which is exactly the trap this switch exists to catch elsewhere. A
+ * timer writing a style attribute is the same shape as the real instabilities
+ * this suite has met, and nothing in the capture path can flatten it.
+ */
+async function installSabotage(page) {
+  await page.evaluate((rect) => {
+    const patch = document.createElement('div');
+    patch.id = 'nb-visual-suite-sabotage';
+    patch.style.cssText =
+      `position:fixed;left:${rect.x}px;top:${rect.y}px;` +
+      `width:${rect.w}px;height:${rect.h}px;z-index:2147483647;pointer-events:none;`;
+    document.body.appendChild(patch);
+    let n = 0;
+    setInterval(() => {
+      n += 1;
+      patch.style.background = n % 2 === 0 ? '#ff1f9c' : '#1f9cff';
+    }, 200);
+  }, SABOTAGE_RECT);
+}
+
+/** Does any box the mask found overlap the patch we broke on purpose? */
+function sabotageWasSeen(moving) {
+  if (moving === null || moving === undefined) return false;
+  const r = SABOTAGE_RECT;
+  return moving.boxes.some(
+    (b) =>
+      b.x < r.x + r.w && b.x + b.w > r.x && b.y < r.y + r.h && b.y + b.h > r.y,
+  );
+}
+
 async function bootScene(context, blob, size) {
   const page = await context.newPage();
   await installFixture(page, blob);
@@ -939,6 +1070,7 @@ async function bootScene(context, blob, size) {
     timeout: 120_000,
   });
   await page.addStyleTag({ content: STILL_CSS });
+  if (SABOTAGE) await installSabotage(page);
   await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, {
     timeout: 120_000,
   });
@@ -998,7 +1130,24 @@ async function awaitFonts(page) {
  * vary), so `Buffer.equals` reported the book studio as animating forever while
  * a pixel diff of the same pair reported zero differing pixels. The signature
  * below is taken over the decoded image, in the comparator page.
+ *
+ * ## The last few frames are kept, and that is the whole diagnosis
+ *
+ * When this gives up it used to hand back one picture and a count, which says
+ * a surface moved and nothing about WHAT moved — and "find what is moving" was
+ * then a day of driving the app by hand, guessing at candidates. So the tail is
+ * retained: `MOVE_TAIL` frames, diffed against each other by `diagnoseMovement`
+ * the moment the walk notices, while the browser is still alive and the page is
+ * still standing on the surface. The mask that comes back names the pixels that
+ * would not hold still, and the DOM under them.
+ *
+ * The tail and not every frame, because a surface that burns the full budget
+ * shoots ninety times and ninety decoded 1280×800 frames is 360MB of ImageData
+ * in the comparator page — which falls over, and an out-of-memory comparator
+ * turns a diagnosable MOVE into an unexplained error.
  */
+const MOVE_TAIL = 8;
+
 async function settle(page, cmp) {
   const shoot = () =>
     page.screenshot({
@@ -1007,7 +1156,13 @@ async function settle(page, cmp) {
       scale: 'css',
       timeout: 60_000,
     });
+  const tail = [];
+  const keep = (b) => {
+    tail.push(b);
+    if (tail.length > MOVE_TAIL) tail.shift();
+  };
   let buffer = await shoot();
+  keep(buffer);
   let previous = await pixelSignature(cmp, buffer);
   const seen = new Set([previous]);
   const deadline = Date.now() + SETTLE_BUDGET_MS;
@@ -1016,18 +1171,236 @@ async function settle(page, cmp) {
   for (;;) {
     await sleep(320);
     buffer = await shoot();
+    keep(buffer);
     shots += 1;
     const next = await pixelSignature(cmp, buffer);
     seen.add(next);
     if (next === previous) {
       stillFor += 1;
       // Twice in a row: one match can be two frames inside the same stall.
-      if (stillFor >= 2) return { buffer, settled: true, shots, distinct: seen.size };
+      if (stillFor >= 2) return { buffer, settled: true, shots, distinct: seen.size, tail: [] };
     } else {
       stillFor = 0;
     }
     previous = next;
-    if (Date.now() > deadline) return { buffer, settled: false, shots, distinct: seen.size };
+    if (Date.now() > deadline) {
+      return { buffer, settled: false, shots, distinct: seen.size, tail };
+    }
+  }
+}
+
+/* --------------------- what would not hold still, and where ---------------- */
+
+/**
+ * Union the changes across the tail, then ask the page what is under them.
+ *
+ * Two halves, and both are needed. The mask is the honest half — it is made of
+ * photographs and cannot be argued with, and it answers "where" precisely
+ * enough to point at one control. The DOM report is the lead: `getAnimations()`
+ * for anything the engine is driving, the GSAP global timeline for anything the
+ * app is driving, and an `elementsFromPoint` down the middle of each moving box
+ * so the answer arrives as a selector rather than as a coordinate.
+ *
+ * The DOM half is asked LAST and separately on purpose: it is the half that can
+ * lie (a tween that finished a frame ago leaves nothing behind), and the mask
+ * stays true whatever it says.
+ */
+const MOVE_MASK_IN_PAGE = async ([b64s, cell]) => {
+  const decode = async (b64) => {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), {
+      colorSpaceConversion: 'none',
+    });
+    const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0);
+    const out = { w: bmp.width, h: bmp.height, data: ctx.getImageData(0, 0, bmp.width, bmp.height).data };
+    bmp.close();
+    return out;
+  };
+
+  const frames = [];
+  for (const b of b64s) frames.push(await decode(b));
+  const { w, h } = frames[0];
+  const mask = new Uint8Array(w * h);
+  const perPair = [];
+  for (let f = 1; f < frames.length; f += 1) {
+    const a = frames[f - 1].data;
+    const b = frames[f].data;
+    let n = 0;
+    for (let p = 0; p < w * h; p += 1) {
+      const i = p * 4;
+      const d = Math.max(
+        Math.abs(a[i] - b[i]),
+        Math.abs(a[i + 1] - b[i + 1]),
+        Math.abs(a[i + 2] - b[i + 2]),
+      );
+      if (d > 20) {
+        mask[p] = 1;
+        n += 1;
+      }
+    }
+    perPair.push(n);
+  }
+
+  // Cluster at cell resolution so the answer is a handful of boxes rather than
+  // a scatter of pixels — a box can be pointed at, a scatter cannot.
+  const cols = Math.ceil(w / cell);
+  const rows = Math.ceil(h / cell);
+  const cells = new Int32Array(cols * rows);
+  let moved = 0;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (mask[y * w + x] === 0) continue;
+      moved += 1;
+      cells[Math.floor(y / cell) * cols + Math.floor(x / cell)] += 1;
+    }
+  }
+  const seen = new Uint8Array(cols * rows);
+  const boxes = [];
+  for (let r0 = 0; r0 < rows; r0 += 1) {
+    for (let c0 = 0; c0 < cols; c0 += 1) {
+      if (cells[r0 * cols + c0] === 0 || seen[r0 * cols + c0] === 1) continue;
+      const stack = [[c0, r0]];
+      seen[r0 * cols + c0] = 1;
+      let minc = c0;
+      let maxc = c0;
+      let minr = r0;
+      let maxr = r0;
+      let px = 0;
+      while (stack.length > 0) {
+        const [c, r] = stack.pop();
+        px += cells[r * cols + c];
+        if (c < minc) minc = c;
+        if (c > maxc) maxc = c;
+        if (r < minr) minr = r;
+        if (r > maxr) maxr = r;
+        for (let dr = -1; dr <= 1; dr += 1) {
+          for (let dc = -1; dc <= 1; dc += 1) {
+            const rr = r + dr;
+            const cc = c + dc;
+            if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+            if (seen[rr * cols + cc] === 1 || cells[rr * cols + cc] === 0) continue;
+            seen[rr * cols + cc] = 1;
+            stack.push([cc, rr]);
+          }
+        }
+      }
+      boxes.push({
+        x: minc * cell,
+        y: minr * cell,
+        w: (maxc - minc + 1) * cell,
+        h: (maxr - minr + 1) * cell,
+        px,
+      });
+    }
+  }
+  boxes.sort((a, b) => b.px - a.px);
+
+  // The picture: the last frame drained to grey, everything that moved in
+  // magenta. Same treatment as the third panel of a failure triptych, so the
+  // two read the same way.
+  const last = frames[frames.length - 1].data;
+  const marked = new Uint8ClampedArray(last.length);
+  for (let p = 0; p < w * h; p += 1) {
+    const i = p * 4;
+    if (mask[p] === 1) {
+      marked[i] = 0xff;
+      marked[i + 1] = 0x1f;
+      marked[i + 2] = 0x9c;
+      marked[i + 3] = 0xff;
+    } else {
+      const grey = (last[i] * 0.299 + last[i + 1] * 0.587 + last[i + 2] * 0.114) * 0.35 + 140;
+      marked[i] = grey;
+      marked[i + 1] = grey;
+      marked[i + 2] = grey;
+      marked[i + 3] = 0xff;
+    }
+  }
+  const out = new OffscreenCanvas(w, h);
+  out.getContext('2d').putImageData(new ImageData(marked, w, h), 0, 0);
+  const blob = await out.convertToBlob({ type: 'image/png' });
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < buf.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  }
+  return { moved, perPair, boxes: boxes.slice(0, 8), png: btoa(s) };
+};
+
+/** What the page itself says is running, and what sits under each moving box. */
+const RUNNING_IN_PAGE = (boxes) => {
+  const name = (el) =>
+    el === null || el === undefined || el.tagName === undefined
+      ? String(el)
+      : `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}` +
+        `${el.classList.length > 0 ? `.${[...el.classList].join('.')}` : ''}`;
+
+  const animations = [];
+  try {
+    for (const a of document.getAnimations()) {
+      animations.push(
+        `${a.animationName ?? a.transitionProperty ?? a.constructor.name}` +
+          ` [${a.playState}] on ${name(a.effect?.target)}`,
+      );
+    }
+  } catch {
+    /* an engine without the Web Animations registry is not this suite's business */
+  }
+
+  const gsap = [];
+  try {
+    const g = globalThis.gsap;
+    if (g !== undefined) {
+      for (const t of g.globalTimeline.getChildren(true, true, true)) {
+        if (t.paused?.() === true) continue;
+        gsap.push(
+          `${(t.targets?.() ?? []).map(name).slice(0, 2).join(', ') || '(no target)'}` +
+            ` dur ${t.duration?.()} repeat ${t.vars?.repeat ?? 0}` +
+            ` progress ${(t.progress?.() ?? 0).toFixed(2)}`,
+        );
+      }
+    }
+  } catch {
+    /* GSAP not on the window in this build */
+  }
+
+  const under = boxes.map((b) => ({
+    box: b,
+    stack: document
+      .elementsFromPoint(b.x + b.w / 2, b.y + b.h / 2)
+      .slice(0, 4)
+      .map(name),
+  }));
+
+  return { animations: animations.slice(0, 12), gsap: gsap.slice(0, 12), under };
+};
+
+/**
+ * Called the instant a settle gives up, with the page still on the surface.
+ *
+ * Returns null rather than throwing on any failure: a diagnosis that falls over
+ * must not cost the case its picture, which is still the thing the operator has
+ * to look at.
+ */
+async function diagnoseMovement(page, cmp, tail) {
+  if (tail.length < 2) return null;
+  try {
+    const mask = await cmp.evaluate(
+      MOVE_MASK_IN_PAGE,
+      [tail.map((b) => b.toString('base64')), CELL],
+    );
+    let running = null;
+    try {
+      running = await page.evaluate(RUNNING_IN_PAGE, mask.boxes);
+    } catch {
+      /* the page may have navigated out from under us; the mask still stands */
+    }
+    return { ...mask, running };
+  } catch {
+    return null;
   }
 }
 
@@ -1256,9 +1629,11 @@ if (LIST) {
   process.exit(0);
 }
 
-const wanted = CASES.filter((c) => ONLY === null || caseName(c).includes(ONLY));
+const wanted = CASES.filter(
+  (c) => ONLY === null || ONLY.some((needle) => caseName(c).includes(needle)),
+);
 if (wanted.length === 0) {
-  console.error(`--only=${ONLY} matched nothing. Try --list.`);
+  console.error(`--only=${ONLY.join(',')} matched nothing. Try --list.`);
   process.exit(2);
 }
 
@@ -1338,6 +1713,29 @@ for (const c of CASES) {
 }
 
 /**
+ * Print the diagnosis under the case that earned it.
+ *
+ * On the console rather than only in the report page, because the person who
+ * runs this suite is watching a terminal for forty-five minutes and the whole
+ * point of the third outcome is that somebody eventually goes and fixes it.
+ */
+function reportMovement(moving) {
+  console.log(
+    `      what moved: ${moving.moved}px across the last ${moving.perPair.length + 1} frames` +
+      ` (${moving.perPair.join(', ')} per pair)`,
+  );
+  for (const b of moving.boxes) {
+    const under = moving.running?.under?.find((u) => u.box.x === b.x && u.box.y === b.y);
+    console.log(
+      `      · ${b.w}×${b.h} at ${b.x},${b.y} — ${b.px}px` +
+        `${under === undefined ? '' : `  ${under.stack.join(' < ')}`}`,
+    );
+  }
+  for (const a of moving.running?.animations ?? []) console.log(`      anim: ${a}`);
+  for (const t of moving.running?.gsap ?? []) console.log(`      gsap: ${t}`);
+}
+
+/**
  * Walk one (size, room) once, filling `taken`.
  *
  * Returns the number of page navigations that happened after boot. Anything
@@ -1404,16 +1802,21 @@ async function walkScene(group, taken) {
       ctx.note = null;
       await surface.enter(page, ctx);
       if (wantedNames.has(caseName(c))) {
-        const { buffer, settled, shots: took, distinct } = await settle(page, cmp);
+        const { buffer, settled, shots: took, distinct, tail } = await settle(page, cmp);
         // The count is the useful half. "Still moving" with 2 distinct frames
         // out of 40 is a slow machine; with 40 out of 40 something is genuinely
         // animating and the comparison below will say so in pixels.
         const warning = settled
           ? null
           : `still moving after ${took} frames (${distinct} distinct)`;
-        taken.set(caseName(c), { buffer, warning });
+        // Diagnose HERE, not in the write phase: the browser is closed by then,
+        // and the only moment the page can be asked what it is running is while
+        // it is still standing on the surface that would not hold still.
+        const moving = settled ? null : await diagnoseMovement(page, cmp, tail);
+        taken.set(caseName(c), { buffer, warning, moving });
         const said = [ctx.note, warning].filter((s) => s !== null && s !== undefined);
         console.log(`    · ${surface.id}${said.length === 0 ? '' : ` — ${said.join('; ')}`}`);
+        if (moving !== null) reportMovement(moving);
       } else {
         console.log(`    (${surface.id} — walked past)`);
       }
@@ -1496,16 +1899,17 @@ for (const [, group] of byScene) {
  * `settle`). Only genuinely different pictures get written.
  */
 const verdicts = [];
-for (const { c, buffer, warning } of shots) {
+for (const { c, buffer, warning, moving } of shots) {
   const path = baselinePath(c);
   if (!existsSync(path)) {
-    verdicts.push({ c, buffer, warning, verdict: null });
+    verdicts.push({ c, buffer, warning, moving, verdict: null });
     continue;
   }
   verdicts.push({
     c,
     buffer,
     warning,
+    moving,
     verdict: await compare(cmp, readFileSync(path), buffer),
   });
 }
@@ -1519,8 +1923,30 @@ await browser.close();
 rmSync(REPORT_DIR, { recursive: true, force: true });
 mkdirSync(REPORT_DIR, { recursive: true });
 
+/**
+ * A MOVE case leaves two pictures, not one.
+ *
+ * `.actual.png` is the moment the deadline fell on; `.moving.png` is the union
+ * of everything that changed over the last few frames, in magenta. The second
+ * is the one that answers the question — a single still of a surface that never
+ * stops tells you it moved and nothing else, and "find what is moving" was
+ * previously a day of driving the app by hand.
+ */
+function writeMovementEvidence(name, buffer, moving) {
+  write(join(REPORT_DIR, `${name}.actual.png`), buffer);
+  if (moving === null || moving === undefined) return '';
+  write(join(REPORT_DIR, `${name}.moving.png`), Buffer.from(moving.png, 'base64'));
+  const worst = moving.boxes[0];
+  if (worst === undefined) return '';
+  const under = moving.running?.under?.[0]?.stack?.[0];
+  return (
+    `; ${moving.moved}px moved, biggest patch ${worst.w}×${worst.h}` +
+    ` at ${worst.x},${worst.y}${under === undefined ? '' : ` (${under})`}`
+  );
+}
+
 if (UPDATE) {
-  for (const { c, buffer, warning, verdict } of verdicts) {
+  for (const { c, buffer, warning, moving, verdict } of verdicts) {
     /*
      * A surface that never stopped moving is NOT baselined, by either path.
      *
@@ -1529,17 +1955,27 @@ if (UPDATE) {
      * as the truth is the same mistake this file already refuses to make for a
      * missing baseline, arriving from the other direction: the picture is not
      * of the app at rest, it is of whichever moment the deadline fell on, so
-     * the next run compares against a coin toss and fails forever. Four
-     * surfaces do this today (both tour-blocks, desk-night-tour-settings,
-     * snug-day-focus-spread), and re-baselining them would have converted a
-     * loud, accurate "still moving" into four cases nobody could ever get green
-     * and everybody would learn to ignore.
+     * the next run compares against a coin toss and fails forever. Six cases
+     * did this when the rule was written; re-baselining them would have
+     * converted a loud, accurate "still moving" into six cases nobody could
+     * ever get green and everybody would learn to ignore. (They were real
+     * defects and are fixed — see the header — but the rule is not about those
+     * six, it is about the next one.)
      *
-     * So it keeps whatever baseline it has and stays reported. The fix is to
-     * find what is moving — not to photograph it harder.
+     * So it keeps whatever baseline it has and stays reported, now with the
+     * moving-pixel mask beside it. The fix is to find what is moving — not to
+     * photograph it harder.
      */
     if (warning !== undefined && warning !== null) {
-      record(c, 'skip', { why: `${warning} — not baselined; find what is moving first` });
+      // The evidence is written even under `--update`, which is the one place
+      // this branch is NOT symmetric with a comparison run: `--update` is what
+      // somebody runs after they think they have fixed the instability, and it
+      // is exactly then that they need the picture that says they have not.
+      const found = writeMovementEvidence(caseName(c), buffer, moving);
+      record(c, 'skip', {
+        why: `${warning}${found} — not baselined; find what is moving first`,
+        sawSabotage: sabotageWasSeen(moving),
+      });
       continue;
     }
     if (verdict === null) {
@@ -1561,7 +1997,7 @@ if (UPDATE) {
     });
   }
 } else {
-  for (const { c, buffer, warning, verdict } of verdicts) {
+  for (const { c, buffer, warning, moving, verdict } of verdicts) {
     const name = caseName(c);
     /*
      * Symmetric with the `--update` branch above, and it has to be.
@@ -1585,8 +2021,11 @@ if (UPDATE) {
      * way to find what is moving is to look at two of them.
      */
     if (warning !== undefined && warning !== null) {
-      write(join(REPORT_DIR, `${name}.actual.png`), buffer);
-      record(c, 'skip', { why: `${warning} — cannot be measured, so not judged` });
+      const found = writeMovementEvidence(name, buffer, moving);
+      record(c, 'skip', {
+        why: `${warning}${found} — cannot be measured, so not judged`,
+        sawSabotage: sabotageWasSeen(moving),
+      });
       continue;
     }
     if (verdict === null) {
@@ -1652,7 +2091,10 @@ const added = results.filter((r) => r.status === 'add');
 const updated = results.filter((r) => r.status === 'upd');
 const unstable = results.filter((r) => r.status === 'skip');
 
-if (failures.length > 0 || KEEP_PASSES) writeReportPage(results);
+// A run whose only news is "these could not be measured" still writes the page:
+// the moving-pixel masks are the only lead anyone has on the third outcome, and
+// a lead nobody can open is not a lead.
+if (failures.length > 0 || unstable.length > 0 || KEEP_PASSES) writeReportPage(results);
 
 console.log('\n────────────────────────────────────────────────');
 console.log(
@@ -1674,6 +2116,35 @@ if (noisiest !== undefined) {
   );
 }
 
+/*
+ * The sabotage verdict, and it answers a different question from the tally.
+ *
+ * Under `--sabotage` a run is not asking whether the app looks right — it is
+ * asking whether this file can still NOTICE. Two things have to be true and
+ * both are checked: every wanted case came back `skip` (the third outcome was
+ * reached at all), and the moving-pixel mask put a box over the patch we broke
+ * (the diagnosis points somewhere true rather than anywhere). A mask that
+ * reported movement in the wrong place would be worse than none, because it
+ * would send the next person chasing the wrong element.
+ */
+if (SABOTAGE) {
+  const missed = results.filter((r) => r.status !== 'skip');
+  const blind = unstable.filter((r) => r.sawSabotage !== true);
+  console.log('');
+  if (missed.length === 0 && blind.length === 0 && unstable.length > 0) {
+    console.log(
+      `  GATE ALIVE — all ${unstable.length} sabotaged case(s) reported MOVE, ` +
+        'and the mask found the patch',
+    );
+  } else {
+    console.log('  GATE INERT — the suite did not notice a screen that never stops:');
+    for (const r of missed) console.log(`   · ${r.name} came back "${r.status}", not MOVE`);
+    for (const r of blind) console.log(`   · ${r.name} reported MOVE but the mask missed the patch`);
+    if (unstable.length === 0 && missed.length === 0) console.log('   · nothing was measured at all');
+    process.exit(3);
+  }
+}
+
 if (failures.length > 0) {
   console.log('\n  failed:');
   for (const f of failures) console.log(`   · ${f.name}${f.why ? ` — ${f.why}` : ''}`);
@@ -1693,14 +2164,24 @@ function writeReportPage(rows) {
   const shown = rows.filter((r) => r.status !== 'pass' || KEEP_PASSES);
   const esc = (s) => String(s).replace(/[<&>]/g, (ch) => `&#${ch.charCodeAt(0)};`);
   const card = (r) => {
-    // Three states, and the middle one is the point: a case with no baseline
-    // has no triptych to show but DOES have a picture, and the whole reason it
-    // failed is so somebody looks at that picture before accepting it.
-    const img = existsSync(join(REPORT_DIR, `${r.name}.diff.png`))
-      ? `<img src="${r.name}.diff.png" alt="${esc(r.name)}">`
-      : existsSync(join(REPORT_DIR, `${r.name}.actual.png`))
-        ? `<img src="${r.name}.actual.png" alt="${esc(r.name)}">`
-        : `<p class="none">no image — ${esc(r.why ?? 'the case never got as far as a screenshot')}</p>`;
+    // Four states, and the two middle ones are the point. A case with no
+    // baseline has no triptych to show but DOES have a picture, and the whole
+    // reason it failed is so somebody looks at that picture before accepting
+    // it. A case that never settled has TWO pictures — the moment the deadline
+    // fell on, and the union of everything that would not hold still — and the
+    // second goes first, because it is the one that answers the question.
+    const has = (suffix) => existsSync(join(REPORT_DIR, `${r.name}.${suffix}.png`));
+    const shot = (suffix, caption) =>
+      `<figure><figcaption>${caption}</figcaption>` +
+      `<img src="${r.name}.${suffix}.png" alt="${esc(`${r.name} — ${caption}`)}"></figure>`;
+    const img = has('diff')
+      ? shot('diff', 'baseline · actual · what changed')
+      : has('moving')
+        ? shot('moving', 'everything that would not hold still, in magenta') +
+          (has('actual') ? shot('actual', 'the frame the deadline fell on') : '')
+        : has('actual')
+          ? shot('actual', 'the picture nobody has accepted yet')
+          : `<p class="none">no image — ${esc(r.why ?? 'the case never got as far as a screenshot')}</p>`;
     const stats =
       r.changed === undefined
         ? ''
@@ -1726,6 +2207,8 @@ function writeReportPage(rows) {
           background:#7c2033; color:#ffd9df; padding:2px 7px; border-radius:9px; margin-left:8px; }
   .stats { display:flex; flex-wrap:wrap; gap:14px; color:#a2968a; font-size:12px; margin:0 0 10px; }
   img { max-width:100%; display:block; border:1px solid #2e2721; border-radius:4px; }
+  figure { margin:0 0 12px; }
+  figcaption { color:#a2968a; font-size:12px; margin:0 0 4px; }
   .none { color:#c08a72; }
 </style>
 <h1>visual suite</h1>

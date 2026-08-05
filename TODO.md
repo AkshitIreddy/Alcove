@@ -25,6 +25,34 @@ being reviewed frame by frame.
       landed on. Preload them for the adjacent pages, the way the flip already
       warms their bitmaps.
 
+- [ ] **A frame review of the SHIPPED demo, before any of it is re-rendered —
+      and "future pages showing" has a boring explanation.** Two frames read at
+      full size, `f0705` and `f0857`:
+
+      Both show a leaf carrying **the tail of the previous authored page
+      followed by the whole of the next one**. 705's left leaf opens with "A
+      page that fills up simply flows onto the next one" and the no-save callout
+      — the foot of the *Writing* page — and then runs the entire *Every mark
+      there is* page underneath it. 857's right leaf does the same with *Two
+      other ways in* and *The stationery drawer*.
+
+      That is not a flip bug and it is not the recorder. It is the over-full
+      seed: v6 pages cost 136% of the leaf they landed on, so the drain was
+      permanently mid-cascade and a leaf's WHOLE document — including the tail
+      about to move on — was on screen while it happened. A viewer watching that
+      at 14fps and calling it *"future pages showing"* is describing it
+      accurately. Fixed at source by seed v7 and the window-derived budget, so
+      the re-render should not be able to produce it; **check these two moments
+      specifically** when it does.
+
+      **And a correction about the method, which is the more useful half.** On
+      the 4×4 board this looked like a THIRD symptom — a right leaf holding
+      nothing but a heading, which is exactly the reported *"bottom content on
+      the right page disappears"*. At full size that leaf is fully inked. The
+      board was wrong and I nearly wrote it down. `demo-sheets.mjs` exists to
+      LOCATE a frame; the judging has to happen at `--frame=NNNN`, and a finding
+      that never left the thumbnail is not a finding.
+
 - [ ] **THE THREE PAGE-TURN SYMPTOMS DO NOT REPRODUCE IN THE APP.**
       > "I didn't notice any of the bugs I mentioned in the gif's video when I
       > was testing in the web server."

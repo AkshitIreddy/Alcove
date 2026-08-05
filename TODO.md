@@ -449,6 +449,19 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### Shipping
 
+- [ ] **Re-render the demo ONE more time, last.** The shipped `demo.webp` was
+      rendered before two changes that are visible in it: the Welcome book's
+      first page became ruled paper, and the studio scroll moved from
+      `block: 'center'` to `'nearest'` (which is what sliced "My Library" under
+      the pinned tab row). It must also wait for the page-budget work, because
+      if that changes how the book paginates it changes the turn sequence the
+      demo walks. Render once, at the end, then run the frame review over it and
+      update the alt text in `part-1-users.md`.
+
+      Note for whoever does it: `demo.gif` is gitignored deliberately — 12 MB
+      against the WebP's 6.5 MB, and GitHub renders animated WebP inline, so the
+      GIF is a local artefact and only `demo.webp` ships.
+
 - [ ] **Release this batch as 0.4.**
       > "Once you finish all this, btw, you can call it 0.4 — do this at the end
       > once all is done."

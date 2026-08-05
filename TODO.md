@@ -5,6 +5,41 @@
 Recorded verbatim (grammar tidied only) from two messages while the 0.3 demo was
 being reviewed frame by frame.
 
+## 🔴 Reported 2026-08-06 — what a still-frame review cannot see
+
+- [ ] **The demo looks broken during page turns, in three ways.**
+      > "The current demo seems to be broken during page turns — it's hard to
+      > say what happens. Sometimes it's like pages are skipping during a turn,
+      > sometimes it's like future pages showing, sometimes when a panel opens
+      > the bottom content on the right page disappears."
+
+- [ ] **The visual harness must detect massive frame-to-frame changes, and it
+      should live in gifsmith.**
+      > "I think you need to fix whatever visual testing harness you're using,
+      > to be able to detect massive visual frame changes or something, to be
+      > able to find these kinds of bugs — and ideally add it to gifsmith."
+
+      They are right about the gap and it is structural, not an oversight. The
+      review that found 26 defects samples every 7th frame and hands each STILL
+      to an agent. Two consequences: at 14fps a 0.5s sample interval steps
+      straight over a one-frame flash, and an agent judging a single frame has
+      no way to know it differs from its neighbours. Every defect that review
+      found was visible in one frame standing alone — a duplicated block, a
+      blank shelf, a clipped heading. Nothing it can do would find "the page
+      skipped" or "content vanished and came back", because those are
+      properties of a SEQUENCE.
+
+      What is needed is temporal: decode consecutive frames, and flag where the
+      change between them does not fit the motion around it — a spike against
+      both neighbours (a flash or a skipped frame), a region losing its ink and
+      regaining it (content disappearing), a jump during a turn larger than the
+      turn's own rate of change. Frame numbers out, a contact strip of the
+      neighbourhood for a human or an agent to look at.
+
+      It belongs in gifsmith because gifsmith already owns every frame, their
+      timestamps and the loop analysis, and because the same defect class ruins
+      any scripted demo, not just this one.
+
 ### The app bugs the demo exposed
 
 - [ ] **Make the Welcome book behave like any other book.** *(the owner's ruling

@@ -1043,6 +1043,13 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
          only sweep that looks at surfaces the README does not photograph, and
          seed v7 changes two of them legitimately — so expect real diffs and
          judge them rather than running `--update` at the first red.
+         **First run `--sabotage --only=desk-day-shelf` on the quiet tree.** It
+         has not yet been watched failing: the one attempt came back GATE INERT
+         from a run the dev server reloaded twice under five agents, which is
+         now reported as INCONCLUSIVE instead (`162cbf8`). A gate nobody has
+         watched fail is not a gate, and this one fails quietly — a broken
+         `settle()` would take surfaces out of coverage and make the summary
+         GREENER.
       3. **Re-capture the 23 shots** — one `--only=hero` run first to watch the
          partial-manifest guard work, then one full run, then re-read every alt
          string against the new picture. `tests/readme.test.ts` goes green here

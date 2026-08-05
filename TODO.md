@@ -363,7 +363,7 @@ under each item (grammar tidied, nothing else), then the task as understood.
       there now.
 ### Shipping 0.3
 
-- [ ] **Make the repo public, then release 0.3.**
+- [x] **Make the repo public, then release 0.3.**
       > "After all this you can make the repo public, then do a new release that
       > encompasses all these changes as 0.3."
 
@@ -374,6 +374,20 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ## 🔴 Reported 2026-08-04 (third pass) — toward the 0.2 release
 
+
+      DONE. The repository is public at
+      https://github.com/AkshitIreddy/Alcove — renamed to the capital A on the
+      reader's ask, with every URL in the tree following it, a description and
+      ten topics. v0.3.0 built from one tag on three runners: seven artefacts
+      and a `SHA256SUMS.txt`. The first attempt failed in 48 seconds because
+      `npm pkg set` edits package.json and not the lock, so `npm ci` refused the
+      whole release.
+
+      The release page was then revised twice from the reader's own reading of
+      it: what changed goes above the download table (it had been the other way,
+      to beat GitHub's fold), the ✔ column is gone, and the SmartScreen and
+      administrator paragraph with it. Both the notes generator and gifsmith's
+      now link a written changelog beside the generated commit list.
 ### Packaging and release
 
 

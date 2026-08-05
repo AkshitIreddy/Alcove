@@ -1,0 +1,1638 @@
+[
+ {
+  "t": 11093,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Dressing a bookThe pai"
+ },
+ {
+  "t": 11095,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Dressing a bookThe pai"
+ },
+ {
+  "t": 11164,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 8,
+  "markers": 0,
+  "who": "left:Drag one out with the "
+ },
+ {
+  "t": 11166,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "left:Drag one out with the "
+ },
+ {
+  "t": 11170,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Dressing a bookThe pai"
+ },
+ {
+  "t": 11173,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "left:Drag one out with the "
+ },
+ {
+  "t": 11197,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 8,
+  "markers": 0,
+  "who": "right:Bookson ten floorsA wa"
+ },
+ {
+  "t": 11198,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Bookson ten floorsA wa"
+ },
+ {
+  "t": 11213,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:Bookson ten floorsA wa"
+ },
+ {
+  "t": 11213,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "left:Drag one out with the "
+ },
+ {
+  "t": 11226,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Bookson ten floorsA wa"
+ },
+ {
+  "t": 11236,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "left:Drag one out with the "
+ },
+ {
+  "t": 11360,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Drag one out with the "
+ },
+ {
+  "t": 11904,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Dressing a bookThe pai"
+ },
+ {
+  "t": 12440,
+  "kind": "reserve",
+  "value": "40px",
+  "who": "off:Every mark there isBol"
+ },
+ {
+  "t": 12450,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:The paintbrush at the "
+ },
+ {
+  "t": 12452,
+  "kind": "reserve",
+  "value": "40px",
+  "who": "off:Every mark there isBol"
+ },
+ {
+  "t": 12533,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "off:Every mark there isBol"
+ },
+ {
+  "t": 14297,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 11,
+  "markers": 0,
+  "who": "left:The paintbrush at the "
+ },
+ {
+  "t": 14300,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "left:The paintbrush at the "
+ },
+ {
+  "t": 14347,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "right:Every mark there isBol"
+ },
+ {
+  "t": 14351,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "right:Every mark there isBol"
+ },
+ {
+  "t": 14358,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 6,
+  "markers": 1,
+  "who": "right:Every mark there isBol"
+ },
+ {
+  "t": 14362,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 6,
+  "markers": 1,
+  "who": "right:Every mark there isBol"
+ },
+ {
+  "t": 14402,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 13,
+  "markers": 1,
+  "who": "right:Ctrl Alt D dresses the"
+ },
+ {
+  "t": 14404,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:Ctrl Alt D dresses the"
+ },
+ {
+  "t": 14408,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Ctrl Alt D dresses the"
+ },
+ {
+  "t": 14410,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "left:The paintbrush at the "
+ },
+ {
+  "t": 14412,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Ctrl Alt D dresses the"
+ },
+ {
+  "t": 14487,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:BlocksEvery paragraph,"
+ },
+ {
+  "t": 14490,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:BlocksEvery paragraph,"
+ },
+ {
+  "t": 14546,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "left:A page that fills up s"
+ },
+ {
+  "t": 14553,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "left:A page that fills up s"
+ },
+ {
+  "t": 14566,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 15,
+  "markers": 1,
+  "who": "left:A page that fills up s"
+ },
+ {
+  "t": 14570,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 7,
+  "markers": 1,
+  "who": "left:A page that fills up s"
+ },
+ {
+  "t": 14586,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:BlocksEvery paragraph,"
+ },
+ {
+  "t": 14590,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 7,
+  "markers": 1,
+  "who": "left:A page that fills up s"
+ },
+ {
+  "t": 14626,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 14,
+  "markers": 0,
+  "who": "right:Select any run of word"
+ },
+ {
+  "t": 14629,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Select any run of word"
+ },
+ {
+  "t": 14633,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Select any run of word"
+ },
+ {
+  "t": 14710,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 16,
+  "markers": 0,
+  "who": "left:Pull a book off the sh"
+ },
+ {
+  "t": 14714,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 9,
+  "markers": 0,
+  "who": "left:Pull a book off the sh"
+ },
+ {
+  "t": 14757,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:The postal drawerSomet"
+ },
+ {
+  "t": 14759,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:The postal drawerSomet"
+ },
+ {
+  "t": 14778,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 9,
+  "markers": 0,
+  "who": "left:Pull a book off the sh"
+ },
+ {
+  "t": 14780,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:The postal drawerSomet"
+ },
+ {
+  "t": 14794,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 13,
+  "markers": 0,
+  "who": "right:Right-click anywhere o"
+ },
+ {
+  "t": 14799,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Right-click anywhere o"
+ },
+ {
+  "t": 14801,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Right-click anywhere o"
+ },
+ {
+  "t": 14934,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 17,
+  "markers": 0,
+  "who": "left:Rub 60g of butter into"
+ },
+ {
+  "t": 14937,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:Rub 60g of butter into"
+ },
+ {
+  "t": 14997,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Four kinds of asideInf"
+ },
+ {
+  "t": 14999,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Four kinds of asideInf"
+ },
+ {
+  "t": 15010,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:Rub 60g of butter into"
+ },
+ {
+  "t": 15012,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Four kinds of asideInf"
+ },
+ {
+  "t": 15027,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 18,
+  "markers": 0,
+  "who": "right:The postal drawerSomet"
+ },
+ {
+  "t": 15030,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:The postal drawerSomet"
+ },
+ {
+  "t": 15031,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:The postal drawerSomet"
+ },
+ {
+  "t": 15136,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 21,
+  "markers": 0,
+  "who": "left:Pressed while still so"
+ },
+ {
+  "t": 15139,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:Pressed while still so"
+ },
+ {
+  "t": 15186,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:PicturesPaste one in, "
+ },
+ {
+  "t": 15199,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:Pressed while still so"
+ },
+ {
+  "t": 15201,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:PicturesPaste one in, "
+ },
+ {
+  "t": 15223,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 21,
+  "markers": 0,
+  "who": "right:Row H, seat 12. It rai"
+ },
+ {
+  "t": 15227,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Row H, seat 12. It rai"
+ },
+ {
+  "t": 15336,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 19,
+  "markers": 0,
+  "who": "left:Four kinds of asideInf"
+ },
+ {
+  "t": 15339,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:Four kinds of asideInf"
+ },
+ {
+  "t": 15378,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:Two upWords beside a p"
+ },
+ {
+  "t": 15380,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:Two upWords beside a p"
+ },
+ {
+  "t": 15393,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:Four kinds of asideInf"
+ },
+ {
+  "t": 15395,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:Two upWords beside a p"
+ },
+ {
+  "t": 15413,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 17,
+  "markers": 0,
+  "who": "right:Write thisOr just this"
+ },
+ {
+  "t": 15416,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Write thisOr just this"
+ },
+ {
+  "t": 15418,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Write thisOr just this"
+ },
+ {
+  "t": 15498,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 20,
+  "markers": 0,
+  "who": "left:A toggle puts a long a"
+ },
+ {
+  "t": 15500,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:A toggle puts a long a"
+ },
+ {
+  "t": 15530,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:The same thing, thrown"
+ },
+ {
+  "t": 15564,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:A toggle puts a long a"
+ },
+ {
+  "t": 15565,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:The same thing, thrown"
+ },
+ {
+  "t": 15569,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:The same thing, thrown"
+ },
+ {
+  "t": 15608,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 18,
+  "markers": 0,
+  "who": "right:Up to four will stand "
+ },
+ {
+  "t": 15612,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:Up to four will stand "
+ },
+ {
+  "t": 15698,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:A process, step by ste"
+ },
+ {
+  "t": 15793,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 20,
+  "markers": 0,
+  "who": "left:A white frame, caption"
+ },
+ {
+  "t": 15797,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "left:A white frame, caption"
+ },
+ {
+  "t": 15839,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:A process, step by ste"
+ },
+ {
+  "t": 15841,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:A process, step by ste"
+ },
+ {
+  "t": 15843,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "left:A white frame, caption"
+ },
+ {
+  "t": 15908,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 22,
+  "markers": 0,
+  "who": "right:Words beside a picture"
+ },
+ {
+  "t": 15912,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:Words beside a picture"
+ },
+ {
+  "t": 15914,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:Words beside a picture"
+ },
+ {
+  "t": 16026,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 7,
+  "markers": 0,
+  "who": "right:Maths, in a notebook h"
+ },
+ {
+  "t": 16029,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 7,
+  "markers": 0,
+  "who": "right:Maths, in a notebook h"
+ },
+ {
+  "t": 16168,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 26,
+  "markers": 0,
+  "who": "left:A column may hold anyt"
+ },
+ {
+  "t": 16172,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:A column may hold anyt"
+ },
+ {
+  "t": 16298,
+  "kind": "drain-reads-padding",
+  "value": "62px",
+  "blocks": 28,
+  "markers": 0,
+  "who": "right:tree, mindmap, graph, "
+ },
+ {
+  "t": 16302,
+  "kind": "drain-reads-padding",
+  "value": "62px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:tree, mindmap, graph, "
+ },
+ {
+  "t": 16463,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 29,
+  "markers": 0,
+  "who": "left:BookbindingSewingKettl"
+ },
+ {
+  "t": 16467,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "left:BookbindingSewingKettl"
+ },
+ {
+  "t": 16504,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:Tables, and a column o"
+ },
+ {
+  "t": 16505,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:Tables, and a column o"
+ },
+ {
+  "t": 16567,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 28,
+  "markers": 0,
+  "who": "right:eventuallyIdeaDraftNot"
+ },
+ {
+  "t": 16571,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:eventuallyIdeaDraftNot"
+ },
+ {
+  "t": 16672,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:One page pointing at a"
+ },
+ {
+  "t": 16674,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:One page pointing at a"
+ },
+ {
+  "t": 16758,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:A process, step by ste"
+ },
+ {
+  "t": 16762,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:A process, step by ste"
+ },
+ {
+  "t": 16773,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 33,
+  "markers": 3,
+  "who": "left:A process, step by ste"
+ },
+ {
+  "t": 16775,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "left:A process, step by ste"
+ },
+ {
+  "t": 16778,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "left:A process, step by ste"
+ },
+ {
+  "t": 16874,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "right:A mermaid fence is rea"
+ },
+ {
+  "t": 16880,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 36,
+  "markers": 3,
+  "who": "right:A mermaid fence is rea"
+ },
+ {
+  "t": 16882,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:A mermaid fence is rea"
+ },
+ {
+  "t": 16884,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "right:A mermaid fence is rea"
+ },
+ {
+  "t": 16988,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:1665Hooke looks down a"
+ },
+ {
+  "t": 17006,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:1665Hooke looks down a"
+ },
+ {
+  "t": 17022,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 41,
+  "markers": 3,
+  "who": "left:1665Hooke looks down a"
+ },
+ {
+  "t": 17025,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "left:1665Hooke looks down a"
+ },
+ {
+  "t": 17028,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "left:1665Hooke looks down a"
+ },
+ {
+  "t": 17099,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 9,
+  "markers": 0,
+  "who": "right:Lettering, and the ink"
+ },
+ {
+  "t": 17102,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 9,
+  "markers": 0,
+  "who": "right:Lettering, and the ink"
+ },
+ {
+  "t": 17155,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "right:Maths, in a notebook h"
+ },
+ {
+  "t": 17163,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 47,
+  "markers": 3,
+  "who": "right:Maths, in a notebook h"
+ },
+ {
+  "t": 17165,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:Maths, in a notebook h"
+ },
+ {
+  "t": 17169,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 7,
+  "markers": 0,
+  "who": "right:Maths, in a notebook h"
+ },
+ {
+  "t": 17295,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:paper: grid at the top"
+ },
+ {
+  "t": 17312,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:paper: grid at the top"
+ },
+ {
+  "t": 17324,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 47,
+  "markers": 3,
+  "who": "left:paper: grid at the top"
+ },
+ {
+  "t": 17326,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "left:paper: grid at the top"
+ },
+ {
+  "t": 17328,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "left:paper: grid at the top"
+ },
+ {
+  "t": 17371,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:ShorthandTwo colons de"
+ },
+ {
+  "t": 17374,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:ShorthandTwo colons de"
+ },
+ {
+  "t": 17432,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "right:pythoncopydef shelve(b"
+ },
+ {
+  "t": 17441,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 50,
+  "markers": 3,
+  "who": "right:pythoncopydef shelve(b"
+ },
+ {
+  "t": 17443,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:pythoncopydef shelve(b"
+ },
+ {
+  "t": 17446,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:pythoncopydef shelve(b"
+ },
+ {
+  "t": 17599,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:The language sits on a"
+ },
+ {
+  "t": 17619,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:The language sits on a"
+ },
+ {
+  "t": 17629,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 52,
+  "markers": 3,
+  "who": "left:The language sits on a"
+ },
+ {
+  "t": 17633,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "left:The language sits on a"
+ },
+ {
+  "t": 17637,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "left:The language sits on a"
+ },
+ {
+  "t": 17668,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Write it with your AIE"
+ },
+ {
+  "t": 17670,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Write it with your AIE"
+ },
+ {
+  "t": 17723,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "right:KeyWhat it does/opens "
+ },
+ {
+  "t": 17729,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 56,
+  "markers": 3,
+  "who": "right:KeyWhat it does/opens "
+ },
+ {
+  "t": 17732,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:KeyWhat it does/opens "
+ },
+ {
+  "t": 17734,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 3,
+  "markers": 0,
+  "who": "right:KeyWhat it does/opens "
+ },
+ {
+  "t": 17874,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 17898,
+  "kind": "reserve",
+  "value": "87px",
+  "who": "left:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 17912,
+  "kind": "drain-reads-padding",
+  "value": "119px",
+  "blocks": 54,
+  "markers": 3,
+  "who": "left:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 17916,
+  "kind": "reserve",
+  "value": "64px",
+  "who": "left:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 17920,
+  "kind": "drain-reads-padding",
+  "value": "96px",
+  "blocks": 4,
+  "markers": 2,
+  "who": "left:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 17958,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "right:"
+ },
+ {
+  "t": 18019,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "right:The Markdown spelling "
+ },
+ {
+  "t": 18034,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 51,
+  "markers": 1,
+  "who": "right:The Markdown spelling "
+ },
+ {
+  "t": 18039,
+  "kind": "drain-reads-padding",
+  "value": "73px",
+  "blocks": 5,
+  "markers": 1,
+  "who": "right:The Markdown spelling "
+ },
+ {
+  "t": 18132,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "right:"
+ },
+ {
+  "t": 18172,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 46,
+  "markers": 0,
+  "who": "left:One page pointing at a"
+ },
+ {
+  "t": 18174,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "left:One page pointing at a"
+ },
+ {
+  "t": 18199,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 42,
+  "markers": 0,
+  "who": "right:It stays on the page a"
+ },
+ {
+  "t": 18203,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 8,
+  "markers": 0,
+  "who": "right:It stays on the page a"
+ },
+ {
+  "t": 18285,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "right:"
+ },
+ {
+  "t": 18347,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 34,
+  "markers": 0,
+  "who": "left:Lifted a little off th"
+ },
+ {
+  "t": 18349,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 8,
+  "markers": 0,
+  "who": "left:Lifted a little off th"
+ },
+ {
+  "t": 18385,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 27,
+  "markers": 0,
+  "who": "right:Larger, and ranged rig"
+ },
+ {
+  "t": 18388,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:Larger, and ranged rig"
+ },
+ {
+  "t": 18502,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 21,
+  "markers": 0,
+  "who": "left:This leaf is dotted, w"
+ },
+ {
+  "t": 18506,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 5,
+  "markers": 0,
+  "who": "left:This leaf is dotted, w"
+ },
+ {
+  "t": 18545,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "right:"
+ },
+ {
+  "t": 18570,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 18,
+  "markers": 0,
+  "who": "right:wash: amber, terracott"
+ },
+ {
+  "t": 18572,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 6,
+  "markers": 0,
+  "who": "right:wash: amber, terracott"
+ },
+ {
+  "t": 18697,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 12,
+  "markers": 0,
+  "who": "right:An unknown name never "
+ },
+ {
+  "t": 18701,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:An unknown name never "
+ },
+ {
+  "t": 18729,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "left:"
+ },
+ {
+  "t": 18801,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "right:An unknown name never "
+ },
+ {
+  "t": 18801,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "left:"
+ },
+ {
+  "t": 18856,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "left:"
+ },
+ {
+  "t": 19230,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 4,
+  "markers": 0,
+  "who": "right:An unknown name never "
+ },
+ {
+  "t": 19230,
+  "kind": "drain-reads-padding",
+  "value": "32px",
+  "blocks": 1,
+  "markers": 0,
+  "who": "left:"
+ },
+ {
+  "t": 19332,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Ctrl Alt D dresses the"
+ },
+ {
+  "t": 19954,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Welcome to Alcove ✎Thi"
+ },
+ {
+  "t": 19954,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Nothing here is a scre"
+ },
+ {
+  "t": 19954,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:The paintbrush at the "
+ },
+ {
+  "t": 19954,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Bookson ten floorsA wa"
+ },
+ {
+  "t": 20013,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "off:A page that fills up s"
+ },
+ {
+  "t": 21353,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Drag one out with the "
+ },
+ {
+  "t": 21354,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "off:A page that fills up s"
+ },
+ {
+  "t": 21354,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Select any run of word"
+ },
+ {
+  "t": 21354,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Pull a book off the sh"
+ },
+ {
+  "t": 23205,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Right-click anywhere o"
+ },
+ {
+  "t": 23205,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Rub 60g of butter into"
+ },
+ {
+  "t": 23205,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:The postal drawerSomet"
+ },
+ {
+  "t": 23205,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Pressed while still so"
+ },
+ {
+  "t": 24482,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Row H, seat 12. It rai"
+ },
+ {
+  "t": 24482,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Four kinds of asideInf"
+ },
+ {
+  "t": 24482,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Write thisOr just this"
+ },
+ {
+  "t": 24482,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:A toggle puts a long a"
+ },
+ {
+  "t": 26445,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:↔▭Up to four will stan"
+ },
+ {
+  "t": 26990,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:↔▭A white frame, capti"
+ },
+ {
+  "t": 26995,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:↔▭Words beside a pictu"
+ },
+ {
+  "t": 26995,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:A column may hold anyt"
+ },
+ {
+  "t": 26995,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:tree, mindmap, graph, "
+ },
+ {
+  "t": 28286,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:BookbindingSewingKettl"
+ },
+ {
+  "t": 28286,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:eventuallyIdeaDraftNot"
+ },
+ {
+  "t": 28286,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:A process, step by ste"
+ },
+ {
+  "t": 29423,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:A mermaid fence is rea"
+ },
+ {
+  "t": 29423,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:1665Hooke looks down a"
+ },
+ {
+  "t": 29423,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Maths, in a notebook h"
+ },
+ {
+  "t": 30981,
+  "kind": "reserve",
+  "value": "64px",
+  "who": "off:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 30988,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:paper: grid at the top"
+ },
+ {
+  "t": 30989,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:pythoncopydef shelve(b"
+ },
+ {
+  "t": 30989,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:The language sits on a"
+ },
+ {
+  "t": 30989,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:KeyWhat it does/opens "
+ },
+ {
+  "t": 30996,
+  "kind": "reserve",
+  "value": "64px",
+  "who": "off:Buckram 12.00 · Bookcl"
+ },
+ {
+  "t": 31012,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "off:The Markdown spelling "
+ },
+ {
+  "t": 32822,
+  "kind": "reserve",
+  "value": "41px",
+  "who": "off:The Markdown spelling "
+ },
+ {
+  "t": 32822,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:One page pointing at a"
+ },
+ {
+  "t": 32822,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:It stays on the page a"
+ },
+ {
+  "t": 32822,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Lifted a little off th"
+ },
+ {
+  "t": 34436,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Larger, and ranged rig"
+ },
+ {
+  "t": 34436,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:This leaf is dotted, w"
+ },
+ {
+  "t": 34436,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:wash: amber, terracott"
+ },
+ {
+  "t": 34436,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:"
+ },
+ {
+  "t": 35371,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:An unknown name never "
+ },
+ {
+  "t": 35371,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:Ctrl K jumps to any bo"
+ },
+ {
+  "t": 35371,
+  "kind": "reserve",
+  "value": "0px",
+  "who": "off:"
+ }
+]

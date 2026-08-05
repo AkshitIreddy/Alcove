@@ -9,7 +9,7 @@ LLMs are already fluent in every ingredient: plain Markdown (dominant in trainin
 ## Implementation plan
 ## 1. Surface syntax (what the spec file teaches)
 
-One self-contained spec file shipped at `src-tauri/resources/notebook-script-spec.md` (~620 lines, every feature shown as a copy-pasteable example; app has a "Copy spec for your AI" button that reads it via Tauri resource API). That file is **generated** — narrative from `scripts/spec-template.md`, every reference table from `src/script/vocab.ts` (see section 6).
+One self-contained spec file shipped at `src-tauri/resources/notebook-script-spec.md` (~620 lines, every feature shown as a copy-pasteable example; app has a "Copy the format for your AI" button that reads it via Tauri resource API). That file is **generated** — narrative from `scripts/spec-template.md`, every reference table from `src/script/vocab.ts` (see section 6).
 
 ### Complete mini-example note
 ```

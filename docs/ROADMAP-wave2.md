@@ -278,7 +278,8 @@ guarantee it is not. What is true:
   the cache key), `tests/catalogue-reach.test.ts` (every value of every
   vocabulary axis is named by a selector), `tests/styles.test.ts` (no light
   model), `tests/readme.test.ts` (the counted claims in the README).
-- All UI hand-drawn warm-parchment styled; left-rail placement over top bars; no
+- All UI in the one warm-parchment register — flat out on the shelf, hand-drawn
+  on the page and on the paper chrome; left-rail placement over top bars; no
   scrollbars inside pages. Long option lists cap at ~20 with an "N more" control
   — added later, app-wide, and a performance fix as much as a layout one.
 

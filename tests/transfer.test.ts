@@ -715,9 +715,9 @@ describe('export scope', () => {
   it('suggests a file name per scope and variant', () => {
     const snapshot = library();
     const plan = buildExportPlan(snapshot, allPages(snapshot), OPTIONS);
-    expect(suggestedFileName(plan, { kind: 'library' }, OPTIONS)).toBe('notebook-library.nbk');
+    expect(suggestedFileName(plan, { kind: 'library' }, OPTIONS)).toBe('alcove-library.nbk');
     expect(suggestedFileName(plan, { kind: 'floor', floor: 2 }, OPTIONS)).toBe(
-      'notebook-floor-3.nbk',
+      'alcove-floor-3.nbk',
     );
     const one = buildExportPlan(snapshot, new Set(['b2-p0']), OPTIONS);
     expect(suggestedFileName(one, { kind: 'selection' }, OPTIONS)).toBe('recipes.nbk');

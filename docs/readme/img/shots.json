@@ -1,14 +1,14 @@
 {
   "$schema": "see scripts/check-readme.mjs — checkShots()",
   "capturedBy": "shots-now/readme-shots.mjs",
-  "lastRunAt": "2026-08-05T07:26:41.912Z",
+  "lastRunAt": "2026-08-05T09:08:08.734Z",
   "app": {
     "product": "Alcove",
     "version": "0.3.0"
   },
   "commit": {
-    "sha": "4ac8edd1583c318967502d3cde5aba7fc980e729",
-    "short": "4ac8edd",
+    "sha": "9b9772611365c3440de55231a43cefcd299ba5c3",
+    "short": "9b97726",
     "dirty": true
   },
   "viewport": {
@@ -31,12 +31,21 @@
   "shots": [
     {
       "file": "ai.png",
-      "bytes": 161667,
-      "sha256": "5b19fe25726bdd2e",
+      "bytes": 161957,
+      "sha256": "560bb8229aa3a7b9",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-05T07:19:40.526Z",
-      "commit": "4ac8edd+dirty"
+      "at": "2026-08-05T08:28:22.908Z",
+      "commit": "9b97726+dirty"
+    },
+    {
+      "file": "appearance.png",
+      "bytes": 692599,
+      "sha256": "91663e1f5b8531d7",
+      "width": 1500,
+      "height": 940,
+      "at": "2026-08-05T09:06:27.659Z",
+      "commit": "9b97726+dirty"
     },
     {
       "file": "book-studio.png",
@@ -67,12 +76,12 @@
     },
     {
       "file": "diagrams.png",
-      "bytes": 195175,
-      "sha256": "0c417eefc4f17b54",
+      "bytes": 186217,
+      "sha256": "ffaa9097270e4f80",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-05T06:09:33.694Z",
-      "commit": "56c5d9c+dirty"
+      "at": "2026-08-05T09:03:00.701Z",
+      "commit": "9b97726+dirty"
     },
     {
       "file": "first-run.png",
@@ -139,12 +148,12 @@
     },
     {
       "file": "script-dialog.png",
-      "bytes": 160027,
-      "sha256": "1ad6841a81f3d864",
+      "bytes": 158399,
+      "sha256": "81f02499e4b7f6c0",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-05T06:09:33.694Z",
-      "commit": "56c5d9c+dirty"
+      "at": "2026-08-05T09:08:08.734Z",
+      "commit": "9b97726+dirty"
     },
     {
       "file": "script-page.png",
@@ -157,12 +166,12 @@
     },
     {
       "file": "settings.png",
-      "bytes": 460199,
-      "sha256": "cff0d06ad89662c7",
+      "bytes": 689541,
+      "sha256": "0ea9c6e46296b854",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-05T06:09:33.694Z",
-      "commit": "56c5d9c+dirty"
+      "at": "2026-08-05T09:06:27.659Z",
+      "commit": "9b97726+dirty"
     },
     {
       "file": "share.png",
@@ -229,12 +238,12 @@
     },
     {
       "file": "transfer.png",
-      "bytes": 340531,
-      "sha256": "d09e356ec287292e",
+      "bytes": 293610,
+      "sha256": "c529c6f9488472c4",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-05T07:19:40.526Z",
-      "commit": "4ac8edd+dirty"
+      "at": "2026-08-05T08:28:22.908Z",
+      "commit": "9b97726+dirty"
     }
   ]
 }

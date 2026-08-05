@@ -325,7 +325,21 @@ export function buildExportPlan(
   };
 }
 
-/** Suggested file name for a plan (`study-notes.nbk`, `library.nbk`, …). */
+/**
+ * Suggested file name for a plan (`study-notes.nbk`, `alcove-library.nbk`, …).
+ *
+ * The three names that are not a book's own title carry the APP's name, because
+ * that is exactly what a file called `library.nbk` sitting in a downloads
+ * folder six months later cannot say. They read `notebook-` until now — the
+ * app's name before the rename to Alcove — and this is not a string buried in a
+ * save dialog: the parcel desk prints the suggestion on its summary card
+ * ("saves as **notebook-library.nbk**"), so the old name was on screen, in a
+ * README screenshot, under a heading that says Alcove.
+ *
+ * The single-book fallback stays `notebook`. That one is not the product name
+ * wearing off — it is the common noun for the thing being exported, and an
+ * untitled book saved as `alcove.nbk` would claim to be the whole library.
+ */
 export function suggestedFileName(
   plan: ExportPlan,
   scope: ExportScope,
@@ -333,10 +347,10 @@ export function suggestedFileName(
 ): string {
   const single = options.variant === 'markdown' && options.layout === 'single-file';
   const ext = single ? 'md' : BUNDLE_EXTENSION;
-  if (scope.kind === 'library') return `notebook-library.${ext}`;
-  if (scope.kind === 'floor') return `notebook-floor-${(scope.floor ?? 0) + 1}.${ext}`;
+  if (scope.kind === 'library') return `alcove-library.${ext}`;
+  if (scope.kind === 'floor') return `alcove-floor-${(scope.floor ?? 0) + 1}.${ext}`;
   if (plan.books.length === 1) return `${slugify(plan.books[0].title, 'notebook')}.${ext}`;
-  return `notebook-selection.${ext}`;
+  return `alcove-selection.${ext}`;
 }
 
 /** Header line for the export preview: "2 books · 9 pages · ~34 KB". */

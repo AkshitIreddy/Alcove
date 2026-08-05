@@ -264,6 +264,13 @@
   text-align: center;
 }
 
+/*
+ * A BARE polaroid keeps its white foot with padding on the figure, and the
+ * placeholder floats in it. A WRITTEN one puts the caption back into the
+ * flow, because the field wraps now (imageView.tsx) and an absolutely
+ * positioned box anchored to the bottom grows UPWARDS — a two-line caption
+ * would climb over the photograph it belongs to.
+ */
 .nb-image[data-frame='polaroid'] .nb-image-captionbox {
   position: absolute;
   left: 8px;
@@ -272,16 +279,41 @@
   margin: 0;
 }
 
+.nb-image[data-frame='polaroid'][data-captioned] .nb-image-figure {
+  padding-bottom: 10px;
+}
+
+.nb-image[data-frame='polaroid'][data-captioned] .nb-image-captionbox {
+  position: static;
+  margin-top: 6px;
+}
+
+/*
+ * A TEXTAREA, not an input, and every property here is part of why: it wraps
+ * (`white-space` inherited from the UA's `pre-wrap`), it breaks a word too
+ * long to fit rather than sliding it out of view, it never grows a scroll bar
+ * (the height is measured in imageView.tsx instead), and it cannot be dragged
+ * out of shape by the corner grip a textarea normally carries.
+ *
+ * 14px Kalam is above the 13px floor the type rules set for a handwriting
+ * face — a caption is the smallest hand on the page and stops there.
+ */
 .nb-image-caption {
+  display: block;
   width: 100%;
+  padding: 0;
   border: none;
   background: transparent;
+  resize: none;
+  overflow: hidden;
   text-align: center;
   font-family: var(--font-accent);
   font-style: italic;
   font-size: 14px;
+  line-height: 1.35;
   color: var(--ink-sepia-soft);
   outline: none;
+  overflow-wrap: break-word;
 }
 
 .nb-image-caption::placeholder {

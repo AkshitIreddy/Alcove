@@ -311,7 +311,7 @@ const EFFECT_KEYS = [...new Set(EFFECTS.map((e) => e.key))];
  * The tile therefore renders a fragment carrying the real data-attribute under
  * `.nb-fx-specimen`, the second scope every rule in effects.css answers to, so
  * the tile is painted by the same declarations that will paint the page — no
- * second, hand-drawn copy of each effect to fall out of step with the first.
+ * second, hand-made copy of each effect to fall out of step with the first.
  * (Not `.nb-prose`: the tutorial spotlight and the e2e helpers resolve that one
  * document-wide, and a decoy in the left rail would capture them.) The wrapper
  * scales and clips, because a torn-paper block is 300px wide and a tile is 84.

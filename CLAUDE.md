@@ -1,6 +1,8 @@
 # Alcove
 
-A Windows desktop notes app: a hand-drawn bookshelf world (warm parchment aesthetic) where books open into Notion-grade block-edited pages. Built with Tauri 2 (Rust) + SolidJS + TypeScript + Vite.
+A Windows desktop notes app: a flat-drawn bookshelf world (warm parchment aesthetic) where books open into hand-drawn, Notion-grade block-edited pages. Built with Tauri 2 (Rust) + SolidJS + TypeScript + Vite.
+
+**Two registers, and the words for them are not interchangeable.** The WORLD is flat — the bookcase, the wall, the dock, the studio's preview cards, the picture-block illustrations: flat fills, one ink outline, crisp repeated geometry. That is what `art/flat.ts`, `FLAT` and `flatShelf.ts` are named after. The PAGE is hand-drawn — every diagram runs real pen wobble through `art/wobble.ts`, the type is handwriting, the cards bow, the tape is torn, and the book rail's icons are pre-wobbled by hand. Use "flat" for the first, "hand-drawn" for the second, and "flat, hand-drawn" only for a sentence about the whole app. The owner's ruling, after being shown both side by side; "flaticon" was considered and rejected as a stock-icon brand that undersells the drawing.
 
 ## The visual language (binding, and the thing most often got wrong)
 

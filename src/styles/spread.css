@@ -400,9 +400,13 @@
    2. "it should ALWAYS be on top left, maybe do a check." The `left` anchor
       is inherited from editor.css; tests/top-left-exits.test.ts is the check.
 
-   Opacity only. Nothing here animates a layout property or a filter, and the
-   button's `transform` belongs to rail.css (it steps aside for an open sheet)
-   — this rule must only ever ADD to that transition list, never own it.
+   Paint only — opacity, colour, the plate. Nothing here animates a layout
+   property or a filter, which is why the receded label keeps its box and only
+   loses its ink: collapsing the words would relayout a fixed element on every
+   pointer trip through the corner, and the pagination pass measures leaf
+   geometry on those same frames. The button's `transform` belongs to rail.css
+   (it steps aside for an open sheet) — this rule must only ever ADD to that
+   transition list, never own it.
    -------------------------------------------------------------------------- */
 .nb-book-view .nb-back-button {
   background: var(--paper-aged);
@@ -422,12 +426,73 @@
  * complaint was about chrome you have to look past, not about chrome you can
  * find. It stays clickable the whole time; the corner reveals it before the
  * pointer ever gets there.
+ *
+ * ## The recede is a change of DRESS, not a dissolve
+ *
+ * This rule used to say `opacity: 0.2` and nothing else, and that is the
+ * defect the demo caught: `qa/demo/frames/f0869.png` is the Table of contents
+ * sheet open and the only way out of the book reduced to #cabfad on #e9e2d0 —
+ * measured, not judged, by `scripts/probe-back-legible.mjs` — which is
+ * 1.41:1. The frames either side show it arrive whole and then vanish. A mark
+ * at 1.4:1 is not a pencil mark, it is a smudge, and the reader has no other
+ * exit; every step of that reasoning was already written above the old
+ * declaration, which is what makes it worth spelling out: the intent was
+ * right and the one number under it was not.
+ *
+ * Element opacity is the wrong instrument for this, and not by a little. It
+ * multiplies EVERYTHING inside the button — so the highest contrast the mark
+ * could ever reach at 0.2 was 1.4:1, and even at the 0.44 the old e2e
+ * threshold would have allowed it caps out near 2.3:1, under the 3:1 a
+ * non-text mark needs on any ground. There is no value of it that is both
+ * "out of the way" and "findable".
+ *
+ * So the recede is spent where it belongs — on the things that made this
+ * chrome rather than a mark:
+ *
+ *   the paper plate    goes  (background, border and lift all off)
+ *   the words          go    (`.nb-back-label` below)
+ *   the arrow          STAYS, redrawn in the quieter ink at a lighter stroke
+ *
+ * which lands at 6.1:1 on the wall against the summoned tab's 9.5:1 — plainly
+ * softer, plainly still a door. Both inks are ones the palette already owns;
+ * this adds no colour and no light model, it just stops asking one alpha to
+ * mean two different things.
+ *
+ * There is deliberately no `opacity` here at all — not even `1`. Focus mode
+ * fades this button out with a rule of exactly the same specificity further
+ * up, and a rule that lands later wins ties: the old `0.2` was quietly
+ * beating `is-focus-mode`'s `0`, so the melted-away chrome had a grey arrow
+ * still floating in it. Declaring `1` would have made that a whole arrow.
+ * Saying nothing lets the button sit at its natural 1 and lets focus mode
+ * take it to 0, which is what both rules always meant.
  */
 .nb-book-view .nb-back-button.is-away {
-  opacity: 0.2;
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+}
+
+/*
+ * The mark itself, receded: the ink drops one rung (--ink-sepia-soft is the
+ * palette's own quieter reading ink, not a new colour) and the stroke thins to
+ * something drawn rather than printed. Paint-only properties, both of them —
+ * nothing here reaches layout, which the docblock above requires of everything
+ * in this section.
+ */
+.nb-back-arrow {
+  transition: color var(--dur-sm) var(--ease-out);
+}
+
+.nb-back-arrow path {
+  transition: stroke-width var(--dur-sm) var(--ease-out);
+}
+
+.nb-book-view .nb-back-button.is-away .nb-back-arrow {
+  color: var(--ink-sepia-soft);
+}
+
+.nb-book-view .nb-back-button.is-away .nb-back-arrow path {
+  stroke-width: 1.9;
 }
 
 .nb-back-label {
@@ -438,7 +503,13 @@
   opacity: 0;
 }
 
-/* Hover and keyboard focus both mean intent, and both outrank the recede. */
+/* Hover and keyboard focus both mean intent, and both outrank the recede.
+   They have to say so part by part now that the recede is a change of dress:
+   the plate and the words come back on their own selectors, and so does the
+   mark's full-strength ink. Same specificity as the `is-away` rules above,
+   and later in the file, which is how they win — and they have to, because
+   `is-away` is still on the button while the pointer is over it whenever an
+   open sheet has carried the button out of the corner BookView watches. */
 .nb-book-view .nb-back-button:hover,
 .nb-book-view .nb-back-button:focus-visible {
   opacity: 1;
@@ -449,6 +520,16 @@
 .nb-book-view .nb-back-button:hover .nb-back-label,
 .nb-book-view .nb-back-button:focus-visible .nb-back-label {
   opacity: 1;
+}
+
+.nb-book-view .nb-back-button:hover .nb-back-arrow,
+.nb-book-view .nb-back-button:focus-visible .nb-back-arrow {
+  color: var(--ink-sepia);
+}
+
+.nb-book-view .nb-back-button:hover .nb-back-arrow path,
+.nb-book-view .nb-back-button:focus-visible .nb-back-arrow path {
+  stroke-width: 2.2;
 }
 
 /* Focus mode dims the whole room behind the book. A zero-blur spread of

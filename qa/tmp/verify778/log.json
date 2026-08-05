@@ -1,0 +1,290 @@
+{
+ "errors": [],
+ "log": [
+  {
+   "tag": "t01-settled",
+   "m": [
+    {
+     "leaf": 3,
+     "head": "Every mark there isBold, italic, c",
+     "blocks": 7,
+     "rail": [
+      709,
+      740
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 772,
+     "lastBlockBottom": 789,
+     "hits": [
+      {
+       "type": "index-card",
+       "text": "**bold** or __bold__, *italic* or ",
+       "overlapPx": 24
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t02-mid-51353",
+   "m": [
+    {
+     "leaf": 4,
+     "head": "The paintbrush at the top of the r",
+     "blocks": 25,
+     "rail": [
+      709,
+      740
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 772,
+     "lastBlockBottom": 2725,
+     "hits": [
+      {
+       "type": "tag",
+       "text": "Ctrl Alt D dresses the open book",
+       "overlapPx": 27
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t03-mid-59431",
+   "m": [
+    {
+     "leaf": 2,
+     "head": "The paintbrush at the top of the r",
+     "blocks": 25,
+     "rail": [
+      709,
+      740
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 772,
+     "lastBlockBottom": 2725,
+     "hits": [
+      {
+       "type": "tag",
+       "text": "Ctrl Alt D dresses the open book",
+       "overlapPx": 30
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t04-mid-69096",
+   "m": [
+    {
+     "leaf": 0,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      723,
+      754
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 786,
+     "lastBlockBottom": 739,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t04-mid-71119",
+   "m": [
+    {
+     "leaf": 0,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      723,
+      754
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 786,
+     "lastBlockBottom": 739,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    },
+    {
+     "leaf": 2,
+     "head": "A page that fills up simply flows ",
+     "blocks": 27,
+     "rail": [
+      709,
+      740
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 772,
+     "lastBlockBottom": 3117,
+     "hits": [
+      {
+       "type": "div",
+       "text": "Select any run of words and the li",
+       "overlapPx": 31
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t04-mid-75385",
+   "m": [
+    {
+     "leaf": 0,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      723,
+      754
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 786,
+     "lastBlockBottom": 739,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    },
+    {
+     "leaf": 2,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      709,
+      740
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 772,
+     "lastBlockBottom": 725,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t04-mid-77082",
+   "m": [
+    {
+     "leaf": 0,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      723,
+      754
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 786,
+     "lastBlockBottom": 739,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    },
+    {
+     "leaf": 2,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      709,
+      740
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 772,
+     "lastBlockBottom": 725,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t04-settled",
+   "m": [
+    {
+     "leaf": 0,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      723,
+      754
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 786,
+     "lastBlockBottom": 739,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "t05-mid-81451",
+   "m": [
+    {
+     "leaf": 0,
+     "head": "A page that fills up simply flows ",
+     "blocks": 7,
+     "rail": [
+      723,
+      754
+     ],
+     "railText": "1like this one",
+     "padBottom": "73px",
+     "proseBottom": 786,
+     "lastBlockBottom": 739,
+     "hits": [
+      {
+       "type": "p",
+       "text": "",
+       "overlapPx": 16
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

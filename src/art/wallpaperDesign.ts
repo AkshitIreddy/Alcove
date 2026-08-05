@@ -16,7 +16,7 @@
  * the part that left the right edge re-enters at the left as the same curve
  * with the same seed. Nothing is clipped into place and nothing is mirrored —
  * the far copy is bit-identical geometry, which is the only thing that makes a
- * hand-drawn wobble safe to run over an edge.
+ * bowed, wobbled mark safe to run over an edge.
  *
  * Marks that run the whole width or height of the tile (stripes, chevrons)
  * cannot be handled that way, because a shape with a start and an end has caps,
@@ -802,9 +802,10 @@ function accentFor(
 /**
  * What the chosen nib does to the drawing.
  *
- * Four multipliers rather than four hand-drawn variants of every motif: the
- * shapes are the same in every room and at every sharpness, and the difference
- * between an engraved damask and a blotted one is entirely in the pen.
+ * Four multipliers rather than four separately drawn variants of every motif:
+ * the shapes are the same in every room and at every sharpness, and the
+ * difference between an engraved damask and a blotted one is entirely in the
+ * pen.
  */
 interface EdgeFeel {
   /** Outline weight multiplier. */
@@ -2712,7 +2713,7 @@ const pomegranate: MotifFn = (ctx, r, seed, c) => {
  * A classical urn with a spray of three sprigs — the mantelpiece motif.
  *
  * Drawn from a centre line out, because an urn that is a hair asymmetric reads
- * as a mistake rather than as a hand-drawn line.
+ * as a mistake rather than as a line set down by eye.
  */
 const urn: MotifFn = (ctx, r, seed, c) => {
   const w = motifInk(r * 0.8, c);
@@ -4490,7 +4491,7 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number, paint: Pain
       for (let i = 0; i < n; i++) {
         const centre = (i + 0.5) * pitch;
         // The wave used to be nearly twice this and the bands looked drunk
-        // rather than drawn. A hand-drawn line wavers; it does not stagger.
+        // rather than drawn. A drawn line wavers; it does not stagger.
         const wave = periodic(size, pitch * 0.028 * feel.wobble, 1, i * 1.7);
         marks.push(
           runningBand(
@@ -4611,7 +4612,7 @@ function buildMarks(size: number, spec: WallpaperSpec, seed: number, paint: Pain
       // One shared wave per axis, so the crossing squares can be displaced by
       // exactly the same amount the two bands are and land back on the
       // intersection. A gingham whose checks slid off its stripes would read as
-      // a rendering fault rather than as a hand-drawn check.
+      // a rendering fault rather than as a check set down by eye.
       const warp = periodic(size, pitch * 0.035, 1, 0.6);
       const weft = periodic(size, pitch * 0.035, 1, 2.1);
       for (let i = 0; i < n; i++) {

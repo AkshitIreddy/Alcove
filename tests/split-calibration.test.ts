@@ -30,6 +30,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from '../src/script';
 import {
   blockLineCost,
+  footnoteRailLines,
   pageLineCost,
   splitBlocksIntoPages,
   PAGE_LINE_BUDGET,
@@ -150,7 +151,12 @@ describe('a container costs its chrome plus what it holds', () => {
     ['marginalia', '', 1.63, 5.63],
     ['pressed-flower', '{title="A title"}', 6.0, 9.44],
     ['ticket-stub', '{title="ADMIT ONE"}', 3.5, 8.75],
-    ['postcard', '{title="WISH YOU WERE HERE"}', 6.25, 13.06],
+    // 13.06 until the card's message was given its own half of the back: the
+    // reserve for the address side used to stop 16px SHORT of the printed
+    // divider, so every full line was set through the rule. Clearing it costs
+    // the column 33px and the 287 characters a twelfth line. Re-measured in
+    // the running app, not derived from the estimator it is checking.
+    ['postcard', '{title="WISH YOU WERE HERE"}', 6.25, 14.06],
     ['ledger', '{title="A title"}', 3.31, 7.31],
     ['wax-seal', '{title=A}', 4.75, 8.63],
     ['map-pin', '{title="The blue door"}', 2.94, 6.75],
@@ -344,5 +350,106 @@ describe('splitting authored content', () => {
     const wall = Array.from({ length: 80 }, (_, i) => `Line ${i}.`).join('\n\n');
     const pages = splitBlocksIntoPages(parse(wall).blocks);
     expect(pages[0].length).toBeGreaterThanOrEqual(Math.floor(PAGE_LINE_BUDGET));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The foot of the page — scripts/probe-footnote-capacity.mjs
+// ---------------------------------------------------------------------------
+
+/**
+ * A page with footnotes is shorter than a page without them, and the splitter
+ * has to know it.
+ *
+ * Found by looking at frame 778 of the recorded demo: the welcome book's
+ * "Every mark there is" leaf, with the note *"1 like this one"* printed under
+ * "The seven washes" card. Two of the three obvious explanations were measured
+ * in the running app and both came back clean — the rail paints ABOVE the card
+ * (probe-footnote-stacking.mjs, elementsFromPoint), and across a walk of the
+ * whole book not one of a hundred and forty drain reads saw a padding-bottom
+ * that was missing its page's rail (probe-footnote-reserve.mjs). The third was
+ * the answer: `probe-footnote-capacity.mjs` builds the same authored page
+ * twice, once with its footnote and once with the marker deleted, and opens
+ * both at 1360x850. Without the note all six blocks stood on the leaf. With it
+ * the page reserved 41px and the drain evicted the last block the first time
+ * the page was looked at — which is the block standing on the note in the
+ * frame.
+ *
+ * The rail's own arithmetic, measured by the same probe: `18 + 23n` pixels for
+ * n note lines (six notes measured 156px exactly), over a 32px page line.
+ */
+describe('the foot of the page', () => {
+  const notesOf = (source: string): number =>
+    footnoteRailLines(parse(source).blocks);
+
+  it('charges nothing for a page with no notes on it', () => {
+    expect(notesOf('Just a line of prose.')).toBe(0);
+  });
+
+  it('charges one note the rail plus one of its lines', () => {
+    // 18px of chrome and 23px of note over a 32px line.
+    expect(notesOf('A word[^ a short note ] here.')).toBeCloseTo(
+      (18 + 23) / 32,
+      2,
+    );
+  });
+
+  it('charges a second note a line and not a second rail', () => {
+    const one = notesOf('A word[^ one ].');
+    const two = notesOf('A word[^ one ] and another[^ two ].');
+    expect(two - one).toBeCloseTo(23 / 32, 2);
+  });
+
+  it('charges a note that wraps for both its lines', () => {
+    // 82 characters to a line of the rail — wider than the page's 72, because
+    // the rail runs the full width of the leaf and is set five points smaller.
+    const short = notesOf(`A word[^ ${'x'.repeat(80)} ].`);
+    const long = notesOf(`A word[^ ${'x'.repeat(90)} ].`);
+    expect(long - short).toBeCloseTo(23 / 32, 2);
+  });
+
+  it('finds a note buried in a container, a list and a table cell', () => {
+    const one = notesOf('A word[^ one ].');
+    expect(notesOf('::: card {title="T"}\nA word[^ one ].\n:::')).toBeCloseTo(one, 5);
+    expect(notesOf('- A word[^ one ].')).toBeCloseTo(one, 5);
+    expect(notesOf('| a[^ one ] | b |\n| --- | --- |\n| 1 | 2 |')).toBeCloseTo(
+      one,
+      5,
+    );
+  });
+
+  it('does not charge the line the marker sits on for the note text', () => {
+    // The line carries a raised number, not the note. A page of long notes was
+    // being charged their words twice: once as wrap on the paragraph, where
+    // nothing is drawn, and never at the foot, where it is.
+    const bare = pageLineCost(parse('One short sentence.').blocks);
+    const noted = pageLineCost(
+      parse(`One short sentence[^ ${'x'.repeat(300)} ].`).blocks,
+    );
+    expect(noted).toBeCloseTo(bare, 5);
+  });
+
+  it('cuts a page early enough that its notes have somewhere to stand', () => {
+    // The failure this exists for: a page filled to the budget with blocks,
+    // one of which carries a note, so the rail has to come out of a leaf that
+    // is already full and the last block is evicted at read time.
+    const wall = Array.from(
+      { length: 40 },
+      (_, i) => (i === 0 ? `Line ${i}[^ a note ].` : `Line ${i}.`),
+    ).join('\n\n');
+    const pages = splitBlocksIntoPages(parse(wall).blocks);
+    for (const page of pages) {
+      if (page.length < 2) continue;
+      expect(
+        pageLineCost(page) + footnoteRailLines(page),
+        'blocks plus the rail they need',
+      ).toBeLessThanOrEqual(PAGE_LINE_BUDGET + blockLineCost(page[page.length - 1]));
+    }
+    // ...and the same wall without the note fills its first page fuller,
+    // which is the rail, and only the rail, coming out of the leaf.
+    const plain = splitBlocksIntoPages(
+      parse(wall.replace('[^ a note ]', '')).blocks,
+    );
+    expect(pages[0].length).toBeLessThan(plain[0].length);
   });
 });

@@ -1,5 +1,349 @@
 # Alcove — running TODO
 
+## 🔴 Reported 2026-08-05 (fourth pass) — the demo, and the bugs it exposed
+
+Recorded verbatim (grammar tidied only) from two messages while the 0.3 demo was
+being reviewed frame by frame.
+
+### The app bugs the demo exposed
+
+- [ ] **Make the Welcome book behave like any other book.** *(the owner's ruling
+      on the capacity question — the answer is "stop special-casing it")*
+      > "Wait, you did need to say something on the book filling thing? Just make
+      > it work like any other book — if it's too big it goes to the next page.
+      > Or just give the user the option to make it tiny by resizing, perhaps you
+      > also use that method in the welcome book. I mean again, we want it to
+      > behave like a real book."
+
+      So the page-count growth is NOT the bug and must not be chased: content
+      that will not fit flowing onward is what a real book does, and it is the
+      contract the whole editor is built on. What was wrong was the DUPLICATION
+      on the way (fixed separately), not the flowing.
+
+      What this does turn into is a feature that already exists and is broken —
+      see the next item. Giving the reader a size lever is the honest version of
+      "make it tiny", and it is what lets a page hold what its author intended
+      without anybody guessing a window size.
+
+      Consequence for `PAGE_LINE_BUDGET`: it is still derived at 1600x1000 while
+      the app opens at 1280x800, and it should be derived from the window
+      constants rather than written beside them. But it is now a QUALITY issue
+      (how full a seeded page looks) rather than a correctness one.
+
+- [ ] **The "body size" slider does not touch page text at all.**
+
+      `src/features/settings/apply.ts:285` writes the reader's choice out as a
+      CSS variable, and `src/styles/editor.css:192` sets `.nb-prose` — the page
+      text, the thing the row's own hint calls "reading type on every page" — to
+      a hardcoded `font-size: 20px`. So the slider moves the UI, the search
+      sheet, the transfer panel and the tour, and moves the one surface it
+      names not at all.
+
+      Fixing it is what makes the owner's "give the user the option to make it
+      tiny by resizing" real. Three things have to move together: the page text
+      reads the setting; the RULE GRID scales with it, because a leaf is ruled
+      paper and the words have to sit on the rules; and the pagination
+      re-measures, so shrinking the type genuinely fits more on a page instead
+      of leaving the old fold in place. `CLAUDE.md` forbids handwriting below
+      13px and the slider floor is 15px, so the range is already safe.
+
+- [ ] **Headings land at the foot of a page, or vanish a second after a turn.**
+      > "If you notice the gif, sometimes the headings are at the bottom of the
+      > page or go missing after a second when the page turn happens — like
+      > completely wrong. Again not sure if this is a code bug or a GIF
+      > rendering bug, so figure it out."
+
+- [ ] **A section appears duplicated on the following page.**
+      > "There is some page with a big A in a circle saying 'pressed when soft'
+      > something, so there is a bug in the gif where it shows the same section
+      > copied on the next page as well. Not sure if it is part of the welcome
+      > book, but I don't know."
+
+- [x] **A click lands on one thing and something else responds.**
+      > "There is a bug where the mouse clicks on something in the gif but
+      > something else happens — for example in the gif, in the studio, it
+      > clicks on one theme but another theme is selected."
+
+      DIAGNOSED, and it is not a misdirected click. Fifty-seven agents looked at
+      the recording frame by frame; at frame 99 the amber selected marker is on
+      **The House Room** while the panel's own subtitle already reads "presets
+      gilt salon" and the world is unmistakably the Gilt Salon. Frames 95-99 are
+      byte-identical, so the screen holds still for ~350ms with the room painted
+      and the wrong card ticked; the stale window is f0089-f0099, ~770ms. At
+      f0100 exactly 4500 px change, confined to the two cards' borders and label
+      bands, with the world unmoved. The panel's selected state arrives late.
+
+### Three more the frame-by-frame review found, which nobody had reported
+
+- [x] **The whole shelf world blanks for half a second when a design is applied.**
+
+      FIXED — and the diagnosis it was handed (a `generateTexture(stage)` render-
+      group problem) was WRONG. Disproved against the running app before
+      anything was changed:
+
+        - `generateTexture(stage)` called in isolation does not blank the canvas
+          — 415 colours before, 415 after, 415 after the next render;
+        - suppressing EVERY screen render across a whole preset apply (31 of
+          them) and holding for 3s does not blank it either — a blocked main
+          thread simply shows the previous frame, which is what it should do.
+
+      The real mechanism, proven with a POSITIVE CONTROL rather than argued:
+      hand one live sprite a destroyed texture and render. The render throws
+      `TypeError: Cannot read properties of null (reading 'addressModeU')`
+      **after** the renderer has already cleared the canvas, and the region
+      collapses to 152 colours, 99% of them `233,226,208` — `--wall`, the
+      `.shelf-root` background, showing through a transparent canvas. That
+      screenshot is indistinguishable from demo frame f0090, and frames
+      90/127/280 are 84% that exact colour.
+
+      Which means it was already cured by the fix two entries down: destroying
+      every spine texture synchronously at the top of the apply is what handed a
+      live sprite a dead texture. Their own comment names it — "Pixi nulls a
+      destroyed texture's matrix, which surfaces during render, taking the whole
+      stage down for a frame". On the current tree, every `app.render()` across
+      three slow and six rapid applies: zero throws, zero blank frames.
+
+      A real defect in the fade was fixed on the way regardless: a second preset
+      applied inside the first fade's 0.42s photographed the STILL-DISSOLVING
+      first snapshot — a double exposure. Measured at two concurrent fades from
+      clicks 150ms apart. The snapshot now hangs in a sibling `overlay` and
+      photographs `scene` rather than the stage it is about to be added to, and
+      the fade is guarded on `roomChanged` — without which a snapshot taken on a
+      no-op notification would hang over the world at full opacity forever.
+
+- [x] **The gate meant to catch the blank world could never fire.**
+
+      `blank = rows.filter(r => r.colours <= 3)` — and two genuinely blank frames
+      scored 140 and 152, because the measured rectangle includes the dock and
+      zoom pill that survive. Now a proportional threshold against the SETTLED
+      frame, plus a `settledColours < 60` failure so a run cannot divide by its
+      own blank frame and call itself clean.
+
+      Proved by reproducing the defect rather than by reverting a fix that never
+      caused it: `--sabotage` frees the cornice texture under its live sprite
+      mid-apply. Sabotaged it reports `minColours 140`, `emptiestRatio 0.164`,
+      `GATE ALIVE`, exit 1; clean it reports `emptiestRatio 1`, exit 0, twice.
+      One subtlety is commented in place — before the repair existed, EVERY
+      frame was blank, so the denominator was blank too, the ratio came out at
+      1.0, and the gate declared itself inert while working perfectly.
+
+- [x] **The case repaints in two halves.**
+
+      FIXED, and it was not a cache key — my guess was wrong and the diagnosis
+      disproved it with the frames: a stale key cannot heal, and these healed.
+      At f136 every part is correct art from the SAME keys that served f130's
+      mixture, and f130-f135's old values are byte-identical to f116 — the
+      outgoing room's own art still on the sprites.
+
+      The real cause was ordering. `EnvTextures.landPart()` assigned each part
+      and fired `onReady` the moment that part's own bake resolved, and
+      `art/bake.ts`'s fairness pump releases exactly ONE producer per turn — so
+      the four parts landed on four different turns and each repainted alone.
+      `bakeCase` now stages all four bitmaps and commits them in ONE synchronous
+      block, so no observer can see a mixed set. Measured on the running app:
+      `caseSpreadMs` 97/77/20 -> 0, `twoRoomFrames` 4/2/1 -> 0.
+
+      Two amplifiers fixed with it: the pump scheduled its next turn from inside
+      the turn callback, so `lastProducerMs` was always one producer stale and a
+      4ms plank was charged an idle callback earned by a wallpaper tile baked
+      minutes earlier; and `onReady` firing four times in one tick made
+      `handleEnvReady` re-stamp every mounted floor to a RenderTexture four
+      times back to back.
+
+- [x] **Every book loses its art and becomes a flat rectangle.**
+
+      FIXED. Also not a cache key: the flat slabs are the app's own documented
+      placeholder. `floorView.applyTexture` sets `Texture.WHITE` +
+      `placeholderTint(...)` whenever `factory.pick()` returns undefined, and
+      `SpineFactory.invalidateAll()` destroyed every baked spine texture
+      SYNCHRONOUSLY at the top of the apply — before a single new pixel had been
+      drawn, and with the atlas keyed by identity (`variant|bookId`) rather than
+      by content, so there was nowhere to keep the outgoing pixels.
+
+### Two latent defects found on the way, neither of them reported
+
+- [ ] **A 32-bit hash files the case bakes.** `textures.ts` keys the four case
+      bakes under `roomTag()` = `fnv1a(schemeKey(...)).toString(36)`.
+      `art/bake.ts`'s own header explains it deliberately keys on the full
+      parameter string rather than a hash, naming "a (small) correctness risk in
+      a 32-bit collision serving one room's plank to another" — and `textures.ts`
+      then hashes it anyway. `tests/design-cache-keys.test.ts` proves
+      `themeKeyOf` is injective, which says nothing about the string the bake is
+      actually filed under. Low probability, no symptoms until it happens.
+
+- [ ] **`bookDesignTag()` is dead as a cache key, and a test guards it anyway.**
+      `grep -rn bookDesignTag src/` finds only doc comments. The spine params key
+      is `${styleEpoch}|${bookId}|${pinnedPresetId}` and the atlas key is
+      `${variant}|${bookId}`. Comments in `art/bookDesign.ts`, `art/bookStyle.ts`
+      and `art/spines.ts` all assert it IS the spine factory's params key — it is
+      not — and `tests/design-cache-keys.test.ts` guards a function no cache
+      consults. Also stale: `textures.ts`, `libraryKey.ts`, `wallpaperDesign.ts`
+      and that test's own header all still reason about "the disk cache"
+      surviving reinstalls. There is no disk cache; `art/bake.ts` removed it, so
+      the whole class of bug is now within-session only.
+
+### Twelve more the frame review confirmed, none of them reported by hand
+
+Each was raised by an agent looking at a contact sheet, then confirmed by a
+second agent pulling the full-size frame and trying to refute it. 26 findings
+were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
+
+- [ ] **f421 — "opening the book…" holds a bare cream window for 1.2 seconds.**
+      17 straight frames of an empty screen with one caption on it. The Suspense
+      fallback in `App.tsx` was added to stop a genuinely blank gap; it is now
+      the gap. And at f428 the synthetic cursor parks on the caption and covers
+      a word, so the only text on screen reads "openin  the book…".
+
+- [ ] **f629 — a diagram vanishes into its own placeholder just before a turn.**
+      The hand-drawn tree on the right page is replaced by an empty dashed
+      rectangle as the page turns.
+
+- [ ] **f617 — a key cap breaks across a line.** "Ctrl Alt N" renders as two
+      half-open pills. A key cap is a single object and must not wrap.
+
+- [ ] **f778 — a footnote collides with a callout.** *(a fix was attempted and
+      REJECTED by the verifier; the real cause is an over-full page)*
+
+      The footnote at the foot of the left page is overprinted by "The seven
+      washes" card and its wash. The first attempt changed the page splitter and
+      reported itself fixed; an independent agent refused it, two ways:
+
+        - **Code path.** `splitBlocksIntoPages` has exactly one caller in `src/`
+          — `features/templates/createFromScript.ts`, which is Markdown import
+          and the templates gallery. The Welcome book is built by
+          `buildWelcomePageDocs` in `data/seed.ts`, one source string to one
+          page, with no estimator anywhere. The book in that frame never goes
+          through the splitter, so a splitter change cannot be its fix.
+        - **A/B on the running app.** With `split.ts` restored to HEAD the leaf
+          renders identically — same layout, same spacing. The overlap measured
+          24px with the change and 26px without it.
+
+      What that verifier measured instead is the real story, and it is the
+      capacity thread again: leaves at rest holding 16, 25, 27 and 33 top-level
+      blocks with last-block bottoms at 1631, 2725, 3117 and 4421px against a
+      772px page. A footnote cannot sit at the foot of a page whose content is
+      five times the paper. Fix the fullness and this goes with it.
+
+- [ ] **f869 — the way back becomes invisible while a panel is open.** Reduced to
+      a pale grey arrow with no label and no outline, against the Table of
+      contents sheet. It is supposed to recede, not disappear.
+
+- [ ] **f1198 — a postcard's message overflows its own card**, the last line cut
+      through by the card's bottom border; and a picture caption beside it is cut
+      off mid-word.
+
+- [ ] **f225 — the studio panel draws its thumbnails in the wrong place.** The
+      "how it is built" previews sit about 65px above their cards, covering the
+      colour swatches and the whole "or a colour of your own" row, while the
+      cards beneath are empty. In the room grid two cards have lost their
+      thumbnails entirely and a third shows the wrong case under a smeared label.
+
+- [ ] **f295 — a floor draws one hairline sliver of a book** while the floor
+      above is half-populated with featureless blocks. Same family as the flat
+      spines above; may be the same fix.
+
+### The renderer
+
+- [ ] **Make gifsmith deterministic, like Blender.**
+      > "Don't think twice, go ahead with the Blender thing if it will help."
+
+      Their original framing: *"maybe you should modify gifsmith to kind of be
+      like Blender, where it doesn't matter if maybe the PC is slow or
+      something — it generates as per design."* Measured and confirmed: the app
+      idles at 244 fps under the capture and then blocks the main thread for
+      904 ms opening the studio and 1147 ms changing a room preset, and the
+      capture records those stalls faithfully. Virtual time makes render time
+      stop being playback time.
+
+- [x] **The demo is lossy, and unevenly so.** *(measured; the lossy option was
+      making the file BIGGER)*
+      > "I feel this gif is very lossy as well. Like, if there is a way to
+      > generate high quality or use a reliability solution that would be good.
+      > Basically when it is showing the gif, it is not always the same spot
+      > that gets messy and lossy. Might be a GitHub problem, I don't know."
+
+      Not GitHub. Two stages were losing the picture and each was measured on
+      its own, against the frames that stage was handed, so the numbers are that
+      stage's own damage rather than the whole pipeline's.
+
+      **The capture stage was throwing away quality AND paying for it.** Frames
+      were JPEG q92 before the encoder ever saw them — 45.40 dB / SSIM 0.991
+      against what Chromium composited. Switching to PNG makes the pipeline
+      lossless end to end, and the resulting GIF is **27% SMALLER**:
+      14,572,788 B from JPEG frames versus 11,481,042 B from PNG. JPEG ringing
+      around ink lines is high-frequency noise a palette and LZW cannot
+      compress, so the lossy option was buying nothing in either direction.
+
+      **The encoder was the bigger loss, by about 10 dB.** On the two-page
+      spread — the content the complaint was actually about:
+
+          defaults (128 colours, bayer, diff)   3,362,546 B   41.39 dB   0.981
+          256 colours, no dither, full palette  3,373,170 B   46.06 dB   0.997
+
+      +4.7 dB and SSIM 0.981 -> 0.997 for **+0.3% bytes**. Over the whole loop
+      it is +6.3% bytes for +3.2 dB.
+
+      Also settled, so nobody re-derives it: error diffusion (`sierra2_4a`) is
+      WORSE than bayer and bigger — it re-rolls its noise every frame and
+      destroys inter-frame compression. `bayerScale: 1` is a disaster, 30.2 dB.
+      Per-frame palettes buy +3.4 dB for FOURTEEN times the size. Lossless
+      animated WebP is exact but impractically slow: 300 frames took six
+      minutes, and the full 1209-frame loop had not finished after an hour.
+
+      "Not always the same spot" was the tell and it was right — that is dither
+      and palette noise moving frame to frame, not a fixed artefact.
+
+### Testing
+
+- [ ] **Replace most of the test suite with AI-in-the-loop visual verification.**
+      > "I want there to be some sort of AI (you) in the loop testing where you
+      > check each part of the gif to verify and find these issues. Most testing
+      > we do now is useless in fact and can be removed. What is important is
+      > for you to visually verify the UI and visuals of the things as you do
+      > it, and for that to be the testing mechanism instead."
+
+- [ ] **Delegate to agents and review their work.**
+      > "Maybe you focus on dedicating tasks to AI agents and reviewing their
+      > work as an extra measure."
+
+### Shipping
+
+- [ ] **Release this batch as 0.4.**
+      > "Once you finish all this, btw, you can call it 0.4 — do this at the end
+      > once all is done."
+
+### Naming
+
+- [ ] **Say "flat" where it is flat, and "hand-drawn" where it is hand-drawn.**
+      > "Btw isn't it kind of weird we call it hand-drawn style when it isn't?
+      > Like we say that in the readme description etc etc — should it be
+      > flaticon style instead?"
+
+      Half right, and the interesting part is that the CODE already agrees with
+      them. `art/flat.ts`, `FLAT`, `flatShelf.ts`, and CLAUDE.md's "the flat
+      language" — the docs drifted from the code, not the other way round.
+
+      Looked at both registers side by side before answering. The WORLD is flat
+      illustration: the bookcase, the wallpaper, the rail icons, the picture
+      block's cat — flat fills, one ink outline, crisp geometry. The PAGE is
+      genuinely hand-drawn: wobbled pen lines on every diagram, real handwriting
+      faces, cards that bow at the edges, torn tape.
+
+      "Flaticon" was rejected and the reason is worth keeping: it is a
+      stock-icon brand, so the association is cheap for something with this much
+      drawing in it, and it is also just wrong about the pages.
+
+      Owner's choice: **flat where flat, hand-drawn where hand-drawn.** 129
+      occurrences to sweep across README.md, docs/ and src/ comments. The
+      headline becomes something like "a flat, hand-drawn room" rather than
+      picking one.
+
+### The README
+
+- [ ] **Some pictures do not show what the section is about.**
+      > "The pictures in the readme sometimes are not relevant — like the sound
+      > picture does not show sound options and just shows a very long shelf."
+
 ## 🔴 Reported 2026-08-05 — toward 0.3, WORK THIS LIST SEQUENTIALLY
 
 The reader asked for these one at a time rather than fanned out: *"this time I

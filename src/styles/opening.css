@@ -1,0 +1,297 @@
+/* ============================================================================
+   Notebook — "opening the book…": the beat between the shelf standing down
+   and the spread landing on the desk.
+
+   ## Why this is its own file, imported by App.tsx
+
+   The fallback used to be four rules at the top of editor.css, and editor.css
+   is imported by BookView — the very module the fallback covers for. So on the
+   one path where it matters most (a cold open, the `lazy()` chunk still in
+   flight) the fallback rendered with NO STYLESHEET AT ALL: an unstyled
+   paragraph in the top-left corner of a white window. It only ever looked
+   right because `preloadBookView()` had usually already pulled editor.css in
+   behind it. A fallback whose appearance depends on the thing it is a fallback
+   for is not a fallback. This file is ~2kB, lives in the boot chunk, and owes
+   nothing to the editor.
+
+   ## Why it draws a whole book rather than centring a caption
+
+   Measured, with `scripts/probe-book-opening.mjs`, at 1440x900:
+
+       import('/src/views/BookView.tsx') at the press ...  11ms  (prefetched)
+       getBook + listPages ..............................   1ms
+       long task at +62ms ...............................  785ms
+       long task at +1407ms .............................. 1157ms
+
+   The chunk is warm and the read is instant; the wait is the spread MOUNTING —
+   the cover bake, the flip surface, one TipTap editor per leaf. That is real
+   work, it happens on the main thread, and the consequence for this file is
+   the design constraint: **whatever is on screen during those two long tasks
+   is frozen**. No layout, no paint, no JavaScript. The only things that keep
+   moving are compositor-driven `transform` and `opacity` animations, which run
+   off the main thread — so those are the only two properties animated here,
+   and that is a hard requirement rather than the usual house preference.
+
+   ## Geometry
+
+   Deliberately the same box as the real spread (spread.css: `.nb-book-view`
+   padding, `.nb-spread-stage` width, `.nb-book-cover` padding and corners), so
+   the arriving spread lands exactly where the paper already was and the
+   handover is a fill rather than a jump. The numbers are restated rather than
+   shared because sharing them means importing spread.css into the boot chunk,
+   which is the 29kB this file exists to avoid; `tests/opening-geometry.test.ts`
+   fails if the two copies drift apart.
+
+   Flat language throughout (CLAUDE.md): one ink outline, flat faces, offset
+   contact shadows from the token scale. No blur, no light model.
+   ========================================================================== */
+
+.nb-book-opening {
+  /* `fixed` rather than the spread's flow layout: the shelf is still mounted
+     behind this (marked away, not unmounted — see the note in App.tsx), and
+     the fallback has to cover it whatever height that leaves. */
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  background: var(--paper-cream);
+  /* .nb-book-view — left padding clears the fixed rail (56px) + breathing room */
+  padding: var(--space-8) var(--space-20) var(--space-12) 88px;
+}
+
+/* .nb-spread-stage — same width formula, so the book is the same size. */
+.nb-opening-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(100%, calc((100vh - 96px) * 1.58), 1760px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* The one entrance. Transform + opacity only; it is over long before the
+     first long task, and if it is not, it finishes on the compositor anyway. */
+  animation: nb-opening-settle 380ms var(--ease-out) both;
+}
+
+/* ----------------------------------------------------------------------------
+   The plate — where the book's title plate is about to be.
+
+   The caption used to sit dead centre of the window, which is precisely where
+   the pointer is left standing after clicking a book cover: in the demo
+   recording (`qa/demo/frames/f0428.png`) the cursor parks on top of it and the
+   only text on screen reads "openin  the book…". Up here it is clear of the
+   press, and it is replaced in place by the real title when the spread lands.
+   -------------------------------------------------------------------------- */
+.nb-opening-header {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-bottom: var(--space-8);
+}
+
+/* Restates .nb-book-title-plate. 23px: the Caveat floor is 20px. */
+.nb-opening-plate {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  font-family: var(--font-heading);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-sepia-soft);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: var(--radius-hand);
+  padding: 2px var(--space-16) 3px;
+  box-shadow: var(--shadow-xs);
+  transform: rotate(-0.5deg);
+  white-space: nowrap;
+}
+
+/*
+ * The ellipsis, as three marks that come and go.
+ *
+ * The only moving thing on screen for as long as the wait lasts, and the whole
+ * reason it is opacity on three separate spans rather than a rewritten text
+ * node: a JS ticker, a `::after` with a stepped `content` animation, or
+ * anything that touches layout all stop dead inside a 785ms long task, and a
+ * frozen "opening the book…" is exactly the frame this work is fixing.
+ */
+.nb-opening-dots {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 1px;
+}
+
+.nb-opening-dots i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.2;
+  animation: nb-opening-dot 1200ms var(--ease-in-out) infinite;
+}
+
+.nb-opening-dots i:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.nb-opening-dots i:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+/* ----------------------------------------------------------------------------
+   The board and the paper on it.
+
+   The cover is the flat terracotta face spread.css uses before the seeded
+   cover art has been baked — the same colour the real spread wears for its own
+   first frames, so the handover does not change colour either.
+   -------------------------------------------------------------------------- */
+.nb-opening-cover {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  padding: 14px 16px 18px;
+  background: var(--wash-terracotta);
+  border: var(--stroke-ink);
+  border-radius: 16px 22px 18px 24px / 20px 16px 24px 18px;
+  box-shadow: var(--shadow-lg);
+}
+
+.nb-opening-leaves {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.nb-opening-leaf {
+  flex: 1 1 50%;
+  min-width: 0;
+  padding: var(--space-40) var(--space-20) var(--space-32);
+  background: var(--paper-cream);
+  /* Settling flat from a shade open, hinged at the gutter. 0.7deg is under a
+     millimetre at the fore-edge — enough to read as paper coming to rest,
+     nowhere near enough to read as a page turn, which is a different gesture
+     with its own engine (src/flip). */
+  animation: nb-opening-leaf 420ms var(--ease-out) both;
+}
+
+/* The fore-edges of the pages beneath, restated from spread.css: offset
+   hairlines alternating cream and edge. Every one is a 0-blur offset plate. */
+.nb-opening-leaf[data-side='left'] {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  transform-origin: 100% 50%;
+  box-shadow:
+    -2px 1px 0 0 var(--paper-deep),
+    -3.5px 2px 0 0 var(--paper-cream),
+    -5px 3px 0 0 var(--paper-deep),
+    -6.5px 4px 0 0 var(--paper-cream),
+    -8px 5px 0 0 var(--paper-edge);
+}
+
+.nb-opening-leaf[data-side='right'] {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  transform-origin: 0 50%;
+  animation-name: nb-opening-leaf-right;
+  box-shadow:
+    2px 1px 0 0 var(--paper-deep),
+    3.5px 2px 0 0 var(--paper-cream),
+    5px 3px 0 0 var(--paper-deep),
+    6.5px 4px 0 0 var(--paper-cream),
+    8px 5px 0 0 var(--paper-edge);
+}
+
+/*
+ * The rules the words are about to land on.
+ *
+ * Bare ruled paper, at the page's own 32px pitch and in the page's own pencil
+ * (rulings.css: a mix of --paper-edge, never a second pigment). Not a skeleton
+ * of grey bars standing in for text — this is what the leaf genuinely looks
+ * like before anything is written on it, which is the honest picture and the
+ * one that stops the beat reading as a placeholder.
+ */
+.nb-opening-rules {
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 31px,
+    color-mix(in srgb, var(--paper-edge) 70%, transparent) 31px,
+    color-mix(in srgb, var(--paper-edge) 70%, transparent) 32px
+  );
+}
+
+/* The gutter, restated from spread.css: the darker face where the leaves meet,
+   with one soft thread down the crease. */
+.nb-opening-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 26px;
+  transform: translateX(-50%);
+  background: var(--lift-ink);
+  pointer-events: none;
+}
+
+.nb-opening-gutter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--ink-line-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   Keyframes — transform and opacity, and nothing else, for the reason in the
+   header. global.css collapses all of these under prefers-reduced-motion.
+   -------------------------------------------------------------------------- */
+@keyframes nb-opening-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes nb-opening-leaf {
+  from {
+    transform: rotate(0.7deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes nb-opening-leaf-right {
+  from {
+    transform: rotate(-0.7deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes nb-opening-dot {
+  0%,
+  70%,
+  100% {
+    opacity: 0.2;
+  }
+  25%,
+  45% {
+    opacity: 1;
+  }
+}

@@ -10,7 +10,7 @@
 in.** This half is for the person using it: what to download, what the installer
 puts where, and how every part of the app works. It assumes nothing about code.
 
-![The Alcove banner: the app's mark — a small red notebook with a cream label and a pencil — beside the word Alcove, over a line reading "a notes app that keeps your writing in books, on a shelf you can walk around in", on cream paper.](img/hero.png)
+![The Alcove banner: a cream card held to a papered wall by a strip of striped tape at one corner. On the left the app's mark — a red ring-bound notebook with a cream label plate wearing a small smiling face, a gold star on the ribbon at its top corner and another on the strap across its front. Beside it the word Alcove in a large handwriting face, and under that two lines: "A notebook that lives on a bookshelf." and "Windows, macOS and Linux · everything stays on your machine." Below those, four pill labels, each in its own wash — endless shelf, block editor, pages that flow, paste from any AI. Six little coloured books stand on a timber plank along the bottom edge.](img/hero.png)
 
 > **The other half is [Part 2 — Building Alcove](part-2-developers.md)** —
 > written for a developer, or for an AI agent helping one. Architecture, the
@@ -218,7 +218,7 @@ at the top) flips it into full-text search across every page in every bookcase.
 Activating a search result opens the book, turns to the page and pulses the
 match so you can see where it was.
 
-![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Constellations, Woodcuts, Fermenting, Rope Work, Birds, Ferns and Tide Tables running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](img/quickswitch.png)
+![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Constellations, Woodcuts, Fermenting, Rope Work, Birds, Tide Tables and Ferns running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](img/quickswitch.png)
 
 Search deliberately ignores which bookcase you are standing in front of. You
 open it because something you wrote is somewhere, and the one thing you reliably
@@ -311,7 +311,7 @@ slash menu with a small worked example already in it, and each is edited as a
 few lines of text — the layout algorithms and the hand-drawn SVG renderers are
 in [`src/diagrams/`](../../src/diagrams/).
 
-![A later spread of the Welcome book, and every mark on it is drawn by the page rather than pasted onto it. The left page is headed "A library of your own" with a gold star, and carries a hand-drawn tree — "Your library" branching to "Study" and "Workshop", Study on to "Books on ten floors" and "A wall, a wallpaper", Workshop on to "Books" — with the boxes and joins wobbled the way a pen wobbles. Under it a tan callout, "The studio, under the shelf", and a green one carrying two key caps: Ctrl Alt S opens the studio, Ctrl Alt N puts a new book on the shelf. The right page is headed "Dressing a book" and holds two tan callouts, "The outside" and "The inside", a pink quote card reading "This one is claret leather with four raised cords. Yours can be anything at all.", and an amber tag reading Ctrl Alt D dresses the open book.](img/diagrams.png)
+![The Welcome book open where its diagram chapter begins, and every mark on the right-hand page is drawn by the page rather than pasted onto it. That page opens "Indentation alone makes a `tree`: two spaces to a level, `|` for a note", and under the sentence stands the tree it describes — Alcove branching to "A library" and "A book", the library on to "Bookcases · one per subject" and "Floors", the book on to "Pages · this thing you are reading" and "Ribbons" — every box and every join wobbled the way a pen wobbles. Below it a tan card headed "Five fences, no library" names all five in their own key caps — tree, mindmap, graph, flowchart and timeline — and says they are about eighty lines of parser each, and that every line of every diagram is drawn by hand on the page. An amber tag under it reads "the next five leaves are the other four", and the next chapter's heading, "The same thing, thrown outward", starts at the foot. The left-hand page is the tail of the chapter before: a polaroid of a cat in a box in one column with a paragraph about columns in the other, a card headed "How it is written" showing `::: columns`, `::: col` and a plain `:::`, a margin note reading "A column may hold anything a page may hold, including more columns", and then this chapter's own title on the last ruled line — "Diagrams, drawn by hand".](img/diagrams.png)
 
 ### Pictures and links
 
@@ -332,7 +332,7 @@ you pointed at lists yours back at the bottom
 Ten hand-drawn icons down the left edge, each with its own tooltip. The first
 six open a panel; after a divider, four that just do something.
 
-![The spread with the icon rail down its left edge, and a hand-drawn tooltip out beside the fourth icon reading "Table of contents" with a Ctrl+Alt+T key cap on it. The rail runs from the paintbrush at the top through page style, ribbons, contents, page history and "in and out", then a divider, then focus mode, thumbnails and add-a-page, with a word count at its foot.](img/rail.png)
+![The spread with the icon rail down its left edge, and a hand-drawn tooltip out beside the fourth icon reading "Table of contents" with a Ctrl+Alt+T key cap on it. Ten glyphs in all: the paintbrush that dresses the book, page style, the catalogue's star, contents — lit, because that is the one being pointed at — page history, and the tray that opens "in and out". Then a short rule, and after it the bookmark that ribbons the page, focus mode, thumbnails and add-a-page. A nib and a word count sit at the foot below a dashed line.](img/rail.png)
 
 | Tool | What it opens |
 | --- | --- |
@@ -373,7 +373,7 @@ Most notes apps let you paste text an assistant wrote. Alcove is built so an
 assistant can write the **whole page** — the sticky notes, the callouts, the
 diagrams — and so you never have to teach it how.
 
-![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy spec for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
+![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
 
 **Take the grammar** — *copy the format for your AI* puts
 <!--f:specLines-->821<!--/f--> lines of specification on your clipboard,
@@ -438,7 +438,7 @@ The paste box previews as you paste, naming each piece it recognised — one
 sticky note, a graph of four edges, a timeline of three entries — so you can see
 the shape of the result before you commit it:
 
-![The Insert script dialog over a dimmed book called Field Notes, subtitled "paste Notebook Script — from your AI, or your own pen". On the left the pasted script in a monospace box, scrolled to the sticky-note directive and the graph and timeline fences. On the right a live preview headed FIELD NOTES — WEEK 3: the Photosynthesis heading, the paragraph with its amber highlight, a yellow sticky-note block tagged "sticky-note", and two hatched placeholder cards tagged "graph" and "timeline" reading "4 edges" and "3 entries". "Copy spec for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/script-dialog.png)
+![The Insert script dialog over a dimmed book called Field Notes, subtitled "paste Notebook Script — from your AI, or your own pen". On the left the pasted script in a monospace box, scrolled to the sticky-note directive and the graph and timeline fences. On the right a live preview headed FIELD NOTES — WEEK 3: the Photosynthesis heading, the paragraph with its amber highlight, a yellow sticky-note block tagged "sticky-note", and two hatched placeholder cards tagged "graph" and "timeline" reading "4 edges" and "3 entries". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/script-dialog.png)
 
 Insert, and it lands on the page as real editable blocks — the diagrams drawn,
 not embedded as images:
@@ -502,10 +502,15 @@ part of it without losing the rest.
 | Ambience beds | **<!--f:ambienceBeds-->10<!--/f-->**, plus silence | [`src/sound/engine.ts`](../../src/sound/engine.ts) |
 | Settings | **<!--f:settingsOptions-->40<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](../../src/data/defaults.ts) |
 
-Two smaller choices sit in *Settings → Appearance* rather than in a studio: the
-**pointer** — the app draws its own, in a set you pick, and hands the system one
-back on its own under Windows High Contrast, where a drawn cursor is the wrong
-answer — and the **nib** you write with.
+Some of it is not in a studio at all. *Settings → Appearance* is where the
+choices that belong to the whole app live rather than to one room — the theme,
+the hand every page is written in, how big the reading type is and what colour
+the ink is — and two smaller ones sit with them: the **pointer**, which the app
+draws itself in a set you pick and hands back to the system on its own under
+Windows High Contrast, where a drawn cursor is the wrong answer, and the **nib**
+you write with.
+
+![The settings sheet open down the right-hand edge over three full floors of the bookcase, its ✕ in the sheet's own top-left corner and a search box under the "Settings" heading. The Appearance section: "choose my look again — 5 questions, and the whole library takes after your answers" with a start button; "surprise me — parchment · sepia ink · the room's own paper · everyday hand" with "roll a whole look"; a "theme" row, "the room this app is drawn in", whose nine chips each carry their own colour — parchment (ticked), honeycomb, apricot, blossom, peony, botanical, verdigris, night, midnight — over "more theme · 21 more, in 4 shelves · show all 30"; a "hand" row, "the face every page is written in", whose six chips are each drawn IN the face they name — everyday hand (ticked), quick note, brush hand, drafting hand, marker, book serif — over "more hand · 21 more, in 3 shelves · show all 27"; a body-size slider reading 18px; and an "ink" row of coloured chips, sepia ticked, then graphite, fountain blue, iron gall, walnut, burgundy, forest, navy, teal and indigo.](img/appearance.png)
 
 ### A colour of your own
 
@@ -590,7 +595,7 @@ sorts first when *Settings → Library & shelf* is set to sort by favourites.
 
 Every interaction has a sound, and the whole set can be re-voiced.
 
-![The settings sheet open down the right-hand edge over the library, its ✕ in the sheet's own top-left corner. A search box sits under the "Settings" heading, then the Appearance section: "choose my look again — 5 questions, and the whole library takes after your answers" with a start button; "surprise me — parchment · sepia ink · the room's own paper · everyday hand" with "roll a whole look"; a "theme" row whose nine chips each carry their own colour — parchment (ticked), honeycomb, apricot, blossom, peony, botanical, verdigris, night, midnight — over "more theme · 21 more, in 4 shelves · show all 30"; a "hand" row whose chips are each drawn IN the face they name — everyday hand (ticked), quick note, brush hand, drafting hand, marker, book serif — over "more hand · 21 more, in 3 shelves · show all 27"; a body-size slider reading 18px; and an "ink" row of coloured chips from sepia through graphite, fountain blue, iron gall, walnut, burgundy, forest, navy, teal and indigo.](img/settings.png)
+![The settings sheet open down the right-hand edge, scrolled to its Sound section, over three full floors of the bookcase at 80%. Under the heading: a "sound set" row reading "House — the set as recorded — warm, even, nothing pushed" over seven chips, House ticked, then Loose Leaf, Reading Room, Brass Bell, Drafting Table, Quiet Hours and Paper Birds — one per character — with "more sound sets · 21 more, in 7 characters · show all 28" beside a button, and "add your own set · your sound files — name each one after the cue it replaces" beside "choose files…". Then five sliders, each with its own percentage: master volume 80%, little clicks & pops 70%, page sounds 80%, bookshelf sounds 70%, ambient bed 35%. Then "mute everything" (off) and "play ambience — run the chosen soundscape underneath" (on), a "soundscape" row of eleven chips with fireplace ticked — rain, storm, fireplace, crickets, night, wind, stream, forest, shore, cafe, none — and below them "typing sounds — soft pencil scratches as you type" and the top of "hourly chime" running off the bottom edge.](img/settings.png)
 
 A **sound set** is a named character every cue in the app is heard through — the
 button, the panel, the checkbox, the page turn, the book coming off the shelf,
@@ -682,7 +687,7 @@ a hand-edited ZIP cannot write outside the two places it is allowed to.
 The **parcel desk** — the rail's *In and out* sheet, or `Ctrl+Shift+E` — packs
 books into a single `.nbk` file. You pick the scope and what rides along.
 
-![The parcel desk over the library: a cream sheet with a scope tree down one side — the whole library, a bookcase, a floor, or a hand-picked selection — and toggles for what rides along beside it, over a summary of what is about to be packed.](img/transfer.png)
+![The parcel desk over an open book: a cream sheet headed "Send part of your library out", with a narrow tab column down its left edge — send out (lit), bring in, undo book. Under "What goes in the parcel" a row of scope chips — whole library (lit), floor 1, floor 2, floor 3, this book, pick by hand — over a flat list of every book with a checkbox and a page count each: Field Notes, Kanji Practice, Watercolour Basics, then "Welcome to Alcove ✎ · 32 pages" ticked, then Cell Biology, Recipes and a dozen more running off the bottom at 0 pages. On the right, "How to pack it": bring the pictures, keep covers & spines, include the library look, perfect fidelity — three of the four ticked — then written as Notebook Script or plain Markdown, and split as one file per page or one file per book. Under that a hatched parcel card, "In the parcel — 1 book · 32 pages · about 140 KB", with a drawn present on it and a line reading "saves as alcove-library.nbk". Close and Export sit at the foot.](img/transfer.png)
 
 Inside, a bundle is a plain ZIP: a manifest with a checksum, one Notebook Script
 file per page, the lossless JSON beside it, the assets, and a snapshot of the

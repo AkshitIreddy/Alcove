@@ -61,9 +61,12 @@
  *     still open the gallery, because that is where a reader MAKES a book;
  *   - the settings sheet still imports Markdown, because that is a library
  *     errand as much as a book one;
- *   - the insert dialog still carries its own "Copy spec for your AI", because
- *     wanting the format is what you discover while staring at an empty paste
- *     box.
+ *   - the insert dialog still carries its own "Copy the format for your AI",
+ *     because wanting the format is what you discover while staring at an empty
+ *     paste box. Word for word the same as the row below, deliberately: it read
+ *     "Copy spec for your AI" over there and "Copy the format for your AI"
+ *     here, which is one action wearing two names in two places a reader meets
+ *     inside a minute of each other.
  *
  * The bundle row is a doorway rather than a duplicate: the parcel desk
  * (`features/transfer`) is a whole panel of its own, with a scope tree, a

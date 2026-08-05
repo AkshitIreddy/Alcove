@@ -430,9 +430,9 @@ export function inkWidth(shortSide: number): number {
 /**
  * A deterministic wobble in [-1, 1] from an integer.
  *
- * Hand-drawn means *not straight*, but it must also mean *the same every
- * frame* — a shelf whose edges shimmered as you panned would be far worse
- * than one drawn with a ruler.
+ * The flat language bows its edges rather than ruling them, so *not straight*
+ * must also mean *the same every frame* — a shelf whose edges shimmered as you
+ * panned would be far worse than one drawn with a ruler.
  */
 function jitter(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
@@ -501,7 +501,7 @@ export function panel(
 }
 
 /**
- * A hand-drawn line: rounded caps, a single bow, no dead-straight run.
+ * A bowed line: rounded caps, a single bow, no dead-straight run.
  * Used for gilt bands, label ruling and plank edges.
  */
 export function stroke(

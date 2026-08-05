@@ -64,11 +64,11 @@
 
 ---
 
-Alcove keeps what you write in books standing on shelves in a hand-drawn room,
-instead of in a list of filenames. You pan and zoom around that room, pull a
-book off its floor, and it opens as a two-page spread you write in with a block
-editor of the kind you already know — slash menu, drag handles, right-click
-menu, tables, callouts, code, diagrams.
+Alcove keeps what you write in books standing on shelves in a flat, hand-drawn
+room, instead of in a list of filenames. You pan and zoom around that room, pull
+a book off its floor, and it opens as a two-page spread you write in with a
+block editor of the kind you already know — slash menu, drag handles,
+right-click menu, tables, callouts, code, diagrams.
 
 Pages are real pages: a page is a fixed leaf that never scrolls, so filling one
 flows your writing onto the next and turning it is a turn rather than a scroll.
@@ -187,7 +187,7 @@ Most notes apps let you paste text an assistant wrote. Alcove is built so an
 assistant can write the **whole page** — the sticky notes, the callouts, the
 diagrams — and so you never have to teach it how.
 
-![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy spec for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/ai.png)
+![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/ai.png)
 
 **Take the grammar** — *copy the format for your AI* puts
 <!--f:specLines-->821<!--/f--> lines of specification on your clipboard,
@@ -383,7 +383,7 @@ at the top) flips it into full-text search across every page in every bookcase.
 Activating a search result opens the book, turns to the page and pulses the
 match so you can see where it was.
 
-![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Constellations, Woodcuts, Fermenting, Rope Work, Birds, Ferns and Tide Tables running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](docs/readme/img/quickswitch.png)
+![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Constellations, Woodcuts, Fermenting, Rope Work, Birds, Tide Tables and Ferns running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](docs/readme/img/quickswitch.png)
 
 Search deliberately ignores which bookcase you are standing in front of. You
 open it because something you wrote is somewhere, and the one thing you reliably
@@ -476,7 +476,7 @@ slash menu with a small worked example already in it, and each is edited as a
 few lines of text — the layout algorithms and the hand-drawn SVG renderers are
 in [`src/diagrams/`](src/diagrams/).
 
-![A later spread of the Welcome book, and every mark on it is drawn by the page rather than pasted onto it. The left page is headed "A library of your own" with a gold star, and carries a hand-drawn tree — "Your library" branching to "Study" and "Workshop", Study on to "Books on ten floors" and "A wall, a wallpaper", Workshop on to "Books" — with the boxes and joins wobbled the way a pen wobbles. Under it a tan callout, "The studio, under the shelf", and a green one carrying two key caps: Ctrl Alt S opens the studio, Ctrl Alt N puts a new book on the shelf. The right page is headed "Dressing a book" and holds two tan callouts, "The outside" and "The inside", a pink quote card reading "This one is claret leather with four raised cords. Yours can be anything at all.", and an amber tag reading Ctrl Alt D dresses the open book.](docs/readme/img/diagrams.png)
+![The Welcome book open where its diagram chapter begins, and every mark on the right-hand page is drawn by the page rather than pasted onto it. That page opens "Indentation alone makes a `tree`: two spaces to a level, `|` for a note", and under the sentence stands the tree it describes — Alcove branching to "A library" and "A book", the library on to "Bookcases · one per subject" and "Floors", the book on to "Pages · this thing you are reading" and "Ribbons" — every box and every join wobbled the way a pen wobbles. Below it a tan card headed "Five fences, no library" names all five in their own key caps — tree, mindmap, graph, flowchart and timeline — and says they are about eighty lines of parser each, and that every line of every diagram is drawn by hand on the page. An amber tag under it reads "the next five leaves are the other four", and the next chapter's heading, "The same thing, thrown outward", starts at the foot. The left-hand page is the tail of the chapter before: a polaroid of a cat in a box in one column with a paragraph about columns in the other, a card headed "How it is written" showing `::: columns`, `::: col` and a plain `:::`, a margin note reading "A column may hold anything a page may hold, including more columns", and then this chapter's own title on the last ruled line — "Diagrams, drawn by hand".](docs/readme/img/diagrams.png)
 
 ### Pictures and links
 
@@ -497,7 +497,7 @@ you pointed at lists yours back at the bottom
 Ten hand-drawn icons down the left edge, each with its own tooltip. The first
 six open a panel; after a divider, four that just do something.
 
-![The spread with the icon rail down its left edge, and a hand-drawn tooltip out beside the fourth icon reading "Table of contents" with a Ctrl+Alt+T key cap on it. The rail runs from the paintbrush at the top through page style, ribbons, contents, page history and "in and out", then a divider, then focus mode, thumbnails and add-a-page, with a word count at its foot.](docs/readme/img/rail.png)
+![The spread with the icon rail down its left edge, and a hand-drawn tooltip out beside the fourth icon reading "Table of contents" with a Ctrl+Alt+T key cap on it. Ten glyphs in all: the paintbrush that dresses the book, page style, the catalogue's star, contents — lit, because that is the one being pointed at — page history, and the tray that opens "in and out". Then a short rule, and after it the bookmark that ribbons the page, focus mode, thumbnails and add-a-page. A nib and a word count sit at the foot below a dashed line.](docs/readme/img/rail.png)
 
 | Tool | What it opens |
 | --- | --- |
@@ -575,7 +575,7 @@ The paste box previews as you paste, naming each piece it recognised — one
 sticky note, a graph of four edges, a timeline of three entries — so you can see
 the shape of the result before you commit it:
 
-![The Insert script dialog over a dimmed book called Field Notes, subtitled "paste Notebook Script — from your AI, or your own pen". On the left the pasted script in a monospace box, scrolled to the sticky-note directive and the graph and timeline fences. On the right a live preview headed FIELD NOTES — WEEK 3: the Photosynthesis heading, the paragraph with its amber highlight, a yellow sticky-note block tagged "sticky-note", and two hatched placeholder cards tagged "graph" and "timeline" reading "4 edges" and "3 entries". "Copy spec for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/script-dialog.png)
+![The Insert script dialog over a dimmed book called Field Notes, subtitled "paste Notebook Script — from your AI, or your own pen". On the left the pasted script in a monospace box, scrolled to the sticky-note directive and the graph and timeline fences. On the right a live preview headed FIELD NOTES — WEEK 3: the Photosynthesis heading, the paragraph with its amber highlight, a yellow sticky-note block tagged "sticky-note", and two hatched placeholder cards tagged "graph" and "timeline" reading "4 edges" and "3 entries". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/script-dialog.png)
 
 Insert, and it lands on the page as real editable blocks — the diagrams drawn,
 not embedded as images:
@@ -639,10 +639,15 @@ part of it without losing the rest.
 | Ambience beds | **<!--f:ambienceBeds-->10<!--/f-->**, plus silence | [`src/sound/engine.ts`](src/sound/engine.ts) |
 | Settings | **<!--f:settingsOptions-->40<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](src/data/defaults.ts) |
 
-Two smaller choices sit in *Settings → Appearance* rather than in a studio: the
-**pointer** — the app draws its own, in a set you pick, and hands the system one
-back on its own under Windows High Contrast, where a drawn cursor is the wrong
-answer — and the **nib** you write with.
+Some of it is not in a studio at all. *Settings → Appearance* is where the
+choices that belong to the whole app live rather than to one room — the theme,
+the hand every page is written in, how big the reading type is and what colour
+the ink is — and two smaller ones sit with them: the **pointer**, which the app
+draws itself in a set you pick and hands back to the system on its own under
+Windows High Contrast, where a drawn cursor is the wrong answer, and the **nib**
+you write with.
+
+![The settings sheet open down the right-hand edge over three full floors of the bookcase, its ✕ in the sheet's own top-left corner and a search box under the "Settings" heading. The Appearance section: "choose my look again — 5 questions, and the whole library takes after your answers" with a start button; "surprise me — parchment · sepia ink · the room's own paper · everyday hand" with "roll a whole look"; a "theme" row, "the room this app is drawn in", whose nine chips each carry their own colour — parchment (ticked), honeycomb, apricot, blossom, peony, botanical, verdigris, night, midnight — over "more theme · 21 more, in 4 shelves · show all 30"; a "hand" row, "the face every page is written in", whose six chips are each drawn IN the face they name — everyday hand (ticked), quick note, brush hand, drafting hand, marker, book serif — over "more hand · 21 more, in 3 shelves · show all 27"; a body-size slider reading 18px; and an "ink" row of coloured chips, sepia ticked, then graphite, fountain blue, iron gall, walnut, burgundy, forest, navy, teal and indigo.](docs/readme/img/appearance.png)
 
 ### A colour of your own
 
@@ -727,7 +732,7 @@ sorts first when *Settings → Library & shelf* is set to sort by favourites.
 
 Every interaction has a sound, and the whole set can be re-voiced.
 
-![The settings sheet open down the right-hand edge over the library, its ✕ in the sheet's own top-left corner. A search box sits under the "Settings" heading, then the Appearance section: "choose my look again — 5 questions, and the whole library takes after your answers" with a start button; "surprise me — parchment · sepia ink · the room's own paper · everyday hand" with "roll a whole look"; a "theme" row whose nine chips each carry their own colour — parchment (ticked), honeycomb, apricot, blossom, peony, botanical, verdigris, night, midnight — over "more theme · 21 more, in 4 shelves · show all 30"; a "hand" row whose chips are each drawn IN the face they name — everyday hand (ticked), quick note, brush hand, drafting hand, marker, book serif — over "more hand · 21 more, in 3 shelves · show all 27"; a body-size slider reading 18px; and an "ink" row of coloured chips from sepia through graphite, fountain blue, iron gall, walnut, burgundy, forest, navy, teal and indigo.](docs/readme/img/settings.png)
+![The settings sheet open down the right-hand edge, scrolled to its Sound section, over three full floors of the bookcase at 80%. Under the heading: a "sound set" row reading "House — the set as recorded — warm, even, nothing pushed" over seven chips, House ticked, then Loose Leaf, Reading Room, Brass Bell, Drafting Table, Quiet Hours and Paper Birds — one per character — with "more sound sets · 21 more, in 7 characters · show all 28" beside a button, and "add your own set · your sound files — name each one after the cue it replaces" beside "choose files…". Then five sliders, each with its own percentage: master volume 80%, little clicks & pops 70%, page sounds 80%, bookshelf sounds 70%, ambient bed 35%. Then "mute everything" (off) and "play ambience — run the chosen soundscape underneath" (on), a "soundscape" row of eleven chips with fireplace ticked — rain, storm, fireplace, crickets, night, wind, stream, forest, shore, cafe, none — and below them "typing sounds — soft pencil scratches as you type" and the top of "hourly chime" running off the bottom edge.](docs/readme/img/settings.png)
 
 A **sound set** is a named character every cue in the app is heard through — the
 button, the panel, the checkbox, the page turn, the book coming off the shelf,
@@ -819,7 +824,7 @@ a hand-edited ZIP cannot write outside the two places it is allowed to.
 The **parcel desk** — the rail's *In and out* sheet, or `Ctrl+Shift+E` — packs
 books into a single `.nbk` file. You pick the scope and what rides along.
 
-![The parcel desk over the library: a cream sheet with a scope tree down one side — the whole library, a bookcase, a floor, or a hand-picked selection — and toggles for what rides along beside it, over a summary of what is about to be packed.](docs/readme/img/transfer.png)
+![The parcel desk over an open book: a cream sheet headed "Send part of your library out", with a narrow tab column down its left edge — send out (lit), bring in, undo book. Under "What goes in the parcel" a row of scope chips — whole library (lit), floor 1, floor 2, floor 3, this book, pick by hand — over a flat list of every book with a checkbox and a page count each: Field Notes, Kanji Practice, Watercolour Basics, then "Welcome to Alcove ✎ · 32 pages" ticked, then Cell Biology, Recipes and a dozen more running off the bottom at 0 pages. On the right, "How to pack it": bring the pictures, keep covers & spines, include the library look, perfect fidelity — three of the four ticked — then written as Notebook Script or plain Markdown, and split as one file per page or one file per book. Under that a hatched parcel card, "In the parcel — 1 book · 32 pages · about 140 KB", with a drawn present on it and a line reading "saves as alcove-library.nbk". Close and Export sit at the foot.](docs/readme/img/transfer.png)
 
 Inside, a bundle is a plain ZIP: a manifest with a checksum, one Notebook Script
 file per page, the lossless JSON beside it, the assets, and a snapshot of the
@@ -1100,7 +1105,7 @@ Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
 | Command | Gates |
 |---|---|
 | `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->86<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
+| `npx vitest run` | <!--f:unitTests-->87<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host. |
 | `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](docs/e2e.md). |
 
@@ -1157,7 +1162,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->288<!--/f--> of <!--f:srcFiles-->296<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6801<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->6857<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1330,10 +1335,10 @@ against the Release before quoting one at a reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->296<!--/f--> TypeScript files, <!--f:srcDocstrings-->288<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6801<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->296<!--/f--> TypeScript files, <!--f:srcDocstrings-->288<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6857<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2302<!--/f--> lines, <!--f:rustCommands-->14<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
-| Tests | <!--f:unitTests-->86<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
-| QA against the running app | <!--f:probeScripts-->67<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
+| Tests | <!--f:unitTests-->87<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
+| QA against the running app | <!--f:probeScripts-->85<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
 | Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
 
@@ -1379,7 +1384,7 @@ A README that quotes numbers goes stale silently, so none of the numbers on this
 page are typed as prose. Each is written inside an invisible marker —
 `<!--f:wallpaperPapers-->126<!--/f-->`, which GitHub renders as `126` and
 nothing else — and recomputed from the tree. So are the
-<!--f:readmeShots-->23<!--/f--> screenshots: each one records the app it
+<!--f:readmeShots-->24<!--/f--> screenshots: each one records the app it
 photographed and the room it stood in, so a picture that has outlived what it
 shows says so rather than quietly lying.
 

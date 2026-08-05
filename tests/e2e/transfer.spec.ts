@@ -169,12 +169,12 @@ test.describe('export', () => {
     // Whole library is the default scope: every seeded book is in the parcel.
     const counts = page.locator('.nb-tr-parcel-counts');
     await expect(counts).toContainText('4 books');
-    await expect(page.locator('.nb-tr-filename')).toContainText('notebook-library.nbk');
+    await expect(page.locator('.nb-tr-filename')).toContainText('alcove-library.nbk');
 
     // Narrowing to a floor narrows the parcel.
     await page.locator('.nb-tr-chip', { hasText: 'floor 2' }).first().click();
     await expect(counts).toContainText('1 book');
-    await expect(page.locator('.nb-tr-filename')).toContainText('notebook-floor-2.nbk');
+    await expect(page.locator('.nb-tr-filename')).toContainText('alcove-floor-2.nbk');
 
     // Unticking one page leaves the book in, minus that page.
     await page.locator('.nb-tr-chip', { hasText: 'whole library' }).first().click();

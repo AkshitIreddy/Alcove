@@ -174,18 +174,31 @@ test('the way back recedes once you are settled, and comes back on intent', asyn
   await expect(page.locator('.nb-back-button')).toHaveCount(1);
 
   // Park the pointer well away from the corner so the linger can expire.
+  //
+  // The recede is read off the WORDS, not off the button. It used to be read
+  // off the button's own opacity ("< 0.5"), and that threshold was quietly the
+  // thing being tested: element opacity multiplies the mark as well as the
+  // plate, so anything low enough to pass took the arrow with it, and the demo
+  // caught the result — `qa/demo/frames/f0869.png` is the only way out of a
+  // book at 1.4:1 against the wall. spread.css now spends the recede on the
+  // plate and the label and leaves the mark drawn, so what a receded button
+  // means is "the words are gone", and that is what this asks.
   await page.mouse.move(900, 600);
   await expect
-    .poll(() => opacityOf(page, '.nb-back-button'), {
+    .poll(() => opacityOf(page, '.nb-back-label'), {
       timeout: 20_000,
       message: 'the way back never got out of the way',
     })
-    .toBeLessThan(0.5);
+    .toBeLessThan(0.1);
+
+  // …and the other half of the same rule: getting out of the way is not the
+  // same as disappearing. The button itself stays drawn the whole time.
+  expect(await opacityOf(page, '.nb-back-button')).toBeGreaterThan(0.9);
 
   // Going near the corner brings it back, whole.
   await page.mouse.move(40, 30);
   await expect
-    .poll(() => opacityOf(page, '.nb-back-button'), {
+    .poll(() => opacityOf(page, '.nb-back-label'), {
       timeout: 10_000,
       message: 'the way back never came back',
     })

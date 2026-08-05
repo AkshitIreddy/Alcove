@@ -324,13 +324,13 @@ export function isCursorSetId(value: unknown): value is CursorSetId {
    `art/flat.ts` traces the same shapes into a canvas context. A cursor is a
    string, so these are the path-data twins of `wobbleRect` and friends: same
    deterministic jitter, same "nothing is axis-true" rule, no second idea of
-   what a hand-drawn edge is.
+   what a bowed edge is.
    -------------------------------------------------------------------------- */
 
 /** The design box. Every glyph is drawn in 0..32 and scaled on the way out. */
 const BOX = 32;
 
-/** `flat.ts`'s jitter, verbatim: hand-drawn, and the same every time. */
+/** `flat.ts`'s jitter, verbatim: bowed, and the same every time. */
 function jitter(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
   return (x - Math.floor(x)) * 2 - 1;

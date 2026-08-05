@@ -3,8 +3,17 @@
  *
  * Aged-paper modal card: big monospace textarea, live parse (150ms debounce)
  * with friendly line-numbered warnings, a read-only preview of the parsed
- * doc, and Insert / Cancel. "Copy spec for your AI" puts the full spec
+ * doc, and Insert / Cancel. "Copy the format for your AI" puts the full spec
  * markdown on the clipboard.
+ *
+ * That button used to read "Copy spec for your AI" while the In-and-out sheet's
+ * row for the SAME clipboard said "Copy the format for your AI" — two labels,
+ * one action, and nothing on either surface to tell a reader they are the same
+ * door. The sheet's wording won, on two grounds: "spec" is a word this app does
+ * not use anywhere a reader can see it (the rails say *in and out*, *the parcel
+ * desk*, *bring Markdown in*), and the README, the front page and the guided
+ * tour had all already settled on "the format" — so the odd one out was the one
+ * nobody else was quoting.
  *
  * On Insert the parsed ScriptDoc is mapped to editor JSON and inserted at the
  * cursor of the live editor (replacing any selection); the pasted source is
@@ -228,7 +237,7 @@ export default function InsertScriptDialog(
             class="nb-ins-button nb-ins-button-ghost font-ui"
             onClick={() => void copySpec()}
           >
-            Copy spec for your AI
+            Copy the format for your AI
           </button>
           <span class="nb-ins-spacer" />
           <button

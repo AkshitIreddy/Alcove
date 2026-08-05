@@ -3,9 +3,10 @@
  *
  * Everything with a `title=""` was borrowing the operating system's grey
  * bubble: another app's typeface, another app's corner, another app's timing,
- * dropped on top of a hand-drawn library. This is the replacement, and it is
- * ONE of them for the whole app — a single layer parked on <body>, driven by
- * delegated listeners, so adding a tooltip anywhere is adding an attribute:
+ * dropped on top of a flat, hand-drawn library. This is the replacement, and
+ * it is ONE of them for the whole app — a single layer parked on <body>,
+ * driven by delegated listeners, so adding a tooltip anywhere is adding an
+ * attribute:
  *
  *   <button aria-label="Zoom out" data-tooltip="Zoom out"
  *           data-tooltip-side="top" data-tooltip-key="-">

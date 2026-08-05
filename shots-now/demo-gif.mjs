@@ -26,6 +26,28 @@
  * House Room again, which is also just what a person does when they are
  * browsing rather than deciding.
  *
+ * ## It is rendered, not recorded
+ *
+ * `capture: 'deterministic'` puts the whole scene on Chromium's virtual clock:
+ * gifsmith spends scene time one frame at a time and screenshots each frame
+ * boundary, so a main-thread stall costs real seconds and no virtual ones and
+ * cannot reach the output. This app is exactly the case that argues for it —
+ * the artwork bakes, the raster cache warms, SQLite writes — and the first
+ * screencast of this demo faithfully recorded every one of those pauses.
+ *
+ * The consequence for THIS file is the important part: **a `t.call()` may not
+ * sleep.** `await new Promise((r) => setTimeout(r, 1900))` measures the
+ * recording machine, which is the one thing the virtual clock exists to remove,
+ * and under it those 1900ms buy zero rendered frames — so the animation the
+ * sleep was waiting for is not merely mistimed, it is not in the GIF at all.
+ * Every callback here therefore takes the clock as its second argument:
+ *
+ *   `ctx.advance(ms)` — spend ms of SCENE time (exactly ms/frameMs frames).
+ *   `ctx.settle(p)`   — await something that can only finish while the page
+ *                       paints, walking the clock forward underneath it.
+ *
+ * (Needs a gifsmith newer than 0.2.3, which handed `t.call` the bare Page.)
+ *
  * ## Why it can drive the app at all
  *
  * The books are drawn inside a Pixi canvas, so there is no DOM node to click
@@ -129,12 +151,20 @@ const tl = timeline((t) => {
   /* ----------------------------- 1. the shelf ---------------------------- */
 
   t.waitFor('.shelf-dock');
-  t.call(async (page) => {
+  t.call(async function stockTheShelf(page, ctx) {
     // Wait for the world's own ready promise, not a timer: the case is baked
     // art and a shot taken before it lands photographs bare arches.
-    await page.evaluate(async () => {
-      await globalThis.__shelfWorld.ready;
-    });
+    //
+    // Through `settle`, because this is the textbook deadlock: an awaited async
+    // `page.evaluate` cannot resolve unless the page runs, and under a paused
+    // virtual clock the page does not run until we spend some. Awaiting it
+    // directly hangs the render with no timeout and no output.
+    await ctx.settle(
+      page.evaluate(async () => {
+        await globalThis.__shelfWorld.ready;
+      }),
+      { capMs: 20_000, label: '__shelfWorld.ready' },
+    );
     /*
      * PUPPETEER, not Playwright. gifsmith drives puppeteer-core, which has no
      * `text=` selector engine — `page.$('text=skip the tour')` is not "no match",
@@ -148,22 +178,27 @@ const tl = timeline((t) => {
       );
       skip?.click();
     });
-    await new Promise((r) => setTimeout(r, 900));
+    await ctx.advance(900);
     // Stock three floors. Awaited one floor at a time — each is a run of
     // inserts plus a store refresh, and firing all three at once races the
-    // slot allocator.
+    // slot allocator. The insert run is async inside the page, so it is a
+    // `settle` too; the pause after it is scene time the shelf spends baking
+    // the spines it was just handed.
     for (const [floor, titles] of [
       [0, FLOOR_1],
       [1, FLOOR_2],
       [2, FLOOR_3],
     ]) {
-      await page.evaluate(
-        ([f, list]) => globalThis.__shelfSeedBooks(list, f),
-        [floor, titles],
+      await ctx.settle(
+        page.evaluate(
+          ([f, list]) => globalThis.__shelfSeedBooks(list, f),
+          [floor, titles],
+        ),
+        { capMs: 20_000, label: `__shelfSeedBooks(floor ${floor})` },
       );
-      await new Promise((r) => setTimeout(r, 1400));
+      await ctx.advance(1400);
     }
-    await new Promise((r) => setTimeout(r, 3000));
+    await ctx.advance(3000);
   });
   t.hold(2.0);
 
@@ -180,6 +215,24 @@ const tl = timeline((t) => {
 
   t.click('[aria-label="Library studio"]', { via: 'cursor' });
   t.waitFor('.nb-library-studio');
+  /*
+   * AND WAIT UNTIL A TILE IS ACTUALLY THERE TO PRESS.
+   *
+   * `.nb-library-studio` is the sheet root and it exists the instant the sheet
+   * mounts — before it has slid in, and before its strips have been laid out.
+   * A tour gated on the root alone can therefore start pressing tiles that are
+   * in the DOM and nowhere on screen, which is what one full render did: all
+   * seven presses reported the tile as unclickable, the tour came out as a
+   * minute of an unchanged shelf, and the frames showed the sheet painted
+   * blank. So the gate is the thing the tour actually needs — a tile with a box,
+   * on screen — rather than the thing that is easiest to name.
+   */
+  t.waitUntil(() => {
+    const el = document.querySelector('[aria-label="Room presets"] .nb-strip-tile');
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 8 && r.height > 8 && r.left >= 0 && r.top < window.innerHeight;
+  });
   t.hold(1.8);
   t.cue('studio');
 
@@ -188,12 +241,14 @@ const tl = timeline((t) => {
     // Bring it into the sheet's own scroll before pointing at it — the later
     // axes are below the fold, and a cursor glide to an off-screen tile lands
     // on nothing.
-    t.call(async (page) => {
+    t.call(async function scrollTileIntoView(page, ctx) {
       await page.evaluate((sel) => {
         document.querySelector(sel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }, selector);
-      await new Promise((r) => setTimeout(r, 500));
-    });
+      // Not a pause — this IS the smooth scroll, and it only happens in scene
+      // time. Sleeping here would leave the sheet mid-scroll for the click.
+      await ctx.advance(500);
+    }, { name: `scroll to ${step.name ?? `${step.strip} #${step.index}`}` });
     t.click(selector, { via: 'cursor' });
     // Long enough to watch the case and the wall actually repaint, which is
     // the whole point of this section.
@@ -217,7 +272,7 @@ const tl = timeline((t) => {
    * Which is the better demo anyway: the reader sees the book leave the shelf
    * and then sees it opened, rather than the shelf cutting to a spread.
    */
-  t.call(async (page) => {
+  t.call(async function pullOutTheBook(page) {
     const opened = await page.evaluate(() => {
       const books = globalThis.__shelfVisibleBooks?.() ?? [];
       const welcome = books.find((b) => /welcome/i.test(b.title)) ?? books[0];
@@ -272,10 +327,44 @@ const tl = timeline((t) => {
    * falls back to the rigid fold rather than curling onto blank paper — correct,
    * but the demo should show the curl, because that is what a reader gets.
    */
+  /*
+   * BLUR FIRST, or the page does not curl — and that is why the reader said
+   * *"page turn animation is not even visible in the gif"*.
+   *
+   * `arrowFlipAction(key, isTyping)` in views/spread.ts returns null when the
+   * active element is a typing target, so the arrow can move the caret instead
+   * of turning the leaf. Once a book has been opened the caret is IN the page,
+   * so every ArrowRight in this demo was a caret move.
+   *
+   * Measured both ways before changing anything (`probe-curl-capture.mjs`):
+   * with the editor blurred the flip runs for 17 frames and the CDP screencast
+   * catches 11 of them — the curl is plainly visible in the captured JPEG. So
+   * neither the app nor the recorder was at fault; the demo was pressing a key
+   * that, in that focus state, does not turn a page.
+   *
+   * (That the app cannot be turned with the arrows while the caret sits in the
+   * page is a real question about the app, not about this file. It is written
+   * down in TODO.md for the owner to rule on rather than quietly changed here.)
+   */
+  /*
+   * AND THE 1900 IS NOW SCENE TIME, WHICH IS THE WHOLE POINT.
+   *
+   * As a real-time sleep this was the recording machine's 1900ms: enough on a
+   * quiet run, not enough while the raster cache was warming, and under the
+   * virtual clock not a single rendered frame — the curl would have been
+   * skipped over rather than filmed. `ctx.advance(1900)` is 1900ms of the
+   * SCENE, so at 14fps and speed 1.1 it is exactly 24 frames of page turn, on
+   * this machine and on anyone else's.
+   */
   const turn = () => {
-    t.call(async (page) => {
+    t.call(async function turnThePage(page, ctx) {
+      await page.evaluate(() => {
+        const el = document.activeElement;
+        if (el instanceof HTMLElement) el.blur();
+      });
+      await ctx.advance(250);
       await page.keyboard.press('ArrowRight');
-      await new Promise((r) => setTimeout(r, 1900));
+      await ctx.advance(1900);
     });
     t.hold(1.5);
   };
@@ -290,11 +379,14 @@ const tl = timeline((t) => {
      * demo: the catalogue alone is forty labelled tiles.
      */
     t.hold(3.2);
-    t.call(async (page) => {
+    t.call(async function closeThePanel(page, ctx) {
       const close = await page.$(`[aria-label^="Close ${name}"]`);
-      if (close) await close.click();
-      await new Promise((r) => setTimeout(r, 900));
-    });
+      // `click()` scrolls the element into view and resolves a clickable point
+      // first, and both of those can need the page to move — so it goes through
+      // the clock rather than being awaited into a stopped scene.
+      if (close) await ctx.settle(close.click(), { capMs: 3_000, label: `Close ${name}` });
+      await ctx.advance(900);
+    }, { name: `close ${name}` });
     t.hold(0.7);
     turn();
   }
@@ -302,13 +394,14 @@ const tl = timeline((t) => {
 
   /* --------------------------- 5. back to the shelf ----------------------- */
 
-  t.call(async (page) => {
+  t.call(async function summonTheBackButton(page, ctx) {
     // The way back lives in the top-left corner and fades to a pencil mark
     // once the reader has settled in, so it has to be summoned before it can
     // be pressed: the pointer entering the corner is one of the three things
-    // that brings it back (see BookView's BACK_ZONE).
+    // that brings it back (see BookView's BACK_ZONE). The 700ms is its fade,
+    // which is scene time like every other animation in the file.
     await page.mouse.move(80, 70);
-    await new Promise((r) => setTimeout(r, 700));
+    await ctx.advance(700);
   });
   t.click('.nb-back-button', { via: 'cursor' });
   t.waitFor('.shelf-dock');
@@ -334,6 +427,20 @@ const scene = {
   props: [cursor(), bezel()],
   timeline: tl,
   /*
+   * RENDERED, NOT RECORDED — and the frames kept lossless on the way out.
+   *
+   * `deterministic` is the offline-renderer backend: virtual time, one
+   * screenshot per frame, so the artwork bake and the raster warm-up cost real
+   * seconds and no scene time at all. `format: 'png'` removes the only lossy
+   * stage before the encoder — this backend never resamples, so the quantiser
+   * sees exactly what Chromium composited. Measured on this walkthrough's own
+   * 1336 frames, the JPEG stage costs 45.4dB PSNR / 0.991 SSIM against what
+   * Chromium drew — and, because JPEG ringing around ink on pale paper is
+   * high-frequency noise in a picture that had none, it also made the GIF 27%
+   * BIGGER (14.2MB against 11.2MB, same frames, same encoder).
+   */
+  capture: { mode: 'deterministic', format: 'png' },
+  /*
    * A FLOOR ON THE LOOP, or the trim throws the tour away.
    *
    * The scene holds still on the shelf for a beat after `loopAnchor()` — that
@@ -358,7 +465,23 @@ const scene = {
    * big readme has space"*. So playback is near real time, the frame rate is
    * up for smoothness, and the size budget is loose enough not to fight it.
    */
-  encode: { width: 900, fps: 14, speed: 1.1, colors: 128, targetMB: 20 },
+  /*
+   * AND THE PALETTE IS WHERE THE MUSH WAS. *"i feel this gif is very lossy …
+   * it is not always the same spot that gets messy"* — that last clause is the
+   * diagnosis: a moving mess is a dither, not a fixed artefact. gifsmith's
+   * defaults (128 colours, a Bayer dither, a palette weighted toward the pixels
+   * that CHANGE) are tuned for size, and on a page of cream paper and fine ink
+   * they are a coarse approximation whose worst part follows the motion around.
+   *
+   * This art is flat colour with one ink outline, which is the case where a
+   * dither buys nothing at all: 256 colours cover it, and turning the dither
+   * off removes the noise instead of hiding it. Measured on this very
+   * walkthrough — see the gifsmith README's table.
+   */
+  encode: {
+    width: 900, fps: 14, speed: 1.1, targetMB: 20,
+    colors: 256, dither: 'none', palette: 'full',
+  },
 };
 
 if (CHECK) {

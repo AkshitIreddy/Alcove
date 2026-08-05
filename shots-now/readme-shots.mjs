@@ -529,6 +529,106 @@ async function openSettings(target) {
   throw new Error('readme-shots: the settings sheet would not open');
 }
 
+/**
+ * Scroll the open settings sheet until one of its section headings sits just
+ * under the sticky header.
+ *
+ * The sheet is 3,200px of paper behind a 940px window, so "open the settings"
+ * is not an instruction that says which settings — whatever the last shot left
+ * the scroll position at is what gets photographed. Asked for by the heading's
+ * own text, not by an offset, because an offset is a count and the sheet grows
+ * a row most weeks.
+ *
+ * ## The search box was tried first, and it is the wrong tool for this picture
+ *
+ * `search the settings…` looked like the honest way to reach Sound: it is the
+ * feature built for exactly this, `pressSettingsRow` below already uses it, and
+ * a query REVEALS collapsed groups. That last part is the problem. `Chapter` in
+ * `SettingsPanel.tsx` answers a query that its own heading covers by handing
+ * every row beneath it an empty term list — so "sound" lays out the whole
+ * chapter — and the section's disclosures are written as `!searching()`, so the
+ * shortlist of seven sets and its "more sound sets · show all 28" button fold
+ * away and all TWENTY-EIGHT chips unroll in their place. The frame that comes
+ * back is 940px of sound-set chips: no sliders, no ambience, no credits, and
+ * nothing that says how many sets there are. Scrolled to instead, the same
+ * section arrives in its resting shape and the whole mixer is in one frame.
+ */
+async function scrollSettingsTo(target, section) {
+  const moved = await target.evaluate((name) => {
+    const sheet = document.querySelector('.nbs-sheet');
+    if (sheet === null) return 'the settings sheet is not in the DOM';
+    const head = [...sheet.querySelectorAll('.nbs-section-title')].find(
+      (el) => (el.textContent ?? '').trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (head === undefined) return `the settings sheet has no “${name}” section`;
+    const header = sheet.querySelector('.nbs-header');
+    sheet.scrollTop +=
+      head.getBoundingClientRect().top - (header?.getBoundingClientRect().bottom ?? 0) - 12;
+    return sheet.scrollTop;
+  }, section);
+  if (typeof moved === 'string') throw new Error(`readme-shots: ${moved}`);
+}
+
+/**
+ * Park the camera at a percentage before photographing anything with the shelf
+ * behind it.
+ *
+ * Step 5 pulls the case all the way out to the 38% floor to photograph it as
+ * one object, and the camera STAYS there for the rest of the run — so the
+ * settings sheet was shot over a bookcase eight floors tall with three thin
+ * rows of colour in the top of it. The reader's report on that picture was
+ * "does not show sound options and just shows a very long shelf", and the
+ * second half of that sentence is this line. 80% is where `shelf.png` and
+ * `box.png` are taken, which is the zoom a book is still a book at.
+ *
+ * Driven through the pill's own buttons rather than through `world`, for the
+ * reason every probe in this repo is driven that way: a dev server that has
+ * served HMR updates can resolve an `import()` to a SECOND copy of a module,
+ * and writes to that copy reach nothing. The reset button goes first because
+ * the notches are multiplicative — six out and six back does not come home —
+ * and 100% is the one position that can be asked for by name.
+ */
+async function parkZoom(target, percent) {
+  if (percent > 100) throw new Error('readme-shots: parkZoom only ever comes down from 100%');
+  const pill = target.locator('.shelf-zoom-pill__pct').first();
+  if ((await pill.count()) === 0) throw new Error('readme-shots: no zoom pill — is the shelf up?');
+  const read = async () =>
+    Number.parseInt(((await pill.textContent()) ?? '').replace(/\D/g, ''), 10);
+  /*
+   * The number when it has STOPPED, which is the only reading worth having and
+   * took two wrong pictures to arrive at. The camera tweens in log-zoom space
+   * and the pill renders every frame of it, so a press from 100% is followed by
+   * a second or so of 96, 92, 87 … 80 — and both cheaper reads get it wrong in
+   * the same direction. Sleeping 400ms and reading gives 100 (stale, "that
+   * press did nothing", press again); polling until the number CHANGES gives 89
+   * (mid-tween, "still above 80", press again). Either way the loop pressed
+   * twice and the settings sheet was photographed at 64% under a line of code
+   * that asks for 80. Two equal readings in a row is the honest one.
+   */
+  const settled = async () => {
+    let last = NaN;
+    for (let poll = 0; poll < 24; poll += 1) {
+      const now = await read();
+      if (now === last) return now;
+      last = now;
+      await wait(target, 250);
+    }
+    return last;
+  };
+  await pill.click({ force: true });
+  const zoomOut = target.getByRole('button', { name: /Zoom out/i }).first();
+  for (let i = 0; i < 12; i += 1) {
+    const now = await settled();
+    if (Number.isNaN(now) || now <= percent) break;
+    await zoomOut.click({ force: true });
+    // A press that leaves the number where it was is the camera's own floor
+    // (`minZoomFor`) answering. Photograph the wrong zoom rather than stand
+    // here pressing a button that has stopped meaning anything.
+    if ((await settled()) === now) break;
+  }
+  await wait(target, 1400);
+}
+
 /* ------------------------------- 1. the banner ---------------------------- */
 
 /*
@@ -575,6 +675,10 @@ const appShots = [
   'share',
   'focus',
   'keyboard',
+  // One open of the settings sheet, two frames of it — the top of the sheet for
+  // "Making it yours", and the Sound section for "Sound". Both names have to be
+  // here or `--only=appearance` boots a browser and photographs nothing.
+  'appearance',
   'settings',
   // Sections 19-21: the three surfaces Part 1 described in prose and never
   // showed, once every other section had a picture beside it.
@@ -826,9 +930,94 @@ if (appShots.some(wanted)) {
      * decorated spread was the third one; the day the Welcome book grew a page
      * that stopped being true, and the shot became two blank ruled leaves with
      * a placeholder on them — a worse picture than the stale one it replaced.
-     * Flipping until a diagram is on screen is the same instruction stated as a
-     * fact about the page rather than as a count.
+     * Flipping until the spread is the picture is the same instruction stated
+     * as a fact about the page rather than as a count.
      *
+     * ## The leaf that HOLDS the chapter, not the leaf that names it
+     *
+     * The condition was "any `.nb-diagram` is on screen", and it stopped on the
+     * first one it met — the third spread of the tour, "A library of your own"
+     * facing "Dressing a book". That spread holds one small tree of bookcases
+     * and is otherwise about leather and raised cords, and it sat under the
+     * README's **Diagrams** section, which promises five kinds of diagram drawn
+     * rather than embedded. One leaf out of two, and the wrong one.
+     *
+     * What is wanted is the tour's own diagram chapter — `src/data/seed.ts`
+     * page 17, "Diagrams, drawn by hand": the hand-drawn `tree`, and the "Five
+     * fences, no library" card that names all five kinds and says every line of
+     * every one of them is drawn on the page.
+     *
+     * Matching its HEADING was tried first and produced two pages of cats and
+     * columns. A heading is a block like any other, so the pagination contract
+     * routinely leaves `# Diagrams, drawn by hand` as the last ruled line of
+     * the PREVIOUS leaf and starts the chapter's body at the top of the facing
+     * one — which means the leaf whose h1 says "Diagrams, drawn by hand" is
+     * reliably the leaf that shows something else. So the walk looks for the
+     * chapter's BODY instead: a leaf with a drawn diagram on it and the words
+     * of its card in it. That is a description of the picture rather than of
+     * the table of contents, and it holds however the blocks fall.
+     *
+     * ## Why not "a diagram on each leaf", which was measured
+     *
+     * It sounds like the better rule, and there is exactly one spread in the
+     * book that satisfies it — the mindmap facing the flowchart — and both of
+     * its leaves OVERFLOW: 346px and 179px of blocks past the bottom of the
+     * paper, which photographs as a sentence sliced in half by the page edge
+     * ("A comma fans out to several / at once"). Waiting does not drain it;
+     * fifteen further seconds left both numbers exactly where they were. Every
+     * other spread in the book measures zero. So the assertions below check the
+     * overflow rather than trusting it: a clipped spread is a failed run rather
+     * than a shipped picture, and if the pagination contract starts draining
+     * those two leaves this is the line that will let the better spread in.
+     *
+     * ## Asked of the two LEAVES, not of the document
+     *
+     * `document.querySelectorAll('.nb-diagram')` is not the spread, and that
+     * cost a run to learn as well. The flip's snapshot cache mounts
+     * neighbouring pages offscreen to rasterise them (`src/flip/`), so at any
+     * instant the document holds two to nine `.nb-prose` roots and only two of
+     * them are ones a reader can see — a document-wide count answers "a diagram
+     * exists somewhere in the raster queue", which flickers true a spread early
+     * and false again depending on when the idle callback ran.
+     */
+    const DIAGRAM_CARD = 'five fences, no library';
+    const spread = () =>
+      page.evaluate(() => {
+        const side = (sel) => {
+          const leaf = document.querySelector(sel);
+          const prose = leaf?.querySelector('.nb-prose') ?? null;
+          return {
+            headings: [...(leaf?.querySelectorAll('.nb-prose h1') ?? [])].map((h) =>
+              (h.textContent ?? '').trim(),
+            ),
+            diagrams: leaf?.querySelectorAll('.nb-diagram').length ?? 0,
+            /*
+             * `textContent` PLUS every `data-title`, and the second half is not
+             * belt and braces — a card's title is not text. `containers.ts`
+             * keeps it as a `data-title` attribute and `effects.css` paints it
+             * with `content: attr(data-title)`, so the words "Five fences, no
+             * library" are on the page, in the picture, legible to a reader,
+             * and absent from `textContent` entirely. A run spent forty turns
+             * walking off the end of the book looking for them.
+             */
+            text: [
+              prose?.textContent ?? '',
+              ...[...(prose?.querySelectorAll('[data-title]') ?? [])].map(
+                (el) => el.getAttribute('data-title') ?? '',
+              ),
+            ]
+              .join(' ')
+              .toLowerCase(),
+            // How far the written column runs past the paper it is written on.
+            // Zero on every page the contract has finished with.
+            over: prose === null ? 0 : Math.round(prose.scrollHeight - prose.clientHeight),
+          };
+        };
+        return { left: side('.nb-flip-leaf-left'), right: side('.nb-flip-leaf-right') };
+      });
+    const holdsChapter = (side) => side.diagrams > 0 && side.text.includes(DIAGRAM_CARD);
+    const isDrawnSpread = (now) => holdsChapter(now.left) || holdsChapter(now.right);
+    /*
      * Turned by TAPPING the leaf's edge hotspot rather than by ArrowRight, and
      * that is not a stylistic preference: arrow-key navigation left the landed
      * spread with a NODE SELECTION on it, so the tree diagram photographed
@@ -848,14 +1037,56 @@ if (appShots.some(wanted)) {
       if (leaf === null) throw new Error('readme-shots: the right leaf has no box');
       await page.mouse.click(leaf.x + leaf.width - 12, leaf.y + leaf.height * 0.5);
     };
+    /*
+     * Eight turns as the book stands today, capped at forty, and the settle
+     * between them is 4.5s rather than 3s. All three numbers were bought:
+     *
+     *  - the settle is long because the pagination contract is still moving
+     *    blocks while the sheet lands. Turned every 3s, the walk read spreads
+     *    that were still being peeled. What each turn costs here is a second
+     *    and a half; what it costs to photograph a half-paginated spread is the
+     *    whole run;
+     *  - the cap is not "what it takes now plus one", because every page the
+     *    tour gains ahead of the diagram run pushes this one turn further out —
+     *    a tight cap is the counted version wearing a loop;
+     *  - and it is FORTY rather than twelve because a walk of this book can
+     *    lose its place. Anything that remounts the book view puts it back on
+     *    the first spread, and on a dev server the commonest cause is somebody
+     *    else saving a file — a Vite HMR update to `BookView.tsx` mid-walk
+     *    threw one run back to spread one four separate times. A search picks
+     *    itself up and carries on; a count of turns cannot, which is the third
+     *    argument for searching — but only if the cap leaves room for detours.
+     *
+     * The headings are printed rather than kept, because when this cannot find
+     * the spread the only useful thing to know is what it walked past.
+     */
     let turns = 0;
-    while (turns < 12 && (await page.locator('.nb-diagram').count()) === 0) {
+    let now = await spread();
+    while (turns < 40 && !isDrawnSpread(now)) {
       await tapForward();
       turns += 1;
-      await wait(page, 3000);
+      await wait(page, 4500);
+      now = await spread();
+      console.log(
+        `   turn ${turns}: ${[...now.left.headings, '|', ...now.right.headings].join(' ')} ` +
+          `(${now.left.diagrams}+${now.right.diagrams} drawn)`,
+      );
     }
-    if ((await page.locator('.nb-diagram').count()) === 0) {
-      throw new Error('readme-shots: no diagram in the first twelve spreads of the tour');
+    if (!isDrawnSpread(now)) {
+      throw new Error(
+        `readme-shots: nothing carrying the “${DIAGRAM_CARD}” card and a drawn diagram in the ` +
+          'first forty spreads of the tour — either the card was reworded in src/data/seed.ts ' +
+          'or the diagram renderers are not drawing',
+      );
+    }
+    // Asserted rather than assumed — the run is five minutes long and a wrong
+    // picture looks exactly like a right one until somebody reads it.
+    if (now.left.over > 0 || now.right.over > 0) {
+      throw new Error(
+        `readme-shots: the diagram spread is clipped (${now.left.over}px left, ` +
+          `${now.right.over}px right past the paper) — the pagination contract has not ` +
+          'drained these leaves and the shot would ship a sentence cut in half',
+      );
     }
     // The diagram renderers are lazy — a skeleton stands in until the drawing is
     // laid out. Shooting over a skeleton is the half-loaded capture this whole
@@ -1022,8 +1253,28 @@ if (appShots.some(wanted)) {
     await wait(page, 900);
   }
 
-  if (wanted('settings')) {
-    console.log('\n16. settings');
+  /*
+   * TWO pictures out of one sheet, because the sheet answers two of the
+   * README's sections and used to answer neither.
+   *
+   * `settings.png` sits under **Sound**, and for a whole release it was the
+   * settings sheet at its resting scroll position — which is the top, which is
+   * Appearance. Nine theme chips, six hands, a body-size slider and an ink row,
+   * under a heading about ambience beds and volume sliders. The picture was not
+   * stale and not broken; it was of a different part of the app than the
+   * paragraph beside it, which is the one failure a freshness check cannot see.
+   *
+   * The Appearance frame itself was never the problem — it is a good picture of
+   * the deepest colour choices in the app, and **Making it yours** was the
+   * longest section on the page with nothing to look at. So it keeps its frame
+   * under its own name and Sound gets the section it is about.
+   *
+   * One open, two shots, one scroll between them: opening the sheet twice would
+   * photograph two sheets and invite them to drift apart, which is the whole
+   * argument for this file existing.
+   */
+  if (wanted('appearance') || wanted('settings')) {
+    console.log('\n16. the settings sheet — appearance, then sound');
     // The seal lives in the window's bottom-left corner, outside the book, so
     // the book goes back on the shelf first.
     await page.evaluate(async () => {
@@ -1032,10 +1283,16 @@ if (appShots.some(wanted)) {
     });
     await page.waitForSelector('.shelf-dock', { timeout: 30_000 });
     await wait(page, 2000);
+    await parkZoom(page, 80);
     await openSettings(page);
     await settle(page, '.nbs-sheet');
     await wait(page, 1400);
-    await shot(page, 'settings');
+    if (wanted('appearance')) await shot(page, 'appearance');
+    if (wanted('settings')) {
+      await scrollSettingsTo(page, 'Sound');
+      await wait(page, 1400);
+      await shot(page, 'settings');
+    }
     await page.keyboard.press('Escape');
     await wait(page, 900);
   }

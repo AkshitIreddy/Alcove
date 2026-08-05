@@ -7,6 +7,12 @@
  * non-reactive Pixi object. Solid components talk to it through the
  * WorldEvents callbacks and its small public API; Solid never diffs Pixi.
  *
+ * One world outlives the whole session, including the trips into a book: it
+ * is stood down by `pause()` and picked back up by `resume()` rather than
+ * built and thrown away per visit, because rebuilding it is what put a blank
+ * cream second in front of every reader who pressed "back to shelf". The
+ * comment on `pause()` is the long version.
+ *
  * No filters, no additive layers, no light: every sprite draws exactly the
  * flat colours its art was authored in (see `art/flat.ts`).
  */
@@ -367,6 +373,29 @@ export class ShelfWorld {
   private readonly world = new Container();
   /** Screen space, above everything: drag ghosts, drop-target hints. */
   private readonly fx = new Container();
+  /**
+   * THE ROOM — wall, case and affordances, and nothing that is merely laid
+   * over a room. `beginThemeFade` photographs this rather than the stage.
+   *
+   * The distinction only costs one Container and it is the whole of what stops
+   * a crossfade compounding. A snapshot of the STAGE includes any snapshot
+   * already sitting on it, and a second preset applied inside the first fade's
+   * 0.42s does exactly that: the outgoing picture is itself half an older
+   * picture, and the reader watches two rooms dissolve through a third. Two
+   * fades overlapping is not a hypothetical — clicking presets a quarter of a
+   * second apart reaches it, and under the old arrangement that put five
+   * children on the stage with the second photograph containing the first.
+   */
+  private readonly scene = new Container();
+  /**
+   * Screen space, over the room: the theme-fade snapshot, and only that.
+   *
+   * Deliberately a sibling of `scene` rather than a child. Adding the sprite to
+   * the very container that was just rendered into a RenderTexture is the kind
+   * of arrangement that reads as fine and is impossible to reason about, and
+   * keeping the photograph out of the frame is free.
+   */
+  private readonly overlay = new Container();
   /** Flat interaction marks — hover/selection outlines, contact shadow. */
   private readonly marks: ShelfMarks;
   /** Crown/header board capping the case above floor 0. */
@@ -383,6 +412,33 @@ export class ShelfWorld {
   private raf = 0;
   private lastTime = 0;
   private destroyed = false;
+  /**
+   * Standing down behind an open book — see `pause()`.
+   *
+   * NOT the same state as `frozen`, and the two are deliberately kept apart.
+   * `frozen` means "a book is in the air over this room, do not touch it";
+   * `paused` means "nobody is in this room at all". A pull-out sets both on
+   * the way into a book and a quick-switcher open sets only the second, which
+   * is exactly why every guard that must cover BOTH says so.
+   */
+  private paused = false;
+  /**
+   * Frames the loop has run, and times the stage has actually been painted.
+   *
+   * Two numbers because the two claims are different and both get made about
+   * this fix. `frames` is the COST — a hidden shelf that still ticks would
+   * keep raising it, so `scripts/probe-return-to-shelf.mjs` reads it either
+   * side of a book to show the loop really stopped rather than merely drew
+   * nothing. `renders` is the PROOF — the case can only be on the canvas if
+   * the stage has been painted at least once, and the probe's per-frame
+   * "is the reader looking at an empty window" test is built on it.
+   *
+   * Only meaningful to QA and carried always, for the same reason `roomBakes`
+   * is: a claim like "no frame after the press was blank" needs a counter, not
+   * a stopwatch. Two increments per frame at most.
+   */
+  private frames = 0;
+  private renders = 0;
   private frozen = false;
   private dragging = false;
   private rawDragX = 0;
@@ -509,8 +565,16 @@ export class ShelfWorld {
 
     // Stage: flat wall, the case, then screen-space affordances. No filters —
     // every sprite here draws exactly the colours its art was authored in.
+    //
+    // Those three are grouped under `scene` so there is a single object that
+    // means "the room": `beginThemeFade` photographs it, and the photograph
+    // hangs in `overlay` beside it rather than inside it. The doc's
+    // backdrop → world → fx order is unchanged; it has simply gained a name.
     this.world.eventMode = 'none';
-    app.stage.addChild(this.backdrop, this.world, this.fx);
+    this.scene.eventMode = 'none';
+    this.overlay.eventMode = 'none';
+    this.scene.addChild(this.backdrop, this.world, this.fx);
+    app.stage.addChild(this.scene, this.overlay);
     app.stage.eventMode = 'none';
 
     // Camera: session restore, else a friendly overview of the first floors.
@@ -546,7 +610,14 @@ export class ShelfWorld {
     // Keyboard zoom: +/- and 0 work anywhere on the shelf (document-level;
     // classifyKeyZoom ignores keystrokes bound for editable fields).
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (this.frozen || this.destroyed) return;
+      // `paused` belongs in this guard next to `frozen`, and it is the half
+      // that only started mattering once the shelf outlived the switch into a
+      // book. This listener is on `document`, so a room nobody can see still
+      // hears every key pressed in the one they are in — and a book opened
+      // from the quick switcher never froze anything, so `frozen` alone would
+      // let a reader's +/− and arrows drive a case behind the page they are
+      // reading. The DOM half of the same rule is `.shelf-root.is-away`.
+      if (this.frozen || this.destroyed || this.paused) return;
       const target = e.target as HTMLElement | null;
       const editing =
         target !== null &&
@@ -1405,6 +1476,116 @@ export class ShelfWorld {
     this.track(tl);
   }
 
+  /* ---------------------------- away, and back ---------------------------- */
+
+  /**
+   * Stand the world down while the reader is inside a book.
+   *
+   * The shelf used to be UNMOUNTED for as long as a book was open, and the
+   * bill for that arrived on the way back rather than on the way in: pressing
+   * "back to shelf" built a second PixiJS Application, re-baked the case, the
+   * wall and every spine, and left the reader looking at bare cream with the
+   * dock and the zoom pill floating on it for the better part of a second. The
+   * wall colour under `.shelf-root` in shelf.css is the older, smaller half of
+   * that story — it made the gap read as a room whose furniture had not
+   * arrived, which is the best anyone can do once they have decided to throw
+   * the room away. This is the other half: do not throw it away.
+   *
+   * What actually costs anything while nobody is looking is the rAF loop. It
+   * runs every frame whether or not the stage is dirty — integrating the
+   * camera, clamping it, publishing the ghost slot — and Pixi's own ticker
+   * would be running too if it were driving (it is not: `autoStart: false`,
+   * this loop IS the ticker). Cancelling the request stops all of it, and
+   * nothing else in here polls; the subscriptions that stay live are woken by
+   * the reader, not by a clock.
+   *
+   * The tracked GSAP animations are deliberately NOT paused. Every one of them
+   * is short and finite — there is no repeating tween in this file — so the
+   * handful that can still be in flight when a book opens (the 80ms ghost
+   * fade, the 300ms row dim) simply finish, off screen, into exactly the
+   * settled state the return wants to find. Pausing them would freeze a
+   * half-disposed ghost that then completes into the middle of the return
+   * choreography and destroys the sprite that choreography had just spawned.
+   *
+   * Momentum is the one thing that IS killed: a fling is a gesture in
+   * progress, and letting one resume ten minutes later would land the reader
+   * somewhere they never scrolled to. Everything else about the camera —
+   * position, zoom, the zoom it was still easing toward — is left exactly as
+   * they left it, because that is the whole point.
+   */
+  pause(): void {
+    if (this.paused || this.destroyed) return;
+    this.paused = true;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.camera.vx = 0;
+    this.camera.vy = 0;
+  }
+
+  /**
+   * The reader is standing in front of the case again.
+   *
+   * The draw is SYNCHRONOUS and happens here rather than being left to the
+   * loop, because "immediately" is the entire reason the world was kept alive:
+   * the canvas is unhidden and painted inside the same task the view switch
+   * runs in, so the first composite after the press already carries the case.
+   * Handing it to the next rAF instead would give back one blank frame — a
+   * much smaller version of the second this exists to delete, and still a
+   * flash of empty cream in exactly the place the reader was watching.
+   */
+  resume(): void {
+    if (!this.paused || this.destroyed) return;
+    this.paused = false;
+    // The clock stopped with the loop. Without this the first dt is however
+    // long the reader spent reading — clamped to 50ms by the loop, but 50ms is
+    // still a step the camera integrators would take on their behalf.
+    this.lastTime = performance.now();
+    this.renderNow();
+    this.raf = requestAnimationFrame(this.frame);
+  }
+
+  /** True while the world is standing down behind an open book (QA probes). */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Frames the loop has run since the world was built (QA probes). */
+  get framesRun(): number {
+    return this.frames;
+  }
+
+  /** Times the stage has been painted since the world was built (QA probes). */
+  get rendersRun(): number {
+    return this.renders;
+  }
+
+  /**
+   * No book is coming back after all — put the room back in order.
+   *
+   * A pull-out freezes the world, dims the row and hides the spine the ghost
+   * was cut from; `prepareReturn` freezes and hides again so a DOM cover has
+   * something to fly onto. All of that used to be undone by the shelf being
+   * thrown away between the two, and none of it is now — so a book deleted,
+   * or moved to another bookcase, while it was open leaves nothing to fly
+   * back to and the reader lands on a room that is dead to the touch, with a
+   * grey stripe across one floor and a gap where their book used to stand.
+   *
+   * Every mounted spine is shown rather than the one that was hidden, because
+   * the one that was hidden is precisely the one that may no longer be there
+   * to ask for.
+   */
+  cancelReturn(): void {
+    if (this.destroyed) return;
+    this.undimSiblings();
+    this.disposeGhost();
+    for (const fv of this.floors.values()) {
+      for (const visual of fv.visuals) visual.sprite.visible = true;
+    }
+    this.frozen = false;
+    this.input.frozen = false;
+    this.dirty = true;
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -1439,7 +1620,11 @@ export class ShelfWorld {
   /* ------------------------------ frame loop ------------------------------ */
 
   private readonly frame = (now: number): void => {
-    if (this.destroyed) return;
+    // Not re-scheduling is what actually stops the loop in both cases: the
+    // request is cancelled by `pause()`/`destroy()`, and this is the belt to
+    // that braces, for a frame already queued when either was called.
+    if (this.destroyed || this.paused) return;
+    this.frames += 1;
     this.raf = requestAnimationFrame(this.frame);
     const dt = clamp((now - this.lastTime) / 1000, 0, 0.05);
     this.lastTime = now;
@@ -1478,17 +1663,29 @@ export class ShelfWorld {
     }
     if (this.pullTick(dt)) this.dirty = true;
     if (moving) this.dirty = true;
-    if (this.dirty) {
-      this.dirty = false;
-      this.applyCamera();
-      this.sync();
-      this.app.render();
-    }
+    if (this.dirty) this.renderNow();
     // Cheap (one floor's visuals, a few adds) and it must also react to
     // state that never marks the stage dirty — a freeze during a pull-out,
     // a move mode starting — so it runs outside the render gate.
     this.publishAddSpot();
   };
+
+  /**
+   * Put the world on the canvas as it stands, now.
+   *
+   * The render half of the frame body, lifted out so `resume()` can spend it
+   * directly on the way back from a book. One implementation rather than two,
+   * because the failure mode of two is silent: a step added to the loop and
+   * not to the return would show up as one wrong frame at exactly the moment
+   * the reader is looking hardest.
+   */
+  private renderNow(): void {
+    this.dirty = false;
+    this.applyCamera();
+    this.sync();
+    this.app.render();
+    this.renders += 1;
+  }
 
   /* --------------------------- add-a-book affordance ---------------------- */
 
@@ -1901,6 +2098,27 @@ export class ShelfWorld {
     const roomChanged = this.appliedLibraryKey !== key;
     const gen = ++this.libraryGen;
 
+    // THE PHOTOGRAPH IS TAKEN FIRST, before a single line below has a chance to
+    // stop the old room being true.
+    //
+    // It used to be taken three statements down, after `setFlatScheme` had
+    // repointed every flat draw at the new hexes and after the spine factory
+    // had been told — and `setTheme` retires every baked spine while `setBuild`
+    // drops any spine baked at the old clear height. The crossfade's whole job
+    // is to hold the room the reader was looking at until the new one is whole,
+    // and it was being handed a picture of a shelf that had already lost its
+    // books: `scripts/probe-studio-repaint.mjs` measured all thirteen on
+    // placeholder slabs within 145ms of the click. The factory keeps a retired
+    // generation now, so the slabs are gone at the source — but a photograph
+    // taken after the shutter has been tripped is wrong on its own terms, and
+    // the only reason it was ever second was the order somebody typed it in.
+    //
+    // Both guards, and `roomChanged` is the load-bearing one: `endThemeFade` is
+    // only reached below it, so a snapshot taken on a no-op notification would
+    // hang over the world at full opacity with nothing left to dissolve it —
+    // the room frozen under a picture of itself.
+    if (roomChanged && this.appliedLibraryKey !== '') this.beginThemeFade();
+
     // The palette every flat draw on this thread reads, set BEFORE the factory
     // is told: `setTheme` invalidates every baked spine, and the re-bakes it
     // provokes must already be finding the new room's cloths.
@@ -1917,10 +2135,6 @@ export class ShelfWorld {
       this.dirty = true;
       return;
     }
-
-    // Only crossfade when a room is being REPLACED — the first dressing has
-    // nothing to fade from.
-    if (this.appliedLibraryKey !== '') this.beginThemeFade();
 
     // The case and the wall are baked together so they land on the same beat:
     // a gothic case against the outgoing room's wall, even for two frames,
@@ -1961,15 +2175,38 @@ export class ShelfWorld {
   }
 
   /**
-   * Grab the current frame into a sprite pinned over the stage. The case art
-   * swaps underneath it, then `endThemeFade` dissolves it — so a theme switch
-   * never shows a half-dressed bookcase.
+   * Photograph the room as the reader last saw it and hang the picture over it.
+   * The case art swaps underneath, then `endThemeFade` dissolves the picture —
+   * so a theme switch never shows a half-dressed bookcase.
+   *
+   * ## What is photographed, and what the photograph hangs on
+   *
+   * `scene`, not `app.stage`, and `overlay`, not `app.stage`. Those are the
+   * same two words twice over, and they are the difference between a crossfade
+   * that composes and one that compounds: a snapshot of the stage contains any
+   * snapshot already ON the stage, so applying a second preset inside the first
+   * fade's 0.42s photographs a room that is itself half a photograph. Two
+   * clicks a quarter-second apart put five children on the stage, which is a
+   * state `qa` reaches by hand, not a thought experiment.
+   *
+   * ## When it is taken
+   *
+   * BEFORE the palette is swapped and before the spine factory is told, not
+   * after (see `applyLibrary`). A photograph is the one thing in the transition
+   * that has to be of the OLD room, and every line after it in that method
+   * exists to stop the old room being true.
+   *
+   * The `try` is not decoration. `generateTexture` reaches all the way to the
+   * GL context, and a context that cannot give a texture back must still be
+   * able to change rooms — badly, in one pop, but it must not throw out of the
+   * apply and leave the case half dressed. `themeFade = null` is what makes
+   * `endThemeFade` a no-op on that path.
    */
   private beginThemeFade(): void {
     if (this.degrade || this.reducedMotion) return;
     try {
       const texture = this.app.renderer.generateTexture({
-        target: this.app.stage,
+        target: this.scene,
         frame: new PIXI.Rectangle(0, 0, this.vp.width, this.vp.height),
         resolution: 1,
       });
@@ -1977,9 +2214,12 @@ export class ShelfWorld {
       snap.eventMode = 'none';
       snap.width = this.vp.width;
       snap.height = this.vp.height;
+      // A fade already in flight is dissolving on its own tween and owns its
+      // own destroy; this only reclaims one that never got that far, which is
+      // the superseded-generation path in `applyLibrary`.
       this.themeFade?.destroy(true);
       this.themeFade = snap;
-      this.app.stage.addChild(snap);
+      this.overlay.addChild(snap);
     } catch {
       this.themeFade = null; // extraction unsupported — swap without the fade
     }

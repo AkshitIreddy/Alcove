@@ -30,6 +30,40 @@
 }
 
 /* ----------------------------------------------------------------------------
+   AWAY — the room while the reader is inside a book.
+
+   The shelf is not unmounted for the length of a book any more. It used to be,
+   and the cost was paid on the way back: pressing "back to shelf" rebuilt the
+   whole Pixi world and the reader watched bare cream for the better part of a
+   second (the `background` above is the older, smaller half of that fix, and
+   it is what that cream WAS). The world now lives on with its loop stopped —
+   `ShelfWorld.pause()` — and this is the part of standing down that the DOM
+   owns.
+
+   `visibility`, deliberately, and not `display: none`. The host keeps its box,
+   so the ResizeObserver in world.ts keeps reporting a real size: a window
+   resized while a book is open still reaches the hidden world, and the case is
+   already the right shape when it comes back. Under `display: none` the host
+   measures 0 and `handleResize` bails, and the reader returns to a canvas
+   sized for a window that is gone. It also buys the two things `inert` is
+   claimed for twice over: hidden content is not hit-tested, not focusable and
+   not in the accessibility tree.
+
+   The `!important` reaches an inline style, which is the only thing it is for
+   here. GSAP drives the studio sheet with `autoAlpha`, and autoAlpha writes
+   `visibility: visible` straight onto the element — which outranks any class
+   rule, so a sheet left open at the moment a book was opened would keep
+   floating at `--z-menus`, over the page, while it slid away. (It is closed on
+   the way out too. This is what makes that a nicety rather than the load-
+   bearing half.)
+   -------------------------------------------------------------------------- */
+.shelf-root.is-away,
+.shelf-root.is-away .nb-rail-panel {
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
    The stage — the canvas plus every piece of chrome that is anchored to it.
 
    A side panel used to be laid over the top of all this, hiding the dock you

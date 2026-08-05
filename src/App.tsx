@@ -25,6 +25,9 @@ import TasteQuestionnaire from "./features/tutorial/tasteQuestionnaire";
 import ShelfView from "./views/ShelfView";
 import { CheatSheetHost } from "./views/CheatSheet";
 import "./styles/settings.css";
+// The Suspense fallback's own stylesheet, in the boot chunk on purpose — see
+// the header of opening.css and the `BookOpening` docblock below.
+import "./styles/opening.css";
 
 /**
  * The book is the app's other half, and the reader does not start in it.
@@ -150,6 +153,59 @@ function DevViewSwitcher(): JSX.Element {
   );
 }
 
+/**
+ * The book, a moment before it has anything in it.
+ *
+ * This is the Suspense fallback, and it is drawn rather than written because
+ * of what it stands in for: the spread mounting blocks the main thread for the
+ * best part of two seconds (the numbers are on the boundary below), so the
+ * reader stares at this frame, unmoving, for as long as that takes. A caption
+ * in the middle of an empty window says "the app has lost its place". The book
+ * already standing open on the desk, in the same box the real spread is about
+ * to fill, says "your book is opening" — and when the spread lands it lands ON
+ * this, same size, same corner radii, same terracotta board, so the handover
+ * is a fill rather than a jump.
+ *
+ * Nothing here is a component from the book half, and it must stay that way:
+ * importing one would pull the editor stack into the boot chunk that
+ * `BookView`'s `lazy()` exists to keep it out of. It is plain markup over
+ * styles/opening.css, which App.tsx imports directly for the same reason —
+ * the old rules lived in editor.css and so arrived with the module they were
+ * covering for.
+ *
+ * `aria-live="polite"` on the region and `aria-hidden` on the drawing: a
+ * screen reader gets "opening the book" once, not a description of a rectangle.
+ */
+function BookOpening(): JSX.Element {
+  return (
+    <div class="nb-book-opening" role="status" aria-live="polite">
+      <div class="nb-opening-stage">
+        <div class="nb-opening-header">
+          <p class="nb-opening-plate">
+            opening the book
+            <span class="nb-opening-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </p>
+        </div>
+        <div class="nb-opening-cover" aria-hidden="true">
+          <div class="nb-opening-leaves">
+            <div class="nb-opening-leaf" data-side="left">
+              <div class="nb-opening-rules" />
+            </div>
+            <div class="nb-opening-leaf" data-side="right">
+              <div class="nb-opening-rules" />
+            </div>
+            <div class="nb-opening-gutter" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Hand-drawn gear (pre-wobbled static paths — no runtime filters). */
 function GearIcon(): JSX.Element {
   return (
@@ -237,7 +293,30 @@ export default function App(): JSX.Element {
 
   return (
     <>
-      <Show when={appState.viewState() === "book"} fallback={<ShelfView />}>
+      {/*
+        THE SHELF IS ALWAYS HERE. It is not the fallback of the `<Show>` below,
+        and that is the fix for the second half of a bug whose first half is
+        already commented inside it.
+
+        As a fallback, ShelfView was unmounted for as long as a book was open —
+        so "back to shelf" did not return to a room, it BUILT one: a new PixiJS
+        application, a fresh bake of the case, the wall and every spine. The
+        reader got a blank cream window with the dock and the zoom pill floating
+        on it for about a second, every single time. It is visible in the demo
+        recording at `qa/demo/frames/f1352.png`, and it is the same shape of
+        defect as the Suspense gap below, in the opposite direction — which is
+        exactly why it survived: the fix for the way IN said nothing about the
+        way back.
+
+        So the room stays standing and is marked away instead. The world stops
+        its loop (`ShelfWorld.pause`), the DOM goes `visibility: hidden` and
+        `inert`, and everything the shelf had open is closed — see the away
+        effect in `features/bookshelf/BookshelfWorld.tsx`, which owns all of it.
+        Returning is then a class and a synchronous render: the camera, the
+        zoom and the scroll are not RESTORED, they were never lost.
+      */}
+      <ShelfView />
+      <Show when={appState.viewState() === "book"}>
         {/*
           A SUSPENSE BOUNDARY, and it is not decoration.
 
@@ -247,23 +326,42 @@ export default function App(): JSX.Element {
           icon rail and BookView's own "opening the book…" fallback, which is
           rendered outside the session `<Show>` precisely so it would show.
 
-          The result was a genuinely empty screen between the shelf unmounting
-          and the spread arriving: cream, the settings seal, nothing else. It is
-          brief, and it was invisible in every test because tests wait for
+          The result was a genuinely empty screen between the shelf standing
+          down and the spread arriving: cream, the settings seal, nothing else.
+          It is brief, and it was invisible in every test because tests wait for
           `.nb-prose` rather than watching the gap — it turned up as two blank
           frames in the middle of the README's demo GIF, in a production build,
           which is where a reader meets it too.
 
-          The fallback is the paper the spread is about to land on, so the beat
-          reads as the book opening rather than as the app losing its place.
+          THEN THE BOUNDARY BECAME THE GAP. The fallback was one 14px caption in
+          the middle of a 1440x900 window, and the demo recording shows it held
+          for nineteen frames (`qa/demo/frames/f0421.png` onward, ~1.5s at 14fps)
+          with the pointer parked on top of it covering a word. Fixing a blank
+          screen with an almost-blank screen is not fixing it.
+
+          Where the time actually goes, measured by `scripts/probe-book-opening.mjs`
+          rather than guessed at — it is NEITHER of the two things this comment
+          blames:
+
+              import('/src/views/BookView.tsx') at the press ...  11ms
+              getBook + listPages ..............................   1ms
+              long task at +62ms ...............................  785ms
+              long task at +1407ms .............................. 1157ms
+
+          `preloadBookView()` is doing its job (the module is requested ~1.2s
+          into the page's life, long before anyone pulls a book) and the session
+          read is a single row and a page list. The wait is the spread MOUNTING:
+          the cover bake, the flip surface, one TipTap editor per leaf. Real
+          work, on the main thread, in BookView and PageEditor — not something a
+          boundary out here can shorten.
+
+          So the boundary's job is to make the wait look like what it is. See
+          `BookOpening` above and the header of styles/opening.css: because the
+          main thread is blocked solid for those two tasks, the fallback is
+          frozen while it is up, and the only properties that keep moving are
+          compositor-driven transform and opacity.
         */}
-        <Suspense
-          fallback={
-            <div class="nb-book-opening" aria-live="polite">
-              <p class="font-label">opening the book…</p>
-            </div>
-          }
-        >
+        <Suspense fallback={<BookOpening />}>
           <BookView />
         </Suspense>
       </Show>

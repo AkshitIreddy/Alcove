@@ -27,9 +27,34 @@
  * exactly what the stage's own transform undoes — so the menus, the plaque
  * editor and the ghost slot all keep landing under the pointer while the
  * room is stepped aside.
+ *
+ * ## This component is mounted for the life of the app
+ *
+ * It used to be the fallback branch of a `<Show>` in App.tsx and therefore
+ * unmounted the moment a book opened, which meant "back to shelf" rebuilt the
+ * Pixi world from nothing and showed a blank cream window while it did (see
+ * `ShelfWorld.pause`). It is mounted always now and marked AWAY while a book
+ * is open — one class, one `inert`, and the world stood down — so the case is
+ * on screen in the same frame the reader asks for it.
+ *
+ * Away is not merely a coat of paint, and the effect below is where the rest
+ * of it lives: the shelf's keyboard commands are given up (BookView claims
+ * `templates` too, and whoever registered last owns it), every menu, sheet and
+ * held-book overlay is closed (each of them holds a capture-phase document
+ * listener and a claim on `state/panelKeys`, and a room nobody is in must not
+ * be eating the keys of the one they are), and the world's loop is stopped.
  */
 
-import { createSignal, For, lazy, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import {
+  createEffect,
+  createSignal,
+  For,
+  lazy,
+  onCleanup,
+  onMount,
+  Show,
+  type JSX,
+} from 'solid-js';
 import { appState } from '../../state/app';
 import {
   duplicateBook,
@@ -309,6 +334,16 @@ export default function BookshelfWorld(): JSX.Element {
    */
   const [studioWanted, setStudioWanted] = createSignal(false);
   let world: ShelfWorld | null = null;
+  /**
+   * Has `world` landed? The world itself is a non-reactive mirror and stays a
+   * plain field (house rule: Solid never diffs Pixi), but it arrives from an
+   * async `create()` and the away effect below has to run again when it does —
+   * a reader who opens a book while the case is still booting must still get a
+   * world that is stood down rather than one left running behind the page.
+   */
+  const [worldLive, setWorldLive] = createSignal(false);
+  /** True while the reader is inside a book and this room is unattended. */
+  const away = (): boolean => appState.viewState() === 'book';
   let disposed = false;
   let creating = false;
 
@@ -393,10 +428,62 @@ export default function BookshelfWorld(): JSX.Element {
       // a *change*, so without this the dock would lay itself out against a
       // zoom of 100% until the first pan.
       setZoomPct(w.zoomPercent);
-      // Returning from an open book: fly the cover back onto the shelf.
-      void w.ready.then(() => {
-        if (!disposed) beginReturnIfPending(w);
-      });
+      // Hand the world to the effect below, which owns both directions of the
+      // switch — including the first pass, where "arriving on the shelf" and
+      // "coming back to it" are the same two lines.
+      setWorldLive(true);
+    });
+  });
+
+  /**
+   * Leaving for a book, and coming back from one.
+   *
+   * The whole reason this is an effect on `viewState` rather than a mount and
+   * an unmount is the second direction: this component used to BE the unmount,
+   * and returning to the shelf therefore rebuilt a PixiJS application, re-baked
+   * the case and every spine, and showed a cream window while it happened.
+   *
+   * Going away, three things have to happen and none of them is cosmetic:
+   *
+   *  - the shelf's chrome is closed. Each of these holds a capture-phase
+   *    `document` keydown listener (the held-book overlay's Escape means "put
+   *    it back") or a claim on `state/panelKeys` (which tells the world's own
+   *    navigation keys to stand down, app-wide, by writing an attribute on
+   *    <html>). Both of those used to be released by this component being torn
+   *    down — `panelKeys.usePanelKeys` says so in as many words: "the trash
+   *    drawer goes with the shelf the moment a book is opened". Nothing goes
+   *    with the shelf any more, so the shelf has to put its own things away.
+   *  - the pulled-book overlay is dropped. It is the DOM cover that flew to
+   *    the middle of the window, and the book view is now standing exactly
+   *    where it is.
+   *  - the world stops (`pause`).
+   *
+   * Coming back, the world is picked up — which paints the case synchronously,
+   * before this task ends — and only then does the book fly home.
+   */
+  createEffect(() => {
+    const inBook = away();
+    if (!worldLive()) return;
+    const w = world;
+    if (w === null) return;
+    if (inBook) {
+      setDockPanel(null);
+      setMenu(null);
+      setSpotMenu(null);
+      setPlateEdit(null);
+      setNaming(null);
+      setOverlay(null);
+      w.pause();
+      return;
+    }
+    w.resume();
+    // `ready` is long resolved by the time a book is closed, so this is a
+    // microtask and not a frame — the case is already painted by `resume()`
+    // above, and the spine is hidden for the incoming cover before anything is
+    // composited. On the FIRST pass it is doing its original job: waiting for
+    // the floors to load before asking which of them the book stands on.
+    void w.ready.then(() => {
+      if (!disposed && !away()) beginReturnIfPending(w);
     });
   });
 
@@ -404,18 +491,36 @@ export default function BookshelfWorld(): JSX.Element {
     disposed = true;
     world?.destroy();
     world = null;
+    setWorldLive(false);
   });
 
+  /**
+   * A book is on its way back to its slot — or nothing is, and the room has to
+   * be told so.
+   *
+   * The `cancelReturn` calls are the half that only exists because the world
+   * outlives the book now. A pull-out leaves it frozen, its row dimmed and one
+   * spine hidden, and every one of those used to be undone by the shelf being
+   * rebuilt from scratch behind the reader's back. Nothing is rebuilt any
+   * more, so every path that does NOT end in a book flying home has to put the
+   * room back itself — otherwise closing a book that was deleted while it was
+   * open drops the reader onto a case that will not answer the mouse.
+   */
   function beginReturnIfPending(w: ShelfWorld): void {
+    if (appState.viewState() !== 'shelf') return;
     const bookId = appState.openBookId();
-    if (bookId === null || appState.viewState() !== 'shelf') return;
+    if (bookId === null) {
+      w.cancelReturn();
+      return;
+    }
     // Auto book thickness: re-count pages after a writing session so the
-    // spine width reflects the book's real girth on this remount.
+    // spine width reflects the book's real girth on this return.
     void updateBookPageCount(bookId).then(() => {
       if (!disposed) void w.refreshData();
     });
     const prep = w.prepareReturn(bookId);
     if (prep === null) {
+      w.cancelReturn();
       appState.clearOpenBook();
       return;
     }
@@ -489,16 +594,26 @@ export default function BookshelfWorld(): JSX.Element {
   }
 
   /**
-   * The shelf's four keyboard commands.
+   * The shelf's five keyboard commands.
    *
    * Registered from the view rather than from world.ts, because these are what
    * the DOCK buttons do — the dock owns the panels and the "which floor is the
    * ghost slot on" answer, and a key that did something subtly different from
    * the button beside it would be a second implementation to keep in step.
-   * Registered on mount and dropped on cleanup, so none of them fires while a
-   * book is open and the case is not on screen.
+   *
+   * Claimed while the shelf is the ROOM the reader is in, not while this
+   * component is mounted: it is mounted for the life of the app now, and the
+   * command bus is a single map keyed by id where the last claim wins.
+   * `templates` is registered by BookView as well — deliberately, the gallery
+   * answers in both rooms — so a claim that outlived the switch would be
+   * overwritten on the way into a book and then DELETED on the way out, when
+   * BookView's own cleanup released the id it was by then holding. The key
+   * would work exactly until the first time a book was closed, which is the
+   * trap `views/BookView.tsx` spells out beside `import-markdown` for the same
+   * reason. An effect that re-registers on the way back is what keeps it.
    */
-  onMount(() => {
+  createEffect(() => {
+    if (away()) return;
     onCleanup(
       registerCommands({
         'new-book': () => addBook(addSpot()?.floor),
@@ -729,7 +844,15 @@ export default function BookshelfWorld(): JSX.Element {
   };
 
   return (
-    <div class="shelf-root">
+    /*
+     * `is-away` hides the room (shelf.css) and `inert` empties it: no focus
+     * lands in here, no screen reader walks the a11y mirror's fifty book rows,
+     * no pointer event finds the canvas. Both, rather than either — the class
+     * is what stops it being drawn and the attribute is what stops it being
+     * REACHED, and a canvas that is merely invisible is still a tab stop away
+     * from the reader who is holding a book.
+     */
+    <div class="shelf-root" classList={{ 'is-away': away() }} inert={away()}>
       {/* The app's own tooltip layer (views/Tooltip.tsx). It parks itself on
           <body>, so it is safe to ask for from more than one view — and the
           shelf is the first view a reader ever sees. */}

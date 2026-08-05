@@ -197,7 +197,7 @@ const tl = timeline((t) => {
     t.click(selector, { via: 'cursor' });
     // Long enough to watch the case and the wall actually repaint, which is
     // the whole point of this section.
-    t.hold(1.9);
+    t.hold(2.3);
   }
 
   t.click('[aria-label="Close Library studio"]', { via: 'cursor' });
@@ -284,7 +284,12 @@ const tl = timeline((t) => {
   for (const [name, selector] of PANELS) {
     t.click(`.nb-rail button[aria-label^="${name}"]`, { via: 'cursor' });
     t.waitFor(selector);
-    t.hold(1.9);
+    /*
+     * Long enough to actually READ the panel. *"not enough time is given to
+     * view the panels sometimes"* — and a panel is the densest thing in the
+     * demo: the catalogue alone is forty labelled tiles.
+     */
+    t.hold(3.2);
     t.call(async (page) => {
       const close = await page.$(`[aria-label^="Close ${name}"]`);
       if (close) await close.click();

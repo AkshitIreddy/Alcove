@@ -73,6 +73,52 @@ being reviewed frame by frame.
       f0100 exactly 4500 px change, confined to the two cards' borders and label
       bands, with the world unmoved. The panel's selected state arrives late.
 
+### The duplication fix, and the discipline that caught the first attempt
+
+- [x] **Reading a book duplicated its content.** FIXED, and the fix is the
+      SECOND attempt — the first was reverted for losing typed text.
+
+      The mechanism, traced three independent ways and none of them the one I
+      proposed: both leaves of a spread mount and drain in ONE synchronous Solid
+      flush, but a drain's removal reached the store on a microtask while
+      `onOverflow` fired synchronously. So the left leaf's carry read the right
+      page's PRE-DRAIN document, put back blocks the right leaf had already
+      given away, and `bumpDocVersion` then remounted that leaf so its new
+      editor drained the same tail a second time. The first duplicate exists
+      with ZERO page turns. The drain now publishes to the store BEFORE handing
+      the blocks up.
+
+      **The regression probes were written FIRST and proved to fail against the
+      reverted attempt**, so nothing could be declared done against a test that
+      never fires. Real output, v1 versus the shipped fix:
+
+          R1  probe-turn-advance.mjs
+              v1:  turn 2 jumped spread 1 -> 20 (delta 19) onto an empty left
+                   leaf; turns 3-6 dead at spread 20; 32 pages -> 46 on reading
+              now: 6 turns, delta 1 each, 0 jumps, 0 blank leaves
+
+          R2  probe-turn-focus.mjs
+              v1:  4 of 6 turns ended with document.activeElement on
+                   `.tiptap.ProseMirror`, and every ArrowRight after that was
+                   swallowed by `isTyping`
+              now: 0 presses that did not advance, focus stays on <body>
+
+          R3  probe-typed-persistence.mjs
+              v1:  39 of 40 markers stored, 4 runs out of 4 (and on a fifth the
+                   view tore itself down at line 25 and FIFTEEN lines never
+                   reached storage)
+              now: 40 of 40 typed, on screen and in storage, with the caret
+                   carried across a spread
+
+      Two caveats the probe author recorded rather than hid: the typing loss is
+      sensitive to the gap — at 60ms between lines v1 keeps all 40, so the probe
+      types with NO pause so the 400ms save debounce never gets a quiet moment;
+      and it reads the stored rows out of the stub DB's localStorage blob rather
+      than through `import('/src/data/pages.ts')`, because on an HMR'd dev
+      server that import can resolve to a second copy of `db.ts` with its own
+      MemoryDb. It also reports INCONCLUSIVE and exits 1 if the caret never
+      crossed a spread, so it cannot pass by never asking the question.
+
 ### Three more the frame-by-frame review found, which nobody had reported
 
 - [x] **The whole shelf world blanks for half a second when a design is applied.**

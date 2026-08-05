@@ -930,7 +930,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->14<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
 migrations, in <!--f:rustFiles-->8<!--/f--> files and
-<!--f:rustLines-->2302<!--/f--> lines.
+<!--f:rustLines-->2300<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -1070,7 +1070,6 @@ wrong.
 | `lowlight` | ^3.3 | Syntax highlighting inside code blocks, through `@tiptap/extension-code-block-lowlight`. |
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](src/art/wobble.ts). |
 | `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* tooltip deliberately does not use it — see [`tests/tooltip.test.ts`](tests/tooltip.test.ts). |
-| `roughjs` | ^4.6 | **Installed and unimported.** The hand-drawn diagram strokes are `art/wobble.ts`, not Rough. Left in `package.json` from an earlier approach; removing it is a safe cleanup nobody has done. |
 | Vitest, Playwright, fast-check | ^4.1 / ^1.62 / ^4.9 | Unit, end-to-end, and property-based tests. fast-check drives the script parser's round-trip invariant and the ZIP codec. |
 
 There is deliberately no state-management library, no CSS framework, no icon
@@ -1161,8 +1160,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->288<!--/f--> of <!--f:srcFiles-->296<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6857<!--/f--> lines of it.
+<!--f:srcDocstrings-->286<!--/f--> of <!--f:srcFiles-->294<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6837<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and
@@ -1335,8 +1334,8 @@ against the Release before quoting one at a reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->296<!--/f--> TypeScript files, <!--f:srcDocstrings-->288<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6857<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
-| Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2302<!--/f--> lines, <!--f:rustCommands-->14<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
+| Frontend source | <!--f:srcFiles-->294<!--/f--> TypeScript files, <!--f:srcDocstrings-->286<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6837<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2300<!--/f--> lines, <!--f:rustCommands-->14<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Tests | <!--f:unitTests-->87<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
 | QA against the running app | <!--f:probeScripts-->85<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
@@ -1457,6 +1456,4 @@ mark to match the app, and do not add rendering to the app to match the mark.
 [`src/editor/solid/`](src/editor/solid/) based on `@vrite/tiptap-solid` (MIT),
 PixiJS (MIT), GSAP (standard licence, all plugins free), Howler (MIT), lowlight
 and the `highlight.js` grammars (BSD-3-Clause / MIT), Tauri (MIT/Apache-2.0).
-`roughjs` (MIT) is in `package.json` but nothing imports it — see
-[the stack table](#the-stack-and-why-each-piece-is-here).
 <!-- /gen -->

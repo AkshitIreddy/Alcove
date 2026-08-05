@@ -132,9 +132,6 @@ export function pointToPagePct(
 export const STICKER_NODE = 'sticker';
 export const PAGE_MARK_NODE = 'page-mark';
 
-/** Every node type that lives in the free layer rather than in the text. */
-export const FREE_NODE_TYPES: readonly string[] = [STICKER_NODE, PAGE_MARK_NODE];
-
 export interface FreeStickerInit {
   readonly stickerId: StickerId;
   readonly x: number;

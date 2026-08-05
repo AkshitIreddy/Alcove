@@ -224,12 +224,38 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 
       Matches label, hint, keycap and a `words` list of what a reader would type; reveals collapsed groups; says so when nothing matches; Escape clears before closing.
-- [ ] **Opening a panel drops the frame rate hard.**
+- [x] **Opening a panel drops the frame rate hard.**
       > "Checking with the FPS overlay I noticed that sometimes if the user, for
       > example, clicks on the sidebar options to open a panel, there is a huge
       > FPS drop before it gets restored again back to 240 FPS. Similarly it may
       > be happening for the studio. We need to make sure FPS drops never
       > happen."
+
+      MOSTLY FIXED, with the remainder measured rather than left vague. Two
+      causes, both found by blaming a CPU profile on the nearest frame in
+      `src/` instead of the native leaf it bottoms out in. (a) `fitSpread` read
+      `--nb-panel-edge` through `getComputedStyle(document.documentElement)` on
+      every frame of the panel slide — 227ms per open, because resolving one
+      custom property through the cascade recomputes every property on `<html>`
+      first. `panelEdge()` now lives in `panelPush.ts` next to the code that
+      writes it, and the tour's private correct copy delegates to it. (b) A
+      studio design change missed every cached preview tile at once and redrew
+      them all in one frame — 1337ms. `tileFor` is unchanged and cache hits are
+      still free; only a miss goes through a 6ms-per-frame budget. Studio open
+      215ms -> 70ms, design change 124ms -> 0ms of main-thread task, page-style
+      and customize-close down to 0ms.
+
+      STILL OPEN, and deliberately: 76-223ms of `(program)` — browser style,
+      layout and paint, with essentially no JS in it. Writing any custom
+      property on `<html>` invalidates the whole document's style, ~6ms a write,
+      and identically so for a property nothing reads (370ms vs 360ms over 60
+      writes) — it is the root write, not the dependency. `@property`
+      registration makes it worse (523ms). The real fix is to publish the target
+      once and let the three consumers transition their own transforms on the
+      compositor; collapsing the tween puts the ceiling at 43ms -> 24ms, and it
+      would make the tour card and the spread — which read the value every frame
+      to travel WITH the sheet — snap instead of slide. Not worth 19ms measured
+      under SwiftShader software rasterisation.
 
 ### The README and the release page
 

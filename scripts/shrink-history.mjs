@@ -314,5 +314,15 @@ console.log(`
     git add -A && git commit                    that remap as its own commit
     git remote add origin <url>                 filter-repo drops the remote
     git push --force origin main                deliberate, and typed by a person
+    git push --force --tags origin              SEE BELOW — not optional
     git tag -a v0.4.0 && git push origin v0.4.0 AFTER the force-push, never before
+
+  THE TAGS ARE NOT OPTIONAL. filter-repo rewrites v0.2.0 and v0.3.0 to point at
+  the new commits, and a force-push of \`main\` alone leaves the REMOTE tags on
+  the old ones. Nothing looks broken — GitHub keeps the old objects, and both
+  Releases stay attached to their tag names — but the release pipeline calls
+  \`git describe --tags --abbrev=0 <tag>~1\` to find the previous version, and a
+  tag hanging off a parallel history is exactly the input that makes that answer
+  quietly wrong. The notes for 0.4.0 would be diffed against a commit that is
+  not this branch's 0.3.0.
 `);

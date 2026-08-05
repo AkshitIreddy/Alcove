@@ -50,6 +50,24 @@ const SECTIONS = [
 ];
 const HIDDEN = new Set(['chore', 'ci', 'build', 'test', 'style', 'refactor', 'wip']);
 
+/*
+ * Scopes that are hidden even when their TYPE is reader-facing.
+ *
+ * `docs(todo)` is the repository's own work list. Its subjects are written for
+ * whoever picks the list up next and they are meaningless — occasionally
+ * alarming — to somebody who has arrived to download an app: "restore two
+ * entries lost in a bulk edit", "f225 re-checked against the running app — 51
+ * canvases, 0 blank", "tick what landed — eleven items". v0.3.0 published three
+ * of those under **Docs**; v0.4.0 would have published six, which is more lines
+ * than the Fixed section it sits under.
+ *
+ * They are counted, not deleted — they roll into the "Plus N maintenance
+ * changes" line at the foot, so the total still adds up and nothing is hidden
+ * from anyone reading the compare view one link below.
+ */
+const HIDDEN_SCOPES = new Set(['todo']);
+const isHidden = (c) => HIDDEN.has(c.type) || HIDDEN_SCOPES.has(c.scope);
+
 const parsed = subjects
   .map((subject) => {
     const match = /^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/.exec(subject);
@@ -91,7 +109,20 @@ head.push(`<img src="${RAW}/assets/brand/alcove-1024.png" width="96" alt="">`);
 head.push('');
 head.push(`# Alcove ${tag}`);
 head.push('');
-head.push('**A hand-drawn bookshelf that opens into real pages.**');
+/*
+ * The naming, and it was backwards here for two releases.
+ *
+ * The owner's ruling (CLAUDE.md, top): the WORLD is flat — the bookcase, the
+ * wall, the dock — and the PAGE is hand-drawn, with real pen wobble, torn tape
+ * and handwriting. "A hand-drawn bookshelf that opens into real pages" states
+ * both halves and gets both of them the wrong way round.
+ *
+ * The sweep that fixed 16 occurrences of this was scoped to `README.md`,
+ * `docs/` and `src/`, so the one line that actually goes out on the GitHub
+ * Release page — the first sentence a stranger reads about the app — was the
+ * one it could not see. `scripts/` and `.github/` are shipping surfaces too.
+ */
+head.push('**A flat-drawn bookshelf that opens into hand-drawn pages.**');
 head.push('');
 head.push('</div>');
 head.push('');
@@ -103,7 +134,7 @@ const fixes = parsed.filter((c) => c.type === 'fix').length;
 const lines = [];
 
 for (const section of SECTIONS) {
-  const items = parsed.filter((c) => c.type === section.key);
+  const items = parsed.filter((c) => c.type === section.key && !isHidden(c));
   if (items.length === 0) continue;
   lines.push(`### ${section.title}`);
   // Group by scope so related work reads together.
@@ -125,7 +156,7 @@ for (const section of SECTIONS) {
 }
 
 const hidden = parsed.filter(
-  (c) => HIDDEN.has(c.type) || (c.type === 'other' && !SECTIONS.some((s) => s.key === c.type)),
+  (c) => isHidden(c) || (c.type === 'other' && !SECTIONS.some((s) => s.key === c.type)),
 );
 if (hidden.length > 0) {
   lines.push(`_Plus ${hidden.length} maintenance change${hidden.length === 1 ? '' : 's'}._`);

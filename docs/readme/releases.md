@@ -19,7 +19,94 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npx vitest run` recomputes, exactly as on the other three pages.
 
-## 0.3.0 — the current build
+## 0.4.0 — the current build
+
+**Reading a book no longer rewrites it.** Opening the Welcome book and turning
+through it used to DUPLICATE its content — nothing typed, reading was enough.
+Both leaves of a spread mount and drain inside one synchronous flush, but a
+drain published its removal to the store on a microtask while it handed the
+blocks up synchronously; so the left leaf's carry read the right page's
+pre-drain document, put back blocks that page had already given away, and the
+remount then drained the same tail a second time. Measured from the stored
+documents: three blocks on two pages each and three twice on one page, now zero
+and zero. A first fix took the same measurement to zero and **lost typed text**
+— 22 lines typed past the foot of a page, 10 stored — and was thrown away. The
+one that shipped was re-done with its regression probes written first and proved
+to fail against the discarded attempt.
+
+**A turn no longer goes blank halfway across.** 0.3.0's notes claimed this and
+were written one commit too early — the fix was cut after that build was. The
+curl used to start on the front face alone, reasoning in a comment that the
+other two *"only matter once it is part-way over, by which time an idle capture
+has usually landed"*. Usually is the problem: `revealed` is the page you are
+turning TOWARDS and the largest thing on screen for most of the gesture, so when
+its bitmap has not landed the shader samples nothing and the spread draws bare
+paper for the rest of the turn. Both big faces are required now, and when the
+answer is no the turn takes the rigid CSS fold, whose faces are the live leaves
+— a plainer turn with the real words on it beats a blank one. No probe had ever
+seen it because they all measure the DOM, and during a curl the leaves are
+`visibility: hidden` with their text still in them: every leaf reads as inked
+while the reader is looking at an empty canvas.
+
+**And closing a book stopped showing a hole.** Eleven frames — three quarters of
+a second — of the dock and the zoom pill floating on blank cream, every time.
+`.shelf-root` painted nothing, so between the book view unmounting and the Pixi
+world's first frame the page background was all there was. It is the wall colour
+now, which reads as a room whose furniture has not arrived yet rather than as
+nothing at all.
+
+**The room stops tearing itself apart while it repaints.** Changing a design
+used to blank the whole bookcase for half a second, repaint the case in two
+halves — new shelf ledges over an old carcass — and drop every book to a flat
+untextured slab. One cause underneath: every spine texture was destroyed
+synchronously before a replacement existed, and a live sprite handed a dead
+texture takes the whole stage down for a frame. Case parts now stage and commit
+together (`caseSpreadMs` 97/77/20 → 0), and the shelf keeps its art until the
+new art is ready.
+
+**Back to the shelf returns to the room you left.** The shelf was unmounted for
+the whole time a book was open, so pressing back did not return to a room, it
+BUILT one — a fresh PixiJS application and a re-bake of everything. Three blank
+frames and a 236ms window with no room at all, now none, with your camera and
+zoom where you left them.
+
+**Custom timber could serve you another room's woodwork.** The case bakes were
+filed under a 32-bit hash. The sixty authored rooms never collide — but a
+reader-typed timber colour is folded into the scheme, so the real input space is
+millions wide. Sweeping 400,000 of them found six collision pairs: navy
+`#0043a9` and teal `#006b82` share a tag, and whichever room asked second got
+the other's plank, recess, post and cornice. The bakes are filed under the whole
+room description now rather than a hash of it, so a colour you typed yourself
+gets the woodwork you asked for.
+
+**The body-size slider moves the page.** It said "reading type on every page"
+and changed everything except the page, which was pinned at a hardcoded 20px.
+Now the page follows it, the rule grid is derived from the type so the words
+keep sitting on the lines at every size, and a full leaf holds 22 lines at 15px
+against 16 at 21px.
+
+**Smaller things, all of them found by looking at the app rather than at the
+code**: a key cap no longer breaks across two lines into half-open pills; a
+postcard no longer cuts its own last line; a finished diagram no longer reverts
+to its loading placeholder as the page turns; the way back stays legible while a
+panel is open; "opening the book…" no longer holds a bare window for a second
+and a bit; and the first page of the Welcome book is ruled paper, which is what
+its own first callout has always told you to click on.
+
+**Two labels stopped lying.** The same clipboard was called *Copy the format for
+your AI* in one place and *Copy spec for your AI* in another — it is the first
+everywhere now, and "spec" was jargon the app used nowhere else a reader could
+see it. And the parcel desk no longer offers to save your library as
+`notebook-library.nbk`, a filename left over from two renames ago.
+
+**Under it**: two Tauri permissions the app never used — clipboard and global
+shortcut — are no longer requested. 469 MB of capture leftovers and refutation
+scratch stopped being tracked, and 88 MB of dead scripts, dependencies and
+reports were deleted outright — which takes a fresh checkout from 448 MB to
+about 64. It does not shrink a clone: git still holds every old copy, and
+rewriting the history of a public repository is a separate decision.
+
+## 0.3.0 — the build before this one
 
 **Pages behave.** Three defects in the page-turn machinery turned out to be one
 bug and two of its symptoms. A node view read `editor.view.dom` on a staged
@@ -29,9 +116,7 @@ That is what drew a page you had never seen as blank white paper: the back of
 the turning sheet and the page revealed under the curl both had no texture, and
 a null texture draws bare paper. With the capture path working again, the
 landing flicker went too — the rasteriser had been editing the two leaves you
-were looking at, and now stages a copy off-screen instead. And a turn that finds
-no bitmap falls back to the rigid fold, whose front face is the live leaf, so
-there is no way left to land on a blank sheet.
+were looking at, and now stages a copy off-screen instead.
 
 **Two blank pages always stand ready** at the end of a book, and the spread is
 completed as well — an odd page count used to leave the last spread with a page

@@ -449,6 +449,22 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
 ### Shipping
 
+- [ ] **The release page's own tagline still gets the naming backwards.**
+      `scripts/release-notes.mjs:112` prints
+      **"A hand-drawn bookshelf that opens into real pages."** on every GitHub
+      Release. Under the owner's ruling that is inside out: the BOOKSHELF is the
+      flat half and the PAGES are the hand-drawn one. It should read something
+      like *"A flat-drawn bookshelf that opens into hand-drawn pages."*
+
+      The naming sweep changed 16 occurrences and left 118 that were accurate,
+      but it was scoped to `README.md`, `docs/` and `src/` — it never looked in
+      `scripts/`, so the one line that goes out on the release page itself was
+      the one it could not see. Worth checking the rest of `scripts/` and
+      `.github/` for the same reason.
+
+      Not fixed yet only because the file is being edited by the release audit
+      as this is written; a second writer would lose that work.
+
 - [ ] **Re-capture all 23 README shots, once, after the app settles.** A run
       against 0.4 died at the book-studio shot — `openRailPanel` waited 120s for
       "Customize this book" on a dev server that three workflows were editing

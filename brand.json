@@ -22,7 +22,7 @@
   "slug": "alcove",
   "identifier": "com.alcove.app",
   "repo": "AkshitIreddy/Alcove",
-  "tagline": "a hand-drawn bookshelf for beautiful study notes",
+  "tagline": "a flat-drawn bookshelf that opens into hand-drawn pages",
   "art": {
     "master": "assets/brand/alcove-art.png",
     "$comment": "The illustration every shipped icon is rendered from. scripts/gen-icons.py cuts its baked frame to alpha and close-crops the small sizes."

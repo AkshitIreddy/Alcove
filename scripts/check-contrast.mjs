@@ -1,9 +1,10 @@
 /**
  * scripts/check-contrast.mjs — WCAG contrast gates for the design tokens.
  *
- * The palette is allowed to be loud (HANDOFF.md: "very colorful — not muted
- * or tasteful"), but every pairing that carries text or an essential icon
- * must clear a measured bar in EACH of the four UI themes (parchment,
+ * The palette is allowed to be loud — the owner asked for *"very colorful
+ * stuff, like very very colorful rather than boring dull colours"* — but
+ * every pairing that carries text or an essential icon must clear a measured
+ * bar in EACH of the four UI themes (parchment,
  * pastel, botanical, night). That bar is checked here, not guessed:
  *
  *   body text / small text        >= 4.5:1  (WCAG AA normal)

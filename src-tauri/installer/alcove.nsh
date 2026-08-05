@@ -65,7 +65,7 @@
 
 ; ------------------------------------------------------------- what it says
 !define MUI_WELCOMEPAGE_TITLE "Alcove"
-!define MUI_WELCOMEPAGE_TEXT "A hand-drawn bookshelf for beautiful study notes.$\r$\n$\r$\nAlcove installs for you alone. No administrator prompt, nothing in Program Files, and no account to make.$\r$\n$\r$\nYour library is a folder on this machine and stays there.$\r$\n$\r$\nClick Next to put it on the shelf."
+!define MUI_WELCOMEPAGE_TEXT "A flat-drawn bookshelf that opens into hand-drawn pages.$\r$\n$\r$\nAlcove installs for you alone. No administrator prompt, nothing in Program Files, and no account to make.$\r$\n$\r$\nYour library is a folder on this machine and stays there.$\r$\n$\r$\nClick Next to put it on the shelf."
 
 !define MUI_FINISHPAGE_TITLE "Alcove is on the shelf"
 ; MUI gives the finish page's paragraph 40 dialog units and puts the two check

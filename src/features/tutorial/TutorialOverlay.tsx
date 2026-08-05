@@ -97,6 +97,11 @@ import {
   tutorialRunning,
 } from './state';
 import { motionScale } from '../../styles/motion';
+// How far into the window the open side sheet reaches. `panelPush` owns the
+// number, publishes it on <html>, and now also owns the one correct way to
+// read it back — the tour kept a private copy of that rule and BookView kept
+// a wrong one, which is the frame-rate drop that was reported.
+import { panelEdge } from '../../views/rail/panelPush';
 import '../../styles/tutorial.css';
 
 /* ------------------------------- helpers ---------------------------------- */
@@ -181,27 +186,6 @@ const stepPresent = (step: TutorialStep): boolean => findTarget(step) !== null;
  */
 const MODAL_OVER_TOUR = '.nbq-layer';
 
-/**
- * How far into the window the open side sheet reaches, in px.
- *
- * `views/rail/panelPush.ts` owns this number and publishes it on <html> as
- * `--nb-panel-edge`; the back arrow and the settings seal already clear the
- * sheet by reading it from CSS. The tour's card is positioned from script, so
- * it reads the same property and does the same arithmetic — one writer, three
- * readers, and nothing here ever writes it back.
- *
- * The INLINE style, not the computed one. This is read on every frame of the
- * tour's rAF loop, and `getComputedStyle` there would flush style on a frame
- * the shelf is already painting; `panelPush.publish` writes the property with
- * `documentElement.style.setProperty`, so the inline value is the live one.
- * Empty (nothing has ever opened) reads as 0, which is what rail.css declares.
- */
-function panelEdge(): number {
-  if (typeof document === 'undefined') return 0;
-  const raw = document.documentElement.style.getPropertyValue('--nb-panel-edge');
-  const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-}
 
 /** Does this press belong to a control on the card rather than to the card? */
 function onCardControl(target: EventTarget | null): boolean {

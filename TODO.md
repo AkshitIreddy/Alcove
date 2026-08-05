@@ -9,7 +9,7 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### Sound
 
-- [ ] **Static during onboarding — a rendering bug, not the recordings.**
+- [x] **Static during onboarding — a rendering bug, not the recordings.**
       > "During onboarding, for example when I move through each one, sometimes
       > there is a sound effect bug of static. The static sound comes when it
       > auto-moves as well, sometimes — so it's not consistent. It's a sound
@@ -60,7 +60,9 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### First impression
 
-- [ ] **The app chose a dark theme without asking.**
+
+      NOT REPRODUCED, and now demonstrably not the app's rendering. An AudioWorklet recorder behind masterGain plus 39 isolated plays re-rendered offline through the same buffers, rates, gains and biquads: recorded-peak / reference-peak = 1.000 on every one, HF energy differing by at most 0.25% of burst energy. The bus rewire was re-tested under a SOUNDING ambient bed (the gap in the earlier A/B) — disconnect and connect land at the same `ctx.currentTime`, longest run of zeros 0. Whatever is heard is downstream of the graph, at the device, and that boundary does not exist headlessly (`outputLatency === 0`, no `renderCapacity`). One real defect found and fixed on the way: every sound-chip press fired TWO click cues ~0ms apart, because `previewSoundSet()` opens with a click and `uiClicks.ts` could not see it. STILL OPEN as a report: re-test on the installed 0.3 build.
+- [x] **The app chose a dark theme without asking.**
       > "For some reason the app chose dark theme for UI without letting me
       > choose. It should default to normal theme — don't take from the user's
       > system settings, if that's what you are doing. Basically I don't want a
@@ -74,7 +76,9 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### The tutorial
 
-- [ ] **Step 10 does not allow dragging — and dragging is broken outside the
+
+      `resolveInterface` answered a "deep" pitch with `uiTheme = 'night'`. Deep is about the ROOM; the interface no longer follows it. Gated by sweeping every combination of all five questions.
+- [x] **Step 10 does not allow dragging — and dragging is broken outside the
       tutorial too.**
       > "Step 10 does not allow dragging stuff. In fact dragging does not work
       > even outside the tutorial."
@@ -99,12 +103,16 @@ under each item (grammar tidied, nothing else), then the task as understood.
       is open; (b) WebView2 on real hardware rather than headless Chromium.
       Re-test on the installed 0.3 build before touching the drag code.
 
-- [ ] **Step 18 does not move the tutorial card when the panel opens.**
+
+      FIXED, and it explains why every test passed. `tauri.conf.json` never set `dragDropEnabled`, so it took Tauri's default of `true` — whose own doc comment says "Disabling it is required to use HTML5 drag and drop on the frontend on Windows". wry then calls `SetAllowExternalDrop(false)` and takes the page's drop-side events. Works in headless Chromium (no Tauri), fails in the installed build.
+- [x] **Step 18 does not move the tutorial card when the panel opens.**
       > "Step 18 doesn't move the UI tutorial window when the user opens the In
       > and Out window. Also we should let the user be able to move the step
       > windows by clicking and dragging."
 
-- [ ] **Say that a step advances on its own.**
+
+      The card clears the panel lane and the arrow stands down rather than crossing the sheet. Every step checked, not only 18 — two others were anchored to a rail button the sheet lands on.
+- [x] **Say that a step advances on its own.**
       > "We should tell the user that the steps move on their own by using the
       > UI. So let's say they do something correct — then a green timer circle
       > or something in that window. Or again, anything else you think of that
@@ -113,6 +121,8 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### Pages and the editor
 
+
+      A moss dial under the task box drains over exactly the beat the timer waits, read from the same constant rather than a second copy of the number.
 - [x] **The page turn flickers the effects in a beat late.** DIAGNOSED, not yet
       fixed — the cause is certain and the repair is a separate, careful job.
       > "When turning pages, after the page turn and we go to the next page,
@@ -156,7 +166,7 @@ under each item (grammar tidied, nothing else), then the task as understood.
       `pageSize()` and `loadPageDoc`) before trying again. An inert change that
       also costs a wasted offscreen attempt per capture is worse than none.
 
-- [ ] **A page never seen before turns up blank white.**
+- [x] **A page never seen before turns up blank white.**
       > "There is a bug in the welcome book: let's say I am turning to a page I
       > haven't seen before, then it shows as a blank white page. But after
       > turning it, and then going back and turning to that page again, the
@@ -165,28 +175,38 @@ under each item (grammar tidied, nothing else), then the task as understood.
       The raster cache has nothing for a page that has never been mounted, and
       the flip shows the empty snapshot rather than waiting or falling back.
 
-- [ ] **Always keep two blank pages ahead.**
+
+      FIXED. `freeMark.tsx` read `props.editor.view.dom`, which THROWS when the view is not assigned yet — and node views are constructed during the EditorView constructor. The throw took down `withOffscreenPage` and a bare `catch { return null }` swallowed it, so EVERY offscreen capture failed. Offscreen capture is what rasterises the back of the turning sheet and the page revealed beneath the curl; both were textureless on every turn and a null texture draws bare paper. Measured through a new `__flipCache` bridge: back/revealed false on every turn before, true after.
+- [x] **Always keep two blank pages ahead.**
       > "Always auto-create the next 2 pages when the user is on the last page,
       > so the user never sees a blank page."
 
-- [ ] **Page style offers four options; it should offer at least twenty.**
+
+      Two REAL pages stand ready, and the spread is completed as well — an odd page count left the last spread with a page on the left and bare cream on the right, which was the blank being complained about. Bounded by the last page actually written on, so a held arrow key cannot grow the book without end.
+- [x] **Page style offers four options; it should offer at least twenty.**
       > "In the sidebar, when inside the app, page style only shows four
       > options: ruled lines, grid squares, blank paper, dot grid. At least 20
       > here."
 
-- [ ] **Handwriting by default, and a way to change the face of a selection.**
+
+      4 -> 27 rulings in `src/editor/rulings.ts`, with ONE stylesheet definition per ruling read by both the page and the panel thumbnail, so a thumbnail cannot advertise something the paper will not draw.
+- [x] **Handwriting by default, and a way to change the face of a selection.**
       > "I want the default text style in the notebook when I write to be like
       > handwriting. Also I don't see an option, when in the notebook, to change
       > the text font style — for example I might want different pieces of text
       > to have different font styles. So fix that."
 
-- [ ] **The code block's language dropdown is not our UI and runs off the page.**
+
+      The default already WAS a hand — verified in the running app (`--font-body` = Patrick Hand at 20px, reaching every block, nothing under 13px), so nothing was changed there. The per-selection face is new: a TipTap mark storing a hand ID from the 27-face table, a floor of max(13, spec.floorPx), a toolbar tray whose chips are drawn in the faces they name, and a block-menu submenu.
+- [x] **The code block's language dropdown is not our UI and runs off the page.**
       > "I noticed for code blocks the dropdown isn't in our app UI, and it also
       > goes all the way down to the bottom."
 
 ### The welcome book
 
-- [ ] **Half-empty pages, and it should be much longer.**
+
+      Replaced with an in-app listbox in the slash menu's register: grouped shelves, type-to-filter, full keyboard, focus returned to the trigger, height capped from the room floating-ui reports. Proven flipping above the tab when a block sits low.
+- [x] **Half-empty pages, and it should be much longer.**
       > "I noticed a lot of pages in the welcome book have empty space at the
       > second half, because you didn't fill anything in it. You should put
       > something in it — more examples or something."
@@ -195,11 +215,15 @@ under each item (grammar tidied, nothing else), then the task as understood.
 
 ### Settings
 
-- [ ] **A search box in Settings.**
+
+      16 pages to 32; median leaf fill 51% -> 82%, worst page 36% -> 71%. The estimator behind it was then recalibrated from containers measured in the running app.
+- [x] **A search box in Settings.**
       > "Settings should have a search bar for the user to search things in it."
 
 ### Performance
 
+
+      Matches label, hint, keycap and a `words` list of what a reader would type; reveals collapsed groups; says so when nothing matches; Escape clears before closing.
 - [ ] **Opening a panel drops the frame rate hard.**
       > "Checking with the FPS overlay I noticed that sometimes if the user, for
       > example, clicks on the sidebar options to open a panel, there is a huge

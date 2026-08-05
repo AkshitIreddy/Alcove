@@ -110,6 +110,7 @@ import {
   type Bookmark,
   type RibbonColor,
 } from './bookmarks';
+import { panelEdge } from './rail/panelPush';
 import {
   MAX_TRAILING_BLANK_PAGES,
   SPREAD_FIT_REST,
@@ -694,12 +695,12 @@ export default function BookView(): JSX.Element {
     }
     const { room, width } = roomCache;
     const centre = (room.left + room.right) / 2;
-    const edge =
-      Number.parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          '--nb-panel-edge',
-        ),
-      ) || 0;
+    // panelPush's own reader: the INLINE property, not a cascade resolution.
+    // This line runs on every frame of the panel tween, and asking
+    // `getComputedStyle(document.documentElement)` for one custom property
+    // recomputes every property on <html> first — 227ms per panel open,
+    // measured, which is the frame-rate drop that was reported.
+    const edge = panelEdge();
     const gap = roomCache.gap;
 
     const next = fitSpreadToRoom(

@@ -24,7 +24,7 @@
  *    bindings is more tiles than a session needs at once, so the store is a
  *    small FIFO rather than an unbounded memo.
  */
-import { createEffect, type JSX } from 'solid-js';
+import { createEffect, onCleanup, type JSX } from 'solid-js';
 import {
   flatScheme,
   flatSchemeTag,
@@ -121,19 +121,35 @@ export function drawInScheme(scheme: FlatScheme, draw: () => void): void {
   }
 }
 
+/** The cache key: every axis that varies the pixels, including the scheme. */
+function tileKey(spec: TileSpec): string {
+  const w = Math.max(1, Math.round(spec.w * spec.dpr));
+  const h = Math.max(1, Math.round(spec.h * spec.dpr));
+  return `${tagOf(spec.scheme)}|${spec.key}|${w}x${h}`;
+}
+
+/** The tile if it is already drawn; `undefined` if drawing it would cost. */
+export function cachedTile(spec: TileSpec): Tile | null | undefined {
+  return tiles.get(tileKey(spec));
+}
+
 /**
  * The drawn tile, ready to `drawImage` straight into a card's canvas.
  *
- * Synchronous on purpose. An `ImageBitmap` would be a little cheaper to blit
- * but forces every caller into a promise, and a grid of sixty cards each
- * resolving on its own microtask is sixty frames of blank paper — the cards
- * are small and the flat renderer is fast, so the whole strip paints inside
- * one frame this way.
+ * Synchronous on purpose, and still is: an `ImageBitmap` would be a little
+ * cheaper to blit but forces every caller into a promise, and a grid of cards
+ * each resolving on its own microtask is a frame of blank paper per card.
+ *
+ * What changed is WHO decides when to call it. This function is the cost; the
+ * decision about whether a given frame can afford that cost belongs to
+ * `paintWhenThereIsRoom` below, because the answer depends on how many other
+ * cards are also missing — which no single card can know. A cache HIT never
+ * goes near the budget, so the common case is exactly as fast as it was.
  */
 export function tileFor(spec: TileSpec): Tile | null {
   const w = Math.max(1, Math.round(spec.w * spec.dpr));
   const h = Math.max(1, Math.round(spec.h * spec.dpr));
-  const key = `${tagOf(spec.scheme)}|${spec.key}|${w}x${h}`;
+  const key = tileKey(spec);
   const hit = tiles.get(key);
   if (hit !== undefined) return hit;
 
@@ -166,6 +182,96 @@ export function tileFor(spec: TileSpec): Tile | null {
   return tile;
 }
 
+/* --------------------- painting across frames, not in one ------------------ */
+
+/**
+ * How long a single frame may spend DRAWING tiles that are not cached yet.
+ *
+ * The file used to say, and mean, that a whole strip should paint inside one
+ * frame — "sixty cards each resolving on its own microtask is sixty frames of
+ * blank paper", which is true and is why this is a budget rather than a queue
+ * for everything. What it missed is the other end: a card is a full flat
+ * drawing (`drawWallpaperCard` alone spends 17ms in `createPattern`), the
+ * studio shows dozens at once, and EVERY one of them misses whenever the axis
+ * they are keyed on changes. Measured on a press that changed a design:
+ * a 1337ms frame gap — one and a third seconds of a frozen window, which is
+ * what the reader saw as *"a huge FPS drop before it gets restored again"*.
+ *
+ * 6ms leaves the rest of a 16ms frame for Solid, layout and the shelf's own
+ * render. In practice the cards above the fold draw on the first frame or two
+ * and the tail fills in behind the reader's eye as they scroll to it.
+ */
+const PAINT_BUDGET_MS = 6;
+
+const now = (): number =>
+  typeof performance === 'undefined' ? Date.now() : performance.now();
+
+/** Bumped once per animation frame while there is deferred work. */
+let frameToken = 0;
+let spentToken = -1;
+let spentMs = 0;
+
+function spend(ms: number): void {
+  if (spentToken !== frameToken) {
+    spentToken = frameToken;
+    spentMs = 0;
+  }
+  spentMs += ms;
+}
+
+function overBudget(): boolean {
+  return spentToken === frameToken && spentMs >= PAINT_BUDGET_MS;
+}
+
+/** Cards waiting for a frame with room in it. */
+const pending: Array<() => void> = [];
+let pumping = false;
+
+function pump(): void {
+  pumping = false;
+  frameToken += 1;
+  while (pending.length > 0 && !overBudget()) {
+    const job = pending.shift();
+    if (job === undefined) break;
+    const t0 = now();
+    job();
+    spend(now() - t0);
+  }
+  if (pending.length > 0) schedulePump();
+}
+
+function schedulePump(): void {
+  if (pumping) return;
+  pumping = true;
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pump);
+  else setTimeout(pump, 16);
+}
+
+/**
+ * Draw `job` now if this frame still has room, otherwise on a later one.
+ *
+ * Order is preserved, so cards fill top-down the way they are mounted — which
+ * is near enough to "what the reader is looking at first" that prioritising by
+ * visibility would buy nothing a scroll does not already fix.
+ */
+function paintWhenThereIsRoom(job: () => void): () => void {
+  if (!overBudget()) {
+    const t0 = now();
+    job();
+    spend(now() - t0);
+    return () => {};
+  }
+  let live = true;
+  const guarded = (): void => {
+    if (live) job();
+  };
+  pending.push(guarded);
+  schedulePump();
+  return () => {
+    live = false;
+  };
+}
+
 /* ------------------------------ the component ---------------------------- */
 
 export interface DesignCanvasProps {
@@ -191,20 +297,43 @@ export function DesignCanvas(props: DesignCanvasProps): JSX.Element {
     const canvas = el;
     if (!canvas) return;
     const dpr = Math.min(2, (typeof window === 'undefined' ? 1 : window.devicePixelRatio) || 1);
-    const tile = tileFor({
+    const spec: TileSpec = {
       key: props.key,
       w: props.w,
       h: props.h,
       dpr,
       scheme: props.scheme,
       draw: props.draw,
+    };
+
+    const blit = (tile: Tile | null): void => {
+      // Re-read the ref: a deferred paint lands a frame or more later, and the
+      // card may have been swapped out from under it in between.
+      const target = el;
+      if (!target || !target.isConnected) return;
+      target.width = Math.max(1, Math.round(props.w * dpr));
+      target.height = Math.max(1, Math.round(props.h * dpr));
+      const ctx = target.getContext('2d');
+      if (ctx === null) return;
+      ctx.clearRect(0, 0, target.width, target.height);
+      if (tile !== null) ctx.drawImage(tile, 0, 0, target.width, target.height);
+    };
+
+    /*
+     * A tile that is ALREADY drawn is blitted immediately and never queued —
+     * that is the common case (a re-render, a scroll back, a second card on the
+     * same design) and it must stay free. Only a genuine miss, which is a whole
+     * flat drawing, is subject to the frame budget.
+     */
+    const cached = cachedTile(spec);
+    if (cached !== undefined) {
+      blit(cached);
+      return;
+    }
+    const cancel = paintWhenThereIsRoom(() => {
+      blit(tileFor(spec));
     });
-    canvas.width = Math.max(1, Math.round(props.w * dpr));
-    canvas.height = Math.max(1, Math.round(props.h * dpr));
-    const ctx = canvas.getContext('2d');
-    if (ctx === null) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (tile !== null) ctx.drawImage(tile, 0, 0, canvas.width, canvas.height);
+    onCleanup(cancel);
   });
 
   return (

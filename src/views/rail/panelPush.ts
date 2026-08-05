@@ -133,3 +133,29 @@ export function releasePanelPush(key: string): void {
   if (!claims.delete(key)) return;
   retarget();
 }
+
+/**
+ * Where the open sheet's right edge is, in viewport px. 0 with nothing open.
+ *
+ * THE INLINE STYLE, NEVER `getComputedStyle`, and this function exists so that
+ * rule has one home instead of one per consumer. `publish` above writes the
+ * property with `documentElement.style.setProperty` on every frame of the
+ * tween, so the inline value IS the live one — while resolving it through the
+ * cascade asks the engine to recompute every property on <html> first.
+ *
+ * Measured, because the cost is far worse than it sounds. `BookView.fitSpread`
+ * read it the computed way and runs on every frame of that same tween: opening
+ * one rail panel spent 227ms inside `getPropertyValue`, and the reader saw it
+ * as *"a huge FPS drop before it gets restored again back to 240 FPS"*. The
+ * tour's overlay had already found this and kept a private copy of the fix;
+ * that copy now delegates here.
+ *
+ * Empty (nothing has ever opened) parses as NaN and reads as 0, which is what
+ * `rail.css` declares for the property anyway.
+ */
+export function panelEdge(): number {
+  if (typeof document === 'undefined') return 0;
+  const raw = document.documentElement.style.getPropertyValue('--nb-panel-edge');
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}

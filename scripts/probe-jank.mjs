@@ -138,9 +138,64 @@ for (const tool of ['customize', 'page-style', 'catalogue', 'toc', 'share']) {
   });
 }
 
+/*
+ * 4. THE STUDIO — which the reader named alongside the panels, and which this
+ * section did not previously open. It printed its heading, pressed Escape and
+ * stopped, so a clean run read as "the studio is fine" when nothing had been
+ * measured at all.
+ *
+ * The studio lives on the SHELF, not inside a book, so this leaves first.
+ */
 console.log('\n4. the studio, which the reader guessed at too');
-await page.keyboard.press('Escape');
-await page.waitForTimeout(1200);
+// Escape does not leave a book — it closes whatever panel is up — so the two
+// earlier versions of this section measured while still inside the Welcome
+// book, where the shelf dock is not mounted at all. Go back properly, and
+// through the SAME module instance the app uses: a probe's own
+// import('/src/state/app.ts') can resolve to a second copy on a dev server
+// that has served HMR, and calling closeBook() on that copy does nothing.
+await page.evaluate(() => {
+  globalThis.__shelfWorld?.closeBook?.();
+});
+if ((await page.locator('.shelf-dock').count()) === 0) {
+  await page.evaluate(async () => {
+    const app = await import('/src/state/app.ts');
+    app.appState.closeBook();
+  });
+}
+await page.waitForTimeout(2600);
+// By its accessible name — the dock's buttons carry no data-tool hook, and
+// the first version of this section guessed three that do not exist and
+// reported SKIPPED, which is the same nothing it printed before.
+const studioBtn = page.getByLabel('Library studio').first();
+if ((await studioBtn.count()) === 0) {
+  // Say WHAT is there instead of just "skipped" — a skip that does not explain
+  // itself is how this section spent three runs reporting nothing at all.
+  const seen = await page.evaluate(() => ({
+    view: document.querySelector('.nb-book-view') !== null ? 'book' : 'shelf',
+    dock: document.querySelector('.shelf-dock') !== null,
+    labels: [...document.querySelectorAll('button')]
+      .map((b) => b.getAttribute('aria-label'))
+      .filter((x) => x !== null)
+      .slice(0, 12),
+  }));
+  console.log('   SKIPPED — no studio button. on screen:', JSON.stringify(seen));
+} else {
+  await measure('open the studio', async () => {
+    await studioBtn.click();
+  }, 1800);
+  // Pressing a design is the expensive half — it re-bakes every case part.
+  const swatch = page.locator('.nb-studio button, .nbq-studio button, [data-preset-id]').nth(6);
+  if ((await swatch.count()) > 0) {
+    await measure('change a design in the studio', async () => {
+      await swatch.click();
+    }, 2000);
+  } else {
+    console.log('   (no preset swatch found to press — open/close cost only)');
+  }
+  await measure('close the studio', async () => {
+    await page.keyboard.press('Escape');
+  }, 1600);
+}
 
 console.log('\nerrors:', errors.length ? errors.slice(0, 3) : 'none');
 await browser.close();

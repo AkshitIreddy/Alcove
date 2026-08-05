@@ -53,7 +53,86 @@ being reviewed frame by frame.
       LOCATE a frame; the judging has to happen at `--frame=NNNN`, and a finding
       that never left the thumbnail is not a finding.
 
-- [ ] **THE THREE PAGE-TURN SYMPTOMS DO NOT REPRODUCE IN THE APP.**
+- [ ] **The curl freezes near the end of the first turn after a panel closes.**
+      *(found while trying to reproduce the three symptoms — none of which
+      reproduced, and this did)*
+
+      Measured at 1360x850, the demo's own viewport, driving the demo's own
+      sequence. A turn is designed to take 450ms and measures 436-518ms. The
+      first turn after a rail panel is closed:
+
+          frozen at p=0.89 for 1,154ms   (beginFlip → land: 1,720ms)
+          other runs, same turn:          2,523ms and 617ms
+
+      Live that is a page stuck nine tenths of the way over for more than a
+      second, which is the worst possible place to stop — the reader is looking
+      at a sheet standing on its edge. **It will never appear in the GIF**:
+      `capture: 'deterministic'` puts the scene on a virtual clock, so a
+      main-thread stall costs zero rendered frames. That is the recorder working
+      exactly as designed and it means the recording cannot be used to find
+      this class of defect at all.
+
+      A hypothesis to test rather than assume: opening a panel scales the whole
+      spread 1 → 0.7691 and closing it scales back, so every cached page bitmap
+      is at the wrong scale the moment a panel moves. If closing kicks off a
+      re-rasterise of the visible pages, the next `beginFlip` is contending with
+      it for the main thread. That would explain why it is the FIRST turn after
+      a close and not the second.
+
+      Related and smaller, same measurement: **every turn ends with a 135-191ms
+      hold at p=1** while the raster→DOM swap runs. Consistent, all seven turns.
+      Worth knowing whether that is the swap costing 140ms or a timer waiting
+      140ms for it.
+
+- [ ] **THE THREE PAGE-TURN SYMPTOMS DO NOT REPRODUCE IN THE APP.** *(now
+      MEASURED, not merely reported — see below; and the third one has an
+      explanation that is not a bug)*
+
+      Driven at the demo's own viewport with the demo's own sequence, per
+      animation frame, with each check's gate watched failing first:
+
+        - **Skipping.** 7 turns × 2 runs, ~600 frames. Every commit moved
+          exactly +1 spread; page count constant at 32; one
+          beginFlip/settle/land per press, never overlapping. Gate: a TOC jump
+          across two spreads turns it red.
+        - **Future pages.** The three faces `beginFlip` actually uploaded
+          textures for, compared against the faces named on every later frame:
+          **0 divergent frames of 176 mid-curl**. All 7 turns took the WebGL
+          curl. Gate: clearing the cache after upload flags 12 frames.
+          Structural bonus — with a cold cache the app REFUSES to curl and takes
+          the rigid fold, so "curl onto blank paper" is unreachable by that
+          route.
+        - **The right page's foot emptying when a panel opens.** 30 panel
+          slides, 2,400+ frames, per-block presence/height/clip/hit-test: 0
+          lost, 0 clipped, 0 zero-height, stored text identical. Gate: a
+          `clip-path` on the leaf reports 4-20 blocks lost — and it was INERT
+          TWICE before it worked (a 90px clip that never reached the words, then
+          a hit test counting an ancestor as a hit). Trusted only once the
+          picture and the number agreed.
+
+      **What the third one actually is.** Opening a panel scales the spread
+      1 → 0.7691 over ~280ms about a centre origin on a 743px stage, so the
+      page's bottom edge travels **~86px up the screen**. Nothing is lost; the
+      words get 23% smaller and the foot moves up. Across ~4 GIF frames that
+      reads exactly as "the bottom content disappeared".
+
+      **And why the recording reads as broken at all.** A measured curl is
+      436-518ms; the GIF is 14fps at speed 1.1 = 78.6ms of scene time per
+      frame, so a whole turn is **~6 output frames, of which ~4 show the sheet
+      at an angle** — against 26-30 frames live. Then `ctx.advance(1900)` holds
+      a motionless spread for the other ~18. A turn that is four frames of
+      motion inside twenty-four is not a turn a viewer can read.
+
+      Two things learned that cost a run each, kept so they do not again:
+
+        - **`page.screenshot()` returns blank cream paper on this app in
+          headless Chromium.** A probe using it on the spread will manufacture a
+          "blank page" defect that is not there. Use a CDP screencast.
+        - **A Vite hot update tearing the view down mid-curl looks exactly like
+          the bug.** One run reported `spread 0 → -1 → 0` with the flip frozen
+          at p=0.82 and the stage absent for 250ms — that was another agent
+          saving a file. Any probe measuring this app on a shared dev server
+          must detect HMR and reloads and say it saw none.
       > "I didn't notice any of the bugs I mentioned in the gif's video when I
       > was testing in the web server."
 

@@ -73,9 +73,9 @@ export interface SpreadPageIds {
 }
 
 export interface FlipSurfaceApi {
-  /** Animated flip forward (also wired to ArrowRight). */
+  /** Animated flip forward. Not bound to a key — see the removal note above onMount. */
   flipNext(): void;
-  /** Animated flip backward (also wired to ArrowLeft). */
+  /** Animated flip backward. Not bound to a key — see the removal note above onMount. */
   flipPrev(): void;
   /** Mark every known page snapshot stale and re-rasterize during idle. */
   invalidateSnapshots(): void;
@@ -108,16 +108,6 @@ export interface FlipSurfaceProps {
   /** Optional override for direction gating. */
   canFlip?(direction: FlipDirection): boolean;
   ref?: (api: FlipSurfaceApi) => void;
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target.closest('[contenteditable="true"]') !== null
-  );
 }
 
 export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
@@ -262,16 +252,23 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
     getSnapshot: (pageId) => cache.peek(pageId),
   };
 
-  const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.defaultPrevented || isEditableTarget(event.target)) return;
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      controller?.flipNext();
-    } else if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      controller?.flipPrev();
-    }
-  };
+  /*
+   * THERE USED TO BE A `window` keydown LISTENER HERE, arrow-turning the page
+   * on its own — independent of, and unknown to, `arrowFlipAction` in
+   * `views/spread.ts`. Two bindings doing the same thing from two files is how
+   * the removal of arrow-key page turns (the owner's ruling — see spread.ts's
+   * header) went in everywhere else and still left the arrows working here.
+   *
+   * Found by `tests/e2e/pages.spec.ts`'s "arrow keys do not turn the page",
+   * which was written to invert the OLD passing test rather than delete it,
+   * on the reasoning that a removal nothing watches is a removal that comes
+   * back. It caught exactly that: red against a tree where every other arrow
+   * binding was already gone. `--repeat-each=2 --retries=0` twice, not a
+   * flake — 0 -> 1 on every ArrowRight, same assertion both times.
+   *
+   * Turning a page is `.nb-flip-hotspot-next`/`-prev` (pointer taps and drags,
+   * both wired below) and the corner curl. Nothing here needs to see a key.
+   */
 
   onMount(() => {
     controller = new PageFlipController({
@@ -282,7 +279,6 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
       getFlipPages,
       navigate: (dir) => props.onNavigate(dir),
     });
-    window.addEventListener('keydown', onKeyDown);
     props.ref?.(api);
   });
 
@@ -371,7 +367,6 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
   });
 
   onCleanup(() => {
-    window.removeEventListener('keydown', onKeyDown);
     controller?.destroy();
     controller = undefined;
     cache.dispose(); // drops every bitmap when the book closes

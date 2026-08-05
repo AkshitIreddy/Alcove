@@ -345,7 +345,8 @@ test('a step whose target is missing degrades to a centred card, never a dead en
 
 /*
  * The tour used to take Space, the arrows, Backspace and PageUp/Down as
- * navigation — every one of them a key its own steps ask the reader to use.
+ * navigation — every one of them a key the reader needs for the caret while a
+ * step is asking them to write.
  * Only the buttons, Enter and Escape may move it now.
  */
 test('the tour never steals a key one of its steps is teaching', async ({ page }) => {

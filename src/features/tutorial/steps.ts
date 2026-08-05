@@ -422,8 +422,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'pages',
     title: 'Turning the page',
-    body: 'Drag the corner of the page and it curls over; the arrow keys do the same thing without the flourish. Pages are a fixed height and never scroll — write past the bottom and the overflow moves onto the next page on its own, making one if there is none.',
-    hint: '← → to turn · or drag the corner',
+    body: 'Drag the corner of the page and it curls over; drag the outer edge instead and you can take the turn slowly and change your mind halfway. Pages are a fixed height and never scroll — write past the bottom and the overflow moves onto the next page on its own, making one if there is none.',
+    hint: 'drag the corner · or the outer edge',
     task: {
       ask: 'Turn to the next page.',
       fact: 'page-turned',

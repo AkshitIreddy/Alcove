@@ -4,8 +4,15 @@
  * Everything the spread host needs to *decide* lives here, DOM-free, so it
  * runs under plain-node vitest (tests/spread.test.ts): ord↔spread math, the
  * adjacent-page id window handed to FlipSurface, flip gating, the
- * auto-create-on-forward-flip decision, the keyboard guard and the starter
- * doc for new pages.
+ * auto-create-on-forward-flip decision, and the starter doc for new pages.
+ *
+ * There is no arrow-key mapping here, and adding one back is not an oversight
+ * to correct. `arrowFlipAction` used to turn ←/→ into a flip unless the caret
+ * sat in a typing target — which meant it worked only until the reader touched
+ * the paper, and the app's own first page had to teach both halves of that.
+ * The owner ruled it out rather than caveat it. Turning a page is the corner
+ * curl and the outer edge, which work in every focus state; jumping is the
+ * table of contents and the thumbnail strip, which open with a key.
  *
  * Conventions
  * - "slot" is a page's position in the book's ord-ascending page list
@@ -254,26 +261,6 @@ export function prependBlocksToDoc(
   const existing = Array.isArray(doc.content) ? doc.content : [];
   const keep = docHasContent(doc) ? existing : [];
   return { ...doc, content: [...blocks, ...keep] };
-}
-
-/* ----------------------------------------------------------------------------
-   Keyboard guard
-   -------------------------------------------------------------------------- */
-
-/**
- * Map a keydown to a flip direction. `isTyping` is the caller's guard —
- * true when document.activeElement sits inside `.nb-prose` or any editable
- * control (input/textarea/contenteditable) — and always wins: arrows must
- * keep moving the caret, never the page.
- */
-export function arrowFlipAction(
-  key: string,
-  isTyping: boolean,
-): FlipDirection | null {
-  if (isTyping) return null;
-  if (key === 'ArrowRight') return 'next';
-  if (key === 'ArrowLeft') return 'prev';
-  return null;
 }
 
 /* ----------------------------------------------------------------------------

@@ -655,10 +655,11 @@ export type TutorialAction = 'next' | 'back' | 'skip';
  * The tour used to swallow Space, the arrow keys, Backspace and PageUp/Down
  * as navigation. Every one of those is a key the reader needs for the thing
  * the tour is asking them to do: Space types a word break on the "write
- * something" step, ← → turn the page on the page-turning step, Backspace
- * fixes a typo. A guided tour that eats the keys it is teaching is worse than
- * no tour, so navigation now belongs to the buttons — plus Enter, which the
- * card's own focused button owns anyway, and Esc, which must always work.
+ * something" step, the arrows move the caret back through the words just
+ * typed, Backspace fixes a typo. A tour that eats the keys it is teaching with
+ * is worse than no tour, so navigation now belongs to the buttons — plus
+ * Enter, which the card's own focused button owns anyway, and Esc, which must
+ * always work.
  */
 export function keyAction(key: string): TutorialAction | null {
   switch (key) {

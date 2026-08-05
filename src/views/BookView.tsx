@@ -114,7 +114,6 @@ import { panelEdge } from './rail/panelPush';
 import {
   MAX_TRAILING_BLANK_PAGES,
   SPREAD_FIT_REST,
-  arrowFlipAction,
   canFlipSpread,
   docHasContent,
   fitSpreadToRoom,
@@ -124,7 +123,6 @@ import {
   prependBlocksToDoc,
   spreadOfSlot,
   spreadPageIds,
-  visualScale,
   type SpreadFit,
   type SpreadIds,
 } from './spread';
@@ -507,31 +505,41 @@ export default function BookView(): JSX.Element {
   const [pageCapacity, setPageCapacity] = createSignal(0);
 
   /**
-   * How long after the last change of scale to re-measure.
+   * The capacity is in LAID-OUT pixels, and nothing about a scale may enter it.
    *
-   * Longer than a frame so a tween costs one measurement rather than thirty,
-   * and short enough that a reader who opens a panel and immediately types is
-   * measured before they reach the foot of the page. The panel tween itself is
-   * ~280 ms, so this lands just after it.
-   */
-  const SETTLE_MS = 90;
-
-  /**
-   * The capacity is in DRAWN pixels, because the thing it is compared against
-   * is.
+   * The two numbers the drain compares have to be in the same units, and there
+   * were two ways to arrange that. This used to convert the CAPACITY into drawn
+   * px — multiply the laid-out height by `visualScale` — because PageEditor
+   * measures block bottoms with `getBoundingClientRect()`, which reports the
+   * glass. It fixed the unit mismatch and introduced a worse one, because
+   * neither `clientHeight` nor `Math.floor` survives being multiplied by a
+   * scale:
    *
-   * PageEditor measures block bottoms with `getBoundingClientRect()`, which
-   * reports what is on the glass; the leaf's own height comes from
-   * `clientHeight`, which reports what was laid out. Those were the same number
-   * until the spread started carrying a scale — the focus dial's zoom, and now
-   * the panel fit — and after that a page at 78% measured its blocks 22% short
-   * against an unshrunk capacity and quietly held a quarter more text than it
-   * has room to show. A ResizeObserver never notices, either: a transform does
-   * not resize anything.
+   *     capacity = floor(laidOut × s)
    *
-   * So multiply the laid-out capacity by however much the leaf is being drawn
-   * at. `visualScale` is 1 whenever nothing is scaling, which is most of the
-   * time, and the whole thing collapses to what it was.
+   * is not proportional to `s`. At s = 1 a 761px leaf floors to 760; at
+   * s = 0.7913 it floors to 602, which is 760.8 laid-out px. So opening a rail
+   * sheet changed what fits on the page by half a pixel — measured, on every
+   * spread of the Welcome book (`scripts/probe-panel-repaginate.mjs`), and by
+   * up to ~3px at `MIN_SPREAD_SCALE`. Half a pixel is nothing until a page has
+   * been drained to its boundary, which is exactly what the drain leaves
+   * behind: on the demo recording the card "What a card is for" sat with its
+   * foot ON the padding line and vanished six frames after the "Customize this
+   * book" sheet slid in, evicted to the next page, permanently — the contract
+   * peels forward and never pulls back.
+   *
+   * `styles/spread.css`, `styles/rail.css` and `views/spread.ts` all promise in
+   * as many words that a sheet answers the room it takes with a TRANSFORM so
+   * that "the leaf's layout box — and therefore where every word sits and how
+   * many fit — is untouched". A capacity built out of a scale cannot keep that
+   * promise however carefully it is rounded.
+   *
+   * So the conversion goes the other way now: this stays a pure layout number
+   * and `PageEditor.extractOverflow` divides its rect distances by the leaf's
+   * scale before comparing. The residual error there (a `clientHeight` rounded
+   * to a whole pixel) is a CONSTANT — it does not depend on `s` — so the
+   * drain's verdict is identical at every scale, which is the property that
+   * actually matters. `probe-panel-repaginate.mjs` gates it at 0.00px.
    */
   const measureCapacity = (paper: HTMLElement): void => {
     const styles = getComputedStyle(paper);
@@ -539,50 +547,27 @@ export default function BookView(): JSX.Element {
       paper.clientHeight -
       (Number.parseFloat(styles.paddingTop) || 0) -
       (Number.parseFloat(styles.paddingBottom) || 0);
-    const capacity =
-      laidOut *
-      visualScale(paper.getBoundingClientRect().height, paper.clientHeight);
-    if (capacity > 120) setPageCapacity(Math.floor(capacity));
+    if (laidOut > 120) setPageCapacity(Math.floor(laidOut));
   };
 
-  /** Both leaves, re-measured — for when the SCALE moved rather than the box. */
-  const remeasureCapacity = (): void => {
-    for (const side of ['left', 'right'] as const) {
-      const paper = paperElements[side];
-      if (paper?.isConnected === true) measureCapacity(paper);
-    }
-  };
-
-  /**
-   * The same, but ONCE the scale stops moving.
+  /*
+   * THERE IS NO "re-measure once the scale settles" ANY MORE, and its absence
+   * is the point.
    *
-   * `measureCapacity` forces three synchronous layouts per leaf — a
-   * `getComputedStyle`, a `clientHeight` and a `getBoundingClientRect` — and it
-   * was being asked for on every frame of the panel tween, which runs for about
-   * a third of a second. Profiling a rail panel opening put `measureCapacity`
-   * at 118 ms of self time on its own, the largest cost in the whole window and
-   * the reason EVERY panel stalled by roughly the same amount whether it drew
-   * anything expensive or not.
+   * A scale-settle re-measure used to hang off `fitSpread`, because the
+   * capacity was quoted in drawn px and a sliding sheet therefore moved it.
+   * With the capacity back in laid-out px there is nothing for a transform to
+   * move: `clientHeight` and a computed padding are what they were before the
+   * sheet opened. Every way the number CAN change is a change to the paper's
+   * own layout box, and `capacityObserver` below is already watching exactly
+   * that — a window resize, the stage remounting with a book, a focus rung
+   * altering the stage's laid-out width.
    *
-   * Nothing needs the number while the sheet is still sliding. It is compared
-   * against block bottoms when the reader types, and a reader is not typing
-   * mid-tween — so the measurement is coalesced to the last frame of the move.
-   * The timer is reset by each change, so a tween of any length costs exactly
-   * one measurement, and an interrupted one (a second panel opened over the
-   * first) costs one for both rather than one each.
+   * Keeping the call "just in case" would have kept a panel wired to the
+   * reader's pagination for no reason, and that wire is the defect: it also
+   * cost a forced layout per leaf per slide (118 ms of self time, profiled,
+   * the largest single cost in a panel open).
    */
-  let capacitySettle: ReturnType<typeof setTimeout> | undefined;
-  const remeasureCapacityWhenSettled = (): void => {
-    if (capacitySettle !== undefined) clearTimeout(capacitySettle);
-    capacitySettle = setTimeout(() => {
-      capacitySettle = undefined;
-      remeasureCapacity();
-    }, SETTLE_MS);
-  };
-  onCleanup(() => {
-    if (capacitySettle !== undefined) clearTimeout(capacitySettle);
-  });
-
   const capacityObserver =
     typeof ResizeObserver !== 'undefined'
       ? new ResizeObserver((entries) => {
@@ -712,10 +697,10 @@ export default function BookView(): JSX.Element {
     if (next.shift === lastFit.shift && next.scale === lastFit.scale) return;
     lastFit = next;
     setSpreadFit(next);
-    // The leaf is now drawn at a different size, and the page capacity is
-    // quoted in drawn pixels — see measureCapacity. Once the move SETTLES,
-    // not on every frame of it: this runs for the whole tween.
-    remeasureCapacityWhenSettled();
+    // …and NOTHING about the pagination is touched from here. The leaf is drawn
+    // at a different size; its layout box, and therefore what fits on it, is
+    // the same box it was. See measureCapacity, and the note above
+    // `capacityObserver` for what used to be on this line.
   };
 
   /** The view frame: fixed to the window, so this one is only the resize. */
@@ -1082,27 +1067,16 @@ export default function BookView(): JSX.Element {
   const stepFocus = (direction: 1 | -1): void =>
     goToFocus(stepFocusLevel(focusLevel(), direction));
 
-  /**
-   * At the `leaf` rung an arrow key means ONE page, not one spread.
-   *
-   * Reading a single leaf and having the arrow skip the page next to it is the
-   * kind of thing that loses a reader their place. The side flips first and the
-   * spread follows only when the side runs out, which is what turning a page in
-   * a real book does.
+  /*
+   * The `leaf` rung used to have a keyboard step of its own — one page rather
+   * than one spread — reached by the arrow keys, and it went with them. What is
+   * left is the FocusDial's `left`/`right` buttons (onPickLeaf below): real
+   * buttons, Tab-reachable, and they pick a side WITHIN the spread. Stated
+   * plainly rather than papered over: choosing a side survives, stepping past
+   * the right leaf into the next spread does not. The corner curl still turns
+   * the spread at this rung, and inventing a new chord for the rest is the
+   * owner's call, not this file's.
    */
-  const stepLeaf = (direction: 1 | -1): void => {
-    if (direction > 0) {
-      if (soloLeaf() === 'left') setSoloLeaf('right');
-      else {
-        setSoloLeaf('left');
-        flipApi?.flipNext();
-      }
-    } else if (soloLeaf() === 'right') setSoloLeaf('left');
-    else {
-      setSoloLeaf('right');
-      flipApi?.flipPrev();
-    }
-  };
 
   // -------------------------------------------------------------------------
   // The way back (see the convention docblock at the top of this file)
@@ -1160,8 +1134,11 @@ export default function BookView(): JSX.Element {
   });
 
   // -------------------------------------------------------------------------
-  // Keyboard: ←/→ flip through the FlipSurface api unless the user is typing;
-  // F9 toggles focus mode, '?' opens the cheat-sheet when not typing.
+  // Keyboard: Escape leaves focus mode, `[` and `]` walk the focus rungs, and
+  // Ctrl +/-/0 works its zoom. Nothing here turns a page — turning is the
+  // corner curl and the outer edge (FlipSurface), which answer in every focus
+  // state. The arrows were removed because they only ever turned a page while
+  // the caret was outside the paper.
   // -------------------------------------------------------------------------
   const onKeyDown = (event: KeyboardEvent): void => {
     // Leaving focus mode is checked BEFORE the defaultPrevented guard: the
@@ -1234,18 +1211,6 @@ export default function BookView(): JSX.Element {
     // of `matchesBinding` calls here, which is what let F9 and '?' fire for a
     // year without ever appearing in the settings sheet. The cheat-sheet moved
     // out too: it lives at the root so it answers on the shelf as well.
-    const action = arrowFlipAction(
-      event.key,
-      isTypingTarget(document.activeElement),
-    );
-    if (action === null) return;
-    event.preventDefault();
-    if (focusLevel() === 'leaf') {
-      stepLeaf(action === 'next' ? 1 : -1);
-      return;
-    }
-    if (action === 'next') flipApi?.flipNext();
-    else flipApi?.flipPrev();
   };
   onMount(() => window.addEventListener('keydown', onKeyDown));
   onCleanup(() => window.removeEventListener('keydown', onKeyDown));

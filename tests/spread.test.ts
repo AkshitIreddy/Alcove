@@ -5,7 +5,7 @@
  * Runs without DOM: ord↔spread math, the six-id window handed to FlipSurface
  * (incl. nulls at both ends of the book), flip gating + the auto-create
  * decision matrix, the blank-vs-ink doc probe, the starter doc's inherited
- * page style, and the arrow-key guard.
+ * page style, and the spread fit.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -15,7 +15,6 @@ import {
   MAX_TRAILING_BLANK_PAGES,
   MIN_SPREAD_SCALE,
   SPREAD_FIT_REST,
-  arrowFlipAction,
   canFlipSpread,
   docHasContent,
   fitSpreadToRoom,
@@ -358,27 +357,6 @@ describe('prependBlocksToDoc', () => {
       para('carried'),
       { type: 'image' },
     ]);
-  });
-});
-
-/* ───────────────────────────── keyboard guard ─────────────────────────── */
-
-describe('arrowFlipAction', () => {
-  it('maps arrows to flip directions when not typing', () => {
-    expect(arrowFlipAction('ArrowRight', false)).toBe('next');
-    expect(arrowFlipAction('ArrowLeft', false)).toBe('prev');
-  });
-
-  it('typing always wins — the caret keeps the arrows', () => {
-    expect(arrowFlipAction('ArrowRight', true)).toBeNull();
-    expect(arrowFlipAction('ArrowLeft', true)).toBeNull();
-  });
-
-  it('ignores every other key', () => {
-    expect(arrowFlipAction('ArrowUp', false)).toBeNull();
-    expect(arrowFlipAction('ArrowDown', false)).toBeNull();
-    expect(arrowFlipAction('Enter', false)).toBeNull();
-    expect(arrowFlipAction(' ', false)).toBeNull();
   });
 });
 

@@ -152,9 +152,11 @@ floors as standard, up to <!--f:maxFloors-->60<!--/f--> when you keep pressing
 ### A book opens as a spread, and turns like a book
 
 Two pages side by side, ruled paper, a tool rail down the left edge, and a word
-count at its foot. Arrow keys turn pages; so does dragging the outer edge or a
-corner of a leaf, which lets you take the turn at your own speed and change your
-mind halfway.
+count at its foot. You turn a page by dragging its outer edge or the corner
+curl, which lets you take the turn at your own speed and change your mind
+halfway. To jump rather than turn, the table of contents (`Ctrl+Alt+T`) and the
+thumbnail strip (`Ctrl+Alt+M`) both open with a key and are walked with Tab and
+Enter.
 
 ![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove ✎" in a large handwriting face with a gold star beside it, a paragraph with the phrase "real paper you can write on" in an amber highlight, a green callout telling you to click anywhere on the ruled lines and start typing, a three-item bulleted list about the shelf, opening a book and turning pages, a tan card headed "Thirty-two leaves, every one a demonstration", and a green banner reading "So: turn the page." The right page is headed "The shelf", opens "Behind this book is a bookcase, and behind that a room", and carries a tan card headed "Getting about" with an Enter key cap drawn into the sentence, a tilted yellow sticky note about the dock at the foot of the rail, and a moss tag reading "Ctrl Alt F grows the case by a floor". A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](img/spread.png)
 
@@ -652,7 +654,7 @@ than greying it out.
 | --- | --- |
 | Anywhere | `Ctrl+K` jump to a book, heading or page · `Ctrl+Shift+F` search the words inside every page · `Ctrl+,` settings · `Ctrl+/` or `?` the cheat sheet · `Escape` back out |
 | On the shelf | `Ctrl+Alt+N` new book · `Ctrl+Alt+S` the studio · `Ctrl+Alt+F` add a floor · `Ctrl+Alt+X` the trash · `+` `−` `0` zoom · arrows walk the shelf · `Enter` take the lit book · `Home` back to the first book |
-| In a book | `Ctrl+N` add a page · `Ctrl+Alt+B` ribbon this page · `F9` focus mode · `Ctrl+Alt+T` contents · `Ctrl+Alt+A` catalogue · `Ctrl+Alt+L` page style · `Ctrl+Alt+D` dress this book · `Ctrl+Alt+M` thumbnails · `←` `→` turn the page · `[` `]` step focus · drag a page edge to curl it |
+| In a book | `Ctrl+N` add a page · `Ctrl+Alt+B` ribbon this page · `F9` focus mode · `Ctrl+Alt+T` contents · `Ctrl+Alt+A` catalogue · `Ctrl+Alt+L` page style · `Ctrl+Alt+D` dress this book · `Ctrl+Alt+M` thumbnails · `[` `]` step focus · drag a page edge or the corner curl to turn a page |
 | While writing | `/` the block menu · `/today` today's journal page · `Ctrl+B` `Ctrl+I` bold and italic · right-click for the block menu · drag the dots to reorder · click bare paper to start a line there |
 | In and out | `Ctrl+Alt+I` paste a script in · `Ctrl+Alt+E` copy this page out as script · `Ctrl+Alt+G` start from a template · `Ctrl+Alt+P` export as PDF · `Ctrl+Shift+Alt+P` this page as a picture · `Ctrl+Shift+Alt+M` bring Markdown in · `Ctrl+Shift+E` pack books into one file · `Ctrl+Shift+I` add a bundle to this shelf |
 

@@ -189,7 +189,7 @@ inertness structurally instead: fill removed, border switched to dashed
 **Surface** `?` overlay.
 
 `.nb-cheat-keys` used `min-width: 92px` with `display: flex`, so short keys
-(`← →`, `F9`, `Esc`, `?`) sat at 92px while `drag page edge` and
+(`F9`, `Esc`, `?`, `[ ]`) sat at 92px while `drag page edge` and
 `click corner curl` pushed past it. The description column therefore started
 at **three different x positions** inside each of the two columns — the eye
 has nothing to track down.

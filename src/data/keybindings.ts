@@ -343,13 +343,16 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
     binding: 'mod+alt+m',
     label: 'the strip of little pages',
   },
-  {
-    kind: 'house',
-    id: 'page-turn',
-    group: 'book',
-    keys: '←  →',
-    label: 'turn the page',
-  },
+  /*
+   * There is no `←  →` row here, and its absence is the decision rather than a
+   * gap. The arrows used to turn the page unless the caret sat in the paper —
+   * so the honest row would have read "turn the page, except while typing",
+   * and a line in the reader's shortcut list that has to be qualified is a
+   * promise this module cannot keep. An arrow belongs to the text before it
+   * belongs to the book. Turning is `page-curl` and `page-corner` below, which
+   * answer in every focus state; `table-of-contents` and `thumbnails` above are
+   * the keyboard's way to a page. See src/views/spread.ts for the ruling.
+   */
   {
     kind: 'house',
     id: 'focus-range',

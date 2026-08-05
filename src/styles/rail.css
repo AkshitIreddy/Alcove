@@ -279,6 +279,23 @@
   border-radius: var(--radius-wobble-lg);
   box-shadow: var(--shadow-lg);
   visibility: hidden; /* GSAP flips this + owns xPercent */
+}
+
+/*
+ * Only while it is actually sliding — the same rule reader.css:48 states for
+ * the spread, and for the same reason with a sharper edge here.
+ *
+ * A permanent `will-change: transform` gives this sheet a compositor layer for
+ * the whole session, and a layer is rastered on the compositor's schedule
+ * rather than the DOM's. So while the main thread is busy — re-baking a room,
+ * for instance — the compositor keeps presenting whichever tiles it last
+ * finished, and a screenshot can hold two ages of the same panel: the section
+ * title reading "presets gilt salon" over a strip whose tick is still on the
+ * previous card. That is the "clicks one theme, another is selected" report,
+ * and it is a rastering fact rather than a state one — the value was right the
+ * whole time. `RailPanel.tsx` adds and removes the class around its tweens.
+ */
+.nb-rail-panel.is-sliding {
   will-change: transform;
 }
 

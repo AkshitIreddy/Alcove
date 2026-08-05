@@ -126,6 +126,12 @@ const SLICE_BUDGET_MS = 8;
 const SLICE_MAX_BAKES = 12;
 
 /**
+ * How long the outgoing room's spines may be worn while their replacements
+ * bake (`SpineFactory.armRetireWatchdog`).
+ */
+const RETIRE_MAX_MS = 6000;
+
+/**
  * Cost of the most expensive spine seen so far, per variant. Used to stop a
  * slice BEFORE starting a bake that is likely to overrun the remaining budget,
  * rather than discovering it afterwards.
@@ -213,6 +219,23 @@ export class SpineFactory {
   private readonly sources = new Map<string, CanvasSource>();
   private readonly loTextures = new Map<string, Texture>();
   private readonly hiTextures = new Map<string, Texture>();
+  /**
+   * The OUTGOING room's spines, still worn by their books until each one's
+   * replacement lands. See `invalidateAll` for why they are kept rather than
+   * freed; `get()` falls back here and `retireOne` empties it a book at a time.
+   */
+  private readonly retiredLo = new Map<string, Texture>();
+  private readonly retiredHi = new Map<string, Texture>();
+  /** Fires if a retired generation is never fully replaced (`armRetireWatchdog`). */
+  private retireTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Textures to free once the flush that replaces them has announced itself.
+   * Freeing at retirement time would destroy a Texture a live sprite is still
+   * pointing at, and Pixi nulls a destroyed texture's matrix — which surfaces
+   * as `Cannot read properties of null (reading 'addressModeU')` on the next
+   * render, taking the whole stage down for a frame.
+   */
+  private readonly freeAfterFlush: Texture[] = [];
   private readonly paramsCache = new Map<string, ResolvedBookStyle>();
   private readonly queue = new Map<string, QueueItem>();
   /** The room whose spine bias new/unstyled books inherit. */
@@ -330,7 +353,41 @@ export class SpineFactory {
   }
 
   /**
-   * Drop every baked spine (theme switch). Listeners re-request.
+   * Retire every baked spine (theme switch). Listeners re-request; each book
+   * keeps the art it is wearing until its own replacement lands.
+   *
+   * ## Retirement, not demolition
+   *
+   * This used to free everything on the spot: destroy both texture buckets,
+   * `clear()` both atlases (whose `onEvict` destroys the GPU sources), then
+   * announce — all synchronously, before a single new pixel had been drawn.
+   * The announcement runs the listeners in the same tick, so `floorView`
+   * re-picked, got `undefined`, and every book on every floor fell to
+   * `Texture.WHITE + placeholderTint`. Measured on the demo recording: ten
+   * frames, ~0.7s, of a shelf of flat untextured slabs — no titles, no label
+   * plates, no gilt, and wearing the OUTGOING room's cloths because the
+   * placeholder tint comes from the cached params. Then the whole shelf
+   * repainted at once. The reader did not read that as "the room changed"; the
+   * reader read it as the books disappearing.
+   *
+   * The old pixels were perfectly good until the new ones existed. So they
+   * stay: the live buckets move to `retiredLo`/`retiredHi`, `get()` falls back
+   * to them, and each book's retired texture is freed the moment its own
+   * re-bake lands (`retireOne`, deferred past the flush so no sprite is ever
+   * left holding a destroyed Texture). The reader sees bound spines
+   * throughout, each turning into the new room's binding as it arrives.
+   *
+   * The atlases are deliberately NOT cleared: their handles are what keeps the
+   * retired pixels valid, and a re-bake at the SAME size `alloc`s the very same
+   * rect and paints straight over it, which costs nothing at all.
+   *
+   * What it does cost, measured rather than assumed: a book whose size changed
+   * gets a fresh rect and abandons its old one, and `art/atlas.ts` never
+   * reclaims space inside a page. A new build is a new headroom, so a preset
+   * apply resizes most books at once — `scripts/probe-studio-repaint.mjs`
+   * reports lo 1 → 1 pages and hi 1 → 2 across one swap, where clearing first
+   * kept hi at 1. That is one page inside a bucket the LRU already caps
+   * (`hiAtlasPages`), and it is the price of the books not vanishing.
    *
    * The announcement covers every book the shelf has ever ASKED about, not
    * just the ones holding a texture — that is what `known` is for, and it went
@@ -343,21 +400,91 @@ export class SpineFactory {
   invalidateAll(): void {
     if (this.destroyed) return;
     const ids = new Set<string>(this.known);
-    for (const bucket of [this.loTextures, this.hiTextures]) {
+    for (const variant of ['lo', 'hi'] as const) {
+      const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
+      const held = variant === 'hi' ? this.retiredHi : this.retiredLo;
       for (const [bookId, tex] of bucket) {
         ids.add(bookId);
-        tex.destroy(false);
+        // A second room arriving mid-swap must not STACK generations: the book
+        // is already wearing something from before, and that something is what
+        // gets displaced. At most one retired texture per book per variant.
+        const prior = held.get(bookId);
+        if (prior !== undefined && prior !== tex && !prior.destroyed) prior.destroy(false);
+        held.set(bookId, tex);
       }
       bucket.clear();
     }
-    this.loAtlas.clear();
-    this.hiAtlas.clear();
     this.queue.clear();
     // Anything a worker is still painting belongs to the old room — let the
     // results arrive and be dropped rather than stalling on a cancel round-trip.
     this.bakeEpoch++;
     this.inFlight.clear();
+    this.armRetireWatchdog();
     if (ids.size > 0) this.emit([...ids]);
+  }
+
+  /**
+   * Stop holding the outgoing room, whether or not it was replaced.
+   *
+   * A book that is off-screen is never re-requested, so without this its
+   * retired texture would be worn for the life of the session — and the moment
+   * the reader scrolls to it they would be looking at the previous room's
+   * colours with nothing to say so. A placeholder is a worse picture but an
+   * honest one, and the re-request that follows the announcement fixes it
+   * within a frame or two.
+   *
+   * Generous, because the alternative failure is the exact bug this replaced:
+   * a shelf of slabs. A large shelf's re-bake storm is comfortably inside it.
+   */
+  private armRetireWatchdog(): void {
+    if (this.retiredLo.size + this.retiredHi.size === 0) return;
+    if (this.retireTimer !== null) clearTimeout(this.retireTimer);
+    this.retireTimer = setTimeout(() => {
+      this.retireTimer = null;
+      this.releaseRetired();
+    }, RETIRE_MAX_MS);
+  }
+
+  /** Drop the whole retired generation, announcing before anything is freed. */
+  private releaseRetired(): void {
+    if (this.retireTimer !== null) {
+      clearTimeout(this.retireTimer);
+      this.retireTimer = null;
+    }
+    const ids = new Set<string>();
+    const freeing: Texture[] = [];
+    for (const held of [this.retiredLo, this.retiredHi]) {
+      for (const [bookId, tex] of held) {
+        ids.add(bookId);
+        freeing.push(tex);
+      }
+      held.clear();
+    }
+    if (freeing.length === 0) return;
+    // Announce FIRST — the listeners re-point their sprites synchronously, so
+    // by the time these are freed nothing is holding one.
+    if (!this.destroyed && ids.size > 0) this.emit([...ids]);
+    for (const tex of freeing) {
+      if (!tex.destroyed) tex.destroy(false);
+    }
+  }
+
+  /**
+   * One book's replacement has landed: it no longer needs the art it was
+   * wearing. The free is DEFERRED to the end of the flush that announces the
+   * new texture — until then the sprite is still pointing at the retired one,
+   * and Pixi nulls a destroyed Texture's matrix out from under the renderer.
+   */
+  private retireOne(bookId: string, variant: SpineVariant): void {
+    const held = variant === 'hi' ? this.retiredHi : this.retiredLo;
+    const tex = held.get(bookId);
+    if (tex === undefined) return;
+    held.delete(bookId);
+    this.freeAfterFlush.push(tex);
+    if (this.retiredLo.size + this.retiredHi.size === 0 && this.retireTimer !== null) {
+      clearTimeout(this.retireTimer);
+      this.retireTimer = null;
+    }
   }
 
   /**
@@ -407,14 +534,41 @@ export class SpineFactory {
     return this.getStyle(book).spine;
   }
 
-  /** Baked texture for a variant, or undefined (touches the page LRU). */
+  /**
+   * Which room's params `getParams` is currently answering with.
+   *
+   * Read by `floorView` so a placeholder can be tinted in the room the reader
+   * is actually looking at. A floor caches each book's params at layout time
+   * and only `setBooks` re-derives them, so a shelf that fell back to
+   * placeholders during a swap was painting them in the OUTGOING room's
+   * pigment — the one moment the colour is guaranteed to be wrong.
+   */
+  get epoch(): number {
+    return this.styleEpoch;
+  }
+
+  /**
+   * Baked texture for a variant, or undefined (touches the page LRU).
+   *
+   * The fallback to the retired generation is the whole of what keeps a room
+   * swap from emptying the shelf: between `invalidateAll` and this book's own
+   * re-bake landing, the book is still wearing the outgoing room's spine and
+   * that is a far better answer than a flat placeholder slab.
+   */
   get(bookId: string, variant: SpineVariant): Texture | undefined {
+    const atlas = variant === 'hi' ? this.hiAtlas : this.loAtlas;
     const tex = (variant === 'hi' ? this.hiTextures : this.loTextures).get(bookId);
     if (tex !== undefined) {
       // Touch the owning atlas page so LRU tracks last-visible time.
-      (variant === 'hi' ? this.hiAtlas : this.loAtlas).get(`${variant}|${bookId}`);
+      atlas.get(`${variant}|${bookId}`);
+      return tex;
     }
-    return tex;
+    const held = (variant === 'hi' ? this.retiredHi : this.retiredLo).get(bookId);
+    if (held !== undefined && !held.destroyed) {
+      atlas.get(`${variant}|${bookId}`);
+      return held;
+    }
+    return undefined;
   }
 
   /**
@@ -569,6 +723,14 @@ export class SpineFactory {
         bucket.delete(bookId);
         tex.destroy(false);
       }
+      // The retired copy STAYS. It was baked against the old clear height, so
+      // it is the wrong shape for the new stand — but the sprite is scaled to
+      // the new height either way, so the reader sees the same book a per cent
+      // or two out of proportion for a frame or two instead of a flat slab.
+      // This path is not rare on a room swap: a new build is a new headroom,
+      // so `setBuild` drops the bakes of every book whose bay changed shape,
+      // and dropping their retired art with them put ten of thirteen books
+      // back on placeholders — the exact defect the retirement exists to stop.
       (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
       this.queue.delete(`${variant}|${bookId}`);
     }
@@ -658,6 +820,9 @@ export class SpineFactory {
         tex.destroy(false);
         touched = true;
       }
+      // Same bargain as `dropBakes`: if this book is mid-swap and still
+      // wearing the outgoing room's spine, it keeps wearing it until the
+      // re-bake lands. A frame of the old title beats a frame of no book.
       (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
       if (this.queue.delete(`${variant}|${bookId}`)) touched = true;
     }
@@ -684,6 +849,13 @@ export class SpineFactory {
     this.destroyed = true;
     this.idle?.cancel();
     this.idle = null;
+    if (this.retireTimer !== null) {
+      clearTimeout(this.retireTimer);
+      this.retireTimer = null;
+    }
+    this.retiredLo.clear();
+    this.retiredHi.clear();
+    this.freeAfterFlush.length = 0;
     this.queue.clear();
     this.inFlight.clear();
     this.landed.clear();
@@ -892,6 +1064,7 @@ export class SpineFactory {
       frame: new Rectangle(rect.x, rect.y, rect.w, rect.h),
     });
     (variant === 'hi' ? this.hiTextures : this.loTextures).set(book.id, texture);
+    this.retireOne(book.id, variant);
     this.dirtySources.add(source);
     this.landed.add(book.id);
     this.scheduleFlush();
@@ -916,6 +1089,9 @@ export class SpineFactory {
         this.landed.clear();
         this.emit(ids);
       }
+      // Every book whose retired spine is on this list was announced by an
+      // emit at or before this one, so no sprite is still pointing at one.
+      this.drainFreeList();
     };
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
     else setTimeout(run, 16);
@@ -988,7 +1164,19 @@ export class SpineFactory {
     }
     for (const source of touchedSources) source.update();
     if (bakedIds.length > 0) this.emit(bakedIds);
+    // The inline path does not go through `blit`, so it needs its own beat to
+    // free the spines these bakes just replaced.
+    if (bakedIds.length > 0) this.scheduleFlush();
     this.scheduleSlice();
+  }
+
+  /** Free the retired textures whose replacements have now been announced. */
+  private drainFreeList(): void {
+    if (this.freeAfterFlush.length === 0) return;
+    for (const tex of this.freeAfterFlush) {
+      if (!tex.destroyed) tex.destroy(false);
+    }
+    this.freeAfterFlush.length = 0;
   }
 
   private bakeOne(book: Book, variant: SpineVariant, rowCtx?: SpineRowContext): CanvasSource {
@@ -1033,6 +1221,7 @@ export class SpineFactory {
       frame: new Rectangle(rect.x, rect.y, rect.w, rect.h),
     });
     (variant === 'hi' ? this.hiTextures : this.loTextures).set(book.id, texture);
+    this.retireOne(book.id, variant);
     return source;
   }
 
@@ -1071,15 +1260,29 @@ export class SpineFactory {
     const source = this.sources.get(sourceKey);
     this.sources.delete(sourceKey);
     const bookIds: string[] = [];
+    // The retired generation lives on these same pages (see `invalidateAll` —
+    // the atlases are not cleared on a room swap), so an eviction takes it with
+    // it. Missing this would leave a book wearing a Texture whose GPU source
+    // has just been destroyed, which is a renderer crash rather than a stale
+    // picture.
+    const retired = variant === 'hi' ? this.retiredHi : this.retiredLo;
     for (const key of keys) {
       const sep = key.indexOf('|');
       const bookId = key.slice(sep + 1);
+      let dropped = false;
       const tex = bucket.get(bookId);
       if (tex !== undefined) {
         bucket.delete(bookId);
         tex.destroy(false);
-        bookIds.push(bookId);
+        dropped = true;
       }
+      const held = retired.get(bookId);
+      if (held !== undefined) {
+        retired.delete(bookId);
+        held.destroy(false);
+        dropped = true;
+      }
+      if (dropped) bookIds.push(bookId);
     }
     source?.destroy();
     if (!this.destroyed && bookIds.length > 0) this.emit(bookIds);

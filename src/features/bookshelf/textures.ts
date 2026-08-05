@@ -97,6 +97,19 @@ export type EnvKind =
 /** World-px height of the under-plank detail strip (no longer drawn). */
 export const SHELF_DETAIL_H = 34;
 
+/** A baked part waiting for its three siblings — see `bakeCase`. */
+interface StagedPart {
+  kind: EnvKind;
+  bitmap: ImageBitmap;
+}
+
+/** What `stagePart` did: whether the field moved, and what it displaced. */
+interface PartSwap {
+  changed: boolean;
+  /** The outgoing texture, still live — the caller destroys it after notifying. */
+  retired: Texture | null;
+}
+
 /**
  * `ThemeRequest` and `themeKeyOf` are re-exported, not defined here.
  *
@@ -405,7 +418,16 @@ export class EnvTextures {
    * every renderer — the same reason `makeCanvas` exists.
    */
   private blank: Texture | null = null;
-  private readonly listeners = new Set<(kind: EnvKind) => void>();
+  /**
+   * `onReady` listeners. They take the LIST of parts that landed, not one
+   * part, because a room replacement lands all four together and calling a
+   * listener once per part is four times the work for one visible change —
+   * `world.handleEnvReady` re-stamps every mounted floor to a RenderTexture,
+   * and four of those back to back inside one task measured as a 2.4 SECOND
+   * block on the software renderer, which is worse than the staggered repaint
+   * the atomic commit was added to fix.
+   */
+  private readonly listeners = new Set<(kinds: readonly EnvKind[]) => void>();
   private destroyed = false;
 
   private loadDpr = 1;
@@ -500,7 +522,7 @@ export class EnvTextures {
     void this.bakeCase(this.themeGen);
   }
 
-  onReady(cb: (kind: EnvKind) => void): () => void {
+  onReady(cb: (kinds: readonly EnvKind[]) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
   }
@@ -644,7 +666,28 @@ export class EnvTextures {
     return null;
   }
 
-  /** Fire the four case parts, in the current room's colours. */
+  /**
+   * Fire the four case parts, in the current room's colours.
+   *
+   * ## Why the four are published together when a room is REPLACED
+   *
+   * `bakeCached` runs behind a fairness pump that releases one producer per
+   * turn, so these four resolve in four different tasks — in issue order,
+   * plank first. Publishing each one the moment it lands (which is what this
+   * did) means the shelf paints the new room's ledges onto the old room's
+   * carcass, pilasters and cornice, and holds that until the rest catch up.
+   * Measured on the demo recording: six frames, ~0.4s, of a bookcase that was
+   * two rooms at once — teal shelf boards on a gilt salon.
+   *
+   * So a replacement stages all four bitmaps and commits them in one
+   * synchronous block. Nothing observes a mixed set: the outgoing room stays
+   * whole on screen, and the incoming one arrives whole.
+   *
+   * The FIRST dressing still lands part by part, deliberately. There is no
+   * outgoing room to keep — the sprites are on `PLACEHOLDER_TINTS` — so a part
+   * arriving early is strictly better than four arriving late, and a cold boot
+   * is exactly where the pump's turns are most spread out.
+   */
   private bakeCase(gen: number): Promise<void> {
     const dpr = this.loadDpr;
     // Snapshot the room here, not inside each bake: `setTheme` may land another
@@ -657,32 +700,81 @@ export class EnvTextures {
         design: DEFAULT_SHELF_DESIGN,
       },
     );
-    const jobs: Array<Promise<unknown>> = [
-      bakeFlatPlank(room, SHELF_WIDTH, PLANK_H, dpr).then((b) => this.landPart('plank', b, gen)),
-      bakeFlatBack(room, SHELF_WIDTH, BOOK_ZONE_H, dpr).then((b) => this.landPart('back', b, gen)),
-      bakeFlatRail(room, RAIL_W, FLOOR_H, dpr).then((b) => this.landPart('rail', b, gen)),
-      bakeFlatCrown(room, SHELF_WIDTH + CROWN_LIP * 2, CROWN_H, dpr).then((b) =>
-        this.landPart('crown', b, gen),
-      ),
-    ].map((p) => p.catch(() => undefined));
-    return Promise.all(jobs).then(() => undefined);
+    const replacing =
+      this.plank !== null && this.back !== null && this.rail !== null && this.crown !== null;
+    const parts: ReadonlyArray<readonly [EnvKind, Promise<ImageBitmap>]> = [
+      ['plank', bakeFlatPlank(room, SHELF_WIDTH, PLANK_H, dpr)],
+      ['back', bakeFlatBack(room, SHELF_WIDTH, BOOK_ZONE_H, dpr)],
+      ['rail', bakeFlatRail(room, RAIL_W, FLOOR_H, dpr)],
+      ['crown', bakeFlatCrown(room, SHELF_WIDTH + CROWN_LIP * 2, CROWN_H, dpr)],
+    ];
+    const jobs = parts.map(([kind, job]) =>
+      job
+        .then((bitmap): StagedPart | null => {
+          if (!replacing) {
+            this.landPart(kind, bitmap, gen);
+            return null;
+          }
+          return { kind, bitmap };
+        })
+        .catch(() => null),
+    );
+    return Promise.all(jobs).then((staged) => {
+      if (!replacing || this.destroyed || gen !== this.themeGen) return;
+      this.commitCase(staged);
+    });
   }
 
   /**
-   * Hand a baked part to its field and tell the world.
+   * Put a whole room on the case at once.
+   *
+   * Three phases, and the order of the last two is the contract `landPart` has
+   * always kept: every field is assigned BEFORE any listener runs (so nothing
+   * can read a half-dressed case), and every listener runs BEFORE the outgoing
+   * textures are freed (`world.syncCrown` re-points the cornice sprite from
+   * inside that callback, and freeing first would hand it a dead texture).
+   */
+  private commitCase(staged: ReadonlyArray<StagedPart | null>): void {
+    const changed: EnvKind[] = [];
+    const outgoing: Texture[] = [];
+    for (const part of staged) {
+      if (part === null) continue;
+      const swap = this.stagePart(part.kind, part.bitmap);
+      if (!swap.changed) continue;
+      changed.push(part.kind);
+      if (swap.retired !== null) outgoing.push(swap.retired);
+    }
+    if (changed.length > 0) {
+      for (const cb of this.listeners) cb(changed);
+    }
+    for (const texture of outgoing) texture.destroy(true);
+  }
+
+  /**
+   * Hand a baked part to its field WITHOUT announcing it, reporting whether
+   * anything moved and which texture the caller now owes a `destroy` to.
    *
    * The identity check is load-bearing: `load()` and `setTheme()` both request
    * the same keys now, and `bakeCached` memoizes, so both callers can be
    * handed the SAME ImageBitmap. Wrapping it in a second Texture and freeing
    * the first would tear the bitmap out from under a live sprite.
    */
+  private stagePart(kind: EnvKind, bitmap: ImageBitmap): PartSwap {
+    const old = this.textureFor(kind);
+    if (old !== null && !old.destroyed && old.source.resource === bitmap) {
+      return { changed: false, retired: null };
+    }
+    this.assign(kind, textureFromBitmap(bitmap, true));
+    return { changed: true, retired: old !== null && !old.destroyed ? old : null };
+  }
+
+  /** Assign one part and tell the world immediately (the first dressing). */
   private landPart(kind: EnvKind, bitmap: ImageBitmap, gen: number): void {
     if (this.destroyed || gen !== this.themeGen) return;
-    const old = this.textureFor(kind);
-    if (old !== null && !old.destroyed && old.source.resource === bitmap) return;
-    this.assign(kind, textureFromBitmap(bitmap, true));
-    for (const cb of this.listeners) cb(kind);
-    if (old !== null && !old.destroyed) old.destroy(true);
+    const swap = this.stagePart(kind, bitmap);
+    if (!swap.changed) return;
+    for (const cb of this.listeners) cb([kind]);
+    swap.retired?.destroy(true);
   }
 
   private textureFor(kind: EnvKind): Texture | null {

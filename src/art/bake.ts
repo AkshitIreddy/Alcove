@@ -171,17 +171,61 @@ function fastTurn(cb: () => void): boolean {
   return true;
 }
 
+/**
+ * Take a turn, and DECIDE how expensive that turn should be only once we are
+ * already on the other side of a task boundary.
+ *
+ * This shape is not decoration. `pump()` schedules the next turn from inside
+ * the current turn's callback, immediately after releasing a waiter — and
+ * releasing a waiter only resolves its promise. The producer body runs later,
+ * in the microtask drain at the end of this task, and `lastProducerMs` is not
+ * assigned until it finishes. Deciding the scheduler at scheduling time
+ * therefore always charged the next turn the cost of a producer from the
+ * PREVIOUS storm.
+ *
+ * Measured on the running shelf: a preset apply asks for four case parts and a
+ * wallpaper tile. The plank produces in ~4ms, but the turn that would release
+ * the recess had already been charged 11.5ms (the wallpaper tile baked at
+ * boot, minutes earlier), so it went to `requestIdleCallback` — and the shelf
+ * renders continuously, so idle never comes and the timeout paid 13–58ms
+ * headless, a third of a second on the demo machine. One slow turn, then three
+ * fast ones, every time. That single stale decision is what let the case paint
+ * in two halves: new ledges beside an old carcass.
+ *
+ * So the turn always starts with the cheap macrotask hop, which is where the
+ * previous producer's real cost has just been recorded, and only THEN spends a
+ * frame of idle latency if that cost warrants one. The pump's actual guarantee
+ * — one producer per task, a paint and input opportunity between every two —
+ * is unchanged either way.
+ */
 function scheduleTurn(cb: () => void): void {
-  if (lastProducerMs <= CHEAP_PRODUCER_MS && fastTurn(cb)) return;
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(() => cb(), { timeout: PUMP_IDLE_TIMEOUT_MS });
-    return;
-  }
-  setTimeout(cb, 0);
+  const decide = (): void => {
+    if (lastProducerMs <= CHEAP_PRODUCER_MS) {
+      cb();
+      return;
+    }
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => cb(), { timeout: PUMP_IDLE_TIMEOUT_MS });
+      return;
+    }
+    setTimeout(cb, 0);
+  };
+  if (fastTurn(decide)) return;
+  setTimeout(decide, 0);
 }
 
 function pump(): void {
-  if (pumpScheduled || pumpQueue.length === 0) return;
+  if (pumpScheduled) return;
+  if (pumpQueue.length === 0) {
+    // The storm is over. A cost measured before it says nothing about the next
+    // one, and keeping it means the HEAD of every future storm is throttled by
+    // whatever the app happened to bake last — which is how a 4ms flat plank
+    // came to be scheduled behind an idle callback earned by a wallpaper tile.
+    // The throttle exists to space out a burst; between bursts there is
+    // nothing to space.
+    lastProducerMs = 0;
+    return;
+  }
   pumpScheduled = true;
   scheduleTurn(() => {
     pumpScheduled = false;

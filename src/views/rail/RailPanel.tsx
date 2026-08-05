@@ -119,7 +119,21 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
       const width = sheet.offsetWidth;
       const restLeft = Number.parseFloat(getComputedStyle(sheet).left) || 0;
       claimPanelPush(pushKey, width, restLeft + width);
-      gsap.to(sheet, { xPercent: 0, ...tween('slow', 'enter') });
+      // Promote the sheet for the slide and DEMOTE it again at the end. The
+      // hint used to live on `.nb-rail-panel` unconditionally, which kept a
+      // compositor layer alive for a sheet that moves twice a session — and a
+      // permanently promoted layer is rastered on its own schedule, so while
+      // the main thread is busy (a room being re-baked, say) the compositor
+      // happily presents the band it last managed to raster. That is how one
+      // screenshot came to hold two ages of the same panel: the section title
+      // said "presets gilt salon" while the tick below it was still on the
+      // previous card. Same rule reader.css:48 already states for the spread.
+      sheet.classList.add('is-sliding');
+      gsap.to(sheet, {
+        xPercent: 0,
+        ...tween('slow', 'enter'),
+        onComplete: () => sheet.classList.remove('is-sliding'),
+      });
       // Keyboard openers only — see the module docblock.
       if (opener !== null && opener.matches(':focus-visible')) {
         sheet.focus({ preventScroll: true });
@@ -139,10 +153,14 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
       opener = null;
       // Leaving is a step quicker than arriving — the sheet has already been
       // read by the time it closes.
+      sheet.classList.add('is-sliding');
       gsap.to(sheet, {
         xPercent: -130,
         ...tween('normal', 'exit'),
-        onComplete: () => gsap.set(sheet, { visibility: 'hidden' }),
+        onComplete: () => {
+          gsap.set(sheet, { visibility: 'hidden' });
+          sheet.classList.remove('is-sliding');
+        },
       });
     }
     return open;

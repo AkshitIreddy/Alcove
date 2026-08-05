@@ -158,6 +158,8 @@ export class FloorView {
   /** Floor data state: undefined = still loading, [] = known empty. */
   loaded = false;
   visuals: BookVisual[] = [];
+  /** The style epoch `visuals[].params` were derived at (see refreshTextures). */
+  private paramsEpoch = -1;
 
   private readonly backBase: Sprite;
   private backWood: Sprite | null = null;
@@ -257,6 +259,7 @@ export class FloorView {
     recentBookId: string | null = null,
   ): void {
     this.loaded = books !== undefined;
+    this.paramsEpoch = factory.epoch;
     this.clearHoverFx();
     for (const v of this.visuals) {
       gsap.killTweensOf(v.sprite);
@@ -456,6 +459,14 @@ export class FloorView {
 
   /** Re-pick textures for specific books (bakes landed / page evicted). */
   refreshTextures(factory: SpineFactory, bookIds?: ReadonlySet<string>): void {
+    // The params were derived when this row was laid out, and a room swap
+    // re-derives every book's. They are only read for `placeholderTint` now,
+    // but that is exactly the moment it matters: a book with no texture yet was
+    // being filled in the OUTGOING room's cloth.
+    if (factory.epoch !== this.paramsEpoch) {
+      this.paramsEpoch = factory.epoch;
+      for (const visual of this.visuals) visual.params = factory.getParams(visual.book);
+    }
     for (const visual of this.visuals) {
       if (bookIds !== undefined && !bookIds.has(visual.book.id)) continue;
       this.applyTexture(visual, factory);

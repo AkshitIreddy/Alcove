@@ -73,6 +73,46 @@ being reviewed frame by frame.
       f0100 exactly 4500 px change, confined to the two cards' borders and label
       bands, with the world unmoved. The panel's selected state arrives late.
 
+- [x] **A blank page at the end, and a blank screen on the way back.**
+      > "I noticed at the end of the gif it shows a blank page, and also when
+      > 'back to shelf' is clicked, for a second it shows just a blank screen."
+
+      Both fixed. The blank SCREEN was `ShelfView` being unmounted for the whole
+      time a book was open, so pressing back rebuilt the entire Pixi world —
+      3 blank frames and a 236ms window with no room at all, now 0 and never.
+      The blank PAGE was measured rather than assumed: all 1397 frames of the
+      old recording were decoded and the page area checked for ink against a
+      luma threshold that tells page cream (241) from the wall (226), so a shelf
+      rebuild could not be miscounted. Zero frames showed a blank page even
+      then; what the reader saw was the blank screen at the end of the turn
+      sequence, which is the same defect.
+
+- [x] **The page-turn animation is not visible at all, and the flicker remains.**
+      > "Page turn animation is not even visible in the gif, along with page
+      > flicker that still happens."
+
+      FIXED, and it was the demo pressing a key that does not turn a page.
+      `arrowFlipAction(key, isTyping)` returns null when the active element is a
+      typing target, and after a book is opened the caret IS in the page — so
+      every ArrowRight in the recording was a caret move. Neither the app nor
+      the recorder was at fault: `probe-curl-capture.mjs` showed that with the
+      editor blurred the flip runs for 17 frames and the CDP screencast catches
+      11 of them, with the curl plainly visible in the captured JPEG.
+
+      Measured on both recordings, diffing the RIGHT-HAND PAGE only so a rail
+      sheet sliding cannot be mistaken for a turn:
+
+          old   34 page changes, 17 INSTANT CUTS, no curl anywhere
+          new   18 page changes,  1 instant cut, 11 ANIMATED runs of 0.36-0.50s
+
+      Frame 694 of the new recording shows the leaf lifted with the next page's
+      words through the gap. The instant cuts falling 17 -> 1 is the other half:
+      most of them were never turns, they were the duplication rewriting the
+      page under the reader.
+
+      (Recorded here after the fact — both entries were lost from this file
+      during a bulk edit and restored once the loss was noticed.)
+
 ### The duplication fix, and the discipline that caught the first attempt
 
 - [x] **Reading a book duplicated its content.** FIXED, and the fix is the

@@ -1,5 +1,12 @@
 # Alcove — running TODO
 
+## ⏸ PAUSED CHECKPOINT — 2026-08-06 (superseded — work resumed)
+
+See `HANDOFF.md` **RESUMED** section. Spine blockers f0206/f0322 are fixed;
+demo render **#5** is the candidate WebP; Gifsmith verify-only is green (run
+31091378026); visual matrix 57/64 pass (7 baseline drifts); quiet E2E had
+parallel-contention timeouts — rerun on exclusive `:1420` before ship.
+
 ## 🎯 OPEN — everything left, in the order to do it
 
 This index exists because the file below it is 3,900 lines of dated reports and
@@ -37,8 +44,10 @@ tree is in right now, what's uncommitted, and what to check first.
    remains 25.66/19.41 lines and columns 592/434px. The refined default budget
    is 16.41 lines; seeded estimates average 81% (85% max), and live named leaves
    average 88% (97% max). The minimum-window ceiling is 52% of the default leaf.
-5. `:1223` Re-render the demo, once, last. Check it against the two open
-   findings above before calling it done.
+5. [x] `:1223` Re-render the demo. Five renders with local Gifsmith; render **#5**
+   is the candidate (1192 frames, 77s, seam MSE 0.115, 17 temporal findings,
+   ~35% shorter post-click holds). **f0206 and f0322 are gone.** `probe-spine-settle.mjs`
+   GATE ALIVE.
 6. Tag and ship.
 
 ### Smaller, not release-blocking

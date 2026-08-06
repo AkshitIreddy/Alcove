@@ -91,6 +91,8 @@ The five design docs in `docs/design/` are the canonical blueprints — read the
 
 ## Verify
 
+**Not every gate runs on every change.** Default for day-to-day work: `npx tsc --noEmit` and `npx vitest run` on the code you touched. Full visual matrix (~45 min), Playwright E2E (~45 min, needs exclusive `:1420`), and the 97 probe scripts are **release or regression tools** — run them when the surface warrants it, not because an agent checklist says so. The owner’s preference is **look at the UI** (frame review, specimen boards, triptychs) over running every harness on every commit. The harness count has grown large (2774 unit tests, 96 e2e, 64 visual surfaces, dozens of probes); trimming redundant or flaky gates is worth doing — see `HANDOFF.md` testing note.
+
 - Frontend typecheck: `npx tsc --noEmit` (agents working in parallel: use this, do NOT run `npm run build` or `npm run tauri dev`)
 - Rust: `cargo check --manifest-path src-tauri/Cargo.toml`, and **`cargo test --manifest-path src-tauri/Cargo.toml` — this line said only `check` for a long time, and a Rust unit test was failing the whole while.** `xref_offsets_point_at_objects` took byte offsets out of a PDF's xref table and indexed them into a `from_utf8_lossy` string, which is not the file: a PDF opens with a binary comment line, so every byte past the ninth sits somewhere else in the string than in the buffer. The exporter was fine. Nothing ran the test. `check` compiles; only `test` runs anything.
 - Unit tests: `npx vitest run`

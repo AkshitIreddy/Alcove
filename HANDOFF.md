@@ -61,7 +61,8 @@ reported MOVE and the matrix reached 63/64 exact before the last timer race was
 fixed; that surface then repeated 0px twice), (3) re-capture the 24 README shots
 (done: atomic failure/partial guards proved, full clean 0.4.0 set captured and
 every alt visually checked), (4)
-`npm run readme:build` + re-check the release-notes arithmetic, (5) re-render
+`npm run readme:build` + re-check the release-notes arithmetic (done; current
+budget/fill figures replaced the stale first-cut values), (5) re-render
 the demo once, last, (6) run `scripts/shrink-history.mjs --yes` (already
 rehearsed safe on a throwaway clone — 1.4GB → 318MB, GO), `--remap`, force-push
 `main` **and `--tags`**, then `git tag v0.4.0`. Every step from (2) onward needs

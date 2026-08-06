@@ -152,12 +152,12 @@ export const REFERENCE_WINDOW: WindowSize = { width: 1600, height: 1000 };
  * app permits, and the two fail in opposite directions:
  *
  *   window       leaf holds   budget   a page cut for the default is...
- *   1600x1000    25.66        23.5     ...67% of the leaf. Roomier margins.
- *   1280x800     19.41        17.2     ...exactly right. The DEFAULT.
- *   960x620      13.78        11.6     ...over by three lines; the tail flows.
+ *   1600x1000    25.66        23.50    ...at most 64% of the leaf. More air.
+ *   1280x800     19.41        16.41    ...up to 85%. The DEFAULT.
+ *   960x620      13.78        10.02    ...over by six estimator lines; it flows.
  *
  * Cutting for 960x620 would mean nothing ever reflows on open at any size the
- * app allows — and it would put every seeded page at 60% of the leaf a NEW
+ * app allows — and it would put the page ceiling at 52% of the leaf a NEW
  * READER SEES, which is the "half-empty pages" the owner already reported
  * once. It buys a guarantee at the one window a reader has to drag the frame
  * to reach, and pays for it at the window everybody starts in.
@@ -375,7 +375,7 @@ export function lineBudgetFor(win: WindowSize): number {
  *
  * At the reference window this law still gives 23.5 to two decimal places,
  * which is the check that it is the same model and not a new one; at the
- * window the app opens it gives 17.2.
+ * window the app opens it gives 16.41.
  */
 export const PAGE_LINE_BUDGET = lineBudgetFor(TARGET_WINDOW);
 

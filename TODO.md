@@ -33,8 +33,10 @@ tree is in right now, what's uncommitted, and what to check first.
    hero run left the set byte-identical; the partial hero kept set identity at
    0.3.0; the full run promoted 24 pictures + manifest at once as Alcove 0.4.0.
    Every alt was visually checked and six stale descriptions were corrected.
-4. `npm run readme:build`, then re-check the 0.4.0 release-notes arithmetic
-   against whatever the numbers land on (they've moved twice already).
+4. [x] `npm run readme:build`; rechecked the 0.4.0 arithmetic. Leaf capacity
+   remains 25.66/19.41 lines and columns 592/434px. The refined default budget
+   is 16.41 lines; seeded estimates average 81% (85% max), and live named leaves
+   average 88% (97% max). The minimum-window ceiling is 52% of the default leaf.
 5. `:1223` Re-render the demo, once, last. Check it against the two open
    findings above before calling it done.
 6. Tag and ship.
@@ -376,16 +378,17 @@ being reviewed frame by frame.
       `PAGE_LINE_BUDGET` is derived from the window now, off two laws measured
       at five sizes — the chrome above and below a leaf is a constant 179px and
       the 32px rule grid does not scale with the frame. Cut for 1280x800, the
-      window `tauri.conf.json` opens: 17.2 lines rather than 23.5. Cutting for
+      window `tauri.conf.json` opens: 16.41 lines rather than 23.5. Cutting for
       the 960x620 minimum would guarantee nothing ever reflows and would put
-      every seeded page at 60% of the leaf a NEW READER SEES, which is the
+      the page ceiling at 52% of the leaf a NEW READER SEES, which is the
       half-empty pages already reported once.
 
       Seed v7 is the same thirty-two leaves saying the same things in fewer
       words. Every v6 page cost 136% of the leaf it landed on — the tour turned
       into 46 leaves the moment it was opened, which was pagination doing
-      exactly its job. Now 84% of the leaf at the default window, and generously
-      margined rather than full at 1600x1000.
+      exactly its job. The estimator now averages 81% of the default leaf and
+      peaks at 85%; live named leaves average 88% and peak at 97%, while the
+      same leaves average 65% at 1600x1000.
 
       Two side effects worth recording. `probe-diagram-scale.mjs` was written
       before assuming a diagram's cost moves with the window: `.nb-dg-svg` is
@@ -1324,6 +1327,15 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
          the target budget moved), and the seed was re-cut against it. Nothing
          gates prose. Recompute the four numbers and fix them, or the release
          page ships confident arithmetic about a build that does something else.
+
+         **Done 2026-08-06.** The pure current constants reproduce 25.65625 vs
+         19.40625 leaf lines and 592.16px vs 434.16px columns. The two-point
+         slack fit makes the default budget 16.4058 lines, not the stale 17.2.
+         Across all 32 seed sources the estimator averages 80.8% and peaks at
+         84.5%; the running default-window probe's named leaves average 87.9%
+         and peak at 96.6%. The minimum budget is 10.0243 lines, 51.7% of the
+         default leaf. Release prose and calibration comments now say those
+         quantities explicitly.
       5. **Re-render the demo. Last, and once.** Then review it: the two
          over-full moments (f0705, f0857 in the old recording), the preset click
          where the ring lagged the room, and every turn's landing.

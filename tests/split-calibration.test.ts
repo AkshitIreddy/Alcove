@@ -460,8 +460,9 @@ describe('the estimator against thirty-two real leaves', () => {
    * small blocks was billed for a full page and drew two thirds of one.
    *
    * Judged AT THE WINDOW THE PAGE WAS CUT FOR, which is the change v7 forced.
-   * These pages are authored against a 1280x800 leaf and fill 87% to 100% of
-   * it; the same pages measured on the 1600x1000 leaf above cover 60%, and
+   * These pages are authored against a 1280x800 leaf: the estimator puts them
+   * at 70–85% of it, while the live named leaves measure 73–97%. At 1600x1000
+   * those same named leaves average 65%, and
    * asking "is this page full" of a leaf a third bigger than the one it was
    * written for is the question that produced the bug in the first place.
    */

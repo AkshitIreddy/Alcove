@@ -49,11 +49,13 @@ grid does not scale with the frame — which is what makes a small window
 expensive rather than merely smaller. And the Welcome book was re-cut for the
 window it opens in: the same thirty-two leaves on the same subjects, said in
 fewer words, with the second card dropped from the pages that carried two. They
-sit at 84% of the leaf now, and read as generously margined on a larger screen.
+average 81% of the default leaf in the splitter (the dearest is 85%); measured
+in the running app, the named leaves average 88% and the dearest reaches 97%.
+They read as generously margined on a larger screen.
 
 It is cut for the size the app OPENS at rather than the smallest it allows.
 Cutting for the minimum would guarantee nothing ever reflowed at any window —
-and would put every page of the tour at 60% of the leaf a new reader is actually
+and would put the splitter's page ceiling at 52% of the leaf a new reader is actually
 handed, which is the half-empty pages already complained about once. Shrink the
 frame past the default and the tail flows onward, which is what the owner asked
 for in the first place: *"just make it work like any other book — if it's too

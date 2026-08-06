@@ -345,6 +345,10 @@ export class ShelfWorld {
   private appliedLibraryKey = '';
   /** Set while a coalesced `applyLibrary` is already queued for this tick. */
   private libraryQueued = false;
+  /** The in-flight room apply, if any — the demo must not declare a hold until this finishes. */
+  private libraryApply: Promise<void> = Promise.resolve();
+  /** True while `applyLibrary` is executing (not just queued). */
+  private libraryBusy = false;
   /**
    * How many times the case + wall have actually been BAKED.
    *
@@ -969,6 +973,8 @@ export class ShelfWorld {
         [...this.floors.values()].flatMap((fv) =>
           fv.visuals.map((v) => ({ id: v.book.id, title: v.book.title })),
         );
+      globals['__shelfWhenSpinesReady'] = (hi = false): Promise<void> =>
+        this.whenRoomSettled(hi);
       // Apply a Book Studio override blob straight to a book (screenshot
       // boards need a heavily customized book on the shelf).
       globals['__shelfSetBookStyle'] = async (
@@ -1249,6 +1255,69 @@ export class ShelfWorld {
   spineRectOf(bookId: string): RectLike | null {
     const book = this.store.findBook(bookId);
     return book === null ? null : this.spineScreenRect(book);
+  }
+
+  /**
+   * Awaitable gate for every book currently mounted on the shelf.
+   *
+   * Tier-0 views request hi-res title text on top of lo; waiting only on lo
+   * still lets a spine sharpen mid-hold, which is what the demo's temporal
+   * review flagged at f0206 and f0322.
+   */
+  whenSpinesSettled(hi = false): Promise<void> {
+    for (const fv of this.floors.values()) this.requestSpines(fv);
+    const ids: string[] = [];
+    for (const fv of this.floors.values()) {
+      for (const visual of fv.visuals) ids.push(visual.book.id);
+    }
+    return this.factory.whenReady(ids, { hi });
+  }
+
+  /**
+   * Awaitable gate for the whole room repaint: case bakes, wallpaper, floor
+   * relayout, and every mounted spine. Waiting only on spines let the demo
+   * declare a hold while `applyLibrary` was still mid-flight.
+   */
+  whenRoomSettled(hi = false): Promise<void> {
+    return this.waitLibraryQuiet()
+      .then(() => this.envTex.themeReady)
+      .then(() => this.whenSpinesSettled(hi))
+      .then(() => this.waitFrames(2))
+      .then(() => this.whenSpinesSettled(hi));
+  }
+
+  /** One animation frame — enough for a texture flush to reach the sprites. */
+  private waitFrames(count: number): Promise<void> {
+    if (count <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const step = (): void => {
+        count -= 1;
+        if (count <= 0) resolve();
+        else if (typeof requestAnimationFrame === 'function') requestAnimationFrame(step);
+        else setTimeout(step, 16);
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(step);
+      else setTimeout(step, 16);
+    });
+  }
+
+  /**
+   * The optimistic studio save fires `applyLibrary` twice: once on the click,
+   * again when SQLite answers. Declaring a hold after only the first pass is
+   * how the demo's temporal review caught spines landing mid-hold.
+   */
+  private async waitLibraryQuiet(): Promise<void> {
+    let stable = 0;
+    while (stable < 2) {
+      await this.libraryApply;
+      await this.waitFrames(1);
+      if (this.libraryBusy || this.libraryQueued) {
+        stable = 0;
+        continue;
+      }
+      stable += 1;
+    }
+    await this.libraryApply;
   }
 
   /**
@@ -2076,12 +2145,14 @@ export class ShelfWorld {
     setTimeout(() => {
       this.libraryQueued = false;
       if (this.destroyed) return;
-      void this.applyLibrary(snapshotLibraryPrefs());
+      this.libraryApply = this.applyLibrary(snapshotLibraryPrefs()).catch(() => {});
     }, 0);
   }
 
   private async applyLibrary(prefs: LibraryPrefs): Promise<void> {
     if (this.destroyed) return;
+    this.libraryBusy = true;
+    try {
     const next = resolveLibrary(prefs);
     // The room is colours AND carpentry AND paper, and only the colours come
     // through `prefs`. Fold the other two into the key here, or a reader who
@@ -2168,6 +2239,9 @@ export class ShelfWorld {
     this.dirty = true;
     this.appliedLibraryKey = key;
     this.events.onLibraryChange?.(key);
+    } finally {
+      this.libraryBusy = false;
+    }
   }
 
   /** The room key currently ON SCREEN (bakes landed). QA + tests read this. */

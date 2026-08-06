@@ -152,6 +152,27 @@ export function roomToPrefs(room: string | null | undefined): LibraryPrefs {
   }
 }
 
+/**
+ * The room a bookcase CARD should paint.
+ *
+ * There are deliberately two sources here. The open room moves optimistically
+ * in `saveLibraryPrefs` on the frame the reader presses a studio tile; its
+ * `bookcases.list[].room` blob follows only after SQLite has written and the
+ * bookcase store has refreshed. Reading that row for the open card therefore
+ * leaves its thumbnail exactly one press behind the shelf. A closed case has no
+ * live room store of its own, so its persisted row remains the right source.
+ *
+ * `openPrefs` is passed rather than snapshotted so a Solid caller keeps tracking
+ * its fields when `resolveLibrary` reads them.
+ */
+export function prefsForBookcasePreview(
+  room: string | null | undefined,
+  isOpen: boolean,
+  openPrefs: LibraryPrefs,
+): LibraryPrefs {
+  return isOpen ? openPrefs : roomToPrefs(room);
+}
+
 /** Publish the open case's room into the reactive store. */
 function adopt(state: BookcaseState): LibraryPrefs {
   const open = state.list.find((c) => c.id === state.activeId);

@@ -270,6 +270,17 @@ export class SpineFactory {
    * shelf forty times for one frame's worth of new pixels.
    */
   private readonly landed = new Set<string>();
+  /**
+   * Promises waiting for listed books to finish baking. Checked after every
+   * flush and whenever the queue drains — the demo's temporal review caught
+   * hi-res spines landing two seconds into a declared hold because nothing
+   * here existed to gate on.
+   */
+  private readonly settleWaits: Array<{
+    ids: Set<string>;
+    hi: boolean;
+    resolve: () => void;
+  }> = [];
   private flushScheduled = false;
   /** Pages touched since the last flush (their GPU source needs an update). */
   private readonly dirtySources = new Set<CanvasSource>();
@@ -328,6 +339,25 @@ export class SpineFactory {
   onTexturesChanged(cb: (bookIds: readonly string[]) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  /**
+   * Resolves when every listed book has a live baked texture and nothing for
+   * it remains queued or in-flight. When `hi` is true and hi-res is enabled,
+   * both buckets must be settled — tier-0 views prefer hi, and waiting only
+   * on lo still lets a decorated spine sharpen mid-hold.
+   */
+  whenReady(bookIds: readonly string[], opts?: { hi?: boolean }): Promise<void> {
+    if (this.destroyed) return Promise.resolve();
+    const hi = opts?.hi === true && this.hiEnabled;
+    const ids = [...new Set(bookIds)];
+    if (ids.length === 0 || ids.every((id) => this.isSettled(id, hi))) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.settleWaits.push({ ids: new Set(ids), hi, resolve });
+      this.checkSettles();
+    });
   }
 
   /**
@@ -718,22 +748,41 @@ export class SpineFactory {
   private dropBakes(bookId: string): void {
     for (const variant of ['lo', 'hi'] as const) {
       const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
+      const held = variant === 'hi' ? this.retiredHi : this.retiredLo;
       const tex = bucket.get(bookId);
       if (tex !== undefined) {
         bucket.delete(bookId);
-        tex.destroy(false);
+        /*
+         * A build-only change arrives after the previous room swap has
+         * finished, so its active texture usually has NO older entry left in
+         * `retired*`. Destroying the active one here therefore made `get()`
+         * fall all the way through to Texture.WHITE until the resized bake
+         * landed — the studio demo caught every visible book losing its
+         * labels, cords and gilt for two frames.
+         *
+         * Retire the pixels that are actually on screen, exactly as
+         * `invalidateAll` does for a colour change. The atlas handle stays
+         * live until `alloc()` sees the replacement size: same-size bakes may
+         * paint in place; changed sizes release the old handle as part of the
+         * allocation. Atlas pages never reclaim an individual rect, so the
+         * held frame remains valid in either case.
+         */
+        const prior = held.get(bookId);
+        if (prior !== undefined && prior !== tex && !prior.destroyed) {
+          // A replacement can land immediately before another invalidation;
+          // the sprite may still point at `prior` until this flush announces
+          // `tex`, so free it only after that announcement.
+          if (!this.freeAfterFlush.includes(prior)) this.freeAfterFlush.push(prior);
+        }
+        held.set(bookId, tex);
       }
       // The retired copy STAYS. It was baked against the old clear height, so
       // it is the wrong shape for the new stand — but the sprite is scaled to
       // the new height either way, so the reader sees the same book a per cent
       // or two out of proportion for a frame or two instead of a flat slab.
-      // This path is not rare on a room swap: a new build is a new headroom,
-      // so `setBuild` drops the bakes of every book whose bay changed shape,
-      // and dropping their retired art with them put ten of thirteen books
-      // back on placeholders — the exact defect the retirement exists to stop.
-      (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
       this.queue.delete(`${variant}|${bookId}`);
     }
+    this.armRetireWatchdog();
     this.landed.add(bookId);
     this.scheduleFlush();
   }
@@ -1092,9 +1141,40 @@ export class SpineFactory {
       // Every book whose retired spine is on this list was announced by an
       // emit at or before this one, so no sprite is still pointing at one.
       this.drainFreeList();
+      this.checkSettles();
     };
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
     else setTimeout(run, 16);
+  }
+
+  /** True when a bucket is live and nothing is still painting it. */
+  private variantSettled(bookId: string, variant: SpineVariant): boolean {
+    const key = `${variant}|${bookId}`;
+    const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
+    return bucket.has(bookId) && !this.queue.has(key) && !this.inFlight.has(key);
+  }
+
+  private isSettled(bookId: string, hi: boolean): boolean {
+    if (!this.variantSettled(bookId, 'lo')) return false;
+    return !hi || this.variantSettled(bookId, 'hi');
+  }
+
+  private checkSettles(): void {
+    if (this.settleWaits.length === 0) return;
+    for (let i = this.settleWaits.length - 1; i >= 0; i--) {
+      const wait = this.settleWaits[i];
+      let ready = true;
+      for (const id of wait.ids) {
+        if (!this.isSettled(id, wait.hi)) {
+          ready = false;
+          break;
+        }
+      }
+      if (ready) {
+        this.settleWaits.splice(i, 1);
+        wait.resolve();
+      }
+    }
   }
 
   private scheduleSlice(): void {

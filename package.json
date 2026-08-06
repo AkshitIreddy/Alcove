@@ -1,7 +1,7 @@
 {
   "name": "alcove",
   "version": "0.4.0",
-  "description": "Built like a picture book: flat-drawn shelves and walls. Write inside like a notebook — block editor, diagrams, tape, stickers. Offline. Windows, macOS, Linux.",
+  "description": "Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers. Offline. Windows, macOS, Linux.",
   "type": "module",
   "scripts": {
     "start": "vite",

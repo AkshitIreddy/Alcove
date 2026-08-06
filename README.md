@@ -28,7 +28,7 @@
 <h1 align="center">Alcove</h1>
 
 <p align="center">
-  <b>Built like a picture book: flat-drawn shelves and walls. Write inside like a notebook — block editor, diagrams, tape, stickers.</b>
+  <b>Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers.</b>
 </p>
 
 <p align="center">
@@ -64,10 +64,10 @@
 
 ---
 
-Alcove is built like a picture book: flat-drawn shelves and walls you pan through
-and dress — repaint the carpentry, swap the wallpaper, give every spine its own
-binding. Pull a book off its floor and write inside like a notebook: ruled pages,
-block editor, diagrams, tape, stickers, callouts, and code.
+Alcove is built like a storybook library — cozy shelves and patterned walls you
+pan through and dress: repaint the carpentry, swap the wallpaper, give every
+spine its own binding. Open any book into notebook pages filled with diagrams,
+notes, tape, and stickers — ruled leaves, block editor, callouts, and code.
 
 Pages are real pages: a page is a fixed leaf that never scrolls, so filling one
 flows your writing onto the next and turning it is a turn rather than a scroll.
@@ -492,6 +492,8 @@ anything you wrote.
 Pages can also point at each other: type `[[` for the page picker, and the page
 you pointed at lists yours back at the bottom
 ([`src/editor/backlinks/`](src/editor/backlinks/)).
+
+![The Welcome book on its Pictures page: three hand-drawn kittens in a polaroid image-row across ruled notebook lines — a ginger one captioned "Has plans", a grey one asleep captioned "On the good chair", and a cream one peering over a cardboard box captioned "His box now". Each sits in a white polaroid frame with a pencil caption beneath, drawn in the same flat ink outline as the bookcase.](docs/readme/img/kittens.png)
 
 ### The rail, end to end
 

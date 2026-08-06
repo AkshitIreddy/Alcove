@@ -22,7 +22,7 @@
   "slug": "alcove",
   "identifier": "com.alcove.app",
   "repo": "AkshitIreddy/Alcove",
-  "tagline": "built like a picture book — flat-drawn shelves and walls; write inside like a notebook",
+  "tagline": "built like a storybook library — cozy shelves, patterned walls; notebook pages with diagrams, notes, tape, stickers",
   "art": {
     "master": "assets/brand/alcove-art.png",
     "$comment": "The illustration every shipped icon is rendered from. scripts/gen-icons.py cuts its baked frame to alpha and close-crops the small sizes."

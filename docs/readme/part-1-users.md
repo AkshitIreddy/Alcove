@@ -6,8 +6,9 @@
 
 # Part 1 — Using Alcove
 
-**A notes app that keeps your writing in books, on a shelf you can walk around
-in.** This half is for the person using it: what to download, what the installer
+**Built like a storybook library, with cozy shelves and patterned walls. Open every
+book into notebook pages filled with diagrams, notes, tape, and stickers.** This
+half is for the person using it: what to download, what the installer
 puts where, and how every part of the app works. It assumes nothing about code.
 
 ![The Alcove banner: a cream card held to a papered wall by a strip of striped tape at one corner. On the left the app's mark — a red ring-bound notebook with a cream label plate wearing a small smiling face, a gold star on the ribbon at its top corner and another on the strap across its front. Beside it the word Alcove in a large handwriting face, and under that two lines: "A notebook that lives on a bookshelf." and "Windows, macOS and Linux · everything stays on your machine." Below those, four pill labels, each in its own wash — endless shelf, block editor, pages that flow, paste from any AI. Six little coloured books stand on a timber plank along the bottom edge.](img/hero.png)
@@ -328,6 +329,8 @@ anything you wrote.
 Pages can also point at each other: type `[[` for the page picker, and the page
 you pointed at lists yours back at the bottom
 ([`src/editor/backlinks/`](../../src/editor/backlinks/)).
+
+![The Welcome book on its Pictures page: three hand-drawn kittens in a polaroid image-row across ruled notebook lines — a ginger one captioned "Has plans", a grey one asleep captioned "On the good chair", and a cream one peering over a cardboard box captioned "His box now". Each sits in a white polaroid frame with a pencil caption beneath, drawn in the same flat ink outline as the bookcase.](img/kittens.png)
 
 ### The rail, end to end
 

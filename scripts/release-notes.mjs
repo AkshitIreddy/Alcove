@@ -109,7 +109,7 @@ head.push(`<img src="${RAW}/assets/brand/alcove-1024.png" width="96" alt="">`);
 head.push('');
 head.push(`# Alcove ${tag}`);
 head.push('');
-head.push('**Built like a picture book: flat-drawn shelves and walls. Write inside like a notebook — block editor, diagrams, tape, stickers.**');
+head.push('**Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers.**');
 head.push('');
 head.push('</div>');
 head.push('');

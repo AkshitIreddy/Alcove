@@ -66,6 +66,7 @@
  * `GATE INERT` means every "clean" this probe has ever printed meant nothing.
  *
  * Usage: node scripts/probe-studio-repaint.mjs [--url=http://localhost:1420]
+ *                                              [--strip="Room presets"]
  *                                              [--tile=2] [--tag=after]
  *                                              [--sabotage]
  */
@@ -78,6 +79,7 @@ const opt = (name, fallback) => {
   return hit ? hit.split('=').slice(1).join('=') : fallback;
 };
 const URL_BASE = opt('url', 'http://localhost:1420');
+const STRIP = opt('strip', 'Room presets');
 const TILE = Number(opt('tile', '2'));
 const TAG = opt('tag', 'run');
 /** How long to keep recording after the click. */
@@ -189,7 +191,7 @@ await page.getByRole('button', { name: /studio/i }).first().click();
 await page.waitForSelector('.nb-library-studio', { timeout: 20000 });
 await page.waitForTimeout(1600);
 
-const strip = page.locator('[aria-label="Room presets"]');
+const strip = page.locator(`[aria-label="${STRIP}"]`);
 await strip.waitFor({ timeout: 20000 });
 const tile = strip.locator('button.nb-strip-tile:not(.nb-strip-more)').nth(TILE);
 await tile.scrollIntoViewIfNeeded();
@@ -268,9 +270,9 @@ console.log(`  preset strip   ${JSON.stringify(panelRect)}`);
  * a burst of them samples the transition densely enough to LOOK at, and to
  * measure blankness and spine decoration on.
  */
-await page.evaluate(() => {
+await page.evaluate((stripName) => {
   const w = globalThis.__shelfWorld;
-  const strip = document.querySelector('[aria-label="Room presets"]');
+  const strip = document.querySelector(`[aria-label="${stripName}"]`);
   const log = [];
   globalThis.__repaintLog = log;
   const t0 = performance.now();
@@ -335,7 +337,7 @@ await page.evaluate(() => {
     requestAnimationFrame(beat);
   };
   requestAnimationFrame(beat);
-});
+}, STRIP);
 
 /*
  * Pictures come off the COMPOSITOR, not from `page.screenshot`.

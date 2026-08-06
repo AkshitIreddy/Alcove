@@ -372,11 +372,20 @@
   border: 3px dashed var(--ink-line);
   border-radius: 8px 12px 11px 7px / 11px 8px 12px 9px;
   box-shadow: var(--shadow-md);
+  /* The world can publish this DOM overlay a few frames after the Pixi room
+     has returned. Fade that late mount in instead of letting a whole book-
+     sized affordance pop into an otherwise settled shelf. */
+  animation: shelf-addslot-arrive var(--dur-sm, 180ms) var(--ease-out) both;
   transition:
     background var(--dur-sm, 180ms) var(--ease-out),
     border-color var(--dur-sm, 180ms) var(--ease-out),
     box-shadow var(--dur-sm, 180ms) var(--ease-out),
     transform var(--dur-sm, 180ms) var(--ease-out);
+}
+
+@keyframes shelf-addslot-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Faint band across the "spine", the way a real one carries its title. */
@@ -477,6 +486,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .shelf-addslot {
+    animation: none;
+  }
+
   .shelf-addslot.is-firstrun {
     animation: none;
   }

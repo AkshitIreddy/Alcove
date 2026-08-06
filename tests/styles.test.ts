@@ -35,6 +35,26 @@ function stylesheets(): Array<{ file: string; css: string }> {
     .map((file) => ({ file, css: readFileSync(join(STYLES_DIR, file), 'utf8') }));
 }
 
+describe('the page-turn gutter belongs only to the flat landing', () => {
+  const spread = readFileSync(join(STYLES_DIR, 'spread.css'), 'utf8');
+  const clean = stripComments(spread);
+
+  it('raises the gutter and dog-ear on is-flip-landing', () => {
+    expect(clean).toMatch(
+      /:has\(\.nb-flip-surface\.is-flip-landing\)\s+\.nb-spread-gutter\s*\{[^}]*z-index\s*:\s*calc\(var\(--z-flip\)\s*\+\s*2\)/s,
+    );
+    expect(clean).toMatch(
+      /:has\(\.nb-flip-surface\.is-flip-landing\)\s+\.nb-page-curl\s*\{[^}]*z-index\s*:\s*calc\(var\(--z-flip\)\s*\+\s*3\)/s,
+    );
+  });
+
+  it('does not paint the rigid gutter above a moving curl', () => {
+    expect(clean).not.toMatch(
+      /:has\(\.nb-flip-canvas\.is-flipping\)\s+\.nb-(?:spread-gutter|page-curl)/,
+    );
+  });
+});
+
 /** Strip comments so a rule quoted in prose cannot fail the suite. */
 function stripComments(css: string): string {
   // Keep newlines so reported line numbers stay honest.

@@ -54,7 +54,12 @@ import {
   type Bookcase,
 } from '../../data/bookcases';
 import { countBooksInBookcase } from '../../data/books';
-import { prefsForBookcase, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
+import {
+  libraryPrefs,
+  prefsForBookcase,
+  prefsForBookcasePreview,
+  resolveLibrary,
+} from '../../features/bookshelf/libraryPrefs';
 import {
   BookcaseMenu,
   type BookcaseMenuAction,
@@ -297,11 +302,20 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
       <div class="nb-case-grid">
         <For each={bookcases.list}>
           {(bookcase: Bookcase) => {
+            const isOpen = (): boolean => bookcase.id === bookcases.activeId;
+            /*
+             * The OPEN card follows the same optimistic store as the world.
+             * Its persisted `bookcase.room` row lands a database round-trip
+             * later; drawing from that row made every preset thumbnail show
+             * the room selected one press ago. Closed cards still read their
+             * own rows — they have no live room store of their own.
+             */
             const scheme = (): ReturnType<typeof resolveLibrary>['scheme'] =>
-              resolveLibrary(prefsForBookcase(bookcase.id)).scheme;
+              resolveLibrary(
+                prefsForBookcasePreview(bookcase.room, isOpen(), libraryPrefs),
+              ).scheme;
             const design = (): ReturnType<typeof shelfDesignOf> =>
               shelfDesignOf(roomDesign(bookcase.id));
-            const isOpen = (): boolean => bookcase.id === bookcases.activeId;
             const count = (): number | undefined => counts()?.[bookcase.id];
             /** The blur that follows Enter or Escape has already been handled. */
             let cancelled = false;

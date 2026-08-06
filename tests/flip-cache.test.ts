@@ -109,6 +109,27 @@ describe('PageRasterCache — capture does not re-trigger itself', () => {
   });
 });
 
+describe('PageRasterCache — QA readiness state', () => {
+  it('distinguishes a present stale face from a fresh, idle face', async () => {
+    const cache = new PageRasterCache({ getElement: () => fakeSheet() });
+    await cache.ensure('p1');
+    await flush();
+
+    const ready = cache.qaState(['p1', null]);
+    expect(ready).toMatchObject({ fresh: true, quiet: true });
+
+    cache.notifyEdited('p1');
+    const stale = cache.qaState(['p1']);
+    expect(cache.get('p1')).toBeDefined();
+    expect(stale).toMatchObject({ fresh: false, quiet: false });
+    expect(stale.token).not.toBe(ready.token);
+
+    await flush();
+    expect(cache.qaState(['p1'])).toMatchObject({ fresh: true, quiet: true });
+    cache.dispose();
+  });
+});
+
 describe('PageRasterCache — suspension during a flip', () => {
   it('defers idle captures while suspended and replays them on resume', async () => {
     const staged: string[] = [];

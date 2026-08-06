@@ -481,6 +481,44 @@ export class PageRasterCache {
   }
 
   /**
+   * Read-only scheduling state for the `?fx=force` flip bridge.
+   *
+   * Presence is not readiness: `get()` deliberately serves a stale bitmap
+   * while an edited page is debouncing or being recaptured. Visual probes
+   * need to know when a named set of faces is both fresh AND no cache job can
+   * replace it on the next tick. Keeping this query on the owning instance
+   * also avoids the dev-server duplicate-module trap described in
+   * FlipSurface's QA bridge.
+   */
+  qaState(pageIds: ReadonlyArray<string | null>): {
+    fresh: boolean;
+    quiet: boolean;
+    token: string;
+  } {
+    const ids = [...new Set(pageIds.filter((id): id is string => id !== null))];
+    const busy = (set: ReadonlySet<string> | ReadonlyMap<string, unknown>): boolean =>
+      ids.some((id) => set.has(id));
+    const quiet =
+      !this.disposed &&
+      !busy(this.inflight) &&
+      !busy(this.debounceTimers) &&
+      !busy(this.capturing) &&
+      !busy(this.deferred) &&
+      this.idleHandles.size === 0;
+    const token = ids
+      .map((id) => {
+        const entry = this.entries.peek(id);
+        return `${id}:${this.version(id)}:${entry?.version ?? -1}:${entry?.tone ?? '-'}`;
+      })
+      .join('|');
+    return {
+      fresh: ids.every((id) => this.isFresh(id)),
+      quiet,
+      token,
+    };
+  }
+
+  /**
    * Mark a page dirty without scheduling a capture (e.g. page deleted or
    * about to remount). The stale bitmap stays usable until re-captured.
    */

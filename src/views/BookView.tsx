@@ -743,6 +743,26 @@ export default function BookView(): JSX.Element {
 
   /** Serialize carries: bursts of overflow land one at a time, in order. */
   let carryChain: Promise<void> = Promise.resolve();
+  let carryPending = 0;
+  let carryRevision = 0;
+
+  /**
+   * Put one carry on the serialized chain and make its lifetime observable by
+   * the flip QA bridge. A raster can exist while this work is still saving the
+   * source and invalidating the target, so cache presence alone cannot prove a
+   * face is ready to photograph.
+   */
+  const enqueueCarry = (work: () => Promise<void>): void => {
+    carryPending += 1;
+    carryRevision += 1;
+    carryChain = carryChain
+      .then(work)
+      .catch(() => undefined)
+      .finally(() => {
+        carryPending -= 1;
+        carryRevision += 1;
+      });
+  };
 
   /**
    * ProseMirror's scrollIntoView scrolls the prose root mid-drain (while the
@@ -949,11 +969,7 @@ export default function BookView(): JSX.Element {
     caretOffset: number | null,
   ): void => {
     if (!Array.isArray(blocks) || blocks.length === 0) return;
-    carryChain = carryChain.then(() =>
-      carryOverflow(pageId, blocks, cursorCarried, caretOffset).catch(
-        () => undefined,
-      ),
-    );
+    enqueueCarry(() => carryOverflow(pageId, blocks, cursorCarried, caretOffset));
   };
 
   /**
@@ -1015,10 +1031,10 @@ export default function BookView(): JSX.Element {
     // blocks back into a document that still has them.
     updatePageDoc(pageId, trimmed);
     bumpDocVersion(pageId);
-    carryChain = carryChain.then(async () => {
+    enqueueCarry(async () => {
       await savePageDoc(pageId, trimmed);
       await carryOverflow(pageId, moved, false, null);
-    }).catch(() => undefined);
+    });
   };
 
   // -------------------------------------------------------------------------
@@ -2043,6 +2059,10 @@ export default function BookView(): JSX.Element {
                     // were shown (settleAhead).
                     pageCapacityPx={pageCapacity()}
                     onAheadOverflow={settleAhead}
+                    aheadWorkState={() => ({
+                      pending: carryPending,
+                      revision: carryRevision,
+                    })}
                     onNavigate={onNavigate}
                     canFlip={canFlip}
                     leftPage={leftLeaf}

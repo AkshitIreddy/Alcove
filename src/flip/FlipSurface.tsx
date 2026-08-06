@@ -138,6 +138,8 @@ export interface FlipSurfaceProps {
     source: PageDoc,
     trailingPhantom: 0 | 1,
   ): void;
+  /** QA-only state owned by the host's serialized ahead-page carry queue. */
+  aheadWorkState?(): { pending: number; revision: number };
   /** Optional override for direction gating. */
   canFlip?(direction: FlipDirection): boolean;
   ref?: (api: FlipSurfaceApi) => void;
@@ -264,6 +266,8 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         if (pages === null) return null;
         const has = (id: string | null): boolean =>
           id === null ? true : cache.get(id) !== undefined;
+        const state = cache.qaState([pages.front, pages.back, pages.revealed]);
+        const ahead = props.aheadWorkState?.() ?? { pending: 0, revision: 0 };
         return {
           front: pages.front,
           back: pages.back,
@@ -271,6 +275,10 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
           hasFront: has(pages.front),
           hasBack: has(pages.back),
           hasRevealed: has(pages.revealed),
+          fresh: state.fresh,
+          quiet: state.quiet,
+          aheadPending: ahead.pending,
+          token: `${state.token}|ahead:${ahead.revision}`,
         };
       },
       /** Forget everything, so a probe can ask what a cold book does. */

@@ -1,7 +1,8 @@
 # Handoff — pick up here
 
 Written 2026-08-06, for whoever (human or agent) continues this session's work.
-Everything below is current as of commit `02136e7` on `main`, public repo
+Everything below is current as of the latest local `main` checkpoint; use
+`git log -1` for its rewritten-safe identity. The public repo is
 `AkshitIreddy/Alcove`. **Read `CLAUDE.md` first — it is binding**, and read
 `TODO.md`'s `## 🎯 OPEN` section at the top for the actual work list; this file
 is orientation, not a duplicate of it.
@@ -22,25 +23,18 @@ reorganize `TODO.md` (done — see its new top section), and this document.
 them again.** That was explicit. Work directly, verify directly, keep changes
 small and commit often.
 
-## The one thing to check FIRST
+## The original first blocker is complete
 
-There is **uncommitted, unverified work already sitting in the tree**:
-`src/flip/offscreenPages.ts`, `src/flip/FlipSurface.tsx`, `src/views/BookView.tsx`
-and `scripts/probe-turn-face.mjs` carry unstaged changes (run `git status` /
-`git diff --stat` to see the current shape — it may have grown further if a
-background agent from before this handoff is still running). They appear to
-make offscreen flip-face captures **drain** a staged page before photographing
-it, which would plausibly explain the "wrong spread briefly shown" finding
-recorded in `TODO.md`'s open-items index. Nobody has run the test suite or
-`tsc` against this specific diff and called it good. **Read it, verify it
-(`npx tsc --noEmit`, the flip-related tests, ideally `probe-turn-face.mjs`
-against the running app), and either finish + commit it or `git checkout --`
-it.** Do not leave it sitting uncommitted for a third session.
+The staged-page flip work was finished and committed. Offscreen pages now drain
+before capture, the exact source `PageDoc` is the compare-and-swap token, and a
+probe mutation proved the gate alive: normal 6/6 turns matched their landing;
+with settlement disabled, 6/6 were deliberately wrong. The visual harness now
+also waits for fresh, idle face rasters and the serialized ahead-page carry,
+rather than treating a stale-but-present bitmap as ready.
 
 ## Where things stand
 
-- `npx tsc --noEmit` — clean (as of the uncommitted diff above; re-check after
-  touching it).
+- `npx tsc --noEmit` — clean after the flip/cache readiness changes.
 - `npx vitest run` — 2 known-red, both pre-existing and understood, neither a
   regression: `tests/readme.test.ts` fails because the README screenshots are
   still stamped 0.3.0 while `package.json` says 0.4.0 (fixed by the real shot
@@ -62,8 +56,9 @@ it.** Do not leave it sitting uncommitted for a third session.
 ## The release sequence (also in `TODO.md`'s index, in more detail)
 
 In order, and the order matters: (1) finish/verify the in-flight flip diff
-above, or revert it, (2) `npm run visual` full matrix — watch the sabotage gate
-pass on a QUIET tree first, (3) re-capture the 23 README shots, (4)
+(done), (2) `npm run visual` full matrix with a live sabotage gate (done: gate
+reported MOVE and the matrix reached 63/64 exact before the last timer race was
+fixed; that surface then repeated 0px twice), (3) re-capture the 24 README shots, (4)
 `npm run readme:build` + re-check the release-notes arithmetic, (5) re-render
 the demo once, last, (6) run `scripts/shrink-history.mjs --yes` (already
 rehearsed safe on a throwaway clone — 1.4GB → 318MB, GO), `--remap`, force-push

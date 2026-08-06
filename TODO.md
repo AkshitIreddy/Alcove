@@ -25,10 +25,11 @@ tree is in right now, what's uncommitted, and what to check first.
    silently diffs against the wrong "previous" tag), then `git tag v0.4.0`.
    *Actually, do this LAST — see the numbered order at `:1236`; it's listed
    first here only because it has no dependency on anything else finishing.*
-2. `npm run visual`, full matrix. Watch the sabotage gate fail first
-   (`--sabotage --only=desk-day-shelf` on a QUIET tree — the one attempt so far
-   was contaminated by concurrent agents and inconclusive).
-3. `:1181` Re-capture the 23 README shots — `--only=hero` first to watch the
+2. [x] `npm run visual`, full matrix. The quiet-tree sabotage reported MOVE on
+   71/71 distinct frames and `GATE ALIVE`; the comparison reached 63/64 exact,
+   the remaining back-tab timer race was pinned, and that surface then repeated
+   at 0px twice. Representative baselines were inspected at original size.
+3. `:1181` Re-capture the 24 README shots — `--only=hero` first to watch the
    new atomic-commit machinery work, then the full run, then re-read every alt
    string against the new pictures (a gate exists for this now, but only for
    welcome-book prose shots).
@@ -1215,7 +1216,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
         - **Anyone holding a clone must re-clone.** For a repo whose only
           remote copy is the owner's, that is nobody.
 
-- [ ] **Re-capture all 23 README shots, once, after the app settles.** A run
+- [ ] **Re-capture all 24 README shots, once, after the app settles.** A run
       against 0.4 died at the book-studio shot — `openRailPanel` waited 120s for
       "Customize this book" on a dev server that three workflows were editing
       underneath it. Seven shots had been rewritten by then, so the partial set
@@ -1238,9 +1239,9 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       is the one path in that change not yet watched working, and what it must
       show is the version left at whatever the previous manifest said, with
       `PARTIAL RUN` printed. If it stamps 0.4.0 onto a set of 0.3.0 pictures,
-      the fix is wrong and the alarm is off for all twenty-three.
+      the fix is wrong and the alarm is off for all twenty-four.
 
-      **Then re-read the alt text against the new pictures, one by one.** The 23
+      **Then re-read the alt text against the new pictures, one by one.** The 24
       alt strings are hand-written and long — `img/spread.png` alone quotes a
       green callout, a three-item list, a tan card headed "Thirty-two leaves,
       and every one of them a demonstration" and a green banner reading "So:
@@ -1293,7 +1294,17 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
          watched fail is not a gate, and this one fails quietly — a broken
          `settle()` would take surfaces out of coverage and make the summary
          GREENER.
-      3. **Re-capture the 23 shots** — one `--only=hero` run first to watch the
+
+         **Done 2026-08-06.** The sabotage produced 71/71 distinct frames,
+         19,200 changed pixels per sampled pair, and `GATE ALIVE`. The clean
+         matrix then reached 63/64 exact; its only residual was the bounded
+         back-tab linger on `desk-day-tour-blocks`. The surface now waits for
+         its declared receded state and repeated at 0px twice. Shelf art uses
+         one off-thread worker so arrival-allocated atlas mip phases are stable,
+         and the gate asserts every mounted tier-0 spine is the finished hi-res
+         texture. Curl readiness now requires fresh/idle cache entries plus a
+         quiescent ahead-page carry token, not mere bitmap presence.
+      3. **Re-capture the 24 shots** — one `--only=hero` run first to watch the
          partial-manifest guard work, then one full run, then re-read every alt
          string against the new picture. `tests/readme.test.ts` goes green here
          and not before.

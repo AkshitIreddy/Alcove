@@ -385,7 +385,7 @@ export function checkCoverage(facts = computeFacts(), docs = readmeDocs()) {
 /* ------------------------------ the screenshots -------------------------- */
 
 /*
- * Everything below exists because the README's thirteen screenshots went stale
+ * Everything below exists because the README's twenty-four screenshots went stale
  * the way only pictures can: silently, and all at once.
  *
  * The reader's report was "picture in readme uses old name and pic, also some
@@ -398,7 +398,7 @@ export function checkCoverage(facts = computeFacts(), docs = readmeDocs()) {
  * happy the whole time.
  *
  * The fix is the same shape as the fact markers: write down what the picture
- * SHOWS, then recompute it. `shots-now/readme-shots.mjs` captures all thirteen
+ * SHOWS, then recompute it. `shots-now/readme-shots.mjs` captures all twenty-four
  * in one run and records, in `docs/readme/img/shots.json`, the app it
  * photographed (product name and version), the commit it stood on, a digest of
  * every file whose CONTENT is in shot, and the identity strings the pictures

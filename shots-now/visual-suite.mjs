@@ -99,10 +99,10 @@
  *    `animations: 'disabled'` finishes CSS animations and transitions on top of
  *    that, and the caret is made transparent by an injected rule.
  *  - **Nothing is photographed until the screen stops moving.** `settle()`
- *    shoots until two consecutive frames have identical PIXELS, which means the
- *    compositor, the Pixi bake queue and every tween have finished. A far better
- *    guard than any fixed wait, because SwiftShader's frame budget varies with
- *    what else the machine is doing.
+ *    requires three unchanged observations spanning 1.2 seconds, which means
+ *    the compositor, the Pixi bake queue and every tween have finished. A far
+ *    better guard than any fixed wait, because SwiftShader's frame budget varies
+ *    with what else the machine is doing.
  *  - **Fonts are awaited**, both `document.fonts.ready` and an explicit
  *    `check()` for the five families the app renders in.
  *  - **Nothing is written to disk until every picture is taken.** The dev
@@ -377,6 +377,7 @@ const SURFACES = [
         null,
         { timeout: 45_000 },
       );
+      await waitForShelfArt(page);
     },
   },
   {
@@ -457,6 +458,17 @@ const SURFACES = [
     async enter(page) {
       await tap(page, '.nb-rail-button[data-tool="catalogue"]');
       await page.waitForSelector('.nb-rail-panel[aria-hidden="false"]', { timeout: 30_000 });
+      const viewport = page.viewportSize();
+      if (viewport !== null) await page.mouse.move(viewport.width - 2, viewport.height - 2);
+      // The back control recedes on a JS timer. Keep the escape route visibly
+      // present for this chrome-heavy surface instead of photographing
+      // whichever side of that timer the catalogue happened to reach. Wait
+      // for that timer first: removing the class before it fires only means
+      // Solid puts the class straight back when its signal finally changes.
+      await page.waitForSelector('.nb-back-button.is-away', { timeout: 30_000 });
+      await page.evaluate(() => {
+        document.querySelector('.nb-back-button')?.classList.remove('is-away');
+      });
     },
     async leave(page) {
       await tidy(page);
@@ -472,6 +484,14 @@ const SURFACES = [
     async enter(page) {
       await startTour(page);
       await jumpTour(page, 'blocks');
+      const viewport = page.viewportSize();
+      if (viewport !== null) await page.mouse.move(viewport.width - 2, viewport.height - 2);
+      // `tidy()` uses Escape to close the preceding catalogue. Escape also
+      // summons the book's back tab for a bounded linger, and that timer used
+      // to race this tour capture. The tour is the subject here, so declare
+      // the quiet pencil-mark state and wait for it rather than sampling the
+      // linger on whichever side happened to win.
+      await page.waitForSelector('.nb-back-button.is-away', { timeout: 30_000 });
     },
   },
   {
@@ -528,17 +548,22 @@ const SURFACES = [
      * (`flip/math.ts::dragToP`), so pressing the edge hotspot and holding the
      * pointer at a computed x parks the curl at an exact p with nothing
      * running. That is what makes a moving thing photographable at all.
-     */
+    */
     async enter(page, ctx) {
-      const geom = ctx.geom ?? (await spreadGeometry(page));
+      await waitForFlipFaces(page);
+      // Focus mode changes the fitted spread geometry. The old cached rect was
+      // measured when the book first opened, before walking all three focus
+      // rungs, so the same nominal drag could land at a different real p.
+      const geom = await spreadGeometry(page);
+      ctx.geom = geom;
       const leaf = geom.right;
-      const y = leaf.y + leaf.h * 0.5;
-      const startX = leaf.x + leaf.w - 12;
-      const targetX = leaf.x + leaf.w * (1 - 2 * 0.35);
+      const y = Math.round(leaf.y + leaf.h * 0.5);
+      const startX = Math.round(leaf.x + leaf.w - 12);
+      const targetX = Math.round(leaf.x + leaf.w * (1 - 2 * 0.35));
       await page.mouse.move(startX, y);
       await page.mouse.down();
       await frames(page, 2);
-      await page.mouse.move(targetX, y, { steps: 12 });
+      await page.mouse.move(targetX, y);
       await frames(page, 3);
 
       /**
@@ -757,7 +782,84 @@ async function openBook(page) {
   await tap(page, '.pulled-book');
   await page.waitForSelector('.nb-flip-surface', { timeout: 45_000 });
   await page.waitForSelector('.nb-prose', { timeout: 45_000 });
-  await sleep(800);
+  await page.waitForFunction(
+    () => document.querySelectorAll('.nb-page[data-paginated="true"]').length >= 2,
+    null,
+    { timeout: 45_000 },
+  );
+  await waitForFlipFaces(page);
+}
+
+/** Wait for both atlas tiers to finish replacing their placeholders. */
+async function waitForShelfArt(page) {
+  await page.waitForFunction(
+    () => {
+      const world = globalThis.__shelfWorld;
+      const factory = world?.factory;
+      return Boolean(
+        world?.tier === 0 &&
+        factory?.fontsReady &&
+          factory.known?.size >= 8 &&
+          [...factory.known].every(
+            (id) => factory.loTextures?.has(id) && factory.hiTextures?.has(id),
+          ) &&
+          factory.queue?.size === 0 &&
+          factory.inFlight?.size === 0 &&
+          factory.landed?.size === 0 &&
+          factory.dirtySources?.size === 0 &&
+          factory.flushScheduled === false &&
+          [...(world?.floors?.values?.() ?? [])].every((floor) =>
+            floor.visuals?.every(
+              (visual) =>
+                !visual.sprite.texture.destroyed &&
+                visual.sprite.texture === factory.hiTextures.get(visual.book.id),
+            ),
+          ),
+      );
+    },
+    null,
+    { timeout: 120_000 },
+  );
+  await frames(page, 2);
+}
+
+/** The curl is measurable only once all three page faces are in the live cache. */
+async function waitForFlipFaces(page) {
+  const ready = () => {
+    const faces = globalThis.__flipCache?.facesFor?.('next');
+    return Boolean(
+      faces?.hasFront &&
+        faces?.hasBack &&
+        faces?.hasRevealed &&
+        faces?.fresh &&
+        faces?.quiet &&
+        faces?.aheadPending === 0,
+    );
+  };
+  for (;;) {
+    await page.waitForFunction(ready, null, { timeout: 120_000 });
+    const token = await page.evaluate(
+      () => globalThis.__flipCache?.facesFor?.('next')?.token ?? null,
+    );
+    // Prove the ready state is stable rather than merely catching the instant
+    // between a staged source capture and its serialized carry invalidating
+    // the target. The token includes page/cache versions and carry revision.
+    await sleep(600);
+    const stable = await page.evaluate((expected) => {
+      const faces = globalThis.__flipCache?.facesFor?.('next');
+      return Boolean(
+        faces?.hasFront &&
+          faces?.hasBack &&
+          faces?.hasRevealed &&
+          faces?.fresh &&
+          faces?.quiet &&
+          faces?.aheadPending === 0 &&
+          faces?.token === expected,
+      );
+    }, token);
+    if (stable) break;
+  }
+  await frames(page, 2);
 }
 
 /**
@@ -849,12 +951,29 @@ async function buildFixtureKitOnce(browser) {
     return await page.evaluate(async (bookSeeds) => {
       const seed = await import('/src/data/seed.ts');
       const style = await import('/src/art/bookStyle.ts');
+      const editor = await import('/src/editor/extensions.ts');
       const count = seed.WELCOME_PAGE_SOURCES.length;
       const pageIds = Array.from(
         { length: count },
         (_, i) => `vs-page-welcome-${String(i + 1).padStart(2, '0')}`,
       );
       const built = seed.buildWelcomePageDocs({ bookId: 'vs-book-welcome', pageIds });
+      const idTypes = new Set(editor.BLOCK_ID_TYPES);
+      const withStableIds = (node, path) => {
+        const out = { ...node };
+        if (idTypes.has(node.type)) {
+          out.attrs = {
+            ...(node.attrs ?? {}),
+            id: node.attrs?.id ?? `vs-block-${path.join('-')}`,
+          };
+        }
+        if (Array.isArray(node.content)) {
+          out.content = node.content.map((child, index) =>
+            withStableIds(child, [...path, index]),
+          );
+        }
+        return out;
+      };
       return {
         seedVersion: seed.SEED_VERSION,
         seedVersionKey: seed.SEED_VERSION_KEY,
@@ -862,7 +981,13 @@ async function buildFixtureKitOnce(browser) {
         welcomeSpineSeed: seed.WELCOME_SPINE_SEED,
         welcomeBinding: seed.WELCOME_BINDING,
         welcomePageIds: pageIds,
-        welcomePages: built.map((b) => ({ doc: b.doc, source: b.source })),
+        // Production saves UniqueID's generated ids on first open. This
+        // fixture is rebuilt from source every run, so provide stable ids up
+        // front; otherwise id-seeded hand-drawn tilts change on every capture.
+        welcomePages: built.map((b, pageIndex) => ({
+          doc: withStableIds(b.doc, [pageIndex]),
+          source: b.source,
+        })),
         dressings: bookSeeds.map((s) => style.freshBookStyleOverrides(s)),
       };
     }, seeds);
@@ -1031,6 +1156,17 @@ async function installFixture(page, blob) {
 
 /** The stylesheet the suite adds, and the only one. */
 const STILL_CSS = `
+  /* Playwright temporarily finishes CSS transitions for a screenshot and then
+     restores them. Restoring an opacity transition can start it again, so a
+     screenshot loop can manufacture the very motion it is trying to observe.
+     Hold CSS motion off for the whole scene instead. JS timers remain live,
+     which is why the deliberate sabotage still exercises settling honestly. */
+  *, *::before, *::after {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
   /* A blinking caret is the one thing on the page that is never the same
      twice. Playwright's animations:'disabled' does not touch it. */
   * { caret-color: transparent !important; }
@@ -1089,7 +1225,11 @@ async function bootScene(context, blob, size) {
   page.setDefaultTimeout(45_000);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message.split('\n')[0]));
-  await page.goto(`${URL_BASE}/?fx=force&dev=0`, {
+  // One worker keeps the arrival-allocated spine atlas deterministic while
+  // still exercising the production off-thread paint path. With three,
+  // completion order moves each rect to a different mipmap phase between
+  // launches; the art is identical but its minified fine pixels are not.
+  await page.goto(`${URL_BASE}/?fx=force&dev=0&artworkers=1`, {
     waitUntil: 'domcontentloaded',
     timeout: 120_000,
   });
@@ -1495,7 +1635,7 @@ const COMPARE_IN_PAGE = async ([aB64, bB64, cfg]) => {
     );
 
   /**
-   * Does `src`'s pixel at (x,y) have a near-enough twin within one pixel of
+   * Does `src`'s pixel at (x,y) have a near-enough twin close to
    * (x,y) in `dst`? This is the whole antialiasing tolerance: a rendered edge
    * that shifted a fraction of a pixel has a matching neighbour; a label that
    * moved four pixels does not.
@@ -1631,7 +1771,11 @@ async function compare(cmp, baselineBuf, actualBuf) {
   return cmp.evaluate(COMPARE_IN_PAGE, [
     baselineBuf.toString('base64'),
     actualBuf.toString('base64'),
-    { tol: CHANNEL_TOL, cell: CELL, cellHot: Math.ceil(CELL_FAIL / 2) },
+    {
+      tol: CHANNEL_TOL,
+      cell: CELL,
+      cellHot: Math.ceil(CELL_FAIL / 2),
+    },
   ]);
 }
 
@@ -1665,11 +1809,12 @@ console.log(
     `${UPDATE ? ' (re-baselining)' : ''} against ${URL_BASE}`,
 );
 
-const browser = await chromium.launch({
+const launchBrowser = () => chromium.launch({
   headless: true,
   args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
 });
-const cmp = await browser.newPage();
+const comparatorBrowser = await launchBrowser();
+const cmp = await comparatorBrowser.newPage();
 await cmp.goto('about:blank');
 
 /**
@@ -1700,9 +1845,10 @@ const record = (c, status, extra = {}) => {
 };
 
 let kit;
+const fixtureBrowser = await launchBrowser();
 try {
   console.log('\nbuilding the fixture from the app’s own code…');
-  kit = await buildFixtureKit(browser);
+  kit = await buildFixtureKit(fixtureBrowser);
   console.log(
     `  welcome book: ${kit.welcomePages.length} pages, seed ${kit.welcomeSpineSeed}; ` +
       `${kit.dressings.length} dressed spines`,
@@ -1710,9 +1856,11 @@ try {
 } catch (error) {
   console.error(`could not build the fixture: ${String(error).split('\n')[0]}`);
   console.error('is the dev server up?  npm run dev');
-  await browser.close();
+  await fixtureBrowser.close();
+  await comparatorBrowser.close();
   process.exit(2);
 }
+await fixtureBrowser.close();
 
 /* --------------------------------- walk ---------------------------------- */
 
@@ -1768,9 +1916,18 @@ function reportMovement(moving) {
  * a file in `src/` — and every picture after it is of a half-built app. The
  * caller throws the whole attempt away rather than baselining that.
  */
-async function walkScene(group, taken) {
+async function walkScene(group, taken, captureNames = wantedNames) {
   const { size, room } = group[0];
-  const context = await browser.newContext({
+  const isolatedCurl =
+    captureNames.size === 1 &&
+    [...captureNames][0] === `${size.id}-${room.id}-page-curl`;
+  // SwiftShader's WebGL resources are process-scoped and are not reclaimed
+  // promptly when a browser context closes. Reusing one Chromium for all four
+  // scenes made the later page-curl cases intermittently fall back to the CSS
+  // fold. A fresh process per scene keeps every quadrant on the renderer its
+  // baseline names and also mirrors an app launch more closely.
+  const sceneBrowser = await launchBrowser();
+  const context = await sceneBrowser.newContext({
     viewport: { width: size.width, height: size.height },
     deviceScaleFactor: 1,
     // Fixed, because a locale reaches the page through date and number
@@ -1786,6 +1943,7 @@ async function walkScene(group, taken) {
     ({ page, errors } = await bootScene(context, buildStubBlob(kit, room), size));
   } catch (error) {
     await context.close();
+    await sceneBrowser.close();
     return { reloads: 0, fatal: `boot: ${String(error).split('\n')[0]}`, failures };
   }
   page.on('framenavigated', (frame) => {
@@ -1808,7 +1966,7 @@ async function walkScene(group, taken) {
    * reachable is untouched.
    */
   const lastWanted = group.reduce(
-    (last, c, i) => (wantedNames.has(caseName(c)) ? i : last),
+    (last, c, i) => (captureNames.has(caseName(c)) ? i : last),
     -1,
   );
 
@@ -1816,6 +1974,15 @@ async function walkScene(group, taken) {
   for (const [index, c] of group.entries()) {
     const { surface } = c;
     if (index > lastWanted) break;
+    if (
+      isolatedCurl &&
+      surface.id !== 'shelf' &&
+      surface.id !== 'book-spread' &&
+      surface.id !== 'page-curl'
+    ) {
+      console.log(`    (${surface.id} — bypassed for isolated curl)`);
+      continue;
+    }
     // Bail the moment the page reloads rather than grinding through eleven
     // more surfaces that will each spend forty-five seconds discovering the
     // app is back on the shelf. The caller starts the scene over.
@@ -1826,7 +1993,7 @@ async function walkScene(group, taken) {
       // remark cannot be printed against this one.
       ctx.note = null;
       await surface.enter(page, ctx);
-      if (wantedNames.has(caseName(c))) {
+      if (captureNames.has(caseName(c))) {
         const { buffer, settled, shots: took, distinct, tail } = await settle(page, cmp);
         // The count is the useful half. "Still moving" with 2 distinct frames
         // out of 40 is a slow machine; with 40 out of 40 something is genuinely
@@ -1871,21 +2038,60 @@ async function walkScene(group, taken) {
     for (const e of unique.slice(0, 5)) console.log(`     · ${e}`);
   }
   await context.close();
+  await sceneBrowser.close();
   return { reloads, fatal: null, failures };
 }
 
 for (const [, group] of byScene) {
   const { size, room } = group[0];
   console.log(`\n${size.id} · ${room.id}`);
+  const groupWanted = new Set(
+    group.map(caseName).filter((name) => wantedNames.has(name)),
+  );
+  const curlCase = group.find(
+    (c) => c.surface.id === 'page-curl' && groupWanted.has(caseName(c)),
+  );
+  // Screenshotting every preceding surface can exhaust SwiftShader's live
+  // texture budget before the curl is reached. Walk it normally in the main
+  // scene, but photograph it in a fresh process whose prerequisite surfaces
+  // are traversed without captures. That preserves the real interaction path
+  // and makes the named WebGL surface deterministic.
+  const primaryNames = new Set(
+    [...groupWanted].filter((name) => curlCase === undefined || name !== caseName(curlCase)),
+  );
   let outcome = null;
   let taken = new Map();
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    taken = new Map();
-    outcome = await walkScene(group, taken);
-    if (outcome.fatal !== null || outcome.reloads === 0) break;
-    console.log(
-      `  (the dev server reloaded the page ${outcome.reloads}× mid-walk — starting the scene again)`,
-    );
+  if (primaryNames.size === 0) {
+    outcome = { reloads: 0, fatal: null, failures: [] };
+  } else {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      taken = new Map();
+      outcome = await walkScene(group, taken, primaryNames);
+      if (outcome.fatal !== null || outcome.reloads === 0) break;
+      console.log(
+        `  (the dev server reloaded the page ${outcome.reloads}× mid-walk — starting the scene again)`,
+      );
+    }
+  }
+  if (outcome.fatal === null && outcome.reloads === 0 && curlCase !== undefined) {
+    console.log('  page-curl · isolated renderer pass');
+    let curlOutcome = null;
+    let curlTaken = new Map();
+    const curlNames = new Set([caseName(curlCase)]);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      curlTaken = new Map();
+      curlOutcome = await walkScene(group, curlTaken, curlNames);
+      if (curlOutcome.fatal !== null || curlOutcome.reloads === 0) break;
+      console.log(
+        `  (the dev server reloaded the curl pass ${curlOutcome.reloads}× — starting it again)`,
+      );
+    }
+    for (const [name, shot] of curlTaken) taken.set(name, shot);
+    outcome = {
+      fatal: curlOutcome.fatal,
+      reloads: curlOutcome.reloads,
+      failures: [...outcome.failures, ...curlOutcome.failures],
+    };
   }
   if (outcome.fatal !== null) {
     for (const c of group) record(c, 'err', { why: outcome.fatal });
@@ -1960,7 +2166,7 @@ for (const { c, buffer, warning, moving } of shots) {
   });
 }
 
-await browser.close();
+await comparatorBrowser.close();
 
 /* -------------------------------- write ---------------------------------- */
 

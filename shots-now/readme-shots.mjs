@@ -472,7 +472,7 @@ async function reboot(page) {
  * being written to by three other workflows — a Vite HMR update mid-click, the
  * toggle lost, the sheet never arriving. The app was fine the whole time; the
  * app is *always* fine the whole time in that failure. What it cost was the
- * other twenty-two pictures.
+ * other twenty-three pictures.
  *
  * So a step that throws gets a reload and another go. Three attempts, because
  * two is not enough to ride out a save-rebuild-save and four is long enough that
@@ -1156,7 +1156,7 @@ if (appShots.some(wanted)) {
   /*
    * The step that killed the 0.4.0 run: `openRailPanel` waited its full two
    * minutes for "Customize this book" while the dev server was rebuilding under
-   * it, threw, and took twenty-two other pictures down with it — seven of them
+   * it, threw, and took twenty-three other pictures down with it — seven of them
    * already written over the real ones. Both halves of that are fixed, and this
    * is the one to watch: a reload and two more goes, over a set that is not on
    * disk yet either way.
@@ -1650,7 +1650,7 @@ if (appShots.some(wanted)) {
  * A PAGE PER SHOT, and both of them separate from everything above.
  *
  * Everything above runs after "skip the tour" has been pressed, because
- * thirteen pictures of the app should not have a tour card sitting on them. The
+ * twenty-two pictures of the app should not have a tour card sitting on them. The
  * two things a first-time reader actually meets first are the taste questions
  * and the tour, so they are taken here instead.
  *
@@ -1834,10 +1834,10 @@ for (const file of [...kept.keys()]) {
 /*
  * THE SET'S IDENTITY IS ONLY REWRITTEN BY A RUN THAT TOOK THE WHOLE SET.
  *
- * `app`, `depicts` and `sources` describe the twenty-three PICTURES, not the
+ * `app`, `depicts` and `sources` describe the twenty-four PICTURES, not the
  * run: "these are what the app looked like at this version, in this room, with
- * these sources". `--only=hero` takes one of them and leaves twenty-two alone —
- * and used to stamp today's tree onto all twenty-three anyway, which is a
+ * these sources". `--only=hero` takes one of them and leaves twenty-three alone —
+ * and used to stamp today's tree onto all twenty-four anyway, which is a
  * strictly worse outcome than the drift it was meant to record. `checkShots()`
  * compares this block against the tree, so a one-shot run silenced the
  * "pictures are 0.3.0, the app says 0.4.0" alarm for the entire set. The
@@ -1887,7 +1887,7 @@ writeFileSync(join(STAGING, manifestName), `${JSON.stringify(manifest, null, 2)}
 /**
  * Move the staged set over the committed one — the last thing this run does.
  *
- * Two passes, because "move twenty-four files" is not one operation and the gap
+ * Two passes, because "move twenty-five files" is not one operation and the gap
  * between the first and the last is precisely the state being made impossible.
  * Everything is COPIED into `docs/readme/img/` first under an `.incoming`
  * suffix — invisible to `shotFiles()` and to `computeFacts()`, which both match
@@ -1899,7 +1899,7 @@ writeFileSync(join(STAGING, manifestName), `${JSON.stringify(manifest, null, 2)}
  * This is not POSIX atomicity and does not claim to be. What it guarantees is
  * the thing that was actually wanted: **no picture the README shows is written
  * until every picture has been taken and the manifest describing them exists.**
- * A run that throws at shot nineteen of twenty-three now leaves a repo it never
+ * A run that throws at shot nineteen of twenty-four now leaves a repo it never
  * touched, instead of a library that is two thirds of one release and one third
  * of another.
  *

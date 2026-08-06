@@ -12,11 +12,11 @@
  *  2. **Numbers.** "222 of 230 source files open with a module docstring",
  *     "126 papers", "five design docs carry a superseded banner". Every one
  *     was measured once and none is self-maintaining.
- *  3. **Pictures.** Thirteen screenshots, which drift the most quietly of all:
+ *  3. **Pictures.** Twenty-four screenshots, which drift the most quietly of all:
  *     the whole set predated the rename, so the banner said *Bellanote* over
  *     the old blue mark and the open spread was headed "Welcome to Bellanote"
  *     while every link to them resolved and every byte was valid.
- *     `shots-now/readme-shots.mjs` now takes all thirteen in one run and writes
+ *     `shots-now/readme-shots.mjs` now takes all twenty-four in one run and writes
  *     down what it photographed; `checkShots()` reads that back.
  *  4. **Navigation.** The front page's body is two tables of anchor links into
  *     the halves, one row per section. Those were typed by hand, which is how
@@ -239,7 +239,7 @@ describe('the README shows this build of the app', () => {
     // picture of the studio with no studio in it. Everything else on this page
     // passed it, because each of those checks asks whether a shot matches the
     // TREE and this is the one question only the shots can answer about each
-    // other: thirteen captions, thirteen states, so no two of them can be one
+    // other: twenty-four captions, twenty-four states, so no two can be one
     // image. Duplicated in checkShots() so `npm run readme:check` sees it too.
     const seen = new Map<string, string>();
     const twins: string[] = [];
@@ -304,7 +304,7 @@ describe('the README shows this build of the app', () => {
 /**
  * The alt text is the one thing on the front page nothing else can see.
  *
- * Twenty-three of the pictures carry hand-written alt text, and it is long and
+ * Twenty-four of the pictures carry hand-written alt text, and it is long and
  * specific on purpose — `img/spread.png` alone quotes a card title, a banner and
  * a highlighted phrase straight out of the Welcome book. Every other check on
  * this page looks at the picture as a FILE: {@link checkShots} weighs it, hashes

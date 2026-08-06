@@ -37,6 +37,7 @@ import { CurlRenderer } from './curl';
 import { createFlipContext, type FlipContext } from './gl';
 import { createRigidFold, crossfadeSpread, type RigidFoldHandle } from './cssFallback';
 import { refreshPaperTone } from './paperTone';
+import { waitForLandingMedia } from './landingMedia';
 import type { PageRasterCache } from './rasterCache';
 import {
   TAP_FLIP_DURATION_S,
@@ -218,6 +219,7 @@ export class PageFlipController {
     // mounted (book stays open, surface remounts) after this controller goes.
     this.options.canvas.classList.remove('is-flipping');
     this.options.root.classList.remove('is-flip-gesture');
+    this.options.root.classList.remove('is-flip-landing');
     if (this.leafElement) this.leafElement.style.visibility = '';
     this.leafElement = null;
     this.renderer?.dispose();
@@ -390,6 +392,7 @@ export class PageFlipController {
     // canvas frame must not fire in the middle of this flip.
     this.landToken++;
     this.landing = false;
+    this.options.root.classList.remove('is-flip-landing');
 
     // No page rasterization from here until the overlay is down: one capture
     // is 200ms+ of main thread and it lands wherever it likes — mid-tween
@@ -583,8 +586,9 @@ export class PageFlipController {
    *              leaf's `visibility: hidden`. Raster, new DOM and the leaf's
    *              own fore-edge hairlines are therefore all painted at the end
    *              of this same frame, one exactly on top of the other.
-   *   frame N+1 — the new DOM is on screen (under the canvas) and proven
-   *              painted. Clear the GL colour buffer.
+   *   frame N+1 — once destination images are decoded, the new DOM is on
+   *              screen (under the canvas) and proven painted. Clear the GL
+   *              colour buffer.
    *   frame N+2 — display:none the canvas.
    *
    * FRAME N IS THE ONE THAT HAS TO BE RIGHT ON ITS OWN, and that is a stronger
@@ -593,7 +597,7 @@ export class PageFlipController {
    * (218–665ms long tasks, measured) and the reader sits on frame N for all of
    * it. Everything the settled spread wears, frame N must already wear: the
    * page textures (this method's renderNow), the gutter band and the dog-ear
-   * (spread.css lifts them over the canvas for the length of the turn) and the
+   * (spread.css lifts them over the canvas for this flat landing only) and the
    * page-stack hairlines (the reveal below). Anything left for N+1 is not a
    * frame late — it is half a second late, and it reads as the page loading its
    * shading after it lands.
@@ -632,6 +636,12 @@ export class PageFlipController {
     // Pin the overlay to the exact end state before the DOM changes beneath
     // it. A queued render would arrive a frame late, i.e. after navigation.
     this.renderNow();
+
+    // The real gutter and dog-ear belong above the FLAT landing frame, but not
+    // above the moving curl: a straight DOM band across a bending sheet reads
+    // as a rendering tear. This class lasts through the clear/hide handoff and
+    // changes nothing about the settled spread.
+    this.options.root.classList.add('is-flip-landing');
 
     if (target === 1) {
       // Drop the live selection BEFORE the swap. Its endpoints sit in the
@@ -673,32 +683,40 @@ export class PageFlipController {
     // overlay from that moment; these frames must then do nothing.
     const superseded = (): boolean => this.destroyed || this.landToken !== token;
 
-    requestAnimationFrame(() => {
+    // Navigation mounts image elements synchronously, but decoding their new
+    // sources can finish one paint later. The flat raster already contains
+    // those pictures, so keep it as the veil until the live replacements can
+    // paint. Image-free landings still take exactly the old one-rAF path.
+    void waitForLandingMedia(this.options.root).then(() => {
       if (superseded()) return;
-      // The live DOM committed above has now been painted once beneath the
-      // canvas, so the overlay can go without a visible pop.
-      this.renderer?.clear();
-      // Belt and braces: the reveal happened in frame N, but a host that
-      // recycles the wrapper (or a re-entrant landing) must never be left
-      // holding an inline `hidden`.
-      if (leafElement) leafElement.style.visibility = '';
-      this.phase = 'rest';
-      this.landing = false;
-      this.leafElement = null;
-      if (target === 1) {
-        this.savedRanges = [];
-        this.savedActive = null;
-        this.options.events?.onLanded?.(dir);
-      } else {
-        this.restoreSelection(); // focus/selection come back only on cancel
-        this.options.events?.onCancel?.(dir);
-      }
       requestAnimationFrame(() => {
         if (superseded()) return;
-        this.options.canvas.classList.remove('is-flipping');
-        // Snapshots may run again — the overlay is down and the new spread's
-        // neighbours are the next thing worth rasterizing.
-        this.options.cache.resume();
+        // The live DOM committed above has now been painted once beneath the
+        // canvas, so the overlay can go without a visible pop.
+        this.renderer?.clear();
+        // Belt and braces: the reveal happened in frame N, but a host that
+        // recycles the wrapper (or a re-entrant landing) must never be left
+        // holding an inline `hidden`.
+        if (leafElement) leafElement.style.visibility = '';
+        this.phase = 'rest';
+        this.landing = false;
+        this.leafElement = null;
+        if (target === 1) {
+          this.savedRanges = [];
+          this.savedActive = null;
+          this.options.events?.onLanded?.(dir);
+        } else {
+          this.restoreSelection(); // focus/selection come back only on cancel
+          this.options.events?.onCancel?.(dir);
+        }
+        requestAnimationFrame(() => {
+          if (superseded()) return;
+          this.options.canvas.classList.remove('is-flipping');
+          this.options.root.classList.remove('is-flip-landing');
+          // Snapshots may run again — the overlay is down and the new spread's
+          // neighbours are the next thing worth rasterizing.
+          this.options.cache.resume();
+        });
       });
     });
   }
@@ -743,6 +761,7 @@ export class PageFlipController {
     const leafElement = this.leafElement;
     this.options.canvas.classList.remove('is-flipping');
     this.options.root.classList.remove('is-flip-gesture');
+    this.options.root.classList.remove('is-flip-landing');
 
     const finish = (): void => {
       this.phase = 'rest';

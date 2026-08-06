@@ -374,28 +374,25 @@
    `.nb-sheet-paper`, and a page texture is a capture of a sheet. No snapshot,
    warmed however early, can contain them.
 
-   So while the overlay is up they go ABOVE it. The band is then painted by the
-   DOM continuously, through the whole turn and through the whole starved
-   landing, which is also the only way to be pixel-exact with the resting spread
-   — drawing it a second time in the shader would double its alpha wherever the
-   canvas is transparent (at p=0 the left half of the band already shows through
-   the untouched half of the overlay).
+   So at the FLAT LANDING they go above it. They must stay below it while the
+   sheet is moving: a rigid 26px DOM band painted over a bowed page cuts across
+   the content like a compositor seam. The curl owns the moving geometry; the
+   DOM owns the two marks only once the controller has drawn p=0 or p=1.
 
-   Conditional rather than a flat raise, and keyed on the same `:has()` that
-   reader.css uses to DEMOTE the sticker layer for the same reason in reverse:
-   nothing about the resting spread changes, and both the raise and the canvas's
-   own `display` come off one class on one element, so there is no frame where
-   the two disagree.
+   Conditional rather than a flat raise, and keyed on the controller's short
+   `is-flip-landing` phase: nothing about the resting spread changes. The class
+   begins after the final curl frame is drawn and ends in the same task that
+   hides the cleared canvas.
 
    The stack above `--z-flip`, top down: sticker layer +6, drag handles +5,
    crossfade veil +4 (flip.css — it masks EVERYTHING, including these two),
    dog-ear +3, gutter +2, the curl canvas itself.
    -------------------------------------------------------------------------- */
-.nb-spread:has(.nb-flip-canvas.is-flipping) .nb-spread-gutter {
+.nb-spread:has(.nb-flip-surface.is-flip-landing) .nb-spread-gutter {
   z-index: calc(var(--z-flip) + 2);
 }
 
-.nb-spread:has(.nb-flip-canvas.is-flipping) .nb-page-curl {
+.nb-spread:has(.nb-flip-surface.is-flip-landing) .nb-page-curl {
   z-index: calc(var(--z-flip) + 3);
 }
 

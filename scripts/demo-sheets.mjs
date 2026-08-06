@@ -80,13 +80,30 @@ for (let s = 0; s < sheets; s += 1) {
     .join(';');
   const stack = slice.map((_, i) => `[t${i}]`).join('');
   const file = join(OUT, `sheet-${String(s + 1).padStart(2, '0')}.png`);
+  const position = (i) => {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    /*
+     * xstack's layout grammar accepts sums such as `w0+w1`, not arithmetic
+     * multiplication. `w0*2` was parsed into a two-column layout, so a board
+     * announced as 4×4 silently painted twelve samples on top of four others.
+     * Sum the actual cells before this one; this also keeps a partial last row
+     * correct if scaled inputs ever differ by a rounding pixel.
+     */
+    const x = col === 0
+      ? '0'
+      : Array.from({ length: col }, (_, c) => `w${row * COLS + c}`).join('+');
+    const y = row === 0
+      ? '0'
+      : Array.from({ length: row }, (_, r) => `h${r * COLS}`).join('+');
+    return `${x}_${y}`;
+  };
   ff([
     ...inputs,
     '-filter_complex',
-    `${labels};${stack}xstack=inputs=${slice.length}:layout=${
-      slice.map((_, i) => `${(i % COLS) === 0 ? '0' : `w0*${i % COLS}`}_${
-        Math.floor(i / COLS) === 0 ? '0' : `h0*${Math.floor(i / COLS)}`}`).join('|')
-    }[out]`,
+      `${labels};${stack}xstack=inputs=${slice.length}:layout=${
+        slice.map((_, i) => position(i)).join('|')
+      }[out]`,
     '-map', '[out]', '-frames:v', '1', '-y', file,
   ]);
   const nums = slice.map((f) => Number(f.replace(/\D/g, '')));

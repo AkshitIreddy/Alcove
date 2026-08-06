@@ -64,11 +64,79 @@
  *   node shots-now/demo-gif.mjs
  *   node shots-now/demo-gif.mjs --check     (dry run + contact sheet, no encode)
  */
-import { render, timeline, web, dryRun, contactSheet } from 'gifsmith';
-import { cursor, bezel } from 'gifsmith/props';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
+/*
+ * Release work can exercise a locally-built gifsmith before that build is
+ * published, without changing package.json or the sibling repository. Keep
+ * the normal package import as the default; GIFSMITH_LOCAL or
+ * --gifsmith-local is an explicit file URL such as
+ * file:///C:/.../gifsmith/dist/index.js.
+ */
 const args = process.argv.slice(2);
+const localArg = args.find((arg) => arg.startsWith('--gifsmith-local='));
+const GIFSMITH_ENTRY = process.env.GIFSMITH_LOCAL
+  || (localArg ? localArg.split('=').slice(1).join('=') : 'gifsmith');
+const gifsmith = await import(GIFSMITH_ENTRY);
+const props = await import(
+  GIFSMITH_ENTRY !== 'gifsmith'
+    ? new URL('./props/index.js', GIFSMITH_ENTRY).href
+    : 'gifsmith/props'
+);
+const { render, timeline, dryRun, contactSheet } = gifsmith;
+const { cursor, bezel } = props;
+
+/**
+ * Native smooth scrolling is scheduled by Chromium's compositor. Deterministic
+ * capture advances the page's virtual clock, not that compositor timeline, so
+ * `behavior: 'smooth'` can sit still for the whole call and then jump on its
+ * last frame. Move the scroll position explicitly at scene-frame boundaries;
+ * this makes the motion both visible and reproducible in the encoded demo.
+ */
+async function sceneScroll(page, ctx, selector, destination, durationMs) {
+  const range = await page.evaluate(({ selector, destination }) => {
+    const subject = document.querySelector(selector);
+    const scroller = subject?.closest('.nb-rail-panel-body');
+    if (!(subject instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return null;
+
+    const from = scroller.scrollTop;
+    if (destination === 'end') {
+      return { from, to: Math.max(0, scroller.scrollHeight - scroller.clientHeight) };
+    }
+
+    subject.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    const to = scroller.scrollTop;
+    scroller.scrollTop = from;
+    return { from, to };
+  }, { selector, destination });
+  if (!range || Math.abs(range.to - range.from) < 1) return;
+
+  const steps = Math.max(2, Math.ceil(durationMs / 70));
+  for (let step = 1; step <= steps; step += 1) {
+    const p = step / steps;
+    const eased = 1 - ((1 - p) ** 3);
+    await page.evaluate(({ selector, top }) => {
+      const scroller = document.querySelector(selector)?.closest('.nb-rail-panel-body');
+      if (scroller instanceof HTMLElement) scroller.scrollTop = top;
+    }, { selector, top: range.from + ((range.to - range.from) * eased) });
+    await ctx.advance(durationMs / steps);
+  }
+}
+
+/**
+ * Wait until every mounted spine has finished baking before a declared hold.
+ * The temporal review caught lo/hi arrivals two seconds into holds at f0206
+ * and f0322; `ctx.advance` alone cannot see worker completions.
+ */
+async function settleSpines(page, ctx, { hi = true, label = 'spines' } = {}) {
+  const promise = page.evaluate((wantHi) => globalThis.__shelfWhenSpinesReady(wantHi), hi);
+  if (typeof ctx?.settle === 'function') {
+    await ctx.settle(promise, { capMs: 30_000, label });
+  } else {
+    await promise;
+  }
+}
+
 const opt = (name, fallback) => {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.split('=').slice(1).join('=') : fallback;
@@ -199,8 +267,16 @@ const tl = timeline((t) => {
       await ctx.advance(1400);
     }
     await ctx.advance(3000);
+    await settleSpines(page, ctx, { label: 'seeded shelf spines' });
   });
-  t.hold(2.0);
+  t.call(async function settleShelfForSeam(page, ctx) {
+    await settleSpines(page, ctx, { label: 'shelf seam spines' });
+  }, { name: 'settle shelf spines' });
+  /*
+   * Trimmed before the loop — only needs the shelf to be still, not held long
+   * enough to read. The old 2.0s here bought nothing in the shipped WebP.
+   */
+  t.hold(0.4);
 
   /*
    * THE SEAM. Everything above is setup the reader never sees — the trim
@@ -209,7 +285,12 @@ const tl = timeline((t) => {
    */
   t.loopAnchor();
   t.cue('shelf');
-  t.hold(1.8);
+  /*
+   * The first frame a GitHub reader sees. It used to hold 1.8s — long enough
+   * to scroll past before the cursor moved. Half a second is plenty for the
+   * loop trimmer to find a matching seam; motion starts on the studio click.
+   */
+  t.hold(0.5);
 
   /* ---------------------------- 2. the studio ---------------------------- */
 
@@ -233,7 +314,11 @@ const tl = timeline((t) => {
     const r = el.getBoundingClientRect();
     return r.width > 8 && r.height > 8 && r.left >= 0 && r.top < window.innerHeight;
   });
-  t.hold(1.8);
+  /*
+   * One beat to read that the studio opened — not 1.8s. The sheet slide and
+   * the cursor glide to the first tile are the motion; this is just a settle.
+   */
+  t.hold(0.6);
   t.cue('studio');
 
   for (const step of STUDIO_TOUR) {
@@ -257,21 +342,26 @@ const tl = timeline((t) => {
      * the bottom edge rather than dragging the section headings under the tabs.
      */
     t.call(async function scrollTileIntoView(page, ctx) {
-      await page.evaluate((sel) => {
-        document.querySelector(sel)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }, selector);
-      // Not a pause — this IS the smooth scroll, and it only happens in scene
-      // time. Sleeping here would leave the sheet mid-scroll for the click.
-      await ctx.advance(500);
+      // Not a pause — this IS the smooth scroll, one deterministic scene-frame
+      // step at a time. Sleeping here would leave the sheet mid-scroll for the
+      // click, while native smooth scrolling collapses to a cut under CDP's
+      // virtual clock.
+      await sceneScroll(page, ctx, selector, 'nearest', 500);
     }, { name: `scroll to ${step.name ?? `${step.strip} #${step.index}`}` });
     t.click(selector, { via: 'cursor' });
     // Long enough to watch the case and the wall actually repaint, which is
     // the whole point of this section.
-    t.hold(2.3);
+    t.call(async function settleStudioRepaint(page, ctx) {
+      await settleSpines(page, ctx, { label: `studio spines after ${step.name ?? step.strip}` });
+      // The dashed add-slot is a DOM overlay the world can publish a beat after
+      // the Pixi room settles; spend its fade before the declared hold.
+      if (typeof ctx?.advance === 'function') await ctx.advance(250);
+    }, { name: `settle spines after ${step.name ?? step.strip}` });
+    t.hold(1.5);
   }
 
   t.click('[aria-label="Close Library studio"]', { via: 'cursor' });
-  t.hold(1.5);
+  t.hold(1.0);
 
   /* -------------------------- 3. open a book ----------------------------- */
 
@@ -299,7 +389,7 @@ const tl = timeline((t) => {
   });
   t.waitFor('.pulled-book');
   // Let the hinge, the arc and the overshoot finish before touching it.
-  t.hold(1.7);
+  t.hold(1.1);
   /*
    * A REAL pointer, which `via: 'cursor'` gives. The cover listens for pointer
    * events, so a synthetic `element.click()` does nothing at all — checked,
@@ -307,7 +397,7 @@ const tl = timeline((t) => {
    */
   t.click('.pulled-book', { via: 'cursor' });
   t.waitFor('.nb-prose');
-  t.hold(2.4);
+  t.hold(1.6);
   t.cue('book');
 
   /* ------------------ 4. turn pages, opening panels between --------------- */
@@ -407,7 +497,7 @@ const tl = timeline((t) => {
     t.call(async function letTheTurnRun(page, ctx) {
       await ctx.advance(1900);
     });
-    t.hold(1.5);
+    t.hold(1.0);
   };
 
   turn();
@@ -419,16 +509,31 @@ const tl = timeline((t) => {
      * view the panels sometimes"* — and a panel is the densest thing in the
      * demo: the catalogue alone is forty labelled tiles.
      */
-    t.hold(3.2);
+    if (name === 'In and out') {
+      /*
+       * This is the one panel whose last explanatory sentence sits just below
+       * the fold at the demo viewport. Holding the unscrolled sheet filmed a
+       * sentence cut after "only" for three seconds. Read the errands first,
+       * then deliberately show that the sheet scrolls and let its foot land in
+       * full; the total reading time remains unhurried.
+       */
+      t.hold(1.2);
+      t.call(async function showSharePanelFoot(page, ctx) {
+        await sceneScroll(page, ctx, '.nb-share', 'end', 700);
+      }, { name: 'scroll In and out to its foot' });
+      t.hold(1.2);
+    } else {
+      t.hold(2.1);
+    }
     t.call(async function closeThePanel(page, ctx) {
       const close = await page.$(`[aria-label^="Close ${name}"]`);
       // `click()` scrolls the element into view and resolves a clickable point
       // first, and both of those can need the page to move — so it goes through
       // the clock rather than being awaited into a stopped scene.
       if (close) await ctx.settle(close.click(), { capMs: 3_000, label: `Close ${name}` });
-      await ctx.advance(900);
+      await ctx.advance(600);
     }, { name: `close ${name}` });
-    t.hold(0.7);
+    t.hold(0.5);
     turn();
   }
   turn();
@@ -446,12 +551,16 @@ const tl = timeline((t) => {
   });
   t.click('.nb-back-button', { via: 'cursor' });
   t.waitFor('.shelf-dock');
+  t.call(async function settleReturnShelf(page, ctx) {
+    await settleSpines(page, ctx, { label: 'return shelf spines' });
+    if (typeof ctx?.advance === 'function') await ctx.advance(250);
+  }, { name: 'settle return shelf spines' });
   /*
    * Land, and settle into the SAME pose the anchor was taken in. This hold is
    * what gives the trimmer a matching frame to cut on; too short and the seam
    * lands mid-animation.
    */
-  t.hold(2.6);
+  t.hold(1.8);
 });
 
 const scene = {
@@ -481,6 +590,14 @@ const scene = {
    * BIGGER (14.2MB against 11.2MB, same frames, same encoder).
    */
   capture: { mode: 'deterministic', format: 'png' },
+  /*
+   * Read the paced frames as a sequence while the renderer still owns the
+   * executed step ledger. A standalone review can still find flashes and
+   * reversals, but without this opt-in it cannot distinguish motion promised
+   * by a click/turn from motion leaking into a declared hold, or compare peer
+   * turns against one another.
+   */
+  review: { dir: `${QA_DIR}/review`, maxFindings: 24, controls: 5 },
   /*
    * A FLOOR ON THE LOOP, or the trim throws the tour away.
    *

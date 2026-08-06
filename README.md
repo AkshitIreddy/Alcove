@@ -28,7 +28,7 @@
 <h1 align="center">Alcove</h1>
 
 <p align="center">
-  <b>A notes app that keeps your writing in books, on a shelf you can walk around in.</b>
+  <b>Built like a picture book: flat-drawn shelves and walls. Write inside like a notebook — block editor, diagrams, tape, stickers.</b>
 </p>
 
 <p align="center">
@@ -64,11 +64,10 @@
 
 ---
 
-Alcove keeps what you write in books standing on shelves in a flat, hand-drawn
-room, instead of in a list of filenames. You pan and zoom around that room, pull
-a book off its floor, and it opens as a two-page spread you write in with a
-block editor of the kind you already know — slash menu, drag handles,
-right-click menu, tables, callouts, code, diagrams.
+Alcove is built like a picture book: flat-drawn shelves and walls you pan through
+and dress — repaint the carpentry, swap the wallpaper, give every spine its own
+binding. Pull a book off its floor and write inside like a notebook: ruled pages,
+block editor, diagrams, tape, stickers, callouts, and code.
 
 Pages are real pages: a page is a fixed leaf that never scrolls, so filling one
 flows your writing onto the next and turning it is a turn rather than a scroll.

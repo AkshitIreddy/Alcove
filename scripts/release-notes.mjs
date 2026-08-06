@@ -109,20 +109,7 @@ head.push(`<img src="${RAW}/assets/brand/alcove-1024.png" width="96" alt="">`);
 head.push('');
 head.push(`# Alcove ${tag}`);
 head.push('');
-/*
- * The naming, and it was backwards here for two releases.
- *
- * The owner's ruling (CLAUDE.md, top): the WORLD is flat — the bookcase, the
- * wall, the dock — and the PAGE is hand-drawn, with real pen wobble, torn tape
- * and handwriting. "A hand-drawn bookshelf that opens into real pages" states
- * both halves and gets both of them the wrong way round.
- *
- * The sweep that fixed 16 occurrences of this was scoped to `README.md`,
- * `docs/` and `src/`, so the one line that actually goes out on the GitHub
- * Release page — the first sentence a stranger reads about the app — was the
- * one it could not see. `scripts/` and `.github/` are shipping surfaces too.
- */
-head.push('**A flat-drawn bookshelf that opens into hand-drawn pages.**');
+head.push('**Built like a picture book: flat-drawn shelves and walls. Write inside like a notebook — block editor, diagrams, tape, stickers.**');
 head.push('');
 head.push('</div>');
 head.push('');

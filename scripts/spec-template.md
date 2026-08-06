@@ -5,9 +5,10 @@
 # Notebook Script — the complete guide
 
 You are (probably) an AI assistant that has been handed this file. A person
-uses **Alcove**, a cozy Windows desktop notes app: a flat-painted bookshelf
-where books open into hand-drawn pages with warm parchment paper, watercolor
-washes, sticky notes, polaroids and washi tape. They want you to **write a
+uses **Alcove**, a cozy Windows desktop app built like a picture book: flat-drawn
+shelves and walls, with ruled pages inside — warm parchment paper, handwriting-style
+type, block editor, diagrams, tape, stickers, watercolor washes, sticky notes,
+polaroids and washi tape. They want you to **write a
 note for them in Notebook Script** — the app's plain-text format.
 
 Your job: output one block of Notebook Script (and nothing else, unless asked).

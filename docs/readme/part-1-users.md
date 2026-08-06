@@ -374,7 +374,7 @@ a template is a way of starting a book rather than a thing you do to one.
 ## Written with an AI
 <!--nav: Notebook Script is a language a chatbot can write for you, the spec is one button, and the design packs generate their own prompt-->
 
-Most notes apps let you paste text an assistant wrote. Alcove is built so an
+Most assistants hand you plain text. Alcove is built so an
 assistant can write the **whole page** — the sticky notes, the callouts, the
 diagrams — and so you never have to teach it how.
 

@@ -89,8 +89,8 @@ Two footnotes on the two numbers that are not a straight file read:
   ships the runtime *unpacked* into the install directory, so the 849 MiB above
   lands in `%LOCALAPPDATA%\Alcove` and stays there. Worse, it is pinned:
   Alcove would stop receiving the security updates Edge ships, forever, on
-  every machine that took it — a browser engine frozen at install date, in a
-  notes app that renders pasted HTML and fetches remote images. Not offered.
+  every machine that took it — a browser engine frozen at install date, in an
+  app that renders pasted HTML and fetches remote images. Not offered.
 
 ### What each mode means for a real machine
 
@@ -174,8 +174,8 @@ checks them against. Changing the mode changes both numbers.
 **The option already existed and already defaulted to keeping.** Tauri's
 uninstall confirm page creates a "delete the application data" checkbox,
 unticked, and `RmDir /r`s `$APPDATA\<identifier>` and
-`$LOCALAPPDATA\<identifier>` only if it was ticked. Alcove is a notes app, so
-that default is not a detail — `tests/packaging.test.ts` asserts the hook file
+`$LOCALAPPDATA\<identifier>` only if it was ticked. Alcove stores your library
+in app data, so that default is not a detail — `tests/packaging.test.ts` asserts the hook file
 never assigns `$DeleteAppDataCheckboxState` and never sends `BM_SETCHECK`, so a
 later "helpful" pre-tick is a red test rather than somebody's lost books.
 

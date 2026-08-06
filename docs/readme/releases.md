@@ -219,8 +219,8 @@ never asks for an administrator.
 
 **The uninstaller tells you where your books are.** Before it asks anything, it
 shows you the library folder and offers to open it — and it leaves that folder
-alone unless you tick the box. A notes app whose uninstaller quietly takes the
-notes with it is unforgivable, so keeping them is the default.
+alone unless you tick the box. An app whose uninstaller quietly takes your
+library with it is unforgivable, so keeping them is the default.
 
 **Both installers look like the app.** The same cream ground, the same ink, the
 mark on the header and down the sidebar, rather than a grey wizard from 1998.

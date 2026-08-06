@@ -182,7 +182,7 @@ in a marker `npx vitest run` recomputes — see
 ## Written with an AI
 <!--nav: Notebook Script is a language a chatbot can write for you, the spec is one button, and the design packs generate their own prompt-->
 
-Most notes apps let you paste text an assistant wrote. Alcove is built so an
+Most assistants hand you plain text. Alcove is built so an
 assistant can write the **whole page** — the sticky notes, the callouts, the
 diagrams — and so you never have to teach it how.
 
@@ -939,7 +939,7 @@ migrations, in <!--f:rustFiles-->8<!--/f--> files and
 
 These are the constraints every decision below is downstream of. They are stated
 here rather than at the top of the front page on purpose: a reader deciding
-whether to install a notes app does not need the storage model first, and the
+whether to install Alcove does not need the storage model first, and the
 one who does need it is you.
 
 - **One SQLite file, on the reader's own disk.** `notebook.db` in the app data

@@ -74,7 +74,7 @@ migrations, in <!--f:rustFiles-->8<!--/f--> files and
 
 These are the constraints every decision below is downstream of. They are stated
 here rather than at the top of the front page on purpose: a reader deciding
-whether to install a notes app does not need the storage model first, and the
+whether to install Alcove does not need the storage model first, and the
 one who does need it is you.
 
 - **One SQLite file, on the reader's own disk.** `notebook.db` in the app data

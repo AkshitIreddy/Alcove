@@ -124,8 +124,8 @@ function exampleBlock(category: PackCategory): string {
 
 function manifestPrompt(category: PackCategory): string {
   return [
-    `You are making a customisation pack for Alcove — a desktop notes app drawn`,
-    `by hand: a warm parchment bookshelf world you keep notebooks in.`,
+    `You are making a customisation pack for Alcove — a desktop app built like a storybook library:`,
+    `cozy shelves and patterned walls, with notebook pages inside.`,
     '',
     `I want ${category.plural}: ${category.blurb}.`,
     `Tell me what you would like them to be about, or use what I have told you.`,
@@ -178,8 +178,8 @@ function filesPrompt(category: PackCategory): string {
   const files = category.files;
   if (files === undefined) return manifestPrompt(category);
   return [
-    'You are making a set of interface sounds for Alcove — a desktop notes app',
-    'drawn by hand: a warm parchment bookshelf world you keep notebooks in.',
+    'You are making a set of interface sounds for Alcove — a desktop app built like a storybook library:',
+    'cozy shelves and patterned walls, with notebook pages inside.',
     '',
     'You cannot hand me audio in a chat window, so hand me the next best thing:',
     '',

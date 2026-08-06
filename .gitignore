@@ -1,5 +1,8 @@
 node_modules
 dist
+
+# Local agent handoff — never push (owner keeps this on disk only).
+HANDOFF.md
 # `dist` above does NOT cover this: the pattern matches a directory named
 # exactly `dist`, and the release build writes the compiled frontend to
 # `dist-release/` instead — a hundred-odd built JS, CSS and font files that

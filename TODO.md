@@ -29,10 +29,10 @@ tree is in right now, what's uncommitted, and what to check first.
    71/71 distinct frames and `GATE ALIVE`; the comparison reached 63/64 exact,
    the remaining back-tab timer race was pinned, and that surface then repeated
    at 0px twice. Representative baselines were inspected at original size.
-3. `:1181` Re-capture the 24 README shots — `--only=hero` first to watch the
-   new atomic-commit machinery work, then the full run, then re-read every alt
-   string against the new pictures (a gate exists for this now, but only for
-   welcome-book prose shots).
+3. [x] `:1181` Re-captured all 24 README shots from clean `718d14c`. The broken
+   hero run left the set byte-identical; the partial hero kept set identity at
+   0.3.0; the full run promoted 24 pictures + manifest at once as Alcove 0.4.0.
+   Every alt was visually checked and six stale descriptions were corrected.
 4. `npm run readme:build`, then re-check the 0.4.0 release-notes arithmetic
    against whatever the numbers land on (they've moved twice already).
 5. `:1223` Re-render the demo, once, last. Check it against the two open
@@ -1216,7 +1216,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
         - **Anyone holding a clone must re-clone.** For a repo whose only
           remote copy is the owner's, that is nobody.
 
-- [ ] **Re-capture all 24 README shots, once, after the app settles.** A run
+- [x] **Re-capture all 24 README shots, once, after the app settles.** A run
       against 0.4 died at the book-studio shot — `openRailPanel` waited 120s for
       "Customize this book" on a dev server that three workflows were editing
       underneath it. Seven shots had been rewritten by then, so the partial set
@@ -1224,14 +1224,12 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       script is that the pictures cannot drift apart, and a set where seven
       frames show a ruled first page and sixteen do not is exactly that drift.
 
-      `tests/readme.test.ts` currently fails on the shot manifest, correctly —
-      it records app 0.3.0 against a tree that says 0.4.0, and the freshness
-      gate is doing its job. Do NOT paper over it by editing the manifest; it
-      goes green when the shots are re-taken.
+      Before the recapture, `tests/readme.test.ts` failed on the shot manifest,
+      correctly: it recorded app 0.3.0 against a tree that said 0.4.0. The
+      freshness and Welcome-prose gates are green on the real 0.4.0 set now.
 
-      Re-run when nothing else is writing to `src/`, and check the rail button
-      failure was only that — the timeout may have been HMR mid-edit, or it may
-      be real.
+      The quiet-tree rerun confirmed the rail-button failure was HMR
+      contamination: book studio and every other step passed first time.
 
       The script survives a dead run now (`b5c3828`): staging directory, atomic
       commit of the whole set, two retries per step behind a reload. **Do one
@@ -1257,6 +1255,14 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       the ones showing welcome-book prose: `spread`, `page-turn`, `diagrams`,
       `focus`, `rail`, `slash`, and the page count in `transfer` (still 32, but
       check).
+
+      Completed 2026-08-06 from clean `718d14c`: the sabotage failed three
+      times and printed `NOTHING WAS COMMITTED`; the partial hero preserved
+      the old 0.3.0 set identity; the full run promoted 25 files only after all
+      24 shots passed first time and stamped 0.4.0 with `dirty: false`.
+      Original-resolution review found and corrected six stale alts (zoomed
+      floor count, quick-switch order, focus chrome, both diagram pages, the
+      occupied shelf behind Sound settings, and the two-book parcel totals).
 
 - [ ] **Re-render the demo ONE more time, last.** The shipped `demo.webp` was
       rendered before two changes that are visible in it: the Welcome book's

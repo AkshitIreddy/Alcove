@@ -155,24 +155,32 @@ h6 {
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
+  cursor: var(--nb-cur-default, default);
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
+  cursor: var(--nb-cur-default, default);
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--paper-edge);
   border: 3px solid var(--paper-cream);
   border-radius: var(--radius-pill);
+  cursor: var(--nb-cur-grab, grab);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
 
+::-webkit-scrollbar-thumb:active {
+  cursor: var(--nb-cur-grabbing, grabbing);
+}
+
 ::-webkit-scrollbar-corner {
   background: transparent;
+  cursor: var(--nb-cur-default, default);
 }
 
 /* ----------------------------------------------------------------------------

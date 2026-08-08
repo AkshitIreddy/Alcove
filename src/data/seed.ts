@@ -40,6 +40,9 @@
  *            Festive / Gift ribbon design inside.
  *   v10 → v11 makes both untouched Welcome markers blue: Navy outside and a
  *             broad Cornflower silk marker inside.
+ *   v11 → v12 removes the untouched Welcome book's outer marker and striped
+ *             endbands, and pins its previously seed-rolled silhouette to the
+ *             solid square case. The blue between-page ribbon stays.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -49,6 +52,7 @@ import { materializeStableBlockIds } from '../editor/blockIdentity';
 import { scriptDocToTiptap } from '../editor/script/toTiptap';
 import { createBook, deleteBook } from './books';
 import { getDb, type Db } from './db';
+import { bookBinding, loadDesignPrefs, saveBookBinding } from './designPrefs';
 import { removePageIndex } from './search';
 import { createPage, listPages, savePageDoc, setPageScript } from './pages';
 import type { PageDoc } from './types';
@@ -90,7 +94,7 @@ import type { PageDoc } from './types';
  * useful sample data first, then guided action, then progressive discovery.
  * See the research note above WELCOME_PAGE_SOURCES.
  */
-export const SEED_VERSION = 11;
+export const SEED_VERSION = 12;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
@@ -157,9 +161,11 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * This is the first object a reader ever sees on the shelf, and it was warm
  * amber cloth with whatever the seed happened to give it — which read as the
  * default it was. It is the app's calling card, so it is dressed like one:
- * claret leather, four raised cords with gilt rules either side, wrapped
- * endbands, a gilt title plate and gilt edges, quarto and stout so it has some
- * presence beside a pocket paperback.
+ * claret leather, four raised cords with gilt rules either side, a gilt title
+ * plate and gilt edges, quarto and stout so it has some presence beside a
+ * pocket paperback. Its binding preset is pinned separately to `plain-cloth`:
+ * the style's explicit leather still supplies the covering, while that preset's
+ * square case supplies the solid silhouette instead of the seed's old waist.
  *
  * ## `pigment` is not the colour its name says
  *
@@ -233,8 +239,9 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   raisedBands: 4,
   bandGilt: true,
   gilt: true,
-  headTail: true,
-  headTailStyle: 2, // wrapped cord
+  // No striped endband: at shelf scale its alternating pale/red strokes read
+  // as an unexplained mark on the spine rather than as sewn thread.
+  headTail: false,
   ornament: 9, // Quill
   titlePlate: 'gilt',
   titleFont: 0,
@@ -244,12 +251,49 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   thickness: 44, // 'stout' — a five-page book would otherwise be a sliver
   // A restrained fine-binding cover chosen from rendered shelf/held
   // candidates: double fleurons, quill stamp, inset title plate and brass
-  // corners. The navy ribbon is the cool, unmistakable marker the Welcome
-  // book now uses both outside and between its pages.
-  charm: 'ribbon',
-  charmColor: 2, // Navy
+  // corners. The between-page marker is enough; the outer ribbon accessory
+  // made the closed book look as if it carried two bookmarks.
+  charm: 'none',
   coverFrame: 21, // Double Fleuron
   coverMedallion: 9, // Quill — the same device as the spine
+  cornerProtectors: true,
+  insetPlate: true,
+};
+
+/**
+ * The binding preset pinned to an untouched Welcome book.
+ *
+ * `plain-cloth` is intentionally used only for its square case and unworked
+ * silhouette. `WELCOME_BINDING.material` is an explicit style override, so the
+ * finished book remains leather; no room palette or preset repaint can turn it
+ * back into cloth. A named, validated preset is safer than persisting a second
+ * hand-composed id in the seed.
+ */
+export const WELCOME_BOOK_PRESET = 'plain-cloth';
+
+/** Exact v9–v11 shipped style, used only to recognise an untouched cover. */
+const LEGACY_MARKED_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
+  material: 'leather',
+  pigment: 20,
+  hueJitter: 0,
+  raisedBands: 4,
+  bandGilt: true,
+  gilt: true,
+  headTail: true,
+  headTailStyle: 2,
+  ornament: 9,
+  titlePlate: 'gilt',
+  titleFont: 0,
+  wear: 0.1,
+  edge: 'gilt',
+  format: 'quarto',
+  thickness: 44,
+  charm: 'ribbon',
+  // Migrated Forest → Crimson → Navy. The matcher below accepts only
+  // those three shipped indices and compares every other field exactly.
+  charmColor: 2,
+  coverFrame: 21,
+  coverMedallion: 9,
   cornerProtectors: true,
   insetPlate: true,
 };
@@ -3537,23 +3581,45 @@ async function renameLegacyWelcomeBook(db: Db): Promise<void> {
 }
 
 /**
- * v11: the Welcome book's matching marker pair became Navy outside and broad
- * Cornflower silk inside.
+ * v12: the Welcome book keeps one blue marker between its pages, loses the
+ * outer ribbon and striped endbands, and receives a solid square case.
  *
- * The two customisation axes are migrated independently. The cover marker is
- * changed only when the complete style is still an exact shipped
- * Forest/Crimson binding. The between-page design changes only when it is
- * absent or exactly the v10 Gift value. A reader may therefore have customised
- * either axis and still receive the untouched default for the other; no
- * authored choice is replaced.
+ * This migration is deliberately all-or-nothing across the three appearance
+ * axes. The complete cover style, between-page ribbon and binding choice must
+ * all still be shipped/unset values before any one is changed. A reader who
+ * customised even one part keeps the whole book exactly as they left it.
  */
-async function migrateLegacyWelcomeRibbon(db: Db): Promise<void> {
+async function migrateWelcomeBookDesign(db: Db): Promise<void> {
+  // A direct book route can seed before the shelf starts this store. Load it
+  // before testing the binding or an in-memory empty value could overwrite a
+  // real persisted choice.
+  await loadDesignPrefs();
   const rows = await db.select<Array<{ id: string; cover_meta: string | null }>>(
     'SELECT id, cover_meta FROM books WHERE title = $1',
     [WELCOME_BOOK_TITLE],
   );
-  const expected = WELCOME_BINDING as Record<string, unknown>;
-  const expectedKeys = Object.keys(expected).sort();
+  const legacyStyle = LEGACY_MARKED_WELCOME_BINDING as Record<string, unknown>;
+  const legacyStyleKeys = Object.keys(legacyStyle).sort();
+  const currentStyle = WELCOME_BINDING as Record<string, unknown>;
+  const currentStyleKeys = Object.keys(currentStyle).sort();
+  const legacyRibbonKeys = Object.keys(LEGACY_CRIMSON_WELCOME_RIBBON).sort();
+  const currentRibbonKeys = Object.keys(WELCOME_RIBBON).sort();
+
+  const exactRecord = (
+    raw: unknown,
+    expected: Readonly<Record<string, unknown>>,
+    keys: readonly string[],
+  ): raw is Record<string, unknown> =>
+    raw !== null &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    Object.keys(raw).sort().length === keys.length &&
+    keys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(raw, key) &&
+        (raw as Record<string, unknown>)[key] === expected[key],
+    );
+
   for (const row of rows) {
     if (row.cover_meta === null) continue;
     let meta: Record<string, unknown>;
@@ -3564,53 +3630,63 @@ async function migrateLegacyWelcomeRibbon(db: Db): Promise<void> {
     } catch {
       continue;
     }
-    let updated = meta;
-    let changed = false;
-
     const rawStyle = meta.style;
+    let isOldShippedStyle = false;
     if (rawStyle !== null && typeof rawStyle === 'object' && !Array.isArray(rawStyle)) {
       const style = rawStyle as Record<string, unknown>;
       const keys = Object.keys(style).sort();
       const hasShippedShape =
-        keys.length === expectedKeys.length &&
-        keys.every((key, index) => key === expectedKeys[index]);
-      const isLegacyMarker = style.charmColor === 0 || style.charmColor === 1;
-      const isOldShippedStyle =
+        keys.length === legacyStyleKeys.length &&
+        keys.every((key, index) => key === legacyStyleKeys[index]);
+      const isLegacyMarker =
+        style.charmColor === 0 || style.charmColor === 1 || style.charmColor === 2;
+      isOldShippedStyle =
         style.charm === 'ribbon' &&
         isLegacyMarker &&
         hasShippedShape &&
-        expectedKeys.every(
-          (key) => key === 'charmColor' || style[key] === expected[key],
+        legacyStyleKeys.every(
+          (key) => key === 'charmColor' || style[key] === legacyStyle[key],
         );
-      if (isOldShippedStyle) {
-        updated = { ...updated, style: { ...style, charmColor: 2 } };
-        changed = true;
-      }
     }
+    // Recognising the current value makes the operation recoverable if a v12
+    // run wrote cover_meta but was interrupted before pinning the silhouette.
+    const isCurrentShippedStyle = exactRecord(rawStyle, currentStyle, currentStyleKeys);
 
     const rawRibbon = meta.ribbon;
-    const legacyRibbonKeys = Object.keys(LEGACY_CRIMSON_WELCOME_RIBBON).sort();
-    const hasLegacyRibbon =
-      rawRibbon !== null &&
-      typeof rawRibbon === 'object' &&
-      !Array.isArray(rawRibbon) &&
-      Object.keys(rawRibbon).sort().length === legacyRibbonKeys.length &&
-      legacyRibbonKeys.every(
-        (key) =>
-          Object.prototype.hasOwnProperty.call(rawRibbon, key) &&
-          (rawRibbon as Record<string, unknown>)[key] ===
-            LEGACY_CRIMSON_WELCOME_RIBBON[key],
-      );
-    if (!Object.prototype.hasOwnProperty.call(meta, 'ribbon') || hasLegacyRibbon) {
-      updated = { ...updated, ribbon: { ...WELCOME_RIBBON } };
-      changed = true;
+    const hasLegacyRibbon = exactRecord(
+      rawRibbon,
+      LEGACY_CRIMSON_WELCOME_RIBBON,
+      legacyRibbonKeys,
+    );
+    const hasCurrentShippedRibbon = exactRecord(rawRibbon, WELCOME_RIBBON, currentRibbonKeys);
+    const ribbonIsShipped =
+      !Object.prototype.hasOwnProperty.call(meta, 'ribbon') ||
+      hasLegacyRibbon ||
+      hasCurrentShippedRibbon;
+    const pinned = bookBinding(row.id);
+    const bindingIsShipped = pinned === null || pinned === WELCOME_BOOK_PRESET;
+
+    if (
+      !(isOldShippedStyle || isCurrentShippedStyle) ||
+      !ribbonIsShipped ||
+      !bindingIsShipped
+    ) {
+      continue;
     }
 
-    if (!changed) continue;
-    await db.execute('UPDATE books SET cover_meta = $1 WHERE id = $2', [
-      JSON.stringify(updated),
-      row.id,
-    ]);
+    if (isOldShippedStyle || !hasCurrentShippedRibbon) {
+      await db.execute('UPDATE books SET cover_meta = $1 WHERE id = $2', [
+        JSON.stringify({
+          ...meta,
+          style: { ...WELCOME_BINDING },
+          ribbon: { ...WELCOME_RIBBON },
+        }),
+        row.id,
+      ]);
+    }
+    if (pinned === null) {
+      await saveBookBinding(row.id, WELCOME_BOOK_PRESET);
+    }
   }
 }
 
@@ -3651,6 +3727,7 @@ async function createWelcomeBook(): Promise<void> {
       ribbon: { ...WELCOME_RIBBON },
     },
   });
+  await saveBookBinding(book.id, WELCOME_BOOK_PRESET);
   await writeWelcomePages(book.id);
 }
 
@@ -3696,6 +3773,8 @@ async function refreshWelcomeBook(db: Db): Promise<boolean> {
  *   v9           changed only the untouched shipped outer marker to navy
  *   v10          changed untouched Welcome markers to crimson / Festive Gift
  *   v11          changes those untouched markers to matching blues
+ *   v12          removes the untouched outer marker/endbands and pins a solid
+ *                square case, preserving every explicit customisation
  *   always      create the welcome book if the library has none
  *
  * The order matters twice. Renaming BEFORE the existence check is what stops
@@ -3714,7 +3793,7 @@ export async function seedIfEmpty(): Promise<boolean> {
 
   await cleanupOldDemoBooks(db);
   await renameLegacyWelcomeBook(db);
-  await migrateLegacyWelcomeRibbon(db);
+  await migrateWelcomeBookDesign(db);
   await refreshWelcomeBook(db);
   const exists = await welcomeBookExists(db);
   if (!exists) await createWelcomeBook();

@@ -362,6 +362,15 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   gap: var(--space-8);
   padding: var(--space-12) var(--space-16) var(--space-8);
   background: var(--paper-cream);
+  /*
+   * The parent draws the ink outline, but a square child background paints
+   * later and can cover the curved top-corner strokes from inside. Inherit
+   * the parent's two actual top radii — including the shelf sheet's deliberate
+   * square top-left hinge — so the paper stops before the outline instead of
+   * erasing both corners.
+   */
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
   border-bottom: 1px dashed var(--ink-line-soft);
 }
 

@@ -850,6 +850,71 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       <Show when={sheet() === null}>
         {(_closed) => (
           <>
+        {/* A room-wide throw is a starting point, so it belongs at the top of
+            the studio rather than after every fine-grained wallpaper control. */}
+        <section class="nb-panel-section nb-studio-luck nb-library-luck">
+          <h3 class="nb-panel-section-title">start somewhere else</h3>
+
+          {/* Absent until the vocabularies carry mood words — see moodTags(). */}
+          <Show when={moods().length > 0}>
+            <div class="nb-panel-row nb-panel-row-stack">
+              <span class="nb-panel-row-label">
+                in the mood for{' '}
+                <em class="nb-panel-row-hint">{mood() === '' ? 'anything' : mood()}</em>
+              </span>
+              <div class="nb-chip-row" role="group" aria-label="Surprise me mood">
+                <button
+                  type="button"
+                  class="nb-chip"
+                  aria-pressed={mood() === ''}
+                  onClick={() => setMood('')}
+                >
+                  anything
+                </button>
+                <For each={moods()}>
+                  {(word) => (
+                    <button
+                      type="button"
+                      class="nb-chip"
+                      aria-pressed={mood() === word}
+                      onClick={() => setMood(word)}
+                    >
+                      {word}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          <button
+            type="button"
+            class="nb-studio-luck-action nb-studio-luck-action-surprise nb-library-luck-action"
+            onClick={surprise}
+          >
+            <strong>surprise me</strong>
+            <span>
+              Choose a new colour, case build, timber work and wallpaper together.
+            </span>
+          </button>
+          <div class="nb-chip-row nb-studio-luck-reset">
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost"
+              onClick={() => patch({ shelf: null, wall: null, timberHex: null, wallHex: null })}
+            >
+              back to one room
+            </button>
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost"
+              onClick={() => patchDesign({ ...DEFAULT_ROOM_DESIGN })}
+            >
+              plain again
+            </button>
+          </div>
+        </section>
+
         <section class="nb-panel-section">
           <h3 class="nb-panel-section-title">bookcases</h3>
           <BookcasesPanel />
@@ -1140,65 +1205,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
           </p>
         </section>
 
-        <section class="nb-panel-section nb-panel-section-divided">
-          <h3 class="nb-panel-section-title">start somewhere else</h3>
-
-          {/* Absent until the vocabularies carry mood words — see moodTags(). */}
-          <Show when={moods().length > 0}>
-            <div class="nb-panel-row nb-panel-row-stack">
-              <span class="nb-panel-row-label">
-                in the mood for{' '}
-                <em class="nb-panel-row-hint">{mood() === '' ? 'anything' : mood()}</em>
-              </span>
-              <div class="nb-chip-row" role="group" aria-label="Surprise me mood">
-                <button
-                  type="button"
-                  class="nb-chip"
-                  aria-pressed={mood() === ''}
-                  onClick={() => setMood('')}
-                >
-                  anything
-                </button>
-                <For each={moods()}>
-                  {(word) => (
-                    <button
-                      type="button"
-                      class="nb-chip"
-                      aria-pressed={mood() === word}
-                      onClick={() => setMood(word)}
-                    >
-                      {word}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
-
-          <div class="nb-chip-row">
-            <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
-              surprise me
-            </button>
-            <button
-              type="button"
-              class="nb-chip nb-chip-ghost"
-              /* "One room" means every part comes from one place, and a colour
-                 the reader mixed is the loudest way a part can be somewhere
-                 else — so this clears those too, or the button would leave
-                 behind the very thing it says it is undoing. */
-              onClick={() => patch({ shelf: null, wall: null, timberHex: null, wallHex: null })}
-            >
-              back to one room
-            </button>
-            <button
-              type="button"
-              class="nb-chip nb-chip-ghost"
-              onClick={() => patchDesign({ ...DEFAULT_ROOM_DESIGN })}
-            >
-              plain again
-            </button>
-          </div>
-        </section>
           </>
         )}
       </Show>

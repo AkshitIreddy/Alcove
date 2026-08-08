@@ -868,7 +868,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   };
 
   const surprise = (): void => {
-    // A whole new book: reroll the style AND let the room's bias back in.
+    // A coherent new book: let the room load the dice, then keep the binding
+    // chosen by that same throw. This is deliberately different from
+    // randomise, which mixes every knob from the whole curated vocabulary.
     const seed = (Math.random() * 0xffffffff) >>> 0;
     const fresh = resolveBookStyle(seed, themeSpineDefaults(getTheme(libraryPrefs.theme)), null, {
       pageCount: props.pageCount,
@@ -879,9 +881,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       bookStyleToOverrides(fresh.style),
     );
     props.onStyleChange(frozen);
-    // Unpin the binding too: "a whole new book" means the seed gets its say
-    // back on every axis, not on all but one.
-    void saveBookBinding(bindingKey(), null);
+    let binding = presetForSeed(seed).id;
+    // A weighted roll quite rightly favours restrained bindings. Give it a
+    // few honest rethrows when it lands on the exact binding already here, so
+    // a press still has a visible answer.
+    for (let tries = 0; tries < 4 && binding === design().preset; tries += 1) {
+      binding = presetForSeed((Math.random() * 0xffffffff) >>> 0).id;
+    }
+    void saveBookBinding(bindingKey(), binding);
   };
 
   /**
@@ -994,6 +1001,45 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       <Show when={!bindingSheet() && axisSheet() === null}>
         {(_closed) => (
           <>
+      {/* --------------------------- the two dice ------------------------- */}
+      {/*
+        First in the panel because these are starting points, not an escape
+        hatch after four thousand pixels of controls. They intentionally have
+        different jobs and say so in the controls themselves.
+      */}
+      <section class="nb-panel-section nb-studio-luck" aria-label="Book appearance starting points">
+        <h3 class="nb-panel-section-title">start with the dice</h3>
+        <div class="nb-studio-luck-grid">
+          <button type="button" class="nb-studio-luck-action" onClick={randomise}>
+            <strong>randomise</strong>
+            <span>Mix every book control independently for the widest variety.</span>
+          </button>
+          <button
+            type="button"
+            class="nb-studio-luck-action nb-studio-luck-action-surprise"
+            onClick={surprise}
+          >
+            <strong>surprise me</strong>
+            <span>Make one coherent look, with the current room loading the dice.</span>
+          </button>
+        </div>
+        <div class="nb-chip-row nb-studio-luck-reset">
+          <button
+            type="button"
+            class="nb-chip nb-chip-ghost"
+            onClick={() => {
+              props.onStyleChange(null);
+              void saveBookBinding(bindingKey(), null);
+            }}
+          >
+            follow the room
+          </button>
+        </div>
+        <p class="nb-panel-footnote nb-panel-footnote-tight">
+          Randomise explores; Surprise me coordinates. You can tune either result below.
+        </p>
+      </section>
+
       {/* ------------------------- flipping preview ------------------------ */}
       <div class="nb-studio-stage">
         <div
@@ -1640,29 +1686,6 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         </div>
       </section>
 
-      <section class="nb-panel-section">
-        <div class="nb-chip-row">
-          <button type="button" class="nb-chip" onClick={randomise}>
-            randomise
-          </button>
-          <button type="button" class="nb-chip nb-chip-gilt" onClick={surprise}>
-            surprise me
-          </button>
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            onClick={() => {
-              props.onStyleChange(null);
-              void saveBookBinding(bindingKey(), null);
-            }}
-          >
-            follow the room
-          </button>
-        </div>
-        <p class="nb-panel-footnote">
-          unset knobs follow the library theme; anything you touch stays yours in every room
-        </p>
-      </section>
           </>
         )}
       </Show>

@@ -193,10 +193,11 @@ h6 {
   top: 8px;
   right: 4px;
   bottom: 8px;
-  width: 14px;
-  padding: 2px 3px;
+  width: 9px;
+  padding: 2px;
+  box-sizing: border-box;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--paper-deep) 48%, transparent);
+  background: transparent;
   cursor: var(--nb-cur-default, default);
   touch-action: none;
   pointer-events: auto;
@@ -208,14 +209,14 @@ h6 {
 
 .nb-app-scrollbar:hover,
 .nb-app-scrollbar:focus-visible {
-  background: var(--paper-deep);
+  background: color-mix(in srgb, var(--paper-deep) 42%, transparent);
 }
 
 .nb-app-scrollbar-thumb {
   display: block;
-  width: 8px;
+  width: 5px;
   min-height: 36px;
-  border: 1.5px solid var(--ink-line-soft);
+  border: 1px solid var(--ink-line-soft);
   border-radius: 7px 9px 8px 10px / 9px 7px 10px 8px;
   background: var(--paper-edge);
   cursor: var(--nb-cur-grab, grab);

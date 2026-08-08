@@ -186,67 +186,6 @@ function resolvedToken(root: HTMLElement, property: string, fallback: SceneRgba)
   }
 }
 
-function transformScale(raw: string): number {
-  if (raw === '' || raw === 'none') return 1;
-  const numbers = raw.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)?.map(Number) ?? [];
-  if (raw.startsWith('matrix3d(') && numbers.length >= 16) {
-    return Math.max(
-      Math.hypot(numbers[0]!, numbers[1]!, numbers[2]!),
-      Math.hypot(numbers[4]!, numbers[5]!, numbers[6]!),
-      1,
-    );
-  }
-  if (raw.startsWith('matrix(') && numbers.length >= 4) {
-    return Math.max(
-      Math.hypot(numbers[0]!, numbers[1]!),
-      Math.hypot(numbers[2]!, numbers[3]!),
-      1,
-    );
-  }
-  if (raw.startsWith('scale(') && numbers.length >= 1) {
-    return Math.max(Math.abs(numbers[0]!), Math.abs(numbers[1] ?? numbers[0]!), 1);
-  }
-  return 1;
-}
-
-/** Read the hover transition's destination, not merely its pointerdown frame. */
-function cornerPresentation(corner: HTMLElement, style: CSSStyleDeclaration): {
-  scale: number;
-  opacity: number;
-} {
-  let scale = transformScale(style.transform);
-  let opacity = Number.parseFloat(style.opacity);
-  if (!Number.isFinite(opacity)) opacity = 1;
-  try {
-    const useTransitionDestination =
-      corner.closest<HTMLElement>('.nb-spread')?.matches(':hover') === true;
-    if (!useTransitionDestination) {
-      return {
-        scale: Math.max(scale, 1),
-        opacity: Math.min(Math.max(opacity, 0), 1),
-      };
-    }
-    for (const animation of corner.getAnimations()) {
-      const effect = animation.effect;
-      if (!(effect instanceof KeyframeEffect)) continue;
-      for (const frame of effect.getKeyframes()) {
-        if (typeof frame.transform === 'string') {
-          scale = Math.max(scale, transformScale(frame.transform));
-        }
-        const frameOpacity = Number.parseFloat(String(frame.opacity ?? ''));
-        if (Number.isFinite(frameOpacity)) opacity = Math.max(opacity, frameOpacity);
-      }
-    }
-  } catch {
-    // Test DOMs may not implement Web Animations. Computed style is exact
-    // enough there and is also the production fallback.
-  }
-  return {
-    scale: Math.max(scale, 1),
-    opacity: Math.min(Math.max(opacity, 0), 1),
-  };
-}
-
 /**
  * Read the actual binding instead of keeping a second palette in the shader.
  * Computed pseudo-element paint is available in WebView2/Chromium and already
@@ -283,11 +222,8 @@ export function readFlipSnapshotSceneStyle(root: HTMLElement): FlipSnapshotScene
     const left = leftLeaf === null ? null : getComputedStyle(leftLeaf);
     const right = rightLeaf === null ? null : getComputedStyle(rightLeaf);
     const cornerStyle = corner === null ? null : getComputedStyle(corner);
-    const cornerState =
-      corner === null || cornerStyle === null
-        ? { scale: 1, opacity: 1 }
-        : cornerPresentation(corner, cornerStyle);
     const cornerPaper = resolvedToken(root, '--paper-deep', FALLBACK_DEEP);
+    const cornerOpacity = Number.parseFloat(cornerStyle?.opacity ?? '');
     return {
       gutterWidth: positivePixels(body.width, 26),
       gutter: computedRgba(body.backgroundColor, FALLBACK_GUTTER),
@@ -303,13 +239,17 @@ export function readFlipSnapshotSceneStyle(root: HTMLElement): FlipSnapshotScene
         right === null || right.boxShadow === 'none'
           ? fallbackEdges(1, paper)
           : computedEdgeLayers(right.boxShadow),
-      cornerSize: positivePixels(cornerStyle?.width ?? '', 34) * cornerState.scale,
+      // The turn scene paints the destination leaf's settled dog-ear, never
+      // the outgoing page's hover/"ready to fold" transform. Sampling a CSS
+      // transition here made the corner shrink or slide when DOM ownership
+      // returned after landing.
+      cornerSize: positivePixels(cornerStyle?.width ?? '', 34),
       cornerRadius: positivePixels(cornerStyle?.borderBottomRightRadius ?? '', 4),
       cornerPaper: [
         cornerPaper[0],
         cornerPaper[1],
         cornerPaper[2],
-        cornerPaper[3] * cornerState.opacity,
+        cornerPaper[3] * (Number.isFinite(cornerOpacity) ? cornerOpacity : 0.75),
       ],
       showCorner: corner !== null && cornerStyle?.display !== 'none',
     };

@@ -18,6 +18,22 @@ Work **in this order** unless blocked:
 
 #### Release blockers — newest owner pass
 
+- [x] Settings chapter rail: selecting Library files or Help now moves and keeps
+      the active gilt marker on that icon instead of snapping back to System.
+- [x] Keep the custom-cursor scrollbar behavior while restoring the old slim,
+      quiet visual weight; the DOM track is 9px and its visible thumb is 5px.
+- [x] Book opening no longer exposes empty ruled leaves while TipTap/content is
+      mounting. Keep the already-rendered focused cover/shelf as the visual
+      owner until the first populated spread has completed a paint opportunity.
+- [ ] **Owner motion retest — replacement staged:** transformed special-block
+      and diagram geometry measured 0px displacement in the fixed-position
+      turn probe; confirm text no longer moves down during the curl and jumps
+      back when live DOM resumes on localhost.
+- [ ] **Owner motion retest — replacement staged:** the right-hand destination
+      corner now has one DOM owner and measured the same 34px size, 0.75 opacity
+      and no transform before/during/after the turn; confirm both directions on
+      localhost.
+
 - [x] Replace the book studio's action card with one compact Randomise dice
       button at the preview's upper-right; remove Surprise Me and Follow the
       Room from this panel entirely.

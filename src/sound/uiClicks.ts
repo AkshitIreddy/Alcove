@@ -1,11 +1,9 @@
 /**
- * src/sound/uiClicks.ts — one soft click under every button in the app.
+ * src/sound/uiClicks.ts — quiet chrome plus a reliable book-rail click.
  *
- * Buttons were the only interactive surface with no voice at all: menus popped,
- * checkboxes rang, pages turned, and pressing "new book" or a rail icon or a
- * settings chip made exactly no sound. Rather than adding a `play()` to fifty
- * call sites (and forgetting the fifty-first), this installs ONE delegated
- * listener and lets the DOM say what a button is.
+ * The left book rail is the app's tactile tool surface, so its buttons click.
+ * Other chrome stays quiet unless it opts in with `data-nb-sound-click`.
+ * Important actions still call `play()` with their own semantic role.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * WHY `click` AND NOT `pointerdown`
@@ -21,7 +19,13 @@
  * <button> both fire it, with `detail === 0`.
  */
 
-import { msSinceClickPlay, msSinceVoicedPlay, play } from './engine';
+import {
+  msSinceClickPlay,
+  msSinceVoicedPlay,
+  play,
+  prepareInteractionAudio,
+  recordInteractionGesture,
+} from './engine';
 
 /**
  * What counts as a button. Deliberately not `a[href]` — links inside a page's
@@ -38,12 +42,19 @@ const BUTTON_SELECTOR = [
   '[role="option"]',
 ].join(',');
 
+/** Explicit opt-in for otherwise quiet UI controls. */
+export const CLICK_ATTR = 'data-nb-sound-click';
+export const SOUNDED_BUTTON_SELECTOR = [
+  `:is(${BUTTON_SELECTOR})[${CLICK_ATTR}]`,
+  `.nb-rail :is(${BUTTON_SELECTOR})`,
+].join(',');
+
 /** Opt-out hook: put this on a control (or any ancestor) to keep it silent. */
 export const SILENT_ATTR = 'data-nb-silent';
 
 /**
  * A control that voiced itself within this window keeps the floor. 180 ms is
- * long enough to cover an async `play()` that had to load its Howl first, and
+ * long enough to cover an async `play()` that had to finish decoding first, and
  * short enough that the previous interaction's sound has stopped counting.
  */
 const VOICED_WINDOW_MS = 180;
@@ -68,7 +79,11 @@ let installed: (() => void) | undefined;
 export function isSoundedButton(target: EventTarget | null): boolean {
   const node = target as Element | null;
   if (!node || typeof node.closest !== 'function') return false;
-  const button = node.closest(BUTTON_SELECTOR);
+  // `:is()` is load-bearing. Appending `[attr]` to the comma-joined selector
+  // directly qualifies only its final arm (`[role="option"]`) and silently
+  // turns every preceding arm — including plain `button` — back into blanket
+  // playback.
+  const button = node.closest(SOUNDED_BUTTON_SELECTOR);
   if (!button) return false;
   if (button.hasAttribute('disabled') || button.getAttribute('aria-disabled') === 'true') {
     return false;
@@ -115,6 +130,16 @@ export function shouldClick(
 export function installUiClickSounds(root: Document = document): () => void {
   if (installed) return installed;
 
+  // Installed synchronously before any app interaction. It also repairs
+  // WebView focus state before mute gating runs.
+  const onTrustedGesture = (): void => recordInteractionGesture();
+  root.addEventListener('pointerdown', onTrustedGesture, true);
+  root.addEventListener('keydown', onTrustedGesture, true);
+
+  // Create Pixi Sound's shared context before the first gesture, arm direct
+  // gesture resume, and decode the page/book/rail cues in the background.
+  void prepareInteractionAudio().catch(() => undefined);
+
   // App start is the only moment the app reliably passes through on its way
   // to making a sound, and this is the one sound module App.tsx already calls.
   // The import is dynamic so the static graph of this module stays DOM-free
@@ -132,6 +157,8 @@ export function installUiClickSounds(root: Document = document): () => void {
 
   root.addEventListener('click', onClick, { passive: true });
   installed = () => {
+    root.removeEventListener('pointerdown', onTrustedGesture, true);
+    root.removeEventListener('keydown', onTrustedGesture, true);
     root.removeEventListener('click', onClick);
     installed = undefined;
   };

@@ -67,9 +67,10 @@
  *
  * Two things still hold the line, and neither is this CLI:
  *
- *   - `tests/readme.test.ts` fails on drift. A stale COUNT is a fact, not an
- *     edit, and a fact that has stopped being true should be red.
- *   - `--strict` makes this exit 1, for a caller that wants a gate.
+ *   - `scripts/check-readme.mjs --strict` fails on file-derived fact and link
+ *     drift. A stale COUNT is a fact, not an edit, and a fact that has stopped
+ *     being true should be red.
+ *   - TypeScript-derived counts are refreshed by the explicit README build.
  *
  * Usage:
  *   npm run readme:build     rewrite the generated regions of all three pages
@@ -885,7 +886,7 @@ if (invokedDirectly) {
     } else if (!strict) {
       console.log(
         '\n  Reported, not enforced — what the page should say is yours to decide.\n' +
-          '  (npx vitest run tests/readme.test.ts is the gate; --strict exits 1 here.)',
+          '  (--strict exits 1 for composition drift.)',
       );
     }
     process.exit(strict && problems.length > 0 ? 1 : 0);

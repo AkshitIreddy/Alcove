@@ -14,17 +14,15 @@
  *       snapshotting is suspended for the duration of the flip)
  *   pointermove → p = clamp mapping, corner grips tilt the fold; direct
  *       proxy writes + one rAF-coalesced GL render per frame
- *   pointerup → tap ⇒ tween p→1 (power2.inOut, 0.45s); drag ⇒ velocity
+ *   pointerup → tap ⇒ tween p→1 (power3.out, 0.45s); drag ⇒ velocity
  *       decision (complete vs cancel), gsap power3.out with
  *       duration clamp(0.55 − 0.1·|v|, 0.25, 0.55), or InertiaPlugin throw
  *       physics when the plugin is registered
  *   pointerdown mid-tween → tween.kill(), resume drag from current p
- *   land() → flat-state swap: draw the end state, commit navigation (p=1) or
- *       restore selection/focus (p=0) under the canvas, reveal the moving leaf
- *       in that same frame, then wait one rAF for the new DOM to paint before
- *       clearing the overlay and one more before hiding the canvas (see
- *       land() for the frame-by-frame, and for why the landing frame has to be
- *       a complete picture of the spread rather than merely a matching one)
+ *   land() → atomic flat-state swap: synchronously commit navigation (p=1),
+ *       reveal the exact live destination and remove the moving canvas in one
+ *       task; after its first paint opportunity resume snapshot work and emit
+ *       the landed event. A cancelled turn simply reveals its original leaf.
  *
  * Fallbacks: WebGL unavailable → rigid CSS 3D fold (same gesture math);
  * context loss mid-flip → instant land via a crossfade veil; reduced motion
@@ -32,13 +30,17 @@
  */
 
 import { gsap } from 'gsap';
-import { play } from '../sound/engine';
 import { CurlRenderer } from './curl';
 import { createFlipContext, type FlipContext } from './gl';
 import { createRigidFold, crossfadeSpread, type RigidFoldHandle } from './cssFallback';
 import { refreshPaperTone } from './paperTone';
 import { waitForLandingMedia } from './landingMedia';
 import type { PageRasterCache } from './rasterCache';
+import {
+  FLIP_SCENE_OVERSCAN_PX,
+  readFlipSnapshotSceneStyle,
+  type FlipSnapshotSceneIds,
+} from './scene';
 import {
   TAP_FLIP_DURATION_S,
   clamp01,
@@ -47,7 +49,6 @@ import {
   flipDuration,
   foldTilt,
   hitTestHotspot,
-  soundVolumeForVelocity,
   type FlipDirection,
   type FlipGrip,
 } from './math';
@@ -63,15 +64,8 @@ export interface FlipEvents {
   onCancel?: (direction: FlipDirection) => void;
 }
 
-/** Page ids for the three textures of a flip; null = plain cream paper. */
-export interface FlipPages {
-  /** Moving sheet's visible face (current right page for 'next'). */
-  front: string | null;
-  /** Sheet's other side (next left page for 'next', prev right for 'prev'). */
-  back: string | null;
-  /** Page uncovered beneath the sheet (next right / prev left). */
-  revealed: string | null;
-}
+/** Compatibility name for the complete four-page snapshot scene contract. */
+export interface FlipPages extends FlipSnapshotSceneIds {}
 
 export interface PageFlipControllerOptions {
   /** Spread root: hotspot pointer events, canvas overlay parent, geometry frame. */
@@ -99,8 +93,87 @@ interface LeafGeometry {
   h: number;
 }
 
+interface SceneGeometry {
+  rootW: number;
+  rootH: number;
+  left: LeafGeometry;
+  right: LeafGeometry;
+  moving: LeafGeometry;
+}
+
+const UNIT_LEAF: LeafGeometry = { x: 0, y: 0, w: 1, h: 1 };
+
+/**
+ * `getBoundingClientRect()` is in post-transform screen pixels. The flip
+ * canvas, however, is absolutely positioned inside the spread and its CSS
+ * width/height are in the spread's PRE-transform coordinate space. The book
+ * is routinely scaled by `--nb-spread-fit` (and by focus zoom), so feeding a
+ * bounding rect straight to WebGL shifts every sheet toward the canvas origin
+ * and makes it snap back when the live DOM takes ownership at landing.
+ *
+ * Recover the root's local CSS box, then invert its axis scale for both leaf
+ * rects. Translation cancels through the root-relative subtraction. Leaves
+ * themselves are not transformed, so this is the exact DOM-local rectangle
+ * the absolutely-positioned canvas overlays.
+ */
+function measureSceneGeometry(
+  root: HTMLElement,
+  leftElement: HTMLElement | null,
+  rightElement: HTMLElement | null,
+  movingSide: LeafSide,
+): SceneGeometry {
+  const rootRect = root.getBoundingClientRect();
+  const rootStyle = getComputedStyle(root);
+  const cssWidth = Number.parseFloat(rootStyle.width);
+  const cssHeight = Number.parseFloat(rootStyle.height);
+  const rootW = Number.isFinite(cssWidth) && cssWidth > 0
+    ? cssWidth
+    : Math.max(root.clientWidth, rootRect.width, 1);
+  const rootH = Number.isFinite(cssHeight) && cssHeight > 0
+    ? cssHeight
+    : Math.max(root.clientHeight, rootRect.height, 1);
+  const scaleX = rootRect.width > 0 ? rootRect.width / rootW : 1;
+  const scaleY = rootRect.height > 0 ? rootRect.height / rootH : 1;
+
+  const localRect = (element: HTMLElement | null): LeafGeometry | null => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return null;
+    return {
+      x: (rect.left - rootRect.left) / scaleX,
+      y: (rect.top - rootRect.top) / scaleY,
+      w: Math.max(rect.width / scaleX, 1),
+      h: Math.max(rect.height / scaleY, 1),
+    };
+  };
+
+  const measuredLeft = localRect(leftElement);
+  const measuredRight = localRect(rightElement);
+  const measuredMoving = movingSide === 'left' ? measuredLeft : measuredRight;
+  const moving = measuredMoving ?? UNIT_LEAF;
+  // Both wrappers are mounted in FlipSurface, including the empty first-page
+  // left wrapper. These mirrored fallbacks are only for a torn-down/zero-size
+  // host and keep the renderer finite while the normal exact path disappears.
+  const left = measuredLeft ?? {
+    x: movingSide === 'right' ? moving.x - moving.w : moving.x,
+    y: moving.y,
+    w: moving.w,
+    h: moving.h,
+  };
+  const right = measuredRight ?? {
+    x: movingSide === 'left' ? moving.x + moving.w : moving.x,
+    y: moving.y,
+    w: moving.w,
+    h: moving.h,
+  };
+
+  return { rootW, rootH, left, right, moving };
+}
+
 const TAP_SLOP_PX = 6;
 const TAP_MAX_MS = 300;
+/** Never hold the cheaper raster endpoint on screen for a broken/lazy image. */
+const LANDING_MEDIA_CAP_MS = 96;
 
 /** InertiaPlugin is free since GSAP 3.13 but may not be registered. */
 function inertiaRegistered(): boolean {
@@ -122,11 +195,18 @@ export class PageFlipController {
   private downY = 0;
   private downTime = 0;
   private pointerId: number | null = null;
+  /** Pointer-up navigation for reduced motion or a still-cold curl face. */
   private reducedPendingDir: FlipDirection | null = null;
 
-  private rootRect: DOMRect | null = null;
-  private leaf: LeafGeometry = { x: 0, y: 0, w: 1, h: 1 };
-  private leafElement: HTMLElement | null = null;
+  /** Absolute post-transform screen rect used only for pointer gesture math. */
+  private pointerLeaf: LeafGeometry = { ...UNIT_LEAF };
+  /** Untransformed CSS geometry used only by the local WebGL scene. */
+  private scene: SceneGeometry | null = null;
+  /** Symmetric canvas room for flat fore-edges (x) and lifted curl (y). */
+  private sceneOverscan = {
+    x: FLIP_SCENE_OVERSCAN_PX,
+    y: FLIP_SCENE_OVERSCAN_PX,
+  };
 
   private tween: gsap.core.Tween | null = null;
   private fold: RigidFoldHandle | null = null;
@@ -135,14 +215,16 @@ export class PageFlipController {
   private destroyed = false;
 
   /**
-   * Landing bookkeeping. `landing` is true from the moment navigation is
-   * committed until the overlay is back at rest — a re-grab in that window
-   * would drive a gesture against an already-swapped spread. `landToken`
-   * invalidates a landing's queued frames the instant a new flip (or a
-   * destroy / context loss) takes over, so a stale frame can never rip the
-   * canvas away mid-gesture.
+   * Landing bookkeeping. `landing` is true from the DOM commit until the
+   * exact live destination has painted — a re-grab in that window would drive
+   * against an already-swapped spread.
+   * `landToken` invalidates queued frames the instant a new flip (or a destroy
+   * / context loss) takes over, so stale work can never rip the canvas away
+   * mid-gesture.
    */
   private landing = false;
+  /** True only after a completed landing has actually committed navigation. */
+  private landingCommitted = false;
   private landToken = 0;
 
   private ctx: FlipContext | null = null;
@@ -188,12 +270,12 @@ export class PageFlipController {
     this.renderer?.setPaperTexture(tile, tileCssSize);
   }
 
-  /** Programmatic flip (tap-to-flip target, keyboard →). */
+  /** Programmatic forward flip (the UI turns pages through pointer hotspots). */
   flipNext(): void {
     this.programmaticFlip('next');
   }
 
-  /** Programmatic flip (keyboard ←). */
+  /** Programmatic backward flip (the UI turns pages through pointer hotspots). */
   flipPrev(): void {
     this.programmaticFlip('prev');
   }
@@ -207,6 +289,7 @@ export class PageFlipController {
     root.removeEventListener('pointerup', this.onPointerUp);
     root.removeEventListener('pointercancel', this.onPointerCancel);
     this.landToken++; // drop any queued landing frames
+    this.landingCommitted = false;
     this.tween?.kill();
     this.tween = null;
     this.cancelCrossfade?.();
@@ -218,10 +301,11 @@ export class PageFlipController {
     // Leave nothing of the overlay behind: the host may keep the leaves
     // mounted (book stays open, surface remounts) after this controller goes.
     this.options.canvas.classList.remove('is-flipping');
+    this.options.canvas.classList.remove('is-flip-releasing');
     this.options.root.classList.remove('is-flip-gesture');
-    this.options.root.classList.remove('is-flip-landing');
-    if (this.leafElement) this.leafElement.style.visibility = '';
-    this.leafElement = null;
+    this.revealLiveLeaves();
+    this.options.root.classList.remove('is-flip-scene');
+    this.revealLiveLeaves();
     this.renderer?.dispose();
     this.renderer = null;
     this.ctx?.dispose();
@@ -257,10 +341,15 @@ export class PageFlipController {
 
     const hit = this.hitTest(event);
     if (!hit) return;
-    if (!this.options.getFlipPages(hit.dir)) return;
+    const pages = this.options.getFlipPages(hit.dir);
+    if (!pages) return;
 
-    if (this.reducedMotion()) {
-      // No curl under reduced motion: remember intent, navigate on release.
+    if (this.reducedMotion() || (this.usesWebGL && !this.curlFacesReady(pages, true))) {
+      // No curl under reduced motion. A cold destination also cannot use the
+      // rigid fold: only the current live leaf is mounted, so rotating it
+      // exposes the book cover instead of the page being turned toward. Keep
+      // the pointer contract, use the short paper veil on release, and warm
+      // the missing rasters so the next turn gets the real curl.
       this.reducedPendingDir = hit.dir;
       this.capturePointer(event);
       return;
@@ -271,8 +360,8 @@ export class PageFlipController {
   private readonly onPointerMove = (event: PointerEvent): void => {
     if (this.phase !== 'dragging' || event.pointerId !== this.pointerId) return;
     const local = this.toLeafLocal(event.clientX, event.clientY);
-    const p = dragToP(local.x, this.leaf.w);
-    this.baseTilt = foldTilt(this.grip, local.y / this.leaf.h);
+    const p = dragToP(local.x, this.pointerLeaf.w);
+    this.baseTilt = foldTilt(this.grip, local.y / this.pointerLeaf.h);
 
     const dt = (event.timeStamp - this.lastMoveTime) / 1000;
     if (dt > 0.001) {
@@ -304,17 +393,20 @@ export class PageFlipController {
       event.timeStamp - this.downTime < TAP_MAX_MS;
 
     if (isTap) {
-      // Tap-to-flip: full programmatic sweep.
-      this.settle(1, TAP_FLIP_DURATION_S, 'power2.inOut', null);
-      void play('page-flip', { volume: soundVolumeForVelocity(1) });
+      /*
+       * A tap begins from a still page, so an ease-in/out spends its slow tail
+       * straightening the already-flat destination: the paper appears landed
+       * while cards and headings still creep the last 6–15px into place. The
+       * drag path has always used power3.out for exactly this handoff. Give a
+       * tap the same fast-out landing so its residual motion happens while the
+       * page is visibly turning, not as an afterthought on the final frames.
+       */
+      this.settle(1, TAP_FLIP_DURATION_S, 'power3.out', null);
       return;
     }
 
     const v = this.velocity;
     const target = decideFlipTarget(this.flip.p, v);
-    // Page-flip rustle at launch, volume scaled by release velocity; the
-    // engine rotates page-flip-1..3 with no immediate repeats.
-    if (target === 1) void play('page-flip', { volume: soundVolumeForVelocity(v) });
     this.settle(target, flipDuration(v), 'power3.out', v);
   };
 
@@ -352,12 +444,16 @@ export class PageFlipController {
   }
 
   private toLeafLocal(clientX: number, clientY: number): { x: number; y: number } {
-    const root = this.rootRect;
-    const rx = root ? clientX - root.left : clientX;
-    const ry = root ? clientY - root.top : clientY;
     const x =
-      this.dir === 'next' ? rx - this.leaf.x : this.leaf.x + this.leaf.w - rx;
-    return { x, y: clamp01((ry - this.leaf.y) / this.leaf.h) * this.leaf.h };
+      this.dir === 'next'
+        ? clientX - this.pointerLeaf.x
+        : this.pointerLeaf.x + this.pointerLeaf.w - clientX;
+    return {
+      x,
+      y:
+        clamp01((clientY - this.pointerLeaf.y) / this.pointerLeaf.h) *
+        this.pointerLeaf.h,
+    };
   }
 
   /* ------------------------------ flip phases ------------------------------ */
@@ -369,12 +465,28 @@ export class PageFlipController {
     this.downY = event.clientY;
     this.downTime = event.timeStamp;
     const local = this.toLeafLocal(event.clientX, event.clientY);
-    this.flip.p = dragToP(local.x, this.leaf.w);
+    this.flip.p = dragToP(local.x, this.pointerLeaf.w);
     this.lastP = this.flip.p;
     this.lastMoveTime = event.timeStamp;
     this.velocity = 0;
     this.renderNow(); // same frame as the leaf hide — see beginFlip
     return true;
+  }
+
+  /**
+   * A GPU turn begins only when its complete scene exists. A missing opposite
+   * page, backside or revealed page is not allowed to degrade into cream: that
+   * is exactly the late-arriving destination state this contract removes.
+   */
+  private curlFacesReady(pages: FlipPages, warmMissing: boolean): boolean {
+    const ids = [pages.stationary, pages.front, pages.back, pages.revealed].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+    const missing = ids.filter((id) => this.options.cache.get(id)?.bitmap == null);
+    if (warmMissing) {
+      for (const id of missing) void this.options.cache.ensure(id);
+    }
+    return missing.length === 0;
   }
 
   /**
@@ -392,22 +504,28 @@ export class PageFlipController {
     // canvas frame must not fire in the middle of this flip.
     this.landToken++;
     this.landing = false;
-    this.options.root.classList.remove('is-flip-landing');
+    this.landingCommitted = false;
+    this.options.root.classList.remove('is-flip-scene');
+    this.options.canvas.classList.remove('is-flip-releasing');
 
     // No page rasterization from here until the overlay is down: one capture
     // is 200ms+ of main thread and it lands wherever it likes — mid-tween
     // (the turn stutters) or mid-landing (the swap frames stretch out).
     this.options.cache.suspend();
 
-    this.rootRect = this.options.root.getBoundingClientRect();
     const rect = leafElement.getBoundingClientRect();
-    this.leaf = {
-      x: rect.left - this.rootRect.left,
-      y: rect.top - this.rootRect.top,
+    this.pointerLeaf = {
+      x: rect.left,
+      y: rect.top,
       w: Math.max(rect.width, 1),
       h: Math.max(rect.height, 1),
     };
-    this.leafElement = leafElement;
+    this.scene = measureSceneGeometry(
+      this.options.root,
+      this.options.getLeafElement('left'),
+      this.options.getLeafElement('right'),
+      side,
+    );
     this.dir = dir;
     this.grip = grip;
     this.baseTilt = 0;
@@ -449,7 +567,7 @@ export class PageFlipController {
      */
     const cachedFor = (id: string | null): ImageBitmap | null =>
       id === null ? null : (this.options.cache.get(id)?.bitmap ?? null);
-    const wanted = [pages.front, pages.back, pages.revealed].filter(
+    const wanted = [pages.stationary, pages.front, pages.back, pages.revealed].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
     const missing = wanted.filter((id) => cachedFor(id) === null);
@@ -476,9 +594,10 @@ export class PageFlipController {
      * leaves are `visibility: hidden` WITH their text still in them, so a leaf
      * reads as inked while the reader is looking at a blank canvas.
      *
-     * `back` is deliberately NOT required: it is the underside of the turning
-     * sheet, seen briefly and at a steep angle, and blank paper is what the
-     * back of a sheet looks like anyway.
+     * `back` is deliberately optional: it is the underside of the turning
+     * sheet and missing it degrades to plain paper inside the curl. Requiring
+     * it would instead switch rapid turns to the rigid CSS fallback, whose
+     * rotating live leaf can visibly pass behind the cover.
      *
      * The alternative when this says no is not "nothing" — it is the rigid CSS
      * fold, whose faces are the live leaves, so it always has the real words on
@@ -486,7 +605,11 @@ export class PageFlipController {
      */
     const faceReady = (id: string | null): boolean =>
       id === null || cachedFor(id) !== null;
-    const canCurl = faceReady(pages.front) && faceReady(pages.revealed);
+    const canCurl =
+      faceReady(pages.stationary) &&
+      faceReady(pages.front) &&
+      faceReady(pages.back) &&
+      faceReady(pages.revealed);
 
     if (this.usesWebGL && this.ctx && this.renderer && canCurl) {
       // What colour is blank paper today? The reader may have changed theme
@@ -500,14 +623,43 @@ export class PageFlipController {
       const cache = this.options.cache;
       const bitmapOf = (id: string | null): ImageBitmap | null =>
         id ? (cache.get(id)?.bitmap ?? null) : null;
-      this.renderer.setPageTextures(
-        bitmapOf(pages.front),
-        bitmapOf(pages.back),
-        bitmapOf(pages.revealed),
+      this.renderer.setSnapshotScene(
+        {
+          stationary: bitmapOf(pages.stationary),
+          front: bitmapOf(pages.front),
+          back: bitmapOf(pages.back),
+          revealed: bitmapOf(pages.revealed),
+        },
+        readFlipSnapshotSceneStyle(this.options.root),
+      );
+      /*
+       * Perspective expands a lifted sheet vertically around the camera
+       * centre. Numeric evaluation of the exact vertex shader at a 617×793
+       * leaf gives ~35px beyond the page for a straight edge turn and ~166px
+       * for the 22.5° corner grip. The old fixed 10px canvas therefore cut the
+       * upper-left of a bottom-corner turn clean off. Scale the symmetric room
+       * with the actual leaf height: 6% contains the straight curl, 24%
+       * contains either corner with a measured margin across book sizes.
+       * Horizontal room stays the flat fore-edge contract's 10px.
+       */
+      this.sceneOverscan = {
+        x: FLIP_SCENE_OVERSCAN_PX,
+        y: Math.max(
+          FLIP_SCENE_OVERSCAN_PX,
+          Math.ceil(this.scene.moving.h * (grip === 'edge' ? 0.06 : 0.24)),
+        ),
+      };
+      this.options.canvas.style.setProperty(
+        '--nb-flip-overscan-x',
+        `${this.sceneOverscan.x}px`,
+      );
+      this.options.canvas.style.setProperty(
+        '--nb-flip-overscan-y',
+        `${this.sceneOverscan.y}px`,
       );
       this.ctx.resize(
-        this.rootRect.width,
-        this.rootRect.height,
+        this.scene.rootW + this.sceneOverscan.x * 2,
+        this.scene.rootH + this.sceneOverscan.y * 2,
         Math.min(window.devicePixelRatio || 1, 2),
       );
       // Draw the resting frame NOW, in the same task that hides the leaf.
@@ -515,7 +667,8 @@ export class PageFlipController {
       // frame the leaf is hidden with an empty canvas over it: the page
       // blinks out at the start of every flip, which is most of what made a
       // click-to-turn feel like it jumped rather than moved.
-      leafElement.style.visibility = 'hidden'; // keeps layout
+      this.hideLiveLeaves(); // wrappers keep layout/paint; the GPU owns both sheets
+      this.options.canvas.classList.remove('is-flip-releasing');
       this.options.canvas.classList.add('is-flipping');
       this.renderNow();
     } else {
@@ -534,14 +687,18 @@ export class PageFlipController {
 
   private programmaticFlip(dir: FlipDirection): void {
     if (this.destroyed || this.phase !== 'rest') return;
-    if (!this.options.getFlipPages(dir)) return;
+    const pages = this.options.getFlipPages(dir);
+    if (!pages) return;
     if (this.reducedMotion()) {
       this.crossfadeNavigate(dir);
       return;
     }
+    if (this.usesWebGL && !this.curlFacesReady(pages, true)) {
+      this.crossfadeNavigate(dir);
+      return;
+    }
     if (!this.beginFlip(dir, 'edge')) return;
-    void play('page-flip', { volume: soundVolumeForVelocity(1) });
-    this.settle(1, TAP_FLIP_DURATION_S, 'power2.inOut', null);
+    this.settle(1, TAP_FLIP_DURATION_S, 'power3.out', null);
   }
 
   /** Tween p to its target and land. `velocity` non-null enables inertia. */
@@ -556,7 +713,9 @@ export class PageFlipController {
       // queued render always paints the PREVIOUS tick's value, so the whole
       // settle ran a frame behind the tween. Pointer moves stay coalesced
       // (they can fire more than once per frame); a tween cannot.
-      onUpdate: () => this.renderNow(),
+      onUpdate: () => {
+        this.renderNow();
+      },
       onComplete: () => this.land(this.flip.p > 0.5 ? 1 : 0),
     };
     if (velocity !== null && inertiaRegistered()) {
@@ -573,151 +732,82 @@ export class PageFlipController {
   }
 
   /**
-   * Flat-state swap (the seamless trick): the page is geometrically flat at
-   * p∈{0,1}, so we commit/restore the live DOM under the canvas, let it
-   * paint, then wipe and hide the overlay — raster→DOM is pixel-identical.
+   * Return the complete snapshot scene to live DOM in one non-blended swap.
    *
-   * FRAME ORDER (this is the whole trick, and it used to cost a frame more
-   * than it needed to):
-   *
-   *   frame N  — we are inside a rAF callback (GSAP's ticker drives the
-   *              tween, so onComplete lands here). Draw the p=target frame
-   *              synchronously, THEN commit navigation, THEN drop the moving
-   *              leaf's `visibility: hidden`. Raster, new DOM and the leaf's
-   *              own fore-edge hairlines are therefore all painted at the end
-   *              of this same frame, one exactly on top of the other.
-   *   frame N+1 — once destination images are decoded, the new DOM is on
-   *              screen (under the canvas) and proven painted. Clear the GL
-   *              colour buffer.
-   *   frame N+2 — display:none the canvas.
-   *
-   * FRAME N IS THE ONE THAT HAS TO BE RIGHT ON ITS OWN, and that is a stronger
-   * requirement than "the swap is seamless". A landing is the busiest moment in
-   * the app, so frames N+1 and N+2 can be starved for hundreds of milliseconds
-   * (218–665ms long tasks, measured) and the reader sits on frame N for all of
-   * it. Everything the settled spread wears, frame N must already wear: the
-   * page textures (this method's renderNow), the gutter band and the dog-ear
-   * (spread.css lifts them over the canvas for this flat landing only) and the
-   * page-stack hairlines (the reveal below). Anything left for N+1 is not a
-   * frame late — it is half a second late, and it reads as the page loading its
-   * shading after it lands.
-   *
-   * It used to wait two rAFs before the clear, which held a stale raster over
-   * the already-committed spread for an extra frame; with the main thread
-   * busy (a page capture used to be able to land right here) that frame
-   * stretched into hundreds of milliseconds and read as a second flip
-   * flickering over unchanged pages. Suspending captures for the whole
-   * landing keeps these frames short, and the render before navigate() means
-   * frame N can never show a half-updated overlay.
-   *
-   * The wipe and the hide stay DELIBERATELY on different frames. `display:
-   * none` pulls the canvas out of compositing, so a gl.clear() issued in the
-   * same frame is never presented: the layer keeps the last curl frame, and
-   * that ghost sheet flashes back the next time the canvas is shown.
+   * The destination is mounted under an opaque scene that already contains
+   * all four sheets and the binding. Media decode, the submitted endpoint and
+   * one browser paint opportunity are awaited; then the scene canvas becomes
+   * transparent in the same task that both live leaves become visible. There
+   * is no landing-only gutter, edge proxy or opacity crossfade to arrive late.
    */
   private land(target: 0 | 1): void {
-    if (this.landing) return; // a landing is already in flight
+    if (this.landing) return;
     this.landing = true;
+    this.landingCommitted = false;
     const token = ++this.landToken;
     this.tween = null;
     this.flip.p = target;
     const dir = this.dir;
-    const leafElement = this.leafElement;
 
-    // Selection is drag-and-drop-able again from here; restoreSelection()
-    // below also needs the surface selectable to put a cancelled flip back.
     this.options.root.classList.remove('is-flip-gesture');
-
     if (this.fold) {
       this.fold.dispose();
       this.fold = null;
     }
 
-    // Pin the overlay to the exact end state before the DOM changes beneath
-    // it. A queued render would arrive a frame late, i.e. after navigation.
+    // Pin the complete scene to its exact endpoint before changing the DOM.
     this.renderNow();
 
-    // The real gutter and dog-ear belong above the FLAT landing frame, but not
-    // above the moving curl: a straight DOM band across a bending sheet reads
-    // as a rendering tear. This class lasts through the clear/hide handoff and
-    // changes nothing about the settled spread.
-    this.options.root.classList.add('is-flip-landing');
-
-    if (target === 1) {
-      // Drop the live selection BEFORE the swap. Its endpoints sit in the
-      // spread that is about to be unmounted, and a range whose container is
-      // removed does not vanish — the browser reparents the boundary onto the
-      // surviving ancestor, which leaves it spanning the entire new leaf. That
-      // is what made a turn arrive with every word on the page highlighted.
-      // The saved ranges are clones, so a cancelled flip can still restore.
-      this.clearSelection();
-      this.options.navigate(dir); // new spread mounts under the canvas
-    }
-
-    /*
-     * THE MOVING LEAF COMES BACK NOW, IN THE FRAME THAT SWAPPED — not in the
-     * rAF below, and not on both branches at different times.
-     *
-     * A cancelled flip has always revealed it here; a completed one waited for
-     * frame N+1, and the asymmetry was costing the landing a piece of its
-     * shading. `visibility: hidden` on the leaf wrapper takes its
-     * `.nb-leaf-paper` box-shadow with it — the five offset hairlines that draw
-     * the fore-edges of the pages beneath (see the leaf rules above) — and
-     * those paint OUTSIDE the leaf's border box, which is to say outside the
-     * canvas, which is to say the overlay cannot draw them back. So for every
-     * frame between the swap and rAF #1 the new page stood there with no page
-     * stack down its outer edge, and `probe-landing-effects.mjs` duly reported
-     * `right.paperVis` moving hidden → visible 26–48ms after the DOM was
-     * already correct. On a starved landing that is the same half second as
-     * everything else.
-     *
-     * Safe to do under the overlay because the overlay is opaque exactly where
-     * this leaf is: the ground pass writes `vec4(color, 1.0)` over the moving
-     * leaf's whole rect at every p (curl.ts), and at p=1 the curl mesh covers
-     * the other leaf's rect as well. Nothing of the live DOM reaches the glass
-     * a frame early — only the hairlines just outside it, which is the point.
-     */
-    if (leafElement) leafElement.style.visibility = '';
-
-    // A newer flip (or destroy / context loss) bumps landToken and owns the
-    // overlay from that moment; these frames must then do nothing.
     const superseded = (): boolean => this.destroyed || this.landToken !== token;
 
-    // Navigation mounts image elements synchronously, but decoding their new
-    // sources can finish one paint later. The flat raster already contains
-    // those pictures, so keep it as the veil until the live replacements can
-    // paint. Image-free landings still take exactly the old one-rAF path.
-    void waitForLandingMedia(this.options.root).then(() => {
+    // Mount the real destination in the same animation tick as the final scene
+    // draw. It remains opacity-hidden, but is laid out and paintable below.
+    if (target === 1) {
+      this.clearSelection();
+      this.options.navigate(dir);
+      this.landingCommitted = true;
+    }
+
+    void waitForLandingMedia(this.options.root, LANDING_MEDIA_CAP_MS).then(() => {
       if (superseded()) return;
-      requestAnimationFrame(() => {
+      const release = (): void => {
         if (superseded()) return;
-        // The live DOM committed above has now been painted once beneath the
-        // canvas, so the overlay can go without a visible pop.
-        this.renderer?.clear();
-        // Belt and braces: the reveal happened in frame N, but a host that
-        // recycles the wrapper (or a re-entrant landing) must never be left
-        // holding an inline `hidden`.
-        if (leafElement) leafElement.style.visibility = '';
-        this.phase = 'rest';
-        this.landing = false;
-        this.leafElement = null;
-        if (target === 1) {
-          this.savedRanges = [];
-          this.savedActive = null;
-          this.options.events?.onLanded?.(dir);
-        } else {
-          this.restoreSelection(); // focus/selection come back only on cancel
-          this.options.events?.onCancel?.(dir);
-        }
+        // One paint opportunity with destination DOM mounted underneath the
+        // complete scene. The following task is the one atomic owner change.
         requestAnimationFrame(() => {
           if (superseded()) return;
-          this.options.canvas.classList.remove('is-flipping');
-          this.options.root.classList.remove('is-flip-landing');
-          // Snapshots may run again — the overlay is down and the new spread's
-          // neighbours are the next thing worth rasterizing.
-          this.options.cache.resume();
+          const canvas = this.options.canvas;
+          canvas.classList.add('is-flip-releasing');
+          this.revealLiveLeaves();
+
+          requestAnimationFrame(() => {
+            if (superseded()) return;
+            this.renderer?.clear();
+            this.phase = 'rest';
+            this.landing = false;
+            this.landingCommitted = false;
+            if (target === 1) {
+              this.savedRanges = [];
+              this.savedActive = null;
+              this.options.events?.onLanded?.(dir);
+            } else {
+              this.restoreSelection();
+              this.options.events?.onCancel?.(dir);
+            }
+
+            requestAnimationFrame(() => {
+              if (superseded()) return;
+              canvas.classList.remove('is-flipping', 'is-flip-releasing');
+              this.options.cache.resume();
+            });
+          });
         });
-      });
+      };
+      if (typeof this.renderer?.afterSubmittedFrame === 'function') {
+        this.renderer.afterSubmittedFrame(release);
+      } else {
+        release();
+      }
     });
   }
 
@@ -732,7 +822,6 @@ export class PageFlipController {
     if (this.phase !== 'rest') return;
     this.phase = 'settling';
     this.options.events?.onFlipStart?.(dir);
-    void play('page-flip', { volume: 0.6 });
     this.cancelCrossfade = crossfadeSpread({
       container: this.options.root,
       onSwap: () => {
@@ -751,21 +840,22 @@ export class PageFlipController {
   private handleContextLost(): void {
     this.renderer = null; // programs are gone with the context
     if (this.phase === 'rest') return;
-    const committed = this.landing; // land() already navigated
+    // Context loss before the atomic live commit needs the veil; loss after
+    // the swap must never navigate a second time.
+    const committed = this.landingCommitted;
     this.landToken++; // the veil owns the landing from here
     this.landing = false;
+    this.landingCommitted = false;
     this.tween?.kill();
     this.tween = null;
     const dir = this.dir;
     const target: 0 | 1 = this.flip.p > 0.5 ? 1 : 0;
-    const leafElement = this.leafElement;
     this.options.canvas.classList.remove('is-flipping');
+    this.options.canvas.classList.remove('is-flip-releasing');
     this.options.root.classList.remove('is-flip-gesture');
-    this.options.root.classList.remove('is-flip-landing');
 
     const finish = (): void => {
       this.phase = 'rest';
-      this.leafElement = null;
       this.options.cache.resume(); // the overlay is gone; snapshots may run
       if (target === 1) this.options.events?.onLanded?.(dir);
       else {
@@ -777,7 +867,6 @@ export class PageFlipController {
     if (committed) {
       // The spread already swapped and its live DOM is painted underneath —
       // nothing to mask, and navigating twice would skip a spread.
-      if (leafElement) leafElement.style.visibility = '';
       finish();
       return;
     }
@@ -790,7 +879,6 @@ export class PageFlipController {
           this.clearSelection(); // see land()
           this.options.navigate(dir);
         }
-        if (leafElement) leafElement.style.visibility = '';
       },
       onDone: finish,
     });
@@ -824,18 +912,42 @@ export class PageFlipController {
    * would leave one frame of empty canvas over a hidden leaf.
    */
   private renderNow(): void {
-    if (this.destroyed || !this.renderer || !this.rootRect) return;
+    if (this.destroyed || !this.renderer || !this.scene) return;
+    const { moving, left, right, rootW, rootH } = this.scene;
+    const { x: overscanX, y: overscanY } = this.sceneOverscan;
     this.renderer.render({
       p: this.flip.p,
       baseTilt: this.baseTilt,
       dir: this.dir,
-      leafX: this.leaf.x,
-      leafY: this.leaf.y,
-      leafW: this.leaf.w,
-      leafH: this.leaf.h,
-      canvasW: this.rootRect.width,
-      canvasH: this.rootRect.height,
+      leafX: moving.x + overscanX,
+      leafY: moving.y + overscanY,
+      leafW: moving.w,
+      leafH: moving.h,
+      leftX: left.x + overscanX,
+      leftY: left.y + overscanY,
+      leftW: left.w,
+      leftH: left.h,
+      rightX: right.x + overscanX,
+      rightY: right.y + overscanY,
+      rightW: right.w,
+      rightH: right.h,
+      canvasW: rootW + overscanX * 2,
+      canvasH: rootH + overscanY * 2,
     });
+  }
+
+  /**
+   * Hide both live sheets only after the renderer has a complete scene.
+   * Opacity (via CSS), not visibility: Chromium may prepaint the destination
+   * underneath, so the final class swap does not ask it to invent the page.
+   */
+  private hideLiveLeaves(): void {
+    this.options.root.classList.add('is-flip-scene');
+  }
+
+  /** Atomic counterpart used for landing, cancel, destroy and context loss. */
+  private revealLiveLeaves(): void {
+    this.options.root.classList.remove('is-flip-scene');
   }
 
   /* ---------------------------- selection state ---------------------------- */

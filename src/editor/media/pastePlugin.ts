@@ -12,14 +12,15 @@
  * The decision logic lives in classify.ts (pure, unit-tested); the orchestrator
  * wires this plugin into the editor via `editorProps`/`addProseMirrorPlugins`.
  */
-import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { isTauri } from '../../data/db';
-import { storeImageFile } from './assets';
-import { classifyPaste, groupImageSources } from './classify';
+import { classifyPaste } from './classify';
+import { insertMediaFiles, mediaFilesFrom } from './insert';
 import type { LinkCardStatus } from './linkCard';
 import { checkFetchableUrl } from './urlGuard';
+import { notify } from '../script/exporters/toast';
 
 export const mediaPastePluginKey = new PluginKey('nb-media-paste');
 
@@ -40,64 +41,39 @@ function imageFilesFrom(transfer: DataTransfer | null): File[] {
   );
 }
 
+function videoFilesFrom(transfer: DataTransfer | null): File[] {
+  if (!transfer) return [];
+  return Array.from(transfer.files).filter((file) =>
+    file.type.startsWith('video/'),
+  );
+}
+
 function inCodeBlock(view: EditorView): boolean {
   const { $from } = view.state.selection;
   return $from.parent.type.spec.code === true;
 }
 
-/** Clamp a captured position into the current doc (content may have moved). */
-function clampPos(view: EditorView, pos: number): number {
-  return Math.max(0, Math.min(pos, view.state.doc.content.size));
-}
+/**
+ * Store a clipboard payload after the synchronous paste handler has claimed
+ * it. Claiming the event suppresses ProseMirror's default paste, so a failed
+ * store must be visible rather than leaving the reader with no block and no
+ * explanation. Partial batches are reported too: silently dropping one file
+ * out of several is the same bug in a less obvious shape.
+ */
+function insertPastedMedia(view: EditorView, files: readonly File[]): void {
+  const failedMessage =
+    files.length === 1 && files[0]?.type.startsWith('image/')
+      ? 'image could not be added'
+      : files.length === 1 && files[0]?.type.startsWith('video/')
+        ? 'video could not be added'
+        : 'pasted media could not be added';
 
-// ---------------------------------------------------------------------------
-// Image insertion
-// ---------------------------------------------------------------------------
-
-function buildImageBlocks(view: EditorView, sources: readonly string[]): PMNode[] {
-  const { schema } = view.state;
-  const imageType = schema.nodes.image;
-  const rowType = schema.nodes.imageRow;
-  if (!imageType) return [];
-  if (sources.length === 1 || !rowType) {
-    return sources.map((src) => imageType.create({ src }));
-  }
-  return groupImageSources(sources).map((group) =>
-    group.length === 1
-      ? imageType.create({ src: group[0] })
-      : rowType.create(null, group.map((src) => imageType.create({ src }))),
-  );
-}
-
-async function insertImageFiles(
-  view: EditorView,
-  files: readonly File[],
-  dropPos: number | null,
-): Promise<void> {
-  const stored = await Promise.all(
-    files.map(async (file) => {
-      try {
-        return await storeImageFile(file);
-      } catch {
-        return null; // one unreadable file must not sink the batch
-      }
-    }),
-  );
-  const sources = stored
-    .filter((s): s is NonNullable<typeof s> => s !== null)
-    .map((s) => s.src);
-  if (sources.length === 0 || view.isDestroyed) return;
-
-  const blocks = buildImageBlocks(view, sources);
-  if (blocks.length === 0) return;
-
-  const tr = view.state.tr;
-  if (dropPos === null) {
-    tr.replaceSelection(new Slice(Fragment.from(blocks), 0, 0));
-  } else {
-    tr.insert(clampPos(view, dropPos), blocks);
-  }
-  view.dispatch(tr.scrollIntoView());
+  void insertMediaFiles(view, files, null)
+    .then((inserted) => {
+      if (inserted === 0) notify(failedMessage);
+      else if (inserted < files.length) notify('some pasted media could not be added');
+    })
+    .catch(() => notify(failedMessage));
 }
 
 // ---------------------------------------------------------------------------
@@ -181,18 +157,20 @@ export function createMediaPastePlugin(): Plugin {
 
     props: {
       handlePaste(view, event) {
-        const files = imageFilesFrom(event.clipboardData);
+        const images = imageFilesFrom(event.clipboardData);
+        const videos = videoFilesFrom(event.clipboardData);
         const text = event.clipboardData?.getData('text/plain') ?? '';
         const action = classifyPaste({
-          imageFileCount: files.length,
+          imageFileCount: images.length,
+          videoFileCount: videos.length,
           text,
           selectionEmpty: view.state.selection.empty,
           inCodeBlock: inCodeBlock(view),
         });
         switch (action.kind) {
-          case 'insert-images':
+          case 'insert-media':
             event.preventDefault();
-            void insertImageFiles(view, files, null);
+            insertPastedMedia(view, [...images, ...videos]);
             return true;
           case 'insert-link-card':
             event.preventDefault();
@@ -204,14 +182,14 @@ export function createMediaPastePlugin(): Plugin {
 
       handleDrop(view, event, _slice, moved) {
         if (moved) return false; // internal block drag, not a file drop
-        const files = imageFilesFrom(event.dataTransfer);
+        const files = mediaFilesFrom(event.dataTransfer);
         if (files.length === 0) return false;
         event.preventDefault();
         const coords = view.posAtCoords({
           left: event.clientX,
           top: event.clientY,
         });
-        void insertImageFiles(view, files, coords?.pos ?? null);
+        void insertMediaFiles(view, files, coords?.pos ?? null);
         return true;
       },
     },

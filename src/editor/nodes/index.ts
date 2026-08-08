@@ -38,6 +38,7 @@ import { PageLink } from './pageLink';
 import { MathBlock, MathInline } from './math';
 import { Spoiler } from './spoiler';
 import { BlockEffects } from '../effects/blockEffects';
+import { StationerySplit } from './stationerySplit';
 
 export interface CustomNodeRegistration {
   /** Node name as it appears in document JSON (`node.type`). */
@@ -85,6 +86,7 @@ const registry: CustomNodeRegistration[] = [
   // The two fastenings.
   { name: WaxSeal.name, extension: WaxSeal },
   { name: MapPin.name, extension: MapPin },
+  { name: StationerySplit.name, extension: StationerySplit },
   // Universal decorative attrs (rotate/tape/washi/shadow/frame/paper/underline).
   { name: BlockEffects.name, extension: BlockEffects },
 ];
@@ -170,6 +172,13 @@ export {
   type MathRenderOptions,
 } from './mathTex';
 export { Spoiler } from './spoiler';
+export {
+  StationerySplit,
+  STATIONERY_SPLIT_TYPES,
+  isStationerySplitType,
+  normalizeStationerySplits,
+  type StationerySplitType,
+} from './stationerySplit';
 export {
   BlockEffects,
   BLOCK_EFFECT_TYPES,

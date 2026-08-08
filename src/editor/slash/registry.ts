@@ -372,7 +372,7 @@ const blockCommands: SlashCommand[] = [
     ],
     section: 'blocks',
     run: ({ editor, range }) =>
-      editor.chain().focus().deleteRange(range).wrapIn('postcard').run(),
+      editor.chain().focus().deleteRange(range).insertPostcard().run(),
   },
   {
     id: 'ledger',
@@ -392,7 +392,7 @@ const blockCommands: SlashCommand[] = [
     ],
     section: 'blocks',
     run: ({ editor, range }) =>
-      editor.chain().focus().deleteRange(range).wrapIn('ledger').run(),
+      editor.chain().focus().deleteRange(range).insertLedger().run(),
   },
   {
     id: 'photo-corner',

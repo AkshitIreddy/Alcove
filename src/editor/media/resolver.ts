@@ -12,7 +12,7 @@
  * `assetSrcFromRoot` is the pure joining logic (unit-tested in
  * tests/media.test.ts); `resolveAssetSrc` is the environment-aware wrapper.
  */
-import { isTauri } from '../../data/db';
+import { getLibraryInfo, isTauri } from '../../data/db';
 
 /** Normalize a rel_path: forward slashes, no leading slash, no `..`. */
 export function normalizeRelPath(relPath: string): string {
@@ -62,10 +62,7 @@ export const MISSING_ASSET_SRC =
 let assetsRootPromise: Promise<string> | null = null;
 
 async function tauriAssetsRoot(): Promise<string> {
-  assetsRootPromise ??= (async () => {
-    const { appDataDir, join } = await import('@tauri-apps/api/path');
-    return join(await appDataDir(), 'assets');
-  })();
+  assetsRootPromise ??= getLibraryInfo().then((info) => info.assetsRoot);
   return assetsRootPromise;
 }
 

@@ -15,13 +15,35 @@ import { createComponent } from 'solid-js';
 import { render } from 'solid-js/web';
 import SlashMenu from './SlashMenu';
 import { filterSlashCommands, type SlashCommand } from './registry';
-import { play } from '../../sound/engine';
 
 const slashPluginKey = new PluginKey('nb-slash-commands');
 
 interface MenuState {
   items: readonly SlashCommand[];
   selected: number;
+}
+
+/** Width of the editable region containing the slash, not the whole leaf. */
+function availableWidth(editor: Editor): number | null {
+  try {
+    const dom = editor.view.domAtPos(editor.state.selection.from).node;
+    const element = dom instanceof Element ? dom : dom.parentElement;
+    const region = element?.closest<HTMLElement>(
+      '[data-type="col"], .nb-prose',
+    );
+    if (region === null || region === undefined) return null;
+    return Math.max(84, Math.floor(region.getBoundingClientRect().width));
+  } catch {
+    return null;
+  }
+}
+
+function sizeForEditor(host: HTMLElement, editor: Editor): void {
+  const width = availableWidth(editor);
+  if (width === null) return;
+  host.style.setProperty('--nb-slash-available-width', `${width}px`);
+  host.classList.toggle('is-narrow', width < 220);
+  host.classList.toggle('is-very-narrow', width < 150);
 }
 
 function createSlashRenderer(): ReturnType<
@@ -73,7 +95,6 @@ function createSlashRenderer(): ReturnType<
 
   return {
     onStart: (props: SuggestionProps<SlashCommand, SlashCommand>): void => {
-      void play('pop-soft');
       dismissed = false;
       executeSelected = (command) => props.command(command);
       setState({ items: props.items, selected: 0 });
@@ -89,6 +110,7 @@ function createSlashRenderer(): ReturnType<
       host.style.top = '0';
       host.style.left = '0';
       host.style.zIndex = 'var(--z-menus)';
+      sizeForEditor(host, props.editor);
       document.body.appendChild(host);
 
       disposeRoot = render(
@@ -116,6 +138,7 @@ function createSlashRenderer(): ReturnType<
         items: props.items,
         selected: Math.min(state.selected, Math.max(0, props.items.length - 1)),
       });
+      if (host !== null) sizeForEditor(host, props.editor);
       reposition(props.clientRect);
     },
 

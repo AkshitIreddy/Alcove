@@ -100,6 +100,21 @@ const rings = new Map<string, readonly PageSnapshot[]>();
 const lastRecordedAt = new Map<string, number>();
 /** Pages whose persisted history has been merged into the memory ring. */
 const hydrated = new Set<string>();
+/** One shared database read per page while hydration is in flight. */
+const hydrationJobs = new Map<string, Promise<boolean>>();
+/** Pages with an in-memory change that has not reached the database yet. */
+const dirty = new Set<string>();
+
+interface PersistRunner {
+  running: boolean;
+  requested: boolean;
+}
+
+/** Per-page writers. A page's older tail must never land after its newer one. */
+const persistRunners = new Map<string, PersistRunner>();
+
+/** Invalidates asynchronous work left behind by resetHistoryForTests(). */
+let historyGeneration = 0;
 
 /**
  * Record a snapshot of `doc` for `pageId` if the per-page throttle allows
@@ -112,35 +127,130 @@ export function recordSnapshot(
 ): void {
   const now = options.now ?? Date.now();
   const last = lastRecordedAt.get(pageId) ?? 0;
-  if (!options.force && now - last < MIN_SNAPSHOT_GAP_MS) return;
+  if (options.force || now - last >= MIN_SNAPSHOT_GAP_MS) {
+    const ring = rings.get(pageId) ?? [];
+    // Deep-copy through JSON so later editor mutations cannot reach into the
+    // stored snapshot (doc JSON is plain data by contract).
+    const snapshot: PageSnapshot = {
+      at: new Date(now).toISOString(),
+      doc: JSON.parse(JSON.stringify(doc)) as PageDoc,
+    };
+    const next = pushSnapshot(ring, snapshot);
+    if (next !== ring) {
+      rings.set(pageId, next);
+      lastRecordedAt.set(pageId, now);
+      dirty.add(pageId);
+    }
+  }
 
-  const ring = rings.get(pageId) ?? [];
-  // Deep-copy through JSON so later editor mutations cannot reach into the
-  // stored snapshot (doc JSON is plain data by contract).
-  const snapshot: PageSnapshot = {
-    at: new Date(now).toISOString(),
-    doc: JSON.parse(JSON.stringify(doc)) as PageDoc,
-  };
-  const next = pushSnapshot(ring, snapshot);
-  if (next === ring) return; // unchanged doc — no new snapshot, no persist
-  rings.set(pageId, next);
-  lastRecordedAt.set(pageId, now);
-  void persist(pageId, next);
+  // Hydrate before the first write after launch. Requesting this even when the
+  // snapshot was throttled also gives a previous transient DB failure a safe
+  // retry point without manufacturing another history entry.
+  if (!hydrated.has(pageId) || dirty.has(pageId)) requestPersist(pageId);
 }
 
-async function persist(
+async function writePersistedTail(
   pageId: string,
   ring: readonly PageSnapshot[],
-): Promise<void> {
+): Promise<boolean> {
   try {
     const db = await getDb();
     await db.execute(
       'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
       [historyKey(pageId), JSON.stringify(persistedTail(ring))],
     );
+    return true;
   } catch {
     // History persistence is best-effort; the in-memory ring still works.
+    return false;
   }
+}
+
+/**
+ * Merge the persisted tail exactly once. Concurrent readers and writers share
+ * this promise. A failed read deliberately does NOT mark the page hydrated,
+ * so the next edit/list request can retry instead of trusting an empty ring.
+ */
+function ensureHydrated(pageId: string): Promise<boolean> {
+  if (hydrated.has(pageId)) return Promise.resolve(true);
+  const pending = hydrationJobs.get(pageId);
+  if (pending !== undefined) return pending;
+
+  const generation = historyGeneration;
+  const job = (async (): Promise<boolean> => {
+    try {
+      const db = await getDb();
+      const rows = await db.select<Array<{ value: string }>>(
+        'SELECT value FROM settings WHERE key = $1 LIMIT 1',
+        [historyKey(pageId)],
+      );
+      if (generation !== historyGeneration) return false;
+
+      const stored = parseStoredHistory(rows[0]?.value);
+      if (stored.length > 0) {
+        const ring = rings.get(pageId) ?? [];
+        const known = new Set(ring.map((snapshot) => snapshot.at));
+        const merged = [...stored.filter((snapshot) => !known.has(snapshot.at)), ...ring]
+          .sort((a, b) => a.at.localeCompare(b.at))
+          .slice(-MEMORY_CAP);
+        rings.set(pageId, merged);
+      }
+      hydrated.add(pageId);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  hydrationJobs.set(pageId, job);
+  void job.finally(() => {
+    if (hydrationJobs.get(pageId) === job) hydrationJobs.delete(pageId);
+  });
+  return job;
+}
+
+/**
+ * Coalesce writes per page, but never overlap them. If a snapshot arrives
+ * during an execute, the loop writes the newer ring afterwards. Failures leave
+ * `dirty` set; the next record/list call requests another attempt.
+ */
+function requestPersist(pageId: string): void {
+  let runner = persistRunners.get(pageId);
+  if (runner === undefined) {
+    runner = { running: false, requested: false };
+    persistRunners.set(pageId, runner);
+  }
+  runner.requested = true;
+  if (runner.running) return;
+
+  runner.running = true;
+  const generation = historyGeneration;
+  void (async () => {
+    try {
+      while (runner.requested && generation === historyGeneration) {
+        runner.requested = false;
+        if (!(await ensureHydrated(pageId))) return;
+        if (!dirty.has(pageId)) continue;
+
+        const ring = rings.get(pageId) ?? [];
+        if (!(await writePersistedTail(pageId, ring))) return;
+        if (rings.get(pageId) === ring) {
+          dirty.delete(pageId);
+        } else {
+          // A later snapshot appeared while this tail was being written.
+          runner.requested = true;
+        }
+      }
+    } finally {
+      runner.running = false;
+      if (generation !== historyGeneration) return;
+      if (runner.requested) {
+        requestPersist(pageId);
+      } else if (persistRunners.get(pageId) === runner) {
+        persistRunners.delete(pageId);
+      }
+    }
+  })();
 }
 
 /**
@@ -148,33 +258,18 @@ async function persist(
  * tail (survives restarts) beneath the in-memory ring on first access.
  */
 export async function listSnapshots(pageId: string): Promise<PageSnapshot[]> {
-  if (!hydrated.has(pageId)) {
-    hydrated.add(pageId);
-    try {
-      const db = await getDb();
-      const rows = await db.select<Array<{ value: string }>>(
-        'SELECT value FROM settings WHERE key = $1 LIMIT 1',
-        [historyKey(pageId)],
-      );
-      const stored = parseStoredHistory(rows[0]?.value);
-      if (stored.length > 0) {
-        const ring = rings.get(pageId) ?? [];
-        const known = new Set(ring.map((s) => s.at));
-        const merged = [...stored.filter((s) => !known.has(s.at)), ...ring]
-          .sort((a, b) => a.at.localeCompare(b.at))
-          .slice(-MEMORY_CAP);
-        rings.set(pageId, merged);
-      }
-    } catch {
-      // Unreadable history — the in-memory ring alone is fine.
-    }
-  }
+  const ready = await ensureHydrated(pageId);
+  if (ready && dirty.has(pageId)) requestPersist(pageId);
   return [...(rings.get(pageId) ?? [])].reverse();
 }
 
 /** Test seam: drop all in-memory rings and hydration marks. */
 export function resetHistoryForTests(): void {
+  historyGeneration += 1;
   rings.clear();
   lastRecordedAt.clear();
   hydrated.clear();
+  hydrationJobs.clear();
+  dirty.clear();
+  persistRunners.clear();
 }

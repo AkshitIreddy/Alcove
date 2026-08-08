@@ -148,6 +148,30 @@ export function blockToScript(editor: Editor, pos: number): string | null {
   return docToScript(doc);
 }
 
+/** Link-card URL, or the first text link carried by this block. */
+export function linkUrlAt(editor: Editor, pos: number): string | null {
+  const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
+  if (block === null) return null;
+  if (block.node.type.name === 'linkCard') {
+    const url: unknown = block.node.attrs.url;
+    return typeof url === 'string' && url !== '' ? url : null;
+  }
+  let found: string | null = null;
+  block.node.descendants((node) => {
+    if (found !== null) return false;
+    for (const mark of node.marks) {
+      if (mark.type.name !== 'link') continue;
+      const href: unknown = mark.attrs.href;
+      if (typeof href === 'string' && href !== '') {
+        found = href;
+        return false;
+      }
+    }
+    return true;
+  });
+  return found;
+}
+
 /**
  * Put a text selection inside the block, then run `command` — the pattern
  * for "turn into" verbs (setNode/toggle* act on the selection).

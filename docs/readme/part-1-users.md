@@ -21,8 +21,8 @@ puts where, and how every part of the app works. It assumes nothing about code.
 Every section below is also on the [front page](../../README.md), which carries
 this text inline rather than linking to it, so read whichever one you landed on.
 The two cannot disagree: `scripts/gen-readme.mjs` lifts these sections into it
-and `npx vitest run` fails when the copy has drifted. Every count is read out of
-the module that defines it and wrapped in a marker the same run recomputes, so a
+and `npm run readme:check` fails when the copy has drifted. Every count is read
+out of the module that defines it and wrapped in a marker `npm test` recomputes, so a
 vocabulary that grows while this page does not is a failing test.
 
 **On this page**
@@ -56,6 +56,11 @@ nothing left running when you close the window.
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 <!-- /gen -->
+
+Starting with the first updater-enabled release, Alcove checks that same Release
+page after launch and offers newer signed versions in the app. If you installed
+v0.4.0, install the next release manually once; v0.4.0 predates the updater, so
+it cannot discover that first upgrade by itself.
 
 **[What is new in this version](releases.md)**
 
@@ -159,7 +164,7 @@ halfway. To jump rather than turn, the table of contents (`Ctrl+Alt+T`) and the
 thumbnail strip (`Ctrl+Alt+M`) both open with a key and are walked with Tab and
 Enter.
 
-![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove ✎" in a large handwriting face with a gold star beside it, a paragraph with the phrase "real paper you can write on" in an amber highlight, a green callout telling you to click anywhere on the ruled lines and start typing, a three-item bulleted list about the shelf, opening a book and turning pages, a tan card headed "Thirty-two leaves, every one a demonstration", and a green banner reading "So: turn the page." The right page is headed "The shelf", opens "Behind this book is a bookcase, and behind that a room", and carries a tan card headed "Getting about" with an Enter key cap drawn into the sentence, a tilted yellow sticky note about the dock at the foot of the rail, and a moss tag reading "Ctrl Alt F grows the case by a floor". A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](img/spread.png)
+![The Welcome book open on ruled paper. The left page says every book opens into real pages, highlights that phrase in amber, offers a green local-save callout, three navigation bullets and a moss banner inviting the reader to turn the page. The right page, "Your first five minutes", gives four small actions, a blank task to mark, a yellow note explaining that Alcove keeps up while you write, and an Esc key reminder. The hand-drawn tool rail remains visible along the left edge.](img/spread.png)
 
 Mid-turn, the leaf lifts off the spread and you can see the next page under it:
 
@@ -381,7 +386,7 @@ diagrams — and so you never have to teach it how.
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
 
 **Take the grammar** — *copy the format for your AI* puts
-<!--f:specLines-->821<!--/f--> lines of specification on your clipboard,
+<!--f:specLines-->822<!--/f--> lines of specification on your clipboard,
 generated from the parser's own tables, so it cannot describe a language the app
 would refuse. **Ask for a note** in your own words. **Paste it back**, and the
 dialog previews what it recognised before anything lands on the page.
@@ -503,9 +508,9 @@ part of it without losing the rest.
 | Bookmark ribbons | cloth × weight × tail × material × charm, **<!--f:ribbonPresets-->40<!--/f-->** named | [`src/views/bookmarks.ts`](../../src/views/bookmarks.ts) |
 | Block decoration | **<!--f:effectAxes-->11<!--/f-->** axes, **<!--f:effectValues-->472<!--/f-->** values, applicable to **<!--f:blockEffectTypes-->35<!--/f-->** kinds of block | [`src/editor/effects/vocabulary.ts`](../../src/editor/effects/vocabulary.ts) |
 | Stickers | **<!--f:stickers-->50<!--/f-->**, grouped by family, plus your own | [`src/editor/nodes/stickers.ts`](../../src/editor/nodes/stickers.ts) |
-| Sound sets | **<!--f:soundSets-->28<!--/f-->**, voicing **<!--f:soundCues-->66<!--/f-->** cues | [`src/sound/soundSets.ts`](../../src/sound/soundSets.ts) |
+| Sound sets | **<!--f:soundSets-->28<!--/f-->**, voicing **<!--f:soundCues-->64<!--/f-->** cues | [`src/sound/soundSets.ts`](../../src/sound/soundSets.ts) |
 | Ambience beds | **<!--f:ambienceBeds-->10<!--/f-->**, plus silence | [`src/sound/engine.ts`](../../src/sound/engine.ts) |
-| Settings | **<!--f:settingsOptions-->40<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](../../src/data/defaults.ts) |
+| Settings | **<!--f:settingsOptions-->42<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](../../src/data/defaults.ts) |
 
 Some of it is not in a studio at all. *Settings → Appearance* is where the
 choices that belong to the whole app live rather than to one room — the theme,
@@ -607,7 +612,7 @@ button, the panel, the checkbox, the page turn, the book coming off the shelf,
 the crumple, the keystroke, the bell. There are
 <!--f:soundSets-->28<!--/f--> of them, grouped by character — the house voicing
 and its near neighbours, then paper, library, chamber, studio, hush and
-whimsy — between them voicing <!--f:soundCues-->66<!--/f--> cues.
+whimsy — between them voicing <!--f:soundCues-->64<!--/f--> cues.
 
 A set adds no new recordings. It conditions the ones that ship — substituting
 which family voices a role, changing playback rate, trimming gain, layering a
@@ -692,7 +697,7 @@ a hand-edited ZIP cannot write outside the two places it is allowed to.
 The **parcel desk** — the rail's *In and out* sheet, or `Ctrl+Shift+E` — packs
 books into a single `.nbk` file. You pick the scope and what rides along.
 
-![The parcel desk over an open book: a cream sheet headed "Send part of your library out", with a narrow tab column down its left edge — send out (lit), bring in, undo book. Under "What goes in the parcel" a row of scope chips — whole library (lit), floor 1, floor 2, floor 3, this book, pick by hand — over a flat list with a checkbox and page count for every book. Field Notes is ticked at 4 pages; Kanji Practice and Watercolour Basics are empty; "Welcome to Alcove ✎" is ticked at 32 pages; eleven more books through First Aid follow at 0 pages. On the right, "How to pack it": bring the pictures, keep covers & spines, include the library look, perfect fidelity — three of the four ticked — then written as Notebook Script or plain Markdown, and split as one file per page or one file per book. Under that a hatched parcel card reads "In the parcel — 2 books · 36 pages · about 115 KB", lists Field Notes and Welcome separately, carries a drawn present, and says "saves as alcove-library.nbk". Close and Export sit at the foot.](img/transfer.png)
+![The "Send part of your library out" panel over an open book. The whole-library scope lists every title and selects only "Welcome to Alcove" at 48 pages. Bring the pictures, keep covers and spines, and perfect fidelity are enabled; the parcel is written as Notebook Script with one file per page. Its summary reads "1 book · 48 pages · about 101 KB", shows the Welcome book and the alcove-library.nbk filename, with Close and Export at the foot.](img/transfer.png)
 
 Inside, a bundle is a plain ZIP: a manifest with a checksum, one Notebook Script
 file per page, the lossless JSON beside it, the assets, and a snapshot of the

@@ -32,7 +32,6 @@ import { createComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { bumpLinkGraph, loadLinkTargets, type PageCard } from '../../search/backlinks';
-import { play } from '../../sound/engine';
 import { pageIdOfEditor } from '../instances';
 import PageLinkMenu from './PageLinkMenu';
 
@@ -136,7 +135,6 @@ function createPageLinkRenderer(): ReturnType<
     },
 
     onStart: (props: SuggestionProps<PageCard, PageCard>): void => {
-      void play('pop-soft');
       dismissed = false;
       executeSelected = (card) => props.command(card);
       setState({ items: props.items, selected: 0, loading: false });
@@ -251,7 +249,7 @@ export const PageLinkSuggestions = Extension.create({
           range: Range;
           props: PageCard;
         }) => {
-          if (insertPageLinkAt(editor, range, props)) void play('pop-soft');
+          insertPageLinkAt(editor, range, props);
         },
         render: createPageLinkRenderer,
       }),

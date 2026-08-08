@@ -30,11 +30,20 @@
  *            at 1280x800, so each one arrived a third over the leaf it landed
  *            on and the drain grew the book from 32 leaves to 46 the first
  *            time anybody opened it. Same machinery again.
+ *   v7 → v8  expanded into a forty-eight-leaf field guide: a progressive,
+ *            learn-by-doing tour of the editor, catalogue, diagrams,
+ *            navigation, history, media and ways in and out. The outgoing v7
+ *            sources remain byte-identical below, so only an untouched tour
+ *            is refreshed.
+ *   v8 → v9  changed the untouched Welcome cover marker from Forest to Navy.
+ *   v9 → v10 makes the untouched Welcome marker pair Crimson outside and the
+ *            Festive / Gift ribbon design inside.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
 
 import { parse } from '../script';
+import { materializeStableBlockIds } from '../editor/blockIdentity';
 import { scriptDocToTiptap } from '../editor/script/toTiptap';
 import { createBook, deleteBook } from './books';
 import { getDb, type Db } from './db';
@@ -73,8 +82,13 @@ import type { PageDoc } from './types';
  *
  * See refreshWelcomeBook for what a bump does to a library that already has a
  * welcome book: nothing at all, unless every page in it is still ours.
+ *
+ * v8: forty-eight leaves, deliberately organised as a journey rather than a
+ * feature list. The design follows the strongest current onboarding pattern:
+ * useful sample data first, then guided action, then progressive discovery.
+ * See the research note above WELCOME_PAGE_SOURCES.
  */
-export const SEED_VERSION = 7;
+export const SEED_VERSION = 10;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
@@ -216,6 +230,7 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   hueJitter: 0,
   raisedBands: 4,
   bandGilt: true,
+  gilt: true,
   headTail: true,
   headTailStyle: 2, // wrapped cord
   ornament: 9, // Quill
@@ -225,6 +240,31 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   edge: 'gilt',
   format: 'quarto',
   thickness: 44, // 'stout' — a five-page book would otherwise be a sliver
+  // A restrained fine-binding cover chosen from rendered shelf/held
+  // candidates: double fleurons, quill stamp, inset title plate and brass
+  // corners. The crimson ribbon is the warm, unmistakable marker the Welcome
+  // book now uses both outside and between its pages.
+  charm: 'ribbon',
+  charmColor: 0, // Crimson
+  coverFrame: 21, // Double Fleuron
+  coverMedallion: 9, // Quill — the same device as the spine
+  cornerProtectors: true,
+  insetPlate: true,
+};
+
+/**
+ * The Welcome book's between-page ribbon set: Festive / Gift in the ribbon
+ * picker. Keep the complete resolved design here, rather than only the preset
+ * id, so a seeded book remains truthful if that picker entry is ever renamed.
+ */
+export const WELCOME_RIBBON: Readonly<Record<string, unknown>> = {
+  cloth: 'postbox',
+  weight: 'sash',
+  tail: 'swallowtail',
+  material: 'silk',
+  charm: 'none',
+  charmTone: 'gilt',
+  preset: 'gift',
 };
 
 /**
@@ -351,7 +391,7 @@ const KITTENS = {
  *    onto the next one, and `scripts/probe-welcome.mjs` for the fill. Change
  *    the text here and run them again; the arithmetic is not a substitute.
  */
-export const WELCOME_PAGE_SOURCES: readonly string[] = [
+const WELCOME_PAGE_SOURCES_V7: readonly string[] = [
   // ---------------------------------------------------------------- the world
   // Page 1 — what this is, and how to move around
   `---
@@ -1012,8 +1052,933 @@ Now go and write something of your own.
 ];
 
 /**
- * Every page this book USED to be, kept verbatim — the v4 five, then the v5
- * sixteen.
+ * The current welcome field guide: useful sample data, then guided action,
+ * then progressively deeper tools.
+ *
+ * Research choice, recorded where it changes the product:
+ *
+ * - Notion's template guidance treats a worked example as a starting point,
+ *   not a feature inventory: https://www.notion.com/help/guides/the-ultimate-guide-to-notion-templates
+ * - ProductLed's current onboarding examples favour learning by doing and an
+ *   early useful outcome: https://productled.com/blog/best-user-onboarding-examples
+ *
+ * So these forty-eight leaves form a real little notebook. Each spread shows
+ * the result before naming the mechanism, asks for one safe action where that
+ * helps, and saves reference material for the second half. It remains authored
+ * in Notebook Script, so Export Script hands the reader a truthful, editable
+ * example rather than a brochure baked specially for first run.
+ */
+export const WELCOME_PAGE_SOURCES: readonly string[] = [
+  // ----------------------------------------------------------- begin here
+  `---
+paper: lined
+wash: amber
+---
+
+# Welcome to Alcove ✎ {sticker=star}
+
+Every book on the shelf opens into ==real pages you can change=={color=amber}.
+
+::: callout {variant=tip}
+Click a ruled line and type. Your writing saves itself on this machine.
+:::
+
+- Pull a book forward, then open it
+- Turn a page from its outer edge
+- Use the left rail for everything else
+
+::: banner {color=moss}
+This whole book is editable. Turn the page. {sticker=arrow}
+:::
+`,
+
+  `# Your first five minutes {sticker=coffee}
+
+Try the small things that make the rest obvious.
+
+1. Put the caret at the end of this sentence
+2. Press \`/\` and browse the block menu
+3. Tick the task below
+4. Turn the page, then come back
+
+- [ ] I made one mark of my own
+
+::: sticky-note {color=lemon, rotate=-2}
+There is no save button to remember. Alcove keeps up while you write.
+:::
+
+::: marginalia
+\`Esc\` always gives you a way back.
+:::
+`,
+
+  `# The shelf is a room {sticker=book}
+
+The shelf behind this page is not a file picker. It is the place your books live.
+
+::: card {title="Move through the room"}
+Drag to pan. Scroll to zoom. Click a spine to pull it forward; click the held book to read.
+:::
+
+::: tag {color=moss}
+The dock makes a book, opens templates, dresses the room, adds a floor and holds the trash.
+:::
+
+::: callout {variant=info}
+Keyboard focus follows the same route, so the shelf works without a mouse.
+:::
+`,
+
+  `# More than one bookcase {sticker=star}
+
+A library can have a case for each part of a life.
+
+\`\`\`tree
+Your library
+  Work · Research
+  Home · Recipes
+  Someday · Ideas
+\`\`\`
+
+::: map-pin {title="Three rooms, one library"}
+Each case keeps its floors, carpentry, timber and wallpaper. Search still sees the whole library.
+:::
+`,
+
+  `# Dress the room {sticker=flower}
+
+The shelf studio separates shape from colour.
+
+::: columns {gap=lg}
+::: col
+**Carpentry**
+
+Arches, rails, crowns and the clear height books must fit beneath.
+:::
+::: col
+**Walls & timber**
+
+Wallpaper pattern, scale and ink; timber pattern; a complete colour scheme.
+:::
+:::
+
+::: callout {variant=tip}
+Preview first. The case repaints in place when you choose.
+:::
+`,
+
+  `# Dress this book {sticker=sparkle}
+
+This claret volume is showing the book studio before you even open it.
+
+::: card {title="The spine"}
+Leather, cloth or board; pigment, raised cords, gilt rules, title plate, edge and wear.
+:::
+
+::: card {title="The cover"}
+Tooled frame, medallion, inset plate, corner protectors and a ribbon marker.
+:::
+
+::: marginalia
+A book keeps its identity when it moves to another room.
+:::
+`,
+
+  `# Paper and ribbons {sticker=leaf}
+
+The page-style rail holds **twenty-seven rulings**: everyday lines and grids, specialist guides, music paper and oddities.
+
+::: columns {gap=lg}
+::: col
+**One leaf**
+
+Ruling, line height and the gap between printed rules.
+:::
+::: col
+**The whole book**
+
+Ribbon design and the default page look apply to every leaf, now and later.
+:::
+:::
+
+::: marginalia
+Bookmarks cycle six ribbon colours, with no six-page limit.
+:::
+`,
+
+  `# Four ways to begin {sticker=pin}
+
+::: columns {gap=lg}
+::: col
+**Blank** — start with one line.
+
+**Template** — begin from a useful shape.
+:::
+::: col
+**Markdown** — bring an existing note.
+
+**Notebook Script** — let an assistant draft a whole page.
+:::
+:::
+
+::: callout {variant=star}
+The best starting point is the one that gets your own words onto paper soonest.
+:::
+
+::: wax-seal {title=A}
+No beginning seals the rest of the book; change course whenever you like.
+:::
+`,
+
+  // ------------------------------------------------------------ write it
+  `# Write by blocks {sticker=book}
+
+Every paragraph, list, picture, card and diagram is a **block**.
+
+- [ ] Press \`/\` on an empty line
+- [ ] Insert a callout or heading
+- [ ] Hover its left edge for the handle
+
+::: card {title="Why blocks matter"}
+Move one thought without cutting text. Turn it into another kind. Duplicate it, decorate it or delete it.
+:::
+
+> A page stays flexible without becoming a pile of tiny text boxes. {washi=top}
+`,
+
+  `# Headings and dividers {sticker=star}
+
+## A section you can find again
+
+Headings build the table of contents automatically.
+
+### A smaller thought inside it
+
+Three levels are enough to make a page legible without turning it into an outline.
+
+---
+
+The divider above is a block too: move it, tint it, or use it to separate two kinds of work.
+
+::: marginalia
+Type \`#\`, \`##\` or \`###\` in Notebook Script.
+:::
+`,
+
+  `# Lists that think {sticker=leaf}
+
+- A bullet can contain another idea
+  - and another level beneath it
+  - without losing the parent
+- Tab moves inward; Shift-Tab comes back
+
+1. Number the order
+2. Change the order by dragging a block
+3. Keep writing
+
+- [ ] An open task waits
+- [x] A finished task remembers
+
+::: callout {variant=tip}
+Checking a task gives a small visual celebration. Motion-off skips the burst; mute and the little-clicks volume control its sound.
+:::
+`,
+
+  `# Move, change, duplicate {sticker=arrow}
+
+The block handle and the right-click menu reach the same useful actions.
+
+::: index-card {title="A block can become"}
+Paragraph, heading, quote, bullet, number or task — without retyping its words.
+:::
+
+::: card {title="A block can also"}
+Move up or down, duplicate, copy a link to itself, change its wash, or leave the page. Immediate undo restores a deletion; history may also hold an earlier snapshot.
+:::
+`,
+
+  `# Ink between words {sticker=pin}
+
+**Bold**, *italic*, \`inline code\`, ~~struck out~~ and [a link](https://example.com).
+
+==Amber=={color=amber}, ==terracotta=={color=terracotta}, ==moss=={color=moss}, ==lemon=={color=lemon}, ==sky=={color=sky}, ==blush=={color=blush}, ==graphite=={color=graphite}.
+
+::: card {title="A toolbar appears on selection"}
+Keep the words selected and choose emphasis, ink, a wash or a link. The page stays put while you decide.
+:::
+
+::: marginalia
+The same marks round-trip through Notebook Script.
+:::
+`,
+
+  `# Columns you can resize {sticker=leaf}
+
+::: columns {gap=lg}
+::: col
+**Compare**
+
+Before / after
+:::
+::: col
+**Compose**
+
+Picture / prose
+:::
+::: col
+**Rebalance**
+
+Drag the lines
+:::
+:::
+
+::: card {title="One block, several measures"}
+Each lane stays editable while you rebalance the widths.
+:::
+
+::: marginalia
+Choose two, three or four columns from the block menu.
+:::
+`,
+
+  `# Tables you can sort {sticker=coffee}
+
+| Project | Next step | Priority |
+| --- | --- | --- |
+| Herbarium | label specimens | high |
+| Reading list | find the essay | medium |
+| Recipes | test the scones | high |
+
+Use the small sort control in a heading once to sort, again to reverse it.
+
+::: marginalia
+Tab moves between cells. Exported Markdown keeps the pipes and headings.
+:::
+`,
+
+  `# Pages that never scroll {sticker=moon}
+
+A leaf has a real bottom. When writing reaches it, the last complete block moves to the next page.
+
+::: callout {variant=star}
+No scrollbar appears inside paper, and no sentence is cut in half at the fold.
+:::
+
+::: card {title="The book grows with the writing"}
+If there is no next page, Alcove makes one. If type becomes larger, the fold is measured again.
+:::
+
+::: marginalia
+Turn the page instead of scrolling the page.
+:::
+`,
+
+  // ---------------------------------------------------------- catalogue
+  `# The catalogue {sticker=sparkle}
+
+Seven shelves turn the editor's vocabulary into things you can see before inserting.
+
+::: columns {gap=lg}
+::: col
+- Paper & cards
+- Text blocks
+- Callouts
+- Diagrams
+:::
+::: col
+- Tape & trim
+- Lettering
+- Stickers
+- Search every shelf
+:::
+:::
+
+::: callout {variant=tip}
+Paper and sticker shelves are yours to curate: hide what you never use and keep favourites near the front.
+:::
+`,
+
+  `# Make a little collage {sticker=flower}
+
+This paragraph is taped down. {tape=corner, rotate=-2, paper=torn}
+
+This one wears a stitched frame and a soft lift. {frame=stitch, shadow=lifted, color=sky}
+
+::: washi-box {color=blush}
+A washi box is useful for a thought that should feel collected rather than announced.
+:::
+
+Underlined as if by hand. {underline=squiggle}
+`,
+
+  `# Cards with a purpose {sticker=pin}
+
+::: card {title="Definition"}
+**Colophon** — the note that tells how a book was made.
+:::
+
+::: ledger {title="Field expenses"}
+::: col
+Tea
+
+Postage
+
+Pencils
+:::
+::: col
+£2.40
+
+£1.85
+
+£3.10
+:::
+:::
+
+::: marginalia
+The ledger's writing sits on its printed rules. Use a shape because it has a job, not only because it is pretty.
+:::
+`,
+
+  `# Postal desk {sticker=heart}
+
+::: envelope {color=amber}
+A letter folded away for later, with its flap still open.
+:::
+
+::: stamp {color=terracotta}
+One penny, postmarked in a small hand.
+:::
+
+::: postcard {title="WISH YOU WERE HERE"}
+::: col
+The rain turned. The bookshop stayed open. I found our atlas.
+:::
+::: col
+Alcove House
+Library Lane
+Home
+:::
+:::
+`,
+
+  `# Keepsakes {sticker=flower}
+
+A page can keep a whole afternoon.
+
+::: pressed-flower {title="Meadow cranesbill — June"}
+Flat between the pages for a fortnight, and still blue.
+:::
+
+::: ticket-stub {title="ADMIT ONE"}
+Row H · seat 12 · rain all the way home.
+:::
+
+`,
+
+  `# Fold it away {sticker=moon}
+
+::: callout {variant=info}
+Callouts say what kind of aside they are: information, tip, warning or star.
+:::
+
+::: toggle {title="A longer aside — click to open"}
+Toggles keep supporting material on the page without making the main path longer. They may contain other blocks.
+:::
+
+::: spoiler
+A spoiler hides one short answer until the reader chooses to look.
+:::
+
+::: marginalia
+These remain real editable blocks while closed.
+:::
+`,
+
+  `# Washes and fasteners {sticker=star}
+
+Amber wash, taped at the top. {color=amber, tape=top}
+
+Sky paper in a double frame. {color=sky, frame=double}
+
+Blush with a stacked-paper edge. {color=blush, shadow=stacked}
+
+::: card {title="Effects stack"}
+Choose several; each remains removable without rebuilding the block.
+:::
+`,
+
+  `# Lettering cabinet {sticker=music}
+
+The everyday notebook hand. {font=hand}
+
+A quick casual hand. {font=casual}
+
+A marker for a loud label. {font=marker, size=lg}
+
+A book face for something printed. {font=book}
+
+Monospaced labels a specimen. {font=mono, ink=graphite}
+
+::: card {title="Fifty hands · fifty inks · twelve sizes"}
+Ten ranging modes place a block from the left margin to the far edge; the choice travels with it.
+:::
+`,
+
+  // ------------------------------------------------------------ pictures
+  `# Pictures, starring kittens {sticker=cat}
+
+Paste, choose a file, or drop a picture directly onto paper.
+
+::: image-row {style=polaroid, cols=3}
+![A ginger kitten](${KITTENS.ginger}){caption="Has plans"}
+![A grey kitten asleep](${KITTENS.asleep}){caption="On the good chair"}
+![A cream kitten in a box](${KITTENS.box}){caption="His box now"}
+:::
+
+::: marginalia
+Rows hold up to four images and keep their captions together.
+:::
+`,
+
+  `# One picture, properly {sticker=sun}
+
+::: columns {gap=lg}
+::: col
+::: polaroid {rotate=-2}
+![The ginger kitten again](${KITTENS.ginger})
+A white frame, captioned in pencil.
+:::
+:::
+::: col
+::: photo-corner {title="Four paper corners"}
+![A grey kitten asleep](${KITTENS.asleep})
+:::
+:::
+:::
+
+::: marginalia
+Drag a picture corner to resize it without cropping the subject.
+:::
+`,
+
+  `# Picture beside prose {sticker=leaf}
+
+::: columns {gap=lg}
+::: col
+![A cream kitten in a box](${KITTENS.box}){width=260}
+:::
+::: col
+## Evidence
+
+The box was empty before lunch. It now belongs to the kitten.
+
+### Conclusion
+
+Ownership has been established beyond reasonable doubt.
+:::
+:::
+
+::: marginalia
+Columns keep the picture and the paragraph in their own measures.
+:::
+`,
+
+  `# Sound and celebration {sticker=sparkle}
+
+- [ ] Tick me to try the confetti
+
+::: card {title="A small response, not a fireworks show"}
+The burst is brief. Motion-off or the operating system's reduce-motion setting removes it. Mute everything—or set little clicks & pops to zero—to silence its cue.
+:::
+
+::: index-card {title="The sound room"}
+Choose a shipped sound set, tune categories separately, add typing sounds, or import your own local cue files.
+:::
+
+`,
+
+  `# Local video {sticker=music}
+
+Drop a video file onto a leaf and Alcove makes a player block where it lands.
+
+::: card {title="The useful controls stay with it"}
+Play, pause, seek, resize and move the block like any other piece of the page.
+:::
+
+::: callout {variant=info}
+The video is copied into the library's own storage. Opening the notebook later does not depend on the file remaining in Downloads.
+:::
+
+::: marginalia
+Nothing is uploaded merely because it was placed on a page.
+:::
+`,
+
+  `# Stickers of your own {sticker=heart}
+
+The built-in drawer has fifty hand-drawn stickers. A local picture can become one more.
+
+::: washi-box {color=lemon}
+Import a PNG or SVG once; its filename becomes its sticker name, then click it to place it at the caret.
+:::
+
+This block wears a margin sticker. {sticker=bee}
+
+This one wears another. {sticker=moon, color=sky}
+
+::: card {title="Your drawer stays yours"}
+Custom stickers and curated favourites persist offline with the rest of the library.
+:::
+`,
+
+  // ----------------------------------------------------------- diagrams
+  `# A tree of ideas {sticker=microscope}
+
+Indentation alone makes a hand-drawn tree. Two spaces mean one branch inward.
+
+\`\`\`tree {style=watercolor}
+Alcove | a living library
+  Library
+    Cases
+    Search
+  Book
+    Pages
+    Ribbons
+\`\`\`
+
+::: callout {variant=info}
+Change the few source lines and every branch is laid out again in the page's hand-drawn visual language.
+:::
+`,
+
+  `# A mind map {sticker=sparkle}
+
+\`\`\`mindmap
+Field notebook
+  Observe
+    Place
+    Weather
+  Collect
+    Sketch
+    Photograph
+  Connect
+    Question
+    Next visit
+\`\`\`
+
+::: marginalia
+Change \`tree\` to \`mindmap\`; the words stay while the composition redraws.
+:::
+`,
+
+  `# A graph of connections {sticker=arrow}
+
+One arrow per line makes a network. A comma fans one idea into several.
+
+\`\`\`graph
+Question {shape=cloud, color=amber}
+Question -> Notes, Experiment
+Notes -> Draft: informs
+Experiment -> Draft
+\`\`\`
+
+::: marginalia
+Nodes may be rectangles, circles or clouds; labels belong on arrows.
+:::
+`,
+
+  `---
+paper: grid
+wash: moss
+---
+
+# A process, step by step {sticker=coffee}
+
+\`\`\`flowchart
+Capture -> Sort: blocks
+Capture -> Connect: links
+Sort -> Share: when ready
+Connect -> Share
+\`\`\`
+
+::: tag {color=moss}
+\`flowchart\` uses the graph grammar; this leaf also asked for squared paper in its script header.
+:::
+`,
+
+  `# A timeline {sticker=moon}
+
+\`label: text\` puts events in order; a pipe can tint one turning point.
+
+\`\`\`timeline
+1665: Hooke names the cell
+1839: Schwann describes animal cells
+1855: Virchow — cells come from cells | color=amber
+1931: The electron microscope
+Today: Add your own observation | color=moss
+\`\`\`
+
+`,
+
+  `# Diagrams stay editable {sticker=pin}
+
+A diagram is not flattened into an image. Click it to reopen the few lines that made it.
+
+::: index-card {title="Five tiny languages"}
+\`tree\` · \`mindmap\` · \`graph\` · \`flowchart\`
+
+\`timeline\`
+:::
+
+::: card {title="Tolerant on purpose"}
+Common arrow spellings and a pasted Mermaid-style fence are understood gently. Diagnostics explain repairs instead of breaking the page.
+:::
+
+`,
+
+  // ------------------------------------------------------------- precise
+  `---
+paper: grid
+---
+
+# Maths in the margins {sticker=sparkle}
+
+Single dollars keep maths in a sentence: the circle is $A=\\pi r^2$ and the error stays below $\\epsilon$. Double dollars give an equation its own line.
+
+$$
+e^{i\\pi} + 1 = 0
+$$
+
+$$
+\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}
+$$
+
+::: callout {variant=info}
+Click a formula to edit its TeX; press Enter to set it back onto the page.
+:::
+
+`,
+
+  `# Code, kept exactly {sticker=microscope}
+
+Three backticks and a language name preserve spaces and colour the tokens.
+
+\`\`\`python
+def shelve(book, case):
+    spot = case.free_spot()
+    if spot is None:
+        case.add_floor()
+        spot = case.free_spot()
+    case.place(spot, book)
+    return spot
+\`\`\`
+
+::: marginalia
+Unknown languages keep their name and spacing; they simply arrive without syntax colour.
+:::
+`,
+
+  `# Notes at the foot {sticker=pin}
+
+A marker can carry its note inline[^ Like this, between the brackets. ] or point to a definition below[^travel].
+
+::: card {title="Why the note travels"}
+Pages have a fixed height. If the marked paragraph flows onward, its footnote moves with it instead of becoming an orphan.
+:::
+
+::: marginalia
+Two spellings: \`[^ whole note ]\`, or \`[^name]\` with a definition below.
+:::
+
+[^travel]: This note belongs to the paragraph that names it.
+`,
+
+  `# Pages point at pages {sticker=heart}
+
+Type \`[[\` and choose a page. The reference works in both directions.
+
+The formulas are on [[Maths in the margins]], the kittens on [[Pictures, starring kittens]], and the first diagram on [[A tree of ideas]].
+
+::: callout {variant=star}
+Open a page that is being mentioned and its backlinks show what points here.
+:::
+
+::: card {title="A missing destination stays readable"}
+If no page matches, the words remain ordinary text instead of becoming a broken chip.
+:::
+`,
+
+  // ----------------------------------------------------------- wayfinding
+  `# Find anything again {sticker=book}
+
+::: card {title="Quick switcher"}
+\`Ctrl K\` jumps by fuzzy title to any book or headed page, including another bookcase.
+:::
+
+::: card {title="Full-text search"}
+\`Ctrl Shift F\` searches the words inside every page and takes you to the match.
+:::
+
+::: marginalia
+Useful habit: name a page for what you will remember asking, not only its date.
+:::
+
+`,
+
+  `# Four ways through {sticker=leaf}
+
+Four views answer four different navigation questions.
+
+::: columns {gap=lg}
+::: col
+**Contents**
+
+Which headings are in this book?
+
+**Thumbnails**
+
+Which leaf do I recognise by sight?
+:::
+::: col
+**Ribbons**
+
+Which pages matter now?
+
+**Backlinks**
+
+What else mentions this page?
+:::
+:::
+
+::: marginalia
+All four jump without changing the page itself.
+:::
+`,
+
+  `# Focus, zoom, and leaf {sticker=moon}
+
+::: index-card {title="Walk the rungs"}
+Spread → page → single leaf. Use the dial, or \`[\` and \`]\` while focused.
+:::
+
+::: card {title="Then choose the distance"}
+Zoom further into the paper and pan when it grows larger than the window. The exit remains in the top-left corner.
+:::
+
+::: callout {variant=tip}
+Focus closes the tool panel first, so the page gets the room the mode promises.
+:::
+`,
+
+  `# History and autosave {sticker=moon}
+
+Every edit saves locally; useful earlier states remain available in page history.
+
+\`\`\`timeline
+Now: the page in your hands
+Earlier: a saved snapshot
+Before that: another recoverable turn
+Restore: make the chosen snapshot current
+\`\`\`
+
+::: callout {variant=warn}
+Restoring is deliberate and visible. It never silently overwrites the page while you browse.
+:::
+
+`,
+
+  `# Daily pages and templates {sticker=sun}
+
+Type \`/today\` to jump to today's journal page, creating it when needed.
+
+::: card {title="Templates are starting shapes"}
+Choose Cornell notes, a lecture page, flashcards, a weekly planner or a reading log, then make it yours.
+:::
+
+::: card {title="Markdown comes in as books"}
+Import one or several files. Headings, lists, tables, links and image references become editable blocks.
+:::
+`,
+
+  `# Notebook Script {sticker=sparkle}
+
+::let subject = The complete Alcove tour
+::style hero {color=amber, underline=marker}
+
+**{{subject}}** was written in the same text format you can export. {use=hero}
+
+::: columns {gap=lg}
+::: col
+**Familiar**
+
+Markdown headings, lists, tables, pictures, code and links.
+:::
+::: col
+**Expressive**
+
+Containers, attributes, diagrams, variables and reusable styles.
+:::
+:::
+
+::: callout {variant=tip}
+Download the format guide and attach it—or copy it when the chat accepts a long paste. Ask for one page, preview the result, then insert it.
+:::
+`,
+
+  `# In, out, and safekeeping {sticker=book}
+
+::: columns {gap=lg}
+::: col
+**A page leaves as**
+
+- Notebook Script
+- PNG picture
+- PDF
+:::
+::: col
+**A library leaves as**
+
+- A portable parcel
+- An automatic backup
+- A manual backup
+:::
+:::
+
+::: callout {variant=info}
+When a newer signed release is available, Alcove offers the update and runs the ordinary installer only after you accept.
+:::
+
+::: marginalia
+Your library is kept by default when the app itself is replaced.
+:::
+`,
+
+  `---
+paper: dotted
+wash: amber
+---
+
+# This leaf is yours {sticker=heart}
+
+You have seen rooms become libraries, lines become pages, and plain words become diagrams and keepsakes.
+
+::: quote-card {color=amber}
+The showcase ends here. Your notebook does not.
+:::
+
+- [ ] Add a page and write one thing of your own
+
+::: card {title="Need a way back?"}
+- [[Your first five minutes]]
+- [[The catalogue]]
+- [[Find anything again]]
+:::
+`,
+];
+
+/**
+ * Every page this book USED to be, kept verbatim — the v7 thirty-two, then
+ * the older generations already retained below.
  *
  * They are here for one job: telling a welcome book nobody has touched from a
  * welcome book somebody has been writing in. A refresh replaces the first and
@@ -1028,6 +1993,10 @@ Now go and write something of your own.
  * mojibaked pencil.
  */
 export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
+  // v7 — thirty-two leaves. Kept by reference so the outgoing strings remain
+  // byte-for-byte the exact template literals above; never edit that array.
+  ...WELCOME_PAGE_SOURCES_V7,
+
   // Page 1 — what Alcove is + how to get around
   `---
 paper: cream
@@ -2308,13 +3277,21 @@ export function buildWelcomePageDocs(ids?: WelcomePageIds): Array<{
     const pageId = index === -1 ? undefined : ids.pageIds[index];
     return pageId === undefined ? null : { pageId, bookId: ids.bookId };
   };
-  return WELCOME_PAGE_SOURCES.map((source) => ({
-    doc: scriptDocToTiptap(parse(source), {
+  return WELCOME_PAGE_SOURCES.map((source, index) => {
+    const doc = scriptDocToTiptap(parse(source), {
       hasNode: (name) => EDITOR_NODE_NAMES.has(name),
       resolvePageLink: resolve,
-    }),
-    source,
-  }));
+    });
+    // The seeder already owns the real page ids. Stamp block identity now so
+    // the first offscreen flip capture and the first live leaf cannot each
+    // invent a different tilt seed. The fallback scope keeps pure builders
+    // deterministic when rows have not been created (tests/previews).
+    const pageId = ids?.pageIds[index] ?? `welcome:${index}`;
+    return {
+      doc: materializeStableBlockIds(pageId, doc).doc,
+      source,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2375,11 +3352,10 @@ const SHIPPED_WELCOME_SOURCES: readonly string[] = [
 /**
  * A page's document with every `id` attribute removed, as canonical JSON.
  *
- * The ids are why this comparison cannot be a plain deep-equal: seeded pages
- * are stored WITHOUT block ids, and TipTap's UniqueID extension mints one for
- * every block the first time a page is opened, saving as it goes. So a book
- * the reader merely LOOKED at has a different document from the one that was
- * written to disk — different in the one way that means nothing.
+ * The ids are why this comparison cannot be a plain deep-equal. Current seeds
+ * carry deterministic ids, while older seeds were stored without them and
+ * TipTap minted random ones when a page first opened. Both shapes describe
+ * the same authored page, so identity is removed before comparison.
  */
 function docFingerprint(doc: PageDoc): string {
   const strip = (value: unknown): unknown => {
@@ -2425,9 +3401,10 @@ export function docFromSeededSource(source: string): PageDoc {
  * otherwise they have written in it since, and the source is only the thing it
  * started as.
  *
- * The `source_dirty` flag is deliberately not consulted. It is set by any save
- * at all, and simply OPENING a page saves it once (see docFingerprint), so a
- * book that has been read once would look written-in for the rest of its life.
+ * The `source_dirty` flag is deliberately not consulted. Older app versions
+ * marked it when merely opening a page caused UniqueID's first save, and that
+ * historical bit remains set after an upgrade even though current identity
+ * preparation no longer treats opening as an authored edit.
  */
 export function isUnchangedSeededPage(page: {
   scriptSource: string | null;
@@ -2547,6 +3524,71 @@ async function renameLegacyWelcomeBook(db: Db): Promise<void> {
 }
 
 /**
+ * v10: the Welcome book's matching marker pair became crimson outside and the
+ * Festive / Gift design inside.
+ *
+ * The two customisation axes are migrated independently. The cover marker is
+ * changed only when the complete style is still an exact shipped Forest/Navy
+ * binding. The between-page design is installed only when the `ribbon` key has
+ * never been written. A reader may therefore have customised either one and
+ * still receive the untouched default for the other; no authored choice is
+ * replaced.
+ */
+async function migrateLegacyWelcomeRibbon(db: Db): Promise<void> {
+  const rows = await db.select<Array<{ id: string; cover_meta: string | null }>>(
+    'SELECT id, cover_meta FROM books WHERE title = $1',
+    [WELCOME_BOOK_TITLE],
+  );
+  const expected = WELCOME_BINDING as Record<string, unknown>;
+  const expectedKeys = Object.keys(expected).sort();
+  for (const row of rows) {
+    if (row.cover_meta === null) continue;
+    let meta: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(row.cover_meta);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      meta = parsed as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    let updated = meta;
+    let changed = false;
+
+    const rawStyle = meta.style;
+    if (rawStyle !== null && typeof rawStyle === 'object' && !Array.isArray(rawStyle)) {
+      const style = rawStyle as Record<string, unknown>;
+      const keys = Object.keys(style).sort();
+      const hasShippedShape =
+        keys.length === expectedKeys.length &&
+        keys.every((key, index) => key === expectedKeys[index]);
+      const isLegacyMarker = style.charmColor === 1 || style.charmColor === 2;
+      const isOldShippedStyle =
+        style.charm === 'ribbon' &&
+        isLegacyMarker &&
+        hasShippedShape &&
+        expectedKeys.every(
+          (key) => key === 'charmColor' || style[key] === expected[key],
+        );
+      if (isOldShippedStyle) {
+        updated = { ...updated, style: { ...style, charmColor: 0 } };
+        changed = true;
+      }
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(meta, 'ribbon')) {
+      updated = { ...updated, ribbon: { ...WELCOME_RIBBON } };
+      changed = true;
+    }
+
+    if (!changed) continue;
+    await db.execute('UPDATE books SET cover_meta = $1 WHERE id = $2', [
+      JSON.stringify(updated),
+      row.id,
+    ]);
+  }
+}
+
+/**
  * Write the welcome pages into a book, in two passes.
  *
  * The second pass exists because page ten links to pages three and eight, and
@@ -2578,7 +3620,10 @@ async function createWelcomeBook(): Promise<void> {
     floor: 0,
     slot: 3,
     spineSeed: WELCOME_SPINE_SEED,
-    coverMeta: { style: { ...WELCOME_BINDING } },
+    coverMeta: {
+      style: { ...WELCOME_BINDING },
+      ribbon: { ...WELCOME_RIBBON },
+    },
   });
   await writeWelcomePages(book.id);
 }
@@ -2622,6 +3667,8 @@ async function refreshWelcomeBook(db: Db): Promise<boolean> {
  *   v2/v3/v4    retitle a welcome book sitting on any past app name
  *   v5, v6      replace the welcome book's PAGES with the current tour, and
  *               only when every page in it is still exactly as it was seeded
+ *   v9           changed only the untouched shipped outer marker to navy
+ *   v10          changes untouched Welcome markers to crimson / Festive Gift
  *   always      create the welcome book if the library has none
  *
  * The order matters twice. Renaming BEFORE the existence check is what stops
@@ -2640,6 +3687,7 @@ export async function seedIfEmpty(): Promise<boolean> {
 
   await cleanupOldDemoBooks(db);
   await renameLegacyWelcomeBook(db);
+  await migrateLegacyWelcomeRibbon(db);
   await refreshWelcomeBook(db);
   const exists = await welcomeBookExists(db);
   if (!exists) await createWelcomeBook();

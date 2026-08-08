@@ -29,7 +29,7 @@ Alcove](part-1-users.md) first — this half assumes it.
 
 <!-- gen:contents-part-2 -->
 - [How it's built](#how-its-built) — The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row
-- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the four checks
+- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks
 - [The map of the app](#the-map-of-the-app) — Directory by directory, plus the module-docstring convention this README points at instead of copying
 - [The art pipeline](#the-art-pipeline) — Bake once, draw forever: atlas packing, LOD tiers, and the cache-key rule
 - [The design vocabularies](#the-design-vocabularies) — Colour, carpentry, wall and binding as four orthogonal axes — and adding a value end to end
@@ -38,8 +38,7 @@ Alcove](part-1-users.md) first — this half assumes it.
 - [Notebook Script](#notebook-script) — Why `parse()` is total, the round-trip invariant, and the generated spec
 - [The data layer](#the-data-layer) — The schema, the bookcase model, and why every read is validated
 - [The failure modes this codebase has actually shipped](#the-failure-modes-this-codebase-has-actually-shipped) — The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named
-- [The gates](#the-gates) — Every unit-test file and the specific class of bug it exists to stop
-- [Driving the running app](#driving-the-running-app) — Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does
+- [The gate](#the-gate) — The deliberately tiny smoke suite
 - [Things that were harder than they look](#things-that-were-harder-than-they-look) — Five places the obvious implementation is wrong
 - [The design record](#the-design-record) — The ADR set in `docs/design/`, including which documents are superseded and why they are kept
 - [Building and releasing](#building-and-releasing) — The bundle artefacts, the icon pipeline, and the tag-driven release workflow
@@ -65,10 +64,10 @@ shortest useful thing on this page.
 Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
 webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
 Vite. Almost everything interesting happens in the frontend. The Rust side is
-<!--f:rustCommands-->14<!--/f--> commands — image assets, link previews, backups,
+<!--f:rustCommands-->15<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
-migrations, in <!--f:rustFiles-->8<!--/f--> files and
-<!--f:rustLines-->2306<!--/f--> lines.
+migrations, in <!--f:rustFiles-->9<!--/f--> files and
+<!--f:rustLines-->2619<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -197,18 +196,18 @@ wrong.
 |---|---|---|
 | [Tauri 2](https://tauri.app/) | 2.x | Ships the OS webview instead of bundling Chromium: a 16 MB installer rather than ten times that, and one process tree. Rust gets the things a webview cannot do — filesystem, SQLite, tray, an SSRF-guarded image fetcher. |
 | [SolidJS](https://www.solidjs.com/) | ^1.9.3 | Fine-grained reactivity with no virtual DOM. That is not a benchmark preference here: the app mounts dozens of TipTap node views, and a VDOM diff over a node view is exactly the thing that fights ProseMirror for ownership of the DOM. |
-| TypeScript + Vite | ~5.6 / ^6.0 | `strict`, plus `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch`. Vite's dev server is also the QA harness — see *Driving the running app*. |
+| TypeScript + Vite | ~5.6 / ^6.0 | `strict`, plus `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch`. Vite also provides the browser-only development path on port 1420. |
 | [PixiJS v8](https://pixijs.com/) | ^8.19 | Continuous zoom is the hard requirement, and it is what DOM loses on: Chromium rasterises a layer at a fixed scale, so animating `transform: scale()` on a big container gives blurry pixels during the zoom and a re-raster hitch at the end. A single SVG loses harder — filter-based linework is CPU-bound. |
 | [TipTap v3](https://tiptap.dev/) | ^3.29 | `@tiptap/core` is genuinely framework-agnostic (core + `@tiptap/pm` only), so it runs under Solid with a thin binding layer. ProseMirror underneath supplies IME/composition handling and transaction-based undo against a strict schema, which is not cheaply replicable. In June 2025 Tiptap MIT-licensed ten formerly-Pro extensions, including the exact set this app needs: DragHandle, NodeRange, UniqueID, Details, Mathematics, TableOfContents. |
 | Vendored Solid bindings | in-repo | [`src/editor/solid/`](../../src/editor/solid/) rather than a dependency, because there is no Solid adapter upstream worth taking and an editor binding is not a thing to upgrade by lockfile bump. Three files; see [The vendored Solid bindings](#the-vendored-solid-bindings). |
 | SQLite via `tauri-plugin-sql` | ^2.4 | Migrations are registered on the Rust side in [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs). No ORM; the repos in [`src/data/`](../../src/data/) speak SQL directly. |
 | GSAP | ^3.15 | Every plugin is free as of 2024, including Flip, which is what makes a dragged block settle into its new position instead of teleporting. Transform/opacity only in hot paths. |
-| Howler | ^2.2 | <!--f:soundCues-->66<!--/f--> cues and <!--f:ambienceBeds-->10<!--/f--> ambience beds, in four categories (`ui`, `pages`, `shelf`, `ambient`) each with its own volume under a master. Web Audio through one library rather than by hand, because the interesting part is the cue table, not the graph. Provenance and licensing are under [Licence and credits](#licence-and-credits); the design is [`docs/design/sound.md`](../design/sound.md). |
+| [`@pixi/sound`](https://pixijs.io/sound/) | ^6.0 | <!--f:soundCues-->64<!--/f--> cues and <!--f:ambienceBeds-->10<!--/f--> ambience beds, in four categories (`ui`, `pages`, `shelf`, `ambient`) with category volumes under one master. It shares the app's Pixi runtime and provides pooled Web Audio playback without maintaining a second audio framework. Provenance and licensing are under [Licence and credits](#licence-and-credits); the design is [`docs/design/sound.md`](../design/sound.md). |
 | `html-to-image` | ^1.11 | Page → `ImageBitmap` for the curl. The one library in the app with a bug worked around at length ([`svgSnapshot.ts`](../../src/flip/svgSnapshot.ts)). |
 | `lowlight` | ^3.3 | Syntax highlighting inside code blocks, through `@tiptap/extension-code-block-lowlight`. |
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](../../src/art/wobble.ts). |
-| `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* tooltip deliberately does not use it — see [`tests/tooltip.test.ts`](../../tests/tooltip.test.ts). |
-| Vitest, Playwright, fast-check | ^4.1 / ^1.62 / ^4.9 | Unit, end-to-end, and property-based tests. fast-check drives the script parser's round-trip invariant and the ZIP codec. |
+| `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* delegated tooltip deliberately does not use it — see [`Tooltip.tsx`](../../src/views/Tooltip.tsx). |
+| Vitest | ^4.1 | Runs the single retained smoke file, [`tests/smoke.test.ts`](../../tests/smoke.test.ts), in Node. |
 
 There is deliberately no state-management library, no CSS framework, no icon
 package, no chart library and no markdown library. The parser, the ZIP codec, the
@@ -218,7 +217,7 @@ would not meet (see [`src/features/transfer/zip.ts`](../../src/features/transfer
 for the reasoning in one concrete case).
 
 ## Getting it running
-<!--nav: `npm run tauri dev`, the browser-only dev path, and the four checks-->
+<!--nav: `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks-->
 
 ```bash
 npm install
@@ -229,46 +228,23 @@ npm run dev            # frontend only, in a browser, on :1420
 `npm run dev` works because [`src/data/db.ts`](../../src/data/db.ts) falls back to an
 in-memory database stub outside Tauri — the same `select`/`execute` surface,
 persisted to `localStorage`, degrading to empty results rather than throwing on
-SQL it does not understand. A book created in the browser survives a reload. This
-is not a toy path: it is what the entire Playwright harness runs against, and
-[`tests/stub-persistence.test.ts`](../../tests/stub-persistence.test.ts) holds it to the
-real thing's behaviour.
+SQL it does not understand. A book created in the browser survives a reload. It
+is a convenient development path, not a substitute for the Tauri host.
 
-### The four checks
+### The bare-bones gate
 
-Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
-**not** run `npm run build` or `npm run tauri dev`.
+The owner performs visual and audio acceptance directly. Automated verification
+is deliberately limited to the two commands below.
 
-| Command | Gates |
+| Command | What it checks |
 |---|---|
-| `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->92<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](../../vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
-| `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host compiles, with no warnings. |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | Its 29 unit tests — archive paths, PDF structure, media hashing. Listed separately because for a long time only `check` was, and a broken test sat green-looking underneath it. |
-| `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](../e2e.md). |
+| `npx tsc --noEmit` | Frontend type safety in strict mode. |
+| `npm test` | Three smoke invariants: Notebook Script remains total, pagination keeps one block, and package/Tauri versions agree. |
 
-Two generated artefacts have their own verify mode, and both are wired into the
-test suite so a forgotten regeneration is a red test rather than a silent
-divergence: `npm run spec:check` (the AI-facing Notebook Script spec) and
-`npm run readme:check` (the front page and both halves of it). A third,
-`python scripts/gen-icons.py --check`, exists and is honest about not being
-wired in yet.
-
-> [!WARNING]
-> Headless Chromium runs on SwiftShader, so the app's software-renderer probe puts
-> the shelf into degrade mode and you get lo-res untitled spines. **Append
-> `?fx=force`** to override it. In the same environment `requestAnimationFrame` is
-> throttled, so poll for state instead of waiting a fixed time — a `waitForTimeout`
-> that passes on your machine will flake in CI. The override lives in
-> [`features/bookshelf/env.ts`](../../src/features/bookshelf/env.ts) and is not to be
-> removed; all visual QA depends on it.
-
-The suite shares that dev server with everything else working in the repo, so a
-red run is not automatically a product failure: a save in another window
-full-reloads the page mid-test. The config allows one retry for exactly that and
-keeps the trace of the attempt that failed, which is how you tell the two apart.
-[`docs/e2e.md`](../e2e.md) is the whole story, including the honest determinism
-check to run when the repo is quiet.
+The smoke suite is [`tests/smoke.test.ts`](../../tests/smoke.test.ts), selected by
+[`vitest.smoke.config.ts`](../../vitest.smoke.config.ts). It does not boot a
+browser, capture pixels, inspect audio, occupy port 1420 or claim anything about
+what the app looks or sounds like.
 
 ## The map of the app
 <!--nav: Directory by directory, plus the module-docstring convention this README points at instead of copying-->
@@ -291,7 +267,7 @@ defending — why it is that way and what it replaced.
 | [`src/features/transfer/`](../../src/features/transfer/) | Export/import bundles (`.nbk`), conflict resolution, restore points. |
 | [`src/features/system/`](../../src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](../../src/features/packs/), [`src/features/templates/`](../../src/features/templates/), [`src/features/tutorial/`](../../src/features/tutorial/), [`src/features/quickswitch/`](../../src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
-| [`src/sound/`](../../src/sound/) | The Howler engine, the named sound sets, and the in-app credits panel. |
+| [`src/sound/`](../../src/sound/) | The `@pixi/sound` engine, named sound sets, and the in-app credits panel. |
 | [`src/search/`](../../src/search/) | The fuzzy matcher and the full-text index behind `Ctrl+K` and `Ctrl+Shift+F`. In-repo, because the ranking rules are the product. |
 | [`src/state/`](../../src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
 | [`src/features/settings/`](../../src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
@@ -299,12 +275,11 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->288<!--/f--> of <!--f:srcFiles-->296<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6926<!--/f--> lines of it.
+<!--f:srcDocstrings-->300<!--/f--> of <!--f:srcFiles-->309<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6979<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
-either: `npm run readme:check` recomputes them from the tree and
-`tests/readme.test.ts` fails if this sentence has drifted.
+either: `npm run readme:check` recomputes them from the tree and reports drift.
 
 The convention:
 
@@ -409,8 +384,8 @@ would need 6.25× the bake area for the top sliver of the range.
 
 Switches carry ±0.03 hysteresis so the tier cannot flicker while the zoom sits on
 a threshold, and a multi-tier jump (2 → 0 on a fast zoom-in) resolves in one call.
-[`lod.ts`](../../src/features/bookshelf/lod.ts) is deliberately Pixi-free so it tests in
-Node.
+[`lod.ts`](../../src/features/bookshelf/lod.ts) is deliberately Pixi-free so the
+decision logic remains independent of rendering.
 
 ### The cache-key rule
 
@@ -431,9 +406,8 @@ The keys, and what has to be in them:
 | the spine params key | [`spineFactory.ts`](../../src/features/bookshelf/spineFactory.ts) | the seed, the resolved style, and the binding. |
 
 [`libraryKey.ts`](../../src/features/bookshelf/libraryKey.ts) is split out of
-`textures.ts` purely so a Node test can load it without Pixi.
-[`tests/design-cache-keys.test.ts`](../../tests/design-cache-keys.test.ts) pins all of
-them.
+`textures.ts` so key construction stays independent of Pixi and can be reviewed
+alongside the persisted axes it represents.
 
 One subtlety worth internalising before you touch a key: the wallpaper has *two*
 identity strings and they answer different questions. `wallpaperAxisKey` answers
@@ -490,8 +464,9 @@ The distinction trips people up, so it is worth stating flatly.
   *and* carpentry *and* paper into one named room. Every pointer inside it points
   into a different vocabulary and every one of those pointers fails **silently** —
   `getWallpaper` answers an unknown id with the bare wall, `resolveShelfDesign`
-  answers an unknown build with the house plank case — which is exactly why
-  [`tests/room-presets.test.ts`](../../tests/room-presets.test.ts) exists.
+  answers an unknown build with the house plank case. That is why preset work
+  must exercise the studio through the running app as well as checking each
+  resolver: a well-formed pointer can still resolve to the wrong room silently.
 
 ### Two cloth lists, and confusing them is the mistake to avoid
 
@@ -530,15 +505,12 @@ the studio still offers all of them. The wallpapers and the carpentry carry the
 same shape (`WALLPAPER_ROLL` / `isRollableWallpaper`, `ROLLABLE_BUILDS` /
 `ROLLABLE_PATTERNS`).
 
-**A curation gate with no caller is not a gate.** `isRollableWallpaper`,
-`WALLPAPER_ROLL` and `rollWallpaper` were authored, exported and unit-tested, and
+**A curation helper with no caller changes nothing.** `isRollableWallpaper`,
+`WALLPAPER_ROLL` and `rollWallpaper` were authored and exported, and
 a `grep` over `src/` found no caller: the studio's "surprise me" was still rolling
-the whole table, demoted papers included. Every unit test passed the whole time,
-because they all tested the pool rather than who reads it. [`tests/roll-gates.test.ts`](../../tests/roll-gates.test.ts) now checks the
-*wiring* by reading the caller's source — deliberately source-reading rather than
-behavioural, because the studio is a Solid component that reaches for `window` on
-import, and the property being asserted is "which constant does this line name",
-which is exactly what source can answer.
+the whole table, demoted papers included. The lesson remains: review the caller
+as well as the pool, then try the studio. A correct table is not evidence that
+the button uses it.
 
 ### Where the choices live
 
@@ -576,7 +548,7 @@ mark. Lattices are fitted to the tile, not the tile to the lattice.
 
 **3. Hang it in the book.** Add at least one `WALLPAPER_BOOK` entry using the new
 motif, with a tier (`front` / `book` / `back`), a family and mood tags. Five
-constraints hold across the whole list and are all tested: no two papers agree on
+constraints hold across the whole list: no two papers agree on
 all four of pattern/scale/depth/ink; no motif is hung more than three times; every
 value of every axis is reachable from some paper; every mood word lands on at least
 ten papers; every family leads with at least four `front` papers and no more than a
@@ -598,29 +570,15 @@ the *same* routine that paints the real thing (`drawWallpaperCard`, not an
 approximation). If you add an axis rather than a value, its `artKey` needs the new
 axis too.
 
-**7. Run the gates, in this order:**
+**7. Run the bare-bones checks, then inspect the changed surface yourself:**
 
 ```bash
-npx vitest run tests/art-wallpaper.test.ts      # reachability + the seam test
-npx vitest run tests/design-cache-keys.test.ts  # every axis reaches every key
-npx vitest run tests/plugged-in.test.ts         # is anything you exported inert?
-node scripts/probe-wallpapers.mjs               # look at it, at wall scale
-node scripts/probe-vocabularies.mjs             # does it reach the running shelf?
+npx tsc --noEmit
+npm test
 ```
 
-The seam test is the one worth understanding. There is no canvas in Node and no
-canvas package in this repo, so the tile is *recorded* rather than rasterised:
-`renderWallpaperTile` is handed a proxy that captures every call and property set,
-and the op list is replayed onto a real 2D context inside headless Chromium — the
-same rasteriser the app draws with. It measures the browser's actual antialiasing
-rather than a model of it, and it skips (rather than fails) on a machine with no
-browser installed.
-
-Step 7's last line is the one people skip and shouldn't. A specimen board proves a
-module draws well in isolation and says **nothing** about whether the app can reach
-it. The three shape vocabularies each shipped with a board, and for a while the
-pickers stored and previewed truthfully while the shelf kept drawing a plain plank
-case against a bare wall.
+Those commands do not judge appearance or reachability. Open the affected studio
+and shelf in the real app, apply the new value, and inspect the result directly.
 
 ## The editor
 <!--nav: The vendored Solid bindings, the pagination contract, block effects, and adding a block type step by step-->
@@ -649,10 +607,8 @@ rather than a lockfile bump. Three pieces:
 
 `editor.getJSON()` is what goes into `pages.doc_json`. There is no separate
 serialisation step and therefore no schema drift between what the editor accepts
-and what the database holds. [`tests/editor.test.ts`](../../tests/editor.test.ts)
-round-trips fixtures through `schema.nodeFromJSON` to keep it that way, and
-`getSchema()` is used in Node so the storage schema can be derived without
-mounting anything.
+and what the database holds. `getSchema()` exposes the same storage schema
+without mounting an editor, so importers and migrations do not need a DOM.
 
 Custom blocks are registered in [`editor/nodes/index.ts`](../../src/editor/nodes/index.ts)
 and pulled wholesale by [`extensions.ts`](../../src/editor/extensions.ts), so a new
@@ -685,10 +641,9 @@ passes sit *before* earlier passes' blocks in the carried array. Once the caret 
 carried it can never be "found" again (its old position maps into the shrunken
 doc), so every subsequent pass shifts the offset by that pass's removed size.
 
-All of it is DOM-free and unit-tested in
-[`pagination.ts`](../../src/editor/pagination.ts) /
-[`tests/pagination.test.ts`](../../tests/pagination.test.ts). Adding `overflow: auto` to
-a page to "fix" a layout bug silently disables the entire mechanism.
+The pure arithmetic lives in [`pagination.ts`](../../src/editor/pagination.ts).
+Adding `overflow: auto` to a page to "fix" a layout bug silently disables the
+entire mechanism.
 
 ### Block effects, and how an axis reaches the stylesheet
 
@@ -747,15 +702,13 @@ automatically and there is deliberately no per-name mapping table to update.
 **3. Register it** in [`editor/nodes/index.ts`](../../src/editor/nodes/index.ts). If it
 is a top-level block that a reader should be able to decorate, add it to
 `BLOCK_EFFECT_TYPES` in
-[`blockEffects.ts`](../../src/editor/effects/blockEffects.ts) as well —
-[`tests/block-effect-coverage.test.ts`](../../tests/block-effect-coverage.test.ts)
-checks that, and an inline node has to say out loud why it is excluded.
+[`blockEffects.ts`](../../src/editor/effects/blockEffects.ts) as well. An inline
+node still has to say out loud why it is excluded from block decoration.
 
 **4. Paint it.** Add a selector in `src/styles/effects.css`. An attribute nobody
-styles is not an error in CSS, it is ordinary markup — this is the failure
-[`tests/stationery-drawn.test.ts`](../../tests/stationery-drawn.test.ts) exists for.
-Only reach for a Solid node view if the block is genuinely interactive (the
-spoiler is the one that is).
+styles is not an error in CSS, it is ordinary markup, so inspect the inserted
+block in the app. Only reach for a Solid node view if the block is genuinely
+interactive (the spoiler is the one that is).
 
 **5. Make it reachable.** Add a slash command in
 [`editor/slash/registry.ts`](../../src/editor/slash/registry.ts) — there are
@@ -763,22 +716,20 @@ spoiler is the one that is).
 [`CataloguePanel.tsx`](../../src/views/rail/CataloguePanel.tsx). The catalogue is not
 optional: the panel is what a reader browses when they do not know the name yet.
 
-**6. Regenerate the spec and run the gates.**
+**6. Regenerate the spec and run the bare-bones checks.**
 
 ```bash
-npm run spec                                     # rebuild the AI-facing spec
-npx vitest run tests/stationery-drawn.test.ts    # node · CSS · slash · catalogue
-npx vitest run tests/effects.test.ts             # script name ↔ real node
-npx vitest run tests/editor-script.test.ts       # script → JSON → script survives
-npx vitest run tests/script/spec-generated.test.ts
+npm run spec                              # rebuild the AI-facing spec
+npm run spec:check                        # checked-in copies match the vocabulary
+npx tsc --noEmit                          # strict frontend types
+npm test                                  # the retained smoke suite
 ```
 
-`tests/stationery-drawn.test.ts` is the one that checks all four links at once,
-and it exists because a rewrite of `effects.css` once dropped the container
-section for four commits. Every sticky note, polaroid, washi box, card, quote
-card, banner, index card, envelope, stamp, tag and margin note rendered as a bare
-`<div>`, and nothing failed: the nodes existed, the script round-tripped, the
-slash menu inserted them. The only evidence was looking at a page.
+A rewrite of `effects.css` once dropped the container section for four commits.
+Every sticky note, polaroid, washi box, card, quote card, banner, index card,
+envelope, stamp, tag and margin note rendered as a bare `<div>` while their nodes
+and script forms still existed. The final check is therefore direct: insert the
+block and look at the page.
 
 ## The flip
 <!--nav: The cylinder curl, the snapshot cache, and the library bug worked around at length-->
@@ -833,10 +784,10 @@ snapshotted as black blobs. [`svgSnapshot.ts`](../../src/flip/svgSnapshot.ts) in
 resolved paint properties for the duration of the capture and undoes it in a
 `finally`.
 
-[`math.ts`](../../src/flip/math.ts) is pure and node-testable, which is where the fold
-sweep, radius easing and snapshot-ratio decisions are gated
-([`tests/flip.test.ts`](../../tests/flip.test.ts),
-[`tests/flip-cache.test.ts`](../../tests/flip-cache.test.ts)). The CSS 3D rigid fold in
+[`math.ts`](../../src/flip/math.ts) keeps the fold sweep, radius easing and
+snapshot-ratio decisions independent of the renderer. After changing the curl,
+turn pages in both directions and inspect the moving and landed states. The CSS
+3D rigid fold in
 [`cssFallback.ts`](../../src/flip/cssFallback.ts) is the no-WebGL path only.
 
 ## Notebook Script
@@ -851,13 +802,10 @@ recovers from every malformed construct with a diagnostic, and
 [`index.ts`](../../src/script/index.ts) wraps the whole call in a `try/catch` that
 degrades even an internal parser bug to a plain-text document with an
 `internal-error` warning. There is no input that throws, and no diagnostic of
-severity `error`; [`tests/script/slop.test.ts`](../../tests/script/slop.test.ts) is a
-corpus of deliberately broken inputs where each case asserts a *specific*
-recovery, not merely the absence of an exception.
+severity `error`.
 
 The second invariant is round-trip: `parse(print(doc))` deep-equals `doc` modulo
-spans and diagnostics, driven under fast-check in
-[`tests/script/printer.test.ts`](../../tests/script/printer.test.ts).
+spans and diagnostics.
 
 Tolerance is deliberate and bounded. `normalize.ts` fuzzy-matches names with
 Levenshtein ≤ 2, *within a value domain only* — never across domains, so a
@@ -869,15 +817,15 @@ is silently rewritten to the existing one on the way in.
 
 **The spec is generated, and the generation is gated.**
 [`src-tauri/resources/notebook-script-spec.md`](../../src-tauri/resources/notebook-script-spec.md)
-is the file a person copies into a chatbot — <!--f:specLines-->821<!--/f--> lines,
+is the file a person copies into a chatbot — <!--f:specLines-->822<!--/f--> lines,
 built by [`scripts/gen-spec.mjs`](../../scripts/gen-spec.mjs) from
 [`src/script/vocab.ts`](../../src/script/vocab.ts) and
 [`scripts/spec-template.md`](../../scripts/spec-template.md), and inlined a second time
 into [`src/editor/script/spec.ts`](../../src/editor/script/spec.ts) so the rail's *copy
 spec* button needs no file read. The vocabulary tables carry doc metadata whose
 *types* make an undocumented name a compile error rather than a silent gap, and
-[`tests/script/spec-generated.test.ts`](../../tests/script/spec-generated.test.ts)
-regenerates in memory and fails if the checked-in copies differ. Without that,
+`npm run spec:check` regenerates in memory and fails if the checked-in copies
+differ. Without that,
 teaching the parser a new container leaves every chatbot writing script the app
 cannot read.
 
@@ -926,9 +874,8 @@ browser-dev stub has no DDL at all.
 queries in [`src/data/`](../../src/data/) take `bookcaseId` as an optional *trailing*
 argument, and omitting it deliberately means every bookcase — so search and the
 quick switcher keep working across the collection, and a book never vanishes from
-search because the reader is standing somewhere else
-([`tests/open-anywhere.test.ts`](../../tests/open-anywhere.test.ts)). If you add a query
-and mean "this case", pass the id.
+search because the reader is standing somewhere else. If you add a query and mean
+"this case", pass the id; then drive the cross-case result in the running app.
 
 ### Everything read back out is validated, or it is a crash inside a bake
 
@@ -936,9 +883,8 @@ Nothing in SQLite has a schema the frontend can trust: a `settings` value is a
 string. So every store that reads one is **total** — `resolveShelfDesign`,
 `getWallpaper`, `resolveBookStyle`, `mergeSettings`, the `designPrefs` validators.
 Junk resolves to the house choice; it never throws.
-[`tests/studio-design-prefs.test.ts`](../../tests/studio-design-prefs.test.ts) and
-[`tests/settings.test.ts`](../../tests/settings.test.ts) hold that line, because the
-alternative is an exception raised in the middle of drawing a room.
+That boundary belongs in the resolver itself, because the alternative is an
+exception raised in the middle of drawing a room.
 
 ## The failure modes this codebase has actually shipped
 <!--nav: The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named-->
@@ -973,21 +919,8 @@ count of the vocabulary said 472 and a count of what a reader could apply said 4
 and no test compared the two. (The present counts are in *The editor* above, and
 they are markers; those two are the historical measurement.)
 
-Two gates now exist for this shape, and they are the ones to run after adding
-anything to a vocabulary:
-
-- [`tests/plugged-in.test.ts`](../../tests/plugged-in.test.ts) — the standing alarm.
-  Every exported vocabulary, pool, gate and label map in `src/art` and
-  `src/editor/effects` must have a real consumer elsewhere in `src/`. Two passes,
-  because neither alone is enough: the modules are **imported** so "is this a
-  vocabulary" is answered by what the value *is* rather than how its name reads,
-  and the consumers are found by **reading source**, since the question is "does
-  any module name this thing". A consumer must both import from the defining
-  module and name the identifier. Genuinely API-only exports go in `EXEMPT` with
-  the reason written out, and the exemption list is checked back against the tree
-  so it cannot rot into a list of names nobody recognises.
-- [`tests/catalogue-reach.test.ts`](../../tests/catalogue-reach.test.ts) — reachability,
-  deliberately not counts. A number there would just be a third place to update.
+A new vocabulary or roll pool needs its caller reviewed and the running UI tried
+directly. Reachability is a behaviour, not a count of exports.
 
 ### 2. A cache key missing an axis
 
@@ -1004,10 +937,8 @@ The design docs are load-bearing here, which makes a wrong one expensive.
 
 - `CLAUDE.md` once said "no gradients" flatly. The rule is *no light model*;
   gradients are fine and the app icon itself carries three. The overbroad wording
-  cost a pointless sweep across `src/styles/`, and
-  [`tests/styles.test.ts`](../../tests/styles.test.ts) now gates the unambiguous things
-  (blur, `backdrop-filter`, non-zero box-shadow blur radius) and deliberately does
-  **not** gate gradients.
+  cost a pointless sweep across `src/styles/`. The corrected rule names the
+  forbidden light model precisely and deliberately does **not** ban gradients.
 - [`docs/design/art-pipeline.md`](../design/art-pipeline.md) still contains SVG
   filter recipes. Nothing consumes them; the doc carries a banner saying so.
 - [`docs/design/library-themes.md`](../design/library-themes.md) has been
@@ -1027,22 +958,16 @@ was believed, and where the property is mechanical, gate it.
 
 Shape 1's louder cousin, and the one this README itself was wrong about for a
 release. Four flows — the templates gallery, the PDF chooser, the page picture
-and the Markdown import — were written, unit-tested, driven end to end by
-Playwright, and reachable only by typing `window.__nbGroupD` into a console.
-Every gate above was happy: the code existed, the tests passed, and
+and the Markdown import — were written and reachable only by typing
+`window.__nbGroupD` into a console. The code existed, and
 [`features/templates/groupD.ts`](../../src/features/templates/groupD.ts)
 re-exported all four, which gave each of them a "consumer" in `src/`.
 
 They have buttons now — the gallery on the shelf dock, the other three on the
 rail's *In and out* sheet
-([`views/rail/SharePanel.tsx`](../../src/views/rail/SharePanel.tsx)) — and the
-alarm that would have caught it is part three of
-[`tests/plugged-in.test.ts`](../../tests/plugged-in.test.ts). It walks every
-module in `src/`, classifies an entry point by the SHAPE of its name
-(`open…`, `show…`, `launch…`, `start…`, `import…`, `export…`), strips dev-only
-blocks and re-export lines before looking for callers, and fails when nothing in
-a production build opens it. The exemption list is empty, which is the state to
-keep it in.
+([`views/rail/SharePanel.tsx`](../../src/views/rail/SharePanel.tsx)). When changing
+these flows, use those visible entry points; a console bridge is not product
+reachability.
 
 The README lesson is separate and worth stating: this page carried an
 `[!IMPORTANT]` caveat about those four for as long as they were inert, which was
@@ -1051,190 +976,14 @@ an expiry date on it. This README is under the same rule as all four shapes —
 state what is true, name what was believed, gate what is mechanical. See *How
 this document stays true*.
 
-## The gates
-<!--nav: Every unit-test file and the specific class of bug it exists to stop-->
+## The gate
+<!--nav: The deliberately tiny smoke suite-->
 
-<!--f:unitTests-->92<!--/f--> unit-test files, and almost none of them are there
-for coverage. Each exists to stop a specific class of bug, and most of the
-docstrings name the day the bug shipped. This is the fastest way to learn what
-this codebase is afraid of.
-
-### Gates on the repo itself
-
-| File | Catches |
-|---|---|
-| [`plugged-in.test.ts`](../../tests/plugged-in.test.ts) | An exported vocabulary, pool, gate or label map with no consumer anywhere in `src/`. |
-| [`roll-gates.test.ts`](../../tests/roll-gates.test.ts) | A roll pool that is not smaller than its table, or a caller that still rolls the full table. Reads the caller's source. |
-| [`catalogue-reach.test.ts`](../../tests/catalogue-reach.test.ts) | A value the editor accepts that no menu offers and no stylesheet paints. |
-| [`stationery-drawn.test.ts`](../../tests/stationery-drawn.test.ts) | A container missing any of its four links: node, CSS selector, slash command, catalogue shelf. |
-| [`block-effect-coverage.test.ts`](../../tests/block-effect-coverage.test.ts) | A block type a reader can create but cannot decorate. |
-| [`design-cache-keys.test.ts`](../../tests/design-cache-keys.test.ts) | An axis that changes a pixel and is missing from the key that pixel is filed under. |
-| [`styles.test.ts`](../../tests/styles.test.ts) | A blur, a `backdrop-filter`, a non-zero box-shadow blur radius, or a handwriting face set below 13px, anywhere in `src/styles/`. |
-| [`contrast.test.ts`](../../tests/contrast.test.ts) | A token pair that fails its contrast target, in each of the four UI themes, without needing a browser. |
-| [`control-contrast.test.ts`](../../tests/control-contrast.test.ts) | The other direction: not the pairs somebody thought to list, but every colour-on-ground the stylesheets actually declare, measured across every room the appearance settings can build. The tour's own "next" button sat at 1.05:1 in one of them. |
-| [`brand-consistency.test.ts`](../../tests/brand-consistency.test.ts) | A surface that disagrees with `brand.json`. Renaming the app is a scavenger hunt across the tree in four languages, and this is what makes it one command instead. |
-| [`readme.test.ts`](../../tests/readme.test.ts) | A broken relative link or a stale number in this document. |
-| [`script/spec-generated.test.ts`](../../tests/script/spec-generated.test.ts) | A checked-in AI spec that no longer regenerates, or a vocabulary the parser does not implement. |
-
-### The art and the vocabularies
-
-| File | Catches |
-|---|---|
-| [`art.test.ts`](../../tests/art.test.ts) | Non-determinism in the seeded art, and atlas packing that overlaps or overflows. |
-| [`art-themes.test.ts`](../../tests/art-themes.test.ts) | A colour scheme that is malformed, duplicated, or missing its six cloths. |
-| [`art-wallpaper.test.ts`](../../tests/art-wallpaper.test.ts) | A visible seam — by recording the tile's draw ops and replaying them in real Chromium — plus axis reachability across the paper book. |
-| [`art-bookstyle.test.ts`](../../tests/art-bookstyle.test.ts) | `resolveBookStyle` becoming non-deterministic or throwing on a junk `cover_meta` blob. |
-| [`book-bindings.test.ts`](../../tests/book-bindings.test.ts) | The questions nobody is going to answer by looking at every shape × material × decoration combination: legibility, distinctness, tier discipline. Slowest file in the suite (~110 s). |
-| [`covers.test.ts`](../../tests/covers.test.ts) | Cover parameter derivation and the `cover_meta` override plumbing. |
-| [`charm-palette.test.ts`](../../tests/charm-palette.test.ts) | Charm colourways that break the drawing's actual requirements — held to rules, not to a count. |
-| [`custom-colour.test.ts`](../../tests/custom-colour.test.ts) | Three already-shipped failures in the pigment shelf and the reader's own colour. |
-| [`bookmarks.test.ts`](../../tests/bookmarks.test.ts) | Three classes of ribbon-vocabulary bug this codebase has shipped before. |
-| [`cursors.test.ts`](../../tests/cursors.test.ts) | Four ways the drawn pointer can be wrong without anyone noticing. |
-| [`design-tile-cache.test.ts`](../../tests/design-tile-cache.test.ts) | A FIFO tile cache too small to hold one picker — a ceiling chosen when the vocabularies were a third of their size. |
-| [`room-presets.test.ts`](../../tests/room-presets.test.ts) | A preset pointing at an id that no longer exists in one of the four vocabularies it bundles. |
-| [`bookcase-rooms.test.ts`](../../tests/bookcase-rooms.test.ts) | A run of new bookcases that all come out looking like the same room. |
-| [`studio-design-prefs.test.ts`](../../tests/studio-design-prefs.test.ts) | A validator in `designPrefs.ts` that throws instead of falling back. |
-| [`studio-moods.test.ts`](../../tests/studio-moods.test.ts) | The mood row disappearing, since its existence depends on data rather than code. |
-| [`curation.test.ts`](../../tests/curation.test.ts) | The reader's own pins and hides, keyed by (axis, entry id). |
-| [`taste-onboarding.test.ts`](../../tests/taste-onboarding.test.ts) | An onboarding answer pointing into a vocabulary at an id that silently resolves to the house default. |
-| [`spine-resolution.test.ts`](../../tests/spine-resolution.test.ts) | Bake scales that are world-px rather than device-px, which is what made books look low-res on a scaled display. |
-| [`bookshelf.test.ts`](../../tests/bookshelf.test.ts) | Camera math, virtualizer windowing diffs, LOD hysteresis, and the shelf-life data layer. |
-| [`name-plate.test.ts`](../../tests/name-plate.test.ts) | The inline name box covering the book it names — the reason a brand-new book read as a white slab twice. The geometry had to leave `BookshelfWorld.tsx` before node could see it, so half the file keeps it out. |
-
-### The editor and the pages
-
-| File | Catches |
-|---|---|
-| [`editor.test.ts`](../../tests/editor.test.ts) | Slash-menu ranking, and a doc that no longer round-trips through the real ProseMirror schema. |
-| [`editor-depth.test.ts`](../../tests/editor-depth.test.ts) | Nested toggles, columns and footnotes — three features sharing one failure mode. |
-| [`editor-qol.test.ts`](../../tests/editor-qol.test.ts) | Caret-carry math, word/character counting, and the rest of the wave-2 editor logic. |
-| [`editor-script.test.ts`](../../tests/editor-script.test.ts) | A script → TipTap → script round-trip that loses content, or an unknown container that does not degrade to a callout and come back. |
-| [`effects.test.ts`](../../tests/effects.test.ts) | A script container name with no registered node, and block-effect attributes that do not survive the real schema. |
-| [`pagination.test.ts`](../../tests/pagination.test.ts) | An overflow computation that peels the wrong blocks, or peels the last one. |
-| [`spread.test.ts`](../../tests/spread.test.ts) | Ord↔spread math, the six-id window handed to the flip surface, and the auto-create rule. |
-| [`spread-fit.test.ts`](../../tests/spread-fit.test.ts) | Correct fit arithmetic wired to nothing — or wired to the wrong number, which is what walked an open book off the right of the window when a rail panel opened. |
-| [`selection-toolbar.test.ts`](../../tests/selection-toolbar.test.ts) | The plugin-view card that follows a selection, which lives on `document.body` for reasons its own header states. |
-| [`table-sort.test.ts`](../../tests/table-sort.test.ts) | Header-click sorting, at each of the three layers it can fail at. |
-| [`backlinks.test.ts`](../../tests/backlinks.test.ts) | A page that links to another not being findable from the other end. |
-| [`open-anywhere.test.ts`](../../tests/open-anywhere.test.ts) | A search hit in another bookcase that does not take you there. |
-| [`media.test.ts`](../../tests/media.test.ts) | The TS mirror of the Rust SSRF guard drifting, and asset path resolution. |
-| [`motion.test.ts`](../../tests/motion.test.ts) | A fifth step in the motion scale — which is how the app's timings drifted apart the first time. |
-| [`tooltip.test.ts`](../../tests/tooltip.test.ts) | `placeTip` geometry: flipping, clamping, and walking the nub back to its control. |
-| [`tooltips.test.ts`](../../tests/tooltips.test.ts) | A control that borrows the operating system's tooltip instead of the app's. |
-| [`top-left-exits.test.ts`](../../tests/top-left-exits.test.ts) | A way out of a mode that is not in the top-left. |
-| [`reader-controls.test.ts`](../../tests/reader-controls.test.ts) | The three things the reader asked to be in charge of drifting back: focus as a range rather than a switch, stickers placeable anywhere, and *one* ribbon control rather than two. The third is a wiring fact, so it is a source sweep pointed at one line. |
-| [`keybindings.test.ts`](../../tests/keybindings.test.ts) | The shortcut registry and its single listener, on four properties each already broken once. |
-| [`packs.test.ts`](../../tests/packs.test.ts) | The reader's own uploaded packs, and the one property the feature rests on. |
-| [`export.test.ts`](../../tests/export.test.ts) | The pure PDF assembler, markdown page splitting, template integrity, user stickers. |
-| [`flip.test.ts`](../../tests/flip.test.ts) | Fold-line sweep, radius easing, and the curl shader's sampling invariants — without DOM or WebGL. |
-| [`flip-cache.test.ts`](../../tests/flip-cache.test.ts) | Two live scheduling defects in the raster cache, invisible in a screenshot and obvious in a timeline. |
-| [`diagrams.test.ts`](../../tests/diagrams.test.ts) | Layout invariants and wobble stability for the hand-drawn renderers. |
-
-### Notebook Script
-
-| File | Catches |
-|---|---|
-| [`script/parser.test.ts`](../../tests/script/parser.test.ts) | The grammar, construct by construct. |
-| [`script/printer.test.ts`](../../tests/script/printer.test.ts) | A `parse(print(doc))` round-trip that is not the identity, under fast-check. |
-| [`script/slop.test.ts`](../../tests/script/slop.test.ts) | A malformed input that throws, or degrades to something other than its specified recovery. |
-| [`script/v2.test.ts`](../../tests/script/v2.test.ts) | Imprecise diagnostics, and the `::let` / `::style` machinery. |
-| [`script/maths-notes-links.test.ts`](../../tests/script/maths-notes-links.test.ts) | Maths, footnotes, page references and toggles — four constructs that each took over a character the parser already used, so most of the file is the negative side: a sentence about money is still a sentence, a bare `[` still opens a link, an unclosed `$$` does not eat the rest of the note. |
-
-### Data, transfer and system
-
-| File | Catches |
-|---|---|
-| [`bookcases.test.ts`](../../tests/bookcases.test.ts) | A migration that loses a library, and three other things about the bookcase model that must not be got wrong. |
-| [`data-seed.test.ts`](../../tests/data-seed.test.ts) | A seed migration that deletes something a reader wrote. |
-| [`stub-persistence.test.ts`](../../tests/stub-persistence.test.ts) | The browser dev stub diverging from real SQLite behaviour. |
-| [`search.test.ts`](../../tests/search.test.ts) | Extraction, fuzzy matching and ranking, plus the index against the stub. |
-| [`settings.test.ts`](../../tests/settings.test.ts) | `mergeSettings` failing to validate an unknown stored blob over the defaults. |
-| [`system.test.ts`](../../tests/system.test.ts) | Backup cadence arithmetic and the scheduler's decision loop. |
-| [`transfer.test.ts`](../../tests/transfer.test.ts) | Bundle format, the ZIP codec, export scoping, the import conflict matrix, restore-point retention. |
-| [`transfer-bookcases.test.ts`](../../tests/transfer-bookcases.test.ts) | The database half of transfer — snapshot, apply, revert. |
-| [`tutorial.test.ts`](../../tests/tutorial.test.ts) | The guided tour's pure surfaces (the overlay itself needs a DOM, which is not installed). |
-| [`tutorial-surfaces.test.ts`](../../tests/tutorial-surfaces.test.ts) | The same tour against a document — [`tests/support/fakeDom.ts`](../../tests/support/fakeDom.ts), a selector matcher rather than a DOM. A surface missing from the dismiss list outlives its step and its scrim then eats the gesture the next step waits for. |
-| [`sound.test.ts`](../../tests/sound.test.ts) | The generated WAVs themselves, plus engine routing, rotation and character. |
-| [`sound-sets.test.ts`](../../tests/sound-sets.test.ts) | Three already-shipped failures in the named sound sets and their persisted choice. |
-| [`sound-voicing.test.ts`](../../tests/sound-voicing.test.ts) | The level a cue starts at — the bug that turned a tap into "jittery sand paper" about twice in three clicks. Measured off the app's real Web Audio output by `shots-now/sound-grit.mjs`. |
-| [`sound-own.test.ts`](../../tests/sound-own.test.ts) | The reader's own sound files and the filter, both of which a TODO had written off as impossible. |
-
-One file is **not** a gate and should not be read as one:
-`tests/zz-scratch.test.ts` is a scratch harness that dumps data to disk, named to
-sort last. It counts toward the file total above. If you find another `zz-*`, it
-is the same thing.
-
-## Driving the running app
-<!--nav: Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does-->
-
-Unit tests prove a module is right. They say nothing about whether the app can
-*reach* it, and that has been the expensive bug three times over. Three layers of
-answer, in increasing cost:
-
-### Specimen boards
-
-[`specimen.html`](../../specimen.html) against the dev server shows the flat vocabulary
-on its own. `BOOK_SPECIMENS=1 npx vitest run` writes binding boards.
-[`shots-now/`](../../shots-now/) is the scratch drawer for one-off measurement and
-board scripts — `baseline.mjs` reads real font metrics to answer "where does the
-baseline actually sit in the line box", `atlas-budget.mjs` measures atlas
-pressure, `sound-grit.mjs` records the app's real Web Audio output to settle a
-"jittery sand paper" report, `covers-board.mjs` lays out a contact sheet. Its
-`out/` directory is git-ignored; the scripts are kept because the *measurement* is
-the reusable part, and two of them are cited by tests that now hold the result.
-
-A board proves a module draws well in isolation. It cannot tell you the app is
-using it.
-
-### Probes
-
-<!--f:probeScripts-->97<!--/f--> scripts under [`scripts/`](../../scripts/) named
-`probe-*.mjs` drive the running app with Playwright. The important three:
-
-- [`probe-vocabularies.mjs`](../../scripts/probe-vocabularies.mjs) — a design choice
-  reaches the case, the wall, *and* a second bookcase.
-- [`probe-bindings.mjs`](../../scripts/probe-bindings.mjs) — a binding survives the
-  whole spine bake path.
-- [`probe-studio-wiring.mjs`](../../scripts/probe-studio-wiring.mjs) — the studio panel,
-  driven only by clicking.
-
-A fourth is worth naming because of what it deletes before it starts:
-[`probe-groupd.mjs`](../../scripts/probe-groupd.mjs) removes `window.__nbGroupD`
-— the dev bridge four finished features were reachable through and *only*
-through — and then drives all four by pointer. A green e2e spec had said nothing
-about that for a whole wave, because the spec drove the bridge.
-
-Two rules, both learned the hard way.
-
-**A probe asserts on APPLIED state, never on what was merely saved.** What the
-store holds is not evidence; what the textures and the backdrop are holding is.
-A probe that reads back its own write passes vacuously and proves nothing — which
-is exactly the state the vocabularies shipped in, with truthful pickers and a
-plain plank case on screen.
-
-**QA bridges are handed out by [`world.ts`](../../src/features/bookshelf/world.ts),
-never imported by the probe.** A probe's own `import('/src/data/…')` can resolve
-to a *second copy* of the module on a dev server that has served HMR updates, and
-writes to that copy never reach the shelf. Everything a probe needs is exposed on
-`window`: `__shelfSaveDesign`, `__shelfSaveSettings`, `__shelfDesign`,
-`__shelfBookcases`, `__shelfBinding`, `__shelfVisibleBooks`, `__shelfSpineRect`
-and about a dozen more.
-
-### End-to-end
-
-`npm run e2e` runs <!--f:e2eSpecs-->15<!--/f--> Playwright specs. One worker, on
-purpose: every test boots the same in-memory-DB app, and parallel software-WebGL
-contexts starve each other. Read [`docs/e2e.md`](../e2e.md) before changing
-[`playwright.config.ts`](../../playwright.config.ts) — in particular before setting
-`retries` back to 0, which the config's own comment argues against at length
-(Playwright labels a retried pass as *flaky* and names it in the summary, so the
-retry relabels an environmental failure rather than hiding a real one).
-
-### And then look at it
-
-Visual work is not done until you have captured a screenshot and *actually looked
-at it*. Keep it proportionate — the surface you changed, batched into boards where
-it makes sense.
+The repository retains one unit-test file:
+[`tests/smoke.test.ts`](../../tests/smoke.test.ts). `npm test` runs it through
+[`vitest.smoke.config.ts`](../../vitest.smoke.config.ts); `npx tsc --noEmit`
+runs beside it. Visual and audio quality are owner-reviewed rather than inferred
+from automated harnesses.
 
 ## Things that were harder than they look
 <!--nav: Five places the obvious implementation is wrong-->
@@ -1276,7 +1025,7 @@ texels-per-device-pixel measurements are under *The art pipeline* above.
 page-decoration vocabulary was validated, rendered, and pickable from no menu at
 all. Told in full under *The failure modes this codebase has actually shipped*
 above, along with the five siblings that led to a standing alarm.
-→ [`tests/catalogue-reach.test.ts`](../../tests/catalogue-reach.test.ts)
+→ [`views/rail/CataloguePanel.tsx`](../../src/views/rail/CataloguePanel.tsx)
 
 ## The design record
 <!--nav: The ADR set in `docs/design/`, including which documents are superseded and why they are kept-->
@@ -1309,10 +1058,9 @@ Read the relevant one **before** working in its area.
 | [`generated-assets.md`](../design/generated-assets.md) | ⚠️ Superseded (runtime) | No generated asset ships. The local ComfyUI setup is still a usable authoring tool, which is why it is kept. |
 
 [`docs/ROADMAP-wave2.md`](../ROADMAP-wave2.md) tracks the customization and
-quality-of-life features and their ownership. [`docs/e2e.md`](../e2e.md),
-[`docs/packaging-icons.md`](../packaging-icons.md) and
+quality-of-life features and their ownership. [`docs/packaging-icons.md`](../packaging-icons.md) and
 [`docs/packaging-mac-linux.md`](../packaging-mac-linux.md) are operational rather
-than architectural, and all three are worth reading before their first red run.
+than architectural, and both are worth reading before packaging work.
 
 <!--lift: releasing-->
 ## Building and releasing
@@ -1328,6 +1076,7 @@ npm run tauri build    # the above, then the Rust bundle
 | Artefact | Notes |
 |---|---|
 | `Alcove_<version>_x64-setup.exe` | NSIS, and the one a reader downloads. `installMode: currentUser`, so installing needs no administrator prompt. |
+| `Alcove_<version>_x64-setup.exe.sig` | The updater signature for that exact NSIS installer. |
 | `Alcove_<version>_x64_en-US.msi` | WiX. For policy deployment. |
 | `alcove.exe` | The app itself, with the icon group compiled in by `tauri_winres`. |
 
@@ -1399,9 +1148,9 @@ is three jobs rather than one matrix:
 
 | Job | Runner | What it does |
 |---|---|---|
-| `gates` | `ubuntu-latest` | `tsc --noEmit`, `vitest run`, `spec:check`, `readme:check`, `gen-icons.py --check` |
+| `gates` | `ubuntu-latest` | `tsc --noEmit`, `npm test`, `spec:check`, `readme:check`, `gen-icons.py --check` |
 | `build` ×3 | `windows-latest`, `macos-15`, `ubuntu-22.04` | the bundle, and nothing else |
-| `release` | `ubuntu-latest` | notes, `SHA256SUMS.txt`, one GitHub Release |
+| `release` | `ubuntu-latest` | notes, signed `latest.json`, checksums, one GitHub Release |
 
 **The gates run once.** None of them can fail differently on a different
 operating system, so running them on all three runners would triple their cost
@@ -1423,13 +1172,26 @@ should produce, and what to check when it does.
 Notes come from [`scripts/release-notes.mjs`](../../scripts/release-notes.mjs) by
 diffing against the previous tag. A tag containing `-` publishes as a prerelease.
 
-Two honest edges. **Nothing is signed** on any platform, so Windows shows a
-SmartScreen warning and macOS quarantines the first launch — which is why the
-release carries checksums. And this is still the *only* workflow: it fires on
-tags, so nothing runs `tsc` or `vitest` on an ordinary push, and the artefact
-names in `docs/packaging-mac-linux.md` are read off the bundler's naming rules
-rather than off a run that has already happened on every platform. Check them
-against the Release before quoting one at a reader.
+The main build receives `TAURI_SIGNING_PRIVATE_KEY` from a GitHub Actions secret
+and emits the NSIS, AppImage and universal macOS updater payloads with their
+signatures. The release job writes `latest.json` with immutable tag URLs and the
+signature contents, then uploads it beside those files. Installed copies check
+that stable endpoint after launch; **Update now** downloads the matching payload,
+verifies it, installs it and relaunches Alcove. The private key is ignored locally
+and never belongs in git; [`docs/packaging-mac-linux.md`](../packaging-mac-linux.md)
+has the one-time secret setup.
+
+One bootstrap is unavoidable: v0.4.0 predates the updater, so a v0.4.0 install
+must take the first updater-enabled release manually. Every release after that
+can use the in-app path.
+
+Two honest edges remain. The updater payloads are signed, but the applications
+are not Authenticode-signed or Apple-notarised, so Windows can still show a
+SmartScreen warning and macOS can still quarantine a manual download. And this
+is still the *only* workflow: it fires on tags, so nothing runs `tsc` or `npm
+test` on an ordinary push. Check the first cross-platform run against the
+predicted artefact names in `docs/packaging-mac-linux.md` before quoting one at a
+reader.
 
 > [!NOTE]
 > There is consequently no CI badge to display yet. The gates run locally, and
@@ -1441,24 +1203,23 @@ against the Release before quoting one at a reader.
 <!--nav: The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails-->
 
 <!--f:generatorScripts-->7<!--/f--> scripts under [`scripts/`](../../scripts/) named
-`gen-*` write checked-in files. **Two** of them have a regeneration check wired
-into the test suite, which is the difference between a generator and a
-guarantee — the rest are covered indirectly, or not at all.
+`gen-*` write checked-in files. They use explicit verify commands and
+change-shaped gates rather than relying on a catch-all suite.
 
 | Generator | Writes | Verified by |
 |---|---|---|
-| [`gen-spec.mjs`](../../scripts/gen-spec.mjs) | the AI-facing Notebook Script spec, twice (Tauri resource + inlined TS) | `npm run spec:check`, and `tests/script/spec-generated.test.ts` — fails on a forgotten regeneration |
-| [`gen-readme.mjs`](../../scripts/gen-readme.mjs) | the front page's body — the badge strip and download table from `package.json`, whole sections lifted out of these halves with their links retargeted, and a navigation table of only what it did not lift | `npm run readme:check`, and `tests/readme.test.ts` — fails on a forgotten regeneration or a hand-edited lift, and resolves every `#fragment` besides |
-| [`gen-tints.mjs`](../../scripts/gen-tints.mjs) | the tint rules in `effects.css` | `tests/catalogue-reach.test.ts` (reachability, not regeneration) |
+| [`gen-spec.mjs`](../../scripts/gen-spec.mjs) | the AI-facing Notebook Script spec, twice (Tauri resource + inlined TS) | `npm run spec:check` — fails on a forgotten regeneration |
+| [`gen-readme.mjs`](../../scripts/gen-readme.mjs) | the front page's body — the badge strip and download table from `package.json`, whole sections lifted out of these halves with their links retargeted, and a navigation table of only what it did not lift | `npm run readme:check` |
+| [`gen-tints.mjs`](../../scripts/gen-tints.mjs) | the tint rules in `effects.css` | regenerate deliberately, then `npx tsc --noEmit` and `npm test` |
 | [`gen-underlines.mjs`](../../scripts/gen-underlines.mjs) | the underline rules | as above |
-| [`gen-lettering.mjs`](../../scripts/gen-lettering.mjs) | the hand / ink / size / ranging rules | as above, plus the 13px floor in `tests/styles.test.ts` |
-| [`gen-sounds.mjs`](../../scripts/gen-sounds.mjs) | every shipped WAV and `CREDITS.json` | `tests/sound.test.ts`, and `scripts/check-sounds.mjs` |
-| [`gen-icons.py`](../../scripts/gen-icons.py) | the PNG set, `icon.ico`, `icon.icns` | `--check`, **not** wired into CI or vitest yet |
+| [`gen-lettering.mjs`](../../scripts/gen-lettering.mjs) | the hand / ink / size / ranging rules | as above; inspect the 13px handwriting floor in the app |
+| [`gen-sounds.mjs`](../../scripts/gen-sounds.mjs) | every shipped WAV and `CREDITS.json` | regenerate deliberately, then audition the affected cues directly |
+| [`gen-icons.py`](../../scripts/gen-icons.py) | the PNG set, `icon.ico`, `icon.icns` | `--check`, run by the tag release workflow |
 
-The last row is the honest edge: `python scripts/gen-icons.py --check` parses the
-bytes on disk rather than trusting the writer, and against the file it replaced it
-reported 13 problems. Adding `"icons:check"` to `package.json` and calling it from
-a test is the obvious next step and has not been done.
+`python scripts/gen-icons.py --check` parses the bytes on disk rather than
+trusting the writer, and against the file it replaced it reported 13 problems.
+It stays out of the everyday fast gate because Pillow is a release-tool
+dependency, but every tagged build runs it before the platform matrix.
 
 ## How this document stays true
 <!--nav: The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed-->
@@ -1468,12 +1229,9 @@ Two mechanisms, both with a failing check rather than just a writer:
 - **`npm run spec:check`** regenerates
   [`src-tauri/resources/notebook-script-spec.md`](../../src-tauri/resources/notebook-script-spec.md)
   — the file a person hands to a chatbot — from `src/script/vocab.ts` and a
-  template, and fails if the checked-in copy differs.
-  [`tests/script/spec-generated.test.ts`](../../tests/script/spec-generated.test.ts)
-  runs it, and separately checks that the vocabulary the spec is generated *from*
-  is the vocabulary the parser actually implements. Without it, teaching the
-  parser a new container silently leaves chatbots writing script the app cannot
-  read.
+  template, and fails if either checked-in copy differs. Without it, teaching
+  the parser a new container silently leaves chatbots writing script the app
+  cannot read.
 - **`npm run readme:check`** covers all four pages — the front door
   [`README.md`](../../README.md), the two halves in [`docs/readme/`](.) and the
   [release notes](releases.md) beside them. It recomputes every number written
@@ -1488,19 +1246,13 @@ Two mechanisms, both with a failing check rather than just a writer:
   never names, a screenshot no page shows, a section with no summary written
   beside it.
 
-  **It reports; it does not block, and it does not write prose.** That is the
-  reader's instruction — *"the check exists to say that hey something is missing
-  from readme, but final editing of readme is left in the hands of the dev/ai"* —
-  and it is also the right division: whether the page ought to mention something
-  is an editorial judgement, and a script that made it would be wrong about half
-  of them. So the CLI prints a grouped report and exits 0.
-  [`tests/readme.test.ts`](../../tests/readme.test.ts) is the gate that still
-  bites, because a stale COUNT is a fact rather than an opinion: it supplies the
-  counts that need TypeScript loaded, so a vocabulary that grows while a page
-  says otherwise is a failing test. It also checks that the deferred-key list in
-  the script and the values supplied by the test agree, because a key one side
-  forgets is a number nobody verifies. `--strict` on either script exits 1, for
-  a caller that wants a gate in a shell.
+  **It reports; it does not write prose or make editorial decisions.** That is
+  the reader's instruction — *"the check exists to say that hey something is
+  missing from readme, but final editing of readme is left in the hands of the
+  dev/ai"* — and it is also the right division: whether the page ought to mention
+  something is an editorial judgement, and a script that made it would be wrong
+  about half of them. The raw checker can print that grouped report, while `npm
+  run readme:check` uses strict mode so mechanical drift blocks the gate.
 
   The composition is newer than the other two and exists because the front
   page rotted exactly once, as a signpost: two tables of anchor links, typed by
@@ -1533,12 +1285,11 @@ Two mechanisms, both with a failing check rather than just a writer:
   lines. It also resolves every `#fragment` on all three pages against the real
   headings of the file it points into.
 
-Every number on these three pages and every relative link on them is a
-measurement, not a claim. If you write a new one, wrap it in a marker and
-register the fact in
-[`scripts/check-readme.mjs`](../../scripts/check-readme.mjs); if it needs a TypeScript
-module loaded, add it to `DEFERRED_FACTS` and supply it from
-[`tests/readme.test.ts`](../../tests/readme.test.ts).
+Every file-derived number on these pages and every relative link is checked by
+[`scripts/check-readme.mjs`](../../scripts/check-readme.mjs). If you write a new
+number it can derive from disk, wrap it in a marker and register the fact there.
+TypeScript-only product counts remain deferred and are reported as such by the
+standalone checker.
 
 The generator is the cheap half. The failure when someone edits a generated region
 by hand is the entire value.
@@ -1603,7 +1354,7 @@ mark to match the app, and do not add rendering to the app to match the mark.
 
 **Upstream.** TipTap and ProseMirror (MIT), the Solid bindings in
 [`src/editor/solid/`](../../src/editor/solid/) based on `@vrite/tiptap-solid` (MIT),
-PixiJS (MIT), GSAP (standard licence, all plugins free), Howler (MIT), lowlight
+PixiJS and `@pixi/sound` (MIT), GSAP (standard licence, all plugins free), lowlight
 and the `highlight.js` grammars (BSD-3-Clause / MIT), Tauri (MIT/Apache-2.0).
 <!--/lift-->
 

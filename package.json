@@ -4,6 +4,7 @@
   "description": "Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers. Offline. Windows, macOS, Linux.",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-html-to-image-fonts.mjs",
     "start": "vite",
     "dev": "vite",
     "build": "npm run spec:check && vite build",
@@ -13,13 +14,11 @@
     "spec:check": "node scripts/gen-spec.mjs --check",
     "sounds": "node scripts/gen-sounds.mjs",
     "readme:build": "node scripts/gen-readme.mjs",
-    "readme:check": "node scripts/check-readme.mjs && node scripts/gen-readme.mjs --check",
+    "readme:check": "node scripts/check-readme.mjs --strict && node scripts/gen-readme.mjs --check --strict",
     "readme:facts": "node scripts/check-readme.mjs --facts",
     "rename": "node scripts/rename-app.mjs",
     "icons": "python scripts/gen-icons.py",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui",
-    "visual": "node shots-now/visual-suite.mjs"
+    "test": "vitest run --config vitest.smoke.config.ts"
   },
   "license": "MIT",
   "dependencies": {
@@ -33,12 +32,15 @@
     "@fontsource/nunito-sans": "^5.3.0",
     "@fontsource/patrick-hand": "^5.3.0",
     "@fontsource/shadows-into-light": "^5.3.0",
+    "@pixi/sound": "^6.0.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-sql": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@tiptap/core": "^3.29.2",
     "@tiptap/extension-code-block-lowlight": "^3.29.2",
     "@tiptap/extension-details": "^3.29.2",
@@ -69,7 +71,6 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/howler": "^2.2.13",
-    "fast-check": "^4.9.0",
     "gifsmith": "^0.2.3",
     "playwright": "^1.62.0",
     "typescript": "~5.6.2",

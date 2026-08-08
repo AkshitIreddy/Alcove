@@ -69,12 +69,17 @@ import {
 } from './gl';
 import { foldOffset, foldTiltAtP, radiusForP, type FlipDirection } from './math';
 import { DEFAULT_PAPER_CREAM_RGB, paperCreamRgb } from './paperTone';
+import type {
+  FlipSnapshotSceneBitmaps,
+  FlipSnapshotSceneStyle,
+  SceneRgba,
+} from './scene';
 
 /**
- * Curl mesh resolution. The doc says 40x8; we run finer because the radius
- * now tightens toward the landing (a small cylinder needs more columns before
- * it facets) and because a tilted corner fold cuts diagonally across rows,
- * where too few rows smear the crease. 1024 quads is still nothing.
+ * Curl mesh resolution. The radius tightens toward the landing (a small
+ * cylinder needs enough columns not to facet), and a tilted corner fold cuts
+ * diagonally across rows, where too few rows smear the crease. 1024 quads is
+ * still tiny for a single draw.
  */
 export const CURL_GRID_COLS = 64;
 export const CURL_GRID_ROWS = 16;
@@ -210,6 +215,7 @@ uniform sampler2D uPaperTex;
 uniform vec2 uPaperScale;  // leaf size / paper tile css size (repeat count)
 uniform float uPaperMix;   // fibre multiply strength (0 disables)
 uniform float uPaperMean;  // mean luminance of the paper tile (normalizer)
+uniform float uLift;       // sin(p·π): 0 at both flat handoff states
 
 // The LIVE --paper-cream, baked in at compile time (paperTone.ts). A constant
 // rather than a uniform because it changes only when the reader changes theme,
@@ -269,14 +275,16 @@ void main() {
 
   vec3 color;
   if (isBack) {
-    // Paper backside = the sheet's other page, 4% lighter and slightly
-    // desaturated. A flat face tint, not a light model: it is the same
-    // trick as a lighter timber face beside a darker one in art/flat.ts,
-    // and it is the ONLY depth cue the moving sheet carries. faceUv owns
-    // the mirroring for both directions.
+    // Paper backside = the sheet's other page, up to 4% lighter and slightly
+    // desaturated. A flat face tint, not a light model: it is the same trick
+    // as a lighter timber face beside a darker one in art/flat.ts, and it is
+    // the ONLY depth cue the moving sheet carries. Fade it with the geometric
+    // lift so both flat endpoints are the unmodified snapshot; otherwise the
+    // p=1 landing holds a paler page and changes colour when the live DOM
+    // replaces it. faceUv owns the mirroring for both directions.
     vec3 c = samplePage(uTexBack, faceUv(vUv, true));
-    c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), 0.12);
-    color = mix(c, vec3(1.0), 0.04);
+    c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), 0.12 * uLift);
+    color = mix(c, vec3(1.0), 0.04 * uLift);
   } else {
     color = samplePage(uTexFront, faceUv(vUv, false));
   }
@@ -325,14 +333,14 @@ precision highp float;
 
 in vec2 vUv;
 
-uniform sampler2D uTexRevealed;
+uniform sampler2D uTexPage;
 uniform vec2 uLeafSize;
 uniform float uFoldD;
 uniform float uTilt;
 uniform float uRadius;
-uniform float uLift;
 uniform float uShadowStart; // leaf-local px past the fold where the sheet's
                             // silhouette ends — measured, not assumed
+uniform float uContact;     // 1 for the revealed sheet, 0 for stationary
 ${fragCommon(cream)}
 out vec4 outColor;
 
@@ -341,7 +349,7 @@ const float CONTACT_REACH = ${CONTACT_SHADOW_REACH_PX.toFixed(1)};
 
 void main() {
   // The revealed page sits the same way round as the leaf's front face.
-  vec3 color = paperMultiply(samplePage(uTexRevealed, faceUv(vUv, false)), vUv);
+  vec3 color = paperMultiply(samplePage(uTexPage, faceUv(vUv, false)), vUv);
 
   // Shadow geometry stays in LEAF-local space (vUv is unmirrored) so the
   // band tracks the fold line the vertex shader used — same spine-anchored
@@ -366,7 +374,7 @@ void main() {
   float band =
     smoothstep(uShadowStart - 1.0, uShadowStart + 1.0, d) *
     (1.0 - smoothstep(end - 1.0, end + 1.0, d));
-  float a = CONTACT_ALPHA * uLift * band;
+  float a = CONTACT_ALPHA * uLift * band * uContact;
 
   color *= mix(vec3(1.0), FLAT_SHADOW, a); // the app's one shadow colour
   outColor = vec4(color, 1.0);
@@ -375,6 +383,48 @@ void main() {
 
 /** The ground fragment shader at the parchment default — see CURL_FRAG_SRC. */
 export const GROUND_FRAG_SRC = groundFragSrc(PAPER_CREAM_RGB);
+
+/**
+ * Flat scene chrome. It uses the same perspective projection and z scale as
+ * the sheets: binding paint sits a hair above flat paper, while any genuinely
+ * lifted curl still occludes it through the shared depth buffer.
+ */
+export const SCENE_SOLID_VERT_SRC = /* glsl */ `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 a_uv;
+${VERT_COMMON}
+uniform float uSceneZ;
+out vec2 vUv;
+
+void main() {
+  vUv = a_uv;
+  gl_Position = project(a_uv * uLeafSize, uSceneZ);
+}
+`;
+
+export const SCENE_SOLID_FRAG_SRC = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec4 uColor;
+uniform vec2 uRectSize;
+uniform float uRadius;
+uniform float uShape; // 0 rounded rectangle, 1 hard-stop folded-corner band
+out vec4 outColor;
+
+void main() {
+  if (uRadius > 0.0) {
+    vec2 halfSize = uRectSize * 0.5;
+    vec2 q = abs((vUv - 0.5) * uRectSize) - (halfSize - vec2(uRadius));
+    float distanceToRound = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uRadius;
+    if (distanceToRound > 0.0) discard;
+  }
+  if (uShape > 0.5) {
+    float along = (vUv.x + vUv.y) * 0.5;
+    if (along < 0.49 || along > 0.77) discard;
+  }
+  outColor = uColor;
+}
+`;
 
 /* ----------------------------------------------------------------------------
    Renderer
@@ -421,6 +471,13 @@ function silhouetteOffset(
   return Math.max(groundLocalX - foldD, 0);
 }
 
+interface LeafGeometry {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface CurlFrame {
   /** Flip progress 0..1. */
   p: number;
@@ -432,28 +489,43 @@ export interface CurlFrame {
   leafY: number;
   leafW: number;
   leafH: number;
+  /** Exact live-DOM leaf rects. Never derive the stationary sheet by
+   * translating the moving one: fit transforms and fractional flex layout
+   * make that translation visibly disagree with the landing DOM. */
+  leftX: number;
+  leftY: number;
+  leftW: number;
+  leftH: number;
+  rightX: number;
+  rightY: number;
+  rightW: number;
+  rightH: number;
   /** Canvas css size. */
   canvasW: number;
   canvasH: number;
 }
 
 /**
- * Owns the two programs (curl mesh + ground pass), the 40x8 mesh, the quad,
- * and the four textures. One instance per FlipSurface; all GL objects are
+ * Owns the three programs (curl mesh + two-sheet ground + scene chrome), the
+ * 64x16 mesh, the quad, and the complete four-page texture set. One instance
+ * per FlipSurface; all GL objects are
  * created once at book-open so gesture start never compiles/allocates.
  */
 export class CurlRenderer {
   private readonly gl: WebGL2RenderingContext;
   private curlProgram: GlProgram;
   private groundProgram: GlProgram;
+  private readonly sceneSolidProgram: GlProgram;
   private readonly mesh: GlMesh;
   private readonly quad: GlMesh;
+  private stationary: WebGLTexture;
   private front: WebGLTexture;
   private back: WebGLTexture;
   private revealed: WebGLTexture;
   private paper: WebGLTexture;
   private paperTileCss = 512;
   private paperMix = 0;
+  private sceneStyle: FlipSnapshotSceneStyle;
   private disposed = false;
 
   /**
@@ -470,12 +542,29 @@ export class CurlRenderer {
     this.cream = paperCreamRgb();
     this.curlProgram = new GlProgram(gl, CURL_VERT_SRC, curlFragSrc(this.cream));
     this.groundProgram = new GlProgram(gl, GROUND_VERT_SRC, groundFragSrc(this.cream));
+    this.sceneSolidProgram = new GlProgram(gl, SCENE_SOLID_VERT_SRC, SCENE_SOLID_FRAG_SRC);
     this.mesh = createGridMesh(gl, CURL_GRID_COLS, CURL_GRID_ROWS);
     this.quad = createQuadMesh(gl);
+    this.stationary = this.creamTexture();
     this.front = this.creamTexture();
     this.back = this.creamTexture();
     this.revealed = this.creamTexture();
     this.paper = createSolidTexture(gl, 255, 255, 255);
+    const [r, g, b] = this.cream;
+    this.sceneStyle = {
+      gutterWidth: 26,
+      gutter: [93 / 255, 58 / 255, 38 / 255, 0.22],
+      threadWidth: 2,
+      thread: [93 / 255, 58 / 255, 38 / 255, 0.36],
+      paper: [r / 255, g / 255, b / 255, 1],
+      edgeRadius: 4,
+      leftEdges: [],
+      rightEdges: [],
+      cornerSize: 34,
+      cornerRadius: 4,
+      cornerPaper: [229 / 255, 216 / 255, 187 / 255, 1],
+      showCorner: true,
+    };
   }
 
   private creamTexture(): WebGLTexture {
@@ -491,7 +580,7 @@ export class CurlRenderer {
    *
    * The cream FALLBACK textures — what a face with no snapshot shows, and on
    * the night theme the difference between a dark sheet and a white one — pick
-   * the new colour up on their own: setPageTextures rebuilds them from
+   * the new colour up on their own: setSnapshotScene rebuilds them from
    * `this.cream` and the controller calls it immediately after this, in the
    * same beginFlip.
    */
@@ -529,18 +618,19 @@ export class CurlRenderer {
    * front = moving page's visible face; back = destination page printed on
    * the sheet's other side; revealed = page uncovered beneath the sheet.
    */
-  setPageTextures(
-    front: ImageBitmap | null,
-    back: ImageBitmap | null,
-    revealed: ImageBitmap | null,
-  ): void {
+  setSnapshotScene(scene: FlipSnapshotSceneBitmaps, style: FlipSnapshotSceneStyle): void {
     const gl = this.gl;
+    gl.deleteTexture(this.stationary);
     gl.deleteTexture(this.front);
     gl.deleteTexture(this.back);
     gl.deleteTexture(this.revealed);
-    this.front = front ? uploadTexture(gl, front) : this.creamTexture();
-    this.back = back ? uploadTexture(gl, back) : this.creamTexture();
-    this.revealed = revealed ? uploadTexture(gl, revealed) : this.creamTexture();
+    this.stationary = scene.stationary
+      ? uploadTexture(gl, scene.stationary)
+      : this.creamTexture();
+    this.front = scene.front ? uploadTexture(gl, scene.front) : this.creamTexture();
+    this.back = scene.back ? uploadTexture(gl, scene.back) : this.creamTexture();
+    this.revealed = scene.revealed ? uploadTexture(gl, scene.revealed) : this.creamTexture();
+    this.sceneStyle = style;
   }
 
   /** Same tiled paper texture the resting CSS uses; enables the multiply. */
@@ -551,7 +641,14 @@ export class CurlRenderer {
     this.paperMix = mix;
   }
 
-  /** Draw one frame: clear → ground pass (revealed + shadow) → curl mesh. */
+  /**
+   * Draw one complete scene frame:
+   * stationary + revealed sheets → binding → moving curl.
+   *
+   * Nothing first appears at landing. The opposite page, destination page,
+   * paper behind the translucent gutter and its center thread are submitted in
+   * every frame from p=0. The moving mesh is last and wins wherever it lifts.
+   */
   render(frame: CurlFrame): void {
     if (this.disposed || this.ctx.isLost()) return;
     const gl = this.gl;
@@ -581,11 +678,20 @@ export class CurlRenderer {
     // used to be higher. (gl.ts turns the test on and picks LEQUAL.)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const setCommon = (prog: GlProgram): void => {
-      prog.set2f('uLeafSize', leafW, leafH);
-      prog.set2f('uLeafOrigin', frame.leafX, frame.leafY);
+    const setCommon = (
+      prog: GlProgram,
+      geometry: LeafGeometry = {
+        x: frame.leafX,
+        y: frame.leafY,
+        w: leafW,
+        h: leafH,
+      },
+      sign = dirSign,
+    ): void => {
+      prog.set2f('uLeafSize', geometry.w, geometry.h);
+      prog.set2f('uLeafOrigin', geometry.x, geometry.y);
       prog.set2f('uCanvasSize', frame.canvasW, frame.canvasH);
-      prog.set1f('uDir', dirSign);
+      prog.set1f('uDir', sign);
       prog.setMat4('uProj', proj);
       prog.set1f('uCamDist', camDist);
       prog.set1f('uFoldD', foldD);
@@ -593,23 +699,231 @@ export class CurlRenderer {
       prog.set1f('uRadius', radius);
       prog.set1f('uLift', lift);
       prog.set1f('uShadowStart', shadowStart);
-      prog.set2f('uPaperScale', leafW / this.paperTileCss, leafH / this.paperTileCss);
+      prog.set2f(
+        'uPaperScale',
+        geometry.w / this.paperTileCss,
+        geometry.h / this.paperTileCss,
+      );
       prog.set1f('uPaperMix', this.paperMix);
       prog.set1f('uPaperMean', 0.94);
     };
 
-    this.groundProgram.use();
-    setCommon(this.groundProgram);
-    this.groundProgram.setTexture('uTexRevealed', this.revealed, 0);
-    this.groundProgram.setTexture('uPaperTex', this.paper, 2);
-    this.quad.draw();
+    const drawGround = (
+      texture: WebGLTexture,
+      geometry: LeafGeometry,
+      sign: number,
+      contact: 0 | 1,
+    ): void => {
+      this.groundProgram.use();
+      setCommon(this.groundProgram, geometry, sign);
+      this.groundProgram.set1f('uContact', contact);
+      this.groundProgram.setTexture('uTexPage', texture, 0);
+      this.groundProgram.setTexture('uPaperTex', this.paper, 2);
+      this.quad.draw();
+    };
+
+    const drawSolid = (
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      color: SceneRgba,
+      z: number,
+      radius = 0,
+      shape: 0 | 1 = 0,
+    ): void => {
+      if (width <= 0 || height <= 0 || color[3] <= 0) return;
+      const program = this.sceneSolidProgram;
+      program.use();
+      program.set2f('uLeafSize', width, height);
+      program.set2f('uLeafOrigin', x, y);
+      program.set2f('uCanvasSize', frame.canvasW, frame.canvasH);
+      program.set1f('uDir', 1);
+      program.setMat4('uProj', proj);
+      program.set1f('uCamDist', camDist);
+      program.set1f('uSceneZ', z);
+      program.set2f('uRectSize', width, height);
+      program.set1f('uRadius', Math.max(0, Math.min(radius, width * 0.5, height * 0.5)));
+      program.set1f('uShape', shape);
+      // createFlipContext uses premultiplied-alpha blending.
+      program.set4f(
+        'uColor',
+        color[0] * color[3],
+        color[1] * color[3],
+        color[2] * color[3],
+        color[3],
+      );
+      this.quad.draw();
+    };
+
+    const leftLeaf: LeafGeometry = {
+      x: frame.leftX,
+      y: frame.leftY,
+      w: frame.leftW,
+      h: frame.leftH,
+    };
+    const rightLeaf: LeafGeometry = {
+      x: frame.rightX,
+      y: frame.rightY,
+      w: frame.rightW,
+      h: frame.rightH,
+    };
+    const movingLeaf: LeafGeometry = {
+      x: frame.leafX,
+      y: frame.leafY,
+      w: leafW,
+      h: leafH,
+    };
+    const stationaryLeaf = dirSign > 0 ? leftLeaf : rightLeaf;
+
+    // CSS paints its first box shadow on top; draw the list backwards so the
+    // nearest cream/deep hairline wins exactly the same way.
+    for (const edge of [...this.sceneStyle.leftEdges].reverse()) {
+      drawSolid(
+        leftLeaf.x + edge.x,
+        leftLeaf.y + edge.y,
+        leftLeaf.w,
+        leftLeaf.h,
+        edge.color,
+        -0.02,
+        this.sceneStyle.edgeRadius,
+      );
+    }
+    for (const edge of [...this.sceneStyle.rightEdges].reverse()) {
+      drawSolid(
+        rightLeaf.x + edge.x,
+        rightLeaf.y + edge.y,
+        rightLeaf.w,
+        rightLeaf.h,
+        edge.color,
+        -0.02,
+        this.sceneStyle.edgeRadius,
+      );
+    }
+
+    drawGround(this.stationary, stationaryLeaf, -dirSign, 0);
+    drawGround(this.revealed, movingLeaf, dirSign, 1);
+
+    /*
+     * The binding lives ON the flat paper but UNDER a lifted turning sheet.
+     *
+     * This pass used to paint an opaque cream rectangle first and then draw
+     * the translucent gutter last with depth disabled. The rectangle erased
+     * both pages' rules at the spine, and the last-pass stripe showed through
+     * paper that had not revealed it yet: exactly the pasted-on sticker the
+     * reader reported. The DOM gutter itself is translucent over the paper, so
+     * the GL scene must be the same composition: no backing rectangle, and the
+     * curl drawn afterwards so real paper occludes it.
+     */
+    const bindingX = (leftLeaf.x + leftLeaf.w + rightLeaf.x) * 0.5;
+    const bindingY = Math.min(leftLeaf.y, rightLeaf.y);
+    const bindingH = Math.max(leftLeaf.y + leftLeaf.h, rightLeaf.y + rightLeaf.h) - bindingY;
+    const gutterW = Math.max(this.sceneStyle.gutterWidth, 1);
+    const threadW = Math.min(Math.max(this.sceneStyle.threadWidth, 1), gutterW);
+    const drawBinding = (): void => {
+      drawSolid(bindingX - gutterW * 0.5, bindingY, gutterW, bindingH, this.sceneStyle.gutter, 0.001);
+      drawSolid(bindingX - threadW * 0.5, bindingY, threadW, bindingH, this.sceneStyle.thread, 0.002);
+    };
+    drawBinding();
 
     this.curlProgram.use();
-    setCommon(this.curlProgram);
+    setCommon(this.curlProgram, movingLeaf);
     this.curlProgram.setTexture('uTexFront', this.front, 0);
     this.curlProgram.setTexture('uTexBack', this.back, 1);
     this.curlProgram.setTexture('uPaperTex', this.paper, 2);
     this.mesh.draw();
+
+    // At the two EXACTLY-flat handoffs the settled DOM owns the gutter above
+    // both leaves. Repeat only those endpoint pixels above the mesh so the
+    // p=1 scene already equals the destination before land() releases it. Do
+    // not fade this in during the turn: while p is genuinely between pages the
+    // moving paper must occlude the binding, rather than a stripe appearing
+    // through a sheet that has not revealed it.
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    if (p <= 1e-6 || p >= 1 - 1e-6) drawBinding();
+
+    // The dog-ear belongs to the stationary book chrome, but unlike the
+    // binding it never intersects the moving sheet's route. Keep it a final
+    // screen-space mark so its apparent size cannot pulse with perspective.
+    if (this.sceneStyle.showCorner) {
+      const corner = Math.min(
+        Math.max(this.sceneStyle.cornerSize, 1),
+        rightLeaf.w,
+        rightLeaf.h,
+      );
+      drawSolid(
+        rightLeaf.x + rightLeaf.w - corner - 2,
+        rightLeaf.y + rightLeaf.h - corner - 2,
+        corner,
+        corner,
+        this.sceneStyle.cornerPaper,
+        0,
+        this.sceneStyle.cornerRadius,
+        1,
+      );
+    }
+    gl.depthMask(true);
+    gl.enable(gl.DEPTH_TEST);
+
+    /*
+     * Chromium may otherwise leave several WebGL command batches queued while
+     * the main thread immediately starts mounting the destination editors.
+     * The JS-side progress has already reached p=1, but the compositor can
+     * keep presenting an older curl frame and then drain those old frames
+     * after navigation — the visible "page turned behind the cover" failure.
+     *
+     * flush() only submits the batch; unlike finish() it does not wait for the
+     * GPU and therefore does not turn every animation frame into a blocking
+     * synchronization point. The landing code still owns the paint boundary.
+     */
+    gl.flush();
+  }
+
+  /**
+   * Run `ready` only after every draw submitted before this call has finished
+   * on the GPU. Landing uses this before it swaps the live DOM: two rAFs alone
+   * only prove that the main thread reached a paint boundary, not that
+   * Chromium's WebGL command queue reached the p=1 frame.
+   *
+   * Polling a fence is intentionally asynchronous. `gl.finish()` would prove
+   * the same fact by blocking the main thread—and turn a busy GPU into a
+   * frozen page. A lost context / failed fence releases the caller so the
+   * controller's existing context-loss fallback can take over.
+   */
+  afterSubmittedFrame(ready: () => void): void {
+    if (this.disposed || this.ctx.isLost()) {
+      ready();
+      return;
+    }
+    const gl = this.gl;
+    const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (!fence) {
+      ready();
+      return;
+    }
+    gl.flush();
+
+    const poll = (): void => {
+      if (this.disposed || this.ctx.isLost()) {
+        gl.deleteSync(fence);
+        ready();
+        return;
+      }
+      const status = gl.clientWaitSync(fence, 0, 0);
+      if (status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED) {
+        gl.deleteSync(fence);
+        ready();
+        return;
+      }
+      if (status === gl.WAIT_FAILED) {
+        gl.deleteSync(fence);
+        ready();
+        return;
+      }
+      requestAnimationFrame(poll);
+    };
+    requestAnimationFrame(poll);
   }
 
   clear(): void {
@@ -617,6 +931,7 @@ export class CurlRenderer {
     const gl = this.gl;
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.flush();
   }
 
   dispose(): void {
@@ -625,8 +940,10 @@ export class CurlRenderer {
     const gl = this.gl;
     this.curlProgram.dispose();
     this.groundProgram.dispose();
+    this.sceneSolidProgram.dispose();
     this.mesh.dispose();
     this.quad.dispose();
+    gl.deleteTexture(this.stationary);
     gl.deleteTexture(this.front);
     gl.deleteTexture(this.back);
     gl.deleteTexture(this.revealed);

@@ -42,11 +42,14 @@
  * here. It is no longer a flat fill — `art/wallpaperDesign.ts` bakes a
  * seamless tile onto the backdrop sprite — but that tile is a wall, not a part
  * of the case, and it is baked where it is used. The decorative extras the
- * painting era accumulated — shelf props, flora, star
- * charms, ribbons, empty-floor doodles, under-shelf drawers and bunting, and
- * the blurred case halo — return a 1×1 transparent texture or null. One
- * option per thing was the brief, and a flat case that is also festooned with
- * ornament is just the old mud in new colours.
+ * painting era accumulated — shelf props, flora, empty-floor doodles,
+ * under-shelf drawers and bunting, and the blurred case halo — return a 1×1
+ * transparent texture or null. One option per thing was the brief, and a flat
+ * case that is also festooned with ornament is just the old mud in new
+ * colours. Two tiny book-status marks deliberately survive: the pinned-book
+ * star and the continue-reading ribbon. They belong to the book, communicate
+ * real state, and use the same flat vocabulary as its binding rather than
+ * pretending to be room furniture.
  *
  * The trash-drawer front went further and is gone entirely: the trash is a
  * button on the shelf's left rail now, not a piece of furniture bolted under
@@ -97,6 +100,14 @@ export type EnvKind =
 /** World-px height of the under-plank detail strip (no longer drawn). */
 export const SHELF_DETAIL_H = 34;
 
+/** Pinned-book star design box, in world px. */
+export const STAR_CHARM_W = 20;
+export const STAR_CHARM_H = 24;
+
+/** Continue-reading ribbon design box, in world px. */
+export const CONTINUE_RIBBON_W = 12;
+export const CONTINUE_RIBBON_H = 34;
+
 /** A baked part waiting for its three siblings — see `bakeCase`. */
 interface StagedPart {
   kind: EnvKind;
@@ -137,14 +148,6 @@ export const PLACEHOLDER_TINTS = {
   crown: 0xc08a52,
 } as const;
 
-/** Number of distinct empty-floor doodle variants (none are drawn now). */
-export const EMPTY_DOODLE_VARIANTS = 3;
-
-/** Deterministic doodle variant for a floor. */
-export function doodleVariantFor(floorIndex: number): number {
-  return fnv1a(`doodle|${floorIndex}`) % EMPTY_DOODLE_VARIANTS;
-}
-
 function textureFromBitmap(bitmap: ImageBitmap, mipmaps: boolean): Texture {
   const source = new ImageSource({
     resource: bitmap,
@@ -156,10 +159,11 @@ function textureFromBitmap(bitmap: ImageBitmap, mipmaps: boolean): Texture {
 type AnyCanvas = OffscreenCanvas | HTMLCanvasElement;
 
 /**
- * IMPORTANT: small synchronously-authored art (plaques, carets) must reach the
- * GPU as an ImageBitmap (ImageSource), NOT as a live CanvasSource. Direct
- * canvas uploads deliver wrong pixels on some renderers (headless SwiftShader
- * garbles both alpha and content — the original "invisible empty-shelf hint"
+ * IMPORTANT: small synchronously-authored art (plaques, carets, book-status
+ * marks) must reach the GPU as an ImageBitmap (ImageSource), NOT as a live
+ * CanvasSource. Direct canvas uploads deliver wrong pixels on some renderers
+ * (headless SwiftShader garbles both alpha and content — the original
+ * "invisible empty-shelf hint"
  * bug), while the ImageBitmap path — used by every baked env texture — renders
  * correctly everywhere. OffscreenCanvas.transferToImageBitmap() makes that
  * conversion synchronous.
@@ -190,6 +194,109 @@ function textureFromCanvas(canvas: AnyCanvas): Texture {
   return new Texture({
     source: new CanvasSource({ resource: canvas as HTMLCanvasElement }),
   });
+}
+
+/* -------------------------- book status marks ---------------------------- */
+
+/**
+ * Draw the little star hung from a favourite book.
+ *
+ * This used to be a miniature lighting study: a gold gradient, a brown
+ * one-off outline and a white specular dot. At shelf scale that read as a
+ * foreign sticker. The status mark now uses the same three moves as the rest
+ * of the flat world: one bowed ink thread, one gilt face, one FLAT.ink
+ * outline. The cream centre is a punched eyelet, not a highlight.
+ */
+export function drawStarCharm(
+  ctx: FlatCtx,
+  w = STAR_CHARM_W,
+  h = STAR_CHARM_H,
+): void {
+  const cx = w / 2;
+  const cy = h * 0.62;
+  const outer = Math.min(w * 0.41, h * 0.35);
+  const inner = outer * 0.44;
+
+  // The thread is behind the charm and disappears cleanly into its top point.
+  stroke(ctx, cx, 0.8, cx + 0.55, cy - outer + 0.75, FLAT.ink, 1.45, 0x51a7);
+
+  ctx.beginPath();
+  for (let i = 0; i < 10; i += 1) {
+    const radius = i % 2 === 0 ? outer : inner;
+    // A hair of deterministic asymmetry keeps the tiny mark in the same hand
+    // as the bowed case edges without making its silhouette fuzzy.
+    const nudge = i % 3 === 0 ? 0.18 : i % 3 === 1 ? -0.08 : 0.06;
+    const angle = -Math.PI / 2 + (i * Math.PI) / 5 + nudge * 0.025;
+    const x = cx + Math.cos(angle) * (radius + nudge);
+    const y = cy + Math.sin(angle) * (radius - nudge * 0.35);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = FLAT.gilt;
+  ctx.fill();
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // A real punched eyelet: flat paper face, bounded by the same ink as every
+  // other shape. It makes the star read as a hanging object rather than a UI
+  // glyph while remaining legible at 20px.
+  ctx.beginPath();
+  ctx.arc(cx, cy, 1.7, 0, Math.PI * 2);
+  ctx.fillStyle = FLAT.cream;
+  ctx.fill();
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+/**
+ * Draw the bookmark hanging from the most recently opened book.
+ *
+ * Moss is the house ribbon colour. Its dark cuff is a second physical face,
+ * not shading: one flat fold beside one flat strip, each bounded by FLAT.ink.
+ * The tail bows by fractions of a pixel so it belongs beside a drawn binding
+ * without losing the crisp notched silhouette that makes it readable.
+ */
+export function drawContinueRibbon(
+  ctx: FlatCtx,
+  w = CONTINUE_RIBBON_W,
+  h = CONTINUE_RIBBON_H,
+): void {
+  const left = 1.25;
+  const right = w - 1.25;
+  const tail = h - 1.5;
+  const notchY = h - 7.2;
+
+  ctx.beginPath();
+  ctx.moveTo(left, 1.2);
+  ctx.quadraticCurveTo(w / 2, 0.65, right, 1.05);
+  ctx.quadraticCurveTo(w - 0.75, h * 0.48, right - 0.15, notchY);
+  ctx.lineTo(w / 2, tail);
+  ctx.lineTo(left + 0.05, notchY - 0.15);
+  ctx.quadraticCurveTo(0.65, h * 0.48, left, 1.2);
+  ctx.closePath();
+  ctx.fillStyle = FLAT.moss;
+  ctx.fill();
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = 1.7;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // The folded cuff sits over the strip as one darker flat face.
+  ctx.beginPath();
+  ctx.moveTo(left + 0.15, 1.35);
+  ctx.quadraticCurveTo(w / 2, 0.9, right - 0.15, 1.2);
+  ctx.lineTo(right - 0.12, 5.2);
+  ctx.quadraticCurveTo(w / 2, 5.65, left + 0.1, 5.35);
+  ctx.closePath();
+  ctx.fillStyle = FLAT.mossDark;
+  ctx.fill();
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = 1.15;
+  ctx.stroke();
 }
 
 /* ---------------------------- flat case parts ----------------------------- */
@@ -393,15 +500,10 @@ export class EnvTextures {
   backdropStrip: Texture | null = null;
 
   private readonly plaques = new Map<string, Texture>();
-  private selectCaret: Texture | null = null;
-  /**
-   * One shared 1×1 transparent texture, handed back by every getter whose art
-   * the flat restyle retired. Its callers all set an explicit width/height, so
-   * a real (non-zero) texture keeps their scale maths finite, and building it
-   * ourselves rather than using `Texture.EMPTY` keeps the pixels defined on
-   * every renderer — the same reason `makeCanvas` exists.
-   */
-  private blank: Texture | null = null;
+  /** Small art is cached at the effective DPR it was actually baked for. */
+  private readonly selectCarets = new Map<number, Texture>();
+  private readonly starCharms = new Map<number, Texture>();
+  private readonly continueRibbons = new Map<number, Texture>();
   /**
    * `onReady` listeners. They take the LIST of parts that landed, not one
    * part, because a room replacement lands all four together and calling a
@@ -514,27 +616,44 @@ export class EnvTextures {
     return () => this.listeners.delete(cb);
   }
 
-  /**
-   * Empty-floor doodle. Retired with the pencil vocabulary: the doodles were
-   * chalk-toned strokes tuned for a dark painted back panel, and they read as
-   * smudges against a flat recess.
-   */
-  getEmptyDoodle(dpr: number, variant: number): Texture {
-    void dpr;
-    void variant;
-    return this.blankTexture();
-  }
-
-  /** Pinned-book star charm. Retired with the rest of the spine furniture. */
+  /** Pinned-book status mark, cached at the effective DPR it was baked for. */
   getStarCharm(dpr: number): Texture {
-    void dpr;
-    return this.blankTexture();
+    const renderDpr = Number.isFinite(dpr) ? Math.max(1, dpr) : 1;
+    const cached = this.starCharms.get(renderDpr);
+    if (cached !== undefined) return cached;
+    const scale = renderDpr * 2;
+    const canvas = makeCanvas(
+      Math.ceil(STAR_CHARM_W * scale),
+      Math.ceil(STAR_CHARM_H * scale),
+    );
+    const ctx = get2d(canvas);
+    if (ctx !== null) {
+      ctx.scale(scale, scale);
+      drawStarCharm(ctx as FlatCtx);
+    }
+    const texture = textureFromCanvas(canvas);
+    this.starCharms.set(renderDpr, texture);
+    return texture;
   }
 
-  /** Continue-reading ribbon. Retired with the rest of the spine furniture. */
+  /** Continue-reading status mark, likewise cached per effective DPR. */
   getRibbon(dpr: number): Texture {
-    void dpr;
-    return this.blankTexture();
+    const renderDpr = Number.isFinite(dpr) ? Math.max(1, dpr) : 1;
+    const cached = this.continueRibbons.get(renderDpr);
+    if (cached !== undefined) return cached;
+    const scale = renderDpr * 2;
+    const canvas = makeCanvas(
+      Math.ceil(CONTINUE_RIBBON_W * scale),
+      Math.ceil(CONTINUE_RIBBON_H * scale),
+    );
+    const ctx = get2d(canvas);
+    if (ctx !== null) {
+      ctx.scale(scale, scale);
+      drawContinueRibbon(ctx as FlatCtx);
+    }
+    const texture = textureFromCanvas(canvas);
+    this.continueRibbons.set(renderDpr, texture);
+    return texture;
   }
 
   /**
@@ -544,10 +663,12 @@ export class EnvTextures {
    * sprite, it never distorts across spine widths.
    */
   getSelectCaret(dpr: number): Texture {
-    if (this.selectCaret !== null) return this.selectCaret;
+    const renderDpr = Number.isFinite(dpr) ? Math.max(1, dpr) : 1;
+    const cached = this.selectCarets.get(renderDpr);
+    if (cached !== undefined) return cached;
     const w = SELECT_CARET_W;
     const h = SELECT_CARET_H;
-    const scale = Math.max(1, dpr) * 2; // small art: bake crisp at 2×
+    const scale = renderDpr * 2; // small art: bake crisp at 2×
     const canvas = makeCanvas(Math.ceil(w * scale), Math.ceil(h * scale));
     const ctx = get2d(canvas);
     if (ctx) {
@@ -564,17 +685,19 @@ export class EnvTextures {
         stroke(flat, x0, y0, x1, y1, FLAT.ink, 1.8, 0x5e1e);
       }
     }
-    this.selectCaret = textureFromCanvas(canvas);
-    return this.selectCaret;
+    const texture = textureFromCanvas(canvas);
+    this.selectCarets.set(renderDpr, texture);
+    return texture;
   }
 
   /**
    * Floor plaque: a cream paper label with two gilt pins and a hand-written
-   * line. Cached per label text; the cache is bounded (LRU-ish clear) since
-   * labels are user-editable.
+   * line. Cached per effective DPR and label text; the cache is bounded
+   * (LRU-ish clear) since labels are user-editable.
    */
   getPlaque(dpr: number, label: string): Texture {
-    const key = label;
+    const renderDpr = Number.isFinite(dpr) ? Math.max(1, dpr) : 1;
+    const key = `${renderDpr}|${label}`;
     const cached = this.plaques.get(key);
     if (cached !== undefined) return cached;
     if (this.plaques.size > 48) {
@@ -583,7 +706,7 @@ export class EnvTextures {
     }
     const w = PLAQUE_W;
     const h = PLAQUE_H;
-    const scale = Math.max(1, dpr) * 2;
+    const scale = renderDpr * 2;
     const canvas = makeCanvas(Math.ceil(w * scale), Math.ceil(h * scale));
     const ctx = get2d(canvas);
     if (ctx) {
@@ -626,8 +749,12 @@ export class EnvTextures {
     this.crown?.destroy(true);
     this.wallpaper?.destroy(true);
     this.backdropStrip?.destroy(true);
-    this.selectCaret?.destroy(true);
-    this.blank?.destroy(true);
+    for (const tex of this.selectCarets.values()) tex.destroy(true);
+    this.selectCarets.clear();
+    for (const tex of this.starCharms.values()) tex.destroy(true);
+    this.starCharms.clear();
+    for (const tex of this.continueRibbons.values()) tex.destroy(true);
+    this.continueRibbons.clear();
     for (const tex of this.plaques.values()) tex.destroy(true);
     this.plaques.clear();
     this.plank = null;
@@ -638,8 +765,6 @@ export class EnvTextures {
     this.crown = null;
     this.wallpaper = null;
     this.backdropStrip = null;
-    this.selectCaret = null;
-    this.blank = null;
   }
 
   /* ------------------------------ internals ------------------------------- */
@@ -786,20 +911,6 @@ export class EnvTextures {
     else this.crown = texture;
   }
 
-  /** The shared no-op texture (see the `blank` field). */
-  private blankTexture(): Texture {
-    if (this.blank !== null) return this.blank;
-    // An untouched canvas is fully transparent, which is the whole point —
-    // but it still has to be given a context before anyone can transfer an
-    // ImageBitmap out of it. `OffscreenCanvas.transferToImageBitmap()` throws
-    // InvalidStateError on a canvas that has never had one, which is not
-    // something tsc or a unit test can see: it only shows up as four thrown
-    // errors in the running app.
-    const canvas = makeCanvas(1, 1);
-    get2d(canvas);
-    this.blank = textureFromCanvas(canvas);
-    return this.blank;
-  }
 }
 
 /** Plaque design size, world px (drawn on the plank face). */

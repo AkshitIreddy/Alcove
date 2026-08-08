@@ -10,7 +10,7 @@
  * this module is safe in the browser dev build (where it simply idles).
  */
 
-import { getDb, isTauri, DB_PATH } from '../../data/db';
+import { getDb, getDbPath, isTauri } from '../../data/db';
 import { load as loadSettings, settings } from '../../data/settings';
 
 /** settings-table key holding the ISO timestamp of the last backup run. */
@@ -129,7 +129,7 @@ export async function restoreBackup(path: string): Promise<RestoreResult> {
   if (!isTauri()) throw new Error('restore needs the desktop app');
   try {
     const { default: Database } = await import('@tauri-apps/plugin-sql');
-    const db = await Database.load(DB_PATH);
+    const db = await Database.load(await getDbPath());
     await db.close();
   } catch {
     // Best-effort — restore still attempts the file swap.

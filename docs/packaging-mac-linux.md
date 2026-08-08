@@ -18,6 +18,27 @@ setup window. This one is about the pipeline around all of it.
 
 ## Running it
 
+### One-time updater setup
+
+Before the first updater-enabled tag, add one repository secret under **GitHub
+→ Settings → Secrets and variables → Actions**:
+
+- `TAURI_SIGNING_PRIVATE_KEY` — the complete contents of the ignored local file
+  `src-tauri/updater.key`.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — only if that key was generated with a
+  password. An unencrypted key does not need this second secret.
+
+Never commit or paste the private key into the workflow. The matching public
+key is deliberately tracked as `src-tauri/updater.key.pub` and embedded in the
+app; it can verify a release but cannot sign one. The release fails before a
+bundle is built if the private-key secret is absent.
+
+There is one unavoidable bootstrap: **v0.4.0 shipped before the updater existed.**
+An installed v0.4.0 cannot discover code it does not contain, so readers must
+manually install the first updater-enabled release once. From that release
+onward, Alcove checks GitHub after launch, offers a newer signed version, downloads
+the platform installer/archive, applies it, and relaunches.
+
 ```bash
 git tag v0.2.0
 git push origin v0.2.0
@@ -37,7 +58,7 @@ than waiting.
 
 | Job | Runner | What it does |
 | --- | --- | --- |
-| `gates` | `ubuntu-latest` | `tsc --noEmit`, `vitest run`, `spec:check`, `readme:check`, `gen-icons.py --check` |
+| `gates` | `ubuntu-latest` | `tsc --noEmit`, the fast logic gate (`npm test`), release-only logic (`test:release`), `spec:check`, `readme:check`, `gen-icons.py --check` |
 | `build` (×3) | `windows-latest`, `macos-15`, `ubuntu-22.04` | the bundle, and nothing else |
 | `release` | `ubuntu-latest` | notes, checksums, one GitHub Release |
 
@@ -60,7 +81,8 @@ never publishes a release with a platform quietly missing.
 
 ## What a first run should produce
 
-Seven files plus a checksum manifest. The three Windows rows below were built
+Seven reader-facing bundles, five updater-support files, and a checksum
+manifest. The three Windows bundle rows below were built
 locally and their names and sizes read off the files; **the macOS and Linux
 names are still predicted from the Tauri bundler's naming rules, not read off a
 run** — check those against the job log the first time, and correct this table
@@ -69,13 +91,23 @@ if the bundler disagrees.
 | Platform | Artefact | Notes |
 | --- | --- | --- |
 | Windows x64 | `Alcove_0.2.0_x64-setup.exe` | NSIS, **16.2 MB** — measured, this one was built. `installMode: currentUser`, so no administrator prompt. The one to hand to a reader. |
+| Windows updater | `Alcove_0.2.0_x64-setup.exe.sig` | Tauri updater signature for the normal NSIS setup. The offline installer is deliberately not an update target. |
 | Windows x64 | `Alcove_0.2.0_x64-setup-offline.exe` | The same installer carrying the whole Edge WebView2 runtime, **217 MB**. Built by its own step and renamed. Only for a machine with no internet — see [`packaging-windows.md`](packaging-windows.md). |
 | Windows x64 | `Alcove_0.2.0_x64_en-US.msi` | WiX, **19.8 MB** — also measured. For policy deployment. |
 | macOS universal | `Alcove_0.2.0_universal.dmg` | Contains `Alcove.app`. Both architectures in one file — see below. |
+| macOS updater | `Alcove.app.tar.gz` + `.sig` | Universal updater archive and signature; both macOS architecture entries point to this same file. |
 | Linux x64 | `Alcove_0.2.0_amd64.deb` | Debian, Ubuntu, Mint. |
 | Linux x64 | `Alcove-0.2.0-1.x86_64.rpm` | Fedora, openSUSE. Tauri 2 builds this with a pure-Rust packer, so the runner needs no `rpmbuild`. |
 | Linux x64 | `Alcove_0.2.0_amd64.AppImage` | Runs without installing. The one to offer anybody not on a `.deb`/`.rpm` distribution. |
+| Linux updater | `Alcove_0.2.0_amd64.AppImage.sig` | Signature for the AppImage updater payload. |
+| updater | `latest.json` | Stable feed consumed by installed copies. It carries the release notes, immutable tag URLs, and the **contents** of each signature file. |
 | all | `SHA256SUMS.txt` | Generated in the release job. |
+
+`latest.json` maps `windows-x86_64` to the normal NSIS setup,
+`linux-x86_64` to the AppImage, and both `darwin-aarch64` and
+`darwin-x86_64` to the universal macOS archive. The workflow generates it only
+after proving every payload and signature exists. The checksum step runs after
+that, so the manifest and updater files are covered too.
 
 `bundle.targets` is `"all"`, so each runner produces whatever its platform
 supports; the workflow does not name the formats, it globs the bundle
@@ -94,8 +126,8 @@ WebView2"; `tests/packaging.test.ts` fails if that ever becomes two answers.
 [`packaging-windows.md`](packaging-windows.md) has the three measured sizes the
 choice rests on.
 
-The `.app` itself is not uploaded separately. It is a directory, not a file,
-and a GitHub Release asset has to be a file; it lives inside the `.dmg`.
+The `.app` itself is not uploaded as a directory. It lives inside the `.dmg`
+for manual installation and inside the signed `.app.tar.gz` for the updater.
 
 ## macOS: one universal binary, and it is not signed
 
@@ -283,14 +315,10 @@ expected, not a fault.
 ## What to check on a first run
 
 > [!IMPORTANT]
-> **A tag pushed today would stop at the gates and build nothing**, and not
-> because of anything on this page. `npm run readme:check` and
-> `tests/readme.test.ts` both fail on `docs/readme/img/*.png`: the recorded
-> SHA-256 no longer matches the file on disk, because the screenshots are stale
-> and recapturing them is its own open item. The check compares content hashes,
-> not modification times, so it fails identically on a runner — this is the gate
-> working, not a CI artefact. Clear that item before the first tag, or the first
-> run tells you nothing about the three build jobs.
+> **Do not use a tag as the first test of this workflow.** Run the documented
+> gates locally first, then make sure `TAURI_SIGNING_PRIVATE_KEY` is present in
+> the repository's Actions secrets. A missing updater key fails before any
+> platform build starts, by design.
 
 In order, because each one only matters if the previous passed.
 
@@ -314,15 +342,20 @@ In order, because each one only matters if the previous passed.
      expect. Read the *Show what was bundled* step directly above it; it prints
      every `bundle/` directory on the runner, and correct the matrix glob and the
      artefact table above.
-3. **The release exists and carries seven assets.** Six bundles plus
+3. **The release exists and carries thirteen assets.** Seven reader-facing
+   bundles, four `.sig`/archive updater companions, `latest.json`, and
    `SHA256SUMS.txt`. If a bundle's filename differs from the table above, fix the
    table — the workflow globs and does not care, but this document is a promise
    to the next reader.
-4. **The notes read like notes.** `scripts/release-notes.mjs` diffs against the
+4. **`latest.json` opens from the public release URL.** Its version equals the
+   tag without the leading `v`; all four platform entries have a tag-specific
+   HTTPS URL and a non-empty signature. The tag gate has already proved that
+   this version is also the one embedded in the installer.
+5. **The notes read like notes.** `scripts/release-notes.mjs` diffs against the
    previous tag; for the *first* tag there is no previous one, so it summarises
    the entire history and will be long. That is correct behaviour and worth
    expecting rather than debugging.
-5. **Then actually install one.** CI proves a bundle was produced. It proves
+6. **Then actually install one.** CI proves a bundle was produced. It proves
    nothing about whether it launches. The macOS quarantine dance above is
    expected on first open and is not a broken build.
 
@@ -331,13 +364,15 @@ In order, because each one only matters if the previous passed.
 - **No run has happened.** Everything here is derived from the configuration and
   the bundler's documented behaviour. The artefact names in particular are
   predictions.
-- **Nothing is signed** on any platform. Windows will show a SmartScreen warning
-  for an unknown publisher, and macOS will quarantine. Both are expected for an
-  unsigned build and neither is a defect in the workflow.
+- **The updater payloads are signed, but the applications are not code-signed.**
+  The updater signature lets Alcove reject a modified download. It is not
+  Authenticode or Apple notarisation, so Windows can still show a SmartScreen
+  warning and macOS can still quarantine a manual download. Those are separate
+  trust systems.
 - **Linux is x64 only.** `ubuntu-22.04-arm` exists as a runner label, so an arm64
   Linux bundle is one matrix entry away, but nothing has asked for it.
 - **There is still no push-triggered CI.** This workflow fires on tags. `tsc`,
-  `vitest`, `spec:check` and `readme:check` run here, and locally, and nowhere
+  `npm test`, `test:release`, `spec:check` and `readme:check` run here, and locally, and nowhere
   else — so a green release says the gates passed *at the tag*, not that they
   have passed on every commit. Wiring a push workflow is the prerequisite for
   displaying a CI badge, not the other way round.

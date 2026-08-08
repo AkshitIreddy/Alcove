@@ -2995,6 +2995,17 @@ export default function SettingsPanel(props: {
               onChange={(v) => put({ muteAll: v })}
             />
           </Row>
+          <Row
+            label="quiet in the background"
+            hint="pause every cue and the ambience while another window has focus"
+            words="background unfocused blur mute silence sounds"
+          >
+            <Toggle
+              label="mute sounds when unfocused"
+              checked={settings.muteSoundsWhenUnfocused}
+              onChange={(v) => put({ muteSoundsWhenUnfocused: v })}
+            />
+          </Row>
           {/* Not "ambient bed" — that name is already taken four rows up by
               the bed's volume slider, and two controls with one label read as
               a duplicate rather than as a switch and its level. */}
@@ -3357,6 +3368,22 @@ export default function SettingsPanel(props: {
               checked={inTauri ? settings.trayQuickCapture : false}
               disabled={!inTauri}
               onChange={(v) => put({ trayQuickCapture: v })}
+            />
+          </Row>
+          <Row
+            label="close to tray"
+            words="system tray notification area minimize hide close quit taskbar background"
+            hint={
+              inTauri
+                ? 'the close button hides Alcove; Quit in the tray still exits it'
+                : 'available in the desktop app'
+            }
+          >
+            <Toggle
+              label="close to tray"
+              checked={inTauri ? settings.closeToTray : false}
+              disabled={!inTauri}
+              onChange={(v) => put({ closeToTray: v })}
             />
           </Row>
           <Row

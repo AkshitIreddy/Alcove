@@ -14,11 +14,18 @@
  *   the pages go back by pressing the back button and end, so it will look like
  *   it goes to the shelf but it is the beginning of the GIF."*
  *
+ * The Welcome book grew from sixteen to forty-eight leaves after that brief.
+ * A literal turn through all twenty-four spreads made the book look like a
+ * page-turn benchmark and buried the panels, so this cut keeps the substantial
+ * tour while curating the strongest specimens: stationery, kittens, media,
+ * diagrams, maths/code and linked notes. Contents and thumbnails are each used
+ * once; real turns join the nearby spreads; every book panel gets its own beat.
+ *
  * ## The loop is the constraint that shapes everything
  *
- * `loopAnchor()` makes gifsmith trim to the best hold-to-hold seam, and the
- * last frame then IS the first frame — no crossfade, no ghosting. That only
- * works if the scene genuinely comes home, which has one consequence worth
+ * `loopAnchor()` makes gifsmith trim to the best hold-to-hold seam, with no
+ * visible crossfade or ghosting. That only works if the scene genuinely comes
+ * home, which has one consequence worth
  * stating because it is easy to get wrong: **the studio has to finish on the
  * room it started in.** A demo that shows off four rooms and stops on the
  * fourth cannot loop, because the shelf the reader lands back on is not the
@@ -61,7 +68,7 @@
  * the shelf from degrading its effects — see `world.ts`.
  *
  *   npm run dev          (a dev server on :1420)
- *   node shots-now/demo-gif.mjs
+ *   node shots-now/demo-gif.mjs --gifsmith-local=file:///C:/path/to/gifsmith/dist/index.js
  *   node shots-now/demo-gif.mjs --check     (dry run + contact sheet, no encode)
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -85,6 +92,61 @@ const props = await import(
 );
 const { render, timeline, dryRun, contactSheet } = gifsmith;
 const { cursor, bezel } = props;
+
+/**
+ * Timeline callbacks receive gifsmith's capture clock during a render, while
+ * its cheap snapshot/contact-sheet player deliberately calls them with only a
+ * page. Keep one clock-shaped seam so `--check` exercises the exact same
+ * callback code instead of crashing on the first `ctx.advance`.
+ */
+async function advanceScene(page, ctx, durationMs) {
+  if (typeof ctx?.advance === 'function') {
+    await ctx.advance(durationMs);
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+async function settleScene(ctx, promise, options) {
+  if (typeof ctx?.settle === 'function') return ctx.settle(promise, options);
+  return promise;
+}
+
+/**
+ * Click one exact viewport point with the pointer the film shows.
+ *
+ * gifsmith's selector click intentionally aims its cursor at an element's
+ * centre. That is right for buttons, but two of this demo's real affordances
+ * are regions rather than DOM buttons: a Pixi spine and the page's bottom
+ * corner grip. Moving only Puppeteer's hidden pointer made those actions look
+ * telepathic; aiming at the centre of the full-height flip hotspot made a
+ * valid click look detached from the dog-ear that teaches the gesture.
+ *
+ * Keep the synthetic cursor, ripple and browser pointer on the SAME point.
+ * `settleScene` walks the virtual clock while the in-page cursor tween runs,
+ * so deterministic capture records the journey rather than its last frame.
+ */
+async function cursorClickPoint(
+  page,
+  ctx,
+  point,
+  { durationMs = 520, label = 'point click' } = {},
+) {
+  await settleScene(
+    ctx,
+    page.evaluate(
+      ({ x, y, duration }) => globalThis.__gifsmith?.cursorTo(x, y, duration, 'easeInOut'),
+      { x: point.x, y: point.y, duration: durationMs },
+    ),
+    { capMs: durationMs + 1_000, label: `${label} cursor` },
+  );
+  await page.mouse.move(point.x, point.y);
+  await page.evaluate(
+    ({ x, y }) => globalThis.__gifsmith?.ripple(x, y),
+    { x: point.x, y: point.y },
+  );
+  await page.mouse.click(point.x, point.y);
+}
 
 /**
  * Native smooth scrolling is scheduled by Chromium's compositor. Deterministic
@@ -119,7 +181,36 @@ async function sceneScroll(page, ctx, selector, destination, durationMs) {
       const scroller = document.querySelector(selector)?.closest('.nb-rail-panel-body');
       if (scroller instanceof HTMLElement) scroller.scrollTop = top;
     }, { selector, top: range.from + ((range.to - range.from) * eased) });
-    await ctx.advance(durationMs / steps);
+    await advanceScene(page, ctx, durationMs / steps);
+  }
+}
+
+/** Deterministic horizontal counterpart used by the page filmstrip. */
+async function sceneScrollInline(page, ctx, selector, durationMs) {
+  const range = await page.evaluate((wanted) => {
+    const subject = document.querySelector(wanted);
+    const scroller = subject?.closest('.nb-thumb-strip');
+    if (!(subject instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return null;
+    const from = scroller.scrollLeft;
+    const stripRect = scroller.getBoundingClientRect();
+    const subjectRect = subject.getBoundingClientRect();
+    const subjectCenter =
+      from + (subjectRect.left + subjectRect.right) / 2 - stripRect.left;
+    const max = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const to = Math.max(0, Math.min(max, subjectCenter - scroller.clientWidth / 2));
+    return { from, to };
+  }, selector);
+  if (!range || Math.abs(range.to - range.from) < 1) return;
+
+  const steps = Math.max(2, Math.ceil(durationMs / 70));
+  for (let step = 1; step <= steps; step += 1) {
+    const p = step / steps;
+    const eased = p * p * (3 - 2 * p);
+    await page.evaluate(({ left }) => {
+      const strip = document.querySelector('.nb-thumb-strip');
+      if (strip instanceof HTMLElement) strip.scrollLeft = left;
+    }, { left: range.from + ((range.to - range.from) * eased) });
+    await advanceScene(page, ctx, durationMs / steps);
   }
 }
 
@@ -130,11 +221,7 @@ async function sceneScroll(page, ctx, selector, destination, durationMs) {
  */
 async function settleSpines(page, ctx, { hi = true, label = 'spines' } = {}) {
   const promise = page.evaluate((wantHi) => globalThis.__shelfWhenSpinesReady(wantHi), hi);
-  if (typeof ctx?.settle === 'function') {
-    await ctx.settle(promise, { capMs: 30_000, label });
-  } else {
-    await promise;
-  }
+  await settleScene(ctx, promise, { capMs: 30_000, label });
 }
 
 const opt = (name, fallback) => {
@@ -150,6 +237,15 @@ const URL_BASE = opt('url', 'http://localhost:1420');
  * picture of the product. Both are the same two the README shots take.
  */
 const APP_URL = `${URL_BASE}/?fx=force&dev=0`;
+
+/*
+ * The anchor sees the cursor before its first journey. Bring it back to this
+ * exact quiet corner before the closing hold too, otherwise the app itself
+ * loops perfectly while the synthetic pointer alone teleports at the seam.
+ * This is explicit rather than relying on gifsmith's viewport-derived default
+ * so a future viewport edit cannot silently move one end of the loop.
+ */
+const LOOP_CURSOR_HOME = Object.freeze({ x: 54, y: 24 });
 
 const OUT_DIR = 'docs/readme/img';
 mkdirSync(OUT_DIR, { recursive: true });
@@ -227,7 +323,8 @@ const tl = timeline((t) => {
     // `page.evaluate` cannot resolve unless the page runs, and under a paused
     // virtual clock the page does not run until we spend some. Awaiting it
     // directly hangs the render with no timeout and no output.
-    await ctx.settle(
+    await settleScene(
+      ctx,
       page.evaluate(async () => {
         await globalThis.__shelfWorld.ready;
       }),
@@ -246,7 +343,7 @@ const tl = timeline((t) => {
       );
       skip?.click();
     });
-    await ctx.advance(900);
+    await advanceScene(page, ctx, 900);
     // Stock three floors. Awaited one floor at a time — each is a run of
     // inserts plus a store refresh, and firing all three at once races the
     // slot allocator. The insert run is async inside the page, so it is a
@@ -257,16 +354,35 @@ const tl = timeline((t) => {
       [1, FLOOR_2],
       [2, FLOOR_3],
     ]) {
-      await ctx.settle(
+      await settleScene(
+        ctx,
         page.evaluate(
           ([f, list]) => globalThis.__shelfSeedBooks(list, f),
           [floor, titles],
         ),
         { capMs: 20_000, label: `__shelfSeedBooks(floor ${floor})` },
       );
-      await ctx.advance(1400);
+      await advanceScene(page, ctx, 1400);
     }
-    await ctx.advance(3000);
+    // Opening the Welcome book later makes it the world's recent book and
+    // adds the pale status ribbon to its spine. The loop closes after that
+    // state change, so the anchor has to start with the same mark or the last
+    // frame toggles one ornament as it returns to frame one. Use the world
+    // instance the app exposes — importing the data module from this page can
+    // resolve an HMR-duplicated store that the visible shelf never observes.
+    const recent = await page.evaluate(() => {
+      const books = globalThis.__shelfVisibleBooks?.() ?? [];
+      const welcome = books.find((book) => /welcome/i.test(book.title)) ?? books[0];
+      if (!welcome || typeof globalThis.__shelfWorld?.noteBookOpened !== 'function') {
+        return { ok: false, seen: books.length };
+      }
+      globalThis.__shelfWorld.noteBookOpened(welcome.id);
+      return { ok: true, title: welcome.title };
+    });
+    if (!recent.ok) {
+      throw new Error(`demo-gif: cannot mark Welcome recent (${recent.seen} visible)`);
+    }
+    await advanceScene(page, ctx, 3000);
     await settleSpines(page, ctx, { label: 'seeded shelf spines' });
   });
   t.call(async function settleShelfForSeam(page, ctx) {
@@ -354,14 +470,28 @@ const tl = timeline((t) => {
     t.call(async function settleStudioRepaint(page, ctx) {
       await settleSpines(page, ctx, { label: `studio spines after ${step.name ?? step.strip}` });
       // The dashed add-slot is a DOM overlay the world can publish a beat after
-      // the Pixi room settles; spend its fade before the declared hold.
-      if (typeof ctx?.advance === 'function') await ctx.advance(250);
+      // the Pixi room settles; spend its 180ms fade before the declared hold.
+      await advanceScene(page, ctx, 190);
     }, { name: `settle spines after ${step.name ?? step.strip}` });
-    t.hold(1.5);
+    // The applied-state gate above owns correctness; this is only the beat in
+    // which the viewer sees the finished choice. The former 1.5s pause after
+    // every tile made the studio feel slower than the app.
+    t.hold(0.65);
   }
 
+  /* The studio has a second, materially different surface for the reader's
+   * own packs. Show it without replacing or shortening the room tour above,
+   * then restore the library pane before closing so the handoff remains
+   * legible and the loop still ends on the restored House Room. */
+  t.click('[data-studio-tab="own"]', { via: 'cursor' });
+  t.waitFor('[role="tabpanel"][aria-label="Your own"]');
+  t.hold(0.85);
+  t.click('[data-studio-tab="library"]', { via: 'cursor' });
+  t.waitFor('[role="tabpanel"][aria-label="This library"]');
+  t.hold(0.45);
+
   t.click('[aria-label="Close Library studio"]', { via: 'cursor' });
-  t.hold(1.0);
+  t.hold(0.65);
 
   /* -------------------------- 3. open a book ----------------------------- */
 
@@ -377,16 +507,26 @@ const tl = timeline((t) => {
    * Which is the better demo anyway: the reader sees the book leave the shelf
    * and then sees it opened, rather than the shelf cutting to a spread.
    */
-  t.call(async function pullOutTheBook(page) {
-    const opened = await page.evaluate(() => {
+  t.call(async function pullOutTheBook(page, ctx) {
+    const target = await page.evaluate(() => {
       const books = globalThis.__shelfVisibleBooks?.() ?? [];
       const welcome = books.find((b) => /welcome/i.test(b.title)) ?? books[0];
       if (!welcome) return { ok: false, seen: books.length };
-      globalThis.__shelfPullOut(welcome.id);
-      return { ok: true, title: welcome.title, seen: books.length };
+      const rect = globalThis.__shelfSpineRect?.(welcome.id);
+      if (!rect) return { ok: false, seen: books.length };
+      return {
+        ok: true,
+        title: welcome.title,
+        seen: books.length,
+        point: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+      };
     });
-    if (!opened.ok) throw new Error(`demo-gif: no book to pull out (${opened.seen} visible)`);
-  });
+    if (!target.ok) throw new Error(`demo-gif: no book spine to click (${target.seen} visible)`);
+    await cursorClickPoint(page, ctx, target.point, {
+      durationMs: 620,
+      label: `click ${target.title}`,
+    });
+  }, { name: 'click the Welcome spine', seconds: 0.62 });
   t.waitFor('.pulled-book');
   // Let the hinge, the arc and the overshoot finish before touching it.
   t.hold(1.1);
@@ -394,33 +534,119 @@ const tl = timeline((t) => {
    * A REAL pointer, which `via: 'cursor'` gives. The cover listens for pointer
    * events, so a synthetic `element.click()` does nothing at all — checked,
    * because it silently left the demo on the shelf for the rest of the scene.
+   *
+   * The click is also a route boundary: the pulled cover unmounts and the live
+   * spread mounts in one product frame. Chrome's View Transition API looked
+   * right in a live dry run but `Page.captureScreenshot` did not expose its
+   * pseudo-layer to deterministic capture, so the encoded demo still hard-cut.
+   *
+   * Keep an exact, full-resolution photograph of the REAL pre-click frame over
+   * the route swap, split it at the book's gutter, then part the two OPAQUE
+   * halves over the REAL live spread. A crossfade is the wrong transition for
+   * two detailed scenes: its middle necessarily shows the cover, shelf and
+   * readable pages at once. The centre reveal gives every pixel one owner and
+   * still reads as the same book opening. Transform is stepped on gifsmith's
+   * scene clock, so every intermediate paint is guaranteed to become an
+   * output frame. The synthetic cursor is hidden only while the photograph is
+   * taken and remains live/crisp above it.
    */
+  t.call(async function stageRealBookHandoff(page) {
+    const cursorVisibility = await page.evaluate(() => {
+      const cursor = document.getElementById('__gifsmith_cursor');
+      if (cursor === null) return null;
+      const before = cursor.style.visibility;
+      cursor.style.visibility = 'hidden';
+      return before;
+    });
+    const pngBase64 = await page.screenshot({ type: 'png', encoding: 'base64' });
+    await page.evaluate((visibility) => {
+      const cursor = document.getElementById('__gifsmith_cursor');
+      if (cursor !== null) cursor.style.visibility = visibility ?? '';
+    }, cursorVisibility);
+    const dataUrl = `data:image/png;base64,${pngBase64}`;
+    const staged = await page.evaluate(async (src) => {
+      if (!document.querySelector('.pulled-book')) return false;
+      document.getElementById('__demo-book-handoff')?.remove();
+      const handoff = document.createElement('div');
+      handoff.id = '__demo-book-handoff';
+      handoff.style.cssText = [
+        'position:fixed',
+        'inset:0',
+        'overflow:hidden',
+        'pointer-events:none',
+        // Above the app + captured bezel, below gifsmith's live cursor/ripple.
+        'z-index:2147483640',
+      ].join(';');
+
+      const half = (side) => {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.src = src;
+        image.dataset.demoHandoffHalf = side;
+        image.style.cssText = [
+          'position:absolute',
+          'inset:0',
+          'width:100%',
+          'height:100%',
+          'object-fit:fill',
+          `clip-path:${side === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)'}`,
+          'transform:translate3d(0,0,0)',
+          'will-change:transform',
+        ].join(';');
+        handoff.append(image);
+        return image;
+      };
+
+      const halves = [half('left'), half('right')];
+      document.body.append(handoff);
+      try {
+        await Promise.all(halves.map((image) => image.decode()));
+      } catch {
+        handoff.remove();
+        return false;
+      }
+      return halves.every((image) => image.complete && image.naturalWidth > 0);
+    }, dataUrl);
+    if (!staged) throw new Error('demo-gif: cannot stage cover-to-spread handoff');
+  }, { name: 'stage real cover-to-spread handoff' });
   t.click('.pulled-book', { via: 'cursor' });
   t.waitFor('.nb-prose');
-  t.hold(1.6);
+  t.call(async function revealRealBookHandoff(page, ctx) {
+    const steps = Math.max(7, Math.round(440 / Math.max(1, ctx?.frameMs || 63)));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const eased = t * t * (3 - 2 * t);
+      const present = await page.evaluate((progress) => {
+        const handoff = document.getElementById('__demo-book-handoff');
+        const left = handoff?.querySelector('[data-demo-handoff-half="left"]');
+        const right = handoff?.querySelector('[data-demo-handoff-half="right"]');
+        if (!(left instanceof HTMLImageElement) || !(right instanceof HTMLImageElement)) {
+          return false;
+        }
+        // Each image is viewport-wide but exposes one half, so 50% clears it.
+        left.style.transform = `translate3d(${-50 * progress}%,0,0)`;
+        right.style.transform = `translate3d(${50 * progress}%,0,0)`;
+        return true;
+      }, eased);
+      if (!present) throw new Error('demo-gif: staged book handoff disappeared early');
+      await advanceScene(page, ctx, 440 / steps);
+    }
+    await page.evaluate(() => document.getElementById('__demo-book-handoff')?.remove());
+  }, { name: 'reveal real cover-to-spread handoff', seconds: 0.44 });
+  t.hold(1.1);
   t.cue('book');
+  t.call(async function normalizeBookChrome(page, ctx) {
+    // A failed prior check can leave the persistent thumbnail preference on.
+    // Start from the same chrome every time, then restore it after the finale.
+    await settleScene(
+      ctx,
+      page.evaluate(() => globalThis.__shelfSaveSettings({ thumbnailsStrip: false })),
+      { capMs: 5_000, label: 'hide thumbnails before storyboard' },
+    );
+    await advanceScene(page, ctx, 250);
+  }, { name: 'normalize book chrome', seconds: 0.25 });
 
-  /* ------------------ 4. turn pages, opening panels between --------------- */
-
-  /*
-   * One panel between turns, so all of them are opened without the middle of
-   * the demo becoming a list of panels. Each is opened by its own rail button
-   * and closed by its own ✕ — never Escape, which is also how a reader puts
-   * the book back and would end the scene early.
-   */
-  /*
-   * The sheet roots carry the SHORT name — `.nb-share`, not `.nb-share-panel`,
-   * and `.nb-pagestyle`, not `.nb-page-style`. Guessing these cost a
-   * five-minute run in `readme-shots.mjs`, because a wrong selector does not
-   * error: the opener just keeps clicking a toggle and waiting.
-   */
-  const PANELS = [
-    ['Page style', '.nb-pagestyle'],
-    ['Catalogue', '.nb-catalogue'],
-    ['Table of contents', '.nb-toc'],
-    ['Customize this book', '.nb-book-studio'],
-    ['In and out', '.nb-share'],
-  ];
+  /* --------------------- 4. the forty-eight-leaf field guide -------------- */
 
   /*
    * A READER'S PACE, and it is not only about the look.
@@ -455,14 +681,12 @@ const tl = timeline((t) => {
    * file drives the affordance the app actually has.
    */
   /*
-   * AND THE 1900 IS NOW SCENE TIME, WHICH IS THE WHOLE POINT.
+   * THE TURN WAITS ON ITS REAL PHASES, NOT ON A FIXED PAUSE.
    *
-   * As a real-time sleep this was the recording machine's 1900ms: enough on a
-   * quiet run, not enough while the raster cache was warming, and under the
-   * virtual clock not a single rendered frame — the curl would have been
-   * skipped over rather than filmed. `ctx.advance(1900)` is 1900ms of the
-   * SCENE, so at 14fps and speed 1.1 it is exactly 24 frames of page turn, on
-   * this machine and on anyone else's.
+   * The visible cursor journey is advanced on gifsmith's scene clock, the app
+   * owns the curl's duration, and the landing gate below waits for both the
+   * canvas and its handoff class to clear. That records however many frames the
+   * real turn needs without padding every turn with the old fixed 1.9 seconds.
    */
   /*
    * THE DEMO CLICKS THE PAGE EDGE. It used to press →, and that key no longer
@@ -487,29 +711,72 @@ const tl = timeline((t) => {
    * shows nothing; a cursor going to the edge of the page and the page peeling
    * after it shows the reader what to do with their hand.
    *
-   * The pacing is unchanged and still deliberate: ~1.9s of SCENE time per turn,
-   * because the raster cache warms the next faces in idle time and a turn that
-   * outruns the warm falls back to the rigid fold. Measured earlier: at 1.6s
-   * between turns 2 of 4 had all their faces, at 3s it was 4 of 4.
+   * The pacing is still deliberate: the readiness gate waits for warm faces,
+   * the app runs its real turn, and only then does the page get a short reading
+   * beat. A cache race therefore cannot turn a shorter demo pause into a blank
+   * or rigid-fold frame.
    */
-  const turn = () => {
-    t.click('.nb-flip-hotspot-next', { via: 'cursor' });
-    t.call(async function letTheTurnRun(page, ctx) {
-      await ctx.advance(1900);
+  const turn = (expectedHeading, expectedSpread) => {
+    // Keep the filmed curl on the warmed path. A real reader can use the live
+    // fold fallback immediately; the demo can wait briefly and show the
+    // richer curl rather than filming a cache race.
+    t.waitUntil(() => {
+      const faces = globalThis.__flipCache?.facesFor?.('next');
+      return Boolean(
+        faces && faces.hasFront && faces.hasRevealed && faces.fresh &&
+        faces.quiet && faces.aheadPending === 0
+      );
     });
-    t.hold(1.0);
+    t.call(async function clickTheVisiblePageCorner(page, ctx) {
+      const before = await page.$eval('[data-spread-index]', (node) =>
+        Number(node.getAttribute('data-spread-index')),
+      );
+      if (before + 1 !== expectedSpread) {
+        throw new Error(
+          `demo-gif: storyboard drift before "${expectedHeading}" ` +
+          `(at spread ${before}, expected ${expectedSpread - 1})`,
+        );
+      }
+      await page.evaluate(({ spread, heading }) => {
+        globalThis.__demoExpectedSpread = spread;
+        globalThis.__demoExpectedHeading = heading;
+      }, { spread: expectedSpread, heading: expectedHeading });
+      const point = await page.$eval('.nb-flip-hotspot-next', (hotspot) => {
+        const rect = hotspot.getBoundingClientRect();
+        return { x: rect.right - 18, y: rect.bottom - 18 };
+      });
+      await cursorClickPoint(page, ctx, point, {
+        durationMs: 480,
+        label: 'click the bottom-right page corner',
+      });
+    }, { name: 'click the visible page corner', seconds: 0.48 });
+    // Wait on the overlay itself. A fixed 1.9s wait filmed more still paper
+    // than animation and could still be wrong on a stalled frame.
+    t.waitUntil(() =>
+      document.querySelector('.nb-flip-canvas.is-flipping') === null &&
+      !document.querySelector('.nb-flip-surface.is-flip-landing') &&
+      Number(document.querySelector('[data-spread-index]')?.getAttribute('data-spread-index')) ===
+        globalThis.__demoExpectedSpread &&
+      [...document.querySelectorAll('.nb-leaf-paper h1')].some(
+        (heading) => heading.textContent?.trim() === globalThis.__demoExpectedHeading,
+      )
+    );
+    t.hold(0.6);
   };
 
-  turn();
-  for (const [name, selector] of PANELS) {
+  /*
+   * Open one substantial book sheet, let it be read, and close it through its
+   * own button. The contents sheet is deliberately not handled here: choosing
+   * a chapter from it closes it as part of the real navigation path.
+   */
+  const showPanel = (
+    name,
+    selector,
+    { hold = 1.25, showFoot = false, closeName = name } = {},
+  ) => {
     t.click(`.nb-rail button[aria-label^="${name}"]`, { via: 'cursor' });
     t.waitFor(selector);
-    /*
-     * Long enough to actually READ the panel. *"not enough time is given to
-     * view the panels sometimes"* — and a panel is the densest thing in the
-     * demo: the catalogue alone is forty labelled tiles.
-     */
-    if (name === 'In and out') {
+    if (showFoot) {
       /*
        * This is the one panel whose last explanatory sentence sits just below
        * the fold at the demo viewport. Holding the unscrolled sheet filmed a
@@ -517,44 +784,374 @@ const tl = timeline((t) => {
        * then deliberately show that the sheet scrolls and let its foot land in
        * full; the total reading time remains unhurried.
        */
-      t.hold(1.2);
+      t.hold(0.85);
       t.call(async function showSharePanelFoot(page, ctx) {
-        await sceneScroll(page, ctx, '.nb-share', 'end', 700);
-      }, { name: 'scroll In and out to its foot' });
-      t.hold(1.2);
+        await sceneScroll(page, ctx, selector, 'end', 520);
+      }, { name: 'scroll In and out to its foot', seconds: 0.52 });
+      t.hold(0.9);
     } else {
-      t.hold(2.1);
+      t.hold(hold);
     }
-    t.call(async function closeThePanel(page, ctx) {
-      const close = await page.$(`[aria-label^="Close ${name}"]`);
-      // `click()` scrolls the element into view and resolves a clickable point
-      // first, and both of those can need the page to move — so it goes through
-      // the clock rather than being awaited into a stopped scene.
-      if (close) await ctx.settle(close.click(), { capMs: 3_000, label: `Close ${name}` });
-      await ctx.advance(600);
-    }, { name: `close ${name}` });
-    t.hold(0.5);
-    turn();
-  }
-  turn();
+    // Close through the same visible pointer used to open the panel. A direct
+    // ElementHandle.click closed the sheet while the filmed cursor remained on
+    // the rail icon, which read as a second telepathic action.
+    t.click(`[aria-label^="Close ${closeName}"]`, { via: 'cursor' });
+    t.hold(0.4);
+  };
+
+  /*
+   * A distant jump the viewer can understand.
+   *
+   * TOC rows have truthful visible text but no page-specific selector. Mark
+   * the exact row in the live sheet, scroll that sheet to it one deterministic
+   * frame at a time, then let gifsmith's cursor click the real button. Going
+   * through the product is both clearer and safer than setting spread state
+   * through a private QA bridge.
+   */
+  const jumpToChapter = (
+    title,
+    spread,
+    { hold = 1.1, waitFor = [], waitUntil = null } = {},
+  ) => {
+    t.click('.nb-rail button[aria-label^="Table of contents"]', { via: 'cursor' });
+    t.waitFor('.nb-toc');
+    t.call(async function findChapterInContents(page, ctx) {
+      const marked = await page.evaluate((wanted) => {
+        for (const row of document.querySelectorAll('.nb-toc-row')) {
+          row.removeAttribute('data-demo-toc-target');
+        }
+        const row = [...document.querySelectorAll('.nb-toc-row')].find((candidate) => {
+          const text = candidate.querySelector('.nb-toc-text')?.textContent?.trim();
+          return text === wanted;
+        });
+        if (!(row instanceof HTMLElement)) return false;
+        row.setAttribute('data-demo-toc-target', 'true');
+        return true;
+      }, title);
+      if (!marked) throw new Error(`demo-gif: TOC has no chapter named "${title}"`);
+      await sceneScroll(
+        page,
+        ctx,
+        '.nb-toc-row[data-demo-toc-target="true"]',
+        'nearest',
+        500,
+      );
+    }, { name: `find ${title} in contents`, seconds: 0.5 });
+    t.click('.nb-toc-row[data-demo-toc-target="true"]', { via: 'cursor' });
+    t.call(async function waitForChapterToLand(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForFunction(
+          ({ expectedSpread, expectedTitle }) => {
+            const stage = document.querySelector('.nb-spread-stage');
+            const at = Number(stage?.getAttribute('data-spread-index'));
+            const headings = [...document.querySelectorAll('.nb-leaf-paper h1')];
+            return (
+              at === expectedSpread &&
+              headings.some((heading) => heading.textContent?.trim() === expectedTitle)
+            );
+          },
+          { timeout: 15_000 },
+          { expectedSpread: spread, expectedTitle: title },
+        ),
+        { capMs: 15_000, label: `land on ${title}` },
+      );
+      await advanceScene(page, ctx, 380);
+    }, { name: `land on ${title}`, seconds: 0.38 });
+    for (const selector of waitFor) t.waitFor(selector);
+    if (waitUntil !== null) t.waitUntil(waitUntil);
+    t.hold(hold);
+  };
+
+  /**
+   * The filmstrip is the quick route once the demo has introduced the TOC.
+   * It keeps the action attached to the pages (and visibly proves the current
+   * previews contain real ink) without reopening the same sheet for every
+   * chapter. Scroll, click and landing are all product interactions.
+   */
+  const jumpWithThumbnail = (
+    title,
+    spread,
+    { hold = 0.95, waitFor = [], waitUntil = null } = {},
+  ) => {
+    const selector = `.nb-thumb[aria-label^="Jump to ${title}"]`;
+    t.call(async function bringThumbnailIntoView(page, ctx) {
+      // Browser hover and gifsmith's filmed cursor are separate pointers. Park
+      // the real one over quiet chrome before the strip scrolls; its old
+      // tooltip fades during this 420ms movement instead of remaining pinned
+      // to the previous thumbnail while the visible cursor travels away.
+      // BookView summons its back button inside x<=280/y<=160. (110,24)
+      // looked like quiet chrome but was inside that zone, so the real hidden
+      // pointer expanded/faded the button while the filmed cursor remained on
+      // a thumbnail. Keep both facts honest by parking just outside the zone.
+      await page.mouse.move(320, 24);
+      await sceneScrollInline(page, ctx, selector, 420);
+    }, { name: `scroll the filmstrip to ${title}`, seconds: 0.42 });
+    t.click(selector, { via: 'cursor', glideSeconds: 0.34 });
+    t.call(async function waitForThumbnailDestination(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForFunction(
+          ({ expectedSpread, expectedTitle }) => {
+            const stage = document.querySelector('.nb-spread-stage');
+            const at = Number(stage?.getAttribute('data-spread-index'));
+            const headings = [...document.querySelectorAll('.nb-leaf-paper h1')];
+            return (
+              at === expectedSpread &&
+              headings.some((heading) => heading.textContent?.trim() === expectedTitle)
+            );
+          },
+          { timeout: 15_000 },
+          { expectedSpread: spread, expectedTitle: title },
+        ),
+        { capMs: 15_000, label: `land on ${title} from filmstrip` },
+      );
+      await advanceScene(page, ctx, 260);
+    }, { name: `land on ${title} from filmstrip`, seconds: 0.26 });
+    for (const required of waitFor) t.waitFor(required);
+    if (waitUntil !== null) t.waitUntil(waitUntil);
+    // The current pair must have content-bearing document previews, not the
+    // blank ruled shells the old, un-centred demo held for ten seconds.
+    t.waitUntil(() => {
+      const current = [...document.querySelectorAll('.nb-thumb.is-current .nb-thumb-paper')];
+      return current.length > 0 && current.every((paper) => paper.classList.contains('has-preview'));
+    });
+    t.hold(hold);
+  };
+
+  /**
+   * The ribbon control is both an action and the doorway to its full drawer.
+   * Show the complete panel, then remove the temporary mark before moving on:
+   * that proves page-local ribbons without changing the Welcome book at the
+   * loop boundary or making a bookmark appear to follow the next turn.
+   */
+  const showRibbons = () => {
+    const ribbonButton = '.nb-rail button[data-tool="bookmark"]';
+    t.click(ribbonButton, { via: 'cursor' });
+    t.waitFor('.nb-ribbon-plate');
+    t.hold(0.65);
+    t.click('.nb-ribbon-plate-actions button:last-child', { via: 'cursor' });
+    t.waitFor('.nb-ribbon-drawer');
+    t.hold(1.2);
+    t.click('[aria-label^="Close Ribbons"]', { via: 'cursor' });
+    t.hold(0.35);
+    t.click(ribbonButton, { via: 'cursor' });
+    t.waitUntil(() => document.querySelector('.nb-ribbon-plate') === null);
+    t.hold(0.25);
+  };
+
+  /** Open both reveal controls on the Welcome spread that teaches them. */
+  const showFoldedAside = () => {
+    const markVisibleControl = (selector, mark) =>
+      t.call(async function markRevealControl(page) {
+        const found = await page.evaluate(({ wanted, attribute }) => {
+          for (const prior of document.querySelectorAll(`[${attribute}]`)) {
+            prior.removeAttribute(attribute);
+          }
+          const control = [...document.querySelectorAll(wanted)].find((candidate) => {
+            if (!(candidate instanceof HTMLElement)) return false;
+            if (candidate.closest('[aria-hidden="true"]') !== null) return false;
+            const rect = candidate.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 &&
+              rect.left < innerWidth && rect.right > 0 &&
+              rect.top < innerHeight && rect.bottom > 0;
+          });
+          if (!(control instanceof HTMLElement)) return false;
+          control.setAttribute(attribute, 'true');
+          return true;
+        }, { wanted: selector, attribute: mark });
+        if (!found) throw new Error(`demo-gif: no visible reveal control for ${selector}`);
+      }, { name: `mark visible ${selector}` });
+
+    markVisibleControl('[data-type="details"] > button', 'data-demo-details');
+    t.click('[data-demo-details="true"]', { via: 'cursor' });
+    t.waitUntil(() => {
+      const content = document
+        .querySelector('[data-demo-details="true"]')
+        ?.closest('[data-type="details"]')
+        ?.querySelector('[data-type="detailsContent"]');
+      if (!(content instanceof HTMLElement)) return false;
+      const rect = content.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+    markVisibleControl('.nb-spoiler-toggle', 'data-demo-spoiler');
+    t.click('[data-demo-spoiler="true"]', { via: 'cursor' });
+    t.waitUntil(() =>
+      document.querySelector('[data-demo-spoiler="true"]')
+        ?.closest('.nb-spoiler')
+        ?.classList.contains('is-revealed') === true
+    );
+    t.hold(1.0);
+    // Leave the seeded Welcome page as it arrived. Closing also returns its
+    // geometry to the cached shape before the next real curl.
+    t.click('[data-demo-spoiler="true"]', { via: 'cursor' });
+    t.waitUntil(() =>
+      document.querySelector('[data-demo-spoiler="true"]')
+        ?.closest('.nb-spoiler')
+        ?.classList.contains('is-revealed') === false
+    );
+    t.click('[data-demo-details="true"]', { via: 'cursor' });
+    t.waitUntil(() => {
+      const content = document
+        .querySelector('[data-demo-details="true"]')
+        ?.closest('[data-type="details"]')
+        ?.querySelector('[data-type="detailsContent"]');
+      return !(content instanceof HTMLElement) || content.getBoundingClientRect().height === 0;
+    });
+    t.hold(0.25);
+  };
+
+  /* Opening: nearby chapters are joined by honest curls, with a different
+     panel between them so the tour never becomes a run of repeated turns. */
+  turn('The shelf is a room', 1);
+  // spread 1: The shelf is a room · More than one bookcase
+  showPanel('Customize this book', '.nb-book-studio', { hold: 1.2 });
+  turn('Dress the room', 2);
+  // spread 2: Dress the room · Dress this book
+  showPanel('Page style', '.nb-pagestyle', { hold: 1.25 });
+  turn('Paper and ribbons', 3);
+  // spread 3: Paper and ribbons · Four ways to begin
+  turn('Write by blocks', 4);
+  // spread 4: Write by blocks · Headings and dividers
+  showPanel('Catalogue', '.nb-catalogue', { hold: 1.3 });
+
+  /* Contents is introduced once and does useful work: it lands on the ledger
+     specimen so the film proves prose remains seated on its printed rules
+     after a special block. The kitten spread then arrives through ordinary
+     page turns, keeping navigation legible without making it repetitive. */
+  jumpToChapter('Cards with a purpose', 9, {
+    hold: 1.35,
+    waitFor: ['[data-type="ledger"]', '[data-type="postcard"]'],
+  });
+
+  turn('Keepsakes', 10);
+  // spread 10: keepsakes · Fold it away
+  showFoldedAside();
+  turn('Washes and fasteners', 11);
+  // spread 11: washes and fasteners · lettering cabinet
+  turn('Pictures, starring kittens', 12);
+  // spread 12: Pictures, starring kittens · One picture, properly
+  t.waitFor('.nb-image-row .nb-image-img');
+  t.waitUntil(() => {
+    const pictures = [...document.querySelectorAll('.nb-image-row .nb-image-img')];
+    return pictures.length >= 3 && pictures.every(
+      (picture) => picture instanceof HTMLImageElement &&
+        picture.complete && picture.naturalWidth > 0,
+    );
+  });
+  t.hold(1.35);
+  showRibbons();
+
+  turn('Picture beside prose', 13);
+  // spread 13: Picture beside prose · Sound and celebration
+  turn('Local video', 14);
+  // spread 14: Local video · Stickers of your own
+
+  /* One filmstrip jump introduces the other navigation surface. Its live page
+     previews remain on screen long enough to be read, then the strip closes
+     and ordinary page turns resume. */
+  t.click('.nb-rail button[aria-label^="Thumbnails strip"]', { via: 'cursor' });
+  t.waitFor('.nb-thumb-strip');
+  jumpWithThumbnail('A tree of ideas', 15, {
+    hold: 1.35,
+    waitUntil: () => document.querySelectorAll('.nb-diagram svg').length >= 2,
+  });
+  t.click('.nb-rail button[aria-label^="Thumbnails strip"]', { via: 'cursor' });
+  t.waitUntil(() => document.querySelector('.nb-thumb-strip') === null);
+  t.hold(0.25);
+
+  turn('A graph of connections', 16);
+  // spread 16: A graph of connections · A process, step by step
+  t.waitUntil(() => document.querySelectorAll('.nb-diagram svg').length >= 2);
+  t.hold(1.0);
+  turn('A timeline', 17);
+  // spread 17: A timeline · Diagrams stay editable
+  turn('Maths in the margins', 18);
+  // spread 18: Maths in the margins · Code, kept exactly
+  turn('Notes at the foot', 19);
+  // spread 19: Notes at the foot · Pages point at pages
+  turn('Find anything again', 20);
+  // spread 20: Find anything again · Four ways through
+
+  /* The closing feature pages now meet their controls instead of being
+     omitted: focus beside its guide, history beside autosave, then the full
+     transfer panel beside Notebook Script and the final invitation. */
+  turn('Focus, zoom, and leaf', 21);
+  // spread 21: Focus, zoom, and leaf · History and autosave
+  t.click('.nb-rail button[data-tool="focus"]', { via: 'cursor' });
+  t.hold(0.9);
+  t.click('[aria-label="Leave focus mode (Escape)"]', { via: 'cursor' });
+  t.hold(0.45);
+  showPanel('Page history', '.nb-history', {
+    hold: 1.1,
+    closeName: 'Turn back time',
+  });
+  turn('Daily pages and templates', 22);
+  // spread 22: Daily pages and templates · Notebook Script
+  turn('In, out, and safekeeping', 23);
+  // spread 23 (the 24th/final spread): In, out, and safekeeping · This leaf is yours
+  showPanel('In and out', '.nb-share', { showFoot: true });
+  t.hold(1.15);
 
   /* --------------------------- 5. back to the shelf ----------------------- */
 
-  t.call(async function summonTheBackButton(page, ctx) {
-    // The way back lives in the top-left corner and fades to a pencil mark
-    // once the reader has settled in, so it has to be summoned before it can
-    // be pressed: the pointer entering the corner is one of the three things
-    // that brings it back (see BookView's BACK_ZONE). The 700ms is its fade,
-    // which is scene time like every other animation in the file.
-    await page.mouse.move(80, 70);
-    await ctx.advance(700);
-  });
-  t.click('.nb-back-button', { via: 'cursor' });
+  // The collapsed pencil/arrow is itself the affordance and remains clickable.
+  // Drive it directly: the visible cursor glide summons its label on the way,
+  // instead of holding a finished page for nearly a second before acting.
+  t.click('.nb-back-button', { via: 'cursor', glideSeconds: 0.36 });
+  t.call(async function filmRealBookReturn(page, ctx) {
+    /*
+     * The app already owns this movement: spread → closing cover, the same
+     * cover flying home over the resumed room, then the short canvas settle
+     * into its slot. A plain timeline `waitFor('.shelf-dock')` lets those
+     * animations finish while deterministic capture's clock is parked, which
+     * records only their endpoints as two hard cuts. Settle on the real phase
+     * boundaries while gifsmith advances its capture clock instead.
+     */
+    await settleScene(
+      ctx,
+      page.waitForSelector('.nb-book-close-bridge.is-active', {
+        visible: true,
+        timeout: 0,
+      }),
+      { capMs: 500, label: 'book close bridge starts' },
+    );
+    await settleScene(
+      ctx,
+      page.waitForSelector('[data-testid="pulled-book-return-wash"]', {
+        visible: true,
+        timeout: 0,
+      }),
+      { capMs: 900, label: 'closing cover reaches return route' },
+    );
+    await settleScene(
+      ctx,
+      page.waitForSelector('.pulled-book', { hidden: true, timeout: 0 }),
+      { capMs: 1_000, label: 'returning DOM cover reaches its shelf slot' },
+    );
+    // The final owner is Pixi's short insertion ghost (0.56s at motion=1).
+    // It has no DOM node to await, so spend its declared duration plus one
+    // capture frame before the still-shelf gate below is allowed to begin.
+    await advanceScene(page, ctx, 640);
+  }, { name: 'film the real book return', seconds: 1.5 });
   t.waitFor('.shelf-dock');
   t.call(async function settleReturnShelf(page, ctx) {
     await settleSpines(page, ctx, { label: 'return shelf spines' });
-    if (typeof ctx?.advance === 'function') await ctx.advance(250);
-  }, { name: 'settle return shelf spines' });
+    // The dashed add-book affordance arrives independently of the Pixi
+    // spines. Gate on its real, visible DOM node, then spend more than its
+    // declared 180ms `shelf-addslot-arrive` animation before the final hold is
+    // allowed to begin. That keeps motion out of a beat the ledger calls still.
+    await settleScene(
+      ctx,
+      page.waitForSelector('.shelf-addslot', { visible: true, timeout: 0 }),
+      { capMs: 2_000, label: 'return shelf add-slot' },
+    );
+    await advanceScene(page, ctx, 220);
+  }, { name: 'settle return shelf and add-slot', seconds: 0.22 });
+  // Match the anchor's pointer pose as well as its shelf pose. In practice the
+  // back button already leaves it close to here, so this is a small retreat,
+  // not a conspicuous cursor-only epilogue.
+  t.cursorTo(LOOP_CURSOR_HOME, 0.28, 'easeOut');
   /*
    * Land, and settle into the SAME pose the anchor was taken in. This hold is
    * what gives the trimmer a matching frame to cut on; too short and the seam
@@ -571,10 +1168,9 @@ const scene = {
     // rasteriser every probe in this repo uses.
     args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
   },
-  out: `${OUT_DIR}/demo.gif`,
-  alsoEmit: ['webp'],
+  out: `${OUT_DIR}/demo.webp`,
   viewport: { width: 1360, height: 850 },
-  props: [cursor(), bezel()],
+  props: [cursor({ start: LOOP_CURSOR_HOME }), bezel()],
   timeline: tl,
   /*
    * RENDERED, NOT RECORDED — and the frames kept lossless on the way out.
@@ -645,7 +1241,7 @@ const scene = {
 if (CHECK) {
   const plan = await dryRun(scene);
   console.log(JSON.stringify(plan, null, 2));
-  const sheet = await contactSheet(scene, 9);
+  const sheet = await contactSheet(scene, 16);
   // The shape varies by version, so take whichever field carries the base64
   // rather than assuming one — an object handed to Buffer.from throws.
   const b64 = typeof sheet === 'string' ? sheet : (sheet.gridBase64 ?? sheet.png ?? sheet.base64);

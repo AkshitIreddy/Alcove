@@ -95,14 +95,13 @@ async function readAssetBytes(
   if (!input.options.includeAssets || input.plan.assets.length === 0) return undefined;
   if (!isTauri()) return undefined;
   try {
-    const { BaseDirectory, readFile } = await import('@tauri-apps/plugin-fs');
     const bytes = new Map<string, Uint8Array>();
     for (const asset of input.plan.assets) {
       try {
-        bytes.set(
-          asset.relPath,
-          await readFile(`assets/${asset.relPath}`, { baseDir: BaseDirectory.AppData }),
-        );
+        const raw = await tauriInvoke<number[]>('library_asset_read', {
+          relPath: asset.relPath,
+        });
+        bytes.set(asset.relPath, Uint8Array.from(raw));
       } catch {
         // Missing file: keep the manifest entry, ship no bytes.
       }

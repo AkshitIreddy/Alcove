@@ -577,10 +577,10 @@ export function solidScrimPath(vp: Size): string {
  * tour walks on. Long enough to read the line and see the tick draw; short
  * enough that finishing a step feels like it moved you forward.
  */
-export const CELEBRATE_MS = 1500;
+export const CELEBRATE_MS = 5000;
 
 /** With motion off there is no tick to watch draw, so do not sit there. */
-export const CELEBRATE_SNAP_MS = 450;
+export const CELEBRATE_SNAP_MS = 1500;
 
 /**
  * How long to hold before advancing, given the step's own `dwell` and the

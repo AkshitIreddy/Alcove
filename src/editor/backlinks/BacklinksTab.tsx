@@ -68,7 +68,6 @@ export default function BacklinksTab(props: BacklinksTabProps): JSX.Element {
 
   const toggle = (): void => {
     setOpen((was) => !was);
-    void play('pop-soft');
   };
 
   const follow = (card: PageCard): void => {

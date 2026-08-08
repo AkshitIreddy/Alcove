@@ -10,7 +10,7 @@ name: Release
 #
 # The shape is three jobs, not one matrix, and that is deliberate:
 #
-#   gates   — tsc, vitest, spec:check, readme:check and the icon audit, ONCE,
+#   gates   — tsc, the fast logic gate, spec:check, readme:check and the icon audit, ONCE,
 #             on the cheapest runner. None of them can fail differently on a
 #             different operating system, so running them three times would buy
 #             nothing and cost the slowest runner in the matrix.
@@ -96,14 +96,32 @@ jobs:
           # thrown away. The download cache is the part that saves the network.
           cache: npm
 
+      # The feed version and the version inside the downloaded installer must
+      # agree. Otherwise the old binary comes back after relaunch and offers
+      # the same update forever.
+      - name: Tag matches the bundled app version
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const version = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8")).version;
+            if (process.env.TAG !== `v${version}`) {
+              throw new Error(`tag ${process.env.TAG} does not match bundled app version v${version}`);
+            }
+          '
+
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --fund=false
 
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Unit tests
-        run: npx vitest run
+      - name: Fast logic gate
+        run: npm test
+
+      - name: Release-only logic gates
+        run: npm run test:release
 
       - name: Generated spec is current
         run: npm run spec:check
@@ -148,6 +166,7 @@ jobs:
             tauri-args: ''
             artefacts: |
               src-tauri/target/release/bundle/nsis/*-setup.exe
+              src-tauri/target/release/bundle/nsis/*-setup.exe.sig
               src-tauri/target/release/bundle/nsis/*-setup-offline.exe
               src-tauri/target/release/bundle/msi/*.msi
 
@@ -169,6 +188,8 @@ jobs:
             tauri-args: '--target universal-apple-darwin'
             artefacts: |
               src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
 
           # 22.04 on purpose. The .deb and the AppImage are linked against the
           # builder's glibc, so building on 24.04 (glibc 2.39) would produce a
@@ -182,6 +203,7 @@ jobs:
               src-tauri/target/release/bundle/deb/*.deb
               src-tauri/target/release/bundle/rpm/*.rpm
               src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/appimage/*.AppImage.sig
 
     steps:
       - name: Checkout
@@ -250,6 +272,20 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --fund=false
 
+      # Updater signatures are not Authenticode/notarisation. They are the
+      # cryptographic proof the already-installed app requires before it will
+      # run a downloaded update. The private half lives only in GitHub Actions;
+      # the public half is embedded in tauri.conf.json.
+      - name: Updater signing key is configured
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY repository secret before releasing"
+            exit 1
+          fi
+
       # The Rust unit tests, on one runner only.
       #
       # They had never run anywhere. The Gates job has no Rust in it — no
@@ -283,6 +319,8 @@ jobs:
         # rather than guarded, and can be dropped once that is no longer true.
         env:
           NO_STRIP: 'true'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build ${{ matrix.tauri-args }}
 
       # ---------------------------------------------------------------------
@@ -332,14 +370,16 @@ jobs:
           set -euo pipefail
           mkdir -p keep
           mv nsis/*-setup.exe keep/
+          mv nsis/*-setup.exe.sig keep/
           cd "$GITHUB_WORKSPACE"
           npx tauri build --bundles nsis \
-            --config '{"bundle":{"windows":{"webviewInstallMode":{"type":"offlineInstaller","silent":true}}}}'
+            --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"webviewInstallMode":{"type":"offlineInstaller","silent":true}}}}'
           cd src-tauri/target/release/bundle
           for f in nsis/*-setup.exe; do
             mv "$f" "nsis/$(basename "${f%-setup.exe}")-setup-offline.exe"
           done
           mv keep/*-setup.exe nsis/
+          mv keep/*-setup.exe.sig nsis/
           rmdir keep
           ls -lh nsis
 
@@ -424,7 +464,7 @@ jobs:
           # is a platform a reader was promised on the download table, so a
           # missing one is a broken promise rather than a smaller release.
           missing=''
-          for pattern in '*-setup.exe' '*-setup-offline.exe' '*.msi' '*.dmg' '*.deb' '*.rpm' '*.AppImage'; do
+          for pattern in '*-setup.exe' '*-setup.exe.sig' '*-setup-offline.exe' '*.msi' '*.dmg' '*.app.tar.gz' '*.app.tar.gz.sig' '*.deb' '*.rpm' '*.AppImage' '*.AppImage.sig'; do
             # shellcheck disable=SC2086
             set -- $pattern
             [ -e "$1" ] || missing="$missing $pattern"
@@ -434,8 +474,33 @@ jobs:
             exit 1
           fi
 
-      # Neither the .dmg nor the AppImage is code-signed, so a reader has no
-      # way to tell a good download from a truncated one. Ship the sums.
+      # `latest.json` is the stable endpoint embedded in every installed copy
+      # of Alcove. Its URLs point at this immutable tag, and its signatures are
+      # the contents of the `.sig` files rather than links to them.
+      - name: Write signed updater manifest
+        env:
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          node scripts/write-updater-json.mjs \
+            --dir artefacts \
+            --tag "$TAG" \
+            --repository "$GITHUB_REPOSITORY" \
+            --notes RELEASE_NOTES.md
+
+      - name: Prove updater metadata is complete
+        working-directory: artefacts
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const feed = JSON.parse(fs.readFileSync("latest.json", "utf8"));
+            for (const platform of ["windows-x86_64", "linux-x86_64", "darwin-aarch64", "darwin-x86_64"]) {
+              const item = feed.platforms?.[platform];
+              if (!item?.url || !item?.signature) throw new Error(`incomplete updater entry: ${platform}`);
+            }
+          '
+
+      # The updater signatures prove update authenticity to Alcove. Checksums
+      # remain useful to humans manually downloading the unsigned-code bundles.
       - name: Checksums
         working-directory: artefacts
         run: |

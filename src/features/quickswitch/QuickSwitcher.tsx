@@ -200,7 +200,6 @@ export default function QuickSwitcher(): JSX.Element {
     setRecents(recentBookIds());
     setOpen(true);
     void refreshData();
-    void play('pop-soft');
     requestAnimationFrame(() => inputEl?.focus());
   };
 

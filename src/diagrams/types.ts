@@ -6,6 +6,7 @@
  */
 
 import type { Attrs, Graph, TimelineEntry, TreeNode } from '../script/types';
+import { WASH_COLORS, type WashColor } from '../script/vocab';
 
 /** The diagram kinds the block node can host (mirrors script DiagramLang). */
 export const DIAGRAM_KINDS = [
@@ -43,18 +44,9 @@ export function isDiagramShape(value: unknown): value is DiagramShape {
 }
 
 /** Wash tints available for `{color=...}` (graphite = plain paper). */
-export const DIAGRAM_WASHES = [
-  'amber',
-  'terracotta',
-  'moss',
-  'lemon',
-  'sky',
-  'blush',
-  'plum',
-  'graphite',
-] as const;
+export const DIAGRAM_WASHES = WASH_COLORS;
 
-export type DiagramWash = (typeof DIAGRAM_WASHES)[number];
+export type DiagramWash = WashColor;
 
 export function isDiagramWash(value: unknown): value is DiagramWash {
   return (

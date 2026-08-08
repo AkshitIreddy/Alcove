@@ -221,7 +221,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * A cue whose file no longer resolves is DROPPED rather than registered with
  * a placeholder src. A dropped cue falls through to the base set and the
- * reader hears the app; a registered-but-broken one would be a Howl that
+ * reader hears the app; a registered-but-broken one would be a decoded sound that
  * fails to decode, i.e. one role that is silent forever with nothing on
  * screen to say why.
  */

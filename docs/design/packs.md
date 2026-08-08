@@ -1,7 +1,6 @@
 # Packs — the reader's own work
 
-> Status: **current**. Implemented in `src/features/packs/`, gated by
-> `tests/packs.test.ts`, driven end to end by `scripts/probe-packs.mjs`.
+> Status: **current**. Implemented in `src/features/packs/`.
 
 The reader asked for this, in these words:
 
@@ -43,9 +42,8 @@ importer    is told to    told to do             brought in
 accepts     produce
 ```
 
-`tests/packs.test.ts` closes the loop from the far end: it lifts the example
-back **out of the generated prompt text** and runs it through the **real**
-importer. Four more checks hold the seam shut:
+The generated prompt and importer share the same schema. Four invariants hold
+the seam shut:
 
 - every field key the importer reads appears in the prompt;
 - every word an enum accepts is listed in the prompt;
@@ -190,7 +188,6 @@ covers that.
 The preview tiles in `YourDesigns` are new drawn pixels, so they key on the
 room's colour key **and** the design — through `wallpaperAxisKey` and
 `shelfDesignTag`, never a local join that can fall an axis behind.
-`tests/packs.test.ts` reads the source for both.
 
 **If a pack ever carries bytes that get drawn, this section stops being true
 and a cache key has to grow.**
@@ -199,10 +196,8 @@ and a cache key has to grow.**
 
 ## 6. Where it is reachable from
 
-An importer nobody can reach is the exact failure this tree keeps finding —
-`tests/roll-gates.test.ts` exists because a whole curation gate was authored,
-exported, unit-tested and called by nothing. So there are three doors, and the
-suite checks all three:
+An importer nobody can reach is the exact failure this tree keeps finding. So
+there are three visible doors:
 
 1. **`YourDesigns`** — a "yours" strip inside `LibraryStudio`'s wallpaper row
    and bookcase row, with a `+ add your own` control. This is the important
@@ -226,8 +221,7 @@ suite checks all three:
    and a **paste box**, because a reader who has just been handed JSON in a
    chat window has it on the clipboard, and telling them to save a file first
    is asking them to open a file manager to move data six inches. The paste box
-   is also the only route an automated check can drive: a native file dialog
-   cannot be answered by Playwright.
+   also makes text generated in a chat immediately usable.
 2. **How it works.** Numbered steps, the field table, and the category's
    `caveat` — the honest limitation, in the card rather than in a docstring.
 3. **The prompt.** Shown whole, with `Copy the prompt`. Whole on purpose: it is
@@ -269,18 +263,11 @@ id to be minted slightly differently.
 
 ---
 
-## 9. QA
+## 9. Verification
 
-- `tests/packs.test.ts` — 64 checks: the round trip, the vocabularies, the
-  refusals, the SVG rules, the stale-entry drop, and a source-read wiring gate.
-- `scripts/probe-packs.mjs` — the seam. Only ever clicks: opens the studio,
-  presses `+ add your own`, pastes a broken pack and reads the refusal, pastes
-  a good one, closes, presses a resulting tile, and checks the **wall** through
-  `__shelfDesign()` — the applied state, never what was merely saved. Then the
-  same for carpentry, then the stickers path, then a 900px window for overflow.
-- `window.__nbPacks` — `list` / `load` / `install(categoryId, text)` /
-  `apply(packId, index)` / `forget`, for a probe that cannot answer a file
-  dialog.
+Run `npx tsc --noEmit` and `npm test`, then use each visible import door in the
+running app. Try one refused pack and one valid pack, apply the resulting design,
+and inspect the applied wall or carpentry rather than only the saved record.
 
 ## Limits
 

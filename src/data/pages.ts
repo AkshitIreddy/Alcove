@@ -113,6 +113,25 @@ export async function savePageDoc(
 }
 
 /**
+ * Persist deterministic block ids without pretending the reader edited text.
+ *
+ * Page render preparation is a storage normalization: ids affect node
+ * identity and seeded decoration, but not the note's authored content. Keep
+ * `source_dirty` and `updated_at` untouched so merely opening an older book
+ * neither invalidates its verbatim Notebook Script nor changes its recency.
+ */
+export async function persistPageDocIdentity(
+  id: string,
+  doc: PageDoc,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute('UPDATE pages SET doc_json = $1 WHERE id = $2', [
+    JSON.stringify(doc),
+    id,
+  ]);
+}
+
+/**
  * Store the verbatim Notebook Script source a page was inserted from (or
  * clear it with `null`). Resets `source_dirty` — the source is clean at the
  * moment of insertion.
@@ -131,4 +150,3 @@ export async function setPageScript(
   );
   return { ...existing, scriptSource: source, sourceDirty: false, updatedAt };
 }
-

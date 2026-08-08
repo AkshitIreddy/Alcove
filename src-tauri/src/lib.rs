@@ -1,15 +1,13 @@
+use tauri::{Manager, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod backup;
 mod export;
 mod import;
+mod library;
 mod media;
 mod transfer;
 mod tray;
-
-/// Connection string for the app database. Must stay in sync with
-/// `DB_PATH` in `src/data/db.ts` on the frontend.
-const DB_URL: &str = "sqlite:notebook.db";
 
 /// Migrations for the app database.
 ///
@@ -112,6 +110,11 @@ fn migrations() -> Vec<Migration> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let library_paths = library::LibraryPaths::resolve()
+        .expect("could not resolve Alcove's library folder");
+    let db_url = library_paths.db_url().to_string();
+    let setup_paths = library_paths.clone();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             media::save_image_asset,
@@ -120,28 +123,53 @@ pub fn run() {
             backup::run_backup,
             backup::list_backups,
             backup::restore_backup,
-            tray::tray_enable,
-            tray::tray_disable,
+            tray::tray_sync,
             export::export_pdf,
             import::read_markdown_file,
             transfer::bundle_write,
             transfer::bundle_read,
             transfer::bundle_probe,
             transfer::bundle_write_asset,
+            library::library_info,
+            library::library_asset_read,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::new()
-                .add_migrations(DB_URL, migrations())
+                .add_migrations(&db_url, migrations())
                 .build(),
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .setup(move |app| {
+            // `convertFileSrc` remains narrowly scoped even when the reader
+            // chose a library on another drive.
+            app.asset_protocol_scope()
+                .allow_directory(setup_paths.assets_root(), true)?;
+            app.manage(setup_paths.clone());
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if tray::close_to_tray_enabled() {
+                    // The tray always includes "Quit Alcove" while this flag
+                    // is on, so hiding here never leaves a trapped process.
+                    api.prevent_close();
+                    let _ = window.hide();
+                    let _ = tray::ensure_tray(window.app_handle());
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

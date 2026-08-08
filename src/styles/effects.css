@@ -2674,15 +2674,20 @@
 /* --- 5b. nineteen rulings ------------------------------------------------ */
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='lined'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-8) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-pad: var(--space-8) var(--space-16);
+  --pa-pos: 0 var(--nb-writing-rule-offset);
   --pa-bg: repeating-linear-gradient(
     to bottom,
     transparent 0,
-    transparent calc(var(--page-line-height, 32px) - 1px),
+    transparent calc(var(--nb-writing-rule-pitch) - 1px),
     color-mix(in srgb, var(--paper-edge) 80%, transparent)
-      calc(var(--page-line-height, 32px) - 1px),
+      calc(var(--nb-writing-rule-pitch) - 1px),
     color-mix(in srgb, var(--paper-edge) 80%, transparent)
-      var(--page-line-height, 32px)
+      var(--nb-writing-rule-pitch)
   );
 }
 
@@ -2693,7 +2698,12 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='index'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-16) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-pad: var(--space-16) var(--space-16) var(--space-12);
+  --pa-pos: 0 0, 0 var(--nb-writing-rule-offset);
   --pa-bg:
     linear-gradient(
       to bottom,
@@ -2703,8 +2713,10 @@
     ),
     repeating-linear-gradient(
       to bottom,
-      transparent 0 27px,
-      color-mix(in srgb, var(--wash-sky) 26%, transparent) 27px 28px
+      transparent 0 calc(var(--nb-writing-rule-pitch) - 1px),
+      color-mix(in srgb, var(--wash-sky) 26%, transparent)
+        calc(var(--nb-writing-rule-pitch) - 1px)
+        var(--nb-writing-rule-pitch)
     );
 }
 
@@ -2752,16 +2764,26 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='ledger'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-12) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-ground: color-mix(in srgb, var(--wash-moss-light) 44%, var(--paper-cream));
+  --pa-pos: 0 var(--nb-writing-rule-offset), 0 0;
   --pa-bg:
-    repeating-linear-gradient(to bottom, transparent 0 27px, color-mix(in srgb, var(--wash-moss) 30%, transparent) 27px 28px),
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--nb-writing-rule-pitch) - 1px), color-mix(in srgb, var(--wash-moss) 30%, transparent) calc(var(--nb-writing-rule-pitch) - 1px) var(--nb-writing-rule-pitch)),
     repeating-linear-gradient(to right, transparent 0 78px, color-mix(in srgb, var(--wash-moss) 26%, transparent) 78px 79px);
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='accounts'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-12) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-ground: color-mix(in srgb, var(--wash-lemon-light) 30%, var(--paper-cream));
+  --pa-pos: 0 var(--nb-writing-rule-offset), 0 0, 0 0;
   --pa-bg:
-    repeating-linear-gradient(to bottom, transparent 0 27px, color-mix(in srgb, var(--paper-edge) 60%, transparent) 27px 28px),
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--nb-writing-rule-pitch) - 1px), color-mix(in srgb, var(--paper-edge) 60%, transparent) calc(var(--nb-writing-rule-pitch) - 1px) var(--nb-writing-rule-pitch)),
     linear-gradient(to right, transparent calc(100% - 132px), color-mix(in srgb, var(--wash-coral) 40%, transparent) calc(100% - 132px) calc(100% - 131px), transparent calc(100% - 131px)),
     linear-gradient(to right, transparent calc(100% - 66px), color-mix(in srgb, var(--wash-coral) 40%, transparent) calc(100% - 66px) calc(100% - 65px), transparent calc(100% - 65px));
 }
@@ -2776,11 +2798,16 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='cornell'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-12) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-pad: var(--space-12) var(--space-16) var(--space-32) var(--space-48);
+  --pa-pos: 0 0, 0 0, 0 var(--nb-writing-rule-offset);
   --pa-bg:
     linear-gradient(to right, transparent 38px, color-mix(in srgb, var(--wash-coral) 48%, transparent) 38px 40px, transparent 40px),
     linear-gradient(to bottom, transparent calc(100% - 26px), color-mix(in srgb, var(--wash-coral) 48%, transparent) calc(100% - 26px) calc(100% - 24px), transparent calc(100% - 24px)),
-    repeating-linear-gradient(to bottom, transparent 0 27px, color-mix(in srgb, var(--wash-sky) 22%, transparent) 27px 28px);
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--nb-writing-rule-pitch) - 1px), color-mix(in srgb, var(--wash-sky) 22%, transparent) calc(var(--nb-writing-rule-pitch) - 1px) var(--nb-writing-rule-pitch));
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='isometric'] {
@@ -2835,23 +2862,36 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='legal'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-12) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-ground: color-mix(in srgb, var(--wash-lemon-light) 76%, var(--paper-cream));
   --pa-pad: var(--space-12) var(--space-16) var(--space-12) var(--space-40);
+  --pa-pos: 0 0, 0 var(--nb-writing-rule-offset);
   --pa-bg:
     linear-gradient(to right, transparent 30px, color-mix(in srgb, var(--wash-coral) 50%, transparent) 30px 31px, transparent 31px 34px, color-mix(in srgb, var(--wash-coral) 50%, transparent) 34px 35px, transparent 35px),
-    repeating-linear-gradient(to bottom, transparent 0 31px, color-mix(in srgb, var(--wash-sky) 26%, transparent) 31px 32px);
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--nb-writing-rule-pitch) - 1px), color-mix(in srgb, var(--wash-sky) 26%, transparent) calc(var(--nb-writing-rule-pitch) - 1px) var(--nb-writing-rule-pitch));
   --pa-border: none;
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='copybook'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-12) - var(--nb-rule-lead, 7.5px)
+  );
+  --pa-pos: 0 var(--nb-writing-rule-offset);
   --pa-bg: repeating-linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--wash-sky) 30%, transparent) 0 1px,
-    transparent 1px 13px,
-    color-mix(in srgb, var(--wash-sky) 14%, transparent) 13px 14px,
-    transparent 14px 27px,
-    color-mix(in srgb, var(--wash-sky) 30%, transparent) 27px 28px,
-    transparent 28px 42px
+    transparent 0 calc(var(--nb-writing-rule-pitch) / 2 - 1px),
+    color-mix(in srgb, var(--wash-sky) 14%, transparent)
+      calc(var(--nb-writing-rule-pitch) / 2 - 1px)
+      calc(var(--nb-writing-rule-pitch) / 2),
+    transparent calc(var(--nb-writing-rule-pitch) / 2)
+      calc(var(--nb-writing-rule-pitch) - 1px),
+    color-mix(in srgb, var(--wash-sky) 30%, transparent)
+      calc(var(--nb-writing-rule-pitch) - 1px)
+      var(--nb-writing-rule-pitch)
   );
 }
 
@@ -2888,12 +2928,17 @@
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-paper='receipt'] {
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: calc(
+    var(--space-16) - var(--nb-rule-lead, 7.5px)
+  );
   --pa-ground: color-mix(in srgb, var(--paper-cream) 96%, var(--wash-sky-light));
   --pa-border: none;
   --pa-radius: 0;
   --pa-pad: var(--space-16) var(--space-12);
+  --pa-pos: 0 var(--nb-writing-rule-offset);
   --pa-bg:
-    repeating-linear-gradient(to bottom, transparent 0 25px, color-mix(in srgb, var(--paper-edge) 30%, transparent) 25px 26px);
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--nb-writing-rule-pitch) - 1px), color-mix(in srgb, var(--paper-edge) 30%, transparent) calc(var(--nb-writing-rule-pitch) - 1px) var(--nb-writing-rule-pitch));
   --pa-clip: polygon(
     0% 5px, 6% 0px, 12% 5px, 18% 0px, 24% 5px, 30% 0px, 36% 5px, 42% 0px,
     48% 5px, 54% 0px, 60% 5px, 66% 0px, 72% 5px, 78% 0px, 84% 5px, 90% 0px,
@@ -3301,26 +3346,35 @@
   color: var(--ink-graphite);
 }
 
+/* The toggle label occupies its own small chip above the answer instead of a
+   full rule band.  That left the answer's Patrick Hand baseline exactly 3px
+   above the page ruling while details and columns landed on it.  Move only
+   the painted answer—not the block box—so the paragraph after the spoiler
+   keeps its already-correct grid phase and pagination does not change. */
+.nb-spoiler-body {
+  transform: translateY(3px);
+}
+
 /* blur() is a live filter in an interactive path (art-pipeline.md rules it
-   out) and it was transitioned, so it re-ran every frame of the reveal. The
-   body keeps its box while hidden, so revealing costs no reflow. */
+   out) and it was transitioned, so it re-ran every frame of the reveal. A
+   closed disclosure must also be CLOSED: preserving the answer's full block
+   height painted a large, empty-looking slab on short answers and made the
+   page read as if content had failed to load. The document remains mounted;
+   only its closed-state layout is clipped until the reader reveals it. */
 .nb-spoiler:not(.is-revealed) .nb-spoiler-body {
   position: relative;
+  block-size: 0;
+  overflow: clip;
   visibility: hidden;
   pointer-events: none;
   user-select: none;
+  transform: none;
 }
 
-/* --paper-edge rather than an ink token: at full ink the band reads as a hole
-   punched in the page and shouts louder than anything else on it. */
+/* A collapsed answer has no placeholder slab. The toggle already says what
+   action is available, so another painted bar is redundant chrome. */
 .nb-spoiler:not(.is-revealed) .nb-spoiler-body::after {
-  content: '';
-  visibility: visible;
-  position: absolute;
-  inset: -2px -4px;
-  background: var(--paper-edge);
-  border: 1px solid var(--ink-line-soft);
-  border-radius: var(--radius-sm);
+  content: none;
 }
 
 /* 6.8 columns / col live in editor.css, beside the divider-drag rules that
@@ -3331,6 +3385,9 @@
    6.9 index-card — ruled stock, a red rule under the head, one squared corner
    -------------------------------------------------------------------------- */
 :is(.nb-prose, .nb-fx-specimen) [data-type='index-card'] {
+  --nb-ruling-ground: var(--paper-cream);
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-writing-rule-offset: 42px;
   position: relative;
   min-height: 132px;
   margin: var(--space-24) 0;
@@ -3339,14 +3396,16 @@
      first line of writing starts BELOW the rule — the earlier version put the
      rule at 16px against a 20px padding, so it struck through the first line. */
   padding: 42px var(--space-20) var(--space-20);
-  background-color: var(--paper-cream);
+  background-color: var(--nb-ruling-ground);
   /* Ruled from the red rule down, not from the top of the card. */
   background-image: repeating-linear-gradient(
     to bottom,
-    transparent 0 27px,
-    color-mix(in srgb, var(--wash-sky) 30%, transparent) 27px 28px
+    transparent 0 calc(var(--nb-writing-rule-pitch) - 1px),
+    color-mix(in srgb, var(--wash-sky) 30%, transparent)
+      calc(var(--nb-writing-rule-pitch) - 1px)
+      var(--nb-writing-rule-pitch)
   );
-  background-position: 0 38px;
+  background-position: 0 var(--nb-writing-rule-offset);
   border: 1.5px solid var(--ink-line);
   /* Three rounded corners and one cut square: a filed card, not a coaster. */
   border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 0;
@@ -3692,10 +3751,22 @@
    6.16 postcard — divided back: message on the left, address on the right
    -------------------------------------------------------------------------- */
 :is(.nb-prose, .nb-fx-specimen) [data-type='postcard'] {
+  --nb-ruling-ground: color-mix(
+    in srgb,
+    var(--paper-cream) 88%,
+    var(--fx-light)
+  );
   --fx-light: var(--wash-sky-light);
   --fx-base: var(--wash-sky);
   --fx-deep: var(--wash-sky-deep);
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  /* Relative to the pseudo-element, whose top is inset 16px. This places its
+     first address rule beneath the first baseline in the 60px address head. */
+  --nb-writing-rule-offset: 64px;
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
   min-height: 176px;
   margin: var(--space-24) 0;
   /*
@@ -3716,14 +3787,49 @@
    * message that will not fit its half is not made to fit by lending it the
    * address lines.
    */
-  padding: var(--space-20) calc(50% + var(--space-16)) var(--space-20)
-    var(--space-20);
-  background: color-mix(in srgb, var(--paper-cream) 88%, var(--fx-light));
+  padding: var(--space-20);
+  background-color: var(--nb-ruling-ground);
   border: 1.5px solid var(--ink-line);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
   transform: rotate(var(--nb-rotate, 0deg));
   font-family: var(--font-accent);
+}
+
+/* Two real ProseMirror regions: message and address can each hold blocks and
+   receive their own caret. The printed divider belongs to the card, so hide
+   the generic columns divider inherited from editor.css. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='postcard'] > [data-type='col'] {
+  min-width: 0;
+  min-height: 136px;
+  box-sizing: border-box;
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='postcard']
+  > [data-type='col']
+  + [data-type='col']::before {
+  display: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='postcard']
+  > [data-type='col']:first-child {
+  padding-right: var(--space-16);
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='postcard']
+  > [data-type='col']:last-child {
+  padding: 60px 2px 0 var(--space-20);
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='postcard']
+  > [data-type='col']
+  > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* The divider, the four address rules and the stamp box, all as background
@@ -3762,10 +3868,13 @@
     /* four address rules under it */
       repeating-linear-gradient(
         to bottom,
-        transparent 0 25px,
-        color-mix(in srgb, var(--ink-line-soft) 45%, transparent) 25px 26px
+        transparent 0 calc(var(--nb-writing-rule-pitch) - 1px),
+        color-mix(in srgb, var(--ink-line-soft) 45%, transparent)
+          calc(var(--nb-writing-rule-pitch) - 1px)
+          var(--nb-writing-rule-pitch)
       )
-      left var(--space-20) bottom 6px / calc(100% - var(--space-20)) 104px
+      left var(--space-20) top var(--nb-writing-rule-offset) /
+      calc(100% - var(--space-20)) calc(var(--nb-writing-rule-pitch) * 4)
       no-repeat;
   pointer-events: none;
 }
@@ -3805,13 +3914,31 @@
    the reader is typing prose lines, not table cells.
    -------------------------------------------------------------------------- */
 :is(.nb-prose, .nb-fx-specimen) [data-type='ledger'] {
+  --nb-ruling-ground: color-mix(
+    in srgb,
+    var(--paper-cream) 84%,
+    var(--fx-light)
+  );
   --fx-light: var(--wash-moss-light);
   --fx-base: var(--wash-moss);
   --fx-deep: var(--wash-moss-deep);
+  /* The rules are writing guides, so they must use the editor's actual
+     leading. A fixed 26px ledger grid under 32px prose made each successive
+     line appear to float farther above the rule. Keep the stroke a breath
+     below the alphabetic baseline so its antialiasing does not run through
+     the writing at page scale. */
+  --nb-writing-rule-pitch: var(--page-line-height, 32px);
+  --nb-ledger-rule-gap: 2px;
+  --nb-writing-rule-offset: calc(
+    var(--space-32) + var(--nb-ledger-rule-gap)
+  );
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(84px, 28%, 112px);
+  align-items: stretch;
   margin: var(--space-24) 0;
   padding: var(--space-32) var(--space-16) var(--space-16);
-  background-color: color-mix(in srgb, var(--paper-cream) 84%, var(--fx-light));
+  background-color: var(--nb-ruling-ground);
   background-image:
     /* ONE vertical rule, and the money column tinted beside it. Two rules
        boxed a second, narrower column that nothing was ever going to be
@@ -3823,8 +3950,10 @@
     /* the horizontal ruling */
       repeating-linear-gradient(
         to bottom,
-        transparent 0 25px,
-        color-mix(in srgb, var(--fx-deep) 26%, transparent) 25px 26px
+        transparent 0 calc(var(--nb-writing-rule-pitch) - 1px),
+        color-mix(in srgb, var(--fx-deep) 26%, transparent)
+          calc(var(--nb-writing-rule-pitch) - 1px)
+          var(--nb-writing-rule-pitch)
       );
   background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
   background-position:
@@ -3832,29 +3961,57 @@
     right 0 top 0,
     left 0 top 24px,
     left 0 top 28px,
-    left 0 top 30px;
+    left 0 top var(--nb-writing-rule-offset);
   background-size:
     1.5px 100%,
     92px 100%,
     100% 1.5px,
     100% 1px,
-    100% 26px;
+    100% var(--nb-writing-rule-pitch);
   border: 1.5px solid var(--ink-line);
   border-radius: 2px;
   font-family: var(--font-body);
   font-variant-numeric: tabular-nums;
 }
 
+:is(.nb-prose, .nb-fx-specimen) [data-type='ledger'] > [data-type='col'] {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='ledger']
+  > [data-type='col']
+  + [data-type='col']::before {
+  display: none;
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='ledger']
+  > [data-type='col']:first-child {
+  padding-right: var(--space-12);
+}
+
+:is(.nb-prose, .nb-fx-specimen)
+  [data-type='ledger']
+  > [data-type='col']:last-child {
+  padding-left: var(--space-12);
+  text-align: right;
+}
+
 /* No account name, no head: an empty ruled band above the double rule reads
    as a row somebody forgot to fill in. The strip starts at the ruling. */
 :is(.nb-prose, .nb-fx-specimen) [data-type='ledger']:not([data-title]) {
+  --nb-writing-rule-offset: calc(
+    var(--space-12) + var(--nb-ledger-rule-gap)
+  );
   padding-top: var(--space-12);
   background-position:
     right 92px top 0,
     right 0 top 0,
     left 0 top -4px,
     left 0 top -4px,
-    left 0 top 6px;
+    left 0 top var(--nb-writing-rule-offset);
 }
 
 /* The account name, written across the head above the double rule. */

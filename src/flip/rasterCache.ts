@@ -7,7 +7,8 @@
  * same frame.
  *
  * - `toCanvas` with pixelRatio capped at 2 (1.5 when deviceMemory < 8).
- * - Font-embed CSS built ONCE via getFontEmbedCSS and reused per capture.
+ * - Font-embed CSS cached by the family stacks each page actually uses; this
+ *   keeps later diagram/accent faces from inheriting the opening page's bundle.
  * - `includeStyleProperties` narrowed to the properties that can actually
  *   change a pixel — the single biggest cost in a capture (see
  *   snapshotStyleProperties below).
@@ -73,7 +74,7 @@ export const SNAPSHOTTING_CLASS = 'snapshotting';
 
 /** Elements never included in snapshots (interactive chrome, not paper). */
 export const SNAPSHOT_EXCLUDE_SELECTOR =
-  '.nb-drag-handle, .nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
+  '.nb-style-switcher, .nb-page-full-hint, [data-snapshot-hide]';
 
 /**
  * 1×1 transparent PNG — stand-in for images that fail to inline.
@@ -106,6 +107,90 @@ export function snapshotFilter(node: HTMLElement): boolean {
     typeof node.matches !== 'function' ||
     !node.matches(SNAPSHOT_EXCLUDE_SELECTOR)
   );
+}
+
+/* -------------------------------------------------------------------------
+   Font embedding — cache by the faces THIS page actually uses
+   ------------------------------------------------------------------------- */
+
+/**
+ * `getFontEmbedCSS(root)` filters the document's @font-face rules down to the
+ * families used under `root`. That makes caching its first answer forever
+ * incorrect: the opening pages use Caveat + Patrick Hand, while a later
+ * diagram, ledger or styled block can introduce Architects Daughter, Kalam,
+ * Gochi Hand, Shadows Into Light, Lora, Crimson Pro or Nunito Sans. The old
+ * one-promise caches in all three capture paths therefore photographed those
+ * later faces with a system fallback. At the flat landing the real DOM put the
+ * bundled face back, changing word widths and making ribbons/cards re-wrap.
+ *
+ * Cache by the computed family stacks present on this capture root instead —
+ * including SVG labels and text emitted by `::before` / `::after` (which
+ * html-to-image's own HTMLElement-only font walk cannot discover). Pages with
+ * the same typography reuse the expensive embedded data URLs; pages that
+ * introduce a face get the CSS for that face rather than inheriting whichever
+ * page happened to rasterize first.
+ */
+const fontEmbedCssByUsage = new Map<string, Promise<string>>();
+
+function fontUsageStacks(root: HTMLElement): string[] {
+  if (typeof getComputedStyle !== 'function') return [];
+  const stacks = new Set<string>();
+  const elements: Element[] = [root, ...Array.from(root.querySelectorAll('*'))];
+  for (const element of elements) {
+    try {
+      // Computed first: an inline `var(--font-label)` is not a usable @font-face
+      // name, while the computed stack has already resolved that variable.
+      const stack = getComputedStyle(element).fontFamily;
+      if (stack.trim() !== '') stacks.add(stack.trim());
+    } catch {
+      // A detached/custom test double can have no computed style. The fallback
+      // key still lets getFontEmbedCSS decide what it can inspect.
+    }
+
+    if (!(element instanceof HTMLElement)) continue;
+    for (const pseudo of ['::before', '::after'] as const) {
+      try {
+        const style = getComputedStyle(element, pseudo);
+        const content = style.content?.trim() ?? '';
+        if (content === '' || content === 'none' || content === 'normal') continue;
+        const stack = style.fontFamily;
+        if (stack.trim() !== '') stacks.add(stack.trim());
+      } catch {
+        // Browsers without pseudo-style inspection simply fall back to the
+        // regular element stacks. The capture remains usable, just less exact.
+      }
+    }
+  }
+  return [...stacks].sort();
+}
+
+function fontProbe(root: HTMLElement, stacks: readonly string[]): HTMLElement {
+  const doc = root.ownerDocument;
+  if (doc === null || doc === undefined || stacks.length === 0) return root;
+  const probe = doc.createElement('div');
+  for (const stack of stacks) {
+    const sample = doc.createElement('span');
+    sample.style.fontFamily = stack;
+    sample.textContent = 'Aa';
+    probe.appendChild(sample);
+  }
+  return probe;
+}
+
+export function pageFontEmbedCSS(root: HTMLElement): Promise<string> {
+  const stacks = fontUsageStacks(root);
+  const key = stacks.join('|') || '__default__';
+  const cached = fontEmbedCssByUsage.get(key);
+  if (cached !== undefined) return cached;
+  const pending = getFontEmbedCSS(fontProbe(root, stacks)).catch((error) => {
+    // Do not poison this typography for the rest of the session. A transient
+    // asset failure may be gone by the next idle capture.
+    fontEmbedCssByUsage.delete(key);
+    console.warn('[rasterCache] font embedding failed', error);
+    return '';
+  });
+  fontEmbedCssByUsage.set(key, pending);
+  return pending;
 }
 
 /* -------------------------------------------------------------------------
@@ -421,7 +506,6 @@ export class PageRasterCache {
   private readonly inflight = new Map<string, Promise<RasterEntry | null>>();
   private readonly debounceTimers = new Map<string, number>();
   private readonly idleHandles = new Set<IdleHandle>();
-  private fontCss: Promise<string> | undefined;
   private readonly pixelRatio: number;
   private disposed = false;
 
@@ -689,10 +773,7 @@ export class PageRasterCache {
     const toneAtStart = paperToneTag();
     const background = snapshotBackground(element);
 
-    // Font-embed CSS is built once for the whole app lifetime and reused —
-    // per the doc this removes the biggest per-capture cost.
-    this.fontCss ??= getFontEmbedCSS(element).catch(() => '');
-    const fontEmbedCSS = await this.fontCss;
+    const fontEmbedCSS = await pageFontEmbedCSS(element);
 
     // From here to the end of the rasterization we are writing to the live
     // page (the marker class, then every SVG's inline paint) — mutations the

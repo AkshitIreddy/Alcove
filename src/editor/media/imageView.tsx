@@ -168,8 +168,9 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       }}
       class="nb-image"
       classList={{ 'is-selected': props.selected, 'is-resizing': dragPct() !== null }}
+      data-nb-block-flow="feature"
       data-align={align()}
-      data-frame={frame()}
+      data-media-frame={frame()}
       /*
        * Whether anything is actually written under the picture. A polaroid's
        * white foot is reserved with padding when it is bare and given to the
@@ -305,11 +306,17 @@ export const MediaImage = Image.extend({
       frame: {
         default: 'plain' satisfies ImageFrame,
         parseHTML: (element: HTMLElement) => {
-          const raw = element.getAttribute('data-frame');
+          /* `data-frame` belongs to the block-decoration vocabulary. Older
+             image HTML used it too, which accidentally wrapped every image in
+             the universal decorative-frame padding. Read it only as a legacy
+             fallback; new media owns a namespaced attribute. */
+          const raw =
+            element.getAttribute('data-media-frame') ??
+            element.getAttribute('data-frame');
           return isFrame(raw) ? raw : 'plain';
         },
         renderHTML: (attributes: Record<string, unknown>) => ({
-          'data-frame': String(attributes.frame ?? 'plain'),
+          'data-media-frame': String(attributes.frame ?? 'plain'),
         }),
       },
     };

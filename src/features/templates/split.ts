@@ -111,6 +111,7 @@ import type {
   ScriptDoc,
   TreeNode,
 } from '../../script/types';
+import { layoutTimeline } from '../../diagrams/layout/timeline';
 
 // ---------------------------------------------------------------------------
 // The window a page is cut for
@@ -833,7 +834,7 @@ const DIAGRAM_INSET_PX = 48;
  * layout and is drawn at `min(intrinsic width, column - 48)`:
  *
  *   Mindmap    viewBox 663 wide   drawn 544 -> 386   14.22 lines -> 10.09
- *   Timeline   viewBox 580 wide   drawn 544 -> 386    6.34 lines ->  4.50
+ *   Timeline   viewBox 376 wide   drawn 376 -> 376    no default downscale
  *   Graph      viewBox 207 wide   drawn 207 -> 207    8.38 lines ->  8.38
  *   Flowchart  viewBox 125 wide   drawn 125 -> 125   10.75 lines -> 10.75
  *
@@ -842,8 +843,11 @@ const DIAGRAM_INSET_PX = 48;
  * while a layout that stacks DOWNWARD is narrower than the column at any window
  * anyone uses and does not move at all.
  *
- * That is why this is applied to the mindmap and the timeline and not to the
- * graph, the flowchart or the tree. A tree is the awkward one — it was measured
+ * That is why this is applied to the mindmap and not to the graph, the
+ * flowchart, the timeline or the tree. Timeline's primitive was narrowed from
+ * 580px to 376px after its nominal 15px labels were observed at ~10px in the
+ * default 386px drawing area; its exact layout is costed below and only scales
+ * when a genuinely narrower frame requires it. A tree is the awkward one — it was measured
  * at both, 7.63 lines shrinking to 6.53 (clamped) and 7.09 to 5.03 (clamped
  * harder) — and it is left unscaled deliberately, because a tree narrow enough
  * to escape the clamp would then be charged for a shrink that never happened,
@@ -879,19 +883,19 @@ function diagramLines(block: DiagramBlock, frame: Frame): number {
         diagramFitScale(frame)
       );
     case 'timeline':
-      // 3.3 lines for two short entries, 8.7 for eight, 6.8 for four whose
-      // text wraps — an entry's column is narrow, about 30 characters.
-      // Scaled by the fit for the same reason as the mindmap: a timeline runs
-      // along the page and is clamped to the column at every window measured.
-      return (
-        (1.4 +
-          0.9 *
-            block.entries.reduce(
-              (n, entry) => n + Math.max(1, Math.ceil(entry.text.length / 30)),
-              0,
-            )) *
-        diagramFitScale(frame)
-      );
+      // The responsive primitive is deliberately narrower than the default
+      // leaf, so use the same pure layout that sizes its actual wrapped cards.
+      // In a narrow column/minimum window the whole SVG still scales to fit;
+      // charge that real drawn height rather than the old 580px calibration.
+      {
+        const layout = layoutTimeline(block.entries);
+        const availableWidth = Math.max(
+          1,
+          frame.width * proseColumnPx(REFERENCE_WINDOW) - DIAGRAM_INSET_PX,
+        );
+        const fit = Math.min(1, availableWidth / layout.width);
+        return (layout.height * fit) / PAGE_LINE_PX;
+      }
     default:
       // 8.4 lines for a chain of three, 17.0 for a chain of six.
       return Math.min(18, 2.9 * graphLayers(block));
@@ -917,6 +921,23 @@ function containerLines(block: ContainerBlock, frame: Frame): number {
     let lines = 0;
     for (const child of block.children) lines += blockLines(child, frame);
     return lines;
+  }
+  if (block.name === 'postcard' || block.name === 'ledger') {
+    const columns = block.children.filter(
+      (child): child is ContainerBlock =>
+        child.kind === 'container' && child.name === 'col',
+    );
+    if (columns.length >= 2) {
+      const cost = CONTAINER[block.name] ?? CONTAINER.generic;
+      const leftShare = block.name === 'postcard' ? 0.5 : 0.72;
+      return Math.max(
+        cost.min * frame.line,
+        cost.chrome * frame.line + Math.max(
+          blockLines(columns[0]!, narrow(frame, leftShare)),
+          blockLines(columns[1]!, narrow(frame, 1 - leftShare)),
+        ),
+      );
+    }
   }
   const cost = CONTAINER[block.name] ?? CONTAINER.generic;
   const inner: Frame = {

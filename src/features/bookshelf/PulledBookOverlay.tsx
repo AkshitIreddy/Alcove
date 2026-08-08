@@ -6,8 +6,8 @@
  * stage — and the reverse on the way back. GPU-smooth world motion, DOM-crisp
  * cover where it matters.
  *
- * The face is REAL cover art: art/covers.renderCover baked once into a
- * device-pixel-ratio canvas (seeded from spine_seed, honoring cover_meta
+ * The face is REAL cover art: art/covers.coverDataUrl baked once at
+ * device-pixel-ratio resolution (seeded from spine_seed, honoring cover_meta
  * overrides), so the pull-out shows the same intricate tooled cover the
  * opened BookView rests on — no more flat gradient rectangle.
  *
@@ -54,19 +54,25 @@
 
 import gsap from 'gsap';
 import { createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import { resolveBookStyle } from '../../art/bookStyle';
-import { renderCoverInto } from '../../art/covers';
+import { coverDataUrl } from '../../art/covers';
 import { getTheme } from '../../art/themes';
 import { readShelfMeta } from '../../data/books';
 import { play } from '../../sound/engine';
-import { bookStyleOverridesFor, themeSpineDefaults } from './bookIdentity';
+import { resolveBookAppearance } from './bookIdentity';
 import { libraryPrefs } from './libraryPrefs';
 import type { Book } from '../../data/types';
 import { prefersReducedMotion } from './env';
-import type { RectLike } from './world';
+import {
+  pulledBookCenterLayout,
+  returnGhostHandoffRect,
+} from './pulledBookGeometry';
+import { paintPulledBookStatusMark } from './pulledBookStatus';
+import type { RectLike, ShelfBookStatus } from './world';
 
 export interface PulledOverlayProps {
   book: Book;
+  /** Actual ornaments on the Pixi spine when it handed this book over. */
+  status: ShelfBookStatus;
   /** The spine's screen rect: where the flight starts ('open') or ends ('close'). */
   spineRect: RectLike;
   /**
@@ -77,6 +83,8 @@ export interface PulledOverlayProps {
   mode: 'open' | 'close';
   /** Where the book belongs on the shelf, read at the moment it is sent back. */
   homeRect(): RectLike;
+  /** Current shelf zoom, needed to meet the canvas return ghost exactly. */
+  homeZoom(): number;
   /** The bookcase in screen px — the drop target for carrying it back. */
   caseRect(): RectLike | null;
   /** The carried book is (or is no longer) over the case: show the slot outline. */
@@ -94,35 +102,6 @@ export interface PulledOverlayProps {
   onOpen(): void;
   /** The overlay is finished with — unmount it. */
   onDone(): void;
-}
-
-interface CenterLayout {
-  width: number;
-  height: number;
-  x: number;
-  y: number;
-}
-
-/**
- * Where the book arrives, and how big.
- *
- * Sized to the thing it becomes. The opened spread's cover board fills nearly
- * the whole window, so a closed cover that lands at nearly that height reads
- * as the same object opening; the 540px card this replaces (which had to make
- * room for a label plate under it) read as a thumbnail being swapped for a
- * book. Clamped so a very tall window does not produce a poster.
- */
-function centerLayout(): CenterLayout {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const height = Math.max(220, Math.min(vh * 0.82, 720));
-  const width = height * 0.72;
-  return {
-    width,
-    height,
-    x: (vw - width) / 2,
-    y: (vh - height) / 2,
-  };
 }
 
 /**
@@ -189,13 +168,17 @@ function arcPoint(
 function inside(rect: RectLike | null, x: number, y: number): boolean {
   if (rect === null) return false;
   return (
-    x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
+    x >= rect.x &&
+    x <= rect.x + rect.width &&
+    y >= rect.y &&
+    y <= rect.y + rect.height
   );
 }
 
 export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
   let el!: HTMLDivElement;
   let coverCanvas: HTMLCanvasElement | undefined;
+  let starCanvas: HTMLCanvasElement | undefined;
 
   /**
    * True while the book is out of the shelf and its fate is still open — the
@@ -209,6 +192,8 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
   const [overCase, setOverCase] = createSignal(false);
   /** The wash over the frozen room. Raised a frame late so it fades in. */
   const [dim, setDim] = createSignal(false);
+  /** Opaque paper behind a returning cover until the shelf has repainted. */
+  const [returnWashUp, setReturnWashUp] = createSignal(p.mode === 'close');
   /** True once the flight has landed and the book is resting in the room. */
   const [held, setHeld] = createSignal(false);
 
@@ -222,36 +207,37 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
    */
   let putBackNow: () => void = () => {};
 
-  const center = centerLayout();
+  const center = pulledBookCenterLayout();
 
   onMount(() => {
     const m = prefersReducedMotion() ? 0 : 1;
     el.style.width = `${center.width}px`;
     el.style.height = `${center.height}px`;
 
+    if (starCanvas) {
+      paintPulledBookStatusMark(starCanvas, 'star');
+    }
+
     // Bake the cover face at device resolution for the center size.
     if (coverCanvas) {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       coverCanvas.width = Math.round(center.width * dpr);
       coverCanvas.height = Math.round(center.height * dpr);
-      const ctx = coverCanvas.getContext('2d');
-      if (ctx) {
-        // Same resolver the shelf spine uses, so a customized book is
-        // recognisably itself on the shelf, mid-pull-out and open (§4).
-        const { cover } = resolveBookStyle(
-          p.book.spineSeed,
-          themeSpineDefaults(getTheme(libraryPrefs.theme)),
-          bookStyleOverridesFor(p.book),
-          { pageCount: readShelfMeta(p.book)?.pageCount },
-        );
-        renderCoverInto(
-          ctx,
-          coverCanvas.width,
-          coverCanvas.height,
-          cover,
-          p.book.title,
-        );
-      }
+      // Same resolver the shelf spine uses, so a customized book is
+      // recognisably itself on the shelf, mid-pull-out and open (§4). The
+      // BookView idle-bakes this exact URL before closing, which makes the
+      // return route a cache hit instead of another main-thread drawing pause.
+      const { cover } = resolveBookAppearance(
+        p.book,
+        getTheme(libraryPrefs.theme),
+        { pageCount: readShelfMeta(p.book)?.pageCount },
+      );
+      coverCanvas.style.backgroundImage = `url("${coverDataUrl(
+        coverCanvas.width,
+        coverCanvas.height,
+        cover,
+        p.book.title,
+      )}")`;
     }
 
     /** Closed on its spine, standing where the canvas ghost is. */
@@ -291,13 +277,20 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
     let opened = false;
     let returning = false;
     let finished = false;
+    let handoffFrame: number | null = null;
+    let washFrame: number | null = null;
     /**
      * The live press on the cover, if any (see "catching it in flight"). It is
      * declared up here rather than beside its handlers because the outbound
      * flight's landing has to ask whether a hand is already on the book.
      */
-    let press: { id: number; x: number; y: number; cardX: number; cardY: number } | null =
-      null;
+    let press: {
+      id: number;
+      x: number;
+      y: number;
+      cardX: number;
+      cardY: number;
+    } | null = null;
 
     const applyStart = (pose: Pose, opacity: number): void => {
       gsap.set(el, {
@@ -317,7 +310,8 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
     };
 
     /** Drive x/y along the arc from a 0→1 progress proxy. */
-    const flyPath = (from: Pose, to: Pose, progress: { t: number }) => (): void => {
+    const flyPath =
+      (from: Pose, to: Pose, progress: { t: number }) => (): void => {
       const at = arcPoint(from, to, progress.t);
       here.x = at.x;
       here.y = at.y;
@@ -329,7 +323,13 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
 
     const flyOut = (): void => {
       const from = spinePose(p.spineRect);
-      const to: Pose = { x: center.x, y: center.y, scaleX: 1, scaleY: 1, rotationY: 0 };
+      const to: Pose = {
+        x: center.x,
+        y: center.y,
+        scaleX: 1,
+        scaleY: 1,
+        rotationY: 0,
+      };
       applyStart(from, 0);
       const progress = { t: 0 };
       const path = flyPath(from, to, progress);
@@ -344,27 +344,59 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
           // cover its tabindex, so this has to come after the flag, and after
           // Solid has written the attribute.
           queueMicrotask(() => {
-            if (!opened && !returning && !finished) el.focus({ preventScroll: true });
+            if (!opened && !returning && !finished)
+              el.focus({ preventScroll: true });
           });
         },
       });
       tl
         // Crossfade first, over a stationary frame or two: the canvas ghost is
         // still on screen underneath and the two must agree before either moves.
-        .to(el, { opacity: 1, duration: 0.07 * m, ease: 'none', onStart: () => p.onHandoff('out') }, 0)
-        .to(progress, { t: 1, duration: 0.44 * m, ease: 'power2.inOut', onUpdate: path }, 0)
+        .to(
+          el,
+          {
+            opacity: 1,
+            duration: 0.07 * m,
+            ease: 'none',
+            onStart: () => p.onHandoff('out'),
+          },
+          0,
+        )
+        .to(
+          progress,
+          { t: 1, duration: 0.44 * m, ease: 'power2.inOut', onUpdate: path },
+          0,
+        )
         // The cover swings square a beat before the flight lands, so you are
         // reading the book's face by the time it arrives.
-        .to(el, { rotationY: 0, duration: 0.42 * m, ease: 'power2.out' }, 0.02 * m)
+        .to(
+          el,
+          { rotationY: 0, duration: 0.42 * m, ease: 'power2.out' },
+          0.02 * m,
+        )
         // Size is locked to the SAME ease as the path. On `power2.out` the
         // cover reached full width a quarter of the way across and then slid
         // there at that size, which is a modal zooming open, not a book being
         // carried; growth has to arrive when the book does.
-        .to(el, { scaleX: 1.03, scaleY: 1.03, duration: 0.38 * m, ease: 'power2.inOut' }, 0)
+        .to(
+          el,
+          {
+            scaleX: 1.03,
+            scaleY: 1.03,
+            duration: 0.38 * m,
+            ease: 'power2.inOut',
+          },
+          0,
+        )
         // The settle. Everything above is the throw; this is the catch.
         .to(
           el,
-          { scaleX: 1, scaleY: 1, duration: 0.22 * m, ease: 'elastic.out(1, 0.5)' },
+          {
+            scaleX: 1,
+            scaleY: 1,
+            duration: 0.22 * m,
+            ease: 'elastic.out(1, 0.5)',
+          },
           0.38 * m,
         );
     };
@@ -378,26 +410,62 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       // A catch mid-flight leaves a squaring tween running on the same
       // channels this timeline is about to own; two owners fight.
       gsap.killTweensOf(el);
+      if (m === 0) {
+        applyStart(to, 1);
+        finished = true;
+        p.onHandoff('in');
+        gsap.set(el, { opacity: 0 });
+        p.onDone();
+        return;
+      }
       tl = gsap.timeline({
         onComplete: () => {
           progress.t = 1;
           path();
-          finished = true;
-          p.onDone();
+          // Keep one opaque owner on screen. The canvas ghost is created at
+          // this exact pose, then gets one paint frame before the DOM face is
+          // atomically removed — no translucent double exposure between them.
+          p.onHandoff('in');
+          handoffFrame = requestAnimationFrame(() => {
+            handoffFrame = null;
+            gsap.set(el, { opacity: 0 });
+            finished = true;
+            p.onDone();
+          });
         },
       });
       tl
         // Anticipation on the way out too: it gathers itself before it goes.
-        .to(el, { scaleX: from.scaleX * 1.035, scaleY: from.scaleY * 1.035, duration: 0.1 * m, ease: 'power2.out' }, 0)
-        .to(progress, { t: 1, duration: 0.4 * m, ease: 'power2.in', onUpdate: path }, 0.1 * m)
         .to(
           el,
-          { scaleX: to.scaleX, scaleY: to.scaleY, duration: 0.4 * m, ease: 'power2.in' },
+          {
+            scaleX: from.scaleX * 1.035,
+            scaleY: from.scaleY * 1.035,
+            duration: 0.1 * m,
+            ease: 'power2.out',
+          },
+          0,
+        )
+        .to(
+          progress,
+          { t: 1, duration: 0.4 * m, ease: 'power2.in', onUpdate: path },
           0.1 * m,
         )
-        .to(el, { rotationY: to.rotationY, duration: 0.34 * m, ease: 'power2.in' }, 0.14 * m)
-        // Hand back to the canvas as the face turns away, not after it has.
-        .to(el, { opacity: 0, duration: 0.1 * m, ease: 'none', onStart: () => p.onHandoff('in') }, 0.46 * m);
+        .to(
+          el,
+          {
+            scaleX: to.scaleX,
+            scaleY: to.scaleY,
+            duration: 0.4 * m,
+            ease: 'power2.in',
+          },
+          0.1 * m,
+        )
+        .to(
+          el,
+          { rotationY: to.rotationY, duration: 0.34 * m, ease: 'power2.in' },
+          0.14 * m,
+        );
     };
 
     /* ------------------------------ the two ends -------------------------- */
@@ -428,7 +496,10 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       setCarrying(false);
       setOverCase(false);
       p.onOverCase(false);
-      flyHome(currentPose(), spinePose(p.homeRect()));
+      flyHome(
+        currentPose(),
+        spinePose(returnGhostHandoffRect(p.homeRect(), p.homeZoom())),
+      );
     };
 
     putBackNow = putBack;
@@ -439,9 +510,22 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       // being painted at full strength on the mount frame.
       requestAnimationFrame(() => setDim(!opened && !returning));
     } else {
-      const from: Pose = { x: center.x, y: center.y, scaleX: 1, scaleY: 1, rotationY: 0 };
+      const from: Pose = {
+        x: center.x,
+        y: center.y,
+        scaleX: 1,
+        scaleY: 1,
+        rotationY: 0,
+      };
       applyStart(from, 1);
-      flyHome(from, spinePose(p.spineRect));
+      washFrame = requestAnimationFrame(() => {
+        washFrame = null;
+        setReturnWashUp(false);
+      });
+      flyHome(
+        from,
+        spinePose(returnGhostHandoffRect(p.homeRect(), p.homeZoom())),
+      );
     }
 
     /* -------------------------- catching it in flight --------------------- */
@@ -535,7 +619,8 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       const press_ = press;
       if (press_ === null || e.pointerId !== press_.id) return;
       press = null;
-      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      if (el.hasPointerCapture(e.pointerId))
+        el.releasePointerCapture(e.pointerId);
       settle();
     };
 
@@ -575,6 +660,8 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
 
     onCleanup(() => {
       tl?.kill();
+      if (handoffFrame !== null) cancelAnimationFrame(handoffFrame);
+      if (washFrame !== null) cancelAnimationFrame(washFrame);
       gsap.killTweensOf(here);
       document.removeEventListener('keydown', onKey, true);
       el.removeEventListener('pointerdown', onDown);
@@ -601,6 +688,15 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
           class="pulled-book-scrim"
           classList={{ 'is-up': dim() && live() }}
           data-testid="pulled-book-scrim"
+          aria-hidden="true"
+        />
+      </Show>
+
+      <Show when={p.mode === 'close'}>
+        <div
+          class="pulled-book-return-wash"
+          classList={{ 'is-up': returnWashUp() }}
+          data-testid="pulled-book-return-wash"
           aria-hidden="true"
         />
       </Show>
@@ -672,6 +768,7 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
         role={held() ? 'button' : 'presentation'}
         tabindex={held() ? 0 : undefined}
         aria-label={held() ? `Open ${p.book.title}` : undefined}
+        style={{ overflow: 'visible' }}
       >
         {/* Inline-styled so the overlay needs no shelf.css additions
             (that stylesheet belongs to the shelf art wave). */}
@@ -685,8 +782,27 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
             width: '100%',
             height: '100%',
             display: 'block',
+            'border-radius': 'inherit',
+            'background-position': 'center',
+            'background-repeat': 'no-repeat',
+            'background-size': '100% 100%',
           }}
         />
+        <Show when={p.status.pinned}>
+          <canvas
+            ref={(node) => (starCanvas = node)}
+            data-testid="pulled-book-star"
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '-18px',
+              top: '8px',
+              'z-index': '2',
+              'pointer-events': 'none',
+              'transform-origin': '50% 0',
+          }}
+        />
+        </Show>
       </div>
     </>
   );

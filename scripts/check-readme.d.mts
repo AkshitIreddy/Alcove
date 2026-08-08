@@ -1,7 +1,7 @@
 /**
  * Types for scripts/check-readme.mjs — the README checker is plain ESM so it
- * can run from `npm run readme:check` without a build step, but
- * tests/readme.test.ts imports it, and this is the contract it imports.
+ * can run from `npm run readme:check` without a build step. This declaration
+ * keeps its reusable exports explicit for TypeScript-aware callers.
  */
 
 /** Absolute path to the repo root. */
@@ -39,7 +39,7 @@ export const MIN_SHOT_BYTES: number;
 /** Files whose content is inside a picture, keyed by the picture's file name. */
 export const SHOT_SOURCES: Readonly<Record<string, readonly string[]>>;
 
-/** Identity keys the manifest records and tests/readme.test.ts supplies. */
+/** TypeScript-derived identity keys recorded by the screenshot manifest. */
 export const DEPICTED_KEYS: readonly string[];
 
 /** Short sha256 of a repo-relative file. */

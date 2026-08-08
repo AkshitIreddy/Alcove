@@ -19,6 +19,7 @@ import { startBackupScheduler } from './backup';
 import { startErrorLog } from './errorLog';
 import { launchIntoLastBook, startOpenBookPersistence } from './launch';
 import { startTraySync } from './tray';
+import { startUpdateChecker } from './updater';
 
 /*
  * The HUD used to mount itself, from inside SettingsPanel's always-present
@@ -58,6 +59,7 @@ export {
 } from './errorLog';
 export { launchIntoLastBook, startOpenBookPersistence } from './launch';
 export { ensureInboxBook, openQuickNote, startTraySync } from './tray';
+export { checkForUpdates, startUpdateChecker } from './updater';
 
 let initialized = false;
 
@@ -72,6 +74,7 @@ export function initSystemFeatures(): () => void {
     startOpenBookPersistence(),
     startBackupScheduler(),
     startTraySync(),
+    startUpdateChecker(),
   ];
   void launchIntoLastBook();
   return () => {

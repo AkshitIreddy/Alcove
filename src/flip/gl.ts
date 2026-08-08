@@ -3,7 +3,7 @@
  *
  * Hand-rolled per the design doc (no three.js — protects cold start and
  * bundle size). Provides exactly what the curl renderer needs: context
- * creation with loss handling, program compilation, the 40x8 grid mesh, a
+ * creation with loss handling, program compilation, the 64x16 grid mesh, a
  * unit quad, ImageBitmap texture upload and cached uniform helpers.
  */
 
@@ -176,6 +176,10 @@ export class GlProgram {
     this.gl.uniform3f(this.loc(name), x, y, z);
   }
 
+  set4f(name: string, x: number, y: number, z: number, w: number): void {
+    this.gl.uniform4f(this.loc(name), x, y, z, w);
+  }
+
   setMat4(name: string, m: Float32Array): void {
     this.gl.uniformMatrix4fv(this.loc(name), false, m);
   }
@@ -206,7 +210,7 @@ export interface GlMesh {
 
 /**
  * Grid mesh over the unit square (a_uv in [0,1]²), `cols` x `rows` cells
- * (doc: 40x8). The vertex shader owns all deformation, so the only
+ * (64x16 in CurlRenderer). The vertex shader owns all deformation, so the only
  * attribute is uv at location 0.
  */
 export function createGridMesh(gl: WebGL2RenderingContext, cols: number, rows: number): GlMesh {

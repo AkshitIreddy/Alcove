@@ -37,8 +37,10 @@ export interface Dismissible {
   readonly id: string;
   /** Matches every instance that is currently open. */
   readonly open: string;
-  /** A control INSIDE the surface that closes it, or the Escape key. */
+  /** A control that closes it, or the Escape key. */
   readonly close: string | 'escape';
+  /** Most close controls are inside; toggles such as filmstrip live elsewhere. */
+  readonly closeFrom?: 'surface' | 'document';
 }
 
 /**
@@ -72,6 +74,15 @@ export const DISMISSIBLE: readonly Dismissible[] = [
   // catches it on the frame the step changes, before the reader can press
   // anything into a scrim.
   { id: 'taste', open: '.nbq-layer', close: '.nbq-exit--quiet' },
+  // The filmstrip has no close button of its own: the rail toggle that opened
+  // it is also its way out. Once the tour leaves the step that teaches the
+  // toggle, put the strip away before it covers the next lesson.
+  {
+    id: 'thumb-strip',
+    open: '.nb-thumb-strip',
+    close: '.nb-rail-button[data-tool="thumbs"]',
+    closeFrom: 'document',
+  },
   { id: 'trash', open: '.shelf-trash', close: '.shelf-trash__close' },
   { id: 'settings', open: '.nbs-sheet', close: '.nbs-close' },
   { id: 'quick-switcher', open: '.nb-qs-bar', close: '.nb-qs-close' },
@@ -114,12 +125,19 @@ function pressEscape(): void {
   }
 }
 
-function closeOne(surface: Element, how: string | 'escape'): boolean {
+function closeOne(
+  surface: Element,
+  how: string | 'escape',
+  closeFrom: 'surface' | 'document' = 'surface',
+): boolean {
   if (how === 'escape') {
     pressEscape();
     return true;
   }
-  const button = surface.querySelector<HTMLElement>(how);
+  const button =
+    closeFrom === 'document'
+      ? document.querySelector<HTMLElement>(how)
+      : surface.querySelector<HTMLElement>(how);
   if (button === null) return false;
   button.click();
   return true;
@@ -156,7 +174,7 @@ export function dismissStale(keepSelectors: readonly string[]): readonly string[
     for (const surface of queryAll(kind.open)) {
       if (!isVisible(surface)) continue;
       if (wanted.some((el) => el === surface || surface.contains(el))) continue;
-      if (closeOne(surface, kind.close)) closed.push(kind.id);
+      if (closeOne(surface, kind.close, kind.closeFrom)) closed.push(kind.id);
     }
   }
   return closed;

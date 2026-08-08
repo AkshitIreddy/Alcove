@@ -87,9 +87,13 @@ export function layoutTree(
   roots: TreeNode[],
   opts: TreeLayoutOptions = {},
 ): DiagramLayout {
-  const gapX = opts.gapX ?? 28;
+  /* A default leaf is roughly 387px wide. Sixteen pixels still separates the
+     hand-drawn node outlines, while keeping a useful two-branch tree at its
+     authored 14/13px type instead of shrinking the whole SVG below the
+     handwriting floor. */
+  const gapX = opts.gapX ?? 16;
   const gapY = opts.gapY ?? 44;
-  const margin = opts.margin ?? 16;
+  const margin = opts.margin ?? 10;
 
   const sized = roots.map((root, i) =>
     buildSized(root, String(i), undefined, 0, gapX, opts.measure),
@@ -199,8 +203,12 @@ export function layoutMindmap(
   roots: TreeNode[],
   opts: RadialLayoutOptions = {},
 ): DiagramLayout {
-  const ringGap = opts.ringGap ?? 130;
-  const margin = opts.margin ?? 24;
+  /* The former 130px rings made even a small, nine-node mind map more than
+     600px wide. The page then scaled its nominal 14px labels to about 9px.
+     Sixty-eight pixels leaves clear angular lanes for ordinary node boxes and
+     fits the same useful specimen near native size in a default leaf. */
+  const ringGap = opts.ringGap ?? 68;
+  const margin = opts.margin ?? 10;
 
   const sized = roots.map((root, i) =>
     buildSized(root, String(i), undefined, 0, 24, opts.measure),

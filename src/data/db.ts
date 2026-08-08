@@ -1,8 +1,9 @@
 /**
  * Database access. Lazy singleton:
  *
- * - Inside Tauri: `@tauri-apps/plugin-sql` against `sqlite:notebook.db`
- *   (schema/migrations are registered on the Rust side in src-tauri/src/lib.rs).
+ * - Inside Tauri: `@tauri-apps/plugin-sql` against the installer-selected
+ *   library folder (schema/migrations are registered against that exact URL
+ *   on the Rust side in src-tauri/src/lib.rs).
  * - Outside Tauri (plain `vite` in a browser): a stub implementing the same
  *   `select`/`execute` surface, so the UI runs in dev without Rust. The stub
  *   understands the small SQL dialect the repos in this directory actually
@@ -11,8 +12,30 @@
  *   a reload just like it does on the real SQLite file.
  */
 
-/** Must stay in sync with `DB_URL` in src-tauri/src/lib.rs. */
+/** Browser/dev fallback, and the pre-custom-location legacy URL. */
 export const DB_PATH = 'sqlite:notebook.db';
+
+export interface LibraryInfo {
+  root: string;
+  assetsRoot: string;
+  dbUrl: string;
+}
+
+let libraryInfoPromise: Promise<LibraryInfo> | null = null;
+
+/** The one Rust-resolved root used by SQLite, media, backups and imports. */
+export async function getLibraryInfo(): Promise<LibraryInfo> {
+  if (!isTauri()) return { root: '', assetsRoot: '', dbUrl: DB_PATH };
+  libraryInfoPromise ??= (async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<LibraryInfo>('library_info');
+  })();
+  return libraryInfoPromise;
+}
+
+export async function getDbPath(): Promise<string> {
+  return (await getLibraryInfo()).dbUrl;
+}
 
 export interface DbExecuteResult {
   rowsAffected: number;
@@ -39,7 +62,7 @@ export function getDb(): Promise<Db> {
 async function loadTauriDb(): Promise<Db> {
   // Dynamic import so the browser dev build never touches Tauri internals.
   const { default: Database } = await import('@tauri-apps/plugin-sql');
-  return Database.load(DB_PATH);
+  return Database.load(await getDbPath());
 }
 
 // ---------------------------------------------------------------------------

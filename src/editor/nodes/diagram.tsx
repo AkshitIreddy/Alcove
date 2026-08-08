@@ -259,6 +259,7 @@ function DiagramView(props: SolidNodeViewProps): JSX.Element {
     <NodeViewWrapper
       class="nb-diagram"
       classList={{ 'is-selected': props.selected, 'is-editing': editing() }}
+      data-nb-block-flow="feature"
       data-kind={kind()}
       ref={(el: HTMLElement) => {
         wrapperEl = el;

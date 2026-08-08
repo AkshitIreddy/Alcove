@@ -26,7 +26,7 @@ import { CanvasSource, Rectangle, Texture } from 'pixi.js';
 import { AtlasManager, type AtlasPage } from '../../art/atlas';
 import { recordBakeSample } from '../../art/bake';
 import { artOffload, type ArtOffload } from './artOffload';
-import { resolveBookStyle, type ResolvedBookStyle } from '../../art/bookStyle';
+import type { ResolvedBookStyle } from '../../art/bookStyle';
 import {
   renderSpine,
   SPINE_THICKNESS_RANGE,
@@ -39,8 +39,8 @@ import { bookBinding } from '../../data/designPrefs';
 import type { Book } from '../../data/types';
 import {
   bookStyleOverridesFor,
+  resolveBookAppearance,
   spineArtHeight,
-  themeSpineDefaults,
 } from './bookIdentity';
 import { paletteCss, placeholderTint } from './spinePalette';
 import { fnv1a } from '../../art/noise';
@@ -347,15 +347,37 @@ export class SpineFactory {
    * both buckets must be settled — tier-0 views prefer hi, and waiting only
    * on lo still lets a decorated spine sharpen mid-hold.
    */
-  whenReady(bookIds: readonly string[], opts?: { hi?: boolean }): Promise<void> {
+  whenReady(
+    bookIds: readonly string[],
+    opts?: { hi?: boolean; signal?: AbortSignal },
+  ): Promise<void> {
     if (this.destroyed) return Promise.resolve();
     const hi = opts?.hi === true && this.hiEnabled;
     const ids = [...new Set(bookIds)];
-    if (ids.length === 0 || ids.every((id) => this.isSettled(id, hi))) {
+    if (
+      opts?.signal?.aborted === true ||
+      ids.length === 0 ||
+      ids.every((id) => this.isSettled(id, hi))
+    ) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      this.settleWaits.push({ ids: new Set(ids), hi, resolve });
+      let finished = false;
+      let wait!: { ids: Set<string>; hi: boolean; resolve: () => void };
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        opts?.signal?.removeEventListener('abort', abort);
+        resolve();
+      };
+      const abort = (): void => {
+        const at = this.settleWaits.indexOf(wait);
+        if (at >= 0) this.settleWaits.splice(at, 1);
+        finish();
+      };
+      wait = { ids: new Set(ids), hi, resolve: finish };
+      this.settleWaits.push(wait);
+      opts?.signal?.addEventListener('abort', abort, { once: true });
       this.checkSettles();
     });
   }
@@ -531,10 +553,9 @@ export class SpineFactory {
     const key = `${this.styleEpoch}|${book.id}|${pinned ?? '-'}`;
     let resolved = this.paramsCache.get(key);
     if (resolved === undefined) {
-      const base = resolveBookStyle(
-        book.spineSeed,
-        themeSpineDefaults(this.theme),
-        bookStyleOverridesFor(book),
+      const base = resolveBookAppearance(
+        book,
+        this.theme,
         { pageCount: readShelfMeta(book)?.pageCount },
       );
       // `null` is not a default here — it means "let the seed choose", which
@@ -896,6 +917,10 @@ export class SpineFactory {
 
   destroy(): void {
     this.destroyed = true;
+    // Resolve (and therefore detach abort listeners from) any room/demo gate.
+    // A destroyed factory cannot make further progress, and leaving callers
+    // pending turns a route change into a leaked transition promise.
+    for (const wait of this.settleWaits.splice(0)) wait.resolve();
     this.idle?.cancel();
     this.idle = null;
     if (this.retireTimer !== null) {

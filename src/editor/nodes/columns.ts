@@ -307,7 +307,10 @@ export const Columns = Node.create({
   renderHTML({ HTMLAttributes }) {
     return [
       'div',
-      mergeAttributes(HTMLAttributes, { 'data-type': 'columns' }),
+      mergeAttributes(HTMLAttributes, {
+        'data-type': 'columns',
+        'data-nb-block-flow': 'feature',
+      }),
       0,
     ];
   },

@@ -9,12 +9,12 @@
 ;   > "most install and unistall exe look boring make sure ours looks
 ;   >  interesting, pretty like our app"
 ;
-; The first half is the important one. Alcove is a notes app; an uninstaller
-; that quietly takes somebody's books with it is unforgivable. So the option
-; DEFAULTS TO KEEPING the library — that is Tauri's own behaviour and this file
-; does not change it — and a page is added ahead of the question that says
-; exactly where the library is and offers to open the folder, so it can be
-; copied somewhere first.
+; The first half is the important one. Alcove is a storybook library on this
+; machine; an uninstaller that quietly takes somebody's books with it is
+; unforgivable. So the option DEFAULTS TO KEEPING the library — that is
+; Tauri's own behaviour and this file does not change it — and a page is added
+; ahead of the question that says exactly where the library is and offers to
+; open the folder, so it can be copied somewhere first.
 ;
 ; ## How this file is reached
 ;
@@ -54,6 +54,7 @@
 ; uninstaller's checkbox removes.
 !define ALCOVE_IDENTIFIER "com.alcove.app"
 !define ALCOVE_LIBRARY "$APPDATA\${ALCOVE_IDENTIFIER}"
+!define ALCOVE_LOCATION_FILE "${ALCOVE_LIBRARY}\library-location.txt"
 ; The same path written the way a reader can paste it into Explorer's address
 ; bar. Used where the string is baked at compile time and `$APPDATA` would
 ; never get the chance to expand.
@@ -65,7 +66,7 @@
 
 ; ------------------------------------------------------------- what it says
 !define MUI_WELCOMEPAGE_TITLE "Alcove"
-!define MUI_WELCOMEPAGE_TEXT "A flat-drawn bookshelf that opens into hand-drawn pages.$\r$\n$\r$\nAlcove installs for you alone. No administrator prompt, nothing in Program Files, and no account to make.$\r$\n$\r$\nYour library is a folder on this machine and stays there.$\r$\n$\r$\nClick Next to put it on the shelf."
+!define MUI_WELCOMEPAGE_TEXT "Built like a storybook library — cozy shelves and patterned walls.$\r$\nNotebook pages with diagrams, notes, tape, and stickers inside.$\r$\n$\r$\nAlcove installs for you alone. No administrator prompt, nothing in Program Files, and no account to make.$\r$\n$\r$\nYour library is a folder on this machine and stays there.$\r$\n$\r$\nClick Next to put it on the shelf."
 
 !define MUI_FINISHPAGE_TITLE "Alcove is on the shelf"
 ; MUI gives the finish page's paragraph 40 dialog units and puts the two check
@@ -76,13 +77,13 @@
 ; the last two lines were hidden behind "Open Alcove now", and at 60 the text
 ; below still had one line too many. SIX slots fit — count a blank line as one.
 !define MUI_FINISHPAGE_TEXT_LARGE
-!define MUI_FINISHPAGE_TEXT "Open it and you will find a bookcase with one book on it.$\r$\n$\r$\nYour library will live in:$\r$\n${ALCOVE_LIBRARY}$\r$\n$\r$\nCopy that folder to back it up or to carry your books to another machine."
+!define MUI_FINISHPAGE_TEXT "Open it to find a storybook shelf and one welcome book.$\r$\n$\r$\nYour books, pictures and backups live together in the library folder you chose.$\r$\n$\r$\nCopy that folder to back it up or to carry your books to another machine."
 !define MUI_FINISHPAGE_RUN_TEXT "Open Alcove now"
 
 ; Two short lines: the text control on the uninstall confirm page is about
 ; three lines tall, and Tauri's own "delete the library" checkbox sits just
 ; below it. Anything longer is clipped rather than scrolled.
-!define MUI_UNCONFIRMPAGE_TEXT_TOP "Alcove will be removed from this computer. Your library in ${ALCOVE_LIBRARY_TYPED} is KEPT unless you tick the box below."
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "Alcove will be removed from this computer. The library folder shown on the previous page is KEPT unless you tick the box below."
 
 ; -----------------------------------------------------------------------------
 ; The extra uninstaller page: where the library is, before anything is deleted.
@@ -95,6 +96,92 @@
 ; -----------------------------------------------------------------------------
 Var AlcoveLibraryDialog
 Var AlcoveLibraryPathBox
+Var AlcoveLibrarySelection
+Var AlcoveLibraryBrowseButton
+
+; The installer owns a separate library-location page.  It is skipped for
+; passive updater runs, which keep the existing pointer without interruption.
+Page custom AlcoveLibraryInstallPage AlcoveLibraryInstallLeave
+
+Function AlcoveResolveLibrarySelection
+  ${If} $AlcoveLibrarySelection != ""
+    Return
+  ${EndIf}
+  StrCpy $AlcoveLibrarySelection "${ALCOVE_LIBRARY}"
+  IfFileExists "${ALCOVE_LOCATION_FILE}" 0 done
+  ClearErrors
+  FileOpen $0 "${ALCOVE_LOCATION_FILE}" r
+  ${IfNot} ${Errors}
+    FileRead $0 $1
+    FileClose $0
+    trim_location_line:
+    StrCpy $2 $1 1 -1
+    StrCmp $2 "$\r" trim_location_char
+    StrCmp $2 "$\n" trim_location_char location_line_ready
+    trim_location_char:
+    StrCpy $1 $1 -1
+    Goto trim_location_line
+    location_line_ready:
+    ${If} $1 != ""
+      StrCpy $AlcoveLibrarySelection $1
+    ${EndIf}
+  ${EndIf}
+  done:
+FunctionEnd
+
+Function AlcoveLibraryInstallPage
+  ClearErrors
+  ${GetOptions} $CMDLINE "/P" $0
+  ${IfNot} ${Errors}
+    Abort
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $CMDLINE "/UPDATE" $0
+  ${IfNot} ${Errors}
+    Abort
+  ${EndIf}
+
+  Call AlcoveResolveLibrarySelection
+  !insertmacro MUI_HEADER_TEXT "Choose your library folder" "Your books, pages, pictures and backups stay together."
+  nsDialogs::Create 1018
+  Pop $AlcoveLibraryDialog
+  ${If} $AlcoveLibraryDialog == error
+    Abort
+  ${EndIf}
+  ${IfThen} $(^RTL) = 1 ${|} nsDialogs::SetRTL $(^RTL) ${|}
+
+  ${NSD_CreateLabel} 0 0u 100% 28u "Choose where Alcove stores your library. This is separate from the app's install folder, and you can copy the whole folder as a backup."
+  Pop $0
+  ${NSD_CreateLabel} 0 34u 100% 10u "Library folder:"
+  Pop $0
+  ${NSD_CreateText} 0 47u 76% 13u "$AlcoveLibrarySelection"
+  Pop $AlcoveLibraryPathBox
+  ${NSD_CreateButton} 79% 46u 21% 15u "Browse..."
+  Pop $AlcoveLibraryBrowseButton
+  ${NSD_OnClick} $AlcoveLibraryBrowseButton AlcoveBrowseLibrary
+  ${NSD_CreateLabel} 0 70u 100% 38u "If you already have an Alcove library in the normal location and choose a new empty folder, Alcove copies it there on first launch. The old copy is kept as a safety copy."
+  Pop $0
+  nsDialogs::Show
+FunctionEnd
+
+Function AlcoveBrowseLibrary
+  ${NSD_GetText} $AlcoveLibraryPathBox $AlcoveLibrarySelection
+  nsDialogs::SelectFolderDialog "Choose Alcove's library folder" "$AlcoveLibrarySelection"
+  Pop $0
+  ${If} $0 != error
+    StrCpy $AlcoveLibrarySelection $0
+    ${NSD_SetText} $AlcoveLibraryPathBox "$AlcoveLibrarySelection"
+  ${EndIf}
+FunctionEnd
+
+Function AlcoveLibraryInstallLeave
+  ${NSD_GetText} $AlcoveLibraryPathBox $AlcoveLibrarySelection
+  ${If} $AlcoveLibrarySelection == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Choose a folder for your Alcove library."
+    Abort
+  ${EndIf}
+  GetFullPathName $AlcoveLibrarySelection "$AlcoveLibrarySelection"
+FunctionEnd
 
 UninstPage custom un.AlcoveLibraryPage
 
@@ -118,6 +205,8 @@ Function un.AlcoveLibraryPage
 
   !insertmacro MUI_HEADER_TEXT "Your library" "Everything you have written, and where it is kept."
 
+  Call un.AlcoveResolveLibrarySelection
+
   nsDialogs::Create 1018
   Pop $AlcoveLibraryDialog
   ${If} $AlcoveLibraryDialog == error
@@ -137,7 +226,7 @@ Function un.AlcoveLibraryPage
 
   ; A read-only edit rather than a label, so the path can be selected and
   ; copied. A path a reader cannot copy is a path they have to retype.
-  ${NSD_CreateText} 0 42u 100% 13u "${ALCOVE_LIBRARY}"
+  ${NSD_CreateText} 0 42u 100% 13u "$AlcoveLibrarySelection"
   Pop $AlcoveLibraryPathBox
   SendMessage $AlcoveLibraryPathBox ${EM_SETREADONLY} 1 0
 
@@ -154,7 +243,33 @@ FunctionEnd
 Function un.AlcoveOpenLibrary
   ; `un.onInit` has already run `SetShellVarContext current`, so $APPDATA is
   ; this user's Roaming folder — the same one the uninstall section deletes.
-  ExecShell "open" "${ALCOVE_LIBRARY}"
+  ExecShell "open" "$AlcoveLibrarySelection"
+FunctionEnd
+
+Function un.AlcoveResolveLibrarySelection
+  ${If} $AlcoveLibrarySelection != ""
+    Return
+  ${EndIf}
+  StrCpy $AlcoveLibrarySelection "${ALCOVE_LIBRARY}"
+  IfFileExists "${ALCOVE_LOCATION_FILE}" 0 done
+  ClearErrors
+  FileOpen $0 "${ALCOVE_LOCATION_FILE}" r
+  ${IfNot} ${Errors}
+    FileRead $0 $1
+    FileClose $0
+    un_trim_location_line:
+    StrCpy $2 $1 1 -1
+    StrCmp $2 "$\r" un_trim_location_char
+    StrCmp $2 "$\n" un_trim_location_char un_location_line_ready
+    un_trim_location_char:
+    StrCpy $1 $1 -1
+    Goto un_trim_location_line
+    un_location_line_ready:
+    ${If} $1 != ""
+      StrCpy $AlcoveLibrarySelection $1
+    ${EndIf}
+  ${EndIf}
+  done:
 FunctionEnd
 
 ; -----------------------------------------------------------------------------
@@ -164,16 +279,38 @@ FunctionEnd
 ; -----------------------------------------------------------------------------
 
 !macro NSIS_HOOK_POSTINSTALL
+  Call AlcoveResolveLibrarySelection
+  CreateDirectory "${ALCOVE_LIBRARY}"
+  FileOpen $0 "${ALCOVE_LOCATION_FILE}" w
+  FileWrite $0 "$AlcoveLibrarySelection$\r$\n"
+  FileClose $0
   ; The install log is the one place a reader can scroll back to afterwards.
-  DetailPrint "Your library will live in ${ALCOVE_LIBRARY}"
+  DetailPrint "Your library will live in $AlcoveLibrarySelection"
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  ; Save the selected path before Tauri optionally removes the default app
+  ; data folder (which also contains our location pointer).
+  Call un.AlcoveResolveLibrarySelection
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ; Expanded inside `Section Uninstall`, which is why this may name a variable
   ; the template declares after this file is included.
   ${If} $DeleteAppDataCheckboxState = 1
-    DetailPrint "Your library in ${ALCOVE_LIBRARY} has been deleted."
+    ; Tauri removes the default folder itself.  For a custom library, remove
+    ; only Alcove-owned entries; never recursively erase an arbitrary folder
+    ; the reader may also use for other files.
+    ${If} $AlcoveLibrarySelection != "${ALCOVE_LIBRARY}"
+      Delete "$AlcoveLibrarySelection\notebook.db"
+      Delete "$AlcoveLibrarySelection\notebook.db-wal"
+      Delete "$AlcoveLibrarySelection\notebook.db-shm"
+      RmDir /r "$AlcoveLibrarySelection\assets"
+      RmDir /r "$AlcoveLibrarySelection\backups"
+      RmDir "$AlcoveLibrarySelection"
+    ${EndIf}
+    DetailPrint "Alcove's library data in $AlcoveLibrarySelection has been deleted."
   ${Else}
-    DetailPrint "Your library has been LEFT IN PLACE, in ${ALCOVE_LIBRARY}"
+    DetailPrint "Your library has been LEFT IN PLACE, in $AlcoveLibrarySelection"
   ${EndIf}
 !macroend

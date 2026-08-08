@@ -1,5 +1,4 @@
 import {
-  For,
   Show,
   Suspense,
   createSignal,
@@ -9,7 +8,7 @@ import {
   type JSX,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { appState, type ViewState } from "./state/app";
+import { appState } from "./state/app";
 import {
   load as loadSettings,
   settings,
@@ -94,65 +93,6 @@ function preloadBookView(): () => void {
   return () => cancel(handle as number);
 }
 
-const VIEWS: readonly ViewState[] = ["shelf", "book"];
-
-/**
- * The switcher is DEV chrome: a raw "shelf | book" pill pinned over the
- * bottom-right corner of the book cover in every production screenshot.
- * It stays reachable (the e2e suite and manual QA drive it) but only when
- * asked for — `?dev=1`, a `nb-dev` localStorage flag, or a non-production
- * bundle. Everything else gets a clean corner.
- */
-function devChromeEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("dev") === "1") return true;
-    if (params.get("dev") === "0") return false;
-    if (window.localStorage.getItem("nb-dev") === "1") return true;
-  } catch {
-    // Storage or URL unavailable (packaged webview quirks) — fall through.
-  }
-  return import.meta.env.DEV === true;
-}
-
-/**
- * Tiny dev-only switcher so both views stay reachable while features land.
- *
- * Placement/opacity live in settings.css (`.nb-dev-switcher`), NOT in an
- * inline style: inline styles outrank the stylesheet, so an inline `opacity`
- * here would beat the focus-mode fade rule and leave the pill glowing over a
- * deliberately dimmed desk.
- */
-function DevViewSwitcher(): JSX.Element {
-  return (
-    <nav class="nb-dev-switcher" aria-label="Dev view switcher">
-      <For each={VIEWS}>
-        {(view) => {
-          const active = () => appState.viewState() === view;
-          return (
-            <button
-              type="button"
-              class="font-ui"
-              style={{
-                padding: "var(--space-4) var(--space-12)",
-                "border-radius": "var(--radius-pill)",
-                background: active() ? "var(--wash-amber-light)" : "transparent",
-                color: active() ? "var(--ink-sepia)" : "var(--ink-graphite-soft)",
-                "font-weight": active() ? 700 : 400,
-                transition: "background var(--dur-xs) var(--ease-out), color var(--dur-xs) var(--ease-out)",
-              }}
-              onClick={() => appState.setViewState(view)}
-            >
-              {view}
-            </button>
-          );
-        }}
-      </For>
-    </nav>
-  );
-}
-
 /**
  * The book, a moment before it has anything in it.
  *
@@ -230,8 +170,6 @@ export default function App(): JSX.Element {
     setSettingsWanted(true);
     setSettingsOpen((open) => !open);
   };
-  const showDevChrome = devChromeEnabled();
-
   onMount(() => {
     // Hydrate persisted settings, then keep the world in sync: subscribe fires
     // immediately with the current snapshot and again after load()/every save().
@@ -364,9 +302,6 @@ export default function App(): JSX.Element {
         <Suspense fallback={<BookOpening />}>
           <BookView />
         </Suspense>
-      </Show>
-      <Show when={showDevChrome}>
-        <DevViewSwitcher />
       </Show>
       <QuickSwitcher />
       {/* The taste questionnaire, mounted once for the life of the app and

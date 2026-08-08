@@ -2656,7 +2656,10 @@ function paintCharm(
       // A marker slipped down the fore-edge side, notched at the tail — the
       // icon's ribbon, stood up rather than hanging out of the bottom. It runs
       // outboard of the label on purpose; a ribbon laid across the title was
-      // the first thing that looked wrong in the specimen.
+      // the first thing that looked wrong in the specimen. The darker face is
+      // only the short fold where the marker leaves the head. A full-height
+      // dark stripe beside the cloth read as a second bookmark on the large
+      // pulled-out cover, even though it was technically part of the first.
       const rw = w * 0.075;
       const rx = x + w * 0.848;
       const tail = y + h * 0.26;
@@ -2669,10 +2672,27 @@ function paintCharm(
       ctx.closePath();
       ctx.fillStyle = face;
       ctx.fill();
+
+      // One small turned face at the head, contained inside the same outer
+      // silhouette. Keeping it short makes the tail read as one strip.
+      ctx.beginPath();
+      ctx.moveTo(rx + rw * 0.7, y - unit * 0.02);
+      ctx.lineTo(rx + rw, y - unit * 0.02);
+      ctx.lineTo(rx + rw, y + rw * 0.72);
+      ctx.lineTo(rx + rw * 0.7, y + rw * 0.98);
+      ctx.closePath();
+      ctx.fillStyle = dark;
+      ctx.fill();
+
       pen(ctx, FLAT.ink, ink * 0.8);
+      ctx.beginPath();
+      ctx.moveTo(rx, y - unit * 0.02);
+      ctx.lineTo(rx + rw, y - unit * 0.02);
+      ctx.lineTo(rx + rw, tail);
+      ctx.lineTo(rx + rw / 2, tail - rw * 0.55);
+      ctx.lineTo(rx, tail);
+      ctx.closePath();
       ctx.stroke();
-      // The fold: one darker face, which is the whole depth model again.
-      stroke(ctx, rx + rw * 0.72, y, rx + rw * 0.72, tail - rw * 0.3, dark, rw * 0.3, seed);
       break;
     }
     case 'tassel': {

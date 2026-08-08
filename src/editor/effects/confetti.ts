@@ -29,6 +29,17 @@
  */
 import { isMotionOff } from '../../styles/motion';
 
+/**
+ * The one cue a completed task owns. Kept pure so the no-stacking contract is
+ * testable without mounting a TipTap editor or a canvas.
+ */
+export function taskCompletionCue(
+  confettiOnComplete: boolean,
+  minimalistMode: boolean,
+): 'confetti' | 'check-done' {
+  return confettiOnComplete && !minimalistMode ? 'confetti' : 'check-done';
+}
+
 export const CONFETTI_COUNT = 40;
 export const CONFETTI_DURATION_MS = 900;
 /** Gravity in px/ms² (≈ 970 px/s² — reads as fluttering paper, not hail). */
@@ -109,6 +120,24 @@ export interface ConfettiFrame {
   scaleY: number;
 }
 
+/** Fill a caller-owned frame object so the hot canvas loop allocates nothing. */
+function writeParticleFrame(
+  p: ConfettiParticle,
+  tMs: number,
+  out: ConfettiFrame,
+): void {
+  const t = Math.max(0, Math.min(CONFETTI_DURATION_MS, tMs));
+  const progress = t / CONFETTI_DURATION_MS;
+  const sway = Math.sin(t * p.swayRate + p.phase) * p.flutter * progress;
+  const fadeStart = p.fadeAt * CONFETTI_DURATION_MS;
+  const fadeSpan = CONFETTI_DURATION_MS - fadeStart;
+  out.x = p.vx * t + sway;
+  out.y = p.vy * t + 0.5 * CONFETTI_GRAVITY_PX_MS2 * t * t;
+  out.rotation = p.spin * t + p.phase;
+  out.opacity = t <= fadeStart ? 1 : Math.max(0, 1 - (t - fadeStart) / fadeSpan);
+  out.scaleY = 0.35 + 0.65 * Math.abs(Math.cos(t * p.flipRate + p.phase));
+}
+
 /**
  * Build the burst. Pure — `rng` is injectable so tests drive it
  * deterministically. Velocities/sizes are bounded so every particle stays
@@ -151,20 +180,9 @@ export function createConfettiParticles(
 
 /** Kinematics at time t (ms since the burst). Pure. */
 export function particleAt(p: ConfettiParticle, tMs: number): ConfettiFrame {
-  const t = Math.max(0, Math.min(CONFETTI_DURATION_MS, tMs));
-  const progress = t / CONFETTI_DURATION_MS;
-  // Amplitude ramps with progress so every scrap leaves the origin exactly at
-  // the origin, and the sway never exceeds `flutter` off the ballistic path.
-  const sway = Math.sin(t * p.swayRate + p.phase) * p.flutter * progress;
-  const fadeStart = p.fadeAt * CONFETTI_DURATION_MS;
-  const fadeSpan = CONFETTI_DURATION_MS - fadeStart;
-  return {
-    x: p.vx * t + sway,
-    y: p.vy * t + 0.5 * CONFETTI_GRAVITY_PX_MS2 * t * t,
-    rotation: p.spin * t + p.phase,
-    opacity: t <= fadeStart ? 1 : Math.max(0, 1 - (t - fadeStart) / fadeSpan),
-    scaleY: 0.35 + 0.65 * Math.abs(Math.cos(t * p.flipRate + p.phase)),
-  };
+  const out: ConfettiFrame = { x: 0, y: 0, rotation: 0, opacity: 1, scaleY: 1 };
+  writeParticleFrame(p, tMs, out);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +316,8 @@ function teardown(): void {
  * burst read as dust.
  */
 const DRAW_SCALE = 2.1;
+/** Reused by the synchronous frame loop; avoids one short-lived object/scrap/frame. */
+const HOT_FRAME: ConfettiFrame = { x: 0, y: 0, rotation: 0, opacity: 1, scaleY: 1 };
 
 function drawShape(ctx: CanvasRenderingContext2D, p: ConfettiParticle): void {
   const long = p.size * p.stretch * DRAW_SCALE;
@@ -361,18 +381,30 @@ function frame(now: number): void {
     const originX = burst.x - boxLeft;
     const originY = burst.y - boxTop;
     for (const p of burst.particles) {
-      const state = particleAt(p, t);
+      writeParticleFrame(p, t, HOT_FRAME);
+      const state = HOT_FRAME;
       if (state.opacity <= 0) continue;
-      ctx.setTransform(boxDpr, 0, 0, boxDpr, 0, 0);
-      ctx.translate(originX + state.x, originY + state.y);
-      ctx.rotate(state.rotation);
-      ctx.scale(1, state.scaleY);
+      // The old sequence crossed the JS/native canvas boundary four times per
+      // scrap (`setTransform`, `translate`, `rotate`, `scale`). This is the
+      // exact combined matrix: same pixels and draw order, one call. At the
+      // normal 40 scraps it removes 7,200 canvas calls per second at 60 fps.
+      const cos = Math.cos(state.rotation);
+      const sin = Math.sin(state.rotation);
+      ctx.setTransform(
+        boxDpr * cos,
+        boxDpr * sin,
+        -boxDpr * sin * state.scaleY,
+        boxDpr * cos * state.scaleY,
+        boxDpr * (originX + state.x),
+        boxDpr * (originY + state.y),
+      );
       ctx.globalAlpha = state.opacity;
       ctx.fillStyle = colors[p.colorIndex % colors.length];
       drawShape(ctx, p);
     }
   }
 
+  ctx.globalAlpha = 1;
   frameId = requestAnimationFrame(frame);
 }
 

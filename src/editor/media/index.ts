@@ -34,7 +34,9 @@ export {
   recordAssetRow,
   storeImageBytes,
   storeImageFile,
+  storeVideoFile,
   type FetchedImageResult,
+  type StoredAsset,
   type StoredImage,
 } from './assets';
 
@@ -49,6 +51,16 @@ export {
   createMediaPastePlugin,
   mediaPastePluginKey,
 } from './pastePlugin';
+
+export {
+  insertMediaFiles,
+  insertMediaFilesInEditor,
+  mediaFilesFrom,
+  mediaKindForFile,
+  pickMediaFiles,
+  readClipboardImageFile,
+  type MediaFileKind,
+} from './insert';
 
 export {
   LinkCard,
@@ -66,3 +78,5 @@ export {
   type ImageAlign,
   type ImageFrame,
 } from './imageView';
+
+export { MediaVideo } from './videoView';

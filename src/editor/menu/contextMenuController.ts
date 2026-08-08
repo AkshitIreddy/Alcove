@@ -12,7 +12,6 @@ import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { createComponent } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
-import { play } from '../../sound/engine';
 import ContextMenu from './ContextMenu';
 import {
   buildBlockContextMenu,
@@ -220,8 +219,6 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
   window.addEventListener('blur', close);
   editor.on('destroy', close);
   openMenu = { close };
-
-  void play('pop-soft');
 
   const reference = {
     getBoundingClientRect: (): DOMRect =>

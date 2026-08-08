@@ -179,6 +179,11 @@ function mergeStored(raw: unknown): MutableSettings {
     thumbnailsStrip: takeBoolean(s.thumbnailsStrip, d.thumbnailsStrip),
     launchIntoLastBook: takeBoolean(s.launchIntoLastBook, d.launchIntoLastBook),
     trayQuickCapture: takeBoolean(s.trayQuickCapture, d.trayQuickCapture),
+    closeToTray: takeBoolean(s.closeToTray, d.closeToTray),
+    muteSoundsWhenUnfocused: takeBoolean(
+      s.muteSoundsWhenUnfocused,
+      d.muteSoundsWhenUnfocused,
+    ),
     backupFolder:
       typeof s.backupFolder === 'string' ? s.backupFolder : d.backupFolder,
     perfHud: takeBoolean(s.perfHud, d.perfHud),

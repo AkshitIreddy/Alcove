@@ -152,6 +152,17 @@
   color: var(--ink-graphite-soft);
 }
 
+.nb-ins-spec-note {
+  margin: 0 0 var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border: 1px dashed var(--wash-lemon-deep);
+  border-radius: 11px 9px 12px 10px / 9px 12px 10px 11px;
+}
+
 /* ----------------------------------------------------------------------------
    Body: textarea + warnings | preview
    -------------------------------------------------------------------------- */
@@ -510,6 +521,10 @@
   align-items: center;
   gap: var(--space-8);
   margin-top: var(--space-16);
+}
+
+.nb-ins-spec-actions {
+  flex-wrap: wrap;
 }
 
 .nb-ins-spacer {

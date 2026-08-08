@@ -109,9 +109,9 @@ most of why the app reads as a single drawing rather than a pile of clip art;
 letting a room pick its own would turn sixty palettes into sixty unrelated
 illustrations. That also puts a floor under how dark a scheme may go — every
 colour above has to keep the one brown ink legible on top of it, which is why
-**there is no midnight room**. `tests/art-themes.test.ts` enforces a luminance
-floor on every hex, and the `wall > timber > timberDark > recess` ordering that
-makes the case read as a box with a hollow in it.
+**there is no midnight room**. Every palette keeps a luminance floor and the
+`wall > timber > timberDark > recess` ordering that makes the case read as a box
+with a hollow in it.
 
 **Exactly six cloths, in every scheme** — and a spine no longer reads them.
 
@@ -322,9 +322,9 @@ appear in the relevant cache key next to `flatSchemeTag()`:
 | `wallpaperTileKey`, `mergeWallpaperSpec`, `designOptions.wallpaperKey`, `LibraryStudio.sameSpec` | every wallpaper axis, via the exported `wallpaperAxisKey` |
 | the spine factory's params key | the pinned binding id (`bookBinding(bookId)`, verbatim) |
 
-`tests/design-cache-keys.test.ts` pins this. `themeKeyOf` lives in
-`libraryKey.ts` rather than `textures.ts` precisely so a node test can load it
-without pulling in Pixi.
+`themeKeyOf` lives in `libraryKey.ts` rather than `textures.ts` so key
+construction stays independent of Pixi and can be reviewed beside the axes it
+must carry.
 
 The book row is the odd one out and is worth reading twice: the spine caches are
 **invalidation-keyed, not content-keyed**. Only the pin is in a key, and only
@@ -451,9 +451,6 @@ flat.
 - A customized book keeps its identity on the shelf, mid-pull-out, and open.
 - 60fps maintained: everything baked, sprite-drawn, LOD-aware.
 
-Unit tests prove a module draws well in isolation and say nothing about whether
-the app can reach it. Anything that travels store → world is proved by driving
-the running app: `scripts/probe-vocabularies.mjs` (a design choice reaches the
-case, the wall and a second bookcase), `probe-bindings.mjs` (bindings through the
-whole spine bake path), `probe-studio-wiring.mjs` (the panel, driven only by
-clicking), `probe-room-presets.mjs` (rolling and drawing preset candidates).
+Anything that travels store → world must be tried through its visible studio
+control in the running app. Saving a value is not enough: inspect the applied
+case, wall, binding or preset on screen.

@@ -145,7 +145,6 @@ function PageLinkView(props: SolidNodeViewProps): JSX.Element {
     event.preventDefault();
     event.stopPropagation();
     if (missing()) {
-      void play('pop-soft');
       return;
     }
     const resolved = card();

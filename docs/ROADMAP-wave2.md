@@ -277,7 +277,8 @@ guarantee it is not. What is true:
   `tests/design-cache-keys.test.ts` (every axis that varies baked pixels is in
   the cache key), `tests/catalogue-reach.test.ts` (every value of every
   vocabulary axis is named by a selector), `tests/styles.test.ts` (no light
-  model), `tests/readme.test.ts` (the counted claims in the README).
+  model), `tests/readme-integrity.test.ts` (the counted claims, links and shot
+  identity in the README).
 - All UI in the one warm-parchment register — flat out on the shelf, hand-drawn
   on the page and on the paper chrome; left-rail placement over top bars; no
   scrollbars inside pages. Long option lists cap at ~20 with an "N more" control

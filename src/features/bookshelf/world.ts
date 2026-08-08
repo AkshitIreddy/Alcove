@@ -57,7 +57,10 @@ import {
   switchBookcase,
   type BookcaseState,
 } from '../../data/bookcases';
-import { save as saveSettings, subscribe as subscribeSettings } from '../../data/settings';
+import {
+  save as saveSettings,
+  subscribe as subscribeSettings,
+} from '../../data/settings';
 import { liveCommandIds } from '../../data/keybindings';
 import {
   hiddenIds,
@@ -196,6 +199,12 @@ export interface RectLike {
   height: number;
 }
 
+/** Physical shelf ornaments carried with a book through every renderer. */
+export interface ShelfBookStatus {
+  pinned: boolean;
+  recent: boolean;
+}
+
 export interface VisibleBook {
   id: string;
   title: string;
@@ -225,8 +234,8 @@ export const NEW_BOOK_TITLE = 'Untitled';
 export interface WorldEvents {
   /** The a11y mirror re-renders from this. */
   onVisibleBooksChange(books: VisibleBook[]): void;
-  /** Canvas pull-out finished; the DOM overlay takes over at `rect`. */
-  onGhostReady(book: Book, rect: RectLike): void;
+  /** Canvas pull-out finished; the DOM overlay takes over the same decorated book. */
+  onGhostReady(book: Book, rect: RectLike, status: ShelfBookStatus): void;
   /** Rounded zoom percent changed (drives the zoom pill readout). */
   onZoomChange?(percent: number): void;
   /** The applied library room changed (theme/wallpaper/backdrop key). */
@@ -250,6 +259,14 @@ interface CameraSnapshot {
 let sessionCamera: CameraSnapshot | null = null;
 
 const PARALLAX = 0.85;
+/**
+ * A failed worker must not leave the outgoing room's photograph over the app
+ * forever. It is the same order as the spine factory's 6s retired-generation
+ * watchdog but independent of it (that clock starts earlier): on the unhappy
+ * path the coherent old room gives way to the factory's honest fallback, and
+ * baking continues after the reveal.
+ */
+const ROOM_SPINE_STAGE_MAX_MS = 5500;
 
 /**
  * The room's `scheme.wall` as a tint, for the placeholder only.
@@ -294,6 +311,8 @@ const PULL_FOLLOW_K = 11;
 interface BookPull {
   fv: FloorView;
   visual: BookVisual;
+  /** Snapshot of the actual child ornaments at the instant the spine left. */
+  status: ShelfBookStatus;
   ghost: Sprite;
   shadow: Sprite;
   /** Where the spine sat on screen when the pull began. */
@@ -326,7 +345,9 @@ export class ShelfWorld {
   private readonly store = new FloorStore();
   private readonly factory: SpineFactory;
   private readonly envTex = new EnvTextures();
-  private readonly stamps = new FloorStampCache((floor) => this.floors.has(floor));
+  private readonly stamps = new FloorStampCache((floor) =>
+    this.floors.has(floor),
+  );
   private readonly input: ShelfInput;
 
   /**
@@ -338,17 +359,34 @@ export class ShelfWorld {
   private caseId = '';
   /** Bumped per bookcase switch so stale async reloads drop. */
   private caseGen = 0;
+  /**
+   * Immediate continue-reading truth while `touchBookOpened` is still in
+   * flight. Persisted floor data takes ownership again once it catches up.
+   */
+  private explicitRecentBookId: string | null = null;
 
   /** Bumped per theme application so stale async case bakes drop. */
   private libraryGen = 0;
   /** The room key whose art is actually on screen. */
   private appliedLibraryKey = '';
+  /**
+   * The newest room whose case/wall application is still in flight.
+   *
+   * This cannot be inferred from `themeFade`: taking the outgoing-room
+   * photograph is allowed to fail (for example after WebGL context loss), but
+   * the case and wallpaper bakes have still been requested. A quick A -> B ->
+   * A must therefore supersede B even when no photograph exists, otherwise B
+   * can land underneath A's freshly restored spine palette.
+   */
+  private pendingLibraryKey: string | null = null;
   /** Set while a coalesced `applyLibrary` is already queued for this tick. */
   private libraryQueued = false;
   /** The in-flight room apply, if any — the demo must not declare a hold until this finishes. */
   private libraryApply: Promise<void> = Promise.resolve();
   /** True while `applyLibrary` is executing (not just queued). */
   private libraryBusy = false;
+  /** Overlapping superseded applies keep `libraryBusy` true until all retire. */
+  private libraryBusyCount = 0;
   /**
    * How many times the case + wall have actually been BAKED.
    *
@@ -358,8 +396,16 @@ export class ShelfWorld {
    * rather than a stopwatch.
    */
   private roomBakes = 0;
-  /** Full-viewport snapshot held over the stage during a theme crossfade. */
+  /** Full-viewport snapshot holding the last coherent room during a repaint. */
   private themeFade: Sprite | null = null;
+  /** Resolves when the current held-room snapshot has been released. */
+  private themeReveal: Promise<void> = Promise.resolve();
+  /** Idempotent resolver belonging to `themeReveal`; captured by each tween. */
+  private themeRevealDone: (() => void) | null = null;
+  /** Destroys the held snapshot and settles its waiter immediately. */
+  private themeRevealFinish: (() => void) | null = null;
+  /** The visible-spine staging pass; superseding rooms and teardown abort it. */
+  private roomSpineStage: AbortController | null = null;
 
   /** The wall: one TilingSprite carrying the room's baked wallpaper tile. */
   private readonly backdrop: TilingSprite;
@@ -382,12 +428,11 @@ export class ShelfWorld {
    * over a room. `beginThemeFade` photographs this rather than the stage.
    *
    * The distinction only costs one Container and it is the whole of what stops
-   * a crossfade compounding. A snapshot of the STAGE includes any snapshot
-   * already sitting on it, and a second preset applied inside the first fade's
-   * 0.42s does exactly that: the outgoing picture is itself half an older
-   * picture, and the reader watches two rooms dissolve through a third. Two
-   * fades overlapping is not a hypothetical — clicking presets a quarter of a
-   * second apart reaches it, and under the old arrangement that put five
+   * room snapshots compounding. A snapshot of the STAGE includes any snapshot
+   * already sitting on it, and a second preset applied before the first room
+   * finishes staging would photograph a photograph: the outgoing picture is
+   * itself half an older room. Rapid preset clicks are not hypothetical, and
+   * under the old arrangement they put five
    * children on the stage with the second photograph containing the first.
    */
   private readonly scene = new Container();
@@ -497,7 +542,10 @@ export class ShelfWorld {
 
   /* ------------------------------- creation ------------------------------ */
 
-  static async create(host: HTMLElement, events: WorldEvents): Promise<ShelfWorld> {
+  static async create(
+    host: HTMLElement,
+    events: WorldEvents,
+  ): Promise<ShelfWorld> {
     ensureGsapPixi();
     const degrade = detectSoftwareRenderer();
     const dpr = degrade ? 1 : Math.min(globalThis.devicePixelRatio || 1, 2);
@@ -583,12 +631,17 @@ export class ShelfWorld {
 
     // Camera: session restore, else a friendly overview of the first floors.
     const snap = sessionCamera;
-    this.camera = snap !== null
+    this.camera =
+      snap !== null
       ? createCamera(snap.zoom, snap.x, snap.y)
       : createCamera(0.8, 0, Y_MIN);
     if (snap === null) {
       const bx = xBounds(this.vp, this.camera.zoom);
-      this.camera.x = clamp((SHELF_WIDTH - this.vp.width / this.camera.zoom) / 2, bx.min, bx.max);
+      this.camera.x = clamp(
+        (SHELF_WIDTH - this.vp.width / this.camera.zoom) / 2,
+        bx.min,
+        bx.max,
+      );
     }
     // A restored zoom may undershoot the viewport-aware floor (window grew),
     // and a restored X may sit outside the bounds that zoom implies — so the
@@ -656,7 +709,9 @@ export class ShelfWorld {
 
     this.unsubs.push(
       this.store.onChange((floorIndices) => this.handleFloorData(floorIndices)),
-      this.factory.onTexturesChanged((bookIds) => this.handleTexturesChanged(bookIds)),
+      this.factory.onTexturesChanged((bookIds) =>
+        this.handleTexturesChanged(bookIds),
+      ),
       this.envTex.onReady(() => this.handleEnvReady()),
       watchReducedMotion((reduced) => {
         this.reducedMotion = reduced;
@@ -697,7 +752,9 @@ export class ShelfWorld {
       this.dirty = true;
     };
     document.addEventListener('visibilitychange', onVisibility);
-    this.unsubs.push(() => document.removeEventListener('visibilitychange', onVisibility));
+    this.unsubs.push(() =>
+      document.removeEventListener('visibilitychange', onVisibility),
+    );
 
     this.pool = new Pool<FloorView>(
       () => {
@@ -847,7 +904,8 @@ export class ShelfWorld {
       // `import('/src/data/designPrefs')` can land on a second copy of the
       // module — the same trap `__shelfSaveDesign` exists to avoid, one
       // direction over.
-      globals['__shelfBinding'] = (bookId: string): string | null => bookBinding(bookId);
+      globals['__shelfBinding'] = (bookId: string): string | null =>
+        bookBinding(bookId);
       /*
        * The reader's own hand on a list — read only, and from THIS instance of
        * `data/shelfOfMine` for the same reason as everything above it.
@@ -876,9 +934,11 @@ export class ShelfWorld {
         list: (): BookcaseState => snapshotBookcases(),
         active: () => activeBookcase(),
         floors: (): number => this.floorCount,
-        create: (name?: string) => createBookcase(name === undefined ? {} : { name }),
+        create: (name?: string) =>
+          createBookcase(name === undefined ? {} : { name }),
         rename: (id: string, name: string) => renameBookcase(id, name),
-        remove: (id: string, withBooks = false) => deleteBookcase(id, { withBooks }),
+        remove: (id: string, withBooks = false) =>
+          deleteBookcase(id, { withBooks }),
         switch: (id: string) => this.openBookcase(id),
         addFloor: (): number => this.addFloor(),
       };
@@ -968,8 +1028,12 @@ export class ShelfWorld {
         this.spineRectOf(bookId);
       // Take a book off the shelf the way a click does, for probes that need
       // the held state without hunting for a spine's pixels.
-      globals['__shelfPullOut'] = (bookId: string): void => this.pullOut(bookId);
-      globals['__shelfVisibleBooks'] = (): Array<{ id: string; title: string }> =>
+      globals['__shelfPullOut'] = (bookId: string): void =>
+        this.pullOut(bookId);
+      globals['__shelfVisibleBooks'] = (): Array<{
+        id: string;
+        title: string;
+      }> =>
         [...this.floors.values()].flatMap((fv) =>
           fv.visuals.map((v) => ({ id: v.book.id, title: v.book.title })),
         );
@@ -1057,6 +1121,7 @@ export class ShelfWorld {
     }
 
     const gen = ++this.caseGen;
+    this.explicitRecentBookId = null;
     this.frozen = false;
     this.input.frozen = false;
     this.cancelMove();
@@ -1226,6 +1291,47 @@ export class ShelfWorld {
 
   /* ------------------------------ public API ----------------------------- */
 
+  /** The recent id the pixels must use, including a DB write still in flight. */
+  private currentRecentBookId(): string | null {
+    return this.explicitRecentBookId ?? this.store.recentBookId();
+  }
+
+  /** Reconcile every mounted spine and any far-LOD stamp from one status truth. */
+  private syncMountedStatusMarks(): void {
+    const recentId = this.currentRecentBookId();
+    for (const [index, fv] of this.floors) {
+      if (fv.syncStatusMarks(this.envTex, this.dpr, recentId)) {
+        this.rebakeStamp(index, fv);
+      }
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * Publish an opening synchronously, before the persisted timestamp returns.
+   * This is deliberately separate from the data write: the Solid owner starts
+   * that write, while the long-lived world owns the sprites it immediately
+   * changes and later reconstructs for the close flight.
+   */
+  noteBookOpened(bookId: string): void {
+    this.explicitRecentBookId = bookId;
+    this.syncMountedStatusMarks();
+  }
+
+  /** Read the actual composed visual where possible; data is only a fallback. */
+  private bookStatus(book: Book, visual?: BookVisual): ShelfBookStatus {
+    return {
+      pinned:
+        visual !== undefined
+          ? visual.charm !== null
+          : readShelfMeta(book)?.pinned === true,
+      recent:
+        visual !== undefined
+          ? visual.ribbon !== null
+          : book.id === this.currentRecentBookId(),
+    };
+  }
+
   /**
    * Take a book off the shelf by id — the accessibility mirror, the shelf
    * menu, keyboard Enter. It does NOT open the book: it plays the same
@@ -1247,6 +1353,7 @@ export class ShelfWorld {
       this.pullOutBook(fv, visual);
       return;
     }
+    this.noteBookOpened(book.id);
     void touchBookOpened(book.id);
     appState.openBook(book.id);
   }
@@ -1264,13 +1371,13 @@ export class ShelfWorld {
    * still lets a spine sharpen mid-hold, which is what the demo's temporal
    * review flagged at f0206 and f0322.
    */
-  whenSpinesSettled(hi = false): Promise<void> {
+  whenSpinesSettled(hi = false, signal?: AbortSignal): Promise<void> {
     for (const fv of this.floors.values()) this.requestSpines(fv);
     const ids: string[] = [];
     for (const fv of this.floors.values()) {
       for (const visual of fv.visuals) ids.push(visual.book.id);
     }
-    return this.factory.whenReady(ids, { hi });
+    return this.factory.whenReady(ids, { hi, signal });
   }
 
   /**
@@ -1279,26 +1386,97 @@ export class ShelfWorld {
    * declare a hold while `applyLibrary` was still mid-flight.
    */
   whenRoomSettled(hi = false): Promise<void> {
-    return this.waitLibraryQuiet()
+    return (
+      this.waitLibraryQuiet()
       .then(() => this.envTex.themeReady)
       .then(() => this.whenSpinesSettled(hi))
       .then(() => this.waitFrames(2))
-      .then(() => this.whenSpinesSettled(hi));
+        .then(() => this.whenSpinesSettled(hi))
+        // `applyLibrary` is complete when the room is staged and its atomic
+        // reveal has started. A screenshot/demo hold is honest only once the
+        // outgoing snapshot is actually gone.
+        .then(() => this.themeReveal)
+    );
   }
 
-  /** One animation frame — enough for a texture flush to reach the sprites. */
+  /**
+   * One visual beat — normally rAF, with a wall-clock fallback for a hidden
+   * WebView. QA/demo waiters must not hang merely because Chromium has
+   * suspended presentation; correctness-critical room commits use
+   * `renderNow()` directly below.
+   */
   private waitFrames(count: number): Promise<void> {
     if (count <= 0) return Promise.resolve();
     return new Promise((resolve) => {
+      let raf = 0;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const next = (): void => {
+        let fired = false;
       const step = (): void => {
+          if (fired) return;
+          fired = true;
+          if (raf !== 0 && typeof cancelAnimationFrame === 'function')
+            cancelAnimationFrame(raf);
+          if (timer !== null) clearTimeout(timer);
         count -= 1;
         if (count <= 0) resolve();
-        else if (typeof requestAnimationFrame === 'function') requestAnimationFrame(step);
-        else setTimeout(step, 16);
+          else next();
+        };
+        if (typeof requestAnimationFrame === 'function')
+          raf = requestAnimationFrame(step);
+        // Occluded Chromium can suspend rAF indefinitely. 120ms is long enough
+        // not to race an ordinary frame, but finite enough for demo automation.
+        timer = setTimeout(step, 120);
       };
-      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(step);
-      else setTimeout(step, 16);
+      next();
     });
+  }
+
+  /**
+   * Stage every mounted spine behind the outgoing-room photograph.
+   *
+   * `SpineFactory.whenReady` normally resolves in a few worker turns. The
+   * deadline is not a performance target; it is the escape hatch for a failed
+   * canvas/worker so the photograph can never become a modal error mask. The
+   * old textures remain the factory's fallback and requests continue.
+   */
+  private async stageRoomSpines(
+    hi: boolean,
+    generation: number,
+  ): Promise<void> {
+    this.roomSpineStage?.abort();
+    const controller = new AbortController();
+    this.roomSpineStage = controller;
+    const timer = setTimeout(() => controller.abort(), ROOM_SPINE_STAGE_MAX_MS);
+    try {
+      // Two passes make the visible set stable. Rendering between them applies
+      // camera/viewport changes and lets `sync()` mount any newly-visible
+      // FloorView; the second call then re-enumerates what is actually on
+      // screen before the photograph lifts.
+      //
+      // This is DIRECT rather than an awaited rAF. Chromium may suspend rAF
+      // while a window is hidden/minimized; using it as a correctness latch
+      // left the opaque outgoing room over the app indefinitely even though
+      // the 5.5s spine deadline had already fired.
+      await this.whenSpinesSettled(hi, controller.signal);
+      if (
+        controller.signal.aborted ||
+        this.destroyed ||
+        generation !== this.libraryGen
+      )
+        return;
+      this.renderNow();
+      if (
+        controller.signal.aborted ||
+        this.destroyed ||
+        generation !== this.libraryGen
+      )
+        return;
+      await this.whenSpinesSettled(hi, controller.signal);
+    } finally {
+      clearTimeout(timer);
+      if (this.roomSpineStage === controller) this.roomSpineStage = null;
+    }
   }
 
   /**
@@ -1443,12 +1621,15 @@ export class ShelfWorld {
     if (ghost === null) return;
     const m = this.hooks.motion();
     this.track(
-      gsap.to([ghost, shadow].filter((s): s is Sprite => s !== null), {
+      gsap.to(
+        [ghost, shadow].filter((s): s is Sprite => s !== null),
+        {
         alpha: 0,
         duration: 0.08 * m,
         onUpdate: this.hooks.markDirty,
         onComplete: () => this.disposeGhost(),
-      }),
+        },
+      ),
     );
   }
 
@@ -1457,24 +1638,32 @@ export class ShelfWorld {
    * book + its current screen rect for the overlay to fly back to. Null when
    * the book is unknown or its floor is nowhere near the viewport.
    */
-  prepareReturn(bookId: string): { book: Book; rect: RectLike } | null {
+  prepareReturn(
+    bookId: string,
+  ): { book: Book; rect: RectLike; status: ShelfBookStatus } | null {
     const book = this.store.findBook(bookId);
     if (book === null) return null;
     const floorTop = book.floor * FLOOR_H;
     const visibleTop = this.camera.y - FLOOR_H;
-    const visibleBottom = this.camera.y + this.vp.height / this.camera.zoom + FLOOR_H;
+    const visibleBottom =
+      this.camera.y + this.vp.height / this.camera.zoom + FLOOR_H;
     if (floorTop < visibleTop || floorTop > visibleBottom) return null;
     this.frozen = true;
     this.input.frozen = true;
+    this.syncMountedStatusMarks();
     const fv = this.floors.get(book.floor);
     const visual = fv?.visuals.find((v) => v.book.id === bookId);
     if (visual !== undefined) visual.sprite.visible = false;
     this.dirty = true;
-    return { book, rect: this.spineScreenRect(book) };
+    return {
+      book,
+      rect: this.spineScreenRect(book),
+      status: this.bookStatus(book, visual),
+    };
   }
 
   /** Close flow, step 2: canvas ghost settles the book back into its slot. */
-  pushInBook(book: Book, onDone: () => void): void {
+  pushInBook(book: Book, status: ShelfBookStatus, onDone: () => void): void {
     void play('book-return');
     this.clearSlotHint();
     // The row lights back up as the book arrives, not after it has landed —
@@ -1505,6 +1694,7 @@ export class ShelfWorld {
     ghost.anchor.set(0.5, 1);
     ghost.width = visual.w * zoom;
     ghost.height = visual.height * zoom;
+    this.attachGhostStatus(ghost, visual, status);
     // Arrives tipped the other way from how it left, and straightens INTO the
     // lean it lives at, so the book slots back between its neighbours instead
     // of being deposited on top of them.
@@ -1516,7 +1706,10 @@ export class ShelfWorld {
     this.ghost = ghost;
     this.fx.addChild(ghost);
     this.dirty = true;
-    const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: finish });
+    const tl = gsap.timeline({
+      onUpdate: this.hooks.markDirty,
+      onComplete: finish,
+    });
     tl
       // Accelerating in: gravity, not a landing gear. `power3.out` had the
       // book crawling the last few pixels, which is what made the return feel
@@ -1530,16 +1723,32 @@ export class ShelfWorld {
         },
         0,
       )
-      .to(ghost, { rotation: visual.baseRotation, duration: 0.42 * m, ease: 'power2.out' }, 0)
+      .to(
+        ghost,
+        {
+          rotation: visual.baseRotation,
+          duration: 0.42 * m,
+          ease: 'power2.out',
+        },
+        0,
+      )
       // The plank stops it: one frame of compression, then a small rebound.
       .to(
         ghost,
-        { pixi: { scaleY: targetScaleY * 0.955 }, duration: 0.06 * m, ease: 'power2.out' },
+        {
+          pixi: { scaleY: targetScaleY * 0.955 },
+          duration: 0.06 * m,
+          ease: 'power2.out',
+        },
         0.3 * m,
       )
       .to(
         ghost,
-        { pixi: { scaleY: targetScaleY }, duration: 0.2 * m, ease: 'elastic.out(1, 0.5)' },
+        {
+          pixi: { scaleY: targetScaleY },
+          duration: 0.2 * m,
+          ease: 'elastic.out(1, 0.5)',
+        },
         0.36 * m,
       );
     this.track(tl);
@@ -1658,8 +1867,21 @@ export class ShelfWorld {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.roomSpineStage?.abort();
+    this.roomSpineStage = null;
+    // A QA/demo waiter may be awaiting the reveal while the route tears the
+    // world down. Finish first also clears the wall-clock watchdog before the
+    // Pixi app and its overlay children are destroyed.
+    this.themeRevealFinish?.();
+    this.themeRevealFinish = null;
+    this.themeRevealDone?.();
+    this.themeRevealDone = null;
     cancelAnimationFrame(this.raf);
-    sessionCamera = { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom };
+    sessionCamera = {
+      x: this.camera.x,
+      y: this.camera.y,
+      zoom: this.camera.zoom,
+    };
     for (const unsub of this.unsubs) unsub();
     this.unsubs.length = 0;
     this.input.destroy();
@@ -1785,7 +2007,12 @@ export class ShelfWorld {
    * looked-at floor unloaded, or the slot panned out of the viewport).
    */
   private computeAddSpot(): AddSpot | null {
-    if (this.destroyed || this.frozen || this.pull !== null || this.move !== null) {
+    if (
+      this.destroyed ||
+      this.frozen ||
+      this.pull !== null ||
+      this.move !== null
+    ) {
       return null;
     }
     // Tier 2 is the whole-floor stamp view — individual spines are not even
@@ -1813,7 +2040,14 @@ export class ShelfWorld {
      * promises a book the shelf would never draw.
      */
     const ghostH = (centerX: number): number =>
-      Math.min(GHOST_H, bookClearHeight(buildOf(shelfDesignOf(this.roomDesign)), centerX, GHOST_W / 2));
+      Math.min(
+        GHOST_H,
+        bookClearHeight(
+          buildOf(shelfDesignOf(this.roomDesign)),
+          centerX,
+          GHOST_W / 2,
+        ),
+      );
     for (let index = firstFloor; index <= lastFloor; index++) {
       const fv = this.floors.get(index);
       if (fv === undefined || !fv.loaded) continue;
@@ -1881,7 +2115,9 @@ export class ShelfWorld {
    * its spine rect so the caller can open the inline title editor right on
    * the spine. Null when the world is busy or already torn down.
    */
-  async addBook(floor?: number): Promise<{ book: Book; rect: RectLike } | null> {
+  async addBook(
+    floor?: number,
+  ): Promise<{ book: Book; rect: RectLike } | null> {
     if (this.destroyed || this.frozen || this.pull !== null) return null;
     const target = clamp(
       floor ?? this.addSpot?.floor ?? this.centerFloor,
@@ -1902,7 +2138,6 @@ export class ShelfWorld {
     if (this.destroyed) return null;
     await this.store.refreshAll();
     if (this.destroyed) return null;
-    void play('pop-soft');
     this.animateArrival(book);
     this.dirty = true;
     return { book, rect: this.spineScreenRect(book) };
@@ -1938,7 +2173,8 @@ export class ShelfWorld {
             from.x + (visual.centerX - from.x) * t,
             from.y + (visual.baseY - from.y) * t,
           );
-          sprite.rotation = from.rotation + (visual.baseRotation - from.rotation) * t;
+          sprite.rotation =
+            from.rotation + (visual.baseRotation - from.rotation) * t;
           sprite.alpha = Math.min(1, t * 2.4);
           this.dirty = true;
         },
@@ -1978,8 +2214,10 @@ export class ShelfWorld {
     const pull = this.pull;
     if (pull === null || pull.finishing) return false;
     const m = this.hooks.motion();
-    pull.x = m === 0 ? pull.targetX : lerpExp(pull.x, pull.targetX, dt, PULL_FOLLOW_K);
-    pull.y = m === 0 ? pull.targetY : lerpExp(pull.y, pull.targetY, dt, PULL_FOLLOW_K);
+    pull.x =
+      m === 0 ? pull.targetX : lerpExp(pull.x, pull.targetX, dt, PULL_FOLLOW_K);
+    pull.y =
+      m === 0 ? pull.targetY : lerpExp(pull.y, pull.targetY, dt, PULL_FOLLOW_K);
     pull.ghost.position.set(pull.x, pull.y);
     // Contact shadow stays on the shelf and fades as the book lifts away.
     const away = Math.hypot(pull.x - pull.startX, pull.y - pull.startY);
@@ -2045,7 +2283,10 @@ export class ShelfWorld {
    *  - the bake key already carries `flatSchemeTag()`, so the bake cache
    *    cannot serve the athenaeum's damask into the reef.
    */
-  private async applyWallpaper(spec: WallpaperSpec, scheme: ColourScheme): Promise<void> {
+  private async applyWallpaper(
+    spec: WallpaperSpec,
+    scheme: ColourScheme,
+  ): Promise<void> {
     if (this.destroyed) return;
     const css = wallpaperTilePx(spec, this.dpr) / this.dpr;
     // The scheme has to be live around `wallpaperTileKey` as well as around
@@ -2069,7 +2310,8 @@ export class ShelfWorld {
         const px = Math.ceil(css * this.dpr);
         const canvas = new OffscreenCanvas(px, px);
         const ctx = canvas.getContext('2d');
-        if (ctx === null) throw new Error('world: 2d context unavailable for wallpaper');
+        if (ctx === null)
+          throw new Error('world: 2d context unavailable for wallpaper');
         ctx.scale(this.dpr, this.dpr);
         // Synchronous set → draw → restore, same contract as every other bake:
         // `flatScheme()` is module state and anything that awaited in between
@@ -2077,7 +2319,11 @@ export class ShelfWorld {
         const before = flatScheme();
         setFlatScheme(scheme);
         try {
-          renderWallpaperTile(ctx as unknown as Parameters<typeof renderWallpaperTile>[0], css, spec);
+          renderWallpaperTile(
+            ctx as unknown as Parameters<typeof renderWallpaperTile>[0],
+            css,
+            spec,
+          );
         } finally {
           setFlatScheme(before);
         }
@@ -2091,7 +2337,10 @@ export class ShelfWorld {
     if (this.destroyed || gen !== this.wallpaperGen) return;
 
     const old = this.backdrop.texture;
-    const source = new ImageSource({ resource: bitmap, autoGenerateMipmaps: false });
+    const source = new ImageSource({
+      resource: bitmap,
+      autoGenerateMipmaps: false,
+    });
     source.addressMode = 'repeat';
     source.scaleMode = 'linear';
     this.backdrop.texture = new Texture({ source });
@@ -2104,11 +2353,11 @@ export class ShelfWorld {
 
   /**
    * Dress the whole world in a library theme (§1). Order matters:
-   *  1. snapshot the current frame so the swap crossfades rather than pops;
+   *  1. snapshot the current coherent frame and hold it over the repaint;
    *  2. re-spec the spine palette immediately (cheap);
    *  3. kick the case bakes — memoized, so a room revisited in this session
    *     is instant;
-   *  4. when they land, fade the snapshot out.
+   *  4. when they all land, remove the snapshot in one atomic reveal.
    */
   /**
    * Fold every room notification that lands in one tick into ONE application.
@@ -2145,13 +2394,22 @@ export class ShelfWorld {
     setTimeout(() => {
       this.libraryQueued = false;
       if (this.destroyed) return;
-      this.libraryApply = this.applyLibrary(snapshotLibraryPrefs()).catch(() => {});
+      const previous = this.libraryApply;
+      const current = this.applyLibrary(snapshotLibraryPrefs()).catch(() => {});
+      // Do not let a later duplicate notification replace the promise for an
+      // older, still-running bake. Demo/QA holds await this aggregate, so
+      // "quiet" means every superseded generation has actually retired.
+      this.libraryApply = Promise.all([previous, current]).then(() => {});
     }, 0);
   }
 
   private async applyLibrary(prefs: LibraryPrefs): Promise<void> {
     if (this.destroyed) return;
+    this.libraryBusyCount += 1;
     this.libraryBusy = true;
+    let ownGen: number | null = null;
+    let ownKey: string | null = null;
+    let completed = false;
     try {
     const next = resolveLibrary(prefs);
     // The room is colours AND carpentry AND paper, and only the colours come
@@ -2163,12 +2421,32 @@ export class ShelfWorld {
     this.roomDesign = design;
     const shelf = shelfDesignOf(design);
     const key = `${next.key}|${shelfDesignTag(shelf)}|${wallpaperKeyOf(design.wallpaper)}`;
-    // Compare against what is actually ON SCREEN, not just against the last
-    // request: the initial snapshot and the "stored prefs loaded" snapshot
-    // arrive back to back, and the second one must not cancel the first's
-    // bake bookkeeping (which is what left `libraryKey` empty forever).
-    const roomChanged = this.appliedLibraryKey !== key;
+      // A duplicate notification for the room already on screen is a real no-op,
+      // as is a duplicate for the generation already baking. In particular, do
+      // not bump `libraryGen` in either case: doing so cancels useful work while
+      // starting no replacement work of its own.
+      if (
+        (this.pendingLibraryKey === null && this.appliedLibraryKey === key) ||
+        this.pendingLibraryKey === key
+      ) {
+        this.dirty = true;
+        return;
+      }
+
+      /*
+       * Compare against BOTH what is on screen and what is in flight. A request
+       * back to applied room A while B is baking is a change even if the
+       * outgoing-room photograph could not be created. B may already have
+       * changed case/wall pixels under the spines, so A must issue replacement
+       * EnvTextures + wallpaper generations rather than merely restoring the
+       * palette and returning.
+       */
+      this.pendingLibraryKey = key;
+      ownKey = key;
     const gen = ++this.libraryGen;
+      ownGen = gen;
+      // A newer room owns the only staging pass that may synchronously render.
+      this.roomSpineStage?.abort();
 
     // THE PHOTOGRAPH IS TAKEN FIRST, before a single line below has a chance to
     // stop the old room being true.
@@ -2176,7 +2454,7 @@ export class ShelfWorld {
     // It used to be taken three statements down, after `setFlatScheme` had
     // repointed every flat draw at the new hexes and after the spine factory
     // had been told — and `setTheme` retires every baked spine while `setBuild`
-    // drops any spine baked at the old clear height. The crossfade's whole job
+    // drops any spine baked at the old clear height. The held snapshot's job
     // is to hold the room the reader was looking at until the new one is whole,
     // and it was being handed a picture of a shelf that had already lost its
     // books: `scripts/probe-studio-repaint.mjs` measured all thirteen on
@@ -2185,11 +2463,11 @@ export class ShelfWorld {
     // taken after the shutter has been tripped is wrong on its own terms, and
     // the only reason it was ever second was the order somebody typed it in.
     //
-    // Both guards, and `roomChanged` is the load-bearing one: `endThemeFade` is
-    // only reached below it, so a snapshot taken on a no-op notification would
-    // hang over the world at full opacity with nothing left to dissolve it —
-    // the room frozen under a picture of itself.
-    if (roomChanged && this.appliedLibraryKey !== '') this.beginThemeFade();
+      // The duplicate-request guard above is load-bearing: `endThemeFade` is
+      // only reached below this point, so taking a snapshot for a true no-op
+      // would hang it over the world with nothing left to release it — the room
+      // frozen under a picture of itself.
+      if (this.appliedLibraryKey !== '') this.beginThemeFade();
 
     // The palette every flat draw on this thread reads, set BEFORE the factory
     // is told: `setTheme` invalidates every baked spine, and the re-bakes it
@@ -2203,17 +2481,16 @@ export class ShelfWorld {
     // so this cannot ride on `setTheme`'s comparison.
     this.factory.setBuild(buildOf(shelf));
 
-    if (!roomChanged) {
-      this.dirty = true;
-      return;
-    }
-
     // The case and the wall are baked together so they land on the same beat:
     // a gothic case against the outgoing room's wall, even for two frames,
     // reads as a glitch rather than as a transition.
     this.roomBakes += 1;
     await Promise.all([
-      this.envTex.setTheme({ themeId: next.theme.id, scheme: next.scheme, design: shelf }),
+        this.envTex.setTheme({
+          themeId: next.theme.id,
+          scheme: next.scheme,
+          design: shelf,
+        }),
       this.applyWallpaper(design.wallpaper, next.scheme),
     ]);
     if (this.destroyed || gen !== this.libraryGen) return;
@@ -2225,9 +2502,15 @@ export class ShelfWorld {
     // bay, and a mounted floor is holding sprites sized against the old one.
     // Re-plating alone left an arcaded case wearing the plank case's skyline
     // until the virtualizer happened to remount the floor.
-    const recentId = this.store.recentBookId();
+      const recentId = this.currentRecentBookId();
     for (const [index, fv] of this.floors) {
-      fv.setBooks(this.store.get(index), this.factory, this.dpr, this.envTex, recentId);
+        fv.setBooks(
+          this.store.get(index),
+          this.factory,
+          this.dpr,
+          this.envTex,
+          recentId,
+        );
       fv.setPlaque(this.envTex, this.dpr, floorLabel(index));
       fv.refreshTextures(this.factory);
       this.rebakeStamp(index, fv);
@@ -2235,12 +2518,39 @@ export class ShelfWorld {
     }
     this.kbVisual = null;
     this.applyKbHalo();
+
+      // The case, wall and replacement spines are one visual commit. Spine
+      // arrivals still refresh the live scene one book at a time (good for
+      // ordinary scrolling), but during a room repaint they do it BEHIND the
+      // fully opaque photograph taken above. Reveal only once every mounted lo
+      // spine — and the titled hi spine at close LOD — is present and Pixi has
+      // synchronously uploaded/re-pointed the atlas textures.
+      await this.stageRoomSpines(this.tier === 0, gen);
+      if (this.destroyed || gen !== this.libraryGen) return;
+      // Commit the fully staged scene underneath the still-opaque photograph.
+      // Do not entrust this last correctness beat to rAF: a hidden WebView can
+      // suspend it, and `renderNow` is exactly the same render body the loop uses.
+      this.renderNow();
+      if (this.destroyed || gen !== this.libraryGen) return;
     this.endThemeFade();
     this.dirty = true;
     this.appliedLibraryKey = key;
+      this.pendingLibraryKey = null;
+      completed = true;
     this.events.onLibraryChange?.(key);
     } finally {
-      this.libraryBusy = false;
+      // A failed CURRENT generation must be retryable. A superseded generation
+      // must not clear the newer request's key when its finally block arrives.
+      if (
+        !completed &&
+        ownGen !== null &&
+        ownGen === this.libraryGen &&
+        ownKey === this.pendingLibraryKey
+      ) {
+        this.pendingLibraryKey = null;
+      }
+      this.libraryBusyCount = Math.max(0, this.libraryBusyCount - 1);
+      this.libraryBusy = this.libraryBusyCount > 0;
     }
   }
 
@@ -2251,16 +2561,17 @@ export class ShelfWorld {
 
   /**
    * Photograph the room as the reader last saw it and hang the picture over it.
-   * The case art swaps underneath, then `endThemeFade` dissolves the picture —
-   * so a theme switch never shows a half-dressed bookcase.
+   * The case art swaps underneath, then `endThemeFade` removes the picture in
+   * one beat, so a theme switch never shows a half-dressed or double-exposed
+   * bookcase.
    *
    * ## What is photographed, and what the photograph hangs on
    *
    * `scene`, not `app.stage`, and `overlay`, not `app.stage`. Those are the
-   * same two words twice over, and they are the difference between a crossfade
-   * that composes and one that compounds: a snapshot of the stage contains any
-   * snapshot already ON the stage, so applying a second preset inside the first
-   * fade's 0.42s photographs a room that is itself half a photograph. Two
+   * same two words twice over, and they are the difference between a coherent
+   * hold and a compounded snapshot: a snapshot of the stage contains any
+   * snapshot already ON the stage, so applying a second preset while the first
+   * is staging photographs a room that is itself half a photograph. Two
    * clicks a quarter-second apart put five children on the stage, which is a
    * state `qa` reaches by hand, not a thought experiment.
    *
@@ -2278,7 +2589,32 @@ export class ShelfWorld {
    * `endThemeFade` a no-op on that path.
    */
   private beginThemeFade(): void {
-    if (this.degrade || this.reducedMotion) return;
+    // A second preset can arrive while the first is still staging. The scene
+    // underneath is then deliberately incomplete, while this existing sprite
+    // is still the last coherent room. Keep it: photographing the scene again
+    // would replace a true outgoing room with a half-new one.
+    if (this.themeFade !== null) return;
+
+    // A prior reveal may still be finishing while a new room starts. Its scene
+    // is already complete, so it is safe to photograph; settle the old
+    // waiter before giving the field to this transition. Each tween captures
+    // its own idempotent `done`, so its later onComplete cannot resolve this
+    // newer promise by accident.
+    this.themeRevealFinish?.();
+    this.themeRevealFinish = null;
+    this.themeRevealDone?.();
+    let settled = false;
+    let resolveReveal!: () => void;
+    this.themeReveal = new Promise<void>((resolve) => {
+      resolveReveal = resolve;
+    });
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      resolveReveal();
+      if (this.themeRevealDone === done) this.themeRevealDone = null;
+    };
+    this.themeRevealDone = done;
     try {
       const texture = this.app.renderer.generateTexture({
         target: this.scene,
@@ -2289,33 +2625,38 @@ export class ShelfWorld {
       snap.eventMode = 'none';
       snap.width = this.vp.width;
       snap.height = this.vp.height;
-      // A fade already in flight is dissolving on its own tween and owns its
-      // own destroy; this only reclaims one that never got that far, which is
-      // the superseded-generation path in `applyLibrary`.
-      this.themeFade?.destroy(true);
       this.themeFade = snap;
       this.overlay.addChild(snap);
     } catch {
       this.themeFade = null; // extraction unsupported — swap without the fade
+      done();
     }
   }
 
   private endThemeFade(): void {
     const snap = this.themeFade;
-    if (snap === null) return;
+    if (snap === null) {
+      this.themeRevealDone?.();
+      return;
+    }
     this.themeFade = null;
-    this.track(
-      gsap.to(snap, {
-        alpha: 0,
-        duration: 0.42,
-        ease: 'power2.out',
-        onUpdate: this.hooks.markDirty,
-        onComplete: () => {
-          snap.destroy(true);
-          this.dirty = true;
-        },
-      }),
-    );
+    const done = this.themeRevealDone;
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      if (!snap.destroyed) snap.destroy(true);
+      if (this.themeRevealFinish === finish) this.themeRevealFinish = null;
+      done?.();
+      this.dirty = true;
+    };
+    this.themeRevealFinish = finish;
+    // Blending a translucent old room over the new one double-exposes the
+    // wallpaper, carpentry and every book spine. That reads as a broken
+    // repaint, not as a graceful transition. The replacement room is already
+    // fully staged behind an opaque coherent photograph, so reveal it in one
+    // atomic beat.
+    finish();
   }
 
   /* ---------------------------- virtualization ---------------------------- */
@@ -2328,7 +2669,10 @@ export class ShelfWorld {
     // virtualizer keeps mounting empty floors below the last plank and the
     // bookcase reads as a shelf that forgot to stop.
     const last = Math.min(raw.last, this.floorCount - 1);
-    const range: FloorRange = { first: Math.min(raw.first, Math.max(0, last)), last };
+    const range: FloorRange = {
+      first: Math.min(raw.first, Math.max(0, last)),
+      last,
+    };
     const prevTier = this.tier;
     this.tier = nextLodTier(this.tier, cam.zoom);
     const tierChanged = this.tier !== prevTier;
@@ -2338,12 +2682,13 @@ export class ShelfWorld {
     for (const index of diff.remove) {
       const fv = this.floors.get(index);
       if (fv !== undefined) {
-        if (this.hovered !== null && this.hovered.fv === fv) this.hovered = null;
+        if (this.hovered !== null && this.hovered.fv === fv)
+          this.hovered = null;
         this.floors.delete(index);
         this.pool.release(fv);
       }
     }
-    const recentId = this.store.recentBookId();
+    const recentId = this.currentRecentBookId();
     for (const index of diff.add) {
       const fv = this.pool.acquire();
       this.floors.set(index, fv);
@@ -2365,7 +2710,11 @@ export class ShelfWorld {
     if (tierChanged) {
       if (this.tier !== 0) this.clearHover();
       for (const [index, fv] of this.floors) {
-        fv.applyTier(this.tier, this.tier === 2 ? this.stampFor(index, fv) : null, this.factory);
+        fv.applyTier(
+          this.tier,
+          this.tier === 2 ? this.stampFor(index, fv) : null,
+          this.factory,
+        );
       }
       if (this.tier === 0) {
         for (const fv of this.floors.values()) this.requestSpines(fv);
@@ -2401,7 +2750,8 @@ export class ShelfWorld {
         neighbourRight: this.bleedNeighbour(visuals, i, 1),
       };
       this.factory.request(visual.book, 'lo', priority, ctx);
-      if (this.tier === 0) this.factory.request(visual.book, 'hi', priority, ctx);
+      if (this.tier === 0)
+        this.factory.request(visual.book, 'hi', priority, ctx);
     }
   }
 
@@ -2434,11 +2784,17 @@ export class ShelfWorld {
   private handleFloorData(floorIndices: readonly number[]): void {
     if (this.destroyed) return;
     let touched = false;
-    const recentId = this.store.recentBookId();
+    const recentId = this.currentRecentBookId();
     for (const index of floorIndices) {
       const fv = this.floors.get(index);
       if (fv === undefined) continue;
-      fv.setBooks(this.store.get(index), this.factory, this.dpr, this.envTex, recentId);
+      fv.setBooks(
+        this.store.get(index),
+        this.factory,
+        this.dpr,
+        this.envTex,
+        recentId,
+      );
       fv.refreshTextures(this.factory);
       this.rebakeStamp(index, fv);
       this.requestSpines(fv);
@@ -2558,7 +2914,11 @@ export class ShelfWorld {
 
   /* -------------------------------- input --------------------------------- */
 
-  private handleWheelZoom(deltaY: number, cursor: Vec2, sensitivity: number): void {
+  private handleWheelZoom(
+    deltaY: number,
+    cursor: Vec2,
+    sensitivity: number,
+  ): void {
     if (this.frozen || this.pull !== null) return;
     this.killNavTweens();
     // Viewport-aware min zoom: the case never shrinks below ~30% of the
@@ -2624,7 +2984,10 @@ export class ShelfWorld {
       if (pull.finishing) return;
       pull.targetX = cursor.x;
       pull.targetY = cursor.y + (pull.visual.height * this.camera.zoom) / 2;
-      const travel = Math.hypot(pull.targetX - pull.startX, pull.targetY - pull.startY);
+      const travel = Math.hypot(
+        pull.targetX - pull.startX,
+        pull.targetY - pull.startY,
+      );
       if (travel >= PULL_COMPLETE_TRAVEL_PX) this.finishBookPull();
       this.dirty = true;
       return;
@@ -2725,7 +3088,6 @@ export class ShelfWorld {
     }
     const hit = this.hitBook(cursor);
     if (hit !== null) {
-      void play('pop-soft');
       this.events.onBookMenu?.(hit.visual.book, { x: cursor.x, y: cursor.y });
       return;
     }
@@ -2735,8 +3097,8 @@ export class ShelfWorld {
     const wy = cursor.y / cam.zoom + cam.y;
     // "New book here" has to name a floor that exists — the plinth is not one.
     const floor = Math.floor(wy / FLOOR_H);
-    if (floor < 0 || floor >= this.floorCount || wx < 0 || wx > SHELF_WIDTH) return;
-    void play('pop-soft');
+    if (floor < 0 || floor >= this.floorCount || wx < 0 || wx > SHELF_WIDTH)
+      return;
     this.events.onShelfMenu?.(floor, { x: cursor.x, y: cursor.y });
   }
 
@@ -2915,8 +3277,10 @@ export class ShelfWorld {
     const visual = this.floors
       .get(book.floor)
       ?.visuals.find((v) => v.book.id === book.id);
-    const centerX = visual !== undefined ? visual.centerX : slotCenterX(book.slot);
-    const height = visual !== undefined ? visual.height : SPINE_BASE_HEIGHT + params.hJitter;
+    const centerX =
+      visual !== undefined ? visual.centerX : slotCenterX(book.slot);
+    const height =
+      visual !== undefined ? visual.height : SPINE_BASE_HEIGHT + params.hJitter;
     const screen = worldToScreen(this.camera, {
       x: centerX,
       y: book.floor * FLOOR_H + BOOK_BASELINE,
@@ -2930,10 +3294,36 @@ export class ShelfWorld {
    * Screen-space canvas ghost of a spine (fx layer). Hides the shelf sprite;
    * shared by the tap pull-out and the drag-to-pull gesture.
    */
+  private cloneStatusMark(source: Sprite): Sprite {
+    const mark = new Sprite(source.texture);
+    mark.label = source.label;
+    mark.anchor.set(source.anchor.x, source.anchor.y);
+    mark.position.set(source.position.x, source.position.y);
+    mark.width = source.width;
+    mark.height = source.height;
+    mark.rotation = source.rotation;
+    mark.skew.set(source.skew.x, source.skew.y);
+    mark.alpha = source.alpha;
+    mark.tint = source.tint;
+    mark.eventMode = 'none';
+    return mark;
+  }
+
+  /** Put the same physical children on a transient Pixi copy of the spine. */
+  private attachGhostStatus(
+    ghost: Sprite,
+    visual: BookVisual,
+    status: ShelfBookStatus,
+  ): void {
+    if (status.pinned && visual.charm !== null) {
+      ghost.addChild(this.cloneStatusMark(visual.charm));
+    }
+  }
+
   private spawnGhost(
     fv: FloorView,
     visual: BookVisual,
-  ): { ghost: Sprite; shadow: Sprite; screen: Vec2 } {
+  ): { ghost: Sprite; shadow: Sprite; screen: Vec2; status: ShelfBookStatus } {
     const zoom = this.camera.zoom;
     gsap.killTweensOf(visual.sprite);
     visual.sprite.position.set(visual.centerX, visual.baseY);
@@ -2949,6 +3339,8 @@ export class ShelfWorld {
     ghost.width = visual.w * zoom;
     ghost.height = visual.height * zoom;
     ghost.position.set(screen.x, screen.y);
+    const status = this.bookStatus(visual.book, visual);
+    this.attachGhostStatus(ghost, visual, status);
     // Inherit the lean. The ghost used to spawn bolt upright over a leaning
     // spine, so every pull-out began with the book snapping straight one frame
     // before it moved — the single loudest tell that this was two objects.
@@ -2967,7 +3359,7 @@ export class ShelfWorld {
     this.ghostShadow = shadow;
     visual.sprite.visible = false;
     this.dirty = true;
-    return { ghost, shadow, screen };
+    return { ghost, shadow, screen, status };
   }
 
   /** Dim the floor siblings for focus while a book comes out. */
@@ -3055,7 +3447,7 @@ export class ShelfWorld {
 
     const zoom = this.camera.zoom;
     const m = this.hooks.motion();
-    const { ghost, shadow, screen } = this.spawnGhost(fv, visual);
+    const { ghost, shadow, screen, status } = this.spawnGhost(fv, visual);
     ghost.skew.x = 0.06;
     const baseScaleX = ghost.scale.x;
     const baseScaleY = ghost.scale.y;
@@ -3065,16 +3457,21 @@ export class ShelfWorld {
     const liftedY = screen.y - 46 * zoom;
     // Beat 3: a few px toward the middle of the viewport — enough to bend the
     // path, not enough to look like the book was thrown.
-    const liftedX = screen.x + Math.sign(this.vp.width / 2 - screen.x) * 7 * zoom;
+    const liftedX =
+      screen.x + Math.sign(this.vp.width / 2 - screen.x) * 7 * zoom;
     const finish = (): void => {
       const width = visual.w * zoom * 1.35;
       const height = visual.height * zoom * 1.35;
-      this.events.onGhostReady(visual.book, {
+      this.events.onGhostReady(
+        visual.book,
+        {
         x: liftedX - width / 2,
         y: liftedY - height,
         width,
         height,
-      });
+        },
+        status,
+      );
     };
     if (m === 0) {
       ghost.scale.set(baseScaleX * 1.35, baseScaleY * 1.35);
@@ -3103,13 +3500,21 @@ export class ShelfWorld {
         },
         0,
       )
-      .to(shadow, { alpha: 0.3, pixi: { scaleX: shadowScaleX * 0.82 }, duration: 0.09 }, 0)
+      .to(
+        shadow,
+        { alpha: 0.3, pixi: { scaleX: shadowScaleX * 0.82 }, duration: 0.09 },
+        0,
+      )
       // 2. extraction: out of the row, overshooting the final size slightly.
       // Position and size are separate tweens so the size can hand over to the
       // settle beat cleanly instead of two tweens writing scale on one frame.
       .to(
         ghost,
-        { pixi: { y: liftedY, x: liftedX }, duration: 0.27, ease: 'power3.out' },
+        {
+          pixi: { y: liftedY, x: liftedX },
+          duration: 0.27,
+          ease: 'power3.out',
+        },
         0.09,
       )
       .to(
@@ -3162,11 +3567,12 @@ export class ShelfWorld {
     this.dragging = false;
     this.camera.vx = 0;
     this.camera.vy = 0;
-    const { ghost, shadow, screen } = this.spawnGhost(fv, visual);
+    const { ghost, shadow, screen, status } = this.spawnGhost(fv, visual);
     shadow.alpha = 0.3;
     this.pull = {
       fv,
       visual,
+      status,
       ghost,
       shadow,
       startX: screen.x,
@@ -3190,7 +3596,7 @@ export class ShelfWorld {
     this.input.frozen = true;
     this.camera.vx = 0;
     this.camera.vy = 0;
-    const { ghost, shadow, visual, fv } = pull;
+    const { ghost, shadow, visual, fv, status } = pull;
     const zoom = this.camera.zoom;
     const m = this.hooks.motion();
     this.dimSiblings(fv, visual);
@@ -3204,12 +3610,16 @@ export class ShelfWorld {
       this.updateCursor();
       const width = visual.w * zoom * 1.35;
       const height = visual.height * zoom * 1.35;
-      this.events.onGhostReady(visual.book, {
+      this.events.onGhostReady(
+        visual.book,
+        {
         x: liftX - width / 2,
         y: liftY - height,
         width,
         height,
-      });
+        },
+        status,
+      );
     };
     if (m === 0) {
       ghost.scale.set(targetScaleX, targetScaleY);
@@ -3224,7 +3634,10 @@ export class ShelfWorld {
     // already did it. What is missing from a release is the arrival: the book
     // overshoots the size it is going to be, then eases back down onto it
     // while the lean it was carried at swings through upright.
-    const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: finish });
+    const tl = gsap.timeline({
+      onUpdate: this.hooks.markDirty,
+      onComplete: finish,
+    });
     tl.to(
       ghost,
       {
@@ -3275,17 +3688,40 @@ export class ShelfWorld {
     // Back into the row, and it lands: a book dropped into its slot compresses
     // against the plank for a frame or two. It also goes back to its LEAN, not
     // to upright — the row it belongs to is not a picket fence.
-    const tl = gsap.timeline({ onUpdate: this.hooks.markDirty, onComplete: done });
+    const tl = gsap.timeline({
+      onUpdate: this.hooks.markDirty,
+      onComplete: done,
+    });
     tl.to(
       ghost,
-      { pixi: { x: pull.startX, y: pull.startY }, duration: 0.26, ease: 'power3.inOut' },
+      {
+        pixi: { x: pull.startX, y: pull.startY },
+        duration: 0.26,
+        ease: 'power3.inOut',
+      },
       0,
     )
-      .to(ghost, { rotation: visual.baseRotation, duration: 0.26, ease: 'power2.inOut' }, 0)
-      .to(ghost, { pixi: { scaleY: landedScaleY * 0.965 }, duration: 0.06, ease: 'power2.in' }, 0.24)
       .to(
         ghost,
-        { pixi: { scaleY: landedScaleY }, duration: 0.16, ease: 'elastic.out(1, 0.55)' },
+        { rotation: visual.baseRotation, duration: 0.26, ease: 'power2.inOut' },
+        0,
+      )
+      .to(
+        ghost,
+        {
+          pixi: { scaleY: landedScaleY * 0.965 },
+          duration: 0.06,
+          ease: 'power2.in',
+        },
+        0.24,
+      )
+      .to(
+        ghost,
+        {
+          pixi: { scaleY: landedScaleY },
+          duration: 0.16,
+          ease: 'elastic.out(1, 0.55)',
+        },
         0.3,
       )
       .to(shadow, { alpha: 0, duration: 0.2, ease: 'power2.in' }, 0.1);
@@ -3315,7 +3751,12 @@ export class ShelfWorld {
    * slot), Escape cancels. Only available at LOD0 with the floor mounted.
    */
   beginMove(bookId: string): void {
-    if (this.frozen || this.destroyed || this.pull !== null || this.move !== null) {
+    if (
+      this.frozen ||
+      this.destroyed ||
+      this.pull !== null ||
+      this.move !== null
+    ) {
       return;
     }
     const book = this.store.findBook(bookId);
@@ -3358,7 +3799,10 @@ export class ShelfWorld {
     move.targetSlot = Math.round(
       clamp((wx - SLOT_MARGIN_X - SLOT_W / 2) / SLOT_W, 0, 19),
     );
-    move.ghost.position.set(cursor.x, cursor.y + (move.visual.height * cam.zoom) / 2);
+    move.ghost.position.set(
+      cursor.x,
+      cursor.y + (move.visual.height * cam.zoom) / 2,
+    );
     move.shadow.alpha = 0;
     if (this.movePreview === null) {
       // The drop hint is the hover mark, standing empty at the target slot: a
@@ -3391,7 +3835,11 @@ export class ShelfWorld {
     move.committing = true;
     void play('drop-thump');
     try {
-      const slot = await nextFreeSlot(move.targetFloor, move.targetSlot, this.caseId);
+      const slot = await nextFreeSlot(
+        move.targetFloor,
+        move.targetSlot,
+        this.caseId,
+      );
       await moveBook(move.visual.book.id, move.targetFloor, slot);
     } catch {
       // DB failure: the refresh below re-syncs whatever state persisted.
@@ -3423,6 +3871,18 @@ export class ShelfWorld {
   /** Re-fetch every loaded floor from the DB (after shelf-UI mutations). */
   async refreshData(): Promise<void> {
     await this.store.refreshAll();
+    if (this.explicitRecentBookId !== null) {
+      const persistedRecent = this.store.recentBookId();
+      if (
+        persistedRecent === this.explicitRecentBookId ||
+        this.store.findBook(this.explicitRecentBookId) === null
+      ) {
+        // The database has caught up (or the book left this case); future
+        // changes can once again derive directly from loaded floor data.
+        this.explicitRecentBookId = null;
+      }
+    }
+    this.syncMountedStatusMarks();
   }
 
   /** Drop baked spine textures after a rename (title is baked into hi-res). */
@@ -3447,7 +3907,8 @@ export class ShelfWorld {
       }
       return false;
     }
-    if (this.tier !== 0 || this.pull !== null || this.move !== null) return false;
+    if (this.tier !== 0 || this.pull !== null || this.move !== null)
+      return false;
     if (key === 'Enter') {
       const kv = this.kbVisual;
       if (kv === null) return false;
@@ -3456,7 +3917,10 @@ export class ShelfWorld {
       return true;
     }
     const isArrow =
-      key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown';
+      key === 'ArrowLeft' ||
+      key === 'ArrowRight' ||
+      key === 'ArrowUp' ||
+      key === 'ArrowDown';
     if (!isArrow && key !== 'Home') return false;
 
     const sel = this.kbSel;
@@ -3469,7 +3933,10 @@ export class ShelfWorld {
       let best: number | null = null;
       for (const [index, fv] of this.floors) {
         if (fv.visuals.length === 0) continue;
-        if (best === null || Math.abs(index - centerFloor) < Math.abs(best - centerFloor)) {
+        if (
+          best === null ||
+          Math.abs(index - centerFloor) < Math.abs(best - centerFloor)
+        ) {
           best = index;
         }
       }
@@ -3506,11 +3973,7 @@ export class ShelfWorld {
       this.killNavTweens();
       cam.vx = 0;
       cam.vy = 0;
-      cam.y = clamp(
-        floorTop - (viewH - FLOOR_H) / 2,
-        Y_MIN,
-        this.maxCameraY(),
-      );
+      cam.y = clamp(floorTop - (viewH - FLOOR_H) / 2, Y_MIN, this.maxCameraY());
       this.dirty = true;
     }
   }
@@ -3581,7 +4044,8 @@ export class ShelfWorld {
   private track<T extends gsap.core.Animation>(anim: T): T {
     // Opportunistic pruning keeps the set small without touching callbacks.
     for (const existing of this.tracked) {
-      if (!existing.isActive() && existing.progress() === 1) this.tracked.delete(existing);
+      if (!existing.isActive() && existing.progress() === 1)
+        this.tracked.delete(existing);
     }
     this.tracked.add(anim);
     return anim;

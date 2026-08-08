@@ -75,6 +75,7 @@ function LinkCardView(props: SolidNodeViewProps): JSX.Element {
         'is-loading': status() === 'loading',
         'is-plain': status() === 'plain',
       }}
+      data-nb-block-flow="feature"
       data-status={status()}
     >
       <div

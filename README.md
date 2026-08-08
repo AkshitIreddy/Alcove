@@ -45,17 +45,15 @@
 
 <!--
   The demo is generated, not recorded by hand: `node shots-now/demo-gif.mjs`
-  drives the real app with gifsmith and emits both a .webp and a .gif. It is a
-  forward loop with no crossfade — the scene returns to the shelf it started on
-  and the trim cuts on that seam, so the last frame IS the first frame.
+  drives the real app with gifsmith and emits one animated WebP. It is a forward
+  loop with no crossfade — the scene returns to the shelf it started on and the
+  trim cuts between matching, visually seamless shelf holds.
 
-  The WEBP is the one shown, and the .gif is gitignored. They are the same 38
-  seconds; the webp is 4MB against the gif's 7, and GitHub renders animated webp
-  inline just the same. Committing both would put 11MB into history on every
-  re-render, on a repo people are meant to clone.
+  GitHub renders animated WebP inline, so generating a second copy as GIF only
+  makes each demo refresh heavier for a repo people are meant to clone.
 -->
 <p align="center">
-  <img src="docs/readme/img/demo.webp" alt="A loop through Alcove: a full bookcase against gold-trellised wallpaper; the library studio opens and the whole room is repainted three times over — a gilt salon, a card room, a carnival — then the carpentry, the wallpaper and the colours are each changed on their own before the first room is put back; a book is pulled off the shelf, swings open into a two-page spread, and the pages are turned one at a time with a panel opened between each — page style, the catalogue, the table of contents, the book studio, in and out — before the way back returns to the shelf it began on." width="880">
+  <img src="docs/readme/img/demo.webp" alt="A loop through Alcove: a stocked walnut bookcase is transformed in the full seven-step library studio through room presets, carpentry, wallpaper and colours, then returned to its opening look. The Welcome book pulls from the shelf and opens into ruled pages; every rail panel appears while the tour visits book styling, page styling, the catalogue, contents, a ruled ledger and postcard, kitten pictures, ribbons, history, thumbnails, hand-drawn diagrams, maths, code, footnotes, page links, sharing, search and focus mode. The book closes and settles back into the same populated shelf where the loop began." width="880">
 </p>
 
 <p align="center">
@@ -131,7 +129,7 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
 **Part 2 — Building Alcove** — for a developer, or for an AI agent helping one. Nothing below is needed to use the app.
 
 - [How it's built](#how-its-built) — The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row
-- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the four checks
+- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks
 - [The map of the app](#the-map-of-the-app) — Directory by directory, plus the module-docstring convention this README points at instead of copying
 - [Building and releasing](#building-and-releasing) — The bundle artefacts, the icon pipeline, and the tag-driven release workflow
 - [Non-goals](#non-goals) — No sync, no cloud, no mobile, no plugin API, no second visual language, no light model
@@ -152,7 +150,7 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
   start with. Books are drawn objects, not rows in a list — you recognise yours
   by its binding.
 - **A language an AI can write for you.** *Copy the format for your AI* puts
-  <!--f:specLines-->821<!--/f--> lines of generated grammar on your clipboard;
+  <!--f:specLines-->822<!--/f--> lines of generated grammar on your clipboard;
   any chatbot then writes you a note in it, and *paste a script in* turns that
   answer into formatted pages — sticky notes, callouts, highlights, and trees,
   graphs and timelines drawn as real diagrams rather than pasted as pictures.
@@ -189,7 +187,7 @@ diagrams — and so you never have to teach it how.
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/ai.png)
 
 **Take the grammar** — *copy the format for your AI* puts
-<!--f:specLines-->821<!--/f--> lines of specification on your clipboard,
+<!--f:specLines-->822<!--/f--> lines of specification on your clipboard,
 generated from the parser's own tables, so it cannot describe a language the app
 would refuse. **Ask for a note** in your own words. **Paste it back**, and the
 dialog previews what it recognised before anything lands on the page.
@@ -220,6 +218,11 @@ nothing left running when you close the window.
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
+
+Starting with the first updater-enabled release, Alcove checks that same Release
+page after launch and offers newer signed versions in the app. If you installed
+v0.4.0, install the next release manually once; v0.4.0 predates the updater, so
+it cannot discover that first upgrade by itself.
 
 **[What is new in this version](docs/readme/releases.md)**
 
@@ -322,7 +325,7 @@ halfway. To jump rather than turn, the table of contents (`Ctrl+Alt+T`) and the
 thumbnail strip (`Ctrl+Alt+M`) both open with a key and are walked with Tab and
 Enter.
 
-![The Welcome book open on its first spread, its title on a little tab above the covers. The left page carries "Welcome to Alcove ✎" in a large handwriting face with a gold star beside it, a paragraph with the phrase "real paper you can write on" in an amber highlight, a green callout telling you to click anywhere on the ruled lines and start typing, a three-item bulleted list about the shelf, opening a book and turning pages, a tan card headed "Thirty-two leaves, every one a demonstration", and a green banner reading "So: turn the page." The right page is headed "The shelf", opens "Behind this book is a bookcase, and behind that a room", and carries a tan card headed "Getting about" with an Enter key cap drawn into the sentence, a tilted yellow sticky note about the dock at the foot of the rail, and a moss tag reading "Ctrl Alt F grows the case by a floor". A vertical rail of hand-drawn tool icons runs down the left edge with a word count at its foot.](docs/readme/img/spread.png)
+![The Welcome book open on ruled paper. The left page says every book opens into real pages, highlights that phrase in amber, offers a green local-save callout, three navigation bullets and a moss banner inviting the reader to turn the page. The right page, "Your first five minutes", gives four small actions, a blank task to mark, a yellow note explaining that Alcove keeps up while you write, and an Esc key reminder. The hand-drawn tool rail remains visible along the left edge.](docs/readme/img/spread.png)
 
 Mid-turn, the leaf lifts off the spread and you can see the next page under it:
 
@@ -638,9 +641,9 @@ part of it without losing the rest.
 | Bookmark ribbons | cloth × weight × tail × material × charm, **<!--f:ribbonPresets-->40<!--/f-->** named | [`src/views/bookmarks.ts`](src/views/bookmarks.ts) |
 | Block decoration | **<!--f:effectAxes-->11<!--/f-->** axes, **<!--f:effectValues-->472<!--/f-->** values, applicable to **<!--f:blockEffectTypes-->35<!--/f-->** kinds of block | [`src/editor/effects/vocabulary.ts`](src/editor/effects/vocabulary.ts) |
 | Stickers | **<!--f:stickers-->50<!--/f-->**, grouped by family, plus your own | [`src/editor/nodes/stickers.ts`](src/editor/nodes/stickers.ts) |
-| Sound sets | **<!--f:soundSets-->28<!--/f-->**, voicing **<!--f:soundCues-->66<!--/f-->** cues | [`src/sound/soundSets.ts`](src/sound/soundSets.ts) |
+| Sound sets | **<!--f:soundSets-->28<!--/f-->**, voicing **<!--f:soundCues-->64<!--/f-->** cues | [`src/sound/soundSets.ts`](src/sound/soundSets.ts) |
 | Ambience beds | **<!--f:ambienceBeds-->10<!--/f-->**, plus silence | [`src/sound/engine.ts`](src/sound/engine.ts) |
-| Settings | **<!--f:settingsOptions-->40<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](src/data/defaults.ts) |
+| Settings | **<!--f:settingsOptions-->42<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](src/data/defaults.ts) |
 
 Some of it is not in a studio at all. *Settings → Appearance* is where the
 choices that belong to the whole app live rather than to one room — the theme,
@@ -742,7 +745,7 @@ button, the panel, the checkbox, the page turn, the book coming off the shelf,
 the crumple, the keystroke, the bell. There are
 <!--f:soundSets-->28<!--/f--> of them, grouped by character — the house voicing
 and its near neighbours, then paper, library, chamber, studio, hush and
-whimsy — between them voicing <!--f:soundCues-->66<!--/f--> cues.
+whimsy — between them voicing <!--f:soundCues-->64<!--/f--> cues.
 
 A set adds no new recordings. It conditions the ones that ship — substituting
 which family voices a role, changing playback rate, trimming gain, layering a
@@ -827,7 +830,7 @@ a hand-edited ZIP cannot write outside the two places it is allowed to.
 The **parcel desk** — the rail's *In and out* sheet, or `Ctrl+Shift+E` — packs
 books into a single `.nbk` file. You pick the scope and what rides along.
 
-![The parcel desk over an open book: a cream sheet headed "Send part of your library out", with a narrow tab column down its left edge — send out (lit), bring in, undo book. Under "What goes in the parcel" a row of scope chips — whole library (lit), floor 1, floor 2, floor 3, this book, pick by hand — over a flat list with a checkbox and page count for every book. Field Notes is ticked at 4 pages; Kanji Practice and Watercolour Basics are empty; "Welcome to Alcove ✎" is ticked at 32 pages; eleven more books through First Aid follow at 0 pages. On the right, "How to pack it": bring the pictures, keep covers & spines, include the library look, perfect fidelity — three of the four ticked — then written as Notebook Script or plain Markdown, and split as one file per page or one file per book. Under that a hatched parcel card reads "In the parcel — 2 books · 36 pages · about 115 KB", lists Field Notes and Welcome separately, carries a drawn present, and says "saves as alcove-library.nbk". Close and Export sit at the foot.](docs/readme/img/transfer.png)
+![The "Send part of your library out" panel over an open book. The whole-library scope lists every title and selects only "Welcome to Alcove" at 48 pages. Bring the pictures, keep covers and spines, and perfect fidelity are enabled; the parcel is written as Notebook Script with one file per page. Its summary reads "1 book · 48 pages · about 101 KB", shows the Welcome book and the alcove-library.nbk filename, with Close and Export at the foot.](docs/readme/img/transfer.png)
 
 Inside, a bundle is a plain ZIP: a manifest with a checksum, one Notebook Script
 file per page, the lossless JSON beside it, the assets, and a snapshot of the
@@ -930,10 +933,10 @@ stay in [Part 2](docs/readme/part-2-developers.md) and are listed under
 Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
 webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
 Vite. Almost everything interesting happens in the frontend. The Rust side is
-<!--f:rustCommands-->14<!--/f--> commands — image assets, link previews, backups,
+<!--f:rustCommands-->15<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
-migrations, in <!--f:rustFiles-->8<!--/f--> files and
-<!--f:rustLines-->2306<!--/f--> lines.
+migrations, in <!--f:rustFiles-->9<!--/f--> files and
+<!--f:rustLines-->2619<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -1062,18 +1065,18 @@ wrong.
 |---|---|---|
 | [Tauri 2](https://tauri.app/) | 2.x | Ships the OS webview instead of bundling Chromium: a 16 MB installer rather than ten times that, and one process tree. Rust gets the things a webview cannot do — filesystem, SQLite, tray, an SSRF-guarded image fetcher. |
 | [SolidJS](https://www.solidjs.com/) | ^1.9.3 | Fine-grained reactivity with no virtual DOM. That is not a benchmark preference here: the app mounts dozens of TipTap node views, and a VDOM diff over a node view is exactly the thing that fights ProseMirror for ownership of the DOM. |
-| TypeScript + Vite | ~5.6 / ^6.0 | `strict`, plus `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch`. Vite's dev server is also the QA harness — see *Driving the running app*. |
+| TypeScript + Vite | ~5.6 / ^6.0 | `strict`, plus `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch`. Vite also provides the browser-only development path on port 1420. |
 | [PixiJS v8](https://pixijs.com/) | ^8.19 | Continuous zoom is the hard requirement, and it is what DOM loses on: Chromium rasterises a layer at a fixed scale, so animating `transform: scale()` on a big container gives blurry pixels during the zoom and a re-raster hitch at the end. A single SVG loses harder — filter-based linework is CPU-bound. |
 | [TipTap v3](https://tiptap.dev/) | ^3.29 | `@tiptap/core` is genuinely framework-agnostic (core + `@tiptap/pm` only), so it runs under Solid with a thin binding layer. ProseMirror underneath supplies IME/composition handling and transaction-based undo against a strict schema, which is not cheaply replicable. In June 2025 Tiptap MIT-licensed ten formerly-Pro extensions, including the exact set this app needs: DragHandle, NodeRange, UniqueID, Details, Mathematics, TableOfContents. |
 | Vendored Solid bindings | in-repo | [`src/editor/solid/`](src/editor/solid/) rather than a dependency, because there is no Solid adapter upstream worth taking and an editor binding is not a thing to upgrade by lockfile bump. Three files; see [The vendored Solid bindings](docs/readme/part-2-developers.md#the-vendored-solid-bindings). |
 | SQLite via `tauri-plugin-sql` | ^2.4 | Migrations are registered on the Rust side in [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs). No ORM; the repos in [`src/data/`](src/data/) speak SQL directly. |
 | GSAP | ^3.15 | Every plugin is free as of 2024, including Flip, which is what makes a dragged block settle into its new position instead of teleporting. Transform/opacity only in hot paths. |
-| Howler | ^2.2 | <!--f:soundCues-->66<!--/f--> cues and <!--f:ambienceBeds-->10<!--/f--> ambience beds, in four categories (`ui`, `pages`, `shelf`, `ambient`) each with its own volume under a master. Web Audio through one library rather than by hand, because the interesting part is the cue table, not the graph. Provenance and licensing are under [Licence and credits](#licence-and-credits); the design is [`docs/design/sound.md`](docs/design/sound.md). |
+| [`@pixi/sound`](https://pixijs.io/sound/) | ^6.0 | <!--f:soundCues-->64<!--/f--> cues and <!--f:ambienceBeds-->10<!--/f--> ambience beds, in four categories (`ui`, `pages`, `shelf`, `ambient`) with category volumes under one master. It shares the app's Pixi runtime and provides pooled Web Audio playback without maintaining a second audio framework. Provenance and licensing are under [Licence and credits](#licence-and-credits); the design is [`docs/design/sound.md`](docs/design/sound.md). |
 | `html-to-image` | ^1.11 | Page → `ImageBitmap` for the curl. The one library in the app with a bug worked around at length ([`svgSnapshot.ts`](src/flip/svgSnapshot.ts)). |
 | `lowlight` | ^3.3 | Syntax highlighting inside code blocks, through `@tiptap/extension-code-block-lowlight`. |
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](src/art/wobble.ts). |
-| `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* tooltip deliberately does not use it — see [`tests/tooltip.test.ts`](tests/tooltip.test.ts). |
-| Vitest, Playwright, fast-check | ^4.1 / ^1.62 / ^4.9 | Unit, end-to-end, and property-based tests. fast-check drives the script parser's round-trip invariant and the ZIP codec. |
+| `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* delegated tooltip deliberately does not use it — see [`Tooltip.tsx`](src/views/Tooltip.tsx). |
+| Vitest | ^4.1 | Runs the single retained smoke file, [`tests/smoke.test.ts`](tests/smoke.test.ts), in Node. |
 
 There is deliberately no state-management library, no CSS framework, no icon
 package, no chart library and no markdown library. The parser, the ZIP codec, the
@@ -1083,7 +1086,7 @@ would not meet (see [`src/features/transfer/zip.ts`](src/features/transfer/zip.t
 for the reasoning in one concrete case).
 
 ## Getting it running
-<!--nav: `npm run tauri dev`, the browser-only dev path, and the four checks-->
+<!--nav: `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks-->
 
 ```bash
 npm install
@@ -1094,46 +1097,23 @@ npm run dev            # frontend only, in a browser, on :1420
 `npm run dev` works because [`src/data/db.ts`](src/data/db.ts) falls back to an
 in-memory database stub outside Tauri — the same `select`/`execute` surface,
 persisted to `localStorage`, degrading to empty results rather than throwing on
-SQL it does not understand. A book created in the browser survives a reload. This
-is not a toy path: it is what the entire Playwright harness runs against, and
-[`tests/stub-persistence.test.ts`](tests/stub-persistence.test.ts) holds it to the
-real thing's behaviour.
+SQL it does not understand. A book created in the browser survives a reload. It
+is a convenient development path, not a substitute for the Tauri host.
 
-### The four checks
+### The bare-bones gate
 
-Cheapest first. Agents working in parallel should use `tsc` and `vitest` and
-**not** run `npm run build` or `npm run tauri dev`.
+The owner performs visual and audio acceptance directly. Automated verification
+is deliberately limited to the two commands below.
 
-| Command | Gates |
+| Command | What it checks |
 |---|---|
-| `npx tsc --noEmit` | The frontend, in `strict` mode. Note it only covers `src/` — `tests/` is not in the `tsconfig` include, so a test file's type errors surface when Vitest transpiles it, not here. |
-| `npx vitest run` | <!--f:unitTests-->92<!--/f--> unit-test files, node environment (jsdom is deliberately not installed; [`vitest.config.ts`](vitest.config.ts) pins the environment for exactly that reason). `tests/book-bindings.test.ts` takes ~110 s on its own; that is expected. |
-| `cargo check --manifest-path src-tauri/Cargo.toml` | The Rust host compiles, with no warnings. |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | Its 29 unit tests — archive paths, PDF structure, media hashing. Listed separately because for a long time only `check` was, and a broken test sat green-looking underneath it. |
-| `npm run e2e` | <!--f:e2eSpecs-->15<!--/f--> Playwright specs against a dev server on :1420. Running them, and reading a red run, is [`docs/e2e.md`](docs/e2e.md). |
+| `npx tsc --noEmit` | Frontend type safety in strict mode. |
+| `npm test` | Three smoke invariants: Notebook Script remains total, pagination keeps one block, and package/Tauri versions agree. |
 
-Two generated artefacts have their own verify mode, and both are wired into the
-test suite so a forgotten regeneration is a red test rather than a silent
-divergence: `npm run spec:check` (the AI-facing Notebook Script spec) and
-`npm run readme:check` (the front page and both halves of it). A third,
-`python scripts/gen-icons.py --check`, exists and is honest about not being
-wired in yet.
-
-> [!WARNING]
-> Headless Chromium runs on SwiftShader, so the app's software-renderer probe puts
-> the shelf into degrade mode and you get lo-res untitled spines. **Append
-> `?fx=force`** to override it. In the same environment `requestAnimationFrame` is
-> throttled, so poll for state instead of waiting a fixed time — a `waitForTimeout`
-> that passes on your machine will flake in CI. The override lives in
-> [`features/bookshelf/env.ts`](src/features/bookshelf/env.ts) and is not to be
-> removed; all visual QA depends on it.
-
-The suite shares that dev server with everything else working in the repo, so a
-red run is not automatically a product failure: a save in another window
-full-reloads the page mid-test. The config allows one retry for exactly that and
-keeps the trace of the attempt that failed, which is how you tell the two apart.
-[`docs/e2e.md`](docs/e2e.md) is the whole story, including the honest determinism
-check to run when the repo is quiet.
+The smoke suite is [`tests/smoke.test.ts`](tests/smoke.test.ts), selected by
+[`vitest.smoke.config.ts`](vitest.smoke.config.ts). It does not boot a
+browser, capture pixels, inspect audio, occupy port 1420 or claim anything about
+what the app looks or sounds like.
 
 ## The map of the app
 <!--nav: Directory by directory, plus the module-docstring convention this README points at instead of copying-->
@@ -1156,7 +1136,7 @@ defending — why it is that way and what it replaced.
 | [`src/features/transfer/`](src/features/transfer/) | Export/import bundles (`.nbk`), conflict resolution, restore points. |
 | [`src/features/system/`](src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](src/features/packs/), [`src/features/templates/`](src/features/templates/), [`src/features/tutorial/`](src/features/tutorial/), [`src/features/quickswitch/`](src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
-| [`src/sound/`](src/sound/) | The Howler engine, the named sound sets, and the in-app credits panel. |
+| [`src/sound/`](src/sound/) | The `@pixi/sound` engine, named sound sets, and the in-app credits panel. |
 | [`src/search/`](src/search/) | The fuzzy matcher and the full-text index behind `Ctrl+K` and `Ctrl+Shift+F`. In-repo, because the ranking rules are the product. |
 | [`src/state/`](src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
 | [`src/features/settings/`](src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
@@ -1164,12 +1144,11 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->288<!--/f--> of <!--f:srcFiles-->296<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6926<!--/f--> lines of it.
+<!--f:srcDocstrings-->300<!--/f--> of <!--f:srcFiles-->309<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6979<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
-either: `npm run readme:check` recomputes them from the tree and
-`tests/readme.test.ts` fails if this sentence has drifted.
+either: `npm run readme:check` recomputes them from the tree and reports drift.
 
 The convention:
 
@@ -1200,6 +1179,7 @@ npm run tauri build    # the above, then the Rust bundle
 | Artefact | Notes |
 |---|---|
 | `Alcove_<version>_x64-setup.exe` | NSIS, and the one a reader downloads. `installMode: currentUser`, so installing needs no administrator prompt. |
+| `Alcove_<version>_x64-setup.exe.sig` | The updater signature for that exact NSIS installer. |
 | `Alcove_<version>_x64_en-US.msi` | WiX. For policy deployment. |
 | `alcove.exe` | The app itself, with the icon group compiled in by `tauri_winres`. |
 
@@ -1271,9 +1251,9 @@ is three jobs rather than one matrix:
 
 | Job | Runner | What it does |
 |---|---|---|
-| `gates` | `ubuntu-latest` | `tsc --noEmit`, `vitest run`, `spec:check`, `readme:check`, `gen-icons.py --check` |
+| `gates` | `ubuntu-latest` | `tsc --noEmit`, `npm test`, `spec:check`, `readme:check`, `gen-icons.py --check` |
 | `build` ×3 | `windows-latest`, `macos-15`, `ubuntu-22.04` | the bundle, and nothing else |
-| `release` | `ubuntu-latest` | notes, `SHA256SUMS.txt`, one GitHub Release |
+| `release` | `ubuntu-latest` | notes, signed `latest.json`, checksums, one GitHub Release |
 
 **The gates run once.** None of them can fail differently on a different
 operating system, so running them on all three runners would triple their cost
@@ -1295,13 +1275,26 @@ should produce, and what to check when it does.
 Notes come from [`scripts/release-notes.mjs`](scripts/release-notes.mjs) by
 diffing against the previous tag. A tag containing `-` publishes as a prerelease.
 
-Two honest edges. **Nothing is signed** on any platform, so Windows shows a
-SmartScreen warning and macOS quarantines the first launch — which is why the
-release carries checksums. And this is still the *only* workflow: it fires on
-tags, so nothing runs `tsc` or `vitest` on an ordinary push, and the artefact
-names in `docs/packaging-mac-linux.md` are read off the bundler's naming rules
-rather than off a run that has already happened on every platform. Check them
-against the Release before quoting one at a reader.
+The main build receives `TAURI_SIGNING_PRIVATE_KEY` from a GitHub Actions secret
+and emits the NSIS, AppImage and universal macOS updater payloads with their
+signatures. The release job writes `latest.json` with immutable tag URLs and the
+signature contents, then uploads it beside those files. Installed copies check
+that stable endpoint after launch; **Update now** downloads the matching payload,
+verifies it, installs it and relaunches Alcove. The private key is ignored locally
+and never belongs in git; [`docs/packaging-mac-linux.md`](docs/packaging-mac-linux.md)
+has the one-time secret setup.
+
+One bootstrap is unavoidable: v0.4.0 predates the updater, so a v0.4.0 install
+must take the first updater-enabled release manually. Every release after that
+can use the in-app path.
+
+Two honest edges remain. The updater payloads are signed, but the applications
+are not Authenticode-signed or Apple-notarised, so Windows can still show a
+SmartScreen warning and macOS can still quarantine a manual download. And this
+is still the *only* workflow: it fires on tags, so nothing runs `tsc` or `npm
+test` on an ordinary push. Check the first cross-platform run against the
+predicted artefact names in `docs/packaging-mac-linux.md` before quoting one at a
+reader.
 
 > [!NOTE]
 > There is consequently no CI badge to display yet. The gates run locally, and
@@ -1338,10 +1331,10 @@ against the Release before quoting one at a reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->296<!--/f--> TypeScript files, <!--f:srcDocstrings-->288<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6926<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
-| Rust host | <!--f:rustFiles-->8<!--/f--> files, <!--f:rustLines-->2306<!--/f--> lines, <!--f:rustCommands-->14<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
-| Tests | <!--f:unitTests-->92<!--/f--> Vitest files and <!--f:e2eSpecs-->15<!--/f--> Playwright specs | [The gates](docs/readme/part-2-developers.md#the-gates) |
-| QA against the running app | <!--f:probeScripts-->97<!--/f--> `probe-*.mjs` scripts | [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) |
+| Frontend source | <!--f:srcFiles-->309<!--/f--> TypeScript files, <!--f:srcDocstrings-->300<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6979<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Rust host | <!--f:rustFiles-->9<!--/f--> files, <!--f:rustLines-->2619<!--/f--> lines, <!--f:rustCommands-->15<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
+| Bare-bones checks | One Vitest smoke file plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
+| Visual and audio acceptance | Performed directly by the owner; no automated browser, pixel, frame or waveform gate | [The bare-bones gate](docs/readme/part-2-developers.md#the-bare-bones-gate) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
 | Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
 
@@ -1365,8 +1358,7 @@ is already on this page, plus the corners this page does not go into.
 | [Notebook Script](docs/readme/part-2-developers.md#notebook-script) | Why `parse()` is total, the round-trip invariant, and the generated spec |
 | [The data layer](docs/readme/part-2-developers.md#the-data-layer) | The schema, the bookcase model, and why every read is validated |
 | [The failure modes this codebase has actually shipped](docs/readme/part-2-developers.md#the-failure-modes-this-codebase-has-actually-shipped) | The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named |
-| [The gates](docs/readme/part-2-developers.md#the-gates) | Every unit-test file and the specific class of bug it exists to stop |
-| [Driving the running app](docs/readme/part-2-developers.md#driving-the-running-app) | Specimen boards, probes, end-to-end, and why a board proves less than it looks like it does |
+| [The gate](docs/readme/part-2-developers.md#the-gate) | The deliberately tiny smoke suite |
 | [Things that were harder than they look](docs/readme/part-2-developers.md#things-that-were-harder-than-they-look) | Five places the obvious implementation is wrong |
 | [The design record](docs/readme/part-2-developers.md#the-design-record) | The ADR set in `docs/design/`, including which documents are superseded and why they are kept |
 | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) | The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails |
@@ -1387,24 +1379,23 @@ A README that quotes numbers goes stale silently, so none of the numbers on this
 page are typed as prose. Each is written inside an invisible marker —
 `<!--f:wallpaperPapers-->126<!--/f-->`, which GitHub renders as `126` and
 nothing else — and recomputed from the tree. So are the
-<!--f:readmeShots-->24<!--/f--> screenshots: each one records the app it
+<!--f:readmeShots-->25<!--/f--> screenshots: each one records the app it
 photographed and the room it stood in, so a picture that has outlived what it
 shows says so rather than quietly lying.
 
 ```bash
-npm run readme:check   # report what has drifted, and what is missing
+npm run readme:check   # fail on mechanical drift; report coverage gaps
 npm run readme:facts   # print the true values
 npm run readme:build   # recompose this page from package.json and the halves
 ```
 
-**The check reports; it does not block, and it never rewrites a sentence.** It
+**The check blocks mechanical drift, and it never rewrites a sentence.** It
 prints a grouped list — numbers that no longer match the tree, links that go
-nowhere, pictures that no longer show this app, and things that are in the repo
-but on no page at all — and then leaves the editing to whoever is doing it,
-which may well be an agent. What a page *ought* to say is a judgement, and a
-script should not be making it. The one thing that does still fail is
-`npx vitest run`, on a stale count, because a count that has stopped being true
-is a fact rather than an opinion.
+nowhere, pictures that no longer show this app, and generated regions that are
+out of date — then exits red. Things that are in the repo but on no page at all
+remain coverage notes: what a page *ought* to say is a judgement, and a script
+should not be making it. The retained Vitest gate checks the same facts, links
+and screenshot identity as part of `npm test`.
 
 **Nor is the prose typed twice.** The manual above is *lifted* out of
 [`docs/readme/part-1-users.md`](docs/readme/part-1-users.md) and
@@ -1420,10 +1411,10 @@ every contents list on every page are composed the same way, from the version in
 [`package.json`](package.json), cross-checked against
 [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json).
 
-So editing a generated region by hand is a red test, not a divergence somebody
-notices months later. [`tests/readme.test.ts`](tests/readme.test.ts) is the real
-gate: it supplies the counts that need the TypeScript modules loaded, and it
-resolves every relative link the way a reader's browser would follow it.
+So editing a generated region by hand is a red check, not a divergence somebody
+notices months later. [`scripts/check-readme.mjs`](scripts/check-readme.mjs)
+is the focused gate: strict mode checks the file-derived facts and resolves
+every relative link the way a reader's browser would follow it.
 [How this document stays true](docs/readme/part-2-developers.md#how-this-document-stays-true)
 is the long version, and the place the procedure for adding a marker of your own
 is written out.
@@ -1458,6 +1449,6 @@ mark to match the app, and do not add rendering to the app to match the mark.
 
 **Upstream.** TipTap and ProseMirror (MIT), the Solid bindings in
 [`src/editor/solid/`](src/editor/solid/) based on `@vrite/tiptap-solid` (MIT),
-PixiJS (MIT), GSAP (standard licence, all plugins free), Howler (MIT), lowlight
+PixiJS and `@pixi/sound` (MIT), GSAP (standard licence, all plugins free), lowlight
 and the `highlight.js` grammars (BSD-3-Clause / MIT), Tauri (MIT/Apache-2.0).
 <!-- /gen -->

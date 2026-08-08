@@ -23,6 +23,10 @@ import {
   DEFAULT_LINE_HEIGHT_PX,
   LINE_HEIGHT_MAX_PX,
   LINE_HEIGHT_MIN_PX,
+  DEFAULT_RULE_GAP_PX,
+  RULE_GAP_MAX_PX,
+  RULE_GAP_MIN_PX,
+  clampRuleGapPx,
   isPageStyle,
 } from '../../editor/document';
 import {
@@ -60,6 +64,7 @@ export interface PageStylePanelProps {
 export default function PageStylePanel(props: PageStylePanelProps): JSX.Element {
   const [style, setStyle] = createSignal<PageStyle>('ruled');
   const [lineHeight, setLineHeight] = createSignal(DEFAULT_LINE_HEIGHT_PX);
+  const [ruleGap, setRuleGap] = createSignal(DEFAULT_RULE_GAP_PX);
 
   /*
    * The cards are drawn thumbnails and not chips or strip tiles, so this drives
@@ -93,6 +98,7 @@ export default function PageStylePanel(props: PageStylePanelProps): JSX.Element 
         ),
       );
     }
+    setRuleGap(clampRuleGapPx(attrs.ruleGapPx));
   });
 
   const applyStyle = (value: PageStyle): void => {
@@ -107,6 +113,19 @@ export default function PageStylePanel(props: PageStylePanelProps): JSX.Element 
     const editor = activeEditor();
     if (!editor) return;
     editor.view.dispatch(editor.state.tr.setDocAttribute('lineHeightPx', value));
+  };
+
+  const applyRuleGap = (value: number): void => {
+    const gap = clampRuleGapPx(value);
+    setRuleGap(gap);
+    const editor = activeEditor();
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr.setDocAttribute(
+        'ruleGapPx',
+        gap === DEFAULT_RULE_GAP_PX ? undefined : gap,
+      ),
+    );
   };
 
   return (
@@ -173,6 +192,22 @@ export default function PageStylePanel(props: PageStylePanelProps): JSX.Element 
           value={lineHeight()}
           aria-label="Line height"
           onInput={(e) => applyLineHeight(Number(e.currentTarget.value))}
+        />
+      </label>
+
+      <label class="nb-panel-row">
+        <span class="nb-panel-row-label">
+          rule gap <em class="nb-panel-row-hint">{ruleGap()}px</em>
+        </span>
+        <input
+          type="range"
+          class="nb-panel-slider"
+          min={RULE_GAP_MIN_PX}
+          max={RULE_GAP_MAX_PX}
+          step={1}
+          value={ruleGap()}
+          aria-label="Rule gap"
+          onInput={(e) => applyRuleGap(Number(e.currentTarget.value))}
         />
       </label>
 

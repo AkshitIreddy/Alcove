@@ -727,6 +727,61 @@ function mapColumn(block: ContainerBlock, options: ToTiptapOptions): TiptapNode 
   );
 }
 
+/** Postcard/ledger always arrive as two independently editable columns. */
+function stationerySplitContainer(
+  block: ContainerBlock,
+  options: ToTiptapOptions,
+): TiptapNode[] {
+  const name = block.name as 'postcard' | 'ledger';
+  if (!hasContainerNode(name, options) || !hasContainerNode('col', options)) {
+    return fallbackContainer(block, options);
+  }
+
+  const promoted: Record<string, unknown> = {};
+  const used: string[] = [];
+  if (isWashName(block.attrs.color)) {
+    promoted.color = block.attrs.color;
+    used.push('color');
+  }
+  if (typeof block.attrs.title === 'string' && block.attrs.title !== '') {
+    promoted.title = block.attrs.title;
+    used.push('title');
+  }
+
+  const columns: TiptapNode[] = [];
+  const loose: Block[] = [];
+  for (const child of block.children) {
+    if (child.kind === 'container' && child.name === 'col') {
+      columns.push(mapColumn(child, options));
+    } else {
+      loose.push(child);
+    }
+  }
+  if (loose.length > 0) {
+    columns.unshift(node('col', {}, blockChildren(loose, options)));
+  }
+  while (columns.length < 2) {
+    columns.push(node('col', {}, [{ type: 'paragraph' }]));
+  }
+  if (columns.length > 2) {
+    const second = columns[1]!;
+    const surplus = columns.slice(2).flatMap((col) => col.content ?? []);
+    columns[1] = node('col', second.attrs ?? {}, [
+      ...(second.content ?? []),
+      ...surplus,
+    ]);
+    columns.length = 2;
+  }
+
+  return [
+    node(
+      name,
+      { ...promoted, ...extraAttrs(block.attrs, used) },
+      columns,
+    ),
+  ];
+}
+
 function mapContainer(
   block: ContainerBlock,
   options: ToTiptapOptions,
@@ -793,12 +848,14 @@ function mapContainer(
     case 'marginalia':
     case 'pressed-flower':
     case 'ticket-stub':
-    case 'postcard':
-    case 'ledger':
     case 'photo-corner':
     case 'wax-seal':
     case 'map-pin':
       return plainContainer(block, options);
+
+    case 'postcard':
+    case 'ledger':
+      return stationerySplitContainer(block, options);
 
     case 'toggle':
       return mapToggle(block, options);

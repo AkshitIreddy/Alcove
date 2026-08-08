@@ -51,6 +51,32 @@ export async function saveBytes(
   }
 }
 
+export const NOTEBOOK_SCRIPT_SPEC_FILE_NAME =
+  'alcove-notebook-script-guide.md';
+
+export const NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING =
+  'The full format guide is large. Some assistants may reject a clipboard paste. ' +
+  'If yours accepts file uploads, download the Markdown guide instead.';
+
+type SpecSaver = typeof saveBytes;
+
+/**
+ * Save/download the same full guide used by the adjacent clipboard action.
+ * The caller supplies the generated spec so this generic saver does not pull
+ * a 30 KB string into every image/PDF export bundle that imports it.
+ */
+export async function downloadNotebookScriptSpec(
+  spec: string,
+  saver: SpecSaver = saveBytes,
+): Promise<SaveOutcome> {
+  return saver(
+    new TextEncoder().encode(spec),
+    NOTEBOOK_SCRIPT_SPEC_FILE_NAME,
+    'text/markdown;charset=utf-8',
+    [{ name: 'Markdown', extensions: ['md'] }],
+  );
+}
+
 /** `my title` → `my-title` filename stem (never empty). */
 export function fileStem(title: string, fallback = 'notebook'): string {
   const stem = title

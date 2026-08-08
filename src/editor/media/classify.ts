@@ -8,6 +8,8 @@ import { isBareUrl } from './urlGuard';
 export interface PasteContext {
   /** Number of image files on the clipboard / drag payload. */
   imageFileCount: number;
+  /** Number of video files on the clipboard / drag payload. */
+  videoFileCount: number;
   /** Plain-text clipboard content ('' when absent). */
   text: string;
   /** True when the selection is a caret (no range selected). */
@@ -17,7 +19,7 @@ export interface PasteContext {
 }
 
 export type PasteAction =
-  | { kind: 'insert-images' }
+  | { kind: 'insert-media' }
   | { kind: 'insert-link-card'; url: string }
   | { kind: 'default' };
 
@@ -30,8 +32,8 @@ export type PasteAction =
  * - anything else → let ProseMirror handle it.
  */
 export function classifyPaste(context: PasteContext): PasteAction {
-  if (context.imageFileCount > 0) {
-    return { kind: 'insert-images' };
+  if (context.imageFileCount > 0 || context.videoFileCount > 0) {
+    return { kind: 'insert-media' };
   }
   if (
     !context.inCodeBlock &&

@@ -3,8 +3,8 @@
  *
  * Aged-paper modal card: big monospace textarea, live parse (150ms debounce)
  * with friendly line-numbered warnings, a read-only preview of the parsed
- * doc, and Insert / Cancel. "Copy the format for your AI" puts the full spec
- * markdown on the clipboard.
+ * doc, and Insert / Cancel. The full format guide can be copied to the
+ * clipboard or downloaded as Markdown for an assistant that accepts files.
  *
  * That button used to read "Copy spec for your AI" while the In-and-out sheet's
  * row for the SAME clipboard said "Copy the format for your AI" — two labels,
@@ -34,6 +34,10 @@ import { parse, type Diag, type ScriptDoc } from '../../script';
 import { getPage, savePageDoc, setPageScript } from '../../data/pages';
 import { usePanelKeys } from '../../state/panelKeys';
 import { scriptDocToTiptap } from '../script/toTiptap';
+import {
+  downloadNotebookScriptSpec,
+  NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING,
+} from '../script/exporters/saveFile';
 import { NOTEBOOK_SCRIPT_SPEC } from '../script/spec';
 import { activeEditor } from './activeEditor';
 import ScriptPreview from './ScriptPreview';
@@ -123,6 +127,15 @@ export default function InsertScriptDialog(
     );
   };
 
+  const downloadSpec = async (): Promise<void> => {
+    const outcome = await downloadNotebookScriptSpec(NOTEBOOK_SCRIPT_SPEC);
+    if (outcome === 'saved') {
+      props.onNotify?.('format guide saved — attach it to your AI');
+    } else if (outcome === 'failed') {
+      props.onNotify?.('could not save the format guide');
+    }
+  };
+
   const insert = async (): Promise<void> => {
     const text = source();
     if (text.trim() === '' || inserting()) return;
@@ -192,6 +205,10 @@ export default function InsertScriptDialog(
           paste Notebook Script — from your AI, or your own pen
         </p>
 
+        <p class="nb-ins-spec-note font-ui" role="note">
+          {NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING}
+        </p>
+
         <div class="nb-ins-body">
           <div class="nb-ins-left">
             <textarea
@@ -231,7 +248,14 @@ export default function InsertScriptDialog(
           </div>
         </div>
 
-        <div class="nb-ins-actions">
+        <div class="nb-ins-actions nb-ins-spec-actions">
+          <button
+            type="button"
+            class="nb-ins-button nb-ins-button-ghost font-ui"
+            onClick={() => void downloadSpec()}
+          >
+            Download the format for your AI
+          </button>
           <button
             type="button"
             class="nb-ins-button nb-ins-button-ghost font-ui"

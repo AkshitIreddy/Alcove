@@ -214,17 +214,16 @@ pub async fn bundle_probe(path: String) -> Result<String, String> {
         .map_err(|e| format!("probe task failed: {e}"))?
 }
 
-/// Resolve `<app_data>/assets/<rel_path>`, refusing anything that escapes.
+/// Resolve `<library>/assets/<rel_path>`, refusing anything that escapes.
 fn asset_target(app: &tauri::AppHandle, rel_path: &str) -> Result<PathBuf, String> {
     use tauri::Manager;
     if !is_safe_archive_path(rel_path) {
         return Err("that asset path is not allowed".into());
     }
-    let base = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))?;
-    Ok(base.join("assets").join(rel_path))
+    let library = app
+        .try_state::<crate::library::LibraryPaths>()
+        .ok_or_else(|| "library folder is not initialized".to_string())?;
+    Ok(library.assets_root().join(rel_path))
 }
 
 /// Write one imported media file. **Additive**: an existing file is left

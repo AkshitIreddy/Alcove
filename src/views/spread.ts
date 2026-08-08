@@ -87,65 +87,41 @@ export function spreadPageIds(
    -------------------------------------------------------------------------- */
 
 /**
- * How many blank pages a reader may deliberately leave at the end of a book.
- *
- * The rule used to be that the last spread could only be turned when its
- * right leaf held ink, which stopped a runaway of empty pages but also made
- * a deliberate blank impossible — reported as *"it does not let me move to
- * another page, someone might want to leave blank pages"*. Leaving a spread
- * blank to come back to is ordinary notebook behaviour and has to work.
- *
- * So blanks are allowed, and merely bounded: four trailing empty pages is
- * two whole spreads of breathing room, far more than anyone leaves on
- * purpose, and still a hard stop if the key repeats.
- */
-export const MAX_TRAILING_BLANK_PAGES = 4;
-
-/**
  * Direction gating for the spread.
  * - 'prev' needs a spread before this one.
- * - 'next' is free while pages exist ahead. On the last spread it is allowed
- *   when the right leaf holds ink — that flip auto-creates the next page (see
- *   shouldAutoCreatePage) — or when the book has not yet accumulated its
- *   allowance of trailing blanks, which is what lets a reader skip a page.
+ * - 'next' is always available. At the end it appends the landing page, so a
+ *   reader may deliberately leave as many blank leaves as they need.
  *
- * `rightLeafHasContent` must already fold in existence: a null right page
- * (cream blank face) is never "content".
+ * The last two parameters remain in the pure helper's surface for callers and
+ * stored regression probes written against the earlier bounded rule. They no
+ * longer gate navigation: a user-committed turn is the bound, not page ink.
  */
 export function canFlipSpread(
-  pageCount: number,
+  _pageCount: number,
   spreadIndex: number,
   direction: FlipDirection,
-  rightLeafHasContent: boolean,
-  trailingBlankPages = 0,
+  _rightLeafHasContent: boolean,
+  _trailingBlankPages = 0,
 ): boolean {
   if (direction === 'prev') return spreadIndex > 0;
-  if (!isLastSpread(pageCount, spreadIndex)) return true;
-  return rightLeafHasContent || trailingBlankPages < MAX_TRAILING_BLANK_PAGES;
+  return true;
 }
 
 /**
  * Whether committing a flip in `direction` from `spreadIndex` must create
  * the book's next page (ord = append): only forward, only off the last
- * spread, and only where the flip is legal in the first place.
- *
- * Deliberately the same predicate as `canFlipSpread` rather than a stricter
- * one. If a flip off the end is allowed then a page has to exist to land on;
- * the two rules drifting apart would turn the last spread into a flip that
- * animates onto nothing.
+ * spread. Forward navigation itself is unbounded; this predicate is the
+ * matching creation half that guarantees every end turn has a real landing
+ * leaf rather than incrementing the spread index onto nothing.
  */
 export function shouldAutoCreatePage(
   pageCount: number,
   spreadIndex: number,
   direction: FlipDirection,
-  rightLeafHasContent: boolean,
-  trailingBlankPages = 0,
+  _rightLeafHasContent: boolean,
+  _trailingBlankPages = 0,
 ): boolean {
-  return (
-    direction === 'next' &&
-    isLastSpread(pageCount, spreadIndex) &&
-    canFlipSpread(pageCount, spreadIndex, 'next', rightLeafHasContent, trailingBlankPages)
-  );
+  return direction === 'next' && isLastSpread(pageCount, spreadIndex);
 }
 
 /**

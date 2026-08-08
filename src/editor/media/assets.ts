@@ -13,7 +13,7 @@ import { nanoid } from 'nanoid';
 import { getDb, isTauri } from '../../data/db';
 import { registerDevAssetUrl, resolveAssetSrc } from './resolver';
 
-export interface StoredImage {
+export interface StoredAsset {
   /** `assets` table id (content-derived in Tauri). */
   assetId: string;
   /** Path relative to the assets root (or `dev/…` in the browser). */
@@ -21,6 +21,9 @@ export interface StoredImage {
   /** Displayable src for the current environment. */
   src: string;
 }
+
+/** Compatibility name for image-only callers. */
+export type StoredImage = StoredAsset;
 
 interface SavedAssetIpc {
   id: string;
@@ -32,11 +35,12 @@ export async function recordAssetRow(
   id: string,
   relPath: string,
   meta: Record<string, unknown> | null = null,
+  kind: 'image' | 'video' = 'image',
 ): Promise<void> {
   const db = await getDb();
   await db.execute(
     'INSERT OR REPLACE INTO assets (id, rel_path, kind, meta, created_at) VALUES ($1, $2, $3, $4, $5)',
-    [id, relPath, 'image', meta === null ? null : JSON.stringify(meta), new Date().toISOString()],
+    [id, relPath, kind, meta === null ? null : JSON.stringify(meta), new Date().toISOString()],
   );
 }
 
@@ -48,14 +52,23 @@ export async function storeImageBytes(
   bytes: Uint8Array,
   suggestedExt: string,
   meta: Record<string, unknown> | null = null,
-): Promise<StoredImage> {
+): Promise<StoredAsset> {
+  return storeMediaBytes(bytes, suggestedExt, 'image', meta);
+}
+
+async function storeMediaBytes(
+  bytes: Uint8Array,
+  suggestedExt: string,
+  kind: 'image' | 'video',
+  meta: Record<string, unknown> | null,
+): Promise<StoredAsset> {
   if (isTauri()) {
     const { invoke } = await import('@tauri-apps/api/core');
     const saved = await invoke<SavedAssetIpc>('save_image_asset', {
       bytes: Array.from(bytes),
       suggestedExt,
     });
-    await recordAssetRow(saved.id, saved.relPath, meta);
+    await recordAssetRow(saved.id, saved.relPath, meta, kind);
     return {
       assetId: saved.id,
       relPath: saved.relPath,
@@ -64,22 +77,37 @@ export async function storeImageBytes(
   }
 
   // Browser dev fallback: object URL, no filesystem.
-  const id = `img_dev_${nanoid(10)}`;
+  const id = `${kind === 'video' ? 'vid' : 'img'}_dev_${nanoid(10)}`;
   const relPath = `dev/${id}`;
   const url = URL.createObjectURL(
-    new Blob([bytes.slice().buffer], { type: `image/${suggestedExt || 'png'}` }),
+    new Blob([bytes.slice().buffer], {
+      type: `${kind}/${suggestedExt || (kind === 'video' ? 'mp4' : 'png')}`,
+    }),
   );
   registerDevAssetUrl(relPath, url);
-  await recordAssetRow(id, relPath, meta);
+  await recordAssetRow(id, relPath, meta, kind);
   return { assetId: id, relPath, src: url };
 }
 
 /** Convenience: persist a pasted/dropped File or Blob. */
-export async function storeImageFile(file: File | Blob): Promise<StoredImage> {
+export async function storeImageFile(file: File | Blob): Promise<StoredAsset> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const ext = file.type.startsWith('image/') ? file.type.slice(6) : 'png';
   const name = file instanceof File ? file.name : null;
   return storeImageBytes(bytes, ext, name === null ? null : { fileName: name });
+}
+
+/** Persist a dropped video through the same content-addressed asset writer. */
+export async function storeVideoFile(file: File | Blob): Promise<StoredAsset> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ext = file.type.startsWith('video/') ? file.type.slice(6) : 'mp4';
+  const name = file instanceof File ? file.name : null;
+  return storeMediaBytes(
+    bytes,
+    ext,
+    'video',
+    name === null ? null : { fileName: name },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +154,7 @@ export async function fetchImages(
       license: item.license,
       provider,
       query,
-    });
+    }, 'image');
     results.push({ ...item, src: await resolveAssetSrc(item.relPath) });
   }
   return results;

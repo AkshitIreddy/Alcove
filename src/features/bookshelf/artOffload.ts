@@ -29,6 +29,7 @@
 
 import { flatScheme } from '../../art/flat';
 import {
+  ART_PROTOCOL_VERSION,
   ART_JOB_TIMEOUT_MS,
   type ArtJob,
   type ArtMessage,
@@ -54,8 +55,6 @@ interface WorkerSlot {
   worker: Worker;
   /** Jobs handed over and not yet answered — the round-robin cost function. */
   inFlight: number;
-  ready: boolean;
-  fonts: string[];
 }
 
 /* ----------------------------- capability -------------------------------- */
@@ -218,7 +217,7 @@ export class ArtOffload {
           type: 'module',
           name: `notebook-art-${i}`,
         });
-        const slot: WorkerSlot = { worker, inFlight: 0, ready: false, fonts: [] };
+        const slot: WorkerSlot = { worker, inFlight: 0 };
         worker.addEventListener('message', (event: MessageEvent<ArtMessage>) =>
           this.handle(slot, event.data),
         );
@@ -243,12 +242,26 @@ export class ArtOffload {
 
   private handle(slot: WorkerSlot, message: ArtMessage): void {
     if (message.kind === 'ready') {
-      slot.ready = true;
-      slot.fonts = message.fonts;
+      // The worker queues jobs until its fonts settle, so it is safe to post
+      // during startup. Its ready message is ordered before every result; a
+      // stale bundle is therefore retired (and its queued jobs rejected)
+      // before the host can accept pixels produced under another protocol.
+      if (message.version !== ART_PROTOCOL_VERSION) {
+        this.retire(
+          slot,
+          `artOffload: protocol ${message.version} does not match host ${ART_PROTOCOL_VERSION}`,
+        );
+      }
       return;
     }
     const entry = this.pending.get(message.id);
-    if (entry === undefined) return;
+    if (entry === undefined || entry.worker !== slot) {
+      // A successful reply owns native pixel memory even when the promise
+      // timed out, the pool was destroyed, or this worker was retired. Once
+      // there is no consumer, the host is responsible for closing it.
+      if (message.kind === 'spine') message.bitmap.close();
+      return;
+    }
     this.pending.delete(message.id);
     clearTimeout(entry.timer);
     slot.inFlight = Math.max(0, slot.inFlight - 1);
@@ -262,14 +275,14 @@ export class ArtOffload {
   }
 
   /** A worker that errored is dropped; its jobs fall back to the main thread. */
-  private retire(slot: WorkerSlot): void {
+  private retire(slot: WorkerSlot, reason = 'artOffload: worker died'): void {
     const index = this.slots.indexOf(slot);
     if (index >= 0) this.slots.splice(index, 1);
     for (const [id, entry] of [...this.pending]) {
       if (entry.worker !== slot) continue;
       clearTimeout(entry.timer);
       this.pending.delete(id);
-      entry.reject(new Error('artOffload: worker died'));
+      entry.reject(new Error(reason));
     }
     try {
       slot.worker.terminate();
@@ -291,4 +304,3 @@ export function artOffload(): ArtOffload {
   shared ??= new ArtOffload();
   return shared;
 }
-

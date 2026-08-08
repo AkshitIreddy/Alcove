@@ -401,6 +401,7 @@ function CalloutView(props: SolidNodeViewProps): JSX.Element {
     // custom colour as a custom colour instead of as an unrecognised tint.
     <NodeViewWrapper
       class="nb-callout"
+      data-nb-block-flow="feature"
       data-tint={wash().id}
       data-tint-hex={wash().hex ?? undefined}
       style={washStyle(wash())}

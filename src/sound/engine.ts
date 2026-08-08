@@ -1,9 +1,10 @@
 /**
  * src/sound/engine.ts — typed procedural-sound playback engine.
  *
- * Wraps Howler behind a small typed surface. Fully lazy: the howler module
- * is dynamically imported and Howl instances are created only when a sound
- * is first needed, so cold start pays nothing until the first play().
+ * Wraps @pixi/sound behind a small typed surface. The library is loaded after
+ * mount, critical interaction cues decode in the background, and every play
+ * carries its volume and speed into Pixi's play options before the first
+ * sample starts.
  *
  * The settings store drives this from outside via setVolumes / muteAll /
  * setReducedSound / setSoundCharacter — this module never imports src/data.
@@ -44,11 +45,8 @@
  * credits consequence (there is none: a set plays a cue, so it plays that
  * cue's provenance).
  *
- * A set may also carry a master-bus FILTER, which is a real BiquadFilterNode
- * in howler's own Web Audio graph rather than anything faked with gain. Its
- * limits are precise and are written down in `sound/filter.ts`; the engine's
- * whole part in it is `syncBusFilter()`, called wherever howler might just
- * have built or replaced its context.
+ * A set may also carry a master-bus FILTER, installed through Pixi Sound's
+ * public `filtersAll` surface. Its limits live in `sound/filter.ts`.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * THE READER'S OWN SETS
@@ -60,8 +58,7 @@
  * That is why `Cue` below exists: the engine plays a URL with a category, and
  * `/sounds/<name>.wav` is simply the shipped way of naming one.
  *
- * For tests, the Howler dependency is injectable via setHowlerLoader() and
- * the jitter RNG via setPlayRngForTests().
+ * The Pixi Sound dependency and jitter RNG are injectable for focused tests.
  */
 
 import {
@@ -71,7 +68,8 @@ import {
   describeBusFilter,
   resetBusFilterForTests,
   type BusFilterStatus,
-  type HowlerAudioGlobal,
+  type PixiFilterConstructor,
+  type PixiSoundGlobal,
 } from './filter';
 import {
   DEFAULT_SOUND_SET_ID,
@@ -91,7 +89,14 @@ import {
   userSoundSet,
   type AnySoundSetId,
 } from './userSoundSets';
-
+import * as bundledPixiSound from '@pixi/sound';
+import {
+  getPageTurnAudioState,
+  playPageTurn,
+  preparePageTurnAudio,
+  resetPageTurnAudioForTests,
+  type PageTurnAudioState,
+} from './pageTurnPlayer';
 /* ------------------------------- sound names ------------------------------ */
 
 export type SoundName =
@@ -152,8 +157,6 @@ export type SoundName =
   | 'pencil-scratch'
   /* celebration */
   | 'confetti'
-  | 'confetti-2'
-  | 'confetti-3'
   /* ambience beds */
   | 'ambient-rain'
   | 'ambient-storm'
@@ -190,7 +193,11 @@ export type Volumes = Record<VolumeKey, number>;
  * working exactly as before — only now it rotates.
  */
 export const SOUND_FAMILIES = {
-  'page-flip': ['page-flip-1', 'page-flip-2', 'page-flip-3', 'page-flip-4', 'page-flip-5', 'page-flip-6'],
+  // One measured, stable take. Rotating six recordings made the same action
+  // vary by 2.9x RMS energy and turned an isolated slow page turn into a dice
+  // roll. The other WAVs remain in the manifest for old concrete call sites,
+  // but the semantic page-turn role always reaches this clean take.
+  'page-flip': ['page-flip-2'],
   'book-pull': ['book-pull', 'book-pull-2', 'book-pull-3', 'book-pull-4'],
   'book-return': ['book-return', 'book-return-2', 'book-return-3', 'book-return-4'],
   'shelf-whoosh': ['shelf-whoosh', 'shelf-whoosh-2', 'shelf-whoosh-3'],
@@ -200,7 +207,9 @@ export const SOUND_FAMILIES = {
   'check-done': ['check-done', 'check-done-2', 'check-done-3', 'check-done-4'],
   'crumple-delete': ['crumple-delete', 'crumple-delete-2', 'crumple-delete-3', 'crumple-delete-4'],
   'drop-thump': ['drop-thump', 'drop-thump-2', 'drop-thump-3', 'drop-thump-4'],
-  confetti: ['confetti', 'confetti-2', 'confetti-3'],
+  // One genuine CC0 balloon take. Do not manufacture variant counts by
+  // pitch-shifting it; silence is preferable to a mislabeled substitute.
+  confetti: ['confetti'],
   'typing-tick': ['typing-tick-1', 'typing-tick-2', 'typing-tick-3', 'typing-tick-4', 'typing-tick-5', 'typing-tick-6'],
   'chime-hour': ['chime-hour', 'chime-hour-2', 'chime-hour-3'],
 } as const satisfies Record<string, readonly SoundName[]>;
@@ -267,8 +276,6 @@ export const VARIANT_WEIGHTS: Record<SoundName, VariantWeight> = {
   'drop-thump-4': 'full',
   'pencil-scratch': 'plain',
   confetti: 'plain',
-  'confetti-2': 'full',
-  'confetti-3': 'plain',
   'ambient-rain': 'full',
   'ambient-storm': 'full',
   'ambient-fireplace': 'full',
@@ -487,64 +494,251 @@ const CHARACTER_SKIP_ROLES: Record<SoundCharacter, ReadonlySet<FamilyName>> =
     SOUND_CHARACTERS.map((name) => [name, rolesFullyInside(CHARACTER_PROFILES[name].skip)]),
   ) as Record<SoundCharacter, ReadonlySet<FamilyName>>;
 
-/* --------------------------- injectable Howler ---------------------------- */
+/* ------------------------ injectable Pixi Sound -------------------------- */
 
-/**
- * Minimal structural slice of Howl the engine relies on. Tests provide a
- * stub matching this shape; production uses the real howler module.
- */
-export interface HowlLike {
-  play(): number;
-  stop(id?: number): unknown;
-  playing(id?: number): boolean;
-  volume(vol: number, id?: number): unknown;
-  rate(rate: number, id?: number): unknown;
-  fade(from: number, to: number, duration: number, id?: number): unknown;
-  once(event: string, fn: () => void, id?: number): unknown;
-  unload(): unknown;
-}
-
-export interface HowlOptions {
-  src: string[];
+export interface PixiInstanceLike {
+  readonly id: number;
+  volume: number;
+  speed: number;
   loop: boolean;
-  preload: boolean;
-  /**
-   * Howler infers the codec from the src's extension. An asset-protocol URL
-   * for one of the reader's own files is percent-encoded and can carry a
-   * query, so the extension is stated outright rather than left to a regex
-   * over a path we did not build.
-   */
-  format?: string[];
+  muted: boolean;
+  paused: boolean;
+  stop(): void;
+  once(event: 'end' | 'stop', fn: () => void): unknown;
 }
 
-export type HowlConstructor = new (options: HowlOptions) => HowlLike;
+export interface PixiSoundLike {
+  readonly isLoaded: boolean;
+  readonly isPlayable: boolean;
+  readonly isPlaying: boolean;
+  readonly instances: PixiInstanceLike[];
+  readonly duration: number;
+  volume: number;
+  speed: number;
+  loop: boolean;
+  play(options?: {
+    volume?: number;
+    speed?: number;
+    loop?: boolean;
+    complete?: () => void;
+  }): PixiInstanceLike | Promise<PixiInstanceLike>;
+  stop(): unknown;
+  destroy(): void;
+}
+
+export interface PixiSoundOptions {
+  readonly url: string | string[];
+  readonly loop?: boolean;
+  readonly preload?: boolean;
+  readonly volume?: number;
+  readonly speed?: number;
+  readonly loaded?: (error: Error | null, sound?: PixiSoundLike) => void;
+}
+
+export interface PixiSoundLibraryLike extends PixiSoundGlobal {
+  readonly context: {
+    readonly audioContext?: AudioContext | null;
+    paused?: boolean;
+    muted?: boolean;
+    volume?: number;
+    playEmptySound?: () => void;
+  };
+  disableAutoPause: boolean;
+  volumeAll: number;
+  add(alias: string, options: PixiSoundOptions): PixiSoundLike;
+  exists(alias: string): boolean;
+  find(alias: string): PixiSoundLike;
+  remove(alias: string): unknown;
+  removeAll(): unknown;
+  muteAll(): unknown;
+  unmuteAll(): unknown;
+  pauseAll(): unknown;
+  resumeAll(): unknown;
+  close(): unknown;
+  init(): unknown;
+}
+
+export interface PixiSoundModule {
+  readonly sound: PixiSoundLibraryLike;
+  readonly Filter?: PixiFilterConstructor;
+}
+
+export type PixiSoundLoader = () => Promise<PixiSoundModule>;
 
 /**
- * `Howler` is optional so a test stub can keep providing `{ Howl }` alone —
- * and so that "no namespace" is a first-class state rather than a crash. The
- * only thing it costs is the bus filter, which reports itself unavailable.
+ * This is deliberately a STATIC import.
+ *
+ * Vite gave the old dynamic import its own optimized-dependency URL. PixiJS
+ * was already alive under the shelf's URL, so evaluating the second URL ran
+ * Pixi's canvas extension registration twice and threw before SoundLibrary
+ * could create a context (`canvas-system already has a handler`). Keeping
+ * sound in the initial module graph gives both packages one Pixi module
+ * identity and also guarantees the backend exists before the first gesture.
  */
-export interface HowlerModule {
-  Howl: HowlConstructor;
-  Howler?: HowlerAudioGlobal;
+const defaultLoader: PixiSoundLoader = async () =>
+  bundledPixiSound as unknown as PixiSoundModule;
+
+let loadPixiSound: PixiSoundLoader = defaultLoader;
+let pixiModule: Promise<PixiSoundModule> | undefined;
+let pixiLibrary: PixiSoundLibraryLike | undefined;
+let pixiFilter: PixiFilterConstructor | undefined;
+let lastTrustedGestureMs = Number.NEGATIVE_INFINITY;
+let trustedGestures = 0;
+let lastBackendError: string | null = null;
+let contextRecoveries = 0;
+let recoveringContext = false;
+
+const userActivationIsActive = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  return (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation?.isActive ?? false;
+};
+
+/**
+ * The small DOM surface needed to resume audio from a real gesture. Kept
+ * structural so the lifecycle can be proved with a fake target in node tests.
+ */
+export interface AudioGestureTarget {
+  addEventListener(type: 'pointerdown' | 'keydown', listener: EventListener, capture: boolean): void;
+  removeEventListener(type: 'pointerdown' | 'keydown', listener: EventListener, capture: boolean): void;
 }
 
-export type HowlerLoader = () => Promise<HowlerModule>;
+let disarmGestureResume: (() => void) | undefined;
 
-const defaultLoader: HowlerLoader = async () =>
-  (await import('howler')) as unknown as HowlerModule;
+function handleTrustedGesture(library: PixiSoundLibraryLike): void {
+  // A trusted interaction inside the app is stronger focus evidence than
+  // document.hasFocus(), which WebView2 can report one event-loop turn late.
+  // This only clears focus-derived suppression; the reader's hard mute stays.
+  if (!appFocused) setAppFocused(true);
+  applyLibraryMute();
+  const ctx = library.context.audioContext;
+  if (ctx === undefined || ctx === null) {
+    audioUnlocked = true;
+    flushQueuedPlays(true);
+    return;
+  }
+  if (ctx.state === 'closed') {
+    audioUnlocked = false;
+    lastBackendError = 'Pixi Sound AudioContext is closed';
+    if (!recoveringContext) {
+      recoveringContext = true;
+      try {
+        // Pixi documents close()+init() as its hardware-failure recovery path.
+        // We are already inside a trusted gesture, so recreate synchronously,
+        // discard every sound tied to the dead context, and unlock the new one.
+        soundEntries.clear();
+        ambient = undefined;
+        preloadState = 'idle';
+        library.init();
+        if (library.supported !== false) library.disableAutoPause = true;
+        library.volumeAll = 1;
+        applyLibraryMute();
+        contextRecoveries += 1;
+        syncBusFilter();
+        handleTrustedGesture(library);
+        void preloadCriticalCues();
+      } catch (error) {
+        backendLoadFailures += 1;
+        lastBackendError = `Pixi Sound context recovery failed: ${String(error)}`;
+      } finally {
+        recoveringContext = false;
+      }
+    }
+    return;
+  }
 
-let loadHowler: HowlerLoader = defaultLoader;
-let howlerModule: Promise<HowlerModule> | undefined;
-/** The namespace once it has loaded — the bus filter's only way in. */
-let howlerGlobal: HowlerAudioGlobal | undefined;
+  // This call and resume() must occur before the trusted dispatch unwinds.
+  // Starting queued BufferSources now is safe even while resume is pending:
+  // AudioContext.currentTime is frozen while suspended, so they begin at the
+  // resumed clock's first available quantum rather than expiring in silence.
+  library.context.playEmptySound?.();
+  flushQueuedPlays(true);
+  if (ctx.state === 'running') {
+    audioUnlocked = true;
+    return;
+  }
+  void ctx.resume().then(() => {
+    audioUnlocked = ctx.state === 'running';
+    if (audioUnlocked) {
+      unlocks += 1;
+      lastBackendError = null;
+      flushQueuedPlays(true);
+    } else {
+      resumeFailures += 1;
+      lastBackendError = `AudioContext resume resolved in state ${ctx.state}`;
+    }
+  }).catch((error) => {
+    audioUnlocked = false;
+    resumeFailures += 1;
+    lastBackendError = `AudioContext resume failed: ${String(error)}`;
+  });
+}
 
-/** Test seam: swap the howler module (and drop any cached instances). */
-export function setHowlerLoader(loader: HowlerLoader): void {
-  loadHowler = loader;
-  howlerModule = undefined;
-  howlerGlobal = undefined;
-  howls.clear();
+/**
+ * Synchronous first-gesture latch. Pixi is a static dependency now, but the
+ * injectable loader used by focused tests may still resolve asynchronously;
+ * the latch keeps that seam honest without changing production timing.
+ */
+export function recordInteractionGesture(nowMs: number = Date.now()): void {
+  if (!appFocused) setAppFocused(true);
+  const isNewGesture = nowMs - lastTrustedGestureMs > 8;
+  lastTrustedGestureMs = nowMs;
+  if (isNewGesture) trustedGestures += 1;
+  if (pixiLibrary !== undefined) {
+    handleTrustedGesture(pixiLibrary);
+    return;
+  }
+  void loadPixiSoundOnce().then(({ sound: library }) => {
+    if (userActivationIsActive()) handleTrustedGesture(library);
+  }).catch((error) => {
+    lastBackendError = `Pixi Sound import failed after gesture: ${String(error)}`;
+  });
+}
+
+/**
+ * Arm capture-phase unlock on the EXISTING Pixi Sound AudioContext. MDN's
+ * autoplay contract is literal: resume must be called inside the trusted
+ * gesture dispatch, before any awaited preload or application handler.
+ */
+export function armAudioGestureResume(
+  library: PixiSoundLibraryLike | undefined,
+  target: AudioGestureTarget | undefined,
+): () => void {
+  disarmGestureResume?.();
+  disarmGestureResume = undefined;
+  if (library === undefined || target === undefined) return () => undefined;
+
+  let armed = true;
+  const disarm = (): void => {
+    if (!armed) return;
+    armed = false;
+    target.removeEventListener('pointerdown', resume, true);
+    target.removeEventListener('keydown', resume, true);
+    if (disarmGestureResume === disarm) disarmGestureResume = undefined;
+  };
+  const resume: EventListener = (): void => {
+    const now = Date.now();
+    // App's synchronous broker normally sees this same event first. Do not
+    // resume/play the empty unlock buffer twice for one physical gesture.
+    if (now - lastTrustedGestureMs <= 8) return;
+    trustedGestures += 1;
+    lastTrustedGestureMs = now;
+    handleTrustedGesture(library);
+  };
+
+  target.addEventListener('pointerdown', resume, true);
+  target.addEventListener('keydown', resume, true);
+  disarmGestureResume = disarm;
+  return disarm;
+}
+
+/** Test seam: swap Pixi Sound and drop every decoded entry. */
+export function setPixiSoundLoader(loader: PixiSoundLoader): void {
+  disarmGestureResume?.();
+  loadPixiSound = loader;
+  pixiModule = undefined;
+  pixiLibrary = undefined;
+  pixiFilter = undefined;
+  soundEntries.clear();
   ambient = undefined;
 }
 
@@ -565,6 +759,10 @@ const defaultVolumes = (): Volumes => ({
 
 let volumes: Volumes = defaultVolumes();
 let muted = false;
+/** Reader preference: a background Alcove should not keep speaking. */
+let muteWhenUnfocused = false;
+/** Window/visibility state mirrored synchronously for every playback gate. */
+let appFocused = true;
 let reducedSound = false;
 let character: SoundCharacter = 'calm';
 /**
@@ -589,8 +787,8 @@ interface Cue {
   readonly url: string;
   readonly category: SoundCategory;
   readonly loop: boolean;
-  /** Codec hint when the URL's extension cannot be trusted. */
-  readonly format?: string[];
+  /** Known-good shipped take used when a custom or alternate cue cannot decode. */
+  readonly fallback?: SoundName;
 }
 
 const shippedCue = (name: SoundName): Cue => ({
@@ -598,6 +796,7 @@ const shippedCue = (name: SoundName): Cue => ({
   url: soundUrl(name),
   category: SOUND_MANIFEST[name].category,
   loop: SOUND_MANIFEST[name].loop,
+  fallback: name,
 });
 
 /**
@@ -608,17 +807,95 @@ const shippedCue = (name: SoundName): Cue => ({
 const categoryOfRole = (role: FamilyName): SoundCategory =>
   SOUND_MANIFEST[(SOUND_FAMILIES[role] as readonly SoundName[])[0] as SoundName].category;
 
-const howls = new Map<string, Promise<HowlLike>>();
+type LoadStatus = 'loading' | 'ready' | 'error';
+
+interface SoundEntry {
+  readonly cue: Cue;
+  readonly sound: PixiSoundLike;
+  readonly ready: Promise<PixiSoundLike>;
+  status: LoadStatus;
+  error: string | null;
+}
+
+const soundEntries = new Map<string, SoundEntry>();
 
 interface AmbientState {
-  howl: HowlLike;
-  id: number;
+  sound: PixiSoundLike;
+  instance: PixiInstanceLike;
   /** Which loop this bed is playing (soundscape switches crossfade between them). */
   name: SoundName;
 }
 let ambient: AmbientState | undefined;
 /** Whether the ambient bed should be running (survives mute/unmute). */
 let ambientWanted = false;
+
+type PreloadState = 'idle' | 'loading' | 'ready' | 'partial' | 'failed';
+let preloadState: PreloadState = 'idle';
+let audioUnlocked = false;
+let cuesReady = 0;
+let cueLoadFailures = 0;
+let backendLoadFailures = 0;
+let playFailures = 0;
+let fallbacksUsed = 0;
+let unlocks = 0;
+let resumeFailures = 0;
+let queuedPlays = 0;
+let replayedPlays = 0;
+let expiredPlays = 0;
+let cooldownDrops = 0;
+let concurrencyDrops = 0;
+
+const CRITICAL_FAMILIES = ['page-flip', 'book-pull', 'click-soft'] as const satisfies readonly FamilyName[];
+const CRITICAL_CUES: readonly SoundName[] = CRITICAL_FAMILIES.flatMap(
+  (family) => [...SOUND_FAMILIES[family]],
+);
+
+async function preloadCriticalCues(): Promise<void> {
+  if (preloadState === 'loading' || preloadState === 'ready') return;
+  preloadState = 'loading';
+  const results = await Promise.allSettled(CRITICAL_CUES.map((name) => ensureSound(shippedCue(name))));
+  const ready = results.filter((result) => result.status === 'fulfilled').length;
+  preloadState = ready === results.length ? 'ready' : ready === 0 ? 'failed' : 'partial';
+}
+
+/** Whether a sound is currently forbidden by either kind of mute. */
+function soundsSuppressed(): boolean {
+  return muted || (muteWhenUnfocused && !appFocused);
+}
+
+function detectAppFocus(): boolean {
+  if (typeof document === 'undefined') return true;
+  const visible = document.visibilityState === undefined || document.visibilityState === 'visible';
+  const focused = typeof document.hasFocus !== 'function' || document.hasFocus();
+  return visible && focused;
+}
+
+/**
+ * Apply a focus transition without cutting a waveform at an arbitrary sample.
+ * New one-shots are gated immediately; the long ambient bed leaves on a short
+ * fade and returns only when it was wanted before the window went away.
+ */
+function setAppFocused(focused: boolean): void {
+  if (appFocused === focused) return;
+  appFocused = focused;
+  applyLibraryMute();
+  if (muteWhenUnfocused && !focused) {
+    fadeOutAmbient(200);
+  } else if (muteWhenUnfocused && focused && ambientWanted && !muted) {
+    void startAmbient();
+  }
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  appFocused = detectAppFocus();
+  document.addEventListener('visibilitychange', () => setAppFocused(detectAppFocus()));
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    // `document.hasFocus()` can still report the old value during the blur
+    // dispatch in some webviews, so blur carries the known answer directly.
+    window.addEventListener('blur', () => setAppFocused(false));
+    window.addEventListener('focus', () => setAppFocused(true));
+  }
+}
 /**
  * The soundscape a NEW LIBRARY should open with.
  *
@@ -792,46 +1069,106 @@ function baseSet(): SoundSetId {
  * Install (or re-install) the active set's master-bus filter.
  *
  * Cheap and idempotent by design — `applyBusFilter` compares the AudioContext
- * identity and the requested chain and returns immediately when neither moved
- * — which is what lets this be called on the play path instead of trying to
- * predict when howler built its context or replaced it under us.
+ * identity and requested chain and returns immediately when neither moved.
  */
 function syncBusFilter(): void {
-  applyBusFilter(howlerGlobal, soundSetFilter(baseSet()));
+  applyBusFilter(pixiLibrary, pixiFilter, soundSetFilter(baseSet()));
 }
 
-function loadHowlerOnce(): Promise<HowlerModule> {
-  howlerModule ??= loadHowler().then((mod) => {
-    howlerGlobal = mod.Howler;
-    // Howler puts the AudioContext to sleep after 30 s with nothing playing.
-    // A desktop notes app is quiet for thirty seconds constantly, and the
-    // wake-up is not free: the play that wakes it is deferred into a resume
-    // callback with `_playLock` set, which pushes its own `volume()` and
-    // `rate()` into howler's load queue behind it. Those drain from a
-    // `setTimeout(0)`, so the cue sounds for at least one whole task at the
-    // Howl's group level rather than its own. See the field's docblock.
-    if (howlerGlobal !== undefined) howlerGlobal.autoSuspend = false;
+function applyLibraryMute(): void {
+  if (pixiLibrary === undefined) return;
+  if (soundsSuppressed()) pixiLibrary.muteAll();
+  else pixiLibrary.unmuteAll();
+}
+
+function loadPixiSoundOnce(): Promise<PixiSoundModule> {
+  pixiModule ??= loadPixiSound().then((mod) => {
+    pixiLibrary = mod.sound;
+    pixiFilter = mod.Filter;
+    // A notebook is routinely idle for minutes. Keep one stable device graph;
+    // recreating it around a rapid page-turn burst is exactly the kind of seam
+    // that can turn a short transient into noise.
+    if (mod.sound.supported !== false) mod.sound.disableAutoPause = true;
+    mod.sound.volumeAll = 1;
+    const ctx = mod.sound.context.audioContext;
+    audioUnlocked = ctx === undefined || ctx === null || ctx.state === 'running';
+    armAudioGestureResume(
+      mod.sound,
+      typeof document === 'undefined' ? undefined : document,
+    );
+    applyLibraryMute();
     syncBusFilter();
     return mod;
+  }).catch((error) => {
+    backendLoadFailures += 1;
+    lastBackendError = `Pixi Sound import failed: ${String(error)}`;
+    pixiModule = undefined;
+    throw error;
   });
-  return howlerModule;
+  return pixiModule;
 }
 
-function ensureHowl(cue: Cue): Promise<HowlLike> {
-  let entry = howls.get(cue.key);
-  if (!entry) {
-    entry = loadHowlerOnce().then(
-      ({ Howl }) =>
-        new Howl({
-          src: [cue.url],
-          loop: cue.loop,
-          preload: true,
-          ...(cue.format === undefined ? {} : { format: cue.format }),
-        }),
-    );
-    howls.set(cue.key, entry);
-  }
-  return entry;
+/**
+ * Load Pixi Sound after mount, arm gesture-synchronous resume, and begin
+ * decoding the interaction cues which must feel immediate. It never plays.
+ */
+export async function prepareInteractionAudio(): Promise<void> {
+  await Promise.all([loadPixiSoundOnce(), preparePageTurnAudio()]);
+  void preloadCriticalCues();
+}
+
+function ensureSound(cue: Cue): Promise<PixiSoundLike> {
+  const cached = soundEntries.get(cue.key);
+  if (cached !== undefined) return cached.ready;
+
+  return loadPixiSoundOnce().then(({ sound: library }) => {
+    const afterLoad = soundEntries.get(cue.key);
+    if (afterLoad !== undefined) return afterLoad.ready;
+
+    let resolveReady!: (sound: PixiSoundLike) => void;
+    let rejectReady!: (error: Error) => void;
+    const ready = new Promise<PixiSoundLike>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    let entry: SoundEntry | undefined;
+    let pendingResult: { error: Error | null; sound?: PixiSoundLike } | undefined;
+    const loaded = (error: Error | null, decoded?: PixiSoundLike): void => {
+      if (entry === undefined) {
+        pendingResult = { error, sound: decoded };
+        return;
+      }
+      if (entry.status !== 'loading') return;
+      if (error !== null || decoded === undefined) {
+        const failure = error ?? new Error(`Pixi Sound did not decode ${cue.key}`);
+        entry.status = 'error';
+        entry.error = failure.message;
+        cueLoadFailures += 1;
+        lastBackendError = `Cue ${cue.key} failed to decode: ${failure.message}`;
+        rejectReady(failure);
+        return;
+      }
+      entry.status = 'ready';
+      entry.error = null;
+      cuesReady += 1;
+      lastBackendError = null;
+      resolveReady(decoded);
+    };
+    const sound = library.add(cue.key, {
+      url: cue.url,
+      loop: cue.loop,
+      preload: true,
+      volume: 1,
+      speed: 1,
+      loaded,
+    });
+    entry = { cue, sound, ready, status: 'loading', error: null };
+    soundEntries.set(cue.key, entry);
+    // Cached/instant decodes are allowed to complete during library.add().
+    if (pendingResult !== undefined) loaded(pendingResult.error, pendingResult.sound);
+    else if (sound.isLoaded || sound.isPlayable) loaded(null, sound);
+    return ready;
+  });
 }
 
 /**
@@ -859,6 +1196,12 @@ export interface PlayOptions {
   rate?: number;
   /** Opt out of the automatic per-play pitch/level jitter. */
   noJitter?: boolean;
+  /**
+   * Cancel a queued or ringing play. Active audio fades briefly before it is
+   * stopped, so cancelling a rapid sound-set preview cannot create the hard
+   * waveform edge heard as a click/crackle.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -866,11 +1209,15 @@ export interface PlayOptions {
  * this after first paint hides any first-play latency.
  */
 export async function init(): Promise<void> {
-  await Promise.all(SOUND_NAMES.map((name) => ensureHowl(shippedCue(name))));
+  await Promise.all([loadPixiSoundOnce(), preparePageTurnAudio()]);
+  const results = await Promise.allSettled(SOUND_NAMES.map((name) => ensureSound(shippedCue(name))));
+  if (results.every((result) => result.status === 'fulfilled')) preloadState = 'ready';
+  else if (results.some((result) => result.status === 'fulfilled')) preloadState = 'partial';
+  else preloadState = 'failed';
 }
 
 /**
- * Fire-and-forget playback. Resolves with the Howler sound id, or undefined
+ * Fire-and-forget playback. Resolves with the Pixi Sound instance id, or undefined
  * when the sound was skipped (muted, reduced-sound, character-skipped,
  * silenced by the sound set, or ambient delegation).
  *
@@ -883,12 +1230,14 @@ export async function init(): Promise<void> {
  * fatigues.
  */
 export async function play(name: PlayableName, options: PlayOptions = {}): Promise<number | undefined> {
+  if (options.signal?.aborted === true) return undefined;
   if (isFamily(name)) return playRole(name, options);
   return playFile(shippedCue(name), options, {
     gain: 1,
     rate: undefined,
     stamp: !CLICK_NAMES.has(name),
     gateByName: true,
+    role: familyOfSound(name),
   });
 }
 
@@ -911,6 +1260,8 @@ interface FilePlan {
    * `roleSilent` have already asked the question that was actually meant.
    */
   readonly gateByName: boolean;
+  /** Semantic role used for concurrency and cooldown policy. */
+  readonly role: FamilyName | null;
 }
 
 /**
@@ -919,7 +1270,7 @@ interface FilePlan {
  * otherwise a silenced role would still be counted as a tick.
  */
 function roleSilent(role: FamilyName): boolean {
-  if (muted) return true;
+  if (soundsSuppressed()) return true;
   if (reducedSound && REDUCED_SKIP_ROLES.has(role)) return true;
   if (CHARACTER_SKIP_ROLES[character].has(role)) return true;
   // A file the reader put here is heard even when the base set silences the
@@ -929,12 +1280,6 @@ function roleSilent(role: FamilyName): boolean {
   // questions the reader asked more recently than "here is my click".
   if (userCueFor(soundSet, role) !== null) return false;
   return resolveVoice(baseSet(), role) === null;
-}
-
-/** Codec hint from a file name; undefined when there is nothing to go on. */
-function formatOf(fileName: string): string[] | undefined {
-  const ext = /\.([a-z0-9]{1,5})$/i.exec(fileName.trim())?.[1]?.toLowerCase();
-  return ext === undefined ? undefined : [ext];
 }
 
 /**
@@ -954,8 +1299,15 @@ function cueForFamily(family: FamilyName): Cue {
     url: own.src,
     category: categoryOfRole(family),
     loop: false,
-    format: formatOf(own.fileName),
+    fallback: (SOUND_FAMILIES[family] as readonly SoundName[])[0],
   };
+}
+
+function familyOfSound(name: SoundName): FamilyName | null {
+  for (const family of FAMILY_NAMES) {
+    if ((SOUND_FAMILIES[family] as readonly SoundName[]).includes(name)) return family;
+  }
+  return null;
 }
 
 /** The voice a role gets when only the reader's own file is speaking for it. */
@@ -968,11 +1320,12 @@ const identityVoice = (role: FamilyName): SoundVoice => ({
 
 /** Play one interaction role through the reader's sound set. */
 async function playRole(role: FamilyName, options: PlayOptions): Promise<number | undefined> {
+  if (options.signal?.aborted === true) return undefined;
   if (roleSilent(role)) return undefined;
   const voice = resolveVoice(baseSet(), role) ?? identityVoice(role);
   // Reduced sound means one sound per action, so a set's body layer is the
   // first thing to go — it is exactly the "extra" that preference asks about.
-  if (voice.layer !== null && !reducedSound) scheduleLayer(voice.layer);
+  if (voice.layer !== null && !reducedSound) scheduleLayer(voice.layer, options.signal);
   // The reader's file is attached to the ROLE, so it wins over the base set's
   // substitution: importing a click and then hearing a page turn because the
   // base voices buttons with paper would be indefensible. Only when they have
@@ -983,6 +1336,7 @@ async function playRole(role: FamilyName, options: PlayOptions): Promise<number 
     rate: voice.rate,
     stamp: role !== CLICK_ROLE,
     gateByName: false,
+    role,
   });
 }
 
@@ -991,13 +1345,15 @@ async function playRole(role: FamilyName, options: PlayOptions): Promise<number 
  * off the shelf. Never stamps `lastVoicedPlayMs`: a layer is part of the
  * gesture that scheduled it, not an event of its own.
  */
-function scheduleLayer(layer: SoundLayer): void {
+function scheduleLayer(layer: SoundLayer, signal?: AbortSignal): void {
   const fire = (): void => {
-    void playFile(cueForFamily(layer.cue), {}, {
+    if (signal?.aborted === true) return;
+    void playFile(cueForFamily(layer.cue), { signal }, {
       gain: layer.gain,
       rate: layer.rate,
       stamp: false,
       gateByName: false,
+      role: layer.cue,
     });
   };
   if (layer.delayMs <= 0) {
@@ -1014,17 +1370,156 @@ function scheduleLayer(layer: SoundLayer): void {
     fire();
   }, layer.delayMs);
   layerTimers.add(timer);
+  signal?.addEventListener('abort', () => {
+    clearTimeout(timer);
+    layerTimers.delete(timer);
+  }, { once: true });
 }
 
 /** Layer plays that have been scheduled but have not sounded yet. */
 const layerTimers = new Set<ReturnType<typeof setTimeout>>();
+
+/** Read through a function so TypeScript does not treat `aborted` as immutable across awaits. */
+const wasAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted ?? false;
+
+function isAudioReady(): boolean {
+  const ctx = pixiLibrary?.context.audioContext;
+  // Pixi's HTMLAudio fallback has no AudioContext and is already playable.
+  return ctx === undefined || ctx === null || ctx.state === 'running';
+}
+
+const CANCEL_FADE_MS = 32;
+
+interface PendingPlay {
+  readonly cue: Cue;
+  readonly options: PlayOptions;
+  readonly plan: FilePlan;
+  readonly expiresAt: number;
+}
+
+const MAX_PENDING_PLAYS = 8;
+const PENDING_TTL_MS = 1200;
+const pendingPlays: PendingPlay[] = [];
+
+function queueUntilUnlocked(cue: Cue, options: PlayOptions, plan: FilePlan): void {
+  if (wasAborted(options.signal)) return;
+  const dedupe = plan.role ?? cue.key;
+  const prior = pendingPlays.findIndex((item) => (item.plan.role ?? item.cue.key) === dedupe);
+  if (prior >= 0) pendingPlays.splice(prior, 1);
+  if (pendingPlays.length >= MAX_PENDING_PLAYS) {
+    pendingPlays.shift();
+    expiredPlays += 1;
+  }
+  pendingPlays.push({ cue, options, plan, expiresAt: Date.now() + PENDING_TTL_MS });
+  queuedPlays += 1;
+}
+
+function flushQueuedPlays(fromTrustedGesture = false): void {
+  if (!fromTrustedGesture && !isAudioReady()) return;
+  const now = Date.now();
+  const queued = pendingPlays.splice(0);
+  for (const item of queued) {
+    if (item.expiresAt < now || wasAborted(item.options.signal)) {
+      expiredPlays += 1;
+      continue;
+    }
+    replayedPlays += 1;
+    void playFile(item.cue, item.options, item.plan, fromTrustedGesture);
+  }
+  if (ambientWanted && !soundsSuppressed()) void startAmbient();
+}
+
+interface VoicePolicy {
+  readonly cooldownMs: number;
+  readonly maxVoices: number;
+  /** Keep a rapid gesture stream quiet until it has paused this long. */
+  readonly burstQuietMs?: number;
+}
+
+const DEFAULT_VOICE_POLICY: VoicePolicy = { cooldownMs: 25, maxVoices: 3 };
+const VOICE_POLICIES: Partial<Record<FamilyName, VoicePolicy>> = {
+  // Reader-supplied page cues still pass through the generic backend. Allow
+  // every isolated turn and cap only true overlap; the shipped page cue uses
+  // the dedicated Howler lane above and never reaches this policy.
+  'page-flip': { cooldownMs: 90, maxVoices: 1 },
+  'book-pull': { cooldownMs: 90, maxVoices: 2 },
+  'book-return': { cooldownMs: 90, maxVoices: 2 },
+  'click-soft': { cooldownMs: 45, maxVoices: 2 },
+  'pop-soft': { cooldownMs: 55, maxVoices: 2 },
+  'tick-hover': { cooldownMs: 80, maxVoices: 1 },
+  'typing-tick': { cooldownMs: 70, maxVoices: 2 },
+};
+const MAX_ACTIVE_VOICES = 12;
+const activeVoices = new Map<number, { role: FamilyName | null; instance: PixiInstanceLike }>();
+const reservations = new Map<FamilyName | null, number>();
+const lastRoleStart = new Map<FamilyName | null, number>();
+const lastRoleRequest = new Map<FamilyName | null, number>();
+let burstDrops = 0;
+
+function reserveVoice(role: FamilyName | null): boolean {
+  const policy = role === null ? DEFAULT_VOICE_POLICY : VOICE_POLICIES[role] ?? DEFAULT_VOICE_POLICY;
+  const now = Date.now();
+  const lastRequest = lastRoleRequest.get(role) ?? Number.NEGATIVE_INFINITY;
+  lastRoleRequest.set(role, now);
+  if (policy.burstQuietMs !== undefined && now - lastRequest < policy.burstQuietMs) {
+    burstDrops += 1;
+    return false;
+  }
+  const last = lastRoleStart.get(role) ?? Number.NEGATIVE_INFINITY;
+  if (now - last < policy.cooldownMs) {
+    cooldownDrops += 1;
+    return false;
+  }
+  let sameRole = reservations.get(role) ?? 0;
+  for (const active of activeVoices.values()) if (active.role === role) sameRole += 1;
+  const reservedTotal = [...reservations.values()].reduce((sum, count) => sum + count, 0);
+  if (sameRole >= policy.maxVoices || activeVoices.size + reservedTotal >= MAX_ACTIVE_VOICES) {
+    concurrencyDrops += 1;
+    return false;
+  }
+  reservations.set(role, (reservations.get(role) ?? 0) + 1);
+  lastRoleStart.set(role, now);
+  return true;
+}
+
+function releaseReservation(role: FamilyName | null): void {
+  const left = (reservations.get(role) ?? 1) - 1;
+  if (left <= 0) reservations.delete(role);
+  else reservations.set(role, left);
+}
+
+/** Fade a live voice to zero before stopping it; a hard stop is a new click. */
+function stopOnAbort(
+  signal: AbortSignal,
+  instance: PixiInstanceLike,
+): void {
+  let retiring = false;
+  const retire = (): void => {
+    if (retiring) return;
+    retiring = true;
+    const start = instance.volume;
+    const began = Date.now();
+    const step = (): void => {
+      const progress = Math.min(1, (Date.now() - began) / CANCEL_FADE_MS);
+      instance.volume = start * (1 - progress);
+      if (progress < 1) setTimeout(step, 8);
+      else instance.stop();
+    };
+    step();
+  };
+  signal.addEventListener('abort', retire, { once: true });
+  // Abort may have won the few instructions between play() and listener setup.
+  if (signal.aborted) retire();
+}
 
 /** Play one concrete cue, under a plan the caller (or the set) decided. */
 async function playFile(
   cue: Cue,
   options: PlayOptions,
   plan: FilePlan,
+  fromQueue = false,
 ): Promise<number | undefined> {
+  if (wasAborted(options.signal)) return undefined;
   // Only a shipped cue can be an ambient bed, and its key IS its SoundName —
   // a reader's key carries a `|` and can never collide with one.
   const name = cue.key as SoundName;
@@ -1035,9 +1530,9 @@ async function playFile(
     );
     if (entry) soundscape = entry[0];
     await startAmbient();
-    return ambient?.id;
+    return ambient?.instance.id;
   }
-  if (muted) return undefined;
+  if (soundsSuppressed()) return undefined;
   const profile = CHARACTER_PROFILES[character];
   if (plan.gateByName) {
     if (reducedSound && REDUCED_SKIP.has(name)) return undefined;
@@ -1071,125 +1566,74 @@ async function playFile(
     else rate = nudge;
   }
 
-  const howl = await ensureHowl(cue);
-  // Howler builds its AudioContext lazily and rebuilds it on `unload()`, so
-  // the bus filter is re-checked where a graph is most likely to have just
-  // appeared. The call costs an identity compare when nothing moved.
+  const vol = effectiveVolume(cue.category, (options.volume ?? 1) * level, plan.gain);
+
+  // Page turns use their own predecoded Howler lane. This check happens
+  // before Pixi Sound is touched, so the busiest WebGL animation in the app
+  // cannot share a renderer-owned context/ticker/compressor with its cue.
+  // A reader-supplied page sound has a `user:...|page-flip` key and therefore
+  // keeps using the generic backend; only the measured shipped take is routed.
+  if (plan.role === 'page-flip' && cue.key === 'page-flip-2') {
+    return playPageTurn(vol, rate ?? 1);
+  }
+
+  try {
+    await loadPixiSoundOnce();
+  } catch {
+    return undefined;
+  }
+  if (wasAborted(options.signal)) return undefined;
+  const withinTrustedGestureWindow = Date.now() - lastTrustedGestureMs < 1500;
+  if (!isAudioReady() && !fromQueue && !withinTrustedGestureWindow) {
+    audioUnlocked = false;
+    queueUntilUnlocked(cue, options, plan);
+    return undefined;
+  }
+  // Focus/mute may have changed while either lazy load above was pending.
+  if (soundsSuppressed()) return undefined;
   syncBusFilter();
 
-  const vol = effectiveVolume(cue.category, (options.volume ?? 1) * level, plan.gain);
-  presetLevel(howl, cue.key, vol, rate);
-  const id = howl.play();
-  // Still stated per id: the group value above is what the voice STARTS at,
-  // and this is what it is, for anything that later reads or fades it.
-  howl.volume(vol, id);
-  if (rate !== undefined) howl.rate(rate, id);
-  rememberVoice(howl, cue.key, id, vol, rate ?? 1);
-  return id;
-}
-
-/* --------------------------- how a play is levelled ------------------------ */
-
-/**
- * SET THE LEVEL AND THE RATE BEFORE THE FIRST SAMPLE, NOT AFTER IT.
- *
- * This is the fix for "a lot of time i said bad but actually there is a sound
- * bug that turns that sound effects into jitterry sand paper … when i click
- * again to close it becomes jittery sand paper".
- *
- * Howler builds a fresh voice for every `play()`, and `Sound.reset()` copies
- * the HOWL'S GROUP volume and rate onto it. `playWebAudio` then writes that
- * group volume straight into the voice's gain node — one statement before
- * `bufferSource.start()`. So a `howl.volume(v, id)` issued AFTER `play()`
- * always starts the sound at the group value and corrects it a moment later.
- * The group value is 1.0, and this engine asks for 0.28–0.56.
- *
- * `shots-now/sound-grit.mjs` records the app's own Web Audio output through an
- * AudioWorklet spliced into howler's master bus. Across five phases and 137
- * recorded plays, EVERY SINGLE ONE started at gain 1.000 and was pulled down
- * afterwards. Whether that is audible is a race: two `setValueAtTime` calls at
- * the same AudioContext time replace one another and nothing is heard, but one
- * render quantum apart and the cue opens 2–4× too loud and then steps
- * discontinuously mid-transient. The same tape caught a 40 ms window of it on
- * the ambient bed, so the race is not theoretical. A step in the middle of a
- * click's attack is a click on top of a click — the same control, one press
- * clean and the next gritty.
- *
- * Two smaller things fall out of setting the rate up front. Howler computes a
- * voice's end timer inside `play()` from `sound._rate`; a rate applied
- * afterwards makes `rate()` re-derive that timer from
- * `ctx.currentTime - sound._playStart`, and `_playStart` is a MAIN-THREAD
- * timestamp for a buffer the render thread starts slightly later. When the
- * timer lands early, `_ended` calls `stop()`, which is `bufferSource.stop(0)`
- * — a hard cut with no fade, i.e. a truncated tail. Pre-setting means the
- * timer is computed once, from the real duration.
- *
- * ── AND THE VOICES THAT ARE STILL RINGING ────────────────────────────────
- *
- * The group setters walk every live id, so moving the group would also yank
- * any copy of this same cue still sounding — worse than the bug, because that
- * sound is already in the reader's ear. They are put back in the SAME tick:
- * two `setValueAtTime` events at one AudioContext time replace one another, so
- * a restored voice hears nothing at all, while the new voice still starts at
- * its own level. Written the other way — a `howl.playing()` guard that simply
- * skipped the pre-set during an overlap — the recorded tape still showed a
- * 7 % correction on every play of a cue fired inside its own length.
- */
-function presetLevel(howl: HowlLike, key: string, vol: number, rate: number | undefined): void {
-  const ringing = soundingVoices(howl, key);
-  howl.volume(vol);
-  // Always stated, including the plain 1: the group rate persists on the Howl,
-  // so a jittered play would otherwise bequeath its pitch to the next press.
-  howl.rate(rate ?? 1);
-  for (const voice of ringing) {
-    if (voice.vol !== vol) howl.volume(voice.vol, voice.id);
-    if (voice.rate !== (rate ?? 1)) howl.rate(voice.rate, voice.id);
+  if (!reserveVoice(plan.role)) return undefined;
+  try {
+    let sound: PixiSoundLike;
+    try {
+      sound = await ensureSound(cue);
+    } catch {
+      const fallback = cue.fallback;
+      if (fallback === undefined || fallback === cue.key) {
+        releaseReservation(plan.role);
+        return undefined;
+      }
+      fallbacksUsed += 1;
+      sound = await ensureSound(shippedCue(fallback));
+    }
+    if (
+      wasAborted(options.signal)
+      || soundsSuppressed()
+      || (!isAudioReady() && !fromQueue && !withinTrustedGestureWindow)
+    ) {
+      releaseReservation(plan.role);
+      return undefined;
+    }
+    let instance: PixiInstanceLike | undefined;
+    const cleanup = (): void => {
+      if (instance !== undefined) activeVoices.delete(instance.id);
+    };
+    const result = sound.play({ volume: vol, speed: rate ?? 1, loop: cue.loop, complete: cleanup });
+    instance = await Promise.resolve(result);
+    releaseReservation(plan.role);
+    activeVoices.set(instance.id, { role: plan.role, instance });
+    instance.once('end', cleanup);
+    instance.once('stop', cleanup);
+    if (options.signal !== undefined) stopOnAbort(options.signal, instance);
+    return instance.id;
+  } catch (error) {
+    releaseReservation(plan.role);
+    playFailures += 1;
+    lastBackendError = `Cue ${cue.key} failed to play: ${String(error)}`;
+    return undefined;
   }
 }
-
-/**
- * The copies of one cue still sounding, with the level and rate each is at.
- *
- * Howler will not tell us what a voice's volume is without a getter call per
- * id, and the engine is the only thing that ever sets one, so it keeps its own
- * note. Ended voices are dropped on every read — `playing(id)` is the truth,
- * and this list is only ever as long as the overlap really is.
- */
-const voices = new Map<string, { id: number; vol: number; rate: number }[]>();
-
-function soundingVoices(howl: HowlLike, key: string): { id: number; vol: number; rate: number }[] {
-  const list = voices.get(key);
-  if (list === undefined || list.length === 0) return [];
-  const still = list.filter((v) => howl.playing(v.id));
-  voices.set(key, still);
-  return still;
-}
-
-function rememberVoice(howl: HowlLike, key: string, id: number, vol: number, rate: number): void {
-  const still = soundingVoices(howl, key);
-  still.push({ id, vol, rate });
-  voices.set(key, still);
-}
-
-/*
- * ── WHAT WAS MEASURED AND RULED OUT, so it is not re-suspected ────────────
- *
- * The same recording tap answered the other three theories about the grit, and
- * none of them is the cause:
- *
- *  - CLIPPING IS NOT REACHABLE. The loudest thing this app can emit is one
- *    shelf cue at −10 dBFS in the file times a volume that clamps at 1. Nine
- *    simultaneous voices would be needed to hit the rail; the tape's worst
- *    case, one cue every 40 ms for a second, peaked at 0.076.
- *  - OVERLAPPING VOICES DO STACK, but gently: 24 plays at 40 ms summed to
- *    1.2× one play, not to a clipped edge. A voice cap was written and then
- *    taken out again — it fixed nothing measurable and its retiring fade was
- *    a new discontinuity where there had been none.
- *  - THE BUS FILTER IS NOT RE-INSERTED PER PLAY. `applyBusFilter` compares
- *    the context, the master gain and the chain's tag and returns without
- *    touching the graph, which the tape confirms: no gain event on the
- *    master, ever, between plays.
- */
 
 /**
  * Start the ambient bed for the current soundscape, fading in over 600 ms.
@@ -1198,26 +1642,28 @@ function rememberVoice(howl: HowlLike, key: string, id: number, vol: number, rat
  */
 export async function startAmbient(): Promise<void> {
   ambientWanted = true;
-  if (muted || soundscape === 'none') return;
+  if (soundsSuppressed() || soundscape === 'none') return;
   const name = SOUNDSCAPE_LOOPS[soundscape];
-  const howl = await ensureHowl(shippedCue(name));
+  let sound: PixiSoundLike;
+  try {
+    await loadPixiSoundOnce();
+    if (!isAudioReady()) return;
+    sound = await ensureSound(shippedCue(name));
+  } catch {
+    return;
+  }
   syncBusFilter();
   // State may have changed while the module/file loaded (soundscape is
   // mutable across the await — re-read it through the accessor so control-flow
   // narrowing from the guard above cannot leak into this check).
-  if (!ambientWanted || muted) return;
+  if (!ambientWanted || soundsSuppressed()) return;
   const scapeNow = getSoundscape();
   if (scapeNow === 'none' || SOUNDSCAPE_LOOPS[scapeNow] !== name) return;
-  if (ambient?.name === name && howl.playing(ambient.id)) return;
+  if (ambient?.name === name && sound.isPlaying) return;
   if (ambient && ambient.name !== name) fadeOutAmbient(AMBIENT_FADE_MS); // crossfade out the old bed
-  // Silent BEFORE the first sample, for the reason in `presetLevel`: the bed
-  // used to start at the Howl's group level and be set to 0 afterwards, which
-  // put a burst of full-level fireplace in front of every fade-in.
-  howl.volume(0);
-  const id = howl.play();
-  ambient = { howl, id, name };
-  howl.volume(0, id);
-  howl.fade(0, effectiveVolume(SOUND_MANIFEST[name].category, undefined), AMBIENT_FADE_MS, id);
+  const instance = await Promise.resolve(sound.play({ volume: 0, speed: 1, loop: true }));
+  ambient = { sound, instance, name };
+  fadeInstance(instance, effectiveVolume(SOUND_MANIFEST[name].category, undefined), AMBIENT_FADE_MS);
 }
 
 /** Stop the ambient loop with a 600 ms fade-out. */
@@ -1238,7 +1684,7 @@ export function setSoundscape(name: SoundscapeName): void {
     fadeOutAmbient(AMBIENT_FADE_MS);
     return;
   }
-  if (ambientWanted && !muted) void startAmbient();
+  if (ambientWanted && !soundsSuppressed()) void startAmbient();
 }
 
 export function getSoundscape(): SoundscapeName {
@@ -1249,9 +1695,24 @@ function fadeOutAmbient(fadeMs: number): void {
   const current = ambient;
   if (!current) return;
   ambient = undefined;
-  const { howl, id, name } = current;
-  howl.fade(effectiveVolume(SOUND_MANIFEST[name].category, undefined), 0, fadeMs, id);
-  howl.once('fade', () => howl.stop(id), id);
+  fadeInstance(current.instance, 0, fadeMs, true);
+}
+
+function fadeInstance(
+  instance: PixiInstanceLike,
+  target: number,
+  durationMs: number,
+  stopAfter = false,
+): void {
+  const start = instance.volume;
+  const began = Date.now();
+  const step = (): void => {
+    const progress = durationMs <= 0 ? 1 : Math.min(1, (Date.now() - began) / durationMs);
+    instance.volume = start + (target - start) * progress;
+    if (progress < 1) setTimeout(step, 16);
+    else if (stopAfter) instance.stop();
+  };
+  step();
 }
 
 /**
@@ -1264,7 +1725,7 @@ export function setVolumes(partial: Partial<Volumes>): void {
     if (v !== undefined) volumes[key] = clamp01(v);
   }
   // Live-apply to the running ambient bed.
-  if (ambient) ambient.howl.volume(effectiveVolume(SOUND_MANIFEST[ambient.name].category, undefined), ambient.id);
+  if (ambient) ambient.instance.volume = effectiveVolume(SOUND_MANIFEST[ambient.name].category, undefined);
 }
 
 export function getVolumes(): Readonly<Volumes> {
@@ -1278,7 +1739,7 @@ export function getVolumes(): Readonly<Volumes> {
 export function setSoundCharacter(next: SoundCharacter): void {
   if (character === next) return;
   character = next;
-  if (ambient) ambient.howl.volume(effectiveVolume(SOUND_MANIFEST[ambient.name].category, undefined), ambient.id);
+  if (ambient) ambient.instance.volume = effectiveVolume(SOUND_MANIFEST[ambient.name].category, undefined);
 }
 
 export function getSoundCharacter(): SoundCharacter {
@@ -1332,7 +1793,24 @@ export function getBusFilter(): BusFilterStatus {
 export function muteAll(mute: boolean): void {
   if (muted === mute) return;
   muted = mute;
+  applyLibraryMute();
   if (mute) {
+    fadeOutAmbient(200);
+  } else if (ambientWanted && !soundsSuppressed()) {
+    void startAmbient();
+  }
+}
+
+/**
+ * Silence the sound engine while another window has focus. The setting is
+ * independent from mute-all: turning either one off must not override the
+ * other, and a wanted ambience bed resumes only when sound is allowed again.
+ */
+export function setMuteWhenUnfocused(mute: boolean): void {
+  if (muteWhenUnfocused === mute) return;
+  muteWhenUnfocused = mute;
+  applyLibraryMute();
+  if (soundsSuppressed()) {
     fadeOutAmbient(200);
   } else if (ambientWanted) {
     void startAmbient();
@@ -1455,7 +1933,7 @@ export function chimeTick(): void {
   const key = hourKey(now);
   if (key === lastSeenHourKey) return;
   lastSeenHourKey = key;
-  if (muted) return;
+  if (soundsSuppressed()) return;
   if (now - launchedAtMs < CHIME_MIN_UPTIME_MS) return;
   if (!chimeDeps.hasFocus()) return;
   chimesPlayed += 1;
@@ -1471,6 +1949,8 @@ export interface SoundEngineState {
   /** The loop the running bed is playing, or null when no bed runs. */
   ambientPlaying: SoundName | null;
   muted: boolean;
+  muteWhenUnfocused: boolean;
+  appFocused: boolean;
   reducedSound: boolean;
   character: SoundCharacter;
   /** The reader's chosen voicing — what QA asserts a picker actually applied. */
@@ -1497,6 +1977,36 @@ export interface SoundEngineState {
   hourlyChime: boolean;
   /** Chimes actually rung this session. */
   chimesPlayed: number;
+  backend: {
+    name: '@pixi/sound';
+    loaded: boolean;
+    preload: PreloadState;
+    unlocked: boolean;
+    contextState: string;
+    suppressedBy: 'mute' | 'focus' | null;
+    trustedGestures: number;
+    lastGestureAgeMs: number | null;
+    lastError: string | null;
+    cached: number;
+    ready: number;
+    active: number;
+    queued: number;
+    queuedTotal: number;
+    loadFailures: number;
+    backendLoadFailures: number;
+    playFailures: number;
+    fallbacksUsed: number;
+    unlocks: number;
+    resumeFailures: number;
+    replayed: number;
+    expired: number;
+    cooldownDrops: number;
+    concurrencyDrops: number;
+    contextRecoveries: number;
+    burstDrops: number;
+  };
+  /** Page turns are isolated from Pixi's render-owned sound graph. */
+  pageTurns: PageTurnAudioState;
   volumes: Volumes;
 }
 
@@ -1507,6 +2017,8 @@ export function getEngineState(): SoundEngineState {
     ambientWanted,
     ambientPlaying: ambient?.name ?? null,
     muted,
+    muteWhenUnfocused,
+    appFocused,
     reducedSound,
     character,
     set: soundSet,
@@ -1523,6 +2035,37 @@ export function getEngineState(): SoundEngineState {
     typingTicksPlayed,
     hourlyChime: hourlyChimeEnabled,
     chimesPlayed,
+    backend: {
+      name: '@pixi/sound',
+      loaded: pixiLibrary !== undefined,
+      preload: preloadState,
+      unlocked: isAudioReady() && audioUnlocked,
+      contextState: pixiLibrary?.context.audioContext?.state ?? (pixiLibrary === undefined ? 'not-loaded' : 'legacy'),
+      suppressedBy: muted ? 'mute' : muteWhenUnfocused && !appFocused ? 'focus' : null,
+      trustedGestures,
+      lastGestureAgeMs: Number.isFinite(lastTrustedGestureMs)
+        ? Math.max(0, Date.now() - lastTrustedGestureMs)
+        : null,
+      lastError: lastBackendError,
+      cached: soundEntries.size,
+      ready: cuesReady,
+      active: activeVoices.size,
+      queued: pendingPlays.length,
+      queuedTotal: queuedPlays,
+      loadFailures: cueLoadFailures,
+      backendLoadFailures,
+      playFailures,
+      fallbacksUsed,
+      unlocks,
+      resumeFailures,
+      replayed: replayedPlays,
+      expired: expiredPlays,
+      cooldownDrops,
+      concurrencyDrops,
+      contextRecoveries,
+      burstDrops,
+    },
+    pageTurns: getPageTurnAudioState(),
     volumes: { ...volumes },
   };
 }
@@ -1562,8 +2105,8 @@ declare global {
        * — rather than asserting that we called `createBiquadFilter`.
        */
       busFilterNodes: () => readonly BiquadFilterNode[];
-      /** The howler namespace, for the same reason (ctx, masterGain). */
-      howlerGlobal: () => HowlerAudioGlobal | undefined;
+      /** Public Pixi Sound library for device/context diagnostics. */
+      pixiSound: () => PixiSoundLibraryLike | undefined;
     };
   }
 }
@@ -1585,7 +2128,7 @@ if (typeof window !== 'undefined') {
     poolFor,
     play,
     busFilterNodes,
-    howlerGlobal: () => howlerGlobal,
+    pixiSound: () => pixiLibrary,
   };
 }
 
@@ -1595,6 +2138,11 @@ if (typeof window !== 'undefined') {
 export function setChimeDepsForTests(deps: ChimeDeps): void {
   chimeDeps = deps;
   launchedAtMs = deps.now();
+}
+
+/** Drive the focus gate in node tests, where there is no real window. */
+export function setAppFocusedForTests(focused: boolean): void {
+  setAppFocused(focused);
 }
 
 /** Swap the typing velocity RNG for deterministic assertions. */
@@ -1610,21 +2158,56 @@ export function setPlayRngForTests(rng: () => number): void {
 
 /** Reset all engine state (volumes, mute, caches, variant rotation). */
 export function resetEngineForTests(): void {
+  disarmGestureResume?.();
+  disarmGestureResume = undefined;
   volumes = defaultVolumes();
   muted = false;
+  muteWhenUnfocused = false;
+  appFocused = true;
   reducedSound = false;
   character = 'calm';
   soundSet = DEFAULT_SOUND_SET_ID;
   ambient = undefined;
   ambientWanted = false;
   soundscape = 'rain';
-  howls.clear();
-  voices.clear();
+  resetPageTurnAudioForTests();
+  try {
+    pixiLibrary?.removeAll();
+  } catch {
+    // A test adapter may already have torn itself down.
+  }
+  soundEntries.clear();
+  pendingPlays.length = 0;
+  activeVoices.clear();
+  reservations.clear();
+  lastRoleStart.clear();
+  lastRoleRequest.clear();
   for (const timer of layerTimers) clearTimeout(timer);
   layerTimers.clear();
-  howlerModule = undefined;
-  howlerGlobal = undefined;
-  loadHowler = defaultLoader;
+  pixiModule = undefined;
+  pixiLibrary = undefined;
+  pixiFilter = undefined;
+  loadPixiSound = defaultLoader;
+  preloadState = 'idle';
+  audioUnlocked = false;
+  cuesReady = 0;
+  cueLoadFailures = 0;
+  backendLoadFailures = 0;
+  playFailures = 0;
+  fallbacksUsed = 0;
+  unlocks = 0;
+  resumeFailures = 0;
+  queuedPlays = 0;
+  replayedPlays = 0;
+  expiredPlays = 0;
+  cooldownDrops = 0;
+  concurrencyDrops = 0;
+  contextRecoveries = 0;
+  recoveringContext = false;
+  burstDrops = 0;
+  lastTrustedGestureMs = Number.NEGATIVE_INFINITY;
+  trustedGestures = 0;
+  lastBackendError = null;
   resetBusFilterForTests();
   pickers.clear();
   playRng = Math.random;

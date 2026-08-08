@@ -1,0 +1,78 @@
+/* The update card borrows the insert dialog's aged-paper shell. Only the
+   release notes and download meter are specific to this surface. */
+
+.nb-update-overlay {
+  /* Above the settings sheet: a delayed check can finish while it is open. */
+  z-index: calc(var(--z-toasts) + 1);
+}
+
+.nb-update-card {
+  width: min(500px, 100%);
+}
+
+.nb-update-body {
+  display: block;
+  margin-top: var(--space-4);
+}
+
+.nb-update-notes {
+  max-height: 12rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: var(--radius-hand);
+}
+
+.nb-update-progress {
+  height: 10px;
+  margin-top: var(--space-16);
+  overflow: hidden;
+  background: var(--paper-deep);
+  border: var(--stroke-ink-thin);
+  border-radius: 7px 6px 8px 5px / 6px 8px 5px 7px;
+}
+
+.nb-update-progress-fill {
+  height: 100%;
+  background: var(--wash-moss);
+  border-right: 1.5px solid var(--ink-line);
+  transition: width var(--dur-xs) linear;
+}
+
+.nb-update-progress-fill.is-indeterminate {
+  animation: nb-update-travel 1.25s ease-in-out infinite alternate;
+}
+
+@keyframes nb-update-travel {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(455%); }
+}
+
+.nb-update-progress-label,
+.nb-update-error {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-update-error {
+  margin-top: var(--space-12);
+  color: var(--wash-terracotta-deep);
+}
+
+.nb-update-actions {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-update-progress-fill.is-indeterminate {
+    animation: none;
+  }
+}

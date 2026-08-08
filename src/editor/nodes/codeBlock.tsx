@@ -77,7 +77,6 @@ import {
   type CodeLanguageChoice,
 } from '../codeLanguages';
 import { createHoverIntent } from '../menu/hoverIntent';
-import { play } from '../../sound/engine';
 import {
   autoIndent,
   backspaceIndent,
@@ -688,7 +687,6 @@ function LanguagePicker(props: LanguagePickerProps): JSX.Element {
     setQuery('');
     setActive(startAt);
     setOpen(true);
-    void play('pop-soft');
   };
 
   const pick = (row: CodeLanguageChoice): void => {
@@ -968,6 +966,7 @@ function CodeBlockView(props: SolidNodeViewProps): JSX.Element {
     <NodeViewWrapper
       class="nb-code"
       classList={{ 'is-selected': props.selected }}
+      data-nb-block-flow="feature"
       data-language={language() ?? 'auto'}
     >
       <div class="nb-code-tab" contenteditable={false}>

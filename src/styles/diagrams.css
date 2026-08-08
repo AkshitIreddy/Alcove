@@ -97,11 +97,6 @@
   fill: var(--wash-blush-light);
 }
 
-.nb-dg-node[data-wash='plum'] .nb-dg-fill,
-.nb-dg-tl-entry[data-wash='plum'] .nb-dg-fill {
-  fill: var(--wash-plum-light);
-}
-
 .nb-dg-node[data-wash='graphite'] .nb-dg-fill,
 .nb-dg-tl-entry[data-wash='graphite'] .nb-dg-fill {
   fill: var(--paper-deep);

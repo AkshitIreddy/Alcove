@@ -2,24 +2,39 @@
  * features/bookshelf/bookIdentity.ts — one book, three places.
  *
  * "A customized book keeps its identity on the shelf, mid-pull-out, and open"
- * (docs/design/library-themes.md §5). Three renderers read three different
- * things today:
+ * (docs/design/library-themes.md §5). All three renderers resolve the same
+ * `ResolvedBookStyle` here:
  *
  *   shelf spine   → SpineParams   (spineFactory, from cover_meta.style)
  *   pull-out ghost→ CoverParams   (PulledBookOverlay, from cover_meta.style)
- *   opened book   → CoverOverrides(BookView, from cover_meta.cover)
+ *   opened book   → CoverParams    (BookView, from the same resolution)
  *
- * So the studio writes BOTH sections: the merged style under `style`, and its
- * cover-facing projection under `cover`. This module owns that projection and
- * the write, so the studio, the shelf and any QA harness agree byte for byte.
+ * `cover_meta.style` is canonical; `cover_meta.cover` remains a compatibility
+ * input, but opening never migrates it. Identity is a read-time invariant.
  */
 
-import type { BookStyle, SpineThemeDefaults } from '../../art/bookStyle';
-import type { CoverOverrides } from '../../art/covers';
+import {
+  resolveBookStyle,
+  type BookStyle,
+  type ResolveBookStyleOptions,
+  type ResolvedBookStyle,
+  type SpineThemeDefaults,
+} from '../../art/bookStyle';
+import {
+  deriveCoverParams,
+  normalizeCoverOverrides,
+  type CoverOverrides,
+} from '../../art/covers';
 import { clamp } from '../../art/noise';
-import { SPINE_BASE_HEIGHT, textureFromMaterial, type SpineParams } from '../../art/spines';
+import {
+  materialFromTexture,
+  SPINE_BASE_HEIGHT,
+  textureFromMaterial,
+  type SpineParams,
+} from '../../art/spines';
 import type { LibraryTheme } from '../../art/themes';
 import {
+  readCoverOverrides,
   readBookStyleOverrides,
   saveBookStyleOverrides,
   saveCoverOverrides,
@@ -88,6 +103,47 @@ const LEGACY_PALETTE_PIGMENT: Readonly<Record<string, number>> = {
 };
 
 /**
+ * Cover-only books predate the studio's shared style blob. Fold every field
+ * that has a spine/style equivalent into the resolver so that respecting an
+ * old cover choice does not make the shelf wear a different book.
+ *
+ * This is a read-time compatibility floor, not a migration. Cover-only knobs
+ * with no BookStyle equivalent (for example one of the later lettering hands)
+ * remain on the cover and are merged by `resolveBookAppearance` below.
+ */
+function legacyCoverStyleFloor(
+  book: Pick<Book, 'coverMeta'>,
+): Record<string, unknown> | null {
+  const cover = normalizeCoverOverrides(readCoverOverrides(book));
+  if (cover === null) return null;
+
+  const style: Record<string, unknown> = {};
+  if (cover.palette !== undefined) style.pigment = cover.palette;
+  if ('clothHex' in cover) style.clothHex = cover.clothHex;
+  if (cover.material !== undefined) style.material = cover.material;
+  else if (cover.texture !== undefined) style.material = materialFromTexture(cover.texture);
+  if (cover.frame !== undefined) style.coverFrame = cover.frame;
+  if (cover.medallion !== undefined) style.coverMedallion = cover.medallion;
+  // BookStyle has three base title faces. Later cover-only hands still survive
+  // in the explicit cover merge even though a spine cannot represent them.
+  if (cover.titleFont !== undefined && cover.titleFont <= 2) {
+    style.titleFont = cover.titleFont;
+  }
+  if (cover.gilt !== undefined) style.gilt = cover.gilt;
+  if (cover.titlePlate !== undefined) style.titlePlate = cover.titlePlate;
+  if (cover.cornerProtectors !== undefined) {
+    style.cornerProtectors = cover.cornerProtectors;
+  }
+  if (cover.insetPlate !== undefined) style.insetPlate = cover.insetPlate;
+  if (cover.edge !== undefined) style.edge = cover.edge;
+  if (cover.wear !== undefined) style.wear = cover.wear;
+  if (cover.charm !== undefined) style.charm = cover.charm;
+  if (cover.charmColor !== undefined) style.charmColor = cover.charmColor;
+
+  return Object.keys(style).length > 0 ? style : null;
+}
+
+/**
  * The full override blob for a book: its studio style, sitting on top of the
  * legacy `cover_meta.palette` hint.
  *
@@ -99,11 +155,52 @@ export function bookStyleOverridesFor(
   book: Pick<Book, 'coverMeta'>,
 ): Record<string, unknown> | null {
   const style = readBookStyleOverrides(book);
+  // A style blob supersedes its old cover projection. When no style exists,
+  // however, the cover is the user's only customization record and must feed
+  // the shared identity rather than being discarded.
+  const cover = style === null ? legacyCoverStyleFloor(book) : null;
   const legacy = book.coverMeta?.palette;
   const pigment =
     typeof legacy === 'string' ? LEGACY_PALETTE_PIGMENT[legacy] : undefined;
-  if (pigment === undefined) return style;
-  return { pigment, ...(style ?? {}) };
+  const merged = {
+    ...(pigment === undefined ? {} : { pigment }),
+    ...(cover ?? {}),
+    ...(style ?? {}),
+  };
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+/**
+ * Resolve one book once for every place it is drawn.
+ *
+ * A studio style is the source of truth and its possibly stale `cover`
+ * projection is ignored. A pre-studio cover-only book keeps that explicit
+ * face, layered over the same resolved style the shelf uses. No persistence
+ * occurs here: opening an old library never rewrites or "upgrades" its data.
+ */
+export function resolveBookAppearance(
+  book: Pick<Book, 'spineSeed' | 'coverMeta'>,
+  theme: LibraryTheme,
+  opts: ResolveBookStyleOptions = {},
+): ResolvedBookStyle {
+  const hasStudioStyle = readBookStyleOverrides(book) !== null;
+  const resolved = resolveBookStyle(
+    book.spineSeed,
+    themeSpineDefaults(theme),
+    bookStyleOverridesFor(book),
+    opts,
+  );
+  if (hasStudioStyle) return resolved;
+
+  const explicitCover = normalizeCoverOverrides(readCoverOverrides(book));
+  if (explicitCover === null) return resolved;
+  return {
+    ...resolved,
+    cover: deriveCoverParams(book.spineSeed, {
+      ...coverOverridesFromStyle(resolved.style),
+      ...explicitCover,
+    }),
+  };
 }
 
 /**

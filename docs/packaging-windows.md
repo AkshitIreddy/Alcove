@@ -174,41 +174,51 @@ checks them against. Changing the mode changes both numbers.
 **The option already existed and already defaulted to keeping.** Tauri's
 uninstall confirm page creates a "delete the application data" checkbox,
 unticked, and `RmDir /r`s `$APPDATA\<identifier>` and
-`$LOCALAPPDATA\<identifier>` only if it was ticked. Alcove stores your library
-in app data, so that default is not a detail — `tests/packaging.test.ts` asserts the hook file
-never assigns `$DeleteAppDataCheckboxState` and never sends `BM_SETCHECK`, so a
-later "helpful" pre-tick is a red test rather than somebody's lost books.
+`$LOCALAPPDATA\<identifier>` only if it was ticked. Alcove leaves that state
+alone, so the default is still to keep every book.
 
-Two things were missing, and both are in `alcove.nsh`:
+Three things are added in `alcove.nsh`:
 
-**1. An extra page, ahead of the question.** `UninstPage custom
+**1. A library-folder page during installation.** It defaults to the normal
+Roaming app-data folder and offers a real folder browser. Passive updater runs
+skip the page and retain the existing choice. The installer writes the absolute
+selection to `%APPDATA%\com.alcove.app\library-location.txt`; that small pointer
+stays in the predictable location even when the library is on another drive.
+
+**2. An extra page, ahead of the uninstall question.** `UninstPage custom
 un.AlcoveLibraryPage`, declared from the hook file, which puts it FIRST in the
 uninstaller. It says the library is kept, shows the path in a **read-only edit
 box** so it can be selected and copied (a path you cannot copy is a path you
 have to retype), and offers an **Open the folder** button.
 
-**2. Wording that names what it deletes.** Tauri's label is "Delete the
+**3. Wording that names what it deletes.** Tauri's label is "Delete the
 application data" — jargon, and a reader could easily take it for a cache. The
-replacement in `English.nsh` says *"Also delete my library — every book and page
-in %APPDATA%\com.alcove.app"*, and `MUI_UNCONFIRMPAGE_TEXT_TOP` restates it
-above the box.
+replacement in `English.nsh` names the library, and
+`MUI_UNCONFIRMPAGE_TEXT_TOP` points back to the exact folder shown on the
+previous page.
 
 ### Where the library actually is
 
-`%APPDATA%\com.alcove.app` — Roaming, not Local. Tauri's `app_config_dir()` and
-`app_data_dir()` are the same folder on Windows, and it holds `notebook.db` (plus
-its WAL/SHM sidecars), `assets/` and `backups/`. `%LOCALAPPDATA%\com.alcove.app`
-holds only the WebView2 cache and is disposable; `%LOCALAPPDATA%\Alcove` is the
-program.
+By default: `%APPDATA%\com.alcove.app` — Roaming, not Local. When a reader
+chooses another folder, `src-tauri/src/library.rs` resolves it before the SQL
+plugin is built, and the database URL, media assets, import/export and default
+backups all use that one root. On an upgrade from the default location to an
+empty custom folder, the existing database, sidecars, assets and backups are
+copied before the database opens; the original is retained as a safety copy.
+
+The custom assets folder is added to Tauri's asset-protocol scope at runtime,
+and bundle export reads through a path-validating Rust command instead of
+granting the webview a broad drive permission.
 
 ### The path is written two ways, deliberately
 
-`ALCOVE_LIBRARY` is `$APPDATA\com.alcove.app` and expands at runtime — it goes
-in nsDialogs controls, where it resolves to `C:\Users\<you>\AppData\Roaming\…`.
-`ALCOVE_LIBRARY_TYPED` is `%APPDATA%\com.alcove.app` and goes where the string
-is baked at compile time (the checkbox label, `MUI_UNCONFIRMPAGE_TEXT_TOP`) —
-and it is the better form there anyway, because a reader can paste it straight
-into Explorer's address bar.
+`ALCOVE_LIBRARY` is `$APPDATA\com.alcove.app`: the default library and the
+stable home of `library-location.txt`. `AlcoveLibrarySelection` is the resolved
+runtime value shown by both installer and uninstaller. The uninstaller reads it
+before Tauri can remove the pointer. If deletion was explicitly selected for a
+custom folder, the hook removes only Alcove-owned database files, `assets/` and
+`backups/`, then removes the folder only if it is empty; it never recursively
+erases an arbitrary reader-selected directory.
 
 ### The page is on the upgrade path too, and is worded for it
 

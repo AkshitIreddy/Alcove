@@ -416,12 +416,10 @@ paper chip so the rail reads as a strip of tools.
 
 ---
 
-## Regression cover
+## Acceptance criteria
 
-`tests/e2e/visual-audit.spec.ts` (13 specs, all green) locks these in by
-*measurement* — computed contrast ratios, computed radii, laid-out geometry —
-rather than pixel snapshots, so they survive art changes and SwiftShader's
-throttled rAF:
+When these surfaces change, inspect them directly and keep the measured
+properties below intact:
 
 | spec | guards |
 | --- | --- |

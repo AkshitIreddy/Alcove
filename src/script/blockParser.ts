@@ -571,12 +571,15 @@ export function parseDoc(source: string): ScriptDoc {
         expectedOneOf(CONTAINER_NAMES),
       );
     }
-    if (resolved.name === "col" && !stack.some((o) => o.block.name === "columns")) {
+    const acceptsColumns = stack.some((open) =>
+      ["columns", "postcard", "ledger"].includes(open.block.name),
+    );
+    if (resolved.name === "col" && !acceptsColumns) {
       warn(
         "col-outside-columns",
-        "':::col' outside a ':::columns' block — it renders as a plain box",
+        "':::col' outside a split container — it renders as a plain box",
         lineSpan(line),
-        "::: columns wrapping the ::: col blocks",
+        "::: columns, ::: postcard or ::: ledger wrapping the ::: col blocks",
       );
     }
     // once per note: a runaway `:::` cascade would otherwise warn per level

@@ -8,6 +8,7 @@
 import Document from '@tiptap/extension-document';
 import { PAGE_STYLES } from '../data/types';
 import type { PageDoc, PageStyle } from '../data/types';
+import { normalizeStationerySplits } from './nodes/stationerySplit';
 
 /*
  * The ruling IDS live in `data/types.ts`, beside the `PageStyle` union the
@@ -23,6 +24,11 @@ export type EditorPageStyle = PageStyle;
 
 export const DEFAULT_PAGE_STYLE: EditorPageStyle = 'ruled';
 export const DEFAULT_LINE_HEIGHT_PX = 32;
+export const DEFAULT_RULE_GAP_PX = 0;
+
+/** Reader-controlled baseline offset from the printed rule, in pixels. */
+export const RULE_GAP_MIN_PX = -12;
+export const RULE_GAP_MAX_PX = 12;
 
 /**
  * The line heights a reader may CHOOSE, in px — the bounds of both sliders
@@ -58,6 +64,15 @@ function clampLineHeight(value: unknown): number {
   );
 }
 
+export function clampRuleGapPx(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_RULE_GAP_PX;
+  return Math.min(
+    RULE_GAP_MAX_PX,
+    Math.max(RULE_GAP_MIN_PX, Math.round(parsed)),
+  );
+}
+
 export const NotebookDocument = Document.extend({
   addAttributes() {
     return {
@@ -75,6 +90,19 @@ export const NotebookDocument = Document.extend({
           clampLineHeight(element.getAttribute('data-line-height')),
         renderHTML: () => ({}),
       },
+      // Undefined keeps old/default pages byte-clean; the live page reads it
+      // as zero. A non-zero value is persisted in the document JSON with the
+      // ruling it adjusts, rather than in a parallel settings store.
+      ruleGapPx: {
+        default: undefined,
+        parseHTML: (element: HTMLElement) => {
+          const raw = element.getAttribute('data-rule-gap');
+          if (raw === null || raw === '') return undefined;
+          const gap = clampRuleGapPx(raw);
+          return gap === DEFAULT_RULE_GAP_PX ? undefined : gap;
+        },
+        renderHTML: () => ({}),
+      },
     };
   },
 });
@@ -85,10 +113,11 @@ export const NotebookDocument = Document.extend({
  * fall back to defaults without mutating the input.
  */
 export function normalizePageDoc(doc: PageDoc): PageDoc {
-  const content =
+  const rawContent =
     Array.isArray(doc.content) && doc.content.length > 0
       ? doc.content
       : [{ type: 'paragraph' }];
+  const content = normalizeStationerySplits(rawContent) as unknown[];
   return {
     ...doc,
     attrs: {

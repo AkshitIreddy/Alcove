@@ -708,6 +708,25 @@
 }
 
 /*
+ * The spread closes over cream paper, then the shelf route resumes behind the
+ * returning cover. This matching flat wash begins opaque and leaves in one
+ * short paint-only beat, so the route swap cannot flash a half-painted room.
+ */
+.pulled-book-return-wash {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) - 1);
+  background: var(--paper-cream);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms var(--ease-out);
+}
+
+.pulled-book-return-wash.is-up {
+  opacity: 1;
+}
+
+/*
  * `.pulled-book-hand` and its `__title` / `__verbs` / `__btn` / `__hint` were
  * styled here: the label plate that used to sit under a book at rest, with
  * "read it" and "put it back" on it. The reader asked for both verbs gone —

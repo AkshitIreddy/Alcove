@@ -66,7 +66,11 @@ import {
   updateBookPageCount,
 } from '../../data/books';
 import type { Book } from '../../data/types';
-import { bindingFor, formatBinding, registerCommands } from '../../data/keybindings';
+import {
+  bindingFor,
+  formatBinding,
+  registerCommands,
+} from '../../data/keybindings';
 import { settings } from '../../data/settings';
 // The gallery is reached by `import()` at the moment it is opened, NOT by a
 // static import — of the module that defines it OR of `features/templates/
@@ -92,6 +96,7 @@ import {
   ShelfWorld,
   type AddSpot,
   type RectLike,
+  type ShelfBookStatus,
   type VisibleBook,
 } from './world';
 
@@ -144,6 +149,7 @@ function preloadStudio(): () => void {
 interface OverlayState {
   book: Book;
   rect: RectLike;
+  status: ShelfBookStatus;
   mode: 'open' | 'close';
 }
 
@@ -224,10 +230,19 @@ const DOCK_SHORT_H = 520;
 function NewBookIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <g
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.9"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
         <path d="M5.4 4.6 L12.2 4.2 L12.6 21.8 L5.8 22.2 Z" />
         <path d="M7.2 8.1 L10.6 7.9 M7.3 11.4 L10.7 11.2" />
-        <path d="M20.6 12.2 L20.6 22.0 M15.7 17.1 L25.5 17.1" stroke-dasharray="0 0" />
+        <path
+          d="M20.6 12.2 L20.6 22.0 M15.7 17.1 L25.5 17.1"
+          stroke-dasharray="0 0"
+        />
         <path d="M15.6 8.6 L18.4 8.5" opacity="0.6" />
       </g>
     </svg>
@@ -237,7 +252,13 @@ function NewBookIcon(): JSX.Element {
 function PaletteIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <g
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.9"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
         <path d="M14.2 3.6 C7.4 3.4 3.2 8.4 3.6 14.2 C4.0 20.1 9.1 24.6 14.6 24.2 C17.2 24.0 17.6 22.1 16.6 20.7 C15.6 19.3 16.4 17.6 18.3 17.6 L21.2 17.6 C23.4 17.6 24.6 16.0 24.5 13.6 C24.2 8.0 20.4 3.8 14.2 3.6 Z" />
         <path d="M8.6 12.1 A0.9 0.9 0 1 1 8.5 12.0 M12.6 8.3 A0.9 0.9 0 1 1 12.5 8.2 M17.6 9.0 A0.9 0.9 0 1 1 17.5 8.9 M8.2 17.4 A0.9 0.9 0 1 1 8.1 17.3" />
       </g>
@@ -248,7 +269,13 @@ function PaletteIcon(): JSX.Element {
 function TrashIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <g
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.9"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
         <path d="M5.4 8.2 C11.2 7.6, 17.0 7.6, 22.8 8.1" />
         <path d="M11.0 8.0 C11.1 6.2, 11.6 5.2, 14.0 5.1 C16.4 5.0, 17.0 6.0, 17.1 7.9" />
         <path d="M7.4 9.6 C7.8 16.4, 8.2 20.6, 8.6 22.6 C8.8 23.7, 9.6 24.2, 11.0 24.3 C13.0 24.5, 15.2 24.5, 17.2 24.3 C18.6 24.2, 19.3 23.7, 19.5 22.6 C19.9 20.5, 20.4 16.3, 20.8 9.5" />
@@ -271,11 +298,28 @@ function TrashIcon(): JSX.Element {
 function TemplateIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9.8 6.3 C12.9 6 16 6 19.1 6.3 M8.1 9.7 C11.9 9.3 15.6 9.3 19.4 9.6" opacity="0.55" stroke-width="1.5" />
+      <g
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.9"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path
+          d="M9.8 6.3 C12.9 6 16 6 19.1 6.3 M8.1 9.7 C11.9 9.3 15.6 9.3 19.4 9.6"
+          opacity="0.55"
+          stroke-width="1.5"
+        />
         <path d="M5.4 12.6 C11.2 12.1 17 12.1 22.8 12.6 C23.2 16.6 23.2 20.4 22.7 23.8 C17 24.4 11.2 24.4 5.7 23.7 C5.1 20.2 5 16.4 5.4 12.6 Z" />
-        <path d="M8.9 16.6 C12.3 16.3 15.7 16.3 19.2 16.6 M9 20.2 C11.8 19.9 14.6 19.9 16.7 20.1" stroke-width="1.5" opacity="0.6" />
-        <path d="M23.4 2.6 C23.9 4.4 24.7 5.2 26.5 5.7 C24.7 6.2 23.9 7 23.4 8.8 C22.9 7 22.1 6.2 20.3 5.7 C22.1 5.2 22.9 4.4 23.4 2.6 Z" stroke-width="1.5" />
+        <path
+          d="M8.9 16.6 C12.3 16.3 15.7 16.3 19.2 16.6 M9 20.2 C11.8 19.9 14.6 19.9 16.7 20.1"
+          stroke-width="1.5"
+          opacity="0.6"
+        />
+        <path
+          d="M23.4 2.6 C23.9 4.4 24.7 5.2 26.5 5.7 C24.7 6.2 23.9 7 23.4 8.8 C22.9 7 22.1 6.2 20.3 5.7 C22.1 5.2 22.9 4.4 23.4 2.6 Z"
+          stroke-width="1.5"
+        />
       </g>
     </svg>
   );
@@ -291,9 +335,18 @@ function TemplateIcon(): JSX.Element {
 function AddFloorIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 28 28" class="shelf-dock__icon" aria-hidden="true">
-      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <g
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.9"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
         <path d="M3.6 6.4 L24.3 5.9 M3.8 12.6 L24.5 12.1" />
-        <path d="M6.2 6.2 L6.4 12.5 M13.0 6.0 L13.2 12.3 M20.0 6.0 L20.2 12.2" opacity="0.55" />
+        <path
+          d="M6.2 6.2 L6.4 12.5 M13.0 6.0 L13.2 12.3 M20.0 6.0 L20.2 12.2"
+          opacity="0.55"
+        />
         <path d="M4.0 19.6 L24.4 19.1" stroke-dasharray="4 3.4" />
         <path d="M14.2 22.0 L14.2 25.6 M12.4 23.8 L16.0 23.8" />
       </g>
@@ -389,13 +442,13 @@ export default function BookshelfWorld(): JSX.Element {
       onVisibleBooksChange: (books) => {
         if (!disposed) setVisibleBooks(books);
       },
-      onGhostReady: (book, rect) => {
+      onGhostReady: (book, rect, status) => {
         if (disposed) return;
         // The pulled cover flies from a canvas-local spine rect to the CENTRE
         // of the window, so it must not still be inside a stage that a panel
         // has stepped aside. A book leaving the shelf ends the panel too.
         setDockPanel(null);
-        setOverlay({ book, rect, mode: 'open' });
+        setOverlay({ book, rect, status, mode: 'open' });
       },
       onZoomChange: (percent) => {
         if (!disposed) setZoomPct(percent);
@@ -513,6 +566,10 @@ export default function BookshelfWorld(): JSX.Element {
       w.cancelReturn();
       return;
     }
+    // Every route into the reader (shelf, quick switcher, tray, import) gets
+    // the same immediate ribbon before the asynchronous timestamp reload can
+    // race this close-overlay reconstruction.
+    w.noteBookOpened(bookId);
     // Auto book thickness: re-count pages after a writing session so the
     // spine width reflects the book's real girth on this return.
     void updateBookPageCount(bookId).then(() => {
@@ -524,7 +581,12 @@ export default function BookshelfWorld(): JSX.Element {
       appState.clearOpenBook();
       return;
     }
-    setOverlay({ book: prep.book, rect: prep.rect, mode: 'close' });
+    setOverlay({
+      book: prep.book,
+      rect: prep.rect,
+      status: prep.status,
+      mode: 'close',
+    });
   }
 
   /* --------------------------- adding a book ---------------------------- */
@@ -565,7 +627,6 @@ export default function BookshelfWorld(): JSX.Element {
 
   /** Open the studio sheet, on the room (null) or on one book's wardrobe. */
   function openStudio(bookId: string | null): void {
-    void play('pop-soft');
     setStudioBookId(bookId);
     // Before the panel state, so the sheet is in the tree on the same frame
     // the `open` prop turns true and RailPanel's tween has something to move.
@@ -588,7 +649,6 @@ export default function BookshelfWorld(): JSX.Element {
     }
     if (panel === 'studio') openStudio(null);
     else {
-      void play('pop-soft');
       setDockPanel('trash');
     }
   }
@@ -646,7 +706,6 @@ export default function BookshelfWorld(): JSX.Element {
    * sound and the sheet closing, and the sheet arrives a frame or two later.
    */
   function openTemplates(): void {
-    void play('pop-soft');
     // A sheet claiming the left of the window would sit under the overlay.
     setDockPanel(null);
     void import('../templates/TemplatesGallery').then((m) =>
@@ -670,12 +729,14 @@ export default function BookshelfWorld(): JSX.Element {
     }
     if (panel === 'studio') openStudio(null);
     else {
-      void play('pop-soft');
       setDockPanel('trash');
     }
   }
 
-  function handleSpotAction(state: SpotMenuState, action: ShelfSpotAction): void {
+  function handleSpotAction(
+    state: SpotMenuState,
+    action: ShelfSpotAction,
+  ): void {
     if (action === 'new-book') addBook(state.floor);
     else if (action === 'from-template') openTemplates();
     else if (action === 'add-floor') world?.addFloor();
@@ -702,10 +763,8 @@ export default function BookshelfWorld(): JSX.Element {
     }
     void (async () => {
       if (action === 'pin') {
-        void play('pop-soft');
         await setBookPinned(book.id, readShelfMeta(book)?.pinned !== true);
       } else if (action === 'duplicate') {
-        void play('pop-soft');
         await duplicateBook(book.id);
       } else if (action === 'delete') {
         void play('crumple-delete');
@@ -753,7 +812,7 @@ export default function BookshelfWorld(): JSX.Element {
       w.fadeGhost();
       return;
     }
-    w.pushInBook(state.book, () => {
+    w.pushInBook(state.book, state.status, () => {
       // Only a book that was actually OPEN has an id to clear; a book put
       // back from the hand never reached the book view.
       if (state.mode === 'close') appState.clearOpenBook();
@@ -766,7 +825,12 @@ export default function BookshelfWorld(): JSX.Element {
    * continue-reading ribbon is moved here rather than in the world.
    */
   function handleOpen(state: OverlayState): void {
+    world?.noteBookOpened(state.book.id);
     void touchBookOpened(state.book.id);
+    // This is the cover-to-pages handoff, not the earlier shelf pull. One
+    // restrained real page rustle gives that second physical action its own
+    // cue; the concrete clean take avoids rotating into a heavy shelf sound.
+    void play('page-flip-1', { volume: 0.72, noJitter: true });
     // Hand over to the book view; this unmounts the shelf (camera is
     // preserved in the module-level session snapshot).
     appState.openBook(state.book.id);
@@ -896,7 +960,11 @@ export default function BookshelfWorld(): JSX.Element {
         </Show>
 
         {/* ---- first run: a bare case should ask for its first book -------- */}
-        <Show when={addSpot()?.firstRun === true && naming() === null && inviteBox()}>
+        <Show
+          when={
+            addSpot()?.firstRun === true && naming() === null && inviteBox()
+          }
+        >
           {(box) => (
             <div
               class="shelf-firstrun"
@@ -947,7 +1015,10 @@ export default function BookshelfWorld(): JSX.Element {
              * answer.
              */
             const box = (): NamePlateBox =>
-              namePlateBox(state().rect, { width: viewportW(), height: viewportH() });
+              namePlateBox(state().rect, {
+                width: viewportW(),
+                height: viewportH(),
+              });
             return (
               <>
                 {/* The leader that ties the tag back to the book it names. */}
@@ -968,7 +1039,11 @@ export default function BookshelfWorld(): JSX.Element {
                   maxLength={80}
                   aria-label="Name this book"
                   placeholder="name it…"
-                  value={state().book.title === NEW_BOOK_TITLE ? '' : state().book.title}
+                  value={
+                    state().book.title === NEW_BOOK_TITLE
+                      ? ''
+                      : state().book.title
+                  }
                   style={{
                     left: `${box().left}px`,
                     top: `${box().top}px`,
@@ -994,7 +1069,8 @@ export default function BookshelfWorld(): JSX.Element {
                   }}
                   onBlur={(e) => {
                     const current = naming();
-                    if (current !== null) commitName(current, e.currentTarget.value);
+                    if (current !== null)
+                      commitName(current, e.currentTarget.value);
                   }}
                 />
               </>
@@ -1012,12 +1088,14 @@ export default function BookshelfWorld(): JSX.Element {
           {(state) => (
             <PulledBookOverlay
               book={state.book}
+              status={state.status}
               spineRect={state.rect}
               mode={state.mode}
               // Read at the moment the book is sent back rather than captured
               // at the pull: the row can have re-laid out under it (a rename,
               // a sibling arriving) while the reader was deciding.
               homeRect={() => world?.spineRectOf(state.book.id) ?? state.rect}
+              homeZoom={() => (world?.zoomPercent ?? 100) / 100}
               caseRect={() => world?.caseScreenRect() ?? null}
               onOverCase={(over) => world?.showSlotHint(state.book.id, over)}
               onHandoff={(phase) => handleHandoff(state, phase)}
@@ -1066,18 +1144,22 @@ export default function BookshelfWorld(): JSX.Element {
                 width: `${Math.max(state().rect.width + 60, 170)}px`,
                 height: `${Math.max(state().rect.height + 12, 30)}px`,
               }}
-              ref={(node) => queueMicrotask(() => {
+              ref={(node) =>
+                queueMicrotask(() => {
                 node.focus();
                 node.select();
-              })}
+                })
+              }
               onKeyDown={(e) => {
                 e.stopPropagation();
-                if (e.key === 'Enter') commitPlate(state(), e.currentTarget.value);
+                if (e.key === 'Enter')
+                  commitPlate(state(), e.currentTarget.value);
                 else if (e.key === 'Escape') setPlateEdit(null);
               }}
               onBlur={(e) => {
                 const current = plateEdit();
-                if (current !== null) commitPlate(current, e.currentTarget.value);
+                if (current !== null)
+                  commitPlate(current, e.currentTarget.value);
               }}
             />
           )}

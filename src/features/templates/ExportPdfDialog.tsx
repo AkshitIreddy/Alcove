@@ -13,6 +13,7 @@ import {
   exportActivePagePdf,
   exportOpenBookPdf,
 } from '../../editor/script/exporters/exportPage';
+import { useDialogFocus } from '../../state/dialogFocus';
 import { usePanelKeys } from '../../state/panelKeys';
 import '../../styles/insert.css';
 import '../../styles/templates.css';
@@ -23,11 +24,17 @@ interface ExportPdfDialogProps {
 
 export function ExportPdfDialog(props: ExportPdfDialogProps): JSX.Element {
   const [busy, setBusy] = createSignal<'page' | 'book' | null>(null);
+  let cardRef: HTMLDivElement | undefined;
+  let closeRef: HTMLButtonElement | undefined;
 
   // Mounted only while up (`openExportPdfDialog` disposes the host). Every
   // dialog claims the keyboard, so no reader of this file has to work out which
   // scene it can appear over — see state/panelKeys.ts.
   usePanelKeys();
+  useDialogFocus({
+    container: () => cardRef,
+    initialFocus: () => closeRef,
+  });
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && busy() === null) props.onClose();
@@ -55,9 +62,11 @@ export function ExportPdfDialog(props: ExportPdfDialogProps): JSX.Element {
     >
       <div
         class="nb-ins-card nb-pdf-card"
+        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label="Export PDF"
+        tabindex="-1"
       >
         {/*
           Disabled while a render is running, for the same reason the scrim
@@ -69,6 +78,7 @@ export function ExportPdfDialog(props: ExportPdfDialogProps): JSX.Element {
           type="button"
           class="nb-ins-close"
           aria-label="Close export"
+          ref={closeRef}
           disabled={busy() !== null}
           onClick={() => props.onClose()}
         >

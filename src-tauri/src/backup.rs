@@ -14,10 +14,8 @@
 //!   under `assets/` are ever written. The frontend closes the sql-plugin
 //!   connection before invoking this and prompts for a restart afterwards.
 //!
-//! The sql plugin resolves `sqlite:notebook.db` against `app_config_dir`;
-//! assets live under `app_data_dir/assets`. On Windows both roots are the
-//! same Roaming folder, but the code keeps them distinct to stay correct on
-//! every platform.
+//! Database, assets and default backups share the installer-selected library
+//! root exposed by `library.rs`.
 
 use serde::Serialize;
 use std::fs::File;
@@ -160,23 +158,23 @@ fn now_secs() -> u64 {
 // Path resolution
 // ---------------------------------------------------------------------------
 
-/// Directory holding `notebook.db` (sql plugin resolves against config dir).
+/// Directory holding `notebook.db`.
 fn db_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_config_dir()
-        .map_err(|e| format!("no app config dir: {e}"))
+    app.try_state::<crate::library::LibraryPaths>()
+        .map(|paths| paths.root().to_path_buf())
+        .ok_or_else(|| "library folder is not initialized".to_string())
 }
 
 /// Directory holding `assets/`.
 fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))
+    db_dir(app)
 }
 
 /// Default backups folder: `<app-data>/backups` (created on demand).
 fn default_backup_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    Ok(data_dir(app)?.join("backups"))
+    app.try_state::<crate::library::LibraryPaths>()
+        .map(|paths| paths.backups_root())
+        .ok_or_else(|| "library folder is not initialized".to_string())
 }
 
 /// The folder backups go to / are listed from.

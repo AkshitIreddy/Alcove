@@ -275,6 +275,14 @@ const SOURCES = {
     url: 'https://opengameart.org/sites/default/files/bell_ding%d.wav',
     indexed: true,
   },
+  balloonPop: {
+    title: 'Balloon pop (from Balloon Sounds)',
+    author: 'Gniffelbaf; curated by AntumDeluge',
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    page: 'https://opengameart.org/content/balloon-sounds',
+    url: 'https://opengameart.org/sites/default/files/balloon_pop.flac',
+  },
   fire: {
     title: 'Fireplace Sound loop',
     author: 'PagDev',
@@ -1074,10 +1082,13 @@ const CUES = [
   { name: 'drop-thump-3', src: ['bookPaper'], at: 27.40, dur: 0.50, centroidMax: 900, peakDb: -10, fadeOutMs: 140 },
   { name: 'drop-thump-4', src: ['bookPaper'], at: 34.10, dur: 0.60, centroidMax: 900, peakDb: -10, fadeOutMs: 160 },
 
-  /* â”€â”€ celebration: one strike sounded a few times, not a jingle â”€â”€ */
-  { name: 'confetti', src: ['bell', 4], at: 0.0, dur: 0.95, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.09, 0.19] },
-  { name: 'confetti-2', src: ['bell', 3], at: 0.0, dur: 1.05, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.07, 0.16, 0.26] },
-  { name: 'confetti-3', src: ['bell', 2], at: 0.0, dur: 0.92, centroidMax: 1900, centroidMin: 900, peakDb: -11, shimmer: [0, 0.11, 0.21] },
+  /* â”€â”€ celebration: one honest balloon pop, never a bell in disguise â”€â”€ */
+  // This family is deliberately a singleton. Three fake variants made by
+  // pitch-shifting or layering one recording would satisfy a count while
+  // making the actual cue worse; if this exact CC0 take ever fails listening
+  // review, the product rule is to silence confetti instead of substituting an
+  // unrelated object.
+  { name: 'confetti', src: ['balloonPop'], at: 0.0, dur: 0.54, centroidMax: 1900, centroidMin: 800, peakDb: -12, snap: false, fadeInMs: 5, fadeOutMs: 85 },
 ];
 
 /**
@@ -1261,6 +1272,21 @@ async function build() {
       dry = bed;
     }
     emit(cue.name, condition(dry, { ...cue, name: cue.name }), [key]);
+    if (cue.name === 'confetti') {
+      /*
+       * Dither is a single seeded stream shared by the historical generator.
+       * The three old bell "confetti" files consumed 128,772 sample frames;
+       * the honest balloon take consumes 23,814. Advance the missing frames so
+       * replacing this family does not rewrite every unrelated WAV that comes
+       * after it by one least-significant bit. This is binary diff hygiene,
+       * not audio processing; each frame consumes two TPDF samples.
+       */
+      const retiredConfettiFrames = 128_772 - 23_814;
+      for (let frame = 0; frame < retiredConfettiFrames; frame += 1) {
+        rng();
+        rng();
+      }
+    }
   }
 
   /* keystrokes */
@@ -1311,7 +1337,7 @@ async function build() {
       peakDb: l.peakDb, cornerHz: 1400, name: l.name,
     });
     y = dcBlock(y);
-    // Loops still have to start and end at zero â€” nothing may click when Howler
+    // Loops still have to start and end at zero â€” nothing may click when the player
     // restarts them â€” but the fade has to be short enough not to punch an
     // audible hole in the seam. 5 ms is the balance: a steady bed like the
     // rain is still at only ~2% of its own level half a millisecond in (a
@@ -1336,7 +1362,7 @@ async function build() {
     emit(c.name, normalizeTo(y, -14), ['bell']);
   }
 
-  /* manifest + report */
+  /* provenance manifest */
   const manifest = {
     note: 'Provenance for every shipped cue. Rebuild with: node scripts/gen-sounds.mjs',
     generated: new Date().toISOString().slice(0, 10),
@@ -1358,8 +1384,6 @@ async function build() {
     lines.push(r.name.padEnd(20) + pad(r.ms, 8) + pad(r.peakDb, 10) + pad(r.centroid, 10)
       + pad(r.highPct, 9) + pad(r.stepPct, 10));
   }
-  writeFileSync(join(OUT_DIR, 'report.txt'), `${lines.join('\n')}\n`);
-
   console.log(lines.join('\n'));
   console.log(`\n${rows.length} files written to public/sounds/`);
   return rows;

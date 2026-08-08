@@ -2,7 +2,8 @@
  * src/editor/script/exporters/capture.ts — page rasterization for export.
  *
  * Reuses the flip snapshot approach (html-to-image toCanvas, font-embed CSS
- * cached once, chrome elements filtered out) at a fixed 2x pixel ratio —
+ * cached by each page's used family stacks, chrome elements filtered out) at
+ * a fixed 2x pixel ratio —
  * roadmap items 23/24 want print-quality output, not the flip's
  * device-memory-capped ratio.
  *
@@ -14,12 +15,13 @@
  *   pages are not in the DOM.
  */
 import { Editor, type JSONContent } from '@tiptap/core';
-import { getFontEmbedCSS, toCanvas } from 'html-to-image';
+import { toCanvas } from 'html-to-image';
 import { settings } from '../../../data/settings';
 import type { PageDoc, PageStyle } from '../../../data/types';
 import {
   DEFAULT_LINE_HEIGHT_PX,
   DEFAULT_PAGE_STYLE,
+  clampRuleGapPx,
   isPageStyle,
   normalizePageDoc,
 } from '../../document';
@@ -28,8 +30,11 @@ import { createEditorExtensions } from '../../extensions';
 import {
   SNAPSHOTTING_CLASS,
   TRANSPARENT_PX,
+  pageFontEmbedCSS,
   snapshotFilter,
+  snapshotStyleProperties,
 } from '../../../flip/rasterCache';
+import { inlineSvgStyles } from '../../../flip/svgSnapshot';
 
 /** Export pixel ratio (roadmap: "reuse snapshot pipeline at 2x"). */
 export const EXPORT_PIXEL_RATIO = 2;
@@ -70,17 +75,15 @@ export function isCapturable(element: HTMLElement | null): boolean {
   );
 }
 
-let fontCssPromise: Promise<string> | undefined;
-
 async function captureCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
   if (!isCapturable(element)) {
     throw new Error(
       `capture: element has no layout (${element.clientWidth}×${element.clientHeight})`,
     );
   }
-  fontCssPromise ??= getFontEmbedCSS(element).catch(() => '');
-  const fontEmbedCSS = await fontCssPromise;
+  const fontEmbedCSS = await pageFontEmbedCSS(element);
   element.classList.add(SNAPSHOTTING_CLASS);
+  const restoreSvg = inlineSvgStyles(element);
   try {
     return await toCanvas(element, {
       pixelRatio: EXPORT_PIXEL_RATIO,
@@ -88,8 +91,12 @@ async function captureCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
       fontEmbedCSS,
       imagePlaceholder: TRANSPARENT_PX,
       filter: snapshotFilter,
+      // html-to-image's style-property cache is global, so an export capture
+      // must establish the same narrowed list as mounted/offscreen flip pages.
+      includeStyleProperties: snapshotStyleProperties(),
     });
   } finally {
+    restoreSvg();
     element.classList.remove(SNAPSHOTTING_CLASS);
   }
 }
@@ -184,6 +191,28 @@ export interface OffscreenLeafContext {
 }
 
 /**
+ * The sheet's untransformed border-box size, retaining fractional CSS pixels.
+ * `clientWidth`/`clientHeight` round to integers; staging a 577.656px live leaf
+ * at 578px is enough to move a threshold word to another line at the raster →
+ * DOM handoff. The global reset pins `box-sizing:border-box`, so computed
+ * width/height are both transform-free and the exact box we need. A detached
+ * or auto-sized element falls back to the integer client box.
+ */
+export function measureUntransformedSheet(element: HTMLElement): OffscreenPageSize {
+  try {
+    const style = getComputedStyle(element);
+    const width = Number.parseFloat(style.width);
+    const height = Number.parseFloat(style.height);
+    if (Number.isFinite(width) && width > 1 && Number.isFinite(height) && height > 1) {
+      return { width, height };
+    }
+  } catch {
+    // Detached test doubles and a tearing-down WebView can have no style.
+  }
+  return { width: element.clientWidth, height: element.clientHeight };
+}
+
+/**
  * Sheet size of the mounted book leaf, or a book-ish default. Scans every
  * mounted sheet (the collapsed left leaf of a single-page spread measures
  * 0×0) and takes the largest laid-out one.
@@ -194,7 +223,7 @@ export function measureMountedSheet(): OffscreenPageSize {
   for (const paper of document.querySelectorAll<HTMLElement>(
     '.nb-sheet-paper:not(.nb-export-sheet)',
   )) {
-    const { clientWidth: width, clientHeight: height } = paper;
+    const { width, height } = measureUntransformedSheet(paper);
     if (width < 120 || height < 160) continue;
     if (width * height > bestArea) {
       bestArea = width * height;
@@ -214,6 +243,11 @@ function docLineHeight(doc: PageDoc): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : DEFAULT_LINE_HEIGHT_PX;
+}
+
+function docRuleGap(doc: PageDoc): number {
+  const value = doc.attrs?.ruleGapPx;
+  return value === undefined ? 0 : clampRuleGapPx(value);
 }
 
 /** Wait until every <img> under root has settled (or the cap elapses). */
@@ -265,6 +299,7 @@ export async function withOffscreenPage<T>(
   page.dataset.style = docPageStyle(doc);
   if (context.paginated === true) page.dataset.paginated = 'true';
   page.style.setProperty('--page-line-height', `${docLineHeight(doc)}px`);
+  page.style.setProperty('--page-rule-gap', `${docRuleGap(doc)}px`);
 
   const mount = document.createElement('div');
   mount.className = 'nb-page-editor';

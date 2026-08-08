@@ -45,6 +45,7 @@ import {
 import {
   muteAll as engineMuteAll,
   setHourlyChime as engineSetHourlyChime,
+  setMuteWhenUnfocused as engineSetMuteWhenUnfocused,
   setReducedSound as engineSetReducedSound,
   setSoundscape as engineSetSoundscape,
   setTypingSounds as engineSetTypingSounds,
@@ -169,6 +170,7 @@ export interface SettingsRoot {
 export interface SettingsSoundAdapter {
   setVolumes(partial: Partial<Volumes>): void;
   muteAll(mute: boolean): void;
+  setMuteWhenUnfocused(mute: boolean): void;
   setReducedSound(reduced: boolean): void;
   startAmbient(): void;
   stopAmbient(): void;
@@ -237,6 +239,7 @@ function startAmbientDeferred(): void {
 const engineAdapter: SettingsSoundAdapter = {
   setVolumes: engineSetVolumes,
   muteAll: engineMuteAll,
+  setMuteWhenUnfocused: engineSetMuteWhenUnfocused,
   setReducedSound: engineSetReducedSound,
   startAmbient: startAmbientDeferred,
   stopAmbient: engineStopAmbient,
@@ -369,6 +372,7 @@ export function applySettingsTo(
     ambient: s.soundAmbient,
   });
   sound.muteAll(s.muteAll);
+  sound.setMuteWhenUnfocused(s.muteSoundsWhenUnfocused);
   sound.setReducedSound(s.reducedSound);
   sound.setSoundscape(s.soundscape);
   sound.setTypingSounds(s.typingSounds);

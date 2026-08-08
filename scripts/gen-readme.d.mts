@@ -1,7 +1,7 @@
 /**
  * Types for scripts/gen-readme.mjs — the front-page composer is plain ESM so it
  * can run from `npm run readme:build` without a build step, but
- * tests/readme.test.ts imports it, and this is the contract it imports.
+ * tests/readme-integrity.test.ts imports it, and this is the contract it imports.
  */
 
 /** One half of the README, as the front page reaches it. */

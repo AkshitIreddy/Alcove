@@ -29,6 +29,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import { appState } from '../../state/app';
+import { useDialogFocus } from '../../state/dialogFocus';
 import { usePanelKeys } from '../../state/panelKeys';
 import { editorState } from '../../editor/state';
 import { notify } from '../../editor/script/exporters/toast';
@@ -295,7 +296,6 @@ function ExportRoom(props: {
         singleMarkdown(),
       );
       if (result.outcome === 'saved') {
-        void play('pop-soft');
         notify(`${fileName} · ${formatBytes(result.bytes)}`);
       } else if (result.outcome === 'failed') {
         notify('could not write the bundle');
@@ -550,7 +550,6 @@ function ImportRoom(props: {
       setBundle(result);
       setDone(null);
       if (result.contents !== null) {
-        void play('pop-soft');
         setSelectedPages(selectAllPages(result.contents.manifest));
         const initial = new Map<string, BookResolution>();
         const expandedNext = new Set<string>();
@@ -611,7 +610,6 @@ function ImportRoom(props: {
         current,
         bundle()?.fileName ?? 'bundle',
       );
-      void play('pop-soft');
       setDone(
         `added ${outcome.createdPageCount} page${outcome.createdPageCount === 1 ? '' : 's'} — undo any time from the undo book`,
       );
@@ -869,7 +867,6 @@ function HistoryRoom(props: { revision: number; onChanged(): void }): JSX.Elemen
       if (outcome === null || outcome.restorePoint === null) {
         notify('nothing left to undo for that import');
       } else {
-        void play('pop-soft');
         const furniture =
           outcome.removedBookcases === 0
             ? ''
@@ -1003,6 +1000,7 @@ export interface TransferPanelProps {
 export function TransferPanel(props: TransferPanelProps): JSX.Element {
   const [tab, setTab] = createSignal<TransferTab>(props.initialTab ?? 'export');
   const [revision, setRevision] = createSignal(0);
+  let cardRef: HTMLDivElement | undefined;
   const [snapshot, { refetch }] = createResource(
     () => revision(),
     () => loadLibrarySnapshot(),
@@ -1012,6 +1010,12 @@ export function TransferPanel(props: TransferPanelProps): JSX.Element {
   // shelf that scene answers arrows and Enter on `document`. Mounted only while
   // open (`openTransferPanel` disposes the host), so no `open` accessor.
   usePanelKeys();
+  useDialogFocus({
+    container: () => cardRef,
+    initialFocus: () =>
+      cardRef?.querySelector<HTMLElement>('.nb-tr-rail-button[data-active="true"]') ??
+      undefined,
+  });
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') props.onClose();
@@ -1033,9 +1037,11 @@ export function TransferPanel(props: TransferPanelProps): JSX.Element {
     >
       <div
         class="nb-tr-card"
+        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label="Export, import and undo"
+        tabindex="-1"
       >
         <nav class="nb-tr-rail" aria-label="Transfer sections">
           <For each={TABS}>

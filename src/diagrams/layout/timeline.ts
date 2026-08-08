@@ -49,10 +49,15 @@ export function layoutTimeline(
   opts: TimelineLayoutOptions = {},
 ): TimelineLayout {
   const measure = opts.measure ?? measureText;
-  const cardWidth = opts.cardWidth ?? 240;
-  const spineGap = opts.spineGap ?? 34;
+  /* The editor's default 1280px spread leaves about 387px for one page's
+     prose. The old 580px timeline was therefore scaled to two thirds size by
+     the SVG viewBox, quietly turning its nominal 15px handwriting into ~10px.
+     Keep the primitive inside the real page measure; wrapping makes cards
+     taller, and a fixed-height page can paginate that honestly. */
+  const cardWidth = opts.cardWidth ?? 160;
+  const spineGap = opts.spineGap ?? 16;
   const gapY = opts.gapY ?? 18;
-  const margin = opts.margin ?? 16;
+  const margin = opts.margin ?? 12;
   const warnings: string[] = [];
 
   const spineX = margin + cardWidth + spineGap;

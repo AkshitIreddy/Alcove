@@ -41,7 +41,6 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
-import { play } from '../../sound/engine';
 import { nextSortState, sortedRowOrder, type SortDirection } from './sortRows';
 
 const tableSortKey = new PluginKey('nb-table-sort');
@@ -266,7 +265,7 @@ function chipDom(
     if (found === null) return;
     const editor: Editor | undefined = (view as unknown as { nbEditor?: Editor }).nbEditor;
     if (editor === undefined) return;
-    if (cycleTableSort(editor, found.tablePos, column)) void play('pop-soft');
+    cycleTableSort(editor, found.tablePos, column);
   });
   return button;
 }

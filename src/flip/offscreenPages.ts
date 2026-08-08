@@ -13,11 +13,12 @@
  * live leaf, rasterized through the same html-to-image recipe the cache
  * uses for mounted pages — same device-memory-capped pixel ratio, the live
  * paper colour behind it (paperTone.ts), chrome elements filtered out,
- * font-embed CSS built once.
+ * font-embed CSS cached by the family stacks each page actually uses.
  */
 
-import { getFontEmbedCSS, toCanvas } from 'html-to-image';
+import { toCanvas } from 'html-to-image';
 import type { PageDoc } from '../data/types';
+import { DEFAULT_LINE_HEIGHT_PX } from '../editor/document';
 import {
   measureMountedSheet,
   withOffscreenPage,
@@ -25,15 +26,19 @@ import {
   type OffscreenPageSize,
 } from '../editor/script/exporters/capture';
 import { trailingOverflowCount } from '../editor/pagination';
+import { loadBacklinks } from '../search/backlinks';
 import { visualScale } from '../views/spread';
 import { snapshotPixelRatio } from './math';
 import { snapshotBackground } from './paperTone';
 import {
   SNAPSHOTTING_CLASS,
   TRANSPARENT_PX,
+  pageFontEmbedCSS,
   snapshotFilter,
+  snapshotStyleProperties,
 } from './rasterCache';
 import { inlineSvgStyles } from './svgSnapshot';
+import { snapshotGridCorrections } from './snapshotFidelity';
 
 /*
  * The marker class, the chrome exclusion and the transparent placeholder are
@@ -138,6 +143,288 @@ export interface OffscreenPageCaptureOptions {
 const SETTLE_AHEAD =
   typeof location === 'undefined' || !/[?&]settleahead=0\b/.test(location.search);
 
+const ORDINARY_PROSE_SELECTOR = 'p, h1, h2, h3, h4, ul, ol, blockquote';
+
+/**
+ * Apply PageEditor's measured grid decoration to an owned staged sheet. The
+ * staged read-only editor does not install the live plugin; without this
+ * mirror its curl texture and the landed prose occupy different baselines.
+ */
+export function alignStagedProse(sheet: HTMLElement, pitch: number): number {
+  const prose = sheet.querySelector<HTMLElement>('.nb-prose');
+  if (prose === null) return 0;
+  const children = Array.from(prose.children).filter(
+    (node): node is HTMLElement => node instanceof HTMLElement,
+  );
+  for (const child of children) {
+    child.removeAttribute('data-nb-grid-snap');
+    child.style.removeProperty('--nb-grid-snap');
+  }
+  const rootRect = prose.getBoundingClientRect();
+  const scale = visualScale(rootRect.height, prose.clientHeight);
+  const corrections = snapshotGridCorrections(
+    children.map((child) => ({
+      ordinary: child.matches(ORDINARY_PROSE_SELECTOR),
+      top: (child.getBoundingClientRect().top - rootRect.top) / scale,
+    })),
+    pitch,
+  );
+  for (const { index, pixels } of corrections) {
+    const child = children[index]!;
+    const value = pixels.toFixed(2);
+    child.dataset.nbGridSnap = value;
+    child.style.setProperty('--nb-grid-snap', `${value}px`);
+  }
+  return corrections.length;
+}
+
+/**
+ * Preserve list row advance through html-to-image's computed-style clone.
+ *
+ * Page prose uses positive top padding plus an equal negative bottom margin
+ * to place glyphs on the printed rule without changing the 32px flow rhythm.
+ * html-to-image copies an LI's computed border-box height as an explicit
+ * height, defeating that overlap in its clone: four one-line rows become four
+ * 39.5px rows and the last is painted underneath the following card.
+ *
+ * Staged sheets are hidden and owned by the snapshot pipeline. Freeze each
+ * measured source-DOM row advance there—not at a fixed pitch—so wrapped and
+ * nested list items keep their real geometry without touching the live editor.
+ */
+export function freezeStagedListRows(sheet: HTMLElement): number {
+  let frozen = 0;
+  for (const list of sheet.querySelectorAll<HTMLElement>('ul, ol')) {
+    const flowAnchor = list.nextElementSibling instanceof HTMLElement
+      ? list.nextElementSibling
+      : null;
+    const anchorTopBefore = flowAnchor?.getBoundingClientRect().top ?? null;
+    const marginBottomBefore = Number.parseFloat(getComputedStyle(list).marginBottom) || 0;
+    const rows = Array.from(list.children).filter(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && child.tagName === 'LI',
+    );
+    if (rows.length === 0) continue;
+    const listBottom = list.getBoundingClientRect().bottom;
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      const top = row.getBoundingClientRect().top;
+      const nextTop = rows[index + 1]?.getBoundingClientRect().top ?? listBottom;
+      const advance = nextTop - top;
+      if (!Number.isFinite(advance) || advance <= 0) continue;
+      row.style.height = `${advance.toFixed(3)}px`;
+      row.style.boxSizing = 'border-box';
+      frozen += 1;
+    }
+    /*
+     * Freezing the LI border boxes changes margin-collapse at the list's foot.
+     * Patrick Hand's ruled paragraphs use positive top padding plus an equal
+     * negative bottom margin; before the freeze that negative lead escapes the
+     * final LI and pulls the next top-level block up by 7.5px. An explicit LI
+     * height contains it, so every block after the first list moved down in
+     * the staged texture even though the list's own measured top/bottom stayed
+     * identical. The live→GL swap therefore jumped text, cards and diagrams on
+     * BOTH pages by exactly 7.5px.
+     *
+     * Preserve the next sibling's measured flow position while retaining the
+     * explicit row heights html-to-image needs. This is measured per list—not
+     * a font-specific constant—so wrapped/nested rows and custom type scales
+     * keep their real advance.
+     */
+    if (flowAnchor !== null && anchorTopBefore !== null) {
+      const delta = flowAnchor.getBoundingClientRect().top - anchorTopBefore;
+      if (Number.isFinite(delta) && Math.abs(delta) > 0.01) {
+        list.style.marginBottom = `${(marginBottomBefore - delta).toFixed(3)}px`;
+      }
+    }
+  }
+  return frozen;
+}
+
+/**
+ * Make the staged top-level flow independent of margin collapsing.
+ *
+ * html-to-image does not carry the app stylesheet into its foreignObject. It
+ * copies every element's computed height and margins as inline declarations.
+ * That sounds equivalent, but it changes CSS margin-collapsing: an auto-sized
+ * node view followed by a list loses the half-line that separated them in the
+ * live editor, and every later block is painted 8px high. The source staging
+ * DOM can therefore measure perfectly while the bitmap it produces still
+ * jumps as soon as the GL scene replaces the live leaves.
+ *
+ * This sheet is owned and hidden by the snapshot pipeline, so freeze its
+ * measured border boxes into one unambiguous flow before cloning: every block
+ * gets its measured height, zero trailing margin, and a leading margin equal
+ * to the exact gap/overlap from the previous measured border box. Negative
+ * heading overlaps are preserved just as deliberately as positive feature
+ * gaps. The clone now has one layout answer in both Chromium documents.
+ */
+export function freezeStagedBlockFlow(sheet: HTMLElement): number {
+  const prose = sheet.querySelector<HTMLElement>('.nb-prose');
+  if (prose === null) return 0;
+  const children = Array.from(prose.children).filter(
+    (node): node is HTMLElement => node instanceof HTMLElement,
+  );
+  if (children.length === 0) return 0;
+
+  const rootTop = prose.getBoundingClientRect().top;
+  const boxes = children.map((child) => {
+    const rect = child.getBoundingClientRect();
+    return {
+      top: rect.top - rootTop,
+      bottom: rect.bottom - rootTop,
+      height: rect.height,
+    };
+  });
+
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    const box = boxes[index]!;
+    const previousBottom = index === 0 ? 0 : boxes[index - 1]!.bottom;
+    const leading = box.top - previousBottom;
+    if (!Number.isFinite(box.height) || box.height < 0 || !Number.isFinite(leading)) {
+      continue;
+    }
+    child.style.setProperty('box-sizing', 'border-box', 'important');
+    child.style.setProperty('height', `${box.height.toFixed(3)}px`, 'important');
+    child.style.setProperty('margin-block-start', `${leading.toFixed(3)}px`, 'important');
+    child.style.setProperty('margin-block-end', '0px', 'important');
+  }
+
+  /*
+   * Replacing a collapsed pair with explicit leading/trailing margins changes
+   * the collapse context while we are doing it. Reconcile in document order:
+   * moving one block also moves everything after it, so the next measurement
+   * naturally includes the correction already made above. One pass converges
+   * the whole column to the border boxes recorded before normalization.
+   */
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    const actualTop = child.getBoundingClientRect().top - rootTop;
+    const delta = boxes[index]!.top - actualTop;
+    if (!Number.isFinite(delta) || Math.abs(delta) < 0.01) continue;
+    const current = Number.parseFloat(getComputedStyle(child).marginBlockStart) || 0;
+    child.style.setProperty(
+      'margin-block-start',
+      `${(current + delta).toFixed(3)}px`,
+      'important',
+    );
+  }
+  return children.length;
+}
+
+function backlinkWords(count: number): string {
+  return count === 1 ? '1 page links here' : `${count} pages link here`;
+}
+
+/**
+ * Mount the collapsed page furniture that PageEditor normally owns outside
+ * `.nb-page-editor`. Adjacent leaves have no PageEditor, so the offscreen
+ * stage must supply it before pagination and rasterization.
+ */
+export function mountStagedBacklinks(sheet: HTMLElement, count: number): void {
+  const page = sheet.querySelector<HTMLElement>('.nb-page');
+  if (page === null || count < 1 || !Number.isFinite(count)) return;
+
+  page.style.setProperty('--nb-backlink-rail', 'var(--nb-backlink-tab-h)');
+  const backlinks = document.createElement('div');
+  backlinks.className = 'nb-backlinks';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'nb-backlink-tab';
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-label', backlinkWords(count));
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'nb-backlink-mark');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = (d: string, join = false): SVGPathElement => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    element.setAttribute('d', d);
+    element.setAttribute('fill', 'none');
+    element.setAttribute('stroke', 'currentColor');
+    element.setAttribute('stroke-width', '1.9');
+    element.setAttribute('stroke-linecap', 'round');
+    if (join) element.setAttribute('stroke-linejoin', 'round');
+    return element;
+  };
+  svg.append(
+    path('M20 5.4 C 20.6 9.2 19.4 12.6 16.4 14.4 C 13.2 16.3 9.4 16.8 5.2 16.4'),
+    path('M9.6 11.6 C 7.9 13.2 6.4 14.8 5.2 16.4 C 6.6 17.9 8.2 19.3 10 20.6', true),
+  );
+
+  const label = document.createElement('span');
+  label.className = 'nb-backlink-count font-ui';
+  label.textContent = backlinkWords(count);
+  button.append(svg, label);
+  backlinks.append(button);
+  page.append(backlinks);
+}
+
+/**
+ * Restore the leaf-owned portal target before offscreen node views finish
+ * mounting. Free stickers and page marks are document nodes, but their pixels
+ * live in this sibling layer on a real BookView leaf; without it the snapshot
+ * scene silently loses them while ordinary inline node views remain.
+ */
+export function mountStagedFreeLayer(sheet: HTMLElement): HTMLElement {
+  const existing = sheet.querySelector<HTMLElement>(':scope > .nb-free-layer');
+  if (existing !== null) return existing;
+  const layer = document.createElement('div');
+  layer.className = 'nb-free-layer';
+  layer.setAttribute('role', 'group');
+  layer.setAttribute('aria-label', 'Stickers and trim placed on this page');
+  sheet.prepend(layer);
+  return layer;
+}
+
+const snapshotFrame = (): Promise<void> =>
+  new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+function mediaReady(image: HTMLImageElement): Promise<void> {
+  if (image.complete) return Promise.resolve();
+  const loadOrError = (): Promise<void> => new Promise((resolve) => {
+    const done = (): void => resolve();
+    image.addEventListener('load', done, { once: true });
+    image.addEventListener('error', done, { once: true });
+  });
+  if (typeof image.decode !== 'function') return loadOrError();
+  return image.decode().catch(() => (image.complete ? undefined : loadOrError()));
+}
+
+/**
+ * Scene readiness barrier for portalled/custom node views and their media.
+ * withOffscreenPage's first image wait happens before this callback; the free
+ * layer is deliberately added here, so its node-view images need their own
+ * bounded decode pass before html-to-image clones the sheet.
+ */
+export async function settleStagedSnapshotScene(
+  sheet: HTMLElement,
+  capMs = 2000,
+): Promise<void> {
+  mountStagedFreeLayer(sheet);
+  // useFreeLayer retries on rAF; one frame discovers the target, one commits
+  // Solid's Portal children and custom-node-view paint.
+  await snapshotFrame();
+  await snapshotFrame();
+  const media = Array.from(sheet.querySelectorAll<HTMLImageElement>('img')).filter(
+    (image) => image.src !== '' || image.currentSrc !== '',
+  );
+  if (media.length > 0) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cap = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, Math.max(0, capMs));
+    });
+    await Promise.race([
+      Promise.allSettled(media.map(mediaReady)).then(() => undefined),
+      cap,
+    ]);
+    if (timer !== undefined) clearTimeout(timer);
+  }
+  await snapshotFrame();
+}
+
 function settleStaged(
   sheet: HTMLElement,
   pageId: string,
@@ -212,7 +499,6 @@ function settleStaged(
 export function createOffscreenPageCapture(
   options: OffscreenPageCaptureOptions,
 ): (pageId: string) => Promise<ImageBitmap | null> {
-  let fontCss: Promise<string> | undefined;
   const pixelRatio =
     options.pixelRatio ??
     snapshotPixelRatio(
@@ -241,11 +527,27 @@ export function createOffscreenPageCapture(
         // BEFORE the font work and before the capture: everything below this
         // line is about photographing the sheet, and the sheet is not the page
         // yet (see settleStaged).
+        mountStagedFreeLayer(sheet);
+        const backlinks = await loadBacklinks(pageId);
+        mountStagedBacklinks(sheet, backlinks.length);
+        const storedPitch: unknown = doc.attrs?.lineHeightPx;
+        const pitch =
+          typeof storedPitch === 'number' && Number.isFinite(storedPitch)
+            ? storedPitch
+            : DEFAULT_LINE_HEIGHT_PX;
+        alignStagedProse(sheet, pitch);
         settleStaged(sheet, pageId, doc, options, admitted);
-        // Font-embed CSS is built once and reused — the biggest per-capture
-        // cost, same policy as the mounted path.
-        fontCss ??= getFontEmbedCSS(sheet).catch(() => '');
-        const fontEmbedCSS = await fontCss;
+        // The drain may remove the first ordinary block after a special one;
+        // re-derive the decorations from the exact DOM that will be painted.
+        alignStagedProse(sheet, pitch);
+        await settleStagedSnapshotScene(sheet);
+        // Portal/media/node-view paint may change a feature block's height.
+        // Derive the grid and the frozen flow from the final pixels, not the
+        // construction frame that preceded them.
+        alignStagedProse(sheet, pitch);
+        freezeStagedListRows(sheet);
+        freezeStagedBlockFlow(sheet);
+        const fontEmbedCSS = await pageFontEmbedCSS(sheet);
         sheet.classList.add(SNAPSHOTTING_CLASS);
         // Diagrams on a staged page hit exactly the same html-to-image hole
         // as on a mounted one: class-styled SVG children clone unstyled and
@@ -263,6 +565,10 @@ export function createOffscreenPageCapture(
             fontEmbedCSS,
             imagePlaceholder: TRANSPARENT_PX,
             filter: snapshotFilter,
+            // html-to-image caches the first property list process-wide. All
+            // three page capture paths must therefore enter through the same
+            // contract, regardless of which one happens to photograph first.
+            includeStyleProperties: snapshotStyleProperties(),
           });
           return await createImageBitmap(canvas);
         } finally {

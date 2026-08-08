@@ -22,10 +22,16 @@ import {
   deleteBlock,
   duplicateBlock,
   insertParagraphNear,
+  linkUrlAt,
   toggleEffectAt,
   topLevelBlockAt,
   withBlockSelection,
 } from './blockOps';
+import {
+  insertMediaFilesInEditor,
+  pickMediaFiles,
+  readClipboardImageFile,
+} from '../media/insert';
 
 export interface ContextMenuContext {
   readonly editor: Editor;
@@ -438,11 +444,76 @@ const EFFECT_ITEMS: readonly ContextMenuItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Insert — media paths share one persistence/insertion implementation
+// ---------------------------------------------------------------------------
+
+const INSERT_ITEMS: readonly ContextMenuItem[] = [
+  {
+    kind: 'item',
+    id: 'insert-picture',
+    title: 'Picture from file…',
+    glyph: '▣',
+    run: ({ editor, pos, notify }) => {
+      void pickMediaFiles('image/*').then(async (files) => {
+        if (files.length === 0) return;
+        const block = editor.state.doc.nodeAt(pos);
+        const count = await insertMediaFilesInEditor(
+          editor,
+          files,
+          block === null ? editor.state.doc.content.size : pos + block.nodeSize,
+        );
+        notify?.(count > 0 ? (count === 1 ? 'picture added' : `${count} pictures added`) : 'picture could not be added');
+      });
+    },
+  },
+  {
+    kind: 'item',
+    id: 'insert-video',
+    title: 'Video from file…',
+    glyph: '▶',
+    run: ({ editor, pos, notify }) => {
+      void pickMediaFiles('video/*').then(async (files) => {
+        if (files.length === 0) return;
+        const block = editor.state.doc.nodeAt(pos);
+        const count = await insertMediaFilesInEditor(
+          editor,
+          files,
+          block === null ? editor.state.doc.content.size : pos + block.nodeSize,
+        );
+        notify?.(count > 0 ? (count === 1 ? 'video added' : `${count} videos added`) : 'video could not be added');
+      });
+    },
+  },
+  {
+    kind: 'item',
+    id: 'paste-image',
+    title: 'Paste image',
+    glyph: '▣',
+    run: ({ editor, pos, notify }) => {
+      void readClipboardImageFile().then(async (file) => {
+        if (file === null) {
+          notify?.('no image on the clipboard');
+          return;
+        }
+        const block = editor.state.doc.nodeAt(pos);
+        const count = await insertMediaFilesInEditor(
+          editor,
+          [file],
+          block === null ? editor.state.doc.content.size : pos + block.nodeSize,
+        );
+        notify?.(count > 0 ? 'image pasted' : 'image could not be added');
+      });
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
 // The menu
 // ---------------------------------------------------------------------------
 
 export function buildBlockContextMenu(): ContextMenuEntry[] {
   return [
+    { kind: 'submenu', id: 'insert', title: 'Insert', glyph: '＋', items: INSERT_ITEMS },
     { kind: 'submenu', id: 'turn-into', title: 'Turn into', glyph: '⇄', items: TURN_INTO_ITEMS },
     { kind: 'submenu', id: 'color', title: 'Color', glyph: 'A', items: COLOR_ITEMS },
     { kind: 'submenu', id: 'lettering', title: 'Handwriting', glyph: 'Aa', items: LETTERING_ITEMS },
@@ -475,6 +546,23 @@ export function buildBlockContextMenu(): ContextMenuEntry[] {
       glyph: '⧉',
       run: ({ editor, pos }) => {
         duplicateBlock(editor, pos);
+      },
+    },
+    {
+      kind: 'item',
+      id: 'copy-link',
+      title: 'Copy link',
+      glyph: '↗',
+      run: ({ editor, pos, notify }) => {
+        const url = linkUrlAt(editor, pos);
+        if (url === null) {
+          notify?.('no link on this block');
+          return;
+        }
+        void navigator.clipboard
+          .writeText(url)
+          .then(() => notify?.('link copied'))
+          .catch(() => notify?.('could not reach the clipboard'));
       },
     },
     {

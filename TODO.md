@@ -1,13 +1,166 @@
 # Alcove — running TODO
 
-## ⏸ PAUSED CHECKPOINT — 2026-08-06 (superseded — work resumed)
+## 🎯 OPEN — owner testing pass (2026-08-07)
 
-See `HANDOFF.md` **RESUMED** section. Spine blockers f0206/f0322 are fixed;
-demo render **#5** is the candidate WebP; Gifsmith verify-only is green (run
-31091378026); visual matrix 57/64 pass (7 baseline drifts); quiet E2E had
-parallel-contention timeouts — rerun on exclusive `:1420` before ship.
+**Start with `HANDOFF.md`.** The checked-out commit still matches
+**`origin/main`** (`b847c9d`), while the working tree contains the reviewed
+owner-testing batch described below. Do **not** discard it or push without owner
+permission.
 
-## 🎯 OPEN — everything left, in the order to do it
+**These items are symptoms and priorities, not implementation specs.** Prior
+agents wrote some of the “how” (file names, timers, cue names). **Claude should
+rethink each task once** — reproduce, measure, and ship a better fix if you see
+one. Tick the outcome, not the exact recipe in the bullet.
+
+Work **in this order** unless blocked:
+
+### Owner retest — 2026-08-08
+
+- [ ] Preserve the app-styled table scrollbars in page-turn snapshots; the
+      foreignObject/canvas copy must not fall back to browser scrollbar chrome.
+- [ ] Make the centre binding physically continuous in both turn directions:
+      keep the departing side visible until the sheet covers it, reveal the
+      arriving side progressively behind the sheet, and keep both halves at
+      the settled size/colour whenever exposed.
+- [ ] Keep the bottom outer page-corner shadow exactly the same apparent size
+      during the curl and after landing.
+- [ ] Eliminate the remaining live-page to snapshot text movement and the
+      resulting mid-turn text anomalies for ordinary and special blocks.
+- [ ] Change the seeded Welcome book's outer marker and inner ribbon from red
+      back to blue, without replacing a reader-customized binding or ribbon.
+
+### Completed owner retest — 2026-08-08
+
+- [x] Eliminate page-turn static on isolated slow turns as well as rapid turns;
+      do not treat burst overlap as the only failure mode.
+- [x] Rebuild the middle-page treatment so it belongs to the selected paper:
+      matching colour/ruling, no pasted strip, no premature reveal from behind
+      the moving page, and no abrupt rule cutoff at the gutter.
+- [x] Eliminate the remaining pre-turn and mid-turn vertical text movement on
+      both visible pages.
+- [x] Make both shipped Welcome bookmark layers red; set the inner bookmark's
+      default style to the existing Festive Gift option, and remove the brown
+      fill from the cut-out corner treatment.
+- [x] Prebuild blank destination pages with the selected paper/ruling before
+      navigation so a white leaf never flashes before its lines appear.
+
+- [x] Eliminate intermittent static during rapid page turns through playback
+      scheduling that stays clean under bursts.
+- [x] Repair the remaining page-turn seams: no top-left clipping on a
+      bottom-right turn, no shrinking outer-edge/corner shadow, no delayed
+      left half of the gutter shadow, and no text/card/diagram movement on
+      either stationary or destination page.
+- [x] Remove the leading empty gap before the first cursor choice in Settings.
+- [x] Make “mute background sounds when unfocused” opt-in rather than enabled
+      by default, without changing an existing reader's saved preference.
+- [x] Let the installer choose where the reader's library data is stored and
+      make the selected location reach the running app safely.
+- [x] Superseded: the seeded Welcome book's earlier blue marker was replaced
+      by the owner-selected red marker and Festive Gift ribbon above.
+- [x] Play the book-opening cue when the pulled cover is opened into the book,
+      separately from the shelf pull/drag cue.
+- [x] Keep forward navigation available through arbitrarily many blank pages;
+      stock pages ahead without imposing a trailing-blank ceiling.
+- [x] Restore audible book-open, page-turn and sidebar cues after the audio
+      runtime migration; keep the unlock path reliable after focus changes.
+- [x] Keep the complete destination page prepared before a turn begins, and
+      keep the right-hand leaf/page stack fixed in screen space throughout the
+      curl instead of shifting left and snapping back.
+- [x] Remove the development-only bottom-right `Shelf / Book` switch pill from
+      the open-book view.
+- [x] Prevent double ruling in special blocks that own their own internal lines.
+- [x] Audit the Welcome source and correct heading/media spacing, including the
+      “one picture properly” example.
+- [x] Ship only the animated WebP demo; remove the duplicate GIF path.
+- [x] Retire automated visual/audio/E2E/probe suites and retain only the parser,
+      pagination and version smoke gate plus TypeScript compilation.
+- [x] Install the personal global `build-without-fear` Codex skill outside the
+      repository.
+
+### 0 — Rework testing
+
+- [x] **Superseded 2026-08-08:** retire the historical unit, Playwright, visual,
+      probe and sound-metric systems. Keep only `npx tsc --noEmit` and the three
+      non-visual/non-audio invariants in `tests/smoke.test.ts`. The owner accepts
+      visual and audio behaviour directly.
+
+### 1 — Sound
+
+- [x] Static / crackle: onboarding step changes, profile preview rapid-fire,
+      page-turn playback.
+- [x] Right-click must **not** play page-turn (wrong cue).
+- [x] Todo confetti: celebration pop, **not** metal bell / wooden table tap.
+      When confetti is on, do not stack `check-done` on top.
+- [x] Confetti WAVs: source real CC0 celebration material (balloon pop / party
+      popper class) — not paper rustle, not iPhone UI taps.
+
+### 2 — Page flip
+
+- [x] Shadow / paper colour still landing late after turn — prefetch / raster
+      cache / gutter band timing. Prove with stage-2 frame captures.
+
+### 3 — Onboarding
+
+- [x] Slow down dwell / celebrate timers (owner: too fast).
+- [x] Thumbnail strip auto-closes when tour advances.
+
+### 4 — Editor
+
+- [x] Ruled lines: text sits on the rules; user-adjustable gap (page style).
+
+### 5 — Stickers / blocks
+
+- [x] Ledger + postcard: real two-column layout (not one block pretending).
+- [x] Slash menu: no overflow/clipping in narrow right column.
+
+### 6 — Media
+
+- [x] Drag-drop video onto page.
+- [x] Context menu: Insert submenu, Copy link.
+
+### 7 — Desktop / ship polish
+
+- [x] Auto-updater (Tauri plugin + dialog + signed GitHub Release feed).
+      The first updater-enabled installer is a one-time manual upgrade from
+      v0.4.0; releases after that update in-app.
+- [x] NSIS installer taglines.
+- [x] Close-to-tray.
+- [x] Mute sounds when window unfocused.
+
+### Finishing after owner localhost review
+
+- [ ] Re-render the full-length animated WebP after the owner approves this
+      localhost build. Keep all seven studio steps and every rail panel, use
+      TOC/thumbnails once each, retain the ruled ledger and kitten spreads, and
+      do not shorten the tour. The prior 93-second candidate predates the final
+      page-coordinate repair; do not start this render until the owner asks.
+
+### Blocked on owner
+
+- [ ] CI workflow on ordinary commits (Actions minutes).
+- [ ] Pin to Start `E_ACCESSDENIED` (needs keyboard grant).
+- [ ] Add the updater signing private key to GitHub Actions secrets before the
+      first updater-enabled release; existing 0.4.0 installs then need one
+      manual bootstrap installer.
+- [ ] `git push` / force-push / tag — only when they say.
+
+---
+
+## ⏸ Archive — earlier checkpoints (historical)
+
+The sections below are dated reports and completed work. **Do not treat old
+`[x]` items as open.** Use only `## 🎯 OPEN` above for current work.
+
+## ⏸ PAUSED CHECKPOINT — 2026-08-06 (superseded)
+
+See `HANDOFF.md` **2026-08-07** section. Spine blockers f0206/f0322 were fixed
+in an earlier branch; current `main` is docs-only at `b847c9d` — re-verify
+flip/sound fixes in the open list above.
+
+## 🎯 OPEN — superseded index (2026-08-06)
+
+The map below is **stale**. Use `## 🎯 OPEN — owner testing pass (2026-08-07)` at
+the top of this file instead.
 
 This index exists because the file below it is 3,900 lines of dated reports and
 293 done items interleaved with the 12 still open. The detail for every row
@@ -1141,8 +1294,8 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
 
       `.github/workflows/` holds exactly one file, `release.yml`, and it runs on
       a tag. There is no push workflow and no pull-request workflow, so every
-      gate this repository has — typecheck, 2,742 unit tests, `spec:check`,
-      `readme:check`, the icon container check — fires for the first time when a
+      gate this repository has — typecheck, the retained fast and release logic
+      gates, `spec:check`, `readme:check`, the icon container check — fires for the first time when a
       release is already being cut. Everything in between is gated by whoever
       remembers to run it.
 
@@ -1236,7 +1389,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       script is that the pictures cannot drift apart, and a set where seven
       frames show a ruled first page and sixteen do not is exactly that drift.
 
-      Before the recapture, `tests/readme.test.ts` failed on the shot manifest,
+      Before the recapture, the former `tests/readme.test.ts` gate failed on the shot manifest,
       correctly: it recorded app 0.3.0 against a tree that said 0.4.0. The
       freshness and Welcome-prose gates are green on the real 0.4.0 set now.
 
@@ -1324,7 +1477,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
          quiescent ahead-page carry token, not mere bitmap presence.
       3. **Re-capture the 24 shots** — one `--only=hero` run first to watch the
          partial-manifest guard work, then one full run, then re-read every alt
-         string against the new picture. `tests/readme.test.ts` goes green here
+         string against the new picture. The README integrity gate goes green here
          and not before.
       4. **`npm run readme:build`**, because the counts move every time an agent
          adds a probe, and they have moved a dozen times today. **Then re-read
@@ -2666,7 +2819,7 @@ agents reported honestly, plus the seams between them that I closed by hand.
       under `docs/readme/img/`.
       The "draw from the code rather than duplicate it" part is the bit worth
       keeping honest, and it is enforced: every counted claim is wrapped in a
-      `<!--f:name-->N<!--/f-->` marker and `tests/readme.test.ts` recomputes all
+      `<!--f:name-->N<!--/f-->` marker and the README integrity gate recomputes all
       nineteen from the tree — source files, docstring lines, unit tests, e2e
       specs, probes, design docs, Rust commands, and each vocabulary's size.
       It has already caught this session's prose drifting twice, which is the
@@ -3867,13 +4020,58 @@ the app quietly assumes one bookcase.
       that did not actually help was dropped rather than kept for sounding
       right. Mid-curl fidelity compared frame to frame.  `884aa8c`
 
-## 🔍 Found by audit
+## 🔍 Found by audit — resolved in the 2026-08-07 owner-testing batch
 
-A read-only hunt for bugs nobody had reported, ranked by severity. **Captured,
-not fixed** — deliberately, so each one gets its own change with its own
-verification. Every line number below was re-checked against the working tree
-while writing this list; where the hunt's note disagreed with the file, the
-file won (two paths and three line numbers were corrected).
+The original trigger notes remain below as a record of what was reproduced.
+They are historical now; this is the completion ledger and the verification
+that replaced “captured, not fixed”:
+
+- [x] **1 — history survives the first post-restart edit.** Hydration precedes
+      persistence, concurrent hydration is shared, writes are serialized, and
+      a transient DB failure remains retryable (`history-lru.test.ts`).
+- [x] **2 — the Playwright helper reaches the book.** The tutorial completion
+      flag is installed before navigation and the late overlay is stopped;
+      `.nb-book-view` was rechecked and is still applied by `BookView`.
+- [x] **3 — replacing a raster closes it.** `LruMap.set` evicts a different old
+      value, but does not close an identical object reinserted under its key.
+- [x] **4 — rapid A → B → A room changes are last-request-wins.** The world
+      tracks the in-flight room independently of the optional fade snapshot,
+      aggregates overlapping apply promises, and keeps `libraryBusy` true until
+      every superseded generation retires. The focused browser check sabotages
+      `generateTexture`, delays B after its generation is assigned, and proves
+      A issues a replacement bake and becomes terminal.
+- [x] **5 — staged diagrams render before capture.** Offscreen/export hosts
+      bypass lazy intersection. The repaired probe uses real corner turns,
+      samples both live and staged skeletons over 451 frames (0/0), exits red on
+      a finding, and its sabotage produced 31 skeleton frames / `GATE ALIVE`.
+- [x] **6 — exported diagrams keep their SVG paint.** Export capture shares
+      `inlineSvgStyles`; the real 2× PNG probe measured 0% opaque black and
+      4.91% ink over the diagram, while sabotage reached 31.97% black.
+- [x] **7 — failed or partial image paste is reported** through the existing
+      toast instead of silently consuming the clipboard.
+- [x] **8 — dialogs own focus honestly.** The shared focus helper enters,
+      traps visible controls and restores for modal cards; the live-control
+      tutorial deliberately opts out of trapping. Focused Vitest and Playwright
+      checks are green.
+- [x] **9 — late art-worker bitmaps are closed** when their timed-out job no
+      longer has an owner.
+- [x] **10 — small shelf art is keyed by effective DPR.** Carets, plaques,
+      pinned stars and continue-reading ribbons bake/reuse/destroy per scale.
+- [x] **11 — the art protocol version is enforced.** A mismatched worker is
+      retired; dead readiness/font-slot fields were removed.
+- [x] **12 — transparent shelf leftovers no longer allocate.** Empty-floor
+      doodle plumbing and its shared blank texture are gone. The star and ribbon
+      were not deleted: public product promises made them real status marks,
+      with pixel/alpha and live shelf checks instead of the old false-positive
+      `undefined !== null` assertion.
+- [x] **13 — snapshot rules and the flip document agree with the code.** Dead
+      hotspot/hairline/drag-handle rules and excludes are gone; all three page
+      capture paths share `snapshotStyleProperties`; the 64×16 mesh, endpoint
+      tint, tap easing and fallback description are current and gated.
+- [x] **14 — diagram colors have one source of truth.** `DIAGRAM_WASHES` is the
+      script's `WASH_COLORS` table itself and the unreachable plum CSS is gone.
+
+### Original findings and trigger notes (historical)
 
 The hunt's original #1 — the page-snapshot cache feeding itself forever on an
 idle open book — **is already fixed** and is not listed here; it turned out to

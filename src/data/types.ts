@@ -334,6 +334,10 @@ export interface Settings {
   // Wave 2 — system
   launchIntoLastBook: boolean;
   trayQuickCapture: boolean;
+  /** Hide to the tray on window close instead of quitting. */
+  closeToTray: boolean;
+  /** Silence cues and the ambient bed while another window has focus. */
+  muteSoundsWhenUnfocused: boolean;
   /** Absolute folder for backups, or null = app data default. */
   backupFolder: string | null;
   /** Dev overlay: FPS + texture memory. */

@@ -404,49 +404,16 @@
   transform: scale(0.96);
 }
 
-/* ----------------------------------------------------------------------------
-   Dev view switcher (App.tsx, gated behind ?dev=1 / import.meta.env.DEV).
-   A margin note in the corner, not a toolbar: it used to sit at 0.85 opacity
-   directly over the book cover's bottom-right corner in every build.
-   -------------------------------------------------------------------------- */
-.nb-dev-switcher {
-  position: fixed;
-  right: var(--space-8);
-  bottom: var(--space-8);
-  z-index: var(--z-menus);
-  display: flex;
-  gap: var(--space-4);
-  padding: 3px;
-  background: var(--paper-aged);
-  border: var(--stroke-ink-thin);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-xs);
-  opacity: 0.45;
-  transition: opacity calc(var(--dur-sm) * var(--motion-scale, 1))
-    var(--ease-out);
-}
-
-.nb-dev-switcher:hover,
-.nb-dev-switcher:focus-within {
-  opacity: 1;
-}
-
-/* Focus mode promises "the chrome melts away", but the gear and the dev
-   switcher live OUTSIDE .nb-book-view (App.tsx renders them as siblings), so
-   the rail's fade never reached them and they stayed at full strength over a
-   dimmed desk. :has() bridges the gap. Hover/focus brings them back, so
-   nothing becomes unreachable. */
-body:has(.nb-book-view.is-focus-mode) .nbs-gear-button,
-body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher {
+/* The gear lives outside .nb-book-view, so the rail's focus-mode fade cannot
+   reach it without this bridge. Hover/focus still brings it back. */
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button {
   opacity: 0.1;
   transition: opacity calc(var(--dur-md) * var(--motion-scale, 1))
     var(--ease-out);
 }
 
 body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:hover,
-body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible,
-body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:hover,
-body:has(.nb-book-view.is-focus-mode) .nb-dev-switcher:focus-within {
+body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible {
   opacity: 1;
 }
 

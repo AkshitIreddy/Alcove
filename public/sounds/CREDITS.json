@@ -1,6 +1,6 @@
 {
   "note": "Provenance for every shipped cue. Rebuild with: node scripts/gen-sounds.mjs",
-  "generated": "2026-08-03",
+  "generated": "2026-08-07",
   "attributionsRequired": [
     "Rain on Window Loop by alxl (OpenGameArt) â€” CC BY 4.0"
   ],
@@ -472,32 +472,12 @@
     ],
     "confetti": [
       {
-        "title": "Bell dings/chimes",
-        "author": "PWL",
+        "title": "Balloon pop (from Balloon Sounds)",
+        "author": "Gniffelbaf; curated by AntumDeluge",
         "licence": "CC0 1.0",
         "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/bell-dingschimes",
-        "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
-      }
-    ],
-    "confetti-2": [
-      {
-        "title": "Bell dings/chimes",
-        "author": "PWL",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/bell-dingschimes",
-        "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
-      }
-    ],
-    "confetti-3": [
-      {
-        "title": "Bell dings/chimes",
-        "author": "PWL",
-        "licence": "CC0 1.0",
-        "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "sourcePage": "https://opengameart.org/content/bell-dingschimes",
-        "sourceFile": "https://opengameart.org/sites/default/files/bell_ding%d.wav"
+        "sourcePage": "https://opengameart.org/content/balloon-sounds",
+        "sourceFile": "https://opengameart.org/sites/default/files/balloon_pop.flac"
       }
     ],
     "typing-tick-1": [

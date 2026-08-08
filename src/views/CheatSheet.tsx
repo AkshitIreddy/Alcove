@@ -20,6 +20,7 @@
 import { For, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { settings } from '../data/settings';
+import { useDialogFocus } from '../state/dialogFocus';
 import { usePanelKeys } from '../state/panelKeys';
 import {
   SHORTCUT_GROUPS,
@@ -76,10 +77,17 @@ export interface CheatSheetProps {
 }
 
 export default function CheatSheet(props: CheatSheetProps): JSX.Element {
+  let cardRef: HTMLDivElement | undefined;
+  let closeRef: HTMLButtonElement | undefined;
+
   // Mounted only while the card is up (CheatSheetHost's <Show>), so the claim
   // needs no `open` accessor. Without it the shelf answered arrows through the
   // veil — the card that lists the keys was itself losing them.
   usePanelKeys();
+  useDialogFocus({
+    container: () => cardRef,
+    initialFocus: () => closeRef,
+  });
 
   // Read the live map: a reader who moved "the catalogue" onto another key
   // must be shown the key they chose, not the one the app shipped.
@@ -93,8 +101,11 @@ export default function CheatSheet(props: CheatSheetProps): JSX.Element {
     >
       <div
         class="nb-cheat-card"
+        ref={cardRef}
         role="dialog"
+        aria-modal="true"
         aria-label="Keyboard shortcuts"
+        tabindex="-1"
         onClick={(e) => e.stopPropagation()}
       >
         {/*
@@ -111,6 +122,7 @@ export default function CheatSheet(props: CheatSheetProps): JSX.Element {
           type="button"
           class="nb-cheat-close"
           aria-label="Close keyboard shortcuts"
+          ref={closeRef}
           onClick={() => props.onClose()}
         >
           ×

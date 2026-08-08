@@ -31,17 +31,49 @@
    Pointer events stay on the surface (the controller owns the gesture).
    -------------------------------------------------------------------------- */
 .nb-flip-canvas {
+  --nb-flip-overscan-x: 10px;
+  --nb-flip-overscan-y: 10px;
   position: absolute;
-  inset: 0;
+  /* The complete GPU scene includes the 2–8px fore-edge stack outside the
+     sheet boxes, plus vertical lift from the perspective curl. X stays at the
+     flat scene's 10px contract; the controller raises symmetric Y room for a
+     corner grip without changing hotspot/layout geometry. */
+  top: calc(-1 * var(--nb-flip-overscan-y));
+  left: calc(-1 * var(--nb-flip-overscan-x));
+  right: auto;
+  bottom: auto;
   z-index: var(--z-flip);
   display: none;
-  width: 100%;
-  height: 100%;
+  width: calc(100% + var(--nb-flip-overscan-x) + var(--nb-flip-overscan-x));
+  height: calc(100% + var(--nb-flip-overscan-y) + var(--nb-flip-overscan-y));
+  /* global.css makes media responsive with `canvas { max-width: 100% }`.
+     That silently clamped this overscanned canvas back to the root width while
+     the drawing buffer and shader still used root+20: every GL x-coordinate
+     was squeezed left, putting the spine ~10px and the right fore-edge ~20px
+     left of the live DOM. This canvas is an intentional overflow overlay. */
+  max-width: none;
+  max-height: none;
   pointer-events: none;
+  opacity: 1;
 }
 
 .nb-flip-canvas.is-flipping {
   display: block;
+}
+
+/* Both live sheets stay laid out and paintable below the complete canvas scene.
+   They are opacity-hidden—not visibility:hidden—so the landing owner change is
+   one class removal, with no destination layout or media first appearing then. */
+.nb-flip-surface.is-flip-scene .nb-flip-leaf {
+  opacity: 0;
+}
+
+/* The raster endpoint and live DOM use different rasterizers. Never blend
+   them: even a one-device-pixel glyph difference becomes doubled lettering.
+   The controller waits for the live page to paint, switches atomically, then
+   clears and hides the retained GL layer on following compositor frames. */
+.nb-flip-canvas.is-flipping.is-flip-releasing {
+  opacity: 0;
 }
 
 /* ----------------------------------------------------------------------------
@@ -73,17 +105,6 @@
 .nb-flip-surface.is-flip-gesture * {
   user-select: none;
   -webkit-user-select: none;
-}
-
-/* The strip stays COLOURLESS. spread.css fills it with --wash-amber-light on
-   hover, which paints a yellow band down the outer edge of the paper and a
-   hard vertical seam where the band ends — a coloured rectangle, not a page
-   about to lift. The corner wedge below is the whole affordance. Three
-   classes so this wins on specificity wherever the two files land in the
-   cascade; the amber declaration itself belongs to spread.css's owner. */
-.nb-flip-surface .nb-flip-hotspot.nb-flip-hotspot-next,
-.nb-flip-surface .nb-flip-hotspot.nb-flip-hotspot-prev {
-  background: none;
 }
 
 .nb-flip-hotspot:active {
@@ -147,17 +168,6 @@
   transform: translateY(0);
 }
 
-/* The dog-ear at the bottom-right corner (spread.css .nb-page-curl) is drawn
-   as a flat triangle in a 34px box — but the box also carries a 1px left
-   border, and since the triangle only fills the lower-right half, that border
-   stands alone on blank paper as a dark vertical hairline beside the peel:
-   the "straight line near the bottom-right corner". The wedge is the
-   affordance; the line is a leftover edge of its box. Killed here (see the
-   note on the hotspot fill above about which file owns the declaration). */
-.nb-spread .nb-page-curl {
-  border-left: none;
-}
-
 /* ----------------------------------------------------------------------------
    Snapshotting — applied to the capture root while html-to-image clones it.
    Hide anything that must never bake into a page texture: caret, selection
@@ -172,7 +182,6 @@
   background: transparent !important;
 }
 
-.snapshotting .nb-drag-handle,
 .snapshotting .nb-style-switcher,
 .snapshotting .ProseMirror-gapcursor,
 .snapshotting .ProseMirror-dropcursor,

@@ -86,6 +86,34 @@ export function AiSpecIcon(): JSX.Element {
   );
 }
 
+/** The AI guide arriving as a file — download the Notebook Script spec. */
+export function DownloadSpecIcon(): JSX.Element {
+  return frame(
+    <>
+      <path
+        d="M 5.7 3.9 C 9.4 3.6 13 3.7 16.8 4 C 17.1 8.6 17.1 13.3 16.8 18 C 13.1 18.3 9.5 18.3 5.9 17.9 C 5.5 13.2 5.5 8.5 5.7 3.9 Z"
+        {...S}
+      />
+      <path
+        d="M 8 7.5 C 9.7 7.3 11.3 7.3 12.7 7.5 M 8 10.5 C 9.3 10.3 10.6 10.3 11.8 10.5"
+        {...S}
+        stroke-width="1.3"
+        opacity="0.55"
+      />
+      <path
+        d="M 17.9 8.1 C 18 10.8 18 13.4 17.9 16.1 M 15.7 14 C 16.5 14.9 17.2 15.8 17.9 16.7 C 18.7 15.8 19.4 14.9 20.1 14"
+        {...S}
+        stroke-width="1.6"
+      />
+      <path
+        d="M 14.6 19.9 C 16.8 20.2 18.9 20.2 21 19.9"
+        {...S}
+        stroke-width="1.4"
+      />
+    </>,
+  );
+}
+
 /** Plus over a page corner — add a page. */
 export function AddPageIcon(): JSX.Element {
   return frame(

@@ -19,7 +19,11 @@
 import type { FlatScheme } from '../../art/flat';
 import type { SpineParams } from '../../art/spines';
 
-/** Bump when a job's meaning changes so a stale worker bundle is obvious. */
+/**
+ * Bump when a job's meaning changes. The host rejects a worker whose ready
+ * handshake carries another value, so this is an enforced wire contract and
+ * not merely a diagnostic label.
+ */
 export const ART_PROTOCOL_VERSION = 3;
 
 /* --------------------------------- jobs ---------------------------------- */

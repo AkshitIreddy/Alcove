@@ -35,14 +35,13 @@
  * 2. KEYED REMOUNT — page content must be keyed by page id (PageEditor
  *    props are read once at mount, and it flushes its debounced save on
  *    unmount per docs/design/block-editor.md §8). `onNavigate` updates the
- *    host store; Solid remounts the leaves while the flip canvas still
- *    covers the spread, then the controller hides the canvas one painted
- *    frame later — that unmount is what flushes pending edits.
+ *    host store; Solid remounts the leaves synchronously before the moving
+ *    canvas is removed in that task — that unmount is what flushes pending
+ *    edits.
  * 3. `onNavigate` must be SYNCHRONOUS store work (no await): the controller
- *    draws the landed frame, calls it, and clears the overlay on the very
- *    next rAF — by which point the new leaves must have painted underneath.
- *    Page data should already be in memory (the host preloads adjacent
- *    pages).
+ *    calls it, reveals the exact live leaves and removes the moving canvas in
+ *    one task. The first flat paint is therefore the real destination. Page
+ *    data should already be in memory (the host preloads adjacent pages).
  * 4. `pageIds` null means "no page there" (e.g. cover): flipping renders a
  *    plain cream face. Omit `nextLeft`+`nextRight` as null to disable
  *    forward flips (same for prev), or pass `canFlip` for custom gating.
@@ -57,8 +56,10 @@ import { createEffect, onCleanup, onMount, type JSX } from 'solid-js';
 import { PageFlipController, type FlipPages, type LeafSide } from './PageFlipController';
 import { PageRasterCache, type RasterEntry } from './rasterCache';
 import { createOffscreenPageCapture } from './offscreenPages';
+import { measureUntransformedSheet } from '../editor/script/exporters/capture';
 import type { PageDoc } from '../data/types';
-import { flipFaceIds, type FlipDirection } from './math';
+import { type FlipDirection } from './math';
+import { flipSnapshotSceneIds } from './scene';
 import '../styles/flip.css';
 
 export interface SpreadPageIds {
@@ -187,7 +188,7 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
   };
 
   const getFlipPages = (dir: FlipDirection): FlipPages | null =>
-    canFlip(dir) ? flipFaceIds(dir, ids()) : null;
+    canFlip(dir) ? flipSnapshotSceneIds(dir, ids()) : null;
 
   // Read once, like the leaf children: a plain function prop, not JSX.
   const loadPageDoc = props.loadPageDoc;
@@ -207,9 +208,9 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
             // largest mounted sheet while the leaf is mid-remount.
             pageSize: () => {
               const el = props.getPageElement('right');
-              return el !== null && el.clientWidth > 1 && el.clientHeight > 1
-                ? { width: el.clientWidth, height: el.clientHeight }
-                : null;
+              if (el === null) return null;
+              const size = measureUntransformedSheet(el);
+              return size.width > 1 && size.height > 1 ? size : null;
             },
             // …and INSIDE the spread, so the staged sheet inherits the same
             // cascade a mounted leaf does. Staged on <body> it kept the
@@ -266,12 +267,19 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         if (pages === null) return null;
         const has = (id: string | null): boolean =>
           id === null ? true : cache.get(id) !== undefined;
-        const state = cache.qaState([pages.front, pages.back, pages.revealed]);
+        const state = cache.qaState([
+          pages.stationary,
+          pages.front,
+          pages.back,
+          pages.revealed,
+        ]);
         const ahead = props.aheadWorkState?.() ?? { pending: 0, revision: 0 };
         return {
+          stationary: pages.stationary,
           front: pages.front,
           back: pages.back,
           revealed: pages.revealed,
+          hasStationary: has(pages.stationary),
           hasFront: has(pages.front),
           hasBack: has(pages.back),
           hasRevealed: has(pages.revealed),

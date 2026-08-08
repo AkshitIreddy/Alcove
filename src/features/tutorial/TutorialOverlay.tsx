@@ -97,6 +97,7 @@ import {
   tutorialRunning,
 } from './state';
 import { motionScale } from '../../styles/motion';
+import { useDialogFocus } from '../../state/dialogFocus';
 // How far into the window the open side sheet reaches. `panelPush` owns the
 // number, publishes it on <html>, and now also owns the one correct way to
 // read it back — the tour kept a private copy of that rule and BookView kept
@@ -167,11 +168,12 @@ function resolveAnchor(step: TutorialStep): Rect | null {
 const stepPresent = (step: TutorialStep): boolean => findTarget(step) !== null;
 
 /**
- * A modal question standing over the tour, whose keys are its own.
+ * A modal dialog standing over the tour, whose keys are its own.
  *
- * The one that ships is the taste questionnaire (`./tasteQuestionnaire.tsx`),
- * which the `taste` step puts on screen: a sheet with its own scrim, its own
- * Escape ("leave without dressing anything") and its own ← →.
+ * The taste questionnaire (`./tasteQuestionnaire.tsx`) is opened by the tour
+ * itself, but it is not the only possible owner: the root-level shortcut card
+ * and any other modal can be opened while the non-modal teaching card remains
+ * behind it. All of them have their own Escape, and some own ← → as well.
  *
  * IT CANNOT DEFEND THOSE KEYS BY ITSELF, and that is the whole reason this
  * exists. Both it and this overlay hold a capture-phase `keydown` on `window`,
@@ -181,11 +183,13 @@ const stepPresent = (step: TutorialStep): boolean => findTarget(step) !== null;
  * ← → in the questionnaire moved both. The tour is the thing behind, so the tour
  * is the thing that stands down.
  *
- * A selector, treated as a hint in the usual way (see ./probe.ts): a panel that
- * renames its layer gets the old behaviour back rather than a crash.
+ * Use the accessibility contract rather than a feature class. The tutorial's
+ * own card is explicitly `aria-modal="false"`; any visible dialog declaring
+ * `aria-modal="true"` is the foreground owner and the tour must stand down.
+ * This also means a new modal gets correct keyboard ownership without being
+ * added to a private selector list here.
  */
-const MODAL_OVER_TOUR = '.nbq-layer';
-
+const MODAL_OVER_TOUR = '[role="dialog"][aria-modal="true"]';
 
 /** Does this press belong to a control on the card rather than to the card? */
 function onCardControl(target: EventTarget | null): boolean {
@@ -250,6 +254,18 @@ export default function TutorialOverlay(): JSX.Element {
   let lastStepShown = -1;
   /** Pending auto-advance, cancelled by any manual navigation. */
   let advanceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // This card teaches against LIVE controls, so unlike a modal it must let Tab
+  // continue into the highlighted shelf/page. It still takes initial focus so
+  // its Enter/Escape instructions are true, and gives the opener back only if
+  // the reader was still in the card when the tour ended.
+  useDialogFocus({
+    container: () => cardEl,
+    initialFocus: () => cardEl,
+    open: tutorialRunning,
+    trap: false,
+    restore: 'if-contained',
+  });
 
   /**
    * The steps of THIS run. Everything below indexes into this list, never into
@@ -332,7 +348,6 @@ export default function TutorialOverlay(): JSX.Element {
    */
   function chooseLength(next: TourLength): void {
     setTutorialLength(next);
-    void play('pop-soft', { volume: 0.5 });
     // The list has just changed shape underneath us; step on from the
     // greeting, which is index 0 of both tours.
     queueMicrotask(() => {
@@ -849,20 +864,6 @@ export default function TutorialOverlay(): JSX.Element {
     window.addEventListener('keydown', handler, true);
     onCleanup(() => window.removeEventListener('keydown', handler, true));
   });
-
-  // Focus the card so Enter works without the reader clicking first — but
-  // never steal it back from a page, panel or search bar they have moved into
-  // to do what the step asked.
-  createEffect(
-    on([tutorialRunning, stepIndex], () => {
-      if (!tutorialRunning()) return;
-      queueMicrotask(() => {
-        const active = document.activeElement;
-        if (active !== null && active !== document.body && !cardEl?.contains(active)) return;
-        cardEl?.focus({ preventScroll: true });
-      });
-    }),
-  );
 
   /* ------------------------ e2e / debug surface -------------------------- */
 

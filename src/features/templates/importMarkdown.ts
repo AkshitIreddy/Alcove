@@ -17,7 +17,6 @@ import type { Book } from '../../data/types';
 import { appState } from '../../state/app';
 import { editorState } from '../../editor/state';
 import { notify } from '../../editor/script/exporters/toast';
-import { play } from '../../sound/engine';
 import { createBookFromScript } from './createFromScript';
 import { titleFromFileName } from './split';
 
@@ -131,7 +130,6 @@ export async function importMarkdownBooks(): Promise<Book[]> {
   }
   if (books.length === 0) return books;
 
-  void play('pop-soft');
   notify(
     books.length === 1
       ? `imported “${books[0].title}”`

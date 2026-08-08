@@ -29,6 +29,7 @@ function ImageRowView(props: SolidNodeViewProps): JSX.Element {
     <NodeViewWrapper
       class="nb-image-row"
       classList={{ 'is-selected': props.selected }}
+      data-nb-block-flow="feature"
       data-count={props.node.childCount}
     >
       <NodeViewContent class="nb-image-row-track" />

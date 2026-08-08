@@ -35,12 +35,9 @@
  *                 its takes from.
  *   JITTER        a scale on the per-play pitch/level wobble. 0.2 is a
  *                 machine; 2.4 is a wind-up toy.
- *   FILTER        a real BiquadFilterNode chain on howler's master bus. See
- *                 `sound/filter.ts` for what Howler does and does not expose;
- *                 the short version is that this lever is genuinely a filter
- *                 and is genuinely per-SET rather than per-role, because the
- *                 only public seam is `Howler.masterGain → ctx.destination`
- *                 and everything reaches that already mixed.
+ *   FILTER        real BiquadFilterNodes wrapped by Pixi Sound's public
+ *                 `filtersAll` surface. It is genuinely per-SET rather than
+ *                 per-role because every cue reaches that master chain.
  *
  * Only seven sets carry one, and that is a judgement rather than a limit: the
  * cues are conditioned once by `gen-sounds.mjs` against measured centroid and
@@ -222,7 +219,10 @@ export const SOUND_SET_GROUPS: Record<SoundSetGroupId, SoundSetGroup> = {
       'tick-hover': { gain: 0.8 },
       'pop-soft': { cue: 'page-flip', rate: 1.08, gain: 0.35 },
       'check-done': { cue: 'click-soft', rate: 1.06 },
-      confetti: { cue: 'book-pull', rate: 1.16, gain: 0.75 },
+      // A celebration stays a celebration in every audible set. Substituting
+      // a book riffle here made the same confetti effect sound like somebody
+      // handling paper off-screen.
+      confetti: { cue: 'confetti', rate: 1.05, gain: 0.72 },
       'drop-thump': { rate: 1.02, gain: 0.8 },
       'chime-hour': { rate: 0.99, gain: 0.8 },
       'shelf-whoosh': { gain: 0.9 },
@@ -296,10 +296,9 @@ export const SOUND_SET_GROUPS: Record<SoundSetGroupId, SoundSetGroup> = {
         layer: { cue: 'pop-soft', rate: 1.45, gain: 0.55, delayMs: 110 },
       },
       confetti: {
-        cue: 'pop-soft',
+        cue: 'confetti',
         rate: 1.1,
-        gain: 0.8,
-        layer: { cue: 'pop-soft', rate: 1.3, gain: 0.5, delayMs: 90 },
+        gain: 0.78,
       },
       'page-flip': { gain: 0.85 },
       'book-pull': { gain: 0.85 },
@@ -559,7 +558,7 @@ const SET_LIST = [
     blurb: 'the panels ring too — the loudest set in the app',
     voices: {
       'pop-soft': { cue: 'check-done', rate: 1.18, gain: 0.45 },
-      confetti: { cue: 'chime-hour', rate: 1.12, gain: 0.7 },
+      confetti: { cue: 'confetti', rate: 1.12, gain: 0.7 },
       'chime-hour': { rate: 0.96 },
     },
   },
@@ -757,7 +756,7 @@ export function resolveSoundSetId(value: unknown): SoundSetId {
 /* ───────────────────────────── resolution ───────────────────────────────── */
 
 /**
- * Rate bounds. Howler itself accepts 0.5–4; the narrow window here is a
+ * Rate bounds. The backend accepts a much wider range; this narrow window is a
  * musical judgement — past a quarter either way a page turn stops sounding
  * like paper — and it is also what makes the two multiplier layers safe to
  * compound without anyone having to check the product by hand.

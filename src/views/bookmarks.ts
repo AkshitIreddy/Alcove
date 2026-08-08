@@ -486,19 +486,18 @@ export interface RibbonDesign {
 /**
  * The ribbon a book that has never been dressed wears.
  *
- * Deliberately not the old flat rectangle: the reader called the shipped
- * defaults *"boring/bland/cheap"*, and the first ribbon anyone ever sees is a
- * default. A moss grosgrain band with a swallowtail and a gilt bead is still
- * quiet enough to sit on any cover.
+ * Deliberately not the old flat rectangle: the reader chose the existing
+ * Festive / Gift design as the shipped inner-bookmark default. Stored book
+ * choices still win; this is only what an undressed book (or junk data) gets.
  */
 export const DEFAULT_RIBBON: RibbonDesign = {
-  cloth: 'moss',
-  weight: 'band',
+  cloth: 'postbox',
+  weight: 'sash',
   tail: 'swallowtail',
-  material: 'grosgrain',
-  charm: 'bead',
+  material: 'silk',
+  charm: 'none',
   charmTone: 'gilt',
-  preset: 'reading-room',
+  preset: 'gift',
 };
 
 const byId = <T extends Named>(list: readonly T[]): ReadonlyMap<string, T> =>
@@ -934,10 +933,15 @@ export function ribbonCss(design: RibbonDesign): string {
   background-repeat: no-repeat;
   background-position: 0 0;
   background-size: 100% 100%;
+  /* The legacy six-colour CSS paints a solid fallback behind this SVG. Its
+     brown face showed through the transparent swallowtail/notch cut-outs,
+     making an intentionally cut corner look filled in. The drawing is the
+     complete ribbon now, so every pixel outside its polygon stays clear. */
+  background-color: transparent;
 }`,
   ];
   const paint = (selector: string, slot: RibbonColor): string =>
-    `${selector} { background-image: ${svgDataUri(ribbonSvg(design, { slot }))}; }`;
+    `${selector} { background-color: transparent; background-image: ${svgDataUri(ribbonSvg(design, { slot }))}; }`;
   for (const slot of RIBBON_COLORS) {
     out.push(paint(`:root .nb-ribbon[data-color='${slot}']`, slot));
   }

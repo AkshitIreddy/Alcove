@@ -26,7 +26,10 @@ dedication or CC0, sliced to a single event and conditioned by
 > The next pass took the lesson. Reading the same report row by row found
 > **three more defects nobody had heard either** — the button click, the
 > keystroke and one page turn — and all three are fixed below under *Three
-> more the report found*. The set is **25 recordings** now, up from the 15 the
+> more the report found*. Confetti later moved from a disguised bell shimmer to
+> one exact CC0 balloon-pop recording; its singleton family is deliberate,
+> because fake pitch-shifted variants would make the cue worse. The set is
+> **26 recordings** now, up from the 15 the
 > survey counted.
 
 One source (the rain bed) is CC BY 4.0. **The obligation is discharged in the
@@ -125,7 +128,7 @@ All verified by reading each submission's own licence field (not badge
 images, which also appear in OpenGameArt sidebars for unrelated work — that
 distinction caught the rain bed, filtered as CC0 but actually CC BY 4.0).
 
-Twenty-five recordings. The table is generated-adjacent rather than
+Twenty-six recordings. The table is generated-adjacent rather than
 hand-maintained prose: `CREDITS.json` is rewritten from the same `SOURCES`
 object on every build, so if a row here disappears from that object the
 manifest says so. **Kenney's Interface Sounds is no longer in it** — that is
@@ -150,6 +153,7 @@ commit longer than it should have.
 | Metal box springs open | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Metal_box_springs_open.ogg) |
 | Cracking peanuts | stephan | Public domain (`PD-author`, via pdsounds.org) | [Commons](https://commons.wikimedia.org/wiki/File:Cracking_peanuts.ogg) |
 | Bell dings/chimes | PWL | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/bell-dingschimes) |
+| Balloon pop (from Balloon Sounds) | Gniffelbaf; curated by AntumDeluge | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/balloon-sounds) |
 | Fireplace Sound loop | PagDev | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/fireplace-sound-loop) |
 | Crickets Ambient Noise | Wolfgang_ (Ted Kerr) | CC0 1.0 | [OpenGameArt](https://opengameart.org/content/crickets-ambient-noise-loopable) |
 | Rain on Window Loop | alxl | **CC BY 4.0 — attribution required** | [OpenGameArt](https://opengameart.org/content/rain-on-window-loop) |
@@ -198,16 +202,14 @@ not require it; the panel credits them anyway, which is cheap and decent.
 The manifest's `sounds` map is **an array per cue**, because a layered bed is
 built from more than one recording — `ambient-night` credits both the crickets
 and the wind. `src/sound/credits.ts` regroups it the other way for display (one
-entry per recording, with the cues it became) and is unit-tested against the
-real file: `tests/sound.test.ts` asserts every shipped cue has provenance, that
-`attributionsRequired` matches what the per-cue flags say, and that anything
-whose licence string contains "CC BY" is flagged. A rebuild that quietly lost
-the credit fails there rather than in a licence complaint.
+entry per recording, with the cues it became). Every rebuild rewrites this
+manifest from the same provenance table as the audio, including the required
+CC BY flag.
 
 ## Which recording became which cue
 
 One recorded world, the way the art is one drawn world — the interface is
-made of paper, graphite, books, small struck objects and a brass bell, not of
+made of paper, graphite, books, small struck objects, a balloon and a brass bell, not of
 synthesised blips.
 
 | Family | Comes from |
@@ -222,16 +224,16 @@ synthesised blips.
 | `check-done` ×4 | a small bell allowed to ring out |
 | `crumple-delete` ×4 | paper actually being crushed |
 | `drop-thump` ×4 | a book shutting / meeting a surface |
-| `confetti` ×3 | one bell strike sounded three or four times — a shimmer, not a jingle |
+| `confetti` | one real balloon pop; if it fails listening review, this decorative role goes silent rather than borrowing an unrelated sound |
 | `pencil-scratch` | a 210 ms seamless loop of the pencil recording |
 | `typing-tick` ×6 | isolated keystrokes off two keyboards — hunt-and-peck ×5, a chunky-keyed PC board ×1 |
 | `chime-hour` ×3 | three or four real strikes in sequence, because an hour bell *is* a sequence |
 | `ambient-*` ×10 | one field recording each — see *The soundscapes* above |
 
-### Three more the report found
+### Three more source corrections
 
-The `pop-soft` discovery was made by reading `report.txt`, not by listening.
-Read the rest of it the same way and three more cues fail on their own numbers.
+The `pop-soft` discovery came from comparing the cue's physical source with
+the role it was meant to voice. Three more cues failed that same review.
 None of the three is a conditioning problem, and that is the finding worth
 keeping: **each one is a cue whose SOURCE is the wrong physical event**, and no
 ceiling, lid or level moves a recording from one kind of event to another.
@@ -264,9 +266,8 @@ defect wearing a better hat.
 **`tick-hover` ×5 and `typing-tick` ×6 were the same 60-second pencil take,
 interleaved.** Measured, they were indistinguishable — 1546–1586 Hz against
 1477–1601 Hz, one range inside the other — and the only thing telling a
-keystroke from a hover was 9 dB of level. `tests/sound.test.ts` cannot catch
-this and is not wrong to miss it: its variety check compares takes *within* a
-family, and each family was internally various. The defect only exists
+keystroke from a hover was 9 dB of level. Within-family variety metrics cannot
+catch this because each family was internally various; the defect only exists
 *between* two families.
 
 The hover keeps the pencil, which is the half worth keeping: a hover is a
@@ -287,9 +288,8 @@ straight back on top of the hover. Three of the quietest cues in the app fire
 within the same second of the same gesture, so it is not enough that they come
 from different objects; they have to sit in different places.
 
-**Where the envelope peaks is the check worth adding to the next pass.** It is
-not in `tests/sound.test.ts` and it should be read off the files by hand until
-it is: a hover is friction, so its energy is spread over the whole window and
+**Where the envelope peaks is worth reading off the files by hand.** A hover is
+friction, so its energy is spread over the whole window and
 its loudest moment is wherever the graphite happened to catch. A keystroke and
 a button press are contact events, so they are loudest in the first 8–17 ms and
 decay from there. That one number separates the three quiet cues more sharply
@@ -355,104 +355,62 @@ lands a tick just under a page turn instead of under the room. The same
 arithmetic set `click-soft` at −19: 5 dB beneath `pop-soft`, so pressing a
 button stays smaller than opening a panel.
 
-## Sets: the two levers that were written off
+## Playback backend and unlock contract
 
-`TODO.md` carried one line about the sound sets for a long time:
+Playback uses **`@pixi/sound` 6.x**, the release line officially paired with
+PixiJS 8 in the [Pixi Sound compatibility table](https://pixijs.io/sound/docs/index.html).
+It gives the app one maintained audio context, decoded preload state, per-play
+volume/speed options, and the public `filtersAll` bus surface. Keeping these on
+public APIs matters: the intermittent static was most likely to appear at
+backend lifecycle and first-sample gain seams, so the engine no longer reaches
+through a library's private voice nodes or changes gain after playback begins.
 
-> No "add your own set" for sound, and no runtime filtering in a set's levers
-> (Howler exposes rate and volume per play, not a filter node).
+The backend is a **static application dependency**, not a lazy dynamic import.
+This is load-bearing with Vite: when Pixi Sound was first loaded through its
+own optimized-dependency URL after the shelf's PixiJS module already existed,
+Pixi's canvas extension table was evaluated a second time and threw
+`canvas-system already has a handler`. No AudioContext or WAV request ever
+existed in that failure mode. One initial module graph gives the shelf and
+sound one Pixi extension registry. `prepareInteractionAudio()` then pre-decodes the
+page-turn, book-open and book-rail click families. A cue that arrives before
+decode/unlock is retained in a bounded, expiring queue and replayed once; rapid
+roles have explicit cooldown and voice caps so repeated page-edge presses
+cannot create an unbounded transient pile-up. Decode failures, fallback use,
+unlock attempts, queue expiry and concurrency drops are exposed by
+`getEngineState().backend` rather than disappearing as unexplained silence.
 
-Both halves have now been taken seriously and they did not come out the same
-way. **One was wrong and is now built. The other is half right, and the half
-that is right is a real, permanent limit** — written down below in the exact
-shape it takes, because the interesting thing about a "no" is where it stops.
+Page turns are stricter than ordinary controls. The recordings are 300–430ms
+broadband events and Pixi mixes every live instance through one dynamics
+compressor; two valid page buffers overlapping during the compressor's release
+can be perceived as a burst of static. The engine never stops a live page
+instance (a hard stop would create a real discontinuity). It voices the first
+turn, keeps the rest of a rapid stream silent, and rearms only after 650ms of
+quiet. `backend.burstDrops` makes that decision inspectable. The separate
+pulled-cover → open-pages transition uses one restrained concrete page take,
+not the shelf-pull cue.
+
+Browser autoplay policy is handled literally. MDN recommends creating or
+resuming an `AudioContext` from a user gesture
+([Web Audio best practices](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Best_practices),
+[`AudioContext.resume()`](https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/resume)).
+The engine therefore installs a capture-phase `pointerdown`/`keydown` broker
+synchronously. The broker calls Pixi's empty-buffer unlock and
+`resume()` inside every trusted dispatch, then releases queued BufferSources
+against the suspended audio clock while resume is pending. A trusted in-app
+gesture also repairs focus-derived muting (WebView2 can report
+`document.hasFocus()` one turn late), but never overrides the reader's hard
+mute. A closed hardware context is rebuilt through Pixi's documented `init()`
+path on the next gesture and its old decoded cache is discarded.
 
 ### A set's filter is real, and it is a master bus
 
-The parenthetical is true about `Howl`: it has `rate()` and `volume()` per
-play and no tone control of any kind. It is not true about **`Howler`**, the
-namespace beside it. Two of its fields are public, documented in
-`@types/howler`, and described by howler's own source as being there for
-"plugins or advanced usage":
-
-- `Howler.ctx` — the `AudioContext`
-- `Howler.masterGain` — the `GainNode` every playing sound connects to
-
-Every sound in the app is already mixed into `masterGain`, and `masterGain`
-connects to `ctx.destination`. That last hop is a seam, and `src/sound/filter.ts`
-cuts it:
-
-```
-masterGain ──▶ destination                            howler's own wiring
-masterGain ──▶ biquad ──▶ [biquad] ──▶ destination    ours
-```
-
-So a set's `filter` is a chain of **real `BiquadFilterNode`s in the browser's
-own Web Audio graph**. It is not an EQ baked into a file, and it is not a gain
-trim dressed up as a filter. `scripts/probe-sound-bus.mjs` proves that by
-measurement rather than by assertion: it feeds a tone into `Howler.masterGain`
-in the running app, reads an `AnalyserNode` either side of the installed chain,
-and compares the difference against what the wired node's own
-`getFrequencyResponse()` predicts. Measured, on the dev server:
-
-| Set | Chain | Tone | Measured | The node's own maths |
-| --- | --- | --- | --- | --- |
-| `house` | *none* | 300 Hz / 8 kHz | 0.0 dB | 0.0 dB |
-| `far-room` | lowpass 1500 Hz | 300 Hz | +0.2 dB | +0.2 dB |
-| `far-room` | lowpass 1500 Hz | 8 kHz | **−30.6 dB** | −30.6 dB |
-| `music-box` | highpass 520 + peak 3.2 k | 120 Hz | **−25.2 dB** | −25.2 dB |
-| `music-box` | highpass 520 + peak 3.2 k | 3.2 kHz | **+3.1 dB** | +3.1 dB |
-| `drafting-table` | *inherited from its group* | 60 Hz | **−20.5 dB** | −20.5 dB |
-
-Two things about that table are worth stating rather than leaving to be
-rediscovered:
-
-**The `house` row is 0.0 dB by construction, not by measurement.** With no
-chain installed there is no tail to tap, so both analysers sit on the same
-`masterGain` and the difference can only be zero. What that row actually
-proves is the thing next to it — `installed: false` and an empty node list,
-i.e. howler's own `masterGain → destination` hop is still what the audio
-passes through. The probe asserts it in those terms.
-
-**The probe waits on the audio clock, never on the wall clock.** A freshly
-built `AudioContext` reports `state === 'running'` before its render thread has
-produced a single quantum — measured here, `ctx.currentTime` advanced 0.011 s
-across a 500 ms `setTimeout` — and an `AnalyserNode` that has never been fed
-returns `-Infinity` in every bin, which subtracts to `NaN`. Sleeping on
-`setTimeout` therefore made the probe fail the very claim it exists to confirm,
-on exactly the runs where the context was newest. It now polls
-`ctx.currentTime` (which only moves when audio has really been rendered) and
-reports a silent analyser as a **rig failure** rather than as a filter result.
-If a future edit reintroduces a wall-clock sleep, the first two or three sets
-measured will start failing intermittently and the filter will look broken when
-it is not.
-
-#### What it genuinely cannot do, and why
-
-1. **It is per-SET, never per-ROLE.** The seam is the master bus, and
-   everything arrives there already mixed — including the ambient bed. A
-   per-role filter would mean reaching into one playing sound's own gain node,
-   which lives at `howl._sounds[i]._node`: private, undocumented, and
-   re-created on every play. A voicing lever built on that would break on a
-   howler patch release and break *silently*, which is worse than not having
-   it. A set's filter is therefore a property of the room the app is heard in
-   — which is the only thing any of the sets wanted to say anyway.
-2. **It needs the Web Audio backend.** With `Howler.usingWebAudio === false`
-   (no `AudioContext`, or a `Howl` opted into HTML5 streaming) there is no
-   master gain to cut into, no filter is installed, and `busFilterStatus()`
-   says exactly that rather than pretending. `getEngineState().filter` carries
-   `installed`, `supported` and a `reason`, and QA is expected to read them.
-3. **The context can be replaced under us.** `Howler.unload()` closes the
-   `AudioContext` and builds a fresh `masterGain` wired straight to the new
-   destination, throwing our chain away. `applyBusFilter` is therefore cheap
-   and idempotent — it compares the context identity and the requested chain
-   and returns immediately when neither moved — so the engine can simply call
-   it on the play path instead of trying to predict howler's lifecycle.
-4. **Failure is never allowed to be silence.** Every rewire runs inside a
-   `try`/`catch` whose recovery is `masterGain.connect(destination)`, the exact
-   wiring howler shipped. The worst case is an unfiltered app, not a
-   disconnected one. `tests/sound-own.test.ts` drives a context whose
-   `createBiquadFilter` throws and asserts the master gain comes back.
+Pixi Sound's public [`filtersAll`](https://pixijs.io/sound/docs/SoundLibrary.html)
+surface accepts `Filter` wrappers around real `BiquadFilterNode`s. A sound
+set's chain is therefore genuine Web Audio processing, not baked EQ or a gain
+trim. It remains per-set rather than per-role because it intentionally applies
+to the complete mix. If Web Audio or filter construction is unavailable,
+`filtersAll` is cleared and playback continues unfiltered; `busFilterStatus()`
+reports that fallback explicitly.
 
 Only a minority of the twenty-eight sets carry a filter, and that is a
 judgement rather than a limit. The cues are already conditioned once against
@@ -539,8 +497,8 @@ module-scope map a reload empties. `hydrate` therefore *drops* a cue whose file
 no longer resolves rather than registering a dead `src` — a dropped cue falls
 through to the base and the reader hears the app, where a registered-but-broken
 one would be one role silent forever with nothing on screen to say why.
-`scripts/probe-own-sounds.mjs` asserts that fallback rather than pretending the
-dev shell can do what the packaged app does.
+That fallback is intentional; the browser shell must not pretend it can retain a
+file URL across reloads.
 
 ## Rebuilding
 
@@ -552,7 +510,7 @@ Needs `ffmpeg` on `PATH` (decoding only) and, on a cold cache, network access.
 Sources are cached in `os.tmpdir()/notebook-sound-sources`, deliberately
 **outside** the repo: the ~130 MB of raw material is not vendored, only the
 12 MB of conditioned cues under `public/sounds/`. Every run rewrites
-`CREDITS.json` and `report.txt` from the same tables that drive the audio, so
+`CREDITS.json` from the same tables that drive the audio, so
 provenance cannot drift from what actually shipped.
 
 ## Contract with `src/sound/engine.ts`
@@ -560,13 +518,11 @@ provenance cannot drift from what actually shipped.
 66 files named exactly as `SoundName` enumerates them, 44.1 kHz / 16-bit /
 mono, served from `/sounds/<name>.wav`. The `plain` / `full` split in
 `VARIANT_WEIGHTS` still means "shorter take" / "longer take", so within each
-family the `full` entries are cut longer; `tests/sound.test.ts` measures the
-actual files to keep the two in step.
+family the `full` entries are cut longer.
 
 `SOUNDSCAPE_LOOPS` is the single source of truth for the bed list: the settings
-chips, the `Settings['soundscape']` validator, `ALL_SOUND_NAMES` and the test
-suite all derive from it, so adding a bed to `gen-sounds.mjs` and to that map
-is the whole change.
+chips, the `Settings['soundscape']` validator and `ALL_SOUND_NAMES` derive from
+it, so adding a bed to `gen-sounds.mjs` and to that map is the whole change.
 
 The engine no longer plays a `SoundName`, it plays a `Cue`: a URL, a category,
 a loop flag and a cache key. `/sounds/<name>.wav` is simply the shipped way of
@@ -574,7 +530,7 @@ naming one, and `shippedCue()` is the adaptor for everything that still names a
 file. That indirection is what lets one of the reader's own files be played by
 the same path with the same volume slider, the same jitter and the same set
 gain — a reader's key carries a `|` and so cannot collide with a `SoundName` in
-the Howl cache. Its category comes from the **role**, derived from that role's
+the decoded-sound cache. Its category comes from the **role**, derived from that role's
 own first take, so a page turn they recorded still moves with the pages slider
 and no new mapping has to be maintained.
 
@@ -597,29 +553,10 @@ menuitem|option]`, minus anything `disabled`, `aria-disabled` or marked
 
 ## Acceptance
 
-`tests/sound.test.ts` (286 assertions) is the gate and all of it passes on the
-recorded set: format and duration bounds, warmth ceilings, the click metrics
-(max adjacent-sample step ≤ 25% of peak, first 0.5 ms ≤ 4% of peak, edges at
-zero), the loudness hierarchy, per-family variety, loop seam continuity, the
-button-click delegation rules, and the licence manifest itself.
-
-`tests/sound-sets.test.ts` covers the named voicings; `tests/sound-own.test.ts`
-covers the two levers above. The split of what each kind of check can settle is
-deliberate and is stated in that file's header:
-
-- A **stub graph** answers what is connected to what — a chain built and never
-  connected, a master gain left disconnected after a throw, a re-wire running
-  on every play. It cannot answer whether a filter filters, because nothing in
-  it processes a sample.
-- **`scripts/probe-sound-bus.mjs`** answers that, in a real `AudioContext`, by
-  measurement (the table above).
-- **`scripts/probe-own-sounds.mjs`** answers the other seam — whether a
-  reader's file is actually *played* — from the network, because howler fetches
-  the URL it was handed. The seeded cue is a shipped WAV under a query string
-  no other code path in the app would ever request, so a request for it is
-  unambiguous. A panel, a registry and a store can all agree that a file is
-  assigned to a role while the app still plays the shipped cue, since the
-  decision is made inside `playRole`, below all three.
+Run `npx tsc --noEmit` and `npm test`, then audition the affected gestures in the
+running app. Listen for click/static defects, loudness hierarchy, per-family
+variety, loop seams, and whether an imported cue actually replaces its shipped
+role. The licence manifest must still match the regenerated audio table.
 
 Two findings worth keeping:
 

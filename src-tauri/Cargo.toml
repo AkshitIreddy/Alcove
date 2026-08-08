@@ -1,7 +1,7 @@
 [package]
 name = "alcove"
 version = "0.4.0"
-description = "Alcove - a flat-drawn bookshelf that opens into hand-drawn pages"
+description = "Alcove — a storybook library for notes, diagrams, tape, and stickers"
 authors = ["Akshit"]
 edition = "2021"
 
@@ -27,7 +27,8 @@ tauri-plugin-fs = "2.5.1"
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-window-state = "2.4.1"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 scraper = "0.27.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls"] }
 zip = { version = "5", default-features = false, features = ["deflate"] }
-

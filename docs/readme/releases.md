@@ -17,7 +17,62 @@ to — those notes are generated at the tag by
 against the previous one. This page is the human summary beside it.
 
 Every number below is read out of the module that defines it and wrapped in a
-marker `npx vitest run` recomputes, exactly as on the other three pages.
+marker `npm test` recomputes, exactly as on the other three pages.
+
+## Unreleased — local owner-testing checkpoint
+
+This checkpoint is deliberately local: it has **not** been pushed, tagged or
+published, and the animated WebP has not been re-rendered for it.
+
+**The desktop build can update itself from signed GitHub Releases.** A new
+release is checked from inside the installed executable, shown as an explicit
+download/install choice, and handed to Tauri's signed updater. Existing 0.4.0
+installations still need one manual bootstrap installer before they can use
+that path. The release workflow now emits updater metadata alongside the
+platform installers; the signing private key remains outside the repository.
+
+**Installation and ownership are clearer.** Windows setup can choose the
+library-data folder, the running app resolves that location consistently for
+the database, media and backups, close-to-tray is wired end to end, and the
+uninstaller continues to preserve the library unless the reader explicitly
+chooses otherwise.
+
+**The Welcome book became the complete product tour.** Its forty-eight authored
+leaves demonstrate ordinary writing, pagination, the catalogue, cards and
+keepsakes, images and local video, hand-drawn diagrams, mathematics, code,
+links, history, sharing and customization. The source was re-cut around real
+page capacity, and the book now carries an authored cover/ribbon treatment
+rather than inheriting a generic rectangle.
+
+**Notebook Script and media travel further.** The AI-format sheet can be copied
+or downloaded as a Markdown file, with an honest warning that the full grammar
+can exceed a chat paste limit. Images and videos share one insertion path;
+drag/drop, paste, file choice and the block context menu all reach stored local
+media without turning a page into a cloud upload.
+
+**Reading and editing received the accumulated owner-test repair pass.** Blank
+destination spreads are prepared before a turn, page turns use complete staged
+snapshots, page links/backlinks/free marks survive capture, table and special
+block structure is retained, page-local ribbons do not follow the reader to
+another leaf, and arbitrary trailing blank pages remain reachable. Page-turn
+audio is isolated from the busy Pixi/WebGL path and uses one measured clean
+recording; the owner confirmed the static is gone. Confetti likewise ships one
+acceptable cue and stays silent rather than substituting a poor one.
+
+**The old catch-all QA repository was retired.** Thousands of historical unit,
+Playwright, waveform, baseline and one-off probe files had become a second
+product whose results no longer matched owner acceptance. The everyday gate is
+now TypeScript plus five high-signal parser/pagination/version smoke checks;
+release and visual judgement remain deliberate activities rather than an
+automatic claim that rendered pixels or sound are correct.
+
+**Known before the next release:** table scrollbars lose their app styling in
+turn snapshots; the two halves of the centre binding do not yet reveal with the
+physical sheet in both directions; the bottom corner mark changes apparent
+size; some text still shifts when ownership changes from live DOM to the page
+snapshot; and the Welcome marker is changing back to blue. These are recorded
+at the top of `TODO.md`. No release or demo refresh should happen before that
+list is cleared and the owner accepts the localhost build.
 
 ## 0.4.0 — the current build
 
@@ -316,7 +371,7 @@ every bookcase, scheduled ZIP backups, `.nbk` bundles that import additively
 with a restore point, Markdown in and out, PDF and PNG export, tray quick
 capture, and <!--f:soundSets-->28<!--/f--> sound sets over
 <!--f:ambienceBeds-->10<!--/f--> ambience beds.
-<!--f:settingsOptions-->40<!--/f--> settings and
+<!--f:settingsOptions-->42<!--/f--> settings and
 <!--f:rebindableKeys-->24<!--/f--> rebindable shortcuts.
 
 Its known edges were the two listed above, and both are still open.

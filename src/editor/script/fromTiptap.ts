@@ -509,8 +509,6 @@ function blockFromNode(node: TiptapNode): Block[] {
       case 'marginalia':
       case 'pressed-flower':
       case 'ticket-stub':
-      case 'postcard':
-      case 'ledger':
       case 'photo-corner':
       case 'wax-seal':
       case 'map-pin': {
@@ -529,6 +527,36 @@ function blockFromNode(node: TiptapNode): Block[] {
             kind: 'container',
             name: node.type as ContainerName,
             children: childNodes(node).flatMap(blockFromNode),
+            attrs,
+            ...ZERO,
+          },
+        ];
+      }
+      case 'postcard':
+      case 'ledger': {
+        const raw = nodeAttrs(node);
+        const attrs = attrsFrom(raw, ['title']);
+        if (typeof raw.title === 'string' && raw.title !== '') {
+          attrs.title = raw.title;
+        }
+        const columns = childNodes(node)
+          .filter((child) => child.type === 'col')
+          .slice(0, 2)
+          .map((child) => ({
+            kind: 'container' as const,
+            name: 'col' as const,
+            children: childNodes(child).flatMap(blockFromNode),
+            attrs: attrsFrom(nodeAttrs(child)),
+            ...ZERO,
+          }));
+        return [
+          {
+            kind: 'container',
+            name: node.type as ContainerName,
+            children:
+              columns.length === 2
+                ? columns
+                : childNodes(node).flatMap(blockFromNode),
             attrs,
             ...ZERO,
           },

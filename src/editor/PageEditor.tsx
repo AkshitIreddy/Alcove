@@ -36,7 +36,12 @@
  * remount with a keyed <Show>/<For> when the page changes.
  */
 import type { Editor, JSONContent } from '@tiptap/core';
-import type { EditorView } from '@tiptap/pm/view';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import {
+  Decoration,
+  DecorationSet,
+  type EditorView,
+} from '@tiptap/pm/view';
 import type { Slice } from '@tiptap/pm/model';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
@@ -50,6 +55,8 @@ import { createPageBacklinks } from './backlinks/usePageBacklinks';
 import {
   DEFAULT_LINE_HEIGHT_PX,
   DEFAULT_PAGE_STYLE,
+  DEFAULT_RULE_GAP_PX,
+  clampRuleGapPx,
   isPageStyle,
   normalizePageDoc,
 } from './document';
@@ -59,7 +66,11 @@ import { recordSnapshot } from './history/pageHistory';
 import { registerPageEditor, unregisterPageEditor } from './instances';
 import { setActiveEditor } from './insert/activeEditor';
 import { handleEditorContextMenu } from './menu/contextMenuController';
-import { createMediaPastePlugin } from './media';
+import {
+  createMediaPastePlugin,
+  insertMediaFiles,
+  mediaFilesFrom,
+} from './media';
 import {
   accumulateCarriedCaret,
   contentOverflows,
@@ -75,8 +86,9 @@ import { notifySaved } from './saveIndicator';
 import { createEditorTransaction, createTiptapEditor } from './solid';
 import { play } from '../sound/engine';
 import { settings } from '../data/settings';
-import { burstConfetti } from './effects/confetti';
+import { burstConfetti, taskCompletionCue } from './effects/confetti';
 import { mountMarginDoodles } from './effects/doodles';
+import { notify } from './script/exporters/toast';
 import '../styles/effects.css';
 
 /**
@@ -98,8 +110,14 @@ function onTaskToggle(event: Event): void {
   ) {
     return;
   }
-  void play('check-done');
-  if (!settings.confettiOnComplete || settings.minimalistMode) return;
+  const celebrates = settings.confettiOnComplete && !settings.minimalistMode;
+  // One action gets one audible answer. Stacking the checkbox cue under the
+  // celebration made a completed task sound like two unrelated objects hit
+  // at once (and doubled the playback work at the exact moment the burst
+  // starts). When the decorative burst is disabled, keep the quieter done
+  // cue; when it is enabled, the celebration owns the moment.
+  void play(taskCompletionCue(settings.confettiOnComplete, settings.minimalistMode));
+  if (!celebrates) return;
   requestAnimationFrame(() => {
     if (!target.isConnected) return;
     const rect = target.getBoundingClientRect();
@@ -107,7 +125,6 @@ function onTaskToggle(event: Event): void {
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
     });
-    void play('confetti');
   });
 }
 
@@ -260,6 +277,123 @@ function topLevelBlocks(view: EditorView): HTMLElement[] {
     }
   }
   return blocks;
+}
+
+interface GridSnapDecoration {
+  from: number;
+  to: number;
+  pixels: number;
+}
+
+function gridSnapCorrection(laidOutTop: number, pitch: number): number {
+  if (!Number.isFinite(laidOutTop) || !Number.isFinite(pitch) || pitch <= 0) {
+    return 0;
+  }
+  const phase = ((laidOutTop % pitch) + pitch) % pitch;
+  return phase < 0.5 || pitch - phase < 0.5 ? 0 : pitch - phase;
+}
+
+/**
+ * ProseMirror owns every direct child of `.nb-prose`.
+ *
+ * Writing an inline style onto one of those elements looks right for one DOM
+ * turn, then ProseMirror's observer restores the DOM described by its state and
+ * the style disappears. A node decoration is the sanctioned way to put a
+ * measured presentation attribute on an editor node: it survives redraws,
+ * maps through document transactions, and is removed by the same owner that
+ * applied it.
+ */
+function createGridSnapPlugin(
+  key: PluginKey<DecorationSet>,
+): Plugin<DecorationSet> {
+  return new Plugin<DecorationSet>({
+    key,
+    state: {
+      init: () => DecorationSet.empty,
+      apply: (transaction, decorations) => {
+        const measured = transaction.getMeta(key) as
+          | readonly GridSnapDecoration[]
+          | undefined;
+        if (measured !== undefined) {
+          return DecorationSet.create(
+            transaction.doc,
+            measured.map(({ from, to, pixels }) =>
+              Decoration.node(from, to, {
+                'data-nb-grid-snap': pixels.toFixed(2),
+                style: `--nb-grid-snap: ${pixels.toFixed(2)}px;`,
+              }),
+            ),
+          );
+        }
+        return decorations.map(transaction.mapping, transaction.doc);
+      },
+    },
+    props: {
+      decorations: (state) => key.getState(state) ?? null,
+    },
+  });
+}
+
+/**
+ * Put ordinary prose back on the paper grid after an irregular-height block.
+ *
+ * Cards, media, diagrams and other special node views are allowed to size
+ * themselves to their content. Their height is rarely an exact multiple of
+ * the page pitch, though, so the next plain paragraph used to inherit that
+ * remainder and float between the printed lines. Only the first ordinary text
+ * block after a special block needs a spacer; once it is snapped, every later
+ * line follows from the prose line-height again.
+ *
+ * The correction is added INSIDE the target's top padding (editor.css), not as
+ * a margin and not as a page/ruling offset. Its border-box top therefore does
+ * not move when the correction is applied. Re-measuring the same layout yields
+ * the same number instead of alternately adding and removing a pitch: this is
+ * the idempotence the ResizeObserver path depends on.
+ */
+function measureProseGridSnaps(
+  view: EditorView,
+  pitch: number,
+): GridSnapDecoration[] {
+  if (!Number.isFinite(pitch) || pitch <= 0) return [];
+  const root = view.dom;
+  const children = Array.from(root.children).filter(
+    (node): node is HTMLElement => node instanceof HTMLElement,
+  );
+  const ranges: Array<{ from: number; to: number }> = [];
+  view.state.doc.forEach((node, from) => {
+    ranges.push({ from, to: from + node.nodeSize });
+  });
+  // A node view may be between construction and attachment for one frame. Do
+  // not risk decorating the wrong document node; the MutationObserver below
+  // queues the complete shape as soon as it lands.
+  if (children.length !== ranges.length) return [];
+
+  /*
+   * "Ordinary" means writing whose first line belongs on the paper's rule,
+   * not merely a naked paragraph. Lists and blockquotes are top-level
+   * ProseMirror nodes too; their actual words live in descendant paragraphs,
+   * which inherit the decoration's --nb-grid-snap value. Leaving those roots
+   * out is exactly how the ledger specimen failed: ledger -> blockquote meant
+   * the quoted prose kept the ledger's fractional phase and floated above the
+   * printed lines even though paragraph -> ledger -> paragraph looked right.
+   */
+  const ordinary = (node: Element): boolean =>
+    node.matches('p, h1, h2, h3, h4, ul, ol, blockquote');
+  const rootRect = root.getBoundingClientRect();
+  const scale = visualScale(rootRect.height, root.clientHeight);
+  const measured: GridSnapDecoration[] = [];
+
+  for (let index = 1; index < children.length; index += 1) {
+    const child = children[index] as HTMLElement;
+    const previous = children[index - 1] as HTMLElement;
+    if (!ordinary(child) || ordinary(previous)) continue;
+    const laidOutTop =
+      (child.getBoundingClientRect().top - rootRect.top) / scale;
+    const pixels = gridSnapCorrection(laidOutTop, pitch);
+    if (pixels <= 0) continue;
+    measured.push({ ...ranges[index]!, pixels });
+  }
+  return measured;
 }
 
 export default function PageEditor(props: PageEditorProps): JSX.Element {
@@ -656,6 +790,11 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   // still under construction, so the wiring has to exist first and is bound
   // to the instance afterwards.
   const dragWiring = createDragHandleWiring(pageId);
+  const gridSnapKey = new PluginKey<DecorationSet>(
+    `nb-grid-snap-${pageId}`,
+  );
+  const gridSnapPlugin = createGridSnapPlugin(gridSnapKey);
+  let gridSnapSignature = '[]';
 
   const editor = createTiptapEditor(() => ({
     element: mountElement,
@@ -680,7 +819,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         contextmenu: (_view, event: Event): boolean => {
           const instance = editor();
           if (!instance || !(event instanceof MouseEvent)) return false;
-          return handleEditorContextMenu(instance, event);
+          return handleEditorContextMenu(instance, event, notify);
         },
       },
     },
@@ -689,20 +828,116 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       // the frame the text was typed, not one frame later.
       extractOverflow(instance);
       scheduleSave(instance);
+      queueGridSnap();
     },
     // Two editors are mounted at once in the spread view; the focused one is
     // the "active" editor the script toolbar/dialog should target.
     onFocus: ({ editor: instance }) => setActiveEditor(instance),
   }));
 
+  let gridSnapFrame = 0;
+  const applyGridSnap = (): void => {
+    const instance = editor();
+    if (
+      !instance ||
+      instance.isDestroyed ||
+      gridSnapKey.getState(instance.state) === undefined
+    ) {
+      return;
+    }
+    const storedPitch: unknown = instance.state.doc.attrs.lineHeightPx;
+    const pitch =
+      typeof storedPitch === 'number' && Number.isFinite(storedPitch)
+        ? storedPitch
+        : DEFAULT_LINE_HEIGHT_PX;
+    const measured = measureProseGridSnaps(
+      instance.view,
+      pitch,
+    ).map((snap) => ({
+      ...snap,
+      pixels: Number(snap.pixels.toFixed(2)),
+    }));
+    const signature = JSON.stringify(measured);
+    if (signature === gridSnapSignature) return;
+    gridSnapSignature = signature;
+    instance.view.dispatch(
+      instance.state.tr.setMeta(gridSnapKey, measured),
+    );
+  };
+  const queueGridSnap = (): void => {
+    if (gridSnapFrame !== 0) return;
+    gridSnapFrame = requestAnimationFrame(() => {
+      gridSnapFrame = 0;
+      applyGridSnap();
+    });
+  };
+
+  createEffect(() => {
+    const instance = editor();
+    if (!instance || instance.isDestroyed) return;
+    const root = instance.view.dom;
+    const resize = new ResizeObserver(queueGridSnap);
+    const observeCurrentBlocks = (): void => {
+      resize.disconnect();
+      resize.observe(root, { box: 'border-box' });
+      for (const child of Array.from(root.children)) {
+        // Special blocks can grow because their border or padding changes
+        // while their content box stays identical (a late card treatment is
+        // one real example). The default content-box observation misses that
+        // movement even though it shifts every following baseline.
+        if (child instanceof HTMLElement) {
+          resize.observe(child, { box: 'border-box' });
+        }
+      }
+    };
+    const mutations = new MutationObserver(() => {
+      observeCurrentBlocks();
+      queueGridSnap();
+    });
+    observeCurrentBlocks();
+    mutations.observe(root, { childList: true, subtree: true });
+    queueGridSnap();
+    void document.fonts?.ready.then(() => {
+      if (!instance.isDestroyed) queueGridSnap();
+    });
+    onCleanup(() => {
+      mutations.disconnect();
+      resize.disconnect();
+    });
+  });
+  onCleanup(() => {
+    if (gridSnapFrame !== 0) cancelAnimationFrame(gridSnapFrame);
+  });
+
   // Publish the live editor for the script toolbar/dialog + install the media
   // paste/drop plugin and the drag-handle wiring (once per instance).
   let mediaPluginInstalled: unknown = null;
+  let gridSnapPluginInstalled: unknown = null;
   let detachDragWiring: (() => void) | undefined;
   createEffect(() => {
     const instance = editor();
     setActiveEditor(instance ?? null);
     if (instance) registerPageEditor(pageId, instance);
+    if (instance && gridSnapPluginInstalled !== instance) {
+      instance.registerPlugin(gridSnapPlugin);
+      gridSnapPluginInstalled = instance;
+      gridSnapSignature = '[]';
+      // The first measurement is synchronous, like initial overflow above.
+      // Deferring it to rAF paints one frame with text after a card/ledger
+      // floating between rules, then visibly pushes that text onto the grid.
+      // getBoundingClientRect() performs the needed layout immediately; later
+      // media/font/resize changes still use the coalesced observer path.
+      applyGridSnap();
+      // Some custom node views finish attaching after registerPlugin returns.
+      // In that narrow construction window measureProseGridSnaps deliberately
+      // returns [] rather than decorating the wrong document node. Re-measure
+      // in a microtask as well: node-view construction has finished, but the
+      // browser has not painted yet. The old rAF-only retry was the visible
+      // one-pixel drop after a turned page containing cards or image captions.
+      queueMicrotask(() => {
+        if (!instance.isDestroyed) applyGridSnap();
+      });
+    }
     if (instance && mediaPluginInstalled !== instance) {
       instance.registerPlugin(createMediaPastePlugin());
       detachDragWiring?.();
@@ -787,6 +1022,11 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       : DEFAULT_LINE_HEIGHT_PX;
   });
 
+  const ruleGapPx = createEditorTransaction(editor, (instance): number => {
+    const value: unknown = instance?.state.doc.attrs.ruleGapPx;
+    return value === undefined ? DEFAULT_RULE_GAP_PX : clampRuleGapPx(value);
+  });
+
   // -------------------------------------------------------------------------
   // Margin doodles — deterministic pencil sketches, seeded by pageId.
   // Mounted only when the user wants them (settings are reactive; the
@@ -815,6 +1055,28 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   const backlinkRailPx = (): string =>
     backlinks().length > 0 ? 'var(--nb-backlink-tab-h)' : '0px';
 
+  /** Catch OS media drops on the paper margin as well as the prose root. */
+  const onPageDragOver = (event: DragEvent): void => {
+    if (mediaFilesFrom(event.dataTransfer).length > 0) event.preventDefault();
+  };
+
+  const onPageDrop = (event: DragEvent): void => {
+    // The ProseMirror media plugin already handled a drop inside `.nb-prose`.
+    if (event.defaultPrevented) return;
+    const instance = editor();
+    if (instance === undefined || instance.isDestroyed) return;
+    const files = mediaFilesFrom(event.dataTransfer);
+    if (files.length === 0) return;
+    event.preventDefault();
+    const at = instance.view.posAtCoords({
+      left: event.clientX,
+      top: event.clientY,
+    })?.pos ?? instance.state.doc.content.size;
+    void insertMediaFiles(instance.view, files, at).then((count) => {
+      if (count > 0) notify(count === 1 ? 'media added' : `${count} media blocks added`);
+    });
+  };
+
   return (
     <div
       class="nb-page"
@@ -822,8 +1084,11 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       data-paginated={isPaginated() ? 'true' : undefined}
       style={{
         '--page-line-height': `${lineHeightPx()}px`,
+        '--page-rule-gap': `${ruleGapPx()}px`,
         '--nb-backlink-rail': backlinkRailPx(),
       }}
+      onDragOver={onPageDragOver}
+      onDrop={onPageDrop}
       ref={(el) => {
         pageRootElement = el;
         el.addEventListener('change', onTaskToggle);

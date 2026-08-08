@@ -99,14 +99,14 @@ export interface StepNudge {
  * not when they have finished — so the ordinary 1.5s celebration beat is the
  * wrong unit entirely.
  *
- * Five seconds is long enough to read a panel's headings and see what kind of
+ * Twelve seconds is long enough to read a panel's headings and see what kind of
  * thing is in it, which is all these steps claim to teach. A reader who is done
  * sooner presses "on we go"; a reader who wants longer presses the same icon
  * again once the tour has moved on, which is the point of the step. It is
  * READING time, so `celebrateDelay` never scales it by the motion preference
  * (`styles/motion.ts` states that rule for `LINGER_MS`).
  */
-export const PANEL_DWELL_MS = 5000;
+export const PANEL_DWELL_MS = 12000;
 
 /** What the reader has to do before the step counts as finished. */
 export interface StepTask {

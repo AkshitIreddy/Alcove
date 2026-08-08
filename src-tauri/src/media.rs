@@ -12,7 +12,6 @@ use serde::Serialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::time::Duration;
-use tauri::Manager;
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 /// Cap for fetched HTML documents (link previews) and API responses.
@@ -361,11 +360,11 @@ fn data_uri(bytes: &[u8], content_type: Option<&str>) -> String {
 // ---------------------------------------------------------------------------
 
 fn assets_images_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let base = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))?;
-    Ok(base.join("assets").join("images"))
+    use tauri::Manager;
+    let library = app
+        .try_state::<crate::library::LibraryPaths>()
+        .ok_or_else(|| "library folder is not initialized".to_string())?;
+    Ok(library.assets_root().join("images"))
 }
 
 fn save_bytes_as_asset(

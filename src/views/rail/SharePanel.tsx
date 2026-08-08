@@ -36,19 +36,19 @@
  *   take out   — I want this page, or this book, somewhere else
  *   for an AI  — I want an assistant to write one of these
  *
- * The AI pair is last and together on purpose. Copying the spec and copying
- * the page are the two halves of one loop — hand the format to an assistant,
- * hand it the page you already have — and they were at opposite ends of the
- * rail, one of them next to "add a page".
+ * The AI tools are last and together on purpose. Downloading/copying the spec
+ * and copying the page are the two halves of one loop — hand the format to an
+ * assistant, hand it the page you already have — and they were at opposite
+ * ends of the rail, one of them next to "add a page".
  *
  * ## What it does NOT own
  *
  * Almost nothing. Every row that can calls the flow's own module-level opener
  * — the same call the keyboard makes through `data/keybindings` — so the
  * button and the key can never drift, and no export logic lives in a view.
- * The three that arrive as props do so because they need what only `BookView`
+ * The four that arrive as props do so because they need what only `BookView`
  * has: the focused leaf's page id (copy this page), the live editor's dialog
- * (paste a script), and the toast (copy the spec).
+ * (paste a script), and the toast (copy or download the spec).
  *
  * ## The doors that stayed open
  *
@@ -61,12 +61,10 @@
  *     still open the gallery, because that is where a reader MAKES a book;
  *   - the settings sheet still imports Markdown, because that is a library
  *     errand as much as a book one;
- *   - the insert dialog still carries its own "Copy the format for your AI",
- *     because wanting the format is what you discover while staring at an empty
- *     paste box. Word for word the same as the row below, deliberately: it read
- *     "Copy spec for your AI" over there and "Copy the format for your AI"
- *     here, which is one action wearing two names in two places a reader meets
- *     inside a minute of each other.
+ *   - the insert dialog still carries the same download/copy pair, because
+ *     wanting the format is what you discover while staring at an empty paste
+ *     box. The names match word for word so one action does not wear two names
+ *     in two places a reader meets inside a minute of each other.
  *
  * The bundle row is a doorway rather than a duplicate: the parcel desk
  * (`features/transfer`) is a whole panel of its own, with a scope tree, a
@@ -79,6 +77,9 @@ import { For, Show, type JSX } from 'solid-js';
 import { bindingFor, formatBinding } from '../../data/keybindings';
 import { settings } from '../../data/settings';
 import { exportActivePagePng } from '../../editor/script/exporters/exportPage';
+import {
+  NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING,
+} from '../../editor/script/exporters/saveFile';
 import { openExportPdfDialog } from '../../features/templates/ExportPdfDialog';
 import { importMarkdownBooks } from '../../features/templates/importMarkdown';
 import { openTemplatesGallery } from '../../features/templates/TemplatesGallery';
@@ -90,8 +91,12 @@ import {
   TemplatesIcon,
 } from '../../features/templates/icons';
 import { openTransferPanel } from '../../features/transfer';
-import { play } from '../../sound/engine';
-import { AiSpecIcon, ExportScriptIcon, InsertScriptIcon } from './icons';
+import {
+  AiSpecIcon,
+  DownloadSpecIcon,
+  ExportScriptIcon,
+  InsertScriptIcon,
+} from './icons';
 
 export interface SharePanelProps {
   /**
@@ -106,6 +111,8 @@ export interface SharePanelProps {
   onCopyScript(): void;
   /** Put the whole Notebook Script spec on the clipboard, and say so. */
   onCopySpec(): void;
+  /** Save the same full spec as a Markdown file, and say what happened. */
+  onDownloadSpec(): void;
   /** Close the sheet behind a row that opens a modal over it. */
   onClose(): void;
 }
@@ -126,6 +133,8 @@ interface ShareGroup {
   readonly id: string;
   readonly title: string;
   readonly rows: readonly ShareRow[];
+  /** Optional guidance that belongs before this group's choices. */
+  readonly notice?: string;
 }
 
 const IN: readonly ShareRow[] = [
@@ -190,12 +199,19 @@ const OUT: readonly ShareRow[] = [
 
 const AI: readonly ShareRow[] = [
   {
+    id: 'spec-download',
+    title: 'Download the format for your AI',
+    hint: 'the whole Notebook Script guide, ready to attach',
+    icon: DownloadSpecIcon,
+    run: (props) => props.onDownloadSpec(),
+  },
+  {
     id: 'spec',
     // No key cap, and that is honest: nothing in `data/keybindings` binds this
     // one. A borrowed combination on the row would be a shortcut that opens
     // something else.
     title: 'Copy the format for your AI',
-    hint: 'the whole Notebook Script spec, to the clipboard',
+    hint: 'the same full guide, to the clipboard',
     icon: AiSpecIcon,
     run: (props) => props.onCopySpec(),
   },
@@ -218,7 +234,12 @@ const AI: readonly ShareRow[] = [
 const GROUPS: readonly ShareGroup[] = [
   { id: 'in', title: 'Bring something in', rows: IN },
   { id: 'out', title: 'Take this page, or this book, out', rows: OUT },
-  { id: 'ai', title: 'For an assistant', rows: AI },
+  {
+    id: 'ai',
+    title: 'For an assistant',
+    rows: AI,
+    notice: NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING,
+  },
 ];
 
 function Rows(props: {
@@ -249,7 +270,6 @@ function Rows(props: {
               : `${row.title} — ${row.hint} (${cap(row)})`
           }
           onClick={() => {
-            void play('pop-soft');
             // The PDF chooser, the paste box, the gallery and the parcel desk
             // are modal overlays; a sheet still standing in the left of the
             // window would only be something to look past, and Escape would
@@ -303,6 +323,13 @@ export default function SharePanel(props: SharePanelProps): JSX.Element {
                 inch above, and a heading repeating it is a heading nobody
                 reads. Each of these says which QUESTION its rows answer. */}
             <p class="nb-panel-section-title">{group.title}</p>
+            <Show when={group.notice} keyed>
+              {(notice) => (
+                <p class="nb-share-notice font-ui" role="note">
+                  {notice}
+                </p>
+              )}
+            </Show>
             <Rows rows={group.rows} host={props} />
           </section>
         )}

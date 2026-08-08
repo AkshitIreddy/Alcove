@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { freshBookStyleOverrides } from '../art/bookStyle';
 import { getDb } from './db';
+import { PAGE_STYLES } from './types';
 import type {
   Book,
   BookRow,
@@ -354,7 +355,6 @@ export interface BookPageDefaults {
   ink?: string;
 }
 
-const PAGE_STYLE_VALUES: readonly string[] = ['ruled', 'grid', 'blank', 'dotted'];
 const INK_VALUES: readonly string[] = ['sepia', 'graphite', 'ink-blue'];
 
 /** Loose cover-art override JSON stored under `cover_meta.cover`, or null. */
@@ -384,7 +384,10 @@ export function readPageDefaults(
   ) {
     out.lineHeightPx = Math.min(64, Math.max(24, Math.round(raw.lineHeightPx)));
   }
-  if (typeof raw.pageStyle === 'string' && PAGE_STYLE_VALUES.includes(raw.pageStyle)) {
+  if (
+    typeof raw.pageStyle === 'string' &&
+    (PAGE_STYLES as readonly string[]).includes(raw.pageStyle)
+  ) {
     out.pageStyle = raw.pageStyle as PageStyle;
   }
   if (typeof raw.ink === 'string' && INK_VALUES.includes(raw.ink)) {
@@ -507,25 +510,50 @@ export async function savePageDefaults(
   });
 }
 
-/** Patch shelf metadata fields (read-merge-write). */
-async function patchShelfMeta(
+/**
+ * Per-book tails for shelf metadata's read-merge-write transaction.
+ *
+ * SQLite serializes each statement, not the SELECT + UPDATE pair: an opening
+ * timestamp and a page-count refresh can therefore both read the same old JSON
+ * and the later UPDATE erases the other field. Tails never reject, so one failed
+ * write is reported to its caller without poisoning the next mutation.
+ */
+const shelfMetaPatchTails = new Map<string, Promise<void>>();
+
+/** Perform one shelf metadata patch after this book's preceding patch settles. */
+function patchShelfMeta(
   id: string,
   patch: ShelfMeta,
 ): Promise<Book | null> {
-  const book = await getBook(id);
-  if (book === null) return null;
-  const merged = { ...(readShelfMeta(book) ?? {}), ...patch };
-  // Drop keys explicitly set to undefined (used to clear trash bookkeeping).
-  for (const key of Object.keys(merged) as Array<keyof ShelfMeta>) {
-    if (merged[key] === undefined) delete merged[key];
-  }
-  return updateBook(id, {
-    coverMeta: mergeCoverMetaSection(
-      book.coverMeta,
-      'shelf',
-      merged as Record<string, unknown>,
-    ),
+  const previous = shelfMetaPatchTails.get(id) ?? Promise.resolve();
+  const operation = previous.then(async () => {
+    const book = await getBook(id);
+    if (book === null) return null;
+    const merged = { ...(readShelfMeta(book) ?? {}), ...patch };
+    // Drop keys explicitly set to undefined (used to clear trash bookkeeping).
+    for (const key of Object.keys(merged) as Array<keyof ShelfMeta>) {
+      if (merged[key] === undefined) delete merged[key];
+    }
+    return updateBook(id, {
+      coverMeta: mergeCoverMetaSection(
+        book.coverMeta,
+        'shelf',
+        merged as Record<string, unknown>,
+      ),
+    });
   });
+
+  // Store a fulfilled tail even when `operation` rejects: later patches wait
+  // for the failed attempt to retire, then get a clean turn of their own.
+  const tail = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  shelfMetaPatchTails.set(id, tail);
+  void tail.then(() => {
+    if (shelfMetaPatchTails.get(id) === tail) shelfMetaPatchTails.delete(id);
+  });
+  return operation;
 }
 
 /**

@@ -52,6 +52,115 @@
   align-items: center;
 }
 
+/* ----------------------------------------------------------------------------
+   Closing bridge — open spread → closed cover → returning shelf cover.
+
+   The cover's final box is shared with PulledBookOverlay in TypeScript. At the
+   route change only ownership changes: geometry, art and the opaque paper
+   behind it all stay put. Every animated property here is compositor-safe.
+   -------------------------------------------------------------------------- */
+.nb-spread-stage.is-book-closing {
+  animation: nb-book-close-chrome 150ms var(--ease-out) both;
+}
+
+.nb-book-close-bridge {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) + 4);
+  /* `hidden` still creates a programmatically scrollable box. ProseMirror can
+     then scroll a wide special block into view during mount, presenting the
+     destination page horizontally offset until BookView's reset frame runs.
+     `clip` enforces the fixed-page contract without acquiring scrollLeft. */
+  overflow: clip;
+  visibility: hidden;
+  pointer-events: none;
+  perspective: 1500px;
+}
+
+.nb-book-close-bridge.is-active {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.nb-book-close-wash {
+  position: absolute;
+  inset: 0;
+  background: var(--paper-cream);
+}
+
+.nb-book-close-bridge.is-active .nb-book-close-wash {
+  animation: nb-book-close-wash 340ms var(--ease-out) both;
+}
+
+.nb-book-close-face {
+  position: fixed;
+  background-color: var(--wash-terracotta);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  border: var(--stroke-ink);
+  border-radius: 10px 18px 18px 10px / 12px 16px 16px 12px;
+  box-shadow: var(--shadow-lg);
+  transform-origin: 0 50%;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+.nb-book-close-bridge.is-active .nb-book-close-face {
+  animation: nb-book-close-face 340ms var(--ease-out) both;
+}
+
+.nb-book-close-star,
+.nb-book-close-ribbon {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  transform-origin: 50% 0;
+}
+
+.nb-book-close-star {
+  left: -18px;
+  top: 8px;
+}
+
+.nb-book-close-ribbon {
+  right: -11px;
+  top: -7px;
+}
+
+@keyframes nb-book-close-chrome {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes nb-book-close-wash {
+  0% {
+    opacity: 0;
+  }
+  58%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes nb-book-close-face {
+  0% {
+    transform: translate3d(52%, 0, 0) scale3d(0.94, 1.04, 1)
+      rotateY(-82deg);
+  }
+  72% {
+    transform: translate3d(-1.5%, 0, 0) scale3d(1.025, 1.025, 1)
+      rotateY(2deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1) rotateY(0deg);
+  }
+}
+
 .nb-spread-header {
   flex: 0 0 auto;
   align-self: center;
@@ -179,6 +288,46 @@
 }
 
 /*
+ * The moving leaf is visibility:hidden during a WebGL curl, which also hides
+ * its OUTSIDE box-shadow. The revealed page is drawn by the ground pass, but
+ * that quad ends at the paper box and therefore cannot draw the leaves stacked
+ * behind its fore-edge. Keep a shadow-only proxy below the canvas while the
+ * gesture is moving. It owns no paper fill and no content; the opaque curl and
+ * ground passes cover its in-page pixels, while the 2–8px offsets remain
+ * visible in the cover's padding ring. At land() the gesture class and hidden
+ * live leaf are exchanged in one task, so the real leaf resumes ownership
+ * without an arrival animation or a one-frame missing stack.
+ */
+.nb-flip-surface.is-flip-gesture:not(.is-flip-scene) .nb-flip-leaf::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-flip) - 1);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+.nb-flip-surface.is-flip-gesture:not(.is-flip-scene) .nb-flip-leaf-left:not(.is-empty)::after {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  box-shadow:
+    -2px 1px 0 0 var(--paper-deep),
+    -3.5px 2px 0 0 var(--paper-cream),
+    -5px 3px 0 0 var(--paper-deep),
+    -6.5px 4px 0 0 var(--paper-cream),
+    -8px 5px 0 0 var(--paper-edge);
+}
+
+.nb-flip-surface.is-flip-gesture:not(.is-flip-scene) .nb-flip-leaf-right::after {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  box-shadow:
+    2px 1px 0 0 var(--paper-deep),
+    3.5px 2px 0 0 var(--paper-cream),
+    5px 3px 0 0 var(--paper-deep),
+    6.5px 4px 0 0 var(--paper-cream),
+    8px 5px 0 0 var(--paper-edge);
+}
+
+/*
  * A leaf with no page behind it yet.
  *
  * It has to keep looking like the back of a notebook — bare paper, which is
@@ -188,6 +337,9 @@
  * micro-copy that shows up when you go near it.
  */
 .nb-leaf-blank {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -198,6 +350,27 @@
   background: none;
   cursor: text;
   color: var(--ink-faint, #a99b86);
+}
+
+/*
+ * A destination leaf is a real piece of the selected paper before its editor
+ * finishes mounting. The preview deliberately uses the normal
+ * `.nb-page[data-style] .nb-page-editor .ProseMirror` ruling cascade — one
+ * source for all twenty-seven patterns — and the transparent button above it
+ * keeps the whole sheet writable. This is also the safe fallback for the few
+ * milliseconds between requesting a new row and publishing it to Solid.
+ */
+.nb-spread .nb-blank-page-preview {
+  position: relative;
+}
+
+.nb-spread .nb-blank-page-preview > .nb-page-editor {
+  pointer-events: none;
+}
+
+.nb-spread .nb-blank-page-preview .ProseMirror {
+  height: 100%;
+  min-height: 0;
 }
 
 .nb-leaf-blank-hint {
@@ -228,7 +401,30 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--space-32);
+  /* The writing column keeps its 52px leaf margin, but the PAPER ruling must
+     reach the leaf edges and continue beneath the translucent binding. When
+     the pattern lived only on ProseMirror it ended at the text column, leaving
+     a blank vertical moat on both sides and an especially abrupt stop at the
+     spine. Expand the page through the sheet's 20px inset, then spend that
+     exact amount back in padding so prose geometry and pagination do not move. */
+  margin-inline: calc(-1 * var(--space-20));
+  padding: 0 calc(var(--space-32) + var(--space-20));
+}
+
+.nb-spread .nb-page[data-style] {
+  background-image: var(--rule-image, none);
+  background-size: var(--rule-size, auto);
+  background-position: var(--rule-pos, 0 0);
+  background-repeat: var(--rule-repeat, repeat);
+}
+
+/* The spread page now owns the one ruling plane. Keeping the same pattern on
+   ProseMirror would double-ink each rule and bring back the harsh centre seam. */
+.nb-spread
+  .nb-page[data-style]
+  .nb-page-editor
+  .ProseMirror {
+  background-image: none;
 }
 
 .nb-spread .nb-page-editor {
@@ -236,7 +432,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Pages paginate; they never scroll, even programmatically. In particular,
+     do not let a newly mounted card make the first post-turn frame scroll
+     sideways and snap back after the canvas comes down. */
+  overflow: clip;
 }
 
 .nb-spread .nb-page-editor .ProseMirror {
@@ -269,24 +468,21 @@
    gradient overlay, never animated). Sits above the resting leaves and outside
    the snapshot roots.
 
-   It used to sit BELOW the flip canvas too, on the reasoning that this made
-   "rest and mid-flip frames match". It did the opposite — a 26px band that the
-   overlay covered for the whole of every turn and for the whole of the starved
-   landing after it. See the block at the foot of this file; the raise lives
-   there, next to the dog-ear's, because the two share one reason.
+   During motion it stays below the curl: a rigid stripe above a bent sheet
+   slices through the paper and makes the sheet look transparent or tucked
+   behind the cover. At the exactly-flat landing endpoint it rises again before
+   the destination is committed, so the strong 26px binding never has a missing
+   flat frame. See the phase-scoped rules below.
    -------------------------------------------------------------------------- */
 .nb-spread-gutter {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 132px;
+  width: 26px;
   transform: translateX(-50%);
   z-index: 10;
   pointer-events: none;
-  /* The gutter is where the two leaves meet, so it is the DARKER FACE of the
-     paper rather than a shading ramp across 132px. */
-  width: 26px;
   background: var(--lift-ink);
 }
 
@@ -332,7 +528,6 @@
     transparent 77%
   );
   border-bottom-right-radius: var(--radius-sm);
-  border-left: 1px solid var(--ink-line-soft);
   transition: opacity var(--dur-sm) var(--ease-out), transform var(--dur-sm) var(--ease-out);
   transform-origin: 100% 100%;
 }
@@ -343,58 +538,14 @@
 }
 
 /* ----------------------------------------------------------------------------
-   THE TWO MARKS NO PAGE TEXTURE CAN EVER CONTAIN
+   ONE COMPLETE SCENE, ONE OWNER
 
-   The reader, on the turn: *"it doesn't have the shading — for example the
-   shadow in the middle — the page looks whitish for maybe 0.5 seconds and then
-   all of it comes. So it feels like it loads those effects when the user
-   finishes turning the pages."*
-
-   Nothing was loading. `scripts/probe-landing-effects.mjs` sampled every value
-   the leaf's look is made of, every 8ms, anchored on the DOM swap — the paper
-   colour, the fore-edge hairlines, the ruling stack, the two doc attributes it
-   is computed from, the tokens resolved at the leaf — and every one of them was
-   already at its settled value on the very sample the new leaf appeared in.
-   0ms late, on every turn, on every run.
-
-   What was late was not a VALUE but a VIEW. The gutter band above, its crease
-   and the dog-ear are DOM siblings of the flip surface at z-index 10 and 11,
-   and the curl canvas is `position: absolute; inset: 0` at `--z-flip` (200)
-   across the whole spread. So for as long as the overlay is up they are simply
-   not on the glass: measured buried by name, 26px of overlap — the band's full
-   width — for 557–1039ms of every turn. The landing is the busiest moment in
-   the app (two PageEditors mount, two TipTap documents parse, the pagination
-   drain runs), so the frame that finally takes the overlay down is starved for
-   up to half a second, and everything appears at once when it lands. That is
-   the reader's half second exactly: not when the shading became true, but when
-   it became visible.
-
-   And warming more bitmaps — the obvious "preload the effects" fix — provably
-   cannot help. §5 of that probe asserts it: both of these live OUTSIDE every
-   `.nb-sheet-paper`, and a page texture is a capture of a sheet. No snapshot,
-   warmed however early, can contain them.
-
-   So at the FLAT LANDING they go above it. They must stay below it while the
-   sheet is moving: a rigid 26px DOM band painted over a bowed page cuts across
-   the content like a compositor seam. The curl owns the moving geometry; the
-   DOM owns the two marks only once the controller has drawn p=0 or p=1.
-
-   Conditional rather than a flat raise, and keyed on the controller's short
-   `is-flip-landing` phase: nothing about the resting spread changes. The class
-   begins after the final curl frame is drawn and ends in the same task that
-   hides the cleared canvas.
-
-   The stack above `--z-flip`, top down: sticker layer +6, drag handles +5,
-   crossfade veil +4 (flip.css — it masks EVERYTHING, including these two),
-   dog-ear +3, gutter +2, the curl canvas itself.
+   During motion WebGL owns stationary/revealed sheets, moving front/back,
+   gutter + thread, the two outer page stacks and the dog-ear from frame one.
+   The resting DOM owns all of them again in one non-blended class swap. Never
+   add an endpoint-only copy: a feature absent during the turn is a late pop,
+   even if its final pixels resemble the settled feature.
    -------------------------------------------------------------------------- */
-.nb-spread:has(.nb-flip-surface.is-flip-landing) .nb-spread-gutter {
-  z-index: calc(var(--z-flip) + 2);
-}
-
-.nb-spread:has(.nb-flip-surface.is-flip-landing) .nb-page-curl {
-  z-index: calc(var(--z-flip) + 3);
-}
 
 /*
  * AND THE DOG-EAR DOES NOT FADE OUT FOR THE TURN, though it is tempting.
@@ -416,13 +567,6 @@
   transition: opacity var(--dur-sm) var(--ease-out);
   opacity: 0;
   pointer-events: auto;
-}
-
-/* The hotspots fade in on opacity (above), so the fill itself is flat: a band
-   of the amber face, not a ramp dissolving into the page. */
-.nb-spread .nb-flip-hotspot-next,
-.nb-spread .nb-flip-hotspot-prev {
-  background: var(--wash-amber-light);
 }
 
 .nb-spread .nb-flip-hotspot:hover {
@@ -724,15 +868,10 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0;
-  transition: opacity var(--dur-sm) var(--ease-out);
-}
-
-.nb-thumb-paper.has-snapshot canvas {
   opacity: 1;
 }
 
-/* Placeholder ruled lines while a page has no snapshot yet. */
+/* Paper ruling beneath the semantic preview / real page bitmap. */
 .nb-thumb-paper::before {
   content: '';
   position: absolute;

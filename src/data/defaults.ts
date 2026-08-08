@@ -47,7 +47,9 @@ export const DEFAULT_SETTINGS: Settings = {
    * `muteAll` both still win over it.
    */
   ambientLoop: true,
-  reducedSound: false,
+  // Incidental effects are opt-in in the settings sheet. New libraries keep
+  // only meaningful action feedback until a reader asks for a fuller soundscape.
+  reducedSound: true,
 
   // Behavior
   autostart: false,
@@ -89,6 +91,11 @@ export const DEFAULT_SETTINGS: Settings = {
   // Wave 2 — system
   launchIntoLastBook: false,
   trayQuickCapture: false,
+  closeToTray: false,
+  // Keep background audio alive unless a reader explicitly asks for focus-
+  // based muting. `settings.mergeStored` still honours either saved boolean,
+  // so this changes only a new profile (or a blob with no value for the key).
+  muteSoundsWhenUnfocused: false,
   backupFolder: null,
   perfHud: false,
 

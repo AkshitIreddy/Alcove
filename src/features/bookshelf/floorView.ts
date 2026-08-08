@@ -4,7 +4,7 @@
  * root (positioned at y = i*FLOOR_H) → content (floor-local), bottom → top:
  *   back panel (flat tint placeholder, baked board wall crossfades in)
  *   → plank (flat tint placeholder, wood bitmap crossfades in)
- *   → empty-floor doodle → hover mark layer → book sprites → selection marks
+ *   → hover mark layer → book sprites → selection marks
  *   → side rails (the case frame, in front so shelves read as slotted in).
  * Because the whole case lives in `content`, LOD2 stamps inherit it and the
  * far-zoom tower still reads as a bookcase.
@@ -40,16 +40,18 @@ import { layoutFloor } from './layout';
 import type { LodTier } from './lod';
 import { LOD_CROSSFADE_MS } from './lod';
 import {
-  doodleVariantFor,
+  CONTINUE_RIBBON_H,
+  CONTINUE_RIBBON_W,
   PLACEHOLDER_TINTS,
   SELECT_CARET_H,
   SELECT_CARET_W,
   SHELF_DETAIL_H,
+  STAR_CHARM_H,
+  STAR_CHARM_W,
   type EnvTextures,
 } from './textures';
 import { placeholderTint, type SpineFactory } from './spineFactory';
 import { makeFrameSprite, type ShelfMarks } from './glow';
-import { fnv1a, mulberry32 } from '../../art/noise';
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -172,7 +174,6 @@ export class FloorView {
   private shelfDetail: Sprite | null = null;
   /** DPR the world mounted this floor with (applyEnv needs it for detail). */
   private dprHint = 1;
-  private hint: Sprite | null = null;
   private hoverFrame: NineSliceSprite | null = null;
   private hoverShadow: Sprite | null = null;
   private selectFrame: NineSliceSprite | null = null;
@@ -279,7 +280,9 @@ export class FloorView {
       // SAME number, or every sprite is resampled by a fraction of a pixel on
       // every frame — which is precisely the softness this pipeline was just
       // measured and fixed for.
-      const widths = paramsList.map((params) => spineArtWidth((params as SpineParams).w));
+      const widths = paramsList.map((params) =>
+        spineArtWidth((params as SpineParams).w),
+      );
       const placed = layoutFloor(
         widths.map((w, i) => ({ slot: (books[i] as Book).slot, w })),
         this.index,
@@ -323,26 +326,62 @@ export class FloorView {
         };
         sprite.position.set(centerX, visual.baseY);
         sprite.rotation = visual.baseRotation;
-        // Wave-2 decorations, parented to the spine so hover lifts/leans
-        // carry them along. Local transforms are set in applyTexture.
-        if (readShelfMeta(book)?.pinned === true) {
-          const charm = new Sprite(env.getStarCharm(dpr));
-          charm.anchor.set(0.5, 0);
-          sprite.addChild(charm);
-          visual.charm = charm;
-        }
-        if (recentBookId !== null && book.id === recentBookId) {
-          const ribbon = new Sprite(env.getRibbon(dpr));
-          ribbon.anchor.set(0.5, 0);
-          sprite.addChild(ribbon);
-          visual.ribbon = ribbon;
-        }
         this.applyTexture(visual, factory);
         this.booksLayer.addChild(sprite);
         this.visuals.push(visual);
       }
     }
-    this.updateHint(env, dpr);
+    this.syncStatusMarks(env, dpr, recentBookId);
+  }
+
+  /**
+   * Reconcile the physical status ornaments without rebuilding the row.
+   *
+   * Opening a book updates its persisted `lastOpenedAt` asynchronously, but
+   * the return flight can begin before that write (and a subsequent floor
+   * reload) lands. The world therefore publishes the newly opened id here
+   * synchronously. Keeping this as a small in-place operation also means the
+   * visible spine, pull ghost, held DOM cover and return ghost all read the
+   * same actual child-sprite state instead of independently guessing it.
+   */
+  syncStatusMarks(
+    env: EnvTextures,
+    dpr: number,
+    recentBookId: string | null,
+  ): boolean {
+    let changed = false;
+    for (const visual of this.visuals) {
+      const pinned = readShelfMeta(visual.book)?.pinned === true;
+      if (pinned && visual.charm === null) {
+          const charm = new Sprite(env.getStarCharm(dpr));
+        charm.label = 'book-status-star';
+          charm.anchor.set(0.5, 0);
+        charm.eventMode = 'none';
+        visual.sprite.addChild(charm);
+          visual.charm = charm;
+        changed = true;
+      } else if (!pinned && visual.charm !== null) {
+        visual.sprite.removeChild(visual.charm);
+        visual.charm.destroy();
+        visual.charm = null;
+        changed = true;
+        }
+
+      // Recently-opened state is not another physical bookmark. The binding
+      // and the reader's page ribbon already communicate that vocabulary;
+      // adding a status ribbon made the shelf book visibly wear two.
+      void recentBookId;
+      if (visual.ribbon !== null) {
+        visual.sprite.removeChild(visual.ribbon);
+        visual.ribbon.destroy();
+        visual.ribbon = null;
+        changed = true;
+      }
+
+      this.layoutDecor(visual);
+    }
+    if (changed) this.hooks.markDirty();
+    return changed;
   }
 
   /** Pull env art in (called on populate and again when bakes land). */
@@ -366,7 +405,10 @@ export class FloorView {
       this.backWood.position.set(0, 0);
       this.backWood.width = SHELF_WIDTH;
       this.backWood.height = BOOK_ZONE_H;
-      this.content.addChildAt(this.backWood, this.content.getChildIndex(this.backBase) + 1);
+      this.content.addChildAt(
+        this.backWood,
+        this.content.getChildIndex(this.backBase) + 1,
+      );
       fadeIn(this.backWood);
     }
 
@@ -375,7 +417,10 @@ export class FloorView {
       this.plankWood.position.set(0, BOOK_ZONE_H);
       this.plankWood.width = SHELF_WIDTH;
       this.plankWood.height = PLANK_H;
-      this.content.addChildAt(this.plankWood, this.content.getChildIndex(this.plankBase) + 1);
+      this.content.addChildAt(
+        this.plankWood,
+        this.content.getChildIndex(this.plankBase) + 1,
+      );
       fadeIn(this.plankWood);
     }
 
@@ -388,7 +433,10 @@ export class FloorView {
       this.shelfDetail.width = SHELF_WIDTH;
       this.shelfDetail.height = SHELF_DETAIL_H;
       this.shelfDetail.eventMode = 'none';
-      this.content.addChildAt(this.shelfDetail, this.content.getChildIndex(this.hoverLayer));
+      this.content.addChildAt(
+        this.shelfDetail,
+        this.content.getChildIndex(this.hoverLayer),
+      );
       fadeIn(this.shelfDetail);
     } else if (this.shelfDetail !== null) {
       if (detail === null) {
@@ -428,7 +476,10 @@ export class FloorView {
       this.plaque = new Sprite(tex);
       this.plaque.anchor.set(0.5);
       this.plaque.position.set(PLAQUE_CENTER_X, PLAQUE_CENTER_Y);
-      this.content.addChildAt(this.plaque, this.content.getChildIndex(this.hoverLayer));
+      this.content.addChildAt(
+        this.plaque,
+        this.content.getChildIndex(this.hoverLayer),
+      );
     } else if (this.plaque.texture !== tex) {
       this.plaque.texture = tex;
     }
@@ -444,13 +495,25 @@ export class FloorView {
    * EnvTextures.setStain re-derives the case wood.
    */
   refreshEnv(env: EnvTextures): void {
-    if (this.backWood !== null && env.back !== null && this.backWood.texture !== env.back) {
+    if (
+      this.backWood !== null &&
+      env.back !== null &&
+      this.backWood.texture !== env.back
+    ) {
       this.backWood.texture = env.back;
     }
-    if (this.plankWood !== null && env.plank !== null && this.plankWood.texture !== env.plank) {
+    if (
+      this.plankWood !== null &&
+      env.plank !== null &&
+      this.plankWood.texture !== env.plank
+    ) {
       this.plankWood.texture = env.plank;
     }
-    if (this.railsWood && env.rail !== null && this.railL.texture !== env.rail) {
+    if (
+      this.railsWood &&
+      env.rail !== null &&
+      this.railL.texture !== env.rail
+    ) {
       this.railL.texture = env.rail;
       this.railR.texture = env.rail;
     }
@@ -465,7 +528,8 @@ export class FloorView {
     // being filled in the OUTGOING room's cloth.
     if (factory.epoch !== this.paramsEpoch) {
       this.paramsEpoch = factory.epoch;
-      for (const visual of this.visuals) visual.params = factory.getParams(visual.book);
+      for (const visual of this.visuals)
+        visual.params = factory.getParams(visual.book);
     }
     for (const visual of this.visuals) {
       if (bookIds !== undefined && !bookIds.has(visual.book.id)) continue;
@@ -477,7 +541,11 @@ export class FloorView {
    * Tier transition. `stamp` must be provided when entering tier 2 (world
    * bakes it first). Crossfades 120ms between live content and the stamp.
    */
-  applyTier(tier: LodTier, stamp: RenderTexture | null, factory: SpineFactory): void {
+  applyTier(
+    tier: LodTier,
+    stamp: RenderTexture | null,
+    factory: SpineFactory,
+  ): void {
     const prev = this.tier;
     this.tier = tier;
     if (tier !== 2) this.refreshTextures(factory);
@@ -501,7 +569,11 @@ export class FloorView {
       stampSprite.alpha = 0;
       content.visible = true;
       this.hooks.track(
-        gsap.to(stampSprite, { alpha: 1, duration: fade, onUpdate: () => this.hooks.markDirty() }),
+        gsap.to(stampSprite, {
+          alpha: 1,
+          duration: fade,
+          onUpdate: () => this.hooks.markDirty(),
+        }),
       );
       this.hooks.track(
         gsap.to(content, {
@@ -526,7 +598,11 @@ export class FloorView {
       }
       this.content.alpha = 0;
       this.hooks.track(
-        gsap.to(this.content, { alpha: 1, duration: fade, onUpdate: () => this.hooks.markDirty() }),
+        gsap.to(this.content, {
+          alpha: 1,
+          duration: fade,
+          onUpdate: () => this.hooks.markDirty(),
+        }),
       );
       this.hooks.track(
         gsap.to(stampSprite, {
@@ -587,7 +663,9 @@ export class FloorView {
       gsap.to(visual.sprite, {
         pixi: {
           y: on ? visual.baseY - HOVER_LIFT : visual.baseY,
-          rotation: (on ? visual.baseRotation + HOVER_TILT : visual.baseRotation) / DEG_TO_RAD,
+          rotation:
+            (on ? visual.baseRotation + HOVER_TILT : visual.baseRotation) /
+            DEG_TO_RAD,
         },
         duration: fade,
         ease: 'power2.out',
@@ -801,49 +879,34 @@ export class FloorView {
   }
 
   /**
-   * Position/scale the charm + ribbon children in the spine sprite's LOCAL
-   * space. The sprite's scale maps texture px → world px, so local sizes are
-   * divided back out; decor then renders at a stable world size and rides
-   * every hover lift / lean / pull transform for free. Children also inherit
-   * the parent tint (placeholder phase) — counter-tint is not worth it for
-   * the ~100ms placeholder window.
+   * Position status children in the spine sprite's LOCAL coordinates.
+   *
+   * The parent maps texture px to world px, so divide the desired world size
+   * back through that scale. The star hangs just outside the left board edge
+   * and the ribbon just outside the right page edge; this keeps both readable
+   * on the narrowest legal spine instead of stacking two badges over its
+   * title—or over a binding whose own decoration happens to be a ribbon.
    */
   private layoutDecor(visual: BookVisual): void {
     const sx = visual.sprite.scale.x;
     const sy = visual.sprite.scale.y;
     if (sx === 0 || sy === 0) return;
-    const charm = visual.charm;
-    if (charm !== null) {
-      charm.width = 20 / sx;
-      charm.height = 24 / sy;
-      charm.position.set((-visual.w * 0.16) / sx, (-visual.height + 2) / sy);
-    }
-    const ribbon = visual.ribbon;
-    if (ribbon !== null) {
-      ribbon.width = 11 / sx;
-      ribbon.height = 32 / sy;
-      ribbon.position.set((visual.w * 0.17) / sx, (-visual.height - 5) / sy);
-    }
-  }
 
-  private updateHint(env: EnvTextures, dpr: number): void {
-    const empty = this.loaded && this.visuals.length === 0;
-    if (empty) {
-      const variant = doodleVariantFor(this.index);
-      const tex = env.getEmptyDoodle(dpr, variant);
-      if (this.hint === null) {
-        this.hint = new Sprite(tex);
-        this.hint.anchor.set(0.5, 1);
-        this.content.addChildAt(this.hint, this.content.getChildIndex(this.booksLayer));
-      } else {
-        this.hint.texture = tex;
+    if (visual.charm !== null) {
+      visual.charm.width = STAR_CHARM_W / sx;
+      visual.charm.height = STAR_CHARM_H / sy;
+      visual.charm.position.set(
+        (-visual.w / 2 - STAR_CHARM_W * 0.15) / sx,
+        (-visual.height + 1.5) / sy,
+      );
       }
-      // Doodles stand on the plank, drifting a little per floor.
-      const rnd = mulberry32(fnv1a(`hint|${this.index}`));
-      this.hint.position.set(SHELF_WIDTH * (0.3 + rnd() * 0.4), BOOK_BASELINE + 2);
-      this.hint.width = 200;
-      this.hint.height = 130;
+    if (visual.ribbon !== null) {
+      visual.ribbon.width = CONTINUE_RIBBON_W / sx;
+      visual.ribbon.height = CONTINUE_RIBBON_H / sy;
+      visual.ribbon.position.set(
+        (visual.w / 2 + CONTINUE_RIBBON_W * 0.18) / sx,
+        (-visual.height - 4.5) / sy,
+      );
     }
-    if (this.hint !== null) this.hint.visible = empty;
   }
 }

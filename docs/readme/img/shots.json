@@ -1,11 +1,11 @@
 {
   "$schema": "see scripts/check-readme.mjs — checkShots()",
   "capturedBy": "shots-now/readme-shots.mjs",
-  "lastRunAt": "2026-08-06T02:11:15.665Z",
+  "lastRunAt": "2026-08-07T11:48:27.079Z",
   "commit": {
-    "sha": "718d14c52e65a97b101cb18ac5a2defbab760558",
-    "short": "718d14c",
-    "dirty": false
+    "sha": "b847c9d63bbc0c484ed15fd88d8699e984f3dfde",
+    "short": "b847c9d",
+    "dirty": true
   },
   "viewport": {
     "width": 1500,
@@ -120,6 +120,15 @@
       "commit": "718d14c"
     },
     {
+      "file": "kittens.png",
+      "bytes": 61141,
+      "sha256": "621ea3217e23623f",
+      "width": 1400,
+      "height": 520,
+      "at": "2026-08-06T18:28:35+05:30",
+      "commit": "46032db"
+    },
+    {
       "file": "page-turn.png",
       "bytes": 206494,
       "sha256": "0c3c1fddf86a57e7",
@@ -211,12 +220,12 @@
     },
     {
       "file": "spread.png",
-      "bytes": 183889,
-      "sha256": "ec271e4c6ca48c8b",
+      "bytes": 180192,
+      "sha256": "c5fd36fa06260a7d",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-06T02:11:15.665Z",
-      "commit": "718d14c"
+      "at": "2026-08-07T11:48:27.079Z",
+      "commit": "b847c9d+dirty"
     },
     {
       "file": "studio.png",
@@ -238,12 +247,12 @@
     },
     {
       "file": "transfer.png",
-      "bytes": 296341,
-      "sha256": "42c45d206a724508",
+      "bytes": 341355,
+      "sha256": "33d9d85e48eac564",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-06T02:11:15.665Z",
-      "commit": "718d14c"
+      "at": "2026-08-07T11:48:27.079Z",
+      "commit": "b847c9d+dirty"
     }
   ]
 }

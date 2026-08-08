@@ -23,6 +23,7 @@ function SpoilerView(props: SolidNodeViewProps): JSX.Element {
     <NodeViewWrapper
       class="nb-spoiler"
       classList={{ 'is-revealed': revealed(), 'is-selected': props.selected }}
+      data-nb-block-flow="feature"
     >
       <button
         type="button"

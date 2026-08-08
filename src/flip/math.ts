@@ -52,7 +52,7 @@ export const DPR_CAP_DEFAULT = 2;
 export const DPR_CAP_LOW_MEMORY = 1.5;
 export const LOW_MEMORY_THRESHOLD_GB = 8;
 
-/** Programmatic (tap / keyboard) flip duration, seconds (doc: 0.45s). */
+/** Tap/programmatic flip duration, seconds (doc: 0.45s). */
 export const TAP_FLIP_DURATION_S = 0.45;
 
 /** Reduced-motion crossfade duration, ms (doc: 160ms). */
@@ -335,7 +335,15 @@ export class LruMap<K, V> {
   }
 
   set(key: K, value: V): void {
-    if (this.map.has(key)) this.map.delete(key);
+    if (this.map.has(key)) {
+      const replaced = this.map.get(key) as V;
+      this.map.delete(key);
+      // Replacing a raster entry transfers ownership to the new value, so the
+      // old bitmap must be closed just like an ordinary eviction. Re-inserting
+      // the exact same value is only a recency refresh; closing it here would
+      // leave the value still stored in the map but already unusable.
+      if (!Object.is(replaced, value)) this.onEvict?.(key, replaced);
+    }
     this.map.set(key, value);
     while (this.map.size > this.capacity) {
       const oldest = this.map.keys().next();

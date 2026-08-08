@@ -264,6 +264,19 @@
   translate: var(--nb-gear-clear) 0;
 }
 
+/*
+ * A book sheet rests six pixels to the right of the settings seal, but its
+ * `xPercent: -130` entrance/exit crosses the bottom-left corner on the way to
+ * that rest position. The sheet used to paint over the seal during every
+ * close, leaving a green crescent for the whole transition. Keep the resting
+ * stack unchanged; only the compositor-owned crossing puts the seal one rung
+ * above the sheet. Shelf sheets are deliberately excluded: they hinge on the
+ * window edge and `--nb-panel-gutter` moves the seal out of their way instead.
+ */
+body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
+  z-index: calc(var(--z-menus) + 1);
+}
+
 /* ---------------------------------- panels -------------------------------- */
 .nb-rail-panel {
   position: fixed;
@@ -1234,10 +1247,10 @@
    on — a chip has room for none of those, and a reader deciding whether to
    press this is a reader who needs all three.
 
-   EIGHT rows now rather than five: the paste box, the templates gallery, the
-   AI spec and "copy this page as script" all moved off the rail and onto this
+   NINE rows now rather than five: the paste box, the templates gallery, the
+   AI spec's download/copy pair and "copy this page as script" all live on this
    sheet, in three labelled groups (bring in / take out / for an assistant).
-   At eight the list has to be
+   At nine the list has to be
    SCANNABLE — a reader is looking for one of three things and should be able
    to skip two groups without reading them — so the groups carry the shared
    `.nb-panel-section-title` and are ruled apart by `.nb-panel-section-divided`
@@ -1248,6 +1261,17 @@
    spacing rules here would be a second answer to the same question, and the
    two would drift.
    ========================================================================== */
+.nb-share-notice {
+  margin: var(--space-4) 0 var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-ui);
+  line-height: 1.4;
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border: 1px dashed var(--wash-lemon-deep);
+  border-radius: 10px 12px 9px 11px / 11px 9px 12px 10px;
+}
+
 .nb-share-row {
   display: grid;
   grid-template-columns: 26px 1fr auto;

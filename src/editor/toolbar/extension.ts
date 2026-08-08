@@ -31,7 +31,6 @@ import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { createComponent } from 'solid-js';
 import { createStore, type SetStoreFunction } from 'solid-js/store';
 import { render } from 'solid-js/web';
-import { play } from '../../sound/engine';
 import SelectionToolbar from './SelectionToolbar';
 import {
   NO_ACTIVE_MARKS,
@@ -255,7 +254,6 @@ class SelectionToolbarView {
       return;
     }
     toggleSelectionMark(this.editor, action.id);
-    void play('pop-soft');
   };
 
   private readonly onFace = (hand: string): void => {
@@ -265,7 +263,6 @@ class SelectionToolbarView {
     // for a face the document did not take is the lie this readout exists to
     // prevent.
     this.setState('face', selectionFace(this.editor));
-    void play('pop-soft');
   };
 
   private readonly onClearFace = (): void => {
@@ -283,14 +280,12 @@ class SelectionToolbarView {
 
   private readonly onWash = (wash: HighlightWash): void => {
     applySelectionHighlight(this.editor, wash, this.state.hlStyle);
-    void play('pop-soft');
   };
 
   private readonly onHighlightStyle = (style: HighlightStyle): void => {
     // A style with no wash under it would be a squiggle in no colour, so the
     // press means "highlight it this way" — wash included.
     applySelectionHighlight(this.editor, this.state.wash, style);
-    void play('pop-soft');
   };
 
   private readonly onClearHighlight = (): void => {
@@ -304,7 +299,6 @@ class SelectionToolbarView {
   private readonly onApplyLink = (): void => {
     if (applySelectionLink(this.editor, this.state.href)) {
       this.setState({ tray: null, linkError: false });
-      void play('pop-soft');
     } else {
       this.setState('linkError', true);
     }
@@ -329,7 +323,6 @@ class SelectionToolbarView {
     } else {
       this.setState({ tray, linkError: false });
     }
-    if (tray !== null) void play('pop-soft');
     // A tray makes the card taller; re-anchor so it does not grow off-screen.
     requestAnimationFrame(() => {
       if (!this.destroyed && this.up) this.place();

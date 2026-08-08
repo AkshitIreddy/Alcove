@@ -471,7 +471,6 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
     if (clamped === untrack(index) && untrack(stage) === 'ask') return;
     setStage('ask');
     setIndex(clamped);
-    void play('pop-soft', { volume: 0.5 });
   }
 
   function forward(): void {
@@ -481,7 +480,6 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
       return;
     }
     setStage('summary');
-    void play('pop-soft', { volume: 0.55 });
   }
 
   function back(): void {

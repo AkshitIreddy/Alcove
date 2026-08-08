@@ -1,11 +1,12 @@
 /**
- * src/features/system/tray.ts — frontend half of tray quick capture.
+ * src/features/system/tray.ts — frontend half of tray quick capture and
+ * close-to-tray.
  *
  * The Rust side (src-tauri/src/tray.rs) owns the tray icon and menu; this
- * module keeps the tray's existence in sync with the `trayQuickCapture`
- * setting (invoking `tray_enable` / `tray_disable`) and handles the
- * "Quick note" action: the tray emits `nb://tray-quick-note`, and we open
- * an "Inbox" book — created on demand on floor 0 — for fast capture.
+ * module sends both persisted tray settings through one `tray_sync` command
+ * and handles the "Quick note" action: the tray emits
+ * `nb://tray-quick-note`, and we open an "Inbox" book — created on demand on
+ * floor 0 — for fast capture.
  */
 
 import { getDb, isTauri } from '../../data/db';
@@ -13,7 +14,7 @@ import { createBook, listBooksByFloorRange } from '../../data/books';
 import { createPage } from '../../data/pages';
 import { subscribe as subscribeSettings } from '../../data/settings';
 import { appState } from '../../state/app';
-import type { Book, BookRow } from '../../data/types';
+import type { Book, BookRow, Settings } from '../../data/types';
 
 /** Must match `QUICK_NOTE_EVENT` in src-tauri/src/tray.rs. */
 export const QUICK_NOTE_EVENT = 'nb://tray-quick-note';
@@ -36,6 +37,13 @@ export function nextFreeSlot(
     if (book.floor === floor && book.slot > max) max = book.slot;
   }
   return max + 1;
+}
+
+/** Whether either tray feature needs the icon to remain reachable. */
+export function trayNeeded(
+  current: Pick<Settings, 'trayQuickCapture' | 'closeToTray'>,
+): boolean {
+  return current.trayQuickCapture || current.closeToTray;
 }
 
 /* ------------------------------- inbox book -------------------------------- */
@@ -86,25 +94,34 @@ export async function openQuickNote(): Promise<void> {
 
 /* --------------------------------- sync ------------------------------------ */
 
-async function invokeTauri(cmd: string): Promise<void> {
+async function invokeTraySync(
+  quickCapture: boolean,
+  closeToTray: boolean,
+): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke(cmd);
+  await invoke('tray_sync', { quickCapture, closeToTray });
 }
 
 /**
- * Keep the tray in sync with the `trayQuickCapture` setting and listen for
- * quick-note events. Desktop only (no-op disposer in the browser).
+ * Keep the tray in sync with both tray settings and listen for quick-note
+ * events. Desktop only (no-op disposer in the browser).
  * Returns a disposer.
  */
 export function startTraySync(): () => void {
   if (!isTauri()) return () => {};
 
-  let lastEnabled: boolean | null = null;
+  let lastQuickCapture: boolean | null = null;
+  let lastCloseToTray: boolean | null = null;
   const unsubscribeSettings = subscribeSettings((current) => {
-    const enabled = current.trayQuickCapture;
-    if (enabled === lastEnabled) return;
-    lastEnabled = enabled;
-    void invokeTauri(enabled ? 'tray_enable' : 'tray_disable').catch(() => {
+    const quickCapture = current.trayQuickCapture;
+    const closeToTray = current.closeToTray;
+    if (
+      quickCapture === lastQuickCapture &&
+      closeToTray === lastCloseToTray
+    ) return;
+    lastQuickCapture = quickCapture;
+    lastCloseToTray = closeToTray;
+    void invokeTraySync(quickCapture, closeToTray).catch(() => {
       // Tray unavailable (unregistered command / platform) — setting stays.
     });
   });

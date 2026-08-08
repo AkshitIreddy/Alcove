@@ -20,7 +20,6 @@
  * (cover_meta.pageDefaults) and fall back to settings.pageStyleDefault.
  */
 import {
-  For,
   Show,
   createEffect,
   createMemo,
@@ -35,14 +34,21 @@ import {
 import { appState } from '../state/app';
 import { editorState } from '../editor/state';
 import {
+  bookcaseOf,
   getBook,
   listBooksByFloorRange,
-  readCoverOverrides,
   readPageDefaults,
+  readShelfMeta,
   savePageDefaults,
   type BookPageDefaults,
 } from '../data/books';
-import { createPage, getPage, listPages, savePageDoc } from '../data/pages';
+import {
+  createPage,
+  getPage,
+  listPages,
+  persistPageDocIdentity,
+  savePageDoc,
+} from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { save as saveSettings, settings } from '../data/settings';
 import { registerCommands } from '../data/keybindings';
@@ -50,10 +56,14 @@ import type { Book, Page, PageDoc, PageStyle } from '../data/types';
 import {
   coverDataUrl,
   deriveCoverParams,
-  normalizeCoverOverrides,
   type CoverOverrides,
 } from '../art/covers';
+import { getTheme } from '../art/themes';
 import PageEditor, { type PageEditorProps } from '../editor/PageEditor';
+import {
+  pageDocForRendering,
+  preparePageRenderDocs,
+} from '../editor/blockIdentity';
 import InsertScriptDialog from '../editor/insert/InsertScriptDialog';
 import { activeEditor } from '../editor/insert/activeEditor';
 import {
@@ -65,6 +75,7 @@ import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
 import { exportActivePagePng } from '../editor/script/exporters/exportPage';
+import { downloadNotebookScriptSpec } from '../editor/script/exporters/saveFile';
 import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
 import { openExportPdfDialog } from '../features/templates/ExportPdfDialog';
 import { openTemplatesGallery } from '../features/templates/TemplatesGallery';
@@ -77,6 +88,14 @@ import { play } from '../sound/engine';
 import { LINGER_MS } from '../styles/motion';
 import { useSearchJump } from '../search/jump';
 import QuickSwitcher from '../features/quickswitch/QuickSwitcher';
+import { resolveBookAppearance } from '../features/bookshelf/bookIdentity';
+import { prefsForBookcase } from '../features/bookshelf/libraryPrefs';
+import { prefersReducedMotion } from '../features/bookshelf/env';
+import {
+  pulledBookCenterLayout,
+  type PulledBookCenterLayout,
+} from '../features/bookshelf/pulledBookGeometry';
+import { paintPulledBookStatusMark } from '../features/bookshelf/pulledBookStatus';
 import BookRail, { type RailPanelId } from './rail/BookRail';
 import RailPanel from './rail/RailPanel';
 import CustomizePanel from './rail/CustomizePanel';
@@ -113,7 +132,6 @@ import {
 } from './bookmarks';
 import { panelEdge } from './rail/panelPush';
 import {
-  MAX_TRAILING_BLANK_PAGES,
   SPREAD_FIT_REST,
   canFlipSpread,
   docHasContent,
@@ -175,8 +193,15 @@ async function loadSession(source: {
   }
   if (!book) return null;
 
-  const pages = await listPages(book.id);
-  if (pages.length === 0) pages.push(await createPage({ bookId: book.id }));
+  const storedPages = await listPages(book.id);
+  if (storedPages.length === 0) {
+    storedPages.push(await createPage({ bookId: book.id }));
+  }
+  // Resolve the identity migration before the resource publishes this
+  // session. Both PageEditor and the offscreen flip capture therefore receive
+  // the same ids on their very first construction, rather than independently
+  // minting ids one frame apart at the raster-to-DOM handoff.
+  const pages = await preparePageRenderDocs(storedPages, persistPageDocIdentity);
   return { book, pages };
 }
 
@@ -209,6 +234,8 @@ const BACK_LINGER_MS = 2800;
 
 /** How long it stays once the pointer has left the corner again. */
 const BACK_LEAVE_MS = 650;
+/** Safety net if an animation event is lost during a route or window change. */
+const BOOK_CLOSE_FALLBACK_MS = 520;
 
 /** Hand-drawn back arrow (pre-wobbled static path — no runtime filters). */
 function BackArrowIcon(): JSX.Element {
@@ -261,6 +288,20 @@ const sameSpreadIds = (a: SpreadIds, b: SpreadIds): boolean =>
   a.prevRight === b.prevRight;
 
 export default function BookView(): JSX.Element {
+  /**
+   * Visual-QA ruler: render each authored page exactly as stored, without the
+   * pagination drain moving its trailing blocks onward. This is dev-only and
+   * opt-in (`?qa=no-pagination`); production books always paginate.
+   *
+   * The normal walk proves the final book is stable. This view answers the
+   * diagnostic question the normal walk cannot once a cascade has begun:
+   * which authored leaf was actually too tall before anything moved?
+   */
+  const qaNoPagination =
+    import.meta.env.DEV &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('qa') === 'no-pagination';
+
   // Source is an object so a null bookId still triggers the fetcher
   // (createResource skips falsy sources).
   const [session] = createResource(
@@ -290,7 +331,19 @@ export default function BookView(): JSX.Element {
       if (loaded) {
         setPages(loaded.pages);
         setSpreadIndex(0);
-        setCoverOverrides(normalizeCoverOverrides(readCoverOverrides(loaded.book)));
+        // Hydrate from the same resolved appearance the shelf and pull-out use.
+        // A Welcome-style `cover_meta.style` without a duplicated `cover`
+        // section used to fall through to a fresh random board here.
+        const appearance = resolveBookAppearance(
+          loaded.book,
+          getTheme(prefsForBookcase(bookcaseOf(loaded.book)).theme),
+          { pageCount: readShelfMeta(loaded.book)?.pageCount },
+        );
+        const canonicalCover: CoverOverrides & { seed?: number } = {
+          ...appearance.cover,
+        };
+        delete canonicalCover.seed;
+        setCoverOverrides(canonicalCover);
         setPageDefaults(readPageDefaults(loaded.book));
       }
     }),
@@ -332,9 +385,9 @@ export default function BookView(): JSX.Element {
   const rightHasContent = (): boolean => docHasContent(rightPage()?.doc);
 
   /**
-   * Empty pages at the very end of the book. This is the allowance that lets
-   * a reader deliberately skip a page (see MAX_TRAILING_BLANK_PAGES) while
-   * still stopping a held key from appending without bound.
+   * Empty pages at the very end of the book. Kept for the pure spread helpers
+   * and imported-book repair path; navigation readiness itself is based on the
+   * concrete styled destination slots below, never on how many blanks exist.
    */
   const trailingBlanks = (): number => {
     const all = pages();
@@ -346,27 +399,66 @@ export default function BookView(): JSX.Element {
     return n;
   };
 
-  const canFlip = (direction: FlipDirection): boolean =>
-    canFlipSpread(
-      pages().length,
-      spreadIndex(),
-      direction,
-      rightHasContent(),
-      trailingBlanks(),
-    );
+  const canFlip = (direction: FlipDirection): boolean => {
+    if (
+      !canFlipSpread(
+        pages().length,
+        spreadIndex(),
+        direction,
+        rightHasContent(),
+        trailingBlanks(),
+      )
+    ) {
+      return false;
+    }
+    if (direction === 'prev') return true;
+
+    /*
+     * A forward turn is armed only after BOTH destination leaves exist with
+     * their inherited page docs. Previously `canFlipSpread` allowed the turn
+     * first and `onNavigate` inserted those rows afterwards, so the curl had
+     * no styled snapshots and the landed spread was cream-white until SQLite
+     * and PageEditor caught up. The reserve below normally keeps this true;
+     * the guard closes the tiny race when a reader turns unusually quickly.
+     */
+    const destinationLeft = leftSlot(spreadIndex() + 1);
+    return pages().length >= destinationLeft + 2;
+  };
 
   // -------------------------------------------------------------------------
   // Page creation ("+ page" rail tool + auto-create on forward flip)
   // -------------------------------------------------------------------------
-  const appendPage = async (): Promise<Page | null> => {
-    const loaded = session();
-    if (!loaded) return null;
-    const created = await createPage({
-      bookId: loaded.book.id,
-      doc: newPageDoc(bookPageStyle(), bookLineHeight()),
+  /*
+   * One append lane for every producer in this view: end-of-book turns, the
+   * rail button, blank-leaf clicks and pagination overflow. `createPage`
+   * derives ord from SQLite, so two independent awaits can otherwise read the
+   * same last ord before either INSERT lands. Chaining here keeps arbitrary
+   * blank-page growth safe without making each caller know about the others.
+   * A rejection is swallowed only by the lane tail, not by the caller, so the
+   * current action still receives its real error and later appends may proceed.
+   */
+  let appendLane: Promise<void> = Promise.resolve();
+  const appendPage = (): Promise<Page | null> => {
+    const bookId = session()?.book.id;
+    if (!bookId) return Promise.resolve(null);
+    const pending = appendLane.then(async (): Promise<Page | null> => {
+      if (session()?.book.id !== bookId) return null;
+      const created = await createPage({
+        bookId,
+        doc: newPageDoc(bookPageStyle(), bookLineHeight()),
+      });
+      // A route change may finish while SQLite is inserting into the old book.
+      // Keep that valid row there, but never publish it into another session.
+      if (session()?.book.id === bookId) {
+        setPages((prev) => [...prev, created]);
+      }
+      return created;
     });
-    setPages((prev) => [...prev, created]);
-    return created;
+    appendLane = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
   };
 
   let flipApi: FlipSurfaceApi | undefined;
@@ -375,7 +467,8 @@ export default function BookView(): JSX.Element {
     const slotOfNew = pages().length;
     const created = await appendPage();
     if (!created) return;
-    void play('pop-soft');
+    // A paper ribbon is visually self-confirming. It deliberately makes no
+    // sound: the old pitched pop/tong was more intrusive than useful.
     const target = spreadOfSlot(slotOfNew);
     if (target === spreadIndex() + 1) {
       flipApi?.flipNext(); // one spread ahead — arrive with the flip animation
@@ -386,7 +479,7 @@ export default function BookView(): JSX.Element {
   };
 
   /**
-   * KEEP TWO REAL PAGES STANDING READY AT THE END OF THE BOOK.
+   * KEEP TWO COMPLETE, ALREADY-STYLED SPREADS STANDING AHEAD OF THE READER.
    *
    * The reader: *"always auto-create the next 2 pages when the user is on the
    * last page, so the user never sees a blank page."*
@@ -398,78 +491,34 @@ export default function BookView(): JSX.Element {
    * waiting for an editor to appear underneath you. Creating it a beat EARLIER
    * costs the same page and removes the seam entirely.
    *
-   * Bounded by the trailing blanks rather than by position, which is what stops
-   * a runaway: once two empty pages trail the book nothing more is made, and
-   * writing on one is what earns the next. `MAX_TRAILING_BLANK_PAGES` is four,
-   * so two ahead sits inside the allowance a reader already has for
-   * deliberately skipping a page — this cannot make `canFlipSpread` refuse a
-   * turn it would otherwise have allowed.
+   * Finite by construction: the target is based on the current spread, not on
+   * the total number of trailing blank documents. Counting trailing blanks was
+   * the subtle bug here: once a book had four empty pages it looked "stocked"
+   * forever, even after the reader had walked onto the last pair. Advancing one
+   * spread moves this fixed window and creates only the next pair.
    *
-   * Only near the end, or a book with two hundred written pages would grow two
-   * more the moment it opened.
+   * Two spreads rather than one give the offscreen raster cache time to capture
+   * the selected ruling before even a fast second turn. `appendPage` stamps the
+   * book's current page style and line height into every reserved document.
    */
-  const PAGES_AHEAD = 2;
+  const READY_SPREADS_AHEAD = 2;
   let stocking = false;
   createEffect(() => {
     const count = pages().length;
     const here = spreadIndex();
-    // Track both, so writing on the last page re-arms this.
-    const blanks = trailingBlanks();
     if (!session()) return;
-    // Within one spread of the end — anywhere else there is nothing to stock.
-    if (spreadOfSlot(Math.max(0, count - 1)) > here + 1) return;
     if (stocking) return;
 
-    /*
-     * Two blanks is not the whole answer, and the difference is visible.
-     *
-     * A spread is TWO slots, so an odd page count leaves the last spread with a
-     * real page on the left and nothing at all on the right — measured as
-     * ["empty-editor", "no-editor"], which on screen is a page you can write on
-     * beside a leaf of bare cream that does nothing when clicked. That bare
-     * leaf IS the blank page being complained about; stocking two more pages
-     * without evening the count just moves it along.
-     *
-     * So the target is the smallest page count that both leaves two blanks
-     * ahead AND completes the spread. In practice that is two or three pages,
-     * once, and then nothing until the reader writes on one.
-     */
-    let wanted = Math.max(0, PAGES_AHEAD - blanks);
-    if ((count + wanted) % 2 !== 0) wanted += 1;
-    if (wanted === 0) return;
-
-    /*
-     * AND NEVER PAST THE ALLOWANCE, or this defeats the runaway guard.
-     *
-     * `canFlipSpread` lets a reader turn onto a blank spread while fewer than
-     * MAX_TRAILING_BLANK_PAGES empty pages trail the book — the stop that keeps
-     * a held arrow key from appending without bound. Topping the blanks back up
-     * to two after every turn keeps that count permanently under the limit, so
-     * the guard never fires and the book grows forever. Measured: three turns
-     * past the end each produced another full spread.
-     *
-     * The count of trailing blanks stopped being a measure of the READER'S
-     * intent the moment this effect started creating them, so the bound is
-     * taken from the last page they actually wrote on instead. Four blanks past
-     * that is the same allowance as before, arrived at honestly.
-     */
-    const all = pages();
-    let lastInked = -1;
-    for (let i = all.length - 1; i >= 0; i -= 1) {
-      if (docHasContent(all[i]?.doc)) {
-        lastInked = i;
-        break;
-      }
-    }
-    const ceiling = lastInked + 1 + MAX_TRAILING_BLANK_PAGES;
-    wanted = Math.min(wanted, Math.max(0, ceiling - count));
+    const readyThrough = here + READY_SPREADS_AHEAD;
+    const targetCount = leftSlot(readyThrough) + 2;
+    const wanted = Math.max(0, targetCount - count);
     if (wanted === 0) return;
 
     stocking = true;
     void (async () => {
       try {
-        // Sequenced, not Promise.all: createPage derives its ord from the
-        // store, so two in flight would both claim the same slot.
+        // Await each request so this reserve grows deterministically. The
+        // shared append lane also serializes it against every other producer.
         for (let i = 0; i < wanted; i += 1) await appendPage();
       } finally {
         stocking = false;
@@ -487,10 +536,9 @@ export default function BookView(): JSX.Element {
       trailingBlanks(),
     );
     if (toCreate > 0) {
-      // Fire-and-forget: the new spread shows cream blank faces for the few
-      // ms until the rows land, then the keyed leaves mount their editors.
-      // SEQUENCED, not Promise.all: createPage derives its ord from the store,
-      // so two in flight at once would both claim the same slot.
+      // Defensive repair for an imported/corrupt sparse book. Normal pointer
+      // navigation cannot enter this branch because `canFlip` waits for the
+      // styled destination reserve above.
       void (async () => {
         for (let i = 0; i < toCreate; i += 1) await appendPage();
       })();
@@ -498,6 +546,7 @@ export default function BookView(): JSX.Element {
     setSpreadIndex((index) =>
       Math.max(0, index + (direction === 'next' ? 1 : -1)),
     );
+    void play('page-flip');
   };
 
   // -------------------------------------------------------------------------
@@ -1174,6 +1223,113 @@ export default function BookView(): JSX.Element {
   /** Pointer is inside the summoning corner. Plain flag: read on every move. */
   let backNear = false;
 
+  // The spread and the shelf are always-mounted siblings with different
+  // owners. Closing gets one short local bridge before changing that owner,
+  // otherwise the spread unmounts into a full-size cover in a single frame.
+  const initialCloseLayout = (): PulledBookCenterLayout =>
+    pulledBookCenterLayout(
+      typeof window === 'undefined' ? 1280 : window.innerWidth,
+      typeof window === 'undefined' ? 800 : window.innerHeight,
+    );
+  const [closing, setClosing] = createSignal(false);
+  const [closeLayout, setCloseLayout] =
+    createSignal<PulledBookCenterLayout>(initialCloseLayout());
+  const [preparedCloseFace, setPreparedCloseFace] = createSignal<{
+    url: string;
+    image: HTMLImageElement;
+  } | null>(null);
+  let closeRequested = false;
+  let closeFallback: ReturnType<typeof setTimeout> | undefined;
+
+  // Rendering a full-resolution procedural cover is real work. Do it while
+  // the reader is idle, not inside the click that is supposed to start the
+  // closing gesture; the same URL is then reused by the shelf overlay.
+  createEffect(() => {
+    const loaded = session();
+    const overrides = coverOverrides();
+    const layout = closeLayout();
+    setPreparedCloseFace(null);
+    if (loaded == null || typeof window === 'undefined') return;
+
+    let cancelled = false;
+    const bake = (): void => {
+      if (cancelled) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const url = coverDataUrl(
+        Math.round(layout.width * dpr),
+        Math.round(layout.height * dpr),
+        deriveCoverParams(loaded.book.spineSeed, overrides),
+        loaded.book.title,
+      );
+      // Baking gives us PNG bytes; decoding them for the first CSS paint is a
+      // separate cost. Retain the decoded image for the life of the view so
+      // inserting the bridge does not turn that decode into another click
+      // pause.
+      const image = new Image();
+      image.src = url;
+      const publish = (): void => {
+        if (!cancelled) setPreparedCloseFace({ url, image });
+      };
+      if (typeof image.decode === 'function') {
+        void image
+          .decode()
+          .catch(() => undefined)
+          .then(publish);
+      } else if (image.complete) {
+        publish();
+      } else {
+        image.addEventListener('load', publish, { once: true });
+        image.addEventListener('error', publish, { once: true });
+      }
+    };
+
+    let cancel: () => void;
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(bake, { timeout: 1200 });
+      cancel = () => window.cancelIdleCallback(id);
+    } else {
+      const id = window.setTimeout(bake, 350);
+      cancel = () => window.clearTimeout(id);
+    }
+    onCleanup(() => {
+      cancelled = true;
+      cancel();
+    });
+  });
+
+  const commitClose = (): void => {
+    if (closeFallback !== undefined) {
+      clearTimeout(closeFallback);
+      closeFallback = undefined;
+    }
+    appState.closeBook();
+  };
+
+  /** One entry point, so a double click can never launch two return flights. */
+  const requestClose = (): void => {
+    if (closeRequested) return;
+    closeRequested = true;
+    setActivePanel(null);
+    setInsertOpen(false);
+    if (prefersReducedMotion() || session() == null) {
+      commitClose();
+      return;
+    }
+    setClosing(true);
+    closeFallback = setTimeout(commitClose, BOOK_CLOSE_FALLBACK_MS);
+  };
+
+  const finishCloseBridge: JSX.EventHandler<HTMLDivElement, AnimationEvent> = (
+    event,
+  ) => {
+    if (
+      event.currentTarget === event.target &&
+      event.animationName === 'nb-book-close-face'
+    ) {
+      commitClose();
+    }
+  };
+
   const clearBackTimer = (): void => {
     if (backTimer !== undefined) {
       clearTimeout(backTimer);
@@ -1215,9 +1371,15 @@ export default function BookView(): JSX.Element {
     // know the door is there — and then it gets out of the way.
     showBack(BACK_LINGER_MS);
     window.addEventListener('pointermove', onPointerMove, { passive: true });
+    const syncCloseLayout = (): void => {
+      setCloseLayout(initialCloseLayout());
+    };
+    window.addEventListener('resize', syncCloseLayout, { passive: true });
+    onCleanup(() => window.removeEventListener('resize', syncCloseLayout));
   });
   onCleanup(() => {
     clearBackTimer();
+    if (closeFallback !== undefined) clearTimeout(closeFallback);
     window.removeEventListener('pointermove', onPointerMove);
   });
 
@@ -1377,7 +1539,6 @@ export default function BookView(): JSX.Element {
   const openTemplates = (): void => {
     // The sheet would sit under the overlay, and its Escape would close first.
     setActivePanel(null);
-    void play('pop-soft');
     openTemplatesGallery();
   };
 
@@ -1494,6 +1655,15 @@ export default function BookView(): JSX.Element {
     }
   };
 
+  const downloadSpec = async (): Promise<void> => {
+    const outcome = await downloadNotebookScriptSpec(NOTEBOOK_SCRIPT_SPEC);
+    if (outcome === 'saved') {
+      notify('format guide saved — attach it to your AI');
+    } else if (outcome === 'failed') {
+      notify('could not save the format guide', 'error');
+    }
+  };
+
   /**
    * Export Script (design doc §3): the stored verbatim source while the page
    * is unedited since insert, else the canonical printer over the live doc.
@@ -1566,7 +1736,6 @@ export default function BookView(): JSX.Element {
     notifySaved();
     setHistoryRefresh((n) => n + 1);
     notify('the page turned back in time');
-    void play('pop-soft');
   };
 
   // -------------------------------------------------------------------------
@@ -1587,6 +1756,26 @@ export default function BookView(): JSX.Element {
     return bookmarks().find((mark) => mark.pageId === page.id) ?? null;
   });
 
+  /**
+   * The cloth that physically peeks out of each visible leaf.
+   *
+   * This is deliberately separate from `activeMark`, which follows keyboard
+   * focus for the rail control.  Using that focus value to paint the cover made
+   * one ribbon appear to follow the reader from page to page until focus moved.
+   */
+  const leftVisibleMark = createMemo((): Bookmark | null => {
+    const page = leftPage();
+    return page
+      ? (bookmarks().find((mark) => mark.pageId === page.id) ?? null)
+      : null;
+  });
+  const rightVisibleMark = createMemo((): Bookmark | null => {
+    const page = rightPage();
+    return page
+      ? (bookmarks().find((mark) => mark.pageId === page.id) ?? null)
+      : null;
+  });
+
   const activeBookmarked = createMemo((): boolean => activeMark() !== null);
 
   const commitBookmarks = (next: Bookmark[]): void => {
@@ -1601,10 +1790,10 @@ export default function BookView(): JSX.Element {
     const page = activePage();
     if (!loaded || !page) return;
     const next = toggleBookmark(bookmarks(), page.id);
-    const added = next.length > bookmarks().length;
     commitBookmarks(next);
-    void play('pop-soft');
-    notify(added ? 'ribbon tucked into this page' : 'ribbon removed');
+    // The ribbon is its own visible confirmation.  The former pitched pop was
+    // perceived as a metallic "tong", and a toast merely repeated the same
+    // thing the reader can already see on the page.
   };
 
   /**
@@ -1630,19 +1819,7 @@ export default function BookView(): JSX.Element {
         mark.pageId === page.id ? { ...mark, color: slot } : mark,
       ),
     );
-    void play('pop-soft');
-    notify(`the ${slot} ribbon marks this page`);
   };
-
-  /** Bookmarks resolved to live slots (dropped pages disappear quietly). */
-  const ribbons = createMemo(() =>
-    bookmarks()
-      .map((mark) => ({
-        ...mark,
-        slot: pages().findIndex((page) => page.id === mark.pageId),
-      }))
-      .filter((mark) => mark.slot >= 0),
-  );
 
   // -------------------------------------------------------------------------
   // /today journal jump (roadmap #18): the slash command records a pending
@@ -1681,6 +1858,33 @@ export default function BookView(): JSX.Element {
   // changes / overflow carries always do.
   // -------------------------------------------------------------------------
   const paperElements: Partial<Record<LeafSide, HTMLDivElement>> = {};
+
+  /**
+   * Every route into a spread inherits the no-scroll page contract.
+   *
+   * Overflow already resets the mounted leaf, but TOC/thumbnails/ribbon jumps
+   * replace both leaves without running that path. A late ProseMirror
+   * scrollIntoView during their mount could therefore leave the destination
+   * internally scrolled with its heading above the paper. Reset after the DOM
+   * swap and across two paint boundaries so both the first mount and a late
+   * editor focus are pinned back to the top.
+   */
+  createEffect(
+    on(spreadIndex, () => {
+      queueMicrotask(() => {
+        resetLeafScroll('left');
+        resetLeafScroll('right');
+        requestAnimationFrame(() => {
+          resetLeafScroll('left');
+          resetLeafScroll('right');
+          requestAnimationFrame(() => {
+            resetLeafScroll('left');
+            resetLeafScroll('right');
+          });
+        });
+      });
+    }),
+  );
 
   // Search click-to-jump (group C): flip to the target page + pulse the match.
   useSearchJump({
@@ -1725,7 +1929,6 @@ export default function BookView(): JSX.Element {
     }
     const target = pageAt(slot);
     if (!target) return;
-    void play('pop-soft');
     setFocusedSide(side);
     focusPageCaret(target.id, 'end');
   };
@@ -1770,7 +1973,6 @@ export default function BookView(): JSX.Element {
         editor.state.tr.insert(pos, editor.schema.nodeFromJSON(json)),
       );
     });
-    void play('pop-soft');
     notify(`${armedMarkLabel(mark)} stuck to this page — drag it wherever you like`);
   };
 
@@ -1828,14 +2030,29 @@ export default function BookView(): JSX.Element {
         when={leafKey(page())}
         keyed
         fallback={
-          <button
-            type="button"
-            class="nb-leaf-blank"
-            aria-label="Write on this page"
-            onClick={() => void writeOnBlankLeaf(side)}
+          <div
+            class="nb-page nb-blank-page-preview"
+            data-style={bookPageStyle()}
+            style={{
+              '--page-line-height': `${bookLineHeight() ?? 32}px`,
+            }}
           >
-            <span class="nb-leaf-blank-hint font-ui">start writing</span>
-          </button>
+            {/* Use the real ruling cascade while a bare leaf is becoming a
+                stored page. This placeholder has the same page/editor/prose
+                structure as PageEditor, so all twenty-seven page modes paint
+                correctly without maintaining a second set of gradients. */}
+            <div class="nb-page-editor" aria-hidden="true">
+              <div class="ProseMirror" />
+            </div>
+            <button
+              type="button"
+              class="nb-leaf-blank"
+              aria-label="Write on this page"
+              onClick={() => void writeOnBlankLeaf(side)}
+            >
+              <span class="nb-leaf-blank-hint font-ui">start writing</span>
+            </button>
+          </div>
         }
       >
         {(_key: string) => {
@@ -1845,15 +2062,18 @@ export default function BookView(): JSX.Element {
               pageId={current.id}
               initialDoc={current.doc}
               onDocChange={(doc) => updatePageDoc(current.id, doc)}
-              paginated
-              pageCapacityPx={pageCapacity()}
-              onOverflow={(blocks, cursorCarried, caretOffset) =>
-                handleOverflow(
-                  current.id,
-                  blocks,
-                  cursorCarried,
-                  caretOffset ?? null,
-                )
+              paginated={!qaNoPagination}
+              pageCapacityPx={qaNoPagination ? undefined : pageCapacity()}
+              onOverflow={
+                qaNoPagination
+                  ? undefined
+                  : (blocks, cursorCarried, caretOffset) =>
+                      handleOverflow(
+                        current.id,
+                        blocks,
+                        cursorCarried,
+                        caretOffset ?? null,
+                      )
               }
             />
           ) : null;
@@ -1871,6 +2091,7 @@ export default function BookView(): JSX.Element {
         'is-zoomed': focusMode() && focusZoom() !== ZOOM_REST,
         'is-placing': armedMark() !== null,
       }}
+      aria-busy={closing() ? 'true' : undefined}
       data-focus-mode={focusMode() ? 'true' : 'false'}
       /* The rung, for CSS and for anything measuring the mode from outside.
          `is-focus-mode` stays exactly what it was — the e2e suite and the tour
@@ -1907,7 +2128,8 @@ export default function BookView(): JSX.Element {
         tabindex={focusMode() ? -1 : 0}
         onFocus={() => holdBack()}
         onBlur={() => showBack(BACK_LEAVE_MS)}
-        onClick={() => appState.closeBook()}
+        disabled={closing()}
+        onClick={requestClose}
       >
         <BackArrowIcon />
         <span class="nb-back-label">back to shelf</span>
@@ -1997,13 +2219,28 @@ export default function BookView(): JSX.Element {
           // must never be re-evaluated by a reactive prop read downstream.
           const leftLeaf = leafFace('left', leftPage);
           const rightLeaf = leafFace('right', rightPage);
+          const closeFaceUrl = (): string => {
+            const prepared = preparedCloseFace();
+            if (prepared !== null) return prepared.url;
+            const layout = closeLayout();
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            return coverDataUrl(
+              Math.round(layout.width * dpr),
+              Math.round(layout.height * dpr),
+              deriveCoverParams(loaded.book.spineSeed, coverOverrides()),
+              loaded.book.title,
+            );
+          };
+          const pinned = readShelfMeta(loaded.book)?.pinned === true;
           return (
-            <div
-              class="nb-spread-stage"
-              ref={attachStage}
-              data-spread-index={spreadIndex()}
-              data-book-ink={pageDefaults()?.ink ?? 'inherit'}
-            >
+            <>
+              <div
+                class="nb-spread-stage"
+                classList={{ 'is-book-closing': closing() }}
+                ref={attachStage}
+                data-spread-index={spreadIndex()}
+                data-book-ink={pageDefaults()?.ink ?? 'inherit'}
+              >
               <header class="nb-spread-header">
                 <h1 class="nb-book-title-plate">{loaded.book.title}</h1>
               </header>
@@ -2021,29 +2258,34 @@ export default function BookView(): JSX.Element {
                 }}
               >
                 {/* Ribbon bookmarks peeking over the top edge (roadmap #19). */}
-                <Show when={ribbons().length > 0}>
+                {/* A ribbon belongs to the page it marks. Rendering the whole
+                    book's set on every spread made a page-local bookmark look
+                    like it followed the reader after a turn (and made the
+                    outside of a book accumulate duplicate-looking tabs). */}
+                <Show
+                  when={leftVisibleMark() !== null || rightVisibleMark() !== null}
+                >
                   <div class="nb-ribbon-row" data-testid="ribbon-row">
-                    <For each={ribbons()}>
+                    <Show when={leftVisibleMark()} keyed>
                       {(mark) => (
-                        <button
-                          type="button"
+                        <span
                           class="nb-ribbon"
                           data-color={mark.color}
-                          style={{
-                            left: `${
-                              8 +
-                              ((mark.slot + 0.5) /
-                                Math.max(pages().length, 1)) *
-                                84
-                            }%`,
-                          }}
-                          data-tooltip={`ribbon — page ${mark.slot + 1}`}
-                          data-tooltip-side="left"
-                          aria-label={`Jump to bookmarked page ${mark.slot + 1}`}
-                          onClick={() => jumpToSlot(mark.slot)}
+                          style={{ left: '43%' }}
+                          aria-label="The left page is bookmarked"
                         />
                       )}
-                    </For>
+                    </Show>
+                    <Show when={rightVisibleMark()} keyed>
+                      {(mark) => (
+                        <span
+                          class="nb-ribbon"
+                          data-color={mark.color}
+                          style={{ left: '88%' }}
+                          aria-label="The right page is bookmarked"
+                        />
+                      )}
+                    </Show>
                   </div>
                 </Show>
                 <div class="nb-spread">
@@ -2052,13 +2294,19 @@ export default function BookView(): JSX.Element {
                     spreadIndex={spreadIndex()}
                     pageIds={ids()}
                     getPageElement={(side) => paperElements[side] ?? null}
-                    loadPageDoc={async (pageId) => (await getPage(pageId))?.doc ?? null}
+                    // The adjacent-page snapshot reads the exact in-memory doc
+                    // handed to PageEditor. Reloading SQLite here could race an
+                    // edit or the identity normalization above and recreate a
+                    // one-frame difference at the raster-to-DOM handoff.
+                    loadPageDoc={async (pageId) =>
+                      pageDocForRendering(pages(), pageId)
+                    }
                     // A page staged for its snapshot is drained first, against
                     // the same budget the mounted leaves use, and hands the
                     // tail back here — so a reader turns onto the page they
                     // were shown (settleAhead).
-                    pageCapacityPx={pageCapacity()}
-                    onAheadOverflow={settleAhead}
+                    pageCapacityPx={qaNoPagination ? undefined : pageCapacity()}
+                    onAheadOverflow={qaNoPagination ? undefined : settleAhead}
                     aheadWorkState={() => ({
                       pending: carryPending,
                       revision: carryRevision,
@@ -2080,7 +2328,6 @@ export default function BookView(): JSX.Element {
                 <ThumbStrip
                   pages={pages()}
                   currentSpread={spreadIndex()}
-                  getSnapshot={(pageId) => flipApi?.getSnapshot(pageId)}
                   onJump={jumpToSlot}
                 />
               </Show>
@@ -2122,10 +2369,9 @@ export default function BookView(): JSX.Element {
                 title="In and out"
                 onClose={() => setActivePanel(null)}
               >
-                {/* The three that cannot resolve their own context: the paste
-                    box is mounted against the focused leaf, and both copies
-                    need this view's page and its toast. Everything else on the
-                    sheet calls its own module-level opener. */}
+                {/* The four that cannot resolve their own context: the paste
+                    box is mounted against the focused leaf; page copy needs
+                    that leaf; spec copy/download use this view's toast. */}
                 <SharePanel
                   onInsertScript={() => setInsertOpen(true)}
                   onCopyScript={() => {
@@ -2138,6 +2384,7 @@ export default function BookView(): JSX.Element {
                       'spec copied — paste it to your AI',
                     )
                   }
+                  onDownloadSpec={() => void downloadSpec()}
                   onClose={() => setActivePanel(null)}
                 />
               </RailPanel>
@@ -2175,16 +2422,54 @@ export default function BookView(): JSX.Element {
                 </Show>
               </RailPanel>
 
-              <Show when={insertOpen() ? activePage()?.id : null} keyed>
-                {(pageId) => (
-                  <InsertScriptDialog
-                    pageId={pageId}
-                    onClose={() => setInsertOpen(false)}
-                    onNotify={notify}
-                  />
-                )}
+                <Show when={insertOpen() ? activePage()?.id : null} keyed>
+                  {(pageId) => (
+                    <InsertScriptDialog
+                      pageId={pageId}
+                      onClose={() => setInsertOpen(false)}
+                      onNotify={notify}
+                    />
+                  )}
+                </Show>
+              </div>
+
+              {/*
+                A real shared-object bridge: it ends at the exact centred box
+                PulledBookOverlay begins from after the route changes. The
+                paper wash owns the background across that route boundary;
+                the cover itself never becomes translucent once visible.
+              */}
+              <Show when={preparedCloseFace() !== null || closing()}>
+                <div
+                  class="nb-book-close-bridge"
+                  classList={{ 'is-active': closing() }}
+                  data-testid="book-close-bridge"
+                  aria-hidden="true"
+                >
+                  <div class="nb-book-close-wash" />
+                  <div
+                    class="nb-book-close-face"
+                    onAnimationEnd={finishCloseBridge}
+                    style={{
+                      left: `${closeLayout().x}px`,
+                      top: `${closeLayout().y}px`,
+                      width: `${closeLayout().width}px`,
+                      height: `${closeLayout().height}px`,
+                      'background-image': `url("${closeFaceUrl()}")`,
+                    }}
+                  >
+                    <Show when={pinned}>
+                      <canvas
+                        class="nb-book-close-star"
+                        ref={(node) =>
+                          paintPulledBookStatusMark(node, 'star')
+                        }
+                      />
+                    </Show>
+                  </div>
+                </div>
               </Show>
-            </div>
+            </>
           );
         }}
       </Show>

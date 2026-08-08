@@ -127,28 +127,13 @@ const opt = (name, fallback) => {
 const URL_BASE = opt('url', 'http://localhost:1420');
 
 /**
- * The one URL every app shot is taken at, and BOTH parameters are load-bearing.
+ * The one URL every app shot is taken at.
  *
  * `fx=force` is the old one: headless Chromium reports no WebGL worth having,
  * and without it the shelf draws in its reduced mode and the README shows an
  * app nobody runs.
- *
- * `dev=0` is the new one, and it fixes a defect that had shipped into every
- * picture on the front page. `App.tsx`'s `devChromeEnabled()` falls through to
- * `import.meta.env.DEV`, which is TRUE on the dev server these shots are taken
- * against — so the dev-only "shelf | book" view switcher was pinned over the
- * bottom-right corner of every single one of them, half across the page-curl
- * dog-ear. The README was showing readers a control the installed app does not
- * have, sitting on top of one it does. The gate already accepted `dev=0`;
- * nothing ever passed it.
- *
- * `tests/readme.test.ts` pins this line by READING this file rather than
- * importing it — importing would launch Playwright, because everything here
- * runs at the top level. The failure is otherwise silent: the shots still
- * render, still pass every size and freshness check, and the pill is small
- * enough to read as part of the app.
  */
-const SHOT_URL = `${URL_BASE}/?fx=force&dev=0`;
+const SHOT_URL = `${URL_BASE}/?fx=force`;
 const ONLY = opt('only', '')
   .split(',')
   .map((s) => s.trim())
@@ -1773,7 +1758,7 @@ await browser.close();
 /**
  * The identity strings the pictures spell out, read off the TypeScript by
  * regex rather than by import — this script is plain ESM run by node, and the
- * five values are all single literals declared once. `tests/readme.test.ts`
+ * five values are all single literals declared once. `tests/readme-integrity.test.ts`
  * imports the same five properly and compares, so a regex that silently stopped
  * matching would fail there rather than pass here.
  */

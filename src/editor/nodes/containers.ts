@@ -297,7 +297,10 @@ export const IndexCard = Node.create({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const attrs: Record<string, unknown> = { 'data-type': 'index-card' };
+    const attrs: Record<string, unknown> = {
+      'data-type': 'index-card',
+      'data-nb-ruling-surface': '',
+    };
     if (!hasExplicitRotate(node)) {
       const seed = `${String(node.attrs.id ?? '')}|${String(node.attrs.title ?? '')}`;
       attrs.style = `--nb-rotate: ${seededTilt(seed, 1.4)}deg`;
@@ -479,7 +482,7 @@ export const TicketStub = Node.create({
 export const Postcard = Node.create({
   name: 'postcard',
   group: 'block',
-  content: 'block+',
+  content: 'col col',
   defining: true,
   draggable: true,
 
@@ -492,7 +495,10 @@ export const Postcard = Node.create({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const attrs: Record<string, unknown> = { 'data-type': 'postcard' };
+    const attrs: Record<string, unknown> = {
+      'data-type': 'postcard',
+      'data-nb-ruling-surface': '',
+    };
     if (!hasExplicitRotate(node)) {
       const seed = `${String(node.attrs.id ?? '')}|post`;
       attrs.style = `--nb-rotate: ${seededTilt(seed, 1)}deg`;
@@ -505,7 +511,7 @@ export const Postcard = Node.create({
 export const Ledger = Node.create({
   name: 'ledger',
   group: 'block',
-  content: 'block+',
+  content: 'col col',
   defining: true,
   draggable: true,
 
@@ -519,7 +525,14 @@ export const Ledger = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     // Deliberately untilted: ruled account paper is bound in, not stuck on.
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'ledger' }), 0];
+    return [
+      'div',
+      mergeAttributes(HTMLAttributes, {
+        'data-type': 'ledger',
+        'data-nb-ruling-surface': '',
+      }),
+      0,
+    ];
   },
 });
 

@@ -21,10 +21,10 @@ import { render } from 'solid-js/web';
 import { parse } from '../../script';
 import ScriptPreview from '../../editor/insert/ScriptPreview';
 import { appState } from '../../state/app';
+import { useDialogFocus } from '../../state/dialogFocus';
 import { usePanelKeys } from '../../state/panelKeys';
 import { editorState } from '../../editor/state';
 import { notify } from '../../editor/script/exporters/toast';
-import { play } from '../../sound/engine';
 import {
   appendScriptPagesToBook,
   createBookFromScript,
@@ -89,6 +89,8 @@ function TemplateCard(props: {
 
 export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
+  let galleryRef: HTMLDivElement | undefined;
+  let closeRef: HTMLButtonElement | undefined;
 
   const canInsertHere = (): boolean =>
     appState.viewState() === 'book' && editorState.openBookId() !== null;
@@ -97,6 +99,10 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
   // and Enter are bound on `document`. Without this the card's own keyboard was
   // shared with the shelf underneath it — see state/panelKeys.ts.
   usePanelKeys();
+  useDialogFocus({
+    container: () => galleryRef,
+    initialFocus: () => closeRef,
+  });
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') props.onClose();
@@ -112,7 +118,6 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
         template.script,
         template.name,
       );
-      void play('pop-soft');
       notify(`“${book.title}” added to the shelf`);
       props.onClose();
       reopenBook(book.id);
@@ -129,7 +134,6 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
     setBusy(true);
     try {
       const pages = await appendScriptPagesToBook(bookId, template.script);
-      void play('pop-soft');
       notify(
         `${pages.length} ${template.name} page${pages.length === 1 ? '' : 's'} added`,
       );
@@ -151,9 +155,11 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
     >
       <div
         class="nb-ins-card nb-tpl-gallery"
+        ref={galleryRef}
         role="dialog"
         aria-modal="true"
         aria-label="Start from a template"
+        tabindex="-1"
       >
         {/*
           Moved here from a "Close" at the bottom-right of the card. That put
@@ -164,6 +170,7 @@ export function TemplatesGallery(props: TemplatesGalleryProps): JSX.Element {
           type="button"
           class="nb-ins-close"
           aria-label="Close templates"
+          ref={closeRef}
           onClick={() => props.onClose()}
         >
           ×

@@ -3,9 +3,9 @@
  *
  * The README claims things a repo can drift away from: that a file is at a
  * path, that 222 of 230 source files open with a module docstring, that there
- * are 48 unit-test files and 15 e2e specs, that five design docs carry a
- * superseded banner. Every one of those was true when it was typed and none of
- * them is self-maintaining.
+ * are five design docs carrying a superseded banner, and that the Rust half is
+ * still the size the architecture page says it is. Every one of those was true
+ * when it was typed and none is self-maintaining.
  *
  * So they are not typed as prose. Each is written into the markdown wrapped in
  * an invisible marker:
@@ -15,7 +15,7 @@
  * GitHub renders that as `222` and nothing else. This script recomputes every
  * key from the tree and fails if the checked-in number disagrees — the same
  * shape as `npm run spec:check`, and for the same reason: a generator nobody
- * runs is worth nothing, a check that fails a test run is worth everything.
+ * runs is worth nothing, while an explicit check can catch mechanical drift.
  *
  * It also resolves every relative link, **against the directory the file it is
  * written in actually lives in** — which is what a browser does. `README.md` is
@@ -38,10 +38,9 @@
  * readme:build` composes the regions that are marked as generated, and every
  * sentence outside them is somebody's to write.
  *
- * That leaves the numbers gated where they should be: `tests/readme.test.ts`
- * fails on a stale count, because a count that has stopped being true is a fact
- * rather than an editorial choice. `--strict` here exits 1 for a caller that
- * wants the same thing from a shell.
+ * File-only facts are checked by `npm run readme:check`. Vocabulary counts and
+ * app identity require importing TypeScript, so this standalone script reports
+ * them as deferred rather than pretending it checked them.
  *
  * It also answers the other half of the question — what is MISSING. See
  * {@link checkCoverage}: a number this script can compute that the page never
@@ -54,10 +53,9 @@
  *   node scripts/check-readme.mjs --strict   …and exit 1 if anything has drifted
  *   node scripts/check-readme.mjs --facts    print every computed fact
  *
- * The vocabulary counts (how many shelf builds, how many papers) are NOT here:
- * computing them means loading TypeScript, and `tests/readme.test.ts` can
- * simply import those modules. It calls the functions below for everything
- * else, so `npx vitest run` is the gate and this script is the convenience.
+ * Vocabulary counts (how many shelf builds, how many papers) are not computed
+ * here because that means loading TypeScript. They remain explicit deferred
+ * facts; this script checks everything it can derive from files alone.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -167,11 +165,6 @@ export function computeFacts() {
       /^gen-.*\.(mjs|py)$/.test(n),
     ).length,
     readmeShots: walk(join(ROOT, 'docs', 'readme', 'img'), (n) => n.endsWith('.png')).length,
-    unitTests: walk(join(ROOT, 'tests'), (n) => n.endsWith('.test.ts')).length,
-    e2eSpecs: walk(join(ROOT, 'tests', 'e2e'), (n) => n.endsWith('.spec.ts')).length,
-    probeScripts: readdirSync(join(ROOT, 'scripts')).filter((n) =>
-      /^probe-.*\.mjs$/.test(n),
-    ).length,
     designDocs: designDocs.length,
     supersededDesignDocs: superseded,
     rustCommands: (
@@ -202,10 +195,8 @@ function stripCode(text) {
 const FACT_RE = /<!--\s*f:([A-Za-z][A-Za-z0-9_]*)\s*-->([\s\S]*?)<!--\s*\/f\s*-->/g;
 
 /**
- * Keys this script knows about but cannot compute, because computing them
- * means loading TypeScript modules. `tests/readme.test.ts` imports those
- * modules directly and passes the values in, so the numbers ARE gated — just
- * by `npx vitest run` rather than by the CLI. The CLI skips them and says so.
+ * Keys this script knows about but cannot compute without loading TypeScript
+ * modules. The standalone checker skips them and says so explicitly.
  */
 export const DEFERRED_FACTS = [
   'shelfBuilds',
@@ -430,8 +421,8 @@ export function checkCoverage(facts = computeFacts(), docs = readmeDocs()) {
  * one, the manifest recorded the shot's own digest, and that digest matched.
  * The cause is fixed at the capture end — `onScreen()` in
  * `shots-now/readme-shots.mjs` now waits for the sheet's left edge to be inside
- * the window rather than trusting Playwright's `visible`, which a sheet parked
- * off-canvas satisfies. This is the other end of it, and worth having on its
+ * the window rather than trusting a generic visibility flag, which a sheet
+ * parked off-canvas satisfies. This is the other end of it, and worth having on its
  * own: two shots with two different captions cannot both be the same picture,
  * whatever went wrong upstream to make them one. {@link checkShots} therefore
  * compares the pictures to EACH OTHER as well as to the tree.
@@ -479,9 +470,8 @@ export const SHOT_SOURCES = {
 };
 
 /**
- * Identity the pictures spell out in words, deferred to `tests/readme.test.ts`
- * for the same reason {@link DEFERRED_FACTS} is: reading these means loading
- * TypeScript, and a vitest file can simply import the modules.
+ * Identity the pictures spell out in words. These are deferred for the same
+ * reason as {@link DEFERRED_FACTS}: reading them means loading TypeScript.
  *
  * These are the five things whose change made the last set of shots wrong: the
  * title written across the open spread and drawn into the root of the tree
@@ -586,8 +576,7 @@ export function readShotsManifest() {
  *
  * `depicted` carries the values from {@link DEPICTED_KEYS} that only a
  * TypeScript import can supply; anything missing from it is counted as deferred
- * rather than failed, so the CLI stays runnable on its own and
- * `tests/readme.test.ts` is where those become a gate.
+ * rather than failed, so the CLI stays runnable on its own.
  */
 export function checkShots(depicted = {}) {
   const problems = [];
@@ -752,7 +741,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   console.log(
     `README report — ${docs.length} file(s), ${links.checked} relative link(s), ` +
       `${marks.checked} fact marker(s) and ${shots.checked} screenshot(s) checked, ` +
-      `${marks.deferred + shots.deferred} deferred to tests/readme.test.ts`,
+      `${marks.deferred + shots.deferred} TypeScript-derived value(s) deferred`,
   );
   block(
     'numbers that no longer match the tree',
@@ -775,7 +764,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } else if (!strict) {
     console.log(
       '\n  Reported, not enforced — the editing is yours.\n' +
-        '  (npx vitest run tests/readme.test.ts is the gate; --strict exits 1 here.)',
+        '  (--strict exits 1 for the file-derived problems listed above.)',
     );
   }
   process.exit(strict && problems.length > 0 ? 1 : 0);

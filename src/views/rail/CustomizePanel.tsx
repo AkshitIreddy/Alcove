@@ -91,6 +91,13 @@ export interface CustomizePanelProps {
 export default function CustomizePanel(props: CustomizePanelProps): JSX.Element {
   const [tab, setTab] = createSignal<StudioTab>(props.initialTab ?? 'book');
   const [style, setStyle] = createSignal<Record<string, unknown> | null>(null);
+  /*
+   * Studio clicks can arrive faster than two cover_meta read/merge/write
+   * operations. Serialize them in click order: otherwise an older, slower
+   * write can finish last and the shelf quite correctly repaint the wrong
+   * persisted style when the book closes.
+   */
+  let styleWrites: Promise<void> = Promise.resolve();
 
   // Hydrate the persisted style blob whenever the book changes.
   createEffect(
@@ -126,7 +133,11 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
     if (props.bookId !== undefined) {
       // Writes cover_meta.style AND its cover projection, so the shelf spine,
       // the pull-out ghost and the opened book all agree.
-      void persistBookStyle(props.bookId, (normalized as BookStyle | null) ?? null);
+      const bookId = props.bookId;
+      const persisted = (normalized as BookStyle | null) ?? null;
+      styleWrites = styleWrites
+        .catch(() => undefined)
+        .then(() => persistBookStyle(bookId, persisted));
     }
   };
 

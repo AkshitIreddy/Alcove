@@ -43,8 +43,6 @@ export interface ShelfStudioProps {
   /** The book being dressed, or null for the room-only studio. */
   bookId: string | null;
   onClose(): void;
-  /** Fired after a change that the shelf must re-read from the DB. */
-  onBookChanged?(): void;
 }
 
 export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
@@ -85,7 +83,6 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
    */
   const changeOverrides = (next: CoverOverrides | null): void => {
     setOverrides(next);
-    if (props.bookId !== null) props.onBookChanged?.();
   };
 
   const changeDefaults = (next: BookPageDefaults | null): void => {

@@ -1354,13 +1354,6 @@ export default function BookshelfWorld(): JSX.Element {
           open={dockPanel() === 'studio'}
           bookId={studioBookId()}
           onClose={() => setDockPanel(null)}
-          onBookChanged={() => {
-            const w = world;
-            const id = studioBookId();
-            if (w === null || id === null) return;
-            w.invalidateSpine(id);
-            void w.refreshData();
-          }}
         />
       </Show>
     </div>

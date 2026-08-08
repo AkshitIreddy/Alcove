@@ -42,6 +42,27 @@ import {
 import type { Book } from '../../data/types';
 import { mapPigmentRamp } from './spinePalette';
 
+/*
+ * The Pixi world stays mounted (and paused) while a book is open, so changing
+ * cover_meta in the editor does not naturally travel through its paged
+ * FloorStore. A small domain event closes that seam: it is emitted only after
+ * both canonical style and cover projection have reached SQLite, and the
+ * world can then re-read the row before invalidating its baked spine.
+ */
+export type BookAppearanceListener = (bookIds: readonly string[]) => void;
+
+const appearanceListeners = new Set<BookAppearanceListener>();
+
+/** Listen for successfully persisted book-appearance changes. */
+export function subscribeBookAppearances(listener: BookAppearanceListener): () => void {
+  appearanceListeners.add(listener);
+  return () => appearanceListeners.delete(listener);
+}
+
+function publishBookAppearance(bookId: string): void {
+  for (const listener of appearanceListeners) listener([bookId]);
+}
+
 /**
  * A room's spine bias, in the vocabulary `resolveBookStyle` actually reads.
  *
@@ -249,4 +270,5 @@ export async function persistBookStyle(
       ? null
       : (coverOverridesFromStyle(style) as unknown as Record<string, unknown>),
   );
+  publishBookAppearance(bookId);
 }

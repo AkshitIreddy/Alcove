@@ -126,6 +126,7 @@ import {
 import {
   bookStyleOverridesFor,
   persistBookStyle,
+  subscribeBookAppearances,
   themeSpineDefaults,
 } from './bookIdentity';
 import { FloorStampCache } from './floorStamps';
@@ -501,6 +502,12 @@ export class ShelfWorld {
   private zoomTween: gsap.core.Tween | null = null;
   private springTween: gsap.core.Tween | null = null;
   private readonly tracked = new Set<gsap.core.Animation>();
+  /** Book-style writes waiting to be re-read into the paged shelf store. */
+  private readonly appearancePending = new Set<string>();
+  /** Coalesces same-turn style + cover notifications into one DB refresh. */
+  private appearanceRefreshQueued = false;
+  /** Serializes refreshes when a reader clicks several studio controls fast. */
+  private appearanceRefresh: Promise<void> = Promise.resolve();
   private a11ySignature = '';
 
   /* ------------------------- wave-2 shelf-life state ---------------------- */
@@ -790,6 +797,13 @@ export class ShelfWorld {
       subscribeBookBindings((ids) => {
         for (const id of ids) this.factory.invalidate(id);
         this.dirty = true;
+      }),
+      // cover_meta style writes happen while this world is commonly paused
+      // behind the open book. Re-read the persisted Book rows first, then
+      // invalidate their baked pixels; invalidating first would let the
+      // factory immediately queue a replacement from its stale FloorStore row.
+      subscribeBookAppearances((ids) => {
+        this.queueBookAppearanceRefresh(ids);
       }),
     );
     void loadLibraryPrefs();
@@ -3883,6 +3897,45 @@ export class ShelfWorld {
       }
     }
     this.syncMountedStatusMarks();
+  }
+
+  /**
+   * Pull successfully-saved Book Studio changes across the SQLite → FloorStore
+   * → SpineFactory seam.
+   *
+   * The order is the fix:
+   *  1. re-read the canonical Book row;
+   *  2. invalidate cached params and atlas entries;
+   *  3. let the invalidation callback request a replacement from the NEW row.
+   *
+   * The world remains mounted while a book is open, so rebuilding the
+   * component on return cannot be relied on. Same-turn writes are coalesced
+   * and overlapping batches are serialized, which also prevents a slower old
+   * refresh from landing after a newer style.
+   */
+  private queueBookAppearanceRefresh(bookIds: readonly string[]): void {
+    if (this.destroyed) return;
+    for (const id of bookIds) this.appearancePending.add(id);
+    if (this.appearanceRefreshQueued) return;
+    this.appearanceRefreshQueued = true;
+
+    queueMicrotask(() => {
+      this.appearanceRefreshQueued = false;
+      if (this.destroyed || this.appearancePending.size === 0) return;
+      const ids = [...this.appearancePending];
+      this.appearancePending.clear();
+
+      this.appearanceRefresh = this.appearanceRefresh
+        .catch(() => undefined)
+        .then(async () => {
+          if (this.destroyed) return;
+          await this.store.refreshAll();
+          if (this.destroyed) return;
+          for (const id of ids) this.factory.invalidate(id);
+          this.syncMountedStatusMarks();
+          this.dirty = true;
+        });
+    });
   }
 
   /** Drop baked spine textures after a rename (title is baked into hi-res). */

@@ -18,6 +18,26 @@ Work **in this order** unless blocked:
 
 #### Release blockers — newest owner pass
 
+- [x] Replace the book studio's action card with one compact Randomise dice
+      button at the preview's upper-right; remove Surprise Me and Follow the
+      Room from this panel entirely.
+- [x] Keep the selected app cursor over every styled scrollbar track/thumb;
+      dragging a scrollbar must not fall back to the Windows arrow.
+- [x] **Implementation staged; owner motion retest below:** repair the remaining
+      flip-time vertical jump specifically inside special
+      effect blocks. Ordinary ruled prose is stable; the snapshot transaction
+      must preserve nested effect content geometry, not only top-level boxes.
+- [x] **Implementation staged; owner motion retest below:** stage the newly
+      revealed destination leaf's turn-corner shadow in its
+      settled/final state from the first visible flip frame, so its affordance
+      never shifts after the page lands.
+- [x] Simplify Library Studio: remove Surprise Me, Back to one room, Plain
+      again, and the duplicate Add a floor control (the shelf rail owns that
+      action).
+- [x] Replace the Your own tab's “not yet, and why” refusal list with working
+      add/import paths. Do not advertise an unsupported upload category; every
+      card shown there must accept, validate, persist and surface its result.
+
 - [ ] **Owner motion retest — implementation staged:** re-open and fix the
       page-turn text movement as a transition-ownership
       defect: ordinary text and special blocks still jump upward when live DOM

@@ -507,7 +507,7 @@
 
 /* ----------------------------------------------------------------------------
    Page-turn discoverability — a dog-ear curl at the bottom-right corner and
-   a soft glow along the edge hotspots on hover.
+   a soft glow along the edge hotspots on hover. Transform/opacity only.
 
    The far corner of the book, which makes it the first thing off the glass
    whenever the spread is moved without being re-fitted: every rail panel used
@@ -535,15 +535,13 @@
     transparent 77%
   );
   border-bottom-right-radius: var(--radius-sm);
+  transition: opacity var(--dur-sm) var(--ease-out), transform var(--dur-sm) var(--ease-out);
   transform-origin: 100% 100%;
 }
 
 .nb-spread:hover .nb-page-curl {
-  /* The corner belongs to the destination page, not to pointer hover. Keeping
-     one settled geometry across DOM and WebGL prevents a late shrink/slide at
-     the ownership handoff. The edge hotspot itself still supplies hover
-     feedback below. */
-  opacity: 0.75;
+  opacity: 1;
+  transform: scale(1.18);
 }
 
 /* ----------------------------------------------------------------------------

@@ -24,6 +24,14 @@ GESTURE â†’ CURL MAPPING:
 - Hotspots: right-page right-edge strip (~48px) and both bottom/top corners get `pointerdown` handlers (also a click on the strip = tap-to-flip). On pointerdown: `setPointerCapture`, blur the editor (`document.activeElement.blur()`), snapshot check (cache hit expected), set leaf DOM `visibility:hidden` (keeps layout), show canvas â€” all in the same frame.
 - State: `{p, cx, cy, dir}` where pâˆˆ[0,1] is flip progress, (cx,cy) the drag point in leaf-local coords. During drag: `p = clamp((leafRightX - pointerX) / leafWidth, 0, 1)` for a rightâ†’left flip; corner drags also feed cy so the curl apex tilts (fold line angle Î¸ = atan2 from the gripped corner, like iBooks).
 - Curl geometry (vertex shader): classic cylinder deformation. Mesh: 64x16 grid quad covering the leaf. For each vertex, compute signed distance d from the fold line. The fold sweeps from the leaf's farthest corner at p=0 to the gutter at p=1; it never crosses the spine, so the inner edge stays attached to the book. If d>0 (past the fold), wrap the vertex around a cylinder of radius r: `angle = d / r; pos.x = foldX + sin(angle)*r (mirrored); pos.z = (1 - cos(angle)) * r`. Radius follows `4 * 0.15W * p * (1-p)`: exactly zero at both flat endpoints and 0.15W at mid-turn. Apply a fixed perspective projection (fov ~20Â°, camera on +z) so the curl foreshortens naturally. Back face: same mesh, `gl_FrontFacing == false` â†’ sample the NEXT page's texture mirrored in x; its flat 4% lighter/desaturated paper-back tint is multiplied by the geometric lift and therefore also reaches zero at both live-DOM handoffs.
+- **Vertical typesetting is invariant through the curl.** Depth may foreshorten
+  and widen the sheet in x, and a corner grip may decide where that x/z fold
+  crosses the page, but the vertex shader must preserve each source pixel's
+  page-relative y coordinate. A conventional perspective divide moved lifted
+  glyphs away from the camera centre; an inline-code pill crossing the fold was
+  visibly torn onto two baselines and then jumped back at landing. Compensate y
+  before projection and feed the original local y to `project()`. This is an
+  interaction-legibility rule, not a rejection of curl depth.
 - Textures: `uTexFront` = current page bitmap, `uTexBack` = next (or previous) page bitmap, uploaded via `texImage2D(bitmap)` at flip start (~1ms). Also `uPaperTex` = the same tiled paper texture used in CSS, multiplied in the fragment shader so raster pages match resting pages exactly.
 
 ~~SHADOW / LIGHTING MODEL~~ — **REMOVED. There is no light model.**
